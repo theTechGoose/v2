@@ -384,3 +384,21 @@ Deno.test("REQ-337 parseToolCall: create_quote carries a model-supplied jobName;
   }));
   if (none?.type === "create_quote") assertEquals(none.payload.jobName, undefined);
 });
+
+// REQ-418 (demo-loop cycle 2, M27): the model put the customer's phone in
+// create_quote's serviceAddress ("512-555-0199") and it seeded the customer
+// step's job-address box. A phone, an email or a letterless value is never an
+// address, so the parser drops it.
+Deno.test("REQ-418 parseToolCall: a phone, email or letterless serviceAddress is left off", () => {
+  for (const serviceAddress of ["512-555-0199", "Maria Lopez, 512-555-0199", "maria@lopez.com", "$250"]) {
+    const out = parseToolCall(call("create_quote", {
+      summary: "Cotización: reparar puerta de baño — Maria Lopez",
+      serviceAddress,
+      lineItems: [{ description: "Reparar puerta de baño", amountCents: 25_000 }],
+    }));
+    assertEquals(out?.type, "create_quote");
+    if (out?.type === "create_quote") {
+      assertEquals(out.payload.serviceAddress, undefined, `kept ${serviceAddress}`);
+    }
+  }
+});

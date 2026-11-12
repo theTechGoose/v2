@@ -1,6 +1,7 @@
 import type { LLMAction } from "@agents/domain/business/llm/base/mod.ts";
 import { t } from "@core/i18n/mod.ts";
 import { PAYMENT_TERMS_PRESETS } from "@agents/domain/business/terms-prefill/mod.ts";
+import { isAddressShaped } from "#quote-flow/quick-quote-prefill.ts";
 
 /** REQ-315: "q-001" / "Q-001 bathroom" → "Q-001"; anything else → undefined. */
 function docNumber(v: unknown): string | undefined {
@@ -205,8 +206,11 @@ export function parseToolCall(call: { function: { name: string; arguments: strin
       if (!summary || lineItems.length === 0) return undefined;
       // REQ-337: the model's own job name, when it gave one
       const jobName = typeof args.jobName === "string" ? args.jobName.trim() : "";
-      // REQ-263: the job address, when the user gave one
-      const serviceAddress = typeof args.serviceAddress === "string" ? args.serviceAddress.trim() : "";
+      // REQ-263: the job address, when the user gave one. REQ-418 (demo M27):
+      // a phone, an email or a letterless value is never one — dropped here;
+      // the coordinator also checks it against what the user typed.
+      const rawAddress = typeof args.serviceAddress === "string" ? args.serviceAddress.trim() : "";
+      const serviceAddress = rawAddress && isAddressShaped(rawAddress) ? rawAddress : "";
       // REQ-258: only a preset payment option id survives; anything else is
       // dropped and the wizard asks as before.
       const paymentTerms = typeof args.paymentTerms === "string" &&
