@@ -1681,7 +1681,7 @@
   "notify.invoice.claimed": "{name} says they paid — confirm you got it",
   "notify.invoice.nudgeDue": "Invoice scheduled to send {date} — is the job done? Send it",
   "notify.invoice.nudgeDueBody": "Confirm the work is finished, then send the final invoice from Invoices › Upcoming.",
-  "notify.invoice.claimedVia": "{name} says they paid by {method} — confirm you got it",
+  "notify.invoice.claimedVia": "{name} says they paid {method} — confirm you got it",
   "notify.invoice.overdue": "Invoice for {name} is overdue",
   "notify.invoice.paid": "{name} paid",
   "notify.invoice.paidAmount": "{name} paid {amount}",

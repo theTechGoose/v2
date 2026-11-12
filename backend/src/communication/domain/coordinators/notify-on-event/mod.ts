@@ -95,9 +95,59 @@ function notificationEntityType(
 function renderNotifString(lang: Lang, key: string, params?: Vars): string {
   return t(lang, key, {
     name: t(lang, "notify.fallbackClient"),
-    ...(params ?? {}),
+    ...renderParams(lang, params),
   });
 }
+
+/**
+ * REQ-224 (demo M36 / i18n-formatting-m14): raw domain values are formatted
+ * HERE, at render time, in the viewer's language — never baked into the
+ * stored params. So rows already stored with the raw values read right too.
+ *   - `amountCents` (integer cents) → `{amount}` as dollars ("$450").
+ *     A legacy numeric `amount` is the same integer cents (what
+ *     ConfirmPayment used to emit); a string `amount` is pre-formatted.
+ *   - `method` (the PaymentMethod enum, "zelle") → its localized phrase
+ *     ("por Zelle" / "via Zelle", "en efectivo" / "in cash").
+ */
+function renderParams(lang: Lang, params?: Vars): Vars {
+  if (!params) return {};
+  const out: Vars = { ...params };
+  if (typeof params.amountCents === "number") {
+    out.amount = fmtCents(params.amountCents);
+  } else if (typeof params.amount === "number") {
+    out.amount = fmtCents(params.amount);
+  }
+  delete out.amountCents;
+  if (typeof params.method === "string") {
+    const key = METHOD_PHRASE_KEY[params.method];
+    if (key) out.method = t(lang, key);
+  }
+  return out;
+}
+
+/** Integer cents → "$450" / "$1,234.50" (whole dollars drop the cents). */
+function fmtCents(cents: number): string {
+  const whole = cents % 100 === 0;
+  return `$${
+    (cents / 100).toLocaleString("en-US", {
+      minimumFractionDigits: whole ? 0 : 2,
+      maximumFractionDigits: whole ? 0 : 2,
+    })
+  }`;
+}
+
+/** PaymentMethod enum → the "paid <phrase>" label shared with /invoices. */
+const METHOD_PHRASE_KEY: Record<string, string> = {
+  ach: "invoicesPage.method.ach",
+  card: "invoicesPage.method.card",
+  cash: "invoicesPage.method.cash",
+  cashapp: "invoicesPage.method.cashApp",
+  check: "invoicesPage.method.check",
+  other: "invoicesPage.method.other",
+  paypal: "invoicesPage.method.paypal",
+  venmo: "invoicesPage.method.venmo",
+  zelle: "invoicesPage.method.zelle",
+};
 
 /**
  * Re-render a stored notification into the viewer's language. Rows written
@@ -199,11 +249,20 @@ export function notificationL10n(event: DomainEvent): NotificationL10n | null {
     };
   }
   if (event.entityType === "invoice" && event.action === "paid") {
-    const amount = event.data?.amount as string | undefined;
+    // REQ-224: ConfirmPayment sends integer `amountCents`; the money is
+    // formatted per viewer at render time (renderParams). A pre-formatted
+    // string `amount` is still accepted.
+    const amountCents = event.data?.amountCents as number | undefined;
+    const amount = event.data?.amount as string | number | undefined;
+    const money: Vars | undefined = typeof amountCents === "number"
+      ? { amountCents }
+      : amount !== undefined && amount !== ""
+      ? { amount }
+      : undefined;
     return {
       type: "invoice_paid",
-      titleKey: amount ? "notify.invoice.paidAmount" : "notify.invoice.paid",
-      titleParams: amount ? { ...nameParams, amount } : nameParams,
+      titleKey: money ? "notify.invoice.paidAmount" : "notify.invoice.paid",
+      titleParams: money ? { ...nameParams, ...money } : nameParams,
     };
   }
   if (event.entityType === "invoice" && event.action === "overdue") {
