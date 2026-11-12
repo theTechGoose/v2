@@ -46,6 +46,13 @@
  * for a snapshot every MIRROR_GAP_MS until one lands (a stall asks the same way; the customer's
  * heartbeat makes a lost frame a stall within ~3 s even while they are idle). Following another
  * of the customer's tabs starts the receiver over. In dev the pill shows what the mirror counted.
+ *
+ * REQ-391 (demo-loop cycle 2, M4 + m21) — …and in time (`stageStatus`): "Loading their next
+ * page…" while the customer's page is gone and the next may come (the link's `between`) or a newly
+ * followed tab's snapshot is not in; "Catching up…" while a resync is out; "Behind N s" while the
+ * frames come in over 1.5 s late (each frame carries its push time on the deploy's clock; the dev
+ * chip shows the lag's median/worst, whole path and wire). A tab that said it is closing is
+ * "Waiting for {name}'s app…" at once, under a banner across the frame's top edge.
  */
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import { type Lang, langSignal, t } from "../lib/i18n.ts";
@@ -67,6 +74,7 @@ import {
   createMirrorReceiver,
   MIRROR_GAP_MS,
   type MirrorFrame,
+  type MirrorLag,
   type MirrorStats,
 } from "../../shared/demo-mode/mirror.ts";
 import {
@@ -108,7 +116,11 @@ import {
   STAGE_PILL_BOTTOM,
   stageInsetBottom,
 } from "../../shared/demo-mode/pill.ts";
-import { stageFrameLook } from "../../shared/demo-mode/stage-frame.ts";
+import {
+  behindSeconds,
+  stageFrameLook,
+  stageStatus,
+} from "../../shared/demo-mode/stage-frame.ts";
 
 interface Demo {
   id: string;
@@ -151,12 +163,23 @@ interface OwnStats {
 }
 /** REQ-309 — the mirror's counters on the pill (dev only): one short line, the legend in its title */
 const MIRROR_STATS_LEGEND =
-  "mirror (dev): f frames · hb heartbeats · x frames that did not fit · st stalls · rs resyncs asked · old dropped as older · bad undecodable · held waiting for an earlier frame · the last frame's age";
-function mirrorStatsText(s: MirrorStats, own: OwnStats): string {
+  "mirror (dev): f frames · hb heartbeats · x frames that did not fit · st stalls · rs resyncs asked · old dropped as older · bad undecodable · held waiting for an earlier frame · the last frame's age · lag median/worst seconds from the customer's push to the frame handed on · net the same to its last chunk in (encoder + wire) · p2p or ws: how the frames travel (WebRTC, or the server's socket)";
+/** REQ-391 — seconds, one decimal; "–" for nothing measured */
+const secs = (ms: number | null) => ms === null ? "–" : (ms / 1000).toFixed(1);
+function mirrorStatsText(
+  s: MirrorStats,
+  own: OwnStats,
+  lag: MirrorLag,
+  direct: boolean,
+): string {
   const age = own.lastAt
     ? `${((Date.now() - own.lastAt) / 1000).toFixed(1)}s`
     : "–";
-  return `mirror f${s.frames} hb${s.beats} x${own.failed} st${s.stalls} rs${own.resyncs} old${s.older} bad${s.undecodable} held${s.held} ${age}`;
+  return `mirror f${s.frames} hb${s.beats} x${own.failed} st${s.stalls} rs${own.resyncs} old${s.older} bad${s.undecodable} held${s.held} ${age} lag ${
+    secs(lag.p50)
+  }/${secs(lag.max)}s net ${secs(lag.netP50)}/${secs(lag.netMax)}s ${
+    direct ? "p2p" : "ws"
+  }`;
 }
 
 export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
@@ -177,6 +200,12 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
   const [mirrored, setMirrored] = useState<Screen | null>(null);
   /** REQ-297 — the screen in the frame is from before the customer's app dropped */
   const [stale, setStale] = useState(false);
+  /** REQ-391 — another tab (or page) of the customer's is followed and its snapshot is not in
+   *  the frame yet: the frame still shows what came before */
+  const [awaiting, setAwaiting] = useState(false);
+  /** REQ-391 — how late the frames come (whole seconds, 0: in time) and whether a resync is out;
+   *  read off the receiver on the stall tick, set only when it changes */
+  const [lagView, setLagView] = useState({ behind: 0, resyncing: false });
   /** REQ-235 — this stage's End ended it */
   const endedHere = useRef(false);
   const [stage, setStage] = useState({ w: 1, h: 1 });
@@ -427,6 +456,7 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
         }, ms);
       });
       setStale(false); // REQ-297 — their screen is current again
+      setAwaiting(false); // REQ-391 — and it is the followed tab's
     }
   };
 
@@ -559,7 +589,11 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
         });
         askResync();
       },
+      // REQ-391 — the deploy's clock, as the customer's sender stamps it: how late each frame is
+      clock: () => linkRef.current?.now() ?? Date.now(),
     });
+    /** REQ-391 — what the pill said last of the lag (its hysteresis) */
+    let behind = 0;
     ownRef.current = { failed: 0, resyncs: 0, lastAt: 0 };
     dirtyRef.current = false;
     // REQ-292 — the customer's tab the stage follows: a switch starts the mirror's ordering over
@@ -618,6 +652,8 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
         rx.reset();
         dirtyRef.current = false;
         lastTRef.current = 0;
+        // REQ-391 (M4) — until this tab's snapshot is in, the frame is not its screen: never Live
+        setAwaiting(true);
         if (cid !== followedCid) {
           // REQ-292 — another of the customer's tabs: its page load may be OLDER than the one
           // shown; the receiver starts over so that tab's snapshot is taken (the mirrored page
@@ -710,7 +746,21 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
     // mirror over — asked again every MIRROR_GAP_MS until a snapshot lands
     const stall = setInterval(() => {
       if (rx.stalled() || dirtyRef.current) askResync();
-      if (dev) setStatsText(mirrorStatsText(rx.stats(), ownRef.current));
+      // REQ-391 (M4) — a snapshot asked for and not in: "Catching up…"; how late the frames come
+      // in: "Behind N s" when it is over LAG_BEHIND_MS
+      const resyncing = dirtyRef.current || rx.stalled();
+      const lag = rx.lag();
+      behind = behindSeconds(lag.last, behind);
+      setLagView((v) =>
+        v.behind === behind && v.resyncing === resyncing
+          ? v
+          : { behind, resyncing }
+      );
+      if (dev) {
+        setStatsText(
+          mirrorStatsText(rx.stats(), ownRef.current, lag, link.isDirect()),
+        );
+      }
     }, 500);
     return () => {
       clearInterval(stall);
@@ -729,6 +779,8 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
       setCmds({});
       setMirrored(null);
       setStale(false);
+      setAwaiting(false);
+      setLagView({ behind: 0, resyncing: false });
       setPeerOnline(false);
       setStatus("connecting");
     };
@@ -765,14 +817,29 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
   const name = demo?.targetName ?? "";
   // REQ-232 (demo-lifecycle-p1, m1, m3) — plain words, never the transport
   // REQ-309 (demo m26) — "Live" is the frame's truth: the followed tab's screen is in it
-  const statusLabel = ended || status === "ended"
+  // REQ-391 (M4) — …and in time: their page gone or not in yet, a resync out, frames late
+  const live = stageStatus({
+    ended,
+    status,
+    mirrored: !!mirrored,
+    awaiting,
+    resyncing: lagView.resyncing,
+    behind: lagView.behind,
+  });
+  const statusLabel = live.key === "ended"
     ? t("demoMode.ended")
-    : status === "replaced"
+    : live.key === "elsewhere"
     ? t("demoMode.elsewhere")
-    : status === "direct" || status === "relay"
-    ? mirrored ? t("demoMode.live") : t("demoMode.connecting")
-    : status === "waiting"
+    : live.key === "waiting"
     ? t("demoMode.waitingFor", { name })
+    : live.key === "loadingNext"
+    ? t("demoMode.loadingNext")
+    : live.key === "catchingUp"
+    ? t("demoMode.catchingUp")
+    : live.key === "behind"
+    ? t("demoMode.behind", { n: live.n ?? 2 })
+    : live.key === "live"
+    ? t("demoMode.live")
     : t("demoMode.connecting");
   // REQ-291 — centred by auto margins at max-content width: `left:50%` + translate capped the
   // shrink-to-fit width at half the window (CSS 2.1 §10.3.7), so the pill wrapped at 1440 px.
@@ -872,16 +939,19 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
               );
             })()}
             {look.waiting && (
+              // REQ-391 (m21) — a banner across the frame's top edge, never a card over their page
               <div
                 data-cy="demo-waiting"
                 role="status"
-                style={`${box};z-index:${
+                style={`position:absolute;left:${fit.left}px;top:${
+                  fit.top - bannerH
+                }px;width:${fit.width}px;z-index:${
                   Z + 2
-                };display:grid;place-items:center;pointer-events:none;color:#fff;font:inherit`}
+                };box-sizing:border-box;pointer-events:none;color:#fff;font:inherit`}
               >
-                <div style="display:grid;gap:6px;justify-items:center;text-align:center;max-width:360px;padding:14px 20px;border-radius:12px;background:rgba(18,26,22,.85);box-shadow:0 6px 24px rgba(0,0,0,.4)">
+                <div style="display:flex;flex-wrap:wrap;gap:2px 8px;align-items:baseline;justify-content:center;text-align:center;padding:7px 12px;border-radius:6px 6px 0 0;background:rgba(18,26,22,.88);box-shadow:0 2px 10px rgba(0,0,0,.35);font-size:12.5px;line-height:1.35">
                   <strong>{t("demoMode.waitingFor", { name })}</strong>
-                  <span style="font-size:12.5px;opacity:.8">
+                  <span style="opacity:.8">
                     {t("demoMode.waitingKeep")}
                   </span>
                 </div>

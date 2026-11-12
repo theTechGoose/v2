@@ -304,14 +304,18 @@ describe("REQ-232 a stage keeps the set of the customer's tabs (B3, demo-lifecyc
     const s = stage();
     tabOnline(s.ws, "t1");
     expect(s.status()).toBe("relay");
-    tabOnline(s.ws, "t1", false);
+    // REQ-391 AMENDMENT — the page says it is navigating; the stage says so ("between"), not Live
+    const navigating = (cid: string) =>
+      s.ws.recv({ t: "peer", online: false, cid, why: "navigating" });
+    navigating("t1");
+    expect(s.status()).toBe("between");
     jest.advanceTimersByTime(PRESENCE_GRACE_MS - 500);
     tabOnline(s.ws, "t1-next");
     jest.advanceTimersByTime(PRESENCE_GRACE_MS * 2);
     expect(sinceLive(s.statuses)).not.toContain("waiting");
     expect(s.status()).toBe("relay");
-    tabOnline(s.ws, "t1-next", false);
-    expect(s.status()).toBe("relay");
+    navigating("t1-next");
+    expect(s.status()).toBe("between");
     jest.advanceTimersByTime(PRESENCE_GRACE_MS + 50);
     expect(s.status()).toBe("waiting");
     s.link.close();

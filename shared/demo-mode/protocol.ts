@@ -68,7 +68,9 @@ export interface Anchor {
 }
 
 /** REQ-242 — one piece of a mirror frame: `l` the page load it belongs to, `s` the frame's
- *  number in that load, `i` of `n` pieces, `z` the frame is gzip + base64, `d` the text */
+ *  number in that load, `i` of `n` pieces, `z` the frame is gzip + base64, `d` the text.
+ *  REQ-391 — `t`: when the customer's app pushed the frame, on the deploy's clock (ms) — the
+ *  stage measures how late each frame is in */
 export interface DomChunk {
   l: string;
   s: number;
@@ -76,7 +78,17 @@ export interface DomChunk {
   n: number;
   z?: 1;
   d: string;
+  t?: number;
 }
+
+/** REQ-391 — why a customer's page went, said by the page itself as it goes (`pagehide`): it is
+ *  navigating to another page of the app (a link, `location.href`, a reload or a history step —
+ *  a new socket follows), or no next page of the app is known to be coming (`closing`: a closed
+ *  tab, the address bar pointed elsewhere, the browser's own reload button) */
+export type LeaveWhy = "navigating" | "closing";
+
+const isLeaveWhy = (x: unknown): x is LeaveWhy =>
+  x === "navigating" || x === "closing";
 
 export type PeerMessage =
   | { k: "move"; a: Anchor; t?: number } // t: the sender's clock (REQ-180)
@@ -97,7 +109,11 @@ export type ClientMessage =
   | { t: "relay"; data: PeerMessage; to?: "presenters" }
   | { t: "claim"; at: number }
   | { t: "sync"; to: string }
-  | { t: "end" };
+  | { t: "end" }
+  // REQ-391 — this socket's page is going, and why (the server says so when it is gone)
+  | { t: "leaving"; why: LeaveWhy }
+  // REQ-391 — what time is it on the deploy? (`c`: this browser's clock, answered back)
+  | { t: "time"; c: number };
 
 /** REQ-214 — `pid`: which presenter a message is from (never on the viewer's), which presenter
  *  came or went (a `peer` without one is a customer tab), and a presenter's own id on their
@@ -106,7 +122,9 @@ export type ClientMessage =
  *  view; `replaced`: the same staff account opened the demo in a newer window, this one is done.
  *  REQ-235 — and which presenter ended the demo (an `ended` by the viewer never has one).
  *  REQ-296 — `reason: "expired"`: the demo reached SESSION_TTL_MS; nobody ended it (`by` names no
- *  side then, and there is no `pid`) */
+ *  side then, and there is no `pid`). REQ-391 — a socket gone (`online: false`) carries the `why`
+ *  its page said as it went, when it said one; `time` answers a browser's ask with the deploy's
+ *  clock (`s`) and the browser's own (`c`) */
 export type ServerMessage =
   | {
     t: "welcome";
@@ -116,7 +134,8 @@ export type ServerMessage =
     pid?: string;
     cid?: string;
   }
-  | { t: "peer"; online: boolean; pid?: string; cid?: string }
+  | { t: "peer"; online: boolean; pid?: string; cid?: string; why?: LeaveWhy }
+  | { t: "time"; c: number; s: number }
   | { t: "signal"; from: Role; pid?: string; cid?: string; data: unknown }
   | { t: "relay"; from: Role; pid?: string; cid?: string; data: PeerMessage }
   | { t: "claim"; cid: string; at: number }
@@ -131,8 +150,14 @@ export type EndReason = "declined" | "expired";
 export const ACTIVE_POLL_MS = 5_000;
 /** REQ-232 — the other side's last socket went: the link stays "live" this long before it says it
  *  is waiting. A page change in the customer's app is a new page and a new socket (the old one
- *  closes, the new one joins once the page has loaded), and it must never flash "waiting". */
+ *  closes, the new one joins once the page has loaded), and it must never flash "waiting".
+ *  REQ-391 — on a stage this is the grace of a tab that said it is NAVIGATING (its next page is
+ *  coming); one that said it is closing gets none, one that said nothing SILENT_GRACE_MS. */
 export const PRESENCE_GRACE_MS = 5_000;
+/** REQ-391 — a customer tab's socket went without a word (a crash, a lost network — whose first
+ *  reconnect comes after 1 s — or a page from before REQ-391): the stage waits this long for a
+ *  next page before it says it is waiting */
+export const SILENT_GRACE_MS = 2_000;
 /** a demo nobody ended expires on its own — and says so (REQ-296: `ended … expired` to everyone) */
 export const SESSION_TTL_MS = 2 * 60 * 60 * 1000;
 /** how long the customer's last reported page is kept — the presenter lands there at once (AMENDMENT — same screen) */
@@ -206,6 +231,8 @@ function parseDomChunk(o: Record<string, unknown>): DomChunk | null {
   ) return null;
   const c: DomChunk = { l: o.l, s: o.s, i: o.i, n: o.n, d: o.d };
   if (o.z === 1) c.z = 1;
+  // REQ-391 — a send time that is not one is dropped, never the chunk
+  if (natural(o.t)) c.t = o.t;
   return c;
 }
 
@@ -237,6 +264,7 @@ export function parsePeerMessage(x: unknown): PeerMessage | null {
           n: c.n,
           ...(c.z ? { z: 1 as const } : {}),
           d: c.d,
+          ...(c.t !== undefined ? { t: c.t } : {}),
         }
         : null;
     }
@@ -284,6 +312,10 @@ export function parseClientMessage(raw: string): ClientMessage | null {
       return typeof o.to === "string" && o.to ? { t: "sync", to: o.to } : null;
     case "end":
       return { t: "end" };
+    case "leaving":
+      return isLeaveWhy(o.why) ? { t: "leaving", why: o.why } : null;
+    case "time":
+      return num(o.c) ? { t: "time", c: o.c } : null;
     default:
       return null;
   }
@@ -313,8 +345,17 @@ export function parseServerMessage(raw: string): ServerMessage | null {
         : null;
     case "peer":
       return typeof o.online === "boolean"
-        ? { t: "peer", online: o.online, ...pidOf(o), ...cidOf(o) }
+        ? {
+          t: "peer",
+          online: o.online,
+          ...pidOf(o),
+          ...cidOf(o),
+          // REQ-391 — why a socket went: on a departure only
+          ...(!o.online && isLeaveWhy(o.why) ? { why: o.why } : {}),
+        }
         : null;
+    case "time":
+      return num(o.c) && num(o.s) ? { t: "time", c: o.c, s: o.s } : null;
     case "signal":
       return isRole(o.from) && o.data !== undefined
         ? { t: "signal", from: o.from, ...pidOf(o), ...cidOf(o), data: o.data }

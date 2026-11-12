@@ -25,20 +25,33 @@
  *
  * REQ-242 — the customer's screen rides the same link as `dom` chunks (the reliable channel, or
  * the relay); a stage's `resync` goes to the customer alone — colleagues get pointers only.
+ *
+ * REQ-391 (demo-loop cycle 2, M4 + m21) — a customer tab says WHY its page goes (`leaving`, on
+ * the socket, at pagehide) and the server stamps it on the tab's departure. A stage whose last tab
+ * went says so at once: "closing" — waiting, no grace; "navigating" — "between" for
+ * PRESENCE_GRACE_MS while the next page comes; nothing said (a crash, a lost network, a page from
+ * before) — "between" for SILENT_GRACE_MS. Never "live" over a page that is gone. Every link also
+ * asks the deploy's time once welcomed (`time`) and keeps the best round trip's offset: `now()` is
+ * the deploy's clock as this browser knows it, the same on both ends within a round trip — the
+ * mirror stamps frames with it and the stage measures how late they come in.
  */
 import {
   type ClientMessage,
+  type LeaveWhy,
   parsePeerMessage,
   parseServerMessage,
   type PeerMessage,
   PRESENCE_GRACE_MS,
   type Role,
+  SILENT_GRACE_MS,
   SOCKET_PATH,
 } from "../../../shared/demo-mode/protocol.ts";
 
 export type LinkStatus =
   | "connecting"
   | "waiting"
+  /** REQ-391 — a stage: the customer's page went and its next one may still come (the grace) */
+  | "between"
   | "relay"
   | "direct"
   | "ended"
@@ -78,6 +91,10 @@ export interface DemoLink {
   isDirect(): boolean;
   /** REQ-232 — the customer's side: this tab is the one the customer is using now */
   claim(): void;
+  /** REQ-391 — this page is going, and why (at pagehide): the server says it when the socket goes */
+  leaving(why: LeaveWhy): void;
+  /** REQ-391 — the deploy's clock as this browser knows it (its own until the deploy answered) */
+  now(): number;
   /** end the demo for both sides */
   end(): void;
   close(): void;
@@ -138,6 +155,9 @@ export function connectDemo(o: DemoLinkOptions): DemoLink {
   let attempt = 0;
   let status: LinkStatus = "connecting";
   let retry: ReturnType<typeof setTimeout> | undefined;
+  /** REQ-391 — the deploy's clock minus this browser's, from the shortest `time` round trip */
+  let skew = 0;
+  let bestRtt = Number.POSITIVE_INFINITY;
 
   const setStatus = (s: LinkStatus) => {
     if (status === s) return;
@@ -166,20 +186,23 @@ export function connectDemo(o: DemoLinkOptions): DemoLink {
     if (closed) return setStatus("closed");
     if (ws?.readyState !== WebSocket.OPEN) return setStatus("connecting");
     if (!online()) return setStatus("waiting");
+    // REQ-391 — a stage whose customer's page went: never "live" over it while the next may come
+    if (o.role === "presenter" && tabs.size === 0) return setStatus("between");
     setStatus(direct() ? "direct" : "relay");
   };
   const endGrace = () => {
     lingering = false;
     clearTimeout(grace);
   };
-  /** REQ-232 — the last socket of the other side went: hold "live" for the grace */
-  const startGrace = () => {
+  /** REQ-232 — the last socket of the other side went: hold on for the grace (REQ-391 — how long
+   *  depends on what its page said: PRESENCE_GRACE_MS by default) */
+  const startGrace = (ms: number = PRESENCE_GRACE_MS) => {
     lingering = true;
     clearTimeout(grace);
     grace = setTimeout(() => {
       lingering = false;
       refresh();
-    }, PRESENCE_GRACE_MS);
+    }, ms);
   };
 
   const teardown = (key: string) => {
@@ -327,13 +350,29 @@ export function connectDemo(o: DemoLinkOptions): DemoLink {
     follow();
     refresh();
   };
-  const tabLeft = (cid: string) => {
+  /** REQ-391 — `why`: what its page said as it went. The last tab gone: closing — nobody to wait
+   *  for (waiting at once, m21); navigating — its next page comes (the full grace, M4); nothing
+   *  said — a short grace */
+  const tabLeft = (cid: string, why?: LeaveWhy) => {
     gone.add(cid);
     if (gone.size > 200) gone.delete(gone.values().next().value!);
     if (!tabs.delete(cid)) return;
-    if (tabs.size === 0) startGrace();
+    if (tabs.size === 0) {
+      const ms = why === "navigating" ? PRESENCE_GRACE_MS : SILENT_GRACE_MS;
+      if (why === "closing") endGrace();
+      else startGrace(ms);
+    }
     follow();
     refresh();
+  };
+  /** REQ-391 — ask the deploy's time; the answer sets `skew` (Cristian: halfway through the trip) */
+  const askTime = () => wsSend({ t: "time", c: Date.now() });
+  const tookTime = (c: number, s: number) => {
+    const now = Date.now();
+    const rtt = now - c;
+    if (rtt < 0 || rtt >= bestRtt) return;
+    bestRtt = rtt;
+    skew = s + rtt / 2 - now;
   };
   /** REQ-232 — the customer's side: say again that this tab is the one in use */
   const reclaim = () => {
@@ -421,12 +460,16 @@ export function connectDemo(o: DemoLinkOptions): DemoLink {
           // who is here comes next, one `peer` each (REQ-232); this tab says again it is in use
           reclaim();
           refresh();
+          askTime(); // REQ-391
+          break;
+        case "time":
+          tookTime(m.c, m.s);
           break;
         case "peer":
           if (m.pid !== undefined) stageSeen(m.online, m.pid, m.cid);
           else if (o.role === "presenter") {
             if (m.online) tabSeen(m.cid ?? NO_CID);
-            else tabLeft(m.cid ?? NO_CID);
+            else tabLeft(m.cid ?? NO_CID, m.why);
           }
           break;
         case "claim":
@@ -518,6 +561,10 @@ export function connectDemo(o: DemoLinkOptions): DemoLink {
       claimedAt = Date.now();
       wsSend({ t: "claim", at: claimedAt });
     },
+    leaving(why) {
+      wsSend({ t: "leaving", why });
+    },
+    now: () => Date.now() + skew,
     end() {
       wsSend({ t: "end" });
     },

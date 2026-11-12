@@ -24,6 +24,14 @@
  * MIRROR_GAP_MS — not a picture that stays stale until their next change. A frame that does not
  * decode is told to the sequencer (`lost`) and stalls at once: nothing will close that gap. The
  * receiver counts what it saw (`stats`) so a lost frame can be pinned in one demo run.
+ *
+ * REQ-391 (demo-loop cycle 2, M4) — how LATE the stage is, measured: the sender stamps every
+ * chunk of a frame with the moment the frame was pushed (`t`, on the deploy's clock — the link's
+ * `now()`, the same on both ends within a round trip), heartbeats included; the receiver, reading
+ * the same clock, measures each frame it hands on (send → handed on: the whole path, a frame held
+ * for an earlier one included) and each frame as its last chunk comes in (send → in: the encoder
+ * and the wire alone), and keeps the last, the median and the worst of the last MIRROR_LAG_WINDOW
+ * (`lag()`) — the stage says "Behind N s" from it, and in dev shows where the time went.
  */
 import {
   type DomChunk,
@@ -41,6 +49,8 @@ export const MIRROR_GAP_MS = 2_000;
 export const MIRROR_HEARTBEAT_MS = 1_000;
 /** a frame's JSON over this many characters is gzipped */
 export const MIRROR_GZIP_OVER = 4_096;
+/** REQ-391 — the receiver's lag median and worst are over this many of the latest frames */
+export const MIRROR_LAG_WINDOW = 200;
 
 /** an element: its mirror id, its tag (an SVG/MathML one keeps its case), attributes, children */
 export interface SEl {
@@ -256,17 +266,25 @@ export async function decodeFrame(
   }
 }
 
-/** a frame's chunks back together, whatever order they come in; a duplicate is ignored */
+/** a frame's chunks back together, whatever order they come in; a duplicate is ignored.
+ *  REQ-391 — the frame's send time (`t`) comes along when its chunks carry one */
 export class ChunkAssembler {
   #parts = new Map<
     string,
-    { n: number; got: number; d: (string | undefined)[]; z: boolean }
+    {
+      n: number;
+      got: number;
+      d: (string | undefined)[];
+      z: boolean;
+      t?: number;
+    }
   >();
 
   push(
     c: DomChunk,
-  ): { l: string; s: number; z: boolean; text: string } | null {
-    if (c.n === 1) return { l: c.l, s: c.s, z: c.z === 1, text: c.d };
+  ): { l: string; s: number; z: boolean; text: string; t?: number } | null {
+    const at = c.t !== undefined ? { t: c.t } : {};
+    if (c.n === 1) return { l: c.l, s: c.s, z: c.z === 1, text: c.d, ...at };
     const key = `${c.l}:${c.s}`;
     let p = this.#parts.get(key);
     if (!p) {
@@ -274,14 +292,21 @@ export class ChunkAssembler {
       if (this.#parts.size >= 32) {
         this.#parts.delete(this.#parts.keys().next().value!);
       }
-      p = { n: c.n, got: 0, d: new Array(c.n), z: c.z === 1 };
+      p = { n: c.n, got: 0, d: new Array(c.n), z: c.z === 1, ...at };
       this.#parts.set(key, p);
     }
     if (p.n !== c.n || p.d[c.i] !== undefined) return null;
     p.d[c.i] = c.d;
+    p.t ??= c.t;
     if (++p.got < p.n) return null;
     this.#parts.delete(key);
-    return { l: c.l, s: c.s, z: p.z, text: p.d.join("") };
+    return {
+      l: c.l,
+      s: c.s,
+      z: p.z,
+      text: p.d.join(""),
+      ...(p.t !== undefined ? { t: p.t } : {}),
+    };
   }
 }
 
@@ -410,20 +435,25 @@ export interface MirrorSender {
   idle(): Promise<void>;
 }
 
-/** the customer's end: frames numbered per page load, encoded in order, sent as dom chunks */
+/** the customer's end: frames numbered per page load, encoded in order, sent as dom chunks.
+ *  REQ-391 — `clock`: the deploy's time as this browser knows it (the link's `now()`); every
+ *  chunk carries the time its frame was PUSHED — the encoder's own wait counts as lateness */
 export function createMirrorSender(o: {
   send(m: PeerMessage): void;
   load?: string;
   gzipOver?: number;
   chunkChars?: number;
+  clock?: () => number;
 }): MirrorSender {
   const load = o.load ?? newLoadId();
+  const clock = o.clock ?? (() => Date.now());
   let seq = 0;
   let chain: Promise<void> = Promise.resolve();
   return {
     load,
     push(f) {
       const s = seq++;
+      const t = Math.max(0, Math.round(clock()));
       chain = chain.then(async () => {
         const { z, text } = await encodeFrame(f, { gzipOver: o.gzipOver });
         const parts = chunkText(text, o.chunkChars ?? MIRROR_CHUNK_CHARS);
@@ -436,6 +466,7 @@ export function createMirrorSender(o: {
             n: parts.length,
             ...(z ? { z: 1 as const } : {}),
             d: parts[i],
+            t,
           });
         }
       }).catch(() => {});
@@ -462,33 +493,79 @@ export interface MirrorStats {
   stalls: number;
 }
 
+/** REQ-391 — how late the frames came, in ms (null: none carried a send time) */
+export interface MirrorLag {
+  /** the last frame handed on: from the customer's push to here, handed on */
+  last: number | null;
+  /** over the last MIRROR_LAG_WINDOW frames handed on: the median and the worst */
+  p50: number | null;
+  max: number | null;
+  /** the same for the wire alone — push to the frame's last chunk in, before decoding and
+   *  before waiting for an earlier frame: what the network (and the customer's encoder) took */
+  netP50: number | null;
+  netMax: number | null;
+}
+
+/** REQ-391 — the latest `cap` samples: their median (the lower one) and their worst */
+function samples(cap: number) {
+  const xs: number[] = [];
+  return {
+    add(x: number) {
+      xs.push(x);
+      if (xs.length > cap) xs.shift();
+    },
+    clear: () => void (xs.length = 0),
+    p50(): number | null {
+      if (!xs.length) return null;
+      const s = [...xs].sort((a, b) => a - b);
+      return s[Math.floor((s.length - 1) / 2)];
+    },
+    max: (): number | null => xs.length ? Math.max(...xs) : null,
+  };
+}
+
 /** the stage's end: chunks in, frames out in order, each with the page load it belongs to;
  *  `stalled()` says when to ask for a snapshot; `reset()` starts over (REQ-309 — the stage follows
  *  another tab: a frame decoded from before the reset is never handed on, and the other tab's
- *  page-load id is not "older") */
+ *  page-load id is not "older"). REQ-391 — `clock`: the deploy's time as this browser knows it
+ *  (the link's `now()`); `lag()` says how late the frames came */
 export function createMirrorReceiver(o: {
   onFrame(f: MirrorFrame, load: string): void;
   /** REQ-292 tripwire — a snapshot the sequencer rejected: the stage logs it and resyncs */
   onDropped?(f: MirrorFrame, load: string, seq: number): void;
   gapMs?: number;
   now?: () => number;
+  clock?: () => number;
 }): {
   push(c: DomChunk): Promise<void>;
   stalled(): boolean;
   reset(): void;
   idle(): Promise<void>;
   stats(): MirrorStats;
+  lag(): MirrorLag;
 } {
   const asm = new ChunkAssembler();
   const order = new FrameSequencer({ gapMs: o.gapMs, now: o.now });
+  const clock = o.clock ?? (() => Date.now());
   let chain: Promise<void> = Promise.resolve();
   let epoch = 0;
   const n = { frames: 0, snaps: 0, beats: 0, undecodable: 0, stalls: 0 };
   let wasStalled = false;
+  /** REQ-391 — each decoded frame's send time, until it is handed on (it may wait in the
+   *  sequencer for an earlier one) */
+  const sentAt = new WeakMap<MirrorFrame, number>();
+  const lagAll = samples(MIRROR_LAG_WINDOW);
+  const lagWire = samples(MIRROR_LAG_WINDOW);
+  let lagLast: number | null = null;
+  /** how long ago `t` was, on the deploy's clock — never negative (the two clocks agree only
+   *  within a round trip) */
+  const since = (t: number) => Math.max(0, Math.round(clock() - t));
   return {
     push(c) {
       const whole = asm.push(c);
       if (!whole) return chain;
+      // REQ-391 — the frame is in: the customer's encoder and the wire are done with it
+      if (whole.t !== undefined) lagWire.add(since(whole.t));
       const mine = epoch;
       chain = chain.then(async () => {
         const f = await decodeFrame(whole.text, whole.z);
@@ -500,6 +577,7 @@ export function createMirrorReceiver(o: {
           order.lost(whole.l, whole.s);
           return;
         }
+        if (whole.t !== undefined) sentAt.set(f, whole.t);
         if (f.t === "snap" && order.rejectsSnap(whole.l, whole.s)) {
           // REQ-292 tripwire — a snapshot the sequencer will refuse is never silent
           try {
@@ -513,6 +591,12 @@ export function createMirrorReceiver(o: {
           n.frames++;
           if (g.t === "snap") n.snaps++;
           else if (g.ops.length === 0) n.beats++;
+          // REQ-391 — handed on now: how late, the whole way (a wait for an earlier frame too)
+          const t = sentAt.get(g);
+          if (t !== undefined) {
+            lagLast = since(t);
+            lagAll.add(lagLast);
+          }
           try {
             o.onFrame(g, whole.l);
           } catch {
@@ -532,8 +616,19 @@ export function createMirrorReceiver(o: {
       epoch++;
       order.reset();
       wasStalled = false;
+      // REQ-391 — another tab (or page) is followed: its frames are measured afresh
+      lagAll.clear();
+      lagWire.clear();
+      lagLast = null;
     },
     idle: () => chain,
     stats: () => ({ ...n, older: order.dropped, held: order.heldCount() }),
+    lag: () => ({
+      last: lagLast,
+      p50: lagAll.p50(),
+      max: lagAll.max(),
+      netP50: lagWire.p50(),
+      netMax: lagWire.max(),
+    }),
   };
 }

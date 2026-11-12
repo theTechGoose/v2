@@ -9,7 +9,7 @@ import {
   type ServerMessage,
 } from "#demo-mode/protocol.ts";
 import { ChunkAssembler, chunkText, newLoadId } from "#demo-mode/mirror.ts";
-import { DemoHub } from "./mod.ts";
+import { DemoHub, type Peer } from "./mod.ts";
 
 function fakePeer(role: Role) {
   const inbox: ServerMessage[] = [];
@@ -798,6 +798,54 @@ Deno.test("REQ-296 a demo that reaches its TTL ends for everyone across hubs: bo
     assertEquals(hans2.inbox.filter((m) => m.t === "ended"), []);
   } finally {
     Deno.env.delete("DEMO_SESSION_TTL_MS");
+    await a.close();
+    await b.close();
+    await resetKv();
+  }
+});
+
+// REQ-391 — demo-loop cycle 2, M4 + m21: a customer's tab says, as its page goes, WHY (it is
+// navigating to another page of the app, or no next page is known: closing); the controller keeps
+// that on the peer and the hub stamps it on the tab's `peer … online:false` — in this hub and,
+// through the mailbox, in every other — so the stage knows at once whether to wait for a next page.
+// A tab that said nothing is announced as before.
+Deno.test("REQ-391 a tab that said why it goes is announced gone with that reason, in this hub and across hubs; one that said nothing without one", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const a = DemoHub.isolated("a");
+  const b = DemoHub.isolated("b");
+  const stage = socketPeer("presenter", "hans");
+  const near = socketPeer("viewer");
+  const far = socketPeer("viewer");
+  const mute = socketPeer("viewer");
+  try {
+    await a.join("s391", stage);
+    const n = await a.join("s391", near);
+    const f = await b.join("s391", far);
+    const m = await a.join("s391", mute);
+    const gone = () =>
+      stage.inbox.filter((x) => x.t === "peer" && !x.online && !x.pid);
+    (near as Peer).leaving = "navigating";
+    n.leave();
+    (far as Peer).leaving = "closing";
+    f.leave();
+    m.leave();
+    await until("the stage hears all three go", () => gone().length === 3);
+    const byCid = new Map(gone().map((x) => [x.t === "peer" ? x.cid : "", x]));
+    assertEquals(byCid.get(n.cid), {
+      t: "peer",
+      online: false,
+      cid: n.cid,
+      why: "navigating",
+    });
+    assertEquals(byCid.get(f.cid), {
+      t: "peer",
+      online: false,
+      cid: f.cid,
+      why: "closing",
+    }, "across hubs too");
+    assertEquals(byCid.get(m.cid), { t: "peer", online: false, cid: m.cid });
+  } finally {
     await a.close();
     await b.close();
     await resetKv();
