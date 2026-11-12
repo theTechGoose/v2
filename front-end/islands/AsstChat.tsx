@@ -42,6 +42,12 @@ import {
   type LinkToast as LinkToastState,
 } from "../lib/customer-link.ts";
 import { CustomerLinkRow, LinkToast } from "../components/CustomerLinkRow.tsx";
+import StepComposer, { StepComposerOpen } from "../components/StepComposer.tsx"; // REQ-392
+import {
+  type ChatStepHint,
+  type ChatStepId,
+  composerMode,
+} from "../../shared/quote-flow/step-composer.ts"; // REQ-392
 import { localizeTermValue } from "../lib/term-i18n.ts";
 import {
   mergeFreshTerms,
@@ -865,6 +871,19 @@ export default function AsstChat({
   const [priceBasis, setPriceBasis] = useState<
     "labor_and_materials" | "labor_materials_as_noted"
   >(seed?.priceBasis ?? "labor_and_materials");
+  /** REQ-392 (demo-loop cycle 2, M7): the assistant's answer to a message
+   *  typed in the compact composer on Pick a price / the Job details picker —
+   *  their panel covers the thread, so it shows on the step. */
+  const [stepNote, setStepNote] = useState<
+    { step: ChatStepId; text: string } | null
+  >(null);
+  /** REQ-392: bumped when a correction names the price ("more like $28k") —
+   *  remounts the price box with it. */
+  const [priceSeedRev, setPriceSeedRev] = useState(0);
+  /** REQ-392: the step whose compact box was opened from the step's own
+   *  Continue row (Pick a price, the Job details picker — see stepBoxDocked);
+   *  keyed by the step so the next step starts closed. */
+  const [stepBoxOpenKey, setStepBoxOpenKey] = useState<string | null>(null);
   /** REQ-329 (demo p15-13): the size of the job the amount pad scales its
    *  quick chips to — the market tier (the first tier if none is "market"). */
   const priceAnchorCents = priceSuggestions === null
@@ -2358,6 +2377,124 @@ export default function AsstChat({
       e.preventDefault();
       sendText(draft);
     }
+  }
+
+  /**
+   * REQ-392 (demo-loop cycle 2, M7): a message typed in the compact composer
+   * on a guided step goes to the assistant WITH the step, and the step takes
+   * the answer — Pick a price its re-priced tiers and the price the
+   * correction named, the Job details picker its rewritten versions. On a
+   * wizard question / the review the answer lands in the thread, and a quote
+   * the assistant changed is re-read by submitTurn (quoteUpdated). It amends
+   * the step in place, so no history snapshot: Back still undoes the step.
+   * Resolves true once the assistant answered.
+   */
+  async function sendStepText(
+    text: string,
+    step: ChatStepId,
+    wizardStepId?: string,
+  ): Promise<boolean> {
+    const said = text.trim();
+    if (!said || sending) return false;
+    const hint = stepHintFor(step, wizardStepId);
+    let answered: Message[] | undefined;
+    await submitTurn(
+      { role: "user", kind: "text", content: said },
+      async () => {
+        const res = await assistantClient.chat({
+          conversationId: convoId,
+          content: said,
+          kind: "text",
+          step: hint,
+        }) as {
+          conversation?: { id: string };
+          newMessages?: Message[];
+          message?: Message;
+          conversationId?: string;
+        };
+        answered = res.newMessages ?? [];
+        return res;
+      },
+    );
+    if (!answered) return false;
+    applyStepAnswer(step, answered);
+    return true;
+  }
+
+  /** REQ-392: what the server needs to act on the step — on the pre-quote
+   *  steps the job as typed and what is on screen (no quote exists yet). */
+  function stepHintFor(step: ChatStepId, wizardStepId?: string): ChatStepHint {
+    if (step === "price") {
+      const typed = (submittedJobDetails ?? pendingJobDetailsRaw ?? "").trim();
+      const shown = (pendingJobDetailsRaw ?? "").trim();
+      return {
+        id: "price",
+        ...(typed ? { job: typed } : {}),
+        // help me price it: the confirmed bullets, priced beside the job
+        ...(suggestPricing && shown && shown !== typed ? { scope: shown } : {}),
+        ...(suggestPricing ? { tiers: true } : {}),
+      };
+    }
+    if (step === "job_details") {
+      const typed = ((pickerMode === "confirm"
+        ? submittedJobDetails ?? pendingJobDetailsRaw
+        : jobPolishRawRef.current ?? submittedJobDetails ??
+          quote?.description) ?? "").trim();
+      const picked = jobOptions?.find((o) => o.id === selectedOptionId);
+      const shown = (picked?.bullets ?? [])
+        .filter((b) => !b.deleted && b.text.trim())
+        .map((b) => b.text.trim())
+        .join("\n");
+      return {
+        id: "job_details",
+        ...(typed ? { job: typed } : {}),
+        ...(shown ? { scope: shown } : {}),
+      };
+    }
+    if (step === "wizard") {
+      return { id: "wizard", ...(wizardStepId ? { wizardStepId } : {}) };
+    }
+    return { id: "review" };
+  }
+
+  /** REQ-392: the step takes the server's answer. */
+  function applyStepAnswer(step: ChatStepId, newMessages: Message[]) {
+    const answer = [...newMessages].reverse().find((m) =>
+      m.role === "assistant" &&
+      (m.payload as { step?: unknown } | undefined)?.step === step
+    );
+    if (!answer) return;
+    const p = (answer.payload ?? {}) as {
+      priceSuggestions?: {
+        options?: NonNullable<typeof priceSuggestions>;
+        basis?: "labor_and_materials" | "labor_materials_as_noted";
+      };
+      statedPriceCents?: number;
+      jobOptions?: { options?: JobOption[]; degraded?: boolean };
+    };
+    if (step === "price") {
+      const tiers = p.priceSuggestions?.options;
+      if (tiers && tiers.length > 0) {
+        setPriceBasis(p.priceSuggestions?.basis ?? "labor_and_materials");
+        setPriceSuggestions(tiers);
+      }
+      if (typeof p.statedPriceCents === "number" && p.statedPriceCents > 0) {
+        setPriceCents(p.statedPriceCents);
+        setPriceSeedRev((n) => n + 1);
+      }
+    }
+    const opts = p.jobOptions?.options;
+    if (step === "job_details" && opts && opts.length > 0) {
+      const drafts = toOptionDrafts(opts);
+      optionsTouchedRef.current = false;
+      setEditingBullet(null);
+      setEditingTitleId(null);
+      setProPopup(null);
+      setOptionsDegraded(p.jobOptions?.degraded === true);
+      setJobOptions(drafts);
+      setSelectedOptionId(drafts[0]?.id ?? null);
+    }
+    setStepNote({ step, text: answer.content });
   }
 
   /**
@@ -4697,6 +4834,44 @@ export default function AsstChat({
     }
   }
 
+  // REQ-392 (demo-loop cycle 2, M7): which composer shows — the full one, the
+  // compact "Tell the assistant…" box on a tap step, or none (invoice screens).
+  const composer = composerMode({
+    priceCaptureOpen,
+    jobOptionsOpen,
+    invoiceReviewOpen: invoiceReview !== null,
+    invoiceResultOpen: invoiceResult !== null,
+    awaitingJobDetails,
+    previewOpen: previewCtaId !== null,
+    messages,
+  });
+  const composerStepKey = composer.kind === "step"
+    ? `${composer.step}:${composer.wizardStepId ?? ""}`
+    : composer.kind;
+  // A new step starts without the last step's answer and with its own price
+  // box focus (REQ-041 NW-53f).
+  useEffect(() => {
+    setStepNote(null);
+    setPriceSeedRev(0);
+    setStepBoxOpenKey((k) => (k === composerStepKey ? k : null));
+  }, [composerStepKey]);
+  // Pick a price and the Job details picker own the panel and are bounded to
+  // it (REQ-338: the picker fits at 1280×720), so their closed box is a
+  // button in their own Continue row — no bar under the panel until tapped.
+  const stepBoxDocked = composer.kind === "step" &&
+    (composer.step === "price" || composer.step === "job_details");
+  const stepBoxOpen = stepBoxOpenKey === composerStepKey;
+  const stepBoxOpenButton = stepBoxDocked && !stepBoxOpen &&
+      composer.kind === "step"
+    ? (
+      <StepComposerOpen
+        step={composer.step}
+        lang={lang}
+        onOpen={() => setStepBoxOpenKey(composerStepKey)}
+      />
+    )
+    : null;
+
   const empty = messages.length === 0;
   // A step panel restored by back (price capture, details entry, picker,
   // invoice steps) takes over the scroll area even on a thread that already
@@ -5196,43 +5371,49 @@ export default function AsstChat({
                                     )
                                     : null}
                                 </button>
+                                <div class="chat__step-actions">
+                                  {stepBoxOpenButton}
+                                  <button
+                                    type="button"
+                                    class="chat__price-continue"
+                                    disabled={sending}
+                                    onClick={applyJobOption}
+                                  >
+                                    {sending
+                                      ? (
+                                        <>
+                                          <span
+                                            class="spinner"
+                                            aria-hidden="true"
+                                          />{" "}
+                                          {tFor(lang, "asstChat.settingUp")}
+                                        </>
+                                      )
+                                      : tFor(lang, "asstChat.continue")}
+                                  </button>
+                                </div>
+                              </>
+                            )
+                            : (
+                              <div class="chat__step-actions">
+                                {stepBoxOpenButton}
                                 <button
                                   type="button"
                                   class="chat__price-continue"
-                                  disabled={sending}
+                                  disabled={!selectedOptionId || sending}
                                   onClick={applyJobOption}
                                 >
                                   {sending
                                     ? (
                                       <>
-                                        <span
-                                          class="spinner"
-                                          aria-hidden="true"
-                                        />{" "}
+                                        <span class="spinner" aria-hidden="true" />
+                                        {" "}
                                         {tFor(lang, "asstChat.settingUp")}
                                       </>
                                     )
                                     : tFor(lang, "asstChat.continue")}
                                 </button>
-                              </>
-                            )
-                            : (
-                              <button
-                                type="button"
-                                class="chat__price-continue"
-                                disabled={!selectedOptionId || sending}
-                                onClick={applyJobOption}
-                              >
-                                {sending
-                                  ? (
-                                    <>
-                                      <span class="spinner" aria-hidden="true" />
-                                      {" "}
-                                      {tFor(lang, "asstChat.settingUp")}
-                                    </>
-                                  )
-                                  : tFor(lang, "asstChat.continue")}
-                              </button>
+                              </div>
                             )}
                         </>
                       )}
@@ -5860,14 +6041,17 @@ export default function AsstChat({
                         // UX-04: seed the picker with the $-amount the user
                         // already typed; key remounts it per details text so
                         // a re-entered flow never shows a stale value.
-                        key={pendingJobDetailsRaw ?? "blank"}
+                        // REQ-392: and with the price a correction named.
+                        key={`${pendingJobDetailsRaw ?? "blank"}#${priceSeedRev}`}
                         initialCents={priceCents ?? 0}
                         // REQ-329 (demo p15-13): the quick chips scale to the
                         // AI's market price instead of a fixed $50…$5k.
                         anchorCents={priceAnchorCents}
                         // REQ-041 (NW-53f): the number field is focused in
-                        // the help-me-price flow too.
-                        autoFocus
+                        // the help-me-price flow too — when the step opens,
+                        // not when a correction re-seeds it (REQ-392: the
+                        // contractor is typing in the step composer then).
+                        autoFocus={priceSeedRev === 0}
                         onChange={setPriceCents}
                         onSubmit={(cents) => {
                           if (sending) return;
@@ -5875,21 +6059,24 @@ export default function AsstChat({
                         }}
                       />
                     </div>
-                    <button
-                      type="button"
-                      class="chat__price-continue"
-                      disabled={(priceCents ?? 0) <= 0 || sending}
-                      onClick={() => onPriceContinue(priceCents!)}
-                    >
-                      {sending
-                        ? (
-                          <>
-                            <span class="spinner" aria-hidden="true" />{" "}
-                            {tFor(lang, "asstChat.settingUp")}
-                          </>
-                        )
-                        : tFor(lang, "asstChat.continue")}
-                    </button>
+                    <div class="chat__step-actions">
+                      {stepBoxOpenButton}
+                      <button
+                        type="button"
+                        class="chat__price-continue"
+                        disabled={(priceCents ?? 0) <= 0 || sending}
+                        onClick={() => onPriceContinue(priceCents!)}
+                      >
+                        {sending
+                          ? (
+                            <>
+                              <span class="spinner" aria-hidden="true" />{" "}
+                              {tFor(lang, "asstChat.settingUp")}
+                            </>
+                          )
+                          : tFor(lang, "asstChat.continue")}
+                      </button>
+                    </div>
                   </div>
                 )
                 : (
@@ -8725,35 +8912,18 @@ export default function AsstChat({
       </div>
 
       {(() => {
-        // Roadmap p.2: hide the composer when the user is in a "tapping-only"
-        // structured step — the MoneyInput screen, or any unanswered wizard
-        // card that exposes its own options. Text input has no place there
-        // and was visually distracting customers during testing.
-        const answeredStepIds = new Set<string>();
-        for (const x of messages) {
-          const sid = (x.payload as { wizardStepId?: string } | undefined)
-            ?.wizardStepId;
-          if (x.kind === "text" && sid) answeredStepIds.add(sid);
-        }
-        const hasUnansweredWizard = messages.some((m) => {
-          if (m.kind !== "wizard") return false;
-          const sid = (m.payload as { stepId?: string } | undefined)?.stepId;
-          return !sid || !answeredStepIds.has(sid);
-        });
-        // Also hide it while the final quote-review card is open (previewCtaId
-        // set): that screen is tap-only — the user sends via the card's button,
-        // so a text box underneath just invites stray typing.
-        // The details entry restored by back needs the composer even while
-        // the thread still holds an unanswered wizard question underneath.
-        const composerHidden = priceCaptureOpen || jobOptionsOpen ||
-          invoiceReview !== null || invoiceResult !== null ||
-          (hasUnansweredWizard && !awaitingJobDetails) ||
-          previewCtaId !== null;
-        // The error strip must survive a hidden composer: wizard-step
-        // failures (customer create rejected, network flake) land in
-        // `error`, and every wizard step hides the composer — swallowing
-        // the banner made those failures read as "the button did nothing".
-        if (composerHidden) {
+        // Roadmap p.2 / REQ-041 NW-53b: the big composer stays off the
+        // "tapping-only" steps — the price screen, the Job details picker,
+        // an unanswered wizard question, the Ready-to-send review — where a
+        // text box underneath invited stray typing. REQ-392 (demo-loop cycle
+        // 2, M7): but those steps are where the contractor needs to say
+        // "that's wrong, it's the whole job", so each keeps the compact
+        // "Tell the assistant…" box, whose message goes WITH the step
+        // (sendStepText). The invoice review / result screens keep none.
+        // The error strip survives either way: wizard-step failures
+        // (customer create rejected, network flake) land in `error`, and
+        // swallowing the banner made them read as "the button did nothing".
+        if (composer.kind === "none") {
           return error
             ? (
               <div class="composer">
@@ -8761,6 +8931,36 @@ export default function AsstChat({
               </div>
             )
             : null;
+        }
+        if (composer.kind === "step") {
+          return (
+            <StepComposer
+              key={composerStepKey}
+              step={composer.step}
+              lang={lang}
+              sending={sending}
+              error={error}
+              onRetry={canRetryTurn && retryTurnRef.current
+                ? () => {
+                  const fn = retryTurnRef.current;
+                  retryTurnRef.current = null;
+                  setCanRetryTurn(false);
+                  setError(undefined);
+                  fn?.();
+                }
+                : undefined}
+              note={stepNote?.step === composer.step ? stepNote.text : null}
+              onSend={(text) =>
+                sendStepText(text, composer.step, composer.wizardStepId)}
+              {...(stepBoxDocked
+                ? {
+                  open: stepBoxOpen,
+                  onOpenChange: (o: boolean) =>
+                    setStepBoxOpenKey(o ? composerStepKey : null),
+                }
+                : {})}
+            />
+          );
         }
         return (
           <div

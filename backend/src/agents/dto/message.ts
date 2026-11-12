@@ -63,6 +63,13 @@ export class ChatInputDto {
    *  the shape is per-kind and the controller does the deeper checks. */
   @IsOptional()
   payload?: Record<string, unknown>;
+
+  /** REQ-392 (demo-loop cycle 2, M7): the guided step a text was typed on —
+   *  the compact "Tell the assistant…" box's `{ id, wizardStepId?, job?,
+   *  scope?, tiers? }`. Loose here; the controller keeps it only when
+   *  `parseChatStepHint` (shared/quote-flow/step-composer.ts) accepts it. */
+  @IsOptional()
+  step?: unknown;
 }
 
 export function parseChatInput(input: unknown): ChatInputDto {

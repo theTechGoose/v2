@@ -3,6 +3,7 @@ import type { ExecutionContext } from "#danet/core";
 import { HandleChatMessage } from "@agents/domain/coordinators/handle-chat-message/mod.ts";
 import { StartConversation } from "@agents/domain/coordinators/start-conversation/mod.ts";
 import { parseChatInput } from "@agents/dto/message.ts";
+import { parseChatStepHint } from "#quote-flow/step-composer.ts"; // REQ-392
 import { FileStore } from "@files/domain/data/file-store/mod.ts";
 import { ProcessVoiceMemo } from "@files/domain/coordinators/process-voice-memo/mod.ts";
 import { UserStore } from "@users/domain/data/user-store/mod.ts";
@@ -71,6 +72,11 @@ export class ChatController {
     if (!content || !content.trim()) {
       throw new Error("chat requires non-empty content");
     }
+    // REQ-392 (demo-loop cycle 2, M7): a text typed in the compact composer
+    // on a guided step carries that step; junk is no step (a plain turn).
+    const step = (dto.kind ?? "text") === "text"
+      ? parseChatStepHint(dto.step)
+      : undefined;
 
     const result = await this.chatFlow.run({
       userId: user.id,
@@ -78,6 +84,7 @@ export class ChatController {
       content,
       kind: dto.kind,
       ...(payload ? { payload } : {}),
+      ...(step ? { step } : {}),
     });
 
     return ctx.json(result);

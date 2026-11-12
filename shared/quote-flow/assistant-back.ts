@@ -22,7 +22,7 @@ export interface AssistantBackView {
   previewOpen: boolean;
   /** Terminal invoice-saved card open — nothing above it is undoable. */
   invoiceResultOpen: boolean;
-  /** stepIdx of the ACTIVE wizard step (last message), else null. */
+  /** stepIdx of the ACTIVE wizard step (activeWizardStepIdx), else null. */
   activeWizardStepIdx: number | null;
   /** Depth of the snapshot stack. */
   viewStackDepth: number;
@@ -82,14 +82,31 @@ export function firstOpenReviewCta(
   return null;
 }
 
-/** stepIdx when the LAST message is an active wizard step, else null. */
+/** stepIdx of the active wizard step: the LAST wizard card, when nothing but
+ *  a chat turn typed on it came after it — REQ-392: the compact "Tell the
+ *  assistant…" box sits on every wizard question, and its question + the
+ *  reply land under the card without answering it. A pick (a text carrying
+ *  `wizardStepId`), a CTA or any card after it ends the step: null. */
 export function activeWizardStepIdx(
   messages: readonly AssistantMessageLike[],
 ): number | null {
-  const last = messages[messages.length - 1];
-  if (last?.kind !== "wizard") return null;
-  const idx = (last.payload as { stepIdx?: number } | undefined)?.stepIdx;
-  return typeof idx === "number" ? idx : null;
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const m = messages[i];
+    if (m.kind === "wizard") {
+      const idx = (m.payload as { stepIdx?: number } | undefined)?.stepIdx;
+      return typeof idx === "number" ? idx : null;
+    }
+    if (!isChatAside(m)) return null;
+  }
+  return null;
+}
+
+/** A chat message (text / voice / photo) that is not a wizard pick. */
+function isChatAside(m: AssistantMessageLike): boolean {
+  if (m.kind !== "text" && m.kind !== "voice" && m.kind !== "image") {
+    return false;
+  }
+  return !(m.payload as { wizardStepId?: unknown } | undefined)?.wizardStepId;
 }
 
 /** Sentinel step cursor for "the wizard is complete" (review/send stage). */

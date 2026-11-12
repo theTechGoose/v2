@@ -8,6 +8,7 @@
 import { api, ApiError, type ApiOptions } from "../lib/api.ts";
 import type { AssistantDraft } from "../../shared/quote-flow/assistant-draft.ts";
 import type { ThreadStatus } from "../../shared/quote-flow/chat-header.ts";
+import type { ChatStepHint } from "../../shared/quote-flow/step-composer.ts"; // REQ-392
 
 /** Minimal mirror of the backend Quote DTO — the frontend only needs the
  *  fields read from `getQuote`. Defined here (not in dashboard.ts) because
@@ -148,6 +149,11 @@ export interface ChatInput {
   content?: string;
   kind?: "text" | "voice" | "image";
   payload?: Record<string, unknown>;
+  /** REQ-392 (demo-loop cycle 2, M7): the guided step a text was typed on —
+   *  the compact "Tell the assistant…" box. The server re-prices on Pick a
+   *  price, rewrites the versions on Job details, and answers a wizard
+   *  question / the Ready-to-send review with the step in mind. */
+  step?: ChatStepHint;
 }
 
 export interface ChatResult {
