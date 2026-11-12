@@ -2969,7 +2969,7 @@ function InvoiceCard(
             disabled={busy}
             data-cy={`invoice-back-cta-${inv.stage}`}
           >
-            {busy ? "…" : cta.replace(/ →$/, "")}
+            {busy ? "…" : cta}
           </button>
           <button type="button" onClick={doOpenInvoice}>
             {tFor(lang, "invoicesPage.back.open")}

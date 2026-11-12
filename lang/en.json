@@ -1272,7 +1272,7 @@
   "invoicesPage.detail.saveBtn": "Save changes",
   "invoicesPage.detail.total": "Total",
   "invoicesPage.detail.paymentReceivedBtn": "Payment received",
-  "invoicesPage.cta.outReceived": "Payment received →",
+  "invoicesPage.cta.outReceived": "Payment received",
   "invoicesPage.pay.title": "How did they pay?",
   "invoicesPage.pay.amountLabel": "Amount received ($)",
   "invoicesPage.pay.dateLabel": "Received on",
