@@ -877,6 +877,7 @@
   "clientsHero.titlePost.one": "ya está en tu lista.",
   "clientsHero.titlePre": "Las",
   "clientsHero.titlePre.one": "Tu",
+  "clientsPage.address": "Dirección (opcional)",
   "clientsPage.addError": "No se pudo agregar ese cliente.",
   "clientsPage.added": "Cliente {name} agregado",
   "clientsPage.businessName": "Nombre del negocio",

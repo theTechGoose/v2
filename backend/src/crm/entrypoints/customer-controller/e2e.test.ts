@@ -246,3 +246,22 @@ for (
     });
   });
 }
+
+Deno.test("REQ-599 m30 customer e2e: POST /customers keeps the New customer modal's address", async () => {
+  await withServer(async (port) => {
+    const sid = await login(port);
+    const created = await fetch(`http://localhost:${port}/customers`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-session-id": sid },
+      body: JSON.stringify({
+        name: "Bob",
+        address: "1600 Congress Ave, Austin, TX 78701",
+      }),
+    }).then((r) => r.json());
+    assertEquals(created.address, "1600 Congress Ave, Austin, TX 78701");
+    const fetched = await fetch(`http://localhost:${port}/customers/${created.id}`, {
+      headers: { "x-session-id": sid },
+    }).then((r) => r.json());
+    assertEquals(fetched.address, "1600 Congress Ave, Austin, TX 78701");
+  });
+});

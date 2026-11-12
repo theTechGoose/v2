@@ -94,15 +94,45 @@ export function customerFormErrors(
  * backdrop click closes the dialog only while this is false, so a stray click (the demo pill
  * moving under a hand, a mis-aimed tap) never throws typed text away.
  */
-export function customerDraftDirty(d: {
+export function customerDraftDirty(d: NewCustomerDraft): boolean {
+  return [d.name, d.businessName, d.phoneNumber, d.email, d.address ?? ""]
+    .some((v) => v.trim() !== "");
+}
+
+/**
+ * The New customer modal's typed values. REQ-599 (demo-loop cycle 4, m30):
+ * `address` is the modal's optional Address field.
+ */
+export interface NewCustomerDraft {
   name: string;
   businessName: string;
   phoneNumber: string;
   email: string;
-}): boolean {
-  return [d.name, d.businessName, d.phoneNumber, d.email].some((v) =>
-    v.trim() !== ""
-  );
+  address?: string;
+}
+
+/**
+ * REQ-599 (demo-loop cycle 4, m30) — the POST /customers body for a New
+ * customer draft: every value trimmed, blank optional fields left out (so a
+ * blank address never overwrites "No address on file" with "").
+ */
+export function newCustomerPayload(d: NewCustomerDraft): {
+  name: string;
+  businessName?: string;
+  phoneNumber?: string;
+  email?: string;
+  address?: string;
+} {
+  const out: ReturnType<typeof newCustomerPayload> = { name: d.name.trim() };
+  const businessName = d.businessName.trim();
+  const phoneNumber = d.phoneNumber.trim();
+  const email = d.email.trim();
+  const address = (d.address ?? "").trim();
+  if (businessName) out.businessName = businessName;
+  if (phoneNumber) out.phoneNumber = phoneNumber;
+  if (email) out.email = email;
+  if (address) out.address = address;
+  return out;
 }
 
 /**
