@@ -35,6 +35,10 @@ import {
 } from "../../shared/quote-flow/pricing-plans.ts";
 import { switchQuote } from "../../shared/quote-flow/plan-switch.ts";
 import { accountNetDays } from "../../shared/quote-flow/completion-schedule.ts"; // REQ-411
+import {
+  insurerError,
+  policyNumberError,
+} from "../../shared/quote-flow/business-fields.ts"; // REQ-503
 import { dollars, PlanCards } from "../components/PlanCards.tsx";
 import {
   handoffOf,
@@ -1018,9 +1022,13 @@ function InsuranceEditCard(
             value={provider}
             disabled={!!busy}
             onInput={(e) => setProvider((e.target as HTMLInputElement).value)}
-            onBlur={() =>
-              provider.trim() !== (ins?.provider ?? "") &&
-              save({ provider: provider.trim() })}
+            onBlur={() => {
+              if (provider.trim() === (ins?.provider ?? "")) return;
+              // REQ-503 (demo m62): "!!!" is not an insurer
+              const bad = insurerError(provider);
+              if (bad) return setErr(tFor(langSignal.value, bad));
+              save({ provider: provider.trim() });
+            }}
           />
         </label>
         <label style="display:block">
@@ -1031,9 +1039,13 @@ function InsuranceEditCard(
             value={policy}
             disabled={!!busy}
             onInput={(e) => setPolicy((e.target as HTMLInputElement).value)}
-            onBlur={() =>
-              policy.trim() !== (ins?.policyNumber ?? "") &&
-              save({ policyNumber: policy.trim() })}
+            onBlur={() => {
+              if (policy.trim() === (ins?.policyNumber ?? "")) return;
+              // REQ-503 (demo m62): letters, digits and dashes, up to 40
+              const bad = policyNumberError(policy);
+              if (bad) return setErr(tFor(langSignal.value, bad));
+              save({ policyNumber: policy.trim() });
+            }}
           />
         </label>
         <label style="display:block">
