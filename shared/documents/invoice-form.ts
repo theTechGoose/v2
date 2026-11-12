@@ -306,7 +306,11 @@ export function missingInfo(form: {
   if (!form.serviceAddress.trim() && !form.billTo.address.trim()) {
     out.push("noServiceAddress");
   }
-  if (form.lineItems.length === 0) out.push("noLineItems");
+  // REQ-486 (m32): an amount with no lines is the supported quick bill (the
+  // typed total) — only an empty bill lacks line items.
+  if (form.lineItems.length === 0 && form.amountCents <= 0) {
+    out.push("noLineItems");
+  }
   if (form.amountCents <= 0) out.push("noAmount");
   return out;
 }
@@ -388,6 +392,20 @@ export function buildInvoiceBody(
       ...(l.unit ? { unit: l.unit } : {}),
       price: l.price,
     }));
+  } else {
+    // REQ-486 (m32): the quick one-amount bill — "What's it for" (else the
+    // description) + the typed amount become one itemized line, so the
+    // invoice and the /i page say what was billed. A quote-drawn invoice is
+    // left alone: the backend derives the quote's own lines for it.
+    const label = jobName ?? description;
+    const amountCents = Math.max(0, Math.round(form.amountCents ?? 0));
+    if (!form.quoteId && label && amountCents > 0) {
+      body.lineItems = [{
+        description: label,
+        quantity: 1,
+        price: amountCents,
+      }];
+    }
   }
   body.subtotalCents = totals.subtotalCents;
   if (totals.discountCents > 0) {
