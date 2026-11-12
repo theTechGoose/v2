@@ -2194,10 +2194,15 @@ function InvoiceCard(
     : inv.stage === "scheduled"
     ? scheduledSubline(inv.scheduledFor, now, lang)
     : inv.stage === "out"
-    ? tFor(lang, "invoicesPage.subline.out", {
-      n: inv.daysIn,
-      date: fmtDate(inv.dueDate, now, lang),
-    })
+    // REQ-499 (demo p6): the send day reads "Sent today", never "Out 0d".
+    ? inv.daysIn < 1
+      ? tFor(lang, "invoicesPage.subline.outToday", {
+        date: fmtDate(inv.dueDate, now, lang),
+      })
+      : tFor(lang, "invoicesPage.subline.out", {
+        n: inv.daysIn,
+        date: fmtDate(inv.dueDate, now, lang),
+      })
     : inv.stage === "drafting"
     ? tFor(lang, "invoicesPage.subline.drafting", {
       date: fmtDate(inv.issuedDate ?? inv.createdAt, now, lang),

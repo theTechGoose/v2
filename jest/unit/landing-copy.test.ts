@@ -154,8 +154,10 @@ describe("P-08 single landing-offer source (shared/quote-flow/landing-offers)", 
       "../../shared/quote-flow/landing-offers",
     );
     expect(formatSocialProof(1200, "en")).toBe("1,200");
-    expect(formatSocialProof(1200, "es")).toBe("1.200");
-    expect(formatSocialProof(48215, "es")).toBe("48.215");
+    // REQ-499 (demo p6, cycle 3) amends P-08: counts are US-grouped in
+    // Spanish too, matching the landing's US-grouped money (REQ-413).
+    expect(formatSocialProof(1200, "es")).toBe("1,200");
+    expect(formatSocialProof(48215, "es")).toBe("48,215");
   });
 
   it('P-08 routes/index.tsx no longer hardcodes the "34 contractors" weekly counter', () => {

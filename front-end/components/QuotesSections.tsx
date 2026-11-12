@@ -258,7 +258,10 @@ export function DecidedRow(
   },
 ) {
   const decidedDays = q.decidedDays ?? 0;
-  const when = decidedDays === 1
+  // REQ-499 (demo p6): a quote decided today reads "today", never "0d ago".
+  const when = decidedDays < 1
+    ? tFor(lang, "quotesDecided.today")
+    : decidedDays === 1
     ? tFor(lang, "quotesDecided.yesterday")
     : tFor(lang, "quotesDecided.daysAgo", { n: decidedDays });
   return (
