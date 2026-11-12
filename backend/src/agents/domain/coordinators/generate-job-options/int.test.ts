@@ -853,3 +853,36 @@ Deno.test("REQ-446 (m13) every model option carries its role, by detail, in the 
   assertEquals(res.options.map((o) => o.id), ["opt1", "opt2", "opt3"]);
   assertEquals(res.options.map((o) => o.style), ["concise", "standard", "detailed"]);
 });
+
+// ── REQ-434 (demo-loop cycle 3: M10) ───────────────────────────────────────
+// fleet-6: the picker stored jobNameByLang.es = "Renovación de cocina y" — the
+// model's 31-character "Renovación de cocina y limpieza" was cut at the
+// 30-character budget right after its connector.
+Deno.test("REQ-434 M10 a model jobName over the budget is never cut after a connector, in either language", async () => {
+  const { llm, coord } = fresh();
+  llm.setHandler(() => ({
+    text: JSON.stringify({
+      options: [{
+        byLang: {
+          en: {
+            jobName: "Bathroom Renovation and Cleanup",
+            summary: "Renovate the bathroom and clean up",
+            bullets: ["Demo the old vanity", "Install the new vanity", "Jobsite cleanup"],
+          },
+          es: {
+            jobName: "Renovación de cocina y limpieza",
+            summary: "Renovar la cocina y limpiar",
+            bullets: ["Quitar la vanidad vieja", "Instalar la vanidad nueva", "Limpieza"],
+          },
+        },
+      }],
+    }),
+  }));
+  const res = await coord.run({
+    userId: "u1",
+    raw: "renovate the kitchen and clean up after",
+    langs: ["en", "es"],
+  });
+  assertEquals(res.options[0].byLang.en.jobName, "Bathroom Renovation");
+  assertEquals(res.options[0].byLang.es.jobName, "Renovación de cocina");
+});

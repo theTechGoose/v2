@@ -7,6 +7,7 @@
  * must also satisfy. Target: shared/quote-flow/job-name.ts
  */
 import {
+  fitJobNameToBudget,
   isValidJobName,
   JOB_NAME_MAX_CHARS,
   JOB_NAME_MAX_WORDS,
@@ -99,8 +100,10 @@ describe("REQ-337 m6: summaries with a customer tail or recipient derive a clean
     expect(summarizeJobName("Cotización: Limpieza profunda — María", "es")).toBe("Limpieza profunda");
   });
 
-  it("cuts at 'for'/'para' when the recipient follows, and skips digit-led fragments (en)", () => {
-    expect(summarizeJobName("Deep clean 3-bed house for Maria Lopez")).toBe("Deep Clean House");
+  // REQ-434 (cycle 3, M10): a bed/bath count is kept as a "3-Bed" qualifier
+  // up front instead of being dropped (which titled a quote "Deep Clean Bed").
+  it("cuts at 'for'/'para' when the recipient follows (en)", () => {
+    expect(summarizeJobName("Deep clean 3-bed house for Maria Lopez")).toBe("3-Bed Deep Clean House");
     expect(summarizeJobName("Roof repair for Jim Roof and gutters")).toBe("Roof Repair");
     expect(summarizeJobName("Kitchen backsplash para la señora Gómez")).toBe("Kitchen Backsplash");
   });
@@ -113,5 +116,51 @@ describe("REQ-337 m6: summaries with a customer tail or recipient derive a clean
 
   it("still keeps 'for' when no recipient follows", () => {
     expect(summarizeJobName("Quote for kitchen remodel")).toBe("Kitchen Remodel");
+  });
+});
+
+/**
+ * REQ-434 (demo-loop cycle 3, M10): customer documents were titled
+ * "Deep Clean Bed" and "Renovación de cocina y" — the English summarizer
+ * skipped the digits of "3 bed 2 bath" and kept the dangling noun, and the
+ * 30-character budget cut a Spanish name right after its "y".
+ */
+describe("REQ-434 M10: a job name is never cut into a fragment", () => {
+  it("fitJobNameToBudget never ends a Spanish name on a connector", () => {
+    expect(fitJobNameToBudget("Renovación de cocina y limpieza")).toBe("Renovación de cocina");
+    expect(fitJobNameToBudget("Limpieza profunda de baños y cocinas")).toBe("Limpieza profunda de baños");
+    expect(
+      fitJobNameToBudget(summarizeJobName("Renovación de cocina y limpieza", "es", { maxWords: 5 })),
+    ).toBe("Renovación de cocina");
+  });
+
+  it("fitJobNameToBudget never ends an English name on a connector", () => {
+    expect(fitJobNameToBudget("Bathroom Renovation and Cleanup")).toBe("Bathroom Renovation");
+    expect(fitJobNameToBudget("Window Washing Service & Screens")).toBe("Window Washing Service");
+    expect(fitJobNameToBudget("Repair of")).toBe("Repair");
+    // A name inside the budget is untouched.
+    expect(fitJobNameToBudget("Bedroom & Hallway Repaint")).toBe("Bedroom & Hallway Repaint");
+    expect(fitJobNameToBudget("Repintar dormitorios y pasillo")).toBe("Repintar dormitorios y pasillo");
+  });
+
+  it("summarizeJobName keeps the bed/bath counts as qualifiers ('3-Bed 2-Bath Deep Clean')", () => {
+    expect(summarizeJobName("deep clean 3 bed 2 bath")).toBe("3-Bed 2-Bath Deep Clean");
+    // Over the 30-character budget the last qualifier gives way, not the job.
+    expect(summarizeJobName("Deep clean of a 3 bedroom 2 bathroom house")).toBe(
+      "3-Bedroom Deep Clean House",
+    );
+    expect(summarizeJobName("Deep clean 3-bed 2-bath home — Maria")).toBe("3-Bed 2-Bath Deep Clean Home");
+    expect(isValidJobName(summarizeJobName("deep clean 3 bed 2 bath"))).toBe(true);
+  });
+
+  it("a number that is not a size qualifier is still skipped, never a bare-number title", () => {
+    expect(summarizeJobName("Replace 6 fence panels")).toBe("Replace Fence Panels");
+    expect(summarizeJobName("Deep clean 3")).toBe("Deep Clean");
+  });
+
+  it("qualifiers give way before the core name when the budget is tight", () => {
+    const name = summarizeJobName("exterior repaint 3 bedroom 2 bathroom 2 story house");
+    expect(isValidJobName(name)).toBe(true);
+    expect(name.endsWith("Exterior Repaint House")).toBe(true);
   });
 });

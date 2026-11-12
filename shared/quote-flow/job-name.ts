@@ -173,23 +173,80 @@ export function summarizeJobName(
   if (lang === "es") return summarizeJobNameEs(words, maxWords);
 
   const significant: string[] = [];
+  const sizes: string[] = [];
   const seen = new Set<string>();
-  for (const w of words) {
+  for (let i = 0; i < words.length; i++) {
+    const w = words[i];
     const lower = w.toLowerCase();
+    // REQ-434 (cycle 3, M10): a bed/bath/story count is the job's size —
+    // "3 bed 2 bath" → "3-Bed 2-Bath", placed up front. Skipping the digits
+    // kept the dangling nouns and titled the quote "Deep Clean Bed".
+    const size = sizeQualifier(w, words[i + 1]);
+    if (size) {
+      if (!sizes.includes(size.label) && sizes.length < MAX_SIZE_QUALIFIERS) {
+        sizes.push(size.label);
+      }
+      i += size.consumed - 1;
+      continue;
+    }
     if (STOPWORDS.has(lower) || seen.has(lower)) continue;
-    // REQ-337: "3-bed", "80sqft", "2" — a digit-led fragment never titles
-    // an English document ("Deep Clean 3").
+    if (significant.length === maxWords) continue;
+    // REQ-337: "80sqft", "2" — any other digit-led fragment never titles an
+    // English document ("Deep Clean 3").
     if (isNumeric(w)) continue;
     seen.add(lower);
     significant.push(titleCase(w));
-    if (significant.length === maxWords) break;
   }
 
   // Terse input made entirely of stopwords still yields something.
-  if (significant.length === 0 && words.length > 0) {
+  if (significant.length === 0 && sizes.length === 0 && words.length > 0) {
     return titleCase(words[0]);
   }
-  return significant.join(" ");
+  // REQ-434: the size qualifiers give way (last first) before the core name
+  // does when the whole would break the budget.
+  while (
+    sizes.length > 0 && !isValidJobName([...sizes, ...significant].join(" "))
+  ) {
+    sizes.pop();
+  }
+  return [...sizes, ...significant].join(" ");
+}
+
+/** REQ-434: the countable spaces a job's size is given in ("3 bed",
+ *  "2-bath", "2 story"), mapped to the singular a title uses. */
+const SIZE_NOUNS: Record<string, string> = {
+  bed: "Bed",
+  beds: "Bed",
+  bedroom: "Bedroom",
+  bedrooms: "Bedroom",
+  bath: "Bath",
+  baths: "Bath",
+  bathroom: "Bathroom",
+  bathrooms: "Bathroom",
+  room: "Room",
+  rooms: "Room",
+  story: "Story",
+  stories: "Story",
+  storey: "Story",
+  car: "Car",
+};
+const MAX_SIZE_QUALIFIERS = 2;
+
+/** "3-bed" (one token) or "3" + "bed" (two tokens) → "3-Bed". */
+function sizeQualifier(
+  word: string,
+  next: string | undefined,
+): { label: string; consumed: number } | null {
+  const joined = word.match(/^(\p{N}+)-(\p{L}+)$/u);
+  if (joined) {
+    const noun = SIZE_NOUNS[joined[2].toLowerCase()];
+    return noun ? { label: `${joined[1]}-${noun}`, consumed: 1 } : null;
+  }
+  if (/^\p{N}+$/u.test(word) && next) {
+    const noun = SIZE_NOUNS[next.toLowerCase()];
+    if (noun) return { label: `${word}-${noun}`, consumed: 2 };
+  }
+  return null;
 }
 
 /**
@@ -320,8 +377,44 @@ export function isValidJobName(name: string): boolean {
   return trimmed.split(/\s+/).length <= JOB_NAME_MAX_WORDS;
 }
 
+/** REQ-434: the words a name may never END on — English and Spanish
+ *  connectors and articles ("Renovación de cocina y", "Kitchen Remodel and"). */
+const TRAILING_CONNECTORS = new Set([
+  "a",
+  "an",
+  "the",
+  "and",
+  "&",
+  "+",
+  "or",
+  "of",
+  "for",
+  "from",
+  "with",
+  "to",
+  "in",
+  "on",
+  "at",
+  "by",
+  ...ES_STOPWORDS,
+]);
+
+/** REQ-434 (cycle 3, M10): drop dangling connectors from the end of a name
+ *  — always keeping at least the first word. */
+export function trimTrailingConnectors(name: string): string {
+  const words = name.trim().split(/\s+/).filter((w) => w.length > 0);
+  while (
+    words.length > 1 &&
+    TRAILING_CONNECTORS.has(words[words.length - 1].toLowerCase())
+  ) {
+    words.pop();
+  }
+  return words.join(" ");
+}
+
 /** REQ-337: fit a model-supplied name to the budget — whole words, never a
- *  cut mid-word; always at least the first word. */
+ *  cut mid-word; always at least the first word. REQ-434 (cycle 3, M10): and
+ *  never a cut that leaves a connector last ("Renovación de cocina y"). */
 export function fitJobNameToBudget(name: string): string {
   const words = name.trim().split(/\s+/).filter((w) => w.length > 0);
   const out: string[] = [];
@@ -333,5 +426,5 @@ export function fitJobNameToBudget(name: string): string {
     ) break;
     out.push(w);
   }
-  return out.join(" ");
+  return trimTrailingConnectors(out.join(" "));
 }

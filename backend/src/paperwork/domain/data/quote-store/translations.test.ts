@@ -140,3 +140,18 @@ Deno.test("REQ-400 (M5) renaming the job drops its stale per-language names; a r
   assertEquals(same.jobNameByLang?.es, "Reparación de cerca");
   await resetKv();
 });
+
+// REQ-434 (demo-loop cycle 3, M10): a quote made without a jobName derives
+// one from its summary — "deep clean 3 bed 2 bath" was titled "Deep Clean Bed".
+Deno.test("REQ-434 (M10) a derived job name keeps the bed/bath counts, never 'Deep Clean Bed'", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const store = new QuoteStore();
+  const q = await store.create("u-1", {
+    summary: "deep clean 3 bed 2 bath",
+    lineItems: [{ description: "Deep clean", quantity: 1, unit: "ea", price: 35_000 }],
+    status: "draft",
+  });
+  assertEquals(q.jobName, "3-Bed 2-Bath Deep Clean");
+  await resetKv();
+});

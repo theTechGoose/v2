@@ -84,3 +84,19 @@ Deno.test("REQ-261 M26 polish drops a sentence that names a private cost", async
     "Rough-in plumbing for the new bathroom. Includes new shutoff valves.",
   );
 });
+
+// REQ-434 (demo-loop cycle 3, M10): the English clamp keeps three words and
+// must not leave the third one a dangling connector ("Kitchen Renovation And").
+Deno.test("REQ-434 M10 polish: a model jobName clamped to three words never ends on a connector", async () => {
+  const llm = new StubLLMClient();
+  llm.setHandler(() => ({
+    text: JSON.stringify({
+      jobName: "Kitchen Renovation and Cleanup",
+      summary: "Kitchen renovation and cleanup",
+      description: "We will renovate the kitchen and clean up afterwards.",
+    }),
+  }));
+  const coord = new PolishJobDetails(llm);
+  const res = await coord.run({ userId: "u1", raw: "renovate the kitchen and clean up" });
+  assertEquals(res.jobName, "Kitchen Renovation");
+});
