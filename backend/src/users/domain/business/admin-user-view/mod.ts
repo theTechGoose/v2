@@ -14,6 +14,9 @@ export interface AdminUserView {
   superAdmin: boolean;
   /** REQ-177 */
   features: Features;
+  /** REQ-341 — the identity's own language: on whoami's `impersonator` it is the PRESENTER's,
+   *  which the demo stage renders in (the resolved /me user is the customer under impersonation) */
+  language?: "en" | "es";
 }
 
 /**
@@ -31,5 +34,6 @@ export function projectAdminUser(
     businessName: businessName ?? undefined,
     superAdmin: user.superAdmin === true,
     features: user.features ?? {},
+    language: user.language,
   };
 }

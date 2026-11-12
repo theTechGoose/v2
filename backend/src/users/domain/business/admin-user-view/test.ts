@@ -19,7 +19,13 @@ Deno.test("projectAdminUser: maps the fixed admin shape + businessName", () => {
     businessName: "Ramirez Roofing",
     superAdmin: false,
     features: {}, // REQ-177
+    language: undefined, // REQ-341 — carried when set (the stage reads the presenter's)
   });
+});
+
+Deno.test("REQ-341 projectAdminUser: carries the user's language (whoami's impersonator is the presenter)", () => {
+  assertEquals(projectAdminUser({ ...base, language: "es" }).language, "es");
+  assertEquals(projectAdminUser({ ...base, language: "en" }).language, "en");
 });
 
 Deno.test("projectAdminUser: coerces superAdmin to a real boolean", () => {

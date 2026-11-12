@@ -94,8 +94,13 @@ describe("REQ-270 (c) the replica frame never persists a language", () => {
 });
 
 describe("REQ-270 (c) the stage takes the staff's language from the server", () => {
-  test("REQ-270 /demo/stage passes initialLang (user.language) to DemoStage", () => {
+  // REQ-341 (demo-loop cycle 1, M10): "the staff's language" is the PRESENTER's — under
+  // impersonation ctx.state.user is the customer, so the route must resolve the impersonator's
+  // language (presenterLangForRequest → /admin/whoami), not read user.language.
+  test("REQ-270 /demo/stage passes the presenter's language as initialLang to DemoStage", () => {
     const route = read("front-end/routes/demo/stage.tsx");
+    expect(route).toMatch(/const lang(?:: Lang)? = await presenterLangForRequest\(/);
+    expect(route).not.toMatch(/ctx\.state\.user\??\.language/);
     expect(route).toMatch(/<DemoStage\s+initialLang=\{lang\}\s*\/>/);
   });
 
