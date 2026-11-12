@@ -73,3 +73,25 @@ export function lockLabelKey(
 ): "worker.onDraft" | "worker.invoiced" {
   return lockState === "draft" ? "worker.onDraft" : "worker.invoiced";
 }
+
+/**
+ * REQ-608 (demo m47, cycle 4) — the ticks a batch opens with. Ticks the office already
+ * made are kept; with none, the batch's draft invoices are ticked — the same rule a
+ * pull uses — so a reload (or opening the batch from the list) does not leave the
+ * drafts unticked and "Send selected" disabled.
+ */
+export function defaultBatchChecks(
+  batch: { invoices: { id: string; status: string }[] } | null | undefined,
+  checked: Set<string>,
+): Set<string> {
+  if (checked.size > 0 || !batch) return checked;
+  return new Set(
+    batch.invoices.filter((i) => i.status === "draft").map((i) => i.id),
+  );
+}
+
+/**
+ * REQ-608 (demo m47, cycle 4) — how long the worker's "Note saved" line stays (unless the
+ * note is edited again first), counted from AFTER the save's reload.
+ */
+export const NOTE_SAVED_MS = 6000;

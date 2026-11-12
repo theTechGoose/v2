@@ -28,7 +28,7 @@ import {
   workerDayNav,
   workerScreenLang,
 } from "../lib/field.ts";
-import { lockLabelKey } from "../lib/field-batches.ts";
+import { lockLabelKey, NOTE_SAVED_MS } from "../lib/field-batches.ts";
 import { refreshTickDue } from "../lib/refresh-tick.ts";
 import { type Lang, langSignal, setLang, t } from "../lib/i18n.ts";
 
@@ -219,6 +219,10 @@ export default function WorkerScreen(
   const toastTimer = useRef<ReturnType<typeof setTimeout> | undefined>(
     undefined,
   );
+  /** REQ-608 — one "Note saved" timer per visit; a newer save restarts it */
+  const flashTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>(
+    {},
+  );
   const busyRef = useRef(busy);
   busyRef.current = busy;
   const draftsRef = useRef(drafts);
@@ -302,15 +306,23 @@ export default function WorkerScreen(
     return () => clearInterval(id);
   }, [date]);
 
-  /** one in-flight request per control; failures become a toast, never silence */
-  async function act(key: string, fn: () => Promise<unknown>) {
-    if (busyRef.current.has(key)) return;
+  /**
+   * one in-flight request per control; failures become a toast, never silence.
+   * Resolves true once the action AND its reload are done (REQ-608).
+   */
+  async function act(
+    key: string,
+    fn: () => Promise<unknown>,
+  ): Promise<boolean> {
+    if (busyRef.current.has(key)) return false;
     setBusy((b) => new Set(b).add(key));
     try {
       await fn();
       await load();
+      return true;
     } catch (e) {
       showToast(t("worker.fail", { msg: friendly(e) }));
+      return false;
     } finally {
       setBusy((b) => {
         const n = new Set(b);
@@ -366,28 +378,39 @@ export default function WorkerScreen(
     setOpen((o) => ({ ...o, [vid]: o[vid] === which ? null : which }));
   }
 
-  function saveNote(v: Visit) {
+  /** REQ-608 — drop a visit's "Note saved" line (its timer ran out, or the note was edited) */
+  function clearFlash(vid: string) {
+    clearTimeout(flashTimers.current[vid]);
+    delete flashTimers.current[vid];
+    setFlash((f) => {
+      if (!(vid in f)) return f;
+      const n = { ...f };
+      delete n[vid];
+      return n;
+    });
+  }
+
+  async function saveNote(v: Visit) {
     const first = live(v)[0] ?? v.services[0];
     if (!first) return;
     const note = drafts[v.id] ?? noteOf(v);
-    act(`note:${v.id}`, async () => {
+    const ok = await act(`note:${v.id}`, async () => {
       await workerClient.note(first.id, note);
       setDrafts((d) => {
         const n = { ...d };
         delete n[v.id];
         return n;
       });
-      setFlash((f) => ({ ...f, [v.id]: t("worker.saved") }));
-      setTimeout(
-        () =>
-          setFlash((f) => {
-            const n = { ...f };
-            delete n[v.id];
-            return n;
-          }),
-        1500,
-      );
     });
+    if (!ok) return;
+    // REQ-608 (demo m47): shown once the reload is done, and held until the note is
+    // edited again or NOTE_SAVED_MS passes — 1.5 s from before the reload was unseen
+    clearTimeout(flashTimers.current[v.id]);
+    setFlash((f) => ({ ...f, [v.id]: t("worker.saved") }));
+    flashTimers.current[v.id] = setTimeout(
+      () => clearFlash(v.id),
+      NOTE_SAVED_MS,
+    );
   }
 
   function deferGo(v: Visit) {
@@ -633,6 +656,7 @@ export default function WorkerScreen(
                   const el = e.target as HTMLTextAreaElement;
                   growNote(el);
                   setDrafts((d) => ({ ...d, [v.id]: el.value }));
+                  clearFlash(v.id); // REQ-608 — an edit is no longer "saved"
                 }}
               />
               <button
@@ -643,7 +667,11 @@ export default function WorkerScreen(
                 {t("worker.save")}
               </button>
             </form>
-            {flash[v.id] && <div class="saved">{flash[v.id]}</div>}
+            {flash[v.id] && (
+              <div class="saved" data-cy="w-note-saved" role="status">
+                {flash[v.id]}
+              </div>
+            )}
           </>
         )}
         {!locked && panel === "services" && (
