@@ -6,6 +6,7 @@ import { ViewStore } from "@paperwork/domain/data/view-store/mod.ts";
 import type {
   Customer,
   CustomerCard,
+  CustomerDocument,
   CustomerLastTone,
   CustomerStatus,
 } from "@crm/dto/customer.ts";
@@ -13,6 +14,7 @@ import type { Quote } from "@paperwork/dto/quote.ts";
 import type { Invoice } from "@paperwork/dto/invoice.ts";
 import type { View } from "@paperwork/dto/view.ts";
 import { docNumberOf } from "#documents/numbering.ts";
+import { invoiceState, quoteState } from "#documents/versions.ts";
 import { t } from "@core/i18n/mod.ts";
 import {
   type BalanceSubParts,
@@ -194,7 +196,45 @@ function buildOne(
     temp,
     daysSinceContact,
     revenue12moCents,
+    documents: documentsFor(myQuotes, myInvoices),
   };
+}
+
+/**
+ * REQ-323 (demo-loop cycle 1, m20): the customer's documents for the card back —
+ * one row per quote and per invoice (the onboarding sample excluded), newest
+ * first, each with its own number (REQ-204: never an id slice), its lifecycle
+ * state and the page that opens it.
+ */
+export function documentsFor(
+  quotes: Quote[],
+  invoices: Invoice[],
+): CustomerDocument[] {
+  const rows: CustomerDocument[] = [];
+  for (const q of quotes) {
+    if (q.isSample) continue;
+    rows.push({
+      kind: "quote",
+      id: q.id,
+      number: docNumberOf(q),
+      state: quoteState(q),
+      amountCents: q.estimatedTotal ?? 0,
+      url: `/quotes?open=${q.id}`,
+      updatedAt: q.updatedAt,
+    });
+  }
+  for (const i of invoices) {
+    rows.push({
+      kind: "invoice",
+      id: i.id,
+      number: docNumberOf(i),
+      state: invoiceState(i),
+      amountCents: i.amount ?? 0,
+      url: `/i/${i.id}`,
+      updatedAt: i.updatedAt,
+    });
+  }
+  return rows.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
 }
 
 export function deriveStatus(args: {

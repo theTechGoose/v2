@@ -113,6 +113,34 @@ export type CustomerJobsSub = "overdue" | "active" | "scheduled" | "none";
 export type CustomerStatus = "active" | "lead" | "owes" | "regular" | "cold" | "new";
 export type CustomerLastTone = "hot" | "warm" | "cold";
 
+/** REQ-323 — the lifecycle states `quoteState` / `invoiceState` (shared/documents/versions.ts) name. */
+export type CustomerDocState =
+  | "draft"
+  | "sent"
+  | "accepted"
+  | "declined"
+  | "revised"
+  | "claimed"
+  | "paid"
+  | "void"
+  | "approved"
+  | "pending";
+
+/**
+ * REQ-323 (demo-loop cycle 1, m20): one of the customer's documents, as the
+ * card back lists it — its number ("Q-001" / "INV-5000"), state, amount and the
+ * page that opens it (`/quotes?open=<id>` for a quote, `/i/<id>` for an invoice).
+ */
+export interface CustomerDocument {
+  kind: "quote" | "invoice";
+  id: string;
+  number: string;
+  state: CustomerDocState;
+  amountCents: number;
+  url: string;
+  updatedAt: string;
+}
+
 /**
  * Enriched customer row for the /clients page. Extends `Customer` with derived
  * rollups computed by `BuildCustomerCards`. Never persisted — pure projection.
@@ -133,6 +161,8 @@ export interface CustomerCard extends Customer {
   temp: number;
   daysSinceContact: number;
   revenue12moCents: number;
+  /** REQ-323 — every quote and invoice of the customer, newest first. */
+  documents: CustomerDocument[];
 }
 
 /**

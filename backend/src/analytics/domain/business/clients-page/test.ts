@@ -7,7 +7,7 @@ function card(over: Partial<CustomerCard>): CustomerCard {
   return {
     id: crypto.randomUUID(), userId: "u", name: "Zed", createdAt: "2026-01-01T00:00:00Z", updatedAt: "2026-01-01T00:00:00Z",
     lastWhen: null, lastTone: "cold", balanceCents: 0, balanceSub: "", activeJobs: 0, jobsSub: "none",
-    status: "regular", temp: 0, daysSinceContact: 0, revenue12moCents: 0, ...over,
+    status: "regular", temp: 0, daysSinceContact: 0, revenue12moCents: 0, documents: [], ...over,
   };
 }
 

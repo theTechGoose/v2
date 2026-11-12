@@ -194,10 +194,25 @@ export function balanceDisplay(
       }),
     };
   }
+  // REQ-323 (demo-loop cycle 1, m20): "Settled" is a claim that something was
+  // billed and paid; a lead with an open quote and no invoice has nothing to
+  // settle, so it reads "Nothing billed yet" until an invoice has been issued.
   return {
     cls: "ccard2__bal-val--zero",
-    text: tFor(lang, "clientsDisplay.balance.settled"),
+    text: tFor(
+      lang,
+      hasBilled(c)
+        ? "clientsDisplay.balance.settled"
+        : "clientsDisplay.balance.nothingBilled",
+    ),
   };
+}
+
+/** REQ-323 — an issued, non-void invoice exists (sent, viewed, claimed, paid …). */
+export function hasBilled(c: Pick<CustomerCard, "documents">): boolean {
+  return (c.documents ?? []).some((d) =>
+    d.kind === "invoice" && d.state !== "draft" && d.state !== "void"
+  );
 }
 
 export function segmentLabel(

@@ -26,10 +26,37 @@ export type ClientSegmentKey =
   | "hoa"
   | "unsorted";
 
+/** REQ-323 — the states `quoteState` / `invoiceState` name (shared/documents/versions.ts) */
+export type CustomerDocState =
+  | "draft"
+  | "sent"
+  | "accepted"
+  | "declined"
+  | "revised"
+  | "claimed"
+  | "paid"
+  | "void"
+  | "approved"
+  | "pending";
+
+/** REQ-323 — one of the customer's documents as the card back lists it (mirrors the CRM DTO) */
+export interface CustomerDocument {
+  kind: "quote" | "invoice";
+  id: string;
+  number: string;
+  state: CustomerDocState;
+  amountCents: number;
+  /** `/quotes?open=<id>` for a quote, `/i/<id>` for an invoice */
+  url: string;
+  updatedAt: string;
+}
+
 export interface CustomerCard {
   id: string;
   userId: string;
   name: string;
+  /** REQ-198/323 — the customer's own number, "C-001" */
+  number?: string;
   email?: string;
   phoneNumber?: string;
   address?: string;
@@ -54,6 +81,8 @@ export interface CustomerCard {
   temp: number;
   daysSinceContact: number;
   revenue12moCents: number;
+  /** REQ-323 — every quote and invoice of the customer, newest first */
+  documents: CustomerDocument[];
 }
 
 /** REQ-135 — the board's chips: a status, or all of them */
