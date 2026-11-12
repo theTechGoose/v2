@@ -32,7 +32,9 @@ import {
   payNowTarget,
   relatedDocumentRows,
   shortDate,
+  versionChangeLine,
 } from "../../shared/documents/linked-view.ts";
+import type { VersionChanges } from "../../shared/documents/versions.ts";
 import { fmtMoneyExact, fmtPhone, telHref } from "../lib/format.ts";
 import { type Lang, tFor } from "../lib/i18n.ts";
 import {
@@ -84,6 +86,8 @@ export interface QuotePublic {
   version?: number;
   state?: string;
   publishedAt?: string;
+  /** REQ-304: what this version changed against the one before it. */
+  changesFromPrevious?: VersionChanges;
   /** REQ-205: the documents billed / changed against this agreement. */
   invoices?: LinkedInvoiceLike[];
   changeOrders?: LinkedChangeOrderLike[];
@@ -310,6 +314,11 @@ export function QuoteDoc(
       },
       lang,
     );
+  // REQ-304 (demo M28): "What changed in Version 2: Total $9,500.00 →
+  // $10,700.00" — the customer sees the comparison, not just "Revised".
+  const changedLine = quote.changesFromPrevious && !quote.isSample
+    ? versionChangeLine(quote.changesFromPrevious, lang)
+    : "";
   const related = relatedDocumentRows(quote, lang);
   // REQ-251 (demo m13): a signed agreement hands the customer straight to
   // the open invoice the signature billed — not just a small related row.
@@ -400,6 +409,19 @@ export function QuoteDoc(
                   <div style={`margin-top:2px;font-size:12px;color:${MUTED}`}>
                     {tFor(lang, "public.doc.publishedOn", {
                       date: shortDate(quote.publishedAt, lang),
+                    })}
+                  </div>
+                )
+                : null}
+              {changedLine
+                ? (
+                  <div
+                    data-cy="public-doc-changes"
+                    style={`margin-top:4px;font-size:12px;font-weight:700;color:${TEAL}`}
+                  >
+                    {tFor(lang, "public.doc.whatChanged", {
+                      n: String(quote.version ?? 1),
+                      changes: changedLine,
                     })}
                   </div>
                 )

@@ -330,6 +330,24 @@ export function versionChanges(
   };
 }
 
+/**
+ * REQ-304: what publishing the pending revision would change — the live
+ * record against the live record with the pending revision folded in, so a
+ * pending revision that only carries the total never reads as "lines
+ * removed". `null` when nothing is pending.
+ */
+export function pendingRevisionChanges(
+  doc:
+    | (Record<string, unknown> & { pendingRevision?: Record<string, unknown> })
+    | null
+    | undefined,
+): VersionChanges | null {
+  const pending = doc?.pendingRevision;
+  if (!doc || !pending || Object.keys(pending).length === 0) return null;
+  const { pendingRevision: _p, ...live } = doc;
+  return versionChanges(live, { ...live, ...pending });
+}
+
 /** What a customer sees, with the pending revision folded in (the contractor's working copy). */
 export function workingCopy<T extends VersionedDoc>(doc: T): T {
   if (!doc.pendingRevision) return doc;
