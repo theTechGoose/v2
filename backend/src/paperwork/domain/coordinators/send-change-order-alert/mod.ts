@@ -5,6 +5,7 @@ import { CustomerStore } from "@crm/domain/data/customer-store/mod.ts";
 import {
   changeOrderRef,
   customerOnDocument,
+  docRef,
 } from "@paperwork/domain/business/doc-render/mod.ts";
 import { UserStore } from "@users/domain/data/user-store/mod.ts";
 import { BusinessIdentityStore } from "@profile/domain/data/business-identity-store/mod.ts";
@@ -36,6 +37,27 @@ function fmtDelta(cents: number): string {
   }`;
 }
 
+/** REQ-456 (demo-loop cycle 3, M25): what reached the CUSTOMER, per channel,
+ *  so the chat can say "Sent CO-001 to Karen by email (…) — text failed (…)".
+ *  A channel with nothing on file has neither its address nor a reason. */
+export interface ChangeOrderCustomerDelivery {
+  /** "CO-001" */
+  number: string;
+  /** "/co/<id>?lang=<commsLanguage>" — the approval page, origin-free. */
+  approvalPath: string;
+  emailedTo?: string;
+  emailFailureReason?: string;
+  textedTo?: string;
+  smsFailureReason?: string;
+}
+
+export interface ChangeOrderAlertResult {
+  ok: boolean;
+  reason?: string;
+  /** REQ-456: absent only when there was no contractor to send as. */
+  customer?: ChangeOrderCustomerDelivery;
+}
+
 /**
  * SendChangeOrderAlert — fires when a contractor CREATES or EDITS a change
  * order (roadmap p.12 + change-order editability). Editing re-opens approval
@@ -61,7 +83,7 @@ export class SendChangeOrderAlert {
     private invoices: InvoiceStore,
   ) {}
 
-  async run(changeOrderId: string): Promise<{ ok: boolean; reason?: string }> {
+  async run(changeOrderId: string): Promise<ChangeOrderAlertResult> {
     const co = await this.changeOrders.get(changeOrderId);
     const [contractor, liveCustomer, ident, invoice] = await Promise.all([
       this.users.get(co.userId).catch(() => undefined),
@@ -95,11 +117,16 @@ export class SendChangeOrderAlert {
     // REQ-398 (demo p13-j, REQ-342 parity): the link carries the language
     // the order was sent in; /co reads ?lang= first and its EN | ES toggle
     // flips it from there.
-    const url = `${APP_URL}/co/${co.id}?lang=${coLang}`;
+    const approvalPath = `/co/${co.id}?lang=${coLang}`;
+    const url = `${APP_URL}${approvalPath}`;
     const refCo = changeOrderRef(co, invoice, coLang);
     const refCx = changeOrderRef(co, invoice, cxLang);
 
     let sentAny = false;
+    const delivered: ChangeOrderCustomerDelivery = {
+      number: docRef(co),
+      approvalPath,
+    };
 
     // ── Customer: the actual approval request ───────────────────────────
     if (contact.email) {
@@ -126,8 +153,11 @@ export class SendChangeOrderAlert {
           }`,
         );
         sentAny = sentAny || res.ok;
+        if (res.ok) delivered.emailedTo = contact.email;
+        else delivered.emailFailureReason = res.reason ?? "failed";
       } catch (err) {
         console.error("[send-change-order-alert] customer email failed:", err);
+        delivered.emailFailureReason = errText(err);
       }
     }
     if (contact.phoneNumber) {
@@ -148,8 +178,11 @@ export class SendChangeOrderAlert {
           }`,
         );
         sentAny = sentAny || res.ok;
+        if (res.ok) delivered.textedTo = contact.phoneNumber;
+        else delivered.smsFailureReason = res.reason ?? "failed";
       } catch (err) {
         console.error("[send-change-order-alert] customer sms failed:", err);
+        delivered.smsFailureReason = errText(err);
       }
     }
 
@@ -206,8 +239,14 @@ export class SendChangeOrderAlert {
       }
     }
 
-    return sentAny ? { ok: true } : { ok: false, reason: "no_contact" };
+    return sentAny
+      ? { ok: true, customer: delivered }
+      : { ok: false, reason: "no_contact", customer: delivered };
   }
+}
+
+function errText(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
 }
 
 /** Customer-facing approval request (commsLanguage). */

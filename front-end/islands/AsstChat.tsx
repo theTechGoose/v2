@@ -56,7 +56,7 @@ import {
   previewTermRows,
 } from "../../shared/quote-flow/wizard-terms.ts"; // REQ-347
 import { quoteUpdatedBy } from "../lib/chat-quote-refresh.ts";
-import { chatQuoteLink } from "../lib/chat-quote-link.ts";
+import { chatChangeOrderLink, chatQuoteLink } from "../lib/chat-quote-link.ts";
 import {
   liveDraftOffer,
   offerAmount,
@@ -1136,6 +1136,8 @@ export default function AsstChat({
     { id: string; customerEmail?: string; customerPhone?: string } | null
   >(null);
   const [invLinkCopied, setInvLinkCopied] = useState(false);
+  /** REQ-456: which reply's change-order link was just copied. */
+  const [coLinkCopied, setCoLinkCopied] = useState<string | null>(null);
   /** Language the quote-review card is PREVIEWED in (and sent in). The
    *  contractor flips it with the "Preview in" toggle; defaults to their app
    *  language until they explicitly pick one. */
@@ -9106,6 +9108,52 @@ export default function AsstChat({
                               { number },
                             )}
                           </a>
+                        );
+                      })()}
+                      {(() => {
+                        // REQ-456 (M25): a reply that created a change order
+                        // names it and links the customer's approval page.
+                        const co = m.role === "assistant"
+                          ? chatChangeOrderLink(m.payload)
+                          : undefined;
+                        if (!co) return null;
+                        const number = co.number ?? "CO";
+                        const pill =
+                          "display:inline-flex;align-items:center;gap:6px;margin-top:6px;margin-right:6px;padding:7px 12px;border-radius:999px;font-size:12.5px;font-weight:800;text-decoration:none;cursor:pointer";
+                        return (
+                          <div data-cy="msg-co-link">
+                            <a
+                              data-cy="msg-co-open"
+                              href={co.path}
+                              target="_blank"
+                              rel="noopener"
+                              style={`${pill};border:0;background:#144852;color:#fff`}
+                            >
+                              {tFor(lang, "asstChat.changeOrderLink.open", {
+                                number,
+                              })}
+                            </a>
+                            <button
+                              type="button"
+                              data-cy="msg-co-copy"
+                              style={`${pill};border:1px solid #144852;background:#fff;color:#144852`}
+                              onClick={async () => {
+                                try {
+                                  await navigator.clipboard.writeText(
+                                    `${globalThis.location.origin}${co.path}`,
+                                  );
+                                  setCoLinkCopied(m.id);
+                                  setTimeout(() => setCoLinkCopied(null), 1500);
+                                } catch { /* clipboard unavailable */ }
+                              }}
+                            >
+                              {coLinkCopied === m.id
+                                ? tFor(lang, "asstChat.preview.linkCopied")
+                                : tFor(lang, "asstChat.changeOrderLink.copy", {
+                                  number,
+                                })}
+                            </button>
+                          </div>
                         );
                       })()}
                       {(() => {

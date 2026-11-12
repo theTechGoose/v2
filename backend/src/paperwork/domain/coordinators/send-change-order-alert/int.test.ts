@@ -4,7 +4,7 @@
  * for quotes. /co reads ?lang= first and its EN | ES toggle flips it from
  * there.
  */
-import { assert, assertStringIncludes } from "#std/assert";
+import { assert, assertEquals, assertStringIncludes } from "#std/assert";
 import { SendChangeOrderAlert } from "./mod.ts";
 import { ChangeOrderStore } from "@paperwork/domain/data/change-order-store/mod.ts";
 import { InvoiceStore } from "@paperwork/domain/data/invoice-store/mod.ts";
@@ -18,7 +18,10 @@ import {
 import { SmsService } from "@users/domain/data/sms/mod.ts";
 import { getKv, resetKv } from "@core/data/kv/mod.ts";
 
-async function seed(commsLanguage: "en" | "es") {
+async function seed(
+  commsLanguage: "en" | "es",
+  smsResult: { ok: boolean; reason?: string } = { ok: true },
+) {
   Deno.env.set("KV_PATH", ":memory:");
   await resetKv();
   const kv = await getKv();
@@ -61,7 +64,7 @@ async function seed(commsLanguage: "en" | "es") {
   };
   sms.send = (input: { to: string; body: string }) => {
     texts.push(input.body);
-    return Promise.resolve({ ok: true } as never);
+    return Promise.resolve(smsResult as never);
   };
   const flow = new SendChangeOrderAlert(
     new ChangeOrderStore(),
@@ -98,3 +101,38 @@ for (const lang of ["es", "en"] as const) {
     }
   });
 }
+
+/**
+ * REQ-456 (demo-loop cycle 3, M25): the alert reports what reached the
+ * CUSTOMER, channel by channel, so the chat can say "Sent CO-001 to Juan by
+ * email (…) — text failed (…)" instead of "I've sent you the link to share".
+ */
+Deno.test("REQ-456 M25: the change-order alert returns the CO number, the /co link and the customer's per-channel delivery", async () => {
+  const { flow, coId } = await seed("en", {
+    ok: false,
+    reason: "invalid number",
+  });
+  try {
+    const res = await flow.run(coId);
+    assertEquals(res.customer, {
+      number: "CO-001",
+      approvalPath: `/co/${coId}?lang=en`,
+      emailedTo: "juan@test.dev",
+      smsFailureReason: "invalid number",
+    });
+  } finally {
+    await resetKv();
+  }
+});
+
+Deno.test("REQ-456 M25: emailed and texted → both addresses are reported", async () => {
+  const { flow, coId } = await seed("es");
+  try {
+    const res = await flow.run(coId);
+    assertEquals(res.customer?.emailedTo, "juan@test.dev");
+    assertEquals(res.customer?.textedTo, "+15125550973");
+    assertEquals(res.customer?.approvalPath, `/co/${coId}?lang=es`);
+  } finally {
+    await resetKv();
+  }
+});

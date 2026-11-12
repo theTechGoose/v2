@@ -94,10 +94,18 @@ function fresh() {
   // REQ-238: the change-order path. The alert is captured, not sent.
   const changeOrders = new ChangeOrderStore();
   const alerted: string[] = [];
+  // REQ-456: what the alert reports back (a test may set a delivery), and
+  // how long it takes — the reply must wait for it.
+  const alertResult: { value: unknown; delayMs: number } = {
+    value: { ok: true },
+    delayMs: 0,
+  };
   const alert = {
     run: (id: string) => {
       alerted.push(id);
-      return Promise.resolve({ ok: true });
+      return new Promise((r) =>
+        setTimeout(() => r(alertResult.value), alertResult.delayMs)
+      );
     },
   } as unknown as SendChangeOrderAlert;
   const changeOrder = new ApplyChatChangeOrder(
@@ -128,6 +136,7 @@ function fresh() {
   return {
     changeOrders,
     alerted,
+    alertResult,
     conversations,
     messages,
     llm,
@@ -846,8 +855,90 @@ Deno.test("REQ-238 M27: Maria's signed quote with an invoice gets a pending chan
       quoteNumber: "Q-001",
       invoiceId: inv.id,
       changeOrderId: cos[0].id,
+      // REQ-456 (M25): and the change order's own number and approval link
+      changeOrderNumber: cos[0].number ?? "",
+      approvalPath: `/co/${cos[0].id}`,
     },
   );
+  await resetKv();
+});
+
+Deno.test("REQ-456 M25: a chat change order waits for the alert and says what reached the customer — 'Sent CO-001 to Maria Lopez by email (…) — text failed (…)' — with the CO number and /co link on the outcome", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const f = fresh();
+  const { maria, quote } = await seedMaria(f, "accepted");
+  const inv = await f.invoices.create("u-1", {
+    quoteId: quote.id,
+    customerId: maria.id,
+    amount: 35_000,
+    status: "sent",
+  } as never);
+  f.alertResult.delayMs = 30;
+  f.alertResult.value = {
+    ok: true,
+    customer: {
+      number: "CO-001",
+      approvalPath: "/co/PLACEHOLDER?lang=en",
+      emailedTo: "maria@example.com",
+      smsFailureReason: "invalid number",
+    },
+  };
+  f.llm.setScript([NEW_QUOTE_MISTAKE]);
+  const conv = await f.conversations.create({ userId: "u-1" });
+  const result = await f.flow.run({
+    userId: "u-1",
+    conversationId: conv.id,
+    content: `${DEMO}. Send it to her.`,
+  });
+  const cos = await f.changeOrders.listByInvoice("u-1", inv.id);
+  assertEquals(cos.length, 1);
+  const reply = result.newMessages[result.newMessages.length - 1];
+  assert(
+    reply.content.includes(
+      "Sent CO-001 to Maria Lopez by email (maria@example.com) — text failed (invalid number).",
+    ),
+    reply.content,
+  );
+  assert(!reply.content.includes("sent you the link"), reply.content);
+  const outcome = (reply.payload as { changeOrder?: Record<string, unknown> })
+    ?.changeOrder;
+  assertEquals(outcome?.changeOrderNumber, "CO-001");
+  assertEquals(outcome?.approvalPath, "/co/PLACEHOLDER?lang=en");
+  assertEquals(outcome?.delivery, {
+    emailedTo: "maria@example.com",
+    smsFailureReason: "invalid number",
+  });
+  await resetKv();
+});
+
+Deno.test("REQ-456 M25: when the alert throws, the reply says the change order was not sent and points at the approval link", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const f = fresh();
+  const { maria, quote } = await seedMaria(f, "accepted");
+  await f.invoices.create("u-1", {
+    quoteId: quote.id,
+    customerId: maria.id,
+    amount: 35_000,
+    status: "sent",
+  } as never);
+  (f.alertResult as { value: unknown }).value = Promise.reject(
+    new Error("postmark down"),
+  );
+  // keep the rejected promise from being reported as unhandled before use
+  ((f.alertResult.value as Promise<unknown>).catch(() => {}));
+  f.llm.setScript([NEW_QUOTE_MISTAKE]);
+  const conv = await f.conversations.create({ userId: "u-1" });
+  const result = await f.flow.run({
+    userId: "u-1",
+    conversationId: conv.id,
+    content: DEMO,
+  });
+  const reply = result.newMessages[result.newMessages.length - 1];
+  assert(reply.content.includes("not sent"), reply.content);
+  assert(reply.content.includes("postmark down"), reply.content);
+  assert(reply.content.includes("approval link"), reply.content);
   await resetKv();
 });
 
