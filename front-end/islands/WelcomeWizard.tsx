@@ -43,6 +43,7 @@ import {
   PRICING_PLANS,
 } from "../../shared/quote-flow/pricing-plans.ts";
 import { PlanCards } from "../components/PlanCards.tsx";
+import { wizardPlanNote } from "../lib/plan-pick-note.ts";
 import {
   handoffPage,
   pickErrorOf,
@@ -1257,6 +1258,9 @@ function PlanStep({ ctx }: { ctx: StepCtx }) {
               featuredId="monster"
               disabled={(p) => p.priceCents > 0 && !hasEmail}
               back="/welcome"
+              // REQ-356 — a card IS the pick: its line says what pressing it does
+              note={(p) =>
+                wizardPlanNote(t, plan, p.id, new Date().toISOString())}
             />
             <p class="welcome__plan-custom">
               {t("welcome.plan.custom", { phone: SUPPORT_PHONE_DISPLAY })}
