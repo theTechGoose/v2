@@ -1549,6 +1549,8 @@
   "invoicesPage.kpi.draftingSubScheduled.other": "no drafts · {n} scheduled to send",
   "invoicesPage.kpi.out": "Out for payment",
   "invoicesPage.kpi.outSub": "{n} on the way",
+  "invoicesPage.kpi.outSubClaimed.one": "{n} on the way · {c} awaiting your confirmation",
+  "invoicesPage.kpi.outSubClaimed.other": "{n} on the way · {c} awaiting your confirmation",
   "invoicesPage.kpi.paid": "Paid this month",
   "invoicesPage.kpi.paidSub.one": "{n} cleared",
   "invoicesPage.kpi.paidSub.other": "{n} cleared",
