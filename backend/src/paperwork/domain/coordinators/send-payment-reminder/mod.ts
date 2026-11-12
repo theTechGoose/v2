@@ -51,7 +51,10 @@ export interface ReminderResult {
  *     manually).
  *   - Per-invoice mute: `remindersMuted=true` short-circuits the entire
  *     cadence for that invoice.
- *   - Eligibility: status in (sent|viewed|claimed) AND dueDate past.
+ *   - Eligibility: status in (sent|viewed) AND dueDate past. A `claimed`
+ *     invoice (the customer reported paying) is PAUSED — never dunned while
+ *     the claim is pending; reject-claim flips it back to `sent`, which
+ *     resumes the cadence where it left off (REQ-250, demo m12).
  */
 @Injectable()
 export class SendPaymentReminder {
@@ -172,7 +175,8 @@ export class SendPaymentReminder {
 }
 
 /** Pick the next eligible day to fire for `invoice`. Returns undefined
- *  if nothing's due (muted, paid, void, scheduled, draft, or within the
+ *  if nothing's due (muted, paid, void, scheduled, draft, claimed — the
+ *  customer said they paid, REQ-250 — or within the
  *  past-due window of the next step but hasn't crossed it yet).
  *
  *  Cadence semantics:
@@ -182,9 +186,13 @@ export class SendPaymentReminder {
  *      copy).
  *    - Never regress: once Day N has fired, no step < N will fire.
  */
+/** REQ-250 (demo m12): `claimed` is deliberately absent — a pending payment
+ *  claim pauses the cadence. */
+const REMINDER_ELIGIBLE: readonly string[] = ["sent", "viewed"];
+
 export function pickNextDay(invoice: Invoice, now: Date): CadenceDay | undefined {
   if (invoice.remindersMuted) return undefined;
-  if (!["sent", "viewed", "claimed"].includes(invoice.status ?? "")) return undefined;
+  if (!REMINDER_ELIGIBLE.includes(invoice.status ?? "")) return undefined;
   const od = daysOverdue(invoice, now);
   if (od < CADENCE_DAYS[0]) return undefined;
   const firedDays = new Set((invoice.reminderHistory ?? []).map((h) => h.day));

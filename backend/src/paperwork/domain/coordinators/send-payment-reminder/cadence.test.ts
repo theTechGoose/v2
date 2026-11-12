@@ -74,12 +74,34 @@ Deno.test("pickNextDay: muted invoices fire nothing", () => {
   assertEquals(pickNextDay(inv({ remindersMuted: true }), NOW), undefined);
 });
 
-Deno.test("pickNextDay: only fires for sent/viewed/claimed (not paid/void/scheduled)", () => {
+Deno.test("pickNextDay: only fires for sent/viewed (not paid/void/scheduled/claimed)", () => {
   assertEquals(pickNextDay(inv({ status: "paid" }), NOW), undefined);
   assertEquals(pickNextDay(inv({ status: "void" }), NOW), undefined);
   assertEquals(pickNextDay(inv({ status: "scheduled" }), NOW), undefined);
   assertEquals(pickNextDay(inv({ status: "viewed" }), NOW), 30);
-  assertEquals(pickNextDay(inv({ status: "claimed" }), NOW), 30);
+});
+
+Deno.test("REQ-250 (demo quote-invoice-money-m12): a claimed invoice is paused — the customer said they paid, the cadence does not dun them", () => {
+  // 4, 8, 15 and 31 days past due: every rung is elapsed, none fires.
+  for (const at of ["2026-05-05", "2026-05-09", "2026-05-16", "2026-06-01"]) {
+    assertEquals(
+      pickNextDay(inv({ status: "claimed" }), new Date(`${at}T12:00:00Z`)),
+      undefined,
+      `claimed at ${at}`,
+    );
+  }
+  // Rejecting the claim flips the invoice back to `sent` — the cadence resumes
+  // where it left off (Day 3 fired before the claim → Day 7 next).
+  assertEquals(
+    pickNextDay(
+      inv({
+        status: "sent",
+        reminderHistory: [{ day: 3, sentAt: "x", channels: ["sms"] }],
+      }),
+      new Date("2026-05-09T12:00:00Z"),
+    ),
+    7,
+  );
 });
 
 Deno.test("pickNextDay: nothing within the first 3 days past due", () => {
