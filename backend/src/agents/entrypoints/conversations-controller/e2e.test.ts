@@ -251,6 +251,8 @@ const PRE_CONTINUE_DRAFT = {
   priceBasis: null,
   previewCtaId: null,
   polishRaw: null,
+  // REQ-400 (demo-loop cycle 2, M21): the message as typed rides the draft
+  originalRaw: "Patio slab 10x12 for the Nguyen family",
 };
 
 async function newConv(port: number, sid: string): Promise<{ id: string }> {

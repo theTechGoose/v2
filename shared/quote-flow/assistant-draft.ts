@@ -81,6 +81,11 @@ export interface AssistantDraft {
   previewCtaId: string | null;
   /** Raw details that still owe the end-of-wizard Job Details picker. */
   polishRaw: string | null;
+  /** REQ-400 (demo-loop cycle 2, M21): the message the contractor TYPED for
+   *  this job, as typed. Never overwritten by the confirm step (which turns
+   *  jobDetailsRaw into the picked bullets), so "Edit job details" can
+   *  regenerate from the whole job, not from the bullets alone. */
+  originalRaw: string | null;
 }
 
 export function emptyAssistantDraft(): AssistantDraft {
@@ -103,6 +108,7 @@ export function emptyAssistantDraft(): AssistantDraft {
     priceBasis: null,
     previewCtaId: null,
     polishRaw: null,
+    originalRaw: null,
   };
 }
 
@@ -233,6 +239,7 @@ export function parseAssistantDraft(input: unknown): AssistantDraft | null {
       : null,
     previewCtaId: str(input.previewCtaId, MAX_ID),
     polishRaw: str(input.polishRaw, MAX_TEXT),
+    originalRaw: str(input.originalRaw, MAX_TEXT),
   };
 }
 

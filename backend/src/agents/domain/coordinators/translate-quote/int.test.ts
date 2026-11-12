@@ -298,3 +298,202 @@ Deno.test("REQ-333 (M24) the caller's baseLang wins over the contractor's app la
   assertEquals(calls.length, 1);
   await resetKv();
 });
+
+/**
+ * REQ-400 (demo-loop cycle 2, M5): "Quote/agreement documents mix languages —
+ * job name untranslated". The English agreement read "Maria Lopez's
+ * Reparación de puerta Agreement" while its line read "Repair of bathroom
+ * door" (pair 6); the Spanish one read "Acuerdo de Roof Replacement de Dave
+ * Roof" (pair 4). TranslateQuote filled the description and the lines, never
+ * `jobNameByLang` / `summaryByLang`, which every reader prefers. The job name
+ * and the summary now ride the same batch: the base language verbatim, the
+ * other through TranslateBullets, the name cased for its language.
+ */
+function headingLlm() {
+  const llm = new StubLLMClient();
+  const calls: LLMRequest[] = [];
+  const EN_OF: Record<string, string> = {
+    "Reparación de puerta": "door repair",
+    "Reparación de puerta de baño — Maria Lopez":
+      "Bathroom door repair — Maria Lopez",
+    "Reparación de puerta de baño": "Bathroom door repair",
+  };
+  const ES_OF: Record<string, string> = {
+    "Roof Replacement": "Reemplazo De Techo",
+    "Replace the roof": "Reemplazar el techo",
+    "Tear off 22 squares": "Retirar 22 cuadrados de tejas",
+    "Deck Repair": "Reparación De Terraza",
+  };
+  llm.setHandler((req) => {
+    calls.push(req);
+    const { texts } = JSON.parse(req.messages[0].content as string) as {
+      texts: string[];
+    };
+    const toEn = /English/.test(req.systemPrompt ?? "");
+    return {
+      text: JSON.stringify({
+        texts: texts.map((t) => toEn ? (EN_OF[t] ?? t) : (ES_OF[t] ?? t)),
+      }),
+    };
+  });
+  return { llm, calls };
+}
+
+async function headingSetup(language: "en" | "es") {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const quotes = new QuoteStore();
+  const users = new UserStore();
+  const me = await users.create({
+    phoneNumber: language === "es" ? "+15550000400" : "+15550000401",
+    language,
+  });
+  const { llm, calls } = headingLlm();
+  const flow = new TranslateQuote(quotes, new TranslateBullets(llm), users);
+  return { quotes, flow, calls, me };
+}
+
+Deno.test("REQ-400 (M5) a Spanish chat quote's job name and summary are translated into English and kept verbatim in Spanish", async () => {
+  const { quotes, flow, calls, me } = await headingSetup("es");
+  const q = await quotes.create(me.id, {
+    summary: "Reparación de puerta de baño — Maria Lopez",
+    jobName: "Reparación de puerta",
+    lineItems: [{
+      description: "Reparación de puerta de baño",
+      quantity: 1,
+      unit: "ea",
+      price: 25_000,
+    }],
+    status: "draft",
+  });
+
+  await flow.run({ userId: me.id, quoteId: q.id, baseLang: "es" });
+
+  const after = await quotes.getOwned(q.id, me.id);
+  // English Title Case for a translated name ("Door Repair", not the
+  // model's "door repair"); Spanish is the typed name itself.
+  assertEquals(after.jobNameByLang, {
+    es: "Reparación de puerta",
+    en: "Door Repair",
+  });
+  assertEquals(after.summaryByLang, {
+    es: "Reparación de puerta de baño — Maria Lopez",
+    en: "Bathroom door repair — Maria Lopez",
+  });
+  assertEquals(
+    after.lineItems[0].descriptionByLang?.en,
+    "Bathroom door repair",
+  );
+  // One model call — the name and the summary ride the lines' batch.
+  assertEquals(calls.length, 1);
+  const sent = JSON.parse(calls[0].messages[0].content as string).texts;
+  assert(sent.includes("Reparación de puerta"), `the batch: ${sent}`);
+
+  // Idempotent: nothing left to ask.
+  await flow.run({ userId: me.id, quoteId: q.id });
+  assertEquals(calls.length, 1);
+  await resetKv();
+});
+
+Deno.test("REQ-400 (M5) an English pick with no Spanish name gets one, in Spanish sentence case (pair 4)", async () => {
+  const { quotes, flow, calls, me } = await headingSetup("en");
+  const q = await quotes.create(me.id, {
+    summary: "Replace the roof",
+    jobName: "Roof Replacement",
+    // applyJobOption on an option generated in English only
+    jobNameByLang: { en: "Roof Replacement" },
+    description: "Tear off 22 squares",
+    descriptionByLang: { en: "Tear off 22 squares" },
+    lineItems: [{
+      description: "Roof Replacement",
+      quantity: 1,
+      unit: "ea",
+      price: 1_450_000,
+    }],
+    status: "draft",
+  });
+
+  await flow.run({ userId: me.id, quoteId: q.id, baseLang: "en" });
+
+  const after = await quotes.getOwned(q.id, me.id);
+  assertEquals(after.jobNameByLang, {
+    en: "Roof Replacement",
+    es: "Reemplazo de techo",
+  });
+  assertEquals(after.summaryByLang?.es, "Reemplazar el techo");
+  assertEquals(after.summaryByLang?.en, "Replace the roof");
+  assertEquals(after.descriptionByLang?.es, "Retirar 22 cuadrados de tejas");
+  assertEquals(calls.length, 1, "one call — Spanish only");
+  await resetKv();
+});
+
+Deno.test("REQ-400 (M5) a renamed job drops its stale per-language names; the next run fills the new ones", async () => {
+  const { quotes, flow, calls, me } = await headingSetup("en");
+  const q = await quotes.create(me.id, {
+    summary: "Replace the roof",
+    jobName: "Roof Replacement",
+    lineItems: [{
+      description: "Roof Replacement",
+      quantity: 1,
+      unit: "ea",
+      price: 1_450_000,
+    }],
+    status: "draft",
+  });
+  await flow.run({ userId: me.id, quoteId: q.id, baseLang: "en" });
+  assertEquals(
+    (await quotes.getOwned(q.id, me.id)).jobNameByLang?.es,
+    "Reemplazo de techo",
+  );
+
+  // A rename that writes no per-language names (an editor that does not
+  // round-trip them) must not keep rendering the old Spanish name.
+  const renamed = await quotes.update(q.id, me.id, { jobName: "Deck Repair" });
+  assertEquals(renamed.jobNameByLang, undefined);
+
+  await flow.run({ userId: me.id, quoteId: q.id });
+  const after = await quotes.getOwned(q.id, me.id);
+  assertEquals(after.jobNameByLang, {
+    en: "Deck Repair",
+    es: "Reparación de terraza",
+  });
+  assertEquals(calls.length, 2);
+  await resetKv();
+});
+
+Deno.test("REQ-400 (M5) a failed translation caches no name — the base name is written, the other retries", async () => {
+  const { quotes, flow, me } = await headingSetup("es");
+  const llm = new StubLLMClient();
+  llm.setHandler(() => {
+    throw new Error("provider down");
+  });
+  const failing = new TranslateQuote(
+    quotes,
+    new TranslateBullets(llm),
+    new UserStore(),
+  );
+  const q = await quotes.create(me.id, {
+    summary: "Reparación de puerta de baño",
+    jobName: "Reparación de puerta",
+    lineItems: [{
+      description: "Reparación de puerta de baño",
+      quantity: 1,
+      unit: "ea",
+      price: 25_000,
+    }],
+    status: "draft",
+  });
+
+  await failing.run({ userId: me.id, quoteId: q.id, baseLang: "es" });
+  const after = await quotes.getOwned(q.id, me.id);
+  assertEquals(after.jobNameByLang, { es: "Reparación de puerta" });
+  assertEquals(after.summaryByLang, { es: "Reparación de puerta de baño" });
+
+  // The provider is back: the English name is filled on the next run.
+  await flow.run({ userId: me.id, quoteId: q.id });
+  assertEquals(
+    (await quotes.getOwned(q.id, me.id)).jobNameByLang?.en,
+    "Door Repair",
+  );
+  await resetKv();
+});

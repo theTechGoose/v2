@@ -217,8 +217,10 @@ Deno.test("REQ-266 ai-assistant-p7-options the detailed option keeps all ten sco
   }));
   const res = await coord.run({ userId: "u1", raw: GUT_JOB_ITEMS.join(", "), langs: ["en"] });
   assertEquals(res.degraded, false);
-  assertEquals(res.options[1].bullets, GUT_JOB_ITEMS);
-  assertEquals(res.options[1].byLang.en.bullets.length, 10);
+  // REQ-400 (M21): the two versions that hold only part of the job are
+  // dropped — the whole-job option leads.
+  assertEquals(res.options[0].bullets, GUT_JOB_ITEMS);
+  assertEquals(res.options[0].byLang.en.bullets.length, 10);
 });
 
 Deno.test("REQ-266 ai-assistant-p7-options the honest fallback keeps all ten scope lines the contractor typed", async () => {
@@ -439,4 +441,207 @@ Deno.test("REQ-337 p15-1 the prompt asks for a jobName that names every area wit
     assert(/every area/i.test(p), `${lang}: does not ask to cover every area`);
     assert(/30 characters/.test(p), `${lang}: no character budget`);
   }
+});
+
+// ── REQ-400 (demo-loop cycle 2: M21, m32) ──────────────────────────────────
+// M21: pair 7's master-bath gut came back as three "versions" that each held
+// a third of the job — v1 (tub out, curbless shower, tile), v2 (drain+niche,
+// glass, vanity), v3 (drain move, fan+lights, heated floor). The prompt's
+// output example gave every option exactly three bullets and nothing on the
+// server checked that an option covers the job. m32: pair 2's lawn job got
+// "Servicio para Ana López" / "Cliente: Ana López" as scope bullets.
+
+const V1 = [
+  "Remove old tub/shower combo",
+  "Install walk-in shower with curbless entry",
+  "Porcelain tile 12x24 on walls",
+];
+const V2 = ["Linear drain and niche", "Frameless glass panel", "Double vanity"];
+const V3 = ["Move drain on slab", "Exhaust fan and recessed lights", "Heated floor"];
+const V1_ES = [
+  "Retirar la combinación de bañera y ducha",
+  "Instalar ducha a nivel del suelo sin bordillo",
+  "Azulejo de porcelana 12x24 en paredes",
+];
+const V2_ES = ["Desagüe lineal y nicho", "Panel de vidrio sin marco", "Mueble de baño doble"];
+const V3_ES = [
+  "Mover el desagüe en la losa",
+  "Extractor y luces empotradas",
+  "Piso radiante",
+];
+/** One word per scope item — every version of the job names all nine. */
+const PRIYA_KEYS = ["tub", "curbless", "porcelain", "niche", "glass", "vanity", "slab", "fan", "heated"];
+const PRIYA_RAW =
+  "Master bath gut for Maria Gutierrez 512-555-0188 maria.g@example.com: remove tub/shower combo, " +
+  "curbless walk-in shower w/ linear drain + niche, 12x24 porcelain on walls, frameless glass panel, " +
+  "60in double vanity, move drain on slab, exhaust fan + 4 recessed lights, heated floor. Thinking 3 weeks.";
+
+function option(en: string[], es: string[], name: string) {
+  return {
+    en: { jobName: name, summary: `${name} scope`, bullets: en },
+    es: { jobName: name, summary: `${name} alcance`, bullets: es },
+  };
+}
+const splitReply = () =>
+  JSON.stringify({
+    options: [
+      option(V1, V1_ES, "Master Bath Remodel"),
+      option(V2, V2_ES, "Master Bath Upgrade"),
+      option(V3, V3_ES, "Complete Bathroom Renovation"),
+    ],
+  });
+const WHOLE_CONCISE = [
+  "Tub/shower combo out; curbless walk-in shower with linear drain and niche",
+  "12x24 porcelain wall tile and frameless glass panel",
+  "Double vanity; move the drain on the slab",
+  "Exhaust fan, recessed lights and heated floor",
+];
+const wholeReply = () =>
+  JSON.stringify({
+    options: [
+      option(WHOLE_CONCISE, WHOLE_CONCISE, "Master Bath Remodel"),
+      option([...V1, ...V2, ...V3], [...V1_ES, ...V2_ES, ...V3_ES], "Master Bath Gut"),
+    ],
+  });
+
+function assertWholeJob(
+  options: Array<{ jobName: string; bullets: string[] }>,
+  keys: string[],
+) {
+  for (const o of options) {
+    const text = o.bullets.join(" | ").toLowerCase();
+    for (const k of keys) {
+      assert(text.includes(k), `"${o.jobName}" leaves out "${k}": ${JSON.stringify(o.bullets)}`);
+    }
+  }
+}
+
+Deno.test("REQ-400 (M21) a reply that splits the job across the options is asked again once; the whole-job answer is used", async () => {
+  const { llm, coord } = fresh();
+  const calls: Array<{ messages: Array<{ role: string; content: string }> }> = [];
+  llm.setHandler((req) => {
+    calls.push({ messages: req.messages.map((m) => ({ role: m.role, content: m.content })) });
+    return { text: calls.length === 1 ? splitReply() : wholeReply() };
+  });
+  const res = await coord.run({ userId: "u1", raw: PRIYA_RAW, langs: ["en", "es"] });
+  assertEquals(calls.length, 2, "the split answer is re-asked exactly once");
+  assertEquals(res.degraded, false);
+  assertWholeJob(res.options, PRIYA_KEYS);
+  // The second ask carries the first answer and names every item it split.
+  const [first, second] = calls;
+  assertEquals(second.messages[0], first.messages[0]);
+  assertEquals(second.messages[1].role, "assistant");
+  assertEquals(second.messages[2].role, "user");
+  for (const line of [...V1, ...V2, ...V3]) {
+    assert(second.messages[2].content.includes(line), `the re-ask names "${line}"`);
+  }
+  assert(/every option/i.test(second.messages[2].content));
+});
+
+Deno.test("REQ-400 (M21) a model that splits the job twice: the parts merge into one version that holds every item", async () => {
+  const { llm, coord } = fresh();
+  let n = 0;
+  llm.setHandler(() => ({ text: (n++, splitReply()) }));
+  const res = await coord.run({ userId: "u1", raw: PRIYA_RAW, langs: ["en", "es"] });
+  assertEquals(n, 2);
+  assertEquals(res.degraded, false);
+  assertEquals(res.options[0].bullets, [...V1, ...V2, ...V3]);
+  assertEquals(res.options[0].byLang.es.bullets, [...V1_ES, ...V2_ES, ...V3_ES]);
+  assertWholeJob(res.options, PRIYA_KEYS);
+  // the "· Short version" keeps every item too — grouped, never cut
+  for (const o of res.options) {
+    assert(!/^(?:Master Bath Upgrade|Complete Bathroom Renovation)$/.test(o.jobName), `a third survived: ${o.jobName}`);
+  }
+});
+
+Deno.test("REQ-400 (M21) a whole-job option among partial ones: the partial ones are dropped and the model is not asked again", async () => {
+  const { llm, coord } = fresh();
+  let n = 0;
+  llm.setHandler(() => ({
+    text: (n++, JSON.stringify({
+      options: [
+        { en: { jobName: "Bathroom Remodel", summary: "s", bullets: ["Gut and rebuild the bathroom", "Curbless shower with glass", "New vanity and fixtures"] } },
+        { en: { jobName: "Bath Gut Remodel", summary: "s", bullets: GUT_JOB_ITEMS } },
+        { en: { jobName: "Master Bath Rebuild", summary: "s", bullets: GUT_JOB_ITEMS.slice(0, 5) } },
+      ],
+    })),
+  }));
+  const res = await coord.run({ userId: "u1", raw: GUT_JOB_ITEMS.join(", "), langs: ["en"] });
+  assertEquals(n, 1);
+  assertEquals(res.options[0].bullets, GUT_JOB_ITEMS);
+  assertWholeJob(res.options, ["gutted", "curbless", "slab", "frameless", "vanity", "hex", "faucets", "exhaust", "recessed", "permit"]);
+});
+
+Deno.test("REQ-400 (m32) bullets naming the customer, their contact or the job's duration never reach an option, in any language", async () => {
+  const { llm, coord } = fresh();
+  llm.setHandler(() => ({
+    text: JSON.stringify({
+      options: [
+        {
+          es: { jobName: "Corte de césped semanal", summary: "Corte de césped", bullets: ["Corte de césped semanal", "Duración de 4 semanas", "Servicio para Ana López"] },
+          en: { jobName: "Weekly Lawn Mowing", summary: "Lawn mowing", bullets: ["Weekly lawn mowing", "4-week duration", "Service for Ana López"] },
+        },
+        {
+          es: { jobName: "Servicio de jardinería", summary: "Jardinería", bullets: ["Servicio semanal de corte de césped", "Cliente: Ana López"] },
+          en: { jobName: "Yard Service", summary: "Yard service", bullets: ["Weekly lawn mowing service", "Customer: Ana López"] },
+        },
+        {
+          es: { jobName: "Mantenimiento de césped", summary: "Mantenimiento", bullets: ["Mantenimiento de césped para Ana López", "Llamar al 512-555-0199"] },
+          en: { jobName: "Lawn Maintenance", summary: "Maintenance", bullets: ["Lawn maintenance for Ana López", "Call 512-555-0199"] },
+        },
+      ],
+    }),
+  }));
+  const res = await coord.run({
+    userId: "u1",
+    raw: "Corte de césped semanal para Ana López, 512-555-0199, 4 semanas, $400 en total",
+    langs: ["es", "en"],
+  });
+  assertEquals(res.degraded, false);
+  for (const b of allBullets(res.options)) {
+    assert(!/Ana L[oó]pez/i.test(b), `a bullet names the customer: ${b}`);
+    assert(!/^(?:cliente|customer)\b/i.test(b), `a customer label: ${b}`);
+    assert(!/555-0199/.test(b), `a bullet carries her phone: ${b}`);
+    assert(!/duraci[oó]n|duration|\b4 semanas\b|\b4-week\b/i.test(b), `a duration bullet: ${b}`);
+  }
+  assertEquals(res.options[0].byLang.es.bullets, ["Corte de césped semanal"]);
+  assertEquals(res.options[0].byLang.en.bullets, ["Weekly lawn mowing"]);
+  const third = res.options.find((o) => o.byLang.es.jobName === "Mantenimiento de césped");
+  assertEquals(third?.byLang.es.bullets, ["Mantenimiento de césped"]);
+});
+
+Deno.test("REQ-400 (m32) the honest fallback never bullets the customer's name", async () => {
+  const { llm, coord } = fresh();
+  llm.setHandler(() => {
+    throw new Error("boom");
+  });
+  const res = await coord.run({
+    userId: "u1",
+    raw: "Corte de césped semanal para Ana López, 4 semanas, $400 en total",
+    langs: ["es", "en"],
+  });
+  assertEquals(res.degraded, true);
+  for (const b of allBullets(res.options)) {
+    assert(!/Ana López/.test(b), `a fallback bullet names the customer: ${b}`);
+  }
+  assert(/corte de césped semanal/i.test(res.options[0].bullets[0]), res.options[0].bullets[0]);
+});
+
+Deno.test("REQ-400 (M21) neither the prompt nor the output structure shows a fixed three-bullet example; both say every option is the whole job", async () => {
+  const { llm, coord } = fresh();
+  let systemPrompt = "";
+  let user = "";
+  llm.setHandler((req) => {
+    systemPrompt = req.systemPrompt ?? "";
+    user = String(req.messages[0].content);
+    throw new Error("only reading the prompt");
+  });
+  await coord.run({ userId: "u1", raw: PRIYA_RAW, langs: ["en", "es"] });
+  for (const text of [systemPrompt, user]) {
+    assert(!/"<scope line>",\s*"<scope line>",\s*"<scope line>"/.test(text), "a three-bullet example");
+    assert(!/\["\.\.\.",\s*"\.\.\.",\s*"\.\.\."\]/.test(text), "a three-bullet example");
+    assert(/every option/i.test(text), "does not say every option is the whole job");
+  }
+  assert(/whole job/i.test(systemPrompt));
+  assert(/customer's name/i.test(systemPrompt), "no rule against the customer's name as a bullet");
 });

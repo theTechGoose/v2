@@ -94,10 +94,14 @@ import { pendingRevisionNotice } from "../../shared/documents/versions.ts";
 import { scopeBulletsFromRaw } from "../../shared/quote-flow/scope-from-raw.ts";
 import {
   currentDetailsOption,
+  customerFactsFrom,
   dedupeOptionsByBullets,
+  groupedBullets,
   seedPickerOptions,
+  stripCustomerDetails,
   widerBullets,
 } from "../../shared/quote-flow/option-bullets.ts";
+import { editJobDetailsSeed } from "../../shared/quote-flow/edit-job-details.ts";
 import {
   type OptionTap,
   optionTap,
@@ -386,10 +390,13 @@ function localFallbackOptions(
   lang: Lang,
 ): { options: JobOption[]; degraded: boolean } {
   const scoped = scopeBulletsFromRaw(raw, lang);
-  // REQ-330 (M21): every scope line survives — no cap.
-  const base = scoped.degraded
-    ? [tFor(lang, "asstChat.newJob")]
-    : scoped.bullets;
+  // REQ-330 (M21): every scope line survives — no cap. REQ-400 (m32): a line
+  // keeps its scope and loses the customer's name, phone and e-mail.
+  const facts = customerFactsFrom(raw);
+  const lines = scoped.degraded ? [] : scoped.bullets
+    .map((line) => stripCustomerDetails(line, facts))
+    .filter((line): line is string => !!line);
+  const base = lines.length > 0 ? lines : [tFor(lang, "asstChat.newJob")];
   const summary = base[0].split(/\s+/).slice(0, 8).join(" ");
   const jobName = summary.split(/\s+/).slice(0, 3).join(" ");
   // P-24: the three versions must be distinguishable at a glance. They used
@@ -402,7 +409,8 @@ function localFallbackOptions(
       id: "opt2",
       jobName: versionTitle(jobName, "short", lang),
       summary,
-      bullets: base.slice(0, 3),
+      // REQ-400 (M21): every item, in fewer lines — never the first three.
+      bullets: groupedBullets(base),
     },
     {
       id: "opt3",
@@ -413,7 +421,10 @@ function localFallbackOptions(
   ];
   // REQ-330 (p15-7): a short job makes the "short" version equal to the
   // full one — equal bullet sets collapse, never two cards alike.
-  return { options: dedupeOptionsByBullets(options), degraded: scoped.degraded };
+  return {
+    options: dedupeOptionsByBullets(options),
+    degraded: lines.length === 0,
+  };
 }
 
 /** P-26: the preview's send button brands the ACTION ("Send by Text +
@@ -853,6 +864,12 @@ export default function AsstChat({
    *  and the price-Continue handler combines both pieces to build the
    *  quote. (The other two flows ignore this — they go through the LLM.) */
   const [pendingJobDetailsRaw, setPendingJobDetailsRaw] = useState<string | null>(seed?.jobDetailsRaw ?? null);
+  /** REQ-400 (M21): the message the contractor typed for this job, as typed
+   *  (the confirm step overwrites pendingJobDetailsRaw with the picked
+   *  bullets). "Edit job details" regenerates from it plus the current lines. */
+  const [originalRaw, setOriginalRaw] = useState<string | null>(
+    seed?.originalRaw ?? null,
+  );
   /** REQ-338: the confirm strip's echo of the typed message, opened past its 3-line clamp */
   const [rawEchoOpen, setRawEchoOpen] = useState(false);
   /** Captures the raw text the user submitted at the job-details step
@@ -1675,6 +1692,7 @@ export default function AsstChat({
       priceBasis,
       previewCtaId,
       polishRaw: needsJobPolish ? jobPolishRawRef.current : null,
+      originalRaw,
     };
   }
   const canonicalDraft = (d: unknown) => JSON.stringify(parseAssistantDraft(d));
@@ -3218,6 +3236,7 @@ export default function AsstChat({
     pushHistory();
     setPendingJobDetailsRaw(trimmed);
     setSubmittedJobDetails(trimmed);
+    setOriginalRaw(trimmed);
     setAwaitingJobDetails(false);
     // UX-04/UX-32: the sentence often already answers the next questions
     // ("…para la familia Nguyen, $3,700 todo incluido") — seed the price
@@ -7099,14 +7118,27 @@ export default function AsstChat({
                               // snapshot it so the header back closes the picker.
                               pushHistory();
                               pendingReviewCtaRef.current = previewCtaId ?? m.id;
-                              jobPolishRawRef.current = lines.length > 0
-                                ? lines.join("\n")
-                                : (quote?.summary ?? quote?.jobName ?? "");
+                              // REQ-400 (M5, M21): the current card is the
+                              // quote's OWN lines — never the preview
+                              // language's rows, which applyJobOption would
+                              // store as the description — and the options
+                              // are regenerated from the typed message plus
+                              // those lines, not the lines alone.
+                              const editSeed = editJobDetailsSeed({
+                                description: quote?.description,
+                                lockedDescription: lockedPayload.description,
+                                lineItems: quote?.lineItems?.length
+                                  ? quote.lineItems
+                                  : lockedPayload.lineItems,
+                                originalRaw,
+                                fallback: quote?.summary ?? quote?.jobName,
+                              });
+                              jobPolishRawRef.current = editSeed.raw;
                               // REQ-330 (M23): the current lines, title and
                               // summary are the first, pre-selected card;
                               // the regenerated options sit beside it.
                               void openJobPicker({
-                                lines,
+                                lines: editSeed.lines,
                                 jobName: quote?.jobName,
                                 summary: quote?.summary,
                               });
