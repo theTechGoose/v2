@@ -31,11 +31,16 @@ import { fmtMoney, fmtMoneyExact } from "../lib/format.ts";
 import { type Lang, langSignal, tFor } from "../lib/i18n.ts";
 import QuoteTrack from "./QuoteTrack.tsx";
 import { isChangeOrderMutable } from "../../shared/quote-flow/adjustment-guards.ts";
-import {
-  formatPhoneInput,
-  formatShortDate,
-} from "../../shared/quote-flow/format-helpers.ts";
+import { formatShortDate } from "../../shared/quote-flow/format-helpers.ts";
 import PaymentReceivedForm from "../components/PaymentReceivedForm.tsx";
+import { CustomerFields } from "../components/CustomerForm.tsx"; // REQ-625
+import {
+  customerCreatePayload,
+  type CustomerFormValues,
+  emptyCustomerForm,
+  validateCustomerForm,
+} from "../../shared/customer-form/mod.ts";
+import { composeAddress } from "../../shared/customer-address/mod.ts";
 import {
   type DispatchChannel,
   interpretSendResult,
@@ -432,6 +437,19 @@ export default function InvoicesPage(_props: { lang?: Lang }) {
       : null
   );
 
+  /** REQ-626: a card's "Open" — the editable detail panel, in-app; the
+   *  panel renders above the hero, so bring it into view. */
+  function openInvoice(id: string) {
+    setOpenId(id);
+    try {
+      const url = new URL(globalThis.location.href);
+      url.searchParams.set("open", id);
+      url.searchParams.delete("pay");
+      history.replaceState(null, "", url.toString());
+      globalThis.scrollTo({ top: 0, behavior: "smooth" });
+    } catch { /* history unavailable — the panel still opens */ }
+  }
+
   // Re-pull the invoice list after a mutation (discount / edit / change
   // order) so every displayed total is the live `amount` — no full reload.
   async function refreshInvoices() {
@@ -616,6 +634,7 @@ export default function InvoicesPage(_props: { lang?: Lang }) {
                       idx={i}
                       now={now}
                       lang={lang}
+                      onOpen={openInvoice}
                     />
                   ))}
                 </div>
@@ -641,6 +660,7 @@ export default function InvoicesPage(_props: { lang?: Lang }) {
                       idx={i}
                       now={now}
                       lang={lang}
+                      onOpen={openInvoice}
                     />
                   ))}
                 </div>
@@ -666,6 +686,7 @@ export default function InvoicesPage(_props: { lang?: Lang }) {
                       idx={i}
                       now={now}
                       lang={lang}
+                      onOpen={openInvoice}
                     />
                   ))}
                 </div>
@@ -693,6 +714,7 @@ export default function InvoicesPage(_props: { lang?: Lang }) {
                       idx={i}
                       now={now}
                       lang={lang}
+                      onOpen={openInvoice}
                     />
                   ))}
                 </div>
@@ -718,6 +740,7 @@ export default function InvoicesPage(_props: { lang?: Lang }) {
                       idx={i}
                       now={now}
                       lang={lang}
+                      onOpen={openInvoice}
                     />
                   ))}
                 </div>
@@ -743,6 +766,7 @@ export default function InvoicesPage(_props: { lang?: Lang }) {
                       idx={i}
                       now={now}
                       lang={lang}
+                      onOpen={openInvoice}
                     />
                   ))}
                 </div>
@@ -1548,6 +1572,16 @@ function InvoiceDetail(
             {tFor(lang, "invoicesPage.detail.paymentReceivedBtn")}
           </button>
         )}
+        {/* REQ-626: what the customer sees stays one click away */}
+        <a
+          data-cy="invoice-detail-view-as-customer"
+          href={`/i/${inv.id}`}
+          target="_blank"
+          rel="noopener"
+          style={`${secondaryBtn};text-decoration:none;display:inline-flex;align-items:center`}
+        >
+          {tFor(lang, "invoicesPage.back.viewAsCustomer")}
+        </a>
       </div>
 
       {mode === "pay" && (
@@ -1981,11 +2015,13 @@ function plusDays(n: number): string {
 }
 
 function InvoiceCard(
-  { inv, idx, now, lang }: {
+  { inv, idx, now, lang, onOpen }: {
     inv: EnrichedInvoice;
     idx: number;
     now: Date;
     lang: Lang;
+    /** REQ-626: open this invoice's EDITABLE detail panel, in-app */
+    onOpen: (id: string) => void;
   },
 ) {
   const [flipped, setFlipped] = useState(false);
@@ -2136,9 +2172,10 @@ function InvoiceCard(
   }
   function doOpenInvoice(e: Event) {
     e.stopPropagation();
-    // Public invoice page is the canonical detail surface today — opens
-    // in a new tab so the dashboard stays put.
-    globalThis.open(`/i/${inv.id}`, "_blank", "noopener,noreferrer");
+    // REQ-626: "Open" is the editable detail panel (Edit / Discount / Change
+    // order / Delete / Payment received) — the customer's page is its own
+    // "View as customer" link.
+    onOpen(inv.id);
   }
   async function doSendText(e: Event) {
     e.stopPropagation();
@@ -2934,9 +2971,22 @@ function InvoiceCard(
           >
             {busy ? "…" : cta.replace(/ →$/, "")}
           </button>
-          <button type="button" onClick={doOpenInvoice}>
+          <button
+            type="button"
+            data-cy="invoice-back-open"
+            onClick={doOpenInvoice}
+          >
             {tFor(lang, "invoicesPage.back.open")}
           </button>
+          <a
+            data-cy="invoice-view-as-customer"
+            href={`/i/${inv.id}`}
+            target="_blank"
+            rel="noopener"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {tFor(lang, "invoicesPage.back.viewAsCustomer")}
+          </a>
           {inv.stage === "claimed" && (
             <button
               type="button"
@@ -3057,9 +3107,13 @@ function NewInvoiceModal(
   const today = new Date().toISOString().slice(0, 10);
   const [requestId] = useState(() => crypto.randomUUID());
   const [clientSel, setClientSel] = useState("");
-  const [newName, setNewName] = useState("");
-  const [newPhone, setNewPhone] = useState("");
-  const [newEmail, setNewEmail] = useState("");
+  // REQ-625: "New client" is the shared customer form (every field)
+  const [newClient, setNewClient] = useState<CustomerFormValues>(
+    emptyCustomerForm,
+  );
+  const newName = newClient.name;
+  const newPhone = newClient.phone;
+  const newEmail = newClient.email;
   const [jobName, setJobName] = useState("");
   const [description, setDescription] = useState("");
   const [billTo, setBillTo] = useState<BillTo>(EMPTY_BILL_TO);
@@ -3164,9 +3218,25 @@ function NewInvoiceModal(
     discountCents: dollarsToCents(discount),
     taxRateBp: percentToBp(taxRate),
   });
+  // REQ-625: a new client's details stand in for any bill-to field (and the
+  // service address) left blank — the invoice is billed to who was just typed.
+  const newAddress = composeAddress(newClient);
+  const effBillTo = clientSel === NEW_SENTINEL
+    ? {
+      name: billTo.name.trim() || newClient.name.trim(),
+      businessName: billTo.businessName.trim() ||
+        newClient.businessName.trim(),
+      email: billTo.email.trim() || newClient.email.trim(),
+      phoneNumber: billTo.phoneNumber.trim() || newClient.phone.trim(),
+      address: billTo.address.trim() || newAddress,
+    }
+    : billTo;
+  const effService = clientSel === NEW_SENTINEL
+    ? serviceAddress.trim() || newAddress
+    : serviceAddress;
   const missing = missingInfo({
-    billTo,
-    serviceAddress,
+    billTo: effBillTo,
+    serviceAddress: effService,
     lineItems: formLines,
     amountCents: totals.totalCents,
   });
@@ -3203,24 +3273,31 @@ function NewInvoiceModal(
       setError(tFor(lang, "invoicesPage.new.errClientName"));
       return;
     }
+    if (clientSel === NEW_SENTINEL) {
+      const bad = validateCustomerForm(newClient);
+      if (bad.phone || bad.email) {
+        setError(
+          tFor(
+            lang,
+            bad.phone
+              ? "customerForm.err.phoneInvalid"
+              : "customerForm.err.emailInvalid",
+          ),
+        );
+        return;
+      }
+    }
     setBusy(true);
     setError(null);
     try {
       let customerId: string | undefined;
       let bt = billTo;
       if (clientSel === NEW_SENTINEL) {
-        const created = await clientsClient.create({
-          name: newName.trim(),
-          ...(newPhone.trim() ? { phoneNumber: newPhone.trim() } : {}),
-          ...(newEmail.trim() ? { email: newEmail.trim() } : {}),
-        });
+        const created = await clientsClient.create(
+          customerCreatePayload(newClient),
+        );
         customerId = created.id;
-        bt = {
-          ...billTo,
-          name: billTo.name.trim() || newName.trim(),
-          email: billTo.email.trim() || newEmail.trim(),
-          phoneNumber: billTo.phoneNumber.trim() || newPhone.trim(),
-        };
+        bt = effBillTo;
       } else if (clientSel) {
         customerId = clientSel;
       }
@@ -3246,7 +3323,7 @@ function NewInvoiceModal(
           netDays,
           issuedDate,
           dueDate,
-          serviceAddress,
+          serviceAddress: effService,
           serviceDateFrom: serviceFrom || undefined,
           serviceDateTo: serviceTo || undefined,
           paymentInstructions,
@@ -3376,41 +3453,18 @@ function NewInvoiceModal(
 
         {clientSel === NEW_SENTINEL && (
           <div style="display:flex;flex-direction:column;gap:12px;background:rgba(0,0,0,0.03);border-radius:10px;padding:12px 14px">
-            <label style={labelStyle}>
-              {tFor(lang, "settings.name")}
-              <input
-                type="text"
-                autoFocus
-                required
-                value={newName}
-                disabled={busy}
-                onInput={(e) =>
-                  setNewName((e.target as HTMLInputElement).value)}
-                style={inputStyle}
-              />
-            </label>
-            <label style={labelStyle}>
-              {tFor(lang, "settings.phone")}
-              <input
-                type="tel"
-                value={formatPhoneInput(newPhone)} /* NW-34 (REQ-012) */
-                disabled={busy}
-                onInput={(e) =>
-                  setNewPhone((e.target as HTMLInputElement).value)}
-                style={inputStyle}
-              />
-            </label>
-            <label style={labelStyle}>
-              {tFor(lang, "settings.email")}
-              <input
-                type="email"
-                value={newEmail}
-                disabled={busy}
-                onInput={(e) =>
-                  setNewEmail((e.target as HTMLInputElement).value)}
-                style={inputStyle}
-              />
-            </label>
+            {/* REQ-625: the ONE customer form — name, company, phone, email, address, notes */}
+            <CustomerFields
+              values={newClient}
+              onChange={(p) => setNewClient((v) => ({ ...v, ...p }))}
+              lang={lang}
+              disabled={busy}
+              errors={(() => {
+                const { name: _n, ...rest } = validateCustomerForm(newClient);
+                return rest;
+              })()}
+              autoFocus
+            />
           </div>
         )}
 
@@ -3627,10 +3681,11 @@ function NewInvoiceModal(
             type="button"
             data-cy="new-invoice-line-add"
             disabled={busy}
-            onClick={() => setLines((ls) => [
-              ...ls,
-              { description: "", quantity: "1", unit: "", price: "" },
-            ])}
+            onClick={() =>
+              setLines((ls) => [
+                ...ls,
+                { description: "", quantity: "1", unit: "", price: "" },
+              ])}
             style="appearance:none;cursor:pointer;background:none;border:1px dashed var(--border,#d8dcd5);border-radius:8px;padding:7px 12px;font:inherit;font-size:13px;font-weight:700;color:var(--brand-teal,#144852)"
           >
             {tFor(lang, "invoices.form.addLine")}

@@ -20,6 +20,7 @@
     "#quote-flow/": "../shared/quote-flow/",
     "#documents/": "../shared/documents/",
     "#payments/": "../shared/payments/",
+    "#customer-address/": "../shared/customer-address/",
     "#features": "../shared/features.ts",
     "#legal/": "../shared/legal/",
     "#demo-booking/": "../shared/demo-booking/",

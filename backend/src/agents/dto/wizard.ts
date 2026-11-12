@@ -70,7 +70,19 @@ export class WizardAnswerDto {
   @IsOptional()
   customer?: {
     id?: string;
-    create?: { name: string; email?: string; phoneNumber?: string };
+    create?: {
+      name: string;
+      email?: string;
+      phoneNumber?: string;
+      isBusiness?: boolean;
+      businessName?: string;
+      /** REQ-625: address parts + notes from the shared customer form */
+      street?: string;
+      city?: string;
+      state?: string;
+      zip?: string;
+      notes?: string;
+    };
   };
 }
 

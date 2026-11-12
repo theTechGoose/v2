@@ -33,6 +33,12 @@ export interface WizardAnswerInput {
       phoneNumber?: string;
       isBusiness?: boolean;
       businessName?: string;
+      /** REQ-625: the shared customer form's address parts + notes */
+      street?: string;
+      city?: string;
+      state?: string;
+      zip?: string;
+      notes?: string;
     };
   };
 }
@@ -289,6 +295,14 @@ export class HandleWizardAnswer {
         ...(create?.businessName?.trim()
           ? { businessName: create.businessName.trim() }
           : {}),
+        // REQ-625: the full customer form — address parts (the store
+        // composes `address`) and notes; non-strings are ignored.
+        ...Object.fromEntries(
+          (["street", "city", "state", "zip", "notes"] as const)
+            .map((k) => [k, create?.[k]])
+            .filter(([, v]) => typeof v === "string" && v.trim())
+            .map(([k, v]) => [k, (v as string).trim()]),
+        ),
       });
       return {
         customerId: created.id,
