@@ -87,8 +87,10 @@ describe("REQ-278 M16: both customer forms use the shared rule", () => {
     expect(src).toMatch(
       /from "\.\.\/\.\.\/shared\/quote-flow\/customer-contact\.ts"/,
     );
-    expect(src).toMatch(/customerContactError\(/);
-    expect(src).toMatch(/submitDisabled[^;]*contactFormatErr/s);
+    // REQ-390 amends: the chat form asks the same rule per field
+    // (customerStepFeedback, built on customerFormErrors) and Next follows it.
+    expect(src).toMatch(/customerStepFeedback\(/);
+    expect(src).toMatch(/submitDisabled[^;]*feedback\.canSubmit/s);
   });
   test("REQ-278 the /customers Add modal refuses a bad contact before POST", () => {
     const src = read("front-end/islands/ClientsPage.tsx");

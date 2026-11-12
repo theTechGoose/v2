@@ -257,6 +257,8 @@ function NameStep({ ctx }: { ctx: StepCtx }) {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const valid = value.trim().length > 0;
+  // REQ-390 (demo m18): spaces alone disabled Continue without a word
+  const blank = value.length > 0 && !valid;
 
   async function save() {
     if (!valid || busy) return;
@@ -282,6 +284,8 @@ function NameStep({ ctx }: { ctx: StepCtx }) {
         enterKeyHint="go"
         aria-label={t("welcome.name.question")}
         placeholder={t("welcome.name.placeholder")}
+        aria-invalid={blank ? "true" : undefined}
+        aria-describedby={blank ? "welcome-name-blank" : undefined}
         value={value}
         // deno-lint-ignore no-explicit-any
         onInput={(e: any) =>
@@ -294,6 +298,13 @@ function NameStep({ ctx }: { ctx: StepCtx }) {
           }
         }}
       />
+      {blank
+        ? (
+          <p id="welcome-name-blank" class="welcome__error" role="alert">
+            {t("welcome.nameBlank")}
+          </p>
+        )
+        : null}
       {err ? <p class="welcome__error" role="alert">{err}</p> : null}
       <StepFooter ctx={ctx} valid={valid} busy={busy} onContinue={save} />
     </StepBody>
@@ -305,6 +316,8 @@ function BusinessNameStep({ ctx }: { ctx: StepCtx }) {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const valid = value.trim().length > 0;
+  // REQ-390 (demo m18): spaces alone disabled Continue without a word
+  const blank = value.length > 0 && !valid;
   // REQ-348 (demo m34): the languages the business sends in, shown here so a Spanish signup sees
   // English AND Spanish picked (the one rule, shared/quote-flow/comms-language.ts). Until the
   // person touches a box the pick follows the account's language — the header switch included.
@@ -314,7 +327,10 @@ function BusinessNameStep({ ctx }: { ctx: StepCtx }) {
     const set = new Set(sendIn);
     if (on) set.add(code);
     else set.delete(code);
-    if (set.size === 0) return; // always at least one language
+    // always at least one language — REQ-390 (m18): the last box on is also
+    // disabled (below), so the controlled box can never show unticked while
+    // the old language is what gets saved
+    if (set.size === 0) return;
     setPicked((["en", "es"] as const).filter((c) => set.has(c)));
   }
 
@@ -353,6 +369,8 @@ function BusinessNameStep({ ctx }: { ctx: StepCtx }) {
         enterKeyHint="go"
         aria-label={t("welcome.businessName.question")}
         placeholder={t("welcome.businessName.placeholder")}
+        aria-invalid={blank ? "true" : undefined}
+        aria-describedby={blank ? "welcome-biz-blank" : undefined}
         value={value}
         // deno-lint-ignore no-explicit-any
         onInput={(e: any) => setValue(e.currentTarget.value)}
@@ -364,6 +382,13 @@ function BusinessNameStep({ ctx }: { ctx: StepCtx }) {
           }
         }}
       />
+      {blank
+        ? (
+          <p id="welcome-biz-blank" class="welcome__error" role="alert">
+            {t("welcome.nameBlank")}
+          </p>
+        )
+        : null}
       <fieldset class="welcome__send-in">
         <legend class="welcome__send-in-label">{t("settings.commsLang")}</legend>
         <div class="welcome__send-in-options">
@@ -374,7 +399,8 @@ function BusinessNameStep({ ctx }: { ctx: StepCtx }) {
                   type="checkbox"
                   data-cy={`welcome-comms-${code}`}
                   checked={sendIn.includes(code)}
-                  disabled={busy}
+                  disabled={busy ||
+                    (sendIn.length === 1 && sendIn[0] === code)}
                   // deno-lint-ignore no-explicit-any
                   onChange={(e: any) =>
                     toggleSendIn(code, e.currentTarget.checked)}
@@ -383,6 +409,13 @@ function BusinessNameStep({ ctx }: { ctx: StepCtx }) {
               </label>
             ))}
         </div>
+        {sendIn.length === 1
+          ? (
+            <p class="welcome__hint" data-cy="welcome-comms-keep-one">
+              {t("welcome.commsLangKeepOne")}
+            </p>
+          )
+          : null}
       </fieldset>
       {err ? <p class="welcome__error" role="alert">{err}</p> : null}
       <StepFooter ctx={ctx} valid={valid} busy={busy} onContinue={save} />
@@ -595,6 +628,9 @@ function AddressStep({ ctx }: { ctx: StepCtx }) {
   const [zipTouched, setZipTouched] = useState(Boolean(a.postal));
   const zipErr = zipError(postal);
   const showZipErr = zipTouched && zipErr !== null;
+  // REQ-390 (demo m18): while the ZIP is still being typed, the same reason
+  // shows as a neutral hint, so a disabled Continue is never unexplained
+  const showZipHint = !zipTouched && zipErr !== null;
   const valid = (street.trim().length > 0 || city.trim().length > 0 ||
     postal.trim().length > 0) && zipErr === null;
 
@@ -767,7 +803,11 @@ function AddressStep({ ctx }: { ctx: StepCtx }) {
           placeholder={t("welcome.address.zip")}
           maxLength={10}
           aria-invalid={showZipErr ? "true" : undefined}
-          aria-describedby={showZipErr ? "welcome-zip-err" : undefined}
+          aria-describedby={showZipErr
+            ? "welcome-zip-err"
+            : showZipHint
+            ? "welcome-zip-hint"
+            : undefined}
           value={postal}
           // deno-lint-ignore no-explicit-any
           onInput={(e: any) => setPostal(e.currentTarget.value)}
@@ -777,6 +817,12 @@ function AddressStep({ ctx }: { ctx: StepCtx }) {
       {showZipErr && zipErr
         ? (
           <p id="welcome-zip-err" class="welcome__error" role="alert">
+            {t(zipErr)}
+          </p>
+        )
+        : showZipHint && zipErr
+        ? (
+          <p id="welcome-zip-hint" class="welcome__hint">
             {t(zipErr)}
           </p>
         )
@@ -896,6 +942,13 @@ function PaymentStep({ ctx }: { ctx: StepCtx }) {
               ? (() => {
                 const err = touched[m.id] ? handleErr(m.id) : null;
                 const errId = `welcome-handle-${m.id}-err`;
+                // REQ-390 (demo m18): a handle still being typed gets the same
+                // reason as a neutral hint — Continue is never off unexplained
+                const hint = !touched[m.id] &&
+                    handles[m.id].trim().length > 0
+                  ? handleErr(m.id)
+                  : null;
+                const hintId = `welcome-handle-${m.id}-hint`;
                 return (
                   <>
                     <input
@@ -904,7 +957,7 @@ function PaymentStep({ ctx }: { ctx: StepCtx }) {
                       aria-label={t(`welcome.payment.handle.${m.id}`)}
                       placeholder={t(`welcome.payment.handle.${m.id}`)}
                       aria-invalid={err ? "true" : undefined}
-                      aria-describedby={err ? errId : undefined}
+                      aria-describedby={err ? errId : hint ? hintId : undefined}
                       value={handles[m.id]}
                       // deno-lint-ignore no-explicit-any
                       onInput={(e: any) =>
@@ -921,6 +974,8 @@ function PaymentStep({ ctx }: { ctx: StepCtx }) {
                           {t(err)}
                         </p>
                       )
+                      : hint
+                      ? <p id={hintId} class="welcome__hint">{t(hint)}</p>
                       : null}
                   </>
                 );
