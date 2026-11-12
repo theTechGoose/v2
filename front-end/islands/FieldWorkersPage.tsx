@@ -11,8 +11,9 @@ import {
 } from "../clients/field.ts";
 import FieldHead from "../components/FieldHead.tsx";
 import { ApiError } from "../lib/api.ts";
+import { initialsOf } from "../lib/clients-display.ts";
 import { I, ICN } from "../lib/dash-icons.tsx";
-import { fmtCell } from "../lib/field.ts";
+import { fmtCell, PHONE_PLACEHOLDER } from "../lib/field.ts";
 import { langSignal, t } from "../lib/i18n.ts";
 
 interface AddForm {
@@ -209,7 +210,7 @@ export default function FieldWorkersPage() {
               required
               inputMode="numeric"
               autocomplete="off"
-              placeholder="8435550201"
+              placeholder={PHONE_PLACEHOLDER}
               maxlength={10}
               pattern="\d{10}"
               value={form.phone}
@@ -332,7 +333,7 @@ export default function FieldWorkersPage() {
                         aria-hidden="true"
                         style="display:inline-grid;place-items:center;width:32px;height:32px;border-radius:50%;background:var(--brand-green);color:#fff;font-size:12px;flex-shrink:0"
                       >
-                        {w.name.slice(0, 2).toUpperCase()}
+                        {initialsOf(w.name)}
                       </span>
                       <span data-cy="wk-row-name">{w.name}</span>
                       {w.role === "foreman" && (

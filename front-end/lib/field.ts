@@ -44,7 +44,13 @@ export function splitEm(
   return m ? { before: m[1], em: m[2], after: m[3] } : null;
 }
 
-/** last 10 digits as (843) 555-0201; anything else as typed */
+/**
+ * REQ-363 — the one sample phone number for a phone box: the neutral 555 area
+ * code, so no business is shown somebody else's town (it was a Myrtle Beach SC number).
+ */
+export const PHONE_PLACEHOLDER = "(555) 123-4567";
+
+/** last 10 digits as (555) 123-4567; anything else as typed */
 export function fmtCell(digits: string): string {
   const d = digits.replace(/\D/g, "").slice(-10);
   return d.length === 10
