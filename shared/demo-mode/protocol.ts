@@ -355,6 +355,19 @@ export function pointToFrac(p: { x: number; y: number }, box: Rect): Anchor {
   };
 }
 
+/** REQ-305 — two anchors name the same place: the same node of the same page load at (nearly) the
+ *  same point of its box, or — neither naming a node — (nearly) the same fraction of the viewport.
+ *  A resting pointer placed again is sent only when this says no. */
+export function sameAnchor(a: Anchor | null, b: Anchor | null): boolean {
+  if (!a || !b) return a === b;
+  const near = (p: number, q: number) => Math.abs(p - q) < 0.002;
+  if (a.n || b.n) {
+    return !!a.n && !!b.n && a.n.id === b.n.id && a.n.l === b.n.l &&
+      near(a.n.x, b.n.x) && near(a.n.y, b.n.y);
+  }
+  return near(a.vx, b.vx) && near(a.vy, b.vy);
+}
+
 export interface Inset {
   top: number;
   right: number;

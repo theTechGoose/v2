@@ -24,6 +24,13 @@
  * REQ-214 — several staff may present at once: one pointer per presenter, each in that
  * presenter's colour with their name on it; the pill names them all with their colour dots.
  *
+ * REQ-305 — each presenter's last anchor is kept and placed again whenever this page moves under
+ * it (a scroll of any scroller, a resize, a change of the page): the arrow follows the element
+ * they point at, and sits on the window's edge pointing outside when that element is out of view.
+ * This side's resting pointer goes out again after every snapshot (a stage that was just handed
+ * one has not seen it), and whenever the page moved under the still cursor so that another
+ * element (or another spot of it) is under it now.
+ *
  * REQ-232 — only opening the demo here (the started event) moves a staff page onto the stage. Any
  * other staff page — another window of the same account, /admin after "Return to your account" —
  * says "Guiding {name}" with "Back to the demo" and never moves on its own. Every customer tab is
@@ -52,6 +59,7 @@ import {
   pointToFrac,
   type Presenter,
   type Role,
+  sameAnchor,
   STAGE_PATH,
 } from "../../shared/demo-mode/protocol.ts";
 import {
@@ -63,6 +71,7 @@ import {
   MOVE_GAP_RELAY_MS,
   moveThrottle,
   newerMove,
+  placeIn,
   type Pt,
 } from "../../shared/demo-mode/motion.ts";
 import { type ActivePoll, activePoll } from "../lib/demo-mode/active-poll.ts";
@@ -196,11 +205,19 @@ export default function DemoModeOverlay() {
   /** REQ-242 — this page's recorder and the sender its frames go out through */
   const recorderRef = useRef<Recorder | null>(null);
   const senderRef = useRef<MirrorSender | null>(null);
+  /** REQ-305 — each presenter's pointer as last sent: its anchor, placed again on this screen
+   *  whenever this page moves under it (the arrow follows the element they point at) */
+  const anchorsRef = useRef<Map<string, Anchor>>(new Map());
+  /** REQ-305 — where this side's pointer rests on this screen; null once it left the window */
+  const lastMoveRef = useRef<Pt | null>(null);
+  /** REQ-305 — this side's pointer as last sent */
+  const sentRef = useRef<Anchor | null>(null);
 
   /** REQ-242 — a point of this screen for the presenters: the fraction of this viewport and the
    *  mirrored element under it (their stage puts the pointer on that same element) */
   const anchorOf = (p: Pt): Anchor => {
     const a = pointToFrac(p, viewportBox());
+    sentRef.current = a; // REQ-305 — every anchor of this pointer goes out: the last one sent
     const recorder = recorderRef.current;
     const sender = senderRef.current;
     if (!recorder || !sender) return a;
@@ -209,7 +226,7 @@ export default function DemoModeOverlay() {
     if (id === null || !el) return a;
     const r = el.getBoundingClientRect();
     if (r.width <= 0 || r.height <= 0) return a;
-    return {
+    const out = {
       ...a,
       n: {
         id,
@@ -218,6 +235,8 @@ export default function DemoModeOverlay() {
         l: sender.load,
       },
     };
+    sentRef.current = out;
+    return out;
   };
   /** a presenter's pointer on this screen: on the element they point at when this page has it */
   const toScreen = (a: Anchor): Pt => {
@@ -231,6 +250,17 @@ export default function DemoModeOverlay() {
       }
     }
     return fracToPoint(a, viewportBox());
+  };
+  /** REQ-305 — where an anchor's pointer is drawn: on the window's edge, pointing outside, when
+   *  the element it names is out of view */
+  const placeOnScreen = (a: Anchor) => placeIn(toScreen(a), viewportBox());
+
+  /** REQ-305 — this side's resting pointer, once more: a stage that was just handed a fresh
+   *  snapshot (it joined, or asked for one) has not seen it — the stage's resendPointer, mirrored */
+  const resendPointer = () => {
+    const p = lastMoveRef.current;
+    if (!p) return;
+    linkRef.current?.send({ k: "move", a: anchorOf(p), t: performance.now() });
   };
 
   /** this side's moves, rated leading + trailing so the rest position always goes out */
@@ -391,11 +421,44 @@ export default function DemoModeOverlay() {
     };
     const command = (pid: string, cmd: Omit<PointerCmd, "seq">) =>
       setCmds((c) => ({ ...c, [pid]: { seq: ++seq.current, ...cmd } }));
+    /** REQ-305 — a presenter's pointer placed from its anchor, and where each was last placed */
+    const placed = new Map<string, Pt & { outside: boolean }>();
+    const place = (pid: string, a: Anchor, kind: "move" | "click") => {
+      const p = placeOnScreen(a);
+      placed.set(pid, { ...p.at, outside: p.outside });
+      command(pid, { kind, at: p.at, outside: p.outside });
+    };
+    let raf = 0;
+    /** REQ-305 — this page moved under the pointers (a scroll of any scroller, a resize, a change
+     *  of the page), on the next frame: every presenter's arrow is placed again on its element, and
+     *  this side's resting pointer goes out again when what is under the still cursor changed */
+    const replace = () => {
+      raf = 0;
+      for (const [pid, a] of anchorsRef.current) {
+        const p = placeOnScreen(a);
+        const was = placed.get(pid);
+        if (
+          was && was.x === p.at.x && was.y === p.at.y &&
+          was.outside === p.outside
+        ) continue;
+        place(pid, a, "move");
+      }
+      const rest = lastMoveRef.current;
+      if (!rest || !linkRef.current) return;
+      const was = sentRef.current;
+      if (!sameAnchor(was, anchorOf(rest))) throttle.push(rest);
+    };
+    const shifted = () => {
+      if (!raf) raf = requestAnimationFrame(replace);
+    };
     // REQ-242 — this screen, recorded (paused until a presenter is there) and sent over the link
     let link: DemoLink | null = null;
     const sender = createMirrorSender({ send: (m) => link?.send(m) });
     const recorder = createRecorder(document, {
-      emit: (f) => void sender.push(f),
+      emit: (f) => {
+        void sender.push(f);
+        shifted(); // REQ-305 — the page changed: the pointers on it with it
+      },
     });
     senderRef.current = sender;
     recorderRef.current = recorder;
@@ -405,7 +468,11 @@ export default function DemoModeOverlay() {
       onPresence: (pid, online) => {
         lastT.delete(pid); // their stage came or went: its clock starts over
         // a presenter who left takes their pointer along
-        if (!online) command(pid, { kind: "leave" });
+        if (!online) {
+          anchorsRef.current.delete(pid);
+          placed.delete(pid);
+          command(pid, { kind: "leave" });
+        }
         pollRef.current?.();
       },
       onStatus: (s) => {
@@ -425,8 +492,10 @@ export default function DemoModeOverlay() {
         }
       },
       onPeerOnline: () => {
-        // REQ-242 — a presenter joined: the whole screen at once, then every change
+        // REQ-242 — a presenter joined: the whole screen at once, then every change; REQ-305 —
+        // and this side's resting pointer, which their stage has not seen
         recorder.snapshot();
+        resendPointer();
       },
       onPeer: (m: PeerMessage, from: PeerFrom) => {
         if (from.role !== "presenter") return;
@@ -436,17 +505,22 @@ export default function DemoModeOverlay() {
             // REQ-180: a move that arrives after a later one is ignored; the rest glide
             if (!newerMove(lastT.get(pid) ?? 0, m.t)) break;
             lastT.set(pid, m.t ?? lastT.get(pid) ?? 0);
-            command(pid, { kind: "move", at: toScreen(m.a) });
+            anchorsRef.current.set(pid, m.a);
+            place(pid, m.a, "move");
             break;
           case "click":
-            command(pid, { kind: "click", at: toScreen(m.a) });
+            anchorsRef.current.set(pid, m.a);
+            place(pid, m.a, "click");
             break;
           case "leave":
+            anchorsRef.current.delete(pid);
+            placed.delete(pid);
             command(pid, { kind: "leave" });
             break;
           case "resync":
-            // REQ-242 — a stage missed a frame: the whole screen again
+            // REQ-242 — a stage missed a frame: the whole screen again (REQ-305: and the pointer)
             recorder.snapshot();
+            resendPointer();
             break;
         }
       },
@@ -458,6 +532,7 @@ export default function DemoModeOverlay() {
           presenters: d?.presenters ?? [],
           presenterName: d?.presenterName,
         }));
+        anchorsRef.current.clear();
         setCmds({});
         setDemo(null);
       },
@@ -466,6 +541,17 @@ export default function DemoModeOverlay() {
     // the page is going (a reload, another page): its pointer goes with it
     const onHide = () => link?.send({ k: "leave" });
     globalThis.addEventListener("pagehide", onHide);
+    // REQ-305 — the page moves under the pointers: a scroll of any scroller, a resize, the body
+    // growing (an image in, a panel opened)
+    addEventListener("resize", shifted);
+    document.addEventListener("scroll", shifted, {
+      capture: true,
+      passive: true,
+    });
+    const ro = typeof ResizeObserver === "undefined"
+      ? null
+      : new ResizeObserver(shifted);
+    ro?.observe(document.body);
     // REQ-232 (B3) — this tab is the one the customer is using: it claims the stage when it is in
     // front (now, if it is), gets focus or is clicked; a tab behind another says nothing
     const claim = () => link?.claim();
@@ -484,6 +570,11 @@ export default function DemoModeOverlay() {
       globalThis.removeEventListener("focus", claim);
       document.removeEventListener("visibilitychange", onVisible);
       document.removeEventListener("pointerdown", claim, { capture: true });
+      removeEventListener("resize", shifted);
+      document.removeEventListener("scroll", shifted, { capture: true });
+      ro?.disconnect();
+      if (raf) cancelAnimationFrame(raf);
+      anchorsRef.current.clear();
       throttle.cancel();
       recorder.stop();
       recorderRef.current = null;
@@ -500,6 +591,7 @@ export default function DemoModeOverlay() {
   useEffect(() => {
     if (!demo || demo.role !== "viewer") return;
     const onMove = (e: PointerEvent) => {
+      lastMoveRef.current = { x: e.clientX, y: e.clientY };
       if (linkRef.current) throttle.push({ x: e.clientX, y: e.clientY });
     };
     const onDown = (e: PointerEvent) =>
@@ -507,7 +599,11 @@ export default function DemoModeOverlay() {
         k: "click",
         a: anchorOf({ x: e.clientX, y: e.clientY }),
       });
-    const onLeave = () => linkRef.current?.send({ k: "leave" });
+    const onLeave = () => {
+      lastMoveRef.current = null;
+      sentRef.current = null;
+      linkRef.current?.send({ k: "leave" });
+    };
     document.addEventListener("pointermove", onMove, {
       capture: true,
       passive: true,

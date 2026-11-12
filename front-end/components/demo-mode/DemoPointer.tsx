@@ -6,6 +6,9 @@
  * sits right of the arrow and below it, and flips left or up near an edge (`tagPlacement`). A
  * pointer at rest stops covering what it points at: the tag fades after TAG_IDLE_MS, the arrow
  * dims after ARROW_IDLE_MS; the next move brings both back.
+ *
+ * REQ-305 — `outside`: the element pointed at is out of view, the arrow sits on the edge of
+ * `bounds` pointing at it (`data-outside`, drawn faint with a dashed ring) — never off-screen.
  */
 import { useEffect, useState } from "preact/hooks";
 import {
@@ -40,8 +43,9 @@ const windowBox = (): Bounds => ({
 });
 
 export default function DemoPointer(
-  { pointer, waves, name, color, z, attach, bounds }: {
+  { pointer, outside, waves, name, color, z, attach, bounds }: {
     pointer: Pt | null;
+    outside?: boolean;
     waves: Wave[];
     name: string;
     color: string;
@@ -85,18 +89,25 @@ export default function DemoPointer(
           data-cy="demo-pointer"
           data-presenter={name}
           data-idle={idle}
+          data-outside={outside ? "" : undefined}
           ref={attach}
           style={`position:fixed;left:0;top:0;width:24px;height:30px;overflow:visible;pointer-events:none;z-index:${
             z + 1
           }`}
         >
+          {outside && (
+            <span
+              aria-hidden="true"
+              style={`position:absolute;left:-8px;top:-8px;width:36px;height:36px;border-radius:50%;border:2px dashed ${color};opacity:.7`}
+            />
+          )}
           <svg
             width="24"
             height="30"
             viewBox="0 0 22 28"
             aria-hidden="true"
             style={`position:absolute;left:0;top:0;opacity:${
-              idle >= 2 ? 0.45 : 1
+              outside ? 0.55 : idle >= 2 ? 0.45 : 1
             };transition:opacity .4s`}
           >
             <path

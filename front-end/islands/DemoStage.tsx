@@ -22,6 +22,16 @@
  * REQ-214 — several staff may present at once: the other presenters' pointers are drawn on the
  * frame too, each in their colour with their name, and the pill lists who is presenting.
  *
+ * REQ-305 — a pointer's anchor is resolved against a SETTLED frame, and again whenever the frame's
+ * layout moves: the customer's and the colleagues' last anchors are kept and placed again after
+ * every applied frame, every settle and every resize (a point outside the frame goes on its edge,
+ * pointing outside); the customer's pointer is hidden on a NEW page only, never on a resync of the
+ * same one. This presenter's pointer names a mirrored node only once the replay's stylesheets are
+ * in (before that the browser lays the frame out without them: the page's links stacked top-left,
+ * a drawer in the flow) — a page mirrored afresh gets the resting pointer at once as a fraction of
+ * the frame, then on the node under it, anchored again on every layout pass while the snapshot
+ * settles and sent whenever that node changed.
+ *
  * REQ-232 — the pill says plainly whether the demo is live: "Live", "Connecting…", or "Waiting for
  * {name}'s app…" — the last only when none of the customer's tabs is left, after a few seconds'
  * grace (a page change in their app is a new socket). The stage follows the tab the customer used
@@ -43,6 +53,7 @@ import {
   type PeerMessage,
   pointToFrac,
   type Presenter,
+  sameAnchor,
 } from "../../shared/demo-mode/protocol.ts";
 import {
   createMirrorReceiver,
@@ -54,6 +65,7 @@ import {
   MOVE_GAP_RELAY_MS,
   moveThrottle,
   newerMove,
+  placeIn,
   type Pt,
 } from "../../shared/demo-mode/motion.ts";
 import {
@@ -160,6 +172,23 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
   /** REQ-180 — the customer's last move clock seen; REQ-242 — it is their page's performance.now(),
    *  which starts over with every page, so it is forgotten whenever their page changes */
   const lastTRef = useRef(0);
+  /** REQ-305 — the customer's pointer as last sent: its anchor, placed again against the replay
+   *  whenever the replay's layout moves (a frame applied, its styles in, the stage resized). A new
+   *  page's snapshot forgets it — unless it already names that page (it came ahead of it). */
+  const customerRef = useRef<Anchor | null>(null);
+  /** REQ-305 — each colleague's last anchor, the same way (REQ-214); and where each was placed */
+  const peersRef = useRef<Map<string, Anchor>>(new Map());
+  const placedRef = useRef<Map<string, Pt & { outside: boolean }>>(new Map());
+  /** REQ-305 — this presenter's pointer as last sent (its node belongs to one page load) */
+  const sentRef = useRef<Anchor | null>(null);
+  /** REQ-305 — a snapshot is settling: the resting pointer is anchored again on every layout pass
+   *  once the replay is styled; `open` until that snapshot's last settle timer (`gen`: which one) */
+  const restRef = useRef<{ gen: number; open: boolean } | null>(null);
+  const snapGenRef = useRef(0);
+  /** REQ-214 — how a colleague's pointer is driven, for the placing again */
+  const commandRef = useRef<
+    ((pid: string, cmd: Omit<PointerCmd, "seq">) => void) | null
+  >(null);
   const linkRef = useRef<DemoLink | null>(null);
   const peerOnlineRef = useRef(false);
   peerOnlineRef.current = peerOnline;
@@ -188,10 +217,15 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
     const f = fitBox();
     const a = pointToFrac(p, f);
     const load = loadRef.current;
-    const n = load
-      ? replayerRef.current?.anchorAt((p.x - f.left) / f.s, (p.y - f.top) / f.s)
+    const rep = replayerRef.current;
+    // REQ-305 — never a node of a replay whose stylesheets are not in: the node under the point
+    // there is not the one under it on the customer's screen (the fraction is, near enough)
+    const n = load && rep?.styled()
+      ? rep.anchorAt((p.x - f.left) / f.s, (p.y - f.top) / f.s)
       : null;
-    return n && load ? { ...a, n: { ...n, l: load } } : a;
+    const out = n && load ? { ...a, n: { ...n, l: load } } : a;
+    sentRef.current = out; // REQ-305 — every anchor of this pointer goes out: the last one sent
+    return out;
   };
   /** a point of the customer's (or a colleague's) pointer on this screen: on the element it names
    *  when the replay has it, else at the same fraction of the frame */
@@ -221,12 +255,69 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
     }), []);
 
   /** REQ-242 — where this presenter's pointer rests, once more: the customer's page that just
-   *  joined (or was just mirrored afresh) has not seen it */
+   *  joined (or was just mirrored afresh) has not seen it. As last sent when that named a node of
+   *  the page the replay shows; else as a fraction of the frame only — REQ-305: never on a node
+   *  looked for in a replay just built, its styles not in yet (that put it on whatever an
+   *  unstyled page stacked under the point: a sidebar link, the phone drawer) */
   const resendPointer = () => {
     const p = lastMoveRef.current;
     if (!p) return;
-    linkRef.current?.send({ k: "move", a: anchorOf(p), t: performance.now() });
+    const sent = sentRef.current;
+    const a = sent?.n?.l && sent.n.l === loadRef.current
+      ? sent
+      : pointToFrac(p, fitBox());
+    sentRef.current = a;
+    linkRef.current?.send({ k: "move", a, t: performance.now() });
   };
+  /** REQ-305 — the resting pointer on the node under it in the styled replay, sent when that is
+   *  not what went last (the frame settled under a still mouse) */
+  const restAgain = () => {
+    const p = lastMoveRef.current;
+    if (!p) return;
+    const was = sentRef.current;
+    const a = anchorOf(p);
+    if (sameAnchor(was, a)) return;
+    linkRef.current?.send({ k: "move", a, t: performance.now() });
+  };
+
+  /** REQ-305 — where an anchor's pointer is drawn: on the frame's edge, pointing outside, when the
+   *  element it names is out of the frame (scrolled away, or a frame not yet scrolled) */
+  const placeOnStage = (a: Anchor) => placeIn(toStage(a), fitBox());
+  const showCustomer = () => {
+    const a = customerRef.current;
+    if (!a) return;
+    const p = placeOnStage(a);
+    glide.glideTo(p.at, p.outside);
+  };
+  const placePeer = (pid: string, a: Anchor, kind: "move" | "click") => {
+    const p = placeOnStage(a);
+    placedRef.current.set(pid, { ...p.at, outside: p.outside });
+    commandRef.current?.(pid, { kind, at: p.at, outside: p.outside });
+  };
+  /** REQ-305 — the replay's layout may have moved (a frame applied, its styles, images or fonts
+   *  in, a settle, the stage resized): every pointer anchored to its nodes is placed again; and
+   *  while a snapshot settles, this presenter's resting pointer is anchored again to the node
+   *  under it once the replay is styled */
+  const replace = () => {
+    showCustomer();
+    for (const [pid, a] of peersRef.current) {
+      const p = placeOnStage(a);
+      const was = placedRef.current.get(pid);
+      if (
+        was && was.x === p.at.x && was.y === p.at.y &&
+        was.outside === p.outside
+      ) continue;
+      placePeer(pid, a, "move");
+    }
+    const rest = restRef.current;
+    if (rest && replayerRef.current?.styled()) {
+      restAgain();
+      // the snapshot has settled: from now on the customer's arrow follows its node
+      if (!rest.open) restRef.current = null;
+    }
+  };
+  const replaceRef = useRef(replace);
+  replaceRef.current = replace;
 
   /** REQ-242 — the replay and the customer's screen came apart: a fresh snapshot, please */
   const askResync = () => {
@@ -250,7 +341,8 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
       askResync();
       return;
     }
-    if (load !== loadRef.current) lastTRef.current = 0; // another page: another clock
+    const newLoad = load !== loadRef.current;
+    if (newLoad) lastTRef.current = 0; // another page: another clock
     loadRef.current = load;
     const size = rep.size();
     const path = rep.path() ?? "";
@@ -262,13 +354,28 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
       );
     }
     if (f.t === "snap") {
-      // a new page, or a fresh copy of it: the customer's pointer was on the old one
-      glide.hide();
-      resendPointer();
-      // its scrolls once more when its styles and images are in
-      for (const ms of SETTLE_MS) {
-        setTimeout(() => replayerRef.current?.settle(), ms);
+      if (newLoad) {
+        // a new page: the customer's pointer was on the old one
+        if (customerRef.current?.n?.l !== load) {
+          customerRef.current = null;
+          glide.hide();
+        }
+        resendPointer(); // REQ-305 — at once, a fraction of the frame
       }
+      // its scrolls once more as its styles come in; REQ-305 — the pointers too
+      const gen = ++snapGenRef.current;
+      restRef.current = { gen, open: true };
+      SETTLE_MS.forEach((ms, k) => {
+        setTimeout(() => {
+          replayerRef.current?.settle();
+          // REQ-305 — this snapshot's last timer closes its window (a newer one owns its own)
+          const rest = restRef.current;
+          if (k === SETTLE_MS.length - 1 && rest?.gen === gen) {
+            rest.open = false;
+          }
+          replaceRef.current();
+        }, ms);
+      });
     }
   };
 
@@ -280,7 +387,11 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
     }
     const again = frameDocRef.current !== null;
     frameDocRef.current = doc;
-    replayerRef.current = createReplayer(doc);
+    replayerRef.current?.dispose();
+    replayerRef.current = createReplayer(doc, {
+      // REQ-305 — the frame's layout moved: its pointers with it
+      onLayout: () => replaceRef.current(),
+    });
     const q = queueRef.current;
     queueRef.current = [];
     for (const [f, l] of q) take(f, l);
@@ -316,6 +427,12 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
       mo?.disconnect();
     };
   }, []);
+
+  // 0a. REQ-305 — the frame moved or scaled (the stage, the banner or the pill changed): the
+  //     pointers anchored to it are placed again
+  useEffect(() => {
+    replace();
+  }, [fit]);
 
   // 0b. REQ-228 — the pill's height, whenever it changes (a wrap on a narrow window, a new status)
   const hasPill = Boolean(demo);
@@ -379,6 +496,7 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
       }
       setCmds((c) => ({ ...c, [pid]: { seq: ++seq.current, ...cmd } }));
     };
+    commandRef.current = command;
     const rx = createMirrorReceiver({ onFrame: take });
     const link = connectDemo({
       sessionId: demo.id,
@@ -387,6 +505,8 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
       onPresence: (pid, online) => {
         lastTOf.delete(pid); // their stage came or went: its clock starts over
         if (!online) {
+          peersRef.current.delete(pid);
+          placedRef.current.delete(pid);
           setCmds((c) => ({
             ...c,
             [pid]: { seq: ++seq.current, kind: "leave" },
@@ -400,6 +520,7 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
         setPeerOnline(online);
         // the customer's app dropped: their pointer is nowhere now (the mirror keeps their last screen)
         if (!online) {
+          customerRef.current = null;
           glide.hide();
           lastTRef.current = 0;
         }
@@ -407,6 +528,9 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
         wasOnline = online;
         if (s === "replaced") {
           // REQ-232 — another window of this account has the demo now: nothing moves here
+          customerRef.current = null;
+          peersRef.current.clear();
+          placedRef.current.clear();
           glide.hide();
           setCmds({});
         }
@@ -433,10 +557,14 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
           if (m.k === "move") {
             if (!newerMove(lastTOf.get(pid) ?? 0, m.t)) return;
             lastTOf.set(pid, m.t ?? lastTOf.get(pid) ?? 0);
-            command(pid, { kind: "move", at: toStage(m.a) });
+            peersRef.current.set(pid, m.a);
+            placePeer(pid, m.a, "move");
           } else if (m.k === "click") {
-            command(pid, { kind: "click", at: toStage(m.a) });
+            peersRef.current.set(pid, m.a);
+            placePeer(pid, m.a, "click");
           } else if (m.k === "leave") {
+            peersRef.current.delete(pid);
+            placedRef.current.delete(pid);
             command(pid, { kind: "leave" });
           }
           return;
@@ -448,13 +576,15 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
           case "move":
             if (!newerMove(lastTRef.current, m.t)) break;
             lastTRef.current = m.t ?? lastTRef.current;
-            glide.glideTo(toStage(m.a));
+            customerRef.current = m.a;
+            showCustomer();
             break;
           case "click": {
-            const at = toStage(m.a);
-            glide.glideTo(at);
+            customerRef.current = m.a;
+            const p = placeOnStage(m.a);
+            glide.glideTo(p.at, p.outside);
             const id = ++waveId.current;
-            setWaves((w) => [...w, { id, ...at }]);
+            setWaves((w) => [...w, { id, ...p.at }]);
             setTimeout(
               () => setWaves((w) => w.filter((x) => x.id !== id)),
               WAVE_MS,
@@ -462,12 +592,16 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
             break;
           }
           case "leave":
+            customerRef.current = null;
             glide.hide();
             break;
         }
       },
       onEnded: (by, _reason, pid) => {
         setEnded(true);
+        customerRef.current = null;
+        peersRef.current.clear();
+        placedRef.current.clear();
         glide.hide();
         setCmds({});
         // REQ-235 — who ended it rides the hop to /admin
@@ -497,8 +631,14 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
       throttle.cancel();
       link.close();
       linkRef.current = null;
+      commandRef.current = null;
       rx.reset();
       loadRef.current = null;
+      customerRef.current = null;
+      peersRef.current.clear();
+      placedRef.current.clear();
+      sentRef.current = null;
+      restRef.current = null;
       glide.hide();
       setCmds({});
       setMirrored(null);
@@ -641,6 +781,8 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
                 }}
                 onPointerLeave={() => {
                   lastMoveRef.current = null;
+                  sentRef.current = null;
+                  restRef.current = null;
                   throttle.cancel();
                   linkRef.current?.send({ k: "leave" });
                 }}
@@ -651,6 +793,7 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
         )}
       <DemoPointer
         pointer={glide.pointer}
+        outside={glide.outside}
         waves={waves}
         name={name}
         color={CUSTOMER_COLOR}
