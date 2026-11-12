@@ -371,6 +371,8 @@ export interface InvoiceFormValues {
   serviceDateTo?: string;
   paymentInstructions: string;
   billTo: BillTo;
+  /** REQ-655: extra work on a job whose invoices are all paid (?extra=1) */
+  extraWork?: boolean;
 }
 
 function nonEmpty(s: string | undefined): string | undefined {
@@ -467,6 +469,9 @@ export function buildInvoiceBody(
   };
   if (form.customerId) body.customerId = form.customerId;
   if (form.quoteId) body.quoteId = form.quoteId;
+  // REQ-655: extra work past a paid-off agreement is billed on purpose — the
+  // REQ-233 cap's acknowledgement (`override`), or the cap refuses it.
+  if (form.quoteId && form.extraWork) body.override = true;
   const jobName = nonEmpty(form.jobName);
   if (jobName) body.jobName = jobName;
   const description = nonEmpty(form.description);
@@ -485,7 +490,9 @@ export function buildInvoiceBody(
     // left alone: the backend derives the quote's own lines for it.
     const label = jobName ?? description;
     const amountCents = Math.max(0, Math.round(form.amountCents ?? 0));
-    if (!form.quoteId && label && amountCents > 0) {
+    // REQ-655 (cycle 5, p18-9c): extra work on a paid-off job bills only
+    // its own line — never the quote's.
+    if ((!form.quoteId || form.extraWork) && label && amountCents > 0) {
       body.lineItems = [{
         description: label,
         quantity: 1,

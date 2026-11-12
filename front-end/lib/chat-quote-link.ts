@@ -23,6 +23,8 @@ const LINKABLE = new Set([
   "draft_updated",
   "change_order",
   "needs_invoice",
+  "new_invoice", // REQ-655 (cycle 5, M12): extra work billed on a new invoice
+  "all_paid", // REQ-655: a credit on a paid-off job
   "locked",
   "no_such_line",
 ]);

@@ -39,6 +39,42 @@ export function newChangeOrderTarget(ledger: {
     : { kind: "new_invoice" };
 }
 
+/** REQ-655 (demo-loop cycle 5, p18-9c): the new invoice for extra work on a
+ *  job whose every invoice is paid — linked to the quote (`quoteId`, which
+ *  prefills its customer and job) and marked as extra work (`extra=1`). */
+export function extraWorkInvoiceHref(quoteId: string): string {
+  return `/invoices?new=1&quoteId=${encodeURIComponent(quoteId)}&extra=1`;
+}
+
+/** REQ-655: does this /invoices query open the extra-work invoice? Only with
+ *  the quote it bills against. */
+export function isExtraWorkLink(search: string): boolean {
+  const q = new URLSearchParams(search);
+  return q.get("extra") === "1" && !!q.get("quoteId");
+}
+
+/**
+ * REQ-655 (p18-9c): the signed quote's button, decided BEFORE it renders. On
+ * a fully paid job "New change order" led to "a change order has nowhere to
+ * go" and a blank, unlinked invoice; there it is "Bill extra work" and goes
+ * straight to the linked new invoice. Otherwise it opens the change-order
+ * panel (`href: null`).
+ */
+export function newChangeOrderButton(
+  target: NewChangeOrderTarget,
+  quoteId: string,
+): {
+  labelKey: "quotes.ledger.newChangeOrder" | "quotes.ledger.billExtraWork";
+  href: string | null;
+} {
+  return target.kind === "new_invoice"
+    ? {
+      labelKey: "quotes.ledger.billExtraWork",
+      href: extraWorkInvoiceHref(quoteId),
+    }
+    : { labelKey: "quotes.ledger.newChangeOrder", href: null };
+}
+
 /** Edit and Withdraw on a change-order row: an order the customer has not
  *  approved (P-41 — the server refuses the rest), on a known invoice. */
 export function changeOrderRowActions(

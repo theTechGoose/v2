@@ -143,7 +143,9 @@ describe("REQ-462 (M26) the quotes page", () => {
     expect(src).toMatch(/changeOrdersClient\.create\(/);
     expect(src).toMatch(/data-cy="quote-co-form"/);
     expect(src).toMatch(/quotes\.ledger\.coInvoiceFirst/);
-    expect(src).toMatch(/quotes\.ledger\.coNewInvoice/);
+    // REQ-655 (cycle 5, p18-9c) amends the all-paid case: no refusal box —
+    // the button itself is "Bill extra work", to a linked new invoice
+    expect(src).toMatch(/newChangeOrderButton\(/);
   });
 
   it("REQ-462 a change-order row has Edit (PUT) and Withdraw (asks, then DELETE)", () => {
