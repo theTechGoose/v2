@@ -13,6 +13,7 @@ import {
   type WinRate,
 } from "../clients/quotes.ts";
 import { api, ApiError } from "../lib/api.ts";
+import { startListRefresh } from "../lib/list-refresh.ts";
 import { I, ICN } from "../lib/dash-icons.tsx";
 import { fmtMoney, fmtMoneyExact } from "../lib/format.ts";
 import {
@@ -1042,6 +1043,34 @@ export default function QuotesPage(_props: { lang?: "en" | "es" }) {
     });
     return () => {
       alive = false;
+    };
+  }, [lang]);
+
+  // REQ-321 (demo M14): the list above is read once at mount, so a quote
+  // the customer signed in another tab stayed "Out for response" until a
+  // manual reload. Re-read it every 30 s through REQ-221's scheduler (hidden
+  // tabs wait, one catch-up when shown) and on the window's focus. A failed
+  // re-read keeps the last list; the first paint stays the mount effect's.
+  useEffect(() => {
+    let alive = true;
+    const refresh = async () => {
+      const [cards, winRate] = await Promise.all([
+        quotesClient.list(),
+        quotesClient.winRate(90).catch(() => null as WinRate | null),
+      ]);
+      if (!alive || !Array.isArray(cards)) return;
+      setS((prev) =>
+        prev.loading || prev.error ? prev : {
+          ...prev,
+          quotes: cards.map((c) => mapCard(c, lang)),
+          winRate: winRate ?? prev.winRate,
+        }
+      );
+    };
+    const stop = startListRefresh(refresh, 30_000);
+    return () => {
+      alive = false;
+      stop();
     };
   }, [lang]);
 

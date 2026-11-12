@@ -1,6 +1,7 @@
-import { useState } from "preact/hooks";
+import { useEffect, useRef, useState } from "preact/hooks";
 import { type Lang, tFor } from "../lib/i18n.ts";
 import { fmtMoneyExact } from "../lib/format.ts";
+import { startInvoiceRefresh } from "../lib/public-invoice-refresh.ts";
 import {
   claimBody,
   claimDecision,
@@ -71,6 +72,22 @@ export default function PublicInvoiceClaim(
   const [version, setVersion] = useState<number | undefined>(initialVersion);
   const [stale, setStale] = useState(false);
   const [alreadyPaid, setAlreadyPaid] = useState(false);
+
+  // REQ-321 (demo M14): this page is SSR'd once; the badge patches below
+  // only mirror THIS island's own claim. The owner's later confirm-payment
+  // (another session) must reach the open tab too — poll the public invoice
+  // and reload the moment the server leaves the state shown here. `shown`
+  // is read at every tick, so a claim made in this tab moves the baseline
+  // (claimed) instead of triggering a reload of its own.
+  const shownRef = useRef({ status: "sent", version: initialVersion });
+  useEffect(
+    () => startInvoiceRefresh({ invoiceId, shown: () => shownRef.current }),
+    [invoiceId],
+  );
+  shownRef.current = {
+    status: alreadyPaid ? "paid" : done ? "claimed" : "sent",
+    version,
+  };
 
   if (alreadyPaid) {
     return (
