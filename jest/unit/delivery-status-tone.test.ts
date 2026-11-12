@@ -49,8 +49,9 @@ describe("REQ-327 copy — the CTA sub-line starts with a capital", () => {
     expect(en["asstChat.cta.notDelivered"]).toBe("Not delivered —");
   });
 
-  it("es: 'No entregado —'", () => {
-    expect(es["asstChat.cta.notDelivered"]).toBe("No entregado —");
+  // REQ-413: agrees with the header's "No entregada" (la entrega / la cotización).
+  it("es: 'No entregada —'", () => {
+    expect(es["asstChat.cta.notDelivered"]).toBe("No entregada —");
   });
 });
 

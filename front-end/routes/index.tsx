@@ -154,7 +154,7 @@ const DEMO_SCRIPT_ES: Bubble[] = [
     side: "left",
     kind: "bubble",
     cls: "them",
-    text: "Perfecto. Va la cotización — rango típico $10.800–$12.400.",
+    text: "Perfecto. Va la cotización — rango típico $10,800–$12,400.",
   },
   {
     side: "left",
@@ -292,7 +292,12 @@ export default define.page(async function Landing(ctx) {
               EN/ES abbreviation below 720px; the aria-label keeps the full
               sentence for assistive tech at every width. */
           }
-          <div class="lang-toggle" role="tablist" aria-label="Language">
+          <div
+            class="lang-toggle"
+            role="tablist"
+            aria-label={t("aria.language")}
+            data-i18n-aria="aria.language"
+          >
             {
               /* NW-01 (REQ-002): Spanish first — it is the default and the
                client asked for "Yo hablo Español | I speak English". */
@@ -1084,7 +1089,11 @@ export default define.page(async function Landing(ctx) {
               <span class="eyebrow-pill" data-i18n="cta.eyebrow">
                 {t("cta.eyebrow")}
               </span>
-              <ol class="pm-steps" aria-label="Sign-in steps">
+              <ol
+                class="pm-steps"
+                aria-label={t("aria.signInSteps")}
+                data-i18n-aria="aria.signInSteps"
+              >
                 <li class="pm-steps__item pm-steps__item--active">
                   <span class="pm-steps__dot">1</span>
                   <span class="pm-steps__label" data-i18n="cta.steps.phone">

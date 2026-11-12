@@ -39,8 +39,7 @@ export function ClientsHero(
             <>
               <h1 class="ph2__title">
                 {tFor(lang, "clientsHero.emptyTitlePre")}{" "}
-                <em>{tFor(lang, "clientsHero.emptyTitleEm")}</em>. <br />
-                {tFor(lang, "clientsHero.emptyTitlePost")}
+                <em>{tFor(lang, "clientsHero.emptyTitleEm")}</em>.
               </h1>
               <p class="ph2__sub">
                 {tFor(lang, "clientsHero.emptySub")}

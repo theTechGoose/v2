@@ -419,6 +419,11 @@
       if (el.getAttribute("data-html") === "1") el.innerHTML = v;
       else el.textContent = v;
     });
+    // REQ-413: aria-labels are page copy too ("Language" / "Idioma").
+    document.querySelectorAll("[data-i18n-aria]").forEach(function (el) {
+      const k = el.getAttribute("data-i18n-aria");
+      if (k && dict[k] != null) el.setAttribute("aria-label", dict[k]);
+    });
     document.querySelectorAll(".rotor-track .word").forEach(function (w) {
       w.textContent = w.getAttribute("data-" + lang) || w.textContent;
     });
