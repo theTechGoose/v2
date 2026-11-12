@@ -55,7 +55,7 @@ export class FieldViews {
   }
 
   task(t: FieldTask, n: Names) {
-    return { ...t, customerName: n.customer(t.customerId), taskTypeName: n.type(t.taskTypeId), workerName: n.worker(t.workerId), regionName: n.region(t.regionId)?.name ?? "—" };
+    return { ...t, customerName: n.customer(t.customerId), taskTypeName: n.type(t.taskTypeId), workerName: n.worker(t.workerId), regionName: n.region(t.regionId)?.name ?? "" }; // REQ-365: no zone (a one-off) is "", not "—"
   }
 
   workerTask(t: FieldTask, n: Names) {

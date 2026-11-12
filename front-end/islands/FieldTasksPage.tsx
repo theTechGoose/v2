@@ -28,6 +28,7 @@ import FieldHead from "../components/FieldHead.tsx";
 import { ApiError } from "../lib/api.ts";
 import { I, ICN } from "../lib/dash-icons.tsx";
 import { daySummary } from "../lib/field-task-summary.ts";
+import { groupTasks, workerZoneLabel } from "../lib/field-task-groups.ts";
 import {
   addTaskProblem,
   addTaskServerProblem,
@@ -379,14 +380,9 @@ export default function FieldTasksPage() {
   // REQ-284 — "To do" counts the open tasks; "Assigned" stays a per-task status
   const { done, toDo, notDone, counted } = daySummary(tasks);
 
-  // group by worker · zone, in first-seen order
-  const groups = new Map<string, TaskView[]>();
-  for (const x of tasks) {
-    const k = `${x.workerName} · ${x.regionName}`;
-    const g = groups.get(k);
-    if (g) g.push(x);
-    else groups.set(k, [x]);
-  }
+  // REQ-365 — group by worker + zone id, in first-seen order; a one-off with no zone
+  // is titled with the worker alone
+  const groups = groupTasks(tasks);
 
   // the worker's note belongs to the visit — show it once per subscription+day
   const seenNote = new Set<string>();
@@ -499,7 +495,7 @@ export default function FieldTasksPage() {
           <div class="task__client">{x.customerName}</div>
           {x.address && <div class="task__addr">{x.address}</div>}
           <div class="hint">
-            {x.workerName} · {x.regionName}
+            {workerZoneLabel(x)}
           </div>
           {showNote && (
             <div class="task__note">
@@ -975,10 +971,10 @@ export default function FieldTasksPage() {
         <div class="panel hint">{t("field.tk.none")}</div>
       )}
 
-      {[...groups.entries()].map(([k, rows]) => (
-        <div class="panel" key={k}>
+      {groups.map(({ key, title, rows }) => (
+        <div class="panel" key={key}>
           <h3 class="panel__title">
-            <I d={ICN.hardhat} size={16} /> {k}{" "}
+            <I d={ICN.hardhat} size={16} /> {title}{" "}
             <span class="count">
               {rows.filter((r) => r.status === "complete").length}/{rows.filter(
                 isOpen,

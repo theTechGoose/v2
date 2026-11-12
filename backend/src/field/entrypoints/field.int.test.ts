@@ -1770,3 +1770,35 @@ Deno.test("REQ-288 GET /field/regions/center — demo m5: an Austin, TX business
     );
   });
 });
+
+// REQ-365 — demo cycle 1, p15-17: "Miguel Torres · —" on /field/tasks
+Deno.test("REQ-365 a one-off task for a customer with no subscription answers regionId and regionName empty, never a dash", async () => {
+  await withServer(async (call) => {
+    const H = await login(call, "+15125551365");
+    const customer =
+      (await call("POST", "/customers", { name: "Nobody Zoned" }, H)).body;
+    const w = (await call("POST", "/field/workers", {
+      name: "Miguel Torres",
+      phoneNumber: "8435550365",
+      pin: "1234",
+    }, H)).body;
+    const today = fieldToday();
+    const made = await call("POST", "/field/tasks", {
+      customerId: customer.id,
+      date: today,
+      taskTypeName: "Mulch",
+      priceCents: 500,
+      workerId: w.id,
+    }, H);
+    assertEquals(made.status, 201);
+    assertEquals([made.body.regionId, made.body.regionName], ["", ""]);
+    const day =
+      (await call("GET", `/field/tasks?date=${today}`, undefined, H)).body;
+    const listed = day.find((t: { id: string }) => t.id === made.body.id);
+    assertEquals([listed.workerName, listed.regionId, listed.regionName], [
+      "Miguel Torres",
+      "",
+      "",
+    ]);
+  });
+});
