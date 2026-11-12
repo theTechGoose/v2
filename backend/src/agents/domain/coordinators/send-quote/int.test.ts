@@ -51,13 +51,14 @@ function fresh() {
   // SMS dispatch is best-effort; in dev (no TWILIO_* env) SmsService logs
   // instead of sending and never throws, so it doesn't affect these
   // email/status/bus assertions.
+  const sms = new SmsService();
   const smser = new SendPaperworkSms(
     quotes,
     invoices,
     customers,
     users,
     identity,
-    new SmsService(),
+    sms,
     new ShortLinkStore(),
     new LogPaperworkMessage(
       new CommConversationStore(),
@@ -80,6 +81,7 @@ function fresh() {
     bus,
     sentEmails,
     flow,
+    sms,
   };
 }
 
@@ -310,5 +312,86 @@ Deno.test("send-quote: rejects a quote id that doesn't match conv.quoteId", asyn
   );
   const reloaded = await ctx.quotes.getOwned(stray.id, "u-1");
   assertEquals(reloaded.status, "draft");
+  await resetKv();
+});
+
+// REQ-226 (demo: quote-invoice-money-m4, test-setup-claims-555-copy,
+// customers-payments-fieldops-m1): the divider of a failed text carries a
+// structured smsFailureCode the assistant branches on, and the reason the
+// contractor reads names neither Twilio nor its error code.
+async function sendSmsTo(phoneNumber: string | undefined) {
+  const ctx = await makeReadyConversation();
+  if (phoneNumber) {
+    await ctx.customers.update(ctx.customer.id, "u-1", { phoneNumber });
+  }
+  const r = await ctx.flow.run({
+    userId: "u-1",
+    conversationId: ctx.conv.id,
+    quoteId: ctx.quote.id,
+    channel: "sms",
+  });
+  return {
+    ctx,
+    payload: (r.newMessages[0].payload ?? {}) as {
+      textedTo?: string;
+      smsFailureReason?: string;
+      smsFailureCode?: string;
+    },
+    label: r.newMessages[0].content,
+  };
+}
+
+Deno.test("REQ-226 send-quote: a fictional 555-01XX phone on file fails with smsFailureCode 'fictional' and no Twilio/21211 in the copy", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const { payload, label } = await sendSmsTo("+15125550123");
+  assertEquals(payload.textedTo, undefined);
+  assertEquals(payload.smsFailureCode, "fictional");
+  assert(payload.smsFailureReason, "a reason is recorded");
+  assert(
+    !/twilio|21211/i.test(payload.smsFailureReason!),
+    `reason names no provider/code: ${payload.smsFailureReason}`,
+  );
+  assert(!/twilio|21211/i.test(label), `divider label: ${label}`);
+  await resetKv();
+});
+
+Deno.test("REQ-226 send-quote: no phone on file fails with smsFailureCode 'missing'", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const { payload } = await sendSmsTo(undefined);
+  assertEquals(payload.smsFailureCode, "missing");
+  await resetKv();
+});
+
+Deno.test("REQ-226 send-quote: Twilio's own 21211 rejection becomes smsFailureCode 'invalid' with plain copy", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const ctx0 = await makeReadyConversation();
+  ctx0.sms.send = () =>
+    Promise.resolve({
+      ok: false,
+      reason: "sms.invalidNumber",
+      code: 21211,
+      detail: "Invalid 'To' Phone Number",
+    });
+  await ctx0.customers.update(ctx0.customer.id, "u-1", {
+    phoneNumber: "+15126550123",
+  });
+  const r = await ctx0.flow.run({
+    userId: "u-1",
+    conversationId: ctx0.conv.id,
+    quoteId: ctx0.quote.id,
+    channel: "sms",
+  });
+  const payload = (r.newMessages[0].payload ?? {}) as {
+    smsFailureReason?: string;
+    smsFailureCode?: string;
+  };
+  assertEquals(payload.smsFailureCode, "invalid");
+  assert(
+    !/twilio|21211/i.test(payload.smsFailureReason ?? ""),
+    `reason names no provider/code: ${payload.smsFailureReason}`,
+  );
   await resetKv();
 });

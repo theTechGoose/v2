@@ -6,6 +6,7 @@ import { SendPaperworkEmail } from "@paperwork/domain/coordinators/send-paperwor
 import { SendPaperworkSms } from "@paperwork/domain/coordinators/send-paperwork-sms/mod.ts";
 import { EventBus } from "@core/business/events/mod.ts";
 import { t } from "@core/i18n/mod.ts";
+import type { SmsFailureCode } from "#quote-flow/sms-failure.ts";
 import type { AgentConversation } from "@agents/dto/conversation.ts";
 import type { AgentMessage } from "@agents/dto/message.ts";
 
@@ -83,6 +84,9 @@ export class SendQuote {
     let emailFailureReason: string | undefined;
     let textedTo: string | undefined;
     let smsFailureReason: string | undefined;
+    // REQ-226: the structured why — the assistant's recovery card branches
+    // on this, never on the translated reason.
+    let smsFailureCode: SmsFailureCode | undefined;
 
     // Stamp the send state on the FIRST dispatch. sentAt (not status) is the
     // guard: lock-quote flips status to "sent" without a timestamp, and the
@@ -137,7 +141,10 @@ export class SendQuote {
           language: input.language,
         });
         if (result.ok) textedTo = result.to;
-        else smsFailureReason = result.reason;
+        else {
+          smsFailureReason = result.reason;
+          smsFailureCode = result.failureCode ?? "other";
+        }
         console.log(
           `[send-quote] quote=${quote.id} sms ok=${result.ok} to=${
             result.to ?? "<none>"
@@ -145,6 +152,7 @@ export class SendQuote {
         );
       } catch (err) {
         smsFailureReason = (err as Error).message ?? "dispatch threw";
+        smsFailureCode = "other";
         console.error(
           `[send-quote] sms dispatch failed for quote ${quote.id}:`,
           err,
@@ -174,6 +182,7 @@ export class SendQuote {
         ...(emailFailureReason ? { emailFailureReason } : {}),
         ...(textedTo ? { textedTo } : {}),
         ...(smsFailureReason ? { smsFailureReason } : {}),
+        ...(smsFailureCode ? { smsFailureCode } : {}),
       },
     });
 
