@@ -6,8 +6,9 @@
  * the page itself is also route-gated on the super-admin flag, so this island
  * only ever renders for an actual super admin.
  *
- * Copy here is intentionally English-only (internal operator tool) — it
- * deliberately doesn't touch the i18n dictionaries.
+ * REQ-269 (demo i18n-formatting-m2): every string comes from the dictionaries
+ * (`adminPage.*`) through t(), so the console follows the app language and the
+ * topbar's EN/ES toggle like every other page.
  */
 import { useEffect, useState } from "preact/hooks";
 import { adminClient, type AdminUserView } from "../clients/admin.ts";
@@ -17,6 +18,7 @@ import {
   demoModeClient,
 } from "../clients/demo-mode.ts";
 import { fmtPhone } from "../lib/format.ts";
+import { t } from "../lib/i18n.ts";
 import { type FeatureKey, FEATURES } from "../../shared/features.ts";
 
 const wrap = "max-width:980px;margin:0 auto;padding:8px 4px 48px";
@@ -37,6 +39,13 @@ const tabStyle = (on: boolean) =>
 const btnDanger =
   "padding:7px 12px;border-radius:8px;border:1px solid #e3b7b7;background:#fff;color:#a83b3b;cursor:pointer;font:inherit;font-weight:600;white-space:nowrap";
 
+/** A feature's label/hint in the app language; a feature added to shared/features.ts
+ *  before its dictionary keys still shows its registry text, never a raw key. */
+function featureText(key: string, fallback: string): string {
+  const v = t(key);
+  return v === key ? fallback : v;
+}
+
 /** REQ-227 (demo-lifecycle-p2): `selfId` — the signed-in admin's own id; their own row offers
  *  neither Impersonate nor Demo (a demo on yourself makes you the customer AND the presenter) */
 export default function AdminPage({ selfId }: { selfId?: string }) {
@@ -56,7 +65,7 @@ export default function AdminPage({ selfId }: { selfId?: string }) {
     try {
       setRows(await adminClient.search(q.trim()));
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Search failed");
+      setError(err instanceof Error ? err.message : t("adminPage.err.search"));
     } finally {
       setLoading(false);
     }
@@ -77,7 +86,7 @@ export default function AdminPage({ selfId }: { selfId?: string }) {
         : await adminClient.grant(u.id);
       setRows((rs) => rs.map((r) => (r.id === u.id ? updated : r)));
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Update failed");
+      setError(err instanceof Error ? err.message : t("adminPage.err.update"));
     } finally {
       setBusyId(null);
     }
@@ -91,7 +100,7 @@ export default function AdminPage({ selfId }: { selfId?: string }) {
       const updated = await adminClient.setFeature(u.id, key, on);
       setRows((rs) => rs.map((r) => (r.id === u.id ? updated : r)));
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Update failed");
+      setError(err instanceof Error ? err.message : t("adminPage.err.update"));
     } finally {
       setBusyId(null);
     }
@@ -117,7 +126,7 @@ export default function AdminPage({ selfId }: { selfId?: string }) {
         }),
       );
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Demo failed");
+      setError(err instanceof Error ? err.message : t("adminPage.err.demo"));
       // no detail: the overlay asks the server and clears its Opening… pill
       globalThis.dispatchEvent(new Event(DEMO_STARTED_EVENT));
     } finally {
@@ -134,7 +143,9 @@ export default function AdminPage({ selfId }: { selfId?: string }) {
       // The server swapped the pm_session cookie; reload as the target user.
       globalThis.location.href = "/dashboard";
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Impersonate failed");
+      setError(
+        err instanceof Error ? err.message : t("adminPage.err.impersonate"),
+      );
       setBusyId(null);
     }
   }
@@ -143,12 +154,12 @@ export default function AdminPage({ selfId }: { selfId?: string }) {
     <div style={wrap}>
       <div style="margin:6px 4px 18px">
         <h1 style="margin:0 0 4px;font-size:22px;font-weight:800;color:var(--fg)">
-          Admin
+          {t("adminPage.title")}
         </h1>
         <p style="margin:0;color:var(--fg-muted,#6b7560);font-size:13.5px">
           {tab === "users"
-            ? "Search users, grant or revoke admin, and impersonate."
-            : "Switch features on or off per account."}
+            ? t("adminPage.lead.users")
+            : t("adminPage.lead.accounts")}
         </p>
       </div>
       <div role="tablist" style="display:flex;gap:8px;margin:0 4px 14px">
@@ -160,7 +171,7 @@ export default function AdminPage({ selfId }: { selfId?: string }) {
           style={tabStyle(tab === "users")}
           onClick={() => setTab("users")}
         >
-          Users
+          {t("adminPage.tab.users")}
         </button>
         <button
           type="button"
@@ -170,7 +181,7 @@ export default function AdminPage({ selfId }: { selfId?: string }) {
           style={tabStyle(tab === "accounts")}
           onClick={() => setTab("accounts")}
         >
-          Accounts
+          {t("adminPage.tab.accounts")}
         </button>
       </div>
 
@@ -184,10 +195,10 @@ export default function AdminPage({ selfId }: { selfId?: string }) {
             style={inputStyle}
             type="search"
             inputMode="tel"
-            placeholder="Search by phone (e.g. 512 555 or +1512)"
+            placeholder={t("adminPage.search.placeholder")}
             value={q}
             onInput={(e) => setQ((e.target as HTMLInputElement).value)}
-            aria-label="Search users by phone number"
+            aria-label={t("adminPage.search.aria")}
           />
           <button
             type="submit"
@@ -195,7 +206,7 @@ export default function AdminPage({ selfId }: { selfId?: string }) {
             style={btnPrimary}
             disabled={loading}
           >
-            {loading ? "Searching…" : "Search"}
+            {loading ? t("adminPage.searching") : t("adminPage.search")}
           </button>
         </form>
       </div>
@@ -215,11 +226,18 @@ export default function AdminPage({ selfId }: { selfId?: string }) {
             <table style="width:100%;border-collapse:collapse;font-size:13.5px">
               <thead>
                 <tr style="text-align:left;color:var(--fg-muted,#6b7560);font-size:11.5px;letter-spacing:.05em;text-transform:uppercase">
-                  <th style="padding:8px 10px">Account</th>
-                  <th style="padding:8px 10px">Phone</th>
+                  <th style="padding:8px 10px">{t("adminPage.col.account")}</th>
+                  <th style="padding:8px 10px">{t("adminPage.col.phone")}</th>
                   {FEATURES.map((f) => (
-                    <th key={f.key} style="padding:8px 10px" title={f.hint}>
-                      {f.label}
+                    <th
+                      key={f.key}
+                      style="padding:8px 10px"
+                      title={featureText(
+                        `adminPage.feature.${f.key}.hint`,
+                        f.hint,
+                      )}
+                    >
+                      {featureText(`adminPage.feature.${f.key}`, f.label)}
                     </th>
                   ))}
                 </tr>
@@ -262,7 +280,9 @@ export default function AdminPage({ selfId }: { selfId?: string }) {
                               )}
                           />
                           <span style="font-size:12.5px;color:var(--fg-muted,#6b7560)">
-                            {u.features?.[f.key] === true ? "on" : "off"}
+                            {u.features?.[f.key] === true
+                              ? t("adminPage.feature.on")
+                              : t("adminPage.feature.off")}
                           </span>
                         </label>
                       </td>
@@ -285,7 +305,7 @@ export default function AdminPage({ selfId }: { selfId?: string }) {
               style="font-size:12px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--fg-muted,#6b7560)"
               for="impersonate-select"
             >
-              Impersonate
+              {t("adminPage.impersonate")}
             </label>
             <select
               id="impersonate-select"
@@ -294,10 +314,11 @@ export default function AdminPage({ selfId }: { selfId?: string }) {
               onChange={(e) =>
                 setImpersonateId((e.target as HTMLSelectElement).value)}
             >
-              <option value="">Select a user…</option>
+              <option value="">{t("adminPage.selectUser")}</option>
               {rows.map((u) => (
                 <option key={u.id} value={u.id}>
-                  {(u.name || u.businessName || "Unnamed") + " · " +
+                  {(u.name || u.businessName || t("adminPage.unnamed")) +
+                    " · " +
                     fmtPhone(u.phoneNumber)}
                 </option>
               ))}
@@ -308,7 +329,7 @@ export default function AdminPage({ selfId }: { selfId?: string }) {
               disabled={!impersonateId || busyId !== null}
               onClick={() => impersonate(impersonateId)}
             >
-              Go
+              {t("adminPage.go")}
             </button>
           </div>
 
@@ -316,11 +337,15 @@ export default function AdminPage({ selfId }: { selfId?: string }) {
             <table style="width:100%;border-collapse:collapse;font-size:13.5px">
               <thead>
                 <tr style="text-align:left;color:var(--fg-muted,#6b7560);font-size:11.5px;letter-spacing:.05em;text-transform:uppercase">
-                  <th style="padding:8px 10px">Name</th>
-                  <th style="padding:8px 10px">Phone</th>
-                  <th style="padding:8px 10px">Business</th>
-                  <th style="padding:8px 10px">Admin</th>
-                  <th style="padding:8px 10px;text-align:right">Actions</th>
+                  <th style="padding:8px 10px">{t("adminPage.col.name")}</th>
+                  <th style="padding:8px 10px">{t("adminPage.col.phone")}</th>
+                  <th style="padding:8px 10px">
+                    {t("adminPage.col.business")}
+                  </th>
+                  <th style="padding:8px 10px">{t("adminPage.col.admin")}</th>
+                  <th style="padding:8px 10px;text-align:right">
+                    {t("adminPage.col.actions")}
+                  </th>
                 </tr>
               </thead>
               <tbody>
@@ -342,10 +367,14 @@ export default function AdminPage({ selfId }: { selfId?: string }) {
                       {u.superAdmin
                         ? (
                           <span style="display:inline-block;padding:2px 8px;border-radius:999px;background:#e7f3e3;color:#2f6d29;font-size:11.5px;font-weight:700">
-                            yes
+                            {t("adminPage.yes")}
                           </span>
                         )
-                        : <span style="color:var(--fg-muted,#9aa394)">no</span>}
+                        : (
+                          <span style="color:var(--fg-muted,#9aa394)">
+                            {t("adminPage.no")}
+                          </span>
+                        )}
                     </td>
                     <td style="padding:10px;text-align:right;white-space:nowrap">
                       <button
@@ -357,8 +386,8 @@ export default function AdminPage({ selfId }: { selfId?: string }) {
                         {busyId === u.id
                           ? "…"
                           : u.superAdmin
-                          ? "Revoke"
-                          : "Grant"}
+                          ? t("adminPage.revoke")
+                          : t("adminPage.grant")}
                       </button>
                       {u.id !== selfId && (
                         <>
@@ -368,12 +397,12 @@ export default function AdminPage({ selfId }: { selfId?: string }) {
                             disabled={busyId !== null}
                             onClick={() => impersonate(u.id)}
                           >
-                            Impersonate
+                            {t("adminPage.impersonate")}
                           </button>
                           <button
                             type="button"
                             data-cy="adm-demo"
-                            title="Demo mode: guide this user with a live pointer on their screen"
+                            title={t("adminPage.demo.title")}
                             style={btnSecondary + ";margin-left:8px" +
                               (busyId === u.id
                                 ? ";opacity:.65;cursor:wait"
@@ -381,7 +410,9 @@ export default function AdminPage({ selfId }: { selfId?: string }) {
                             disabled={busyId !== null}
                             onClick={() => demo(u.id, u.name || u.phoneNumber)}
                           >
-                            {busyId === u.id ? "Opening…" : "Demo"}
+                            {busyId === u.id
+                              ? t("adminPage.opening")
+                              : t("adminPage.demo")}
                           </button>
                         </>
                       )}
@@ -396,12 +427,12 @@ export default function AdminPage({ selfId }: { selfId?: string }) {
 
       {loading && rows.length === 0 && (
         <div style="text-align:center;color:var(--fg-muted,#9aa394);font-size:13.5px;padding:24px">
-          Loading users…
+          {t("adminPage.loading")}
         </div>
       )}
       {!loading && rows.length === 0 && (
         <div style="text-align:center;color:var(--fg-muted,#9aa394);font-size:13.5px;padding:24px">
-          No users found.
+          {t("adminPage.empty")}
         </div>
       )}
     </div>

@@ -525,7 +525,10 @@ describe("REQ-232 the wiring: plain words, no auto-placement, Return really retu
   const es = JSON.parse(read("lang/es.json")) as Record<string, string>;
   const overlay = read("front-end/islands/DemoModeOverlay.tsx");
   const stageSrc = read("front-end/islands/DemoStage.tsx");
-  const banner = read("front-end/islands/ImpersonationBanner.tsx");
+  // REQ-269 (i18n-m2): the bar's markup lives in its translated view component
+  // (reconciled on demo-fixes) — the island keeps the stop() logic.
+  const banner = read("front-end/islands/ImpersonationBanner.tsx") +
+    read("front-end/components/ImpersonationBannerView.tsx");
 
   test("both dictionaries say plainly whether the demo is live — never accept, never direct or relay", () => {
     for (

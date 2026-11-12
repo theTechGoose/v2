@@ -24,9 +24,8 @@
 import { useEffect, useRef, useState } from "preact/hooks";
 import { adminClient, type WhoAmI } from "../clients/admin.ts";
 import { demoModeClient } from "../clients/demo-mode.ts";
-import { t } from "../lib/i18n.ts";
-import { fmtPhone } from "../lib/format.ts";
 import { clearBannerRoom, setBannerRoom } from "../lib/banner-room.ts";
+import { ImpersonationBannerView } from "../components/ImpersonationBannerView.tsx";
 
 export default function ImpersonationBanner() {
   const [who, setWho] = useState<WhoAmI | null>(null);
@@ -71,11 +70,6 @@ export default function ImpersonationBanner() {
 
   if (!shown || !who) return null;
 
-  const acting = who.user;
-  const actingLabel = acting
-    ? (acting.name || acting.businessName || fmtPhone(acting.phoneNumber))
-    : "another user";
-
   /** REQ-232 (M21) — `confirmed`: the staff said yes to leaving the demo they present */
   async function stop(confirmed = false) {
     setBusy(true);
@@ -102,56 +96,15 @@ export default function ImpersonationBanner() {
     }
   }
 
-  const btn =
-    "padding:5px 12px;border-radius:8px;border:0;background:#fff;color:#7a2e2e;cursor:pointer;font:inherit;font-weight:700";
-
   return (
-    <div
-      ref={el}
-      // REQ-153 — demo mode's pointer paths never count this banner (the staff side alone has it)
-      data-demo-skip
-      role="status"
-      data-cy="imp-banner"
-      style="position:fixed;top:0;left:0;right:0;z-index:9999;display:flex;gap:12px;align-items:center;justify-content:center;flex-wrap:wrap;padding:8px 14px;background:#7a2e2e;color:#fff;font:inherit;font-size:13px;font-weight:600;box-shadow:0 1px 6px rgba(0,0,0,.25)"
-    >
-      <span>
-        Impersonating <strong>{actingLabel}</strong>
-        {who.impersonator?.name ? ` (as ${who.impersonator.name})` : ""}
-      </span>
-      {leaving
-        ? (
-          <>
-            <span>{t("demoMode.returnAsk", { name: leaving.name })}</span>
-            <button
-              type="button"
-              data-cy="imp-leave-demo"
-              onClick={() => stop(true)}
-              disabled={busy}
-              style={btn}
-            >
-              {busy ? "Returning…" : t("demoMode.leave")}
-            </button>
-            <button
-              type="button"
-              data-cy="imp-leave-cancel"
-              onClick={() => setLeaving(null)}
-              disabled={busy}
-              style="padding:5px 12px;border-radius:8px;border:1px solid rgba(255,255,255,.7);background:transparent;color:#fff;cursor:pointer;font:inherit;font-weight:700"
-            >
-              {t("common.cancel")}
-            </button>
-          </>
-        )
-        : (
-          <button
-            type="button"
-            onClick={() => stop()}
-            disabled={busy}
-            style={btn}
-          >
-            {busy ? "Returning…" : "Return to your account"}
-          </button>
-        )}
-    </div>
+    <ImpersonationBannerView
+      who={who}
+      busy={busy}
+      onStop={() => stop()}
+      el={el}
+      leaving={leaving}
+      onLeave={() => stop(true)}
+      onCancelLeave={() => setLeaving(null)}
+    />
   );
 }
