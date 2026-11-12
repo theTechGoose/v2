@@ -445,6 +445,13 @@ Deno.test("REQ-232 (M21): Return to your account on the stage asks first, leaves
           banner.includes("Ana Torres"),
           `the question names the customer ("${banner}")`,
         );
+        // REQ-298 — Hans is the only presenter: the question says leaving ends the demo
+        expect(
+          banner.includes(
+            "You are the only presenter — leaving ends the demo for Ana Torres.",
+          ),
+          `REQ-298: the only presenter is told leaving ends the demo ("${banner}")`,
+        );
         await ask.click();
       }
       await until(

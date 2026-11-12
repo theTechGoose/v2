@@ -34,6 +34,9 @@
  * turns at once into a notice of who ended it ("{name} ended the demo", "You ended the demo"),
  * kept until dismissed or a new demo starts. On /admin it says what a stage handed over on its
  * way there (`?demo=ended&by=…`), once.
+ * REQ-298 (demo-loop cycle 1, M5 + M17) — a restart is said: a demo that arrives while the ended
+ * notice is up, or within 30 s of an end, puts "{name} started a new demo" in the pill (with a
+ * pulse) for a few seconds before the plain "is guiding you" line — never a silent replacement.
  */
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import { t } from "../lib/i18n.ts";
@@ -58,6 +61,11 @@ import {
   createMirrorSender,
   type MirrorSender,
 } from "../../shared/demo-mode/mirror.ts";
+import {
+  type RestartNotice,
+  restartNotice,
+  startedText,
+} from "../../shared/demo-mode/restart.ts";
 import {
   MOVE_GAP_DIRECT_MS,
   MOVE_GAP_RELAY_MS,
@@ -169,6 +177,12 @@ export default function DemoModeOverlay() {
   const seq = useRef(0);
   /** REQ-235 — the demo is over: who ended it, said until dismissed (or a new demo starts) */
   const [notice, setNotice] = useState<EndedNotice | null>(null);
+  /** REQ-298 — the demo that just arrived is a restart: the pill says so for a few seconds */
+  const [fresh, setFresh] = useState(false);
+  const restartRef = useRef<RestartNotice | null>(null);
+  if (!restartRef.current) {
+    restartRef.current = restartNotice({ onChange: setFresh });
+  }
   const linkRef = useRef<DemoLink | null>(null);
   /** REQ-228 — the pill, where it sits, and whether it is the phone's compact one */
   const pillRef = useRef<HTMLDivElement | null>(null);
@@ -295,10 +309,18 @@ export default function DemoModeOverlay() {
       ADMIN_PATH + got.rest + globalThis.location.hash,
     );
   }, []);
-  // REQ-235 — a new demo takes the notice's place
+  // REQ-235 — an end opens REQ-298's window (the notice up, or 30 s): the next demo is a restart
   useEffect(() => {
-    if (demo) setNotice(null);
+    if (notice) restartRef.current?.ended();
+  }, [notice]);
+  // REQ-235 — a new demo takes the notice's place; REQ-298 — a restart is SAID first, never a
+  // silent swap: "{name} started a new demo" in the pill for a few seconds
+  useEffect(() => {
+    if (!demo) return;
+    restartRef.current?.started(notice !== null);
+    setNotice(null);
   }, [demo?.id]);
+  useEffect(() => () => restartRef.current?.dispose(), []);
 
   // 1. is there a demo for this session? on load, every 5 s while this side is not connected to the
   //    other, and when /admin opens one here. Every ask says where this app is. REQ-232 — the answer
@@ -680,6 +702,11 @@ export default function DemoModeOverlay() {
   const guidingText = presenters.length > 1
     ? t("demoMode.guidingMany", { names })
     : t("demoMode.guiding", { name: names });
+  // REQ-298 — just restarted: the line says so (and the pill pulses) before "is guiding you"
+  const started = fresh
+    ? startedText(demo.presenters, demo.presenterName)
+    : null;
+  const line = started ? t(started.key, started.vars) : guidingText;
   // REQ-232 (demo-lifecycle-p1) — plain words: is the staff here or not; never how the bytes travel
   const statusLabel = status === "ended"
     ? t("demoMode.ended")
@@ -713,23 +740,43 @@ export default function DemoModeOverlay() {
           bounds={viewportBox()}
         />
       ))}
-      <div ref={pillRef} data-cy="demo-pill" role="status" style={pillStyle}>
+      {started && (
+        <style>
+          {`@keyframes pmDemoPulse{0%{box-shadow:0 4px 18px rgba(0,0,0,.35),0 0 0 0 rgba(255,255,255,.75)}100%{box-shadow:0 4px 18px rgba(0,0,0,.35),0 0 0 14px rgba(255,255,255,0)}}`}
+        </style>
+      )}
+      <div
+        ref={pillRef}
+        data-cy="demo-pill"
+        data-restarted={started ? "" : undefined}
+        role="status"
+        style={started
+          ? `${pillStyle};animation:pmDemoPulse 1.1s ease-out 3`
+          : pillStyle}
+      >
         <span
           data-cy="demo-details"
+          // REQ-298 — a restart is said even on the phone's compact pill
           style={`display:${
-            compact && !open ? "none" : "inline-flex"
+            compact && !open && !started ? "none" : "inline-flex"
           };gap:10px;align-items:center;${cut}`}
         >
           <strong>{t("demoMode.title")}</strong>
-          <span style={cut}>{guidingText}</span>
+          {started
+            ? (
+              <span data-cy="demo-restarted" style={cut}>
+                {line}
+              </span>
+            )
+            : <span style={cut}>{line}</span>}
           <PresenterChips presenters={presenters} nowrap />
         </span>
         <button
           type="button"
           data-cy="demo-more"
           aria-expanded={!compact || open}
-          aria-label={guidingText}
-          title={guidingText}
+          aria-label={line}
+          title={line}
           onClick={() => setOpen((o) => !o)}
           style={`display:inline-flex;align-items:center;gap:6px;padding:0;border:0;background:none;color:inherit;font:inherit;cursor:${
             compact ? "pointer" : "default"

@@ -609,7 +609,9 @@ describe("REQ-232 the wiring: plain words, no auto-placement, Return really retu
     expect(leave).toBeGreaterThan(-1);
     expect(back).toBeGreaterThan(leave);
     expect(banner).toContain('data-cy="imp-leave-demo"');
-    expect(banner).toContain('t("demoMode.returnAsk"');
+    // REQ-298 — the question's copy comes from returnAskText (alone: leaving ends the demo)
+    expect(banner).toMatch(/returnAskText\(/);
+    expect(banner).toContain('data-cy="imp-leave-ask"');
     const controller = read(
       "backend/src/demo-mode/entrypoints/demo-mode-controller/mod.ts",
     );
