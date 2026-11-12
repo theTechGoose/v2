@@ -207,6 +207,20 @@ export const assistantClient = {
       opts,
     ),
 
+  /** REQ-334 (demo-loop cycle 1, M25): the locked card's "Re-open" — the
+   *  inverse of lockQuote. The server leaves the terms wizard, drops the
+   *  locked card + CTA and clears lockedAt; the draft card is back. */
+  reopenQuote: (conversationId: string, quoteId: string, opts: ApiOptions = {}) =>
+    api.post<{
+      conversation: Conversation;
+      removedMessageIds: string[];
+      newMessages: Message[];
+    }>(
+      `/agents/conversations/${conversationId}/reopen-quote`,
+      { quoteId },
+      opts,
+    ),
+
   /** Dev-only: simulate the customer signing the quote — the single
    *  customer-facing acceptance event in the chain. Flips quote→
    *  accepted, emits the chat phase_divider + "Continue to invoice"

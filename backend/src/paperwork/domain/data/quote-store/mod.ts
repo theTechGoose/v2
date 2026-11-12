@@ -263,6 +263,18 @@ export class QuoteStore {
     return updated;
   }
 
+  /** REQ-334 (demo-loop cycle 1, M25): the inverse of the lock stamp — drop
+   *  `lockedAt` so a locked-but-unsent quote is a plain draft again.
+   *  `update` ignores undefined, so this is its own write. */
+  async unlock(id: string, userId: string): Promise<Quote> {
+    const existing = await this.getOwned(id, userId);
+    const { lockedAt: _lockedAt, ...rest } = existing;
+    const updated: Quote = { ...rest, updatedAt: new Date().toISOString() };
+    const kv = await getKv();
+    await kv.set([PREFIX, id], updated);
+    return updated;
+  }
+
   /** REQ-039 (NW-52): "do not delete data, flag it" — soft delete. The
    *  row and the owner index stay; reads and lists hide it. */
   async delete(id: string, userId: string): Promise<void> {

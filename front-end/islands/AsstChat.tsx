@@ -69,6 +69,7 @@ import { versionTitle } from "../../shared/quote-flow/version-titles.ts";
 import {
   cardChipKey,
   isLockedOrIssued,
+  reopenActionFor,
 } from "../../shared/quote-flow/quote-lock.ts";
 import { deriveChatHeader } from "../../shared/quote-flow/chat-header.ts";
 import { pendingRevisionNotice } from "../../shared/documents/versions.ts";
@@ -3677,6 +3678,47 @@ export default function AsstChat({
       });
     } catch (err) {
       setError(err instanceof Error ? err.message : "couldn't lock the quote");
+    } finally {
+      setSending(false);
+    }
+  }
+
+  /**
+   * REQ-334 (demo-loop cycle 1, M25): the locked card's "Re-open" — the
+   * inverse of lockActionCard. It used to post the chat text "Re-open the
+   * quote." which nothing handled (the terms prompt answered it with "Tap
+   * \"Re-open the quote\" to go back to phase 1"). Now a locked quote is
+   * re-opened for real on the server (leave the wizard, drop the locked card
+   * + CTA, clear lockedAt) and the transcript reloads on the draft card with
+   * Lock it in / Edit. A quote already SENT can't be un-sent: the change
+   * goes down the revision path, so Re-open seeds the composer with the
+   * "Change the quote: " prompt (REQ-238).
+   */
+  async function reopenActionCard(message: Message, payload: ActionCardPayload) {
+    if (sending || !convoId || !payload.quoteId) return;
+    if (reopenActionFor(payload.status) === "revise") {
+      openDraftEdit();
+      return;
+    }
+    if (reopenActionFor(payload.status) !== "unlock") return;
+    setError(undefined);
+    setSending(true);
+    setPreviewCtaId(null);
+    try {
+      const res = await assistantClient.reopenQuote(convoId, payload.quoteId);
+      const snap = await assistantClient.conversation(convoId);
+      if (snap && Array.isArray(snap.messages)) {
+        setMessages(snap.messages);
+      } else {
+        const gone = new Set([message.id, ...res.removedMessageIds]);
+        setMessages((m) => [...m.filter((x) => !gone.has(x.id)), ...res.newMessages]);
+      }
+      // The chat header reads quote.lockedAt — drop the stamp locally too.
+      setQuote((cur) =>
+        cur && cur.id === payload.quoteId ? { ...cur, lockedAt: null } : cur
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "couldn't re-open the quote");
     } finally {
       setSending(false);
     }
@@ -8286,8 +8328,8 @@ export default function AsstChat({
                                 <button
                                   type="button"
                                   class="action-card__btn"
-                                  onClick={() => sendText("Re-open the quote.")}
-                                  disabled={sending}
+                                  onClick={() => reopenActionCard(m, payload)}
+                                  disabled={sending || !payload.quoteId}
                                 >
                                   <I d={ICN.refresh} size={11} />{" "}
                                   {tFor(lang, "asstChat.actionCard.reopen")}

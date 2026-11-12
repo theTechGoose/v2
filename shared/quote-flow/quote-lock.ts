@@ -54,3 +54,22 @@ export function cardChipKey(status: string | undefined | null): string {
 export function isLockedOrIssued(status: string | undefined | null): boolean {
   return status === QUOTE_LOCKED || status === "sent";
 }
+
+/**
+ * REQ-334 (demo-loop cycle 1, M25): what the in-chat card's "Re-open" does.
+ *  - `unlock`: the quote is locked but never sent — re-open it for real
+ *    (ReopenQuote: leave terms, clear lockedAt, back to the draft card).
+ *  - `revise`: the quote is already issued — nothing can be un-sent; the
+ *    change goes down the revision path (the composer's "Change the quote: ").
+ *  - `none`: a draft has nothing to re-open.
+ */
+export type ReopenAction = "unlock" | "revise" | "none";
+
+export function reopenActionFor(
+  status: string | undefined | null,
+): ReopenAction {
+  const s = (status ?? "").toLowerCase();
+  if (s === QUOTE_LOCKED) return "unlock";
+  if (ISSUED.has(s)) return "revise";
+  return "none";
+}
