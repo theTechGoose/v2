@@ -116,9 +116,12 @@ import {
   versionTitle,
 } from "../../shared/quote-flow/version-titles.ts"; // REQ-446
 import {
+  becameSigned,
   cardChipKey,
+  cardReopenAction,
   isLockedOrIssued,
-  reopenActionFor,
+  liveCardQuote,
+  quoteAnswered,
 } from "../../shared/quote-flow/quote-lock.ts";
 import {
   deriveChatHeader,
@@ -2132,7 +2135,14 @@ export default function AsstChat({
   // and a row whose lifecycle moved (signed, declined, a new version) is
   // taken — the header, the cards, the list chip and the recovery form say
   // what a reload says; a re-read with nothing new leaves the row alone.
-  // (A public signature adds no message to the thread: the row is what moves.)
+  // REQ-563 (cycle 4, m3): a public signature also adds the server's
+  // "… signed …" divider to the thread, so the row turning signed re-reads
+  // the transcript too. The refs give the async re-read the row and thread
+  // as they are now, not as they were when this effect ran.
+  const quoteNow = useRef(quote);
+  quoteNow.current = quote;
+  const convoIdNow = useRef(convoId);
+  convoIdNow.current = convoId;
   useEffect(() => {
     const rowId = quote?.id;
     if (typeof globalThis.window === "undefined" || !rowId) return;
@@ -2147,6 +2157,16 @@ export default function AsstChat({
               ? { ...cur, ...fresh } as typeof cur
               : cur
           );
+          // REQ-563 (cycle 4, m3): the signature wrote "… signed Q-001 ·
+          // deposit INV-001 …" into this thread — show it now, not on reload.
+          const thread = convoIdNow.current;
+          if (thread && becameSigned(quoteNow.current, fresh)) {
+            return assistantClient.conversation(thread).then((snap) => {
+              if (!cancelled && Array.isArray(snap?.messages)) {
+                setMessages(snap.messages);
+              }
+            });
+          }
         }),
     );
     return () => {
@@ -4399,11 +4419,17 @@ export default function AsstChat({
    */
   async function reopenActionCard(message: Message, payload: ActionCardPayload) {
     if (sending || !convoId || !payload.quoteId) return;
-    if (reopenActionFor(payload.status) === "revise") {
+    // REQ-563 (cycle 4, m3): the live quote decides, not the card's snapshot
+    // — a "locked" card whose quote went out revises; a signed one does nothing.
+    const action = cardReopenAction(
+      payload.status,
+      liveCardQuote(payload, ruleQuote),
+    );
+    if (action === "revise") {
       openDraftEdit();
       return;
     }
-    if (reopenActionFor(payload.status) !== "unlock") return;
+    if (action !== "unlock") return;
     setError(undefined);
     setSending(true);
     setPreviewCtaId(null);
@@ -9453,7 +9479,9 @@ export default function AsstChat({
                               )
                               : null}
                           </div>
-                          {payload.status === "draft" && !isSuperseded
+                          {payload.status === "draft" && !isSuperseded &&
+                              // REQ-563: no Lock/Edit on a quote already answered
+                              !quoteAnswered(liveCardQuote(payload, ruleQuote))
                             ? (
                               <div class="action-card__cta">
                                 <button
@@ -9479,7 +9507,13 @@ export default function AsstChat({
                               </div>
                             )
                             : null}
-                          {isLockedOrIssued(payload.status)
+                          {
+                              // REQ-563 (cycle 4, m3): Re-open follows the
+                              // live quote — none once the customer signed.
+                              cardReopenAction(
+                                  payload.status,
+                                  liveCardQuote(payload, ruleQuote),
+                                ) !== "none"
                             ? (
                               <div class="action-card__cta">
                                 <button

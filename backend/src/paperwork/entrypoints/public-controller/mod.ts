@@ -15,6 +15,7 @@ import { NotFoundError } from "@core/data/repository/mod.ts";
 import { SendSignedConfirmation } from "@paperwork/domain/coordinators/send-signed-confirmation/mod.ts";
 import { signedConfirmChannel } from "@paperwork/domain/business/customer-sms/mod.ts";
 import { SendAcceptedAlert } from "@paperwork/domain/coordinators/send-accepted-alert/mod.ts";
+import { QuoteSignedPort } from "@paperwork/domain/coordinators/quote-signed-port/mod.ts"; // REQ-563
 import { SendInquiryAlert } from "@paperwork/domain/coordinators/send-inquiry-alert/mod.ts";
 import { RenderInvoicePdf } from "@paperwork/domain/coordinators/render-invoice-pdf/mod.ts";
 import { RenderQuotePdf } from "@paperwork/domain/coordinators/render-quote-pdf/mod.ts";
@@ -204,6 +205,8 @@ export class PaperworkPublicController {
     private quotePdf: RenderQuotePdf,
     private payments: PaymentStore,
     private sessions: SessionStore,
+    // REQ-563: optional so a hand-built controller (tests) needs no chat
+    private signedChat?: QuoteSignedPort,
   ) {}
 
   /**
@@ -858,11 +861,22 @@ export class PaperworkPublicController {
     // because a second accept 409s before reaching here, and the coordinator
     // stamps acceptedNotifiedAt as its own replay guard. Errors MUST NOT
     // fail the customer's accept — the acceptance is captured regardless.
-    await this.signedConfirmation.run(updated.id).catch((err) => {
-      console.error(
-        `[quotes/${updated.id}/accept] signed-confirmation failed:`,
-        err,
-      );
+    const confirmed = await this.signedConfirmation.run(updated.id).catch(
+      (err) => {
+        console.error(
+          `[quotes/${updated.id}/accept] signed-confirmation failed:`,
+          err,
+        );
+        return undefined;
+      },
+    );
+    // REQ-563 (demo-loop cycle 4, m3): the owner's chat says who signed and
+    // the invoice that went out — after the confirmation, so it can name it.
+    // Never fails the accept (the port logs its own errors).
+    await this.signedChat?.run({
+      userId: existing.userId,
+      quoteId: updated.id,
+      ...(confirmed?.invoiceId ? { invoiceId: confirmed.invoiceId } : {}),
     });
     return ctx.json({ ok: true, quoteId: updated.id });
   }

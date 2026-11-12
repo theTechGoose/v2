@@ -111,6 +111,8 @@ describe("REQ-234 AsstChat wiring", () => {
   });
 
   it("a locked card keeps the Re-open action (the old status==='sent' gate is gone)", () => {
-    expect(src).toMatch(/isLockedOrIssued\(payload\.status\)/);
+    // REQ-563 AMENDMENT: gated on cardReopenAction (locked/issued card AND
+    // the live quote not yet answered) instead of the card's snapshot.
+    expect(src).toMatch(/cardReopenAction\(\s*payload\.status,/);
   });
 });

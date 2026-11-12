@@ -6,6 +6,11 @@ import { QuoteStore } from "@paperwork/domain/data/quote-store/mod.ts";
 import { UserStore } from "@users/domain/data/user-store/mod.ts";
 import { EventBus } from "@core/business/events/mod.ts";
 import { isAccepted } from "#quote-flow/quote-status.ts";
+import { InvoiceStore } from "@paperwork/domain/data/invoice-store/mod.ts";
+import {
+  type QuoteSignedEvent,
+  QuoteSignedPort,
+} from "@paperwork/domain/coordinators/quote-signed-port/mod.ts";
 import type { AgentConversation } from "@agents/dto/conversation.ts";
 import type { AgentMessage } from "@agents/dto/message.ts";
 
@@ -47,7 +52,84 @@ export class AcceptQuote {
     private quotes: QuoteStore,
     private users: UserStore,
     private bus: EventBus,
-  ) {}
+    // REQ-563: optional so the hand-built coordinator (its own tests) runs
+    // without them; the app injects both and registers on the port.
+    private invoices?: InvoiceStore,
+    port?: QuoteSignedPort,
+  ) {
+    port?.register((e) => this.recordSigned(e));
+  }
+
+  /**
+   * REQ-563 (demo-loop cycle 4, m3): the customer signed on the public /q
+   * page. Every thread of the owner's bound to that quote gets ONE system
+   * divider naming who signed, the quote number and the invoice the
+   * signature billed — "Linda Perez signed Q-001 · deposit INV-001 $1,425.00
+   * sent" — in the owner's language, and the row carries the invoice (so the
+   * list's chip and the header both read "Signed · Invoiced"), the unread
+   * badge and the preview. The quote itself is already accepted and billed by
+   * the public route; this only tells the chat. A replay is a no-op.
+   */
+  async recordSigned(e: QuoteSignedEvent): Promise<AgentMessage[]> {
+    const quote = await this.quotes.getOwned(e.quoteId, e.userId);
+    const convs = (await this.conversations.listByUser(e.userId, {
+      limit: 1000,
+    })).filter((c) => c.quoteId === quote.id);
+    if (convs.length === 0) return [];
+    const me = await this.users.get(e.userId).catch(() => null);
+    const lang = me?.language === "es" ? "es" : "en";
+    const invoice = e.invoiceId && this.invoices
+      ? await this.invoices.getOwned(e.invoiceId, e.userId).catch(() => null)
+      : null;
+    const vars = {
+      name: quote.acceptedName?.trim() || t(lang, "acceptQuote.signed.someone"),
+      quote: quote.number?.trim() || t(lang, "acceptQuote.signed.theQuote"),
+      invoice: invoice?.number ?? "",
+      amount: fmtUSD(invoice?.amount),
+    };
+    const key = !invoice
+      ? "acceptQuote.signed.plain"
+      : (invoice.installmentTotal ?? 1) > 1
+      ? "acceptQuote.signed.deposit"
+      : "acceptQuote.signed.invoice";
+    const label = t(lang, key, vars);
+    const out: AgentMessage[] = [];
+    for (const conv of convs) {
+      const prior = await this.messages.listByConversation(conv.id);
+      if (
+        prior.some((m) =>
+          m.kind === "phase_divider" && m.payload?.signed === true &&
+          m.payload?.quoteId === quote.id
+        )
+      ) continue;
+      out.push(
+        await this.messages.append({
+          conversationId: conv.id,
+          role: "system",
+          kind: "phase_divider",
+          content: label,
+          payload: {
+            phase: 4,
+            label,
+            quoteId: quote.id,
+            signed: true,
+            ...(invoice
+              ? { invoiceId: invoice.id, invoiceStatus: invoice.status }
+              : {}),
+          },
+        }),
+      );
+      await this.conversations.update(conv.id, {
+        hasUnreadEvent: true,
+        quoteStatus: "accepted",
+        preview: `✓ ${label}`,
+        ...(invoice
+          ? { invoiceId: invoice.id, invoiceStatus: invoice.status }
+          : {}),
+      });
+    }
+    return out;
+  }
 
   async run(input: AcceptQuoteInput): Promise<AcceptQuoteResult> {
     const conv = await this.conversations.get(input.conversationId);
@@ -111,4 +193,15 @@ export class AcceptQuote {
 
     return { conversation: updatedConv, newMessages: [note, cta] };
   }
+}
+
+/** "$1,425.00" from integer cents (the signed confirmation's format). */
+function fmtUSD(cents: number | undefined): string {
+  if (typeof cents !== "number" || !Number.isFinite(cents)) return "";
+  return `$${
+    (cents / 100).toLocaleString("en-US", {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    })
+  }`;
 }
