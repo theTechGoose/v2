@@ -1,7 +1,7 @@
 import Backdrop from "../components/Backdrop.tsx";
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import { I, ICN } from "../lib/dash-icons.tsx";
-import { detailLines } from "../lib/format.ts";
+import { detailLines, fmtPhone } from "../lib/format.ts";
 import { settledSendCtaIds } from "../lib/send-cta-settled.ts";
 import {
   computePaymentSplit,
@@ -72,7 +72,10 @@ import {
   isLockedOrIssued,
   reopenActionFor,
 } from "../../shared/quote-flow/quote-lock.ts";
-import { deriveChatHeader } from "../../shared/quote-flow/chat-header.ts";
+import {
+  deriveChatHeader,
+  headerTone,
+} from "../../shared/quote-flow/chat-header.ts";
 import { pendingRevisionNotice } from "../../shared/documents/versions.ts";
 import { scopeBulletsFromRaw } from "../../shared/quote-flow/scope-from-raw.ts";
 import {
@@ -1803,15 +1806,17 @@ export default function AsstChat({
           )?.status,
           hasQuoteCard: !!lastQuoteCard,
         }) === "asstChat.header.notDelivered";
-    const status = tFor(
-      lang,
-      undelivered ? "asstChat.header.notDelivered" : header.statusKey,
-    );
+    const statusKey = undelivered
+      ? "asstChat.header.notDelivered"
+      : header.statusKey;
+    const status = tFor(lang, statusKey);
     const headerClient = header.clientName ??
       tFor(lang, header.clientKey ?? "asstChat.header.newConversation");
+    // REQ-327: the tone rides with the status so "Not delivered" is red,
+    // not the live green dot.
     globalThis.window.dispatchEvent(
       new CustomEvent("pm:asst-header", {
-        detail: { client: headerClient, status },
+        detail: { client: headerClient, status, tone: headerTone(statusKey) },
       }),
     );
   }, [
@@ -7827,7 +7832,11 @@ export default function AsstChat({
                                             : "asstChat.cta.emailedTo",
                                         )}
                                         {" "}
-                                        <code>{sentRecipient}</code>
+                                        <code>
+                                          {dispatchedChannel === "sms"
+                                            ? fmtPhone(sentRecipient)
+                                            : sentRecipient}
+                                        </code>
                                       </>
                                     )
                                     : dispatchFailReason

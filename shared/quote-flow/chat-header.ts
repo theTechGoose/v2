@@ -85,6 +85,15 @@ export interface ChatHeader {
 }
 
 const K = "asstChat.header.";
+
+/** REQ-327: how the status line should look — "bad" paints the header's dot
+ *  and sub-line red instead of the default green. */
+export type HeaderTone = "ok" | "bad";
+
+/** The tone of a header status key: only "Not delivered" is bad. */
+export function headerTone(statusKey: string): HeaderTone {
+  return statusKey === `${K}notDelivered` ? "bad" : "ok";
+}
 const ACCEPTED = new Set(["accepted", "signed", "won"]);
 const ISSUED = new Set(["sent", "viewed", "opened"]);
 

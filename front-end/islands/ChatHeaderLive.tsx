@@ -13,26 +13,31 @@
 import { useEffect, useState } from "preact/hooks";
 import { I, ICN } from "../lib/dash-icons.tsx";
 import { langSignal, tFor } from "../lib/i18n.ts";
+import type { HeaderTone } from "../../shared/quote-flow/chat-header.ts";
 
 interface Props {
   initialClient: string;
   initialStatus: string;
+  /** REQ-327: "bad" paints the dot + sub-line red (a failed delivery). */
+  initialTone?: HeaderTone;
   lang?: "en" | "es";
 }
 
 interface HeaderEvent {
   client: string;
   status: string;
+  tone?: HeaderTone;
 }
 
 export default function ChatHeaderLive(
-  { initialClient, initialStatus }: Props,
+  { initialClient, initialStatus, initialTone }: Props,
 ) {
   // Self-source the UI language so the header re-renders live when the
   // language flips (Settings). The optional `lang` prop is an ignored SSR seed.
   const lang = langSignal.value;
   const [client, setClient] = useState(initialClient);
   const [status, setStatus] = useState(initialStatus);
+  const [tone, setTone] = useState<HeaderTone>(initialTone ?? "ok");
 
   useEffect(() => {
     function onUpdate(e: Event) {
@@ -43,6 +48,9 @@ export default function ChatHeaderLive(
       }
       if (typeof detail.status === "string" && detail.status.length > 0) {
         setStatus(detail.status);
+        // REQ-327: the tone travels with the status; a status without one
+        // is fine (the default green).
+        setTone(detail.tone === "bad" ? "bad" : "ok");
       }
     }
     globalThis.addEventListener("pm:asst-header", onUpdate);
@@ -68,8 +76,16 @@ export default function ChatHeaderLive(
       </a>
       <div class="chat__head-info">
         <div class="chat__head-title">{client}</div>
-        <div class="chat__head-sub">
-          <span class="chat__head-dot" />
+        <div
+          class={`chat__head-sub${
+            tone === "bad" ? " chat__head-sub--bad" : ""
+          }`}
+        >
+          <span
+            class={`chat__head-dot${
+              tone === "bad" ? " chat__head-dot--bad" : ""
+            }`}
+          />
           {status}
         </div>
       </div>

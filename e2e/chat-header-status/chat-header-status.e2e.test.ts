@@ -225,4 +225,13 @@ Deno.test("REQ-245: the chat header follows the quote — drafted, locked, gathe
       /not delivered/i.test(h.status),
       `a send that reached nobody: 'Not delivered', not 'Out for signature' (status: ${h.status})`,
     );
+    // REQ-327 (demo-loop cycle 1, p7): a failed delivery is not painted
+    // green — the dot and the sub-line carry the --bad tone.
+    const dotClass = await page.locator(".chat__head-dot").getAttribute(
+      "class",
+    );
+    expect(
+      /chat__head-dot--bad/.test(dotClass ?? ""),
+      `REQ-327: 'Not delivered' gets a red dot, not the green one (class: ${dotClass})`,
+    );
   }));
