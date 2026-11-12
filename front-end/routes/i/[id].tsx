@@ -23,6 +23,7 @@ import {
 } from "../../../shared/quote-flow/visit-groups.ts";
 import PublicInvoiceClaim from "../../islands/PublicInvoiceClaim.tsx";
 import PublicInvoiceRefresh from "../../islands/PublicInvoiceRefresh.tsx";
+import OwnerClaimReview from "../../islands/OwnerClaimReview.tsx";
 import PublicLangToggle from "../../islands/PublicLangToggle.tsx";
 import {
   invoiceHeadline,
@@ -32,6 +33,10 @@ import {
 import { receivedNoteBody } from "../../../shared/documents/received-note.ts";
 import { receiptSentViaOf } from "../../../shared/documents/delivery-truth.ts";
 import { claimRejectedNote } from "../../../shared/documents/claim-rejected-note.ts";
+import {
+  ownerClaimNote,
+  ownerClaimNoteShown,
+} from "../../../shared/documents/owner-claim-note.ts";
 import {
   BG,
   computeMilestones,
@@ -289,6 +294,7 @@ function InvoiceDoc(
   const claimed = invoice.status === "claimed" && !!invoice.paymentIntent;
   const pastDue = !paid && !claimed && isPastDue(invoice.dueDate);
   const es = lang === "es";
+  const contractorFirst = invoice.contractor?.name?.split(/\s+/)[0];
   const businessLabel = invoice.contractor?.businessName?.trim() ||
     invoice.contractor?.name?.trim() ||
     tFor(lang, "brand.name");
@@ -754,11 +760,21 @@ function InvoiceDoc(
             : claimed
             ? (
               <>
-                <ClaimedNote
-                  invoice={invoice}
-                  contractorFirst={invoice.contractor?.name?.split(/\s+/)[0]}
-                  es={es}
-                />
+                {
+                  /* REQ-557 (demo M25): the business's own preview of a
+                  claimed invoice is addressed to her — who says they paid,
+                  and Confirm received / Didn't get it. The customer keeps
+                  their own note. */
+                }
+                {ownerClaimNoteShown(invoice, search)
+                  ? <OwnerClaimedNote invoice={invoice} lang={lang} />
+                  : (
+                    <ClaimedNote
+                      invoice={invoice}
+                      contractorFirst={contractorFirst}
+                      es={es}
+                    />
+                  )}
                 {
                   /* REQ-321 (demo M14): this page mounts no claim island, so it
                   re-reads the invoice itself — the owner's confirm flips it to
@@ -1196,6 +1212,26 @@ function Pill(
     >
       {label}
     </span>
+  );
+}
+
+/** REQ-557 (demo M25): the claimed note for the business's own viewer —
+ *  who says they paid, with Confirm received / Didn't get it. */
+function OwnerClaimedNote(
+  { invoice, lang }: { invoice: InvoicePublic; lang: Lang },
+) {
+  const l = lang === "es" ? "es" : "en";
+  const intent = invoice.paymentIntent!;
+  return (
+    <OwnerClaimReview
+      invoiceId={invoice.id}
+      copy={ownerClaimNote((k, v) => tFor(l, k, v), {
+        customer: (intent.claimedBy ?? invoice.customer?.name)?.trim()
+          .split(/\s+/)[0],
+        methodName: methodFriendly(intent.method, l),
+        reference: intent.reference,
+      })}
+    />
   );
 }
 
