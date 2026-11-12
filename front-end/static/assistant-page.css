@@ -5602,14 +5602,16 @@ body {
   font-weight: 600;
   color: var(--fg-muted);
 }
+/* REQ-672 (cycle 5, p9): the custom chip ("Pick a date", "Custom") is told
+   apart by its dashed border only. Its old coffee-50 fill and muted text
+   made it read as a state on a row of plain white chips. */
 .wiz-opt--custom {
   border-style: dashed;
-  color: var(--fg-muted);
-  background: var(--coffee-50);
 }
-.wiz-opt--custom:hover {
-  border-style: solid;
-  color: var(--brand-teal);
+@media (hover: hover) {
+  .wiz-opt--custom:hover {
+    border-style: solid;
+  }
 }
 
 /* Roadmap p.8: after a wizard rewind, the user's previous pick on the
@@ -5620,11 +5622,27 @@ body {
   box-shadow: inset 0 0 0 1px var(--brand-green);
 }
 /* REQ-258 (demo M22): the option the chat already named ("half deposit" →
-   50/50) is shown pre-selected; the contractor still taps to confirm. */
-.wiz-opt--suggested {
+   50/50) is flagged; the contractor still taps to confirm.
+   REQ-672 (cycle 5, p9): a suggestion is NOT a selection — a dashed green
+   border on the plain white chip plus a "Suggested" tag, never the
+   filled look that .wiz-opt--selected / --prev use. */
+.wiz-opt--suggested,
+.wiz-opt--prefill {
   border-color: var(--brand-green);
-  background: var(--green-50, #eef6ea);
-  box-shadow: inset 0 0 0 1px var(--brand-green);
+  border-style: dashed;
+}
+.wiz-opt__tag {
+  align-self: flex-start;
+  margin-top: 3px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  border: 1px solid var(--brand-green);
+  color: var(--brand-green);
+  background: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
 }
 
 /* REQ-265: the step's answer the job sentence already gave — one tap. */
@@ -8914,9 +8932,15 @@ body {
     background 0.12s ease,
     box-shadow 0.12s ease;
 }
-.chat__jobopt:hover,
-.chat__jobopt-custom:hover {
-  border-color: var(--brand-green, #519843);
+/* REQ-672 (cycle 5, c4-p4-p5a): the brand-green border + mint fill mean
+   "selected" only. Hover is neutral and limited to real hover devices, so a
+   resting pointer or a sticky touch hover never looks like a pick. */
+@media (hover: hover) {
+  .chat__jobopt:hover,
+  .chat__jobopt-custom:hover {
+    border-color: var(--fg-muted, #8a8f88);
+    box-shadow: 0 2px 8px -4px rgba(26, 83, 92, 0.25);
+  }
 }
 .chat__jobopt.is-selected,
 .chat__jobopt-custom.is-selected {

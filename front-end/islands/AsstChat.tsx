@@ -9249,7 +9249,7 @@ export default function AsstChat({
                                       } ${
                                         showPrefill &&
                                           prefillOpt?.id === opt.id
-                                          ? "wiz-opt--prev wiz-opt--prefill"
+                                          ? "wiz-opt--prefill"
                                           : ""
                                       }`}
                                       title={rewindAnswer &&
@@ -9319,6 +9319,26 @@ export default function AsstChat({
                                         ? (
                                           <span class="wiz-opt__sub">
                                             {opt.sub}
+                                          </span>
+                                        )
+                                        : null}
+                                      {
+                                        /* REQ-672 (cycle 5, p9): a
+                                          suggestion says so in words — it
+                                          is not a selection. */
+                                      }
+                                      {(showPrefill &&
+                                          prefillOpt?.id === opt.id) ||
+                                          (rewindAnswer?.stepId !==
+                                              payload.stepId &&
+                                            payload.suggestedOptionId ===
+                                              opt.id)
+                                        ? (
+                                          <span class="wiz-opt__tag">
+                                            {tFor(
+                                              lang,
+                                              "asstChat.wiz.suggestedTag",
+                                            )}
                                           </span>
                                         )
                                         : null}
