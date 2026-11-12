@@ -272,9 +272,17 @@ describe("REQ-309 (demo M19/m14/m26) — a gap is found while the customer is id
       stage.indexOf("const statusLabel ="),
       stage.indexOf("const pillStyle ="),
     );
-    expect(stage).toMatch(/stageStatus\(\{[\s\S]{0,300}mirrored: !!mirrored/);
+    // REQ-391 — the label is stageStatus's key; REQ-370 — and the frame counts as mirrored only
+    // once it is shown (a styled snapshot in it): until then "Connecting", never "Live"
+    expect(stage).toMatch(
+      /stageStatus\(\{[\s\S]{0,300}mirrored: !!mirrored && styled/,
+    );
     expect(label).toMatch(/t\("demoMode\.live"\)/);
     expect(label).toMatch(/t\("demoMode\.connecting"\)/);
+    // REQ-370 — the overlay keys on the same fact: the frame shown (a styled snapshot in it)
+    expect(stage).toMatch(
+      /\{look\.visibility === "hidden" && \(\s*<div\s+data-cy="demo-connecting"/,
+    );
   });
 
   test("a frame that does not fit marks the stage dirty, and it keeps asking (every MIRROR_GAP_MS) until a snapshot lands — a stall asks the same way", () => {

@@ -141,8 +141,10 @@ import {
 } from "../../shared/demo-mode/pill.ts";
 import {
   behindSeconds,
+  frameReady,
   stageFrameLook,
   stageStatus,
+  STYLE_WAIT_MS,
 } from "../../shared/demo-mode/stage-frame.ts";
 
 interface Demo {
@@ -231,6 +233,13 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
   /** REQ-391 — how late the frames come (whole seconds, 0: in time) and whether a resync is out;
    *  read off the receiver on the stall tick, set only when it changes */
   const [lagView, setLagView] = useState({ behind: 0, resyncing: false });
+  /** REQ-370 (demo m23) — the replay's stylesheets are in (or STYLE_WAIT_MS passed since the first
+   *  snapshot): until then the frame stays hidden under "Connecting to {name}…", never unstyled */
+  const [styled, setStyled] = useState(false);
+  const styledRef = useRef(false);
+  /** REQ-370 — when the first snapshot of this demo was applied, and the fallback timer */
+  const firstSnapAtRef = useRef<number | null>(null);
+  const styleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   /** REQ-235 — this stage's End ended it */
   const endedHere = useRef(false);
   const [stage, setStage] = useState({ w: 1, h: 1 });
@@ -434,6 +443,7 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
    *  in, a settle, the stage resized): every pointer anchored to its nodes is placed again;
    *  REQ-393 — and this presenter's resting pointer is looked up again under his still mouse */
   const replace = () => {
+    checkStyled(); // REQ-370 — a stylesheet of the replay may just have loaded
     showCustomer();
     setWaves((w) => placeWavesAgain(w, (a) => placeOnStage(a).at));
     for (const [pid, a] of peersRef.current) {
@@ -460,6 +470,22 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
     ownRef.current.resyncs++;
     linkRef.current?.send({ k: "resync" });
   };
+
+  /** REQ-370 — reveal the frame once the replay is styled, or once it has waited STYLE_WAIT_MS
+   *  (`late`: the fallback timer, whatever the clock's rounding says) */
+  const checkStyled = (late = false) => {
+    const rep = replayerRef.current;
+    const at = firstSnapAtRef.current;
+    if (styledRef.current || !rep || at === null) return;
+    if (late || frameReady({ styled: rep.styled(), waited: Date.now() - at })) {
+      styledRef.current = true;
+      if (styleTimerRef.current) clearTimeout(styleTimerRef.current);
+      styleTimerRef.current = null;
+      setStyled(true);
+    }
+  };
+  const checkStyledRef = useRef(checkStyled);
+  checkStyledRef.current = checkStyled;
 
   /** REQ-242 — a frame of the customer's screen, into the replay */
   const take = (f: MirrorFrame, load: string) => {
@@ -511,6 +537,15 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
       });
       setStale(false); // REQ-297 — their screen is current again
       setAwaiting(false); // REQ-391 — and it is the followed tab's
+      // REQ-370 — the first snapshot starts the wait for its stylesheets (at most STYLE_WAIT_MS)
+      if (firstSnapAtRef.current === null) {
+        firstSnapAtRef.current = Date.now();
+        styleTimerRef.current = setTimeout(
+          () => checkStyledRef.current(true),
+          STYLE_WAIT_MS,
+        );
+      }
+      checkStyled();
     }
   };
 
@@ -849,6 +884,12 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
       setStale(false);
       setAwaiting(false);
       setLagView({ behind: 0, resyncing: false });
+      // REQ-370 — the next demo's first frame waits for its own stylesheets
+      if (styleTimerRef.current) clearTimeout(styleTimerRef.current);
+      styleTimerRef.current = null;
+      firstSnapAtRef.current = null;
+      styledRef.current = false;
+      setStyled(false);
       setPeerOnline(false);
       setStatus("connecting");
     };
@@ -921,13 +962,16 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
     linkRef.current?.send({ k: "click", a: anchorOf({ x, y }) });
 
   const name = demo?.targetName ?? "";
+  // REQ-297 — the frame's look: greyed, dimmed and under the waiting overlay while the screen in it
+  // is the one from before the customer's app dropped; REQ-370 — hidden until the replay is styled
+  const look = stageFrameLook({ status, mirrored: !!mirrored, stale, styled });
   // REQ-232 (demo-lifecycle-p1, m1, m3) — plain words, never the transport
   // REQ-309 (demo m26) — "Live" is the frame's truth: the followed tab's screen is in it
   // REQ-391 (M4) — …and in time: their page gone or not in yet, a resync out, frames late
   const live = stageStatus({
     ended,
     status,
-    mirrored: !!mirrored,
+    mirrored: !!mirrored && styled, // REQ-370 — shown only once styled
     awaiting,
     resyncing: lagView.resyncing,
     behind: lagView.behind,
@@ -958,9 +1002,6 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
   const box = `position:absolute;left:${fit.left}px;top:${
     fit.top - bannerH
   }px;width:${fit.width}px;height:${fit.height}px`;
-  // REQ-297 — the frame's look: greyed, dimmed and under the waiting overlay while the screen in it
-  // is the one from before the customer's app dropped
-  const look = stageFrameLook({ status, mirrored: !!mirrored, stale });
 
   return (
     <div
@@ -989,7 +1030,7 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
         )
         : demo && (
           <>
-            {!mirrored && (
+            {look.visibility === "hidden" && (
               <div
                 data-cy="demo-connecting"
                 role="status"
