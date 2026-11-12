@@ -1,3 +1,5 @@
+import { customerPhoneE164 } from "#quote-flow/customer-contact.ts";
+
 /**
  * Normalize a phone string into E.164 form (e.g., "+15125551234").
  *
@@ -21,6 +23,29 @@ export function isFictionalUsNumber(e164: string): boolean {
   if (!m) return false;
   const [, area, exchange, line] = m;
   return area === "555" || (exchange === "555" && line.startsWith("01"));
+}
+
+/** REQ-523: why a number cannot be texted, or the E.164 form to dial. */
+export type SmsTarget =
+  | { ok: true; e164: string }
+  | { ok: false; failureCode: "missing" | "invalid" }
+  | { ok: false; failureCode: "fictional"; e164: string };
+
+/**
+ * REQ-523 (demo-loop cycle 3, issue m16): can a text be addressed to this
+ * number at all? Missing, not dialable (the customer-save rule,
+ * `customerPhoneE164`), or fictional → refused with a code. SmsService.send
+ * asks this before anything else, so no sender — dev mode included — ever
+ * reports a text to a number that cannot get one.
+ */
+export function smsTarget(raw: string | null | undefined): SmsTarget {
+  if (!raw?.trim()) return { ok: false, failureCode: "missing" };
+  const e164 = customerPhoneE164(raw);
+  if (!e164) return { ok: false, failureCode: "invalid" };
+  if (isFictionalUsNumber(e164)) {
+    return { ok: false, failureCode: "fictional", e164 };
+  }
+  return { ok: true, e164 };
 }
 
 export function normalizePhone(input: string): string {

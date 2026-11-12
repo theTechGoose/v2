@@ -1049,6 +1049,16 @@ export class PaperworkPublicController {
           installmentIndex: row.installmentIndex,
           installmentTotal: row.installmentTotal,
         }));
+      // REQ-523 (demo m16): the channel the payment receipt can arrive on.
+      // ConfirmPayment emails the customer's CURRENT record and texts it only
+      // when the number can take a text — REQ-403's rule, so the claim page
+      // never promises "we'll text you a receipt" to a 555-01XX number.
+      const receiptTo = i.customerId
+        ? await this.customers.getOwned(i.customerId, i.userId).catch(() =>
+          undefined
+        )
+        : undefined;
+      const receiptChannel = signedConfirmChannel(receiptTo);
       // Method config drives the public page's "How would you like to
       // pay?" buttons. We surface only methods the contractor has
       // explicitly enabled (handles non-empty).
@@ -1083,6 +1093,7 @@ export class PaperworkPublicController {
           }
           : {}),
         acceptedMethods,
+        receiptChannel,
         // Agreement context mirrored from the linked quote so the invoice
         // renders the same itemized job + term grid as the signed agreement
         // (minus the legal clauses + signature block). Omitted for standalone

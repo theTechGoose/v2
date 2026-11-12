@@ -52,11 +52,13 @@ export class AccountAdmins {
     private sms: SmsService,
   ) {}
 
-  /** the owner invites a phone: the record, then the text (its failure is logged, never thrown) */
+  /** the owner invites a phone: the record, then the text (its failure is logged, never thrown).
+   *  REQ-523 (demo m16): the answer says whether the text went out (`texted`) — the page
+   *  never claims an invite was texted to a number that could not get it. */
   async invite(
     owner: User,
     input: { phoneNumber?: unknown; name?: unknown },
-  ): Promise<AccountAdmin> {
+  ): Promise<AccountAdmin & { texted: boolean }> {
     let phone: string;
     try {
       phone = normalizePhone(
@@ -94,7 +96,7 @@ export class AccountAdmins {
         `[account-admins] invite text to ${phone} failed: ${sent.reason}`,
       );
     }
-    return rec;
+    return { ...rec, texted: sent.ok };
   }
 
   list(owner: User): Promise<AccountAdmin[]> {

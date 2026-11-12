@@ -1,5 +1,9 @@
 import { useEffect, useRef, useState } from "preact/hooks";
 import { type Lang, tFor } from "../lib/i18n.ts";
+import {
+  claimThanksKey,
+  type ReceiptChannel,
+} from "../../shared/documents/receipt-note.ts";
 import { fmtMoneyExact, fmtPayHandle } from "../lib/format.ts";
 import { startInvoiceRefresh } from "../lib/public-invoice-refresh.ts";
 import { announceChange } from "../lib/change-announce.ts";
@@ -17,6 +21,9 @@ interface Props {
   invoiceId: string;
   acceptedMethods: Method[];
   customerName?: string;
+  /** REQ-523 (demo m16): where the payment receipt can arrive — the thanks
+   *  line promises a text only when the customer's number can take one. */
+  receiptChannel?: ReceiptChannel;
   /** REQ-203: the balance this page shows — the claim is for THIS amount;
    *  a changed balance comes back as 409 stale_balance with the current one. */
   balanceCents?: number;
@@ -55,6 +62,7 @@ export default function PublicInvoiceClaim(
     invoiceId,
     acceptedMethods,
     customerName,
+    receiptChannel,
     balanceCents,
     version: initialVersion,
     lang = "en",
@@ -135,7 +143,7 @@ export default function PublicInvoiceClaim(
         <p
           style={`margin:8px 0 0;color:${INK};font-size:15px;line-height:1.55`}
         >
-          {tFor(lang, "publicInvoiceClaim.thanksBody")}
+          {tFor(lang, claimThanksKey(receiptChannel))}
         </p>
       </section>
     );

@@ -20,7 +20,7 @@ export class AdminsController {
     return await this.admins.list(user);
   }
 
-  /** `{ phoneNumber, name? }` → 201 the record; the text goes out to the number */
+  /** `{ phoneNumber, name? }` → 201 the record + `texted` (REQ-523: whether the invite text went out) */
   @Post()
   async invite(@Context() ctx: ExecutionContext, @Body() body: unknown) {
     const owner = await requireOwner(ctx, this.sessions, this.users);
