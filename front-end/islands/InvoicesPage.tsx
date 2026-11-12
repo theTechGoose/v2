@@ -28,7 +28,7 @@ import {
   ShimmerStyle,
 } from "../components/Skeletons.tsx";
 import { fmtMoney, fmtMoneyExact } from "../lib/format.ts";
-import { type Lang, langSignal, tFor } from "../lib/i18n.ts";
+import { type Lang, langSignal, tFor, tnFor } from "../lib/i18n.ts";
 import QuoteTrack from "./QuoteTrack.tsx";
 import { isChangeOrderMutable } from "../../shared/quote-flow/adjustment-guards.ts";
 import {
@@ -1005,7 +1005,7 @@ function InvoicesKpis(
         <div class="qkpi__lbl">{tFor(lang, "invoicesPage.kpi.paid")}</div>
         <div class="qkpi__val">{fmtMoney(paidTotal)}</div>
         <div class="qkpi__sub">
-          {tFor(lang, "invoicesPage.kpi.paidSub", { n: paidCount })}
+          {tnFor(lang, "invoicesPage.kpi.paidSub", paidCount)}
         </div>
       </div>
     </div>

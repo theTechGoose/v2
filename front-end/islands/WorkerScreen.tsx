@@ -67,6 +67,7 @@ const css = `
   .visit__btns { display: flex; gap: 8px; }
   .visit__btns button { flex: 1; padding: 10px; border: 1px solid var(--border); border-radius: 10px; background: #fff; font: inherit; font-weight: 700; color: var(--brand-teal); display: flex; align-items: center; justify-content: center; gap: 6px; min-height: 44px; cursor: pointer; }
   .visit__btns button.on { background: var(--mint-100); border-color: var(--brand-teal); }
+  .visit__note-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--brand-teal); flex: none; }
   .note { display: flex; gap: 6px; }
   .note input { flex: 1; padding: 10px 11px; border: 1px solid var(--border); border-radius: 9px; font: inherit; font-size: 15px; min-width: 0; }
   .note button, .add button { padding: 10px 14px; border: 0; border-radius: 9px; background: var(--brand-teal); color: #fff; font: inherit; font-weight: 700; min-height: 44px; cursor: pointer; }
@@ -468,7 +469,15 @@ export default function WorkerScreen(
             >
               <I d={ICN.msg} size={14} />
               {t("worker.note")}
-              {note ? " ·" : ""}
+              {note && (
+                <span
+                  class="visit__note-dot"
+                  data-cy="w-note-dot"
+                  role="img"
+                  aria-label={t("worker.hasNote")}
+                  title={t("worker.hasNote")}
+                />
+              )}
             </button>
             <button
               type="button"
