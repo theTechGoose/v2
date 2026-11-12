@@ -550,6 +550,14 @@ export default function InvoicesPage(_props: { lang?: Lang }) {
   );
   const overdueTotal = overdue.reduce((sum, i) => sum + (i.amount ?? 0), 0);
   const outTotal = out.reduce((sum, i) => sum + (i.amount ?? 0), 0);
+  // REQ-317: the unsent installments of signed agreements — money still to
+  // bill, so the hero never reads "All clear" over them.
+  const scheduledTotal = scheduled.reduce(
+    (sum, i) => sum + (i.amount ?? 0),
+    0,
+  );
+  const nextScheduledFor = scheduled.find((i) => !!i.scheduledFor)
+    ?.scheduledFor;
   const paidThisMonthTotal = paidThisMonth.reduce(
     (sum, i) => sum + (i.amount ?? 0),
     0,
@@ -602,6 +610,10 @@ export default function InvoicesPage(_props: { lang?: Lang }) {
         outstandingCount={overdue.length + out.length}
         // REQ-243: a claim waiting for confirmation is never "All clear".
         claimedCount={claimed.length}
+        // REQ-317: a scheduled installment is money still to bill.
+        scheduledCount={scheduled.length}
+        scheduledCents={scheduledTotal}
+        nextScheduledFor={nextScheduledFor}
         overdueCount={overdue.length}
         totalInvoiceCount={enriched.length}
         forecast={forecast}
@@ -793,6 +805,9 @@ function InvoicesHero(
     outstandingTotal,
     outstandingCount,
     claimedCount,
+    scheduledCount = 0,
+    scheduledCents = 0,
+    nextScheduledFor,
     overdueCount,
     totalInvoiceCount,
     forecast,
@@ -802,6 +817,9 @@ function InvoicesHero(
     outstandingTotal: number;
     outstandingCount: number;
     claimedCount: number;
+    scheduledCount?: number;
+    scheduledCents?: number;
+    nextScheduledFor?: string;
     overdueCount: number;
     totalInvoiceCount: number;
     forecast?: ForecastResult;
@@ -813,6 +831,8 @@ function InvoicesHero(
     totalInvoiceCount,
     outstandingCount,
     claimedCount,
+    scheduledCount,
+    scheduledCents,
     forecast,
   });
   const trulyEmpty = mode === "empty";
@@ -843,6 +863,23 @@ function InvoicesHero(
                     : "invoicesPage.hero.claimed.other",
                   { n: claimedCount },
                 )} <em>{tFor(lang, "invoicesPage.hero.claimedEm")}</em>.
+              </>
+            )
+            : mode === "scheduled"
+            ? (
+              <>
+                {(() => {
+                  // "{amount} still to bill." / "Queda por facturar {amount}."
+                  const [pre, post] = tFor(lang, "invoicesPage.hero.scheduled")
+                    .split("{amount}");
+                  return (
+                    <>
+                      {pre}
+                      <em>{fmtMoney(scheduledCents)}</em>
+                      {post ?? ""}
+                    </>
+                  );
+                })()}
               </>
             )
             : mode === "clear"
@@ -897,6 +934,24 @@ function InvoicesHero(
             ? <>{tFor(lang, "invoicesPage.sub.empty")}</>
             : mode === "claimed"
             ? <>{tFor(lang, "invoicesPage.sub.claimed")}</>
+            : mode === "scheduled"
+            ? (
+              <span data-cy="hero-scheduled-next">
+                {tFor(lang, "invoicesPage.sub.scheduledNext")}{" "}
+                <strong>
+                  {nextScheduledFor
+                    ? formatShortDate(nextScheduledFor, lang)
+                    : "—"}
+                </strong>{" "}
+                · {scheduledCount} {tFor(
+                  lang,
+                  scheduledCount === 1
+                    ? "invoicesPage.unitScheduled.one"
+                    : "invoicesPage.unitScheduled.other",
+                  { n: scheduledCount },
+                )}
+              </span>
+            )
             : haveForecast && forecast!.thisWeek.length > 0
             ? (
               <span data-cy="forecast-breakdown">

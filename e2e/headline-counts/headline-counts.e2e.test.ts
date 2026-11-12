@@ -184,3 +184,95 @@ Deno.test("REQ-243 (a): an open quote whose card names Maria Lopez counts one cl
       `the hero counts the card's client (${text})`,
     );
   }));
+
+/** REQ-317 (demo-loop cycle 1, M33): a 50/50 job — the $1,600 deposit is
+ *  sent, the $1,600 balance is a scheduled installment of the signed
+ *  agreement. Once the deposit is recorded the hero must still say money is
+ *  to come, never "All clear — nothing outstanding." */
+Deno.test("REQ-317: a 50/50 job after the deposit — the hero says $1,600 is still to bill, never 'All clear'", (t) =>
+  story(t, async ({ page, expect, http, baseUrl }) => {
+    const { auth } = await signIn(http, page, baseUrl);
+    const customer = await (await http("/api/customers", {
+      method: "POST",
+      headers: auth,
+      body: JSON.stringify({
+        name: "Dana Whitfield",
+        email: "dw@blackhole.postmarkapp.com",
+      }),
+    })).json();
+    const half = {
+      description: "Deck rebuild (installment)",
+      quantity: 1,
+      unit: "job",
+      price: 160_000,
+    };
+    const deposit = await (await http("/api/invoices", {
+      method: "POST",
+      headers: auth,
+      body: JSON.stringify({
+        customerId: customer.id,
+        status: "sent",
+        jobName: "Deck rebuild",
+        dueDate: inDays(2),
+        lineItems: [half],
+        amount: 160_000,
+        installmentIndex: 1,
+        installmentTotal: 2,
+      }),
+    })).json();
+    const balance = await http("/api/invoices", {
+      method: "POST",
+      headers: auth,
+      body: JSON.stringify({
+        customerId: customer.id,
+        status: "scheduled",
+        scheduledFor: inDays(21),
+        jobName: "Deck rebuild",
+        dueDate: inDays(28),
+        lineItems: [half],
+        amount: 160_000,
+        installmentIndex: 2,
+        installmentTotal: 2,
+      }),
+    });
+    expect(
+      balance.status < 300,
+      `the balance is scheduled (${balance.status})`,
+    );
+    await balance.body?.cancel();
+
+    await page.goto(`/invoices?open=${deposit.id}`);
+    await page.locator("[data-cy='invoice-payment-received']").first()
+      .click();
+    await page.locator("[data-cy='pay-received-form']").waitFor({
+      timeout: 15_000,
+    });
+    await page.locator("[data-cy='pay-method-zelle']").click();
+    await page.locator("[data-cy='pay-received-submit']").click();
+    await page.locator("[data-cy='pay-received-form']").waitFor({
+      state: "hidden",
+      timeout: 15_000,
+    });
+    const hero = page.locator("[data-cy='forecast-hero']");
+    let after = "";
+    for (let i = 0; i < 30; i++) {
+      after = (await hero.innerText()).replace(/\s+/g, " ").trim();
+      if (!/expected this week/i.test(after)) break;
+      await page.waitForTimeout(200);
+    }
+    expect(
+      !/All clear/i.test(after),
+      `after the deposit the hero is not 'All clear' (${after})`,
+    );
+    expect(
+      /\$1,600 still to bill/i.test(after),
+      `the hero names the scheduled balance (${after})`,
+    );
+    const sub = page.locator(".qph__sub").first();
+    const subText = (await sub.innerText()).replace(/\s+/g, " ").trim();
+    expect(
+      /Next installment/i.test(subText) &&
+        /1 scheduled invoice\b/.test(subText),
+      `the sub line gives the next installment date and count (${subText})`,
+    );
+  }));

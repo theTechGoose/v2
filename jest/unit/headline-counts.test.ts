@@ -211,3 +211,94 @@ describe("REQ-243 (e): a refresh after 'Payment received' re-pulls the forecast 
     expect(body).toMatch(/setForecast\(/);
   });
 });
+
+describe("REQ-317: a scheduled installment of a signed agreement is never 'All clear' (demo-loop cycle 1, M33)", () => {
+  const none = { thisWeekCents: 0, nextWeekCents: 0, atRiskCents: 0 };
+  it("the 50/50 case: deposit paid, $1,600 balance scheduled → 'scheduled', not 'clear'", () => {
+    expect(
+      invoicesHeroMode({
+        totalInvoiceCount: 2,
+        outstandingCount: 0,
+        claimedCount: 0,
+        scheduledCount: 1,
+        scheduledCents: 160_000,
+        forecast: none,
+      }),
+    ).toBe("scheduled");
+  });
+  it("a claim waiting for confirmation still outranks the scheduled balance", () => {
+    expect(
+      invoicesHeroMode({
+        totalInvoiceCount: 2,
+        outstandingCount: 0,
+        claimedCount: 1,
+        scheduledCount: 1,
+        scheduledCents: 160_000,
+        forecast: none,
+      }),
+    ).toBe("claimed");
+  });
+  it("money overdue / out / expected keeps its own headline over the scheduled one", () => {
+    expect(
+      invoicesHeroMode({
+        totalInvoiceCount: 2,
+        outstandingCount: 1,
+        claimedCount: 0,
+        scheduledCount: 1,
+        scheduledCents: 160_000,
+        forecast: { ...none, thisWeekCents: 160_000 },
+      }),
+    ).toBe("thisWeek");
+    expect(
+      invoicesHeroMode({
+        totalInvoiceCount: 2,
+        outstandingCount: 1,
+        claimedCount: 0,
+        scheduledCount: 1,
+        scheduledCents: 160_000,
+      }),
+    ).toBe("outstanding");
+  });
+  it("a scheduled row carrying no money, or none at all, is still 'clear'", () => {
+    expect(
+      invoicesHeroMode({
+        totalInvoiceCount: 2,
+        outstandingCount: 0,
+        claimedCount: 0,
+        scheduledCount: 1,
+        scheduledCents: 0,
+      }),
+    ).toBe("clear");
+    expect(
+      invoicesHeroMode({
+        totalInvoiceCount: 1,
+        outstandingCount: 0,
+        claimedCount: 0,
+        scheduledCount: 0,
+        scheduledCents: 0,
+      }),
+    ).toBe("clear");
+  });
+  it("InvoicesPage feeds the hero the scheduled money and next date; en + es carry the copy", () => {
+    const src = read("front-end/islands/InvoicesPage.tsx");
+    expect(src).toMatch(/scheduledCount=\{scheduled\.length\}/);
+    expect(src).toMatch(/scheduledCents=\{scheduledTotal\}/);
+    expect(src).toMatch(/nextScheduledFor=/);
+    for (const d of [en, es]) {
+      for (
+        const k of [
+          "invoicesPage.hero.scheduled",
+          "invoicesPage.sub.scheduledNext",
+          "invoicesPage.unitScheduled.one",
+          "invoicesPage.unitScheduled.other",
+        ]
+      ) expect(d[k]).toBeTruthy();
+    }
+    expect(en["invoicesPage.hero.scheduled"]).toMatch(
+      /^\{amount\} still to bill\.$/,
+    );
+    expect(es["invoicesPage.hero.scheduled"]).toMatch(
+      /^Queda por facturar \{amount\}\.$/,
+    );
+  });
+});
