@@ -149,6 +149,21 @@ describe("REQ-242 the stage replays into a script-less frame", () => {
     expect(stage).toMatch(/<DemoPointer[\s\S]{0,300}bounds=\{fit\}/);
   });
 
+  test("REQ-292 M6/M8 — the stage starts its receiver over when the tab it follows changes, and a dropped snapshot is warned about and resynced, never swallowed", () => {
+    const online = stage.slice(stage.indexOf("onPeerOnline:"));
+    const body = online.slice(0, online.indexOf("},") + 2);
+    expect(body).toMatch(/onPeerOnline:\s*\(cid/);
+    expect(body).toMatch(/rx\.reset\(\)/);
+    expect(body).toMatch(/loadRef\.current = null/);
+    // the mirrored page stays until the new tab's snapshot: no setMirrored(null) on a switch
+    expect(body).not.toMatch(/setMirrored\(null\)/);
+    const rxMade = stage.slice(stage.indexOf("createMirrorReceiver("));
+    const rxArgs = rxMade.slice(0, rxMade.indexOf("\n    });") + 8);
+    expect(rxArgs).toMatch(/onDropped/);
+    expect(rxArgs).toMatch(/console\.warn\(/);
+    expect(rxArgs).toMatch(/askResync\(\)/);
+  });
+
   test("after a snapshot the stage lets the replay settle its scrolls once the styles are in", () => {
     expect(stage).toMatch(/f\.t === "snap"[\s\S]{0,600}\.settle\(\)/);
   });

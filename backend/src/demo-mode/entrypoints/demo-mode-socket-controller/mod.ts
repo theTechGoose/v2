@@ -61,10 +61,18 @@ export class DemoModeSocketController {
       },
     };
     let leave: (() => void) | null = null;
+    // REQ-292 — the socket may close while the join is awaited: then the peer leaves as soon as
+    // it is in, so a tab closed mid-join is removed and announced, never a ghost
+    let closed = false;
+    const onGone = () => {
+      closed = true;
+      leave?.();
+    };
 
     socket.onopen = async () => {
       const joined = await this.hub.join(sessionId, peer);
       leave = joined.leave;
+      if (closed) return leave();
       // welcome first (with this socket's cid): join tells the OTHERS only, so nothing reached
       // this socket yet; then who is already here — a tab hears of the stages (REQ-214: by pid),
       // a stage of the tabs and of the other accounts' stages, each by cid (REQ-232)
@@ -99,8 +107,8 @@ export class DemoModeSocketController {
       }
       await this.hub.send(sessionId, { role, ...(pid ? { pid } : {}), cid }, m);
     };
-    socket.onclose = () => leave?.();
-    socket.onerror = () => leave?.();
+    socket.onclose = onGone;
+    socket.onerror = onGone;
     return response;
   }
 }

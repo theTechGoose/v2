@@ -162,13 +162,17 @@ function link(role: Role, pid?: string) {
   const got: { m: PeerMessage; from: PeerFrom }[] = [];
   const presence: [string, boolean][] = [];
   let wholeViewAsks = 0;
+  const followed: (string | undefined)[] = [];
   const l = connectDemo({
     sessionId: "s1",
     role,
     ...(pid ? { pid } : {}),
     onPeer: (m, from) => got.push({ m, from }),
     onStatus: (s) => statuses.push(s),
-    onPeerOnline: () => wholeViewAsks++,
+    onPeerOnline: (cid?: string) => {
+      wholeViewAsks++;
+      followed.push(cid);
+    },
     onPresence: (p, on) => presence.push([p, on]),
     onEnded: () => {},
   });
@@ -179,6 +183,7 @@ function link(role: Role, pid?: string) {
     statuses,
     got,
     presence,
+    followed,
     asks: () => wholeViewAsks,
     status: () => statuses[statuses.length - 1],
   };
@@ -357,6 +362,24 @@ describe("REQ-232 a stage keeps the set of the customer's tabs (B3, demo-lifecyc
     // a tab that already left never comes back through a late claim
     s.ws.recv({ t: "claim", cid: "t2", at: 900 });
     expect(s.ws.of("sync").map((m: Any) => m.to)).toEqual(["t1", "t2", "t1"]);
+    s.link.close();
+  });
+
+  test("REQ-292 M6 — every follow switch names the tab the stage follows now (onPeerOnline(cid)): a claim, and the fallback after the followed tab closes", () => {
+    const s = stage();
+    tabOnline(s.ws, "t1");
+    s.ws.recv({ t: "claim", cid: "t1", at: 100 });
+    tabOnline(s.ws, "t2");
+    s.ws.recv({ t: "claim", cid: "t2", at: 200 });
+    s.ws.recv({ t: "claim", cid: "t1", at: 300 }); // the customer clicks tab 1 again
+    tabOnline(s.ws, "t1", false); // and closes it: back to tab 2
+    expect(s.followed).toEqual(["t1", "t2", "t1", "t2"]);
+    expect(s.ws.of("sync").map((m: Any) => m.to)).toEqual([
+      "t1",
+      "t2",
+      "t1",
+      "t2",
+    ]);
     s.link.close();
   });
 

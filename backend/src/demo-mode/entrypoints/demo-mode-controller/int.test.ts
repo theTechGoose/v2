@@ -1141,6 +1141,41 @@ Deno.test("REQ-232 two customer tabs over the composed router's socket: each wel
   });
 });
 
+Deno.test("REQ-292 M6 — a customer tab whose socket closes the instant it opens (before its welcome, while the join is still awaited) is announced to the stage as arrived and then gone: never a ghost tab that keeps the pill Live", async () => {
+  await withServer(async (call) => {
+    const ana = await signIn(call, "+15125553061");
+    const hans = await signIn(call, "+15125553062");
+    await call("POST", "/api/admin/bootstrap", { phoneNumber: "+15125553062" });
+    const made = await call("POST", "/api/demo-mode/sessions", {
+      userId: ana.body.userId,
+    }, H(hans.body.sessionId));
+    const stage = open(made.body.id, hans.body.sessionId);
+    await stage.next("the stage's welcome");
+    for (let i = 0; i < 5; i++) {
+      // the tab's socket: closed as soon as it is open, before any frame from the server
+      const ws = new WebSocket(
+        `ws://localhost:${PORT}/api/demo-mode/ws?session=${made.body.id}&token=${ana.body.sessionId}`,
+      );
+      const closed = new Promise<void>((r) => (ws.onclose = () => r()));
+      ws.onerror = () => {};
+      ws.onopen = () => ws.close();
+      await closed;
+      const came = await stage.next(`tab ${i} arrives`);
+      assert(
+        came.t === "peer" && came.online && !("pid" in came),
+        `tab ${i} arrives: ${JSON.stringify(came)}`,
+      );
+      const went = await stage.next(`tab ${i} leaves`, 1500);
+      assertEquals(
+        went,
+        { t: "peer", online: false, cid: came.cid },
+        `tab ${i}: closed mid-join, it must still be announced gone`,
+      );
+    }
+    await stage.close();
+  });
+});
+
 Deno.test("REQ-232 POST /demo-mode/sessions/:id/leave — the customer may not (403), a stranger neither (403), an unknown demo is 404; a presenter with a colleague leaves: the colleague and the customer hear them go and the demo goes on; the last presenter leaving ends it for everyone", async () => {
   await withServer(async (call) => {
     const ana = await signIn(call, "+15125553061");
