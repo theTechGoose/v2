@@ -76,13 +76,27 @@ describe("REQ-440 (demo-loop cycle 3, m2) — the pill's band is real on pages w
     expect(src).toContain("bandBackground(");
   });
 
-  test("REQ-440: the New invoice sheet's scrolling backdrop ends above the band", () => {
+  // REQ-618 (demo-loop cycle 4, p4-p3b) amends REQ-440(c): the backdrop is also the dim, so
+  // ending it above the band left a ~60 px undimmed strip under the sheet. The dim covers the
+  // whole window again; only the sheet's CONTENT keeps clear of the band, by the scroller's
+  // bottom padding (and scroll padding, for focus/scrollIntoView).
+  test("REQ-618: the New invoice sheet's backdrop dims the whole window, and its content scrolls clear of the band", () => {
     const src = read("front-end/islands/InvoicesPage.tsx");
     const sheet = src.match(
       /<Backdrop\s+onClose=[^\n]*\n\s*style="(position:fixed;[^"]*overflow-y:auto[^"]*)"/,
     );
     expect(sheet?.[1]).toBeDefined();
-    expect(sheet?.[1]).toContain(`inset:0 0 var(${PILL_ROOM_VAR}, 0px) 0`);
-    expect(sheet?.[1]).not.toMatch(/inset:0;/);
+    const style = sheet![1];
+    // the dim: the full window, whatever the band
+    expect(style).toMatch(/(^|;)inset:0;/);
+    expect(style).not.toContain(`inset:0 0 var(${PILL_ROOM_VAR}`);
+    expect(style).toContain("background:rgba(20,40,45,0.45)");
+    // the content: its end, and anything scrolled to, stop above the band
+    expect(style).toContain(
+      `padding:20px 20px calc(20px + var(${PILL_ROOM_VAR}, 0px))`,
+    );
+    expect(style).toContain(
+      `scroll-padding-bottom:var(${PILL_ROOM_VAR}, 0px)`,
+    );
   });
 });

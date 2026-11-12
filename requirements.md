@@ -3707,3 +3707,18 @@ The cycle 3 root-cause pass (M2) found that switching tabs with Playwright in a 
 - unit: n/a — a prompt string; covered by the harness test.
 - int: `demo-loop/demo20b_test.ts` "REQ-533 …" runs the real harness with a fake fleet-claude and checks both prompts.
 - e2e: n/a — the next demo cycle is the run that uses it.
+
+## REQ-440 AMENDMENT — (c) superseded by REQ-618
+REQ-440(c) ended the New invoice sheet's backdrop above the pill's band (`inset:0 0 var(--demo-pill-h, 0px) 0`). That backdrop is also the dim, so it left an undimmed strip under the sheet during a demo (cycle 4, p4-p3b). REQ-618 replaces (c). The sheet's content still ends above the band, but the dim now covers the whole window. **Tests:** see REQ-618; the unit assertion for (c) in `jest/unit/demo-pill-band.test.ts` is now REQ-618's.
+
+## REQ-618 — During a demo, the New invoice sheet dims the whole window (demo-loop cycle 4, issue p4-p3b; amends REQ-440(c))
+
+The user's words: "fix every issue the demo found, loop until there are none." Cycle 4 demo issue p4-p3b (fleet-2): "the sheet and its dim end about 60 px above the screen bottom. The page behind ("0 cleared") and the pill show through, undimmed." RCA (CONFIRMED, skeptic UPHELD): this is a regression from 7de43dfe (REQ-440(c), cycle 3 m2). That change pulled the sheet's backdrop up by `--demo-pill-h` to keep its scrolling content out from under the customer's pill. The backdrop is also the dim, so the bottom ~56-64 px of the window was never dimmed. The REQ-440(b) band (z-index 1) sits under the page's own layers and does not cover the strip.
+
+Requirement: the New invoice sheet's backdrop dims the whole window (`inset:0`) during a demo and outside one. Only the sheet's content keeps clear of the band. The scroller's bottom padding is `calc(20px + var(--demo-pill-h, 0px))`, and `scroll-padding-bottom:var(--demo-pill-h, 0px)` keeps focus and scrollIntoView above it. With no demo the band is 0 and the sheet looks as it did before. No other full-window backdrop copied REQ-440(c): `--demo-pill-h` appears in no other `inset` (checked with grep across front-end/).
+
+- unit: `jest/unit/demo-pill-band.test.ts` ("REQ-618: the New invoice sheet's backdrop dims the whole window, and its content scrolls clear of the band"). Replaces REQ-440(c)'s assertion. It checks the backdrop style: `inset:0`, the dim colour kept, padding-bottom offset by the band, and the scroll padding.
+- int: n/a — this is a CSS layout on one island; there is no server or module seam to integrate.
+- e2e: `e2e/demo-mode/demo-invoice-sheet-dim.e2e.test.ts` ("REQ-618 (demo-loop cycle 4, p4-p3b): …"). A live demo runs, and the contractor opens /invoices?new=1 at 1280×720 and 390×844. The backdrop covers the whole window. Every point in the bottom strip beside the pill hits the backdrop, not the page behind. Once the sheet is scrolled to its end, it ends above the band and does not meet the pill.
+- RED first (before the fix): the unit test failed with `Expected pattern: /(^|;)inset:0;/ — Received "position:fixed;inset:0 0 var(--demo-pill-h, 0px) 0;…"`. `shots run e2e/demo-mode/demo-invoice-sheet-dim.e2e.test.ts` failed with `✗ REQ-618 … desktop-1280: the sheet's backdrop (its dim) covers the whole window — {"backdrop":{"left":0,"top":0,"right":1280,"bottom":656},"vw":1280,"vh":720,"band":"64px"}`. That is the demo's 64 px strip.
+- GREEN: the jest unit project gave "Test Suites: 325 passed · Tests: 1 skipped, 3201 passed". `shots run` passed ✓ REQ-618 twice in a row, plus ✓ REQ-440 (demo-pill-band) and ✓ REQ-482 M39 en/es (new-invoice-mobile, the same sheet on a phone).

@@ -3720,11 +3720,13 @@ function NewInvoiceModal(
   // REQ-409: the intro and ledger line follow the quote (and its acceptance)
   const copy = newInvoiceCopy(ledger);
 
-  // REQ-440 (cycle 3, m2): the sheet scrolls, so it ends above the demo pill's band (0 with no demo)
+  // REQ-618 (cycle 4, p4-p3b; amends REQ-440(c)): the backdrop is the dim, so it covers the whole
+  // window; only the sheet's content keeps clear of the demo pill's band (0 with no demo) — its
+  // scroll end and anything scrolled to stop above it.
   return (
     <Backdrop
       onClose={() => !busy && onClose()}
-      style="position:fixed;inset:0 0 var(--demo-pill-h, 0px) 0;background:rgba(20,40,45,0.45);display:flex;align-items:flex-start;justify-content:center;z-index:1000;padding:20px;overflow-y:auto"
+      style="position:fixed;inset:0;background:rgba(20,40,45,0.45);display:flex;align-items:flex-start;justify-content:center;z-index:1000;padding:20px 20px calc(20px + var(--demo-pill-h, 0px));scroll-padding-bottom:var(--demo-pill-h, 0px);overflow-y:auto"
     >
       <form
         data-cy="new-invoice-modal"
