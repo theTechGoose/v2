@@ -110,7 +110,10 @@ export type PeerMessage =
   | { k: "resync" }
   // REQ-295 — the customer's demo pill box in their viewport (null: no pill), for the stage's ghost;
   // REQ-372 — and what the pill says, so the ghost is a replica, not an empty box
-  | ({ k: "pill"; r: Rect | null } & PillFace);
+  | ({ k: "pill"; r: Rect | null; t?: number } & PillFace)
+  // REQ-636 (cycle 5, m8) — a stage that just followed a tab asks it for its pill (one sent
+  // before the stage followed it was dropped); `t` above: the pill's frame clock (link.now())
+  | { k: "askPill" };
 
 /** REQ-372 — the pill's state in words the stage translates itself (the presenter's language) */
 export type PillStatus = "live" | "connecting" | "ended";
@@ -359,10 +362,16 @@ export function parsePeerMessage(x: unknown): PeerMessage | null {
     case "resync":
       return { k: "resync" };
     case "pill": {
-      if (o.r === null) return { k: "pill", r: null };
+      // REQ-636 — the frame clock the pill was sent at
+      const t = typeof o.t === "number" && Number.isFinite(o.t)
+        ? { t: o.t }
+        : {};
+      if (o.r === null) return { k: "pill", r: null, ...t };
       const r = parseRect(o.r);
-      return r ? { k: "pill", r, ...parsePillFace(o) } : null;
+      return r ? { k: "pill", r, ...parsePillFace(o), ...t } : null;
     }
+    case "askPill":
+      return { k: "askPill" };
     default:
       return null;
   }

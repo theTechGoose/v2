@@ -447,9 +447,12 @@ export function ghostWords(
  * is still connecting and cannot say so (its face rides the very link that is opening), so the
  * stage's ghost keeps the last pill and says "Connecting…" in the stage's words until the new
  * page's pill speaks — never a blank, never a stale "Connected". An ended demo stays ended.
+ * REQ-636 — and untucked (the old page's tuck is not the new page's).
  */
 export function pillFaceAwaiting(face: PillFace): PillFace {
-  const { label: _label, ...rest } = face;
+  // REQ-636 (cycle 5, m8) — nor is it tucked: the new page decides that (a non-public page starts
+  // with the whole pill), so the old page's tab must not linger on the stage
+  const { label: _label, tucked: _tucked, ...rest } = face;
   return { ...rest, status: face.status === "ended" ? "ended" : "connecting" };
 }
 
