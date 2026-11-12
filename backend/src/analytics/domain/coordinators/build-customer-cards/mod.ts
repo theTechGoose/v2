@@ -195,7 +195,7 @@ function buildOne(
   };
 }
 
-function deriveStatus(args: {
+export function deriveStatus(args: {
   balanceCents: number;
   acceptedQuotes: Quote[];
   myQuotes: Quote[];
@@ -224,8 +224,11 @@ function deriveStatus(args: {
     return "regular";
   }
   if (daysSinceContact > 60 && balanceCents <= 0) return "cold";
-  // Fallback: if there's any non-decided open quote treat as lead, else regular
+  // Fallback: if there's any non-decided open quote treat as lead
   if (myQuotes.length > 0 && acceptedQuotes.length === 0) return "lead";
+  // REQ-271 (demo i18n-formatting-m5): nothing on the books yet — no quote, no paid invoice —
+  // is a new customer, never a "regular".
+  if (myQuotes.length === 0 && args.paidInvoiceCount === 0) return "new";
   return "regular";
 }
 

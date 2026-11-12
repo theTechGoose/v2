@@ -28,6 +28,7 @@ const STATUS_LABEL_KEYS: Record<ClientStatus, string> = {
   owes: "clientsDisplay.status.owes",
   regular: "clientsDisplay.status.regular",
   cold: "clientsDisplay.status.cold",
+  new: "clientsDisplay.status.new",
 };
 
 const SEGMENT_LABEL_KEYS: Record<ClientSegmentKey, string> = {
@@ -77,6 +78,16 @@ export function moodFor(c: CustomerCard, lang: Lang = "en"): MoodPalette {
       shadow: "rgba(232,112,79,0.35)",
       statusFg: "#A8431F",
       label: tFor(lang, "clientsDisplay.status.lead"),
+    };
+  }
+  if (c.status === "new") {
+    // REQ-271: a customer with nothing on the books yet — never the regular fallback.
+    return {
+      from: "#7FB3D5",
+      to: "#3E7CA6",
+      shadow: "rgba(62,124,166,0.32)",
+      statusFg: "#2E6185",
+      label: tFor(lang, "clientsDisplay.status.new"),
     };
   }
   if (c.status === "cold") {
@@ -235,6 +246,9 @@ export function storyLineFor(c: CustomerCard, lang: Lang = "en"): string {
   }
   if (c.status === "regular") {
     return tFor(lang, "clientsDisplay.story.regular", { when: c.lastWhenRel });
+  }
+  if (c.status === "new") {
+    return tFor(lang, "clientsDisplay.story.new", { when: c.lastWhenRel });
   }
   return tFor(lang, "clientsDisplay.story.default", { when: c.lastWhenRel });
 }
