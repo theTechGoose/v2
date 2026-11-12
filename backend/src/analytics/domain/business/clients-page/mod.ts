@@ -8,6 +8,7 @@
  * (over everything). The page draws what it is handed and derives nothing.
  */
 import type { Customer, CustomerCard, CustomerStatus } from "@crm/dto/customer.ts";
+import { customerMatchesQuery } from "#quote-flow/customer-search.ts";
 
 export const CLIENTS_PAGE_SIZE = 25;
 export const CLIENTS_PAGE_SIZE_MAX = 100;
@@ -48,15 +49,11 @@ export interface ClientsPageQuery {
 
 type Searchable = Pick<Customer, "name" | "businessName" | "email" | "phoneNumber" | "address" | "notes">;
 
-/** a blank query matches all; otherwise name, business, email, phone (by digits), address or notes, case-insensitive */
+/** a blank query matches all; otherwise name, business, email, phone (by digits), address or notes,
+ *  case- and accent-blind — REQ-279 (demo M32): "maria" finds "María"; the one rule the assistant's
+ *  customer picker uses too (shared/quote-flow/customer-search.ts) */
 export function matchesQuery(c: Searchable, q: string | undefined): boolean {
-  const needle = (q ?? "").trim().toLowerCase();
-  if (!needle) return true;
-  const digits = needle.replace(/\D/g, "");
-  const texts = [c.name, c.businessName, c.email, c.address, c.notes];
-  if (texts.some((t) => (t ?? "").toLowerCase().includes(needle))) return true;
-  if (digits.length >= 3 && (c.phoneNumber ?? "").replace(/\D/g, "").includes(digits)) return true;
-  return false;
+  return customerMatchesQuery(c, q);
 }
 
 /** by name, case-insensitive, then by createdAt — a stable order for paging */

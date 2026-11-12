@@ -42,3 +42,17 @@ Deno.test("REQ-135 GET /customers — the array without page; the envelope with 
     assertEquals([q.items.length, q.items[0].name, q.total], [1, "Client 07", 1]);
   });
 });
+
+Deno.test("REQ-279 (demo M32) GET /customers?q= — accent-blind: 'maria' finds 'María José Peña', 'peña' finds 'Pena'", async () => {
+  await withServer(async (port) => {
+    const sid = await login(port, "+15125551353");
+    const H = { ...J, "x-session-id": sid };
+    for (const name of ["María José Peña", "Ana Pena", "Bob Smith"]) {
+      await (await fetch(`http://localhost:${port}/customers`, { method: "POST", headers: H, body: JSON.stringify({ name }) })).body?.cancel();
+    }
+    const maria = await fetch(`http://localhost:${port}/customers?q=maria`, { headers: H }).then((r) => r.json());
+    assertEquals([maria.total, maria.items.map((c: { name: string }) => c.name)], [1, ["María José Peña"]]);
+    const pena = await fetch(`http://localhost:${port}/customers?q=${encodeURIComponent("peña")}`, { headers: H }).then((r) => r.json());
+    assertEquals([pena.total, pena.items.map((c: { name: string }) => c.name)], [2, ["Ana Pena", "María José Peña"]]);
+  });
+});

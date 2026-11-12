@@ -144,3 +144,21 @@ Deno.test("REQ-277 (M31): the card's nudge and the panel's Message text the cust
     );
     expect(inert === 0, `no unlabelled, unwired button left on a card (${inert})`);
   }));
+
+Deno.test("REQ-279 (demo M32): the customers search is accent-blind — 'maria' finds María José Peña, 'pena' finds her too", (t) =>
+  story(t, async ({ page, expect, http, baseUrl }) => {
+    const { auth } = await signIn(http, page, baseUrl);
+    for (const name of ["María José Peña", "Bob Smith"]) {
+      const r = await http("/api/customers", { method: "POST", headers: auth, body: JSON.stringify({ name }) });
+      await r.body?.cancel();
+    }
+    await page.goto("/customers");
+    await expect.see("2 on the books");
+    const cards = page.locator(".ccard2");
+    for (const q of ["maria", "pena"]) {
+      await page.locator("[data-cy='clients-search']").fill(q);
+      for (let i = 0; i < 25 && (await cards.count()) !== 1; i++) await page.waitForTimeout(200);
+      expect((await cards.count()) === 1, `one card for "${q}" (${await cards.count()})`);
+      await expect.see("María José Peña");
+    }
+  }));
