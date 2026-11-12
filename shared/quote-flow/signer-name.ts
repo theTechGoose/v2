@@ -27,3 +27,27 @@ export function isValidSignerName(raw: unknown): boolean {
   if (words.length >= 2) return true;
   return (name.match(LETTERS)?.length ?? 0) >= 3;
 }
+
+/** Lowercase, accent-free, whitespace-collapsed — for spelling comparison. */
+function foldName(raw: string): string {
+  return normalizeSignerName(raw).normalize("NFD").replace(/\p{M}/gu, "")
+    .toLowerCase();
+}
+
+/**
+ * REQ-692 (demo-loop cycle 5, p18-6a): "Carmen Nunez" signed an agreement
+ * made out to "Carmen Núñez" and the page showed both spellings. When the
+ * typed name differs from the name on file only by accents or case, return
+ * the on-file spelling to suggest; otherwise undefined. A suggestion only —
+ * any valid typed name still signs (rejecting a mismatch is the owner's call).
+ */
+export function onFileSpellingSuggestion(
+  typed: string,
+  onFile: string | undefined,
+): string | undefined {
+  if (!onFile) return undefined;
+  const want = normalizeSignerName(onFile);
+  const got = normalizeSignerName(typed);
+  if (!want || !got || got === want) return undefined;
+  return foldName(got) === foldName(want) ? want : undefined;
+}

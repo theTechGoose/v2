@@ -193,6 +193,9 @@ function cstr(lang: Lang, terms?: Term[]) {
     estCompletion: tFor(lang, "quoteDoc.estCompletion"),
     estimated: (v: string) => tFor(lang, "quoteDoc.estimated", { value: v }),
     signHere: tFor(lang, "quoteDoc.signHere"),
+    signatures: tFor(lang, "quoteDoc.signatures"),
+    contractorSignedBySending: (date: string) =>
+      tFor(lang, "quoteDoc.contractorSignedBySending", { date }),
     bothCaptured: tFor(lang, "quoteDoc.bothCaptured"),
     bySigning: (first?: string) =>
       first
@@ -823,8 +826,18 @@ export function QuoteDoc(
               the customer's filled cursive name + date after signing. */
           }
           {!declined && (
-            <section style="margin-top:36px">
-              <SectionHeader n={num()} title={t.signHere} />
+            <section
+              data-cy="quote-signature-section"
+              style="margin-top:36px"
+            >
+              {
+                /* REQ-692 (demo c5 p18-6a): a signed agreement no longer
+                  says "Sign here" — the section is the signatures record. */
+              }
+              <SectionHeader
+                n={num()}
+                title={signed ? t.signatures : t.signHere}
+              />
               <div
                 style={`margin:-4px 0 0;color:${MUTED};font-size:13px;line-height:1.5`}
               >
@@ -858,18 +871,38 @@ export function QuoteDoc(
                   <div style={`margin-top:2px;font-size:11px;color:${MUTED}`}>
                     {contractorDateLine}
                   </div>
+                  {
+                    /* REQ-692 (demo c3-p8-pair5-e): the contractor signs by
+                      sending (deck p14) — say so, so the cursive mark never
+                      reads as a signature nobody gave. */
+                  }
+                  {!unready && quote.publishedAt && (
+                    <div
+                      data-cy="quote-contractor-sent-note"
+                      style={`margin-top:6px;font-size:11px;font-style:italic;color:${MUTED}`}
+                    >
+                      {t.contractorSignedBySending(
+                        fmtDate(quote.publishedAt, lang),
+                      )}
+                    </div>
+                  )}
                 </div>
                 {/* Customer card — placeholder OR filled */}
                 {signed
                   ? (
                     <div
+                      data-cy="quote-customer-signature"
                       style={`padding:14px 16px;background:#fff;border:1px solid ${LINE};border-radius:12px;min-height:96px;display:flex;flex-direction:column;justify-content:flex-end`}
                     >
                       <div
                         style={`font-size:10px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:${MUTED}`}
                       >
-                        {customerName
-                          ? t.signatureOf(customerName)
+                        {
+                          /* REQ-692 (demo c5 p18-6a): the signer's typed
+                            name, one spelling across the whole card. */
+                        }
+                        {signerName
+                          ? t.signatureOf(signerName)
                           : t.clientSignature}
                       </div>
                       {
@@ -882,7 +915,7 @@ export function QuoteDoc(
                       <div
                         style={`margin-top:2px;font-size:14px;font-weight:800;color:${INK}`}
                       >
-                        {customerName ?? quote.acceptedName ?? "—"}
+                        {signerName ?? "—"}
                       </div>
                       {view.signatureImage
                         ? (
@@ -890,7 +923,7 @@ export function QuoteDoc(
                             data-cy="quote-signature-image"
                             src={view.signatureImage}
                             alt={tFor(lang, "public.doc.signedBy", {
-                              name: quote.acceptedName ?? customerName ?? "",
+                              name: signerName ?? "",
                             })}
                             style="margin-top:6px;max-height:64px;max-width:240px;object-fit:contain;display:block"
                           />
@@ -899,13 +932,13 @@ export function QuoteDoc(
                           <div
                             style={`margin-top:6px;font-family:'Snell Roundhand','Brush Script MT',cursive;font-size:26px;color:${TEAL};line-height:1.1`}
                           >
-                            {quote.acceptedName ?? customerName ?? "—"}
+                            {signerName ?? "—"}
                           </div>
                         )}
                       <div
                         style={`margin-top:6px;font-size:11px;color:${MUTED}`}
                       >
-                        {t.by} {quote.acceptedName ?? customerName ?? "—"}
+                        {t.by} {signerName ?? "—"}
                       </div>
                       <div
                         style={`margin-top:2px;font-size:11px;color:${MUTED}`}
@@ -1001,6 +1034,7 @@ export function QuoteDoc(
                             version={quote.version}
                             lang={lang}
                             override={quote.internal === true}
+                            onFileName={quote.customer?.name}
                             onSigned={onSigned}
                           />
                         )}
