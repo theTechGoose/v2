@@ -49,6 +49,15 @@ import {
   websiteLabel,
 } from "../../shared/quote-flow/format-helpers.ts";
 import { summarizeJobName } from "../../shared/quote-flow/job-name.ts";
+import type { QuoteDelivery } from "../../shared/quote-flow/delivery.ts";
+import {
+  applySendOutcome,
+  headerStatusKey,
+  lastRecoveryDividerId,
+  type SendDividerPayload,
+  sendDividerFailed,
+  sendOutcomePayload,
+} from "../lib/send-delivery.ts";
 import { isPlaceholderName } from "../../shared/quote-flow/outbound-identity.ts";
 import {
   TimeoutError,
@@ -608,6 +617,9 @@ export default function AsstChat({
       acceptedAt?: string | null;
       /** Wizard-captured agreement terms — the quote IS the agreement. */
       terms?: { stepId: string; label: string; value: string }[];
+      /** REQ-236: the latest send's outcome + first delivery time. */
+      lastDelivery?: QuoteDelivery;
+      deliveredAt?: string;
     }
     | undefined
   >();
@@ -1332,6 +1344,8 @@ export default function AsstChat({
             terms: (q as {
               terms?: { stepId: string; label: string; value: string }[];
             }).terms,
+            lastDelivery: q.lastDelivery,
+            deliveredAt: q.deliveredAt,
           });
         }
       })
@@ -1474,27 +1488,21 @@ export default function AsstChat({
     const lastDivider = [...messages]
       .reverse()
       .find((m) => m.kind === "phase_divider");
-    const dividerPhase = (
-      lastDivider?.payload as { phase?: number } | undefined
-    )?.phase;
     // UX-02: the customer's acceptance is the loudest state this thread can
-    // reach — it outranks "out for signature", which reads as still-waiting.
-    let status = tFor(lang, "asstChat.header.default");
-    if (quoteAccepted || dividerPhase === 4) {
-      status = tFor(lang, "asstChat.header.quoteAccepted");
-    } else if (quote?.status === "sent" || quote?.status === "viewed") {
-      status = tFor(lang, "asstChat.header.outForSignature");
-    } else if (dividerPhase === 3) {
-      status = tFor(lang, "asstChat.header.quoteSent");
-    } else if (dividerPhase === 2) {
-      status = tFor(lang, "asstChat.header.gatheringInfo");
-    } else if (quoteStatus === "accepted") {
-      status = tFor(lang, "asstChat.header.quoteAccepted");
-    } else if (quoteStatus === "sent") {
-      status = tFor(lang, "asstChat.header.quoteSent");
-    } else if (lastQuoteCard) {
-      status = tFor(lang, "asstChat.header.quoteDrafted");
-    }
+    // reach. REQ-236: a send that reached nobody reads "Not delivered", never
+    // "Out for signature" / "Quote sent".
+    const status = tFor(
+      lang,
+      headerStatusKey({
+        quoteAccepted,
+        quote,
+        lastDividerPayload: lastDivider?.payload as
+          | SendDividerPayload
+          | undefined,
+        lastCardStatus: quoteStatus,
+        hasQuoteCard: !!lastQuoteCard,
+      }),
+    );
     // No status chip at all on a brand-new thread — "Drafting…" before
     // anything has been drafted reads as broken state.
     const headerClient = client ??
@@ -1511,6 +1519,7 @@ export default function AsstChat({
     quote?.id,
     quote?.status,
     quote?.acceptedAt,
+    quote?.lastDelivery,
     convoId,
     messages.length,
     lang,
@@ -2875,6 +2884,10 @@ export default function AsstChat({
         args.quoteId,
         args.channel,
       );
+      // REQ-236: the resend's outcome — "sent" only if it delivered.
+      setQuote((q) =>
+        q ? applySendOutcome(q, sendOutcomePayload(res.newMessages)) : q
+      );
       if (res.newMessages?.length) {
         setMessages((m) => [...m, ...res.newMessages]);
       }
@@ -2924,7 +2937,11 @@ export default function AsstChat({
         next.add(message.id);
         return next;
       });
-      setQuote((q) => (q ? { ...q, status: "sent" } : q));
+      // REQ-236 (demo M8): a 200 is not a delivery — the quote reads "sent"
+      // only when the divider says a channel delivered it.
+      setQuote((q) =>
+        q ? applySendOutcome(q, sendOutcomePayload(res.newMessages)) : q
+      );
       setPreviewCtaId(null);
       if (res.newMessages?.length) {
         setMessages((m) => [...m, ...res.newMessages]);
@@ -5209,28 +5226,12 @@ export default function AsstChat({
               // The recovery form should appear ONLY on the most recent
               // failure-divider — otherwise older failures duplicate the
               // form everywhere and clutter the thread.
-              let lastRecoveryDividerId: string | undefined;
-              for (let i = visible.length - 1; i >= 0; i--) {
-                const cand = visible[i];
-                if (cand.kind !== "phase_divider") continue;
-                const cp = (cand.payload ?? {}) as {
-                  quoteId?: string;
-                  emailedTo?: string;
-                  textedTo?: string;
-                  emailFailureReason?: string;
-                  smsFailureReason?: string;
-                };
-                if (!cp.quoteId) continue;
-                const eMissing = !cp.emailedTo && !!cp.emailFailureReason &&
-                  !customer?.email;
-                const pMissing = !cp.textedTo && !!cp.smsFailureReason &&
-                  (!customer?.phoneNumber ||
-                    /Invalid|21211/i.test(cp.smsFailureReason ?? ""));
-                if (eMissing || pMissing) {
-                  lastRecoveryDividerId = cand.id;
-                  break;
-                }
-              }
+              // REQ-236: only the NEWEST send divider can carry it — a good
+              // resend retires the older failure and its form.
+              const recoveryDividerId = lastRecoveryDividerId(
+                visible,
+                customer,
+              );
               return visible.map((m) => {
                 const wizardStepId = (
                   m.payload as { wizardStepId?: string } | undefined
@@ -5293,7 +5294,7 @@ export default function AsstChat({
                   const needRecovery = !!dp.quoteId && !!customer?.id &&
                     !!inferredChannel &&
                     (emailMissing || phoneMissing) &&
-                    m.id === lastRecoveryDividerId;
+                    m.id === recoveryDividerId;
                   const draft = recoveryDraft[m.id] ?? {};
                   const saving = recoverySavingId === m.id;
                   const askEmail = needRecovery && emailMissing;
@@ -5303,7 +5304,11 @@ export default function AsstChat({
                       <div class="phase-divider">
                         <div class="phase-divider__line" />
                         <div class="phase-divider__label">
-                          <I d={ICN.contract} size={11} /> {label}
+                          <I
+                            d={sendDividerFailed(dp) ? ICN.alert : ICN.contract}
+                            size={11}
+                          />{" "}
+                          {label}
                         </div>
                         <div class="phase-divider__line" />
                       </div>
@@ -7007,6 +7012,8 @@ export default function AsstChat({
                             <I
                               d={reviewed && !dispatchFailed
                                 ? ICN.check
+                                : dispatchFailed
+                                ? ICN.alert
                                 : ICN.contract}
                               size={18}
                             />

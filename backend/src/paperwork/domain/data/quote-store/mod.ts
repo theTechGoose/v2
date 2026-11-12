@@ -14,6 +14,7 @@ import type { DocVersionRecord } from "#documents/versions.ts";
 import type {
   CreateQuoteDto,
   Quote,
+  QuoteDeliveryFields,
   UpdateQuoteDto,
 } from "@paperwork/dto/quote.ts";
 
@@ -115,7 +116,7 @@ export class QuoteStore {
   async updateIf(
     id: string,
     predicate: (current: Quote) => boolean,
-    patch: UpdateQuoteDto,
+    patch: UpdateQuoteDto & QuoteDeliveryFields,
   ): Promise<Quote | null> {
     const kv = await getKv();
     for (let attempt = 0; attempt < 20; attempt++) {
@@ -182,7 +183,7 @@ export class QuoteStore {
   async update(
     id: string,
     userId: string,
-    patch: UpdateQuoteDto,
+    patch: UpdateQuoteDto & QuoteDeliveryFields,
   ): Promise<Quote> {
     const existing = await this.getOwned(id, userId);
     const definedPatch = Object.fromEntries(

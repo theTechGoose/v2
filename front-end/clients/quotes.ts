@@ -10,6 +10,7 @@
 import { api, type ApiOptions } from "../lib/api.ts";
 import type { QuoteLedger } from "../../shared/documents/ledger.ts";
 import type { DocVersionRecord } from "../../shared/documents/versions.ts";
+import type { QuoteDelivery } from "../../shared/quote-flow/delivery.ts";
 
 export type { QuoteLedger };
 
@@ -18,6 +19,8 @@ export type QuoteVersion = DocVersionRecord & { current?: boolean };
 
 export type QuoteStage =
   | "draft"
+  /** REQ-236: the last send reached nobody. */
+  | "undelivered"
   | "sent"
   | "opened"
   | "cooling"
@@ -60,6 +63,9 @@ export interface QuoteCard {
   sentAt?: string;
   acceptedAt?: string;
   lostAt?: string;
+  /** REQ-236: the latest send attempt's outcome + first delivery time. */
+  lastDelivery?: QuoteDelivery;
+  deliveredAt?: string;
   createdAt: string;
   updatedAt: string;
   // Derived

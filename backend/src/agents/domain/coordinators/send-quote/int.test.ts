@@ -312,3 +312,140 @@ Deno.test("send-quote: rejects a quote id that doesn't match conv.quoteId", asyn
   assertEquals(reloaded.status, "draft");
   await resetKv();
 });
+
+// ── REQ-236 (demo M8): a failed send is NOT a sent quote ──────────────────
+// The delivery outcome is stored on the quote (`lastDelivery`), the quote
+// only becomes "sent" (status, sentAt, `quote:sent`) when at least one
+// channel actually delivered, and the conversation's list chip reads
+// "undelivered" instead of "sent".
+
+async function makeNoEmailConversation(userId = "u-1") {
+  const ctx = fresh();
+  await seedContractor(userId);
+  // A customer with no email and no phone: every channel fails.
+  const customer = await ctx.customers.create(userId, { name: "Maria Lopez" });
+  const quote = await ctx.quotes.create(userId, {
+    summary: "Fence",
+    lineItems: [],
+    estimatedTotal: 35_000,
+    status: "draft",
+    customerId: customer.id,
+  });
+  const conv = await ctx.conversations.create({
+    userId,
+    quoteId: quote.id,
+    customerId: customer.id,
+  });
+  return { ...ctx, conv, customer, quote };
+}
+
+Deno.test("REQ-236: a send that delivers nowhere leaves the quote unsent and records the failure", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const ctx = await makeNoEmailConversation();
+  const events: DomainEvent[] = [];
+  ctx.bus.subscribe((e) => {
+    if (e.entityType === "quote" && e.action === "sent") events.push(e);
+  });
+
+  const r = await ctx.flow.run({
+    userId: "u-1",
+    conversationId: ctx.conv.id,
+    quoteId: ctx.quote.id,
+    channel: "email",
+  });
+
+  const reloaded = await ctx.quotes.getOwned(ctx.quote.id, "u-1");
+  assertEquals(reloaded.status, "draft", "a failed send is not a sent quote");
+  assertEquals(reloaded.sentAt, undefined, "no sentAt without a delivery");
+  assertEquals(reloaded.deliveredAt, undefined);
+  assert(reloaded.lastDelivery, "the delivery outcome is stored on the quote");
+  assertEquals(reloaded.lastDelivery!.channel, "email");
+  assertEquals(reloaded.lastDelivery!.emailedTo, undefined);
+  assert(reloaded.lastDelivery!.emailFailureReason, "failure reason kept");
+  assertEquals(events.length, 0, "no quote:sent event for a failed send");
+  assertEquals(r.conversation.quoteStatus, "undelivered");
+  await resetKv();
+});
+
+Deno.test("REQ-236: a quote LockQuote already marked sent still reads undelivered after a failed send", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const ctx = await makeNoEmailConversation();
+  const lockedAt = new Date().toISOString();
+  await ctx.quotes.update(ctx.quote.id, "u-1", {
+    status: "sent",
+    sentAt: lockedAt,
+  });
+
+  const r = await ctx.flow.run({
+    userId: "u-1",
+    conversationId: ctx.conv.id,
+    quoteId: ctx.quote.id,
+    channel: "sms",
+  });
+
+  const reloaded = await ctx.quotes.getOwned(ctx.quote.id, "u-1");
+  assertEquals(reloaded.deliveredAt, undefined);
+  assertEquals(reloaded.lastDelivery?.channel, "sms");
+  assertEquals(reloaded.lastDelivery?.textedTo, undefined);
+  assert(reloaded.lastDelivery?.smsFailureReason, "sms failure reason kept");
+  assertEquals(r.conversation.quoteStatus, "undelivered");
+  await resetKv();
+});
+
+Deno.test("REQ-236: a good resend after a failure sends the quote and clears the failure", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const ctx = await makeNoEmailConversation();
+  const events: DomainEvent[] = [];
+  ctx.bus.subscribe((e) => {
+    if (e.entityType === "quote" && e.action === "sent") events.push(e);
+  });
+
+  await ctx.flow.run({
+    userId: "u-1",
+    conversationId: ctx.conv.id,
+    quoteId: ctx.quote.id,
+    channel: "email",
+  });
+  // The contractor adds the email, then resends.
+  await ctx.customers.update(ctx.customer.id, "u-1", {
+    email: "maria@example.com",
+  });
+  const r = await ctx.flow.run({
+    userId: "u-1",
+    conversationId: ctx.conv.id,
+    quoteId: ctx.quote.id,
+    channel: "email",
+  });
+
+  const reloaded = await ctx.quotes.getOwned(ctx.quote.id, "u-1");
+  assertEquals(reloaded.status, "sent");
+  assert(reloaded.sentAt, "sentAt stamped on the first real delivery");
+  assert(reloaded.deliveredAt, "deliveredAt stamped");
+  assertEquals(reloaded.lastDelivery?.emailedTo, "maria@example.com");
+  assertEquals(reloaded.lastDelivery?.emailFailureReason, undefined);
+  assertEquals(events.length, 1, "quote:sent fires once, on the delivery");
+  assertEquals(r.conversation.quoteStatus, "sent");
+  await resetKv();
+});
+
+Deno.test("REQ-236: a successful send records where it went", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const ctx = await makeReadyConversation();
+
+  await ctx.flow.run({
+    userId: "u-1",
+    conversationId: ctx.conv.id,
+    quoteId: ctx.quote.id,
+  });
+
+  const reloaded = await ctx.quotes.getOwned(ctx.quote.id, "u-1");
+  assert(reloaded.deliveredAt);
+  assertEquals(reloaded.lastDelivery?.channel, "email");
+  assertEquals(reloaded.lastDelivery?.emailedTo, "tom@example.com");
+  assert(reloaded.lastDelivery?.at);
+  await resetKv();
+});

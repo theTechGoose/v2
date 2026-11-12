@@ -32,7 +32,11 @@ import {
 } from "../components/QuotesSections.tsx";
 import QuoteTrack from "./QuoteTrack.tsx";
 import QuoteCard from "./QuoteCard.tsx";
-import type { Quote } from "../lib/quotes-seed.ts";
+import {
+  DRAFT_TRACK_STAGES,
+  OUT_STAGES,
+  type Quote,
+} from "../lib/quotes-seed.ts";
 import {
   CardGridSkeleton,
   PageHeaderSkeleton,
@@ -89,6 +93,7 @@ function mapCard(c: BackendQuoteCard, lang: "en" | "es"): Quote {
     opens: c.opens,
     sentDays: c.sentDays,
     decidedDays: c.decidedDays ?? undefined,
+    ...(c.lastDelivery?.channel ? { channel: c.lastDelivery.channel } : {}),
     band: ["#FFB3B3", "#FF6B6B"],
     shadow: "rgba(255,107,107,0.35)",
     ...(c.isSample === true ? { isSample: true } : {}),
@@ -810,15 +815,14 @@ export default function QuotesPage(_props: { lang?: "en" | "es" }) {
   const real = quotes.filter(isReal);
 
   // Card lists for the tracks (samples included — the card renders):
-  const outCards = quotes.filter((q) =>
-    ["sent", "opened", "cooling", "stale"].includes(q.stage)
-  );
-  const draftCards = quotes.filter((q) => q.stage === "draft");
+  // REQ-236: an undelivered quote is never "out for response".
+  const outCards = quotes.filter((q) => OUT_STAGES.includes(q.stage));
+  const draftCards = quotes.filter((q) => DRAFT_TRACK_STAGES.includes(q.stage));
   const decidedCards = quotes.filter((q) => ["won", "lost"].includes(q.stage));
 
   // Aggregates (real quotes only):
   const open = real.filter((q) =>
-    ["draft", "sent", "opened", "cooling", "stale"].includes(q.stage)
+    DRAFT_TRACK_STAGES.includes(q.stage) || OUT_STAGES.includes(q.stage)
   );
   const openTotal = open.reduce((acc, q) => acc + q.value, 0);
   const stale = real.filter((q) => q.stage === "stale");

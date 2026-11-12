@@ -11,6 +11,8 @@
  *     "1 activos" artifacts (P-36).
  */
 
+import { isUndelivered, type QuoteDelivery } from "./delivery.ts";
+
 export type PipelineClass = "awaiting" | "won" | "lost" | "draft";
 
 export interface PipelineQuote {
@@ -18,6 +20,9 @@ export interface PipelineQuote {
   sentAt?: string | null;
   acceptedAt?: string | null;
   lostAt?: string | null;
+  /** REQ-236: the stored send outcome (see ./delivery.ts). */
+  lastDelivery?: QuoteDelivery | null;
+  deliveredAt?: string | null;
   [key: string]: unknown;
 }
 
@@ -62,6 +67,9 @@ export function classifyQuoteForPipeline(quote: PipelineQuote): PipelineClass {
   if (WON_STATUSES.has(quote.status ?? "")) return "won";
   if (quote.lostAt) return "lost";
   if (LOST_STATUSES.has(quote.status ?? "")) return "lost";
+  // REQ-236 (demo M8): a send that reached nobody is not out with the
+  // customer — it is still on the contractor's desk.
+  if (isUndelivered(quote)) return "draft";
   if (quote.sentAt || quote.status === "sent" || quote.status === "viewed") {
     return "awaiting";
   }
