@@ -14,8 +14,9 @@ import type { NavNode } from "./nav-folders.ts";
 export const NAV: NavNode<IconName>[] = [
   { id: "home", icon: "home", href: "/dashboard" },
   // P-46: one EN term — the nav, URL, and page all say "customers"
-  // (/clients stays live as an alias route; countKey is the store name).
-  { id: "customers", icon: "user", href: "/customers", countKey: "clients" },
+  // (/clients stays live as an alias route). REQ-518: no countKey — a customers total is not
+  // work waiting, so it never gets the pink pill.
+  { id: "customers", icon: "user", href: "/customers" },
   {
     id: "billing",
     icon: "pay",

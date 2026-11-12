@@ -1,7 +1,6 @@
 import Backdrop from "../components/Backdrop.tsx";
 import { useEffect, useState } from "preact/hooks";
 import { I, ICN } from "../lib/dash-icons.tsx";
-import { type DashboardStats } from "../clients/dashboard.ts";
 import {
   type CachedDash,
   readCached,
@@ -22,8 +21,11 @@ import {
   type ProfileUpdatedDetail,
 } from "../lib/profile-events.ts";
 import { sidebarIdentity, withSavedName } from "../lib/greeting-identity.ts";
-
-type CountKey = "clients" | "quotes" | "invoices";
+import {
+  type CountKey,
+  countLabelKey,
+  pickSidebarCounts,
+} from "../lib/sidebar-counts.ts";
 
 // REQ-176 — the tree itself is data in lib/nav-tree.ts; this island renders one level of it.
 
@@ -53,21 +55,12 @@ const INITIAL_STATE: SbState = {
   superAdmin: false,
 };
 
-function pickCounts(stats: DashboardStats): Partial<Record<CountKey, number>> {
-  // "Active" totals only — drafts shouldn't badge as new work since the user
-  // hasn't sent them yet. Quotes uses sent (not total) for the same reason.
-  return {
-    clients: stats.customers,
-    quotes: stats.quotes.sent,
-    invoices: stats.invoices.pending,
-  };
-}
-
 /** Project the shared dash-cache snapshot onto the sidebar's slice. */
 function projectSidebar(snap: CachedDash | null): SbState {
   if (!snap) return INITIAL_STATE;
   const { stats, profile } = snap;
-  const counts = stats ? pickCounts(stats) : {};
+  // REQ-518: actionable counts only — never the customers total
+  const counts = stats ? pickSidebarCounts(stats) : {};
   const lang = profile?.user.language === "es" ? "es" : "en";
   const superAdmin = profile?.user.superAdmin === true;
   // REQ-423 — the sign-in placeholder is no name: the business stands in, else "Account"
@@ -341,6 +334,10 @@ export default function DashSidebar(
                 const count = item.countKey
                   ? s.counts[item.countKey as CountKey]
                   : undefined;
+                // REQ-518: the pill says what it counts (hover title + screen readers)
+                const countLabel = item.countKey && count
+                  ? tFor(lang, countLabelKey(item.countKey), { count })
+                  : undefined;
                 return (
                   <a
                     key={item.id}
@@ -363,7 +360,15 @@ export default function DashSidebar(
                       </span>
                     )}
                     {!collapsed && count != null && count > 0
-                      ? <span class="nav-item__count">{count}</span>
+                      ? (
+                        <span
+                          class="nav-item__count"
+                          title={countLabel}
+                          aria-label={countLabel}
+                        >
+                          {count}
+                        </span>
+                      )
                       : null}
                   </a>
                 );
