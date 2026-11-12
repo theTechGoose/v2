@@ -1016,6 +1016,8 @@
   "conversationTitle.newConversation": "New conversation",
   "counter.decrement": "-1",
   "counter.increment": "+1",
+  "customer.invalidEmail": "Enter a valid email address, like name@example.com.",
+  "customer.invalidPhone": "Enter a full phone number, like (512) 555-1234.",
   "dashAssistantCta.callSupport": "Call support",
   "dashAssistantCta.sub": "Your assistant drafts quotes, sends agreements, and chases invoices — just tell it about the job.",
   "dashAssistantCta.title": "Talk to your Assistant",

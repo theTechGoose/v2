@@ -8,6 +8,8 @@
  */
 import { useEffect, useState } from "preact/hooks";
 import { formatPhoneInput } from "../../shared/quote-flow/format-helpers.ts";
+import { customerContactError } from "../../shared/quote-flow/customer-contact.ts"; // REQ-278
+import { ApiError } from "../lib/api.ts";
 import {
   clientsClient,
   type ClientsFilter,
@@ -131,6 +133,16 @@ export default function ClientsPage({ lang: _lang }: { lang?: "en" | "es" }) {
   async function submitAddClient(e: Event) {
     e.preventDefault();
     if (!addName.trim() || adding) return;
+    // REQ-278 (demo M16): type=tel has no pattern and type=email takes
+    // "carl@x" — check the contact with the backend's own rule before POST.
+    const contactErr = customerContactError({
+      email: addEmail,
+      phoneNumber: addPhone,
+    });
+    if (contactErr) {
+      setAddErr(tFor(lang, contactErr));
+      return;
+    }
     setAdding(true);
     setAddErr(null);
     try {
@@ -147,8 +159,16 @@ export default function ClientsPage({ lang: _lang }: { lang?: "en" | "es" }) {
       setAddOpen(false);
       await refreshClients();
     } catch (err) {
+      // REQ-278: the backend names a refused contact by dictionary key.
+      const key = err instanceof ApiError
+        ? (err.body as { message?: unknown } | null)?.message
+        : undefined;
       setAddErr(
-        err instanceof Error ? err.message : tFor(lang, "clientsPage.addError"),
+        key === "customer.invalidPhone" || key === "customer.invalidEmail"
+          ? tFor(lang, key)
+          : err instanceof Error
+          ? err.message
+          : tFor(lang, "clientsPage.addError"),
       );
     } finally {
       setAdding(false);
