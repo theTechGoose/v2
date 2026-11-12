@@ -106,6 +106,16 @@ import { InvoiceStore } from "@paperwork/domain/data/invoice-store/mod.ts";
 import { isInvoiceLocked } from "#documents/versions.ts";
 import { ApplyChatChangeOrder } from "@agents/domain/coordinators/apply-chat-change-order/mod.ts";
 import { UpdateChatChangeOrder } from "@agents/domain/coordinators/update-chat-change-order/mod.ts"; // REQ-462
+// REQ-583 (demo-loop cycle 4, M2): send the invoice / record a payment.
+import { ChatBilling } from "@agents/domain/coordinators/chat-billing/mod.ts";
+import {
+  invoicesContext,
+  liveSendOffer,
+  namedCustomer,
+  parsePaymentReport,
+  parseSendInvoiceAsk,
+} from "@agents/domain/business/chat-billing-intent/mod.ts";
+import { isAccepted } from "#quote-flow/quote-status.ts";
 import {
   ReviseQuote,
   type ReviseQuoteInput,
@@ -365,6 +375,9 @@ export class HandleChatMessage {
     /** REQ-462 (demo-loop cycle 3, M26): edits / withdraws a change order
      *  named by its number ("CO-001"). */
     private changeOrderEdit?: UpdateChatChangeOrder,
+    /** REQ-583 (demo-loop cycle 4, M2): sends the invoice and records the
+     *  payment the contractor reports. */
+    private billing?: ChatBilling,
   ) {}
 
   /** REQ-438 (M7): which of the contractor's quotes a change order would
@@ -389,6 +402,37 @@ export class HandleChatMessage {
       customers: customers.map((c) => ({ id: c.id, name: c.name })),
       ...ask,
     });
+  }
+
+  /** REQ-583 (demo-loop cycle 4, M2, pair 6): the job of the customer a
+   *  billing ask names ("Job done for Carmen Ruiz … make the invoice") — as a
+   *  conversation binding — when there is one to bill: their one open job,
+   *  else the one of theirs that is signed. Undefined when nobody on file is
+   *  named, or which job is unclear. */
+  private async namedCustomersJob(
+    userId: string,
+    text: string,
+  ): Promise<{ quoteId: string; customerId: string } | undefined> {
+    const customers = this.customers
+      ? await this.customers.listByUser(userId).catch(() => [])
+      : [];
+    const who = namedCustomer(customers, text);
+    if (!who) return undefined;
+    const target = await this.changeOrderTarget(userId, {
+      customerName: who.name,
+    });
+    if (target.kind === "quote") {
+      return { quoteId: target.quoteId, customerId: who.id };
+    }
+    if (target.kind !== "ambiguous") return undefined;
+    const signed = (await Promise.all(
+      target.quoteIds.map((id) =>
+        this.quotes.getOwned(id, userId).catch(() => undefined)
+      ),
+    )).filter((q) => !!q && isAccepted(q));
+    return signed.length === 1
+      ? { quoteId: signed[0]!.id, customerId: who.id }
+      : undefined;
   }
 
   /** REQ-438 (M7): the answer to "delete invoice INV-001" — where to delete
@@ -1687,6 +1731,49 @@ export class HandleChatMessage {
       });
       return await finishEarly(owed);
     }
+    // ---- REQ-583 (demo-loop cycle 4, M2): a payment the customer made, and
+    // an invoice to send NOW, are done here in code. The chat model had no
+    // tool for either: pair 1's "Linda paid the deposit $1,425 by Zelle
+    // today" was never recorded, pair 3's "send it to her now please" got "I
+    // can't send the invoice directly…". "it" is the invoice the last reply
+    // offered with Send now (or the card's own "Send INV-001 now"); without
+    // that offer the model decides, with its send_invoice tool.
+    const billingText = !llmResponse && typeof input.content === "string"
+      ? input.content
+      : "";
+    const paymentReport = this.billing && billingText
+      ? parsePaymentReport(billingText)
+      : undefined;
+    const recorded = this.billing && paymentReport
+      ? await this.billing.recordPayment({
+        userId: input.userId,
+        conversation: conv,
+        lang: replyLang,
+        report: paymentReport,
+        text: billingText,
+        fromWords: true,
+      })
+      : undefined;
+    if (recorded) return await finishEarly(recorded);
+    const sendAsk = this.billing && billingText
+      ? parseSendInvoiceAsk(billingText)
+      : undefined;
+    const sendOffer = sendAsk && !sendAsk.invoiceNumber
+      ? liveSendOffer(history.filter((m) => m.id !== userMsg.id))
+      : undefined;
+    if (this.billing && sendAsk && (sendAsk.invoiceNumber || sendOffer)) {
+      return await finishEarly(
+        await this.billing.send({
+          userId: input.userId,
+          conversation: conv,
+          lang: replyLang,
+          ...(sendAsk.invoiceNumber
+            ? { invoiceNumber: sendAsk.invoiceNumber }
+            : { invoiceId: sendOffer!.invoiceId }),
+          ...(sendAsk.channel ? { channel: sendAsk.channel } : {}),
+        }),
+      );
+    }
     // M32: "John signed! Please send him the deposit invoice" → where the
     // bill stands (signing already sent the deposit invoice).
     if (
@@ -1695,6 +1782,26 @@ export class HandleChatMessage {
     ) {
       const billed = await answerBilling();
       if (billed) return await finishEarly(billed);
+    }
+    // REQ-583 (M2, pair 6): "Job done for Carmen Ruiz, faucet and the 2
+    // doors. Make the invoice for $450 please." in a NEW chat — no job bound.
+    // The customer it names has a job: bind it and answer where its bill
+    // stands. The demo read "invoice for" as a line to reprice ('I couldn't
+    // find a line called "invoice for" on Q-001…').
+    if (
+      !llmResponse && !conv.quoteId && typeof input.content === "string" &&
+      isInvoiceRequest(input.content)
+    ) {
+      const jobId = await this.namedCustomersJob(input.userId, input.content);
+      if (jobId) {
+        const bound = await this.conversations.update(conv.id, jobId);
+        const billed = await new AnswerBilling(
+          this.conversations,
+          this.messages,
+        )
+          .run({ userId: input.userId, conversation: bound, lang: replyLang });
+        if (billed) return await finishEarly(billed);
+      }
     }
     // ---- REQ-388 (M23): "Draft a quote at $1,500" — the pricing answer's
     // offer, taken (the chat's button sends those words). The draft is the
@@ -1983,11 +2090,22 @@ export class HandleChatMessage {
           "\n\n",
         );
       }
+      // REQ-583 (demo-loop cycle 4, M2): a signed job's invoices — what the
+      // model reads (what is billed, scheduled, paid) and what its
+      // send_invoice / record_payment tools may do.
+      const jobInvoices = this.billing && boundQuote && isAccepted(boundQuote)
+        ? await this.billing.invoicesOf(input.userId, boundQuote.id)
+        : undefined;
+      const invoiceLines = jobInvoices ? invoicesContext(jobInvoices) : "";
+      if (invoiceLines) {
+        businessContext = [businessContext, invoiceLines].filter(Boolean)
+          .join("\n\n");
+      }
       // REQ-368 (M32): only the tools this state allows — no lock / terms
       // once the quote is past drafting, no create / lock in the terms phase.
       // REQ-392: the review may also revise a line already on the quote.
       const tools = stepTools(
-        chatToolsFor(conv.currentPhase, boundQuote),
+        chatToolsFor(conv.currentPhase, boundQuote, jobInvoices),
         step,
       );
       // REQ-445 (demo-loop cycle 3, B2 + M20): a price the contractor gives
@@ -2288,6 +2406,43 @@ export class HandleChatMessage {
       return { conversation: updated, newMessages: [userMsg, reply] };
     };
     const userText = typeof input.content === "string" ? input.content : "";
+
+    // ---- REQ-583 (demo-loop cycle 4, M2): the model's send_invoice /
+    // record_payment run through ChatBilling, and the reply is what was
+    // actually done — never the model's own "Sending it now!".
+    const billingAction = llmResponse.action;
+    if (
+      this.billing && (billingAction?.type === "send_invoice" ||
+        billingAction?.type === "record_payment")
+    ) {
+      const done = billingAction.type === "send_invoice"
+        ? await this.billing.send({
+          userId: input.userId,
+          conversation: conv,
+          lang: replyLang,
+          ...(billingAction.payload.invoiceNumber
+            ? { invoiceNumber: billingAction.payload.invoiceNumber }
+            : {}),
+        })
+        : (await this.billing.recordPayment({
+          userId: input.userId,
+          conversation: conv,
+          lang: replyLang,
+          report: billingAction.payload,
+          text: userText,
+        }))!;
+      if (notDone) {
+        done.newMessages.push(
+          await this.messages.append({
+            conversationId: conv.id,
+            role: "assistant",
+            kind: "text",
+            content: notDone,
+          }),
+        );
+      }
+      return await finishEarly(done);
+    }
 
     // ---- REQ-462 (demo-loop cycle 3, M26): edit / withdraw a change order
     // by its number. The reply is the coordinator's; its payload names the

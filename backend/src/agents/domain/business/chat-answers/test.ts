@@ -359,7 +359,12 @@ Deno.test("REQ-388 M19 billingReply: a pay-after-completion quote — signed, it
   assertStringIncludes(r.text, "26 nov");
   assert(!/se envi[oó]/i.test(r.text), r.text);
   assertEquals(r.offerInvoiceCta, false);
-  assertEquals(r.invoice, undefined);
+  // REQ-583 AMENDMENT (demo-loop cycle 4, M2): the scheduled invoice is now
+  // shown as its card with "Send now" (pair 3/9 had no way to send it from
+  // the chat) — still no "Continue to invoice", still nothing sent.
+  assertEquals(r.invoice?.id, "inv-ana");
+  assertEquals(r.invoice?.status, "scheduled");
+  assertEquals(r.invoice?.offerSend, true);
 
   const en = billingReply("en", ANA_QUOTE, [ANA_INVOICE]);
   assertStringIncludes(en.text, "nothing is billed yet");
@@ -449,4 +454,52 @@ Deno.test("REQ-474 M17 owedReply: owed now is what is still owed on an open invo
     invoices: [{ ...ANA_PEREZ_DIRECT, paidAt: "2026-11-12T10:00:00Z" }],
   });
   assertEquals(paid.owedCents, 0);
+});
+
+// ---------------------------------------------------------------------------
+// REQ-583 (demo-loop cycle 4, M2): an invoice not sent yet is shown as its
+// card with "Send now". Pair 3 ("Invoice Maria for the deep clean") and pair 9
+// ("…mándale la factura") got "it's scheduled for Nov 19" and nothing to
+// press; pair 1, after the deposit was paid, heard nothing about the balance.
+// ---------------------------------------------------------------------------
+
+Deno.test("REQ-583 M2 billingReply: pay on completion — the scheduled invoice is the card, with Send now, and nothing is billed by asking", () => {
+  const r = billingReply("en", ANA_QUOTE, [ANA_INVOICE]);
+  assertStringIncludes(r.text, "nothing is billed yet");
+  assertStringIncludes(r.text, "Nov 26");
+  assertEquals(r.offerInvoiceCta, false);
+  assertEquals(r.invoice?.id, "inv-ana");
+  assertEquals(r.invoice?.number, "INV-001");
+  assertEquals(r.invoice?.status, "scheduled");
+  assertEquals(r.invoice?.offerSend, true);
+  assertEquals(r.invoice?.amountCents, 40_000);
+});
+
+Deno.test("REQ-583 M2 billingReply: the deposit paid, the balance scheduled — says when the balance goes out, and shows it with Send now", () => {
+  const r = billingReply("en", SIGNED, [
+    { ...DEPOSIT, status: "paid" },
+    BALANCE,
+  ]);
+  assertStringIncludes(r.text, "paid");
+  assertStringIncludes(r.text, "INV-002");
+  assertStringIncludes(r.text, "Nov 26");
+  assertEquals(r.invoice?.id, "inv-2");
+  assertEquals(r.invoice?.status, "scheduled");
+  assertEquals(r.invoice?.offerSend, true);
+  const es = billingReply("es", SIGNED, [
+    { ...DEPOSIT, status: "paid" },
+    BALANCE,
+  ]);
+  assertStringIncludes(es.text, "INV-002");
+  assertStringIncludes(es.text, "26 nov");
+});
+
+Deno.test("REQ-583 M2 billingReply: a drafted invoice is shown with Send now; a sent one never offers it again", () => {
+  const drafted = billingReply("en", SIGNED, [{ ...DEPOSIT, status: "draft" }]);
+  assertEquals(drafted.invoice?.id, "inv-1");
+  assertEquals(drafted.invoice?.status, "draft");
+  assertEquals(drafted.invoice?.offerSend, true);
+  const out = billingReply("en", SIGNED, [DEPOSIT, BALANCE]);
+  assertEquals(out.invoice?.id, "inv-1");
+  assertEquals(out.invoice?.offerSend, undefined);
 });

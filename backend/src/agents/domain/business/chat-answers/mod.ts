@@ -176,6 +176,9 @@ export interface BillingReply {
     title: string;
     /** Card line: "Deposit (1 of 2)" / "Job total". */
     line: string;
+    /** REQ-583 (demo-loop cycle 4, M2): not sent yet (scheduled / drafted) —
+     *  the card offers "Send now". */
+    offerSend?: boolean;
   };
   /** Signed, but nothing billed yet: offer the "Continue to invoice" CTA. */
   offerInvoiceCta: boolean;
@@ -230,6 +233,9 @@ export function billingReply(
         text: `${say("nothingBilledYet")} ${
           scheduledSentence(lang, scheduled)
         }`,
+        // REQ-583 (demo-loop cycle 4, M2): and the scheduled invoice itself,
+        // with Send now — pair 3 / 9 had nothing to press.
+        invoice: invoiceCard(lang, scheduled),
         offerInvoiceCta: false,
       };
     }
@@ -265,7 +271,8 @@ export function billingReply(
   const next = live
     .filter((i) => i.status === "scheduled")
     .sort(byInstallment)[0];
-  if (open && next) {
+  // REQ-583: also once all that is billed is paid — when the balance goes out
+  if (next) {
     const when = next.scheduledFor ?? next.dueDate;
     parts.push(say("next", {
       number: docNumberOf(next),
@@ -274,33 +281,48 @@ export function billingReply(
     }));
   }
 
-  // No card once everything is paid, nor for a drafted invoice — the chat's
-  // card renders a "draft" status with the quote's Lock-it-in buttons.
-  if (!open || open.status === "draft") {
-    return { text: parts.join(" "), offerInvoiceCta: false };
-  }
+  // REQ-583 (demo-loop cycle 4, M2): the card is the open invoice — a drafted
+  // one too, with Send now (the chat's invoice card has none of the quote
+  // card's buttons) — or, once all that is billed is paid, the next scheduled
+  // one with Send now. None when nothing more is to come.
+  const card = open ?? next;
+  return {
+    text: parts.join(" "),
+    ...(card ? { invoice: invoiceCard(lang, card) } : {}),
+    offerInvoiceCta: false,
+  };
+}
 
+/** The card for one invoice: number, amount, due date, which payment it is —
+ *  and (REQ-583) "Send now" while it has not gone out (scheduled / drafted).
+ *  Also the card ChatBilling shows after a send or a payment. */
+export function invoiceCard(
+  lang: Lang,
+  inv: BillingInvoice,
+): NonNullable<BillingReply["invoice"]> {
+  const number = docNumberOf(inv);
+  const due = inv.dueDate ? formatShortDate(inv.dueDate, lang) : "";
+  const index = inv.installmentIndex;
+  const total = inv.installmentTotal ?? 1;
   const line = index === 1 && total > 1
     ? t(lang, "chatCoordinator.billing.line.deposit", { index, total })
     : typeof index === "number" && total > 1
     ? t(lang, "chatCoordinator.billing.line.installment", { index, total })
     : t(lang, "chatCoordinator.billing.line.full");
+  const unsent = inv.status === "scheduled" || inv.status === "draft";
   return {
-    text: parts.join(" "),
-    invoice: {
-      id: shown.id,
-      number,
-      // The chat card's chip speaks quote statuses (cardChipKey): a payment
-      // claim is still a sent invoice there — the text says it was claimed.
-      status: shown.status === "claimed" ? "sent" : shown.status ?? "sent",
-      amountCents: shown.amount ?? 0,
-      ...(shown.dueDate ? { dueDate: shown.dueDate } : {}),
-      title: due
-        ? t(lang, "chatCoordinator.billing.cardTitle", { number, due })
-        : number,
-      line,
-    },
-    offerInvoiceCta: false,
+    id: inv.id,
+    number,
+    // The chat card's chip: a payment claim is still a sent invoice there —
+    // the text says it was claimed.
+    status: inv.status === "claimed" ? "sent" : inv.status ?? "sent",
+    amountCents: inv.amount ?? 0,
+    ...(inv.dueDate ? { dueDate: inv.dueDate } : {}),
+    title: due
+      ? t(lang, "chatCoordinator.billing.cardTitle", { number, due })
+      : number,
+    line,
+    ...(unsent ? { offerSend: true } : {}),
   };
 }
 

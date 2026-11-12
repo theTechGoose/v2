@@ -260,3 +260,48 @@ Deno.test("REQ-445 B2 parseLineReprice: 'make it around $18,000' names no line; 
   // still not a line: the pronoun alone (REQ-315)
   assertEquals(parseLineReprice("make it $500"), undefined);
 });
+
+// ---------------------------------------------------------------------------
+// REQ-583 (demo-loop cycle 4, M2): pair 6 — "Job done for Carmen Ruiz, faucet
+// and the 2 doors. Make the invoice for $450 please." was read by the
+// `make <line> $N` pattern as a reprice of a line called "invoice for", and
+// ReviseQuote answered 'I couldn't find a line called "invoice for" on Q-001…'.
+// An invoice (factura, bill) is never a line on the quote.
+// ---------------------------------------------------------------------------
+
+Deno.test("REQ-583 M2 parseLineReprice: 'make the invoice for $450' (pair 6) names no line — nor any invoice / factura / bill", () => {
+  for (
+    const text of [
+      "Job done for Carmen Ruiz, faucet and the 2 doors. Make the invoice for $450 please.",
+      "make the invoice $450",
+      "make the deposit invoice for $500",
+      "make the final invoice $1,200",
+      "change the invoice to $450",
+      "set the bill to $300",
+      "make the bill for $300",
+      "cambia la factura a $450",
+      "ajusta la factura final a $900",
+    ]
+  ) {
+    assertEquals(parseLineReprice(text), undefined, text);
+  }
+  // a line is still a line — "for" before the money no longer sticks to it
+  assertEquals(parseLineReprice("make the deck stain $400"), {
+    match: "deck stain",
+    amountCents: 40_000,
+  });
+  assertEquals(parseLineReprice("make the cabinets for $400"), {
+    match: "cabinets",
+    amountCents: 40_000,
+  });
+});
+
+Deno.test("REQ-583 M2 changeOrderAsReprice: the demo model's change_order on 'Make the invoice for $450' is not a reprice", () => {
+  assertEquals(
+    changeOrderAsReprice(
+      { description: "Invoice for faucet and 2 doors" },
+      "Job done for Carmen Ruiz, faucet and the 2 doors. Make the invoice for $450 please.",
+    ),
+    undefined,
+  );
+});
