@@ -221,7 +221,12 @@ describe("REQ-242 the customer's overlay records", () => {
   });
 
   test("pointer lifecycle on the customer's side: anchored moves, leave on pagehide, a departed presenter's pointer cleared, the tag bounded by the window", () => {
-    expect(overlay).toMatch(/recorder\.idOf\(/);
+    // REQ-371 (demo m10, cycle 2): the overlay anchors through anchorAt (pointer-anchor.ts), which
+    // asks the recorder; the overlay still places presenters' anchors with recorder.nodeOf
+    const anchoring = read("front-end/lib/demo-mode/pointer-anchor.ts");
+    expect(overlay).toMatch(/anchorAt\([\s\S]{0,200}recorder,/);
+    expect(anchoring).toMatch(/recorder\.idOf\(/);
+    expect(anchoring).toMatch(/recorder\.nodeOf\(/);
     expect(overlay).toMatch(/recorder\.nodeOf\(/);
     expect(overlay).toMatch(/addEventListener\("pagehide"/);
     expect(overlay).toMatch(/onPresence: \(pid, online\)/);
