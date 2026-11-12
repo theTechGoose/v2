@@ -8428,6 +8428,31 @@ body {
   line-height: 1.5;
   color: var(--fg, #1a2415);
   white-space: pre-wrap;
+  /* REQ-338 (demo m31): the echo of the typed message is clamped to three
+     lines — an ~800-char message used to grow the strip until it pushed the
+     option list out of the 720px window. "Show more" opens it. */
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+.chat__confirm-details-text.is-open {
+  display: block;
+  -webkit-line-clamp: unset;
+  max-height: 8em;
+  overflow-y: auto;
+}
+.chat__confirm-details-more {
+  align-self: flex-start;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--brand-teal, #1a535c);
+  text-decoration: underline;
+  cursor: pointer;
+}
+.chat__confirm-details-more:hover {
+  color: var(--brand-green, #519843);
 }
 
 /* Step-level Back inside wizard cards ([data-cy=wizard-back]) — same look
@@ -8468,11 +8493,30 @@ body {
   flex-direction: column;
   gap: 8px;
   position: relative;
+  /* REQ-338 (demo m31): the picker is a bounded column — it never grows
+     past the panel; the option list is the part that gives (flex: 1 1 auto;
+     min-height: 0), so the head, the confirm strip and Continue always have
+     their room and the strip never lands over the cards. min-height: 0
+     overrides the flex item's content-sized minimum so it can shrink. */
+  max-height: 100%;
+  min-height: 0;
   animation: chat-price-in 320ms cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+/* REQ-338: the empty-state box takes the panel's exact height while the
+   picker is open, so the picker's max-height: 100% resolves (the default
+   min-height: 100% grows with content and would never bound it). */
+.chat__empty--picker {
+  height: 100%;
+  min-height: 0;
+}
+.chat__jobopts > .chat__confirm-details,
+.chat__jobopts > .chat__price-continue {
+  flex: 0 0 auto;
 }
 .chat__jobopts-head {
   display: flex;
   flex-direction: column;
+  flex: 0 0 auto;
   gap: 1px;
   text-align: left;
   position: relative;
@@ -8518,7 +8562,15 @@ body {
   display: flex;
   flex-direction: column;
   gap: 7px;
-  max-height: calc(100dvh - 235px);
+  /* REQ-338: the room the picker leaves after its head, the confirm strip
+     and Continue — not a fixed viewport budget (was calc(100dvh - 235px),
+     which ignored the strip's height). */
+  flex: 1 1 auto;
+  /* a floor, not 0: a card's head and first lines always show. When the
+     opened echo ("show more") needs more than the panel has left, the
+     picker overflows downward and the chat panel scrolls — the cards are
+     never squeezed out of sight and nothing is drawn over them. */
+  min-height: 72px;
   overflow-y: auto;
   margin: 0 -4px;
   padding: 2px 4px;
