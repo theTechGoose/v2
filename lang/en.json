@@ -3710,6 +3710,8 @@
   "field.tk.title": "The day's <em>round</em>, by worker.",
   "field.tk.sub": "Tasks come from each zone's subscriptions, or are added one-off with Add task, and go to the worker who does them. Notes the workers leave are only visible here.",
   "field.tk.date": "Day",
+  "field.tk.prevDay": "Previous day",
+  "field.tk.nextDay": "Next day",
   "field.tk.today": "Today",
   "field.tk.generate": "Generate the day's tasks",
   "field.tk.generated": "{n} new tasks",

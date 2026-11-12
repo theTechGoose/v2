@@ -3709,6 +3709,8 @@
   "field.tk.title": "La <em>ronda</em> del día, por trabajador.",
   "field.tk.sub": "Las tareas salen de las suscripciones de cada zona, o se crean sueltas con Agregar tarea, y van al trabajador que las hace. Las notas que dejan los trabajadores se ven solo aquí.",
   "field.tk.date": "Día",
+  "field.tk.prevDay": "Día anterior",
+  "field.tk.nextDay": "Día siguiente",
   "field.tk.today": "Hoy",
   "field.tk.generate": "Generar tareas del día",
   "field.tk.generated": "{n} tareas nuevas",
