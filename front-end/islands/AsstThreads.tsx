@@ -183,9 +183,10 @@ export default function AsstThreads(
         // links keep the top of the panel and stay tappable, so one tap
         // reveals navigation AND conversation history. Inline so it beats the
         // `.asst .threads { display:none }` phone rule without a second
-        // source of truth in the stylesheet.
+        // source of truth in the stylesheet. REQ-379: it ends above the demo
+        // pill's band (--demo-pill-h, 0 when no demo), like the drawer.
         style={mobileOpen
-          ? "display:flex;position:fixed;left:0;width:260px;right:auto;bottom:0;top:auto;max-height:42vh;z-index:61;border-radius:14px 14px 0 0;background:#fff;box-shadow:0 -10px 24px rgba(0,0,0,0.28)"
+          ? "display:flex;position:fixed;left:0;width:260px;right:auto;bottom:var(--demo-pill-h, 0px);top:auto;max-height:42vh;z-index:61;border-radius:14px 14px 0 0;background:#fff;box-shadow:0 -10px 24px rgba(0,0,0,0.28)"
           : undefined}
       >
         <div class="threads__head">

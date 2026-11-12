@@ -2,25 +2,24 @@
  * REQ-228 — where the demo pills go so they never cover the page (demo issue
  * pointer-and-replica-side-effects-m4).
  *
- * The customer's pill is one line and sits in the first slot of the screen with nothing of the
- * page under it: the four corners first (bottom-left, the old place, leads), then down the left
- * and right edges from the bottom up. A clear current slot is kept (no hopping). The staff stage
- * keeps the frame out of the band its own pill measures (its height, its offset from the bottom,
- * a gap) instead of a guessed 76 px.
+ * The customer's pill is one line. The staff stage keeps the frame out of the band its own pill
+ * measures (its height, its offset from the bottom, a gap) instead of a guessed 76 px.
  *
- * REQ-295 (demo-loop cycle 1, M1) — "clear" means nothing of the page under it: no control, no
- * image / canvas / dialog, no text, no painted card or bar (`countsAsPage`). The pill never falls
- * back onto the page: nothing clear at full size → the compact form; nothing clear compact → room
- * is reserved under the page (`setPillRoom`, the REQ-181 way) and the pill sits in it. The slots
- * are computed from a reserved box (the size rounded up to steps) so the pill's own size changes
- * do not move them; the box is remembered per path for the tab so a reload does not hop it; and a
- * move glides. The stage gets the box (`pill` peer message) and draws its ghost.
+ * REQ-295 (demo-loop cycle 1, M1) — the room is reserved under the page (`setPillRoom`, the
+ * REQ-181 way: `--demo-pill-h` on <html>, the body padded by it) and the stage gets the pill's box
+ * (`pill` peer message) and draws its ghost.
+ *
+ * REQ-379 (demo-loop cycle 2, M1 + M6 + M28) — ONE home instead of REQ-295's hunt for a clear slot
+ * (it hopped page to page, flipped compact <-> full and came back per path after a reload): the
+ * pill sits bottom-left in a band reserved under the page, and the app's shells subtract that band
+ * as they do the banner, so nothing of the page is ever under it. It is as wide as its content and
+ * never wider than the window minus a margin each side (`pillHome`; nothing measured is written
+ * back as a min-width, which grew a 390 px phone's pill to 400 px). Only a dialog whose content
+ * lies under the home moves it: to the top-left while that is clear (`dockPill`). The phone's
+ * details stay open or closed across a reload (`rememberPillOpen`).
  */
 import type { Rect } from "./protocol.ts";
 
-export type Corner = "bl" | "br" | "tl" | "tr";
-/** bottom-left (where the pill always was) first */
-export const PILL_CORNERS: readonly Corner[] = ["bl", "br", "tl", "tr"];
 /** the pill's distance from the screen's edges */
 export const PILL_MARGIN = 12;
 /** at or below this width the customer's pill shows only its status and End (details on tap) */
@@ -43,10 +42,13 @@ export const PAGE_BACKDROP_AREA = 0.6;
 export const PILL_BOX_STEP = { w: 40, h: 8 } as const;
 /** REQ-295 — a move glides this long */
 export const PILL_MOVE_MS = 250;
-/** REQ-295 — the room reserved under the page when no spot is clear (on <html>, like --banner-h) */
+/** REQ-295 — the room reserved under the page (on <html>, like --banner-h); REQ-379: always, while
+ *  a pill is up — the shells subtract it */
 export const PILL_ROOM_VAR = "--demo-pill-h";
-/** REQ-295 — the tab remembers the pill's box per page path under this prefix */
-export const PILL_BOX_KEY = "pm-demo-pill:";
+/** REQ-379 — the band's air above and below the pill (the pill sits in the band, not on the page) */
+export const PILL_BAND_GAP = 8;
+/** REQ-379 — the tab remembers whether the phone pill's details are open under this key */
+export const PILL_OPEN_KEY = "pm-demo-pill:open";
 
 type Size = { w: number; h: number };
 
@@ -88,39 +90,6 @@ export function reservedBox(size: Size, step = PILL_BOX_STEP): Size {
   };
 }
 
-/** the pill's box at a corner of the view, a margin in from both edges */
-export function cornerRect(
-  corner: Corner,
-  view: Size,
-  pill: Size,
-  margin = PILL_MARGIN,
-): Rect {
-  const left = corner[1] === "l" ? margin : view.w - margin - pill.w;
-  const top = corner[0] === "t" ? margin : view.h - margin - pill.h;
-  return { left, top, width: pill.w, height: pill.h };
-}
-
-/** every place the pill may go, best first: the corners, then the side edges from the bottom up */
-export function pillSlots(
-  view: Size,
-  pill: Size,
-  margin = PILL_MARGIN,
-): Rect[] {
-  const out = PILL_CORNERS.map((c) => cornerRect(c, view, pill, margin));
-  const step = Math.max(8, Math.round(pill.h / 2));
-  const lowest = view.h - margin - pill.h;
-  for (let top = lowest - step; top > margin; top -= step) {
-    out.push({ left: margin, top, width: pill.w, height: pill.h });
-    out.push({
-      left: view.w - margin - pill.w,
-      top,
-      width: pill.w,
-      height: pill.h,
-    });
-  }
-  return out;
-}
-
 /** a grid of points over a box, edges included, a little inside them (to ask what is under it) */
 export function samplePoints(
   r: Rect,
@@ -140,49 +109,54 @@ export function samplePoints(
   return pts;
 }
 
-/** the slot to use: the current box while it is clear, else the first clear slot; REQ-295 — when
- *  nothing is clear, nothing (the pill never falls back onto the page) */
-export function pickPillSlot(
-  current: Rect | null,
-  slots: Rect[],
-  blocked: (r: Rect) => number,
-): Rect | null {
-  if (current && blocked(current) === 0) return current;
-  for (const s of slots) {
-    if (blocked(s) === 0) return s;
-  }
-  return null;
-}
-
-/** REQ-295 — where the pill goes next. `box` null: nothing is clear at this size and the pill is
- *  not compact yet — show the compact form and plan again. `room` > 0: nothing is clear even
- *  compact — reserve that much under the page and sit bottom-left in it. The pill sits at its
- *  box's top-left and is at least as wide as the box; the full-size box never shrinks while the
- *  page lasts (a shorter status must not move the pill), the compact form takes its own box. */
-export function planPill(o: {
-  current: Rect | null;
+/**
+ * REQ-379 — the pill's one home: bottom-left, its bottom `gap` above the window's (visible)
+ * bottom. Its width is its own (natural) width, never wider than the window minus a margin each
+ * side — a stale or inflated measure (M6: 400 px on a 390 px phone) is cut back, never kept. The
+ * band reserved under the page (`room`) is the pill's height rounded up to the box step (a status
+ * a pixel taller does not move the page) plus the gap above and below it. Nothing but the window
+ * and the pill goes in: no current box, no path, no memory — the same on every page and load.
+ */
+export function pillHome(o: {
   view: Size;
   size: Size;
-  compact: boolean;
+  margin?: number;
+  gap?: number;
+}): { box: Rect; room: number } {
+  const margin = o.margin ?? PILL_MARGIN;
+  const gap = o.gap ?? PILL_BAND_GAP;
+  const width = Math.min(
+    Math.max(1, o.size.w),
+    Math.max(1, o.view.w - 2 * margin),
+  );
+  const height = Math.max(1, o.size.h);
+  return {
+    box: { left: margin, top: o.view.h - gap - height, width, height },
+    room: reservedBox({ w: width, h: height }).h + 2 * gap,
+  };
+}
+
+/**
+ * REQ-379 — a dialog is up (REQ-300 froze the pill instead, over whatever the dialog put under
+ * it): the pill stays home while nothing of the dialog is under it, else docks at the top-left —
+ * under the impersonation banner (`top`, its height) — while that is clear, else stays home. Two
+ * places, asked in that order: never a third, never a hunt.
+ */
+export function dockPill(o: {
+  home: Rect;
+  view: Size;
+  top?: number;
   blocked: (r: Rect) => number;
   margin?: number;
-}): { box: Rect | null; room: number } {
+}): Rect {
+  if (o.blocked(o.home) === 0) return o.home;
   const margin = o.margin ?? PILL_MARGIN;
-  const fit = reservedBox(o.size);
-  const box = o.compact || !o.current ? fit : {
-    w: Math.max(fit.w, o.current.width),
-    h: Math.max(fit.h, o.current.height),
-  };
-  const cur = o.current
-    ? clampRect({ ...o.current, width: box.w, height: box.h }, o.view, margin)
-    : null;
-  const pick = pickPillSlot(cur, pillSlots(o.view, box, margin), o.blocked);
-  if (pick) return { box: pick, room: 0 };
-  if (!o.compact) return { box: null, room: 0 };
-  return {
-    box: cornerRect("bl", o.view, box, margin),
-    room: box.h + 2 * margin,
-  };
+  const dock = clampRect(
+    { ...o.home, top: (o.top ?? 0) + margin },
+    o.view,
+    margin,
+  );
+  return o.blocked(dock) === 0 ? dock : o.home;
 }
 
 /** the slice of Storage this needs — fakeable in a unit test */
@@ -192,9 +166,9 @@ export interface StorageLike {
   removeItem(key: string): void;
 }
 
-/** REQ-295 — the tab's memory for the pill's box (none in SSR or a locked-down browser). It
- *  remembers the pill's PLACE only — never anything about the demo itself (REQ-153 AMENDMENT:
- *  the customer is never asked, so nothing of an answer is kept). */
+/** REQ-295 — the tab's memory for the pill (none in SSR or a locked-down browser). REQ-379: it
+ *  remembers whether the phone pill's details are open, only — never anything about the demo
+ *  itself (REQ-153 AMENDMENT: the customer is never asked, so nothing of an answer is kept). */
 export function pillStore(): StorageLike | null {
   try {
     const g = globalThis as { sessionStorage?: StorageLike };
@@ -204,36 +178,20 @@ export function pillStore(): StorageLike | null {
   }
 }
 
-/** REQ-295 — keep the pill's box for this page path (null forgets it) */
-export function rememberPillBox(
-  store: StorageLike,
-  path: string,
-  box: Rect | null,
-): void {
+/** REQ-379 — keep whether the phone pill's details are open, for the tab */
+export function rememberPillOpen(store: StorageLike, open: boolean): void {
   try {
-    if (box) store.setItem(PILL_BOX_KEY + path, JSON.stringify(box));
-    else store.removeItem(PILL_BOX_KEY + path);
-  } catch { /* storage full or refused: the pill just picks again */ }
+    if (open) store.setItem(PILL_OPEN_KEY, "1");
+    else store.removeItem(PILL_OPEN_KEY);
+  } catch { /* storage full or refused: the details just start closed */ }
 }
 
-/** REQ-295 — the box this page path had, if any */
-export function recallPillBox(store: StorageLike, path: string): Rect | null {
+/** REQ-379 — were the phone pill's details open in this tab? (closed when unknown) */
+export function recallPillOpen(store: StorageLike): boolean {
   try {
-    const raw = store.getItem(PILL_BOX_KEY + path);
-    if (!raw) return null;
-    const o = JSON.parse(raw) as Record<string, unknown>;
-    const n = (k: string) => typeof o[k] === "number" && Number.isFinite(o[k]);
-    if (!o || !n("left") || !n("top") || !n("width") || !n("height")) {
-      return null;
-    }
-    return {
-      left: o.left as number,
-      top: o.top as number,
-      width: o.width as number,
-      height: o.height as number,
-    };
+    return store.getItem(PILL_OPEN_KEY) === "1";
   } catch {
-    return null;
+    return false;
   }
 }
 

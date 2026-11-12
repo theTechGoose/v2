@@ -377,8 +377,8 @@ body {
      island) and shrinks for the soft keyboard; falls back to 100dvh without JS. */
   height: 100vh;
   /* REQ-181: minus the impersonation banner's room (--banner-h), so nothing
-     hides under it. */
-  height: calc(var(--app-vh, 100dvh) - var(--banner-h, 0px));
+     hides under it. REQ-379: and minus the demo pill's band (--demo-pill-h). */
+  height: calc(var(--app-vh, 100dvh) - var(--banner-h, 0px) - var(--demo-pill-h, 0px));
   display: flex;
   min-height: 0;
   overflow: hidden;
@@ -2588,8 +2588,8 @@ body {
      island) and shrinks for the soft keyboard; falls back to 100dvh without JS. */
   height: 100vh;
   /* REQ-181: minus the impersonation banner's room (--banner-h), so nothing
-     hides under it. */
-  height: calc(var(--app-vh, 100dvh) - var(--banner-h, 0px));
+     hides under it. REQ-379: and minus the demo pill's band (--demo-pill-h). */
+  height: calc(var(--app-vh, 100dvh) - var(--banner-h, 0px) - var(--demo-pill-h, 0px));
   display: flex;
   min-height: 0;
   overflow: hidden;
@@ -9021,7 +9021,7 @@ body {
     position: fixed;
     top: 0;
     left: 0;
-    bottom: 0;
+    bottom: var(--demo-pill-h, 0px); /* REQ-379: ends above the demo pill */
     z-index: 60;
     width: 260px;
     transform: translateX(-100%);
@@ -9049,12 +9049,13 @@ body {
     top: var(--banner-h, 0px); /* REQ-181: under the impersonation banner */
     left: 0;
     right: 0;
-    height: calc(var(--vvh, 100dvh) - var(--banner-h, 0px));
+    /* REQ-379: minus the demo pill's band, which hugs the visible bottom too */
+    height: calc(var(--vvh, 100dvh) - var(--banner-h, 0px) - var(--demo-pill-h, 0px));
     transform: translateY(var(--vvt, 0px));
     overflow: hidden;
   }
   .asst {
-    height: calc(var(--vvh, 100dvh) - var(--banner-h, 0px) - 60px);
+    height: calc(var(--vvh, 100dvh) - var(--banner-h, 0px) - 60px - var(--demo-pill-h, 0px));
     min-height: 0;
   }
 }

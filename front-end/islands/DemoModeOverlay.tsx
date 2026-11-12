@@ -111,16 +111,17 @@ import {
   CONTROL_SELECTOR,
   countsAsPage,
   coversView,
+  dockPill,
   PAGE_MEDIA_SELECTOR,
+  PILL_BAND_GAP,
   PILL_COMPACT_MAX_W,
   PILL_FONT,
   PILL_MARGIN,
   PILL_MOVE_MS,
+  pillHome,
   pillStore,
-  planPill,
-  recallPillBox,
-  rectsOverlap,
-  rememberPillBox,
+  recallPillOpen,
+  rememberPillOpen,
   samplePoints,
   setPillRoom,
 } from "../../shared/demo-mode/pill.ts";
@@ -142,16 +143,17 @@ const sameDemo = (a: Demo | null, b: Demo) =>
   JSON.stringify(a.presenters) === JSON.stringify(b.presenters);
 
 const Z = 2147483000;
+/** REQ-379 (M28) — the pill lets a click through to the page; its buttons take theirs */
+const HIT = "pointer-events:auto";
 
 const here = () => globalThis.location.pathname + globalThis.location.search;
-/** REQ-228 — how often the pill re-checks what is under it (the page changes under a fixed box) */
+/** REQ-379 — how often the pill looks for a dialog over its home (it never hunts for a spot) */
 const PILL_CHECK_MS = 700;
 
 /**
  * REQ-300 (demo M20) — an open dialog's backdrop: a fixed box over the whole view under the view's
- * centre (the demo's own chrome not counted). While it is up the pill keeps its place — a slot
- * over the backdrop is no clearer than the current one, and a pill hopping under a hand turned a
- * click into a backdrop click that closed the dialog.
+ * centre (the demo's own chrome not counted). REQ-379 — while it is up, a pill whose home has the
+ * dialog's content under it docks at the top-left (`dockPill`) instead of staying frozen over it.
  */
 function dialogBackdropUp(): boolean {
   const view = { w: globalThis.innerWidth, h: globalThis.innerHeight };
@@ -210,54 +212,25 @@ function pageAt(x: number, y: number): Element | null {
   return is ? top : null;
 }
 
-/** REQ-295 — hit-testing never reports `pointer-events:none` elements (ribbons, toasts, badges,
- *  decorations), yet they show: their boxes, found once per check, outermost only */
-const GHOST_SCAN_MAX = 5000;
-function ghostsOfPage(): Rect[] {
-  const out: Rect[] = [];
-  const all = document.body?.querySelectorAll("*") ?? [];
-  const n = Math.min(all.length, GHOST_SCAN_MAX);
-  for (let i = 0; i < n; i++) {
-    const el = all[i];
-    const cs = getComputedStyle(el);
-    if (cs.pointerEvents !== "none") continue;
-    const parent = el.parentElement;
-    if (
-      parent && parent !== document.body &&
-      getComputedStyle(parent).pointerEvents === "none"
-    ) continue;
-    if (el.closest("[data-demo-overlay]")) continue;
-    if (
-      cs.display === "none" || cs.visibility === "hidden" ||
-      parseFloat(cs.opacity) === 0
-    ) continue;
-    const b = el.getBoundingClientRect();
-    if (b.width < 2 || b.height < 2) continue;
-    const shows = (el.textContent ?? "").trim() !== "" || painted(cs) ||
-      el.matches(PAGE_MEDIA_SELECTOR) ||
-      el.querySelector(PAGE_MEDIA_SELECTOR) !== null;
-    if (!shows) continue;
-    out.push({ left: b.left, top: b.top, width: b.width, height: b.height });
-  }
-  return out;
-}
-
 /** REQ-228 / REQ-295 — how many distinct pieces of the page lie under a box (the demo's own chrome
- *  not counted): controls, media, dialogs, text, cards and bars — and the ghosts hit-testing
- *  cannot see */
-function pageUnder(r: Rect, ghosts: Rect[]): number {
+ *  not counted): controls, media, dialogs, text, cards and bars. REQ-379: a point every 40 px
+ *  across, so a link between two points of a wide pill is not missed */
+function pageUnder(r: Rect): number {
   const found = new Set<Element>();
-  for (const { x, y } of samplePoints(r)) {
+  for (
+    const { x, y } of samplePoints(r, Math.max(5, Math.ceil(r.width / 40)), 3)
+  ) {
     const el = pageAt(x, y);
     if (el) found.add(el);
   }
-  let n = found.size;
-  for (const g of ghosts) if (rectsOverlap(r, g)) n++;
-  return n;
+  return found.size;
 }
 
-/** REQ-295 — a full-size spot must be clear this many checks in a row before the pill grows back */
-const UNCRAMP_CHECKS = 2;
+/** REQ-379 — the impersonation banner's height (REQ-181's --banner-h): a docked pill goes under it */
+const bannerH = () =>
+  parseFloat(
+    getComputedStyle(document.documentElement).getPropertyValue("--banner-h"),
+  ) || 0;
 
 const narrow = () =>
   typeof globalThis.innerWidth === "number" &&
@@ -295,19 +268,12 @@ export default function DemoModeOverlay() {
   const linkRef = useRef<DemoLink | null>(null);
   /** REQ-228 — the pill, where it sits, and whether it is the phone's compact one */
   const pillRef = useRef<HTMLDivElement | null>(null);
-  /** REQ-295 — the reserved box the pill sits in (not the pill's own size) */
-  const posRef = useRef<Rect | null>(null);
-  /** REQ-295 — `glide`: a move from a known spot glides; the first placement snaps */
-  const [pos, setPos] = useState<
-    { left: number; top: number; width: number; glide: boolean } | null
-  >(null);
+  /** REQ-379 — how far up from its home a dialog docked the pill (0: home); a move glides */
+  const [dock, setDock] = useState(0);
   const atRef = useRef<{ left: number; top: number } | null>(null);
-  const [compact, setCompact] = useState(false);
-  /** REQ-295 — compact because no full-size spot was clear (not because the screen is narrow) */
-  const crampedRef = useRef(false);
-  /** REQ-295 — the pill's last full-size measure, to know when it may grow back */
-  const fullSizeRef = useRef<{ w: number; h: number } | null>(null);
-  const clearFullRef = useRef(0);
+  /** REQ-379 — the phone's compact form from the first render: a full-size first measure is what
+   *  grew to a 400 px pill on a 390 px phone (M6) */
+  const [compact, setCompact] = useState(narrow);
   /** REQ-295 — the room reserved under the page right now (0: none) */
   const roomRef = useRef(0);
   /** REQ-295 — the pill's box as last told to the stage */
@@ -767,15 +733,29 @@ export default function DemoModeOverlay() {
     };
   }, [demo?.id]);
 
-  // 5. REQ-228 — the pill sits where nothing of the page is under it, and moves when something comes
-  // REQ-235 — the ended notice is a pill too: it keeps clear of the page the same way
-  // REQ-295 — never onto the page: compact first, then room under the page; the box is remembered
-  // per path so a reload does not hop it; the stage is told where the pill is
+  // 4. REQ-379 — the phone pill's details, open or closed as this tab last left them: a reload
+  //    must not flip them (the tab keeps that choice and nothing else)
+  const openReadRef = useRef(false);
+  useEffect(() => {
+    const store = pillStore();
+    if (!store) return;
+    if (!openReadRef.current) {
+      openReadRef.current = true;
+      if (recallPillOpen(store)) setOpen(true);
+      return;
+    }
+    rememberPillOpen(store, open);
+  }, [open]);
+
+  // 5. REQ-228 — the pill never covers the page; REQ-235 — the ended notice is a pill too.
+  // REQ-379 — ONE home, bottom-left in a band reserved under the page (REQ-295's room, which the
+  // shells now subtract like --banner-h): no slot hunt, no per-path memory, no compact <-> full
+  // flip. The band follows the pill's own height; a dialog whose content is under the home docks
+  // the pill at the top-left until it goes; the stage is told where the pill is
   const shown = !inert && Boolean(demo || opening || notice);
   useEffect(() => {
     if (!shown) return;
     let settle: ReturnType<typeof setTimeout> | undefined;
-    const path = () => globalThis.location.pathname;
     const roomOf = () => ({
       root: document.documentElement.style,
       body: document.body.style,
@@ -807,92 +787,48 @@ export default function DemoModeOverlay() {
       linkRef.current?.send({ k: "pill", r });
     };
     sendPillRef.current = sendPill;
-    if (!posRef.current) {
-      const store = pillStore();
-      if (store) posRef.current = recallPillBox(store, path());
-    }
     const place = () => {
       const el = pillRef.current;
-      if (!el || typeof document.elementsFromPoint !== "function") return;
-      // REQ-300 — End's question is up: the pill's box is frozen, so the Yes a hand is reaching
-      // for stays where it was seen (the wider question used to re-place the pill 150 ms later
-      // and the click landed on the page beneath — a dialog's backdrop closed the dialog)
+      if (!el) return;
+      // REQ-300 — End's question is up: nothing moves, so the Yes a hand is reaching for stays
+      // where it was seen — nor does the page under it (the band keeps its height)
       if (el.querySelector('[data-cy="demo-end-ask"]')) return;
-      // REQ-300 — a dialog is open: the pill stays where it is until it closes
-      if (posRef.current && dialogBackdropUp()) return;
-      const view = { w: globalThis.innerWidth, h: globalThis.innerHeight };
-      const size = { w: el.offsetWidth, h: el.offsetHeight };
-      const ghosts = ghostsOfPage();
-      const blocked = (r: Rect) => pageUnder(r, ghosts);
-      const isCompact = narrow() || crampedRef.current;
-      if (!isCompact) fullSizeRef.current = size;
-      // grown back only when a full-size spot has been clear a few checks in a row
-      if (crampedRef.current && !narrow() && fullSizeRef.current) {
-        const full = planPill({
-          current: posRef.current,
-          view,
-          size: fullSizeRef.current,
-          compact: false,
-          blocked,
-        });
-        clearFullRef.current = full.box ? clearFullRef.current + 1 : 0;
-        if (clearFullRef.current >= UNCRAMP_CHECKS) {
-          crampedRef.current = false;
-          clearFullRef.current = 0;
-          setCompact(narrow());
-          return; // measured again at the full size, then placed
-        }
-      }
-      const plan = planPill({
-        current: posRef.current,
-        view,
-        size,
-        compact: isCompact,
-        blocked,
-      });
-      if (!plan.box) {
-        crampedRef.current = true;
-        setCompact(true);
-        return; // the compact pill is measured again, then placed
-      }
-      setCompact(isCompact);
-      room(plan.room);
-      const next = plan.box;
-      const cur = posRef.current;
-      if (
-        !cur || cur.left !== next.left || cur.top !== next.top ||
-        cur.width !== next.width || cur.height !== next.height
-      ) {
-        posRef.current = next;
-        const store = pillStore();
-        if (store) rememberPillBox(store, path(), next);
-      }
-      // the pill sits at its box's top-left, at least as wide as the box
-      const at = {
-        left: next.left,
-        top: next.top,
-        width: next.width,
-        glide: atRef.current !== null,
+      // REQ-379 — the compact form follows the window across PILL_COMPACT_MAX_W, both ways
+      setCompact(narrow());
+      // the visible bottom: above an iOS keyboard, like the shells' --vvh (MobileViewport)
+      const vv = globalThis.visualViewport;
+      const view = {
+        w: globalThis.innerWidth,
+        h: vv ? vv.offsetTop + vv.height : globalThis.innerHeight,
       };
-      atRef.current = at;
-      setPos((p) =>
-        p && p.left === at.left && p.top === at.top && p.width === at.width
-          ? p
-          : at
-      );
+      // its own size: nothing measured is ever written back into its style (M6's min-width loop)
+      const home = pillHome({
+        view,
+        size: { w: el.offsetWidth, h: el.offsetHeight },
+      });
+      room(home.room);
+      // REQ-379 — a dialog is up: out of its content (REQ-300 froze the pill over it instead)
+      const box = typeof document.elementsFromPoint === "function" &&
+          dialogBackdropUp()
+        ? dockPill({ home: home.box, view, top: bannerH(), blocked: pageUnder })
+        : home.box;
+      setDock(Math.round(box.top - home.box.top));
+      atRef.current = { left: box.left, top: box.top };
       sendPill();
     };
     const later = () => {
       clearTimeout(settle);
       settle = setTimeout(place, 150);
     };
+    // REQ-379 — across PILL_COMPACT_MAX_W the form switches at once (a tap right after the
+    // resize finds the phone's pill), then the band is measured again
+    const onResize = () => {
+      setCompact(narrow());
+      later();
+    };
     place();
     const timer = setInterval(place, PILL_CHECK_MS);
-    addEventListener("resize", later);
-    document.addEventListener("scroll", later, {
-      capture: true,
-      passive: true,
-    });
+    addEventListener("resize", onResize);
     const ro = typeof ResizeObserver === "undefined"
       ? null
       : new ResizeObserver(later);
@@ -901,8 +837,7 @@ export default function DemoModeOverlay() {
       clearInterval(timer);
       clearTimeout(settle);
       ro?.disconnect();
-      removeEventListener("resize", later);
-      document.removeEventListener("scroll", later, { capture: true });
+      removeEventListener("resize", onResize);
       sendPillRef.current = () => {};
       if (roomRef.current) {
         roomRef.current = 0;
@@ -919,19 +854,17 @@ export default function DemoModeOverlay() {
 
   if (inert) return null;
 
-  // REQ-295 — a move glides; the pill is hidden until its first spot is known
-  const at = pos
-    ? `left:${pos.left}px;top:${pos.top}px;min-width:${pos.width}px;transition:${
-      pos.glide
-        ? `left ${PILL_MOVE_MS}ms ease,top ${PILL_MOVE_MS}ms ease`
-        : "none"
-    }`
-    : `left:${PILL_MARGIN}px;bottom:${PILL_MARGIN}px;visibility:hidden`;
+  // REQ-379 — ONE home: bottom-left in the band reserved under the page, its bottom on the visible
+  // bottom (above an iOS keyboard, like the shells' --vvh); a dialog over the home docks it (a
+  // glide). No measure is written back: it is as wide as its content, capped by the window. Its
+  // empty area lets a click through to the page (M28): only its buttons (HIT) take one
+  const at =
+    `left:${PILL_MARGIN}px;bottom:calc(100% - var(--vvt, 0px) - var(--vvh, 100%) + ${PILL_BAND_GAP}px);transform:translateY(${dock}px);transition:transform ${PILL_MOVE_MS}ms ease`;
   const pillStyle = `position:fixed;${at};z-index:${
     Z + 3
   };display:flex;gap:10px;align-items:center;justify-content:space-between;flex-wrap:nowrap;white-space:nowrap;max-width:calc(100vw - ${
     2 * PILL_MARGIN
-  }px);box-sizing:border-box;padding:7px 12px;border-radius:14px;background:#1f3d1b;color:#fff;font-family:${PILL_FONT};font-size:13px;box-shadow:0 4px 18px rgba(0,0,0,.35)`;
+  }px);box-sizing:border-box;padding:7px 12px;border-radius:14px;background:#1f3d1b;color:#fff;font-family:${PILL_FONT};font-size:13px;box-shadow:0 4px 18px rgba(0,0,0,.35);pointer-events:none`;
   /** one line: a long name is cut, not wrapped (the live pill's rule, REQ-228) */
   const cut = "overflow:hidden;text-overflow:ellipsis;min-width:0";
   // REQ-294 (demo m21) — the words that carry a name wrap to as many lines as it needs: the ended
@@ -958,7 +891,7 @@ export default function DemoModeOverlay() {
             aria-label={t("demoMode.dismiss")}
             title={t("demoMode.dismiss")}
             onClick={() => setNotice(null)}
-            style="padding:0 6px;border:0;background:transparent;color:#fff;cursor:pointer;font:inherit;font-size:18px;line-height:1;opacity:.85"
+            style={`padding:0 6px;border:0;background:transparent;color:#fff;cursor:pointer;font:inherit;font-size:18px;line-height:1;opacity:.85;${HIT}`}
           >
             ×
           </button>
@@ -1022,7 +955,7 @@ export default function DemoModeOverlay() {
                 type="button"
                 data-cy="demo-rejoin"
                 onClick={() => void placePresenter(demo)}
-                style="padding:5px 12px;border-radius:8px;border:0;background:#fff;color:#1f3d1b;cursor:pointer;font:inherit;font-size:12px;font-weight:700"
+                style={`padding:5px 12px;border-radius:8px;border:0;background:#fff;color:#1f3d1b;cursor:pointer;font:inherit;font-size:12px;font-weight:700;${HIT}`}
               >
                 {t("demoMode.rejoin")}
               </button>
@@ -1120,7 +1053,7 @@ export default function DemoModeOverlay() {
           onClick={() => setOpen((o) => !o)}
           style={`display:inline-flex;align-items:center;gap:6px;padding:0;border:0;background:none;color:inherit;font:inherit;cursor:${
             compact ? "pointer" : "default"
-          }`}
+          };${HIT}`}
         >
           {compact && (
             <span
