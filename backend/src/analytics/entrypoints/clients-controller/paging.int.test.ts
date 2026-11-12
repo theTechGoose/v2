@@ -59,3 +59,18 @@ Deno.test("REQ-135 GET /clients — 30 customers: page 1 of 25, page 2 of 5, tot
     assertEquals([none.items.length, none.total, none.totalPages, none.counts[st]], [0, 0, 1, 30]);
   });
 });
+
+Deno.test("REQ-364 (demo p15-16, cycle 1) GET /clients — a lead made minutes ago and an invoice sent minutes ago are not in Today's loop", async () => {
+  await withServer(async (port) => {
+    const sid = await login(port, "+15125551364");
+    const H = { ...J, "x-session-id": sid };
+    const guy = await fetch(`http://localhost:${port}/customers`, { method: "POST", headers: H, body: JSON.stringify({ name: "Guy Justadded" }) }).then((r) => r.json());
+    await (await fetch(`http://localhost:${port}/quotes`, { method: "POST", headers: H, body: JSON.stringify({ customerId: guy.id, summary: "Fence repair", lineItems: [] }) })).body?.cancel();
+    const olga = await fetch(`http://localhost:${port}/customers`, { method: "POST", headers: H, body: JSON.stringify({ name: "Olga Owes" }) }).then((r) => r.json());
+    await (await fetch(`http://localhost:${port}/invoices`, { method: "POST", headers: H, body: JSON.stringify({ contractId: "k", customerId: olga.id, dueDate: "2099-01-01", status: "pending", amount: 250_00 }) })).body?.cancel();
+    const page = await fetch(`http://localhost:${port}/clients`, { headers: H }).then((r) => r.json());
+    const statusOf = Object.fromEntries(page.items.map((c: { name: string; status: string }) => [c.name, c.status]));
+    assertEquals(statusOf, { "Guy Justadded": "lead", "Olga Owes": "owes" }, "the demo's shape: a fresh lead and a fresh owes");
+    assertEquals(page.loop, [], "nothing has been quiet long enough to check in on — the strip shows loopBar.empty");
+  });
+});

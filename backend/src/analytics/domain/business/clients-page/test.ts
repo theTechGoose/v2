@@ -1,7 +1,7 @@
 /** REQ-135 — the one set of rules a customers page is cut by: query, status, order, page, totals. */
 import { assertEquals } from "#std/assert";
 import type { CustomerCard } from "@crm/dto/customer.ts";
-import { CLIENTS_FILTERS, CLIENTS_PAGE_SIZE, CLIENTS_PAGE_SIZE_MAX, clientsPage, countByStatus, loopPicks, matchesQuery, pageOf, sortByName, summarize } from "./mod.ts";
+import { CLIENTS_FILTERS, CLIENTS_PAGE_SIZE, CLIENTS_PAGE_SIZE_MAX, clientsPage, countByStatus, LOOP_MIN_QUIET_DAYS, loopPicks, matchesQuery, pageOf, sortByName, summarize } from "./mod.ts";
 
 function card(over: Partial<CustomerCard>): CustomerCard {
   return {
@@ -59,8 +59,8 @@ Deno.test("REQ-135 clients-page — countByStatus, summarize and loopPicks read 
 
 Deno.test("REQ-135 clients-page — clientsPage composes: q narrows the counts, status cuts the page, totals stay the roster's", () => {
   const cards = [
-    ...Array.from({ length: 26 }, (_, i) => card({ name: `Lead ${String(i).padStart(2, "0")}`, status: "lead" })),
-    card({ name: "Owes Olga", status: "owes", balanceCents: 500 }),
+    ...Array.from({ length: 26 }, (_, i) => card({ name: `Lead ${String(i).padStart(2, "0")}`, status: "lead", daysSinceContact: 10 })),
+    card({ name: "Owes Olga", status: "owes", balanceCents: 500, daysSinceContact: 10 }),
   ];
   const all = clientsPage(cards, { page: 2 });
   assertEquals([all.items.length, all.total, all.totalPages, all.summary.totalClients], [2, 27, 2, 27]);
@@ -77,4 +77,22 @@ Deno.test("REQ-271 clients-page — a new customer has its own chip: counted, fi
   assertEquals(countByStatus(cards).new, 2);
   assertEquals(countByStatus(cards).regular, 1);
   assertEquals(clientsPage(cards, { status: "new" }).total, 2);
+});
+
+Deno.test("REQ-364 (demo p15-16, cycle 1) clients-page — a lead made today is not in the loop", () => {
+  const justAdded = card({ name: "Guy Added Two Minutes Ago", status: "lead", daysSinceContact: 0 });
+  assertEquals(loopPicks([justAdded]), [], "a lead added minutes ago is not a check-in");
+  assertEquals(clientsPage([justAdded]).loop, [], "the only customer, just made: the loop is empty (the page shows loopBar.empty)");
+});
+
+Deno.test("REQ-364 (demo p15-16, cycle 1) clients-page — the loop takes only leads and owes quiet for LOOP_MIN_QUIET_DAYS or more", () => {
+  assertEquals(LOOP_MIN_QUIET_DAYS, 3);
+  const cards = [
+    card({ name: "lead-0", status: "lead", daysSinceContact: 0 }), card({ name: "lead-2", status: "lead", daysSinceContact: 2 }),
+    card({ name: "lead-3", status: "lead", daysSinceContact: 3 }),
+    card({ name: "owes-0", status: "owes", balanceCents: 900, daysSinceContact: 0 }), card({ name: "owes-1", status: "owes", balanceCents: 900, daysSinceContact: 1 }),
+    card({ name: "owes-7", status: "owes", balanceCents: 900, daysSinceContact: 7 }),
+    card({ name: "cold-90", status: "cold", daysSinceContact: 90 }),
+  ];
+  assertEquals(loopPicks(cards).map((c) => c.name), ["owes-7", "lead-3"], "an invoice sent today is not chased, a lead from yesterday is not nagged");
 });

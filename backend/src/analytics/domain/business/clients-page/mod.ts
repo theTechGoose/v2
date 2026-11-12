@@ -36,7 +36,7 @@ export interface ClientsSummary {
 export interface ClientsPageResponse extends Page<CustomerCard> {
   counts: ClientsCounts;
   summary: ClientsSummary;
-  /** the three to call next: leads and owes, longest quiet first */
+  /** the three to call next: leads and owes quiet LOOP_MIN_QUIET_DAYS or more, longest quiet first */
   loop: CustomerCard[];
 }
 
@@ -86,8 +86,14 @@ export function summarize(cards: readonly CustomerCard[]): ClientsSummary {
   };
 }
 
+/** REQ-364 (demo p15-16): a lead or an unpaid balance is a check-in only once it has been quiet
+ *  this many days — a lead added two minutes ago, or an invoice sent this morning, is not a
+ *  "friendly check-in" yet. Nothing that old: the loop is empty and the page shows loopBar.empty. */
+export const LOOP_MIN_QUIET_DAYS = 3;
+
+/** the three to call next: leads and owes quiet for LOOP_MIN_QUIET_DAYS or more, longest quiet first */
 export function loopPicks(cards: readonly CustomerCard[]): CustomerCard[] {
-  return cards.filter((c) => c.status === "lead" || c.status === "owes")
+  return cards.filter((c) => (c.status === "lead" || c.status === "owes") && c.daysSinceContact >= LOOP_MIN_QUIET_DAYS)
     .sort((a, b) => b.daysSinceContact - a.daysSinceContact)
     .slice(0, 3);
 }
