@@ -169,6 +169,7 @@ import {
   bandGhostBox,
   ghostWords,
   PILL_FONT,
+  pillFaceAwaiting,
   pillFaceOffline,
   pillGhost,
   STAGE_PILL_BOTTOM,
@@ -1009,9 +1010,11 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
           loadRef.current = null;
         }
         resendPointer();
-        // REQ-295 — their new page tells where its pill is; the old ghost goes
-        setPillBox(null);
-        setPillFace({});
+        // REQ-295 — their new page tells where its pill is. REQ-540 (cycle 4, m9) — until it
+        // does, the ghost stays where the pill was and says "Connecting…" (the new page's pill is
+        // connecting and cannot say so: its face rides the link that is opening) — never a blank
+        // and then a "Connected" the customer's pill never showed
+        setPillFace((f) => pillFaceAwaiting(f));
       },
       onPeer: (m: PeerMessage, from: PeerFrom) => {
         if (from.role === "presenter") {
@@ -1077,6 +1080,8 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
               tucked: m.tucked,
               band: m.band,
               bandBg: m.bandBg,
+              title: m.title,
+              end: m.end,
             });
             break;
         }
@@ -1425,6 +1430,7 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
               // the pill says, and a marker when the pill runs off their screen or past the frame.
               // REQ-430 (cycle 3, m4) — its status in the CUSTOMER's words (their pill's label),
               // its line unless compact and closed, then the guide's short name, as on the phone
+              // REQ-540 (cycle 4, m9) — the whole pill: its "Demo mode" title and End (a disabled chip)
               const ghost = pillGhost(pillBox, fit);
               if (!ghost) return null;
               const g = ghost.box;
@@ -1445,6 +1451,14 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
                     Math.max(2, 8 * fit.s)
                   }px;overflow:hidden;white-space:nowrap;font-family:${PILL_FONT};font-size:${px}px;line-height:1.1`}
                 >
+                  {words.title && (
+                    <strong
+                      data-cy="demo-pill-ghost-title"
+                      style="flex:none"
+                    >
+                      {words.title}
+                    </strong>
+                  )}
                   {words.text && (
                     <span
                       data-cy="demo-pill-ghost-text"
@@ -1467,6 +1481,16 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
                       style="flex:none;padding:1px 4px;border-radius:999px;background:rgba(255,255,255,.18);font-weight:700"
                     >
                       {words.status}
+                    </span>
+                  )}
+                  {words.end && (
+                    // REQ-540 (cycle 4, m9) — the pill's End, drawn as a chip the stage cannot use
+                    <span
+                      data-cy="demo-pill-ghost-end"
+                      aria-disabled="true"
+                      style="flex:none;padding:1px 5px;border-radius:5px;background:#fff;color:#7a2e2e;font-weight:700;opacity:.6"
+                    >
+                      {words.end}
                     </span>
                   )}
                   {cut && (

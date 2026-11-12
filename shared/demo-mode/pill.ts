@@ -410,20 +410,47 @@ export function statusKeyOf(s: PillStatus): string {
  * words when their pill sent its label (an older page: the stage's words, `statusKeyOf`); the
  * line unless the phone pill is compact and closed, and then the guide's short name, as the phone
  * shows it.
+ *
+ * REQ-540 (demo-loop cycle 4, m9) — and the rest of the pill, word for word: the "Demo mode"
+ * title (never on the compact phone pill, as on the phone) and End (the stage draws it as a
+ * disabled chip; none once the demo ended), in the customer's words when their pill sent them.
+ * A pill never heard says nothing.
  */
 export function ghostWords(
   face: PillFace,
   t: (key: string) => string,
-): { status?: string; text?: string; guide?: string } {
+): {
+  title?: string;
+  text?: string;
+  guide?: string;
+  status?: string;
+  end?: string;
+} {
   const closed = face.compact === true && face.open !== true;
-  const status = face.status
-    ? face.label || t(statusKeyOf(face.status))
-    : undefined;
+  const heard = face.status !== undefined;
+  const status = heard ? face.label || t(statusKeyOf(face.status!)) : undefined;
   return {
-    status,
+    title: heard && face.compact !== true
+      ? face.title || t("demoMode.title")
+      : undefined,
     text: !closed && face.text ? face.text : undefined,
     guide: closed && face.guide ? face.guide : undefined,
+    status,
+    end: heard && face.status !== "ended"
+      ? face.end || t("demoMode.end")
+      : undefined,
   };
+}
+
+/**
+ * REQ-540 (demo-loop cycle 4, m9) — a new page of the customer joined (onPeerOnline): its pill
+ * is still connecting and cannot say so (its face rides the very link that is opening), so the
+ * stage's ghost keeps the last pill and says "Connecting…" in the stage's words until the new
+ * page's pill speaks — never a blank, never a stale "Connected". An ended demo stays ended.
+ */
+export function pillFaceAwaiting(face: PillFace): PillFace {
+  const { label: _label, ...rest } = face;
+  return { ...rest, status: face.status === "ended" ? "ended" : "connecting" };
 }
 
 /**

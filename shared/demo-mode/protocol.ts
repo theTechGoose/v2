@@ -139,6 +139,11 @@ export interface PillFace {
   band?: number;
   /** REQ-545 — the band's colour (the page's own background) */
   bandBg?: string;
+  /** REQ-540 (cycle 4, m9) — the pill's "Demo mode" title in the customer's words (unset: the
+   *  pill hides it — the compact phone pill — or an older page) */
+  title?: string;
+  /** REQ-540 — the pill's End label in the customer's words (the stage draws it as a disabled chip) */
+  end?: string;
 }
 
 /** REQ-545 — a colour the stage may paint: hex, rgb() or rgba() only */
@@ -163,6 +168,8 @@ function parsePillFace(o: Record<string, unknown>): PillFace {
   if (typeof o.bandBg === "string" && BAND_BG.test(o.bandBg)) {
     f.bandBg = o.bandBg;
   }
+  if (typeof o.title === "string") f.title = o.title.slice(0, PILL_LABEL_MAX);
+  if (typeof o.end === "string") f.end = o.end.slice(0, PILL_LABEL_MAX);
   return f;
 }
 
