@@ -14,6 +14,11 @@ import { ApiError } from "../lib/api.ts";
 import { I, ICN } from "../lib/dash-icons.tsx";
 import { fmtCell, PHONE_PLACEHOLDER } from "../lib/field.ts";
 import { langSignal, t, tn } from "../lib/i18n.ts";
+import {
+  copyShareText,
+  type InviteShare,
+  inviteShare,
+} from "../lib/invite-share.ts";
 
 interface InviteForm {
   /** digits only, at most 10 */
@@ -59,9 +64,11 @@ export default function AdminsPage() {
   const [inviting, setInviting] = useState(false);
   const [inviteErr, setInviteErr] = useState<string | null>(null);
   // REQ-523 (demo m16): the invited number, and whether the text went out
-  const [sent, setSent] = useState<{ phone: string; texted: boolean } | null>(
-    null,
-  );
+  // REQ-601 (cycle 4, M12): when it did not, the sign-in link + the invite text to share
+  const [sent, setSent] = useState<
+    { phone: string; texted: boolean; share: InviteShare | null } | null
+  >(null);
+  const [copied, setCopied] = useState<boolean | null>(null);
   const [confirmId, setConfirmId] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [rowErr, setRowErr] = useState<{ id: string; msg: string } | null>(
@@ -98,13 +105,19 @@ export default function AdminsPage() {
     setInviting(true);
     setInviteErr(null);
     setSent(null);
+    setCopied(null);
     try {
-      const { texted, ...made } = await adminsClient.invite({
-        phoneNumber: form.phone,
-        name: form.name.trim() || undefined,
-      });
+      const { texted, signInUrl, shareText, ...made } = await adminsClient
+        .invite({
+          phoneNumber: form.phone,
+          name: form.name.trim() || undefined,
+        });
       setForm(BLANK);
-      setSent({ phone: fmtCell(made.phoneNumber), texted: texted === true });
+      setSent({
+        phone: fmtCell(made.phoneNumber),
+        texted: texted === true,
+        share: inviteShare({ texted, signInUrl, shareText }),
+      });
       setAdmins((list) => [...(list ?? []), made]);
     } catch (err) {
       setInviteErr(errMsg(err));
@@ -210,6 +223,59 @@ export default function AdminsPage() {
                   phone: sent.phone,
                 })}
               </p>
+            )}
+            {sent && !sent.texted && sent.share && (
+              <div class="panel" data-cy="adm-share" style="margin:8px 0 0">
+                <p style="margin:0 0 8px">
+                  {t("admins.shareLink")}:{" "}
+                  <a
+                    href={sent.share.url}
+                    target="_blank"
+                    rel="noopener"
+                    data-cy="adm-share-url"
+                    style="word-break:break-all"
+                  >
+                    {sent.share.url}
+                  </a>
+                </p>
+                <textarea
+                  readOnly
+                  rows={3}
+                  data-cy="adm-share-text"
+                  style="width:100%;resize:vertical"
+                  value={sent.share.text}
+                  onFocus={(e) =>
+                    (e.currentTarget as HTMLTextAreaElement).select()}
+                />
+                <div
+                  class="row"
+                  style="margin-top:6px;align-items:center;gap:8px"
+                >
+                  <button
+                    type="button"
+                    class="btn btn--ghost"
+                    data-cy="adm-share-copy"
+                    data-copied={copied === true ? "true" : undefined}
+                    onClick={async () => {
+                      const share = sent.share;
+                      if (share) {
+                        setCopied(await copyShareText(share.text));
+                      }
+                    }}
+                  >
+                    {t("admins.copyShare")}
+                  </button>
+                  {copied !== null && (
+                    <span class="hint" role="status" data-cy="adm-share-copied">
+                      {t(
+                        copied
+                          ? "admins.shareCopied"
+                          : "admins.shareCopyFailed",
+                      )}
+                    </span>
+                  )}
+                </div>
+              </div>
             )}
           </form>
         )
