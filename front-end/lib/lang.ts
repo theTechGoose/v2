@@ -1,7 +1,8 @@
 /**
  * Language signal — single source of truth for EN/ES.
  *
- * Server: read from Accept-Language / cookie / query.
+ * Server: per request, from the page / ?lang= / the signed-in user / the
+ * pm_lang cookie (lib/ssr-lang.ts, REQ-231).
  * Client: subscribed to by islands; toggled from Settings (and the landing
  * page's server-rendered switch), persisted to localStorage.
  */
@@ -69,9 +70,28 @@ export function writeLangToUrl(lang: Lang): void {
   }
 }
 
-// Client-only seed: resolve the initial language exactly once at module load.
-// Priority: ?lang= (URL) > localStorage["pm:lang"] > the "es" default.
-// Guarded because this module is imported in SSR.
+/**
+ * REQ-231 — the browser's starting language. `server` is the language the
+ * server rendered the islands in (`window.__PM_LANG`, set by the app shell from
+ * lib/ssr-lang.ts) — taking it first is what makes hydration match the server
+ * markup, so an English user never sees the Spanish default flash, nor a
+ * Spanish attribute (the composer's placeholder) the hydration left behind.
+ * Without one: ?lang= > localStorage["pm:lang"] > the "es" default.
+ * `persist` is only ever a real choice (?lang= or the stored one); the server's
+ * language and the default are never written (see below).
+ */
+export function pickClientLang(
+  src: { server: unknown; query: unknown; stored: unknown },
+): { lang: Lang; persist: Lang | null } {
+  const chosen = asLang(src.query as string) ?? asLang(src.stored as string);
+  return {
+    lang: asLang(src.server as string) ?? chosen ?? "es",
+    persist: chosen,
+  };
+}
+
+// Client-only seed: resolve the initial language exactly once at module load
+// (pickClientLang). Guarded because this module is imported in SSR.
 //
 // CRITICAL — only an actual CHOICE is persisted. This block used to call
 // persistLang(resolved) unconditionally, so merely loading ANY page (including
@@ -82,15 +102,15 @@ export function writeLangToUrl(lang: Lang): void {
 // same URL. The default is a fallback, not a preference: it is never written.
 if (typeof document !== "undefined" && globalThis.location) {
   try {
-    const fromQuery = asLang(
-      new URLSearchParams(globalThis.location.search).get("lang"),
-    );
-    const fromStorage = asLang(globalThis.localStorage?.getItem("pm:lang"));
-    const chosen = fromQuery ?? fromStorage;
-    langSignal.value = chosen ?? "es";
+    const { lang, persist } = pickClientLang({
+      server: (globalThis as { __PM_LANG?: unknown }).__PM_LANG,
+      query: new URLSearchParams(globalThis.location.search).get("lang"),
+      stored: globalThis.localStorage?.getItem("pm:lang"),
+    });
+    langSignal.value = lang;
     // Mirror ONLY a real choice into localStorage + cookie, so SSR routes
     // (verify/login) render the same language the islands hydrate to.
-    if (chosen) persistLang(chosen);
+    if (persist) persistLang(persist);
   } catch {
     /* keep the default */
   }
