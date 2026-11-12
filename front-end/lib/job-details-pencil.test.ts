@@ -70,6 +70,13 @@ Deno.test("REQ-468 p5: the Job Details edit button draws exactly one pencil (its
   );
 });
 
-Deno.test("REQ-468 p5: inline term-value edit buttons keep their single CSS ::after pencil", () => {
-  assert(pencilAfterClasses(css).has("quote-review__term-edit"));
+// REQ-617 (cycle 4, p4-p3a) superseded the CSS ::after pencil on term values:
+// each inline term-value button now draws exactly one pencil — the <Icon> in
+// <TermEditValue> — and no ::after pencil.
+Deno.test("REQ-468 p5 / REQ-617: inline term-value edit buttons draw a single pencil (the <TermEditValue> Icon, no ::after)", () => {
+  assert(!pencilAfterClasses(css).has("quote-review__term-edit"));
+  const at = island.indexOf('class="quote-review__term-edit"');
+  assert(at > 0, "term-edit button not found in AsstChat.tsx");
+  const body = island.slice(at, island.indexOf("</button>", at));
+  assert(/<TermEditValue\s/.test(body), "term-edit lost its <TermEditValue>");
 });
