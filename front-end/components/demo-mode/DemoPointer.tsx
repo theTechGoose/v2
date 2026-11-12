@@ -11,6 +11,11 @@
  *
  * REQ-305 — `outside`: the element pointed at is out of view, the arrow sits on the edge of
  * `bounds` pointing at it (`data-outside`, marked by a dashed ring) — never off-screen.
+ *
+ * REQ-451 (demo M14, cycle 3) — `off`: the sender's pointer is OFF the shared screen (a
+ * presenter's mouse beside the phone frame on his stage, `o: 1`). Not the arrow and the name over
+ * the screen's controls: a small translucent marker against the edge it is off, pointing that way
+ * (`offMark`), no tag, no ring (`data-off`).
  */
 import { useEffect, useState } from "preact/hooks";
 import {
@@ -22,6 +27,11 @@ import {
   TAG_IDLE_MS,
   tagPlacement,
 } from "../../../shared/demo-mode/motion.ts";
+import {
+  OFF_MARK_OPACITY,
+  OFF_MARK_PX,
+  offMark,
+} from "../../../shared/demo-mode/presenter-anchor.ts";
 
 export interface Wave {
   id: number;
@@ -31,9 +41,12 @@ export interface Wave {
 export const WAVE_MS = 1100;
 
 /** the arrow, its tip at (2, 2) of a 22 × 28 box drawn at 24 × 30 */
-const ARROW_PATH = "M2 2 L2 22 L7.5 17 L11 26 L14.5 24.5 L11 16 L18 16 Z";
-const ARROW_W = 24;
-const ARROW_H = 30;
+export const ARROW_PATH =
+  "M2 2 L2 22 L7.5 17 L11 26 L14.5 24.5 L11 16 L18 16 Z";
+export const ARROW_W = 24;
+export const ARROW_H = 30;
+/** REQ-451 — the off-screen marker: a chevron pointing right, turned to the edge it is off */
+const OFF_MARK_PATH = "M4.5 2.5 L10 7 L4.5 11.5";
 
 export interface Bounds {
   left: number;
@@ -51,9 +64,11 @@ const windowBox = (): Bounds => ({
 });
 
 export default function DemoPointer(
-  { pointer, outside, waves, name, color, z, attach, bounds }: {
+  { pointer, outside, off, waves, name, color, z, attach, bounds }: {
     pointer: Pt | null;
     outside?: boolean;
+    /** REQ-451 — the sender's pointer is off the shared screen: the small edge marker */
+    off?: boolean;
     waves: Wave[];
     name: string;
     color: string;
@@ -79,6 +94,7 @@ export default function DemoPointer(
   const place = pointer
     ? tagPlacement(pointer, bounds ?? windowBox(), tag)
     : { left: false, up: false };
+  const mark = pointer && off ? offMark(pointer, bounds ?? windowBox()) : null;
   return (
     <>
       <style>
@@ -97,50 +113,87 @@ export default function DemoPointer(
           data-presenter={name}
           data-idle={idle ? 1 : 0}
           data-outside={outside ? "" : undefined}
+          data-off={off ? "" : undefined}
           ref={attach}
           style={`position:fixed;left:0;top:0;width:24px;height:30px;overflow:visible;pointer-events:none;z-index:${
             z + 1
           }`}
         >
-          {outside && (
-            <span
-              aria-hidden="true"
-              style={`position:absolute;left:-8px;top:-8px;width:36px;height:36px;border-radius:50%;border:2px dashed ${color};opacity:.7`}
-            />
-          )}
-          <svg
-            width="24"
-            height="30"
-            viewBox="0 0 22 28"
-            aria-hidden="true"
-            style={`position:absolute;left:0;top:0;overflow:visible;opacity:${look.arrow};filter:drop-shadow(0 1px 2px rgba(0,0,0,.45))`}
-          >
-            <path
-              d={ARROW_PATH}
-              fill="none"
-              stroke="#fff"
-              stroke-width="4"
-              stroke-linejoin="round"
-            />
-            <path
-              d={ARROW_PATH}
-              fill={color}
-              stroke="#1a1a1a"
-              stroke-width="1.3"
-              stroke-linejoin="round"
-            />
-          </svg>
-          <span
-            data-cy="demo-pointer-tag"
-            aria-hidden="true"
-            style={`position:absolute;${
-              place.up ? `bottom:${ARROW_H + TAG_GAP}px` : `top:${TAG_DY}px`
-            };${
-              place.left ? `right:${ARROW_W + TAG_GAP}px` : `left:${TAG_DX}px`
-            };padding:2px 8px;border-radius:999px;background:${color};color:#fff;font-size:12px;font-weight:700;white-space:nowrap;border:1px solid rgba(255,255,255,.85);box-shadow:0 1px 4px rgba(0,0,0,.35);opacity:${look.tag};transition:opacity .3s`}
-          >
-            {name}
-          </span>
+          {off && mark
+            ? (
+              <svg
+                data-cy="demo-pointer-off-mark"
+                width={OFF_MARK_PX}
+                height={OFF_MARK_PX}
+                viewBox="0 0 14 14"
+                aria-hidden="true"
+                style={`position:absolute;left:${mark.left}px;top:${mark.top}px;overflow:visible;opacity:${OFF_MARK_OPACITY};transform:rotate(${mark.deg}deg);filter:drop-shadow(0 1px 1px rgba(0,0,0,.35))`}
+              >
+                <path
+                  d={OFF_MARK_PATH}
+                  fill="none"
+                  stroke="#fff"
+                  stroke-width="5"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                />
+                <path
+                  d={OFF_MARK_PATH}
+                  fill="none"
+                  stroke={color}
+                  stroke-width="2.6"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                />
+              </svg>
+            )
+            : (
+              <>
+                {outside && (
+                  <span
+                    aria-hidden="true"
+                    style={`position:absolute;left:-8px;top:-8px;width:36px;height:36px;border-radius:50%;border:2px dashed ${color};opacity:.7`}
+                  />
+                )}
+                <svg
+                  width="24"
+                  height="30"
+                  viewBox="0 0 22 28"
+                  aria-hidden="true"
+                  style={`position:absolute;left:0;top:0;overflow:visible;opacity:${look.arrow};filter:drop-shadow(0 1px 2px rgba(0,0,0,.45))`}
+                >
+                  <path
+                    d={ARROW_PATH}
+                    fill="none"
+                    stroke="#fff"
+                    stroke-width="4"
+                    stroke-linejoin="round"
+                  />
+                  <path
+                    d={ARROW_PATH}
+                    fill={color}
+                    stroke="#1a1a1a"
+                    stroke-width="1.3"
+                    stroke-linejoin="round"
+                  />
+                </svg>
+                <span
+                  data-cy="demo-pointer-tag"
+                  aria-hidden="true"
+                  style={`position:absolute;${
+                    place.up
+                      ? `bottom:${ARROW_H + TAG_GAP}px`
+                      : `top:${TAG_DY}px`
+                  };${
+                    place.left
+                      ? `right:${ARROW_W + TAG_GAP}px`
+                      : `left:${TAG_DX}px`
+                  };padding:2px 8px;border-radius:999px;background:${color};color:#fff;font-size:12px;font-weight:700;white-space:nowrap;border:1px solid rgba(255,255,255,.85);box-shadow:0 1px 4px rgba(0,0,0,.35);opacity:${look.tag};transition:opacity .3s`}
+                >
+                  {name}
+                </span>
+              </>
+            )}
         </div>
       )}
     </>

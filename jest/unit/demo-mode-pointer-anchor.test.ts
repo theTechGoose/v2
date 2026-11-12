@@ -21,6 +21,7 @@
 import * as fs from "fs";
 import * as path from "path";
 import { createRecorder } from "../../front-end/lib/demo-mode/mirror-record";
+import * as replayMod from "../../front-end/lib/demo-mode/mirror-replay";
 import { createReplayer } from "../../front-end/lib/demo-mode/mirror-replay";
 import type { MirrorFrame } from "../../shared/demo-mode/mirror";
 import * as motion from "../../shared/demo-mode/motion";
@@ -436,6 +437,174 @@ describe("REQ-305 styled(): the replay has every stylesheet it links (M2 — no 
   });
 });
 
+describe("REQ-451 settled(): a styled replay's layout is the customer's only once its web fonts and the images it fetches are in — or SETTLE_CAP_MS after its snapshot (demo M1 + M14, cycle 3)", () => {
+  // looked up at run time: a missing method or export fails these tests, not the whole file
+  const settled = (rep: unknown) => {
+    const f = (rep as { settled?: () => boolean }).settled;
+    if (typeof f !== "function") {
+      throw new Error("the replayer has no settled()");
+    }
+    return f.call(rep);
+  };
+  const capMs = () => {
+    const v =
+      (replayMod as unknown as { SETTLE_CAP_MS?: number }).SETTLE_CAP_MS;
+    if (typeof v !== "number") throw new Error("no SETTLE_CAP_MS export");
+    return v;
+  };
+  const img = (d: FDocument) => el(d, (e) => e.localName === "img");
+  const fontsOf = (stage: FDocument, status: string) => {
+    const fonts = Object.assign(new FakeFonts(), { status });
+    (stage as unknown as { fonts: unknown }).fonts = fonts;
+    return fonts;
+  };
+  /** a replayer whose clock, cap timer and layout passes the test drives */
+  function replayer(stage: FDocument) {
+    const clock = { t: 1_000 };
+    const timers: { fn: () => void; ms: number; cancelled: boolean }[] = [];
+    const passes: (() => void)[] = [];
+    const layouts = { n: 0 };
+    const rep = createReplayer(
+      stage as unknown as Document,
+      {
+        schedule: (fn: () => void) => passes.push(fn),
+        Resize: null,
+        onLayout: () => layouts.n++,
+        now: () => clock.t,
+        later: (fn: () => void, ms: number) => {
+          const t = { fn, ms, cancelled: false };
+          timers.push(t);
+          return () => {
+            t.cancelled = true;
+          };
+        },
+      } as Parameters<typeof createReplayer>[1],
+    );
+    return { rep, clock, timers, passes, layouts };
+  }
+
+  test("false before any snapshot, and while its stylesheet, an image it fetches or a web font is still coming in; true once all are in — a stylesheet's or an image's load (or error) event, never its `sheet` or `complete` alone (the frame was still laid out without them)", () => {
+    const doc = customerPage();
+    const stage = stageDoc();
+    const fonts = fontsOf(stage, "loaded");
+    const { rep } = replayer(stage);
+    expect(settled(rep)).toBe(false); // nothing shown yet
+    expect(rep.apply(snapshotOf(doc)[0])).toBe(true);
+    expect(settled(rep)).toBe(false); // nothing in
+    stage.fire("load", sheetOf(stage));
+    expect(rep.styled()).toBe(true);
+    // styled — but the page's first image (the hero, a logo) has no height yet: everything
+    // under it sits higher than on the customer's screen
+    expect(settled(rep)).toBe(false);
+    stage.fire("load", img(stage));
+    fonts.status = "loading"; // its text not in its web font yet
+    expect(settled(rep)).toBe(false);
+    fonts.status = "loaded";
+    expect(settled(rep)).toBe(true);
+
+    // a fresh snapshot starts over; an image that failed counts as in
+    expect(rep.apply(snapshotOf(doc)[0])).toBe(true);
+    stage.fire("load", sheetOf(stage));
+    expect(settled(rep)).toBe(false);
+    stage.fire("error", img(stage));
+    expect(settled(rep)).toBe(true);
+    // a stylesheet whose sheet the browser attached at once (its memory cache) — styled() counts
+    // it (REQ-305) — still has the frame laid out without it until its load event (measured: both
+    // links had their sheets, the wizard still stacked at full width, the Continue button under
+    // the middle of the phone)
+    expect(rep.apply(snapshotOf(doc)[0])).toBe(true);
+    (sheetOf(stage) as unknown as { sheet: unknown }).sheet = {};
+    stage.fire("load", img(stage));
+    expect(rep.styled()).toBe(true);
+    expect(settled(rep)).toBe(false);
+    stage.fire("load", sheetOf(stage));
+    expect(settled(rep)).toBe(true);
+    // an image whose data is in (`complete`) but whose load event has not come: the frame was
+    // still laid out without it
+    expect(rep.apply(snapshotOf(doc)[0])).toBe(true);
+    stage.fire("load", sheetOf(stage));
+    (img(stage) as unknown as { complete: boolean }).complete = true;
+    expect(settled(rep)).toBe(false);
+    stage.fire("load", img(stage));
+    expect(settled(rep)).toBe(true);
+    // a stylesheet that failed is not waited for
+    expect(rep.apply(snapshotOf(doc)[0])).toBe(true);
+    stage.fire("error", sheetOf(stage));
+    stage.fire("load", img(stage));
+    expect(settled(rep)).toBe(true);
+  });
+
+  test("once settled, a snapshot stays so until the next one (a font or image a later change brings moves both screens alike)", () => {
+    const doc = customerPage();
+    const stage = stageDoc();
+    const fonts = fontsOf(stage, "loaded");
+    const { rep } = replayer(stage);
+    expect(rep.apply(snapshotOf(doc)[0])).toBe(true);
+    stage.fire("load", sheetOf(stage));
+    stage.fire("load", img(stage));
+    expect(settled(rep)).toBe(true);
+    fonts.status = "loading";
+    expect(settled(rep)).toBe(true);
+    expect(rep.apply(snapshotOf(doc)[0])).toBe(true);
+    expect(settled(rep)).toBe(false);
+  });
+
+  test("an image the browser holds back until it is scrolled near (loading=lazy), or one with no address, is never waited for; one with a srcset only is", () => {
+    const stage = stageDoc();
+    fontsOf(stage, "loaded");
+    const { rep } = replayer(stage);
+    const page = (...imgs: Record<string, string>[]) =>
+      docWith(
+        (d) =>
+          h(
+            d,
+            "html",
+            {},
+            h(d, "head"),
+            h(d, "body", {}, ...imgs.map((a) => h(d, "img", a))),
+          ),
+        "https://app.test/q/abc",
+        420,
+        800,
+      );
+    expect(
+      rep.apply(
+        snapshotOf(page({ src: "/below.png", loading: "lazy" }, {}))[0],
+      ),
+    ).toBe(true);
+    expect(settled(rep)).toBe(true);
+    expect(rep.apply(snapshotOf(page({ srcset: "/a.png 1x" }))[0])).toBe(true);
+    expect(settled(rep)).toBe(false);
+  });
+
+  test("a font or an image that never comes holds nothing for good: SETTLE_CAP_MS after the snapshot it is settled, and a layout pass then tells the stage; a new snapshot or dispose() cancels the old cap", () => {
+    const doc = customerPage();
+    const stage = stageDoc();
+    fontsOf(stage, "loaded");
+    const { rep, clock, timers, passes, layouts } = replayer(stage);
+    expect(capMs()).toBeGreaterThanOrEqual(1_000);
+    expect(capMs()).toBeLessThanOrEqual(5_000);
+    expect(rep.apply(snapshotOf(doc)[0])).toBe(true);
+    stage.fire("load", sheetOf(stage)); // styled; the image never loads
+    expect(timers.map((t) => t.ms)).toEqual([capMs()]);
+    while (passes.length) passes.shift()!();
+    clock.t += capMs() - 1;
+    expect(settled(rep)).toBe(false);
+    clock.t += 1;
+    const before = layouts.n;
+    timers[0].fn();
+    expect(passes.length).toBe(1);
+    passes.shift()!();
+    expect(layouts.n).toBe(before + 1);
+    expect(settled(rep)).toBe(true);
+    expect(rep.apply(snapshotOf(doc)[0])).toBe(true);
+    expect(timers.length).toBe(2);
+    expect(settled(rep)).toBe(false);
+    rep.dispose();
+    expect(timers[1].cancelled).toBe(true);
+  });
+});
+
 describe("REQ-305 placeIn: a resolved point outside its box goes on the box's edge, the whole arrow showing, marked as pointing outside (m16)", () => {
   const box = { left: 100, top: 50, width: 400, height: 300 };
   test("inside (edges included): the point itself, not outside", () => {
@@ -523,29 +692,37 @@ describe("REQ-305 the stage: anchors kept and placed again; its presenter's poin
     return stage.slice(at, stage.indexOf("\n    }\n  };\n", at));
   })();
 
-  test("anchorOf looks for the mirrored node under the presenter's pointer only once the replay is styled (else the fraction of the frame alone)", () => {
+  // REQ-451 AMENDMENT (demo M1 + M14, cycle 3) — only once it is SETTLED (styled, and its fonts
+  // and images in): a node taken from a half-built replay would stay the wrong one
+  test("anchorOf looks for the mirrored node under the presenter's pointer only once the replay is styled — REQ-451: settled (else the fraction of the frame alone)", () => {
     expect(fn("anchorOf")).toMatch(
-      /load && rep\?\.styled\(\)\s*\?\s*rep\.anchorAt\(/,
+      /const settled = !!load && rep\?\.settled\(\) === true;[\s\S]{0,400}const n = settled\s*\?\s*rep\.anchorAt\(/,
     );
+    expect(fn("anchorOf")).not.toMatch(/rep\?\.styled\(\)/);
   });
 
   // REQ-393 AMENDMENT (demo M2, cycle 2) — the resting pointer is looked up again on EVERY layout
   // pass, not only while a snapshot settles: the settle window is gone
-  test("after a snapshot nothing is anchored at once: a new page gets the resting pointer as a fraction of the frame (resendPointer), then — on every layout pass (REQ-393: not only while the snapshot settles), once styled — on the node under it, sent only when that changed", () => {
+  // REQ-451 AMENDMENT (demo M1, cycle 3) — a new page gets NO fraction under his still mouse: the
+  // held anchor goes again only to the page load it was made on, and a layout pass looks it up
+  // again only while it is a fraction made before the replay was styled (lookAgain)
+  test("after a snapshot nothing is anchored at once: a new page gets the held anchor only when it was made on it (resendPointer, never a fraction of the frame); a fraction made unstyled is looked up once styled, sent only when that changed", () => {
     expect(snapBranch).not.toMatch(/anchorOf\(|anchorAt\(|restAgain\(/);
     expect(snapBranch).toMatch(/if \(newLoad\)[\s\S]{0,400}resendPointer\(\)/);
     // no settle window: each settle timer settles the scrolls and places everything again
     expect(snapBranch).not.toMatch(/restRef|snapGenRef/);
     expect(snapBranch).toMatch(/\.settle\(\);\s*replaceRef\.current\(\);/);
-    // the fraction-only resend never reads the replay's nodes
+    // the resend never reads the replay's nodes, nor makes a fraction of the frame (REQ-451)
     const resend = fn("resendPointer");
     expect(resend).not.toMatch(/anchorOf\(|anchorAt\(/);
-    expect(resend).toMatch(/pointToFrac\(p, fitBox\(\)\)/);
+    expect(resend).not.toMatch(/pointToFrac\(/);
+    expect(resend).toMatch(/resendable\(/);
     // the anchored one is sent only when it names another place than the last sent
     expect(fn("restAgain")).toMatch(
       /const was = sentRef\.current;\s*const a = anchorOf\(p\);\s*if \(sameAnchor\(was, a\)\) return;/,
     );
-    expect(fn("replace")).toMatch(
+    expect(fn("replace")).toMatch(/lookAgain\([\s\S]{0,260}rest\.push\(null\)/);
+    expect(fn("replace")).not.toMatch(
       /if \(lastMoveRef\.current\) rest\.push\(null\)/,
     );
   });
@@ -588,9 +765,10 @@ describe("REQ-305 the customer's overlay: presenters' anchors follow their nodes
   test("each presenter's last anchor is kept and placed again (clamped to the window) on scroll, resize, the body growing and every recorded change", () => {
     expect(overlay).toMatch(/const anchorsRef = useRef<Map<string, Anchor>>/);
     expect(overlay).toMatch(/anchorsRef\.current\.set\(pid, m\.a\)/);
-    // REQ-393 — and an off-screen anchor (the presenter's mouse beside the frame) on the edge
+    // REQ-393 — and an off-screen anchor (the presenter's mouse beside the frame) on the edge;
+    // REQ-451 — placed only when toScreen has a point for it (its node is on this page)
     expect(overlay).toMatch(
-      /placeIn\(toScreen\(a\), viewportBox\(\)(, ARROW_BOX, a\.o === 1)?\)/,
+      /placeIn\((toScreen\(a\)|p), viewportBox\(\)(, ARROW_BOX, a\.o === 1)?\)/,
     );
     expect(overlay).toMatch(/addEventListener\("resize", shifted\)/);
     expect(overlay).toMatch(

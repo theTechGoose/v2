@@ -4,6 +4,9 @@
  * click at a point of THIS screen, or leaving); `seq` makes every command new.
  *
  * REQ-242 — `bounds`: the box the name tag stays inside (the stage's frame, the customer's window).
+ *
+ * REQ-451 (demo M14) — `off` on a command: that side's pointer is off the shared screen (its
+ * mouse beside the frame on its stage) — drawn as DemoPointer's small edge marker, no name tag.
  */
 import { useEffect, useRef, useState } from "preact/hooks";
 import type { Pt } from "../../../shared/demo-mode/motion.ts";
@@ -20,6 +23,8 @@ export interface PointerCmd {
   at?: Pt;
   /** REQ-305 — `at` is on the edge of the box: the element pointed at is out of view */
   outside?: boolean;
+  /** REQ-451 — the pointer is off the shared screen: the small edge marker, no tag */
+  off?: boolean;
 }
 
 export default function PeerPointer(
@@ -32,18 +37,23 @@ export default function PeerPointer(
   },
 ) {
   const glide = useGlide();
+  const [off, setOff] = useState(false);
   const [waves, setWaves] = useState<Wave[]>([]);
   const waveId = useRef(0);
   useEffect(() => {
     if (!cmd) return;
     switch (cmd.kind) {
       case "move":
-        if (cmd.at) glide.glideTo(cmd.at, cmd.outside);
+        if (cmd.at) {
+          glide.glideTo(cmd.at, cmd.outside);
+          setOff(cmd.off === true);
+        }
         break;
       case "click": {
         if (!cmd.at) break;
         const at = cmd.at;
         glide.glideTo(at, cmd.outside);
+        setOff(cmd.off === true);
         const id = ++waveId.current;
         setWaves((w) => [...w, { id, ...at }]);
         setTimeout(
@@ -54,6 +64,7 @@ export default function PeerPointer(
       }
       case "leave":
         glide.hide();
+        setOff(false);
         break;
     }
   }, [cmd?.seq]);
@@ -61,6 +72,7 @@ export default function PeerPointer(
     <DemoPointer
       pointer={glide.pointer}
       outside={glide.outside}
+      off={off}
       waves={waves}
       name={name}
       color={color}

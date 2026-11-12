@@ -15,6 +15,19 @@
  *
  * (The customer scrolling under the presenter's still mouse is REQ-305's M2 story in
  * demo-scroll-pointer.e2e.test.ts, amended by REQ-393: the arrow stays under his cursor.)
+ *
+ * REQ-451 AMENDMENT (demo M1 + M14, cycle 3) — his pointer is what he POINTED AT:
+ *   1. the cursor handed over from /admin counts only on the frame: the Demo button sits beside
+ *      the phone frame, so the phone shows no arrow (and the stage no "off" hint) until he moves;
+ *      his mouse beside the frame is a small translucent marker on the phone's edge — no arrow,
+ *      no name tag over its controls — where his mouse meets the frame as it is now (a frame
+ *      that moves under his still mouse moves the marker); back on the frame, the arrow and its
+ *      tag; the stage reloaded under his still mouse on the frame starts there (the hand-off
+ *      counts there) — on the element under it once the replay has settled, never on one a
+ *      half-built replay put there (its logo or fonts not in: the Continue button).
+ *   2. a tab the stage newly follows shows no arrow while his mouse is still (he pointed at the
+ *      other tab's page); a tab followed again, its page unchanged, gets the arrow he left there;
+ *      his move puts it on the followed tab only.
  */
 import { story, type StoryTools } from "#shots";
 
@@ -124,15 +137,85 @@ async function openDemo(pg: Page, baseUrl: string, userPhone: string) {
 const screenOf = (pg: Page) =>
   pg.locator("[data-cy='demo-screen']").innerText() as Promise<string>;
 
-/** the presenter's arrow on a customer tab: where it is drawn and whether it points outside */
+/** the presenter's arrow on a customer tab: where it is drawn, whether it points outside, whether
+ *  it is REQ-451's small off-screen marker, whether its name tag is drawn, and whether it is the
+ *  element marked `old` before (a pointer drawn afresh is a new element) */
 const arrowOn = (pg: Page) =>
   pg.evaluate(() => {
     const el = Array.from(document.querySelectorAll("[data-cy='demo-pointer']"))
       .find((e) => e.getAttribute("data-presenter") === "Hans");
     if (!el) return null;
     const m = new DOMMatrixReadOnly(getComputedStyle(el).transform);
-    return { x: m.m41, y: m.m42, outside: el.hasAttribute("data-outside") };
-  }) as Promise<{ x: number; y: number; outside: boolean } | null>;
+    return {
+      x: m.m41,
+      y: m.m42,
+      outside: el.hasAttribute("data-outside"),
+      off: el.hasAttribute("data-off"),
+      tag: el.querySelector("[data-cy='demo-pointer-tag']") !== null,
+      old: el.hasAttribute("data-e2e-old"),
+    };
+  }) as Promise<
+    | {
+      x: number;
+      y: number;
+      outside: boolean;
+      off: boolean;
+      tag: boolean;
+      old: boolean;
+    }
+    | null
+  >;
+
+/** the presenter's arrow on a tab once it has come to rest (two reads apart agree) */
+async function settledArrow(pg: Page) {
+  let last = await arrowOn(pg);
+  for (let i = 0; i < 40; i++) {
+    await sleep(150);
+    const now = await arrowOn(pg);
+    if (
+      now && last && Math.abs(now.x - last.x) < 0.5 &&
+      Math.abs(now.y - last.y) < 0.5
+    ) return now;
+    last = now;
+  }
+  throw new Error(
+    `the presenter's arrow never came to rest (${JSON.stringify(last)})`,
+  );
+}
+
+/** REQ-451 — mark the page's element under a point (the demo's own chrome skipped) */
+const markPointed = (p: { x: number; y: number }) => {
+  const el = document.elementsFromPoint(p.x, p.y)
+    .find((e) => !e.closest("[data-demo-overlay]"));
+  el?.setAttribute("data-e2e-pointed", "");
+  return !!el;
+};
+/** REQ-451 — true when the page's element under a point is the one marked; else what it is */
+const pointedAt = (p: { x: number; y: number }) => {
+  const el = document.elementsFromPoint(p.x, p.y)
+    .find((e) => !e.closest("[data-demo-overlay]"));
+  return el?.hasAttribute("data-e2e-pointed")
+    ? true
+    : el
+    ? `${el.tagName}.${el.className}`
+    : null;
+};
+
+/** REQ-451 — no presenter arrow on a tab for `ms` (none comes while he does not move) */
+async function noArrowFor(what: string, pg: Page, ms: number) {
+  const t0 = Date.now();
+  while (Date.now() - t0 < ms) {
+    const at = await arrowOn(pg);
+    if (at) {
+      throw new Error(
+        `${what}: the presenter's arrow showed with no move ${
+          JSON.stringify(at)
+        }`,
+      );
+    }
+    await sleep(150);
+  }
+}
 
 /** the stage's "your pointer is off their screen" hint, when it shows */
 const offHint = (pg: Page) =>
@@ -148,7 +231,24 @@ async function frameBox(pg: Page) {
   return b;
 }
 
-Deno.test("REQ-393 (demo M2 start, M8): the stage opened from /admin sends the presenter's pointer before he moves; with his mouse beside the phone frame the arrow sits on the edge of the customer's screen, marked outside, and the stage says so; back on the frame it is on the screen and the hint goes", (t) =>
+/** the frame's box once it has stopped moving (the staff banner mounts after whoami, the pill's
+ *  height follows its status: each moves the frame) — two reads 300 ms apart agree */
+async function steadyFrame(pg: Page) {
+  let last = await frameBox(pg);
+  for (let i = 0; i < 30; i++) {
+    await sleep(300);
+    const now = await frameBox(pg);
+    if (
+      Math.abs(now.x - last.x) < 0.5 && Math.abs(now.y - last.y) < 0.5 &&
+      Math.abs(now.width - last.width) < 0.5 &&
+      Math.abs(now.height - last.height) < 0.5
+    ) return now;
+    last = now;
+  }
+  throw new Error(`the frame never stopped moving (${JSON.stringify(last)})`);
+}
+
+Deno.test("REQ-393 (demo M8) + REQ-451 (demo M14): the cursor handed over from /admin counts only on the frame — beside it the phone shows nothing until he moves; his mouse beside the phone frame is a small marker on the phone's edge with no name tag, and the stage says so; back on the frame the arrow and the tag, the hint gone; a stage reloaded under his still mouse on the frame starts there", (t) =>
   story(t, async ({ page, expect, http, baseUrl }) => {
     await page.setViewportSize({ width: 1280, height: 860 });
     const who = await people(http);
@@ -175,39 +275,59 @@ Deno.test("REQ-393 (demo M2 start, M8): the stage opened from /admin sends the p
         25_000,
       );
 
-      // 1. M2 start — the admin's mouse has not moved since the click on Demo: the customer's
-      //    phone shows his pointer anyway, on their screen or on its edge as the frame has it
-      const fb = await frameBox(page);
+      // 1. REQ-451 (M14) start — the admin's mouse has not moved since the click on Demo. The
+      //    hand-off counts only on the frame: beside it (the Demo button at the right of the row)
+      //    the phone shows no arrow — never one pinned to its edge over its controls — and the
+      //    stage does not say his pointer is off their screen; on it, the arrow is there at once
+      const fb = await steadyFrame(page);
       const beside = clickedAt.x < fb.x || clickedAt.x > fb.x + fb.width ||
         clickedAt.y < fb.y || clickedAt.y > fb.y + fb.height;
-      await until(
-        `M2: the presenter's pointer reaches the customer's phone with no move (his mouse at ${
-          JSON.stringify(clickedAt)
-        }, the frame ${JSON.stringify(fb)})`,
-        async () => {
-          const at = await arrowOn(phone);
-          if (!at) throw new Error("no presenter arrow on the phone");
-          if (at.outside !== beside) {
-            throw new Error(`arrow ${JSON.stringify(at)}, beside ${beside}`);
-          }
-          return true;
-        },
-        15_000,
-      );
-      expect(true, "the presenter's pointer is on the phone before he moved");
+      if (beside) {
+        await noArrowFor(
+          `M14: the hand-off beside the frame (his mouse at ${
+            JSON.stringify(clickedAt)
+          }, the frame ${JSON.stringify(fb)})`,
+          phone,
+          2_500,
+        );
+        expect.eq(
+          await offHint(page),
+          null,
+          "M14: no off-screen hint for a hand-off beside the frame",
+        );
+      } else {
+        await until(
+          `the hand-off on the frame: the presenter's arrow reaches the phone with no move (his mouse at ${
+            JSON.stringify(clickedAt)
+          })`,
+          async () => (await arrowOn(phone))?.off === false,
+          15_000,
+        );
+      }
 
-      // 2. M8 — his mouse beside the phone frame (the stage's dark margin): the arrow sits on the
-      //    phone's left edge at the same height, marked outside — never gone — and the stage says so
-      const besideLeft = { x: fb.x - 140, y: fb.y + fb.height * 0.4 };
+      // 2. M8 + REQ-451 (M14) — his mouse beside the phone frame (the stage's dark margin): a
+      //    small translucent marker on the phone's left edge at the same height — no arrow, no
+      //    name tag over the phone's controls, never gone — and the stage says so
+      const fb2 = await steadyFrame(page);
+      const besideLeft = { x: fb2.x - 140, y: fb2.y + fb2.height * 0.4 };
       await page.mouse.move(besideLeft.x - 20, besideLeft.y - 10);
       await page.mouse.move(besideLeft.x, besideLeft.y);
       await until(
-        "M8: beside the frame, the arrow is on the phone's left edge at 40 % of its height, marked outside",
+        "M14: beside the frame, the small marker is on the phone's left edge at 40 % of its height — no name tag",
         async () => {
           const at = await arrowOn(phone);
-          if (!at) throw new Error("no presenter arrow: it vanished");
-          if (!at.outside || at.x > 2 || Math.abs(at.y - 844 * 0.4) > 4) {
-            throw new Error(`arrow ${JSON.stringify(at)}`);
+          if (!at) throw new Error("no presenter pointer: it vanished");
+          // where his mouse meets the frame's edge — on the frame as it is now (REQ-451: a frame
+          // that moved under his still mouse moves the marker with it)
+          const f = await frameBox(page);
+          const want = (besideLeft.y - f.y) / f.height * 844;
+          if (
+            !at.off || at.tag || !at.outside || at.x > 2 ||
+            Math.abs(at.y - want) > 4
+          ) {
+            throw new Error(
+              `pointer ${JSON.stringify(at)} (want y ${want.toFixed(1)})`,
+            );
           }
           return true;
         },
@@ -223,8 +343,8 @@ Deno.test("REQ-393 (demo M2 start, M8): the stage opened from /admin sends the p
       await sleep(1_500);
       const still = await arrowOn(phone);
       expect(
-        still !== null && still.outside,
-        `M8: the arrow stays on the edge while his mouse is beside the frame (${
+        still !== null && still.off && !still.tag,
+        `M8/M14: the marker stays on the edge while his mouse is beside the frame (${
           JSON.stringify(still)
         })`,
       );
@@ -233,16 +353,18 @@ Deno.test("REQ-393 (demo M2 start, M8): the stage opened from /admin sends the p
       }).catch(() => {});
 
       // 3. back on the frame: on the screen, the hint gone
-      const onFrame = { x: fb.x + fb.width / 2, y: fb.y + fb.height / 2 };
+      const fb3 = await steadyFrame(page);
+      const onFrame = { x: fb3.x + fb3.width / 2, y: fb3.y + fb3.height / 2 };
       await page.mouse.move(onFrame.x - 10, onFrame.y - 10);
       await page.mouse.move(onFrame.x, onFrame.y);
       await until(
-        "back on the frame: the arrow is on the phone's screen, at its middle",
+        "back on the frame: the arrow (with its name tag) is on the phone's screen, at its middle",
         async () => {
           const at = await arrowOn(phone);
           if (!at) throw new Error("no presenter arrow");
           if (
-            at.outside || Math.abs(at.x - 195) > 4 || Math.abs(at.y - 422) > 4
+            at.outside || at.off || !at.tag || Math.abs(at.x - 195) > 4 ||
+            Math.abs(at.y - 422) > 4
           ) throw new Error(`arrow ${JSON.stringify(at)}`);
           return true;
         },
@@ -254,6 +376,39 @@ Deno.test("REQ-393 (demo M2 start, M8): the stage opened from /admin sends the p
         10_000,
       );
       expect.eq(await offHint(page), null, "no hint while on the frame");
+
+      // 4. REQ-451 — on the frame the hand-off counts: the stage reloads under his still mouse
+      //    (a page loaded under a still mouse hears no pointer event) and the phone's arrow, gone
+      //    with the old stage, is drawn afresh where it was — with no move
+      const was = await arrowOn(phone);
+      if (!was) throw new Error("no presenter arrow before the stage's reload");
+      await phone.evaluate(() => {
+        const el = Array.from(
+          document.querySelectorAll("[data-cy='demo-pointer']"),
+        ).find((e) => e.getAttribute("data-presenter") === "Hans");
+        el?.setAttribute("data-e2e-old", "");
+      });
+      await page.reload();
+      await page.locator("[data-cy='demo-pill']").waitFor({ timeout: 15_000 });
+      await until(
+        "REQ-451: after the stage's reload the phone shows his arrow afresh where it was, with no move",
+        async () => {
+          const at = await arrowOn(phone);
+          if (!at) throw new Error("no presenter arrow on the phone");
+          if (
+            at.old || at.off || at.outside || Math.abs(at.x - was.x) > 4 ||
+            Math.abs(at.y - was.y) > 4
+          ) {
+            throw new Error(
+              `arrow ${JSON.stringify(at)} (before the reload ${
+                JSON.stringify(was)
+              })`,
+            );
+          }
+          return true;
+        },
+        25_000,
+      );
 
       await page.locator("[data-cy='demo-end']").click();
       await page.locator("[data-cy='demo-end-confirm']").click().catch(
@@ -268,7 +423,7 @@ Deno.test("REQ-393 (demo M2 start, M8): the stage opened from /admin sends the p
     }
   }));
 
-Deno.test("REQ-393 (demo M2 tab switch): the tab the stage leaves loses the presenter's arrow and the tab it follows shows it with no move; his moves reach the followed tab only; a click in the first tab swaps them back", (t) =>
+Deno.test("REQ-393 (demo M2 tab switch) + REQ-451 (demo M1): the tab the stage leaves loses the presenter's arrow; a tab it newly follows shows none until he moves; a tab followed again with its page unchanged gets back the arrow he left there; his moves reach the followed tab only", (t) =>
   story(t, async ({ page, expect, http, baseUrl }) => {
     await page.setViewportSize({ width: 1280, height: 800 });
     const who = await people(http);
@@ -293,7 +448,7 @@ Deno.test("REQ-393 (demo M2 tab switch): the tab the stage leaves loses the pres
         25_000,
       );
       // the presenter rests in the middle of the frame (inside tab 2's wider frame too)
-      const fb = await frameBox(page);
+      const fb = await steadyFrame(page);
       const rest = { x: fb.x + fb.width / 2, y: fb.y + fb.height / 2 };
       await page.mouse.move(rest.x - 30, rest.y - 15);
       await page.mouse.move(rest.x, rest.y);
@@ -303,7 +458,17 @@ Deno.test("REQ-393 (demo M2 tab switch): the tab the stage leaves loses the pres
         10_000,
       );
 
-      // 1. a second tab is the one the customer uses now: the stage follows it
+      // where it comes to rest (it glides from his first move to his second)
+      const onTab1 = await settledArrow(tab1);
+      // the element his arrow is on in tab 1 (tab 1's page stays as it is: a mark on it holds)
+      expect(
+        await tab1.evaluate(markPointed, onTab1),
+        "tab 1 has an element under the presenter's arrow",
+      );
+
+      // 1. a second tab is the one the customer uses now: the stage follows it. REQ-451 (M1) —
+      //    he pointed at tab 1's page: tab 2 shows no arrow while his mouse is still (never the
+      //    spot under it, over whatever tab 2's page has there)
       const tab2 = await userCtx.newPage();
       await tab2.setViewportSize({ width: 640, height: 760 });
       await tab2.goto(`${baseUrl}/settings`);
@@ -320,23 +485,68 @@ Deno.test("REQ-393 (demo M2 tab switch): the tab the stage leaves loses the pres
         async () => (await arrowOn(tab1)) === null,
         10_000,
       );
+      await noArrowFor(
+        "REQ-451: the tab the stage newly follows (tab 2), his mouse still",
+        tab2,
+        2_000,
+      );
+
+      // 2. REQ-451 — the customer uses tab 1 again (any pointerdown claims the stage; this one
+      //    changes nothing on tab 1's page, so the arrow's spot can be compared): the stage
+      //    follows it back; tab 1's page is unchanged and he has not moved — the arrow he left
+      //    there is back, on the same element, at the same spot
+      await tab1.evaluate(() =>
+        document.dispatchEvent(new PointerEvent("pointerdown"))
+      );
       await until(
-        "M2: the tab the stage follows (tab 2) shows the presenter's arrow — he never moved",
-        async () => (await arrowOn(tab2))?.outside === false,
+        "tab 1 takes the stage back (420 × 800)",
+        async () => (await screenOf(page)).includes("420 × 800"),
+        20_000,
+      );
+      await until(
+        "REQ-451: tab 1, followed again with its page unchanged, gets back the arrow he left there — on the same element, with no move",
+        async () => {
+          const at = await arrowOn(tab1);
+          if (!at || at.off) {
+            throw new Error(`tab 1's arrow ${JSON.stringify(at)}`);
+          }
+          const under = await tab1.evaluate(pointedAt, at);
+          if (
+            under !== true || Math.abs(at.x - onTab1.x) > 2 ||
+            Math.abs(at.y - onTab1.y) > 2
+          ) {
+            throw new Error(
+              `tab 1's arrow ${JSON.stringify(at)} (before ${
+                JSON.stringify(onTab1)
+              }) is on ${under}, not the element it was on`,
+            );
+          }
+          return true;
+        },
         10_000,
       );
-      expect(true, "the arrow moved to the followed tab with no move");
 
-      // 2. his next move reaches tab 2 only
-      const before = await arrowOn(tab2);
+      // 3. tab 2 again: still no arrow while he is still; his move reaches tab 2 only
+      await tab2.locator("[data-cy='demo-more']").click();
+      await until(
+        "a click in tab 2 takes the stage (640 × 760)",
+        async () => (await screenOf(page)).includes("640 × 760"),
+        20_000,
+      );
+      await until(
+        "M2: tab 1, left, loses the arrow",
+        async () => (await arrowOn(tab1)) === null,
+        10_000,
+      );
+      await noArrowFor(
+        "REQ-451: tab 2 followed again, his last arrow on tab 1's page",
+        tab2,
+        1_500,
+      );
       await page.mouse.move(rest.x + 25, rest.y + 20);
       await until(
         "his move reaches tab 2",
-        async () => {
-          const at = await arrowOn(tab2);
-          return !!at && !!before &&
-            Math.hypot(at.x - before.x, at.y - before.y) > 10;
-        },
+        async () => (await arrowOn(tab2))?.off === false,
         10_000,
       );
       await sleep(1_500);
@@ -346,8 +556,8 @@ Deno.test("REQ-393 (demo M2 tab switch): the tab the stage leaves loses the pres
         "M2: tab 1 (not followed) never gets his moves",
       );
 
-      // 3. the customer clicks in tab 1 (its pill's toggle: a 420 px pill is the compact one, no
-      //    title): the stage follows it again, and the arrows swap
+      // 4. the customer clicks in tab 1: the stage follows it again; tab 2 loses the arrow; his
+      //    last arrow was on tab 2's page, so tab 1 shows none until he moves (REQ-451)
       await tab1.locator("[data-cy='demo-more']").click();
       await until(
         "a click in tab 1 takes the stage back (420 × 800)",
@@ -359,12 +569,18 @@ Deno.test("REQ-393 (demo M2 tab switch): the tab the stage leaves loses the pres
         async () => (await arrowOn(tab2)) === null,
         10_000,
       );
+      await noArrowFor(
+        "REQ-451: tab 1, his last arrow on tab 2's page",
+        tab1,
+        1_500,
+      );
+      await page.mouse.move(rest.x, rest.y);
       await until(
-        "M2: tab 1, followed again, shows the arrow — he did not move",
-        async () => (await arrowOn(tab1)) !== null,
+        "his move reaches tab 1",
+        async () => (await arrowOn(tab1))?.off === false,
         10_000,
       );
-      expect(true, "the arrows swapped back with the stage");
+      expect(true, "the arrow follows the stage only as he points");
 
       await page.locator("[data-cy='demo-end']").click();
       await page.locator("[data-cy='demo-end-confirm']").click().catch(

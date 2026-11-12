@@ -15,6 +15,12 @@
  *      the browser lays out first); REQ-393 AMENDMENT (demo M2, cycle 2): once the mirror has
  *      settled and the customer scrolls, the arrow stays under the presenter's still cursor, on the
  *      element the mirror now has there.
+ *      REQ-451 AMENDMENT (demo M1, cycle 3): the arrow is what he POINTED AT. After the page change
+ *      and after the reload the customer's new page shows no arrow while his mouse is still (what
+ *      he pointed at was on the page that went — never the spot under his mouse, over whatever is
+ *      there now); his next move puts it on the element under his cursor in the new mirror. When
+ *      the customer scrolls, the arrow rides with its element, and the stage draws a faint ghost
+ *      of it on that element in the frame (his own cursor stays where it was).
  */
 import { story, type StoryTools } from "#shots";
 import { answerQuestions } from "../_shared/onboarding-answers.ts";
@@ -147,6 +153,31 @@ const mirrorScrollTop = (page: Page) =>
       JSON.stringify(FRAME)
     }); const d = f && f.contentDocument; return d && d.scrollingElement ? d.scrollingElement.scrollTop : -1; })()`,
   ) as Promise<number>;
+
+/** REQ-451 — the stage's faint ghost of the presenter's arrow (where the customer's screen has it) */
+const ghostAt = (page: Page) =>
+  page.evaluate(() => {
+    const el = document.querySelector("[data-cy='demo-pointer-ghost']");
+    if (!el) return null;
+    const m = new DOMMatrixReadOnly(getComputedStyle(el).transform);
+    return { x: m.m41, y: m.m42, outside: el.hasAttribute("data-outside") };
+  });
+
+/** REQ-451 — no presenter arrow on a customer page for `ms` (none comes while he does not move) */
+async function noArrowFor(what: string, userPage: Page, ms: number) {
+  const t0 = Date.now();
+  while (Date.now() - t0 < ms) {
+    const at = await pointerAt(userPage, "Hans");
+    if (at) {
+      throw new Error(
+        `${what}: the presenter's arrow showed with no move ${
+          JSON.stringify(at)
+        }`,
+      );
+    }
+    await new Promise((r) => setTimeout(r, 150));
+  }
+}
 
 const pointerAt = (page: Page, name: string) =>
   page.evaluate((n) => {
@@ -447,7 +478,7 @@ Deno.test("REQ-305 (demo M7, m16, setup-m6): the customer scrolls /q by window.s
     }
   }));
 
-Deno.test("REQ-305 (demo M2): the presenter's resting pointer is on the element under it after the customer goes to another page and after a reload — never on what an unstyled mirror put there — and (REQ-393) when the customer scrolls it stays under his still cursor, on the element now there", (t) =>
+Deno.test("REQ-305 (demo M2) + REQ-451 (demo M1): after the customer goes to another page and after a reload no arrow shows until the presenter moves, then it is on the element under his cursor — never on what an unstyled mirror put there; when the customer scrolls it rides with its element and the stage draws its ghost there", (t) =>
   story(t, async (tools) => {
     const { page, expect, baseUrl } = tools;
     const d = await demoOn(tools, () => "/customers");
@@ -459,12 +490,18 @@ Deno.test("REQ-305 (demo M2): the presenter's resting pointer is on the element 
       const stagePt = toStage(rest);
       await page.mouse.move(stagePt.x - 30, stagePt.y - 15);
       await page.mouse.move(stagePt.x, stagePt.y);
-      const presenterOnItsNode = async (what: string) => {
+      /** REQ-451 — `nudge`: he moves (a pixel to and fro) until the arrow is on its element: a
+       *  move made while the stage still showed the page before is not the new page's */
+      let wiggle = 0;
+      const presenterOnItsNode = async (what: string, nudge = false) => {
         await until(
           `${what}: the presenter's arrow on the customer's screen is on the element under the presenter's cursor`,
           async () => {
             const meant = await underMirror(page, rest.x, rest.y);
             const at = await pointerAt(userPage, "Hans");
+            if (!at && nudge) {
+              await page.mouse.move(stagePt.x + (wiggle++ % 2), stagePt.y);
+            }
             if (!at) {
               throw new Error("no presenter arrow on the customer's screen");
             }
@@ -485,7 +522,9 @@ Deno.test("REQ-305 (demo M2): the presenter's resting pointer is on the element 
       await presenterOnItsNode("at rest on /customers");
 
       // 1. the customer goes to their quote's page under the still mouse: a new mirror, whose
-      //    stylesheets the stage has never loaded — its first layout is the unstyled one
+      //    stylesheets the stage has never loaded — its first layout is the unstyled one.
+      //    REQ-451 (M1): what he pointed at was on /customers — the new page shows no arrow while
+      //    his mouse is still (never the spot under it, over whatever /q has there)
       const qPath = `/q/${d.quote.id}`;
       await userPage.goto(`${baseUrl}${qPath}`);
       await until(
@@ -494,11 +533,23 @@ Deno.test("REQ-305 (demo M2): the presenter's resting pointer is on the element 
           (await page.locator(FRAME).getAttribute("data-path")) === qPath,
         25_000,
       );
+      await noArrowFor(
+        "REQ-451: the customer's new page, his mouse still",
+        userPage,
+        1_500,
+      );
+      // he moves: on the element under his cursor in the new mirror, once it is styled
+      await page.mouse.move(stagePt.x + 1, stagePt.y);
+      await page.mouse.move(stagePt.x, stagePt.y);
       await d.mirrorAsTall("the quote page");
-      await presenterOnItsNode("after the customer's page change");
+      await presenterOnItsNode("after the customer's page change", true);
 
-      // 2. the customer reloads it: mirrored afresh, the arrow is back on the same element
+      // 2. the customer reloads it: a new page load — no arrow until he moves, then it is back on
+      //    the same element
       await userPage.reload();
+      await userPage.locator("[data-cy='demo-status']").filter({
+        hasText: "Connected",
+      }).waitFor({ timeout: 20_000 });
       await until(
         "the stage mirrors the reloaded page, scrolled where the customer's is",
         async () => {
@@ -510,18 +561,30 @@ Deno.test("REQ-305 (demo M2): the presenter's resting pointer is on the element 
         },
         25_000,
       );
-      await presenterOnItsNode("after the customer's reload");
-      // the reloaded page's mirror has settled
+      await noArrowFor(
+        "REQ-451: the customer's reloaded page, his mouse still",
+        userPage,
+        2_000,
+      );
+      await page.mouse.move(stagePt.x + 1, stagePt.y);
+      await page.mouse.move(stagePt.x, stagePt.y);
+      await presenterOnItsNode("after the customer's reload", true);
+      // the reloaded page's mirror has settled: the arrow stays, with no move
       await page.waitForTimeout(2_000);
       await presenterOnItsNode("once the mirror has settled");
+      expect.eq(
+        await ghostAt(page),
+        null,
+        "REQ-451: no ghost on the stage while the arrow is where he put it",
+      );
 
-      // 3. REQ-393 AMENDMENT (demo M2, cycle 2) — one model on both screens: the resting pointer
-      //    is the spot under the presenter's still mouse. The customer scrolls; the mirror scrolls
-      //    under his cursor; the arrow stays at that spot of their screen, on the element the
-      //    mirror now has under his cursor (it no longer rides away with the old element)
+      // 3. REQ-451 AMENDMENT (demo M1, cycle 3) — supersedes REQ-393's step: the arrow is what he
+      //    pointed at. The customer scrolls; the mirror scrolls under his still cursor; the arrow
+      //    rides with its element on their screen (never left over whatever comes under the
+      //    spot), and the stage draws a faint ghost of it on that element in the frame
       const before = await pointerAt(userPage, "Hans");
       if (!before) throw new Error("no presenter arrow before the scroll");
-      const meant = await underMirror(page, rest.x, rest.y);
+      const meant = await underCustomer(userPage, before.x, before.y);
       const from = await userPage.evaluate(() => globalThis.scrollY);
       const to = from >= 250 ? from - 250 : from + 250;
       await userPage.evaluate((y) => globalThis.scrollTo(0, y), to);
@@ -531,18 +594,31 @@ Deno.test("REQ-305 (demo M2): the presenter's resting pointer is on the element 
       const delta = after - from;
       expect(Math.abs(delta) >= 200, `the customer's page scrolled (${delta})`);
       await until(
-        `REQ-393: the presenter's arrow stays under his still cursor (the page scrolled ${delta}px), on the element the mirror has there now`,
+        `REQ-451: the presenter's arrow rides with its element (the page scrolled ${delta}px) and the stage's ghost is on it`,
         async () => {
           const at = await pointerAt(userPage, "Hans");
           if (!at) throw new Error("no presenter arrow");
-          const now = await underMirror(page, rest.x, rest.y);
           const shown = await underCustomer(userPage, at.x, at.y);
-          const drift = Math.hypot(at.x - before.x, at.y - before.y);
-          if (at.outside || drift > 3 || !now || shown !== now) {
+          const now = await underMirror(page, rest.x, rest.y);
+          const moved = before.y - at.y;
+          const ghost = await ghostAt(page);
+          const ghostOn = ghost
+            ? await underMirror(
+              page,
+              d.toFrame(ghost).x,
+              d.toFrame(ghost).y,
+            )
+            : null;
+          if (
+            at.outside || shown !== meant || Math.abs(moved - delta) > 3 ||
+            !ghost || ghost.outside || ghostOn !== meant
+          ) {
             throw new Error(
-              `arrow ${JSON.stringify(at)} (before the scroll ${
+              `arrow ${JSON.stringify(at)} on ${shown} (before the scroll ${
                 JSON.stringify(before)
-              }, on ${meant}) on ${shown}; the mirror has ${now} under his cursor`,
+              } on ${meant}; moved ${moved} for a ${delta}px scroll); under his cursor the mirror has ${now}; ghost ${
+                JSON.stringify(ghost)
+              } on ${ghostOn}`,
             );
           }
           return true;
