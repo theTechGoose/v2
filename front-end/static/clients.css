@@ -269,6 +269,7 @@
   text-align: left;
   line-height: 1.3;
   transition: gap var(--dur-fast) var(--ease-out);
+  text-decoration: none; /* REQ-277: a message nudge is a link */
 }
 .ccard2__nudge:hover {
   gap: 9px;
@@ -461,7 +462,7 @@
 .ccard2__panel-actions {
   margin-top: auto;
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: 1fr; /* REQ-277: Message is the one action */
   gap: 8px;
 }
 .ccard2__panel-act {
@@ -478,6 +479,7 @@
   font-weight: 700;
   font-size: 12px;
   cursor: pointer;
+  text-decoration: none; /* REQ-277: Message is a link */
   transition: transform var(--dur-fast) var(--ease-out);
 }
 .ccard2__panel-act--pink {
