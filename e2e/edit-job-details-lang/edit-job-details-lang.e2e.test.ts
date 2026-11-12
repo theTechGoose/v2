@@ -238,6 +238,13 @@ Deno.test("REQ-400 M5: preview in Español → Edit job details → add an Engli
       JSON.stringify(EN_LINES),
       "the current card is the contractor's own English lines, not the Spanish preview rows",
     );
+    // REQ-446 (cycle 3, m13): the pencil edits the current card in place —
+    // no regenerated, reworded alternatives beside it.
+    expect.eq(
+      await page.locator(".chat__jobopt").count(),
+      1,
+      "the pencil opens the current card alone (REQ-446)",
+    );
 
     // Add an English line and continue.
     const add = current.locator(".chat__jobopt-add-input");

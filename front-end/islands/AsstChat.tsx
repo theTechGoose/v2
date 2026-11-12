@@ -87,7 +87,11 @@ import { termLabel } from "../../shared/quote-flow/terms-i18n.ts";
 import { composerPlaceholderKey } from "../../shared/quote-flow/trade-fit.ts"; // REQ-343
 import type { ExtractedDuration } from "../../shared/quote-flow/quote-facts.ts";
 import { reviewJobDetails } from "../../shared/quote-flow/review-job-details.ts";
-import { versionTitle } from "../../shared/quote-flow/version-titles.ts";
+import {
+  versionStyleLabel,
+  type VersionStyle,
+  versionTitle,
+} from "../../shared/quote-flow/version-titles.ts"; // REQ-446
 import {
   cardChipKey,
   isLockedOrIssued,
@@ -102,6 +106,7 @@ import { pendingRevisionNotice } from "../../shared/documents/versions.ts";
 import { scopeBulletsFromRaw } from "../../shared/quote-flow/scope-from-raw.ts";
 import { ownWordsOption } from "../../shared/quote-flow/own-words-option.ts";
 import {
+  carryPickedOptionId,
   currentDetailsOption,
   customerFactsFrom,
   dedupeOptionsByBullets,
@@ -370,6 +375,8 @@ interface JobOptionDraft {
   jobName: string;
   summary: string;
   bullets: BulletDraft[];
+  /** REQ-446 (m13): the version's role (concise / standard / detailed). */
+  style?: VersionStyle;
   /** Per-language content of the ORIGINAL (pre-edit) option, used to fill the
    *  quote's descriptionByLang on pick without re-translating unedited bullets. */
   byLang?: Record<
@@ -395,6 +402,7 @@ function toOptionDrafts(options: JobOption[]): JobOptionDraft[] {
     id: o.id,
     jobName: o.jobName,
     summary: o.summary,
+    ...(o.style ? { style: o.style } : {}),
     bullets: o.bullets.map((text) => ({
       id: `b${++bulletSeq}`,
       text,
@@ -2647,7 +2655,10 @@ export default function AsstChat({
       setProOffer(null);
       setOptionsDegraded(p.jobOptions?.degraded === true);
       setJobOptions(drafts);
-      setSelectedOptionId(drafts[0]?.id ?? null);
+      // REQ-446 (demo-loop cycle 3, m13): the contractor's pick follows the
+      // rewrite — the same version, else the closest lines, else the same
+      // place — never back to card 1.
+      setSelectedOptionId((cur) => carryPickedOptionId(jobOptions, cur, opts));
     }
     setStepNote({ step, text: answer.content });
   }
@@ -2714,6 +2725,13 @@ export default function AsstChat({
     // when it was answered.
     setJobOptionsOpen(true);
     beginJobOptionsWait();
+    // REQ-446 (demo-loop cycle 3, m13): the pencil edits the CURRENT card in
+    // place — no regenerated, reworded alternatives beside it ("Tell the
+    // assistant…" still rewrites it on request, REQ-392).
+    if (seed && seed.lines.length > 0) {
+      settleJobOptions(raw, null, seed);
+      return;
+    }
     const inflight = optionsInFlightRef.current ?? assistantClient
       .generateJobOptions(raw)
       .catch((err) => {
@@ -5249,6 +5267,20 @@ export default function AsstChat({
                                                   { n: i + 1 },
                                                 )}
                                             </span>
+                                            {opt.style
+                                              ? (
+                                                // REQ-446 (m13): which version this is
+                                                <span
+                                                  class="chat__jobopt-style"
+                                                  data-cy="jobopt-style"
+                                                >
+                                                  {versionStyleLabel(
+                                                    opt.style,
+                                                    lang,
+                                                  )}
+                                                </span>
+                                              )
+                                              : null}
                                           </button>
                                           <button
                                             type="button"
