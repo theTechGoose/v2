@@ -1,6 +1,6 @@
 /**
  * REQ-176 — the sidebar's root on the real shell: Dashboard, Customers, Billing, Admin and nothing
- * else; Billing opens to Quotes, Invoices, Payments; Admin to Recurring and Admins; Back climbs one
+ * else; Billing opens to Quotes, Invoices, Payments; Admin to Workers and Admins, Field to the four; Back climbs one
  * level at a time; a page inside a nested folder loads inside it.
  */
 import { story, type StoryTools } from "#shots";
@@ -31,7 +31,7 @@ async function verify(http: StoryTools["http"], phone: string) {
   return { cookie, auth: { ...JSON_HEADERS, cookie } };
 }
 
-Deno.test("REQ-176: the root is Dashboard, Customers, Billing, Recurring, Admin; Billing opens to Quotes, Invoices, Payments, Work orders and Invoices loads inside it; Admin opens to Workers and Admins; Recurring to the four; Back returns to the root; /field/tasks loads inside Recurring", (t) =>
+Deno.test("REQ-176: the root is Dashboard, Customers, Billing, Field (REQ-361, was Recurring), Admin; Billing opens to Quotes, Invoices, Payments, Work orders and Invoices loads inside it; Admin opens to Workers and Admins; Field to the four; Back returns to the root; /field/tasks loads inside Field", (t) =>
   story(t, async ({ page, expect, http, baseUrl }) => {
     const user = await verify(http, `+1512${digits()}`);
     await (await http("/api/me", {
@@ -66,7 +66,7 @@ Deno.test("REQ-176: the root is Dashboard, Customers, Billing, Recurring, Admin;
     let seen = await labels();
     expect.eq(
       seen.join(" | "),
-      "Dashboard | Customers | Billing | Recurring | Roles",
+      "Dashboard | Customers | Billing | Field | Roles",
       "the root is the five rows",
     );
     // 2. Billing: Back, Quotes, Invoices, Payments, Work orders; Invoices loads inside it
@@ -89,7 +89,7 @@ Deno.test("REQ-176: the root is Dashboard, Customers, Billing, Recurring, Admin;
       (await labels()).includes("Payments"),
       "the sidebar opened inside Billing",
     );
-    // 3. Back to the root, then Admin: Admins alone (Recurring is on the root — the amendment)
+    // 3. Back to the root, then Admin: Admins alone (Field is on the root — the amendment)
     await nav.locator("[data-cy='nav-back']").click();
     await nav.locator("[data-cy='nav-folder-manage']").waitFor({
       timeout: 10_000,
@@ -103,17 +103,17 @@ Deno.test("REQ-176: the root is Dashboard, Customers, Billing, Recurring, Admin;
       "inside Admin (Workers moved here — REQ-178)",
     );
     await nav.locator("[data-cy='nav-back']").click();
-    // 4. Recurring, on the root: the five; Back lands on the root
-    await nav.locator("[data-cy='nav-folder-recurring']").waitFor({
+    // 4. Field (REQ-361, was Recurring), on the root: the five; Back lands on the root
+    await nav.locator("[data-cy='nav-folder-field']").waitFor({
       timeout: 10_000,
     });
-    await nav.locator("[data-cy='nav-folder-recurring']").click();
+    await nav.locator("[data-cy='nav-folder-field']").click();
     await nav.locator("a[href='/field/batches']").waitFor({ timeout: 10_000 });
     seen = await labels();
     expect.eq(
       seen.join(" | "),
       "Back | Subscriptions | Assignments | Tasks | Batches",
-      "inside Recurring",
+      "inside Field (REQ-361, was Recurring)",
     );
     await nav.locator("[data-cy='nav-back']").click();
     await nav.locator("[data-cy='nav-folder-billing']").waitFor({
@@ -126,6 +126,6 @@ Deno.test("REQ-176: the root is Dashboard, Customers, Billing, Recurring, Admin;
     seen = await labels();
     expect(
       seen.includes("Batches") && !seen.includes("Editors"),
-      `inside Recurring on load (${seen.join(", ")})`,
+      `inside Field on load (${seen.join(", ")})`,
     );
   }));
