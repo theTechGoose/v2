@@ -10,6 +10,7 @@ import {
   cashAppPayUrl,
   cashtagOf,
   checkPayLinks,
+  hasAnyPayWay,
   MAX_PAY_LINKS,
   payButtons,
   paypalMeHandle,
@@ -264,5 +265,24 @@ describe("REQ-630 wiring", () => {
     );
     expect(keys.length).toBeGreaterThan(10);
     for (const k of keys) expect(typeof es[k]).toBe("string");
+  });
+});
+
+describe("REQ-630 AMENDMENT a business paid only through its own links counts as payments set up", () => {
+  it("hasAnyPayWay: a switched-on method, or an enabled safe link", () => {
+    expect(hasAnyPayWay(undefined)).toBe(false);
+    expect(hasAnyPayWay({})).toBe(false);
+    expect(hasAnyPayWay({ zelle: { enabled: false } })).toBe(false);
+    expect(hasAnyPayWay({ zelle: { enabled: true } })).toBe(true);
+    expect(hasAnyPayWay({ links: [{ id: "a", name: "Extra Pay", url: "https://pay.example.com/a2z", enabled: true }] })).toBe(true);
+    expect(hasAnyPayWay({ links: [{ id: "a", name: "Extra Pay", url: "https://pay.example.com/a2z", enabled: false }] })).toBe(false);
+    expect(hasAnyPayWay({ links: [{ id: "a", name: "Bad", url: "http://pay.example.com", enabled: true }] })).toBe(false);
+  });
+  it("every 'is payment set up?' check uses it", () => {
+    for (const f of [
+      "shared/quote-flow/onboarding-questions.ts",
+      "front-end/islands/SetupChecklist.tsx",
+      "backend/src/agents/domain/coordinators/handle-chat-message/mod.ts",
+    ]) expect(read(f)).toMatch(/hasAnyPayWay\(/);
   });
 });

@@ -49,6 +49,7 @@ import { SendPaperworkEmail } from "@paperwork/domain/coordinators/send-paperwor
 import { EventBus } from "@core/business/events/mod.ts";
 import type { AgentConversation } from "@agents/dto/conversation.ts";
 import type { AgentMessage } from "@agents/dto/message.ts";
+import { hasAnyPayWay } from "#payments/pay-links.ts";
 
 /** Confirmation phrases that mean "lock the active draft quote." When the
  *  user types one of these AND the conversation already carries a draft
@@ -190,10 +191,7 @@ export class HandleChatMessage {
       const needsState = !addr?.state || addr.state.trim().length === 0;
       const needsAddress = !addr?.postal || addr.postal.trim().length === 0;
       const needsEmail = !me?.email || me.email.trim().length === 0;
-      const acceptedAny = Object.values(ident?.acceptedPaymentMethods ?? {})
-        .some(
-          (m) => m && (m as { enabled?: boolean }).enabled === true,
-        );
+      const acceptedAny = hasAnyPayWay(ident?.acceptedPaymentMethods); // REQ-630 AMENDMENT
       const needsPayout = !acceptedAny;
       // Pick the assistant's next ask once name/biz/state/address are
       // done. Email + payment are the two nice-to-haves that come last;

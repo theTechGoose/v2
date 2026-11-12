@@ -3,6 +3,7 @@ import { profileClient, type ProfileSnapshot } from "../clients/profile.ts";
 import { langSignal, tFor } from "../lib/i18n.ts";
 import { isPlaceholderName } from "../../shared/quote-flow/outbound-identity.ts";
 import { editableName } from "../../shared/person-name/mod.ts"; // REQ-624
+import { hasAnyPayWay } from "../../shared/payments/pay-links.ts"; // REQ-630 AMENDMENT
 
 /**
  * SetupChecklist — post-onboarding "finish setting up" card on the
@@ -43,11 +44,7 @@ export default function SetupChecklist() {
   // above is only for the checklist item-completeness data, not the language.
   const lang = langSignal.value;
   const id = snap.identity ?? null;
-  const acceptedAny = id?.acceptedPaymentMethods
-    ? Object.values(id.acceptedPaymentMethods).some(
-      (m) => m && (m as { enabled?: boolean }).enabled === true,
-    )
-    : false;
+  const acceptedAny = hasAnyPayWay(id?.acceptedPaymentMethods); // REQ-630 AMENDMENT
 
   const items: Item[] = [
     {

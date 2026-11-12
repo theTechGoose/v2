@@ -338,3 +338,27 @@ export function payWayNames(
   }
   return out;
 }
+
+/**
+ * REQ-630 AMENDMENT — "is payment set up?": any of the nine methods switched on, or any enabled
+ * custom link with a safe https URL. The one rule every checklist / onboarding / assistant check uses,
+ * so a business paid only through its own links ("Extra Pay") is never nagged to set up payments.
+ */
+export function hasAnyPayWay(apm: unknown): boolean {
+  if (!apm || typeof apm !== "object") return false;
+  for (const [key, m] of Object.entries(apm as Record<string, unknown>)) {
+    if (key === "links") {
+      if (!Array.isArray(m)) continue;
+      if (
+        m.some((l) =>
+          l && typeof l === "object" &&
+          (l as { enabled?: unknown }).enabled !== false &&
+          safeHttpsUrl((l as { url?: unknown }).url) !== null
+        )
+      ) return true;
+      continue;
+    }
+    if (m && typeof m === "object" && (m as { enabled?: unknown }).enabled === true) return true;
+  }
+  return false;
+}
