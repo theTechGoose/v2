@@ -15,7 +15,7 @@ import {
 } from "../clients/admins.ts";
 import { isFolder, viewAt } from "../lib/nav-folders.ts";
 import { restingPath, SB_DRAWER_CSS } from "../lib/sb-drawer.ts";
-import { NAV } from "../lib/nav-tree.ts";
+import { NAV, superAdminTabAt } from "../lib/nav-tree.ts";
 import {
   PROFILE_UPDATED,
   type ProfileUpdatedDetail,
@@ -381,12 +381,12 @@ export default function DashSidebar(
                 );
               })}
               {
-                /* Super-admin tab — super-admins only, inside the Admin folder
-                (REQ-176). Server enforces the /admin gate too (route middleware
+                /* Super-admin tab — super-admins only, on the root and inside the
+                Roles folder (REQ-176; REQ-604 demo m18: on the root too). Server enforces the /admin gate too (route middleware
                 + every endpoint); this just hides the entry for everyone else.
                 Label is intentionally not i18n'd (internal operator tool). */
               }
-              {s.superAdmin && view.folder?.id === "manage" && (
+              {superAdminTabAt(s.superAdmin, view.folder?.id ?? null) && (
                 <a
                   href="/admin"
                   class={`nav-item ${

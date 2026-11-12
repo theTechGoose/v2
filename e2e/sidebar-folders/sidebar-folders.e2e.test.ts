@@ -85,7 +85,11 @@ Deno.test("REQ-156: the root shows Field (REQ-361, was Recurring) and none of th
     for (
       const l of ["Subscriptions", "Assignments", "Tasks", "Batches"]
     ) expect(seen.includes(l), `${l} inside the folder (${seen.join(", ")})`);
-    expect(!seen.includes("Workers"), "Workers is Admin's (REQ-178)");
+    // REQ-604 (demo m18): Workers is listed in Field too (it stays in Roles, REQ-178)
+    expect(
+      seen.includes("Workers"),
+      `Workers inside Field (${seen.join(", ")})`,
+    );
     expect(!seen.includes("Customers"), "the root's entries are gone");
     expect(
       !seen.includes("Field"),
