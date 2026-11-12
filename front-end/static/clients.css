@@ -693,9 +693,12 @@
 }
 
 /* Toolbar */
+/* REQ-357 (demo cycle 1, p5): search, sort and export share the first row;
+   the filter chips get a full row of their own and wrap, so no chip is ever
+   clipped or scrolled out of sight, at any width or in any language. */
 .ctoolbar2 {
   display: grid;
-  grid-template-columns: 1fr auto auto;
+  grid-template-columns: minmax(0, 1fr) auto auto;
   gap: 8px;
   align-items: center;
   background: #fff;
@@ -726,7 +729,13 @@
   color: var(--fg-subtle);
 }
 .ctoolbar2__filters {
+  grid-column: 1 / -1;
+  grid-row: 2;
+  justify-self: start;
+  max-width: 100%;
+  min-width: 0;
   display: flex;
+  flex-wrap: wrap;
   gap: 4px;
   padding: 2px;
   background: var(--bg-sunken);
@@ -901,9 +910,6 @@
   }
   .ctoolbar2 {
     grid-template-columns: 1fr;
-  }
-  .ctoolbar2__filters {
-    overflow-x: auto;
   }
   .ph2__title {
     font-size: 28px;

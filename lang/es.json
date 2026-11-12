@@ -600,7 +600,7 @@
   "clientsBoard.balance": "Saldo",
   "clientsBoard.empty.noClients": "Aún no hay clientes — agrega el primero para comenzar tu lista.",
   "clientsBoard.empty.noMatches": "Ningún cliente coincide con este filtro.",
-  "clientsBoard.filter.activeJobs": "Trabajos activos",
+  "clientsBoard.filter.activeJobs": "En curso",
   "clientsBoard.filter.all": "Todos",
   "clientsBoard.filter.leads": "Prospectos",
   "clientsBoard.filter.new": "Nuevos",
