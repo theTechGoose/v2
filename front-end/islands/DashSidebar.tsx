@@ -1,10 +1,4 @@
 import { useEffect, useState } from "preact/hooks";
-import {
-  isReplicaFrame,
-  onReplicaView,
-  onViewRequest,
-  reportView,
-} from "../lib/demo-mode/replica.ts";
 import { I, ICN } from "../lib/dash-icons.tsx";
 import { type DashboardStats } from "../clients/dashboard.ts";
 import {
@@ -105,26 +99,9 @@ export default function DashSidebar(
 
   const [collapsed, setCollapsed] = useState<boolean>(() => {
     if (typeof globalThis.localStorage === "undefined") return false;
-    // REQ-187 — the replica frame takes the customer's flag, never the staff's storage
-    if (isReplicaFrame()) return false;
     return globalThis.localStorage.getItem("pm:sb-collapsed") === "1";
   });
   const [mobileOpen, setMobileOpen] = useState(false);
-  // REQ-187 — the customer's sidebar reports its flags (on change, and when asked on join); the
-  // replica frame's sidebar takes them from the stage
-  useEffect(() => {
-    if (isReplicaFrame()) {
-      return onReplicaView((v) => {
-        setCollapsed(v.sb);
-        setMobileOpen(v.drawer);
-        setPath(v.folder);
-      });
-    }
-    const report = () =>
-      reportView({ sb: collapsed, drawer: mobileOpen, folder: path });
-    report();
-    return onViewRequest(report);
-  }, [collapsed, mobileOpen, path]);
   // Seed from the shared cache so a navigation between pages renders the
   // last-known counts/identity immediately and the badge doesn't flash
   // empty before the refetch lands.
@@ -243,7 +220,7 @@ export default function DashSidebar(
           // deno-lint-ignore react-no-danger
           dangerouslySetInnerHTML={{
             __html:
-              `(function(){try{if(window.name==="pm-demo-replica")return;if(localStorage.getItem("pm:sb-collapsed")==="1"){var s=document.currentScript;var a=s&&s.closest(".sb");if(a){a.classList.add("sb--collapsed");}}}catch(_){}})();`,
+              `(function(){try{if(localStorage.getItem("pm:sb-collapsed")==="1"){var s=document.currentScript;var a=s&&s.closest(".sb");if(a){a.classList.add("sb--collapsed");}}}catch(_){}})();`,
           }}
         />
         <div class="sb__inner">

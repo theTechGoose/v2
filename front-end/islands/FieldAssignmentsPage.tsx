@@ -21,12 +21,6 @@ import FieldHead from "../components/FieldHead.tsx";
 import { ApiError } from "../lib/api.ts";
 import { I, ICN } from "../lib/dash-icons.tsx";
 import { langSignal, t } from "../lib/i18n.ts";
-import {
-  isReplicaFrame,
-  onReplicaView,
-  onViewRequest,
-  reportView,
-} from "../lib/demo-mode/replica.ts";
 
 // ---- Leaflet, typed just as far as this page uses it ----
 type LatLng = [number, number];
@@ -39,15 +33,10 @@ interface LLayerGroup extends LLayer {
   clearLayers(): void;
 }
 interface LMap {
-  setView(center: LatLng, zoom: number, opts?: { animate?: boolean }): LMap;
-  getCenter(): { lat: number; lng: number };
-  getZoom(): number;
-  on(event: string, fn: () => void): LMap;
+  setView(center: LatLng, zoom: number): LMap;
   fitBounds(bounds: LatLng[], opts?: { padding?: [number, number] }): LMap;
   remove(): void;
   invalidateSize(): void;
-  containerPointToLatLng(p: [number, number]): { lat: number; lng: number };
-  latLngToContainerPoint(ll: LatLng): { x: number; y: number };
 }
 interface Leaflet {
   map(el: HTMLElement, opts?: { scrollWheelZoom?: boolean }): LMap;
@@ -150,10 +139,6 @@ export default function FieldAssignmentsPage() {
   const mapRef = useRef<LMap | null>(null);
   const layerRef = useRef<LLayerGroup | null>(null);
   const leafletRef = useRef<Leaflet | null>(null);
-  /** REQ-187 — demo mode: the customer's map reports its centre/zoom; the replica frame's map takes
-   *  them (and keeps them over its own fit). `mirrorRef` is the subscription, disposed with the map. */
-  const mirrorRef = useRef<(() => void) | null>(null);
-  const lastMapRef = useRef<{ c: [number, number]; z: number } | null>(null);
   const [mapReady, setMapReady] = useState(false);
 
   async function load() {
@@ -192,26 +177,10 @@ export default function FieldAssignmentsPage() {
       ], 11);
       L.tileLayer(OSM_TILES, { attribution: OSM_ATTR, maxZoom: 18 }).addTo(map);
       mapRef.current = map;
-      if (isReplicaFrame()) {
-        mirrorRef.current = onReplicaView((v) => {
-          if (!v.map) return;
-          lastMapRef.current = v.map;
-          map.setView(v.map.c, v.map.z, { animate: false });
-        });
-      } else {
-        const report = () => {
-          const c = map.getCenter();
-          reportView({ map: { c: [c.lat, c.lng], z: map.getZoom() } });
-        };
-        map.on("moveend", report);
-        mirrorRef.current = onViewRequest(report);
-      }
       setMapReady(true);
     });
     return () => {
       cancelled = true;
-      mirrorRef.current?.();
-      mirrorRef.current = null;
       layerRef.current?.remove();
       layerRef.current = null;
       mapRef.current?.remove();
@@ -280,9 +249,6 @@ export default function FieldAssignmentsPage() {
     }
     map.invalidateSize();
     if (pts.length) map.fitBounds(pts, { padding: [30, 30] });
-    // REQ-187 — in the replica frame the customer's view rules over this fit
-    const mirrored = lastMapRef.current;
-    if (mirrored) map.setView(mirrored.c, mirrored.z, { animate: false });
   }, [regions, mapReady]);
 
   async function run(fn: () => Promise<unknown>) {

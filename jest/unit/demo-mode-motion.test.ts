@@ -150,9 +150,11 @@ describe("REQ-180 — the overlay and the stage are wired to it", () => {
         /from "\.\.\/\.\.\/shared\/demo-mode\/motion\.ts"/,
       );
       expect(island).toMatch(/moveThrottle/);
+      // REQ-242 (2026-11-11): a move is the viewport fraction plus the mirrored element under it
       expect(island).toMatch(
-        /k: "move",\s*a: pointToFrac\([^)]*\)\),\s*t: performance\.now\(\)/,
+        /k: "move",\s*a: anchorOf\(\{ x, y \}\),\s*t: performance\.now\(\)/,
       );
+      expect(island).toMatch(/const a = pointToFrac\(p, /);
       expect(island).toMatch(/newerMove\(/);
       expect(island).toMatch(/MOVE_GAP_DIRECT_MS : MOVE_GAP_RELAY_MS/);
     }

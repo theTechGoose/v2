@@ -3,7 +3,12 @@
 // at once and never twice, presence crosses both ways, and an end reaches everyone.
 import { assert, assertEquals } from "#std/assert";
 import { resetKv } from "@core/data/kv/mod.ts";
-import type { Role, ServerMessage } from "#demo-mode/protocol.ts";
+import {
+  MIRROR_CHUNK_CHARS,
+  type Role,
+  type ServerMessage,
+} from "#demo-mode/protocol.ts";
+import { ChunkAssembler, chunkText, newLoadId } from "#demo-mode/mirror.ts";
 import { DemoHub } from "./mod.ts";
 
 function fakePeer(role: Role) {
@@ -64,7 +69,7 @@ Deno.test("REQ-153 two hubs on one KV — a message posted in one reaches the pe
     assertEquals(vj.peerOnline, true, "the presenter is in this hub");
     await a.send("s1", { role: "presenter" }, {
       t: "relay",
-      data: { k: "view", v: { path: "/customers" } },
+      data: { k: "dom", l: "lp0q1x2-ab12", s: 0, i: 0, n: 1, d: "{}" },
     });
     assertEquals(
       viewer2.inbox.filter((m) => m.t === "relay").length,
@@ -286,6 +291,64 @@ Deno.test("REQ-214 two presenters on one demo: presence, stamped relays, present
           m.t === "peer" && !m.online && m.pid === "lia"
         ),
     );
+  } finally {
+    await a.close();
+    await b.close();
+    await resetKv();
+  }
+});
+
+Deno.test("REQ-242 full-size mirror chunks cross two isolates through the KV mailbox intact, every one once, and reassemble byte-identical whatever order they come in (two-byte text included)", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const a = DemoHub.isolated("a");
+  const b = DemoHub.isolated("b");
+  const presenter = fakePeer("presenter");
+  const viewer = fakePeer("viewer");
+  try {
+    await a.join("m1", presenter);
+    await b.join("m1", viewer);
+    await until(
+      "the presenter hears the viewer",
+      () => presenter.inbox.some((m) => m.t === "peer" && m.online),
+    );
+    // the worst case for a KV value: every chunk at the size limit, every one a two-byte string
+    const text = "¿Qué tal? 🚰 “ok” ".repeat(4_000);
+    const parts = chunkText(text);
+    assert(parts.length >= 4, `${parts.length} chunks`);
+    assert(
+      parts.slice(0, -1).every((p) =>
+        p.length >= MIRROR_CHUNK_CHARS - 1 && p.length <= MIRROR_CHUNK_CHARS
+      ),
+      "every chunk but the last is full (a surrogate pair is never cut)",
+    );
+    const l = newLoadId();
+    for (const [i, d] of parts.entries()) {
+      await b.send("m1", { role: "viewer" }, {
+        t: "relay",
+        data: { k: "dom", l, s: 0, i, n: parts.length, d },
+      });
+    }
+    await until(
+      "every chunk crossed",
+      () =>
+        presenter.inbox.filter((m) => m.t === "relay").length === parts.length,
+      8000,
+    );
+    const asm = new ChunkAssembler();
+    let whole: { text: string } | null = null;
+    const got = presenter.inbox.flatMap((m) =>
+      m.t === "relay" && m.data.k === "dom" ? [m.data] : []
+    );
+    // the mailbox orders the mail of one millisecond by its random id, so chunks may cross out of
+    // order; the stage's ChunkAssembler (and FrameSequencer, for frames) put them back
+    assertEquals(
+      got.map((c) => c.i).sort((x, y) => x - y),
+      parts.map((_, i) => i),
+      "every chunk, once",
+    );
+    for (const c of got) whole = asm.push(c) ?? whole;
+    assertEquals(whole?.text, text, "byte-identical, whatever the order");
   } finally {
     await a.close();
     await b.close();

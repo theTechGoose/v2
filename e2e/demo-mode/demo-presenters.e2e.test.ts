@@ -5,12 +5,13 @@
  * different colours; each stage lists both presenters. Lia moves over her frame: Ana's screen
  * shows a pointer tagged "Lia" in Lia's colour; Hans moves: a second pointer tagged "Hans" in a
  * different colour, and Hans's stage shows Lia's pointer. End from Hans clears all three.
+ * REQ-242 — each stage's frame mirrors Ana's document; its page is the frame's `data-path`.
  */
 import { story, type StoryTools } from "#shots";
 
 const JSON_HEADERS = { "content-type": "application/json" };
 const digits = () => String(Math.floor(Math.random() * 9_000_000) + 1_000_000);
-const FRAME = "pm-demo-replica";
+const FRAME = "[data-cy='demo-frame']";
 
 async function verify(http: StoryTools["http"], phone: string) {
   const r = await http("/api/auth/verify", {
@@ -233,15 +234,17 @@ Deno.test("REQ-214: two staff present to one customer — Lia's Demo on an alrea
       const ps = await pointers(userPage);
       expect.eq(ps.length, 2, "two pointers on Ana's screen");
       expect(ps[0].color !== ps[1].color, "in two different colours");
-      // frame sanity: both stages show Ana's page
-      const framePath = (pg: typeof page) => {
-        const f = pg.frame({ name: FRAME });
-        return f ? new URL(f.url()).pathname : null;
-      };
+      // frame sanity: both stages mirror Ana's page (REQ-242)
+      const framePath = (pg: typeof page) =>
+        pg.locator(FRAME).getAttribute("data-path");
       const customerPath = new URL(userPage.url()).pathname;
-      expect.eq(framePath(page), customerPath, "Hans's frame is on Ana's page");
       expect.eq(
-        framePath(liaPage),
+        await framePath(page),
+        customerPath,
+        "Hans's frame is on Ana's page",
+      );
+      expect.eq(
+        await framePath(liaPage),
         customerPath,
         "Lia's frame is on Ana's page",
       );

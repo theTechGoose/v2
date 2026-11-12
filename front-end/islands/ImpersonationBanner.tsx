@@ -13,23 +13,21 @@
  * shown, the banner publishes its height (`--banner-h` on <html>, re-measured when it wraps)
  * and pads the body; the shells' CSS subtracts it (lib/banner-room.ts).
  *
- * REQ-187 — inside the stage's replica frame it renders nothing: the customer has no banner.
+ * REQ-242 — it is marked `data-demo-skip`: the stage measures it by that, and the demo mirror never
+ * records it (the customer's screen has no banner).
  */
 import { useEffect, useRef, useState } from "preact/hooks";
 import { adminClient, type WhoAmI } from "../clients/admin.ts";
 import { fmtPhone } from "../lib/format.ts";
 import { clearBannerRoom, setBannerRoom } from "../lib/banner-room.ts";
-import { isReplicaFrame } from "../lib/demo-mode/replica.ts";
 
 export default function ImpersonationBanner() {
   const [who, setWho] = useState<WhoAmI | null>(null);
   const [busy, setBusy] = useState(false);
   const el = useRef<HTMLDivElement>(null);
-  const replica = isReplicaFrame();
-  const shown = Boolean(who?.impersonating) && !replica;
+  const shown = Boolean(who?.impersonating);
 
   useEffect(() => {
-    if (replica) return;
     let alive = true;
     adminClient.whoami()
       .then((w) => {
