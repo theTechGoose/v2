@@ -8235,6 +8235,14 @@ body {
   color: var(--fg, #1a2415);
   white-space: pre-wrap;
 }
+/* REQ-387 (demo M25): the know-my-price path's raw words get tidied up by
+   the Job Details picker before the review. */
+.chat__price-details-recap-note {
+  margin-top: 4px;
+  font-size: 12px;
+  font-style: italic;
+  color: var(--fg-muted, #6b7560);
+}
 
 /* 4th pricing option — custom price. Clicking focuses the MoneyInput. */
 .chat__price-custom-cta {

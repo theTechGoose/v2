@@ -5782,6 +5782,20 @@ export default function AsstChat({
                           <span class="chat__price-details-recap-text">
                             {pendingJobDetailsRaw}
                           </span>
+                          {/* REQ-387 (demo M25): on the know-my-price path
+                              these are the raw words — the Job Details
+                              picker rewrites them at the end of the
+                              wizard, before the review. Say so. */}
+                          {!suggestPricing && !confirmedOptionRef.current
+                            ? (
+                              <span
+                                class="chat__price-details-recap-note"
+                                data-cy="price-details-tidy-note"
+                              >
+                                {tFor(lang, "asstChat.price.tidyNote")}
+                              </span>
+                            )
+                            : null}
                         </div>
                       )
                       : null}
@@ -8140,6 +8154,13 @@ export default function AsstChat({
                                   <CustomPaymentPickerForm
                                     sending={sending}
                                     lang={lang}
+                                    // REQ-387 (demo M25): the schedule the
+                                    // message stated opens ready to verify.
+                                    initialSplits={wizardPrefillFor(
+                                      payload.stepId,
+                                      quoteFacts,
+                                      lang,
+                                    )?.splits}
                                     onSubmit={(paymentStr) => {
                                       setCustomPaymentPick(null);
                                       postWizardAnswer(m, {
@@ -10958,18 +10979,29 @@ function parsePaymentGuess(text: string): {
 function CustomPaymentPickerForm(props: {
   sending: boolean;
   lang?: Lang;
+  /** REQ-387 (demo M25): a schedule the job message stated ("30% deposit,
+   *  40% at cabinets install, 30% at completion") — opens on verify. */
+  initialSplits?: number[];
   onSubmit: (paymentStr: string) => void;
   onCancel: () => void;
 }) {
-  const { sending, lang = "en", onSubmit, onCancel } = props;
-  const [phase, setPhase] = useState<"ask" | "verify">("ask");
+  const { sending, lang = "en", initialSplits, onSubmit, onCancel } = props;
+  const seeded = !!initialSplits && initialSplits.length >= 2 &&
+    initialSplits.length <= 4;
+  const [phase, setPhase] = useState<"ask" | "verify">(
+    seeded ? "verify" : "ask",
+  );
   const [freeText, setFreeText] = useState("");
   const [parseFailed, setParseFailed] = useState(false);
-  const [mode, setMode] = useState<"net" | "split">("net");
+  const [mode, setMode] = useState<"net" | "split">(seeded ? "split" : "net");
   const [netDays, setNetDays] = useState("30");
-  const [splits, setSplits] = useState<string[]>(["50", "50"]);
+  const [splits, setSplits] = useState<string[]>(
+    seeded ? initialSplits!.map(String) : ["50", "50"],
+  );
   const [confidence, setConfidence] = useState<"ok" | "guess" | "fail">("ok");
-  const [heardFrom, setHeardFrom] = useState("");
+  const [heardFrom, setHeardFrom] = useState(
+    seeded ? initialSplits!.join(" / ") : "",
+  );
 
   const days = Math.max(0, Math.min(180, Number(netDays) || 0));
   const splitNums = splits.map((s) =>
