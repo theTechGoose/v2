@@ -355,8 +355,10 @@ describe("REQ-451 the stage: his anchor stays on what he pointed at; a new page 
     expect(stage).not.toMatch(/lastMoveRef\.current = seeded/);
     const take = fn("takeSeed");
     expect(take).toMatch(/if \(!s \|\| !fitted\(\)\) return;/);
-    expect(take).toMatch(/seedOn\(s, fitBox\(\)\)/);
-    expect(take).toMatch(/throttle\.push\(p\)/);
+    // REQ-539 AMENDMENT (demo m24, cycle 4) — through seedUse: only the stage's own hand-off on
+    // the frame is pushed; /admin's is a hint (see demo-pointer-seed-origin.test.ts)
+    expect(take).toMatch(/seedUse\(s, fitBox\(\)\)/);
+    expect(take).toMatch(/throttle\.push\(use\.at\)/);
     expect(fn("replace")).toMatch(/takeSeed\(\);/);
     const at = stage.slice(stage.indexOf("const at = (e: PointerEvent) => {"));
     expect(at.slice(0, at.indexOf("\n    };"))).toMatch(
