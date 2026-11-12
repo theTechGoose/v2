@@ -8611,7 +8611,7 @@ body {
   color: var(--fg, #1a2415);
   padding: 1px 4px;
   border-radius: 6px;
-  cursor: text;
+  cursor: pointer;
   transition: background 0.12s ease;
 }
 .chat__jobopt-text:hover:not(:disabled) {
@@ -8621,6 +8621,24 @@ body {
   text-decoration: line-through;
   color: #9aa792;
   cursor: default;
+}
+/* REQ-335 (M31): the bullet's own pencil — editing lives here, so a tap on
+   the text only selects the card. Always visible (no hover on a phone). */
+.chat__jobopt-pencil {
+  flex: 0 0 auto;
+  appearance: none;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  padding: 0 2px;
+  line-height: 1;
+  font-size: 11px;
+  color: var(--fg-muted, #9aa792);
+  border-radius: 6px;
+}
+.chat__jobopt-pencil:hover {
+  color: var(--fg, #1a2415);
+  background: rgba(26, 83, 92, 0.06);
 }
 .chat__jobopt-edit {
   flex: 1 1 auto;
