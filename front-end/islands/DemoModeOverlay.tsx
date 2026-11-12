@@ -971,6 +971,8 @@ export default function DemoModeOverlay() {
           status: f.status,
           text: f.text,
           clipped,
+          label: f.label,
+          guide: f.guide,
         }
         : {};
       const faceKey = JSON.stringify(face);
@@ -1095,6 +1097,7 @@ export default function DemoModeOverlay() {
       open: false,
       status: "ended",
       text: t(said.key, said.vars),
+      label: t("demoMode.ended"),
     };
     return (
       <div data-demo-overlay>
@@ -1214,7 +1217,12 @@ export default function DemoModeOverlay() {
     : status === "direct" || status === "relay"
     ? t("demoMode.connected")
     : t("demoMode.connecting");
-  // REQ-372 — what this pill shows, for the stage's replica
+  // REQ-373 (demo m2, p13-h) — the guide's first name on the compact pill; the name said once
+  const copy = pillCopy({ presenters, status: statusLabel, compact, open, t });
+  /** REQ-373 — "● Alex" beside the status while the details are hidden */
+  const showGuide = copy.showShort && !started;
+  // REQ-372 — what this pill shows, for the stage's replica. REQ-430 (cycle 3, m4) — its status
+  // in this pill's own words (the customer's language) and the guide's short name when shown
   faceRef.current = {
     compact,
     open: compact && open,
@@ -1224,11 +1232,9 @@ export default function DemoModeOverlay() {
       ? "live"
       : "connecting",
     text: line,
+    label: statusLabel,
+    guide: showGuide ? copy.shortName : undefined,
   };
-  // REQ-373 (demo m2, p13-h) — the guide's first name on the compact pill; the name said once
-  const copy = pillCopy({ presenters, status: statusLabel, compact, open, t });
-  /** REQ-373 — "● Alex" beside the status while the details are hidden */
-  const showGuide = copy.showShort && !started;
 
   async function end() {
     const id = demo!.id;

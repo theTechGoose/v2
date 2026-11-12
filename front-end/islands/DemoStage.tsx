@@ -152,11 +152,12 @@ import {
   whoEnded,
 } from "../../shared/demo-mode/ended.ts";
 import {
+  ghostWords,
   PILL_FONT,
+  pillFaceOffline,
   pillGhost,
   STAGE_PILL_BOTTOM,
   stageInsetBottom,
-  statusKeyOf,
 } from "../../shared/demo-mode/pill.ts";
 import {
   behindSeconds,
@@ -846,6 +847,9 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
           customerRef.current = null;
           glide.hide();
           lastTRef.current = 0;
+          // REQ-430 (cycle 3, m4) — the frozen ghost stops saying "Connected": connecting (or
+          // ended) in the stage's words until the customer's pill speaks again
+          setPillFace((f) => pillFaceOffline(f, s));
         }
         if (s === "waiting") setStale(true);
         if (wasOnline && !online && s !== "ended") pollRef.current?.();
@@ -947,6 +951,8 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
               status: m.status,
               text: m.text,
               clipped: m.clipped,
+              label: m.label,
+              guide: m.guide,
             });
             break;
         }
@@ -1216,14 +1222,14 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
             </div>
             {mirrored && pillBox && (() => {
               // REQ-372 (cycle 2, m1 + m8) — cut to the frame, and a read-only replica of what
-              // the pill says: its text (unless compact and closed), its status in this stage's
-              // words, and a marker when the pill runs off their screen or past the frame
+              // the pill says, and a marker when the pill runs off their screen or past the frame.
+              // REQ-430 (cycle 3, m4) — its status in the CUSTOMER's words (their pill's label),
+              // its line unless compact and closed, then the guide's short name, as on the phone
               const ghost = pillGhost(pillBox, fit);
               if (!ghost) return null;
               const g = ghost.box;
               const cut = ghost.clipped || pillFace.clipped === true;
-              const showText = Boolean(pillFace.text) &&
-                !(pillFace.compact && !pillFace.open);
+              const words = ghostWords(pillFace, t);
               const px = Math.max(7, 13 * fit.s);
               return (
                 <div
@@ -1239,20 +1245,28 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
                     Math.max(2, 8 * fit.s)
                   }px;overflow:hidden;white-space:nowrap;font-family:${PILL_FONT};font-size:${px}px;line-height:1.1`}
                 >
-                  {showText && (
+                  {words.text && (
                     <span
                       data-cy="demo-pill-ghost-text"
                       style="flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis"
                     >
-                      {pillFace.text}
+                      {words.text}
                     </span>
                   )}
-                  {pillFace.status && (
+                  {words.guide && (
+                    <span
+                      data-cy="demo-pill-ghost-guide"
+                      style="flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis"
+                    >
+                      {words.guide}
+                    </span>
+                  )}
+                  {words.status && (
                     <span
                       data-cy="demo-pill-ghost-status"
                       style="flex:none;padding:1px 4px;border-radius:999px;background:rgba(255,255,255,.18);font-weight:700"
                     >
-                      {t(statusKeyOf(pillFace.status))}
+                      {words.status}
                     </span>
                   )}
                   {cut && (

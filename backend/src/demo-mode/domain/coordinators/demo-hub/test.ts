@@ -961,6 +961,49 @@ Deno.test("REQ-372 a pill message keeps its words across the socket parse and tw
   }
 });
 
+// REQ-430 (demo-loop cycle 3, m4) — the pill's status in the CUSTOMER's words and the guide's
+// short name survive the socket parse and two hubs, so the stage's ghost can say them.
+Deno.test("REQ-430 a pill message keeps its translated status label and guide name across the socket parse and two hubs", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const a = DemoHub.isolated("a");
+  const b = DemoHub.isolated("b");
+  const presenter = fakePeer("presenter");
+  const viewer = fakePeer("viewer");
+  try {
+    await a.join("s430", presenter);
+    await b.join("s430", viewer);
+    const pill = {
+      k: "pill",
+      r: { left: 12, top: 790, width: 200, height: 40 },
+      compact: true,
+      open: false,
+      status: "live",
+      label: "Conectado",
+      text: "Hans te está guiando",
+      guide: "Hans",
+      clipped: false,
+    };
+    const m = parseClientMessage(JSON.stringify({ t: "relay", data: pill }));
+    assert(m && m.t === "relay", "the socket accepts the pill");
+    await b.send("s430", { role: "viewer" }, m);
+    await until(
+      "the stage gets the pill",
+      () => presenter.inbox.some((x) => x.t === "relay"),
+    );
+    const got = presenter.inbox.find((x) => x.t === "relay")!;
+    assertEquals(parseServerMessage(JSON.stringify(got)) as unknown, {
+      t: "relay",
+      from: "viewer",
+      data: pill,
+    });
+  } finally {
+    await a.close();
+    await b.close();
+    await resetKv();
+  }
+});
+
 Deno.test("REQ-378 (demo-loop cycle 2, m22) a joining stage is greeted — welcome and who is here — BEFORE anyone hears it arrive: a tab that answers the arrival at once (its first snapshot) is never ahead of the stage's welcome", async () => {
   Deno.env.set("KV_PATH", ":memory:");
   await resetKv();

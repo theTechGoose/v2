@@ -117,6 +117,8 @@ export type PillStatus = "live" | "connecting" | "ended";
 const PILL_STATUSES: readonly PillStatus[] = ["live", "connecting", "ended"];
 /** REQ-372 — the longest pill text that rides to the stage */
 export const PILL_TEXT_MAX = 160;
+/** REQ-430 — the longest status label / guide name that rides to the stage */
+export const PILL_LABEL_MAX = 60;
 
 /** REQ-372 (demo-loop cycle 2, m1) — what the customer's pill shows: compact (status only) or
  *  full, opened on a tap, its status, its line (the customer's words) and whether it runs off
@@ -127,6 +129,10 @@ export interface PillFace {
   status?: PillStatus;
   text?: string;
   clipped?: boolean;
+  /** REQ-430 (cycle 3, m4) — the status as the customer's pill words it (their language) */
+  label?: string;
+  /** REQ-430 — the guide's short name, drawn on the compact pill while its details are hidden */
+  guide?: string;
 }
 
 /** REQ-372 — the face fields of a pill message, each checked; junk is dropped, not fatal */
@@ -139,6 +145,8 @@ function parsePillFace(o: Record<string, unknown>): PillFace {
   }
   if (typeof o.text === "string") f.text = o.text.slice(0, PILL_TEXT_MAX);
   if (typeof o.clipped === "boolean") f.clipped = o.clipped;
+  if (typeof o.label === "string") f.label = o.label.slice(0, PILL_LABEL_MAX);
+  if (typeof o.guide === "string") f.guide = o.guide.slice(0, PILL_LABEL_MAX);
   return f;
 }
 
