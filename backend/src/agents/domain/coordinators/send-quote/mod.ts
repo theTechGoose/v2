@@ -382,11 +382,10 @@ function buildDivider(o: {
     if (smsOk) {
       return t(lang, "sendQuote.divider.texted", { textedTo: textedTo! });
     }
-    if (smsFailureReason) {
-      return t(lang, "sendQuote.divider.textFailed", {
-        reason: smsFailureReason,
-      });
-    }
+    // REQ-525 (demo cycle 3, p8-pair2-a): the reason has one home — the
+    // send card reads it from this divider's payload — so the label stays
+    // short instead of restating it a second (and third) time.
+    if (smsFailureReason) return t(lang, "sendQuote.divider.textNotDelivered");
     return t(lang, "sendQuote.divider.noPhone");
   }
 

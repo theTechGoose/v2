@@ -437,7 +437,7 @@
   "asstChat.recovery.addEmail": "Agrega su correo para enviar",
   "asstChat.recovery.addEmailCheckPhone": "Agrega su correo y revisa su teléfono para enviar",
   "asstChat.recovery.addPhone": "Agrega su teléfono para enviar",
-  "asstChat.recovery.checkPhone": "Ese número no recibe mensajes — revísalo",
+  "asstChat.recovery.checkPhone": "Corrige el número y vuelve a enviar",
   "asstChat.recovery.emailPlaceholder": "cliente@correo.com",
   "asstChat.recovery.phonePlaceholder": "(555) 555-5555",
   "asstChat.recovery.saveResend": "Guardar y reenviar",
@@ -4205,5 +4205,6 @@
   "asstChat.composer.priced.handyman": "Ej: Resanar dos hoyos en el tablaroca, colgar una puerta, arreglar una llave que gotea — $425",
   "asstChat.composer.priced.roofing": "Ej: Cambiar las tejas de un techo de 20 cuadros, quitando una capa — $11,000",
   "asstChat.composer.priced.pest": "Ej: Fumigación trimestral de una casa de 2,000 pies², dentro y fuera — $125",
-  "invoicesPage.new.jobNamePlaceholder.plumbing": "ej. Reparación de grifo de cocina"
+  "invoicesPage.new.jobNamePlaceholder.plumbing": "ej. Reparación de grifo de cocina",
+  "sendQuote.divider.textNotDelivered": "Mensaje de texto no entregado"
 }

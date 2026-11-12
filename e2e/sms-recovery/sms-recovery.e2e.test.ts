@@ -110,8 +110,10 @@ async function sendToFictionalPhone(
 
 for (
   const [lang, headline] of [
-    ["en", /can.t get texts.*check/i],
-    ["es", /no recibe mensajes.*rev[ií]s/i],
+    // REQ-525 (cycle 3, p8-pair2-a): the headline is the action to take —
+    // the reason itself is the send card's to tell, not a third time here.
+    ["en", /^Fix the number and resend$/],
+    ["es", /^Corrige el número y vuelve a enviar$/],
   ] as const
 ) {
   Deno.test(`REQ-226 (${lang}): a phone on file that can't take texts → the card asks to check it, pre-filled, and no Twilio/21211 on screen`, (t) =>
@@ -140,5 +142,33 @@ for (
       const text = await page.locator(".asst, body").first().innerText();
       expect(!/twilio/i.test(text), "no provider name on screen");
       expect(!/21211/.test(text), "no provider error code on screen");
+    }));
+}
+
+// REQ-525 — demo-loop cycle 3, issue p8-pair2-a: "The same 555 send error is
+// shown three times". The divider above the recovery box now reads only
+// "Text not delivered" — it no longer restates the 555 reason the send card
+// owns — and the recovery box names the fix, not the failure.
+for (
+  const [lang, divider, reason] of [
+    ["en", "Text not delivered", /reserved test number/i], // REQ-523 wording
+    ["es", "Mensaje de texto no entregado", /número de prueba reservado/i], // REQ-523 wording
+  ] as const
+) {
+  Deno.test(`REQ-525 (${lang}): a failed text's divider is short and the recovery box doesn't repeat the reason`, (t) =>
+    story(t, async ({ page, expect, http, baseUrl }) => {
+      const auth = await signIn(http, page, baseUrl, lang);
+      const conversationId = await sendToFictionalPhone(http, auth, lang);
+      await page.setViewportSize({ width: 1280, height: 900 });
+      await page.goto(`/assistant/${conversationId}`);
+      const card = page.locator(".recovery-card").first();
+      await card.waitFor({ state: "visible", timeout: 20_000 });
+      const label = (await page.locator(".phase-divider__label").last()
+        .innerText()).trim();
+      expect(label === divider, `divider reads "${divider}": "${label}"`);
+      expect(!reason.test(label), `divider restates the reason: "${label}"`);
+      const head = (await card.locator(".recovery-card__head").innerText())
+        .trim();
+      expect(!reason.test(head), `recovery box restates the reason: "${head}"`);
     }));
 }

@@ -769,14 +769,13 @@ Deno.test("REQ-276 send-quote: the send note is ONE language — the contractor'
   });
 
   const note = r.newMessages[0].content;
-  assert(
-    note.startsWith(
-      "Error al enviar la Cotización + Acuerdo por mensaje de texto",
-    ),
-    `divider in Spanish: ${note}`,
-  );
+  // REQ-525: the label is the short Spanish line; the (Spanish) reason
+  // rides on the payload for the send card, its one home.
+  assertEquals(note, "Mensaje de texto no entregado", `divider in Spanish`);
+  const reason = (r.newMessages[0].payload as { smsFailureReason?: string })
+    .smsFailureReason ?? "";
   // REQ-523 (demo m16): the reason names the reserved block, not "every 555 number"
-  assert(/número de prueba reservado/.test(note), `Spanish reason: ${note}`);
+  assert(/número de prueba reservado/.test(reason), `Spanish reason: ${reason}`);
   assert(!/Quote \+ Agreement/.test(note), `no English template: ${note}`);
   await resetKv();
 });
@@ -930,5 +929,24 @@ Deno.test("REQ-399 M16 send-quote: a Send that threw does not hold its requestId
   // The same id with the right quote now goes through.
   await ctx.flow.run({ ...input, quoteId: ctx.quote.id });
   assertEquals(ctx.sentEmails.length, 1);
+  await resetKv();
+});
+
+// ── REQ-525 (demo-loop cycle 3, p8-pair2-a): one failure, one reason ──────
+// A text to a 555 number used to explain itself three times: the divider
+// ("Quote + Agreement text failed — <reason>"), the send card ("Couldn't
+// send — Not delivered — <reason>") and the recovery box. The reason now
+// lives only on the send card (read from the divider's payload); the
+// divider's own label is the short "Text not delivered".
+Deno.test("REQ-525 send-quote: a failed text's divider label is short and does not restate the reason; the payload still carries it", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const { payload, label } = await sendSmsTo("+15125550123");
+  assert(payload.smsFailureReason, "the reason stays on the payload");
+  assertEquals(label, "Text not delivered");
+  assert(
+    !label.includes(payload.smsFailureReason!),
+    `divider restates the reason: ${label}`,
+  );
   await resetKv();
 });
