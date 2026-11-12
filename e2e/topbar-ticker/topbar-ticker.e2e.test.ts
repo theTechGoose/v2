@@ -119,7 +119,7 @@ Deno.test("REQ-273: /assistant's live-activity pill shows the event's text and '
  * event every 3.8 s and cut a long sentence off at 280 px. With the feed
  * answering an older "Quote sent" AND a newer "accepted" (older first, as a
  * stale rotation would surface it), the pill shows the newer one and stays on
- * it across two of the old rotation periods; at 1280 px the whole sentence
+ * it across two of the old rotation periods; at 1440 px the whole sentence
  * fits, no ellipsis, and the hover title carries the full words.
  */
 const OLDER = "Quote sent to your customer Cobblestone Cafe for review";
@@ -155,7 +155,10 @@ Deno.test("REQ-319: the live-activity pill shows the newest event only, never go
         ]),
       }));
 
-    await page.setViewportSize({ width: 1280, height: 800 });
+    await page.setViewportSize({ width: 1440, height: 900 });
+    // REQ-406 (demo m15, cycle 2): at 1280 px the search box keeps its
+    // placeholder's room and the pill gives way (ellipsis + hover title), so
+    // the whole-sentence check is made at 1440 px.
     await page.goto("/assistant");
     const item = page.locator(".topbar__ticker .topbar__ticker-item").first();
     await item.waitFor({ state: "visible", timeout: 25_000 });
@@ -180,7 +183,7 @@ Deno.test("REQ-319: the live-activity pill shows the newest event only, never go
     }));
     expect(
       fit.scroll <= fit.client,
-      `the whole sentence fits in the pill at 1280 px (${fit.scroll}px in ${fit.client}px)`,
+      `the whole sentence fits in the pill at 1440 px (${fit.scroll}px in ${fit.client}px)`,
     );
     expect.eq(
       await item.getAttribute("title"),

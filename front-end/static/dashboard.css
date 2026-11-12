@@ -765,7 +765,11 @@ body {
 
 /* Live activity ticker — rotates through recent events */
 .topbar__ticker {
-  flex-shrink: 1;
+  /* REQ-406 (demo m15, cycle 2): the pill gives way first — a far larger
+     shrink factor than the search box's, down to its 220px floor — so it
+     never squeezes the search below its placeholder. Below 1250px it is
+     hidden (TOPBAR_CSS, front-end/lib/topbar-css.ts). */
+  flex: 0 100 auto;
   /* REQ-273: never narrower than dot + 120px of text + time — an
      overflow:hidden flex item's auto minimum is 0, which let the text
      collapse until only "● hace 1m" was left. REQ-319: an explicit floor
@@ -902,7 +906,10 @@ body {
   white-space: nowrap;
 }
 .topbar__search {
-  flex: 1;
+  /* REQ-406 (demo m15, cycle 2): asks for its placeholder's room ("Search a
+     number, customer, address or date…" + icon + kbd), not just what the
+     ticker leaves over. */
+  flex: 1 1 380px;
   min-width: 0;
   max-width: 560px;
   display: flex;
