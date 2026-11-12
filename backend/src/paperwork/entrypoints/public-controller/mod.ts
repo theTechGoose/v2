@@ -34,6 +34,10 @@ import {
 } from "@core/data/stripe-gateway/mod.ts"; // REQ-213
 import { RecordCardPayment } from "@paperwork/domain/coordinators/record-card-payment/mod.ts"; // REQ-213
 import { FAKE_STRIPE_API } from "#payments/stripe-keys.ts"; // REQ-213
+import {
+  projectPayMethods,
+  type PublicPayMethod,
+} from "#payments/pay-links.ts"; // REQ-630
 import type { ChangeOrder } from "@paperwork/dto/change-order.ts";
 import { docNumberOf } from "#documents/numbering.ts";
 import {
@@ -1392,28 +1396,10 @@ function parseClaim(input: unknown): ClaimPaymentDto {
  *  authenticated request flow (out of v1 scope). */
 function projectAcceptedMethods(
   contractor: { acceptedPaymentMethods?: AcceptedPaymentMethods } | undefined,
-): Array<{ method: string; handle?: string }> {
-  const m = contractor?.acceptedPaymentMethods;
-  if (!m) return [];
-  const out: Array<{ method: string; handle?: string }> = [];
-  if (m.check?.enabled) out.push({ method: "check", handle: m.check.mailTo });
-  if (m.venmo?.enabled) out.push({ method: "venmo", handle: m.venmo.handle });
-  if (m.zelle?.enabled) out.push({ method: "zelle", handle: m.zelle.handle });
-  if (m.cashapp?.enabled) {
-    out.push({ method: "cashapp", handle: m.cashapp.cashtag });
-  }
-  if (m.paypal?.enabled) {
-    out.push({ method: "paypal", handle: m.paypal.handle });
-  }
-  if (m.cash?.enabled) out.push({ method: "cash" });
-  if (m.ach?.enabled) out.push({ method: "ach", handle: m.ach.instructions });
-  if (m.card?.enabled) {
-    out.push({ method: "card", handle: m.card.instructions });
-  }
-  if (m.other?.enabled) {
-    out.push({ method: "other", handle: m.other.instructions });
-  }
-  return out;
+): PublicPayMethod[] {
+  // REQ-630 — the shared projection: the old { method, handle } rows unchanged, then one
+  // { method: "link", id, name, url } row per enabled https payment link
+  return projectPayMethods(contractor?.acceptedPaymentMethods);
 }
 
 interface PublicContractor {

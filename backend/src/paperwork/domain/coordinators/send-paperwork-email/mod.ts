@@ -3,6 +3,8 @@ import { publishPendingInvoice, publishPendingQuote } from "@paperwork/domain/bu
 import { type Lang, t } from "@core/i18n/mod.ts";
 import { QuoteStore } from "@paperwork/domain/data/quote-store/mod.ts";
 import { InvoiceStore } from "@paperwork/domain/data/invoice-store/mod.ts";
+import { StripeSettingsStore } from "@users/domain/data/stripe-settings-store/mod.ts"; // REQ-630
+import { payWaysEmailHtml } from "@paperwork/domain/business/pay-ways/mod.ts"; // REQ-630
 import { CustomerStore } from "@crm/domain/data/customer-store/mod.ts";
 import { UserStore } from "@users/domain/data/user-store/mod.ts";
 import { BusinessIdentityStore } from "@profile/domain/data/business-identity-store/mod.ts";
@@ -102,6 +104,8 @@ export class SendPaperworkEmail {
     private identity: BusinessIdentityStore,
     private email: EmailService,
     private commsLog: LogPaperworkMessage,
+    /** REQ-630 — whether the business takes cards on its own Stripe (the email's "Pay by card") */
+    private stripeSettings?: StripeSettingsStore,
   ) {}
 
   async run(
@@ -195,6 +199,14 @@ export class SendPaperworkEmail {
       subject = paid
         ? renderInvoicePaidSubject(invoice, senderBiz, safeSender, lang)
         : renderInvoiceSubject(invoice, safeSender, lang, senderBiz);
+      // REQ-630 — the ways to pay, the same the invoice page offers (none on a paid email)
+      const payWays = paid ? "" : payWaysEmailHtml(senderBiz?.acceptedPaymentMethods, {
+        card: await this.stripeSettings?.get(userId).then((s) => !!s).catch(() => false) ?? false,
+        lang,
+        payUrl: `${APP_URL}/i/${invoice.id}`,
+        amountCents: Math.max(0, (invoice.amount ?? 0) - (invoice.paidCents ?? 0)),
+        note: docRef(invoice),
+      });
       htmlBody = renderInvoiceHtml(
         invoice,
         customer,
@@ -202,6 +214,7 @@ export class SendPaperworkEmail {
         senderBiz,
         invQuote,
         paid,
+        payWays,
       );
     }
 
@@ -1086,6 +1099,8 @@ export function renderInvoiceHtml(
   senderBiz: BusinessIdentity | undefined,
   quote?: Quote,
   paid = false,
+  /** REQ-630 — the pre-rendered "Ways to pay" block (payWaysEmailHtml) */
+  payWays = "",
 ): string {
   const es = senderBiz?.commsLanguage === "es";
   const lang: Lang = es ? "es" : "en";
@@ -1098,7 +1113,7 @@ export function renderInvoiceHtml(
       : undefined);
   // Standalone invoice → lightweight amount-only email (unchanged behavior).
   if (items.length === 0 && agreementTotal == null) {
-    return renderInvoiceBasicHtml(i, customer, sender, senderBiz, lang, paid);
+    return renderInvoiceBasicHtml(i, customer, sender, senderBiz, lang, paid, payWays);
   }
   const amountLabel = invoiceAmountLabel(i, lang, paid);
 
@@ -1369,6 +1384,7 @@ export function renderInvoiceHtml(
       ? `<tr><td style="padding:18px 36px 0">${facts}</td></tr>`
       : ""
   }
+        ${payWays ? `<tr><td style="padding:0 36px">${payWays}</td></tr>` : ""}
 
         <!-- big CTA -->
         <tr><td style="padding:28px 36px 0;text-align:center">
@@ -1468,6 +1484,7 @@ export function renderInvoiceBasicHtml(
   senderBiz: BusinessIdentity | undefined,
   lang: Lang,
   paid = false,
+  payWays = "",
 ): string {
   const amountLabel = invoiceAmountLabel(i, lang, paid);
   // REQ-204 / REQ-201: "INV-5000 · Version 2", never an id slice; the
@@ -1562,7 +1579,7 @@ export function renderInvoiceBasicHtml(
         </td>
       </tr>
     </table>
-    ${invoiceFactsHtml(i, undefined, lang) ? `<div style="margin-top:16px">${invoiceFactsHtml(i, undefined, lang)}</div>` : ""}`;
+    ${invoiceFactsHtml(i, undefined, lang) ? `<div style="margin-top:16px">${invoiceFactsHtml(i, undefined, lang)}</div>` : ""}${payWays}`;
 
   return shell({
     preheader: t(lang, "paperworkEmail.invoice.preheader", {

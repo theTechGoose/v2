@@ -37,28 +37,35 @@ export interface BusinessIdentity {
   /** Per-method enable flags + handles (Venmo @, Zelle email, etc.).
    *  Shape mirrors backend AcceptedPaymentMethods but kept permissive so
    *  consumers only need the .enabled flag for gating logic. */
-  acceptedPaymentMethods?: Partial<
-    Record<
-      | "check"
-      | "venmo"
-      | "zelle"
-      | "cashapp"
-      | "paypal"
-      | "cash"
-      | "ach"
-      | "card"
-      | "other",
-      {
-        enabled?: boolean;
-        handle?: string;
-        cashtag?: string;
-        mailTo?: string;
-        routingNumber?: string;
-        accountNumberMasked?: string;
-        instructions?: string;
-      }
+  acceptedPaymentMethods?:
+    & Partial<
+      Record<
+        | "check"
+        | "venmo"
+        | "zelle"
+        | "cashapp"
+        | "paypal"
+        | "cash"
+        | "ach"
+        | "card"
+        | "other",
+        {
+          enabled?: boolean;
+          handle?: string;
+          cashtag?: string;
+          mailTo?: string;
+          routingNumber?: string;
+          accountNumberMasked?: string;
+          instructions?: string;
+        }
+      >
     >
-  >;
+    & {
+      /** REQ-630: the business's other payment links (name + https url), in display order */
+      links?: Array<
+        { id: string; name: string; url: string; enabled?: boolean }
+      >;
+    };
   createdAt: string;
   updatedAt: string;
 }

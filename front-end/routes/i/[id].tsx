@@ -153,7 +153,16 @@ interface InvoicePublic {
     installmentIndex?: number;
     installmentTotal?: number;
   }>;
-  acceptedMethods?: Array<{ method: string; handle?: string }>;
+  /** REQ-630: `method: "link"` rows carry the business's own payment link (id, name, https url) */
+  acceptedMethods?: Array<
+    {
+      method: string;
+      handle?: string;
+      id?: string;
+      name?: string;
+      url?: string;
+    }
+  >;
 }
 
 export default define.page(async function PublicInvoice(ctx) {
@@ -729,6 +738,8 @@ function InvoiceDoc(
                     balanceCents={balanceCents}
                     version={invoice.version}
                     lang={es ? "es" : "en"}
+                    hasCard={!!card}
+                    docNumber={invoice.number}
                   />
                 </div>
               </>

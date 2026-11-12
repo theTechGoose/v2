@@ -44,6 +44,7 @@ import {
 import { filesClient } from "../clients/files.ts";
 import { stripeClient, type StripeStatus } from "../clients/stripe.ts"; // REQ-212
 import { checkKeyPair, maskSecret } from "../../shared/payments/stripe-keys.ts"; // REQ-212
+import { checkPayLinks } from "../../shared/payments/pay-links.ts"; // REQ-630
 import { ApiError } from "../lib/api.ts";
 import { fmtPhone } from "../lib/format.ts";
 import { TransferAccount } from "../components/TransferAccount.tsx"; // REQ-220
@@ -1450,6 +1451,176 @@ function PaymentsEditCard(
   );
 }
 
+/** PayLinksCard (REQ-630) — "Other payment links": any other way the business gets paid online
+ *  (Extra Pay, Square, a bank portal), by name + https URL. Each becomes an outlined button on the
+ *  invoice page and a row in the invoice email. Saves the whole acceptedPaymentMethods object with
+ *  the new list, so the methods above are untouched. */
+function PayLinksCard(
+  { snapshot, onSaved }: {
+    snapshot: ProfileSnapshot;
+    onSaved: (partial: Partial<ProfileSnapshot>) => void;
+  },
+) {
+  const lang: Lang = langSignal.value === "es" ? "es" : "en";
+  const links = snapshot.identity?.acceptedPaymentMethods?.links ?? [];
+  const [name, setName] = useState("");
+  const [url, setUrl] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const [saved, setSaved] = useState(false);
+
+  async function persist(next: Array<Record<string, unknown>>) {
+    const checked = checkPayLinks(next);
+    if (!checked.ok) {
+      setErr(tFor(lang, `settings.payLinks.err.${checked.reason}`));
+      return false;
+    }
+    setBusy(true);
+    setErr(null);
+    setSaved(false);
+    try {
+      const id = await profileClient.updateIdentity({
+        acceptedPaymentMethods: {
+          ...(snapshot.identity?.acceptedPaymentMethods ?? {}),
+          links: checked.links,
+        },
+      });
+      onSaved({
+        identity: {
+          ...(snapshot.identity ?? {} as never),
+          ...id,
+        } as typeof snapshot.identity,
+      });
+      setSaved(true);
+      return true;
+    } catch (e) {
+      const code = e instanceof ApiError && e.body && typeof e.body === "object"
+        ? String((e.body as { error?: string }).error ?? "")
+        : "";
+      setErr(
+        code.startsWith("pay_link_")
+          ? tFor(
+            lang,
+            `settings.payLinks.err.${code.slice("pay_link_".length)}`,
+          )
+          : tFor(lang, "settings.payLinks.err.failed"),
+      );
+      return false;
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function add() {
+    const ok = await persist([
+      ...links,
+      { name: name.trim(), url: url.trim() },
+    ]);
+    if (ok) {
+      setName("");
+      setUrl("");
+    }
+  }
+
+  return (
+    <EditPanel
+      title={tFor(lang, "settings.payLinks")}
+      busy={busy}
+      err={err}
+      saved={saved}
+      saving={tFor(lang, "settings.payLinks.saving")}
+      savedLabel={tFor(lang, "settings.saved")}
+      dataCy="pay-links-card"
+    >
+      <p style="margin:0 0 14px;font-size:13px;color:var(--fg-muted, #6b7560)">
+        {tFor(lang, "settings.payLinks.intro")}
+      </p>
+      {links.length
+        ? (
+          <ul style="list-style:none;margin:0 0 14px;padding:0;display:grid;gap:8px">
+            {links.map((l) => (
+              <li
+                key={l.id}
+                data-cy={`pay-link-row-${l.id}`}
+                style="display:flex;align-items:center;gap:10px;border:1px solid var(--brand-green,#519843);border-radius:10px;padding:10px 12px;background:#fff"
+              >
+                <span style="flex:1;min-width:0;display:grid">
+                  <span style="font-weight:700;font-size:14px;color:var(--fg);overflow-wrap:anywhere">
+                    {l.name}
+                  </span>
+                  <span style="font-size:12px;color:var(--fg-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
+                    {l.url}
+                  </span>
+                </span>
+                <a
+                  href={l.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style="flex:none;font-size:13px;font-weight:600;color:var(--fg-muted);text-decoration:none;padding:8px 6px"
+                >
+                  {tFor(lang, "settings.payLinks.test")}
+                </a>
+                <button
+                  type="button"
+                  style={`${btnSecondary};flex:none`}
+                  disabled={busy}
+                  data-cy={`pay-link-remove-${l.id}`}
+                  onClick={() => persist(links.filter((x) => x.id !== l.id))}
+                >
+                  {tFor(lang, "settings.payLinks.remove")}
+                </button>
+              </li>
+            ))}
+          </ul>
+        )
+        : (
+          <p style="margin:0 0 14px;font-size:13px;color:var(--fg-muted)">
+            {tFor(lang, "settings.payLinks.empty")}
+          </p>
+        )}
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px">
+        <label style="display:block">
+          <span style={labelStyle}>{tFor(lang, "settings.payLinks.name")}</span>
+          <input
+            type="text"
+            style={inputStyle}
+            value={name}
+            maxLength={40}
+            placeholder={tFor(lang, "settings.payLinks.namePh")}
+            data-cy="pay-link-name"
+            onInput={(e) => setName((e.target as HTMLInputElement).value)}
+          />
+        </label>
+        <label style="display:block">
+          <span style={labelStyle}>{tFor(lang, "settings.payLinks.url")}</span>
+          <input
+            type="url"
+            inputMode="url"
+            style={inputStyle}
+            value={url}
+            placeholder={tFor(lang, "settings.payLinks.urlPh")}
+            autocomplete="off"
+            spellcheck={false}
+            data-cy="pay-link-url"
+            onInput={(e) => setUrl((e.target as HTMLInputElement).value)}
+          />
+        </label>
+      </div>
+      <div style="margin-top:12px">
+        <button
+          type="button"
+          style={btnPrimary}
+          disabled={busy || !name.trim() || !url.trim()}
+          data-cy="pay-link-add"
+          onClick={add}
+        >
+          {tFor(lang, "settings.payLinks.add")}
+        </button>
+      </div>
+    </EditPanel>
+  );
+}
+
 /** CardPaymentsCard (REQ-212) — the business's own Stripe. Paste the publishable and secret
  *  keys; the backend checks them against Stripe and seals the secret. The card shows the
  *  connection back (account, mode, the masked secret — never the secret), previews the merchant
@@ -2685,6 +2856,7 @@ export default function SettingsPage() {
 
           <PaymentsEditCard snapshot={p} onSaved={onSaved} />
           <CardPaymentsCard snapshot={p} />
+          <PayLinksCard snapshot={p} onSaved={onSaved} />
 
           {!acting && (
             <DangerZoneCard
