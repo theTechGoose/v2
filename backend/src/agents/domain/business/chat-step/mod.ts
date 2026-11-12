@@ -24,6 +24,7 @@ import { type Lang, t } from "@core/i18n/mod.ts";
 import type { ChatStepHint } from "#quote-flow/step-composer.ts";
 import type { LLMToolName } from "@agents/domain/business/llm/base/mod.ts";
 import { requestedLangs } from "@agents/domain/business/requested-langs/mod.ts";
+import { ES_TRADE_GLOSSARY } from "@agents/domain/business/es-trade-glossary/mod.ts";
 
 /** "$28,000" — cents only when there are any ("$1,850.50"). */
 export function stepMoney(cents: number): string {
@@ -76,7 +77,12 @@ export function stepContextLine(
     const question = opts.question?.trim() || hint.wizardStepId || "terms";
     return t("en", "prompts.chatStep.wizard", { question });
   }
-  if (hint?.id === "review") return t("en", "prompts.chatStep.review");
+  // REQ-448 (demo-loop cycle 3, m47): the review is where update_job_details
+  // rewrites the Spanish job details ("trinchado" for trench) — it carries the
+  // shared trade glossary.
+  if (hint?.id === "review") {
+    return `${t("en", "prompts.chatStep.review")} ${ES_TRADE_GLOSSARY}`;
+  }
   return undefined;
 }
 
