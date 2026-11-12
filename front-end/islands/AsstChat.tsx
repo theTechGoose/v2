@@ -95,6 +95,7 @@ import {
 } from "../../shared/quote-flow/chat-header.ts";
 import { pendingRevisionNotice } from "../../shared/documents/versions.ts";
 import { scopeBulletsFromRaw } from "../../shared/quote-flow/scope-from-raw.ts";
+import { ownWordsOption } from "../../shared/quote-flow/own-words-option.ts";
 import {
   currentDetailsOption,
   customerFactsFrom,
@@ -372,6 +373,8 @@ interface JobOptionDraft {
 /** Sentinel id for the "write it myself" card — a free-text job description
  *  the contractor types verbatim instead of picking a generated option. */
 const CUSTOM_OPTION_ID = "__custom__";
+/** REQ-381: id of the option the confirm strip builds from the typed message. */
+const OWN_WORDS_OPTION_ID = "__own_words__";
 
 /** REQ-338: does the confirm strip's echo need a "show more" past its 3-line clamp? */
 function isLongRawEcho(raw: string): boolean {
@@ -3049,13 +3052,41 @@ export default function AsstChat({
    * its price line. Patches the existing quote (created in phase 1), then
    * opens the deferred quote review.
    */
-  async function applyJobOption() {
+  function applyJobOption() {
+    return applyOption(null);
+  }
+
+  /** REQ-381 (demo M20): the confirm strip echoes the message the contractor
+   *  typed, so clicking it confirms THAT message — run through the shared
+   *  scope pass — never the pre-selected generated card (version 1).
+   *  Continue keeps confirming the selected card. */
+  function confirmOwnWords() {
+    const own = ownWordsOption(pendingJobDetailsRaw ?? "", lang);
+    if (!own) {
+      setError(tFor(lang, "asstChat.jobOpts.customEmpty"));
+      return;
+    }
+    return applyOption({
+      id: OWN_WORDS_OPTION_ID,
+      jobName: own.jobName,
+      summary: own.summary,
+      bullets: own.bullets.map((text, i) => ({
+        id: `w${i}`,
+        text,
+        deleted: false,
+      })),
+    });
+  }
+
+  /** `picked` set: apply that option (the confirm strip's own words);
+   *  null: apply the card the contractor selected. */
+  async function applyOption(picked: JobOptionDraft | null) {
     if (sending) return;
-    let opt = jobOptions?.find((o) => o.id === selectedOptionId);
+    let opt = picked ?? jobOptions?.find((o) => o.id === selectedOptionId);
     // "Write it myself" — synthesize a draft from the free-text box: each
     // non-empty line becomes a bullet, the first line seeds the title/summary.
     // No byLang, so the customer-language copy is filled lazily on preview.
-    if (selectedOptionId === CUSTOM_OPTION_ID) {
+    if (!picked && selectedOptionId === CUSTOM_OPTION_ID) {
       const lines = customDraftRef.current
         .split("\n")
         .map((l) => l.trim())
@@ -5455,6 +5486,10 @@ export default function AsstChat({
                               /* Roadmap p.16: explicit confirm-details step —
                                  shows the collected details and confirms on
                                  click, advancing to the pricing options.
+                                 REQ-381 (demo M20): the strip confirms the
+                                 message it echoes (the contractor's own
+                                 words), never the selected card — that is
+                                 Continue's job.
                                  UX-41: the summary strip stays, but the
                                  standard button-styled advance control every
                                  other step renders comes back below it — the
@@ -5466,7 +5501,7 @@ export default function AsstChat({
                                   data-cy="confirm-details"
                                   class="chat__confirm-details"
                                   disabled={sending}
-                                  onClick={applyJobOption}
+                                  onClick={confirmOwnWords}
                                 >
                                   <span class="chat__confirm-details-label">
                                     {sending
