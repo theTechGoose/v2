@@ -190,6 +190,7 @@ import {
   sendResultLangKey,
 } from "../../shared/quote-flow/send-result.ts";
 import MoneyInput from "./MoneyInput.tsx";
+import { priceChipAnchorCents } from "../lib/money-input.ts";
 import { startPoll } from "../lib/poll.ts";
 import { Icon } from "../components/ui/Icon.tsx";
 
@@ -913,12 +914,19 @@ export default function AsstChat({
    *  Continue row (Pick a price, the Job details picker — see stepBoxDocked);
    *  keyed by the step so the next step starts closed. */
   const [stepBoxOpenKey, setStepBoxOpenKey] = useState<string | null>(null);
-  /** REQ-329 (demo p15-13): the size of the job the amount pad scales its
-   *  quick chips to — the market tier (the first tier if none is "market"). */
-  const priceAnchorCents = priceSuggestions === null
-    ? null
-    : (priceSuggestions.find((t) => t.tier === "market") ?? priceSuggestions[0])
-      ?.priceCents ?? null;
+  /** REQ-389 (demo m31): the amount the price pad was prefilled with — the
+   *  "$18,500" typed in the quick-quote sentence — held apart from the live
+   *  priceCents so the chips don't rescale while the contractor types. */
+  const [prefillPriceCents, setPrefillPriceCents] = useState<number | null>(
+    seed?.priceCents ?? null,
+  );
+  /** REQ-329 (demo p15-13) + REQ-389 (demo m31): the size of the job the
+   *  amount pad scales its quick chips to — the market tier, else the
+   *  prefilled amount (quick-quote / know-my-price paths ask for no tiers). */
+  const priceAnchorCents = priceChipAnchorCents(
+    priceSuggestions,
+    prefillPriceCents,
+  );
   const [optionsLoading, setOptionsLoading] = useState(false);
   /** REQ-027 (NW-11): the model could not draft the options — the cards
    *  are heuristic scope bullets and the picker says so. */
@@ -1441,6 +1449,7 @@ export default function AsstChat({
     setPendingJobDetailsRaw(snap.pendingJobDetailsRaw);
     setPendingPriceCents(snap.pendingPriceCents);
     setPriceCents(snap.priceCents);
+    setPrefillPriceCents(snap.priceCents);
     setJobOptionsOpen(snap.jobOptionsOpen);
     setPickerMode(snap.pickerMode);
     setSuggestPricing(snap.suggestPricing);
@@ -2554,6 +2563,8 @@ export default function AsstChat({
       }
       if (typeof p.statedPriceCents === "number" && p.statedPriceCents > 0) {
         setPriceCents(p.statedPriceCents);
+        // REQ-389 — a stated price sizes the pad's quick chips too
+        setPrefillPriceCents(p.statedPriceCents);
         setPriceSeedRev((n) => n + 1);
       }
     }
@@ -3335,6 +3346,8 @@ export default function AsstChat({
     if (prefill.priceCents && !suggestPricing) {
       setPriceCents(prefill.priceCents);
     }
+    // REQ-389 (demo m31): the typed amount sizes the pad's quick chips.
+    setPrefillPriceCents(suggestPricing ? null : prefill.priceCents ?? null);
     setPrefillCustomerName(prefill.customerName);
     setPrefillServiceAddress(prefill.serviceAddress);
     setPrefillLines(prefill.lines);
