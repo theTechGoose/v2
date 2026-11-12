@@ -15,7 +15,7 @@ import type {
   LineSummary,
   VersionChanges,
 } from "./versions.ts";
-import type { QuoteLedger } from "./ledger.ts";
+import { type QuoteLedger, quoteTotalCents } from "./ledger.ts";
 
 export type Lang = "en" | "es";
 
@@ -56,6 +56,7 @@ const WORDS: Record<
     publishedBy: string;
     customer: string;
     by: string;
+    awaitingApproval: string;
   }
 > = {
   en: {
@@ -64,6 +65,7 @@ const WORDS: Record<
     publishedBy: "published",
     customer: "the customer",
     by: "by",
+    awaitingApproval: "Waiting for your approval",
   },
   es: {
     version: "Versión",
@@ -71,6 +73,7 @@ const WORDS: Record<
     publishedBy: "publicada",
     customer: "el cliente",
     by: "por",
+    awaitingApproval: "Esperando tu aprobación",
   },
 };
 
@@ -311,9 +314,16 @@ export interface RelatedDocumentRow {
   deltaAmountCents?: number;
   dueDate?: string;
   description?: string;
+  /** REQ-457: a change order still waiting for the customer's approval */
+  pending?: boolean;
 }
 
-/** The rows under a public document: every invoice, the approved change orders. */
+/**
+ * The rows under a public document: every invoice, the approved change
+ * orders, and (REQ-457, demo M27) the change orders still waiting for the
+ * customer — "Waiting for your approval", linking /co/:id. Declined ones
+ * are left off.
+ */
 export function relatedDocumentRows(
   payload: {
     invoices?: LinkedInvoiceLike[];
@@ -337,18 +347,69 @@ export function relatedDocumentRows(
     });
   }
   for (const co of payload.changeOrders ?? []) {
-    if (co.status !== "approved") continue;
+    const pending = isPendingChangeOrder(co);
+    if (co.status !== "approved" && !pending) continue;
     rows.push({
       kind: "changeOrder",
       id: co.id,
       number: co.number,
       url: co.url ?? `/co/${co.id}`,
-      stateLabel: stateLabel("approved", lang),
+      stateLabel: pending
+        ? WORDS[lang === "es" ? "es" : "en"].awaitingApproval
+        : stateLabel("approved", lang),
       deltaAmountCents: co.deltaAmountCents,
       ...(co.description ? { description: co.description } : {}),
+      ...(pending ? { pending: true } : {}),
     });
   }
   return rows;
+}
+
+/** A change order with no decision yet (the store's default status). */
+function isPendingChangeOrder(co: LinkedChangeOrderLike): boolean {
+  return (co.status ?? "pending") === "pending";
+}
+
+// ---------- the signed quote's pending change orders (REQ-457) ----------
+
+export interface PendingChangeOrderNotice {
+  id: string;
+  number: string;
+  url: string;
+  deltaAmountCents: number;
+  /** the job total once this change is approved: quote + approved + this */
+  newTotalCents: number;
+}
+
+/**
+ * REQ-457 (demo M27, cycle 3): what the signed /q says about each change
+ * order still waiting for the customer — "A change order (CO-001, +$1,200)
+ * is waiting for your approval — new job total $8,250". The job total is
+ * the quote's total plus the approved change orders (the ledger's agreement
+ * total, REQ-205), plus this change.
+ */
+export function pendingChangeOrderNotices(
+  quote: {
+    estimatedTotal?: number;
+    lineItems?: { price?: number; quantity?: number }[];
+    changeOrders?: LinkedChangeOrderLike[];
+  },
+): PendingChangeOrderNotice[] {
+  const cos = quote.changeOrders ?? [];
+  const pending = cos.filter(isPendingChangeOrder);
+  if (pending.length === 0) return [];
+  const base = quoteTotalCents(quote);
+  const approved = cos
+    .filter((co) => co.status === "approved")
+    .reduce((s, co) => s + Math.round(co.deltaAmountCents), 0);
+  const agreement = Math.max(0, base + approved);
+  return pending.map((co) => ({
+    id: co.id,
+    number: co.number,
+    url: co.url ?? `/co/${co.id}`,
+    deltaAmountCents: co.deltaAmountCents,
+    newTotalCents: Math.max(0, agreement + Math.round(co.deltaAmountCents)),
+  }));
 }
 
 // ---------- the signed quote's pay hand-off (REQ-251) ----------

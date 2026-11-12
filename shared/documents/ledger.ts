@@ -152,7 +152,9 @@ export interface QuoteLedger {
   workOrders: LedgerWorkOrderRow[];
 }
 
-export function quoteTotalCents(q: LedgerQuote): number {
+export function quoteTotalCents(
+  q: Pick<LedgerQuote, "estimatedTotal" | "lineItems">,
+): number {
   if (typeof q.estimatedTotal === "number") {
     return Math.max(0, Math.round(q.estimatedTotal));
   }

@@ -324,3 +324,49 @@ Deno.test("REQ-210: a work order linked to the quote is listed on /work-orders a
     );
     expect.eq(after.version, 2, "the change is a new version");
   }));
+
+Deno.test("REQ-457 (demo M27, cycle 3): a signed Q-001 with a pending CO-001 (+$120.00) shows 'waiting for your approval — new job total $1,120.00' and lists CO-001 under Related documents, linking /co/:id", (t) =>
+  story(t, async ({ page, expect, http, baseUrl }) => {
+    const { auth } = await signIn(http, page, baseUrl);
+    const { quote, invoice } = await seedAgreement(http, auth);
+
+    const signed = await http(`/api/quotes/${quote.id}/accept`, {
+      method: "POST",
+      headers: JSON_HEADERS,
+      body: JSON.stringify({ name: "Hans Hansen", version: 1 }),
+    });
+    expect.eq(signed.status, 200, "the customer signs Q-001");
+    await signed.body?.cancel();
+    const co = await post(
+      http,
+      auth,
+      `/api/invoices/${invoice.id}/change-orders`,
+      { description: "Add stair railing", deltaAmountCents: 12000 },
+    );
+
+    await page.goto(`/q/${quote.id}`);
+    const banner = page.locator("[data-cy='quote-pending-change-order']");
+    await banner.first().waitFor({ timeout: 15_000 });
+    const text = (await banner.first().innerText()).replace(/\s+/g, " ");
+    expect(
+      text.includes(
+        "A change order (CO-001, +$120.00) is waiting for your approval — new job total $1,120.00",
+      ),
+      `the banner names the CO and the new total (got "${text}")`,
+    );
+    expect.eq(
+      await banner.first().locator("a").getAttribute("href"),
+      `/co/${co.id}`,
+      "the banner links the change order to approve",
+    );
+    const row = page.locator("[data-cy='related-doc-change-order']", {
+      hasText: "CO-001",
+    });
+    expect.eq(await row.count(), 1, "CO-001 is listed under Related documents");
+    expect.eq(
+      await row.getAttribute("href"),
+      `/co/${co.id}`,
+      "the related row links the public change order",
+    );
+    await expect.see("Waiting for your approval");
+  }));
