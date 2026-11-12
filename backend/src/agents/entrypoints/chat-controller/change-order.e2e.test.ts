@@ -212,3 +212,67 @@ Deno.test("REQ-238 M27 e2e: once Maria's job is invoiced, the same sentence make
     );
   });
 });
+
+// REQ-377 (demo-loop cycle 2, B1): "Dana wants a tile backsplash too — change
+// Q-001 to $19,750" on a sent $18,500 quote added a $125 line. Over HTTP, on
+// the booted app: the new total is read and subtracted by the server.
+Deno.test("REQ-377 B1 e2e: 'change Q-001 to $19,750' on a sent $18,500 quote adds Tile backsplash at $1,250 — new total $19,750", async () => {
+  await withServer(async () => {
+    const me = await signIn("+15125557377");
+    const call = api(me.sid);
+    const dana = await call<{ id: string }>("POST", "/customers", {
+      name: "Dana Price",
+    });
+    const quote = await call<{ id: string; number: string }>(
+      "POST",
+      "/quotes",
+      {
+        summary: "Kitchen Remodel — Dana Price",
+        jobName: "Kitchen Remodel",
+        customerId: dana.id,
+        lineItems: [
+          {
+            description: "Install new cabinets",
+            quantity: 1,
+            unit: "ea",
+            price: 1_100_000,
+          },
+          {
+            description: "Install quartz countertops",
+            quantity: 1,
+            unit: "ea",
+            price: 750_000,
+          },
+        ],
+        estimatedTotal: 1_850_000,
+      },
+    );
+    assertEquals(quote.number, "Q-001");
+    await call("PUT", `/quotes/${quote.id}`, { status: "sent" });
+
+    const turn = await call<
+      { newMessages: { role: string; content: string }[] }
+    >("POST", "/agents/chat", {
+      content: "Dana wants a tile backsplash too — change Q-001 to $19,750",
+    });
+
+    assertEquals(await quoteIds(me.userId), [quote.id], "still one quote");
+    const stored = await call<{
+      estimatedTotal: number;
+      pendingRevision?: {
+        lineItems: { description: string; price: number }[];
+        estimatedTotal: number;
+      };
+    }>("GET", `/quotes/${quote.id}`);
+    assertEquals(stored.estimatedTotal, 1_850_000);
+    assertEquals(stored.pendingRevision?.estimatedTotal, 1_975_000);
+    assertEquals(stored.pendingRevision?.lineItems.at(-1), {
+      description: "Tile backsplash",
+      quantity: 1,
+      unit: "ea",
+      price: 125_000,
+    } as never);
+    const reply = turn.newMessages.at(-1)!.content;
+    assert(reply.includes("$1,250.00"), reply);
+  });
+});

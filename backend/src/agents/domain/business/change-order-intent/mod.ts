@@ -256,3 +256,152 @@ export function pickChangeOrderTarget(input: {
   // one customer: their one open quote, else their newest draft
   return { kind: "quote", quoteId: pool[0].id };
 }
+
+// ---------------------------------------------------------------------------
+// REQ-377 (demo-loop cycle 2, B1): a NEW TOTAL, not an added amount.
+// ---------------------------------------------------------------------------
+//
+// "Dana wants a tile backsplash too — change Q-001 to $19,750" on an $18,500
+// quote is a change order of +$1,250. Nothing read it in code, so the model
+// did the subtraction into cents itself, wrote 12500, and a $125 line went
+// onto the revision. The total is read here; the coordinator, which knows
+// the quote, subtracts.
+
+const MONEY_SRC = String
+  .raw`\$\s?(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d{1,2})?`;
+const MONEY_ALL_RE = /\$\s?(\d{1,3}(?:,\d{3})+|\d+)(?:\.(\d{1,2}))?/g;
+
+/** What the new total is OF: a quote number, "the total", "the quote". */
+const TOTAL_SUBJECT = String
+  .raw`(?:(?:the\s+)?(?:total\s+(?:of|on|for)\s+)?Q-\d+(?:'s|’s)?(?:\s+total)?|the\s+(?:(?:quote|job|grand)\s+)?total|the\s+(?:quote|job|price)(?:'s\s+total|\s+total)?|(?:the\s+)?new\s+total)`;
+
+const TARGET_RES: RegExp[] = [
+  // "change Q-001 to $19,750", "make the total $19,200", "bring the quote up to $9,800"
+  new RegExp(
+    String
+      .raw`\b(?:change|make|set|bring|update|raise|bump|lower|adjust|put)\s+${TOTAL_SUBJECT}(?:\s+(?:up|down))?(?:\s+(?:to|at|=))?\s*(?:be\s+)?(${MONEY_SRC})`,
+    "i",
+  ),
+  // "new total $19,200", "total should be $19,200"
+  new RegExp(
+    String
+      .raw`\b(?:new\s+)?total\s+(?:(?:should\s+be|is\s+now|will\s+be|is|of|to|=|:)\s*)?(${MONEY_SRC})`,
+    "i",
+  ),
+  // "cambia Q-001 a $19,750", "pon el total en $19,750"
+  new RegExp(
+    String
+      .raw`(?<!\p{L})(?:cambia|cambiar|cambie|pon|ponle|ponla|deja|sube|subir|baja|ajusta)\s+(?:(?:el\s+total\s+de\s+)?(?:la\s+)?Q-\d+|el\s+total|la\s+cotizaci[oó]n)\s+(?:a|en)\s*(${MONEY_SRC})`,
+    "iu",
+  ),
+  // "nuevo total $19,750", "total de $19,750"
+  new RegExp(
+    String
+      .raw`(?<!\p{L})(?:nuevo\s+)?total\s+(?:(?:de|ser[aá]|es|a)\s+)?(${MONEY_SRC})`,
+    "iu",
+  ),
+];
+
+/** What introduces the added work in the rest of the sentence. */
+const ITEM_INTRO_RE =
+  /^(?:.*?\b(?:wants?|needs?|asked\s+for|would\s+like|is\s+adding)\s+(?:(?:to\s+add|also|too)\s+)?|(?:and\s+|also\s+)?(?:add(?:ing)?|plus|include|including|for|with)\s+|.*?(?<!\p{L})(?:quiere|necesita|pide)\s+(?:tambi[eé]n\s+)?|(?:y\s+)?(?:agrega|agregar|añade|añadir|suma|con|por|para)\s+)(.+)$/iu;
+const TRAILING_FILLER_RE =
+  /\s+(?:too|also|as\s+well|please|now|tambi[eé]n|por\s+favor)$/i;
+
+function centsOf(money: string): number {
+  const m = money.match(/(\d{1,3}(?:,\d{3})+|\d+)(?:\.(\d{1,2}))?/)!;
+  return Number(m[1].replace(/,/g, "")) * 100 +
+    (m[2] ? Number(m[2].padEnd(2, "0")) : 0);
+}
+
+/** Every dollar amount typed, in cents ("$19,750" → 1975000). */
+export function typedAmountsCents(text: string): number[] {
+  return [...(text ?? "").matchAll(MONEY_ALL_RE)].map((m) => centsOf(m[0]));
+}
+
+export interface TargetTotalChange {
+  /** "Q-001" when the sentence names one. */
+  quoteNumber?: string;
+  /** The job's NEW total, integer cents. */
+  targetTotalCents: number;
+  /** The added work ("Tile backsplash"); absent when none is named. */
+  description?: string;
+}
+
+/**
+ * Read "change Q-001 to $19,750", "make the total $19,200", "new total
+ * $9,800", "cambia Q-001 a $19,750" — a new TOTAL for a quote — and the work
+ * the sentence adds ("Dana wants a tile backsplash too" → "Tile backsplash").
+ * Undefined when the text is not one, or carries more than one dollar
+ * amount (then which is the total is not for a regex to guess).
+ */
+export function parseTargetTotalChange(
+  text: string,
+): TargetTotalChange | undefined {
+  if (!text || typedAmountsCents(text).length !== 1) return undefined;
+  for (const re of TARGET_RES) {
+    const m = text.match(re);
+    if (!m || m.index === undefined) continue;
+    const out: TargetTotalChange = { targetTotalCents: centsOf(m[1]) };
+    if (out.targetTotalCents <= 0) return undefined;
+    const num = text.match(DOC_NUMBER_RE);
+    if (num) out.quoteNumber = num[0].toUpperCase();
+
+    const rest = (text.slice(0, m.index) + " " +
+      text.slice(m.index + m[0].length))
+      .replace(/\(?\bQ-\d+\b\)?/gi, " ")
+      .replace(/\s{2,}/g, " ")
+      .replace(/^[\s.,;:!?¡¿—–-]+|[\s.,;:!?¡¿—–-]+$/g, "")
+      .trim();
+    const item = rest.match(ITEM_INTRO_RE);
+    if (item) {
+      let desc = item[1].split(/[.;!?—–]|,\s|\s-\s/)[0].trim();
+      while (TRAILING_FILLER_RE.test(desc)) {
+        desc = desc.replace(TRAILING_FILLER_RE, "").trim();
+      }
+      desc = desc.replace(ARTICLE_RE, "").trim();
+      if (/\p{L}/u.test(desc)) out.description = capitalize(desc);
+    }
+    return out;
+  }
+  return undefined;
+}
+
+export type DeltaCheck =
+  | { kind: "ok"; deltaCents: number }
+  /** the amount fits nothing typed — ask, write nothing */
+  | { kind: "ask" };
+
+/**
+ * Cross-check the model's change_order delta against the dollars the
+ * contractor typed. It stands when it is a typed amount (±$A) or a typed
+ * amount minus a base — the job's current total, or a line's price
+ * (a reprice on a signed quote, REQ-315). A delta off by a factor of 10 or
+ * 100 from exactly one of those is the model's cents slip (demo B1: 12500
+ * for 125000) and is corrected. Anything else is asked about. No amount
+ * typed → nothing to check against: the delta stands.
+ */
+export function reconcileChangeOrderDelta(input: {
+  deltaCents: number;
+  userText: string;
+  /** The current total first, then anything else a delta may be measured from. */
+  bases: number[];
+}): DeltaCheck {
+  const delta = Math.trunc(input.deltaCents);
+  const amounts = typedAmountsCents(input.userText);
+  if (amounts.length === 0) return { kind: "ok", deltaCents: delta };
+  const fits = new Set<number>();
+  for (const a of amounts) {
+    fits.add(a);
+    fits.add(-a);
+    for (const b of input.bases) fits.add(a - b);
+  }
+  fits.delete(0);
+  if (fits.has(delta)) return { kind: "ok", deltaCents: delta };
+  const slips = new Set<number>();
+  for (const scaled of [delta * 10, delta * 100, delta / 10, delta / 100]) {
+    if (Number.isInteger(scaled) && fits.has(scaled)) slips.add(scaled);
+  }
+  if (slips.size === 1) return { kind: "ok", deltaCents: [...slips][0] };
+  return { kind: "ask" };
+}

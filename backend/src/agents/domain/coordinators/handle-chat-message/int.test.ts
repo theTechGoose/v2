@@ -2344,3 +2344,228 @@ Deno.test("REQ-337 m6 handle-chat-message integration: a model-supplied jobName 
   assertEquals(stored.jobName, "Bedroom & Hallway Repaint");
   await resetKv();
 });
+
+// ---------------------------------------------------------------------------
+// REQ-377 (demo-loop cycle 2, B1): "Dana wants a tile backsplash too — change
+// Q-001 to $19,750" on Dana's sent $18,500 kitchen quote added "Tile
+// backsplash ($125.00)" — the model's own cents subtraction (12500, not
+// 125000), written unchecked. The new total is now read and subtracted in
+// code, and a model delta that fits nothing the contractor typed is fixed or
+// asked about — never written.
+// ---------------------------------------------------------------------------
+
+const PAIR5_TEXT = "Dana wants a tile backsplash too — change Q-001 to $19,750";
+
+/** Dana Price's sent $18,500 kitchen remodel (demo pair 5), bound to a chat. */
+async function seedKitchen(f: ReturnType<typeof fresh>) {
+  await seedOnboarded("u-1");
+  const dana = await f.customers.create("u-1", { name: "Dana Price" });
+  const line = (description: string, price: number) => ({
+    description,
+    quantity: 1,
+    unit: "ea",
+    price,
+  });
+  const draft = await f.quotes.create("u-1", {
+    summary: "Kitchen Remodel — Dana Price",
+    jobName: "Kitchen Remodel",
+    customerId: dana.id,
+    lineItems: [
+      line("Install new cabinets", 1_100_000),
+      line("Install quartz countertops", 750_000),
+    ],
+    estimatedTotal: 1_850_000,
+  });
+  const quote = await f.quotes.update(draft.id, "u-1", {
+    status: "sent",
+    sentAt: new Date().toISOString(),
+  });
+  const conv = await f.conversations.create({
+    userId: "u-1",
+    quoteId: quote.id,
+  });
+  return { quote, conv };
+}
+
+type Pending = {
+  lineItems: { description: string; price: number }[];
+  estimatedTotal: number;
+};
+
+/** What the demo's model fired: the right tool, a tenth of the money. */
+const TENTH_OF_THE_PRICE = {
+  text: "",
+  action: {
+    type: "change_order" as const,
+    payload: {
+      quoteNumber: "Q-001",
+      description: "Tile backsplash",
+      deltaAmountCents: 12_500,
+    },
+  },
+};
+
+Deno.test("REQ-377 B1: the demo's exact sentence adds Tile backsplash at $1,250 — total $19,750 — whatever the model would have said", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const f = fresh();
+  const { quote, conv } = await seedKitchen(f);
+  f.llm.setScript([TENTH_OF_THE_PRICE]);
+  const result = await f.flow.run({
+    userId: "u-1",
+    conversationId: conv.id,
+    content: PAIR5_TEXT,
+  });
+  await onlyQuoteIs(f, quote.id);
+  const stored = await f.quotes.getOwned(quote.id, "u-1");
+  assertEquals(stored.estimatedTotal, 1_850_000, "the live version waits");
+  const pending = stored.pendingRevision as Pending;
+  assertEquals(pending.lineItems.map((l) => [l.description, l.price]), [
+    ["Install new cabinets", 1_100_000],
+    ["Install quartz countertops", 750_000],
+    ["Tile backsplash", 125_000],
+  ]);
+  assertEquals(pending.estimatedTotal, 1_975_000);
+  const reply = result.newMessages.at(-1)!;
+  assert(reply.content.includes("$1,250.00"), reply.content);
+  assertEquals(reply.content.includes("$125.00"), false, reply.content);
+  assertEquals((reply.payload as RevisionPayload).changeOrder, {
+    kind: "pending_revision",
+    quoteId: quote.id,
+    quoteNumber: "Q-001",
+  });
+  await resetKv();
+});
+
+Deno.test("REQ-377 B1: a second new total is measured from the pending revision, not the published quote", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const f = fresh();
+  const { quote, conv } = await seedKitchen(f);
+  await f.flow.run({
+    userId: "u-1",
+    conversationId: conv.id,
+    content: PAIR5_TEXT,
+  });
+  await f.flow.run({
+    userId: "u-1",
+    conversationId: conv.id,
+    content: "add under-cabinet lighting — change Q-001 to $20,600",
+  });
+  const pending = (await f.quotes.getOwned(quote.id, "u-1"))
+    .pendingRevision as Pending;
+  assertEquals(
+    pending.lineItems.at(-1),
+    {
+      description: "Under-cabinet lighting",
+      quantity: 1,
+      unit: "ea",
+      price: 85_000,
+    } as unknown as Pending["lineItems"][number],
+  );
+  assertEquals(pending.estimatedTotal, 2_060_000);
+  await resetKv();
+});
+
+Deno.test("REQ-377 B1: a new total with no item asks what the difference is for — nothing is written", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const f = fresh();
+  const { quote, conv } = await seedKitchen(f);
+  f.llm.setScript([TENTH_OF_THE_PRICE]);
+  const result = await f.flow.run({
+    userId: "u-1",
+    conversationId: conv.id,
+    content: "change Q-001 to $19,750",
+  });
+  const stored = await f.quotes.getOwned(quote.id, "u-1");
+  assertEquals(stored.pendingRevision ?? undefined, undefined);
+  const reply = result.newMessages.at(-1)!;
+  assert(reply.content.includes("$1,250.00"), reply.content);
+  assert(reply.content.includes("$19,750.00"), reply.content);
+  assertEquals(
+    (reply.payload as RevisionPayload).changeOrder?.kind,
+    "needs_description",
+  );
+  await resetKv();
+});
+
+Deno.test("REQ-377 B1: the model's own change_order delta is cross-checked against the dollars typed — a decimal slip is corrected", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const f = fresh();
+  const { quote, conv } = await seedKitchen(f);
+  f.llm.setScript([TENTH_OF_THE_PRICE]);
+  // phrased so no deterministic reader catches it: the model's call runs
+  const result = await f.flow.run({
+    userId: "u-1",
+    conversationId: conv.id,
+    content: "Dana wants a tile backsplash too, so Q-001 comes out at $19,750",
+  });
+  const pending = (await f.quotes.getOwned(quote.id, "u-1"))
+    .pendingRevision as Pending;
+  assertEquals(pending.lineItems.at(-1)?.price, 125_000);
+  assertEquals(pending.estimatedTotal, 1_975_000);
+  assert(result.newMessages.at(-1)!.content.includes("$1,250.00"));
+  await resetKv();
+});
+
+Deno.test("REQ-377 B1: a model delta that fits no dollar amount typed is asked about — nothing is written", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const f = fresh();
+  const { quote, conv } = await seedKitchen(f);
+  f.llm.setScript([{
+    ...TENTH_OF_THE_PRICE,
+    action: {
+      ...TENTH_OF_THE_PRICE.action,
+      payload: {
+        ...TENTH_OF_THE_PRICE.action.payload,
+        deltaAmountCents: 99_900,
+      },
+    },
+  }]);
+  const result = await f.flow.run({
+    userId: "u-1",
+    conversationId: conv.id,
+    content: "Dana wants a tile backsplash too, so Q-001 comes out at $19,750",
+  });
+  const stored = await f.quotes.getOwned(quote.id, "u-1");
+  assertEquals(stored.pendingRevision ?? undefined, undefined);
+  const reply = result.newMessages.at(-1)!;
+  assertEquals(reply.content.includes("$999.00"), false, reply.content);
+  assertEquals(
+    (reply.payload as RevisionPayload).changeOrder?.kind,
+    "needs_amount",
+  );
+  await resetKv();
+});
+
+Deno.test("REQ-377 B1: change_order's targetTotalCents (the tool's new-total field) is subtracted in code", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const f = fresh();
+  const { quote, conv } = await seedKitchen(f);
+  f.llm.setScript([{
+    text: "",
+    action: {
+      type: "change_order",
+      payload: {
+        quoteNumber: "Q-001",
+        description: "Tile backsplash",
+        deltaAmountCents: 0,
+        targetTotalCents: 1_975_000,
+      },
+    },
+  }]);
+  await f.flow.run({
+    userId: "u-1",
+    conversationId: conv.id,
+    content: "Dana wants a tile backsplash too, so Q-001 comes out at $19,750",
+  });
+  const pending = (await f.quotes.getOwned(quote.id, "u-1"))
+    .pendingRevision as Pending;
+  assertEquals(pending.lineItems.at(-1)?.price, 125_000);
+  assertEquals(pending.estimatedTotal, 1_975_000);
+  await resetKv();
+});
