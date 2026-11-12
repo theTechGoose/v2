@@ -1051,11 +1051,23 @@ export class PaperworkPublicController {
       // the /invoices "New invoice" modal write them directly (roadmap p.3).
       // REQ-497 (demo m23): plus their per-language text (TranslateInvoice),
       // while it still matches what was typed — /i reads map[lang] ?? jobName.
-      if (!jobDetails && (i.jobName || i.description)) {
+      // REQ-487 (demo m58): its OWN line items fill the itemized table too —
+      // except a batch invoice, whose visits render grouped by address.
+      const ownItems = !jobDetails && i.lineItems?.length &&
+          !groupVisits(i.lineItems)
+        ? i.lineItems.map((li) => ({
+          description: li.description,
+          quantity: li.quantity,
+          unit: li.unit,
+          price: li.price,
+        }))
+        : undefined;
+      if (!jobDetails && (i.jobName || i.description || ownItems)) {
         jobDetails = {
           ...(i.jobName ? { jobName: i.jobName } : {}),
           ...(i.description ? { description: i.description } : {}),
           ...invoiceTextByLang(i),
+          ...(ownItems ? { lineItems: ownItems } : {}),
         };
       }
       // Project sibling invoices into a public-safe shape, sorted by
