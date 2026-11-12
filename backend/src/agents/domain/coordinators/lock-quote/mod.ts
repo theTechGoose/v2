@@ -2,6 +2,7 @@ import { Injectable } from "#danet/core";
 import { AgentConversationStore } from "@agents/domain/data/agent-conversation-store/mod.ts";
 import { AgentMessageStore } from "@agents/domain/data/agent-message-store/mod.ts";
 import { QuoteStore } from "@paperwork/domain/data/quote-store/mod.ts";
+import { TranslateQuote } from "@agents/domain/coordinators/translate-quote/mod.ts";
 import { SendPaperworkEmail } from "@paperwork/domain/coordinators/send-paperwork-email/mod.ts";
 import { EventBus } from "@core/business/events/mod.ts";
 import { UserStore } from "@users/domain/data/user-store/mod.ts";
@@ -57,6 +58,8 @@ export class LockQuote {
     private bus: EventBus,
     private emailer: SendPaperworkEmail,
     private users: UserStore,
+    /** REQ-264 (M15): fills every document language before dispatch. */
+    private translator?: TranslateQuote,
   ) {}
 
   async run(input: LockQuoteInput): Promise<LockQuoteResult> {
@@ -86,6 +89,13 @@ export class LockQuote {
         entityId: quote.id,
         action: "sent",
       });
+      // REQ-264 (M15): the customer reads the document in either language
+      // (/q?lang=…, the email's) — translate before it goes out; never
+      // blocks the send.
+      await this.translator?.run({ userId: input.userId, quoteId: quote.id })
+        .catch((err) =>
+          console.error(`[lock-quote] translate failed for ${quote.id}:`, err)
+        );
       try {
         await this.emailer.run(input.userId, {
           kind: "quote",

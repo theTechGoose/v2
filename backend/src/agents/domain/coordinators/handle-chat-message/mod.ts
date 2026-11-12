@@ -42,6 +42,7 @@ import {
 } from "@agents/domain/business/onboarding/mod.ts";
 import { BusinessAddressStore } from "@profile/domain/data/business-address-store/mod.ts";
 import { QuoteStore } from "@paperwork/domain/data/quote-store/mod.ts";
+import { TranslateQuote } from "@agents/domain/coordinators/translate-quote/mod.ts";
 import { FileStore } from "@files/domain/data/file-store/mod.ts";
 import { UserStore } from "@users/domain/data/user-store/mod.ts";
 import { BusinessIdentityStore } from "@profile/domain/data/business-identity-store/mod.ts";
@@ -150,6 +151,8 @@ export class HandleChatMessage {
     private bus: EventBus,
     private emailer: SendPaperworkEmail,
     @Inject(LLM_CLIENT) private llm: LLMClient,
+    /** REQ-264 (M15): fills every document language before dispatch. */
+    private translator?: TranslateQuote,
   ) {}
 
   async run(input: HandleChatInput): Promise<HandleChatResult> {
@@ -923,6 +926,11 @@ export class HandleChatMessage {
           // Best-effort customer email. Failure here MUST NOT abort the
           // turn — the lock already succeeded, and the user can retry the
           // dispatch from the UI.
+          // REQ-264 (M15): translate before the quote goes out.
+          await this.translator?.run({ userId: input.userId, quoteId })
+            .catch((err) =>
+              console.error(`[chat:lock_quote] translate failed:`, err)
+            );
           try {
             await this.emailer.run(input.userId, {
               kind: "quote",

@@ -40,6 +40,10 @@ import {
   outboundSenderName,
 } from "#quote-flow/outbound-identity.ts";
 import { resolveCommsLanguage } from "#quote-flow/comms-language.ts";
+import {
+  localizeLineItems,
+  quoteDescription,
+} from "#quote-flow/quote-translations.ts";
 import type { Quote } from "@paperwork/dto/quote.ts";
 import type { Invoice } from "@paperwork/dto/invoice.ts";
 import type { Customer } from "@crm/dto/customer.ts";
@@ -642,7 +646,7 @@ export function renderQuoteSubject(
  * remote images that mail clients block.
  */
 export function renderQuoteHtml(
-  q: Quote,
+  quote: Quote,
   liveCustomer: RenderedCustomer | undefined,
   sender: User | undefined,
   senderBiz: BusinessIdentity | undefined,
@@ -651,6 +655,12 @@ export function renderQuoteHtml(
   // contractor's outgoing-comms language (default en), not their UI language.
   const es = senderBiz?.commsLanguage === "es";
   const lang: Lang = es ? "es" : "en";
+  // REQ-264 (M15): job details + line items in the email's language.
+  const q: Quote = {
+    ...quote,
+    description: quoteDescription(quote, lang),
+    lineItems: localizeLineItems(quote.lineItems, lang),
+  };
   // REQ-204 / REQ-201: "Q-001 · Version 2", never an id slice; an issued
   // quote shows the customer as snapshotted when it was issued.
   const docNumber = docRefWithVersion(q, lang);
@@ -1091,7 +1101,8 @@ export function renderInvoiceHtml(
   const lang: Lang = es ? "es" : "en";
   // REQ-204: an issued bill shows the customer as snapshotted (billTo first)
   const customer = customerOnDocument(i, liveCustomer);
-  const items = quote?.lineItems ?? [];
+  // REQ-264 (M15): the agreement's line items in the email's language.
+  const items = localizeLineItems(quote?.lineItems, lang);
   const agreementTotal = quote?.estimatedTotal ??
     (items.length
       ? items.reduce((s, li) => s + (li.price ?? 0) * (li.quantity ?? 1), 0)

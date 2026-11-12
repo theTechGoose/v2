@@ -14,8 +14,11 @@ import { resetKv } from "@core/data/kv/mod.ts";
 import { LogPaperworkMessage } from "@communication/domain/coordinators/log-paperwork-message/mod.ts";
 import { ConversationStore as CommConversationStore } from "@communication/domain/data/conversation-store/mod.ts";
 import { MessageStore as CommMessageStore } from "@communication/domain/data/message-store/mod.ts";
+import { TranslateQuote } from "@agents/domain/coordinators/translate-quote/mod.ts";
+import { TranslateBullets } from "@agents/domain/coordinators/translate-bullets/mod.ts";
+import { StubLLMClient } from "@agents/domain/business/llm/implementations/stub/mod.ts";
 
-function fresh() {
+function fresh(translator?: TranslateQuote) {
   const conversations = new AgentConversationStore();
   const messages = new AgentMessageStore();
   const quotes = new QuoteStore();
@@ -51,6 +54,7 @@ function fresh() {
       bus,
       emailer,
       new UserStore(),
+      translator,
     ),
   };
 }
@@ -162,5 +166,53 @@ Deno.test("lock-quote integration: emits quote:sent on the bus", async () => {
       e.entityType === "quote" && e.action === "sent"
     );
     assert(sent);
+  });
+});
+
+// REQ-264 (demo M15): locking a quote sends it — every document language is
+// filled on the server first, so /q?lang=en on a Spanish quote reads English.
+Deno.test("REQ-264 (M15) lock-quote fills the English line items of a Spanish quote", async () => {
+  await withKv(async () => {
+    const llm = new StubLLMClient();
+    llm.setHandler((req) => {
+      const { texts } = JSON.parse(req.messages[0].content as string) as {
+        texts: string[];
+      };
+      const toEn = /English/.test(req.systemPrompt ?? "");
+      return {
+        text: JSON.stringify({
+          texts: texts.map((t) =>
+            toEn && t === "Pintar el baño" ? "Paint the bathroom" : t
+          ),
+        }),
+      };
+    });
+    const s = fresh(new TranslateQuote(new QuoteStore(), new TranslateBullets(llm)));
+    const conv = await s.conversations.create({
+      userId: "u-1",
+      currentPhase: "quote",
+    });
+    const quote = await s.quotes.create("u-1", {
+      summary: "Baño",
+      lineItems: [{
+        description: "Pintar el baño",
+        quantity: 1,
+        unit: "ea",
+        price: 45_000,
+      }],
+      estimatedTotal: 45_000,
+    });
+    await s.conversations.update(conv.id, { quoteId: quote.id });
+
+    await s.flow.run({
+      userId: "u-1",
+      conversationId: conv.id,
+      quoteId: quote.id,
+    });
+
+    const after = await s.quotes.getOwned(quote.id, "u-1");
+    assertEquals(after.status, "sent");
+    assertEquals(after.lineItems[0].descriptionByLang?.en, "Paint the bathroom");
+    assertEquals(after.lineItems[0].description, "Pintar el baño");
   });
 });

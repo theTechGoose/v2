@@ -5,6 +5,7 @@ import { QuoteStore } from "@paperwork/domain/data/quote-store/mod.ts";
 import { SendPaperworkEmail } from "@paperwork/domain/coordinators/send-paperwork-email/mod.ts";
 import { SendPaperworkSms } from "@paperwork/domain/coordinators/send-paperwork-sms/mod.ts";
 import { EventBus } from "@core/business/events/mod.ts";
+import { TranslateQuote } from "@agents/domain/coordinators/translate-quote/mod.ts";
 import { t } from "@core/i18n/mod.ts";
 import type { AgentConversation } from "@agents/dto/conversation.ts";
 import type { AgentMessage } from "@agents/dto/message.ts";
@@ -57,6 +58,8 @@ export class SendQuote {
     private bus: EventBus,
     private emailer: SendPaperworkEmail,
     private smser: SendPaperworkSms,
+    /** REQ-264 (M15): fills every document language before dispatch. */
+    private translator?: TranslateQuote,
   ) {}
 
   async run(input: SendQuoteInput): Promise<SendQuoteResult> {
@@ -73,6 +76,21 @@ export class SendQuote {
       quote = await this.quotes.update(quote.id, input.userId, {
         customerId: conv.customerId,
       });
+    }
+
+    // REQ-264 (M15): the customer can open the document in either language
+    // (/q?lang=…, the email's language), so fill every missing translation —
+    // description AND line items — on the server before it goes out. Never
+    // blocks the send: on failure the base text still renders.
+    if (this.translator) {
+      try {
+        quote = await this.translator.run({
+          userId: input.userId,
+          quoteId: quote.id,
+        });
+      } catch (err) {
+        console.error(`[send-quote] translate failed for ${quote.id}:`, err);
+      }
     }
 
     const channel: SendChannel = input.channel ?? "email";

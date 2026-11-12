@@ -20,8 +20,11 @@ import { getKv, resetKv } from "@core/data/kv/mod.ts";
 import { LogPaperworkMessage } from "@communication/domain/coordinators/log-paperwork-message/mod.ts";
 import { ConversationStore as CommConversationStore } from "@communication/domain/data/conversation-store/mod.ts";
 import { MessageStore as CommMessageStore } from "@communication/domain/data/message-store/mod.ts";
+import { TranslateQuote } from "@agents/domain/coordinators/translate-quote/mod.ts";
+import { TranslateBullets } from "@agents/domain/coordinators/translate-bullets/mod.ts";
+import { StubLLMClient } from "@agents/domain/business/llm/implementations/stub/mod.ts";
 
-function fresh() {
+function fresh(translator?: TranslateQuote) {
   const conversations = new AgentConversationStore();
   const messages = new AgentMessageStore();
   const quotes = new QuoteStore();
@@ -71,6 +74,7 @@ function fresh() {
     bus,
     emailer,
     smser,
+    translator,
   );
   return {
     conversations,
@@ -310,5 +314,112 @@ Deno.test("send-quote: rejects a quote id that doesn't match conv.quoteId", asyn
   );
   const reloaded = await ctx.quotes.getOwned(stray.id, "u-1");
   assertEquals(reloaded.status, "draft");
+  await resetKv();
+});
+
+// REQ-264 (demo M15): a Spanish quote sent in English reads in English — the
+// send fills every missing translation (description + line items) on the
+// server before dispatch, instead of relying on the contractor having
+// toggled the preview to that language.
+Deno.test("REQ-264 (M15) send-quote translates a Spanish quote's line items before the English email goes out", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const llm = new StubLLMClient();
+  llm.setHandler((req) => {
+    const { texts } = JSON.parse(req.messages[0].content as string) as {
+      texts: string[];
+    };
+    const toEn = /English/.test(req.systemPrompt ?? "");
+    return {
+      text: JSON.stringify({
+        texts: texts.map((t) =>
+          toEn && t === "Limpieza y retiro de desechos"
+            ? "Cleanup and debris removal"
+            : t
+        ),
+      }),
+    };
+  });
+  const quotes = new QuoteStore();
+  const ctx = fresh(new TranslateQuote(quotes, new TranslateBullets(llm)));
+  await seedContractor("u-1");
+  const customer = await ctx.customers.create("u-1", {
+    name: "Tom",
+    email: "tom@example.com",
+  });
+  const quote = await ctx.quotes.create("u-1", {
+    summary: "Pintar el baño",
+    lineItems: [
+      {
+        description: "Limpieza y retiro de desechos",
+        quantity: 1,
+        unit: "ea",
+        price: 5_000,
+      },
+      { description: "Pintar el baño", quantity: 1, unit: "ea", price: 40_000 },
+    ],
+    estimatedTotal: 45_000,
+    status: "draft",
+    customerId: customer.id,
+  });
+  const conv = await ctx.conversations.create({
+    userId: "u-1",
+    quoteId: quote.id,
+    customerId: customer.id,
+  });
+
+  await ctx.flow.run({
+    userId: "u-1",
+    conversationId: conv.id,
+    quoteId: quote.id,
+    language: "en",
+  });
+
+  const after = await ctx.quotes.getOwned(quote.id, "u-1");
+  assertEquals(
+    after.lineItems[0].descriptionByLang?.en,
+    "Cleanup and debris removal",
+  );
+  assertEquals(
+    after.lineItems[0].descriptionByLang?.es,
+    "Limpieza y retiro de desechos",
+  );
+  assertEquals(ctx.sentEmails.length, 1);
+  const html = ctx.sentEmails[0].htmlBody ?? "";
+  assert(
+    html.includes("Cleanup and debris removal"),
+    "the English email lists the translated line item",
+  );
+  assert(
+    !html.includes("Limpieza y retiro de desechos"),
+    "the English email does not fall back to the Spanish line item",
+  );
+  await resetKv();
+});
+
+Deno.test("REQ-264 (M15) a failing translator never blocks the send", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const llm = new StubLLMClient();
+  llm.setHandler(() => {
+    throw new Error("provider down");
+  });
+  const quotes = new QuoteStore();
+  const translator = new TranslateQuote(quotes, new TranslateBullets(llm));
+  const base = await makeReadyConversation();
+  const ctx = fresh(translator);
+  await ctx.quotes.update(base.quote.id, "u-1", {
+    lineItems: [{ description: "Pintar", quantity: 1, unit: "ea", price: 1 }],
+  });
+
+  await ctx.flow.run({
+    userId: "u-1",
+    conversationId: base.conv.id,
+    quoteId: base.quote.id,
+  });
+
+  const after = await ctx.quotes.getOwned(base.quote.id, "u-1");
+  assertEquals(after.status, "sent");
+  assertEquals(ctx.sentEmails.length, 1);
   await resetKv();
 });

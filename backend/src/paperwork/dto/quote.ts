@@ -38,6 +38,13 @@ export class LineItemDto {
   /** Per-unit price in INTEGER CENTS. Line total is price * quantity. */
   @IsNumber()
   price!: number;
+
+  /** REQ-264 (M15): per-language cache of `description`, keyed by lang code.
+   *  Filled server-side by TranslateQuote; readers render
+   *  descriptionByLang[lang] ?? description. */
+  @IsOptional()
+  @IsObject()
+  descriptionByLang?: Record<string, string>;
 }
 
 export class CreateQuoteDto {

@@ -22,6 +22,10 @@ import { buildSignatureBlock } from "../../shared/quote-flow/signature-block.ts"
 import { agreementTitle } from "../../shared/quote-flow/agreement-title.ts";
 import { deriveQuoteView } from "../../shared/quote-flow/public-doc-state.ts";
 import {
+  localizeLineItems,
+  quoteDescription,
+} from "../../shared/quote-flow/quote-translations.ts";
+import {
   docHeadline,
   type LinkedChangeOrderLike,
   type LinkedInvoiceLike,
@@ -256,7 +260,9 @@ export function QuoteDoc(
   const contractorFirst = contractorName?.split(/\s+/)[0];
   const senderInitials = initialsFromName(contractorName ?? businessLabel);
 
-  const items = quote.lineItems ?? [];
+  // REQ-264 (M15): line items in the document's language (server-filled
+  // lineItems[].descriptionByLang), else their base text.
+  const items = localizeLineItems(quote.lineItems, lang);
   // Title/summary in the document's language when the per-language fields are
   // present (populated from the picked job option); else the single value.
   const summary = (quote.summaryByLang?.[lang] ?? quote.summary ??
@@ -494,7 +500,7 @@ export function QuoteDoc(
             <JobDetailsSection
               n={num()}
               title={t.jobDetails}
-              description={quote.descriptionByLang?.[lang] ?? quote.description}
+              description={quoteDescription(quote, lang)}
               items={items}
               total={total}
               forceTable

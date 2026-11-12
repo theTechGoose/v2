@@ -11,6 +11,10 @@ import {
   snapshotCustomer,
 } from "@core/data/numbered-store/mod.ts";
 import type { DocVersionRecord } from "#documents/versions.ts";
+import {
+  descriptionTranslationsStale,
+  reconcileLineItemTranslations,
+} from "#quote-flow/quote-translations.ts";
 import type {
   CreateQuoteDto,
   Quote,
@@ -187,10 +191,20 @@ export class QuoteStore {
     const existing = await this.getOwned(id, userId);
     const definedPatch = Object.fromEntries(
       Object.entries(patch).filter(([_, v]) => v !== undefined),
-    );
+    ) as Partial<Quote>;
+    // REQ-264 (M15): an edited text's cached translations are stale — drop
+    // them (the next send re-translates); unchanged lines keep theirs.
+    if (definedPatch.lineItems) {
+      definedPatch.lineItems = reconcileLineItemTranslations(
+        existing.lineItems,
+        definedPatch.lineItems,
+      );
+    }
+    const staleDescription = descriptionTranslationsStale(existing, patch);
     const updated: Quote = {
       ...existing,
       ...definedPatch,
+      ...(staleDescription ? { descriptionByLang: undefined } : {}),
       id: existing.id,
       userId: existing.userId,
       createdAt: existing.createdAt,

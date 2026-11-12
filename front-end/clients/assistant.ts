@@ -405,4 +405,23 @@ export const assistantClient = {
       { texts, to },
       opts,
     ),
+
+  /** REQ-264 (M15): have the server fill a quote's missing translations
+   *  (job-details description + line items) for `langs`; returns the quote. */
+  translateQuote: (
+    quoteId: string,
+    langs: ("en" | "es")[],
+    opts: ApiOptions = {},
+  ) =>
+    api.post<{
+      description?: string;
+      descriptionByLang?: Record<string, string>;
+      lineItems?: {
+        description: string;
+        descriptionByLang?: Record<string, string>;
+        quantity?: number;
+        unit?: string;
+        price?: number;
+      }[];
+    }>("/agents/job-details/translate-quote", { quoteId, langs }, opts),
 };
