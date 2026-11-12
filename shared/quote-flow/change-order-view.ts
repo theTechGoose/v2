@@ -17,6 +17,7 @@
  */
 import { type LedgerQuote, quoteTotalCents } from "../documents/ledger.ts";
 import { hasSignOverride } from "./public-doc-state.ts";
+import { shortDate } from "../documents/linked-view.ts";
 
 export interface JobTotalsChangeOrder {
   id: string;
@@ -60,4 +61,34 @@ export function changeOrderPreview(
   if (payload.internal !== true) return false;
   if (payload.status !== "pending") return false;
   return !hasSignOverride(search);
+}
+
+/** REQ-689 (demo-loop cycle 5, p5): the /co intro line, by status. A pending
+ *  order asks for review and approval; a decided one says what happened —
+ *  never "approve to update your total" under an "Approved" headline. The
+ *  total is the job's new total when the page has it (REQ-398 m25), else
+ *  the invoice's. */
+export function changeOrderIntro(
+  co: {
+    status?: string;
+    decidedAt?: string;
+    jobNewAmount?: number;
+    newAmount?: number;
+  },
+  lang: "en" | "es",
+  money: (cents: number) => string,
+): { key: string; vars?: Record<string, string> } {
+  if (co.status === "declined") {
+    return { key: "changeOrderPublic.introDeclined" };
+  }
+  if (co.status !== "approved") return { key: "changeOrderPublic.intro" };
+  const date = shortDate(co.decidedAt, lang);
+  const totalCents = co.jobNewAmount ?? co.newAmount;
+  if (!date || totalCents == null) {
+    return { key: "changeOrderPublic.introApprovedPlain" };
+  }
+  return {
+    key: "changeOrderPublic.introApproved",
+    vars: { date, total: money(totalCents) },
+  };
 }

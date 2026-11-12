@@ -12,6 +12,7 @@ import {
 import PublicChangeOrderActions from "../../islands/PublicChangeOrderActions.tsx";
 import PublicLangToggle from "../../islands/PublicLangToggle.tsx";
 import { docHeadline } from "../../../shared/documents/linked-view.ts";
+import { changeOrderIntro } from "../../../shared/quote-flow/change-order-view.ts";
 
 interface ChangeOrderPublic {
   id: string;
@@ -79,6 +80,8 @@ export default define.page(async function PublicChangeOrder(ctx) {
   // <html lang> says what this page actually paints (REQ-122 contract).
   ctx.state.lang = lang;
   const hasJob = co?.jobCurrentAmount != null && co?.jobNewAmount != null;
+  // REQ-689 (demo p5): pending asks; approved/declined say what happened.
+  const intro = co ? changeOrderIntro(co, lang, money) : undefined;
 
   return (
     <>
@@ -192,8 +195,15 @@ export default define.page(async function PublicChangeOrder(ctx) {
                       </div>
                     )
                     : null}
-                  <p style={`margin:10px 0 0;color:${MUTED};font-size:14px`}>
-                    {tFor(lang, "changeOrderPublic.intro")}
+                  {
+                    /* REQ-689 (demo p5): the intro follows the status — a
+                      decided order never asks to be approved. */
+                  }
+                  <p
+                    data-cy="co-intro"
+                    style={`margin:10px 0 0;color:${MUTED};font-size:14px`}
+                  >
+                    {intro && tFor(lang, intro.key, intro.vars)}
                   </p>
 
                   <section
