@@ -56,3 +56,18 @@ describe("REQ-283 Add task names what is missing and can add a customer", () => 
     }
   });
 });
+
+// REQ-340 (demo-loop cycle 1, M37) — the saved task's address carries into the page's customer list
+describe("REQ-340 a one-off task's address becomes the customer's when they had none", () => {
+  const page = read("front-end/islands/FieldTasksPage.tsx");
+
+  test("after createTask resolves, the island writes the task's address onto a local customer row that had none", () => {
+    const body = page.slice(page.indexOf("async function submitAdd"));
+    const after = body.slice(
+      body.indexOf("fieldClient.createTask"),
+      body.indexOf("setFlash("),
+    );
+    expect(after).toMatch(/setCustomers\(/);
+    expect(after).toMatch(/made\.address/);
+  });
+});

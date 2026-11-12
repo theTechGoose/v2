@@ -264,6 +264,17 @@ export default function FieldTasksPage() {
         address: add.address.trim() || undefined,
       });
       if (made.date === date) setTasks((rows) => [...rows, made]);
+      // REQ-340 (demo M37): the server put the task's address on a customer
+      // who had none — mirror it so the next pick prefills it without a reload
+      if (made.address) {
+        setCustomers((rows) =>
+          rows.map((c) =>
+            c.id === made.customerId && !c.address?.trim()
+              ? { ...c, address: made.address }
+              : c
+          )
+        );
+      }
       if (!types.some((x) => x.id === made.taskTypeId)) {
         setTypes((x) => [...x, {
           id: made.taskTypeId,
