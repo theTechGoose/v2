@@ -127,6 +127,21 @@ export function dashboardBlockers(a: OnboardingAnswers): OnboardingQuestion[] {
   return unansweredQuestions(a).filter((q) => !isDeferred(q, a));
 }
 
+/**
+ * REQ-504 (demo M37, cycle 3) — "Skip setup for now": the questions the escape defers in one go —
+ * every open deferrable one (never the name, never an answered one). Deferred, they stop keeping
+ * the dashboard shut (`dashboardBlockers`), and the setup checklist asks for them; the next code
+ * still brings the wizard back (REQ-091).
+ */
+export function skipSetupDeferrals(a: OnboardingAnswers): OnboardingQuestion[] {
+  return unansweredQuestions(a).filter((q) => isDeferrable(q));
+}
+
+/** REQ-504 — the escape is offered only once the name, which cannot be deferred, is answered */
+export function canSkipSetup(a: OnboardingAnswers): boolean {
+  return isAnswered("name", a);
+}
+
 /** where a verified code lands — a deferral never counts here: the wizard asks again (REQ-091) */
 export function signInLanding(a: OnboardingAnswers): typeof WIZARD_PATH | typeof RETURNING_PATH {
   return isStaff(a) || onboardingAnswered(a) ? RETURNING_PATH : WIZARD_PATH;

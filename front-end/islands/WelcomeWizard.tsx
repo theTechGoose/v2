@@ -16,9 +16,9 @@
  * navigation, so Back reaches an answered question even after a reload, and
  * the counter is the step's place in the whole onboarding
  * (lib/welcome-steps.ts). The
- * low-key "Skip setup for now" escape records the leave and
- * drops the user in the assistant (the dashboard would send them straight
- * back). Which questions are open is the one rule the backend and the
+ * low-key "Skip setup for now" escape (offered once the name is answered)
+ * records the leave, defers every open question and lands on the dashboard,
+ * whose setup checklist asks for the rest (REQ-504). Which questions are open is the one rule the backend and the
  * dashboard read too: shared/quote-flow/onboarding-questions.ts.
  *
  * The step engine here is deliberately extensible: each phase of the build
@@ -39,7 +39,7 @@ import {
   profileClient,
   type ProfileSnapshot,
 } from "../clients/profile.ts";
-import { isAnswered } from "../../shared/quote-flow/onboarding-questions.ts";
+import { canSkipSetup, isAnswered } from "../../shared/quote-flow/onboarding-questions.ts";
 import { isPlaceholderName } from "../../shared/quote-flow/outbound-identity.ts";
 import {
   ONBOARDING_PLANS,
@@ -1568,16 +1568,16 @@ export default function WelcomeWizard(
   async function skipSetup() {
     if (leaving) return;
     setLeaving(true);
-    // REQ-091: record the leave, then the assistant — the dashboard would send
-    // an account with an open question straight back here; the wizard returns
-    // at the first open question on the next code.
+    // REQ-504 (demo M37): record the leave and defer every open question on the
+    // server, then the dashboard — its setup checklist asks for the rest. The
+    // wizard still returns at the first open question on the next code (REQ-091).
     await fetch("/api/me/onboarded", {
       method: "POST",
       headers: { "content-type": "application/json" },
       credentials: "include",
-      body: JSON.stringify({ skipped: true }),
-    }).catch(() => {});
-    globalThis.location.href = "/assistant";
+      body: JSON.stringify({ skipped: true, deferAll: true }),
+    }).then((r) => r.body?.cancel()).catch(() => {});
+    globalThis.location.href = "/dashboard";
   }
 
   // REQ-348 (demo m34): the EN/ES switch, in the wizard itself — /welcome mounts no app topbar,
@@ -1639,14 +1639,19 @@ export default function WelcomeWizard(
         <StepComp key={step.id} ctx={ctx} />
       </div>
 
-      <button
-        type="button"
-        class="welcome__escape"
-        onClick={skipSetup}
-        disabled={leaving}
-      >
-        {t("welcome.skipSetup")}
-      </button>
+      {
+        /* REQ-504: the name cannot be deferred, so the escape waits for it */
+        canSkipSetup(snap) && (
+          <button
+            type="button"
+            class="welcome__escape"
+            onClick={skipSetup}
+            disabled={leaving}
+          >
+            {t("welcome.skipSetup")}
+          </button>
+        )
+      }
     </div>
   );
 }

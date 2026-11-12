@@ -197,6 +197,54 @@ Deno.test("REQ-227 me e2e: POST /me/onboarding/deferred stamps the question on t
   });
 });
 
+/**
+ * REQ-504 (demo-loop cycle 3, issue M37) — "Skip setup for now" left the dashboard unreachable: the
+ * escape stamped only `onboardedAt` (a record, not a gate), so every open question still kept the
+ * dashboard shut and its sidebar link looped back to the wizard. `{ skipped: true, deferAll: true }`
+ * now stamps every OPEN deferrable question deferred (REQ-227), so the dashboard opens and its setup
+ * checklist asks for the rest. The name is never deferred; answered questions get no stamp; a bare
+ * `{ skipped: true }` (and a finish) still stamps nothing.
+ */
+Deno.test("REQ-504 me e2e: POST /me/onboarded { skipped, deferAll } defers every open deferrable question so the dashboard's gate opens; answered ones and the name are never stamped; a bare skip stamps nothing", async () => {
+  const { dashboardBlockers } = await import("#quote-flow/onboarding-questions.ts");
+  await withServer(async (port) => {
+    const base = `http://localhost:${port}`;
+    const session = await login(port, "+15125551250");
+    const h = { "content-type": "application/json", "x-session-id": session.sessionId };
+    // the demo's path: the name, the business name and the email answered, then the escape
+    await drain(await fetch(`${base}/me`, { method: "PUT", headers: h, body: JSON.stringify({ name: "Ana", email: "ana@roof.test" }) }));
+    await drain(await fetch(`${base}/profile/identity`, { method: "PUT", headers: h, body: JSON.stringify({ businessName: "Ana Roofing" }) }));
+    const before = await fetch(`${base}/profile`, { headers: h }).then((r) => r.json());
+    assert(dashboardBlockers(before).length > 0, "before the escape the dashboard is shut");
+
+    const left = await fetch(`${base}/me/onboarded`, { method: "POST", headers: h, body: JSON.stringify({ skipped: true, deferAll: true }) });
+    assertEquals(left.status, 200);
+    const body = await left.json();
+    assert(body.onboardedAt, "the leave is still recorded");
+    assertEquals(
+      Object.keys(body.onboardingDeferred ?? {}).sort(),
+      ["address", "insurance", "logo", "payment", "plan", "state"],
+      "every open deferrable question is deferred — not the answered business name or email",
+    );
+    const after = await fetch(`${base}/profile`, { headers: h }).then((r) => r.json());
+    assertEquals(dashboardBlockers(after), [], "after the escape nothing keeps the dashboard shut");
+
+    // the name can never be deferred: an account without one is still held at the name
+    const nameless = await login(port, "+15125551251");
+    const hn = { "content-type": "application/json", "x-session-id": nameless.sessionId };
+    const n = await fetch(`${base}/me/onboarded`, { method: "POST", headers: hn, body: JSON.stringify({ skipped: true, deferAll: true }) }).then((r) => r.json());
+    assertEquals(n.onboardingDeferred?.name, undefined, "the name is never deferred");
+    const np = await fetch(`${base}/profile`, { headers: hn }).then((r) => r.json());
+    assertEquals(dashboardBlockers(np), ["name"], "only the name still holds the dashboard");
+
+    // a bare skip (and a finish) stamps nothing
+    const bare = await login(port, "+15125551252");
+    const hb = { "content-type": "application/json", "x-session-id": bare.sessionId };
+    const b = await fetch(`${base}/me/onboarded`, { method: "POST", headers: hb, body: JSON.stringify({ skipped: true }) }).then((r) => r.json());
+    assertEquals(b.onboardingDeferred, undefined, "a bare skip defers nothing");
+  });
+});
+
 const RESET_SECRET = "test-reset-secret-0123456789";
 
 Deno.test("reset-by-phone: refused when RESET_SECRET is unset (no backdoor by default)", async () => {

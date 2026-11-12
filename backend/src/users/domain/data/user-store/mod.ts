@@ -236,14 +236,16 @@ export class UserStore {
 
   /**
    * REQ-227: stamp one onboarding question deferred (the wizard step's Skip) with now-ISO; the
-   * others are kept. Kept off `update` so a PUT /me body can never carry a deferral.
+   * others are kept. REQ-504: or several at once ("Skip setup for now"). Kept off `update` so a PUT /me body can never carry a deferral.
    */
-  async deferOnboarding(id: string, question: string): Promise<User> {
+  async deferOnboarding(id: string, question: string | readonly string[]): Promise<User> {
     const existing = await this.get(id);
     const now = new Date().toISOString();
+    // REQ-504: "Skip setup for now" defers every open question in one write
+    const stamps = Object.fromEntries((typeof question === "string" ? [question] : question).map((q) => [q, now]));
     const updated: User = {
       ...existing,
-      onboardingDeferred: { ...(existing.onboardingDeferred ?? {}), [question]: now },
+      onboardingDeferred: { ...(existing.onboardingDeferred ?? {}), ...stamps },
       updatedAt: now,
     };
     const kv = await getKv();
