@@ -656,3 +656,70 @@ Deno.test("REQ-583 M2 prompts.pricingAndBilling: no more 'say where to see it (I
   );
   assertEquals(!!pay && /paid/i.test(pay.function.description), true);
 });
+
+// ---------------------------------------------------------------------------
+// REQ-579 (demo-loop cycle 4, M14, run r857a9d67): pair 2's quote was titled
+// "Poner césped nuevo (sod St" — the '.' after "St" ended the clause, inside
+// an open parenthesis. A '.' after an abbreviation is not a sentence end,
+// and a clause never ends inside open parentheses.
+// ---------------------------------------------------------------------------
+
+Deno.test("REQ-579 M14 pricingSubjects: pair 2's sentence keeps '(sod St. Augustine)' whole", () => {
+  const subs = pricingSubjects(
+    "¿cuánto debo cobrar por poner césped nuevo (sod St. Augustine) en un patio de 1,200 pies cuadrados?",
+  );
+  assertEquals(subs.length, 1);
+  assertEquals(
+    subs[0].job,
+    "poner césped nuevo (sod St. Augustine) en un patio de 1,200 pies cuadrados",
+  );
+  assertEquals(
+    jobTitle(subs[0].job),
+    "Poner césped nuevo (sod St. Augustine) en un patio de 1,200 pies cuadrados",
+  );
+});
+
+Deno.test("REQ-579 M14 a '.' after St / Dr / Ave / Mt / Mr / Mrs / Jr / No / approx is not a sentence end", () => {
+  const cases: [string, string][] = [
+    [
+      "how much should I charge for a fence on Oak Dr. Smith wants cedar",
+      "a fence on Oak Dr. Smith wants cedar",
+    ],
+    [
+      "what should I charge for a deck at 12 Main Ave. Austin TX",
+      "a deck at 12 Main Ave. Austin TX",
+    ],
+    [
+      "how much do I charge for gutters for Mrs. Lee on Mt. Bonnell",
+      "gutters for Mrs. Lee on Mt. Bonnell",
+    ],
+    [
+      "how much do I charge for a porch for Bob Jones Jr. On Elm St",
+      "a porch for Bob Jones Jr. On Elm St",
+    ],
+    [
+      "how much do I charge for a slab approx. 400 sq ft",
+      "a slab approx. 400 sq ft",
+    ],
+    ["how much do I charge for unit No. 4 repaint", "unit No. 4 repaint"],
+  ];
+  for (const [text, job] of cases) {
+    assertEquals(parsePricingQuestion(text)?.job, job, text);
+  }
+});
+
+Deno.test("REQ-579 M14 a clause never ends inside open parentheses — '?' / ';' in them included", () => {
+  assertEquals(
+    parsePricingQuestion(
+      "how much do I charge for a sod install (St. Augustine; about 1,200 sq ft) in the backyard? Thanks",
+    )?.job,
+    "a sod install (St. Augustine; about 1,200 sq ft) in the backyard",
+  );
+  // A real sentence end after the parenthesis still ends the job.
+  assertEquals(
+    parsePricingQuestion(
+      "how much do I charge for a fence (cedar). The customer wants it by May",
+    )?.job,
+    "a fence (cedar)",
+  );
+});

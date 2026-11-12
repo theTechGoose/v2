@@ -153,6 +153,7 @@ import {
   acceptedJobChipLabel,
   extractQuickQuotePrefill,
   type PriceLine,
+  quickQuoteNames,
   quoteLineItemsFromPrefill,
 } from "../../shared/quote-flow/quick-quote-prefill.ts";
 import {
@@ -3221,15 +3222,17 @@ export default function AsstChat({
       // option — title, summary, bullets, and any pre-generated translations
       // — and skip the end-of-phase-2 polish pass entirely.
       const confirmed = confirmedOptionRef.current;
-      const firstLine = raw.split("\n")[0].trim();
-      const summary = confirmed?.summary ||
-        firstLine.split(/\s+/).slice(0, 8).join(" ") ||
-        tFor(lang, "asstChat.newJob");
       // UX-29: the shared lang-aware derivation — a bare 3-word slice
-      // produced titles like "El patio de".
-      const jobName = (confirmed?.jobName &&
-        jobNameCase(confirmed.jobName, lang)) ||
-        summarizeJobName(summary, lang);
+      // produced titles like "El patio de". REQ-579 (cycle 4, M14): named in
+      // the language the details were TYPED in, and the single line is the
+      // job's name, never the raw 8-word slice.
+      const names = quickQuoteNames({
+        raw,
+        lang,
+        fallback: tFor(lang, "asstChat.newJob"),
+        confirmed,
+      });
+      const { summary, jobName } = names;
       const byLang = confirmed?.byLang;
       // REQ-441 (cycle 3, M23): reuse a pre-generated translation only when
       // the confirmed bullets are unedited — a line added with "Add your
@@ -3292,7 +3295,7 @@ export default function AsstChat({
         ...byLangFields,
         // REQ-259 (demo M23): the lines the user typed, priced, when they
         // still add up to the confirmed price; else one summary line.
-        lineItems: quoteLineItemsFromPrefill(prefillLines, cents, summary),
+        lineItems: quoteLineItemsFromPrefill(prefillLines, cents, names.line),
         estimatedTotal: cents,
         // REQ-263: the job address typed in the sentence rides on the quote.
         ...(prefillServiceAddress
@@ -3630,6 +3633,10 @@ export default function AsstChat({
             ? {
               ...q,
               summary,
+              // REQ-579 (cycle 4, m7): the picked name is the job's one
+              // name — the header reads it now, as the list does.
+              jobName,
+              ...(hasName ? { jobNameByLang: nameByLang } : {}),
               description: description || summary,
               ...(hasByLang ? { descriptionByLang: descByLang } : {}),
               lineItems: items ?? q.lineItems,
@@ -3637,6 +3644,16 @@ export default function AsstChat({
             }
             : q
         );
+      }
+      // REQ-579 (cycle 4, m7): the server re-titles the thread from the
+      // quote's new jobName (REQ-447 bindQuote) — one name in the header,
+      // the list and the thread title.
+      if (quoteId && convoId) {
+        const conv = await api.post<{ title?: string }>(
+          `/agents/conversations/${convoId}/draft`,
+          { quoteId },
+        ).catch(() => undefined);
+        if (conv?.title) setConvTitle(conv.title);
       }
       try {
         globalThis.sessionStorage?.removeItem(`pm:jobpolish:${convoId}`);

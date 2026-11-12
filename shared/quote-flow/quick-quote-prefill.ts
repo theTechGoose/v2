@@ -9,6 +9,9 @@
  */
 import { moneyAmounts } from "./money-amounts.ts";
 
+import { jobNameCase, summarizeJobName } from "./job-name.ts";
+import { messageLang } from "./message-language.ts";
+
 export interface QuickQuotePrefill {
   priceCents: number | null;
   customerName: string | null;
@@ -189,6 +192,44 @@ export function quoteLineItemsFromPrefill(
     }));
   }
   return [{ description: summary, quantity: 1, unit: "ea", price: cents }];
+}
+
+/** REQ-579: what a quote started from typed details is called. */
+export interface QuickQuoteNames {
+  /** The quote's summary: the confirmed option's, else the typed first
+   *  line's first 8 words. */
+  summary: string;
+  /** The job's one name — the header, the list and the thread title read it. */
+  jobName: string;
+  /** The single line item's text when the typed lines don't itemise the
+   *  price: the confirmed option's summary, else the job name — never the
+   *  raw 8-word slice ("Baño principal de la señora Tran en Round"). */
+  line: string;
+}
+
+/**
+ * REQ-579 (demo-loop cycle 4, M14): name a quick quote. The typed text's own
+ * language names the job (pair 7 typed Spanish in the English app and got
+ * "Baño Principal De"); the app language decides only when the text can't
+ * tell. A confirmed picker option names it as the contractor picked it.
+ */
+export function quickQuoteNames(args: {
+  raw: string;
+  lang: "en" | "es";
+  fallback: string;
+  confirmed?: { summary?: string; jobName?: string } | null;
+}): QuickQuoteNames {
+  const firstLine = (args.raw ?? "").split("\n")[0].trim();
+  const typedLang = messageLang(args.raw ?? "") ?? args.lang;
+  const confirmedSummary = args.confirmed?.summary?.trim();
+  const summary = confirmedSummary ||
+    firstLine.split(/\s+/).slice(0, 8).join(" ") ||
+    args.fallback;
+  const confirmedName = args.confirmed?.jobName?.trim();
+  const jobName = (confirmedName && jobNameCase(confirmedName, args.lang)) ||
+    summarizeJobName(summary, typedLang) ||
+    args.fallback;
+  return { summary, jobName, line: confirmedSummary || jobName };
 }
 
 /** A run token: Capitalized Unicode-letter word (apostrophes/hyphens ok). */
