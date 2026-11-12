@@ -87,12 +87,20 @@ describe("REQ-425 p13-b the empty chat is not pinned to the bottom", () => {
     expect(src).toMatch(/const welcomeRef = useRef/);
     expect(src).toMatch(/welcomeRef\.current = empty && !panelOpen;/);
     const pinEffect = src.slice(
-      src.indexOf("const STICK_THRESHOLD"),
+      // REQ-469: the pin itself lives in lib/chat-bottom-pin.ts now
+      src.indexOf("return attachBottomPin("),
       src.indexOf("}, [messages.length]);"),
     );
     // no unconditional bottom pin is left in the auto-scroll effects
     expect(pinEffect).not.toMatch(/scrollTop = scroller\.scrollHeight;/);
     expect(pinEffect).not.toMatch(/top: el\.scrollHeight/);
     expect(pinEffect).toMatch(/welcomeRef\.current/);
+    const pin = read("front-end/lib/chat-bottom-pin.ts");
+    expect(pin).toMatch(
+      /scrollTop = deps\.isWelcome\(\) \? 0 : scroller\.scrollHeight;/,
+    );
+    expect(pin).toMatch(
+      /if \(deps\.isWelcome\(\)\) \{\s*wasWelcome = true;\s*return;/,
+    );
   });
 });
