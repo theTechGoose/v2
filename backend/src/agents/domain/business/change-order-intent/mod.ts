@@ -67,6 +67,28 @@ function capitalize(s: string): string {
   return s ? s[0].toUpperCase() + s.slice(1) : s;
 }
 
+/** REQ-455 (M24): longest item clause read in code, in words. */
+const MAX_CLAUSE_WORDS = 8;
+/** REQ-455 (M24): words that make a clause a story about the job, not the
+ *  item — who signed, who wants what, what to do with the document. */
+const NARRATIVE_RE =
+  /(?<!\p{L})(?:signed|accepted|approved|agreed|wants?|wanted|needs?|asked|would\s+like|make\s+(?:a|an|the|it|me)|send|sent|email|text\s+(?:it|her|him|them)|she|he|they|her|him|them|i|we|you|my|please|quiere|quieren|firm[oó]|aprob[oó]|env[ií]a|enviar|env[ií]ale|manda|mandar|m[aá]ndale|haz|ella|[eé]l|ellos|ellas)(?!\p{L})/iu;
+
+/**
+ * REQ-455 (demo-loop cycle 3, M24): is this change clause a short,
+ * well-formed item ("Fridge cleaning", "Credit for the missed visit") that
+ * code may store as the change order's description? Not when it runs past
+ * eight words, holds a sentence break, or tells a story ("Karen signed but
+ * now she wants…", "make a …", "send it to her") — that is the model's job.
+ */
+export function isCleanChangeClause(text: string): boolean {
+  const clause = (text ?? "").trim();
+  if (!clause) return false;
+  if (clause.split(/\s+/).length > MAX_CLAUSE_WORDS) return false;
+  if (/[.!?]\s/.test(clause)) return false;
+  return !NARRATIVE_RE.test(clause);
+}
+
 /**
  * Read a change-order request. Returns undefined when the text is not one;
  * otherwise whatever of customer / description / amount it carries (any may
@@ -120,8 +142,12 @@ export function parseChangeOrderRequest(
     const whole = Number(money[2].replace(/,/g, ""));
     const frac = money[3] ? Number(money[3].padEnd(2, "0")) : 0;
     negative = Boolean(money[1]);
-    rest = (rest.slice(0, money.index) + " " +
-      rest.slice((money.index ?? 0) + money[0].length)).trim();
+    // REQ-455 (M24): what follows the money ends at the first sentence
+    // boundary — "…$40. Send it to her." is not part of the change.
+    let after = rest.slice((money.index ?? 0) + money[0].length);
+    const stop = after.search(/[.!?](?:\s|$)/);
+    if (stop >= 0) after = after.slice(0, stop);
+    rest = (rest.slice(0, money.index) + " " + after).trim();
     const cents = whole * 100 + frac;
     if (CREDIT_VERBS.test(rest)) negative = true;
     out.deltaAmountCents = negative ? -cents : cents;
@@ -137,7 +163,9 @@ export function parseChangeOrderRequest(
       .trim();
     desc = desc.replace(ADD_VERBS, "").trim();
     desc = desc.replace(ARTICLE_RE, "").trim(); // REQ-315
-    if (desc) out.description = capitalize(desc);
+    // REQ-455 (M24): only a short, well-formed item is read in code; a
+    // narrative sentence is left to the model, never stored half-stripped.
+    if (desc && isCleanChangeClause(desc)) out.description = capitalize(desc);
   }
   return out;
 }

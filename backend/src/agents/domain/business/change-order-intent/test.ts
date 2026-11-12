@@ -6,6 +6,7 @@
 import { assertEquals } from "#std/assert";
 import {
   isChangeOrderRequest,
+  isCleanChangeClause,
   parseChangeOrderRequest,
   parseTargetTotalChange,
   pickChangeOrderTarget,
@@ -565,4 +566,57 @@ Deno.test("REQ-377 B1 reconcileChangeOrderDelta: no dollar amount typed → the 
     }),
     { kind: "ask" },
   );
+});
+
+// ---------------------------------------------------------------------------
+// REQ-455 (demo-loop cycle 3, M24): pair 5 typed a narrative sentence and the
+// parser kept everything it didn't strip as the description, so the client's
+// /co page read "Karen signed but now she wants to upgrade to a frameless
+// glass shower door, add. Make a for and send it to her". A description is
+// only read in code when the change clause is short and well-formed;
+// otherwise it is left out and the coordinator asks the model.
+// ---------------------------------------------------------------------------
+
+const M24 =
+  "Karen signed but now she wants to upgrade to a frameless glass shower door, add $1,200. Make a change order for Q-001 and send it to her.";
+
+Deno.test("REQ-455 M24 parseChangeOrderRequest: the demo's narrative sentence keeps Q-001 and +$1,200 but never a garbled description", () => {
+  const out = parseChangeOrderRequest(M24);
+  assertEquals(out, { quoteNumber: "Q-001", deltaAmountCents: 120_000 });
+});
+
+Deno.test("REQ-455 M24 parseChangeOrderRequest: the description is cut at the first sentence boundary after the money", () => {
+  assertEquals(
+    parseChangeOrderRequest(
+      "Change order for Maria: add fridge cleaning $40. Send it to her today.",
+    ),
+    {
+      customerName: "Maria",
+      description: "Fridge cleaning",
+      deltaAmountCents: 4_000,
+    },
+  );
+});
+
+Deno.test("REQ-455 M24 isCleanChangeClause: short item clauses pass; long, multi-sentence or narrative ones don't", () => {
+  for (
+    const ok of [
+      "Fridge cleaning",
+      "Second coat of paint",
+      "Remove the deck stain",
+      "Credit for the missed visit",
+      "Limpieza del refri",
+    ]
+  ) assertEquals(isCleanChangeClause(ok), true, ok);
+  for (
+    const bad of [
+      "Karen signed but now she wants to upgrade to a frameless glass shower door, add",
+      "Karen signed but now she wants to upgrade to a frameless glass shower door, add. Make a for and send it to her",
+      "Upgrade to a frameless door. Then tile",
+      "She wants a frameless door",
+      "Make a door upgrade",
+      "Door upgrade and send it",
+      "one two three four five six seven eight nine",
+    ]
+  ) assertEquals(isCleanChangeClause(bad), false, bad);
 });

@@ -1019,6 +1019,75 @@ Deno.test("REQ-238 M27: a change order on the conversation's own draft adds the 
 });
 
 // ---------------------------------------------------------------------------
+// REQ-455 (demo-loop cycle 3, M24): pair 5's narrative sentence skipped the
+// model and the client's /co page showed the raw request, garbled. A sentence
+// like that goes to the model's change_order tool, whose clean description is
+// what the change order stores; the typed $1,200 still checks its delta.
+// ---------------------------------------------------------------------------
+
+Deno.test("REQ-455 M24: the demo's narrative change-order sentence stores the model's clean description, not the garbled raw request", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const f = fresh();
+  await seedOnboarded("u-1");
+  const karen = await f.customers.create("u-1", { name: "Karen Holt" });
+  const created = await f.quotes.create("u-1", {
+    summary: "Bathroom remodel — Karen",
+    jobName: "Bathroom remodel",
+    customerId: karen.id,
+    lineItems: [{
+      description: "Bathroom remodel",
+      quantity: 1,
+      unit: "ea",
+      price: 1_400_000,
+    }],
+    estimatedTotal: 1_400_000,
+  });
+  const quote = await f.quotes.update(created.id, "u-1", {
+    status: "accepted",
+    sentAt: new Date().toISOString(),
+    acceptedAt: new Date().toISOString(),
+  });
+  const inv = await f.invoices.create("u-1", {
+    quoteId: quote.id,
+    customerId: karen.id,
+    amount: 1_400_000,
+    status: "sent",
+  } as never);
+  let llmCalls = 0;
+  f.llm.setHandler(() => {
+    llmCalls++;
+    return {
+      text: "",
+      action: {
+        type: "change_order",
+        payload: {
+          quoteNumber: "Q-001",
+          description: "Upgrade to a frameless glass shower door",
+          deltaAmountCents: 120_000,
+        },
+      },
+    };
+  });
+  const conv = await f.conversations.create({ userId: "u-1" });
+  await f.flow.run({
+    userId: "u-1",
+    conversationId: conv.id,
+    content:
+      "Karen signed but now she wants to upgrade to a frameless glass shower door, add $1,200. Make a change order for Q-001 and send it to her.",
+  });
+  assertEquals(llmCalls, 1, "the model reads a narrative change order");
+  const cos = await f.changeOrders.listByInvoice("u-1", inv.id);
+  assertEquals(cos.length, 1);
+  assertEquals(
+    cos[0].description,
+    "Upgrade to a frameless glass shower door",
+  );
+  assertEquals(cos[0].deltaAmountCents, 120_000);
+  await resetKv();
+});
+
+// ---------------------------------------------------------------------------
 // REQ-263 (demo ai-assistant-m2): "412 Oak St Austin" typed in the chat must
 // land on the quote as its service (job) address.
 // ---------------------------------------------------------------------------
