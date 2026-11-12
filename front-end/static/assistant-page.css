@@ -6704,6 +6704,33 @@ body {
   background: transparent;
   box-shadow: none;
 }
+/* REQ-468 (demo p5): the Job Details section-label edit button. Its pencil
+   is the <Icon> it holds — it must NOT reuse .quote-review__term-edit, whose
+   ::after paints a second pencil (the "double pencil" the demo saw). */
+.quote-review__section-edit {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  vertical-align: middle;
+  background: transparent;
+  border: none;
+  padding: 2px 4px;
+  margin: -2px 0 -2px 4px;
+  color: #ff6b6b;
+  opacity: 0.6;
+  cursor: pointer;
+  border-radius: 4px;
+  transition: opacity 140ms, background 120ms;
+}
+.quote-review__section-edit:hover {
+  opacity: 1;
+  background: rgba(255, 107, 107, 0.08);
+}
+.quote-review__section-edit:disabled {
+  opacity: 0.3;
+  cursor: default;
+  background: transparent;
+}
 .wiz-opt--selected {
   border-color: var(--brand-green) !important;
   background: rgba(81, 152, 67, 0.08) !important;
