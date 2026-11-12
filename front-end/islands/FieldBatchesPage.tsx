@@ -17,6 +17,7 @@ import {
 } from "../clients/field.ts";
 import FieldHead from "../components/FieldHead.tsx";
 import { ApiError } from "../lib/api.ts";
+import { customerFixHref } from "../lib/customer-card-edit.ts";
 import { I, ICN } from "../lib/dash-icons.tsx";
 import { fmtMoneyExact, shiftIso, todayIso } from "../lib/field.ts";
 import {
@@ -282,7 +283,10 @@ export default function FieldBatchesPage() {
             {f.fix && (
               <>
                 {" "}
-                <a href="/customers" data-cy="lt-send-fix">{f.fix}</a>
+                {/* REQ-600 (cycle 4, M5): straight to that customer's card */}
+                <a href={customerFixHref(f.customerId)} data-cy="lt-send-fix">
+                  {f.fix}
+                </a>
               </>
             )}
           </p>
