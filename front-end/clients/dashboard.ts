@@ -153,6 +153,10 @@ export interface Invoice {
     | "paid"
     | "void";
   paidAt?: string;
+  /** REQ-556: where the paid receipt went — "email" | "text" | "none". */
+  receiptSentVia?: string;
+  /** REQ-556: how signing's confirmation reached the customer ([] = nobody). */
+  deliveredVia?: string[];
   createdAt: string;
   updatedAt: string;
   urgency?: {

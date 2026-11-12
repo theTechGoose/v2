@@ -97,6 +97,9 @@ export class ConfirmPayment {
 
     // REQ-224: the feed line names the client as the bill shows them.
     let customerName: string | undefined;
+    // REQ-556 (demo-loop cycle 4, M7): what this receipt actually reached.
+    let receiptEmailed = false;
+    let receiptTexted = false;
 
     // 3. Best-effort receipt dispatch.
     try {
@@ -137,7 +140,7 @@ export class ConfirmPayment {
           amount: intent.amount,
           lang,
         });
-        await this.email.send({
+        const mailed = await this.email.send({
           to: customer.email,
           subject,
           htmlBody,
@@ -150,6 +153,7 @@ export class ConfirmPayment {
             contentType: "application/pdf",
           }],
         });
+        receiptEmailed = mailed.ok;
         // UX-30: the promised receipt must be auditable in the comms trail,
         // like every other outbound paperwork dispatch.
         await this.commsLog.run({
@@ -214,6 +218,7 @@ export class ConfirmPayment {
         // UX-30: log the receipt SMS to the comms trail — REQ-523: only a
         // text the provider accepted, never a refused or rejected one.
         if (res.ok) {
+          receiptTexted = true;
           await this.commsLog.run({
             userId,
             customerId: invoice.customerId,
@@ -233,6 +238,28 @@ export class ConfirmPayment {
       }
     } catch (err) {
       console.error("[confirm-payment] receipt dispatch failed:", err);
+    }
+
+    // REQ-556 (demo-loop cycle 4, M7): record where the receipt went, so the
+    // paid card and /i never say "sent" / "in your inbox" when it went
+    // nowhere. MarkInvoicePaid recorded its PAID-invoice email; an email
+    // either one delivered wins, then a delivered text, else "none".
+    try {
+      const current = await this.invoices.getOwned(invoice.id, userId);
+      if (current.status === "paid") {
+        const via = receiptEmailed || current.receiptSentVia === "email"
+          ? "email"
+          : receiptTexted
+          ? "text"
+          : "none";
+        if (current.receiptSentVia !== via) {
+          await this.invoices.update(invoice.id, userId, {
+            receiptSentVia: via,
+          });
+        }
+      }
+    } catch (err) {
+      console.error("[confirm-payment] could not record the receipt delivery:", err);
     }
 
     // 4. Emit event for activity feed + dashboard counters.

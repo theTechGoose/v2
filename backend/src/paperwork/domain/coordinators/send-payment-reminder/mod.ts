@@ -31,7 +31,17 @@ export interface ReminderResult {
   /** True when the Day-30 escalation was used (notifies contractor only,
    *  does NOT dispatch to the customer). */
   escalated: boolean;
+  /** REQ-556 (demo-loop cycle 4, M7): why nothing reached the customer, when
+   *  nothing did — the reminders are muted, this rung already fired, there is
+   *  no email or phone to send to, or every channel tried failed. */
+  reason?: ReminderSkipReason;
 }
+
+export type ReminderSkipReason =
+  | "muted"
+  | "already_fired"
+  | "no_recipient"
+  | "not_delivered";
 
 /**
  * SendPaymentReminder — the overdue-cadence engine.
@@ -92,10 +102,16 @@ export class SendPaymentReminder {
   ): Promise<ReminderResult> {
     const invoice = await this.invoices.getOwned(invoiceId, userId);
     if (invoice.remindersMuted) {
-      return { invoiceId, day, channels: [], escalated: false };
+      return { invoiceId, day, channels: [], escalated: false, reason: "muted" };
     }
     if (alreadyFiredOn(invoice, day)) {
-      return { invoiceId, day, channels: [], escalated: false };
+      return {
+        invoiceId,
+        day,
+        channels: [],
+        escalated: false,
+        reason: "already_fired",
+      };
     }
 
     // Day-30 escalation: bell-only, no customer dispatch.
@@ -139,29 +155,52 @@ export class SendPaymentReminder {
       url = `${appUrl}/s/${link.code}`;
     } catch { /* fall through */ }
 
+    // REQ-556 (demo-loop cycle 4, M7): a channel counts only when the
+    // provider took the message; nothing delivered says why, and does not
+    // burn the rung (add a contact and the next nudge goes out).
     const channels: string[] = [];
     const toEmail = customer?.email || shown?.email;
     const toPhone = customer?.phoneNumber || shown?.phoneNumber;
+    if (!toEmail && !toPhone) {
+      return {
+        invoiceId,
+        day,
+        channels,
+        escalated: false,
+        reason: "no_recipient",
+      };
+    }
     if (toEmail) {
       try {
-        await this.email.send({
+        const res = await this.email.send({
           to: toEmail,
           subject: copy.emailSubject,
           htmlBody: copy.emailHtml(url),
           ...(sender?.email ? { cc: [sender.email] } : {}),
         });
-        channels.push("email");
+        if (res.ok) channels.push("email");
+        else console.warn(`[send-payment-reminder] email not sent: ${res.reason}`);
       } catch (err) {
         console.error("[send-payment-reminder] email failed:", err);
       }
     }
     if (toPhone) {
       try {
-        await this.sms.send({ to: toPhone, body: copy.smsBody(url) });
-        channels.push("sms");
+        const res = await this.sms.send({ to: toPhone, body: copy.smsBody(url) });
+        if (res.ok) channels.push("sms");
+        else console.warn(`[send-payment-reminder] sms not sent: ${res.detail ?? res.reason}`);
       } catch (err) {
         console.error("[send-payment-reminder] sms failed:", err);
       }
+    }
+    if (channels.length === 0) {
+      return {
+        invoiceId,
+        day,
+        channels,
+        escalated: false,
+        reason: "not_delivered",
+      };
     }
 
     await this.appendHistory(userId, invoice, day, channels);

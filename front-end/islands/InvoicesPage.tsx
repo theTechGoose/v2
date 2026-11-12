@@ -41,6 +41,12 @@ import {
 } from "../lib/invoice-card.ts";
 import { Icon } from "../components/ui/Icon.tsx";
 import {
+  nudgeNote,
+  outReadKey,
+  paidReadKey,
+  wasUndelivered,
+} from "../../shared/documents/delivery-truth.ts";
+import {
   draftingKpiSub,
   invoiceKpiTotals,
   invoicesHeroMode,
@@ -2258,7 +2264,13 @@ function InvoiceCard(
     ? scheduledSubline(inv.scheduledFor, now, lang)
     : inv.stage === "out"
     // REQ-499 (demo p6): the send day reads "Sent today", never "Out 0d".
-    ? inv.daysIn < 1
+    // REQ-556 (cycle 4, M7): "Issued today" when signing billed it but no
+    // email or text reached the customer.
+    ? inv.daysIn < 1 && wasUndelivered(inv)
+      ? tFor(lang, "invoicesPage.subline.issuedToday", {
+        date: fmtDate(inv.dueDate, now, lang),
+      })
+      : inv.daysIn < 1
       ? tFor(lang, "invoicesPage.subline.outToday", {
         date: fmtDate(inv.dueDate, now, lang),
       })
@@ -2425,17 +2437,17 @@ function InvoiceCard(
         body: JSON.stringify({ invoiceId: inv.id, day }),
       });
       const body = res.ok
-        ? (await res.json().catch(() => ({}))) as { channels?: string[] }
+        ? (await res.json().catch(() => ({}))) as {
+          channels?: string[];
+          reason?: string;
+        }
         : null;
-      if (body && Array.isArray(body.channels) && body.channels.length > 0) {
-        setSendNote(tFor(lang, "invoicesPage.nudge.sent"));
-      } else if (body) {
-        // 200 with no channel = the cadence already fired this rung today,
-        // or reminders are muted for this invoice.
-        setSendNote(tFor(lang, "invoicesPage.nudge.alreadySent"));
-      } else {
-        setSendFail(tFor(lang, "invoicesPage.nudge.failed"));
-      }
+      // REQ-556 (cycle 4, M7): a 200 that reached nobody says why — no
+      // email or phone on file, every channel failed, muted, or this rung
+      // already fired — never "Already nudged" for a nudge that went nowhere.
+      const note = nudgeNote(body);
+      if (note.tone === "fail") setSendFail(tFor(lang, note.key));
+      else setSendNote(tFor(lang, note.key));
     } catch {
       setSendFail(tFor(lang, "invoicesPage.nudge.failed"));
     } finally {
@@ -2605,7 +2617,8 @@ function InvoiceCard(
       { n: inv.daysOverdue },
     )
     : inv.stage === "out"
-    ? tFor(lang, "invoicesPage.read.out", {
+    // REQ-556 (cycle 4, M7): signing billed it but nobody received it
+    ? tFor(lang, outReadKey(inv), {
       issued: fmtDate(inv.issuedDate ?? inv.createdAt, now, lang),
       due: fmtDate(inv.dueDate, now, lang),
     })
@@ -2614,7 +2627,8 @@ function InvoiceCard(
       date: fmtDate(inv.issuedDate ?? inv.createdAt, now, lang),
     })
     : inv.stage === "paid"
-    ? tFor(lang, "invoicesPage.read.paid", {
+    // REQ-556 (cycle 4, M7): where the receipt actually went
+    ? tFor(lang, paidReadKey(inv), {
       date: fmtDate(inv.paidAt, now, lang),
     })
     : inv.stage === "claimed"

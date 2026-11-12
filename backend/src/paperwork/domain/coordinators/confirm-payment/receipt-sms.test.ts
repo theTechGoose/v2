@@ -65,7 +65,7 @@ function rig(answer?: SendSmsResult) {
   };
   const receiptPdf = new RenderReceiptPdf();
   receiptPdf.run = () => Promise.resolve(new Uint8Array([37, 80, 68, 70]));
-  const markPaid = new MarkInvoicePaid({} as SendPaperworkEmail);
+  const markPaid = new MarkInvoicePaid({} as SendPaperworkEmail, invoices);
   markPaid.run = () => Promise.resolve();
   const flow = new ConfirmPayment(
     invoices,

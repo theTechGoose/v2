@@ -275,6 +275,9 @@ export class SendSignedConfirmation {
       ok: false,
       reason: "no_customer_email",
     };
+    // REQ-556 (demo-loop cycle 4, M7): the channels this confirmation — and
+    // so the invoice it bills — actually reached the customer on.
+    const deliveredVia: string[] = [];
     if (recipient) {
       console.log(
         `[send-signed-confirmation] dispatching to ${recipient} for quote ${quote.id}`,
@@ -323,6 +326,7 @@ export class SendSignedConfirmation {
           }
           : {}),
       });
+      if (sent.ok) deliveredVia.push("email");
       console.log(
         sent.ok
           ? `[send-signed-confirmation] sent to ${recipient} messageId=${
@@ -370,6 +374,7 @@ export class SendSignedConfirmation {
         // Comms trail (roadmap p.8): record a REAL delivery like every other
         // outbound text so it's queryable per document.
         if (res.ok) {
+          deliveredVia.push("text");
           await this.commsLog.run({
             userId,
             customerId: customer?.id,
@@ -383,6 +388,23 @@ export class SendSignedConfirmation {
       }
     } catch (err) {
       console.error("[send-signed-confirmation] completion SMS failed:", err);
+    }
+
+    // ---- 4. REQ-556 (demo-loop cycle 4, M7): record on the milestone signing
+    // billed how it reached the customer — [] when nothing could be delivered
+    // (no email, a test number, both refused). It stays issued: the signer is
+    // handed it on /q (REQ-251's Pay now), so it is not hidden as a draft
+    // (REQ-312); the assistant and /invoices read this record instead of
+    // saying it "went out automatically".
+    if (invoiceId) {
+      try {
+        await this.invoices.update(invoiceId, userId, { deliveredVia });
+      } catch (err) {
+        console.error(
+          "[send-signed-confirmation] could not record the delivery:",
+          err,
+        );
+      }
     }
 
     return {

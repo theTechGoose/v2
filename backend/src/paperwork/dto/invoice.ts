@@ -282,6 +282,15 @@ export class UpdateInvoiceDto {
   claimRejectedAt?: string | null;
   @IsOptional() @IsString()
   claimRejectedMethod?: string | null;
+  /** REQ-556: where the paid receipt reached the customer — "email" | "text"
+   *  | "none". Set by MarkInvoicePaid / ConfirmPayment; never from a request. */
+  @IsOptional() @IsString()
+  receiptSentVia?: string;
+  /** REQ-556: how signing's confirmation reached the customer for the
+   *  milestone it billed — ["email", "text"]; [] = nobody. Set by
+   *  SendSignedConfirmation; never from a request. */
+  @IsOptional() @IsArray() @IsString({ each: true })
+  deliveredVia?: string[];
 }
 
 export interface Invoice extends CreateInvoiceDto, NumberedFields {
@@ -304,6 +313,9 @@ export interface Invoice extends CreateInvoiceDto, NumberedFields {
   updatedAt: string;
   /** Computed read-only field: never accepted from request bodies; projected on read. */
   urgency?: InvoiceUrgency;
+  /** REQ-556: see UpdateInvoiceDto — the delivery results, server-written. */
+  receiptSentVia?: string;
+  deliveredVia?: string[];
   /** REQ-497: see UpdateInvoiceDto — set by TranslateInvoice only. */
   lang?: string;
   jobNameByLang?: Record<string, string>;

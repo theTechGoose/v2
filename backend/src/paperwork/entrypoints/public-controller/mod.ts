@@ -1589,6 +1589,8 @@ function redactInvoice(i: Invoice) {
     dueDate: i.dueDate,
     status: i.status,
     paidAt: i.paidAt,
+    // REQ-556 (demo-loop cycle 4, M7): where the paid receipt actually went
+    receiptSentVia: i.receiptSentVia,
     createdAt: i.createdAt,
     installmentIndex: i.installmentIndex,
     installmentTotal: i.installmentTotal,
