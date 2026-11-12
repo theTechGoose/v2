@@ -250,3 +250,107 @@ Deno.test("REQ-423: a fresh unnamed Spanish staff account reads 'Hola 👋' (nev
       "the sidebar followed the save without a reload",
     );
   }));
+
+Deno.test("REQ-606 (demo cycle 4, m20): after the staff name prompt saves, the admin's own /admin row shows the name at once — no '(no name yet)' waiting on a refresh that a locked or backed-off page never makes", (t) =>
+  story(t, async ({ page, expect, http, baseUrl }) => {
+    const phone = `+1512${digits()}`;
+    let r = await http("/api/auth/verify", {
+      method: "POST",
+      headers: JSON_HEADERS,
+      body: JSON.stringify({ phoneNumber: phone, code: "000000" }),
+    });
+    let body = await r.json();
+    let cookie = (r.headers.get("set-cookie") ?? "").split(";")[0];
+    if (body.recoverable === true) {
+      r = await http("/api/auth/start-fresh", {
+        method: "POST",
+        headers: JSON_HEADERS,
+        body: JSON.stringify({ token: body.recoveryToken }),
+      });
+      body = await r.json();
+      cookie = (r.headers.get("set-cookie") ?? "").split(";")[0];
+    }
+    if (!cookie) {
+      throw new Error(`sign-in: no cookie (${JSON.stringify(body)})`);
+    }
+    const auth = { ...JSON_HEADERS, cookie };
+    await (await http("/api/me", {
+      method: "PUT",
+      headers: auth,
+      body: JSON.stringify({ language: "en" }),
+    })).body?.cancel();
+    const boot = await http("/api/admin/bootstrap", {
+      method: "POST",
+      headers: auth,
+      body: JSON.stringify({
+        phoneNumber: phone,
+        token: Deno.env.get("SUPERADMIN_BOOTSTRAP_TOKEN") ?? "",
+      }),
+    });
+    expect.eq(boot.status, 200, `bootstrap super admin (${await boot.text()})`);
+    const [name, value] = cookie.split("=");
+    const hosts = new Set([
+      new URL(baseUrl).hostname,
+      "localhost",
+      "127.0.0.1",
+    ]);
+    await page.context().addCookies([...hosts].flatMap((domain) => [
+      { name, value, domain, path: "/" },
+      { name: "pm_lang", value: "en", domain, path: "/" },
+    ]));
+
+    // narrow the list to this admin's own row
+    await page.goto(`/admin`);
+    const q = page.locator("[data-cy='adm-q']");
+    await q.waitFor({ timeout: 15_000 });
+    const self = page.locator("[data-cy='adm-name']");
+    await clickUntil(page, "[data-cy='adm-search']", async () => {
+      if ((await q.inputValue()) !== phone.slice(2)) {
+        await q.fill(phone.slice(2));
+      }
+      return (await self.count()) === 1;
+    });
+    expect.eq(
+      ((await self.first().textContent()) ?? "").trim(),
+      "(no name yet)",
+      "precondition: the placeholder row",
+    );
+
+    // from here the users list is never re-read — as on a locked page (a Demo made this
+    // browser the customer) or an idle one backed off to 60 s (REQ-424)
+    let reads = 0;
+    await page.route("**/admin/users?**", (route) => {
+      reads++;
+      return route.abort();
+    });
+
+    const input = page.locator("[data-cy='staff-name-input'][data-ready]");
+    await input.waitFor({ timeout: 15_000 });
+    await input.fill("Rafa Staff");
+    await page.locator("[data-cy='staff-name-save']").click();
+    await page.locator("[data-cy='staff-name-prompt']").waitFor({
+      state: "detached",
+      timeout: 15_000,
+    });
+    try {
+      await page.waitForFunction(
+        () =>
+          document.querySelector("[data-cy='adm-name']")?.textContent
+            ?.trim() === "Rafa Staff",
+        undefined,
+        { timeout: 5_000 },
+      );
+    } catch {
+      throw new Error(
+        `the admin's own row still reads "${
+          ((await self.first().textContent()) ?? "").trim()
+        }" after the name was saved (users-list reads since: ${reads})`,
+      );
+    }
+    const opt = await page.locator("#impersonate-select option")
+      .allTextContents();
+    expect(
+      opt.some((o) => o.startsWith("Rafa Staff")),
+      `the Impersonate list follows too (${opt.join(" | ")})`,
+    );
+  }));
