@@ -1266,6 +1266,9 @@ function redactQuote(q: Quote) {
     lineItems: q.lineItems,
     estimatedTotal: q.estimatedTotal,
     status: q.status,
+    // REQ-256: the onboarding sample — the page shows it as a sample to a
+    // placeholder customer, not a numbered document addressed to nobody.
+    isSample: q.isSample === true || undefined,
     createdAt: q.createdAt,
     // The agreement half of the document: the wizard-captured terms + the
     // schedule dates, rendered as the numbered Terms grid on /q.

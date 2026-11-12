@@ -105,6 +105,9 @@ export interface QuotePublic {
   descriptionByLang?: Record<string, string>;
   jobNameByLang?: Record<string, string>;
   summaryByLang?: Record<string, string>;
+  /** REQ-256: the onboarding "see what your customer sees" sample — shown
+   *  as a sample (no number, not sent) to a placeholder customer. */
+  isSample?: boolean;
   lineItems?: LineItem[];
   terms?: Term[];
   createdAt?: string;
@@ -256,7 +259,11 @@ export function QuoteDoc(
   const contractorFirst = contractorName?.split(/\s+/)[0];
   const senderInitials = initialsFromName(contractorName ?? businessLabel);
 
-  const items = quote.lineItems ?? [];
+  // REQ-256: a line's own per-language text wins over its single value.
+  const items = (quote.lineItems ?? []).map((li) => {
+    const own = li.descriptionByLang?.[lang]?.trim();
+    return own ? { ...li, description: own } : li;
+  });
   // Title/summary in the document's language when the per-language fields are
   // present (populated from the picked job option); else the single value.
   const summary = (quote.summaryByLang?.[lang] ?? quote.summary ??
@@ -283,16 +290,19 @@ export function QuoteDoc(
   // its date come from the public projection. Rows written before numbering
   // keep the old #ID reference.
   const docNumber = quote.number ?? `#${quote.id.slice(0, 8).toUpperCase()}`;
-  const headline = docHeadline(
-    {
-      number: docNumber,
-      version: quote.version ?? 1,
-      state: quote.state ??
-        (signed ? "accepted" : declined ? "declined" : "sent"),
-      date: signed ? view.acceptedAt : quote.publishedAt,
-    },
-    lang,
-  );
+  // REQ-256: the onboarding sample has no number and was sent to no one.
+  const headline = quote.isSample
+    ? tFor(lang, "quoteDoc.sampleHeadline")
+    : docHeadline(
+      {
+        number: docNumber,
+        version: quote.version ?? 1,
+        state: quote.state ??
+          (signed ? "accepted" : declined ? "declined" : "sent"),
+        date: signed ? view.acceptedAt : quote.publishedAt,
+      },
+      lang,
+    );
   const related = relatedDocumentRows(quote, lang);
 
   // Signature-block copy (deck p14) — shared with the backend renderers via
@@ -463,7 +473,10 @@ export function QuoteDoc(
           >
             <PartyCard
               role={t.to}
-              name={customerName}
+              name={customerName ??
+                (quote.isSample
+                  ? tFor(lang, "quoteDoc.sampleCustomer")
+                  : undefined)}
               email={quote.customer?.email}
               phone={quote.customer?.phoneNumber}
             />

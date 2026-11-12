@@ -54,6 +54,8 @@ export interface DocContractor {
 
 export interface LineItem {
   description: string;
+  /** REQ-256: the line's text per language; the document picks its own. */
+  descriptionByLang?: Record<string, string>;
   price?: number;
   quantity?: number;
   unit?: string;

@@ -29,6 +29,13 @@ export class LineItemDto {
   @IsString()
   description!: string;
 
+  /** REQ-256: the line's text per language (keyed by lang code), so the
+   *  public page's EN | ES toggle flips it. Readers render
+   *  descriptionByLang[lang] ?? description. */
+  @IsOptional()
+  @IsObject()
+  descriptionByLang?: Record<string, string>;
+
   @IsNumber()
   quantity!: number;
 
