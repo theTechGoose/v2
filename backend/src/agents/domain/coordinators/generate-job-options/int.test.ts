@@ -164,3 +164,94 @@ Deno.test("REQ-028 NW-05 a usable one-option reply is padded to three distinct v
   assertEquals(res.options[2].byLang.en.bullets[3], "Jobsite cleanup");
   assertEquals(res.options.map((o) => o.id), ["opt1", "opt2", "opt3"]);
 });
+
+// REQ-266 (demo issue ai-assistant-p7-options): a 900-character gut job
+// lists ten scope items; the options pass cut every option to 4 bullets
+// (prompt "3 or 4 bullets — no more, no fewer" + `.slice(0, 4)`), so hex
+// mosaic, faucets, fan and lights vanished, and the anti-echo rule made the
+// model swap the contractor's own word "Gutted" for "Removed".
+const GUT_JOB_ITEMS = [
+  "Gutted old fixtures and tile",
+  "Curbless shower",
+  "Slab cut for linear drain",
+  "Frameless glass enclosure",
+  "72 inch double vanity",
+  "Hex mosaic shower floor",
+  "Two widespread faucets",
+  "Exhaust fan",
+  "Recessed lights",
+  "Pull the permit",
+];
+
+Deno.test("REQ-266 ai-assistant-p7-options the detailed option keeps all ten scope items the model returns", async () => {
+  const { llm, coord } = fresh();
+  llm.setHandler(() => ({
+    text: JSON.stringify({
+      options: [
+        {
+          en: {
+            jobName: "Bathroom Remodel",
+            summary: "Full bathroom gut remodel",
+            bullets: ["Gut and rebuild the bathroom", "Curbless shower with glass", "New vanity and fixtures"],
+          },
+        },
+        {
+          en: {
+            jobName: "Bath Gut Remodel",
+            summary: "Full bathroom gut with curbless shower",
+            bullets: GUT_JOB_ITEMS,
+          },
+        },
+        {
+          en: {
+            jobName: "Master Bath Rebuild",
+            summary: "Bathroom rebuild",
+            bullets: GUT_JOB_ITEMS.slice(0, 5),
+          },
+        },
+      ],
+    }),
+  }));
+  const res = await coord.run({ userId: "u1", raw: GUT_JOB_ITEMS.join(", "), langs: ["en"] });
+  assertEquals(res.degraded, false);
+  assertEquals(res.options[1].bullets, GUT_JOB_ITEMS);
+  assertEquals(res.options[1].byLang.en.bullets.length, 10);
+});
+
+Deno.test("REQ-266 ai-assistant-p7-options the honest fallback keeps all ten scope lines the contractor typed", async () => {
+  const { llm, coord } = fresh();
+  llm.setHandler(() => {
+    throw new Error("boom");
+  });
+  const res = await coord.run({ userId: "u1", raw: GUT_JOB_ITEMS.join("\n"), langs: ["en"] });
+  assertEquals(res.degraded, true);
+  assertEquals(res.options[0].bullets, GUT_JOB_ITEMS);
+});
+
+Deno.test("REQ-266 ai-assistant-p7-options the prompt asks for every scope item and the contractor's own trade words", async () => {
+  const { llm, coord } = fresh();
+  let systemPrompt = "";
+  llm.setHandler((req) => {
+    systemPrompt = req.systemPrompt ?? "";
+    throw new Error("only reading the prompt");
+  });
+  await coord.run({ userId: "u1", raw: GUT_JOB_ITEMS.join(", "), langs: ["en"] });
+  // No hard 3–4 cap that forces a ten-item job into four bullets.
+  assert(!/no more, no fewer/i.test(systemPrompt), "prompt still caps bullets at 3 or 4");
+  assert(!/3 or 4 bullets/i.test(systemPrompt), "prompt still caps bullets at 3 or 4");
+  // The detailed option must carry every distinct scope item.
+  assert(/every distinct scope item/i.test(systemPrompt), "prompt does not require every scope item");
+  // Anti-echo stays, but trade words survive ("gutted" is not reworded to "removed").
+  assert(/verbatim/i.test(systemPrompt), "the anti-echo rule (REQ-026) must stay");
+  assert(/own trade (?:verbs|words)/i.test(systemPrompt), "prompt does not keep the contractor's trade words");
+  assert(/gutted/i.test(systemPrompt), "prompt does not name the 'gutted' example");
+});
+
+Deno.test("REQ-266 ai-assistant-p7-options the fallback 'wider scope' version never has fewer items than the full one", async () => {
+  const { llm, coord } = fresh();
+  llm.setHandler(() => {
+    throw new Error("boom");
+  });
+  const res = await coord.run({ userId: "u1", raw: GUT_JOB_ITEMS.join("\n"), langs: ["en"] });
+  assertEquals(res.options[2].bullets, [...GUT_JOB_ITEMS, "Jobsite cleanup"]);
+});
