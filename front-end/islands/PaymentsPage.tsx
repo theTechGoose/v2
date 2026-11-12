@@ -43,6 +43,7 @@ import {
 import { fmtMoney } from "../lib/format.ts";
 import { type Lang, langSignal, tFor } from "../lib/i18n.ts";
 import PaymentReceivedForm from "../components/PaymentReceivedForm.tsx";
+import PaymentsKpis from "../components/PaymentsKpis.tsx";
 import { docNumberOf } from "../../shared/documents/numbering.ts";
 import { type PaymentClaim, pendingClaims } from "../lib/payment-claims.ts";
 import { cashFlowWeeks } from "../lib/cash-flow-weeks.ts";
@@ -705,73 +706,6 @@ function PaymentsHero(
         ))}
       </div>
     </header>
-  );
-}
-
-/* ---------------- KPIs ---------------- */
-
-function PaymentsKpis(
-  {
-    lang,
-    landedCount,
-    monthTotal,
-    transitCount,
-    transitTotal,
-    attentionCount,
-    attentionTotal,
-    avgDays,
-  }: {
-    lang: Lang;
-    landedCount: number;
-    monthTotal: number;
-    transitCount: number;
-    transitTotal: number;
-    attentionCount: number;
-    attentionTotal: number;
-    avgDays: number;
-  },
-) {
-  return (
-    <div class="qkpi">
-      <div class="qkpi__cell">
-        <div class="qkpi__lbl">{tFor(lang, "paymentsPage.kpi.landedLabel")}</div>
-        <div class="qkpi__val">{fmtMoney(monthTotal)}</div>
-        <div class="qkpi__sub">
-          {tnFor(lang, "paymentsPage.kpi.payments", landedCount)}
-        </div>
-      </div>
-      <div class="qkpi__cell qkpi__cell--accent">
-        <div class="qkpi__lbl">{tFor(lang, "paymentsPage.kpi.transitLabel")}</div>
-        <div class="qkpi__val">{fmtMoney(transitTotal)}</div>
-        <div class="qkpi__sub">
-          {tFor(lang, "paymentsPage.kpi.onTheWay", { n: transitCount })}
-        </div>
-      </div>
-      <div class="qkpi__cell">
-        <div class="qkpi__lbl">
-          {tFor(lang, "paymentsPage.kpi.attentionLabel")}
-        </div>
-        <div class="qkpi__val" data-cy="payments-kpi-attention">
-          {attentionCount}
-        </div>
-        <div class="qkpi__sub">
-          {tFor(lang, "paymentsPage.kpi.heldUp", {
-            amount: fmtMoney(attentionTotal),
-          })}
-        </div>
-      </div>
-      <div class="qkpi__cell">
-        <div class="qkpi__lbl">{tFor(lang, "paymentsPage.kpi.avgLabel")}</div>
-        <div class="qkpi__val">
-          {avgDays > 0 ? tFor(lang, "paymentsPage.value.days", { n: avgDays }) : "—"}
-        </div>
-        <div class="qkpi__sub">
-          {avgDays > 0
-            ? tFor(lang, "paymentsPage.kpi.acrossLanded")
-            : tFor(lang, "paymentsPage.kpi.noHistory")}
-        </div>
-      </div>
-    </div>
   );
 }
 

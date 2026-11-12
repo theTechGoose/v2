@@ -54,6 +54,16 @@
   max-width: 520px;
   text-wrap: pretty;
 }
+/* REQ-408 (demo p13-d): the hero's CTA row. Without a rule the intro
+   paragraph (margin zeroed by the global reset) sat flush on the button on a
+   phone, and the ghost links were spaced by inline margins. */
+.qph__cta-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-top: 14px;
+}
 .qph__sub strong {
   color: var(--brand-teal);
   font-weight: 700;

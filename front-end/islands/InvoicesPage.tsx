@@ -1027,7 +1027,7 @@ function InvoicesHero(
               class="qph__cta qph__cta--ghost"
               data-cy="invoice-export"
               href={`/api/invoices/export.csv?year=${new Date().getFullYear()}`}
-              style="margin-left:10px;background:transparent;border:1px solid var(--brand-teal);color:var(--brand-teal)"
+              style="background:transparent;border:1px solid var(--brand-teal);color:var(--brand-teal)"
             >
               {tFor(lang, "invoicesPage.exportCsv", {
                 year: new Date().getFullYear(),
@@ -1040,7 +1040,7 @@ function InvoicesHero(
               class="qph__cta qph__cta--ghost"
               data-cy="invoice-export-all"
               href="/api/invoices/export.csv?status=all"
-              style="margin-left:10px;background:transparent;border:1px solid var(--brand-teal);color:var(--brand-teal)"
+              style="background:transparent;border:1px solid var(--brand-teal);color:var(--brand-teal)"
             >
               {tFor(lang, "export.invoicesAll")}
             </a>
@@ -1050,7 +1050,7 @@ function InvoicesHero(
               class="qph__cta qph__cta--ghost"
               data-cy="invoice-export-unpaid"
               href="/api/invoices/export.csv?status=unpaid"
-              style="margin-left:10px;background:transparent;border:1px solid var(--brand-teal);color:var(--brand-teal)"
+              style="background:transparent;border:1px solid var(--brand-teal);color:var(--brand-teal)"
             >
               {tFor(lang, "export.invoicesUnpaid")}
             </a>
