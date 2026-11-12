@@ -10,6 +10,7 @@ import {
   TERMS_WIZARD_V1 as SHARED_TERMS_WIZARD_V1,
 } from "#quote-flow/wizard-terms.ts";
 import type { TradeKind } from "#quote-flow/trade-fit.ts";
+import { accountNetDays } from "#quote-flow/completion-schedule.ts"; // REQ-411
 
 /**
  * The quote's terms wizard (5 steps) and the invoice wizard (REQ-024). The
@@ -80,13 +81,17 @@ export function stepQuestionKey(
   return step.question;
 }
 
+/** REQ-411 (demo-loop cycle 2, m35): `vars` fill the sub-lines — `{n}` is
+ *  the account's days to pay ("Full amount due within {n} days of the job's
+ *  completion"), so the wizard never contradicts Settings. */
 export function localizeOptions(
   options: WizardOption[],
   lang: "en" | "es",
+  vars: { n: number } = { n: accountNetDays(undefined) },
 ): WizardOption[] {
   return options.map((o) => ({
     ...o,
     label: t(lang, o.label),
-    ...(o.sub ? { sub: t(lang, o.sub) } : {}),
+    ...(o.sub ? { sub: t(lang, o.sub, vars) } : {}),
   }));
 }

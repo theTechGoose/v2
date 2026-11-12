@@ -94,6 +94,18 @@ export function invoicesHeroMode(input: {
   return "outstanding";
 }
 
+/** REQ-411 (demo-loop cycle 2, m34): the label before the hero's next
+ *  scheduled date. The only, after-completion bill of a "Payment upon
+ *  completion" job (one installment of one) is not a "Next installment" — it
+ *  "Bills on completion". A split's later installment keeps the old label. */
+export function scheduledHeroSubKey(
+  next: { installmentTotal?: number } | undefined,
+): "invoicesPage.sub.billsOnCompletion" | "invoicesPage.sub.scheduledNext" {
+  return next?.installmentTotal === 1
+    ? "invoicesPage.sub.billsOnCompletion"
+    : "invoicesPage.sub.scheduledNext";
+}
+
 /** Re-pull everything the /invoices page derives its headline from: the
  *  list AND the forecast. Each half fails on its own (a failed half comes
  *  back `undefined` so the caller keeps what it had). */

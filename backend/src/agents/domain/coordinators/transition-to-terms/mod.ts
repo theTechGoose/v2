@@ -18,6 +18,7 @@ import type { AgentConversation } from "@agents/dto/conversation.ts";
 import type { AgentMessage } from "@agents/dto/message.ts";
 import { BusinessIdentityStore } from "@profile/domain/data/business-identity-store/mod.ts";
 import { tradeKindFor } from "#quote-flow/trade-fit.ts";
+import { accountNetDays } from "#quote-flow/completion-schedule.ts"; // REQ-411
 
 export interface TransitionToTermsResult {
   conversation: AgentConversation;
@@ -81,6 +82,11 @@ export class TransitionToTerms {
         ? getWizardSpec(state.specId)
         : wizardSpecFor(conv.docKind);
       const step = spec.steps[stepIdx];
+      // REQ-411 (m35): the payment sub-line names the account's days to pay.
+      const n = accountNetDays(
+        (await this.identity?.get(input.userId).catch(() => null))
+          ?.invoiceNetDays,
+      );
       const wizardMsg = await this.messages.append({
         conversationId: conv.id,
         role: "assistant",
@@ -92,7 +98,9 @@ export class TransitionToTerms {
           specId: spec.id,
           stepIdx,
           stepId: step?.id,
-          options: step ? localizeOptions(step.options, lang) : undefined,
+          options: step
+            ? localizeOptions(step.options, lang, { n })
+            : undefined,
           suggestedOptionId: suggestedOptionId(conv.termsPrefill, step),
         },
       });
@@ -132,7 +140,9 @@ export class TransitionToTerms {
         specId: spec.id,
         stepIdx: 0,
         stepId: firstStep.id,
-        options: localizeOptions(firstStep.options, lang),
+        options: localizeOptions(firstStep.options, lang, {
+          n: accountNetDays(business?.invoiceNetDays),
+        }),
         hint: firstStep.hint,
         suggestedOptionId: suggestedOptionId(conv.termsPrefill, firstStep),
       },

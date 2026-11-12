@@ -23,6 +23,7 @@ import { filesClient } from "../clients/files.ts";
 import { reviewCardNumber } from "../../shared/documents/numbering.ts";
 import { type QuoteCard, quotesClient } from "../clients/quotes.ts";
 import { billedTotalCents } from "../../shared/quote-flow/milestone-reconcile.ts";
+import { accountNetDays } from "../../shared/quote-flow/completion-schedule.ts"; // REQ-411
 import {
   isExceedsAgreement,
   swapInvoiceCents,
@@ -567,6 +568,9 @@ interface Props {
   /** Languages the contractor can send in (from Settings checkboxes). Drives
    *  the quote-review "Preview in" language toggle. Defaults to ["en"]. */
   sendLanguages?: string[];
+  /** REQ-411 (demo-loop cycle 2, m35): the account's Settings "Days to pay an
+   *  invoice" — the "Payment upon completion" sub-line names it. */
+  invoiceNetDays?: number;
   /** The contractor's own UI language — drives all contractor-facing chrome.
    *  Defaults to "en". (The customer-facing quote preview uses its own
    *  `previewLang` toggle, sourced from `sendLanguages`.) */
@@ -695,6 +699,7 @@ export default function AsstChat({
   userInitials = "?",
   from,
   sendLanguages,
+  invoiceNetDays,
 }: Props) {
   // REQ-230 (demo M14): what a load paints from the server's copy of the
   // flow. Computed once (SSR included) and used as every flow state's seed.
@@ -7046,7 +7051,9 @@ export default function AsstChat({
                                         id: `fallback-${i}`,
                                         label: tFor(previewLang, o.labelKey),
                                         sub: o.subKey
-                                          ? tFor(previewLang, o.subKey)
+                                          ? tFor(previewLang, o.subKey, {
+                                            n: accountNetDays(invoiceNetDays),
+                                          })
                                           : undefined,
                                       }));
                                     return (

@@ -23,6 +23,11 @@ import type { User } from "@users/dto/user.ts";
 import type { Customer } from "@crm/dto/customer.ts";
 import type { CustomerSnapshot } from "@core/data/numbered-store/mod.ts";
 import { SITE_ORIGIN } from "#quote-flow/site-meta.ts";
+import {
+  accountNetDays,
+  completionFromTerms,
+  startDayFromTerms,
+} from "#quote-flow/completion-schedule.ts"; // REQ-411
 
 const COLOR_TEAL = "#144852";
 const COLOR_GREEN = "#519843";
@@ -182,7 +187,7 @@ export class SendSignedConfirmation {
       // "Pay now" and the customer owes nothing yet) and due N days after it;
       // the nudge sweep surfaces it to the contractor when the job wraps.
       const afterCompletion = plannedMilestones.length === 1
-        ? completionTerms(paymentTermsValue)
+        ? completionTerms(paymentTermsValue, ident?.invoiceNetDays)
         : undefined;
       const completionSlot = afterCompletion
         ? completionScheduledFor(quote, today)
@@ -453,14 +458,22 @@ export function computeScheduledDates(
 /** REQ-316 (demo M12): payment terms that bill AFTER the job, not at signing.
  *  Reads the stored EN base only (terms are persisted as the EN option label —
  *  handle-wizard-answer's captureTerms — and localized by every reader):
- *  "Payment upon completion" is the wizard's net_15 option → 15 net days;
- *  "Net N" (net 30, net-7) → N. Everything else (Due now, the splits, custom
- *  text) is not a completion term. */
+ *  "Payment upon completion" is the wizard's net_15 option; "Net N" (net 30,
+ *  net-7) → N. Everything else (Due now, the splits, custom text) is not a
+ *  completion term.
+ *
+ *  REQ-411 (demo-loop cycle 2, m35): "upon completion" gives the customer the
+ *  account's days to pay — Settings' "Days to pay an invoice"
+ *  (`invoiceNetDays`), else the 30 that field shows — never a hard-coded 15
+ *  the Settings page contradicts. */
 export function completionTerms(
   value: string | undefined,
+  invoiceNetDays?: number | null,
 ): { netDays: number } | undefined {
   if (!value) return undefined;
-  if (/\b(?:upon|on|at) completion\b/i.test(value)) return { netDays: 15 };
+  if (/\b(?:upon|on|at) completion\b/i.test(value)) {
+    return { netDays: accountNetDays(invoiceNetDays) };
+  }
   const net = /\bnet\s*-?\s*(\d{1,3})\b/i.exec(value);
   if (net) return { netDays: Number(net[1]) };
   return undefined;
@@ -469,19 +482,24 @@ export function completionTerms(
 const ISO_DAY = /^\d{4}-\d{2}-\d{2}$/;
 
 /** REQ-316: the day a pay-after-completion invoice is scheduled to go out —
- *  the quote's estimated completion date, else 14 days after the later of its
- *  start date and today (the same fallback window computeScheduledDates uses). */
+ *  the quote's estimated completion date when it is a date.
+ *
+ *  REQ-411 (demo-loop cycle 2, m34): otherwise the job's end from its TERMS —
+ *  the start ("Next week", a picked date; the quote's ISO startDate first;
+ *  never before today) plus the duration ("4 weeks") — so a job signed Nov 12
+ *  that starts next week and runs 4 weeks bills Dec 17, not Nov 26. Only with
+ *  no duration does it fall back to 14 days after that start. */
 export function completionScheduledFor(
-  quote: Pick<Quote, "startDate" | "estimatedCompletionDate">,
+  quote: Partial<
+    Pick<Quote, "startDate" | "estimatedCompletionDate" | "terms">
+  >,
   today: Date,
 ): string {
   const completion = quote.estimatedCompletionDate;
   if (completion && ISO_DAY.test(completion)) return completion;
-  const start = quote.startDate && ISO_DAY.test(quote.startDate)
-    ? parseIsoDate(quote.startDate)
-    : today;
-  const base = start.getTime() > today.getTime() ? start : today;
-  return addDaysIso(base, 14);
+  const input = { terms: quote.terms, startDate: quote.startDate, today };
+  return completionFromTerms(input) ??
+    addDaysIso(parseIsoDate(startDayFromTerms(input)), 14);
 }
 
 /** REQ-240: who an invoice bills when its quote has no customer on file —
