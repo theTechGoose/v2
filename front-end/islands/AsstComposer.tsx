@@ -91,8 +91,7 @@ export default function AsstComposer({ conversationId, lang = "en" }: Props) {
       </div>
       <div class="composer__hint">
         <kbd>⏎</kbd> {tFor(lang, "asstComposer.hintSend")} <kbd>⇧⏎</kbd>{" "}
-        {tFor(lang, "asstComposer.hintNewLine")} <kbd>⌘K</kbd>{" "}
-        {tFor(lang, "asstComposer.hintCommands")}
+        {tFor(lang, "asstComposer.hintNewLine")}
       </div>
     </div>
   );

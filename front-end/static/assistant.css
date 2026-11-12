@@ -2297,15 +2297,6 @@ body {
 .threads__new:hover {
   transform: translateY(-1px);
 }
-.threads__new-kbd {
-  margin-left: auto;
-  background: rgba(255, 255, 255, 0.2);
-  padding: 2px 8px;
-  border-radius: 6px;
-  font-family: var(--font-mono);
-  font-size: 10px;
-  font-weight: 700;
-}
 .threads__list {
   flex: 1;
   overflow-y: auto;
@@ -3739,7 +3730,6 @@ body {
 .threads--collapsed .threads__title,
 .threads--collapsed .threads__count,
 .threads--collapsed .threads__new-label,
-.threads--collapsed .threads__new-kbd,
 .threads--collapsed .threads__list {
   display: none;
 }
