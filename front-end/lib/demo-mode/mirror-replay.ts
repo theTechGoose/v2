@@ -32,6 +32,14 @@
  * one halfway there. `styled()` says whether every stylesheet the replay links is in: until then
  * the browser lays the frame out without them (the page's links stacked top-left, a drawer in the
  * flow), so the stage looks for no node under its presenter's pointer in it.
+ *
+ * REQ-380 (demo-loop cycle 2, M10) — a canvas keeps its picture: setting a canvas's width or
+ * height, even to the value it had, clears its bitmap, and the customer's page does exactly that
+ * (the /q signature pad's setupCanvas, on mount and on every resize) before redrawing the same
+ * strokes — so the customer's bitmap reads as before and nothing new is sent. The replay keeps
+ * every canvas's last bitmap and paints it again after any width/height op on it; a bitmap still
+ * decoding never paints over a newer one. `stats()` counts the bitmaps applied and the repaints
+ * (the stage's dev pill shows them).
  */
 import type {
   MirrorFrame,
@@ -86,6 +94,9 @@ export interface Replayer {
   styled(): boolean;
   /** REQ-305 — stop watching the frame's document */
   dispose(): void;
+  /** REQ-380 — canvas bitmaps that arrived (`cv` ops), were applied to a canvas, and were
+   *  repainted after a width/height op */
+  stats(): { seen: number; cv: number; repaints: number };
 }
 
 const SVG_NS = "http://www.w3.org/2000/svg";
@@ -119,17 +130,35 @@ function awaited(l: Element): boolean {
     !l.hasAttribute("disabled") && (l.getAttribute("href") ?? "").trim() !== "";
 }
 
+/** REQ-380 — the bitmap each canvas should show, and its decoded image once it has loaded */
+const wanted = new WeakMap<
+  HTMLCanvasElement,
+  { url: string; img: HTMLImageElement | null }
+>();
+
+function draw(c: HTMLCanvasElement, img: HTMLImageElement): void {
+  try {
+    const ctx = c.getContext("2d");
+    if (!ctx) return;
+    ctx.clearRect(0, 0, c.width, c.height);
+    ctx.drawImage(img, 0, 0, c.width, c.height);
+  } catch {
+    // the canvas went away
+  }
+}
+
 function defaultPaint(c: HTMLCanvasElement, url: string): void {
+  const had = wanted.get(c);
+  // REQ-380 — the same bitmap again (a repaint after a width/height set): drawn at once
+  if (had && had.url === url && had.img) return draw(c, had.img);
+  const w = { url, img: null as HTMLImageElement | null };
+  wanted.set(c, w);
   const img = new Image();
   img.onload = () => {
-    try {
-      const ctx = c.getContext("2d");
-      if (!ctx) return;
-      ctx.clearRect(0, 0, c.width, c.height);
-      ctx.drawImage(img, 0, 0, c.width, c.height);
-    } catch {
-      // the canvas went away
-    }
+    // REQ-380 — a newer bitmap was asked for meanwhile: this one never paints over it
+    if (wanted.get(c) !== w) return;
+    w.img = img;
+    draw(c, img);
   };
   img.src = url;
 }
@@ -139,6 +168,9 @@ export function createReplayer(
   opts: ReplayerOptions = {},
 ): Replayer {
   const paint = opts.paintCanvas ?? defaultPaint;
+  /** REQ-380 — every canvas's last bitmap, by id: painted again after a width/height op */
+  const bitmaps = new Map<number, string>();
+  const counts = { seen: 0, cv: 0, repaints: 0 };
   let byId = new Map<number, Node>();
   let idOf = new WeakMap<Node, number>();
   /** the latest scroll of every node (0: the window) */
@@ -315,6 +347,15 @@ export function createReplayer(
         if (!e) return false;
         if (op.v === null) e.removeAttribute(op.n);
         else setAttr(e, e.localName.toLowerCase(), op.n, op.v);
+        // REQ-380 — a width or height set (or removed) cleared the canvas: its picture again
+        const u = bitmaps.get(op.i);
+        if (
+          u && e.localName.toLowerCase() === "canvas" &&
+          /^(width|height)$/i.test(op.n)
+        ) {
+          paint(e as HTMLCanvasElement, u);
+          counts.repaints++;
+        }
         return true;
       }
       case "x": {
@@ -361,13 +402,17 @@ export function createReplayer(
           }
           byId.delete(id);
           scrolls.delete(id);
+          bitmaps.delete(id);
         }
         return fit;
       }
       case "cv": {
+        counts.seen++;
         const e = el(op.i);
         if (!e) return false;
+        bitmaps.set(op.i, op.u);
         paint(e as HTMLCanvasElement, op.u);
+        counts.cv++;
         return true;
       }
     }
@@ -380,6 +425,7 @@ export function createReplayer(
           byId = new Map();
           idOf = new WeakMap();
           scrolls.clear();
+          bitmaps.clear();
           sheets = new Set();
           const root = build(f.root);
           const old = doc.documentElement;
@@ -454,6 +500,7 @@ export function createReplayer(
       }
       return true;
     },
+    stats: () => ({ ...counts }),
     dispose() {
       disposed = true;
       doc.removeEventListener("load", onLoad, true);

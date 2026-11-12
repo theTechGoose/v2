@@ -171,6 +171,7 @@ export class FElement extends FNode {
   setAttribute(n: string, v: string): void {
     if (!/^[^\s"'>/=]+$/.test(n)) throw new Error("InvalidCharacterError");
     this.#attrs.set(n, String(v));
+    this.#canvasReset(n);
     this.ownerDocument.record({
       type: "attributes",
       target: this,
@@ -185,6 +186,7 @@ export class FElement extends FNode {
   removeAttribute(n: string): void {
     if (!this.#attrs.has(n)) return;
     this.#attrs.delete(n);
+    this.#canvasReset(n);
     this.ownerDocument.record({
       type: "attributes",
       target: this,
@@ -192,6 +194,13 @@ export class FElement extends FNode {
       removedNodes: [],
       attributeName: n,
     });
+  }
+  /** REQ-380 — like a real canvas: setting (or removing) its width or height, even to the value it
+   *  had, clears the bitmap — what the replay painted on it is gone */
+  #canvasReset(n: string): void {
+    if (this.localName === "canvas" && (n === "width" || n === "height")) {
+      this.painted = null;
+    }
   }
   get id(): string {
     return this.getAttribute("id") ?? "";

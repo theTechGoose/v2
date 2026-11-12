@@ -865,3 +865,135 @@ describe("REQ-309 (demo M19) — an op that does not fit no longer freezes the m
     expect(body.getAttribute("class")).toBe("quiet");
   });
 });
+
+describe("REQ-380 (demo-loop cycle 2, M10) — a drawn signature reaches the stage and stays there", () => {
+  const INK = "data:image/png;base64,SIGNATURE";
+  /** a /q signing pad: the canvas PublicSignQuote sizes on mount and on every resize */
+  const padPage = () =>
+    docWith((d) =>
+      h(
+        d,
+        "html",
+        {},
+        h(d, "head"),
+        h(
+          d,
+          "body",
+          {},
+          h(
+            d,
+            "div",
+            { class: "pad" },
+            h(d, "canvas", { width: "640", height: "400" }),
+          ),
+        ),
+      )
+    );
+  const canvasOf = (doc: FDocument) => el(doc, (e) => e.localName === "canvas");
+
+  test("the replay repaints a canvas's last bitmap after a width or height op on it (a width set clears a canvas)", () => {
+    const { doc: stage, rep } = replay();
+    expect(
+      rep.apply({
+        t: "snap",
+        w: 420,
+        h: 800,
+        u: "/q/abc",
+        root: {
+          i: 1,
+          t: "html",
+          c: [{
+            i: 2,
+            t: "body",
+            c: [{
+              i: 3,
+              t: "canvas",
+              a: { width: "640", height: "400" },
+            }],
+          }],
+        },
+        ops: [{ o: "cv", i: 3, u: INK }],
+      }),
+    ).toBe(true);
+    const c = canvasOf(stage);
+    expect(c.painted).toBe(INK);
+    // the customer's setupCanvas: the same width and height set again (a resize, a remount)
+    expect(
+      rep.apply({
+        t: "ops",
+        ops: [
+          { o: "a", i: 3, n: "width", v: "640" },
+          { o: "a", i: 3, n: "height", v: "400" },
+        ],
+      }),
+    ).toBe(true);
+    expect(c.painted).toBe(INK);
+    // a width removed clears it too
+    expect(
+      rep.apply({ t: "ops", ops: [{ o: "a", i: 3, n: "width", v: null }] }),
+    )
+      .toBe(true);
+    expect(c.painted).toBe(INK);
+    // a later bitmap is the one kept
+    const INK2 = "data:image/png;base64,SIGNATURE2";
+    expect(
+      rep.apply({
+        t: "ops",
+        ops: [{ o: "cv", i: 3, u: INK2 }, {
+          o: "a",
+          i: 3,
+          n: "width",
+          v: "800",
+        }],
+      }),
+    ).toBe(true);
+    expect(c.painted).toBe(INK2);
+    // the dev stats count the bitmaps applied and the repaints
+    expect(rep.stats()).toEqual({ seen: 2, cv: 2, repaints: 4 });
+  });
+
+  test("the recorder re-sends a canvas's bitmap with any width/height change on it, even when the bitmap reads the same", () => {
+    const doc = padPage();
+    const canvas = canvasOf(doc);
+    const frames: MirrorFrame[] = [];
+    const r = record(doc, frames);
+    r.snapshot();
+    // the customer draws (the sweep sends it; here the snapshot does)
+    canvas.bitmap = INK;
+    r.snapshot();
+    const sent = frames.length;
+    // a resize: setupCanvas sets the same width/height and redraws the same strokes
+    canvas.setAttribute("width", "640");
+    canvas.setAttribute("height", "400");
+    r.flush();
+    expect(frames.length).toBe(sent + 1);
+    const f = frames[sent];
+    expect(f.t).toBe("ops");
+    const id = r.idOf(canvas as unknown as Node);
+    const cv = f.ops.filter((o) => o.o === "cv");
+    expect(cv).toEqual([{ o: "cv", i: id, u: INK }]);
+    // the cv goes after the attribute ops it repairs
+    const at = f.ops.findIndex((o) => o.o === "cv");
+    expect(f.ops.slice(0, at).some((o) => o.o === "a")).toBe(true);
+    // counted (two snapshots and the re-send)
+    expect(r.stats()).toEqual({ cv: 3 });
+  });
+
+  test("end to end: drawn, then the customer's window resized — the stage's pad still shows the signature", () => {
+    const doc = padPage();
+    const canvas = canvasOf(doc);
+    const frames: MirrorFrame[] = [];
+    const r = record(doc, frames);
+    canvas.bitmap = INK;
+    r.snapshot();
+    const { doc: stage, rep } = replay();
+    let at = applyAll(rep, frames, 0);
+    expect(canvasOf(stage).painted).toBe(INK);
+    canvas.setAttribute("width", "640");
+    canvas.setAttribute("height", "400");
+    r.flush();
+    at = applyAll(rep, frames, at);
+    expect(at).toBe(frames.length);
+    expect(canvasOf(stage).painted).toBe(INK);
+  });
+});
