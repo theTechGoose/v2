@@ -92,3 +92,55 @@ Deno.test("REQ-274: /customers in English — the tab title, the sidebar and the
     expect(!/\bclients?\b/i.test(body), "no client(s) anywhere on the English page");
     expect(body.includes("Customers"), "the sidebar label says Customers");
   }));
+
+Deno.test("REQ-277 (M31): the card's nudge and the panel's Message text the customer; 'Open card' opens the card; nothing on the card is inert", (t) =>
+  story(t, async ({ page, expect, http, baseUrl }) => {
+    const { auth } = await signIn(http, page, baseUrl);
+    // a regular customer with a phone (the nudge reads "Open card"), and one with no contact at all
+    for (const body of [
+      { name: "Phone Pat", phoneNumber: "(512) 555-3150" },
+      { name: "Nocontact Nell" },
+    ]) {
+      const r = await http("/api/customers", { method: "POST", headers: auth, body: JSON.stringify(body) });
+      await r.body?.cancel();
+    }
+    await page.goto("/customers");
+    await expect.see("Phone Pat");
+    const pat = page.locator(".ccard2", { hasText: "Phone Pat" });
+    const nell = page.locator(".ccard2", { hasText: "Nocontact Nell" });
+
+    // every action on a card is a link or a button with somewhere to go
+    const nudge = pat.locator("[data-cy='ccard2-nudge']");
+    await nudge.waitFor();
+    const nudgeLabel = (await nudge.innerText()).trim();
+    const nudgeHref = await nudge.getAttribute("href");
+    if (nudgeLabel.startsWith("Open card")) {
+      expect(nudgeHref === null, `"Open card" opens the card, not a link (${nudgeHref})`);
+      await clickUntil(page, ".ccard2:has-text('Phone Pat') [data-cy='ccard2-nudge']", async () =>
+        (await pat.getAttribute("class"))?.includes("ccard2--open") ?? false);
+    } else {
+      expect(nudgeHref === "sms:+15125553150", `"${nudgeLabel}" texts Pat (${nudgeHref})`);
+      await clickUntil(page, ".ccard2:has-text('Phone Pat') .ccard2__name", async () =>
+        (await pat.getAttribute("class"))?.includes("ccard2--open") ?? false);
+    }
+    // the open panel's Message texts Pat; there is no dead "Open card" in it
+    const msg = pat.locator("[data-cy='ccard2-message']");
+    await msg.waitFor();
+    expect((await msg.getAttribute("href")) === "sms:+15125553150", `Message texts Pat (${await msg.getAttribute("href")})`);
+    expect((await pat.locator(".ccard2__panel-actions", { hasText: "Open card" }).count()) === 0, "no 'Open card' in the panel");
+
+    // Nell has no phone or email: her nudge opens her card and her panel offers no Message
+    await page.keyboard.press("Escape");
+    const nellNudge = nell.locator("[data-cy='ccard2-nudge']");
+    expect((await nellNudge.getAttribute("href")) === null, "Nell's nudge has nowhere to send a text");
+    await clickUntil(page, ".ccard2:has-text('Nocontact Nell') [data-cy='ccard2-nudge']", async () =>
+      (await nell.getAttribute("class"))?.includes("ccard2--open") ?? false);
+    expect((await nell.locator("[data-cy='ccard2-message']").count()) === 0, "no Message for a customer with no contact");
+
+    // nothing inert left on the card: every card button has a handler (clicked → something changed is the
+    // nudge above; here the static check that no ccard2 button is a bare mock button)
+    const inert = await page.evaluate(() =>
+      [...document.querySelectorAll(".ccard2 button")].filter((b) => !(b as HTMLElement).dataset.cy && !b.classList.contains("ccard2__panel-x")).length
+    );
+    expect(inert === 0, `no unlabelled, unwired button left on a card (${inert})`);
+  }));

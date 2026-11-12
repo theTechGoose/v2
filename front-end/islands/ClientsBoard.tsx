@@ -25,6 +25,7 @@ import {
   sinceBadge,
   storyLineFor,
 } from "../lib/clients-display.ts";
+import { messageHrefFor, nudgeActionFor } from "../lib/client-actions.ts";
 import {
   formatPhoneDisplay,
   telHref,
@@ -101,6 +102,8 @@ function ClientCard(
   const cta = ctaFor(c, lang);
   const balance = balanceDisplay(c, lang);
   const address = addressFor(c, lang);
+  const nudge = nudgeActionFor(c);
+  const messageHref = messageHrefFor(c);
 
   function onCardClick(e: Event) {
     const target = e.target as HTMLElement;
@@ -166,9 +169,26 @@ function ClientCard(
         )}
       </div>
       <div class="ccard2__foot">
-        <button class="ccard2__nudge" type="button">
-          {cta} <span class="ccard2__nudge-arrow">→</span>
-        </button>
+        {/* REQ-277 (M31): the nudge does what it says — a message verb texts
+            the customer; "Open card" (or nowhere to send) opens the panel */}
+        {nudge.kind === "message"
+          ? (
+            <a class="ccard2__nudge" data-cy="ccard2-nudge" href={nudge.href}>
+              {cta} <span class="ccard2__nudge-arrow">→</span>
+            </a>
+          )
+          : (
+            <button
+              class="ccard2__nudge"
+              data-cy="ccard2-nudge"
+              type="button"
+              onClick={() => {
+                if (!isOpen) onOpen();
+              }}
+            >
+              {cta} <span class="ccard2__nudge-arrow">→</span>
+            </button>
+          )}
         <div class="ccard2__bal-wrap">
           <div class="ccard2__bal-lbl">
             {tFor(lang, "clientsBoard.balance")}
@@ -302,19 +322,21 @@ function ClientCard(
             </a>
           ))}
         </div>
-        <div class="ccard2__panel-actions">
-          <button class="ccard2__panel-act" type="button">
-            <I d={ICN.msg} size={12} sw={2.4} />{" "}
-            {tFor(lang, "clientsBoard.panel.message")}
-          </button>
-          <button
-            class="ccard2__panel-act ccard2__panel-act--pink"
-            type="button"
-          >
-            <I d={ICN.eye} size={12} sw={2.4} />{" "}
-            {tFor(lang, "clientsBoard.panel.openCard")}
-          </button>
-        </div>
+        {/* REQ-277 (M31): Message texts (else mails) the customer and is not
+            offered with nowhere to send; the mock's "Open card" went nowhere —
+            this panel IS the open card — so it is gone */}
+        {messageHref && (
+          <div class="ccard2__panel-actions">
+            <a
+              class="ccard2__panel-act"
+              data-cy="ccard2-message"
+              href={messageHref}
+            >
+              <I d={ICN.msg} size={12} sw={2.4} />{" "}
+              {tFor(lang, "clientsBoard.panel.message")}
+            </a>
+          </div>
+        )}
       </div>
     </div>
   );

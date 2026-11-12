@@ -13,6 +13,7 @@ import type {
 } from "../clients/clients.ts";
 import { type Lang, tFor } from "./i18n.ts";
 import { hasAddress } from "../../shared/quote-flow/format-helpers.ts";
+import { type CtaKind, ctaKindFor } from "./client-actions.ts";
 
 export interface MoodPalette {
   from: string;
@@ -253,13 +254,17 @@ export function storyLineFor(c: CustomerCard, lang: Lang = "en"): string {
   return tFor(lang, "clientsDisplay.story.default", { when: c.lastWhenRel });
 }
 
+/** REQ-277: the label of the nudge whose action `nudgeActionFor` decides — one precedence for both */
 export function ctaFor(c: CustomerCard, lang: Lang = "en"): string {
-  if (c.balanceCents > 0) return tFor(lang, "clientsDisplay.cta.reminder");
-  if (c.status === "active") return tFor(lang, "clientsDisplay.cta.progress");
-  if (c.status === "lead") return tFor(lang, "clientsDisplay.cta.followUp");
-  if (c.status === "cold") return tFor(lang, "clientsDisplay.cta.hello");
-  return tFor(lang, "clientsDisplay.cta.openCard");
+  return tFor(lang, CTA_LABEL_KEYS[ctaKindFor(c)]);
 }
+const CTA_LABEL_KEYS: Record<CtaKind, string> = {
+  reminder: "clientsDisplay.cta.reminder",
+  progress: "clientsDisplay.cta.progress",
+  followUp: "clientsDisplay.cta.followUp",
+  hello: "clientsDisplay.cta.hello",
+  openCard: "clientsDisplay.cta.openCard",
+};
 
 /** Editorial number → words for small counts; falls back to digits. */
 const NUM_WORD_KEYS = [
