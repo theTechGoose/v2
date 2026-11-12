@@ -57,14 +57,16 @@ export interface PollOptions {
 }
 
 function browserEnv(): PollEnv {
+  // REQ-493: read off globalThis, not the bare `document` global, so a page's
+  // decision built on this scheduler also type-checks where there is no DOM
+  // lib (the backend's integration tests read /q's through it).
+  const doc = (globalThis as { document?: PollEnv["doc"] }).document ?? null;
   return {
     now: () => Date.now(),
     setInterval: (fn, ms) => globalThis.setInterval(fn, ms),
     clearInterval: (id) => globalThis.clearInterval(id as number),
-    doc: typeof document === "undefined" ? null : document,
-    activity: typeof document === "undefined"
-      ? null
-      : globalThis as unknown as EventTargetLike,
+    doc,
+    activity: doc ? globalThis as unknown as EventTargetLike : null,
   };
 }
 

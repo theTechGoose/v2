@@ -194,6 +194,8 @@ import {
 import MoneyInput from "./MoneyInput.tsx";
 import { priceChipAnchorCents } from "../lib/money-input.ts";
 import { startPoll } from "../lib/poll.ts";
+import { followChanges } from "../lib/change-feed.ts";
+import { boundQuoteMoved } from "../lib/live-doc-refresh.ts";
 import { Icon } from "../components/ui/Icon.tsx";
 
 /**
@@ -1963,6 +1965,38 @@ export default function AsstChat({
       );
     };
   }, [convoId, quote?.id]);
+
+  // REQ-493 (demo-loop c3 m7): the row above moved only on that hand-back,
+  // which waits for the list's poll — backed off to 60 s in a tab nobody
+  // touches while the customer signs in another — or while the review is open
+  // (its 8 s poll below). The chat kept "GATHERING A LITTLE MORE INFO" and
+  // the "Save & resend" form after the signature. Follow the change feed: a
+  // change naming this thread's quote re-reads the row, review open or not,
+  // and a row whose lifecycle moved (signed, declined, a new version) is
+  // taken — the header, the cards, the list chip and the recovery form say
+  // what a reload says; a re-read with nothing new leaves the row alone.
+  // (A public signature adds no message to the thread: the row is what moves.)
+  useEffect(() => {
+    const rowId = quote?.id;
+    if (typeof globalThis.window === "undefined" || !rowId) return;
+    let cancelled = false;
+    const stop = followChanges(
+      (c) => c.entityType === "quote" && c.entityId === rowId,
+      () =>
+        quotesClient.get(rowId).then((fresh) => {
+          if (cancelled) return;
+          setQuote((cur) =>
+            cur && cur.id === rowId && boundQuoteMoved(cur, fresh)
+              ? { ...cur, ...fresh } as typeof cur
+              : cur
+          );
+        }),
+    );
+    return () => {
+      cancelled = true;
+      stop();
+    };
+  }, [quote?.id]);
 
   // Keep the composer focused: on first mount (so users can just start typing)
   // and again whenever the assistant finishes a turn (sending: true → false).

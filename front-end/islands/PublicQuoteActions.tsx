@@ -1,6 +1,7 @@
 import { useState } from "preact/hooks";
 import { tFor } from "../lib/i18n.ts";
 import { Icon } from "../components/ui/Icon.tsx";
+import { announceChange } from "../lib/change-announce.ts";
 
 interface Props {
   quoteId: string;
@@ -203,6 +204,8 @@ function DeclineForm(
         }
       }
       setStatus("ok");
+      // REQ-493 (demo-loop c3 m7): the owner's tabs in this browser follow.
+      announceChange({ entityType: "quote", entityId: quoteId });
       onDeclined();
     } catch (e) {
       setStatus("error");

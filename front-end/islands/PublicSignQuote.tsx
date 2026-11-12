@@ -3,6 +3,7 @@ import { tFor } from "../lib/i18n.ts";
 import { Icon } from "../components/ui/Icon.tsx";
 import { acceptDecision } from "../../shared/documents/linked-view.ts";
 import { SIGN_OVERRIDE_QUERY } from "../../shared/quote-flow/public-doc-state.ts";
+import { announceChange } from "../lib/change-announce.ts";
 
 interface Props {
   quoteId: string;
@@ -327,6 +328,9 @@ export default function PublicSignQuote(
         throw new Error(text.slice(0, 200) || `${r.status}`);
       }
       setStatus("ok");
+      // REQ-493 (demo-loop c3 m7): signed in person on the owner's device —
+      // the owner's app tabs in this browser follow at once.
+      announceChange({ entityType: "quote", entityId: quoteId });
       // REQ-311: no reload. The parent refetches the public projection and
       // re-renders the signed document in place, so the customer stays
       // right here: the signature card fills in with the typed name + date,

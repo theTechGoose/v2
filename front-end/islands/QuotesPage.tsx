@@ -15,6 +15,7 @@ import {
 import { api, ApiError } from "../lib/api.ts";
 import { startListRefresh } from "../lib/list-refresh.ts";
 import { openQuoteMoved } from "../lib/live-doc-refresh.ts";
+import { followChanges, isDocChange } from "../lib/change-feed.ts";
 import { I, ICN } from "../lib/dash-icons.tsx";
 import { fmtMoney, fmtMoneyExact } from "../lib/format.ts";
 import {
@@ -1675,9 +1676,21 @@ export default function QuotesPage(_props: { lang?: "en" | "es" }) {
       );
     };
     const stop = startListRefresh(refresh, 30_000);
+    // REQ-493 (demo-loop c3 m7): the client signed in another tab and this
+    // one sat on "Sent" / "Edit → Version 3" until the 30 s re-read — a tab
+    // that is only switched to fires no focus. The change feed re-reads now
+    // (the open panel follows its card, above); a moved invoice also re-reads
+    // an open panel, whose ledger lists the invoices.
+    const unfollow = followChanges(isDocChange, refresh);
+    const unfollowLedger = followChanges(
+      (c) => c.entityType === "invoice" && !!openIdRef.current,
+      () => setOpenTick((t) => t + 1),
+    );
     return () => {
       alive = false;
       stop();
+      unfollow();
+      unfollowLedger();
     };
   }, []);
 
