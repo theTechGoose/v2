@@ -69,6 +69,10 @@ import {
   policyNumberError,
   zipError,
 } from "../../shared/quote-flow/business-fields.ts"; // REQ-352, REQ-503
+import {
+  PAYMENT_METHOD_CATALOG,
+  type PaymentMethodDef,
+} from "../../shared/identity/payment-methods.ts"; // REQ-620
 import { api } from "../lib/api.ts";
 import { type AddressSuggestion, suggestAddresses } from "../lib/mapbox.ts";
 
@@ -845,34 +849,28 @@ function AddressStep({ ctx }: { ctx: StepCtx }) {
   );
 }
 
-const PAYMENT_METHODS: {
-  id: "venmo" | "zelle" | "cashapp" | "check" | "cash" | "ach";
-  handleField?: "handle" | "cashtag";
-}[] = [
-  { id: "venmo", handleField: "handle" },
-  { id: "zelle", handleField: "handle" },
-  { id: "cashapp", handleField: "cashtag" },
-  { id: "check" },
-  { id: "cash" },
-  { id: "ach" },
-];
+/** REQ-620 (cycle 4, p4-p6b): the step offers every method in the shared
+ *  catalogue — the same list, order and labels as Settings' Payments card.
+ *  Only a money-routing handle (Venmo / Cash App / Zelle / PayPal) is asked
+ *  for here; the optional notes (check address, ACH / card) live in Settings. */
+const asksHandle = (m: PaymentMethodDef) =>
+  m.handleField !== null && !m.optional;
 
 function PaymentStep({ ctx }: { ctx: StepCtx }) {
   const cur = ctx.snap.identity?.acceptedPaymentMethods ?? {};
   const [enabled, setEnabled] = useState<Record<string, boolean>>(() => {
     const o: Record<string, boolean> = {};
-    for (const m of PAYMENT_METHODS) o[m.id] = Boolean(cur[m.id]?.enabled);
+    for (const m of PAYMENT_METHOD_CATALOG) {
+      o[m.id] = Boolean(cur[m.id]?.enabled);
+    }
     return o;
   });
   const [handles, setHandles] = useState<Record<string, string>>(() => {
     const o: Record<string, string> = {};
-    for (const m of PAYMENT_METHODS) {
-      const entry = cur[m.id] as
-        | { handle?: string; cashtag?: string }
-        | undefined;
-      o[m.id] =
-        (m.handleField === "cashtag" ? entry?.cashtag : entry?.handle) ??
-          "";
+    for (const m of PAYMENT_METHOD_CATALOG) {
+      const entry = cur[m.id] as Record<string, unknown> | undefined;
+      const v = asksHandle(m) ? entry?.[m.handleField!] : "";
+      o[m.id] = typeof v === "string" ? v : "";
     }
     return o;
   });
@@ -884,7 +882,9 @@ function PaymentStep({ ctx }: { ctx: StepCtx }) {
   // field is left (a stored handle counts as left).
   const [touched, setTouched] = useState<Record<string, boolean>>(() => {
     const o: Record<string, boolean> = {};
-    for (const m of PAYMENT_METHODS) o[m.id] = handles[m.id].trim().length > 0;
+    for (const m of PAYMENT_METHOD_CATALOG) {
+      o[m.id] = handles[m.id].trim().length > 0;
+    }
     return o;
   });
   const handleErr = (id: string) =>
@@ -892,9 +892,9 @@ function PaymentStep({ ctx }: { ctx: StepCtx }) {
 
   // Valid when at least one method is on, and every handle-requiring method
   // that's on has a non-empty, well-formed handle.
-  const anyOn = PAYMENT_METHODS.some((m) => enabled[m.id]);
-  const handlesOk = PAYMENT_METHODS.every((m) =>
-    !m.handleField || !enabled[m.id] ||
+  const anyOn = PAYMENT_METHOD_CATALOG.some((m) => enabled[m.id]);
+  const handlesOk = PAYMENT_METHOD_CATALOG.every((m) =>
+    !asksHandle(m) || !enabled[m.id] ||
     (handles[m.id].trim().length > 0 && handleErr(m.id) === null)
   );
   const valid = anyOn && handlesOk;
@@ -904,16 +904,19 @@ function PaymentStep({ ctx }: { ctx: StepCtx }) {
     setBusy(true);
     setErr("");
     try {
-      // Read-modify-write the whole map so methods enabled elsewhere (paypal,
-      // card, ...) survive. Only the six chips here are overwritten.
+      // Read-modify-write the whole map so keys set elsewhere (other, a
+      // check's mailing address from Settings, ...) survive.
       const next: Record<string, unknown> = {
         ...(ctx.snap.identity?.acceptedPaymentMethods ?? {}),
       };
-      for (const m of PAYMENT_METHODS) {
+      for (const m of PAYMENT_METHOD_CATALOG) {
         if (enabled[m.id]) {
-          const entry: Record<string, unknown> = { enabled: true };
-          if (m.handleField && handles[m.id].trim()) {
-            entry[m.handleField] = handles[m.id].trim();
+          const entry: Record<string, unknown> = {
+            ...((next[m.id] as object | undefined) ?? {}),
+            enabled: true,
+          };
+          if (asksHandle(m) && handles[m.id].trim()) {
+            entry[m.handleField!] = handles[m.id].trim();
           }
           next[m.id] = entry;
         } else if (next[m.id]) {
@@ -938,8 +941,8 @@ function PaymentStep({ ctx }: { ctx: StepCtx }) {
       why={t("welcome.payment.why")}
     >
       <div class="welcome__pay">
-        {PAYMENT_METHODS.map((m) => (
-          <div key={m.id} class="welcome__pay-method">
+        {PAYMENT_METHOD_CATALOG.map((m) => (
+          <div key={m.id} class="welcome__pay-method" data-pay-method={m.id}>
             <button
               type="button"
               class={"welcome__chip" +
@@ -948,9 +951,9 @@ function PaymentStep({ ctx }: { ctx: StepCtx }) {
               onClick={() =>
                 setEnabled((prev) => ({ ...prev, [m.id]: !prev[m.id] }))}
             >
-              {t(`welcome.payment.method.${m.id}`)}
+              {t(m.labelKey)}
             </button>
-            {m.handleField && enabled[m.id]
+            {asksHandle(m) && enabled[m.id]
               ? (() => {
                 const err = touched[m.id] ? handleErr(m.id) : null;
                 const errId = `welcome-handle-${m.id}-err`;

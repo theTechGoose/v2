@@ -41,6 +41,10 @@ import {
 import { switchQuote } from "../../shared/quote-flow/plan-switch.ts";
 import { accountNetDays } from "../../shared/quote-flow/completion-schedule.ts"; // REQ-411
 import {
+  PAYMENT_METHOD_CATALOG,
+  type PaymentMethodDef,
+} from "../../shared/identity/payment-methods.ts"; // REQ-620
+import {
   insurerError,
   policyNumberError,
 } from "../../shared/quote-flow/business-fields.ts"; // REQ-503
@@ -1294,76 +1298,10 @@ function TaxEditCard(
   );
 }
 
-interface PayRow {
-  key:
-    | "venmo"
-    | "cashapp"
-    | "zelle"
-    | "paypal"
-    | "check"
-    | "cash"
-    | "ach"
-    | "card";
-  label: string;
-  /** Backend field that stores the handle. null → no handle (cash). */
-  field: "handle" | "cashtag" | "mailTo" | "instructions" | null;
-  placeholder: string;
-  /** Money-routing handles (Venmo/Zelle/etc.) are required when the method is
-   *  enabled and get a retype-to-confirm guard — a typo sends funds to the
-   *  wrong place. A check's mailing address is optional (the contractor's
-   *  address already prints on the invoice) and needs no confirm field. */
-  optional?: boolean;
-}
-
-// `label` and `placeholder` hold i18n KEYS (resolved per-language at render).
-const PAY_ROWS: PayRow[] = [
-  {
-    key: "venmo",
-    label: "paymentMethod.venmo",
-    field: "handle",
-    placeholder: "settings.pay.venmoPh",
-  },
-  {
-    key: "cashapp",
-    label: "paymentMethod.cashApp",
-    field: "cashtag",
-    placeholder: "settings.pay.cashappPh",
-  },
-  {
-    key: "zelle",
-    label: "paymentMethod.zelle",
-    field: "handle",
-    placeholder: "settings.pay.zellePh",
-  },
-  {
-    key: "paypal",
-    label: "paymentMethod.paypal",
-    field: "handle",
-    placeholder: "settings.pay.paypalPh",
-  },
-  {
-    key: "check",
-    label: "paymentMethod.check",
-    field: "mailTo",
-    placeholder: "settings.pay.checkPh",
-    optional: true,
-  },
-  {
-    key: "ach",
-    label: "paymentMethod.ach",
-    field: "instructions",
-    placeholder: "settings.pay.achPh",
-    optional: true,
-  },
-  {
-    key: "card",
-    label: "paymentMethod.card",
-    field: "instructions",
-    placeholder: "settings.pay.cardPh",
-    optional: true,
-  },
-  { key: "cash", label: "paymentMethod.cash", field: null, placeholder: "" },
-];
+// REQ-620 (cycle 4, p4-p6b): the rows are the shared payment-method catalogue
+// (shared/identity/payment-methods.ts) — the same list, order and labels the
+// onboarding wizard's payment step renders. labelKey / placeholderKey are i18n
+// KEYS (resolved per-language at render).
 
 interface PayState {
   enabled: boolean;
@@ -1382,7 +1320,7 @@ function PaymentsEditCard(
 ) {
   const apm = snapshot.identity?.acceptedPaymentMethods ?? {};
   const init: Record<string, PayState> = {};
-  for (const r of PAY_ROWS) {
+  for (const r of PAYMENT_METHOD_CATALOG) {
     const cur = (apm as Record<
       string,
       {
@@ -1392,9 +1330,9 @@ function PaymentsEditCard(
         mailTo?: string;
         instructions?: string;
       }
-    >)[r.key];
-    const val = r.field ? (cur?.[r.field] ?? "") : "";
-    init[r.key] = { enabled: !!cur?.enabled, value: val, confirm: val };
+    >)[r.id];
+    const val = r.handleField ? (cur?.[r.handleField] ?? "") : "";
+    init[r.id] = { enabled: !!cur?.enabled, value: val, confirm: val };
   }
   const [rows, setRows] = useState<Record<string, PayState>>(init);
   const [busy, setBusy] = useState(false);
@@ -1419,9 +1357,9 @@ function PaymentsEditCard(
     if (saveNow) autosave(merged);
   }
 
-  const mismatch = (r: PayRow) => {
-    const st = rows[r.key];
-    return st.enabled && r.field !== null && st.value.trim() !== "" &&
+  const mismatch = (r: PaymentMethodDef) => {
+    const st = rows[r.id];
+    return st.enabled && r.handleField !== null && st.value.trim() !== "" &&
       st.confirm.trim() !== "" && st.value.trim() !== st.confirm.trim();
   };
 
@@ -1433,11 +1371,11 @@ function PaymentsEditCard(
     const apmPatch: Record<string, Record<string, unknown>> = {
       ...(apm as Record<string, Record<string, unknown>>),
     };
-    for (const r of PAY_ROWS) {
-      const st = cur[r.key];
+    for (const r of PAYMENT_METHOD_CATALOG) {
+      const st = cur[r.id];
       const entry: Record<string, unknown> = { enabled: st.enabled };
-      if (r.field) entry[r.field] = st.value.trim();
-      apmPatch[r.key] = entry;
+      if (r.handleField) entry[r.handleField] = st.value.trim();
+      apmPatch[r.id] = entry;
     }
     return apmPatch;
   }
@@ -1446,9 +1384,9 @@ function PaymentsEditCard(
    *  for a SILENT instant-save (incomplete rows wait for the explicit Save,
    *  which surfaces the validation copy). */
   function autosaveReady(cur: Record<string, PayState>): boolean {
-    return PAY_ROWS.every((r) => {
-      const st = cur[r.key];
-      if (!st.enabled || r.field === null || r.optional) return true;
+    return PAYMENT_METHOD_CATALOG.every((r) => {
+      const st = cur[r.id];
+      if (!st.enabled || r.handleField === null || r.optional) return true;
       return st.value.trim() !== "" && st.value.trim() === st.confirm.trim();
     });
   }
@@ -1481,12 +1419,12 @@ function PaymentsEditCard(
 
   async function save() {
     // Validate every enabled handle-bearing method has a matching confirm.
-    for (const r of PAY_ROWS) {
-      const st = rows[r.key];
-      if (!st.enabled || r.field === null) continue;
+    for (const r of PAYMENT_METHOD_CATALOG) {
+      const st = rows[r.id];
+      if (!st.enabled || r.handleField === null) continue;
       // Optional fields (check's mailing address) may be left blank.
       if (r.optional) continue;
-      const label = tFor(lang, r.label);
+      const label = tFor(lang, r.labelKey);
       if (st.value.trim() === "") {
         setErr(t.enterHandle(label));
         return;
@@ -1531,14 +1469,17 @@ function PaymentsEditCard(
         {t.paymentsIntro}
       </p>
       <div style="display:flex;flex-direction:column;gap:12px">
-        {PAY_ROWS.map((r) => {
-          const st = rows[r.key];
+        {PAYMENT_METHOD_CATALOG.map((r) => {
+          const st = rows[r.id];
           const bad = mismatch(r);
-          const label = tFor(lang, r.label);
-          const placeholder = r.placeholder ? tFor(lang, r.placeholder) : "";
+          const label = tFor(lang, r.labelKey);
+          const placeholder = r.placeholderKey
+            ? tFor(lang, r.placeholderKey)
+            : "";
           return (
             <div
-              key={r.key}
+              key={r.id}
+              data-pay-method={r.id}
               style={`border:1px solid ${
                 st.enabled
                   ? "var(--brand-green,#519843)"
@@ -1551,7 +1492,7 @@ function PaymentsEditCard(
                   checked={st.enabled}
                   onChange={(e) =>
                     // P-42: a toggle IS the edit — persist it instantly.
-                    patchRow(r.key, {
+                    patchRow(r.id, {
                       enabled: (e.target as HTMLInputElement).checked,
                     }, true)}
                 />
@@ -1559,11 +1500,11 @@ function PaymentsEditCard(
                   {label}
                 </span>
               </label>
-              {st.enabled && r.field !== null && (
+              {st.enabled && r.handleField !== null && (
                 <div style="margin-top:10px;display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px">
                   <label style="display:block">
                     <span style={labelStyle}>
-                      {r.field === "instructions"
+                      {r.handleField === "instructions"
                         ? t.instructionsOptional
                         : r.optional
                         ? t.mailingOptional
@@ -1575,7 +1516,7 @@ function PaymentsEditCard(
                       value={st.value}
                       placeholder={placeholder}
                       onInput={(e) =>
-                        patchRow(r.key, {
+                        patchRow(r.id, {
                           value: (e.target as HTMLInputElement).value,
                         })}
                       onBlur={() => autosave(rowsRef.current)}
@@ -1592,7 +1533,7 @@ function PaymentsEditCard(
                         value={st.confirm}
                         placeholder={placeholder}
                         onInput={(e) =>
-                          patchRow(r.key, {
+                          patchRow(r.id, {
                             confirm: (e.target as HTMLInputElement).value,
                           })}
                         onBlur={() => autosave(rowsRef.current)}
