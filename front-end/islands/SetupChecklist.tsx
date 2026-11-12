@@ -3,6 +3,7 @@ import { profileClient, type ProfileSnapshot } from "../clients/profile.ts";
 import { langSignal, tFor } from "../lib/i18n.ts";
 import { Icon } from "../components/ui/Icon.tsx";
 import { isPlaceholderName } from "../../shared/quote-flow/outbound-identity.ts";
+import { setupItemHref, type SetupItemKey } from "../lib/settings-anchors.ts";
 import {
   PROFILE_UPDATED,
   type ProfileUpdatedDetail,
@@ -21,9 +22,10 @@ import {
  * profile-shape read on every render.
  */
 interface Item {
-  key: string;
+  key: SetupItemKey;
   label: string;
   done: boolean;
+  /** REQ-513: the Settings section that answers it, never the bare /settings */
   href: string;
 }
 
@@ -69,43 +71,43 @@ export default function SetupChecklist() {
       // the one field this user most needs to supply must not read as done.
       label: tFor(lang, "setupChecklist.item.name"),
       done: !isPlaceholderName(snap.user.name),
-      href: "/settings",
+      href: setupItemHref("name"),
     },
     {
       key: "biz",
       label: tFor(lang, "setupChecklist.item.businessName"),
       done: !!id?.businessName?.trim(),
-      href: "/settings",
+      href: setupItemHref("biz"),
     },
     {
       key: "email",
       label: tFor(lang, "setupChecklist.item.email"),
       done: !!snap.user.email?.trim(),
-      href: "/settings",
+      href: setupItemHref("email"),
     },
     {
       key: "logo",
       label: tFor(lang, "setupChecklist.item.logo"),
       done: !!id?.logoFileId,
-      href: "/settings",
+      href: setupItemHref("logo"),
     },
     {
       key: "address",
       label: tFor(lang, "setupChecklist.item.address"),
       done: !!(snap.address?.postal?.trim() || snap.address?.street?.trim()),
-      href: "/settings",
+      href: setupItemHref("address"),
     },
     {
       key: "payment",
       label: tFor(lang, "setupChecklist.item.payment"),
       done: acceptedAny,
-      href: "/settings",
+      href: setupItemHref("payment"),
     },
     {
       key: "insurance",
       label: tFor(lang, "setupChecklist.item.insurance"),
       done: !!snap.insurance?.provider?.trim(),
-      href: "/settings",
+      href: setupItemHref("insurance"),
     },
   ];
   const remaining = items.filter((i) => !i.done);

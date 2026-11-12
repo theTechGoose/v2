@@ -18,6 +18,11 @@ import {
   type ProfileSnapshot,
 } from "../clients/profile.ts";
 import { announceProfile } from "../lib/profile-events.ts";
+import {
+  revealSettingsAnchor,
+  SETTINGS_ANCHORS,
+  settingsAnchorOf,
+} from "../lib/settings-anchors.ts"; // REQ-513
 import { DOC_KINDS, type DocKind } from "../../shared/documents/numbering.ts";
 import {
   formOf,
@@ -323,6 +328,7 @@ function EditPanel(
     saving = tFor("en", "settings.saving"),
     savedLabel = tFor("en", "settings.saved"),
     dataCy,
+    id,
   }: {
     title: string;
     children: ComponentChildren;
@@ -332,10 +338,12 @@ function EditPanel(
     saving?: string;
     savedLabel?: string;
     dataCy?: string;
+    /** REQ-513: the section's anchor, the target of a setup-checklist deep link */
+    id?: string;
   },
 ) {
   return (
-    <div class="panel" style="padding:18px 20px" data-cy={dataCy}>
+    <div class="panel" style="padding:18px 20px" data-cy={dataCy} id={id}>
       <div
         class="panel__head"
         style="margin-bottom:12px;display:flex;align-items:center;justify-content:space-between;gap:10px"
@@ -481,6 +489,7 @@ function EditCard(
             type="text"
             class="settings-edit__input"
             style={inputStyle}
+            id={SETTINGS_ANCHORS.name}
             value={name}
             disabled={busy === "user"}
             onInput={(e) => {
@@ -500,6 +509,7 @@ function EditCard(
             class="settings-edit__input"
             style={inputStyle}
             data-cy="settings-email"
+            id={SETTINGS_ANCHORS.email}
             value={email}
             disabled={busy === "user"}
             aria-invalid={emailErr ? "true" : undefined}
@@ -537,6 +547,7 @@ function EditCard(
             class="settings-edit__input"
             style={inputStyle}
             data-cy="settings-biz"
+            id={SETTINGS_ANCHORS.biz}
             value={biz}
             disabled={busy === "identity"}
             aria-invalid={bizErr ? "true" : undefined}
@@ -628,7 +639,10 @@ function EditCard(
             {t.netDaysHint}
           </span>
         </label>
-        <div style="grid-column:1 / -1;display:flex;flex-wrap:wrap;align-items:center;gap:12px">
+        <div
+          id={SETTINGS_ANCHORS.logo}
+          style="grid-column:1 / -1;display:flex;flex-wrap:wrap;align-items:center;gap:12px"
+        >
           <button
             type="button"
             class="btn btn-secondary"
@@ -892,6 +906,7 @@ function AddressEditCard(
   return (
     <EditPanel
       title={t.mailingAddress}
+      id={SETTINGS_ANCHORS.address}
       busy={busy}
       err={err}
       saved={saved}
@@ -1046,6 +1061,7 @@ function InsuranceEditCard(
   return (
     <EditPanel
       title={t.insurance}
+      id={SETTINGS_ANCHORS.insurance}
       busy={!!busy}
       err={err}
       saved={saved}
@@ -1503,6 +1519,7 @@ function PaymentsEditCard(
   return (
     <EditPanel
       title={t.payments}
+      id={SETTINGS_ANCHORS.payment}
       busy={busy}
       err={err}
       saved={saved}
@@ -2440,8 +2457,13 @@ export default function SettingsPage() {
   }, []);
   // REQ-127 — two tabs: Account (everything below) and Billing (the plan). The address opens the
   // one asked for (?tab=billing; a pick's reason or a receipt's marker open Billing too)
+  // REQ-513: a checklist deep link (#logo, #insurance…) names an Account-tab section
   const [tab, setTab] = useState<SettingsTab>(() =>
-    typeof location === "undefined" ? "account" : settingsTabOf(location.search)
+    typeof location === "undefined"
+      ? "account"
+      : settingsAnchorOf(location.hash)
+      ? "account"
+      : settingsTabOf(location.search)
   );
   const pickTab = (next: SettingsTab) => {
     setTab(next);
@@ -2465,6 +2487,17 @@ export default function SettingsPage() {
       alive = false;
     };
   }, []);
+
+  // REQ-513: reveal the section the checklist link named, once the cards are drawn — the
+  // browser's own hash jump ran against the loading skeleton
+  const revealed = useRef(false);
+  useEffect(() => {
+    if (revealed.current || s.loading || !s.profile || tab !== "account") {
+      return;
+    }
+    revealed.current = true;
+    revealSettingsAnchor(location.hash);
+  }, [s.loading, s.profile, tab]);
 
   if (s.loading) {
     return (
