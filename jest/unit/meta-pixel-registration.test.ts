@@ -22,8 +22,8 @@ import {
   pixelEventScript,
   registrationEvent,
   registrationEventFor,
+  REPLICA_FRAME_NAME,
 } from "../../shared/meta-pixel/pixel";
-import { REPLICA_FRAME_NAME } from "../../front-end/lib/demo-mode/replica";
 
 const ROOT = path.resolve(__dirname, "../..");
 const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), "utf8");
@@ -117,9 +117,12 @@ describe("REQ-229 CompleteRegistration is the account's own: never staff, never 
     expect(frame.ctx.fbq).toBeUndefined();
   });
 
-  it("REQ-229 the replica frame name the scripts check is the one the stage gives its frame", () => {
+  it("REQ-229 + REQ-242 the demo stage runs no script of the customer's page at all: its mirror frame is sandboxed without allow-scripts, so no pixel boots or fires there; the old replica name stays guarded", () => {
     const pixel = read("shared/meta-pixel/pixel.ts");
     expect(pixel).toContain(`"${REPLICA_FRAME_NAME}"`);
+    const stage = read("front-end/islands/DemoStage.tsx");
+    expect(stage).toMatch(/sandbox="allow-same-origin"/);
+    expect(stage).not.toMatch(/allow-scripts/);
   });
 
   it("REQ-229 /welcome asks who the session is before it renders CompleteRegistration — no unconditional registrationEvent(user.id)", () => {

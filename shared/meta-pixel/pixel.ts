@@ -78,9 +78,10 @@ export function isPixelPage(pathname: string): boolean {
 }
 
 /**
- * REQ-229 — the demo stage's replica frame (front-end/lib/demo-mode/replica.ts REPLICA_FRAME_NAME:
- * the stage names its iframe so, and the name survives every navigation inside it). That frame is
- * the customer's page rendered in the STAFF's browser: no PageView and no conversion from it.
+ * REQ-229 — the demo stage's old replica frame (REQ-187 named its iframe so, and the name survived
+ * every navigation inside it). That frame was the customer's page rendered in the STAFF's browser:
+ * no PageView and no conversion from it. REQ-242 replaced it with a script-less mirror frame (no
+ * pixel can run there at all); the guard stays for any browser still holding a replica window.
  */
 export const REPLICA_FRAME_NAME = "pm-demo-replica";
 const IN_REPLICA_FRAME = `window.name===${

@@ -572,9 +572,10 @@ describe("REQ-232 the wiring: plain words, no auto-placement, Return really retu
   });
 
   test("a staff page never moves itself onto the stage: the poll only reports, the started event places, any other page offers Back to the demo", () => {
+    // REQ-222 (M11) — the ask lives in the active poll's `ask`
     const check = overlay.slice(
-      overlay.indexOf("const check = async () => {"),
-      overlay.indexOf("pollRef.current = () => void check();"),
+      overlay.indexOf("const poller = activePoll({"),
+      overlay.indexOf("pollRef.current = check;"),
     );
     expect(check.length).toBeGreaterThan(50);
     expect(check).not.toMatch(/placePresenter\(/);
