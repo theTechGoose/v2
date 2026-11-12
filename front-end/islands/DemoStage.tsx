@@ -151,12 +151,17 @@ interface OwnStats {
 }
 /** REQ-309 — the mirror's counters on the pill (dev only): one short line, the legend in its title */
 const MIRROR_STATS_LEGEND =
-  "mirror (dev): f frames · hb heartbeats · x frames that did not fit · st stalls · rs resyncs asked · old dropped as older · bad undecodable · held waiting for an earlier frame · the last frame's age";
-function mirrorStatsText(s: MirrorStats, own: OwnStats): string {
+  "mirror (dev): f frames · hb heartbeats · x frames that did not fit · st stalls · rs resyncs asked · old dropped as older · bad undecodable · held waiting for an earlier frame · cv canvas bitmaps arrived/applied/repainted after a resize (REQ-380) · the last frame's age";
+function mirrorStatsText(
+  s: MirrorStats,
+  own: OwnStats,
+  cv: { seen: number; cv: number; repaints: number } | undefined,
+): string {
   const age = own.lastAt
     ? `${((Date.now() - own.lastAt) / 1000).toFixed(1)}s`
     : "–";
-  return `mirror f${s.frames} hb${s.beats} x${own.failed} st${s.stalls} rs${own.resyncs} old${s.older} bad${s.undecodable} held${s.held} ${age}`;
+  const c = cv ?? { seen: 0, cv: 0, repaints: 0 };
+  return `mirror f${s.frames} hb${s.beats} x${own.failed} st${s.stalls} rs${own.resyncs} old${s.older} bad${s.undecodable} held${s.held} cv${c.seen}/${c.cv}/${c.repaints} ${age}`;
 }
 
 export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
@@ -710,7 +715,15 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
     // mirror over — asked again every MIRROR_GAP_MS until a snapshot lands
     const stall = setInterval(() => {
       if (rx.stalled() || dirtyRef.current) askResync();
-      if (dev) setStatsText(mirrorStatsText(rx.stats(), ownRef.current));
+      if (dev) {
+        setStatsText(
+          mirrorStatsText(
+            rx.stats(),
+            ownRef.current,
+            replayerRef.current?.stats(),
+          ),
+        );
+      }
     }, 500);
     return () => {
       clearInterval(stall);

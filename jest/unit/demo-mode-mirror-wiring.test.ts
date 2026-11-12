@@ -289,4 +289,9 @@ describe("REQ-309 (demo M19/m14/m26) — a gap is found while the customer is id
     expect(stage).toMatch(/rx\.stats\(\)/);
     expect(stage).toMatch(/localhost\|127\\\.0\\\.0\\\.1/);
   });
+
+  test("REQ-380 (demo M10): the dev pill counts the canvas bitmaps that arrived, were applied and were repainted", () => {
+    expect(stage).toMatch(/replayerRef\.current\?\.stats\(\)/);
+    expect(stage).toMatch(/cv\$\{c\.seen\}\/\$\{c\.cv\}\/\$\{c\.repaints\}/);
+  });
 });

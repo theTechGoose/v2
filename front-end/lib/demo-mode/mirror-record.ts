@@ -26,6 +26,12 @@
  * REQ-309 (demo M19) — a heartbeat: while somebody watches, an empty `ops` frame goes out
  * whenever nothing went out for MIRROR_HEARTBEAT_MS (`beat()`, on the sweep), so the stage can
  * tell a lost frame (a held heartbeat, stalled after MIRROR_GAP_MS) from a page that is quiet.
+ *
+ * REQ-380 (demo-loop cycle 2, M10) — a width or height set on a canvas clears its bitmap, on the
+ * stage too; the page usually redraws the same picture at once (the /q signature pad's
+ * setupCanvas on mount and resize), so the bitmap reads as before and the sweep would never send
+ * it again. Any width/height change on a canvas re-sends its bitmap in the same frame, after the
+ * attribute ops. `stats()` counts the bitmaps sent.
  */
 import {
   MIRROR_FLUSH_MS,
@@ -70,6 +76,8 @@ export interface Recorder {
   idOf(n: Node | null): number | null;
   /** the mirrored element with id `id` */
   nodeOf(id: number): Element | null;
+  /** REQ-380 — canvas bitmaps sent (`cv` ops) since the recorder was made */
+  stats(): { cv: number };
 }
 
 const XHTML = "http://www.w3.org/1999/xhtml";
@@ -261,6 +269,7 @@ export function createRecorder(doc: Document, o: RecorderOptions): Recorder {
   let lastEmit = 0;
   const emit = (f: MirrorFrame) => {
     lastEmit = now();
+    for (const op of f.ops) if (op.o === "cv") cvSent++;
     o.emit(f);
   };
   const base = () => doc.baseURI || win?.location.href || "";
@@ -290,6 +299,8 @@ export function createRecorder(doc: Document, o: RecorderOptions): Recorder {
   let lastSize = "";
   let lastUrl = "";
   let lastCanvasSweep = 0;
+  /** REQ-380 — canvas bitmaps sent */
+  let cvSent = 0;
 
   let observer: MutationObserver | null = null;
   let pending: MutationRecord[] = [];
@@ -704,6 +715,8 @@ export function createRecorder(doc: Document, o: RecorderOptions): Recorder {
     ops.push(...state);
 
     // 4. attributes and texts of the nodes the stage keeps
+    /** REQ-380 — canvases whose width/height was set: their bitmap goes again, after the ops */
+    const resized: number[] = [];
     for (const [n, names] of attrs) {
       if (fresh.has(n) || !mirrored(n)) continue;
       const e = n as Element;
@@ -715,6 +728,17 @@ export function createRecorder(doc: Document, o: RecorderOptions): Recorder {
         const raw = e.getAttribute(name);
         const v = raw === null ? null : attrValue(e, tag, name, raw, m, b);
         ops.push({ o: "a", i: id, n: name, v });
+        if (
+          tag === "canvas" && /^(width|height)$/i.test(name) &&
+          !resized.includes(id)
+        ) resized.push(id);
+      }
+    }
+    for (const id of resized) {
+      const cu = canvasUrl(nodes.get(id) as Element);
+      if (cu) {
+        lastCanvas.set(id, cu);
+        ops.push({ o: "cv", i: id, u: cu });
       }
     }
     for (const n of texts) {
@@ -825,5 +849,6 @@ export function createRecorder(doc: Document, o: RecorderOptions): Recorder {
       const n = nodes.get(id);
       return n && n.nodeType === ELEMENT ? n as Element : null;
     },
+    stats: () => ({ cv: cvSent }),
   };
 }
