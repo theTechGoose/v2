@@ -23,6 +23,10 @@
  * nor counted on a customer's row.
  */
 import { isSampleQuote } from "../quote-flow/pipeline-stats.ts";
+import {
+  foldSearch,
+  textsMatchAllWords,
+} from "../quote-flow/customer-search.ts";
 import { docNumberOf, matchesDocNumber } from "./numbering.ts";
 import {
   invoiceBalance,
@@ -219,7 +223,8 @@ export function urlFor(type: SearchType, id: string): string {
 // ---- matching ----
 
 function fold(s: string): string {
-  return s.toLowerCase().replace(/[^a-z0-9]/g, "");
+  // REQ-519: fold accents ("é" → "e") before stripping, never drop the letter
+  return foldSearch(s).replace(/[^a-z0-9]/g, "");
 }
 
 function splitNumber(folded: string): { letters: string; digits: string } {
@@ -325,10 +330,6 @@ export function matchesDate(value: string | undefined, query: string): boolean {
   return day === null || Number(d.slice(8, 10)) === day;
 }
 
-function hasText(hay: string | undefined, q: string): boolean {
-  return typeof hay === "string" && hay.toLowerCase().includes(q);
-}
-
 function hasPhone(phone: string | undefined, q: string): boolean {
   if (!phone) return false;
   const qd = q.replace(/\D/g, "");
@@ -341,8 +342,10 @@ function hasId(id: string, q: string): boolean {
   return q.length >= 4 && id.toLowerCase().startsWith(q);
 }
 
+/** REQ-519 (demo cycle 3, M33): accent- and case-blind, every word of q somewhere in the
+ *  record's texts, any order — "maria" and "maria pena" find "María José Peña" */
 function anyText(q: string, ...hays: Array<string | undefined>): boolean {
-  return hays.some((h) => hasText(h, q));
+  return textsMatchAllWords(hays, q);
 }
 
 function anyDate(q: string, ...dates: Array<string | undefined>): boolean {

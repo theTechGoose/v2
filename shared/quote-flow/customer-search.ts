@@ -21,8 +21,24 @@ export interface SearchableCustomer {
   notes?: string | null;
 }
 
-/** a blank query matches all; otherwise name, business, email, address or notes
- *  (accent- and case-blind), or the phone by its digits (three or more) */
+/**
+ * REQ-519 (demo cycle 3, M33) — does every word of `q` appear somewhere in
+ * `hays`? Accent- and case-blind, any order, words may be skipped: "maria pena"
+ * finds "María José Peña". A blank query matches.
+ */
+export function textsMatchAllWords(
+  hays: ReadonlyArray<string | undefined | null>,
+  q: string,
+): boolean {
+  const words = foldSearch(q).split(" ").filter(Boolean);
+  const folded = hays.filter((h): h is string => typeof h === "string")
+    .map(foldSearch);
+  return words.every((w) => folded.some((h) => h.includes(w)));
+}
+
+/** a blank query matches all; otherwise every word of it in name, business, email,
+ *  address or notes (accent- and case-blind, any order — REQ-519), or the phone by
+ *  its digits (three or more) */
 export function customerMatchesQuery(
   c: SearchableCustomer,
   q: string | undefined | null,
@@ -30,7 +46,7 @@ export function customerMatchesQuery(
   const needle = foldSearch(q ?? "");
   if (!needle) return true;
   const texts = [c.name, c.businessName, c.email, c.address, c.notes];
-  if (texts.some((t) => foldSearch(t ?? "").includes(needle))) return true;
+  if (textsMatchAllWords(texts, needle)) return true;
   const digits = needle.replace(/\D/g, "");
   return digits.length >= 3 &&
     (c.phoneNumber ?? "").replace(/\D/g, "").includes(digits);

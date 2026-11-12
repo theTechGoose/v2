@@ -39,6 +39,12 @@ Deno.test("REQ-279 (demo M32) clients-page — matchesQuery is accent-blind both
   assertEquals(matchesQuery(maria, "mario"), false, "still a real filter");
 });
 
+Deno.test("REQ-519 (demo cycle 3, M33) clients-page — matchesQuery matches word by word: 'maria pena' finds 'María José Peña' (middle name skipped)", () => {
+  const maria = card({ name: "María José Peña", businessName: "Peña Jardinería" });
+  for (const q of ["maria pena", "pena maria", "María Peña", "maria jardineria"]) assertEquals(matchesQuery(maria, q), true, q);
+  for (const q of ["maria smith", "maria pena zzz"]) assertEquals(matchesQuery(maria, q), false, q);
+});
+
 Deno.test("REQ-135 clients-page — sortByName is by name, case-insensitive, then by createdAt", () => {
   const a = card({ name: "alpha", createdAt: "2026-02-01T00:00:00Z" });
   const b = card({ name: "Alpha", createdAt: "2026-01-01T00:00:00Z" });

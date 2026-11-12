@@ -185,3 +185,25 @@ Deno.test("REQ-207: '742 ever' and 'inv-1' bring up invoice INV-001 for Zelda Or
       "the row click opened the customers page",
     );
   }));
+
+Deno.test("REQ-519 (demo cycle 3, M33): the header search is accent-blind and word-by-word — 'maria' and 'maria pena' bring up María José Peña", (t) =>
+  story(t, async ({ page, expect, http, baseUrl }) => {
+    const { auth } = await signIn(http, page, baseUrl);
+    await answerQuestions(http, auth, { name: "Search Story" });
+    for (const name of ["María José Peña", "Bob Smith"]) {
+      const r = await http("/api/customers", {
+        method: "POST",
+        headers: auth,
+        body: JSON.stringify({ name }),
+      });
+      await r.body?.cancel();
+    }
+    await page.goto("/dashboard");
+    for (const q of ["maria", "maria pena"]) {
+      const text = await searchFor(page, q, row("customer", "C-001"));
+      expect(
+        text.includes("María José Peña"),
+        `"${q}" brings up María José Peña (${text})`,
+      );
+    }
+  }));
