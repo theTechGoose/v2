@@ -72,9 +72,11 @@ import {
 } from "../../shared/documents/change-order-actions.ts"; // REQ-462, REQ-565
 import {
   canReviseQuote,
+  editableJobDetails,
   editableLines,
   type EditableQuoteLine,
   editorTotalCents,
+  jobDetailsPatch,
   linesPatch,
   nextVersionOf,
   type PublishedMark,
@@ -1311,6 +1313,9 @@ function QuoteLineEditor(
   const [lines, setLines] = useState<EditableQuoteLine[]>(() =>
     editableLines(q)
   );
+  // REQ-561 (demo M28): the job-detail bullets the customer reads.
+  const [initialDetails] = useState(() => editableJobDetails(q));
+  const [details, setDetails] = useState(initialDetails);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const n = nextVersionOf(q);
@@ -1342,6 +1347,7 @@ function QuoteLineEditor(
       await quotesClient.update(q.id, {
         lineItems: body.lineItems,
         estimatedTotal: body.estimatedTotal,
+        ...jobDetailsPatch(initialDetails, details),
       });
       onSaved(n);
     } catch {
@@ -1360,6 +1366,26 @@ function QuoteLineEditor(
       <p style={`margin:0 0 8px;font-size:12.5px;${mutedStyle}`}>
         {tFor(lang, "quotesPage.edit.heading", { n })}
       </p>
+      <label style="display:block;margin:0 0 10px">
+        <span
+          style={`display:block;font-size:11px;font-weight:700;${mutedStyle}`}
+        >
+          {tFor(lang, "quotesPage.edit.jobDetails")}
+        </span>
+        <textarea
+          data-cy="quote-edit-job-details"
+          rows={Math.min(8, Math.max(3, details.split("\n").length + 1))}
+          value={details}
+          disabled={busy}
+          onInput={(e) => setDetails((e.target as HTMLTextAreaElement).value)}
+          style={`${field};margin-top:4px;resize:vertical;line-height:1.45`}
+        />
+        <span
+          style={`display:block;margin-top:2px;font-size:11px;${mutedStyle}`}
+        >
+          {tFor(lang, "quotesPage.edit.jobDetailsHint")}
+        </span>
+      </label>
       <div style={`${grid};font-size:11px;font-weight:700;${mutedStyle}`}>
         <span>{tFor(lang, "quotesPage.edit.description")}</span>
         <span>{tFor(lang, "quotesPage.edit.qty")}</span>

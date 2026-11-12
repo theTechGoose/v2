@@ -159,6 +159,14 @@ export class QuoteStore {
       live as unknown as Record<string, unknown>,
       { ...(prior ?? {}), ...defined },
     );
+    // REQ-561 (demo M28): new job details make the per-language copies of
+    // the old ones stale — Version N+1 carries none, so readers fall back to
+    // the new text and the next translate run (send / preview) refills them.
+    // Job details edited back to the live text take the cleared copies along.
+    if (!("descriptionByLang" in defined)) {
+      if ("description" in pending) pending.descriptionByLang = {};
+      else delete pending.descriptionByLang;
+    }
     const updated: Quote = {
       ...live,
       ...(Object.keys(pending).length ? { pendingRevision: pending } : {}),

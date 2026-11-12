@@ -327,6 +327,8 @@ export interface VersionChanges {
   added?: LineSummary[];
   removed?: LineSummary[];
   changed?: { from: LineSummary; to: LineSummary }[];
+  /** REQ-561 (demo M28): the job-detail bullets (`description`) differ. */
+  descriptionChanged?: boolean;
 }
 
 interface LineLike {
@@ -367,6 +369,10 @@ export function versionChanges(
   }
   const added = b.slice(shared).map(lineSummary);
   const removed = a.slice(shared).map(lineSummary);
+  // REQ-561 (demo M28): the bullets the customer reads are content too.
+  const textOf = (c: Record<string, unknown> | null | undefined) =>
+    typeof c?.description === "string" ? c.description.trim() : "";
+  const descriptionChanged = textOf(before) !== textOf(after);
   return {
     ...(from !== to
       ? { totalFromCents: from ?? 0, totalToCents: to ?? 0 }
@@ -377,6 +383,7 @@ export function versionChanges(
     ...(added.length ? { added } : {}),
     ...(removed.length ? { removed } : {}),
     ...(changed.length ? { changed } : {}),
+    ...(descriptionChanged ? { descriptionChanged } : {}),
   };
 }
 
@@ -450,8 +457,14 @@ export function effectivePendingRevision(
   return out;
 }
 
-/** The fields whose change the line summary already says. */
-const LINE_SUMMARY_FIELDS = new Set(["lineItems", "estimatedTotal", "amount"]);
+/** The fields whose change the line summary already says (REQ-561: incl. "Job details changed"). */
+const LINE_SUMMARY_FIELDS = new Set([
+  "lineItems",
+  "estimatedTotal",
+  "amount",
+  "description",
+  "descriptionByLang",
+]);
 
 /**
  * REQ-395 (demo M12): does the pending revision change anything the line

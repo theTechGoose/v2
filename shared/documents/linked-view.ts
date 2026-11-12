@@ -193,6 +193,8 @@ const CHANGE_WORDS: Record<
     removedNamed: string;
     changedNamed: string;
     untitled: string;
+    /** REQ-561 (demo M28): the job-detail bullets changed. */
+    jobDetails: string;
   }
 > = {
   en: {
@@ -204,6 +206,7 @@ const CHANGE_WORDS: Record<
     removedNamed: "Removed",
     changedNamed: "Changed",
     untitled: "Untitled line",
+    jobDetails: "Job details changed",
   },
   es: {
     total: "Total",
@@ -214,6 +217,7 @@ const CHANGE_WORDS: Record<
     removedNamed: "Eliminado",
     changedNamed: "Cambiado",
     untitled: "Línea sin título",
+    jobDetails: "Detalles del trabajo cambiados",
   },
 };
 
@@ -268,6 +272,7 @@ export function versionChangeLine(
       }`,
     );
   } else count(c.linesChanged, w.changed);
+  if (c.descriptionChanged) parts.push(w.jobDetails);
   return parts.join(" · ");
 }
 
