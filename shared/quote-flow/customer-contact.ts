@@ -14,6 +14,7 @@
  * call (the assistant requires one channel; the /customers modal does not).
  */
 import { normalizeEmail } from "./normalize-email.ts";
+import { phoneKey } from "./customer-dedupe.ts";
 
 /** E.164 form of a typed customer phone, or null when it cannot be dialled. */
 export function customerPhoneE164(raw: string): string | null {
@@ -102,4 +103,63 @@ export function customerDraftDirty(d: {
   return [d.name, d.businessName, d.phoneNumber, d.email].some((v) =>
     v.trim() !== ""
   );
+}
+
+/**
+ * REQ-390 (demo-loop cycle 2, m18 / m19) — the assistant's "Who is this for?"
+ * form, one message PER FIELD (customerFormErrors' rule plus the form's own
+ * two: a contact is required, and it must not be the contractor's own):
+ *  - `name`: shown once the name field was left empty (`nameTouched`);
+ *  - `phone` / `email`: a malformed value, or the contractor's own;
+ *  - `contact`: no phone and no email. REQ-029 keeps the reason visible from
+ *    the start, as a neutral `hint`; it becomes an `error` once a contact
+ *    field was typed in or left (`contactTouched`).
+ * `canSubmit` is the Next button's rule.
+ */
+export interface CustomerStepFeedback {
+  name?: "customer.nameRequired";
+  phone?: "customer.invalidPhone" | "asstChat.customerStep.ownPhone";
+  email?: "customer.invalidEmail" | "asstChat.customerStep.ownEmail";
+  contact?: {
+    key: "asstChat.customerStep.needContact";
+    tone: "hint" | "error";
+  };
+  canSubmit: boolean;
+}
+
+export function customerStepFeedback(
+  form: {
+    name?: string | null;
+    email?: string | null;
+    phoneNumber?: string | null;
+  },
+  opts: {
+    ownerEmail?: string | null;
+    ownerPhone?: string | null;
+    nameTouched?: boolean;
+    contactTouched?: boolean;
+  },
+): CustomerStepFeedback {
+  const base = customerFormErrors(form);
+  const phone = (form.phoneNumber ?? "").trim();
+  const email = (form.email ?? "").trim();
+  const out: CustomerStepFeedback = { canSubmit: false };
+  if (base.name && opts.nameTouched) out.name = base.name;
+  const ownPhone = !!phone && !!opts.ownerPhone &&
+    phoneKey(phone) === phoneKey(opts.ownerPhone);
+  const ownEmail = !!email && !!opts.ownerEmail &&
+    email.toLowerCase() === opts.ownerEmail.trim().toLowerCase();
+  if (ownPhone) out.phone = "asstChat.customerStep.ownPhone";
+  else if (base.phone) out.phone = base.phone;
+  if (ownEmail) out.email = "asstChat.customerStep.ownEmail";
+  else if (base.email) out.email = base.email;
+  if (!phone && !email) {
+    out.contact = {
+      key: "asstChat.customerStep.needContact",
+      tone: opts.contactTouched ? "error" : "hint",
+    };
+  }
+  out.canSubmit = !base.name && !out.phone && !out.email && !out.contact;
+  if (out.canSubmit) return { canSubmit: true };
+  return out;
 }

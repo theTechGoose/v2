@@ -10,6 +10,7 @@
  * case-blind, or the whole name accent- and case-blind. Pure logic.
  */
 import type { QuoteFacts } from "./quote-facts.ts";
+import { formatPhoneInput } from "./format-helpers.ts";
 
 export interface DedupableCustomer {
   id: string;
@@ -91,4 +92,55 @@ export function knownCustomerForStep<C extends DedupableCustomer>(
     phoneNumber: facts.customerPhone,
   });
   return match ? { source: "match", customer: match } : null;
+}
+
+/**
+ * REQ-390 (demo-loop cycle 2, M18) — what the create form's "already exists"
+ * warning says about `existing`, the customer findExistingCustomer matched:
+ * that customer's own phone (else email), so the contractor can see whether it
+ * is the same person ("Bob · (512) 555-0142 already exists"). When only the
+ * NAME matched and what was typed reaches someone else (another phone or
+ * email), it is worded as "another Bob". A match with no contact on file keeps
+ * the plain "Looks like Bob already exists".
+ */
+export type DuplicateNoticeKey =
+  | "asstChat.customerStep.alreadyExists"
+  | "asstChat.customerStep.alreadyExistsContact"
+  | "asstChat.customerStep.anotherSameName";
+
+export interface DuplicateNotice {
+  key: DuplicateNoticeKey;
+  params: { name: string; contact?: string };
+}
+
+/** "(512) 555-0142" for a US number, else the number as stored. */
+const phoneLabel = (p: string): string =>
+  phoneKey(p).length === 10 && p.replace(/\D/g, "").length <= 11
+    ? formatPhoneInput(p)
+    : p.trim();
+
+export function duplicateNotice(
+  existing: DedupableCustomer,
+  typed: CustomerContact,
+): DuplicateNotice {
+  const name = existing.name;
+  const contact = (existing.phoneNumber ?? "").trim()
+    ? phoneLabel(existing.phoneNumber!)
+    : (existing.email ?? "").trim();
+  if (!contact) {
+    return { key: "asstChat.customerStep.alreadyExists", params: { name } };
+  }
+  const typedPhone = phoneKey(typed.phoneNumber);
+  const typedEmail = emailKey(typed.email);
+  const samePhone = typedPhone.length === 10 &&
+    phoneKey(existing.phoneNumber) === typedPhone;
+  const sameEmail = !!typedEmail && emailKey(existing.email) === typedEmail;
+  const typedOther = (typedPhone.length > 0 || !!typedEmail) && !samePhone &&
+    !sameEmail;
+  return {
+    key: typedOther
+      ? "asstChat.customerStep.anotherSameName"
+      : "asstChat.customerStep.alreadyExistsContact",
+    params: { name, contact },
+  };
 }

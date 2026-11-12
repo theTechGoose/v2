@@ -508,3 +508,10 @@
 .welcome__plan-pending-lede { margin: 0; font-size: 14px; line-height: 1.45; }
 .welcome__plan-actions { display: flex; flex-wrap: wrap; gap: 10px; }
 .welcome__plan-actions .welcome__btn { text-decoration: none; }
+
+/* REQ-390 (demo m18): why Continue is off, before the field is left — neutral */
+.welcome__hint {
+  color: var(--fg-muted);
+  font-size: 14px;
+  font-weight: 600;
+}

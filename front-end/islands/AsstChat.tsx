@@ -137,11 +137,13 @@ import {
   wizardPrefillFor,
 } from "../../shared/quote-flow/quote-facts.ts";
 import {
+  duplicateNotice,
   findExistingCustomer,
   knownCustomerForStep,
-} from "../../shared/quote-flow/customer-dedupe.ts"; // REQ-331
+} from "../../shared/quote-flow/customer-dedupe.ts"; // REQ-331, REQ-390
 import { editDraftSeed } from "../../shared/quote-flow/draft-edit.ts";
-import { customerContactError } from "../../shared/quote-flow/customer-contact.ts"; // REQ-278
+import { customerStepFeedback } from "../../shared/quote-flow/customer-contact.ts"; // REQ-278, REQ-390
+import { parseDurationNumber } from "../../shared/quote-flow/duration-input.ts"; // REQ-390
 import { isPlaceholderName } from "../../shared/quote-flow/outbound-identity.ts";
 import {
   TimeoutError,
@@ -9230,6 +9232,11 @@ function CustomerStepPanel(props: {
   // REQ-331 (demo m44): the contractor saw "<name> already exists" on the
   // create form and chose to create a second one anyway.
   const [createAnyway, setCreateAnyway] = useState(false);
+  // REQ-390 (demo m19): the missing-contact reason is a neutral hint until a
+  // contact field was typed in or left; the name's message waits for the
+  // name field to be left.
+  const [nameTouched, setNameTouched] = useState(false);
+  const [contactTouched, setContactTouched] = useState(false);
   const rootRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -9296,43 +9303,18 @@ function CustomerStepPanel(props: {
     const trimmedName = createName.trim();
     const trimmedEmail = createEmail.trim();
     const trimmedPhone = createPhone.trim();
-    const normEmail = (e: string | undefined) => (e ?? "").trim().toLowerCase();
-    // Trailing 10 digits so a US country-code prefix doesn't defeat the match
-    // (E.164 "+15403331334" vs a typed "(540) 333-1334").
-    const normPhone = (p: string | undefined) => {
-      const d = (p ?? "").replace(/\D/g, "");
-      return d.length > 10 ? d.slice(-10) : d;
-    };
-    // The customer must be reachable on at least one channel — without a
-    // contact the agreement can't be delivered to them.
-    const hasContact = trimmedEmail.length > 0 || trimmedPhone.length > 0;
-    // Guard: the customer's contact must not be the contractor's own. This is
-    // the root of the "every customer carries my email/phone, and the agreement
-    // sends to me" bug.
-    const emailIsOwn = !!ownerEmail && trimmedEmail.length > 0 &&
-      normEmail(trimmedEmail) === normEmail(ownerEmail);
-    const phoneIsOwn = !!ownerPhone && trimmedPhone.length > 0 &&
-      normPhone(trimmedPhone) === normPhone(ownerPhone);
-    // REQ-278 (demo M16): "123" / "555-12" / "davis@@gmail" are not a way
-    // to reach the customer — the inputs sit outside a <form>, so the
-    // browser's own type=email check never ran. Same rule as the backend.
-    const contactFormatErr = customerContactError({
-      email: trimmedEmail,
-      phoneNumber: trimmedPhone,
-    });
-    // REQ-029 (NW-22): the missing-contact reason is visible from the start
-    // — a silently disabled Next read as "it did not save".
-    const contactErr = emailIsOwn
-      ? tFor(lang, "asstChat.customerStep.ownEmail")
-      : phoneIsOwn
-      ? tFor(lang, "asstChat.customerStep.ownPhone")
-      : !hasContact
-      ? tFor(lang, "asstChat.customerStep.needContact")
-      : contactFormatErr
-      ? tFor(lang, contactFormatErr)
-      : undefined;
-    const submitDisabled = sending || trimmedName.length === 0 ||
-      !hasContact || emailIsOwn || phoneIsOwn || !!contactFormatErr;
+    // REQ-278 / REQ-390 (demo m18, m19): one rule, one message PER FIELD —
+    // a bad phone AND a bad email are both named, each under its own input;
+    // the contractor's own phone / email is refused (the "every customer
+    // carries my email/phone, and the agreement sends to me" bug); no
+    // contact at all is REQ-029's visible-from-the-start reason, a neutral
+    // hint until a contact field was touched. The inputs sit outside a
+    // <form>, so the browser's own type=email check never ran.
+    const feedback = customerStepFeedback(
+      { name: trimmedName, email: trimmedEmail, phoneNumber: trimmedPhone },
+      { ownerEmail, ownerPhone, nameTouched, contactTouched },
+    );
+    const submitDisabled = sending || !feedback.canSubmit;
     // REQ-331 (demo m44): live-search what is typed against the account's
     // customers — the same phone / email / accent-folded name rule the
     // server applies — and offer the existing one before a second "x" is
@@ -9342,6 +9324,16 @@ function CustomerStepPanel(props: {
       email: trimmedEmail,
       phoneNumber: trimmedPhone,
     });
+    // REQ-390 (demo M18): the warning shows WHICH customer exists ("Bob ·
+    // (512) 555-0142"), and a name-only match with another phone/email reads
+    // as "another Bob".
+    const dupeNotice = dupe
+      ? duplicateNotice(dupe, {
+        name: trimmedName,
+        email: trimmedEmail,
+        phoneNumber: trimmedPhone,
+      })
+      : null;
     const formHeading = tFor(lang, "asstChat.customerStep.whoFor");
     const namePlaceholder = tFor(lang, "asstChat.customerStep.name");
     return (
@@ -9355,8 +9347,22 @@ function CustomerStepPanel(props: {
             aria-label={namePlaceholder}
             value={createName}
             onInput={(e) => setCreateName((e.target as HTMLInputElement).value)}
+            onBlur={() => setNameTouched(true)}
+            aria-invalid={feedback.name ? "true" : undefined}
+            aria-describedby={feedback.name ? "cust-name-err" : undefined}
             autoFocus
           />
+          {feedback.name
+            ? (
+              <div
+                id="cust-name-err"
+                class="cust-pick__err"
+                data-cy="cust-name-err"
+              >
+                {tFor(lang, feedback.name)}
+              </div>
+            )
+            : null}
           <input
             type="text"
             data-cy="wizard-business-name"
@@ -9380,8 +9386,13 @@ function CustomerStepPanel(props: {
               placeholder={tFor(lang, "asstChat.customerStep.phonePlaceholder")}
               aria-label={tFor(lang, "asstChat.customerStep.phonePlaceholder")} /* REQ-289 */
               value={formatPhoneInput(createPhone)} /* NW-34 (REQ-012) */
-              onInput={(e) =>
-                setCreatePhone((e.target as HTMLInputElement).value)}
+              onInput={(e) => {
+                setCreatePhone((e.target as HTMLInputElement).value);
+                setContactTouched(true);
+              }}
+              onBlur={() => setContactTouched(true)}
+              aria-invalid={feedback.phone ? "true" : undefined}
+              aria-describedby={feedback.phone ? "cust-phone-err" : undefined}
             />
             <input
               type="email"
@@ -9389,10 +9400,37 @@ function CustomerStepPanel(props: {
               placeholder={tFor(lang, "asstChat.customerStep.emailPlaceholder")}
               aria-label={tFor(lang, "asstChat.customerStep.emailPlaceholder")} /* REQ-289 */
               value={createEmail}
-              onInput={(e) =>
-                setCreateEmail((e.target as HTMLInputElement).value)}
+              onInput={(e) => {
+                setCreateEmail((e.target as HTMLInputElement).value);
+                setContactTouched(true);
+              }}
+              onBlur={() => setContactTouched(true)}
+              aria-invalid={feedback.email ? "true" : undefined}
+              aria-describedby={feedback.email ? "cust-email-err" : undefined}
             />
           </div>
+          {feedback.phone
+            ? (
+              <div
+                id="cust-phone-err"
+                class="cust-pick__err"
+                data-cy="cust-phone-err"
+              >
+                {tFor(lang, feedback.phone)}
+              </div>
+            )
+            : null}
+          {feedback.email
+            ? (
+              <div
+                id="cust-email-err"
+                class="cust-pick__err"
+                data-cy="cust-email-err"
+              >
+                {tFor(lang, feedback.email)}
+              </div>
+            )
+            : null}
           <input
             type="text"
             data-cy="wizard-service-address"
@@ -9410,19 +9448,26 @@ function CustomerStepPanel(props: {
             onInput={(e) =>
               setCreateAddress((e.target as HTMLInputElement).value)}
           />
-          {localErr ?? contactErr
+          {localErr
+            ? <div class="cust-pick__err">{localErr}</div>
+            : feedback.contact
             ? (
-              <div class="cust-pick__err" data-cy="cust-contact-hint">
-                {localErr ?? contactErr}
+              /* REQ-029 visible from the start; REQ-390 (m19) a hint until touched */
+              <div
+                class={feedback.contact.tone === "error"
+                  ? "cust-pick__err"
+                  : "cust-pick__hint"}
+                data-cy="cust-contact-hint"
+                role={feedback.contact.tone === "error" ? "alert" : undefined}
+              >
+                {tFor(lang, feedback.contact.key)}
               </div>
             )
             : null}
-          {dupe
+          {dupe && dupeNotice
             ? (
               <div class="cust-pick__err" data-cy="cust-already-exists">
-                {tFor(lang, "asstChat.customerStep.alreadyExists", {
-                  name: dupe.name,
-                })}
+                {tFor(lang, dupeNotice.key, dupeNotice.params)}
               </div>
             )
             : null}
@@ -10168,9 +10213,11 @@ function CustomDurationPickerForm(props: {
   const [confidence, setConfidence] = useState<"ok" | "guess" | "fail">("ok");
   const [heardFrom, setHeardFrom] = useState("");
 
-  const num = Math.max(1, Math.min(99, Number(n) || 0));
-  const valid = n.trim() !== "" && Number.isFinite(num) && num >= 1 &&
-    num <= 99;
+  // REQ-390 (demo m18): the number is checked as typed — "-3" used to be
+  // clamped to 1 first and read "1 day" in the agreement.
+  const parsedNum = parseDurationNumber(n);
+  const num = parsedNum.n ?? 0;
+  const valid = parsedNum.n !== null;
   // P-25: the manual duration control used to build the EN string
   // ("3 weeks") and submit it verbatim into a Spanish agreement. Preview AND
   // submitted value now go through termLabel, so an ES contractor locks in
@@ -10353,19 +10400,18 @@ function CustomDurationPickerForm(props: {
           inputMode="numeric"
           min={1}
           max={99}
+          step={1}
           value={n}
           onInput={(e) => {
-            const raw = (e.target as HTMLInputElement).value;
-            if (raw === "") setN("");
-            else setN(String(Math.max(1, Math.min(99, Number(raw) || 1))));
-          }}
-          onBlur={() => {
-            // REQ-343: an untouched empty number stays empty (Lock in
-            // stays disabled) instead of inventing a "1".
-            if (n && Number(n) < 1) setN("1");
+            // REQ-390 (m18): keep what was typed; the rule below explains a
+            // bad number instead of silently turning it into another one.
+            // REQ-343: an untouched empty number stays empty.
+            setN((e.target as HTMLInputElement).value);
           }}
           autoFocus
           aria-label={tFor(lang, "asstChat.verify.number")}
+          aria-invalid={parsedNum.error ? "true" : undefined}
+          aria-describedby={parsedNum.error ? "dur-num-err" : undefined}
         />
         <select
           class="cust-pick__search dur__unit"
@@ -10382,6 +10428,13 @@ function CustomDurationPickerForm(props: {
           <option value="months">{tFor(lang, "asstChat.unit.months")}</option>
         </select>
       </div>
+      {parsedNum.error
+        ? (
+          <div id="dur-num-err" class="cust-pick__err" data-cy="dur-num-err">
+            {tFor(lang, parsedNum.error)}
+          </div>
+        )
+        : null}
       <div class="dur__presets">
         {presets.map((p) => {
           const active = n === p.n && unit === p.unit;

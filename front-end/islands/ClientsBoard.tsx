@@ -18,6 +18,7 @@ import { fmtMoneyExact, perVisitCents } from "../lib/field.ts";
 import {
   addressFor,
   balanceDisplay,
+  cardDisambiguators,
   ctaFor,
   initialsOf,
   lastWhenFor,
@@ -89,10 +90,12 @@ interface CardProps {
   onOpen: () => void;
   onClose: () => void;
   lang: "en" | "es";
+  /** REQ-390 (M18): set when another visible card shares this name — "C-002" / "···0177" */
+  disambig?: string;
 }
 
 function ClientCard(
-  { c, subs, idx, isOpen, onOpen, onClose, lang }: CardProps,
+  { c, subs, idx, isOpen, onOpen, onClose, lang, disambig }: CardProps,
 ) {
   const mood = moodFor(c, lang);
   const initials = initialsOf(c.name);
@@ -140,7 +143,19 @@ function ClientCard(
       </div>
       <div class="ccard2__av">{initials}</div>
       <div class="ccard2__body">
-        <h3 class="ccard2__name">{c.name}</h3>
+        <h3 class="ccard2__name">
+          {c.name}
+          {disambig && (
+            /* REQ-390 (M18): two "Bob" cards are told apart on their faces */
+            <span
+              class="ccard2__disambig"
+              data-cy="ccard2-disambig"
+              style="margin-left:6px;font-size:0.6em;font-weight:600;opacity:0.65;white-space:nowrap"
+            >
+              {disambig}
+            </span>
+          )}
+        </h3>
         {c.businessName && <div class="ccard2__biz">{c.businessName}</div>}
         <div class="ccard2__seg">
           {seg && (
@@ -459,6 +474,8 @@ export default function ClientsBoard(
 
   // REQ-135 — the rows ARE the page: the API searched, filtered and cut them
   const rows = cards;
+  // REQ-390 (M18): same-name cards on this page carry a short tag
+  const disambigs = cardDisambiguators(rows);
 
   return (
     <>
@@ -521,6 +538,7 @@ export default function ClientsBoard(
               onOpen={() => setOpenId(c.id)}
               onClose={() => setOpenId(null)}
               lang={lang}
+              disambig={disambigs.get(c.id)}
             />
           ))}
           {rows.length === 0 && (

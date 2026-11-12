@@ -362,3 +362,36 @@ export function numberWord(n: number, lang: Lang = "en"): string {
   if (n >= 0 && n < NUM_WORD_KEYS.length) return tFor(lang, NUM_WORD_KEYS[n]);
   return String(n);
 }
+
+/**
+ * REQ-390 (demo-loop cycle 2, M18) — two customers with the same name ("Bob"
+ * and "Bob") looked identical on /customers: the phone and the C-number lived
+ * only on the card's back panel. For every visible card whose accent- and
+ * case-folded name another visible card shares, the short tag that tells them
+ * apart: the customer's number ("C-002"), else the phone's last four
+ * ("···0177"), else the email. Unique names get nothing (the face stays as is).
+ */
+export function cardDisambiguators(
+  cards: ReadonlyArray<
+    Pick<CustomerCard, "id" | "name" | "number" | "phoneNumber" | "email">
+  >,
+): Map<string, string> {
+  const fold = (s: string | null | undefined) =>
+    (s ?? "").normalize("NFD").replace(/\p{M}/gu, "").replace(/\s+/g, " ")
+      .trim().toLowerCase();
+  const seen = new Map<string, number>();
+  for (const c of cards) {
+    const k = fold(c.name);
+    seen.set(k, (seen.get(k) ?? 0) + 1);
+  }
+  const out = new Map<string, string>();
+  for (const c of cards) {
+    if ((seen.get(fold(c.name)) ?? 0) < 2) continue;
+    const digits = (c.phoneNumber ?? "").replace(/\D/g, "");
+    const tag = c.number?.trim() ||
+      (digits.length >= 4 ? `···${digits.slice(-4)}` : "") ||
+      (c.email ?? "").trim();
+    if (tag) out.set(c.id, tag);
+  }
+  return out;
+}
