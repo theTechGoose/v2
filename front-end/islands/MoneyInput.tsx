@@ -17,6 +17,7 @@
 import { useEffect, useRef, useState } from "preact/hooks";
 import { type Lang, langSignal, tFor } from "../lib/i18n.ts";
 import { amountInWords } from "../../shared/quote-flow/locale-format.ts";
+import { formatTyping, typeMoney } from "../lib/money-input.ts";
 
 interface MoneyInputProps {
   initialCents?: number;
@@ -111,28 +112,17 @@ export default function MoneyInput(
 
   function handleInput(e: Event) {
     const el = e.currentTarget as HTMLInputElement;
-    const oldVal = el.value;
-    const oldCaret = el.selectionStart ?? oldVal.length;
-    const tokensBeforeCaret = oldVal
-      .slice(0, oldCaret)
-      .replace(/[^\d.]/g, "")
-      .length;
-
-    const formatted = formatTyping(oldVal);
+    // typeMoney writes the formatted text into the field itself (REQ-280, demo M33): a keystroke
+    // that leaves the amount unchanged (a letter, a minus) gets no render to clear it.
+    const { formatted, cents: typed, caret } = typeMoney(el);
+    el.setSelectionRange(caret, caret);
     setDisplay(formatted);
-    setCents(parseToCents(formatted));
+    setCents(typed);
 
     queueMicrotask(() => {
       const node = inputRef.current;
       if (!node) return;
-      let pos = 0;
-      let counted = 0;
-      for (let i = 0; i < formatted.length; i++) {
-        if (counted >= tokensBeforeCaret) break;
-        if (/[\d.]/.test(formatted[i])) counted++;
-        pos = i + 1;
-      }
-      node.setSelectionRange(pos, pos);
+      node.setSelectionRange(caret, caret);
     });
   }
 
@@ -364,38 +354,6 @@ function OdoCell({ ch }: { ch: string }) {
 /* --------------------------------------------------------------------- */
 /* Helpers                                                                */
 /* --------------------------------------------------------------------- */
-
-function parseToCents(raw: string): number | null {
-  const cleaned = raw.replace(/[^\d.]/g, "");
-  if (cleaned === "" || cleaned === ".") return null;
-  const firstDot = cleaned.indexOf(".");
-  let intPart = firstDot === -1 ? cleaned : cleaned.slice(0, firstDot);
-  let decPart = firstDot === -1
-    ? ""
-    : cleaned.slice(firstDot + 1).replace(/\./g, "");
-  if (intPart === "") intPart = "0";
-  decPart = (decPart + "00").slice(0, 2);
-  const cents = parseInt(intPart, 10) * 100 + parseInt(decPart, 10);
-  return Number.isFinite(cents) ? cents : null;
-}
-
-function formatTyping(raw: string): string {
-  let s = raw.replace(/[^\d.]/g, "");
-  const firstDot = s.indexOf(".");
-  if (firstDot !== -1) {
-    s = s.slice(0, firstDot + 1) + s.slice(firstDot + 1).replace(/\./g, "");
-  }
-  if (firstDot !== -1) {
-    const dec = s.slice(firstDot + 1, firstDot + 3);
-    s = s.slice(0, firstDot + 1) + dec;
-  }
-  const dot2 = s.indexOf(".");
-  let intPart = dot2 === -1 ? s : s.slice(0, dot2);
-  const decPart = dot2 === -1 ? "" : s.slice(dot2);
-  if (intPart.length > 1) intPart = intPart.replace(/^0+/, "") || "0";
-  const intFmt = intPart === "" ? "" : Number(intPart).toLocaleString("en-US");
-  return intFmt + decPart;
-}
 
 function shortMoney(cents: number): string {
   const d = cents / 100;
