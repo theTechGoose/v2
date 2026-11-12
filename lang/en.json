@@ -4063,6 +4063,7 @@
   "demoMode.connectingTo": "Connecting to {name}'s screen…",
   "demoMode.pointerOff": "Your pointer is off {name}'s screen",
   "demoMode.pointerGhost": "Your pointer on {name}'s screen",
+  "demoMode.pointerAbsent": "Your pointer isn't on {name}'s screen — move to show it",
   "demoMode.loadingNext": "Loading their next page…",
   "demoMode.catchingUp": "Catching up…",
   "demoMode.behind": "Behind {n} s",

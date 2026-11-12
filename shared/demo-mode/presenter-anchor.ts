@@ -19,6 +19,9 @@
  *     their screen — a logo with no height yet put the Continue button under the middle of the
  *     phone, and the arrow stayed on it); and while his mouse is beside the frame (where it meets
  *     the frame's edge moves with the frame).
+ *     REQ-538 (cycle 4 M1) — and a node anchor that died (another page load shown, its node gone:
+ *     a card swapped or flipped) once that replay has settled: looked up once under his still
+ *     mouse; `pointerAbsent` tells the stage his arrow is not on their screen meanwhile.
  *   - `seedOn`: the mouse handed over by the page that opened the stage counts only on the frame.
  *   - `ghostAt`: where the stage draws his arrow as their screen has it, faint, when that is apart
  *     from where he put it (their page moved it with its element, or the frame moved).
@@ -78,14 +81,48 @@ export function resendable(h: Held, load: string | null): Anchor | null {
 
 /** whether a layout pass of the replay (showing `shown`) looks his still mouse up again: his mouse
  *  beside the frame (the frame may have moved: the marker goes where his mouse meets its edge now),
- *  or a provisional fraction made on the page shown, once that page's replay has settled */
+ *  or a provisional fraction made on the page shown, once that page's replay has settled.
+ *  REQ-538 (REQ-451 AMENDMENT, cycle 4 M1) — and a DEAD node anchor, once the replay shown has
+ *  settled: another page load is shown, or its node no longer resolves there (`alive` false: a
+ *  card swapped or flipped, a button replaced). Nothing else ever brought the arrow back until he
+ *  moved. A live node anchor is never looked up again (REQ-451); the look-up makes a live anchor,
+ *  so it happens once. `alive` unknown counts as alive. */
 export function lookAgain(
   h: Held,
-  shown: { load: string | null; settled: boolean },
+  shown: { load: string | null; settled: boolean; alive?: boolean },
 ): boolean {
   if (h.a?.o === 1) return true;
+  if (h.a?.n) {
+    if (!shown.settled || shown.load === null) return false;
+    return h.load !== shown.load || h.a.n.l !== shown.load ||
+      shown.alive === false;
+  }
   return h.provisional && h.load !== null && h.load === shown.load &&
     shown.settled;
+}
+
+/** REQ-538 — a dead anchor is looked up again only once the replay's layout has been still this
+ *  long (a card flip's burst of changes) */
+export const REANCHOR_QUIET_MS = 250;
+
+/** REQ-538 — how long the stage waits before looking his still mouse up again for a dead anchor:
+ *  REANCHOR_QUIET_MS, and never before the last settle pass after the latest snapshot (`snapAt`,
+ *  `settleEnd` ms after it) — until then the replay's scroll may not be the customer's yet, and the
+ *  node under his mouse is not the one under it on their screen */
+export function reanchorDelay(
+  now: number,
+  snapAt: number | null,
+  settleEnd: number,
+  quiet = REANCHOR_QUIET_MS,
+): number {
+  return Math.max(quiet, snapAt === null ? 0 : snapAt + settleEnd - now);
+}
+
+/** REQ-538 — whether the stage tells him his arrow is not on their screen: he holds a node anchor
+ *  that is not drawn there (`alive` false: another page, its node gone) — until he moves, or the
+ *  settled replay looks his still mouse up again */
+export function pointerAbsent(h: Held, alive: boolean): boolean {
+  return !!h.a?.n && h.a.o !== 1 && !alive;
 }
 
 /** the mouse handed over by the page that opened the stage, counted only on the fitted frame */

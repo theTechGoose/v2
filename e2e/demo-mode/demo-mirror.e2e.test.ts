@@ -10,6 +10,8 @@
  * new page. All along the staff browser sends no write to /api and its frame loads no script.
  * REQ-451 AMENDMENT (demo M1, cycle 3): the presenter's pointer is what he pointed at — the
  * customer's next page shows no arrow while his mouse is still, and his next move brings it back.
+ * REQ-538 AMENDMENT (demo M1, cycle 4): once that page's mirror has settled, his still mouse is
+ * looked up again once — the arrow comes back on the new page with no move.
  */
 import { story, type StoryTools } from "#shots";
 import { pillUp } from "../_shared/demo-pill.ts";
@@ -511,9 +513,10 @@ Deno.test("REQ-242: the stage mirrors the customer's actual screen — connectin
       );
 
       // 8. pointer-m1 — the presenter rests; the customer changes page. REQ-451 AMENDMENT (demo M1,
-      //    cycle 3): what he pointed at was on the page that went — the new page shows no arrow
-      //    while his mouse is still (never the spot under it, over whatever the new page has
-      //    there); his next move brings it back, on the new page
+      //    cycle 3): what he pointed at was on the page that went — never the spot under his still
+      //    mouse over whatever the unsettled new page has there. REQ-538 AMENDMENT (demo M1, cycle
+      //    4): once the new page's mirror has settled his still mouse is looked up again, once —
+      //    the arrow is back on the new page with no move (it used to stay gone until he moved)
       await userPage.goto(`${baseUrl}/customers`);
       await until(
         "the stage's mirror follows to /customers",
@@ -522,22 +525,10 @@ Deno.test("REQ-242: the stage mirrors the customer's actual screen — connectin
             "/customers",
         20_000,
       );
-      const stillT0 = Date.now();
-      let shownStill: unknown = null;
-      while (!shownStill && Date.now() - stillT0 < 1_500) {
-        shownStill = await pointerAt(userPage, "Hans");
-        await new Promise((r) => setTimeout(r, 150));
-      }
-      expect.eq(
-        shownStill,
-        null,
-        "REQ-451: no presenter arrow on the new page while his mouse is still",
-      );
-      await page.mouse.move(target.x + 1, target.y);
-      await page.mouse.move(target.x, target.y);
       await until(
-        "the presenter's pointer is on the customer's new page once he moves",
+        "REQ-538: the presenter's pointer is back on the customer's new page with his mouse still",
         async () => (await pointerAt(userPage, "Hans")) !== null,
+        10_000,
       );
 
       // 9. pointer-m2 — the customer's pointer on the stage goes away on their next page
