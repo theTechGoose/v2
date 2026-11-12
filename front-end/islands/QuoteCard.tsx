@@ -167,10 +167,20 @@ export default function QuoteCard(
         <p class="qcard__story">{story}</p>
       </div>
       <div class="qcard__foot">
+        {
+          /* REQ-310 (demo m13): the front CTA is a real action — it opens
+            the quote panel (the same as the back's Open), so the customer's
+            link is reachable without flipping. No panel wired → flip. */
+        }
         <button
           class="qcard__cta"
           type="button"
-          onClick={(e) => e.stopPropagation()}
+          data-cy="qcard-cta"
+          onClick={(e) => {
+            e.stopPropagation();
+            if (onOpen) onOpen(q.id);
+            else setFlipped(true);
+          }}
         >
           {cta}{" "}
           <span style="display:inline-block;transition:transform 240ms">→</span>
