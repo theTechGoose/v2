@@ -14,6 +14,7 @@ import {
   cardDate,
   hasSecondaryPaymentReceived,
   paymentReceivedTarget,
+  revealPayForm,
   scheduledSubline,
 } from "./invoice-card.ts";
 import { tFor } from "./i18n.ts";
@@ -86,5 +87,64 @@ Deno.test("REQ-489 p8-pair1-d: from another page, 'Payment received' navigates t
   assertEquals(
     paymentReceivedTarget("https://app.test/invoices/", "a").inPlace,
     true,
+  );
+});
+
+// REQ-552 — demo-loop cycle 4, issue m25: "Payment received form opens
+// off-screen (looks like nothing happened)". On desktop the page scroller is
+// `.content`, not the window, so the old `globalThis.scrollTo({top:0})` did
+// nothing; the pay form must be scrolled into view and its first method
+// button focused.
+Deno.test("REQ-552 m25: revealPayForm scrolls the pay form into view (block start) and focuses the first method button", () => {
+  const calls: string[] = [];
+  const first = {
+    focus: (o?: FocusOptions) => calls.push(`focus:${o?.preventScroll}`),
+  };
+  const form = {
+    scrollIntoView: (o?: ScrollIntoViewOptions) =>
+      calls.push(`scroll:${o?.block}`),
+    querySelector: (sel: string) => {
+      calls.push(`q:${sel}`);
+      return first;
+    },
+  };
+  const root = {
+    querySelector: (sel: string) => {
+      calls.push(`root:${sel}`);
+      return form;
+    },
+  };
+  assertEquals(revealPayForm(root as unknown as ParentNode), true);
+  assertEquals(calls, [
+    "root:[data-cy=pay-received-form]",
+    "scroll:start",
+    "q:button[data-cy^=pay-method-]",
+    "focus:true",
+  ]);
+});
+
+Deno.test("REQ-552 m25: revealPayForm is a no-op when the pay form is not mounted", () => {
+  const root = { querySelector: () => null };
+  assertEquals(revealPayForm(root as unknown as ParentNode), false);
+});
+
+Deno.test("REQ-552 m25: InvoicesPage reveals the pay form in an effect keyed on payNonce, never via window.scrollTo", async () => {
+  const src = await Deno.readTextFile(
+    new URL("../islands/InvoicesPage.tsx", import.meta.url),
+  );
+  const open = src.slice(
+    src.indexOf("function openForPayment("),
+    src.indexOf("async function refreshInvoices("),
+  );
+  assertEquals(
+    /globalThis\.scrollTo|window\.scrollTo/.test(open),
+    false,
+    "openForPayment must not scroll the window (.content is the scroller)",
+  );
+  assertEquals(
+    /useEffect\(\(\) => \{[^}]*revealPayForm\(document\)[\s\S]*?\}, \[payNonce\]\)/
+      .test(src),
+    true,
+    "an effect keyed on [payNonce] calls revealPayForm(document)",
   );
 });

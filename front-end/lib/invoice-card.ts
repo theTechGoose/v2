@@ -109,3 +109,22 @@ export function paymentReceivedTarget(
 export function hasNudgeButton(stage: CardStage): boolean {
   return stage === "claimed" || stage === "out";
 }
+
+/**
+ * REQ-552 (demo-loop cycle 4, m25): bring the "Payment received" form on
+ * screen after a card opens the detail in pay mode. The window is not the
+ * scroller on desktop (`.app` is fixed-height overflow:hidden, `.content`
+ * scrolls), so `window.scrollTo` is a no-op there — scrollIntoView walks up
+ * to whichever ancestor scrolls (the QuotesPage panel pattern). The first
+ * method button gets focus so the form reads as opened (and keyboard users
+ * land in it). Returns false when the form is not mounted.
+ */
+export function revealPayForm(root: ParentNode): boolean {
+  const form = root.querySelector<HTMLElement>("[data-cy=pay-received-form]");
+  if (!form) return false;
+  form.scrollIntoView({ block: "start", behavior: "auto" });
+  form.querySelector<HTMLElement>("button[data-cy^=pay-method-]")?.focus({
+    preventScroll: true,
+  });
+  return true;
+}
