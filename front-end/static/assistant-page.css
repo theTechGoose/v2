@@ -4670,6 +4670,16 @@ body {
   box-shadow: 0 0 0 0 rgba(81, 152, 67, 0.5);
   animation: tickerPulse 1.6s ease-in-out infinite;
 }
+/* REQ-327: a failed delivery is not painted green — the "live" pulse is
+   for a quote that is out there; a dead one sits still and red. */
+.chat__head-sub--bad {
+  color: var(--danger);
+}
+.chat__head-dot--bad {
+  background: var(--danger);
+  box-shadow: none;
+  animation: none;
+}
 .chat__head-tools {
   display: flex;
   gap: 4px;
