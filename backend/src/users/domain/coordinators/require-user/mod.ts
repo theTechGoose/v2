@@ -1,4 +1,5 @@
 import type { ExecutionContext } from "#danet/core";
+import { personLanguage } from "@users/domain/business/account-admins/mod.ts"; // REQ-631
 import { type Session, SessionStore } from "@users/domain/data/session-store/mod.ts";
 import { UserStore } from "@users/domain/data/user-store/mod.ts";
 import type { User } from "@users/dto/user.ts";
@@ -70,6 +71,15 @@ export interface ResolvedSession {
   session: Session;
   /** the person signed in when they act for another's account (REQ-146); null on their own */
   actor: User | null;
+}
+
+/**
+ * REQ-631 — the signed-in person's UI language ("en" unless "es"): the actor's own while acting,
+ * else the account's. For what the app says TO the person (assistant replies, the notification
+ * feed, insight cards) — never for what the business sends its customers.
+ */
+export function uiLangOf(r: Pick<ResolvedSession, "user" | "actor">): "en" | "es" {
+  return personLanguage(r.user, r.actor) === "es" ? "es" : "en";
 }
 
 /** requireUser, keeping the session and the acting person (REQ-624: who to name) */

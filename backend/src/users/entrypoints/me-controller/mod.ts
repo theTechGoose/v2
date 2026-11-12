@@ -199,9 +199,9 @@ export class MeController {
   }
 
   /**
-   * PUT /me — name, email, language. REQ-624: while acting, the name and the email are the
-   * person's own and are written to HER record; the owner's are never touched. The language is
-   * the account's (unchanged). Replies with the /me view.
+   * PUT /me — name, email, language. While acting, all three are the PERSON's own and are written
+   * to HER record (REQ-624 name/email, REQ-631 language); the owner's record is never touched.
+   * Replies with the /me view (`actor.language` is hers).
    */
   @Put()
   async update(@Context() ctx: ExecutionContext, @Body() body: unknown) {
@@ -340,7 +340,7 @@ export class MeController {
  *  function: an undecorated method on a Danet controller breaks its router) */
 async function withActor(admins: AccountAdmins, user: User, actor: User | null) {
   if (!actor) return user;
-  return { ...user, actor: await admins.actorView(actor, user.id) };
+  return { ...user, actor: await admins.actorView(actor, user.id, user) };
 }
 
 /** REQ-220 — a refused transfer as `{ ok:false, error }` under its status; anything else is rethrown */

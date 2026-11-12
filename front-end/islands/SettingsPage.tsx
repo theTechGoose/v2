@@ -48,7 +48,11 @@ import { checkPayLinks } from "../../shared/payments/pay-links.ts"; // REQ-630
 import { ApiError } from "../lib/api.ts";
 import { fmtPhone } from "../lib/format.ts";
 import { TransferAccount } from "../components/TransferAccount.tsx"; // REQ-220
-import { editableName, personName } from "../../shared/person-name/mod.ts"; // REQ-624
+import {
+  editableName,
+  personLanguage,
+  personName,
+} from "../../shared/person-name/mod.ts"; // REQ-624
 import { refreshDash } from "../lib/dash-cache.ts";
 import { type Lang, langSignal, setLang, tFor } from "../lib/i18n.ts";
 import { normalizeWebsiteUrl } from "../../shared/quote-flow/format-helpers.ts";
@@ -2234,7 +2238,9 @@ const PILL_KEY = {
 } as const;
 
 function BillingTab({ snapshot }: { snapshot: ProfileSnapshot }) {
-  const lang: Lang = snapshot.user.language === "es" ? "es" : "en";
+  const lang: Lang = personLanguage(snapshot.user, snapshot.actor) === "es"
+    ? "es"
+    : "en"; // REQ-631
   const plan = snapshot.plan ?? null;
   // REQ-064 — the hidden test tier has a name and a price too, though it is never a card
   const planById = (id: string) => PRICING_PLANS.find((p) => p.id === id);
@@ -2765,8 +2771,9 @@ export default function SettingsPage() {
   }
 
   const p = s.profile;
-  const lang: Lang = p.user.language === "es" ? "es" : "en";
-  const t = tr(p.user.language === "es");
+  // REQ-631: the person's language — an editor's own while acting, never the owner's
+  const lang: Lang = personLanguage(p.user, p.actor) === "es" ? "es" : "en";
+  const t = tr(lang === "es");
   const onSaved = (next: Partial<ProfileSnapshot>) =>
     setS((cur) =>
       cur.profile ? { ...cur, profile: { ...cur.profile, ...next } } : cur
@@ -2834,7 +2841,7 @@ export default function SettingsPage() {
                 // UX-35: the email lives on ONE surface — the editable form
                 // below. Repeating it read-only here competed with the form and
                 // clipped long addresses at the card edge.
-                [t.language, p.user.language === "es" ? t.spanish : t.english],
+                [t.language, lang === "es" ? t.spanish : t.english],
               ]}
             />
             <Card

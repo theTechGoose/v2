@@ -13,6 +13,12 @@ import { resetKv } from "@core/data/kv/mod.ts";
 import { OtpStore } from "@users/domain/data/otp-store/mod.ts";
 import { type SendSmsInput, SmsService } from "@users/domain/data/sms/mod.ts";
 import { UserStore } from "@users/domain/data/user-store/mod.ts";
+import { AccountAdminStore } from "@users/domain/data/account-admin-store/mod.ts";
+
+/** REQ-632 — the API now refuses a nameless invite; a LEGACY one (made before) is seeded as stored */
+async function legacyInvite(ownerId: string, phoneNumber: string) {
+  await new AccountAdminStore().create({ userId: ownerId, phoneNumber });
+}
 
 @Module({ imports: [UsersModule] })
 class TestApp {}
@@ -122,10 +128,10 @@ Deno.test("REQ-624 PUT /me while acting writes HER record: her name changes, the
   });
 });
 
-Deno.test("REQ-624 an editor invited with no name: her phone, needsName true; once she names herself, that is her name everywhere", async () => {
+Deno.test("REQ-624/632 a LEGACY editor invite with no name: her phone, needsName true; once she names herself, that is her name everywhere", async () => {
   await withServer(async (call) => {
     const owner = await ownerWithBusiness(call, "+15125552420", "Alexander Jerez", "A2Z Landscape LLC");
-    await call("POST", "/me/admins", { phoneNumber: "5125552421" }, owner.H);
+    await legacyInvite(owner.userId, "+15125552421");
     const her = await signIn(call, "+15125552421");
     const me = await call("GET", "/me", undefined, her.H);
     assertEquals(me.body.actor.name, "(512) 555-2421", "never the owner's name");
@@ -148,7 +154,7 @@ Deno.test("REQ-624 /me/accounts names her by THIS account's invite, not another 
     const a = await ownerWithBusiness(call, "+15125552430", "Alexander Jerez", "A2Z Landscape LLC");
     const b = await ownerWithBusiness(call, "+15125552432", "Other Owner", "Other Co");
     // A invites first (no name) — her sign-in lands in A; B's invite names her "Cousin"
-    await call("POST", "/me/admins", { phoneNumber: "5125552431" }, a.H);
+    await legacyInvite(a.userId, "+15125552431");
     await new Promise((r) => setTimeout(r, 5));
     await call("POST", "/me/admins", { phoneNumber: "5125552431", name: "Cousin" }, b.H);
     const her = await signIn(call, "+15125552431");

@@ -34,7 +34,7 @@ export class ProfileCompositeController {
     const { user, actor } = await requireSession(ctx, this.sessions, this.users);
     const snapshot = await this.loader.load(user.id);
     if (!actor) return snapshot;
-    const view = await this.accountAdmins.actorView(actor, user.id);
+    const view = await this.accountAdmins.actorView(actor, user.id, user); // REQ-631: with her language
     // no name yet (her phone stands in): no letters to show — the sidebar draws its dot
     return { ...snapshot, actor: view, initials: view.needsName ? "?" : computeInitials(view.name) };
   }

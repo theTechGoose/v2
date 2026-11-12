@@ -1,4 +1,5 @@
 import { asset, Head } from "fresh/runtime";
+import { personLanguage } from "../../../shared/person-name/mod.ts"; // REQ-631
 import { define } from "../../utils.ts";
 import { loadUser } from "../../lib/auth.ts";
 import SiteFooter from "../../components/SiteFooter.tsx";
@@ -24,9 +25,8 @@ export default define.page(async function PlanTest(ctx) {
   const asked = ctx.url.searchParams.get("lang");
   const lang: Lang = asked === "en" || asked === "es"
     ? asked
-    : user.language === "en" || user.language === "es"
-    ? user.language
-    : langFromCookie(ctx.req.headers.get("cookie")) ?? pickLangFromAcceptLanguage(ctx.req.headers.get("accept-language"));
+    : personLanguage(user) ??
+      langFromCookie(ctx.req.headers.get("cookie")) ?? pickLangFromAcceptLanguage(ctx.req.headers.get("accept-language"));
   // REQ-101 — the account this page's charge goes through: the one named on the address, else sandbox
   const merchant = accountForPick("test", merchantOf(ctx.url.searchParams.get("merchant") ?? ""));
   const plans = PRICING_PLANS.filter((p) => p.id === "test");

@@ -62,17 +62,20 @@ export function actorName(actor: { phoneNumber: string; name?: string }, inviteN
 }
 
 /**
- * REQ-624 — PUT /me while acting: the name and the email are the person's own and go to HER record;
- * the language is the account's (it drives the account's UI and the server's replies, read off the
- * account record everywhere) and stays where it was.
+ * PUT /me while acting: everything in it is the PERSON's own and goes to HER record — her name and
+ * email (REQ-624) and, REQ-631, her language. Nothing reaches the account: the owner's record (his
+ * language included) is his alone. Kept as a split so a future account-level field has a place.
  */
 export function splitActingPatch(
   patch: { name?: string; email?: string; language?: Language },
-): { actor: { name?: string; email?: string }; account: { language?: Language } } {
-  const actor: { name?: string; email?: string } = {};
-  const account: { language?: Language } = {};
+): { actor: { name?: string; email?: string; language?: Language }; account: Record<string, never> } {
+  const actor: { name?: string; email?: string; language?: Language } = {};
   if (patch.name !== undefined) actor.name = patch.name;
   if (patch.email !== undefined) actor.email = patch.email;
-  if (patch.language !== undefined) account.language = patch.language;
-  return { actor, account };
+  if (patch.language !== undefined) actor.language = patch.language;
+  return { actor, account: {} };
 }
+
+/** REQ-631 — the signed-in person's language (hers while acting); REQ-632 — the required invite name.
+ *  One rule each, shared with the front-end. */
+export { inviteName, personLanguage } from "#person-name/mod.ts";

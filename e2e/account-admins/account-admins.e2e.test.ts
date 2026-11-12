@@ -150,3 +150,58 @@ Deno.test("REQ-146: the owner invites a number on /admins; that number signs in 
     expect.eq(cut.status, 401, "the admin's session is gone");
     await cut.body?.cancel();
   }));
+
+Deno.test("REQ-632: the editor's name is required — Invite stays disabled until it is filled, leaving it empty shows the error in English and in Spanish, and the API refuses a nameless invite with name_required", (t) =>
+  story(t, async ({ page, expect, http, baseUrl }) => {
+    const owner = await verify(http, `+1512${digits()}`);
+    const me = await http("/api/me", {
+      method: "PUT",
+      headers: owner.auth,
+      body: JSON.stringify({ language: "en", name: "Alexander Jerez" }),
+    });
+    await me.body?.cancel();
+    const herPhone = `+1843${digits()}`;
+
+    // the API: missing, blank, whitespace and the placeholder are each a 400 name_required
+    for (const name of [undefined, "", "   ", "New user"]) {
+      const r = await http("/api/me/admins", {
+        method: "POST",
+        headers: owner.auth,
+        body: JSON.stringify({ phoneNumber: herPhone.slice(2), ...(name === undefined ? {} : { name }) }),
+      });
+      expect.eq(r.status, 400, `refused: ${JSON.stringify(name)}`);
+      expect.eq((await r.json()).error, "name_required", `the code: ${JSON.stringify(name)}`);
+    }
+
+    // the form, in English
+    await useCookie(page, baseUrl, owner.cookie);
+    await page.goto("/admins");
+    const invite = page.locator("[data-cy='adm-invite']");
+    const name = page.locator("[data-cy='adm-name']");
+    const err = page.locator("[data-cy='adm-name-error']");
+    await invite.waitFor({ timeout: 15_000 });
+    expect.eq(await name.getAttribute("required"), "", "the name field is required");
+    await page.locator("[data-cy='adm-phone']").fill(herPhone.slice(2));
+    expect(await invite.isDisabled(), "a phone alone does not enable Invite");
+    await name.focus();
+    await name.blur();
+    await err.waitFor({ timeout: 10_000 });
+    await expect.see("Enter the editor's name");
+    expect.eq(await name.getAttribute("aria-invalid"), "true", "the field says it is invalid");
+    await name.fill("   ");
+    expect(await invite.isDisabled(), "spaces are no name");
+    await name.fill("Sofia Jerez");
+    await err.waitFor({ state: "detached", timeout: 10_000 });
+    expect(!(await invite.isDisabled()), "a name and a phone enable Invite");
+    await invite.click();
+    await page.locator("[data-cy='adm-row']", { hasText: "Sofia Jerez" }).waitFor({ timeout: 15_000 });
+
+    // and in Spanish
+    await page.locator("[data-cy='topbar-lang-es']").click();
+    await page.locator("[data-cy='adm-phone']").fill(`843${digits()}`);
+    await name.focus();
+    await name.blur();
+    await err.waitFor({ timeout: 10_000 });
+    await expect.see("Escribe el nombre del editor");
+    expect(await invite.isDisabled(), "still disabled in Spanish");
+  }));

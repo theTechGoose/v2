@@ -97,24 +97,24 @@ Deno.test("REQ-146 the owner invites a phone: 201 and a text in the owner's lang
       texts[0].body,
     ); // REQ-191: "editor", not "admin"
     assertEquals(
-      (await call("POST", "/me/admins", { phoneNumber: "5125551500" }, O))
+      (await call("POST", "/me/admins", { phoneNumber: "5125551500", name: "Me" }, O))
         .status,
       400,
       "own number",
     );
     assertEquals(
-      (await call("POST", "/me/admins", { phoneNumber: "512-555-1501" }, O))
+      (await call("POST", "/me/admins", { phoneNumber: "512-555-1501", name: "Hans" }, O))
         .status,
       409,
       "already invited",
     );
     assertEquals(
-      (await call("POST", "/me/admins", { phoneNumber: "12" }, O)).status,
+      (await call("POST", "/me/admins", { phoneNumber: "12", name: "Hans" }, O)).status,
       400,
       "bad phone",
     );
     assertEquals(
-      (await call("POST", "/me/admins", {}, O)).status,
+      (await call("POST", "/me/admins", { name: "Hans" }, O)).status,
       400,
       "no phone",
     );
@@ -184,7 +184,7 @@ Deno.test("REQ-146 the invited phone signs in and acts for the owner: /me and /p
       403,
     );
     assertEquals(
-      (await call("POST", "/me/admins", { phoneNumber: "+15125551512" }, A))
+      (await call("POST", "/me/admins", { phoneNumber: "+15125551512", name: "Other" }, A))
         .status,
       403,
     );
@@ -296,7 +296,7 @@ Deno.test("REQ-146 the dev master code signs an admin into the owner's account t
       (await call(
         "POST",
         "/me/admins",
-        { phoneNumber: "+15125551522" },
+        { phoneNumber: "+15125551522", name: "Hans" },
         H(first.body.sessionId),
       )).status,
       201,
@@ -305,7 +305,7 @@ Deno.test("REQ-146 the dev master code signs an admin into the owner's account t
       (await call(
         "POST",
         "/me/admins",
-        { phoneNumber: "+15125551522" },
+        { phoneNumber: "+15125551522", name: "Hans" },
         H(second.body.sessionId),
       )).status,
       201,
@@ -324,5 +324,63 @@ Deno.test("REQ-146 the dev master code signs an admin into the owner's account t
       "First Owner",
       "Second Owner",
     ]);
+  });
+});
+
+Deno.test("REQ-632 the invite requires the editor's name: missing, blank, whitespace or the sign-up placeholder → 400 name_required, nothing stored, no text", async () => {
+  await withServer(async (call, texts) => {
+    const owner = await signIn(call, "+15125551530");
+    const O = H(owner.body.sessionId);
+    await call("PUT", "/me", { name: "Alexander Jerez", language: "en" }, O);
+    texts.length = 0;
+    for (const body of [
+      { phoneNumber: "5125551531" },
+      { phoneNumber: "5125551531", name: "" },
+      { phoneNumber: "5125551531", name: "   " },
+      { phoneNumber: "5125551531", name: "\t" },
+      { phoneNumber: "5125551531", name: "New user" },
+      { phoneNumber: "5125551531", name: "Nuevo usuario" },
+      { phoneNumber: "5125551531", name: 7 },
+    ]) {
+      const r = await call("POST", "/me/admins", body, O);
+      assertEquals(r.status, 400, `refused: ${JSON.stringify(body)} → ${JSON.stringify(r.body)}`);
+      assertEquals(r.body.error, "name_required", JSON.stringify(body));
+    }
+    assertEquals((await call("GET", "/me/admins", undefined, O)).body, [], "nothing stored");
+    assertEquals(texts.length, 0, "no invite text went out");
+    const ok = await call("POST", "/me/admins", { phoneNumber: "5125551531", name: "  Sofia Jerez " }, O);
+    assertEquals(ok.status, 201);
+    assertEquals(ok.body.name, "Sofia Jerez", "trimmed");
+    assertEquals(texts.length, 1);
+  });
+});
+
+Deno.test("REQ-632 the fakes-only legacy seam plants a nameless invite (the REQ-624 prompt's fallback case) for the owner; refused to an editor; a 404 on the real deploy", async () => {
+  await withServer(async (call, texts) => {
+    const owner = await signIn(call, "+15125551540");
+    const O = H(owner.body.sessionId);
+    texts.length = 0;
+    const planted = await call("POST", "/dev/account-admins/legacy-invite", { phoneNumber: "5125551541" }, O);
+    assertEquals(planted.status, 201, JSON.stringify(planted.body));
+    assertEquals(planted.body.name, undefined, "no name, as a legacy invite");
+    assertEquals(texts.length, 0, "no text");
+    const her = await signIn(call, "+15125551541");
+    const me = await call("GET", "/me", undefined, H(her.body.sessionId));
+    assertEquals(me.body.actor.needsName, true, "she will be asked her name");
+    assertEquals(
+      (await call("POST", "/dev/account-admins/legacy-invite", { phoneNumber: "5125551542" }, H(her.body.sessionId))).status,
+      403,
+      "owner only",
+    );
+    Deno.env.set("DENO_DEPLOY", "1");
+    try {
+      assertEquals(
+        (await call("POST", "/dev/account-admins/legacy-invite", { phoneNumber: "5125551543" }, O)).status,
+        404,
+        "no such route on the real deploy",
+      );
+    } finally {
+      Deno.env.delete("DENO_DEPLOY");
+    }
   });
 });

@@ -115,16 +115,25 @@ Deno.test("REQ-624: the owner invites \"Daughter Test\"; she signs in and the gr
     await page.locator("[data-cy='sb-user-name']", { hasText: "Daughter Edited" }).waitFor({ timeout: 20_000 });
   }));
 
-Deno.test("REQ-624: an editor invited with no name is asked hers once; it is saved to her, never to the owner", (t) =>
+Deno.test("REQ-624/632: an editor on a LEGACY invite with no name is asked hers once; it is saved to her, never to the owner", (t) =>
   story(t, async ({ page, expect, http, baseUrl }) => {
     const o = await owner(http);
     const herPhone = `+1843${digits()}`;
-    const inv = await http("/api/me/admins", {
+    // REQ-632: the invite API now requires the name — a LEGACY nameless invite (made before) is
+    // planted through the fakes-only seam, the way such a record sits in the store
+    const refused = await http("/api/me/admins", {
       method: "POST",
       headers: o.auth,
       body: JSON.stringify({ phoneNumber: herPhone.slice(2) }),
     });
-    expect.eq(inv.status, 201, "invited without a name");
+    expect.eq(refused.status, 400, "a nameless invite is refused now");
+    await refused.body?.cancel();
+    const inv = await http("/api/dev/account-admins/legacy-invite", {
+      method: "POST",
+      headers: o.auth,
+      body: JSON.stringify({ phoneNumber: herPhone.slice(2) }),
+    });
+    expect.eq(inv.status, 201, "a legacy invite without a name");
     await inv.body?.cancel();
 
     const her = await verify(http, herPhone);

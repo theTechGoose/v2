@@ -1,5 +1,8 @@
 import { asset, Head } from "fresh/runtime";
-import { greetingFirstName } from "../../../shared/person-name/mod.ts"; // REQ-624
+import {
+  greetingFirstName,
+  personLanguage,
+} from "../../../shared/person-name/mod.ts"; // REQ-624
 import { define } from "../../utils.ts";
 import SiteFooter from "../../components/SiteFooter.tsx";
 import { tFor } from "../../lib/i18n.ts";
@@ -33,7 +36,7 @@ const MONTH_KEYS = [
 
 export default define.page(function InvoicesRoute(ctx) {
   const user = ctx.state.user;
-  const lang = user?.language ?? "en";
+  const lang = personLanguage(user) ?? "en";
   const greetingName = greetingFirstName(user) ||
     tFor(lang, "common.greetingNameFallback");
   const now = new Date();

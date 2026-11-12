@@ -1,4 +1,5 @@
 import { asset, Head } from "fresh/runtime";
+import { personLanguage } from "../../shared/person-name/mod.ts"; // REQ-631
 import { define } from "../utils.ts";
 import SiteFooter from "../components/SiteFooter.tsx";
 import { loadUser } from "../lib/auth.ts";
@@ -55,10 +56,8 @@ export default define.page(async function Welcome(ctx) {
 
   const subscribed = subscribeEventFrom(ctx.url.searchParams.get("px"));
 
-  const lang: Lang = (snapshot?.user?.language === "es" ||
-      snapshot?.user?.language === "en")
-    ? snapshot.user.language
-    : (langFromCookie(ctx.req.headers.get("cookie")) ??
+  const lang: Lang = personLanguage(snapshot?.user, snapshot?.actor) ??
+    (langFromCookie(ctx.req.headers.get("cookie")) ??
       pickLangFromAcceptLanguage(ctx.req.headers.get("accept-language")));
 
   return (
