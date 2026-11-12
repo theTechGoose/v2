@@ -42,6 +42,7 @@ import {
   widerBullets,
 } from "#quote-flow/option-bullets.ts";
 import { mentionsMoney } from "#quote-flow/private-cost.ts";
+import { ES_TRADE_GLOSSARY } from "@agents/domain/business/es-trade-glossary/mod.ts";
 
 export interface GenerateJobOptionsInput {
   userId: string;
@@ -170,7 +171,10 @@ export class GenerateJobOptions {
       ).join(", ")
     } }`;
     const multiLangLine =
-      `\n\nOUTPUT STRUCTURE OVERRIDE: return JSON { "options": [ ${optionShape}, ${optionShape}, ${optionShape} ] } — an ARRAY of exactly 3 option objects; each option object has exactly these language keys: ${langList}. "bullets" has as many lines as the option needs: EVERY option covers the WHOLE job (every scope item, in every option) and the three play distinct roles in this order — 1 CONCISE (fewest lines, related items grouped), 2 STANDARD (one line per item), 3 DETAILED (one line per item with every specific the contractor stated: quantities, sizes, materials) — never split the job's items across them. No bullet names the customer, their contact or the job's duration. Within an option, the bullets in each language MUST be 1:1 translations of the same scope (same count and order). jobName/summary/bullets follow all the rules above, in each language.`;
+      `\n\nOUTPUT STRUCTURE OVERRIDE: return JSON { "options": [ ${optionShape}, ${optionShape}, ${optionShape} ] } — an ARRAY of exactly 3 option objects; each option object has exactly these language keys: ${langList}. "bullets" has as many lines as the option needs: EVERY option covers the WHOLE job (every scope item, in every option) and the three play distinct roles in this order — 1 CONCISE (fewest lines, related items grouped), 2 STANDARD (one line per item), 3 DETAILED (one line per item with every specific the contractor stated: quantities, sizes, materials) — never split the job's items across them. No bullet names the customer, their contact or the job's duration. Within an option, the bullets in each language MUST be 1:1 translations of the same scope (same count and order). jobName/summary/bullets follow all the rules above, in each language.` +
+      // REQ-448 (demo-loop cycle 3, m47): the Spanish picker copy read
+      // "gabinetes de shaker" and "sq ft" — it had no glossary.
+      (langs.includes("es") ? ` ${ES_TRADE_GLOSSARY}` : "");
 
     // REQ-400 (m32): the customer the message names — never a bullet.
     const facts = customerFactsFrom(raw);

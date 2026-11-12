@@ -2,6 +2,7 @@ import type { LLMAction } from "@agents/domain/business/llm/base/mod.ts";
 import { t } from "@core/i18n/mod.ts";
 import { PAYMENT_TERMS_PRESETS } from "@agents/domain/business/terms-prefill/mod.ts";
 import { isAddressShaped } from "#quote-flow/quick-quote-prefill.ts";
+import { ES_TRADE_GLOSSARY } from "@agents/domain/business/es-trade-glossary/mod.ts";
 
 /** REQ-315: "q-001" / "Q-001 bathroom" → "Q-001"; anything else → undefined. */
 function docNumber(v: unknown): string | undefined {
@@ -196,7 +197,9 @@ export const TOOL_DEFS = [
             description: t("en", "prompts.tools.updateJobDetails.descriptionByLang"),
             properties: {
               en: { type: "string", description: t("en", "prompts.tools.updateJobDetails.en") },
-              es: { type: "string", description: t("en", "prompts.tools.updateJobDetails.es") },
+              // REQ-448 (demo-loop cycle 3, m47): the Spanish the chat model
+              // writes here gets the shared trade glossary.
+              es: { type: "string", description: `${t("en", "prompts.tools.updateJobDetails.es")} ${ES_TRADE_GLOSSARY}` },
             },
             additionalProperties: false,
           },

@@ -4,6 +4,7 @@ import {
   type LLMClient,
 } from "@agents/domain/business/llm/base/mod.ts";
 import { mentionsMoney } from "#quote-flow/private-cost.ts";
+import { ES_TRADE_GLOSSARY } from "@agents/domain/business/es-trade-glossary/mod.ts";
 
 export interface TranslateBulletsInput {
   userId: string;
@@ -30,15 +31,9 @@ export interface TranslateBulletsResult {
   translated?: boolean;
 }
 
-/**
- * REQ-350 (demo-loop cycle 1, m9): trade terms the model mistranslates —
- * "Customer supplied vanity installation" came back as "Instalación de
- * lavabo …", and a lavabo is the sink, not the cabinet.
- */
-export const ES_TRADE_GLOSSARY =
-  "Glossary (use these Spanish terms): vanity → mueble de baño (or tocador), never lavabo; " +
-  "sink / basin → lavabo; countertop → encimera; backsplash → salpicadero; " +
-  "drywall → tablaroca; studs → montantes; trim → molduras; grout → lechada.";
+/** REQ-350 / REQ-448: the shared Spanish trade glossary (one fragment for
+ *  every Spanish-writing prompt) — re-exported for existing importers. */
+export { ES_TRADE_GLOSSARY };
 
 /**
  * TranslateBullets — translates the contractor's (possibly hand-edited)

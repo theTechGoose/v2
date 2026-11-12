@@ -11,6 +11,7 @@ import {
 import { clampSummary } from "#quote-flow/summary-clamp.ts";
 import { scopeBulletsFromRaw } from "#quote-flow/scope-from-raw.ts";
 import { withoutMoneySentences } from "#quote-flow/private-cost.ts";
+import { ES_TRADE_GLOSSARY } from "@agents/domain/business/es-trade-glossary/mod.ts";
 
 export interface PolishJobDetailsInput {
   userId: string;
@@ -73,7 +74,9 @@ export class PolishJobDetails {
         : "";
 
     const langLine = input.commsLanguage === "es"
-      ? "\n\n" + t("en", "prompts.polishJobDetails.spanishInstruction")
+      ? "\n\n" + t("en", "prompts.polishJobDetails.spanishInstruction") +
+        // REQ-448 (demo-loop cycle 3, m47): the shared trade glossary.
+        " " + ES_TRADE_GLOSSARY
       : "";
 
     let text: string;
