@@ -27,6 +27,7 @@ import { clientsClient } from "../clients/clients.ts";
 import FieldHead from "../components/FieldHead.tsx";
 import { ApiError } from "../lib/api.ts";
 import { I, ICN } from "../lib/dash-icons.tsx";
+import { daySummary } from "../lib/field-task-summary.ts";
 import {
   customerOptions,
   fmtDay,
@@ -338,8 +339,8 @@ export default function FieldTasksPage() {
     }
   };
 
-  const done = tasks.filter((x) => x.status === "complete").length;
-  const open = tasks.filter(isOpen).length;
+  // REQ-284 — "To do" counts the open tasks; "Assigned" stays a per-task status
+  const { done, toDo, notDone, counted } = daySummary(tasks);
 
   // group by worker · zone, in first-seen order
   const groups = new Map<string, TaskView[]>();
@@ -671,7 +672,7 @@ export default function FieldTasksPage() {
   return (
     <>
       <FieldHead
-        eyebrow={t("field.tk.eyebrow", { done, n: open })}
+        eyebrow={t("field.tk.eyebrow", { done, n: counted })}
         title={t("field.tk.title")}
         sub={t("field.tk.sub")}
       >
@@ -877,12 +878,10 @@ export default function FieldTasksPage() {
       <div class="workload" data-cy="tk-summary" style="align-items:center">
         <span class="hint" style="font-weight:700">{fmtDay(date, lang)}</span>
         <span class="chip chip--green">{t("field.tk.done")} {done}</span>
-        <span class="chip">
-          {t("field.tk.assigned")} {Math.max(0, open - done)}
-        </span>
-        {tasks.length - open > 0 && (
+        <span class="chip">{t("field.tk.toDo")} {toDo}</span>
+        {notDone > 0 && (
           <span class="chip chip--muted">
-            {t("field.tk.skipped")} {tasks.length - open}
+            {t("field.tk.skipped")} {notDone}
           </span>
         )}
       </div>
