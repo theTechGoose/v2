@@ -145,7 +145,7 @@ describe("REQ-206 bill-to from the customer", () => {
       name: "Ann Lee",
       businessName: "Lee Props",
       email: "ann@x.com",
-      phoneNumber: "+15125550100",
+      phoneNumber: "(512) 555-0100", // REQ-593: in the input's phone mask
       address: "1 Main St",
     });
     expect(billToFromCustomer(undefined)).toEqual({

@@ -14,6 +14,7 @@ import {
   storedQuotePriceProblem,
 } from "#quote-flow/quote-price-guard.ts";
 import type { SmsFailureCode } from "#quote-flow/sms-failure.ts";
+import { formatPhoneDisplay } from "#quote-flow/format-helpers.ts";
 import { versionOf } from "#documents/versions.ts";
 import { getKv } from "@core/data/kv/mod.ts";
 import type { AgentConversation } from "@agents/dto/conversation.ts";
@@ -352,7 +353,7 @@ async function claimRequest(key: Deno.KvKey): Promise<boolean> {
   return res.ok;
 }
 
-function buildDivider(o: {
+export function buildDivider(o: {
   channel: SendChannel;
   emailedTo?: string;
   emailFailureReason?: string;
@@ -365,6 +366,9 @@ function buildDivider(o: {
   const smsFailureReason = readableReason(o.smsFailureReason, lang);
   const emailOk = !!emailedTo;
   const smsOk = !!textedTo;
+  // REQ-593 (cycle 4, m12): the label shows the number as the app does
+  // everywhere ("+1 (512) 867-5309"), not the E.164 the SMS service used.
+  const textedShown = textedTo ? formatPhoneDisplay(textedTo) : "";
 
   if (channel === "email") {
     if (emailOk) {
@@ -380,7 +384,7 @@ function buildDivider(o: {
 
   if (channel === "sms") {
     if (smsOk) {
-      return t(lang, "sendQuote.divider.texted", { textedTo: textedTo! });
+      return t(lang, "sendQuote.divider.texted", { textedTo: textedShown });
     }
     // REQ-525 (demo cycle 3, p8-pair2-a): the reason has one home — the
     // send card reads it from this divider's payload — so the label stays
@@ -393,7 +397,7 @@ function buildDivider(o: {
   if (emailOk && smsOk) {
     return t(lang, "sendQuote.divider.emailedAndTexted", {
       emailedTo: emailedTo!,
-      textedTo: textedTo!,
+      textedTo: textedShown,
     });
   }
   if (emailOk) {
@@ -404,7 +408,7 @@ function buildDivider(o: {
   }
   if (smsOk) {
     return t(lang, "sendQuote.divider.textedEmailFailed", {
-      textedTo: textedTo!,
+      textedTo: textedShown,
       reason: emailFailureReason ?? t(lang, "sendQuote.divider.noRecipient"),
     });
   }

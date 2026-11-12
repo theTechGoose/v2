@@ -11,6 +11,11 @@
  */
 import { docNumberOf } from "./numbering.ts";
 import {
+  formatPhoneDisplay,
+  formatPhoneInput,
+  isUsPhone,
+} from "../quote-flow/format-helpers.ts";
+import {
   type DocState,
   invoiceBalance,
   invoiceState,
@@ -215,13 +220,18 @@ export function paymentInstructionsFromMethods(
       : key === "ach" || key === "card" || key === "other"
       ? m.instructions
       : m.handle)?.trim();
+    // REQ-593 (cycle 4, m12): a phone handle reads like a phone —
+    // "Zelle: +1 (512) 555-0109", not the digits as typed at onboarding.
+    const shown = detail && isUsPhone(detail)
+      ? formatPhoneDisplay(detail)
+      : detail;
     if (key === "other") {
       if (detail) {
         parts.push(detail);
       }
       continue;
     }
-    parts.push(detail ? `${labels[key]}: ${detail}` : labels[key]);
+    parts.push(shown ? `${labels[key]}: ${shown}` : labels[key]);
   }
   return parts.join(" · ");
 }
@@ -279,7 +289,11 @@ export function billToFromCustomer(
     name: c?.name ?? "",
     businessName: c?.businessName ?? "",
     email: c?.email ?? "",
-    phoneNumber: c?.phoneNumber ?? "",
+    // REQ-593 (cycle 4, m12): the stored digits fill the field in the same
+    // mask the input applies as you type; anything else is kept as is.
+    phoneNumber: isUsPhone(c?.phoneNumber)
+      ? formatPhoneInput(c!.phoneNumber!)
+      : c?.phoneNumber ?? "",
     address: c?.address ?? "",
   };
 }

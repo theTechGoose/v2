@@ -5,6 +5,7 @@ import {
   type QuoteSendPreview,
   type SendPreviewChannel,
   sendPreviewSections,
+  sendPreviewSmsTo,
 } from "../../shared/quote-flow/send-preview.ts";
 
 /** Endonyms — the same in every UI language. */
@@ -160,7 +161,9 @@ export function SendPreviewBody(
           <section class="send-dialog__preview-part">
             <h5>
               {tFor(uiLang, "asstChat.send.previewText")}
-              {preview.sms.to ? ` · ${preview.sms.to}` : ""}
+              {sendPreviewSmsTo(preview)
+                ? ` · ${sendPreviewSmsTo(preview)}`
+                : ""}
             </h5>
             <p class="send-dialog__preview-sms" data-cy="send-preview-sms">
               {preview.sms.body}

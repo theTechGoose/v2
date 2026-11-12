@@ -92,7 +92,7 @@ async function valueOf(
   return await page.locator(sel).inputValue();
 }
 
-Deno.test("REQ-483 M40 + m18: onboarding's Zelle + Cash and Settings' 15 days to pay → a standalone New invoice opens with 'Zelle: 5125550102 · Cash' and Net 15, not an empty field and Net 30", (t) =>
+Deno.test("REQ-483 M40 + m18: onboarding's Zelle + Cash and Settings' 15 days to pay → a standalone New invoice opens with 'Zelle: +1 (512) 555-0102 · Cash' (REQ-593 formats the number) and Net 15, not an empty field and Net 30", (t) =>
   story(t, async ({ page, expect, http, baseUrl }) => {
     const { auth } = await signIn(http, page, baseUrl);
     await saveIdentity(http, auth, {
@@ -108,9 +108,9 @@ Deno.test("REQ-483 M40 + m18: onboarding's Zelle + Cash and Settings' 15 days to
       await valueOf(
         page,
         "[data-cy='new-invoice-payment-instructions']",
-        "Zelle: 5125550102 · Cash",
+        "Zelle: +1 (512) 555-0102 · Cash",
       ),
-      "Zelle: 5125550102 · Cash",
+      "Zelle: +1 (512) 555-0102 · Cash",
       "Payment instructions start from the onboarding methods",
     );
     expect.eq(

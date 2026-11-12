@@ -19,6 +19,7 @@ import { openQuoteMoved } from "../lib/live-doc-refresh.ts";
 import { followChanges, isDocChange } from "../lib/change-feed.ts";
 import { I, ICN } from "../lib/dash-icons.tsx";
 import { fmtMoney, fmtMoneyExact } from "../lib/format.ts";
+import { formatPhoneDisplay } from "../../shared/quote-flow/format-helpers.ts";
 import {
   docHeadline,
   ledgerSummary,
@@ -1541,7 +1542,8 @@ function OpenQuotePanel(
                 r.channel === "email"
                   ? "quotesPage.open.receipt.emailedTo"
                   : "quotesPage.open.receipt.textedTo",
-                { to: r.to },
+                // REQ-593 (cycle 4, m12): a number reads like one
+                { to: r.channel === "email" ? r.to : formatPhoneDisplay(r.to) },
               )}
             </div>
           ))}

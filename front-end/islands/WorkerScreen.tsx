@@ -18,6 +18,7 @@ import {
   type WorkerTaskView,
 } from "../clients/field.ts";
 import { ApiError } from "../lib/api.ts";
+import { formatPhoneInput } from "../../shared/quote-flow/format-helpers.ts";
 import { I, ICN } from "../lib/dash-icons.tsx";
 import {
   fmtDay,
@@ -848,7 +849,7 @@ export default function WorkerScreen(
                 inputMode="tel"
                 autoComplete="tel"
                 placeholder={t("worker.cellPh")}
-                value={cell}
+                value={formatPhoneInput(cell)} /* REQ-593 */
                 required
                 onInput={(e) => setCell((e.target as HTMLInputElement).value)}
               />

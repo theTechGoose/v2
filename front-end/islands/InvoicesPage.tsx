@@ -3983,7 +3983,7 @@ function NewInvoiceModal(
             <input
               type="tel"
               data-cy="new-invoice-bill-phone"
-              value={billTo.phoneNumber}
+              value={formatPhoneInput(billTo.phoneNumber)} /* REQ-593 */
               disabled={busy}
               onInput={(e) =>
                 setBill({ phoneNumber: (e.target as HTMLInputElement).value })}
