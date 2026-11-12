@@ -92,11 +92,17 @@ export interface BusinessInsurance {
   updatedAt: string;
 }
 
+/** Mirrors backend users/dto/contract-defaults.ts. REQ-622: no paymentTermsDays / depositPct /
+ *  warrantyDays — the payment terms are identity.invoiceNetDays ("Days to pay an invoice"). */
 export interface ContractDefaults {
   userId: string;
-  paymentTermsDays?: number;
-  depositPct?: number;
-  warrantyDays?: number;
+  defaultTerms?: string;
+  paymentInstructions?: string;
+  paymentTermsTemplateId?: string;
+  warrantyMonths?: number;
+  terminationNoticeDays?: number;
+  disputeResolution?: "mediation" | "arbitration" | "court";
+  governingState?: string;
   createdAt: string;
   updatedAt: string;
 }
