@@ -707,3 +707,22 @@ Deno.test("REQ-170: no Generate button; a week ahead shows its task on arrival; 
     await page.locator("[data-cy='tk-unstaffed']").first().waitFor({ timeout: 15_000 });
     await expect.see("Ana Torres");
   }));
+
+Deno.test("REQ-284: the day's only task checked off — the summary reads Complete 1 · To do 0, never Assigned 0 (demo customers-payments-fieldops-m4)", (t) =>
+  story(t, async ({ page, expect, http, baseUrl }) => {
+    await officeDay({ page, http, baseUrl });
+    await page.goto("/field/tasks");
+    const task = page.locator("[data-cy='tk-task']").first();
+    await task.waitFor({ timeout: 15_000 });
+    const summary = page.locator("[data-cy='tk-summary']");
+    await expect.see("0 of 1 complete");
+    const before = (await summary.innerText()).replace(/\s+/g, " "); // the chips are text-transform: uppercase
+    expect.eq(/To do 1/i.test(before), true, `one to do before: ${before}`);
+    await task.locator("[data-cy='tk-done']").click();
+    await page.locator("[data-cy='tk-task'][data-status='complete']").first().waitFor({ timeout: 15_000 });
+    await expect.see("1 of 1 complete");
+    const text = (await summary.innerText()).replace(/\s+/g, " ");
+    expect.eq(/Complete 1/i.test(text), true, `complete chip: ${text}`);
+    expect.eq(/To do 0/i.test(text), true, `to-do chip: ${text}`);
+    expect.eq(/Assigned/i.test(text), false, `no 'Assigned' counter: ${text}`);
+  }));

@@ -3209,6 +3209,7 @@
   "field.tk.none": "No hay tareas para este día: ninguna zona con trabajador tiene suscripciones, o es un día pasado sin ronda.",
   "field.tk.assigned": "Asignada",
   "field.tk.done": "Completada",
+  "field.tk.toDo": "Pendientes",
   "field.tk.markDone": "Marcar hecha",
   "field.tk.markOpen": "Marcar pendiente",
   "field.tk.note": "Nota del trabajador",
