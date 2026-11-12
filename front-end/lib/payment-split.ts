@@ -26,6 +26,10 @@ export type MilestoneRole =
   | "completion"
   | "full";
 
+/** REQ-491 (demo m60): the share "Deposit + balance" bills upfront. The
+ *  wizard option's sub-line names it, so it is never a silent number. */
+export const DEPOSIT_BALANCE_PCT = 20;
+
 export interface PaymentSplitPart {
   role: MilestoneRole;
   /** Percent of the total this milestone represents (0–100). */
@@ -73,12 +77,17 @@ export function computePaymentSplit(
     return [{ role: "full", pct: 100, amountCents: totalCents }];
   }
 
-  // 3. "Deposit + balance" — 20% upfront, the rest on completion.
+  // 3. "Deposit + balance" — DEPOSIT_BALANCE_PCT upfront, the rest on
+  //    completion.
   if (v.includes("deposit") && v.includes("balance")) {
-    const deposit = Math.round(totalCents * 0.20);
+    const deposit = Math.round((totalCents * DEPOSIT_BALANCE_PCT) / 100);
     return [
-      { role: "deposit", pct: 20, amountCents: deposit },
-      { role: "completion", pct: 80, amountCents: totalCents - deposit },
+      { role: "deposit", pct: DEPOSIT_BALANCE_PCT, amountCents: deposit },
+      {
+        role: "completion",
+        pct: 100 - DEPOSIT_BALANCE_PCT,
+        amountCents: totalCents - deposit,
+      },
     ];
   }
 
@@ -87,6 +96,29 @@ export function computePaymentSplit(
   //    that no document ever showed.) A single payment is the only safe read
   //    when we can't parse the split.
   return [{ role: "full", pct: 100, amountCents: totalCents }];
+}
+
+/**
+ * REQ-491 (demo-loop cycle 3, m60): the i18n vars for the "Deposit + balance"
+ * option's sub-line — `{pct}` always, and `{deposit}` / `{balance}` (whole
+ * dollars, the split computePaymentSplit bills) only for a positive total,
+ * so the contractor sees "20% upfront, rest when done · $90 / $360" before
+ * picking it. The wizard emitter (backend localizeOptions) and the
+ * assistant's fallback picker both read it.
+ */
+export function depositBalanceSubVars(
+  totalCents: number | null | undefined,
+): { pct: number; deposit?: string; balance?: string } {
+  const parts = typeof totalCents === "number"
+    ? computePaymentSplit("Deposit + balance", totalCents)
+    : [];
+  if (parts.length !== 2) return { pct: DEPOSIT_BALANCE_PCT };
+  const usd = (c: number) => `$${Math.round(c / 100).toLocaleString("en-US")}`;
+  return {
+    pct: DEPOSIT_BALANCE_PCT,
+    deposit: usd(parts[0].amountCents),
+    balance: usd(parts[1].amountCents),
+  };
 }
 
 function roleForIndex(i: number, len: number): MilestoneRole {

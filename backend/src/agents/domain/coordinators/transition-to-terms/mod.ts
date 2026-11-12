@@ -99,7 +99,14 @@ export class TransitionToTerms {
           stepIdx,
           stepId: step?.id,
           options: step
-            ? localizeOptions(step.options, lang, { n })
+            ? localizeOptions(step.options, lang, {
+              n,
+              // REQ-491 (m60): "Deposit + balance" names its $ split.
+              totalCents: conv.quoteId
+                ? (await new QuoteStore().getOwned(conv.quoteId, input.userId)
+                  .catch(() => undefined))?.estimatedTotal
+                : undefined,
+            })
             : undefined,
           suggestedOptionId: suggestedOptionId(conv.termsPrefill, step),
         },

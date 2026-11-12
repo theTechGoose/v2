@@ -259,7 +259,11 @@ export class HandleWizardAnswer {
           specId: spec.id,
           stepIdx: next.activeStepIdx,
           stepId: step.id,
-          options: localizeOptions(step.options, lang, { n }),
+          // REQ-491 (m60): "Deposit + balance" names its $ split.
+          options: localizeOptions(step.options, lang, {
+            n,
+            totalCents: await this.quoteTotalCents(conv),
+          }),
           hint: step.hint,
           suggestedOptionId: suggestedOptionId(conv.termsPrefill, step),
         },
@@ -487,6 +491,18 @@ export class HandleWizardAnswer {
       return false;
     }
     return true;
+  }
+
+  /** REQ-491 (demo m60): the total the payment split bills (the quote's
+   *  estimatedTotal, as send-signed-confirmation invoices it), or undefined
+   *  when there is no readable quote yet. */
+  private async quoteTotalCents(
+    conv: AgentConversation,
+  ): Promise<number | undefined> {
+    if (!conv.quoteId) return undefined;
+    const quote = await this.quotes.getOwned(conv.quoteId, conv.userId)
+      .catch(() => undefined);
+    return quote?.estimatedTotal;
   }
 
   /** The wizard completed: tell the bus the quote's terms are drafted. */

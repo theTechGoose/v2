@@ -11,6 +11,7 @@ import {
 } from "#quote-flow/wizard-terms.ts";
 import type { TradeKind } from "#quote-flow/trade-fit.ts";
 import { accountNetDays } from "#quote-flow/completion-schedule.ts"; // REQ-411
+import { depositBalanceSubVars } from "#payment-split"; // REQ-491
 
 /**
  * The quote's terms wizard (5 steps) and the invoice wizard (REQ-024). The
@@ -83,15 +84,23 @@ export function stepQuestionKey(
 
 /** REQ-411 (demo-loop cycle 2, m35): `vars` fill the sub-lines — `{n}` is
  *  the account's days to pay ("Full amount due within {n} days of the job's
- *  completion"), so the wizard never contradicts Settings. */
+ *  completion"), so the wizard never contradicts Settings.
+ *  REQ-491 (demo-loop cycle 3, m60): `{pct}` names the "Deposit + balance"
+ *  share, and with the quote's `totalCents` the option switches to its
+ *  `subAmounts` line ("20% upfront, rest when done · $90 / $360"). */
 export function localizeOptions(
   options: WizardOption[],
   lang: "en" | "es",
-  vars: { n: number } = { n: accountNetDays(undefined) },
+  vars: { n: number; totalCents?: number } = { n: accountNetDays(undefined) },
 ): WizardOption[] {
-  return options.map((o) => ({
-    ...o,
-    label: t(lang, o.label),
-    ...(o.sub ? { sub: t(lang, o.sub, vars) } : {}),
-  }));
+  const split = depositBalanceSubVars(vars.totalCents);
+  const subVars: Record<string, string | number> = { n: vars.n, ...split };
+  return options.map(({ subAmounts, ...o }) => {
+    const subKey = subAmounts && split.deposit ? subAmounts : o.sub;
+    return {
+      ...o,
+      label: t(lang, o.label),
+      ...(subKey ? { sub: t(lang, subKey, subVars) } : {}),
+    };
+  });
 }

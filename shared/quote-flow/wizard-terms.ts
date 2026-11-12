@@ -18,6 +18,9 @@ export interface WizardOptionDef {
   id: string;
   label: string;
   sub?: string;
+  /** REQ-491: the sub-line key used instead of `sub` once the quote's total
+   *  is known (it names the dollars too). */
+  subAmounts?: string;
   /** When true, the user is expected to supply a free-text customValue. */
   isCustom?: boolean;
 }
@@ -127,7 +130,10 @@ export const TERMS_WIZARD_V1: WizardSpecDef = {
         {
           id: "deposit_bal",
           label: "termsWizard.paymentTerms.depositBalance.label",
+          // REQ-491 (demo m60): the sub-line names the split it bills —
+          // "20% upfront, rest when done · $90 / $360".
           sub: "termsWizard.paymentTerms.depositBalance.sub",
+          subAmounts: "termsWizard.paymentTerms.depositBalance.subAmounts",
         },
         {
           id: "custom",
