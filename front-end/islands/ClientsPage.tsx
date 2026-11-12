@@ -8,7 +8,10 @@
  */
 import { useEffect, useState } from "preact/hooks";
 import { formatPhoneInput } from "../../shared/quote-flow/format-helpers.ts";
-import { customerContactError } from "../../shared/quote-flow/customer-contact.ts"; // REQ-278
+import {
+  type CustomerFormErrors,
+  customerFormErrors,
+} from "../../shared/quote-flow/customer-contact.ts"; // REQ-278, REQ-352
 import { ApiError } from "../lib/api.ts";
 import {
   clientsClient,
@@ -47,6 +50,17 @@ const INITIAL: State = {
 
 /** REQ-135 — a keystroke waits this long before it asks the API */
 const SEARCH_DEBOUNCE_MS = 250;
+/** REQ-352 — how long the "<name> added" confirmation stays up */
+const FLASH_MS = 4000;
+
+type AddField = keyof CustomerFormErrors;
+
+/** REQ-352 — a modal input, red-bordered while its field carries a message */
+function inputStyle(bad: boolean): string {
+  return `padding:11px 13px;border:1px solid ${
+    bad ? "#a83b3b" : "var(--border,#d8dcd5)"
+  };border-radius:10px;font:inherit;font-size:15px;font-weight:400;color:var(--fg)`;
+}
 
 export default function ClientsPage({ lang: _lang }: { lang?: "en" | "es" }) {
   const lang = langSignal.value;
@@ -69,6 +83,15 @@ export default function ClientsPage({ lang: _lang }: { lang?: "en" | "es" }) {
   const [addOpen, setAddOpen] = useState(false);
   const [adding, setAdding] = useState(false);
   const [addErr, setAddErr] = useState<string | null>(null);
+  // REQ-352 (demo M38): one message per field, under that field
+  const [fieldErrs, setFieldErrs] = useState<CustomerFormErrors>({});
+  // REQ-352 (demo p15-5): "<name> added" after a successful Add
+  const [flash, setFlash] = useState("");
+  useEffect(() => {
+    if (!flash) return;
+    const t = setTimeout(() => setFlash(""), FLASH_MS);
+    return () => clearTimeout(t);
+  }, [flash]);
   const [addName, setAddName] = useState("");
   // REQ-289: the New customer modal is a dialog — Escape closes it, as the
   // backdrop click does (not while the save is in flight)
@@ -130,24 +153,40 @@ export default function ClientsPage({ lang: _lang }: { lang?: "en" | "es" }) {
     return () => globalThis.removeEventListener("popstate", onPop);
   }, []);
 
+  /** REQ-352: the rule over the modal's values, `over` replacing one being typed */
+  function errorsFor(over: Partial<Record<AddField, string>> = {}) {
+    return customerFormErrors({
+      name: over.name ?? addName,
+      phoneNumber: over.phone ?? addPhone,
+      email: over.email ?? addEmail,
+    });
+  }
+  /** REQ-352: re-check ONE field (on blur, or while it already shows a message) */
+  function checkField(field: AddField, value?: string) {
+    const key = errorsFor(value === undefined ? {} : { [field]: value })[field];
+    setFieldErrs((prev) => {
+      const next = { ...prev };
+      if (key) (next as Record<string, string>)[field] = key;
+      else delete next[field];
+      return next;
+    });
+  }
+
   async function submitAddClient(e: Event) {
     e.preventDefault();
-    if (!addName.trim() || adding) return;
-    // REQ-278 (demo M16): type=tel has no pattern and type=email takes
-    // "carl@x" — check the contact with the backend's own rule before POST.
-    const contactErr = customerContactError({
-      email: addEmail,
-      phoneNumber: addPhone,
-    });
-    if (contactErr) {
-      setAddErr(tFor(lang, contactErr));
-      return;
-    }
+    if (adding) return;
+    // REQ-278 (demo M16) / REQ-352 (demo M38): the backend's own rule, run
+    // here per field — the form is novalidate, so the browser's bubble (which
+    // the demo stage cannot show) never pre-empts these messages.
+    const errs = errorsFor();
+    setFieldErrs(errs);
+    if (Object.keys(errs).length > 0) return;
     setAdding(true);
     setAddErr(null);
+    const name = addName.trim();
     try {
       await clientsClient.create({
-        name: addName.trim(),
+        name,
         ...(addBusiness.trim() ? { businessName: addBusiness.trim() } : {}),
         ...(addPhone.trim() ? { phoneNumber: addPhone.trim() } : {}),
         ...(addEmail.trim() ? { email: addEmail.trim() } : {}),
@@ -156,20 +195,27 @@ export default function ClientsPage({ lang: _lang }: { lang?: "en" | "es" }) {
       setAddBusiness("");
       setAddPhone("");
       setAddEmail("");
+      setFieldErrs({});
       setAddOpen(false);
+      setFlash(tFor(lang, "clientsPage.added", { name }));
       await refreshClients();
     } catch (err) {
-      // REQ-278: the backend names a refused contact by dictionary key.
+      // REQ-278: the backend names a refused contact by dictionary key —
+      // REQ-352: shown under the field it names.
       const key = err instanceof ApiError
         ? (err.body as { message?: unknown } | null)?.message
         : undefined;
-      setAddErr(
-        key === "customer.invalidPhone" || key === "customer.invalidEmail"
-          ? tFor(lang, key)
-          : err instanceof Error
-          ? err.message
-          : tFor(lang, "clientsPage.addError"),
-      );
+      if (key === "customer.invalidPhone") {
+        setFieldErrs((prev) => ({ ...prev, phone: key }));
+      } else if (key === "customer.invalidEmail") {
+        setFieldErrs((prev) => ({ ...prev, email: key }));
+      } else {
+        setAddErr(
+          err instanceof Error
+            ? err.message
+            : tFor(lang, "clientsPage.addError"),
+        );
+      }
     } finally {
       setAdding(false);
     }
@@ -231,6 +277,7 @@ export default function ClientsPage({ lang: _lang }: { lang?: "en" | "es" }) {
         lang={lang}
         onAdd={() => {
           setAddErr(null);
+          setFieldErrs({});
           setAddOpen(true);
         }}
       />
@@ -267,6 +314,7 @@ export default function ClientsPage({ lang: _lang }: { lang?: "en" | "es" }) {
             aria-labelledby="add-client-title"
             onClick={(e) => e.stopPropagation()}
             onSubmit={submitAddClient}
+            noValidate
             style="background:#fff;border-radius:16px;padding:24px 26px;max-width:440px;width:100%;box-shadow:0 24px 64px rgba(20,72,82,0.22);display:flex;flex-direction:column;gap:14px"
           >
             <h2
@@ -282,11 +330,22 @@ export default function ClientsPage({ lang: _lang }: { lang?: "en" | "es" }) {
                 autoFocus
                 required
                 value={addName}
-                onInput={(e) =>
-                  setAddName((e.target as HTMLInputElement).value)}
-                style="padding:11px 13px;border:1px solid var(--border,#d8dcd5);border-radius:10px;font:inherit;font-size:15px;font-weight:400;color:var(--fg)"
+                aria-invalid={fieldErrs.name ? "true" : undefined}
+                aria-describedby={fieldErrs.name
+                  ? "add-client-name-err"
+                  : undefined}
+                onInput={(e) => {
+                  const v = (e.target as HTMLInputElement).value;
+                  setAddName(v);
+                  if (fieldErrs.name) checkField("name", v);
+                }}
+                style={inputStyle(Boolean(fieldErrs.name))}
               />
             </label>
+            <FieldError
+              id="add-client-name-err"
+              msg={fieldErrs.name && tFor(lang, fieldErrs.name)}
+            />
             <label style="display:flex;flex-direction:column;gap:5px;font-size:13px;font-weight:700;color:var(--fg-muted,#6b7560)">
               {tFor(lang, "clientsPage.businessName")}
               <input
@@ -304,21 +363,45 @@ export default function ClientsPage({ lang: _lang }: { lang?: "en" | "es" }) {
                 value={formatPhoneInput(
                   addPhone,
                 )} /* NW-34 (REQ-012): (555) 123-4567 as you type */
-                onInput={(e) =>
-                  setAddPhone((e.target as HTMLInputElement).value)}
-                style="padding:11px 13px;border:1px solid var(--border,#d8dcd5);border-radius:10px;font:inherit;font-size:15px;font-weight:400;color:var(--fg)"
+                aria-invalid={fieldErrs.phone ? "true" : undefined}
+                aria-describedby={fieldErrs.phone
+                  ? "add-client-phone-err"
+                  : undefined}
+                onInput={(e) => {
+                  const v = (e.target as HTMLInputElement).value;
+                  setAddPhone(v);
+                  if (fieldErrs.phone) checkField("phone", v);
+                }}
+                onBlur={() => checkField("phone")}
+                style={inputStyle(Boolean(fieldErrs.phone))}
               />
             </label>
+            <FieldError
+              id="add-client-phone-err"
+              msg={fieldErrs.phone && tFor(lang, fieldErrs.phone)}
+            />
             <label style="display:flex;flex-direction:column;gap:5px;font-size:13px;font-weight:700;color:var(--fg-muted,#6b7560)">
               {tFor(lang, "settings.email")}
               <input
                 type="email"
                 value={addEmail}
-                onInput={(e) =>
-                  setAddEmail((e.target as HTMLInputElement).value)}
-                style="padding:11px 13px;border:1px solid var(--border,#d8dcd5);border-radius:10px;font:inherit;font-size:15px;font-weight:400;color:var(--fg)"
+                aria-invalid={fieldErrs.email ? "true" : undefined}
+                aria-describedby={fieldErrs.email
+                  ? "add-client-email-err"
+                  : undefined}
+                onInput={(e) => {
+                  const v = (e.target as HTMLInputElement).value;
+                  setAddEmail(v);
+                  if (fieldErrs.email) checkField("email", v);
+                }}
+                onBlur={() => checkField("email")}
+                style={inputStyle(Boolean(fieldErrs.email))}
               />
             </label>
+            <FieldError
+              id="add-client-email-err"
+              msg={fieldErrs.email && tFor(lang, fieldErrs.email)}
+            />
             {addErr && (
               <p
                 role="alert"
@@ -338,7 +421,7 @@ export default function ClientsPage({ lang: _lang }: { lang?: "en" | "es" }) {
               </button>
               <button
                 type="submit"
-                disabled={adding || !addName.trim()}
+                disabled={adding}
                 style="padding:10px 20px;border:0;border-radius:10px;background:var(--brand-green,#519843);color:#fff;font:inherit;font-weight:800;cursor:pointer;opacity:1"
               >
                 {adding ? "…" : tFor(lang, "common.add")}
@@ -347,6 +430,30 @@ export default function ClientsPage({ lang: _lang }: { lang?: "en" | "es" }) {
           </form>
         </div>
       )}
+      {flash && (
+        <div
+          role="status"
+          aria-live="polite"
+          class="clients-flash"
+          style="position:fixed;left:50%;bottom:28px;transform:translateX(-50%);z-index:1001;background:var(--brand-green,#519843);color:#fff;padding:12px 20px;border-radius:12px;font-weight:700;font-size:14.5px;box-shadow:0 12px 32px rgba(20,72,82,0.22)"
+        >
+          {flash}
+        </div>
+      )}
     </>
+  );
+}
+
+/** REQ-352 — a field's in-app message, right under that field */
+function FieldError({ id, msg }: { id: string; msg?: string | false }) {
+  if (!msg) return null;
+  return (
+    <p
+      id={id}
+      role="alert"
+      style="margin:-8px 0 0;color:#a83b3b;font-size:13px;font-weight:600"
+    >
+      {msg}
+    </p>
   );
 }
