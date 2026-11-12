@@ -48,6 +48,7 @@ import {
   newerMove,
   type Pt,
 } from "../../shared/demo-mode/motion.ts";
+import { type ActivePoll, activePoll } from "../lib/demo-mode/active-poll.ts";
 import {
   connectDemo,
   type DemoLink,
@@ -111,6 +112,8 @@ export default function DemoModeOverlay() {
   const peerOnlineRef = useRef(false);
   peerOnlineRef.current = peerOnline;
   const pollRef = useRef<(() => void) | null>(null);
+  /** REQ-222 (M11) — the poll itself; `idle()` re-arms it whenever this side is not connected */
+  const pollerRef = useRef<ActivePoll | null>(null);
   const whoRef = useRef<Promise<boolean> | null>(null);
   /** one whoami per page, started early (on the opening event) so the placement never waits for it */
   const knowImpersonating = () =>
@@ -198,13 +201,15 @@ export default function DemoModeOverlay() {
 
   // 1. is there a demo for this session? on load, every 5 s while this side is not connected to the
   //    other, and when /admin opens one here. Every ask says where this app is.
+  //    REQ-222 (M11): the schedule is the connection state's, not a chain's — see effect 1b.
   useEffect(() => {
     if (inert) return;
     let alive = true;
-    let timer: number | undefined;
-    const check = async () => {
-      clearTimeout(timer);
-      try {
+    const poller = activePoll({
+      every: ACTIVE_POLL_MS,
+      connected: () => peerOnlineRef.current,
+      ask: async () => {
+        // signed out, or the backend is away: it throws, nothing to draw, ask again later
         const a = await demoModeClient.active({ path: here() });
         if (!alive) return;
         if (a.session && a.role) {
@@ -215,14 +220,11 @@ export default function DemoModeOverlay() {
           setDemo(null);
         }
         setOpening(null);
-      } catch {
-        // signed out, or the backend is away — nothing to draw
-      }
-      if (alive && !peerOnlineRef.current) {
-        timer = setTimeout(check, ACTIVE_POLL_MS);
-      }
-    };
-    pollRef.current = () => void check();
+      },
+    });
+    const check = () => poller.now();
+    pollerRef.current = poller;
+    pollRef.current = check;
     const onVisible = () => {
       if (document.visibilityState === "visible" && !peerOnlineRef.current) {
         void check();
@@ -258,12 +260,19 @@ export default function DemoModeOverlay() {
     return () => {
       alive = false;
       pollRef.current = null;
-      clearTimeout(timer);
+      pollerRef.current = null;
+      poller.stop();
       document.removeEventListener("visibilitychange", onVisible);
       globalThis.removeEventListener(DEMO_OPENING_EVENT, onOpening);
       globalThis.removeEventListener(DEMO_STARTED_EVENT, onStarted);
     };
   }, []);
+
+  // 1b. REQ-222 (M11) — not connected (on load, the peer gone, the demo ENDED, the demo cleared):
+  //     the poll is re-armed, so the next demo reaches this app within ACTIVE_POLL_MS, no reload
+  useEffect(() => {
+    if (!peerOnline) pollerRef.current?.idle();
+  }, [peerOnline, demo?.id]);
 
   // 2. the link — the customer's side (the presenter's lives on the stage)
   useEffect(() => {
