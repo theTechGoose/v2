@@ -18,16 +18,32 @@ import {
 } from "@agents/domain/business/llm-prompts/mod.ts";
 import { isInQuotePhase } from "@agents/domain/business/derive-phase/mod.ts";
 // REQ-368 (demo-loop cycle 1, M30 + M32): pricing / billing asks + tool gate.
+// REQ-388 (demo-loop cycle 2, M19 + M23 + m38): owed questions, several
+// pricing subjects, follow-ups, "explain", and the draft offer.
 import {
+  asksHowPriced,
   chatToolsFor,
   isInvoiceRequest,
   isOpenDraft,
   jobTitle,
   mayAdvanceQuote,
+  owedNameFromHistory,
+  parseDraftRequest,
+  parseOwedQuestion,
+  parsePricingFollowUp,
   parsePricingQuestion,
+  type PricingSubject,
+  pricingSubjects,
+  withoutPlace,
 } from "@agents/domain/business/chat-routing/mod.ts";
-import { pricingReply } from "@agents/domain/business/chat-answers/mod.ts";
+import {
+  type PricedSubject,
+  pricingContext,
+  pricingReply,
+} from "@agents/domain/business/chat-answers/mod.ts";
+import { liveDraftOffer } from "#quote-flow/chat-draft-offer.ts";
 import { AnswerBilling } from "@agents/domain/coordinators/answer-billing/mod.ts";
+import { AnswerOwed } from "@agents/domain/coordinators/answer-owed/mod.ts";
 import { SuggestPrices } from "@agents/domain/coordinators/suggest-prices/mod.ts";
 import { TransitionToTerms } from "@agents/domain/coordinators/transition-to-terms/mod.ts";
 import {
@@ -195,6 +211,21 @@ function pickPreviewSource(msgs: AgentMessage[]): string | undefined {
     if (m.kind === "action_card" || m.kind === "text") return m.content;
   }
   return undefined;
+}
+
+/** REQ-388 (M23 + m38): the prices a pricing answer gave, as its payload
+ *  carries them — the context a follow-up is priced with. */
+function pricingOf(m: AgentMessage | undefined): PricedSubject[] | undefined {
+  if (!m || m.role !== "assistant" || m.kind !== "text") return undefined;
+  const p = (m.payload as { pricing?: { subjects?: unknown } } | undefined)
+    ?.pricing;
+  const subjects = Array.isArray(p?.subjects) ? p.subjects : [];
+  const out = subjects.filter((x): x is PricedSubject =>
+    !!x && typeof x === "object" &&
+    typeof (x as PricedSubject).job === "string" &&
+    Array.isArray((x as PricedSubject).options)
+  );
+  return out.length ? out : undefined;
 }
 
 export interface HandleChatInput {
@@ -1073,6 +1104,33 @@ export class HandleChatMessage {
         : r.conversation;
       return { conversation, newMessages: [userMsg, ...r.newMessages] };
     };
+    // ---- REQ-388 (demo-loop cycle 2, M19): "¿Cuánto me debe Ana López?" —
+    // what a customer owes and when, from their own quotes and invoices, with
+    // or without a quote bound. Pair 2's model had neither (and a prompt that
+    // said the invoice went out at signing): "El invoice ya se envió cuando
+    // firmó." A follow-up that names nobody is about the thread's last name.
+    const owedAsk = !llmResponse && !changeOrderAsk &&
+        typeof input.content === "string"
+      ? parseOwedQuestion(input.content)
+      : undefined;
+    if (owedAsk) {
+      const earlier = history
+        .filter((m) => m.role === "user" && m.id !== userMsg.id)
+        .map((m) => m.content);
+      const owed = await new AnswerOwed(
+        this.conversations,
+        this.messages,
+        this.quotes,
+        undefined,
+        this.customers,
+      ).run({
+        userId: input.userId,
+        conversation: conv,
+        lang: replyLang,
+        customerName: owedAsk.customerName ?? owedNameFromHistory(earlier),
+      });
+      return await finishEarly(owed);
+    }
     // M32: "John signed! Please send him the deposit invoice" → where the
     // bill stands (signing already sent the deposit invoice).
     if (
@@ -1082,70 +1140,31 @@ export class HandleChatMessage {
       const billed = await answerBilling();
       if (billed) return await finishEarly(billed);
     }
-    // M30: "how much do i charge for panel swap 200a" → the three tiers of
-    // the "help me price it" engine (SuggestPrices) and, for a new job in
-    // the quote phase, a draft at the Market price.
-    const pricingAsk = !llmResponse && !changeOrderAsk &&
+    // ---- REQ-388 (M23): "Draft a quote at $1,500" — the pricing answer's
+    // offer, taken (the chat's button sends those words). The draft is the
+    // offered job at the price asked for, else the offered one. A pricing
+    // question itself never drafts.
+    const earlierMessages = history.filter((m) => m.id !== userMsg.id);
+    const offered = liveDraftOffer(earlierMessages, conv.quoteId);
+    const draftAsk = !llmResponse && offered && isInQuotePhase(conv) &&
         typeof input.content === "string"
-      ? parsePricingQuestion(input.content)
+      ? parseDraftRequest(input.content)
       : undefined;
-    const pricedSubject = pricingAsk?.job ||
-      boundQuote?.jobName?.trim() || boundQuote?.summary?.trim() || "";
-    if (pricingAsk && pricedSubject) {
-      const draftIt = isInQuotePhase(conv) && !conv.quoteId && !!pricingAsk.job;
-      const canUpdate = isInQuotePhase(conv) && !!boundQuote &&
-        isOpenDraft(boundQuote) && !boundQuote.lockedAt;
-      // Asking about the bound quote ("what should I charge for this?"):
-      // price its words — never its amounts, which SuggestPrices would read
-      // as a cost floor.
-      const raw = pricingAsk.job || !boundQuote ? input.content : [
-        input.content,
-        `The job: ${pricedSubject}`,
-        boundQuote.description ?? "",
-        ...(boundQuote.lineItems ?? []).map((l) => l.description),
-      ].filter((s) => s.trim()).join("\n");
-      const addr = await this.addresses.get(input.userId).catch(() => null);
-      const priced = await new SuggestPrices(this.llm).run({
-        userId: input.userId,
-        raw,
-        lang: replyLang,
-        ...(addr
-          ? {
-            address: {
-              city: addr.city,
-              state: addr.state,
-              postal: addr.postal,
-            },
-          }
-          : {}),
-      });
-      const market = priced.options.find((o) => o.tier === "market") ??
-        priced.options[1] ?? priced.options[0];
-      const text = pricingReply(replyLang, {
-        job: pricedSubject,
-        where: [addr?.city?.trim(), addr?.state?.trim()].filter(Boolean)
-          .join(", "),
-        options: priced.options,
-        basis: priced.basis,
-        ...(draftIt ? { draftedAt: market.label } : {}),
-        offerUpdate: canUpdate,
-      });
-      const title = jobTitle(pricingAsk.job);
-      llmResponse = draftIt
-        ? {
-          text,
-          action: {
-            type: "create_quote",
-            payload: {
-              summary: title,
-              lineItems: [{
-                description: title,
-                amountCents: market.priceCents,
-              }],
-            },
+    if (offered && draftAsk) {
+      const title = offered.offer.title;
+      llmResponse = {
+        text: "",
+        action: {
+          type: "create_quote",
+          payload: {
+            summary: title,
+            lineItems: [{
+              description: title,
+              amountCents: draftAsk.amountCents ?? offered.offer.amountCents,
+            }],
           },
-        }
-        : { text };
+        },
+      };
     }
 
     // ---- N3: action_card / continue_cta → synthetic text turns so the LLM
@@ -1212,16 +1231,159 @@ export class HandleChatMessage {
         }),
     );
 
+    const base = isInQuotePhase(conv)
+      ? SYSTEM_PROMPT_QUOTE
+      : SYSTEM_PROMPT_TERMS;
+    // Roadmap p.13: the assistant talks to the CONTRACTOR, so it follows
+    // their UI language (user.language) — it would be odd for the app to
+    // be in Spanish while the assistant replies in English.
+    const langRule = replyLang === "es"
+      ? `\n\n${t("en", "prompts.contractorLanguageEsOverride")}`
+      : "";
+
+    // ---- REQ-368 (M30) + REQ-388 (demo-loop cycle 2, M23 + m38): a pricing
+    // question is answered with the "help me price it" engine's three tiers
+    // (SuggestPrices) — every job the message asks about, each on its own
+    // words; a follow-up right after a price ("y para un baño de 5x8?") with
+    // the earlier prices as context. Nothing is drafted (pair 7's question
+    // became a quote whose line was the question): a new job in the quote
+    // phase gets a "Draft a quote at $X" offer. When the message asks how the
+    // price was reached, the chat model writes the answer around those
+    // prices, with no tools.
+    let pricingPayload: Record<string, unknown> | undefined;
+    const asked = typeof input.content === "string" ? input.content : "";
+    const pricingAsk = !llmResponse && !changeOrderAsk && asked
+      ? parsePricingQuestion(asked)
+      : undefined;
+    const lastBefore = earlierMessages[earlierMessages.length - 1];
+    const followUp = !llmResponse && !changeOrderAsk && !pricingAsk &&
+        pricingOf(lastBefore)
+      ? parsePricingFollowUp(asked)
+      : undefined;
+    const subjects: PricingSubject[] = pricingAsk?.job
+      ? pricingSubjects(asked)
+      : followUp
+      ? [{ job: followUp.job, action: false }]
+      : [];
+    const boundSubject = boundQuote?.jobName?.trim() ||
+      boundQuote?.summary?.trim() || "";
+    if (
+      (pricingAsk || followUp) &&
+      (subjects.length > 0 || (pricingAsk && boundSubject))
+    ) {
+      const addr = await this.addresses.get(input.userId).catch(() => null);
+      const where = [addr?.city?.trim(), addr?.state?.trim()].filter(Boolean)
+        .join(", ");
+      const earlierPrices = [...earlierMessages].reverse().map(pricingOf)
+        .find((p) => !!p);
+      const price = (raw: string) =>
+        new SuggestPrices(this.llm).run({
+          userId: input.userId,
+          raw,
+          lang: replyLang,
+          ...(addr
+            ? {
+              address: {
+                city: addr.city,
+                state: addr.state,
+                postal: addr.postal,
+              },
+            }
+            : {}),
+          ...(earlierPrices ? { context: pricingContext(earlierPrices) } : {}),
+        });
+      const priced: PricedSubject[] = [];
+      if (subjects.length === 0 && boundQuote) {
+        // Asking about the bound quote ("what should I charge for this?"):
+        // price its words — never its amounts, which SuggestPrices would
+        // read as a cost floor.
+        const r = await price(
+          [
+            asked,
+            `The job: ${boundSubject}`,
+            boundQuote.description ?? "",
+            ...(boundQuote.lineItems ?? []).map((l) => l.description),
+          ].filter((x) => x.trim()).join("\n"),
+        );
+        priced.push({ job: boundSubject, ...r });
+      }
+      for (const s of subjects) {
+        // One job: the whole message, with every quantity and cost it names
+        // (REQ-260). Several: each job's own words — pair 7's drain move is
+        // never priced together with its heated floor.
+        const r = await price(subjects.length === 1 ? asked : s.job);
+        priced.push({
+          job: withoutPlace(s.job, { city: addr?.city, state: addr?.state }),
+          action: s.action,
+          ...r,
+        });
+      }
+      const [first, ...more] = priced;
+      const market = first.options.find((o) => o.tier === "market") ??
+        first.options[1] ?? first.options[0];
+      // One job, named in full: a follow-up's "un baño de 5x8" alone is no
+      // quote line, and several jobs are a question, not one quote.
+      const draftOffer = isInQuotePhase(conv) && !conv.quoteId && !followUp &&
+          subjects.length === 1
+        ? {
+          title: jobTitle(first.job),
+          amountCents: market.priceCents,
+          tier: market.label,
+        }
+        : undefined;
+      const answer = pricingReply(replyLang, {
+        ...first,
+        where,
+        more,
+        ...(draftOffer
+          ? {
+            offerDraft: {
+              tier: draftOffer.tier,
+              amountCents: draftOffer.amountCents,
+            },
+          }
+          : {}),
+        offerUpdate: isInQuotePhase(conv) && !!boundQuote &&
+          isOpenDraft(boundQuote) && !boundQuote.lockedAt,
+      });
+      pricingPayload = {
+        pricing: {
+          subjects: priced.map((p) => ({
+            job: p.job,
+            options: p.options.map((o) => ({
+              label: o.label,
+              priceCents: o.priceCents,
+            })),
+          })),
+        },
+        ...(draftOffer ? { draftOffer } : {}),
+      };
+      let explained = "";
+      if (asksHowPriced(asked)) {
+        const covers = priced.some((p) => p.basis === "labor_and_materials")
+          ? "\nThe prices include labor and materials."
+          : "";
+        const res = await this.llm.respond({
+          systemPrompt: `${base}\n\n${
+            t("en", "prompts.pricingExplain")
+          }${langRule}`,
+          messages: llmTurns,
+          userId: input.userId,
+          businessContext: `Prices from the pricing engine for this message${
+            where ? ` (${where})` : ""
+          }:\n${pricingContext(priced)}${covers}`,
+          tools: [],
+        }).catch((err) => {
+          console.error("[handle-chat] price explanation failed:", err);
+          return undefined;
+        });
+        explained = res?.text?.trim() ?? "";
+      }
+      llmResponse = { text: explained || answer };
+    }
+
     if (!llmResponse) {
-      const base = isInQuotePhase(conv)
-        ? SYSTEM_PROMPT_QUOTE
-        : SYSTEM_PROMPT_TERMS;
-      // Roadmap p.13: the assistant talks to the CONTRACTOR, so it follows
-      // their UI language (user.language) — it would be odd for the app to
-      // be in Spanish while the assistant replies in English.
-      const systemPrompt = replyLang === "es"
-        ? `${base}\n\n${t("en", "prompts.contractorLanguageEsOverride")}`
-        : base;
+      const systemPrompt = `${base}${langRule}`;
       // REQ-262 (demo M25): ground the model in the saved quote.
       let businessContext: string | undefined;
       if (conv.quoteId) {
@@ -1544,6 +1706,8 @@ export class HandleChatMessage {
       suppressTextBubble = false;
     }
 
+    // REQ-388 (M23 + m38): a pricing answer carries its prices and offer.
+    if (pricingPayload) replyPayload = { ...pricingPayload, ...replyPayload };
     const newMessages: AgentMessage[] = [userMsg];
     if (!suppressTextBubble) {
       const assistantMsg = await this.messages.append({

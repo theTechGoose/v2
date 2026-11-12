@@ -5,12 +5,20 @@
  * model may call in the conversation's current state.
  */
 import { assertEquals } from "#std/assert";
+import { t } from "@core/i18n/mod.ts";
 import {
+  asksHowPriced,
   chatToolsFor,
   isInvoiceRequest,
   jobTitle,
   mayAdvanceQuote,
+  owedNameFromHistory,
+  parseDraftRequest,
+  parseOwedQuestion,
+  parsePricingFollowUp,
   parsePricingQuestion,
+  pricingSubjects,
+  withoutPlace,
 } from "./mod.ts";
 
 // ---------------------------------------------------------------------------
@@ -186,4 +194,272 @@ Deno.test("REQ-368 M32 mayAdvanceQuote: lock / terms only run on a draft in the 
   assertEquals(mayAdvanceQuote("quote", { status: "sent" }), false);
   assertEquals(mayAdvanceQuote("terms", { status: "draft" }), false);
   assertEquals(mayAdvanceQuote("terms", { status: "accepted" }), false);
+});
+
+// ---------------------------------------------------------------------------
+// REQ-388 (demo-loop cycle 2, M23 + m38 + M19, run r561db6d4)
+//
+//   M23 (pair 7): "what should i charge to move a shower drain 18 inches on a
+//   slab foundation in austin? explain how you got the number, and also
+//   cuánto cobro por piso radiante en un baño de 8x10?" became ONE job — the
+//   whole rest of the message — and a draft quote with it as the line item.
+//   m38 (pair 7): "y para un baño de 5x8?" went to the free chat model.
+//   M19 (pair 2): "¿Cuánto me debe Ana López?" had no deterministic path.
+// ---------------------------------------------------------------------------
+
+const PAIR7 =
+  "what should i charge to move a shower drain 18 inches on a slab foundation in austin? explain how you got the number, and also cuánto cobro por piso radiante en un baño de 8x10?";
+/** The same message as the customer quoted it back in the demo chat. */
+const PAIR7_AS_QUOTED =
+  "what should i charge to move a shower drain 18 inches on a slab... explain how you got the number, and also cuánto cobro por piso radiante en un baño de 8x10?";
+
+Deno.test("REQ-388 M23 parsePricingQuestion: pair 7's question — the job ends where the question does, never the whole message", () => {
+  assertEquals(parsePricingQuestion(PAIR7), {
+    job: "move a shower drain 18 inches on a slab foundation in austin",
+  });
+  assertEquals(parsePricingQuestion(PAIR7_AS_QUOTED), {
+    job: "move a shower drain 18 inches on a slab",
+  });
+});
+
+Deno.test("REQ-388 M23 pricingSubjects: pair 7 asks two prices — the drain move and the heated floor", () => {
+  assertEquals(pricingSubjects(PAIR7), [
+    {
+      job: "move a shower drain 18 inches on a slab foundation in austin",
+      action: true,
+    },
+    { job: "piso radiante en un baño de 8x10", action: false },
+  ]);
+  assertEquals(pricingSubjects(PAIR7_AS_QUOTED), [
+    { job: "move a shower drain 18 inches on a slab", action: true },
+    { job: "piso radiante en un baño de 8x10", action: false },
+  ]);
+  // one question → one subject; "for" names a thing, "to" an action
+  assertEquals(pricingSubjects("how much do i charge for panel swap 200a"), [
+    { job: "panel swap 200a", action: false },
+  ]);
+  assertEquals(
+    pricingSubjects("how much should we charge to replace a water heater"),
+    [{ job: "replace a water heater", action: true }],
+  );
+  // no job / a rate / not a pricing question → nothing to price
+  assertEquals(pricingSubjects("what should I charge?"), []);
+  assertEquals(pricingSubjects("how much should I charge per hour?"), []);
+  assertEquals(pricingSubjects("Tile bathroom 80 sqft."), []);
+});
+
+Deno.test("REQ-388 M23 the job ends at a clause boundary: '…', ', and also', 'explain', 'tell me why', a second question", () => {
+  const cases: [string, string][] = [
+    [
+      "how much should I charge for a panel swap, and also how long does it take?",
+      "a panel swap",
+    ],
+    ["what should I charge for a deck stain explain your math", "a deck stain"],
+    ["what should I charge for a 12x12 deck… tell me why", "a 12x12 deck"],
+    [
+      "¿cuánto cobro por pintar 3 cuartos? y explícame por qué",
+      "pintar 3 cuartos",
+    ],
+    [
+      "Thanks. Customer wants a 10'x10' slab, what should I charge?",
+      "a 10'x10' slab",
+    ],
+    // a comma alone, "sq. ft" and "$1,500.50" are not boundaries
+    [
+      "what's a fair price for a deck stain, 300 sqft",
+      "a deck stain, 300 sqft",
+    ],
+    ["what should I charge for 400 sq. ft of tile", "400 sq. ft of tile"],
+  ];
+  for (const [text, job] of cases) {
+    assertEquals(parsePricingQuestion(text), { job }, text);
+  }
+});
+
+Deno.test("REQ-388 M23 asksHowPriced: 'explain how you got the number' asks for the reasoning; a bare pricing question does not", () => {
+  for (
+    const text of [
+      PAIR7,
+      "what should I charge for a deck? explain",
+      "how much do I charge for a panel swap and why",
+      "¿cuánto cobro por pintar 3 cuartos? explícame",
+      "¿cuánto cobro por pintar 3 cuartos y por qué?",
+      "what's a fair price for a deck stain — how did you get that number?",
+    ]
+  ) {
+    assertEquals(asksHowPriced(text), true, text);
+  }
+  for (
+    const text of [
+      "how much do i charge for panel swap 200a",
+      "¿Cuánto cobro por cambiar un panel de 200A?",
+      "how much should we charge to replace a water heater",
+      "what should i charge to move a shower drain 18 inches on a slab foundation in austin?",
+      "",
+    ]
+  ) {
+    assertEquals(asksHowPriced(text), false, text);
+  }
+});
+
+Deno.test("REQ-388 m38 parsePricingFollowUp: 'y para un baño de 5x8?' asks the same price for another size", () => {
+  const cases: [string, string][] = [
+    ["y para un baño de 5x8?", "un baño de 5x8"],
+    ["¿y para un baño de 5x8?", "un baño de 5x8"],
+    ["and for a 5x8 one?", "a 5x8 one"],
+    ["what about a 12x12 room?", "a 12x12 room"],
+    ["¿y si es de 5x8?", "5x8"],
+    ["how about 2 coats?", "2 coats"],
+  ];
+  for (const [text, job] of cases) {
+    assertEquals(parsePricingFollowUp(text), { job }, text);
+  }
+  for (
+    const text of [
+      "and also add tile",
+      "y gracias",
+      "y para cuándo estaría listo?",
+      "and what's the total?",
+      "Tile bathroom 80 sqft.",
+      "no no thats not a quote, I was ASKING... en español por favor",
+      "",
+    ]
+  ) {
+    assertEquals(parsePricingFollowUp(text), undefined, text);
+  }
+});
+
+Deno.test("REQ-388 M19 parseOwedQuestion: pair 2 — '¿Cuánto me debe Ana López?' names her; the follow-up names nobody", () => {
+  assertEquals(parseOwedQuestion("¿Cuánto me debe Ana López?"), {
+    customerName: "Ana López",
+  });
+  assertEquals(
+    parseOwedQuestion(
+      "No entiendo. ¿Cuánto dinero me debe y cuándo me va a pagar?",
+    ),
+    {},
+  );
+});
+
+Deno.test("REQ-388 M19 parseOwedQuestion: other ways to ask what a customer owes or when they pay (EN + ES)", () => {
+  const named: [string, string][] = [
+    ["How much does John Miller owe me?", "John Miller"],
+    ["what does Ana owe?", "Ana"],
+    ["how much does Ana still owe us", "Ana"],
+    ["what's John's balance?", "John"],
+    ["when is Ana going to pay me?", "Ana"],
+    ["¿Qué me debe la señora Pérez?", "Pérez"],
+    ["¿Cuándo me paga Ana López?", "Ana López"],
+    ["¿Ana López cuánto me debe?", "Ana López"],
+    ["cuanto me debe ana lopez y cuando me paga", "ana lopez"],
+  ];
+  for (const [text, name] of named) {
+    assertEquals(parseOwedQuestion(text), { customerName: name }, text);
+  }
+  for (
+    const text of [
+      "how much does the customer owe me?",
+      "what do they owe?",
+      "¿Cuánto me debe el cliente?",
+      "¿cuánto me debe?",
+    ]
+  ) {
+    assertEquals(parseOwedQuestion(text), {}, text);
+  }
+});
+
+Deno.test("REQ-388 M19 parseOwedQuestion: what the contractor owes, a pricing question, a billing ask are not 'what does X owe'", () => {
+  for (
+    const text of [
+      "how much do I owe Home Depot?",
+      "¿Cuánto le debo a Juan?",
+      "¿Cuánto cobro por cambiar un panel de 200A?",
+      "send him the invoice",
+      "how much does a panel swap cost?",
+      "John signed! Please send him the deposit invoice for $1,600",
+      // what a document must say or a job costs — not what someone owes
+      "¿Qué debe incluir la cotización?",
+      "¿Cuánto debe costar un baño de 5x8?",
+      "",
+    ]
+  ) {
+    assertEquals(parseOwedQuestion(text), undefined, text);
+  }
+  // a filler word or a document is not a customer's name
+  for (const text of ["Bueno, ¿cuánto me debe?", "what's the job's balance?"]) {
+    assertEquals(parseOwedQuestion(text), {}, text);
+  }
+  // and pair 2's question is neither a billing ask nor a pricing question
+  assertEquals(isInvoiceRequest("¿Cuánto me debe Ana López?"), false);
+  assertEquals(parsePricingQuestion("¿Cuánto me debe Ana López?"), undefined);
+});
+
+Deno.test("REQ-388 M19 owedNameFromHistory: the follow-up 'how much does she owe' is about the customer the thread last named", () => {
+  assertEquals(
+    owedNameFromHistory([
+      "¿Cuánto me debe Ana López?",
+      "No entiendo. ¿Cuánto dinero me debe y cuándo me va a pagar?",
+    ]),
+    "Ana López",
+  );
+  assertEquals(
+    owedNameFromHistory([
+      "how much does John Miller owe me?",
+      "what does Ana owe?",
+      "and when will she pay?",
+    ]),
+    "Ana",
+  );
+  assertEquals(owedNameFromHistory(["hello", "¿cuánto me debe?"]), undefined);
+});
+
+Deno.test("REQ-388 M23 parseDraftRequest: the offer button's words (EN + ES) and 'draft it' ask for the draft", () => {
+  assertEquals(parseDraftRequest("Draft a quote at $1,500"), {
+    amountCents: 150_000,
+  });
+  assertEquals(parseDraftRequest("draft a quote at $1,500.50"), {
+    amountCents: 150_050,
+  });
+  assertEquals(parseDraftRequest("Preparar cotización por $1,500"), {
+    amountCents: 150_000,
+  });
+  assertEquals(parseDraftRequest("draft it at 1800"), { amountCents: 180_000 });
+  assertEquals(parseDraftRequest("draft it"), {});
+  assertEquals(parseDraftRequest("yes, draft it"), {});
+  assertEquals(parseDraftRequest("sí, prepárala"), {});
+  for (
+    const text of [
+      "draft a quote for a 12x12 deck, $3,000",
+      "Quote for Bryant: gutter cleaning $220.",
+      "how much do i charge for panel swap 200a",
+      "I know my price, write it up.",
+      "",
+    ]
+  ) {
+    assertEquals(parseDraftRequest(text), undefined, text);
+  }
+});
+
+Deno.test("REQ-388 M23 withoutPlace: 'in austin' is where the job is, not the job", () => {
+  const austin = { city: "Austin", state: "TX" };
+  assertEquals(
+    withoutPlace(
+      "move a shower drain 18 inches on a slab foundation in austin",
+      austin,
+    ),
+    "move a shower drain 18 inches on a slab foundation",
+  );
+  assertEquals(withoutPlace("deck stain in Austin, TX", austin), "deck stain");
+  assertEquals(
+    withoutPlace("panel swap in round rock", austin),
+    "panel swap in round rock",
+  );
+  assertEquals(withoutPlace("panel swap", {}), "panel swap");
+});
+
+Deno.test("REQ-388 M23 parseDraftRequest: what the chat's 'Draft a quote' button sends (asstChat.draftOffer, en + es) is read as the ask", () => {
+  for (const lang of ["en", "es"] as const) {
+    const said = t(lang, "asstChat.draftOffer", { amount: "$1,500" });
+    assertEquals(parseDraftRequest(said), { amountCents: 150_000 }, said);
+  }
 });

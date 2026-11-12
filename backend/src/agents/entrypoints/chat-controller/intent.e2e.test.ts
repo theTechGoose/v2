@@ -4,7 +4,7 @@
  * pricing and billing paths, the ones that now answer before any chat model.
  *
  *   M30 (pair 10): "how much do i charge for panel swap 200a" → three priced
- *   tiers and a draft quote, not a refusal.
+ *   tiers, not a refusal (and, REQ-388, an offer to draft — no quote yet).
  *   M32 (pair 1): a 50/50 quote, sent, signed on the public page (which bills
  *   the deposit) → "John signed! Please send him the deposit invoice for
  *   $1,600" names that invoice; the stale "Business / Person" CTA it used to
@@ -107,7 +107,9 @@ const texts = (msgs: Msg[]) =>
   msgs.filter((m) => m.role === "assistant" && m.kind === "text")
     .map((m) => m.content).join("\n");
 
-Deno.test("REQ-368 M30 e2e: 'how much do i charge for panel swap 200a' answers with three priced tiers and a draft quote — not a refusal", async () => {
+// REQ-388 (demo-loop cycle 2, M23) supersedes the draft quote: the answer
+// offers it (owed-pricing.e2e.test.ts drives the offer).
+Deno.test("REQ-368 M30 + REQ-388 M23 e2e: 'how much do i charge for panel swap 200a' answers with three priced tiers and offers the draft — not a refusal, and no quote yet", async () => {
   await withServer(async () => {
     const me = await signIn();
     const call = api(me.sid);
@@ -127,14 +129,17 @@ Deno.test("REQ-368 M30 e2e: 'how much do i charge for panel swap 200a' answers w
     assertStringIncludes(text, "Market: $");
     assertStringIncludes(text, "Premium: $");
 
-    const card = res.newMessages.find((m) => m.kind === "action_card");
-    assert(card, "no draft quote card");
-    assertEquals(card!.payload?.status, "draft");
-    const quotes = await new QuoteStore().listByUser(me.userId);
-    assertEquals(quotes.length, 1);
-    assertEquals(quotes[0].status, "draft");
-    assertEquals(quotes[0].estimatedTotal, card!.payload?.totalCents);
-    assertEquals(res.conversation.quoteId, quotes[0].id);
+    assertEquals(
+      res.newMessages.filter((m) => m.kind === "action_card").length,
+      0,
+      "a question was drafted into a quote",
+    );
+    assertEquals((await new QuoteStore().listByUser(me.userId)).length, 0);
+    assertEquals(res.conversation.quoteId, undefined);
+    const reply = res.newMessages.find((m) =>
+      m.role === "assistant" && m.kind === "text"
+    );
+    assert(reply?.payload?.draftOffer, "no draft offer");
   });
 });
 

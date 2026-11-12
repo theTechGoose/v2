@@ -48,3 +48,59 @@ Deno.test("REQ-261 M26 quote and terms prompts carry the PRIVATE COSTS rule", ()
     assert(/never put a dollar amount/i.test(p), "rule must forbid dollar amounts");
   }
 });
+
+// REQ-388 (demo-loop cycle 2, run r561db6d4) — the pricing/billing rules both
+// chat prompts carry (REQ-368's prompts.pricingAndBilling).
+//   m38: the model told the contractor "obtén varias cotizaciones de
+//   contratistas locales" — the prompt never said the user IS the contractor.
+//   M23: it told the model to "also call create_quote at the typical price"
+//   for a pricing question — a question became a draft.
+//   M19: it said "say the invoice already went out when they signed" for every
+//   signed quote — false for a pay-after-completion job (REQ-316) — and the
+//   Spanish override let the model answer "El invoice ya se envió".
+Deno.test("REQ-388 m38 quote and terms prompts: the user is the contractor — advise what to charge, never send them to other contractors for quotes", () => {
+  for (const p of [SYSTEM_PROMPT_QUOTE, SYSTEM_PROMPT_TERMS]) {
+    assert(
+      /advise them on what to CHARGE/.test(p),
+      "says who the advice is for",
+    );
+    assert(
+      /never tell (?:them|the contractor) to get quotes or bids from other contractors/i
+        .test(p),
+      "forbids 'get quotes from other contractors'",
+    );
+  }
+});
+
+Deno.test("REQ-388 M23 quote and terms prompts: a pricing question is answered, never drafted into a quote", () => {
+  for (const p of [SYSTEM_PROMPT_QUOTE, SYSTEM_PROMPT_TERMS]) {
+    assert(
+      !/also call `?create_quote`? at the typical price/i.test(p),
+      "still drafts",
+    );
+    assert(/don't draft a quote unless the contractor asks for one/i.test(p));
+  }
+});
+
+Deno.test("REQ-388 M19 quote and terms prompts: what was billed follows the payment terms and the data — no blanket 'went out when they signed'", () => {
+  for (const p of [SYSTEM_PROMPT_QUOTE, SYSTEM_PROMPT_TERMS]) {
+    assert(!/say the invoice already went out when they signed/i.test(p));
+    assert(
+      /payment upon completion/i.test(p),
+      "names pay-after-completion terms",
+    );
+    assert(/never say an invoice went out unless/i.test(p));
+  }
+});
+
+Deno.test("REQ-388 M19 the Spanish override names the documents in Spanish — 'factura', never 'invoice' (en and es dictionaries agree)", () => {
+  for (const lang of ["en", "es"] as const) {
+    const o = t(lang, "prompts.contractorLanguageEsOverride");
+    assert(o.includes("'factura' (never 'invoice')"), `${lang}: ${o}`);
+    assert(o.includes("'cotización' (never 'quote')"), `${lang}: ${o}`);
+  }
+  assertEquals(
+    t("en", "prompts.pricingAndBilling"),
+    t("es", "prompts.pricingAndBilling"),
+  );
+});

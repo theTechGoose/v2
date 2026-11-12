@@ -249,3 +249,48 @@ Deno.test("REQ-332 suggest-prices: the fallback tiers carry the derived basis to
   const res = await flow.run({ userId: "u-1", raw: VANITY_RAW, lang: "en" });
   assertEquals(res.basis, "labor_materials_as_noted");
 });
+
+// REQ-388 (demo-loop cycle 2, m38, run r561db6d4): "y para un baño de 5x8?"
+// after a heated-floor price went to the free chat model, which gave a range
+// of its own. A follow-up is priced by this engine with the earlier tiers as
+// context, so the numbers come from one place — and those earlier prices are
+// suggestions, never a cost floor (REQ-260's floor is the contractor's OWN
+// stated cost).
+Deno.test("REQ-388 m38 suggest-prices: earlier prices in the chat reach the model as context — and are never a cost floor", async () => {
+  const { llm, flow } = fresh();
+  let user = "";
+  llm.setHandler((req) => {
+    user = req.messages.find((m) => m.role === "user")?.content ?? "";
+    return {
+      text: JSON.stringify({
+        options: [
+          {
+            tier: "competitive",
+            priceCents: 76_000,
+            rationale: "5x8 heated floor",
+          },
+          { tier: "market", priceCents: 82_000, rationale: "Typical" },
+          { tier: "premium", priceCents: 88_000, rationale: "Premium mat" },
+        ],
+      }),
+    };
+  });
+  const res = await flow.run({
+    userId: "u-1",
+    raw: "y para un baño de 5x8?",
+    lang: "es",
+    context:
+      "piso radiante en un baño de 8x10: Competitivo $1,500 · De mercado $2,000 · Premium $2,500",
+  });
+  assert(user.includes("y para un baño de 5x8?"), user);
+  assert(
+    user.includes("piso radiante en un baño de 8x10"),
+    `no context: ${user}`,
+  );
+  assert(
+    /consistent/i.test(user),
+    `context not framed for consistency: ${user}`,
+  );
+  // $2,500 from the context is not a floor: the tiers stay as priced
+  assertEquals(res.options.map((o) => o.priceCents), [76_000, 82_000, 88_000]);
+});

@@ -23,6 +23,11 @@ export interface SuggestPricesInput {
   /** REQ-017 (NW-09): the contractor's saved business location — the model
    *  prices for THIS market, never a national average. */
   address?: { city?: string; state?: string; postal?: string };
+  /** REQ-388 (demo-loop cycle 2, m38): prices this conversation already
+   *  gave ("piso radiante en un baño de 8x10: Competitivo $1,500 · …"), so
+   *  "y para un baño de 5x8?" is priced consistently with them. Suggestions,
+   *  not the contractor's costs — never part of the REQ-260 floor. */
+  context?: string;
 }
 
 export interface PriceOption {
@@ -88,7 +93,13 @@ export class SuggestPrices {
     const basisLine = basis === "labor_materials_as_noted"
       ? "\n\nThe customer supplies some of the materials (see the message): price the labor and only the materials the contractor provides."
       : "";
-    const content = `${job}${locationLine}${basisLine}${langLine}`;
+    // REQ-388 (m38): earlier prices in the chat — for consistency only.
+    const context = input.context?.trim() ?? "";
+    const contextLine = context
+      ? `\n\nPrices already suggested earlier in this conversation (keep the new prices consistent with them — the same rate per unit; they are suggestions, not the contractor's costs):\n${context}`
+      : "";
+    const content =
+      `${job}${contextLine}${locationLine}${basisLine}${langLine}`;
 
     // REQ-260 (M24): the largest dollar amount the contractor stated (a
     // subcontractor's quote, the materials) is a floor no tier may sit under.
