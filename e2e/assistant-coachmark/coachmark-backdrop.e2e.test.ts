@@ -1,7 +1,8 @@
 /**
  * REQ-290 — demo cycle 1, issues m17 + p12: in a browser, the dashboard's coach overlay (a fresh
  * account's first visit) is drawn with no backdrop-filter — the spotlighted "My assistant" item
- * stays sharp — and its hint reads "Tap anywhere to dismiss"; and the stage's mirror frame shell
+ * stays sharp — and its hint is a capitalised sentence (REQ-616, demo cycle 4 p4-p8e: on this
+ * mouse-pointer desktop viewport it reads "Click anywhere to dismiss"); and the stage's mirror frame shell
  * (MIRROR_SRCDOC) forces backdrop-filter to none on anything mirrored into it, so a scaled stage
  * paints no ghost checklist.
  */
@@ -53,7 +54,7 @@ async function signIn(
   ]);
 }
 
-Deno.test("REQ-290: the dashboard coach overlay has no backdrop-filter and reads 'Tap anywhere to dismiss'; the stage's mirror frame forces backdrop-filter to none", (t) =>
+Deno.test("REQ-290 + REQ-616: the dashboard coach overlay has no backdrop-filter and, on a mouse-pointer desktop, reads 'Click here…' / 'Click anywhere to dismiss'; the stage's mirror frame forces backdrop-filter to none", (t) =>
   story(t, async ({ page, expect, http, baseUrl }) => {
     await page.setViewportSize({ width: 1280, height: 860 });
     await signIn(http, page, baseUrl);
@@ -77,11 +78,24 @@ Deno.test("REQ-290: the dashboard coach overlay has no backdrop-filter and reads
       !/backdrop-filter/i.test(seen.inline),
       "the coach overlay declares no backdrop-filter inline",
     );
+    // REQ-616 (demo cycle 4, p4-p8e): a mouse pointer gets click wording, never "Tap"
     expect(
-      seen.text.includes("Tap anywhere to dismiss"),
-      `the hint reads "Tap anywhere to dismiss" (got "${seen.text}")`,
+      seen.text.includes("Click here to talk to your assistant"),
+      `the heading reads "Click here to talk to your assistant" (got "${seen.text}")`,
     );
-    expect(!seen.text.includes("tap anywhere to dismiss"), "no lowercase hint");
+    expect(
+      seen.text.includes("Click anywhere to dismiss"),
+      `the hint reads "Click anywhere to dismiss" (got "${seen.text}")`,
+    );
+    expect(
+      !/\btap\b/i.test(seen.text),
+      `no "tap" wording on desktop (got "${seen.text}")`,
+    );
+    const aria = await dialog.getAttribute("aria-label");
+    expect(
+      aria === "Onboarding hint — click anywhere to dismiss",
+      `the dialog's aria-label uses click wording (got "${aria}")`,
+    );
 
     // the stage's frame shell: anything mirrored into it with a backdrop-filter computes to none
     await page.goto("about:blank");
