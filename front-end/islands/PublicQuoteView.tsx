@@ -13,6 +13,11 @@ import {
   type QuotePublic,
 } from "../components/quote-doc.tsx";
 import { type Lang, tFor } from "../lib/i18n.ts";
+import {
+  type PublicQuoteError,
+  publicQuoteErrorKey,
+  publicQuoteErrorOf,
+} from "../../shared/quote-flow/public-quote-error.ts";
 import { langSignal, persistLang, writeLangToUrl } from "../lib/lang.ts";
 import { startPublicQuoteRefresh } from "../lib/live-doc-refresh.ts";
 import { enterSignInPerson } from "../lib/sign-in-person.ts";
@@ -20,20 +25,27 @@ import { enterSignInPerson } from "../lib/sign-in-person.ts";
 interface State {
   phase: "loading" | "error" | "ok";
   quote?: QuotePublic;
-  message?: string;
+  /** REQ-574: what went wrong — rendered in the current language. */
+  error?: PublicQuoteError;
 }
 
 export default function PublicQuoteView(
-  { id, lang: initialLang }: {
+  { id, lang: initialLang, errorLang }: {
     id: string;
     /** REQ-048: the language the contract OPENS in — English unless the
      *  visitor picked otherwise (resolveContractLang in the /q route). The
      *  EN | ES toggle below flips it in place from there. */
     lang: Lang;
+    /** REQ-574 (demo-loop c4, p4-p9b): with no document there is no doc
+     *  language, so a load error speaks the visitor's own language — ?lang=,
+     *  then pm_lang, then Accept-Language (resolvePublicLang in the route) —
+     *  until they flip the toggle. Defaults to `lang`. */
+    errorLang?: Lang;
   },
 ) {
   const [lang, setLang] = useState<Lang>(initialLang);
-  const LINK_GONE = tFor(lang, "publicQuote.linkExpired");
+  // REQ-574: true once the visitor taps EN | ES — their pick then wins.
+  const [picked, setPicked] = useState(false);
   const [s, setS] = useState<State>({ phase: "loading" });
   // REQ-306: the page's query — `?as=customer&confirm=1` is the in-person
   // override that shows the pad to the business's own viewer. Read on the
@@ -49,6 +61,7 @@ export default function PublicQuoteView(
   // remembered (cookie + localStorage) and mirrored into ?lang= so the link
   // stays shareable; <html lang> (HtmlLang) and the tab title follow.
   function pick(next: Lang) {
+    setPicked(true);
     if (next === lang) return;
     setLang(next);
     persistLang(next);
@@ -63,19 +76,21 @@ export default function PublicQuoteView(
       document.title = tFor(next, "quoteDoc.docTitle");
     }
   }
-  const toggle = (
+  // REQ-574: the toggle marks the language actually shown (an error card can
+  // speak errorLang before the visitor picks).
+  const toggleFor = (shown: Lang) => (
     <div
       class="ctr__lang ctr__no-print"
       role="group"
-      aria-label={tFor(lang, "quoteDoc.langToggleAria")}
+      aria-label={tFor(shown, "quoteDoc.langToggleAria")}
     >
       {(["en", "es"] as Lang[]).map((l) => (
         <button
           key={l}
           type="button"
           data-contract-lang={l}
-          aria-pressed={lang === l ? "true" : "false"}
-          class={lang === l ? "on" : ""}
+          aria-pressed={shown === l ? "true" : "false"}
+          class={shown === l ? "on" : ""}
           onClick={() => pick(l)}
         >
           {l.toUpperCase()}
@@ -83,6 +98,7 @@ export default function PublicQuoteView(
       ))}
     </div>
   );
+  const toggle = toggleFor(lang);
 
   useEffect(() => {
     let alive = true;
@@ -120,11 +136,14 @@ export default function PublicQuoteView(
         if (r.ok) {
           setS({ phase: "ok", quote: (await r.json()) as QuotePublic });
         } else {
-          setS({ phase: "error", message: LINK_GONE });
+          // REQ-574 (p4-p9b): 404 → can't find it; 410 → expired/revoked;
+          // 5xx → couldn't load (retry). Not one "expired" for everything.
+          await r.body?.cancel().catch(() => {});
+          setS({ phase: "error", error: publicQuoteErrorOf(r.status) });
         }
       })
       .catch(() => {
-        if (alive()) setS({ phase: "error", message: LINK_GONE });
+        if (alive()) setS({ phase: "error", error: publicQuoteErrorOf(null) });
       });
   }
 
@@ -171,12 +190,21 @@ export default function PublicQuoteView(
     );
   }
   if (s.phase === "error") {
+    const errLang = picked ? lang : (errorLang ?? lang);
     return (
       <>
-        {toggle}
+        {toggleFor(errLang)}
         <ErrorCard
-          message={s.message ?? tFor(lang, "publicQuote.unavailable")}
-          lang={lang}
+          message={s.error
+            ? tFor(errLang, publicQuoteErrorKey(s.error))
+            : tFor(errLang, "publicQuote.unavailable")}
+          lang={errLang}
+          onRetry={s.error === "loadFailed"
+            ? () => {
+              setS({ phase: "loading" });
+              load(() => true);
+            }
+            : undefined}
         />
       </>
     );

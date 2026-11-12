@@ -235,7 +235,12 @@ function cstr(lang: Lang, terms?: Term[]) {
 }
 
 export function ErrorCard(
-  { message, lang = "en" }: { message: string; lang?: Lang },
+  { message, lang = "en", onRetry }: {
+    message: string;
+    lang?: Lang;
+    /** REQ-574: a load that failed (network / 5xx) offers a Retry. */
+    onRetry?: () => void;
+  },
 ) {
   return (
     <>
@@ -249,6 +254,16 @@ export function ErrorCard(
           {tFor(lang, "quoteDoc.cantOpen")}
         </div>
         <p style={`margin:8px 0 0;color:${MUTED};font-size:14px`}>{message}</p>
+        {onRetry && (
+          <button
+            type="button"
+            data-cy="quote-retry"
+            onClick={onRetry}
+            style={`margin-top:16px;padding:10px 22px;border-radius:999px;border:0;background:${TEAL};color:#fff;font-weight:700;font-size:14px;cursor:pointer`}
+          >
+            {tFor(lang, "publicQuote.retry")}
+          </button>
+        )}
       </div>
     </>
   );

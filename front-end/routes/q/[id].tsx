@@ -4,7 +4,10 @@ import DocTitle from "../../components/DocTitle.tsx";
 import SiteFooter from "../../components/SiteFooter.tsx";
 import PublicQuoteView from "../../islands/PublicQuoteView.tsx";
 import { BG, INK } from "../../components/quote-doc.tsx";
-import { resolveContractLang } from "../../../shared/quote-flow/public-lang.ts";
+import {
+  resolveContractLang,
+  resolvePublicLang,
+} from "../../../shared/quote-flow/public-lang.ts";
 import { tFor } from "../../lib/i18n.ts";
 
 /**
@@ -30,6 +33,14 @@ export default define.page(function PublicQuote(ctx) {
   // of the signal for the footer, the tab title and <html lang> to follow
   // (Fresh renders the page before the app shell reads ctx.state.lang).
   ctx.state.lang = lang;
+  // REQ-574 (demo-loop c4, p4-p9b): a link that loads no document (unknown
+  // id, revoked, offline) has no doc language — its error card speaks the
+  // visitor's: ?lang=, then pm_lang, then Accept-Language, then English.
+  const errorLang = resolvePublicLang({
+    query: new URL(ctx.req.url).searchParams.get("lang"),
+    cookie: ctx.req.headers.get("cookie"),
+    header: ctx.req.headers.get("accept-language"),
+  });
 
   return (
     <>
@@ -50,7 +61,7 @@ export default define.page(function PublicQuote(ctx) {
         style={`min-height:100dvh;background:${BG};font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:${INK};display:flex;flex-direction:column;scroll-padding-bottom:var(--kb-inset, 0px)`}
       >
         <div style="flex:1;width:100%;max-width:792px;margin:0 auto;padding:32px 16px calc(64px + var(--kb-inset, 0px))">
-          <PublicQuoteView id={id} lang={lang} />
+          <PublicQuoteView id={id} lang={lang} errorLang={errorLang} />
         </div>
         <SiteFooter lang={lang} document />
       </div>
