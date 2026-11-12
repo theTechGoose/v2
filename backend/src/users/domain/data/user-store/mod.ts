@@ -125,6 +125,8 @@ export class UserStore {
   /**
    * Search users by phone number (partial, digits-only match). Backs the
    * admin user-lookup table. An empty query lists users (capped at `limit`).
+   * REQ-507 (demo m25): a non-empty query with no digits ("abc!!") matches no
+   * phone — it used to strip to "" and list everyone.
    *
    * Scans the ["user", *] prefix — the reverse index ["user_by_phone", *] is
    * a different first segment, so it's never included. Single-tenant/dev KV
@@ -133,6 +135,7 @@ export class UserStore {
   async searchByPhone(query: string, limit = 25): Promise<User[]> {
     const kv = await getKv();
     const needle = query.replace(/\D/g, "");
+    if (needle === "" && query.trim() !== "") return [];
     const out: User[] = [];
     for await (const entry of kv.list<User>({ prefix: ["user"] })) {
       const user = entry.value;

@@ -22,6 +22,7 @@ import {
   UnauthorizedError,
 } from "@users/domain/coordinators/require-user/mod.ts";
 import {
+  adminSearchMatches,
   type AdminUserView,
   projectAdminUser,
 } from "@users/domain/business/admin-user-view/mod.ts";
@@ -32,6 +33,9 @@ import { PlanStore } from "@users/domain/data/plan-store/mod.ts";
 import { CrmLeadCapture } from "@users/domain/coordinators/crm-lead-capture/mod.ts";
 import { chosen, merchantOf, planOf } from "@users/domain/business/plan/mod.ts";
 import type { PlanId } from "@users/dto/plan.ts";
+
+/** REQ-507 — the most rows a non-blank /admin users search returns (as the blank list) */
+const ADMIN_SEARCH_LIMIT = 25;
 
 /**
  * /admin — super-admin-only surface. EVERY mutating/listing endpoint calls
@@ -107,18 +111,34 @@ export class AdminController {
     };
   }
 
-  /** GET /admin/users?q=<phone> — search users by (partial) phone number. */
+  /**
+   * GET /admin/users?q= — search users. A blank q lists users (capped); otherwise
+   * a name, business or email by text, or a (partial) phone by its digits.
+   * REQ-507 (demo m25): "abc!!" listed everyone — a q that matches nobody is [].
+   */
   @Get("users")
   async search(
     @Context() ctx: ExecutionContext,
     @Query("q") q?: string,
   ): Promise<AdminUserView[]> {
     await requireSuperAdmin(ctx, this.sessions, this.users);
-    const matches = await this.users.searchByPhone(q ?? "");
-    return await Promise.all(matches.map(async (u) => {
-      const identity = await this.identities.get(u.id);
-      return projectAdminUser(u, identity?.businessName);
-    }));
+    const query = (q ?? "").trim();
+    if (query === "") {
+      const all = await this.users.searchByPhone("");
+      return await Promise.all(all.map(async (u) => {
+        const identity = await this.identities.get(u.id);
+        return projectAdminUser(u, identity?.businessName);
+      }));
+    }
+    const out: AdminUserView[] = [];
+    for (const u of await this.users.searchByPhone("", 100_000)) {
+      const business = (await this.identities.get(u.id))?.businessName;
+      if (adminSearchMatches(u, business, query)) {
+        out.push(projectAdminUser(u, business));
+        if (out.length >= ADMIN_SEARCH_LIMIT) break;
+      }
+    }
+    return out;
   }
 
   /** POST /admin/users/:id/grant — grant super-admin to a user. */

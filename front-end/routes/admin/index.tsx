@@ -60,7 +60,15 @@ export default define.page(function AdminRoute(ctx) {
       <div class="app">
         <DashSidebar active="admin" />
         <main class="main">
-          <DashTopbar greetingDate={greetingDate} greetingName={greetingName} />
+          {
+            /* REQ-507 (demo m25): the account search would search the staff account's own
+              customers — on /admin the users search below is the only one */
+          }
+          <DashTopbar
+            greetingDate={greetingDate}
+            greetingName={greetingName}
+            search={false}
+          />
           <div class="content">
             {askName && <StaffNamePrompt />}
             <AdminPage selfId={user?.id} />

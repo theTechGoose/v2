@@ -28,8 +28,8 @@ function withLang<T>(lang: "en" | "es", fn: () => T): T {
 
 const ENGLISH_ADMIN = [
   "Search users, grant or revoke admin, and impersonate.",
-  "Search by phone",
-  "Search users by phone number",
+  "Search by name, business or phone",
+  "Search users by name, business or phone number",
   ">Users<",
   ">Accounts<",
   ">Search<",
