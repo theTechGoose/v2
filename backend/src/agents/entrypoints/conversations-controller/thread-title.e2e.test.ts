@@ -157,3 +157,55 @@ Deno.test("REQ-447 e2e (m14): binding a quote to a titled thread (POST :id/draft
     assertEquals((await c.headerOf(id)).clientName, "Faucet Replacement");
   });
 });
+
+/**
+ * REQ-580 (demo-loop cycle 4, issue p4-p7b): the details-first flows mint a
+ * thread and park the typed job details on it with POST :id/draft { note }.
+ * That note is the thread's first message, so it titles the thread and is
+ * its preview — the list must never show "New conversation —" while the
+ * contractor picks options. A later note does not retitle it, and a quote's
+ * jobName title (REQ-447) is never overwritten by a note.
+ */
+const NOTE = "Kitchen remodel for Karen Henderson: new cabinets";
+
+Deno.test("REQ-580 e2e (p4-p7b): the first draft note titles the minted thread and is its preview — never 'New conversation —'", async () => {
+  await withServer(async () => {
+    const c = client(await login("+15125550580"));
+    const conv = await c.post("/agents/conversations", {});
+    const saved = await c.post(`/agents/conversations/${conv.id}/draft`, {
+      note: NOTE,
+    });
+    assertEquals(saved.title, NOTE);
+    assertEquals(saved.preview, NOTE);
+    const row = await c.rowOf(conv.id) as { title?: string; preview?: string };
+    assertEquals(row.title, NOTE);
+    assertEquals(row.preview, NOTE);
+    assertEquals(threadTitle(row, "en"), NOTE);
+    assertEquals((await c.headerOf(conv.id)).clientName, NOTE);
+  });
+});
+
+Deno.test("REQ-580 e2e (p4-p7b): a second draft note does not retitle the thread", async () => {
+  await withServer(async () => {
+    const c = client(await login("+15125550581"));
+    const conv = await c.post("/agents/conversations", {});
+    await c.post(`/agents/conversations/${conv.id}/draft`, { note: NOTE });
+    const again = await c.post(`/agents/conversations/${conv.id}/draft`, {
+      note: "actually make it a bathroom",
+    });
+    assertEquals(again.title, NOTE);
+    assertEquals((await c.rowOf(conv.id) as { title?: string }).title, NOTE);
+  });
+});
+
+Deno.test("REQ-580 e2e (p4-p7b): a note on a quote-bound thread keeps the jobName title", async () => {
+  await withServer(async () => {
+    const c = client(await login("+15125550582"));
+    const quote = await c.post("/quotes", quoteBody);
+    const conv = await c.post("/agents/conversations", { quoteId: quote.id });
+    const saved = await c.post(`/agents/conversations/${conv.id}/draft`, {
+      note: NOTE,
+    });
+    assertEquals(saved.title, "Faucet Replacement");
+  });
+});

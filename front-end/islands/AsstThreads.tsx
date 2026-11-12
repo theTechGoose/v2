@@ -9,6 +9,7 @@ import {
 } from "../../shared/quote-flow/chat-header.ts";
 import { startPoll } from "../lib/poll.ts";
 import {
+  applyThreadTurn,
   latestThreadStatus,
   listNeedsRefresh,
   listStatusFor,
@@ -17,6 +18,7 @@ import {
   THREAD_STATUS_EVENT,
   THREAD_TURN_EVENT,
   type ThreadStatusDetail,
+  type ThreadTurnDetail,
 } from "../lib/thread-status-sync.ts";
 
 interface Props {
@@ -162,8 +164,19 @@ export default function AsstThreads(
       showLive((e as CustomEvent<ThreadStatusDetail>).detail);
     globalThis.addEventListener(THREAD_STATUS_EVENT, onStatus);
     // REQ-442 (demo-loop cycle 3, M22): the thread's first turn named it —
-    // show its title now, not at the next poll.
-    const onTurn = () => {
+    // show its title now, not at the next poll. REQ-580 (cycle 4, p4-p2d /
+    // p4-p7b): every landed turn (draft note, wizard answer, chat turn)
+    // carries the server's new title / preview — patch the row at once, then
+    // re-read soon after (a thread just minted isn't in the list yet).
+    const onTurn = (e: Event) => {
+      const turn = (e as CustomEvent<ThreadTurnDetail>).detail;
+      if (turn?.conversationId) {
+        const patched = applyThreadTurn(threadsRef.current, turn);
+        if (patched !== threadsRef.current) {
+          threadsRef.current = patched;
+          setThreads(patched);
+        }
+      }
       if (typeof document !== "undefined" && document.hidden) return;
       clearTimeout(soon);
       soon = setTimeout(refresh, 300);
