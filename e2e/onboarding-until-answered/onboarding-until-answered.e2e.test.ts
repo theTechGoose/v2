@@ -67,7 +67,7 @@ async function fillStep(page: StoryTools["page"], selector: string, value: strin
   throw new Error(`the wizard never took "${value}" at ${selector}`);
 }
 
-Deno.test("REQ-091: onboarding happens until every question is answered — a new account's code lands in the wizard, Skip only puts a question off, 'Skip setup for now' leaves for the assistant, and the dashboard and the next code bring the wizard back at the first open question", (t) =>
+Deno.test("REQ-091: onboarding happens until every question is answered — a new account's code lands in the wizard, Skip only puts a question off, 'Skip setup for now' (REQ-504) defers what is open and opens the dashboard, whose sidebar link no longer loops, and the next code brings the wizard back at the first open question", (t) =>
   story(t, async ({ page, expect, baseUrl }) => {
     await page.setViewportSize(DESKTOP);
     const host = new URL(baseUrl).hostname;
@@ -78,24 +78,25 @@ Deno.test("REQ-091: onboarding happens until every question is answered — a ne
     let landed = await codeIn(page, local);
     expect.eq(landed.pathname, "/welcome", `a new account's code lands in the wizard (${landed})`);
     await expect.see("what should we call you");
+    // REQ-504: the name cannot be put off, so the escape is not offered before it
+    expect.eq(await page.locator("button.welcome__escape").count(), 0, "no 'Skip setup for now' before the name");
     await fillStep(page, "input.welcome__input", "Story Person");
     await page.locator("[data-cy='welcome-continue']").click();
     await expect.see("business called");
     // Skip stays: it puts the business name off and moves on
     await page.locator("[data-cy='welcome-skip']").click();
     await expect.see("best email");
-    // "Skip setup for now" leaves the wizard — for the assistant, not the dashboard (which would send the person straight back)
+    // REQ-504 (demo M37, cycle 3): "Skip setup for now" defers every open question and lands on the
+    // dashboard — which used to send the person straight back to the wizard, its sidebar link looping
     await clickAway(page, "button.welcome__escape");
-    await page.waitForURL((u: URL) => u.pathname.startsWith("/assistant"), { timeout: 60_000 });
+    await page.waitForURL((u: URL) => u.pathname === "/dashboard", { timeout: 60_000 });
     await page.waitForLoadState("networkidle");
-    await frame(page); // the assistant, where the escape lands
-    expect(new URL(page.url()).pathname.startsWith("/assistant"), `skip setup leaves for the assistant (${page.url()})`);
-
-    // the dashboard sends the person back to the wizard, at the first open question
+    await frame(page); // the dashboard, where the escape lands
+    expect.eq(new URL(page.url()).pathname, "/dashboard", `skip setup opens the dashboard (${page.url()})`);
+    // and coming back to it (the sidebar's Dashboard link) stays there; the setup checklist asks for the rest
     await page.goto("/dashboard");
-    await page.waitForURL((u: URL) => u.pathname === "/welcome", { timeout: 60_000 });
-    expect.eq(new URL(page.url()).pathname, "/welcome", "the dashboard sends an unfinished account back to the wizard");
-    await expect.see("business called");
+    await page.waitForLoadState("networkidle");
+    expect.eq(new URL(page.url()).pathname, "/dashboard", "the dashboard no longer bounces to the wizard after the escape");
 
     // and so does the next code, returning user or not
     await page.context().clearCookies();

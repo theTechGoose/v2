@@ -25,7 +25,8 @@ import {
 } from "@users/domain/data/payments-link/mod.ts";
 import { parseChoosePlan } from "@users/dto/plan.ts";
 import { externalRefFor } from "@users/domain/business/plan/mod.ts"; // REQ-106 — the fake's clock is per account
-import { isDeferrable } from "#quote-flow/onboarding-questions.ts"; // REQ-227
+import { isDeferrable, skipSetupDeferrals } from "#quote-flow/onboarding-questions.ts"; // REQ-227, REQ-504
+import { LoadProfile } from "@profile/domain/coordinators/load-profile/mod.ts"; // REQ-504
 
 /** REQ-227 — only a wizard question with a Skip can be deferred: anything else is a 400 */
 class NotDeferrable extends Error {
@@ -57,6 +58,8 @@ export class MeController {
     private accountAdmins: AccountAdmins,
     /** REQ-220 — "Transfer account": a new number takes the account */
     private transfer: TransferAccount,
+    /** REQ-504 — the open questions "Skip setup for now" defers, read off the profile */
+    private profile: LoadProfile,
   ) {}
 
   /** REQ-146 — the person's own account first, then every account they administer */
@@ -215,11 +218,20 @@ export class MeController {
    * the wizard, the dashboard and a verified code look at the questions
    * still open on the profile, never at this stamp — onboarding happens
    * until every question is answered.
+   *
+   * REQ-504 (demo M37, cycle 3): `{ skipped: true, deferAll: true }` — the wizard's "Skip setup
+   * for now" — also stamps every open deferrable question deferred (REQ-227), so the dashboard
+   * lets the person in and its setup checklist asks for the rest. The name is never deferred.
    */
   @Post("onboarded")
   async onboarded(@Context() ctx: ExecutionContext, @Body() body: unknown) {
     const user = await requireUser(ctx, this.sessions, this.users);
-    const skipped = Boolean((body as { skipped?: unknown } | null)?.skipped);
+    const b = body as { skipped?: unknown; deferAll?: unknown } | null;
+    const skipped = Boolean(b?.skipped);
+    if (skipped && b?.deferAll === true) {
+      const open = skipSetupDeferrals(await this.profile.load(user.id));
+      if (open.length > 0) await this.users.deferOnboarding(user.id, open);
+    }
     const marked = await this.users.markOnboarded(user.id, skipped);
     await this.leads.enqueueSync(user.id); // REQ-058/099 — onboarding done: the CRM customer reads what it entered, after this reply
     await this.leads.enqueueSignupNotice(
