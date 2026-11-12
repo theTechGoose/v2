@@ -3333,6 +3333,7 @@
   "worker.save": "Guardar",
   "worker.saved": "Nota guardada",
   "worker.logout": "Salir",
+  "worker.backToOffice": "Volver a la oficina",
   "worker.allDone": "¡Ronda completa! Buen trabajo.",
   "worker.note": "Nota",
   "worker.hasNote": "Tiene una nota",
