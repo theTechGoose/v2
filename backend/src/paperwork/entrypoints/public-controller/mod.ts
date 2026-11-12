@@ -1480,6 +1480,10 @@ export function composeAddressLine(
   const city = addr.city?.trim();
   const state = addr.state?.trim();
   const postal = addr.postal?.trim();
+  // REQ-610 (demo m51): a state and/or ZIP with no street or city is not a
+  // mailing address — onboarding's state step saves `{ state }` alone, and the
+  // client's quote printed the business address as just "FL". No line at all.
+  if (!street && !city) return undefined;
   // REQ-420 (demo m28): a row saved before the address save path split
   // one-line streets can hold the whole "street, City, ST ZIP" in `street`.
   // Don't repeat what the street already ends with ("…, TX 78702, TX").

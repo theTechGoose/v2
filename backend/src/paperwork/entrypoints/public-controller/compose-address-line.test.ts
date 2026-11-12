@@ -39,11 +39,18 @@ Deno.test("composeAddressLine: city-only is acceptable", () => {
   );
 });
 
-Deno.test("composeAddressLine: state + postal without city renders both", () => {
-  assertEquals(
-    composeAddressLine({ state: "TX", postal: "78701" }),
-    "TX 78701",
-  );
+// REQ-610 (demo-loop cycle 4, issue m51): onboarding's state step saves an
+// address holding only `state`; the client's quote then printed the business
+// address as just "FL". A state and/or ZIP with no street or city is not a
+// mailing address — the line is left out entirely.
+Deno.test("REQ-610 m51: a state-only address renders no address line", () => {
+  assertEquals(composeAddressLine({ state: "FL" }), undefined);
+  assertEquals(composeAddressLine({ state: " FL ", street: " ", city: "" }), undefined);
+});
+
+Deno.test("REQ-610 m51: state + postal with no street or city renders no address line", () => {
+  assertEquals(composeAddressLine({ state: "TX", postal: "78701" }), undefined);
+  assertEquals(composeAddressLine({ postal: "78701" }), undefined);
 });
 
 Deno.test("composeAddressLine: street-only (legacy rows pre-onboarding wizard)", () => {
