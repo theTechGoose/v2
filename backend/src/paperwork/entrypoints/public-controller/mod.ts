@@ -36,6 +36,9 @@ import {
   versionOf,
 } from "#documents/versions.ts";
 import type { CustomerSnapshot } from "@core/data/numbered-store/mod.ts";
+import { SessionStore } from "@users/domain/data/session-store/mod.ts";
+import { readSessionId } from "@users/domain/coordinators/require-user/mod.ts";
+import { isInternalViewer } from "@paperwork/domain/business/internal-viewer/mod.ts";
 
 /**
  * Map a NotFoundError into a 404 JSON response. Public endpoints used to
@@ -141,6 +144,7 @@ export class PaperworkPublicController {
     private invoicePdf: RenderInvoicePdf,
     private quotePdf: RenderQuotePdf,
     private payments: PaymentStore,
+    private sessions: SessionStore,
   ) {}
 
   /**
@@ -503,22 +507,32 @@ export class PaperworkPublicController {
   ) {
     try {
       let q = await this.quotes.get(id); // no ownership gate — knowledge of id is the capability
+      // REQ-225: the owner, an admin acting for them, or staff behind an
+      // impersonation session (the demo replica) is not the client opening
+      // the link. Serve the page, but record no open and leave the status.
+      const sessionId = readSessionId(ctx);
+      const session = sessionId
+        ? await this.sessions.get(sessionId).catch(() => null)
+        : null;
+      const internal = isInternalViewer(session, q.userId);
       // Record the open so the /quotes pipeline card can derive the
       // "Viewed" stage + opens count (roadmap p.13). BuildQuoteCards
       // dedupes to ≤1 open per hour, so SSR double-fetches don't inflate.
-      try {
-        await this.views.create({
-          paperworkType: "quote",
-          paperworkId: q.id,
-          viewedAt: new Date().toISOString(),
-        });
-      } catch (err) {
-        console.warn(`[quotes/${id}/public] view record failed:`, err);
+      if (!internal) {
+        try {
+          await this.views.create({
+            paperworkType: "quote",
+            paperworkId: q.id,
+            viewedAt: new Date().toISOString(),
+          });
+        } catch (err) {
+          console.warn(`[quotes/${id}/public] view record failed:`, err);
+        }
       }
       // First open flips sent → viewed so the contractor's pipeline card
       // reflects that the link actually landed.
       // Idempotent: subsequent GETs find a non-"sent" status and skip.
-      if (q.status === "sent") {
+      if (!internal && q.status === "sent") {
         try {
           q = await this.quotes.update(id, q.userId, { status: "viewed" });
           await this.bus.emit({
