@@ -468,6 +468,20 @@ describe("REQ-232 the customer's tab (demo-lifecycle-m3)", () => {
     t.link.close();
   });
 
+  test("REQ-309 (demo m26) — a stage listed right after the welcome: the tab sends its whole view at once, before any sync", () => {
+    const t = tab();
+    t.welcome();
+    expect(t.asks()).toBe(0);
+    t.ws.recv({ t: "peer", online: true, pid: "hans", cid: "s1" });
+    expect(t.asks()).toBe(1);
+    // the same stage again (a duplicate notice) asks nothing more; a second stage does
+    t.ws.recv({ t: "peer", online: true, pid: "hans", cid: "s1" });
+    expect(t.asks()).toBe(1);
+    t.ws.recv({ t: "peer", online: true, pid: "lia", cid: "s2" });
+    expect(t.asks()).toBe(2);
+    t.link.close();
+  });
+
   test("two windows of one staff account are two connections: the second offer never tears the first down, each answer goes to its own stage", async () => {
     g.RTCPeerConnection = FakePC;
     const t = tab();

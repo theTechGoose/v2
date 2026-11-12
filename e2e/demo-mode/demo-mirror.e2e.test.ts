@@ -212,7 +212,44 @@ Deno.test("REQ-242: the stage mirrors the customer's actual screen — connectin
       // 2. the customer opens the assistant: the stage shows their exact viewport, no script inside
       await userPage.goto(`${baseUrl}/assistant`);
       await userPage.locator(".composer__input").waitFor({ timeout: 20_000 });
-      await page.locator(FRAME).waitFor({ state: "visible", timeout: 25_000 });
+      // REQ-309 (demo m26) — the pill and the frame tell ONE story: the pill never says Live
+      // while the frame still says it is connecting; both turn with the first snapshot
+      const STATUS = "[data-cy='demo-status']";
+      const liveWhileConnecting: string[] = [];
+      await until(
+        "the frame is in",
+        async () => {
+          const connecting = await page.locator("[data-cy='demo-connecting']")
+            .isVisible().catch(() => false);
+          const status = (await page.locator(STATUS).innerText().catch(() =>
+            ""
+          ))
+            .trim();
+          if (connecting && /^(Live|En vivo)$/.test(status)) {
+            liveWhileConnecting.push(status);
+          }
+          return await page.locator(FRAME).isVisible().catch(() => false);
+        },
+        25_000,
+      );
+      expect.eq(
+        liveWhileConnecting.length,
+        0,
+        "REQ-309 (m26): the pill never says Live over 'Connecting to…'",
+      );
+      await until(
+        "the pill says Live once the frame is in",
+        async () => (await page.locator(STATUS).innerText()).trim() === "Live",
+      );
+      // REQ-309 — on localhost the pill counts the mirror's frames (how a lost frame gets pinned)
+      await until(
+        "the stats chip counts frames",
+        async () =>
+          /\bf[1-9]/.test(
+            await page.locator("[data-cy='demo-mirror-stats']").innerText()
+              .catch(() => ""),
+          ),
+      );
       await until(
         "the frame is the customer's viewport, 420 × 800",
         async () =>

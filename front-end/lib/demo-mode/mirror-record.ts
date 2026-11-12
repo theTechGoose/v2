@@ -22,9 +22,14 @@
  * empty box), media sources. URLs are made absolute (the stage's frame has no base of its own).
  * Passwords, one-time codes, card numbers and anything under `data-demo-mask` are masked, a
  * bullet per character, before they leave this browser.
+ *
+ * REQ-309 (demo M19) — a heartbeat: while somebody watches, an empty `ops` frame goes out
+ * whenever nothing went out for MIRROR_HEARTBEAT_MS (`beat()`, on the sweep), so the stage can
+ * tell a lost frame (a held heartbeat, stalled after MIRROR_GAP_MS) from a page that is quiet.
  */
 import {
   MIRROR_FLUSH_MS,
+  MIRROR_HEARTBEAT_MS,
   type MirrorFrame,
   type Op,
   type SEl,
@@ -43,6 +48,10 @@ export interface RecorderOptions {
   flushMs?: number;
   /** how often the sweep looks for changes that come without an event */
   sweepMs?: number;
+  /** REQ-309 — a heartbeat (an empty frame) when nothing went out for this long */
+  heartbeatMs?: number;
+  /** the clock the heartbeat reads (jest hands in its own) */
+  now?: () => number;
 }
 
 export interface Recorder {
@@ -50,6 +59,9 @@ export interface Recorder {
   snapshot(): void;
   /** the changes since the last frame, as a frame (nothing when nothing changed) */
   flush(): void;
+  /** REQ-309 — an empty frame when nothing went out for heartbeatMs while somebody watches: the
+   *  stage can tell a lost frame from a quiet page (nothing while paused) */
+  beat(): void;
   /** stop watching until the next snapshot */
   pause(): void;
   /** stop for good */
@@ -243,6 +255,14 @@ export function createRecorder(doc: Document, o: RecorderOptions): Recorder {
   const Observer = o.Observer ?? globalThis.MutationObserver;
   const flushMs = o.flushMs ?? MIRROR_FLUSH_MS;
   const sweepMs = o.sweepMs ?? 500;
+  const heartbeatMs = o.heartbeatMs ?? MIRROR_HEARTBEAT_MS;
+  const now = o.now ?? (() => Date.now());
+  /** REQ-309 — when the last frame went out (the heartbeat's clock) */
+  let lastEmit = 0;
+  const emit = (f: MirrorFrame) => {
+    lastEmit = now();
+    o.emit(f);
+  };
   const base = () => doc.baseURI || win?.location.href || "";
   const pageHost = () => {
     try {
@@ -524,7 +544,18 @@ export function createRecorder(doc: Document, o: RecorderOptions): Recorder {
     doc.addEventListener("change", onEvent, true);
     doc.addEventListener("scroll", onScroll, { capture: true, passive: true });
     win?.addEventListener("resize", onEvent);
-    if (!o.manual) sweepTimer = setInterval(() => flush(), sweepMs);
+    if (!o.manual) {
+      sweepTimer = setInterval(() => {
+        flush();
+        beat();
+      }, sweepMs);
+    }
+  }
+
+  /** REQ-309 — nothing went out for heartbeatMs while somebody watches: an empty frame */
+  function beat() {
+    if (!attached || now() - lastEmit < heartbeatMs) return;
+    emit({ t: "ops", ops: [] });
   }
 
   function detach() {
@@ -561,7 +592,7 @@ export function createRecorder(doc: Document, o: RecorderOptions): Recorder {
     lastSize = `${w}x${h}`;
     lastUrl = here();
     lastCanvasSweep = Date.now();
-    o.emit({ t: "snap", w, h, u: lastUrl, root: s, ops: out });
+    emit({ t: "snap", w, h, u: lastUrl, root: s, ops: out });
   }
 
   const depth = (n: Node) => {
@@ -768,12 +799,13 @@ export function createRecorder(doc: Document, o: RecorderOptions): Recorder {
     }
 
     if (gone.length) ops.push({ o: "g", i: gone });
-    if (ops.length) o.emit({ t: "ops", ops });
+    if (ops.length) emit({ t: "ops", ops });
   }
 
   return {
     snapshot,
     flush,
+    beat,
     pause: detach,
     stop() {
       detach();

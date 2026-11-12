@@ -9,6 +9,12 @@
  * parsed); ops after it must name nodes the replay has, or `apply` says no — a desync is never
  * papered over, the stage asks for a fresh snapshot instead.
  *
+ * REQ-309 (demo M19) — but a desync is no longer fatal: an op that does not fit is skipped (best
+ * effort — a kept child the replay has elsewhere is moved here, a missing one left out, a node
+ * said gone but still here is taken out) and the rest of the frame, and the frames after it, still
+ * apply; `apply` still says no, so the stage asks for a snapshot, but the mirror does not freeze
+ * until it lands. A snapshot that throws, or ops before any snapshot, still fail hard.
+ *
  * Pointers: `anchorAt` says which mirrored element is under a point of the frame and where in its
  * box; `pointOf` turns such an anchor back into a point — the same element on both screens.
  *
@@ -158,16 +164,21 @@ export function createReplayer(
         const p = el(op.i);
         if (!p) return false;
         const list: Node[] = [];
+        let fit = true;
         for (const c of op.c) {
           if (typeof c === "number") {
             // a child by id is one the replay has, where it was
             const n = byId.get(c);
-            if (!n || n.parentNode !== p) return false;
+            if (!n) {
+              fit = false; // REQ-309 — left out; the snapshot asked for brings it
+              continue;
+            }
+            if (n.parentNode !== p) fit = false; // REQ-309 — moved here: the customer has it here
             list.push(n);
           } else list.push(build(c));
         }
         setChildren(p, list);
-        return true;
+        return fit;
       }
       case "a": {
         const e = el(op.i);
@@ -209,15 +220,20 @@ export function createReplayer(
         at = op.u;
         return true;
       case "g": {
+        let fit = true;
         for (const id of op.i) {
           const n = byId.get(id);
           if (!n) continue;
-          // gone from the customer's page, still on this one: the two have drifted apart
-          if (doc.contains(n)) return false;
+          // gone from the customer's page, still on this one: the two have drifted apart —
+          // REQ-309: taken out here too (the customer has no such node), and reported
+          if (doc.contains(n)) {
+            fit = false;
+            n.parentNode?.removeChild(n);
+          }
           byId.delete(id);
           scrolls.delete(id);
         }
-        return true;
+        return fit;
       }
       case "cv": {
         const e = el(op.i);
@@ -230,8 +246,8 @@ export function createReplayer(
 
   return {
     apply(f) {
-      try {
-        if (f.t === "snap") {
+      if (f.t === "snap") {
+        try {
           byId = new Map();
           idOf = new WeakMap();
           scrolls.clear();
@@ -242,18 +258,22 @@ export function createReplayer(
           view = { w: f.w, h: f.h };
           at = f.u;
           ok = true;
-        } else if (!ok) return false;
-        for (const op of f.ops) {
-          if (!run(op)) {
-            ok = false;
-            return false;
-          }
+        } catch {
+          ok = false;
+          return false;
         }
-        return true;
-      } catch {
-        ok = false;
-        return false;
+      } else if (!ok) return false;
+      // REQ-309 — an op that does not fit is skipped and the rest still applies: the frame is
+      // reported (the stage asks for a snapshot) but the mirror no longer freezes until it lands
+      let fit = true;
+      for (const op of f.ops) {
+        try {
+          if (!run(op)) fit = false;
+        } catch {
+          fit = false;
+        }
       }
+      return fit;
     },
     size: () => view,
     path: () => at,

@@ -17,6 +17,13 @@
  *     hands the frames on strictly in order (`FrameSequencer`): a later frame waits for an
  *     earlier one, a gap that lasts MIRROR_GAP_MS is `stalled()` (the stage then asks for a fresh
  *     snapshot), a snapshot starts over, an older page load's frames are dropped.
+ *
+ * REQ-309 (demo M19/m14/m26) — a gap is found while the customer is idle: the recorder sends an
+ * empty `ops` frame (a heartbeat) whenever nothing went out for MIRROR_HEARTBEAT_MS, so a frame
+ * lost just before the customer stopped is a held heartbeat on the stage, stalled after
+ * MIRROR_GAP_MS — not a picture that stays stale until their next change. A frame that does not
+ * decode is told to the sequencer (`lost`) and stalls at once: nothing will close that gap. The
+ * receiver counts what it saw (`stats`) so a lost frame can be pinned in one demo run.
  */
 import {
   type DomChunk,
@@ -29,6 +36,9 @@ import {
 export const MIRROR_FLUSH_MS = 50;
 /** how long a missing frame is waited for before the stage asks for a fresh snapshot */
 export const MIRROR_GAP_MS = 2_000;
+/** REQ-309 — the recorder sends an empty `ops` frame when nothing went out for this long: the stage
+ *  can then tell a lost frame (a held heartbeat, stalled after MIRROR_GAP_MS) from a quiet page */
+export const MIRROR_HEARTBEAT_MS = 1_000;
 /** a frame's JSON over this many characters is gzipped */
 export const MIRROR_GZIP_OVER = 4_096;
 
@@ -212,11 +222,17 @@ export async function encodeFrame(
   if (json.length <= (opts.gzipOver ?? MIRROR_GZIP_OVER) || !canGzip()) {
     return { z: false, text: json };
   }
-  const zipped = new Blob([json]).stream().pipeThrough(
-    new CompressionStream("gzip"),
-  );
-  const bytes = new Uint8Array(await new Response(zipped).arrayBuffer());
-  return { z: true, text: toBase64(bytes) };
+  try {
+    const zipped = new Blob([json]).stream().pipeThrough(
+      new CompressionStream("gzip"),
+    );
+    const bytes = new Uint8Array(await new Response(zipped).arrayBuffer());
+    return { z: true, text: toBase64(bytes) };
+  } catch {
+    // REQ-309 — gzip refused (a browser quirk, memory): the frame still goes, plain — a frame
+    // silently dropped here is a stage stale until the customer's next change
+    return { z: false, text: json };
+  }
 }
 
 /** a frame back from its text; null when it is not one */
@@ -276,8 +292,12 @@ export class FrameSequencer {
   /** frames that came early: by load, by number */
   #held = new Map<string, Map<number, MirrorFrame>>();
   #since: number | null = null;
+  /** REQ-309 — a frame came that cannot be used: a gap nothing will close, stalled at once */
+  #broken = false;
   #gapMs: number;
   #now: () => number;
+  /** REQ-309 — frames dropped as an older page load's, already past, or seen before */
+  dropped = 0;
 
   constructor(o: { gapMs?: number; now?: () => number } = {}) {
     this.#gapMs = o.gapMs ?? MIRROR_GAP_MS;
@@ -287,11 +307,12 @@ export class FrameSequencer {
   push(l: string, s: number, f: MirrorFrame): MirrorFrame[] {
     const out: MirrorFrame[] = [];
     // an older page load (ids sort by load time) is over
-    if (this.#load !== null && l < this.#load) return this.#settle(out);
+    if (this.#load !== null && l < this.#load) return this.#drop(out);
     if (f.t === "snap") {
-      if (l === this.#load && s < this.#next) return this.#settle(out);
+      if (l === this.#load && s < this.#next) return this.#drop(out);
       this.#load = l;
       this.#next = s + 1;
+      this.#broken = false;
       for (const k of [...this.#held.keys()]) if (k < l) this.#held.delete(k);
       const mine = this.#held.get(l);
       if (mine) {
@@ -302,7 +323,7 @@ export class FrameSequencer {
       return this.#settle(out);
     }
     if (l === this.#load) {
-      if (s < this.#next) return this.#settle(out);
+      if (s < this.#next) return this.#drop(out);
       if (s === this.#next) {
         this.#next++;
         out.push(f);
@@ -317,9 +338,26 @@ export class FrameSequencer {
     return this.#settle(out);
   }
 
-  /** a frame has been missing for MIRROR_GAP_MS: time for a fresh snapshot */
+  /** REQ-309 — frame (l, s) came but cannot be used (it did not decode): the gap at s will never
+   *  close by itself, so this stalls at once, until a snapshot starts over. One already past, or
+   *  of an older load, changes nothing. */
+  lost(l: string, s: number): void {
+    if (this.#load !== null && l < this.#load) return;
+    if (l === this.#load && s < this.#next) return;
+    this.#broken = true;
+  }
+
+  /** a frame has been missing for MIRROR_GAP_MS (or one came broken): time for a fresh snapshot */
   stalled(): boolean {
-    return this.#since !== null && this.#now() - this.#since >= this.#gapMs;
+    return this.#broken ||
+      (this.#since !== null && this.#now() - this.#since >= this.#gapMs);
+  }
+
+  /** REQ-309 — frames waiting for an earlier one */
+  heldCount(): number {
+    let n = 0;
+    for (const m of this.#held.values()) n += m.size;
+    return n;
   }
 
   reset(): void {
@@ -327,6 +365,12 @@ export class FrameSequencer {
     this.#next = 0;
     this.#held.clear();
     this.#since = null;
+    this.#broken = false;
+  }
+
+  #drop(out: MirrorFrame[]): MirrorFrame[] {
+    this.dropped++;
+    return this.#settle(out);
   }
 
   #drain(out: MirrorFrame[]): void {
@@ -389,8 +433,27 @@ export function createMirrorSender(o: {
   };
 }
 
+/** REQ-309 — what the receiver counted since it started (the stage shows it in dev) */
+export interface MirrorStats {
+  /** frames handed on in order: snapshots, changes and heartbeats */
+  frames: number;
+  snaps: number;
+  /** empty `ops` frames: the customer's heartbeat */
+  beats: number;
+  /** frames that did not decode — each a gap, stalled at once */
+  undecodable: number;
+  /** frames dropped as an older page load's, already past, or seen before */
+  older: number;
+  /** frames waiting for an earlier one, right now */
+  held: number;
+  /** times a gap lasted into a stall */
+  stalls: number;
+}
+
 /** the stage's end: chunks in, frames out in order, each with the page load it belongs to;
- *  `stalled()` says when to ask for a snapshot */
+ *  `stalled()` says when to ask for a snapshot; `reset()` starts over (REQ-309 — the stage follows
+ *  another tab: a frame decoded from before the reset is never handed on, and the other tab's
+ *  page-load id is not "older") */
 export function createMirrorReceiver(o: {
   onFrame(f: MirrorFrame, load: string): void;
   gapMs?: number;
@@ -400,19 +463,33 @@ export function createMirrorReceiver(o: {
   stalled(): boolean;
   reset(): void;
   idle(): Promise<void>;
+  stats(): MirrorStats;
 } {
   const asm = new ChunkAssembler();
   const order = new FrameSequencer({ gapMs: o.gapMs, now: o.now });
   let chain: Promise<void> = Promise.resolve();
+  let epoch = 0;
+  const n = { frames: 0, snaps: 0, beats: 0, undecodable: 0, stalls: 0 };
+  let wasStalled = false;
   return {
     push(c) {
       const whole = asm.push(c);
       if (!whole) return chain;
+      const mine = epoch;
       chain = chain.then(async () => {
         const f = await decodeFrame(whole.text, whole.z);
-        // an undecodable frame is a gap: the sequencer stalls and a snapshot is asked for
-        if (!f) return;
+        if (mine !== epoch) return;
+        if (!f) {
+          // REQ-309 — an undecodable frame is a gap nothing will close: stalled at once, and
+          // the stage asks for a snapshot
+          n.undecodable++;
+          order.lost(whole.l, whole.s);
+          return;
+        }
         for (const g of order.push(whole.l, whole.s, f)) {
+          n.frames++;
+          if (g.t === "snap") n.snaps++;
+          else if (g.ops.length === 0) n.beats++;
           try {
             o.onFrame(g, whole.l);
           } catch {
@@ -422,8 +499,18 @@ export function createMirrorReceiver(o: {
       }).catch(() => {});
       return chain;
     },
-    stalled: () => order.stalled(),
-    reset: () => order.reset(),
+    stalled() {
+      const s = order.stalled();
+      if (s && !wasStalled) n.stalls++;
+      wasStalled = s;
+      return s;
+    },
+    reset() {
+      epoch++;
+      order.reset();
+      wasStalled = false;
+    },
     idle: () => chain,
+    stats: () => ({ ...n, older: order.dropped, held: order.heldCount() }),
   };
 }

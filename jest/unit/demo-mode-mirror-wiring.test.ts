@@ -228,3 +228,50 @@ describe("REQ-242 the transport", () => {
     expect(t).not.toMatch(/m\.k !== "view"/);
   });
 });
+
+describe("REQ-309 (demo M19/m14/m26) — a gap is found while the customer is idle, the pill tells the frame's truth, the mirror is counted", () => {
+  const stage = read("front-end/islands/DemoStage.tsx");
+  const recorder = read("front-end/lib/demo-mode/mirror-record.ts");
+  const mirror = read("shared/demo-mode/mirror.ts");
+
+  test("the recorder's sweep beats: an empty frame when nothing went out for MIRROR_HEARTBEAT_MS", () => {
+    expect(recorder).toMatch(/MIRROR_HEARTBEAT_MS/);
+    expect(recorder).toMatch(
+      /setInterval\(\(\) => \{\s*flush\(\);\s*beat\(\);\s*\}, sweepMs\)/,
+    );
+  });
+
+  test("a frame that does not decode is told to the sequencer", () => {
+    expect(mirror).toMatch(/order\.lost\(whole\.l, whole\.s\)/);
+  });
+
+  test("the stage pill says Live only once the followed tab's snapshot is in the frame — the fact the connecting overlay uses", () => {
+    const label = stage.slice(
+      stage.indexOf("const statusLabel ="),
+      stage.indexOf("const pillStyle ="),
+    );
+    expect(label).toMatch(
+      /status === "direct" \|\| status === "relay"\)?\s*\?\s*mirrored\s*\?\s*t\("demoMode\.live"\)\s*:\s*t\("demoMode\.connecting"\)/,
+    );
+  });
+
+  test("a frame that does not fit marks the stage dirty, and it keeps asking (every MIRROR_GAP_MS) until a snapshot lands — a stall asks the same way", () => {
+    expect(stage).toMatch(/const dirtyRef = useRef\(false\)/);
+    expect(stage).toMatch(
+      /if \(rx\.stalled\(\) \|\| dirtyRef\.current\) askResync\(\)/,
+    );
+    expect(stage).toMatch(/dirtyRef\.current = true;/);
+    expect(stage).toMatch(/f\.t === "snap"\) \{\s*dirtyRef\.current = false;/);
+  });
+
+  test("following another of the customer's tabs starts the receiver over", () => {
+    const online = stage.slice(stage.indexOf("onPeerOnline:"));
+    expect(online.slice(0, online.indexOf("},") + 2)).toMatch(/rx\.reset\(\)/);
+  });
+
+  test("in dev the pill shows what the mirror counted", () => {
+    expect(stage).toMatch(/data-cy="demo-mirror-stats"/);
+    expect(stage).toMatch(/rx\.stats\(\)/);
+    expect(stage).toMatch(/localhost\|127\\\.0\\\.0\\\.1/);
+  });
+});

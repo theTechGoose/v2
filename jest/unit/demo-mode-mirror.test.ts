@@ -22,6 +22,7 @@ import {
   FrameSequencer,
   MIRROR_GAP_MS,
   MIRROR_GZIP_OVER,
+  MIRROR_HEARTBEAT_MS,
   type MirrorFrame,
   newLoadId,
   parseMirrorFrame,
@@ -340,5 +341,187 @@ describe("REQ-242 the pointer's name tag stays inside its box and rests when idl
   test("the tag fades first, the arrow dims later", () => {
     expect(TAG_IDLE_MS).toBe(1_500);
     expect(ARROW_IDLE_MS).toBeGreaterThan(TAG_IDLE_MS);
+  });
+});
+
+describe("REQ-309 (demo M19/m14/m26) — a gap is found while the customer is idle, a bad frame stalls at once, the receiver counts", () => {
+  const clock = () => {
+    let t = 1000;
+    return { now: () => t, tick: (ms: number) => (t += ms) };
+  };
+  /** the customer's heartbeat: an empty batch of changes */
+  const beat: MirrorFrame = { t: "ops", ops: [] };
+  const chunk = (l: string, s: number, f: MirrorFrame) => ({
+    l,
+    s,
+    i: 0,
+    n: 1,
+    d: JSON.stringify(f),
+  });
+
+  test("the heartbeat is an empty ops frame every second — a frame like any other, well inside the gap the stage waits for", () => {
+    expect(MIRROR_HEARTBEAT_MS).toBe(1_000);
+    expect(MIRROR_HEARTBEAT_MS * 2).toBeLessThanOrEqual(MIRROR_GAP_MS);
+    expect(parseMirrorFrame(beat)).toEqual(beat);
+  });
+
+  test("a frame lost just before the customer went idle: the next heartbeat is held, the gap stalls after MIRROR_GAP_MS, more heartbeats keep it stalled, the resync's snapshot mends it", () => {
+    const c = clock();
+    const q = new FrameSequencer({ gapMs: MIRROR_GAP_MS, now: c.now });
+    const L = newLoadId(1_000);
+    expect(q.push(L, 0, snap())).toEqual([snap()]);
+    // frame 1 (the day change, the open form) never arrives and the customer stops to chat:
+    // without a heartbeat nothing is ever held and the stage shows Nov 12 for good (pair 8)
+    expect(q.push(L, 2, beat)).toEqual([]);
+    expect(q.heldCount()).toBe(1);
+    c.tick(MIRROR_GAP_MS - 1);
+    expect(q.stalled()).toBe(false);
+    c.tick(2);
+    expect(q.stalled()).toBe(true);
+    expect(q.push(L, 3, beat)).toEqual([]);
+    expect(q.stalled()).toBe(true);
+    expect(q.heldCount()).toBe(2);
+    expect(q.push(L, 4, snap(2))).toEqual([snap(2)]);
+    expect(q.stalled()).toBe(false);
+    expect(q.heldCount()).toBe(0);
+  });
+
+  test("a frame that came but cannot be used (lost) stalls at once — nothing will close that gap; one already past, or of an older load, changes nothing; a snapshot (or a reset) clears it", () => {
+    const c = clock();
+    const q = new FrameSequencer({ gapMs: MIRROR_GAP_MS, now: c.now });
+    const L = newLoadId(1_000);
+    q.push(L, 0, snap());
+    q.lost(L, 1);
+    expect(q.stalled()).toBe(true);
+    expect(q.push(L, 2, snap(2))).toEqual([snap(2)]);
+    expect(q.stalled()).toBe(false);
+    q.lost(L, 1); // already past
+    q.lost(newLoadId(5), 0); // an older page load
+    expect(q.stalled()).toBe(false);
+    // the first snapshot itself undecodable: nothing applied yet, stalled at once
+    const q2 = new FrameSequencer({ gapMs: MIRROR_GAP_MS, now: c.now });
+    q2.lost(newLoadId(2_000), 0);
+    expect(q2.stalled()).toBe(true);
+    q2.reset();
+    expect(q2.stalled()).toBe(false);
+  });
+
+  test("the sequencer counts what it drops as older or already seen", () => {
+    const q = new FrameSequencer({ gapMs: MIRROR_GAP_MS, now: () => 0 });
+    const old = newLoadId(1_000);
+    const fresh = newLoadId(2_000);
+    q.push(fresh, 0, snap());
+    q.push(old, 1, ops("old")); // an older load
+    q.push(fresh, 0, snap()); // the same snapshot again
+    q.push(fresh, 1, ops("one"));
+    q.push(fresh, 1, ops("one")); // a duplicate
+    expect(q.dropped).toBe(3);
+  });
+
+  test("the receiver tells the sequencer about a frame that does not decode (stalled at once, counted) and counts frames, snapshots, heartbeats, older, held and stalls", async () => {
+    const got: MirrorFrame[] = [];
+    const rx = createMirrorReceiver({
+      onFrame: (f) => got.push(f),
+      now: () => 0,
+    });
+    const L = newLoadId(9);
+    const sender = createMirrorSender({
+      send: (m) => {
+        if (m.k === "dom") void rx.push(m);
+      },
+      load: L,
+    });
+    void sender.push(snap());
+    void sender.push(beat);
+    await sender.idle();
+    await rx.idle();
+    expect(got).toEqual([snap(), beat]);
+    expect(rx.stalled()).toBe(false);
+    expect(rx.stats()).toEqual({
+      frames: 2,
+      snaps: 1,
+      beats: 1,
+      undecodable: 0,
+      older: 0,
+      held: 0,
+      stalls: 0,
+    });
+    // frames 2, 3 and 4 never came; 5 came as junk: a gap nothing will close
+    await rx.push({ l: L, s: 5, i: 0, n: 1, d: "{not a frame" });
+    expect(rx.stalled()).toBe(true);
+    expect(rx.stats()).toEqual({
+      frames: 2,
+      snaps: 1,
+      beats: 1,
+      undecodable: 1,
+      older: 0,
+      held: 0,
+      stalls: 1,
+    });
+    // gzip-flagged junk is the same; one stall however often it is asked
+    await rx.push({ l: L, s: 6, i: 0, n: 1, z: 1, d: "bm90IGd6aXA=" });
+    expect(rx.stalled()).toBe(true);
+    expect(rx.stats().undecodable).toBe(2);
+    expect(rx.stats().stalls).toBe(1);
+    // the snapshot the stage asked for (the sender's next number): applied, the stall over
+    void sender.push(snap(2));
+    await sender.idle();
+    await rx.idle();
+    expect(got).toEqual([snap(), beat, snap(2)]);
+    expect(rx.stalled()).toBe(false);
+    expect(rx.stats()).toEqual({
+      frames: 3,
+      snaps: 2,
+      beats: 1,
+      undecodable: 2,
+      older: 0,
+      held: 0,
+      stalls: 1,
+    });
+    // an older page load's frame: dropped and counted; an early one: held and counted
+    await rx.push(chunk(newLoadId(1), 0, ops("stale")));
+    expect(got.length).toBe(3);
+    expect(rx.stats().older).toBe(1);
+    await rx.push(chunk(L, 7, ops("early")));
+    expect(rx.stats().held).toBe(1);
+  });
+
+  test("reset: a frame pushed before it is never handed on after it (the stage follows another tab, whose page may have loaded earlier)", async () => {
+    const got: MirrorFrame[] = [];
+    const rx = createMirrorReceiver({ onFrame: (f) => got.push(f) });
+    const p = rx.push(chunk(newLoadId(9_000), 0, snap()));
+    rx.reset();
+    await p;
+    await rx.idle();
+    expect(got).toEqual([]);
+    // the other tab's page loaded earlier: after the reset its frames are not "older"
+    await rx.push(chunk(newLoadId(3_000), 0, snap(2)));
+    expect(got).toEqual([snap(2)]);
+    expect(rx.stats().older).toBe(0);
+  });
+
+  test("encodeFrame never drops a frame: gzip failing, it goes as plain JSON", async () => {
+    const g = globalThis as unknown as Record<string, unknown>;
+    const real = g.CompressionStream;
+    g.CompressionStream = class {
+      constructor() {
+        throw new Error("no gzip today");
+      }
+    };
+    try {
+      const big: MirrorFrame = {
+        t: "ops",
+        ops: Array.from(
+          { length: 400 },
+          (_, i) => ({ o: "x" as const, i: i + 1, x: `bubble ${i}` }),
+        ),
+      };
+      expect(JSON.stringify(big).length).toBeGreaterThan(MIRROR_GZIP_OVER);
+      const e = await encodeFrame(big);
+      expect(e.z).toBe(false);
+      expect(await decodeFrame(e.text, false)).toEqual(big);
+    } finally {
+      g.CompressionStream = real;
+    }
   });
 });
