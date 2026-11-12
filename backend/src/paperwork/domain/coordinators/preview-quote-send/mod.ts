@@ -21,6 +21,11 @@ import {
   sendPreviewSections,
 } from "#quote-flow/send-preview.ts";
 import { applyRevision, isQuoteLocked } from "#documents/versions.ts";
+import { QuoteTranslatorPort } from "@paperwork/domain/coordinators/quote-translator-port/mod.ts";
+import {
+  missingHeadingTranslations,
+  missingQuoteTranslations,
+} from "#quote-flow/quote-translations.ts";
 import type { Quote } from "@paperwork/dto/quote.ts";
 import type { Customer } from "@crm/dto/customer.ts";
 import type { User } from "@users/dto/user.ts";
@@ -51,6 +56,7 @@ export class PreviewQuoteSend {
     private users: UserStore,
     private identity: BusinessIdentityStore,
     private shortlinks: ShortLinkStore,
+    private translator?: QuoteTranslatorPort,
   ) {}
 
   async run(
@@ -58,7 +64,7 @@ export class PreviewQuoteSend {
     input: PreviewQuoteSendInput,
   ): Promise<QuoteSendPreview> {
     // Ownership first: another user's quote throws before anything renders.
-    const stored = await this.quotes.getOwned(input.quoteId, userId);
+    let stored = await this.quotes.getOwned(input.quoteId, userId);
     const sender = await this.users.get(userId).catch(() => undefined) as
       | User
       | undefined;
@@ -72,6 +78,22 @@ export class PreviewQuoteSend {
       businessName: rawBiz?.businessName ?? rawBiz?.legalName,
     });
     if (!displayName) return { lang, needsName: true };
+
+    // REQ-591 (cycle 4, M32): a language with no cached heading or text yet
+    // is translated first, as lock and send do — else the English preview of
+    // a Spanish quote renders the Spanish summary as its hero.
+    if (
+      this.translator &&
+      (missingHeadingTranslations(stored, [lang]).length > 0 ||
+        missingQuoteTranslations(stored, [lang]).length > 0)
+    ) {
+      await this.translator.run({
+        userId,
+        quoteId: stored.id,
+        langs: [lang],
+      });
+      stored = await this.quotes.getOwned(input.quoteId, userId);
+    }
 
     const senderBiz = {
       ...(rawBiz ?? {}),

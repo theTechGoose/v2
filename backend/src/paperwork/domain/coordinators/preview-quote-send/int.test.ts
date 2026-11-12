@@ -19,8 +19,12 @@ import { BusinessIdentityStore } from "@profile/domain/data/business-identity-st
 import { CustomerStore } from "@crm/domain/data/customer-store/mod.ts";
 import { ShortLinkStore } from "@paperwork/domain/data/shortlink-store/mod.ts";
 import { getKv, resetKv } from "@core/data/kv/mod.ts";
+import {
+  QuoteTranslatorPort,
+  type TranslateQuoteRequest,
+} from "@paperwork/domain/coordinators/quote-translator-port/mod.ts";
 
-function fresh() {
+function fresh(translator?: QuoteTranslatorPort) {
   const quotes = new QuoteStore();
   const customers = new CustomerStore();
   const shortlinks = new ShortLinkStore();
@@ -31,6 +35,7 @@ function fresh() {
     new UserStore(),
     identity,
     shortlinks,
+    translator,
   );
   return { flow, quotes, customers, shortlinks, identity };
 }
@@ -188,5 +193,136 @@ Deno.test("REQ-461 (m8) preview-quote-send: another user's quote is refused; no 
   assertEquals(p.needsName, true);
   assertEquals(p.email, undefined);
   assertEquals(p.sms, undefined);
+  await resetKv();
+});
+
+// REQ-591 (demo-loop cycle 4, M32): the English email preview of a
+// Spanish-drafted quote had an English subject ("Faucet Repair") but a
+// Spanish hero ("Reparación De Grifo Y Puertas Interiores").
+async function seedSpanishDraft(
+  ctx: ReturnType<typeof fresh>,
+  heading: Record<string, unknown>,
+) {
+  const customer = await ctx.customers.create("u-1", {
+    name: "Carmen Ruiz",
+    email: "carmen@example.com",
+  });
+  return await ctx.quotes.create(
+    "u-1",
+    {
+      customerId: customer.id,
+      lang: "es",
+      summary: "Reparación de grifo y puertas interiores",
+      jobName: "Reparación de grifo",
+      lineItems: [{
+        description: "Cambiar grifo",
+        descriptionByLang: { es: "Cambiar grifo", en: "Replace faucet" },
+        quantity: 1,
+        unit: "ea",
+        price: 30000,
+      }],
+      estimatedTotal: 30000,
+      ...heading,
+    } as Parameters<QuoteStore["create"]>[1],
+  );
+}
+
+const SPANISH_HERO = /Reparaci[oó]n|Grifo|Puertas Interiores/i;
+
+Deno.test("REQ-591 (cycle 4, M32) preview-quote-send: an English preview of a Spanish-drafted quote has no Spanish hero", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const ctx = fresh();
+  await seedContractor("u-1", "Luis Ortega");
+  await ctx.identity.upsert("u-1", { businessName: "Ortega Handyman" });
+  const quote = await seedSpanishDraft(ctx, {
+    jobNameByLang: { es: "Reparación de grifo", en: "Faucet Repair" },
+  });
+
+  const p = await ctx.flow.run("u-1", {
+    quoteId: quote.id,
+    channel: "email",
+    lang: "en",
+  });
+  assert(p.email);
+  assertStringIncludes(p.email.subject, "Faucet Repair");
+  assertStringIncludes(p.email.html, "Faucet Repair");
+  assert(
+    !SPANISH_HERO.test(p.email.html),
+    `Spanish heading in the English email: ${
+      p.email.html.match(SPANISH_HERO)?.[0]
+    }`,
+  );
+
+  // With an English summary cached, the hero is that summary.
+  await ctx.quotes.update(
+    quote.id,
+    "u-1",
+    {
+      summaryByLang: {
+        es: "Reparación de grifo y puertas interiores",
+        en: "Faucet and interior door repair",
+      },
+    } as Parameters<QuoteStore["update"]>[2],
+  );
+  const p2 = await ctx.flow.run("u-1", {
+    quoteId: quote.id,
+    channel: "email",
+    lang: "en",
+  });
+  assertStringIncludes(p2.email!.html, "Faucet And Interior Door Repair");
+  assert(!SPANISH_HERO.test(p2.email!.html), "no Spanish hero");
+
+  // The Spanish preview still leads with the typed Spanish summary.
+  const es = await ctx.flow.run("u-1", {
+    quoteId: quote.id,
+    channel: "email",
+    lang: "es",
+  });
+  assertStringIncludes(es.email!.html, "Reparación de Grifo");
+  await resetKv();
+});
+
+Deno.test("REQ-591 (cycle 4, M32) preview-quote-send: a quote with no heading in the picked language is translated before the preview renders", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const port = new QuoteTranslatorPort();
+  const ctx = fresh(port);
+  const calls: TranslateQuoteRequest[] = [];
+  port.register(async (req) => {
+    calls.push(req);
+    await ctx.quotes.update(
+      req.quoteId,
+      req.userId,
+      {
+        jobNameByLang: { es: "Reparación de grifo", en: "Faucet Repair" },
+        summaryByLang: {
+          es: "Reparación de grifo y puertas interiores",
+          en: "Faucet and interior door repair",
+        },
+      } as Parameters<QuoteStore["update"]>[2],
+    );
+  });
+  await seedContractor("u-1", "Luis Ortega");
+  const quote = await seedSpanishDraft(ctx, {});
+
+  const p = await ctx.flow.run("u-1", {
+    quoteId: quote.id,
+    channel: "email",
+    lang: "en",
+  });
+  assertEquals(calls.length, 1, "translated once before rendering");
+  assertEquals(calls[0].langs, ["en"]);
+  assertStringIncludes(p.email!.subject, "Faucet Repair");
+  assertStringIncludes(p.email!.html, "Faucet And Interior Door Repair");
+  assert(!SPANISH_HERO.test(p.email!.html), "no Spanish hero");
+
+  // Everything cached now: a second preview does not call the model again.
+  await ctx.flow.run("u-1", {
+    quoteId: quote.id,
+    channel: "email",
+    lang: "en",
+  });
+  assertEquals(calls.length, 1, "no translation when nothing is missing");
   await resetKv();
 });

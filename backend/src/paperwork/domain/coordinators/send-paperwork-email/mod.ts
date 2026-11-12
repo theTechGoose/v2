@@ -47,6 +47,7 @@ import { withSendLang } from "#quote-flow/share-link.ts";
 import {
   localizeLineItems,
   quoteDescription,
+  quoteSummary,
 } from "#quote-flow/quote-translations.ts";
 import type { Quote } from "@paperwork/dto/quote.ts";
 import type { Invoice } from "@paperwork/dto/invoice.ts";
@@ -774,8 +775,11 @@ export function renderQuoteHtml(
     "PM",
   );
 
+  // REQ-591 (cycle 4, M32): the hero (and the preheader) in the send
+  // language — summaryByLang, else the job name in that language, else the
+  // typed summary — never the raw summary under a translated subject.
   const summaryClean =
-    (q.summary ?? t(lang, "paperworkEmail.quote.summaryFallback"))
+    (quoteSummary(q, lang) ?? t(lang, "paperworkEmail.quote.summaryFallback"))
       .replace(/^\s*quote\s*:\s*/i, "")
       .trim();
   // Title case for visual weight in the hero. P-07: Unicode-aware (the old
