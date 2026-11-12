@@ -323,8 +323,26 @@ export function threadStatusKey(status: ThreadStatus): string {
   return STATUS_KEY[status] ?? STATUS_KEY.none;
 }
 
-/** The conversation list's chip colours (assistant-page.css). */
-export type ThreadChipKind = "draft" | "needs" | "sent" | "paid";
+/** The conversation list's chip colours (assistant-page.css).
+ *  REQ-453 (demo-loop cycle 3, p8-pair5-d / p8-pair2-b): "progress" is the
+ *  neutral tone of a quote moving along normally; "needs" (pink) is kept
+ *  for a status that really asks for attention. */
+export type ThreadChipKind = "draft" | "progress" | "needs" | "sent" | "paid";
+
+/** REQ-453: each quote status's chip tone. Only a failed send and a declined
+ *  quote are the pink "needs" — locked, the terms wizard, picking details and
+ *  ready-to-send are progress, not problems. */
+const CHIP_KIND: Record<Exclude<ThreadStatus, "none">, ThreadChipKind> = {
+  drafted: "draft",
+  locked: "progress",
+  gathering: "progress",
+  pickingDetails: "progress",
+  readyToSend: "progress",
+  undelivered: "needs",
+  sent: "sent",
+  declined: "needs",
+  accepted: "paid",
+};
 
 /**
  * REQ-369: the conversation list's chip — the thread's status in the
@@ -343,14 +361,7 @@ export function threadChip(
     return { kind: "sent", key: "asstThreads.chip.invoiced" };
   }
   if (!status || !(status in STATUS_KEY) || status === "none") return null;
-  const kind: ThreadChipKind = status === "accepted"
-    ? "paid"
-    : status === "sent"
-    ? "sent"
-    : status === "drafted"
-    ? "draft"
-    : "needs";
-  return { kind, key: STATUS_KEY[status] };
+  return { kind: CHIP_KIND[status], key: STATUS_KEY[status] };
 }
 
 export function deriveChatHeader(input: ChatHeaderInput): ChatHeader {

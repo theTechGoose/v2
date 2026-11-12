@@ -277,7 +277,9 @@ describe("REQ-369 the conversation list's chip is the same status", () => {
     });
   });
 
-  it("chip colours follow the status: signed paid-green, out sent-green, drafts quiet, the rest needs-you", () => {
+  // REQ-453 (demo-loop cycle 3, p8-pair5-d / p8-pair2-b): in-progress steps
+  // are the neutral "progress" tone; only a failed send or a decline is pink.
+  it("chip colours follow the status: signed paid-green, out sent-green, drafts quiet, in-progress neutral, failures needs-you", () => {
     expect(threadChip("accepted")?.kind).toBe("paid");
     expect(threadChip("sent")?.kind).toBe("sent");
     expect(threadChip("drafted")?.kind).toBe("draft");
@@ -288,10 +290,11 @@ describe("REQ-369 the conversation list's chip is the same status", () => {
         "addingTerms",
         "pickingDetails",
         "readyToSend",
-        "undelivered",
-        "declined",
       ] as ThreadStatus[]
     ) {
+      expect(threadChip(s)?.kind).toBe("progress");
+    }
+    for (const s of ["undelivered", "declined"] as ThreadStatus[]) {
       expect(threadChip(s)?.kind).toBe("needs");
     }
   });

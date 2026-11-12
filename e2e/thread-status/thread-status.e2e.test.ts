@@ -436,3 +436,64 @@ Deno.test("REQ-369: the customer signs while the chat sits open with no review o
       "no reload",
     );
   }));
+
+/** The open thread's list chip: its class and its painted colours, next to
+ *  the colours of the page's pink alert tone and its neutral teal. */
+async function chipTone(page: StoryTools["page"]) {
+  return await page.evaluate(() => {
+    const chip = document.querySelector(".thread--active .thread__chip") as
+      | HTMLElement
+      | null;
+    const probe = (bg: string) => {
+      const el = document.createElement("span");
+      el.style.background = bg;
+      document.body.appendChild(el);
+      const c = getComputedStyle(el).backgroundColor;
+      el.remove();
+      return c;
+    };
+    return {
+      cls: chip?.className ?? "",
+      bg: chip ? getComputedStyle(chip).backgroundColor : "",
+      pink: probe("var(--pink-50)"),
+      teal: probe("var(--teal-50)"),
+    };
+  });
+}
+
+Deno.test("REQ-453 (demo cycle 3, p8-pair5-d / p8-pair2-b): a locked quote and the terms wizard's 'Gathering a little more info' get a neutral list chip, not the pink alert one", (t) =>
+  story(t, async ({ page, expect, http, baseUrl }) => {
+    const auth = await signIn(http, page, baseUrl);
+    await page.setViewportSize({ width: 1280, height: 900 });
+    const { quoteId, convId } = await newThread(http, auth);
+    const url = `/assistant/${convId}`;
+
+    await post(http, auth, `/api/agents/conversations/${convId}/lock-quote`, {
+      quoteId,
+    });
+    await page.goto(url);
+    await headerAndChip(page, /quote locked/i);
+    let tone = await chipTone(page);
+    expect(
+      /thread__chip--progress/.test(tone.cls) && !/--needs/.test(tone.cls),
+      `locked: the chip is the progress tone (class: ${tone.cls})`,
+    );
+    expect(tone.bg !== tone.pink, `locked: not pink (bg ${tone.bg})`);
+    expect.eq(tone.bg, tone.teal, "locked: the chip is the neutral teal");
+
+    await post(
+      http,
+      auth,
+      `/api/agents/conversations/${convId}/transition-to-terms`,
+    );
+    await page.goto(url);
+    const s = await headerAndChip(page, /gathering/i);
+    expect(/gathering/i.test(s.chip), `gathering (chip: ${s.chip})`);
+    tone = await chipTone(page);
+    expect(
+      /thread__chip--progress/.test(tone.cls) && !/--needs/.test(tone.cls),
+      `gathering: the chip is the progress tone (class: ${tone.cls})`,
+    );
+    expect(tone.bg !== tone.pink, `gathering: not pink (bg ${tone.bg})`);
+    expect.eq(tone.bg, tone.teal, "gathering: the chip is the neutral teal");
+  }));
