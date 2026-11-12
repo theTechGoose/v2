@@ -23,6 +23,8 @@ const MUST_CARRY = [
   "pies cuadrados", // sq ft
   "pies lineales", // lf
   "mueble de baño", // vanity (REQ-350)
+  "fregadero", // kitchen sink — never lavabo (REQ-594, cycle 4 m40)
+  "plafón del alero", // soffit (REQ-594, cycle 4 m40)
 ];
 
 function assertGlossary(prompt: string | undefined, where: string) {
@@ -124,4 +126,37 @@ Deno.test("REQ-448 m47 PolishJobDetails in Spanish carries the glossary", async 
     commsLanguage: "es",
   });
   assertGlossary(promptText(seen()), "polish-job-details (es)");
+});
+
+/**
+ * REQ-594 (demo-loop cycle 4, m40): the demo's Spanish left "soffit" in
+ * English and turned a kitchen sink into "lavabo" (a bathroom basin) — the
+ * glossary itself said "sink / basin → lavabo" with no kitchen exception and
+ * had no soffit entry.
+ */
+Deno.test("REQ-594 m40 the glossary maps kitchen sink → fregadero and soffit → plafón del alero", async () => {
+  const { ES_TRADE_GLOSSARY } = await import("./mod.ts");
+  assert(
+    /kitchen sink → fregadero/.test(ES_TRADE_GLOSSARY),
+    "kitchen sink must map to fregadero",
+  );
+  assert(
+    /soffit → plafón del alero/.test(ES_TRADE_GLOSSARY),
+    "soffit must map to plafón del alero",
+  );
+});
+
+Deno.test("REQ-594 m40 the glossary never maps a bare / kitchen sink to lavabo", async () => {
+  const { ES_TRADE_GLOSSARY } = await import("./mod.ts");
+  // Every "… → lavabo" mapping must be qualified as a BATHROOM sink.
+  for (const m of ES_TRADE_GLOSSARY.matchAll(/([^;:]*?)→\s*lavabo/g)) {
+    assert(
+      /bathroom/.test(m[1]),
+      `unqualified sink → lavabo mapping: "${m[0].trim()}"`,
+    );
+  }
+  assert(
+    !/kitchen sink[^;]*→\s*lavabo/.test(ES_TRADE_GLOSSARY),
+    "kitchen sink must not map to lavabo",
+  );
 });

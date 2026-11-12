@@ -220,3 +220,56 @@ Deno.test("REQ-410 M24 translate-bullets: a plain line that translates shorter i
   assertEquals(res.translated, true);
   assertEquals(res.texts, ["Pintar"]);
 });
+
+/**
+ * REQ-594 (demo-loop cycle 4, m40): "Keep trade terminology" let the model
+ * leave "soffit" in English, and the glossary sent a kitchen sink to
+ * "lavabo". The Spanish prompt for a kitchen-sink + soffit line must carry
+ * fregadero, plafón del alero, and an explicit "translate trade nouns" rule.
+ */
+Deno.test("REQ-594 m40 translate-bullets: a kitchen sink + soffit line gets fregadero, plafón del alero and the translate-trade-nouns rule", async () => {
+  const llm = new StubLLMClient();
+  let sys = "";
+  llm.setHandler((req) => {
+    sys = req.systemPrompt ?? "";
+    return {
+      text: JSON.stringify({
+        texts: [
+          "Instalar fregadero de cocina nuevo",
+          "Reparar plafón del alero (sofito) dañado",
+        ],
+      }),
+    };
+  });
+  const res = await new TranslateBullets(llm).run({
+    userId: "u-1",
+    texts: ["Install new kitchen sink", "Repair damaged soffit"],
+    to: "es",
+    from: "en",
+  });
+  assertEquals(res.translated, true);
+  assert(/kitchen sink → fregadero/.test(sys), sys);
+  assert(/soffit → plafón del alero/.test(sys), sys);
+  assert(/translate (every )?trade nouns? into/i.test(sys), sys);
+  assert(!/(?<!bathroom )sink \/ basin → lavabo/.test(sys), sys);
+});
+
+Deno.test("REQ-594 m40 translate-bullets: the English target is also told to translate trade nouns", async () => {
+  const llm = new StubLLMClient();
+  let sys = "";
+  llm.setHandler((req) => {
+    sys = req.systemPrompt ?? "";
+    return { text: JSON.stringify({ texts: ["Install new kitchen sink"] }) };
+  });
+  await new TranslateBullets(llm).run({
+    userId: "u-1",
+    texts: ["Instalar fregadero de cocina nuevo"],
+    to: "en",
+    from: "es",
+  });
+  assert(/translate (every )?trade nouns? into English/i.test(sys), sys);
+  assert(
+    !sys.includes("kitchen sink → fregadero"),
+    "en target must not carry the es glossary",
+  );
+});

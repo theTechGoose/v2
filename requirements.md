@@ -3707,3 +3707,11 @@ The cycle 3 root-cause pass (M2) found that switching tabs with Playwright in a 
 - unit: n/a — a prompt string; covered by the harness test.
 - int: `demo-loop/demo20b_test.ts` "REQ-533 …" runs the real harness with a fake fleet-claude and checks both prompts.
 - e2e: n/a — the next demo cycle is the run that uses it.
+
+## REQ-594 — Spanish copy says fregadero for a kitchen sink (lavabo only for a bathroom sink) and translates soffit (demo-loop cycle 4, issue m40)
+
+> "fix every issue the demo found, loop until there are none"
+
+Demo-loop cycle 4 (run r857a9d67, fleet-6) found the Spanish job copy left "soffit" in English and turned a kitchen sink into "lavabo" (a bathroom basin). RCA (confirmed, skeptic upheld): the shared Spanish glossary that every Spanish-writing prompt carries said `sink / basin → lavabo` with no kitchen-sink exception and had no soffit entry (`backend/src/agents/domain/business/es-trade-glossary/mod.ts`, from REQ-448), and TranslateBullets' "Keep trade terminology" line let the model leave trade nouns untranslated (`backend/src/agents/domain/coordinators/translate-bullets/mod.ts`). The glossary now maps kitchen sink → fregadero (or tarja), never lavabo; bathroom sink / basin → lavabo; soffit → plafón del alero (or sofito). TranslateBullets tells the model to translate trade nouns into the target language and to leave one untranslated only when the target language has no word for it.
+
+**Tests:** unit `backend/src/agents/domain/business/es-trade-glossary/test.ts` ("REQ-594 m40 …": the glossary maps kitchen sink → fregadero and soffit → plafón del alero; no unqualified or kitchen sink → lavabo mapping; the REQ-448 per-path checks now also require fregadero and plafón del alero in GenerateJobOptions, update_job_details `es`, the review hint, TranslateBullets and PolishJobDetails) · integration `backend/src/agents/domain/coordinators/translate-bullets/int.test.ts` ("REQ-594 m40 …": a kitchen sink + soffit batch to es sends fregadero, plafón del alero and the translate-trade-nouns rule; the en target gets the rule but not the es glossary) · e2e n/a — the defect is the model's wording, which the stub-LLM browser lane cannot reproduce.
