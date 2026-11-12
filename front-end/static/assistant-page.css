@@ -8674,21 +8674,14 @@ body {
   flex-direction: column;
   gap: 8px;
   position: relative;
-  /* REQ-338 (demo m31): the picker is a bounded column — it never grows
-     past the panel; the option list is the part that gives (flex: 1 1 auto;
-     min-height: 0), so the head, the confirm strip and Continue always have
-     their room and the strip never lands over the cards. min-height: 0
-     overrides the flex item's content-sized minimum so it can shrink. */
-  max-height: 100%;
-  min-height: 0;
+  /* REQ-383 (demo M26, cycle 2): the picker takes its natural height and the
+     chat panel scrolls. REQ-338 bounded it to the panel (max-height: 100%)
+     and let the option list give, which at 1280×720 squeezed the cards into
+     a 77 px window holding 471 px of content. The strip and Continue sit
+     after the list in flow, never over a card; the empty-state box's base
+     min-height: 100% lets the picker grow past the panel, and AsstChat
+     scrolls the panel to the picker's head and first card on open. */
   animation: chat-price-in 320ms cubic-bezier(0.2, 0.7, 0.2, 1);
-}
-/* REQ-338: the empty-state box takes the panel's exact height while the
-   picker is open, so the picker's max-height: 100% resolves (the default
-   min-height: 100% grows with content and would never bound it). */
-.chat__empty--picker {
-  height: 100%;
-  min-height: 0;
 }
 .chat__jobopts > .chat__confirm-details,
 .chat__jobopts > .chat__price-continue {
@@ -8743,16 +8736,10 @@ body {
   display: flex;
   flex-direction: column;
   gap: 7px;
-  /* REQ-338: the room the picker leaves after its head, the confirm strip
-     and Continue — not a fixed viewport budget (was calc(100dvh - 235px),
-     which ignored the strip's height). */
-  flex: 1 1 auto;
-  /* a floor, not 0: a card's head and first lines always show. When the
-     opened echo ("show more") needs more than the panel has left, the
-     picker overflows downward and the chat panel scrolls — the cards are
-     never squeezed out of sight and nothing is drawn over them. */
-  min-height: 72px;
-  overflow-y: auto;
+  /* REQ-383 (demo M26): every card at its full height — no inner scroll
+     box, no shrinking (REQ-338's flex: 1 1 auto + 72 px floor left a
+     two-bullet window). The chat panel is the one scroller. */
+  flex: 0 0 auto;
   margin: 0 -4px;
   padding: 2px 4px;
 }

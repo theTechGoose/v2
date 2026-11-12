@@ -27,16 +27,9 @@ describe("REQ-338 the confirm strip never covers the option list", () => {
   test("the option list takes the room the picker leaves, not a fixed viewport budget", () => {
     const list = rule(css, ".chat__jobopts-list");
     expect(list).not.toMatch(/100dvh\s*-\s*235px/);
-    expect(list).toMatch(/flex:\s*1 1 auto/);
-    expect(list).toMatch(/overflow-y:\s*auto/);
-    // a floor, so an opened echo cannot squeeze the cards out of sight
-    expect(list).toMatch(/min-height:\s*(6\d|[7-9]\d|1\d\d)px/);
-    // the picker itself is the bounded column: it fills the panel at most,
-    // and the empty-state box gives it a definite height while it is open
-    const picker = rule(css, ".chat__jobopts");
-    expect(picker).toMatch(/max-height:\s*100%/);
-    expect(picker).toMatch(/min-height:\s*0/);
-    expect(rule(css, ".chat__empty--picker")).toMatch(/height:\s*100%/);
+    // REQ-383 (M26, cycle 2) superseded the bounded column: the list keeps
+    // its natural height and the chat panel scrolls (jobopts-list-height.test.ts)
+    expect(list).not.toMatch(/overflow-y:\s*auto/);
     expect(chat).toMatch(/jobOptionsOpen \? " chat__empty--picker" : ""/);
   });
 
