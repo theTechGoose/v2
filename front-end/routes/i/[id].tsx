@@ -11,6 +11,9 @@ import {
   type VisitGroup,
 } from "../../../shared/quote-flow/visit-groups.ts";
 import PublicInvoiceClaim from "../../islands/PublicInvoiceClaim.tsx";
+import PublicCardPay, {
+  type CardConfig,
+} from "../../islands/PublicCardPay.tsx"; // REQ-213
 import {
   invoiceHeadline,
   shortDate,
@@ -150,13 +153,29 @@ interface InvoicePublic {
     installmentIndex?: number;
     installmentTotal?: number;
   }>;
-  acceptedMethods?: Array<{ method: string; handle?: string }>;
+  /** REQ-630: `method: "link"` rows carry the business's own payment link (id, name, https url) */
+  acceptedMethods?: Array<
+    {
+      method: string;
+      handle?: string;
+      id?: string;
+      name?: string;
+      url?: string;
+    }
+  >;
 }
 
 export default define.page(async function PublicInvoice(ctx) {
   const id = ctx.params.id;
   const r = await ssrBackendGet<InvoicePublic>(`/invoices/${id}/public`);
   const invoice = r.ok ? r.data : undefined;
+  // REQ-213 — whether the business takes cards (REQ-212) and what the card page needs
+  const cardRes = invoice
+    ? await ssrBackendGet<CardConfig>(`/invoices/${id}/card`)
+    : undefined;
+  const card = cardRes?.ok && cardRes.data?.available
+    ? cardRes.data
+    : undefined;
   // Chrome language — the visitor's own saved choice (pm_lang cookie) wins over
   // the document's generation language, exactly like /q (P-12). The
   // claim + change-order islands below receive this same resolved language.
@@ -171,7 +190,16 @@ export default define.page(async function PublicInvoice(ctx) {
     <>
       <Head>
         <title>{tFor(lang, "publicInvoice.docTitle")}</title>
-        <link rel="stylesheet" href={asset("/landing.css")} />
+        <link key="css-landing" rel="stylesheet" href={asset("/landing.css")} />
+        {card
+          ? (
+            <link
+              key="css-paycard"
+              rel="stylesheet"
+              href={asset("/paycard.css")}
+            />
+          )
+          : null}
       </Head>
       <div
         style={`min-height:100dvh;background:${BG};font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:${INK};display:flex;flex-direction:column;scroll-padding-bottom:var(--kb-inset, 0px)`}
@@ -184,7 +212,7 @@ export default define.page(async function PublicInvoice(ctx) {
                 lang={lang}
               />
             )
-            : <InvoiceDoc invoice={invoice} lang={lang} />}
+            : <InvoiceDoc invoice={invoice} lang={lang} card={card} />}
         </div>
         <SiteFooter lang={lang} />
       </div>
@@ -218,7 +246,11 @@ function siteLabel(url: string): string {
 }
 
 function InvoiceDoc(
-  { invoice, lang }: { invoice: InvoicePublic; lang: Lang },
+  { invoice, lang, card }: {
+    invoice: InvoicePublic;
+    lang: Lang;
+    card?: CardConfig;
+  },
 ) {
   const paid = invoice.status === "paid" || !!invoice.paidAt;
   const claimed = invoice.status === "claimed" && !!invoice.paymentIntent;
@@ -687,14 +719,30 @@ function InvoiceDoc(
               />
             )
             : (
-              <PublicInvoiceClaim
-                invoiceId={invoice.id}
-                acceptedMethods={invoice.acceptedMethods ?? []}
-                customerName={invoice.customer?.name}
-                balanceCents={balanceCents}
-                version={invoice.version}
-                lang={es ? "es" : "en"}
-              />
+              <>
+                {/* REQ-213 — the card first, on the business's own Stripe; the manual methods below */}
+                {card
+                  ? (
+                    <PublicCardPay
+                      invoiceId={invoice.id}
+                      config={card}
+                      lang={es ? "es" : "en"}
+                    />
+                  )
+                  : null}
+                <div data-claim-wrap>
+                  <PublicInvoiceClaim
+                    invoiceId={invoice.id}
+                    acceptedMethods={invoice.acceptedMethods ?? []}
+                    customerName={invoice.customer?.name}
+                    balanceCents={balanceCents}
+                    version={invoice.version}
+                    lang={es ? "es" : "en"}
+                    hasCard={!!card}
+                    docNumber={invoice.number}
+                  />
+                </div>
+              </>
             )}
 
           {

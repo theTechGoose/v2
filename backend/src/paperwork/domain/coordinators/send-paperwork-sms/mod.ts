@@ -4,6 +4,8 @@ import { isFictionalUsNumber } from "@users/domain/business/normalize-phone/mod.
 import { t } from "@core/i18n/mod.ts";
 import { QuoteStore } from "@paperwork/domain/data/quote-store/mod.ts";
 import { InvoiceStore } from "@paperwork/domain/data/invoice-store/mod.ts";
+import { StripeSettingsStore } from "@users/domain/data/stripe-settings-store/mod.ts"; // REQ-630
+import { payWaysSmsLine } from "@paperwork/domain/business/pay-ways/mod.ts"; // REQ-630
 import { CustomerStore } from "@crm/domain/data/customer-store/mod.ts";
 import { UserStore } from "@users/domain/data/user-store/mod.ts";
 import { BusinessIdentityStore } from "@profile/domain/data/business-identity-store/mod.ts";
@@ -77,6 +79,8 @@ export class SendPaperworkSms {
     private sms: SmsService,
     private shortlinks: ShortLinkStore,
     private commsLog: LogPaperworkMessage,
+    /** REQ-630 — whether the business takes cards on its own Stripe (the text names "card") */
+    private stripeSettings?: StripeSettingsStore,
   ) {}
 
   async run(
@@ -147,12 +151,19 @@ export class SendPaperworkSms {
         kind: "invoice",
         id: invoice.id,
       });
+      const smsLang = senderBiz?.commsLanguage === "es" ? "es" : "en";
+      // REQ-630 — name the online ways to pay the link offers
+      const payLine = payWaysSmsLine(senderBiz?.acceptedPaymentMethods, {
+        card: await this.stripeSettings?.get(userId).then((s) => !!s).catch(() => false) ?? false,
+        lang: smsLang,
+      });
       body = renderInvoiceBody(
         invoice,
         customer,
         sender,
         shortUrl,
-        senderBiz?.commsLanguage === "es" ? "es" : "en",
+        smsLang,
+        payLine ?? undefined,
       );
     }
 
@@ -392,6 +403,8 @@ export function renderInvoiceBody(
   sender: User | undefined,
   url: string,
   lang: "en" | "es" = "en",
+  /** REQ-630 — "Pay online by card, Venmo or Extra Pay — all at the link." */
+  payLine?: string,
 ): string {
   // P-49: the shared builder guarantees a capitalized sentence start for
   // unnamed customers ("Tu factura…" / "Your invoice…"), greeting otherwise.
@@ -404,7 +417,8 @@ export function renderInvoiceBody(
     amount: fmtUSD(i.amount),
     url,
     lang,
-  }) + "\n\n" + docTitle("invoice", i, lang) + "\n\n" + t(lang, "paperworkSms.body.invoiceClosing");
+  }) + "\n\n" + docTitle("invoice", i, lang) + (payLine ? `\n\n${payLine}` : "") + "\n\n" +
+    t(lang, "paperworkSms.body.invoiceClosing");
 }
 
 // ---------- phone normalization --------------------------------------------

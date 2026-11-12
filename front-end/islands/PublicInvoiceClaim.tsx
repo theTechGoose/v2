@@ -5,11 +5,28 @@ import {
   claimBody,
   claimDecision,
 } from "../../shared/documents/linked-view.ts";
+import { type PayButton, payButtons } from "../../shared/payments/pay-links.ts"; // REQ-630
 
 interface Method {
   method: string;
   handle?: string;
+  /** REQ-630: a `link` row — the business's own payment link */
+  id?: string;
+  name?: string;
+  url?: string;
 }
+
+/** REQ-630: the chip key — a method, or `link-<id>` for each payment link. */
+const chipKey = (m: Method) => m.method === "link" ? `link-${m.id}` : m.method;
+
+/** REQ-630: each platform's colour, for the outline + mark of its button. */
+const BRAND_COLOR: Record<string, string> = {
+  venmo: "#008CFF",
+  cashapp: "#00A63A",
+  paypal: "#003087",
+  zelle: "#6D1ED4",
+  link: "#144852",
+};
 
 interface Props {
   invoiceId: string;
@@ -22,6 +39,10 @@ interface Props {
   version?: number;
   /** Outgoing-comms language (roadmap p.13). Customer-facing. */
   lang?: "en" | "es";
+  /** REQ-630: the card (Stripe) is offered above — no "reach out" fallback without methods. */
+  hasCard?: boolean;
+  /** REQ-630: the invoice number, the note on a Venmo payment. */
+  docNumber?: string;
 }
 
 const TEAL = "#144852";
@@ -56,8 +77,11 @@ export default function PublicInvoiceClaim(
     balanceCents,
     version: initialVersion,
     lang = "en",
+    hasCard = false,
+    docNumber,
   }: Props,
 ) {
+  const [copied, setCopied] = useState<string | undefined>(undefined);
   const [selected, setSelected] = useState<string | undefined>(undefined);
   const [reference, setReference] = useState("");
   const [claimedBy, setClaimedBy] = useState(customerName ?? "");
@@ -93,6 +117,8 @@ export default function PublicInvoiceClaim(
   }
 
   if (acceptedMethods.length === 0) {
+    // REQ-630: the card above is a way to pay — nothing to add
+    if (hasCard) return null;
     return (
       <section
         data-cy="claim-no-methods"
@@ -124,11 +150,35 @@ export default function PublicInvoiceClaim(
   }
 
   const selectedMethod = selected
-    ? acceptedMethods.find((m) => m.method === selected)
+    ? acceptedMethods.find((m) => chipKey(m) === selected)
     : undefined;
+  // REQ-630: the app links (amount prefilled), the business's own links, then what is copied
+  const buttons = payButtons(acceptedMethods, {
+    amountCents: balance,
+    note: docNumber,
+  });
+
+  function copy(b: PayButton) {
+    if (b.kind !== "copy") return;
+    const done = () => {
+      setCopied(b.key);
+      setTimeout(() => setCopied((k) => (k === b.key ? undefined : k)), 2000);
+    };
+    try {
+      navigator.clipboard.writeText(b.value).then(done, done);
+    } catch {
+      done();
+    }
+  }
 
   async function submit() {
-    if (!selected || submitting) return;
+    if (!selected || !selectedMethod || submitting) return;
+    // REQ-630: a payment link is claimed as "other", its name the reference
+    const method = selectedMethod.method === "link"
+      ? "other"
+      : selectedMethod.method;
+    const ref = reference.trim() ||
+      (selectedMethod.method === "link" ? selectedMethod.name ?? "" : "");
     setSubmitting(true);
     setError(undefined);
     try {
@@ -139,13 +189,13 @@ export default function PublicInvoiceClaim(
         body: JSON.stringify(
           typeof balance === "number"
             // REQ-203: claim the balance shown, on the version shown
-            ? claimBody({ method: selected, reference, claimedBy }, {
+            ? claimBody({ method, reference: ref, claimedBy }, {
               balanceCents: balance,
               ...(typeof version === "number" ? { version } : {}),
             })
             : {
-              method: selected,
-              ...(reference.trim() ? { reference: reference.trim() } : {}),
+              method,
+              ...(ref ? { reference: ref } : {}),
               ...(claimedBy.trim() ? { claimedBy: claimedBy.trim() } : {}),
             },
         ),
@@ -236,10 +286,109 @@ export default function PublicInvoiceClaim(
           </div>
         )
         : null}
+      {buttons.length > 0
+        ? (
+          <div data-cy="pay-buttons" style="margin-bottom:22px">
+            <div
+              style={`font-size:11px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:${MUTED}`}
+            >
+              {tFor(lang, "payLinks.page.heading")}
+            </div>
+            <div style="margin-top:12px;display:grid;gap:10px">
+              {buttons.map((b) => {
+                const color = BRAND_COLOR[b.method] ?? TEAL;
+                const mark = (
+                  <span
+                    aria-hidden="true"
+                    style={`flex:none;width:32px;height:32px;border-radius:9px;background:${color};color:#fff;display:grid;place-items:center;font-weight:900;font-size:15px`}
+                  >
+                    {b.label.trim().charAt(0).toUpperCase()}
+                  </span>
+                );
+                if (b.kind === "link") {
+                  const label = b.method === "link" ||
+                      typeof balance !== "number"
+                    ? tFor(lang, "payLinks.page.payWith", { brand: b.label })
+                    : tFor(lang, "payLinks.page.amountWith", {
+                      amount: fmtMoneyExact(balance),
+                      brand: b.label,
+                    });
+                  return (
+                    <a
+                      key={b.key}
+                      data-cy={`pay-${b.key}`}
+                      href={b.href}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      style={`display:flex;align-items:center;gap:12px;min-height:52px;box-sizing:border-box;padding:10px 14px;background:#fff;border:1.5px solid ${color};border-radius:12px;color:${INK};text-decoration:none`}
+                    >
+                      {mark}
+                      <span style="flex:1;min-width:0;display:grid">
+                        <span style="font-weight:800;font-size:15px;line-height:1.25;overflow-wrap:anywhere">
+                          {label}
+                        </span>
+                        {b.detail
+                          ? (
+                            <span
+                              style={`font-size:12.5px;color:${MUTED};overflow:hidden;text-overflow:ellipsis;white-space:nowrap`}
+                            >
+                              {b.detail}
+                            </span>
+                          )
+                          : null}
+                      </span>
+                      <span
+                        aria-hidden="true"
+                        style={`flex:none;color:${color};font-weight:900;font-size:18px`}
+                      >
+                        ↗
+                      </span>
+                    </a>
+                  );
+                }
+                return (
+                  <div
+                    key={b.key}
+                    data-cy={`pay-${b.key}`}
+                    style={`display:flex;align-items:center;gap:12px;min-height:52px;box-sizing:border-box;padding:10px 14px;background:#fff;border:1.5px solid ${color};border-radius:12px;color:${INK}`}
+                  >
+                    {mark}
+                    <span style="flex:1;min-width:0;display:grid">
+                      <span style="font-weight:800;font-size:15px;line-height:1.25">
+                        {b.label}
+                      </span>
+                      <span
+                        data-cy={`pay-${b.key}-value`}
+                        style={`font-size:13px;color:${INK};overflow-wrap:anywhere`}
+                      >
+                        {tFor(lang, "payLinks.page.sendTo", {
+                          handle: b.value,
+                        })}
+                      </span>
+                    </span>
+                    <button
+                      type="button"
+                      data-cy={`pay-${b.key}-copy`}
+                      onClick={() => copy(b)}
+                      style={`flex:none;appearance:none;cursor:pointer;background:#fff;color:${color};border:1px solid ${color};border-radius:999px;padding:7px 14px;font-size:13px;font-weight:800`}
+                    >
+                      {copied === b.key
+                        ? tFor(lang, "payLinks.page.copied")
+                        : tFor(lang, "payLinks.page.copy")}
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )
+        : null}
       <div
         style={`font-size:11px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:${MUTED}`}
       >
-        {tFor(lang, "publicInvoiceClaim.howToPay")}
+        {buttons.length > 0
+          ? tFor(lang, "payLinks.page.alreadyPaid")
+          : tFor(lang, "publicInvoiceClaim.howToPay")}
         {typeof balance === "number"
           ? (
             <span
@@ -253,20 +402,21 @@ export default function PublicInvoiceClaim(
       </div>
       <div style="margin-top:12px;display:flex;flex-wrap:wrap;gap:8px">
         {acceptedMethods.map((m) => {
-          const active = m.method === selected;
+          const key = chipKey(m);
+          const active = key === selected;
           return (
             <button
               type="button"
-              key={m.method}
-              data-cy={`claim-method-${m.method}`}
-              onClick={() => setSelected(m.method)}
+              key={key}
+              data-cy={`claim-method-${key}`}
+              onClick={() => setSelected(key)}
               style={`appearance:none;cursor:pointer;background:${
                 active ? PINK : "#fff"
               };color:${active ? "#fff" : INK};border:1px solid ${
                 active ? PINK_DARK : LINE
               };border-radius:999px;padding:9px 16px;font-size:13.5px;font-weight:700;letter-spacing:.01em`}
             >
-              {methodLabel(m.method, lang)}
+              {m.method === "link" ? m.name : methodLabel(m.method, lang)}
             </button>
           );
         })}
@@ -282,7 +432,9 @@ export default function PublicInvoiceClaim(
             <div
               style={`font-size:11px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:${TEAL}`}
             >
-              {methodLabel(selectedMethod.method, lang)}
+              {selectedMethod.method === "link"
+                ? selectedMethod.name
+                : methodLabel(selectedMethod.method, lang)}
             </div>
             <div
               style={`margin-top:8px;color:${INK};font-size:14.5px;line-height:1.55`}
@@ -410,6 +562,8 @@ function methodInstructions(m: Method, lang: Lang = "en"): string {
       return m.handle
         ? m.handle
         : tFor(lang, "publicInvoiceClaim.instructions.other");
+    case "link":
+      return tFor(lang, "payLinks.page.claimLink", { name: m.name ?? "" });
     default:
       return tFor(lang, "publicInvoiceClaim.instructions.default");
   }
@@ -434,6 +588,7 @@ function referencePlaceholder(method: string, lang: Lang = "en"): string {
     case "card":
       return tFor(lang, "publicInvoiceClaim.refPlaceholder.card");
     case "other":
+    case "link":
       return tFor(lang, "publicInvoiceClaim.refPlaceholder.other");
     default:
       return "";

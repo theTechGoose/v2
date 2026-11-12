@@ -1,0 +1,772 @@
+/* REQ-213 / REQ-216 — the CRM's pay card, whole (ppwk-crm pages/charge: pay-card, float-input,
+   pay-submit, the page's own motion; ngx-interactive-paycard, MIT), on the public invoice.
+   transform/opacity only; no `transition: all`; one reduced-motion block. The `.cp*` rules are
+   this page's wrapper around it. */
+
+.cp {
+  margin-top: 24px;
+  background: #fff;
+  border: 1px solid #e3e8e6;
+  border-radius: 16px;
+  padding: 20px 22px 22px;
+  --color-primary: #144852;
+  --color-base-100: #fff;
+  --color-pc-field-border: #d5dcda;
+  --color-pc-field-text: #1c2c30;
+  --color-pc-label: #3b4a4e;
+  --color-pc-invalid: #e5a3a3;
+  --color-pc-error-text: #a83b3b;
+  --color-pc-error-icon: #c94a4a;
+  --radius-pc-input: 10px;
+  --pc-label-tab-h: 1.1rem;
+  --pc-label-size: 0.72rem;
+  --pc-label-line: 0.875rem;
+  --pc-label-tab-drop: 5px;
+}
+.cp__eyebrow {
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  color: #519843;
+}
+.cp-merchant {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 10px 0 18px;
+}
+.cp-merchant img {
+  width: 44px;
+  height: 44px;
+  object-fit: contain;
+  border-radius: 10px;
+  background: #f4f6f5;
+  padding: 4px;
+}
+.cp-merchant__mark {
+  width: 44px;
+  height: 44px;
+  border-radius: 10px;
+  background: #144852;
+  color: #fff;
+  display: grid;
+  place-items: center;
+  font-size: 20px;
+}
+.cp-merchant b {
+  display: block;
+  font-size: 16px;
+  color: #1c2c30;
+}
+.cp-merchant small {
+  display: block;
+  font-size: 12px;
+  color: #6b7a7e;
+  line-height: 1.35;
+  margin-top: 2px;
+}
+.cp-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin-top: 26px;
+}
+.cp-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 0.75rem;
+}
+/* REQ-017 (CRM) — touch targets: 44px and 16px type, so iOS Safari does not zoom on focus */
+@media screen and (max-width: 480px), (pointer: coarse) {
+  .cp-form {
+    --pc-control-min-h: 44px;
+    --pc-control-font: 16px;
+  }
+}
+.charge-submit-msg {
+  color: #a83b3b;
+  font-size: 0.8125rem;
+  margin: 0;
+}
+.charge-secure-note {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  margin: 0.25rem 0 0;
+  font-size: 0.75rem;
+  color: #6b7a7e;
+}
+.charge-secure-icon {
+  width: 0.875rem;
+  height: 0.875rem;
+  flex: none;
+}
+.cp-or {
+  margin: 22px 0 -10px;
+  text-align: center;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  color: #6b7a7e;
+}
+.cp-paid {
+  margin-top: 24px;
+  background: rgba(81, 152, 67, 0.08);
+  border: 1px solid rgba(81, 152, 67, 0.30);
+  border-radius: 14px;
+  padding: 20px 24px;
+}
+.cp-paid p {
+  margin: 8px 0 0;
+  color: #1c2c30;
+  font-size: 15px;
+  line-height: 1.55;
+}
+
+/* ===== float-input — the label is a TAB standing on the field's top edge; while the field
+   is wrong the message IS the label (CRM REQ-019 / REQ-025) ===== */
+.pc-field {
+  display: flex;
+  flex-direction: column;
+}
+.pc-field-shell {
+  margin-top: calc(var(--pc-label-tab-h, 1rem) + 0.25rem);
+  display: flex;
+  border-radius: var(--radius-pc-input, 0.375rem);
+  box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+}
+.pc-field-box {
+  position: relative;
+  display: flex;
+  align-items: stretch;
+  flex-grow: 1;
+}
+.pc-field-box:focus-within {
+  z-index: 10;
+}
+.pc-input {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 0.6rem 0.75rem;
+  font: inherit;
+  min-height: var(--pc-control-min-h, auto);
+  font-size: var(--pc-control-font, 1rem);
+  color: var(--color-pc-field-text, #111827);
+  background: var(--color-base-100, #fff);
+  border: 1px solid var(--color-pc-field-border, #d1d5db);
+  border-radius: var(--radius-pc-input, 0.375rem);
+  outline: 1px solid transparent;
+  outline-offset: -1px;
+  transition: border-color 0.15s ease, outline-color 0.15s ease;
+}
+.pc-input:focus {
+  outline-color: var(--color-primary, #1447e6);
+  border-color: var(--color-primary, #1447e6);
+}
+.pc-input--invalid {
+  border-color: var(--color-pc-invalid, #fca5a5);
+}
+.pc-input:disabled {
+  cursor: not-allowed;
+}
+.pc-field-label {
+  max-width: calc(100% - 0.75rem);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  position: absolute;
+  bottom: 100%;
+  margin-bottom: calc(-1px - var(--pc-label-tab-drop, 5px));
+  left: 0;
+  box-sizing: border-box;
+  min-height: var(--pc-label-tab-h, 1rem);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: calc((var(--pc-label-tab-h, 1rem) - var(--pc-label-line, 0.875rem)) /
+    2) 0.4rem;
+  white-space: nowrap;
+  border: 1px solid var(--color-pc-field-border, #d1d5db);
+  border-bottom: none;
+  border-radius: var(--radius-pc-input, 0.375rem) var(--radius-pc-input,
+    0.375rem) 0 0;
+  background: var(--color-base-100, #fff);
+  color: var(--color-pc-label, #111827);
+  font-size: var(--pc-label-size, 0.75rem);
+  font-weight: 600;
+  line-height: var(--pc-label-line, 0.875rem);
+  letter-spacing: .02em;
+}
+.pc-field-box:focus-within .pc-field-label {
+  border-color: var(--color-primary, #1447e6);
+  color: var(--color-primary, #1447e6);
+}
+.pc-field-err-icon {
+  position: absolute;
+  inset: 0 0.75rem 0 auto;
+  display: flex;
+  align-items: center;
+  pointer-events: none;
+}
+.pc-field-err-icon-svg {
+  width: 1.25rem;
+  height: 1.25rem;
+  color: var(--color-pc-error-icon, #ef4444);
+  animation: pc-fade-in 0.3s ease-in;
+}
+.pc-field-label--error,
+.pc-field-box:focus-within .pc-field-label--error {
+  color: var(--color-pc-error-text, #dc2626);
+  border-color: var(--color-pc-invalid, #fca5a5);
+  animation: pc-fade-in 0.3s ease-in;
+}
+.pc-hidden {
+  display: none;
+}
+@keyframes pc-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* ===== pay-submit — the one full-width action; a real spinner while busy ===== */
+.pay-submit-btn {
+  appearance: none;
+  border: 0;
+  cursor: pointer;
+  width: 100%;
+  margin-top: 0.25rem;
+  padding: 14px 18px;
+  border-radius: 12px;
+  background: #ff6b6b;
+  color: #fff;
+  font: inherit;
+  font-size: 16px;
+  font-weight: 800;
+  letter-spacing: .01em;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  min-height: var(--pc-control-min-h, 48px);
+}
+.pay-submit-btn[disabled] {
+  opacity: .7;
+  cursor: default;
+}
+.pay-submit-icon {
+  width: 1rem;
+  height: 1rem;
+}
+.pay-submit-spinner {
+  width: 1rem;
+  height: 1rem;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, .45);
+  border-top-color: #fff;
+  animation: pay-submit-spin 0.6s linear infinite;
+}
+@keyframes pay-submit-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* ===== pay-card — ngx-interactive-paycard card.component.scss, flattened (MIT); the CRM's
+   renames (.pc-card*, .pc-fade-up, .pc-anim-*) and jank fixes carried in ===== */
+.pc-fade-up {
+  animation: pc-fade 1s ease-in forwards;
+}
+@keyframes pc-fade {
+  0% {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.pc-card {
+  /* the card keeps a real card's shape and scales its own contents off its own width with
+     container queries, so it never spills whatever size it gets (CRM REQ-017/018) */
+  container-type: inline-size;
+  aspect-ratio: 1.586;
+  margin-inline: auto;
+  max-width: 430px;
+  width: 100%;
+  height: auto;
+  position: relative;
+  z-index: 2;
+}
+@media screen and (max-width: 480px) {
+  .pc-card {
+    max-width: 100%;
+  }
+}
+
+/* the issuer mark printed into the art: placement is DATA — --pc-mark-size / --pc-mark-opacity
+   and data-anchor off the brand record (CRM REQ-014 amendment + REQ-033) */
+.pc-card__brand {
+  position: absolute;
+  z-index: 3;
+  height: calc(var(--pc-mark-size, 92) * 1%);
+  width: auto;
+  object-fit: contain;
+  opacity: calc(var(--pc-mark-opacity, 42) / 100);
+  pointer-events: none;
+  filter: saturate(1.35) contrast(1.05);
+}
+.pc-card__brand[data-anchor="right"] {
+  right: -5%;
+  top: 56%;
+  transform: translateY(-50%);
+}
+.pc-card__brand[data-anchor="left"] {
+  left: -5%;
+  top: 56%;
+  transform: translateY(-50%);
+}
+.pc-card__brand[data-anchor="center"] {
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+}
+.pc-card__brand[data-anchor="top"] {
+  left: 50%;
+  top: 4%;
+  transform: translateX(-50%);
+}
+.pc-card__brand[data-anchor="bottom"] {
+  left: 50%;
+  bottom: 4%;
+  transform: translateX(-50%);
+}
+.pc-card__brand[data-anchor="top-left"] {
+  left: 4%;
+  top: 4%;
+}
+.pc-card__brand[data-anchor="top-right"] {
+  right: 4%;
+  top: 4%;
+}
+.pc-card__brand[data-anchor="bottom-left"] {
+  left: 4%;
+  bottom: 4%;
+}
+.pc-card__brand[data-anchor="bottom-right"] {
+  right: 4%;
+  bottom: 4%;
+}
+
+/* empty name cells take no room (CRM REQ-019/017) */
+.pc-card__nameItem:has(> span:empty) {
+  min-width: 0;
+}
+
+.pc-card--active .pc-card__side--front {
+  transform: perspective(1000px) rotateY(180deg) rotateX(0deg) rotateZ(0deg);
+}
+.pc-card--active .pc-card__side--back {
+  transform: perspective(1000px) rotateY(0) rotateX(0deg) rotateZ(0deg);
+}
+
+/* the focus ring: a fixed host box the size of the card; the island writes translate()/scale()
+   inline (jank fix #1 — transform only, never width/height) */
+.pc-card__focus {
+  position: absolute;
+  z-index: 3;
+  border-radius: 5px;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%;
+  transition: transform 0.35s cubic-bezier(0.71, 0.03, 0.56, 0.85), opacity
+    0.35s cubic-bezier(0.71, 0.03, 0.56, 0.85);
+  will-change: transform;
+  opacity: 0;
+  pointer-events: none;
+  overflow: hidden;
+  border: var(--pc-focus-border, 2px solid rgba(255, 255, 255, 0.65));
+}
+.pc-card__focus:after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  background: var(--pc-focus-glow, rgb(8, 20, 47));
+  height: 100%;
+  border-radius: 5px;
+  filter: blur(25px);
+  opacity: 0.5;
+}
+.pc-card__focus--active {
+  opacity: 1;
+}
+
+.pc-card__side {
+  border-radius: 15px;
+  overflow: hidden;
+  box-shadow: var(--pc-card-shadow, 0 20px 60px 0 rgba(14, 42, 90, 0.55));
+  transform: perspective(2000px) rotateY(0deg) rotateX(0deg) rotate(0deg);
+  transform-style: preserve-3d;
+  transition: transform 0.8s cubic-bezier(0.71, 0.03, 0.56, 0.85);
+  will-change: transform;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+  height: 100%;
+}
+.pc-card__side--back {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  transform: perspective(2000px) rotateY(-180deg) rotateX(0deg) rotate(0deg);
+  z-index: 2;
+  padding: 0;
+  height: 100%;
+}
+.pc-card__side--back .pc-card__cover {
+  transform: rotateY(-180deg);
+}
+.pc-card__bg {
+  max-width: 100%;
+  display: block;
+  max-height: 100%;
+  height: 100%;
+  width: 100%;
+  object-fit: cover;
+}
+.pc-card__cover {
+  height: 100%;
+  position: absolute;
+  background-color: var(--pc-cover-bg, #1c1d27);
+  background-image: var(--pc-cover-gradient, linear-gradient(147deg, #1c1d27 0%,
+    black 74%));
+  left: 0;
+  top: 0;
+  width: 100%;
+  border-radius: 15px;
+  overflow: hidden;
+}
+.pc-card__cover:after {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%;
+  background: var(--pc-cover-scrim, rgba(6, 2, 29, 0.45));
+}
+/* branded art is already dark; it does not need the full wash (CRM REQ-014 amendment) */
+.pc-card:has(.pc-card__brand) .pc-card__cover:after {
+  background: rgba(6, 2, 29, 0.2);
+}
+
+.pc-card__top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  margin-bottom: 40px;
+  padding: 0 10px;
+}
+.pc-card__chip {
+  width: 60px;
+}
+.pc-card__type {
+  height: 45px;
+  position: relative;
+  display: flex;
+  justify-content: flex-end;
+  max-width: 100px;
+  margin-left: auto;
+  width: 100%;
+}
+.pc-card__typeImg {
+  object-fit: contain;
+  object-position: top right;
+  max-height: 100%;
+}
+.pc-card__info {
+  color: #fff;
+  width: 100%;
+  max-width: calc(100% - 85px);
+  padding: 10px 15px;
+  font-weight: 500;
+  display: block;
+  cursor: pointer;
+}
+.pc-card__holder {
+  opacity: 0.7;
+  font-size: 13px;
+  margin-bottom: 6px;
+}
+.pc-card__wrapper {
+  font-family: "Source Code Pro", ui-monospace, SFMono-Regular, Menlo,
+    monospace;
+  padding: 25px 15px;
+  position: relative;
+  z-index: 4;
+  height: 100%;
+  box-sizing: border-box;
+  text-shadow: var(--pc-text-shadow, 7px 6px 10px rgba(14, 42, 90, 0.8));
+  user-select: none;
+}
+.pc-card__name {
+  font-size: 18px;
+  line-height: 1;
+  white-space: nowrap;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+}
+.pc-card__nameItem {
+  display: inline-block;
+  min-width: 8px;
+  position: relative;
+}
+.pc-card__number {
+  font-weight: 500;
+  line-height: 1;
+  color: #fff;
+  font-size: 27px;
+  margin-bottom: 25px;
+  display: inline-block;
+  padding: 10px 15px;
+  cursor: pointer;
+}
+.pc-card__numberItem {
+  width: 16px;
+  display: inline-block;
+}
+.pc-card__content {
+  color: #fff;
+  display: flex;
+  align-items: flex-start;
+}
+.pc-card__date {
+  flex-wrap: wrap;
+  font-size: 18px;
+  margin-left: auto;
+  padding: 10px;
+  display: inline-flex;
+  width: 80px;
+  white-space: nowrap;
+  flex-shrink: 0;
+  cursor: pointer;
+}
+.pc-card__dateItem {
+  position: relative;
+  display: inline-block;
+  min-width: 22px;
+}
+.pc-card__dateTitle {
+  opacity: 0.7;
+  font-size: 13px;
+  padding-bottom: 6px;
+  width: 100%;
+}
+.pc-card__band {
+  background: var(--pc-band-bg, rgba(0, 0, 19, 0.8));
+  width: 100%;
+  height: 50px;
+  margin-top: 30px;
+  position: relative;
+  z-index: 2;
+}
+.pc-card__cvv {
+  text-align: right;
+  position: relative;
+  z-index: 2;
+  padding: 15px;
+}
+.pc-card__cvv .pc-card__type {
+  opacity: 0.7;
+}
+.pc-card__cvvTitle {
+  padding-right: 10px;
+  font-size: 15px;
+  font-weight: 500;
+  color: #fff;
+  margin-bottom: 5px;
+}
+.pc-card__cvvBand {
+  height: 45px;
+  background: var(--pc-cvv-band-bg, #fff);
+  margin-bottom: 30px;
+  text-align: right;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding-right: 10px;
+  color: var(--pc-cvv-band-text, #1a3b5d);
+  font-size: 18px;
+  border-radius: 4px;
+  box-shadow: var(--pc-cvv-band-shadow, 0px 10px 20px -7px rgba(32, 56, 117,
+    0.35));
+  gap: 4px;
+}
+.pc-card__cvvBand span[hidden] {
+  display: none;
+}
+
+/* a card narrower than the desktop 430px sizes its contents in container units */
+@container (max-width: 420px) {
+  .pc-card__wrapper {
+    padding: 6.5cqw 4cqw;
+  }
+  .pc-card__top {
+    margin-bottom: 5cqw;
+  }
+  .pc-card__chip {
+    width: 17cqw;
+  }
+  .pc-card__type {
+    height: 13cqw;
+    max-width: 30cqw;
+  }
+  .pc-card__number {
+    font-size: 6.7cqw;
+    margin-bottom: 4cqw;
+    padding: 2cqw 3cqw;
+  }
+  .pc-card__numberItem {
+    width: 4cqw;
+  }
+  .pc-card__info {
+    max-width: 64%;
+    padding: 2cqw 3cqw;
+  }
+  .pc-card__holder,
+  .pc-card__dateTitle {
+    font-size: 3.6cqw;
+  }
+  .pc-card__name,
+  .pc-card__info [data-name-placeholder] {
+    font-size: 5cqw;
+    line-height: 1.1;
+  }
+  .pc-card__date {
+    font-size: 5cqw;
+    width: auto;
+    padding: 2cqw 3cqw;
+  }
+  .pc-card__dateItem {
+    min-width: 6cqw;
+  }
+  .pc-card__cvvTitle {
+    font-size: 3.6cqw;
+  }
+  .pc-card__band {
+    height: 13cqw;
+    margin: 8cqw 0 4cqw;
+  }
+}
+@container (max-width: 240px) {
+  .pc-card__wrapper {
+    padding: 4.5cqw 4cqw;
+  }
+  .pc-card__top {
+    margin-bottom: 3cqw;
+  }
+  .pc-card__number {
+    margin-bottom: 2cqw;
+    font-size: 6.2cqw;
+  }
+  .pc-card__info,
+  .pc-card__date {
+    padding: 1cqw 3cqw;
+  }
+}
+
+/* the back face on a narrow card: the band, the CVV band and the mark in container units too,
+   so the whole back fits a phone-wide card */
+@container (max-width: 420px) {
+  .pc-card__cvv {
+    padding: 3cqw 4cqw;
+  }
+  .pc-card__cvvTitle {
+    margin-bottom: 1cqw;
+    padding-right: 2cqw;
+  }
+  .pc-card__cvvBand {
+    height: 13cqw;
+    margin-bottom: 4cqw;
+    font-size: 5cqw;
+  }
+  .pc-card__cvv .pc-card__type {
+    height: 9cqw;
+  }
+}
+
+/* the per-cell entry animations (Angular :enter, as keyframes) — the island toggles these on
+   the one changed cell and clears them on animationend */
+@keyframes pc-slide-fade-up {
+  from {
+    transform: translateY(15px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+@keyframes pc-holder-fade-right {
+  from {
+    transform: translateX(10px) rotate(45deg);
+    opacity: 0;
+  }
+  to {
+    transform: translate(0, 0);
+    opacity: 1;
+  }
+}
+@keyframes pc-holder-fade-up {
+  from {
+    transform: translateY(15px);
+    opacity: 0;
+  }
+  to {
+    transform: translate(0, 0);
+    opacity: 1;
+  }
+}
+.pc-anim-slide-fade-up {
+  animation: pc-slide-fade-up 0.25s ease-in-out;
+}
+.pc-anim-holder-fade-right {
+  display: inline-block;
+  position: absolute;
+  animation: pc-holder-fade-right 0.25s ease-in-out;
+}
+.pc-anim-holder-fade-up {
+  display: inline-block;
+  position: absolute;
+  animation: pc-holder-fade-up 0.25s ease-in-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pc-card__side,
+  .pc-card__focus,
+  .pc-input {
+    transition: none;
+  }
+  [class^="pc-anim-"],
+  .pc-fade-up,
+  .pc-field-err-icon-svg,
+  .pc-field-label--error {
+    animation-duration: .01s;
+  }
+  .pay-submit-spinner {
+    animation: none;
+  }
+}
