@@ -502,6 +502,7 @@ body {
 }
 
 .sb__textus {
+  text-decoration: none; /* REQ-359: links read like the folder buttons */
   /* Neutral surface — "My assistant" is a nav entry, not a destructive/alert
      action, so it shouldn't be the loudest (red, glowing, shaking) element. */
   background: rgba(255, 255, 255, 0.12);
@@ -554,6 +555,7 @@ body {
 }
 @media (prefers-reduced-motion: reduce) {
   .sb__textus {
+  text-decoration: none; /* REQ-359: links read like the folder buttons */
     animation: none;
   }
 }
@@ -619,6 +621,7 @@ body {
 }
 
 .nav-item {
+  text-decoration: none; /* REQ-359: links read like the folder buttons */
   display: flex;
   align-items: center;
   gap: 12px;

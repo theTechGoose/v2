@@ -480,6 +480,7 @@ body {
 }
 
 .sb__textus {
+  text-decoration: none; /* REQ-359: links read like the folder buttons */
   background: var(--brand-pink);
   color: #fff;
   border: none;
@@ -564,6 +565,7 @@ body {
 }
 
 .nav-item {
+  text-decoration: none; /* REQ-359: links read like the folder buttons */
   display: flex;
   align-items: center;
   gap: 12px;
@@ -2678,6 +2680,7 @@ body {
 }
 
 .sb__textus {
+  text-decoration: none; /* REQ-359: links read like the folder buttons */
   background: var(--brand-pink);
   color: #fff;
   border: none;
@@ -2762,6 +2765,7 @@ body {
 }
 
 .nav-item {
+  text-decoration: none; /* REQ-359: links read like the folder buttons */
   display: flex;
   align-items: center;
   gap: 12px;
@@ -8881,6 +8885,7 @@ body {
   }
 }
 .sb__textus {
+  text-decoration: none; /* REQ-359: links read like the folder buttons */
   animation: pm-assistant-shake 5.2s ease-in-out infinite;
 }
 .sb__textus:hover, .sb__textus:focus-visible {
@@ -8888,6 +8893,7 @@ body {
 }
 @media (prefers-reduced-motion: reduce) {
   .sb__textus {
+  text-decoration: none; /* REQ-359: links read like the folder buttons */
     animation: none;
   }
 }
