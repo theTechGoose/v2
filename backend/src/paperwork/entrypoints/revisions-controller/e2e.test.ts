@@ -516,17 +516,22 @@ Deno.test("REQ-205: GET /quotes/:id/ledger — invoices with numbers and statuse
     assertEquals(pub.quote?.number, "Q-001");
     assertEquals(pub.quote?.url, `/q/${q.id}`);
     assertEquals(pub.quote?.accepted, true);
+    // REQ-312 (demo m29, reconciled on demo-fixes): the customer's pages list
+    // ISSUED invoices only — INV-002 is the scheduled second milestone, still
+    // on the contractor's ledger above, not yet on the customer's page.
+    assertEquals(
+      ledger2.invoices.map((i: { number: string }) => i.number),
+      ["INV-001", "INV-002"],
+    );
     assertEquals(pub.siblings.map((s: { number: string }) => s.number), [
       "INV-001",
-      "INV-002",
     ]);
     // the public quote lists its invoices with balances
     const pubQ = await get(`/quotes/${q.id}/public`);
     assertEquals(pubQ.invoices.map((i: { number: string }) => i.number), [
       "INV-001",
-      "INV-002",
     ]);
-    assertEquals(pubQ.invoices[1].balanceCents, 50000);
+    assertEquals(pubQ.invoices[0].balanceCents, 0);
     assertNotEquals(pubQ.invoices[0].url, undefined);
   });
 });

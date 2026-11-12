@@ -41,8 +41,14 @@ function fakeEnv(opts: { hidden?: boolean } = {}) {
       winListeners.get(t)?.delete(fn);
     },
   };
+  // REQ-299 reads a clock for its catch-up debounce: a period that elapses
+  // (tick) moves it, so a tab shown again after a missed tick catches up
+  let clock = 0;
+  let period = 0;
   const env: PollEnv = {
+    now: () => clock,
     setInterval: (fn: () => void, ms: number) => {
+      period = Math.max(period, ms);
       const id = nextId++;
       timers.set(id, { fn, ms });
       return id;
@@ -59,7 +65,9 @@ function fakeEnv(opts: { hidden?: boolean } = {}) {
     winListeners,
     /** one period elapses */
     tick() {
-      for (const t of [...timers.values()]) t.fn();
+      const all = [...timers.values()];
+      clock += period; // time passes whether or not a timer is armed
+      for (const t of all) t.fn();
     },
     focus() {
       for (const l of [...(winListeners.get("focus") ?? [])]) l();

@@ -282,7 +282,8 @@ Deno.test("cross-module e2e: customer accepts a quote → notification appears i
     assertEquals(matching.length, 1);
     assertEquals(
       matching[0].title,
-      "Acme Roofing accepted your quote for Roof Tear Off",
+      // REQ-337: an intra-word hyphen keeps its compound whole ("Tear-off")
+      "Acme Roofing accepted your quote for Roof Tear-off",
     );
   });
 });

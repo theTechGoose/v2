@@ -3,7 +3,7 @@
  * shell; this island fetches the pipeline + win-rate + insight from the
  * backend on mount.
  */
-import { useEffect, useState } from "preact/hooks";
+import { useEffect, useRef, useState } from "preact/hooks";
 import {
   type Insight,
   type QuoteCard as BackendQuoteCard,
@@ -978,6 +978,9 @@ export default function QuotesPage(_props: { lang?: "en" | "es" }) {
   // makes this island re-render when SettingsPage flips the language. The
   // optional `lang` prop is an ignored SSR seed.
   const lang = langSignal.value;
+  // REQ-321: the periodic re-read words its cards in the language live now
+  const langRef = useRef(lang);
+  langRef.current = lang;
   const [s, setS] = useState<State>(INITIAL);
 
   // /quotes?open=<id> deep link — seeded from the URL; UX-08: also settable
@@ -1120,7 +1123,10 @@ export default function QuotesPage(_props: { lang?: "en" | "es" }) {
   // the customer signed in another tab stayed "Out for response" until a
   // manual reload. Re-read it every 30 s through REQ-221's scheduler (hidden
   // tabs wait, one catch-up when shown) and on the window's focus. A failed
-  // re-read keeps the last list; the first paint stays the mount effect's.
+  // re-read keeps the last list; the first paint stays loadPipeline's.
+  // Reconciled with REQ-304 on demo-fixes: one scheduler per mount (not an
+  // effect keyed on [lang]) — a language switch re-runs loadPipeline, and
+  // this re-read words the cards in the language live at that moment.
   useEffect(() => {
     let alive = true;
     const refresh = async () => {
@@ -1132,7 +1138,7 @@ export default function QuotesPage(_props: { lang?: "en" | "es" }) {
       setS((prev) =>
         prev.loading || prev.error ? prev : {
           ...prev,
-          quotes: cards.map((c) => mapCard(c, lang)),
+          quotes: cards.map((c) => mapCard(c, langRef.current)),
           winRate: winRate ?? prev.winRate,
         }
       );
@@ -1142,7 +1148,7 @@ export default function QuotesPage(_props: { lang?: "en" | "es" }) {
       alive = false;
       stop();
     };
-  }, [lang]);
+  }, []);
 
   if (s.loading) {
     return (
