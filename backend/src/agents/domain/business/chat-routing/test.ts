@@ -200,6 +200,7 @@ Deno.test("REQ-368 M32 chatToolsFor: the terms phase (pair 1: signed quote, fini
     "change_order",
     "update_job_details",
     "update_change_order", // REQ-462
+    "update_terms", // REQ-585
   ];
   assertEquals(chatToolsFor("terms", { status: "accepted" }), termsTools);
   assertEquals(chatToolsFor("terms", { status: "draft" }), termsTools);

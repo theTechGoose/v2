@@ -17,7 +17,9 @@ const TTL_MS = 30 * 24 * 60 * 60 * 1_000; // 30 days, matches conversation TTL
  * reverse for newest-first cursors).
  *
  * Messages are *append-only*: there's no update endpoint. To "edit" a
- * wizard answer, the agent appends a new message reflecting the change.
+ * wizard answer, the agent appends a new message reflecting the change —
+ * except a pick the contractor corrects in the chat, which `replace` changes
+ * in place (REQ-585).
  */
 @Injectable()
 export class AgentMessageStore {
@@ -90,6 +92,33 @@ export class AgentMessageStore {
     for await (const entry of iter) {
       if (target.has(entry.value.id)) await kv.delete(entry.key);
     }
+  }
+
+  /**
+   * REQ-585 (demo-loop cycle 4, M30): change one message IN PLACE — same id,
+   * same place in the transcript (its key keeps its createdAt). A wizard pick
+   * the contractor corrected in the chat ("empezamos la próxima semana, no el
+   * próximo mes") is that pick changed, so back / rewind still pops the right
+   * one. Returns the stored message, or undefined when there is none.
+   */
+  async replace(
+    conversationId: string,
+    id: string,
+    patch: { content?: string; payload?: Record<string, unknown> },
+  ): Promise<AgentMessage | undefined> {
+    const kv = await getKv();
+    const iter = kv.list<AgentMessage>({ prefix: [PREFIX, conversationId] });
+    for await (const entry of iter) {
+      if (entry.value.id !== id) continue;
+      const next: AgentMessage = {
+        ...entry.value,
+        ...(patch.content !== undefined ? { content: patch.content } : {}),
+        ...(patch.payload !== undefined ? { payload: patch.payload } : {}),
+      };
+      await kv.set(entry.key, next, { expireIn: TTL_MS });
+      return next;
+    }
+    return undefined;
   }
 
   /** Most-recent meaningful message (skips system + phase_divider) — for thread previews. */

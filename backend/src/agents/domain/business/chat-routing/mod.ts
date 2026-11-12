@@ -523,6 +523,11 @@ const ALL_TOOLS: readonly LLMToolName[] = [
  *     meant; pair 1's model was handed lock_quote here anyway). A sent
  *     quote's price changes go through revise_quote as its next Version
  *     (REQ-375) — there is no Re-open on a sent quote.
+ *     REQ-585 (demo-loop cycle 4, M4 + M30): + update_terms — the start,
+ *     the time to complete and the payment terms typed in the chat. Offered
+ *     in every terms state (the terms prompt names it); the coordinator
+ *     refuses a sent or signed quote's answered terms.
+ *   update_terms is never offered in the quote phase: no wizard runs yet.
  */
 export function chatToolsFor(
   phase: AgentPhase,
@@ -534,6 +539,7 @@ export function chatToolsFor(
       "change_order",
       "update_job_details",
       "update_change_order", // REQ-462
+      "update_terms", // REQ-585
     ];
   }
   const advance = !!quote && isOpenDraft(quote);

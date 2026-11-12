@@ -71,6 +71,7 @@ import {
   previewTermRows,
 } from "../../shared/quote-flow/wizard-terms.ts"; // REQ-347
 import { quoteUpdatedBy } from "../lib/chat-quote-refresh.ts";
+import { mergeTurnMessages } from "../lib/turn-messages.ts"; // REQ-585
 import { attachBottomPin } from "../lib/chat-bottom-pin.ts";
 import { chatChangeOrderLink, chatQuoteLink } from "../lib/chat-quote-link.ts";
 import {
@@ -121,7 +122,10 @@ import {
   headerTone,
 } from "../../shared/quote-flow/chat-header.ts";
 import { pendingRevisionNotice } from "../../shared/documents/versions.ts";
-import { scopeBulletsFromRaw } from "../../shared/quote-flow/scope-from-raw.ts";
+import {
+  scopeBulletsFromRaw,
+  scopeDescriptionFromRaw, // REQ-585
+} from "../../shared/quote-flow/scope-from-raw.ts";
 import { ownWordsOption } from "../../shared/quote-flow/own-words-option.ts";
 import {
   carryPickedOptionId,
@@ -2384,10 +2388,15 @@ export default function AsstChat({
           .catch(() => {/* the next load shows it */});
       }
       if (Array.isArray(res.newMessages) && res.newMessages.length > 0) {
-        setMessages((m) => [
-          ...m.filter((msg) => msg.id !== tmpId),
-          ...res.newMessages!,
-        ]);
+        // REQ-585 (demo-loop cycle 4, M30): a pick the turn changed in place
+        // (a start date typed in the chat) replaces that message where it
+        // sits — never a second copy under the reply.
+        setMessages((m) =>
+          mergeTurnMessages(
+            m.filter((msg) => msg.id !== tmpId),
+            res.newMessages!,
+          )
+        );
         // REQ-262 (demo M25): the assistant rewrote / translated the quote's
         // job details — re-read it so the open preview shows the new text.
         const updatedQuoteId = quoteUpdatedBy(res.newMessages);
@@ -3203,10 +3212,16 @@ export default function AsstChat({
       // directly while /api/* bounces through the Fresh proxy; mixing the two
       // creates the quote on one backend and reads/updates it on another, so
       // the later GET/PUT /quotes/:id 404s. Keep all quote ops on one path.
+      // REQ-585 (demo-loop cycle 4, M30): a quick quote (nothing confirmed)
+      // starts from the message's scope lines — never the message itself as
+      // its one job line, which every later chat edit echoed back.
+      const scoped = confirmed
+        ? raw.trim()
+        : scopeDescriptionFromRaw(raw, lang);
       const quoteFields = {
         summary,
         jobName,
-        description: raw.trim(),
+        ...(scoped ? { description: scoped } : {}),
         ...byLangFields,
         // REQ-259 (demo M23): the lines the user typed, priced, when they
         // still add up to the confirmed price; else one summary line.

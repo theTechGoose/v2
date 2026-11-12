@@ -12,11 +12,13 @@
 import { assert, assertEquals, assertStringIncludes } from "#std/assert";
 import type { LLMAction } from "@agents/domain/business/llm/base/mod.ts";
 import {
+  isEditAction,
   jobDetailsChangeLine,
   jobDetailsChangeOf,
   notDoneLine,
   planToolCalls,
   pricesSameLine,
+  proseAnswer,
   sameJobDetails,
   toolCallsOf,
   totalMoveLine,
@@ -93,9 +95,17 @@ Deno.test("REQ-444 planToolCalls: a mix that can't all run keeps the first call 
     notDone: ["lock_quote", "request_terms_transition"],
   });
   // The same tool again is not reported as undone (one of it ran).
+  // REQ-585 (demo-loop cycle 4, M4): the job details that ride along with a
+  // create are folded into it — never reported as not done.
   assertEquals(planToolCalls([DRAFT, DRAFT, DETAILS]), {
-    single: DRAFT,
-    notDone: ["update_job_details"],
+    single: {
+      type: "create_quote" as const,
+      payload: {
+        ...(DRAFT as Extract<LLMAction, { type: "create_quote" }>).payload,
+        descriptionByLang: { en: "Demo\nPlumbing permit" },
+      },
+    },
+    notDone: [],
   });
 });
 
@@ -242,5 +252,141 @@ Deno.test("REQ-444 workingTotalCents: the pending revision's total when one wait
       lineItems: [{ price: 100 }, { price: 50, quantity: 3 }],
     }),
     250,
+  );
+});
+
+// ---------------------------------------------------------------------------
+// REQ-585 (demo-loop cycle 4, M4 + M30)
+// ---------------------------------------------------------------------------
+
+const ES_DETAILS: LLMAction = {
+  type: "update_job_details",
+  payload: {
+    descriptionByLang: {
+      es: "Reparar fuga del grifo de la cocina\nColgar 2 puertas interiores",
+    },
+  },
+};
+
+Deno.test("REQ-585 M4 planToolCalls: pair 6's create_quote + update_job_details ('Ella habla español') is ONE create carrying the job details — nothing reported as not done", () => {
+  const draft = DRAFT as Extract<LLMAction, { type: "create_quote" }>;
+  const folded: ReturnType<typeof planToolCalls> = {
+    single: {
+      type: "create_quote",
+      payload: {
+        ...draft.payload,
+        descriptionByLang: ES_DETAILS.type === "update_job_details"
+          ? ES_DETAILS.payload.descriptionByLang
+          : {},
+      },
+    },
+    notDone: [],
+  };
+  assertEquals(planToolCalls([DRAFT, ES_DETAILS]), folded);
+  // Whatever order the model made them in.
+  assertEquals(planToolCalls([ES_DETAILS, DRAFT]), folded);
+  // Two job-details calls: merged per language, the later one wins.
+  const en: LLMAction = {
+    type: "update_job_details",
+    payload: { descriptionByLang: { en: "Fix kitchen faucet leak" } },
+  };
+  const plan = planToolCalls([DRAFT, ES_DETAILS, en]);
+  assertEquals(plan.notDone, []);
+  assertEquals(
+    plan.single?.type === "create_quote"
+      ? plan.single.payload.descriptionByLang
+      : undefined,
+    {
+      es: "Reparar fuga del grifo de la cocina\nColgar 2 puertas interiores",
+      en: "Fix kitchen faucet leak",
+    },
+  );
+  // A lock that ran first still runs alone; the create (with its details) is
+  // the one named as not done — the details are part of it.
+  assertEquals(planToolCalls([LOCK, DRAFT, ES_DETAILS]), {
+    single: LOCK,
+    notDone: ["create_quote"],
+  });
+});
+
+const RAW_ES =
+  "Baño principal de la señora Tran en Round Rock, quitar la tina y poner regadera de azulejo con banca, vanity doble, el inodoro se queda pero lo reinstalamos, dos semanas y media, ponle precio, no sé, como 18 mil?";
+
+Deno.test("REQ-585 M30 jobDetailsChangeLine: a one-line raw body that was rewritten is 'reworded' — her whole message is never echoed (twice)", () => {
+  const out = jobDetailsChangeLine("es", {
+    before: RAW_ES,
+    after: RAW_ES.replace("como 18 mil?", "como 19,500?") +
+      " Calefacción del piso.",
+    langs: ["es"],
+  });
+  assertEquals(out, "Actualicé los detalles del trabajo (español).");
+  assert(!out.includes("Tran"), out);
+  // A short one-line body replaced by another: still not echoed twice.
+  const short = jobDetailsChangeLine("en", {
+    before: "Demo kitchen",
+    after: "Demo the whole kitchen",
+    langs: ["en"],
+  });
+  assertEquals(short, "Updated the job details (English).");
+});
+
+Deno.test("REQ-585 M30 jobDetailsChangeLine: a changed line longer than 80 characters is never echoed; short ones are still named, without a doubled period", () => {
+  const long =
+    "Install new white shaker cabinets from the cabinet place on Burnet Road with soft-close hinges and crown";
+  assert(long.length > 80);
+  const out = jobDetailsChangeLine("en", {
+    before: "Demo existing kitchen\nTile backsplash",
+    after: `Demo existing kitchen\nTile backsplash\n${long}`,
+    langs: ["en", "es"],
+  });
+  assertEquals(out, "Updated the job details (English, Spanish).");
+  assertEquals(
+    jobDetailsChangeLine("es", {
+      before: "Demoler la cocina\nAzulejo",
+      after: "Demoler la cocina\nAzulejo\nCalefacción del piso.",
+      langs: ["es"],
+    }),
+    "Actualicé los detalles del trabajo (español): agregué Calefacción del piso.",
+  );
+});
+
+Deno.test("REQ-585 M4 proseAnswer: the model's answer stays, its claims of a change go (the outcome lines say what changed)", () => {
+  assertEquals(
+    proseAnswer(
+      "Done — I updated the start date to Nov 23. Yes, a 50% deposit is common for remodels in Texas.",
+    ),
+    "Yes, a 50% deposit is common for remodels in Texas.",
+  );
+  assertEquals(
+    proseAnswer(
+      "Listo, actualicé la fecha de inicio. Sí, un anticipo del 50% es normal en Texas.",
+    ),
+    "Sí, un anticipo del 50% es normal en Texas.",
+  );
+  assertEquals(
+    proseAnswer("I've removed the Floor stays line and updated the quote."),
+    "",
+  );
+  assertEquals(proseAnswer(""), "");
+  assertEquals(
+    proseAnswer("Is the permit for the whole job or just the plumbing?"),
+    "Is the permit for the whole job or just the plumbing?",
+  );
+});
+
+Deno.test("REQ-585 update_terms is a change that runs beside the others, and is named when it didn't run", () => {
+  const terms: LLMAction = {
+    type: "update_terms",
+    payload: { startDate: "next week" },
+  };
+  assert(isEditAction(terms));
+  assertEquals(planToolCalls([terms, PERMIT]), {
+    edits: [terms, PERMIT],
+    notDone: [],
+  });
+  assertStringIncludes(notDoneLine("en", ["update_terms"]), "change the terms");
+  assertStringIncludes(
+    notDoneLine("es", ["update_terms"]),
+    "cambiar los términos",
   );
 });
