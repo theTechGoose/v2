@@ -1006,8 +1006,8 @@ function PSideFlow(
       <svg width={w} height={h} style="display:block;width:100%;height:auto">
         <defs>
           <linearGradient id="cfArea" x1="0" x2="0" y1="0" y2="1">
-            <stop offset="0%" stopColor="#FF6B6B" stopOpacity="0.32" />
-            <stop offset="100%" stopColor="#FF6B6B" stopOpacity="0" />
+            <stop offset="0%" stop-color="#FF6B6B" stop-opacity="0.32" />
+            <stop offset="100%" stop-color="#FF6B6B" stop-opacity="0" />
           </linearGradient>
         </defs>
         <path d={area} fill="url(#cfArea)" />
