@@ -14,6 +14,7 @@ import {
   type LineReprice,
   parseLineReprice,
 } from "@agents/domain/business/quote-line-revision/mod.ts";
+import { moneyAmounts } from "#quote-flow/money-amounts.ts";
 
 /** "change order" (any spacing/hyphen, plural) or Spanish "orden de cambio". */
 const CHANGE_ORDER_RE =
@@ -628,6 +629,56 @@ export function typedAmountsCents(text: string): number[] {
   return [...(text ?? "").matchAll(MONEY_ALL_RE)].map((m) => centsOf(m[0]));
 }
 
+/** What may follow a bare amount for it to be money: the end, a pause or a
+ *  joining word ("about 1200 extra.", "add 60 to her job"). */
+const BARE_END = String
+  .raw`(?:$|[.,;:!?)…]|(?:to|for|on|onto|and|but|so|please|pls|total)(?![\p{L}]))`;
+/** "1200 extra", "1200 more", "1,200 additional", "1200 on top". */
+const BARE_AFTER_RE = new RegExp(
+  String.raw`^\s*(?:extra|more|additional|on top)\s*${BARE_END}`,
+  "iu",
+);
+/** "add 1200", "plus 1200", "an additional 1,200", "another 300". */
+const BARE_BEFORE_RE =
+  /(?:^|[^\p{L}])(?:add(?:ing)?|plus|another|an? (?:additional|extra))\s+(?:(?:about|around|roughly|like|~)\s*)?$/iu;
+const BARE_END_RE = new RegExp(String.raw`^\s*${BARE_END}`, "iu");
+const BARE_NUM_RE =
+  /(?<![\p{L}\d$.,])(\d{1,3}(?:,\d{3})+|\d+)(?:\.(\d{1,2}))?(?![\d,.]?\d)/gu;
+
+/**
+ * REQ-651 (demo-loop cycle 5, B1): every amount a change order may be
+ * measured against, in cents — the shared reader's amounts ("$1,200",
+ * "$1.2k", "1200 dollars", "1.2k"; a rate like "$55 a foot" is not one) and
+ * a bare number next to a money cue ("about 1200 extra", "1200 more", "add
+ * 60 to her job", "an additional 1,200"). Pair 7's "about 1200 extra" had no
+ * "$", so the model's $150 had nothing to be checked against. A size or a
+ * count ("64 sqft", "add 2 more outlets") is never one.
+ */
+export function changeOrderAmountsCents(text: string): number[] {
+  const s = text ?? "";
+  const money = moneyAmounts(s);
+  const out = money.filter((a) => !a.rate).map((a) => ({
+    at: a.start,
+    cents: a.cents,
+  }));
+  for (const m of s.matchAll(BARE_NUM_RE)) {
+    const start = m.index!;
+    const end = start + m[0].length;
+    if (money.some((a) => start < a.end && end > a.start)) continue;
+    const after = s.slice(end);
+    const cued = BARE_AFTER_RE.test(after) ||
+      (BARE_BEFORE_RE.test(s.slice(0, start)) &&
+        (BARE_END_RE.test(after) ||
+          /^\s*(?:extra|more|additional)\s*$/iu.test(after) ||
+          BARE_AFTER_RE.test(after)));
+    if (!cued) continue;
+    const cents = centsOf(m[0]);
+    if (cents > 0) out.push({ at: start, cents });
+  }
+  return out.sort((a, b) => a.at - b.at).map((a) => a.cents)
+    .filter((c, i, all) => all.indexOf(c) === i);
+}
+
 export interface TargetTotalChange {
   /** "Q-001" when the sentence names one. */
   quoteNumber?: string;
@@ -688,7 +739,8 @@ export type DeltaCheck =
  * (a reprice on a signed quote, REQ-315). A delta off by a factor of 10 or
  * 100 from exactly one of those is the model's cents slip (demo B1: 12500
  * for 125000) and is corrected. Anything else is asked about. No amount
- * typed → nothing to check against: the delta stands.
+ * typed → nothing to check against: the delta stands. The amounts are
+ * `changeOrderAmountsCents`' (REQ-651: "about 1200 extra" is $1,200).
  */
 export function reconcileChangeOrderDelta(input: {
   deltaCents: number;
@@ -697,7 +749,7 @@ export function reconcileChangeOrderDelta(input: {
   bases: number[];
 }): DeltaCheck {
   const delta = Math.trunc(input.deltaCents);
-  const amounts = typedAmountsCents(input.userText);
+  const amounts = changeOrderAmountsCents(input.userText);
   if (amounts.length === 0) return { kind: "ok", deltaCents: delta };
   const fits = new Set<number>();
   for (const a of amounts) {

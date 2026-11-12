@@ -450,11 +450,18 @@ export interface RevisionJump {
   unpriced: PricedLine[];
 }
 
+/** The amounts the contractor typed for the job or a line, in cents — never
+ *  a rate ("$55 a foot" is a price per foot, not an amount of the job). */
+function typedPricesCents(userText: string): number[] {
+  return moneyAmounts(userText).filter((a) => !a.rate).map((a) => a.cents);
+}
+
 /**
- * The sanity gate on a revision: the new total is more than 3× the old one,
- * it is not within ±15% of an amount the contractor typed (as the new total
- * or as the increase), and some new or repriced line carries a price nobody
- * typed. Undefined when the revision is believable.
+ * The sanity gate on a revision: the new total is more than 3× the old one
+ * — or, REQ-651 (demo-loop cycle 5, B1), under a third of it — it is not
+ * within ±15% of an amount the contractor typed (as the new total or as the
+ * change), and some new or repriced line carries a price nobody typed.
+ * Undefined when the revision is believable.
  */
 export function revisionJump(
   before: readonly PricedLine[],
@@ -463,18 +470,112 @@ export function revisionJump(
 ): RevisionJump | undefined {
   const from = sumOf(before);
   const to = sumOf(after);
-  if (from <= 0 || to <= 3 * from) return undefined;
-  const typed = moneyAmounts(userText).map((a) => a.cents);
-  if (typed.some((a) => near(to, a) || near(to - from, a))) return undefined;
+  if (from <= 0 || (to <= 3 * from && 3 * to >= from)) return undefined;
+  const typed = typedPricesCents(userText);
+  if (typed.some((a) => near(to, a) || near(Math.abs(to - from), a))) {
+    return undefined;
+  }
+  const all = moneyAmounts(userText).map((a) => a.cents);
   const was = new Map(before.map((l) => [lineKey(l.description), l]));
   const unpriced = after.filter((l) => {
     const old = was.get(lineKey(l.description));
     if (old && old.amountCents === l.amountCents) return false;
-    return !typed.includes(l.amountCents);
+    return !all.includes(l.amountCents);
   });
   return unpriced.length
     ? { fromCents: from, toCents: to, unpriced }
     : undefined;
+}
+
+// ---------------------------------------------------------------------------
+// REQ-651 (demo-loop cycle 5, B1) — a typed rate × the job's quantity
+// ---------------------------------------------------------------------------
+
+/** The unit a rate or a quantity is in: "ft", "sqft", "hr", "day", "yd", "m". */
+function unitFamily(word: string): string | undefined {
+  const w = word.toLowerCase().replace(/[\s.]+/g, " ").trim();
+  if (/^(?:sq|sqft|sf|square|m2)\b/.test(w)) return "sqft";
+  if (/^(?:ft|foot|feet|lf|lin|linear|pie|pies)\b/.test(w)) return "ft";
+  if (/^(?:h|hr|hrs|hour|hours|hora|horas)\b/.test(w)) return "hr";
+  if (/^(?:day|days|d[ií]a|d[ií]as)\b/.test(w)) return "day";
+  if (/^(?:yard|yd|yds)\b/.test(w)) return "yd";
+  if (/^(?:metro|metros)\b/.test(w)) return "m";
+  return undefined;
+}
+
+/** What follows a rate's amount: "/ft", " a foot", " per sq ft". */
+const RATE_UNIT_RE =
+  /^\s*(?:\/\s*|(?:a|an|per|each|por|la|el|al|the)\s+)((?:sq|square)\s*(?:ft|feet|foot)?|sqft|sf|m2|(?:lin(?:ear)?\s+)?(?:ft|foot|feet)|lf|h|hr|hrs|hour|hours|hora|horas|day|days|d[ií]as?|yard|yds?|pies?|metros?)(?![\p{L}])/iu;
+
+/** "150 ft", "150-ft", "64 sqft", "64 sq ft", "40 hours" — never a height or
+ *  a width ("6 ft high", "6 ft tall"). */
+const QTY_RE =
+  /(?<![\p{L}\d$.,])(\d{1,3}(?:,\d{3})+|\d+(?:\.\d+)?)\s*-?\s*((?:sq|square)\s*(?:ft|feet|foot)|sqft|sf|m2|(?:lin(?:ear)?\s+)?(?:ft|foot|feet)|lf|hrs?|hours?|days?|yards?|yds?|pies?\s+cuadrados|pies?|metros?(?:\s+cuadrados)?)(?![\p{L}])(?!\s*(?:high|tall|wide|deep|thick|de\s+alto|de\s+ancho)\b)/giu;
+
+function quantitiesIn(text: string): Map<string, number[]> {
+  const out = new Map<string, number[]>();
+  for (const m of (text ?? "").matchAll(QTY_RE)) {
+    let fam = unitFamily(m[2]);
+    if (/cuadrados/i.test(m[2])) fam = "sqft";
+    const n = Number(m[1].replace(/,/g, ""));
+    if (!fam || !(n > 0)) continue;
+    out.set(fam, [...(out.get(fam) ?? []), n]);
+  }
+  return out;
+}
+
+/** Within 1% — a slip moves the decimal point, nothing else. */
+function same(a: number, b: number): boolean {
+  return Math.abs(a - b) <= 0.01 * b;
+}
+
+/**
+ * Pair 8 typed "I get $55 a foot" on a 150 ft fence and the model priced the
+ * line at 8250 cents — 55 × 150 as dollars passed as cents. A line with a
+ * quantity in the unit of a typed rate (in its own description, or typed in
+ * the message) whose price is rate × quantity off by ×10 or ×100 either way
+ * is that slip: it is set to rate × quantity. A line already at rate ×
+ * quantity, or off by anything else (the contractor's extras), is left as
+ * it is. Undefined when no line changes.
+ */
+export function fixRateSlips<T extends PricedLine>(
+  lines: readonly T[],
+  userText: string,
+): T[] | undefined {
+  const s = userText ?? "";
+  const rates = moneyAmounts(s).filter((a) => a.rate).flatMap((a) => {
+    const m = s.slice(a.end).match(RATE_UNIT_RE);
+    const fam = m ? unitFamily(m[1]) : undefined;
+    return fam ? [{ cents: a.cents, fam }] : [];
+  });
+  if (rates.length === 0) return undefined;
+  const typedQty = quantitiesIn(
+    moneyAmounts(s).reduceRight(
+      (t, a) => t.slice(0, a.start) + " " + t.slice(a.end),
+      s,
+    ),
+  );
+  let changed = false;
+  const out = lines.map((l) => {
+    if (l.amountCents <= 0) return { ...l };
+    const own = quantitiesIn(l.description);
+    for (const r of rates) {
+      const qtys = own.get(r.fam) ?? typedQty.get(r.fam) ?? [];
+      for (const q of qtys) {
+        const want = Math.round(r.cents * q);
+        if (same(l.amountCents, want)) return { ...l };
+        const slip = [10, 100].some((k) =>
+          same(l.amountCents * k, want) || same(l.amountCents, want * k)
+        );
+        if (slip) {
+          changed = true;
+          return { ...l, amountCents: want };
+        }
+      }
+    }
+    return { ...l };
+  });
+  return changed ? out : undefined;
 }
 
 /** Is the model's create_quote a revision of the draft on file (its summary,
@@ -496,7 +597,7 @@ export type PriceSettlement =
   | {
     kind: "lines";
     lineItems: PricedLine[];
-    how: "reasked" | "scaled" | "lifted";
+    how: "reasked" | "scaled" | "lifted" | "rate";
   }
   /** save nothing — ask the contractor */
   | { kind: "ask"; jump: RevisionJump };
@@ -507,11 +608,14 @@ export type PriceSettlement =
  * - A stated total: lines more than ±15% off are re-asked once, naming both
  *   totals; still off (or no answer), the lines are scaled to it in code.
  * - A revision of the draft on file with no stated total: a jump of more
- *   than 3× with prices nobody typed is asked about — nothing is saved.
+ *   than 3× — or a drop under a third (REQ-651) — with prices nobody typed
+ *   is asked about; nothing is saved.
+ * - First (REQ-651, B1): a line priced at a typed rate × its quantity off by
+ *   ×10 / ×100 is set to rate × quantity (`fixRateSlips`).
  * - A first draft: under the job's plausibility floor (REQ-382) it is
  *   re-asked once with the job size; still under, it is lifted to the floor.
  *   A total the contractor typed (or the sum of the prices they typed) is
- *   theirs, and is never re-asked or lifted.
+ *   theirs, and is never re-asked or lifted; a typed rate is not a price.
  *
  * Lines that add up to nothing are REQ-302's to refuse, not this check's.
  */
@@ -524,6 +628,24 @@ export async function settleQuotePrice(input: {
   /** First draft: the job's floor and the size it was read off. */
   floor?: { cents: number; jobSize: string };
   /** One more model call with the note; its create_quote lines, if any. */
+  reask: (note: string) => Promise<readonly PricedLine[] | undefined>;
+}): Promise<PriceSettlement> {
+  // REQ-651 (B1): a typed rate × the job's quantity, off by ×10 / ×100, is
+  // the model's cents slip — fixed before any other check reads the lines.
+  const rated = fixRateSlips(input.lines, input.userText);
+  const settled = await settleLines({ ...input, lines: rated ?? input.lines });
+  if (rated && settled.kind === "keep") {
+    return { kind: "lines", how: "rate", lineItems: rated };
+  }
+  return settled;
+}
+
+async function settleLines(input: {
+  lines: readonly PricedLine[];
+  userText: string;
+  before?: readonly PricedLine[];
+  targetCents?: number;
+  floor?: { cents: number; jobSize: string };
   reask: (note: string) => Promise<readonly PricedLine[] | undefined>;
 }): Promise<PriceSettlement> {
   const total = sumOf(input.lines);
@@ -555,8 +677,9 @@ export async function settleQuotePrice(input: {
   }
 
   // The floor judges prices the model made up — never the contractor's own:
-  // a total they typed, or the sum of the line prices they typed.
-  const typed = moneyAmounts(input.userText).map((a) => a.cents);
+  // a total they typed, or the sum of the line prices they typed. A rate
+  // ("$55 a foot") is neither (REQ-651, B1).
+  const typed = typedPricesCents(input.userText);
   const typedSum = typed.reduce((a, b) => a + b, 0);
   const theirs = typed.some((a) => near(total, a)) ||
     (typedSum > 0 && near(total, typedSum));
@@ -622,7 +745,10 @@ export function priceJumpAsk(lang: Lang, jump: RevisionJump): string {
       t(lang, "chatCoordinator.priceCheck.more", { n: top.length - 3 }),
     );
   }
-  return t(lang, "chatCoordinator.priceCheck.jump", {
+  const key = jump.toCents < jump.fromCents
+    ? "chatCoordinator.priceCheck.drop"
+    : "chatCoordinator.priceCheck.jump";
+  return t(lang, key, {
     from: money(jump.fromCents),
     to: money(jump.toCents),
     lines: named.join(", "),

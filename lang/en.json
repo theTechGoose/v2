@@ -754,6 +754,7 @@
   "chatCoordinator.quoteLocked": "Quote locked",
   "chatCoordinator.priceMissing": "I can't use that as a price. What should {item} cost? Give me a number, like $500.",
   "chatCoordinator.priceCheck.jump": "That would take the total from {from} to {to} — more than 3 times what it was — with prices you didn't give: {lines}. I didn't change the quote. What should those cost, or what should the total be?",
+  "chatCoordinator.priceCheck.drop": "That would take the total from {from} to {to} — less than a third of what it was — with prices you didn't give: {lines}. I didn't change the quote. What should those cost, or what should the total be?",
   "chatCoordinator.priceCheck.more": "and {n} more",
   "chatCoordinator.priceCheck.includes": "{line} (incl. {included})",
   "chatCoordinator.step.repriced": "Re-priced with your note — {tiers}.",
