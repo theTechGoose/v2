@@ -7,10 +7,10 @@
  * strip echoing the typed message. The list's height used to be a fixed
  * `calc(100dvh - 235px)` and the strip's echo was unbounded, so a long message
  * pushed the strip over the list. In a 1280×720 browser with an ~800-char
- * message: the strip and the list never share pixels, the whole picker fits
- * in the viewport, the echo is clamped to three lines with a "show more"
- * control that reveals the rest, and the third card is still reachable by
- * scrolling the list.
+ * message: the strip and the list never share pixels, the echo is clamped to
+ * three lines with a "show more" control that reveals the rest, and the third
+ * card is reachable. (REQ-383, cycle 2: the list is no longer bounded to the
+ * panel — the panel scrolls; see the REQ-383 story below.)
  */
 import { story, type StoryTools } from "#shots";
 import { answerQuestions } from "../_shared/onboarding-answers.ts";
@@ -176,10 +176,14 @@ Deno.test("REQ-338 m31: at 1280×720 the 'Looks right' strip never covers the op
       m.strip.top >= m.list.bottom,
       `the strip sits below the list (strip top ${m.strip.top}, list bottom ${m.list.bottom})`,
     );
+    // REQ-383 (M26, cycle 2): the picker is no longer squeezed into the
+    // panel — the panel scrolls, and the picker opens on its head or, when
+    // the head and a tall first card do not both fit, on that whole card
+    const card1 = await page.locator(".chat__jobopt").first().boundingBox();
+    const card1Top = card1 ? Math.round(card1.y) : -1;
     expect(
-      m.continueBottom <= 720 && m.picker.top >= 0 &&
-        m.picker.top >= m.scroll.top && m.continueBottom <= m.scroll.bottom,
-      `the whole picker fits in the chat panel (picker top ${m.picker.top}, Continue bottom ${m.continueBottom}; panel ${m.scroll.top}–${m.scroll.bottom})`,
+      card1Top >= m.scroll.top - 1 && card1Top < m.scroll.bottom,
+      `the picker opens on its first card, in the chat panel (card top ${card1Top}; panel ${m.scroll.top}–${m.scroll.bottom})`,
     );
     expect(m.echo !== null, "the strip echoes the typed message");
     const echoLines = (m.echo!.bottom - m.echo!.top) / m.echoLineHeight;
@@ -187,26 +191,21 @@ Deno.test("REQ-338 m31: at 1280×720 the 'Looks right' strip never covers the op
       echoLines <= 3.2,
       `the echo is clamped to three lines (${echoLines.toFixed(1)} lines)`,
     );
+    // REQ-383 (M26): the list is not an inner scroll box — the chat panel scrolls
     expect(
-      m.listScrollHeight > m.listClientHeight,
-      `the list scrolls for the cards it cannot show (scroll ${m.listScrollHeight} > client ${m.listClientHeight})`,
+      m.listScrollHeight <= m.listClientHeight + 1,
+      `the list is at its natural height, not a scroll box (scroll ${m.listScrollHeight}, client ${m.listClientHeight})`,
     );
 
-    // the third card is reachable by scrolling the list, and the strip stays below the list
-    await page.evaluate(() => {
-      const list = document.querySelector(".chat__jobopts-list")!;
-      const third = document.querySelectorAll(
-        ".chat__jobopt",
-      )[2] as HTMLElement;
-      list.scrollTop = third.offsetTop - (list as HTMLElement).offsetTop;
-    });
+    // the third card is reachable by scrolling the panel, and the strip stays below the list
+    await page.locator(".chat__jobopt").nth(2).scrollIntoViewIfNeeded();
     const after = await measure(page);
     const third = await page.locator(".chat__jobopt").nth(2).boundingBox();
     const thirdTop = third ? Math.round(third.y) : -1;
     expect(
-      thirdTop >= after.list.top - 1 && thirdTop < after.list.bottom &&
+      thirdTop >= after.scroll.top - 1 && thirdTop < after.scroll.bottom &&
         after.list.bottom <= after.strip.top,
-      `scrolled, the third card shows in the list, above the strip (card top ${thirdTop}; list ${after.list.top}–${after.list.bottom}; strip top ${after.strip.top})`,
+      `scrolled, the third card shows in the panel, above the strip (card top ${thirdTop}; panel ${after.scroll.top}–${after.scroll.bottom}; list bottom ${after.list.bottom}; strip top ${after.strip.top})`,
     );
 
     // "show more" opens the whole message; the cards stay in sight and Continue reachable
@@ -231,8 +230,8 @@ Deno.test("REQ-338 m31: at 1280×720 the 'Looks right' strip never covers the op
       } lines shown, ${openEcho.scroll}px of text)`,
     );
     expect(
-      open.listClientHeight >= 60,
-      `expanded, the cards stay in sight (list ${open.listClientHeight}px tall)`,
+      open.listClientHeight >= open.listScrollHeight - 1,
+      `expanded, the list keeps its full height (list ${open.listClientHeight}px of ${open.listScrollHeight}px)`,
     );
     expect(
       !overlap(open.strip, open.list) && open.list.bottom <= open.strip.top,
@@ -248,5 +247,108 @@ Deno.test("REQ-338 m31: at 1280×720 the 'Looks right' strip never covers the op
       end.continueBottom <= end.scroll.bottom + 1 &&
         !overlap(end.strip, end.list),
       `expanded and scrolled, Continue is in the panel (Continue bottom ${end.continueBottom}, panel bottom ${end.scroll.bottom})`,
+    );
+  }));
+
+/**
+ * REQ-383 — demo issue M26 (cycle 2): "Job-options list is a 77px scroll box
+ * holding 471px of content". REQ-338 bounded the picker to the chat panel and
+ * let the list give, so at 1280×720 the cards shrank to the list's 72 px floor
+ * — about two bullets. With a ten-item job the first card (ten bullets) must
+ * show whole when the picker opens, the list is never an inner scroll box,
+ * the strip never covers a card, and Continue stays in reach.
+ */
+const TEN_ITEMS = [
+  "Demo the hall bathroom to the studs and haul everything away",
+  "Cut the slab for a curbless shower with a linear drain",
+  "Move the toilet 18 inches and rough in new supply lines",
+  "Frameless glass shower enclosure",
+  "Install a 72 inch double vanity the customer supplies",
+  "Four recessed lights on a new switch, with permit",
+  "Large format porcelain tile on the floor and shower walls",
+  "Recessed niche in the shower wall",
+  "Heated floor mat under the tile",
+  "New exhaust fan vented through the roof",
+].join("\n");
+
+Deno.test("REQ-383 M26: at 1280×720 a ten-item job's first card shows whole — the option list is not a squeezed scroll box", (t) =>
+  story(t, async ({ page, expect, http, baseUrl }) => {
+    await signIn(http, page, baseUrl);
+    await page.setViewportSize({ width: 1280, height: 720 });
+    await page.goto("/assistant");
+    const chip = "button.chat__empty-prompt:has-text('help me price it')";
+    await clickUntil(
+      page,
+      chip,
+      () => page.locator(".chat__details-prompt-bubble").isVisible(),
+    );
+    await page.locator("textarea.composer__input").fill(TEN_ITEMS);
+    await page.locator("button.composer__send").click();
+    await page.locator("[data-cy=confirm-details]").waitFor({
+      state: "visible",
+      timeout: 30_000,
+    });
+    await page.locator(".chat__jobopt").first().waitFor({ state: "attached" });
+    await page.waitForTimeout(900); // entrance animation + any scroll settle
+
+    const m = await measure(page);
+    expect.eq(m.innerHeight, 720, "the window is 720px tall");
+    const first = await page.evaluate(() => {
+      const c = document.querySelector(".chat__jobopt")!;
+      const r = c.getBoundingClientRect();
+      return {
+        top: Math.round(r.top),
+        bottom: Math.round(r.bottom),
+        bullets: c.querySelectorAll(".chat__jobopt-bullet").length,
+      };
+    });
+    expect(
+      first.bullets >= 10,
+      `the first card carries the ten typed items (${first.bullets} bullets)`,
+    );
+    expect(
+      first.bottom - first.top >= 180,
+      `the first card is a full ten-bullet card (${
+        first.bottom - first.top
+      }px tall)`,
+    );
+    expect(
+      m.listScrollHeight <= m.listClientHeight + 1,
+      `the option list is at its natural height, not a scroll box (content ${m.listScrollHeight}px in ${m.listClientHeight}px)`,
+    );
+    expect(
+      first.bottom - first.top <= m.scroll.bottom - m.scroll.top,
+      `the card fits the chat panel (${first.bottom - first.top}px in a ${
+        m.scroll.bottom - m.scroll.top
+      }px panel)`,
+    );
+    expect(
+      first.top >= m.scroll.top - 1 && first.bottom <= m.scroll.bottom + 1,
+      `the whole first card is visible in the chat panel when the picker opens (card ${first.top}–${first.bottom}; panel ${m.scroll.top}–${m.scroll.bottom})`,
+    );
+    expect(
+      !overlap(m.strip, m.list) && m.strip.top >= m.list.bottom,
+      `the strip sits below the list, never over a card (list bottom ${m.list.bottom}, strip top ${m.strip.top})`,
+    );
+
+    // scrolled to the end, the strip and Continue are both in the panel, apart
+    await page.evaluate(() => {
+      const sc = document.querySelector(".chat__scroll")!;
+      sc.scrollTop = sc.scrollHeight;
+    });
+    await page.waitForTimeout(200);
+    const end = await measure(page);
+    const cont = await page.evaluate(() => {
+      const r = document.querySelector(
+        ".chat__jobopts > .chat__price-continue",
+      )!
+        .getBoundingClientRect();
+      return { top: Math.round(r.top), bottom: Math.round(r.bottom) };
+    });
+    expect(
+      end.strip.bottom <= end.scroll.bottom + 1 &&
+        end.strip.bottom <= cont.top + 1 &&
+        cont.bottom <= end.scroll.bottom + 1,
+      `scrolled to the end, the strip and Continue both show, Continue below the strip (strip ${end.strip.top}–${end.strip.bottom}; Continue ${cont.top}–${cont.bottom}; panel bottom ${end.scroll.bottom})`,
     );
   }));

@@ -1983,6 +1983,19 @@ export default function AsstChat({
     };
   }, []);
 
+  // REQ-383 (demo M26, cycle 2): the job-options picker takes its natural
+  // height and the chat panel scrolls (no squeezed inner list). The panel
+  // pins to the bottom whenever its content grows, which would open a tall
+  // picker on its last card — so once the options land, bring the picker's
+  // head and first card into view instead; the strip and Continue follow
+  // the cards in flow, a scroll away, never drawn over a card.
+  const jobOptionsReady = jobOptionsOpen && !optionsLoading &&
+    jobOptions !== null;
+  useEffect(() => {
+    if (!jobOptionsReady) return;
+    return revealPicker(scrollRef.current);
+  }, [jobOptionsReady]);
+
   // Belt-and-suspenders: explicit scroll on message arrivals (for the
   // "user clicked away then a reply lands" case, where they expect to
   // be brought back regardless of where they were). The ResizeObserver
@@ -11410,4 +11423,38 @@ function latestSentQuoteCents(messages: Message[]): number {
     }
   }
   return 0;
+}
+
+/**
+ * REQ-383 (demo M26): scroll the chat panel so the job-options picker opens
+ * on its head and first card — the head at the panel's top, or, when the head
+ * and a tall first card do not both fit, as far down as shows that whole card
+ * (never past the card's own top). Two frames late, so it lands after the
+ * panel's own pin-to-bottom (a ResizeObserver → rAF) for the same growth; an
+ * instant scroll cancels that smooth one. A picker that fits is a no-op.
+ * Returns a cleanup that cancels the pending frames.
+ */
+function revealPicker(scroller: HTMLElement | null): () => void {
+  let raf = 0;
+  if (!scroller) return () => {};
+  raf = requestAnimationFrame(() => {
+    raf = requestAnimationFrame(() => {
+      const picker = scroller.querySelector<HTMLElement>(".chat__jobopts");
+      if (!picker) return;
+      const base = scroller.getBoundingClientRect().top - scroller.scrollTop;
+      const pad = parseFloat(getComputedStyle(scroller).paddingTop) || 0;
+      let top = picker.getBoundingClientRect().top - base - pad;
+      const card = picker.querySelector<HTMLElement>(".chat__jobopt");
+      if (card) {
+        const r = card.getBoundingClientRect();
+        const cardTop = r.top - base - 8;
+        const cardBottom = r.bottom - base + 8;
+        if (cardBottom - top > scroller.clientHeight) {
+          top = Math.min(cardTop, cardBottom - scroller.clientHeight);
+        }
+      }
+      scroller.scrollTo({ top: Math.max(0, top), behavior: "instant" });
+    });
+  });
+  return () => cancelAnimationFrame(raf);
 }
