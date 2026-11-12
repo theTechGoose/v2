@@ -934,6 +934,7 @@ export default function QuotesPage(_props: { lang?: "en" | "es" }) {
                   idx={i}
                   lang={lang}
                   flipOnMount={q.id === openId}
+                  onOpen={openQuote}
                 />
               ))}
             </div>
@@ -959,6 +960,7 @@ export default function QuotesPage(_props: { lang?: "en" | "es" }) {
                   idx={i}
                   lang={lang}
                   flipOnMount={q.id === openId}
+                  onOpen={openQuote}
                 />
               ))}
             </div>

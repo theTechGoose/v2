@@ -465,6 +465,10 @@
   color: #fff;
   filter: brightness(1.06);
 }
+/* REQ-239 (M28): the card's Open action takes its own full-width row. */
+.qcard__back-foot .qcard__back-open {
+  grid-column: 1 / -1;
+}
 /* P-09: honest send-failure note on the card front. */
 .qcard__sendfail {
   margin: 0;
