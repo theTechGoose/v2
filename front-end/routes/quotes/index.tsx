@@ -3,13 +3,18 @@ import { define } from "../../utils.ts";
 import DocTitle from "../../components/DocTitle.tsx";
 import SiteFooter from "../../components/SiteFooter.tsx";
 import { tFor } from "../../lib/i18n.ts";
+import { getSessionId } from "../../lib/auth.ts";
+import { loadQuotesSeed } from "../../lib/quotes-ssr.ts";
 import DashSidebar from "../../islands/DashSidebar.tsx";
 import DashTopbar from "../../islands/DashTopbar.tsx";
 import QuotesPage from "../../islands/QuotesPage.tsx";
 import { greetingFirstName } from "../../../shared/quote-flow/outbound-identity.ts";
 
-export default define.page(function QuotesRoute(ctx) {
+export default define.page(async function QuotesRoute(ctx) {
   const user = ctx.state.user;
+  // REQ-471 (demo-loop c3, p8-pair2-d): read the pipeline here so the first
+  // HTML carries the quote cards; null → the island fetches on hydration.
+  const seed = await loadQuotesSeed(getSessionId(ctx.req));
   const lang = user?.language === "es" ? "es" : "en";
   // The greeting date is computed reactively inside DashTopbar now; here we
   // only supply the name, with a localized "there" fallback.
@@ -33,7 +38,7 @@ export default define.page(function QuotesRoute(ctx) {
         <main class="main">
           <DashTopbar greetingName={greetingName} />
           <div class="content">
-            <QuotesPage />
+            <QuotesPage seed={seed} />
             <SiteFooter lang={lang} compact />
           </div>
         </main>

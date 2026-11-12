@@ -14,6 +14,7 @@ import {
 } from "../clients/quotes.ts";
 import { api, ApiError } from "../lib/api.ts";
 import { startListRefresh } from "../lib/list-refresh.ts";
+import type { QuotesSeed } from "../lib/quotes-ssr.ts";
 import { openQuoteMoved } from "../lib/live-doc-refresh.ts";
 import { I, ICN } from "../lib/dash-icons.tsx";
 import { fmtMoney, fmtMoneyExact } from "../lib/format.ts";
@@ -1036,7 +1037,9 @@ const INITIAL: State = {
   insight: null,
 };
 
-export default function QuotesPage(_props: { lang?: "en" | "es" }) {
+export default function QuotesPage(
+  props: { lang?: "en" | "es"; seed?: QuotesSeed | null },
+) {
   // Self-source the live UI language: reading langSignal.value during render
   // makes this island re-render when SettingsPage flips the language. The
   // optional `lang` prop is an ignored SSR seed.
@@ -1044,7 +1047,21 @@ export default function QuotesPage(_props: { lang?: "en" | "es" }) {
   // REQ-321: the periodic re-read words its cards in the language live now
   const langRef = useRef(lang);
   langRef.current = lang;
-  const [s, setS] = useState<State>(INITIAL);
+  // REQ-471 (demo-loop c3, p8-pair2-d): the route reads the pipeline on the
+  // server and hands it in, so the first paint (SSR and hydration alike)
+  // shows the cards instead of a skeleton waiting on a client fetch. No seed
+  // (the server read failed) → the skeleton + fetch, as before.
+  const [s, setS] = useState<State>(() =>
+    props.seed
+      ? {
+        loading: false,
+        error: null,
+        quotes: props.seed.cards.map((c) => mapCard(c, lang)),
+        winRate: props.seed.winRate,
+        insight: props.seed.insight,
+      }
+      : INITIAL
+  );
 
   // /quotes?open=<id> deep link — seeded from the URL; UX-08: also settable
   // from the list (tapping a decided row opens the same panel).
