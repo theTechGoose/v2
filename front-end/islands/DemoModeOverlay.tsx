@@ -55,6 +55,7 @@
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import { langSignal, tFor, type Vars } from "../lib/i18n.ts";
 import { demoChromeLang, storedLang } from "../lib/lang.ts";
+import { fenceClicks } from "../lib/backdrop-dismiss.ts";
 import {
   DEMO_OPENING_EVENT,
   DEMO_STARTED_EVENT,
@@ -1100,7 +1101,7 @@ export default function DemoModeOverlay() {
       label: t("demoMode.ended"),
     };
     return (
-      <div data-demo-overlay>
+      <div data-demo-overlay ref={fenceClicks}>
         {band}
         <div
           ref={pillRef}
@@ -1135,7 +1136,7 @@ export default function DemoModeOverlay() {
     };
     // REQ-179 — Demo was just clicked: the pill is up before the server answers
     return (
-      <div data-demo-overlay>
+      <div data-demo-overlay ref={fenceClicks}>
         {band}
         <div
           ref={pillRef}
@@ -1162,7 +1163,7 @@ export default function DemoModeOverlay() {
   // (REQ-232: another window, /admin after Return to your account) offer the way back — never take it
   if (demo.role === "presenter") {
     return (
-      <div data-demo-overlay>
+      <div data-demo-overlay ref={fenceClicks}>
         {band}
         <div
           ref={pillRef}
@@ -1251,7 +1252,7 @@ export default function DemoModeOverlay() {
   }
 
   return (
-    <div data-demo-overlay>
+    <div data-demo-overlay ref={fenceClicks}>
       {band}
       {presenters.map((p) => (
         <PeerPointer

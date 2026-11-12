@@ -232,3 +232,27 @@ Deno.test("REQ-419 (demo-loop cycle 2: m40, S7c, p13-k): one customer — no pag
     );
     await expect.see("8807 Spicewood Springs Rd, Austin, TX 78759");
   }));
+
+Deno.test("REQ-432 (demo m40, cycle 3): with a customer card open, switching EN/ES in the topbar keeps it open", (t) =>
+  story(t, async ({ page, expect, http, baseUrl }) => {
+    const { auth } = await signIn(http, page, baseUrl);
+    const r = await http("/api/customers", { method: "POST", headers: auth, body: JSON.stringify({ name: "Linda Lang", phoneNumber: "(512) 555-3151" }) });
+    await r.body?.cancel();
+    await page.goto("/customers");
+    await expect.see("Linda Lang");
+    const card = page.locator(".ccard2", { hasText: "Linda Lang" });
+    const isOpen = async () => (await card.getAttribute("class"))?.includes("ccard2--open") ?? false;
+    await clickUntil(page, ".ccard2:has-text('Linda Lang') .ccard2__name", isOpen);
+    expect(await isOpen(), "the card opened");
+    await clickUntil(page, "[data-cy='topbar-lang-es']", async () =>
+      (await page.locator("[data-cy='topbar-lang-es']").getAttribute("aria-pressed")) === "true");
+    await page.waitForTimeout(300);
+    expect(await isOpen(), "the card is still open after ES");
+    await page.locator("[data-cy='topbar-lang-en']").click();
+    await page.waitForTimeout(300);
+    expect(await isOpen(), "the card is still open after EN");
+    // a click on the page outside the card still closes it (the outside-click dismiss is kept)
+    await page.locator(".ph2__crumb").click();
+    for (let i = 0; i < 20 && (await isOpen()); i++) await page.waitForTimeout(100);
+    expect(!(await isOpen()), "a click outside the card on the page closes it");
+  }));

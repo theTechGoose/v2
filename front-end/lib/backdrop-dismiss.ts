@@ -51,3 +51,38 @@ export function createBackdropGuard(
     },
   };
 }
+
+/**
+ * REQ-432 (demo-loop cycle 3, issues m29 + m40): a document-level
+ * "click outside closes it" listener must not treat the app's own chrome as
+ * "outside". Tapping End demo on the demo pill, or EN/ES in the topbar,
+ * collapsed an open customer card. The chrome: the topbar, the sidebar, the
+ * demo overlay, and anything marked `data-keep-open`.
+ */
+export const CHROME_SELECTOR =
+  "[data-demo-overlay], .topbar, .sidebar, [data-keep-open]";
+
+/** is this click's target part of the app chrome (never an "outside" click)? */
+export function isChromeClick(target: unknown): boolean {
+  const el = target as { closest?: (sel: string) => unknown } | null;
+  if (!el || typeof el.closest !== "function") return false;
+  return el.closest(CHROME_SELECTOR) != null;
+}
+
+const fenced = new WeakSet<object>();
+
+/**
+ * REQ-432 — a callback ref for the demo overlay's root: its click,
+ * pointerdown and mousedown stop at the root in the BUBBLE phase, so the
+ * overlay's own buttons still get them, capture-phase document listeners
+ * (presence, the End question's cancel) still hear them, and no bubbling
+ * outside-click handler on the page underneath acts on them.
+ */
+export function fenceClicks(el: HTMLElement | null): void {
+  if (!el || fenced.has(el)) return;
+  fenced.add(el);
+  const stop = (e: Event) => e.stopPropagation();
+  for (const type of ["click", "pointerdown", "mousedown"]) {
+    el.addEventListener(type, stop);
+  }
+}
