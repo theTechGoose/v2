@@ -62,8 +62,9 @@ export interface DemoLinkOptions {
   onStatus(s: LinkStatus): void;
   /** the other side arrived (or was there on welcome); REQ-232 — on the customer's side also: a
    *  stage asks this tab for its whole view (it follows this tab now); on a stage: it follows
-   *  another of the customer's tabs */
-  onPeerOnline(): void;
+   *  another of the customer's tabs — `cid` names it (REQ-292: the stage starts its mirror over
+   *  when it changes) */
+  onPeerOnline(cid?: string): void;
   /** REQ-214 — a presenter came or went (on the customer's side: any of them; on a stage: a
    *  colleague) — per account: the first window of theirs to come, the last to go */
   onPresence?(pid: string, online: boolean): void;
@@ -314,7 +315,7 @@ export function connectDemo(o: DemoLinkOptions): DemoLink {
     if (best === null) return;
     wsSend({ t: "sync", to: best });
     void offer(best);
-    o.onPeerOnline();
+    o.onPeerOnline(best);
   };
   /** REQ-232 — a presenter: a customer's tab came, went or claimed */
   const tabSeen = (cid: string, at = 0) => {

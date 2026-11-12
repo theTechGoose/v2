@@ -379,7 +379,20 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
       }
       setCmds((c) => ({ ...c, [pid]: { seq: ++seq.current, ...cmd } }));
     };
-    const rx = createMirrorReceiver({ onFrame: take });
+    const rx = createMirrorReceiver({
+      onFrame: take,
+      // REQ-292 tripwire — a snapshot refused by the sequencer is never silent: say so, resync
+      onDropped: (f, load, seq) => {
+        console.warn("[demo-stage] snapshot dropped — resyncing", {
+          load,
+          seq,
+          u: f.t === "snap" ? f.u : undefined,
+        });
+        askResync();
+      },
+    });
+    // REQ-292 — the customer's tab the stage follows: a switch starts the mirror's ordering over
+    let followedCid: string | undefined;
     const link = connectDemo({
       sessionId: demo.id,
       role: "presenter",
@@ -419,10 +432,18 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
           }).catch(() => setDemo(null));
         }
       },
-      onPeerOnline: () => {
+      onPeerOnline: (cid) => {
         // the customer's page joined (a new clock) and its snapshot is on the way: show it this
         // pointer at rest
         lastTRef.current = 0;
+        if (cid !== followedCid) {
+          // REQ-292 — another of the customer's tabs: its page load may be OLDER than the one
+          // shown; the receiver starts over so that tab's snapshot is taken (the mirrored page
+          // stays on screen until it comes)
+          followedCid = cid;
+          rx.reset();
+          loadRef.current = null;
+        }
         resendPointer();
       },
       onPeer: (m: PeerMessage, from: PeerFrom) => {

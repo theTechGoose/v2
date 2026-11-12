@@ -221,7 +221,47 @@ describe("REQ-242 frames in order", () => {
     expect(q.push(fresh, 1, ops("new-1"))).toEqual([]);
     expect(q.push(fresh, 0, snap(2))).toEqual([snap(2), ops("new-1")]);
     expect(q.push(old, 2, ops("old-2"))).toEqual([]);
-    expect(q.push(old, 3, snap(9))).toEqual([]);
+    // REQ-292 — but a SNAPSHOT of that load starts over (the stage follows that tab again)
+    expect(q.push(old, 3, snap(9))).toEqual([snap(9)]);
+  });
+
+  test("REQ-292 M6 — a re-followed older tab: its snapshot and the ops after it are applied, not dropped (tab 1 → tab 2 → tab 1, and the fallback after tab 2 closes)", () => {
+    const c = clock();
+    const q = new FrameSequencer({ gapMs: MIRROR_GAP_MS, now: c.now });
+    const tab1 = newLoadId(1_000); // the older page load
+    const tab2 = newLoadId(2_000); // opened later: a newer id
+    expect(q.push(tab1, 0, snap(1))).toEqual([snap(1)]);
+    expect(q.push(tab1, 1, ops("t1-a"))).toEqual([ops("t1-a")]);
+    // the customer opens tab 2: the stage follows it
+    expect(q.push(tab2, 0, snap(2))).toEqual([snap(2)]);
+    expect(q.push(tab2, 1, ops("t2-a"))).toEqual([ops("t2-a")]);
+    // the customer clicks back to tab 1: the stage's sync brings tab 1's snapshot (a later number
+    // of the OLDER load) — shown, and every op after it
+    expect(q.push(tab1, 2, snap(3))).toEqual([snap(3)]);
+    expect(q.push(tab1, 3, ops("t1-b"))).toEqual([ops("t1-b")]);
+    expect(q.push(tab1, 4, ops("t1-c"))).toEqual([ops("t1-c")]);
+    expect(q.stalled()).toBe(false);
+    // tab 2 again: a stray op of the OLDER tab 1 is dropped, and never stalls
+    expect(q.push(tab2, 2, snap(4))).toEqual([snap(4)]);
+    expect(q.push(tab1, 5, ops("t1-stray"))).toEqual([]);
+    c.tick(MIRROR_GAP_MS + 1);
+    expect(q.stalled()).toBe(false);
+    // tab 2 closes: the fallback to tab 1 syncs — its snapshot is applied, its ops follow
+    expect(q.push(tab1, 6, snap(5))).toEqual([snap(5)]);
+    expect(q.push(tab1, 7, ops("t1-d"))).toEqual([ops("t1-d")]);
+    c.tick(MIRROR_GAP_MS + 1);
+    expect(q.stalled()).toBe(false);
+    // a late op of the closed (newer) tab 2 is held — the stage asks for a snapshot — and tab 1's
+    // snapshot clears it: never a stage stalled for good
+    expect(q.push(tab2, 3, ops("t2-late"))).toEqual([]);
+    c.tick(MIRROR_GAP_MS + 1);
+    expect(q.stalled()).toBe(true);
+    expect(q.push(tab1, 8, snap(7))).toEqual([snap(7)]);
+    expect(q.stalled()).toBe(false);
+    c.tick(MIRROR_GAP_MS + 1);
+    expect(q.stalled()).toBe(false);
+    // a stale snapshot of the SAME load (a lower number) is still stale
+    expect(q.push(tab1, 4, snap(6))).toEqual([]);
   });
 
   test("ops of a load whose snapshot never came stall too", () => {
@@ -315,6 +355,30 @@ describe("REQ-242 the codec and the two ends", () => {
     await rx.idle();
     expect(got).toEqual(frames);
     expect(rx.stalled()).toBe(false);
+  });
+
+  test("REQ-292 tripwire — a snapshot the sequencer rejects is reported to the stage (onDropped), never swallowed", async () => {
+    const sent: PeerMessage[] = [];
+    const sender = createMirrorSender({
+      send: (m) => sent.push(m),
+      load: newLoadId(7),
+      chunkChars: 4096,
+    });
+    for (const f of [snap(1), ops("one"), snap(2)]) void sender.push(f);
+    await sender.idle();
+    const got: MirrorFrame[] = [];
+    const dropped: { load: string; seq: number; t: string }[] = [];
+    const rx = createMirrorReceiver({
+      onFrame: (f) => got.push(f),
+      onDropped: (f, load, seq) => dropped.push({ load, seq, t: f.t }),
+    });
+    const chunks = sent.filter((m) => m.k === "dom");
+    expect(chunks.length).toBe(3);
+    await rx.push(chunks[2]); // snapshot 2 first
+    await rx.push(chunks[0]); // snapshot 1, stale: rejected — and reported
+    await rx.idle();
+    expect(got).toEqual([snap(2)]);
+    expect(dropped).toEqual([{ load: chunks[0].l, seq: 0, t: "snap" }]);
   });
 });
 

@@ -269,7 +269,9 @@ export class ChunkAssembler {
   }
 }
 
-/** frames in order: per page load, by number; a snapshot starts over */
+/** frames in order: per page load, by number; a snapshot starts over — whichever page load it
+ *  comes from (REQ-292: a stage following an OLDER tab again gets that tab's snapshot; the "older
+ *  load is over" rule drops that load's ops only) */
 export class FrameSequencer {
   #load: string | null = null;
   #next = 0;
@@ -286,13 +288,15 @@ export class FrameSequencer {
 
   push(l: string, s: number, f: MirrorFrame): MirrorFrame[] {
     const out: MirrorFrame[] = [];
-    // an older page load (ids sort by load time) is over
-    if (this.#load !== null && l < this.#load) return this.#settle(out);
     if (f.t === "snap") {
+      // a stale copy of the page shown: a lower number of the same load
       if (l === this.#load && s < this.#next) return this.#settle(out);
       this.#load = l;
       this.#next = s + 1;
-      for (const k of [...this.#held.keys()]) if (k < l) this.#held.delete(k);
+      // the other loads' early frames go: an older load is over; a newer one's ops before its
+      // own snapshot are superseded by that snapshot when it comes (REQ-292: a closed tab's late
+      // op must never keep the stage stalled)
+      for (const k of [...this.#held.keys()]) if (k !== l) this.#held.delete(k);
       const mine = this.#held.get(l);
       if (mine) {
         for (const k of [...mine.keys()]) if (k <= s) mine.delete(k);
@@ -310,6 +314,8 @@ export class FrameSequencer {
         return this.#settle(out);
       }
     }
+    // an op of an older page load (ids sort by load time): that load is over — until its snapshot
+    if (this.#load !== null && l < this.#load) return this.#settle(out);
     // early: a later number of this load, or a newer load whose snapshot is not here yet
     let mine = this.#held.get(l);
     if (!mine) this.#held.set(l, mine = new Map());
@@ -320,6 +326,11 @@ export class FrameSequencer {
   /** a frame has been missing for MIRROR_GAP_MS: time for a fresh snapshot */
   stalled(): boolean {
     return this.#since !== null && this.#now() - this.#since >= this.#gapMs;
+  }
+
+  /** REQ-292 — would push(l, s, snapshot) be rejected? (a stale copy of the page shown) */
+  rejectsSnap(l: string, s: number): boolean {
+    return l === this.#load && s < this.#next;
   }
 
   reset(): void {
@@ -393,6 +404,8 @@ export function createMirrorSender(o: {
  *  `stalled()` says when to ask for a snapshot */
 export function createMirrorReceiver(o: {
   onFrame(f: MirrorFrame, load: string): void;
+  /** REQ-292 tripwire — a snapshot the sequencer rejected: the stage logs it and resyncs */
+  onDropped?(f: MirrorFrame, load: string, seq: number): void;
   gapMs?: number;
   now?: () => number;
 }): {
@@ -412,6 +425,14 @@ export function createMirrorReceiver(o: {
         const f = await decodeFrame(whole.text, whole.z);
         // an undecodable frame is a gap: the sequencer stalls and a snapshot is asked for
         if (!f) return;
+        if (f.t === "snap" && order.rejectsSnap(whole.l, whole.s)) {
+          try {
+            o.onDropped?.(f, whole.l, whole.s);
+          } catch {
+            // the stage's own trouble
+          }
+          return;
+        }
         for (const g of order.push(whole.l, whole.s, f)) {
           try {
             o.onFrame(g, whole.l);
