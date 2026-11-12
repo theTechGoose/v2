@@ -197,7 +197,8 @@ import {
   duplicateNotice,
   findExistingCustomer,
   knownCustomerForStep,
-} from "../../shared/quote-flow/customer-dedupe.ts"; // REQ-331, REQ-390
+  withSummaryCustomerName,
+} from "../../shared/quote-flow/customer-dedupe.ts"; // REQ-331, REQ-390, REQ-576
 import {
   dropBareEditSeed,
   editDraftSeed,
@@ -896,6 +897,14 @@ export default function AsstChat({
         new Date(),
       ),
     [quote?.description, messages],
+  );
+  /** REQ-576 (demo-loop cycle 4, m26): the customer step's facts — with no
+   *  typed name, the quote summary's "— Bob Smith" fills it, so the step
+   *  offers that saved customer or opens its create form already filled
+   *  instead of a blank "Who is this for?". */
+  const stepFacts: QuoteFacts = useMemo(
+    () => withSummaryCustomerName(quoteFacts, quote?.summary),
+    [quoteFacts, quote?.summary],
   );
   const [draft, setDraft] = useState("");
   // REQ-464 (demo-loop cycle 3, m33): the prompt Edit seeded the composer
@@ -8792,14 +8801,14 @@ export default function AsstChat({
                                       setPrecommittedKind(null)}
                                     ownerEmail={from?.email}
                                     ownerPhone={from?.phone}
-                                    initialName={quoteFacts.customerName ??
+                                    initialName={stepFacts.customerName ??
                                       prefillCustomerName ??
                                       undefined}
                                     initialPhone={quoteFacts.customerPhone ??
                                       undefined}
                                     initialEmail={quoteFacts.customerEmail ??
                                       undefined}
-                                    prefillFacts={quoteFacts}
+                                    prefillFacts={stepFacts}
                                     initialServiceAddress={quote
                                       ?.serviceAddress}
                                     sending={sending}

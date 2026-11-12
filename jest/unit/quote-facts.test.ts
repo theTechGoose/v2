@@ -192,10 +192,11 @@ describe("REQ-265 the assistant reads the facts at every step", () => {
   test("the customer step is handed the name, phone and email", () => {
     const panel = src.slice(src.indexOf("<CustomerStepPanel"));
     const props = panel.slice(0, panel.indexOf("/>"));
-    expect(props).toMatch(/initialName=\{quoteFacts\.customerName/);
+    // REQ-576 (m26): stepFacts = quoteFacts + the summary's "— <Name>".
+    expect(props).toMatch(/initialName=\{(?:quoteFacts|stepFacts)\.customerName/);
     expect(props).toMatch(/initialPhone=\{quoteFacts\.customerPhone/);
     expect(props).toMatch(/initialEmail=\{quoteFacts\.customerEmail/);
-    expect(props).toMatch(/prefillFacts=\{quoteFacts\}/);
+    expect(props).toMatch(/prefillFacts=\{(?:quoteFacts|stepFacts)\}/);
   });
 
   test("an option step shows the pre-selection as a one-tap confirm", () => {

@@ -126,6 +126,7 @@ import {
 } from "#quote-flow/quick-quote-prefill.ts";
 import { extractQuoteFacts } from "#quote-flow/quote-facts.ts"; // REQ-331
 import {
+  findCustomerNamedInSummary, // REQ-576
   findCustomerNamedInText, // REQ-386
   findExistingCustomer, // REQ-331
 } from "#quote-flow/customer-dedupe.ts";
@@ -426,17 +427,21 @@ export class HandleChatMessage {
   /** REQ-331: the same-owner customer the thread's typed facts name — by
    *  phone, email, then accent-folded name; REQ-386 (demo m17): else the one
    *  customer whose whole name is typed as Capitalized words ("Bob wants 6
-   *  recessed lights" → the existing Bob); null when nobody matches. */
+   *  recessed lights" → the existing Bob); REQ-576 (demo-loop cycle 4, m26):
+   *  else the one customer the model's summary names after its dash
+   *  ("Electrical outlet installation — Bob Smith"), matched only against
+   *  the account's own customers; null when nobody matches. */
   private async customerFromTypedFacts(
     userId: string,
     history: AgentMessage[],
+    summary?: string,
   ): Promise<{ id: string; name: string } | null> {
     if (!this.customers) return null;
     const typed = history
       .filter((m) => m.role === "user" && typeof m.content === "string")
       .map((m) => m.content as string)
       .join("\n");
-    if (!typed.trim()) return null;
+    if (!typed.trim() && !summary) return null;
     const facts = extractQuoteFacts(typed, new Date());
     const mine: Customer[] = await this.customers.listByUser(userId)
       .catch(() => []);
@@ -444,7 +449,8 @@ export class HandleChatMessage {
       name: facts.customerName,
       email: facts.customerEmail,
       phoneNumber: facts.customerPhone,
-    }) ?? findCustomerNamedInText(mine, typed);
+    }) ?? findCustomerNamedInText(mine, typed) ??
+      findCustomerNamedInSummary(mine, summary);
   }
 
   /** REQ-331: the bound customer's name for the terms CTA, if any. */
@@ -2594,6 +2600,7 @@ export class HandleChatMessage {
           const known = await this.customerFromTypedFacts(
             input.userId,
             history,
+            action.payload.summary, // REQ-576 (m26): "— Bob Smith"
           );
           if (known) {
             customerId = known.id;

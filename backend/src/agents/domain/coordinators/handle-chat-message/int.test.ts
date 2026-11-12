@@ -3183,3 +3183,104 @@ Deno.test("handle-chat-message integration: REQ-465 (demo cycle 3, m37) the chat
   assertEquals(lockPayload?.number, stored.number);
   await resetKv();
 });
+
+// --- REQ-576 (demo-loop cycle 4, m26): the summary's "— <Name>" binds the
+// contractor's own customer. Pair 10's card read "Electrical outlet
+// installation — Bob Smith" while Bob was saved, yet the thread stayed
+// unbound and the wizard asked "Is this for a business or a person?". -------
+
+const outletScript = (summary: string) => [{
+  text: "Here's your quote.",
+  action: {
+    type: "create_quote" as const,
+    payload: {
+      summary,
+      lineItems: [{ description: "Install 4 outlets", amountCents: 60_000 }],
+    },
+  },
+}];
+
+Deno.test("REQ-576 m26: create_quote whose summary names one saved customer ('— Bob Smith') binds them though the typed text has no usable name", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const { conversations, llm, quotes, customers, flow } = fresh();
+  await seedOnboarded("u-1");
+  const bob = await customers.create("u-1", {
+    name: "Bob Smith",
+    phoneNumber: "(512) 555-0142",
+  });
+  await customers.create("u-2", { name: "Bob Smith" }); // another owner's
+  llm.setScript(outletScript("Electrical outlet installation — Bob Smith"));
+  const conv = await conversations.create({ userId: "u-1" });
+  const result = await flow.run({
+    userId: "u-1",
+    conversationId: conv.id,
+    content: "4 outlets for bob smith, 555 phone, $150 each",
+  });
+  assertEquals(result.conversation.customerId, bob.id);
+  const card = result.newMessages.find((m) => m.kind === "action_card")!;
+  const quoteId = (card.payload as { quoteId: string }).quoteId;
+  assertEquals((await quotes.getOwned(quoteId, "u-1")).customerId, bob.id);
+  await resetKv();
+});
+
+Deno.test("REQ-576 m26: with the summary's customer bound, the lock CTA names them instead of asking Business or Person", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const { conversations, llm, customers, flow } = fresh();
+  await seedOnboarded("u-1");
+  await customers.create("u-1", { name: "Bob Smith" });
+  const conv = await conversations.create({ userId: "u-1" });
+  llm.setScript(outletScript("Electrical outlet installation — Bob Smith"));
+  const first = await flow.run({
+    userId: "u-1",
+    conversationId: conv.id,
+    content: "4 outlets, $150 each",
+  });
+  const card = first.newMessages.find((m) => m.kind === "action_card")!;
+  const quoteId = (card.payload as { quoteId: string }).quoteId;
+  llm.setScript([{
+    text: "Locked.",
+    action: { type: "lock_quote", payload: { quoteId } },
+  }]);
+  const result = await flow.run({
+    userId: "u-1",
+    conversationId: conv.id,
+    content: "lock it in",
+  });
+  const cta = result.newMessages.find((m) => m.kind === "continue_cta")!;
+  assertEquals(
+    (cta.payload as { customerName?: string }).customerName,
+    "Bob Smith",
+  );
+  assert(!/business or a person/i.test(cta.content));
+  await resetKv();
+});
+
+Deno.test("REQ-576 m26: a summary naming two saved customers of that name, or nobody saved, binds nothing and creates no customer", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const { conversations, llm, customers, flow } = fresh();
+  await seedOnboarded("u-1");
+  await customers.create("u-1", { name: "Bob Smith" });
+  await customers.create("u-1", { name: "Bob Smith" });
+  llm.setScript(outletScript("Outlets — Bob Smith"));
+  const c1 = await conversations.create({ userId: "u-1" });
+  const r1 = await flow.run({
+    userId: "u-1",
+    conversationId: c1.id,
+    content: "4 outlets, $150 each",
+  });
+  assertEquals(r1.conversation.customerId, undefined);
+
+  llm.setScript(outletScript("Outlets — Ana Ruiz"));
+  const c2 = await conversations.create({ userId: "u-1" });
+  const r2 = await flow.run({
+    userId: "u-1",
+    conversationId: c2.id,
+    content: "4 outlets, $150 each",
+  });
+  assertEquals(r2.conversation.customerId, undefined);
+  assertEquals((await customers.listByUser("u-1")).length, 2);
+  await resetKv();
+});
