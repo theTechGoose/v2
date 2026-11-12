@@ -455,6 +455,8 @@
   "asstChat.warranty.typeLabel": "Warranty type",
   "asstChat.warranty.warnFail": "I couldn't read that as a warranty term — set it manually.",
   "asstChat.wiz.prevChoice": "Your previous choice",
+  "asstChat.wiz.fromMessage": "From your message",
+  "asstChat.wiz.usePrefill": "Use this",
   "asstChat.writeSelf.accept": "Accept",
   "asstChat.writeSelf.error": "Couldn't professionalize that. Try again.",
   "asstChat.writeSelf.hint": "One item per line — your assistant can professionalize it for you.",
