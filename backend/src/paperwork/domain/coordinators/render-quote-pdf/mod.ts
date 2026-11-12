@@ -8,6 +8,7 @@ import type { Customer } from "@crm/dto/customer.ts";
 import type { User } from "@users/dto/user.ts";
 import { isAccepted } from "#quote-flow/quote-status.ts";
 import { isTbdTermValue } from "#quote-flow/terms-i18n.ts";
+import { agreementClauses } from "#documents/warranty-clause.ts";
 import { websiteLabel } from "#quote-flow/format-helpers.ts";
 import { agreementTitle } from "#quote-flow/agreement-title.ts";
 import { lineItemDescription } from "#quote-flow/quote-translations.ts";
@@ -564,26 +565,15 @@ export class RenderQuotePdf {
       TEAL,
     );
     y -= 12;
-    const clauseKeys = [
-      "governingLaw",
-      "jobDetails",
-      "paymentTerms",
-      "changeOrders",
-      "customerResponsibilities",
-      "delays",
-      "warranty",
-      "limitationOfLiability",
-      "rightToStopWork",
-      "termination",
-      "disputeResolution",
-      "permits",
-      "indemnification",
-      "entireAgreement",
-    ];
-    const clauses = clauseKeys.map((k) => [
-      t(lang, `renderQuotePdf.clause.${k}.title`),
-      t(lang, `renderQuotePdf.clause.${k}.body`),
-    ]);
+    // REQ-463 (demo m31): clause 7 states the warranty from the terms —
+    // the period when one is set, a no-warranty body otherwise.
+    const clauses = agreementClauses({
+      terms: quote.terms,
+      lang,
+      prefix: "renderQuotePdf.clause",
+      t: (key, vars) => t(lang, key, vars),
+      localize: localizeTermValue,
+    });
     for (let i = 0; i < clauses.length; i++) {
       addPageIfNeeded(34);
       const [head, tail] = clauses[i];

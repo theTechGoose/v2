@@ -26,6 +26,7 @@ import { localizeTermValue } from "../lib/term-i18n.ts";
 import { formatLongDate } from "../../shared/quote-flow/format-helpers.ts";
 import { websiteLabel } from "../../shared/quote-flow/format-helpers.ts";
 import { isTbdTermValue } from "../../shared/quote-flow/terms-i18n.ts";
+import { isNoWarrantyValue } from "../../shared/documents/warranty-clause.ts";
 
 /* ---------- palette ---------- */
 export const PINK = "#FF6B6B";
@@ -347,12 +348,11 @@ export function expandTermValue(
 }
 
 /** Hide warranty term row when the contractor selected "No warranty" — the
- *  legal-text warranty clause still applies on the agreement. */
+ *  agreement's warranty clause then says no workmanship warranty is
+ *  included (REQ-463: the same rule picks clause 7's body). */
 export function isEmptyWarranty(term: Term): boolean {
   if (term.stepId !== "warranty") return false;
-  const v = term.value.trim().toLowerCase();
-  return v === "" || v === "no warranty" || v === "none" || v === "n/a" ||
-    v === "no";
+  return isNoWarrantyValue(term.value);
 }
 
 export function computeMilestones(
