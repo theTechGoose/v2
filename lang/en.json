@@ -3520,7 +3520,7 @@
   "field.subs.delete": "Delete",
   "field.subs.confirmDelete": "Delete this subscription?",
   "field.subs.perVisit": "per visit",
-  "field.subs.geo": "The address is geocoded once on save; the zone is recomputed on the server.",
+  "field.subs.geo": "We place the address on the map when you save.",
   "field.asg.docTitle": "Assignments · DocuMonster",
   "field.asg.eyebrow": "Assignments · {n} zones",
   "field.asg.title": "Customers grouped into <em>zones</em>. One worker per zone takes its subscription rounds and one-off tasks.",
