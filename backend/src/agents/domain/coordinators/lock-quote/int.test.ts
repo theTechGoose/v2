@@ -400,3 +400,29 @@ Deno.test("REQ-333 (M24) lock-quote keeps an English contractor's typed lines ve
     assert(!prompts.some((p) => /into English/.test(p)));
   });
 });
+
+Deno.test("REQ-435 M4 lock-quote integration: the locked action_card carries the quote's serviceAddress", async () => {
+  await withKv(async () => {
+    const s = fresh();
+    const conv = await s.conversations.create({
+      userId: "u-1",
+      currentPhase: "quote",
+    });
+    const quote = await s.quotes.create("u-1", {
+      summary: "Roof",
+      lineItems: [{ description: "x", quantity: 1, unit: "ea", price: 100 }],
+      estimatedTotal: 100,
+      serviceAddress: "4410 Avenue F Austin TX 78751",
+    });
+    const r = await s.flow.run({
+      userId: "u-1",
+      conversationId: conv.id,
+      quoteId: quote.id,
+    });
+    assertEquals(
+      (r.newMessages[0].payload as { serviceAddress?: string } | undefined)
+        ?.serviceAddress,
+      "4410 Avenue F Austin TX 78751",
+    );
+  });
+});

@@ -144,6 +144,7 @@
   "assistantThread.statusFallback": "Tell your assistant about a job — voice or text",
   "asstChat.actionCard.editPrompt": "Change the quote: ",
   "asstChat.actionCard.jobDetails": "Job details",
+  "asstChat.actionCard.jobAddress": "Job address",
   "asstChat.actionCard.lockIn": "Lock it in",
   "asstChat.actionCard.reopen": "Re-open",
   "asstChat.actionCard.superseded": "Superseded",

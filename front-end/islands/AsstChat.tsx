@@ -470,6 +470,8 @@ interface ActionCardPayload {
   description?: string;
   lineItems?: ActionCardLineItem[];
   totalCents?: number;
+  /** REQ-435 (demo-loop cycle 3, M4): the quote's job address. */
+  serviceAddress?: string;
 }
 
 /** Compose the composer placeholder. During onboarding we want it to
@@ -8863,6 +8865,22 @@ export default function AsstChat({
                             </span>
                           </div>
                           <div class="action-card__body">
+                            {payload.serviceAddress
+                              ? (
+                                <div
+                                  class="action-card__row"
+                                  data-cy="action-card-address"
+                                >
+                                  <span>
+                                    {tFor(
+                                      lang,
+                                      "asstChat.actionCard.jobAddress",
+                                    )}
+                                  </span>
+                                  <span>{payload.serviceAddress}</span>
+                                </div>
+                              )
+                              : null}
                             {(() => {
                               const lines = detailLines(payload.description);
                               if (lines.length === 0) return null;

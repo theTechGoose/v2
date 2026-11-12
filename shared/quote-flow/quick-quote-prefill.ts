@@ -337,9 +337,22 @@ function leadInName(raw: string): string | null {
     const tokens = rest.split(/\s+/);
     let household = false;
     let i = 0;
-    if (tokens[0] && /^familia$/i.test(tokens[0])) {
+    // REQ-435 (demo-loop cycle 3, M4): "para la casa de Ana Pérez" / "for
+    // the house of John Reed" — the home is named after the customer, so
+    // skip "casa de / house of" (and a following article) to reach the name.
+    if (
+      tokens[0] && /^(?:casa|hogar|residencia|house|home|residence)$/i.test(
+        tokens[0],
+      ) && tokens[1] && /^(?:de|del|of)$/i.test(tokens[1])
+    ) {
+      i = 2;
+      if (tokens[2] && /^(?:la|los|las|the)$/i.test(tokens[2])) i = 3;
+    }
+    if (tokens[i] && /^familia$/i.test(tokens[i])) {
       household = true;
-      i = 1;
+      i++;
+      // "la familia de Nguyen" → the household is still "Familia Nguyen".
+      if (tokens[i] && /^(?:de|del)$/i.test(tokens[i])) i++;
     }
     const run: string[] = [];
     let stopped = false;
@@ -376,6 +389,10 @@ function leadInName(raw: string): string | null {
 /** Street-type words that close the street part of a US address. */
 const STREET_SUFFIX =
   "St|Street|Ave|Av|Avenue|Rd|Road|Dr|Drive|Blvd|Boulevard|Ln|Lane|Ct|Court|Way|Pl|Place|Pkwy|Parkway|Cir|Circle|Ter|Terrace|Trl|Trail|Hwy|Highway|Cv|Cove|Sq|Square";
+/** Street types written BEFORE the street's name in US addresses
+ *  ("Avenue F", "County Road 175", "Highway 71") — REQ-435. */
+const STREET_TYPE_FIRST =
+  "Avenue|Ave|County\\s+Road|CR|Farm\\s+to\\s+Market|FM|Ranch\\s+Road|RR|State\\s+Highway|SH|Highway|Hwy|Route|Rte";
 /** Abbreviated street types: a period after one is the abbreviation's, not
  *  the end of the sentence ("412 Oak St. Austin"). */
 const STREET_ABBREV =
@@ -393,6 +410,19 @@ const STREET_ABBREV =
  *     "3 bedrooms", a phone number are never one).
  */
 export function extractServiceAddress(raw: string): string | null {
+  // REQ-435 (demo-loop cycle 3, M4): the US street-type-first form — "4410
+  // Avenue F", "12 Ave B", "900 County Road 175", "5100 Highway 71": the
+  // number, the type word, then a letter, a number or one Capitalized name.
+  // Read first: the suffix form would cut "900 County Road 175" at "Road".
+  const typeFirst = new RegExp(
+    `(?<![\\d$.,\\-/])(\\d{1,6}[A-Za-z]?)\\s+(${STREET_TYPE_FIRST})\\s+([A-Z]|\\d{1,5}[A-Za-z]?|[\\p{Lu}][\\p{L}'’-]*)(?=[\\s,;:.]|$)`,
+    "u",
+  );
+  const tf = typeFirst.exec(raw);
+  if (tf) {
+    const out = `${tf[1]} ${tf[2].replace(/\s+/g, " ")} ${tf[3]}`;
+    return out + cityTail(raw.slice(tf.index + tf[0].length)).text;
+  }
   const street = new RegExp(
     `(?<![\\d$.,\\-/])(\\d{1,6}[A-Za-z]?)\\s+((?:[\\p{Lu}\\d][\\p{L}\\d'’.-]*\\s+){1,4}?)(${STREET_SUFFIX})\\.?(?=[\\s,;:]|$)`,
     "u",
@@ -416,16 +446,20 @@ export function extractServiceAddress(raw: string): string | null {
     const out = `${word} ${e[2]}${e[3]}`.replace(/\s+/g, " ").trim();
     return out + cityTail(raw.slice(e.index + e[0].length)).text;
   }
-  // REQ-331: the number-less "on <Street> <St> … <ZIP>" form — only when a
-  // ZIP closes it, so "on Monday" or "on the roof" are never an address.
+  // REQ-331: the number-less "on <Street> <St> … <ZIP>" form — "on Monday"
+  // or "on the roof" are never an address (no Capitalized street + type).
+  // REQ-435 (M4): a ZIP is no longer required — a city ("on Barton Hills Dr,
+  // Austin"), a comma / period clause or the end of the text closes it too;
+  // only a lowercase word running on after the type word refuses it.
   const bare = new RegExp(
     `\\bon\\s+((?:[\\p{Lu}][\\p{L}'’.-]*\\s+){1,4}?)(${STREET_SUFFIX})\\.?(?=[\\s,;:]|$)`,
     "u",
   );
   const b = bare.exec(raw);
   if (b) {
-    const tail = cityTail(raw.slice(b.index + b[0].length));
-    if (tail.zip) {
+    const after = raw.slice(b.index + b[0].length);
+    const tail = cityTail(after);
+    if (tail.zip || tail.text || /^\.?\s*(?:[,;.]|$)/.test(after)) {
       return `${b[1]}${b[2]}`.replace(/\s+/g, " ").trim() + tail.text;
     }
   }
@@ -438,7 +472,13 @@ export function extractServiceAddress(raw: string): string | null {
       .exec(raw);
   if (cityState) {
     const [, city, comma, state, zip] = cityState;
-    return city ? `${city}${comma} ${state} ${zip}` : `${state} ${zip}`;
+    const place = city ? `${city}${comma} ${state} ${zip}` : `${state} ${zip}`;
+    // REQ-435 (M4): a house number typed right before the city/state words
+    // ("4410 Lakeview Austin TX 78751") belongs to the address — never drop it.
+    const house = /(?<![\d$.,\-/])(\d{1,6}[A-Za-z]?)\s+$/.exec(
+      raw.slice(0, cityState.index),
+    );
+    return house && city ? `${house[1]} ${place}` : place;
   }
   const zip =
     /\b(?:zip(?:\s*code)?|c[oó]digo\s+postal|c\.p\.?|cp)\s*[:#]?\s*(\d{5}(?:-\d{4})?)\b/iu
