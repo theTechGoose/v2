@@ -26,6 +26,9 @@
  * presenter's mouse beside the phone frame on his stage, `o: 1`). Not the arrow and the name over
  * the screen's controls: a small translucent marker against the edge it is off, pointing that way
  * (`offMark`), no tag, no ring (`data-off`).
+ *
+ * REQ-546 (demo m14, cycle 4) — the waves and the last-click dot are drawn inside a clip with
+ * `bounds`' box (`data-cy="demo-wave-clip"`, overflow:hidden), never over what is around it.
  */
 import {
   useCallback,
@@ -58,6 +61,8 @@ export interface Wave {
 export const WAVE_RING_MS = 950;
 export const WAVE_RINGS = 3;
 export const CLICK_DOT_MS = 4000;
+/** REQ-546 (demo m14, cycle 4) — the ring's size: 180 px enclosed the neighbouring chips */
+export const WAVE_PX = 120;
 /** how long a wave stays in state: until its ring and its dot are both done */
 export const WAVE_MS = Math.max(WAVE_RING_MS * WAVE_RINGS, CLICK_DOT_MS);
 
@@ -242,29 +247,44 @@ export default function DemoPointer(
     )
     : null;
   const mark = pointer && off ? offMark(pointer, bounds ?? windowBox()) : null;
+  const clip = bounds ?? windowBox();
   return (
     <>
       <style>
         {`@keyframes pmDemoWave{0%{transform:translate(-50%,-50%) scale(.15);opacity:.95}100%{transform:translate(-50%,-50%) scale(1);opacity:0}}@keyframes pmDemoClickDot{0%{opacity:.95}60%{opacity:.8}100%{opacity:0}}`}
       </style>
-      {waves.map((w) => (
-        <span
-          key={w.id}
-          data-cy="demo-wave"
-          style={`position:fixed;left:${w.x}px;top:${w.y}px;width:180px;height:180px;border-radius:50%;border:5px solid ${color};box-shadow:0 0 0 6px rgba(255,255,255,.7), 0 0 30px ${color};pointer-events:none;z-index:${z};opacity:0;animation:pmDemoWave ${WAVE_RING_MS}ms ease-out ${WAVE_RINGS} forwards`}
-        />
-      ))}
-      {waves.length > 0 && (() => {
-        // REQ-431 — the last click only: a small dot that marks "clicked here" a while longer
-        const w = waves[waves.length - 1];
-        return (
-          <span
-            key={`dot-${w.id}`}
-            data-cy="demo-click-dot"
-            style={`position:fixed;left:${w.x}px;top:${w.y}px;width:16px;height:16px;transform:translate(-50%,-50%);border-radius:50%;background:${color};border:2px solid #fff;box-shadow:0 0 0 1px rgba(0,0,0,.35), 0 0 8px ${color};pointer-events:none;z-index:${z};opacity:0;animation:pmDemoClickDot ${CLICK_DOT_MS}ms ease-in forwards`}
-          />
-        );
-      })()}
+      {waves.length > 0 && (
+        // REQ-546 (demo m14, cycle 4) — the waves are clipped to `bounds` (the stage's fitted
+        // frame): a fixed ring is not clipped by the stage's overflow, and one near the frame's
+        // top was drawn over the impersonation banner
+        <div
+          data-cy="demo-wave-clip"
+          style={`position:fixed;left:${clip.left}px;top:${clip.top}px;width:${clip.width}px;height:${clip.height}px;overflow:hidden;pointer-events:none;z-index:${z}`}
+        >
+          {waves.map((w) => (
+            <span
+              key={w.id}
+              data-cy="demo-wave"
+              style={`position:absolute;left:${w.x - clip.left}px;top:${
+                w.y - clip.top
+              }px;width:${WAVE_PX}px;height:${WAVE_PX}px;border-radius:50%;border:4px solid ${color};box-shadow:0 0 0 5px rgba(255,255,255,.7), 0 0 24px ${color};pointer-events:none;opacity:0;animation:pmDemoWave ${WAVE_RING_MS}ms ease-out ${WAVE_RINGS} forwards`}
+            />
+          ))}
+          {(() => {
+            // REQ-431 — the last click only: a small dot that marks "clicked here" a while longer
+            const w = waves[waves.length - 1];
+            return (
+              <span
+                key={`dot-${w.id}`}
+                data-cy="demo-click-dot"
+                style={`position:absolute;left:${w.x - clip.left}px;top:${
+                  w.y - clip.top
+                }px;width:16px;height:16px;transform:translate(-50%,-50%);border-radius:50%;background:${color};border:2px solid #fff;box-shadow:0 0 0 1px rgba(0,0,0,.35), 0 0 8px ${color};pointer-events:none;opacity:0;animation:pmDemoClickDot ${CLICK_DOT_MS}ms ease-in forwards`}
+              />
+            );
+          })()}
+        </div>
+      )}
       {pointer && (
         <div
           data-cy="demo-pointer"
