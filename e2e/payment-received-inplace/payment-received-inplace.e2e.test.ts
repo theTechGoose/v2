@@ -149,3 +149,60 @@ Deno.test("REQ-489 (demo p8-pair1-d, cycle 3): 'Payment received' on /invoices o
       `the detail shows the clicked invoice (${detailText.slice(0, 200)})`,
     );
   }));
+
+/**
+ * REQ-552 — demo-loop cycle 4 (run r857a9d67), issue m25: "Payment received
+ * form opens off-screen (looks like nothing happened)". On desktop `.app` is
+ * a fixed-height overflow:hidden shell and `.content` is the scroller, so
+ * openForPayment's `globalThis.scrollTo({top:0})` was a no-op and the pay
+ * form (rendered above the hero) stayed above the viewport. Clicking a card
+ * low on the page must bring the form on screen and focus its first method.
+ */
+Deno.test("REQ-552 (demo m25, cycle 4): 'Payment received' from a card low on the page brings the pay form on screen and focuses its first method", (t) =>
+  story(t, async ({ page, expect, http, baseUrl }) => {
+    await page.setViewportSize({ width: 1280, height: 720 });
+    const { auth } = await signIn(http, page, baseUrl);
+    const customer = await (await http("/api/customers", {
+      method: "POST",
+      headers: auth,
+      body: JSON.stringify({
+        name: "Odile Marchetti",
+        email: "om@blackhole.postmarkapp.com",
+      }),
+    })).json();
+    for (let i = 1; i <= 6; i++) {
+      await sentInvoice(http, auth, customer.id, `Porch job ${i}`);
+    }
+
+    await page.goto("/invoices");
+    const ctas = page.locator("[data-cy='invoice-cta-out']");
+    await ctas.first().waitFor({ timeout: 15_000 });
+    await page.waitForLoadState("networkidle").catch(() => {});
+    const cta = ctas.last();
+    await cta.scrollIntoViewIfNeeded();
+    const scrolled = await page.evaluate(() => {
+      const c = document.querySelector(".content");
+      return (c?.scrollTop ?? 0) + globalThis.scrollY;
+    });
+    expect(scrolled > 0, `the page is scrolled down to the card (${scrolled})`);
+
+    await cta.click();
+    const form = page.locator("[data-cy='pay-received-form']");
+    await form.waitFor({ timeout: 15_000 });
+    // Smooth or not, give the scroller a moment to settle.
+    await page.waitForTimeout(800);
+    const box = await form.boundingBox();
+    expect(box !== null, "the pay form has a box");
+    expect(
+      box!.y >= 0 && box!.y < 720,
+      `the pay form's top is inside the viewport (y=${box!.y})`,
+    );
+    const focused = await page.evaluate(() =>
+      document.activeElement?.getAttribute("data-cy") ?? null
+    );
+    expect.eq(
+      focused,
+      "pay-method-cash",
+      "the first payment method button has focus",
+    );
+  }));

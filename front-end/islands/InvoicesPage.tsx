@@ -38,6 +38,7 @@ import {
   hasSecondaryPaymentReceived,
   partialSendParts,
   paymentReceivedTarget,
+  revealPayForm,
   scheduledSubline,
   sendNowDates,
 } from "../lib/invoice-card.ts";
@@ -523,9 +524,14 @@ export default function InvoicesPage(_props: { lang?: Lang }) {
     history.replaceState(null, "", target.url);
     setOpenId(id);
     setPayNonce((n) => n + 1);
-    // The detail renders above the hero — bring it into view.
-    globalThis.scrollTo?.({ top: 0, behavior: "smooth" });
   }
+  // REQ-552 (demo-loop cycle 4, m25): the detail renders above the hero, and
+  // on desktop `.content` (not the window) is the scroller — once the
+  // remounted detail is in the DOM, scroll its pay form into view and focus
+  // the first method. 0 = no card click yet (a deep link lands at the top).
+  useEffect(() => {
+    if (payNonce > 0) revealPayForm(document);
+  }, [payNonce]);
 
   // Re-pull the invoice list after a mutation (discount / edit / change
   // order / payment received) so every displayed total is the live
