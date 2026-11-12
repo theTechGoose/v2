@@ -396,20 +396,18 @@
 
   /**
    * Digit grouping for COUNTS (documents sent, contractors) — mirrors
-   * shared/quote-flow/landing-offers.ts#formatSocialProof: "48,217" (en) /
-   * "48.217" (es). Intl is deliberately not used: Spanish CLDR sets
-   * minimumGroupingDigits=2, so toLocaleString("es-ES") leaves 4-digit values
-   * ungrouped and the counter would change shape mid-animation.
-   *
-   * MONEY is never formatted this way. Every amount on this page is US
-   * dollars for a US client, so it stays US-grouped in BOTH languages
-   * ("$12,345"): the es-ES form "$ 12.345" reads as twelve dollars to the
-   * person receiving the quote.
+   * shared/quote-flow/landing-offers.ts#formatSocialProof: "48,217" in BOTH
+   * languages. Every amount on this page is US dollars for a US client, so
+   * money stays US-grouped in both languages (REQ-413: the es-ES "$ 12.345"
+   * reads as twelve dollars), and counts follow the same rule (REQ-499) so a
+   * Spanish page never shows "+1.200" beside a US-grouped amount. Intl is
+   * deliberately not used: Spanish CLDR sets minimumGroupingDigits=2, so
+   * toLocaleString("es-ES") leaves 4-digit values ungrouped and the counter
+   * would change shape mid-animation.
    */
-  function groupCount(n, lang) {
-    const sep = lang === "es" ? "." : ",";
+  function groupCount(n) {
     return String(Math.trunc(Math.abs(n)))
-      .replace(/\B(?=(\d{3})+(?!\d))/g, sep);
+      .replace(/\B(?=(\d{3})+(?!\d))/g, ",");
   }
 
   /** Set by the counter IIFE below; re-paints it on a language switch. */
@@ -649,7 +647,7 @@
     // screen. It used to be painted once, behind a `fired` flag that was never
     // reset, so switching language left the other locale's grouping in place.
     paintCounter = function () {
-      el.textContent = groupCount(shown, curLang);
+      el.textContent = groupCount(shown);
     };
     // Reduced motion: no count-up at all; the final number simply stays.
     const still = globalThis.matchMedia &&

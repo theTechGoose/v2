@@ -41,14 +41,16 @@ export const LANDING_OFFER: LandingOffer = {
 };
 
 /**
- * Localized digit grouping for the social-proof counters: "1,200" (en) /
- * "1.200" (es). Grouped manually — Spanish CLDR sets minimumGroupingDigits=2,
- * so Intl.NumberFormat("es") leaves 4-digit numbers ungrouped ("1200").
+ * Digit grouping for the social-proof counters: "1,200" in BOTH languages.
+ * REQ-499 (demo p6): the landing's money is US-grouped in Spanish too
+ * (REQ-413), so an es-grouped count ("+1.200") sat beside "$4,200.00" — one
+ * number rule per page, the US one, like format-helpers' formatNumber (P-64).
+ * Grouped manually — Spanish CLDR sets minimumGroupingDigits=2, so Intl would
+ * leave 4-digit numbers ungrouped ("1200").
  */
-export function formatSocialProof(n: number, lang: "en" | "es"): string {
-  const separator = lang === "es" ? "." : ",";
+export function formatSocialProof(n: number, _lang?: "en" | "es"): string {
   const grouped = Math.trunc(Math.abs(n))
     .toString()
-    .replace(/\B(?=(\d{3})+(?!\d))/g, separator);
+    .replace(/\B(?=(\d{3})+(?!\d))/g, ",");
   return n < 0 ? `-${grouped}` : grouped;
 }

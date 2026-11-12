@@ -465,3 +465,101 @@ describe("REQ-413 (m49) the English landing lead is written for an English reade
     expect(LANDING_DICT.es["hero.lead"]).toBe(es["landing.hero.lead"]);
   });
 });
+
+/**
+ * REQ-499 — demo-loop cycle 3, issue p6 (run re05e1cbb): Spanish wording and
+ * number slips — "Enviada hace 0d" / "hace 0 d" on the send day,
+ * "Cotización + Acuerdo enviada" beside "… enviado por correo", "atenderla",
+ * "una pregunta antes de pagar" under a paid invoice, and "+1.200
+ * contratistas" next to US-grouped "$4,200.00".
+ */
+describe("REQ-499 (p6, cycle 3) the send day reads 'today', never '0d'", () => {
+  test("invoicesPage.subline.outToday: 'Enviada hoy · vence {date}' / 'Sent today · due {date}'", () => {
+    expect(es["invoicesPage.subline.outToday"]).toBe("Enviada hoy · vence {date}");
+    expect(en["invoicesPage.subline.outToday"]).toBe("Sent today · due {date}");
+  });
+  test("InvoicesPage picks outToday when the invoice went out today", () => {
+    const src = read("front-end/islands/InvoicesPage.tsx");
+    expect(src).toMatch(
+      /inv\.daysIn < 1\s*\?\s*tFor\(lang, "invoicesPage\.subline\.outToday", \{\s*date: fmtDate\(inv\.dueDate, now, lang\),?\s*\}\)/,
+    );
+  });
+  test("quotesDecided.today: 'hoy' / 'today', picked by the decided row at 0 days", () => {
+    expect(es["quotesDecided.today"]).toBe("hoy");
+    expect(en["quotesDecided.today"]).toBe("today");
+    const src = read("front-end/components/QuotesSections.tsx");
+    expect(src).toMatch(
+      /decidedDays < 1\s*\?\s*tFor\(lang, "quotesDecided\.today"\)/,
+    );
+  });
+});
+
+describe("REQ-499 (p6, cycle 3) 'Cotización + Acuerdo' is feminine everywhere", () => {
+  test("no es value says 'Cotización + Acuerdo enviado / redactado / entregado / aceptado'", () => {
+    const bad = Object.entries(es).filter(([, v]) =>
+      /Cotización \+ Acuerdo (?:no )?(?:enviado|redactado|entregado|aceptado|firmado|listo)\b/
+        .test(v)
+    );
+    expect(bad).toEqual([]);
+    expect(es["asstChat.cta.sent"]).toBe("Cotización + Acuerdo enviada");
+    // The send card's sub line continues that same feminine subject.
+    expect(es["asstChat.cta.emailedTo"]).toBe("Enviada por correo a");
+    expect(es["asstChat.cta.textedTo"]).toBe("Enviada por mensaje de texto a");
+    expect(es["sendQuote.divider.emailed"]).toBe(
+      "Cotización + Acuerdo enviada por correo a {emailedTo}",
+    );
+    expect(es["sendQuote.divider.texted"]).toBe(
+      "Cotización + Acuerdo enviada por mensaje de texto a {textedTo}",
+    );
+  });
+});
+
+describe("REQ-499 (p6, cycle 3) the /i footer", () => {
+  test("thanks: 'es un gusto atenderte', never 'atenderla'", () => {
+    expect(es["publicInvoice.footer.thanks"]).toMatch(/es un gusto atenderte,/);
+    expect(es["publicInvoice.footer.thanks"]).not.toMatch(/atenderla/);
+  });
+  test("a paid invoice gets its own lead-in, with no 'before paying'", () => {
+    expect(es["publicInvoice.footer.questionsPaid"]).toBe(
+      "Si tienes alguna pregunta sobre este pago,",
+    );
+    expect(en["publicInvoice.footer.questionsPaid"]).toBe(
+      "If you have a question about this payment,",
+    );
+    for (const d of [en, es]) {
+      expect(d["publicInvoice.footer.questionsPaid"]).not.toMatch(
+        /antes de pagar|before paying/,
+      );
+      expect(`${d["publicInvoice.footer.questionsPaid"]} ${
+        d["publicInvoice.footer.call"]
+      } 555`).not.toMatch(LOWER_AFTER_STOP);
+    }
+  });
+  test("routes/i/[id].tsx renders the footer lead-in by status (paid → claimed → open)", () => {
+    const src = read("front-end/routes/i/[id].tsx");
+    expect(src).toMatch(
+      /<span data-invoice-question>\s*\{tFor\(\s*lang,\s*paid\s*\?\s*"publicInvoice\.footer\.questionsPaid"\s*:\s*claimed\s*\?\s*"publicInvoice\.footer\.questionsClaimed"\s*:\s*"publicInvoice\.footer\.questions",?\s*\)\}/,
+    );
+  });
+});
+
+describe("REQ-499 (p6, cycle 3) landing COUNTS are US-grouped in Spanish too (like REQ-413's money)", () => {
+  test("formatSocialProof: '1,200' and '48,217' in both languages", () => {
+    // deno-lint-ignore no-explicit-any
+    const { formatSocialProof } = require("../../shared/quote-flow/landing-offers") as any;
+    expect(formatSocialProof(1200, "es")).toBe("1,200");
+    expect(formatSocialProof(48217, "es")).toBe("48,217");
+    expect(formatSocialProof(1200, "en")).toBe("1,200");
+  });
+  test("lang/es.json trustStrong reads '+1,200 contratistas'", () => {
+    expect(es["landing.hero.trustStrong"]).toBe("+1,200 contratistas");
+  });
+  test("landing-scripts.js groupCount never groups with '.'", () => {
+    const js = read("front-end/static/landing-scripts.js");
+    const fn = js.slice(js.indexOf("function groupCount("));
+    const body = fn.slice(0, fn.indexOf("\n  }\n"));
+    expect(body.length).toBeGreaterThan(0);
+    expect(body).not.toMatch(/"\."/);
+    expect(body).toMatch(/,\s*"?,"?\)|"," *\)/);
+  });
+});

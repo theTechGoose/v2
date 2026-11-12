@@ -114,3 +114,47 @@ for (
       );
     }));
 }
+
+/**
+ * REQ-499 — demo-loop cycle 3, issue p6: after a reload, a PAID invoice's
+ * footer used to ask "…o tienes una pregunta antes de pagar," (the
+ * client-side swap only ran right after an in-session claim), and the thanks
+ * line read "es un gusto atenderla".
+ */
+Deno.test("REQ-499 (p6, cycle 3): a paid es public invoice's footer asks about this payment, never 'antes de pagar'", (t) =>
+  story(t, async ({ page, expect, http, baseUrl }) => {
+    const invoice = await paidInvoice(http, "es");
+    const hosts = new Set([
+      new URL(baseUrl).hostname,
+      "localhost",
+      "127.0.0.1",
+    ]);
+    await page.context().addCookies(
+      [...hosts].map((domain) => ({
+        name: "pm_lang",
+        value: "es",
+        domain,
+        path: "/",
+      })),
+    );
+    await page.goto(`/i/${invoice.id}`);
+    const question = page.locator("[data-invoice-question]");
+    await question.waitFor({ timeout: 15_000 });
+    expect.eq(
+      ((await question.textContent()) ?? "").trim(),
+      "Si tienes alguna pregunta sobre este pago,",
+      "the paid footer's lead-in is about this payment",
+    );
+    const footer = await page.locator("footer").last().innerText();
+    expect.eq(
+      /antes de pagar/.test(footer),
+      false,
+      "no 'antes de pagar' on a paid invoice",
+    );
+    const thanks = await page.locator('[data-cy="invoice-thanks"]').innerText();
+    expect.eq(
+      /es un gusto atenderte/.test(thanks),
+      true,
+      "thanks reads 'atenderte'",
+    );
+  }));

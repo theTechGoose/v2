@@ -85,7 +85,7 @@ Deno.test("REQ-412 p12: the documents counter reads its real number, never 0", (
     // before any scroll (what a snapshot / text extraction reads)
     expect.eq(
       ((await counter.textContent()) ?? "").trim(),
-      "48.217",
+      "48,217", // REQ-499: US-grouped in es too
       "the counter reads the real number before it is scrolled into view",
     );
     // reduced motion: scrolling to it never animates it down to 0
@@ -95,7 +95,7 @@ Deno.test("REQ-412 p12: the documents counter reads its real number, never 0", (
     await page.waitForTimeout(400);
     expect.eq(
       ((await counter.textContent()) ?? "").trim(),
-      "48.217",
+      "48,217", // REQ-499: US-grouped in es too
       "under reduced motion the counter holds the final number",
     );
     // full motion: it counts up and lands on the same number

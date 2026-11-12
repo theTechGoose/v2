@@ -70,6 +70,18 @@ describe.each(["en", "es"] as const)("REQ-412 landing / (%s)", (lang) => {
     const html = await landing(lang);
     const m = html.match(/id="doc-counter-num"[^>]*>([^<]*)</);
     expect(m).not.toBeNull();
-    expect(m![1]).toBe(lang === "es" ? "48.217" : "48,217");
+    // REQ-499 (demo p6): US-grouped in Spanish too, like the page's money.
+    expect(m![1]).toBe("48,217");
+  });
+});
+
+describe("REQ-499 (demo p6, cycle 3) landing counts are US-grouped in Spanish, like its money", () => {
+  test("es: '+1,200 contratistas' and the counter boot carry no '1.200'", async () => {
+    const html = await landing("es");
+    expect(html).toMatch(/\+1,200 contratistas/);
+    expect(html).not.toMatch(/\+1\.200|48\.217/);
+    const m = html.match(/window\.__PM_OFFER=(\{.*?\});/);
+    expect(m).not.toBeNull();
+    expect(JSON.parse(m![1]).counts.contractors.es).toBe("1,200");
   });
 });

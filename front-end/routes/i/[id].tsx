@@ -1007,8 +1007,20 @@ function InvoiceDoc(
             {(invoice.contractor?.phoneNumber || invoice.contractor?.email)
               ? (
                 <p style="margin:0">
+                  {
+                    /* REQ-499 (demo p6): the lead-in follows the status, so a
+                      paid invoice never asks for questions "before paying" —
+                      on a reload too, not only after an in-session claim. */
+                  }
                   <span data-invoice-question>
-                    {tFor(lang, "publicInvoice.footer.questions")}
+                    {tFor(
+                      lang,
+                      paid
+                        ? "publicInvoice.footer.questionsPaid"
+                        : claimed
+                        ? "publicInvoice.footer.questionsClaimed"
+                        : "publicInvoice.footer.questions",
+                    )}
                   </span>{" "}
                   {invoice.contractor.phoneNumber
                     ? (
