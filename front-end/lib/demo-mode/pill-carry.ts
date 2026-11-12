@@ -9,6 +9,11 @@
  * not up when the grace runs out.
  */
 import type { Presenter, Role } from "../../../shared/demo-mode/protocol.ts";
+import {
+  ADMIN_PATH,
+  type EndedNotice,
+  readEndedNotice,
+} from "../../../shared/demo-mode/ended.ts";
 
 /** where the tab keeps it */
 export const PILL_CARRY_KEY = "pm:demo-pill";
@@ -16,6 +21,9 @@ export const PILL_CARRY_KEY = "pm:demo-pill";
 export const PILL_CARRY_GRACE_MS = 5_000;
 /** a page that went longer ago than this is not "a moment ago": nothing is carried */
 export const PILL_CARRY_FRESH_MS = 30_000;
+
+/** REQ-647 (cycle 5, m29) — an end carried to the next page is said there this long after */
+export const PILL_ENDED_FRESH_MS = 120_000;
 
 /** the demo as the overlay holds it */
 export interface CarriedDemo {
@@ -55,6 +63,64 @@ export function forgetDemo(store: Store | null | undefined): void {
   try {
     store?.removeItem(PILL_CARRY_KEY);
   } catch { /* refused */ }
+}
+
+/**
+ * REQ-647 (cycle 5, m29) — the demo ended: the tab keeps the notice (in the demo's place), so the
+ * next page still says it, and no load after the end seeds a Connected pill
+ */
+export function keepEnded(
+  store: Store | null | undefined,
+  ended: EndedNotice,
+  now: number,
+): void {
+  try {
+    store?.setItem(PILL_CARRY_KEY, JSON.stringify({ ended, at: now }));
+  } catch {
+    /* storage full or refused: the next page says nothing, as before */
+  }
+}
+
+/** REQ-647 — the end the last page of this tab left, if fresh and well formed — else null */
+export function carriedEnded(
+  store: Store | null | undefined,
+  now: number,
+): EndedNotice | null {
+  try {
+    const raw = store?.getItem(PILL_CARRY_KEY);
+    if (!raw) return null;
+    const v = JSON.parse(raw);
+    const e = v?.ended;
+    if (
+      typeof v?.at !== "number" || now - v.at > PILL_ENDED_FRESH_MS ||
+      now < v.at - 1_000
+    ) return null;
+    switch (e?.by) {
+      case "you":
+      case "unknown":
+      case "expired":
+        return { by: e.by };
+      case "other":
+        return typeof e.name === "string" && e.name.trim()
+          ? { by: "other", name: e.name }
+          : { by: "unknown" };
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * REQ-647 (cycle 5, c2-p13-r) — /admin's handover (`?demo=ended&by=…`, a stage's End), read on
+ * the server so the island paints it on first paint; null on any other page or address
+ */
+export function adminEndedNotice(
+  pathname: string,
+  search: string,
+): EndedNotice | null {
+  if (pathname !== ADMIN_PATH) return null;
+  return readEndedNotice(search)?.notice ?? null;
 }
 
 const isPresenter = (p: unknown): p is Presenter =>
@@ -111,12 +177,17 @@ export function carriedDemo(
 /**
  * Is the pill's face Connected? The link is up (direct or relay); or this page loaded from a
  * connected one and the grace still runs (`carrying`) while its own link comes up — unless the
- * link already said the demo is over (ended, replaced, closed).
+ * link already said the demo is over (ended, replaced, closed). REQ-647 (cycle 5, m29): nor once
+ * /active denied the demo (`active` false; null — not answered yet; true — it has this demo).
  */
-export function showsConnected(status: string, carrying: boolean): boolean {
+export function showsConnected(
+  status: string,
+  carrying: boolean,
+  active: boolean | null = null,
+): boolean {
   if (status === "direct" || status === "relay") return true;
   if (status === "ended" || status === "replaced" || status === "closed") {
     return false;
   }
-  return carrying;
+  return carrying && active !== false;
 }

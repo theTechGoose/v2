@@ -2,6 +2,7 @@ import { define } from "../utils.ts";
 import MobileViewport from "../islands/MobileViewport.tsx";
 import ImpersonationBanner from "../islands/ImpersonationBanner.tsx";
 import DemoModeOverlay from "../islands/DemoModeOverlay.tsx";
+import { adminEndedNotice } from "../lib/demo-mode/pill-carry.ts";
 import HtmlLang from "../islands/HtmlLang.tsx";
 import MetaPixel from "../components/MetaPixel.tsx";
 import GoogleTag from "../components/GoogleTag.tsx";
@@ -204,8 +205,18 @@ export default define.page(function App(ctx) {
             sessions. */
         }
         {hasSession ? <ImpersonationBanner /> : null}
-        {/* REQ-153 — demo mode: self-gates on /demo-mode/active, renders nothing otherwise. */}
-        {hasSession ? <DemoModeOverlay /> : null}
+        {
+          /* REQ-153 — demo mode: self-gates on /demo-mode/active, renders nothing otherwise.
+            REQ-647 (cycle 5, c2-p13-r) — /admin's "?demo=ended&by=…" handover is read here, so
+            the notice is in the server's HTML: on first paint, hydrated or not. */
+        }
+        {hasSession
+          ? (
+            <DemoModeOverlay
+              endedNotice={adminEndedNotice(url.pathname, url.search)}
+            />
+          )
+          : null}
         <Component />
       </body>
     </html>

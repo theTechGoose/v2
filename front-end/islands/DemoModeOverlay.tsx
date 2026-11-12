@@ -55,6 +55,12 @@
  * full load): the tab keeps its demo and whether its page was connected (pill-carry.ts); the next
  * page draws the pill from it at once, and after a load from a connected page keeps saying
  * Connected for a ~5 s grace while its own link comes up — "Connecting…" only if it does not.
+ * REQ-647 (demo-loop cycle 5, m29 + m23 + c2-p13-r) — the end is said however it is learned: the
+ * /active poll answering null, a socket closed for good (`demoGone`) turn the pill into "The demo
+ * ended" like the `ended` frame does, and open REQ-298's restart window; the tab carries the
+ * notice to its next page (pill-carry.ts keepEnded). "{name} started a new demo" stays ~10 s or
+ * until the customer acts. /admin's handover notice comes in as a prop (`endedNotice`, read by
+ * _app on the server), so it is painted on first paint, hydrated or not.
  */
 import {
   useEffect,
@@ -122,8 +128,10 @@ import {
 import { demoTabKey } from "../lib/demo-mode/tab-key.ts";
 import {
   carriedDemo,
+  carriedEnded,
   forgetDemo,
   keepDemo,
+  keepEnded,
   PILL_CARRY_GRACE_MS,
   showsConnected,
 } from "../lib/demo-mode/pill-carry.ts";
@@ -151,6 +159,7 @@ import {
   ADMIN_PATH,
   type EndedNotice,
   endedText,
+  goneNotice,
   readEndedNotice,
   whoEnded,
 } from "../../shared/demo-mode/ended.ts";
@@ -321,7 +330,12 @@ const viewportBox = () => ({
   height: globalThis.innerHeight || 1,
 });
 
-export default function DemoModeOverlay() {
+export default function DemoModeOverlay(
+  props: {
+    /** REQ-647 (cycle 5, c2-p13-r) — /admin's handover notice, read by _app on the server */
+    endedNotice?: EndedNotice | null;
+  } = {},
+) {
   /** M5 — in a nested frame (an app page embedded in a page), or on the stage: never part of the demo */
   const inert = typeof globalThis.location !== "undefined" &&
     (globalThis.top !== globalThis.self ||
@@ -337,7 +351,12 @@ export default function DemoModeOverlay() {
   const [cmds, setCmds] = useState<Record<string, PointerCmd>>({});
   const seq = useRef(0);
   /** REQ-235 — the demo is over: who ended it, said until dismissed (or a new demo starts) */
-  const [notice, setNotice] = useState<EndedNotice | null>(null);
+  //    REQ-647 — /admin's handover is painted from the first (server) render
+  const [notice, setNotice] = useState<EndedNotice | null>(
+    () => props.endedNotice ?? null,
+  );
+  /** REQ-647 (cycle 5, m29) — what /active last said of this tab's demo: null, not asked yet */
+  const [activeOk, setActiveOk] = useState<boolean | null>(null);
   /** REQ-298 — the demo that just arrived is a restart: the pill says so for a few seconds */
   const [fresh, setFresh] = useState(false);
   const restartRef = useRef<RestartNotice | null>(null);
@@ -562,6 +581,12 @@ export default function DemoModeOverlay() {
   // /active answers); a load from a connected page keeps the Connected face for the grace
   useLayoutEffect(() => {
     if (inert) return;
+    // REQ-647 (cycle 5, m29) — the last page saw the demo end: still said here
+    const ended = carriedEnded(sessionStore(), Date.now());
+    if (ended) {
+      setNotice((n) => n ?? ended);
+      return;
+    }
     const carried = carriedDemo(sessionStore(), Date.now());
     if (!carried || carried.demo.role !== "viewer") return;
     setDemo(carried.demo);
@@ -585,9 +610,11 @@ export default function DemoModeOverlay() {
       keepDemo(sessionStore(), demo, peerOnline, Date.now());
     } else if (!demo && hadDemoRef.current) {
       hadDemoRef.current = false;
-      forgetDemo(sessionStore());
+      // REQ-647 (cycle 5, m29) — an end is carried to the next page; a demo gone unsaid is not
+      if (notice) keepEnded(sessionStore(), notice, Date.now());
+      else forgetDemo(sessionStore());
     }
-  }, [demo, peerOnline]);
+  }, [demo, peerOnline, notice]);
   useEffect(() => {
     if (inert) return;
     const keepOnHide = () => {
@@ -663,6 +690,42 @@ export default function DemoModeOverlay() {
     setNotice(null);
   }, [demo?.id]);
   useEffect(() => () => restartRef.current?.dispose(), []);
+  // REQ-647 (cycle 5, m23) — the customer pressed or typed in the page: "started a new demo" has
+  // been read. A press on the pill itself (End, the details) is not: the line stays while they act
+  useEffect(() => {
+    if (inert || !fresh) return;
+    const read = (e: Event) => {
+      const at = e.target as Element | null;
+      if (at?.closest?.("[data-demo-overlay]")) return;
+      restartRef.current?.touched();
+    };
+    const opts = { capture: true, passive: true };
+    document.addEventListener("pointerdown", read, opts);
+    document.addEventListener("keydown", read, opts);
+    return () => {
+      document.removeEventListener("pointerdown", read, opts);
+      document.removeEventListener("keydown", read, opts);
+    };
+  }, [fresh]);
+  /**
+   * REQ-647 (cycle 5, m29) — the demo is gone and no `ended` frame said so (the poll answered
+   * null, the socket closed for good): said like any end — the notice in the pill's place (one
+   * already up is kept), REQ-298's window opened — never a silent vanish
+   */
+  function demoGone() {
+    const had = demoRef.current !== null;
+    setActiveOk(false);
+    if (had) {
+      console.info("[demo] gone without an ended frame", {
+        id: demoRef.current?.id,
+      });
+      restartRef.current?.ended();
+      setNotice((n) => goneNotice(true, n));
+      anchorsRef.current.clear();
+      setCmds({});
+    }
+    setDemo(null);
+  }
 
   // 1. is there a demo for this session? on load, again and again while this side is not connected
   //    to the other (REQ-378: each ask held until a demo opens), and when /admin opens one here. Every ask says where this app is. REQ-232 — the answer
@@ -688,9 +751,11 @@ export default function DemoModeOverlay() {
         if (!alive) return;
         if (a.session && a.role) {
           const found: Demo = { role: a.role, ...a.session };
+          setActiveOk(true);
           setDemo((d) => sameDemo(d, found) ? d : found);
         } else {
-          setDemo(null);
+          // REQ-647 — a demo this page had (or carried in) is over: said, not dropped
+          demoGone();
         }
         setOpening(null);
       },
@@ -854,9 +919,10 @@ export default function DemoModeOverlay() {
         wasOnline = online;
         if (s === "closed") {
           // refused or gone for good: ask the server what is true now
+          // REQ-647 — the end said, never a silent drop
           demoModeClient.active().then((a) => {
-            if (!a.session) setDemo(null);
-          }).catch(() => setDemo(null));
+            if (!a.session) demoGone();
+          }).catch(() => demoGone());
         }
       },
       onPeerOnline: () => {
@@ -898,8 +964,10 @@ export default function DemoModeOverlay() {
       },
       onEnded: (by, reason, pid) => {
         // REQ-235 — who ended it, in the pill's place at once, kept until dismissed
-        // (REQ-296 — or that it expired)
+        // (REQ-296 — or that it expired). REQ-647 (cycle 5, m29) — its receipt is logged, so a
+        // live tab that never got it can be told apart on the next demo run
         const d = demoRef.current;
+        console.info("[demo] ended", { id: d?.id, by, reason, pid });
         setNotice(whoEnded({ by, reason, pid }, {
           role: "viewer",
           presenters: d?.presenters ?? [],
@@ -1349,7 +1417,11 @@ export default function DemoModeOverlay() {
             data-cy="demo-ended-dismiss"
             aria-label={t("demoMode.dismiss")}
             title={t("demoMode.dismiss")}
-            onClick={() => setNotice(null)}
+            onClick={() => {
+              setNotice(null);
+              // REQ-647 — read and dismissed: the next page does not say it again
+              forgetDemo(sessionStore());
+            }}
             style={`padding:0 6px;border:0;background:transparent;color:#fff;cursor:pointer;font:inherit;font-size:18px;line-height:1;opacity:.85;${HIT}`}
           >
             ×
@@ -1450,7 +1522,7 @@ export default function DemoModeOverlay() {
   const line = started ? t(started.key, started.vars) : guidingText;
   // REQ-232 (demo-lifecycle-p1) — plain words: is the staff here or not; never how the bytes travel.
   // REQ-535 — a page loaded from a connected one says Connected through the grace
-  const live = showsConnected(status, carrying);
+  const live = showsConnected(status, carrying, activeOk);
   const statusLabel = status === "ended"
     ? t("demoMode.ended")
     : live

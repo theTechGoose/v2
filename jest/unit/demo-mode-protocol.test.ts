@@ -198,7 +198,10 @@ describe("REQ-153 demo mode wiring", () => {
     expect(shell).toMatch(
       /import DemoModeOverlay from "\.\.\/islands\/DemoModeOverlay\.tsx"/,
     );
-    expect(shell).toMatch(/hasSession \? <DemoModeOverlay \/> : null/);
+    // REQ-647 (cycle 5, c2-p13-r): with /admin's handover notice read on the server
+    expect(shell).toMatch(
+      /hasSession\s*\?\s*\(\s*<DemoModeOverlay\s+endedNotice=\{adminEndedNotice\(url\.pathname, url\.search\)\}\s*\/>\s*\)\s*:\s*null/,
+    );
     const island = read("front-end/islands/DemoModeOverlay.tsx");
     // REQ-232 (demo-lifecycle-p1): the customer's pill says Connected / Connecting…, not "waiting"
     expect(island).toContain(`t("demoMode.connecting")`);

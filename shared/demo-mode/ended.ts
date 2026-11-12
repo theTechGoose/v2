@@ -78,6 +78,19 @@ export function whoEnded(
   return presenters.length <= 1 ? { by: "you" } : { by: "unknown" };
 }
 
+/**
+ * REQ-647 (demo-loop cycle 5, m29) — the demo went without an `ended` frame (the /active poll
+ * answering null, a socket closed for good, a carried demo /active denies): a notice already up
+ * stays; a demo this side had is said as "The demo ended"; no demo, nothing to say.
+ */
+export function goneNotice(
+  had: boolean,
+  notice: EndedNotice | null,
+): EndedNotice | null {
+  if (notice) return notice;
+  return had ? { by: "unknown" } : null;
+}
+
 /** the dictionary line for a notice */
 export function endedText(
   n: EndedNotice,
