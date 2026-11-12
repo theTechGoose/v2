@@ -217,8 +217,15 @@ export function placePill(o: {
   /** false: a pill that never tucks (the ended notice, a message to read and dismiss) — a
    *  dialog still docks it, and with no place free it stays home */
   yields?: boolean;
+  /** REQ-643 (demo-loop cycle 5, m9) — a floating message (the ended notice): never a band
+   *  (no room is reserved under the page for it); off content under the home to a clear corner
+   *  (`dockPill`), else home over the page */
+  floats?: boolean;
   blocked: (r: Rect) => number;
 }): { box: Rect; tucked: boolean; band: boolean } {
+  if (o.floats) {
+    return { box: dockPill(o) ?? o.home, tucked: false, band: false };
+  }
   const yields = o.yields ?? true;
   const tucked = { box: tabBox(o.home), tucked: true, band: false };
   if (yields && o.minimal) return tucked;
@@ -231,6 +238,64 @@ export function placePill(o: {
   return o.blocked(o.home) === 0
     ? { box: o.home, tucked: false, band: true }
     : tucked;
+}
+
+/**
+ * REQ-643 (demo-loop cycle 5, m9) — the room reserved under the page (REQ-379's band, which the
+ * shells subtract): only while the pill sits home on its band. Folded to its edge tab, or a
+ * floating message (the ended notice), it reserves none — REQ-545 left the room reserved but
+ * unpainted under the tab, an empty body-coloured strip that cut the app, and kept it under the
+ * ended notice until dismissed. A dialog keeps it (REQ-618's sheet ends above the pill by it).
+ */
+export function bandRoom(
+  o: { band: boolean; dialog: boolean; floats?: boolean },
+  room: number,
+): number {
+  if (o.floats) return 0;
+  return o.band || o.dialog ? Math.max(0, room) : 0;
+}
+
+/**
+ * REQ-643 (demo-loop cycle 5, p18-3d) — a fixed box that covers the view down to the band is a
+ * dialog's backdrop: on a phone the mobile `.app` is transformed, so a backdrop inside it
+ * (`position:fixed; inset:0`) covers only the app's box, which ends at the band's top.
+ */
+export function backdropCovers(r: Rect, view: Size, band: number): boolean {
+  return coversView(r, { w: view.w, h: view.h - Math.max(0, band) });
+}
+
+/** REQ-643 — a see-through colour (0 < alpha < 1): a dialog's dim. A fixed box that covers the
+ *  view and paints none — the phone's own `.app` shell, fixed and full height once no room is
+ *  reserved — is not a backdrop */
+export function seeThrough(color: string): boolean {
+  const m = color.trim().match(/^rgba?\(([^)]*)\)$/);
+  if (!m) return false;
+  const parts = m[1].split(/[\s,/]+/).filter(Boolean);
+  if (parts.length < 4) return false;
+  const a = parts[3].endsWith("%")
+    ? Number(parts[3].slice(0, -1)) / 100
+    : Number(parts[3]);
+  return a > 0 && a < 1;
+}
+
+/** REQ-643 — the dim the band takes under a backdrop that stops short of the window's foot (its
+ *  own colour); none when it reaches the foot (it dims the band itself) or paints nothing */
+export function backdropDim(
+  r: Rect,
+  view: Size,
+  color: string,
+): string | null {
+  if (r.top + r.height >= view.h - 1) return null;
+  const c = color.trim();
+  if (!c || c === "transparent") return null;
+  const a = c.match(/^rgba\([^)]*,\s*([\d.]+)\s*\)$/);
+  if (a && Number(a[1]) === 0) return null;
+  return c;
+}
+
+/** REQ-643 — the band's background: the page's own colour, under the dialog's dim when one is up */
+export function bandPaint(bg: string, dim: string | null): string {
+  return dim ? `linear-gradient(${dim}, ${dim}), ${bg}` : bg;
 }
 
 /**
