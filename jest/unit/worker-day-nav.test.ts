@@ -18,11 +18,12 @@ const es = JSON.parse(read("lang/es.json")) as Record<string, string>;
 const island = read("front-end/islands/WorkerScreen.tsx");
 
 describe("REQ-362 workerDayNav — the /worker day navigator looks back AND ahead", () => {
-  test("on today: ← Yesterday and Tomorrow →, no Today link, not a preview", () => {
+  // REQ-528 (demo m51, cycle 3) amends the labels: the same "Previous day / Next day" on today too
+  test("on today: ← Previous day and Next day →, no Today link, not a preview", () => {
     expect(workerDayNav("2026-11-12", "2026-11-12")).toEqual({
-      prev: { href: "/worker?date=2026-11-11", key: "worker.yesterday" },
+      prev: { href: "/worker?date=2026-11-11", key: "worker.prevDay" },
       today: null,
-      next: { href: "/worker?date=2026-11-13", key: "worker.tomorrow" },
+      next: { href: "/worker?date=2026-11-13", key: "worker.nextDay" },
       preview: false,
     });
   });
@@ -56,7 +57,6 @@ describe("REQ-362 workerDayNav — the /worker day navigator looks back AND ahea
   test("the navigator's and the preview's strings are in both dictionaries", () => {
     for (
       const k of [
-        "worker.tomorrow",
         "worker.prevDay",
         "worker.nextDay",
         "worker.preview",

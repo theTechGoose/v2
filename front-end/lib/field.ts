@@ -30,9 +30,22 @@ export function shiftIso(iso: string, days: number): string {
 export type DayLink = { href: string; key: string };
 
 /**
- * REQ-362 (demo M35) — the /worker day navigator. Today: "← Yesterday ·
- * Tomorrow →". Any other day: "← Previous day · Today · Next day →". A day
- * after today is a read-only preview (REQ-141: no acting on the future).
+ * REQ-528 (demo m51) — the /worker address for one day; the office's way back (?from=, REQ-417)
+ * rides along. `null` for a blank or malformed day (a cleared date picker goes nowhere).
+ */
+export function workerDayHref(iso: string, from?: string): string | null {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(iso)) return null;
+  if (Number.isNaN(new Date(`${iso}T00:00:00`).getTime())) return null;
+  return `/worker?date=${iso}${
+    from ? `&from=${encodeURIComponent(from)}` : ""
+  }`;
+}
+
+/**
+ * REQ-362 (demo M35) — the /worker day navigator: "← Previous day · Next day →", plus "Today"
+ * to jump back from any other day. REQ-528 (demo m51): the labels never change with the day —
+ * no "Yesterday"/"Tomorrow" that rename after one tap. A day after today is a read-only preview
+ * (REQ-141: no acting on the future).
  */
 export function workerDayNav(date: string, today: string, from?: string): {
   prev: DayLink;
@@ -45,13 +58,13 @@ export function workerDayNav(date: string, today: string, from?: string): {
   const keep = from ? `from=${encodeURIComponent(from)}` : "";
   return {
     prev: {
-      href: `/worker?date=${shiftIso(date, -1)}${keep && `&${keep}`}`,
-      key: onToday ? "worker.yesterday" : "worker.prevDay",
+      href: workerDayHref(shiftIso(date, -1), from) ?? "/worker",
+      key: "worker.prevDay",
     },
     today: onToday ? null : `/worker${keep && `?${keep}`}`,
     next: {
-      href: `/worker?date=${shiftIso(date, 1)}${keep && `&${keep}`}`,
-      key: onToday ? "worker.tomorrow" : "worker.nextDay",
+      href: workerDayHref(shiftIso(date, 1), from) ?? "/worker",
+      key: "worker.nextDay",
     },
     preview: date > today,
   };

@@ -4,6 +4,11 @@
  * "Tomorrow →" link; it opens tomorrow's round read-only — the visit and its service are there, the
  * check button is locked, a hint says it can be checked off on the day, and nothing is POSTed.
  * From tomorrow the navigator reads "← Previous day · Today · Next day →".
+ *
+ * REQ-528 — demo-loop cycle 3, demo issue m51: the links keep one label on every day ("← Previous
+ * day" / "Next day →", never "Yesterday"/"Tomorrow" that rename after a tap), the viewed day reads
+ * "Viewing Fri, Nov 13" (fmtDay) instead of the raw ISO date, and a native date input jumps to any
+ * day (/worker?date=).
  */
 import { story, type StoryTools } from "#shots";
 
@@ -48,7 +53,7 @@ async function owner(http: StoryTools["http"]) {
   return auth;
 }
 
-Deno.test("REQ-362 (demo M35): /worker offers Tomorrow →; tomorrow's visit shows read-only with a preview hint and no check-off", (t) =>
+Deno.test("REQ-362 (demo M35) + REQ-528 (demo m51): /worker offers Next day →; tomorrow's visit shows read-only with a preview hint and no check-off", (t) =>
   story(t, async ({ page, expect, http, baseUrl }) => {
     const auth = await owner(http);
     const post = async (p: string, b: unknown) => {
@@ -112,18 +117,18 @@ Deno.test("REQ-362 (demo M35): /worker offers Tomorrow →; tomorrow's visit sho
     await page.locator("[data-cy='w-login']").click();
     await page.getByText("Hey, Miguel").waitFor({ timeout: 15_000 });
 
-    // today: both directions
+    // today: both directions — REQ-528: the same labels as on any other day
     const prev = page.locator("[data-cy='w-day-prev']");
     const next = page.locator("[data-cy='w-day-next']");
     await next.waitFor({ timeout: 15_000 });
     expect.eq(
       (await prev.textContent())?.trim(),
-      "← Yesterday",
+      "← Previous day",
       "the back link",
     );
     expect.eq(
       (await next.textContent())?.trim(),
-      "Tomorrow →",
+      "Next day →",
       "the forward link",
     );
 
@@ -169,4 +174,26 @@ Deno.test("REQ-362 (demo M35): /worker offers Tomorrow →; tomorrow's visit sho
       "Next day →",
       "forward one day",
     );
+
+    // REQ-528 — the viewed day is written out, not the ISO string
+    const tmr = new URL(page.url()).searchParams.get("date") ?? "";
+    const label = (await page.locator("[data-cy='w-day-label']").textContent())
+      ?.trim() ?? "";
+    const want = new Date(`${tmr}T00:00:00`).toLocaleDateString("en-US", {
+      weekday: "short",
+      month: "short",
+      day: "numeric",
+    });
+    expect(
+      label.includes(`Viewing ${want}`),
+      `the day label reads "Viewing ${want}" (got "${label}")`,
+    );
+    expect(!label.includes(tmr), `no raw ISO date in "${label}"`);
+
+    // REQ-528 — the date picker jumps to any day
+    const far = nyIso(new Date(Date.now() + 20 * 86_400_000));
+    await page.locator("[data-cy='w-day-pick']").fill(far);
+    await page.waitForURL(new RegExp(`/worker\\?date=${far}`), {
+      timeout: 15_000,
+    });
   }));

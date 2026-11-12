@@ -24,6 +24,7 @@ import {
   rememberWorkerLangPick,
   todayIso,
   WORKER_OFFICE_FALLBACK,
+  workerDayHref,
   workerDayNav,
   workerScreenLang,
 } from "../lib/field.ts";
@@ -100,6 +101,9 @@ const css = `
   .toast--ok { background: var(--brand-green); }
   .day { font-size: 13px; color: var(--fg-muted); display: flex; gap: 10px; align-items: center; }
   .day a { color: var(--brand-teal); font-weight: 700; }
+  .day .pick { position: relative; cursor: pointer; }
+  .day .pick b { color: var(--fg); text-decoration: underline dotted; }
+  .day .pick input { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; border: 0; padding: 0; }
   .wrap button[disabled] { opacity: .6; }
 `;
 
@@ -412,13 +416,15 @@ export default function WorkerScreen(
 
   /** REQ-362 — the day navigator; a day after today is a read-only preview */
   // REQ-417 — a day change keeps the owner's way back to the office page they came from
-  const nav = date && today
-    ? workerDayNav(
-      date,
-      today,
-      office && officeHref !== WORKER_OFFICE_FALLBACK ? officeHref : undefined,
-    )
-    : null;
+  const navFrom = office && officeHref !== WORKER_OFFICE_FALLBACK
+    ? officeHref
+    : undefined;
+  const nav = date && today ? workerDayNav(date, today, navFrom) : null;
+  /** REQ-528 (demo m51) — the date picker jumps to any day */
+  const pickDay = (iso: string) => {
+    const href = workerDayHref(iso, navFrom);
+    if (href && iso !== date) location.assign(href);
+  };
   const preview = !!nav?.preview;
 
   const dayLine = () => {
@@ -912,13 +918,28 @@ export default function WorkerScreen(
               <a href={nav.prev.href} data-cy="w-day-prev">
                 ← {t(nav.prev.key)}
               </a>
+              {/* REQ-528 (demo m51) — the day written out, and a native picker for any day */}
+              <label class="pick" data-cy="w-day-label">
+                {t("worker.viewing")} <b>{fmtDay(date, lang)}</b>
+                <input
+                  type="date"
+                  data-cy="w-day-pick"
+                  aria-label={t("worker.pickDay")}
+                  value={date}
+                  onChange={(e) => pickDay(e.currentTarget.value)}
+                  onClick={(e) => {
+                    try {
+                      e.currentTarget.showPicker?.();
+                    } catch {
+                      /* not allowed here — the native control still works */
+                    }
+                  }}
+                />
+              </label>
               {nav.today && (
-                <>
-                  <span>{t("worker.viewing")} {date}</span>
-                  <a href={nav.today} data-cy="w-day-today">
-                    {t("worker.todayLink")}
-                  </a>
-                </>
+                <a href={nav.today} data-cy="w-day-today">
+                  {t("worker.todayLink")}
+                </a>
               )}
               <a href={nav.next.href} data-cy="w-day-next">
                 {t(nav.next.key)} →
