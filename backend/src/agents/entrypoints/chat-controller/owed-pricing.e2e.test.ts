@@ -141,6 +141,8 @@ Deno.test("REQ-388 M19 e2e: pair 2 — Ana signs a pay-on-completion quote on th
       }],
       status: "sent",
     });
+    // REQ-460: the customer signs a SENT quote — POST /quotes makes a draft.
+    await call("PUT", `/quotes/${quote.id}`, { status: "sent" });
     const accepted = await api()<{ ok: boolean }>(
       "POST",
       `/quotes/${quote.id}/accept`,

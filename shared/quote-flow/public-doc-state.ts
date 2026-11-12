@@ -25,10 +25,15 @@ export interface PublicQuotePayloadLike {
   /** REQ-306: true when the viewer is the business itself (the owner, an
    *  admin acting for them, an impersonation session) — never the customer. */
   internal?: boolean;
+  /** REQ-460: why this open quote cannot be signed yet (`not_issued`,
+   *  `terms_incomplete` — quoteSignRefusal); absent when it can. */
+  signRefusal?: string;
 }
 
 export interface QuoteView {
-  mode: "open" | "accepted" | "declined";
+  /** REQ-460: "unready" — not signable yet (never sent, or its payment terms
+   *  are not on it); the page shows a notice where the pad would be. */
+  mode: "open" | "accepted" | "declined" | "unready";
   customerName: string;
   acceptedBy?: string;
   acceptedAt?: string;
@@ -63,6 +68,16 @@ export function deriveQuoteView(payload: PublicQuotePayloadLike): QuoteView {
   if (payload.status === "lost") {
     return {
       mode: "declined",
+      customerName,
+      footerVariant: "beforeSigning",
+      pendingSignature: false,
+    };
+  }
+  // REQ-460 (demo-loop cycle 3, M16): the server says it cannot be signed yet
+  // — no ceremony, no pad, no "Sign in person" until it is sent with its terms.
+  if (payload.signRefusal) {
+    return {
+      mode: "unready",
       customerName,
       footerVariant: "beforeSigning",
       pendingSignature: false,

@@ -2927,3 +2927,66 @@ REQ-256 (later) supersedes the sample's "SAMPLE"/"MUESTRA" mark: `EnsureSampleQu
 **Requirement:** the impersonate option's label is "Person name · Business (when present) · phone" — the person (or the "no name yet" text for a placeholder) always leads, the business follows only when set, the phone is last — so setting a business never swaps the name out. One pure helper, `impersonateLabel` in `front-end/lib/admin-console.ts`, used by the island.
 **Tests:** unit `jest/unit/admin-impersonate-label.test.ts` ("REQ-426 (demo cycle 2, p13-e) …": with business → "Deb Kowalski · Sparkle Home Cleaning · (512) 555-0102"; without (or blank) → "Deb Kowalski · (512) 555-0102"; the leading segment is the same before and after a business is set; a placeholder name reads "(no name yet)"; the island's option renders `impersonateLabel(u, noName)` and no `u.businessName ||`) · integration n/a — no backend or wire change; the label is built from the same `AdminUserView` fields · e2e n/a — a pure display string rendered verbatim into the `<option>`; pinned by the unit test against the island source.
 **Evidence (2026-11-12, branch fix/c2-admin-impersonate-label off demo-fixes deb85b35):** RED first — `cd jest && npx jest --selectProjects unit unit/admin-impersonate-label.test.ts` → "Tests: 5 failed" (`impersonateLabel is not a function`; the island's option still `(u.businessName || displayName(u.name, noName)) + " · " + …`). GREEN — the same run (it sweeps the whole unit project) → "Test Suites: 209 passed · Tests: 1 skipped, 2006 passed"; `deno lint`, `deno check`, `deno fmt --check` clean on `lib/admin-console.ts`, `islands/AdminPage.tsx` and the new test.
+## REQ-460 — A quote can be signed only after it went out with its payment terms, and a signed agreement's terms never change (demo-loop cycle 3, issues B1 + M16 + M15)
+**Source:** Raphael, 2026-11-12: "fix every issue the demo found, loop until there are none." Demo-loop cycle 3 (run re05e1cbb, demo-report.md), pair 4 (Tom Baker, roofer). `B1`: "A signed agreement's payment terms change after signature". The customer link was signed while the assistant was still asking "When do you want to get paid?"; Tom then picked "Deposit + balance", and after a reload the signed page showed "PAYMENT TERMS Deposit + balance" under "Signed and binding". `M16`: "The customer link can be signed before the quote is finished". "Customer link / Open as customer" appeared at "Lock it in", and /q could be signed while the card said "GATHERING A LITTLE MORE INFO". `M15`: "An invoice is marked sent for the full amount without the contractor doing it". The report shows "INV-001 · Invoice $14,500.00 Sent", although Tom chose Deposit + balance.
+**Cause (RCA, re-checked at cc5d4b0e):** the three issues are one chain.
+- (1) AsstChat rendered the REQ-310 customer-link row under every action card whose status passed `isLockedOrIssued`, including the LOCKED card that "Lock it in" appends. So "Customer link · Open as customer" appeared while the terms wizard was still asking; under REQ-234, locking is not sending.
+- (2) `POST /quotes/:id/accept` (public-controller) checked only for accepted, lost and owner. It never checked that the quote had gone out or that its terms were complete; REQ-240 listed "a completeness gate on accept" as out of scope. `quote-doc.tsx` showed the pad, and the owner's "Sign in person", on every unsigned quote. So the locked draft could be signed mid-wizard.
+- (3) M15: the quote had no `payment_terms` term at that moment, so `SendSignedConfirmation` billed one invoice for the whole total, status sent. That is REQ-240's no-terms rule.
+- (4) B1: the wizard stayed open. `HandleWizardAnswer` (REQ-240) wrote each answer's terms onto the quote without checking for a signature, and `QuoteStore.update()` had no guard; only `PUT /quotes` went through `quoteEditDecision`'s `locked_signed`. So "Deposit + balance" landed on the signed agreement.
+
+**Requirement:**
+- (a) In the chat, a quote card carries the customer's link only once the quote went out (sent, viewed or signed), never at lock. For the thread's own card the live quote row decides. Rule: `cardShowsCustomerLink` in `front-end/lib/customer-link.ts`.
+- (b) A quote can be signed only after it went out: sent or issued, or a Send was attempted (`lastDelivery`, the REQ-236/REQ-310 fallback link). If it carries the wizard's terms, those must include the payment terms. The one rule is `quoteSignRefusal()` in `shared/documents/versions.ts`. Two exceptions: the onboarding sample (REQ-256) can always be signed, and an API quote with no wizard terms still bills in full (REQ-240).
+  - Otherwise `POST /quotes/:id/accept` answers `409 { ok: false, reason: "not_issued" | "terms_incomplete" }` and bills nothing. This includes the in-person override `?as=customer&confirm=1` (REQ-306).
+  - `GET /quotes/:id/public` carries `signRefusal`. /q then shows "Not ready to sign yet — This quote is still being finished. It can be signed once it's sent with its payment terms." (`data-cy="quote-not-ready"`, en + es) in place of the pad, the internal preview and "Sign in person", and the pill no longer says "Awaiting signature".
+  - A pad that gets the 409 shows the same notice.
+- (c) A terms-wizard answer on a signed quote writes nothing. The wizard closes, its open question is removed so a reload doesn't bring it back, and the assistant replies "{number} is already signed, so its terms can't change. To change them, make a change order or send a new version." (`wizardAnswer.signedLocked`, en + es).
+- (d) `QuoteStore.update()` refuses a terms, lineItems or estimatedTotal change on a signed quote (`QuoteSignedError`, reason `locked_signed`). It compares content, so bookkeeping writes (stamps, a cached translation, an identical rewrite) still land.
+
+**Tests:**
+- unit:
+  - `jest/unit/sign-gate-and-lock.test.ts` ("REQ-460 …", 14 tests): `quoteSignRefusal` cases (locked mid-wizard draft, sent without payment terms, failed send, API quote, sample); `deriveQuoteView` "unready" and `internalPreview` off, override included; `acceptDecision` maps the 409 to `not_ready`; `cardShowsCustomerLink` for card statuses and the live row; quote-doc, PublicSignQuote and AsstChat source pins; the en/es keys.
+  - `front-end/lib/sign-gate.test.tsx` ("REQ-460 …", 4 tests, rendered QuoteDoc): the customer sees the notice with no pad and no "Awaiting signature"; the owner gets no "Sign in person" and no pad, with or without the override; Spanish `terms_incomplete`; a ready sent quote still has the pad.
+  - `backend/src/paperwork/domain/data/quote-store/signed-lock.test.ts` ("REQ-460 …", 3 tests): a signed quote's terms, lines and total are refused and the row is unchanged; bookkeeping still lands; an unsigned quote's terms still change.
+- integration:
+  - `backend/src/paperwork/entrypoints/public-controller/sign-gate.int.test.ts` ("REQ-460 …", 3 tests, the booted app on a real KV):
+    - M16: a locked mid-wizard draft gets 409 `not_issued` for the customer and for the owner's override, nothing is billed, and the public payload says `not_issued`.
+    - M15: a sent quote without payment terms gets 409 `terms_incomplete`. With 50/50 added, the accept bills 725000 + 725000.
+    - A failed-send draft and a sent API quote with no terms can still be signed.
+  - `backend/src/agents/domain/coordinators/handle-wizard-answer/int.test.ts` ("REQ-460 (demo-loop cycle 3, B1) …", 2 tests): an answer after signing writes nothing, replies with the en (and es) copy, closes the wizard with no question left open and no `terms_drafted`, and a second tap gives the same reply.
+- e2e: `e2e/sign-gate/sign-gate.e2e.test.ts` (2 stories):
+  - M16 + M15: the locked card has no customer link. /q, plain and with the override, shows the notice with no pad and no "Sign in person". Both accepts are 409. After Send, the card carries the `/q/<id>` link and the signature bills 725000 + 725000.
+  - B1: after the signature, rewinding and clicking "Deposit + balance" shows the refusal naming Q-001, "change order" and "new version". No wizard options are left, the stored payment term is unchanged, /q shows no "Deposit + balance", and after a reload there is no wizard.
+
+**Tests amended (a quote is now sent before it is signed; POST /quotes keeps `status: "sent"` a draft, NW-10, so each one PUTs `{status:"sent"}` first):**
+- backend: `public-controller/e2e.test.ts`, `public-controller/pay-now.int.test.ts`, `public-controller/public-draft-invoice.int.test.ts`, `invoice-controller/overbill.e2e.test.ts`, `notification-controller/e2e.test.ts`, `clients-controller/paging.int.test.ts`, `chat-controller/intent.e2e.test.ts`, `chat-controller/owed-pricing.e2e.test.ts`.
+- `wizard-controller/partial-terms.e2e.test.ts`: the half-finished accept is now 409 `not_issued`; the wizard is then finished, the quote sent and signed, and the due date reads net 15.
+- jest: `unit/customer-link-access.test.ts` (REQ-310: the action card's row is gated by `cardShowsCustomerLink`), plus the live `integration/{public-doc-state,ux-accept-billing,invoice-parity,activity-feed-lang}.int.test.ts`.
+- stories: `e2e/{chat-deposit-invoice,invoice-overbilling,form-a11y,thread-status}`.
+
+**Evidence (2026-11-12, Mac host, branch fix/c3-sign-gate-and-lock off cc5d4b0e):**
+- RED first:
+  - `deno test -A --unstable-kv …/quote-store/signed-lock.test.ts` → "FAILED | 2 passed | 1 failed" ("Expected function to reject.").
+  - `…/handle-wizard-answer/int.test.ts --filter REQ-460` → "FAILED | 0 passed | 2 failed" ("Values are not equal: the signed terms stand").
+  - `…/public-controller/sign-gate.int.test.ts` → "FAILED | 1 passed | 2 failed" ("the customer cannot sign a quote nobody sent"; "no signature before the payment terms are on the quote").
+  - `deno test -A --no-check lib/sign-gate.test.tsx` → "FAILED | 1 passed | 3 failed" ("the not-ready notice renders"). With type-check: TS2353 'signRefusal' does not exist in type 'Partial<QuotePublic>'.
+  - jest `unit/sign-gate-and-lock.test.ts` against the base tree → "Tests: 13 failed, 1 passed, 14 total" (`quoteSignRefusal is not a function`; the one pass is the "open for signature as before" guard).
+  - `shots run e2e/sign-gate` → "✗ … no 'Customer link · Open as customer' while the quote is being finished — expected 0, got 1" and "✗ … B1 … the click never took" (no refusal ever came).
+- GREEN:
+  - backend `deno test -A --unstable-kv src/` (all unit + int) → "ok | 1756 passed | 0 failed".
+  - jest unit project → "Test Suites: 251 passed · Tests: 1 skipped, 2516 passed".
+  - The 10 live jest integration files that sign quotes → "Test Suites: 10 passed · Tests: 45 passed".
+  - front-end `deno lint` clean, `deno check` rc 0, `deno test -A lib/` → "ok | 216 passed | 0 failed".
+  - `shots run e2e/sign-gate e2e/chat-deposit-invoice e2e/invoice-overbilling e2e/form-a11y e2e/thread-status e2e/customer-link-access` → "13 pass · 0 fail".
+  - `shots run e2e/sign-in-person e2e/sample-quote e2e/demo-mode/demo-signature.e2e.test.ts e2e/live-doc-refresh e2e/public-page-refresh e2e/linked-documents e2e/quote-pay-now e2e/signed-next-step` → 13 pass, 3 fail.
+    - The 3 failures were already failing at base: REQ-203, REQ-251 and REQ-311 put the owner's session cookie on the page, so their sent quote, which has its payment terms, opens as the REQ-306 internal preview (`internal: true`, no `signRefusal`), and the pad they wait for never appears.
+    - REQ-311's commit e82c179d does not contain REQ-306's 5d86e18f, and the base `quote-doc.tsx` already renders the banner instead of `<PublicSignQuote>` for that viewer.
+
+**Not in scope:**
+- The dev-only `AcceptQuote` coordinator (the sent-quote composer's test hook) is not gated.
+- Rewinding the wizard (`/agents/wizard/back`) can still re-open a signed quote's questions; every answer is then refused and the wizard closes again.
+
+### REQ-310 AMENDMENT — by REQ-460: rule (b)'s "every sent (locked/issued) action_card" now means every action card whose quote went out (sent, viewed or signed). A locked card no longer carries the customer-link row (cycle 3 M16). Tests: `jest/unit/customer-link-access.test.ts`, `jest/unit/sign-gate-and-lock.test.ts`, `e2e/sign-gate/sign-gate.e2e.test.ts`.
+### REQ-240 AMENDMENT — by REQ-460: the completeness gate REQ-240 left out of scope now exists. A quote from a half-finished wizard (not sent, or sent without its payment terms) cannot be signed (409 `not_issued` / `terms_incomplete`), and answers after a signature write nothing. The full no-payment-terms invoice remains only for quotes with no wizard terms. Tests: `backend/src/agents/entrypoints/wizard-controller/partial-terms.e2e.test.ts` (amended), `backend/src/paperwork/entrypoints/public-controller/sign-gate.int.test.ts`.
+### REQ-306 AMENDMENT — by REQ-460: the in-person override `?as=customer&confirm=1` still needs a quote that can be signed: one that went out, with its payment terms. On a quote that is not ready, the owner sees the not-ready notice, with no preview banner and no "Sign in person". Tests: `front-end/lib/sign-gate.test.tsx`, `backend/src/paperwork/entrypoints/public-controller/sign-gate.int.test.ts`.

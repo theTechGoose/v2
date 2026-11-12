@@ -169,6 +169,8 @@ Deno.test("REQ-368 M32 e2e: pair 1 — after John signs (deposit billed on signi
       }],
       status: "sent",
     });
+    // REQ-460: the customer signs a SENT quote — POST /quotes makes a draft.
+    await call("PUT", `/quotes/${quote.id}`, { status: "sent" });
     // The assistant conversation the quote was built in: terms wizard done.
     const convs = new AgentConversationStore();
     const conv = await convs.create({

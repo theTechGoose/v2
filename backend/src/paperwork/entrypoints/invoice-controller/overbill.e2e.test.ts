@@ -98,6 +98,12 @@ async function signedFiftyFifty(auth: Record<string, string>) {
     }],
     status: "sent",
   });
+  // REQ-460: the customer signs a SENT quote — POST /quotes makes a draft.
+  await (await fetch(`${BASE}/quotes/${quote.body.id}`, {
+    method: "PUT",
+    headers: auth,
+    body: JSON.stringify({ status: "sent" }),
+  })).body?.cancel();
   const accept = await post(`/quotes/${quote.body.id}/accept`, json, {
     name: "Dana Whitfield",
     signature: SIGNATURE_PNG,

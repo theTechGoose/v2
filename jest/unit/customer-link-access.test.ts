@@ -127,14 +127,16 @@ describe("REQ-310 the chat renders the customer's link after a send, outside the
     expect(divider).toMatch(/<CustomerLinkRow/);
   });
 
-  test("REQ-310 (m13) a sent (locked/issued) action_card renders the row", () => {
+  // REQ-460 (demo-loop cycle 3, M16) amends this: a LOCKED card no longer
+  // carries the link — only a sent (issued) one, via cardShowsCustomerLink.
+  test("REQ-310 (m13) / REQ-460 a sent (issued) action_card renders the row", () => {
     const start = chat.indexOf('if (m.kind === "action_card")');
     const end = chat.indexOf('m.content === "PM_ONBOARDING_DEMO_CTA"', start);
     expect(end).toBeGreaterThan(start);
     const cardBlock = chat.slice(start, end);
-    const lockedAt = cardBlock.indexOf("isLockedOrIssued(payload.status)");
-    expect(lockedAt).toBeGreaterThan(0);
-    expect(cardBlock.slice(lockedAt)).toMatch(/<CustomerLinkRow/);
+    const gateAt = cardBlock.indexOf("cardShowsCustomerLink(");
+    expect(gateAt).toBeGreaterThan(0);
+    expect(cardBlock.slice(gateAt)).toMatch(/<CustomerLinkRow/);
   });
 
   test("REQ-310 (m32) the menu's Copy link reports through the toast — success and the catch branch alike — not its own label", () => {

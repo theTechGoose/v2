@@ -19,10 +19,13 @@ import { customerContactError } from "#quote-flow/customer-contact.ts"; // REQ-2
 import { findExistingCustomer } from "#quote-flow/customer-dedupe.ts"; // REQ-331
 import { termFromPick } from "#quote-flow/wizard-terms.ts"; // REQ-347
 import { accountNetDays } from "#quote-flow/completion-schedule.ts"; // REQ-411
+import { isQuoteLocked } from "#documents/versions.ts"; // REQ-460
+import { docNumberOf } from "#documents/numbering.ts"; // REQ-460
 import { BusinessIdentityStore } from "@profile/domain/data/business-identity-store/mod.ts";
 import type { AgentConversation } from "@agents/dto/conversation.ts";
 import type { AgentMessage } from "@agents/dto/message.ts";
 import type { Customer } from "@crm/dto/customer.ts";
+import type { Quote } from "@paperwork/dto/quote.ts";
 import type {
   WizardAnswer,
   WizardSpec,
@@ -110,6 +113,13 @@ export class HandleWizardAnswer {
     if (!current) {
       throw new Error("wizard state missing — call transition-to-terms first");
     }
+
+    // REQ-460 (demo-loop cycle 3, B1): the bound quote first, before any
+    // write. Once the customer signed it the agreement is final (REQ-202) —
+    // in the demo "Deposit + balance" landed on a signed agreement and the
+    // wizard went on to the warranty.
+    const signed = await this.signedQuote(conv);
+    if (signed) return await this.closeForSigned(conv, current, signed, lang);
 
     // Pre-validate the step ordering BEFORE any side effect. applyAnswer
     // performs the same check, but it runs after handleCustomerStep — and
@@ -272,6 +282,61 @@ export class HandleWizardAnswer {
       convPatch,
     );
     return { conversation: updatedConv, wizardState: next, newMessages };
+  }
+
+  /** REQ-460: the conversation's quote, when its customer already signed it. */
+  private async signedQuote(
+    conv: AgentConversation,
+  ): Promise<Quote | undefined> {
+    if (!conv.quoteId) return undefined;
+    const quote = await this.quotes.getOwned(conv.quoteId, conv.userId)
+      .catch(() => null);
+    return quote && isQuoteLocked(quote) ? quote : undefined;
+  }
+
+  /**
+   * REQ-460 (demo-loop cycle 3, B1): an answer for a quote the customer has
+   * signed. Nothing is recorded — no pick, no answer, nothing on the quote.
+   * The wizard closes: no step stays active and its open question leaves the
+   * thread, so a reload does not ask it again. The assistant says the
+   * agreement is final and that a change goes through a change order or a
+   * new version.
+   */
+  private async closeForSigned(
+    conv: AgentConversation,
+    state: WizardState,
+    quote: Quote,
+    lang: "en" | "es",
+  ): Promise<WizardAnswerResult> {
+    const spec = getWizardSpec(state.specId);
+    const closed: WizardState = { ...state, activeStepIdx: spec.steps.length };
+    await this.conversations.putWizardState(conv.id, closed);
+    const msgs = await this.messages.listByConversation(conv.id);
+    const answered = new Set(
+      msgs.map((m) =>
+        (m.payload as { wizardStepId?: string } | undefined)?.wizardStepId
+      ),
+    );
+    const open = msgs.filter((m) => {
+      if (m.kind !== "wizard") return false;
+      const stepId = (m.payload as { stepId?: string } | undefined)?.stepId;
+      return !!stepId && spec.steps.some((s) => s.id === stepId) &&
+        !answered.has(stepId);
+    }).map((m) => m.id);
+    await this.messages.deleteByIds(conv.id, open);
+    const content = t(lang, "wizardAnswer.signedLocked", {
+      number: docNumberOf(quote),
+    });
+    const reply = await this.messages.append({
+      conversationId: conv.id,
+      role: "assistant",
+      kind: "text",
+      content,
+    });
+    const conversation = await this.conversations.update(conv.id, {
+      preview: content,
+    });
+    return { conversation, wizardState: closed, newMessages: [reply] };
   }
 
   /**

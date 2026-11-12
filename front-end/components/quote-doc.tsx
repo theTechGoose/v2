@@ -136,6 +136,9 @@ export interface QuotePublic {
    *  admin, impersonation) — a preview, not the customer; the pad is
    *  replaced by a banner. Never present for the customer. */
   internal?: boolean;
+  /** REQ-460 (demo-loop cycle 3, M16): why this open quote cannot be signed
+   *  yet (`not_issued` / `terms_incomplete`) — the pad becomes a notice. */
+  signRefusal?: string;
   lineItems?: LineItem[];
   terms?: Term[];
   createdAt?: string;
@@ -285,6 +288,8 @@ export function QuoteDoc(
   const view = deriveQuoteView(quote);
   const signed = view.mode === "accepted";
   const declined = view.mode === "declined";
+  // REQ-460 (demo-loop cycle 3, M16): never sent, or no payment terms yet.
+  const unready = view.mode === "unready";
   const total = quote.estimatedTotal ?? sumLineTotals(quote.lineItems);
   // REQ-032 (NW-28): the signer's typed name is a name too — the named
   // sentence must not fall back to "you agree" once someone has signed.
@@ -525,6 +530,14 @@ export function QuoteDoc(
                   bg="rgba(168,59,59,0.10)"
                   color="#a83b3b"
                   label={t.declined}
+                />
+              )
+              : unready
+              ? (
+                <Pill
+                  bg="rgba(20,72,82,0.06)"
+                  color={MUTED}
+                  label={tFor(lang, "public.doc.notReady")}
                 />
               )
               : (
@@ -847,12 +860,32 @@ export function QuoteDoc(
                       >
                         {customerName ?? t.clientSignature}
                       </div>
-                      <div
-                        style={`margin-top:8px;font-size:12px;font-weight:700;color:${TEAL}`}
-                      >
-                        {customerInstruction}
-                      </div>
-                      {preview
+                      {unready ? null : (
+                        <div
+                          style={`margin-top:8px;font-size:12px;font-weight:700;color:${TEAL}`}
+                        >
+                          {customerInstruction}
+                        </div>
+                      )}
+                      {unready
+                        ? (
+                          // REQ-460 (demo-loop cycle 3, M16): no pad and no
+                          // "Sign in person" before it is sent with its terms.
+                          <div
+                            data-cy="quote-not-ready"
+                            role="status"
+                            class="ctr__no-print"
+                            style="margin-top:12px;background:#f3f6f7;border:1px solid rgba(20,72,82,0.14);border-radius:14px;padding:16px 18px;color:#3d5a60;font-size:13px;line-height:1.5"
+                          >
+                            <div style="font-weight:800;font-size:14px">
+                              {tFor(lang, "public.doc.notReady")}
+                            </div>
+                            <div style="margin-top:4px">
+                              {tFor(lang, "public.doc.notReadyBody")}
+                            </div>
+                          </div>
+                        )
+                        : preview
                         ? (
                           <div
                             data-cy="quote-internal-preview"

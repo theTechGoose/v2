@@ -9,10 +9,14 @@ import { resetKv } from "@core/data/kv/mod.ts";
 /**
  * REQ-240 (demo M29) on the booted app — the demo's exact path: a quote is
  * out, the contractor answers the customer step (Maria) and the start date
- * ("Next week"), then leaves before finishing the wizard. The customer opens
- * the link and signs. The agreement must name Maria and the start date, and
- * the invoice the signature creates must bill Maria and not be due the day
- * it was signed.
+ * ("Next week"), then leaves before finishing the wizard. The agreement must
+ * already name Maria and the start date.
+ *
+ * REQ-460 (demo-loop cycle 3, M16 + M15) amends the rest: the half-finished
+ * agreement is NOT signable (409 `not_issued`, nothing billed) — the demo's
+ * mid-wizard signature billed the whole total as one invoice. Once the
+ * contractor finishes the terms and sends it, the signature's invoice bills
+ * Maria and is not due the day it was signed.
  */
 @Module({ imports: [AgentsModule] })
 class TestApp {}
@@ -49,18 +53,28 @@ async function login(phone = "+15125551234"): Promise<string> {
   return v.sessionId;
 }
 
-async function post(path: string, body: unknown, sid?: string) {
+async function send(
+  method: string,
+  path: string,
+  body: unknown,
+  sid?: string,
+) {
   const res = await fetch(`${BASE}${path}`, {
-    method: "POST",
+    method,
     headers: sid ? { ...J, "x-session-id": sid } : J,
     body: JSON.stringify(body),
   });
   const json = await res.json().catch(() => undefined);
-  assert(res.ok, `${path} answered ${res.status}: ${JSON.stringify(json)}`);
+  return { status: res.status, ok: res.ok, json };
+}
+
+async function post(path: string, body: unknown, sid?: string) {
+  const { status, ok, json } = await send("POST", path, body, sid);
+  assert(ok, `${path} answered ${status}: ${JSON.stringify(json)}`);
   return json;
 }
 
-Deno.test("REQ-240 (M29) e2e: a half-finished terms wizard still puts the customer and start date on the agreement, and the signed invoice bills that customer, not due the same day", async () => {
+Deno.test("REQ-240 (M29) + REQ-460 (c3 M16) e2e: a half-finished terms wizard puts the customer and start date on the agreement but cannot be signed; finished and sent, the signed invoice bills that customer, not due the same day", async () => {
   await withServer(async () => {
     const sid = await login();
     const quote = await post("/quotes", {
@@ -110,6 +124,47 @@ Deno.test("REQ-240 (M29) e2e: a half-finished terms wizard still puts the custom
       "the agreement carries the start date (was 'INICIO Por agendar')",
     );
 
+    // REQ-460: the half-finished agreement is not signable, nothing billed
+    const early = await send("POST", `/quotes/${quote.id}/accept`, {
+      name: "Maria Lopez",
+      signature: "data:image/png;base64,...",
+    });
+    assertEquals(
+      { status: early.status, reason: early.json?.reason },
+      { status: 409, reason: "not_issued" },
+      "a quote nobody sent, its wizard half done, is not signed",
+    );
+    const none = await fetch(`${BASE}/invoices`, {
+      headers: { "x-session-id": sid },
+    }).then((r) => r.json());
+    assertEquals(
+      none.filter((i: { quoteId?: string }) => i.quoteId === quote.id),
+      [],
+      "nothing billed",
+    );
+
+    // …the contractor finishes the terms and sends it
+    for (
+      const [stepId, optionId] of [
+        ["wraps", "2_3_days"],
+        ["payment_terms", "net_15"],
+        ["warranty", "none"],
+      ]
+    ) {
+      await post("/agents/wizard/answer", {
+        conversationId: convId,
+        stepId,
+        optionId,
+      }, sid);
+    }
+    const sent = await send(
+      "PUT",
+      `/quotes/${quote.id}`,
+      { status: "sent" },
+      sid,
+    );
+    assert(sent.ok, `PUT status sent answered ${sent.status}`);
+
     await post(`/quotes/${quote.id}/accept`, {
       name: "Maria Lopez",
       signature: "data:image/png;base64,...",
@@ -133,7 +188,7 @@ Deno.test("REQ-240 (M29) e2e: a half-finished terms wizard still puts the custom
     const today = new Date().toISOString().slice(0, 10);
     assert(
       inv.dueDate > today,
-      `no payment terms were agreed — due ${inv.dueDate}, not the day of signing`,
+      `net 15 — due ${inv.dueDate}, not the day of signing`,
     );
   });
 });

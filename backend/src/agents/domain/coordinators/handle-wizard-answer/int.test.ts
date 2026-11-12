@@ -1204,3 +1204,160 @@ Deno.test("REQ-387 (M25) handle-wizard-answer integration: the typed 30/40/30 sc
   );
   await resetKv();
 });
+
+// ---------------------------------------------------------------------------
+// REQ-460 (demo-loop cycle 3, B1): the customer signed while the terms wizard
+// was still asking "When do you want to get paid?"; the contractor then
+// picked "Deposit + balance" and it was written onto the SIGNED agreement
+// (the /q page showed the new payment terms under "Signed and binding") and
+// the wizard went on to the warranty. A signed quote is final: the answer
+// writes nothing, the wizard closes, and the reply says how to change it.
+// ---------------------------------------------------------------------------
+
+/** A terms wizard on a sent quote, answered up to the payment step — then
+ *  the customer signs on the public page (status + acceptedAt, no chat). */
+async function signedMidWizard(language: "en" | "es" = "en") {
+  const ctx = fresh();
+  const user = await ctx.users.create({ phoneNumber: "+15125554601" });
+  await ctx.users.update(user.id, { language });
+  const quote = await ctx.quotes.create(user.id, {
+    summary: "Roof replacement",
+    lineItems: [{
+      description: "Roof replacement",
+      quantity: 1,
+      unit: "job",
+      price: 1_450_000,
+    }],
+    estimatedTotal: 1_450_000,
+    status: "sent",
+  });
+  const conv = await ctx.conversations.create({
+    userId: user.id,
+    quoteId: quote.id,
+    customerId: "cust-1",
+  });
+  await ctx.transitionFlow.run({ userId: user.id, conversationId: conv.id });
+  for (const step of TERMS_WIZARD_V1.steps) {
+    if (step.id === "payment_terms") break;
+    await ctx.flow.run({
+      userId: user.id,
+      conversationId: conv.id,
+      stepId: step.id,
+      optionId: step.options.find((o) => !o.isCustom)!.id,
+    });
+  }
+  await ctx.quotes.update(quote.id, user.id, {
+    status: "accepted",
+    acceptedAt: new Date().toISOString(),
+    acceptedName: "Linda Ortiz",
+  });
+  const signed = await ctx.quotes.getOwned(quote.id, user.id);
+  return { ...ctx, user, quote: signed, conv };
+}
+
+Deno.test("REQ-460 (demo-loop cycle 3, B1) handle-wizard-answer integration: an answer after the customer signed writes nothing onto the signed quote, closes the wizard and says a change needs a change order or a new version", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const { flow, quotes, conversations, messages, bus, user, quote, conv } =
+    await signedMidWizard("en");
+  const seen: DomainEvent[] = [];
+  bus.subscribe((e) => {
+    if (e.entityType === "quote" && e.action === "terms_drafted") seen.push(e);
+  });
+  const stateBefore = await conversations.getWizardState(conv.id);
+  const transcriptBefore = await messages.listByConversation(conv.id);
+
+  const r = await flow.run({
+    userId: user.id,
+    conversationId: conv.id,
+    stepId: "payment_terms",
+    optionId: "deposit_bal",
+  });
+
+  // nothing written onto the signed agreement
+  const after = await quotes.getOwned(quote.id, user.id);
+  assertEquals(after.terms, quote.terms, "the signed terms stand");
+  assertEquals(
+    (after.terms ?? []).some((t) => t.stepId === "payment_terms"),
+    false,
+    "no 'Deposit + balance' on the signed quote",
+  );
+  assertEquals(after.updatedAt, quote.updatedAt, "the quote row is untouched");
+
+  // no pick recorded, one assistant reply naming the quote and the way out
+  assertEquals(r.newMessages.length, 1, "only the assistant's reply");
+  const reply = r.newMessages[0];
+  assertEquals(reply.role, "assistant");
+  assertEquals(reply.kind, "text");
+  assertEquals(
+    reply.content,
+    t("en", "wizardAnswer.signedLocked", { number: quote.number! }),
+  );
+  assert(/change order/i.test(reply.content), reply.content);
+  assert(reply.content.includes(quote.number!), reply.content);
+  const transcript = await messages.listByConversation(conv.id);
+  assertEquals(
+    transcript.some((m) =>
+      (m.payload as { wizardStepId?: string } | undefined)?.wizardStepId ===
+        "payment_terms"
+    ),
+    false,
+    "no 'Payment terms: Deposit + balance' pick in the thread",
+  );
+
+  // the wizard is closed: no step is active and no question is left open
+  const state = await conversations.getWizardState(conv.id);
+  assertEquals(state?.activeStepIdx, TERMS_WIZARD_V1.steps.length);
+  assertEquals(state?.answers, stateBefore?.answers, "no answer recorded");
+  const answered = new Set(
+    transcript.map((m) =>
+      (m.payload as { wizardStepId?: string } | undefined)?.wizardStepId
+    ).filter(Boolean),
+  );
+  const open = transcript.filter((m) =>
+    m.kind === "wizard" &&
+    !answered.has((m.payload as { stepId?: string }).stepId)
+  );
+  assertEquals(open.length, 0, "no unanswered wizard question remains");
+  assert(
+    transcriptBefore.some((m) =>
+      m.kind === "wizard" &&
+      (m.payload as { stepId?: string }).stepId === "payment_terms"
+    ),
+    "the payment question was open before the answer",
+  );
+  assertEquals(seen.length, 0, "no terms_drafted for a signed quote");
+
+  // a second tap on a stale card is refused the same way, still no write
+  const again = await flow.run({
+    userId: user.id,
+    conversationId: conv.id,
+    stepId: "payment_terms",
+    optionId: "deposit_bal",
+  });
+  assertEquals(again.newMessages.map((m) => m.content), [reply.content]);
+  assertEquals((await quotes.getOwned(quote.id, user.id)).terms, quote.terms);
+  await resetKv();
+});
+
+Deno.test("REQ-460 (demo-loop cycle 3, B1) handle-wizard-answer integration: a Spanish contractor reads the refusal in Spanish", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const { flow, user, quote, conv } = await signedMidWizard("es");
+  const r = await flow.run({
+    userId: user.id,
+    conversationId: conv.id,
+    stepId: "payment_terms",
+    optionId: "deposit_bal",
+  });
+  assertEquals(
+    r.newMessages.map((m) => m.content),
+    [t("es", "wizardAnswer.signedLocked", { number: quote.number! })],
+  );
+  assert(
+    t("es", "wizardAnswer.signedLocked", { number: "Q-001" }) !==
+      t("en", "wizardAnswer.signedLocked", { number: "Q-001" }),
+    "the Spanish copy is its own",
+  );
+  await resetKv();
+});

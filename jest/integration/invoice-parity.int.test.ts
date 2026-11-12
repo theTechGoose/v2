@@ -59,6 +59,8 @@ describe("invoice parity with the quote", () => {
   });
 
   it("links to the signed quote once it is accepted", async () => {
+    // REQ-460: the customer signs only a quote that went out.
+    await s.put(`/quotes/${quoteId}`, { status: "sent" });
     // The one ceremony: the customer accept-signs the quote on /q.
     const accept = await anonymous().post(`/quotes/${quoteId}/accept`, {
       signature: "Green Goblin",

@@ -84,6 +84,8 @@ Deno.test("REQ-320 (demo m15, cycle 1) GET /clients — one signed quote, its in
       method: "POST", headers: H,
       body: JSON.stringify({ customerId: c.id, summary: "Patio", lineItems: [], status: "sent", estimatedTotal: 280_00, terms: [{ stepId: "payment_terms", value: "Due Now" }] }),
     }).then((r) => r.json());
+    // REQ-460: the customer signs a SENT quote — POST /quotes makes a draft.
+    await (await fetch(`http://localhost:${port}/quotes/${q.id}`, { method: "PUT", headers: H, body: JSON.stringify({ status: "sent" }) })).body?.cancel();
     const out = await fetch(`http://localhost:${port}/quotes/${q.id}/accept`, { method: "POST", headers: J, body: JSON.stringify({ name: "Ana Pérez" }) }).then((r) => r.json());
     assertEquals(out.ok, true);
     const page = await fetch(`http://localhost:${port}/clients`, { headers: H }).then((r) => r.json());

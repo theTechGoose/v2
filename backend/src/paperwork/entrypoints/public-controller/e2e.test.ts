@@ -20,6 +20,18 @@ async function drain(res: Response) {
   await res.body?.cancel();
 }
 
+/** REQ-460: only a quote put in front of the customer is signed — POST
+ *  /quotes makes a draft (NW-10), so a test sends it the API's way. */
+async function markSent(port: number, sid: string, id: string) {
+  await drain(
+    await fetch(`http://localhost:${port}/quotes/${id}`, {
+      method: "PUT",
+      headers: { "content-type": "application/json", "x-session-id": sid },
+      body: JSON.stringify({ status: "sent" }),
+    }),
+  );
+}
+
 async function login(port: number, phone = "+15125551234"): Promise<string> {
   await drain(
     await fetch(`http://localhost:${port}/auth/send-otp`, {
@@ -84,6 +96,7 @@ Deno.test("public e2e: POST /quotes/:id/accept (no session) flips status to acce
         estimatedTotal: 500_00,
       }),
     }).then((r) => r.json());
+    await markSent(PORT, sid, q.id);
 
     const out = await fetch(`http://localhost:${PORT}/quotes/${q.id}/accept`, {
       method: "POST",
@@ -170,6 +183,7 @@ Deno.test("public e2e: POST /quotes/:id/decline cannot revoke an already-accepte
       headers: { "content-type": "application/json", "x-session-id": sid },
       body: JSON.stringify({ summary: "Job", lineItems: [], status: "sent" }),
     }).then((r) => r.json());
+    await markSent(PORT, sid, q.id);
 
     await drain(
       await fetch(`http://localhost:${PORT}/quotes/${q.id}/accept`, {
@@ -317,6 +331,7 @@ Deno.test("public e2e: accept with a TIN stores it masked to the last 4 and neve
       headers: { "content-type": "application/json", "x-session-id": sid },
       body: JSON.stringify({ summary: "Job", lineItems: [], status: "sent" }),
     }).then((r) => r.json());
+    await markSent(PORT, sid, q.id);
 
     const out = await fetch(`http://localhost:${PORT}/quotes/${q.id}/accept`, {
       method: "POST",
@@ -361,6 +376,7 @@ Deno.test("public e2e: a second accept is a 409 already_accepted, not a silent s
       headers: { "content-type": "application/json", "x-session-id": sid },
       body: JSON.stringify({ summary: "Job", lineItems: [], status: "sent" }),
     }).then((r) => r.json());
+    await markSent(PORT, sid, q.id);
 
     await drain(
       await fetch(`http://localhost:${PORT}/quotes/${q.id}/accept`, {
