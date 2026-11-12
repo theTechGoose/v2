@@ -49,6 +49,7 @@ import { type Lang, langSignal, tFor } from "../lib/i18n.ts";
 import {
   cardShowsCustomerLink,
   copyCustomerLink,
+  customerLinkOwnerIds,
   customerLinkUrl,
   dividerShowsCustomerLink,
   type LinkToast as LinkToastState,
@@ -6704,6 +6705,19 @@ export default function AsstChat({
                 visible,
                 (x) => reviewedCtas.has(x.id) || settledCtas.has(x.id),
               );
+              // REQ-571 (demo cycle 4, p4-p2c): one customer-link row per
+              // quote — on the newest divider / sent card that carries it,
+              // never one on the card AND one under the send divider.
+              const linkOwners = customerLinkOwnerIds(
+                ordered,
+                (p: ActionCardPayload) =>
+                  cardShowsCustomerLink(
+                    p.status,
+                    ruleQuote && p.quoteId === ruleQuote.id
+                      ? ruleQuote
+                      : undefined,
+                  ),
+              );
               return ordered.map((m) => {
                 const wizardStepId = (
                   m.payload as { wizardStepId?: string } | undefined
@@ -6787,7 +6801,8 @@ export default function AsstChat({
                         </div>
                         <div class="phase-divider__line" />
                       </div>
-                      {dividerShowsCustomerLink(dp) && dp.quoteId
+                      {dividerShowsCustomerLink(dp) && dp.quoteId &&
+                          linkOwners.has(m.id) // REQ-571: once per quote
                         ? (
                           // REQ-310 (m13): the customer's link stays one
                           // click away after the send, outside the menu.
@@ -9342,6 +9357,9 @@ export default function AsstChat({
                             )
                             : null}
                           {payload.quoteId &&
+                              // REQ-571 (c4 p4-p2c): unless a later send
+                              // divider already carries this quote's row.
+                              linkOwners.has(m.id) &&
                               // REQ-460 (c3 M16): only once the quote went
                               // out — a locked quote is still being finished.
                               cardShowsCustomerLink(

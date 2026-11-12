@@ -256,3 +256,46 @@ Deno.test("REQ-472 (demo cycle 3, p8-pair5-c): /assistant after a send — the c
       "the full link is on the hover title",
     );
   }));
+
+Deno.test("REQ-571 (demo cycle 4, p4-p2c): /assistant after lock + send — ONE 'Open as customer' row for the quote, not one on the card and one under the divider", (t) =>
+  story(t, async ({ page, expect, http, baseUrl }) => {
+    const { auth } = await signIn(http, page, baseUrl);
+    const { customer, quote } = await seedQuote(http, auth);
+    const conv = await post(http, auth, "/api/agents/conversations", {
+      quoteId: quote.id,
+      customerId: customer.id,
+    });
+    // the lock appends the quote's action card; the send appends the divider
+    await post(http, auth, `/api/agents/conversations/${conv.id}/lock-quote`, {
+      quoteId: quote.id,
+    });
+    await post(http, auth, `/api/agents/conversations/${conv.id}/send-quote`, {
+      quoteId: quote.id,
+      channel: "email",
+      language: "en",
+    });
+
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await page.goto(`/assistant/${conv.id}`);
+    await page.locator(".action-card").first().waitFor({
+      state: "visible",
+      timeout: 20_000,
+    });
+    const rows = page.locator("[data-cy='customer-link']");
+    await rows.first().waitFor({ state: "visible", timeout: 20_000 });
+    // the card's gate reads the fetched quote row: let it land
+    await page.waitForTimeout(1_500);
+    expect.eq(
+      await rows.count(),
+      1,
+      "one customer-link row for the one quote",
+    );
+    expect.eq(
+      await page.locator(
+        `[data-cy='customer-link-open'][href='/q/${quote.id}']`,
+      )
+        .count(),
+      1,
+      "one 'Open as customer' link to /q/<id>",
+    );
+  }));
