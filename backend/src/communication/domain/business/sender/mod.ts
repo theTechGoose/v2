@@ -31,6 +31,16 @@ export function aliasFrom(alias: string | undefined | null): string {
   return ALIAS.test(slug) ? `${slug}@${SEND_DOMAIN}` : `noreply@${SEND_DOMAIN}`;
 }
 
+/** REQ-628: the From of a contractor's paperwork to their customer — the business's name as the
+ *  display name ("A2Z Landscape LLC" <a2z-landscape-llc@documonster.com>), so the customer's inbox
+ *  names the business, never DocuMonster. No name → the bare alias. Quotes, angle brackets and
+ *  line breaks are dropped from the name so it can never break the header. */
+export function businessFrom(input: { alias?: string | null; name?: string | null }): string {
+  const address = aliasFrom(input.alias);
+  const name = (input.name ?? "").replace(/[\r\n"<>\\]/g, " ").replace(/\s+/g, " ").trim();
+  return name ? `"${name}" <${address}>` : address;
+}
+
 /** the bare, lowercased address of a From line: `"Name" <addr>` or `addr` */
 export function senderAddress(from: string): string {
   const inAngles = from.match(/<([^<>]*)>\s*$/);

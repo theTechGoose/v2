@@ -1,6 +1,7 @@
 import { Brand } from "./ui/Brand.tsx";
 import { Icon } from "./ui/Icon.tsx";
 import { type Lang, tFor } from "../lib/i18n.ts";
+import { type PersonLike, personName } from "../../shared/person-name/mod.ts";
 
 export interface NavItem {
   href: string;
@@ -28,7 +29,7 @@ export const NAV_ITEMS: NavItem[] = [
 interface Props {
   active?: string;
   badges?: Partial<Record<string, number>>;
-  user?: { name?: string; phoneNumber: string };
+  user?: PersonLike & { phoneNumber: string };
   business?: string;
   lang?: Lang;
 }
@@ -36,7 +37,9 @@ interface Props {
 export function AppSidebar(
   { active, badges = {}, user, business, lang = "en" }: Props,
 ) {
-  const initials = (user?.name ?? user?.phoneNumber ?? "?").trim().slice(0, 1)
+  // REQ-624: the person signed in — an editor's own name while she acts for the owner's account
+  const person = personName(user);
+  const initials = (person ?? user?.phoneNumber ?? "?").trim().slice(0, 1)
     .toUpperCase();
   return (
     <aside class="sidebar" aria-label={tFor(lang, "appNav.ariaPrimary")}>
@@ -65,7 +68,7 @@ export function AppSidebar(
         <div class="avatar">{initials}</div>
         <div class="col" style="line-height:1.2">
           <strong style="font-size:14px">
-            {user?.name ?? tFor(lang, "common.account")}
+            {person ?? tFor(lang, "common.account")}
           </strong>
           {business ? <span class="micro">{business}</span> : null}
         </div>

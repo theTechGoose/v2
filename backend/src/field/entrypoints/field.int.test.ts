@@ -1631,3 +1631,50 @@ Deno.test("REQ-177 with the account's fieldTexts flag off nothing is texted and 
     });
   });
 });
+
+// REQ-627 — a voided invoice frees its field-batch tasks to be billed again;
+// "Void & duplicate" moves them to the corrected draft instead (never billed twice)
+Deno.test("REQ-627 void frees the batch's tasks for the next pull; void & duplicate keeps them on the corrected draft", async () => {
+  await withServer(async (call) => {
+    const { H, W, today } = await setUp(call);
+    const mine =
+      (await call("GET", `/field/worker/tasks?date=${today}`, undefined, W))
+        .body;
+    for (const t of mine) {
+      await call("POST", `/field/worker/tasks/${t.id}/complete`, {}, W);
+    }
+    const pulled = await call("POST", "/field/batches/pull", {
+      from: today,
+      to: today,
+    }, H);
+    const inv = pulled.body.invoices[0];
+    await call("PUT", `/invoices/${inv.id}`, { status: "sent" }, H);
+    // a sent invoice cannot be deleted — it is voided
+    const del = await call("DELETE", `/invoices/${inv.id}`, undefined, H);
+    assertEquals([del.status, del.body.reason], [409, "must_void"]);
+    // void & duplicate: the copy carries the tasks — a pull finds nothing
+    const dup = await call("POST", `/invoices/${inv.id}/void-duplicate`, {
+      reason: "wrong price",
+    }, H);
+    assertEquals(dup.status, 200);
+    assertEquals(dup.body.voided.status, "void");
+    assertEquals(dup.body.draft.status, "draft");
+    const again = await call("POST", "/field/batches/pull", {
+      from: today,
+      to: today,
+    }, H);
+    assertEquals(again.body.invoices.length, 0, "the copy still bills them");
+    // send the copy, then void it outright: now the tasks are free again
+    await call("PUT", `/invoices/${dup.body.draft.id}`, { status: "sent" }, H);
+    const voided = await call("POST", `/invoices/${dup.body.draft.id}/void`, {
+      reason: "customer cancelled",
+    }, H);
+    assertEquals([voided.status, voided.body.status], [200, "void"]);
+    const third = await call("POST", "/field/batches/pull", {
+      from: today,
+      to: today,
+    }, H);
+    assertEquals(third.body.invoices.length, 1, "the voided bill's tasks are pullable");
+    assertEquals(third.body.invoices[0].amount, inv.amount);
+  });
+});

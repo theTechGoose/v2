@@ -27,8 +27,14 @@ import {
 } from "../lib/clients-display.ts";
 import {
   formatPhoneDisplay,
+  hasAddress,
   telHref,
 } from "../../shared/quote-flow/format-helpers.ts";
+import {
+  clientCtaAction,
+  clientCtaMessageKind,
+  messageHref,
+} from "../../shared/card-actions/mod.ts";
 
 // Chip set matches the canonical reference (DocuMonster Clients.html)
 // — six entries with the exact labels from the design source. URL
@@ -85,11 +91,16 @@ interface CardProps {
   isOpen: boolean;
   onOpen: () => void;
   onClose: () => void;
+  /** REQ-626 — the client's sheet (Open card, the "Open card" CTA) */
+  onOpenCard: (id: string) => void;
+  /** REQ-625 — the edit form (an address or a contact still to add) */
+  onEdit: (c: CustomerCard) => void;
   lang: "en" | "es";
 }
 
 function ClientCard(
-  { c, subs, idx, isOpen, onOpen, onClose, lang }: CardProps,
+  { c, subs, idx, isOpen, onOpen, onClose, onOpenCard, onEdit, lang }:
+    CardProps,
 ) {
   const mood = moodFor(c, lang);
   const initials = initialsOf(c.name);
@@ -100,6 +111,26 @@ function ClientCard(
   const cta = ctaFor(c, lang);
   const balance = balanceDisplay(c, lang);
   const address = addressFor(c, lang);
+  // REQ-626: Message is a text (or an email) to this client; with no contact
+  // on file it opens the edit form so one can be added.
+  const msgHref = messageHref(c);
+
+  /** REQ-626: the CTA does what it says — a pre-filled message to the
+   *  client, or (its "Open card" label) the client's sheet. */
+  function onCta(e: Event) {
+    e.stopPropagation();
+    const kind = clientCtaMessageKind(c);
+    if (clientCtaAction(c) === "open" || !kind) return onOpenCard(c.id);
+    const href = messageHref(
+      c,
+      tFor(lang, `clientsBoard.msg.${kind}`, {
+        name: c.name.trim().split(/\s+/)[0] ?? c.name,
+        amount: balance.text,
+      }),
+    );
+    if (href) globalThis.location.href = href;
+    else onOpenCard(c.id);
+  }
 
   function onCardClick(e: Event) {
     const target = e.target as HTMLElement;
@@ -165,7 +196,12 @@ function ClientCard(
         )}
       </div>
       <div class="ccard2__foot">
-        <button class="ccard2__nudge" type="button">
+        <button
+          class="ccard2__nudge"
+          type="button"
+          data-cy="ccard2-cta"
+          onClick={onCta}
+        >
           {cta} <span class="ccard2__nudge-arrow">→</span>
         </button>
         <div class="ccard2__bal-wrap">
@@ -236,20 +272,54 @@ function ClientCard(
               </span>
             </a>
           )}
-          <div class="ccard2__panel-row">
-            <span class="ccard2__panel-row-icon">
-              <I d={ICN.pin} size={13} sw={2.2} />
-            </span>
-            <span class="ccard2__panel-row-text">
-              <div class="ccard2__panel-row-lbl">
-                {tFor(lang, "clientsBoard.panel.address")}
-              </div>
-              <div class="ccard2__panel-row-val">{address}</div>
-            </span>
-            <span class="ccard2__panel-row-arrow">
-              <I d={ICN.arrow} size={12} sw={2.4} />
-            </span>
-          </div>
+          {/* REQ-626: the address row goes somewhere — the map, or (none yet) the edit form */}
+          {hasAddress(c)
+            ? (
+              <a
+                class="ccard2__panel-row"
+                data-cy="ccard2-address"
+                href={`https://www.google.com/maps/search/?api=1&query=${
+                  encodeURIComponent(address)
+                }`}
+                target="_blank"
+                rel="noopener"
+              >
+                <span class="ccard2__panel-row-icon">
+                  <I d={ICN.pin} size={13} sw={2.2} />
+                </span>
+                <span class="ccard2__panel-row-text">
+                  <div class="ccard2__panel-row-lbl">
+                    {tFor(lang, "clientsBoard.panel.address")}
+                  </div>
+                  <div class="ccard2__panel-row-val">{address}</div>
+                </span>
+                <span class="ccard2__panel-row-arrow">
+                  <I d={ICN.arrow} size={12} sw={2.4} />
+                </span>
+              </a>
+            )
+            : (
+              <button
+                type="button"
+                class="ccard2__panel-row"
+                data-cy="ccard2-address"
+                onClick={() => onEdit(c)}
+                style="width:100%;border:0;background:transparent;font:inherit;text-align:left;cursor:pointer"
+              >
+                <span class="ccard2__panel-row-icon">
+                  <I d={ICN.pin} size={13} sw={2.2} />
+                </span>
+                <span class="ccard2__panel-row-text">
+                  <div class="ccard2__panel-row-lbl">
+                    {tFor(lang, "clientsBoard.panel.address")}
+                  </div>
+                  <div class="ccard2__panel-row-val">{address}</div>
+                </span>
+                <span class="ccard2__panel-row-arrow">
+                  <I d={ICN.arrow} size={12} sw={2.4} />
+                </span>
+              </button>
+            )}
         </div>
         {/* REQ-145: every subscription of this customer, each a link to the field page */}
         <div
@@ -302,13 +372,35 @@ function ClientCard(
           ))}
         </div>
         <div class="ccard2__panel-actions">
-          <button class="ccard2__panel-act" type="button">
-            <I d={ICN.msg} size={12} sw={2.4} />{" "}
-            {tFor(lang, "clientsBoard.panel.message")}
-          </button>
+          {msgHref
+            ? (
+              <a
+                class="ccard2__panel-act"
+                data-cy="ccard2-message"
+                href={msgHref}
+                style="text-decoration:none"
+              >
+                <I d={ICN.msg} size={12} sw={2.4} />{" "}
+                {tFor(lang, "clientsBoard.panel.message")}
+              </a>
+            )
+            : (
+              <button
+                class="ccard2__panel-act"
+                type="button"
+                data-cy="ccard2-message"
+                title={tFor(lang, "clientSheet.noContact")}
+                onClick={() => onEdit(c)}
+              >
+                <I d={ICN.msg} size={12} sw={2.4} />{" "}
+                {tFor(lang, "clientsBoard.panel.message")}
+              </button>
+            )}
           <button
             class="ccard2__panel-act ccard2__panel-act--pink"
             type="button"
+            data-cy="ccard2-open"
+            onClick={() => onOpenCard(c.id)}
           >
             <I d={ICN.eye} size={12} sw={2.4} />{" "}
             {tFor(lang, "clientsBoard.panel.openCard")}
@@ -337,6 +429,10 @@ interface BoardProps {
   lang?: "en" | "es";
   /** REQ-145 — the account's subscriptions by customer id */
   subsByCustomer?: Map<string, SubscriptionView[]>;
+  /** REQ-626 — open the client's sheet */
+  onOpenCard?: (id: string) => void;
+  /** REQ-625 — open the edit form */
+  onEdit?: (c: CustomerCard) => void;
 }
 
 export default function ClientsBoard(
@@ -354,9 +450,13 @@ export default function ClientsBoard(
     children,
     lang = "en",
     subsByCustomer,
+    onOpenCard = () => {},
+    onEdit = () => {},
   }: BoardProps,
 ) {
   const [openId, setOpenId] = useState<string | null>(null);
+  // REQ-626: the sort button sorts — the API's A–Z, or warmest first (this page)
+  const [sortBy, setSortBy] = useState<"name" | "warmth">("name");
 
   useEffect(() => {
     if (!openId) return;
@@ -376,7 +476,9 @@ export default function ClientsBoard(
   }, [openId]);
 
   // REQ-135 — the rows ARE the page: the API searched, filtered and cut them
-  const rows = cards;
+  const rows = sortBy === "warmth"
+    ? [...cards].sort((a, b) => (b.temp ?? 0) - (a.temp ?? 0))
+    : cards;
 
   return (
     <>
@@ -412,8 +514,16 @@ export default function ClientsBoard(
             );
           })}
         </div>
-        <button class="ctoolbar2__sort" type="button">
-          {tFor(lang, "clientsBoard.sort.warmth")}{" "}
+        <button
+          class="ctoolbar2__sort"
+          type="button"
+          data-cy="clients-sort"
+          aria-label={tFor(lang, "clientsBoard.sort.toggle")}
+          onClick={() => setSortBy((s) => (s === "name" ? "warmth" : "name"))}
+        >
+          {sortBy === "name"
+            ? tFor(lang, "clientsBoard.sort.name")
+            : tFor(lang, "clientsBoard.sort.warmth")}{" "}
           <I d={<path d="m6 9 6 6 6-6" />} size={12} sw={2.5} />
         </button>
         {/* REQ-208: the customers export carries numbers, contacts, documents and balances */}
@@ -438,6 +548,14 @@ export default function ClientsBoard(
               isOpen={openId === c.id}
               onOpen={() => setOpenId(c.id)}
               onClose={() => setOpenId(null)}
+              onOpenCard={(id) => {
+                setOpenId(null);
+                onOpenCard(id);
+              }}
+              onEdit={(x) => {
+                setOpenId(null);
+                onEdit(x);
+              }}
               lang={lang}
             />
           ))}

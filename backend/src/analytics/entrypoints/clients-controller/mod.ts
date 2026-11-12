@@ -10,7 +10,7 @@ import type {
 } from "@analytics/dto/clients-stats.ts";
 import { UserStore } from "@users/domain/data/user-store/mod.ts";
 import { SessionStore } from "@users/domain/data/session-store/mod.ts";
-import { requireUser } from "@users/domain/coordinators/require-user/mod.ts";
+import { requireSession, requireUser, uiLangOf } from "@users/domain/coordinators/require-user/mod.ts";
 import type { Lang } from "@core/i18n/mod.ts";
 import { clientsPage, type ClientsPageResponse } from "@analytics/domain/business/clients-page/mod.ts"; // REQ-135
 
@@ -53,8 +53,9 @@ export class ClientsController {
     @Query("q") q?: string,
     @Query("status") status?: string,
   ): Promise<ClientsPageResponse> {
-    const user = await requireUser(ctx, this.sessions, this.users);
-    const cards = await this.flow.run(user.id, new Date(), (user.language ?? "en") as Lang);
+    const signedIn = await requireSession(ctx, this.sessions, this.users);
+    const user = signedIn.user;
+    const cards = await this.flow.run(user.id, new Date(), uiLangOf(signedIn) as Lang); // REQ-631: the reader's language
     return clientsPage(cards, { page: Number(page), pageSize: Number(pageSize), q, status });
   }
 

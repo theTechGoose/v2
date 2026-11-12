@@ -20,6 +20,7 @@
  * adds entries to STEPS without touching the engine.
  */
 import type { ComponentChildren } from "preact";
+import { personLanguage } from "../../shared/person-name/mod.ts"; // REQ-631
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import { type Lang, langSignal, persistLang } from "../lib/lang.ts";
 import { t } from "../lib/i18n.ts";
@@ -1236,7 +1237,7 @@ export default function WelcomeWizard(
   // the cookie/localStorage agree and other pages render the same language.
   useEffect(() => {
     const stored = globalThis.localStorage?.getItem("pm:lang") as Lang | null;
-    const resolved = initialLang ?? snapshot.user.language ?? stored ?? "en";
+    const resolved = initialLang ?? personLanguage(snapshot.user, snapshot.actor) ?? stored ?? "en"; // REQ-631
     langSignal.value = resolved;
     persistLang(resolved);
     const unsub = langSignal.subscribe(() => force((n) => n + 1));

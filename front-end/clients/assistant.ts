@@ -300,6 +300,13 @@ export const assistantClient = {
           email?: string;
           phoneNumber?: string;
           isBusiness?: boolean;
+          businessName?: string;
+          /** REQ-625: the shared customer form's address parts + notes */
+          street?: string;
+          city?: string;
+          state?: string;
+          zip?: string;
+          notes?: string;
         };
       };
       followUpValues?: Record<string, string | number>;

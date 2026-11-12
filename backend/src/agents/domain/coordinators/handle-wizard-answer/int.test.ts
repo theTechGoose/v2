@@ -567,3 +567,37 @@ Deno.test("REQ-029 NW-22 own-contact create_new rejects with the English diction
   );
   await resetKv();
 });
+
+Deno.test("REQ-625 handle-wizard-answer: the assistant's new customer carries the full form — address parts, composed address, notes", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const { flow, user, conv, customers } = await setupTermsForRealUser({
+    phoneNumber: "+15403331334",
+  });
+  await flow.run({
+    userId: user.id,
+    conversationId: conv.id,
+    stepId: "customer",
+    optionId: "create_new",
+    customer: {
+      create: {
+        name: "Maria Lopez",
+        phoneNumber: "512-555-0101",
+        businessName: "Lopez Properties",
+        street: "4410 Ranch Rd",
+        city: "Austin",
+        state: "TX",
+        zip: "78735",
+        notes: "Gate code 4411",
+      },
+    },
+  });
+  const [saved] = await customers.listByUser(user.id);
+  assertEquals(saved.name, "Maria Lopez");
+  assertEquals(saved.businessName, "Lopez Properties");
+  assertEquals(saved.street, "4410 Ranch Rd");
+  assertEquals(saved.zip, "78735");
+  assertEquals(saved.address, "4410 Ranch Rd, Austin, TX 78735");
+  assertEquals(saved.notes, "Gate code 4411");
+  await resetKv();
+});

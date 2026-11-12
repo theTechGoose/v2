@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "preact/hooks";
+import { editableName } from "../../shared/person-name/mod.ts"; // REQ-624
 import { type Lang, langSignal, tFor } from "../lib/i18n.ts";
 
 const PINK = "#FF6B6B";
@@ -53,11 +54,12 @@ export default function OnboardingProgress(
         if (!r.ok) return;
         const j = await r.json() as {
           user?: { name?: string };
+          actor?: { name?: string; needsName?: boolean };
           identity?: { businessName?: string; legalName?: string };
           address?: { state?: string; postal?: string };
         };
         let s: Step = 0;
-        if (j.user?.name?.trim()) s = (s + 1) as Step;
+        if (editableName(j.user, j.actor).trim()) s = (s + 1) as Step; // REQ-624: the person signed in
         if (
           (j.identity?.businessName?.trim() || j.identity?.legalName?.trim())
         ) s = (s + 1) as Step;

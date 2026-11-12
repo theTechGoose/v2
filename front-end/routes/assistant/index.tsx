@@ -1,4 +1,9 @@
 import { asset, Head } from "fresh/runtime";
+import {
+  greetingFirstName,
+  personLanguage,
+  personName,
+} from "../../../shared/person-name/mod.ts"; // REQ-624
 import { define } from "../../utils.ts";
 import SiteFooter from "../../components/SiteFooter.tsx";
 import { getSessionId } from "../../lib/auth.ts";
@@ -55,18 +60,19 @@ export default define.page(async function AssistantHome(ctx) {
   const profile = await profileClient.get({ sessionId }).catch(() =>
     null as ProfileSnapshot | null
   );
-  const lang = profile?.user?.language === "es" ? "es" : "en";
+  const lang = personLanguage(profile?.user, profile?.actor) === "es"
+    ? "es"
+    : "en";
 
-  const greetingName = user?.name?.trim()
-    ? user.name.trim().split(" ")[0]
-    : tFor(lang, "common.thereFallback");
+  const greetingName = greetingFirstName(user) ||
+    tFor(lang, "common.thereFallback");
 
   const businessName = profile?.identity?.businessName ??
     profile?.identity?.displayName;
   const userInitials = profile?.initials && profile.initials !== "?"
     ? profile.initials
     : deriveUserInitials({
-      name: user?.name,
+      name: personName(user), // REQ-624: the chat's "me" is the person signed in
       businessName,
       phoneNumber: user?.phoneNumber,
     });

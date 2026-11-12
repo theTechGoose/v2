@@ -25,7 +25,7 @@ import { parseCreateAgentConversation } from "@agents/dto/conversation.ts";
 import { shouldTransitionToTerms } from "@agents/domain/business/derive-phase/mod.ts";
 import { UserStore } from "@users/domain/data/user-store/mod.ts";
 import { SessionStore } from "@users/domain/data/session-store/mod.ts";
-import { requireUser } from "@users/domain/coordinators/require-user/mod.ts";
+import { requireSession, requireUser, uiLangOf } from "@users/domain/coordinators/require-user/mod.ts";
 import { CustomerStore } from "@crm/domain/data/customer-store/mod.ts";
 import { QuoteStore } from "@paperwork/domain/data/quote-store/mod.ts";
 
@@ -144,10 +144,12 @@ export class ConversationsController {
     @Param("id") id: string,
     @Query("docKind") docKindQ?: string,
   ) {
-    const user = await requireUser(ctx, this.sessions, this.users);
+    const signedIn = await requireSession(ctx, this.sessions, this.users);
+    const user = signedIn.user;
     // UX-12: the phase divider is STORED — it must be written in the
     // contractor's own language, never frozen English into a Spanish chat.
-    const lang = user.language === "es" ? "es" : "en";
+    // REQ-631: the person driving the chat — an editor's own, not the owner's.
+    const lang = uiLangOf(signedIn);
     // REQ-024: ?docKind=invoice runs the invoice wizard. A query param, not a
     // body: this POST is sent body-less by the app and the e2e alike.
     const docKind = docKindQ === "invoice" ? "invoice" : docKindQ === "quote" ? "quote" : undefined;

@@ -7,6 +7,7 @@
  *      GET /analytics/clients/top       → TopClientsResponse
  */
 import { api, type ApiOptions } from "../lib/api.ts";
+import type { CustomerPayload } from "../../shared/customer-form/mod.ts";
 
 export type ClientStatus = "active" | "lead" | "owes" | "regular" | "cold";
 export type ClientLastTone = "hot" | "warm" | "cold";
@@ -24,6 +25,13 @@ export interface CustomerCard {
   email?: string;
   phoneNumber?: string;
   address?: string;
+  /** REQ-625: the address in parts; `address` is composed from them */
+  street?: string;
+  city?: string;
+  state?: string;
+  zip?: string;
+  /** REQ-198: the C- number */
+  number?: string;
   notes?: string;
   businessName?: string;
   segment?: Exclude<ClientSegmentKey, "unsorted">;
@@ -103,15 +111,13 @@ export const clientsClient = {
       ...opts,
       query: { limit },
     }),
+  /** REQ-626 — one customer (the client sheet opens by id, any page) */
+  get: (id: string, opts: ApiOptions = {}) =>
+    api.get<CustomerCard>(`/customers/${encodeURIComponent(id)}`, opts),
+  /** REQ-625 — PUT /customers/:id (the edit form sends every field) */
   update: (id: string, patch: Record<string, unknown>, opts: ApiOptions = {}) =>
-    api.put<CustomerCard>(`/customers/${id}`, patch, opts),
-  create: (
-    patch: {
-      name: string;
-      phoneNumber?: string;
-      email?: string;
-      businessName?: string;
-    },
-    opts: ApiOptions = {},
-  ) => api.post<CustomerCard>("/customers", patch, opts),
+    api.put<CustomerCard>(`/customers/${encodeURIComponent(id)}`, patch, opts),
+  /** REQ-625 — the full customer form */
+  create: (patch: CustomerPayload, opts: ApiOptions = {}) =>
+    api.post<CustomerCard>("/customers", patch, opts),
 };

@@ -1,8 +1,11 @@
 import { asset, Head } from "fresh/runtime";
+import {
+  greetingFirstName,
+  personLanguage,
+} from "../../../shared/person-name/mod.ts"; // REQ-624
 import { define } from "../../utils.ts";
 import SiteFooter from "../../components/SiteFooter.tsx";
 import { tFor } from "../../lib/i18n.ts";
-import { isPlaceholderName } from "../../../shared/quote-flow/outbound-identity.ts";
 import DashSidebar from "../../islands/DashSidebar.tsx";
 import DashTopbar from "../../islands/DashTopbar.tsx";
 import DashboardPage from "../../islands/DashboardPage.tsx";
@@ -35,12 +38,10 @@ const MONTH_KEYS = [
 
 export default define.page(function Dashboard(ctx) {
   const user = ctx.state.user;
-  const lang = user?.language === "es" ? "es" : "en";
+  const lang = personLanguage(user) === "es" ? "es" : "en";
   // UX-27: the seeded placeholder ("Nuevo usuario"/"New user") is not a real
   // name — never greet the user as "Nuevo"; greet namelessly instead.
-  const realName = isPlaceholderName(user?.name)
-    ? undefined
-    : user?.name?.trim();
+  const realName = greetingFirstName(user); // REQ-624: the signed-in person (the editor while acting)
   const greetingName = (realName || tFor(lang, "common.thereFallback"))
     .split(" ")[0];
   // Passed as a dict KEY so the topbar re-localizes it live when the

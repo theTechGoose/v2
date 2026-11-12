@@ -49,6 +49,7 @@ import { SendPaperworkEmail } from "@paperwork/domain/coordinators/send-paperwor
 import { EventBus } from "@core/business/events/mod.ts";
 import type { AgentConversation } from "@agents/dto/conversation.ts";
 import type { AgentMessage } from "@agents/dto/message.ts";
+import { hasAnyPayWay } from "#payments/pay-links.ts";
 
 /** Confirmation phrases that mean "lock the active draft quote." When the
  *  user types one of these AND the conversation already carries a draft
@@ -103,6 +104,9 @@ export interface HandleChatInput {
    *  render an image bubble pointing at /api/files/:fileId — and so
    *  history-replay can re-fetch image bytes for the LLM each turn. */
   payload?: Record<string, unknown>;
+  /** REQ-631 — the signed-in person's UI language (an editor's own while acting); the server-authored
+   *  replies follow it. Absent → the account's user.language, as before. */
+  uiLang?: "en" | "es";
 }
 
 export interface HandleChatResult {
@@ -181,7 +185,7 @@ export class HandleChatMessage {
       typeof input.content === "string";
     if (inputIsText) {
       const me = await this.users.get(input.userId).catch(() => null);
-      const lang = me?.language === "es" ? "es" : "en";
+      const lang = input.uiLang ?? (me?.language === "es" ? "es" : "en"); // REQ-631
       const ident = await this.identity.get(input.userId).catch(() => null);
       const addr = await this.addresses.get(input.userId).catch(() => null);
       const needsName = !me?.name || me.name.trim().length === 0;
@@ -190,10 +194,7 @@ export class HandleChatMessage {
       const needsState = !addr?.state || addr.state.trim().length === 0;
       const needsAddress = !addr?.postal || addr.postal.trim().length === 0;
       const needsEmail = !me?.email || me.email.trim().length === 0;
-      const acceptedAny = Object.values(ident?.acceptedPaymentMethods ?? {})
-        .some(
-          (m) => m && (m as { enabled?: boolean }).enabled === true,
-        );
+      const acceptedAny = hasAnyPayWay(ident?.acceptedPaymentMethods); // REQ-630 AMENDMENT
       const needsPayout = !acceptedAny;
       // Pick the assistant's next ask once name/biz/state/address are
       // done. Email + payment are the two nice-to-haves that come last;
@@ -612,7 +613,7 @@ export class HandleChatMessage {
     const contractor = await this.users.get(input.userId).catch(() =>
       undefined
     );
-    const replyLang = contractor?.language === "es" ? "es" : "en";
+    const replyLang = input.uiLang ?? (contractor?.language === "es" ? "es" : "en"); // REQ-631: the person's
 
     // ---- N5 fast-path: confirmation → fire lock_quote without the LLM ----
     // The model is unreliable at calling lock_quote on short confirmations

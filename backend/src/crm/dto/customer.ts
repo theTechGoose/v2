@@ -32,6 +32,23 @@ export class CreateCustomerDto {
   @IsString()
   address?: string;
 
+  /** REQ-625: the address in parts; the store composes `address` from them. */
+  @IsOptional()
+  @IsString()
+  street?: string;
+
+  @IsOptional()
+  @IsString()
+  city?: string;
+
+  @IsOptional()
+  @IsString()
+  state?: string;
+
+  @IsOptional()
+  @IsString()
+  zip?: string;
+
   @IsOptional()
   @IsString()
   notes?: string;
@@ -69,6 +86,23 @@ export class UpdateCustomerDto {
   @IsOptional()
   @IsString()
   address?: string;
+
+  /** REQ-625: the address in parts; the store composes `address` from them. */
+  @IsOptional()
+  @IsString()
+  street?: string;
+
+  @IsOptional()
+  @IsString()
+  city?: string;
+
+  @IsOptional()
+  @IsString()
+  state?: string;
+
+  @IsOptional()
+  @IsString()
+  zip?: string;
 
   @IsOptional()
   @IsString()

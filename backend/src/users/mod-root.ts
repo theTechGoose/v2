@@ -58,6 +58,12 @@ import { NumberingStore } from "@users/domain/data/numbering-store/mod.ts"; // R
 import { NumberingController } from "@users/entrypoints/numbering-controller/mod.ts"; // REQ-199
 import { SetupReset } from "@users/domain/coordinators/setup-reset/mod.ts"; // REQ-199
 import { TransferAccount } from "@users/domain/coordinators/transfer-account/mod.ts"; // REQ-220
+import { StripeSettingsStore } from "@users/domain/data/stripe-settings-store/mod.ts"; // REQ-212
+import { ConnectStripe } from "@users/domain/coordinators/connect-stripe/mod.ts"; // REQ-212
+import { StripeSettingsController } from "@users/entrypoints/stripe-settings-controller/mod.ts"; // REQ-212
+import { DevStripeController } from "@users/entrypoints/dev-stripe-controller/mod.ts"; // REQ-212
+import { DevAccountAdminsController } from "@users/entrypoints/dev-account-admins-controller/mod.ts"; // REQ-632
+import { StripeGateway } from "@core/data/stripe-gateway/mod.ts"; // REQ-212
 
 /**
  * UsersModule — owns the full user identity surface:
@@ -91,6 +97,9 @@ import { TransferAccount } from "@users/domain/coordinators/transfer-account/mod
     ContractDefaultsController,
     ProfileCompositeController,
     NumberingController, // REQ-199
+    StripeSettingsController, // REQ-212
+    DevStripeController, // REQ-212
+    DevAccountAdminsController, // REQ-632 — fakes only
   ],
   injectables: [
     // identity
@@ -133,6 +142,9 @@ import { TransferAccount } from "@users/domain/coordinators/transfer-account/mod
     DocNumbering, // REQ-198
     NumberingStore, // REQ-199
     SetupReset, // REQ-199
+    StripeSettingsStore, // REQ-212
+    ConnectStripe, // REQ-212
+    StripeGateway, // REQ-212
     TransferAccount, // REQ-220
   ],
 })

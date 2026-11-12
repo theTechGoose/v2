@@ -17,6 +17,7 @@
  * Skip puts a question off, the wizard asks it again next time.
  */
 import { isPlaceholderName } from "./outbound-identity.ts";
+import { hasAnyPayWay } from "../payments/pay-links.ts";
 
 /** the wizard's questions, in its order (front-end/islands/WelcomeWizard.tsx) */
 export const ONBOARDING_QUESTIONS = [
@@ -66,9 +67,7 @@ export function isAnswered(q: OnboardingQuestion, a: OnboardingAnswers): boolean
     case "address":
       return filled(a.address?.street);
     case "payment":
-      return Object.values(
-        (a.identity?.acceptedPaymentMethods ?? {}) as Record<string, { enabled?: boolean } | null | undefined>,
-      ).some((m) => Boolean(m?.enabled));
+      return hasAnyPayWay(a.identity?.acceptedPaymentMethods); // REQ-630 AMENDMENT
     case "logo":
       return filled(a.identity?.logoFileId);
     case "insurance":

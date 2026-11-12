@@ -1,4 +1,10 @@
 import { asset, Head } from "fresh/runtime";
+import {
+  editableName,
+  greetingFirstName,
+  personLanguage,
+  personName,
+} from "../../../shared/person-name/mod.ts"; // REQ-624
 import { define } from "../../utils.ts";
 import SiteFooter from "../../components/SiteFooter.tsx";
 import { getSessionId } from "../../lib/auth.ts";
@@ -49,17 +55,16 @@ export default define.page(async function AssistantThread(ctx) {
     null as ProfileSnapshot | null
   );
 
-  const lang = profile?.user?.language ?? "en";
-  const greetingName =
-    (user?.name?.trim() || tFor(lang, "assistantThread.greetingFallback"))
-      .split(" ")[0];
+  const lang = personLanguage(profile?.user, profile?.actor) ?? "en";
+  const greetingName = greetingFirstName(user) ||
+    tFor(lang, "assistantThread.greetingFallback");
 
   const businessName = profile?.identity?.businessName ??
     profile?.identity?.displayName;
   const userInitials = profile?.initials && profile.initials !== "?"
     ? profile.initials
     : deriveUserInitials({
-      name: user?.name,
+      name: personName(user), // REQ-624: the chat's "me" is the person signed in
       businessName,
       phoneNumber: user?.phoneNumber,
     });
@@ -89,7 +94,7 @@ export default define.page(async function AssistantThread(ctx) {
     postalCode?: string;
   } | undefined;
   const profileFilled = {
-    name: !!profile?.user?.name?.trim(),
+    name: !!editableName(profile?.user, profile?.actor).trim(), // REQ-624: the person signed in
     biz: !!(profile?.identity?.businessName?.trim() ??
       profile?.identity?.legalName?.trim()),
     state: !!addr?.state?.trim(),
