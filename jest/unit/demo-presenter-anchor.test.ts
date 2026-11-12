@@ -366,22 +366,24 @@ describe("REQ-451 the stage: his anchor stays on what he pointed at; a new page 
     );
   });
 
-  test("the ghost: where their screen has his arrow (ghostAt over presenterOnStage), placed again on every layout pass and hidden whenever he points afresh; drawn faint with its label", () => {
-    expect(fn("showGhost")).toMatch(/ghostAt\(/);
-    expect(fn("showGhost")).toMatch(/presenterOnStage\(/);
+  // REQ-642 AMENDMENT (demo-loop cycle 5, m10): the ghost is where their screen REPORTED his
+  // arrow (`reportedGhost` over the customer's `placed` report), no longer the stage's own
+  // replay (`ghostAt` over presenterOnStage), and its tag is "You" — pinned in
+  // demo-stage-own-pointer.test.ts
+  test("the ghost: where their screen has his arrow (REQ-642: reportedGhost over their report), placed again on every layout pass and hidden whenever he points afresh; drawn faint with its label", () => {
+    expect(fn("showGhost")).toMatch(/reportedGhost\(/);
+    expect(fn("showGhost")).not.toMatch(/presenterOnStage\(/);
     expect(fn("replace")).toMatch(/showGhost\(\);/);
     expect(fn("hold")).toMatch(/setGhost\(null\)/);
     expect(stage).toMatch(/<PointerGhost/);
     const ghost = read("front-end/components/demo-mode/PointerGhost.tsx");
     expect(ghost).toMatch(/data-cy="demo-pointer-ghost"/);
     expect(ghost).toMatch(/GHOST_OPACITY/);
-    expect(stage).toContain('t("demoMode.pointerGhost", { name })');
+    expect(stage).toContain('t("demoMode.pointerGhost")');
     const en = JSON.parse(read("lang/en.json")) as Record<string, string>;
     const es = JSON.parse(read("lang/es.json")) as Record<string, string>;
-    expect(en["demoMode.pointerGhost"]).toBe("Your pointer on {name}'s screen");
-    expect(es["demoMode.pointerGhost"]).toBe(
-      "Tu puntero en la pantalla de {name}",
-    );
+    expect(en["demoMode.pointerGhost"]).toBe("You");
+    expect(es["demoMode.pointerGhost"]).toBe("Tú");
   });
 
   test("a colleague's pointer on this stage follows the same rule: on its node or hidden (presenterOnStage → anchorPoint), the off mark passed on", () => {

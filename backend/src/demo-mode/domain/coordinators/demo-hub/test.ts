@@ -1115,3 +1115,52 @@ Deno.test("REQ-436 (demo-loop cycle 3, M2/M2b) a tab's claim carries its browser
     await b.close();
   }
 });
+
+// REQ-642 (demo-loop cycle 5, m10 + setup-14d) — the customer's overlay reports back where it
+// placed each presenter's arrow (`placed`: the anchor, the tip as a viewport fraction, outside),
+// and the stage draws his ghost from that report. The raw text the customer's socket sends passes
+// the server's gate (parseClientMessage), crosses two isolates, and reaches every stage — each
+// keeps the one naming its own pid — stamped as the viewer's, and parses on the stage's side.
+Deno.test("REQ-642 the customer's placed report passes the server's gate, crosses two isolates and reaches every stage intact", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const a = DemoHub.isolated("a");
+  const b = DemoHub.isolated("b");
+  const hans = stampedPeer("presenter", "hans");
+  const lia = stampedPeer("presenter", "lia");
+  const viewer = stampedPeer("viewer");
+  try {
+    await a.join("s642", hans);
+    await a.join("s642", lia);
+    await b.join("s642", viewer);
+    const data = {
+      k: "placed" as const,
+      pid: "hans",
+      a: { vx: 0.5, vy: 0.5, n: { id: 7, x: 0.5, y: 0.5, l: "L1" } },
+      p: { vx: 0.25, vy: 0.75 },
+    };
+    const raw = JSON.stringify({ t: "relay", data });
+    const m = parseClientMessage(raw);
+    assert(
+      m?.t === "relay",
+      "the server's gate drops the customer's placed report",
+    );
+    await b.send("s642", { role: "viewer" }, m);
+    for (const [who, p] of [["hans", hans], ["lia", lia]] as const) {
+      await until(
+        `${who}'s stage gets the report`,
+        () => p.inbox.some((x) => x.t === "relay" && x.data.k === "placed"),
+      );
+      const got = p.inbox.find((x) => x.t === "relay" && x.data.k === "placed");
+      assertEquals(parseServerMessage(JSON.stringify(got)), {
+        t: "relay",
+        from: "viewer",
+        data,
+      });
+    }
+  } finally {
+    await a.close();
+    await b.close();
+    await resetKv();
+  }
+});

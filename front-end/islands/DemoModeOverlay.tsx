@@ -95,6 +95,8 @@ import {
 } from "../../shared/demo-mode/mirror.ts";
 import {
   anchorPoint,
+  placedReport,
+  placedReporter,
   pointInBox,
 } from "../../shared/demo-mode/presenter-anchor.ts";
 import {
@@ -765,14 +767,20 @@ export default function DemoModeOverlay() {
       setCmds((c) => ({ ...c, [pid]: { seq: ++seq.current, ...cmd } }));
     /** REQ-305 — a presenter's pointer placed from its anchor, and where each was last placed */
     const placed = new Map<string, Pt & { outside: boolean }>();
+    /** REQ-642 (cycle 5, m10) — every placing of a presenter's arrow is reported back to the
+     *  stages (each keeps its own pid's): the stage's ghost of his arrow is where THIS screen has
+     *  it, never its own replay's guess. Rate-limited per presenter; the last one always goes */
+    const reporter = placedReporter({ send: (m) => link?.send(m) });
     const place = (pid: string, a: Anchor, kind: "move" | "click") => {
       const p = placeOnScreen(a);
       // REQ-451 — what he pointed at is not on this page (any more): no arrow, kept until it is
       // back or he points elsewhere
       if (!p) {
+        reporter.report(placedReport(pid, a, null, viewportBox()));
         if (placed.delete(pid)) command(pid, { kind: "leave" });
         return;
       }
+      reporter.report(placedReport(pid, a, p, viewportBox()));
       placed.set(pid, { ...p.at, outside: p.outside });
       // REQ-437 — the element's box goes with the point: the tag sits outside it
       command(pid, {
@@ -836,6 +844,7 @@ export default function DemoModeOverlay() {
         if (!online) {
           anchorsRef.current.delete(pid);
           placed.delete(pid);
+          reporter.forget(pid); // REQ-642 — his next stage hears afresh
           command(pid, { kind: "leave" });
         }
         pollRef.current?.();
@@ -864,6 +873,7 @@ export default function DemoModeOverlay() {
         // and this side's resting pointer, which their stage has not seen
         recorder.snapshot();
         resendPointer();
+        reporter.cancel(); // REQ-642 — a new stage has heard no report: the next goes out
         // REQ-372 (cycle 2, m8) — and where this pill is and what it says: every sync or new
         // stage gets it, not only a change of link status
         sentPillRef.current = null;
@@ -893,6 +903,7 @@ export default function DemoModeOverlay() {
             // REQ-242 — a stage missed a frame: the whole screen again (REQ-305: and the pointer)
             recorder.snapshot();
             resendPointer();
+            reporter.cancel(); // REQ-642 — and where his arrow is, on its next placing
             break;
         }
       },
@@ -993,6 +1004,7 @@ export default function DemoModeOverlay() {
       removeEventListener("resize", shifted);
       document.removeEventListener("scroll", shifted, { capture: true });
       ro?.disconnect();
+      reporter.cancel();
       if (raf) cancelAnimationFrame(raf);
       anchorsRef.current.clear();
       throttle.cancel();
