@@ -169,7 +169,12 @@ import {
   findExistingCustomer,
   knownCustomerForStep,
 } from "../../shared/quote-flow/customer-dedupe.ts"; // REQ-331, REQ-390
-import { editDraftSeed } from "../../shared/quote-flow/draft-edit.ts";
+import {
+  dropBareEditSeed,
+  editDraftSeed,
+  isBareEditSeed,
+  showEditHint,
+} from "../../shared/quote-flow/draft-edit.ts";
 import { customerStepFeedback } from "../../shared/quote-flow/customer-contact.ts"; // REQ-278, REQ-390
 import { parseDurationNumber } from "../../shared/quote-flow/duration-input.ts"; // REQ-390
 import { isPlaceholderName } from "../../shared/quote-flow/outbound-identity.ts";
@@ -832,6 +837,10 @@ export default function AsstChat({
     [quote?.description, messages],
   );
   const [draft, setDraft] = useState("");
+  // REQ-464 (demo-loop cycle 3, m33): the prompt Edit seeded the composer
+  // with, so Lock it in / Re-open / send can drop it when nothing was typed
+  // after it, and the composer can say what to type while it is there.
+  const [editSeed, setEditSeed] = useState<string | null>(null);
   /** Inline price-capture flow opened by the "I already have my price"
    *  empty-state prompt. When set, renders the MoneyInput card in place
    *  of the three preset prompts. `priceCents` tracks the live value so
@@ -2174,11 +2183,11 @@ export default function AsstChat({
    * the correction and sends it to the assistant.
    */
   function openDraftEdit() {
-    const next = editDraftSeed(
-      draft,
-      tFor(lang, "asstChat.actionCard.editPrompt"),
-    );
+    const prompt = tFor(lang, "asstChat.actionCard.editPrompt");
+    const next = editDraftSeed(draft, prompt);
     setDraft(next);
+    // REQ-464: remember the seed only when Edit put it there.
+    setEditSeed(next === prompt ? prompt : null);
     // After the re-render has written `next` into the textarea.
     setTimeout(() => {
       const ta = taRef.current;
@@ -2364,6 +2373,15 @@ export default function AsstChat({
   async function sendText(content: string) {
     const trimmed = content.trim();
     if (!trimmed) return;
+    // REQ-464 (m33): the bare Edit seed is not a change — never send
+    // "Change the quote:" on its own; clear it instead.
+    if (isBareEditSeed(content, editSeed)) {
+      setDraft("");
+      setEditSeed(null);
+      autosize();
+      return;
+    }
+    setEditSeed(null);
     // Empty-state job-details capture: the chat input is acting as
     // the answer surface for "tell me the job details", not a chat turn.
     // Intercept here so we don't fire a generic LLM call. This fires
@@ -4038,6 +4056,10 @@ export default function AsstChat({
         const filtered = idx >= 0 ? m.slice(0, idx) : m;
         return [...filtered, ...res.newMessages];
       });
+      // REQ-464 (m33): the card Edit targeted is locked now — a composer
+      // still holding only "Change the quote: " is cleared.
+      setDraft((d) => dropBareEditSeed(d, editSeed));
+      setEditSeed(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "couldn't lock the quote");
     } finally {
@@ -4079,6 +4101,9 @@ export default function AsstChat({
       setQuote((cur) =>
         cur && cur.id === payload.quoteId ? { ...cur, lockedAt: null } : cur
       );
+      // REQ-464 (m33): a stale Edit seed doesn't carry across the re-open.
+      setDraft((d) => dropBareEditSeed(d, editSeed));
+      setEditSeed(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "couldn't re-open the quote");
     } finally {
@@ -9296,7 +9321,9 @@ export default function AsstChat({
                     </div>
                   </div>
                   <div class="composer__hint">
-                    {tFor(lang, "asstChat.composer.hint")}
+                    {showEditHint(draft, editSeed)
+                      ? tFor(lang, "asstChat.actionCard.editHint")
+                      : tFor(lang, "asstChat.composer.hint")}
                   </div>
                 </>
               )}

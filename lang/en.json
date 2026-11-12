@@ -142,6 +142,7 @@
   "assistantThread.pageTitle": "Assistant · DocuMonster",
   "assistantThread.phasePrefix": "Phase: {phase}",
   "assistantThread.statusFallback": "Tell your assistant about a job — voice or text",
+  "asstChat.actionCard.editHint": "Type the change, e.g. tile $3,600",
   "asstChat.actionCard.editPrompt": "Change the quote: ",
   "asstChat.actionCard.jobDetails": "Job details",
   "asstChat.actionCard.lockIn": "Lock it in",
