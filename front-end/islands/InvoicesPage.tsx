@@ -38,6 +38,7 @@ import {
   formatShortDate,
 } from "../../shared/quote-flow/format-helpers.ts";
 import PaymentReceivedForm from "../components/PaymentReceivedForm.tsx";
+import { paymentRecordedText } from "../lib/payment-received.ts";
 import {
   type DispatchChannel,
   interpretSendResult,
@@ -409,6 +410,9 @@ export default function InvoicesPage(_props: { lang?: Lang }) {
   /** REQ-030 (NW-25): the "Create & send" modal navigates away after
    *  dispatching — a half-delivered or failed send is carried across the
    *  reload (sessionStorage) and shown here instead of being dropped. */
+  /** REQ-322 (demo m36): "Payment of $X recorded" after the detail's
+   *  "Payment received" form saves — the page confirms, not just closes. */
+  const [payFlash, setPayFlash] = useState<string | null>(null);
   const [sendFlash] = useState<
     { text: string; partial: boolean } | null
   >(() => {
@@ -564,6 +568,15 @@ export default function InvoicesPage(_props: { lang?: Lang }) {
           {sendFlash.text}
         </p>
       )}
+      {payFlash && (
+        <p
+          role="status"
+          data-cy="payment-recorded"
+          style="margin:0 0 12px;padding:10px 14px;border-radius:10px;background:var(--brand-green-soft,#e8f3e4);color:var(--brand-green,#519843);font-size:13.5px;font-weight:700"
+        >
+          {payFlash}
+        </p>
+      )}
       {
         /* Rendered FIRST (above the hero) so the detail is what the
           contractor lands on when following an ?open= deep link. */
@@ -580,6 +593,8 @@ export default function InvoicesPage(_props: { lang?: Lang }) {
             history.replaceState(null, "", url.toString());
           }}
           onChanged={refreshInvoices}
+          onPaymentRecorded={(cents) =>
+            setPayFlash(paymentRecordedText(lang, cents))}
         />
       )}
       <InvoicesHero
@@ -1170,11 +1185,13 @@ function lineItemsOf(inv: Invoice): EditableLine[] {
  * come AFTER the forms.
  */
 function InvoiceDetail(
-  { inv, lang, onClose, onChanged }: {
+  { inv, lang, onClose, onChanged, onPaymentRecorded }: {
     inv: EnrichedInvoice;
     lang: Lang;
     onClose: () => void;
     onChanged: () => void | Promise<void>;
+    /** REQ-322: the recorded amount (INTEGER CENTS) for the page's flash. */
+    onPaymentRecorded: (cents: number) => void;
   },
 ) {
   type Mode = "none" | "edit" | "discount" | "co" | "pay";
@@ -1594,8 +1611,10 @@ function InvoiceDetail(
             invoiceId={inv.id}
             amountCents={inv.amount}
             lang={lang}
-            onSaved={async () => {
+            onSaved={async (cents) => {
               await onChanged();
+              // REQ-322: confirm before the detail closes.
+              onPaymentRecorded(cents);
               onClose();
             }}
             onCancel={() => setMode("none")}

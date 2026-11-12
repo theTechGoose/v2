@@ -1405,6 +1405,8 @@
   "invoicesPage.pay.errMethod": "Elige cómo pagaron.",
   "invoicesPage.pay.errAmount": "Ingresa el monto recibido.",
   "invoicesPage.pay.errSave": "No se pudo registrar el pago.",
+  "invoicesPage.pay.errDate": "Elige el día en que lo recibiste.",
+  "invoicesPage.pay.recorded": "Se registró el pago de {amount}",
   "invoicesPage.docTitle": "Facturas · DocuMonster",
   "invoicesPage.empty.awaiting": "No hay pagos reportados esperando tu confirmación.",
   "invoicesPage.empty.drafting": "No hay borradores en progreso. Abre el asistente para comenzar uno.",
