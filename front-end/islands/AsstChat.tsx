@@ -10140,6 +10140,10 @@ function CustomerStepPanel(props: {
   // name field to be left.
   const [nameTouched, setNameTouched] = useState(false);
   const [contactTouched, setContactTouched] = useState(false);
+  // REQ-524 (demo-loop cycle 3, p8-pair7-a): a phone / email FORMAT error
+  // waits for that field to be left — not after the first digit typed.
+  const [phoneTouched, setPhoneTouched] = useState(false);
+  const [emailTouched, setEmailTouched] = useState(false);
   const rootRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -10215,7 +10219,13 @@ function CustomerStepPanel(props: {
     // <form>, so the browser's own type=email check never ran.
     const feedback = customerStepFeedback(
       { name: trimmedName, email: trimmedEmail, phoneNumber: trimmedPhone },
-      { ownerEmail, ownerPhone, nameTouched, contactTouched },
+      {
+        ownerEmail,
+        ownerPhone,
+        nameTouched,
+        contactTouched,
+        phoneTouched, emailTouched, // REQ-524
+      },
     );
     const submitDisabled = sending || !feedback.canSubmit;
     // REQ-331 (demo m44): live-search what is typed against the account's
@@ -10316,7 +10326,10 @@ function CustomerStepPanel(props: {
                 setCreatePhone((e.target as HTMLInputElement).value);
                 setContactTouched(true);
               }}
-              onBlur={() => setContactTouched(true)}
+              onBlur={() => {
+                setContactTouched(true);
+                setPhoneTouched(true); // REQ-524
+              }}
               aria-invalid={feedback.phone ? "true" : undefined}
               aria-describedby={feedback.phone ? "cust-phone-err" : undefined}
             />
@@ -10330,7 +10343,10 @@ function CustomerStepPanel(props: {
                 setCreateEmail((e.target as HTMLInputElement).value);
                 setContactTouched(true);
               }}
-              onBlur={() => setContactTouched(true)}
+              onBlur={() => {
+                setContactTouched(true);
+                setEmailTouched(true); // REQ-524
+              }}
               aria-invalid={feedback.email ? "true" : undefined}
               aria-describedby={feedback.email ? "cust-email-err" : undefined}
             />

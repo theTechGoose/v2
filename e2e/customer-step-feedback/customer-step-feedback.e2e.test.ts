@@ -100,7 +100,7 @@ async function clickUntil(
   throw new Error(`${selector}: the click never took`);
 }
 
-Deno.test("REQ-390 m19/m18/M18: the chat's customer form — neutral hint before typing, both bad fields named, 'another Bob' with the existing Bob's phone", (t) =>
+Deno.test("REQ-390 m19/m18/M18 + REQ-524 p8-pair7-a: the chat's customer form — neutral hint before typing, no format error while typing, both bad fields named, 'another Bob' with the existing Bob's phone", (t) =>
   story(t, async ({ page, expect, http, baseUrl }) => {
     const auth = await signIn(http, page, baseUrl);
     await postJson(http, auth, "/api/customers", {
@@ -149,6 +149,34 @@ Deno.test("REQ-390 m19/m18/M18: the chat's customer form — neutral hint before
       `untouched, it is a hint, not an error (${cls})`,
     );
 
+    // REQ-524 (cycle 3, p8-pair7-a): a half-typed phone / email is not
+    // called wrong while the field still has focus — only once it is left
+    const phone = form.locator("input[type=tel]");
+    const email = form.locator("input[type=email]");
+    await phone.fill("512");
+    await page.waitForTimeout(400);
+    expect(
+      (await page.locator("[data-cy='cust-phone-err']").count()) === 0,
+      "REQ-524: no phone error while still typing",
+    );
+    await phone.press("Tab");
+    await page.locator("[data-cy='cust-phone-err']").waitFor({
+      state: "visible",
+      timeout: 10_000,
+    });
+    await email.fill("bob@");
+    await page.waitForTimeout(400);
+    expect(
+      (await page.locator("[data-cy='cust-email-err']").count()) === 0,
+      "REQ-524: no email error while still typing",
+    );
+    await email.press("Tab");
+    await page.locator("[data-cy='cust-email-err']").waitFor({
+      state: "visible",
+      timeout: 10_000,
+    });
+    await email.fill("");
+
     // M18: the same name shows WHICH Bob exists
     const nameInput = form.locator("input.cust-pick__search").first();
     await nameInput.fill("Bob");
@@ -158,7 +186,6 @@ Deno.test("REQ-390 m19/m18/M18: the chat's customer form — neutral hint before
       (await dupe.innerText()).includes("(512) 555-0142"),
       `the warning shows the existing Bob's phone (${await dupe.innerText()})`,
     );
-    const phone = form.locator("input[type=tel]");
     await phone.fill("5125550177");
     await page.waitForFunction(
       () =>
@@ -178,8 +205,8 @@ Deno.test("REQ-390 m19/m18/M18: the chat's customer form — neutral hint before
     // m18: a bad phone AND a bad email are both named, each on its own
     await nameInput.fill("Robert Q");
     await phone.fill("555-12");
-    const email = form.locator("input[type=email]");
     await email.fill("bob@@gmail");
+    await email.press("Tab"); // REQ-524: the message waits for the field to be left
     await page.locator("[data-cy='cust-phone-err']").waitFor({
       state: "visible",
       timeout: 10_000,
