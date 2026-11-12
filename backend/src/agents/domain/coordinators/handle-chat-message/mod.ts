@@ -432,6 +432,10 @@ export class HandleChatMessage {
         status: q.status,
         createdAt: q.createdAt,
         number: q.number,
+        // REQ-654 (cycle 5, M10): the name the quote itself carries
+        customerName: customers.find((c) => c.id === q.customerId)?.name ??
+          q.customerSnapshot?.name ?? undefined,
+        summary: q.summary,
       })),
       customers: customers.map((c) => ({ id: c.id, name: c.name })),
       ...ask,

@@ -227,6 +227,12 @@ export interface TargetQuote {
   createdAt: string;
   /** REQ-315: the document number ("Q-001"). */
   number?: string;
+  /** REQ-654 (cycle 5, M10): the customer as the quote names them — the
+   *  linked record's name, else its snapshot — when it has one. */
+  customerName?: string;
+  /** REQ-654: the quote's card title ("Kitchen remodel — Dana Whitfield");
+   *  read for a name only while no customer is linked. */
+  summary?: string;
 }
 
 export interface TargetCustomer {
@@ -284,6 +290,22 @@ function docNumberKey(s: string): string {
   return s.trim().toUpperCase().replace(/-0+(\d)/, "-$1");
 }
 
+/** REQ-654: the quote names `asked` as its customer — its customer's name
+ *  or snapshot, else (no customer linked) the name on its card title. */
+function boundNames(q: TargetQuote, asked: string): boolean {
+  const who = boundWho(q);
+  return !!who && namesCustomer(asked, who);
+}
+
+/** REQ-654: whoever the quote names as its customer, if anyone. */
+function boundWho(q: TargetQuote): string | undefined {
+  if (q.customerName?.trim()) return q.customerName.trim();
+  if (q.customerId) return undefined;
+  // "Kitchen remodel — Dana Whitfield": the part after the dash names them
+  const who = (q.summary ?? "").split(/\s[—–-]\s/u).slice(1).join(" ").trim();
+  return who || undefined;
+}
+
 export function pickChangeOrderTarget(input: {
   quotes: TargetQuote[];
   customers: TargetCustomer[];
@@ -317,9 +339,23 @@ export function pickChangeOrderTarget(input: {
   if (bound?.customerId && matched.has(bound.customerId)) {
     return { kind: "quote", quoteId: bound.id };
   }
+  // REQ-654 (demo-loop cycle 5, M10): …or when it names them itself — the
+  // chat's draft "Kitchen remodel — Dana Whitfield" has no customer linked
+  // before the Who step, and "Change the quote: cabinets $7,000" with
+  // customerName "Dana Whitfield" got "I couldn't find a quote for Dana
+  // Whitfield" under the very card.
+  if (bound && boundNames(bound, input.customerName)) {
+    return { kind: "quote", quoteId: bound.id };
+  }
   const theirs = live.filter((q) => q.customerId && matched.has(q.customerId))
     .sort(newestFirst);
-  if (theirs.length === 0) return { kind: "none" };
+  if (theirs.length === 0) {
+    // REQ-654: nothing of the named customer's is on file, and the quote on
+    // screen belongs to nobody yet — it is the one meant, never "none".
+    return bound && !bound.customerId && !boundWho(bound)
+      ? { kind: "quote", quoteId: bound.id }
+      : { kind: "none" };
+  }
 
   const open = theirs.filter((q) => (q.status ?? "draft") !== "draft");
   const pool = open.length > 0 ? open : theirs;

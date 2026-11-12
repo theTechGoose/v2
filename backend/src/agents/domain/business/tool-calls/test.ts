@@ -11,6 +11,7 @@
  */
 import { assert, assertEquals, assertStringIncludes } from "#std/assert";
 import type { LLMAction } from "@agents/domain/business/llm/base/mod.ts";
+import { t } from "@core/i18n/mod.ts";
 import {
   isEditAction,
   jobDetailsChangeLine,
@@ -388,5 +389,49 @@ Deno.test("REQ-585 update_terms is a change that runs beside the others, and is 
   assertStringIncludes(
     notDoneLine("es", ["update_terms"]),
     "cambiar los términos",
+  );
+});
+
+// REQ-654 (demo-loop cycle 5, M10, pair 7): "please put the job details in
+// spanish on the agreement too" got "The job details already say that —
+// nothing changed." The Spanish copy already existed, but only behind the
+// Preview's Español toggle, and the reply never said so.
+Deno.test("REQ-654 M10 jobDetailsChangeLine: the other language is already there → say where to see it, in en and es", () => {
+  const current = {
+    description: "Demo\nCabinets",
+    descriptionByLang: { en: "Demo\nCabinets", es: "Demolición\nGabinetes" },
+  };
+  const change = jobDetailsChangeOf("en", current, {
+    en: "Demo\nCabinets",
+    es: "Demolición\nGabinetes",
+  });
+  assertEquals(change.langs, []);
+  assertEquals(
+    jobDetailsChangeLine("en", change),
+    "The Spanish job details are already on the agreement — switch Preview to Español to see them.",
+  );
+  // the model sent only the Spanish copy, unchanged
+  assertEquals(
+    jobDetailsChangeLine(
+      "en",
+      jobDetailsChangeOf("en", current, { es: "Demolición\nGabinetes" }),
+    ),
+    "The Spanish job details are already on the agreement — switch Preview to Español to see them.",
+  );
+  // a Spanish reply about the English copy
+  assertEquals(
+    jobDetailsChangeLine(
+      "es",
+      jobDetailsChangeOf("es", current, { en: "Demo\nCabinets" }),
+    ),
+    "Los detalles del trabajo en inglés ya están en el acuerdo: cambia la vista previa a English para verlos.",
+  );
+  // only the reply's own language, unchanged → the plain line
+  assertEquals(
+    jobDetailsChangeLine(
+      "en",
+      jobDetailsChangeOf("en", current, { en: "Demo\nCabinets" }),
+    ),
+    t("en", "chatCoordinator.jobDetails.same"),
   );
 });
