@@ -18,7 +18,8 @@
  * lies under the home moves it: to the top-left while that is clear (`dockPill`). The phone's
  * details stay open or closed across a reload (`rememberPillOpen`).
  */
-import type { PillStatus, Rect } from "./protocol.ts";
+import type { PillFace, PillStatus, Rect } from "./protocol.ts";
+export { PILL_LABEL_MAX } from "./protocol.ts";
 
 /** the pill's distance from the screen's edges */
 export const PILL_MARGIN = 12;
@@ -285,6 +286,39 @@ export function statusKeyOf(s: PillStatus): string {
     : s === "ended"
     ? "demoMode.ended"
     : "demoMode.connecting";
+}
+
+/**
+ * REQ-430 (demo-loop cycle 3, m4) — what the stage's ghost says: the status in the CUSTOMER's
+ * words when their pill sent its label (an older page: the stage's words, `statusKeyOf`); the
+ * line unless the phone pill is compact and closed, and then the guide's short name, as the phone
+ * shows it.
+ */
+export function ghostWords(
+  face: PillFace,
+  t: (key: string) => string,
+): { status?: string; text?: string; guide?: string } {
+  const closed = face.compact === true && face.open !== true;
+  const status = face.status
+    ? face.label || t(statusKeyOf(face.status))
+    : undefined;
+  return {
+    status,
+    text: !closed && face.text ? face.text : undefined,
+    guide: closed && face.guide ? face.guide : undefined,
+  };
+}
+
+/**
+ * REQ-430 — the customer's app dropped (the stage's link is waiting, between tabs or over): the
+ * frozen ghost must not keep saying the last "Connected". Its status becomes connecting (ended
+ * when the demo ended) and the customer's own label goes — the stage words it until their pill
+ * speaks again. No pill heard yet: nothing changes.
+ */
+export function pillFaceOffline(face: PillFace, link: string): PillFace {
+  if (!face.status) return face;
+  const { label: _label, ...rest } = face;
+  return { ...rest, status: link === "ended" ? "ended" : "connecting" };
 }
 
 /**

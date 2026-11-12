@@ -357,7 +357,9 @@ describe("REQ-372 — the stage's pill ghost is a clipped, read-only replica (cy
     expect(s).toMatch(/data-cy="demo-pill-ghost-status"/);
     expect(s).toMatch(/data-cy="demo-pill-ghost-text"/);
     expect(s).toMatch(/data-cy="demo-pill-ghost-clipped"/);
-    expect(s).toMatch(/statusKeyOf\(/);
+    // REQ-430 (cycle 3, m4): the status goes through ghostWords — the customer's label, else
+    // statusKeyOf in the stage's words
+    expect(s).toMatch(/ghostWords\(/);
     const en = JSON.parse(read("lang/en.json"));
     const es = JSON.parse(read("lang/es.json"));
     expect(en["demoMode.pillGhostClipped"]).toBeTruthy();
