@@ -5,8 +5,10 @@
  *   • Per-digit odometer roll on every value change (CSS-only, no rAF)
  *   • Aurora mesh background that subtly responds to focus
  *   • Mouse-tracked 3D tilt for a premium tactile feel
- *   • Quick-amount chips that animate the number rolling to a target
- *   • Magnitude bar (log scale, anchored at $10k) under the input
+ *   • Quick-amount chips that animate the number rolling to a target —
+ *     REQ-329: scaled to `anchorCents` (0.5×…1.5× of the AI's market price)
+ *     when the caller knows the size of the job, the fixed $50…$5k otherwise
+ *   • Magnitude bar under the input (linear to the anchor, else log scale)
  *   • Caret hidden — type-and-replace UX (à la Cash App / Stripe)
  *   • Spelled-out value sub-line, animates in on each change
  *
@@ -17,7 +19,12 @@
 import { useEffect, useRef, useState } from "preact/hooks";
 import { type Lang, langSignal, tFor } from "../lib/i18n.ts";
 import { amountInWords } from "../../shared/quote-flow/locale-format.ts";
-import { formatTyping, typeMoney } from "../lib/money-input.ts";
+import {
+  chipPresetsFor,
+  formatTyping,
+  magnitudeFill,
+  typeMoney,
+} from "../lib/money-input.ts";
 
 interface MoneyInputProps {
   initialCents?: number;
@@ -27,14 +34,20 @@ interface MoneyInputProps {
   name?: string;
   /** Optional SSR seed only; the live language is self-sourced from langSignal. */
   lang?: Lang;
+  /**
+   * REQ-329 (demo p15-13): the expected size of the amount — the AI's market
+   * price, the draft total. The quick chips become nice-number fractions and
+   * multiples of it and the magnitude bar fills at 1.5× it. Omitted or ≤ 0:
+   * the fixed $50 · $100 · $500 · $1k · $5k chips and the log bar.
+   */
+  anchorCents?: number | null;
 }
 
-const CHIP_PRESETS_CENTS = [50_00, 100_00, 500_00, 1_000_00, 5_000_00];
-const MAGNITUDE_REF_CENTS = 100_000_000_00; // bar fills at $100M (log scale)
-
 export default function MoneyInput(
-  { initialCents = 0, onChange, onSubmit, autoFocus, name }: MoneyInputProps,
+  { initialCents = 0, onChange, onSubmit, autoFocus, name, anchorCents }:
+    MoneyInputProps,
 ) {
+  const chipPresets = chipPresetsFor(anchorCents);
   // Self-source the live UI language; reading .value during render makes this
   // island re-render whenever the language flips (SettingsPage).
   const lang = langSignal.value;
@@ -184,11 +197,9 @@ export default function MoneyInput(
     Math.min(88, Math.floor(stageWidth / (totalChars * PX_PER_CH))),
   );
 
-  // Magnitude bar fill: log-scaled so $50 reads, $5k still has headroom
-  const magnitude = (cents ?? 0) === 0 ? 0 : Math.min(
-    1,
-    Math.log10(1 + (cents ?? 0)) / Math.log10(1 + MAGNITUDE_REF_CENTS),
-  );
+  // Magnitude bar fill: linear to the anchor (full at the top chip) when there
+  // is one; else log-scaled so $50 reads, $5k still has headroom (REQ-329).
+  const magnitude = magnitudeFill(cents, anchorCents);
 
   // Split display into integer / decimal halves so the cents render smaller
   const dotIdx = display.indexOf(".");
@@ -287,7 +298,7 @@ export default function MoneyInput(
           role="group"
           aria-label={tFor(lang, "moneyInput.quickAmountsAriaLabel")}
         >
-          {CHIP_PRESETS_CENTS.map((c) => (
+          {chipPresets.map((c) => (
             <button
               key={`chip-${c}`}
               type="button"
