@@ -58,6 +58,12 @@ import {
 import { langSignal, tFor } from "../lib/i18n.ts";
 import { quoteJobTitle } from "../../shared/quote-flow/job-name.ts";
 import { changeOrdersClient } from "../clients/change-orders.ts"; // REQ-462
+import QuoteSendDialog, {
+  type SendDialogCustomer,
+} from "../components/QuoteSendDialog.tsx"; // REQ-570
+import { panelCanSend, type PanelSendResult } from "../lib/quote-panel-send.ts"; // REQ-570
+import { customerLinkPath } from "../lib/customer-link.ts"; // REQ-570
+import type { SendChannel } from "../lib/send-dialog.ts"; // REQ-570
 import {
   changeOrderBody,
   changeOrderRowActions,
@@ -159,6 +165,8 @@ interface OpenQuoteState {
   ledger: QuoteLedger | null;
   /** REQ-201: the quote's own version history (current last). */
   versions: QuoteVersion[];
+  /** REQ-570 (m41): who the panel's Send goes to — contact on file. */
+  customer?: SendDialogCustomer | null;
 }
 
 /** REQ-462 (demo-loop cycle 3, M26) — "Signed — later changes go on a change
@@ -1373,10 +1381,17 @@ function OpenQuotePanel(
   // editor and its "saved" note reset whenever another quote is opened.
   const [editing, setEditing] = useState(false);
   const [savedVersion, setSavedVersion] = useState<number | null>(null);
+  // REQ-570 (demo m41): Send ▾ — its menu, the dialog's channel, the outcome.
+  const [sendMenuOpen, setSendMenuOpen] = useState(false);
+  const [sendChannel, setSendChannel] = useState<SendChannel | null>(null);
+  const [sendResult, setSendResult] = useState<PanelSendResult | null>(null);
   const openedId = state.quote?.id;
   useEffect(() => {
     setEditing(false);
     setSavedVersion(null);
+    setSendMenuOpen(false);
+    setSendChannel(null);
+    setSendResult(null);
   }, [openedId]);
 
   if (state.loading) {
@@ -1453,6 +1468,68 @@ function OpenQuotePanel(
       <div class="qopen__meta">
         <div class="qopen__amount">{fmtMoney(q.estimatedTotal ?? 0)}</div>
         <div class="qopen__actions">
+          {
+            /* REQ-570 (demo m41): send it from here — the chat's send dialog
+              and SendQuote — or preview it as the customer will see it. */
+          }
+          {panelCanSend(q) && (
+            <div class="qopen-send">
+              <button
+                type="button"
+                class="qopen__btn"
+                data-cy="quote-panel-send"
+                aria-haspopup="menu"
+                aria-expanded={sendMenuOpen ? "true" : "false"}
+                aria-label={tFor(lang, "quotesPage.open.chooseSend")}
+                onClick={() => setSendMenuOpen((o) => !o)}
+              >
+                <I d={ICN.send} size={13} sw={2.4} />
+                {tFor(lang, "quotesPage.open.send")}
+                <I d={ICN.chev} size={11} sw={2.4} />
+              </button>
+              {sendMenuOpen && (
+                <div
+                  class="qopen-send__menu"
+                  role="menu"
+                  data-cy="quote-panel-send-menu"
+                >
+                  {([
+                    ["both", "asstChat.preview.menuBoth", ICN.send],
+                    ["sms", "asstChat.preview.menuSms", ICN.phone],
+                    ["email", "asstChat.preview.menuEmail", ICN.mail],
+                  ] as const).map(([ch, key, icon]) => (
+                    <button
+                      key={ch}
+                      type="button"
+                      role="menuitem"
+                      class="qopen-send__item"
+                      data-cy={`quote-panel-send-${ch}`}
+                      onClick={() => {
+                        setSendMenuOpen(false);
+                        setSendResult(null);
+                        setSendChannel(ch);
+                      }}
+                    >
+                      <I d={icon} size={13} sw={2.4} />
+                      <span>{tFor(lang, key)}</span>
+                    </button>
+                  ))}
+                  <a
+                    role="menuitem"
+                    class="qopen-send__item"
+                    data-cy="quote-panel-send-preview"
+                    href={customerLinkPath(q.id)}
+                    target="_blank"
+                    rel="noopener"
+                    onClick={() => setSendMenuOpen(false)}
+                  >
+                    <I d={ICN.eye} size={13} sw={2.4} />
+                    <span>{tFor(lang, "asstChat.preview.menuPreview")}</span>
+                  </a>
+                </div>
+              )}
+            </div>
+          )}
           <button type="button" class="qopen__btn" onClick={copyLink}>
             {copied
               ? tFor(lang, "quotesPage.open.linkCopied")
@@ -1498,6 +1575,42 @@ function OpenQuotePanel(
           )}
         </div>
       </div>
+      {sendChannel && (
+        <QuoteSendDialog
+          lang={lang}
+          quoteId={q.id}
+          customer={state.customer ??
+            (q.customerName
+              ? { id: q.customerId, name: q.customerName }
+              : null)}
+          initialChannel={sendChannel}
+          onClose={() => setSendChannel(null)}
+          onSent={(r) => {
+            setSendChannel(null);
+            setSendResult(r);
+            onRefresh();
+          }}
+        />
+      )}
+      {sendResult && (
+        <p
+          class={`qopen-send__result${
+            sendResult.delivered ? "" : " qopen-send__result--failed"
+          }`}
+          data-cy="quote-panel-send-result"
+          role="status"
+        >
+          {sendResult.delivered
+            ? tFor(lang, "quotesPage.open.sentTo", {
+              to: [sendResult.outcome?.emailedTo, sendResult.outcome?.textedTo]
+                .filter(Boolean).join(" · "),
+            })
+            : tFor(lang, "quotesPage.open.sendFailed", {
+              reason: sendResult.outcome?.emailFailureReason ||
+                sendResult.outcome?.smsFailureReason || "",
+            })}
+        </p>
+      )}
       {editing && (
         <QuoteLineEditor
           lang={lang}
@@ -1656,8 +1769,8 @@ export default function QuotesPage(
         .catch(() => ({ opens: [] as { at: string }[] })),
       // UX-08: GET /quotes/:id is the raw row (customerId only) — join the
       // customer so the panel can say WHO the deal is with.
-      api.get<{ id: string; name?: string }[]>("/customers")
-        .catch(() => [] as { id: string; name?: string }[]),
+      api.get<SendDialogCustomer[]>("/customers")
+        .catch(() => [] as SendDialogCustomer[]),
       // REQ-205 / REQ-201: the documents ledger and the version history.
       quotesClient.ledger(openId).catch(() => null as QuoteLedger | null),
       quotesClient.versions(openId).catch(() => [] as QuoteVersion[]),
@@ -1666,10 +1779,14 @@ export default function QuotesPage(
     ) => {
       if (!alive) return;
       let quote = quoteRaw as BackendQuoteCard | null;
-      if (quote && !quote.customerName && quote.customerId) {
-        const found = (Array.isArray(customersList) ? customersList : [])
-          .find((c) => c.id === quote!.customerId);
-        if (found?.name) quote = { ...quote, customerName: found.name };
+      // REQ-570 (m41): the customer row also carries the contact on file
+      // the panel's send dialog tags channels by.
+      const customer = quote?.customerId
+        ? (Array.isArray(customersList) ? customersList : [])
+          .find((c) => c.id === quote!.customerId) ?? null
+        : null;
+      if (quote && !quote.customerName && customer?.name) {
+        quote = { ...quote, customerName: customer.name };
       }
       const receipts = classifyReceipts(
         Array.isArray(messages) ? messages : [],
@@ -1692,6 +1809,7 @@ export default function QuotesPage(
           ? ledger
           : null,
         versions: Array.isArray(versions) ? versions : [],
+        customer,
       });
     });
     return () => {

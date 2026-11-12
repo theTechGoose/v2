@@ -1214,3 +1214,229 @@
     grid-column: 1 / -1;
   }
 }
+
+/* REQ-570 (demo-loop cycle 4, m41): the open panel's Send ▾ and the send
+   dialog it opens (components/QuoteSendDialog.tsx). The dialog carries the
+   assistant's class names; this page doesn't load assistant-page.css, so
+   its look is restated here. */
+.qopen-send {
+  position: relative;
+  display: inline-flex;
+}
+.qopen-send__menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  min-width: 220px;
+  background: #fff;
+  border: 1px solid rgba(20, 72, 82, 0.12);
+  border-radius: 12px;
+  box-shadow:
+    0 18px 40px -12px rgba(20, 72, 82, 0.25),
+    0 6px 14px -6px rgba(20, 72, 82, 0.12);
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  z-index: 50;
+}
+.qopen-send__item {
+  appearance: none;
+  background: transparent;
+  border: none;
+  padding: 9px 10px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--brand-teal);
+  font-family: var(--font-body);
+  font-size: 13.5px;
+  font-weight: 600;
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
+}
+.qopen-send__item:hover {
+  background: rgba(20, 72, 82, 0.06);
+}
+.qopen-send__result {
+  margin: 10px 0 0;
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--brand-green, #519843);
+}
+.qopen-send__result--failed {
+  color: var(--brand-pink);
+}
+.send-dialog__backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  background: rgba(20, 44, 48, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+.send-dialog {
+  width: min(420px, 100%);
+  max-height: calc(100vh - 32px);
+  overflow-y: auto;
+  background: #fff;
+  border-radius: 16px;
+  padding: 20px 20px 16px;
+  box-shadow: 0 24px 60px -18px rgba(20, 72, 82, 0.45);
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  text-align: left;
+}
+.send-dialog__title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 900;
+  color: var(--brand-teal, #144852);
+}
+.send-dialog__options {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.send-dialog__option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 10px 12px;
+  border: 1.5px solid rgba(20, 72, 82, 0.15);
+  border-radius: 10px;
+  background: #fff;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--fg, #1c2c30);
+  cursor: pointer;
+  text-align: left;
+}
+.send-dialog__option.is-current {
+  border-color: var(--brand-green, #519843);
+  background: var(--green-50, #eef6ea);
+}
+.send-dialog__needs {
+  margin-left: auto;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--fg-muted, #6b7b80);
+  white-space: nowrap;
+}
+.send-dialog__option .quote-review__send-menu-tag {
+  font-size: 10.5px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--brand-green);
+  background: rgba(81, 152, 67, 0.12);
+  padding: 2px 7px;
+  border-radius: 999px;
+}
+.send-dialog__needs + .quote-review__send-menu-tag {
+  margin-left: 6px;
+}
+.send-dialog__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.send-dialog__cancel,
+.send-dialog__keep {
+  padding: 10px 18px;
+  border-radius: 10px;
+  font: inherit;
+  font-weight: 800;
+  font-size: 14px;
+  cursor: pointer;
+}
+.send-dialog__cancel {
+  border: 1.5px solid rgba(20, 72, 82, 0.18);
+  background: #fff;
+  color: var(--fg, #1c2c30);
+}
+.send-dialog__keep {
+  border: 0;
+  background: var(--brand-green, #519843);
+  color: #fff;
+}
+.send-dialog__keep:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+.send-dialog__add {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--fg, #1c2c30);
+}
+.send-dialog .cust-pick__search {
+  width: 100%;
+  background: #fff;
+  border: 1.5px solid var(--border);
+  border-radius: 11px;
+  padding: 10px 12px;
+  font-family: var(--font-body);
+  font-size: 12.5px;
+  color: var(--brand-teal);
+}
+.send-dialog .cust-pick__err {
+  padding: 8px 12px;
+  border-radius: 9px;
+  background: rgba(255, 107, 107, 0.10);
+  color: var(--brand-pink);
+  font-size: 11.5px;
+  font-weight: 600;
+}
+.send-dialog__lang {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--fg, #1c2c30);
+}
+.send-dialog .quote-review__langpill {
+  appearance: none;
+  border: 1px solid rgba(20, 72, 82, 0.18);
+  background: #fff;
+  color: var(--brand-teal);
+  font-weight: 700;
+  font-size: 12.5px;
+  padding: 5px 12px;
+  border-radius: 999px;
+  cursor: pointer;
+}
+.send-dialog .quote-review__langpill.is-active {
+  background: var(--brand-teal);
+  border-color: var(--brand-teal);
+  color: #fff;
+}
+.send-dialog__preview {
+  border: 1.5px solid rgba(20, 72, 82, 0.15);
+  border-radius: 10px;
+  padding: 8px 12px;
+  font-size: 13px;
+}
+.send-dialog__preview > summary {
+  cursor: pointer;
+  font-weight: 800;
+  color: var(--brand-teal, #144852);
+}
+.send-dialog__preview-frame {
+  display: block;
+  width: 100%;
+  height: 320px;
+  border: 1px solid rgba(20, 72, 82, 0.12);
+  border-radius: 8px;
+}
