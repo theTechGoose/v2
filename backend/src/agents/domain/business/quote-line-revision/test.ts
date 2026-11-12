@@ -231,3 +231,32 @@ Deno.test("REQ-315 M26 changeOrderAsReprice: the demo model's change_order is th
     undefined,
   );
 });
+
+// REQ-445 (demo-loop cycle 3, B2): "make it around $18,000" read as a reprice
+// of a line called "it around". "it" / "that" / "this" are the job or a
+// pointer to a line, and "around" / "about" are how sure the price is —
+// neither is part of a line's name.
+Deno.test("REQ-445 B2 parseLineReprice: 'make it around $18,000' names no line; 'make that vanity $900' and 'make the tile around $4,000' name theirs", () => {
+  assertEquals(parseLineReprice("make it around $18,000"), undefined);
+  assertEquals(parseLineReprice("make it about $18,000"), undefined);
+  assertEquals(
+    parseLineReprice(
+      "no no eso está muy bajo!! $2,585 for a whole master bath?? make it around $18,000 and add the shower bench and mold remediation allowance",
+    ),
+    undefined,
+  );
+  assertEquals(parseLineReprice("make that vanity $900"), {
+    match: "vanity",
+    amountCents: 90_000,
+  });
+  assertEquals(parseLineReprice("make this vanity $900"), {
+    match: "vanity",
+    amountCents: 90_000,
+  });
+  assertEquals(parseLineReprice("make the tile around $4,000"), {
+    match: "tile",
+    amountCents: 400_000,
+  });
+  // still not a line: the pronoun alone (REQ-315)
+  assertEquals(parseLineReprice("make it $500"), undefined);
+});

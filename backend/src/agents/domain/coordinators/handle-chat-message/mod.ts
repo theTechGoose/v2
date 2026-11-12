@@ -98,6 +98,14 @@ import {
   type ReviseQuoteResult,
 } from "@agents/domain/coordinators/revise-quote/mod.ts";
 import { changeOrderAsReprice } from "@agents/domain/business/quote-line-revision/mod.ts";
+// REQ-445 (demo-loop cycle 3, B2 + M20): the stated total and the price
+// checks a chat-drafted quote gets before it is saved.
+import {
+  draftTotalCents,
+  settleCreateQuote,
+  statedTotalCents,
+  statedTotalNote,
+} from "@agents/domain/business/stated-price/mod.ts";
 import {
   acceptModelServiceAddress,
   extractServiceAddress,
@@ -1863,16 +1871,70 @@ export class HandleChatMessage {
           "\n\n",
         );
       }
-      llmResponse = await this.llm.respond({
+      // REQ-368 (M32): only the tools this state allows — no lock / terms
+      // once the quote is past drafting, no create / lock in the terms phase.
+      // REQ-392: the review may also revise a line already on the quote.
+      const tools = stepTools(
+        chatToolsFor(conv.currentPhase, boundQuote),
+        step,
+      );
+      // REQ-445 (demo-loop cycle 3, B2 + M20): a price the contractor gives
+      // for the WHOLE job ("make it around $18,000", "yo pienso como 18 mil")
+      // is the draft's total. The model is told; its lines are checked below.
+      const draftOnFile = boundQuote?.status === "draft"
+        ? boundQuote
+        : undefined;
+      const statedCents = tools.includes("create_quote") && !changeOrderAsk
+        ? statedTotalCents(asked, {
+          currentTotalCents: draftOnFile
+            ? draftTotalCents(draftOnFile)
+            : undefined,
+        })
+        : undefined;
+      if (statedCents) {
+        businessContext = [businessContext, statedTotalNote(statedCents)]
+          .filter(Boolean).join("\n\n");
+      }
+      const request = {
         systemPrompt,
         messages: llmTurns,
         userId: input.userId,
         ...(businessContext ? { businessContext } : {}),
-        // REQ-368 (M32): only the tools this state allows — no lock / terms
-        // once the quote is past drafting, no create / lock in the terms phase.
-        // REQ-392: the review may also revise a line already on the quote.
-        tools: stepTools(chatToolsFor(conv.currentPhase, boundQuote), step),
-      });
+        tools,
+      };
+      llmResponse = await this.llm.respond(request);
+      // REQ-445: the model's create_quote is checked before it is saved — a
+      // missed stated total (re-asked once, then scaled in code), a revision
+      // that more than triples with prices nobody typed (asked, nothing
+      // saved), a first draft under the job's floor (re-asked once, then
+      // lifted). Replaced lines drop the model's prose, which described its
+      // own numbers: the REQ-267 reply is written from the saved ones.
+      if (llmResponse.action?.type === "create_quote" && !changeOrderAsk) {
+        const settled = await settleCreateQuote({
+          payload: llmResponse.action.payload,
+          userText: asked,
+          statedCents,
+          draft: draftOnFile,
+          lang: replyLang,
+          reask: async (turns) => {
+            const again = await this.llm.respond({
+              ...request,
+              messages: [...llmTurns, ...turns],
+              tools: ["create_quote"],
+            });
+            return again.action?.type === "create_quote"
+              ? again.action.payload.lineItems
+              : undefined;
+          },
+        });
+        if (settled.kind === "ask") llmResponse = { text: settled.text };
+        if (settled.kind === "save") {
+          llmResponse = {
+            text: "",
+            action: { type: "create_quote", payload: settled.payload },
+          };
+        }
+      }
     }
 
     // ---- REQ-444 (demo-loop cycle 3, M21): every tool call the model made.
