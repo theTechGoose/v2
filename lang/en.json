@@ -810,6 +810,7 @@
   "clientsHero.titlePost.one": "is on your list.",
   "clientsHero.titlePre": "The",
   "clientsHero.titlePre.one": "Your",
+  "clientsPage.address": "Address (optional)",
   "clientsPage.addError": "We couldn't add that customer.",
   "clientsPage.added": "{name} added",
   "clientsPage.businessName": "Business name",
