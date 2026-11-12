@@ -5,7 +5,8 @@
  * note for the office, a services panel (remove / put back / defer one / add),
  * and "Defer visit". A foreman sees their own visits first, then one section
  * per crew. `?date=` replays a past day; the list refreshes every 5 s while the
- * tab is visible and nothing is being typed.
+ * tab is visible and nothing is being typed, backing off to 60 s while idle; a
+ * refresh reads only the tasks (REQ-605).
  *
  * Ported from a2z/web/trabajador.html (its <style> block lives here; the demo
  * driver was not ported). Strings: worker.* in lang/*.json via t().
@@ -30,10 +31,14 @@ import {
 } from "../lib/field.ts";
 import { lockLabelKey, NOTE_SAVED_MS } from "../lib/field-batches.ts";
 import { refreshTickDue } from "../lib/refresh-tick.ts";
+import {
+  startWorkerRefresh,
+  WORKER_REFRESH_MS,
+} from "../lib/worker-refresh.ts";
 import { type Lang, langSignal, setLang, t } from "../lib/i18n.ts";
 
 const CELL_KEY = "pm:worker-cell";
-const REFRESH_MS = 5000;
+const REFRESH_MS = WORKER_REFRESH_MS;
 
 const css = `
   /* the worker's phone screen — one column, big tap targets, nothing else */
@@ -275,6 +280,7 @@ export default function WorkerScreen(
       // REQ-416 — for this session only, never over the browser's own pm_lang
       const wl = workerScreenLang(who, langChosenRef.current);
       if (wl) setLang(wl, { persist: false });
+      meRef.current = who;
       if (who) {
         const [rows, tt] = await Promise.all([
           workerClient.tasks(d, who.role === "foreman"),
@@ -291,19 +297,35 @@ export default function WorkerScreen(
     }
   }
 
-  // First load once the day is known; then a 5 s refresh while visible and idle.
+  /** REQ-605 — the poll's read: the day's tasks only (me and task types rarely change) */
+  async function loadTasks() {
+    const d = dateRef.current;
+    const who = meRef.current;
+    if (!d || !who) return;
+    lastLoadRef.current = Date.now();
+    try {
+      setTasks(await workerClient.tasks(d, who.role === "foreman"));
+    } catch (e) {
+      // the session ended elsewhere: a full read puts the sign-in form back
+      if (e instanceof ApiError && e.status === 401) return load();
+      showToast(t("worker.fail", { msg: friendly(e) }));
+    }
+  }
+
+  // First (full) load once the day is known; then REQ-605: a tasks-only refresh every 5 s
+  // while visible and in use, backing off to 60 s while idle, and a full read on the
+  // catch-up after the tab was hidden.
   useEffect(() => {
     if (!date) return;
     load();
-    const id = setInterval(() => {
-      if (
-        meRef.current && document.visibilityState === "visible" &&
-        busyRef.current.size === 0 &&
+    return startWorkerRefresh({
+      full: load,
+      tasks: loadTasks,
+      due: () =>
+        !!meRef.current && busyRef.current.size === 0 &&
         Object.keys(draftsRef.current).length === 0 && !deferringRef.current &&
-        refreshTickDue(lastLoadRef.current, Date.now(), REFRESH_MS) // REQ-508: not right after an act()'s reload
-      ) load();
-    }, REFRESH_MS);
-    return () => clearInterval(id);
+        refreshTickDue(lastLoadRef.current, Date.now(), REFRESH_MS), // REQ-508: not right after an act()'s reload
+    });
   }, [date]);
 
   /**
@@ -313,12 +335,13 @@ export default function WorkerScreen(
   async function act(
     key: string,
     fn: () => Promise<unknown>,
+    after: () => Promise<unknown> = loadTasks, // REQ-605: an action changes tasks only
   ): Promise<boolean> {
     if (busyRef.current.has(key)) return false;
     setBusy((b) => new Set(b).add(key));
     try {
       await fn();
-      await load();
+      await after();
       return true;
     } catch (e) {
       showToast(t("worker.fail", { msg: friendly(e) }));
@@ -371,7 +394,7 @@ export default function WorkerScreen(
       setOpen({});
       setDrafts({});
       setDeferring(null);
-    });
+    }, load);
   }
 
   function toggleOpen(vid: string, which: "note" | "services") {
@@ -823,6 +846,7 @@ export default function WorkerScreen(
                 langChosenRef.current = true;
                 setLang(c);
                 rememberWorkerLangPick(c); // REQ-494 — survives re-entry
+                if (meRef.current) load(); // REQ-605: a language pick re-reads me + task types
               }}
             >
               {c.toUpperCase()}
