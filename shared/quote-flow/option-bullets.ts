@@ -13,6 +13,7 @@
 
 import { extractCustomerName } from "./quick-quote-prefill.ts";
 import { extractEmail, extractPhone } from "./quote-facts.ts";
+import type { VersionStyle } from "./version-titles.ts";
 
 /** The "· Wider scope" version: EVERY bullet plus jobsite cleanup (once) —
  *  never fewer items than the full version. */
@@ -434,6 +435,126 @@ export function partitionByCoverage<T extends { bullets: string[] }>(
       .push(o);
   }
   return { complete, partial, items };
+}
+
+// ── REQ-446 (demo-loop cycle 3, m13): roles, and the pick that survives ───
+// "three near-identical options … a refinement resets her chosen card to
+// card 1." Each version names its role, and a rewrite keeps the pick.
+
+/** How much one version says: its lines, then its characters. */
+function detailOf(bullets: readonly string[]): [number, number] {
+  const lines = bullets.filter((b) => b.trim().length > 0);
+  return [lines.length, lines.reduce((n, b) => n + b.trim().length, 0)];
+}
+
+/**
+ * REQ-446: each version's role by how much it says — the least detailed is
+ * "concise", the most "detailed", the one between "standard" (two versions:
+ * concise and detailed; one version: no role). The options keep their
+ * order; equal detail keeps the model's order (it is asked for concise,
+ * standard, detailed in that order).
+ */
+export function labelVersionStyles<T extends { bullets: string[] }>(
+  options: readonly T[],
+): Array<T & { style?: VersionStyle }> {
+  if (options.length < 2) {
+    return options.map((o) => {
+      const { style: _drop, ...rest } = o as T & { style?: VersionStyle };
+      return rest as T & { style?: VersionStyle };
+    });
+  }
+  const ranked = options
+    .map((o, i) => ({ i, d: detailOf(o.bullets) }))
+    .sort((a, b) => a.d[0] - b.d[0] || a.d[1] - b.d[1] || a.i - b.i);
+  const roles: VersionStyle[] = options.length === 2
+    ? ["concise", "detailed"]
+    : ["concise", "standard", "detailed"];
+  const styleAt = new Map<number, VersionStyle>();
+  ranked.forEach((r, rank) => {
+    // past three versions the middle ones are all "standard"
+    const role = rank === 0
+      ? roles[0]
+      : rank === ranked.length - 1
+      ? roles[roles.length - 1]
+      : "standard";
+    styleAt.set(r.i, role);
+  });
+  return options.map((o, i) => ({ ...o, style: styleAt.get(i) }));
+}
+
+/** A bullet as the picker holds it: a line, or a draft that may be struck. */
+type PickBullet = string | { text: string; deleted?: boolean };
+
+function liveLines(bullets: readonly PickBullet[]): string[] {
+  return bullets
+    .map((b) => typeof b === "string" ? b : b.deleted ? "" : b.text)
+    .filter((b) => b.trim().length > 0);
+}
+
+function termSet(lines: readonly string[]): Set<string> {
+  return new Set(lines.flatMap(scopeTerms));
+}
+
+/** Jaccard overlap of two versions' scope terms (0 … 1). */
+function overlap(a: Set<string>, b: Set<string>): number {
+  if (a.size === 0 && b.size === 0) return 0;
+  let both = 0;
+  for (const t of a) if (b.has(t)) both++;
+  return both / (a.size + b.size - both);
+}
+
+/**
+ * REQ-446 (m13): which rewritten version the contractor's pick moves to when
+ * the assistant rewrites the versions (REQ-392) — never simply the first:
+ *  1. the version with the same role (concise / standard / detailed);
+ *  2. else the one whose lines are closest to the picked card's (scope-term
+ *     overlap; a tie keeps the same place);
+ *  3. else the same place, else the first.
+ * Nothing picked (or the write-it-myself tile) → the first version. Null only
+ * when the rewrite has no versions.
+ */
+export function carryPickedOptionId(
+  prev:
+    | ReadonlyArray<
+      { id: string; bullets: readonly PickBullet[]; style?: VersionStyle }
+    >
+    | null
+    | undefined,
+  prevSelectedId: string | null | undefined,
+  next: ReadonlyArray<
+    { id: string; bullets: readonly string[]; style?: VersionStyle }
+  >,
+): string | null {
+  if (next.length === 0) return null;
+  const first = next[0].id;
+  if (!prevSelectedId) return first;
+  const at = (prev ?? []).findIndex((o) => o.id === prevSelectedId);
+  if (at < 0) {
+    // the old list is gone: keep the same card id when the rewrite has it
+    return next.find((o) => o.id === prevSelectedId) && !prev
+      ? prevSelectedId
+      : first;
+  }
+  const picked = prev![at];
+  if (picked.style) {
+    const same = next.find((o) => o.style === picked.style);
+    if (same) return same.id;
+  }
+  const mine = termSet(liveLines(picked.bullets));
+  let best = -1;
+  let bestScore = 0;
+  next.forEach((o, i) => {
+    const score = overlap(mine, termSet(o.bullets));
+    if (
+      score > bestScore ||
+      (score === bestScore && score > 0 && i === at)
+    ) {
+      best = i;
+      bestScore = score;
+    }
+  });
+  if (best >= 0) return next[best].id;
+  return next[at]?.id ?? first;
 }
 
 /** A line's first letter lowered for joining — an acronym ("LED", "AC")

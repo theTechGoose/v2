@@ -8894,6 +8894,19 @@ body {
 .chat__jobopt-name-btn:hover {
   background: rgba(26, 83, 92, 0.06);
 }
+/* REQ-446 (demo-loop cycle 3, m13): which version a card is — concise /
+   standard / detailed — so three versions never read as one job thrice. */
+.chat__jobopt-style {
+  flex: none;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+  padding: 3px 7px;
+  border-radius: 999px;
+  color: var(--fg-muted, #5c6b55);
+  background: rgba(26, 83, 92, 0.08);
+  white-space: nowrap;
+}
 .chat__jobopt-name-pencil {
   font-size: 11px;
   color: var(--fg-muted, #9aa792);

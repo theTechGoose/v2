@@ -285,7 +285,10 @@ describe("REQ-400 (M21) a job option is a version of the whole job, never a part
       );
       expect(p).toMatch(/every option/i);
       expect(p).toMatch(/whole job/i);
-      expect(p).toMatch(/only in wording and grouping/i);
+      // REQ-446 (cycle 3, m13) superseded "differ only in wording and
+      // grouping" (three near-identical cards) with concise / standard /
+      // detailed — still never a difference in which items are covered.
+      expect(p).toMatch(/never in which items they include/i);
       // m32: never the customer, their contact or the duration as a bullet
       expect(p).toMatch(/customer's name/i);
       expect(p).toMatch(/duration/i);

@@ -645,3 +645,61 @@ Deno.test("REQ-400 (M21) neither the prompt nor the output structure shows a fix
   assert(/whole job/i.test(systemPrompt));
   assert(/customer's name/i.test(systemPrompt), "no rule against the customer's name as a bullet");
 });
+
+// ── REQ-446 (demo-loop cycle 3, m13): three versions, three roles ─────────
+// "three near-identical options" — the prompt asked for versions that
+// "differ only in wording and grouping". They are now concise / standard /
+// detailed, and each option carries the role it plays so the card says so.
+
+Deno.test("REQ-446 (m13) the prompt and the output structure ask for concise / standard / detailed — never wording-only twins", async () => {
+  const { llm, coord } = fresh();
+  let systemPrompt = "";
+  let user = "";
+  llm.setHandler((req) => {
+    systemPrompt = req.systemPrompt ?? "";
+    user = String(req.messages[0].content);
+    throw new Error("only reading the prompt");
+  });
+  await coord.run({ userId: "u1", raw: PRIYA_RAW, langs: ["en", "es"] });
+  for (const text of [systemPrompt, user]) {
+    assert(!/differ only in wording and grouping/i.test(text), "wording-only versions");
+    assert(/CONCISE/.test(text) && /STANDARD/.test(text) && /DETAILED/.test(text), "no roles named");
+  }
+});
+
+Deno.test("REQ-446 (m13) every model option carries its role, by detail, in the model's order", async () => {
+  const { llm, coord } = fresh();
+  const opt = (jobName: string, bullets: string[]) => ({
+    en: { jobName, summary: jobName, bullets },
+  });
+  llm.setHandler(() => ({
+    text: JSON.stringify({
+      options: [
+        opt("Kitchen Remodel", [
+          "Kitchen demolition and haul away",
+          "New cabinets and quartz countertops",
+        ]),
+        opt("Kitchen Renovation", [
+          "Kitchen demolition",
+          "Haul away debris",
+          "Install new cabinets",
+          "Quartz countertops",
+        ]),
+        opt("Complete Kitchen Renovation", [
+          "Full kitchen demolition to the studs",
+          "Haul away all demolition debris",
+          "Install 22 lf of new cabinets",
+          "48 sqft quartz countertops",
+        ]),
+      ],
+    }),
+  }));
+  const res = await coord.run({
+    userId: "u1",
+    raw: "Kitchen demo, haul away, 22 lf cabinets, 48 sqft quartz",
+    langs: ["en"],
+  });
+  assertEquals(res.degraded, false);
+  assertEquals(res.options.map((o) => o.id), ["opt1", "opt2", "opt3"]);
+  assertEquals(res.options.map((o) => o.style), ["concise", "standard", "detailed"]);
+});

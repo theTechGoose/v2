@@ -70,6 +70,8 @@ export interface JobOption {
    *  every selected send language), generated up front so the picked option's
    *  description can be stored — and shown to the customer — in each language. */
   byLang?: Record<string, JobOptionLang>;
+  /** REQ-446 (m13): the version's role — concise / standard / detailed. */
+  style?: "concise" | "standard" | "detailed";
 }
 
 /** Mirrors backend AgentPhase. */
