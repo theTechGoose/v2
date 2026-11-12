@@ -33,6 +33,7 @@ import { type Lang, langSignal, tFor, tnFor } from "../lib/i18n.ts";
 import QuoteTrack from "./QuoteTrack.tsx";
 import {
   cardDate,
+  hasNudgeButton,
   hasSecondaryPaymentReceived,
   scheduledSubline,
 } from "../lib/invoice-card.ts";
@@ -3087,11 +3088,14 @@ function InvoiceCard(
           <button type="button" onClick={doOpenInvoice}>
             {tFor(lang, "invoicesPage.back.open")}
           </button>
-          {inv.stage === "claimed" && (
+          {hasNudgeButton(inv.stage) && (
             <button
               type="button"
               data-cy="invoice-nudge"
               onClick={(e) => {
+                // REQ-250: a claimed card asks first; REQ-477: an out card
+                // (sent, not yet overdue) sends the reminder straight away.
+                if (inv.stage !== "claimed") return doSendNudge(e);
                 e.stopPropagation();
                 setNudgeAsk(true);
               }}
