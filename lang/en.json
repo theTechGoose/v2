@@ -3055,7 +3055,7 @@
   "welcome.state.searchLabel": "Search states",
   "welcome.state.why": "It sets the governing state on your agreements.",
   "welcome.stepOf": "Step {current} of {total}",
-  "welcomeBackToast.nameFallback": "friend",
+  "welcomeBackToast.noName": "Welcome back!",
   "wizardAnswer.cta.readyToSend": "Ready to send",
   "wizardAnswer.cta.readyToSendSummary": "All terms answered. Review and send to your client.",
   "wizardAnswer.pick.customFallback": "Custom",

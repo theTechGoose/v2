@@ -113,3 +113,21 @@ export function withSavedName<P extends IdentitySource>(
     initials: real ? deriveInitials(name, businessOf(profile)) : undefined,
   };
 }
+
+/**
+ * REQ-506 — the welcome-back toast line (demo cycle 3, m26 + s8). `template`
+ * is the live-language "welcome.back" string ("Bienvenido de nuevo,
+ * {firstName}."); `name` is /api/me's raw name. The seeded placeholder
+ * ("Nuevo usuario" / "New user") or a blank name is no name, so the toast
+ * reads the nameless `welcomeBackToast.noName` — never "…, Nuevo.".
+ */
+export function welcomeBackMessage(
+  t: Translate,
+  template: string,
+  name: string | null | undefined,
+): string {
+  const first = greetingFirstName(name);
+  return first
+    ? template.replace("{firstName}", first)
+    : t("welcomeBackToast.noName");
+}
