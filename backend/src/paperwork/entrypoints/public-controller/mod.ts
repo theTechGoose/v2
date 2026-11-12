@@ -51,6 +51,7 @@ import { readSessionId } from "@users/domain/coordinators/require-user/mod.ts";
 import { isInternalViewer } from "@paperwork/domain/business/internal-viewer/mod.ts";
 import { changeOrderJobTotals } from "#quote-flow/change-order-view.ts";
 import { invoiceTextByLang } from "#documents/invoice-lang.ts"; // REQ-497
+import { invoiceDocLang } from "#quote-flow/share-link.ts"; // REQ-586
 
 /**
  * Map a NotFoundError into a 404 JSON response. Public endpoints used to
@@ -1109,6 +1110,10 @@ export class PaperworkPublicController {
       const acceptedMethods = projectAcceptedMethods(contractor);
       // REQ-173: a batch invoice's visits, grouped under their address
       const visits = groupVisits(i.lineItems);
+      const docLang = invoiceDocLang(
+        i,
+        quote && quote.userId === i.userId ? quote : undefined,
+      );
       // REQ-479 (demo M30): the business's own viewer previews the claim
       const internal = await isInternalRequest(ctx, this.sessions, i.userId);
       return ctx.json({
@@ -1123,6 +1128,9 @@ export class PaperworkPublicController {
         contractor,
         customer,
         jobDetails,
+        // REQ-586 (cycle 4, M11): the document's language — /i reads it
+        // ahead of the contractor's default commsLanguage.
+        ...(docLang ? { docLang } : {}),
         ...(visits ? { visits } : {}),
         siblings: sortedSiblings,
         changeOrders: cos.map(projectLinkedChangeOrder),

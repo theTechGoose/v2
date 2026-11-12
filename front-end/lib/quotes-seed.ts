@@ -40,6 +40,9 @@ export interface Quote {
   /** REQ-236: the channel of the latest send attempt — a texted quote never
    *  gets "check your email / spam" copy. */
   channel?: "email" | "sms" | "both";
+  /** REQ-586 (cycle 4, M11): the language the quote last went out in — its
+   *  customer link carries it as `?lang=`. */
+  sendLang?: "en" | "es";
   /** REQ-313 (demo m48): the quote's own REQ-198 number ("Q-001") and its
    *  published version — what the card shows instead of a positional 01/02.
    *  Absent on the onboarding sample (REQ-256: it takes no Q- number). */

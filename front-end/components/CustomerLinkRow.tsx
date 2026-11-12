@@ -19,15 +19,18 @@ import {
 } from "../lib/customer-link.ts";
 
 export function CustomerLinkRow(
-  { quoteId, quoteNumber, lang, onCopy }: {
+  { quoteId, quoteNumber, sendLang, lang, onCopy }: {
     quoteId: string;
     /** REQ-472: "Q-001" — shown in place of the link when known. */
     quoteNumber?: string;
+    /** REQ-586 (cycle 4, M11): the language the quote went out in — Open
+     *  and Copy carry it as `?lang=`. */
+    sendLang?: string;
     lang: Lang;
-    onCopy: (quoteId: string) => void;
+    onCopy: (quoteId: string, sendLang?: string) => void;
   },
 ) {
-  const path = customerLinkPath(quoteId);
+  const path = customerLinkPath(quoteId, sendLang);
   return (
     <div class="customer-link" data-cy="customer-link">
       <span class="customer-link__label">
@@ -41,7 +44,7 @@ export function CustomerLinkRow(
         type="button"
         class="customer-link__btn"
         data-cy="customer-link-copy"
-        onClick={() => onCopy(quoteId)}
+        onClick={() => onCopy(quoteId, sendLang)}
       >
         {tFor(lang, "asstChat.customerLink.copy")}
       </button>

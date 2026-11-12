@@ -18,6 +18,11 @@ export interface QuoteDelivery {
   textedTo?: string;
   emailFailureReason?: string;
   smsFailureReason?: string;
+  /** REQ-586 (demo-loop cycle 4, M11): the language the document went out
+   *  in — the in-app customer links ("Open as customer", "Copy") carry it as
+   *  `?lang=`, like the links inside the SMS / email do (REQ-342). Recorded
+   *  on failed attempts too: the link is the fallback then. */
+  lang?: "en" | "es";
 }
 
 /** True when at least one channel of this attempt delivered. */
@@ -74,5 +79,7 @@ export function deliveryFromDivider(
     ...(textedTo ? { textedTo } : {}),
     ...(emailFailureReason ? { emailFailureReason } : {}),
     ...(smsFailureReason ? { smsFailureReason } : {}),
+    // REQ-586: the send's language rides along to the local quote.
+    ...(p.lang === "en" || p.lang === "es" ? { lang: p.lang } : {}),
   };
 }

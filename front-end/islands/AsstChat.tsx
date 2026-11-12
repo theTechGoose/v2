@@ -49,11 +49,13 @@ import { type Lang, langSignal, tFor } from "../lib/i18n.ts";
 import {
   cardShowsCustomerLink,
   copyCustomerLink,
+  customerLinkPath,
   customerLinkUrl,
   dividerShowsCustomerLink,
   type LinkToast as LinkToastState,
 } from "../lib/customer-link.ts";
 import { CustomerLinkRow, LinkToast } from "../components/CustomerLinkRow.tsx";
+import { quoteSendLang } from "../../shared/quote-flow/share-link.ts"; // REQ-586
 import StepComposer, { StepComposerOpen } from "../components/StepComposer.tsx"; // REQ-392
 import {
   addStepExchange,
@@ -1126,9 +1128,10 @@ export default function AsstChat({
   // root, outside the send menu; "copied" or "couldn't copy, here it is".
   const [linkToast, setLinkToast] = useState<LinkToastState | null>(null);
   const linkToastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  async function copyLinkFor(quoteId: string) {
+  async function copyLinkFor(quoteId: string, sendLang?: string) {
+    // REQ-586 (cycle 4, M11): the link carries the send language.
     const out = await copyCustomerLink(
-      customerLinkUrl(globalThis.location.origin, quoteId),
+      customerLinkUrl(globalThis.location.origin, quoteId, sendLang),
     );
     setLinkToast(out);
     if (linkToastTimer.current) clearTimeout(linkToastTimer.current);
@@ -2151,7 +2154,9 @@ export default function AsstChat({
     assistantClient
       .ensureSampleQuote()
       .then((r) => {
-        if (!cancelled) setSampleQuoteUrl(`/q/${r.quoteId}`);
+        if (!cancelled) {
+          setSampleQuoteUrl(customerLinkPath(r.quoteId, langSignal.value));
+        }
       })
       .catch(() => {});
     return () => {
@@ -6740,6 +6745,8 @@ export default function AsstChat({
                     emailFailureReason?: string;
                     smsFailureReason?: string;
                     smsFailureCode?: string;
+                    /** REQ-586: the language this send went out in. */
+                    lang?: string;
                   };
                   const label = dp.label ?? m.content;
                   // Show the recovery form when this divider belongs to a
@@ -6796,6 +6803,12 @@ export default function AsstChat({
                             quoteNumber={quote?.id === dp.quoteId
                               ? quote.number
                               : undefined}
+                            // REQ-586 (cycle 4, M11): in the language this
+                            // send went out in.
+                            sendLang={dp.lang ??
+                              (quote?.id === dp.quoteId
+                                ? quoteSendLang(quote)
+                                : undefined)}
                             lang={lang}
                             onCopy={copyLinkFor}
                           />
@@ -9358,6 +9371,11 @@ export default function AsstChat({
                                 quoteNumber={quote?.id === payload.quoteId
                                   ? quote.number
                                   : undefined}
+                                // REQ-586 (cycle 4, M11): the quote's last
+                                // send language.
+                                sendLang={quote?.id === payload.quoteId
+                                  ? quoteSendLang(quote)
+                                  : undefined}
                                 lang={lang}
                                 onCopy={copyLinkFor}
                               />
@@ -9399,7 +9417,10 @@ export default function AsstChat({
                             assistantClient
                               .ensureSampleQuote()
                               .then((r) => {
-                                const url = `/q/${r.quoteId}`;
+                                const url = customerLinkPath(
+                                  r.quoteId,
+                                  langSignal.value,
+                                );
                                 setSampleQuoteUrl(url);
                                 globalThis.open(url, "_blank", "noopener");
                               })

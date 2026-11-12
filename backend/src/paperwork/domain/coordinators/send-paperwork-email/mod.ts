@@ -110,6 +110,23 @@ export class SendPaperworkEmail {
     private commsLog: LogPaperworkMessage,
   ) {}
 
+  /**
+   * REQ-586 (demo-loop cycle 4, M11): the language a send goes out in — the
+   * same resolution `run` (and the SMS dispatcher) applies: the per-send
+   * pick, else the stored Settings default, else en. SendQuote records it on
+   * the quote so the in-app customer links carry it as `?lang=`.
+   */
+  async sendLanguage(
+    userId: string,
+    override?: string | null,
+  ): Promise<"en" | "es"> {
+    const biz = await this.tryGetBusinessIdentity(userId);
+    return resolveCommsLanguage({
+      override,
+      identityCommsLanguage: biz?.commsLanguage,
+    });
+  }
+
   async run(
     userId: string,
     input: SendPaperworkEmailInput,

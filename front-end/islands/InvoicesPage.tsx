@@ -65,6 +65,7 @@ import {
 import { docNumberOf } from "../../shared/documents/numbering.ts";
 import { invoiceJobNamePlaceholderKey } from "../../shared/quote-flow/trade-fit.ts"; // REQ-450
 import { isExceedsAgreement } from "../../shared/documents/ledger.ts";
+import { invoiceLinkPath } from "../lib/customer-link.ts"; // REQ-586
 import {
   type DocState,
   isInvoiceLocked,
@@ -2308,7 +2309,12 @@ function InvoiceCard(
     e.stopPropagation();
     // Public invoice page is the canonical detail surface today — opens
     // in a new tab so the dashboard stays put.
-    globalThis.open(`/i/${inv.id}`, "_blank", "noopener,noreferrer");
+    // REQ-586 (cycle 4, M11): in the invoice's own language.
+    globalThis.open(
+      invoiceLinkPath(inv.id, inv.lang),
+      "_blank",
+      "noopener,noreferrer",
+    );
   }
   async function doSendText(e: Event) {
     e.stopPropagation();

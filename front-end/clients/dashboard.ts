@@ -140,6 +140,9 @@ export interface Invoice {
   jobName?: string;
   /** What the bill covers, one line per item. */
   description?: string;
+  /** REQ-497: the language the invoice's text was typed in. REQ-586
+   *  (cycle 4, M11): "Open" carries it as `?lang=`. */
+  lang?: string;
   amount?: number;
   issuedDate?: string;
   dueDate: string;

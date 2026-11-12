@@ -152,6 +152,13 @@ export class SendQuote {
     }
 
     const channel: SendChannel = input.channel ?? "email";
+    // REQ-586 (demo-loop cycle 4, M11): the language this send goes out in,
+    // resolved like the dispatchers do — recorded on the quote and the
+    // divider so the in-app customer links open in it (?lang=).
+    const sendLang = await this.emailer.sendLanguage(
+      input.userId,
+      input.language,
+    ).catch(() => input.language);
     const wantEmail = channel === "email" || channel === "both";
     const wantSms = channel === "sms" || channel === "both";
 
@@ -225,6 +232,7 @@ export class SendQuote {
     const lastDelivery: QuoteDelivery = {
       at: now,
       channel,
+      ...(sendLang ? { lang: sendLang } : {}),
       ...(emailedTo ? { emailedTo } : {}),
       ...(textedTo ? { textedTo } : {}),
       ...(emailFailureReason ? { emailFailureReason } : {}),
@@ -300,6 +308,7 @@ export class SendQuote {
         label: dividerContent,
         quoteId: quote.id,
         channel,
+        ...(sendLang ? { lang: sendLang } : {}),
         ...(publishedVersion ? { publishedVersion } : {}),
         ...(emailedTo ? { emailedTo } : {}),
         ...(emailFailureReason ? { emailFailureReason } : {}),
