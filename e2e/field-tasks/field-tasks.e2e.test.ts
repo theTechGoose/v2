@@ -660,6 +660,47 @@ Deno.test("REQ-164: Add task → customer, type, price, worker → the card show
     await expect.see("0 of 2 complete");
   }));
 
+Deno.test("REQ-283 (demo M38): Add task with no customer picked says so and sends nothing; a new name is added as a customer from the form and the task saves", (t) =>
+  story(t, async ({ page, expect, http, baseUrl }) => {
+    const { auth, worker } = await officeDay({ page, http, baseUrl });
+    const posts: string[] = [];
+    page.on("request", (r) => {
+      if (r.method() === "POST") posts.push(new URL(r.url()).pathname);
+    });
+    await page.goto("/field/tasks");
+    await page.locator("[data-cy='tk-task']").first().waitFor({ timeout: 15_000 });
+    await page.locator("[data-cy='tk-add']").click();
+    const form = page.locator("[data-cy='tk-add-form']");
+    await form.waitFor({ timeout: 15_000 });
+    const box = form.locator("[data-cy='tk-customer'] [data-cy='search-select-input']");
+    await box.fill("Jim Baker");
+    await form.locator("[data-cy='tk-add-type']").fill("Mulch");
+    await form.locator("[data-cy='tk-add-price']").fill("120");
+    // 1. no customer picked — the form says which field, and no task is POSTed
+    await form.locator("[data-cy='tk-add-save']").click();
+    await expect.see("Pick a customer from the list, or add a new one.");
+    expect.eq(await box.getAttribute("aria-invalid"), "true", "the customer box is marked invalid");
+    expect.eq(posts.filter((p) => p.endsWith("/field/tasks")).length, 0, "no task POST");
+    // 2. the box offers to add the typed name as a customer
+    await box.click();
+    const create = form.locator("[data-cy='tk-customer'] [data-cy='search-select-create']");
+    await create.waitFor({ timeout: 15_000 });
+    expect.eq((await create.textContent())?.trim(), '+ Add "Jim Baker" as a customer', "the create row");
+    await create.click();
+    await page.waitForFunction(() => document.querySelector("[data-cy='tk-customer'] input[name='customer']")?.getAttribute("value"));
+    // 3. a new customer has no staffed zone — the form asks for the worker by name, not "Something went wrong"
+    await form.locator("[data-cy='tk-add-save']").click();
+    await expect.see("Pick a worker — this customer has no zone with one yet.");
+    expect.eq(await form.locator("[data-cy='tk-add-worker']").getAttribute("aria-invalid"), "true", "the worker picker is marked invalid");
+    await form.locator("[data-cy='tk-add-worker']").selectOption(worker.id);
+    await form.locator("[data-cy='tk-add-save']").click();
+    await page.locator("[data-cy='tk-task'][data-oneoff='true']").first().waitFor({ timeout: 15_000 });
+    await expect.see("Jim Baker");
+    const list = await http("/api/customers?q=Jim%20Baker", { headers: auth });
+    const body = await list.json();
+    expect((body.items ?? []).some((c: { name: string }) => c.name === "Jim Baker"), "Jim Baker is a customer now");
+  }));
+
 Deno.test("REQ-165: Add service on the card → Edging $25 → a second card in the same group", (t) =>
   story(t, async ({ page, expect, http, baseUrl }) => {
     await officeDay({ page, http, baseUrl });

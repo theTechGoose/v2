@@ -117,6 +117,8 @@ export const clientsClient = {
       phoneNumber?: string;
       email?: string;
       businessName?: string;
+      /** REQ-283 — the one-off task form's typed address */
+      address?: string;
     },
     opts: ApiOptions = {},
   ) => api.post<CustomerCard>("/customers", patch, opts),

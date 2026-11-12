@@ -76,6 +76,9 @@
 }
 .ss__opt--active { background: var(--ss-hover); }
 .ss__opt--picked .ss__label { font-weight: 600; }
+/* REQ-283 — "+ Add …": create the typed name when no option carries it */
+.ss__create { font-size: 14px; font-weight: 600; color: var(--green, #16a34a); }
+.ss__create:hover { background: var(--ss-hover); }
 .ss__label { font-size: 15px; }
 .ss__hint { font-size: 12.5px; color: var(--ss-muted); }
 .ss__empty, .ss__more {
@@ -94,3 +97,6 @@
   background: transparent;
   padding: 11px 0;
 }
+
+/* REQ-283 — the owner's check failed on this box */
+.ss__field:has(.ss__input[aria-invalid="true"]) { border-color: #dc2626; }

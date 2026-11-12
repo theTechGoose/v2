@@ -133,3 +133,36 @@ export function assignmentsMapView(
   const at = center ?? US_MAP_VIEW;
   return { center: [at.lat, at.lng], zoom: at.zoom };
 }
+
+/** "120" / "120.50" → cents, or null when it is not a price */
+export function centsOf(raw: string): number | null {
+  const n = Number(raw);
+  if (raw.trim() === "" || !Number.isFinite(n) || n < 0) return null;
+  return Math.round(n * 100);
+}
+
+/** REQ-283 — the first thing the one-off "Add task" form is missing, by field, with its message key; null when it can be sent */
+export function addTaskProblem(
+  f: { customerId: string; typeName: string; price: string },
+):
+  | { field: "customer"; key: "field.tk.needCustomer" }
+  | { field: "type"; key: "field.tk.needType" }
+  | { field: "price"; key: "field.tk.badPrice" }
+  | null {
+  if (!f.customerId) return { field: "customer", key: "field.tk.needCustomer" };
+  if (!f.typeName.trim()) return { field: "type", key: "field.tk.needType" };
+  if (centsOf(f.price) === null) {
+    return { field: "price", key: "field.tk.badPrice" };
+  }
+  return null;
+}
+
+/** REQ-283 — a server refusal of the one-off task that names a field of the form: "workerId required"
+ *  is a customer with no staffed zone (a new one), so the office has to pick the worker */
+export function addTaskServerProblem(
+  error: string | undefined,
+): { field: "worker"; key: "field.tk.needWorker" } | null {
+  return error === "workerId required"
+    ? { field: "worker", key: "field.tk.needWorker" }
+    : null;
+}

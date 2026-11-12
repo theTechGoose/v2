@@ -798,3 +798,7 @@
   color: #fff;
   border-color: var(--brand-teal);
 }
+
+/* REQ-283 — a form field whose check failed */
+.field input[aria-invalid="true"] { border-color: #dc2626; }
+.field select[aria-invalid="true"] { border-color: #dc2626; }
