@@ -165,6 +165,7 @@ import {
   stageInsetBottom,
 } from "../../shared/demo-mode/pill.ts";
 import {
+  afterActiveCheck,
   behindSeconds,
   frameReady,
   stageFrameLook,
@@ -245,6 +246,10 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
   const [demo, setDemo] = useState<Demo | null>(null);
   /** the server said there is no demo for this session */
   const [gone, setGone] = useState(false);
+  /** REQ-541 (cycle 4, M22) — a demo has been shown on this stage */
+  const shownRef = useRef(false);
+  /** REQ-541 — the stage is already on its way back to the presenter's own account */
+  const leavingRef = useRef(false);
   const [status, setStatus] = useState<LinkStatus>("connecting");
   const [peerOnline, setPeerOnline] = useState(false);
   const [ended, setEnded] = useState(false);
@@ -844,13 +849,21 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
       try {
         const a = await demoModeClient.active();
         if (!alive) return;
-        if (a.session && a.role === "presenter") {
+        const next = afterActiveCheck({
+          found: Boolean(a.session && a.role === "presenter"),
+          shown: shownRef.current,
+        });
+        if (next === "show" && a.session) {
           const found: Demo = { ...a.session, pid: a.pid };
+          shownRef.current = true;
           setDemo((d) => sameDemo(d, found) ? d : found);
           setGone(false);
         } else {
           setDemo(null);
           setGone(true);
+          // REQ-541 (M22) — the demo this stage showed is over (ended from another window of
+          // this account, which a replaced window never hears): never left as the customer
+          if (next === "handBack") handBack();
         }
       } catch {
         // signed out, or the backend is away
@@ -945,9 +958,14 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
         }
         if (s === "closed") {
           demoModeClient.active().then((a) => {
-            if (!a.session) {
+            const next = afterActiveCheck({
+              found: Boolean(a.session),
+              shown: shownRef.current,
+            });
+            if (next !== "show") {
               setDemo(null);
               setGone(true);
+              if (next === "handBack") handBack(); // REQ-541 (M22)
             }
           }).catch(() => setDemo(null));
         }
@@ -1043,6 +1061,7 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
         }
       },
       onEnded: (by, reason, pid) => {
+        leavingRef.current = true; // REQ-541 — the notice below says who ended it
         setEnded(true);
         customerRef.current = null;
         peersRef.current.clear();
@@ -1179,9 +1198,18 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
     globalThis.location.href = endedHref(notice);
   }
 
+  /** REQ-541 (cycle 4, M22) — the demo went without this stage hearing who ended it: back to
+   *  the presenter's own account, once */
+  function handBack() {
+    if (leavingRef.current) return;
+    leavingRef.current = true;
+    void backToOwnAccount({ by: "unknown" });
+  }
+
   async function end() {
     // REQ-235 + REQ-179 — said at once, before the server answers
     endedHere.current = true;
+    leavingRef.current = true;
     setEnded(true);
     linkRef.current?.end();
     try {
@@ -1253,18 +1281,24 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
           >
             <div style="text-align:center;display:grid;gap:12px">
               <strong>{t("demoMode.noDemo")}</strong>
-              <a
-                href="/admin"
-                style="color:#fff;text-decoration:underline;font-size:13px"
+              {
+                /* REQ-541 (M22) — stop impersonating first: a plain link left the presenter as
+                  the customer, under /admin's "You are guiding … in this browser" */
+              }
+              <button
+                type="button"
+                data-cy="demo-stage-back"
+                onClick={() => void backToOwnAccount({ by: "unknown" })}
+                style="color:#fff;text-decoration:underline;font-size:13px;background:none;border:0;padding:0;cursor:pointer;font:inherit"
               >
                 {t("demoMode.backToAdmin")}
-              </a>
+              </button>
             </div>
           </div>
         )
         : demo && (
           <>
-            {look.visibility === "hidden" && (
+            {look.visibility === "hidden" && !look.elsewhere && (
               <div
                 data-cy="demo-connecting"
                 role="status"
@@ -1426,7 +1460,32 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
                 </div>
               </div>
             )}
-            {mirrored && (
+            {look.elsewhere && !ended && (
+              // REQ-541 (cycle 4, M22) — another window of this account has the demo: the greyed
+              // frame says so across it, with the way to take it back
+              <div
+                data-cy="demo-elsewhere"
+                role="status"
+                style={`position:absolute;left:${fit.left}px;top:${
+                  fit.top - bannerH + fit.height / 2
+                }px;width:${fit.width}px;transform:translateY(-50%);z-index:${
+                  Z + 2
+                };box-sizing:border-box;padding:0 12px;color:#fff;font:inherit`}
+              >
+                <div style="display:flex;flex-wrap:wrap;gap:8px 12px;align-items:center;justify-content:center;text-align:center;padding:14px 16px;border-radius:10px;background:rgba(18,26,22,.92);box-shadow:0 4px 18px rgba(0,0,0,.45);font-size:14px;line-height:1.35">
+                  <strong>{t("demoMode.movedElsewhere")}</strong>
+                  <button
+                    type="button"
+                    data-cy="demo-elsewhere-use-here"
+                    onClick={() => globalThis.location.reload()}
+                    style="padding:5px 12px;border-radius:8px;border:0;background:#fff;color:#1f3d1b;cursor:pointer;font:inherit;font-size:13px;font-weight:700"
+                  >
+                    {t("demoMode.useHere")}
+                  </button>
+                </div>
+              </div>
+            )}
+            {mirrored && !look.elsewhere && (
               <div
                 data-cy="demo-stage-layer"
                 aria-hidden="true"

@@ -281,7 +281,8 @@ describe("REQ-309 (demo M19/m14/m26) — a gap is found while the customer is id
     expect(label).toMatch(/t\("demoMode\.connecting"\)/);
     // REQ-370 — the overlay keys on the same fact: the frame shown (a styled snapshot in it)
     expect(stage).toMatch(
-      /\{look\.visibility === "hidden" && \(\s*<div\s+data-cy="demo-connecting"/,
+      // REQ-541 AMENDMENT (M22) — …unless the demo moved to another window (its banner says so)
+      /\{look\.visibility === "hidden" && !look\.elsewhere && \(\s*<div\s+data-cy="demo-connecting"/,
     );
   });
 

@@ -193,7 +193,8 @@ describe("REQ-370 m23 — the stage is wired to it", () => {
 
   test("REQ-370 'Connecting to {name}…' stays up and the pill is not Live while the frame is hidden", () => {
     expect(src).toMatch(
-      /\{look\.visibility === "hidden" && \(\s*<div\s+data-cy="demo-connecting"/,
+      // REQ-541 AMENDMENT (M22) — …unless the demo moved to another window (its banner says so)
+      /\{look\.visibility === "hidden" && !look\.elsewhere && \(\s*<div\s+data-cy="demo-connecting"/,
     );
     // REQ-391 words the pill through stageStatus: the frame counts as mirrored only once it is
     // styled, so "Live" waits for the same fact (reconciled on demo-fixes)
