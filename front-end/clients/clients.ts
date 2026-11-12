@@ -109,6 +109,11 @@ export const clientsClient = {
       ...opts,
       query: { limit },
     }),
+  /** One customer of the signed-in account (GET /customers/:id). */
+  get: (id: string, opts: ApiOptions = {}) =>
+    api.get<
+      Pick<CustomerCard, "id" | "name" | "email" | "phoneNumber" | "address">
+    >(`/customers/${id}`, opts),
   update: (id: string, patch: Record<string, unknown>, opts: ApiOptions = {}) =>
     api.put<CustomerCard>(`/customers/${id}`, patch, opts),
   create: (

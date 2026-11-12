@@ -529,7 +529,7 @@ export default function DemoModeOverlay() {
   const shown = !inert && Boolean(demo || opening || notice);
   useEffect(() => {
     if (!shown) return;
-    let settle: number | undefined;
+    let settle: ReturnType<typeof setTimeout> | undefined;
     const place = () => {
       const el = pillRef.current;
       if (!el || typeof document.elementsFromPoint !== "function") return;

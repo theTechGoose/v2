@@ -3838,8 +3838,9 @@ export default function AsstChat({
       let custEmail: string | undefined;
       let custPhone: string | undefined;
       if (customerId) {
-        const picked = await clientsClient.list()
-          .then((cs) => cs.find((c) => c.id === customerId))
+        // GET /customers/:id — the list endpoint answers one page (REQ-135),
+        // which has no .find; the old call always fell through to undefined.
+        const picked = await clientsClient.get(customerId)
           .catch(() => undefined);
         custEmail = picked?.email ?? undefined;
         custPhone = picked?.phoneNumber ?? undefined;

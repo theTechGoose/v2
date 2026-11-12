@@ -336,7 +336,7 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
   // 1. which demo: on load, every 5 s while the customer's app is not connected
   useEffect(() => {
     let alive = true;
-    let timer: number | undefined;
+    let timer: ReturnType<typeof setTimeout> | undefined;
     const check = async () => {
       clearTimeout(timer);
       try {

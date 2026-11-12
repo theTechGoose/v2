@@ -130,13 +130,13 @@ export function connectDemo(o: DemoLinkOptions): DemoLink {
   let claimedAt = 0;
   /** REQ-232 — the other side's last socket went a moment ago: still "live" until the grace ends */
   let lingering = false;
-  let grace: number | undefined;
+  let grace: ReturnType<typeof setTimeout> | undefined;
   let closed = false;
   let ended = false;
   let replaced = false;
   let attempt = 0;
   let status: LinkStatus = "connecting";
-  let retry: number | undefined;
+  let retry: ReturnType<typeof setTimeout> | undefined;
 
   const setStatus = (s: LinkStatus) => {
     if (status === s) return;

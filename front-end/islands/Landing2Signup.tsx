@@ -167,7 +167,7 @@ export default function Landing2Signup(
   const cardRef = useRef<HTMLDivElement>(null);
   const codeRef = useRef<HTMLInputElement>(null);
   const sendRef = useRef<HTMLButtonElement>(null);
-  const timers = useRef<number[]>([]);
+  const timers = useRef<ReturnType<typeof setTimeout>[]>([]);
   const later = (fn: () => void, ms: number) => {
     timers.current.push(setTimeout(fn, ms));
   };
