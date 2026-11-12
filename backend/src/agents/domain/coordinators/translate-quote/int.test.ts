@@ -497,3 +497,35 @@ Deno.test("REQ-400 (M5) a failed translation caches no name — the base name is
   );
   await resetKv();
 });
+
+Deno.test("REQ-441 (M23, cycle 3) a cached copy missing the contractor's added line is stale — re-translated with every line", async () => {
+  const { quotes, flow, calls } = await setup();
+  // The help-me-price confirm flow: the contractor added "Limpieza y retiro
+  // de desechos" with "Add your own…", but the other language was written
+  // from the ORIGINAL pre-generated option — one line short.
+  const q = await quotes.create("u-1", {
+    summary: "Baño",
+    description:
+      "Preparar paredes\nPintar el baño\nLimpieza y retiro de desechos",
+    descriptionByLang: {
+      es: "Preparar paredes\nPintar el baño\nLimpieza y retiro de desechos",
+      en: "Prepare walls\nPaint the bathroom",
+    },
+    lineItems: [],
+    status: "draft",
+  });
+
+  await flow.run({ userId: "u-1", quoteId: q.id });
+
+  const after = await quotes.getOwned(q.id, "u-1");
+  assertEquals(
+    after.descriptionByLang?.en,
+    "Prepare walls\nPaint the bathroom\nCleanup and debris removal",
+  );
+  assertEquals(calls.length, 1, "only the stale English copy is asked");
+
+  // Now in step: a second run has nothing left to do.
+  await flow.run({ userId: "u-1", quoteId: q.id });
+  assertEquals(calls.length, 1);
+  await resetKv();
+});

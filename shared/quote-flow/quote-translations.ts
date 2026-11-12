@@ -56,11 +56,16 @@ export function missingQuoteTranslations(
   if (!quote) return [];
   const base = baseLang ?? quote.lang;
   const out: MissingTranslation[] = [];
+  const baseLines = descriptionLines(quote.description);
   for (const lang of langs) {
     if (lang === base) continue;
-    const lines = has(quote.descriptionByLang, lang)
-      ? []
-      : descriptionLines(quote.description);
+    // REQ-441 (cycle 3, M23): a cached copy with a different line count than
+    // the base description is stale (a line was added or removed after it
+    // was made) — re-translate it, never keep the short copy.
+    const cached = quote.descriptionByLang?.[lang];
+    const fresh = has(quote.descriptionByLang, lang) &&
+      descriptionLines(cached).length === baseLines.length;
+    const lines = fresh ? [] : baseLines;
     const lineIndexes: number[] = [];
     (quote.lineItems ?? []).forEach((li, i) => {
       if ((li?.description ?? "").trim() && !has(li.descriptionByLang, lang)) {
@@ -72,6 +77,37 @@ export function missingQuoteTranslations(
     }
   }
   return out;
+}
+
+/**
+ * REQ-441 (demo-loop cycle 3, M23) — the job details of an option confirmed
+ * in "help me price it", per language, for the quote startQuoteFromRaw
+ * creates. The app language is the live text (`raw`, with any line the
+ * contractor added or reworded). Another language reuses the option's
+ * pre-generated bullets only when the live lines are exactly the app
+ * language's pre-generated ones; otherwise it is `stale` — left out of the
+ * map, so the caller translates the live lines (or TranslateQuote fills it).
+ */
+export function confirmedDescriptionByLang(
+  byLang: Record<string, { bullets: readonly string[] }>,
+  appLang: string,
+  raw: string,
+): { descriptionByLang: Record<string, string>; stale: string[] } {
+  const live = descriptionLines(raw);
+  const orig = (byLang[appLang]?.bullets ?? []).map((b) => b.trim())
+    .filter(Boolean);
+  const unedited = orig.length > 0 && live.length === orig.length &&
+    live.every((t, i) => t === orig[i]);
+  const descriptionByLang: Record<string, string> = { [appLang]: raw.trim() };
+  const stale: string[] = [];
+  for (const [l, v] of Object.entries(byLang)) {
+    if (l === appLang) continue;
+    const pre = (v?.bullets ?? []).map((b) => b.trim()).filter(Boolean);
+    if (unedited && pre.length === live.length) {
+      descriptionByLang[l] = pre.join("\n");
+    } else stale.push(l);
+  }
+  return { descriptionByLang, stale };
 }
 
 /**
