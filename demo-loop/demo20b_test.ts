@@ -152,3 +152,31 @@ Deno.test("REQ-533: both agents are told that a headless tab switch is not a rea
     assertMatch(p, /headless/i, `${who} prompt names why`);
   }
 });
+
+// REQ-621 — one rule for what is a real issue, used by the testers and by the judge.
+const RULES = `${here}ISSUE-RULES.md`;
+const CATEGORIES = ["NOT_REAL", "BUG_CONTRADICTION", "BUG_HARM", "MISSING_IN_FLOW", "MISSING_NEW_AREA", "BUG_POLISH", "OWNER_CALL", "NITPICK", "PEDANTIC"];
+
+Deno.test("REQ-621: the rules file names every category, in the order they are checked, each with an action", async () => {
+  const r = await Deno.readTextFile(RULES);
+  let at = -1;
+  for (const c of CATEGORIES) {
+    const i = r.indexOf(`${c}`);
+    assert(i > at, `${c} missing or out of order`);
+    at = i;
+  }
+  assertMatch(r, /first (one that )?(matches|yes) wins/i);
+  for (const action of ["fix", "owner list", "log", "drop"]) assertMatch(r, new RegExp(action, "i"));
+  // nothing a user would notice can be a nitpick: polish is checked before nitpick
+  assert(r.indexOf("BUG_POLISH") < r.indexOf("NITPICK"));
+});
+
+Deno.test("REQ-621: both testers are told to read the rules and tag every issue with its category", async () => {
+  const { work } = await runHarness({ FAKE_DEMOER: "ok", FAKE_CUSTOMER: "ok" });
+  for (const who of ["demoer", "customer"]) {
+    const p = await Deno.readTextFile(`${work}/${who}.txt`);
+    assertStringIncludes(p, "demo-loop/ISSUE-RULES.md");
+    assertMatch(p, /category/i, `${who} prompt asks for a category`);
+    assertMatch(p, /NITPICK|PEDANTIC/, `${who} prompt says low categories are still reported`);
+  }
+});

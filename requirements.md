@@ -3707,3 +3707,20 @@ The cycle 3 root-cause pass (M2) found that switching tabs with Playwright in a 
 - unit: n/a — a prompt string; covered by the harness test.
 - int: `demo-loop/demo20b_test.ts` "REQ-533 …" runs the real harness with a fake fleet-claude and checks both prompts.
 - e2e: n/a — the next demo cycle is the run that uses it.
+
+## REQ-621 — one rule for what is a real issue, used by the demo testers and the judge (2026-11-12)
+
+Raphael (2026-11-12): "I think we need to figure out a rule. So that it's crystal clear. What is the line between a nitpick? What is pedantic? And what is a real suggestion? Because even feature requests, sometimes are features that are missing from the product." Then: "How about you judge whether it's picky or pedantic? So we add another step that evaluates … Every single one of these issues. How about you also give these rules to the... Testers, so that they know."
+
+Why: the loop's root-cause step marked real defects "NOT_A_BUG" or "FEATURE_GAP" and left them unfixed. Examples: "Settings shows empty Street/State that onboarding saved"; the plan step contradicting the landing page price; no reminder on an unpaid invoice.
+
+Requirement:
+- `demo-loop/ISSUE-RULES.md` defines nine categories, checked in order with the first match winning. Each has an action: fix, owner list, log or drop.
+- Every polish-visible defect is checked before NITPICK, so nothing a user would notice can be called a nitpick.
+- The demo testers (both agents in `demo20b.sh`) read the file and tag every issue they report.
+- The demo-loop judge step (`cycle.js`, outside the repo; LOOP-002 in `v2/demo-loop/requirements.md`) applies the same file to every issue.
+
+Tests:
+- unit: `demo-loop/demo20b_test.ts` "REQ-621: the rules file names every category, in order, each with an action" (the rules file is executed by agents, so it gets a content test).
+- int: `demo-loop/demo20b_test.ts` "REQ-621: both testers are told to read the rules and tag every issue" runs the real harness with a fake fleet-claude.
+- e2e: the next demo cycle; its reports carry category tags.
