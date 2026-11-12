@@ -30,7 +30,8 @@ import { type Lang, langSignal, persistLang } from "../lib/lang.ts";
 import { setLang, t } from "../lib/i18n.ts";
 import {
   type CommsLang,
-  sendLanguagesOf,
+  onboardingLanguagesSeen,
+  onboardingSendLanguages,
 } from "../../shared/quote-flow/comms-language.ts";
 import { SUPPORT_PHONE_DISPLAY } from "../../shared/legal/contact.ts";
 import {
@@ -123,6 +124,8 @@ interface StepCtx {
   sampleQuoteId: string;
   sampleQuoteFailed: boolean;
   retrySampleQuote: () => void;
+  /** REQ-498 — every language the account was in this visit (opened in, then each EN/ES switch) */
+  languagesSeen: CommsLang[];
 }
 
 /** A step is a real Preact component (rendered as `<Step ctx={ctx} />` with a
@@ -325,10 +328,13 @@ function BusinessNameStep({ ctx }: { ctx: StepCtx }) {
   // REQ-390 (demo m18): spaces alone disabled Continue without a word
   const blank = value.length > 0 && !valid;
   // REQ-348 (demo m34): the languages the business sends in, shown here so a Spanish signup sees
-  // English AND Spanish picked (the one rule, shared/quote-flow/comms-language.ts). Until the
-  // person touches a box the pick follows the account's language — the header switch included.
+  // English AND Spanish picked (the one rule, shared/quote-flow/comms-language.ts). REQ-498 (demo
+  // m42, cycle 3): until the person touches a box the default comes from EVERY language the
+  // account was in this visit — the one it was created/opened in included — not the live switch,
+  // so a Spanish signup who taps EN still keeps Spanish ticked.
   const [picked, setPicked] = useState<CommsLang[] | null>(null);
-  const sendIn = picked ?? sendLanguagesOf(ctx.snap.identity, ctx.snap.user.language);
+  const sendIn = picked ??
+    onboardingSendLanguages(ctx.snap.identity, ctx.languagesSeen);
   function toggleSendIn(code: CommsLang, on: boolean) {
     const set = new Set(sendIn);
     if (on) set.add(code);
@@ -1471,6 +1477,13 @@ export default function WelcomeWizard(
   // never shown again
   const open = useMemo(() => openSteps(registry, snapshot), [registry]);
   const [snap, setSnap] = useState<ProfileSnapshot>(snapshot);
+  // REQ-498 — the languages this visit has seen, starting with the account's own
+  const [languagesSeen, setLanguagesSeen] = useState<CommsLang[]>(() =>
+    onboardingLanguagesSeen(
+      onboardingLanguagesSeen([], snapshot.user.language),
+      initialLang,
+    )
+  );
   // REQ-427 (demo p13-s) — the index is a place in the WHOLE registry, so after a reload Back
   // still reaches the answered question before the current one. It opens at the first open step;
   // REQ-059 — back from a pick (free stored, or the receipt with the plan active): PAST the
@@ -1562,6 +1575,7 @@ export default function WelcomeWizard(
     sampleQuoteId,
     sampleQuoteFailed,
     retrySampleQuote: ensureSampleQuote,
+    languagesSeen,
   };
 
   const [leaving, setLeaving] = useState(false);
@@ -1588,6 +1602,8 @@ export default function WelcomeWizard(
     if (langSignal.value === code) return;
     setLang(code);
     setSnap((prev) => ({ ...prev, user: { ...prev.user, language: code } }));
+    // REQ-498 — remember it: the send-in default keeps every language seen
+    setLanguagesSeen((prev) => onboardingLanguagesSeen(prev, code));
     profileClient.updateUser({ language: code }).catch(() => {
       /* best effort — the UI already flipped */
     });

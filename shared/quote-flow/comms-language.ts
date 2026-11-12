@@ -76,6 +76,35 @@ export function sendLanguagesOf(
 }
 
 /**
+ * REQ-498 (demo-loop cycle 3, m42) — the languages an onboarding visit has
+ * seen: the account's language when the wizard opened, then each one the
+ * wizard's EN/ES switch moved to. In order, no repeats, en/es only.
+ */
+export function onboardingLanguagesSeen(
+  seen: readonly CommsLang[],
+  language: string | null | undefined,
+): CommsLang[] {
+  const n = normalize(language);
+  return n && !seen.includes(n) ? [...seen, n] : [...seen];
+}
+
+/**
+ * REQ-498 — the onboarding wizard's "Languages you send in" default: a stored
+ * choice wins (sendLanguagesOf); else the union of the defaults of every
+ * language the account was in during onboarding. A contractor created in
+ * Spanish who taps EN keeps Spanish ticked — the default no longer follows the
+ * live switch.
+ */
+export function onboardingSendLanguages(
+  identity: CommsLanguagesHolder | null | undefined,
+  languagesSeen: readonly string[],
+): CommsLang[] {
+  // the union of defaultCommsLanguages over the languages seen: Spanish anywhere → en + es
+  const spanishSeen = languagesSeen.some((l) => normalize(l) === "es");
+  return sendLanguagesOf(identity, spanishSeen ? "es" : "en");
+}
+
+/**
  * What an identity write should seed into `commsLanguages`: the default from
  * the contractor's language when neither the stored record nor this write
  * carries a choice (no set, no legacy single language); `undefined` when there
