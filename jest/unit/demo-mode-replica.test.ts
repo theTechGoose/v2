@@ -231,7 +231,7 @@ describe("REQ-187 the stage and the replica frame — wiring", () => {
     expect(route).toMatch(
       /import DemoStage from "\.\.\/\.\.\/islands\/DemoStage\.tsx"/,
     );
-    expect(route).toMatch(/<DemoStage \/>/);
+    expect(route).toMatch(/<DemoStage\b[^>]*\/>/); // REQ-270: it takes initialLang
     const stage = read("front-end/islands/DemoStage.tsx");
     expect(stage).toMatch(/<iframe/);
     expect(stage).toMatch(/name=\{REPLICA_FRAME_NAME\}/);

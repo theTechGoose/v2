@@ -24,11 +24,27 @@ function asLang(v: string | null | undefined): Lang | null {
  *  same value so server-render and island-hydration agree — no flash. */
 const LANG_COOKIE = "pm_lang";
 
+/** The demo stage's replica frame (`REPLICA_FRAME_NAME` in
+ *  lib/demo-mode/replica.ts — kept literal here so every page that imports the
+ *  language signal doesn't pull in the demo protocol). */
+function inReplicaFrame(): boolean {
+  try {
+    const w = globalThis as unknown as { name?: unknown; parent?: unknown };
+    return w.name === "pm-demo-replica" && w.parent !== globalThis;
+  } catch {
+    return false;
+  }
+}
+
 /** Persist the chosen language to BOTH localStorage (client reads) and a
  *  cookie (SSR reads). The single write path for every place that changes
  *  the language. SSR-guarded — a no-op on the server. */
 export function persistLang(lang: Lang): void {
   if (typeof document === "undefined") return;
+  // REQ-270: the demo stage's replica frame runs the CUSTOMER's app on the
+  // staff's origin — its writes would land in the staff's own storage/cookie
+  // and flip the stage's language on the next load. The frame never persists.
+  if (inReplicaFrame()) return;
   try {
     globalThis.localStorage?.setItem("pm:lang", lang);
   } catch { /* private mode / disabled storage */ }
