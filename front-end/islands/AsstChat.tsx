@@ -510,7 +510,7 @@ function localFallbackOptions(
   // REQ-330 (p15-7): a short job makes the "short" version equal to the
   // full one — equal bullet sets collapse, never two cards alike.
   return {
-    options: dedupeOptionsByBullets(options),
+    options: dedupeOptionsByBullets(options, { exact: true }),
     degraded: lines.length === 0,
   };
 }

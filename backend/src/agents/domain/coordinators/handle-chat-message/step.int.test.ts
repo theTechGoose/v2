@@ -157,16 +157,33 @@ const TIERS_JSON = JSON.stringify({
   ],
 });
 
+// REQ-584 AMENDMENT (cycle 4, p4-p1d): three versions that differ by one
+// token are near-twins and collapse to one card, so the fixture's versions
+// really differ in how much they say (concise / standard / detailed).
+const OPTION_BULLETS: Record<number, string[]> = {
+  1: [
+    "Tub out, curbless shower with a relocated drain",
+    "Heated floor under 12x24 tile; vanity and frameless glass",
+  ],
+  2: [
+    "Remove the tub and haul away debris",
+    "Build a curbless shower with a relocated drain",
+    "Install a heated floor under 12x24 tile",
+    "Set the vanity and frameless glass",
+  ],
+  3: [
+    "Remove the tub, disconnect supply lines and haul away all debris",
+    "Cut the slab and relocate the drain for a curbless shower pan",
+    "Waterproof the wet area and set 12x24 porcelain tile",
+    "Install an electric heated floor mat with a programmable thermostat",
+    "Set the vanity, connect plumbing and hang frameless glass",
+  ],
+};
 const OPTION = (n: number) => ({
   en: {
     jobName: `Bath gut ${n}`,
     summary: `Master bath gut, version ${n}`,
-    bullets: [
-      "Remove the tub and haul away debris",
-      "Build a curbless shower with a relocated drain",
-      "Install a heated floor under 12x24 tile",
-      `Set the vanity and frameless glass (${n})`,
-    ],
+    bullets: OPTION_BULLETS[n],
   },
 });
 const OPTIONS_JSON = JSON.stringify({
