@@ -124,6 +124,7 @@ import {
   samplePoints,
   setPillRoom,
 } from "../../shared/demo-mode/pill.ts";
+import { pillCopy } from "../../shared/demo-mode/pill-copy.ts";
 import type { Rect } from "../../shared/demo-mode/protocol.ts";
 
 interface Demo {
@@ -1051,6 +1052,10 @@ export default function DemoModeOverlay() {
     : status === "direct" || status === "relay"
     ? t("demoMode.connected")
     : t("demoMode.connecting");
+  // REQ-373 (demo m2, p13-h) — the guide's first name on the compact pill; the name said once
+  const copy = pillCopy({ presenters, status: statusLabel, compact, open, t });
+  /** REQ-373 — "● Alex" beside the status while the details are hidden */
+  const showGuide = copy.showShort && !started;
 
   async function end() {
     const id = demo!.id;
@@ -1109,20 +1114,33 @@ export default function DemoModeOverlay() {
               </span>
             )
             : <span style={compact ? wrap : cut}>{guidingText}</span>}
-          <PresenterChips presenters={presenters} nowrap />
+          {copy.showChips && <PresenterChips presenters={presenters} nowrap />}
         </span>
+        {showGuide && (
+          <span
+            data-cy="demo-guide"
+            style={`display:inline-flex;align-items:center;gap:6px;${cut}`}
+          >
+            <span
+              aria-hidden="true"
+              style={`flex:none;width:10px;height:10px;border-radius:50%;background:${
+                presenters[0].color
+              };box-shadow:0 0 0 2px rgba(255,255,255,.85)`}
+            />
+            <span style={cut}>{copy.shortName}</span>
+          </span>
+        )}
         <button
           type="button"
           data-cy="demo-more"
           aria-expanded={!compact || open}
-          aria-label={line}
-          title={line}
+          aria-label={copy.moreLabel}
           onClick={() => setOpen((o) => !o)}
           style={`display:inline-flex;align-items:center;gap:6px;padding:0;border:0;background:none;color:inherit;font:inherit;cursor:${
             compact ? "pointer" : "default"
           }`}
         >
-          {compact && (
+          {compact && !showGuide && (
             <span
               aria-hidden="true"
               style={`width:10px;height:10px;border-radius:50%;background:${
