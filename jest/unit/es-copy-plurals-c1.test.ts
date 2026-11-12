@@ -60,7 +60,7 @@ describe("REQ-350 (b) the quote footer's closing is a whole sentence with its ow
   });
   test("quote-doc ends the contact sentence before the closing", () => {
     const src = read("front-end/components/quote-doc.tsx");
-    expect(src).toMatch(/\{"\. "\}\s*\{t\.lookForward\}/);
+    expect(src).toMatch(/\{"\. "\}\s*(?:<span[^>]*data-cy="quote-contact-close"[^>]*>\s*)?\{t\.lookForward\}/);
   });
   test("with only an email, the contact line starts with a capital", () => {
     const src = read("front-end/components/quote-doc.tsx");
