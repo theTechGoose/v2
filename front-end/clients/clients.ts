@@ -122,8 +122,16 @@ export interface TopClient {
   barPct: number;
 }
 
+/** REQ-551: paid revenue (last 12 months) no customer card carries. */
+export interface UnassignedRevenue {
+  invoiceCount: number;
+  revenue12moCents: number;
+}
+
 export interface TopClientsResponse {
   results: TopClient[];
+  /** REQ-551: set when paid invoices with no customer are left unranked. */
+  unassigned?: UnassignedRevenue;
 }
 
 export const clientsClient = {
