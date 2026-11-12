@@ -11,6 +11,11 @@ import { api, type ApiOptions } from "../lib/api.ts";
 import type { QuoteLedger } from "../../shared/documents/ledger.ts";
 import type { DocVersionRecord } from "../../shared/documents/versions.ts";
 import type { QuoteDelivery } from "../../shared/quote-flow/delivery.ts";
+import {
+  type QuoteSendPreview,
+  type SendPreviewChannel,
+  sendPreviewPath,
+} from "../../shared/quote-flow/send-preview.ts";
 
 export type { QuoteLedger };
 
@@ -122,6 +127,13 @@ export const quotesClient = {
   /** REQ-395 (demo M12): drop the pending revision; the customer keeps the published version. */
   discardRevision: (id: string, opts: ApiOptions = {}) =>
     api.post<QuoteCard>(`/quotes/${id}/discard-revision`, {}, opts),
+  /** REQ-461 (demo m8): the email + text the client gets if sent now — sends nothing. */
+  sendPreview: (
+    id: string,
+    channel: SendPreviewChannel,
+    lang: "en" | "es",
+    opts: ApiOptions = {},
+  ) => api.get<QuoteSendPreview>(sendPreviewPath(id, channel, lang), opts),
   /** REQ-201: publish the pending revision (version+1); `notify` re-sends the same link. */
   publish: (
     id: string,

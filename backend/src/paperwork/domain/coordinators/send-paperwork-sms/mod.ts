@@ -235,25 +235,41 @@ export class SendPaperworkSms {
    *  REQ-342 (M13): the URL carries the send language as `?lang=` (the
    *  /s redirect forwards it onto /q or /i), so the customer opens the
    *  document in the language it was sent in. */
-  private async mintShortUrl(
+  private mintShortUrl(
     userId: string,
     r: { kind: "quote" | "invoice"; id: string },
     lang?: "en" | "es",
   ): Promise<string> {
-    try {
-      const link = await this.shortlinks.findOrCreate(userId, r.kind, r.id);
-      return withSendLang(`${APP_URL}/s/${link.code}`, lang);
-    } catch (err) {
-      // findOrCreate now always yields a code (random, else deterministic), so
-      // this only trips on a catastrophic KV failure where we genuinely can't
-      // persist a code — the long URL is then the only link that still works.
-      console.warn(
-        `[send-paperwork-sms] shortlink mint failed for ${r.kind}:${r.id}; falling back to long URL:`,
-        err,
-      );
-      const path = r.kind === "quote" ? `/q/${r.id}` : `/i/${r.id}`;
-      return withSendLang(`${APP_URL}${path}`, lang);
-    }
+    return paperworkShortUrl(this.shortlinks, userId, r, lang);
+  }
+}
+
+/** Mint (or reuse) a short code for the resource and return the
+ *  customer-facing /s/<code> URL. Falls back to the canonical
+ *  long URL if the codegen path throws for any reason.
+ *  REQ-342 (M13): the URL carries the send language as `?lang=` (the
+ *  /s redirect forwards it onto /q or /i), so the customer opens the
+ *  document in the language it was sent in. REQ-461: shared with the send
+ *  preview, so the text it shows carries the link the send will. */
+export async function paperworkShortUrl(
+  shortlinks: ShortLinkStore,
+  userId: string,
+  r: { kind: "quote" | "invoice"; id: string },
+  lang?: "en" | "es",
+): Promise<string> {
+  try {
+    const link = await shortlinks.findOrCreate(userId, r.kind, r.id);
+    return withSendLang(`${APP_URL}/s/${link.code}`, lang);
+  } catch (err) {
+    // findOrCreate now always yields a code (random, else deterministic), so
+    // this only trips on a catastrophic KV failure where we genuinely can't
+    // persist a code — the long URL is then the only link that still works.
+    console.warn(
+      `[send-paperwork-sms] shortlink mint failed for ${r.kind}:${r.id}; falling back to long URL:`,
+      err,
+    );
+    const path = r.kind === "quote" ? `/q/${r.id}` : `/i/${r.id}`;
+    return withSendLang(`${APP_URL}${path}`, lang);
   }
 }
 
