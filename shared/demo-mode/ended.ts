@@ -11,8 +11,10 @@
  *   - a stage's notice rides its hop to /admin as `?demo=ended&by=you|other&name=…`
  *     (`endedHref`); /admin reads it once (`readEndedNotice`) and drops it from the address.
  *   - End asks first (`endConfirm`): the first click asks "End for everyone?"; Yes counts after
- *     END_ARM_MS (the second click of a double click on End never ends a demo); Keep going, or
- *     END_ASK_MS without an answer, puts End back.
+ *     END_ARM_MS (the second click of a double click on End never ends a demo); Keep going puts
+ *     End back. REQ-300 (demo cycle 1, M4): the question has no clock of its own — it used to
+ *     cancel itself after 4 s, before an agent or a reading human had answered, so Yes landed on
+ *     nothing. It now stays up until answered, Escape, or a click outside the pill (EndDemo).
  */
 import type { EndReason, Presenter, Role } from "./protocol.ts";
 
@@ -40,8 +42,6 @@ export interface EndedReader {
 export const ADMIN_PATH = "/admin";
 /** a name the address carries is cut to this */
 export const NAME_MAX = 80;
-/** how long End's question waits for an answer */
-export const END_ASK_MS = 4_000;
 /** how long Yes waits before it counts: longer than a double click's second click */
 export const END_ARM_MS = 400;
 
@@ -149,6 +149,7 @@ export function endConfirm(o: {
   const setTimer = o.setTimer ?? ((fn, ms) => setTimeout(fn, ms));
   const clearTimer = o.clearTimer ?? ((h) => clearTimeout(h as number));
   let s: EndAsk = IDLE;
+  // REQ-300: only the arm ticks; nothing clears the question but an answer
   let timers: unknown[] = [];
   const set = (next: EndAsk) => {
     s = next;
@@ -164,10 +165,6 @@ export function endConfirm(o: {
       set({ asking: true, armed: false });
       timers = [
         setTimer(() => set({ asking: true, armed: true }), END_ARM_MS),
-        setTimer(() => {
-          stop();
-          set(IDLE);
-        }, END_ASK_MS),
       ];
     },
     confirm() {

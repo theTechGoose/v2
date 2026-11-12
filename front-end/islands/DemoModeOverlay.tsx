@@ -110,6 +110,7 @@ import {
   clearPillRoom,
   CONTROL_SELECTOR,
   countsAsPage,
+  coversView,
   PAGE_MEDIA_SELECTOR,
   PILL_COMPACT_MAX_W,
   PILL_FONT,
@@ -145,6 +146,23 @@ const Z = 2147483000;
 const here = () => globalThis.location.pathname + globalThis.location.search;
 /** REQ-228 — how often the pill re-checks what is under it (the page changes under a fixed box) */
 const PILL_CHECK_MS = 700;
+
+/**
+ * REQ-300 (demo M20) — an open dialog's backdrop: a fixed box over the whole view under the view's
+ * centre (the demo's own chrome not counted). While it is up the pill keeps its place — a slot
+ * over the backdrop is no clearer than the current one, and a pill hopping under a hand turned a
+ * click into a backdrop click that closed the dialog.
+ */
+function dialogBackdropUp(): boolean {
+  const view = { w: globalThis.innerWidth, h: globalThis.innerHeight };
+  return document.elementsFromPoint(view.w / 2, view.h / 2)
+    .filter((el) => !el.closest("[data-demo-overlay]"))
+    .some((el) =>
+      el !== document.documentElement && el !== document.body &&
+      getComputedStyle(el).position === "fixed" &&
+      coversView(el.getBoundingClientRect(), view)
+    );
+}
 
 /** REQ-295 — does this element show text of its own (not just its children's)? */
 function ownText(el: Element): boolean {
@@ -796,6 +814,12 @@ export default function DemoModeOverlay() {
     const place = () => {
       const el = pillRef.current;
       if (!el || typeof document.elementsFromPoint !== "function") return;
+      // REQ-300 — End's question is up: the pill's box is frozen, so the Yes a hand is reaching
+      // for stays where it was seen (the wider question used to re-place the pill 150 ms later
+      // and the click landed on the page beneath — a dialog's backdrop closed the dialog)
+      if (el.querySelector('[data-cy="demo-end-ask"]')) return;
+      // REQ-300 — a dialog is open: the pill stays where it is until it closes
+      if (posRef.current && dialogBackdropUp()) return;
       const view = { w: globalThis.innerWidth, h: globalThis.innerHeight };
       const size = { w: el.offsetWidth, h: el.offsetHeight };
       const ghosts = ghostsOfPage();
