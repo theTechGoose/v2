@@ -4,6 +4,7 @@ import { AgentMessageStore } from "@agents/domain/data/agent-message-store/mod.t
 import { QuoteStore } from "@paperwork/domain/data/quote-store/mod.ts";
 import { SendPaperworkEmail } from "@paperwork/domain/coordinators/send-paperwork-email/mod.ts";
 import { SendPaperworkSms } from "@paperwork/domain/coordinators/send-paperwork-sms/mod.ts";
+import { UserStore } from "@users/domain/data/user-store/mod.ts";
 import { EventBus } from "@core/business/events/mod.ts";
 import { t } from "@core/i18n/mod.ts";
 import type { AgentConversation } from "@agents/dto/conversation.ts";
@@ -57,6 +58,7 @@ export class SendQuote {
     private bus: EventBus,
     private emailer: SendPaperworkEmail,
     private smser: SendPaperworkSms,
+    private users: UserStore,
   ) {}
 
   async run(input: SendQuoteInput): Promise<SendQuoteResult> {
@@ -158,7 +160,10 @@ export class SendQuote {
       emailFailureReason,
       textedTo,
       smsFailureReason,
-      lang: input.language ?? "en",
+      // REQ-276 (demo i18n-formatting-m8): the note is chat copy the
+      // contractor reads — their UI language, like the SMS reason inside it
+      // (REQ-030) — never the document's send language.
+      lang: await this.uiLanguage(input.userId),
     });
     const note = await this.messages.append({
       conversationId: conv.id,
@@ -183,6 +188,11 @@ export class SendQuote {
 
     return { conversation: updatedConv, newMessages: [note] };
   }
+
+  private async uiLanguage(userId: string): Promise<"en" | "es"> {
+    const me = await this.users.get(userId).catch(() => null);
+    return me?.language === "es" ? "es" : "en";
+  }
 }
 
 function buildDivider(o: {
@@ -193,14 +203,9 @@ function buildDivider(o: {
   smsFailureReason?: string;
   lang: "en" | "es";
 }): string {
-  const {
-    channel,
-    emailedTo,
-    emailFailureReason,
-    textedTo,
-    smsFailureReason,
-    lang,
-  } = o;
+  const { channel, emailedTo, textedTo, lang } = o;
+  const emailFailureReason = readableReason(o.emailFailureReason, lang);
+  const smsFailureReason = readableReason(o.smsFailureReason, lang);
   const emailOk = !!emailedTo;
   const smsOk = !!textedTo;
 
@@ -251,4 +256,17 @@ function buildDivider(o: {
     emailReason: emailFailureReason ?? t(lang, "sendQuote.divider.noRecipient"),
     smsReason: smsFailureReason ?? t(lang, "sendQuote.divider.noRecipient"),
   });
+}
+
+/** REQ-276: the dispatchers' "no recipient: pass `to` …" is a developer
+ *  message in English; in the contractor's note it reads as the localized
+ *  "no recipient" (the note's own key), so the line stays one language. */
+function readableReason(
+  reason: string | undefined,
+  lang: "en" | "es",
+): string | undefined {
+  if (reason && /^no recipient\b/.test(reason)) {
+    return t(lang, "sendQuote.divider.noRecipient");
+  }
+  return reason;
 }

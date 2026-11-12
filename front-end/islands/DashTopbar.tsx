@@ -3,7 +3,7 @@ import { I } from "../lib/dash-icons.tsx";
 import { dashboardClient, type Notification } from "../clients/dashboard.ts";
 import { langSignal, setLang, tFor } from "../lib/i18n.ts";
 import { profileClient } from "../clients/profile.ts";
-import { capitalizeDateLine } from "../../shared/quote-flow/format-helpers.ts";
+import { formatGreetingDate } from "../../shared/quote-flow/locale-format.ts";
 import GlobalSearch from "./GlobalSearch.tsx";
 
 interface Props {
@@ -35,33 +35,6 @@ function fmtAgo(iso: string): string {
   return `${Math.floor(h / 24)}d`;
 }
 
-// Full weekday / month name keys (same set the dashboard route uses). The
-// greeting date is built here so it re-localizes live when langSignal flips,
-// rather than arriving as a frozen pre-formatted string from the route.
-const WEEKDAY_KEYS = [
-  "dashboardPage.weekday.sunday",
-  "dashboardPage.weekday.monday",
-  "dashboardPage.weekday.tuesday",
-  "dashboardPage.weekday.wednesday",
-  "dashboardPage.weekday.thursday",
-  "dashboardPage.weekday.friday",
-  "dashboardPage.weekday.saturday",
-];
-const MONTH_KEYS = [
-  "dashboardPage.month.january",
-  "dashboardPage.month.february",
-  "dashboardPage.month.march",
-  "dashboardPage.month.april",
-  "dashboardPage.month.may",
-  "dashboardPage.month.june",
-  "dashboardPage.month.july",
-  "dashboardPage.month.august",
-  "dashboardPage.month.september",
-  "dashboardPage.month.october",
-  "dashboardPage.month.november",
-  "dashboardPage.month.december",
-];
-
 export default function DashTopbar(
   {
     greetingName,
@@ -74,14 +47,10 @@ export default function DashTopbar(
   // Reactive app language (seeded from user.language, flipped live by Settings).
   const lang = langSignal.value;
   const now = new Date();
-  // ES weekday/month names are lowercase in the dict ("viernes · agosto"), but
-  // this is the first line of the greeting — sentence-initial capital (P-65).
-  const greetingDate = capitalizeDateLine(
-    `${tFor(lang, WEEKDAY_KEYS[now.getDay()])} · ${
-      tFor(lang, MONTH_KEYS[now.getMonth()])
-    } ${now.getDate()}`,
-    lang,
-  );
+  // Built here so it re-localizes live when langSignal flips. REQ-276: in
+  // the language's own order — es "Miércoles · 11 de noviembre", capitalised
+  // as the line opens the greeting (P-65); en "Wednesday · November 11".
+  const greetingDate = formatGreetingDate(now, lang);
   const [, setUnread] = useState(initialUnread);
   const [items, setItems] = useState<Notification[]>(initialNotifications);
   const [tickerIdx, setTickerIdx] = useState(0);

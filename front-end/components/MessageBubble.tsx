@@ -1,12 +1,6 @@
 import type { Message } from "../clients/assistant.ts";
 import { tFor } from "../lib/i18n.ts";
-
-function fmtTime(ts: number): string {
-  return new Date(ts).toLocaleTimeString([], {
-    hour: "numeric",
-    minute: "2-digit",
-  });
-}
+import { formatClockTime } from "../../shared/quote-flow/locale-format.ts";
 
 export function MessageBubble(
   { msg, lang = "en" }: { msg: Message; lang?: "en" | "es" },
@@ -20,7 +14,7 @@ export function MessageBubble(
       <div class="msg__avatar">{initial.slice(0, 1)}</div>
       <div class="col" style="gap:2px">
         <div class="msg__bubble">{msg.content}</div>
-        <div class="msg__time">{fmtTime(msg.createdAt)}</div>
+        <div class="msg__time">{formatClockTime(msg.createdAt, lang)}</div>
       </div>
     </div>
   );
