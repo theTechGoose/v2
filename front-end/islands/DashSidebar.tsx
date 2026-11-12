@@ -210,6 +210,12 @@ export default function DashSidebar(
   // Reactive UI language: seeded from the profile cache, flipped instantly
   // when Settings changes it. Reading langSignal here re-renders the rail.
   const lang = langSignal.value;
+  // REQ-517 — an icon-only row still names itself: a hover tooltip always, and an
+  // aria-label while collapsed (the label span is gone or display:none then).
+  const named = (label: string) => ({
+    title: label,
+    "aria-label": collapsed ? label : undefined,
+  });
 
   return (
     <>
@@ -294,7 +300,7 @@ export default function DashSidebar(
                   class="nav-item nav-item--back"
                   data-cy="nav-back"
                   onClick={() => setPath(view.parentPath!)}
-                  title={tFor(lang, "nav.back")}
+                  {...named(tFor(lang, "nav.back"))}
                 >
                   <span class="nav-item__icon">
                     <I d={ICN.chevLeft} size={18} />
@@ -320,7 +326,7 @@ export default function DashSidebar(
                       class="nav-item nav-item--folder"
                       data-cy={`nav-folder-${item.id}`}
                       onClick={() => setPath([...path, item.id])}
-                      title={tFor(lang, `nav.${item.id}`)}
+                      {...named(tFor(lang, `nav.${item.id}`))}
                     >
                       <span class="nav-item__icon">
                         <I d={ICN[item.icon]} size={18} />
@@ -348,6 +354,7 @@ export default function DashSidebar(
                     class={`nav-item ${
                       active === item.id ? "nav-item--active" : ""
                     }`}
+                    {...named(tFor(lang, `nav.${item.id}`))}
                   >
                     <span class="nav-item__icon">
                       <I d={ICN[item.icon]} size={18} />
@@ -380,6 +387,7 @@ export default function DashSidebar(
                   class={`nav-item ${
                     active === "admin" ? "nav-item--active" : ""
                   }`}
+                  {...named("Admin")}
                 >
                   <span class="nav-item__icon">
                     <I d={ICN.shield} size={18} />
@@ -481,6 +489,7 @@ export default function DashSidebar(
               class="nav-item"
               style="color:rgba(255,255,255,0.7)"
               data-cy="nav-worker-view"
+              {...named(tFor(lang, "nav.workerView"))}
             >
               <span class="nav-item__icon">
                 <I d={ICN.hardhat} size={18} />
@@ -495,6 +504,7 @@ export default function DashSidebar(
               type="button"
               class="nav-item nav-item--logout"
               onClick={logout}
+              {...named(tFor(lang, "nav.logout"))}
             >
               <span class="nav-item__icon">
                 <I d={ICN.logout} size={18} />
