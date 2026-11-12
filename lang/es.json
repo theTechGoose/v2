@@ -993,6 +993,7 @@
   "quoteDoc.signedBinding": "Firmado y vinculante",
   "quoteDoc.signedNote": "Espera hasta 2 minutos antes de revisar tu correo. No olvides revisar el spam.",
   "quoteDoc.signedNoteSms": "Te enviaremos la confirmación por mensaje de texto a tu teléfono.",
+  "quoteDoc.signedNoteKept": "Tu contratista tiene tu copia firmada. Guarda una para ti con Descargar PDF abajo.",
   "quoteDoc.start": "Inicio",
   "quoteDoc.startTbd": "Por agendar",
   "quoteDoc.tableAmount": "Monto",

@@ -5989,9 +5989,11 @@ export default function AsstChat({
               // form everywhere and clutter the thread.
               // REQ-236: only the NEWEST send divider can carry it — a good
               // resend retires the older failure and its form.
+              // REQ-403 (m11): and none once the customer has signed.
               const recoveryDividerId = lastRecoveryDividerId(
                 visible,
                 customer,
+                { accepted: quoteAccepted },
               );
               return visible.map((m) => {
                 const wizardStepId = (

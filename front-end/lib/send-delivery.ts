@@ -60,12 +60,16 @@ export function dividerNeedsRecovery(
  * The divider that carries the contact-recovery form: the NEWEST send
  * divider, and only when it needs recovery. A newer successful send retires
  * every older failure — its form (and its stale "invalid number" reason)
- * must not re-attach after a good resend.
+ * must not re-attach after a good resend. An accepted quote carries none.
  */
 export function lastRecoveryDividerId(
   messages: readonly { id: string; kind?: string; payload?: unknown }[],
   customer: { email?: string; phoneNumber?: string } | null | undefined,
+  opts: { accepted?: boolean } = {},
 ): string | undefined {
+  // REQ-403 (m11): once the customer signed, the deal is done — a stale
+  // "that number can't receive texts" form is not a next step any more.
+  if (opts.accepted) return undefined;
   for (let i = messages.length - 1; i >= 0; i--) {
     const m = messages[i];
     if (m.kind !== "phase_divider") continue;

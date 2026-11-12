@@ -8,6 +8,10 @@ import { EmailService } from "@communication/domain/data/email-service/mod.ts";
 import { SmsService } from "@users/domain/data/sms/mod.ts";
 import { RenderQuotePdf } from "@paperwork/domain/coordinators/render-quote-pdf/mod.ts";
 import { LogPaperworkMessage } from "@communication/domain/coordinators/log-paperwork-message/mod.ts";
+import {
+  customerSmsTarget,
+  dispatchCustomerSms,
+} from "@paperwork/domain/business/customer-sms/mod.ts";
 import { buildSignedConfirmSms, smsJobName } from "#quote-flow/sms-i18n.ts";
 import { reconcileMilestones } from "#quote-flow/milestone-reconcile.ts";
 import type { Quote, QuoteTerm } from "@paperwork/dto/quote.ts";
@@ -333,8 +337,11 @@ export class SendSignedConfirmation {
     //      the run-level `acceptedNotifiedAt` guard already prevents
     //      double-sends on replay.
     try {
-      const toSms = normalizeE164(customer?.phoneNumber ?? "");
-      if (toSms) {
+      // REQ-403 (m11): only a number that can take a text is texted — a
+      // missing, invalid or fictional one is skipped, so no "Texted to"
+      // receipt is ever logged for it.
+      const target = customerSmsTarget(customer?.phoneNumber);
+      if (target.ok) {
         // P-30: the shared builder handles the unnamed-customer greeting
         // natively ("Hola, …" / "Hi there, …") — never prefill a fallback
         // name here, or ES renders the doubled "Hola hola, …".
@@ -348,8 +355,13 @@ export class SendSignedConfirmation {
           businessName,
           lang,
         });
-        const res = await this.sms.send({ to: toSms, body });
-        // Comms trail (roadmap p.8): record the dispatch like every other
+        // REQ-403: the same guarded dispatch as every other customer text.
+        const res = await dispatchCustomerSms(this.sms, {
+          to: target.e164,
+          body,
+          uiLang: lang === "es" ? "es" : "en",
+        });
+        // Comms trail (roadmap p.8): record a REAL delivery like every other
         // outbound text so it's queryable per document.
         if (res.ok) {
           await this.commsLog.run({
@@ -357,7 +369,7 @@ export class SendSignedConfirmation {
             customerId: customer?.id,
             channel: "text",
             content: body,
-            toAddress: toSms,
+            toAddress: res.to,
             paperworkId: quote.id,
             paperworkType: "quote",
           });
@@ -383,18 +395,6 @@ export function agreementFileName(
   quote: { id: string; number?: string },
 ): string {
   return `Agreement-${docRef(quote).replace(/^#/, "")}.pdf`;
-}
-
-/** Normalize a raw phone to E.164 (US-default). Mirrors the helper in
- *  send-paperwork-sms; returns undefined when it can't be made valid. */
-function normalizeE164(raw: string): string | undefined {
-  const trimmed = raw.trim();
-  if (!trimmed) return undefined;
-  if (/^\+[1-9]\d{6,14}$/.test(trimmed)) return trimmed;
-  const digits = trimmed.replace(/\D/g, "");
-  if (digits.length === 10) return `+1${digits}`;
-  if (digits.length === 11 && digits.startsWith("1")) return `+${digits}`;
-  return undefined;
 }
 
 /** Resolve the contractor's chosen payment terms into one amount per
