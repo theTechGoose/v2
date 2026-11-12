@@ -2944,7 +2944,7 @@ function InvoiceCard(
         <a
           class="qcard__open-link"
           data-cy="invoice-card-open"
-          href={`/i/${inv.id}`}
+          href={invoiceLinkPath(inv.id, inv.lang)} // REQ-586
           target="_blank"
           rel="noopener noreferrer"
           onClick={(e) => e.stopPropagation()}

@@ -70,6 +70,8 @@ async function invoiceFor(
       status: "sent",
       lineItems: [{ description: "Panel upgrade", quantity: 1, price: 450_00 }],
       amount: 450_00,
+      // REQ-550: an issued invoice needs a customer or a bill-to name
+      billTo: { name: "Pat Doe" },
       ...body,
     }),
   });

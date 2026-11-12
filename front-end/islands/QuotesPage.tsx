@@ -1670,7 +1670,7 @@ function OpenQuotePanel(
                     role="menuitem"
                     class="qopen-send__item"
                     data-cy="quote-panel-send-preview"
-                    href={customerLinkPath(q.id)}
+                    href={customerLinkPath(q.id, quoteSendLang(q))}
                     target="_blank"
                     rel="noopener"
                     onClick={() => setSendMenuOpen(false)}

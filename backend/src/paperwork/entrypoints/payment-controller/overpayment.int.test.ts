@@ -78,6 +78,8 @@ async function sentInvoice(auth: Record<string, string>, amount: number) {
     amount,
     status: "sent",
     dueDate: "2026-12-01",
+    // REQ-550: an issued invoice needs a customer or a bill-to name
+    billTo: { name: "Pat Doe" },
   });
   assertEquals(inv.status < 400, true, JSON.stringify(inv.body));
   return inv.body as { id: string };

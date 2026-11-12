@@ -214,7 +214,7 @@ export default function QuoteCard(
             <a
               class="qcard__cta"
               data-cy="qcard-cta"
-              href={`/q/${q.id}`}
+              href={customerLinkPath(q.id, q.sendLang)} // REQ-586
               target="_blank"
               rel="noopener"
               onClick={(e) => e.stopPropagation()}
