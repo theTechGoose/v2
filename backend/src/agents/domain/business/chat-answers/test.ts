@@ -256,8 +256,14 @@ Deno.test("REQ-388 M19 owedReply: pair 2 — Ana owes $400, billed after the job
     invoices: [ANA_INVOICE],
     today: "2026-11-12",
   });
-  assertEquals(r.owedCents, 40_000);
-  assertStringIncludes(r.text, "Ana López te debe $400");
+  // REQ-474 (cycle 3, M17): owed NOW is the open receivable (the Clientes
+  // card's rule); a scheduled bill is still to be billed
+  assertEquals(r.owedCents, 0);
+  assertEquals(r.upcomingCents, 40_000);
+  assertStringIncludes(
+    r.text,
+    "Ana López todavía no te debe nada — $400 aún no se ha facturado",
+  );
   assertStringIncludes(r.text, "INV-001");
   assertStringIncludes(r.text, "programada");
   assertStringIncludes(r.text, "26 nov");
@@ -276,8 +282,13 @@ Deno.test("REQ-388 M19 owedReply: pair 1 — the $1,600 deposit is out (due Nov 
     invoices: [BALANCE, DEPOSIT],
     today: "2026-11-12",
   });
-  assertEquals(r.owedCents, 320_000);
-  assertStringIncludes(r.text, "John Miller owes you $3,200");
+  // REQ-474: $1,600 is out (owed now), $1,600 is scheduled (not billed yet)
+  assertEquals(r.owedCents, 160_000);
+  assertEquals(r.upcomingCents, 160_000);
+  assertStringIncludes(
+    r.text,
+    "John Miller owes you $1,600 now; $1,600 more isn't billed yet.",
+  );
   assertStringIncludes(r.text, "$1,600 invoice (INV-001) is out");
   assertStringIncludes(r.text, "Nov 19");
   assertStringIncludes(r.text, "INV-002");
@@ -309,8 +320,12 @@ Deno.test("REQ-388 M19 owedReply: past due, paid up, signed but not invoiced, an
     quotes: [{ ...SIGNED, number: "Q-001", estimatedTotal: 320_000 }],
     invoices: [],
   });
-  assertEquals(unbilled.owedCents, 320_000);
-  assertStringIncludes(unbilled.text, "owes you $3,200");
+  assertEquals(unbilled.owedCents, 0);
+  assertEquals(unbilled.upcomingCents, 320_000);
+  assertStringIncludes(
+    unbilled.text,
+    "doesn't owe you anything yet — $3,200 isn't billed yet",
+  );
   assertStringIncludes(unbilled.text, "$3,200 of Q-001 isn't billed yet");
 
   const unsigned = owedReply("en", {
@@ -357,4 +372,81 @@ Deno.test("REQ-388 M19 billingReply: a scheduled pay-after-completion invoice th
   assertStringIncludes(r.text, "INV-001");
   assert(!/went out automatically|signed, so/i.test(r.text), r.text);
   assertEquals(r.invoice?.id, "inv-ana");
+});
+
+// ---------------------------------------------------------------------------
+// REQ-474 (demo-loop cycle 3, M17) — owed now vs still to bill
+// ---------------------------------------------------------------------------
+
+const ANA_PEREZ_QUOTE = {
+  id: "q-ap",
+  number: "Q-001",
+  status: "accepted",
+  acceptedAt: "2026-11-12T09:00:00Z",
+  estimatedTotal: 18_000,
+  customerSnapshot: { name: "Ana Pérez" },
+};
+const ANA_PEREZ_SCHEDULED = {
+  id: "inv-ap-1",
+  number: "INV-001",
+  quoteId: "q-ap",
+  status: "scheduled",
+  amount: 18_000,
+  scheduledFor: "2026-11-20",
+  dueDate: "2026-11-20",
+};
+/** the demo's standalone "Bill a client directly" invoice: no quoteId */
+const ANA_PEREZ_DIRECT = {
+  id: "inv-ap-2",
+  number: "INV-002",
+  status: "sent",
+  amount: 18_000,
+  dueDate: "2026-12-12",
+};
+
+Deno.test("REQ-474 M17 owedReply: the demo's books — INV-001 $180 scheduled on Q-001 plus a direct INV-002 $180 sent — say $180 owed now and $180 not billed yet, never $360 owed (the Clientes card says $180)", () => {
+  const r = owedReply("es", {
+    name: "Ana Pérez",
+    quotes: [ANA_PEREZ_QUOTE],
+    invoices: [ANA_PEREZ_SCHEDULED, ANA_PEREZ_DIRECT],
+    today: "2026-11-12",
+  });
+  assertEquals(r.owedCents, 18_000, "owed now = the open receivable");
+  assertEquals(r.upcomingCents, 18_000, "the scheduled INV-001");
+  assertStringIncludes(
+    r.text,
+    "Ana Pérez te debe $180 ahora; $180 más aún no se ha facturado.",
+  );
+  assert(!r.text.includes("$360"), r.text);
+  assertStringIncludes(r.text, "INV-002");
+  assertStringIncludes(r.text, "INV-001");
+
+  const en = owedReply("en", {
+    name: "Ana Pérez",
+    quotes: [ANA_PEREZ_QUOTE],
+    invoices: [ANA_PEREZ_SCHEDULED, ANA_PEREZ_DIRECT],
+    today: "2026-11-12",
+  });
+  assertStringIncludes(
+    en.text,
+    "Ana Pérez owes you $180 now; $180 more isn't billed yet.",
+  );
+});
+
+Deno.test("REQ-474 M17 owedReply: owed now is what is still owed on an open invoice (the card's receivableBalanceCents) — a $50 part payment leaves $130; a paid or void one owes nothing", () => {
+  const part = owedReply("en", {
+    name: "Ana Pérez",
+    quotes: [],
+    invoices: [{ ...ANA_PEREZ_DIRECT, paidCents: 5_000 }],
+  });
+  assertEquals(part.owedCents, 13_000);
+  assertEquals(part.upcomingCents, 0);
+  assertStringIncludes(part.text, "Ana Pérez owes you $130.");
+
+  const paid = owedReply("en", {
+    name: "Ana Pérez",
+    quotes: [],
+    invoices: [{ ...ANA_PEREZ_DIRECT, paidAt: "2026-11-12T10:00:00Z" }],
+  });
+  assertEquals(paid.owedCents, 0);
 });

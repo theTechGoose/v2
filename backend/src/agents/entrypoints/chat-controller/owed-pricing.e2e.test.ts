@@ -160,7 +160,11 @@ Deno.test("REQ-388 M19 e2e: pair 2 — Ana signs a pay-on-completion quote on th
     });
     const text = texts(res.newMessages);
     assert(!text.startsWith("(stub)"), `the chat model answered: ${text}`);
-    assertStringIncludes(text, "Ana López te debe $400");
+    // REQ-474 (cycle 3, M17): a scheduled bill is not owed yet
+    assertStringIncludes(
+      text,
+      "Ana López todavía no te debe nada — $400 aún no se ha facturado",
+    );
     assertStringIncludes(text, inv.number!);
     assertStringIncludes(text, "programada");
     assertStringIncludes(text, "10 dic");
@@ -180,6 +184,63 @@ Deno.test("REQ-388 M19 e2e: pair 2 — Ana signs a pay-on-completion quote on th
     const after = (await new InvoiceStore().listByUser(me.userId))
       .filter((i) => i.quoteId === quote.id);
     assertEquals(after.map((i) => i.status), ["scheduled"]);
+  });
+});
+
+Deno.test("REQ-474 M17 e2e: the demo's books over HTTP — Ana Pérez signs a $180 pay-on-completion quote (INV-001 scheduled), then a direct 'Bill a client' INV-002 $180 is sent; '¿Cuánto me debe Ana Pérez?' says $180 owed now and $180 not billed yet, never $360", async () => {
+  await withServer(async () => {
+    const me = await signIn("es", "+15125557474");
+    const call = api(me.sid);
+    const ana = await call<{ id: string }>("POST", "/customers", {
+      name: "Ana Pérez",
+      phoneNumber: "+15125550174",
+    });
+    const quote = await call<{ id: string }>("POST", "/quotes", {
+      customerId: ana.id,
+      summary: "Limpieza profunda",
+      jobName: "Limpieza profunda",
+      lineItems: [{
+        description: "Limpieza profunda",
+        quantity: 1,
+        unit: "ea",
+        price: 18_000,
+      }],
+      estimatedTotal: 18_000,
+      estimatedCompletionDate: "2099-11-20",
+      terms: [{
+        stepId: "payment_terms",
+        label: "Payment terms",
+        value: "Payment upon completion",
+      }],
+      status: "sent",
+    });
+    const accepted = await api()<{ ok: boolean }>(
+      "POST",
+      `/quotes/${quote.id}/accept`,
+      { signature: "Ana Pérez", name: "Ana Pérez" },
+    );
+    assertEquals(accepted.ok, true);
+    // the standalone New invoice: no quoteId
+    await call("POST", "/invoices", {
+      customerId: ana.id,
+      amount: 18_000,
+      status: "sent",
+      issuedDate: "2026-11-12",
+      dueDate: "2099-12-12",
+    });
+    const mine = await new InvoiceStore().listByUser(me.userId);
+    assertEquals(mine.map((i) => i.status).sort(), ["scheduled", "sent"]);
+
+    const res = await call<ChatRes>("POST", "/agents/chat", {
+      content: "¿Cuánto me debe Ana Pérez?",
+    });
+    const text = texts(res.newMessages);
+    assert(!text.startsWith("(stub)"), `the chat model answered: ${text}`);
+    assertStringIncludes(
+      text,
+      "Ana Pérez te debe $180 ahora; $180 más aún no se ha facturado.",
+    );
+    assert(!text.includes("$360"), text);
   });
 });
 

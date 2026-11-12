@@ -49,6 +49,8 @@ import type { SendChangeOrderAlert } from "@paperwork/domain/coordinators/send-c
 import { ApplyChatChangeOrder } from "@agents/domain/coordinators/apply-chat-change-order/mod.ts";
 import { ReviseQuote } from "@agents/domain/coordinators/revise-quote/mod.ts";
 import type { AgentMessage } from "@agents/dto/message.ts";
+import { BuildCustomerCards } from "@analytics/domain/coordinators/build-customer-cards/mod.ts";
+import { ViewStore } from "@paperwork/domain/data/view-store/mod.ts";
 
 const PAIR2_ASK = "¿Cuánto me debe Ana López?";
 const PAIR2_FOLLOW_UP =
@@ -234,7 +236,11 @@ Deno.test("REQ-388 M19: pair 2 — '¿Cuánto me debe Ana López?' in a new chat
 
   assertEquals(calls.chat.length, 0, "the chat model answered pair 2");
   const text = assistantText(res.newMessages);
-  assertStringIncludes(text, "Ana López te debe $400");
+  // REQ-474 (cycle 3, M17): a scheduled bill is not owed yet — the Clientes rule
+  assertStringIncludes(
+    text,
+    "Ana López todavía no te debe nada — $400 aún no se ha facturado",
+  );
   assertStringIncludes(text, invoice.number!);
   assertStringIncludes(text, "programada");
   assertStringIncludes(text, "26 nov");
@@ -276,7 +282,10 @@ Deno.test("REQ-388 M19: pair 2's follow-up 'No entiendo. ¿Cuánto dinero me deb
 
   assertEquals(calls.chat.length, 0);
   const text = assistantText(res.newMessages);
-  assertStringIncludes(text, "Ana López te debe $400");
+  assertStringIncludes(
+    text,
+    "Ana López todavía no te debe nada — $400 aún no se ha facturado",
+  ); // REQ-474
   assertStringIncludes(text, "26 nov"); // when it goes out
   assertStringIncludes(text, "11 dic"); // when it is due
   assert(!/no puedo/i.test(text), text);
@@ -303,7 +312,7 @@ Deno.test("REQ-388 M19: on Ana's own quote thread '¿Cuánto me debe?' needs no 
   });
   assertStringIncludes(
     assistantText(mine.newMessages),
-    "Ana López te debe $400",
+    "Ana López todavía no te debe nada — $400 aún no se ha facturado", // REQ-474
   );
 
   const blank = await fx.conversations.create({ userId: "u-1" });
@@ -380,7 +389,11 @@ Deno.test("REQ-388 M19: 'how much does John Miller owe me?' (pair 1's books) —
 
   assertEquals(calls.chat.length, 0);
   const text = assistantText(res.newMessages);
-  assertStringIncludes(text, "John Miller owes you $3,200");
+  // REQ-474: $1,600 out (owed now), $1,600 scheduled (not billed yet)
+  assertStringIncludes(
+    text,
+    "John Miller owes you $1,600 now; $1,600 more isn't billed yet.",
+  );
   assertStringIncludes(text, `$1,600 invoice (${deposit.number}) is out`);
   assertStringIncludes(text, "Nov 19");
   assertStringIncludes(text, balance.number!);
@@ -598,5 +611,75 @@ Deno.test("REQ-388 m38: what the chat model still answers after a price ('…en 
     ),
     "no contractor-advice rule in the prompt",
   );
+  await resetKv();
+});
+
+// ---------------------------------------------------------------------------
+// REQ-474 (demo-loop cycle 3, M17)
+// ---------------------------------------------------------------------------
+
+Deno.test("REQ-474 M17: the demo's books — Ana Pérez's INV-001 $180 scheduled on Q-001 plus a direct INV-002 $180 sent — the assistant says $180 owed now and $180 not billed yet, the same $180 the Clientes card shows", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const fx = fresh();
+  await seedOnboarded("u-1", "es");
+  const calls = scriptLlm(fx);
+  const ana = await fx.customers.create("u-1", { name: "Ana Pérez" });
+  const quote = await fx.quotes.create("u-1", {
+    customerId: ana.id,
+    summary: "Limpieza profunda",
+    lineItems: [{
+      description: "Limpieza profunda",
+      quantity: 1,
+      unit: "ea",
+      price: 18_000,
+    }],
+    estimatedTotal: 18_000,
+    status: "draft",
+  });
+  await fx.quotes.update(quote.id, "u-1", {
+    status: "accepted",
+    acceptedAt: "2026-11-12T09:00:00Z",
+  });
+  await fx.invoices.create("u-1", {
+    quoteId: quote.id,
+    customerId: ana.id,
+    amount: 18_000,
+    status: "scheduled",
+    scheduledFor: "2099-11-20",
+    dueDate: "2099-11-20",
+  });
+  // the standalone "Bill a client directly" invoice: no quoteId
+  await fx.invoices.create("u-1", {
+    customerId: ana.id,
+    amount: 18_000,
+    status: "sent",
+    issuedDate: "2026-11-12",
+    dueDate: "2099-12-12",
+  });
+  const conv = await fx.conversations.create({ userId: "u-1" });
+
+  const res = await fx.flow.run({
+    userId: "u-1",
+    conversationId: conv.id,
+    content: "¿Cuánto me debe Ana Pérez?",
+  });
+
+  assertEquals(calls.chat.length, 0);
+  const text = assistantText(res.newMessages);
+  assertStringIncludes(
+    text,
+    "Ana Pérez te debe $180 ahora; $180 más aún no se ha facturado.",
+  );
+  assert(!text.includes("$360"), text);
+
+  const cards = await new BuildCustomerCards(
+    fx.customers,
+    fx.quotes,
+    fx.invoices,
+    new ViewStore(),
+  ).run("u-1");
+  const card = cards.find((c) => c.id === ana.id)!;
+  assertEquals(card.balanceCents, 18_000, "the Clientes card: $180 owed");
   await resetKv();
 });

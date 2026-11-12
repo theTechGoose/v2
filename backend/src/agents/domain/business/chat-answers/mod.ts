@@ -22,6 +22,10 @@ import { type Lang, t } from "@core/i18n/mod.ts";
 import { isAccepted } from "#quote-flow/quote-status.ts";
 import { formatShortDate } from "#quote-flow/format-helpers.ts";
 import { docNumberOf } from "#documents/numbering.ts";
+import {
+  isOpenReceivable,
+  receivableBalanceCents,
+} from "@paperwork/domain/business/open-receivable/mod.ts";
 
 /** "$1,600" — cents only when there are any ("$3,100.50"). */
 function money(cents: number): string {
@@ -325,6 +329,9 @@ export interface OwedQuote extends BillingQuote {
 
 export interface OwedInvoice extends BillingInvoice {
   quoteId?: string;
+  /** REQ-474: part payments / paid stamp — owed now is what is still owed. */
+  paidCents?: number | null;
+  paidAt?: string;
 }
 
 export interface OwedReplyInput {
@@ -340,26 +347,23 @@ export interface OwedReplyInput {
 
 export interface OwedReply {
   text: string;
-  /** Everything still to be paid on signed work: billed and unpaid,
-   *  drafted, scheduled, and the part of a signed quote not invoiced yet. */
+  /** REQ-474 (cycle 3, M17): owed NOW — the open receivable (sent / viewed /
+   *  claimed / pending, unpaid), at what is still owed on each. The same
+   *  rule as the Clientes card's balance (REQ-397 `isOpenReceivable`). */
   owedCents: number;
+  /** REQ-474: signed work not billed yet — drafted and scheduled invoices
+   *  and the part of a signed quote not invoiced. Never added to owed. */
+  upcomingCents: number;
 }
-
-/** Billed to the customer and not paid (claimed = they say they paid). */
-const BILLED_OPEN = new Set([
-  "sent",
-  "viewed",
-  "claimed",
-  "pending",
-  "overdue",
-]);
 
 const byDate = (a?: string, b?: string) => (a ?? "~").localeCompare(b ?? "~");
 
 /**
- * REQ-388 (M19): what `name` owes and when — "Ana López te debe $400. La
- * factura de $400 (INV-001) todavía no se ha enviado — está programada para
- * el 26 nov y vence el 11 dic." From their own data only: open invoices
+ * REQ-388 (M19): what `name` owes and when — "Ana López todavía no te debe
+ * nada — $400 aún no se ha facturado. La factura de $400 (INV-001) todavía
+ * no se ha enviado — está programada para el 26 nov y vence el 11 dic."
+ * REQ-474 (M17): owed NOW (open receivable, the Clientes card's rule) and
+ * still-to-bill are told apart, never summed. From their own data: open invoices
  * (oldest due first), drafted ones, scheduled ones (soonest first), the part
  * of a signed quote not yet invoiced; with nothing owed, whether they are
  * paid up or what is waiting for a signature or to be sent. Never claims an
@@ -376,7 +380,7 @@ export function owedReply(lang: Lang, input: OwedReplyInput): OwedReply {
     isAccepted(q) && !CLOSED.has(status(q))
   );
 
-  const open = live.filter((i) => BILLED_OPEN.has(i.status ?? ""))
+  const open = live.filter((i) => isOpenReceivable(i))
     .sort((a, b) => byDate(a.dueDate, b.dueDate));
   const drafts = live.filter((i) => i.status === "draft");
   const scheduled = live.filter((i) => i.status === "scheduled")
@@ -391,12 +395,23 @@ export function owedReply(lang: Lang, input: OwedReplyInput): OwedReply {
 
   const sum = (xs: { amount?: number }[]) =>
     xs.reduce((s, i) => s + (i.amount ?? 0), 0);
-  const owedCents = sum(open) + sum(drafts) + sum(scheduled) +
+  // REQ-474 (cycle 3, M17): owed now and still-to-bill are told apart — a
+  // scheduled INV-001 plus a direct INV-002 read "$360 owed" while the
+  // Clientes card said $180.
+  const owedCents = open.reduce((s, i) => s + receivableBalanceCents(i), 0);
+  const upcomingCents = sum(drafts) + sum(scheduled) +
     unbilled.reduce((s, u) => s + u.cents, 0);
 
   const parts: string[] = [];
-  if (owedCents > 0) {
+  if (owedCents > 0 && upcomingCents > 0) {
+    parts.push(say("owesNow", {
+      now: money(owedCents),
+      later: money(upcomingCents),
+    }));
+  } else if (owedCents > 0) {
     parts.push(say("owes", { amount: money(owedCents) }));
+  } else if (upcomingCents > 0) {
+    parts.push(say("notYet", { later: money(upcomingCents) }));
   } else if (live.some((i) => i.status === "paid")) {
     parts.push(say("paidUp"));
   } else {
@@ -404,7 +419,7 @@ export function owedReply(lang: Lang, input: OwedReplyInput): OwedReply {
   }
   for (const i of open) {
     const number = docNumberOf(i);
-    const amount = money(i.amount ?? 0);
+    const amount = money(receivableBalanceCents(i));
     const due = i.dueDate ? formatShortDate(i.dueDate, lang) : "";
     if (i.status === "claimed") {
       parts.push(
@@ -431,7 +446,7 @@ export function owedReply(lang: Lang, input: OwedReplyInput): OwedReply {
       number: docNumberOf(u.q),
     }));
   }
-  if (owedCents === 0) {
+  if (owedCents === 0 && upcomingCents === 0) {
     for (const q of input.quotes) {
       if (isAccepted(q) || CLOSED.has(status(q))) continue;
       const vars = {
@@ -442,5 +457,5 @@ export function owedReply(lang: Lang, input: OwedReplyInput): OwedReply {
       parts.push(say(unsent ? "unsent" : "waiting", vars));
     }
   }
-  return { text: parts.join(" "), owedCents };
+  return { text: parts.join(" "), owedCents, upcomingCents };
 }
