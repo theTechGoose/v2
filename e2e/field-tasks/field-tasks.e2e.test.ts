@@ -729,6 +729,21 @@ Deno.test("REQ-340 (demo M37): a new customer added from the form BEFORE the add
     expect.eq(dave.address, "8807 Spicewood Springs Rd, Austin, TX", "the customer carries the task's address — not 'No address on file'");
   }));
 
+Deno.test("REQ-415 (demo p11, cycle 2): a fence builder's Add-task Service box shows its own services as the example, not lawn care", (t) =>
+  story(t, async ({ page, expect, http, baseUrl }) => {
+    await officeDay({ page, http, baseUrl }, [{ taskTypeName: "Fence install", priceCents: 90000 }]);
+    await page.goto("/field/tasks");
+    await page.locator("[data-cy='tk-task']").first().waitFor({ timeout: 15_000 });
+    await page.locator("[data-cy='tk-add']").click();
+    const form = page.locator("[data-cy='tk-add-form']");
+    await form.waitFor({ timeout: 15_000 });
+    const type = form.locator("[data-cy='tk-add-type']");
+    await page.waitForFunction(() => (document.querySelector("[data-cy='tk-add-type']")?.getAttribute("placeholder") ?? "").includes("Fence install"), undefined, { timeout: 15_000 });
+    const ph = (await type.getAttribute("placeholder")) ?? "";
+    expect(ph.includes("Fence install"), `the placeholder names the account's own service (got "${ph}")`);
+    expect(!/lawn|mulch|pool/i.test(ph), `no lawn-care example for a fence builder (got "${ph}")`);
+  }));
+
 Deno.test("REQ-165: Add service on the card → Edging $25 → a second card in the same group", (t) =>
   story(t, async ({ page, expect, http, baseUrl }) => {
     await officeDay({ page, http, baseUrl });

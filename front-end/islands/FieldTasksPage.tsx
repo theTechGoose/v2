@@ -36,6 +36,7 @@ import {
   customerOptions,
   fmtDay,
   fmtMoneyExact,
+  serviceHint,
   shiftIso,
   todayIso,
 } from "../lib/field.ts";
@@ -249,7 +250,13 @@ export default function FieldTasksPage() {
     const problem = addTaskProblem(add);
     if (problem || cents === null) {
       setAddBad(problem?.field ?? "price");
-      setAddErr(t(problem?.key ?? "field.tk.badPrice"));
+      // REQ-415 — the missing-service line names the account's own services
+      const need = serviceHint(types, "need");
+      setAddErr(
+        problem?.key === "field.tk.needType"
+          ? t(need.key, need.vars)
+          : t(problem?.key ?? "field.tk.badPrice"),
+      );
       return;
     }
     setBusy(true);
@@ -414,6 +421,10 @@ export default function FieldTasksPage() {
     }
     return <span class="chip">{t("field.tk.assigned")}</span>;
   }
+
+  // REQ-415 (demo p11) — the Service example is the account's own task types, else neutral
+  const typePhHint = serviceHint(types, "ph");
+  const typePh = t(typePhHint.key, typePhHint.vars);
 
   const typeList = (
     <datalist id="tk-types">
@@ -659,7 +670,7 @@ export default function FieldTasksPage() {
                 type="text"
                 list="tk-types"
                 data-cy="tk-service-type"
-                placeholder={t("field.tk.typePh")}
+                placeholder={typePh}
                 aria-label={t("field.tk.type")}
                 value={service.typeName}
                 required
@@ -827,7 +838,7 @@ export default function FieldTasksPage() {
                 type="text"
                 list="tk-types"
                 data-cy="tk-add-type"
-                placeholder={t("field.tk.typePh")}
+                placeholder={typePh}
                 aria-invalid={addBad === "type" || undefined}
                 value={add.typeName}
                 required

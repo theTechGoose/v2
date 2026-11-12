@@ -192,6 +192,35 @@ export function addTaskProblem(
   return null;
 }
 
+/** REQ-415 (demo p11, cycle 2) — the Service examples on /field/tasks are the account's OWN task
+ *  types (a fence builder sees "Fence install, Gate repair…", not lawn care): the first `max`
+ *  distinct non-blank names, or "" when the account has none yet. */
+export function serviceExamples(types: { name: string }[], max = 3): string {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const x of types) {
+    const name = x.name.trim();
+    const k = name.toLowerCase();
+    if (!name || seen.has(k)) continue;
+    seen.add(k);
+    out.push(name);
+    if (out.length >= max) break;
+  }
+  return out.join(", ");
+}
+
+/** REQ-415 — which dictionary line the Service placeholder ("ph") or the missing-service error
+ *  ("need") reads: the account's examples when it has task types, else the neutral
+ *  "e.g. Weekly service, Repair visit…" line. */
+export function serviceHint(
+  types: { name: string }[],
+  which: "ph" | "need",
+): { key: string; vars?: { examples: string } } {
+  const examples = serviceExamples(types);
+  const base = which === "ph" ? "field.tk.typePh" : "field.tk.needType";
+  return examples ? { key: `${base}From`, vars: { examples } } : { key: base };
+}
+
 /** REQ-283 — a server refusal of the one-off task that names a field of the form: "workerId required"
  *  is a customer with no staffed zone (a new one), so the office has to pick the worker */
 export function addTaskServerProblem(
