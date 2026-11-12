@@ -101,7 +101,8 @@ export type ClientMessage =
  *  came or went (a `peer` without one is a customer tab), and a presenter's own id on their
  *  welcome. REQ-232 — `cid`: which SOCKET — this one's own on its welcome, the one that came or
  *  went on a `peer`, the sender on a signal, relay or claim; `sync`: a stage wants this tab's whole
- *  view; `replaced`: the same staff account opened the demo in a newer window, this one is done */
+ *  view; `replaced`: the same staff account opened the demo in a newer window, this one is done.
+ *  REQ-235 — and which presenter ended the demo (an `ended` by the viewer never has one) */
 export type ServerMessage =
   | {
     t: "welcome";
@@ -117,7 +118,7 @@ export type ServerMessage =
   | { t: "claim"; cid: string; at: number }
   | { t: "sync" }
   | { t: "replaced" }
-  | { t: "ended"; by: Role; reason?: "declined" };
+  | { t: "ended"; by: Role; reason?: "declined"; pid?: string };
 
 /** how often a browser with no demo asks `active` again — the customer sees the invitation within this */
 export const ACTIVE_POLL_MS = 5_000;
@@ -322,9 +323,13 @@ export function parseServerMessage(raw: string): ServerMessage | null {
       return { t: "replaced" };
     case "ended":
       if (!isRole(o.by)) return null;
-      return o.reason === "declined"
-        ? { t: "ended", by: o.by, reason: "declined" }
-        : { t: "ended", by: o.by };
+      return {
+        t: "ended",
+        by: o.by,
+        ...(o.reason === "declined" ? { reason: "declined" as const } : {}),
+        // REQ-235 — the presenter who ended it; the viewer's end names nobody
+        ...(o.by === "presenter" ? pidOf(o) : {}),
+      };
     default:
       return null;
   }

@@ -27,6 +27,8 @@
  * grace (a page change in their app is a new socket). The stage follows the tab the customer used
  * last (the link picks it). A newer window of the same staff account takes the demo over: this one
  * says "Open in another window" and offers "Use this window" (a reload takes it back).
+ * REQ-235 — End asks first (EndDemo); the end goes to /admin saying who ended it ("You ended the
+ * demo", "{customer} ended the demo", "{colleague} ended the demo"), where the overlay keeps it.
  */
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import { t } from "../lib/i18n.ts";
@@ -74,6 +76,12 @@ import PeerPointer, {
   type PointerCmd,
 } from "../components/demo-mode/PeerPointer.tsx";
 import PresenterChips from "../components/demo-mode/PresenterChips.tsx";
+import EndDemo from "../components/demo-mode/EndDemo.tsx";
+import {
+  endedHref,
+  type EndedNotice,
+  whoEnded,
+} from "../../shared/demo-mode/ended.ts";
 
 interface Demo {
   id: string;
@@ -114,6 +122,8 @@ export default function DemoStage() {
   const [ended, setEnded] = useState(false);
   /** REQ-242 — null until the customer's first snapshot is in the frame */
   const [mirrored, setMirrored] = useState<Screen | null>(null);
+  /** REQ-235 — this stage's End ended it */
+  const endedHere = useRef(false);
   const [stage, setStage] = useState({ w: 1, h: 1 });
   const [bannerH, setBannerH] = useState(0);
   const [waves, setWaves] = useState<Wave[]>([]);
@@ -421,14 +431,24 @@ export default function DemoStage() {
             break;
         }
       },
-      onEnded: () => {
+      onEnded: (by, _reason, pid) => {
         setEnded(true);
         glide.hide();
         setCmds({});
+        // REQ-235 — who ended it rides the hop to /admin
+        const d = demoRef.current;
+        const notice: EndedNotice = endedHere.current
+          ? { by: "you" }
+          : whoEnded({ by, pid }, {
+            role: "presenter",
+            pid: d?.pid,
+            presenters: d?.presenters ?? [],
+            targetName: d?.targetName,
+          });
         setTimeout(() => {
           setDemo(null);
           setEnded(false);
-          void backToOwnAccount();
+          void backToOwnAccount(notice);
         }, 1500);
       },
     });
@@ -452,26 +472,29 @@ export default function DemoStage() {
     };
   }, [demo?.id]);
 
-  /** REQ-153 — the demo over, the presenter is handed their own account back */
-  async function backToOwnAccount() {
+  /** REQ-153 — the demo over, the presenter is handed their own account back; REQ-235 — on
+   *  /admin, which says who ended it */
+  async function backToOwnAccount(notice: EndedNotice) {
     try {
       const who = await adminClient.whoami();
       if (who.impersonating) await adminClient.stopImpersonating();
     } catch {
       // not impersonating, or signed out
     }
-    globalThis.location.href = "/admin";
+    globalThis.location.href = endedHref(notice);
   }
 
   async function end() {
+    // REQ-235 + REQ-179 — said at once, before the server answers
+    endedHere.current = true;
+    setEnded(true);
     linkRef.current?.end();
     try {
       if (demo) await demoModeClient.end(demo.id);
     } catch {
       // the socket's end reaches the server too
     }
-    setEnded(true);
-    setTimeout(() => void backToOwnAccount(), 800);
+    setTimeout(() => void backToOwnAccount({ by: "you" }), 800);
   }
 
   const sendClick = (x: number, y: number) =>
@@ -643,15 +666,8 @@ export default function DemoStage() {
               })} · {t("demoMode.pointOnlyHint")}
             </span>
           )}
-          <button
-            type="button"
-            data-cy="demo-end"
-            disabled={ended}
-            onClick={end}
-            style="padding:5px 12px;border-radius:8px;border:0;background:#fff;color:#7a2e2e;cursor:pointer;font:inherit;font-size:12px;font-weight:700"
-          >
-            {t("demoMode.end")}
-          </button>
+          {/* REQ-235 — End asks first */}
+          <EndDemo onEnd={end} disabled={ended} />
         </div>
       )}
     </div>

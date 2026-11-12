@@ -887,15 +887,18 @@ Deno.test("REQ-214 two staff present to one customer: the second Demo joins the 
       "a fresh demo starts the palette over",
     );
 
-    // Hans ends: everyone on Ana's demo hears it; Lia's demo for Bo is untouched
+    // Hans ends: everyone on Ana's demo hears it (REQ-235: and that it was Hans); Lia's demo for
+    // Bo is untouched
     ph.send({ t: "end" });
     assertEquals(await v.next("Ana hears the end"), {
       t: "ended",
       by: "presenter",
+      pid: hans.body.userId,
     });
     assertEquals(await ph.next("Hans hears it too"), {
       t: "ended",
       by: "presenter",
+      pid: hans.body.userId,
     });
     await v.closed;
     await ph.closed;
@@ -1221,13 +1224,16 @@ Deno.test("REQ-232 POST /demo-mode/sessions/:id/leave — the customer may not (
         .status,
       200,
     );
+    // REQ-235 — and hears it was Hans who ended it
     assertEquals(await v.next("Ana hears the end"), {
       t: "ended",
       by: "presenter",
+      pid: hans.body.userId,
     });
     assertEquals(await ph.next("Hans hears it too"), {
       t: "ended",
       by: "presenter",
+      pid: hans.body.userId,
     });
     await v.closed;
     await ph.closed;
@@ -1299,5 +1305,112 @@ Deno.test("REQ-232 the same staff account opens a second stage: the first is tol
     await quiet(w2, "window 2 is never told of its own account");
     await w2.close();
     await v.close();
+  });
+});
+
+Deno.test("REQ-235 who ended it rides `ended`: a colleague's HTTP End, a presenter's socket End and a presenter's Demo on another customer each name that presenter (pid); the customer's HTTP End names none", async () => {
+  await withServer(async (call) => {
+    const ana = await signIn(call, "+15125553051");
+    const bo = await signIn(call, "+15125553052");
+    const hans = await signIn(call, "+15125553053");
+    await call("POST", "/api/admin/bootstrap", { phoneNumber: "+15125553053" });
+    const lia = await signIn(call, "+15125553054");
+    await call("POST", "/api/admin/bootstrap", { phoneNumber: "+15125553054" });
+    const P = H(hans.body.sessionId);
+    const L = H(lia.body.sessionId);
+    const open2 = async (demoId: string) => {
+      const ph = open(demoId, hans.body.sessionId);
+      await ph.next("Hans's welcome");
+      const v = open(demoId, ana.body.sessionId);
+      await v.next("Ana's welcome");
+      return { ph, v };
+    };
+    const byOf = (who: string): ServerMessage => ({
+      t: "ended",
+      by: "presenter",
+      pid: who,
+    });
+
+    // 1. Lia joins Hans's demo for Ana and ends it over HTTP: everyone hears it was Lia
+    const first = await call("POST", "/api/demo-mode/sessions", {
+      userId: ana.body.userId,
+    }, P);
+    assertEquals(first.status, 201, JSON.stringify(first.body));
+    assertEquals(
+      (await call("POST", "/api/demo-mode/sessions", {
+        userId: ana.body.userId,
+      }, L)).status,
+      200,
+      "Lia joins",
+    );
+    const one = await open2(first.body.id);
+    await one.v.next("Ana is told Hans is here");
+    await one.ph.next("Hans hears Ana");
+    const endByLia = await call(
+      "POST",
+      `/api/demo-mode/sessions/${first.body.id}/end`,
+      undefined,
+      L,
+    );
+    assertEquals(endByLia.status, 200, JSON.stringify(endByLia.body));
+    assertEquals(
+      await one.v.next("Ana hears Lia ended it"),
+      byOf(lia.body.userId),
+    );
+    assertEquals(
+      await one.ph.next("Hans hears Lia ended it"),
+      byOf(lia.body.userId),
+    );
+    await one.v.closed;
+    await one.ph.closed;
+
+    // 2. Hans ends a fresh demo from his socket: it was Hans
+    const second = await call("POST", "/api/demo-mode/sessions", {
+      userId: ana.body.userId,
+    }, P);
+    assertEquals(second.status, 201, JSON.stringify(second.body));
+    const two = await open2(second.body.id);
+    await two.v.next("Ana is told Hans is here");
+    await two.ph.next("Hans hears Ana");
+    two.ph.send({ t: "end" });
+    assertEquals(
+      await two.v.next("Ana hears Hans ended it"),
+      byOf(hans.body.userId),
+    );
+    await two.v.closed;
+    await two.ph.closed;
+
+    // 3. Hans opens a demo for Bo while alone on Ana's: Ana's ends, in Hans's name
+    const third = await call("POST", "/api/demo-mode/sessions", {
+      userId: ana.body.userId,
+    }, P);
+    assertEquals(third.status, 201, JSON.stringify(third.body));
+    const v3 = open(third.body.id, ana.body.sessionId);
+    await v3.next("Ana's welcome");
+    const forBo = await call("POST", "/api/demo-mode/sessions", {
+      userId: bo.body.userId,
+    }, P);
+    assertEquals(forBo.status, 201, JSON.stringify(forBo.body));
+    assertEquals(
+      await v3.next("Ana hears her demo ended, by Hans"),
+      byOf(hans.body.userId),
+    );
+    await v3.closed;
+
+    // 4. Bo ends his own demo over HTTP: the presenter hears the customer ended it, no pid
+    const ph4 = open(forBo.body.id, hans.body.sessionId);
+    await ph4.next("Hans's welcome");
+    const endByBo = await call(
+      "POST",
+      `/api/demo-mode/sessions/${forBo.body.id}/end`,
+      undefined,
+      H(bo.body.sessionId),
+    );
+    assertEquals(endByBo.status, 200, JSON.stringify(endByBo.body));
+    assertEquals(await ph4.next("Hans hears Bo ended it"), {
+      t: "ended",
+      by: "viewer",
+    });
+    await ph4.closed;
   });
 });

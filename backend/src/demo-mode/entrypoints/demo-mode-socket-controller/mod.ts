@@ -91,7 +91,10 @@ export class DemoModeSocketController {
       if (!m) return;
       if (m.t === "end") {
         const demo = await this.demos.end(sessionId);
-        if (demo) await this.hub.end(sessionId, role);
+        // REQ-235 — everyone hears who ended it
+        if (demo) {
+          await this.hub.end(sessionId, role, undefined, pid ?? undefined);
+        }
         return;
       }
       await this.hub.send(sessionId, { role, ...(pid ? { pid } : {}), cid }, m);
