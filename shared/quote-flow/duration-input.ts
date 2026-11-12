@@ -26,3 +26,15 @@ export function parseDurationNumber(
   }
   return { n, error: null };
 }
+
+/**
+ * REQ-458 (demo-loop cycle 3, M38) — an EMPTY number (REQ-343 opens the picker
+ * that way) used to preview as a bare "—", which read as a dead end. Empty
+ * now asks for the number instead; a typed number gets no hint (the preview
+ * or REQ-390's message speaks).
+ */
+export function durationPreviewHint(
+  raw: string | null | undefined,
+): "asstChat.duration.previewEmpty" | null {
+  return (raw ?? "").trim() ? null : "asstChat.duration.previewEmpty";
+}

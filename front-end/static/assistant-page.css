@@ -5817,6 +5817,19 @@ body {
   font-size: 13px;
   cursor: pointer;
 }
+/* REQ-458 (demo M38): the empty number box reads as the thing to fill in —
+   a visible label over each field and a focus ring on the number. */
+.dur__label {
+  font-family: var(--font-body);
+  font-weight: 700;
+  font-size: 11px;
+  color: var(--fg-muted);
+}
+.dur__num:focus,
+.dur__num:focus-visible {
+  border-color: var(--brand-green);
+  box-shadow: 0 0 0 3px rgba(81, 152, 67, 0.3);
+}
 .dur__presets {
   display: flex;
   flex-wrap: wrap;
