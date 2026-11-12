@@ -29,7 +29,13 @@ Deno.test("REQ-585 TOOL_DEFS: update_terms takes the start, the time to complete
     Object.fromEntries(
       Object.entries(params.properties).map(([k, v]) => [k, v.type]),
     ),
-    { startDate: "string", duration: "string", paymentTerms: "string" },
+    // REQ-653 (cycle 5, m50): + finishBy — "finish before Thanksgiving"
+    {
+      startDate: "string",
+      duration: "string",
+      paymentTerms: "string",
+      finishBy: "string",
+    },
   );
   assertEquals(params.additionalProperties, false);
   assertStringIncludes(def!.function.description, "start");
@@ -71,4 +77,19 @@ Deno.test("REQ-585 chatToolsFor: update_terms is offered in the terms phase what
   );
   assert(!has("quote", { status: "draft" }));
   assert(!has("quote", undefined));
+});
+
+Deno.test("REQ-653 parseToolCall: update_terms carries a 'finish by' deadline in the contractor's words — alone too (fleet-6 stdout:207)", () => {
+  assertEquals(call({ finishBy: " before thanksgiving " }), {
+    type: "update_terms",
+    payload: { finishBy: "before thanksgiving" },
+  });
+  const defs = TOOL_DEFS as unknown as readonly {
+    function: { name: string; parameters: unknown };
+  }[];
+  const def = defs.find((d) => d.function.name === "update_terms")!;
+  const props = (def.function.parameters as {
+    properties: Record<string, { description: string }>;
+  }).properties;
+  assertStringIncludes(props.finishBy.description, "Thanksgiving");
 });

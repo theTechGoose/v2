@@ -191,11 +191,20 @@ import { getWizardSpec } from "@agents/domain/business/terms-wizard-spec/mod.ts"
 // REQ-585 (demo-loop cycle 4, M4 + M30): the terms typed in the chat.
 import { HandleWizardAnswer } from "@agents/domain/coordinators/handle-wizard-answer/mod.ts";
 import {
+  deadlineCheck,
+  deadlineLine,
   mentionedTerms,
+  readDeadline,
   termsChangeLine,
   termsNotAppliedLine,
   termsPicks,
 } from "@agents/domain/business/terms-edit/mod.ts";
+// REQ-653 (demo-loop cycle 5, M7): "same address", a malformed e-mail.
+import {
+  malformedEmailIn,
+  mentionsSameAddress,
+  sameAddressFor,
+} from "#quote-flow/self-correction.ts";
 
 /** Confirmation phrases that mean "lock the active draft quote." When the
  *  user types one of these AND the conversation already carries a draft
@@ -414,6 +423,48 @@ export class HandleChatMessage {
     );
   }
 
+  /** REQ-653 (demo-loop cycle 5, m50): the deadline a message names ("its
+   *  NOT done before thanksgiving if we start now + 3 wks, fix that"), or
+   *  the update_terms finishBy, checked against the bound quote's start +
+   *  time to complete — said, never answered with "I didn't change the start
+   *  date". When this turn changed a term (`termsTouched`), a deadline typed
+   *  earlier in the conversation is checked too, and said only when missed.
+   *  "" when there is no deadline or no time to complete to check. */
+  private async deadlineSaid(
+    conv: AgentConversation,
+    userId: string,
+    lang: "en" | "es",
+    text: unknown,
+    finishBy: string | undefined,
+    termsTouched: boolean,
+    history: readonly AgentMessage[] = [],
+  ): Promise<string> {
+    if (!conv.quoteId) return "";
+    const today = new Date();
+    const typed = typeof text === "string" ? text : "";
+    let deadline = (finishBy ? readDeadline(finishBy, today, true) : null) ??
+      readDeadline(typed, today);
+    const fromNow = !!deadline;
+    if (!deadline && termsTouched) {
+      for (const m of [...history].reverse()) {
+        if (m.role !== "user" || typeof m.content !== "string") continue;
+        deadline = readDeadline(m.content, today);
+        if (deadline) break;
+      }
+    }
+    if (!deadline) return "";
+    const quote = await this.quotes.getOwned(conv.quoteId, userId)
+      .catch(() => undefined);
+    if (!quote?.terms?.length) return "";
+    const check = deadlineCheck(deadline, {
+      terms: quote.terms,
+      startDate: quote.startDate,
+      today,
+    });
+    if (!check || (!check.late && !fromNow)) return "";
+    return deadlineLine(lang, deadline, check, quote.terms);
+  }
+
   /** REQ-438 (M7): which of the contractor's quotes a change order would
    *  land on — the same pick ApplyChatChangeOrder makes. */
   private async changeOrderTarget(
@@ -528,6 +579,19 @@ export class HandleChatMessage {
       phoneNumber: facts.customerPhone,
     }) ?? findCustomerNamedInText(mine, typed) ??
       findCustomerNamedInSummary(mine, summary);
+  }
+
+  /** REQ-653 (M7): the address "same address" means for this customer —
+   *  their latest quote's job address, else their record's. */
+  private async customersAddress(
+    userId: string,
+    customerId: string,
+  ): Promise<string | undefined> {
+    const [quotes, customer] = await Promise.all([
+      this.quotes.listByUser(userId).catch(() => []),
+      this.customers?.getOwned(customerId, userId).catch(() => null) ?? null,
+    ]);
+    return sameAddressFor(customerId, quotes, customer);
   }
 
   /** REQ-331: the bound customer's name for the terms CTA, if any. */
@@ -1092,14 +1156,30 @@ export class HandleChatMessage {
       }
     }
     // REQ-585: a term the message asked for that nothing set is said.
+    // REQ-653 (m50): a deadline is checked against the terms and said; a
+    // start / time to complete the message named only to state it is not
+    // "not changed".
+    const finishBy = edits.map((e) =>
+      e.type === "update_terms" ? e.payload.finishBy : undefined
+    ).find((v): v is string => !!v?.trim());
+    const deadline = await this.deadlineSaid(
+      conv,
+      userId,
+      lang,
+      userText,
+      finishBy,
+      termsSet.length > 0,
+      history,
+    );
     const missed = [
       ...new Set([
         ...termsNotSet,
         ...await this.termsMissed(conv, userText, termsSet),
       ]),
-    ];
+    ].filter((id) => !deadline || (id !== "start_date" && id !== "wraps"));
     const notSet = termsNotAppliedLine(lang, missed);
     if (notSet) parts.push(notSet);
+    if (deadline) parts.push(deadline);
     const notDone = notDoneLine(lang, dropped);
     if (notDone) parts.push(notDone);
     // REQ-585 (M4): the model's answer to what was asked follows — minus its
@@ -2392,6 +2472,17 @@ export class HandleChatMessage {
     // REQ-585 (M4): the call that runs is the plan's — a create_quote carries
     // the job details the model wrote beside it (pair 6).
     if (plan.single) llmResponse = { ...llmResponse, action: plan.single };
+    // REQ-653 (demo-loop cycle 5, m50): a deadline the message names is
+    // checked against the terms and said — "its NOT done before thanksgiving
+    // if we start now + 3 wks, fix that" got "I didn't change the start date".
+    const deadlineLineSaid = await this.deadlineSaid(
+      conv,
+      input.userId,
+      replyLang,
+      input.content,
+      undefined,
+      false,
+    );
     const notDone = [
       notDoneLine(replyLang, [
         ...plan.notDone,
@@ -2402,8 +2493,11 @@ export class HandleChatMessage {
       // charge for the heated floor?" got the price only).
       termsNotAppliedLine(
         replyLang,
-        await this.termsMissed(conv, input.content, []),
+        (await this.termsMissed(conv, input.content, [])).filter((id) =>
+          !deadlineLineSaid || (id !== "start_date" && id !== "wraps")
+        ),
       ),
+      deadlineLineSaid,
     ].filter(Boolean).join(" ");
     const withNotDone = (text: string) =>
       notDone ? [text.trim(), notDone].filter(Boolean).join(" ") : text;
@@ -2798,6 +2892,11 @@ export class HandleChatMessage {
       });
       suppressTextBubble = false;
     }
+    // REQ-653 (demo-loop cycle 5, M7): "email notanemail" — the composer
+    // can't use it; the reply says it was skipped, never passes it over.
+    const badEmail = llmResponse.action?.type === "create_quote"
+      ? malformedEmailIn(userText)
+      : null;
     if (
       existingDraft && !priceProblem &&
       llmResponse.action?.type === "create_quote"
@@ -2836,6 +2935,14 @@ export class HandleChatMessage {
         replyText = [said, answer].filter(Boolean).join(" ");
         suppressTextBubble = false;
       }
+    }
+
+    if (badEmail) {
+      replyText = [
+        replyText.trim(),
+        t(replyLang, "chatCoordinator.emailSkipped", { value: badEmail }),
+      ].filter(Boolean).join(" ");
+      suppressTextBubble = false;
     }
 
     // ---- update_job_details (REQ-262, demo M25): rewrite / translate the
@@ -2946,10 +3053,16 @@ export class HandleChatMessage {
         const userTexts = history
           .filter((m) => m.role === "user" && typeof m.content === "string")
           .map((m) => m.content as string);
+        // REQ-653 (demo-loop cycle 5, M7): "same address" is the customer's
+        // last job address, else the one on their record — Q-002 for Dana
+        // "same address" had no job address.
         const serviceAddress = [...userTexts].reverse()
           .map((text) => extractServiceAddress(text))
           .find((a): a is string => !!a) ||
           acceptModelServiceAddress(action.payload.serviceAddress, userTexts) ||
+          (customerId && userTexts.some(mentionsSameAddress)
+            ? await this.customersAddress(input.userId, customerId)
+            : undefined) ||
           undefined;
 
         // N7 — update-in-place when the conversation already has a draft
