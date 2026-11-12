@@ -96,6 +96,69 @@ export function invoicesHeroMode(input: {
   return "outstanding";
 }
 
+/** What is still owed on one bill, INTEGER CENTS: the amount less what has
+ *  been received (REQ-202 paidCents), never below zero. */
+export function invoiceBalanceCents(
+  inv: { amount?: number | null; paidCents?: number | null },
+): number {
+  const amount = typeof inv.amount === "number" && Number.isFinite(inv.amount)
+    ? inv.amount
+    : 0;
+  const paid = typeof inv.paidCents === "number" &&
+      Number.isFinite(inv.paidCents)
+    ? inv.paidCents
+    : 0;
+  return Math.max(0, amount - paid);
+}
+
+/** REQ-478 (demo-loop cycle 3, M32): the /invoices KPI tiles and hero total.
+ *  A payment the customer reported and the contractor has not confirmed
+ *  (stage "claimed") is still money out — it counts in "Out for payment"
+ *  (`outTileCents`) and in `outstandingCents`, so a lone $450 claim never
+ *  reads "$0" across the tiles. Every total is the balance still owed
+ *  (amount − paidCents), not the face amount. */
+export function invoiceKpiTotals(
+  invoices: ReadonlyArray<
+    { stage: string; amount?: number | null; paidCents?: number | null }
+  >,
+): {
+  overdueCount: number;
+  overdueCents: number;
+  outCount: number;
+  outCents: number;
+  claimedCount: number;
+  claimedCents: number;
+  outTileCents: number;
+  outstandingCents: number;
+} {
+  let overdueCount = 0, overdueCents = 0;
+  let outCount = 0, outCents = 0;
+  let claimedCount = 0, claimedCents = 0;
+  for (const inv of invoices) {
+    const bal = invoiceBalanceCents(inv);
+    if (inv.stage === "overdue") {
+      overdueCount++;
+      overdueCents += bal;
+    } else if (inv.stage === "out") {
+      outCount++;
+      outCents += bal;
+    } else if (inv.stage === "claimed") {
+      claimedCount++;
+      claimedCents += bal;
+    }
+  }
+  return {
+    overdueCount,
+    overdueCents,
+    outCount,
+    outCents,
+    claimedCount,
+    claimedCents,
+    outTileCents: outCents + claimedCents,
+    outstandingCents: overdueCents + outCents + claimedCents,
+  };
+}
+
 /** REQ-411 (demo-loop cycle 2, m34): the label before the hero's next
  *  scheduled date. The only, after-completion bill of a "Payment upon
  *  completion" job (one installment of one) is not a "Next installment" — it

@@ -38,6 +38,7 @@ import {
 } from "../lib/invoice-card.ts";
 import { Icon } from "../components/ui/Icon.tsx";
 import {
+  invoiceKpiTotals,
   invoicesHeroMode,
   reloadInvoiceData,
   scheduledHeroSubKey,
@@ -528,12 +529,13 @@ export default function InvoicesPage(_props: { lang?: Lang }) {
     i.stage === "paid" && i.paidAt && new Date(i.paidAt) >= monthCutoff
   );
 
-  const outstandingTotal = [...overdue, ...out].reduce(
-    (sum, i) => sum + (i.amount ?? 0),
-    0,
-  );
-  const overdueTotal = overdue.reduce((sum, i) => sum + (i.amount ?? 0), 0);
-  const outTotal = out.reduce((sum, i) => sum + (i.amount ?? 0), 0);
+  // REQ-478 (M32): a reported-but-unconfirmed payment is still money out —
+  // it counts in "Out for payment" and the outstanding total; every total is
+  // the balance still owed (amount − paidCents).
+  const kpiTotals = invoiceKpiTotals(enriched);
+  const outstandingTotal = kpiTotals.outstandingCents;
+  const overdueTotal = kpiTotals.overdueCents;
+  const outTotal = kpiTotals.outTileCents;
   // REQ-317: the unsent installments of signed agreements — money still to
   // bill, so the hero never reads "All clear" over them.
   const scheduledTotal = scheduled.reduce(
@@ -620,6 +622,7 @@ export default function InvoicesPage(_props: { lang?: Lang }) {
         overdueTotal={overdueTotal}
         outCount={out.length}
         outTotal={outTotal}
+        claimedCount={claimed.length}
         draftingCount={drafting.length}
         paidCount={paidThisMonth.length}
         paidTotal={paidThisMonthTotal}
@@ -907,13 +910,14 @@ function InvoicesHero(
                 <em>{fmtMoney(outstandingTotal)}</em>{" "}
                 {tFor(lang, "invoicesPage.hero.onTheWay")}
                 <br />
-                {tFor(lang, "invoicesPage.hero.across")} {outstandingCount}{" "}
-                {tFor(
+                {/* REQ-478: the total includes claimed bills, so the count does too */}
+                {tFor(lang, "invoicesPage.hero.across")}{" "}
+                {outstandingCount + claimedCount} {tFor(
                   lang,
-                  outstandingCount === 1
+                  outstandingCount + claimedCount === 1
                     ? "invoicesPage.unitInvoice.one"
                     : "invoicesPage.unitInvoice.other",
-                  { n: outstandingCount },
+                  { n: outstandingCount + claimedCount },
                 )}.
               </>
             )}
@@ -1049,6 +1053,7 @@ function InvoicesKpis(
     overdueTotal,
     outCount,
     outTotal,
+    claimedCount = 0,
     draftingCount,
     paidCount,
     paidTotal,
@@ -1057,7 +1062,10 @@ function InvoicesKpis(
     overdueCount: number;
     overdueTotal: number;
     outCount: number;
+    /** out + claimed balances (REQ-478) */
     outTotal: number;
+    /** reported payments awaiting the contractor's confirmation (REQ-478) */
+    claimedCount?: number;
     draftingCount: number;
     paidCount: number;
     paidTotal: number;
@@ -1083,7 +1091,12 @@ function InvoicesKpis(
         <div class="qkpi__lbl">{tFor(lang, "invoicesPage.kpi.out")}</div>
         <div class="qkpi__val">{fmtMoney(outTotal)}</div>
         <div class="qkpi__sub">
-          {tFor(lang, "invoicesPage.kpi.outSub", { n: outCount })}
+          {claimedCount > 0
+            ? tnFor(lang, "invoicesPage.kpi.outSubClaimed", claimedCount, {
+              n: outCount,
+              c: claimedCount,
+            })
+            : tFor(lang, "invoicesPage.kpi.outSub", { n: outCount })}
         </div>
       </div>
       <div class="qkpi__cell">

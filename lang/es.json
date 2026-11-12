@@ -1491,6 +1491,8 @@
   "invoicesPage.kpi.draftingSubEmpty": "sin borradores abiertos",
   "invoicesPage.kpi.out": "Enviadas para cobro",
   "invoicesPage.kpi.outSub": "{n} en camino",
+  "invoicesPage.kpi.outSubClaimed.one": "{n} en camino · {c} esperando tu confirmación",
+  "invoicesPage.kpi.outSubClaimed.other": "{n} en camino · {c} esperando tu confirmación",
   "invoicesPage.kpi.paid": "Pagadas este mes",
   "invoicesPage.kpi.paidSub.one": "{n} confirmada",
   "invoicesPage.kpi.paidSub.other": "{n} confirmadas",
