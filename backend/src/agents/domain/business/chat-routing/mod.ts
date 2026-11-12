@@ -165,12 +165,39 @@ const CLAUSE_END_RES: RegExp[] = [
   /,?\s+(?:and\s+|y\s+|then\s+|but\s+|pero\s+|so\s+)?(?:please\s+|por\s+favor\s+|can\s+you\s+|could\s+you\s+|puedes\s+)?(?:explain|expl[ií]ca(?:me|lo|nos)?|tell\s+me|dime|show\s+me|mu[eé]strame|walk\s+me|break\s+(?:it|that|this)\s+down|why|por\s*qu[eé]|how\s+(?:did|do|would)\s+you|c[oó]mo\s+(?:lo\s+)?(?:calculaste|sacaste|llegaste|calculas))(?!\p{L})/iu,
 ];
 
-/** The text up to its first clause boundary. */
+/** REQ-579 (cycle 4, M14): a '.' after one of these ends no sentence —
+ *  "(sod St. Augustine)" titled pair 2's quote "Poner césped nuevo (sod St". */
+const ABBREV_BEFORE_DOT_RE =
+  /(?<!\p{L})(?:st|dr|ave|mt|mr|mrs|ms|jr|sr|sra|dra|no|approx|aprox|apt|blvd|rd|ln|ft|sq|av)$/iu;
+
+/** Open "(" / "[" before `at` that are not yet closed. */
+function openParens(s: string, at: number): number {
+  let depth = 0;
+  for (let i = 0; i < at; i++) {
+    const c = s[i];
+    if (c === "(" || c === "[") depth++;
+    else if ((c === ")" || c === "]") && depth > 0) depth--;
+  }
+  return depth;
+}
+
+/** The text up to its first clause boundary. REQ-579: never inside open
+ *  parentheses, and never at the '.' of an abbreviation ("St.", "Dr."). */
 function clipClause(s: string): string {
   let end = s.length;
   for (const re of CLAUSE_END_RES) {
-    const m = s.match(re);
-    if (m && m.index !== undefined && m.index < end) end = m.index;
+    const all = new RegExp(
+      re.source,
+      re.flags.includes("g") ? re.flags : `${re.flags}g`,
+    );
+    for (const m of s.matchAll(all)) {
+      const at = m.index ?? 0;
+      if (at >= end) break;
+      if (m[0] === "." && ABBREV_BEFORE_DOT_RE.test(s.slice(0, at))) continue;
+      if (openParens(s, at) > 0) continue;
+      end = at;
+      break;
+    }
   }
   return s.slice(0, end);
 }

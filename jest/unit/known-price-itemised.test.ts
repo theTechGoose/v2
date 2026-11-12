@@ -190,7 +190,9 @@ describe("REQ-259 AsstChat wiring — the known-price flow keeps the lines", () 
       src.indexOf("function submitJobDetails("),
     );
     expect(body).toMatch(
-      /lineItems:\s*quoteLineItemsFromPrefill\(\s*prefillLines,\s*cents,\s*summary,?\s*\)/,
+      // REQ-579 (cycle 4, M14): the single line is the job's name
+      // (quickQuoteNames().line), never the raw 8-word summary slice.
+      /lineItems:\s*quoteLineItemsFromPrefill\(\s*prefillLines,\s*cents,\s*names\.line,?\s*\)/,
     );
   });
 
