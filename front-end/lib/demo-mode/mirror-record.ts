@@ -32,6 +32,15 @@
  * setupCanvas on mount and resize), so the bitmap reads as before and the sweep would never send
  * it again. Any width/height change on a canvas re-sends its bitmap in the same frame, after the
  * attribute ops. `stats()` counts the bitmaps sent.
+ *
+ * REQ-638 (demo-loop cycle 5, M11) — a native <select>'s open list is drawn by the browser
+ * outside the DOM, so nothing of it would cross. The recorder marks the select open itself: a
+ * `data-mirror-open` attribute (OPEN_ATTR — the page's own never crosses) from the primary
+ * mousedown or the key (Space, F4, Alt+Arrow) that opens it, until a change, a blur, Escape,
+ * Enter or Tab, a mousedown anywhere (on it again or elsewhere) or the select leaving the page.
+ * Its options already cross as its children (masked under `data-demo-mask`, their labels too);
+ * the stage's replay draws the list from them. A multiple or size > 1 select is a list box on
+ * the page itself: it never opens.
  */
 import {
   MIRROR_FLUSH_MS,
@@ -130,6 +139,15 @@ const NO_VALUE = new Set([
   "image",
 ]);
 
+/** REQ-638 — the attribute that says a native select's list is open (the recorder's, never the page's) */
+export const OPEN_ATTR = "data-mirror-open";
+
+/** REQ-638 — the keys that open a focused native select's list (Chrome, every platform) */
+function opensList(e: KeyboardEvent): boolean {
+  if (e.key === " " || e.key === "F4") return true;
+  return !!e.altKey && (e.key === "ArrowDown" || e.key === "ArrowUp");
+}
+
 /** a bullet per character; spaces stay, so the shape of the text is all that crosses */
 export const mask = (s: string) => s.replace(/\S/g, "•");
 
@@ -216,6 +234,7 @@ function nameAllowed(tag: string, name: string): boolean {
   if (n.startsWith("on") || n.startsWith("xmlns") || DROP_ATTRS.has(n)) {
     return false;
   }
+  if (n === OPEN_ATTR) return false; // REQ-638 — only the recorder says a select is open
   if (EMBED_TAGS.has(tag) && (n === "src" || n === "srcdoc" || n === "data")) {
     return false;
   }
@@ -241,6 +260,10 @@ function attrValue(
     return n === "href" || n === "xlink:href" ? "#" : null;
   }
   if (n === "value" && (masked || secretInput(e, tag))) return mask(value);
+  // REQ-638 — an option's (or a group's) label is what the stage's open list shows
+  if (n === "label" && masked && (tag === "option" || tag === "optgroup")) {
+    return mask(value);
+  }
   return value;
 }
 
@@ -314,6 +337,10 @@ export function createRecorder(doc: Document, o: RecorderOptions): Recorder {
   let inkDue = false;
   /** REQ-380 — canvas bitmaps sent */
   let cvSent = 0;
+  /** REQ-638 — the native select whose list is open on the customer's screen, and the id of the
+   *  one the stage has marked open */
+  let openSel: Element | null = null;
+  let sentOpen: number | null = null;
 
   let observer: MutationObserver | null = null;
   let pending: MutationRecord[] = [];
@@ -496,6 +523,7 @@ export function createRecorder(doc: Document, o: RecorderOptions): Recorder {
       if (v === null) continue;
       (a ??= {})[at.name] = v;
     }
+    if (e === openSel) (a ??= {})[OPEN_ATTR] = ""; // REQ-638
     if (a) s.a = a;
     const c: SNode[] = [];
     const list: number[] = [];
@@ -523,6 +551,7 @@ export function createRecorder(doc: Document, o: RecorderOptions): Recorder {
     scrolled.clear();
     inked.clear();
     pending = [];
+    sentOpen = null;
   }
 
   function forget(id: number) {
@@ -535,6 +564,7 @@ export function createRecorder(doc: Document, o: RecorderOptions): Recorder {
     lastCanvas.delete(id);
     lastScroll.delete(id);
     inked.delete(id);
+    if (sentOpen === id) sentOpen = null;
   }
 
   const onScroll = (e: Event) => {
@@ -542,6 +572,51 @@ export function createRecorder(doc: Document, o: RecorderOptions): Recorder {
     schedule();
   };
   const onEvent = () => schedule();
+
+  /** REQ-638 — `t` is a native select that opens a list (not a list box, not disabled) */
+  function popupSelect(t: EventTarget | null): Element | null {
+    const n = t as Node | null;
+    if (!n || n.nodeType !== ELEMENT) return null;
+    const e = n as Element;
+    if (e.namespaceURI && e.namespaceURI !== XHTML) return null;
+    if (tagOf(e) !== "select") return null;
+    if (e.hasAttribute("multiple") || e.hasAttribute("disabled")) return null;
+    const size = Number(e.getAttribute("size") ?? "0");
+    return Number.isFinite(size) && size > 1 ? null : e;
+  }
+  function setOpen(e: Element | null) {
+    if (openSel === e) return;
+    openSel = e;
+    schedule();
+  }
+  /** REQ-638 — a mousedown on a closed select opens its list; any mousedown while one is open
+   *  (on it again, or elsewhere) closes it */
+  const onDown = (e: Event) => {
+    const btn = (e as MouseEvent).button;
+    const sel = btn === undefined || btn === 0 ? popupSelect(e.target) : null;
+    setOpen(sel && sel !== openSel ? sel : null);
+  };
+  /** REQ-638 — the keys that open a focused select's list, and the ones that close it */
+  const onKey = (e: Event) => {
+    const k = e as KeyboardEvent;
+    if (openSel) {
+      if (
+        e.target === openSel &&
+        (k.key === "Escape" || k.key === "Enter" || k.key === "Tab")
+      ) setOpen(null);
+      return;
+    }
+    const sel = popupSelect(e.target);
+    if (sel && opensList(k)) setOpen(sel);
+  };
+  /** REQ-638 — the open select lost focus, or a pick was made: its list is closed */
+  const onBlur = (e: Event) => {
+    if (openSel && e.target === openSel) setOpen(null);
+  };
+  const onChange = (e: Event) => {
+    if (openSel && e.target === openSel) openSel = null;
+    schedule();
+  };
   /** REQ-534 — a pointer on a mirrored canvas: its ink goes out within inkMs, not on the sweep */
   const onInk = (e: Event) => {
     const t = e.target as Node | null;
@@ -594,7 +669,10 @@ export function createRecorder(doc: Document, o: RecorderOptions): Recorder {
       subtree: true,
     });
     doc.addEventListener("input", onEvent, true);
-    doc.addEventListener("change", onEvent, true);
+    doc.addEventListener("change", onChange, true);
+    doc.addEventListener("mousedown", onDown, true);
+    doc.addEventListener("keydown", onKey, true);
+    doc.addEventListener("focusout", onBlur, true);
     doc.addEventListener("scroll", onScroll, { capture: true, passive: true });
     win?.addEventListener("resize", onEvent);
     for (const t of INK_EVENTS) {
@@ -619,7 +697,10 @@ export function createRecorder(doc: Document, o: RecorderOptions): Recorder {
     attached = false;
     observer?.disconnect();
     doc.removeEventListener("input", onEvent, true);
-    doc.removeEventListener("change", onEvent, true);
+    doc.removeEventListener("change", onChange, true);
+    doc.removeEventListener("mousedown", onDown, true);
+    doc.removeEventListener("keydown", onKey, true);
+    doc.removeEventListener("focusout", onBlur, true);
     doc.removeEventListener("scroll", onScroll, { capture: true });
     win?.removeEventListener("resize", onEvent);
     for (const t of INK_EVENTS) {
@@ -632,6 +713,7 @@ export function createRecorder(doc: Document, o: RecorderOptions): Recorder {
     clearInterval(sweepTimer);
     sweepTimer = undefined;
     reset();
+    openSel = null;
   }
 
   function snapshot() {
@@ -642,8 +724,10 @@ export function createRecorder(doc: Document, o: RecorderOptions): Recorder {
     const root = doc.documentElement;
     if (!root) return;
     const out: Op[] = [];
+    if (openSel && !openSel.isConnected) openSel = null; // REQ-638
     const s = ser(root, false, out, new Set());
     if (!s || "x" in s) return;
+    sentOpen = openSel && mirrored(openSel) ? ids.get(openSel)! : null;
     const x = win?.scrollX ?? 0;
     const y = win?.scrollY ?? 0;
     out.push({ o: "s", i: 0, x, y });
@@ -790,6 +874,19 @@ export function createRecorder(doc: Document, o: RecorderOptions): Recorder {
         lastCanvas.set(id, cu);
         ops.push({ o: "cv", i: id, u: cu });
       }
+    }
+    // REQ-638 — the open select's mark: moved, set or taken off (a node sent whole has it as is)
+    if (openSel && !(mirrored(openSel) && inPage(openSel))) openSel = null;
+    const wantOpen = openSel ? ids.get(openSel)! : null;
+    if (wantOpen !== sentOpen) {
+      const was = sentOpen === null ? undefined : nodes.get(sentOpen);
+      if (was && !fresh.has(was)) {
+        ops.push({ o: "a", i: sentOpen!, n: OPEN_ATTR, v: null });
+      }
+      if (openSel && !fresh.has(openSel)) {
+        ops.push({ o: "a", i: wantOpen!, n: OPEN_ATTR, v: "" });
+      }
+      sentOpen = wantOpen;
     }
     for (const n of texts) {
       if (fresh.has(n) || n.nodeType !== TEXT || !mirrored(n)) continue;
