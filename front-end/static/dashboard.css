@@ -1759,6 +1759,21 @@ body {
   flex-wrap: nowrap;
   min-width: 0;
 }
+/* REQ-514 (demo p8-pair4-b): a panel's empty-state copy. `.panel` has no
+   padding, so the block carries the same side inset as the panel's rows
+   (`.job`, `.quote-item`: 20 px) — never flush against the rounded border. */
+.panel__empty {
+  padding: 14px 20px 16px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--fg-muted);
+}
+.panel__empty--stack {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  align-items: flex-start;
+}
 .panel__title {
   font-family: var(--font-heading);
   font-weight: 800;

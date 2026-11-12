@@ -281,7 +281,7 @@ export function ActiveJobs(
       </div>
       {jobs.length === 0
         ? (
-          <div style="padding:18px 4px;display:flex;flex-direction:column;gap:10px;align-items:flex-start">
+          <div class="panel__empty panel__empty--stack">
             <p style="font-size:13.5px;color:var(--fg-muted, #6b7560);margin:0;line-height:1.5">
               {tFor(lang, "activeJobs.empty.text")}
             </p>
@@ -379,7 +379,7 @@ export function QuotesAwaiting(
         </a>
       </div>
       {empty && (
-        <div style="font-size:13px;color:var(--fg-muted);padding:8px 0 14px">
+        <div class="panel__empty">
           {(() => {
             const e = dashQuotesEmpty({ draftCount, hasDecidedHistory });
             return tFor(lang, e.key, { n: e.n });
