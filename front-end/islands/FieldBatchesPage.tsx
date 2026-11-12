@@ -21,6 +21,7 @@ import { I, ICN } from "../lib/dash-icons.tsx";
 import { fmtMoneyExact, shiftIso, todayIso } from "../lib/field.ts";
 import {
   batchCounts,
+  defaultBatchChecks,
   describeSend,
   pluralParens,
   type SendFailureLine,
@@ -118,7 +119,12 @@ export default function FieldBatchesPage() {
 
   useEffect(() => {
     load()
-      .then((rows) => setCurrent((c) => c ?? rows[0] ?? null))
+      .then((rows) => {
+        const first = rows[0] ?? null;
+        setCurrent((c) => c ?? first);
+        // REQ-608 (demo m47): a reload ticks the drafts, as the pull did
+        setChecked((c) => defaultBatchChecks(first, c));
+      })
       .catch((e) => setError(errorMessage(e)))
       .finally(() => setLoading(false));
   }, []);
@@ -195,7 +201,7 @@ export default function FieldBatchesPage() {
     setError(null);
     setFailures([]);
     setZeroBlocked(false);
-    setChecked(new Set());
+    setChecked(defaultBatchChecks(b, new Set())); // REQ-608 — its drafts, ticked
   }
 
   function toggle(id: string, on: boolean) {
