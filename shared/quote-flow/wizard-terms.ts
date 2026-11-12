@@ -13,6 +13,7 @@
  * island (with .ts) and the Jest unit suite. Translation is injected.
  */
 import { isTbdTermValue } from "./terms-i18n.ts";
+import { PRICE_PICK_STEP_ID } from "./price-pick.ts"; // REQ-688
 
 export interface WizardOptionDef {
   id: string;
@@ -306,7 +307,11 @@ export function baseTermRows(input: {
         | { wizardStepId?: string; optionId?: string; customValue?: string }
         | undefined;
       const sid = p?.wizardStepId;
-      if (m.kind !== "text" || !sid || sid === "customer") continue;
+      // REQ-688: the price pick line is the total, not an agreement term.
+      if (
+        m.kind !== "text" || !sid || sid === "customer" ||
+        sid === PRICE_PICK_STEP_ID
+      ) continue;
       if (byStep.has(sid)) continue;
       let term: AgreementTerm | null;
       if (p?.optionId || p?.customValue) {

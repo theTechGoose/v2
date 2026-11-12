@@ -12,6 +12,9 @@ import type { WizardProgress } from "@agents/domain/business/wizard-progress/mod
 import type { Quote } from "@paperwork/dto/quote.ts";
 import type { Customer } from "@crm/dto/customer.ts";
 import type { AssistantDraft } from "#quote-flow/assistant-draft.ts";
+import { isPricePick, pricePickRef } from "#quote-flow/price-pick.ts"; // REQ-688
+import { renderChatI18n } from "#quote-flow/chat-i18n.ts";
+import { t } from "@core/i18n/mod.ts";
 
 export interface ConversationSnapshot {
   conversation: AgentConversation;
@@ -50,7 +53,7 @@ export class LoadConversation {
     if (conv.hasUnreadEvent) {
       conv = await this.conversations.clearUnreadEvent(conv.id);
     }
-    const msgs = await this.messages.listByConversation(input.conversationId);
+    let msgs = await this.messages.listByConversation(input.conversationId);
 
     let wizard: ConversationSnapshot["wizard"];
     if (conv.currentPhase === "terms") {
@@ -71,6 +74,10 @@ export class LoadConversation {
         /* quote was deleted out from under the conversation — surface conv state without it */
       }
     }
+
+    // REQ-688 (demo-loop cycle 5, m65): the "Price: $…" pick line follows a
+    // later price edit (Back to the price card, a preview or chat change).
+    if (quote) msgs = await this.syncPricePick(conv.id, msgs, quote);
 
     // Bound customer — prefer the conversation's customerId, fall back to
     // the quote's. Needed so the recovery UI (and any per-customer
@@ -94,5 +101,38 @@ export class LoadConversation {
       customer,
       ...(draft ? { draft } : {}),
     };
+  }
+
+  /** REQ-688: rewrite a stale price pick line to the quote's total, stored
+   *  so every reader sees the same line. */
+  private async syncPricePick(
+    conversationId: string,
+    msgs: AgentMessage[],
+    quote: Quote,
+  ): Promise<AgentMessage[]> {
+    const cents = quote.estimatedTotal;
+    if (typeof cents !== "number" || cents <= 0) return msgs;
+    const rounded = Math.round(cents);
+    const out: AgentMessage[] = [];
+    for (const m of msgs) {
+      const stored = (m.payload as { priceCents?: unknown } | undefined)
+        ?.priceCents;
+      if (!isPricePick(m) || stored === rounded) {
+        out.push(m);
+        continue;
+      }
+      const ref = pricePickRef(rounded);
+      // The line keeps the language it was written in; readers re-render it
+      // from the key anyway (REQ-589).
+      const lang = m.content.startsWith(t("es", "wizardAnswer.pick.priceLabel"))
+        ? "es"
+        : "en";
+      const next = await this.messages.replace(conversationId, m.id, {
+        content: renderChatI18n(ref, lang, t),
+        payload: { ...(m.payload ?? {}), i18n: ref, priceCents: rounded },
+      });
+      out.push(next ?? m);
+    }
+    return out;
   }
 }

@@ -19,10 +19,12 @@ import type { AgentMessage } from "@agents/dto/message.ts";
 import { BusinessIdentityStore } from "@profile/domain/data/business-identity-store/mod.ts";
 import { tradeKindFor } from "#quote-flow/trade-fit.ts";
 import { accountNetDays } from "#quote-flow/completion-schedule.ts"; // REQ-411
+import { pricePickMessage } from "#quote-flow/price-pick.ts"; // REQ-688
 
 export interface TransitionToTermsResult {
   conversation: AgentConversation;
-  /** Two messages added: the phase_divider and the first wizard step. */
+  /** Messages added: the phase_divider, the price pick line when the quote
+   *  is priced (REQ-688), and the first wizard step. */
   newMessages: AgentMessage[];
 }
 
@@ -144,6 +146,22 @@ export class TransitionToTerms {
       },
     });
 
+    // REQ-688 (demo-loop cycle 5, m65): the price was picked on the price
+    // card before the wizard, so no pick line named it and the checklist
+    // never showed it. Log it first: "Price: $1,850.00".
+    const priced = conv.quoteId
+      ? (await new QuoteStore().getOwned(conv.quoteId, input.userId)
+        .catch(() => undefined))?.estimatedTotal
+      : undefined;
+    if (typeof priced === "number" && priced > 0) {
+      newMessages.push(
+        await this.messages.append({
+          conversationId: conv.id,
+          ...pricePickMessage(priced, lang, t),
+        }),
+      );
+    }
+
     const firstStep = spec.steps[0];
     const wizardMsg = await this.messages.append({
       conversationId: conv.id,
@@ -165,7 +183,8 @@ export class TransitionToTerms {
       },
     });
 
-    newMessages.push(divider, wizardMsg);
+    newMessages.unshift(divider);
+    newMessages.push(wizardMsg);
     return { conversation: updated, newMessages };
   }
 
