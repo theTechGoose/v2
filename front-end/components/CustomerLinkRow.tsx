@@ -1,9 +1,11 @@
 /**
  * REQ-310 (demo cycle 1, m13 + m32): the customer's link after a send.
  *
- * `CustomerLinkRow` — a persistent "Customer link · /q/:id · Copy · Open as
+ * `CustomerLinkRow` — a persistent "Customer link · Q-001 · Copy · Open as
  * customer" row the chat renders under every send divider and on every sent
- * action_card, outside the send channel menu.
+ * action_card, outside the send channel menu. REQ-472 (demo cycle 3,
+ * p8-pair5-c): it names the document, or a cut path ("/q/e302…") when the
+ * number isn't known — never the raw uuid; Copy and Open use the full link.
  *
  * `LinkToast` — the confirmation for any copy of that link: "Link copied",
  * or "Couldn't copy — here is the link" with the url selectable.
@@ -11,13 +13,16 @@
 import { I, ICN } from "../lib/dash-icons.tsx";
 import { type Lang, tFor } from "../lib/i18n.ts";
 import {
+  customerLinkDisplay,
   customerLinkPath,
   type LinkToast as LinkToastState,
 } from "../lib/customer-link.ts";
 
 export function CustomerLinkRow(
-  { quoteId, lang, onCopy }: {
+  { quoteId, quoteNumber, lang, onCopy }: {
     quoteId: string;
+    /** REQ-472: "Q-001" — shown in place of the link when known. */
+    quoteNumber?: string;
     lang: Lang;
     onCopy: (quoteId: string) => void;
   },
@@ -29,7 +34,9 @@ export function CustomerLinkRow(
         <I d={ICN.clip} size={12} sw={2.4} />{" "}
         {tFor(lang, "asstChat.customerLink.label")}
       </span>
-      <code class="customer-link__path">{path}</code>
+      <code class="customer-link__path" title={path}>
+        {customerLinkDisplay(quoteId, quoteNumber)}
+      </code>
       <button
         type="button"
         class="customer-link__btn"

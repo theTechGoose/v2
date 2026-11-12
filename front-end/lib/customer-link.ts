@@ -12,6 +12,22 @@ export function customerLinkPath(quoteId: string): string {
   return `/q/${quoteId}`;
 }
 
+/**
+ * REQ-472 (demo cycle 3, p8-pair5-c): what the row SHOWS for the link — the
+ * document's number ("Q-001") when it is known, otherwise the path cut to
+ * its first characters ("/q/e302…"). Never the whole uuid; Copy and Open
+ * keep the full link.
+ */
+export function customerLinkDisplay(
+  quoteId: string,
+  quoteNumber?: string | null,
+): string {
+  const number = quoteNumber?.trim();
+  if (number) return number;
+  const shown = quoteId.length > 8 ? `${quoteId.slice(0, 4)}…` : quoteId;
+  return customerLinkPath(shown);
+}
+
 /** The absolute link to paste anywhere (WhatsApp, DMs). */
 export function customerLinkUrl(origin: string, quoteId: string): string {
   return `${origin}${customerLinkPath(quoteId)}`;
