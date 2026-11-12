@@ -28,15 +28,17 @@ describe("REQ-334 Re-open on the locked quote card", () => {
   test("REQ-334 the island's Re-open button calls the reopen handler, never a chat message", () => {
     const src = read("front-end/islands/AsstChat.tsx");
     expect(src).not.toContain('sendText("Re-open the quote.")');
+    // REQ-563 AMENDMENT: the button is gated on the live quote
+    // (cardReopenAction), no longer on the card's isLockedOrIssued snapshot.
     const btn = src.match(
-      /isLockedOrIssued\(payload\.status\)[\s\S]{0,900}?onClick=\{\(\) => (\w+)\(/,
+      /cardReopenAction\(\s*payload\.status,[\s\S]{0,900}?onClick=\{\(\) => (\w+)\(/,
     );
     expect(btn?.[1]).toBe("reopenActionCard");
     expect(src).toMatch(/function reopenActionCard\(/);
     // The unlock path hits the server endpoint; the sent path seeds the composer.
     expect(src).toMatch(/assistantClient\.reopenQuote\(/);
     expect(src).toMatch(
-      /reopenActionFor\(payload\.status\) === "revise"[\s\S]{0,200}openDraftEdit\(\)/,
+      /action === "revise"[\s\S]{0,200}openDraftEdit\(\)/,
     );
   });
 

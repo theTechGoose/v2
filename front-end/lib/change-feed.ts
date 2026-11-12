@@ -151,7 +151,15 @@ function attach(): () => void {
     prev = next;
     emit(changes);
   });
-  const unlisten = listenChanges((c) => emit([c]));
+  // REQ-563 (demo-loop cycle 4, m3): a change another tab announced (the
+  // customer signed on /q) also asks the notifications feed now — the
+  // topbar's ticker reads that feed, and kept "Quote sent to …" for up to its
+  // 60 s idle poll after the page itself had moved on.
+  const unlisten = listenChanges((c) => {
+    emit([c]);
+    lastFresh = env.now();
+    env.refreshFeed().catch(() => {/* the topbar's poll retries */});
+  });
   const onFocus = () => {
     if (env.now() - lastFresh < CATCHUP_MIN_MS) return;
     lastFresh = env.now();

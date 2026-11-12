@@ -73,3 +73,68 @@ export function reopenActionFor(
   if (ISSUED.has(s)) return "revise";
   return "none";
 }
+
+/** The live quote row's lifecycle fields the card's controls read. */
+export interface LiveCardQuote {
+  status?: string | null;
+  acceptedAt?: string | null;
+  lostAt?: string | null;
+}
+
+/** A quote the customer answered — signed or declined: nothing to re-open. */
+const ANSWERED = new Set([
+  "accepted",
+  "signed",
+  "won",
+  "lost",
+  "declined",
+  "void",
+]);
+
+/**
+ * REQ-563 (demo-loop cycle 4, m3): what a quote card's "Re-open" does, read
+ * off the LIVE quote row when the card is this thread's quote — the card's
+ * stored status is a snapshot from when it was appended ("locked" forever),
+ * and "Reabrir" stayed on a quote the customer had already signed. A signed
+ * or declined quote offers none; one that went out since the card goes to
+ * revision; with no live row the card's own status decides (REQ-334).
+ */
+export function cardReopenAction(
+  cardStatus: string | undefined | null,
+  live?: LiveCardQuote | null,
+): ReopenAction {
+  // only a locked/issued card ever carries Re-open (a draft card has Lock/Edit)
+  if (!isLockedOrIssued(cardStatus)) return "none";
+  if (!live) return reopenActionFor(cardStatus);
+  if (quoteAnswered(live)) return "none";
+  return reopenActionFor((live.status ?? "").toLowerCase() || cardStatus);
+}
+
+/** REQ-563: the customer answered the quote — signed or declined. */
+export function quoteAnswered(live: LiveCardQuote | null | undefined): boolean {
+  if (!live) return false;
+  return ANSWERED.has((live.status ?? "").toLowerCase()) ||
+    Boolean(live.acceptedAt) || Boolean(live.lostAt);
+}
+
+/** REQ-563: the live row for a card — the thread's fetched quote when the
+ *  card is that quote's, else none (another quote's card keeps its own). */
+export function liveCardQuote<Q extends { id?: string } & LiveCardQuote>(
+  card: { quoteId?: string } | null | undefined,
+  live: Q | null | undefined,
+): Q | undefined {
+  return live && card?.quoteId && live.id === card.quoteId ? live : undefined;
+}
+
+/** REQ-563: the re-read row says the customer just signed (the chat then
+ *  re-reads its transcript for the server's "… signed …" divider). */
+export function becameSigned(
+  before: LiveCardQuote | null | undefined,
+  after: LiveCardQuote | null | undefined,
+): boolean {
+  const signed = (q: LiveCardQuote | null | undefined) =>
+    !!q && (["accepted", "signed", "won"].includes(
+      (q.status ?? "").toLowerCase(),
+    ) || Boolean(q.acceptedAt));
+  return !signed(before) && signed(after);
+}
