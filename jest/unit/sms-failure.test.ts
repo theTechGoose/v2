@@ -120,9 +120,11 @@ describe("REQ-226 the copy the contractor reads", () => {
     },
   );
 
-  test("REQ-226 both languages carry a 'check the number' headline", () => {
-    expect(en["asstChat.recovery.checkPhone"]).toMatch(/check/i);
-    expect(es["asstChat.recovery.checkPhone"]).toMatch(/rev[ií]s/i);
+  // REQ-525 (cycle 3, p8-pair2-a): the headline is the action — fix the
+  // number — never a restatement of the reason the send card shows.
+  test("REQ-226 both languages carry a 'fix the number' headline", () => {
+    expect(en["asstChat.recovery.checkPhone"]).toMatch(/fix the number/i);
+    expect(es["asstChat.recovery.checkPhone"]).toMatch(/corrige el número/i);
     expect(en["asstChat.recovery.addEmailCheckPhone"]).toBeTruthy();
     expect(es["asstChat.recovery.addEmailCheckPhone"]).toBeTruthy();
   });

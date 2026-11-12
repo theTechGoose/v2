@@ -150,3 +150,49 @@ Deno.test("REQ-236 e2e: a failed send reads undelivered on /quotes and the threa
     );
   });
 });
+
+// REQ-525 (demo-loop cycle 3, p8-pair2-a): over HTTP, a text to a fictional
+// 555 number answers with a divider whose label is the short "Text not
+// delivered" — the reason rides on the payload for the send card, the one
+// place that shows it — never "… text failed — <reason>".
+Deno.test("REQ-525 e2e: a failed text's divider label does not restate the reason the send card shows", async () => {
+  await withServer(async () => {
+    const sid = await login("+15125551299");
+    const auth = { "content-type": "application/json", "x-session-id": sid };
+    const post = (path: string, body: unknown) =>
+      fetch(`${BASE}${path}`, {
+        method: "POST",
+        headers: auth,
+        body: JSON.stringify(body),
+      }).then((r) => r.json());
+    const customer = await post("/customers", {
+      name: "Dana Fictional",
+      phoneNumber: "+15125550123",
+    });
+    const quote = await post("/quotes", {
+      summary: "Fence repair",
+      lineItems: [],
+      estimatedTotal: 35_000,
+      customerId: customer.id,
+    });
+    const kv = await getKv();
+    const userKey = ["user", quote.userId];
+    const user = (await kv.get<Record<string, unknown>>(userKey)).value!;
+    await kv.set(userKey, { ...user, name: "Test Contractor", language: "en" });
+    const conv = await post("/agents/conversations", {});
+    await new AgentConversationStore().update(conv.id, {
+      quoteId: quote.id,
+      customerId: customer.id,
+    });
+
+    const r = await post(`/agents/conversations/${conv.id}/send-quote`, {
+      quoteId: quote.id,
+      channel: "sms",
+    });
+    const div = r.newMessages[0];
+    assertEquals(div.payload.smsFailureCode, "fictional");
+    assert(div.payload.smsFailureReason, "the payload carries the reason");
+    assertEquals(div.content, "Text not delivered");
+    assertEquals(div.payload.label, "Text not delivered");
+  });
+});
