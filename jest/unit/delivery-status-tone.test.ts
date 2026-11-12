@@ -31,6 +31,7 @@ describe("REQ-327 headerTone — the status line's tone", () => {
         "quoteDrafted",
         "quoteLocked",
         "gatheringInfo",
+        "lockedAddingTerms",
         "readyToSend",
         "outForSignature",
         "quoteAccepted",

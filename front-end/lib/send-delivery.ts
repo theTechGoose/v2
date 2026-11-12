@@ -110,6 +110,7 @@ export type HeaderStatusKey =
   | "asstChat.header.outForSignature"
   | "asstChat.header.quoteSent"
   | "asstChat.header.gatheringInfo"
+  | "asstChat.header.lockedAddingTerms"
   | "asstChat.header.quoteLocked"
   | "asstChat.header.quoteDrafted";
 
@@ -147,7 +148,12 @@ export function headerStatusKey(i: {
     return "asstChat.header.outForSignature";
   }
   if (dividerPhase === 3) return "asstChat.header.quoteSent";
-  if (dividerPhase === 2) return "asstChat.header.gatheringInfo";
+  if (dividerPhase === 2) {
+    // REQ-454 (cycle 3, m34): the wizard after a lock reads forward.
+    return i.lastCardStatus === QUOTE_LOCKED || i.lastCardStatus === "sent"
+      ? "asstChat.header.lockedAddingTerms"
+      : "asstChat.header.gatheringInfo";
+  }
   if (i.lastCardStatus === "accepted") return "asstChat.header.quoteAccepted";
   if (i.lastCardStatus === "sent") return "asstChat.header.quoteSent";
   // REQ-234: locked is not sent — the quote is ready to send.

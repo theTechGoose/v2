@@ -94,15 +94,15 @@ describe("REQ-369 threadStatus — one rule, fed by the quote row", () => {
     ).toBe("locked");
   });
 
-  it("the terms wizard asking → gathering, from the transcript (chat) or the wizard state (server)", () => {
+  it("the terms wizard asking on the locked quote → addingTerms (REQ-454), from the transcript (chat) or the wizard state (server)", () => {
     const q = { status: "draft", lockedAt: "2026-11-12T05:00:00Z" };
     expect(
       threadStatus({
         quote: q,
         messages: [card("locked"), termsDivider, wizardStep],
       }),
-    ).toBe("gathering");
-    expect(threadStatus({ quote: q, wizard: "asking" })).toBe("gathering");
+    ).toBe("addingTerms");
+    expect(threadStatus({ quote: q, wizard: "asking" })).toBe("addingTerms");
   });
 
   it("the wizard finished → readyToSend; with the job-details pick still owed → pickingDetails (demo: 'Ready to send' while picking scope)", () => {
@@ -285,6 +285,7 @@ describe("REQ-369 the conversation list's chip is the same status", () => {
       const s of [
         "locked",
         "gathering",
+        "addingTerms",
         "pickingDetails",
         "readyToSend",
         "undelivered",

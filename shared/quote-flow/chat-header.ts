@@ -152,6 +152,7 @@ export const THREAD_STATUSES = [
   "drafted",
   "locked",
   "gathering",
+  "addingTerms",
   "pickingDetails",
   "readyToSend",
   "undelivered",
@@ -220,7 +221,8 @@ function readTranscript(messages: readonly ChatHeaderMessage[]): Transcript {
  * Precedence: the customer signed → declined → a send that reached nobody
  * (REQ-236: the row's record, or the chat's newest divider when the row has
  * not caught up) → out for signature (opened, delivered once, the chat's send
- * record, an issued row) → the terms wizard asking → finished: the
+ * record, an issued row) → the terms wizard asking (on a locked quote:
+ * REQ-454 "adding terms") → finished: the
  * job-details pick still owed, else ready to send → locked → drafted → none.
  */
 export function threadStatus(input: ThreadStatusInput): ThreadStatus {
@@ -263,17 +265,18 @@ export function threadStatus(input: ThreadStatusInput): ThreadStatus {
   // emitted it: with no send record, a "sent" quote behind it was locked.
   if (ISSUED.has(status) && t.lastCardStatus !== "sent") return "sent";
 
+  const locked = t.lastCardStatus === "sent" ||
+    t.lastCardStatus === "locked" || Boolean(q?.lockedAt);
   const wizard = input.wizard ?? wizardStage(messages);
-  if (wizard === "asking") return "gathering";
+  // REQ-454 (demo-loop cycle 3, m34): the flow locks the price FIRST and
+  // runs the terms wizard after it (REQ-234), so the wizard on a locked
+  // quote reads forward — "Quote locked · adding terms" — never the step
+  // back to "Gathering a little more info".
+  if (wizard === "asking") return locked ? "addingTerms" : "gathering";
   if (wizard === "done" || (q?.terms?.length ?? 0) > 0) {
     return input.detailsPending ? "pickingDetails" : "readyToSend";
   }
-  if (
-    t.lastCardStatus === "sent" || t.lastCardStatus === "locked" ||
-    Boolean(q?.lockedAt)
-  ) {
-    return "locked";
-  }
+  if (locked) return "locked";
   if (q || t.hasCard) return "drafted";
   return "none";
 }
@@ -305,6 +308,7 @@ const STATUS_KEY: Record<ThreadStatus, string> = {
   drafted: `${K}quoteDrafted`,
   locked: `${K}quoteLocked`,
   gathering: `${K}gatheringInfo`,
+  addingTerms: `${K}lockedAddingTerms`,
   pickingDetails: `${K}pickingDetails`,
   readyToSend: `${K}readyToSend`,
   undelivered: `${K}notDelivered`,
