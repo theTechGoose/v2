@@ -32,6 +32,12 @@ import { fmtMoney, fmtMoneyExact } from "../lib/format.ts";
 import { type Lang, langSignal, tFor, tnFor } from "../lib/i18n.ts";
 import QuoteTrack from "./QuoteTrack.tsx";
 import {
+  cardDate,
+  hasSecondaryPaymentReceived,
+  scheduledSubline,
+} from "../lib/invoice-card.ts";
+import { Icon } from "../components/ui/Icon.tsx";
+import {
   invoicesHeroMode,
   reloadInvoiceData,
   scheduledHeroSubKey,
@@ -158,21 +164,6 @@ const INITIAL: State = {
   customers: [],
 };
 
-const SHORT_MONTH = [
-  "Jan",
-  "Feb",
-  "Mar",
-  "Apr",
-  "May",
-  "Jun",
-  "Jul",
-  "Aug",
-  "Sep",
-  "Oct",
-  "Nov",
-  "Dec",
-];
-
 /** Map an Invoice.paymentIntent.method (lowercase canonical) to the
  *  customer-facing word used in the "customer paid X" subline. Returns
  *  "—" for missing/unknown values rather than an empty string so the
@@ -220,19 +211,7 @@ function shortDay(iso: string, lang: Lang): string {
   return formatShortDate(iso, lang);
 }
 
-function monthLabel(idx: number, lang: Lang): string {
-  return tFor(lang, `invoicesPage.month.${SHORT_MONTH[idx].toLowerCase()}`);
-}
-
-function fmtDate(iso: string | undefined, now: Date, lang: Lang): string {
-  if (!iso) return "—";
-  const d = new Date(iso + (iso.length === 10 ? "T00:00:00" : ""));
-  if (Number.isNaN(d.getTime())) return iso;
-  const sameYear = d.getFullYear() === now.getFullYear();
-  return sameYear
-    ? `${monthLabel(d.getMonth(), lang)} ${d.getDate()}`
-    : `${monthLabel(d.getMonth(), lang)} ${d.getDate()}, ${d.getFullYear()}`;
-}
+const fmtDate = cardDate;
 
 function initialsOf(name: string): string {
   const parts = name.trim().split(/\s+/).filter(Boolean);
@@ -2212,9 +2191,7 @@ function InvoiceCard(
       date: fmtDate(inv.dueDate, now, lang),
     })
     : inv.stage === "scheduled"
-    ? tFor(lang, "invoicesPage.subline.scheduled", {
-      date: inv.scheduledFor ?? "—",
-    })
+    ? scheduledSubline(inv.scheduledFor, now, lang)
     : inv.stage === "out"
     ? tFor(lang, "invoicesPage.subline.out", {
       n: inv.daysIn,
@@ -2744,9 +2721,16 @@ function InvoiceCard(
                 onClick={() => setAdjustOpen((o) => !o)}
                 style="appearance:none;background:none;border:none;color:var(--brand-teal);font:inherit;font-size:12.5px;font-weight:700;cursor:pointer;padding:2px 0"
               >
-                {adjustOpen
-                  ? tFor(lang, "invoicesPage.adjust.hide")
-                  : `${tFor(lang, "invoicesPage.adjust.open")} ▾`}
+                {adjustOpen ? tFor(lang, "invoicesPage.adjust.hide") : (
+                  <>
+                    {tFor(lang, "invoicesPage.adjust.open")}{" "}
+                    <Icon
+                      name="chevron-down"
+                      size={13}
+                      style="vertical-align:-2px"
+                    />
+                  </>
+                )}
               </button>
               {adjustOpen && (
                 <div style="margin-top:8px;display:flex;flex-direction:column;gap:12px;background:rgba(0,0,0,0.03);border-radius:10px;padding:10px 12px">
@@ -3141,7 +3125,7 @@ function InvoiceCard(
               {tFor(lang, "invoicesPage.back.changeDate")}
             </button>
           )}
-          {(inv.stage === "overdue" || inv.stage === "out") && (
+          {hasSecondaryPaymentReceived(inv.stage) && (
             <button
               type="button"
               data-cy="invoice-payment-received"

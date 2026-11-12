@@ -18,6 +18,7 @@
 import { useEffect, useRef, useState } from "preact/hooks";
 import { langSignal } from "../lib/lang.ts";
 import { tFor } from "../lib/i18n.ts";
+import { Icon } from "../components/ui/Icon.tsx";
 import {
   formatMockUsd,
   MOCK_QUOTE,
@@ -230,7 +231,8 @@ export default function PhoneChat(props: Props) {
             onClick={play}
             style="padding: 8px 16px; border-radius: 999px; border: none; background: var(--brand-pink, #FF6B6B); color: #fff; font-weight: 700; cursor: pointer;"
           >
-            ▶ {tFor(lang, "phoneChat.controls.play")}
+            <Icon name="play" size={12} style="vertical-align:-1px" />{" "}
+            {tFor(lang, "phoneChat.controls.play")}
           </button>
           <button
             type="button"

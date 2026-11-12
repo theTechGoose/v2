@@ -27,8 +27,12 @@ const ROOT = new URL("../..", import.meta.url).pathname.replace(/\/$/, "");
 const join = (...parts: string[]) => parts.join("/");
 const relative = (base: string, p: string) => p.slice(base.length + 1);
 
-/** U+2700–U+27BF: ✓ ✔ ✎ ✏ ✕ ✖ ✗ ✘ … — none are in the app's web fonts. */
-const DINGBAT = /[✀-➿]/u;
+/**
+ * U+2700–U+27BF Dingbats (✓ ✔ ✎ ✏ ✕ ✖ ✗ ✘ …) and — REQ-407, demo-loop cycle 2
+ * m30, where "Adjust invoice ▾" drew a tofu box — U+25A0–U+25FF Geometric
+ * Shapes (▾ ▸ ◀ ▶ ■ ●): none are in the app's web fonts.
+ */
+const DINGBAT = /[✀-➿■-◿]/u;
 
 /**
  * Marketing landing pages: decorative copy ("Signed ✓") inside a mock
@@ -108,7 +112,17 @@ Deno.test("REQ-366 setup-m4: no app lang string carries a Dingbat glyph", async 
 });
 
 Deno.test("REQ-366 setup-m4: the icon set has the check / pencil / x replacements as SVG", () => {
-  for (const name of ["check", "pencil", "x"] as const) {
+  for (
+    const name of [
+      "check",
+      "pencil",
+      "x",
+      "chevron-down",
+      "chevron-left",
+      "chevron-right",
+      "play",
+    ] as const
+  ) {
     const html = renderToString(<Icon name={name} />);
     assert(html.startsWith("<svg"), `${name}: ${html}`);
     assert(/<path d="[^"]+"/.test(html), `${name} has a path: ${html}`);
