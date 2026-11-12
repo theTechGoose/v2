@@ -92,7 +92,10 @@ export class SendChangeOrderAlert {
     const customerName = customer?.name?.trim() || customer?.businessName?.trim() ||
       t(cxLang, "notify.fallbackClient");
     const delta = fmtDelta(co.deltaAmountCents);
-    const url = `${APP_URL}/co/${co.id}`;
+    // REQ-398 (demo p13-j, REQ-342 parity): the link carries the language
+    // the order was sent in; /co reads ?lang= first and its EN | ES toggle
+    // flips it from there.
+    const url = `${APP_URL}/co/${co.id}?lang=${coLang}`;
     const refCo = changeOrderRef(co, invoice, coLang);
     const refCx = changeOrderRef(co, invoice, cxLang);
 

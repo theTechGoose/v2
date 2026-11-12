@@ -42,6 +42,7 @@ import type { CustomerSnapshot } from "@core/data/numbered-store/mod.ts";
 import { SessionStore } from "@users/domain/data/session-store/mod.ts";
 import { readSessionId } from "@users/domain/coordinators/require-user/mod.ts";
 import { isInternalViewer } from "@paperwork/domain/business/internal-viewer/mod.ts";
+import { changeOrderJobTotals } from "#quote-flow/change-order-view.ts";
 
 /**
  * Map a NotFoundError into a 404 JSON response. Public endpoints used to
@@ -53,6 +54,28 @@ function notFoundResponse(ctx: ExecutionContext, e: unknown) {
     return ctx.json({ error: "not_found", resource: e.resource }, 404);
   }
   throw e;
+}
+
+/** REQ-398 (demo M15): a 409 owner_cannot_approve for the business's own
+ *  session (owner, admin acting for them, staff impersonating) without the
+ *  full in-person override `?as=customer&confirm=1`; undefined for anyone
+ *  else. A module function, not a controller method (Danet routes those). */
+async function ownerCannotApprove(
+  ctx: ExecutionContext,
+  sessions: SessionStore,
+  ownerId: string,
+) {
+  const sessionId = readSessionId(ctx);
+  const session = sessionId
+    ? await sessions.get(sessionId).catch(() => null)
+    : null;
+  if (
+    isInternalViewer(session, ownerId) &&
+    !hasSignOverride(new URL(ctx.req.url).search)
+  ) {
+    return ctx.json({ ok: false, reason: "owner_cannot_approve" }, 409);
+  }
+  return undefined;
 }
 
 class AcceptQuoteDto {
@@ -309,7 +332,18 @@ export class PaperworkPublicController {
   ) {
     try {
       const co = await this.changeOrders.get(id);
+      // REQ-398 (demo M15): the business's own viewer (owner, admin acting
+      // for them, staff impersonating) previews — /co shows the banner, not
+      // the approve form, exactly like /q (REQ-306).
+      const sessionId = readSessionId(ctx);
+      const session = sessionId
+        ? await this.sessions.get(sessionId).catch(() => null)
+        : null;
+      const internal = isInternalViewer(session, co.userId);
       let invoiceAmount: number | undefined;
+      // REQ-398 (demo m25): the JOB's agreed total before/after this order —
+      // the headline; the invoice amounts are "This invoice".
+      let jobTotals: { beforeCents: number; afterCents: number } | undefined;
       let businessName: string | undefined;
       // Language the customer document should render in (the contractor's
       // outgoing-comms language). Defaults EN if the identity can't be read.
@@ -349,6 +383,13 @@ export class PaperworkPublicController {
               url: `/q/${q.id}`,
               accepted: isAccepted(q),
             };
+            const cos = await this.changeOrders.listByQuote(co.userId, q.id)
+              .catch(() => [] as ChangeOrder[]);
+            jobTotals = changeOrderJobTotals(
+              q,
+              cos.some((c) => c.id === co.id) ? cos : [...cos, co],
+              co.id,
+            );
           }
         }
       } catch { /* invoice may be gone; still show the order */ }
@@ -372,6 +413,13 @@ export class PaperworkPublicController {
         newAmount: originalAmount != null
           ? Math.max(0, originalAmount + co.deltaAmountCents)
           : undefined,
+        ...(jobTotals
+          ? {
+            jobCurrentAmount: jobTotals.beforeCents,
+            jobNewAmount: jobTotals.afterCents,
+          }
+          : {}),
+        ...(internal ? { internal: true } : {}),
         businessName,
         commsLanguage,
         decidedAt: co.decidedAt,
@@ -400,6 +448,11 @@ export class PaperworkPublicController {
     } catch (e) {
       return notFoundResponse(ctx, e);
     }
+    // REQ-398 (demo M15): the business's own session cannot decide its
+    // customer's change order — the in-person override (?as=customer&confirm=1)
+    // the preview banner links to is the one way through (REQ-306 parity).
+    const refusal = await ownerCannotApprove(ctx, this.sessions, co.userId);
+    if (refusal) return refusal;
     if (co.status !== "pending") {
       return ctx.json({ ok: false, reason: `already_${co.status}` }, 409);
     }
@@ -484,6 +537,11 @@ export class PaperworkPublicController {
     } catch (e) {
       return notFoundResponse(ctx, e);
     }
+    // REQ-398 (demo M15): the business's own session cannot decide its
+    // customer's change order — the in-person override (?as=customer&confirm=1)
+    // the preview banner links to is the one way through (REQ-306 parity).
+    const refusal = await ownerCannotApprove(ctx, this.sessions, co.userId);
+    if (refusal) return refusal;
     if (co.status !== "pending") {
       return ctx.json({ ok: false, reason: `already_${co.status}` }, 409);
     }
