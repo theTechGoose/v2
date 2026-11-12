@@ -48,6 +48,14 @@ import {
   ShimmerStyle,
 } from "../components/Skeletons.tsx";
 import { langSignal, tFor } from "../lib/i18n.ts";
+import {
+  canReviseQuote,
+  editableLines,
+  type EditableQuoteLine,
+  editorTotalCents,
+  linesPatch,
+  nextVersionOf,
+} from "../lib/quote-line-edit.ts";
 import { countOpenClients, outTrackCounts } from "../lib/headline-counts.ts";
 import {
   buildViewedReceipt,
@@ -515,6 +523,181 @@ function QuoteLedgerSection(
   );
 }
 
+/** REQ-315 (demo-loop cycle 1, B2) — "Edit → Version N+1" on an issued,
+ *  unsigned quote: description / qty / price per line, add or remove lines,
+ *  a live new total. Save PUTs the lines + total; the controller files them
+ *  as the pending revision (REQ-201), and the panel's "Publish revision"
+ *  takes over. The customer keeps seeing the published version meanwhile. */
+function QuoteLineEditor(
+  { lang, q, onCancel, onSaved }: {
+    lang: "en" | "es";
+    q: BackendQuoteCard;
+    onCancel: () => void;
+    onSaved: (version: number) => void;
+  },
+) {
+  const [lines, setLines] = useState<EditableQuoteLine[]>(() =>
+    editableLines(q)
+  );
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const n = nextVersionOf(q);
+  const total = editorTotalCents(lines);
+  const field =
+    "padding:7px 9px;border:1px solid rgba(26,83,92,0.22);border-radius:8px;font:inherit;font-size:13px;min-width:0;width:100%;box-sizing:border-box;background:#fff";
+  const grid =
+    "display:grid;grid-template-columns:minmax(0,1fr) 64px 110px auto;gap:6px;align-items:center";
+  const mutedStyle = "color:var(--fg-muted,#6b7560)";
+
+  function patch(
+    i: number,
+    key: "description" | "quantity" | "price",
+    value: string,
+  ) {
+    setLines((ls) => ls.map((l, j) => (j === i ? { ...l, [key]: value } : l)));
+  }
+
+  async function save() {
+    if (busy) return;
+    const body = linesPatch(lines);
+    if (!body.ok) {
+      setErr(tFor(lang, "quotesPage.edit.invalid"));
+      return;
+    }
+    setBusy(true);
+    setErr(null);
+    try {
+      await quotesClient.update(q.id, {
+        lineItems: body.lineItems,
+        estimatedTotal: body.estimatedTotal,
+      });
+      onSaved(n);
+    } catch {
+      setErr(tFor(lang, "quotesPage.edit.error"));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div
+      class="qopen__edit"
+      data-cy="quote-edit-form"
+      style="margin-top:12px;padding:12px;border:1px solid rgba(26,83,92,0.16);border-radius:12px;background:rgba(26,83,92,0.03)"
+    >
+      <p style={`margin:0 0 8px;font-size:12.5px;${mutedStyle}`}>
+        {tFor(lang, "quotesPage.edit.heading", { n })}
+      </p>
+      <div style={`${grid};font-size:11px;font-weight:700;${mutedStyle}`}>
+        <span>{tFor(lang, "quotesPage.edit.description")}</span>
+        <span>{tFor(lang, "quotesPage.edit.qty")}</span>
+        <span>{tFor(lang, "quotesPage.edit.price")}</span>
+        <span />
+      </div>
+      {lines.map((l, i) => (
+        <div key={i} style={`${grid};margin-top:6px`}>
+          <input
+            type="text"
+            data-cy={`quote-edit-line-desc-${i}`}
+            value={l.description}
+            disabled={busy}
+            onInput={(e) =>
+              patch(i, "description", (e.target as HTMLInputElement).value)}
+            style={field}
+          />
+          <input
+            type="number"
+            min="1"
+            step="1"
+            data-cy={`quote-edit-line-qty-${i}`}
+            value={l.quantity}
+            disabled={busy}
+            onInput={(e) =>
+              patch(i, "quantity", (e.target as HTMLInputElement).value)}
+            style={field}
+          />
+          <input
+            type="number"
+            step="0.01"
+            inputMode="decimal"
+            data-cy={`quote-edit-line-price-${i}`}
+            value={l.price}
+            disabled={busy}
+            onInput={(e) =>
+              patch(i, "price", (e.target as HTMLInputElement).value)}
+            style={field}
+          />
+          <button
+            type="button"
+            class="qopen__btn"
+            data-cy={`quote-edit-line-remove-${i}`}
+            disabled={busy || lines.length === 1}
+            onClick={() => setLines((ls) => ls.filter((_, j) => j !== i))}
+          >
+            {tFor(lang, "quotesPage.edit.removeLine")}
+          </button>
+        </div>
+      ))}
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-top:10px;flex-wrap:wrap">
+        <button
+          type="button"
+          class="qopen__btn"
+          data-cy="quote-edit-add-line"
+          disabled={busy}
+          onClick={() =>
+            setLines((ls) => [
+              ...ls,
+              { description: "", quantity: "1", unit: "ea", price: "" },
+            ])}
+        >
+          {tFor(lang, "quotesPage.edit.addLine")}
+        </button>
+        <strong
+          data-cy="quote-edit-total"
+          style="font-variant-numeric:tabular-nums;color:var(--brand-teal,#144852)"
+        >
+          {tFor(lang, "quotesPage.edit.total", {
+            amount: fmtMoneyExact(total),
+          })}
+        </strong>
+      </div>
+      {/* One solid primary (save), the cancel a quiet ghost. */}
+      <div class="qopen__actions" style="margin-top:10px;align-items:center">
+        <button
+          type="button"
+          class="qopen__btn qopen__btn--primary"
+          data-cy="quote-edit-save"
+          disabled={busy}
+          onClick={save}
+          style="background:var(--brand-teal,#144852);border-color:var(--brand-teal,#144852);color:#fff"
+        >
+          {busy
+            ? tFor(lang, "quotesPage.edit.saving")
+            : tFor(lang, "quotesPage.edit.save", { n })}
+        </button>
+        <button
+          type="button"
+          class="qopen__btn"
+          data-cy="quote-edit-cancel"
+          disabled={busy}
+          onClick={onCancel}
+          style="background:transparent;border-color:transparent;color:var(--fg-muted,#6b7560)"
+        >
+          {tFor(lang, "common.cancel")}
+        </button>
+      </div>
+      {err && (
+        <p
+          role="alert"
+          style="margin:8px 0 0;font-size:12.5px;color:#a83b3b;font-weight:600"
+        >
+          {err}
+        </p>
+      )}
+    </div>
+  );
+}
+
 /** Detail surface for /quotes?open=<id> — job name, lifecycle status badge,
  *  full-quote actions, and the "emailed to … / texted to …" receipt strip
  *  built from the per-document comms trail (roadmap p.8). */
@@ -529,6 +712,15 @@ function OpenQuotePanel(
   },
 ) {
   const [copied, setCopied] = useState(false);
+  // REQ-315 (B2): "Edit → Version N+1" on an issued, unsigned quote — the
+  // editor and its "saved" note reset whenever another quote is opened.
+  const [editing, setEditing] = useState(false);
+  const [savedVersion, setSavedVersion] = useState<number | null>(null);
+  const openedId = state.quote?.id;
+  useEffect(() => {
+    setEditing(false);
+    setSavedVersion(null);
+  }, [openedId]);
 
   if (state.loading) {
     return (
@@ -550,6 +742,10 @@ function OpenQuotePanel(
   const quoteId = q.id;
   const title = q.jobName?.trim() || q.summary ||
     tFor(lang, "quotesPage.untitledQuote");
+  // REQ-315: while a revision waits, "Publish revision" is the one primary.
+  const hasPending = Boolean(
+    q.pendingRevision && Object.keys(q.pendingRevision).length > 0,
+  );
 
   async function copyLink() {
     try {
@@ -611,6 +807,20 @@ function OpenQuotePanel(
           >
             {tFor(lang, "quotesPage.open.viewAsClient")}
           </a>
+          {/* REQ-315 (B2): a sent, unsigned quote can be repriced here. */}
+          {canReviseQuote(q) && !editing && (
+            <button
+              type="button"
+              class={`qopen__btn${hasPending ? "" : " qopen__btn--primary"}`}
+              data-cy="quote-edit"
+              onClick={() => {
+                setSavedVersion(null);
+                setEditing(true);
+              }}
+            >
+              {tFor(lang, "quotesPage.open.edit", { n: nextVersionOf(q) })}
+            </button>
+          )}
           {
             /* UX-02: the won quote's obvious next step — never a dead end.
               REQ-205: once the ledger is loaded its own CTA takes over. */
@@ -629,6 +839,29 @@ function OpenQuotePanel(
           )}
         </div>
       </div>
+      {editing && (
+        <QuoteLineEditor
+          lang={lang}
+          q={q}
+          onCancel={() => setEditing(false)}
+          onSaved={(n) => {
+            setEditing(false);
+            setSavedVersion(n);
+            onRefresh();
+          }}
+        />
+      )}
+      {savedVersion !== null && !editing && (
+        <p
+          data-cy="quote-edit-saved"
+          style="margin:10px 0 0;font-size:12.5px;color:var(--brand-green,#519843);font-weight:700"
+        >
+          {tFor(lang, "quotesPage.edit.saved", {
+            n: savedVersion,
+            name: q.customerName ?? tFor(lang, "quotesPage.edit.theCustomer"),
+          })}
+        </p>
+      )}
       {(badge === "accepted" || state.receipts.length > 0 || state.viewed) && (
         <div class="qopen__receipts">
           {badge === "accepted" && (

@@ -53,6 +53,11 @@ import { EventBus } from "@core/business/events/mod.ts";
 import { lockStatusFor, QUOTE_LOCKED } from "#quote-flow/quote-lock.ts";
 import { parseChangeOrderRequest } from "@agents/domain/business/change-order-intent/mod.ts";
 import { ApplyChatChangeOrder } from "@agents/domain/coordinators/apply-chat-change-order/mod.ts";
+import {
+  ReviseQuote,
+  type ReviseQuoteResult,
+} from "@agents/domain/coordinators/revise-quote/mod.ts";
+import { changeOrderAsReprice } from "@agents/domain/business/quote-line-revision/mod.ts";
 import { extractServiceAddress } from "#quote-flow/quick-quote-prefill.ts";
 import type { AgentConversation } from "@agents/dto/conversation.ts";
 import type { AgentMessage } from "@agents/dto/message.ts";
@@ -214,6 +219,8 @@ export class HandleChatMessage {
     private emailer: SendPaperworkEmail,
     @Inject(LLM_CLIENT) private llm: LLMClient,
     private changeOrder: ApplyChatChangeOrder,
+    /** REQ-315 (M26): changes a line that is already on a quote. */
+    private reviseQuote: ReviseQuote,
     /** REQ-264 (M15): fills every document language before dispatch. */
     private translator?: TranslateQuote,
   ) {}
@@ -726,8 +733,32 @@ export class HandleChatMessage {
             ...(changeOrderAsk.customerName
               ? { customerName: changeOrderAsk.customerName }
               : {}),
+            ...(changeOrderAsk.quoteNumber
+              ? { quoteNumber: changeOrderAsk.quoteNumber }
+              : {}),
             description: changeOrderAsk.description,
             deltaAmountCents: changeOrderAsk.deltaAmountCents,
+          },
+        },
+      };
+    }
+    // REQ-315 (M26): "change order for Dana on Q-001: change plumbing
+    // fixtures to $1,300" is a new price for a line already on the quote —
+    // run it as the reprice, without the LLM, never as an added line.
+    if (!llmResponse && changeOrderAsk?.reprice) {
+      llmResponse = {
+        text: "",
+        action: {
+          type: "revise_quote",
+          payload: {
+            ...(changeOrderAsk.customerName
+              ? { customerName: changeOrderAsk.customerName }
+              : {}),
+            ...(changeOrderAsk.quoteNumber
+              ? { quoteNumber: changeOrderAsk.quoteNumber }
+              : {}),
+            lines: [changeOrderAsk.reprice],
+            remove: [],
           },
         },
       };
@@ -832,6 +863,9 @@ export class HandleChatMessage {
             ...(changeOrderAsk.customerName
               ? { customerName: changeOrderAsk.customerName }
               : {}),
+            ...(changeOrderAsk.quoteNumber
+              ? { quoteNumber: changeOrderAsk.quoteNumber }
+              : {}),
             description: changeOrderAsk.description ??
               (items.length === 1
                 ? items[0].description
@@ -842,13 +876,70 @@ export class HandleChatMessage {
         },
       };
     }
+    // REQ-315: the reply to a revise — the coordinator's text; the payload
+    // names the quote (the chat links it) and flags the bound one as updated
+    // so the chat re-reads it.
+    const replyWithRevision = async (result: ReviseQuoteResult) => {
+      const o = result.outcome;
+      const changedBound =
+        (o.kind === "pending_revision" || o.kind === "draft_updated") &&
+        o.quoteId === conv.quoteId;
+      const reply = await this.messages.append({
+        conversationId: conv.id,
+        role: "assistant",
+        kind: "text",
+        content: result.text,
+        payload: {
+          quoteRevision: o,
+          ...(changedBound ? { quoteUpdated: o.quoteId } : {}),
+        },
+      });
+      const patch: Partial<AgentConversation> = {
+        preview: derivePreview(reply.content),
+      };
+      if (
+        history.length === 0 ||
+        (history.length === 1 && history[0].id === userMsg.id)
+      ) {
+        patch.title = deriveTitleFromFirstUserMessage(input.content);
+      }
+      const updated = await this.conversations.update(conv.id, patch);
+      return { conversation: updated, newMessages: [userMsg, reply] };
+    };
+    const userText = typeof input.content === "string" ? input.content : "";
+
     // The change-order reply is the coordinator's, not the model's prose.
     if (llmResponse.action?.type === "change_order") {
+      // REQ-315 (demo-loop cycle 1, M26): the demo's model answered "change
+      // plumbing fixtures to $1,300" with change_order "Adjust plumbing
+      // fixtures to $1,300" (+$150) — a FIFTH line. A change order that is a
+      // reprice changes the line instead; on a signed quote (whose lines
+      // never change, REQ-202) it stays the change order the model asked for.
+      const reprice = changeOrderAsReprice(
+        llmResponse.action.payload,
+        userText,
+      );
+      if (reprice) {
+        const revised = await this.reviseQuote.run({
+          userId: input.userId,
+          lang: replyLang,
+          boundQuoteId: conv.quoteId,
+          customerName: llmResponse.action.payload.customerName,
+          quoteNumber: llmResponse.action.payload.quoteNumber,
+          lines: [reprice],
+          remove: [],
+          userText,
+        });
+        if (revised.outcome.kind !== "locked") {
+          return await replyWithRevision(revised);
+        }
+      }
       const result = await this.changeOrder.run({
         userId: input.userId,
         lang: replyLang,
         boundQuoteId: conv.quoteId,
         customerName: llmResponse.action.payload.customerName,
+        quoteNumber: llmResponse.action.payload.quoteNumber,
         description: llmResponse.action.payload.description,
         deltaAmountCents: llmResponse.action.payload.deltaAmountCents,
       });
@@ -870,6 +961,27 @@ export class HandleChatMessage {
       }
       const updated = await this.conversations.update(conv.id, patch);
       return { conversation: updated, newMessages: [userMsg, reply] };
+    }
+
+    // ---- REQ-315 (demo-loop cycle 1, M26): "change plumbing fixtures to
+    // $1,300 on Q-001" changes THAT line of the existing quote — never a new
+    // line (change_order) and never a new quote (create_quote). The reply is
+    // the coordinator's; its payload names the quote (and flags the bound one
+    // as updated so the chat re-reads it).
+    if (llmResponse.action?.type === "revise_quote") {
+      const p = llmResponse.action.payload;
+      return await replyWithRevision(
+        await this.reviseQuote.run({
+          userId: input.userId,
+          lang: replyLang,
+          boundQuoteId: conv.quoteId,
+          customerName: p.customerName,
+          quoteNumber: p.quoteNumber,
+          lines: p.lines,
+          remove: p.remove,
+          userText,
+        }),
+      );
     }
 
     // Whether this turn produces a rich follow-up bubble (action_card, etc.)

@@ -251,3 +251,114 @@ Deno.test("REQ-262 parseToolCall: update_job_details with no usable language ret
   assertEquals(parseToolCall(call("update_job_details", { descriptionByLang: { en: "  " } })), undefined);
   assertEquals(parseToolCall(call("update_job_details", {})), undefined);
 });
+
+// ---------------------------------------------------------------------------
+// REQ-315 (demo-loop cycle 1, M26): "change plumbing fixtures to $1,300" went
+// to change_order, which only appends a line — the quote got a NEW line
+// "Adjust plumbing fixtures to $1,300 ($150.00)". revise_quote changes the
+// line that is already there; change_order is narrowed to adding / crediting
+// work and both tools can name the quote (Q-001).
+// ---------------------------------------------------------------------------
+
+Deno.test("REQ-315 M26 TOOL_DEFS: revise_quote takes the lines to change (match + new description / amountCents), lines to remove, and the customer or quote number", () => {
+  const def = TOOL_DEFS.find((d) => d.function.name === "revise_quote");
+  if (!def) throw new Error("revise_quote tool is missing");
+  const params = def.function.parameters as unknown as {
+    properties: Record<string, {
+      type: string;
+      description?: string;
+      items?: { properties?: Record<string, unknown>; required?: string[] };
+    }>;
+    required: string[];
+  };
+  assertEquals(params.properties.lines.type, "array");
+  assertEquals(
+    Object.keys(params.properties.lines.items?.properties ?? {}).sort(),
+    ["amountCents", "description", "match"],
+  );
+  assertEquals(params.properties.lines.items?.required, ["match"]);
+  assertEquals(params.properties.remove.type, "array");
+  assertEquals(params.properties.customerName.type, "string");
+  assertEquals(params.properties.quoteNumber.type, "string");
+  assertEquals(params.required, ["lines"]);
+  // the description tells the model this is the reprice tool, not change_order
+  assertEquals(/change_order/.test(def.function.description), true);
+  assertEquals(/\$1,300/.test(def.function.description), true);
+});
+
+Deno.test("REQ-315 parseToolCall: revise_quote keeps entries that name a line and change something, truncates cents, trims names, normalises the quote number", () => {
+  const out = parseToolCall(call("revise_quote", {
+    customerName: " Dana ",
+    quoteNumber: "q-001",
+    lines: [
+      { match: "plumbing fixtures", amountCents: 130_000.9 },
+      { match: " tile ", description: " Porcelain tile " },
+      { match: "", amountCents: 1 }, // no line named
+      { description: "no match", amountCents: 5 }, // no line named
+      { match: "nothing to change" }, // nothing to change
+      { match: "bad cents", amountCents: "1300" }, // wrong type → nothing to change
+      "junk",
+    ],
+    remove: ["haul away", 42, "", "  "],
+  }));
+  assertEquals(out, {
+    type: "revise_quote",
+    payload: {
+      customerName: "Dana",
+      quoteNumber: "Q-001",
+      lines: [
+        { match: "plumbing fixtures", amountCents: 130_000 },
+        { match: "tile", description: "Porcelain tile" },
+      ],
+      remove: ["haul away"],
+    },
+  });
+});
+
+Deno.test("REQ-315 parseToolCall: revise_quote with nothing to change and nothing to remove returns undefined; a remove-only call is fine", () => {
+  assertEquals(parseToolCall(call("revise_quote", { lines: [] })), undefined);
+  assertEquals(parseToolCall(call("revise_quote", {})), undefined);
+  assertEquals(
+    parseToolCall(
+      call("revise_quote", { lines: [{ match: "x" }], remove: [] }),
+    ),
+    undefined,
+  );
+  assertEquals(parseToolCall(call("revise_quote", { remove: ["haul away"] })), {
+    type: "revise_quote",
+    payload: { lines: [], remove: ["haul away"] },
+  });
+});
+
+Deno.test("REQ-315 parseToolCall: change_order carries an optional quoteNumber (Q-001) next to the customer name", () => {
+  assertEquals(
+    parseToolCall(call("change_order", {
+      customerName: "Dana Whitfield",
+      quoteNumber: "q-001",
+      description: "Heated floor",
+      deltaAmountCents: 120_000,
+    })),
+    {
+      type: "change_order",
+      payload: {
+        customerName: "Dana Whitfield",
+        quoteNumber: "Q-001",
+        description: "Heated floor",
+        deltaAmountCents: 120_000,
+      },
+    },
+  );
+  const def = TOOL_DEFS.find((d) => d.function.name === "change_order")!;
+  const props = (def.function.parameters as {
+    properties: Record<string, { type: string }>;
+  }).properties;
+  assertEquals(props.quoteNumber?.type, "string");
+});
+
+Deno.test("REQ-315 TOOL_DEFS: change_order is for ADDING or CREDITING work and sends a price / wording change to revise_quote", () => {
+  const def = TOOL_DEFS.find((d) => d.function.name === "change_order")!;
+  const d = def.function.description;
+  assertEquals(/revise_quote/.test(d), true, d);
+  assertEquals(/add/i.test(d) && /credit/i.test(d), true, d);
+  assertEquals(/add, remove or credit/.test(d), false, d);
+});

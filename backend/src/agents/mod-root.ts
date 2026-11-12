@@ -13,6 +13,7 @@ import { AgentMessageStore } from "@agents/domain/data/agent-message-store/mod.t
 import { StartConversation } from "@agents/domain/coordinators/start-conversation/mod.ts";
 import { HandleChatMessage } from "@agents/domain/coordinators/handle-chat-message/mod.ts";
 import { ApplyChatChangeOrder } from "@agents/domain/coordinators/apply-chat-change-order/mod.ts"; // REQ-238
+import { ReviseQuote } from "@agents/domain/coordinators/revise-quote/mod.ts"; // REQ-315
 import { TransitionToTerms } from "@agents/domain/coordinators/transition-to-terms/mod.ts";
 import { HandleWizardAnswer } from "@agents/domain/coordinators/handle-wizard-answer/mod.ts";
 import { RewindWizard } from "@agents/domain/coordinators/rewind-wizard/mod.ts";
@@ -103,6 +104,7 @@ const LlmClientClass = await selectLLMClass();
     AgentMessageStore,
     StartConversation,
     ApplyChatChangeOrder,
+    ReviseQuote, // REQ-315
     HandleChatMessage,
     TransitionToTerms,
     HandleWizardAnswer,

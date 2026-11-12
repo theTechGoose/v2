@@ -1,0 +1,218 @@
+import { Injectable } from "#danet/core";
+import { type Lang, t } from "@core/i18n/mod.ts";
+import { QuoteStore } from "@paperwork/domain/data/quote-store/mod.ts";
+import { CustomerStore } from "@crm/domain/data/customer-store/mod.ts";
+import {
+  isQuoteIssued,
+  isQuoteLocked,
+  versionOf,
+} from "#documents/versions.ts";
+import { pickChangeOrderTarget } from "@agents/domain/business/change-order-intent/mod.ts";
+import {
+  type LineChange,
+  reviseLineItems,
+  totalOf,
+} from "@agents/domain/business/quote-line-revision/mod.ts";
+import { describeQuoteRevision } from "@agents/domain/business/quote-revision-reply/mod.ts";
+import type { Quote } from "@paperwork/dto/quote.ts";
+
+export interface ReviseQuoteInput {
+  userId: string;
+  lang: Lang;
+  /** The conversation's bound quote, if any. */
+  boundQuoteId?: string;
+  customerName?: string;
+  /** An explicit "Q-001" — resolves straight to that quote. */
+  quoteNumber?: string;
+  lines: LineChange[];
+  remove: string[];
+  /** What the user typed — the reply mentions a deposit ask (REQ-267). */
+  userText: string;
+}
+
+export type ReviseQuoteOutcome =
+  | {
+    kind: "pending_revision";
+    quoteId: string;
+    quoteNumber?: string;
+    nextVersion: number;
+  }
+  | { kind: "draft_updated"; quoteId: string; quoteNumber?: string }
+  /** signed — nothing changes (REQ-202) */
+  | { kind: "locked"; quoteId: string; quoteNumber?: string }
+  /** a named line is not on the quote — nothing written */
+  | {
+    kind: "no_such_line";
+    quoteId: string;
+    quoteNumber?: string;
+    unmatched: string[];
+  }
+  | { kind: "ambiguous"; quoteIds: string[] }
+  | { kind: "none" }
+  | { kind: "ask_customer" };
+
+export interface ReviseQuoteResult {
+  /** The assistant's reply, in the contractor's language. */
+  text: string;
+  outcome: ReviseQuoteOutcome;
+}
+
+type LineItem = Quote["lineItems"][number];
+
+function money(cents: number): string {
+  const sign = cents < 0 ? "−" : "";
+  return `${sign}$${
+    (Math.abs(cents) / 100).toLocaleString("en-US", {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    })
+  }`;
+}
+
+/**
+ * ReviseQuote — REQ-315 (demo-loop cycle 1, M26). "Change plumbing fixtures
+ * to $1,300 on Q-001" changes THAT line of Dana's EXISTING quote; it never
+ * appends a line (change_order) and never drafts a new quote (create_quote).
+ *
+ *   - the quote is found by its explicit number, else by the change-order
+ *     target rules (the named customer's open quote, else the bound one);
+ *   - a signed quote is left alone (REQ-202) — the reply says so;
+ *   - every named line must be on the quote; otherwise nothing is written
+ *     and the reply lists the quote's lines;
+ *   - an issued, unsigned quote gets the change as its pending revision
+ *     (REQ-201) — the reply says where to publish it; a draft is edited in
+ *     place. Either way the reply says what changed (REQ-267).
+ */
+@Injectable()
+export class ReviseQuote {
+  constructor(
+    private quotes: QuoteStore,
+    private customers: CustomerStore,
+  ) {}
+
+  async run(input: ReviseQuoteInput): Promise<ReviseQuoteResult> {
+    const { userId, lang } = input;
+    const [quotes, customers] = await Promise.all([
+      this.quotes.listByUser(userId),
+      this.customers.listByUser(userId),
+    ]);
+    const nameOf = (q: Quote): string => {
+      const c = customers.find((c) => c.id === q.customerId);
+      return c?.name ?? q.customerSnapshot?.name ?? "";
+    };
+    const labelOf = (q: Quote): string =>
+      [q.number, q.jobName || q.summary].filter(Boolean).join(" ");
+
+    const target = pickChangeOrderTarget({
+      quotes: quotes.map((q) => ({
+        id: q.id,
+        customerId: q.customerId,
+        status: q.status,
+        createdAt: q.createdAt,
+        number: q.number,
+      })),
+      customers: customers.map((c) => ({ id: c.id, name: c.name })),
+      customerName: input.customerName,
+      quoteNumber: input.quoteNumber,
+      boundQuoteId: input.boundQuoteId,
+    });
+
+    if (target.kind === "ask_customer") {
+      return {
+        text: t(lang, "chatCoordinator.reviseQuote.askCustomer"),
+        outcome: target,
+      };
+    }
+    if (target.kind === "none") {
+      return {
+        text: t(lang, "chatCoordinator.reviseQuote.none", {
+          // an explicit number is what was looked up (and missed)
+          name: input.quoteNumber ?? input.customerName ?? "",
+        }),
+        outcome: target,
+      };
+    }
+    if (target.kind === "ambiguous") {
+      const list = target.quoteIds
+        .map((id) => quotes.find((q) => q.id === id)!)
+        .map((q) =>
+          `• ${labelOf(q)} — ${nameOf(q)} (${
+            money(q.estimatedTotal ?? totalOf(q.lineItems ?? []))
+          })`
+        )
+        .join("\n");
+      return {
+        text: t(lang, "chatCoordinator.reviseQuote.ambiguous", { list }),
+        outcome: target,
+      };
+    }
+
+    const quote = quotes.find((q) => q.id === target.quoteId)!;
+    const vars = {
+      job: labelOf(quote),
+      name: nameOf(quote) || t(lang, "chatCoordinator.changeOrder.theCustomer"),
+    };
+    const ref = { quoteId: quote.id, quoteNumber: quote.number };
+
+    if (isQuoteLocked(quote)) {
+      return {
+        text: t(lang, "chatCoordinator.reviseQuote.locked", vars),
+        outcome: { kind: "locked", ...ref },
+      };
+    }
+
+    // The working copy: the pending revision when one exists (REQ-201).
+    const base = (quote.pendingRevision?.lineItems as LineItem[] | undefined) ??
+      quote.lineItems ?? [];
+    const rev = reviseLineItems(base, input.lines, input.remove);
+    if (rev.unmatched.length > 0) {
+      const list = base
+        .map((l) =>
+          `• ${l.description} — ${money((l.price ?? 0) * (l.quantity ?? 1))}`
+        )
+        .join("\n");
+      return {
+        text: t(lang, "chatCoordinator.reviseQuote.noSuchLine", {
+          ...vars,
+          line: rev.unmatched.join('", "'),
+          list,
+        }),
+        outcome: { kind: "no_such_line", ...ref, unmatched: rev.unmatched },
+      };
+    }
+
+    const asRevisionLine = (l: LineItem) => ({
+      description: l.description,
+      priceCents: (l.price ?? 0) * (l.quantity ?? 1),
+    });
+    const text = describeQuoteRevision(
+      lang,
+      base.map(asRevisionLine),
+      rev.lineItems.map(asRevisionLine),
+      input.userText,
+    );
+    const patch = {
+      lineItems: rev.lineItems,
+      estimatedTotal: rev.estimatedTotal,
+    };
+
+    // Issued, unsigned → the next version, published by the contractor.
+    if (isQuoteIssued(quote)) {
+      await this.quotes.setPending(quote.id, userId, patch);
+      const nextVersion = versionOf(quote) + 1;
+      return {
+        text: `${text} ${
+          t(lang, "chatCoordinator.reviseQuote.publishHint", {
+            ...vars,
+            version: nextVersion,
+          })
+        }`,
+        outcome: { kind: "pending_revision", ...ref, nextVersion },
+      };
+    }
+
+    // A draft → edited in place.
+    await this.quotes.update(quote.id, userId, patch);
+    return { text, outcome: { kind: "draft_updated", ...ref } };
+  }
+}

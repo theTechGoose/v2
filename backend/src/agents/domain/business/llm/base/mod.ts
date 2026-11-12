@@ -85,7 +85,27 @@ export type LLMAction =
    *  Never a new quote. `deltaAmountCents` is signed (− is a credit). */
   | {
     type: "change_order";
-    payload: { customerName?: string; description: string; deltaAmountCents: number };
+    payload: {
+      customerName?: string;
+      /** REQ-315: an explicit "Q-001" — resolves straight to that quote. */
+      quoteNumber?: string;
+      description: string;
+      deltaAmountCents: number;
+    };
+  }
+  /** REQ-315 (demo-loop cycle 1, M26): change lines that are ALREADY on a
+   *  customer's quote — reprice / reword (`lines`) or take off (`remove`) —
+   *  never append. The coordinator finds the quote (an explicit Q-number
+   *  first), matches each named line, and writes a pending revision on an
+   *  issued quote or edits a draft in place. */
+  | {
+    type: "revise_quote";
+    payload: {
+      customerName?: string;
+      quoteNumber?: string;
+      lines: { match: string; description?: string; amountCents?: number }[];
+      remove: string[];
+    };
   }
   /** REQ-262 (demo M25): rewrite / translate the bound quote's job details.
    *  The coordinator applies it to conv.quoteId — never to a model-named id —

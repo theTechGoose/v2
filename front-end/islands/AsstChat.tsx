@@ -33,6 +33,7 @@ import { readCached, refreshDash, subscribeDash } from "../lib/dash-cache.ts";
 import { type Lang, langSignal, tFor } from "../lib/i18n.ts";
 import { localizeTermValue } from "../lib/term-i18n.ts";
 import { quoteUpdatedBy } from "../lib/chat-quote-refresh.ts";
+import { chatQuoteLink } from "../lib/chat-quote-link.ts";
 import {
   type ChipKey,
   chipReply,
@@ -8219,6 +8220,32 @@ export default function AsstChat({
                       <div class="msg__bubble" style="white-space:pre-wrap">
                         {m.content}
                       </div>
+                      {(() => {
+                        // REQ-315 (m49): a reply that changed a quote links to it.
+                        const ql = m.role === "assistant"
+                          ? chatQuoteLink(m.payload)
+                          : undefined;
+                        if (!ql) return null;
+                        const number = ql.quoteNumber ??
+                          tFor(lang, "asstChat.theQuote");
+                        return (
+                          <a
+                            data-cy="msg-quote-link"
+                            href={`/quotes?open=${
+                              encodeURIComponent(ql.quoteId)
+                            }`}
+                            style="display:inline-flex;align-items:center;gap:6px;margin-top:6px;padding:7px 12px;border-radius:999px;background:#144852;color:#fff;font-size:12.5px;font-weight:800;text-decoration:none"
+                          >
+                            {tFor(
+                              lang,
+                              ql.publish
+                                ? "asstChat.openQuotePublish"
+                                : "asstChat.openQuote",
+                              { number },
+                            )}
+                          </a>
+                        );
+                      })()}
                       <div class="msg__time">{fmtTime(m.createdAt, lang)}</div>
                     </div>
                   </div>

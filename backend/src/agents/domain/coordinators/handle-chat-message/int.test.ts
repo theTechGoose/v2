@@ -25,6 +25,7 @@ import { reviewJobDetails } from "../../../../../../shared/quote-flow/review-job
 import { ChangeOrderStore } from "@paperwork/domain/data/change-order-store/mod.ts";
 import type { SendChangeOrderAlert } from "@paperwork/domain/coordinators/send-change-order-alert/mod.ts";
 import { ApplyChatChangeOrder } from "@agents/domain/coordinators/apply-chat-change-order/mod.ts";
+import { ReviseQuote } from "@agents/domain/coordinators/revise-quote/mod.ts";
 
 /**
  * Seed a fully-onboarded contractor profile for `userId` so the phase-1
@@ -104,6 +105,8 @@ function fresh() {
     customers,
     alert,
   );
+  // REQ-315: the reprice-a-line path (revise_quote).
+  const reviseQuote = new ReviseQuote(quotes, customers);
   const flow = new HandleChatMessage(
     conversations,
     messages,
@@ -116,6 +119,7 @@ function fresh() {
     emailer,
     llm,
     changeOrder,
+    reviseQuote,
   );
   return {
     changeOrders,
@@ -778,12 +782,15 @@ Deno.test("REQ-238 M27: the demo's sentence on Maria's sent, unsigned quote writ
   assert(reply.content.includes("Fridge cleaning"), reply.content);
   assert(reply.content.includes("$40.00"), reply.content);
   assert(reply.content.includes("Publish revision"), reply.content);
+  // REQ-315 (m49): the payload also names the quote, for the chat's link.
   assertEquals(
-    (reply.payload as { changeOrder?: { kind: string; quoteId: string } })
-      ?.changeOrder,
+    (reply.payload as {
+      changeOrder?: { kind: string; quoteId: string; quoteNumber?: string };
+    })?.changeOrder,
     {
       kind: "pending_revision",
       quoteId: quote.id,
+      quoteNumber: stored.number,
     },
   );
   await resetKv();
@@ -831,6 +838,8 @@ Deno.test("REQ-238 M27: Maria's signed quote with an invoice gets a pending chan
     {
       kind: "change_order",
       quoteId: quote.id,
+      // REQ-315 (m49): the outcome names the quote's number for the chat link.
+      quoteNumber: "Q-001",
       invoiceId: inv.id,
       changeOrderId: cos[0].id,
     },
@@ -1539,5 +1548,457 @@ Deno.test("REQ-262 handle-chat-message integration: the quote-phase prompt deman
     content: "Quote for Bryant: gutter cleaning $220.",
   });
   assert(/plain text/i.test(prompt) && /markdown/i.test(prompt), "no plain-text rule in systemQuote");
+  await resetKv();
+});
+
+// ---------------------------------------------------------------------------
+// REQ-315 (demo-loop cycle 1: B2, M26, m49). Demo pair 5 sent Dana's $9,500
+// bathroom quote and then asked the assistant to "change plumbing fixtures to
+// $1,300 on Q-001": the only tool that touched an existing job (change_order)
+// appended "Adjust plumbing fixtures to $1,300 ($150.00)" as a FIFTH line.
+// "Change order for Dana Whitfield on Q-001: add a heated floor, $1,200."
+// asked "Which customer's job is this change order for?" although both the
+// customer and the quote were named, and the reply never linked the quote.
+// ---------------------------------------------------------------------------
+
+/** Dana Whitfield's four-line $9,500 bathroom remodel (demo pair 5). */
+async function seedDana(
+  f: ReturnType<typeof fresh>,
+  status: "draft" | "sent" | "accepted",
+) {
+  await seedOnboarded("u-1");
+  const dana = await f.customers.create("u-1", { name: "Dana Whitfield" });
+  const line = (description: string, price: number) => ({
+    description,
+    quantity: 1,
+    unit: "ea",
+    price,
+  });
+  const quote = await f.quotes.create("u-1", {
+    summary: "Bathroom remodel — Dana Whitfield",
+    jobName: "Bathroom Remodel Dana",
+    customerId: dana.id,
+    lineItems: [
+      line("Demo and disposal", 120_000),
+      line("Plumbing fixtures", 115_000),
+      line("Tile floor and walls", 480_000),
+      line("Vanity and lighting", 235_000),
+    ],
+    estimatedTotal: 950_000,
+  });
+  const live = status === "draft"
+    ? quote
+    : await f.quotes.update(quote.id, "u-1", {
+      status,
+      sentAt: new Date().toISOString(),
+      ...(status === "accepted"
+        ? { acceptedAt: new Date().toISOString() }
+        : {}),
+    });
+  return { dana, quote: live };
+}
+
+/** The model's revise_quote call for "change plumbing fixtures to $1,300 on Q-001". */
+const REPRICE_PLUMBING = {
+  text: "",
+  action: {
+    type: "revise_quote" as const,
+    payload: {
+      customerName: "Dana Whitfield",
+      quoteNumber: "Q-001",
+      lines: [{ match: "plumbing fixtures", amountCents: 130_000 }],
+      remove: [],
+    },
+  },
+};
+
+type RevisionPayload = {
+  quoteRevision?: {
+    kind: string;
+    quoteId?: string;
+    quoteNumber?: string;
+    nextVersion?: number;
+  };
+  quoteUpdated?: string;
+  changeOrder?: { kind: string; quoteId?: string; quoteNumber?: string };
+};
+
+Deno.test("REQ-315 M26: the model's revise_quote on Dana's sent quote reprices 'Plumbing fixtures' to $1,300 as a pending revision — four lines still, $9,500 → $9,650, no new quote", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const f = fresh();
+  const { quote } = await seedDana(f, "sent");
+  f.llm.setScript([REPRICE_PLUMBING]);
+  // a NEW conversation — nothing bound, as in the demo
+  const conv = await f.conversations.create({ userId: "u-1" });
+  const result = await f.flow.run({
+    userId: "u-1",
+    conversationId: conv.id,
+    content:
+      "Change plumbing fixtures to $1,300 on the quote I already sent (Q-001) and send her the new version.",
+  });
+
+  await onlyQuoteIs(f, quote.id);
+  const stored = await f.quotes.getOwned(quote.id, "u-1");
+  // the published version the customer sees is untouched…
+  assertEquals(stored.lineItems.map((l) => l.price), [
+    120_000,
+    115_000,
+    480_000,
+    235_000,
+  ]);
+  assertEquals(stored.estimatedTotal, 950_000);
+  // …and the next version has the SAME four lines with plumbing repriced
+  const pending = stored.pendingRevision as {
+    lineItems: { description: string; price: number }[];
+    estimatedTotal: number;
+  };
+  assertEquals(pending.lineItems.map((l) => [l.description, l.price]), [
+    ["Demo and disposal", 120_000],
+    ["Plumbing fixtures", 130_000],
+    ["Tile floor and walls", 480_000],
+    ["Vanity and lighting", 235_000],
+  ]);
+  assertEquals(pending.estimatedTotal, 965_000);
+  // no quote card; the reply says what changed and where to publish it
+  assertEquals(result.newMessages.some((m) => m.kind === "action_card"), false);
+  const reply = result.newMessages.at(-1)!;
+  assertEquals(reply.role, "assistant");
+  assert(
+    reply.content.includes("Plumbing fixtures $1,150 → $1,300"),
+    reply.content,
+  );
+  assert(reply.content.includes("Total $9,500 → $9,650"), reply.content);
+  assert(reply.content.includes("Publish revision"), reply.content);
+  assertEquals((reply.payload as RevisionPayload).quoteRevision, {
+    kind: "pending_revision",
+    quoteId: quote.id,
+    quoteNumber: stored.number,
+    nextVersion: 2,
+  });
+  await resetKv();
+});
+
+Deno.test("REQ-315 m49: the demo's exact 'Change order for Dana Whitfield on Q-001: add a heated floor, $1,200.' writes the revision on Q-001 — no 'which customer' question — and the reply names the quote", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const f = fresh();
+  const { quote } = await seedDana(f, "sent");
+  // the model would have drafted a new quote; it must not matter
+  f.llm.setScript([NEW_QUOTE_MISTAKE]);
+  const conv = await f.conversations.create({ userId: "u-1" });
+  const result = await f.flow.run({
+    userId: "u-1",
+    conversationId: conv.id,
+    content:
+      "Change order for Dana Whitfield on Q-001: add a heated floor, $1,200.",
+  });
+
+  await onlyQuoteIs(f, quote.id);
+  const stored = await f.quotes.getOwned(quote.id, "u-1");
+  assertEquals(stored.number, "Q-001");
+  const pending = stored.pendingRevision as {
+    lineItems: {
+      description: string;
+      quantity?: number;
+      unit?: string;
+      price: number;
+    }[];
+    estimatedTotal: number;
+  };
+  assertEquals(pending.lineItems.length, 5);
+  assertEquals(pending.lineItems.at(-1), {
+    description: "Heated floor",
+    quantity: 1,
+    unit: "ea",
+    price: 120_000,
+  });
+  assertEquals(pending.estimatedTotal, 1_070_000);
+  const reply = result.newMessages.at(-1)!;
+  assertEquals(reply.role, "assistant");
+  assertEquals(/which customer/i.test(reply.content), false, reply.content);
+  assert(reply.content.includes("Heated floor"), reply.content);
+  assertEquals((reply.payload as RevisionPayload).changeOrder, {
+    kind: "pending_revision",
+    quoteId: quote.id,
+    quoteNumber: "Q-001",
+  });
+  await resetKv();
+});
+
+Deno.test("REQ-315: revise_quote on the conversation's own draft changes the line in place and flags the quote as updated", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const f = fresh();
+  const { quote } = await seedDana(f, "draft");
+  const conv = await f.conversations.create({ userId: "u-1" });
+  await f.conversations.update(conv.id, { quoteId: quote.id });
+  f.llm.setScript([{
+    text: "",
+    action: {
+      type: "revise_quote",
+      payload: {
+        lines: [{ match: "plumbing", amountCents: 130_000 }],
+        remove: ["vanity"],
+      },
+    },
+  }]);
+  const result = await f.flow.run({
+    userId: "u-1",
+    conversationId: conv.id,
+    content: "make plumbing $1,300 and drop the vanity",
+  });
+  await onlyQuoteIs(f, quote.id);
+  const stored = await f.quotes.getOwned(quote.id, "u-1");
+  assertEquals(stored.pendingRevision, undefined);
+  assertEquals(stored.lineItems.map((l) => [l.description, l.price]), [
+    ["Demo and disposal", 120_000],
+    ["Plumbing fixtures", 130_000],
+    ["Tile floor and walls", 480_000],
+  ]);
+  assertEquals(stored.estimatedTotal, 730_000);
+  const reply = result.newMessages.at(-1)!;
+  assert(reply.content.includes("removed Vanity and lighting"), reply.content);
+  assert(
+    reply.content.includes("Plumbing fixtures $1,150 → $1,300"),
+    reply.content,
+  );
+  assertEquals(/publish revision/i.test(reply.content), false, reply.content);
+  const payload = reply.payload as RevisionPayload;
+  assertEquals(payload.quoteRevision, {
+    kind: "draft_updated",
+    quoteId: quote.id,
+    quoteNumber: stored.number,
+  });
+  assertEquals(payload.quoteUpdated, quote.id);
+  await resetKv();
+});
+
+Deno.test("REQ-315: a signed quote is never repriced from chat — nothing is written and the reply says so", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const f = fresh();
+  const { quote } = await seedDana(f, "accepted");
+  f.llm.setScript([REPRICE_PLUMBING]);
+  const conv = await f.conversations.create({ userId: "u-1" });
+  const result = await f.flow.run({
+    userId: "u-1",
+    conversationId: conv.id,
+    content: "change plumbing fixtures to $1,300 on Q-001",
+  });
+  await onlyQuoteIs(f, quote.id);
+  const stored = await f.quotes.getOwned(quote.id, "u-1");
+  assertEquals(stored.pendingRevision, undefined);
+  assertEquals(stored.lineItems[1].price, 115_000);
+  const reply = result.newMessages.at(-1)!;
+  assert(/signed/i.test(reply.content), reply.content);
+  assertEquals(
+    (reply.payload as RevisionPayload).quoteRevision?.kind,
+    "locked",
+  );
+  await resetKv();
+});
+
+Deno.test("REQ-315: a line that is not on the quote writes nothing — the reply lists the quote's lines instead of guessing or appending", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const f = fresh();
+  const { quote } = await seedDana(f, "sent");
+  f.llm.setScript([{
+    text: "",
+    action: {
+      type: "revise_quote",
+      payload: {
+        quoteNumber: "Q-001",
+        lines: [{ match: "heated floor", amountCents: 120_000 }],
+        remove: [],
+      },
+    },
+  }]);
+  const conv = await f.conversations.create({ userId: "u-1" });
+  const result = await f.flow.run({
+    userId: "u-1",
+    conversationId: conv.id,
+    content: "change the heated floor to $1,200 on Q-001",
+  });
+  await onlyQuoteIs(f, quote.id);
+  const stored = await f.quotes.getOwned(quote.id, "u-1");
+  assertEquals(stored.pendingRevision, undefined);
+  assertEquals(stored.lineItems.length, 4);
+  const reply = result.newMessages.at(-1)!;
+  assert(reply.content.includes("heated floor"), reply.content);
+  for (
+    const name of [
+      "Demo and disposal",
+      "Plumbing fixtures",
+      "Tile floor and walls",
+      "Vanity and lighting",
+    ]
+  ) assert(reply.content.includes(name), reply.content);
+  assertEquals(
+    (reply.payload as RevisionPayload).quoteRevision?.kind,
+    "no_such_line",
+  );
+  await resetKv();
+});
+
+Deno.test("REQ-315 M26: the demo model's own call — change_order 'Adjust plumbing fixtures to $1,300' (+$150) — reprices the line instead of appending a fifth one", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const f = fresh();
+  const { quote } = await seedDana(f, "sent");
+  // exactly what the demo's model fired (report M26)
+  f.llm.setScript([{
+    text: "",
+    action: {
+      type: "change_order",
+      payload: {
+        customerName: "Dana Whitfield",
+        description: "Adjust plumbing fixtures to $1,300",
+        deltaAmountCents: 15_000,
+      },
+    },
+  }]);
+  const conv = await f.conversations.create({ userId: "u-1" });
+  const result = await f.flow.run({
+    userId: "u-1",
+    conversationId: conv.id,
+    content:
+      "Change plumbing fixtures to $1,300 on the quote I already sent (Q-001) and send her the new version.",
+  });
+  await onlyQuoteIs(f, quote.id);
+  const stored = await f.quotes.getOwned(quote.id, "u-1");
+  const pending = stored.pendingRevision as {
+    lineItems: { description: string; price: number }[];
+    estimatedTotal: number;
+  };
+  assertEquals(pending.lineItems.map((l) => [l.description, l.price]), [
+    ["Demo and disposal", 120_000],
+    ["Plumbing fixtures", 130_000],
+    ["Tile floor and walls", 480_000],
+    ["Vanity and lighting", 235_000],
+  ]);
+  assertEquals(pending.estimatedTotal, 965_000);
+  const reply = result.newMessages.at(-1)!;
+  assert(
+    reply.content.includes("Plumbing fixtures $1,150 → $1,300"),
+    reply.content,
+  );
+  assertEquals(/Adjust plumbing/i.test(reply.content), false, reply.content);
+  assertEquals(
+    (reply.payload as RevisionPayload).quoteRevision?.kind,
+    "pending_revision",
+  );
+  await resetKv();
+});
+
+Deno.test("REQ-315 M26: 'Change order for Dana Whitfield on Q-001: change plumbing fixtures to $1,300' reprices the line without asking the model — no line 'Change plumbing fixtures to'", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const f = fresh();
+  const { quote } = await seedDana(f, "sent");
+  let asked = 0;
+  f.llm.setHandler(() => {
+    asked++;
+    return NEW_QUOTE_MISTAKE;
+  });
+  const conv = await f.conversations.create({ userId: "u-1" });
+  const result = await f.flow.run({
+    userId: "u-1",
+    conversationId: conv.id,
+    content:
+      "Change order for Dana Whitfield on Q-001: change plumbing fixtures to $1,300",
+  });
+  assertEquals(asked, 0, "the sentence is read without the model");
+  await onlyQuoteIs(f, quote.id);
+  const stored = await f.quotes.getOwned(quote.id, "u-1");
+  const pending = stored.pendingRevision as {
+    lineItems: { description: string; price: number }[];
+  };
+  assertEquals(pending.lineItems.map((l) => [l.description, l.price]), [
+    ["Demo and disposal", 120_000],
+    ["Plumbing fixtures", 130_000],
+    ["Tile floor and walls", 480_000],
+    ["Vanity and lighting", 235_000],
+  ]);
+  const reply = result.newMessages.at(-1)!;
+  assertEquals(/which customer/i.test(reply.content), false, reply.content);
+  assertEquals((reply.payload as RevisionPayload).quoteRevision, {
+    kind: "pending_revision",
+    quoteId: quote.id,
+    quoteNumber: "Q-001",
+    nextVersion: 2,
+  });
+  await resetKv();
+});
+
+Deno.test("REQ-315 m49: a quote number that matches no quote writes nothing and the reply names that number, not a guess by name", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const f = fresh();
+  const { quote } = await seedDana(f, "sent");
+  f.llm.setScript([NEW_QUOTE_MISTAKE]);
+  const conv = await f.conversations.create({ userId: "u-1" });
+  const result = await f.flow.run({
+    userId: "u-1",
+    conversationId: conv.id,
+    content:
+      "Change order for Dana Whitfield on Q-009: add a heated floor, $1,200.",
+  });
+  await onlyQuoteIs(f, quote.id);
+  const stored = await f.quotes.getOwned(quote.id, "u-1");
+  assertEquals(stored.pendingRevision, undefined);
+  const reply = result.newMessages.at(-1)!;
+  assert(reply.content.includes("Q-009"), reply.content);
+  assertEquals(
+    (reply.payload as RevisionPayload).changeOrder?.kind,
+    "none",
+  );
+  await resetKv();
+});
+
+Deno.test("REQ-315: on a SIGNED quote with an invoice, the model's price-change change_order is still the change order for the difference (REQ-238) — the reprice guard never refuses it", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const f = fresh();
+  const { dana, quote } = await seedDana(f, "accepted");
+  const inv = await f.invoices.create("u-1", {
+    quoteId: quote.id,
+    customerId: dana.id,
+    amount: 950_000,
+    status: "sent",
+  } as never);
+  f.llm.setScript([{
+    text: "",
+    action: {
+      type: "change_order",
+      payload: {
+        customerName: "Dana Whitfield",
+        description: "Adjust plumbing fixtures to $1,300",
+        deltaAmountCents: 15_000,
+      },
+    },
+  }]);
+  const conv = await f.conversations.create({ userId: "u-1" });
+  const result = await f.flow.run({
+    userId: "u-1",
+    conversationId: conv.id,
+    content: "Change plumbing fixtures to $1,300 on Q-001",
+  });
+  await onlyQuoteIs(f, quote.id);
+  const stored = await f.quotes.getOwned(quote.id, "u-1");
+  assertEquals(
+    stored.pendingRevision,
+    undefined,
+    "a signed quote never changes",
+  );
+  const cos = await f.changeOrders.listByInvoice("u-1", inv.id);
+  assertEquals(cos.length, 1);
+  assertEquals(cos[0].deltaAmountCents, 15_000);
+  const reply = result.newMessages.at(-1)!;
+  assertEquals(
+    (reply.payload as RevisionPayload).changeOrder?.kind,
+    "change_order",
+  );
   await resetKv();
 });
