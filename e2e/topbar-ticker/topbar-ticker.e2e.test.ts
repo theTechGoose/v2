@@ -19,6 +19,7 @@ async function signIn(
   http: StoryTools["http"],
   page: StoryTools["page"],
   baseUrl: string,
+  lang: "en" | "es" = "en",
 ) {
   const phone = `+1512${digits()}`;
   const r = await http("/api/auth/verify", {
@@ -44,7 +45,7 @@ async function signIn(
   const me = await http("/api/me", {
     method: "PUT",
     headers: auth,
-    body: JSON.stringify({ language: "en", name: "Ticker Story" }),
+    body: JSON.stringify({ language: lang, name: "Ticker Story" }),
   });
   await me.body?.cancel();
   const [name, value] = cookie.split("=");
@@ -54,7 +55,7 @@ async function signIn(
       domain,
     ) => [{ name, value, domain, path: "/" }, {
       name: "pm_lang",
-      value: "en",
+      value: lang,
       domain,
       path: "/",
     }]),
@@ -190,4 +191,75 @@ Deno.test("REQ-319: the live-activity pill shows the newest event only, never go
       NEWER,
       "the hover title carries the event's full words",
     );
+  }));
+
+/**
+ * REQ-496 — demo-loop cycle 3, issue m36: "Top notice stays Spanish ~1.5 s
+ * after switching to EN". The pill showed the server's title, rendered in
+ * `user.language` at fetch time, so after the EN click it waited for the
+ * profile PUT and a coalesced refetch (≤ 1 per 5 s). The feed here keeps
+ * answering the SPANISH-rendered row (as the server did until it saw the PUT)
+ * with its titleKey/titleParams; the pill must read English within a second of
+ * the click all the same — rendered client-side in the live language — and
+ * Spanish again on ES.
+ */
+Deno.test("REQ-496: after the topbar EN click the live-activity pill reads English at once, without waiting for a refetch", (t) =>
+  story(t, async ({ page, expect, http, baseUrl }) => {
+    const { auth } = await signIn(http, page, baseUrl, "es");
+    await answerQuestions(http, auth, { name: "Ticker Story" });
+
+    await page.route("**/api/notifications?*", (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify([{
+          id: "n-paid-es",
+          userId: "u",
+          type: "invoice_paid",
+          title: "María Pérez pagó $450",
+          titleKey: "notify.invoice.paidAmount",
+          titleParams: { name: "María Pérez", amountCents: 45000 },
+          read: false,
+          createdAt: new Date(Date.now() - 5_000).toISOString(),
+        }]),
+      }));
+
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto("/assistant");
+    const item = page.locator(".topbar__ticker .topbar__ticker-item").first();
+    await item.waitFor({ state: "visible", timeout: 25_000 });
+    const words = async () => (await item.innerText()).replace(/\s+/g, " ");
+    expect.eq(await words(), "María Pérez pagó $450", "Spanish, as served");
+
+    // EN: retry the click until the island has hydrated and <html lang> flips
+    for (let i = 0; i < 20; i++) {
+      if ((await page.evaluate(() => document.documentElement.lang)) === "en") {
+        break;
+      }
+      await page.locator("[data-cy='topbar-lang-en']").click({ timeout: 2_000 })
+        .catch(() => {/* not hydrated yet */});
+      await page.waitForTimeout(250);
+    }
+    expect.eq(
+      await page.evaluate(() => document.documentElement.lang),
+      "en",
+      "the EN click took",
+    );
+    // within one second — well inside the 5 s mutation coalescing window
+    let en = "";
+    for (let i = 0; i < 10; i++) {
+      en = await words();
+      if (en === "María Pérez paid $450") break;
+      await page.waitForTimeout(100);
+    }
+    expect.eq(en, "María Pérez paid $450", "the pill follows EN within 1 s");
+
+    await page.locator("[data-cy='topbar-lang-es']").click();
+    let es = "";
+    for (let i = 0; i < 10; i++) {
+      es = await words();
+      if (es === "María Pérez pagó $450") break;
+      await page.waitForTimeout(100);
+    }
+    expect.eq(es, "María Pérez pagó $450", "and back to Spanish on ES");
   }));

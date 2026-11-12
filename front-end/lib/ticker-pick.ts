@@ -7,6 +7,11 @@
  * re-fetches the feed the moment a mutation goes through `lib/api.ts`
  * (`pm:mutated`) instead of waiting for the next 10 s poll.
  */
+import {
+  type LocalizableNotification,
+  notificationTitle,
+  type NotifTranslate,
+} from "../../shared/quote-flow/notification-title.ts";
 
 /** Dispatched on `globalThis` after any successful non-GET through lib/api. */
 export const MUTATION_EVENT = "pm:mutated";
@@ -43,4 +48,31 @@ export function tickerPlainText(html: string): string {
     .replace(/&#39;/g, "'")
     .replace(/\s+/g, " ")
     .trim();
+}
+
+const HTML_ESCAPES: Record<string, string> = {
+  "&": "&amp;",
+  "<": "&lt;",
+  ">": "&gt;",
+  '"': "&quot;",
+  "'": "&#39;",
+};
+
+/**
+ * REQ-496 (demo-loop cycle 3, m36) — the pill's markup in the LIVE language.
+ * A row with a `titleKey` is rendered here with `tr` (the island passes
+ * `tFor(lang, …)`), so the EN/ES switch re-localizes it at once instead of
+ * waiting for the profile PUT + a coalesced refetch; its words come from
+ * params (a customer's name), so they are escaped before `innerHTML`. A legacy
+ * row without a key keeps the server's trusted markup.
+ */
+export function tickerTitleHtml(
+  item: LocalizableNotification,
+  tr: NotifTranslate,
+): string {
+  if (!item.titleKey) return item.title;
+  return notificationTitle(tr, item).replace(
+    /[&<>"']/g,
+    (c) => HTML_ESCAPES[c],
+  );
 }

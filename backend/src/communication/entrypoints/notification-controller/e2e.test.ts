@@ -8,6 +8,8 @@ import { AgentsModule } from "@agents/mod-root.ts";
 import { OtpStore } from "@users/domain/data/otp-store/mod.ts";
 import { NotificationStore } from "@communication/domain/data/notification-store/mod.ts";
 import { resetKv } from "@core/data/kv/mod.ts";
+import { t } from "@core/i18n/mod.ts";
+import { notificationTitle } from "#quote-flow/notification-title.ts";
 
 @Module({ imports: [UsersModule, CommunicationModule] })
 class TestApp {}
@@ -82,6 +84,72 @@ Deno.test("notifications e2e: list returns user's notifications newest-first", a
     assertEquals(list.length, 2);
     assertEquals(list[0].title, "Second"); // newest-first
     assertEquals(list[1].title, "First");
+  } finally {
+    await server.stop();
+    await resetKv();
+  }
+});
+
+// REQ-496 (demo-loop cycle 3, m36): the topbar ticker re-renders a feed row
+// in the LIVE UI language from the row's titleKey/titleParams, without a
+// refetch. So GET /notifications must carry them, and the shared renderer
+// fed the rows a Spanish viewer got must give exactly what the server says
+// once the viewer is English.
+Deno.test("REQ-496: GET /notifications carries titleKey/titleParams, and the shared renderer reproduces the server's title in the other language", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const server = await bootstrapServer(TestApp, { port: PORT, swagger: false });
+  await server.listen();
+  try {
+    const session = await login(PORT);
+    const auth = {
+      "content-type": "application/json",
+      "x-session-id": session.sessionId,
+    };
+    const store = new NotificationStore();
+    await store.create({
+      userId: session.userId,
+      type: "invoice_paid",
+      title: "stored",
+      titleKey: "notify.invoice.paidAmount",
+      titleParams: { name: "María Pérez", amountCents: 45000 },
+    });
+    await store.create({
+      userId: session.userId,
+      type: "invoice_claimed",
+      title: "stored",
+      titleKey: "notify.invoice.claimedVia",
+      titleParams: { method: "zelle" },
+    });
+    const feedIn = async (language: "en" | "es") => {
+      await drain(
+        await fetch(`http://localhost:${PORT}/me`, {
+          method: "PUT",
+          headers: auth,
+          body: JSON.stringify({ language }),
+        }),
+      );
+      return await fetch(`http://localhost:${PORT}/notifications`, {
+        headers: { "x-session-id": session.sessionId },
+      }).then((r) => r.json());
+    };
+    const es = await feedIn("es");
+    const paidEs = es.find((n: { type: string }) => n.type === "invoice_paid");
+    assertEquals(paidEs.title, "María Pérez pagó $450");
+    assertEquals(paidEs.titleKey, "notify.invoice.paidAmount");
+    assertEquals(paidEs.titleParams, {
+      name: "María Pérez",
+      amountCents: 45000,
+    });
+    const en = await feedIn("en");
+    for (const row of es) {
+      const serverEn = en.find((n: { id: string }) => n.id === row.id);
+      assertEquals(
+        notificationTitle((k, v) => t("en", k, v), row),
+        serverEn.title,
+      );
+      assertEquals(notificationTitle((k, v) => t("es", k, v), row), row.title);
+    }
   } finally {
     await server.stop();
     await resetKv();
