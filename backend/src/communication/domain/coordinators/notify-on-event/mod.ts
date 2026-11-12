@@ -289,6 +289,25 @@ export function notificationL10n(event: DomainEvent): NotificationL10n | null {
         : undefined,
     };
   }
+  // REQ-564 (demo-loop cycle 4, m35): a published revision is a feed row —
+  // "Q-001 Version 2 published to María" — so the ticker and Activity stop
+  // reading the older "Quote sent" after the contractor publishes.
+  if (
+    (event.entityType === "quote" || event.entityType === "invoice") &&
+    event.action === "revised"
+  ) {
+    const number = event.data?.number as string | undefined;
+    const version = event.data?.version as number | undefined;
+    return {
+      type: "generic",
+      titleKey: `notify.${event.entityType}.revised`,
+      titleParams: {
+        ...(nameParams ?? {}),
+        number: number ?? "",
+        version: version ?? "",
+      },
+    };
+  }
   if (event.entityType === "message" && event.action === "received") {
     return {
       type: "customer_replied",
