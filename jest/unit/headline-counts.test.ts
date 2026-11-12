@@ -57,8 +57,13 @@ describe("REQ-243 (a): the hero's client count reads the same field the card sho
     ).toBe(0);
   });
   it("QuotesPage feeds QuotesHero from countOpenClients, not a customerId-only Set", () => {
+    // REQ-404 (m13): the count runs inside quotesHeroNumbers, over the OUT
+    // quotes only — still countOpenClients, never a customerId-only Set.
     const src = read("front-end/islands/QuotesPage.tsx");
-    expect(src).toMatch(/clientCount=\{countOpenClients\(open\)\}/);
+    expect(src).toMatch(/clientCount=\{heroNums\.outClients\}/);
+    expect(read("front-end/lib/headline-counts.ts")).toMatch(
+      /outClients: countOpenClients\(out\)/,
+    );
   });
 });
 

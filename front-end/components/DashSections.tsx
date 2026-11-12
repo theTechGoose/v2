@@ -6,6 +6,7 @@
 import { I, ICN, type IconName } from "../lib/dash-icons.tsx";
 import Ticker from "../islands/Ticker.tsx";
 import { type Lang, tFor } from "../lib/i18n.ts";
+import { dashQuotesEmpty } from "../lib/headline-counts.ts";
 import {
   activeJobsCountLabel,
   formatMoneyCompact,
@@ -342,9 +343,12 @@ export interface QuoteRow {
 }
 
 export function QuotesAwaiting(
-  { quotes, lang = "en", hasDecidedHistory = false }: {
+  { quotes, lang = "en", hasDecidedHistory = false, draftCount = 0 }: {
     quotes: QuoteRow[];
     lang?: Lang;
+    /** REQ-404 (m13): real unsent drafts — the count above stays sent-only
+     *  (REQ-320), but the empty line names the drafts ready to send. */
+    draftCount?: number;
     /** UX-02: quotes WERE sent and got answered — the empty state must not
      *  claim "no quotes were ever sent" over a user's first accepted win. */
     hasDecidedHistory?: boolean;
@@ -376,12 +380,10 @@ export function QuotesAwaiting(
       </div>
       {empty && (
         <div style="font-size:13px;color:var(--fg-muted);padding:8px 0 14px">
-          {tFor(
-            lang,
-            hasDecidedHistory
-              ? "quotesAwaiting.emptyDecided"
-              : "quotesAwaiting.empty",
-          )}
+          {(() => {
+            const e = dashQuotesEmpty({ draftCount, hasDecidedHistory });
+            return tFor(lang, e.key, { n: e.n });
+          })()}
         </div>
       )}
       {quotes.map((q, i) => (

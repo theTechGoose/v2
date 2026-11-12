@@ -5,6 +5,8 @@
  * claim, a stale /invoices hero after "Payment received").
  */
 
+import { DRAFT_TRACK_STAGES, OUT_STAGES, type Stage } from "./quotes-seed.ts";
+
 /** A card's client line when there is none to show (QuotesPage's fallback). */
 const NO_CLIENT = "—";
 
@@ -118,4 +120,82 @@ export async function reloadInvoiceData<I, F>(load: {
     load.forecast().catch(() => undefined),
   ]);
   return { invoices, forecast };
+}
+
+export type QuotesHeroMode =
+  | "empty"
+  | "settled"
+  | "draftsOnly"
+  | "warm"
+  | "stale";
+
+/** REQ-404 (demo-loop cycle 2, m13): the /quotes hero's numbers. The money
+ *  "sitting with clients" and the "N open quotes across M clients" line count
+ *  only quotes that actually went out (OUT_STAGES); unsent drafts are
+ *  reported apart ("$X drafting"), and when drafts are all there is the
+ *  headline says nothing has been sent yet. Pass REAL quotes only (P-15). */
+export function quotesHeroNumbers(
+  real: ReadonlyArray<
+    {
+      stage: string;
+      value: number;
+      customerId?: string | null;
+      client?: string | null;
+    }
+  >,
+): {
+  mode: QuotesHeroMode;
+  outCount: number;
+  outTotal: number;
+  outClients: number;
+  staleCount: number;
+  draftCount: number;
+  draftTotal: number;
+} {
+  const out = real.filter((q) => OUT_STAGES.includes(q.stage as Stage));
+  const drafts = real.filter((q) =>
+    DRAFT_TRACK_STAGES.includes(q.stage as Stage)
+  );
+  const sum = (xs: typeof real) => xs.reduce((a, q) => a + (q.value || 0), 0);
+  const staleCount = out.filter((q) => q.stage === "stale").length;
+  const mode: QuotesHeroMode = real.length === 0
+    ? "empty"
+    : out.length > 0
+    ? (staleCount > 0 ? "stale" : "warm")
+    : drafts.length > 0
+    ? "draftsOnly"
+    : "settled";
+  return {
+    mode,
+    outCount: out.length,
+    outTotal: sum(out),
+    outClients: countOpenClients(out),
+    staleCount,
+    draftCount: drafts.length,
+    draftTotal: sum(drafts),
+  };
+}
+
+/** REQ-404 (m13): the dashboard's "Quotes awaiting signature" empty line.
+ *  The count stays sent-only (REQ-320 — an undelivered quote is not
+ *  pending), but a ready-to-send draft is named instead of "No quotes out
+ *  yet. Draft one". */
+export function dashQuotesEmpty(
+  { draftCount, hasDecidedHistory }: {
+    draftCount: number;
+    hasDecidedHistory: boolean;
+  },
+): { key: string; n: number } {
+  if (draftCount > 0) {
+    return {
+      key: `quotesAwaiting.emptyDrafts.${draftCount === 1 ? "one" : "other"}`,
+      n: draftCount,
+    };
+  }
+  return {
+    key: hasDecidedHistory
+      ? "quotesAwaiting.emptyDecided"
+      : "quotesAwaiting.empty",
+    n: 0,
+  };
 }

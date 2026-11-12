@@ -564,6 +564,7 @@ export default function DashboardPage(_props: { lang?: Lang } = {}) {
           quotes={quoteRows}
           lang={lang}
           hasDecidedHistory={(stats?.quotes.accepted ?? 0) > 0}
+          draftCount={stats?.quotes.draft ?? 0}
         />
       </div>
       <div class="grid">
