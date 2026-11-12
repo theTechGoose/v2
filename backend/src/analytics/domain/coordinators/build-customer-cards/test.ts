@@ -94,3 +94,79 @@ Deno.test("REQ-323 documentsFor — the onboarding sample quote is not a documen
   } as unknown as Quote;
   assertEquals(documentsFor([sample], []), []);
 });
+
+/**
+ * REQ-565 (demo-loop cycle 4, m33): the customer card left change orders out
+ * and showed the quote at its original total. documentsFor lists each change
+ * order (its number, state, signed amount and /co link) and words the quote at
+ * the agreed total — the quote plus its approved change orders.
+ */
+import type { ChangeOrder } from "@paperwork/dto/change-order.ts";
+
+const signed = {
+  id: "q-9",
+  number: "Q-001",
+  status: "accepted",
+  acceptedAt: "2026-11-10T00:00:00.000Z",
+  estimatedTotal: 705_000,
+  updatedAt: "2026-11-10T00:00:00.000Z",
+} as unknown as Quote;
+const co = (
+  id: string,
+  number: string,
+  status: ChangeOrder["status"],
+  deltaAmountCents: number,
+  updatedAt: string,
+) =>
+  ({
+    id,
+    userId: "u-1",
+    invoiceId: "i-9",
+    quoteId: "q-9",
+    number,
+    description: "Glass door",
+    deltaAmountCents,
+    status,
+    createdAt: updatedAt,
+    updatedAt,
+  }) as ChangeOrder;
+
+Deno.test("REQ-565 m33 documentsFor — a change order is a row of its own: number, state, signed amount, its /co link", () => {
+  const docs = documentsFor([signed], [], [
+    co("co-1", "CO-001", "pending", 120_000, "2026-11-11T00:00:00.000Z"),
+  ]);
+  assertEquals(docs[0], {
+    kind: "change_order",
+    id: "co-1",
+    number: "CO-001",
+    state: "pending",
+    amountCents: 120_000,
+    url: "/co/co-1",
+    updatedAt: "2026-11-11T00:00:00.000Z",
+  });
+  assertEquals(docs.length, 2);
+});
+
+Deno.test("REQ-565 m33 documentsFor — the quote row shows the agreed total: the quote plus its APPROVED change orders only", () => {
+  const docs = documentsFor([signed], [], [
+    co("co-1", "CO-001", "approved", 120_000, "2026-11-11T00:00:00.000Z"),
+    co("co-2", "CO-002", "approved", -20_000, "2026-11-11T01:00:00.000Z"),
+    co("co-3", "CO-003", "pending", 50_000, "2026-11-11T02:00:00.000Z"),
+    co("co-4", "CO-004", "declined", 90_000, "2026-11-11T03:00:00.000Z"),
+  ]);
+  const quote = docs.find((d) => d.kind === "quote")!;
+  assertEquals(quote.amountCents, 805_000);
+  assertEquals(quote.changeOrdersCents, 100_000);
+  assertEquals(
+    docs.filter((d) => d.kind === "change_order").map((d) => d.number),
+    ["CO-004", "CO-003", "CO-002", "CO-001"],
+  );
+});
+
+Deno.test("REQ-565 m33 documentsFor — a quote with no approved change order keeps its own total and no change-order note", () => {
+  const [quote] = documentsFor([signed], [], [
+    co("co-3", "CO-003", "pending", 50_000, "2026-11-09T00:00:00.000Z"),
+  ]).filter((d) => d.kind === "quote");
+  assertEquals(quote.amountCents, 705_000);
+  assertEquals("changeOrdersCents" in quote, false);
+});

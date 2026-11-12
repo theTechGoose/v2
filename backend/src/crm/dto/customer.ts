@@ -130,14 +130,20 @@ export type CustomerDocState =
 /**
  * REQ-323 (demo-loop cycle 1, m20): one of the customer's documents, as the
  * card back lists it — its number ("Q-001" / "INV-5000"), state, amount and the
- * page that opens it (`/quotes?open=<id>` for a quote, `/i/<id>` for an invoice).
+ * page that opens it (`/quotes?open=<id>` for a quote, `/i/<id>` for an invoice,
+ * REQ-565: `/co/<id>` for a change order).
  */
 export interface CustomerDocument {
-  kind: "quote" | "invoice";
+  /** REQ-565 (demo m33): change orders are the customer's documents too */
+  kind: "quote" | "invoice" | "change_order";
   id: string;
   number: string;
   state: CustomerDocState;
+  /** a quote: the agreed total (the quote plus its approved change orders);
+   *  a change order: its signed delta; an invoice: its amount */
   amountCents: number;
+  /** REQ-565: a quote's approved change orders, summed — only when non-zero */
+  changeOrdersCents?: number;
   url: string;
   updatedAt: string;
 }

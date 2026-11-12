@@ -487,21 +487,21 @@ Deno.test("REQ-323 the card carries number and documents: a sent quote and a pen
     assertEquals(quoteRow, {
       kind: "quote",
       id: q.id,
-      number: q.number,
+      number: q.number!,
       state: "sent",
       amountCents: 950_000,
       url: `/quotes?open=${q.id}`,
-      updatedAt: quoteRow?.updatedAt,
+      updatedAt: quoteRow!.updatedAt,
     });
     assert(q.number?.startsWith("Q-"), `quote number ${q.number}`);
     assertEquals(invRow, {
       kind: "invoice",
       id: inv.id,
-      number: inv.number,
+      number: inv.number!,
       state: "sent",
       amountCents: 400_000,
       url: `/i/${inv.id}`,
-      updatedAt: invRow?.updatedAt,
+      updatedAt: invRow!.updatedAt,
     });
     assert(inv.number?.startsWith("INV-"), `invoice number ${inv.number}`);
   });
@@ -513,5 +513,65 @@ Deno.test("REQ-323 a customer with nothing on the books has an empty documents l
     await customers.create("u-1", { name: "Blank" });
     const [card] = await flow.run("u-1", NOW_FIXED);
     assertEquals(card.documents, []);
+  });
+});
+
+/**
+ * REQ-565 (demo-loop cycle 4, m33): the customer's card lists the change
+ * orders made on her quote, and the quote at its agreed total.
+ */
+import { ChangeOrderStore } from "@paperwork/domain/data/change-order-store/mod.ts";
+
+Deno.test("REQ-565 m33 the card lists the customer's change orders and the quote at quote + approved change orders", async () => {
+  await withKv(async () => {
+    const { customers, quotes, invoices, views } = fresh();
+    const changeOrders = new ChangeOrderStore();
+    const flow = new BuildCustomerCards(
+      customers,
+      quotes,
+      invoices,
+      views,
+      changeOrders,
+    );
+    const maria = await customers.create("u-1", { name: "Maria Lopez" });
+    const other = await customers.create("u-1", { name: "Dave Roof" });
+    const q = await quotes.create("u-1", {
+      customerId: maria.id,
+      summary: "Bathroom",
+      lineItems: [],
+      estimatedTotal: 705_000,
+      status: "accepted",
+    });
+    const inv = await invoices.create("u-1", {
+      quoteId: q.id,
+      customerId: maria.id,
+      dueDate: "2026-12-01",
+      status: "sent",
+      amount: 705_000,
+    });
+    const co1 = await changeOrders.create("u-1", inv.id, {
+      description: "Glass door",
+      deltaAmountCents: 120_000,
+      quoteId: q.id,
+      customerId: maria.id,
+    });
+    await changeOrders.decide(co1.id, "approved");
+    // a legacy row without customerId still belongs to Maria through its invoice
+    await changeOrders.create("u-1", inv.id, {
+      description: "Towel bar",
+      deltaAmountCents: 15_000,
+    });
+    const cards = await flow.run("u-1", NOW_FIXED);
+    const card = cards.find((c) => c.id === maria.id)!;
+    const cos = card.documents.filter((d) => d.kind === "change_order");
+    assertEquals(cos.map((d) => [d.number, d.state, d.amountCents]).sort(), [
+      ["CO-001", "approved", 120_000],
+      ["CO-002", "pending", 15_000],
+    ]);
+    assertEquals(cos[0].url.startsWith("/co/"), true);
+    const quoteRow = card.documents.find((d) => d.kind === "quote")!;
+    assertEquals(quoteRow.amountCents, 825_000);
+    const daves = cards.find((c) => c.id === other.id)!;
+    assertEquals(daves.documents, []);
   });
 });

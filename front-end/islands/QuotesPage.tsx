@@ -61,8 +61,9 @@ import { changeOrdersClient } from "../clients/change-orders.ts"; // REQ-462
 import {
   changeOrderBody,
   changeOrderRowActions,
+  changeOrderShareLinks,
   newChangeOrderTarget,
-} from "../../shared/documents/change-order-actions.ts"; // REQ-462
+} from "../../shared/documents/change-order-actions.ts"; // REQ-462, REQ-565
 import {
   canReviseQuote,
   editableLines,
@@ -70,6 +71,8 @@ import {
   editorTotalCents,
   linesPatch,
   nextVersionOf,
+  type PublishedMark,
+  publishedNoteVisible,
 } from "../lib/quote-line-edit.ts";
 import {
   quoteCardValue,
@@ -363,19 +366,54 @@ function SignedChangeOrder(
 
 type LedgerCoRow = QuoteLedger["changeOrders"][number];
 
+/** REQ-565: who a change order goes to — the quote's customer as filed on it. */
+interface CoRecipient {
+  name: string | null;
+  phone?: string;
+  email?: string;
+}
+
 /** REQ-462 (M26) — one change order in the ledger: number, version, state,
  *  invoice, wording and amount; while the customer has not approved it, Edit
  *  (PUT — its next version, back to pending, the alert sent again) and
  *  Withdraw (asks first, then DELETE). The number still opens /co/:id. */
 function LedgerChangeOrderRow(
-  { lang, co, onChanged, onWithdrawn }: {
+  { lang, co, customer, onChanged, onWithdrawn }: {
     lang: "en" | "es";
     co: LedgerCoRow;
+    customer: CoRecipient;
     onChanged: () => void;
     onWithdrawn: (number: string) => void;
   },
 ) {
   const [editing, setEditing] = useState(false);
+  // REQ-565 (demo m33): the order reaches the customer from its row — its
+  // link copied, texted or emailed, or opened as she sees it.
+  const [copied, setCopied] = useState(false);
+  const who = customer.name ?? tFor(lang, "quotesPage.edit.theCustomer");
+  const origin = typeof globalThis.location === "undefined"
+    ? ""
+    : globalThis.location.origin;
+  const coUrl = `${origin}${co.url}`;
+  const share = changeOrderShareLinks({
+    origin,
+    path: co.url,
+    phone: customer.phone,
+    email: customer.email,
+    subject: tFor(lang, "quotes.ledger.coSendSubject", { number: co.number }),
+    text: tFor(lang, "quotes.ledger.coSendBody", {
+      name: customer.name ?? "",
+      number: co.number,
+      url: coUrl,
+    }).replace(/\s+,/, ","),
+  });
+  async function copyCoLink() {
+    try {
+      await navigator.clipboard.writeText(share.url);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch { /* clipboard unavailable — leave the label as-is */ }
+  }
   const [desc, setDesc] = useState("");
   const [dollars, setDollars] = useState("");
   const [confirming, setConfirming] = useState(false);
@@ -553,6 +591,56 @@ function LedgerChangeOrderRow(
             </button>
           </span>
         )}
+        {!editing && !confirming && (
+          <span
+            data-cy="ledger-co-share"
+            style="display:flex;gap:4px;flex-wrap:wrap;align-items:center;margin-top:2px"
+          >
+            <button
+              type="button"
+              class="qopen__btn"
+              data-cy="ledger-co-copy"
+              style={small}
+              onClick={copyCoLink}
+            >
+              {copied
+                ? tFor(lang, "quotes.ledger.coLinkCopied")
+                : tFor(lang, "quotes.ledger.coCopyLink")}
+            </button>
+            <a
+              class="qopen__btn"
+              data-cy="ledger-co-text"
+              style={small}
+              href={share.sms}
+            >
+              {tFor(lang, "quotes.ledger.coText")}
+            </a>
+            <a
+              class="qopen__btn"
+              data-cy="ledger-co-email"
+              style={small}
+              href={share.email}
+            >
+              {tFor(lang, "quotes.ledger.coEmail")}
+            </a>
+            <a
+              class="qopen__btn"
+              data-cy="ledger-co-view"
+              style={`${small};background:transparent;border-color:transparent`}
+              href={co.url}
+              target="_blank"
+              rel="noopener"
+            >
+              {tFor(lang, "quotes.ledger.coViewAsCustomer")}
+            </a>
+          </span>
+        )}
+        <span
+          data-cy="ledger-co-banner-note"
+          style={`${mutedStyle};font-size:12px`}
+        >
+          {tFor(lang, "quotes.ledger.coBannerNote", { name: who })}
+        </span>
         {savedVersion !== null && !editing && (
           <span
             data-cy="ledger-co-saved"
@@ -631,7 +719,10 @@ function QuoteLedgerSection(
 ) {
   const [publishing, setPublishing] = useState(false);
   const [publishErr, setPublishErr] = useState<string | null>(null);
-  const [published, setPublished] = useState(false);
+  // REQ-565 (demo m33): what the "Revision published" note is true of — it
+  // drops once the quote is signed, a later version lands or a change order
+  // is made (it used to stay until the panel remounted).
+  const [published, setPublished] = useState<PublishedMark | null>(null);
   // REQ-304 (demo M28): publishing is a two-step — the button opens a
   // preview that says what Version N changes, and only its Publish posts.
   const [confirming, setConfirming] = useState(false);
@@ -642,6 +733,16 @@ function QuoteLedgerSection(
   // REQ-466 (demo m38): the draft revision can be read before Publish.
   const [showDraft, setShowDraft] = useState(false);
   const summary = ledgerSummary(ledger);
+  // REQ-565: the change orders go to the quote's customer as filed on it
+  const snapshot = (q as { customerSnapshot?: Record<string, unknown> })
+    .customerSnapshot;
+  const coRecipient: CoRecipient = {
+    name: q.customerName ?? null,
+    ...(typeof snapshot?.phoneNumber === "string"
+      ? { phone: snapshot.phoneNumber }
+      : {}),
+    ...(typeof snapshot?.email === "string" ? { email: snapshot.email } : {}),
+  };
   // REQ-481 (demo M28): why the next invoice is off — "The rest is on
   // INV-002, scheduled Nov 26", not "already invoiced" over an unsent bill.
   const fullyInvoicedText = tFor(lang, summary.fullyInvoicedKey, {
@@ -713,8 +814,15 @@ function QuoteLedgerSection(
     setPublishing(true);
     setPublishErr(null);
     try {
-      await quotesClient.publish(q.id, { notify: true, language: lang });
-      setPublished(true);
+      const res = await quotesClient.publish(q.id, {
+        notify: true,
+        language: lang,
+      });
+      setPublished({
+        version: res?.version ?? ledger.quote.version + 1,
+        status: res?.status ?? q.status ?? "",
+        changeOrders: ledger.changeOrders.length,
+      });
       setConfirming(false);
       onPublished();
     } catch (err) {
@@ -956,6 +1064,7 @@ function QuoteLedgerSection(
               key={co.id}
               lang={lang}
               co={co}
+              customer={coRecipient}
               onChanged={onPublished}
               onWithdrawn={setWithdrawnCo}
             />
@@ -1154,7 +1263,11 @@ function QuoteLedgerSection(
           </span>
         )}
       </div>
-      {published && (
+      {publishedNoteVisible(published, {
+        version: ledger.quote.version,
+        status: q.status ?? "",
+        changeOrders: ledger.changeOrders.length,
+      }) && (
         <p
           data-cy="quote-published-note"
           style="margin:8px 0 0;font-size:12.5px;color:var(--brand-green,#519843);font-weight:700"

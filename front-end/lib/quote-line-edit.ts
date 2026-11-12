@@ -170,3 +170,29 @@ export function linesPatch(
     estimatedTotal: lineItems.reduce((s, l) => s + l.price * l.quantity, 0),
   };
 }
+
+/** REQ-565 (demo-loop cycle 4, m33): what the "Revision published" note was
+ *  true of — the version Publish made, the quote's status then, and how many
+ *  change orders the ledger held. */
+export interface PublishedMark {
+  version: number;
+  status: string;
+  changeOrders: number;
+}
+
+/**
+ * REQ-565 (m33): "Revision published — the customer got the same link again."
+ * used to stay up until the panel remounted, through the customer signing and
+ * a change order being made. It shows only while the ledger is still the one
+ * that publish produced: same status, same change orders, no later version
+ * (the reload that brings the new version in keeps it; anything after drops it).
+ */
+export function publishedNoteVisible(
+  mark: PublishedMark | null,
+  now: PublishedMark,
+): boolean {
+  if (!mark) return false;
+  return now.status === mark.status &&
+    now.changeOrders === mark.changeOrders &&
+    now.version <= mark.version;
+}
