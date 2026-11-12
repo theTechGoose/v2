@@ -95,3 +95,39 @@ Deno.test("REQ-250 m12: the overdue sweep sends nothing on a claimed invoice, an
   assertEquals(ctx.emails.length, 1);
   assertEquals(ctx.texts.length, 1);
 });
+
+/**
+ * REQ-623 — demo cycle 4, issue M26: "No payment-reminder settings
+ * (cadence/on-off)". The sweep reads BusinessIdentity.reminders: off → it sends
+ * nothing on any invoice; a cadence of [7] skips Day 3 and fires Day 7.
+ */
+Deno.test("REQ-623 M26: the overdue sweep obeys the business's reminder on/off switch and cadence days", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const ctx = fresh();
+  const identity = new BusinessIdentityStore();
+  const contractor = await ctx.users.create({ phoneNumber: "+15125557623" });
+  const customer = await ctx.customers.create(contractor.id, {
+    name: "Ana Ruiz",
+    email: "ana@example.com",
+    phoneNumber: "+15125557624",
+  });
+  await ctx.invoices.create(contractor.id, {
+    customerId: customer.id,
+    amount: 250_00,
+    dueDate: "2026-05-01",
+    status: "sent",
+  } as never);
+  const fivePast = new Date("2026-05-06T12:00:00Z");
+  const eightPast = new Date("2026-05-09T12:00:00Z");
+
+  await identity.upsert(contractor.id, { reminders: { enabled: false, days: [3, 7, 14, 30] } } as never);
+  assertEquals(await ctx.reminders.runAll(contractor.id, eightPast), [], "reminders off → nothing fires");
+  assertEquals(ctx.emails.length + ctx.texts.length, 0);
+
+  await identity.upsert(contractor.id, { reminders: { enabled: true, days: [7] } } as never);
+  assertEquals(await ctx.reminders.runAll(contractor.id, fivePast), [], "Day 3 is not in the cadence");
+  const fired = await ctx.reminders.runAll(contractor.id, eightPast);
+  assertEquals(fired.map((r) => r.day), [7]);
+  assertEquals(ctx.emails.length, 1);
+});

@@ -77,6 +77,13 @@ import {
   sendLanguagesOf,
   toggleSendLanguage,
 } from "../../shared/quote-flow/comms-language.ts";
+import {
+  isLastReminderDay,
+  REMINDER_DAY_CHOICES,
+  type ReminderSettings,
+  reminderSettingsOf,
+  toggleReminderDay,
+} from "../../shared/quote-flow/reminder-settings.ts"; // REQ-623
 import { Icon } from "../components/ui/Icon.tsx";
 import {
   CardGridSkeleton,
@@ -2440,6 +2447,133 @@ function DangerZoneCard(
   );
 }
 
+/**
+ * REQ-623 (demo cycle 4, M26) — the business's automatic payment reminders:
+ * an on/off switch for every invoice and the cadence days (3 / 7 / 14 / 30)
+ * as chips. Saves `identity.reminders` at once; the overdue sweep
+ * (SendPaymentReminder.runAll) reads the same setting. At least one day stays
+ * picked — turning reminders off is the switch, not an empty cadence.
+ */
+function RemindersEditCard(
+  { snapshot, onSaved }: {
+    snapshot: ProfileSnapshot;
+    onSaved: (partial: Partial<ProfileSnapshot>) => void;
+  },
+) {
+  const lang: Lang = langSignal.value === "es" ? "es" : "en";
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const [saved, setSaved] = useState(false);
+  const settings: ReminderSettings = reminderSettingsOf(snapshot.identity);
+
+  async function save(next: ReminderSettings) {
+    setBusy(true);
+    setErr(null);
+    setSaved(false);
+    try {
+      const id = await profileClient.updateIdentity({ reminders: next });
+      onSaved({
+        identity: {
+          ...(snapshot.identity ?? {} as never),
+          ...id,
+        } as typeof snapshot.identity,
+      });
+      setSaved(true);
+    } catch (e) {
+      setErr(
+        e instanceof Error ? e.message : tFor(lang, "settings.saveFailed"),
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <EditPanel
+      title={tFor(lang, "settings.reminders.title")}
+      busy={busy}
+      err={err}
+      saved={saved}
+      saving={tFor(lang, "settings.saving")}
+      savedLabel={tFor(lang, "settings.saved")}
+      dataCy="settings-reminders"
+      id="reminders"
+    >
+      <label style="display:flex;align-items:center;gap:10px;cursor:pointer">
+        <input
+          type="checkbox"
+          role="switch"
+          data-cy="settings-reminders-enabled"
+          checked={settings.enabled}
+          disabled={busy}
+          onChange={(e) =>
+            save({
+              ...settings,
+              enabled: (e.target as HTMLInputElement).checked,
+            })}
+        />
+        <span style="font-weight:700;font-size:13.5px;color:var(--fg)">
+          {tFor(lang, "settings.reminders.enabled")}
+        </span>
+      </label>
+      <span style="display:block;margin-top:4px;font-size:12px;color:var(--fg-muted,#6b7560)">
+        {tFor(lang, "settings.reminders.hint")}
+      </span>
+      {settings.enabled
+        ? (
+          <div style="margin-top:12px">
+            <span style={labelStyle}>
+              {tFor(lang, "settings.reminders.days")}
+            </span>
+            <div style="display:flex;flex-wrap:wrap;gap:8px">
+              {REMINDER_DAY_CHOICES.map((d) => {
+                const on = settings.days.includes(d);
+                return (
+                  <button
+                    key={d}
+                    type="button"
+                    data-cy={`settings-reminders-day-${d}`}
+                    aria-pressed={on}
+                    disabled={busy || isLastReminderDay(settings.days, d)}
+                    onClick={() => {
+                      const days = toggleReminderDay(settings.days, d, !on);
+                      if (days) save({ ...settings, days });
+                    }}
+                    style={`padding:6px 12px;border-radius:999px;font:inherit;font-size:13px;font-weight:700;cursor:pointer;border:1px solid ${
+                      on
+                        ? "var(--brand-green,#519843);background:var(--brand-green,#519843);color:#fff"
+                        : "var(--border,#d8dcd5);background:#fff;color:var(--fg)"
+                    }`}
+                  >
+                    {tFor(lang, "settings.reminders.day", { n: String(d) })}
+                  </button>
+                );
+              })}
+            </div>
+            {settings.days.length === 1
+              ? (
+                <span
+                  data-cy="settings-reminders-keep-one"
+                  style="display:block;margin-top:6px;font-size:12px;color:var(--fg-muted,#6b7560)"
+                >
+                  {tFor(lang, "settings.reminders.keepOne")}
+                </span>
+              )
+              : null}
+          </div>
+        )
+        : (
+          <p
+            data-cy="settings-reminders-off"
+            style="margin:10px 0 0;font-size:12.5px;color:var(--fg-muted,#6b7560)"
+          >
+            {tFor(lang, "settings.reminders.offNote")}
+          </p>
+        )}
+    </EditPanel>
+  );
+}
+
 export default function SettingsPage() {
   const [s, setS] = useState<State>(INITIAL);
   // REQ-146: an admin acting for the account never sees the danger zone (the
@@ -2629,6 +2763,9 @@ export default function SettingsPage() {
           <NumberingCard refreshKey={numberingKey} />
 
           <PaymentsEditCard snapshot={p} onSaved={onSaved} />
+
+          {/* REQ-623 (demo cycle 4, M26): automatic payment reminders */}
+          <RemindersEditCard snapshot={p} onSaved={onSaved} />
 
           {!acting && (
             <DangerZoneCard

@@ -16,8 +16,10 @@ import {
   docRefWithVersion,
   docTitle,
 } from "@paperwork/domain/business/doc-render/mod.ts";
+import { reminderSettingsOf } from "#quote-flow/reminder-settings.ts";
 
-/** The cadence steps fired by the overdue-reminder cron. */
+/** The cadence steps fired by the overdue-reminder cron when the business
+ *  has not picked its own (REQ-623: BusinessIdentity.reminders.days). */
 export const CADENCE_DAYS = [3, 7, 14, 30] as const;
 export type CadenceDay = typeof CADENCE_DAYS[number];
 
@@ -51,6 +53,9 @@ export interface ReminderResult {
  *     manually).
  *   - Per-invoice mute: `remindersMuted=true` short-circuits the entire
  *     cadence for that invoice.
+ *   - Business setting (REQ-623, demo cycle 4 M26): `BusinessIdentity.reminders`
+ *     = { enabled, days } — off stops the sweep for every invoice; `days`
+ *     picks which steps run. Unset → on, 3/7/14/30.
  *   - Eligibility: status in (sent|viewed) AND dueDate past. A `claimed`
  *     invoice (the customer reported paying) is PAUSED — never dunned while
  *     the claim is pending; reject-claim flips it back to `sent`, which
@@ -71,9 +76,14 @@ export class SendPaymentReminder {
 
   async runAll(userId: string, now: Date = new Date()): Promise<ReminderResult[]> {
     const out: ReminderResult[] = [];
+    // REQ-623: the business's on/off switch and cadence days
+    const settings = reminderSettingsOf(
+      await this.identity.get(userId).catch(() => null),
+    );
+    if (!settings.enabled) return out;
     const all = await this.invoices.listByUser(userId);
     for (const inv of all) {
-      const day = pickNextDay(inv, now);
+      const day = pickNextDay(inv, now, settings.days);
       if (day == null) continue;
       try {
         out.push(await this.runForInvoice(userId, inv.id, day, now));
@@ -190,18 +200,25 @@ export class SendPaymentReminder {
  *  claim pauses the cadence. */
 const REMINDER_ELIGIBLE: readonly string[] = ["sent", "viewed"];
 
-export function pickNextDay(invoice: Invoice, now: Date): CadenceDay | undefined {
+export function pickNextDay(
+  invoice: Invoice,
+  now: Date,
+  /** REQ-623: the business's cadence (BusinessIdentity.reminders.days) */
+  days: readonly CadenceDay[] = CADENCE_DAYS,
+): CadenceDay | undefined {
   if (invoice.remindersMuted) return undefined;
   if (!REMINDER_ELIGIBLE.includes(invoice.status ?? "")) return undefined;
+  const cadence = CADENCE_DAYS.filter((d) => days.includes(d));
+  if (cadence.length === 0) return undefined;
   const od = daysOverdue(invoice, now);
-  if (od < CADENCE_DAYS[0]) return undefined;
+  if (od < cadence[0]) return undefined;
   const firedDays = new Set((invoice.reminderHistory ?? []).map((h) => h.day));
   let largestFired: number | undefined;
   for (const d of CADENCE_DAYS) {
     if (firedDays.has(d)) largestFired = d;
   }
-  for (let i = CADENCE_DAYS.length - 1; i >= 0; i--) {
-    const d = CADENCE_DAYS[i];
+  for (let i = cadence.length - 1; i >= 0; i--) {
+    const d = cadence[i];
     if (od < d) continue;
     if (firedDays.has(d)) continue;
     if (largestFired != null && d < largestFired) continue;
