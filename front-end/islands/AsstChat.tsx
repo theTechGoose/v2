@@ -245,6 +245,7 @@ import { threadStatusKey } from "../../shared/quote-flow/chat-header.ts";
 import {
   publishThreadStatus,
   publishThreadTurn,
+  threadTurnTitle,
   THREAD_SERVER_STATUS_EVENT,
   type ThreadStatusDetail,
 } from "../lib/thread-status-sync.ts";
@@ -829,6 +830,15 @@ export default function AsstChat({
   const [convTitle, setConvTitle] = useState<string | undefined>(
     initialTitle,
   );
+  /** REQ-671 (demo-loop cycle 5, p8): a landed turn's server row titled the
+   *  thread — the header names it now, as the list does (publishThreadTurn).
+   *  The details-first draft note titles it before any chat turn runs, so
+   *  the header used to say "New conversation" through the job, options and
+   *  price steps. */
+  function adoptTurnTitle(conversation?: object | null) {
+    const title = threadTurnTitle(conversation);
+    if (title) setConvTitle(title);
+  }
   const [customer, setCustomer] = useState<CustomerLite | undefined>(
     initialCustomer,
   );
@@ -2448,9 +2458,7 @@ export default function AsstChat({
           ?.customerId;
       // REQ-447 (cycle 3, p8-pair10-d): the turn titled the thread (its
       // first message, or the job name of the quote it drafted).
-      const turnTitle = (res.conversation as { title?: string } | undefined)
-        ?.title;
-      if (turnTitle) setConvTitle(turnTitle);
+      adoptTurnTitle(res.conversation);
       if (boundId && boundId !== customer?.id) {
         clientsClient.get(boundId)
           .then((c) => setCustomer(c as unknown as CustomerLite))
@@ -3707,6 +3715,7 @@ export default function AsstChat({
       // REQ-580 (demo-loop cycle 4, p4-p7b): the note titled the thread —
       // the list names it now, never "New conversation —".
       publishThreadTurn(id, saved);
+      adoptTurnTitle(saved); // REQ-671: the header too
     } catch {
       // Best-effort: a failed mint must never block the flow the user is in.
     }
@@ -4600,6 +4609,7 @@ export default function AsstChat({
       // REQ-580 (demo-loop cycle 4, p4-p2d): the answer is the thread's new
       // preview — the list shows it now, not one answer behind.
       publishThreadTurn(convoId, res.conversation);
+      adoptTurnTitle(res.conversation); // REQ-671
       // Pick up the freshly-bound customer from the conversation patch
       // (the create_new and pick_existing flows mutate conv.customerId).
       if (res.conversation && typeof res.conversation === "object") {
