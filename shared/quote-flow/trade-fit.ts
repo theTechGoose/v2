@@ -22,6 +22,11 @@ export type TradeKind = "service" | "project";
 const SERVICE_SAMPLE_TRADES: ReadonlySet<SampleTrade> = new Set<SampleTrade>([
   "cleaning",
   "landscaping",
+  // REQ-360 gave the sample its own junk / moving / pest jobs — service
+  // visits too (the stems below already said so).
+  "junk",
+  "moving",
+  "pest",
 ]);
 
 /** Lower-case stems (EN + ES) of service businesses the sample-quote trade
@@ -83,7 +88,12 @@ export function composerTradeFor(businessName?: string | null): ComposerTrade {
   const name = (businessName ?? "").toLowerCase();
   if (!name.trim()) return "general";
   if (hasStem(name, JUNK_STEMS)) return "junk";
-  return inferSampleTrade(name);
+  // REQ-360's sample trades without a composer example of their own (moving,
+  // pest, fencing, concrete, handyman) get the generic line.
+  const trade: string = inferSampleTrade(name);
+  return (COMPOSER_TRADES as readonly string[]).includes(trade)
+    ? trade as ComposerTrade
+    : "general";
 }
 
 /** The dictionary key of the composer placeholder for this business. The

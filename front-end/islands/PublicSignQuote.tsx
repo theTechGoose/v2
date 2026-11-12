@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "preact/hooks";
 import { tFor } from "../lib/i18n.ts";
 import { acceptDecision } from "../../shared/documents/linked-view.ts";
+import { SIGN_OVERRIDE_QUERY } from "../../shared/quote-flow/public-doc-state.ts";
 
 interface Props {
   quoteId: string;
@@ -14,6 +15,10 @@ interface Props {
    *  never a page reload, which landed the customer at the top with no
    *  thank-you and the "Pay now" hand-off out of sight. */
   onSigned?: (signed: { name: string }) => void;
+  /** REQ-306: the business's own session signing in person with the
+   *  customer — the accept POST carries `?as=customer&confirm=1`, without
+   *  which the backend answers 409 owner_cannot_sign. */
+  override?: boolean;
 }
 
 interface Stroke {
@@ -48,7 +53,7 @@ const LINE = "#e3e8e6";
  *     viewport changes mid-flow).
  */
 export default function PublicSignQuote(
-  { quoteId, version, lang = "en", onSigned }: Props,
+  { quoteId, version, lang = "en", onSigned, override = false }: Props,
 ) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const strokesRef = useRef<Stroke[]>([]);
@@ -62,7 +67,7 @@ export default function PublicSignQuote(
   // REQ-203: "stale" — the quote was republished under this page; "already"
   // — someone signed it meanwhile. Both reload into the current document.
   const [status, setStatus] = useState<
-    "idle" | "ok" | "error" | "stale" | "already"
+    "idle" | "ok" | "error" | "stale" | "already" | "owner"
   >("idle");
   const [err, setErr] = useState<string | undefined>();
 
@@ -278,16 +283,21 @@ export default function PublicSignQuote(
     setErr(undefined);
     try {
       const dataUrl = exportSignaturePng() || typedNamePng(trimmed);
-      const r = await fetch(`/api/quotes/${quoteId}/accept`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          name: trimmed,
-          signature: dataUrl,
-          // REQ-203: the version the customer is looking at
-          ...(typeof version === "number" ? { version } : {}),
-        }),
-      });
+      const r = await fetch(
+        `/api/quotes/${quoteId}/accept${
+          override ? `?${SIGN_OVERRIDE_QUERY}` : ""
+        }`,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            name: trimmed,
+            signature: dataUrl,
+            // REQ-203: the version the customer is looking at
+            ...(typeof version === "number" ? { version } : {}),
+          }),
+        },
+      );
       const text = await r.text().catch(() => "");
       let body: unknown = text;
       try {
@@ -304,6 +314,12 @@ export default function PublicSignQuote(
       if (decision.kind === "already_accepted") {
         setStatus("already");
         reloadSoon(900);
+        return;
+      }
+      if (decision.kind === "owner_cannot_sign") {
+        // REQ-306: the business's own session — the backend refused; say
+        // so instead of a raw error (the page normally hides the pad first).
+        setStatus("owner");
         return;
       }
       if (decision.kind !== "ok") {
@@ -324,6 +340,18 @@ export default function PublicSignQuote(
   }
 
   // ---- render ---------------------------------------------------------------
+
+  if (status === "owner") {
+    return (
+      <div
+        data-cy="sign-owner-cannot-sign"
+        role="status"
+        style={`margin-top:24px;background:#fff6e5;border:1px solid rgba(255,170,40,0.35);border-radius:18px;padding:20px;text-align:center;color:#8a5a10;font-weight:700;font-size:14px`}
+      >
+        {tFor(lang, "public.doc.ownerCannotSign")}
+      </div>
+    );
+  }
 
   if (status === "stale") {
     return (

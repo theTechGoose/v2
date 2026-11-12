@@ -20,6 +20,9 @@ export interface PublicQuotePayloadLike {
   acceptedAt?: string;
   acceptedSignature?: string;
   customer?: { name?: string };
+  /** REQ-306: true when the viewer is the business itself (the owner, an
+   *  admin acting for them, an impersonation session) — never the customer. */
+  internal?: boolean;
 }
 
 export interface QuoteView {
@@ -69,6 +72,35 @@ export function deriveQuoteView(payload: PublicQuotePayloadLike): QuoteView {
     footerVariant: "beforeSigning",
     pendingSignature: true,
   };
+}
+
+/* ---------- REQ-306: the business's own preview ---------- */
+
+/** The explicit in-person override: the contractor hands the device to the
+ *  customer. Carried on the /q link and on the accept POST. */
+export const SIGN_OVERRIDE_QUERY = "as=customer&confirm=1";
+
+/** True when the page's (or request's) query carries the full override —
+ *  `as=customer` AND `confirm=1`; half of it is no override. */
+export function hasSignOverride(search: string | undefined | null): boolean {
+  if (!search) return false;
+  const q = new URLSearchParams(
+    search.startsWith("?") ? search.slice(1) : search,
+  );
+  return q.get("as") === "customer" && q.get("confirm") === "1";
+}
+
+/** REQ-306 (demo B3): the business's own viewer of a still-open quote is
+ *  previewing — the page shows "you are viewing as the customer; signing is
+ *  disabled" instead of the pad, unless the in-person override is on. A
+ *  signed or declined quote has nothing to sign, so it is never a preview. */
+export function internalPreview(
+  payload: PublicQuotePayloadLike,
+  search: string | undefined | null,
+): boolean {
+  if (payload.internal !== true) return false;
+  if (deriveQuoteView(payload).mode !== "open") return false;
+  return !hasSignOverride(search);
 }
 
 /* ---------- per-language line items ---------- */
