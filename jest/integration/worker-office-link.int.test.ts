@@ -33,3 +33,49 @@ describe("REQ-282 /worker links back to the office only for the owner", () => {
     expect(officeLinks(await res.text())).toHaveLength(0);
   });
 });
+
+/**
+ * REQ-417 — demo-loop cycle 2, demo issue m44: "'Volver a la oficina' always goes to /field/tasks".
+ * The SSR'd link goes back to the office page the owner came from — `?from=` or a same-origin
+ * Referer, allow-listed to the office's own sections — and to /field/tasks otherwise.
+ */
+describe("REQ-417 (m44) /worker's office link goes back where the owner came from", () => {
+  const hrefOf = async (path: string, headers: Record<string, string>) => {
+    const res = await fetch(`${FE}${path}`, { headers, redirect: "manual" });
+    expect(res.status).toBe(200);
+    const links = officeLinks(await res.text());
+    expect(links).toHaveLength(1);
+    return /href="([^"]*)"/.exec(links[0])?.[1];
+  };
+
+  it("REQ-417 ?from=/field/workers → the link goes back to /field/workers", async () => {
+    const owner = await contractor("+15125550417");
+    const cookie = owner.cookieHeaderValue();
+    expect(
+      await hrefOf("/worker?lang=en&from=%2Ffield%2Fworkers", { cookie }),
+    ).toBe("/field/workers");
+  });
+
+  it("REQ-417 a same-origin Referer is used; an off-site one or an off-site ?from= is not", async () => {
+    const owner = await contractor("+15125550418");
+    const cookie = owner.cookieHeaderValue();
+    const origin = new URL(FE).origin;
+    expect(
+      await hrefOf("/worker?lang=en", {
+        cookie,
+        referer: `${origin}/customers`,
+      }),
+    ).toBe("/customers");
+    expect(
+      await hrefOf("/worker?lang=en", {
+        cookie,
+        referer: "https://evil.example/customers",
+      }),
+    ).toBe("/field/tasks");
+    expect(
+      await hrefOf("/worker?lang=en&from=https%3A%2F%2Fevil.example%2F", {
+        cookie,
+      }),
+    ).toBe("/field/tasks");
+  });
+});

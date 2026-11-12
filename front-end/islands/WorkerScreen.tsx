@@ -22,6 +22,7 @@ import { I, ICN } from "../lib/dash-icons.tsx";
 import {
   fmtDay,
   todayIso,
+  WORKER_OFFICE_FALLBACK,
   workerDayNav,
   workerScreenLang,
 } from "../lib/field.ts";
@@ -81,8 +82,8 @@ const css = `
   .visit__btns button { flex: 1; padding: 10px; border: 1px solid var(--border); border-radius: 10px; background: #fff; font: inherit; font-weight: 700; color: var(--brand-teal); display: flex; align-items: center; justify-content: center; gap: 6px; min-height: 44px; cursor: pointer; }
   .visit__btns button.on { background: var(--mint-100); border-color: var(--brand-teal); }
   .visit__note-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--brand-teal); flex: none; }
-  .note { display: flex; gap: 6px; }
-  .note input { flex: 1; padding: 10px 11px; border: 1px solid var(--border); border-radius: 9px; font: inherit; font-size: 15px; min-width: 0; }
+  .note { display: flex; gap: 6px; align-items: flex-start; }
+  .note textarea { flex: 1; padding: 10px 11px; border: 1px solid var(--border); border-radius: 9px; font: inherit; font-size: 15px; line-height: 1.35; min-width: 0; box-sizing: border-box; resize: none; overflow: hidden; }
   .note button, .add button { padding: 10px 14px; border: 0; border-radius: 9px; background: var(--brand-teal); color: #fff; font: inherit; font-weight: 700; min-height: 44px; cursor: pointer; }
   .services { border-top: 1px dashed var(--border); padding-top: 10px; display: flex; flex-direction: column; gap: 6px; }
   .services .row { display: flex; align-items: center; gap: 8px; font-size: 14px; color: var(--brand-teal); font-weight: 600; }
@@ -155,17 +156,32 @@ interface Deferring {
   note: string;
 }
 
+/** REQ-417 (p13-q) — the note textarea grows to fit its text (rows=2 is the floor) */
+function growNote(el: HTMLTextAreaElement | null) {
+  if (!el) return;
+  el.style.height = "auto";
+  el.style.height = `${el.scrollHeight + 2}px`;
+}
+
 interface Toast {
   msg: string;
   ok: boolean;
 }
 
 export default function WorkerScreen(
-  { initialLang, initialDate, office, langChosen = false }: {
+  {
+    initialLang,
+    initialDate,
+    office,
+    officeHref = WORKER_OFFICE_FALLBACK,
+    langChosen = false,
+  }: {
     initialLang: Lang;
     initialDate?: string;
     /** REQ-282 — an owner session rode in: show the way back to the office */
     office?: boolean;
+    /** REQ-417 (m44) — the office page the owner came from (route-resolved, allow-listed) */
+    officeHref?: string;
     /** REQ-285 — the address chose the language (?lang=); the worker's own does not override it */
     langChosen?: boolean;
   },
@@ -379,7 +395,14 @@ export default function WorkerScreen(
     v.services.map((s) => s.note).find(Boolean) ?? "";
 
   /** REQ-362 — the day navigator; a day after today is a read-only preview */
-  const nav = date && today ? workerDayNav(date, today) : null;
+  // REQ-417 — a day change keeps the owner's way back to the office page they came from
+  const nav = date && today
+    ? workerDayNav(
+      date,
+      today,
+      office && officeHref !== WORKER_OFFICE_FALLBACK ? officeHref : undefined,
+    )
+    : null;
   const preview = !!nav?.preview;
 
   const dayLine = () => {
@@ -574,15 +597,21 @@ export default function WorkerScreen(
                 saveNote(v);
               }}
             >
-              <input
+              {
+                /* REQ-417 (p13-q): a textarea, so the placeholder wraps at 390 px
+                 instead of being cut; it grows with the text */
+              }
+              <textarea
                 data-cy="w-note"
+                rows={2}
                 placeholder={t("worker.notePh")}
                 value={drafts[v.id] ?? note}
-                onInput={(e) =>
-                  setDrafts((d) => ({
-                    ...d,
-                    [v.id]: (e.target as HTMLInputElement).value,
-                  }))}
+                ref={growNote}
+                onInput={(e) => {
+                  const el = e.target as HTMLTextAreaElement;
+                  growNote(el);
+                  setDrafts((d) => ({ ...d, [v.id]: el.value }));
+                }}
               />
               <button
                 type="submit"
@@ -750,7 +779,7 @@ export default function WorkerScreen(
         </div>
         {office && (
           <a
-            href="/field/tasks"
+            href={officeHref}
             class="btn btn--ghost btn--sm"
             data-cy="w-office"
             style="min-height:44px"

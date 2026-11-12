@@ -27,7 +27,9 @@ describe("REQ-282 the worker view links back to the office for a signed-in owner
       /\{office && \(\s*<a[\s\S]*?<\/a>\s*\)\}/,
     )?.[0];
     expect(link).toBeDefined();
-    expect(link).toMatch(/href="\/field\/tasks"/);
+    // REQ-417 (m44): the href is the route-resolved office page, /field/tasks by default
+    expect(link).toMatch(/href=\{officeHref\}/);
+    expect(island).toMatch(/officeHref = WORKER_OFFICE_FALLBACK/);
     expect(link).toMatch(/data-cy="w-office"/);
     expect(link).toMatch(/t\("worker\.backToOffice"\)/);
   });

@@ -76,3 +76,21 @@ Deno.test("REQ-282: a worker's phone (no owner session) shows no office link", (
       "no office link without an owner session",
     );
   }));
+
+Deno.test("REQ-417 (demo m44): Roles → Workers → Open the worker view → Back to office returns to /field/workers", (t) =>
+  story(t, async ({ page, expect, http, baseUrl }) => {
+    await signInOwner(http, page, baseUrl);
+    await page.goto("/field/workers?lang=en");
+    const open = page.locator("[data-cy='wk-open']");
+    await open.waitFor({ timeout: 15_000 });
+    await open.click();
+    await page.waitForURL(/\/worker/, { timeout: 15_000 });
+    const back = page.locator("[data-cy='w-office']");
+    await back.waitFor({ timeout: 15_000 });
+    await back.click();
+    await page.waitForURL(/\/field\/workers/, { timeout: 15_000 });
+    expect(
+      new URL(page.url()).pathname === "/field/workers",
+      `landed on ${page.url()}`,
+    );
+  }));

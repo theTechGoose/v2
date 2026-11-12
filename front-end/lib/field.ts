@@ -34,25 +34,89 @@ export type DayLink = { href: string; key: string };
  * Tomorrow →". Any other day: "← Previous day · Today · Next day →". A day
  * after today is a read-only preview (REQ-141: no acting on the future).
  */
-export function workerDayNav(date: string, today: string): {
+export function workerDayNav(date: string, today: string, from?: string): {
   prev: DayLink;
   today: string | null;
   next: DayLink;
   preview: boolean;
 } {
   const onToday = date === today;
+  // REQ-417 — a day change keeps the office's way back (?from=)
+  const keep = from ? `from=${encodeURIComponent(from)}` : "";
   return {
     prev: {
-      href: `/worker?date=${shiftIso(date, -1)}`,
+      href: `/worker?date=${shiftIso(date, -1)}${keep && `&${keep}`}`,
       key: onToday ? "worker.yesterday" : "worker.prevDay",
     },
-    today: onToday ? null : "/worker",
+    today: onToday ? null : `/worker${keep && `?${keep}`}`,
     next: {
-      href: `/worker?date=${shiftIso(date, 1)}`,
+      href: `/worker?date=${shiftIso(date, 1)}${keep && `&${keep}`}`,
       key: onToday ? "worker.tomorrow" : "worker.nextDay",
     },
     preview: date > today,
   };
+}
+
+/** REQ-417 — where "Back to office" goes when nothing says where the owner came from */
+export const WORKER_OFFICE_FALLBACK = "/field/tasks";
+
+/** the office app's own top-level sections — the only places "Back to office" may lead */
+const OFFICE_SECTIONS = new Set([
+  "dashboard",
+  "field",
+  "customers",
+  "clients",
+  "quotes",
+  "invoices",
+  "payments",
+  "messages",
+  "assistant",
+  "settings",
+  "contracts",
+  "work-orders",
+  "plan",
+  "accounts-manager",
+  "admin",
+  "admins",
+]);
+
+/** a same-origin path into one of the office sections, or null */
+function officePath(raw: string | null | undefined): string | null {
+  if (!raw) return null;
+  // a plain absolute path: no scheme, no "//host", no backslash, no control chars
+  if (!/^\/[A-Za-z0-9\-._~/]*(\?[A-Za-z0-9\-._~/%=&+]*)?$/.test(raw)) {
+    return null;
+  }
+  if (raw.startsWith("//")) return null;
+  const section = raw.slice(1).split(/[/?]/)[0];
+  return OFFICE_SECTIONS.has(section) ? raw : null;
+}
+
+/**
+ * REQ-417 (demo m44, cycle 2) — /worker's "Back to office" link goes back to
+ * the office page the owner opened the worker view from: the `?from=` param
+ * (the office's "Open the worker view" links set it), else a same-origin
+ * Referer, each allow-listed to the office's own sections; else /field/tasks.
+ */
+export function workerOfficeHref(
+  from: string | null | undefined,
+  referer: string | null | undefined,
+  origin: string,
+): string {
+  const fromParam = officePath(from);
+  if (fromParam) return fromParam;
+  if (referer) {
+    try {
+      const u = new URL(referer);
+      if (u.origin === origin) {
+        const p = officePath(`${u.pathname}${u.search}`);
+        if (p) return p;
+      }
+    } catch {
+      // not a URL — ignore it
+    }
+  }
+  return WORKER_OFFICE_FALLBACK;
 }
 
 /** "Mon, Oct 12" / "lun, 12 oct" */

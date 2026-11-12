@@ -5,7 +5,10 @@
  * no dashboard chrome.
  * REQ-282 — an owner who opens it from the office sidebar is still signed in:
  * the route reads that session (no cookie → no backend call) and the island
- * shows a "Back to office" link to /field/tasks. A worker's phone never sees it.
+ * shows a "Back to office" link. A worker's phone never sees it.
+ * REQ-417 (demo m44) — that link goes back to the office page the owner came
+ * from: `?from=` or a same-origin Referer, allow-listed (workerOfficeHref);
+ * /field/tasks when neither says.
  */
 import { asset, Head } from "fresh/runtime";
 import { define } from "../../utils.ts";
@@ -13,6 +16,7 @@ import DocTitle from "../../components/DocTitle.tsx";
 import { type Lang, tFor } from "../../lib/i18n.ts";
 import { langFromCookie } from "../../lib/lang.ts";
 import { loadUser } from "../../lib/auth.ts";
+import { workerOfficeHref } from "../../lib/field.ts";
 import WorkerScreen from "../../islands/WorkerScreen.tsx";
 
 export default define.page(async function WorkerRoute(ctx) {
@@ -24,6 +28,13 @@ export default define.page(async function WorkerRoute(ctx) {
   ctx.state.lang = lang;
   const date = url.searchParams.get("date") ?? undefined;
   const office = !!(await loadUser(ctx.req));
+  const officeHref = office
+    ? workerOfficeHref(
+      url.searchParams.get("from"),
+      ctx.req.headers.get("referer"),
+      url.origin,
+    )
+    : undefined;
   return (
     <>
       <Head>
@@ -40,6 +51,7 @@ export default define.page(async function WorkerRoute(ctx) {
         langChosen={qLang === "en" || qLang === "es"}
         initialDate={date}
         office={office}
+        officeHref={officeHref}
       />
     </>
   );
