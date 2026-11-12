@@ -1472,7 +1472,7 @@
   "invoicesPage.back.eyebrow": "Detalle de la factura",
   "invoicesPage.back.mute": "Silenciar",
   "invoicesPage.back.nudge": "Enviar recordatorio",
-  "invoicesPage.back.nudgeClaimedAsk": "{name} dice que pagó por {method}{ref}. ¿Enviar un recordatorio de pago de todos modos?",
+  "invoicesPage.back.nudgeClaimedAsk": "{name} dice que pagó {method}{ref}. ¿Enviar un recordatorio de pago de todos modos?",
   "invoicesPage.back.nudgeClaimedYes": "Enviar de todos modos",
   "invoicesPage.back.nudgeClaimedNo": "Cancelar",
   "invoicesPage.back.changeDate": "Cambiar fecha",

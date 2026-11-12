@@ -1472,7 +1472,7 @@
   "invoicesPage.back.eyebrow": "Invoice detail",
   "invoicesPage.back.mute": "Mute",
   "invoicesPage.back.nudge": "Send a nudge",
-  "invoicesPage.back.nudgeClaimedAsk": "{name} says they paid via {method}{ref}. Send a payment reminder anyway?",
+  "invoicesPage.back.nudgeClaimedAsk": "{name} says they paid {method}{ref}. Send a payment reminder anyway?",
   "invoicesPage.back.nudgeClaimedYes": "Send anyway",
   "invoicesPage.back.nudgeClaimedNo": "Cancel",
   "invoicesPage.back.changeDate": "Change date",
