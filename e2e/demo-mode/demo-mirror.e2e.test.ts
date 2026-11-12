@@ -209,9 +209,53 @@ Deno.test("REQ-242: the stage mirrors the customer's actual screen — connectin
         "M10: no frame before the customer's first snapshot",
       );
 
+      // REQ-370 (demo m23) — the staff browser fetches the replay's stylesheets for the first
+      // time: they are held here, and while they are the frame is NOT shown unstyled — the
+      // stage keeps "Connecting to Ana Torres" up — until they land (or STYLE_WAIT_MS passes)
+      let heldCss = 0;
+      let release!: () => void;
+      const held = new Promise<void>((r) => (release = r));
+      const CSS = /\.css(\?|$)/;
+      await page.route(CSS, async (route) => {
+        let inFrame = false;
+        try {
+          inFrame = route.request().frame() !== page.mainFrame();
+        } catch { /* a worker's request */ }
+        if (inFrame) {
+          heldCss++;
+          await held;
+        }
+        await route.continue().catch(() => {});
+      });
+
       // 2. the customer opens the assistant: the stage shows their exact viewport, no script inside
       await userPage.goto(`${baseUrl}/assistant`);
       await userPage.locator(".composer__input").waitFor({ timeout: 20_000 });
+      await until(
+        "REQ-370: the snapshot is in the frame and its stylesheet is asked for",
+        async () =>
+          heldCss > 0 &&
+          await mirror.count(page, "link[rel='stylesheet']") > 0,
+        25_000,
+      );
+      const shownUnstyled = await page.locator(FRAME).isVisible().catch(() =>
+        false
+      );
+      const stillConnecting = await page.locator(
+        "[data-cy='demo-connecting']",
+      ).isVisible().catch(() => false);
+      release();
+      await page.unroute(CSS);
+      expect.eq(
+        shownUnstyled,
+        false,
+        "REQ-370 (m23): the frame is not shown while its stylesheets load",
+      );
+      expect.eq(
+        stillConnecting,
+        true,
+        "REQ-370 (m23): 'Connecting to…' stays up until the frame is styled",
+      );
       // REQ-309 (demo m26) — the pill and the frame tell ONE story: the pill never says Live
       // while the frame still says it is connecting; both turn with the first snapshot
       const STATUS = "[data-cy='demo-status']";

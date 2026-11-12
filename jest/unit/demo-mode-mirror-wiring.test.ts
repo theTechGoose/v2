@@ -266,7 +266,11 @@ describe("REQ-309 (demo M19/m14/m26) — a gap is found while the customer is id
       stage.indexOf("const pillStyle ="),
     );
     expect(label).toMatch(
-      /status === "direct" \|\| status === "relay"\)?\s*\?\s*mirrored\s*\?\s*t\("demoMode\.live"\)\s*:\s*t\("demoMode\.connecting"\)/,
+      /status === "direct" \|\| status === "relay"\)?\s*\?\s*look\.visibility === "visible"\s*\?\s*t\("demoMode\.live"\)\s*:\s*t\("demoMode\.connecting"\)/,
+    );
+    // REQ-370 — the overlay keys on the same fact: the frame shown (a styled snapshot in it)
+    expect(stage).toMatch(
+      /\{look\.visibility === "hidden" && \(\s*<div\s+data-cy="demo-connecting"/,
     );
   });
 

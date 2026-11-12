@@ -17,7 +17,9 @@ const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), "utf8");
 describe("REQ-297 m27 — the frame's look from the link status", () => {
   test("REQ-297 live with a snapshot: visible, no filter, no overlay", () => {
     for (const status of ["direct", "relay"] as const) {
-      expect(stageFrameLook({ status, mirrored: true, stale: false })).toEqual({
+      expect(
+        stageFrameLook({ status, mirrored: true, stale: false, styled: true }),
+      ).toEqual({
         visibility: "visible",
         filter: "none",
         waiting: false,
@@ -30,6 +32,7 @@ describe("REQ-297 m27 — the frame's look from the link status", () => {
       status: "waiting",
       mirrored: true,
       stale: true,
+      styled: true, // REQ-370 — the replay is styled
     });
     expect(look.visibility).toBe("visible");
     expect(look.filter).toBe(WAITING_FILTER);
@@ -43,6 +46,7 @@ describe("REQ-297 m27 — the frame's look from the link status", () => {
       status: "direct",
       mirrored: true,
       stale: true,
+      styled: true, // REQ-370 — the replay is styled
     });
     expect(look.filter).toBe(WAITING_FILTER);
     expect(look.waiting).toBe(true);
@@ -53,6 +57,7 @@ describe("REQ-297 m27 — the frame's look from the link status", () => {
       status: "waiting",
       mirrored: false,
       stale: false,
+      styled: true, // REQ-370 — the replay is styled
     });
     expect(look.visibility).toBe("hidden");
     expect(look.waiting).toBe(false);
@@ -62,7 +67,12 @@ describe("REQ-297 m27 — the frame's look from the link status", () => {
     for (
       const status of ["ended", "replaced", "closed", "connecting"] as const
     ) {
-      const look = stageFrameLook({ status, mirrored: true, stale: false });
+      const look = stageFrameLook({
+        status,
+        mirrored: true,
+        stale: false,
+        styled: true,
+      });
       expect(look.filter).toBe("none");
       expect(look.waiting).toBe(false);
     }
