@@ -2,10 +2,12 @@ import { assert, assertEquals } from "@std/assert";
 import {
   _resetForTest,
   type CachedDash,
+  patchCachedLanguage,
   readCached,
   refreshDash,
   subscribeDash,
 } from "./dash-cache.ts";
+import { langSignal, setLang } from "./i18n.ts";
 import type { DashboardStats } from "../clients/dashboard.ts";
 import type { ProfileSnapshot } from "../clients/profile.ts";
 
@@ -289,4 +291,80 @@ Deno.test("dash-cache: works with sessionStorage missing entirely (SSR / private
   const snap = await refreshDash();
   assertEquals(snap.stats?.customers, 1);
   assertEquals(readCached(), snap);
+});
+
+// --- REQ-422 (demo-loop cycle 2, issue m48): a profile read that was already
+// in flight when the user picked a language must not flip the UI back.
+function profileWithLang(language: "en" | "es"): ProfileSnapshot {
+  return {
+    ...SAMPLE_PROFILE,
+    user: { ...SAMPLE_PROFILE.user, language },
+  } as ProfileSnapshot;
+}
+
+Deno.test("REQ-422 (m48): a stale refresh started before the EN click does not revert the language", async () => {
+  installStubStorage();
+  try {
+    setLang("es", { fromServer: true });
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    _resetForTest({
+      // The slow first-visit read: the server snapshot still says "es".
+      stats: async () => {
+        await gate;
+        return SAMPLE_STATS;
+      },
+      profile: () => Promise.resolve(profileWithLang("es")),
+    });
+    const pending = refreshDash(); // dashboard mount, before the click
+    setLang("en"); // the topbar EN click
+    release();
+    const snap = await pending;
+    assertEquals(
+      langSignal.value,
+      "en",
+      "the stale read flipped EN back to ES",
+    );
+    assertEquals(snap.profile?.user?.language, "en");
+    assertEquals(readCached()?.profile?.user?.language, "en");
+  } finally {
+    setLang("es", { fromServer: true });
+    uninstallStubStorage();
+  }
+});
+
+Deno.test("REQ-422 (m48): a refresh started after the choice still seeds the server's language", async () => {
+  installStubStorage();
+  try {
+    setLang("en"); // an earlier local choice…
+    _resetForTest({
+      stats: () => Promise.resolve(SAMPLE_STATS),
+      profile: () => Promise.resolve(profileWithLang("es")),
+    });
+    await refreshDash(); // …then a read that starts afterwards wins
+    assertEquals(langSignal.value, "es");
+  } finally {
+    setLang("es", { fromServer: true });
+    uninstallStubStorage();
+  }
+});
+
+Deno.test("REQ-422 (m48): patchCachedLanguage updates the cached profile and its storage copy", async () => {
+  installStubStorage();
+  try {
+    _resetForTest({
+      stats: () => Promise.resolve(SAMPLE_STATS),
+      profile: () => Promise.resolve(profileWithLang("es")),
+    });
+    await refreshDash();
+    patchCachedLanguage("en");
+    assertEquals(readCached()?.profile?.user?.language, "en");
+    const raw = JSON.parse(
+      globalThis.sessionStorage.getItem("pm:dash-cache:v1")!,
+    );
+    assertEquals(raw.profile.user.language, "en");
+  } finally {
+    setLang("es", { fromServer: true });
+    uninstallStubStorage();
+  }
 });
