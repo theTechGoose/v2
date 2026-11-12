@@ -23,6 +23,7 @@ import type { Quote } from "@paperwork/dto/quote.ts";
 import type { Invoice, PaymentMethod } from "@paperwork/dto/invoice.ts";
 import { isAccepted } from "#quote-flow/quote-status.ts";
 import { groupVisits } from "#quote-flow/visit-groups.ts";
+import { sniffLogoImage } from "#quote-flow/logo-image.ts";
 import { AcceptedPaymentMethods } from "@profile/dto/business-identity.ts";
 import { PaymentStore } from "@paperwork/domain/data/payment-store/mod.ts";
 import type { ChangeOrder } from "@paperwork/dto/change-order.ts";
@@ -165,12 +166,14 @@ export class PaperworkPublicController {
       const ident = await this.identity.get(ownerId).catch(() => null);
       const fileId = ident?.logoFileId;
       if (!fileId) return ctx.json({ error: "no_logo" }, 404);
-      const meta = await this.files.getOwnedMeta(fileId, ownerId);
+      // REQ-252 (M30): only an image is ever served as the logo, typed by its bytes
+      const type = await logoImageType(this.files, fileId, ownerId);
+      if (!type) return ctx.json({ error: "no_logo" }, 404);
       const bytes = await this.files.readBytes(fileId);
       return new Response(bytes as BodyInit, {
         status: 200,
         headers: {
-          "content-type": meta.mimeType,
+          "content-type": type,
           "content-length": String(bytes.length),
           // Short-lived cache: replacing the logo shows up within minutes.
           "cache-control": "public, max-age=300",
@@ -532,7 +535,13 @@ export class PaperworkPublicController {
         }
       }
       const [contractor, customer, related, cos] = await Promise.all([
-        loadContractor(this.users, this.identity, this.addresses, q.userId),
+        loadContractor(
+          this.users,
+          this.identity,
+          this.addresses,
+          this.files,
+          q.userId,
+        ),
         // Full public customer projection (name/phone/email) — the /q page
         // renders the agreement's To/Para contact card (P-13). REQ-204: an
         // issued quote shows the customer as they were when it was issued.
@@ -799,7 +808,13 @@ export class PaperworkPublicController {
       const [contractor, customer, quote, siblings, cos, payments] =
         await Promise
           .all([
-            loadContractor(this.users, this.identity, this.addresses, i.userId),
+            loadContractor(
+              this.users,
+              this.identity,
+              this.addresses,
+              this.files,
+              i.userId,
+            ),
             // REQ-204: an issued invoice shows the customer as they were when it was issued
             lookupCustomerPublic(
               this.customers,
@@ -1171,10 +1186,26 @@ interface PublicContractor {
 
 /** Public-safe contractor projection — never returns internal IDs or
  *  private profile fields (insurance/tax/etc.). */
+/** REQ-252 (M30) — the logo's image type when the file is the owner's and its bytes are an
+ *  image; null otherwise (a file the old unchecked path let through, or one that is gone). */
+async function logoImageType(
+  files: FileStore,
+  fileId: string,
+  ownerId: string,
+): Promise<string | null> {
+  try {
+    await files.getOwnedMeta(fileId, ownerId);
+    return sniffLogoImage(await files.readHead(fileId));
+  } catch {
+    return null;
+  }
+}
+
 async function loadContractor(
   users: UserStore,
   identity: BusinessIdentityStore,
   addresses: BusinessAddressStore,
+  files: FileStore,
   ownerId: string,
 ): Promise<PublicContractor | undefined> {
   try {
@@ -1198,7 +1229,9 @@ async function loadContractor(
         ident?.acceptedPaymentMethods,
       ),
       commsLanguage: ident?.commsLanguage === "es" ? "es" : "en",
-      hasLogo: !!ident?.logoFileId,
+      // REQ-252: no <img> for a logo that would not draw
+      hasLogo: !!ident?.logoFileId &&
+        (await logoImageType(files, ident.logoFileId, ownerId)) !== null,
     };
   } catch {
     return undefined;

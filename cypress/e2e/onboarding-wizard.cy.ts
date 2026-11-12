@@ -271,10 +271,18 @@ describe("Onboarding wizard — education + hand-off", () => {
       name: "Rafa",
       email: "rafa@monsterroofing.com",
     });
-    cy.request("PUT", "/api/profile/identity", {
-      businessName: "Monster Roofing Co",
-      logoFileId: "seed-logo",
-      acceptedPaymentMethods: { venmo: { enabled: true, handle: "@rafa" } },
+    // REQ-252: the logo must be a real image the account uploaded
+    cy.request("POST", "/api/files", {
+      filename: "logo.png",
+      mimeType: "image/png",
+      base64:
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==",
+    }).then((up) => {
+      cy.request("PUT", "/api/profile/identity", {
+        businessName: "Monster Roofing Co",
+        logoFileId: up.body.id,
+        acceptedPaymentMethods: { venmo: { enabled: true, handle: "@rafa" } },
+      });
     });
     cy.request("PUT", "/api/profile/address", {
       street: "123 Palm Ave",

@@ -6,6 +6,7 @@ import { PaperworkModule } from "@paperwork/mod-root.ts";
 import { UsersModule } from "@users/mod-root.ts";
 import { OtpStore } from "@users/domain/data/otp-store/mod.ts";
 import { resetKv } from "@core/data/kv/mod.ts";
+import { BusinessIdentityStore } from "@profile/domain/data/business-identity-store/mod.ts";
 
 @Module({ imports: [UsersModule, PaperworkModule] })
 class TestApp {}
@@ -571,6 +572,54 @@ Deno.test("public e2e: claim-payment is 409 when invoice already paid", async ()
     );
     assertEquals(res.status, 409);
     await res.body?.cancel();
+  } finally {
+    await server.stop();
+    await resetKv();
+  }
+});
+
+// ── REQ-252 (demo issue M30): a logo on record that is not an image never reaches a customer ──
+
+Deno.test("REQ-252 public e2e: a logo on record that is not an image (left by the old unchecked path) — /public-logo is 404 and the public quote says hasLogo false; a real PNG is served as image/png", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const server = await bootstrapServer(TestApp, { port: PORT, swagger: false });
+  await server.listen();
+  try {
+    const sid = await login(PORT);
+    const q = await fetch(`http://localhost:${PORT}/quotes`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-session-id": sid },
+      body: JSON.stringify({ summary: "Job", lineItems: [] }),
+    }).then((r) => r.json());
+    const upload = async (filename: string, mimeType: string, bytes: Uint8Array) =>
+      (await fetch(`http://localhost:${PORT}/files`, {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-session-id": sid },
+        body: JSON.stringify({ filename, mimeType, base64: btoa(String.fromCharCode(...bytes)) }),
+      }).then((r) => r.json())) as { id: string; userId: string };
+    // the demo's file: text bytes named factura.pdf — stored straight on the identity, as the old path did
+    const junk = await upload("factura.pdf", "application/pdf", new TextEncoder().encode("Factura 001\n"));
+    await new BusinessIdentityStore().upsert(junk.userId, { businessName: "Ana Roofing", logoFileId: junk.id });
+
+    const logo = await fetch(`http://localhost:${PORT}/public-logo/quote/${q.id}`);
+    await drain(logo);
+    assertEquals(logo.status, 404, "a non-image is never served as the logo");
+    const pub = await fetch(`http://localhost:${PORT}/quotes/${q.id}/public`).then((r) => r.json());
+    assertEquals(pub.contractor.hasLogo, false, "the page draws no <img> for it");
+
+    const png = await upload(
+      "logo.png",
+      "image/png",
+      Uint8Array.from(atob("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="), (c) => c.charCodeAt(0)),
+    );
+    await new BusinessIdentityStore().upsert(png.userId, { logoFileId: png.id });
+    const ok = await fetch(`http://localhost:${PORT}/public-logo/quote/${q.id}`);
+    assertEquals(ok.status, 200);
+    assertEquals(ok.headers.get("content-type"), "image/png");
+    await drain(ok);
+    const pub2 = await fetch(`http://localhost:${PORT}/quotes/${q.id}/public`).then((r) => r.json());
+    assertEquals(pub2.contractor.hasLogo, true);
   } finally {
     await server.stop();
     await resetKv();

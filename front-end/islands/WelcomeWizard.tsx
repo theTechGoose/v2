@@ -37,6 +37,10 @@ import { PlanCards } from "../components/PlanCards.tsx";
 import { handoffPage, pickErrorOf, planViewOf, resumesAfterPlan } from "../lib/plan-return.ts";
 import { indexAfterPlan, openSteps } from "../lib/welcome-steps.ts";
 import { filesClient } from "../clients/files.ts";
+import {
+  isLogoImageType,
+  LOGO_IMAGE_ACCEPT,
+} from "../../shared/quote-flow/logo-image.ts"; // REQ-252
 import { stateName, US_STATE_OPTIONS } from "../lib/us-states.ts";
 import { api } from "../lib/api.ts";
 import { type AddressSuggestion, suggestAddresses } from "../lib/mapbox.ts";
@@ -812,6 +816,11 @@ function LogoStep({ ctx }: { ctx: StepCtx }) {
 
   async function onFile(file: File | undefined) {
     if (!file || busy) return;
+    // REQ-252 (M30): only an image is a logo — refused here, before any upload
+    if (!isLogoImageType(file.type)) {
+      setErr(t("welcome.logo.notImage"));
+      return;
+    }
     setBusy(true);
     setErr("");
     try {
@@ -835,8 +844,13 @@ function LogoStep({ ctx }: { ctx: StepCtx }) {
       });
       ctx.patchSnap({ identity: { ...(ctx.snap.identity ?? {}), ...updated } });
       ctx.advance();
-    } catch {
-      setErr(t("welcome.saveError"));
+    } catch (e) {
+      // REQ-252: the server refuses a logo that is not an image (422 logo_not_image)
+      setErr(
+        (e as { status?: number })?.status === 422
+          ? t("welcome.logo.notImage")
+          : t("welcome.saveError"),
+      );
     } finally {
       setBusy(false);
     }
@@ -860,7 +874,7 @@ function LogoStep({ ctx }: { ctx: StepCtx }) {
         <input
           class="welcome__file-input"
           type="file"
-          accept="image/*"
+          accept={LOGO_IMAGE_ACCEPT}
           // deno-lint-ignore no-explicit-any
           onChange={(e: any) => onFile(e.currentTarget.files?.[0])}
         />
