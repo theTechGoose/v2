@@ -30,7 +30,9 @@ describe("REQ-494 the /worker EN/ES pick survives re-entry; the demo pill keeps 
 
   test("DemoModeOverlay's strings follow demoChromeLang (the viewer's stored language on /worker)", () => {
     const src = read("front-end/islands/DemoModeOverlay.tsx");
-    expect(src).toMatch(/demoChromeLang\(/);
+    // REQ-544 (cycle 4, m49): the chrome t moved to lib/demo-chrome-t.ts so the pill's children share it
+    expect(src).toMatch(/import \{ demoChromeT as t \} from "\.\.\/lib\/demo-chrome-t\.ts"/);
+    expect(read("front-end/lib/demo-chrome-t.ts")).toMatch(/demoChromeLang\(/);
     expect(src).not.toMatch(/import \{ t \} from "\.\.\/lib\/i18n\.ts"/);
   });
 });

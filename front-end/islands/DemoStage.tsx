@@ -1380,7 +1380,7 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
             />
             {t("demoMode.presenting", { name })}
           </span>
-          <PresenterChips presenters={demo.presenters} me={demo.pid} />
+          <PresenterChips presenters={demo.presenters} me={demo.pid} t={t} />
           <span
             data-cy="demo-status"
             style="padding:2px 8px;border-radius:999px;background:rgba(255,255,255,.18);font-size:11.5px;font-weight:700"
@@ -1420,7 +1420,7 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
             </span>
           )}
           {/* REQ-235 — End asks first */}
-          <EndDemo onEnd={end} disabled={ended} />
+          <EndDemo onEnd={end} disabled={ended} t={t} />
         </div>
       )}
     </div>

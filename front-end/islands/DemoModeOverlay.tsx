@@ -53,8 +53,7 @@
  * pointer off this screen (`o: 1`) is a small marker on the edge, no name tag.
  */
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
-import { langSignal, tFor, type Vars } from "../lib/i18n.ts";
-import { demoChromeLang, storedLang } from "../lib/lang.ts";
+import { demoChromeT as t } from "../lib/demo-chrome-t.ts";
 import { fenceClicks } from "../lib/backdrop-dismiss.ts";
 import {
   DEMO_OPENING_EVENT,
@@ -155,20 +154,8 @@ import {
 import { pillCopy } from "../../shared/demo-mode/pill-copy.ts";
 import type { PillFace, Rect } from "../../shared/demo-mode/protocol.ts";
 
-/**
- * REQ-494 (demo-loop cycle 3, M43) — the demo chrome speaks the viewer's
- * language. On /worker the page runs in a signed-in worker's language for the
- * session (REQ-285/416); the pill keeps the viewer's stored choice there
- * (demoChromeLang). Reads langSignal, so a toggle still re-renders it.
- */
-function t(key: string, vars?: Vars): string {
-  const lang = demoChromeLang({
-    path: globalThis.location?.pathname ?? "",
-    live: langSignal.value,
-    stored: storedLang(),
-  });
-  return tFor(lang, key, vars);
-}
+// REQ-494 / REQ-544 — `t` is the demo chrome's (lib/demo-chrome-t.ts): on /worker it keeps
+// the viewer's stored language, not the signed-in worker's.
 
 interface Demo {
   id: string;
@@ -1295,7 +1282,9 @@ export default function DemoModeOverlay() {
               </span>
             )
             : <span style={compact ? wrap : cut}>{guidingText}</span>}
-          {copy.showChips && <PresenterChips presenters={presenters} nowrap />}
+          {copy.showChips && (
+            <PresenterChips presenters={presenters} nowrap t={t} />
+          )}
         </span>
         {showGuide && (
           <span
@@ -1337,7 +1326,7 @@ export default function DemoModeOverlay() {
           </span>
         </button>
         {/* REQ-235 — End asks first */}
-        <EndDemo onEnd={end} />
+        <EndDemo onEnd={end} t={t} />
       </div>
     </div>
   );

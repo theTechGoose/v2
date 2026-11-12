@@ -9,17 +9,39 @@
  * REQ-379 (M28) — the customer's pill lets a click on its empty area through to the page; End, its
  * question and both answers take their own clicks (`pointer-events:auto`), so a click on the
  * question's words is never "outside" it.
+ *
+ * REQ-544 (demo-loop cycle 4, m49) — speaks the caller's language: the caller passes its `t`
+ * (the overlay's is the demo chrome's, which keeps the viewer's language on /worker; the stage's
+ * is the app's). Never the global t — on /worker that follows the signed-in worker.
  */
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
-import { t } from "../../lib/i18n.ts";
+import type { Vars } from "../../lib/i18n.ts";
 import { type EndAsk, endConfirm } from "../../../shared/demo-mode/ended.ts";
 
 const BTN =
   "padding:5px 12px;border-radius:8px;border:0;cursor:pointer;font:inherit;font-size:12px;font-weight:700;pointer-events:auto";
 
+/** The caller's string lookup (REQ-544). */
+export type DemoT = (key: string, vars?: Vars) => string;
+
+/** REQ-544 — End, its question and both answers, in the caller's language. */
+export function endDemoWords(t: DemoT) {
+  return {
+    end: t("demoMode.end"),
+    ask: t("demoMode.endAsk"),
+    yes: t("demoMode.endYes"),
+    no: t("demoMode.endNo"),
+  };
+}
+
 export default function EndDemo(
-  { onEnd, disabled = false }: { onEnd: () => void; disabled?: boolean },
+  { onEnd, disabled = false, t }: {
+    onEnd: () => void;
+    disabled?: boolean;
+    t: DemoT;
+  },
 ) {
+  const words = endDemoWords(t);
   const [s, setS] = useState<EndAsk>({ asking: false, armed: false });
   const onEndRef = useRef(onEnd);
   onEndRef.current = onEnd;
@@ -63,7 +85,7 @@ export default function EndDemo(
           disabled ? ";opacity:.55;cursor:default" : ""
         }`}
       >
-        {t("demoMode.end")}
+        {words.end}
       </button>
     );
   }
@@ -77,7 +99,7 @@ export default function EndDemo(
       }}
       style="display:inline-flex;align-items:center;gap:8px;flex-wrap:wrap;pointer-events:auto"
     >
-      <span style="font-weight:700">{t("demoMode.endAsk")}</span>
+      <span style="font-weight:700">{words.ask}</span>
       <button
         type="button"
         data-cy="demo-end-confirm"
@@ -87,7 +109,7 @@ export default function EndDemo(
           s.armed ? "" : ";opacity:.55;cursor:default"
         }`}
       >
-        {t("demoMode.endYes")}
+        {words.yes}
       </button>
       <button
         ref={keepRef}
@@ -96,7 +118,7 @@ export default function EndDemo(
         onClick={ask.cancel}
         style="padding:5px 6px;border:0;background:transparent;color:#fff;text-decoration:underline;cursor:pointer;font:inherit;font-size:12px;font-weight:600;pointer-events:auto"
       >
-        {t("demoMode.endNo")}
+        {words.no}
       </button>
     </span>
   );
