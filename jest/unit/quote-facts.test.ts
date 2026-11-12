@@ -104,7 +104,7 @@ describe("REQ-265 extractQuoteFacts — what the user already typed", () => {
       customerEmail: null,
       startDate: null,
       paymentTerms: null,
-      // REQ-343: "takes 3 weeks" IS typed — it seeds the custom duration.
+      // REQ-343 / REQ-330 (M21): "takes 3 weeks" IS typed — the duration.
       duration: { n: 3, unit: "weeks" },
     });
     // a date that is not a START date is not taken
@@ -212,5 +212,56 @@ describe("REQ-265 the assistant reads the facts at every step", () => {
       expect(typeof es[k]).toBe("string");
       expect(en[k]).not.toBe(es[k]);
     }
+  });
+});
+
+/**
+ * REQ-330 (demo cycle 1, M21): "Thinking 4 weeks" in the job message was
+ * never offered on the duration ("wraps") step — wizardPrefillFor handled only
+ * start_date and payment_terms. A typed duration is now a fact, offered as
+ * the wizard's one-tap pre-selection in the wizard's language.
+ */
+describe("REQ-330 M21 extractDuration — the typed time to complete", () => {
+  test("'Thinking 4 weeks' → 4 weeks, offered as a custom duration on the wraps step", () => {
+    const f = mod.extractQuoteFacts(
+      "Master bath gut for the Hendersons on Barton Hills Dr 78704. Thinking 4 weeks. Start Dec 1",
+      TODAY,
+    );
+    expect(f.duration).toEqual({ n: 4, unit: "weeks" });
+    expect(mod.wizardPrefillFor("wraps", f, "en")).toEqual({
+      optionId: "custom",
+      customValue: "4 weeks",
+    });
+    expect(mod.wizardPrefillFor("wraps", f, "es")).toEqual({
+      optionId: "custom",
+      customValue: "4 semanas",
+    });
+  });
+
+  test("Spanish: '3 días' and 'dos semanas'", () => {
+    expect(mod.extractDuration("Remodelar baño para la señora Gutierrez, 3 días")).toEqual({ n: 3, unit: "days" });
+    expect(mod.extractDuration("tomará dos semanas de trabajo")).toEqual({ n: 2, unit: "weeks" });
+    expect(mod.extractDuration("unos 2 meses")).toEqual({ n: 2, unit: "months" });
+  });
+
+  test("a duration that matches a preset pre-selects the preset", () => {
+    const f = (s: string) => mod.extractQuoteFacts(s, TODAY);
+    expect(mod.wizardPrefillFor("wraps", f("Paint 3 bedrooms, about 1 week"), "en")).toEqual({ optionId: "1_week" });
+    expect(mod.wizardPrefillFor("wraps", f("Paint 3 bedrooms, 2 weeks"), "en")).toEqual({ optionId: "2_weeks" });
+    expect(mod.wizardPrefillFor("wraps", f("Fix the faucet, one day job"), "en")).toEqual({ optionId: "1_day" });
+  });
+
+  test("a start offset or a warranty span is not a duration", () => {
+    expect(mod.extractDuration("Paint 3 bedrooms, start in 2 weeks")).toBeNull();
+    expect(mod.extractDuration("Paint 3 bedrooms, starting in 3 days")).toBeNull();
+    expect(mod.extractDuration("Pintar, empezamos en 2 semanas")).toBeNull();
+    expect(mod.extractDuration("Roof repair with a 2 week warranty")).toBeNull();
+    expect(mod.extractDuration("Paint 3 bedrooms")).toBeNull();
+    expect(mod.wizardPrefillFor("wraps", mod.extractQuoteFacts("Paint 3 bedrooms", TODAY), "en")).toBeNull();
+  });
+
+  test("the assistant hands the wraps step the wizard's language", () => {
+    const src = read("front-end/islands/AsstChat.tsx");
+    expect(src).toMatch(/wizardPrefillFor\(\s*payload\.stepId,\s*quoteFacts,\s*lang,?\s*\)/);
   });
 });

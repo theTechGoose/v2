@@ -75,7 +75,9 @@ import { deriveChatHeader } from "../../shared/quote-flow/chat-header.ts";
 import { pendingRevisionNotice } from "../../shared/documents/versions.ts";
 import { scopeBulletsFromRaw } from "../../shared/quote-flow/scope-from-raw.ts";
 import {
-  MAX_OPTION_BULLETS,
+  currentDetailsOption,
+  dedupeOptionsByBullets,
+  seedPickerOptions,
   widerBullets,
 } from "../../shared/quote-flow/option-bullets.ts";
 import {
@@ -355,9 +357,10 @@ function localFallbackOptions(
   lang: Lang,
 ): { options: JobOption[]; degraded: boolean } {
   const scoped = scopeBulletsFromRaw(raw, lang);
+  // REQ-330 (M21): every scope line survives — no cap.
   const base = scoped.degraded
     ? [tFor(lang, "asstChat.newJob")]
-    : scoped.bullets.slice(0, MAX_OPTION_BULLETS);
+    : scoped.bullets;
   const summary = base[0].split(/\s+/).slice(0, 8).join(" ");
   const jobName = summary.split(/\s+/).slice(0, 3).join(" ");
   // P-24: the three versions must be distinguishable at a glance. They used
@@ -379,7 +382,9 @@ function localFallbackOptions(
       bullets: widerBullets(base, tFor(lang, "asstChat.jobsiteCleanup")),
     },
   ];
-  return { options, degraded: scoped.degraded };
+  // REQ-330 (p15-7): a short job makes the "short" version equal to the
+  // full one — equal bullet sets collapse, never two cards alike.
+  return { options: dedupeOptionsByBullets(options), degraded: scoped.degraded };
 }
 
 /** P-26: the preview's send button brands the ACTION ("Send by Text +
@@ -2367,7 +2372,17 @@ export default function AsstChat({
    * picker shows the honest "Writing up your options…" wait — never a
    * client-side echo of the sentence that the model's cards then replace.
    */
-  async function openJobPicker() {
+  /** REQ-330 (M23): the review card's CURRENT job details, seeded into the
+   *  picker as a pre-selected, editable first option when the pencil
+   *  reopens it — bullets verbatim, title kept — beside the regenerated
+   *  alternatives. */
+  interface PickerSeed {
+    lines: string[];
+    jobName?: string | null;
+    summary?: string | null;
+  }
+
+  async function openJobPicker(seed?: PickerSeed) {
     const raw = (jobPolishRawRef.current ?? quote?.description ?? "").trim();
     optionsTouchedRef.current = false;
     // No snapshot here: this picker is the end-of-wizard "send step" (it
@@ -2387,7 +2402,7 @@ export default function AsstChat({
       });
     optionsInFlightRef.current = null;
     const res = await inflight;
-    settleJobOptions(raw, res);
+    settleJobOptions(raw, res, seed);
   }
 
   /** REQ-027 (NW-11): the picker opens on the wait state — dots and
@@ -2411,14 +2426,29 @@ export default function AsstChat({
   function settleJobOptions(
     raw: string,
     res: { options: JobOption[]; degraded?: boolean } | null,
+    seed?: PickerSeed,
   ) {
     const usable = res?.options && res.options.length > 0 ? res.options : null;
+    // REQ-330 (M23): on an edit-reopen the current details are the first,
+    // pre-selected card — never regenerated, capped or renamed; the model's
+    // cards are alternatives beside it (and a degraded answer is not a
+    // problem: the current card stands on its own).
+    const current = seed && seed.lines.length > 0
+      ? currentDetailsOption({
+        lines: seed.lines,
+        jobName: seed.jobName,
+        summary: seed.summary,
+      })
+      : null;
+    const generated = usable ??
+      (current
+        ? []
+        : localFallbackOptions(raw || tFor(lang, "asstChat.newJob"), lang)
+          .options);
     const drafts = toOptionDrafts(
-      usable ??
-        localFallbackOptions(raw || tFor(lang, "asstChat.newJob"), lang)
-          .options,
+      current ? seedPickerOptions(current, generated) : generated,
     );
-    const degraded = !usable || res?.degraded === true;
+    const degraded = !current && (!usable || res?.degraded === true);
     const noScope = degraded && scopeBulletsFromRaw(raw, lang).degraded;
     if (degraded) customDraftRef.current = raw;
     setOptionsDegraded(degraded);
@@ -6728,7 +6758,14 @@ export default function AsstChat({
                               jobPolishRawRef.current = lines.length > 0
                                 ? lines.join("\n")
                                 : (quote?.summary ?? quote?.jobName ?? "");
-                              void openJobPicker();
+                              // REQ-330 (M23): the current lines, title and
+                              // summary are the first, pre-selected card;
+                              // the regenerated options sit beside it.
+                              void openJobPicker({
+                                lines,
+                                jobName: quote?.jobName,
+                                summary: quote?.summary,
+                              });
                             };
                             return (
                               <section class="quote-review__section">
@@ -7959,6 +7996,7 @@ export default function AsstChat({
                               const prefill = wizardPrefillFor(
                                 payload.stepId,
                                 quoteFacts,
+                                lang,
                               );
                               const prefillOpt = prefill
                                 ? opts.find((o) => o.id === prefill.optionId)
