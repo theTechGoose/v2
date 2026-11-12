@@ -113,3 +113,78 @@ Deno.test("REQ-273: /assistant's live-activity pill shows the event's text and '
       "the pill is hidden on a phone, as on the dashboard",
     );
   }));
+
+/**
+ * REQ-319 — demo-loop cycle 1, issue m12: the pill rotated back to an older
+ * event every 3.8 s and cut a long sentence off at 280 px. With the feed
+ * answering an older "Quote sent" AND a newer "accepted" (older first, as a
+ * stale rotation would surface it), the pill shows the newer one and stays on
+ * it across two of the old rotation periods; at 1280 px the whole sentence
+ * fits, no ellipsis, and the hover title carries the full words.
+ */
+const OLDER = "Quote sent to your customer Cobblestone Cafe for review";
+const NEWER = "John Miller accepted quote Q-1042";
+
+Deno.test("REQ-319: the live-activity pill shows the newest event only, never goes back to an older one, and the sentence is not cut off at desktop width", (t) =>
+  story(t, async ({ page, expect, http, baseUrl }) => {
+    const { auth } = await signIn(http, page, baseUrl);
+    await answerQuestions(http, auth, { name: "Ticker Story" });
+
+    await page.route("**/api/notifications?*", (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify([
+          {
+            id: "n-older",
+            userId: "u",
+            type: "quote_sent",
+            title:
+              `Quote sent to your customer <strong>Cobblestone Cafe</strong> for review`,
+            read: false,
+            createdAt: new Date(Date.now() - 180_000).toISOString(),
+          },
+          {
+            id: "n-newer",
+            userId: "u",
+            type: "quote_accepted",
+            title: `<strong>John Miller</strong> accepted quote Q-1042`,
+            read: false,
+            createdAt: new Date(Date.now() - 5_000).toISOString(),
+          },
+        ]),
+      }));
+
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await page.goto("/assistant");
+    const item = page.locator(".topbar__ticker .topbar__ticker-item").first();
+    await item.waitFor({ state: "visible", timeout: 25_000 });
+    const words = async () => (await item.innerText()).replace(/\s+/g, " ");
+    expect(
+      (await words()).includes(NEWER),
+      `the pill opens on the newest event (${await words()})`,
+    );
+    // Two of the old 3.8 s rotation periods: it must not go back to the older event.
+    for (let i = 0; i < 4; i++) {
+      await page.waitForTimeout(2_000);
+      const w = await words();
+      expect(
+        !w.includes(OLDER),
+        `the pill never went back to the older event (${w})`,
+      );
+      expect(w.includes(NEWER), `the pill stays on the newest event (${w})`);
+    }
+    const fit = await item.evaluate((el) => ({
+      scroll: el.scrollWidth,
+      client: el.clientWidth,
+    }));
+    expect(
+      fit.scroll <= fit.client,
+      `the whole sentence fits in the pill at 1280 px (${fit.scroll}px in ${fit.client}px)`,
+    );
+    expect.eq(
+      await item.getAttribute("title"),
+      NEWER,
+      "the hover title carries the event's full words",
+    );
+  }));

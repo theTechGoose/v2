@@ -12,6 +12,8 @@
  * lives behind a method on a per-page client (see clients/*.ts).
  */
 
+import { MUTATION_EVENT } from "./ticker-pick.ts";
+
 const SERVER_BACKEND_URL =
   (typeof Deno !== "undefined" ? Deno.env.get("BACKEND_URL") : undefined) ??
     "http://localhost:3000";
@@ -124,6 +126,13 @@ async function request<T>(
       res.status,
       parsed,
       `${method} ${path} failed: ${res.status}`,
+    );
+  }
+  // REQ-319: a successful client-side mutation tells the live islands (the
+  // topbar's activity pill) to re-fetch now rather than on their next poll.
+  if (method !== "GET" && !isServer()) {
+    globalThis.dispatchEvent(
+      new CustomEvent(MUTATION_EVENT, { detail: { method, path } }),
     );
   }
   return parsed as T;

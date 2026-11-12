@@ -761,11 +761,13 @@ body {
 /* Live activity ticker — rotates through recent events */
 .topbar__ticker {
   flex-shrink: 1;
-  /* REQ-273: never narrower than its content (dot + 120px of text + time);
-     an overflow:hidden flex item's auto minimum is 0, which let the text
-     collapse until only "● hace 1m" was left. */
-  min-width: min-content;
-  max-width: 280px;
+  /* REQ-273: never narrower than dot + 120px of text + time — an
+     overflow:hidden flex item's auto minimum is 0, which let the text
+     collapse until only "● hace 1m" was left. REQ-319: an explicit floor
+     (not min-content) so the pill sizes to its sentence up to the cap and
+     shows an ellipsis past it, instead of a fixed 120px track. */
+  min-width: 220px;
+  max-width: 280px; /* REQ-319: wider from 1024px, below */
   height: 36px;
   display: inline-flex;
   align-items: center;
@@ -784,6 +786,13 @@ body {
   background: #fff;
   border-color: rgba(81, 152, 67, 0.35);
   transform: translateY(-1px);
+}
+/* REQ-319 (demo m12): from a desktop width the pill gets room for the whole
+   sentence — "Quote sent to your c…" was the 280px cap's ellipsis. */
+@media (min-width: 1024px) {
+  .topbar__ticker {
+    max-width: 480px;
+  }
 }
 .topbar__ticker-dot {
   flex-shrink: 0;
@@ -806,17 +815,19 @@ body {
   }
 }
 .topbar__ticker-track {
-  flex: 1;
+  /* REQ-319: sized by the sentence (the item is in flow), shrinking to the
+     floor below when the pill hits its cap. */
+  flex: 0 1 auto;
   min-width: 120px; /* REQ-273: the event text always gets room */
   position: relative;
   height: 18px;
   overflow: hidden;
 }
 .topbar__ticker-item {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  align-items: center;
+  position: relative;
+  display: block;
+  max-width: 100%;
+  line-height: 18px;
   font-size: 12.5px;
   color: var(--brand-teal);
   font-weight: 500;

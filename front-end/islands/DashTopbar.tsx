@@ -18,6 +18,11 @@ import {
   refreshNotifications,
   subscribeNotifications,
 } from "../lib/notifications-feed.ts";
+import {
+  MUTATION_EVENT,
+  newestNotification,
+  tickerPlainText,
+} from "../lib/ticker-pick.ts";
 
 interface Props {
   /** @deprecated Ignored — the date is now computed reactively in-component
@@ -39,6 +44,10 @@ interface Props {
 // the ticker entirely. Showing seeded "Cobblestone Cafe paid $1,000" to a
 // brand-new account read as fake activity and misled first-run users.
 // The pill's age ("just now" / "4m ago") comes from tickerAge (REQ-273).
+// REQ-319 (demo m12): the pill shows the NEWEST event only — it used to
+// rotate through the last ten by position every 3.8 s, so a fresh "accepted
+// · just now" was followed by "Quote sent … 3m ago" and read as going
+// backwards. The interval below only re-renders so the age counts up.
 
 export default function DashTopbar(
   {
@@ -62,7 +71,7 @@ export default function DashTopbar(
     const live = readNotifications();
     return live.length > 0 ? live : initialNotifications;
   });
-  const [tickerIdx, setTickerIdx] = useState(0);
+  const [, setAgeTick] = useState(0);
   // The data-cy hook appears only after hydration so a test can never click
   // the hamburger before the pm:sb-toggle listener (DashSidebar) is live —
   // pre-hydration clicks were the "hamburger does not work" bug (PDF p8).
@@ -93,11 +102,18 @@ export default function DashTopbar(
     const unsub = subscribeNotifications((next) => {
       if (!stopped) setItems(next);
     });
+    // REQ-319: a mutation that went through lib/api (quote sent, invoice
+    // claimed…) refreshes the feed at once instead of waiting for the poll.
+    const onMutated = () => {
+      refreshNotifications().catch(() => {/* the poll retries */});
+    };
+    globalThis.addEventListener(MUTATION_EVENT, onMutated);
     const teardown = () => {
       stopped = true;
       stopA();
       stopB();
       unsub();
+      globalThis.removeEventListener(MUTATION_EVENT, onMutated);
     };
     // P-67: stop both polls the moment logout starts ("pm:logout", fired by
     // DashSidebar before it kills the session) or the page starts navigating
@@ -113,13 +129,12 @@ export default function DashTopbar(
   }, []);
 
   useEffect(() => {
-    const id = setInterval(() => setTickerIdx((n) => n + 1), 3_800);
+    const id = setInterval(() => setAgeTick((n) => n + 1), 3_800);
     return () => clearInterval(id);
   }, []);
 
-  const liveItems = items.length > 0 ? items : null;
-  const tickerItem = liveItems ? liveItems[tickerIdx % liveItems.length] : null;
-  // Recomputed on every rotation tick (3.8 s), so a shown event's age counts up.
+  const tickerItem = newestNotification(items);
+  // Recomputed on every age tick (3.8 s), so the shown event's age counts up.
   const age = tickerItem ? tickerAge(tickerItem.createdAt) : null;
   const ticker = tickerItem
     ? {
@@ -189,7 +204,10 @@ export default function DashTopbar(
             <span class="topbar__ticker-track" aria-live="polite">
               <span
                 class="topbar__ticker-item"
-                key={tickerIdx}
+                // keyed by the event so the slide-in plays once per new event
+                key={tickerItem!.id}
+                // REQ-319: the full sentence on hover, even where it is clipped
+                title={tickerPlainText(ticker.html)}
                 // Trusted server-derived activity markup (no user input).
                 // deno-lint-ignore react-no-danger
                 dangerouslySetInnerHTML={{ __html: ticker.html }}
