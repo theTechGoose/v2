@@ -40,6 +40,7 @@ import {
   outboundSenderName,
 } from "#quote-flow/outbound-identity.ts";
 import { resolveCommsLanguage } from "#quote-flow/comms-language.ts";
+import { withSendLang } from "#quote-flow/share-link.ts";
 import {
   localizeLineItems,
   quoteDescription,
@@ -709,7 +710,10 @@ export function renderQuoteHtml(
   };
   // CTA lands on the /q page — the one Quote + Agreement document the
   // customer reviews, accepts, and signs in a single ceremony.
-  const ctaUrl = `${APP_URL}/q/${q.id}`;
+  // REQ-342 (M13): the link carries the send language, so a cookie-less
+  // customer opens the document in the language it was sent in (REQ-048:
+  // `?lang=` on the link is the visitor's own pick).
+  const ctaUrl = withSendLang(`${APP_URL}/q/${q.id}`, lang);
   const ctaLabel = t(lang, "paperworkEmail.quote.ctaAccept");
 
   const customerFirst = customer?.name?.trim().split(/\s+/)[0];

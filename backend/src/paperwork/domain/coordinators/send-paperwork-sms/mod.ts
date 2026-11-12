@@ -16,6 +16,7 @@ import {
   senderIdentityRefusal,
 } from "#quote-flow/outbound-identity.ts";
 import { resolveCommsLanguage } from "#quote-flow/comms-language.ts";
+import { withSendLang } from "#quote-flow/share-link.ts";
 import {
   smsFailureCodeForReasonKey,
   type SmsFailureCode,
@@ -143,7 +144,7 @@ export class SendPaperworkSms {
       const shortUrl = await this.mintShortUrl(userId, {
         kind: "quote",
         id: quote.id,
-      });
+      }, lang);
       body = renderQuoteBody(quote, customer, sender, senderBiz, shortUrl);
     } else {
       const invoice = await publishPendingInvoice(this.invoices, input.resourceId, userId, senderAsPublisher(userId, sender?.name));
@@ -153,7 +154,7 @@ export class SendPaperworkSms {
       const shortUrl = await this.mintShortUrl(userId, {
         kind: "invoice",
         id: invoice.id,
-      });
+      }, lang);
       body = renderInvoiceBody(
         invoice,
         customer,
@@ -268,14 +269,18 @@ export class SendPaperworkSms {
 
   /** Mint (or reuse) a short code for the resource and return the
    *  customer-facing /s/<code> URL. Falls back to the canonical
-   *  long URL if the codegen path throws for any reason. */
+   *  long URL if the codegen path throws for any reason.
+   *  REQ-342 (M13): the URL carries the send language as `?lang=` (the
+   *  /s redirect forwards it onto /q or /i), so the customer opens the
+   *  document in the language it was sent in. */
   private async mintShortUrl(
     userId: string,
     r: { kind: "quote" | "invoice"; id: string },
+    lang?: "en" | "es",
   ): Promise<string> {
     try {
       const link = await this.shortlinks.findOrCreate(userId, r.kind, r.id);
-      return `${APP_URL}/s/${link.code}`;
+      return withSendLang(`${APP_URL}/s/${link.code}`, lang);
     } catch (err) {
       // findOrCreate now always yields a code (random, else deterministic), so
       // this only trips on a catastrophic KV failure where we genuinely can't
@@ -285,7 +290,7 @@ export class SendPaperworkSms {
         err,
       );
       const path = r.kind === "quote" ? `/q/${r.id}` : `/i/${r.id}`;
-      return `${APP_URL}${path}`;
+      return withSendLang(`${APP_URL}${path}`, lang);
     }
   }
 }

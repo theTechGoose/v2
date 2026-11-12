@@ -567,3 +567,58 @@ Deno.test("REQ-204 send-paperwork-email: a sent invoice's email says 'Invoice IN
   assert(!sent[0].htmlBody.includes("Someone"), "the renamed live record does not rewrite an issued bill");
   await resetKv();
 });
+
+// REQ-342 (demo-loop cycle 1, M13): the CTA link carries the send language,
+// so a cookie-less customer opens the quote in the language it was sent in.
+Deno.test("REQ-342 send-paperwork-email: a Spanish send's CTA is /q/<id>?lang=es; a send with no pick carries the resolved default, ?lang=en", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const { flow, customers, quotes, sent } = fresh();
+  await seedContractor("u-1");
+  const customer = await customers.create("u-1", {
+    name: "Juan",
+    email: "juan@acme.test",
+  });
+  const quote = await quotes.create("u-1", {
+    customerId: customer.id,
+    summary: "Pintar el baño",
+    lineItems: [{ description: "Pintura", quantity: 1, unit: "ea", price: 500 }],
+    estimatedTotal: 500,
+  });
+
+  const es = await flow.run("u-1", {
+    kind: "quote",
+    resourceId: quote.id,
+    language: "es",
+  });
+  assertEquals(es.ok, true);
+  assertStringIncludes(sent[0].htmlBody, `/q/${quote.id}?lang=es`);
+  assert(
+    !sent[0].htmlBody.includes(`/q/${quote.id}"`),
+    "no bare /q link remains in the Spanish email",
+  );
+
+  await resetKv();
+  const bare = fresh();
+  await seedContractor("u-2");
+  const c2 = await bare.customers.create("u-2", {
+    name: "Ann",
+    email: "ann@acme.test",
+  });
+  const q2 = await bare.quotes.create("u-2", {
+    customerId: c2.id,
+    summary: "Roof",
+    lineItems: [{ description: "Demo", quantity: 1, unit: "ea", price: 500 }],
+    estimatedTotal: 500,
+  });
+  const r2 = await bare.flow.run("u-2", { kind: "quote", resourceId: q2.id });
+  assertEquals(r2.ok, true);
+  // UX-28: the coordinator always resolves ONE send language (pick → stored
+  // default → en); the link names what the email went out in.
+  assertStringIncludes(bare.sent[0].htmlBody, `/q/${q2.id}?lang=en`);
+  assert(
+    !bare.sent[0].htmlBody.includes("?lang=es"),
+    "an English send never points the customer at the Spanish document",
+  );
+  await resetKv();
+});
