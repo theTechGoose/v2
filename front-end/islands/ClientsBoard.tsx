@@ -8,11 +8,15 @@
  * BuildCustomerCards) and no list-wide filtering here: the search box and
  * the chips report upward and the island asks the API for the page.
  */
-import type { ComponentChildren } from "preact";
+import type { ComponentChildren, JSX } from "preact";
 import { useEffect, useState } from "preact/hooks";
 import { I, ICN } from "../lib/dash-icons.tsx";
 import { tFor } from "../lib/i18n.ts";
-import type { ClientsFilter, CustomerCard } from "../clients/clients.ts";
+import {
+  clientsClient,
+  type ClientsFilter,
+  type CustomerCard,
+} from "../clients/clients.ts";
 import type { SubscriptionView } from "../clients/field.ts";
 import { fmtMoneyExact, perVisitCents } from "../lib/field.ts";
 import {
@@ -29,6 +33,13 @@ import {
 } from "../lib/clients-display.ts";
 import { messageHrefFor, nudgeActionFor } from "../lib/client-actions.ts";
 import { isChromeClick } from "../lib/backdrop-dismiss.ts";
+import {
+  apiFieldErrorKey,
+  type CardField,
+  cardFieldPatch,
+  openIdFromSearch,
+} from "../lib/customer-card-edit.ts";
+import { ApiError } from "../lib/api.ts";
 import {
   formatPhoneDisplay,
   telHref,
@@ -93,10 +104,213 @@ interface CardProps {
   lang: "en" | "es";
   /** REQ-390 (M18): set when another visible card shares this name — "C-002" / "···0177" */
   disambig?: string;
+  /** REQ-600: a contact row was saved — the page reloads the cards */
+  onSaved: () => void;
+}
+
+interface EditRowProps {
+  field: CardField;
+  icon: JSX.Element;
+  label: string;
+  /** "Add phone" — the row's control while the field is empty */
+  addLabel: string;
+  /** the stored value ("" when none) */
+  value: string;
+  /** what the row shows for it */
+  display: string;
+  /** tel: / mailto: for a filled contact */
+  href?: string;
+  inputType: "tel" | "email" | "text";
+  customerId: string;
+  onSaved: () => void;
+  lang: "en" | "es";
+}
+
+/**
+ * REQ-600 (demo-loop cycle 4, M5) — one panel row that edits in place: empty
+ * → an "Add phone" button; filled → the tel:/mailto: value and a pencil. The
+ * input saves through PUT /customers/:id with the New customer form's rule;
+ * a refusal is shown under the row.
+ */
+function EditRow(
+  {
+    field,
+    icon,
+    label,
+    addLabel,
+    value,
+    display,
+    href,
+    inputType,
+    customerId,
+    onSaved,
+    lang,
+  }: EditRowProps,
+) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(value);
+  const [errKey, setErrKey] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  function start() {
+    setDraft(value);
+    setErrKey(null);
+    setEditing(true);
+  }
+  function cancel() {
+    setEditing(false);
+    setErrKey(null);
+  }
+  async function save(e: Event) {
+    e.preventDefault();
+    if (saving) return;
+    const r = cardFieldPatch(field, draft);
+    if ("error" in r) {
+      setErrKey(r.error);
+      return;
+    }
+    if ((Object.values(r.patch)[0] ?? "") === value.trim()) {
+      cancel();
+      return;
+    }
+    setSaving(true);
+    setErrKey(null);
+    try {
+      await clientsClient.update(customerId, r.patch);
+      setEditing(false);
+      onSaved();
+    } catch (err) {
+      // REQ-278: the backend names a refused contact by dictionary key
+      const key = err instanceof ApiError
+        ? apiFieldErrorKey((err.body as { message?: unknown } | null)?.message)
+        : null;
+      setErrKey(key ?? "clientsBoard.panel.saveError");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const errId = `ccard2-err-${field}-${customerId}`;
+  return (
+    <div
+      class="ccard2__panel-row"
+      data-cy={`ccard2-row-${field}`}
+      style="cursor:default;flex-wrap:wrap"
+    >
+      <span class="ccard2__panel-row-icon">
+        <I d={icon} size={13} sw={2.2} />
+      </span>
+      {editing
+        ? (
+          <form
+            class="ccard2__panel-row-text"
+            style="display:flex;gap:6px;align-items:center;flex-wrap:wrap"
+            onSubmit={save}
+            noValidate
+          >
+            <div class="ccard2__panel-row-lbl" style="flex-basis:100%">
+              {label}
+            </div>
+            <input
+              type={inputType}
+              data-cy={`ccard2-input-${field}`}
+              aria-label={label}
+              aria-invalid={errKey ? "true" : undefined}
+              aria-describedby={errKey ? errId : undefined}
+              autoFocus
+              value={draft}
+              onInput={(e) => setDraft((e.target as HTMLInputElement).value)}
+              onKeyDown={(e) => {
+                // Escape leaves the edit, not the whole card
+                if (e.key === "Escape") {
+                  e.stopPropagation();
+                  cancel();
+                }
+              }}
+              style={`flex:1;min-width:0;padding:6px 8px;border:1px solid ${
+                errKey ? "#a83b3b" : "var(--border,#d8dcd5)"
+              };border-radius:8px;font:inherit;font-size:13px`}
+            />
+            <button
+              type="submit"
+              data-cy={`ccard2-save-${field}`}
+              disabled={saving}
+              style="padding:6px 10px;border:0;border-radius:8px;background:var(--brand-teal);color:#fff;font:inherit;font-size:12px;font-weight:700;cursor:pointer"
+            >
+              {saving ? "…" : tFor(lang, "common.save")}
+            </button>
+            <button
+              type="button"
+              data-cy={`ccard2-cancel-${field}`}
+              disabled={saving}
+              onClick={cancel}
+              style="padding:6px 8px;border:0;background:transparent;color:var(--fg-muted);font:inherit;font-size:12px;font-weight:700;cursor:pointer"
+            >
+              {tFor(lang, "common.cancel")}
+            </button>
+            {errKey && (
+              <p
+                id={errId}
+                role="alert"
+                style="flex-basis:100%;margin:2px 0 0;color:#a83b3b;font-size:12px;font-weight:600;white-space:normal"
+              >
+                {tFor(lang, errKey)}
+              </p>
+            )}
+          </form>
+        )
+        : (
+          <>
+            <span class="ccard2__panel-row-text">
+              <div class="ccard2__panel-row-lbl">{label}</div>
+              {value
+                ? (
+                  <div class="ccard2__panel-row-val">
+                    {href
+                      ? (
+                        <a
+                          href={href}
+                          data-cy={`ccard2-link-${field}`}
+                          style="color:inherit;text-decoration:none"
+                        >
+                          {display}
+                        </a>
+                      )
+                      : display}
+                  </div>
+                )
+                : (
+                  <button
+                    type="button"
+                    data-cy={`ccard2-edit-${field}`}
+                    onClick={start}
+                    style="padding:0;border:0;background:transparent;font:inherit;font-weight:700;color:var(--brand-pink);cursor:pointer"
+                  >
+                    + {addLabel}
+                  </button>
+                )}
+            </span>
+            {value && (
+              <button
+                type="button"
+                class="ccard2__panel-row-arrow"
+                data-cy={`ccard2-edit-${field}`}
+                onClick={start}
+                aria-label={`${tFor(lang, "common.edit")} ${label}`}
+                title={tFor(lang, "common.edit")}
+                style="border:0;background:transparent;padding:4px;cursor:pointer"
+              >
+                <I d={ICN.pencil} size={12} sw={2.4} />
+              </button>
+            )}
+          </>
+        )}
+    </div>
+  );
 }
 
 function ClientCard(
-  { c, subs, idx, isOpen, onOpen, onClose, lang, disambig }: CardProps,
+  { c, subs, idx, isOpen, onOpen, onClose, lang, disambig, onSaved }: CardProps,
 ) {
   const mood = moodFor(c, lang);
   const initials = initialsOf(c.name);
@@ -127,6 +341,7 @@ function ClientCard(
   return (
     <div
       class={`ccard2 ${isOpen ? "ccard2--open" : ""}`}
+      data-customer-id={c.id}
       style={styleStr}
       onClick={onCardClick}
     >
@@ -248,58 +463,51 @@ function ClientCard(
             <I d={ICN.x} size={14} sw={2.5} />
           </button>
         </div>
+        {/* REQ-600 (demo-loop cycle 4, M5): every contact row is always
+            there and edits in place — a name-only customer (Field → Add
+            task) gets a phone or an email here, so its invoices can go out */}
         <div class="ccard2__panel-rows">
-          {c.phoneNumber && (
+          <EditRow
+            field="phone"
+            icon={ICN.phone}
+            label={tFor(lang, "clientsBoard.panel.phone")}
+            addLabel={tFor(lang, "clientsBoard.panel.addPhone")}
+            value={c.phoneNumber ?? ""}
             /* One phone formatter everywhere: the dial href is always
                normalized to tel:+1…, the label always reads
                "+1 (512) 555-3150" (P-64). */
-            <a class="ccard2__panel-row" href={telHref(c.phoneNumber)}>
-              <span class="ccard2__panel-row-icon">
-                <I d={ICN.phone} size={13} sw={2.2} />
-              </span>
-              <span class="ccard2__panel-row-text">
-                <div class="ccard2__panel-row-lbl">
-                  {tFor(lang, "clientsBoard.panel.phone")}
-                </div>
-                <div class="ccard2__panel-row-val">
-                  {formatPhoneDisplay(c.phoneNumber)}
-                </div>
-              </span>
-              <span class="ccard2__panel-row-arrow">
-                <I d={ICN.arrow} size={12} sw={2.4} />
-              </span>
-            </a>
-          )}
-          {c.email && (
-            <a class="ccard2__panel-row" href={`mailto:${c.email}`}>
-              <span class="ccard2__panel-row-icon">
-                <I d={ICN.mail} size={13} sw={2.2} />
-              </span>
-              <span class="ccard2__panel-row-text">
-                <div class="ccard2__panel-row-lbl">
-                  {tFor(lang, "clientsBoard.panel.email")}
-                </div>
-                <div class="ccard2__panel-row-val">{c.email}</div>
-              </span>
-              <span class="ccard2__panel-row-arrow">
-                <I d={ICN.arrow} size={12} sw={2.4} />
-              </span>
-            </a>
-          )}
-          <div class="ccard2__panel-row">
-            <span class="ccard2__panel-row-icon">
-              <I d={ICN.pin} size={13} sw={2.2} />
-            </span>
-            <span class="ccard2__panel-row-text">
-              <div class="ccard2__panel-row-lbl">
-                {tFor(lang, "clientsBoard.panel.address")}
-              </div>
-              <div class="ccard2__panel-row-val">{address}</div>
-            </span>
-            <span class="ccard2__panel-row-arrow">
-              <I d={ICN.arrow} size={12} sw={2.4} />
-            </span>
-          </div>
+            display={c.phoneNumber ? formatPhoneDisplay(c.phoneNumber) : ""}
+            href={c.phoneNumber ? telHref(c.phoneNumber) : undefined}
+            inputType="tel"
+            customerId={c.id}
+            onSaved={onSaved}
+            lang={lang}
+          />
+          <EditRow
+            field="email"
+            icon={ICN.mail}
+            label={tFor(lang, "clientsBoard.panel.email")}
+            addLabel={tFor(lang, "clientsBoard.panel.addEmail")}
+            value={c.email ?? ""}
+            display={c.email ?? ""}
+            href={c.email ? `mailto:${c.email}` : undefined}
+            inputType="email"
+            customerId={c.id}
+            onSaved={onSaved}
+            lang={lang}
+          />
+          <EditRow
+            field="address"
+            icon={ICN.pin}
+            label={tFor(lang, "clientsBoard.panel.address")}
+            addLabel={tFor(lang, "clientsBoard.panel.addAddress")}
+            value={c.address?.trim() ? c.address : ""}
+            display={address}
+            inputType="text"
+            customerId={c.id}
+            onSaved={onSaved}
+            lang={lang}
+          />
         </div>
         {/* REQ-145: every subscription of this customer, each a link to the field page */}
         <div
@@ -442,6 +650,8 @@ interface BoardProps {
   lang?: "en" | "es";
   /** REQ-145 — the account's subscriptions by customer id */
   subsByCustomer?: Map<string, SubscriptionView[]>;
+  /** REQ-600: a card saved a contact field — reload the page's cards */
+  onCustomerSaved?: () => void;
 }
 
 export default function ClientsBoard(
@@ -459,9 +669,23 @@ export default function ClientsBoard(
     children,
     lang = "en",
     subsByCustomer,
+    onCustomerSaved,
   }: BoardProps,
 ) {
-  const [openId, setOpenId] = useState<string | null>(null);
+  // REQ-600 (cycle 4, M5): /customers?open=<id> opens that customer's card —
+  // the batch send's "Add an email or phone" fix links here
+  const [openId, setOpenId] = useState<string | null>(() =>
+    typeof globalThis.location === "undefined"
+      ? null
+      : openIdFromSearch(globalThis.location.search)
+  );
+  const [linkedId] = useState(openId);
+  const linkedOnPage = !!linkedId && cards.some((c) => c.id === linkedId);
+  useEffect(() => {
+    if (!linkedOnPage || typeof document === "undefined") return;
+    document.querySelector(`[data-customer-id="${CSS.escape(linkedId!)}"]`)
+      ?.scrollIntoView({ block: "center" });
+  }, [linkedOnPage]);
 
   useEffect(() => {
     if (!openId) return;
@@ -551,6 +775,7 @@ export default function ClientsBoard(
                 onClose={() => setOpenId(null)}
                 lang={lang}
                 disambig={disambigs.get(c.id)}
+                onSaved={() => onCustomerSaved?.()}
               />
             ))}
             {rows.length === 0 && (

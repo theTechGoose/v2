@@ -27,6 +27,7 @@ import {
   TopClients,
 } from "../components/ClientsSections.tsx";
 import ClientsBoard, { filterFromSearch } from "./ClientsBoard.tsx";
+import { openIdFromSearch } from "../lib/customer-card-edit.ts";
 import { fieldClient, type SubscriptionView } from "../clients/field.ts";
 import { subscriptionsByCustomer } from "../lib/field.ts";
 import {
@@ -249,6 +250,23 @@ export default function ClientsPage({ lang: _lang }: { lang?: "en" | "es" }) {
     };
   }, [page, q, filter]);
 
+  // REQ-600 (cycle 4, M5): a linked card (?open=<id>) that is not on the first
+  // page is searched for by name, once, so the board can open it
+  const [linkChecked, setLinkChecked] = useState(false);
+  useEffect(() => {
+    if (linkChecked || !s.data || typeof globalThis.location === "undefined") {
+      return;
+    }
+    setLinkChecked(true);
+    const id = openIdFromSearch(globalThis.location.search);
+    if (!id || s.data.items.some((c) => c.id === id)) return;
+    clientsClient.get(id).then((c) => {
+      if (c?.name) setQuery(c.name);
+    }).catch(() => {
+      // a stale or foreign link simply opens nothing
+    });
+  }, [s.data, linkChecked]);
+
   if (s.loading || !s.data) {
     return (
       <>
@@ -297,6 +315,7 @@ export default function ClientsPage({ lang: _lang }: { lang?: "en" | "es" }) {
         onPage={setPage}
         lang={lang}
         subsByCustomer={subsByCustomer}
+        onCustomerSaved={refreshClients}
       >
         <TopClients rows={top.results} lang={lang} />
         {

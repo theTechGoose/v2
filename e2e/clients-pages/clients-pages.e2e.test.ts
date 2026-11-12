@@ -256,3 +256,46 @@ Deno.test("REQ-432 (demo m40, cycle 3): with a customer card open, switching EN/
     for (let i = 0; i < 20 && (await isOpen()); i++) await page.waitForTimeout(100);
     expect(!(await isOpen()), "a click outside the card on the page closes it");
   }));
+
+Deno.test("REQ-600 (cycle 4, M5): /customers?open=<id> opens a name+address customer's card; Add phone / Add email / Address save through PUT; a bad phone is refused under its row", (t) =>
+  story(t, async ({ page, expect, http, baseUrl }) => {
+    const { auth } = await signIn(http, page, baseUrl);
+    // what Field → Add task makes: a name and an address, no contact
+    const r = await http("/api/customers", { method: "POST", headers: auth, body: JSON.stringify({ name: "Taskmade Tom", address: "12 Elm St" }) });
+    const tom = await r.json() as { id: string };
+    await page.goto(`/customers?open=${tom.id}`);
+    await expect.see("Taskmade Tom");
+    const card = page.locator(".ccard2", { hasText: "Taskmade Tom" });
+    for (let i = 0; i < 50 && !((await card.getAttribute("class"))?.includes("ccard2--open")); i++) await page.waitForTimeout(100);
+    expect((await card.getAttribute("class"))?.includes("ccard2--open") ?? false, "the deep link opened Tom's card");
+    expect((await card.locator("[data-cy='ccard2-message']").count()) === 0, "no Message yet: Tom has no contact");
+
+    // Add phone: a short number is refused under the row, a full one is saved
+    await clickUntil(page, ".ccard2:has-text('Taskmade Tom') [data-cy='ccard2-edit-phone']", async () =>
+      (await card.locator("[data-cy='ccard2-input-phone']").count()) > 0);
+    await card.locator("[data-cy='ccard2-input-phone']").fill("512-555");
+    await card.locator("[data-cy='ccard2-save-phone']").click();
+    await expect.see("Enter a full phone number");
+    await card.locator("[data-cy='ccard2-input-phone']").fill("(512) 555-3150");
+    await card.locator("[data-cy='ccard2-save-phone']").click();
+    await expect.see("+1 (512) 555-3150");
+    await card.locator("[data-cy='ccard2-message']").waitFor();
+
+    // Add email
+    await card.locator("[data-cy='ccard2-edit-email']").click();
+    await card.locator("[data-cy='ccard2-input-email']").fill("tom@blackhole.postmarkapp.com");
+    await card.locator("[data-cy='ccard2-save-email']").click();
+    await expect.see("tom@blackhole.postmarkapp.com");
+
+    // the Address row edits too (its arrow is no longer decoration)
+    await card.locator("[data-cy='ccard2-edit-address']").click();
+    await card.locator("[data-cy='ccard2-input-address']").fill("99 Oak Ave");
+    await card.locator("[data-cy='ccard2-save-address']").click();
+    await expect.see("99 Oak Ave");
+
+    const g = await http(`/api/customers/${tom.id}`, { headers: auth });
+    const saved = await g.json() as { phoneNumber?: string; email?: string; address?: string };
+    expect(!!saved.phoneNumber && saved.phoneNumber.replace(/\D/g, "").endsWith("5125553150"), `the phone was saved (${saved.phoneNumber})`);
+    expect(saved.email === "tom@blackhole.postmarkapp.com", `the email was saved (${saved.email})`);
+    expect(saved.address === "99 Oak Ave", `the address was saved (${saved.address})`);
+  }));
