@@ -34,6 +34,11 @@ import { readCached, refreshDash } from "../lib/dash-cache.ts";
 import { pickKpis } from "../lib/dashboard-kpis.ts";
 import { jobRowTitle, quoteRowTitle } from "../lib/dashboard-titles.ts";
 import {
+  jobPaidLabel,
+  nextUpcomingBill,
+  outstandingEmptyKey,
+} from "../lib/dashboard-receivables.ts";
+import {
   readNotifications,
   refreshNotifications,
   subscribeNotifications,
@@ -81,6 +86,13 @@ function fmtDueRel(iso: string, now: Date, lang: Lang): string {
   return `${shortMonth(lang, due.getMonth())} ${due.getDate()}`;
 }
 
+/** "Nov 26" for an ISO yyyy-mm-dd (local calendar day, no TZ drift). */
+function fmtDay(iso: string, lang: Lang): string {
+  const d = new Date(`${iso.slice(0, 10)}T00:00:00`);
+  if (!Number.isFinite(d.getTime())) return iso;
+  return `${shortMonth(lang, d.getMonth())} ${d.getDate()}`;
+}
+
 function fmtRel(iso: string, now: Date, lang: Lang): string {
   const t = new Date(iso).getTime();
   if (!Number.isFinite(t)) return "";
@@ -107,12 +119,10 @@ const JOB_ROTATION: { icon: IconName; color: string }[] = [
 function jobToRow(j: Job, idx: number, now: Date, lang: Lang): JobRow {
   const rot = JOB_ROTATION[idx % JOB_ROTATION.length];
   const total = j.totalCents / 100;
-  const paid = j.paidCents / 100;
-  const paidLabel = paid > 0
-    ? tFor(lang, "dashboardPage.job.amountPaid", {
-      amount: `$${Math.round(paid).toLocaleString()}`,
-    })
-    : tFor(lang, "dashboardPage.job.deposit");
+  // REQ-473 (demo-loop cycle 3, M8): "Deposit" only when the agreed terms
+  // open with a deposit — "Payment upon completion" reads "Due on completion".
+  const paidKey = jobPaidLabel(j.paidCents, j.paymentTerms);
+  const paidLabel = tFor(lang, paidKey.key, paidKey.params);
   const statusKind: JobRow["status"]["kind"] = j.status === "overdue"
     ? "warn"
     : j.status === "awaiting_permit"
@@ -299,7 +309,10 @@ interface State {
   stats: DashboardStats | undefined;
   jobs: Job[];
   quoteCards: QuoteCard[];
-  pendingInvoices: Invoice[];
+  /** REQ-473: the open receivables (`?status=open`), not legacy "pending". */
+  openInvoices: Invoice[];
+  /** REQ-473: scheduled installments — the "Upcoming" line. */
+  scheduledInvoices: Invoice[];
   customers: Customer[];
 }
 
@@ -309,7 +322,8 @@ const INITIAL: State = {
   stats: undefined,
   jobs: [],
   quoteCards: [],
-  pendingInvoices: [],
+  openInvoices: [],
+  scheduledInvoices: [],
   customers: [],
 };
 
@@ -394,10 +408,24 @@ export default function DashboardPage(_props: { lang?: Lang } = {}) {
       ),
       dashboardClient.jobs().catch(() => [] as Job[]),
       quotesClient.list("sent").catch(() => [] as QuoteCard[]),
-      dashboardClient.invoices("pending").catch(() => [] as Invoice[]),
+      // REQ-473 (demo-loop cycle 3, M8): the money owed right now (the
+      // shared open-receivable rule) — "pending" is a legacy status accept
+      // never writes, so the list was always empty — plus the scheduled
+      // installments still to bill.
+      dashboardClient.invoices("open").catch(() => [] as Invoice[]),
+      dashboardClient.invoices("scheduled").catch(() => [] as Invoice[]),
       dashboardClient.customers().catch(() => [] as Customer[]),
     ]).then(
-      ([stats, jobs, quoteCards, pendingInvoices, customers]) => {
+      (
+        [
+          stats,
+          jobs,
+          quoteCards,
+          openInvoices,
+          scheduledInvoices,
+          customers,
+        ],
+      ) => {
         if (!alive) return;
         setS({
           loading: false,
@@ -405,7 +433,8 @@ export default function DashboardPage(_props: { lang?: Lang } = {}) {
           stats,
           jobs,
           quoteCards,
-          pendingInvoices,
+          openInvoices,
+          scheduledInvoices,
           customers,
         });
       },
@@ -485,7 +514,14 @@ export default function DashboardPage(_props: { lang?: Lang } = {}) {
     );
   }
 
-  const { stats, jobs, quoteCards, pendingInvoices, customers } = s;
+  const {
+    stats,
+    jobs,
+    quoteCards,
+    openInvoices,
+    scheduledInvoices,
+    customers,
+  } = s;
   const now = new Date();
 
   const kpis = { ...pickKpis(stats), activeJobs: jobs.length };
@@ -498,9 +534,7 @@ export default function DashboardPage(_props: { lang?: Lang } = {}) {
 
   const seenQuoteIds = new Set<string>();
   const safeQuoteCards = Array.isArray(quoteCards) ? quoteCards : [];
-  const safePendingInvoices = Array.isArray(pendingInvoices)
-    ? pendingInvoices
-    : [];
+  const safeOpenInvoices = Array.isArray(openInvoices) ? openInvoices : [];
   const quoteRows: QuoteRow[] = safeQuoteCards
     .slice()
     .sort((a, b) => (b.sentAt ?? "").localeCompare(a.sentAt ?? ""))
@@ -515,11 +549,26 @@ export default function DashboardPage(_props: { lang?: Lang } = {}) {
     .slice(0, 4)
     .map((q) => quoteToRow(q, now, lang));
 
-  const outstandingRows: OutstandingRow[] = safePendingInvoices
+  const outstandingRows: OutstandingRow[] = safeOpenInvoices
     .slice()
     .sort((a, b) => (a.dueDate ?? "").localeCompare(b.dueDate ?? ""))
     .slice(0, 5)
     .map((inv, i) => invoiceToRow(inv, customerNames, now, i, lang));
+
+  // REQ-473: a scheduled installment is money coming, not "No invoices yet".
+  const upcomingBill = nextUpcomingBill(
+    Array.isArray(scheduledInvoices) ? scheduledInvoices : [],
+  );
+  const upcomingLine = upcomingBill
+    ? tFor(lang, "outstanding.upcoming", {
+      amt: Math.round(upcomingBill.amountCents / 100).toLocaleString("en-US"),
+      date: fmtDay(upcomingBill.date, lang),
+    })
+    : null;
+  const outstandingEmpty = outstandingEmptyKey(
+    stats?.invoices.total ?? 0,
+    upcomingBill,
+  );
 
   const grouped: Notification[] = [];
   for (const n of notifications) {
@@ -576,6 +625,8 @@ export default function DashboardPage(_props: { lang?: Lang } = {}) {
           mid={kpis.mid}
           overdue={kpis.overdue}
           items={outstandingRows}
+          upcoming={upcomingLine}
+          emptyKey={outstandingEmpty}
           lang={lang}
         />
       </div>

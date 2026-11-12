@@ -9,7 +9,10 @@ import { QuoteStore } from "@paperwork/domain/data/quote-store/mod.ts";
 import { InvoiceStore } from "@paperwork/domain/data/invoice-store/mod.ts";
 import type { Customer } from "@crm/dto/customer.ts";
 import type { Invoice } from "@paperwork/dto/invoice.ts";
-import { isOpenReceivable } from "@paperwork/domain/business/open-receivable/mod.ts";
+import {
+  isOpenReceivable,
+  isUpcomingReceivable,
+} from "@paperwork/domain/business/open-receivable/mod.ts";
 
 /**
  * The view the dashboard's "Active jobs" panel renders.
@@ -54,8 +57,14 @@ export interface Job {
   paidCents: number;
   /** 0..100 — paid / total. */
   pctPaid: number;
-  /** Earliest pending due date among invoices (ISO yyyy-mm-dd) — null when none pending. */
+  /** Earliest due date among the open receivables (ISO yyyy-mm-dd); with
+   *  none open, the earliest SCHEDULED installment's due date (REQ-473) —
+   *  null only when nothing is owed or upcoming. */
   nextDueDate: string | null;
+  /** REQ-473 (demo-loop cycle 3, M8): the quote's agreed payment terms (the
+   *  stored EN wizard value, e.g. "Payment upon completion", "50 / 50") so the
+   *  row can say "Due on completion" instead of a blanket "Deposit". */
+  paymentTerms: string | null;
   status: JobStatusKind;
   statusLabel: string;
 }
@@ -140,9 +149,13 @@ export class ListActiveJobs {
         statusLabel = "On track";
       }
 
-      const nextDueDate = pendingInvoices
-        .map((i) => i.dueDate)
-        .sort()[0] ?? null;
+      // REQ-473 (demo-loop cycle 3, M8): with nothing open, the next bill is
+      // the earliest scheduled installment — not "No due date".
+      const upcomingInvoices = relatedInvoices.filter(isUpcomingReceivable);
+      const nextDueDate = earliestDue(pendingInvoices) ??
+        earliestDue(upcomingInvoices);
+      const paymentTerms = q.terms?.find((t) => t.stepId === "payment_terms")
+        ?.value?.trim() || null;
 
       out.push({
         id: q.id,
@@ -159,6 +172,7 @@ export class ListActiveJobs {
         paidCents,
         pctPaid,
         nextDueDate,
+        paymentTerms,
         status,
         statusLabel,
       });
@@ -168,4 +182,8 @@ export class ListActiveJobs {
     out.sort((a, b) => (a.id < b.id ? 1 : -1));
     return out;
   }
+}
+
+function earliestDue(invoices: Invoice[]): string | null {
+  return invoices.map((i) => i.dueDate).filter(Boolean).sort()[0] ?? null;
 }
