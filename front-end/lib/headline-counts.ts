@@ -42,6 +42,7 @@ export function outTrackCounts(
 export type InvoicesHeroMode =
   | "empty"
   | "claimed"
+  | "scheduled"
   | "clear"
   | "thisWeek"
   | "nextWeek"
@@ -49,13 +50,23 @@ export type InvoicesHeroMode =
 
 /** Which headline the /invoices hero shows. A payment the customer says
  *  they made and the contractor has not confirmed is pending work — it is
- *  never "All clear", and when nothing else is owed it IS the headline. */
+ *  never "All clear", and when nothing else is owed it IS the headline.
+ *
+ *  REQ-317 (demo-loop cycle 1, M33): a `scheduled` installment of a signed
+ *  agreement (the balance of a 50/50 job after the deposit is paid) is money
+ *  still to bill. The forecast leaves it out of the forward window on
+ *  purpose (roadmap §J), so it is fed here as its own input — "All clear —
+ *  nothing outstanding" is only for the state with no unpaid installment. */
 export function invoicesHeroMode(input: {
   totalInvoiceCount: number;
   /** overdue + out (money still owed, no claim yet) */
   outstandingCount: number;
   /** invoices in the "claimed" stage */
   claimedCount: number;
+  /** invoices in the "scheduled" stage (unsent installments) */
+  scheduledCount?: number;
+  /** the money those scheduled installments carry */
+  scheduledCents?: number;
   forecast?: {
     thisWeekCents: number;
     nextWeekCents: number;
@@ -63,11 +74,15 @@ export function invoicesHeroMode(input: {
   };
 }): InvoicesHeroMode {
   const { totalInvoiceCount, outstandingCount, claimedCount, forecast } = input;
+  const scheduledCents = input.scheduledCents ?? 0;
   if (totalInvoiceCount === 0) return "empty";
   if (outstandingCount === 0 && claimedCount > 0) return "claimed";
   const haveForecast = !!forecast &&
     (forecast.thisWeekCents > 0 || forecast.nextWeekCents > 0 ||
       forecast.atRiskCents > 0);
+  if (outstandingCount === 0 && !haveForecast && scheduledCents > 0) {
+    return "scheduled";
+  }
   if (outstandingCount === 0 && !haveForecast) return "clear";
   if (haveForecast && forecast!.thisWeekCents > 0) return "thisWeek";
   if (haveForecast && forecast!.nextWeekCents > 0) return "nextWeek";
