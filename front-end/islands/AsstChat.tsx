@@ -7331,7 +7331,7 @@ export default function AsstChat({
                                   )}
                                   <button
                                     type="button"
-                                    class="quote-review__term-edit"
+                                    class="quote-review__section-edit"
                                     data-cy="review-job-details-edit"
                                     disabled={sending || !quoteId}
                                     title={tFor(
