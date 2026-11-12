@@ -1857,6 +1857,8 @@
   "nav.logout": "Log out",
   "nav.payments": "Payments",
   "nav.quotes": "Quotes",
+  "nav.count.quotes": "Quotes awaiting a reply: {count}",
+  "nav.count.invoices": "Invoices awaiting payment: {count}",
   "notify.fallbackClient": "your client",
   "notify.invoice.changeOrderApproved": "{name} approved your change order",
   "notify.invoice.changeOrderApprovedAmount": "{name} approved your change order ({delta})",

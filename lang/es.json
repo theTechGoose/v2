@@ -1857,6 +1857,8 @@
   "nav.logout": "Cerrar sesión",
   "nav.payments": "Pagos",
   "nav.quotes": "Cotizaciones",
+  "nav.count.quotes": "Cotizaciones esperando respuesta: {count}",
+  "nav.count.invoices": "Facturas por cobrar: {count}",
   "notify.fallbackClient": "tu cliente",
   "notify.invoice.changeOrderApproved": "{name} aprobó tu orden de cambio",
   "notify.invoice.changeOrderApprovedAmount": "{name} aprobó tu orden de cambio ({delta})",
