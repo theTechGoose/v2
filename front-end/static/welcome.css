@@ -465,17 +465,22 @@
   text-decoration: underline;
   text-underline-offset: 3px;
 }
-.welcome__sample-frame-wrap {
+/* REQ-433 (demo M13, cycle 3): the sample quote is painted inline — the
+   public document at its own width (792px), zoomed into the card and
+   scrollable; read-only (the wheel still scrolls the wrap). */
+.welcome__sample-doc-wrap {
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-md);
-  overflow: hidden;
-  background: var(--bg-sunken);
+  overflow: auto;
+  max-height: 420px;
+  background: #f7f6f1; /* doc-parts BG */
+  padding: 12px;
 }
-.welcome__sample-frame {
-  display: block;
-  width: 100%;
-  height: 420px;
-  border: 0;
+.welcome__sample-doc {
+  width: 792px;
+  zoom: 0.58;
+  pointer-events: none;
+  user-select: none;
 }
 .welcome__sample-loading {
   padding: 32px 16px;
@@ -485,8 +490,12 @@
   border-radius: var(--radius-md);
 }
 @media (max-width: 480px) {
-  .welcome__sample-frame {
-    height: 340px;
+  .welcome__sample-doc-wrap {
+    max-height: 340px;
+    padding: 8px;
+  }
+  .welcome__sample-doc {
+    zoom: 0.38;
   }
 }
 

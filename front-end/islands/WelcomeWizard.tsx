@@ -46,6 +46,7 @@ import {
   PRICING_PLANS,
 } from "../../shared/quote-flow/pricing-plans.ts";
 import { PlanCards } from "../components/PlanCards.tsx";
+import { SampleQuotePreview } from "../components/SampleQuotePreview.tsx";
 import { wizardPlanNote } from "../lib/plan-pick-note.ts";
 import {
   handoffPage,
@@ -1142,7 +1143,8 @@ function SampleQuoteStep({ ctx }: { ctx: StepCtx }) {
   const [busy, setBusy] = useState(false);
   const quoteId = ctx.sampleQuoteId;
   // REQ-256: the sample opens in the wizard's language — the quote stores its
-  // content in both, so the frame follows the EN | ES toggle.
+  // content in both, so the inline preview and the full-size link follow the
+  // EN | ES toggle.
   const sampleHref = `/q/${quoteId}?lang=${langSignal.value}`;
 
   // Final step: Continue marks onboarding finished and lands the user on the
@@ -1164,13 +1166,13 @@ function SampleQuoteStep({ ctx }: { ctx: StepCtx }) {
       {quoteId
         ? (
           <>
-            <div class="welcome__sample-frame-wrap">
-              <iframe
-                class="welcome__sample-frame"
-                src={sampleHref}
-                title={t("welcome.sample.question")}
-              />
-            </div>
+            {
+              /* REQ-433 (demo M13, cycle 3): the sample is rendered inline,
+                not embedded as a frame — the demo stage's mirror never
+                carries an embedded page (REQ-242), so a frame was an empty
+                grey box there. */
+            }
+            <SampleQuotePreview quoteId={quoteId} lang={langSignal.value} />
             <a
               class="welcome__sample-link"
               href={sampleHref}
