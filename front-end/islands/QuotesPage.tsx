@@ -58,13 +58,12 @@ import {
 import { langSignal, tFor } from "../lib/i18n.ts";
 import { quoteJobTitle } from "../../shared/quote-flow/job-name.ts";
 import { quoteSendLang } from "../../shared/quote-flow/share-link.ts"; // REQ-586
-import { customerLinkPath, customerLinkUrl } from "../lib/customer-link.ts";
+import { customerLinkPath, customerLinkUrl } from "../lib/customer-link.ts"; // REQ-570 + REQ-586
 import { changeOrdersClient } from "../clients/change-orders.ts"; // REQ-462
 import QuoteSendDialog, {
   type SendDialogCustomer,
 } from "../components/QuoteSendDialog.tsx"; // REQ-570
 import { panelCanSend, type PanelSendResult } from "../lib/quote-panel-send.ts"; // REQ-570
-import { customerLinkPath } from "../lib/customer-link.ts"; // REQ-570
 import type { SendChannel } from "../lib/send-dialog.ts"; // REQ-570
 import {
   changeOrderBody,
@@ -1605,6 +1604,11 @@ function OpenQuotePanel(
       {summaryText && q.jobName?.trim() && (
         <p class="qopen__summary">{summaryText}</p>
       )}
+      {q.isSample && (
+        <p class="qopen__summary" data-cy="quote-sample-note">
+          {tFor(lang, "quotesPage.open.sampleNote")}
+        </p>
+      )}
       {q.customerName && (
         <p class="qopen__client" style="font-size:13px;color:var(--fg-muted)">
           {tFor(lang, "quotesPage.open.customer", { name: q.customerName })}
@@ -1615,9 +1619,11 @@ function OpenQuotePanel(
         <div class="qopen__actions">
           {
             /* REQ-570 (demo m41): send it from here — the chat's send dialog
-              and SendQuote — or preview it as the customer will see it. */
+              and SendQuote — or preview it as the customer will see it.
+              REQ-614 (cycle 4, m16): the onboarding sample has no customer —
+              nothing here shares or sends it (REQ-360 did the card's back). */
           }
-          {panelCanSend(q) && (
+          {panelCanSend(q) && !q.isSample && (
             <div class="qopen-send">
               <button
                 type="button"
@@ -1675,11 +1681,13 @@ function OpenQuotePanel(
               )}
             </div>
           )}
-          <button type="button" class="qopen__btn" onClick={copyLink}>
-            {copied
-              ? tFor(lang, "quotesPage.open.linkCopied")
-              : tFor(lang, "quotesPage.open.copyLink")}
-          </button>
+          {!q.isSample && (
+            <button type="button" class="qopen__btn" onClick={copyLink}>
+              {copied
+                ? tFor(lang, "quotesPage.open.linkCopied")
+                : tFor(lang, "quotesPage.open.copyLink")}
+            </button>
+          )}
           <a
             class="qopen__btn"
             href={customerLinkPath(q.id, quoteSendLang(q))}
