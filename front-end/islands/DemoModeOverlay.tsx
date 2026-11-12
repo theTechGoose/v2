@@ -88,6 +88,16 @@ import {
   readEndedNotice,
   whoEnded,
 } from "../../shared/demo-mode/ended.ts";
+import {
+  clampRect,
+  CONTROL_SELECTOR,
+  pickPillSlot,
+  PILL_COMPACT_MAX_W,
+  PILL_MARGIN,
+  pillSlots,
+  samplePoints,
+} from "../../shared/demo-mode/pill.ts";
+import type { Rect } from "../../shared/demo-mode/protocol.ts";
 
 interface Demo {
   id: string;
@@ -107,6 +117,34 @@ const sameDemo = (a: Demo | null, b: Demo) =>
 const Z = 2147483000;
 
 const here = () => globalThis.location.pathname + globalThis.location.search;
+/** REQ-228 — how often the pill re-checks what is under it (the page changes under a fixed box) */
+const PILL_CHECK_MS = 700;
+
+/** REQ-228 — how many distinct page controls lie under a box (the demo's own chrome not counted) */
+function controlsUnder(r: Rect): number {
+  const found = new Set<Element>();
+  for (const { x, y } of samplePoints(r)) {
+    const top = document.elementsFromPoint(x, y)
+      .find((el) => !el.closest("[data-demo-overlay]"));
+    const ctl = top?.closest(CONTROL_SELECTOR);
+    if (ctl) found.add(ctl);
+  }
+  return found.size;
+}
+
+/** REQ-228 — the pill's next box: its current one while clear, else the first clear slot */
+function placePill(el: HTMLElement, current: Rect | null): Rect {
+  const view = { w: globalThis.innerWidth, h: globalThis.innerHeight };
+  const size = { w: el.offsetWidth, h: el.offsetHeight };
+  const cur = current
+    ? clampRect({ ...current, width: size.w, height: size.h }, view)
+    : null;
+  return pickPillSlot(cur, pillSlots(view, size), controlsUnder);
+}
+
+const narrow = () =>
+  typeof globalThis.innerWidth === "number" &&
+  globalThis.innerWidth <= PILL_COMPACT_MAX_W;
 /** REQ-188 — this side's layout viewport as a box */
 const viewportBox = () => ({
   left: 0,
@@ -132,6 +170,12 @@ export default function DemoModeOverlay() {
   /** REQ-235 — the demo is over: who ended it, said until dismissed (or a new demo starts) */
   const [notice, setNotice] = useState<EndedNotice | null>(null);
   const linkRef = useRef<DemoLink | null>(null);
+  /** REQ-228 — the pill, where it sits, and whether it is the phone's compact one */
+  const pillRef = useRef<HTMLDivElement | null>(null);
+  const posRef = useRef<Rect | null>(null);
+  const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
+  const [compact, setCompact] = useState(false);
+  const [open, setOpen] = useState(false);
   const impersonatingRef = useRef<boolean | null>(null);
   const placingRef = useRef(false);
   /** REQ-232 — this staff page is on its way to the stage (the pill says Opening…) */
@@ -480,11 +524,59 @@ export default function DemoModeOverlay() {
     };
   }, [demo?.id]);
 
+  // 5. REQ-228 — the pill sits where no control of the page is under it, and moves when one comes
+  // REQ-235 — the ended notice is a pill too: it keeps clear of the page's controls the same way
+  const shown = !inert && Boolean(demo || opening || notice);
+  useEffect(() => {
+    if (!shown) return;
+    let settle: number | undefined;
+    const place = () => {
+      const el = pillRef.current;
+      if (!el || typeof document.elementsFromPoint !== "function") return;
+      setCompact(narrow());
+      const next = placePill(el, posRef.current);
+      const cur = posRef.current;
+      if (!cur || cur.left !== next.left || cur.top !== next.top) {
+        posRef.current = next;
+        setPos({ left: next.left, top: next.top });
+      }
+    };
+    const later = () => {
+      clearTimeout(settle);
+      settle = setTimeout(place, 150);
+    };
+    place();
+    const timer = setInterval(place, PILL_CHECK_MS);
+    addEventListener("resize", later);
+    document.addEventListener("scroll", later, {
+      capture: true,
+      passive: true,
+    });
+    const ro = typeof ResizeObserver === "undefined"
+      ? null
+      : new ResizeObserver(later);
+    if (pillRef.current) ro?.observe(pillRef.current);
+    return () => {
+      clearInterval(timer);
+      clearTimeout(settle);
+      ro?.disconnect();
+      removeEventListener("resize", later);
+      document.removeEventListener("scroll", later, { capture: true });
+    };
+  }, [shown, demo?.role]);
+
   if (inert) return null;
 
-  const pillStyle = `position:fixed;left:12px;bottom:12px;z-index:${
+  const at = pos
+    ? `left:${pos.left}px;top:${pos.top}px`
+    : `left:${PILL_MARGIN}px;bottom:${PILL_MARGIN}px`;
+  const pillStyle = `position:fixed;${at};z-index:${
     Z + 3
-  };display:flex;gap:10px;align-items:center;flex-wrap:wrap;max-width:calc(100vw - 24px);padding:9px 14px;border-radius:14px;background:#1f3d1b;color:#fff;font:inherit;font-size:13px;box-shadow:0 4px 18px rgba(0,0,0,.35)`;
+  };display:flex;gap:10px;align-items:center;flex-wrap:nowrap;white-space:nowrap;max-width:calc(100vw - ${
+    2 * PILL_MARGIN
+  }px);box-sizing:border-box;padding:7px 12px;border-radius:14px;background:#1f3d1b;color:#fff;font:inherit;font-size:13px;box-shadow:0 4px 18px rgba(0,0,0,.35)`;
+  /** one line: a long name is cut, not wrapped */
+  const cut = "overflow:hidden;text-overflow:ellipsis;min-width:0";
 
   // REQ-235 — the demo is over: who ended it, in the pill's place, until dismissed (Demo clicked
   // here again takes over)
@@ -492,9 +584,14 @@ export default function DemoModeOverlay() {
     const said = endedText(notice);
     return (
       <div data-demo-overlay>
-        <div data-cy="demo-ended" role="status" style={pillStyle}>
+        <div
+          ref={pillRef}
+          data-cy="demo-ended"
+          role="status"
+          style={pillStyle}
+        >
           <strong>{t("demoMode.title")}</strong>
-          <span>{t(said.key, said.vars)}</span>
+          <span style={cut}>{t(said.key, said.vars)}</span>
           <button
             type="button"
             data-cy="demo-ended-dismiss"
@@ -515,9 +612,16 @@ export default function DemoModeOverlay() {
     // REQ-179 — Demo was just clicked: the pill is up before the server answers
     return (
       <div data-demo-overlay>
-        <div data-cy="demo-pill" role="status" style={pillStyle}>
+        <div
+          ref={pillRef}
+          data-cy="demo-pill"
+          role="status"
+          style={pillStyle}
+        >
           <strong>{t("demoMode.title")}</strong>
-          <span>{t("demoMode.presenting", { name: opening.targetName })}</span>
+          <span style={cut}>
+            {t("demoMode.presenting", { name: opening.targetName })}
+          </span>
           <span
             data-cy="demo-opening"
             style="padding:2px 8px;border-radius:999px;background:rgba(255,255,255,.18);font-size:11.5px;font-weight:700"
@@ -534,9 +638,16 @@ export default function DemoModeOverlay() {
   if (demo.role === "presenter") {
     return (
       <div data-demo-overlay>
-        <div data-cy="demo-pill" role="status" style={pillStyle}>
+        <div
+          ref={pillRef}
+          data-cy="demo-pill"
+          role="status"
+          style={pillStyle}
+        >
           <strong>{t("demoMode.title")}</strong>
-          <span>{t("demoMode.presenting", { name: demo.targetName })}</span>
+          <span style={cut}>
+            {t("demoMode.presenting", { name: demo.targetName })}
+          </span>
           {placing || opening
             ? (
               <span
@@ -566,6 +677,9 @@ export default function DemoModeOverlay() {
     ? demo.presenters
     : [{ userId: "", name: demo.presenterName, color: "#2f6d29" }];
   const names = presenters.map((p) => p.name).join(", ");
+  const guidingText = presenters.length > 1
+    ? t("demoMode.guidingMany", { names })
+    : t("demoMode.guiding", { name: names });
   // REQ-232 (demo-lifecycle-p1) — plain words: is the staff here or not; never how the bytes travel
   const statusLabel = status === "ended"
     ? t("demoMode.ended")
@@ -599,20 +713,43 @@ export default function DemoModeOverlay() {
           bounds={viewportBox()}
         />
       ))}
-      <div data-cy="demo-pill" role="status" style={pillStyle}>
-        <strong>{t("demoMode.title")}</strong>
-        <span>
-          {presenters.length > 1
-            ? t("demoMode.guidingMany", { names })
-            : t("demoMode.guiding", { name: names })}
-        </span>
-        <PresenterChips presenters={presenters} />
+      <div ref={pillRef} data-cy="demo-pill" role="status" style={pillStyle}>
         <span
-          data-cy="demo-status"
-          style="padding:2px 8px;border-radius:999px;background:rgba(255,255,255,.18);font-size:11.5px;font-weight:700"
+          data-cy="demo-details"
+          style={`display:${
+            compact && !open ? "none" : "inline-flex"
+          };gap:10px;align-items:center;${cut}`}
         >
-          {statusLabel}
+          <strong>{t("demoMode.title")}</strong>
+          <span style={cut}>{guidingText}</span>
+          <PresenterChips presenters={presenters} nowrap />
         </span>
+        <button
+          type="button"
+          data-cy="demo-more"
+          aria-expanded={!compact || open}
+          aria-label={guidingText}
+          title={guidingText}
+          onClick={() => setOpen((o) => !o)}
+          style={`display:inline-flex;align-items:center;gap:6px;padding:0;border:0;background:none;color:inherit;font:inherit;cursor:${
+            compact ? "pointer" : "default"
+          }`}
+        >
+          {compact && (
+            <span
+              aria-hidden="true"
+              style={`width:10px;height:10px;border-radius:50%;background:${
+                presenters[0].color
+              };box-shadow:0 0 0 2px rgba(255,255,255,.85)`}
+            />
+          )}
+          <span
+            data-cy="demo-status"
+            style="padding:2px 8px;border-radius:999px;background:rgba(255,255,255,.18);font-size:11.5px;font-weight:700"
+          >
+            {statusLabel}
+          </span>
+        </button>
         {/* REQ-235 — End asks first */}
         <EndDemo onEnd={end} />
       </div>

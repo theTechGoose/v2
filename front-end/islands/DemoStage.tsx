@@ -82,6 +82,10 @@ import {
   type EndedNotice,
   whoEnded,
 } from "../../shared/demo-mode/ended.ts";
+import {
+  STAGE_PILL_BOTTOM,
+  stageInsetBottom,
+} from "../../shared/demo-mode/pill.ts";
 
 interface Demo {
   id: string;
@@ -106,8 +110,8 @@ const sameDemo = (a: Demo | null, b: Demo) =>
   JSON.stringify(a.presenters) === JSON.stringify(b.presenters);
 
 const Z = 2147483000;
-/** room around the frame: the pill sits in the bottom band */
-const INSET = { top: 16, right: 16, bottom: 76, left: 16 };
+/** room around the frame; the bottom band is the pill's measured height (REQ-228) */
+const INSET = { top: 16, right: 16, left: 16 };
 /** before the first snapshot: the frame is there (its shell loads) but nothing is shown */
 const HIDDEN: Screen = { w: 1, h: 1, path: "" };
 /** REQ-242 — when a snapshot's scrolls are applied again (its stylesheets and images loading) */
@@ -126,6 +130,9 @@ export default function DemoStage() {
   const endedHere = useRef(false);
   const [stage, setStage] = useState({ w: 1, h: 1 });
   const [bannerH, setBannerH] = useState(0);
+  /** REQ-228 — the pill's real height: the frame keeps out of that band, however it wraps */
+  const [pillH, setPillH] = useState(0);
+  const pillRef = useRef<HTMLDivElement | null>(null);
   const [waves, setWaves] = useState<Wave[]>([]);
   /** REQ-214 — the latest thing each colleague did, by pid */
   const [cmds, setCmds] = useState<Record<string, PointerCmd>>({});
@@ -155,8 +162,13 @@ export default function DemoStage() {
 
   const screen = mirrored ?? HIDDEN;
   const fit = useMemo(
-    () => fitScale(stage, screen, { ...INSET, top: INSET.top + bannerH }),
-    [stage.w, stage.h, screen.w, screen.h, bannerH],
+    () =>
+      fitScale(stage, screen, {
+        ...INSET,
+        top: INSET.top + bannerH,
+        bottom: stageInsetBottom(pillH),
+      }),
+    [stage.w, stage.h, screen.w, screen.h, bannerH, pillH],
   );
   const fitRef = useRef(fit);
   fitRef.current = fit;
@@ -297,6 +309,22 @@ export default function DemoStage() {
       mo?.disconnect();
     };
   }, []);
+
+  // 0b. REQ-228 — the pill's height, whenever it changes (a wrap on a narrow window, a new status)
+  const hasPill = Boolean(demo);
+  useEffect(() => {
+    const el = pillRef.current;
+    if (!el) return;
+    const measure = () => setPillH(el.getBoundingClientRect().height);
+    measure();
+    if (typeof ResizeObserver === "undefined") {
+      addEventListener("resize", measure);
+      return () => removeEventListener("resize", measure);
+    }
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [hasPill]);
 
   // 1. which demo: on load, every 5 s while the customer's app is not connected
   useEffect(() => {
@@ -512,7 +540,7 @@ export default function DemoStage() {
     ? t("demoMode.waitingFor", { name })
     : t("demoMode.connecting");
   const pillStyle =
-    `position:fixed;left:50%;transform:translateX(-50%);bottom:14px;z-index:${
+    `position:fixed;left:50%;transform:translateX(-50%);bottom:${STAGE_PILL_BOTTOM}px;z-index:${
       Z + 3
     };display:flex;gap:10px;align-items:center;flex-wrap:wrap;max-width:calc(100vw - 24px);padding:9px 14px;border-radius:14px;background:#1f3d1b;color:#fff;font:inherit;font-size:13px;box-shadow:0 4px 18px rgba(0,0,0,.35)`;
   const box = `position:absolute;left:${fit.left}px;top:${
@@ -634,7 +662,12 @@ export default function DemoStage() {
         />
       ))}
       {demo && (
-        <div data-cy="demo-pill" role="status" style={pillStyle}>
+        <div
+          ref={pillRef}
+          data-cy="demo-pill"
+          role="status"
+          style={pillStyle}
+        >
           <strong>{t("demoMode.title")}</strong>
           <span>{t("demoMode.presenting", { name })}</span>
           <PresenterChips presenters={demo.presenters} me={demo.pid} />
@@ -657,13 +690,14 @@ export default function DemoStage() {
           {mirrored && (
             <span
               data-cy="demo-screen"
-              style="opacity:.8;font-size:12px"
+              title={t("demoMode.pointOnlyHint")}
+              style="opacity:.8;font-size:12px;cursor:help"
             >
               {t("demoMode.theirScreen", {
                 name,
                 w: mirrored.w,
                 h: mirrored.h,
-              })} · {t("demoMode.pointOnlyHint")}
+              })}
             </span>
           )}
           {/* REQ-235 — End asks first */}

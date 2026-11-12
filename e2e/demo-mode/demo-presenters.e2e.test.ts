@@ -136,9 +136,10 @@ Deno.test("REQ-214: two staff present to one customer — Lia's Demo on an alrea
         timeout: 15_000,
       });
       expect(
-        (await userPage.locator("[data-cy='demo-pill']").innerText()).includes(
-          "Hans is guiding you",
-        ),
+        (await userPage.locator("[data-cy='demo-pill']").textContent() ?? "")
+          .includes(
+            "Hans is guiding you",
+          ),
         "one presenter: the pill names Hans",
       );
 
@@ -167,7 +168,8 @@ Deno.test("REQ-214: two staff present to one customer — Lia's Demo on an alrea
         async () => (await chipColors(userPage)).length === 2,
       );
       const chips = await chipColors(userPage);
-      const pill = await userPage.locator("[data-cy='demo-pill']").innerText();
+      const pill =
+        await userPage.locator("[data-cy='demo-pill']").textContent() ?? "";
       expect(
         pill.includes("Hans") && pill.includes("Lia"),
         `the pill names both presenters (${pill})`,
