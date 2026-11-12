@@ -1,3 +1,4 @@
+import "#reflect-metadata";
 import { assertEquals } from "#std/assert";
 import { GlobalSearch } from "./mod.ts";
 import { CustomerStore } from "@crm/domain/data/customer-store/mod.ts";
@@ -6,6 +7,8 @@ import { InvoiceStore } from "@paperwork/domain/data/invoice-store/mod.ts";
 import { ChangeOrderStore } from "@paperwork/domain/data/change-order-store/mod.ts";
 import { WorkOrderStore } from "@paperwork/domain/data/work-order-store/mod.ts";
 import { resetKv } from "@core/data/kv/mod.ts";
+import { BusinessIdentityStore } from "@profile/domain/data/business-identity-store/mod.ts";
+import { EnsureSampleQuote } from "@agents/domain/coordinators/ensure-sample-quote/mod.ts";
 
 function fresh() {
   const customers = new CustomerStore();
@@ -125,5 +128,44 @@ Deno.test("global-search integration: matches quote summary + invoice quote id",
   // But searching by the invoice's own id finds it:
   const byInvoiceId = await flow.run("u-1", { q: i.id.slice(0, 8) });
   assertEquals(byInvoiceId.find((r) => r.type === "invoice")?.id, i.id);
+  await resetKv();
+});
+
+/**
+ * REQ-360 — Raphael: "fix every issue the demo found, loop until there are
+ * none." Demo-loop cycle 1, issue m11: global search for "roof" listed the
+ * onboarding sample as "Roof Shingle Replacement #9876481D $8,000.00 Draft"
+ * next to the real Q-001. The sample is made the way onboarding makes it
+ * (EnsureSampleQuote, a roofer's business name) on the real stores.
+ */
+Deno.test("REQ-360 m11: global search never returns the onboarding sample quote", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const { customers, quotes, flow } = fresh();
+  const identity = new BusinessIdentityStore();
+  await identity.upsert("u-1", { businessName: "Austin Roofing Co" });
+  const made = await new EnsureSampleQuote(quotes, identity).run({
+    userId: "u-1",
+    language: "en",
+  });
+  const sample = await quotes.get(made.quoteId);
+  const tom = await customers.create("u-1", { name: "Tom Reyes" });
+  const real = await quotes.create("u-1", {
+    summary: "Roof leak repair",
+    jobName: "Roof Leak Repair",
+    customerId: tom.id,
+    lineItems: [],
+    status: "sent",
+  });
+
+  const roof = await flow.run("u-1", { q: "roof" });
+  assertEquals(roof.map((h) => h.id).includes(sample.id), false);
+  assertEquals(roof.some((h) => h.id === real.id), true);
+  assertEquals(roof.some((h) => h.number.startsWith("#")), false);
+  assertEquals(await flow.run("u-1", { q: sample.jobName ?? "" }), []);
+  assertEquals(
+    await flow.run("u-1", { q: sample.id.slice(0, 8).toUpperCase() }),
+    [],
+  );
   await resetKv();
 });
