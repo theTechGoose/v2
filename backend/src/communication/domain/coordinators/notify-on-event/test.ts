@@ -224,3 +224,34 @@ Deno.test("REQ-566 (cycle 4, m11): a finished field task maps to a 'Job done' ro
     "Trabajo terminado para Ana Torres: Lawn mowing",
   );
 });
+
+// REQ-564 (demo-loop cycle 4, m35): publishing a revision is a feed event —
+// the topbar ticker and Activity say which document went to which version
+// and who it went to, instead of still reading "Quote sent".
+Deno.test("REQ-564: quote/invoice 'revised' maps to '<number> Version <n> published to <customer>' in both languages", () => {
+  const q: DomainEvent = {
+    ...ev("revised", { number: "Q-001", version: 2, customerName: "Maria" }),
+    entityType: "quote",
+    entityId: "q-1",
+  };
+  assertEquals(notificationL10n(q)?.titleKey, "notify.quote.revised");
+  assertEquals(feedTitle(q, "en"), "Q-001 Version 2 published to Maria");
+  assertEquals(feedTitle(q, "es"), "Versión 2 de Q-001 publicada para Maria");
+  const inv = ev("revised", {
+    number: "INV-003",
+    version: 3,
+    customerName: "Maria",
+  });
+  assertEquals(notificationL10n(inv)?.titleKey, "notify.invoice.revised");
+  assertEquals(feedTitle(inv, "en"), "INV-003 Version 3 published to Maria");
+  assertEquals(
+    feedTitle(inv, "es"),
+    "Versión 3 de INV-003 publicada para Maria",
+  );
+  // no customer on the event → the localized "your client" fallback
+  const bare = ev("revised", { number: "INV-003", version: 3 });
+  assertEquals(
+    feedTitle(bare, "en"),
+    "INV-003 Version 3 published to your client",
+  );
+});
