@@ -29,6 +29,7 @@ import {
   docHeadline,
   type LinkedChangeOrderLike,
   type LinkedInvoiceLike,
+  payNowTarget,
   relatedDocumentRows,
   shortDate,
 } from "../../shared/documents/linked-view.ts";
@@ -303,6 +304,9 @@ export function QuoteDoc(
     lang,
   );
   const related = relatedDocumentRows(quote, lang);
+  // REQ-251 (demo m13): a signed agreement hands the customer straight to
+  // the open invoice the signature billed — not just a small related row.
+  const payNow = signed ? payNowTarget(quote) : undefined;
 
   // Signature-block copy (deck p14) — shared with the backend renderers via
   // the pure module so the web page, the PDF, and the email never drift.
@@ -778,6 +782,26 @@ export function QuoteDoc(
                         : t.signedNoteSms}
                     </div>
                   </div>
+                </div>
+              )}
+              {
+                /* REQ-251 (demo m13): the primary pay hand-off once signed —
+                  the first open invoice billed against this agreement. */
+              }
+              {payNow && (
+                <div
+                  class="ctr__no-print"
+                  style="margin-top:18px;text-align:center"
+                >
+                  <a
+                    data-cy="quote-pay-now"
+                    href={payNow.url}
+                    style={`display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:48px;padding:12px 28px;border-radius:999px;background:${PINK};color:#fff;text-decoration:none;font-weight:800;font-size:16px;box-shadow:0 6px 18px rgba(255,107,107,0.35)`}
+                  >
+                    {tFor(lang, "quoteDoc.payNow", {
+                      amount: fmtMoneyExact(payNow.balanceCents),
+                    })}
+                  </a>
                 </div>
               )}
               {

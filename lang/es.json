@@ -892,6 +892,7 @@
   "quoteDoc.docTag": "Cotización + Acuerdo",
   "quoteDoc.docTitle": "Cotización + Acuerdo · DocuMonster",
   "quoteDoc.downloadPdf": "Descargar PDF",
+  "quoteDoc.payNow": "Pagar ahora {amount}",
   "quoteDoc.forJob": "para",
   "quoteDoc.effective": "vigente",
   "quoteDoc.emailWord": "escribe a",

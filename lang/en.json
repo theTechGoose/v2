@@ -892,6 +892,7 @@
   "quoteDoc.docTag": "Quote + Agreement",
   "quoteDoc.docTitle": "Quote + Agreement · DocuMonster",
   "quoteDoc.downloadPdf": "Download PDF",
+  "quoteDoc.payNow": "Pay now {amount}",
   "quoteDoc.forJob": "for",
   "quoteDoc.effective": "effective",
   "quoteDoc.emailWord": "email",

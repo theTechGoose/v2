@@ -301,6 +301,50 @@ export function relatedDocumentRows(
   return rows;
 }
 
+// ---------- the signed quote's pay hand-off (REQ-251) ----------
+
+export interface PayNowTarget {
+  invoiceId: string;
+  number: string;
+  url: string;
+  balanceCents: number;
+}
+
+/** Invoice statuses the customer can still pay from its public page. */
+const PAYABLE_STATUSES = new Set(["sent", "viewed"]);
+
+/**
+ * REQ-251 (demo quote-invoice-money-m13): the invoice a signed quote's
+ * "Pay now" button opens — the first open invoice billed against the
+ * agreement (the public payload lists them in number / installment order)
+ * with a balance still owed. None while the quote is unsigned, or when every
+ * invoice is paid, reported paid, void, or not yet issued.
+ */
+export function payNowTarget(
+  quote: {
+    status?: string;
+    state?: string;
+    invoices?: LinkedInvoiceLike[];
+  },
+): PayNowTarget | undefined {
+  if (quote.status !== "accepted" && quote.state !== "accepted") {
+    return undefined;
+  }
+  for (const i of quote.invoices ?? []) {
+    if (!PAYABLE_STATUSES.has(i.status ?? "")) continue;
+    const balanceCents = i.balanceCents ??
+      Math.max(0, (i.amountCents ?? 0) - (i.paidCents ?? 0));
+    if (balanceCents <= 0) continue;
+    return {
+      invoiceId: i.id,
+      number: i.number,
+      url: i.url ?? `/i/${i.id}`,
+      balanceCents,
+    };
+  }
+  return undefined;
+}
+
 function invoiceStateOf(status: string | undefined): DocState {
   if (status === "paid" || status === "void" || status === "claimed") {
     return status;
