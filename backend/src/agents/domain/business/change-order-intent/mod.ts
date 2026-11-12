@@ -18,9 +18,55 @@ import {
 /** "change order" (any spacing/hyphen, plural) or Spanish "orden de cambio". */
 const CHANGE_ORDER_RE =
   /\bchange[\s-]*orders?\b|\b[oó]rden(?:es)?\s+de\s+cambio\b/i;
+const CHANGE_ORDER_ALL_RE = new RegExp(CHANGE_ORDER_RE.source, "gi");
 
+/** REQ-438 (demo-loop cycle 3, M7): what right before a phrase denies it —
+ *  "no es / not a / isn't a / no change order", "no es una orden de cambio". */
+const DENIED_BEFORE_RE =
+  /(?:^|[^\p{L}'’])(?:not|isn['’]?t|aren['’]?t|wasn['’]?t|no|nor|never|without|ni|sin|no\s+(?:es|era|sea|quiero|necesito|hagas))\s+(?:(?:a|an|the|any|una?|el|la|ninguna?)\s+)?$/iu;
+
+/** REQ-438: a NEW quote, said outright — "cotización nueva", "nueva
+ *  cotización", "presupuesto nuevo", "new / separate / another quote". */
+const NEW_QUOTE_ALL_RE =
+  /(?<!\p{L})(?:new|separate|another|fresh)\s+(?:quote|estimate|bid)(?!\p{L})|(?<!\p{L})(?:nuev[ao]|otr[ao]|separad[ao])\s+(?:cotizaci[oó]n|presupuesto|estimado)(?!\p{L})|(?<!\p{L})(?:cotizaci[oó]n|presupuesto|estimado)\s+(?:nuev[ao]|separad[ao]|aparte)(?!\p{L})/giu;
+
+/** REQ-438: a message that OPENS as a quote for someone ("Cotización para
+ *  María José Peña: …", "Quote for Bryant: …") asks for a quote. */
+const LEADING_QUOTE_FOR_RE =
+  /^\s*(?:(?:a|an|una?|la)\s+)?(?:quick\s+|r[aá]pida\s+)?(?:quote|estimate|cotizaci[oó]n|presupuesto)(?:\s+r[aá]pid[ao])?\s+(?:for|para)(?!\p{L})/iu;
+
+/** Any match of `re` (global) that is not denied right before it. */
+function affirmed(re: RegExp, text: string): boolean {
+  for (const m of text.matchAll(re)) {
+    const before = text.slice(Math.max(0, (m.index ?? 0) - 40), m.index);
+    if (!DENIED_BEFORE_RE.test(before)) return true;
+  }
+  return false;
+}
+
+/** REQ-438: "una cotización NUEVA", "new quote" — not denied ("not a new
+ *  quote"). This wins over change-order wording in the same message. */
+function saysNewQuote(text: string): boolean {
+  return affirmed(NEW_QUOTE_ALL_RE, text);
+}
+
+/**
+ * REQ-438 (M7): the message asks for a NEW quote — said outright, or opening
+ * as "Cotización para … / Quote for …". Pair 6's "Cotización para María José
+ * Peña: cambiar la llave … $180" was such a request; the model still called
+ * change_order.
+ */
+export function isNewQuoteRequest(text: string): boolean {
+  const s = text ?? "";
+  return saysNewQuote(s) ||
+    (LEADING_QUOTE_FOR_RE.test(s) && !isChangeOrderRequest(s));
+}
+
+/** A change order asked for: "change order" said and not denied ("No es
+ *  change order…", REQ-438), and no NEW quote asked for in the same breath. */
 export function isChangeOrderRequest(text: string): boolean {
-  return CHANGE_ORDER_RE.test(text ?? "");
+  const s = text ?? "";
+  return affirmed(CHANGE_ORDER_ALL_RE, s) && !saysNewQuote(s);
 }
 
 export interface ChangeOrderRequest {
@@ -404,4 +450,33 @@ export function reconcileChangeOrderDelta(input: {
   }
   if (slips.size === 1) return { kind: "ok", deltaCents: [...slips][0] };
   return { kind: "ask" };
+}
+
+/** "$180", "$1,850", "$40.50" — whole dollars without cents. */
+function dollars(cents: number): string {
+  const whole = cents % 100 === 0;
+  return `$${
+    (cents / 100).toLocaleString("en-US", {
+      minimumFractionDigits: whole ? 0 : 2,
+      maximumFractionDigits: whole ? 0 : 2,
+    })
+  }`;
+}
+
+/**
+ * REQ-438 (demo-loop cycle 3, M7): the examples in the change-order "how
+ * much?" question, from the job's OWN amounts. The template carried a fixed
+ * "$1,250" / "$19,750" (the REQ-377 demo job), shown on pair 1's $180 lawn
+ * job. The added amount is the one typed, else a tenth of the job (whole
+ * dollars), else $100; the total is the job's plus that.
+ */
+export function askAmountExamples(input: {
+  currentTotalCents: number;
+  /** The dollar amounts typed, in cents (typedAmountsCents). */
+  typed: number[];
+}): { exampleAdd: string; exampleTotal: string } {
+  const total = Math.max(0, Math.trunc(input.currentTotalCents || 0));
+  const typed = input.typed.find((c) => c > 0);
+  const add = typed ?? (Math.round(total / 10 / 100) * 100 || 10_000);
+  return { exampleAdd: dollars(add), exampleTotal: dollars(total + add) };
 }
