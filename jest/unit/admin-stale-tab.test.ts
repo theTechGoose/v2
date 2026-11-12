@@ -136,7 +136,10 @@ describe("REQ-301 (m35) refreshWhileVisible — the users list stays live", () =
   beforeEach(() => jest.useFakeTimers());
   afterEach(() => jest.useRealTimers());
 
-  test("runs on focus, on becoming visible, and every ADMIN_REFRESH_MS while visible", () => {
+  // REQ-424 AMENDMENT (cycle 2, p2): a focus / visibilitychange refresh is debounced like the
+  // scheduler's catch-up — none when the last refresh is under CATCHUP_MIN_MS (2 s) old, so a
+  // tab switch (both events at once) is one refresh, not two.
+  test("runs on focus, on becoming visible, and every ADMIN_REFRESH_MS while visible", async () => {
     const doc = {
       ...fakeTarget(),
       visibilityState: "visible" as DocumentVisibilityState,
@@ -146,10 +149,14 @@ describe("REQ-301 (m35) refreshWhileVisible — the users list stays live", () =
     const stop = refreshWhileVisible(run, { doc, win });
     expect(ADMIN_REFRESH_MS).toBeLessThanOrEqual(5_000);
     expect(run).not.toHaveBeenCalled();
-    jest.advanceTimersByTime(ADMIN_REFRESH_MS);
+    await jest.advanceTimersByTimeAsync(ADMIN_REFRESH_MS);
     expect(run).toHaveBeenCalledTimes(1);
+    await jest.advanceTimersByTimeAsync(2_000);
     win.fire("focus");
     expect(run).toHaveBeenCalledTimes(2);
+    doc.fire("visibilitychange"); // same tab switch: no second refresh
+    expect(run).toHaveBeenCalledTimes(2);
+    await jest.advanceTimersByTimeAsync(2_000);
     doc.fire("visibilitychange");
     expect(run).toHaveBeenCalledTimes(3);
     stop();

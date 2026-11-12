@@ -7,13 +7,19 @@
  *   - `displayName`: the sign-up placeholder ("New user" / "Nuevo usuario") is not a name.
  *   - `refreshWhileVisible`: the users list stays live — a refresh when the tab comes back
  *     (focus, visibilitychange) and every ADMIN_REFRESH_MS while it is visible.
+ *     REQ-424 (demo cycle 2, p2): an idle /admin backs off to ADMIN_REFRESH_MAX_MS (any input
+ *     brings it back to ADMIN_REFRESH_MS), and a tab switch — focus and visibilitychange
+ *     together — is one refresh, none when the last is under CATCHUP_MIN_MS old.
  */
 import { ApiError } from "./api.ts";
 import type { AdminUserView, WhoAmI } from "../clients/admin.ts";
 import { isPlaceholderName } from "../../shared/quote-flow/outbound-identity.ts";
+import { startPoll } from "./poll.ts";
 
-/** how often a visible /admin re-reads its users list */
+/** how often a visible /admin someone is using re-reads its users list */
 export const ADMIN_REFRESH_MS = 5_000;
+/** REQ-424 — the slowest an idle /admin re-reads it */
+export const ADMIN_REFRESH_MAX_MS = 60_000;
 
 export type AdminLock =
   | { kind: "demo"; customer: string }
@@ -59,28 +65,31 @@ interface Doc extends Target {
   visibilityState: DocumentVisibilityState;
 }
 
-/** run `run` on focus, on becoming visible, and every `every` ms while visible; returns stop() */
+/** run `run` on focus, on becoming visible, and every `every` ms while visible (backing off to
+ *  `maxEvery` while idle — REQ-424); returns stop() */
 export function refreshWhileVisible(
   run: () => void,
-  opts: { every?: number; doc?: Doc; win?: Target } = {},
+  opts: { every?: number; maxEvery?: number; doc?: Doc; win?: Target } = {},
 ): () => void {
-  const every = opts.every ?? ADMIN_REFRESH_MS;
   const doc = opts.doc ?? (globalThis.document as Doc);
   const win = opts.win ?? (globalThis as unknown as Target);
-  const visible = () => doc.visibilityState === "visible";
-  const tick = () => {
-    if (visible()) run();
+  // the scheduler reads `hidden`; this page's callers hand a visibilityState
+  const pollDoc = {
+    get hidden() {
+      return doc.visibilityState !== "visible";
+    },
+    addEventListener: (t: string, f: () => void) => doc.addEventListener(t, f),
+    removeEventListener: (t: string, f: () => void) =>
+      doc.removeEventListener(t, f),
   };
-  const onVisible = () => {
-    if (visible()) run();
-  };
-  const onFocus = () => run();
-  const timer = setInterval(tick, every);
-  doc.addEventListener("visibilitychange", onVisible);
+  const poll = startPoll(run, opts.every ?? ADMIN_REFRESH_MS, {
+    idleMaxMs: opts.maxEvery ?? ADMIN_REFRESH_MAX_MS,
+    env: { doc: pollDoc, activity: win },
+  });
+  const onFocus = () => poll.catchUp();
   win.addEventListener("focus", onFocus);
   return () => {
-    clearInterval(timer);
-    doc.removeEventListener("visibilitychange", onVisible);
+    poll();
     win.removeEventListener("focus", onFocus);
   };
 }

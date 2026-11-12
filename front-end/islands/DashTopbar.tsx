@@ -9,6 +9,10 @@ import GlobalSearch from "./GlobalSearch.tsx";
 import { TOPBAR_CSS } from "../lib/topbar-css.ts";
 import { startPoll } from "../lib/poll.ts";
 import {
+  coalescedRefresh,
+  type MutationDetail,
+} from "../lib/mutation-refresh.ts";
+import {
   PROFILE_UPDATED,
   type ProfileUpdatedDetail,
 } from "../lib/profile-events.ts";
@@ -93,26 +97,37 @@ export default function DashTopbar(
     let stopped = false;
     // REQ-221: the shared scheduler skips hidden
     // tabs (one catch-up when shown again); a failed fetch keeps the last list.
-    const stopA = startPoll(async () => {
-      const { count } = await dashboardClient.unreadCount();
-      if (!stopped) setUnread(count);
-    }, 30_000);
-    // REQ-299: the poll refreshes the shared feed; the ticker follows it
-    const stopB = startPoll(refreshNotifications, 10_000);
+    const stopA = startPoll(
+      async () => {
+        const { count } = await dashboardClient.unreadCount();
+        if (!stopped) setUnread(count);
+      },
+      30_000,
+      { idleMaxMs: 120_000 },
+    );
+    // REQ-299: the poll refreshes the shared feed; the ticker follows it.
+    // REQ-424 (cycle 2, p2): both polls back off while nobody uses the page.
+    const stopB = startPoll(refreshNotifications, 10_000, {
+      idleMaxMs: 60_000,
+    });
     const unsub = subscribeNotifications((next) => {
       if (!stopped) setItems(next);
     });
     // REQ-319: a mutation that went through lib/api (quote sent, invoice
     // claimed…) refreshes the feed at once instead of waiting for the poll.
-    const onMutated = () => {
+    // REQ-424 (cycle 2, p2): at most once per 5 s, and never for a chat post.
+    const mutated = coalescedRefresh(() => {
       refreshNotifications().catch(() => {/* the poll retries */});
-    };
+    });
+    const onMutated = (e: Event) =>
+      mutated.onMutation((e as CustomEvent<MutationDetail>).detail);
     globalThis.addEventListener(MUTATION_EVENT, onMutated);
     const teardown = () => {
       stopped = true;
       stopA();
       stopB();
       unsub();
+      mutated.stop();
       globalThis.removeEventListener(MUTATION_EVENT, onMutated);
     };
     // P-67: stop both polls the moment logout starts ("pm:logout", fired by

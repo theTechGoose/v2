@@ -78,7 +78,9 @@ describe("REQ-299 one notifications feed", () => {
   test("REQ-299 DashTopbar polls the feed and reads it, instead of its own copy of the list", () => {
     const src = read("front-end/islands/DashTopbar.tsx");
     expect(src).not.toMatch(/dashboardClient\.notifications\(/);
-    expect(src).toMatch(/startPoll\(refreshNotifications, 10_000\)/);
+    expect(src).toMatch(
+      /startPoll\(refreshNotifications, 10_000[,)]/, /* REQ-424: + idleMaxMs */
+    );
     expect(src).toMatch(/subscribeNotifications\(/);
   });
 });
