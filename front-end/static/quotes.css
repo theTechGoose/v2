@@ -489,6 +489,27 @@
   font-weight: 600;
   color: #a83b3b;
 }
+/* REQ-555 (M24): the notes sit inside a face's body, which already pads. */
+.qcard__body .qcard__sendfail,
+.qcard__back-body .qcard__sendfail {
+  padding: 8px 0 0;
+}
+/* REQ-555 (M24): the invoice card front's own Open link. */
+.qcard__open-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 8px;
+  font-family: var(--font-heading);
+  font-weight: 700;
+  font-size: 12px;
+  color: var(--brand-teal);
+  text-decoration: none;
+}
+.qcard__open-link:hover {
+  color: var(--brand-pink);
+  text-decoration: underline;
+}
 
 .qcard__flip-hint {
   position: absolute;
