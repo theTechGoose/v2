@@ -487,7 +487,9 @@ export default define.page(async function Landing(ctx) {
                 <h4 class="hs-doc__title" data-i18n="doc.q.title">
                   {t("doc.q.title")}
                 </h4>
-                <div class="hs-doc__client">R. Hernández · Apr 26</div>
+                <div class="hs-doc__client" data-i18n="doc.q.client">
+                  {t("doc.q.client")}
+                </div>
                 <div class="hs-doc__rows">
                   <div class="hs-doc__row">
                     <span data-i18n="doc.q.l1">{t("doc.q.l1")}</span>
@@ -527,38 +529,61 @@ export default define.page(async function Landing(ctx) {
                     </span>
                   </div>
                   <div class="hs-chat__body">
-                    <div class="hs-bubble hs-bubble--me">
-                      Kitchen remodel for the Hernández family. Cabinets, quartz
-                      counters, 3 days labor.
+                    <div
+                      class="hs-bubble hs-bubble--me"
+                      data-i18n="hero.mock.me1"
+                    >
+                      {t("hero.mock.me1")}
                     </div>
-                    <div class="hs-bubble hs-bubble--them">
-                      Got it. Pulling comps now…
+                    <div
+                      class="hs-bubble hs-bubble--them"
+                      data-i18n="hero.mock.them1"
+                    >
+                      {t("hero.mock.them1")}
                     </div>
                     <div class="hs-bubble hs-bubble--them hs-bubble--rich">
                       <div class="hs-rich__row">
-                        <span>Cabinets</span>
+                        <span data-i18n="hero.mock.l1">
+                          {t("hero.mock.l1")}
+                        </span>
                         <strong>$4,200</strong>
                       </div>
                       <div class="hs-rich__row">
-                        <span>Counters</span>
+                        <span data-i18n="hero.mock.l2">
+                          {t("hero.mock.l2")}
+                        </span>
                         <strong>$3,990</strong>
                       </div>
                       <div class="hs-rich__row">
-                        <span>Labor</span>
+                        <span data-i18n="hero.mock.l3">
+                          {t("hero.mock.l3")}
+                        </span>
                         <strong>$1,950</strong>
                       </div>
                       <div class="hs-rich__total">
-                        <span>Total</span>
+                        <span data-i18n="hero.mock.total">
+                          {t("hero.mock.total")}
+                        </span>
                         <strong>$10,990</strong>
                       </div>
-                      <div class="hs-rich__cta">Send to client →</div>
+                      <div class="hs-rich__cta" data-i18n="hero.mock.cta">
+                        {t("hero.mock.cta")}
+                      </div>
                     </div>
-                    <div class="hs-bubble hs-bubble--me hs-bubble--short">
-                      Send it 👍
+                    <div
+                      class="hs-bubble hs-bubble--me hs-bubble--short"
+                      data-i18n="hero.mock.me2"
+                    >
+                      {t("hero.mock.me2")}
                     </div>
                   </div>
                   <div class="hs-chat__input">
-                    <span class="hs-chat__input-text">Type a message…</span>
+                    <span
+                      class="hs-chat__input-text"
+                      data-i18n="hero.mock.input"
+                    >
+                      {t("hero.mock.input")}
+                    </span>
                     <span class="hs-chat__input-send">↑</span>
                   </div>
                 </div>
