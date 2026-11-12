@@ -101,6 +101,10 @@ export interface Notification {
     | "customer_replied"
     | "generic";
   title: string;
+  /** REQ-496 (P-59): the feed's translation key + params, so the client can
+   *  re-render the title in the live language (absent on legacy rows). */
+  titleKey?: string;
+  titleParams?: Record<string, string | number>;
   body?: string;
   entityType?: "quote" | "invoice" | "customer" | "conversation";
   entityId?: string;

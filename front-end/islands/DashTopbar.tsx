@@ -27,6 +27,7 @@ import {
   MUTATION_EVENT,
   newestNotification,
   tickerPlainText,
+  tickerTitleHtml,
 } from "../lib/ticker-pick.ts";
 
 interface Props {
@@ -156,7 +157,9 @@ export default function DashTopbar(
   const age = tickerItem ? tickerAge(tickerItem.createdAt) : null;
   const ticker = tickerItem
     ? {
-      html: tickerItem.title,
+      // REQ-496 (demo m36, cycle 3): rendered from the feed's titleKey in the
+      // LIVE language, so the EN/ES switch re-localizes it at once.
+      html: tickerTitleHtml(tickerItem, (k, v) => tFor(lang, k, v)),
       time: !age
         ? ""
         : age.key === "dashTopbar.justNow"

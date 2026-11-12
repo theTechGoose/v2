@@ -6,7 +6,10 @@ import type {
   NotificationType,
 } from "@communication/dto/notification.ts";
 import { type Lang, t, type Vars } from "@core/i18n/mod.ts";
-import { sentenceCase } from "#quote-flow/format-helpers.ts";
+import {
+  notificationTitle,
+  renderNotifString as renderShared,
+} from "#quote-flow/notification-title.ts";
 
 /**
  * NotifyOnEvent — subscribes to the EventBus on construction and writes a
@@ -86,68 +89,17 @@ function notificationEntityType(
 }
 
 /**
- * Render a notification template in `lang`. A default `{name}` (the
- * localized "your client" fallback) is injected first so a name-less event
- * still reads correctly in the VIEWER's language, then overridden by any
- * real params. No sentence-casing here — that is a read-path concern so the
- * pure `mapEventToNotification` contract keeps its exact prose.
+ * Render a notification template in `lang`. REQ-496 (demo m36, cycle 3): the
+ * rendering itself (the "your client" `{name}` fallback, REQ-224's
+ * `amountCents` / `method` formatting) lives in the shared
+ * `#quote-flow/notification-title.ts`, so the topbar ticker re-renders a feed
+ * row in the live UI language with exactly the server's words. No
+ * sentence-casing here — that is a read-path concern so the pure
+ * `mapEventToNotification` contract keeps its exact prose.
  */
 function renderNotifString(lang: Lang, key: string, params?: Vars): string {
-  return t(lang, key, {
-    name: t(lang, "notify.fallbackClient"),
-    ...renderParams(lang, params),
-  });
+  return renderShared((k, v) => t(lang, k, v), key, params);
 }
-
-/**
- * REQ-224 (demo M36 / i18n-formatting-m14): raw domain values are formatted
- * HERE, at render time, in the viewer's language — never baked into the
- * stored params. So rows already stored with the raw values read right too.
- *   - `amountCents` (integer cents) → `{amount}` as dollars ("$450").
- *     A legacy numeric `amount` is the same integer cents (what
- *     ConfirmPayment used to emit); a string `amount` is pre-formatted.
- *   - `method` (the PaymentMethod enum, "zelle") → its localized phrase
- *     ("por Zelle" / "via Zelle", "en efectivo" / "in cash").
- */
-function renderParams(lang: Lang, params?: Vars): Vars {
-  if (!params) return {};
-  const out: Vars = { ...params };
-  if (typeof params.amountCents === "number") {
-    out.amount = fmtCents(params.amountCents);
-  } else if (typeof params.amount === "number") {
-    out.amount = fmtCents(params.amount);
-  }
-  delete out.amountCents;
-  if (typeof params.method === "string") {
-    const key = METHOD_PHRASE_KEY[params.method];
-    if (key) out.method = t(lang, key);
-  }
-  return out;
-}
-
-/** Integer cents → "$450" / "$1,234.50" (whole dollars drop the cents). */
-function fmtCents(cents: number): string {
-  const whole = cents % 100 === 0;
-  return `$${
-    (cents / 100).toLocaleString("en-US", {
-      minimumFractionDigits: whole ? 0 : 2,
-      maximumFractionDigits: whole ? 0 : 2,
-    })
-  }`;
-}
-
-/** PaymentMethod enum → the "paid <phrase>" label shared with /invoices. */
-const METHOD_PHRASE_KEY: Record<string, string> = {
-  ach: "invoicesPage.method.ach",
-  card: "invoicesPage.method.card",
-  cash: "invoicesPage.method.cash",
-  cashapp: "invoicesPage.method.cashApp",
-  check: "invoicesPage.method.check",
-  other: "invoicesPage.method.other",
-  paypal: "invoicesPage.method.paypal",
-  venmo: "invoicesPage.method.venmo",
-  zelle: "invoicesPage.method.zelle",
-};
 
 /**
  * Re-render a stored notification into the viewer's language. Rows written
@@ -160,9 +112,7 @@ export function localizeNotification(
   lang: Lang,
 ): Notification {
   if (!n.titleKey) return n;
-  const title = sentenceCase(
-    renderNotifString(lang, n.titleKey, n.titleParams),
-  );
+  const title = notificationTitle((k, v) => t(lang, k, v), n);
   const body = n.bodyKey
     ? renderNotifString(lang, n.bodyKey, n.bodyParams)
     : n.body;
