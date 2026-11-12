@@ -60,6 +60,8 @@ import { adminClient } from "../clients/admin.ts";
 import { announceImpersonation } from "../lib/demo-mode/impersonation-signal.ts";
 import {
   ACTIVE_POLL_MS,
+  ACTIVE_REASK_MS,
+  ACTIVE_WAIT_MS,
   type Anchor,
   fracToPoint,
   type PeerMessage,
@@ -479,8 +481,8 @@ export default function DemoModeOverlay() {
   }, [demo?.id]);
   useEffect(() => () => restartRef.current?.dispose(), []);
 
-  // 1. is there a demo for this session? on load, every 5 s while this side is not connected to the
-  //    other, and when /admin opens one here. Every ask says where this app is. REQ-232 — the answer
+  // 1. is there a demo for this session? on load, again and again while this side is not connected
+  //    to the other (REQ-378: each ask held until a demo opens), and when /admin opens one here. Every ask says where this app is. REQ-232 — the answer
   //    only REPORTS: a staff page goes to the stage when it opened the demo (the started event) or
   //    its staff click Back to the demo — never because a poll found the demo (demo-lifecycle-m3, M21).
   //    REQ-222 (M11): the schedule is the connection state's, not a chain's — see effect 1b.
@@ -489,10 +491,17 @@ export default function DemoModeOverlay() {
     let alive = true;
     const poller = activePoll({
       every: ACTIVE_POLL_MS,
+      // REQ-378 (demo-loop cycle 2, m22) — the server holds a shown tab's ask until a demo opens
+      // for it, so the customer's app hears of a new demo at once; the next ask goes out soon
+      rest: ACTIVE_REASK_MS,
       connected: () => peerOnlineRef.current,
       ask: async () => {
-        // signed out, or the backend is away: it throws, nothing to draw, ask again later
-        const a = await demoModeClient.active({ path: here() });
+        // signed out, or the backend is away: it throws, nothing to draw, ask again later. A
+        // hidden tab never holds a connection (HTTP/1.1 allows six per host): it asks plainly
+        const wait = document.visibilityState === "visible"
+          ? ACTIVE_WAIT_MS
+          : 0;
+        const a = await demoModeClient.active({ path: here(), wait });
         if (!alive) return;
         if (a.session && a.role) {
           const found: Demo = { role: a.role, ...a.session };

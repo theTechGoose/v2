@@ -185,6 +185,13 @@ export type EndReason = "declined" | "expired";
 
 /** how often a browser with no demo asks `active` again — the customer sees the invitation within this */
 export const ACTIVE_POLL_MS = 5_000;
+/** REQ-378 (demo-loop cycle 2, m22) — how long the server may hold an ask that finds no demo
+ *  (`GET /demo-mode/active?wait=`): it answers the moment a demo is opened for the caller, so the
+ *  customer's app hears of it at once instead of on its next ask */
+export const ACTIVE_WAIT_MS = 10_000;
+/** REQ-378 — after an answered ask, the next one goes out this soon: the app is nearly always
+ *  listening (a failed ask still waits ACTIVE_POLL_MS) */
+export const ACTIVE_REASK_MS = 1_000;
 /** REQ-232 — the other side's last socket went: the link stays "live" this long before it says it
  *  is waiting. A page change in the customer's app is a new page and a new socket (the old one
  *  closes, the new one joins once the page has loaded), and it must never flash "waiting".

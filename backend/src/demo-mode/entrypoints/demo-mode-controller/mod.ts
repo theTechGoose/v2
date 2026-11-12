@@ -19,7 +19,7 @@ import {
   DemoForbiddenError,
   DemoNotFoundError,
 } from "@demo-mode/domain/coordinators/demo-access/mod.ts";
-import { isSafePath, nextColor } from "#demo-mode/protocol.ts";
+import { ACTIVE_WAIT_MS, isSafePath, nextColor } from "#demo-mode/protocol.ts";
 import { presentersOf } from "@demo-mode/domain/business/demo-role/mod.ts";
 import {
   presenterNameOf,
@@ -62,11 +62,12 @@ async function leaveDemo(
  *                                         colour (REQ-214); a demo for another user takes this admin off their current
  *                                         one (it ends when nobody is left on it). `targetPath` (REQ-179): where the
  *                                         customer is, so the staff browser moves on this one answer
- *   GET  /demo-mode/active?path=/x        any session → { role, session: { id, presenterName, targetName, targetUserId,
+ *   GET  /demo-mode/active?path=/x[&wait=ms] any session → { role, session: { id, presenterName, targetName, targetUserId,
  *                                         presenters: [{ userId, name, color }] } | null, targetPath, pid }: `path` is where
  *                                         the caller's own app is (recorded WHERE_TTL_MS, never from an impersonation
  *                                         session); `targetPath` tells the presenter where the customer is; `pid` is which
  *                                         presenter the caller is (REQ-214)
+ *                                         `wait` (REQ-378): no demo yet → held up to ACTIVE_WAIT_MS, answered the moment one opens
  *   POST /demo-mode/sessions/:id/end      a participant, `{ reason?: "declined" }` → { ok: true }; 403 anyone else; 404 unknown
  *   POST /demo-mode/sessions/:id/leave    a presenter (REQ-232 — "Return to your account" during the demo) → { ok: true }: they
  *                                         are off it; it goes on for the other presenters and ends when nobody is left; 403 the
@@ -142,13 +143,32 @@ export class DemoModeController {
   async active(
     @Context() ctx: ExecutionContext,
     @Query("path") path?: string,
+    @Query("wait") wait?: string,
   ) {
     const caller = await this.access.caller(ctx);
     // the caller's own app says where it is — an impersonation session is the presenter's browser, not the customer's
     if (isSafePath(path) && !caller.session.impersonatorId) {
       await this.demos.here(caller.user.id, path);
     }
-    const current = await this.access.current(caller);
+    // REQ-378 (demo-loop cycle 2, m22) — `wait`: no demo yet, hold the answer (up to ACTIVE_WAIT_MS)
+    // and give it the moment one is opened for the caller — the customer's app hears of a new
+    // demo at once, not on its next ask. The watch is live before the check, so nothing is missed.
+    const holdMs = Math.min(Math.max(Number(wait) || 0, 0), ACTIVE_WAIT_MS);
+    let current: Awaited<ReturnType<DemoAccess["current"]>>;
+    if (holdMs > 0) {
+      const watch = await this.access.watchCurrent(caller);
+      try {
+        current = await this.access.current(caller);
+        if (!current) {
+          await watch.next(holdMs, ctx.req.raw.signal);
+          current = await this.access.current(caller);
+        }
+      } finally {
+        watch.stop();
+      }
+    } else {
+      current = await this.access.current(caller);
+    }
     if (!current) {
       return { role: null, session: null, targetPath: null, pid: null };
     }

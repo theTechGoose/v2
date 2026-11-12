@@ -10,6 +10,7 @@ import { assert, assertEquals } from "#std/assert";
 import { DanetApplication, Module } from "#danet/core";
 import { UsersModule } from "@users/mod-root.ts";
 import { DemoModeModule } from "@demo-mode/mod-root.ts";
+import { DemoHub } from "@demo-mode/domain/coordinators/demo-hub/mod.ts";
 import { resetKv } from "@core/data/kv/mod.ts";
 import { OtpStore } from "@users/domain/data/otp-store/mod.ts";
 import { SmsService } from "@users/domain/data/sms/mod.ts";
@@ -41,7 +42,9 @@ type Call = (
   headers?: HeadersInit,
 ) => Promise<Res>;
 
-async function withServer(fn: (call: Call) => Promise<void>) {
+async function withServer(
+  fn: (call: Call, app: DanetApplication) => Promise<void>,
+) {
   Deno.env.set("KV_PATH", ":memory:");
   Deno.env.delete("TWILIO_ACCOUNT_SID");
   await resetKv();
@@ -74,7 +77,7 @@ async function withServer(fn: (call: Call) => Promise<void>) {
     return { status: r.status, body: parsed };
   };
   try {
-    await fn(call);
+    await fn(call, app);
   } finally {
     ac.abort();
     await srv.finished;
@@ -1665,5 +1668,127 @@ Deno.test("REQ-391 (demo-loop cycle 2, M4 + m21) over the composed router's sock
     assertEquals(junk.gone, { t: "peer", online: false, cid: junk.c });
     await quiet(stage, "the leaving itself is never relayed");
     await stage.close();
+  });
+});
+
+Deno.test("REQ-378 (demo-loop cycle 2, m22) a stage's socket gets its welcome and the tabs already here BEFORE any tab's answer to its arrival: a tab that sends its snapshot the instant it hears the stage is never ahead of the stage's welcome", async () => {
+  await withServer(async (call, app) => {
+    const ana = await signIn(call, "+15125553781");
+    const hans = await signIn(call, "+15125553782");
+    await call("POST", "/api/admin/bootstrap", { phoneNumber: "+15125553782" });
+    const made = await call("POST", "/api/demo-mode/sessions", {
+      userId: ana.body.userId,
+    }, H(hans.body.sessionId));
+    const id = made.body.id as string;
+    // the customer's tab, in the server's own hub: hearing a stage arrive it answers with its whole
+    // view at once — the fastest a real tab can be
+    const hub = app.get(DemoHub);
+    const chunk = {
+      k: "dom" as const,
+      l: "lp0q1x2-ab12",
+      s: 0,
+      i: 0,
+      n: 1,
+      d: "{}",
+    };
+    const tab = {
+      role: "viewer" as const,
+      cid: "tab-m22",
+      send: (m: ServerMessage) => {
+        if (m.t === "peer" && m.online && m.pid) {
+          void hub.send(id, { role: "viewer", cid: "tab-m22" }, {
+            t: "relay",
+            data: chunk,
+          });
+        }
+      },
+    };
+    const joined = await hub.join(id, tab);
+    const stage = open(id, hans.body.sessionId);
+    const first = await stage.next("the stage's first frame");
+    assertEquals(
+      first.t,
+      "welcome",
+      `the welcome comes first, not the tab's snapshot: ${
+        JSON.stringify(first)
+      }`,
+    );
+    assertEquals(await stage.next("the tab already here"), {
+      t: "peer",
+      online: true,
+      cid: "tab-m22",
+    });
+    assertEquals(await stage.next("the tab's snapshot"), {
+      t: "relay",
+      from: "viewer",
+      cid: "tab-m22",
+      data: chunk,
+    });
+    joined.leave();
+    await stage.close();
+  });
+});
+
+Deno.test("REQ-378 (demo-loop cycle 2, m22) the customer's app hears of a new demo at once: GET /demo-mode/active?wait= with no demo is held and answers the moment a demo is opened for them; with none it answers null when the wait is up; without wait it answers at once", async () => {
+  await withServer(async (call) => {
+    const ana = await signIn(call, "+15125553783");
+    const hans = await signIn(call, "+15125553784");
+    await call("POST", "/api/admin/bootstrap", { phoneNumber: "+15125553784" });
+
+    let t0 = Date.now();
+    const plain = await call(
+      "GET",
+      "/api/demo-mode/active?path=/dashboard",
+      undefined,
+      H(ana.body.sessionId),
+    );
+    assertEquals(plain.status, 200);
+    assertEquals(plain.body.session, null);
+    assert(Date.now() - t0 < 1000, "no wait: answered at once");
+
+    t0 = Date.now();
+    const none = await call(
+      "GET",
+      "/api/demo-mode/active?path=/dashboard&wait=800",
+      undefined,
+      H(ana.body.sessionId),
+    );
+    const took = Date.now() - t0;
+    assertEquals(none.body.session, null);
+    assert(took >= 700, `held for the wait when nothing starts (${took} ms)`);
+
+    // the customer's ask is out, held; the demo opens 600 ms later
+    t0 = Date.now();
+    const held = call(
+      "GET",
+      "/api/demo-mode/active?path=/dashboard&wait=8000",
+      undefined,
+      H(ana.body.sessionId),
+    );
+    await new Promise((r) => setTimeout(r, 600));
+    const made = await call("POST", "/api/demo-mode/sessions", {
+      userId: ana.body.userId,
+    }, H(hans.body.sessionId));
+    const opened = Date.now();
+    const got = await held;
+    const after = Date.now() - opened;
+    assertEquals(got.status, 200);
+    assertEquals(got.body.role, "viewer");
+    assertEquals(got.body.session?.id, made.body.id);
+    assert(
+      after < 1500,
+      `answered as soon as the demo opened (${after} ms after, not at the 8 s wait)`,
+    );
+
+    // a demo already on: the wait is never held
+    t0 = Date.now();
+    const on = await call(
+      "GET",
+      "/api/demo-mode/active?wait=8000",
+      undefined,
+      H(ana.body.sessionId),
+    );
+    assertEquals(on.body.session?.id, made.body.id);
+    assert(Date.now() - t0 < 1000, "a demo already on answers at once");
   });
 });
