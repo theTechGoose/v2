@@ -3,6 +3,7 @@ import {
   classifyQuoteForPipeline,
   isSampleQuote,
 } from "#quote-flow/pipeline-stats.ts";
+import { isUndelivered } from "#quote-flow/delivery.ts";
 import { CustomerStore } from "@crm/domain/data/customer-store/mod.ts";
 import { QuoteStore } from "@paperwork/domain/data/quote-store/mod.ts";
 import { ViewStore } from "@paperwork/domain/data/view-store/mod.ts";
@@ -122,9 +123,14 @@ function deriveStage(args: {
     sentAt: quote.sentAt,
     acceptedAt: quote.acceptedAt,
     lostAt: quote.lostAt,
+    lastDelivery: quote.lastDelivery,
+    deliveredAt: quote.deliveredAt,
   });
   if (cls === "won") return "won";
   if (cls === "lost") return "lost";
+  // REQ-236 (demo M8): a send that reached nobody is never "Just sent" /
+  // "Out for response" — whatever status lock-quote left on it.
+  if (isUndelivered(quote)) return "undelivered";
   if (cls === "draft") return "draft";
 
   // Awaiting → refine by engagement (sent/opened/cooling/stale).
@@ -164,6 +170,11 @@ function computeDaysIn(
   // "Days since entering the current stage."
   let entryMs: number;
   switch (stage) {
+    case "undelivered":
+      entryMs = q.lastDelivery?.at
+        ? new Date(q.lastDelivery.at).getTime()
+        : new Date(q.updatedAt).getTime();
+      break;
     case "draft":
       entryMs = new Date(q.createdAt).getTime();
       break;

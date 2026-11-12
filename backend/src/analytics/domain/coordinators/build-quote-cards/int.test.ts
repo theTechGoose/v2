@@ -263,3 +263,72 @@ Deno.test("customerName: joined from customer store; orphaned customerId → nul
     assertEquals(orphan!.customerName, null);
   });
 });
+
+// REQ-236 (demo M8): an undelivered quote is never "sent" / "Just sent" /
+// "Out for response" — its stage is "undelivered".
+Deno.test("REQ-236: stage undelivered when the last send reached nobody (status sent, 0 opens, <24h)", async () => {
+  await withKv(async () => {
+    const { quotes, flow } = fresh();
+    await makeQuote(quotes, {
+      status: "sent",
+      sentAt: minus(3_600_000),
+      lastDelivery: {
+        at: minus(3_600_000),
+        channel: "sms",
+        smsFailureReason: "Twilio 21211: Invalid 'To' Phone Number",
+      },
+    });
+    const [c] = await flow.run("u-1", NOW);
+    assertEquals(c.stage, "undelivered");
+  });
+});
+
+Deno.test("REQ-236: stage undelivered on a draft whose send failed", async () => {
+  await withKv(async () => {
+    const { quotes, flow } = fresh();
+    await makeQuote(quotes, {
+      lastDelivery: {
+        at: minus(60_000),
+        channel: "email",
+        emailFailureReason: "no recipient",
+      },
+    });
+    const [c] = await flow.run("u-1", NOW);
+    assertEquals(c.stage, "undelivered");
+  });
+});
+
+Deno.test("REQ-236: a quote once delivered stays sent even if a later resend failed", async () => {
+  await withKv(async () => {
+    const { quotes, flow } = fresh();
+    await makeQuote(quotes, {
+      status: "sent",
+      sentAt: minus(3_600_000),
+      deliveredAt: minus(3_600_000),
+      lastDelivery: {
+        at: minus(60_000),
+        channel: "sms",
+        smsFailureReason: "carrier down",
+      },
+    });
+    const [c] = await flow.run("u-1", NOW);
+    assertEquals(c.stage, "sent");
+  });
+});
+
+Deno.test("REQ-236: acceptance beats a stale delivery failure", async () => {
+  await withKv(async () => {
+    const { quotes, flow } = fresh();
+    await makeQuote(quotes, {
+      status: "accepted",
+      acceptedAt: minus(60_000),
+      lastDelivery: {
+        at: minus(3_600_000),
+        channel: "email",
+        emailFailureReason: "no recipient",
+      },
+    });
+    const [c] = await flow.run("u-1", NOW);
+    assertEquals(c.stage, "won");
+  });
+});

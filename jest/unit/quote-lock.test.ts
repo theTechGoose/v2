@@ -81,8 +81,15 @@ describe("REQ-234 AsstChat wiring", () => {
   });
 
   it("the header names a locked quote as locked, not 'Quote sent'", () => {
-    expect(src).toMatch(
-      /quoteStatus === QUOTE_LOCKED[\s\S]{0,120}asstChat\.header\.quoteLocked/,
+    // REQ-236 moved the header's reading into lib/send-delivery.ts headerStatusKey, fed the
+    // last card's status
+    expect(src).toMatch(/lastCardStatus: quoteStatus/);
+    const delivery = fs.readFileSync(
+      path.join(__dirname, "../../front-end/lib/send-delivery.ts"),
+      "utf8",
+    );
+    expect(delivery).toMatch(
+      /lastCardStatus === QUOTE_LOCKED[\s\S]{0,120}asstChat\.header\.quoteLocked/,
     );
   });
 

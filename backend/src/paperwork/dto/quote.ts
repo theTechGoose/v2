@@ -10,6 +10,9 @@ import {
 } from "#class-validator";
 import { plainToInstance, Type } from "#class-transformer";
 import type { NumberedFields } from "@core/data/numbered-store/mod.ts";
+import type { QuoteDelivery } from "#quote-flow/delivery.ts";
+
+export type { QuoteDelivery };
 
 /**
  * One row in the persisted terms-wizard answers. The customer-facing quote
@@ -204,7 +207,17 @@ export class UpdateQuoteDto {
   declinedName?: string;
 }
 
-export interface Quote extends CreateQuoteDto, NumberedFields {
+/** REQ-236 (demo M8): server-written send outcome. Not on the request DTOs
+ *  — only SendQuote writes it, never a client PUT. */
+export interface QuoteDeliveryFields {
+  /** The latest send attempt: where it went, or why it didn't. */
+  lastDelivery?: QuoteDelivery;
+  /** First time any channel actually delivered the quote. */
+  deliveredAt?: string;
+}
+
+export interface Quote
+  extends CreateQuoteDto, NumberedFields, QuoteDeliveryFields {
   /** REQ-039 (NW-52): flagged, never erased — lists exclude it. */
   deletedAt?: string;
   id: string;
@@ -216,6 +229,8 @@ export interface Quote extends CreateQuoteDto, NumberedFields {
 
 export type QuoteStage =
   | "draft"
+  /** REQ-236: a send was tried and reached nobody — not out for response. */
+  | "undelivered"
   | "sent"
   | "opened"
   | "cooling"

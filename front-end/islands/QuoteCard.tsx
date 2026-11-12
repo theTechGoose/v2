@@ -104,6 +104,8 @@ export default function QuoteCard(
   const story = QSTORIES[q.id] ?? tFor(lang, "quoteCard.storyFallback");
   const cta = q.stage === "draft"
     ? tFor(lang, "quoteCard.cta.finishSend")
+    : q.stage === "undelivered"
+    ? tFor(lang, "quoteCard.cta.fixContact")
     : q.stage === "opened" && q.opens >= 3
     ? tFor(lang, "quoteCard.cta.sendOffer")
     : q.stage === "opened"
@@ -115,7 +117,8 @@ export default function QuoteCard(
     : q.stage === "sent"
     ? tFor(lang, "quoteCard.cta.setReminder")
     : tFor(lang, "quoteCard.cta.openQuote");
-  const showOpens = q.stage !== "draft" && q.opens > 0;
+  const showOpens = q.stage !== "draft" && q.stage !== "undelivered" &&
+    q.opens > 0;
   const opens = realOpens ?? [];
   const reading = readingFor(q, opens, lang);
 

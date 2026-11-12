@@ -270,6 +270,13 @@ function deriveChip(
   if (c.quoteStatus === "accepted") {
     return { kind: "paid", label: tFor(lang, "status.signed") };
   }
+  // REQ-236 (demo M8): the send reached nobody — never "Quote sent".
+  if (c.quoteStatus === "undelivered") {
+    return {
+      kind: "needs",
+      label: tFor(lang, "asstThreads.chip.notDelivered"),
+    };
+  }
   if (c.quoteStatus === "sent" || c.quoteStatus === "viewed") {
     return { kind: "sent", label: tFor(lang, "asstThreads.chip.quoteSent") };
   }

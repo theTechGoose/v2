@@ -9,6 +9,11 @@ import { t } from "@core/i18n/mod.ts";
 import type { SmsFailureCode } from "#quote-flow/sms-failure.ts";
 import type { AgentConversation } from "@agents/dto/conversation.ts";
 import type { AgentMessage } from "@agents/dto/message.ts";
+import {
+  deliverySucceeded,
+  isUndelivered,
+  type QuoteDelivery,
+} from "#quote-flow/delivery.ts";
 
 export type SendChannel = "email" | "sms" | "both";
 
@@ -44,9 +49,11 @@ export interface SendQuoteResult {
  *   3. If the quote is already 'sent', short-circuit the *state flip*
  *      (idempotent; re-clicks don't double-emit events). Email/SMS
  *      dispatch is NOT idempotent — the user clicked Send, so we deliver.
- *   4. Flip quote.status = 'sent' + stamp sentAt, emit `quote:sent`.
- *   5. Dispatch via the requested channel(s). Failures don't abort the
- *      status flip — the user can retry from the quote surface.
+ *   4. Dispatch via the requested channel(s).
+ *   5. Store the outcome on the quote (`lastDelivery`). ONLY when a channel
+ *      delivered: stamp deliveredAt/sentAt, flip a draft to 'sent', emit
+ *      `quote:sent` (REQ-236 — a failed send is not a sent quote; the user
+ *      fixes the contact and retries).
  *   6. Append a system message so the chat shows what happened.
  */
 @Injectable()
@@ -87,29 +94,6 @@ export class SendQuote {
     // REQ-226: the structured why — the assistant's recovery card branches
     // on this, never on the translated reason.
     let smsFailureCode: SmsFailureCode | undefined;
-
-    // Stamp the send state on the FIRST dispatch. sentAt (not status) is the
-    // guard: quotes from before REQ-234 may carry status "sent" without a
-    // timestamp (lock-quote used to flip it; it now only stamps lockedAt),
-    // and the SMS-only path used to skip the stamp entirely — which hid the
-    // freshly won job from /jobs and every dashboard number (UX-02).
-    if (!quote.sentAt) {
-      const statusFlip = !quote.status || quote.status === "draft";
-      await this.quotes.update(quote.id, input.userId, {
-        ...(statusFlip ? { status: "sent" } : {}),
-        sentAt: new Date().toISOString(),
-      });
-      // Emit only on the actual draft→sent transition (a locked quote is
-      // still a draft — REQ-234 — so this is where it becomes "sent").
-      if (statusFlip) {
-        await this.bus.emit({
-          userId: input.userId,
-          entityType: "quote",
-          entityId: quote.id,
-          action: "sent",
-        });
-      }
-    }
 
     if (wantEmail) {
       try {
@@ -161,6 +145,46 @@ export class SendQuote {
       }
     }
 
+    // REQ-236 (demo M8): the quote is "sent" only once a channel actually
+    // delivered it. The outcome of every attempt is stored on the quote so
+    // /quotes, the pipeline counts, the header and the thread list can tell
+    // "sent" from "tried and failed". sentAt (not status) guards the one-time
+    // send state: quotes from before REQ-234 may carry status "sent" (lock-quote
+    // used to flip it; it now only stamps lockedAt) — then this only records
+    // the delivery. A locked quote is still a draft, so this is where it
+    // becomes "sent" (REQ-234).
+    const now = new Date().toISOString();
+    const lastDelivery: QuoteDelivery = {
+      at: now,
+      channel,
+      ...(emailedTo ? { emailedTo } : {}),
+      ...(textedTo ? { textedTo } : {}),
+      ...(emailFailureReason ? { emailFailureReason } : {}),
+      ...(smsFailureReason ? { smsFailureReason } : {}),
+    };
+    const delivered = deliverySucceeded(lastDelivery);
+    // The transition is judged on the quote as it stood BEFORE dispatch:
+    // the email/SMS dispatchers stamp status/sentAt themselves on success.
+    const statusFlip = delivered && !quote.sentAt &&
+      (!quote.status || quote.status === "draft");
+    const fresh = await this.quotes.getOwned(quote.id, input.userId);
+    const updatedQuote = await this.quotes.update(quote.id, input.userId, {
+      lastDelivery,
+      ...(delivered && !fresh.deliveredAt ? { deliveredAt: now } : {}),
+      ...(delivered && !fresh.sentAt ? { sentAt: now } : {}),
+      ...(statusFlip && fresh.status !== "sent" ? { status: "sent" } : {}),
+    });
+    // Emit only on the actual draft→sent transition (REQ-234: a locked quote
+    // is still a draft, so lock-quote never emitted it).
+    if (statusFlip) {
+      await this.bus.emit({
+        userId: input.userId,
+        entityType: "quote",
+        entityId: quote.id,
+        action: "sent",
+      });
+    }
+
     const dividerContent = buildDivider({
       channel,
       emailedTo,
@@ -187,8 +211,10 @@ export class SendQuote {
       },
     });
 
+    // The thread-list chip: "undelivered" until some send reaches the
+    // customer; a later failed resend of a delivered quote stays "sent".
     const updatedConv = await this.conversations.update(conv.id, {
-      quoteStatus: "sent",
+      quoteStatus: isUndelivered(updatedQuote) ? "undelivered" : "sent",
     });
 
     return { conversation: updatedConv, newMessages: [note] };
