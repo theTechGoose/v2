@@ -41,6 +41,19 @@ Deno.test("REQ-280: typing '-50abc' into the amount leaves the field holding '50
       "a digit typed after a dropped letter lands at the caret",
     );
 
+    // REQ-293 (demo-loop cycle 1, p11): the rolling digits are decoration — every
+    // odometer is aria-hidden, so AT reads the labelled input, not "0123456789"
+    expect.eq(
+      await page.evaluate(() => {
+        const odos = Array.from(document.querySelectorAll(".odo"));
+        return `${odos.length}/${
+          odos.filter((o) => o.getAttribute("aria-hidden") === "true").length
+        }`;
+      }),
+      "2/2",
+      "REQ-293: both odometers are aria-hidden",
+    );
+
     // a form posting name="amount" would send exactly this
     expect.eq(
       await page.evaluate(() =>

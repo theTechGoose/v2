@@ -328,7 +328,10 @@ function Odometer(
   },
 ) {
   return (
-    <span class={`odo ${className ?? ""} ${empty ? "is-empty" : ""}`}>
+    <span
+      class={`odo ${className ?? ""} ${empty ? "is-empty" : ""}`}
+      aria-hidden="true"
+    >
       {Array.from(text).map((ch, i) => <OdoCell key={`${i}-${ch}`} ch={ch} />)}
     </span>
   );
