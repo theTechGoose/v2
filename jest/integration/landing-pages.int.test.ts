@@ -151,6 +151,23 @@ describe("P-19 / SSR is already Spanish when pm_lang=es (no wrong-language first
   });
 });
 
+describe("REQ-413 (demo-loop cycle 2, p5 / m49) the landing SSR speaks one language", () => {
+  it("REQ-413 es: the tablist and the sign-in steps are labelled in Spanish", async () => {
+    const html = await pageHtml("/", "es");
+    expect(html).toMatch(/class="lang-toggle"[^>]*aria-label="Idioma"/);
+    expect(html).toMatch(/class="pm-steps"[^>]*aria-label="Pasos para entrar"/);
+    expect(html).not.toContain("aria-label=\"Sign-in steps\"");
+    expect(html).not.toMatch(/\$10\.800/);
+    expect(html).toContain("Mándanos un mensaje");
+  });
+  it("REQ-413 en: the hero lead is written for an English reader", async () => {
+    const html = await pageHtml("/", "en");
+    expect(html).not.toContain("You communicate with us in Spanish");
+    expect(html).toContain("Talk to us in English or Spanish.");
+    expect(html).toMatch(/class="lang-toggle"[^>]*aria-label="Language"/);
+  });
+});
+
 describe("P-08 admin-configurable landing offers (PROPOSED CONTRACT — see header)", () => {
   it("P-08 authed GET /admin/landing-offers returns the single offer config (red today: 404)", async () => {
     const s = await contractor("+15125552900");

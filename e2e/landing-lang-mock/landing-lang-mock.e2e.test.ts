@@ -92,3 +92,39 @@ Deno.test("REQ-345 m3: clicking EN on / flips both mocks to English without a re
       "the URL reads ?lang=en",
     );
   }));
+
+Deno.test("REQ-413 p5 / m49: the landing's aria-labels and hero lead follow the EN/ES toggle", (t) =>
+  story(t, async ({ page, expect }) => {
+    await page.setViewportSize(DESKTOP);
+    await page.goto("/?lang=es");
+    const aria = (sel: string) =>
+      page.locator(sel).first().getAttribute("aria-label");
+    await page.locator(".lang-toggle").first().waitFor({ state: "attached" });
+    expect.eq(await aria(".lang-toggle"), "Idioma", "es: the tablist label");
+    expect.eq(
+      await aria(".pm-steps"),
+      "Pasos para entrar",
+      "es: the sign-in steps label",
+    );
+    await page.locator('.lang-toggle button[data-lang="en"]').click();
+    await page.waitForFunction(
+      () =>
+        document.querySelector(".lang-toggle")?.getAttribute("aria-label") ===
+          "Language",
+      undefined,
+      { timeout: 10_000 },
+    ).catch(() => {});
+    expect.eq(await aria(".lang-toggle"), "Language", "en: the tablist label");
+    expect.eq(
+      await aria(".pm-steps"),
+      "Sign-in steps",
+      "en: the sign-in steps label",
+    );
+    const lead =
+      (await page.locator('[data-i18n="hero.lead"]').first().textContent()) ??
+        "";
+    expect(
+      lead.startsWith("Talk to us in English or Spanish."),
+      `en: the hero lead is written for an English reader (got "${lead.trim()}")`,
+    );
+  }));

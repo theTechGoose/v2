@@ -65,7 +65,7 @@ Deno.test("REQ-313 (m48) an unnumbered quote (the sample) shows no number and no
   assert(!html.includes("undefined"), "no 'undefined' leaks into the HTML");
   assertEquals(
     doc.querySelector(".qcard__back-eyebrow")!.textContent.trim(),
-    "The open story",
+    "Opens",
   );
 });
 

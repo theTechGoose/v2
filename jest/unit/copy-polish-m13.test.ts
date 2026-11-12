@@ -119,8 +119,12 @@ describe("REQ-275 the worker's note button shows a labelled marker, not a stray 
 });
 
 describe("REQ-275 the clients empty hero keeps a space between its sentences (demo i18n-formatting-m13)", () => {
-  test("a space sits before the <br /> so textContent reads 'customer. They'll'", () => {
+  // REQ-413 (demo-loop cycle 2, p7) dropped the second sentence ("They'll
+  // keep the lights on."): the empty headline is one sentence that ends on
+  // "first customer." — so no <br /> can glue two sentences together.
+  test("the empty headline is one sentence ending after </em>", () => {
     const src = read("front-end/components/ClientsSections.tsx");
-    expect(src).toMatch(/<\/em>\. <br \/>/);
+    expect(src).toMatch(/clientsHero\.emptyTitleEm"\)\}<\/em>\.\n\s*<\/h1>/);
+    expect(src).not.toMatch(/clientsHero\.emptyTitlePost/);
   });
 });

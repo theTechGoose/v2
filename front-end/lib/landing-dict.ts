@@ -38,6 +38,9 @@ export const LANDING_DICT: Record<LandingLang, Record<string, string>> = {
     "nav.pricing": "Pricing",
     "nav.cta": "Get Started",
     "nav.login": "Log in",
+    // REQ-413: aria-labels follow the page language (data-i18n-aria).
+    "aria.language": "Language",
+    "aria.signInSteps": "Sign-in steps",
     "hero.kickerPill": "For pros",
     "hero.kicker": "Built for contractors who work with their hands",
     "hero.h1a": "You do the work.",
@@ -46,7 +49,7 @@ export const LANDING_DICT: Record<LandingLang, Record<string, string>> = {
     // instead of whichever rotor words happen to be visible.
     "hero.h1Sr": "You do the work. We handle the paperwork.",
     "hero.lead":
-      "You communicate with us in Spanish. Everything goes out to your clients in perfect English. No apps to learn. Just chat with us.",
+      "Talk to us in English or Spanish. Everything goes out to your clients in their language, ready to sign. No apps to learn — just chat.",
     "hero.cta1": "Get Started →",
     "hero.cta2": "See How It Works",
     "hero.trustStrong": "{n}+ contractors",
@@ -208,6 +211,8 @@ export const LANDING_DICT: Record<LandingLang, Record<string, string>> = {
     "nav.pricing": "Precios",
     "nav.cta": "Empezar",
     "nav.login": "Entrar",
+    "aria.language": "Idioma",
+    "aria.signInSteps": "Pasos para entrar",
     "hero.kickerPill": "Para pros",
     "hero.kicker": "Hecho para contratistas que trabajan con las manos",
     "hero.h1a": "Tú haces el trabajo.",
@@ -263,7 +268,7 @@ export const LANDING_DICT: Record<LandingLang, Record<string, string>> = {
     "docs.eyebrow": "Un mensaje. Tres documentos.",
     "docs.h2html": "Cotización, contrato, factura — <em>listo</em>.",
     "docs.lead":
-      "Mandanos un mensaje. Te regresamos un documento real con números reales — no un garabato en una servilleta.",
+      "Mándanos un mensaje. Te regresamos un documento real con números reales — no un garabato en una servilleta.",
     "docs.tab.quote": "Cotización",
     "docs.tab.contract": "Contrato",
     "docs.tab.invoice": "Factura",

@@ -270,3 +270,198 @@ describe("REQ-350 (i) one noun for 'View as customer'", () => {
     );
   });
 });
+
+/**
+ * REQ-413 — demo-loop cycle 2, issues p5 / p7 / m49 (run r561db6d4): wording
+ * slips REQ-350's sweep missed, English aria-labels on the landing, es money
+ * grouping in the landing's chat mock, idioms ("let's start the river",
+ * "keep the lights on"), and the English landing lead that told an English
+ * reader "You communicate with us in Spanish."
+ */
+describe("REQ-413 (p5) wording slips", () => {
+  test("es: the send card's failure reads 'No entregada —', agreeing with the header's 'No entregada'", () => {
+    expect(es["asstChat.header.notDelivered"]).toBe("No entregada");
+    expect(es["asstChat.cta.notDelivered"]).toBe("No entregada —");
+  });
+  test("es landing: 'Mándanos' carries its accent", () => {
+    // deno-lint-ignore no-explicit-any
+    const { LANDING_DICT } = require("../../front-end/lib/landing-dict") as any;
+    for (const v of Object.values(LANDING_DICT.es) as string[]) {
+      expect(v).not.toMatch(/\bMandanos\b/);
+    }
+    expect(LANDING_DICT.es["docs.lead"]).toMatch(/^Mándanos un mensaje\./);
+  });
+  test("en: a failed logo upload is a whole sentence", () => {
+    expect(en["settings.logoUploadFailed"]).toBe(
+      "Couldn't upload the logo. Try again.",
+    );
+    expect(es["settings.logoUploadFailed"]).toBe(
+      "No se pudo subir el logo. Inténtalo de nuevo.",
+    );
+  });
+  test("the quote card back's eyebrow is 'Opens' / 'Aperturas', not a calque", () => {
+    expect(en["quoteCard.back.eyebrow"]).toBe("Opens");
+    expect(es["quoteCard.back.eyebrow"]).toBe("Aperturas");
+  });
+  test("payments: the hero and the tip agree on how long a check takes", () => {
+    for (const d of [en, es]) {
+      expect(d["paymentsPage.hero.freshSub"]).toContain(
+        d["paymentsPage.tip.upTo5"],
+      );
+      expect(d["paymentsPage.note.transitCheck"]).toContain(
+        d["paymentsPage.tip.upTo5"].replace(/^(up to|hasta) /, ""),
+      );
+    }
+    expect(en["paymentsPage.tip.upTo5"]).toBe("up to 5 business days");
+    expect(es["paymentsPage.tip.upTo5"]).toBe("hasta 5 días hábiles");
+    for (const d of [en, es]) {
+      expect(d["paymentsPage.hero.freshSub"]).not.toMatch(
+        /in a week|en una semana/,
+      );
+    }
+  });
+});
+
+describe("REQ-413 (p5) no <h1> opens on a lowercase dictionary string", () => {
+  // Every `<h1 …>{tFor(lang, "key")…` (optionally inside <em>/<span>) whose
+  // key is in lang/*.json: that string is the headline's first word.
+  const H1_KEY =
+    /<h1\b[^>]*>\s*(?:<\w+[^>]*>\s*)*\{\s*t(?:For|n|nFor)?\(\s*(?:lang,\s*)?"([\w.]+)"/g;
+  const walk = (d: string): string[] =>
+    fs.readdirSync(path.join(ROOT, d), { withFileTypes: true }).flatMap((e) =>
+      e.isDirectory()
+        ? walk(path.join(d, e.name))
+        : e.name.endsWith(".tsx")
+        ? [path.join(d, e.name)]
+        : []
+    );
+  test("every h1-leading key starts with a capital in en and es", () => {
+    const keys = new Set<string>();
+    for (
+      const f of [
+        ...walk("front-end/components"),
+        ...walk("front-end/islands"),
+        ...walk("front-end/routes"),
+      ]
+    ) {
+      for (const m of read(f).matchAll(H1_KEY)) keys.add(m[1]);
+    }
+    expect(keys.has("quotesHero.settledTitle")).toBe(true);
+    const bad: string[] = [];
+    for (const k of keys) {
+      for (const lang of ["en", "es"] as const) {
+        const v = DICTS[lang][k];
+        if (v != null && !/^[\p{Lu}\d¡¿$]/u.test(v)) {
+          bad.push(`${lang} ${k}: ${v}`);
+        }
+      }
+    }
+    expect(bad).toEqual([]);
+    expect(en["quotesHero.settledTitle"]).toBe(
+      "Nothing is waiting on a client right now.",
+    );
+    expect(es["quotesHero.settledTitle"]).toBe(
+      "Nada está esperando a un cliente ahora mismo.",
+    );
+  });
+});
+
+describe("REQ-413 (p5) money on the landing stays US-grouped in Spanish too", () => {
+  /** "$10.800" — a dollar amount grouped with a dot (es-ES), which a US
+   *  customer reads as ten dollars. */
+  const ES_MONEY = /\$\s?\d{1,3}(?:\.\d{3})+(?!\d)/;
+  test("routes/index.tsx, static/landing-scripts.js and the landing dict carry no '$10.800'", () => {
+    for (
+      const f of [
+        "front-end/routes/index.tsx",
+        "front-end/static/landing-scripts.js",
+        "front-end/lib/landing-dict.ts",
+        "front-end/__stories__/DemoPhoneChat.stories.tsx",
+      ]
+    ) {
+      // Comments may quote the wrong form to explain the rule.
+      const hits = read(f).split("\n").filter((l) =>
+        ES_MONEY.test(l) && !/^\s*(\*|\/\/|\/\*)/.test(l)
+      );
+      expect({ f, hits }).toEqual({ f, hits: [] });
+    }
+    expect(read("front-end/routes/index.tsx")).toContain(
+      "rango típico $10,800–$12,400.",
+    );
+  });
+});
+
+describe("REQ-413 (p5) the landing's aria-labels follow the page language", () => {
+  // deno-lint-ignore no-explicit-any
+  const { LANDING_DICT } = require("../../front-end/lib/landing-dict") as any;
+  const src = read("front-end/routes/index.tsx");
+  test("no hard-coded English aria-label on the tablist or the sign-in steps", () => {
+    expect(src).not.toMatch(/aria-label="Language"/);
+    expect(src).not.toMatch(/aria-label="Sign-in steps"/);
+    expect(src).toMatch(
+      /class="lang-toggle"[^>]*data-i18n-aria="aria\.language"[^>]*aria-label=\{t\("aria\.language"\)\}|class="lang-toggle"[^>]*aria-label=\{t\("aria\.language"\)\}[^>]*data-i18n-aria="aria\.language"/,
+    );
+    expect(src).toMatch(
+      /class="pm-steps"[^>]*aria-label=\{t\("aria\.signInSteps"\)\}[^>]*data-i18n-aria="aria\.signInSteps"|class="pm-steps"[^>]*data-i18n-aria="aria\.signInSteps"[^>]*aria-label=\{t\("aria\.signInSteps"\)\}/,
+    );
+  });
+  test("both labels exist in en and es", () => {
+    expect(LANDING_DICT.en["aria.language"]).toBe("Language");
+    expect(LANDING_DICT.es["aria.language"]).toBe("Idioma");
+    expect(LANDING_DICT.en["aria.signInSteps"]).toBe("Sign-in steps");
+    expect(LANDING_DICT.es["aria.signInSteps"]).toBe("Pasos para entrar");
+  });
+  test("the client-side toggle repaints [data-i18n-aria] too", () => {
+    const js = read("front-end/static/landing-scripts.js");
+    expect(js).toMatch(/querySelectorAll\("\[data-i18n-aria\]"\)/);
+    expect(js).toMatch(/setAttribute\("aria-label"/);
+  });
+});
+
+describe("REQ-413 (p7) plain copy instead of idioms", () => {
+  test("invoices empty hero: 'No invoices yet — send your first one.'", () => {
+    expect(en["invoicesPage.hero.emptyEm"]).toBe("send your first one");
+    expect(es["invoicesPage.hero.emptyEm"]).toBe("envía la primera");
+    for (const d of [en, es]) {
+      expect(Object.values(d).join("\n")).not.toMatch(
+        /start the river|comencemos el flujo/,
+      );
+    }
+  });
+  test("clients hero: no 'keep the lights on' / 'te dan de comer'", () => {
+    for (const d of [en, es]) {
+      expect(Object.values(d).join("\n")).not.toMatch(
+        /lights on|dan de comer|da de comer/,
+      );
+      expect(d["clientsHero.emptyTitlePost"]).toBeUndefined();
+    }
+    expect(
+      `${en["clientsHero.titlePre"]} ${
+        tn("en", "clientsHero.people", 5, { word: "five" })
+      } ${en["clientsHero.titlePost"]}`,
+    )
+      .toBe("The five people you work for.");
+    expect(
+      `${es["clientsHero.titlePre.one"]} ${es["clientsHero.people.one"]} ${
+        es["clientsHero.titlePost.one"]
+      }`,
+    )
+      .toBe("La persona para la que trabajas.");
+    expect(read("front-end/components/ClientsSections.tsx")).not.toMatch(
+      /emptyTitlePost/,
+    );
+  });
+});
+
+describe("REQ-413 (m49) the English landing lead is written for an English reader", () => {
+  // deno-lint-ignore no-explicit-any
+  const { LANDING_DICT } = require("../../front-end/lib/landing-dict") as any;
+  test("en hero.lead no longer says 'You communicate with us in Spanish'", () => {
+    const lead =
+      "Talk to us in English or Spanish. Everything goes out to your clients in their language, ready to sign. No apps to learn — just chat.";
+    expect(LANDING_DICT.en["hero.lead"]).toBe(lead);
+    expect(en["landing.hero.lead"]).toBe(lead);
+    // The Spanish pitch is unchanged.
+    expect(LANDING_DICT.es["hero.lead"]).toBe(es["landing.hero.lead"]);
+  });
+});
