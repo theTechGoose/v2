@@ -82,6 +82,10 @@ import {
   widerBullets,
 } from "../../shared/quote-flow/option-bullets.ts";
 import {
+  type OptionTap,
+  optionTap,
+} from "../../shared/quote-flow/option-tap.ts";
+import {
   acceptedJobChipLabel,
   extractQuickQuotePrefill,
   type PriceLine,
@@ -2572,6 +2576,17 @@ export default function AsstChat({
     setEditingTitleId(optionId);
   }
 
+  /** REQ-335 (M31): a tap anywhere inside a card chooses THAT card; only the
+   *  pencils open inline editing (shared/quote-flow/option-tap.ts). `text` is
+   *  the current title / bullet text the editor starts from. */
+  function onOptionTap(tap: OptionTap, text = "") {
+    const fx = optionTap(tap);
+    setSelectedOptionId(fx.selectedOptionId);
+    if (fx.editTitle) startTitleEdit(tap.optionId, text);
+    if (fx.editBullet) startBulletEdit(tap.optionId, fx.editBullet, text);
+    if (fx.toggleDeleted) toggleBulletDeleted(tap.optionId, fx.toggleDeleted);
+  }
+
   /** Commit an inline title edit (uncontrolled input → value read on blur).
    *  Empty or unchanged input is a no-op so a stray click never blanks a
    *  heading. */
@@ -4836,8 +4851,11 @@ export default function AsstChat({
                                             )}
                                             onClick={(e) => {
                                               e.stopPropagation();
-                                              startTitleEdit(
-                                                opt.id,
+                                              onOptionTap(
+                                                {
+                                                  kind: "titlePencil",
+                                                  optionId: opt.id,
+                                                },
                                                 opt.jobName,
                                               );
                                             }}
@@ -4903,20 +4921,51 @@ export default function AsstChat({
                                                 type="button"
                                                 class="chat__jobopt-text"
                                                 disabled={b.deleted}
+                                                aria-pressed={selected}
                                                 onClick={(e) => {
+                                                  // REQ-335 (M31): a bullet
+                                                  // tap SELECTS its card —
+                                                  // editing lives on the
+                                                  // pencil beside it.
                                                   e.stopPropagation();
-                                                  if (!b.deleted) {
-                                                    startBulletEdit(
-                                                      opt.id,
-                                                      b.id,
-                                                      b.text,
-                                                    );
-                                                  }
+                                                  onOptionTap({
+                                                    kind: "bullet",
+                                                    optionId: opt.id,
+                                                    bulletId: b.id,
+                                                  });
                                                 }}
                                               >
                                                 {b.text}
                                               </button>
                                             )}
+                                          {isEditing || b.deleted ? null : (
+                                            <button
+                                              type="button"
+                                              class="chat__jobopt-pencil"
+                                              title={tFor(
+                                                lang,
+                                                "asstChat.jobOpts.editBullet",
+                                              )}
+                                              aria-label={tFor(
+                                                lang,
+                                                "asstChat.jobOpts.editBullet",
+                                              )}
+                                              onClick={(e) => {
+                                                e.stopPropagation();
+                                                onOptionTap(
+                                                  {
+                                                    kind: "bulletPencil",
+                                                    optionId: opt.id,
+                                                    bulletId: b.id,
+                                                    deleted: b.deleted,
+                                                  },
+                                                  b.text,
+                                                );
+                                              }}
+                                            >
+                                              ✎
+                                            </button>
+                                          )}
                                           <button
                                             type="button"
                                             class="chat__jobopt-x"
@@ -4934,7 +4983,11 @@ export default function AsstChat({
                                               : tFor(lang, "common.delete")}
                                             onClick={(e) => {
                                               e.stopPropagation();
-                                              toggleBulletDeleted(opt.id, b.id);
+                                              onOptionTap({
+                                                kind: "delete",
+                                                optionId: opt.id,
+                                                bulletId: b.id,
+                                              });
                                             }}
                                           >
                                             {b.deleted ? "↺" : "×"}
