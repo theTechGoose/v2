@@ -5,6 +5,9 @@
  *     impersonation, is not an error to print — the browser's session has become the
  *     customer's (another tab clicked Demo) or is gone. The page locks with a plain notice.
  *   - `displayName`: the sign-up placeholder ("New user" / "Nuevo usuario") is not a name.
+ *   - `impersonateLabel` (REQ-426, demo cycle 2 p13-e): the impersonate option reads
+ *     "Person · Business (when present) · phone" — the person always leads, so the live
+ *     refresh never swaps the name for a business the user just set.
  *   - `refreshWhileVisible`: the users list stays live — a refresh when the tab comes back
  *     (focus, visibilitychange) and every ADMIN_REFRESH_MS while it is visible.
  *     REQ-424 (demo cycle 2, p2): an idle /admin backs off to ADMIN_REFRESH_MAX_MS (any input
@@ -13,6 +16,7 @@
  */
 import { ApiError } from "./api.ts";
 import type { AdminUserView, WhoAmI } from "../clients/admin.ts";
+import { fmtPhone } from "./format.ts";
 import { isPlaceholderName } from "../../shared/quote-flow/outbound-identity.ts";
 import { startPoll } from "./poll.ts";
 
@@ -55,6 +59,22 @@ export function displayName(
   noNameYet: string,
 ): string {
   return isPlaceholderName(name) ? noNameYet : name!.trim();
+}
+
+/** REQ-426 (demo cycle 2, p13-e) — one stable impersonate option label:
+ *  person first, business when present, phone last. */
+export function impersonateLabel(
+  user: Pick<AdminUserView, "name" | "businessName" | "phoneNumber">,
+  noNameYet: string,
+): string {
+  const business = user.businessName?.trim();
+  return [
+    displayName(user.name, noNameYet),
+    business,
+    fmtPhone(user.phoneNumber),
+  ]
+    .filter(Boolean)
+    .join(" · ");
 }
 
 interface Target {
