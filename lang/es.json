@@ -3901,6 +3901,7 @@
   "demoMode.waitingKeep": "Su última pantalla se queda aquí hasta que vuelva su app.",
   "demoMode.elsewhere": "Abierta en otra ventana",
   "demoMode.useHere": "Usar esta ventana",
+  "demoMode.movedElsewhere": "Esta demo pasó a otra ventana.",
   "demoMode.rejoin": "Volver a la demo",
   "demoMode.returnAsk": "Volver a tu cuenta te saca de la demo con {name}.",
   "demoMode.leave": "Salir de la demo",
