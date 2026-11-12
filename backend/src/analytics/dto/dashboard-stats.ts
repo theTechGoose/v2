@@ -29,6 +29,7 @@ export class QuoteCountsDto {
   accepted!: number;
 }
 
+/** REQ-397: money still owed on open receivables, INTEGER CENTS per bucket. */
 export class AgingBucketsDto {
   @IsNumber()
   current!: number;
@@ -43,6 +44,8 @@ export class AgingBucketsDto {
 export class InvoiceCountsDto {
   @IsNumber()
   total!: number;
+  /** REQ-397: open receivables — sent / viewed / claimed (or legacy
+   *  pending), unpaid. Scheduled installments are not counted. */
   @IsNumber()
   pending!: number;
   @IsNumber()

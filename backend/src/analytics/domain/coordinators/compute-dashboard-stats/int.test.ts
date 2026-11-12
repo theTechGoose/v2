@@ -215,7 +215,7 @@ Deno.test("compute-dashboard-stats integration: revenue sparkline only counts pa
   await resetKv();
 });
 
-Deno.test("compute-dashboard-stats integration: aging buckets group pending invoices", async () => {
+Deno.test("compute-dashboard-stats integration: aging buckets sum the open invoices' balance cents (REQ-397)", async () => {
   // NOW is Apr 15, 2026.
   Deno.env.set("KV_PATH", ":memory:");
   await resetKv();
@@ -224,21 +224,25 @@ Deno.test("compute-dashboard-stats integration: aging buckets group pending invo
     quoteId: "c",
     dueDate: "2026-05-15",
     status: "pending",
+    amount: 1_00,
   }); // 30d future → current
   await invoices.create("u-1", {
     quoteId: "c",
     dueDate: "2026-04-10",
     status: "pending",
+    amount: 20_00,
   }); //  5d overdue → aging1_14d
   await invoices.create("u-1", {
     quoteId: "c",
     dueDate: "2026-03-25",
     status: "pending",
+    amount: 300_00,
   }); // 21d overdue → overdue15_30d
   await invoices.create("u-1", {
     quoteId: "c",
     dueDate: "2026-01-01",
     status: "pending",
+    amount: 4_000_00,
   }); // 104d overdue → overdue30plus
   await invoices.create("u-1", {
     quoteId: "c",
@@ -249,10 +253,10 @@ Deno.test("compute-dashboard-stats integration: aging buckets group pending invo
 
   const stats = await flow.run("u-1", NOW);
   assertEquals(stats.invoices.agingBuckets, {
-    current: 1,
-    aging1_14d: 1,
-    overdue15_30d: 1,
-    overdue30plus: 1,
+    current: 1_00,
+    aging1_14d: 20_00,
+    overdue15_30d: 300_00,
+    overdue30plus: 4_000_00,
   });
   await resetKv();
 });

@@ -12,6 +12,10 @@ import type {
 } from "@crm/dto/customer.ts";
 import type { Quote } from "@paperwork/dto/quote.ts";
 import type { Invoice } from "@paperwork/dto/invoice.ts";
+import {
+  isOpenReceivable,
+  receivableBalanceCents,
+} from "@paperwork/domain/business/open-receivable/mod.ts";
 import type { View } from "@paperwork/dto/view.ts";
 import { docNumberOf } from "#documents/numbering.ts";
 import { invoiceState, quoteState } from "#documents/versions.ts";
@@ -20,9 +24,6 @@ import {
   balanceSubLabel,
   type BalanceSubParts,
 } from "#quote-flow/balance-sub.ts";
-
-/** Invoice statuses that still count as owed (REQ-016). */
-const OWED_STATUSES = new Set(["pending", "sent", "viewed", "claimed"]);
 
 const MS_PER_DAY = 86_400_000;
 const TWELVE_MONTHS_MS = 365 * MS_PER_DAY;
@@ -115,8 +116,9 @@ function buildOne(
   let balanceCents = 0;
   for (const i of myInvoices) {
     // Audit1 #3 — invoice.amount is INTEGER CENTS now (no × 100).
+    // REQ-397: owed = the shared open-receivable rule, at what is still owed.
     const cents = i.amount ?? 0;
-    if (OWED_STATUSES.has(i.status ?? "")) balanceCents += cents;
+    if (isOpenReceivable(i)) balanceCents += receivableBalanceCents(i);
     else if (i.status === "credit" || i.status === "deposit") {
       balanceCents -= cents;
     }
@@ -139,7 +141,7 @@ function buildOne(
   const paidInvoiceCount = myInvoices.filter((i) => i.status === "paid").length;
   const activeJobs = Math.max(0, acceptedQuotes.length - paidInvoiceCount);
   const overdueCount = myInvoices.filter(
-    (i) => i.status === "pending" && i.dueDate < now.toISOString().slice(0, 10),
+    (i) => isOpenReceivable(i) && i.dueDate < now.toISOString().slice(0, 10),
   ).length;
   // P-34/P-64: the story line's "· active" in the viewer's language — REQ-367:
   // a kind the client words in the live language (clientsDisplay.jobsSub.*).
@@ -289,7 +291,7 @@ function buildBalanceSub(
   const today = now.toISOString().slice(0, 10);
   if (balanceCents > 0) {
     const pending = invoices
-      .filter((i) => i.status === "pending")
+      .filter(isOpenReceivable)
       .sort((a, b) => a.dueDate.localeCompare(b.dueDate));
     const next = pending[0];
     if (next) {

@@ -31,6 +31,7 @@ import { dueDateLine } from "../../shared/quote-flow/pipeline-stats.ts";
 import { docNumberOf } from "../../shared/documents/numbering.ts";
 import { versionOf } from "../../shared/documents/versions.ts";
 import { readCached, refreshDash } from "../lib/dash-cache.ts";
+import { pickKpis } from "../lib/dashboard-kpis.ts";
 import {
   readNotifications,
   refreshNotifications,
@@ -289,44 +290,6 @@ function escapeHtml(s: string): string {
         ? "&quot;"
         : "&#39;",
   );
-}
-
-function pickKpis(stats: DashboardStats | undefined) {
-  const buckets = stats?.invoices.agingBuckets;
-  const current = (buckets?.current ?? 0) / 100;
-  const mid = (buckets?.aging1_14d ?? 0) / 100;
-  const overdue =
-    ((buckets?.overdue15_30d ?? 0) + (buckets?.overdue30plus ?? 0)) / 100;
-  const owed = current + mid + overdue;
-  const sparkline = stats?.revenue.sparkline12mo ?? [];
-  const thisMonthBilled =
-    (sparkline.length > 0 ? sparkline[sparkline.length - 1] : 0) / 100;
-
-  const paidCount = stats?.invoices.paid ?? 0;
-  const ytd = (stats?.revenue.ytdCents ?? 0) / 100;
-  const avgJob = paidCount > 0 ? Math.round(ytd / paidCount) : 0;
-
-  // When there are no pending invoices, clamp Outstanding to exactly $0 — the
-  // aging buckets can carry stray sub-dollar cents that otherwise surface as a
-  // nonsense "$0.09 · 0 invoices".
-  const pending = stats?.invoices.pending ?? 0;
-
-  return {
-    thisMonthBilled,
-    activeJobs: 0,
-    outstanding: pending === 0 ? 0 : owed,
-    outstandingCount: pending,
-    outstandingOverdue: stats?.invoices.overdue ?? 0,
-    pendingQuotes: stats?.quotes.sent ?? 0,
-    // INTEGER CENTS end to end (P-36) — the KPI formats via
-    // formatMoneyCompact, so no /100 dollars conversion here.
-    pendingTotal: stats?.quotedValueCents ?? 0,
-    avgJob,
-    owed,
-    current,
-    mid,
-    overdue,
-  };
 }
 
 interface State {
