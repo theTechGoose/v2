@@ -49,6 +49,10 @@ import {
 } from "../../shared/quote-flow/wizard-terms.ts"; // REQ-347
 import { quoteUpdatedBy } from "../lib/chat-quote-refresh.ts";
 import { chatQuoteLink } from "../lib/chat-quote-link.ts";
+import {
+  liveDraftOffer,
+  offerAmount,
+} from "../../shared/quote-flow/chat-draft-offer.ts"; // REQ-388
 import { quoteHasPrice } from "../../shared/quote-flow/quote-price-guard.ts";
 import {
   type ChipKey,
@@ -5993,6 +5997,9 @@ export default function AsstChat({
                 visible,
                 customer,
               );
+              // REQ-388 (demo-loop cycle 2, M23): a pricing answer offers
+              // the draft — on the newest message, while no quote is bound.
+              const draftOffer = liveDraftOffer(visible, quoteId);
               return visible.map((m) => {
                 const wizardStepId = (
                   m.payload as { wizardStepId?: string } | undefined
@@ -8692,6 +8699,26 @@ export default function AsstChat({
                               { number },
                             )}
                           </a>
+                        );
+                      })()}
+                      {(() => {
+                        // REQ-388 (M23): the button sends its own words
+                        // ("Draft a quote at $1,500"), which the server
+                        // reads as the ask and drafts from this offer.
+                        if (draftOffer?.id !== m.id) return null;
+                        const label = tFor(lang, "asstChat.draftOffer", {
+                          amount: offerAmount(draftOffer.offer.amountCents),
+                        });
+                        return (
+                          <button
+                            type="button"
+                            data-cy="msg-draft-offer"
+                            disabled={sending}
+                            onClick={() => void sendText(label)}
+                            style="display:inline-flex;align-items:center;gap:6px;margin-top:6px;padding:7px 12px;border:0;border-radius:999px;background:#144852;color:#fff;font-size:12.5px;font-weight:800;cursor:pointer"
+                          >
+                            {label}
+                          </button>
                         );
                       })()}
                       <div class="msg__time">{fmtTime(m.createdAt, lang)}</div>

@@ -176,7 +176,9 @@ const assistantText = (msgs: AgentMessage[]) =>
 // M30
 // ---------------------------------------------------------------------------
 
-Deno.test("REQ-368 M30: the demo's pricing question gets three priced tiers and a draft at the Market price — the chat model is never asked", async () => {
+// REQ-388 (demo-loop cycle 2, M23) supersedes REQ-368's draft at the Market
+// price: a question is answered and the draft is offered, never written.
+Deno.test("REQ-368 M30 + REQ-388 M23: the demo's pricing question gets three priced tiers and an offer to draft at the Market price — no quote until asked, and the chat model is never asked", async () => {
   Deno.env.set("KV_PATH", ":memory:");
   await resetKv();
   const fx = fresh();
@@ -207,19 +209,21 @@ Deno.test("REQ-368 M30: the demo's pricing question gets three priced tiers and 
   assertStringIncludes(text, "Market: $2,400");
   assertStringIncludes(text, "Premium: $3,100");
 
-  const card = res.newMessages.find((m) => m.kind === "action_card");
-  assert(card, "no draft card");
-  const p = card!.payload as {
-    status?: string;
-    quoteId?: string;
-    totalCents?: number;
-  };
-  assertEquals(p.status, "draft");
-  assertEquals(p.totalCents, 240_000);
-  const quote = await fx.quotes.getOwned(p.quoteId!, "u-1");
-  assertEquals(quote.estimatedTotal, 240_000);
-  assertEquals(quote.lineItems[0].description, "Panel swap 200a");
-  assertEquals(res.conversation.quoteId, quote.id);
+  assertEquals(
+    res.newMessages.filter((m) => m.kind === "action_card").length,
+    0,
+    "a question was drafted into a quote",
+  );
+  assertEquals((await fx.quotes.listByUser("u-1")).length, 0);
+  assertEquals(res.conversation.quoteId, undefined);
+  const reply = res.newMessages.find((m) =>
+    m.role === "assistant" && m.kind === "text"
+  );
+  assertEquals(reply?.payload?.draftOffer, {
+    title: "Panel swap 200a",
+    amountCents: 240_000,
+    tier: "Market",
+  });
   await resetKv();
 });
 
