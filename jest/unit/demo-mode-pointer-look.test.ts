@@ -42,12 +42,13 @@ describe("REQ-374 (demo m9/p8, cycle 2) the pointer's tag stays readable and off
     }
   });
 
-  test("at rest the tag fades to ~0.6, never to 0; the arrow is always fully opaque", () => {
-    expect(TAG_REST_OPACITY).toBeGreaterThanOrEqual(0.5);
-    expect(TAG_REST_OPACITY).toBeLessThan(1);
+  // REQ-633 REVISION (demo m35, cycle 5): a 0.6 tag let the coach mark's dark scrim show
+  // through ("under the dark layer"); at rest it now stays fully opaque and shrinks instead
+  test("at rest the tag never fades (REQ-633: fully opaque, compact); the arrow is always fully opaque", () => {
+    expect(TAG_REST_OPACITY).toBe(1);
     expect(TAG_IDLE_MS).toBeGreaterThan(0);
-    expect(pointerLook(false)).toEqual({ arrow: 1, tag: 1 });
-    expect(pointerLook(true)).toEqual({ arrow: 1, tag: TAG_REST_OPACITY });
+    expect(pointerLook(false)).toEqual({ arrow: 1, tag: 1, compact: false });
+    expect(pointerLook(true)).toEqual({ arrow: 1, tag: 1, compact: true });
     // no second, dimmer arrow state any more
     expect((motion as Record<string, unknown>).ARROW_IDLE_MS).toBeUndefined();
   });

@@ -27,6 +27,10 @@
  * the screen's controls: a small translucent marker against the edge it is off, pointing that way
  * (`offMark`), no tag, no ring (`data-off`).
  *
+ * REQ-633 (demo m2 + m35 + c4-S12b, cycle 5) — the tag stays off the TEXT under it too, not only
+ * the controls (`coverage` scores both; the least covered spot wins, with or without an anchored
+ * element), and at rest it stays fully opaque, shrunk to the initials (`tagLabel`).
+ *
  * REQ-546 (demo m14, cycle 4) — the waves and the last-click dot are drawn inside a clip with
  * `bounds`' box (`data-cy="demo-wave-clip"`, overflow:hidden), never over what is around it.
  */
@@ -42,6 +46,7 @@ import {
   type Pt,
   type Rect,
   TAG_IDLE_MS,
+  tagLabel,
   tagPlacement,
 } from "../../../shared/demo-mode/motion.ts";
 import {
@@ -96,20 +101,51 @@ const estimate = (name: string) => ({ w: 18 + name.length * 7.5, h: 22 });
 export const CONTROL_SELECTOR =
   "button,a[href],input,select,textarea,summary,label,[role=button],[role=link],[role=option],[role=tab],[role=radio],[role=checkbox],[role=menuitem]";
 
-/** REQ-543 — the topmost control at (x, y) of `doc` other than the one `tip` is on (the target,
- *  or a control holding it), looking through a same-origin iframe (the stage's mirror of the
- *  customer's page, scaled into its frame) */
-function otherControlAt(
+/** REQ-633 (demo m2, cycle 5) — what the tag must not hide besides a control: a text block */
+export const TEXT_SELECTOR =
+  "h1,h2,h3,h4,h5,h6,p,li,td,th,dt,dd,caption,figcaption,blockquote,pre,code,legend";
+
+/** REQ-633 — does `el` show text at (x, y)? Its own text nodes' boxes when the browser lays them
+ *  out (a Range), else the element: a text block, or one holding text directly */
+function textAt(doc: Document, el: Element, x: number, y: number): boolean {
+  const own = Array.from(el.childNodes).filter((n) =>
+    n.nodeType === 3 && (n.textContent ?? "").trim() !== ""
+  );
+  if (!own.length) return el.matches(TEXT_SELECTOR);
+  if (typeof doc.createRange !== "function") return true;
+  try {
+    const range = doc.createRange();
+    const slop = 2;
+    for (const n of own) {
+      range.selectNodeContents(n);
+      for (const b of Array.from(range.getClientRects())) {
+        if (
+          x >= b.left - slop && x <= b.right + slop && y >= b.top - slop &&
+          y <= b.bottom + slop
+        ) return true;
+      }
+    }
+    return false;
+  } catch {
+    return true;
+  }
+}
+
+/** REQ-543 + REQ-633 — what is at (x, y) of `doc`: 2 for a control other than the one `tip` is
+ *  on (the target, or a control holding it), 1 for text, 0 for nothing a tag would hide; looking
+ *  through a same-origin iframe (the stage's mirror of the customer's page, scaled into its
+ *  frame) */
+function contentAt(
   doc: Document,
   x: number,
   y: number,
   tip: Pt,
   depth = 0,
-): boolean {
+): 0 | 1 | 2 {
   const el = typeof doc.elementFromPoint === "function"
     ? doc.elementFromPoint(x, y)
     : null;
-  if (!el) return false;
+  if (!el) return 0;
   if (el.tagName === "IFRAME" && depth < 2) {
     const f = el as HTMLIFrameElement;
     let inner: Document | null = null;
@@ -118,7 +154,7 @@ function otherControlAt(
     } catch {
       inner = null;
     }
-    if (!inner) return false;
+    if (!inner) return 0;
     const b = f.getBoundingClientRect();
     const s = f.clientWidth ? b.width / f.clientWidth : 1;
     const map = (p: Pt): Pt => ({
@@ -126,29 +162,42 @@ function otherControlAt(
       y: (p.y - b.top) / s - f.clientTop,
     });
     const at = map({ x, y });
-    return otherControlAt(inner, at.x, at.y, map(tip), depth + 1);
+    return contentAt(inner, at.x, at.y, map(tip), depth + 1);
   }
   const c = el.closest(CONTROL_SELECTOR);
-  if (!c) return false;
-  const r = c.getBoundingClientRect();
-  return !(tip.x >= r.left && tip.x <= r.left + r.width &&
-    tip.y >= r.top && tip.y <= r.top + r.height);
+  if (c) {
+    const r = c.getBoundingClientRect();
+    const holdsTip = tip.x >= r.left && tip.x <= r.left + r.width &&
+      tip.y >= r.top && tip.y <= r.top + r.height;
+    if (!holdsTip) return 2;
+  }
+  return textAt(doc, el, x, y) ? 1 : 0;
+}
+
+/** the tag box's sample points: a 3 × 3 grid, inset 2 px */
+function samples(r: Rect): Pt[] {
+  const i = 2;
+  const xs = [r.left + i, r.left + r.width / 2, r.left + r.width - i];
+  const ys = [r.top + i, r.top + r.height / 2, r.top + r.height - i];
+  return ys.flatMap((y) => xs.map((x) => ({ x, y })));
 }
 
 /** REQ-543 (demo m6) — would a tag drawn at `r` cover a control other than the one the arrow at
  *  `tip` points at ('Carl' over Cancel)? Hit-tests its centre and inset corners on the page */
 export function coversControl(doc: Document, r: Rect, tip: Pt): boolean {
-  const i = 2;
-  const xs = [r.left + i, r.left + r.width / 2, r.left + r.width - i];
-  const ys = [r.top + i, r.top + r.height / 2, r.top + r.height - i];
-  const pts: Pt[] = [
-    { x: xs[1], y: ys[1] },
-    { x: xs[0], y: ys[0] },
-    { x: xs[2], y: ys[0] },
-    { x: xs[0], y: ys[2] },
-    { x: xs[2], y: ys[2] },
-  ];
-  return pts.some((p) => otherControlAt(doc, p.x, p.y, tip));
+  return samples(r).some((p) => contentAt(doc, p.x, p.y, tip) === 2);
+}
+
+/** REQ-633 (demo m2, cycle 5) — how much a tag drawn at `r` would hide: over its sample points,
+ *  3 for another control, 1 for text ('started!' over the chip pointed at, '$16,800.00', 'TBD');
+ *  0 is a clean spot. The target the arrow is on is not "another" control. */
+export function coverage(doc: Document, r: Rect, tip: Pt): number {
+  let n = 0;
+  for (const p of samples(r)) {
+    const c = contentAt(doc, p.x, p.y, tip);
+    n += c === 2 ? 3 : c;
+  }
+  return n;
 }
 
 /** REQ-437 + REQ-543 — place the tag element for an arrow drawn at `tip`: its MEASURED size (the
@@ -161,7 +210,7 @@ export function placeTag(
   box: Bounds,
   rect: Rect | null,
   fallback: { w: number; h: number },
-  covers?: (r: Rect) => boolean,
+  covers?: (r: Rect) => boolean | number,
 ): void {
   const tag = {
     w: el.offsetWidth || fallback.w,
@@ -213,8 +262,8 @@ export default function DemoPointer(
     const el = tagRef.current;
     if (!el) return;
     const l = live.current;
-    // REQ-543 — off the other controls of the page under it (the tag and arrow are
-    // pointer-events:none, so the hit-test sees through them)
+    // REQ-543 + REQ-633 — off the other controls and the text of the page under it, anchored
+    // or not (the tag and arrow are pointer-events:none, so the hit-test sees through them)
     const doc = globalThis.document;
     placeTag(
       el,
@@ -222,7 +271,7 @@ export default function DemoPointer(
       l.bounds ?? windowBox(),
       l.rect,
       l.fallback,
-      doc && l.rect ? (r) => coversControl(doc, r, p) : undefined,
+      doc ? (r) => coverage(doc, r, p) : undefined,
     );
   }, []);
   const ref = useCallback(
@@ -236,7 +285,7 @@ export default function DemoPointer(
   });
   // REQ-437 — the first render places the tag from the target with the estimated size; every
   // painted frame then places it from the drawn arrow with the measured one
-  const fallback = estimate(name);
+  const fallback = estimate(tagLabel(name, look.compact));
   live.current = { bounds, rect: outside ? null : rect ?? null, fallback };
   const place = pointer
     ? tagPlacement(
@@ -359,6 +408,7 @@ export default function DemoPointer(
                   ref={tagRef}
                   data-cy="demo-pointer-tag"
                   data-tag-side={place?.side}
+                  data-compact={look.compact ? "" : undefined}
                   aria-hidden="true"
                   style={`position:absolute;left:${
                     (place?.x ?? 0) - pointer.x
@@ -366,7 +416,7 @@ export default function DemoPointer(
                     (place?.y ?? 0) - pointer.y
                   }px;padding:2px 8px;border-radius:999px;background:${color};color:#fff;font-size:12px;font-weight:700;white-space:nowrap;border:1px solid rgba(255,255,255,.85);box-shadow:0 1px 4px rgba(0,0,0,.35);opacity:${look.tag};transition:opacity .3s`}
                 >
-                  {name}
+                  {tagLabel(name, look.compact)}
                 </span>
               </>
             )}
