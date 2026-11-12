@@ -4,7 +4,10 @@ import {
   type LLMClient,
 } from "@agents/domain/business/llm/base/mod.ts";
 import { t } from "@core/i18n/mod.ts";
-import { summarizeJobName } from "#quote-flow/job-name.ts";
+import {
+  summarizeJobName,
+  trimTrailingConnectors,
+} from "#quote-flow/job-name.ts";
 import { clampSummary } from "#quote-flow/summary-clamp.ts";
 import { scopeBulletsFromRaw } from "#quote-flow/scope-from-raw.ts";
 import { withoutMoneySentences } from "#quote-flow/private-cost.ts";
@@ -146,7 +149,8 @@ function clampJobName(s: string, lang: "en" | "es"): string {
     " ",
   );
   const words = cleaned.split(" ").filter(Boolean).slice(0, 3);
-  return words.map(titleCaseWord).join(" ");
+  // REQ-434 (cycle 3, M10): the 3-word slice never leaves "And" last.
+  return trimTrailingConnectors(words.map(titleCaseWord).join(" "));
 }
 
 function deriveJobName(summary: string, lang: "en" | "es"): string {
