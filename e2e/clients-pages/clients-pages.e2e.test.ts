@@ -72,9 +72,12 @@ Deno.test("REQ-135: thirty customers — the page shows twenty-five, says Page 1
     await expect.see("Client 30");
     expect((await cards.count()) === 5, `five cards on page two (${await cards.count()})`);
     await page.locator("[data-cy='clients-search']").fill("client 07");
-    await expect.see("Page 1 of 1");
     await expect.see("Client 07");
+    for (let i = 0; i < 50 && (await cards.count()) !== 1; i++) await page.waitForTimeout(100);
     expect((await cards.count()) === 1, `one card for the search (${await cards.count()})`);
+    // REQ-419 (demo-loop cycle 2, p13-k): one page of results has no pager — no "Page 1 of 1"
+    await expect.notSee("Page 1 of 1");
+    expect((await page.locator("[data-cy='clients-pager']").count()) === 0, "no pager for one page");
     await expect.see("30 on the books");
   }));
 
@@ -161,4 +164,55 @@ Deno.test("REQ-279 (demo M32): the customers search is accent-blind — 'maria' 
       expect((await cards.count()) === 1, `one card for "${q}" (${await cards.count()})`);
       await expect.see("María José Peña");
     }
+  }));
+
+Deno.test("REQ-419 (demo-loop cycle 2: m40, S7c, p13-k): one customer — no pager; the closed back is hidden from AT; the open back shows every row unclipped", (t) =>
+  story(t, async ({ page, expect, http, baseUrl }) => {
+    const { auth } = await signIn(http, page, baseUrl);
+    const r = await http("/api/customers", {
+      method: "POST",
+      headers: auth,
+      body: JSON.stringify({ name: "Dana Reyes", phoneNumber: "(512) 555-3150", email: "dana@blackhole.postmarkapp.com", address: "8807 Spicewood Springs Rd, Austin, TX 78759" }),
+    });
+    await r.body?.cancel();
+    await page.goto("/customers");
+    await expect.see("Dana Reyes");
+    // p13-k: a single page has no "Page 1 of 1" floating in the grid
+    await expect.notSee("Page 1 of 1");
+    expect((await page.locator("[data-cy='clients-pager']").count()) === 0, "no pager for one page");
+
+    const card = page.locator(".ccard2", { hasText: "Dana Reyes" });
+    const panel = card.locator(".ccard2__panel");
+    // S7c: the closed back is out of the accessibility tree and the tab order
+    expect((await panel.getAttribute("aria-hidden")) === "true", "the closed back is aria-hidden");
+    expect((await panel.evaluate((el) => (el as HTMLElement).inert)) === true, "the closed back is inert");
+    const snap = await page.locator("body").ariaSnapshot();
+    expect(!snap.includes("dana@blackhole.postmarkapp.com"), "the closed back's email is not in the accessibility snapshot");
+
+    await clickUntil(page, ".ccard2:has-text('Dana Reyes') .ccard2__name", async () =>
+      (await card.getAttribute("class"))?.includes("ccard2--open") ?? false);
+    await page.waitForTimeout(500); // the panel's slide-up transition
+    expect((await panel.getAttribute("aria-hidden")) === null, "the open back is exposed to AT");
+    expect((await panel.evaluate((el) => (el as HTMLElement).inert)) === false, "the open back is not inert");
+
+    // m40: no row group is squeezed below its content, and every row is reachable inside the panel
+    const groups = await panel.locator(".ccard2__panel-rows").evaluateAll((els) =>
+      els.map((el) => ({ cy: el.getAttribute("data-cy") ?? "contact", client: el.clientHeight, scroll: el.scrollHeight }))
+    );
+    expect(groups.length === 3, `contact, subscriptions and documents groups (${JSON.stringify(groups)})`);
+    for (const g of groups) {
+      expect(g.scroll <= g.client + 1, `the ${g.cy} group shows all its rows: ${JSON.stringify(g)}`);
+    }
+    const docs = panel.locator("[data-cy='ccard2-docs']");
+    await docs.scrollIntoViewIfNeeded();
+    const fits = await panel.evaluate((el) => {
+      const p = el.getBoundingClientRect();
+      const d = el.querySelector("[data-cy='ccard2-docs']")!.getBoundingClientRect();
+      return { panelTop: p.top, panelBottom: p.bottom, docsTop: d.top, docsBottom: d.bottom };
+    });
+    expect(
+      fits.docsTop >= fits.panelTop - 1 && fits.docsBottom <= fits.panelBottom + 1,
+      `the DOCUMENTS group scrolls fully into the panel: ${JSON.stringify(fits)}`,
+    );
+    await expect.see("8807 Spicewood Springs Rd, Austin, TX 78759");
   }));
