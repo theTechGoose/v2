@@ -109,6 +109,7 @@ import {
   composerFlowFor,
   composerPlaceholderKey,
 } from "../../shared/quote-flow/trade-fit.ts"; // REQ-343, REQ-450
+import { openOnboardingAsk } from "../../shared/quote-flow/onboarding-composer.ts"; // REQ-582
 import type { ExtractedDuration } from "../../shared/quote-flow/quote-facts.ts";
 import { reviewJobDetails } from "../../shared/quote-flow/review-job-details.ts";
 import {
@@ -545,10 +546,10 @@ interface ActionCardPayload {
   serviceAddress?: string;
 }
 
-/** Compose the composer placeholder. During onboarding we want it to
- *  echo the question Bossie is asking rather than the generic job-mode
- *  slab example, otherwise new users wonder if they're in the right
- *  surface. After onboarding hands off, revert to the job example —
+/** Compose the composer placeholder. While an onboarding ask is open (the
+ *  latest assistant message IS that ask — REQ-582, demo cycle 4 m39) it
+ *  echoes the question Bossie is asking; otherwise — any reply in any
+ *  thread, however it mentions "email" or "payment" — the job example.
  *  REQ-343: the example of THIS business's trade (a cleaner never sees the
  *  concrete slab), the generic one when the name names no trade.
  *  REQ-450: and of THIS flow — "I know my price" shows a priced job, "help
@@ -559,27 +560,10 @@ function composerPlaceholder(
   businessName?: string,
   flow: ComposerFlow = "ask",
 ): string {
-  const lastAssistant = [...msgs].reverse().find((m) =>
-    m.role === "assistant" && m.kind === "text"
+  return tFor(
+    lang,
+    openOnboardingAsk(msgs, tFor) ?? composerPlaceholderKey(businessName, flow),
   );
-  const text = (lastAssistant?.content ?? "").toLowerCase();
-  if (/what should i call you|what.s your (first )?name/.test(text)) {
-    return tFor(lang, "asstChat.composer.firstName");
-  }
-  if (/what.s your business called|business name/.test(text)) {
-    return tFor(lang, "asstChat.composer.businessName");
-  }
-  if (/looks like you.re in|which state|right state/.test(text)) {
-    return tFor(lang, "asstChat.composer.stateCode");
-  }
-  if (/business address|paste it on one line/.test(text)) {
-    return tFor(lang, "asstChat.composer.address");
-  }
-  if (/email/.test(text)) return tFor(lang, "asstChat.composer.email");
-  if (/payment|venmo|zelle|cash app|how.*get paid/.test(text)) {
-    return tFor(lang, "asstChat.composer.payment");
-  }
-  return tFor(lang, composerPlaceholderKey(businessName, flow));
 }
 
 /** Map a quote status to the human-facing chip label on the in-chat
