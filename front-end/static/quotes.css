@@ -1195,3 +1195,23 @@
   background: #3f7a33;
   opacity: 0.8;
 }
+
+/* REQ-482 (demo M39): the New invoice sheet's line-item row. Desktop keeps
+   one row (description · qty · unit · price · ×); under 560px the description
+   takes its own row and qty/unit/price/× wrap beneath it, so ~300px of fixed
+   tracks never push the row off a phone. The header row uses the same grid,
+   so its labels stack exactly like the inputs. */
+.ninv-line {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 64px 76px 110px 28px;
+  gap: 6px;
+  align-items: center;
+}
+@media (max-width: 560px) {
+  .ninv-line {
+    grid-template-columns: repeat(3, minmax(0, 1fr)) 28px;
+  }
+  .ninv-line > :first-child {
+    grid-column: 1 / -1;
+  }
+}

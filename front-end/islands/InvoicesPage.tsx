@@ -3334,11 +3334,16 @@ function NewInvoiceModal(
       billTo.email.trim() || billTo.phoneNumber.trim());
 
   const labelStyle =
-    "display:flex;flex-direction:column;gap:5px;font-size:13px;font-weight:700;color:var(--fg-muted,#6b7560)";
+    "display:flex;flex-direction:column;gap:5px;font-size:13px;font-weight:700;color:var(--fg-muted,#6b7560);min-width:0";
   const inputStyle =
     "padding:11px 13px;border:1px solid var(--border,#d8dcd5);border-radius:10px;font:inherit;font-size:15px;font-weight:400;color:var(--fg)";
   const smallInput =
-    "padding:8px 10px;border:1px solid var(--border,#d8dcd5);border-radius:8px;font:inherit;font-size:13.5px;font-weight:400;color:var(--fg);min-width:0";
+    "padding:8px 10px;border:1px solid var(--border,#d8dcd5);border-radius:8px;font:inherit;font-size:13.5px;font-weight:400;color:var(--fg);min-width:0;width:100%;box-sizing:border-box";
+  // REQ-482 (M39): a bare `1fr 1fr` never shrinks below its inputs'
+  // intrinsic width and ran off a 390px phone — two columns only when both
+  // fit 240px, else one; tracks may shrink to 0 (minmax(min(100%,…))).
+  const pairGrid =
+    "display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,240px),1fr));gap:8px";
   const sectionTitle =
     "margin:6px 0 0;font-size:11px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--fg-muted,#6b7560)";
 
@@ -3609,7 +3614,7 @@ function NewInvoiceModal(
 
         {/* ---- bill to ---- */}
         <div style={sectionTitle}>{tFor(lang, "invoices.form.billTo")}</div>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+        <div style={pairGrid}>
           <label style={labelStyle}>
             {tFor(lang, "invoices.form.billName")}
             <input
@@ -3685,7 +3690,7 @@ function NewInvoiceModal(
             style={smallInput}
           />
         </label>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+        <div style={pairGrid}>
           <label style={labelStyle}>
             {tFor(lang, "invoices.form.serviceFrom")}
             <input
@@ -3716,7 +3721,10 @@ function NewInvoiceModal(
         <div style={sectionTitle}>{tFor(lang, "invoices.form.lineItems")}</div>
         {lines.length > 0 && (
           <div style="display:flex;flex-direction:column;gap:6px">
-            <div style="display:grid;grid-template-columns:1fr 64px 76px 110px 28px;gap:6px;font-size:11px;font-weight:700;color:var(--fg-muted,#6b7560)">
+            <div
+              class="ninv-line ninv-line--head"
+              style="font-size:11px;font-weight:700;color:var(--fg-muted,#6b7560)"
+            >
               <span>{tFor(lang, "invoices.form.lineDesc")}</span>
               <span>{tFor(lang, "invoices.form.lineQty")}</span>
               <span>{tFor(lang, "invoices.form.lineUnit")}</span>
@@ -3727,7 +3735,7 @@ function NewInvoiceModal(
               <div
                 key={i}
                 data-cy={`new-invoice-line-${i}`}
-                style="display:grid;grid-template-columns:1fr 64px 76px 110px 28px;gap:6px;align-items:center"
+                class="ninv-line"
               >
                 <input
                   type="text"
@@ -3824,7 +3832,7 @@ function NewInvoiceModal(
             }`}
           />
         </label>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+        <div style={pairGrid}>
           <label style={labelStyle}>
             {tFor(lang, "invoices.form.discount")}
             <input
@@ -3916,7 +3924,7 @@ function NewInvoiceModal(
         </div>
 
         {/* ---- terms ---- */}
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+        <div style={pairGrid}>
           <label style={labelStyle}>
             {tFor(lang, "invoices.form.terms")}
             <select
