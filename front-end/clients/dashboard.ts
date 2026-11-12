@@ -260,7 +260,13 @@ export type JobStatusKind =
 export interface Job {
   id: string;
   customer: { id: string; name: string };
-  quote: { id: string; summary: string; estimatedTotalCents: number };
+  quote: {
+    id: string;
+    summary: string;
+    /** REQ-447 (cycle 3, m14): the job's one name. */
+    jobName?: string;
+    estimatedTotalCents: number;
+  };
   totalCents: number;
   paidCents: number;
   pctPaid: number;

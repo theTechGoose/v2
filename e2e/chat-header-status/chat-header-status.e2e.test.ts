@@ -235,3 +235,54 @@ Deno.test("REQ-245: the chat header follows the quote — drafted, locked, gathe
       `REQ-327: 'Not delivered' gets a red dot, not the green one (class: ${dotClass})`,
     );
   }));
+
+/**
+ * REQ-447 (demo-loop cycle 3, demo issue p8-pair10-d): the header and the
+ * thread list share ONE title rule. After the first message titled the
+ * thread in the list, the header still read "New conversation" (fleet-9
+ * l.76) — live after the turn, and on a reload of a thread with no quote.
+ */
+Deno.test("REQ-447: after the first message the chat header names the thread as the list does, never 'New conversation'", (t) =>
+  story(t, async ({ page, expect, http, baseUrl }) => {
+    const auth = await signIn(http, page, baseUrl);
+    await page.setViewportSize({ width: 1280, height: 900 });
+    const first = "Need a price on a cedar fence for the Ruiz family";
+
+    // Live: type the first message in a brand-new thread.
+    await page.goto("/assistant");
+    const box = page.locator("textarea").first();
+    await box.waitFor({ state: "visible", timeout: 20_000 });
+    await page.waitForFunction(
+      () => !!document.querySelector("textarea:not([disabled])"),
+      undefined,
+      { timeout: 20_000 },
+    ).catch(() => {});
+    await box.fill(first);
+    await box.press("Enter");
+    await page.waitForFunction(
+      (want) =>
+        ((document.querySelector(".chat__head-title") as HTMLElement | null)
+          ?.innerText ?? "").trim() === want,
+      first,
+      { timeout: 30_000 },
+    ).catch(() => {});
+    const live = (await title(page).innerText()).trim();
+    expect.eq(live, first, "live: the header takes the thread's title");
+
+    // Reload: the server-rendered header and the hydrated one agree too.
+    const id = new URL(page.url()).pathname.split("/").pop() ?? "";
+    expect(id.length > 8, `the thread got an id (url: ${page.url()})`);
+    const rows = await (await http("/api/agents/conversations?limit=50", {
+      headers: auth,
+    })).json() as { id: string; title?: string }[];
+    const row = rows.find((r) => r.id === id);
+    expect.eq(row?.title, first, "the list row's title");
+    await page.goto(`/assistant/${id}`);
+    await page.waitForTimeout(1500);
+    const reloaded = (await title(page).innerText()).trim();
+    expect(
+      !/new conversation/i.test(reloaded),
+      `reload: never 'New conversation' (title: ${reloaded})`,
+    );
+    expect.eq(reloaded, first, "reload: the list row's title");
+  }));

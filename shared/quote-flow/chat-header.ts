@@ -41,7 +41,7 @@ import {
   isUndelivered,
   type QuoteDelivery,
 } from "./delivery.ts";
-import { threadName } from "./thread-title.ts";
+import { threadLabel } from "./thread-title.ts";
 
 /** A chat message, as much of it as the header reads. */
 export interface ChatHeaderMessage {
@@ -68,6 +68,8 @@ export interface ChatHeaderQuote {
 
 export interface ChatHeaderInput {
   customerName?: string | null;
+  /** REQ-447: the conversation's stored title — the list's fallback too. */
+  title?: string | null;
   quote?: ChatHeaderQuote | null;
   messages: readonly ChatHeaderMessage[];
   /** REQ-369: the end-of-wizard job-details pick is still owed. */
@@ -350,9 +352,12 @@ export function deriveChatHeader(input: ChatHeaderInput): ChatHeader {
   // REQ-385 (demo-loop cycle 2, m6): one title rule, the list's — the job
   // name, then "· customer" appended — so the title grows as the thread
   // learns them instead of swapping New conversation → job → customer.
-  const name = threadName({
+  // REQ-447 (cycle 3, p8-pair10-d): and the list's fallback — the stored
+  // conversation title — before "New conversation".
+  const name = threadLabel({
     jobName: quote?.jobName,
     customerName: input.customerName,
+    title: input.title,
   });
   if (name) return { clientName: name, statusKey, status };
   return {

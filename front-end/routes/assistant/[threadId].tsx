@@ -75,6 +75,8 @@ export default define.page(async function AssistantThread(ctx) {
   const ssrHeader = detail
     ? deriveChatHeader({
       customerName: detail.customer?.name,
+      // REQ-447 (cycle 3, p8-pair10-d): the list's title fallback too.
+      title: detail.conversation?.title,
       quote: detail.quote,
       messages: detail.messages ?? [],
       detailsPending: draftOwesDetails(detail.draft),
@@ -161,6 +163,7 @@ export default define.page(async function AssistantThread(ctx) {
                   initialMessages={detail?.messages ?? []}
                   initialCustomer={detail?.customer}
                   initialQuote={detail?.quote}
+                  initialTitle={detail?.conversation?.title}
                   initialDraft={detail?.draft}
                   userInitials={userInitials}
                   from={{

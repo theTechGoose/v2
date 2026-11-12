@@ -121,7 +121,8 @@ function jobToRow(j: Job, idx: number, now: Date, lang: Lang): JobRow {
     : "green";
   return {
     client: j.customer.name,
-    task: j.quote.summary,
+    // REQ-447 (cycle 3, m14): the job's one name, as the quote and thread.
+    task: j.quote.jobName || j.quote.summary,
     amount: `$${Math.round(total).toLocaleString()}`,
     paid: paidLabel,
     pct: j.pctPaid,

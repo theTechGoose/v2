@@ -315,7 +315,14 @@ export class ConversationsController {
       if (draft) await this.store.putDraft(id, draft);
     }
     if (typeof b.quoteId === "string" && b.quoteId.length > 0) {
-      return ctx.json(await this.store.update(id, { quoteId: b.quoteId }));
+      // REQ-447 (cycle 3, m14): the bound quote's jobName titles the thread.
+      return ctx.json(
+        await this.startFlow.bindQuote({
+          userId: user.id,
+          conversationId: id,
+          quoteId: b.quoteId,
+        }),
+      );
     }
     return ctx.json(conv);
   }
