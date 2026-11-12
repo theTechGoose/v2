@@ -80,6 +80,22 @@ async function ownerCannotApprove(
   return undefined;
 }
 
+/** REQ-479 (demo M30, cycle 3): true when this request comes from the
+ *  business's own session (owner, admin acting for them, staff
+ *  impersonating) — the public invoice's `internal` flag and the claim
+ *  guard read the same answer. */
+async function isInternalRequest(
+  ctx: ExecutionContext,
+  sessions: SessionStore,
+  ownerId: string,
+): Promise<boolean> {
+  const sessionId = readSessionId(ctx);
+  const session = sessionId
+    ? await sessions.get(sessionId).catch(() => null)
+    : null;
+  return isInternalViewer(session, ownerId);
+}
+
 class AcceptQuoteDto {
   @IsOptional() @IsString()
   signature?: string;
@@ -1036,8 +1052,11 @@ export class PaperworkPublicController {
       const acceptedMethods = projectAcceptedMethods(contractor);
       // REQ-173: a batch invoice's visits, grouped under their address
       const visits = groupVisits(i.lineItems);
+      // REQ-479 (demo M30): the business's own viewer previews the claim
+      const internal = await isInternalRequest(ctx, this.sessions, i.userId);
       return ctx.json({
         ...redactInvoice(i),
+        ...(internal ? { internal: true } : {}),
         // REQ-202: one current balance, whatever page is open
         paidCents: balance.paidCents,
         balanceCents: balance.balanceCents,
@@ -1106,7 +1125,8 @@ export class PaperworkPublicController {
    *
    * Records a PaymentIntent on the invoice and flips status to
    * `claimed`. No auth — knowledge of the invoice id is the capability,
-   * matching the rest of the public surface.
+   * matching the rest of the public surface — except that the business's
+   * own session is refused (REQ-479, 409 owner_cannot_claim).
    *
    * Idempotent: replaying the same body just overwrites the existing
    * intent; we don't keep a history (the contractor confirms or rejects
@@ -1129,6 +1149,18 @@ export class PaperworkPublicController {
     }
     try {
       const invoice = await this.invoices.get(id);
+      // REQ-479 (demo M30, cycle 3): the business's own session — the owner
+      // on her own invoice link, an admin acting for her, staff behind an
+      // impersonation — cannot file "the customer paid" on its own invoice
+      // (REQ-306's accept guard, applied to the claim). A payment she got is
+      // recorded from /invoices; the in-person override (?as=customer&
+      // confirm=1) is for the customer handed her device.
+      if (
+        await isInternalRequest(ctx, this.sessions, invoice.userId) &&
+        !hasSignOverride(new URL(ctx.req.url).search)
+      ) {
+        return ctx.json({ ok: false, reason: "owner_cannot_claim" }, 409);
+      }
       if (invoice.status === "paid") {
         return ctx.json({ ok: false, reason: "already_paid" }, 409);
       }

@@ -6,6 +6,12 @@ import {
   claimBody,
   claimDecision,
 } from "../../shared/documents/linked-view.ts";
+import {
+  claimPaymentPath,
+  invoiceClaimPreview,
+  recordPaymentHref,
+} from "../../shared/documents/invoice-claim-view.ts";
+import { signOverrideSearch } from "../../shared/quote-flow/public-doc-state.ts";
 
 interface Method {
   method: string;
@@ -23,6 +29,13 @@ interface Props {
   version?: number;
   /** Outgoing-comms language (roadmap p.13). Customer-facing. */
   lang?: "en" | "es";
+  /** REQ-479 (demo M30): the viewer is the business itself (owner, admin,
+   *  staff impersonating) — a preview, never the customer's claim. */
+  internal?: boolean;
+  /** The invoice's status (a paid / void one is never a preview). */
+  status?: string;
+  /** The page's query — carries the in-person override `?as=customer&confirm=1`. */
+  search?: string;
 }
 
 const TEAL = "#144852";
@@ -57,6 +70,9 @@ export default function PublicInvoiceClaim(
     balanceCents,
     version: initialVersion,
     lang = "en",
+    internal = false,
+    status,
+    search = "",
   }: Props,
 ) {
   const [selected, setSelected] = useState<string | undefined>(undefined);
@@ -109,6 +125,42 @@ export default function PublicInvoiceClaim(
     );
   }
 
+  // REQ-479 (demo M30): the owner on her own invoice records a payment she
+  // received; she never files "the customer paid" — unless the customer is
+  // handed the device (the in-person override).
+  if (invoiceClaimPreview({ internal, status }, search)) {
+    return (
+      <section
+        data-cy="invoice-internal-preview"
+        role="status"
+        style="margin-top:24px;background:#fff6e5;border:1px solid rgba(255,170,40,0.45);border-radius:14px;padding:16px 18px;color:#8a5a10;font-size:13px;line-height:1.5"
+      >
+        <div style="font-weight:800;font-size:14px">
+          {tFor(lang, "publicInvoiceClaim.internalPreview")}
+        </div>
+        <div style="margin-top:4px">
+          {tFor(lang, "publicInvoiceClaim.internalPreviewBody")}
+        </div>
+        <a
+          href={recordPaymentHref(invoiceId)}
+          data-cy="invoice-record-payment"
+          style={`display:inline-block;margin-top:12px;background:${TEAL};color:#fff;border-radius:999px;padding:10px 18px;font-size:14px;font-weight:700;text-decoration:none`}
+        >
+          {tFor(lang, "publicInvoiceClaim.recordPayment")}
+        </a>
+        <div style="margin-top:10px">
+          <a
+            href={signOverrideSearch(search)}
+            data-cy="invoice-claim-in-person"
+            style="font-weight:700;color:#8a5a10;text-decoration:underline"
+          >
+            {tFor(lang, "publicInvoiceClaim.internalPreviewInPerson")}
+          </a>
+        </div>
+      </section>
+    );
+  }
+
   if (acceptedMethods.length === 0) {
     return (
       <section
@@ -149,7 +201,7 @@ export default function PublicInvoiceClaim(
     setSubmitting(true);
     setError(undefined);
     try {
-      const res = await fetch(`/api/invoices/${invoiceId}/claim-payment`, {
+      const res = await fetch(claimPaymentPath(invoiceId, search), {
         method: "POST",
         headers: { "content-type": "application/json" },
         credentials: "include",
@@ -200,7 +252,9 @@ export default function PublicInvoiceClaim(
       }
       if (decision.kind === "error") {
         throw new Error(
-          decision.reason === String(res.status)
+          decision.reason === "owner_cannot_claim"
+            ? tFor(lang, "publicInvoiceClaim.ownerCannotClaim")
+            : decision.reason === String(res.status)
             ? tFor(lang, "publicInvoiceClaim.submitError", {
               status: res.status,
             })

@@ -109,8 +109,11 @@ Deno.test("REQ-321 M14: the customer's open /i/:id tab flips to PAID by itself o
     const { auth } = await signIn(http, page, baseUrl);
     const inv = await sentInvoice(http, auth, "Fence repair REQ-321 a");
 
-    // The customer's tab: claim IN the page (the demo's exact path).
-    await page.goto(`/i/${inv.id}`);
+    // The customer's tab: claim IN the page (the demo's exact path). This
+    // browser carries the owner's session, so it is the customer handed the
+    // owner's device — the in-person override (REQ-479: the owner's own
+    // session cannot file a claim without it).
+    await page.goto(`/i/${inv.id}?as=customer&confirm=1`);
     const pill = page.locator("[data-status-pill]");
     await pill.waitFor({ timeout: 15_000 });
     await page.locator("[data-cy='claim-method-zelle']").click();

@@ -2,7 +2,8 @@ import { asset, Head } from "fresh/runtime";
 import { define } from "../../utils.ts";
 import DocTitle from "../../components/DocTitle.tsx";
 import SiteFooter from "../../components/SiteFooter.tsx";
-import { ssrBackendGet } from "../../lib/backend-fetch.ts";
+import { ssrBackendGetAuthed } from "../../lib/backend-fetch.ts";
+import { getSessionId } from "../../lib/auth.ts";
 import { fmtMoneyExact, fmtPhone, telHref } from "../../lib/format.ts";
 import { type Lang, tFor } from "../../lib/i18n.ts";
 import {
@@ -65,6 +66,9 @@ interface Contractor {
 }
 
 interface InvoicePublic {
+  /** REQ-479 (demo M30): the viewer is the business itself (owner, admin,
+   *  staff impersonating) — a preview, not the customer. */
+  internal?: boolean;
   id: string;
   /** REQ-198/201: the document's number ("INV-5000"), version and headline state. */
   number?: string;
@@ -163,7 +167,12 @@ interface InvoicePublic {
 
 export default define.page(async function PublicInvoice(ctx) {
   const id = ctx.params.id;
-  const r = await ssrBackendGet<InvoicePublic>(`/invoices/${id}/public`);
+  // REQ-479 (demo M30): the read carries the viewer's session, so the
+  // backend can tell the business's own preview from the customer.
+  const r = await ssrBackendGetAuthed<InvoicePublic>(
+    `/invoices/${id}/public`,
+    getSessionId(ctx.req),
+  );
   const invoice = r.ok ? r.data : undefined;
   // Chrome language — REQ-272: the link's ?lang= (the EN | ES toggle below)
   // first, then the visitor's own saved choice (pm_lang cookie), over the
@@ -213,7 +222,7 @@ export default define.page(async function PublicInvoice(ctx) {
                 lang={lang}
               />
             )
-            : <InvoiceDoc invoice={invoice} lang={lang} />}
+            : <InvoiceDoc invoice={invoice} lang={lang} search={url.search} />}
         </div>
         <SiteFooter lang={lang} />
       </div>
@@ -247,7 +256,12 @@ function siteLabel(url: string): string {
 }
 
 function InvoiceDoc(
-  { invoice, lang }: { invoice: InvoicePublic; lang: Lang },
+  { invoice, lang, search }: {
+    invoice: InvoicePublic;
+    lang: Lang;
+    /** REQ-479: the page's query, for the claim's in-person override. */
+    search: string;
+  },
 ) {
   const paid = invoice.status === "paid" || !!invoice.paidAt;
   const claimed = invoice.status === "claimed" && !!invoice.paymentIntent;
@@ -736,6 +750,9 @@ function InvoiceDoc(
                 balanceCents={balanceCents}
                 version={invoice.version}
                 lang={es ? "es" : "en"}
+                internal={invoice.internal === true}
+                status={invoice.status}
+                search={search}
               />
             )}
 
