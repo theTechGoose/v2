@@ -13,8 +13,10 @@ import { assert, assertEquals } from "@std/assert";
 import {
   cardDate,
   hasSecondaryPaymentReceived,
+  partialSendParts,
   paymentReceivedTarget,
   scheduledSubline,
+  sendNowDates,
 } from "./invoice-card.ts";
 import { tFor } from "./i18n.ts";
 
@@ -87,4 +89,64 @@ Deno.test("REQ-489 p8-pair1-d: from another page, 'Payment received' navigates t
     paymentReceivedTarget("https://app.test/invoices/", "a").inPlace,
     true,
   );
+});
+
+/* REQ-554 (demo-loop cycle 4, m52): "Enviar ahora" on a scheduled invoice
+ * kept the due date its scheduledFor computed (sent Nov 12, scheduled Nov 19
+ * + 30 → "Due Dec 19"); a half-delivered send read entirely in red. */
+
+Deno.test("REQ-554 m52: Send now issues a scheduled invoice today — due today + its days to pay", () => {
+  assertEquals(
+    sendNowDates(
+      { netDays: 30, scheduledFor: "2026-11-19", dueDate: "2026-12-19" },
+      "2026-11-12",
+    ),
+    { issuedDate: "2026-11-12", dueDate: "2026-12-12" },
+  );
+});
+
+Deno.test("REQ-554 m52: Send now with no netDays keeps the schedule's span (scheduledFor → dueDate)", () => {
+  // a milestone placeholder: due = scheduledFor + 7, no netDays on file
+  assertEquals(
+    sendNowDates(
+      { scheduledFor: "2026-11-19", dueDate: "2026-11-26" },
+      "2026-11-12",
+    ),
+    { issuedDate: "2026-11-12", dueDate: "2026-11-19" },
+  );
+  // crosses a month and a year
+  assertEquals(
+    sendNowDates(
+      { scheduledFor: "2027-01-10", dueDate: "2027-02-09" },
+      "2026-12-20",
+    ),
+    { issuedDate: "2026-12-20", dueDate: "2027-01-19" },
+  );
+});
+
+Deno.test("REQ-554 m52: Send now with neither netDays nor a span only stamps the issue date", () => {
+  assertEquals(sendNowDates({}, "2026-11-12"), { issuedDate: "2026-11-12" });
+  assertEquals(
+    sendNowDates({ dueDate: "2026-12-19" }, "2026-11-12"),
+    { issuedDate: "2026-11-12" },
+  );
+  // a due date before the schedule is no span to keep — never due before issued
+  assertEquals(
+    sendNowDates(
+      { scheduledFor: "2026-11-19", dueDate: "2026-11-10" },
+      "2026-11-12",
+    ),
+    { issuedDate: "2026-11-12", dueDate: "2026-11-12" },
+  );
+});
+
+Deno.test("REQ-554 m52: a half-delivered send splits into what went (good news) and what failed", () => {
+  assertEquals(partialSendParts("es", "text", "noPhone"), {
+    went: "Factura enviada por correo",
+    failed: "El texto no salió: noPhone",
+  });
+  assertEquals(partialSendParts("en", "email", "bounced"), {
+    went: "Invoice texted",
+    failed: "The email didn't go through: bounced",
+  });
 });

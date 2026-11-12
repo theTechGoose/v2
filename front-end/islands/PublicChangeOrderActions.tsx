@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "preact/hooks";
 import { tFor } from "../lib/i18n.ts";
+import { announceChange } from "../lib/change-announce.ts";
 import { startChangeOrderRefresh } from "../lib/public-change-order-refresh.ts";
 import { changeOrderPreview } from "../../shared/quote-flow/change-order-view.ts";
 import {
@@ -23,6 +24,10 @@ interface Props {
   search?: string;
   /** REQ-398: the order's version as rendered (the refresh baseline). */
   version?: number;
+  /** REQ-554 (demo cycle 4, M9): the invoice the order changes, and the
+   *  quote behind it — announced to the owner's other tabs on a decision. */
+  invoiceId?: string;
+  quoteId?: string;
 }
 
 const GREEN = "#519843";
@@ -46,6 +51,8 @@ export default function PublicChangeOrderActions(
     internal = false,
     search = "",
     version,
+    invoiceId,
+    quoteId,
   }: Props,
 ) {
   const [status, setStatus] = useState(initialStatus);
@@ -129,6 +136,13 @@ export default function PublicChangeOrderActions(
       }
       if (action === "approve") setWho(typed);
       setStatus(action === "approve" ? "approved" : "declined");
+      // REQ-554 (demo cycle 4, M9; extends REQ-493): the decision moved the
+      // invoice (and the job's quote) — tell the owner's open /invoices and
+      // /quotes in this browser at once, before this page reloads.
+      if (invoiceId) {
+        announceChange({ entityType: "invoice", entityId: invoiceId });
+      }
+      if (quoteId) announceChange({ entityType: "quote", entityId: quoteId });
       // REQ-398: the status headline and the totals above are server-
       // rendered — re-render the page so they follow the decision.
       try {

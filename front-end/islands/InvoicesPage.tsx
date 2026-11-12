@@ -36,9 +36,12 @@ import {
   cardDate,
   hasNudgeButton,
   hasSecondaryPaymentReceived,
+  partialSendParts,
   paymentReceivedTarget,
   scheduledSubline,
+  sendNowDates,
 } from "../lib/invoice-card.ts";
+import { refreshDash } from "../lib/dash-cache.ts";
 import { Icon } from "../components/ui/Icon.tsx";
 import {
   nudgeNote,
@@ -404,6 +407,36 @@ function fetchForecast(): Promise<ForecastResult | undefined> {
 /** REQ-030: sessionStorage key carrying a send outcome across the reload. */
 const SEND_FLASH_KEY = "pm:invoice-send-flash";
 
+/** REQ-554 (demo-loop cycle 4, M9/m43/m52): what a card's action says once
+ *  the list re-read — held by the PAGE, because the card it came from moves
+ *  track (Upcoming → Sent, Awaiting → Paid) and remounts. */
+type CardFlash =
+  | { cy: string; text: string }
+  | { cy: "send-partial"; went: string; failed: string };
+
+/** REQ-554 (m52): a half-delivered send — what went in green, only what
+ *  failed in red, on a neutral amber note (not the failure red). */
+function PartialSendNote(
+  { went, failed }: { went: string; failed: string },
+) {
+  return (
+    <p
+      role="status"
+      data-cy="send-partial"
+      style="margin:0 0 12px;padding:10px 14px;border-radius:10px;background:#fdf6e3;border:1px solid #f0dca8;font-size:13.5px;font-weight:700;line-height:1.45"
+    >
+      <span
+        data-cy="send-partial-went"
+        style="color:#519843;display:inline-flex;align-items:center;gap:4px"
+      >
+        <Icon name="check" size={14} /> {went}
+      </span>
+      {" · "}
+      <span data-cy="send-partial-failed" style="color:#a83b3b">{failed}</span>
+    </p>
+  );
+}
+
 export default function InvoicesPage(_props: { lang?: Lang }) {
   // Self-source the reactive UI language. Reading langSignal.value during
   // render makes this island re-render live when SettingsPage flips the
@@ -419,14 +452,25 @@ export default function InvoicesPage(_props: { lang?: Lang }) {
   /** REQ-322 (demo m36): "Payment of $X recorded" after the detail's
    *  "Payment received" form saves — the page confirms, not just closes. */
   const [payFlash, setPayFlash] = useState<string | null>(null);
+  /** REQ-554: the note a card's action left (sent / confirmed / reopened /
+   *  half-delivered) — it outlives the card moving track. */
+  const [cardFlash, setCardFlash] = useState<CardFlash | null>(null);
   const [sendFlash] = useState<
-    { text: string; partial: boolean } | null
+    {
+      text: string;
+      partial: boolean;
+      parts?: { went: string; failed: string };
+    } | null
   >(() => {
     try {
       const raw = globalThis.sessionStorage?.getItem(SEND_FLASH_KEY);
       if (!raw) return null;
       globalThis.sessionStorage.removeItem(SEND_FLASH_KEY);
-      return JSON.parse(raw) as { text: string; partial: boolean };
+      return JSON.parse(raw) as {
+        text: string;
+        partial: boolean;
+        parts?: { went: string; failed: string };
+      };
     } catch {
       return null;
     }
@@ -483,6 +527,9 @@ export default function InvoicesPage(_props: { lang?: Lang }) {
     const invoices = fresh.invoices;
     if (invoices) setS((prev) => ({ ...prev, invoices }));
     if (fresh.forecast) setForecast(fresh.forecast);
+    // REQ-554 (demo cycle 4, m23): the sidebar's Invoices badge reads the
+    // dash cache — a paid / sent / deleted invoice re-counts it too.
+    refreshDash().catch(() => {/* the badge keeps its last count */});
   }
 
   useEffect(() => {
@@ -599,13 +646,29 @@ export default function InvoicesPage(_props: { lang?: Lang }) {
 
   return (
     <>
-      {sendFlash && (
+      {sendFlash && sendFlash.partial && sendFlash.parts
+        ? <PartialSendNote {...sendFlash.parts} />
+        : sendFlash && (
+          <p
+            class="qcard__sendfail"
+            role="alert"
+            data-cy={sendFlash.partial
+              ? "send-partial"
+              : "invoice-send-failure"}
+          >
+            {sendFlash.text}
+          </p>
+        )}
+      {cardFlash && "went" in cardFlash && (
+        <PartialSendNote went={cardFlash.went} failed={cardFlash.failed} />
+      )}
+      {cardFlash && "text" in cardFlash && (
         <p
-          class="qcard__sendfail"
-          role="alert"
-          data-cy={sendFlash.partial ? "send-partial" : "invoice-send-failure"}
+          role="status"
+          data-cy={cardFlash.cy}
+          style="margin:0 0 12px;padding:10px 14px;border-radius:10px;background:var(--brand-green-soft,#e8f3e4);color:var(--brand-green,#519843);font-size:13.5px;font-weight:700"
         >
-          {sendFlash.text}
+          {cardFlash.text}
         </p>
       )}
       {payFlash && (
@@ -700,6 +763,8 @@ export default function InvoicesPage(_props: { lang?: Lang }) {
                       now={now}
                       lang={lang}
                       onPaymentReceived={openForPayment}
+                      onRefresh={refreshInvoices}
+                      onFlash={setCardFlash}
                     />
                   ))}
                 </div>
@@ -726,6 +791,8 @@ export default function InvoicesPage(_props: { lang?: Lang }) {
                       now={now}
                       lang={lang}
                       onPaymentReceived={openForPayment}
+                      onRefresh={refreshInvoices}
+                      onFlash={setCardFlash}
                     />
                   ))}
                 </div>
@@ -752,6 +819,8 @@ export default function InvoicesPage(_props: { lang?: Lang }) {
                       now={now}
                       lang={lang}
                       onPaymentReceived={openForPayment}
+                      onRefresh={refreshInvoices}
+                      onFlash={setCardFlash}
                     />
                   ))}
                 </div>
@@ -780,6 +849,8 @@ export default function InvoicesPage(_props: { lang?: Lang }) {
                       now={now}
                       lang={lang}
                       onPaymentReceived={openForPayment}
+                      onRefresh={refreshInvoices}
+                      onFlash={setCardFlash}
                     />
                   ))}
                 </div>
@@ -806,6 +877,8 @@ export default function InvoicesPage(_props: { lang?: Lang }) {
                       now={now}
                       lang={lang}
                       onPaymentReceived={openForPayment}
+                      onRefresh={refreshInvoices}
+                      onFlash={setCardFlash}
                     />
                   ))}
                 </div>
@@ -832,6 +905,8 @@ export default function InvoicesPage(_props: { lang?: Lang }) {
                       now={now}
                       lang={lang}
                       onPaymentReceived={openForPayment}
+                      onRefresh={refreshInvoices}
+                      onFlash={setCardFlash}
                     />
                   ))}
                 </div>
@@ -2101,6 +2176,24 @@ function partialDispatchCopy(lang: Lang, d: DispatchResult): string {
   );
 }
 
+/** REQ-554 (m52): the half-delivered send as its two facts — the channel
+ *  that went and the one that failed (with the backend's reason). */
+function partialParts(
+  lang: Lang,
+  d: DispatchResult,
+): { cy: "send-partial"; went: string; failed: string } {
+  const textFailed = d.failedChannels.includes("text");
+  const failed = textFailed ? d.text : d.email;
+  return {
+    cy: "send-partial",
+    ...partialSendParts(
+      lang,
+      textFailed ? "text" : "email",
+      failed.rawReason ?? failed.outcome.reason ?? "unknown",
+    ),
+  };
+}
+
 /** Honest failure copy when NO channel delivered. REQ-480 (demo cycle 3,
  *  M18): the invoice's own sentence — "INV-002 not delivered — no email on
  *  file; the text failed: …" — never the quote divider's "Quote + Agreement
@@ -2153,13 +2246,18 @@ function plusDays(n: number): string {
 }
 
 function InvoiceCard(
-  { inv, idx, now, lang, onPaymentReceived }: {
+  { inv, idx, now, lang, onPaymentReceived, onRefresh, onFlash }: {
     inv: EnrichedInvoice;
     idx: number;
     now: Date;
     lang: Lang;
     /** REQ-489: opens this invoice in pay mode in place (no page load). */
     onPaymentReceived: (id: string) => void;
+    /** REQ-554 (demo cycle 4, M9/m43): the page's re-read (list, forecast,
+     *  sidebar counts) — a card action re-reads in place, never a reload. */
+    onRefresh: () => Promise<void>;
+    /** REQ-554: the page-level note the action leaves (outlives the card). */
+    onFlash: (f: CardFlash | null) => void;
   },
 ) {
   const [flipped, setFlipped] = useState(false);
@@ -2167,8 +2265,6 @@ function InvoiceCard(
   // P-09: honest send state — set when a dispatch delivered on NO channel,
   // rendered on the card instead of the old silent reload-as-success.
   const [sendFail, setSendFail] = useState<string | null>(null);
-  /** REQ-030: one channel delivered, the other did not. */
-  const [sendPartial, setSendPartial] = useState<string | null>(null);
   // REQ-021: inline confirmation after a nudge (no reload — nothing on the
   // card changes except that the reminder went out).
   const [sendNote, setSendNote] = useState<string | null>(null);
@@ -2210,7 +2306,9 @@ function InvoiceCard(
         method: "DELETE",
         credentials: "include",
       });
-      if (r.ok) globalThis.location.reload();
+      await r.body?.cancel();
+      // REQ-554: the card leaves the list by a re-read, not a page load
+      if (r.ok) await onRefresh();
       else setSendFail(tFor(lang, "invoicesPage.detail.errDelete"));
     } finally {
       setBusy(false);
@@ -2301,7 +2399,16 @@ function InvoiceCard(
         method: "POST",
         credentials: "include",
       });
-      if (r.ok) globalThis.location.reload();
+      await r.body?.cancel();
+      // REQ-554 (demo cycle 4, m43): "Payment confirmed" re-reads in place
+      // and says so — no whole-page reload.
+      if (r.ok) {
+        onFlash({
+          cy: "payment-confirmed",
+          text: tFor(lang, "invoicesPage.flash.paymentConfirmed"),
+        });
+        await onRefresh();
+      }
     } finally {
       setBusy(false);
     }
@@ -2317,7 +2424,15 @@ function InvoiceCard(
         method: "POST",
         credentials: "include",
       });
-      if (r.ok) globalThis.location.reload();
+      await r.body?.cancel();
+      // REQ-554 (m43): same as confirm — re-read in place, say what happened
+      if (r.ok) {
+        onFlash({
+          cy: "claim-reopened",
+          text: tFor(lang, "invoicesPage.flash.claimReopened"),
+        });
+        await onRefresh();
+      }
     } finally {
       setBusy(false);
     }
@@ -2353,20 +2468,45 @@ function InvoiceCard(
     if (busy) return;
     setBusy(true);
     setSendFail(null);
+    onFlash(null);
     try {
-      // Fire both channels and interpret honestly (P-09): only reload-as-
-      // success when at least one channel actually delivered; otherwise the
-      // failure is surfaced on the card and nothing pretends it was sent.
+      // REQ-554 (demo cycle 4, m52): sent now, it is issued now — issued
+      // today, due today + its days to pay (like Finish + send), BEFORE the
+      // dispatch so the message the client gets carries the same due date.
+      const was = { issuedDate: inv.issuedDate, dueDate: inv.dueDate };
+      const dates = sendNowDates(inv, new Date().toISOString().slice(0, 10));
+      const put = (body: Record<string, unknown>) =>
+        fetch(`/api/invoices/${inv.id}`, {
+          method: "PUT",
+          credentials: "include",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(body),
+        }).then((r) => r.body?.cancel()).catch(() => {});
+      await put(dates);
+      // Fire both channels and interpret honestly (P-09): a failure is
+      // surfaced on the card and nothing pretends it was sent.
       const d = await dispatchInvoice(inv.id);
-      // REQ-030 (NW-25): reload only when NOTHING failed; a half-delivered
-      // send says which channel went and which did not.
-      if (d.delivered && !d.partial) globalThis.location.reload();
-      else if (d.delivered) setSendPartial(partialDispatchCopy(lang, d));
+      // REQ-030 (NW-25): a half-delivered send says which channel went and
+      // which did not — REQ-554: what went in green, what failed in red.
+      if (d.delivered && !d.partial) {
+        onFlash({
+          cy: "invoice-sent",
+          text: tFor(lang, "invoicesPage.flash.sent"),
+        });
+      } else if (d.delivered) onFlash(partialParts(lang, d));
       else {
+        // still scheduled: it keeps the dates of its schedule
+        await put(Object.fromEntries(
+          Object.entries(was).filter(([, v]) => v !== undefined),
+        ));
         setSendFail(dispatchFailureCopy(lang, d, { number: inv.invoiceRef }));
       }
     } finally {
       setBusy(false);
+      // REQ-554 (demo cycle 4, M9): the server stamps the invoice "sent" on
+      // ANY delivered channel — re-read after every outcome (full, partial,
+      // failed), so the card moves track in place; never a page load.
+      await onRefresh();
     }
   }
   // "Finish + send" on a draft: a fully deterministic dashboard action — no
@@ -2402,10 +2542,14 @@ function InvoiceCard(
       // the contractor must never walk away believing an undeliverable
       // invoice reached anyone.
       const d = await dispatchInvoice(inv.id);
-      // REQ-030 (NW-25): reload only when NOTHING failed; a half-delivered
-      // send says which channel went and which did not.
-      if (d.delivered && !d.partial) globalThis.location.reload();
-      else if (d.delivered) setSendPartial(partialDispatchCopy(lang, d));
+      // REQ-030 (NW-25): a half-delivered send says which channel went and
+      // which did not — REQ-554: in green / red, on the page.
+      if (d.delivered && !d.partial) {
+        onFlash({
+          cy: "invoice-sent",
+          text: tFor(lang, "invoicesPage.flash.sent"),
+        });
+      } else if (d.delivered) onFlash(partialParts(lang, d));
       else {
         setSendFail(
           dispatchFailureCopy(lang, d, {
@@ -2416,6 +2560,9 @@ function InvoiceCard(
       }
     } finally {
       setBusy(false);
+      // REQ-554 (M9): re-read after every outcome — a draft a channel
+      // reached is stamped "sent" server-side and moves track in place.
+      await onRefresh();
     }
   }
   /** REQ-018 (NW-27): open this invoice's detail panel in "Payment received"
@@ -2713,11 +2860,6 @@ function InvoiceCard(
       {sendFail && (
         <p class="qcard__sendfail" role="alert" data-cy="invoice-send-failure">
           {sendFail}
-        </p>
-      )}
-      {sendPartial && (
-        <p class="qcard__sendfail" role="alert" data-cy="send-partial">
-          {sendPartial}
         </p>
       )}
       {sendNote && (
@@ -3509,6 +3651,7 @@ function NewInvoiceModal(
                 ? partialDispatchCopy(lang, d)
                 : dispatchFailureCopy(lang, d),
               partial: d.delivered,
+              ...(d.delivered ? { parts: partialParts(lang, d) } : {}),
             }),
           );
         } catch { /* storage unavailable — the reload still happens */ }
@@ -3704,6 +3847,7 @@ function NewInvoiceModal(
                     keptDraft: true,
                   }),
                 partial: d.delivered,
+                ...(d.delivered ? { parts: partialParts(lang, d) } : {}),
               }),
             );
           } catch { /* storage unavailable — the reload still happens */ }
