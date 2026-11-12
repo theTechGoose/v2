@@ -51,6 +51,7 @@ import { fmtPhone } from "../lib/format.ts";
 import { TransferAccount } from "../components/TransferAccount.tsx"; // REQ-220
 import { type Lang, langSignal, setLang, tFor } from "../lib/i18n.ts";
 import { normalizeWebsiteUrl } from "../../shared/quote-flow/format-helpers.ts";
+import { businessTimezone } from "../../shared/quote-flow/business-timezone.ts";
 import {
   CardGridSkeleton,
   PageHeaderSkeleton,
@@ -365,6 +366,11 @@ function EditCard(
   const [err, setErr] = useState<string | null>(null);
   const logoInputRef = useRef<HTMLInputElement | null>(null);
   const t = tr(langSignal.value === "es");
+  /** REQ-172/255 — the zone picked, else the address's state's, else New York */
+  const zone = businessTimezone({
+    timezone: snapshot.identity?.timezone,
+    state: snapshot.address?.state,
+  });
 
   async function saveUser(patch: Record<string, unknown>) {
     setBusy("user");
@@ -636,18 +642,20 @@ function EditCard(
             {t.commsLangHint}
           </span>
         </div>
-        {/* REQ-172 — the business's time zone: the 9 am schedule texts follow it */}
+        {/* REQ-172/255 — the business's time zone (picked, else the address's state's): the 9 am schedule texts follow it */}
         <label style="display:block;grid-column:1 / -1">
           <span style={labelStyle}>{t.timezone}</span>
           <select
             data-cy="settings-timezone"
-            value={snapshot.identity?.timezone ?? "America/New_York"}
+            value={zone}
             disabled={busy === "identity"}
             onChange={(e) => saveIdentity({
               timezone: (e.target as HTMLSelectElement).value,
             })}
           >
-            {TIMEZONES.map((z) => <option key={z} value={z}>{z}</option>)}
+            {(TIMEZONES.includes(zone) ? TIMEZONES : [zone, ...TIMEZONES]).map((
+              z,
+            ) => <option key={z} value={z}>{z}</option>)}
           </select>
           <span style="display:block;margin-top:4px;font-size:12px;color:var(--fg-muted)">
             {t.timezoneHint}

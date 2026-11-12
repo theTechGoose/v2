@@ -1560,6 +1560,77 @@ Deno.test("REQ-172 the sweep at 09:05 New York texts the day's customers once; H
   });
 });
 
+// REQ-255 (demo issue onboarding-dashboard-settings-m3a) — an Austin, TX business sat on New York time: the 9 am texts went out at 8 am Central
+/** the UTC instant at which `tz`'s wall clock reads hh:mm on `date` */
+function wallClock(date: string, hhmm: string, tz: string): Date {
+  for (let h = 0; h < 24; h++) {
+    const at = new Date(
+      `${date}T${String(h).padStart(2, "0")}:${hhmm.slice(3)}:00Z`,
+    );
+    const local = new Intl.DateTimeFormat("en-CA", {
+      timeZone: tz,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      hourCycle: "h23",
+    }).format(at).replace(",", "");
+    if (local === `${date} ${hhmm}`) return at;
+  }
+  throw new Error(`${tz} never reads ${hhmm} on ${date}`);
+}
+
+Deno.test("REQ-255 with no zone picked, a TX address puts the 9 am sweep on Central time: 09:30 New York is not due, 09:30 Chicago is", async () => {
+  await withTwilioStub(async (texts) => {
+    await withServer(async (call) => {
+      const { H, today } = await todaysRound(call, "+15125551755");
+      await call("PUT", "/profile/identity", {
+        businessName: "Austin Lawn Co",
+      }, H);
+      const addr = await call("PUT", "/profile/address", {
+        street: "1600 Congress Ave",
+        city: "Austin",
+        state: "TX",
+        postal: "78701",
+        country: "US",
+      }, H);
+      assertEquals(addr.status, 200);
+      const notices = new FieldNotices(
+        new UserStore(),
+        new BusinessIdentityStore(),
+        new CustomerStore(),
+        new FieldWorkerStore(),
+        new TaskTypeStore(),
+        new SubscriptionStore(),
+        new FieldDay(
+          new SubscriptionStore(),
+          new RegionStore(),
+          new FieldTaskStore(),
+        ),
+        new SmsService(),
+      );
+      const toCustomer = () => texts.filter((x) => x.to === CUSTOMER_PHONE);
+      const early = await notices.sweep(
+        wallClock(today, "09:30", "America/New_York"),
+      );
+      assertEquals(
+        [early.texted, toCustomer().length],
+        [0, 0],
+        "08:30 in Austin — not 9 am yet",
+      );
+      const due = await notices.sweep(
+        wallClock(today, "09:30", "America/Chicago"),
+      );
+      assertEquals(
+        [due.texted, toCustomer().length],
+        [1, 1],
+        "09:30 in Austin",
+      );
+    });
+  });
+});
+
 // REQ-170 — the office page and a worker read the same day at the same instant: one round, not two
 Deno.test("REQ-170 two reads of the same day at once make one round; a generated task's id is stable", async () => {
   await withServer(async (call) => {
