@@ -9,6 +9,11 @@ interface Props {
   version?: number;
   /** Customer-facing copy language (defaults to en; non-breaking). */
   lang?: "en" | "es";
+  /** REQ-311 (demo-loop c1 m19): a successful accept is handed to the parent
+   *  (PublicQuoteView refetches and swaps the signed document in place) —
+   *  never a page reload, which landed the customer at the top with no
+   *  thank-you and the "Pay now" hand-off out of sight. */
+  onSigned?: (signed: { name: string }) => void;
 }
 
 interface Stroke {
@@ -43,7 +48,7 @@ const LINE = "#e3e8e6";
  *     viewport changes mid-flow).
  */
 export default function PublicSignQuote(
-  { quoteId, version, lang = "en" }: Props,
+  { quoteId, version, lang = "en", onSigned }: Props,
 ) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const strokesRef = useRef<Stroke[]>([]);
@@ -305,11 +310,11 @@ export default function PublicSignQuote(
         throw new Error(text.slice(0, 200) || `${r.status}`);
       }
       setStatus("ok");
-      // Reload after a brief moment so the SSR-rendered "signed" state
-      // takes over: the customer-signature card on the right fills in
-      // with the typed name + date, matching the contractor card on the
-      // left.
-      reloadSoon(900);
+      // REQ-311: no reload. The parent refetches the public projection and
+      // re-renders the signed document in place, so the customer stays
+      // right here: the signature card fills in with the typed name + date,
+      // and "Signed and binding" + "Pay now" appear where the pad was.
+      onSigned?.({ name: trimmed });
     } catch (e) {
       setStatus("error");
       setErr((e as Error).message);

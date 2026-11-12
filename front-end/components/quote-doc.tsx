@@ -240,12 +240,15 @@ export function ErrorCard(
 }
 
 export function QuoteDoc(
-  { quote, lang }: {
+  { quote, lang, onSigned }: {
     quote: QuotePublic;
     /** REQ-048: the viewer's language — English first, or their own pick /
      *  toggle (PublicQuoteView owns it). The contractor's outgoing-comms
      *  language no longer decides what the customer sees first. */
     lang: Lang;
+    /** REQ-311: the sign island's success callback (PublicQuoteView refetches
+     *  and swaps the signed document in place). */
+    onSigned?: (signed: { name: string }) => void;
   },
 ) {
   // Shared view derivation (P-11/P-13/P-40/P-63) — accepted state, the
@@ -343,8 +346,62 @@ export function QuoteDoc(
   let sec = 0;
   const num = () => String(++sec).padStart(2, "0");
 
+  // REQ-311 (demo-loop c1 m19): the signed document opens with a thank-you
+  // and the next step at the top — the customer who lands here later (or
+  // scrolls up) sees "signed, now pay" before anything else.
+  const signerName = quote.acceptedName?.trim() || customerName;
+
   return (
     <>
+      {signed && signerName && (
+        <div
+          data-cy="quote-signed-banner"
+          role="status"
+          class="ctr__no-print"
+          style={`margin-bottom:18px;padding:16px 20px;background:linear-gradient(135deg,rgba(81,152,67,0.14) 0%,rgba(81,152,67,0.05) 100%);border:1px solid rgba(72,158,95,0.35);border-radius:16px;display:flex;align-items:center;gap:14px;flex-wrap:wrap`}
+        >
+          <div
+            aria-hidden="true"
+            style={`width:36px;height:36px;border-radius:50%;background:${GREEN};color:#fff;display:flex;align-items:center;justify-content:center;flex-shrink:0`}
+          >
+            <svg
+              width="18"
+              height="18"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="3"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <path d="M20 6 9 17l-5-5" />
+            </svg>
+          </div>
+          <div style="flex:1;min-width:200px">
+            <div style={`font-weight:800;color:${GREEN};font-size:15px`}>
+              {tFor(lang, "quoteDoc.signedBanner.thanks", {
+                name: signerName,
+                date: view.acceptedAt ? fmtDate(view.acceptedAt, lang) : "",
+              })}
+            </div>
+            <div style={`margin-top:4px;font-size:14px;color:${INK}`}>
+              {payNow
+                ? (
+                  <a
+                    data-cy="quote-signed-banner-pay"
+                    href={payNow.url}
+                    style={`color:${PINK_DARK};font-weight:800;text-decoration:none`}
+                  >
+                    {tFor(lang, "quoteDoc.signedBanner.next", {
+                      amount: fmtMoneyExact(payNow.balanceCents),
+                    })}
+                  </a>
+                )
+                : tFor(lang, "quoteDoc.signedBanner.nextNoInvoice")}
+            </div>
+          </div>
+        </div>
+      )}
       {/* Sticky brand strip */}
       <div class="ctr__no-print" style={`text-align:center;margin-bottom:18px`}>
         {contractor?.hasLogo
@@ -751,6 +808,7 @@ export function QuoteDoc(
                         quoteId={quote.id}
                         version={quote.version}
                         lang={lang}
+                        onSigned={onSigned}
                       />
                     </div>
                   )}
