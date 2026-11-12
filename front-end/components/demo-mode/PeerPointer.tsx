@@ -18,6 +18,8 @@ export interface PointerCmd {
   seq: number;
   kind: "move" | "click" | "leave";
   at?: Pt;
+  /** REQ-305 — `at` is on the edge of the box: the element pointed at is out of view */
+  outside?: boolean;
 }
 
 export default function PeerPointer(
@@ -36,12 +38,12 @@ export default function PeerPointer(
     if (!cmd) return;
     switch (cmd.kind) {
       case "move":
-        if (cmd.at) glide.glideTo(cmd.at);
+        if (cmd.at) glide.glideTo(cmd.at, cmd.outside);
         break;
       case "click": {
         if (!cmd.at) break;
         const at = cmd.at;
-        glide.glideTo(at);
+        glide.glideTo(at, cmd.outside);
         const id = ++waveId.current;
         setWaves((w) => [...w, { id, ...at }]);
         setTimeout(
@@ -58,6 +60,7 @@ export default function PeerPointer(
   return (
     <DemoPointer
       pointer={glide.pointer}
+      outside={glide.outside}
       waves={waves}
       name={name}
       color={color}

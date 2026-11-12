@@ -8,7 +8,10 @@ import { glideStep, type Pt } from "../../../shared/demo-mode/motion.ts";
 
 export interface Glide {
   pointer: Pt | null;
-  glideTo(target: Pt): void;
+  /** REQ-305 — the target sits on the edge of its box, pointing at something outside it */
+  outside: boolean;
+  /** REQ-305 — the same target again (a pointer placed afresh after a layout change) is no move */
+  glideTo(target: Pt, outside?: boolean): void;
   hide(): void;
   /** the pointer element's ref callback: paints the shown position on mount */
   attach(el: HTMLDivElement | null): void;
@@ -16,8 +19,10 @@ export interface Glide {
 
 export function useGlide(): Glide {
   const [pointer, setPointer] = useState<Pt | null>(null);
+  const [outside, setOutside] = useState(false);
   const shownRef = useRef<Pt | null>(null);
   const targetRef = useRef<Pt | null>(null);
+  const outsideRef = useRef(false);
   const elRef = useRef<HTMLDivElement | null>(null);
   const raf = useRef(0);
   const lastFrame = useRef(0);
@@ -39,8 +44,16 @@ export function useGlide(): Glide {
   };
   return {
     pointer,
-    glideTo(target) {
+    outside,
+    glideTo(target, out = false) {
+      const cur = targetRef.current;
+      if (
+        cur && shownRef.current && outsideRef.current === out &&
+        Math.abs(cur.x - target.x) < 0.01 && Math.abs(cur.y - target.y) < 0.01
+      ) return;
       targetRef.current = target;
+      outsideRef.current = out;
+      setOutside(out);
       setPointer(target);
       if (!shownRef.current) {
         // first sight: appear AT the target
@@ -58,6 +71,8 @@ export function useGlide(): Glide {
       raf.current = 0;
       shownRef.current = null;
       targetRef.current = null;
+      outsideRef.current = false;
+      setOutside(false);
       setPointer(null);
     },
     attach(el) {

@@ -15,6 +15,17 @@
  * Scrolls: a scroll is applied as it comes, but an element is a scroller only once its stylesheet
  * is in (and a page is only as long as its images let it be), so the latest scroll of every node is
  * kept and `settle()` applies them again once the replay's styles have loaded.
+ *
+ * REQ-305 — and not only on the stage's timers: the replay settles its scrolls again, and tells
+ * the stage its layout may have moved (`onLayout` — the pointers anchored to its nodes are placed
+ * again), after every applied frame (on the next animation frame), when a stylesheet, an image or
+ * a font of the frame loads, and when the page grows (a ResizeObserver on its html and body); a
+ * scroll of the frame tells the stage too. A scroll is put on at once, never animated by the
+ * page's own `scroll-behavior: smooth` (the quote page's): the customer's smooth scroll arrives as
+ * its steps, and a pointer placed after a scroll op is placed against the position it names, not
+ * one halfway there. `styled()` says whether every stylesheet the replay links is in: until then
+ * the browser lays the frame out without them (the page's links stacked top-left, a drawer in the
+ * flow), so the stage looks for no node under its presenter's pointer in it.
  */
 import type {
   MirrorFrame,
@@ -36,6 +47,15 @@ export const MIRROR_SRCDOC =
 export interface ReplayerOptions {
   /** paint a canvas with a bitmap (a data URL); the default draws it with an Image */
   paintCanvas?(c: HTMLCanvasElement, url: string): void;
+  /** REQ-305 — the replay's layout may have changed and its scrolls were settled: the pointers
+   *  anchored to its nodes are to be placed again */
+  onLayout?(): void;
+  /** REQ-305 — how a settle pass is scheduled (the default: the next animation frame; jest hands
+   *  in its own) */
+  schedule?(fn: () => void): void;
+  /** REQ-305 — the ResizeObserver that watches the page's size (the frame window's by default;
+   *  null for none; jest hands in its own) */
+  Resize?: typeof ResizeObserver | null;
 }
 
 export interface Replayer {
@@ -52,6 +72,10 @@ export interface Replayer {
   pointOf(a: NodeAnchor): { x: number; y: number } | null;
   /** every node's latest scroll, applied again where the replay lost it */
   settle(): void;
+  /** REQ-305 — every stylesheet the replay links has loaded (or failed): its layout is the customer's */
+  styled(): boolean;
+  /** REQ-305 — stop watching the frame's document */
+  dispose(): void;
 }
 
 const SVG_NS = "http://www.w3.org/2000/svg";
@@ -65,6 +89,25 @@ const EMBED = new Set(["iframe", "frame", "object", "embed"]);
 const URLISH = new Set(["href", "src", "xlink:href", "action", "formaction"]);
 
 const clamp01 = (n: number) => Math.min(1, Math.max(0, n));
+
+/** REQ-305 — a scroll put on at once: `behavior: "instant"` overrides the page's own
+ *  `scroll-behavior: smooth` (an assignment to scrollTop would start an animation) */
+function scrollNow(e: Element, x: number, y: number): void {
+  if (typeof e.scrollTo === "function") {
+    e.scrollTo({ left: x, top: y, behavior: "instant" });
+  } else {
+    e.scrollLeft = x;
+    e.scrollTop = y;
+  }
+}
+
+/** REQ-305 — a linked stylesheet the browser will load: one with an address, neither disabled nor
+ *  an alternate (those never load, and must not hold the replay "unstyled" for good) */
+function awaited(l: Element): boolean {
+  const rel = (l.getAttribute("rel") ?? "").toLowerCase().split(/\s+/);
+  return rel.includes("stylesheet") && !rel.includes("alternate") &&
+    !l.hasAttribute("disabled") && (l.getAttribute("href") ?? "").trim() !== "";
+}
 
 function defaultPaint(c: HTMLCanvasElement, url: string): void {
   const img = new Image();
@@ -94,11 +137,91 @@ export function createReplayer(
   let at: string | null = null;
   /** a snapshot has been applied and nothing has failed since */
   let ok = false;
+  /** REQ-305 — the stylesheets the replay links, and the nodes whose load (or error) has fired */
+  let sheets = new Set<Element>();
+  const loaded = new WeakSet<Node>();
+  const schedule = opts.schedule ??
+    ((fn: () => void) =>
+      typeof requestAnimationFrame === "function"
+        ? requestAnimationFrame(() => fn())
+        : setTimeout(fn, 0));
+  let due: { settle: boolean } | null = null;
+  let disposed = false;
 
   const reg = (i: number, n: Node) => {
     byId.set(i, n);
     idOf.set(n, i);
   };
+
+  /** every node's latest scroll, applied again where the replay lost it */
+  function settle() {
+    for (const [i, s] of scrolls) {
+      const e = scroller(i);
+      if (!e) continue;
+      try {
+        if (e.scrollLeft !== s.x || e.scrollTop !== s.y) scrollNow(e, s.x, s.y);
+      } catch {
+        // gone mid-way
+      }
+    }
+  }
+
+  /** REQ-305 — a pass on the next frame: the scrolls settled (when asked), then the stage told;
+   *  several asks before it runs are one pass */
+  const pass = (withSettle: boolean) => {
+    if (disposed) return;
+    if (due) {
+      due.settle ||= withSettle;
+      return;
+    }
+    due = { settle: withSettle };
+    schedule(() => {
+      const d = due;
+      due = null;
+      if (disposed || !d) return;
+      if (d.settle) settle();
+      opts.onLayout?.();
+    });
+  };
+  const settleSoon = () => pass(true);
+  /** the frame scrolled (an op, a settle, the browser keeping its place as content above grew):
+   *  the stage is told — no settle, which would fight a scroll it made itself */
+  const onScroll = () => pass(false);
+  doc.addEventListener("scroll", onScroll, true);
+  /** a stylesheet or an image of the frame is in (or failed): the layout moved */
+  const onLoad = (e: Event) => {
+    if (e.target) loaded.add(e.target as Node);
+    settleSoon();
+  };
+  doc.addEventListener("load", onLoad, true);
+  doc.addEventListener("error", onLoad, true);
+  /** its web fonts are in: the text, and what follows it, moved */
+  const fonts = (doc as Document & { fonts?: EventTarget }).fonts;
+  try {
+    fonts?.addEventListener?.("loadingdone", settleSoon);
+  } catch {
+    // no font set here
+  }
+  const RO = opts.Resize === undefined
+    ? (doc.defaultView?.ResizeObserver ??
+      (typeof ResizeObserver === "function" ? ResizeObserver : null))
+    : opts.Resize;
+  let ro: ResizeObserver | null = null;
+  /** the page's html and body: the frame grows as its styles and images come in */
+  function watchSize() {
+    ro?.disconnect();
+    ro = null;
+    if (!RO) return;
+    try {
+      ro = new RO(() => settleSoon());
+      const html = doc.documentElement;
+      if (html) ro.observe(html);
+      const body = doc.body;
+      if (body) ro.observe(body);
+    } catch {
+      ro = null;
+    }
+  }
 
   function setAttr(e: Element, tag: string, k: string, v: string) {
     const lk = k.toLowerCase();
@@ -128,6 +251,9 @@ export function createReplayer(
       : doc.createElement(tag);
     const lt = tag.toLowerCase();
     if (s.a) { for (const [k, v] of Object.entries(s.a)) setAttr(e, lt, k, v); }
+    if (lt === "link" && /(^|\s)stylesheet(\s|$)/i.test(s.a?.rel ?? "")) {
+      sheets.add(e); // REQ-305 — styled() waits for it
+    }
     if (s.c) { for (const c of s.c) e.appendChild(build(c)); }
     reg(s.i, e);
     return e;
@@ -197,8 +323,7 @@ export function createReplayer(
       case "s": {
         const e = scroller(op.i);
         if (!e) return op.i === 0;
-        e.scrollLeft = op.x;
-        e.scrollTop = op.y;
+        scrollNow(e, op.x, op.y); // REQ-305 — at once, never animated
         scrolls.set(op.i, { x: op.x, y: op.y });
         return true;
       }
@@ -235,6 +360,7 @@ export function createReplayer(
           byId = new Map();
           idOf = new WeakMap();
           scrolls.clear();
+          sheets = new Set();
           const root = build(f.root);
           const old = doc.documentElement;
           if (old) doc.replaceChild(root, old);
@@ -242,6 +368,7 @@ export function createReplayer(
           view = { w: f.w, h: f.h };
           at = f.u;
           ok = true;
+          watchSize();
         } else if (!ok) return false;
         for (const op of f.ops) {
           if (!run(op)) {
@@ -249,6 +376,8 @@ export function createReplayer(
             return false;
           }
         }
+        // REQ-305 — the layout changes once the browser has laid the frame out, not now
+        settleSoon();
         return true;
       } catch {
         ok = false;
@@ -287,17 +416,32 @@ export function createReplayer(
       if (r.width <= 0 || r.height <= 0) return null;
       return { x: r.left + r.width * a.x, y: r.top + r.height * a.y };
     },
-    settle() {
-      for (const [i, s] of scrolls) {
-        const e = scroller(i);
-        if (!e) continue;
-        try {
-          if (e.scrollLeft !== s.x) e.scrollLeft = s.x;
-          if (e.scrollTop !== s.y) e.scrollTop = s.y;
-        } catch {
-          // gone mid-way
+    settle,
+    styled() {
+      for (const l of sheets) {
+        if (!doc.contains(l)) {
+          sheets.delete(l);
+          continue;
         }
+        if (loaded.has(l) || (l as HTMLLinkElement).sheet || !awaited(l)) {
+          continue;
+        }
+        return false;
       }
+      return true;
+    },
+    dispose() {
+      disposed = true;
+      doc.removeEventListener("load", onLoad, true);
+      doc.removeEventListener("error", onLoad, true);
+      doc.removeEventListener("scroll", onScroll, true);
+      try {
+        fonts?.removeEventListener?.("loadingdone", settleSoon);
+      } catch {
+        // no font set here
+      }
+      ro?.disconnect();
+      ro = null;
     },
   };
 }
