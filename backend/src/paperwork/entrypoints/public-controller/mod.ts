@@ -10,6 +10,7 @@ import { UserStore } from "@users/domain/data/user-store/mod.ts";
 import { BusinessIdentityStore } from "@profile/domain/data/business-identity-store/mod.ts";
 import { BusinessAddressStore } from "@profile/domain/data/business-address-store/mod.ts";
 import { EventBus } from "@core/business/events/mod.ts";
+import { endsWithState } from "@core/business/address-parse/mod.ts";
 import { NotFoundError } from "@core/data/repository/mod.ts";
 import { SendSignedConfirmation } from "@paperwork/domain/coordinators/send-signed-confirmation/mod.ts";
 import { signedConfirmChannel } from "@paperwork/domain/business/customer-sms/mod.ts";
@@ -1386,6 +1387,32 @@ export function composeAddressLine(
   const city = addr.city?.trim();
   const state = addr.state?.trim();
   const postal = addr.postal?.trim();
+  // REQ-420 (demo m28): a row saved before the address save path split
+  // one-line streets can hold the whole "street, City, ST ZIP" in `street`.
+  // Don't repeat what the street already ends with ("…, TX 78702, TX").
+  const tailState = !!street && street.includes(",") && !!state &&
+    endsWithState(street, state);
+  const tailZip = !!street && street.includes(",") &&
+    /\b\d{5}(?:-?\d{4})?$/.test(street);
+  if (tailState || tailZip) {
+    const lower = street!.toLowerCase();
+    const keepCity = city &&
+      !new RegExp(
+        `,\\s*${
+          city.toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+        }\\s*(?:,|\\s|$)`,
+      )
+        .test(lower);
+    const keepState = state && !tailState;
+    const keepPostal = postal && !tailZip &&
+      !lower.includes(postal.toLowerCase());
+    const rest = [
+      keepCity ? city : undefined,
+      [keepState ? state : undefined, keepPostal ? postal : undefined]
+        .filter(Boolean).join(" ").trim(),
+    ].filter(Boolean).join(", ");
+    return [street, rest].filter(Boolean).join(", ");
+  }
   // City + ST [postal] is the canonical second half. Skip the second half
   // entirely if neither city nor state is set so we don't render a stray comma.
   const cityState = [city, [state, postal].filter(Boolean).join(" ").trim()]
