@@ -116,3 +116,52 @@ export async function runExclusive<T>(
     flag.current = false;
   }
 }
+
+/**
+ * REQ-402 (demo-loop cycle 2, m5): the channel the send starts on — the
+ * recommended one, or Text + Email when nothing is on file (the dialog then
+ * asks for both). The island's smart default and the menu's/dialog's
+ * "Recommended" tag are this one rule, never two copies.
+ */
+export function defaultSendChannel(
+  customer: ContactOnFile | undefined,
+): SendChannel {
+  return recommendedChannel(customer) ?? "both";
+}
+
+/**
+ * REQ-402 (m5): the hint a channel option carries when the customer can't
+ * be reached on it with what is on file — "needs an email" / "needs a
+ * phone" / "needs a phone and email"; undefined when the channel is ready.
+ */
+export function channelNeedsKey(
+  channel: SendChannel,
+  customer: ContactOnFile | undefined,
+): string | undefined {
+  const needsEmail = channel !== "sms" && !has(customer?.email);
+  const needsPhone = channel !== "email" && !has(customer?.phoneNumber);
+  if (needsEmail && needsPhone) return "asstChat.send.needsBoth";
+  if (needsEmail) return "asstChat.send.needsEmail";
+  if (needsPhone) return "asstChat.send.needsPhone";
+  return undefined;
+}
+
+/**
+ * REQ-402 (m5): the label of the dialog's add-contact field. When the
+ * contact is the chosen channel's only way to reach the customer it is
+ * plainly "Customer's email" / "Customer's phone"; with Text + Email it
+ * keeps "Add an email to also email it".
+ */
+export function addFieldLabelKey(
+  field: "email" | "phone",
+  channel: SendChannel,
+): string {
+  if (field === "email") {
+    return channel === "email"
+      ? "asstChat.send.customerEmail"
+      : "asstChat.send.addEmail";
+  }
+  return channel === "sms"
+    ? "asstChat.send.customerPhone"
+    : "asstChat.send.addPhone";
+}

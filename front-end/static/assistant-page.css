@@ -9488,3 +9488,15 @@ body {
   font-size: 11.5px;
   font-weight: 600;
 }
+
+/* REQ-402 (demo m5): the contact a send channel still lacks, on the option. */
+.send-dialog__needs {
+  margin-left: auto;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--fg-muted, #6b7b80);
+  white-space: nowrap;
+}
+.send-dialog__needs + .quote-review__send-menu-tag {
+  margin-left: 6px;
+}

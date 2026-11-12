@@ -348,8 +348,9 @@ describe("REQ-035 NW-55 agreement presentation copy", () => {
     expect(es["quoteDoc.termLabel.cancellation"]).toBe("Cancelación");
     expect(en["quoteDoc.termValue.cancellation"]).toBe("7 days' notice");
     expect(es["quoteDoc.termValue.cancellation"]).toBe("Aviso de 7 días");
-    expect(en["asstChat.send.howTitle"]).toBe("How do you want to send to customer?");
-    expect(es["asstChat.send.howTitle"]).toBe("¿Cómo quieres enviárselo al cliente?");
+    // REQ-402 (demo m5, cycle 2): the title names the customer.
+    expect(en["asstChat.send.howTitle"]).toBe("How do you want to send this to {name}?");
+    expect(es["asstChat.send.howTitle"]).toBe("¿Cómo quieres enviárselo a {name}?");
     // REQ-308 (demo M3): the button IS the send, so it says so.
     expect(en["asstChat.send.keep"]).toBe("Send");
     expect(es["asstChat.send.keep"]).toBe("Enviar");
