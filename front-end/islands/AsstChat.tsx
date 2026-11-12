@@ -6793,6 +6793,9 @@ export default function AsstChat({
                           // click away after the send, outside the menu.
                           <CustomerLinkRow
                             quoteId={dp.quoteId}
+                            quoteNumber={quote?.id === dp.quoteId
+                              ? quote.number
+                              : undefined}
                             lang={lang}
                             onCopy={copyLinkFor}
                           />
@@ -9352,6 +9355,9 @@ export default function AsstChat({
                               // customer's link too.
                               <CustomerLinkRow
                                 quoteId={payload.quoteId}
+                                quoteNumber={quote?.id === payload.quoteId
+                                  ? quote.number
+                                  : undefined}
                                 lang={lang}
                                 onCopy={copyLinkFor}
                               />

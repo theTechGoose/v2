@@ -213,3 +213,46 @@ Deno.test("REQ-310 (m13 + m32): /assistant after a send — the customer-link ro
       expect(url.endsWith(`/q/${quote.id}`), `the url is on the toast: ${url}`);
     }
   }));
+
+Deno.test("REQ-472 (demo cycle 3, p8-pair5-c): /assistant after a send — the customer-link row names the document, not the raw /q/<uuid>", (t) =>
+  story(t, async ({ page, expect, http, baseUrl }) => {
+    const { auth } = await signIn(http, page, baseUrl);
+    const { customer, quote } = await seedQuote(http, auth);
+    const conv = await post(http, auth, "/api/agents/conversations", {
+      quoteId: quote.id,
+      customerId: customer.id,
+    });
+    await post(http, auth, `/api/agents/conversations/${conv.id}/send-quote`, {
+      quoteId: quote.id,
+      channel: "email",
+      language: "en",
+    });
+
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await page.goto(`/assistant/${conv.id}`);
+    const row = page.locator("[data-cy='customer-link']").first();
+    await row.waitFor({ state: "visible", timeout: 20_000 });
+    const shown = row.locator(".customer-link__path");
+    // the quote's number arrives with the island's quote fetch
+    const number = String(quote.number ?? "");
+    expect(/^Q-\d+/.test(number), `the seeded quote has a number: ${number}`);
+    await page.waitForFunction(
+      (n) =>
+        document.querySelector("[data-cy='customer-link'] .customer-link__path")
+          ?.textContent?.trim() === n,
+      number,
+      { timeout: 15_000 },
+    );
+    const text = (await row.innerText()).trim();
+    expect(!text.includes(quote.id), `the raw id is not shown: "${text}"`);
+    expect.eq(
+      await row.locator("[data-cy='customer-link-open']").getAttribute("href"),
+      `/q/${quote.id}`,
+      "Open as customer still links to the full /q/<id>",
+    );
+    expect.eq(
+      await shown.getAttribute("title"),
+      `/q/${quote.id}`,
+      "the full link is on the hover title",
+    );
+  }));
