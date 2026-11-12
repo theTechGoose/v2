@@ -249,3 +249,100 @@ Deno.test("REQ-332 suggest-prices: the fallback tiers carry the derived basis to
   const res = await flow.run({ userId: "u-1", raw: VANITY_RAW, lang: "en" });
   assertEquals(res.basis, "labor_materials_as_noted");
 });
+
+// ── REQ-382 — demo cycle 2, M22 ─────────────────────────────────────────
+// "Suggested prices far too low (regression)": a master-bath gut (slab drain
+// move, heated floor) whose client supplies only the faucets came back
+// Competitive $1,850 / Market $2,250 / Premium $2,750 against the $28k the
+// contractor chose. The basis line said "price the labor and only the
+// materials the contractor provides"; the model wrote integer cents; and
+// nothing checked the tiers against the size of the job.
+
+const M22_RAW =
+  "Master bath gut for the Patel home: remove old tub/shower combo, walk-in curbless shower (cut the slab to move the drain), " +
+  "recessed niche, frameless glass, porcelain tile 12x24 on walls, 60in double vanity, quartz top, 2 undermount sinks " +
+  "(faucets supplied by client / grifos los pone la clienta), new exhaust fan and lights, 8x10 heated floor, permit.";
+const M22_V1_SCOPE =
+  "Remove old tub/shower combo\nInstall walk-in shower with curbless entry\nPorcelain tile 12x24 on walls";
+const M22_LOW = JSON.stringify({
+  options: [
+    { tier: "competitive", price: 1850, rationale: "Typical bathroom update" },
+    { tier: "market", price: 2250, rationale: "Typical bathroom update" },
+    { tier: "premium", price: 2750, rationale: "Includes heated floor and expedited schedule" },
+  ],
+});
+const M22_RIGHT = JSON.stringify({
+  options: [
+    { tier: "competitive", price: 24000, rationale: "Full gut, slab drain move" },
+    { tier: "market", price: 28500, rationale: "Typical local master-bath gut" },
+    { tier: "premium", price: 34000, rationale: "Custom glass and heated floor" },
+  ],
+});
+
+Deno.test("REQ-382 M22 suggest-prices: a customer-supplied item is named and EVERYTHING else is priced — labor and materials", async () => {
+  const { llm, flow } = fresh();
+  let user = "";
+  llm.setHandler((req) => {
+    user = req.messages.find((m) => m.role === "user")?.content ?? "";
+    return { text: M22_RIGHT };
+  });
+  const res = await flow.run({ userId: "u-1", raw: M22_RAW, scope: M22_V1_SCOPE, lang: "en" });
+  assertEquals(res.basis, "labor_materials_as_noted");
+  assert(user.includes("faucets supplied by client"), `the supplied item is named: ${user}`);
+  assert(/price everything else/i.test(user) && /labor and materials/i.test(user), `everything else is priced in full: ${user}`);
+  assert(!/only the materials the contractor provides/i.test(user), `no labor-only basis line: ${user}`);
+});
+
+Deno.test("REQ-382 M22 suggest-prices: the confirmed scope is a summary that never shrinks the job", async () => {
+  const { llm, flow } = fresh();
+  let user = "";
+  llm.setHandler((req) => {
+    user = req.messages.find((m) => m.role === "user")?.content ?? "";
+    return { text: M22_RIGHT };
+  });
+  await flow.run({ userId: "u-1", raw: M22_RAW, scope: M22_V1_SCOPE, lang: "en" });
+  assert(/never makes the job smaller/i.test(user), `scope is labelled a summary: ${user}`);
+  assert(user.includes("8x10 heated floor"), `the full original message is sent: ${user}`);
+});
+
+Deno.test("REQ-382 M22 suggest-prices: the model returns whole DOLLARS and the code converts to cents", async () => {
+  const { llm, flow } = fresh();
+  let seen: LLMRequest | undefined;
+  llm.setHandler((req) => {
+    seen = req;
+    return { text: M22_RIGHT };
+  });
+  const res = await flow.run({ userId: "u-1", raw: M22_RAW, scope: M22_V1_SCOPE, lang: "en" });
+  assertEquals(res.options.map((o) => o.priceCents), [2400000, 2850000, 3400000]);
+  const sys = seen!.systemPrompt;
+  assert(/"price": <int>/.test(sys), "the output schema asks for price");
+  assert(!/priceCents/.test(sys), "the prompt never asks for cents");
+  assert(/whole US dollars/i.test(sys), "the prompt states the unit");
+});
+
+Deno.test("REQ-382 M22 suggest-prices: tiers under the job's plausibility floor are re-asked once, naming the scope", async () => {
+  const { llm, flow } = fresh();
+  const users: string[] = [];
+  llm.setHandler((req) => {
+    users.push(req.messages.filter((m) => m.role === "user").at(-1)?.content ?? "");
+    return { text: users.length === 1 ? M22_LOW : M22_RIGHT };
+  });
+  const res = await flow.run({ userId: "u-1", raw: M22_RAW, scope: M22_V1_SCOPE, lang: "en" });
+  assertEquals(users.length, 2, "re-asked once");
+  assert(/dollars/i.test(users[1]) && /gut|remodel/i.test(users[1]), `the retry names the unit and the job size: ${users[1]}`);
+  assertEquals(res.options.map((o) => o.priceCents), [2400000, 2850000, 3400000]);
+});
+
+Deno.test("REQ-382 M22 suggest-prices: a model that stays implausibly low never ships tiers under the floor", async () => {
+  const { llm, flow } = fresh();
+  let calls = 0;
+  llm.setHandler(() => {
+    calls++;
+    return { text: M22_LOW };
+  });
+  const res = await flow.run({ userId: "u-1", raw: M22_RAW, scope: M22_V1_SCOPE, lang: "en" });
+  assertEquals(calls, 2, "one retry");
+  const cents = res.options.map((o) => o.priceCents);
+  for (const c of cents) assert(c >= 800000, `every tier clears a master-bath gut floor: ${cents}`);
+  assert(cents[0] < cents[1] && cents[1] < cents[2], `still ascending: ${cents}`);
+});
