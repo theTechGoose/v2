@@ -351,6 +351,128 @@ export function newInvoiceCopy(
   };
 }
 
+/* ---------- what the picked client already has (REQ-474) ---------- */
+
+/** One of the client's invoices still in flight: scheduled, drafted, or out
+ *  for payment (sent / viewed / claimed / pending) and unpaid. */
+export interface PriorInvoice {
+  id: string;
+  number: string;
+  kind: "scheduled" | "draft" | "open";
+  /** what is still owed on it (amount − paid), cents */
+  amountCents: number;
+  quoteId?: string;
+  quoteNumber?: string;
+}
+
+/** A signed quote of the client's — the invoice can be linked to it, which
+ *  sends the quoteId and puts the REQ-233 agreement cap on it. */
+export interface LinkableQuote {
+  id: string;
+  number: string;
+  /** the agreement less every live invoice on it, ≥ 0 */
+  remainingCents: number;
+}
+
+export interface PriorBilling {
+  invoices: PriorInvoice[];
+  quotes: LinkableQuote[];
+}
+
+interface PriorInvoiceIn {
+  id: string;
+  number?: string;
+  customerId?: string;
+  quoteId?: string;
+  status?: string;
+  amount?: number;
+  paidCents?: number | null;
+  paidAt?: string | null;
+}
+
+interface PriorQuoteIn {
+  id: string;
+  number?: string;
+  customerId?: string;
+  status?: string;
+  acceptedAt?: string | null;
+  estimatedTotal?: number;
+  isSample?: boolean;
+}
+
+const OPEN_STATUSES = new Set(["sent", "viewed", "claimed", "pending"]);
+const CLOSED_QUOTE = new Set(["lost", "void", "canceled", "cancelled"]);
+
+/**
+ * REQ-474 (demo-loop cycle 3, M17): the New invoice modal's "this client
+ * already has…" — before a direct bill is made beside a scheduled one. The
+ * client's unpaid scheduled / draft / open invoices (on their customerId, or
+ * on one of their quotes), and their signed quotes with what is left to bill.
+ * Nothing for no client or a client being created in the form.
+ */
+export function priorBillingFor(
+  customerId: string | null | undefined,
+  invoices: readonly PriorInvoiceIn[],
+  quotes: readonly PriorQuoteIn[],
+): PriorBilling {
+  if (!customerId || customerId === "__new__") {
+    return { invoices: [], quotes: [] };
+  }
+  const theirQuotes = quotes.filter((q) =>
+    q.customerId === customerId && !q.isSample
+  );
+  const quoteIds = new Set(theirQuotes.map((q) => q.id));
+  const numberOf = new Map(theirQuotes.map((q) => [q.id, docNumberOf(q)]));
+  const live = invoices.filter((i) =>
+    (i.status ?? "") !== "void" &&
+    (i.customerId === customerId || (!!i.quoteId && quoteIds.has(i.quoteId)))
+  );
+
+  const prior: PriorInvoice[] = [];
+  for (const i of live) {
+    const status = i.status ?? "";
+    const kind = status === "scheduled"
+      ? "scheduled"
+      : status === "draft"
+      ? "draft"
+      : OPEN_STATUSES.has(status)
+      ? "open"
+      : null;
+    const owed = Math.max(0, (i.amount ?? 0) - (i.paidCents ?? 0));
+    if (!kind || i.paidAt || owed <= 0) continue;
+    const quoteNumber = i.quoteId ? numberOf.get(i.quoteId) : undefined;
+    prior.push({
+      id: i.id,
+      number: docNumberOf(i),
+      kind,
+      amountCents: owed,
+      ...(i.quoteId ? { quoteId: i.quoteId } : {}),
+      ...(quoteNumber ? { quoteNumber } : {}),
+    });
+  }
+
+  // a signed quote is offered while it has money left to bill or a bill of
+  // it is still in flight — a long-paid job is not news
+  const signed: LinkableQuote[] = theirQuotes
+    .filter((q) =>
+      (q.status === "accepted" || !!q.acceptedAt) &&
+      !CLOSED_QUOTE.has(q.status ?? "")
+    )
+    .map((q) => {
+      const invoiced = live.filter((i) => i.quoteId === q.id)
+        .reduce((s, i) => s + (i.amount ?? 0), 0);
+      return {
+        id: q.id,
+        number: docNumberOf(q),
+        remainingCents: Math.max(0, (q.estimatedTotal ?? 0) - invoiced),
+      };
+    })
+    .filter((q) =>
+      q.remainingCents > 0 || prior.some((i) => i.quoteId === q.id)
+    );
+  return { invoices: prior, quotes: signed };
+}
+
 /* ---------------- headline (REQ-201) ---------------- */
 
 export interface InvoiceHeadline {

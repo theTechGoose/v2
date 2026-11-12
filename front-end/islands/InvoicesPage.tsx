@@ -22,6 +22,7 @@ import {
   type Invoice,
 } from "../clients/dashboard.ts";
 import { clientsClient } from "../clients/clients.ts";
+import type { QuoteCard } from "../clients/quotes.ts";
 import { I, ICN } from "../lib/dash-icons.tsx";
 import {
   CardGridSkeleton,
@@ -82,6 +83,8 @@ import {
   paymentSummary,
   percentToBp,
   prefillFromLedger,
+  priorBillingFor,
+  type PriorInvoice,
 } from "../../shared/documents/invoice-form.ts";
 
 /** REQ-201: the state words a headline uses, in the page language. */
@@ -610,6 +613,7 @@ export default function InvoicesPage(_props: { lang?: Lang }) {
       {newOpen && (
         <NewInvoiceModal
           customers={Array.isArray(s.customers) ? s.customers : []}
+          invoices={Array.isArray(s.invoices) ? s.invoices : []}
           lang={lang}
           quoteId={newQuoteId}
           onClose={() => setNewOpen(false)}
@@ -3198,10 +3202,18 @@ function toFormLines(lines: TypedLine[]): FormLine[] {
  * With `quoteId` (the /invoices?new=1&quoteId= link from a quote) the form
  * is prefilled from the quote's ledger — its customer, job name and the
  * amount still to invoice — and the invoice stays linked to the quote.
+ *
+ * REQ-474 (demo-loop cycle 3, M17): picking a client shows what they already
+ * have — scheduled / drafted / unpaid invoices and signed quotes — with "Send
+ * INV-001 now" and "Link to Q-001". Linking sends the quoteId, so the REQ-233
+ * agreement cap applies; a direct bill no longer lands beside a scheduled one
+ * unseen.
  */
 function NewInvoiceModal(
-  { customers, lang, quoteId, onClose }: {
+  { customers, invoices, lang, quoteId, onClose }: {
     customers: Customer[];
+    /** the page's invoices — what the picked client already has (REQ-474) */
+    invoices: Invoice[];
     lang: Lang;
     quoteId?: string | null;
     onClose: () => void;
@@ -3238,6 +3250,13 @@ function NewInvoiceModal(
   // REQ-205: the quote's ledger, when the form opened from a quote
   const [ledger, setLedger] = useState<LedgerPrefill | null>(null);
   const [ledgerErr, setLedgerErr] = useState(false);
+  // REQ-474: the quote this invoice bills against — the ?quoteId= link, or
+  // the signed quote picked with "Link to Q-001"
+  const [linkedQuoteId, setLinkedQuoteId] = useState<string | null>(
+    quoteId ?? null,
+  );
+  // REQ-474: the account's quotes, fetched once a client is picked
+  const [allQuotes, setAllQuotes] = useState<QuoteCard[] | null>(null);
 
   // Payment instructions: Settings' contract defaults first, else the last
   // ones typed here.
@@ -3260,11 +3279,12 @@ function NewInvoiceModal(
 
   // REQ-205: prefill from the quote's ledger
   useEffect(() => {
-    if (!quoteId) return;
+    if (!linkedQuoteId) return;
     let alive = true;
+    setLedgerErr(false);
     Promise.all([
-      dashboardClient.quoteLedger(quoteId),
-      dashboardClient.quote(quoteId).catch(() => null),
+      dashboardClient.quoteLedger(linkedQuoteId),
+      dashboardClient.quote(linkedQuoteId).catch(() => null),
     ]).then(([l, q]) => {
       if (!alive) return;
       const p = prefillFromLedger(l, q);
@@ -3278,7 +3298,71 @@ function NewInvoiceModal(
     return () => {
       alive = false;
     };
-  }, [quoteId]);
+  }, [linkedQuoteId]);
+
+  // REQ-474: a client picked → load the quotes once, to find their signed ones
+  const pickedId = clientSel && clientSel !== NEW_SENTINEL ? clientSel : "";
+  useEffect(() => {
+    if (!pickedId || allQuotes) return;
+    let alive = true;
+    dashboardClient.quotes().then((qs) => {
+      if (alive) setAllQuotes(Array.isArray(qs) ? qs : []);
+    }).catch(() => {
+      if (alive) setAllQuotes([]);
+    });
+    return () => {
+      alive = false;
+    };
+  }, [pickedId]);
+  const prior = useMemo(
+    () => priorBillingFor(pickedId, invoices, allQuotes ?? []),
+    [pickedId, invoices, allQuotes],
+  );
+  const priorQuotes = linkedQuoteId ? [] : prior.quotes;
+
+  /** REQ-474: "Send INV-001 now" — the scheduled / drafted bill goes out
+   *  instead of a second one: issue it (status sent) and dispatch it. */
+  async function sendPrior(inv: PriorInvoice) {
+    if (busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const r = await fetch(`/api/invoices/${inv.id}`, {
+        method: "PUT",
+        credentials: "include",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          status: "sent",
+          issuedDate: new Date().toISOString().slice(0, 10),
+        }),
+      });
+      await r.body?.cancel();
+      if (!r.ok) throw new Error(String(r.status));
+      const d = await dispatchInvoice(inv.id);
+      if (!d.delivered || d.partial) {
+        try {
+          globalThis.sessionStorage?.setItem(
+            SEND_FLASH_KEY,
+            JSON.stringify({
+              text: d.delivered
+                ? partialDispatchCopy(lang, d)
+                : dispatchFailureCopy(lang, d),
+              partial: d.delivered,
+            }),
+          );
+        } catch { /* storage unavailable — the reload still happens */ }
+      }
+      const back = new URL(globalThis.location.href);
+      back.searchParams.delete("new");
+      back.searchParams.delete("quoteId");
+      globalThis.location.assign(back.toString());
+    } catch {
+      setError(
+        tFor(lang, "invoicesPage.new.prior.sendFailed", { number: inv.number }),
+      );
+      setBusy(false);
+    }
+  }
 
   /** Pick a customer: bill-to and the service address follow (editable after). */
   function pickCustomer(id: string) {
@@ -3388,7 +3472,8 @@ function NewInvoiceModal(
       const body = buildInvoiceBody(
         {
           customerId,
-          quoteId: quoteId ?? undefined,
+          // REQ-474: the linked quote (REQ-233 caps what it may bill)
+          quoteId: linkedQuoteId ?? undefined,
           jobName,
           description,
           lineItems: formLines,
@@ -3539,6 +3624,86 @@ function NewInvoiceModal(
             </option>
           </select>
         </label>
+
+        {/* REQ-474 (M17): what this client already has — bill that instead */}
+        {(prior.invoices.length > 0 || priorQuotes.length > 0) && (
+          <div
+            data-cy="new-invoice-prior"
+            role="status"
+            style="display:flex;flex-direction:column;gap:8px;background:#FFF6E0;border:1px solid #F1D48A;border-radius:10px;padding:12px 14px;font-size:13px;color:#5A3D08"
+          >
+            {prior.invoices.map((inv) => {
+              const quote = inv.quoteNumber;
+              return (
+                <div
+                  key={inv.id}
+                  style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap"
+                >
+                  <span data-cy="new-invoice-prior-invoice">
+                    {tFor(
+                      lang,
+                      `invoicesPage.new.prior.${inv.kind}${
+                        quote ? "Quote" : ""
+                      }`,
+                      {
+                        name: selectedCustomer?.name ?? "",
+                        number: inv.number,
+                        amount: fmtMoneyExact(inv.amountCents),
+                        quote: quote ?? "",
+                      },
+                    )}
+                  </span>
+                  {inv.kind !== "open" && (
+                    <button
+                      type="button"
+                      data-cy="new-invoice-prior-send"
+                      disabled={busy}
+                      onClick={() => sendPrior(inv)}
+                      style="padding:7px 12px;border-radius:999px;border:0;background:var(--brand-teal,#144852);color:#fff;font:inherit;font-size:12.5px;font-weight:800;cursor:pointer"
+                    >
+                      {tFor(lang, "invoicesPage.new.prior.sendNow", {
+                        number: inv.number,
+                      })}
+                    </button>
+                  )}
+                </div>
+              );
+            })}
+            {priorQuotes.map((q) => (
+              <div
+                key={q.id}
+                style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap"
+              >
+                <span>
+                  {tFor(
+                    lang,
+                    q.remainingCents > 0
+                      ? "invoicesPage.new.prior.quote"
+                      : "invoicesPage.new.prior.quoteBilled",
+                    {
+                      quote: q.number,
+                      amount: fmtMoneyExact(q.remainingCents),
+                    },
+                  )}
+                </span>
+                <button
+                  type="button"
+                  data-cy="new-invoice-prior-link"
+                  disabled={busy}
+                  onClick={() => setLinkedQuoteId(q.id)}
+                  style="padding:7px 12px;border-radius:999px;border:1px solid var(--brand-teal,#144852);background:#fff;color:var(--brand-teal,#144852);font:inherit;font-size:12.5px;font-weight:800;cursor:pointer"
+                >
+                  {tFor(lang, "invoicesPage.new.prior.link", {
+                    quote: q.number,
+                  })}
+                </button>
+              </div>
+            ))}
+            <span style="font-size:12px">
+              {tFor(lang, "invoicesPage.new.prior.hint")}
+            </span>
+          </div>
+        )}
 
         {clientSel === NEW_SENTINEL && (
           <div style="display:flex;flex-direction:column;gap:12px;background:rgba(0,0,0,0.03);border-radius:10px;padding:12px 14px">
