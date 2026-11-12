@@ -191,7 +191,7 @@ Deno.test("REQ-243 (a): an open quote whose card names Maria Lopez counts one cl
  *  sent, the $1,600 balance is a scheduled installment of the signed
  *  agreement. Once the deposit is recorded the hero must still say money is
  *  to come, never "All clear — nothing outstanding." */
-Deno.test("REQ-317: a 50/50 job after the deposit — the hero says $1,600 is still to bill, never 'All clear'", (t) =>
+Deno.test("REQ-317 / REQ-697: a 50/50 job after the deposit — the hero says $1,600 is scheduled and unsent, with its reminder and due dates, never 'All clear'", (t) =>
   story(t, async ({ page, expect, http, baseUrl }) => {
     const { auth } = await signIn(http, page, baseUrl);
     const customer = await (await http("/api/customers", {
@@ -267,14 +267,30 @@ Deno.test("REQ-317: a 50/50 job after the deposit — the hero says $1,600 is st
       `after the deposit the hero is not 'All clear' (${after})`,
     );
     expect(
-      /\$1,600 still to bill/i.test(after),
-      `the hero names the scheduled balance (${after})`,
+      /\$1,600 scheduled — not sent yet/i.test(after),
+      `the hero names the scheduled balance as unsent (${after})`,
+    );
+    // REQ-697 (cycle 5, m13): no week in the eyebrow outside a week headline
+    const eyebrow = (await page.locator(".qph__eyebrow").first().innerText())
+      .replace(/\s+/g, " ").trim();
+    expect(
+      eyebrow === "Receivables",
+      `the eyebrow names no week (${eyebrow})`,
     );
     const sub = page.locator(".qph__sub").first();
     const subText = (await sub.innerText()).replace(/\s+/g, " ").trim();
+    const short = (iso: string) =>
+      new Date(`${iso}T12:00:00Z`).toLocaleDateString("en-US", {
+        month: "short",
+        day: "numeric",
+        timeZone: "UTC",
+      });
     expect(
-      /Next installment/i.test(subText) &&
-        /1 scheduled invoice\b/.test(subText),
-      `the sub line gives the next installment date and count (${subText})`,
+      subText.includes(
+        `Next installment — we'll remind you to send it on ${
+          short(inDays(21))
+        } · due ${short(inDays(28))}`,
+      ) && /1 scheduled invoice\b/.test(subText),
+      `the sub line gives the reminder date, the due date and the count (${subText})`,
     );
   }));

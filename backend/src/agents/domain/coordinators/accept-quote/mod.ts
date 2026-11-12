@@ -6,6 +6,7 @@ import { QuoteStore } from "@paperwork/domain/data/quote-store/mod.ts";
 import { UserStore } from "@users/domain/data/user-store/mod.ts";
 import { EventBus } from "@core/business/events/mod.ts";
 import { isAccepted } from "#quote-flow/quote-status.ts";
+import { shortDate } from "#documents/linked-view.ts";
 import { InvoiceStore } from "@paperwork/domain/data/invoice-store/mod.ts";
 import {
   type QuoteSignedEvent,
@@ -81,13 +82,26 @@ export class AcceptQuote {
     const invoice = e.invoiceId && this.invoices
       ? await this.invoices.getOwned(e.invoiceId, e.userId).catch(() => null)
       : null;
+    // REQ-697 (demo-loop cycle 5, m22): "Payment upon completion" sends
+    // nothing at signing — it schedules the bill and the owner is reminded to
+    // send it. The line says which invoice, the reminder day and the due day.
+    const scheduled = !invoice && e.scheduledInvoiceId && this.invoices
+      ? await this.invoices.getOwned(e.scheduledInvoiceId, e.userId).catch(
+        () => null,
+      )
+      : null;
+    const billed = invoice ?? scheduled;
     const vars = {
       name: quote.acceptedName?.trim() || t(lang, "acceptQuote.signed.someone"),
       quote: quote.number?.trim() || t(lang, "acceptQuote.signed.theQuote"),
-      invoice: invoice?.number ?? "",
-      amount: fmtUSD(invoice?.amount),
+      invoice: billed?.number ?? "",
+      amount: fmtUSD(billed?.amount),
+      date: shortDate(scheduled?.scheduledFor, lang),
+      due: shortDate(scheduled?.dueDate, lang),
     };
-    const key = !invoice
+    const key = scheduled?.scheduledFor
+      ? "acceptQuote.signed.scheduled"
+      : !invoice
       ? "acceptQuote.signed.plain"
       : (invoice.installmentTotal ?? 1) > 1
       ? "acceptQuote.signed.deposit"
@@ -116,6 +130,7 @@ export class AcceptQuote {
             ...(invoice
               ? { invoiceId: invoice.id, invoiceStatus: invoice.status }
               : {}),
+            ...(scheduled ? { scheduledInvoiceId: scheduled.id } : {}),
           },
         }),
       );

@@ -23,6 +23,7 @@ import { AgentsModule } from "@agents/mod-root.ts";
 import { AgentConversationStore } from "@agents/domain/data/agent-conversation-store/mod.ts";
 import { OtpStore } from "@users/domain/data/otp-store/mod.ts";
 import { resetKv } from "@core/data/kv/mod.ts";
+import { shortDate } from "#documents/linked-view.ts";
 
 @Module({ imports: [AgentsModule] })
 class TestApp {}
@@ -210,3 +211,51 @@ Deno.test("REQ-563 m3: in Spanish, and with one invoice (Due Now) it is 'factura
     );
   });
 });
+
+/** REQ-697 (demo-loop cycle 5, m22): "Payment upon completion" bills
+ *  nothing at signing — it schedules INV-001 and the owner is reminded to
+ *  send it. The signing line says so ("scheduled, not sent — we'll remind
+ *  you on … to send it (due …)") instead of a bare "signed", and the /q page
+ *  gets the days to pay its payment term states. */
+for (const lang of ["en", "es"] as const) {
+  Deno.test(`REQ-697 m22 (${lang}): an 'upon completion' signature says which invoice is scheduled, when the owner is reminded and when it is due`, async () => {
+    await withApp(async () => {
+      const { quote, first, messages } = await signedThread(
+        lang,
+        lang === "en" ? "+15125557697" : "+15125557698",
+        "Payment upon completion",
+      );
+      const inv = first as
+        | {
+          id: string;
+          number?: string;
+          status?: string;
+          scheduledFor?: string;
+          dueDate?: string;
+        }
+        | undefined;
+      assert(inv, "the signature scheduled the completion invoice");
+      assertEquals(inv.status, "scheduled");
+      assert(inv.scheduledFor && inv.dueDate, JSON.stringify(inv));
+      const d = messages.find((m) =>
+        m.kind === "phase_divider" && m.payload?.signed === true
+      );
+      assert(d, JSON.stringify(messages));
+      const date = shortDate(inv.scheduledFor, lang);
+      const due = shortDate(inv.dueDate, lang);
+      assertEquals(
+        d.content,
+        lang === "en"
+          ? `Linda Perez signed ${quote.number} · ${inv.number} $2,850.00 is scheduled, not sent — we'll remind you on ${date} to send it (due ${due})`
+          : `Linda Perez firmó ${quote.number} · ${inv.number} $2,850.00 está programada, sin enviar — te recordamos enviarla el ${date} (vence el ${due})`,
+      );
+      assertEquals(d.payload?.scheduledInvoiceId, inv.id);
+
+      // the public agreement carries the business's days to pay (default 30)
+      const pub = await fetch(`${base()}/quotes/${quote.id}/public`).then((
+        r,
+      ) => r.json());
+      assertEquals(pub.contractor?.invoiceNetDays, 30);
+    });
+  });
+}

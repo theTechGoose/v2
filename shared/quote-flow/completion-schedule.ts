@@ -25,6 +25,13 @@ export function accountNetDays(n: number | null | undefined): number {
     : DEFAULT_INVOICE_NET_DAYS;
 }
 
+/** A stored payment term that bills after the job ("Payment upon
+ *  completion", the wizard's net_15 option). REQ-697 (demo-loop cycle 5,
+ *  m22): the agreement states the days to pay beside it. */
+export function isUponCompletionTerm(value: string | undefined): boolean {
+  return /\b(?:upon|on|at) completion\b/i.test(value ?? "");
+}
+
 const DAY_MS = 86_400_000;
 const ISO_DAY = /^\d{4}-\d{2}-\d{2}$/;
 

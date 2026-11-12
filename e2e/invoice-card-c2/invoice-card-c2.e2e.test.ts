@@ -4,7 +4,8 @@
  * /invoices page an out-for-payment card's back row has ONE "Payment received"
  * (it read "Payment received / Open / Payment received / Mute"), "Adjust
  * invoice" draws an SVG chevron instead of a "▾" glyph, and a scheduled card's
- * subline reads "Scheduled to send Nov 26", never the raw ISO date.
+ * subline reads "We'll remind you on Nov 26 to send it" (REQ-697), never the
+ * raw ISO date.
  */
 import { story, type StoryTools } from "#shots";
 
@@ -147,8 +148,9 @@ Deno.test("REQ-407 (demo m30, p13-f): one 'Payment received' on an out card, an 
     const d = new Date(when + "T00:00:00");
     const short = `${SHORT[d.getMonth()]} ${d.getDate()}`;
     expect(!subline.includes(when), `no ISO date in the subline (${subline})`);
+    // REQ-697 (cycle 5, m22): a reminder to send, never "Scheduled to send"
     expect(
-      subline.startsWith(`Scheduled to send ${short}`),
-      `reads 'Scheduled to send ${short}' (${subline})`,
+      subline.startsWith(`We'll remind you on ${short} to send it`),
+      `reads 'We'll remind you on ${short} to send it' (${subline})`,
     );
   }));

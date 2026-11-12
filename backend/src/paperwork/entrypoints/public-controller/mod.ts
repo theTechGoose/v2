@@ -54,6 +54,7 @@ import { isInternalViewer } from "@paperwork/domain/business/internal-viewer/mod
 import { changeOrderJobTotals } from "#quote-flow/change-order-view.ts";
 import { invoiceTextByLang } from "#documents/invoice-lang.ts"; // REQ-497
 import { invoiceDocLang } from "#quote-flow/share-link.ts"; // REQ-586
+import { accountNetDays } from "#quote-flow/completion-schedule.ts"; // REQ-697
 
 /**
  * Map a NotFoundError into a 404 JSON response. Public endpoints used to
@@ -334,6 +335,8 @@ export class PaperworkPublicController {
           ? { websiteUrl: ident.websiteUrl.trim() }
           : {}),
         ...(ident?.commsLanguage ? { commsLanguage: ident.commsLanguage } : {}),
+        // REQ-697 (m22): the payment term states the days to pay
+        invoiceNetDays: accountNetDays(ident?.invoiceNetDays),
       });
       return new Response(bytes as BodyInit, {
         status: 200,
@@ -896,6 +899,10 @@ export class PaperworkPublicController {
       userId: existing.userId,
       quoteId: updated.id,
       ...(confirmed?.invoiceId ? { invoiceId: confirmed.invoiceId } : {}),
+      // REQ-697 (m22): or the completion bill it scheduled, unsent
+      ...(confirmed?.scheduledInvoiceId
+        ? { scheduledInvoiceId: confirmed.scheduledInvoiceId }
+        : {}),
     });
     return ctx.json({ ok: true, quoteId: updated.id });
   }
@@ -1414,6 +1421,10 @@ function projectAcceptedMethods(
 }
 
 interface PublicContractor {
+  /** REQ-697 (demo-loop cycle 5, m22): the days the customer has to pay an
+   *  invoice (Settings, default 30) — the agreement's "Payment upon
+   *  completion" term states it. */
+  invoiceNetDays?: number;
   name?: string;
   businessName?: string;
   phoneNumber?: string;
@@ -1491,6 +1502,7 @@ async function loadContractor(
         ident?.acceptedPaymentMethods,
       ),
       commsLanguage: ident?.commsLanguage === "es" ? "es" : "en",
+      invoiceNetDays: accountNetDays(ident?.invoiceNetDays), // REQ-697
       // REQ-252: no <img> for a logo that would not draw; REQ-613: its version rides along
       ...(ident?.logoFileId &&
           (await logoImageType(files, ident.logoFileId, ownerId)) !== null

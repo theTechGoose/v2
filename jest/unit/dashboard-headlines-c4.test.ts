@@ -40,7 +40,9 @@ describe("REQ-566 (b): the quiet-week line never hides more money out", () => {
       }),
     ).toBe("outstanding");
   });
-  it("when next week IS all that is out, the quiet line stays (fleet-0: $1,425 of $1,425)", () => {
+  // REQ-697 (cycle 5, m13) supersedes this case: "Quiet week — $725 coming
+  // next week" over an open $725 deposit. An open bill is never "quiet".
+  it("when next week IS all that is out, an open bill still leads with 'outstanding' (REQ-697)", () => {
     expect(
       invoicesHeroMode({
         totalInvoiceCount: 1,
@@ -49,7 +51,7 @@ describe("REQ-566 (b): the quiet-week line never hides more money out", () => {
         outstandingCents: 1_425_00,
         forecast: { ...none, nextWeekCents: 1_425_00 },
       }),
-    ).toBe("nextWeek");
+    ).toBe("outstanding");
   });
   it("the /invoices hero passes its outstanding total to the rule", () => {
     const src = read("front-end/islands/InvoicesPage.tsx");

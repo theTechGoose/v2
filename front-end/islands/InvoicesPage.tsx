@@ -53,6 +53,7 @@ import {
 import {
   draftingKpiSub,
   invoiceKpiTotals,
+  invoicesHeroEyebrowKey,
   invoicesHeroMode,
   paidKpiInvoiceCents,
   reloadInvoiceData,
@@ -731,6 +732,7 @@ export default function InvoicesPage(_props: { lang?: Lang }) {
         scheduledCount={scheduled.length}
         scheduledCents={scheduledTotal}
         nextScheduledFor={nextScheduledFor}
+        nextScheduledDue={nextScheduled?.dueDate}
         // REQ-411 (m34): a single after-completion bill reads "Bills on
         // completion", not "Next installment".
         nextScheduled={nextScheduled}
@@ -949,6 +951,7 @@ function InvoicesHero(
     scheduledCount = 0,
     scheduledCents = 0,
     nextScheduledFor,
+    nextScheduledDue,
     nextScheduled,
     overdueCount,
     totalInvoiceCount,
@@ -962,6 +965,8 @@ function InvoicesHero(
     scheduledCount?: number;
     scheduledCents?: number;
     nextScheduledFor?: string;
+    /** REQ-697: when that next scheduled bill is due */
+    nextScheduledDue?: string;
     nextScheduled?: { installmentTotal?: number };
     overdueCount: number;
     totalInvoiceCount: number;
@@ -987,7 +992,9 @@ function InvoicesHero(
     <header class="qph">
       <div class="qph__copy">
         <div class="qph__eyebrow">
-          <span class="qph__eyebrow-dot" /> {tFor(lang, "invoicesPage.eyebrow")}
+          <span class="qph__eyebrow-dot" />{" "}
+          {/* REQ-697 (m13): only a week-scoped headline names a week */}
+          {tFor(lang, invoicesHeroEyebrowKey(mode))}
         </div>
         <h1 class="qph__title" data-cy="forecast-hero">
           {trulyEmpty
@@ -1013,7 +1020,7 @@ function InvoicesHero(
             ? (
               <>
                 {(() => {
-                  // "{amount} still to bill." / "Queda por facturar {amount}."
+                  // REQ-697: "{amount} scheduled — not sent yet."
                   const [pre, post] = tFor(lang, "invoicesPage.hero.scheduled")
                     .split("{amount}");
                   return (
@@ -1088,6 +1095,18 @@ function InvoicesHero(
                     ? formatShortDate(nextScheduledFor, lang)
                     : "—"}
                 </strong>{" "}
+                {
+                  /* REQ-697 (m13): the reminder date is not the due date —
+                    name both ("…remind you to send it on 22 nov · due 29 nov") */
+                }
+                {nextScheduledDue && (
+                  <span data-cy="hero-scheduled-due">
+                    · {tFor(lang, "invoicesPage.sub.scheduledDue", {
+                      date: formatShortDate(nextScheduledDue, lang),
+                    })}
+                    {" "}
+                  </span>
+                )}
                 · {scheduledCount} {tFor(
                   lang,
                   scheduledCount === 1

@@ -145,6 +145,7 @@ describe("REQ-243 (d): a waiting claim is never 'All clear'", () => {
         forecast: { ...none, thisWeekCents: 100 },
       }),
     ).toBe("thisWeek");
+    // REQ-697 (cycle 5, m13): an open bill due next week is never "Quiet week"
     expect(
       invoicesHeroMode({
         totalInvoiceCount: 2,
@@ -152,7 +153,7 @@ describe("REQ-243 (d): a waiting claim is never 'All clear'", () => {
         claimedCount: 0,
         forecast: { ...none, nextWeekCents: 100 },
       }),
-    ).toBe("nextWeek");
+    ).toBe("outstanding");
     expect(
       invoicesHeroMode({
         totalInvoiceCount: 2,
@@ -299,11 +300,12 @@ describe("REQ-317: a scheduled installment of a signed agreement is never 'All c
         ]
       ) expect(d[k]).toBeTruthy();
     }
+    // REQ-697 (cycle 5, m13): scheduled money is named as scheduled, unsent
     expect(en["invoicesPage.hero.scheduled"]).toMatch(
-      /^\{amount\} still to bill\.$/,
+      /^\{amount\} scheduled — not sent yet\.$/,
     );
     expect(es["invoicesPage.hero.scheduled"]).toMatch(
-      /^Queda por facturar \{amount\}\.$/,
+      /^\{amount\} programado — aún sin enviar\.$/,
     );
   });
 });

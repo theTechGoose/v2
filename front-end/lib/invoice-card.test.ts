@@ -38,18 +38,22 @@ Deno.test("REQ-407 m30: an overdue card keeps 'Payment received' beside its Nudg
 Deno.test("REQ-407 p13-f: the scheduled subline reads the date like the due date ('Nov 26'), never ISO", () => {
   assertEquals(
     scheduledSubline("2026-11-26", NOW, "en"),
-    "Scheduled to send Nov 26",
+    // REQ-697 (cycle 5, m22): nothing sends it by itself — it is a reminder
+    "We'll remind you on Nov 26 to send it",
   );
   const es = scheduledSubline("2026-11-26", NOW, "es");
   assert(!/2026-11-26/.test(es), es);
   assertEquals(
     es,
-    `Programada para enviar ${cardDate("2026-11-26", NOW, "es")}`,
+    `Te recordamos enviarla el ${cardDate("2026-11-26", NOW, "es")}`,
   );
 });
 
 Deno.test("REQ-407 p13-f: a scheduled invoice with no date reads a dash", () => {
-  assertEquals(scheduledSubline(undefined, NOW, "en"), "Scheduled to send —");
+  assertEquals(
+    scheduledSubline(undefined, NOW, "en"),
+    "We'll remind you on — to send it",
+  );
 });
 
 Deno.test("REQ-407: cardDate keeps the card's existing due-date format", () => {

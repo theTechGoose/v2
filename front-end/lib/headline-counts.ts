@@ -95,13 +95,31 @@ export function invoicesHeroMode(input: {
   if (outstandingCount === 0 && !haveForecast) return "clear";
   if (haveForecast && forecast!.thisWeekCents > 0) return "thisWeek";
   // REQ-566 (demo-loop cycle 4, m11): "Quiet week — $450 coming next week"
-  // beside $100,000,449 out for payment. The quiet line is only the headline
-  // when next week's money is all that is out; more owed → "outstanding".
+  // beside $100,000,449 out for payment. REQ-697 (demo-loop cycle 5, m13):
+  // "Quiet week — $725 coming next week" over a $725 deposit just sent and
+  // due next Thursday. "Quiet week" says nothing is owed now, so it is never
+  // the headline while any bill is open — an open bill → "outstanding".
   if (
-    haveForecast && forecast!.nextWeekCents > 0 &&
+    outstandingCount === 0 && haveForecast && forecast!.nextWeekCents > 0 &&
     (input.outstandingCents ?? 0) <= forecast!.nextWeekCents
   ) return "nextWeek";
   return "outstanding";
+}
+
+/** REQ-697 (demo-loop cycle 5, m13): the /invoices eyebrow follows the hero
+ *  mode — "Receivables · this week" read over "$180 on the way" for a bill
+ *  due 19 dic. Only the week-scoped headlines name a week. */
+export function invoicesHeroEyebrowKey(
+  mode: InvoicesHeroMode,
+):
+  | "invoicesPage.eyebrow"
+  | "invoicesPage.eyebrowThisWeek"
+  | "invoicesPage.eyebrowNextWeek" {
+  return mode === "thisWeek"
+    ? "invoicesPage.eyebrowThisWeek"
+    : mode === "nextWeek"
+    ? "invoicesPage.eyebrowNextWeek"
+    : "invoicesPage.eyebrow";
 }
 
 /** What is still owed on one bill, INTEGER CENTS: the amount less what has
@@ -234,7 +252,12 @@ export function invoiceKpiTotals(
 /** REQ-411 (demo-loop cycle 2, m34): the label before the hero's next
  *  scheduled date. The only, after-completion bill of a "Payment upon
  *  completion" job (one installment of one) is not a "Next installment" — it
- *  "Bills on completion". A split's later installment keeps the old label. */
+ *  "Bills on completion". A split's later installment keeps the old label.
+ *
+ *  REQ-697 (demo-loop cycle 5, m13 + m22): that date is when the owner is
+ *  REMINDED to send the bill (ScheduleInvoiceNudges; nothing sends it by
+ *  itself), so both labels end "we'll remind you to send it on", and the
+ *  hero adds the bill's due date after it. */
 export function scheduledHeroSubKey(
   next: { installmentTotal?: number } | undefined,
 ): "invoicesPage.sub.billsOnCompletion" | "invoicesPage.sub.scheduledNext" {

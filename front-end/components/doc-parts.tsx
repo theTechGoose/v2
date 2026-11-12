@@ -22,7 +22,7 @@ import {
   telHref,
 } from "../lib/format.ts";
 import { type Lang, tFor } from "../lib/i18n.ts";
-import { localizeTermValue } from "../lib/term-i18n.ts";
+import { localizeTermValue, paymentTermValue } from "../lib/term-i18n.ts";
 import { formatLongDate } from "../../shared/quote-flow/format-helpers.ts";
 import { websiteLabel } from "../../shared/quote-flow/format-helpers.ts";
 import { isTbdTermValue } from "../../shared/quote-flow/terms-i18n.ts";
@@ -300,8 +300,13 @@ export function expandTermValue(
   term: Term,
   contractorState: string | undefined,
   lang: Lang = "en",
+  /** REQ-697: the business's days to pay — stated on "upon completion" */
+  paymentNetDays?: number,
 ): string {
   const stateName = expandStateName(contractorState);
+  if (term.stepId === "payment_terms") {
+    return paymentTermValue(term.value, lang, paymentNetDays);
+  }
   if (term.stepId === "wraps") {
     const v = localizeTermValue(term.value, lang);
     // REQ-047: a TBD duration is not an estimate — print it bare.
@@ -572,6 +577,9 @@ export function TermGrid(props: {
    *  always shows a Start row — deck p12 Terms anatomy). Omit to hide the
    *  row entirely when startDate is absent (invoice behavior). */
   startFallback?: string;
+  /** REQ-697 (demo-loop cycle 5, m22): the agreement's days to pay, stated
+   *  in its "Payment upon completion" row. Omit to print the term bare. */
+  paymentNetDays?: number;
   labels: {
     start: string;
     estCompletion: string;
@@ -622,7 +630,12 @@ export function TermGrid(props: {
           <KV
             key={term.stepId}
             k={props.labels.termLabels[term.stepId] ?? term.label}
-            v={expandTermValue(term, props.contractorState, props.lang)}
+            v={expandTermValue(
+              term,
+              props.contractorState,
+              props.lang,
+              props.paymentNetDays,
+            )}
           />
         ))}
       {(props.extraRows ?? []).map((row) => (

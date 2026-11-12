@@ -16,6 +16,31 @@ import {
   formatTermDate,
   termDateIso,
 } from "../../shared/quote-flow/format-helpers.ts";
+import { isUponCompletionTerm } from "../../shared/quote-flow/completion-schedule.ts";
+
+/** REQ-697 (demo-loop cycle 5, m22): the agreement's payment term in the
+ *  reader's language, with the days the customer has to pay when it bills
+ *  after the job — "Payment upon completion — due within 30 days of the
+ *  invoice". Signing schedules that bill due the account's days to pay after
+ *  it goes out (REQ-411), so the signed agreement says so. Without a known
+ *  window (or for any other term) it is `localizeTermValue`. */
+export function paymentTermValue(
+  value: string,
+  lang: Lang,
+  netDays: number | undefined,
+): string {
+  if (
+    typeof netDays === "number" && Number.isInteger(netDays) &&
+    netDays >= 0 && isUponCompletionTerm(value)
+  ) {
+    return netDays === 0
+      ? tFor(lang, "quoteDoc.termValue.paymentUponCompletionOnReceipt")
+      : tFor(lang, "quoteDoc.termValue.paymentUponCompletionWithin", {
+        n: netDays,
+      });
+  }
+  return localizeTermValue(value, lang);
+}
 
 export function localizeTermValue(value: string, lang: Lang): string {
   // REQ-495 (m17): a picked start date is stored ISO (older quotes carry

@@ -97,7 +97,14 @@ export class SendSignedConfirmation {
   async run(
     quoteId: string,
   ): Promise<
-    { ok: boolean; reason?: string; messageId?: string; invoiceId?: string }
+    {
+      ok: boolean;
+      reason?: string;
+      messageId?: string;
+      invoiceId?: string;
+      /** REQ-697: the after-completion bill the signature scheduled */
+      scheduledInvoiceId?: string;
+    }
   > {
     let quote: Quote;
     try {
@@ -162,6 +169,9 @@ export class SendSignedConfirmation {
       );
     }
     let invoiceId: string | undefined;
+    // REQ-697 (demo-loop cycle 5, m22): the after-completion bill the
+    // signature scheduled (nothing is sent) — the owner's signing line names it.
+    let scheduledInvoiceId: string | undefined;
     // REQ-316: a scheduled-only billing (payment after completion) is still a
     // successful accept even when there is nothing to pay yet.
     let billed = false;
@@ -236,6 +246,7 @@ export class SendSignedConfirmation {
           });
           billed = true;
           if (isFirst && !afterCompletion) invoiceId = invoice.id;
+          if (isFirst && afterCompletion) scheduledInvoiceId = invoice.id;
         } catch (err) {
           console.error(
             `[send-signed-confirmation] milestone ${
@@ -292,6 +303,8 @@ export class SendSignedConfirmation {
           ...(ident?.commsLanguage
             ? { commsLanguage: ident.commsLanguage }
             : {}),
+          // REQ-697 (m22): the payment term states the days to pay
+          invoiceNetDays: accountNetDays(ident?.invoiceNetDays),
         });
       } catch (err) {
         console.error("[send-signed-confirmation] PDF render failed:", err);
@@ -412,6 +425,7 @@ export class SendSignedConfirmation {
       ...(sent.reason ? { reason: sent.reason } : {}),
       ...(sent.messageId ? { messageId: sent.messageId } : {}),
       ...(invoiceId ? { invoiceId } : {}),
+      ...(scheduledInvoiceId ? { scheduledInvoiceId } : {}),
     };
   }
 }
