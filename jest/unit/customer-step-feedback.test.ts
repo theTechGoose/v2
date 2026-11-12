@@ -58,7 +58,7 @@ describe("REQ-390 m18/m19: the in-chat customer form's feedback", () => {
       name: "Bob",
       phoneNumber: "555-12",
       email: "bob@@gmail",
-    }, { contactTouched: true });
+    }, { contactTouched: true, phoneTouched: true, emailTouched: true });
     expect(f.phone).toBe("customer.invalidPhone");
     expect(f.email).toBe("customer.invalidEmail");
     expect(f.contact).toBeUndefined();
@@ -99,6 +99,74 @@ describe("REQ-390 m18/m19: the in-chat customer form's feedback", () => {
       email: "",
     }, {});
     expect(f).toEqual({ canSubmit: true });
+  });
+});
+
+describe("REQ-524 (demo-loop cycle 3, p8-pair7-a): a phone / email format error waits until the field was left", () => {
+  test("REQ-524 p8-pair7-a: a half-typed phone shows no error while still typing, and Next stays off", () => {
+    const f = customerStepFeedback(
+      { name: "Bob", phoneNumber: "5", email: "" },
+      { contactTouched: true, nameTouched: true },
+    );
+    expect(f.phone).toBeUndefined();
+    expect(f.canSubmit).toBe(false);
+  });
+
+  test("REQ-524 p8-pair7-a: once the phone field was left, the short phone is named", () => {
+    const f = customerStepFeedback(
+      { name: "Bob", phoneNumber: "512555", email: "" },
+      { contactTouched: true, phoneTouched: true },
+    );
+    expect(f.phone).toBe("customer.invalidPhone");
+    expect(f.canSubmit).toBe(false);
+  });
+
+  test("REQ-524 p8-pair7-a: a half-typed email shows no error until the email field was left", () => {
+    const typing = customerStepFeedback(
+      { name: "Bob", phoneNumber: "", email: "bob@" },
+      { contactTouched: true },
+    );
+    expect(typing.email).toBeUndefined();
+    expect(typing.canSubmit).toBe(false);
+    const left = customerStepFeedback(
+      { name: "Bob", phoneNumber: "", email: "bob@" },
+      { contactTouched: true, emailTouched: true },
+    );
+    expect(left.email).toBe("customer.invalidEmail");
+  });
+
+  test("REQ-524: touching the phone does not surface the email's error (each field its own flag)", () => {
+    const f = customerStepFeedback(
+      { name: "Bob", phoneNumber: "555-12", email: "bob@@gmail" },
+      { contactTouched: true, phoneTouched: true },
+    );
+    expect(f.phone).toBe("customer.invalidPhone");
+    expect(f.email).toBeUndefined();
+    expect(f.canSubmit).toBe(false);
+  });
+
+  test("REQ-524: a half-typed phone next to a good email still blocks Next (the value is wrong, only the message waits)", () => {
+    const f = customerStepFeedback(
+      { name: "Bob", phoneNumber: "512", email: "bob@gmail.com" },
+      {},
+    );
+    expect(f.phone).toBeUndefined();
+    expect(f.canSubmit).toBe(false);
+  });
+
+  test("REQ-524: AsstChat sets phoneTouched / emailTouched on blur, not on input", () => {
+    const chat = read("front-end/islands/AsstChat.tsx");
+    expect(chat).toMatch(/phoneTouched, emailTouched/);
+    expect(chat).toMatch(
+      /onBlur=\{\(\) => \{\s*setContactTouched\(true\);\s*setPhoneTouched\(true\);/,
+    );
+    expect(chat).toMatch(
+      /onBlur=\{\(\) => \{\s*setContactTouched\(true\);\s*setEmailTouched\(true\);/,
+    );
+    const onInputs = chat.match(/onInput=\{\(e\) => \{[^}]*\}/g) ?? [];
+    for (const h of onInputs) {
+      expect(h).not.toMatch(/setPhoneTouched|setEmailTouched/);
+    }
   });
 });
 

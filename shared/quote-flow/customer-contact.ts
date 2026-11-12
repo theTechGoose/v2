@@ -110,7 +110,12 @@ export function customerDraftDirty(d: {
  * form, one message PER FIELD (customerFormErrors' rule plus the form's own
  * two: a contact is required, and it must not be the contractor's own):
  *  - `name`: shown once the name field was left empty (`nameTouched`);
- *  - `phone` / `email`: a malformed value, or the contractor's own;
+ *  - `phone` / `email`: the contractor's own (at once — it can only match a
+ *    whole number / address), or a malformed value once THAT field was left
+ *    (`phoneTouched` / `emailTouched`; REQ-524, demo-loop cycle 3
+ *    p8-pair7-a — "Enter a full phone number" showed after the first digit,
+ *    while she was still typing). A malformed value blocks `canSubmit` either
+ *    way; only the message waits;
  *  - `contact`: no phone and no email. REQ-029 keeps the reason visible from
  *    the start, as a neutral `hint`; it becomes an `error` once a contact
  *    field was typed in or left (`contactTouched`).
@@ -138,6 +143,8 @@ export function customerStepFeedback(
     ownerPhone?: string | null;
     nameTouched?: boolean;
     contactTouched?: boolean;
+    phoneTouched?: boolean;
+    emailTouched?: boolean;
   },
 ): CustomerStepFeedback {
   const base = customerFormErrors(form);
@@ -150,16 +157,17 @@ export function customerStepFeedback(
   const ownEmail = !!email && !!opts.ownerEmail &&
     email.toLowerCase() === opts.ownerEmail.trim().toLowerCase();
   if (ownPhone) out.phone = "asstChat.customerStep.ownPhone";
-  else if (base.phone) out.phone = base.phone;
+  else if (base.phone && opts.phoneTouched) out.phone = base.phone;
   if (ownEmail) out.email = "asstChat.customerStep.ownEmail";
-  else if (base.email) out.email = base.email;
+  else if (base.email && opts.emailTouched) out.email = base.email;
   if (!phone && !email) {
     out.contact = {
       key: "asstChat.customerStep.needContact",
       tone: opts.contactTouched ? "error" : "hint",
     };
   }
-  out.canSubmit = !base.name && !out.phone && !out.email && !out.contact;
+  out.canSubmit = !base.name && !base.phone && !base.email && !ownPhone &&
+    !ownEmail && !out.contact;
   if (out.canSubmit) return { canSubmit: true };
   return out;
 }
