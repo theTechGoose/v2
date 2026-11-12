@@ -53,8 +53,9 @@ export class TranslateBullets {
         systemPrompt: sys,
         messages: [{ role: "user", content: JSON.stringify({ texts }) }],
         userId: input.userId,
-        // REQ-264 (M15): JSON mode — without it the OpenAI client attaches
-        // the chat tools and a tool call silently returns the originals.
+        // REQ-264 (M15) / REQ-260 (M24): JSON mode — without it the OpenAI
+        // client attaches the chat tools and a tool call silently returns
+        // the originals (no text).
         responseFormat: "json",
       });
       raw = res.text ?? "";

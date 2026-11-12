@@ -80,7 +80,9 @@ export class JobDetailsController {
 
   /**
    * POST /agents/job-details/prices
-   * Body: { raw: string }
+   * Body: { raw: string, scope?: string }
+   *   raw   — the contractor's ORIGINAL message (REQ-260 / M24)
+   *   scope — the bullets they confirmed in the picker, priced beside raw
    * Returns: { options: [{ tier, label, priceCents, rationale }] }
    *
    * Powers the "I know the job, help me price it" flow — three suggested
@@ -89,10 +91,11 @@ export class JobDetailsController {
   @Post("prices")
   async suggestPrices(@Context() ctx: ExecutionContext, @Body() body: unknown) {
     const user = await requireUser(ctx, this.sessions, this.users);
-    const b = (body ?? {}) as { raw?: unknown };
+    const b = (body ?? {}) as { raw?: unknown; scope?: unknown };
     if (typeof b.raw !== "string" || !b.raw.trim()) {
       throw new Error("raw is required");
     }
+    const scope = typeof b.scope === "string" && b.scope.trim() ? b.scope : undefined;
     // REQ-017 (NW-09): the contractor's saved business address — the model
     // prices for their city / state / ZIP.
     const address = await this.addresses.get(user.id)
@@ -102,6 +105,7 @@ export class JobDetailsController {
       await this.prices.run({
         userId: user.id,
         raw: b.raw,
+        scope,
         lang: user.language === "es" ? "es" : "en",
         address,
       }),
