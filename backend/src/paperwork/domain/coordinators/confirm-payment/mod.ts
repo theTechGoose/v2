@@ -6,6 +6,10 @@ import { UserStore } from "@users/domain/data/user-store/mod.ts";
 import { BusinessIdentityStore } from "@profile/domain/data/business-identity-store/mod.ts";
 import { EmailService } from "@communication/domain/data/email-service/mod.ts";
 import { SmsService } from "@users/domain/data/sms/mod.ts";
+import {
+  customerSmsTarget,
+  dispatchCustomerSms,
+} from "@paperwork/domain/business/customer-sms/mod.ts";
 import { ShortLinkStore } from "@paperwork/domain/data/shortlink-store/mod.ts";
 import { RenderReceiptPdf } from "@paperwork/domain/coordinators/render-receipt-pdf/mod.ts";
 import { MarkInvoicePaid } from "@paperwork/domain/coordinators/mark-invoice-paid/mod.ts";
@@ -163,7 +167,10 @@ export class ConfirmPayment {
           paperworkType: "invoice",
         });
       }
-      if (customer?.phoneNumber) {
+      // REQ-523 (demo m16): only a number that can take a text gets the
+      // receipt text — a missing, invalid or fictional one is skipped.
+      const smsTo = customerSmsTarget(customer?.phoneNumber);
+      if (smsTo.ok) {
         // Mint a shortlink back to the public invoice page so the SMS
         // receipt is a single short line.
         let shortUrl = "";
@@ -198,17 +205,31 @@ export class ConfirmPayment {
             tail,
           })
         } (${docRef(updated)})`;
-        await this.sms.send({ to: customer.phoneNumber, body });
-        // UX-30: log the receipt SMS to the comms trail.
-        await this.commsLog.run({
-          userId,
-          customerId: invoice.customerId,
-          channel: "text",
-          content: body,
-          toAddress: customer.phoneNumber,
-          paperworkId: invoice.id,
-          paperworkType: "invoice",
+        // REQ-523: the same guarded dispatch as every other customer text.
+        const res = await dispatchCustomerSms(this.sms, {
+          to: smsTo.e164,
+          body,
+          uiLang: lang,
         });
+        // UX-30: log the receipt SMS to the comms trail — REQ-523: only a
+        // text the provider accepted, never a refused or rejected one.
+        if (res.ok) {
+          await this.commsLog.run({
+            userId,
+            customerId: invoice.customerId,
+            channel: "text",
+            content: body,
+            toAddress: res.to,
+            paperworkId: invoice.id,
+            paperworkType: "invoice",
+          });
+        } else {
+          console.warn(
+            `[confirm-payment] receipt text to ${res.to} not sent: ${
+              res.detail ?? res.reason
+            }`,
+          );
+        }
       }
     } catch (err) {
       console.error("[confirm-payment] receipt dispatch failed:", err);

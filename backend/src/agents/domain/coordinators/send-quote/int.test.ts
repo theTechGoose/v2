@@ -747,7 +747,8 @@ Deno.test("REQ-276 send-quote: the send note is ONE language — the contractor'
     ),
     `divider in Spanish: ${note}`,
   );
-  assert(/número 555 ficticio/.test(note), `Spanish reason: ${note}`);
+  // REQ-523 (demo m16): the reason names the reserved block, not "every 555 number"
+  assert(/número de prueba reservado/.test(note), `Spanish reason: ${note}`);
   assert(!/Quote \+ Agreement/.test(note), `no English template: ${note}`);
   await resetKv();
 });

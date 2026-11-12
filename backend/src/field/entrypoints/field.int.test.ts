@@ -1053,7 +1053,7 @@ async function todaysRound(call: Call, phone = "+15125551630", texts = true) {
   const customer = (await call("POST", "/customers", {
     name: "Ana Torres",
     address: "4601 Dick Pond Rd, Myrtle Beach, SC",
-    phoneNumber: "+18435550199",
+    phoneNumber: "+18435550299", // REQ-523: a textable number (555-01XX is never texted)
   }, H)).body;
   const w = (await call("POST", "/field/workers", {
     name: "Pedro",
@@ -1431,7 +1431,7 @@ async function withTwilioStub(
     await stub.shutdown();
   }
 }
-const CUSTOMER_PHONE = "+18435550199";
+const CUSTOMER_PHONE = "+18435550299"; // REQ-523: 555-01XX numbers are never texted
 
 // REQ-171 — "send text messages to the workers if they get a new one off task for the day" / "… to customers if a one off service is canceled" / "… if their service is canceled or deffered."
 Deno.test("REQ-171 a one-off for today texts the worker, tomorrow's does not; delete / skip / defer text the customer, once", async () => {

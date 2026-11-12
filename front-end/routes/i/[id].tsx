@@ -12,6 +12,10 @@ import {
 import { projectLineItems } from "../../../shared/quote-flow/public-doc-state.ts";
 import { localizeLineItems } from "../../../shared/quote-flow/quote-translations.ts";
 import {
+  claimedNoteKey,
+  receiptChannelOf,
+} from "../../../shared/documents/receipt-note.ts";
+import {
   fmtVisitDate,
   type VisitGroup,
 } from "../../../shared/quote-flow/visit-groups.ts";
@@ -159,6 +163,9 @@ interface InvoicePublic {
     installmentTotal?: number;
   }>;
   acceptedMethods?: Array<{ method: string; handle?: string }>;
+  /** REQ-523 (demo m16): where the payment receipt can arrive — "email",
+   *  "text" (a number that can take one) or "none". */
+  receiptChannel?: string;
 }
 
 export default define.page(async function PublicInvoice(ctx) {
@@ -712,7 +719,7 @@ function InvoiceDoc(
             ? (
               <>
                 <ClaimedNote
-                  intent={invoice.paymentIntent!}
+                  invoice={invoice}
                   contractorFirst={invoice.contractor?.name?.split(/\s+/)[0]}
                   es={es}
                 />
@@ -733,6 +740,7 @@ function InvoiceDoc(
                 invoiceId={invoice.id}
                 acceptedMethods={invoice.acceptedMethods ?? []}
                 customerName={invoice.customer?.name}
+                receiptChannel={receiptChannelOf(invoice)}
                 balanceCents={balanceCents}
                 version={invoice.version}
                 lang={es ? "es" : "en"}
@@ -1132,12 +1140,15 @@ function Pill(
 }
 
 function ClaimedNote(
-  { intent, contractorFirst, es }: {
-    intent: { method: string; reference?: string; claimedAt: string };
+  { invoice, contractorFirst, es }: {
+    /** the claimed invoice — its claim, and (REQ-523, demo m16) where the
+     *  receipt can arrive: a text is promised only when it can */
+    invoice: InvoicePublic;
     contractorFirst?: string;
     es: boolean;
   },
 ) {
+  const intent = invoice.paymentIntent!;
   const lang = es ? "es" : "en";
   const friendly = methodFriendly(intent.method, lang);
   const who = contractorFirst ??
@@ -1165,7 +1176,7 @@ function ClaimedNote(
           )
           : null}
         <br />
-        {tFor(lang, "publicInvoice.claimed.body", { who })}
+        {tFor(lang, claimedNoteKey(receiptChannelOf(invoice)), { who })}
       </p>
     </section>
   );

@@ -58,7 +58,10 @@ export default function AdminsPage() {
   const [form, setForm] = useState<InviteForm>(BLANK);
   const [inviting, setInviting] = useState(false);
   const [inviteErr, setInviteErr] = useState<string | null>(null);
-  const [sent, setSent] = useState<string | null>(null);
+  // REQ-523 (demo m16): the invited number, and whether the text went out
+  const [sent, setSent] = useState<{ phone: string; texted: boolean } | null>(
+    null,
+  );
   const [confirmId, setConfirmId] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [rowErr, setRowErr] = useState<{ id: string; msg: string } | null>(
@@ -96,12 +99,12 @@ export default function AdminsPage() {
     setInviteErr(null);
     setSent(null);
     try {
-      const made = await adminsClient.invite({
+      const { texted, ...made } = await adminsClient.invite({
         phoneNumber: form.phone,
         name: form.name.trim() || undefined,
       });
       setForm(BLANK);
-      setSent(fmtCell(made.phoneNumber));
+      setSent({ phone: fmtCell(made.phoneNumber), texted: texted === true });
       setAdmins((list) => [...(list ?? []), made]);
     } catch (err) {
       setInviteErr(errMsg(err));
@@ -197,8 +200,15 @@ export default function AdminsPage() {
             </div>
             {inviteErr && <p class="alert" data-cy="adm-error">{inviteErr}</p>}
             {sent && (
-              <p class="hint" data-cy="adm-sent" style="margin:8px 0 0">
-                {t("admins.sent", { phone: sent })}
+              <p
+                class={sent.texted ? "hint" : "alert"}
+                data-cy="adm-sent"
+                data-texted={sent.texted ? "true" : "false"}
+                style="margin:8px 0 0"
+              >
+                {t(sent.texted ? "admins.sent" : "admins.notTexted", {
+                  phone: sent.phone,
+                })}
               </p>
             )}
           </form>

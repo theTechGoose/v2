@@ -102,7 +102,8 @@ Deno.test("SmsService smoke: 4xx response surfaces as ok=false with status in re
     const mock = makeMockFetch(() => new Response("invalid number", { status: 400 }));
     const svc = new SmsService();
     svc.fetchOverride = mock.fetch;
-    const out = await svc.send({ to: "+1bogus", body: "x" });
+    // REQ-523: a dialable number — "+1bogus" is now refused before the provider
+    const out = await svc.send({ to: "+15125551234", body: "x" });
     assertEquals(out.ok, false);
     assert(out.reason?.includes("twilio 400"));
   } finally {
@@ -158,7 +159,8 @@ for (
       );
       const svc = new SmsService();
       svc.fetchOverride = mock.fetch;
-      const out = await svc.send({ to: "+15125550100", body: "x" });
+      // REQ-523: a real number — 555-0100 (555-01XX) never reaches the provider now
+      const out = await svc.send({ to: "+15125551234", body: "x" });
       assertEquals(out.ok, false);
       assertEquals(out.reason, key);
       assertEquals(out.code, code);
