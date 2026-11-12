@@ -49,6 +49,7 @@ import {
   policyNumberError,
 } from "../../shared/quote-flow/business-fields.ts"; // REQ-503
 import { dollars, PlanCards } from "../components/PlanCards.tsx";
+import { firstPickNote } from "../lib/plan-pick-note.ts";
 import {
   handoffOf,
   handoffPage,
@@ -1902,7 +1903,14 @@ function BillingTab({ snapshot }: { snapshot: ProfileSnapshot }) {
       });
     }
     if (q.kind === "first") {
-      return tFor(lang, "billing.note.first", { monthly });
+      // REQ-615 — each charge with its date, from the one anchored schedule
+      return firstPickNote(
+        (k, v) => tFor(lang, k, v),
+        "billing.note.first",
+        q.monthlyCents,
+        new Date().toISOString(),
+        lang,
+      );
     }
     if (q.kind === "free") {
       if (currentId === "free") return null;

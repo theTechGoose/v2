@@ -96,8 +96,9 @@ Deno.test("REQ-356: the notes speak Spanish on a Spanish wizard (demo-loop c1 m8
 });
 
 Deno.test("REQ-356: the note's amounts come from the one switch rule — a pick still pending (nobody paid) is a first pick at full price (demo-loop c1 m8)", () => {
+  // REQ-615 added the dated schedule's vars (plan-schedule-note.test.ts); this pins the amounts
   const t = (k: string, v?: Record<string, string | number>) =>
-    `${k}${v ? JSON.stringify(v) : ""}`;
+    `${k}${v ? JSON.stringify({ due: v.due, monthly: v.monthly }) : ""}`;
   const now = "2026-11-12T12:00:00.000Z";
   assertEquals(
     wizardPlanNote(t, { planId: "assist", status: "pending" }, "monster", now),
