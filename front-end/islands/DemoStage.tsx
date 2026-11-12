@@ -77,6 +77,7 @@ import {
   fitScale,
   fracToPoint,
   type PeerMessage,
+  type PillFace,
   pointToFrac,
   type Presenter,
   type Rect,
@@ -131,9 +132,11 @@ import {
   whoEnded,
 } from "../../shared/demo-mode/ended.ts";
 import {
-  pillGhostBox,
+  PILL_FONT,
+  pillGhost,
   STAGE_PILL_BOTTOM,
   stageInsetBottom,
+  statusKeyOf,
 } from "../../shared/demo-mode/pill.ts";
 import {
   behindSeconds,
@@ -288,6 +291,8 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
   const glide = useGlide();
   /** REQ-295 — where the customer's own demo pill is on their screen (what the mirror hides) */
   const [pillBox, setPillBox] = useState<Rect | null>(null);
+  /** REQ-372 (cycle 2, m1) — and what it says, for the ghost's read-only replica */
+  const [pillFace, setPillFace] = useState<PillFace>({});
 
   const screen = mirrored ?? HIDDEN;
   /** REQ-393 — the screen the frame on the stage is fitted to (HIDDEN: none yet) */
@@ -711,6 +716,7 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
         resendPointer();
         // REQ-295 — their new page tells where its pill is; the old ghost goes
         setPillBox(null);
+        setPillFace({});
       },
       onPeer: (m: PeerMessage, from: PeerFrom) => {
         if (from.role === "presenter") {
@@ -760,6 +766,13 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
             break;
           case "pill":
             setPillBox(m.r);
+            setPillFace({
+              compact: m.compact,
+              open: m.open,
+              status: m.status,
+              text: m.text,
+              clipped: m.clipped,
+            });
             break;
         }
       },
@@ -1019,15 +1032,56 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
               />
             </div>
             {mirrored && pillBox && (() => {
-              const g = pillGhostBox(pillBox, fit);
+              // REQ-372 (cycle 2, m1 + m8) — cut to the frame, and a read-only replica of what
+              // the pill says: its text (unless compact and closed), its status in this stage's
+              // words, and a marker when the pill runs off their screen or past the frame
+              const ghost = pillGhost(pillBox, fit);
+              if (!ghost) return null;
+              const g = ghost.box;
+              const cut = ghost.clipped || pillFace.clipped === true;
+              const showText = Boolean(pillFace.text) &&
+                !(pillFace.compact && !pillFace.open);
+              const px = Math.max(7, 13 * fit.s);
               return (
                 <div
                   data-cy="demo-pill-ghost"
+                  data-clipped={cut ? "" : undefined}
+                  aria-hidden="true"
                   title={t("demoMode.pillGhost", { name })}
                   style={`position:fixed;left:${g.left}px;top:${g.top}px;width:${g.width}px;height:${g.height}px;z-index:${Z};box-sizing:border-box;border:1.5px dashed rgba(31,61,27,.55);border-radius:${
                     Math.max(4, 14 * fit.s)
-                  }px;background:rgba(31,61,27,.08);pointer-events:none`}
-                />
+                  }px;background:rgba(31,61,27,.78);color:#fff;pointer-events:none;display:flex;align-items:center;gap:${
+                    Math.max(2, 6 * fit.s)
+                  }px;padding:0 ${
+                    Math.max(2, 8 * fit.s)
+                  }px;overflow:hidden;white-space:nowrap;font-family:${PILL_FONT};font-size:${px}px;line-height:1.1`}
+                >
+                  {showText && (
+                    <span
+                      data-cy="demo-pill-ghost-text"
+                      style="flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis"
+                    >
+                      {pillFace.text}
+                    </span>
+                  )}
+                  {pillFace.status && (
+                    <span
+                      data-cy="demo-pill-ghost-status"
+                      style="flex:none;padding:1px 4px;border-radius:999px;background:rgba(255,255,255,.18);font-weight:700"
+                    >
+                      {t(statusKeyOf(pillFace.status))}
+                    </span>
+                  )}
+                  {cut && (
+                    <span
+                      data-cy="demo-pill-ghost-clipped"
+                      title={t("demoMode.pillGhostClipped", { name })}
+                      style="flex:none;margin-left:auto;font-weight:700"
+                    >
+                      …
+                    </span>
+                  )}
+                </div>
               );
             })()}
             {look.waiting && (

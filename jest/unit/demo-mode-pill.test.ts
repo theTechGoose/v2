@@ -21,7 +21,9 @@ import {
   PILL_MARGIN,
   PILL_MOVE_MS,
   PILL_ROOM_VAR,
+  pillGhost,
   pillGhostBox,
+  pillOverflows,
   pillStore,
   rectsOverlap,
   reservedBox,
@@ -30,6 +32,7 @@ import {
   STAGE_PILL_BOTTOM,
   STAGE_PILL_GAP,
   stageInsetBottom,
+  statusKeyOf,
 } from "../../shared/demo-mode/pill.ts";
 
 const ROOT = path.resolve(__dirname, "../..");
@@ -223,7 +226,7 @@ describe("REQ-295 — the pill holds one clear spot over nothing of the page (de
 
   test("the stage draws the ghost, in both languages", () => {
     const s = read("front-end/islands/DemoStage.tsx");
-    expect(s).toMatch(/pillGhostBox\(/);
+    expect(s).toMatch(/pillGhost(Box)?\(/); // REQ-372: pillGhost, clipped to the frame
     expect(s).toMatch(/data-cy="demo-pill-ghost"/);
     expect(s).toMatch(/case "pill":/);
     const en = JSON.parse(read("lang/en.json"));
@@ -270,5 +273,97 @@ describe("REQ-291 — the stage pill is one line as long as the window holds it"
     const s = read("front-end/islands/DemoStage.tsx");
     expect(s).toMatch(/ref=\{pillRef\}/);
     expect(s).toMatch(/stageInsetBottom\(pillH\)/);
+  });
+});
+
+/**
+ * REQ-372 — demo-loop cycle 2, issues m1 + m8: the stage showed the customer's pill only as an
+ * empty dashed box, sometimes outside the phone frame. The ghost is clipped to the frame, it
+ * carries what the pill says (status + text, its compact/open state) and marks a pill that
+ * overflows; the customer re-sends the pill on every sync / new stage.
+ */
+describe("REQ-372 — the stage's pill ghost is a clipped, read-only replica (cycle 2, m1 + m8)", () => {
+  // a 390 x 844 phone at s 0.5: the frame is 195 x 422 at (100, 50)
+  const fit = { left: 100, top: 50, width: 195, height: 422, s: 0.5 };
+
+  test("m8: a pill wider than the phone (M6's 760 px min-width) is clipped to the frame", () => {
+    const g = pillGhost({ left: 12, top: 800, width: 760, height: 40 }, fit);
+    expect(g).toEqual({
+      box: { left: 106, top: 450, width: 189, height: 20 },
+      clipped: true,
+    });
+    const b = pillGhostBox(
+      { left: 12, top: 800, width: 760, height: 40 },
+      fit,
+    )!;
+    expect(b.left + b.width).toBeLessThanOrEqual(fit.left + fit.width);
+  });
+
+  test("a pill inside the view is not clipped; a box wholly outside the frame draws nothing", () => {
+    expect(
+      pillGhost({ left: 12, top: 800, width: 320, height: 40 }, fit),
+    ).toEqual({
+      box: { left: 106, top: 450, width: 160, height: 20 },
+      clipped: false,
+    });
+    expect(pillGhost({ left: 500, top: 10, width: 100, height: 40 }, fit))
+      .toBeNull();
+    expect(pillGhostBox({ left: 500, top: 10, width: 100, height: 40 }, fit))
+      .toBeNull();
+  });
+
+  test("clipped on every side: above and left of the frame too", () => {
+    expect(
+      pillGhost({ left: -20, top: -10, width: 100, height: 40 }, fit),
+    ).toEqual({
+      box: { left: 100, top: 50, width: 40, height: 15 },
+      clipped: true,
+    });
+  });
+
+  test("the customer's side knows when its pill runs off the screen", () => {
+    const view = { w: 390, h: 844 };
+    expect(pillOverflows({ left: 12, top: 790, width: 400, height: 40 }, view))
+      .toBe(true);
+    expect(pillOverflows({ left: 12, top: 790, width: 366, height: 40 }, view))
+      .toBe(false);
+    expect(pillOverflows({ left: 12, top: 820, width: 300, height: 40 }, view))
+      .toBe(true);
+  });
+
+  test("the pill's status reads in the PRESENTER's words on the stage", () => {
+    expect(statusKeyOf("live")).toBe("demoMode.connected");
+    expect(statusKeyOf("connecting")).toBe("demoMode.connecting");
+    expect(statusKeyOf("ended")).toBe("demoMode.ended");
+  });
+
+  test("the overlay tells the stage what the pill says, and re-sends it on every sync", () => {
+    const o = read("front-end/islands/DemoModeOverlay.tsx");
+    const send = o.slice(o.indexOf("const sendPill = () => {"));
+    const body = send.slice(0, send.indexOf("sendPillRef.current = sendPill;"));
+    for (const f of ["compact", "open", "status", "text", "clipped"]) {
+      expect(body).toMatch(new RegExp(`\\b${f}\\b`));
+    }
+    expect(body).toMatch(/pillOverflows\(/);
+    const peer = o.slice(o.indexOf("onPeerOnline: () => {"));
+    const peerBody = peer.slice(0, peer.indexOf("onPeer: ("));
+    expect(peerBody).toMatch(/sentPillRef\.current = null/);
+    expect(peerBody).toMatch(/sendPillRef\.current\(\)/);
+  });
+
+  test("the stage renders the replica inside the clipped ghost, with a marker when it overflows", () => {
+    const s = read("front-end/islands/DemoStage.tsx");
+    expect(s).toMatch(/pillGhost\(/);
+    expect(s).toMatch(/data-cy="demo-pill-ghost-status"/);
+    expect(s).toMatch(/data-cy="demo-pill-ghost-text"/);
+    expect(s).toMatch(/data-cy="demo-pill-ghost-clipped"/);
+    expect(s).toMatch(/statusKeyOf\(/);
+    const en = JSON.parse(read("lang/en.json"));
+    const es = JSON.parse(read("lang/es.json"));
+    expect(en["demoMode.pillGhostClipped"]).toBeTruthy();
+    expect(es["demoMode.pillGhostClipped"]).toBeTruthy();
+    expect(es["demoMode.pillGhostClipped"]).not.toBe(
+      en["demoMode.pillGhostClipped"],
+    );
   });
 });

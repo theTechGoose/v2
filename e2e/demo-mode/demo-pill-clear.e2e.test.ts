@@ -8,6 +8,9 @@
  * REQ-295 (demo-loop cycle 1, M1) — nor any TEXT of the page: no visible text node's middle has
  * the pill on top. A full reload of the same page puts the pill back in the same spot (no hop),
  * and the stage draws the pill's ghost inside the frame.
+ *
+ * REQ-372 (demo-loop cycle 2, m1 + m8) — the ghost is not an empty dashed box: it carries the
+ * pill's status (in the presenter's words), and on the phone it stays inside the phone frame.
  */
 import { story, type StoryTools } from "#shots";
 
@@ -241,6 +244,14 @@ Deno.test("REQ-228 + REQ-291: the customer's demo pill covers no control of the 
           return r.inside ? null : `ghost outside the frame: ${r.ghost}`;
         },
       );
+      // REQ-372 (cycle 2, m1): and it says what the pill says
+      await until("the ghost carries the pill's status", async () => {
+        const said = await page.locator("[data-cy='demo-pill-ghost-status']")
+          .first().textContent().catch(() => "");
+        return (said ?? "").trim() === "Connected"
+          ? null
+          : `ghost status "${said}"`;
+      });
 
       // 2. phone size: still one line, still covering nothing
       await userPage.setViewportSize({ width: 390, height: 844 });
@@ -289,6 +300,42 @@ Deno.test("REQ-228 + REQ-291: the customer's demo pill covers no control of the 
       );
       await userPage.screenshot({ path: `${folder}/phone-pill-open.png` });
       await userPage.locator("[data-cy='demo-more']").click();
+
+      // 3a. REQ-372 (cycle 2, m1 + m8): on the phone the ghost stays in the frame and says
+      //     the pill's status — not an empty dashed box hanging off the frame's right edge
+      await until(
+        "phone: the ghost is a replica inside the frame",
+        async () => {
+          const r = await page.evaluate(() => {
+            const box = (s: string) =>
+              document.querySelector(s)?.getBoundingClientRect() ?? null;
+            const frame = box("[data-cy='demo-stage-layer']");
+            const ghost = box("[data-cy='demo-pill-ghost']");
+            const status = document.querySelector(
+              "[data-cy='demo-pill-ghost-status']",
+            )?.textContent?.trim() ?? "";
+            return frame && ghost
+              ? {
+                frameW: frame.width,
+                inside: ghost.left >= frame.left - 1 &&
+                  ghost.top >= frame.top - 1 &&
+                  ghost.right <= frame.right + 1 &&
+                  ghost.bottom <= frame.bottom + 1,
+                ghost: [ghost.left, ghost.right, frame.left, frame.right],
+                status,
+              }
+              : null;
+          });
+          if (!r) return "no frame or ghost yet";
+          if (
+            r.frameW > 380
+          ) return `the frame is not the phone yet (${r.frameW}px)`;
+          if (!r.inside) return `ghost outside the frame: ${r.ghost}`;
+          return r.status === "Connected"
+            ? null
+            : `the ghost says "${r.status}", not the pill's status`;
+        },
+      );
 
       // 3. the stage, narrow, following the phone: the pill is below the frame
       await until("the stage pill is below the frame", async () => {

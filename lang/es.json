@@ -3725,6 +3725,7 @@
   "demoMode.end": "Terminar demo",
   "demoMode.theirScreen": "La pantalla de {name}, {w} × {h}",
   "demoMode.pillGhost": "La píldora de demo de {name}: lo que el espejo oculta",
+  "demoMode.pillGhostClipped": "La píldora de {name} se sale del borde de su pantalla",
   "demoMode.pointOnlyHint": "Ves lo que ve el cliente. Tú señalas, el cliente hace clic.",
   "demoMode.noDemo": "No hay ninguna demo abierta.",
   "demoMode.backToAdmin": "Volver a admin",

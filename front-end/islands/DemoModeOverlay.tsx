@@ -128,13 +128,14 @@ import {
   PILL_MARGIN,
   PILL_MOVE_MS,
   pillHome,
+  pillOverflows,
   pillStore,
   recallPillOpen,
   rememberPillOpen,
   samplePoints,
   setPillRoom,
 } from "../../shared/demo-mode/pill.ts";
-import type { Rect } from "../../shared/demo-mode/protocol.ts";
+import type { PillFace, Rect } from "../../shared/demo-mode/protocol.ts";
 
 interface Demo {
   id: string;
@@ -288,6 +289,9 @@ export default function DemoModeOverlay() {
   /** REQ-295 — the pill's box as last told to the stage */
   const sentPillRef = useRef<Rect | null>(null);
   const sendPillRef = useRef<() => void>(() => {});
+  /** REQ-372 — what the pill shows right now (set each render), and as last told to the stage */
+  const faceRef = useRef<PillFace>({});
+  const sentFaceRef = useRef<string>("");
   const [open, setOpen] = useState(false);
   const impersonatingRef = useRef<boolean | null>(null);
   const placingRef = useRef(false);
@@ -649,6 +653,10 @@ export default function DemoModeOverlay() {
         // and this side's resting pointer, which their stage has not seen
         recorder.snapshot();
         resendPointer();
+        // REQ-372 (cycle 2, m8) — and where this pill is and what it says: every sync or new
+        // stage gets it, not only a change of link status
+        sentPillRef.current = null;
+        sendPillRef.current();
       },
       onPeer: (m: PeerMessage, from: PeerFrom) => {
         if (from.role !== "presenter") return;
@@ -826,14 +834,36 @@ export default function DemoModeOverlay() {
           height: el.offsetHeight,
         }
         : null;
+      // REQ-372 (cycle 2, m1) — what the pill says rides along: compact, open, status, text,
+      // and whether it runs off this screen (clipped)
+      const f = faceRef.current;
+      const clipped = r
+        ? pillOverflows(r, {
+          w: globalThis.innerWidth,
+          h: globalThis.innerHeight,
+        }) ||
+          (el !== null && el.scrollWidth > el.clientWidth + 1)
+        : false;
+      const face: PillFace = r
+        ? {
+          compact: f.compact,
+          open: f.open,
+          status: f.status,
+          text: f.text,
+          clipped,
+        }
+        : {};
+      const faceKey = JSON.stringify(face);
       const was = sentPillRef.current;
       if (
         was && r && was.left === r.left && was.top === r.top &&
-        was.width === r.width && was.height === r.height
+        was.width === r.width && was.height === r.height &&
+        sentFaceRef.current === faceKey
       ) return;
       if (!was && !r) return;
       sentPillRef.current = r;
-      linkRef.current?.send({ k: "pill", r });
+      sentFaceRef.current = faceKey;
+      linkRef.current?.send({ k: "pill", r, ...face });
     };
     sendPillRef.current = sendPill;
     const place = () => {
@@ -901,6 +931,12 @@ export default function DemoModeOverlay() {
     };
   }, [shown, demo?.role]);
 
+  // REQ-372 — the pill's words changed (status, compact, opened): the stage hears it; a render that
+  // changed nothing sends nothing (sendPill compares)
+  useEffect(() => {
+    sendPillRef.current();
+  });
+
   if (inert) return null;
 
   // REQ-379 — ONE home: bottom-left in the band reserved under the page, its bottom on the visible
@@ -924,6 +960,12 @@ export default function DemoModeOverlay() {
   // here again takes over)
   if (notice && !opening) {
     const said = endedText(notice);
+    faceRef.current = {
+      compact,
+      open: false,
+      status: "ended",
+      text: t(said.key, said.vars),
+    };
     return (
       <div data-demo-overlay>
         <div
@@ -951,6 +993,12 @@ export default function DemoModeOverlay() {
 
   if (!demo) {
     if (!opening) return null;
+    faceRef.current = {
+      compact: false,
+      open: false,
+      status: "connecting",
+      text: t("demoMode.presenting", { name: opening.targetName }),
+    };
     // REQ-179 — Demo was just clicked: the pill is up before the server answers
     return (
       <div data-demo-overlay>
@@ -1033,6 +1081,17 @@ export default function DemoModeOverlay() {
     : status === "direct" || status === "relay"
     ? t("demoMode.connected")
     : t("demoMode.connecting");
+  // REQ-372 — what this pill shows, for the stage's replica
+  faceRef.current = {
+    compact,
+    open: compact && open,
+    status: status === "ended"
+      ? "ended"
+      : status === "direct" || status === "relay"
+      ? "live"
+      : "connecting",
+    text: line,
+  };
 
   async function end() {
     const id = demo!.id;

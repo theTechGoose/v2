@@ -3725,6 +3725,7 @@
   "demoMode.end": "End demo",
   "demoMode.theirScreen": "{name}'s screen, {w} × {h}",
   "demoMode.pillGhost": "{name}'s demo pill — what the mirror hides",
+  "demoMode.pillGhostClipped": "{name}'s pill runs past the edge of their screen",
   "demoMode.pointOnlyHint": "You see what they see. You point, they click.",
   "demoMode.noDemo": "No demo is open.",
   "demoMode.backToAdmin": "Back to admin",

@@ -14,6 +14,7 @@ import {
   parseClientMessage,
   parsePeerMessage,
   parseServerMessage,
+  PILL_TEXT_MAX,
 } from "../../shared/demo-mode/protocol";
 
 const ROOT = path.resolve(__dirname, "../..");
@@ -70,6 +71,56 @@ describe("REQ-153 demo mode protocol", () => {
     });
     expect(parsePeerMessage({ k: "pill", r: { left: "x" } })).toBeNull();
     expect(parsePeerMessage({ k: "pill" })).toBeNull();
+  });
+
+  test("REQ-372 (cycle 2, m1): the pill message carries what the pill says — compact, open, status, text, clipped", () => {
+    const r = { left: 12, top: 790, width: 320, height: 40 };
+    expect(
+      parsePeerMessage({
+        k: "pill",
+        r,
+        compact: true,
+        open: false,
+        status: "live",
+        text: "Hans is guiding you",
+        clipped: true,
+      }),
+    ).toEqual({
+      k: "pill",
+      r,
+      compact: true,
+      open: false,
+      status: "live",
+      text: "Hans is guiding you",
+      clipped: true,
+    });
+    // junk fields are dropped, the box still rides
+    expect(
+      parsePeerMessage({
+        k: "pill",
+        r,
+        compact: "yes",
+        status: "hacked",
+        text: 42,
+        clipped: 1,
+      }),
+    ).toEqual({ k: "pill", r });
+    // a long text is cut
+    const long = parsePeerMessage({ k: "pill", r, text: "x".repeat(5000) });
+    expect(long && long.k === "pill" && long.text!.length).toBeLessThanOrEqual(
+      PILL_TEXT_MAX,
+    );
+    // and it survives the socket's own parse (the server re-parses every relay)
+    const wire = parseClientMessage(
+      JSON.stringify({
+        t: "relay",
+        data: { k: "pill", r, status: "connecting", text: "Hi", open: true },
+      }),
+    );
+    expect(wire).toEqual({
+      t: "relay",
+      data: { k: "pill", r, status: "connecting", text: "Hi", open: true },
+    });
   });
 
   test("server messages parse and carry who they are from", () => {

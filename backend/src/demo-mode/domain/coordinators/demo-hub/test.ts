@@ -5,6 +5,8 @@ import { assert, assertEquals } from "#std/assert";
 import { resetKv } from "@core/data/kv/mod.ts";
 import {
   MIRROR_CHUNK_CHARS,
+  parseClientMessage,
+  parseServerMessage,
   type Role,
   type ServerMessage,
 } from "#demo-mode/protocol.ts";
@@ -909,6 +911,49 @@ Deno.test("REQ-391 a tab that said why it goes is announced gone with that reaso
       why: "closing",
     }, "across hubs too");
     assertEquals(byCid.get(m.cid), { t: "peer", online: false, cid: m.cid });
+  } finally {
+    await a.close();
+    await b.close();
+    await resetKv();
+  }
+});
+
+// REQ-372 (demo-loop cycle 2, m1) — the customer's pill reaches the stage with what it SAYS: the
+// raw relay goes through the socket's parse, across two isolates, and the stage's parse — the
+// compact/open state, the status, the text and the overflow flag all survive.
+Deno.test("REQ-372 a pill message keeps its words across the socket parse and two hubs", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const a = DemoHub.isolated("a");
+  const b = DemoHub.isolated("b");
+  const presenter = fakePeer("presenter");
+  const viewer = fakePeer("viewer");
+  try {
+    await a.join("s372", presenter);
+    await b.join("s372", viewer);
+    const pill = {
+      k: "pill",
+      r: { left: 12, top: 790, width: 400, height: 40 },
+      compact: true,
+      open: false,
+      status: "live",
+      text: "Hans is guiding you",
+      clipped: true,
+    };
+    const m = parseClientMessage(JSON.stringify({ t: "relay", data: pill }));
+    assert(m && m.t === "relay", "the socket accepts the pill");
+    await b.send("s372", { role: "viewer" }, m);
+    await until(
+      "the stage gets the pill",
+      () => presenter.inbox.some((x) => x.t === "relay"),
+    );
+    const got = presenter.inbox.find((x) => x.t === "relay")!;
+    const onStage = parseServerMessage(JSON.stringify(got));
+    assertEquals(onStage as unknown, {
+      t: "relay",
+      from: "viewer",
+      data: pill,
+    });
   } finally {
     await a.close();
     await b.close();

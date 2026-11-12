@@ -100,8 +100,39 @@ export type PeerMessage =
   | { k: "leave" }
   | ({ k: "dom" } & DomChunk)
   | { k: "resync" }
-  // REQ-295 — the customer's demo pill box in their viewport (null: no pill), for the stage's ghost
-  | { k: "pill"; r: Rect | null };
+  // REQ-295 — the customer's demo pill box in their viewport (null: no pill), for the stage's ghost;
+  // REQ-372 — and what the pill says, so the ghost is a replica, not an empty box
+  | ({ k: "pill"; r: Rect | null } & PillFace);
+
+/** REQ-372 — the pill's state in words the stage translates itself (the presenter's language) */
+export type PillStatus = "live" | "connecting" | "ended";
+const PILL_STATUSES: readonly PillStatus[] = ["live", "connecting", "ended"];
+/** REQ-372 — the longest pill text that rides to the stage */
+export const PILL_TEXT_MAX = 160;
+
+/** REQ-372 (demo-loop cycle 2, m1) — what the customer's pill shows: compact (status only) or
+ *  full, opened on a tap, its status, its line (the customer's words) and whether it runs off
+ *  their screen. Every field optional: an older page sends the box alone. */
+export interface PillFace {
+  compact?: boolean;
+  open?: boolean;
+  status?: PillStatus;
+  text?: string;
+  clipped?: boolean;
+}
+
+/** REQ-372 — the face fields of a pill message, each checked; junk is dropped, not fatal */
+function parsePillFace(o: Record<string, unknown>): PillFace {
+  const f: PillFace = {};
+  if (typeof o.compact === "boolean") f.compact = o.compact;
+  if (typeof o.open === "boolean") f.open = o.open;
+  if (PILL_STATUSES.includes(o.status as PillStatus)) {
+    f.status = o.status as PillStatus;
+  }
+  if (typeof o.text === "string") f.text = o.text.slice(0, PILL_TEXT_MAX);
+  if (typeof o.clipped === "boolean") f.clipped = o.clipped;
+  return f;
+}
 
 /** REQ-214 — a presenter's relay may go to the other presenters only (their pointer rides to the
  *  customer directly). REQ-232 — a signal's `to` addresses ONE socket (its `cid`): a stage's offer
@@ -281,7 +312,7 @@ export function parsePeerMessage(x: unknown): PeerMessage | null {
     case "pill": {
       if (o.r === null) return { k: "pill", r: null };
       const r = parseRect(o.r);
-      return r ? { k: "pill", r } : null;
+      return r ? { k: "pill", r, ...parsePillFace(o) } : null;
     }
     default:
       return null;
