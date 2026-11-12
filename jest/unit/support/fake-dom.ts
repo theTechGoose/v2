@@ -149,6 +149,21 @@ export class FElement extends FNode {
   bitmap = "data:image/png;base64,AAAA";
   /** what the replayer painted on this canvas */
   painted: string | null = null;
+  /** REQ-644 — the element's inline style, as properties set by code (a `style` attribute set or
+   *  removed replaces them all, as in a browser) */
+  #inline = new Map<string, { v: string; p: string }>();
+  readonly style = {
+    setProperty: (k: string, v: string, p = "") => {
+      this.#inline.set(k, { v: String(v), p });
+    },
+    getPropertyValue: (k: string) => this.#inline.get(k)?.v ?? "",
+    getPropertyPriority: (k: string) => this.#inline.get(k)?.p ?? "",
+    removeProperty: (k: string) => {
+      const v = this.#inline.get(k)?.v ?? "";
+      this.#inline.delete(k);
+      return v;
+    },
+  };
   constructor(
     doc: FDocument,
     public localName: string,
@@ -172,6 +187,7 @@ export class FElement extends FNode {
     if (!/^[^\s"'>/=]+$/.test(n)) throw new Error("InvalidCharacterError");
     this.#attrs.set(n, String(v));
     this.#canvasReset(n);
+    if (n === "style") this.#inline.clear();
     this.ownerDocument.record({
       type: "attributes",
       target: this,
@@ -187,6 +203,7 @@ export class FElement extends FNode {
     if (!this.#attrs.has(n)) return;
     this.#attrs.delete(n);
     this.#canvasReset(n);
+    if (n === "style") this.#inline.clear();
     this.ownerDocument.record({
       type: "attributes",
       target: this,

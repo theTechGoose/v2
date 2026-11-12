@@ -308,6 +308,9 @@ describe("REQ-309 (demo M19/m14/m26) — a gap is found while the customer is id
 
   test("REQ-380 (demo M10): the dev pill counts the canvas bitmaps that arrived, were applied and were repainted", () => {
     expect(stage).toMatch(/replayerRef\.current\?\.stats\(\)/);
-    expect(stage).toMatch(/cv\$\{c\.seen\}\/\$\{c\.cv\}\/\$\{c\.repaints\}/);
+    // REQ-644 — and the ones painted on the stage's canvas
+    expect(stage).toMatch(
+      /cv\$\{c\.seen\}\/\$\{c\.cv\}\/\$\{c\.painted\}\/\$\{c\.repaints\}/,
+    );
   });
 });

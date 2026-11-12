@@ -51,6 +51,16 @@
  * decoding never paints over a newer one. `stats()` counts the bitmaps applied and the repaints
  * (the stage's dev pill shows them).
  *
+ * REQ-644 (demo-loop cycle 5, m32) — and a canvas SHOWS its picture. The stage's frame is
+ * sandboxed without `allow-scripts`, and a canvas whose document has scripting disabled represents
+ * its fallback content, never its bitmap (HTML; measured in Chromium: the stage canvas's bitmap
+ * held 2,792 inked pixels while the presenter's screen showed an empty pad, the chip at
+ * cv10/10/0). So every bitmap is also put on the canvas as its own background image (`showBitmap`:
+ * inline, `!important`, stretched to its box — the frame's CSP allows `data:` images), at once and
+ * again after any op that replaces the canvas's inline style; the bitmap itself is still drawn
+ * (what reads its pixels sees the same picture), and `stats().painted` counts the bitmaps drawn
+ * once their decode was in.
+ *
  * REQ-547 (demo-loop cycle 4, M21 + m32) — a snapshot never animates from its unstyled look. Its
  * page is built at once and its stylesheets come in a moment later; when they do, every element
  * whose look they change ran its CSS transition FROM the unstyled look (measured in Chromium: the
@@ -100,8 +110,9 @@ export const STILL_CSS = "*,*::before,*::after{transition:none!important;" +
 export const HOLD_CAP_MS = 1_200;
 
 export interface ReplayerOptions {
-  /** paint a canvas with a bitmap (a data URL); the default draws it with an Image */
-  paintCanvas?(c: HTMLCanvasElement, url: string): void;
+  /** paint a canvas with a bitmap (a data URL); the default shows it as the canvas's background
+   *  and draws it with an Image, calling `drawn` once it has (REQ-644) */
+  paintCanvas?(c: HTMLCanvasElement, url: string, drawn?: () => void): void;
   /** REQ-305 — the replay's layout may have changed and its scrolls were settled: the pointers
    *  anchored to its nodes are to be placed again */
   onLayout?(): void;
@@ -146,9 +157,9 @@ export interface Replayer {
   still(): boolean;
   /** REQ-305 — stop watching the frame's document */
   dispose(): void;
-  /** REQ-380 — canvas bitmaps that arrived (`cv` ops), were applied to a canvas, and were
-   *  repainted after a width/height op */
-  stats(): { seen: number; cv: number; repaints: number };
+  /** REQ-380 — canvas bitmaps that arrived (`cv` ops), were applied to a canvas, were drawn on
+   *  it once decoded (REQ-644), and were repainted after a width/height/style op */
+  stats(): { seen: number; cv: number; painted: number; repaints: number };
 }
 
 const SVG_NS = "http://www.w3.org/2000/svg";
@@ -197,21 +208,51 @@ const wanted = new WeakMap<
   { url: string; img: HTMLImageElement | null }
 >();
 
-function draw(c: HTMLCanvasElement, img: HTMLImageElement): void {
+function draw(
+  c: HTMLCanvasElement,
+  img: HTMLImageElement,
+  drawn?: () => void,
+): void {
   try {
     const ctx = c.getContext("2d");
     if (!ctx) return;
     ctx.clearRect(0, 0, c.width, c.height);
     ctx.drawImage(img, 0, 0, c.width, c.height);
+    drawn?.(); // REQ-644 — counted only once it is on the canvas
   } catch {
     // the canvas went away
   }
 }
 
-function defaultPaint(c: HTMLCanvasElement, url: string): void {
+/** REQ-644 — a canvas in the stage's scriptless frame shows its fallback content, never its
+ *  bitmap: the bitmap is shown as the canvas's own background image instead, stretched to its box
+ *  as a canvas's bitmap is (inline and `!important`: no stylesheet of the customer's covers it) */
+export function showBitmap(c: HTMLCanvasElement, url: string): void {
+  try {
+    const st = c.style;
+    st.setProperty(
+      "background-image",
+      `url("${url.replace(/["\\\n]/g, encodeURIComponent)}")`,
+      "important",
+    );
+    st.setProperty("background-size", "100% 100%", "important");
+    st.setProperty("background-repeat", "no-repeat", "important");
+    st.setProperty("background-position", "0 0", "important");
+  } catch {
+    // no inline style here
+  }
+}
+
+function defaultPaint(
+  c: HTMLCanvasElement,
+  url: string,
+  drawn?: () => void,
+): void {
+  // REQ-644 — what the presenter sees: at once, and in order (the newest bitmap is the last set)
+  showBitmap(c, url);
   const had = wanted.get(c);
   // REQ-380 — the same bitmap again (a repaint after a width/height set): drawn at once
-  if (had && had.url === url && had.img) return draw(c, had.img);
+  if (had && had.url === url && had.img) return draw(c, had.img, drawn);
   const w = { url, img: null as HTMLImageElement | null };
   wanted.set(c, w);
   const img = new Image();
@@ -219,7 +260,7 @@ function defaultPaint(c: HTMLCanvasElement, url: string): void {
     // REQ-380 — a newer bitmap was asked for meanwhile: this one never paints over it
     if (wanted.get(c) !== w) return;
     w.img = img;
-    draw(c, img);
+    draw(c, img, drawn);
   };
   img.src = url;
 }
@@ -231,7 +272,11 @@ export function createReplayer(
   const paint = opts.paintCanvas ?? defaultPaint;
   /** REQ-380 — every canvas's last bitmap, by id: painted again after a width/height op */
   const bitmaps = new Map<number, string>();
-  const counts = { seen: 0, cv: 0, repaints: 0 };
+  const counts = { seen: 0, cv: 0, painted: 0, repaints: 0 };
+  /** REQ-644 — a bitmap drawn on its canvas */
+  const drawn = () => {
+    counts.painted++;
+  };
   let byId = new Map<number, Node>();
   let idOf = new WeakMap<Node, number>();
   /** the latest scroll of every node (0: the window) */
@@ -583,13 +628,14 @@ export function createReplayer(
         if (!e) return false;
         if (op.v === null) e.removeAttribute(op.n);
         else setAttr(e, e.localName.toLowerCase(), op.n, op.v);
-        // REQ-380 — a width or height set (or removed) cleared the canvas: its picture again
+        // REQ-380 — a width or height set (or removed) cleared the canvas: its picture again;
+        // REQ-644 — and a style set (or removed) replaced the inline style that shows it
         const u = bitmaps.get(op.i);
         if (
           u && e.localName.toLowerCase() === "canvas" &&
-          /^(width|height)$/i.test(op.n)
+          /^(width|height|style)$/i.test(op.n)
         ) {
-          paint(e as HTMLCanvasElement, u);
+          paint(e as HTMLCanvasElement, u, drawn);
           counts.repaints++;
         }
         return true;
@@ -647,7 +693,7 @@ export function createReplayer(
         const e = el(op.i);
         if (!e) return false;
         bitmaps.set(op.i, op.u);
-        paint(e as HTMLCanvasElement, op.u);
+        paint(e as HTMLCanvasElement, op.u, drawn);
         counts.cv++;
         return true;
       }
