@@ -149,6 +149,40 @@ export function cardShowsCustomerLink(
   return ISSUED_CARD.has((cardStatus ?? "").toLowerCase());
 }
 
+/** The parts of a chat message the owner pick reads. */
+type LinkMessage = {
+  id: string;
+  kind?: string;
+  payload?: unknown;
+};
+
+/**
+ * REQ-571 (demo-loop cycle 4, p4-p2c): ONE customer-link row per quote.
+ * After a send the send divider (REQ-310) and the sent action card (REQ-310 /
+ * REQ-460) both carried a row for the same quote — two identical "Open as
+ * customer" links. Walk the rendered messages in order and give each quote's
+ * row to the NEWEST message that would show it; returns those message ids.
+ * `cardShows` is the card's own gate (cardShowsCustomerLink, fed the live
+ * quote row where the caller has it).
+ */
+export function customerLinkOwnerIds<P extends { quoteId?: string }>(
+  messages: readonly LinkMessage[],
+  cardShows: (payload: P) => boolean,
+): Set<string> {
+  const owner = new Map<string, string>();
+  for (const m of messages) {
+    const p = (m.payload ?? {}) as P & Record<string, unknown>;
+    if (!p.quoteId) continue;
+    const shows = m.kind === "phase_divider"
+      ? dividerShowsCustomerLink(p)
+      : m.kind === "action_card"
+      ? cardShows(p)
+      : false;
+    if (shows) owner.set(p.quoteId, m.id);
+  }
+  return new Set(owner.values());
+}
+
 /**
  * Write the url to the clipboard and report the outcome. Never throws: a
  * missing clipboard (http, headless, denied permission) is a `failed` toast
