@@ -567,3 +567,110 @@ Deno.test("REQ-029 NW-22 own-contact create_new rejects with the English diction
   );
   await resetKv();
 });
+
+// ---------------------------------------------------------------------------
+// REQ-240 (demo M29): each wizard answer lands on the quote as it is given.
+// The demo contractor answered Persona / Maria / "Next week" and left before
+// the last step; the customer saw "PARA —" and "INICIO Por agendar" on /q and
+// the invoice read "FACTURAR A —", because the customer and terms were only
+// copied onto the quote when the wizard COMPLETED.
+// ---------------------------------------------------------------------------
+
+async function setupTermsConversationWithUnboundQuote(userId = "u-1") {
+  const ctx = fresh();
+  const quote = await ctx.quotes.create(userId, {
+    summary: "Roof",
+    lineItems: [],
+    estimatedTotal: 12_500,
+    status: "sent",
+  });
+  const conv = await ctx.conversations.create({ userId, quoteId: quote.id });
+  await ctx.transitionFlow.run({ userId, conversationId: conv.id });
+  return { ...ctx, conv, quote };
+}
+
+Deno.test("REQ-240 (M29) handle-wizard-answer integration: the customer picked at the customer step is on the quote at once — not only when the wizard completes", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const { flow, conv, quote, quotes } =
+    await setupTermsConversationWithUnboundQuote();
+
+  await flow.run({
+    userId: "u-1",
+    conversationId: conv.id,
+    stepId: "customer",
+    optionId: "create_new",
+    customer: { create: { name: "Maria Lopez" } },
+  });
+
+  const reloaded = await quotes.getOwned(quote.id, "u-1");
+  assert(reloaded.customerId, "the quote carries the picked customer");
+  const conv2 = await fresh().conversations.get(conv.id);
+  assertEquals(reloaded.customerId, conv2.customerId);
+  await resetKv();
+});
+
+Deno.test("REQ-240 (M29) handle-wizard-answer integration: a partial wizard (customer + start date, then the contractor leaves) leaves the start-date term on the quote", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const { flow, conv, quote, quotes, bus } =
+    await setupTermsConversationWithUnboundQuote();
+  const drafted: DomainEvent[] = [];
+  bus.subscribe((e) => {
+    if (e.entityType === "quote" && e.action === "terms_drafted") {
+      drafted.push(e);
+    }
+  });
+
+  await flow.run({
+    userId: "u-1",
+    conversationId: conv.id,
+    stepId: "customer",
+    optionId: "create_new",
+    customer: { create: { name: "Maria Lopez" } },
+  });
+  await flow.run({
+    userId: "u-1",
+    conversationId: conv.id,
+    stepId: "start_date",
+    optionId: "next_week",
+  });
+
+  const reloaded = await quotes.getOwned(quote.id, "u-1");
+  const start = (reloaded.terms ?? []).find((t) => t.stepId === "start_date");
+  assert(start, "the start-date answer is a term on the quote");
+  assertEquals(start.value, t("en", "termsWizard.startDate.nextWeek"));
+  assert(reloaded.customerId, "the customer stays bound");
+  // "terms_drafted" still means the whole set — it fires on completion only.
+  assertEquals(drafted.length, 0);
+  await resetKv();
+});
+
+Deno.test("REQ-240 (M29) handle-wizard-answer integration: a quote already bound to a customer keeps it when the wizard's customer step answers", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const ctx = fresh();
+  const quote = await ctx.quotes.create("u-1", {
+    customerId: "cust-original",
+    summary: "Roof",
+    lineItems: [],
+    estimatedTotal: 12_500,
+  });
+  const conv = await ctx.conversations.create({
+    userId: "u-1",
+    quoteId: quote.id,
+  });
+  await ctx.transitionFlow.run({ userId: "u-1", conversationId: conv.id });
+
+  await ctx.flow.run({
+    userId: "u-1",
+    conversationId: conv.id,
+    stepId: "customer",
+    optionId: "create_new",
+    customer: { create: { name: "Someone Else" } },
+  });
+
+  const reloaded = await ctx.quotes.getOwned(quote.id, "u-1");
+  assertEquals(reloaded.customerId, "cust-original");
+  await resetKv();
+});

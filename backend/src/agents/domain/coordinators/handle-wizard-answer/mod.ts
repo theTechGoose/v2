@@ -176,13 +176,26 @@ export class HandleWizardAnswer {
       convPatch.customerId = boundCustomerId;
     }
 
+    // REQ-240 (demo M29): every answer lands on the quote as it is given —
+    // the customer at the customer step, each term at its step. Waiting for
+    // completion left a quote the contractor walked away from mid-wizard
+    // with no customer and no terms ("PARA —", "INICIO Por agendar"), and
+    // the invoice its signature created billed nobody ("FACTURAR A —").
+    // Best-effort: if conv.quoteId is missing or the quote can't be loaded,
+    // the turn still answers (and the CTA still shows on completion — the
+    // user can pick a quote manually before sending).
+    const persisted = await this.persistAnswers(
+      conv,
+      boundCustomerId,
+      spec,
+      next,
+    );
+
     if (progress.isComplete) {
-      // Persist the collected wizard answers onto the conversation's active
-      // quote — the quote IS the agreement, so the terms live on it.
-      // Best-effort: if conv.quoteId is missing or the quote can't be
-      // loaded, we still surface the CTA — the user can pick a quote
-      // manually before sending.
-      const quoteId = await this.finalizeTerms(conv, boundCustomerId, spec, next);
+      // The quote IS the agreement: the full terms set is on it now.
+      const quoteId = persisted
+        ? await this.announceTermsDrafted(conv)
+        : undefined;
 
       const cta = await this.messages.append({
         conversationId: input.conversationId,
@@ -309,16 +322,17 @@ export class HandleWizardAnswer {
   }
 
   /**
-   * Persist the wizard's answers onto the quote when the wizard completes.
-   * Returns the quote id, or `undefined` if no quote was bound. Idempotent:
-   * re-running with the same picks writes the same terms.
+   * Persist the wizard's answers so far onto the conversation's quote — run
+   * on EVERY answer (REQ-240), not only on completion. Returns whether the
+   * quote was written. Idempotent: re-running with the same picks writes the
+   * same terms.
    */
-  private async finalizeTerms(
+  private async persistAnswers(
     conv: AgentConversation,
     boundCustomerId: string | undefined,
     spec: WizardSpec,
     state: WizardState,
-  ): Promise<string | undefined> {
+  ): Promise<boolean> {
     // Walk the conversation messages and project the user's wizard picks
     // into a labeled terms array. Each pick lives on a `text` user message
     // with payload.wizardStepId — the chat transcript is the canonical
@@ -332,25 +346,36 @@ export class HandleWizardAnswer {
 
     if (!conv.quoteId) {
       console.error(
-        `[wizard:finalize] conversation ${conv.id} has no quoteId — skipping terms persist`,
+        `[wizard:persist] conversation ${conv.id} has no quoteId — skipping terms persist`,
       );
-      return undefined;
+      return false;
     }
     try {
       const customerId = boundCustomerId ?? conv.customerId;
       const quote = await this.quotes.getOwned(conv.quoteId, conv.userId);
-      await this.quotes.update(conv.quoteId, conv.userId, {
+      const patch = {
         ...(terms.length ? { terms } : {}),
         ...(customerId && !quote.customerId ? { customerId } : {}),
         ...(completed ? { estimatedCompletionDate: completed } : {}),
-      });
+      };
+      if (Object.keys(patch).length) {
+        await this.quotes.update(conv.quoteId, conv.userId, patch);
+      }
     } catch (err) {
       console.error(
-        `[wizard:finalize] failed to persist terms onto quote ${conv.quoteId}:`,
+        `[wizard:persist] failed to persist terms onto quote ${conv.quoteId}:`,
         err,
       );
-      return undefined;
+      return false;
     }
+    return true;
+  }
+
+  /** The wizard completed: tell the bus the quote's terms are drafted. */
+  private async announceTermsDrafted(
+    conv: AgentConversation,
+  ): Promise<string | undefined> {
+    if (!conv.quoteId) return undefined;
     await this.bus.emit({
       userId: conv.userId,
       entityType: "quote",

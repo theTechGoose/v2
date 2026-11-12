@@ -100,7 +100,8 @@ Deno.test("public e2e: POST /quotes/:id/accept (no session) flips status to acce
     assertEquals(typeof refetched.acceptedAt, "string");
 
     // UX-37 resolved by construction: accepting the quote IS the one
-    // ceremony, and it bills — no payment_terms → one full invoice due today.
+    // ceremony, and it bills — no payment_terms → one full invoice on net-7
+    // (REQ-240, demo M29: never due the day it is signed).
     const invoices = await fetch(`http://localhost:${PORT}/invoices`, {
       headers: { "x-session-id": sid },
     }).then((r) => r.json());
@@ -110,7 +111,10 @@ Deno.test("public e2e: POST /quotes/:id/accept (no session) flips status to acce
     assertEquals(milestone.length, 1);
     assertEquals(milestone[0].amount, 500_00);
     assertEquals(milestone[0].status, "sent");
-    assertEquals(milestone[0].dueDate, new Date().toISOString().slice(0, 10));
+    assertEquals(
+      milestone[0].dueDate,
+      new Date(Date.now() + 7 * 86_400_000).toISOString().slice(0, 10),
+    );
   } finally {
     await server.stop();
     await resetKv();

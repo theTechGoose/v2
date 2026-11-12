@@ -153,6 +153,8 @@ async function withKv<T>(fn: () => Promise<T>): Promise<T> {
 }
 
 const todayIso = () => new Date().toISOString().slice(0, 10);
+const plusDaysIso = (n: number) =>
+  new Date(Date.now() + n * 86_400_000).toISOString().slice(0, 10);
 
 Deno.test("send-signed-confirmation run: 50/50 terms → first invoice sent now, second scheduled; acceptedNotifiedAt stamped", async () => {
   await withKv(async () => {
@@ -219,7 +221,7 @@ Deno.test("send-signed-confirmation run: idempotent — a replay after acceptedN
   });
 });
 
-Deno.test("send-signed-confirmation run: NO payment terms → accept still bills — one full-amount invoice due today", async () => {
+Deno.test("REQ-240 (M29) send-signed-confirmation run: NO payment terms → accept still bills — one full-amount invoice on the standard net-7, never due the same day", async () => {
   await withKv(async () => {
     const s = freshRun();
     const quote = await s.quotes.create("u-1", {
@@ -240,8 +242,76 @@ Deno.test("send-signed-confirmation run: NO payment terms → accept still bills
     assertEquals(rows[0].status, "sent");
     assertEquals(rows[0].installmentIndex, 1);
     assertEquals(rows[0].installmentTotal, 1);
-    assertEquals(rows[0].dueDate, todayIso(), "no-terms invoice is due today");
+    assertEquals(
+      rows[0].dueDate,
+      plusDaysIso(7),
+      "a quote nobody agreed payment terms on is not due the day it is signed",
+    );
     assertEquals(result.invoiceId, rows[0].id);
+  });
+});
+
+Deno.test("REQ-240 (M29) send-signed-confirmation run: NO payment terms + a completion date after net-7 → the invoice is due on completion", async () => {
+  await withKv(async () => {
+    const s = freshRun();
+    const completion = plusDaysIso(30);
+    const quote = await s.quotes.create("u-1", {
+      summary: "Patio",
+      lineItems: [],
+      estimatedTotal: 750_00,
+      status: "accepted",
+      acceptedAt: new Date().toISOString(),
+      estimatedCompletionDate: completion,
+    });
+
+    await s.flow.run(quote.id);
+
+    const rows = await s.invoices.listByUser("u-1");
+    assertEquals(rows.length, 1);
+    assertEquals(rows[0].dueDate, completion);
+  });
+});
+
+Deno.test("REQ-240 (M29) send-signed-confirmation run: a signed quote with NO customer on file bills the signer by name — the invoice never reads 'Bill to —'", async () => {
+  await withKv(async () => {
+    const s = freshRun();
+    const quote = await s.quotes.create("u-1", {
+      summary: "Patio",
+      lineItems: [],
+      estimatedTotal: 750_00,
+      status: "accepted",
+      acceptedAt: new Date().toISOString(),
+      acceptedName: "Maria Lopez",
+    });
+
+    await s.flow.run(quote.id);
+
+    const rows = await s.invoices.listByUser("u-1");
+    assertEquals(rows.length, 1);
+    assertEquals(rows[0].customerId, undefined);
+    assertEquals(rows[0].billTo?.name, "Maria Lopez");
+  });
+});
+
+Deno.test("REQ-240 (M29) send-signed-confirmation run: a quote WITH a customer bills that customer (no billTo override)", async () => {
+  await withKv(async () => {
+    const s = freshRun();
+    const cust = await s.customers.create("u-1", { name: "Maria Lopez" });
+    const quote = await s.quotes.create("u-1", {
+      customerId: cust.id,
+      summary: "Patio",
+      lineItems: [],
+      estimatedTotal: 750_00,
+      status: "accepted",
+      acceptedAt: new Date().toISOString(),
+      acceptedName: "M. Lopez",
+    });
+
+    await s.flow.run(quote.id);
+
+    const rows = await s.invoices.listByUser("u-1");
+    assertEquals(rows[0].customerId, cust.id);
+    assertEquals(rows[0].billTo, undefined);
   });
 });
 
