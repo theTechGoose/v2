@@ -50,6 +50,9 @@ export default function PublicSignQuote(
   const drawingRef = useRef<Stroke | null>(null);
   const [hasInk, setHasInk] = useState(false);
   const [name, setName] = useState("");
+  // REQ-289: the typed-name label must name its input (else a screen reader
+  // reads the placeholder, "Juan Pérez", as the field's name)
+  const nameId = `sign-name-${quoteId}`;
   const [submitting, setSubmitting] = useState(false);
   // REQ-203: "stale" — the quote was republished under this page; "already"
   // — someone signed it meanwhile. Both reload into the current document.
@@ -483,11 +486,13 @@ export default function PublicSignQuote(
 
       {/* Typed legal name */}
       <label
+        htmlFor={nameId}
         style={`display:block;margin-top:18px;font-size:11px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:${MUTED};margin-bottom:6px`}
       >
         {tFor(lang, "publicSign.nameLabel")}
       </label>
       <input
+        id={nameId}
         type="text"
         value={name}
         onInput={(e) => setName((e.target as HTMLInputElement).value)}

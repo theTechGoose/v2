@@ -258,10 +258,15 @@ function DeclineForm(
         )}
         style="width:100%;padding:10px 12px;border:1px solid #e3e8e6;border-radius:10px;font-size:14px;color:#1c2c30;font-family:inherit;background:#fff;resize:vertical"
       />
-      <label style="display:block;font-size:11px;font-weight:700;letter-spacing:.10em;text-transform:uppercase;color:#6b7a7e;margin:12px 0 6px">
+      {/* REQ-289: the label names its input */}
+      <label
+        htmlFor="pqa-decline-name"
+        style="display:block;font-size:11px;font-weight:700;letter-spacing:.10em;text-transform:uppercase;color:#6b7a7e;margin:12px 0 6px"
+      >
         {tFor(lang, "publicQuoteActions.nameLabel")}
       </label>
       <input
+        id="pqa-decline-name"
         type="text"
         value={name}
         onInput={(e) => setName((e.target as HTMLInputElement).value)}
@@ -382,10 +387,15 @@ function AskForm(
         )}
         style="width:100%;padding:10px 12px;border:1px solid #e3e8e6;border-radius:10px;font-size:14px;color:#1c2c30;font-family:inherit;background:#fff"
       />
-      <label style="display:block;font-size:11px;font-weight:700;letter-spacing:.10em;text-transform:uppercase;color:#6b7a7e;margin:12px 0 6px">
+      {/* REQ-289: the label names its input */}
+      <label
+        htmlFor="pqa-ask-name"
+        style="display:block;font-size:11px;font-weight:700;letter-spacing:.10em;text-transform:uppercase;color:#6b7a7e;margin:12px 0 6px"
+      >
         {tFor(lang, "publicQuoteActions.nameLabel")}
       </label>
       <input
+        id="pqa-ask-name"
         type="text"
         value={name}
         onInput={(e) => setName((e.target as HTMLInputElement).value)}
