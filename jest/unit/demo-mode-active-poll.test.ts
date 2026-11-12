@@ -12,6 +12,7 @@ import * as fs from "fs";
 import * as path from "path";
 import { activePoll } from "../../front-end/lib/demo-mode/active-poll";
 import { ACTIVE_POLL_MS } from "../../shared/demo-mode/protocol";
+import { CATCHUP_MIN_MS } from "../../front-end/lib/poll";
 
 const ROOT = path.resolve(__dirname, "../..");
 const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), "utf8");
@@ -183,5 +184,69 @@ describe("REQ-222 (M11) the customer's /active poll survives the end of a connec
     );
     // the old self-scheduling chain is gone
     expect(src).not.toMatch(/timer = setTimeout\(check, ACTIVE_POLL_MS\)/);
+  });
+});
+
+/**
+ * REQ-299 (demo cycle 1, issue p4) — the overlay's catch-up when the tab is shown again is
+ * debounced: `catchUp()` asks only if the last ask began 2 s or more ago. `now()` (a roster
+ * change, the peer dropped, the started event) still asks at once.
+ */
+describe("REQ-299 the overlay's visible catch-up is debounced", () => {
+  beforeEach(() => jest.useFakeTimers());
+  afterEach(() => jest.useRealTimers());
+
+  test("REQ-299 catchUp() less than 2 s after the last ask does nothing; 2 s later it asks", async () => {
+    const ask = jest.fn(() => Promise.resolve());
+    const poll = activePoll({
+      ask,
+      every: ACTIVE_POLL_MS,
+      connected: () => false,
+    });
+    poll.now();
+    await settle();
+    expect(ask).toHaveBeenCalledTimes(1);
+    jest.advanceTimersByTime(500);
+    poll.catchUp();
+    poll.catchUp();
+    poll.catchUp();
+    await settle();
+    expect(ask).toHaveBeenCalledTimes(1);
+    jest.advanceTimersByTime(CATCHUP_MIN_MS);
+    poll.catchUp();
+    await settle();
+    expect(ask).toHaveBeenCalledTimes(2);
+    poll.stop();
+  });
+
+  test("REQ-299 a catchUp() that asks re-arms the schedule from that ask, not on top of it", async () => {
+    const ask = jest.fn(() => Promise.resolve());
+    const poll = activePoll({
+      ask,
+      every: ACTIVE_POLL_MS,
+      connected: () => false,
+    });
+    poll.now();
+    await settle();
+    jest.advanceTimersByTime(3_000);
+    poll.catchUp();
+    await settle();
+    expect(ask).toHaveBeenCalledTimes(2);
+    jest.advanceTimersByTime(ACTIVE_POLL_MS - 1);
+    await settle();
+    expect(ask).toHaveBeenCalledTimes(2);
+    jest.advanceTimersByTime(1);
+    await settle();
+    expect(ask).toHaveBeenCalledTimes(3);
+    poll.stop();
+  });
+
+  test("REQ-299 the overlay's visibilitychange handler goes through catchUp(), not an unconditional ask", () => {
+    const src = read("front-end/islands/DemoModeOverlay.tsx");
+    const at = src.indexOf("const onVisible = ");
+    expect(at).toBeGreaterThan(-1);
+    const handler = src.slice(at, src.indexOf("};", at));
+    expect(handler).toMatch(/poller\.catchUp\(\)/);
+    expect(handler).not.toMatch(/check\(\)|poller\.now\(\)/);
   });
 });

@@ -12,7 +12,11 @@
  */
 import * as fs from "fs";
 import * as path from "path";
-import { type PollEnv, startPoll } from "../../front-end/lib/poll";
+import {
+  CATCHUP_MIN_MS,
+  type PollEnv,
+  startPoll,
+} from "../../front-end/lib/poll";
 
 const ROOT = path.resolve(__dirname, "../..");
 const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), "utf8");
@@ -27,7 +31,9 @@ function fakeEnv(opts: { hidden?: boolean } = {}) {
     addEventListener: (_t: string, fn: () => void) => listeners.add(fn),
     removeEventListener: (_t: string, fn: () => void) => listeners.delete(fn),
   };
+  const clock = { now: 0 };
   const env: PollEnv = {
+    now: () => clock.now,
     setInterval: (fn: () => void, ms: number) => {
       const id = nextId++;
       timers.set(id, { fn, ms });
@@ -42,9 +48,13 @@ function fakeEnv(opts: { hidden?: boolean } = {}) {
     env,
     timers,
     listeners,
+    clock,
     /** fire every live interval once (one period elapses) */
     tick() {
-      for (const t of [...timers.values()]) t.fn();
+      for (const t of [...timers.values()]) {
+        clock.now += t.ms;
+        t.fn();
+      }
     },
     setHidden(h: boolean) {
       doc.hidden = h;
@@ -185,10 +195,8 @@ describe("REQ-221 the app's polls all go through the scheduler", () => {
       "front-end/islands/AsstThreads.tsx",
       /assistantClient\.conversations\(50\)/,
     ],
-    [
-      "front-end/islands/DashTopbar.tsx",
-      /dashboardClient\.notifications\(10\)/,
-    ],
+    // REQ-299: the list is fetched by the shared feed, which the topbar polls
+    ["front-end/islands/DashTopbar.tsx", /startPoll\(refreshNotifications/],
     ["front-end/islands/DashTopbar.tsx", /dashboardClient\.unreadCount\(\)/],
     ["front-end/islands/AsstChat.tsx", /quotesClient\.get\(qid\)/],
   ] as const;
@@ -219,5 +227,97 @@ describe("REQ-221 the app's polls all go through the scheduler", () => {
     const src = read("front-end/islands/DashTopbar.tsx");
     expect(src).toMatch(/addEventListener\("pm:logout", teardown\)/);
     expect(src).toMatch(/addEventListener\("pagehide", teardown\)/);
+  });
+});
+
+/**
+ * REQ-299 (demo cycle 1, issue p4 "heavy polling") — the catch-up on visibilitychange is debounced:
+ * a tab shown again less than CATCHUP_MIN_MS (2 s) after its last tick does not fetch again. The
+ * demo's headless browser switched tabs for every screenshot, and each switch was an extra fetch
+ * on top of the schedule.
+ */
+describe("REQ-299 the visible catch-up is debounced", () => {
+  test("CATCHUP_MIN_MS is 2 s", () => {
+    expect(CATCHUP_MIN_MS).toBe(2_000);
+  });
+
+  test("shown again less than 2 s after the last tick: no catch-up, the interval is re-armed", async () => {
+    const f = fakeEnv();
+    let calls = 0;
+    startPoll(
+      () => {
+        calls++;
+      },
+      10_000,
+      { env: f.env },
+    );
+    f.tick(); // a tick at t = 10 s
+    await flush();
+    expect(calls).toBe(1);
+    f.clock.now += 500;
+    f.setHidden(true);
+    expect(f.timers.size).toBe(0);
+    f.clock.now += 1_000; // 1.5 s after the tick
+    f.setHidden(false);
+    expect(calls).toBe(1); // no catch-up
+    expect(f.timers.size).toBe(1); // but the schedule is back
+  });
+
+  test("shown again 2 s or more after the last tick: one catch-up", async () => {
+    const f = fakeEnv();
+    let calls = 0;
+    startPoll(
+      () => {
+        calls++;
+      },
+      10_000,
+      { env: f.env },
+    );
+    f.tick();
+    await flush();
+    f.setHidden(true);
+    f.clock.now += CATCHUP_MIN_MS;
+    f.setHidden(false);
+    expect(calls).toBe(2);
+  });
+
+  test("five hide/show flaps inside a second: one catch-up, not five", async () => {
+    const f = fakeEnv();
+    let calls = 0;
+    startPoll(
+      () => {
+        calls++;
+      },
+      10_000,
+      { env: f.env },
+    );
+    f.tick();
+    await flush();
+    f.clock.now += 5_000;
+    for (let i = 0; i < 5; i++) {
+      f.setHidden(true);
+      f.clock.now += 100;
+      f.setHidden(false);
+      await flush();
+    }
+    expect(calls).toBe(2); // the tick + ONE catch-up
+    expect(f.timers.size).toBe(1);
+  });
+
+  test("the immediate call counts as the last tick: a flap right after mount is no catch-up", () => {
+    const f = fakeEnv();
+    let calls = 0;
+    startPoll(
+      () => {
+        calls++;
+      },
+      8_000,
+      { env: f.env, immediate: true },
+    );
+    expect(calls).toBe(1);
+    f.clock.now += 300;
+    f.setHidden(true);
+    f.setHidden(false);
+    expect(calls).toBe(1);
   });
 });

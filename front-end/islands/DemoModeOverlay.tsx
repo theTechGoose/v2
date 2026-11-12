@@ -458,9 +458,10 @@ export default function DemoModeOverlay() {
     const check = () => poller.now();
     pollerRef.current = poller;
     pollRef.current = check;
+    // REQ-299: shown again — a catch-up, unless the last ask is under 2 s old
     const onVisible = () => {
       if (document.visibilityState === "visible" && !peerOnlineRef.current) {
-        void check();
+        poller.catchUp();
       }
     };
     // REQ-179 — Demo clicked here: say so at once and get whoami going; the answer then comes
