@@ -51,6 +51,7 @@ import {
   type DemoStarted,
 } from "../clients/demo-mode.ts";
 import { adminClient } from "../clients/admin.ts";
+import { announceImpersonation } from "../lib/demo-mode/impersonation-signal.ts";
 import {
   ACTIVE_POLL_MS,
   type Anchor,
@@ -394,6 +395,11 @@ export default function DemoModeOverlay() {
           impersonatingRef.current = false;
           return;
         }
+        // REQ-301 (M18) — the whole browser is the customer now: every other /admin tab locks
+        announceImpersonation({
+          targetUserId: d.targetUserId,
+          targetName: d.targetName,
+        });
       }
       if (globalThis.location.pathname !== STAGE_PATH) {
         moving = true;
