@@ -126,6 +126,13 @@ async function signedRepaint(
   const conv = await post(http, auth, "/api/agents/conversations", {
     quoteId: quote.id,
   });
+  // POST /quotes keeps a new quote a draft; REQ-460 signs only a sent one.
+  const sent = await http(`/api/quotes/${quote.id}`, {
+    method: "PUT",
+    headers: auth,
+    body: JSON.stringify({ status: "sent" }),
+  });
+  await sent.body?.cancel();
   const accept = await http(`/api/quotes/${quote.id}/accept`, {
     method: "POST",
     headers: JSON_HEADERS,

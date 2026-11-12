@@ -53,6 +53,12 @@ Deno.test("REQ-251: a signed quote's public payload yields a Pay now target — 
         terms: [{ stepId: "payment_terms", value: "Due Now" }],
       }),
     }).then((r) => r.json());
+    // REQ-460: the customer signs a SENT quote — POST /quotes makes a draft.
+    await (await fetch(`http://localhost:${PORT}/quotes/${q.id}`, {
+      method: "PUT",
+      headers: { "content-type": "application/json", "x-session-id": sid },
+      body: JSON.stringify({ status: "sent" }),
+    })).body?.cancel();
 
     const before = await fetch(
       `http://localhost:${PORT}/quotes/${q.id}/public`,

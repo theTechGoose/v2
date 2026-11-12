@@ -125,6 +125,14 @@ Deno.test("REQ-289: the customer's name fields on /q are found by their labels â
       estimatedTotal: 50000,
       status: "sent",
     });
+    // POST /quotes keeps a new quote a draft; REQ-460 offers the pad only on
+    // a quote that went out.
+    const sent = await http(`/api/quotes/${quote.id}`, {
+      method: "PUT",
+      headers: auth,
+      body: JSON.stringify({ status: "sent" }),
+    });
+    await sent.body?.cancel();
     await page.setViewportSize({ width: 1280, height: 900 });
     await page.goto(`/q/${quote.id}`);
 

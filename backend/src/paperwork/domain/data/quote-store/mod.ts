@@ -18,6 +18,7 @@ import {
   type DocVersionRecord,
   effectivePendingRevision,
   firstIssueStamp,
+  isQuoteLocked,
 } from "#documents/versions.ts";
 import {
   descriptionTranslationsStale,
@@ -35,6 +36,18 @@ const PREFIX = "quote";
 const INDEX_PREFIX = "quote_by_user";
 /** REQ-241: the onboarding sample's number when no localized one is given. */
 const SAMPLE_NUMBER = "SAMPLE";
+
+/**
+ * REQ-460 (demo-loop cycle 3, B1): a write that would change a SIGNED quote's
+ * terms, lines or total. `reason` is REQ-202's word for it (`locked_signed`).
+ */
+export class QuoteSignedError extends Error {
+  readonly reason = "locked_signed";
+  constructor(public readonly fields: string[]) {
+    super(`quote is signed: ${fields.join(", ")} can no longer change`);
+    this.name = "QuoteSignedError";
+  }
+}
 
 @Injectable()
 export class QuoteStore {
@@ -261,6 +274,8 @@ export class QuoteStore {
     const definedPatch = Object.fromEntries(
       Object.entries(patch).filter(([_, v]) => v !== undefined),
     ) as Partial<Quote>;
+    // REQ-460 (demo-loop cycle 3, B1): a signed quote's agreement is final.
+    assertNotSigned(existing, definedPatch);
     // REQ-302: only the money fields the patch carries are judged — a lock
     // stamp or a translation never re-validates an old row.
     assertQuotePriced(definedPatch);
@@ -315,6 +330,50 @@ export class QuoteStore {
     const kv = await getKv();
     await kv.set([PREFIX, id], { ...existing, deletedAt: now, updatedAt: now });
   }
+}
+
+/** REQ-460: the agreement fields a signed quote never changes again. */
+const SIGNED_FIELDS = ["terms", "lineItems", "estimatedTotal"] as const;
+
+/**
+ * REQ-460 (demo-loop cycle 3, B1) — the last gate on the write path for a
+ * SIGNED quote (REQ-202): a patch that would change its terms, its lines or
+ * its total is refused, whoever the caller is. In the demo the terms wizard
+ * wrote "Deposit + balance" onto an agreement the customer had already signed.
+ * What is not the agreement still lands: stamps, delivery, a line's cached
+ * translations (`descriptionByLang`), a rewrite of the values already there.
+ */
+function assertNotSigned(existing: Quote, patch: Partial<Quote>): void {
+  if (!isQuoteLocked(existing)) return;
+  const changed = SIGNED_FIELDS.filter((f) =>
+    patch[f] !== undefined &&
+    agreementValue(f, patch[f]) !== agreementValue(f, existing[f])
+  );
+  if (changed.length) throw new QuoteSignedError(changed);
+}
+
+/** A field's agreement content, comparable: lines without their cached translations. */
+function agreementValue(field: string, value: unknown): string {
+  if (field === "lineItems" && Array.isArray(value)) {
+    return JSON.stringify(
+      value.map((l) => ({
+        description: l?.description,
+        quantity: l?.quantity,
+        unit: l?.unit,
+        price: l?.price,
+      })),
+    );
+  }
+  if (field === "terms" && Array.isArray(value)) {
+    return JSON.stringify(
+      value.map((t) => ({
+        stepId: t?.stepId,
+        label: t?.label,
+        value: t?.value,
+      })),
+    );
+  }
+  return JSON.stringify(value ?? null);
 }
 
 /**

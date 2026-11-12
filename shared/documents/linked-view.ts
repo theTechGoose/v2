@@ -489,6 +489,8 @@ export type AcceptDecision =
   | { kind: "already_accepted" }
   /** REQ-306: the business's own session tried to sign its customer's quote. */
   | { kind: "owner_cannot_sign" }
+  /** REQ-460: not signable yet — never sent, or no payment terms on it. */
+  | { kind: "not_ready" }
   | { kind: "error"; reason: string };
 
 /** What the quote page does with the accept response. */
@@ -507,6 +509,12 @@ export function acceptDecision(status: number, body: unknown): AcceptDecision {
   }
   if (status === 409 && reason === "owner_cannot_sign") {
     return { kind: "owner_cannot_sign" };
+  }
+  if (
+    status === 409 &&
+    (reason === "not_issued" || reason === "terms_incomplete")
+  ) {
+    return { kind: "not_ready" };
   }
   return { kind: "error", reason };
 }

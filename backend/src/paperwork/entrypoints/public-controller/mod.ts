@@ -36,6 +36,7 @@ import {
   invoiceState,
   isInvoiceIssued,
   isQuoteIssued,
+  quoteSignRefusal,
   quoteState,
   versionChanges,
   versionOf,
@@ -78,6 +79,13 @@ async function ownerCannotApprove(
     return ctx.json({ ok: false, reason: "owner_cannot_approve" }, 409);
   }
   return undefined;
+}
+
+/** REQ-460: why an OPEN quote cannot be signed yet; undefined once signed or
+ *  declined (those pages have their own state) or when it can be. */
+function signRefusalOf(q: Quote) {
+  if (isAccepted(q) || q.status === "lost") return undefined;
+  return quoteSignRefusal(q);
 }
 
 class AcceptQuoteDto {
@@ -667,6 +675,7 @@ export class PaperworkPublicController {
           })
           .map((i) => projectLinkedInvoice(this.payments, i)),
       );
+      const signRefusal = signRefusalOf(q);
       return ctx.json({
         ...redactQuote(q),
         contractor,
@@ -681,6 +690,9 @@ export class PaperworkPublicController {
         // previewing — the page swaps the pad for a banner. Absent for the
         // customer so the public shape is unchanged for them.
         ...(internal ? { internal: true } : {}),
+        // REQ-460 (demo-loop cycle 3, M16): an open quote the accept would
+        // refuse says why, so the page shows no pad (to anyone).
+        ...(signRefusal ? { signRefusal } : {}),
       });
     } catch (e) {
       return notFoundResponse(ctx, e);
@@ -727,6 +739,13 @@ export class PaperworkPublicController {
     if (existing.status === "lost") {
       return ctx.json({ ok: false, reason: "declined" }, 409);
     }
+    // REQ-460 (demo-loop cycle 3, M16 + M15): nothing is signed before it was
+    // offered with its payment terms — a locked quote whose terms wizard is
+    // still asking is `not_issued` (the in-person override does not change
+    // that), one with the wizard's terms but no payment terms is
+    // `terms_incomplete`. Signing it billed the whole total as one invoice.
+    const notReady = quoteSignRefusal(existing);
+    if (notReady) return ctx.json({ ok: false, reason: notReady }, 409);
     // REQ-203: a page showing an older version cannot sign the current one.
     const expected = dto.version;
     if (expected !== undefined && expected !== versionOf(existing)) {

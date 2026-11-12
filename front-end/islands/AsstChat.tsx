@@ -38,6 +38,7 @@ import { clientsClient } from "../clients/clients.ts";
 import { readCached, refreshDash, subscribeDash } from "../lib/dash-cache.ts";
 import { type Lang, langSignal, tFor } from "../lib/i18n.ts";
 import {
+  cardShowsCustomerLink,
   copyCustomerLink,
   customerLinkUrl,
   dividerShowsCustomerLink,
@@ -9017,7 +9018,15 @@ export default function AsstChat({
                               </div>
                             )
                             : null}
-                          {isLockedOrIssued(payload.status) && payload.quoteId
+                          {payload.quoteId &&
+                              // REQ-460 (c3 M16): only once the quote went
+                              // out — a locked quote is still being finished.
+                              cardShowsCustomerLink(
+                                payload.status,
+                                ruleQuote && payload.quoteId === ruleQuote.id
+                                  ? ruleQuote
+                                  : undefined,
+                              )
                             ? (
                               // REQ-310 (m13): the sent card carries the
                               // customer's link too.

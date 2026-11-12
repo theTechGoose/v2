@@ -24,6 +24,18 @@ async function drain(res: Response) {
   await res.body?.cancel();
 }
 
+/** REQ-460: only a quote put in front of the customer is signed — POST
+ *  /quotes makes a draft (NW-10), so a test sends it the API's way. */
+async function markSent(port: number, sid: string, id: string) {
+  await drain(
+    await fetch(`http://localhost:${port}/quotes/${id}`, {
+      method: "PUT",
+      headers: { "content-type": "application/json", "x-session-id": sid },
+      body: JSON.stringify({ status: "sent" }),
+    }),
+  );
+}
+
 async function login(
   port: number,
   phone = "+15125551234",
@@ -261,6 +273,7 @@ Deno.test("cross-module e2e: customer accepts a quote → notification appears i
         estimatedTotal: 12_500,
       }),
     }).then((r) => r.json());
+    await markSent(port, sid, quote.id);
 
     const accept = await fetch(
       `http://localhost:${port}/quotes/${quote.id}/accept`,
@@ -320,6 +333,7 @@ Deno.test("cross-module e2e: notification is scoped per-user — contractor B ne
         status: "sent",
       }),
     }).then((r) => r.json());
+    await markSent(port, sidA, quote.id);
     await drain(
       await fetch(`http://localhost:${port}/quotes/${quote.id}/accept`, {
         method: "POST",

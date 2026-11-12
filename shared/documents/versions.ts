@@ -98,6 +98,44 @@ export function isQuoteIssued(
   return Boolean(q.sentAt) || (q.status !== undefined && q.status !== "draft");
 }
 
+/** REQ-460: why a quote cannot be signed yet. */
+export type SignRefusal = "not_issued" | "terms_incomplete";
+
+/**
+ * REQ-460 (demo-loop cycle 3, M16 + M15) — a quote is signable once it was
+ * put in front of the customer with its payment terms settled. Names what is
+ * still missing, or undefined when nothing is (accepted / declined are the
+ * accept's own answers, judged before this).
+ *  - `not_issued`: it was offered to no one. Locking is not sending (REQ-234):
+ *    a locked draft whose terms wizard is still asking was signed in the demo
+ *    through the owner's in-person override (REQ-306), which does not change
+ *    this. A Send that reached nobody DID offer it — REQ-236 keeps that quote
+ *    a draft, and the REQ-310 link is the fallback the contractor pastes.
+ *  - `terms_incomplete`: the wizard's answers are on it (REQ-240 writes each
+ *    one as it is given) but the payment terms are not — what the signature
+ *    bills is not decided yet. A quote written over the API with no wizard
+ *    terms at all bills its whole total at signing (REQ-240).
+ * The onboarding sample (REQ-256) is a draft by design — it shows the owner
+ * what their customer's page looks like, pad included — so it is not judged.
+ */
+export function quoteSignRefusal(
+  q: {
+    status?: string;
+    sentAt?: string;
+    lastDelivery?: unknown;
+    terms?: readonly { stepId?: string }[];
+    isSample?: boolean;
+  },
+): SignRefusal | undefined {
+  if (q.isSample === true) return undefined;
+  if (!isQuoteIssued(q) && !q.lastDelivery) return "not_issued";
+  const terms = q.terms ?? [];
+  if (terms.length > 0 && !terms.some((t) => t.stepId === "payment_terms")) {
+    return "terms_incomplete";
+  }
+  return undefined;
+}
+
 /** A signed quote is locked (REQ-202): its content never changes again. */
 export function isQuoteLocked(
   q: { status?: string; acceptedAt?: string },

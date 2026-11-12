@@ -149,6 +149,22 @@ async function newThread(
   return { quoteId: quote.id, convId: conv.id };
 }
 
+/** The owner sends the quote: REQ-460 lets the customer sign only a quote
+ *  that went out. */
+async function markSent(
+  http: StoryTools["http"],
+  auth: Record<string, string>,
+  quoteId: string,
+) {
+  const res = await http(`/api/quotes/${quoteId}`, {
+    method: "PUT",
+    headers: auth,
+    body: JSON.stringify({ status: "sent" }),
+  });
+  await res.body?.cancel();
+  if (res.status >= 400) throw new Error(`send: ${res.status}`);
+}
+
 /** The customer signs on the public page — no session. */
 async function customerSigns(http: StoryTools["http"], quoteId: string) {
   const res = await http(`/api/quotes/${quoteId}/accept`, {
@@ -157,6 +173,7 @@ async function customerSigns(http: StoryTools["http"], quoteId: string) {
     body: JSON.stringify({ name: "Status Customer", signature: "SC" }),
   });
   await res.body?.cancel();
+  if (res.status >= 400) throw new Error(`accept: ${res.status}`);
 }
 
 /** Answer every wizard step in the page until the quote review opens: the
@@ -275,7 +292,8 @@ Deno.test("REQ-369: the open thread's list chip reads what the chat header reads
     );
 
     // The customer signs on the public page (demo pair 1: header "Quote
-    // accepted", list "Quote sent").
+    // accepted", list "Quote sent") — once the quote went out (REQ-460).
+    await markSent(http, auth, quoteId);
     await customerSigns(http, quoteId);
     s = await headerAndChip(page, /quote accepted/i);
     expect(/quote accepted/i.test(s.header), `signed (header: ${s.header})`);
@@ -387,7 +405,9 @@ Deno.test("REQ-369: the customer signs while the chat sits open with no review o
     });
 
     // The list's next poll sees the signed row and hands it back to the chat,
-    // which re-reads its quote: all three move together.
+    // which re-reads its quote: all three move together. (REQ-460: the quote
+    // goes out first — a locked draft is not signable.)
+    await markSent(http, auth, quoteId);
     await customerSigns(http, quoteId);
     s = await headerAndChip(page, /quote accepted/i);
     expect(

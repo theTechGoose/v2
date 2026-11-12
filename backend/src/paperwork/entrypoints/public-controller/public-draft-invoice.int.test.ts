@@ -58,6 +58,12 @@ Deno.test("REQ-312 (demo m29): a draft invoice on a signed quote is absent from 
         terms: [{ stepId: "payment_terms", value: "Due Now" }],
       }),
     }).then((r) => r.json());
+    // REQ-460: the customer signs a SENT quote — POST /quotes makes a draft.
+    await (await fetch(`${BASE}/quotes/${q.id}`, {
+      method: "PUT",
+      headers: auth,
+      body: JSON.stringify({ status: "sent" }),
+    })).body?.cancel();
     const signed = await fetch(`${BASE}/quotes/${q.id}/accept`, {
       method: "POST",
       headers: { "content-type": "application/json" },

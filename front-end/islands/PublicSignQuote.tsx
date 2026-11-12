@@ -69,7 +69,7 @@ export default function PublicSignQuote(
   // REQ-203: "stale" — the quote was republished under this page; "already"
   // — someone signed it meanwhile. Both reload into the current document.
   const [status, setStatus] = useState<
-    "idle" | "ok" | "error" | "stale" | "already" | "owner"
+    "idle" | "ok" | "error" | "stale" | "already" | "owner" | "notReady"
   >("idle");
   const [err, setErr] = useState<string | undefined>();
 
@@ -324,6 +324,12 @@ export default function PublicSignQuote(
         setStatus("owner");
         return;
       }
+      if (decision.kind === "not_ready") {
+        // REQ-460 (demo-loop cycle 3, M16): not sent yet, or no payment terms
+        // on it — say so, never a raw 409 (the page normally hides the pad).
+        setStatus("notReady");
+        return;
+      }
       if (decision.kind !== "ok") {
         throw new Error(text.slice(0, 200) || `${r.status}`);
       }
@@ -354,6 +360,18 @@ export default function PublicSignQuote(
         style={`margin-top:24px;background:#fff6e5;border:1px solid rgba(255,170,40,0.35);border-radius:18px;padding:20px;text-align:center;color:#8a5a10;font-weight:700;font-size:14px`}
       >
         {tFor(lang, "public.doc.ownerCannotSign")}
+      </div>
+    );
+  }
+
+  if (status === "notReady") {
+    return (
+      <div
+        data-cy="sign-not-ready"
+        role="status"
+        style={`margin-top:24px;background:#f3f6f7;border:1px solid rgba(20,72,82,0.14);border-radius:18px;padding:20px;text-align:center;color:#3d5a60;font-weight:700;font-size:14px`}
+      >
+        {tFor(lang, "public.doc.notReadyBody")}
       </div>
     );
   }

@@ -45,6 +45,28 @@ export function dividerShowsCustomerLink(
     p.smsFailureReason);
 }
 
+/** The statuses a quote card carries once its quote went out (lockStatusFor). */
+const ISSUED_CARD = new Set(["sent", "viewed", "opened", "accepted", "signed"]);
+
+/**
+ * REQ-460 (demo-loop cycle 3, M16): a quote card carries the customer's link
+ * only once the quote went out — sent, viewed, signed. A LOCKED quote is still
+ * being finished (REQ-234: locking is not sending; the terms wizard is still
+ * asking), and its link opened a page the owner signed in person mid-wizard.
+ * For this thread's own card the live quote row decides (a send after the
+ * card was appended counts); any other card goes by its own status.
+ */
+export function cardShowsCustomerLink(
+  cardStatus: string | null | undefined,
+  live?: { status?: string | null; sentAt?: string | null } | null,
+): boolean {
+  if (live) {
+    const s = (live.status ?? "").toLowerCase();
+    return Boolean(live.sentAt) || (s !== "" && s !== "draft");
+  }
+  return ISSUED_CARD.has((cardStatus ?? "").toLowerCase());
+}
+
 /**
  * Write the url to the clipboard and report the outcome. Never throws: a
  * missing clipboard (http, headless, denied permission) is a `failed` toast
