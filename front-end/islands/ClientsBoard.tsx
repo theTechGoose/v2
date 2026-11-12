@@ -214,7 +214,14 @@ function ClientCard(
         </div>
       </div>
 
-      <div class="ccard2__panel" onClick={(e) => e.stopPropagation()}>
+      {/* REQ-419 (demo-loop cycle 2, S7c): the closed back is only faded
+          out, so it leaves the accessibility tree and the tab order too */}
+      <div
+        class="ccard2__panel"
+        aria-hidden={isOpen ? undefined : "true"}
+        inert={!isOpen}
+        onClick={(e) => e.stopPropagation()}
+      >
         <div class="ccard2__panel-head">
           <div class="ccard2__panel-av">{initials}</div>
           <div style="min-width:0;flex:1">
@@ -527,29 +534,33 @@ export default function ClientsBoard(
       </div>
 
       <div class="clay2">
-        <div class="ccards2">
-          {rows.map((c, i) => (
-            <ClientCard
-              key={c.id}
-              c={c}
-              subs={subsByCustomer?.get(c.id) ?? []}
-              idx={i}
-              isOpen={openId === c.id}
-              onOpen={() => setOpenId(c.id)}
-              onClose={() => setOpenId(null)}
-              lang={lang}
-              disambig={disambigs.get(c.id)}
-            />
-          ))}
-          {rows.length === 0 && (
-            <div class="ccards2__empty">
-              {rosterEmpty
-                ? tFor(lang, "clientsBoard.empty.noClients")
-                : tFor(lang, "clientsBoard.empty.noMatches")}
-            </div>
-          )}
-          {/* REQ-135 — the pager: one page at a time from the API */}
-          {!rosterEmpty && (
+        <div class="clay2__main">
+          <div class="ccards2">
+            {rows.map((c, i) => (
+              <ClientCard
+                key={c.id}
+                c={c}
+                subs={subsByCustomer?.get(c.id) ?? []}
+                idx={i}
+                isOpen={openId === c.id}
+                onOpen={() => setOpenId(c.id)}
+                onClose={() => setOpenId(null)}
+                lang={lang}
+                disambig={disambigs.get(c.id)}
+              />
+            ))}
+            {rows.length === 0 && (
+              <div class="ccards2__empty">
+                {rosterEmpty
+                  ? tFor(lang, "clientsBoard.empty.noClients")
+                  : tFor(lang, "clientsBoard.empty.noMatches")}
+              </div>
+            )}
+          </div>
+          {/* REQ-135 — the pager: one page at a time from the API.
+              REQ-419 (cycle 2, p13-k): only when there is a second page, and
+              below the grid, never in the cell beside a card */}
+          {!rosterEmpty && totalPages > 1 && (
             <nav class="cpager" data-cy="clients-pager" aria-label="pages">
               <button
                 type="button"
