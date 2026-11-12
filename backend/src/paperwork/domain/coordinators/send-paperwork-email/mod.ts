@@ -1,5 +1,5 @@
 import { Injectable } from "#danet/core";
-import { publishPendingInvoice, publishPendingQuote } from "@paperwork/domain/business/publish-pending/mod.ts";
+import { publishPendingInvoice, publishPendingQuote, senderAsPublisher } from "@paperwork/domain/business/publish-pending/mod.ts";
 import { type Lang, t } from "@core/i18n/mod.ts";
 import { QuoteStore } from "@paperwork/domain/data/quote-store/mod.ts";
 import { InvoiceStore } from "@paperwork/domain/data/invoice-store/mod.ts";
@@ -163,7 +163,7 @@ export class SendPaperworkEmail {
     let customerIdForLog: string | undefined;
     if (input.kind === "quote") {
       // REQ-201: a send publishes what is pending — the link must show what was sent
-      const quote = await publishPendingQuote(this.quotes, input.resourceId, userId);
+      const quote = await publishPendingQuote(this.quotes, input.resourceId, userId, senderAsPublisher(userId, sender?.name));
       const customer = await this.tryGetCustomer(userId, quote.customerId);
       customerIdForLog = customer?.id;
       // the live address first (a corrected typo should reach them), the snapshot's otherwise
@@ -174,7 +174,7 @@ export class SendPaperworkEmail {
       htmlBody = renderQuoteHtml(quote, customer, safeSender, senderBiz);
       quoteForStamp = quote;
     } else {
-      const invoice = await publishPendingInvoice(this.invoices, input.resourceId, userId);
+      const invoice = await publishPendingInvoice(this.invoices, input.resourceId, userId, senderAsPublisher(userId, sender?.name));
       const customer = await this.tryGetCustomer(userId, invoice.customerId);
       customerIdForLog = customer?.id;
       if (!recipient) recipient = customer?.email ?? customerOnDocument(invoice, customer)?.email;

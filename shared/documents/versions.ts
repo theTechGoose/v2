@@ -180,11 +180,16 @@ export function applyRevision<T extends VersionedDoc & Record<string, unknown>>(
   const { pendingRevision: _pending, ...content } = doc;
   const filed: DocVersionRecord = {
     version: versionOf(doc),
-    publishedAt: doc.publishedAt ?? (doc as { updatedAt?: string }).updatedAt ??
-      now,
-    publishedBy:
-      (doc as { publishedBy?: DocVersionRecord["publishedBy"] }).publishedBy ??
-        {},
+    // REQ-248: a version issued before the first-issue stamp existed was
+    // published by its owner when it was sent — never an anonymous {}.
+    publishedAt: doc.publishedAt ?? (doc as { sentAt?: string }).sentAt ??
+      (doc as { updatedAt?: string }).updatedAt ?? now,
+    publishedBy: publisherOrOwner(
+      doc as {
+        userId?: unknown;
+        publishedBy?: DocVersionRecord["publishedBy"];
+      },
+    ),
     supersededAt: now,
     content,
   };
@@ -201,6 +206,128 @@ export function applyRevision<T extends VersionedDoc & Record<string, unknown>>(
   } as T;
   delete (next as Record<string, unknown>).pendingRevision;
   return { next, filed };
+}
+
+/** REQ-248: the stamped publisher, else the document's owner, else nobody. */
+export function publisherOrOwner(
+  doc: { userId?: unknown; publishedBy?: DocVersionRecord["publishedBy"] },
+): DocVersionRecord["publishedBy"] {
+  const by = doc.publishedBy;
+  if (by && Object.keys(by).length > 0) return by;
+  return typeof doc.userId === "string" && doc.userId
+    ? { userId: doc.userId }
+    : {};
+}
+
+/**
+ * REQ-248: the first issue IS version 1's publication. When a patch stamps
+ * `sentAt` on a document that was never published, it also stamps
+ * `publishedAt` (= sentAt) and `publishedBy` (the given publisher, else the
+ * owner) — once; a later send never re-stamps.
+ */
+export function firstIssueStamp(
+  existing: {
+    userId?: string;
+    publishedAt?: string;
+    publishedBy?: DocVersionRecord["publishedBy"];
+  },
+  patch: { sentAt?: unknown },
+  by?: DocVersionRecord["publishedBy"],
+): { publishedAt?: string; publishedBy?: DocVersionRecord["publishedBy"] } {
+  if (typeof patch.sentAt !== "string" || !patch.sentAt) return {};
+  if (existing.publishedAt) return {};
+  return {
+    publishedAt: patch.sentAt,
+    publishedBy: by && Object.keys(by).length > 0
+      ? by
+      : publisherOrOwner({ userId: existing.userId }),
+  };
+}
+
+/**
+ * REQ-248: an issued, unsigned quote carrying a pending edit — the customer
+ * still sees the published version, and sending publishes the next one.
+ */
+export function pendingRevisionNotice(
+  q:
+    | {
+      status?: string;
+      sentAt?: string;
+      acceptedAt?: string | null;
+      version?: number;
+      pendingRevision?: Record<string, unknown>;
+    }
+    | null
+    | undefined,
+): { nextVersion: number } | null {
+  if (!q) return null;
+  const pending = q.pendingRevision;
+  if (!pending || Object.keys(pending).length === 0) return null;
+  const lifecycle = {
+    status: q.status,
+    sentAt: q.sentAt,
+    acceptedAt: q.acceptedAt ?? undefined,
+  };
+  if (!isQuoteIssued(lifecycle) || isQuoteLocked(lifecycle)) return null;
+  return { nextVersion: versionOf(q) + 1 };
+}
+
+/** REQ-248: what one version changed against the one before it. */
+export interface VersionChanges {
+  totalFromCents?: number;
+  totalToCents?: number;
+  linesAdded: number;
+  linesRemoved: number;
+  linesChanged: number;
+}
+
+interface LineLike {
+  description?: string;
+  quantity?: number;
+  unit?: string;
+  price?: number;
+}
+
+/**
+ * REQ-248: compare two versions' content — the total (`estimatedTotal` for a
+ * quote, `amount` for an invoice) and the line items, matched by position:
+ * the lines both have are "changed" when any of description / quantity /
+ * unit / price differs; the rest were added or removed.
+ */
+export function versionChanges(
+  before: Record<string, unknown> | null | undefined,
+  after: Record<string, unknown> | null | undefined,
+): VersionChanges {
+  const totalOf = (c: Record<string, unknown> | null | undefined) => {
+    const t = c?.estimatedTotal ?? c?.amount;
+    return typeof t === "number" ? t : undefined;
+  };
+  const linesOf = (c: Record<string, unknown> | null | undefined) =>
+    Array.isArray(c?.lineItems) ? (c!.lineItems as LineLike[]) : [];
+  const from = totalOf(before);
+  const to = totalOf(after);
+  const a = linesOf(before);
+  const b = linesOf(after);
+  const shared = Math.min(a.length, b.length);
+  let linesChanged = 0;
+  for (let i = 0; i < shared; i++) {
+    const x = a[i] ?? {};
+    const y = b[i] ?? {};
+    if (
+      (x.description ?? "") !== (y.description ?? "") ||
+      (x.quantity ?? 1) !== (y.quantity ?? 1) ||
+      (x.unit ?? "") !== (y.unit ?? "") ||
+      (x.price ?? 0) !== (y.price ?? 0)
+    ) linesChanged++;
+  }
+  return {
+    ...(from !== to
+      ? { totalFromCents: from ?? 0, totalToCents: to ?? 0 }
+      : {}),
+    linesAdded: Math.max(0, b.length - a.length),
+    linesRemoved: Math.max(0, a.length - b.length),
+    linesChanged,
+  };
 }
 
 /** What a customer sees, with the pending revision folded in (the contractor's working copy). */

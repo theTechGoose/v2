@@ -19,9 +19,14 @@ import {
   docHeadline,
   ledgerSummary,
   shortDate,
+  versionChangeLine,
   versionHistoryLine,
 } from "../../shared/documents/linked-view.ts";
-import { invoiceState, quoteState } from "../../shared/documents/versions.ts";
+import {
+  invoiceState,
+  quoteState,
+  versionChanges,
+} from "../../shared/documents/versions.ts";
 import {
   DecidedRow,
   QSideBig,
@@ -404,16 +409,33 @@ function QuoteLedgerSection(
             })}
           </summary>
           <ul style="margin:6px 0 0;padding-left:18px;font-size:12.5px;line-height:1.7">
-            {versions.map((v) => (
-              <li key={v.version}>
-                {versionHistoryLine(v, lang)}
-                {v.current && (
-                  <span style={` ${mutedStyle}`}>
-                    {` · ${tFor(lang, "quotes.ledger.current")}`}
-                  </span>
-                )}
-              </li>
-            ))}
+            {versions.map((v, i) => {
+              // REQ-248: what this version changed against the one before
+              const changed = i > 0
+                ? versionChangeLine(
+                  versionChanges(versions[i - 1].content, v.content),
+                  lang,
+                )
+                : "";
+              return (
+                <li key={v.version}>
+                  {versionHistoryLine(v, lang)}
+                  {v.current && (
+                    <span style={` ${mutedStyle}`}>
+                      {` · ${tFor(lang, "quotes.ledger.current")}`}
+                    </span>
+                  )}
+                  {changed && (
+                    <div
+                      data-cy="quote-version-changes"
+                      style={`font-size:12px;${mutedStyle}`}
+                    >
+                      {changed}
+                    </div>
+                  )}
+                </li>
+              );
+            })}
           </ul>
         </details>
       )}

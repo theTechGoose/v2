@@ -6,6 +6,7 @@ import { SendPaperworkEmail } from "@paperwork/domain/coordinators/send-paperwor
 import { SendPaperworkSms } from "@paperwork/domain/coordinators/send-paperwork-sms/mod.ts";
 import { EventBus } from "@core/business/events/mod.ts";
 import { t } from "@core/i18n/mod.ts";
+import { versionOf } from "#documents/versions.ts";
 import type { AgentConversation } from "@agents/dto/conversation.ts";
 import type { AgentMessage } from "@agents/dto/message.ts";
 
@@ -152,7 +153,14 @@ export class SendQuote {
       }
     }
 
-    const dividerContent = buildDivider({
+    // REQ-248: a send publishes a pending edit as the next version — say so,
+    // so a revision never goes out as just another "emailed to …".
+    const after = await this.quotes.getOwned(quote.id, input.userId)
+      .catch(() => quote);
+    const publishedVersion = versionOf(after) > versionOf(quote)
+      ? versionOf(after)
+      : undefined;
+    const delivery = buildDivider({
       channel,
       emailedTo,
       emailFailureReason,
@@ -160,6 +168,13 @@ export class SendQuote {
       smsFailureReason,
       lang: input.language ?? "en",
     });
+    const dividerContent = publishedVersion
+      ? `${
+        t(input.language ?? "en", "sendQuote.divider.revisionPublished", {
+          version: String(publishedVersion),
+        })
+      } · ${delivery}`
+      : delivery;
     const note = await this.messages.append({
       conversationId: conv.id,
       role: "system",
@@ -170,6 +185,7 @@ export class SendQuote {
         label: dividerContent,
         quoteId: quote.id,
         channel,
+        ...(publishedVersion ? { publishedVersion } : {}),
         ...(emailedTo ? { emailedTo } : {}),
         ...(emailFailureReason ? { emailFailureReason } : {}),
         ...(textedTo ? { textedTo } : {}),

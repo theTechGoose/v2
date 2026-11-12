@@ -11,7 +11,7 @@ import { CrmModule } from "@crm/mod-root.ts";
 import { AnalyticsModule } from "@analytics/mod-root.ts";
 import { UsersModule } from "@users/mod-root.ts";
 import { OtpStore } from "@users/domain/data/otp-store/mod.ts";
-import { resetKv } from "@core/data/kv/mod.ts";
+import { getKv, resetKv } from "@core/data/kv/mod.ts";
 
 @Module({ imports: [UsersModule, CrmModule, PaperworkModule, AnalyticsModule] })
 class TestApp {}
@@ -531,5 +531,56 @@ Deno.test("REQ-204: editing the customer after a quote was sent does not change 
     const draft = await mkQuote(sid, c.id);
     const pubDraft = await get(`/quotes/${draft.id}/public`);
     assertEquals(pubDraft.customer.name, "Ann Lee-Smith");
+  });
+});
+
+Deno.test("REQ-248: version 1 names who published it and when — issued by PUT, revised by a send, and a pre-stamp row read back with its owner", async () => {
+  await withServer(async () => {
+    const sid = await login();
+    const me = await get(`/me`, auth(sid));
+    const c = await mkCustomer(sid);
+    const q = await mkQuote(sid, c.id);
+    // issued through PUT /quotes/:id (the quotes panel's path)
+    const issued = await put(`/quotes/${q.id}`, auth(sid), {
+      status: "sent",
+    }).then((r) => r.json());
+    assertEquals(issued.publishedAt, issued.sentAt);
+    assertEquals(issued.publishedBy?.userId, me.id);
+    let versions = await get(`/quotes/${q.id}/versions`, auth(sid));
+    assertEquals(versions.length, 1);
+    assertEquals(versions[0].publishedBy, {
+      userId: me.id,
+      name: "Rafa Castro",
+    });
+    assertEquals(versions[0].publishedAt, issued.sentAt);
+    // a pending edit, published by a send: both versions name the publisher
+    await drain(
+      await put(`/quotes/${q.id}`, auth(sid), { estimatedTotal: 120000 }),
+    );
+    const sent = await post(`/quotes/${q.id}/email`, auth(sid), {
+      to: "ops@acme.test",
+    }).then((r) => r.json());
+    assertEquals(sent.ok, true);
+    versions = await get(`/quotes/${q.id}/versions`, auth(sid));
+    assertEquals(versions.map((v: { version: number }) => v.version), [1, 2]);
+    for (const v of versions) {
+      assertEquals(v.publishedBy, { userId: me.id, name: "Rafa Castro" });
+    }
+    assertEquals(versions[0].publishedAt, issued.sentAt);
+    assertNotEquals(versions[0].publishedBy, {});
+    // a row issued before the stamp existed (no publishedAt / publishedBy)
+    const old = await mkQuote(sid, c.id);
+    await drain(
+      await put(`/quotes/${old.id}`, auth(sid), { status: "sent" }),
+    );
+    const kv = await getKv();
+    const row = (await kv.get<Record<string, unknown>>(["quote", old.id]))
+      .value!;
+    delete row.publishedAt;
+    delete row.publishedBy;
+    await kv.set(["quote", old.id], row);
+    const legacy = await get(`/quotes/${old.id}/versions`, auth(sid));
+    assertEquals(legacy[0].publishedBy, { userId: me.id, name: "Rafa Castro" });
+    assertEquals(legacy[0].publishedAt, row.sentAt);
   });
 });

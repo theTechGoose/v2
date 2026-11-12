@@ -10,7 +10,7 @@ import {
   publishNumbered,
   snapshotCustomer,
 } from "@core/data/numbered-store/mod.ts";
-import type { DocVersionRecord } from "#documents/versions.ts";
+import { type DocVersionRecord, firstIssueStamp } from "#documents/versions.ts";
 import type {
   CreateQuoteDto,
   Quote,
@@ -43,6 +43,8 @@ export class QuoteStore {
     // class field materializes `status: undefined`, which would clobber a
     // spread-in default.)
     if (!quote.status) quote.status = "draft";
+    // REQ-248: a quote created already issued is published at birth
+    Object.assign(quote, firstIssueStamp({ userId }, quote));
     // Roadmap p.8: every quote carries a ≤3-word job name platform-wide.
     // The LLM polish step supplies one on assistant-built quotes; API-created
     // quotes fall back to the deterministic summarizer. UX-29: the owner's
@@ -129,6 +131,7 @@ export class QuoteStore {
       );
       const updated: Quote = {
         ...entry.value,
+        ...firstIssueStamp(entry.value, definedPatch), // REQ-248
         ...definedPatch,
         id: entry.value.id,
         userId: entry.value.userId,
@@ -190,6 +193,8 @@ export class QuoteStore {
     );
     const updated: Quote = {
       ...existing,
+      // REQ-248: the first issue is version 1's publication — who and when
+      ...firstIssueStamp(existing, definedPatch),
       ...definedPatch,
       id: existing.id,
       userId: existing.userId,

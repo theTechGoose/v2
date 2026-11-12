@@ -38,6 +38,7 @@ import {
 } from "../../shared/quote-flow/customer-step.ts";
 import { termLabel } from "../../shared/quote-flow/terms-i18n.ts";
 import { versionTitle } from "../../shared/quote-flow/version-titles.ts";
+import { pendingRevisionNotice } from "../../shared/documents/versions.ts";
 import { scopeBulletsFromRaw } from "../../shared/quote-flow/scope-from-raw.ts";
 import {
   acceptedJobChipLabel,
@@ -387,6 +388,31 @@ function statusChipLabel(status: string | undefined, lang: Lang): string {
   }
 }
 
+/**
+ * REQ-248: the version state of a saved quote — status, sentAt, version and
+ * the pending revision (absent when nothing waits). An issued quote's edit
+ * comes back as a pendingRevision with the live content unchanged.
+ */
+function revisionStateOf(saved: unknown): {
+  status?: string;
+  sentAt?: string;
+  version?: number;
+  pendingRevision?: Record<string, unknown>;
+} {
+  const q = (saved ?? {}) as {
+    status?: string;
+    sentAt?: string;
+    version?: number;
+    pendingRevision?: Record<string, unknown>;
+  };
+  return {
+    ...(q.status ? { status: q.status } : {}),
+    ...(q.sentAt ? { sentAt: q.sentAt } : {}),
+    ...(typeof q.version === "number" ? { version: q.version } : {}),
+    pendingRevision: q.pendingRevision,
+  };
+}
+
 function fmtUSD(cents: number): string {
   if (!Number.isFinite(cents)) return "$0";
   const dollars = cents / 100;
@@ -608,6 +634,10 @@ export default function AsstChat({
       acceptedAt?: string | null;
       /** Wizard-captured agreement terms — the quote IS the agreement. */
       terms?: { stepId: string; label: string; value: string }[];
+      /** REQ-248: an issued quote's edits wait here until a send publishes them. */
+      sentAt?: string;
+      version?: number;
+      pendingRevision?: Record<string, unknown>;
     }
     | undefined
   >();
@@ -1332,6 +1362,7 @@ export default function AsstChat({
             terms: (q as {
               terms?: { stepId: string; label: string; value: string }[];
             }).terms,
+            ...revisionStateOf(q),
           });
         }
       })
@@ -2459,7 +2490,7 @@ export default function AsstChat({
             i,
           ) => (i === 0 ? { ...li, description: summary } : li))
           : undefined;
-        await quotesClient.update(quoteId, {
+        const saved = await quotesClient.update(quoteId, {
           description: description || summary,
           ...(hasByLang ? { descriptionByLang: descByLang } : {}),
           ...(hasName ? { jobNameByLang: nameByLang } : {}),
@@ -2476,6 +2507,7 @@ export default function AsstChat({
               description: description || summary,
               ...(hasByLang ? { descriptionByLang: descByLang } : {}),
               lineItems: items ?? q.lineItems,
+              ...revisionStateOf(saved), // REQ-248
             }
             : q
         );
@@ -2924,7 +2956,23 @@ export default function AsstChat({
         next.add(message.id);
         return next;
       });
-      setQuote((q) => (q ? { ...q, status: "sent" } : q));
+      // REQ-248: the send published whatever was pending
+      const publishedVersion = (res.newMessages ?? [])
+        .map((m) =>
+          (m.payload as { publishedVersion?: number } | undefined)
+            ?.publishedVersion
+        )
+        .find((v) => typeof v === "number");
+      setQuote((q) =>
+        q
+          ? {
+            ...q,
+            status: "sent",
+            pendingRevision: undefined,
+            ...(publishedVersion ? { version: publishedVersion } : {}),
+          }
+          : q
+      );
       setPreviewCtaId(null);
       if (res.newMessages?.length) {
         setMessages((m) => [...m, ...res.newMessages]);
@@ -2978,9 +3026,19 @@ export default function AsstChat({
       return;
     }
     try {
-      await quotesClient.update(quoteId, { estimatedTotal: nextCents });
+      // REQ-248: an issued quote's edit is a pending revision — keep what
+      // the server says so the card can say it is not published yet.
+      const saved = await quotesClient.update(quoteId, {
+        estimatedTotal: nextCents,
+      });
       setQuote((cur) =>
-        cur ? ({ ...cur, estimatedTotal: nextCents } as typeof cur) : cur
+        cur
+          ? ({
+            ...cur,
+            estimatedTotal: nextCents,
+            ...revisionStateOf(saved),
+          } as typeof cur)
+          : cur
       );
       if (actionCardId) {
         setMessages((msgs) =>
@@ -6527,6 +6585,26 @@ export default function AsstChat({
                                 {totalStr}
                               </span>
                             </div>
+                            {(() => {
+                              // REQ-248: an issued quote's edit is not live
+                              // until a send publishes it — say so.
+                              const notice = pendingRevisionNotice(quote);
+                              return notice
+                                ? (
+                                  <p
+                                    class="quote-review__unpublished"
+                                    data-cy="quote-review-unpublished"
+                                    style="margin:6px 0 0;font-size:12.5px;font-weight:600;color:var(--amber-700,#9a5b00)"
+                                  >
+                                    {tFor(
+                                      lang,
+                                      "asstChat.preview.unpublishedChange",
+                                      { version: String(notice.nextVersion) },
+                                    )}
+                                  </p>
+                                )
+                                : null;
+                            })()}
                             {milestones &&
                                 milestones.length > 1
                               ? (
