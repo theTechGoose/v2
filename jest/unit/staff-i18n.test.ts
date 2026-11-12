@@ -148,6 +148,6 @@ describe("REQ-269 the staff side follows the app language (demo i18n-formatting-
     const island = read("front-end/islands/SiteFooterLive.tsx");
     expect(island).toMatch(/useLiveLang\(lang\)/);
     expect(read("front-end/lib/live-lang.ts")).toMatch(/langSignal\.subscribe/);
-    expect(island).toMatch(/<SiteFooterView copy=/);
+    expect(island).toMatch(/<SiteFooterView\s+copy=/ /* REQ-509: the props may wrap */);
   });
 });

@@ -2566,10 +2566,16 @@ a.activity-item--link:hover {
      toolbar (Hans's reports). Letting the document scroll and pinning the
      header with position:sticky is rock-solid on iOS. The sidebar is a
      fixed overlay on mobile, so dropping the flex shell is safe. */
+  /* REQ-509 (demo-loop cycle 3, m24): a min-height flex column, not a block —
+     .main and .content grow to fill it, so the footer's auto top margin
+     (.content > .site-footer) puts it at the screen's bottom on a short page
+     (an empty /work-orders showed it mid-screen with ~250px blank below). The
+     sidebar is a fixed overlay here, so it takes no room in the column. */
   .app {
     height: auto;
     min-height: calc(100dvh - var(--demo-pill-h, 0px)); /* REQ-379: the demo pill's band */
-    display: block;
+    display: flex;
+    flex-direction: column;
     overflow: visible;
     /* Bottom scroll-room equal to the keyboard height so form fields near the
        page bottom (e.g. Settings) can scroll above the on-screen keyboard. */
@@ -2578,7 +2584,9 @@ a.activity-item--link:hover {
     overflow-x: clip; /* REQ-353 (M40): no sideways scroll on a phone */
   }
   .main {
-    display: block;
+    display: flex;
+    flex-direction: column;
+    flex: 1 0 auto;
     overflow: visible;
     /* REQ-353 (M40): never a sideways scroll or a beige strip on a phone —
        clip, not hidden, so the sticky topbar keeps working. */
@@ -2640,6 +2648,7 @@ a.activity-item--link:hover {
   /* Body scrolls now, so the last card can pass under Safari's bottom
      toolbar — pad generously to clear the chrome + home indicator. */
   .content {
+    flex: 1 0 auto; /* REQ-509: fills the phone column, so the footer reaches its bottom */
     overflow: visible;
     --content-pb: calc(96px + env(safe-area-inset-bottom, 0px));
     padding-bottom: var(--content-pb);

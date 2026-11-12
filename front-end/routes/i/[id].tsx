@@ -215,7 +215,7 @@ export default define.page(async function PublicInvoice(ctx) {
             )
             : <InvoiceDoc invoice={invoice} lang={lang} />}
         </div>
-        <SiteFooter lang={lang} />
+        <SiteFooter lang={lang} document />
       </div>
     </>
   );
