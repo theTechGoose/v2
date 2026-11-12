@@ -52,7 +52,11 @@ describe("REQ-341 /demo/stage resolves its language through the presenter resolv
   });
 
   test("REQ-341 the title and the island share the presenter's lang", () => {
-    expect(route).toMatch(/tFor\(lang, "demoMode\.title"\)/);
+    // REQ-367 (reconciled on demo-fixes): the title is a DocTitle seeded with
+    // the presenter's lang, carrying both languages for the live switch.
+    expect(route).toMatch(
+      /tFor\(lang, "demoMode\.title"\)|<DocTitle\s+lang=\{lang\}[\s\S]{0,120}tFor\(l, "demoMode\.title"\)/,
+    );
     expect(route).toMatch(/<DemoStage\s+initialLang=\{lang\}\s*\/>/);
   });
 
