@@ -84,6 +84,9 @@ interface Contractor {
 
 export interface QuotePublic {
   id: string;
+  /** REQ-333 (M24): the language the base text was typed in — that language
+   *  renders the typed text, never a cached "translation" of it. */
+  lang?: string;
   /** REQ-198/201: the document's number ("Q-001"), version and headline state. */
   number?: string;
   version?: number;
@@ -296,8 +299,9 @@ export function QuoteDoc(
   const senderInitials = initialsFromName(contractorName ?? businessLabel);
 
   // REQ-264 (M15): line items in the document's language (server-filled
-  // lineItems[].descriptionByLang), else their base text.
-  const items = localizeLineItems(quote.lineItems, lang);
+  // lineItems[].descriptionByLang), else their base text. REQ-333 (M24): in
+  // the quote's own language that is the typed text, never a cache.
+  const items = localizeLineItems(quote.lineItems, lang, quote.lang);
   // Title/summary in the document's language when the per-language fields are
   // present (populated from the picked job option); else the single value.
   const summary = (quote.summaryByLang?.[lang] ?? quote.summary ??

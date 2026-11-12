@@ -82,3 +82,31 @@ Deno.test("REQ-350 translate-bullets: the Spanish prompt carries the trade gloss
   assert(/vanity\W+mueble de baño/i.test(sys), sys);
   assert(/never\W+lavabo|not\W+lavabo/i.test(sys), sys);
 });
+
+/**
+ * REQ-333 (demo-loop cycle 1, M24): the AI silently reworded line items —
+ * English lines were sent through the model with to:'en' and came back
+ * normalized. Same source and target language is not a translation: the
+ * lines come back verbatim and the model is never called.
+ */
+Deno.test("REQ-333 M24 translate-bullets: same source and target language never calls the model", async () => {
+  const llm = new StubLLMClient();
+  let calls = 0;
+  llm.setHandler(() => {
+    calls++;
+    return {
+      text: JSON.stringify({
+        texts: ["Demolition and removal", "Plumbing fixtures installation"],
+      }),
+    };
+  });
+  const res = await new TranslateBullets(llm).run({
+    userId: "u-1",
+    texts: ["Demo and haul-off", "Plumbing fixtures"],
+    from: "en",
+    to: "en",
+  });
+  assertEquals(calls, 0, "no model call for the base language");
+  assertEquals(res.texts, ["Demo and haul-off", "Plumbing fixtures"]);
+  assertEquals(res.translated, true);
+});

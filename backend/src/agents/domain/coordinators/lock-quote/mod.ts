@@ -99,7 +99,11 @@ export class LockQuote {
       // REQ-264 (M15): the customer reads the document in either language
       // (/q?lang=…, the email's) — translate at lock so the review card and
       // the later send carry both; never blocks. REQ-234: lock never sends.
-      await this.translator?.run({ userId: input.userId, quoteId: quote.id })
+      await this.translator?.run({
+        userId: input.userId,
+        quoteId: quote.id,
+        baseLang: lang, // REQ-333 (M24): the contractor typed in their app language
+      })
         .catch((err) =>
           console.error(`[lock-quote] translate failed for ${quote.id}:`, err)
         );

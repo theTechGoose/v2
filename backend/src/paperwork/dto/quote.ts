@@ -79,6 +79,14 @@ export class CreateQuoteDto {
   @IsString()
   description?: string;
 
+  /** REQ-333 (M24): the language the base text (`description`, every line
+   *  item's `description`) was written in — the contractor's app language
+   *  when the quote was translated. That language is never sent to the
+   *  model: its cache is the typed text verbatim. */
+  @IsOptional()
+  @IsString()
+  lang?: string;
+
   /** Per-language cache of the job-details description, keyed by lang code
    *  (e.g. { en, es }). Populated lazily — a language is translated the first
    *  time the quote is previewed/sent in it. Readers render
@@ -180,6 +188,9 @@ export class UpdateQuoteDto {
   jobName?: string;
   @IsOptional() @IsString()
   description?: string;
+  /** REQ-333 (M24): the base text's language. */
+  @IsOptional() @IsString()
+  lang?: string;
   @IsOptional() @IsObject()
   descriptionByLang?: Record<string, string>;
   @IsOptional() @IsObject()

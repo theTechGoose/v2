@@ -254,7 +254,19 @@ Deno.test("REQ-264 (M15) lock-quote fills the English line items of a Spanish qu
         }),
       };
     });
-    const s = fresh(new TranslateQuote(new QuoteStore(), new TranslateBullets(llm)));
+    // REQ-333: a Spanish contractor typed the Spanish line — Spanish is the
+    // base, English the translation.
+    const users = new UserStore();
+    await (await getKv()).set(["user", "u-1"], {
+      id: "u-1",
+      phoneNumber: "+15550000264",
+      language: "es",
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+    });
+    const s = fresh(
+      new TranslateQuote(new QuoteStore(), new TranslateBullets(llm), users),
+    );
     const conv = await s.conversations.create({
       userId: "u-1",
       currentPhase: "quote",
@@ -327,5 +339,64 @@ Deno.test("REQ-302 B1 lock-quote integration: refuses to lock a quote whose tota
         "no locked card",
       );
     }
+  });
+});
+
+// REQ-333 (demo-loop cycle 1, M24): "AI silently rewords line items". An
+// English contractor's typed lines were sent through the model with to:'en'
+// at lock and came back normalized; the review card then showed the
+// paraphrase while the locked card showed the original. The quote's own
+// language is cached verbatim — the model only ever sees the OTHER language.
+Deno.test("REQ-333 (M24) lock-quote keeps an English contractor's typed lines verbatim in English", async () => {
+  await withKv(async () => {
+    const llm = new StubLLMClient();
+    const prompts: string[] = [];
+    llm.setHandler((req) => {
+      prompts.push(req.systemPrompt ?? "");
+      const { texts } = JSON.parse(req.messages[0].content as string) as {
+        texts: string[];
+      };
+      const toEn = /English/.test(req.systemPrompt ?? "");
+      return {
+        text: JSON.stringify({
+          texts: texts.map((t) =>
+            toEn ? `${t} (reworded)` : `${t} (en español)`
+          ),
+        }),
+      };
+    });
+    const users = new UserStore();
+    const me = await users.create({ phoneNumber: "+15550000335", language: "en" });
+    const s = fresh(
+      new TranslateQuote(new QuoteStore(), new TranslateBullets(llm), users),
+    );
+    const conv = await s.conversations.create({
+      userId: me.id,
+      currentPhase: "quote",
+    });
+    const quote = await s.quotes.create(me.id, {
+      summary: "Bathroom remodel",
+      lineItems: [
+        { description: "Demo and haul-off", quantity: 1, unit: "ea", price: 90_000 },
+        { description: "Plumbing fixtures", quantity: 1, unit: "ea", price: 60_000 },
+      ],
+      estimatedTotal: 150_000,
+    });
+    await s.conversations.update(conv.id, { quoteId: quote.id });
+
+    await s.flow.run({ userId: me.id, conversationId: conv.id, quoteId: quote.id });
+
+    const after = await s.quotes.getOwned(quote.id, me.id);
+    assertEquals(after.lineItems.map((li) => li.descriptionByLang?.en), [
+      "Demo and haul-off",
+      "Plumbing fixtures",
+    ]);
+    assertEquals(after.lineItems.map((li) => li.descriptionByLang?.es), [
+      "Demo and haul-off (en español)",
+      "Plumbing fixtures (en español)",
+    ]);
+    assertEquals(after.lang, "en");
+    assertEquals(prompts.length, 1, "the model is asked once — for Spanish");
+    assert(!prompts.some((p) => /into English/.test(p)));
   });
 });

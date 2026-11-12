@@ -659,7 +659,7 @@ export function renderQuoteHtml(
   const q: Quote = {
     ...quote,
     description: quoteDescription(quote, lang),
-    lineItems: localizeLineItems(quote.lineItems, lang),
+    lineItems: localizeLineItems(quote.lineItems, lang, quote.lang), // REQ-333
   };
   // REQ-204 / REQ-201: "Q-001 · Version 2", never an id slice; an issued
   // quote shows the customer as snapshotted when it was issued.
@@ -1102,7 +1102,7 @@ export function renderInvoiceHtml(
   // REQ-204: an issued bill shows the customer as snapshotted (billTo first)
   const customer = customerOnDocument(i, liveCustomer);
   // REQ-264 (M15): the agreement's line items in the email's language.
-  const items = localizeLineItems(quote?.lineItems, lang);
+  const items = localizeLineItems(quote?.lineItems, lang, quote?.lang); // REQ-333
   const agreementTotal = quote?.estimatedTotal ??
     (items.length
       ? items.reduce((s, li) => s + (li.price ?? 0) * (li.quantity ?? 1), 0)

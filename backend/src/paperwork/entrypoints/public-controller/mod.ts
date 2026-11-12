@@ -1340,6 +1340,7 @@ function redactQuote(q: Quote) {
     summary: q.summary,
     description: q.description,
     descriptionByLang: q.descriptionByLang,
+    lang: q.lang, // REQ-333 (M24): the base text's language
     jobName: q.jobName,
     jobNameByLang: q.jobNameByLang,
     summaryByLang: q.summaryByLang,
