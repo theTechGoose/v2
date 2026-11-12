@@ -3,15 +3,12 @@
  *
  * The demo (issue `pointer-and-replica-side-effects-polling`) showed each island running a bare
  * setInterval in every document: the stage's replica frame doubled every poll, and a hidden tab
- * kept them all going. So a poll here:
- *  - never runs inside the demo stage's replica frame (a picture of the customer's screen,
- *    reloaded on each of their navigations — its polls are duplicates of the customer's own),
+ * kept them all going. REQ-242 replaced that frame with a mirror that runs no script at all
+ * (sandboxed without allow-scripts), so no app poll can run on the stage. A poll here:
  *  - does not tick while the document is hidden, and catches up once when it is shown again,
  *  - never starts a tick while the previous one is still in flight,
  *  - swallows a failed fetch (the caller keeps its last good data; the next tick retries).
  */
-import { isReplicaFrame } from "./demo-mode/replica.ts";
-
 type TimerId = ReturnType<typeof setInterval> | number;
 
 export interface PollEnv {
@@ -23,7 +20,6 @@ export interface PollEnv {
     addEventListener: (type: string, fn: () => void) => void;
     removeEventListener: (type: string, fn: () => void) => void;
   } | null;
-  isReplica: () => boolean;
 }
 
 export interface PollOptions {
@@ -38,7 +34,6 @@ function browserEnv(): PollEnv {
     setInterval: (fn, ms) => globalThis.setInterval(fn, ms),
     clearInterval: (id) => globalThis.clearInterval(id as number),
     doc: typeof document === "undefined" ? null : document,
-    isReplica: isReplicaFrame,
   };
 }
 
@@ -49,7 +44,6 @@ export function startPoll(
   opts: PollOptions = {},
 ): () => void {
   const env: PollEnv = { ...browserEnv(), ...opts.env };
-  if (env.isReplica()) return () => {};
 
   let stopped = false;
   let inFlight = false;

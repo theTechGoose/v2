@@ -6,8 +6,7 @@
  * tab too — so one demo doubled every poll and a backgrounded tab kept them all going.
  *
  * The rule: every app poll goes through ONE scheduler (`front-end/lib/poll.ts`) that
- *  - never runs inside the demo stage's replica frame (it is a picture of the customer's screen,
- *    reloaded on every customer navigation; its own polls are pure duplicates),
+ *  - (REQ-242) has nothing to run on the demo stage: its mirror frame runs no scripts at all,
  *  - does not tick while the document is hidden, and catches up once when it becomes visible,
  *  - never stacks a tick on top of one still in flight.
  */
@@ -19,7 +18,7 @@ const ROOT = path.resolve(__dirname, "../..");
 const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), "utf8");
 
 /** a hand-driven clock + document */
-function fakeEnv(opts: { replica?: boolean; hidden?: boolean } = {}) {
+function fakeEnv(opts: { hidden?: boolean } = {}) {
   let nextId = 1;
   const timers = new Map<number, { fn: () => void; ms: number }>();
   const listeners = new Set<() => void>();
@@ -38,7 +37,6 @@ function fakeEnv(opts: { replica?: boolean; hidden?: boolean } = {}) {
       timers.delete(id);
     },
     doc,
-    isReplica: () => opts.replica ?? false,
   };
   return {
     env,
@@ -92,20 +90,11 @@ describe("REQ-221 one poll scheduler", () => {
     expect(calls).toBe(1);
   });
 
-  test("inside the demo stage's replica frame it never polls — no timer, no call, no listener", () => {
-    const f = fakeEnv({ replica: true });
-    let calls = 0;
-    const stop = startPoll(
-      () => {
-        calls++;
-      },
-      8_000,
-      { env: f.env, immediate: true },
-    );
-    expect(calls).toBe(0);
-    expect(f.timers.size).toBe(0);
-    expect(f.listeners.size).toBe(0);
-    stop(); // harmless
+  test("REQ-242: the demo stage's frame runs no script of the app at all (sandboxed without allow-scripts), so no poll can run on the stage and the scheduler needs no frame branch", () => {
+    const stage = read("front-end/islands/DemoStage.tsx");
+    expect(stage).toMatch(/sandbox="allow-same-origin"/);
+    expect(stage).not.toMatch(/allow-scripts/);
+    expect(read("front-end/lib/poll.ts")).not.toMatch(/demo-mode\/replica/);
   });
 
   test("a hidden document does not poll; coming back catches up once and resumes", async () => {

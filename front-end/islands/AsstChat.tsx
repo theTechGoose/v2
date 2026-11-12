@@ -1756,7 +1756,7 @@ export default function AsstChat({
         /* swallow — next tick will retry */
       }
     };
-    // REQ-221: not in the demo replica frame, not while the tab is hidden.
+    // REQ-221: not while the tab is hidden (the REQ-242 stage frame runs no scripts).
     const stop = startPoll(tick, 8_000);
     return () => {
       cancelled = true;

@@ -95,7 +95,7 @@ export default function DashTopbar(
 
   useEffect(() => {
     let stopped = false;
-    // REQ-221: the shared scheduler skips the demo replica frame and hidden
+    // REQ-221: the shared scheduler skips hidden
     // tabs (one catch-up when shown again); a failed fetch keeps the last list.
     const stopA = startPoll(async () => {
       const { count } = await dashboardClient.unreadCount();

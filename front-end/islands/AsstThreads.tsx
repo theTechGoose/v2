@@ -93,7 +93,7 @@ export default function AsstThreads(
   // Live-refresh: poll so a customer accept (which flips hasUnreadEvent +
   // bumps updatedAt server-side) shows up here without a hard reload. One
   // sync on mount in case SSR's snapshot is already stale. REQ-221: the
-  // shared scheduler skips the demo replica frame and hidden tabs, and
+  // shared scheduler skips hidden tabs, and
   // catches up once when the tab is shown again.
   useEffect(() => {
     let cancelled = false;

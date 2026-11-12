@@ -3,8 +3,8 @@
  * /api/notifications?limit=10 (demo issue `pointer-and-replica-side-effects-polling`). In a real
  * browser on /assistant (DashTopbar + AsstThreads):
  *  - the page itself polls (the control: conversations on mount, notifications on its period),
- *  - the same page loaded as the demo stage's replica frame (`<iframe name="pm-demo-replica">`)
- *    sends neither request at all,
+ *  - the same page loaded in a frame sandboxed like the demo stage's (REQ-242: `allow-same-origin`,
+ *    no scripts) sends neither request at all,
  *  - a hidden page sends neither, and catches up with one conversations fetch when shown again.
  */
 import { story, type StoryTools } from "#shots";
@@ -84,7 +84,7 @@ function watchPolls(page: StoryTools["page"]) {
   };
 }
 
-Deno.test("REQ-221: the replica frame and a hidden page do not poll conversations or notifications; the visible page does", (t) =>
+Deno.test("REQ-221: the demo stage's kind of frame and a hidden page do not poll conversations or notifications; the visible page does", (t) =>
   story(t, async ({ page, expect, http, baseUrl }) => {
     await signIn(http, page, baseUrl);
     const polls = watchPolls(page);
@@ -105,35 +105,34 @@ Deno.test("REQ-221: the replica frame and a hidden page do not poll conversation
       `the visible page fetched notifications (${top.notifications})`,
     );
 
-    // the demo stage's replica frame — the same page, framed under the replica's window name
+    // REQ-242 — the demo stage's frame: the same page, sandboxed as the stage sandboxes its
+    // mirror (allow-same-origin, no scripts)
     polls.reset();
     await page.evaluate(() => {
       const f = document.createElement("iframe");
-      f.name = "pm-demo-replica";
+      f.name = "pm-demo-stage-frame";
+      f.setAttribute("sandbox", "allow-same-origin");
       f.src = "/assistant";
       f.style.cssText =
         "position:fixed;left:0;top:0;width:1024px;height:700px;z-index:99999";
       document.body.appendChild(f);
     });
-    const frame = page.frameLocator('iframe[name="pm-demo-replica"]');
-    // hydrated: DashTopbar only sets this hook after its effects ran
-    await frame.locator('[data-cy="mobile-menu"]').waitFor({
-      state: "attached",
-    });
+    const frame = page.frameLocator('iframe[name="pm-demo-stage-frame"]');
+    await frame.locator("body").waitFor({ state: "attached" });
     await page.waitForTimeout(WINDOW_MS);
-    const replica = polls.of("pm-demo-replica");
+    const staged = polls.of("pm-demo-stage-frame");
     expect.eq(
-      replica.conversations,
+      staged.conversations,
       0,
-      "the replica frame fetched no conversations",
+      "the stage's kind of frame fetched no conversations",
     );
     expect.eq(
-      replica.notifications,
+      staged.notifications,
       0,
-      "the replica frame fetched no notifications",
+      "the stage's kind of frame fetched no notifications",
     );
     await page.evaluate(() =>
-      document.querySelector('iframe[name="pm-demo-replica"]')?.remove()
+      document.querySelector('iframe[name="pm-demo-stage-frame"]')?.remove()
     );
 
     // a hidden page — nothing while hidden, one catch-up when shown
