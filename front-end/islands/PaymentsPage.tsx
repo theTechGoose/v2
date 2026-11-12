@@ -44,6 +44,7 @@ import { type Lang, langSignal, tFor } from "../lib/i18n.ts";
 import PaymentReceivedForm from "../components/PaymentReceivedForm.tsx";
 import { docNumberOf } from "../../shared/documents/numbering.ts";
 import { type PaymentClaim, pendingClaims } from "../lib/payment-claims.ts";
+import { cashFlowWeeks } from "../lib/cash-flow-weeks.ts";
 
 /** Plural helper bound to an explicit language (the reactive `tn` reads the
  *  global lang signal; the logged-in app threads `lang` explicitly). */
@@ -476,7 +477,7 @@ export default function PaymentsPage({ lang: _lang }: { lang?: Lang } = {}) {
         </div>
 
         <aside class="qside">
-          <PSideFlow lang={lang} landedAmounts={landed.map((p) => p.amount)} />
+          <PSideFlow lang={lang} landed={landed} />
           <PSideTopPayors lang={lang} landed={landed} />
           <PSideMix lang={lang} landed={landed} />
           <PSideTip lang={lang} />
@@ -1017,14 +1018,11 @@ function LandedRow({ lang, p }: { lang: Lang; p: EnrichedPayment }) {
 /* ---------------- Side rail components ---------------- */
 
 function PSideFlow(
-  { lang, landedAmounts }: { lang: Lang; landedAmounts: number[] },
+  { lang, landed }: { lang: Lang; landed: EnrichedPayment[] },
 ) {
-  // Split landed into 12 weekly buckets. Real history would key off
-  // receivedAt; for now we just slot in the rolling totals.
-  const weeks = new Array(12).fill(0);
-  landedAmounts.forEach((a, i) => {
-    weeks[11 - (i % 12)] += a;
-  });
+  // REQ-325 (demo m38): 12 ISO-week buckets keyed off receivedAt, ending in
+  // the current week; the axis months are derived from today, not fixed.
+  const { weeks, labels } = cashFlowWeeks(landed);
   const hasData = weeks.some((v) => v > 0);
   if (!hasData) {
     return (
@@ -1086,9 +1084,9 @@ function PSideFlow(
         ))}
       </svg>
       <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--fg-muted);margin-top:8px;font-family:var(--font-body)">
-        <span>{tFor(lang, "paymentsPage.flow.feb")}</span>
-        <span>{tFor(lang, "paymentsPage.flow.mar")}</span>
-        <span>{tFor(lang, "paymentsPage.flow.apr")}</span>
+        {labels.map((m, i) => (
+          <span key={i}>{tFor(lang, `dashboardPage.month.${m}`)}</span>
+        ))}
       </div>
     </div>
   );
