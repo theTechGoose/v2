@@ -68,11 +68,11 @@ Deno.test("invoice e2e: GET ?status=pending filters", async () => {
     const auth = { "content-type": "application/json", "x-session-id": sid };
     await drain(await fetch(`http://localhost:${PORT}/invoices`, {
       method: "POST", headers: auth,
-      body: JSON.stringify({ contractId: "c-1", dueDate: "2026-05-01", status: "pending" }),
+      body: JSON.stringify({ contractId: "c-1", dueDate: "2026-05-01", status: "pending", billTo: { name: "Ann Lee" } }),
     }));
     await drain(await fetch(`http://localhost:${PORT}/invoices`, {
       method: "POST", headers: auth,
-      body: JSON.stringify({ contractId: "c-1", dueDate: "2026-05-02", status: "paid" }),
+      body: JSON.stringify({ contractId: "c-1", dueDate: "2026-05-02", status: "paid", billTo: { name: "Ann Lee" } }),
     }));
     const pending = await fetch(`http://localhost:${PORT}/invoices?status=pending`, {
       headers: { "x-session-id": sid },
@@ -99,7 +99,7 @@ Deno.test("REQ-473 invoice e2e: GET ?status=open lists sent/viewed/claimed/pendi
     for (const status of ["sent", "viewed", "claimed", "pending", "scheduled", "draft", "paid", "void"]) {
       await drain(await fetch(`http://localhost:${PORT}/invoices`, {
         method: "POST", headers: auth,
-        body: JSON.stringify({ dueDate: "2026-05-01", status, amount: 925_00, jobName: status }),
+        body: JSON.stringify({ dueDate: "2026-05-01", status, amount: 925_00, jobName: status, billTo: { name: "Ann Lee" } }),
       }));
     }
     const open = await fetch(`http://localhost:${PORT}/invoices?status=open`, {

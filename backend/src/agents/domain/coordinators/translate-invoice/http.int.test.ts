@@ -75,6 +75,7 @@ Deno.test("REQ-497 (demo m23): a standalone invoice typed in Spanish reaches the
         amount: 600_00,
         dueDate: "2026-12-30",
         status: "sent",
+        billTo: { name: "Ann Lee" }, // REQ-550: an issued invoice bills someone
       }),
     }).then((r) => r.json());
     const pub = await fetch(`${BASE}/invoices/${inv.id}/public`).then((r) =>

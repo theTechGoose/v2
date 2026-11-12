@@ -14,6 +14,7 @@ import { InvoiceStore } from "@paperwork/domain/data/invoice-store/mod.ts";
 import { CustomerStore } from "@crm/domain/data/customer-store/mod.ts";
 import { QuoteStore } from "@paperwork/domain/data/quote-store/mod.ts";
 import {
+  type CreateInvoiceDto,
   type Invoice,
   parseCreateInvoice,
   parseUpdateInvoice,
@@ -309,7 +310,14 @@ export class InvoiceController {
     if (body && typeof body === "object") {
       delete (body as { override?: unknown }).override;
     }
-    const dto = parseCreateInvoice(body);
+    // REQ-550 (demo-loop cycle 4, B1): a body that fails validation (e.g.
+    // an amount past the $1bn cap) is the caller's error — 422, not a throw.
+    let dto: CreateInvoiceDto;
+    try {
+      dto = parseCreateInvoice(body);
+    } catch {
+      return ctx.json({ error: "invalid_invoice" }, 422);
+    }
 
     // Derive-from-quote (roadmap p.6): the invoice carries all the quote's
     // information — job name, description, customer, line items, amount —
@@ -356,6 +364,15 @@ export class InvoiceController {
         .toISOString().slice(0, 10);
     }
 
+    // REQ-550 (demo-loop cycle 4, B1): an invoice issued at birth bills
+    // someone — a customer (given, or the quote's) or a typed bill-to name.
+    // Nobody to bill is a draft, never "sent".
+    if (
+      isIssuedAtBirth(dto.status) && !dto.customerId?.trim() &&
+      !(typeof dto.billTo?.name === "string" && dto.billTo.name.trim())
+    ) {
+      return ctx.json({ error: "invoice_needs_recipient" }, 422);
+    }
     // REQ-206: an invoice issued at birth carries its sentAt.
     if (
       dto.status && dto.status !== "draft" && dto.status !== "scheduled" &&
@@ -686,4 +703,10 @@ async function revertApprovedDelta(
   const reverted = Math.max(0, current - co.deltaAmountCents);
   await store.update(co.invoiceId, userId, { amount: reverted });
   return reverted;
+}
+
+/** REQ-550: a create status that issues the invoice (anything but the
+ *  unissued draft / scheduled tracks — an omitted status is a draft). */
+function isIssuedAtBirth(status: string | undefined): boolean {
+  return !!status && status !== "draft" && status !== "scheduled";
 }

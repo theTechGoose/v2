@@ -120,7 +120,9 @@ const MAX_OPTIONS = 8;
 const MAX_BULLETS = 50;
 const MAX_LANGS = 4;
 const MAX_SUGGESTIONS = 4;
-const MAX_CENTS = 100_000_000_000; // $1bn
+/** The largest money amount anything accepts, INTEGER CENTS ($1bn) — the
+ *  assistant draft, the invoice form and POST /invoices (REQ-550). */
+export const MAX_CENTS = 100_000_000_000; // $1bn
 const TIERS = new Set(["competitive", "market", "premium"]);
 
 type Obj = Record<string, unknown>;

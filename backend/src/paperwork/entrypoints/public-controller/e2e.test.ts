@@ -489,6 +489,7 @@ Deno.test("public e2e: POST /invoices/:id/claim-payment flips status to claimed 
         dueDate: "2026-06-01",
         amount: 100_00,
         status: "sent",
+        billTo: { name: "Ann Lee" }, // REQ-550: an issued invoice bills someone
       }),
     }).then((r) => r.json());
 
@@ -542,6 +543,7 @@ Deno.test("public e2e: claim-payment rejects unknown methods", async () => {
         dueDate: "2026-06-01",
         amount: 100,
         status: "sent",
+        billTo: { name: "Ann Lee" }, // REQ-550: an issued invoice bills someone
       }),
     }).then((r) => r.json());
 
@@ -582,6 +584,7 @@ Deno.test("public e2e: claim-payment is 409 when invoice already paid", async ()
         dueDate: "2026-06-01",
         amount: 100,
         status: "paid",
+        billTo: { name: "Ann Lee" }, // REQ-550: an issued invoice bills someone
       }),
     }).then((r) => r.json());
 

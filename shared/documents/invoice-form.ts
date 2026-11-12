@@ -10,6 +10,7 @@
  * No I/O, no DOM, no dates read from the clock — the caller passes "today".
  */
 import { docNumberOf } from "./numbering.ts";
+import { MAX_CENTS } from "../quote-flow/assistant-draft.ts";
 import {
   type DocState,
   invoiceBalance,
@@ -348,15 +349,67 @@ function nonEmpty(s: string | undefined): string | undefined {
  * REQ-480 (demo-loop cycle 3, M18): the status a New invoice is created with.
  * "Issue" with a dispatch to follow creates it UNISSUED (draft): the send
  * endpoints stamp it "sent" only once a channel actually delivers, so an
- * invoice nobody received is never listed as Sent. "Issue" for a client with
- * no contact (nothing to dispatch) is the contractor issuing it by hand —
- * sent. Saving keeps the draft / scheduled tracks.
+ * invoice nobody received is never listed as Sent. REQ-550 (demo-loop cycle
+ * 4, B1) amends the no-contact case: with nothing to dispatch, nothing was
+ * sent either — it is a draft too, and the page says "not sent — share the
+ * link" (`invoiceNotSentCopy`). Saving keeps the draft / scheduled tracks.
  */
 export function newInvoiceStatus(
   opts: { issue: boolean; dispatch: boolean; scheduledFor?: string },
 ): "draft" | "sent" | "scheduled" {
-  if (opts.issue) return opts.dispatch ? "draft" : "sent";
+  if (opts.issue) return "draft";
   return opts.scheduledFor ? "scheduled" : "draft";
+}
+
+/** REQ-550: the most an invoice may bill, INTEGER CENTS — the $1bn cap the
+ *  assistant draft already uses (and POST /invoices enforces). */
+export const INVOICE_MAX_CENTS = MAX_CENTS;
+/** REQ-550: above this total ($250,000) "Issue" asks for a second press. */
+export const INVOICE_CONFIRM_CENTS = 250_000_00;
+
+/**
+ * REQ-550 (demo-loop cycle 4, B1): why the New invoice form must not go
+ * ahead, as an `invoicesPage.new.*` key — or null. A total past the cap is
+ * refused on any path; "Issue" also needs someone to bill: an existing
+ * client, a new client's name, or a typed bill-to name. A draft needs no
+ * recipient. (The missing-info list stays a prompt — REQ-206.)
+ */
+export function invoiceIssueBlock(opts: {
+  issue: boolean;
+  totalCents: number;
+  customerId?: string;
+  newClientName?: string;
+  billToName?: string;
+}): "errRecipient" | "errAmountMax" | null {
+  if (opts.totalCents > INVOICE_MAX_CENTS) return "errAmountMax";
+  if (
+    opts.issue && !nonEmpty(opts.customerId) &&
+    !nonEmpty(opts.newClientName) && !nonEmpty(opts.billToName)
+  ) {
+    return "errRecipient";
+  }
+  return null;
+}
+
+/** REQ-550: an invoice total over INVOICE_CONFIRM_CENTS needs the contractor
+ *  to confirm that exact total (`confirmedCents`) before it is issued. */
+export function needsAmountConfirm(
+  totalCents: number,
+  confirmedCents?: number | null,
+): boolean {
+  return totalCents > INVOICE_CONFIRM_CENTS && confirmedCents !== totalCents;
+}
+
+/** REQ-550: the notice after "Issue" when there was nobody to send it to —
+ *  "INV-003 saved — not sent: …; share its link: <link>". */
+export function invoiceNotSentCopy(
+  t: (key: string, params?: Record<string, string>) => string,
+  opts: { number?: string; link: string },
+): string {
+  return t("invoicesPage.send.notSentShareLink", {
+    number: nonEmpty(opts.number) ?? t("invoicesPage.send.invoiceFallback"),
+    link: opts.link,
+  });
 }
 
 /** The POST /invoices body for the form: cents, basis points, trimmed strings, nothing empty. */
