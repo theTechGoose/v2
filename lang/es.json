@@ -221,7 +221,7 @@
   "asstChat.customerStep.pickTitle": "Elige un cliente",
   "asstChat.customerStep.useFromChat": "Usar a {name} del chat",
   "asstChat.customerStep.useExisting": "Usar a {name}",
-  "asstChat.customerStep.useKnown": "Usar a {name} ✓",
+  "asstChat.customerStep.useKnown": "Usar a {name}",
   "asstChat.customerStep.whoFor": "¿Para quién es esto?",
   "asstChat.demo.body": "Una cotización de muestra en vivo — con la marca de todo lo que acabas de compartir. Se abre en una pestaña nueva.",
   "asstChat.demo.eyebrow": "Pruébalo · 5 segundos",

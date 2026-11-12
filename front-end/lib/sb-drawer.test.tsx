@@ -24,7 +24,7 @@ const lang = (l: string) =>
 
 Deno.test("REQ-358 the resting folder: the active page's folder, Admin for the super-admin tab, the root otherwise", () => {
   assertEquals(restingPath("quotes"), ["billing"]);
-  assertEquals(restingPath("tasks"), ["recurring"]);
+  assertEquals(restingPath("tasks"), ["field"]); // REQ-361: the folder is "field" now
   assertEquals(restingPath("admin"), ["manage"]);
   assertEquals(restingPath("home"), []);
   assertEquals(restingPath("customers"), []);

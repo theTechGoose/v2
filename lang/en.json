@@ -221,7 +221,7 @@
   "asstChat.customerStep.pickTitle": "Pick a customer",
   "asstChat.customerStep.useFromChat": "Use {name} from chat",
   "asstChat.customerStep.useExisting": "Use {name}",
-  "asstChat.customerStep.useKnown": "Use {name} ✓",
+  "asstChat.customerStep.useKnown": "Use {name}",
   "asstChat.customerStep.whoFor": "Who is this for?",
   "asstChat.demo.body": "A live sample quote — branded with everything you just shared. Opens in a new tab.",
   "asstChat.demo.eyebrow": "Try it · 5 seconds",

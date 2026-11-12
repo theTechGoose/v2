@@ -123,7 +123,8 @@ Deno.test("REQ-354 M39: the New customer modal and the Send chooser use <Backdro
     new URL("islands/ClientsPage.tsx", root),
   );
   assert(
-    /<Backdrop[\s\S]{0,200}setAddOpen\(false\)/.test(clients),
+    // REQ-300 (reconciled on demo-fixes): onClose also keeps a dirty draft up
+    /<Backdrop[\s\S]{0,600}setAddOpen\(false\)/.test(clients),
     "ClientsPage add modal not on <Backdrop>",
   );
   const chat = await Deno.readTextFile(new URL("islands/AsstChat.tsx", root));

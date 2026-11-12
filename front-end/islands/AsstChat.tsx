@@ -4983,7 +4983,7 @@ export default function AsstChat({
                                                 );
                                               }}
                                             >
-                                              ✎
+                                              <Icon name="pencil" size={14} style="display:block" />
                                             </button>
                                           )}
                                           <button
@@ -9544,6 +9544,9 @@ function CustomerStepPanel(props: {
             disabled={sending}
           >
             {tFor(lang, "asstChat.customerStep.useKnown", { name: k.name })}
+            {/* REQ-366: the check is an SVG icon, never a Dingbat glyph */}
+            {" "}
+            <Icon name="check" size={14} style="vertical-align:-2px" />
             {k.email || k.phoneNumber
               ? <span class="wiz-opt__sub">{k.email ?? k.phoneNumber}</span>
               : null}
