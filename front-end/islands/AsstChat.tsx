@@ -156,6 +156,7 @@ import {
   recommendedChannel,
   runExclusive,
   sendDialogErrorKey,
+  sendOpenLabelKey,
 } from "../lib/send-dialog.ts";
 import {
   customerStepPrefillView,
@@ -1027,6 +1028,12 @@ export default function AsstChat({
     "both",
   );
   const [channelMenuOpen, setChannelMenuOpen] = useState(false);
+  /** REQ-459 (demo m44): the channel the user picked in the ▾ menu — the
+   *  main button names it ("Send by email…"); null until a pick, so the
+   *  smart default alone keeps the neutral "Send…" (REQ-402). */
+  const [pickedChannel, setPickedChannel] = useState<
+    "email" | "sms" | "both" | null
+  >(null);
   /** REQ-035 (NW-55): "Send to client" opens "How do you want to send to
    *  customer?" — Text / Email / Text + Email with Keep / Cancel. The draft
    *  choice lives here until Keep commits it (and sends). */
@@ -1601,7 +1608,20 @@ export default function AsstChat({
   // REQ-402 (demo m5): the same rule that tags "Recommended".
   useEffect(() => {
     setSendChannel(defaultSendChannel(customer));
+    setPickedChannel(null);
   }, [customer?.email, customer?.phoneNumber]);
+
+  /** REQ-035 / REQ-459 (demo m44): open "How do you want to send" on `ch` —
+   *  the main button opens it on the current channel, a ▾ menu pick on the
+   *  picked one. Nothing is sent until the dialog's Send (REQ-308). */
+  const openSendDialog = (ch: "email" | "sms" | "both") => {
+    setDialogChannel(ch);
+    setDialogEmail("");
+    setDialogPhone("");
+    setDialogErr(undefined);
+    setChannelMenuOpen(false);
+    setSendDialogOpen(true);
+  };
 
   // Whenever the active quoteId changes, fetch the full quote so the
   // post-wizard preview can render description + lineItems without
@@ -8036,14 +8056,7 @@ export default function AsstChat({
                                   <button
                                     type="button"
                                     class="quote-review__send-main"
-                                    onClick={() => {
-                                      setDialogChannel(sendChannel);
-                                      setDialogEmail("");
-                                      setDialogPhone("");
-                                      setDialogErr(undefined);
-                                      setChannelMenuOpen(false);
-                                      setSendDialogOpen(true);
-                                    }}
+                                    onClick={() => openSendDialog(sendChannel)}
                                     // UX-02: an accepted deal offers no live
                                     // re-send of the same agreement — and
                                     // (REQ-233, B2) no invoice swap either:
@@ -8063,10 +8076,14 @@ export default function AsstChat({
                                       )
                                       // REQ-402 (demo m5): this opens the
                                       // "How do you want to send" chooser,
-                                      // so it never promises "by Text".
+                                      // so it never promises "by Text" —
+                                      // REQ-459 (m44): unless the user
+                                      // picked a channel in the ▾ menu.
                                       : tFor(
                                         previewLang,
-                                        "asstChat.preview.sendOpen",
+                                        pickedChannel
+                                          ? sendOpenLabelKey(pickedChannel)
+                                          : "asstChat.preview.sendOpen",
                                       )}
                                   </button>
                               <button
@@ -8108,9 +8125,12 @@ export default function AsstChat({
                                             ? " is-current"
                                             : ""
                                         }`}
+                                        // REQ-459 (demo m44): a pick opens
+                                        // the send dialog on that channel.
                                         onClick={() => {
                                           setSendChannel(ch);
-                                          setChannelMenuOpen(false);
+                                          setPickedChannel(ch);
+                                          openSendDialog(ch);
                                         }}
                                       >
                                         <I d={icon} size={13} sw={2.4} />

@@ -165,3 +165,15 @@ export function addFieldLabelKey(
     ? "asstChat.send.customerPhone"
     : "asstChat.send.addPhone";
 }
+
+/**
+ * REQ-459 (demo-loop cycle 3, m44): the main send button's label once the
+ * user picked a channel in the ▾ menu — "Send by email…" / "Send by text…" /
+ * "Send by text + email…". Before any pick the island keeps REQ-402's
+ * neutral "Send…".
+ */
+export function sendOpenLabelKey(channel: SendChannel): string {
+  if (channel === "email") return "asstChat.preview.sendOpenEmail";
+  if (channel === "sms") return "asstChat.preview.sendOpenSms";
+  return "asstChat.preview.sendOpenBoth";
+}
