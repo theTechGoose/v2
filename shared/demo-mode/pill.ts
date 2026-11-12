@@ -16,7 +16,7 @@
  * do not move them; the box is remembered per path for the tab so a reload does not hop it; and a
  * move glides. The stage gets the box (`pill` peer message) and draws its ghost.
  */
-import type { Rect } from "./protocol.ts";
+import type { PillStatus, Rect } from "./protocol.ts";
 
 export type Corner = "bl" | "br" | "tl" | "tr";
 /** bottom-left (where the pill always was) first */
@@ -264,17 +264,69 @@ export function clearPillRoom(root: StyleLike, body: StyleLike): void {
   body.removeProperty("padding-bottom");
 }
 
-/** REQ-295 — the customer's pill box on the stage: scaled and offset like the frame */
+/**
+ * REQ-295 — the customer's pill box on the stage: scaled and offset like the frame.
+ * REQ-372 (demo-loop cycle 2, m8) — and cut to the frame: a pill wider than the customer's view
+ * (M6's min-width) must not hang off the phone; `clipped` says something was cut. A box wholly
+ * outside the frame draws nothing (null).
+ */
+export function pillGhost(
+  r: Rect,
+  fit: {
+    left: number;
+    top: number;
+    s: number;
+    width?: number;
+    height?: number;
+  },
+): { box: Rect; clipped: boolean } | null {
+  const left = fit.left + r.left * fit.s;
+  const top = fit.top + r.top * fit.s;
+  const right = left + r.width * fit.s;
+  const bottom = top + r.height * fit.s;
+  const fr = fit.width === undefined ? Infinity : fit.left + fit.width;
+  const fb = fit.height === undefined ? Infinity : fit.top + fit.height;
+  const l = Math.max(left, fit.left);
+  const t = Math.max(top, fit.top);
+  const rr = Math.min(right, fr);
+  const bb = Math.min(bottom, fb);
+  if (!(rr > l) || !(bb > t)) return null;
+  const eps = 0.5;
+  return {
+    box: { left: l, top: t, width: rr - l, height: bb - t },
+    clipped: l - left > eps || t - top > eps || right - rr > eps ||
+      bottom - bb > eps,
+  };
+}
+
+/** REQ-295 — the ghost's box on the stage (REQ-372: clipped to the frame; null: nothing to draw) */
 export function pillGhostBox(
   r: Rect,
-  fit: { left: number; top: number; s: number },
-): Rect {
-  return {
-    left: fit.left + r.left * fit.s,
-    top: fit.top + r.top * fit.s,
-    width: r.width * fit.s,
-    height: r.height * fit.s,
-  };
+  fit: {
+    left: number;
+    top: number;
+    s: number;
+    width?: number;
+    height?: number;
+  },
+): Rect | null {
+  return pillGhost(r, fit)?.box ?? null;
+}
+
+/** REQ-372 — the customer's pill runs off their screen (it would be cut, or the stage's copy is) */
+export function pillOverflows(r: Rect, view: Size, tolerance = 1): boolean {
+  return r.left < -tolerance || r.top < -tolerance ||
+    r.left + r.width > view.w + tolerance ||
+    r.top + r.height > view.h + tolerance;
+}
+
+/** REQ-372 — the pill's status as the stage words it (the presenter's dictionary) */
+export function statusKeyOf(s: PillStatus): string {
+  return s === "live"
+    ? "demoMode.connected"
+    : s === "ended"
+    ? "demoMode.ended"
+    : "demoMode.connecting";
 }
 
 /**
