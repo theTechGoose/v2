@@ -795,3 +795,57 @@ Deno.test("REQ-284: the day's only task checked off — the summary reads Comple
     expect.eq(/To do 0/i.test(text), true, `to-do chip: ${text}`);
     expect.eq(/Assigned/i.test(text), false, `no 'Assigned' counter: ${text}`);
   }));
+
+Deno.test("REQ-401 (demo M30/m45, cycle 2): a pull onto drafts says 'on draft invoices'; a send to a customer with no email or phone shows only the failure with its fix; the row reads 1 draft; the worker's lock reads 'on a draft invoice'", (t) =>
+  story(t, async ({ page, expect, http, baseUrl }) => {
+    const { auth } = await signIn(http, page, baseUrl);
+    const post = async (path: string, body: unknown) => {
+      const r = await http(path, { method: "POST", headers: auth, body: JSON.stringify(body) });
+      return r.json();
+    };
+    const put = async (path: string, body: unknown) => {
+      const r = await http(path, { method: "PUT", headers: auth, body: JSON.stringify(body) });
+      await r.body?.cancel();
+    };
+    const customer = await post("/api/customers", { name: "Johnson" });
+    expect(!!customer.id, `Johnson created with no email or phone (${JSON.stringify(customer)})`);
+    const cell = `843${digits()}`;
+    const worker = await post("/api/field/workers", { name: "Luis Herrera", phoneNumber: cell, pin: "1234" });
+    const today = todayIso();
+    const sub = await post("/api/field/subscriptions", {
+      customerId: customer.id,
+      address: "4601 Dick Pond Rd, Myrtle Beach, SC",
+      startDate: today,
+      items: [{ taskTypeName: "Repair 3 fence panels", priceCents: 9000 }],
+    });
+    await put(`/api/field/regions/${sub.region.id}/worker`, { workerId: worker.id });
+    const tasks = await (await http(`/api/field/tasks?date=${today}`, { headers: auth })).json();
+    expect.eq(tasks.length, 1, "one task today");
+    await put(`/api/field/tasks/${tasks[0].id}`, { status: "complete" });
+
+    await page.goto("/field/batches");
+    await page.locator("[data-cy='lt-from']").fill(today);
+    await page.locator("[data-cy='lt-to']").fill(today);
+    await page.locator("[data-cy='lt-pull']").click();
+    await page.locator("[data-cy='lt-invoice']").first().waitFor({ timeout: 20_000 });
+    const summary = await page.locator("[data-cy='lt-summary']").innerText();
+    expect(/1 completed, on draft invoices/.test(summary), `summary: ${summary}`);
+    expect(!/completed and invoiced/.test(summary), `no 'invoiced' for a draft: ${summary}`);
+    await expect.see("1 draft · 0 sent · 0 paid");
+
+    await page.locator("[data-cy='lt-send']").click();
+    await page.locator("[data-cy='lt-send-failure']").first().waitFor({ timeout: 20_000 });
+    await expect.see("Johnson has no email or phone on file, so nothing was sent.");
+    await expect.see("Add an email or phone to Johnson");
+    await expect.notSee("each client got theirs");
+    await expect.notSee("no recipient:");
+
+    // the worker: the task is locked, worded by its draft invoice
+    await page.context().clearCookies();
+    await page.goto("/worker?lang=en");
+    await page.locator("[data-cy='w-cell']").fill(cell);
+    await page.locator("[data-cy='w-pin']").fill("1234");
+    await page.locator("[data-cy='w-login']").click();
+    await page.locator("[data-cy='w-visit']").first().waitFor({ timeout: 20_000 });
+    await expect.see("on a draft invoice");
+  }));

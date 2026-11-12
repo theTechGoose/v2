@@ -25,6 +25,7 @@ import {
   workerDayNav,
   workerScreenLang,
 } from "../lib/field.ts";
+import { lockLabelKey } from "../lib/field-batches.ts";
 import { type Lang, langSignal, setLang, t } from "../lib/i18n.ts";
 
 const CELL_KEY = "pm:worker-cell";
@@ -475,7 +476,9 @@ export default function WorkerScreen(
                 {s.locked && (
                   <>
                     {" "}
-                    <span class="svc__lock">🔒 {t("worker.invoiced")}</span>
+                    <span class="svc__lock">
+                      🔒 {t(lockLabelKey(s.lockState))}
+                    </span>
                   </>
                 )}
               </div>

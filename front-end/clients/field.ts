@@ -8,6 +8,7 @@
  * module only names them by id.
  */
 import { api, type ApiOptions } from "../lib/api.ts";
+import type { SendFailure } from "../lib/field-batches.ts";
 
 export type Cadence = "weekly" | "biweekly" | "monthly";
 export type TaskStatus = "assigned" | "complete" | "skipped" | "deferred";
@@ -183,6 +184,8 @@ export interface WorkerTaskView {
   completedAt?: string;
   /** on an invoice already — read-only for the worker */
   locked: boolean;
+  /** REQ-401: "draft" while that invoice is an unsent draft, "invoiced" once sent */
+  lockState?: "draft" | "invoiced" | null;
 }
 
 export interface GenerateResult {
@@ -242,7 +245,7 @@ export type PullResult = BatchView & { summary: PullSummary };
 export interface SendResult {
   sent: number;
   sentIds: string[];
-  failed: { invoiceId: string; reason: string }[];
+  failed: SendFailure[];
   batch: BatchView;
 }
 

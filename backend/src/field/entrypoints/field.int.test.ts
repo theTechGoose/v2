@@ -1845,3 +1845,80 @@ Deno.test("REQ-365 a one-off task for a customer with no subscription answers re
     ]);
   });
 });
+
+Deno.test("REQ-401 (demo M30/m45, cycle 2) send to a customer with no email or phone fails with code noRecipient and sends nothing; the worker's lock reads 'draft' until the invoice is sent, then 'invoiced'", async () => {
+  await withServer(async (call) => {
+    const { H, W, customer, worker, sub, today } = await setUp(call);
+    const johnson = (await call("POST", "/customers", { name: "Johnson" }, H))
+      .body;
+    assert(johnson?.id, JSON.stringify(johnson));
+    const jSub = (await call("POST", "/field/subscriptions", {
+      customerId: johnson.id,
+      address: "6221 Forestbrook Rd, Myrtle Beach, SC",
+      startDate: today,
+      items: [{ taskTypeName: "Repair 3 fence panels", priceCents: 9000 }],
+    }, H)).body;
+    if (jSub.region.id !== sub.region.id) {
+      await call("PUT", `/field/regions/${jSub.region.id}/worker`, {
+        workerId: worker.id,
+      }, H);
+    }
+    for (
+      const t of (await call(
+        "GET",
+        `/field/worker/tasks?date=${today}`,
+        undefined,
+        W,
+      )).body
+    ) {
+      await call("POST", `/field/worker/tasks/${t.id}/complete`, {}, W);
+    }
+    const pulled = await call("POST", "/field/batches/pull", {
+      from: today,
+      to: today,
+    }, H);
+    assertEquals(pulled.status, 201, JSON.stringify(pulled.body));
+    const inv = (id: string) =>
+      pulled.body.invoices.find((i: { customerId: string }) =>
+        i.customerId === id
+      );
+    const lockStates = async () =>
+      ((await call("GET", `/field/worker/tasks?date=${today}`, undefined, W))
+        .body as { customerId: string; locked: boolean; lockState: string }[])
+        .map((t) =>
+          [
+            t.customerId === johnson.id ? "johnson" : "ana",
+            t.locked,
+            t.lockState,
+          ].join(":")
+        )
+        .sort();
+    assertEquals(await lockStates(), [
+      "ana:true:draft",
+      "ana:true:draft",
+      "johnson:true:draft",
+    ], "pulled onto a DRAFT: locked, but not 'invoiced'");
+    // Johnson alone: nothing goes out, and the failure carries a code the page translates
+    const none = await call("POST", `/field/batches/${pulled.body.id}/send`, {
+      invoiceIds: [inv(johnson.id).id],
+    }, H);
+    assertEquals(none.status, 200, JSON.stringify(none.body));
+    assertEquals(none.body.sent, 0);
+    assertEquals(
+      none.body.failed.map((
+        f: { invoiceId: string; code?: string; customerId?: string },
+      ) => [f.invoiceId, f.code, f.customerId]),
+      [[inv(johnson.id).id, "noRecipient", johnson.id]],
+    );
+    // Ana's goes out: her tasks now read 'invoiced'; Johnson's stay on a draft
+    const sent = await call("POST", `/field/batches/${pulled.body.id}/send`, {
+      invoiceIds: [inv(customer.id).id],
+    }, H);
+    assertEquals([sent.body.sent, sent.body.failed], [1, []]);
+    assertEquals(await lockStates(), [
+      "ana:true:invoiced",
+      "ana:true:invoiced",
+      "johnson:true:draft",
+    ]);
+  });
+});

@@ -1,6 +1,7 @@
 /** The names the pages show next to ids — customers (CustomerStore), types, workers, zones. */
 import { Injectable } from "#danet/core";
 import { CustomerStore } from "@crm/domain/data/customer-store/mod.ts";
+import { InvoiceStore } from "@paperwork/domain/data/invoice-store/mod.ts";
 import { FieldWorkerStore, RegionStore, SubscriptionStore, TaskTypeStore } from "@field/domain/data/field-stores/mod.ts";
 import { scheduleText } from "@field/domain/business/schedule/mod.ts";
 import { workerView } from "@field/domain/business/tasks/mod.ts";
@@ -11,6 +12,8 @@ export interface Names {
   type: (id: string) => string;
   worker: (id: string) => string;
   region: (id: string | undefined) => Region | null;
+  /** REQ-401: the status of a task's invoice — only the worker views load it */
+  invoiceStatus?: (id: string | undefined) => string | undefined;
 }
 
 export const safeWorker = ({ pin: _p, ...w }: FieldWorker) => w;
@@ -23,7 +26,15 @@ export class FieldViews {
     private workers: FieldWorkerStore,
     private regions: RegionStore,
     private subs: SubscriptionStore,
+    private invoices: InvoiceStore,
   ) {}
+
+  /** REQ-401: names + each invoice's status, so a worker's lock reads "draft" until it is sent */
+  async workerNames(userId: string): Promise<Names> {
+    const [n, invoices] = await Promise.all([this.names(userId), this.invoices.listByUser(userId)]);
+    const status = new Map(invoices.map((i) => [i.id, i.status as string]));
+    return { ...n, invoiceStatus: (id) => (id ? status.get(id) : undefined) };
+  }
 
   async names(userId: string): Promise<Names> {
     const [customers, types, workers, regions] = await Promise.all([
@@ -59,7 +70,7 @@ export class FieldViews {
   }
 
   workerTask(t: FieldTask, n: Names) {
-    return { ...workerView(t), customerName: n.customer(t.customerId), taskTypeName: n.type(t.taskTypeId), workerName: n.worker(t.workerId) };
+    return { ...workerView(t, n.invoiceStatus?.(t.invoiceId)), customerName: n.customer(t.customerId), taskTypeName: n.type(t.taskTypeId), workerName: n.worker(t.workerId) };
   }
 
   async regionsWithMembers(userId: string) {

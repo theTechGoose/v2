@@ -101,7 +101,7 @@ export class FieldWorkerController {
     if (!isValidDate(d)) throw new FieldError("date must be YYYY-MM-DD");
     const rows = (await this.day.generate(w.userId, d)).all; // REQ-170: any day materializes on read
     const everyone = all === "1" && w.role === "foreman";
-    const n = await this.views.names(w.userId);
+    const n = await this.views.workerNames(w.userId);
     return rows
       .filter((t) => everyone || t.workerId === w.id)
       .sort((a, b) => (a.workerId === w.id ? 0 : 1) - (b.workerId === w.id ? 0 : 1))
@@ -139,7 +139,7 @@ export class FieldWorkerController {
     const r = addService({ subscription: s, taskTypeId, date, existing: dayTasks, newId, addedByName: w.name });
     if (!r.ok) throw new FieldError(r.reason === "invoiced" ? "visit already invoiced" : r.reason, r.reason === "no_visit" ? 404 : 409);
     await this.tasks.put(r.task);
-    const n = await this.views.names(w.userId);
+    const n = await this.views.workerNames(w.userId);
     return ctx.json(this.views.workerTask(r.task, n), r.restored ? 200 : 201);
   }
 
@@ -153,7 +153,7 @@ export class FieldWorkerController {
     t.completedAt = new Date().toISOString();
     if (typeof b.note === "string") t.note = b.note.trim() || undefined;
     await this.tasks.put(t);
-    return this.views.workerTask(t, await this.views.names(w.userId));
+    return this.views.workerTask(t, await this.views.workerNames(w.userId));
   }
 
   @Post("tasks/:id/uncomplete")
@@ -165,7 +165,7 @@ export class FieldWorkerController {
       delete t.completedAt;
       await this.tasks.put(t);
     }
-    return this.views.workerTask(t, await this.views.names(w.userId));
+    return this.views.workerTask(t, await this.views.workerNames(w.userId));
   }
 
   /** not done — never invoiced */
@@ -177,7 +177,7 @@ export class FieldWorkerController {
     delete t.completedAt;
     await this.tasks.put(t);
     await this.notices.customerCanceled(w.userId, t); // REQ-171: the customer hears, once
-    return this.views.workerTask(t, await this.views.names(w.userId));
+    return this.views.workerTask(t, await this.views.workerNames(w.userId));
   }
 
   @Post("tasks/:id/restore")
@@ -187,7 +187,7 @@ export class FieldWorkerController {
       t.status = "assigned";
       await this.tasks.put(t);
     }
-    return this.views.workerTask(t, await this.views.names(w.userId));
+    return this.views.workerTask(t, await this.views.workerNames(w.userId));
   }
 
   /** tomorrow, with a note: the original is marked, a copy holds tomorrow's slot */
@@ -205,7 +205,7 @@ export class FieldWorkerController {
     const { copy } = deferTask(t, to, String(b.note ?? "").trim() || undefined, newId);
     await this.tasks.putMany(already ? [t] : [t, copy]); // tomorrow's slot may already exist (a generated round): then it simply absorbs the work
     await this.notices.customerDeferred(w.userId, t, to); // REQ-171: the customer hears the new day, once
-    return this.views.workerTask(t, await this.views.names(w.userId));
+    return this.views.workerTask(t, await this.views.workerNames(w.userId));
   }
 
   /** the note is the visit's — on every task of that visit that is not invoiced */
@@ -219,7 +219,7 @@ export class FieldWorkerController {
     const visit = (await this.tasks.listByDay(w.userId, t.date)).filter((x) => x.subscriptionId === t.subscriptionId && !x.invoiceId);
     await this.tasks.putMany(visit.map((x) => ({ ...x, note })));
     t.note = note;
-    return this.views.workerTask(t, await this.views.names(w.userId));
+    return this.views.workerTask(t, await this.views.workerNames(w.userId));
   }
 
 }
