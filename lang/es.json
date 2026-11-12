@@ -2399,6 +2399,7 @@
   "publicSign.disclaimer": "Al escribir tu nombre (y opcionalmente dibujar tu firma), aceptas que esta es tu firma electrónica legal en el acuerdo anterior.",
   "publicSign.error": "No se pudo firmar — {err}",
   "publicSign.eyebrow": "Tu firma",
+  "publicSign.nameInvalid": "Escribe tu nombre legal completo — nombre y apellido.",
   "publicSign.nameLabel": "Escribe tu nombre legal completo",
   "publicSign.namePlaceholder": "Juan Pérez",
   "publicSign.pad.heading": "Dibuja tu firma aquí (opcional)",

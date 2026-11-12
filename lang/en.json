@@ -2399,6 +2399,7 @@
   "publicSign.disclaimer": "By typing your name (and optionally drawing your signature), you agree this is your legal e-signature on the agreement above.",
   "publicSign.error": "Couldn't sign — {err}",
   "publicSign.eyebrow": "Your signature",
+  "publicSign.nameInvalid": "Type your full legal name — first and last name.",
   "publicSign.nameLabel": "Type your full legal name",
   "publicSign.namePlaceholder": "Jane Doe",
   "publicSign.pad.heading": "Draw your signature here (optional)",

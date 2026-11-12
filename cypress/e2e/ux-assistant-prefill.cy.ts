@@ -166,7 +166,7 @@ describe("UX-32 facturar flow uses what the app already knows", () => {
         status: "sent",
         customerId,
       }).then((quoteId: string) => {
-        cy.apiAcceptQuote(quoteId, {});
+        cy.apiAcceptQuote(quoteId, { name: "Maria Cliente" }); // REQ-470: a name is required
       });
     });
   });
