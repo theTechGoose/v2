@@ -125,7 +125,7 @@ async function until(
   throw new Error(`timed out: ${what} — ${last}`);
 }
 
-Deno.test("REQ-228: the customer's demo pill covers no control of the page, on a desktop and on a phone; the stage's pill stays below the frame on a narrow staff window", (t) =>
+Deno.test("REQ-228 + REQ-291: the customer's demo pill covers no control of the page, on a desktop and on a phone; the stage's pill stays below the frame on a narrow staff window and on one line at 1440 px", (t) =>
   story(t, async ({ page, expect, http, baseUrl, folder }) => {
     await page.setViewportSize({ width: 760, height: 700 });
     const userPhone = `+1512${digits()}`;
@@ -312,6 +312,40 @@ Deno.test("REQ-228: the customer's demo pill covers no control of the page, on a
         return r.pillTop >= r.frameBottom
           ? null
           : `pill top ${r.pillTop} above frame bottom ${r.frameBottom}`;
+      });
+
+      // 4. REQ-291 (demo issue p14, cycle 1): a wide stage holds the whole pill on one line,
+      //    centred — `left:50%` used to cap its width at half the window and wrap "End demo"
+      await page.setViewportSize({ width: 1440, height: 900 });
+      await until("the stage pill is one line at 1440 px", async () => {
+        const r = await page.evaluate(() => {
+          const el = document.querySelector("[data-cy='demo-pill']");
+          if (!el) return null;
+          const b = el.getBoundingClientRect();
+          // one line: every child shares the same vertical centre (align-items:center)
+          const rows = new Set(
+            Array.from(el.children, (c) => {
+              const r = c.getBoundingClientRect();
+              return Math.round((r.top + r.bottom) / 2);
+            }),
+          );
+          return {
+            rows: rows.size,
+            w: b.width,
+            left: b.left,
+            right: innerWidth - b.right,
+          };
+        });
+        if (!r) return "no pill yet";
+        if (r.rows > 1) {
+          return `the pill's items sit on ${r.rows} lines — it wrapped`;
+        }
+        if (r.w <= 720) {
+          return `pill is only ${r.w}px wide — still half the window`;
+        }
+        return Math.abs(r.left - r.right) < 2
+          ? null
+          : `pill is off centre (left ${r.left}, right ${r.right})`;
       });
 
       // REQ-235 — End asks first

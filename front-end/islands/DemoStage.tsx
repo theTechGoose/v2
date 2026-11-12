@@ -774,10 +774,14 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
     : status === "waiting"
     ? t("demoMode.waitingFor", { name })
     : t("demoMode.connecting");
+  // REQ-291 — centred by auto margins at max-content width: `left:50%` + translate capped the
+  // shrink-to-fit width at half the window (CSS 2.1 §10.3.7), so the pill wrapped at 1440 px.
+  // flex-wrap stays for windows genuinely narrower than the pill; border-box so the
+  // viewport cap includes the padding (max-content + content-box overflowed by it).
   const pillStyle =
-    `position:fixed;left:50%;transform:translateX(-50%);bottom:${STAGE_PILL_BOTTOM}px;z-index:${
+    `position:fixed;left:0;right:0;margin:0 auto;width:max-content;bottom:${STAGE_PILL_BOTTOM}px;z-index:${
       Z + 3
-    };display:flex;gap:10px;align-items:center;flex-wrap:wrap;max-width:calc(100vw - 24px);padding:9px 14px;border-radius:14px;background:#1f3d1b;color:#fff;font:inherit;font-size:13px;box-shadow:0 4px 18px rgba(0,0,0,.35)`;
+    };display:flex;gap:10px;align-items:center;flex-wrap:wrap;box-sizing:border-box;max-width:calc(100vw - 24px);padding:9px 14px;border-radius:14px;background:#1f3d1b;color:#fff;font:inherit;font-size:13px;box-shadow:0 4px 18px rgba(0,0,0,.35)`;
   const box = `position:absolute;left:${fit.left}px;top:${
     fit.top - bannerH
   }px;width:${fit.width}px;height:${fit.height}px`;
