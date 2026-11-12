@@ -231,6 +231,23 @@ export class UserStore {
     return updated;
   }
 
+  /**
+   * REQ-227: stamp one onboarding question deferred (the wizard step's Skip) with now-ISO; the
+   * others are kept. Kept off `update` so a PUT /me body can never carry a deferral.
+   */
+  async deferOnboarding(id: string, question: string): Promise<User> {
+    const existing = await this.get(id);
+    const now = new Date().toISOString();
+    const updated: User = {
+      ...existing,
+      onboardingDeferred: { ...(existing.onboardingDeferred ?? {}), [question]: now },
+      updatedAt: now,
+    };
+    const kv = await getKv();
+    await kv.set(["user", id], updated);
+    return withHardcodedSuperAdmin(updated);
+  }
+
   /** REQ-039 (NW-52): closing an account flags it — the record AND the
    *  phone index stay, so a later sign-in on the number can offer to
    *  recover it. `GET /me/wipe` is the only hard delete. */

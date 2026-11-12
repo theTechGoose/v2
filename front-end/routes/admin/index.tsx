@@ -51,7 +51,7 @@ export default define.page(function AdminRoute(ctx) {
         <main class="main">
           <DashTopbar greetingDate={greetingDate} greetingName={greetingName} />
           <div class="content">
-            <AdminPage />
+            <AdminPage selfId={user?.id} />
             <SiteFooter lang={lang} />
           </div>
         </main>

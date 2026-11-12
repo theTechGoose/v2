@@ -9,7 +9,10 @@ import {
 } from "../lib/lang.ts";
 import { tFor } from "../lib/i18n.ts";
 import { loadProfileSnapshot } from "../lib/onboarding-gate.ts";
-import { onboardingAnswered } from "../../shared/quote-flow/onboarding-questions.ts";
+import {
+  isStaff,
+  onboardingAnswered,
+} from "../../shared/quote-flow/onboarding-questions.ts";
 import WelcomeWizard from "../islands/WelcomeWizard.tsx";
 import { MetaPixelEvent } from "../components/MetaPixel.tsx";
 import { subscribeEventFrom } from "../../shared/meta-pixel/pixel.ts";
@@ -28,7 +31,9 @@ import { registrationForRequest } from "../lib/pixel-registration.ts";
  *                               never one already answered (REQ-121)
  *
  * Skip puts a question off for now; the skip stamp (`onboardedAt`) is a
- * record, never a gate — the wizard asks again next time.
+ * record, never a gate — the wizard asks again next time. REQ-227: a step's
+ * Skip stamps the question deferred, which opens the dashboard (not this
+ * page's rule); staff (super admins) are never sent through this wizard.
  */
 export default define.page(async function Welcome(ctx) {
   const user = await loadUser(ctx.req);
@@ -43,8 +48,9 @@ export default define.page(async function Welcome(ctx) {
   const snapshot = await loadProfileSnapshot(ctx.req);
 
   // REQ-091: nothing left to ask → the dashboard. (A profile that cannot load
-  // shows the load error below, never a loop.)
-  if (snapshot && onboardingAnswered(snapshot)) {
+  // shows the load error below, never a loop.) REQ-227: staff never meet the
+  // customer wizard (nor its CompleteRegistration pixel).
+  if (snapshot && (onboardingAnswered(snapshot) || isStaff(snapshot))) {
     return new Response(null, {
       status: 302,
       headers: { Location: "/dashboard" },

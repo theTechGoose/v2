@@ -25,6 +25,15 @@ import {
 } from "@users/domain/data/payments-link/mod.ts";
 import { parseChoosePlan } from "@users/dto/plan.ts";
 import { externalRefFor } from "@users/domain/business/plan/mod.ts"; // REQ-106 — the fake's clock is per account
+import { isDeferrable } from "#quote-flow/onboarding-questions.ts"; // REQ-227
+
+/** REQ-227 — only a wizard question with a Skip can be deferred: anything else is a 400 */
+class NotDeferrable extends Error {
+  readonly status = 400;
+  constructor(question: unknown) {
+    super(`not a deferrable onboarding question: ${String(question)}`);
+  }
+}
 
 /**
  * /me — endpoints that act on the currently-authenticated User.
@@ -218,6 +227,20 @@ export class MeController {
       skipped ? "skipped setup" : "completed onboarding",
     ); // REQ-112 — the team hears it, with everything collected
     return marked;
+  }
+
+  /**
+   * POST /me/onboarding/deferred { question } — REQ-227: the wizard step's Skip. Stamps the
+   * question deferred, so the dashboard's gate lets the person through once every open question
+   * is; the next code still asks it again (REQ-091). The name cannot be deferred; anything that
+   * is not one of the wizard's questions is a 400.
+   */
+  @Post("onboarding/deferred")
+  async deferOnboarding(@Context() ctx: ExecutionContext, @Body() body: unknown) {
+    const user = await requireUser(ctx, this.sessions, this.users);
+    const question = (body as { question?: unknown } | null)?.question;
+    if (!isDeferrable(question)) throw new NotDeferrable(question);
+    return await this.users.deferOnboarding(user.id, question);
   }
 
   @Delete()

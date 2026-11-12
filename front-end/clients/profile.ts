@@ -111,6 +111,8 @@ export interface ProfileUser {
   onboardedAt?: string;
   /** Whether that first time was a skip vs. a real finish. */
   onboardingSkipped?: boolean;
+  /** REQ-227: question → ISO time its wizard step's Skip was pressed */
+  onboardingDeferred?: Partial<Record<string, string>>;
   createdAt: number;
   updatedAt: number;
 }
