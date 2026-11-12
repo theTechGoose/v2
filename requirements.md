@@ -4358,3 +4358,10 @@ Tests:
 - unit: `demo-loop/demo20b_test.ts` "REQ-621: the rules file names every category, in order, each with an action" (the rules file is executed by agents, so it gets a content test).
 - int: `demo-loop/demo20b_test.ts` "REQ-621: both testers are told to read the rules and tag every issue" runs the real harness with a fake fleet-claude.
 - e2e: the next demo cycle; its reports carry category tags.
+
+## REQ-685 — an edited change order says what changed in its new version (demo-loop cycle 5, m42) (2026-11-12)
+Raphael: "fix every issue the demo found, loop until there are none." Demo-loop cycle 5 issue **m42** — "Change order Version 2 doesn't say what changed": editing a change order publishes Version 2 (REQ-201/462) and files Version 1, but GET /change-orders/:id/public never loaded the previous version, and /co had no "what changed" line, so the customer was asked to approve Version 2 blind. REQ-304 built that comparison for quotes only (RCA: demo-loop/runs/r37f88707, analyst + skeptic UPHELD, MISSING_IN_FLOW). Now, for Version 2+, the public payload carries `changesFromPrevious` — `{description: {from, to}, deltaAmountCents: {from, to}}`, only the fields that moved — and /co renders it under the headline with `public.doc.whatChanged` (en + es): "What changed in Version 2: Amount +$850.00 → +$1,000.00 · Description: “…” → “…”".
+**Tests:**
+- unit: `jest/unit/co-what-changed.test.ts` (`changeOrderChanges`, `changeOrderChangeLine` EN/ES, /co renders the key)
+- integration: `backend/src/paperwork/entrypoints/public-controller/co-what-changed.int.test.ts` (owner PUT edit → public payload at Version 1 / 2 / 3)
+- e2e: `e2e/co-what-changed/co-what-changed.e2e.test.ts` (customer opens the edited /co in EN and ES)

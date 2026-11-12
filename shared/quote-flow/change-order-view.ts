@@ -61,3 +61,84 @@ export function changeOrderPreview(
   if (payload.status !== "pending") return false;
   return !hasSignOverride(search);
 }
+
+/** REQ-685 (demo-loop cycle 5, m42): what a change order's version changed
+ *  against the filed one before it — only the fields that moved. */
+export interface ChangeOrderChanges {
+  description?: { from: string; to: string };
+  deltaAmountCents?: { from: number; to: number };
+}
+
+interface ChangeOrderContent {
+  description?: unknown;
+  deltaAmountCents?: unknown;
+}
+
+/** REQ-685: compare the previous version's content with the live order;
+ *  undefined when there is no previous version or nothing a customer reads
+ *  moved. */
+export function changeOrderChanges(
+  before: ChangeOrderContent | null | undefined,
+  after: ChangeOrderContent | null | undefined,
+): ChangeOrderChanges | undefined {
+  if (!before || !after) return undefined;
+  const text = (v: unknown) => typeof v === "string" ? v.trim() : "";
+  const cents = (v: unknown) => typeof v === "number" ? Math.round(v) : 0;
+  const out: ChangeOrderChanges = {};
+  if (text(before.description) !== text(after.description)) {
+    out.description = {
+      from: text(before.description),
+      to: text(after.description),
+    };
+  }
+  if (cents(before.deltaAmountCents) !== cents(after.deltaAmountCents)) {
+    out.deltaAmountCents = {
+      from: cents(before.deltaAmountCents),
+      to: cents(after.deltaAmountCents),
+    };
+  }
+  return Object.keys(out).length ? out : undefined;
+}
+
+const CO_CHANGE_WORDS = {
+  en: { amount: "Amount", description: "Description" },
+  es: { amount: "Monto", description: "Descripción" },
+} as const;
+
+function signedUsd(cents: number): string {
+  const abs = (Math.abs(cents) / 100).toLocaleString("en-US", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+  return `${cents < 0 ? "−" : "+"}$${abs}`;
+}
+
+function clipPhrase(s: string): string {
+  const one = s.replace(/\s+/g, " ").trim();
+  return one.length > 40 ? `${one.slice(0, 37).trimEnd()}…` : one;
+}
+
+/** REQ-685: "Amount +$1,600.00 → +$1,800.00 · Description: “a” → “b”" —
+ *  the {changes} of public.doc.whatChanged on /co; "" when nothing moved. */
+export function changeOrderChangeLine(
+  c: ChangeOrderChanges,
+  lang: "en" | "es" = "en",
+): string {
+  const w = CO_CHANGE_WORDS[lang === "es" ? "es" : "en"];
+  const parts: string[] = [];
+  if (c.deltaAmountCents) {
+    parts.push(
+      `${w.amount} ${signedUsd(c.deltaAmountCents.from)} → ${
+        signedUsd(c.deltaAmountCents.to)
+      }`,
+    );
+  }
+  if (c.description) {
+    parts.push(
+      `${w.description}: “${clipPhrase(c.description.from)}” → “${
+        clipPhrase(c.description.to)
+      }”`,
+    );
+  }
+  return parts.join(" · ");
+}
