@@ -16,7 +16,7 @@
  *   {n} — a social-proof counter, localized by `formatSocialProof`; the
  *         element names which one via `data-count="<key>"`.
  *   {p} — the from-price in dollars (LANDING_OFFER.priceFromCents).
- *   {d} — the free-trial length in days (LANDING_OFFER.trialDays).
+ * There is no trial placeholder: billing has no trial (REQ-505).
  */
 
 import { PUBLIC_PLANS } from "../../shared/quote-flow/pricing-plans.ts";
@@ -152,7 +152,9 @@ export const LANDING_DICT: Record<LandingLang, Record<string, string>> = {
       "Your whole back office — quotes, agreements, invoices, follow-ups. Free to start; one flat monthly price for the full platform. No setup fees, cancel anytime.",
     "price.plans.cta": "Get started",
     "price.plans.ctaCustom": "Talk to us",
-    "price.plans.trial": "Try Monster free for {d} days. Cancel anytime.",
+    // REQ-505 (demo cycle 3, m5): what billing does — no trial.
+    "price.plans.terms":
+      "Monster Free costs nothing, no card needed. Paid plans bill monthly — cancel anytime.",
     "price.permo": "/month",
     "price.t1.name": "Monster Free",
     "price.t1.blurb": "Unlimited invoices. Up to five quotes and contracts a month. Spanish and English output. Free forever.", // REQ-109
@@ -322,8 +324,8 @@ export const LANDING_DICT: Record<LandingLang, Record<string, string>> = {
       "Toda tu oficina — cotizaciones, acuerdos, facturas, seguimientos. Empieza gratis; la plataforma completa por un precio fijo al mes. Sin cuotas iniciales, cancela cuando quieras.",
     "price.plans.cta": "Empezar",
     "price.plans.ctaCustom": "Hablemos",
-    "price.plans.trial":
-      "Prueba Monster gratis por {d} días. Cancela cuando quieras.",
+    "price.plans.terms":
+      "Monster Free no cuesta nada, sin tarjeta. Los planes de pago se cobran cada mes — cancela cuando quieras.",
     "price.permo": "/mes",
     "price.t1.name": "Monster Free",
     "price.t1.blurb":

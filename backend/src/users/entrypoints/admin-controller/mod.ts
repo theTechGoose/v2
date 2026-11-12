@@ -247,7 +247,7 @@ export class AdminController {
 
   /**
    * GET /admin/landing-offers — the single source of truth for the marketing
-   * offer both landing pages render (trial length, from-price, the "unlimited"
+   * offer both landing pages render (from-price, the "unlimited"
    * tier, social-proof counters). Read by the super-admin "configure landing
    * offers" section (P-08). Any authenticated session may read it; the values
    * live in shared/quote-flow/landing-offers.ts so the pages and this endpoint
@@ -257,7 +257,6 @@ export class AdminController {
   async landingOffers(@Context() ctx: ExecutionContext) {
     await requireUser(ctx, this.sessions, this.users);
     return {
-      trialDays: LANDING_OFFER.trialDays,
       priceFromCents: LANDING_OFFER.priceFromCents,
       unlimitedTier: LANDING_OFFER.unlimitedTier,
       socialProof: {

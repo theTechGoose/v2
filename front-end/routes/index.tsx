@@ -57,14 +57,13 @@ const TIER_PRICE: Record<string, string> = Object.fromEntries(
 const PRICE_FROM = String(Math.round(LANDING_OFFER.priceFromCents / 100));
 
 /** Offer numbers the client script needs, SSR-injected so neither the counter
- *  targets nor the price/trial claims are ever re-typed in the static script
+ *  targets nor the from-price are ever re-typed in the static script
  *  (P-08). `__PM_DOCS_SENT` drives the animated documents counter; `__PM_OFFER`
- *  fills the dictionary's {n}/{p}/{d} placeholders on a language switch. */
+ *  fills the dictionary's {n}/{p} placeholders on a language switch. */
 const OFFER_BOOT =
   `window.__PM_DOCS_SENT=${LANDING_OFFER.socialProof.docsSent};` +
   `window.__PM_OFFER=${
     JSON.stringify({
-      trialDays: LANDING_OFFER.trialDays,
       priceFrom: PRICE_FROM,
       counts: {
         contractors: {
@@ -239,11 +238,10 @@ export default define.page(async function Landing(ctx) {
   const rotorWord = (en: string, esWord: string) =>
     lang === "es" ? esRotor(esWord) : en;
   /** Dictionary lookup + offer-placeholder fill: {n} social-proof counter,
-   *  {p} from-price, {d} free-trial days — all from LANDING_OFFER. */
+   *  {p} from-price — both from LANDING_OFFER. */
   const t = (key: string, n?: string) =>
     (dict[key] ?? LANDING_DICT.en[key] ?? "")
       .replace(/\{p\}/g, PRICE_FROM)
-      .replace(/\{d\}/g, String(LANDING_OFFER.trialDays))
       .replace(/\{n\}/g, n ?? "");
 
   return (
@@ -273,8 +271,8 @@ export default define.page(async function Landing(ctx) {
         )}
         <link rel="stylesheet" href={asset("/landing.css")} />
         {
-          /* Single-source the offer numbers (P-08): counters, from-price and
-            trial length are SSR-injected from LANDING_OFFER instead of being
+          /* Single-source the offer numbers (P-08): counters and from-price
+            are SSR-injected from LANDING_OFFER instead of being
             magic numbers in the static script. Runs before the deferred ones. */
         }
         <script
@@ -962,8 +960,8 @@ export default define.page(async function Landing(ctx) {
               dangerouslySetInnerHTML={{ __html: t("price.plans.h2html") }}
             />
             <p data-i18n="price.plans.lead">{t("price.plans.lead")}</p>
-            {/* The one free-trial claim, same length /landing advertises. */}
-            <p data-i18n="price.plans.trial">{t("price.plans.trial")}</p>
+            {/* What billing does — no trial to promise (REQ-505, m5). */}
+            <p data-i18n="price.plans.terms">{t("price.plans.terms")}</p>
           </div>
 
           {

@@ -13,17 +13,15 @@
   const I18N = globalThis.__PM_LANDING_DICT || { en: {}, es: {} };
 
   /* Offer numbers (P-08), SSR-injected from shared/quote-flow/landing-offers
-     so no counter, price or trial length is ever re-typed in this file. */
+     so no counter or price is ever re-typed in this file. */
   const OFFER = globalThis.__PM_OFFER || {};
 
   /* Fill a dictionary string's offer placeholders: {n} the social-proof
-     counter the element names via data-count, {p} the from-price, {d} the
-     free-trial length. Mirrors the `t()` helper in routes/index.tsx. */
+     counter the element names via data-count, {p} the from-price. Mirrors the `t()` helper in routes/index.tsx. */
   function fillOffer(text, el, lang) {
     if (text.indexOf("{") < 0) return text;
     const out = text
-      .replace(/\{p\}/g, OFFER.priceFrom == null ? "" : OFFER.priceFrom)
-      .replace(/\{d\}/g, OFFER.trialDays == null ? "" : OFFER.trialDays);
+      .replace(/\{p\}/g, OFFER.priceFrom == null ? "" : OFFER.priceFrom);
     const name = el && el.getAttribute("data-count");
     const counts = (OFFER.counts || {})[name] || {};
     return out.replace(/\{n\}/g, counts[lang] || "");

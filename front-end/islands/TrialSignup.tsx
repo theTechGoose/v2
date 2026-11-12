@@ -7,7 +7,7 @@ import { tFor } from "../lib/i18n.ts";
 import { stashDevCode } from "../lib/dev-code.ts";
 
 /**
- * TrialSignup — the "Start My Free Trial" phone form on the /landing promo
+ * TrialSignup — the "Start Free" phone form on the /landing promo
  * page. Reuses the exact OTP flow as the main landing/login: POST the number
  * to /auth/send-otp, then hand off to /verify for the 6-digit step.
  */
