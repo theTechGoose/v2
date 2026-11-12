@@ -31,6 +31,10 @@ export const MIRROR_SRCDOC =
   `script-src 'none'; frame-src 'none'; child-src 'none'; worker-src 'none'; ` +
   `object-src 'none'; media-src 'none'; connect-src 'none'; manifest-src 'none'; ` +
   `form-action 'none'; base-uri 'none'">` +
+  // REQ-290 (demo m17): a backdrop-filter mirrored into this CSS-scaled frame paints
+  // reflected edge samples (a mirrored "ghost" of the page under an overlay); the stage is
+  // non-interactive, so the blur is cosmetic and nothing in it may use one.
+  `<style>* { backdrop-filter: none !important; -webkit-backdrop-filter: none !important }</style>` +
   `</head><body></body></html>`;
 
 export interface ReplayerOptions {

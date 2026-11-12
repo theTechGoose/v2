@@ -14,7 +14,7 @@ const PINK_DARK = "#d94e4e";
  * Entrance choreography (timing tuned to read as a single beat, not a slow
  * staged reveal — total intro ~700ms before the bubble fully lands):
  *
- *   t=0      — backdrop starts fading in (opacity + slight backdrop blur)
+ *   t=0      — backdrop starts fading in (opacity; no backdrop blur, REQ-290)
  *   t=120ms  — spotlight ring spring-pops to 1.0 from scale(0.6)
  *   t=240ms  — two sonar ripples emit outward from the button
  *   t=320ms  — speech bubble slides in from the right + scales 0.85→1
@@ -173,11 +173,14 @@ export default function AssistantCoachmark(
     <div
       onClick={dismiss}
       onPointerDown={dismiss}
-      style={`position:fixed;inset:0;z-index:9999;pointer-events:none;transition:opacity 320ms ease-out, backdrop-filter 320ms ease-out;opacity:${
+      // REQ-290 (demo m17 + p12): no backdrop-filter here — it blurs the
+      // whole box regardless of the SVG hole (the spotlighted item went
+      // blurry) and, mirrored into the CSS-scaled demo stage, painted the
+      // checklist back as mirrored ghost text. The dark SVG fill is the
+      // whole dimming.
+      style={`position:fixed;inset:0;z-index:9999;pointer-events:none;transition:opacity 320ms ease-out;opacity:${
         fadingOut ? 0 : 1
-      };backdrop-filter:${
-        fadingOut ? "blur(0px)" : "blur(2px)"
-      };-webkit-backdrop-filter:${fadingOut ? "blur(0px)" : "blur(2px)"}`}
+      }`}
       aria-label={tFor(lang, "assistantCoachmark.ariaLabel")}
       role="dialog"
     >
