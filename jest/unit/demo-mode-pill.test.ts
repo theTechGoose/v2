@@ -170,3 +170,43 @@ describe("REQ-228 — the islands use it", () => {
     expect(s).toMatch(/title=\{t\("demoMode\.pointOnlyHint"\)\}/);
   });
 });
+
+/**
+ * REQ-291 — demo issue p14 (cycle 1): the stage pill wrapped onto two lines at 1440 px.
+ * A fixed box with `left:50%` and no width gets CSS shrink-to-fit's available width capped at
+ * half the viewport (CSS 2.1 §10.3.7), so content wider than 720 px wrapped even though
+ * `max-width:calc(100vw - 24px)` allowed far more. Centre with `left:0;right:0;margin:0 auto;
+ * width:max-content` instead: the box is as wide as its content, up to the real max-width.
+ */
+describe("REQ-291 — the stage pill is one line as long as the window holds it", () => {
+  const pillStyle = () => {
+    const s = read("front-end/islands/DemoStage.tsx");
+    const m = s.match(/const pillStyle =\s*`([^`]*)`/);
+    if (!m) throw new Error("DemoStage.tsx has no pillStyle template");
+    return m[1];
+  };
+
+  test("the pill is not centred by left:50% + translate, which halves its available width", () => {
+    const o = pillStyle();
+    expect(o).not.toMatch(/left:50%/);
+    expect(o).not.toMatch(/translateX\(-50%\)/);
+  });
+
+  test("the pill is centred by auto margins at max-content width, capped by the viewport", () => {
+    const o = pillStyle();
+    expect(o).toMatch(/position:fixed/);
+    expect(o).toMatch(/left:0;right:0;margin:0 auto/);
+    expect(o).toMatch(/width:max-content/);
+    expect(o).toMatch(/max-width:calc\(100vw - 24px\)/);
+    // genuinely narrow windows still wrap instead of overflowing — and the cap includes the
+    // padding, or max-content + content-box pushes the border box past the viewport
+    expect(o).toMatch(/flex-wrap:wrap/);
+    expect(o).toMatch(/box-sizing:border-box/);
+  });
+
+  test("REQ-228's band measurement still drives the frame", () => {
+    const s = read("front-end/islands/DemoStage.tsx");
+    expect(s).toMatch(/ref=\{pillRef\}/);
+    expect(s).toMatch(/stageInsetBottom\(pillH\)/);
+  });
+});
