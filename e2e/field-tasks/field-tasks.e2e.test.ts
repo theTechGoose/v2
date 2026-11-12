@@ -253,7 +253,9 @@ Deno.test("REQ-143: worker → subscription on an existing customer → staffed 
     await expect.see("Ana Torres");
     await expect.notSee("$65");
     await page.locator("[data-cy='w-check']").first().click();
-    await expect.see("1 of 1 services done", { timeout: 15_000 });
+    // REQ-527 (demo m55, cycle 3): one noun — the day summary counts tasks
+    await expect.see("1 of 1 tasks done", { timeout: 15_000 });
+    await expect.notSee("services done");
 
     // 6. the batch, on /field/batches — one draft per customer, through the existing invoices
     const [name, value] = auth.cookie.split("=");
