@@ -11,6 +11,7 @@ import { UserStore } from "@users/domain/data/user-store/mod.ts";
 import { BusinessIdentityStore } from "@profile/domain/data/business-identity-store/mod.ts";
 import { EmailService } from "@communication/domain/data/email-service/mod.ts";
 import { SmsService } from "@users/domain/data/sms/mod.ts";
+import { dispatchCustomerSms } from "@paperwork/domain/business/customer-sms/mod.ts";
 import { type Lang, t } from "@core/i18n/mod.ts";
 import { SITE_ORIGIN } from "#quote-flow/site-meta.ts";
 
@@ -162,7 +163,11 @@ export class SendChangeOrderAlert {
     }
     if (contact.phoneNumber) {
       try {
-        const res = await this.sms.send({
+        // REQ-588 (demo-loop cycle 4, M29): the ONE guarded customer-text
+        // dispatch (REQ-403) — a missing/invalid/555 number never reaches the
+        // provider, and the failure reason comes back worded in the
+        // contractor's UI language instead of a raw "sms.fictionalNumber" key.
+        const res = await dispatchCustomerSms(this.sms, {
           to: contact.phoneNumber,
           body: `${refCo}: ${
             t(coLang, "changeOrderRequest.sms.body", {
@@ -171,6 +176,7 @@ export class SendChangeOrderAlert {
               url,
             })
           }`,
+          uiLang: cxLang,
         });
         console.log(
           `[send-change-order-alert] co ${co.id} customer-sms → ${contact.phoneNumber}: ok=${res.ok}${

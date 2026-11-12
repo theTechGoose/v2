@@ -101,3 +101,23 @@ Deno.test("REQ-456 M25 changeOrderSentLine: a developer 'no recipient: …' reas
   });
   assertStringIncludes(line, "text failed (no recipient)");
 });
+
+/** REQ-588 (demo-loop cycle 4, M29): a reason that is a lang key (SmsService
+ *  answers "sms.fictionalNumber") is worded, never shown raw. */
+Deno.test("REQ-588 M29 changeOrderSentLine: an sms.* reason key is translated, not shown raw", () => {
+  const en = changeOrderSentLine("en", {
+    number: "CO-001",
+    name: "Carol Henderson",
+    smsFailureReason: "sms.fictionalNumber",
+  });
+  assert(!en.includes("sms.fictionalNumber"), en);
+  assertStringIncludes(en, "reserved test number");
+  const es = changeOrderSentLine("es", {
+    number: "CO-001",
+    name: "Carol Henderson",
+    emailedTo: "carol@example.com",
+    smsFailureReason: "sms.invalidNumber",
+  });
+  assert(!es.includes("sms.invalidNumber"), es);
+  assertStringIncludes(es, "no es un teléfono válido");
+});
