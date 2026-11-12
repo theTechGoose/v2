@@ -121,7 +121,8 @@ Deno.test("send-paperwork-email integration: dispatches a quote to the linked cu
   assertEquals(sent.length, 1);
   // QuoteStore now auto-derives a ≤3-word jobName from the summary
   // (roadmap p.8), and the subject renders the jobName.
-  assertStringIncludes(sent[0].subject, "Roof Tear Off");
+  // REQ-337: an intra-word hyphen keeps its compound whole ("Tear-off")
+  assertStringIncludes(sent[0].subject, "Roof Tear-off");
   assertStringIncludes(sent[0].htmlBody, "Demo");
   // The quote IS the agreement: the one email carries the review-and-accept
   // CTA pointing at the public /q page.
