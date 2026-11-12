@@ -148,11 +148,6 @@ export default function QuoteCard(
     >
       <div class="qcard__mood">
         <div class="qcard__numeral">{String(idx + 1).padStart(2, "0")}</div>
-        {q.number && (
-          /* REQ-313 (demo m48): the quote's own number — the big numeral
-             behind it is only the card's position in the track. */
-          <div class="qcard__number">{q.number}</div>
-        )}
         <div class="qcard__status">
           <span class="qcard__status-dot" />
           {q.isSample
@@ -167,7 +162,19 @@ export default function QuoteCard(
       </div>
       <div class="qcard__av">{q.initials}</div>
       <div class="qcard__body">
-        <div class="qcard__client-name">{q.client}</div>
+        <div class="qcard__client-name">
+          {q.client}
+          {q.number && (
+            /* REQ-313 (demo m48): the quote's own number — the big numeral
+               is only the card's position. REQ-429 (cycle 3, p8-pair3-b): it
+               rides in the client line ("client · Q-001", as the invoice and
+               payment cards do), not in the mood strip under the avatar. */
+            <>
+              {" · "}
+              <span class="qcard__number">{q.number}</span>
+            </>
+          )}
+        </div>
         <h3 class="qcard__title">{q.title}</h3>
         <p class="qcard__story">{story}</p>
       </div>
