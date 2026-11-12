@@ -14,6 +14,7 @@ import CodeInput from "../islands/CodeInput.tsx";
 import { MetaPixelEvent } from "../components/MetaPixel.tsx";
 import { leadEvent } from "../../shared/meta-pixel/pixel.ts";
 import { verifyEditHref } from "../lib/verify-edit-href.ts";
+import { Icon } from "../components/ui/Icon.tsx";
 
 function formatPhoneDisplay(e164: string): string {
   const digits = e164.replace(/\D/g, "").slice(-10);
@@ -83,7 +84,9 @@ export default define.page(async function Verify(ctx) {
           </a>
           <ol class="pm-steps" aria-label={tFor(lang, "verify.steps.aria")}>
             <li class="pm-steps__item pm-steps__item--done">
-              <span class="pm-steps__dot">✓</span>
+              <span class="pm-steps__dot">
+                <Icon name="check" size={12} stroke-width={3} />
+              </span>
               <span class="pm-steps__label">{s["cta.steps.phone"]}</span>
             </li>
             <span class="pm-steps__bar pm-steps__bar--done" aria-hidden="true">

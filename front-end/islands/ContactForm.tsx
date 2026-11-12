@@ -1,6 +1,7 @@
 import { useState } from "preact/hooks";
 import { landingClient } from "../clients/landing.ts";
 import { ApiError } from "../lib/api.ts";
+import { Icon } from "../components/ui/Icon.tsx";
 
 /**
  * ContactForm — the public inquiry form used by /contact. Posts
@@ -100,7 +101,9 @@ export default function ContactForm(
         role="status"
         style="background:var(--mint-100,#eaf5e6);border:1px solid var(--brand-green,#519843);border-radius:14px;padding:24px;text-align:center;color:var(--fg)"
       >
-        <div style="font-size:32px;line-height:1">✓</div>
+        <div style="line-height:1;color:var(--brand-green,#519843)">
+          <Icon name="check" size={32} stroke-width={2.5} />
+        </div>
         <p style="margin:10px 0 0;font-size:17px;font-weight:700">
           {labels.success}
         </p>

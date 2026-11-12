@@ -1,5 +1,6 @@
 import { useState } from "preact/hooks";
 import { tFor } from "../lib/i18n.ts";
+import { Icon } from "../components/ui/Icon.tsx";
 
 interface Props {
   quoteId: string;
@@ -76,6 +77,12 @@ export default function PublicQuoteActions(
       {resolved === null && mode === "actions" && askSent && (
         <div style="margin-top:18px;background:rgba(20,72,82,0.06);border:1px solid rgba(20,72,82,0.18);border-radius:14px;padding:18px 20px;text-align:center">
           <div style="font-weight:800;color:#144852;font-size:16px">
+            <Icon
+              name="check"
+              size={16}
+              stroke-width={3}
+              style="vertical-align:-2px;margin-right:6px"
+            />
             {tFor(lang, "publicQuoteActions.askForm.sentTitle")}
           </div>
           <div style="margin-top:6px;color:#6b7a7e;font-size:13px">

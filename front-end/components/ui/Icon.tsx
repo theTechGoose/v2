@@ -1,6 +1,11 @@
 /**
  * Minimal icon set. Each icon is a 24×24 stroke-only SVG.
  * Add more as the UI grows; keep them dependency-free.
+ *
+ * REQ-366 (demo setup-m4): every UI icon comes from here — never a literal
+ * Dingbat character (✓ ✎ ✕ …). The app's web fonts carry no Dingbats, so
+ * those fell back per element/frame and rendered as tofu boxes.
+ * lib/ui-glyph-icons.test.tsx guards it.
  */
 import type { JSX } from "preact";
 
@@ -18,6 +23,8 @@ type Name =
   | "mic"
   | "image"
   | "check"
+  | "pencil"
+  | "x"
   | "chevron-right"
   | "menu"
   | "logo";
@@ -81,6 +88,8 @@ const PATHS: Record<Name, JSX.Element> = {
     </>
   ),
   check: <path d="M5 12l5 5L20 6" />,
+  pencil: <path d="M4 20l1-4L16 5l3 3L8 19zM14 7l3 3" />,
+  x: <path d="M6 6l12 12M18 6L6 18" />,
   "chevron-right": <path d="M9 6l6 6-6 6" />,
   menu: <path d="M3 6h18M3 12h18M3 18h18" />,
   logo: <path d="M4 18h16l-2-9-3 3-3-6-3 6-3-3z" />,
@@ -98,9 +107,18 @@ export function Icon({ name, size = 18, class: cls = "", ...rest }: Props) {
       stroke-linecap="round"
       stroke-linejoin="round"
       class={cls}
+      data-icon={name}
+      aria-hidden="true"
       {...rest}
     >
       {PATHS[name]}
     </svg>
   );
 }
+
+/**
+ * The check icon as markup, for the rare imperative DOM update that cannot
+ * render JSX (CodeInput's step dots). Same path as `<Icon name="check">`.
+ */
+export const CHECK_SVG_MARKUP =
+  '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" data-icon="check" aria-hidden="true"><path d="M5 12l5 5L20 6"/></svg>';
