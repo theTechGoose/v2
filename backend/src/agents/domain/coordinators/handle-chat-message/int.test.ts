@@ -20,6 +20,8 @@ import { ConversationStore as CommConversationStore } from "@communication/domai
 import { MessageStore as CommMessageStore } from "@communication/domain/data/message-store/mod.ts";
 import { type DomainEvent, EventBus } from "@core/business/events/mod.ts";
 import { getKv, resetKv } from "@core/data/kv/mod.ts";
+import { LockQuote } from "@agents/domain/coordinators/lock-quote/mod.ts";
+import { reviewJobDetails } from "../../../../../../shared/quote-flow/review-job-details.ts";
 
 /**
  * Seed a fully-onboarded contractor profile for `userId` so the phase-1
@@ -594,5 +596,58 @@ Deno.test("REQ-008 NW-47 handle-chat-message integration: a first turn that is t
   assertEquals(after.name ?? undefined, undefined);
   const ident = await identity.get(me!.id);
   assertEquals(ident?.businessName ?? undefined, undefined);
+  await resetKv();
+});
+
+Deno.test("REQ-237 M17 handle-chat-message integration: a chat-drafted quote, locked, gives the review card its line item as job details", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const { conversations, messages, llm, quotes, bus, emailer, users, flow } =
+    fresh();
+  await seedOnboarded("u-1");
+  llm.setScript([{
+    text: "Aquí está tu cotización.",
+    action: {
+      type: "create_quote",
+      payload: {
+        summary: "Pintura de baño",
+        lineItems: [{ description: "Pintura de baño", amountCents: 45_000 }],
+      },
+    },
+  }]);
+  const conv = await conversations.create({ userId: "u-1" });
+  const drafted = await flow.run({
+    userId: "u-1",
+    conversationId: conv.id,
+    content: "pintar un baño, $450",
+  });
+  const quoteId = (drafted.newMessages[2].payload as { quoteId: string })
+    .quoteId;
+
+  // "Lock it in" — the card's button hits the lock-quote coordinator.
+  const locked = await new LockQuote(
+    conversations,
+    messages,
+    quotes,
+    bus,
+    emailer,
+    users,
+  ).run({ userId: "u-1", conversationId: conv.id, quoteId });
+  const lockCard = locked.newMessages.find((m) => m.kind === "action_card")!;
+  const lockPayload = lockCard.payload as {
+    description?: string;
+    lineItems?: Array<{ description: string; amountCents: number }>;
+  };
+
+  // The review card's inputs, exactly as AsstChat assembles them.
+  const stored = await quotes.getOwned(quoteId, "u-1");
+  const rows = reviewJobDetails({
+    previewLang: "es",
+    descriptionByLang: stored.descriptionByLang,
+    lockedDescription: lockPayload.description,
+    description: stored.description,
+    lineItems: lockPayload.lineItems,
+  });
+  assertEquals(rows, [{ text: "Pintura de baño", amountCents: 45_000 }]);
   await resetKv();
 });
