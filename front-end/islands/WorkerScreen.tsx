@@ -21,6 +21,7 @@ import { ApiError } from "../lib/api.ts";
 import { I, ICN } from "../lib/dash-icons.tsx";
 import {
   fmtDay,
+  rememberWorkerLangPick,
   todayIso,
   WORKER_OFFICE_FALLBACK,
   workerDayNav,
@@ -175,6 +176,7 @@ export default function WorkerScreen(
     office,
     officeHref = WORKER_OFFICE_FALLBACK,
     langChosen = false,
+    langPicked = false,
   }: {
     initialLang: Lang;
     initialDate?: string;
@@ -184,6 +186,8 @@ export default function WorkerScreen(
     officeHref?: string;
     /** REQ-285 — the address chose the language (?lang=); the worker's own does not override it */
     langChosen?: boolean;
+    /** REQ-494 (M43) — the EN/ES switch picked it on an earlier visit (pm_worker_lang) */
+    langPicked?: boolean;
   },
 ) {
   const lang = langSignal.value;
@@ -221,7 +225,7 @@ export default function WorkerScreen(
   const dateRef = useRef(date);
   dateRef.current = date;
   /** REQ-285 — the person chose the language (the switch, or ?lang=): keep it over the worker's */
-  const langChosenRef = useRef(langChosen);
+  const langChosenRef = useRef(langChosen || !!langPicked);
   /** REQ-416 — the page's own language (opened in, or picked on the switch); Salir returns to it */
   const pageLangRef = useRef<Lang>(initialLang);
 
@@ -338,6 +342,7 @@ export default function WorkerScreen(
     act("logout", async () => {
       await workerClient.logout();
       langChosenRef.current = langChosen; // the next worker's language applies
+      rememberWorkerLangPick(null); // REQ-494 — and on the next visit too
       // REQ-416 — the sign-in form is back in the page's own language
       setLang(pageLangRef.current, { persist: false });
       setMe(null);
@@ -778,6 +783,7 @@ export default function WorkerScreen(
                 pageLangRef.current = c;
                 langChosenRef.current = true;
                 setLang(c);
+                rememberWorkerLangPick(c); // REQ-494 — survives re-entry
               }}
             >
               {c.toUpperCase()}

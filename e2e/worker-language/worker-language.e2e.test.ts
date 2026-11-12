@@ -175,3 +175,89 @@ Deno.test("REQ-416: an English browser, a Spanish worker signs in, Salir → the
     const ls = await page.evaluate(() => localStorage.getItem("pm:lang"));
     expect(ls !== "es", `pm:lang was not overwritten (got ${ls})`);
   }));
+
+/**
+ * REQ-494 — demo-loop cycle 3, issue M43 ("Worker view forgets English"): an
+ * English owner signs a Spanish worker in, taps EN, leaves, and re-opens
+ * /worker the way the sidebar does (no ?lang=). The pick is remembered: the
+ * screen stays English through the signed-in load and the 5 s refresh.
+ */
+Deno.test("REQ-494: EN picked on /worker survives re-opening /worker without ?lang= while the Spanish worker is signed in", (t) =>
+  story(t, async ({ page, expect, http, baseUrl }) => {
+    const r = await http("/api/auth/verify", {
+      method: "POST",
+      headers: JSON_HEADERS,
+      body: JSON.stringify({ phoneNumber: `+1512${digits()}`, code: "000000" }),
+    });
+    let body = await r.json();
+    let cookie = (r.headers.get("set-cookie") ?? "").split(";")[0];
+    if (body.recoverable === true) {
+      const f = await http("/api/auth/start-fresh", {
+        method: "POST",
+        headers: JSON_HEADERS,
+        body: JSON.stringify({ token: body.recoveryToken }),
+      });
+      body = await f.json();
+      cookie = (f.headers.get("set-cookie") ?? "").split(";")[0];
+    }
+    expect(!!cookie, "the owner has a session");
+    const auth = { ...JSON_HEADERS, cookie };
+    const me = await http("/api/me", {
+      method: "PUT",
+      headers: auth,
+      body: JSON.stringify({ language: "en", name: "Lang Pick Story" }),
+    });
+    await me.body?.cancel();
+
+    const cell = `843${digits()}`;
+    const w = await http("/api/field/workers", {
+      method: "POST",
+      headers: auth,
+      body: JSON.stringify({
+        name: "Luis",
+        phoneNumber: cell,
+        pin: "1234",
+        language: "es",
+      }),
+    });
+    expect(
+      w.status === 201 || w.status === 200,
+      `worker created (${w.status})`,
+    );
+    await w.body?.cancel();
+
+    const hosts = new Set([
+      new URL(baseUrl).hostname,
+      "localhost",
+      "127.0.0.1",
+    ]);
+    await page.context().addCookies(
+      [...hosts].map((domain) => ({
+        name: "pm_lang",
+        value: "en",
+        domain,
+        path: "/",
+      })),
+    );
+    await page.goto("/worker");
+    await page.locator("[data-cy='w-cell']").fill(cell);
+    await page.locator("[data-cy='w-pin']").fill("1234");
+    await page.locator("[data-cy='w-login']").click();
+    await page.getByText("Hola, Luis").waitFor({ timeout: 15_000 });
+
+    // the person picks English
+    await page.locator(".lang button", { hasText: "EN" }).click();
+    await page.getByText("Hey, Luis").waitFor({ timeout: 5_000 });
+
+    // away and back the way the sidebar links it: /worker, no ?lang=
+    await page.goto("/");
+    await page.goto("/worker");
+    await page.getByText("Hey, Luis").waitFor({ timeout: 15_000 });
+    await page.waitForTimeout(6_000); // the signed-in load + one 5 s refresh
+    await expect.see("Hey, Luis");
+    await expect.see("My tasks");
+    expect(
+      await page.evaluate(() => document.documentElement.lang) === "en",
+      "<html lang> is en",
+    );
+  }));

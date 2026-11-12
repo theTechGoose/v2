@@ -9,22 +9,30 @@
  * REQ-417 (demo m44) — that link goes back to the office page the owner came
  * from: `?from=` or a same-origin Referer, allow-listed (workerOfficeHref);
  * /field/tasks when neither says.
+ * REQ-494 (demo M43) — an EN/ES pick made on the switch is remembered in its
+ * own pm_worker_lang cookie; re-opening /worker without ?lang= keeps it.
  */
 import { asset, Head } from "fresh/runtime";
 import { define } from "../../utils.ts";
 import DocTitle from "../../components/DocTitle.tsx";
-import { type Lang, tFor } from "../../lib/i18n.ts";
+import { tFor } from "../../lib/i18n.ts";
 import { langFromCookie } from "../../lib/lang.ts";
 import { loadUser } from "../../lib/auth.ts";
-import { workerOfficeHref } from "../../lib/field.ts";
+import {
+  workerLangPickFromCookie,
+  workerOfficeHref,
+  workerRouteLang,
+} from "../../lib/field.ts";
 import WorkerScreen from "../../islands/WorkerScreen.tsx";
 
 export default define.page(async function WorkerRoute(ctx) {
   const url = new URL(ctx.req.url);
-  const qLang = url.searchParams.get("lang");
-  const lang: Lang = qLang === "en" || qLang === "es"
-    ? qLang
-    : langFromCookie(ctx.req.headers.get("cookie")) ?? "es";
+  const cookies = ctx.req.headers.get("cookie");
+  const { lang, chosen, picked } = workerRouteLang({
+    query: url.searchParams.get("lang"),
+    picked: workerLangPickFromCookie(cookies),
+    stored: langFromCookie(cookies),
+  });
   ctx.state.lang = lang;
   const date = url.searchParams.get("date") ?? undefined;
   const office = !!(await loadUser(ctx.req));
@@ -48,7 +56,8 @@ export default define.page(async function WorkerRoute(ctx) {
       </Head>
       <WorkerScreen
         initialLang={lang}
-        langChosen={qLang === "en" || qLang === "es"}
+        langChosen={chosen}
+        langPicked={picked}
         initialDate={date}
         office={office}
         officeHref={officeHref}
