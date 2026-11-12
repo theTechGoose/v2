@@ -249,11 +249,14 @@ Deno.test("REQ-501 M35 business-identity e2e: a blank businessName is refused on
     assertEquals(first.status, 200);
     await drain(first);
 
-    for (const blank of ["", "   "]) {
+    // REQ-598 (cycle 4, p4-p10a): an empty name asks for the name; spaces alone keep welcome.nameBlank
+    for (
+      const [blank, key] of [["", "settings.businessNameRequired"], ["   ", "welcome.nameBlank"]]
+    ) {
       const res = await put({ businessName: blank });
       const text = await res.text();
       assertEquals(res.status, 400, `${JSON.stringify(blank)}: ${text}`);
-      assertEquals(text.includes("welcome.nameBlank"), true, text);
+      assertEquals(text.includes(key), true, text);
     }
     const kept = await fetch(`http://localhost:${port}/profile/identity`, { headers }).then((r) => r.json());
     assertEquals(kept.businessName, "Jensen Roofing");

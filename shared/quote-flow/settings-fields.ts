@@ -5,8 +5,9 @@
  *
  * - Email: the same address shape as a customer's (REQ-278, `isValidCustomerEmail`), so
  *   "carl@@jensen" is refused. Blank is allowed — it clears the email.
- * - Business name: blank (spaces alone included) is refused once the business has a name, with
- *   the wizard's own copy (`welcome.nameBlank`).
+ * - Business name: blank is refused once the business has a name. REQ-598 (cycle 4, p4-p10a): an
+ *   emptied field asks for the name (`settings.businessNameRequired`); spaces alone keep the
+ *   wizard's own copy (`welcome.nameBlank`, "spaces alone don't count").
  */
 import { isValidCustomerEmail } from "./customer-contact.ts";
 
@@ -21,8 +22,9 @@ export function accountEmailError(
 export function businessNameError(
   next: string | null | undefined,
   current: string | null | undefined,
-): "welcome.nameBlank" | null {
+): "settings.businessNameRequired" | "welcome.nameBlank" | null {
   if (next === undefined || next === null) return null;
   if (next.trim()) return null;
-  return (current ?? "").trim() ? "welcome.nameBlank" : null;
+  if (!(current ?? "").trim()) return null;
+  return next === "" ? "settings.businessNameRequired" : "welcome.nameBlank";
 }

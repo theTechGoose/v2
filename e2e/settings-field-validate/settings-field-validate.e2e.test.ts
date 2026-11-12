@@ -86,7 +86,7 @@ async function fillAndBlurUntil(
 const visible = (page: StoryTools["page"], selector: string) => () =>
   page.locator(selector).isVisible().catch(() => false);
 
-Deno.test("REQ-501 M35: Settings refuses 'carl@@jensen' and a blank business name on blur — inline errors, nothing saved, hero keeps the name", (t) =>
+Deno.test("REQ-501 M35 / REQ-598: Settings refuses 'carl@@jensen' and a blank business name on blur — inline errors, nothing saved, hero keeps the name", (t) =>
   story(t, async ({ page, expect, http, baseUrl }) => {
     const auth = await signIn(http, page, baseUrl);
     await page.goto("/settings");
@@ -112,10 +112,19 @@ Deno.test("REQ-501 M35: Settings refuses 'carl@@jensen' and a blank business nam
       "",
       visible(page, "[data-cy='settings-biz-error']"),
     );
+    // REQ-598 (cycle 4, p4-p10a): an emptied field asks for the name, not "spaces alone don't count"
     expect.eq(
       await page.locator("[data-cy='settings-biz-error']").innerText(),
-      "Type a name — spaces alone don't count.",
-      "business name inline error",
+      "Type your business name.",
+      "business name inline error (empty)",
+    );
+    await fillAndBlurUntil(
+      page,
+      "[data-cy='settings-biz']",
+      "   ",
+      async () =>
+        (await page.locator("[data-cy='settings-biz-error']").innerText()
+          .catch(() => "")) === "Type a name — spaces alone don't count.",
     );
 
     // nothing reached the server

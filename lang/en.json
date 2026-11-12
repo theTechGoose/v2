@@ -2777,6 +2777,7 @@
   "settings.aria.wipeConfirm": "Type DELETE to confirm account wipe",
   "settings.businessIdentity": "Business identity",
   "settings.businessName": "Business name",
+  "settings.businessNameRequired": "Type your business name.",
   "settings.certHint": "PDF or image · proof of insurance / COI",
   "settings.certOnFile": "Certificate on file",
   "settings.city": "City",
