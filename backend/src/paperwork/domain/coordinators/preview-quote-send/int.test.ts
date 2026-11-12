@@ -326,3 +326,49 @@ Deno.test("REQ-591 (cycle 4, M32) preview-quote-send: a quote with no heading in
   assertEquals(calls.length, 1, "no translation when nothing is missing");
   await resetKv();
 });
+
+// REQ-682 (demo-loop cycle 5, m28): the "What they'll get" email preview
+// shares the send's step builder — the start-day step mentions a text only
+// when this send texts a textable number, and a set start is stated.
+Deno.test("REQ-682 (m28) preview-quote-send: 'what happens next' follows the channel and the quote's start", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const ctx = fresh();
+  await seedContractor("u-1");
+  const { quote } = await seedQuote(ctx);
+
+  const emailOnly = await ctx.flow.run("u-1", {
+    quoteId: quote.id,
+    channel: "email",
+    lang: "en",
+  });
+  const eh = emailOnly.email!.html;
+  assert(/We(?:&#39;|')ll confirm a start day/.test(eh), "no start set yet");
+  assert(
+    !/Pick a start day|We(?:&#39;|')ll text/.test(eh),
+    "email-only promises no text",
+  );
+
+  const both = await ctx.flow.run("u-1", {
+    quoteId: quote.id,
+    channel: "both",
+    lang: "en",
+  });
+  assert(
+    /We(?:&#39;|')ll text you/.test(both.email!.html),
+    "a texted send says so",
+  );
+
+  await ctx.quotes.update(quote.id, "u-1", { startDate: "2026-11-20" });
+  const started = await ctx.flow.run("u-1", {
+    quoteId: quote.id,
+    channel: "both",
+    lang: "en",
+  });
+  assertStringIncludes(started.email!.html, "Work starts Nov 20, 2026");
+  assert(
+    !/We(?:&#39;|')ll text/.test(started.email!.html),
+    "a set start needs no text",
+  );
+  await resetKv();
+});
