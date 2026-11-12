@@ -50,6 +50,21 @@
  * every canvas's last bitmap and paints it again after any width/height op on it; a bitmap still
  * decoding never paints over a newer one. `stats()` counts the bitmaps applied and the repaints
  * (the stage's dev pill shows them).
+ *
+ * REQ-547 (demo-loop cycle 4, M21 + m32) — a snapshot never animates from its unstyled look. Its
+ * page is built at once and its stylesheets come in a moment later; when they do, every element
+ * whose look they change ran its CSS transition FROM the unstyled look (measured in Chromium: the
+ * customers board's closed back panel faded 1 → 0 over 240 ms, its "No subscriptions" text a
+ * ghost over the card) — a state the customer never had. So every transition and animation in the
+ * frame is held still (STILL_CSS, an adopted sheet of the stage's own: no op of the customer's can
+ * remove it) from a snapshot until it has settled, and again while a stylesheet an op added is
+ * loading; it is let go only after the frame's styles were computed with it on (else the browser
+ * computes both at once and runs the transitions anyway — measured). And a later snapshot (a
+ * rejoin, another page) whose sheets this frame has not loaded yet keeps the previous page on show
+ * while they load — preloaded into it as `media="not all"` sheets, never applied to it — and goes
+ * in once they are (from the cache: styled at once), or HOLD_CAP_MS after it came. Its ops apply
+ * to it meanwhile; `styled()` and `settled()` say false until it is in. The first snapshot is
+ * never held: there is nothing to keep, and the stage hides the frame until it is styled (REQ-370).
  */
 import type {
   MirrorFrame,
@@ -75,6 +90,14 @@ export const MIRROR_SRCDOC =
 /** REQ-451 — how long after a snapshot its fonts and images are waited for, at most, before its
  *  layout counts as the customer's anyway */
 export const SETTLE_CAP_MS = 2_500;
+
+/** REQ-547 — every transition and animation of the frame, held still while a snapshot settles */
+export const STILL_CSS = "*,*::before,*::after{transition:none!important;" +
+  "animation-duration:0s!important;animation-delay:0s!important}";
+
+/** REQ-547 — the longest a later snapshot waits for its stylesheets before it replaces the page on
+ *  show anyway (under the stage's STYLE_WAIT_MS, which reveals a new demo's frame regardless) */
+export const HOLD_CAP_MS = 1_200;
 
 export interface ReplayerOptions {
   /** paint a canvas with a bitmap (a data URL); the default draws it with an Image */
@@ -118,6 +141,9 @@ export interface Replayer {
    *  the snapshot): the node under a point is the one under it on the customer's screen. Stays
    *  true until the next snapshot */
   settled(): boolean;
+  /** REQ-547 — the frame's transitions and animations are held still (a snapshot, or a stylesheet
+   *  an op added, is not settled yet) */
+  still(): boolean;
   /** REQ-305 — stop watching the frame's document */
   dispose(): void;
   /** REQ-380 — canvas bitmaps that arrived (`cv` ops), were applied to a canvas, and were
@@ -239,6 +265,149 @@ export function createReplayer(
         : setTimeout(fn, 0));
   let due: { settle: boolean } | null = null;
   let disposed = false;
+  /** REQ-547 — the still rule is on, the sheet (or, with no adoptedStyleSheets, the <style>) that
+   *  carries it, and the hrefs of the stylesheets this frame has loaded (or failed) */
+  let stillOn = false;
+  let stillSheet: CSSStyleSheet | null = null;
+  let stillEl: Element | null = null;
+  const readyHrefs = new Set<string>();
+  /** REQ-547 — the rules of every same-origin stylesheet this frame has loaded, by href; and the
+   *  constructed copies of them a page just put in the frame is styled by until its own links
+   *  are in (a fresh <link> is never styled at once, even with its file in the cache — measured) */
+  const copies = new Map<string, string>();
+  let bridge: CSSStyleSheet[] = [];
+  /** REQ-547 — a later snapshot, built and kept out of the frame while its sheets preload; and
+   *  whether an op just added a stylesheet the frame has to wait for */
+  let pending:
+    | { root: Node; preloads: Set<Element>; cancel: () => void }
+    | null = null;
+  let newSheet = false;
+
+  /** REQ-547 — the still rule into the frame (again: a snapshot replaced the page, an op its head) */
+  function putStill() {
+    const W = doc.defaultView as
+      | (Window & { CSSStyleSheet?: typeof CSSStyleSheet })
+      | null;
+    const adopted = (doc as Document & { adoptedStyleSheets?: CSSStyleSheet[] })
+      .adoptedStyleSheets;
+    if (W?.CSSStyleSheet && Array.isArray(adopted)) {
+      try {
+        if (!stillSheet) {
+          stillSheet = new W.CSSStyleSheet();
+          stillSheet.replaceSync(STILL_CSS);
+        }
+        if (!adopted.includes(stillSheet)) {
+          doc.adoptedStyleSheets = [...adopted, stillSheet];
+        }
+        return;
+      } catch {
+        stillSheet = null; // no constructed sheets here: a <style> instead
+      }
+    }
+    if (!stillEl) {
+      stillEl = doc.createElement("style");
+      stillEl.setAttribute("data-mirror-still", "");
+      stillEl.appendChild(doc.createTextNode(STILL_CSS));
+    }
+    const at = doc.head ?? doc.documentElement;
+    if (at && stillEl.parentNode !== at) at.appendChild(stillEl);
+  }
+  function holdStill(on: boolean) {
+    if (on) {
+      stillOn = true;
+      putStill();
+      return;
+    }
+    if (!stillOn) return;
+    stillOn = false;
+    // the sheets' styles are computed with the rule on first, and only then is it let go: both in
+    // one style pass, and the browser would run the transitions from the unstyled look anyway
+    try {
+      doc.documentElement?.getBoundingClientRect();
+    } catch {
+      // no layout here
+    }
+    if (stillSheet) {
+      try {
+        doc.adoptedStyleSheets = doc.adoptedStyleSheets.filter((x) =>
+          x !== stillSheet
+        );
+      } catch {
+        // gone with its document
+      }
+    }
+    stillEl?.parentNode?.removeChild(stillEl);
+  }
+  /** REQ-547 — let the still rule go once the page in the frame has settled and every stylesheet
+   *  it links is in (a sheet that never answers keeps it: no page transition is worth a ghost) */
+  function review() {
+    if (pending) return;
+    // its own links are in: the copies go (the same rules, under the still rule: nothing moves)
+    if (bridge.length && styled()) dropBridge();
+    if (stillOn && settledNow() && styled()) holdStill(false);
+  }
+
+  /** REQ-547 — the rules of a stylesheet that just loaded, kept (a cross-origin one has none to
+   *  read: it is only known to be in the cache) */
+  function keepCopy(l: Element, href: string) {
+    if (copies.has(href)) return;
+    try {
+      const rules = (l as HTMLLinkElement).sheet?.cssRules;
+      if (!rules) return;
+      let text = "";
+      for (let k = 0; k < rules.length; k++) text += rules[k].cssText + "\n";
+      copies.set(href, text);
+    } catch {
+      // another origin's sheet
+    }
+  }
+
+  /** REQ-547 — a page just put in the frame is styled at once by copies of the sheets it links
+   *  that this frame has already loaded, until its own links are in */
+  function putBridge() {
+    dropBridge();
+    const W = doc.defaultView as
+      | (Window & { CSSStyleSheet?: typeof CSSStyleSheet })
+      | null;
+    const adopted = (doc as Document & { adoptedStyleSheets?: CSSStyleSheet[] })
+      .adoptedStyleSheets;
+    if (!W?.CSSStyleSheet || !Array.isArray(adopted)) return;
+    const made: CSSStyleSheet[] = [];
+    for (const l of sheets) {
+      if (!awaited(l) || !doc.contains(l)) continue;
+      const href = (l.getAttribute("href") ?? "").trim();
+      const text = copies.get(href);
+      if (text === undefined) continue;
+      try {
+        const c = new W.CSSStyleSheet({ baseURL: href } as CSSStyleSheetInit);
+        c.replaceSync(text);
+        made.push(c);
+      } catch {
+        // a copy this browser will not take: that link is waited for as it is
+      }
+    }
+    if (!made.length) return;
+    bridge = made;
+    // under the still rule (it stays last), in the order the page links them
+    const rest = adopted.filter((x) => x !== stillSheet);
+    doc.adoptedStyleSheets = [
+      ...rest,
+      ...made,
+      ...(stillSheet && adopted.includes(stillSheet) ? [stillSheet] : []),
+    ];
+  }
+  function dropBridge() {
+    if (!bridge.length) return;
+    const gone = new Set(bridge);
+    bridge = [];
+    try {
+      doc.adoptedStyleSheets = doc.adoptedStyleSheets.filter((x) =>
+        !gone.has(x)
+      );
+    } catch {
+      // gone with its document
+    }
+  }
 
   const reg = (i: number, n: Node) => {
     byId.set(i, n);
@@ -272,6 +441,7 @@ export function createReplayer(
       due = null;
       if (disposed || !d) return;
       if (d.settle) settle();
+      review(); // REQ-547
       opts.onLayout?.();
     });
   };
@@ -282,7 +452,21 @@ export function createReplayer(
   doc.addEventListener("scroll", onScroll, true);
   /** a stylesheet or an image of the frame is in (or failed): the layout moved */
   const onLoad = (e: Event) => {
-    if (e.target) loaded.add(e.target as Node);
+    const t = e.target as Element | null;
+    if (t) loaded.add(t);
+    // REQ-547 — a stylesheet this frame has: a later snapshot that links it is not held for it
+    if (t?.nodeType === 1 && t.localName?.toLowerCase() === "link") {
+      const href = (t.getAttribute("href") ?? "").trim();
+      if (href) {
+        readyHrefs.add(href);
+        keepCopy(t, href);
+      }
+    }
+    // REQ-547 — a held snapshot's last preload is in: it replaces the page on show
+    if (pending?.preloads.has(t as Element)) {
+      pending.preloads.delete(t as Element);
+      if (pending.preloads.size === 0) swapIn();
+    }
     settleSoon();
   };
   doc.addEventListener("load", onLoad, true);
@@ -345,6 +529,7 @@ export function createReplayer(
     if (s.a) { for (const [k, v] of Object.entries(s.a)) setAttr(e, lt, k, v); }
     if (lt === "link" && /(^|\s)stylesheet(\s|$)/i.test(s.a?.rel ?? "")) {
       sheets.add(e); // REQ-305 — styled() waits for it
+      if (awaited(e)) newSheet = true; // REQ-547 — held still until it is in
     }
     if (lt === "img" && fetched(e)) images.add(e); // REQ-451 — settled() waits for it
     if (s.c) { for (const c of s.c) e.appendChild(build(c)); }
@@ -471,6 +656,7 @@ export function createReplayer(
 
   /** REQ-305 — every stylesheet the replay links has loaded (or failed) */
   function styled(): boolean {
+    if (pending) return false; // REQ-547 — its page is not in the frame yet
     for (const l of sheets) {
       if (!doc.contains(l)) {
         sheets.delete(l);
@@ -484,10 +670,126 @@ export function createReplayer(
     return true;
   }
 
+  /** REQ-547 — the snapshot's page is in the frame: watched, its fonts and images waited for
+   *  (REQ-451, SETTLE_CAP_MS at most: then the stage is told — a layout pass — settled or not),
+   *  and held still until it has settled */
+  function shown() {
+    watchSize();
+    snapAt = now();
+    isSettled = false;
+    cancelCap?.();
+    cancelCap = later(() => {
+      cancelCap = null;
+      settleSoon();
+    }, SETTLE_CAP_MS);
+    holdStill(true);
+    putBridge();
+  }
+
+  /** REQ-547 — the stylesheet hrefs the new page links that this frame neither has loaded (or
+   *  failed) nor is loading for the page on show (that page is no better styled than the new one
+   *  would be: nothing is gained by keeping it) */
+  function unloaded(prev: Set<Element>): string[] {
+    const have = new Set([...readyHrefs, ...copies.keys()]);
+    for (const l of prev) {
+      const href = (l.getAttribute("href") ?? "").trim();
+      if (href && doc.contains(l)) have.add(href);
+    }
+    const out: string[] = [];
+    for (const l of sheets) {
+      if (!awaited(l)) continue;
+      const href = (l.getAttribute("href") ?? "").trim();
+      if (!have.has(href) && !out.includes(href)) out.push(href);
+    }
+    return out;
+  }
+
+  /** REQ-547 — the new page is kept out of the frame while its sheets load into the page on show
+   *  (`media="not all"`: fetched, never applied to it); HOLD_CAP_MS at most */
+  function hold(root: Node, hrefs: string[]) {
+    const at = doc.head ?? doc.documentElement;
+    const preloads = new Set<Element>();
+    for (const href of hrefs) {
+      const l = doc.createElement("link");
+      l.setAttribute("rel", "stylesheet");
+      l.setAttribute("media", "not all");
+      l.setAttribute("data-mirror-preload", "");
+      l.setAttribute("href", href);
+      preloads.add(l);
+      at?.appendChild(l);
+    }
+    const cancel = later(() => swapIn(), HOLD_CAP_MS);
+    pending = { root, preloads, cancel };
+  }
+
+  /** REQ-547 — the held page replaces the one on show */
+  function swapIn() {
+    const p = pending;
+    if (!p || disposed) return;
+    dropPending();
+    const old = doc.documentElement;
+    if (old) doc.replaceChild(p.root, old);
+    else doc.appendChild(p.root);
+    shown();
+    settleSoon();
+  }
+
+  /** REQ-547 — a held page given up (a newer snapshot came, or the replay is done): its preloads
+   *  out of the page on show */
+  function dropPending() {
+    const p = pending;
+    if (!p) return;
+    pending = null;
+    p.cancel();
+    for (const l of p.preloads) l.parentNode?.removeChild(l);
+  }
+
+  /** REQ-451 — see Replayer.settled */
+  function settledNow(): boolean {
+    if (isSettled) return true;
+    if (pending || !view || !styled()) return false; // REQ-547 — nor while held
+    // a web font starts loading when a layout first needs it: lay the frame out, then ask
+    try {
+      doc.documentElement?.getBoundingClientRect();
+    } catch {
+      // no layout here
+    }
+    const fonts = (doc as Document & { fonts?: { status?: string } }).fonts;
+    let busy = fonts?.status === "loading";
+    // a stylesheet's load (or error) event, never its `sheet` alone (what styled() counts, for
+    // the reveal): measured, both links had their sheets from the memory cache and the frame was
+    // still laid out without them (the wizard stacked at full width)
+    for (const l of sheets) {
+      if (busy) break;
+      if (doc.contains(l) && awaited(l) && !loaded.has(l)) busy = true;
+    }
+    for (const i of images) {
+      if (busy) break;
+      if (!doc.contains(i)) {
+        images.delete(i);
+        continue;
+      }
+      // its load (or error) event, never `complete` alone: measured, an image already
+      // `complete` had not given the frame its height yet (the logo: everything under it sat
+      // higher, the Continue button under the middle of the phone)
+      if (loaded.has(i)) continue;
+      busy = true;
+    }
+    if (busy && now() - snapAt < SETTLE_CAP_MS) return false;
+    isSettled = true;
+    cancelCap?.();
+    cancelCap = null;
+    return true;
+  }
+
   return {
     apply(f) {
       if (f.t === "snap") {
         try {
+          // REQ-547 — a page is on show (an earlier snapshot): it stays while this one's sheets load
+          const had = ok && !!doc.documentElement;
+          const prev = sheets;
+          dropPending();
           byId = new Map();
           idOf = new WeakMap();
           scrolls.clear();
@@ -495,24 +797,22 @@ export function createReplayer(
           sheets = new Set();
           images = new Set();
           const root = build(f.root);
-          const old = doc.documentElement;
-          if (old) doc.replaceChild(root, old);
-          else doc.appendChild(root);
+          newSheet = false;
           view = { w: f.w, h: f.h };
           at = f.u;
           ok = true;
-          watchSize();
-          // REQ-451 — its fonts and images are waited for, for SETTLE_CAP_MS at most: then the
-          // stage is told (a layout pass), settled or not
-          snapAt = now();
           isSettled = false;
-          cancelCap?.();
-          cancelCap = later(() => {
-            cancelCap = null;
-            settleSoon();
-          }, SETTLE_CAP_MS);
+          const missing = had ? unloaded(prev) : [];
+          if (missing.length) hold(root, missing);
+          else {
+            const old = doc.documentElement;
+            if (old) doc.replaceChild(root, old);
+            else doc.appendChild(root);
+            shown();
+          }
         } catch {
           ok = false;
+          dropPending();
           return false;
         }
       } else if (!ok) return false;
@@ -526,6 +826,11 @@ export function createReplayer(
           fit = false;
         }
       }
+      // REQ-547 — an op added a stylesheet: held still until it is in; and the still rule back in
+      // the frame should an op have taken the <head> it was in
+      if (newSheet && !pending) holdStill(true);
+      else if (stillOn) putStill();
+      newSheet = false;
       // REQ-305 — the layout changes once the browser has laid the frame out, not now
       settleSoon();
       return fit;
@@ -571,45 +876,12 @@ export function createReplayer(
     },
     settle,
     styled,
-    settled() {
-      if (isSettled) return true;
-      if (!view || !styled()) return false;
-      // a web font starts loading when a layout first needs it: lay the frame out, then ask
-      try {
-        doc.documentElement?.getBoundingClientRect();
-      } catch {
-        // no layout here
-      }
-      const fonts = (doc as Document & { fonts?: { status?: string } }).fonts;
-      let busy = fonts?.status === "loading";
-      // a stylesheet's load (or error) event, never its `sheet` alone (what styled() counts, for
-      // the reveal): measured, both links had their sheets from the memory cache and the frame was
-      // still laid out without them (the wizard stacked at full width)
-      for (const l of sheets) {
-        if (busy) break;
-        if (doc.contains(l) && awaited(l) && !loaded.has(l)) busy = true;
-      }
-      for (const i of images) {
-        if (busy) break;
-        if (!doc.contains(i)) {
-          images.delete(i);
-          continue;
-        }
-        // its load (or error) event, never `complete` alone: measured, an image already
-        // `complete` had not given the frame its height yet (the logo: everything under it sat
-        // higher, the Continue button under the middle of the phone)
-        if (loaded.has(i)) continue;
-        busy = true;
-      }
-      if (busy && now() - snapAt < SETTLE_CAP_MS) return false;
-      isSettled = true;
-      cancelCap?.();
-      cancelCap = null;
-      return true;
-    },
+    settled: settledNow,
     stats: () => ({ ...counts }),
+    still: () => stillOn,
     dispose() {
       disposed = true;
+      dropPending();
       cancelCap?.();
       cancelCap = null;
       doc.removeEventListener("load", onLoad, true);
