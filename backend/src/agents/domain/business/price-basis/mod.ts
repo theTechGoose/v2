@@ -49,3 +49,34 @@ export function deriveBasis(raw: string, scope = ""): PriceBasis {
   }
   return "labor_and_materials";
 }
+
+/**
+ * REQ-382 (demo cycle 2, M22): the clauses in which the customer supplies an
+ * item — "faucets supplied by client / grifos los pone la clienta" — so the
+ * pricing model is told exactly WHAT to leave out, and prices everything
+ * else (labor AND materials). A master-bath gut whose client supplied only
+ * the faucets was priced labor-only at $1,850–$2,750.
+ */
+export function customerSuppliedItems(raw: string, scope = ""): string[] {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const part of `${raw}\n${scope}`.split(/[.;,\n—–()]+/)) {
+    const clause = part.trim();
+    if (!clause) continue;
+    const supplied = COMPOUND.test(clause) ||
+      (CUSTOMER.test(clause) && SUPPLIES.test(clause) &&
+        !FIRST_PERSON.test(clause));
+    const key = clause.toLowerCase();
+    if (supplied && !seen.has(key)) {
+      seen.add(key);
+      out.push(clause);
+    }
+  }
+  return out;
+}
+
+/** REQ-382: the whole job is labor only / materials not included — a blanket
+ *  statement, never inferred from one customer-supplied item. */
+export function isLaborOnly(raw: string, scope = ""): boolean {
+  return BLANKET.test(`${raw}\n${scope}`);
+}

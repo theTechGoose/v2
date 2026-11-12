@@ -1,5 +1,5 @@
 import { assertEquals } from "#std/assert";
-import { deriveBasis } from "./mod.ts";
+import { customerSuppliedItems, deriveBasis, isLaborOnly } from "./mod.ts";
 
 /**
  * REQ-332 (demo cycle 1, m30): "Prices include labor and materials" was a
@@ -97,4 +97,47 @@ Deno.test("REQ-332 deriveBasis: the contractor buying materials is NOT the custo
     deriveBasis("We supply all materials and haul away the debris"),
     "labor_and_materials",
   );
+});
+
+// ── REQ-382 — demo cycle 2, M22 ─────────────────────────────────────────
+// A master-bath gut where the client supplies only the faucets was priced
+// $1,850–$2,750: the basis line told the model to "price the labor and only
+// the materials the contractor provides". The basis stays "as noted" (the
+// faucets ARE the customer's), but the items the customer supplies are named
+// so everything else is priced in full.
+
+const M22_RAW =
+  "Master bath gut for the Patel home: remove old tub/shower combo, walk-in curbless shower (cut the slab to move the drain), " +
+  "recessed niche, frameless glass, porcelain tile 12x24 on walls, 60in double vanity, quartz top, 2 undermount sinks " +
+  "(faucets supplied by client / grifos los pone la clienta), new exhaust fan and lights, 8x10 heated floor, permit.";
+
+Deno.test("REQ-382 M22 deriveBasis: the faucet clause makes the basis 'as noted'", () => {
+  assertEquals(deriveBasis(M22_RAW), "labor_materials_as_noted");
+});
+
+Deno.test("REQ-382 M22 customerSuppliedItems: names ONLY the clause the customer supplies", () => {
+  assertEquals(customerSuppliedItems(M22_RAW), [
+    "faucets supplied by client / grifos los pone la clienta",
+  ]);
+  assertEquals(
+    customerSuppliedItems("Owner-supplied cabinets, we do the install"),
+    [
+      "Owner-supplied cabinets",
+    ],
+  );
+  assertEquals(
+    customerSuppliedItems("Paint 2000 sq ft interior, two coats"),
+    [],
+  );
+  // the contractor buying is not a customer-supplied item
+  assertEquals(customerSuppliedItems("Customer wants us to buy the tile"), []);
+});
+
+Deno.test("REQ-382 M22 isLaborOnly: only blanket labor-only wording, never one supplied item", () => {
+  assertEquals(isLaborOnly(M22_RAW), false);
+  assertEquals(
+    isLaborOnly("Labor only — install the customer's flooring"),
+    true,
+  );
+  assertEquals(isLaborOnly("Tile the shower, materials not included"), true);
 });
