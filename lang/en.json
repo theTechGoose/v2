@@ -3984,6 +3984,8 @@
   "field.common.close": "Close",
   "field.common.loading": "Loading…",
   "field.common.error": "Something went wrong — try again.",
+  "worker.ownerNote": "This is the screen your workers sign into with their cell + PIN. You add workers and set their PINs on the Workers page.",
+  "worker.ownerManage": "Manage workers",
   "worker.cell": "Your cell",
   "worker.cellPh": "(555) 123-4567",
   "field.subs.pickCustomer": "Search a customer…",

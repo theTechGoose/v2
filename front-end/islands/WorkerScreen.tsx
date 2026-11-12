@@ -31,6 +31,7 @@ import {
   workerScreenLang,
 } from "../lib/field.ts";
 import { lockLabelKey, NOTE_SAVED_MS } from "../lib/field-batches.ts";
+import { WORKERS_PAGE_HREF } from "../lib/worker-view-link.ts";
 import { refreshTickDue } from "../lib/refresh-tick.ts";
 import {
   startWorkerRefresh,
@@ -52,6 +53,9 @@ const css = `
   .greet small { display: block; font-family: var(--font-body); font-weight: 500; font-size: 14px; color: var(--fg-muted); margin-top: 4px; }
   .login { background: #fff; border: 1px solid var(--border); border-radius: var(--radius-xl); padding: 22px; display: flex; flex-direction: column; gap: 14px; margin-top: 30px; }
   .login input, .login select { font-size: 18px; padding: 14px; }
+  /* REQ-602 (M35): an owner on the sign-in card is told whose screen it is */
+  .owner-note { background: var(--mint-100); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; font-size: 15px; color: var(--fg); margin-top: 18px; }
+  .owner-note + .login { margin-top: 0; }
   .pin { letter-spacing: .4em; text-align: center; font-family: var(--font-mono); }
   .pinwrap { position: relative; display: flex; }
   .pinwrap input { flex: 1; min-width: 0; padding-right: 52px; }
@@ -901,6 +905,24 @@ export default function WorkerScreen(
             {t("worker.title")}
             <small>{dayLine()}</small>
           </div>
+          {
+            /* REQ-602 (M35): the owner (office session, no worker signed in)
+            has no cell + PIN here — say whose screen this is and where
+            workers are added. */
+          }
+          {office && (
+            <div class="owner-note" data-cy="w-owner-note">
+              <span>{t("worker.ownerNote")}</span>
+              <a
+                href={WORKERS_PAGE_HREF}
+                class="btn btn--ghost btn--sm"
+                data-cy="w-owner-workers"
+                style="min-height:44px;align-self:flex-start"
+              >
+                {t("worker.ownerManage")}
+              </a>
+            </div>
+          )}
           <form class="login" onSubmit={login}>
             <label class="field">
               {t("worker.cell")}

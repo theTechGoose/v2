@@ -26,6 +26,8 @@ import {
   countLabelKey,
   pickSidebarCounts,
 } from "../lib/sidebar-counts.ts";
+import { fieldClient } from "../clients/field.ts";
+import { workerViewHref } from "../lib/worker-view-link.ts";
 
 // REQ-176 — the tree itself is data in lib/nav-tree.ts; this island renders one level of it.
 
@@ -106,6 +108,20 @@ export default function DashSidebar(
     adminsClient.accounts().then((v) => {
       if (alive) setAccounts(v);
     }).catch(() => {/* no session yet, or the API is down — no switcher */});
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  // REQ-602 (M35) — how many workers the account has; null until known
+  const [workerCount, setWorkerCount] = useState<number | null>(null);
+  useEffect(() => {
+    let alive = true;
+    fieldClient.workers().then((ws) => {
+      if (alive) setWorkerCount(ws.length);
+    }).catch(
+      () => {/* no session or no access — keep the plain /worker link */},
+    );
     return () => {
       alive = false;
     };
@@ -487,10 +503,12 @@ export default function DashSidebar(
             )}
             {
               /* REQ-143: the worker screen is always one click away — it is a
-              separate login (cell + PIN), so this is a plain link. */
+              separate login (cell + PIN), so this is a plain link.
+              REQ-602 (M35): with no workers nobody can sign in there, so it
+              goes to /field/workers, where workers are added. */
             }
             <a
-              href="/worker"
+              href={workerViewHref(workerCount)}
               class="nav-item"
               style="color:rgba(255,255,255,0.7)"
               data-cy="nav-worker-view"
