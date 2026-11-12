@@ -1591,6 +1591,7 @@
   "invoicesPage.back.rejectTitle": "Reopen this invoice — you never received this payment",
   "invoicesPage.back.rejectYes": "Mark not received",
   "invoicesPage.back.textClient": "Text client",
+  "invoicesPage.back.addPhone": "Add a phone",
   "invoicesPage.cta.claimed": "Okay, I got it",
   "invoicesPage.cta.drafting": "Finish + send",
   "invoicesPage.cta.out": "View invoice",

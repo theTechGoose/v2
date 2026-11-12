@@ -76,7 +76,12 @@ export default function PublicQuoteActions(
   const offTip = preview
     ? tFor(lang, "publicQuoteActions.previewDisabled")
     : undefined;
-  const off = preview ? ";opacity:0.55;cursor:not-allowed" : "";
+  // REQ-691 (demo p15, cycle 5): both disabled buttons wear the SAME muted
+  // grey text and border — opacity alone left Ask in its active teal, so it
+  // still looked clickable next to a grey Decline.
+  const off = preview
+    ? ";color:#6b7a7e;border:1px solid #e6ebe8;opacity:0.55;cursor:not-allowed"
+    : "";
 
   return (
     <div>
