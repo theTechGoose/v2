@@ -1012,3 +1012,63 @@ Deno.test("REQ-378 (demo-loop cycle 2, m22) a joining stage is greeted — welco
     await resetKv();
   }
 });
+
+Deno.test("REQ-436 (demo-loop cycle 3, M2/M2b) a tab's claim carries its browser tab's key and whether it has focus — to every stage, in one hub and across two; a bad key is dropped, never the claim", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const a = DemoHub.isolated("a");
+  const b = DemoHub.isolated("b");
+  const hans = socketPeer("presenter", "hans");
+  const lia = socketPeer("presenter", "lia");
+  const tab1 = socketPeer("viewer");
+  try {
+    await a.join("s436", hans);
+    await b.join("s436", lia);
+    const t1 = await a.join("s436", tab1);
+    // what the browser sends, off the wire as the socket controller reads it
+    const claim = parseClientMessage(
+      JSON.stringify({ t: "claim", at: 1700, tab: "k-tab_1", f: 1 }),
+    );
+    assertEquals(claim, { t: "claim", at: 1700, tab: "k-tab_1", f: 1 });
+    if (claim?.t !== "claim") throw new Error("not a claim");
+    await a.send("s436", { role: "viewer", cid: t1.cid }, claim);
+    const want: ServerMessage = {
+      t: "claim",
+      cid: t1.cid,
+      at: 1700,
+      tab: "k-tab_1",
+      f: 1,
+    };
+    assertEquals(hans.inbox.filter((m) => m.t === "claim"), [want]);
+    await until(
+      "the stage on the other hub hears it too",
+      () => lia.inbox.some((m) => m.t === "claim"),
+    );
+    assertEquals(lia.inbox.filter((m) => m.t === "claim"), [want]);
+    assertEquals(
+      parseServerMessage(JSON.stringify(want)),
+      want,
+      "the stage's parser keeps the key and the focus",
+    );
+    // a claim from before REQ-436 (no key) and junk keys: still a claim, without the key
+    assertEquals(
+      parseClientMessage(JSON.stringify({ t: "claim", at: 5 })),
+      { t: "claim", at: 5 },
+    );
+    assertEquals(
+      parseClientMessage(
+        JSON.stringify({ t: "claim", at: 5, tab: "<script>", f: "yes" }),
+      ),
+      { t: "claim", at: 5 },
+    );
+    assertEquals(
+      parseServerMessage(
+        JSON.stringify({ t: "claim", cid: "c", at: 5, tab: "x".repeat(65) }),
+      ),
+      { t: "claim", cid: "c", at: 5 },
+    );
+  } finally {
+    await a.close();
+    await b.close();
+  }
+});

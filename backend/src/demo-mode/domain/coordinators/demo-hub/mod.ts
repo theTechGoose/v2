@@ -217,7 +217,14 @@ export class DemoHub {
       if (from.role !== "viewer" || !from.cid) return Promise.resolve();
       return this.broadcast(sessionId, {
         to: "presenter",
-        msg: { t: "claim", cid: from.cid, at: m.at },
+        // REQ-436 — and which browser tab it is, and whether its page has focus
+        msg: {
+          t: "claim",
+          cid: from.cid,
+          at: m.at,
+          ...(m.tab ? { tab: m.tab } : {}),
+          ...(m.f === 1 ? { f: 1 as const } : {}),
+        },
       });
     }
     if (m.t === "sync") {

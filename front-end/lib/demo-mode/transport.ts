@@ -34,6 +34,15 @@
  * asks the deploy's time once welcomed (`time`) and keeps the best round trip's offset: `now()` is
  * the deploy's clock as this browser knows it, the same on both ends within a round trip — the
  * mirror stamps frames with it and the stage measures how late they come in.
+ *
+ * REQ-436 (demo-loop cycle 3, M2/M2b/M2c/M5) — a stage follows BROWSER TABS, not sockets. Every
+ * page of one browser tab carries the same key (`tab`, kept in sessionStorage by the overlay) on
+ * its claims, and says it on every welcome (`at` 0 when the page never claimed); a claim also
+ * says whether the page has focus (`f`), which wins a tie. When the followed tab's page goes
+ * NAVIGATING, the stage keeps following that browser tab — "between", no other tab synced, sent
+ * a `leave` or handed the presenter's pointer — for PRESENCE_GRACE_MS: its next page takes the
+ * stage back the moment it names the key. Another tab is followed only when the grace ends, when
+ * the page said it is closing (or said nothing), or when another tab is really claimed since.
  */
 import {
   type ClientMessage,
@@ -71,6 +80,10 @@ export interface DemoLinkOptions {
   role: Role;
   /** REQ-214 — this presenter's own id (a presenter only) */
   pid?: string;
+  /** REQ-436 — the customer's side: this browser tab's key, the same on every page of the tab */
+  tab?: string;
+  /** REQ-436 — the customer's side: does this page have focus (said on every claim) */
+  hasFocus?: () => boolean;
   onPeer(m: PeerMessage, from: PeerFrom): void;
   onStatus(s: LinkStatus): void;
   /** the other side arrived (or was there on welcome); REQ-232 — on the customer's side also: a
@@ -128,6 +141,18 @@ interface Conn {
 interface Tab {
   at: number;
   n: number;
+  /** REQ-436 — its browser tab's key, once a claim said it */
+  key?: string;
+  /** REQ-436 — its last claim said its page has focus */
+  f?: boolean;
+}
+
+/** REQ-436 — a browser tab whose followed page went navigating: the stage holds on to it */
+interface Held {
+  key: string;
+  at: number;
+  f?: boolean;
+  timer: ReturnType<typeof setTimeout>;
 }
 
 export function connectDemo(o: DemoLinkOptions): DemoLink {
@@ -140,6 +165,8 @@ export function connectDemo(o: DemoLinkOptions): DemoLink {
   let arrivals = 0;
   /** REQ-232 — a presenter: the tab it follows (null: none) */
   let followed: string | null = null;
+  /** REQ-436 — a presenter: the followed browser tab is between two pages (null: it is not) */
+  let held: Held | null = null;
   /** REQ-232 — tabs that left: a late claim never brings one back */
   const gone = new Set<string>();
   /** REQ-214/232 — the stages online, cid → pid: the customer's presenters, a presenter's colleagues */
@@ -187,7 +214,9 @@ export function connectDemo(o: DemoLinkOptions): DemoLink {
     if (ws?.readyState !== WebSocket.OPEN) return setStatus("connecting");
     if (!online()) return setStatus("waiting");
     // REQ-391 — a stage whose customer's page went: never "live" over it while the next may come
-    if (o.role === "presenter" && tabs.size === 0) return setStatus("between");
+    if (o.role === "presenter" && (tabs.size === 0 || held)) {
+      return setStatus("between");
+    }
     setStatus(direct() ? "direct" : "relay");
   };
   const endGrace = () => {
@@ -324,11 +353,21 @@ export function connectDemo(o: DemoLinkOptions): DemoLink {
   const follow = () => {
     let best: string | null = null;
     let top: Tab | null = null;
+    // REQ-436 — a tie on the claim's time goes to the page that has focus, then the newest
+    const beats = (t: Tab, u: Tab) =>
+      t.at > u.at ||
+      (t.at === u.at && (!!t.f !== !!u.f ? !!t.f : t.n > u.n));
     for (const [cid, t] of tabs) {
-      if (!top || t.at > top.at || (t.at === top.at && t.n > top.n)) {
+      if (!top || beats(t, top)) {
         best = cid;
         top = t;
       }
+    }
+    // REQ-436 — the followed browser tab is between pages: it keeps the stage unless another tab
+    // was claimed since (the customer really went there)
+    if (held) {
+      if (!top || top.at <= held.at) return;
+      release();
     }
     if (best === followed) return;
     const was = followed;
@@ -345,12 +384,40 @@ export function connectDemo(o: DemoLinkOptions): DemoLink {
     void offer(best);
     o.onPeerOnline(best);
   };
-  /** REQ-232 — a presenter: a customer's tab came, went or claimed */
-  const tabSeen = (cid: string, at = 0) => {
+  /** REQ-436 — the held browser tab is no longer between pages (its page came, or it is over) */
+  const release = () => {
+    if (!held) return;
+    clearTimeout(held.timer);
+    held = null;
+  };
+  /** REQ-436 — a page of browser tab `key` is here: it takes over what the tab's earlier page had
+   *  (its claim; the stage, when the tab was held) */
+  const inherit = (t: Tab, key: string, at: number, f?: boolean) => {
+    if (at >= t.at) {
+      t.at = at;
+      t.f = f;
+    }
+    t.key = key;
+  };
+  /** REQ-232 — a presenter: a customer's tab came, went or claimed (REQ-436 — `key`: its browser
+   *  tab, `f`: its page has focus) */
+  const tabSeen = (cid: string, at = 0, key?: string, f?: boolean) => {
     if (gone.has(cid)) return;
-    const t = tabs.get(cid);
-    if (t) t.at = Math.max(t.at, at);
-    else tabs.set(cid, { at, n: ++arrivals });
+    let t = tabs.get(cid);
+    if (!t) tabs.set(cid, t = { at: 0, n: ++arrivals });
+    if (at >= t.at && (at > 0 || key)) {
+      t.at = at;
+      t.f = f;
+    }
+    if (key) {
+      t.key = key;
+      if (held?.key === key) {
+        // the followed browser tab's next page: the stage goes back to it at once
+        const h = held;
+        release();
+        inherit(t, key, h.at, h.f);
+      }
+    }
     endGrace();
     follow();
     refresh();
@@ -361,7 +428,30 @@ export function connectDemo(o: DemoLinkOptions): DemoLink {
   const tabLeft = (cid: string, why?: LeaveWhy) => {
     gone.add(cid);
     if (gone.size > 200) gone.delete(gone.values().next().value!);
+    const t = tabs.get(cid);
     if (!tabs.delete(cid)) return;
+    if (cid === followed && t?.key) {
+      // REQ-436 — a page of the same browser tab is already here: it is the stage's now
+      const next = [...tabs.values()].find((u) => u.key === t.key);
+      if (next) inherit(next, t.key, t.at, t.f);
+      else if (why === "navigating") {
+        // its next page is coming: keep following this browser tab, "between", for the grace —
+        // the page that went takes its connection and its pointer along
+        teardown(cid);
+        o.onPeer({ k: "leave" }, { role: "viewer", cid });
+        release();
+        held = {
+          key: t.key,
+          at: t.at,
+          f: t.f,
+          timer: setTimeout(() => {
+            held = null;
+            follow();
+            refresh();
+          }, PRESENCE_GRACE_MS),
+        };
+      }
+    }
     if (tabs.size === 0) {
       const ms = why === "navigating" ? PRESENCE_GRACE_MS : SILENT_GRACE_MS;
       if (why === "closing") endGrace();
@@ -379,9 +469,17 @@ export function connectDemo(o: DemoLinkOptions): DemoLink {
     bestRtt = rtt;
     skew = s + rtt / 2 - now;
   };
-  /** REQ-232 — the customer's side: say again that this tab is the one in use */
+  /** REQ-436 — a claim's browser-tab key and focus (the customer's side) */
+  const claimExtras = () => ({
+    ...(o.tab ? { tab: o.tab } : {}),
+    ...(o.hasFocus?.() ? { f: 1 as const } : {}),
+  });
+  /** REQ-232 — the customer's side: say again that this tab is the one in use; REQ-436 — a page
+   *  with a browser-tab key says which tab it is even when it never claimed (`at` 0) */
   const reclaim = () => {
-    if (claimedAt > 0) wsSend({ t: "claim", at: claimedAt });
+    if (claimedAt > 0 || o.tab) {
+      wsSend({ t: "claim", at: claimedAt, ...claimExtras() });
+    }
   };
   const hasPid = (pid: string) => [...stages.values()].includes(pid);
   /** REQ-214/232 — a stage came or went (by cid; a presenter dropped from the demo: all of theirs) */
@@ -478,7 +576,7 @@ export function connectDemo(o: DemoLinkOptions): DemoLink {
           }
           break;
         case "claim":
-          if (o.role === "presenter") tabSeen(m.cid, m.at);
+          if (o.role === "presenter") tabSeen(m.cid, m.at, m.tab, m.f === 1);
           break;
         case "sync":
           if (o.role === "viewer") o.onPeerOnline();
@@ -513,6 +611,7 @@ export function connectDemo(o: DemoLinkOptions): DemoLink {
       teardownAll();
       tabs.clear();
       followed = null;
+      release();
       stages.clear();
       endGrace();
       if (closed || ended || replaced) return refresh();
@@ -570,7 +669,7 @@ export function connectDemo(o: DemoLinkOptions): DemoLink {
     claim() {
       if (o.role !== "viewer") return;
       claimedAt = Date.now();
-      wsSend({ t: "claim", at: claimedAt });
+      wsSend({ t: "claim", at: claimedAt, ...claimExtras() });
     },
     leaving(why) {
       wsSend({ t: "leaving", why });
@@ -583,6 +682,7 @@ export function connectDemo(o: DemoLinkOptions): DemoLink {
       closed = true;
       clearTimeout(retry);
       endGrace();
+      release();
       teardownAll();
       const sock = ws;
       ws = null;
