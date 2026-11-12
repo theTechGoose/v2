@@ -14,6 +14,8 @@ import { initialsOf } from "../lib/clients-display.ts";
 import { I, ICN } from "../lib/dash-icons.tsx";
 import { fmtCell, PHONE_PLACEHOLDER } from "../lib/field.ts";
 import {
+  type AddFormField,
+  addFormProblems,
   type WorkerErr,
   workerError,
   zoneName,
@@ -51,6 +53,9 @@ export default function FieldWorkersPage() {
   const [loadErr, setLoadErr] = useState<WorkerErr | null>(null);
   const [form, setForm] = useState<AddForm>(BLANK);
   const [adding, setAdding] = useState(false);
+  /** REQ-520 — boxes the owner has left (blurred), and whether Add was pressed: only then a box's problem shows */
+  const [touched, setTouched] = useState<Set<AddFormField>>(new Set());
+  const [tried, setTried] = useState(false);
   /** REQ-421 — a refusal with the box it belongs under (worded at render, so a language flip re-words it) */
   const [addErr, setAddErr] = useState<WorkerErr | null>(null);
   /** REQ-151 — the last add: whether the worker was texted the link and the PIN */
@@ -95,13 +100,27 @@ export default function FieldWorkersPage() {
     };
   }, []);
 
-  const phoneOk = form.phone.length === 10;
-  const pinOk = /^\d{4}$/.test(form.pin);
-  const canAdd = form.name.trim().length > 0 && phoneOk && pinOk && !adding;
+  /** REQ-520 (demo m19) — Add stays enabled; a bad box says why, under itself, once touched or on Add */
+  const problems = addFormProblems(form);
+  const touch = (f: AddFormField) =>
+    setTouched((s) => s.has(f) ? s : new Set(s).add(f));
+  /** the box's message key: the server's refusal first, else its own problem once shown */
+  function boxErr(f: AddFormField): string | null {
+    if (addErr?.field === f) return errMsg(addErr);
+    const k = problems[f];
+    return k && (tried || touched.has(f)) ? t(k) : null;
+  }
+  const nameErr = boxErr("name");
+  const phoneErr = boxErr("phone");
+  const pinErr = boxErr("pin");
 
   async function submit(e: Event) {
     e.preventDefault();
-    if (!canAdd) return;
+    if (adding) return;
+    if (Object.keys(problems).length > 0) {
+      setTried(true);
+      return;
+    }
     setAdding(true);
     setAddErr(null);
     setAdded(null);
@@ -115,6 +134,8 @@ export default function FieldWorkersPage() {
       });
       setAdded({ name: made.name, texted: made.texted === true });
       setForm(BLANK);
+      setTouched(new Set());
+      setTried(false);
       await reload();
     } catch (err) {
       setAddErr(workerError(err, langSignal.value));
@@ -189,7 +210,8 @@ export default function FieldWorkersPage() {
               data-cy="wk-name"
               required
               autocomplete="off"
-              aria-invalid={addErr?.field === "name" ? "true" : undefined}
+              aria-invalid={nameErr ? "true" : undefined}
+              onBlur={() => touch("name")}
               value={form.name}
               onInput={(e) =>
                 setForm({
@@ -197,9 +219,9 @@ export default function FieldWorkersPage() {
                   name: (e.currentTarget as HTMLInputElement).value,
                 })}
             />
-            {addErr?.field === "name" && (
+            {nameErr && (
               <span class="field-error" role="alert" data-cy="wk-name-error">
-                {errMsg(addErr)}
+                {nameErr}
               </span>
             )}
           </label>
@@ -215,10 +237,9 @@ export default function FieldWorkersPage() {
               placeholder={PHONE_PLACEHOLDER}
               maxlength={10}
               pattern="\d{10}"
-              aria-invalid={addErr?.field === "phone" ? "true" : undefined}
-              aria-describedby={addErr?.field === "phone"
-                ? "wk-phone-error"
-                : undefined}
+              aria-invalid={phoneErr ? "true" : undefined}
+              aria-describedby={phoneErr ? "wk-phone-error" : undefined}
+              onBlur={() => touch("phone")}
               value={form.phone}
               onInput={(e) => {
                 setForm({
@@ -232,14 +253,14 @@ export default function FieldWorkersPage() {
                 if (addErr?.field === "phone") setAddErr(null);
               }}
             />
-            {addErr?.field === "phone" && (
+            {phoneErr && (
               <span
                 id="wk-phone-error"
                 class="field-error"
                 role="alert"
                 data-cy="wk-phone-error"
               >
-                {errMsg(addErr)}
+                {phoneErr}
               </span>
             )}
           </label>
@@ -254,20 +275,29 @@ export default function FieldWorkersPage() {
               autocomplete="new-password"
               maxlength={4}
               pattern="\d{4}"
-              aria-invalid={addErr?.field === "pin" ? "true" : undefined}
+              aria-invalid={pinErr ? "true" : undefined}
+              aria-describedby={pinErr ? "wk-pin-error" : undefined}
+              onBlur={() => touch("pin")}
               value={form.pin}
-              onInput={(e) =>
+              onInput={(e) => {
                 setForm({
                   ...form,
                   pin: (e.currentTarget as HTMLInputElement).value.replace(
                     /\D/g,
                     "",
                   ).slice(0, 4),
-                })}
+                });
+                if (addErr?.field === "pin") setAddErr(null);
+              }}
             />
-            {addErr?.field === "pin" && (
-              <span class="field-error" role="alert" data-cy="wk-pin-error">
-                {errMsg(addErr)}
+            {pinErr && (
+              <span
+                id="wk-pin-error"
+                class="field-error"
+                role="alert"
+                data-cy="wk-pin-error"
+              >
+                {pinErr}
               </span>
             )}
           </label>
@@ -292,6 +322,9 @@ export default function FieldWorkersPage() {
             </select>
           </label>
         </div>
+        <p class="hint" style="margin:6px 0 0" data-cy="wk-lang-note">
+          {t("field.wk.langNote")}
+        </p>
         <div
           class="row"
           style="margin-top:10px;align-items:center;justify-content:space-between"
@@ -318,7 +351,7 @@ export default function FieldWorkersPage() {
             type="submit"
             class="btn btn--pink"
             data-cy="wk-add"
-            disabled={!canAdd}
+            disabled={adding}
           >
             <I d={ICN.plus} size={14} sw={2.5} />{" "}
             {adding ? t("field.common.loading") : t("common.add")}

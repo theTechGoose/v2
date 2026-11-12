@@ -53,3 +53,20 @@ export function workerError(err: unknown, lang: "en" | "es"): WorkerErr {
   }
   return { ...hit };
 }
+
+/** REQ-520 (demo cycle 3, m19) — the add form's own boxes, checked before anything is posted */
+export type AddFormField = "name" | "phone" | "pin";
+
+/**
+ * REQ-520 — what is wrong with the new-worker form, box by box (the same
+ * `field.wk.err.*` keys the server's refusals map to). Empty when it can be posted.
+ */
+export function addFormProblems(
+  f: { name: string; phone: string; pin: string },
+): Partial<Record<AddFormField, string>> {
+  const out: Partial<Record<AddFormField, string>> = {};
+  if (f.name.trim().length === 0) out.name = "field.wk.err.nameRequired";
+  if (!/^\d{10}$/.test(f.phone)) out.phone = "field.wk.err.phone10";
+  if (!/^\d{4}$/.test(f.pin)) out.pin = "field.wk.err.pin4";
+  return out;
+}

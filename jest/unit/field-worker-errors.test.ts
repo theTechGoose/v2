@@ -114,6 +114,8 @@ describe("REQ-421 (demo m42) field worker refusals are worded, not raw", () => {
     expect(src).not.toMatch(/return b\.error/);
     expect(src).not.toMatch(/return b\.message/);
     expect(src).toMatch(/data-cy="wk-phone-error"/);
-    expect(src).toMatch(/aria-invalid=\{addErr\?\.field === "phone"/);
+    // REQ-520 amended: the box's message (and aria-invalid) goes through boxErr, server refusal first
+    expect(src).toMatch(/if \(addErr\?\.field === f\) return errMsg\(addErr\)/);
+    expect(src).toMatch(/aria-invalid=\{phoneErr \? "true" : undefined\}/);
   });
 });
