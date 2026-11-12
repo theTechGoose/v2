@@ -4089,7 +4089,7 @@
   "settings.reminders.offNote": "Los recordatorios están apagados — ninguna factura recibe un recordatorio automático. Aún puedes enviar uno a mano.",
   "demoMode.waitingFor": "Esperando la app de {name}…",
   "demoMode.waitingKeep": "Su última pantalla se queda aquí hasta que vuelva su app.",
-  "demoMode.elsewhere": "Abierta en otra ventana",
+  "demoMode.elsewhere": "En otra ventana",
   "demoMode.useHere": "Usar esta ventana",
   "demoMode.movedElsewhere": "Esta demo pasó a otra ventana.",
   "demoMode.rejoin": "Volver a la demo",

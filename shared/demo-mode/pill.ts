@@ -458,9 +458,13 @@ export function pillFaceAwaiting(face: PillFace): PillFace {
  * frozen ghost must not keep saying the last "Connected". Its status becomes connecting (ended
  * when the demo ended) and the customer's own label goes — the stage words it until their pill
  * speaks again. No pill heard yet: nothing changes.
+ *
+ * REQ-646 (demo-loop cycle 5, m63) — `replaced` is not a drop: the customer is still there, it
+ * is THIS window that stopped hearing them (another window of the account has the demo). The
+ * face is kept as it was — never "Connecting…" — and the stage hides the ghost while elsewhere.
  */
 export function pillFaceOffline(face: PillFace, link: string): PillFace {
-  if (!face.status) return face;
+  if (!face.status || link === "replaced") return face;
   const { label: _label, ...rest } = face;
   return { ...rest, status: link === "ended" ? "ended" : "connecting" };
 }

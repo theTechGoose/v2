@@ -10,7 +10,7 @@
  *      with the first tab's pointer still arriving.
  *   4. m3: a second window of the same staff account (a fresh login) opens /admin and STAYS there,
  *      saying "Guiding Ana Torres · Back to the demo"; taking the demo over moves it onto the stage
- *      and tells the first window "Open in another window".
+ *      and tells the first window "In another window" (REQ-646 wording).
  *   5. M21: "Return to your account" on the stage asks first, then leaves the demo (its only
  *      presenter: the demo ends for the customer) and lands on /admin — and stays there.
  *
@@ -379,7 +379,7 @@ Deno.test("REQ-232 (demo-lifecycle-m3): a second window of the same staff accoun
         hasText: /^\s*Live\s*$/,
       }).waitFor({ timeout: 20_000 });
       await page.locator("[data-cy='demo-status']").filter({
-        hasText: "Open in another window",
+        hasText: "In another window",
       }).waitFor({ timeout: 15_000 });
       await page.locator("[data-cy='demo-use-here']").waitFor({
         timeout: 5_000,
