@@ -335,9 +335,12 @@ describe("REQ-235 the islands are wired", () => {
     ) {
       expect(comp).toContain(`data-cy="${cy}"`);
     }
-    for (const k of ["end", "endAsk", "endYes", "endNo"]) {
+    for (const k of ["end", "endYes", "endNo"]) {
       expect(comp).toContain(`t("demoMode.${k}")`);
     }
+    // REQ-649 — the question is the caller's; the stage's default stays "End for everyone?"
+    expect(comp).toContain('askKey = "demoMode.endAsk"');
+    expect(comp).toContain("t(askKey, askVars)");
     expect(comp).toMatch(/endConfirm\(/);
     expect(comp).toMatch(/disabled=\{!s\.armed\}/);
     for (

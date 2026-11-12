@@ -48,8 +48,8 @@ describe("REQ-548 (cycle 4, p4-p3e) End's question gets its own row on the compa
     const o = read("front-end/islands/DemoModeOverlay.tsx");
     expect(o).toMatch(/pillWraps\(\{\s*compact,\s*open,\s*asking\s*\}\)/);
     expect(o).toMatch(
-      // REQ-544 also hands EndDemo the overlay's demo-chrome t
-      /<EndDemo\s+onEnd=\{end\}\s+ownRow=\{compact\}\s+onAsking=\{setAsking\}(?:\s+t=\{t\})?\s*\/>/,
+      // REQ-544 also hands EndDemo the overlay's demo-chrome t; REQ-649 the viewer's question
+      /<EndDemo\s+onEnd=\{end\}\s+ownRow=\{compact\}\s+onAsking=\{setAsking\}(?:\s+t=\{t\})?(?:\s+askKey="demoMode\.endAskViewer"\s+askVars=\{\{\s*name:\s*names\s*\}\})?\s*\/>/,
     );
   });
 });

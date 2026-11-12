@@ -13,6 +13,10 @@
  * REQ-544 (demo-loop cycle 4, m49) — speaks the caller's language: the caller passes its `t`
  * (the overlay's is the demo chrome's, which keeps the viewer's language on /worker; the stage's
  * is the app's). Never the global t — on /worker that follows the signed-in worker.
+ *
+ * REQ-649 (demo-loop cycle 5, m64) — the question is the caller's: the stage keeps "End for
+ * everyone?" (`demoMode.endAsk`, a presenter among staff); the customer's pill passes
+ * `askKey="demoMode.endAskViewer"` with the guide's name ("End the demo with {name}?").
  */
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import type { Vars } from "../../lib/i18n.ts";
@@ -24,18 +28,24 @@ const BTN =
 /** The caller's string lookup (REQ-544). */
 export type DemoT = (key: string, vars?: Vars) => string;
 
+/** REQ-649 — which question End asks (default: the stage's "End for everyone?"). */
+export type EndAskWords = { askKey?: string; askVars?: Vars };
+
 /** REQ-544 — End, its question and both answers, in the caller's language. */
-export function endDemoWords(t: DemoT) {
+export function endDemoWords(
+  t: DemoT,
+  { askKey = "demoMode.endAsk", askVars }: EndAskWords = {},
+) {
   return {
     end: t("demoMode.end"),
-    ask: t("demoMode.endAsk"),
+    ask: t(askKey, askVars),
     yes: t("demoMode.endYes"),
     no: t("demoMode.endNo"),
   };
 }
 
 export default function EndDemo(
-  { onEnd, disabled = false, ownRow = false, onAsking, t }: {
+  { onEnd, disabled = false, ownRow = false, onAsking, t, askKey, askVars }: {
     onEnd: () => void;
     disabled?: boolean;
     /** REQ-548 — the question takes a whole row of a wrapping host (the phone's compact pill) */
@@ -44,9 +54,9 @@ export default function EndDemo(
     onAsking?: (asking: boolean) => void;
     /** REQ-544 — the host's demo-chrome t (the viewer's language, never the page's) */
     t: DemoT;
-  },
+  } & EndAskWords,
 ) {
-  const words = endDemoWords(t);
+  const words = endDemoWords(t, { askKey, askVars });
   const [s, setS] = useState<EndAsk>({ asking: false, armed: false });
   const onEndRef = useRef(onEnd);
   onEndRef.current = onEnd;

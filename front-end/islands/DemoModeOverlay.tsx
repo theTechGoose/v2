@@ -1622,8 +1622,15 @@ export default function DemoModeOverlay() {
                   {statusLabel}
                 </span>
               )}
-            {/* REQ-235 — End asks first */}
-            <EndDemo onEnd={end} ownRow={compact} onAsking={setAsking} t={t} />
+            {/* REQ-235 — End asks first; REQ-649 — the customer is asked about ending it with the guide */}
+            <EndDemo
+              onEnd={end}
+              ownRow={compact}
+              onAsking={setAsking}
+              t={t}
+              askKey="demoMode.endAskViewer"
+              askVars={{ name: names }}
+            />
           </>
         )}
       </div>

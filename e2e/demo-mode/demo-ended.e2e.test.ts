@@ -3,7 +3,8 @@
  * demo's issue demo-lifecycle-m2). Two browsers: Hans (a super admin) opens a demo for Ana from
  * /admin and lands on the stage; Ana's app joins on its own; both connect.
  *
- *   1. Ana clicks End: it asks "End for everyone?" and nothing has ended; Keep going puts End
+ *   1. Ana clicks End: it asks "End the demo with Hans?" (REQ-649, m64 — never "End for
+ *      everyone?", which is the stage's question) and nothing has ended; Keep going puts End
  *      back; asked and left alone the question STAYS (REQ-300: no 4 s self-cancel) and the pill
  *      does not move; a click outside the pill puts End back — the demo still on.
  *   2. Ana ends it (End, Yes): her pill turns at once — before the server answers — into "You
@@ -136,9 +137,15 @@ Deno.test("REQ-235 / REQ-300: End asks first — Keep going, or a click outside,
       await userPage.locator("[data-cy='demo-end-ask']").waitFor({
         timeout: 2_000,
       });
+      // REQ-649 (demo-loop cycle 5, m64) — the customer is asked about ending it with the guide
+      const viewerAsk = await textOf(userPage, "demo-end-ask");
       expect(
-        (await textOf(userPage, "demo-end-ask")).includes("End for everyone?"),
-        "the first click asks: End for everyone?",
+        viewerAsk.includes("End the demo with Hans?"),
+        `the first click asks: End the demo with Hans? (got "${viewerAsk}")`,
+      );
+      expect(
+        !/everyone/i.test(viewerAsk),
+        "REQ-649: the customer is never asked 'End for everyone?'",
       );
       expect.eq(
         await userPage.locator("[data-cy='demo-end']").count(),
