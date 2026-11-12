@@ -47,6 +47,10 @@ import PaymentsKpis from "../components/PaymentsKpis.tsx";
 import { docNumberOf } from "../../shared/documents/numbering.ts";
 import { type PaymentClaim, pendingClaims } from "../lib/payment-claims.ts";
 import { cashFlowWeeks } from "../lib/cash-flow-weeks.ts";
+import {
+  recordOptionLabel,
+  type RecordOptionInvoice,
+} from "../lib/payment-record-option.ts";
 
 /** Plural helper bound to an explicit language (the reactive `tn` reads the
  *  global lang signal; the logged-in app threads `lang` explicitly). */
@@ -384,9 +388,13 @@ export default function PaymentsPage({ lang: _lang }: { lang?: Lang } = {}) {
           .map((i) => ({
             id: i.id,
             amountCents: i.amount,
-            label: `${(i as { jobName?: string }).jobName ?? "Invoice"} · ${
-              customerNames.get(i.customerId ?? "") ?? "—"
-            } · ${fmtMoney(i.amount ?? 0)}`,
+            // REQ-587 (cycle 4, M27): number → job name in the app's
+            // language → the localized word; never a hard-coded "Invoice".
+            label: recordOptionLabel(
+              lang,
+              i as Invoice & RecordOptionInvoice,
+              customerNames.get(i.customerId ?? ""),
+            ),
           }))}
         onRecorded={load}
       />

@@ -13,6 +13,7 @@
 import { useState } from "preact/hooks";
 import { type PaymentMethod, paymentsClient } from "../clients/payments.ts";
 import { type Lang, tFor } from "../lib/i18n.ts";
+import { formatLongDate } from "../../shared/quote-flow/format-helpers.ts";
 import {
   paymentErrorText,
   validatePaymentReceived,
@@ -159,6 +160,19 @@ export default function PaymentReceivedForm(
             onInput={(e) => setDate((e.target as HTMLInputElement).value)}
             style={fieldStyle}
           />
+          {
+            /* REQ-587 (cycle 4, M27): a native date input draws the BROWSER
+              locale (11/12/2026 in an en-US browser) whatever the app
+              language, so the picked day is also spelled out in it. */
+          }
+          {date && (
+            <span
+              data-cy="pay-received-date-text"
+              style="font-size:12px;font-weight:600"
+            >
+              {formatLongDate(date, lang)}
+            </span>
+          )}
         </label>
       </div>
       <label style={labelStyle}>
