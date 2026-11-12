@@ -193,10 +193,12 @@ describe("UX-04 extractQuickQuotePrefill — both halves in one call", () => {
       "Instalación de patio de adoquines 20x15 para la familia Nguyen, $3,700 todo incluido",
     );
     // REQ-263: the prefill also carries the job address (none in this sentence)
+    // REQ-259: … and the typed price lines ([] — one amount).
     expect(got).toEqual({
       priceCents: 370000,
       customerName: "Familia Nguyen",
       serviceAddress: null,
+      lines: [],
     });
   });
 
@@ -207,6 +209,7 @@ describe("UX-04 extractQuickQuotePrefill — both halves in one call", () => {
       priceCents: null,
       customerName: null,
       serviceAddress: null,
+      lines: [],
     });
   });
 });

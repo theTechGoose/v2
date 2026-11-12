@@ -60,6 +60,8 @@ import {
 import {
   acceptedJobChipLabel,
   extractQuickQuotePrefill,
+  type PriceLine,
+  quoteLineItemsFromPrefill,
 } from "../../shared/quote-flow/quick-quote-prefill.ts";
 import {
   formatPhoneDisplay,
@@ -707,6 +709,10 @@ export default function AsstChat({
   const [prefillServiceAddress, setPrefillServiceAddress] = useState<
     string | null
   >(null);
+  /** REQ-259 (demo M23): the priced lines of an itemised sentence ("demo
+   *  $2,500, cabinets $8,000, …") — they become the quote's line items when
+   *  the confirmed price is still their sum. */
+  const [prefillLines, setPrefillLines] = useState<PriceLine[]>([]);
   /** Set after the user clicks Continue on the price step. While true,
    *  the chat input no longer routes to the LLM chat — instead its
    *  next submission is treated as raw job-details, sent through the
@@ -2390,12 +2396,9 @@ export default function AsstChat({
         jobName,
         description: raw.trim(),
         ...byLangFields,
-        lineItems: [{
-          description: summary,
-          quantity: 1,
-          unit: "ea",
-          price: cents,
-        }],
+        // REQ-259 (demo M23): the lines the user typed, priced, when they
+        // still add up to the confirmed price; else one summary line.
+        lineItems: quoteLineItemsFromPrefill(prefillLines, cents, summary),
         estimatedTotal: cents,
         // REQ-263: the job address typed in the sentence rides on the quote.
         ...(prefillServiceAddress
@@ -2628,11 +2631,10 @@ export default function AsstChat({
       const hasName = Object.keys(nameByLang).length > 0;
       const hasSumm = Object.keys(summByLang).length > 0;
       if (quoteId) {
-        const items = quote?.lineItems && quote.lineItems.length > 0
-          ? quote.lineItems.map((
-            li,
-            i,
-          ) => (i === 0 ? { ...li, description: summary } : li))
+        // The picked summary renames the quote's lone summary line; an
+        // itemised quote (REQ-259) keeps the lines the user typed.
+        const items = quote?.lineItems?.length === 1
+          ? [{ ...quote.lineItems[0], description: summary }]
           : undefined;
         await quotesClient.update(quoteId, {
           description: description || summary,
@@ -2723,6 +2725,7 @@ export default function AsstChat({
     }
     setPrefillCustomerName(prefill.customerName);
     setPrefillServiceAddress(prefill.serviceAddress);
+    setPrefillLines(prefill.lines);
     if (suggestPricing) {
       // "Help me price it" (roadmap p.18): confirm the job details FIRST,
       // then price the confirmed scope. The picker's Continue advances to
