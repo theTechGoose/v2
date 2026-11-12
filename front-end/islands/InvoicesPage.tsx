@@ -34,6 +34,7 @@ import { type Lang, langSignal, tFor, tnFor } from "../lib/i18n.ts";
 import QuoteTrack from "./QuoteTrack.tsx";
 import {
   cardDate,
+  detailTitle,
   hasNudgeButton,
   hasSecondaryPaymentReceived,
   partialSendParts,
@@ -1663,6 +1664,12 @@ function InvoiceDetail(
       ? (inv as Record<string, unknown>).discountCents as number
       : 0;
   const jobName = strField(inv, "jobName");
+  // REQ-706 (cycle 5, p18-9a): the client is named once in the header
+  const header = detailTitle({
+    jobName,
+    client: inv.client,
+    invoiceRef: inv.invoiceRef,
+  });
   const moodLabel = tFor(lang, STAGE_MOOD[inv.stage].labelKey);
   const eyebrowStyle =
     "font-size:11px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--fg-muted,#6b7560)";
@@ -1694,10 +1701,10 @@ function InvoiceDetail(
             {tFor(lang, "invoicesPage.back.eyebrow")}
           </div>
           <h2 style="margin:4px 0 0;font-size:20px;font-weight:800;color:var(--fg,#144852);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
-            {jobName ?? inv.client}
+            {header.title}
           </h2>
           <div style="margin-top:2px;font-size:12.5px;color:var(--fg-muted,#6b7560)">
-            {inv.client} · {inv.invoiceRef}
+            {header.sub}
           </div>
           {/* REQ-201: number · version · state */}
           <div

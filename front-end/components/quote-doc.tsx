@@ -31,6 +31,7 @@ import {
   deriveQuoteView,
   internalPreview,
   publicHeadlineState,
+  publishedLineDate,
 } from "../../shared/quote-flow/public-doc-state.ts";
 import {
   localizeLineItems,
@@ -346,6 +347,11 @@ export function QuoteDoc(
   // keep the old #ID reference.
   const docNumber = quote.number ?? `#${quote.id.slice(0, 8).toUpperCase()}`;
   // REQ-256: the onboarding sample has no number and was sent to no one.
+  const headlineDate = quote.isSample
+    ? undefined
+    : signed
+    ? view.acceptedAt
+    : quote.publishedAt;
   const headline = quote.isSample
     ? tFor(lang, "quoteDoc.sampleHeadline")
     : docHeadline(
@@ -355,10 +361,15 @@ export function QuoteDoc(
         // REQ-320 (demo m15): the state word follows the signature pad's
         // derive — none at all while the server still calls it a draft.
         state: publicHeadlineState(quote),
-        date: signed ? view.acceptedAt : quote.publishedAt,
+        date: headlineDate,
       },
       lang,
     );
+  // REQ-706 (cycle 5, p18-9a): "Published <date>" only when the headline
+  // does not already print that date after "Sent".
+  const publishedOn = signed
+    ? undefined
+    : publishedLineDate(quote.publishedAt, headlineDate);
   // REQ-304 (demo M28): "What changed in Version 2: Total $9,500.00 →
   // $10,700.00" — the customer sees the comparison, not just "Revised".
   const changedLine = quote.changesFromPrevious && !quote.isSample
@@ -566,11 +577,11 @@ export function QuoteDoc(
               >
                 {headline}
               </div>
-              {!signed && quote.publishedAt
+              {publishedOn
                 ? (
                   <div style={`margin-top:2px;font-size:12px;color:${MUTED}`}>
                     {tFor(lang, "public.doc.publishedOn", {
-                      date: shortDate(quote.publishedAt, lang),
+                      date: shortDate(publishedOn, lang),
                     })}
                   </div>
                 )

@@ -1631,7 +1631,7 @@
   "invoicesPage.docTitle": "Invoices · DocuMonster",
   "invoicesPage.empty.awaiting": "No claimed payments waiting for you to confirm.",
   "invoicesPage.empty.drafting": "No drafts in progress. Open the assistant to start one.",
-  "invoicesPage.empty.out": "Nothing waiting. Send a quote to get paid.",
+  "invoicesPage.empty.out": "Nothing out. Invoices you send land here.",
   "invoicesPage.empty.overdue": "No overdue invoices. Nice work.",
   "invoicesPage.empty.paid": "Nothing paid yet this month — payments land here once they clear.",
   "invoicesPage.empty.scheduled": "No scheduled invoices. Multi-installment agreements will surface here.",

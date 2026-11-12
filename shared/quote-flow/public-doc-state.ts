@@ -150,6 +150,31 @@ export function publicHeadlineState(
   return payload.state === "revised" ? "revised" : "sent";
 }
 
+/** The calendar day a stamp shows as — UTC, the same day `shortDate` prints. */
+function dayOf(iso: string): string | undefined {
+  if (/^\d{4}-\d{2}-\d{2}$/.test(iso)) return iso;
+  const d = new Date(iso);
+  return Number.isNaN(+d) ? undefined : d.toISOString().slice(0, 10);
+}
+
+/**
+ * REQ-706 (demo-loop cycle 5, p18-9a): the "Published <date>" line under the
+ * /q headline only when it says something the headline does not. Version 1
+ * reads "Q-001 · Version 1 · Sent · Nov 12, 2026" — the publish date IS that
+ * date, so a second "Published Nov 12, 2026" just repeats it under another
+ * verb. Returns the date to print, or undefined to hide the line.
+ */
+export function publishedLineDate(
+  publishedAt: string | undefined,
+  headlineDate: string | undefined,
+): string | undefined {
+  if (!publishedAt) return undefined;
+  if (headlineDate && dayOf(headlineDate) === dayOf(publishedAt)) {
+    return undefined;
+  }
+  return publishedAt;
+}
+
 /* ---------- per-language line items ---------- */
 
 export interface LineItemLike {
