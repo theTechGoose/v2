@@ -84,6 +84,11 @@ import {
   liveDraftOffer,
   offerAmount,
 } from "../../shared/quote-flow/chat-draft-offer.ts"; // REQ-388
+import {
+  arrivedInvoiceFlowOffer,
+  type InvoiceFlowOffer,
+  liveInvoiceFlowOffer,
+} from "../../shared/quote-flow/chat-invoice-flow-offer.ts"; // REQ-656
 import { quoteHasPrice } from "../../shared/quote-flow/quote-price-guard.ts";
 import { polishOffer } from "../../shared/quote-flow/polish-offer.ts";
 import {
@@ -1232,6 +1237,12 @@ export default function AsstChat({
    *  (customer → completion date → payment terms → warranty) to the shared
    *  preview in invoice mode. */
   const [invoiceFlow, setInvoiceFlow] = useState(seed?.invoiceFlow ?? false);
+  /** REQ-656 (demo-loop cycle 5, M9): a chat reply asked to open the invoice
+   *  flow ("Trabajo terminado, necesito facturar…" typed) — opened once the
+   *  turn has settled. */
+  const [pendingInvoiceFlow, setPendingInvoiceFlow] = useState<
+    InvoiceFlowOffer | null
+  >(null);
   /** UX-31: the facturar flow REVIEWS before it saves — customer resolved,
    *  waiting on the contractor to confirm amount + an editable due date.
    *  Nothing is persisted until they confirm. */
@@ -2466,6 +2477,10 @@ export default function AsstChat({
             res.newMessages!,
           )
         );
+        // REQ-656 (demo-loop cycle 5, M9): the server read "job done,
+        // invoice X" — open the invoice flow the starter chip opens.
+        const invoiceAsk = arrivedInvoiceFlowOffer(res.newMessages);
+        if (invoiceAsk) setPendingInvoiceFlow(invoiceAsk);
         // REQ-262 (demo M25): the assistant rewrote / translated the quote's
         // job details — re-read it so the open preview shows the new text.
         const updatedQuoteId = quoteUpdatedBy(res.newMessages);
@@ -3712,9 +3727,20 @@ export default function AsstChat({
     }
   }
 
-  function submitJobDetails(raw: string) {
+  function submitJobDetails(
+    raw: string,
+    /** REQ-656: what the server already read from the words (amount, who
+     *  to bill) and the flow's own pricing mode — the caller's state may
+     *  not have rendered yet. */
+    given: {
+      priceCents?: number;
+      customerName?: string;
+      suggestPricing?: boolean;
+    } = {},
+  ) {
     const trimmed = raw.trim();
     if (sending || !trimmed) return;
+    const pricingFirst = given.suggestPricing ?? suggestPricing;
     setError(undefined);
     void ensureConversationForDraft(trimmed);
     pushHistory();
@@ -3725,16 +3751,21 @@ export default function AsstChat({
     // UX-04/UX-32: the sentence often already answers the next questions
     // ("…para la familia Nguyen, $3,700 todo incluido") — seed the price
     // picker and the customer step instead of asking again from $0.
-    const prefill = extractQuickQuotePrefill(trimmed);
-    if (prefill.priceCents && !suggestPricing) {
+    const extracted = extractQuickQuotePrefill(trimmed);
+    const prefill = {
+      ...extracted,
+      priceCents: given.priceCents ?? extracted.priceCents,
+      customerName: given.customerName ?? extracted.customerName,
+    };
+    if (prefill.priceCents && !pricingFirst) {
       setPriceCents(prefill.priceCents);
     }
     // REQ-389 (demo m31): the typed amount sizes the pad's quick chips.
-    setPrefillPriceCents(suggestPricing ? null : prefill.priceCents ?? null);
+    setPrefillPriceCents(pricingFirst ? null : prefill.priceCents ?? null);
     setPrefillCustomerName(prefill.customerName);
     setPrefillServiceAddress(prefill.serviceAddress);
     setPrefillLines(prefill.lines);
-    if (suggestPricing) {
+    if (pricingFirst) {
       // "Help me price it" (roadmap p.18): confirm the job details FIRST,
       // then price the confirmed scope. The picker's Continue advances to
       // the pricing screen via applyJobOption's confirm branch.
@@ -4755,7 +4786,12 @@ export default function AsstChat({
    * then a quick customer pick, and out comes a standalone invoice (no
    * signature, no terms).
    */
-  function startInvoiceFlow() {
+  function startInvoiceFlow(
+    /** REQ-656 (demo-loop cycle 5, M9): the chat reply's offer — the typed
+     *  words go straight in as the job details, with the amount and who to
+     *  bill, so the flow opens at the price step prefilled. */
+    prefill?: InvoiceFlowOffer,
+  ) {
     pushHistory();
     setFlowChip("invoiceDone");
     setInvoiceFlow(true);
@@ -4800,7 +4836,25 @@ export default function AsstChat({
       setAcceptedJobChips(list);
     }).catch(() => {});
     taRef.current?.focus({ preventScroll: true });
+    if (prefill) {
+      submitJobDetails(prefill.details, {
+        ...(prefill.amountCents ? { priceCents: prefill.amountCents } : {}),
+        ...(prefill.customerName
+          ? { customerName: prefill.customerName }
+          : {}),
+        suggestPricing: false,
+      });
+    }
   }
+
+  // REQ-656 (demo-loop cycle 5, M9): open the flow a reply asked for once
+  // the turn is done (submitJobDetails ignores a busy chat).
+  useEffect(() => {
+    if (!pendingInvoiceFlow || sending || stepSending) return;
+    const offer = pendingInvoiceFlow;
+    setPendingInvoiceFlow(null);
+    startInvoiceFlow(offer);
+  }, [pendingInvoiceFlow, sending, stepSending]);
 
   /** UX-31: the reviewed save — fires only after the contractor confirmed
    *  the amount + due date on the review step. */
@@ -6756,7 +6810,7 @@ export default function AsstChat({
                     <button
                       type="button"
                       class="chat__empty-prompt"
-                      onClick={startInvoiceFlow}
+                      onClick={() => startInvoiceFlow()}
                     >
                       {tFor(lang, "asstChat.prompt.invoiceDone")}
                     </button>
@@ -6842,6 +6896,10 @@ export default function AsstChat({
               // REQ-388 (demo-loop cycle 2, M23): a pricing answer offers
               // the draft — on the newest message, while no quote is bound.
               const draftOffer = liveDraftOffer(visible, quoteId);
+              // REQ-656 (demo-loop cycle 5, M9): "job done, invoice X" —
+              // the reply's invoice flow, on the newest message, while no
+              // job is bound (it opened on arrival; this reopens it).
+              const invoiceFlowOffer = liveInvoiceFlowOffer(visible, quoteId);
               // REQ-452 (demo cycle 3, p8-pair7-b): a sent / "Couldn't send"
               // CTA is drawn at its send divider, not where the wizard left
               // it — below anything typed on the review step before the send.
@@ -9873,6 +9931,18 @@ export default function AsstChat({
                           </button>
                         );
                       })()}
+                      {invoiceFlowOffer?.id === m.id && (
+                        <button
+                          type="button"
+                          data-cy="msg-invoice-flow-offer"
+                          disabled={sending}
+                          onClick={() =>
+                            startInvoiceFlow(invoiceFlowOffer.offer)}
+                          style="display:inline-flex;align-items:center;gap:6px;margin-top:6px;padding:7px 12px;border:0;border-radius:999px;background:#144852;color:#fff;font-size:12.5px;font-weight:800;cursor:pointer"
+                        >
+                          {tFor(lang, "asstChat.invoiceFlowOffer")}
+                        </button>
+                      )}
                       <div class="msg__time">{fmtTime(m.createdAt, lang)}</div>
                     </div>
                   </div>

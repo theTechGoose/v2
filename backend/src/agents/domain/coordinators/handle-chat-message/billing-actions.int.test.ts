@@ -877,3 +877,120 @@ Deno.test("REQ-583 M2: a quote nobody signed offers the model neither tool", asy
     assert(!chat[0].tools?.includes("record_payment"));
   });
 });
+
+// ---------------------------------------------------------------------------
+// REQ-656 (demo-loop cycle 5, run r37f88707, M9) — "job done, invoice X"
+// ---------------------------------------------------------------------------
+
+Deno.test("REQ-656 M9: pair 8 — the chip's words typed in a new chat open the invoice flow (customer + amount), never a drafted quote", async () => {
+  await withKv(async () => {
+    const fx = fresh();
+    await seedOnboarded("es");
+    const conv = await fx.conversations.create({ userId: U });
+    // what the demo's model did with the sentence: a quote, Q-002
+    const chat = scriptLlm(fx, () => ({
+      text: "",
+      action: {
+        type: "create_quote",
+        payload: {
+          summary: "Retiro de refrigerador y lavadora",
+          lineItems: [{
+            description: "Retiro de refrigerador y lavadora",
+            amountCents: 20_000,
+          }],
+        },
+      },
+    }));
+    const said =
+      "Trabajo terminado, necesito facturar: Jorge Ruiz, jorge.ruiz@example.com, sacamos un refrigerador y una lavadora viejos, $200. Que pague hoy.";
+
+    const res = await fx.flow.run({
+      userId: U,
+      conversationId: conv.id,
+      content: said,
+    });
+
+    const text = textOf(res.newMessages);
+    assertEquals(chat.length, 0, `the chat model answered: ${text}`);
+    assertEquals(await fx.quotes.listByUser(U), [], "a quote was drafted");
+    assertEquals(cardsOf(res.newMessages), []);
+    const reply = res.newMessages.find((m) =>
+      m.role === "assistant" && m.kind === "text"
+    );
+    const flow = (reply?.payload as Record<string, unknown> | undefined)
+      ?.invoiceFlow;
+    assertEquals(flow, {
+      details: said,
+      amountCents: 20_000,
+      customerName: "Jorge Ruiz",
+      customerEmail: "jorge.ruiz@example.com",
+    });
+    assertStringIncludes(text, "Jorge Ruiz");
+    assertStringIncludes(text, "$200");
+    assert(!/cotizaci[oó]n/i.test(text), text);
+    assertEquals(res.conversation.quoteId, undefined);
+  });
+});
+
+Deno.test("REQ-656 M9: pair 1 — 'Trabajo terminado, factura a María López…' on a signed pay-on-completion job leads with Send now; nothing is sent without the tap", async () => {
+  await withKv(async () => {
+    const fx = fresh();
+    await seedOnboarded("es");
+    const { conv, invoices: [inv] } = await signedJob(fx, {
+      customer: { name: "María López", email: "maria@example.com" },
+      job: "Corte de césped",
+      totalCents: 18_000,
+      invoices: [{
+        amount: 18_000,
+        status: "scheduled",
+        scheduledFor: "2026-11-19",
+        dueDate: "2026-12-19",
+        installmentIndex: 1,
+        installmentTotal: 1,
+      }],
+    });
+    const chat = scriptLlm(fx);
+
+    const res = await fx.flow.run({
+      userId: U,
+      conversationId: conv.id,
+      content:
+        "Trabajo terminado, factura a María López por la cotización Q-001",
+    });
+
+    const text = textOf(res.newMessages);
+    assertEquals(chat.length, 0, `the chat model answered: ${text}`);
+    assert(!/todav[ií]a no se ha facturado nada/i.test(text), text);
+    assertStringIncludes(text, "Enviar ahora");
+    assertStringIncludes(text, inv.number!);
+    assertStringIncludes(text, "$180");
+    const card = cardsOf(res.newMessages).find((p) => p.invoiceId === inv.id);
+    assertEquals(card?.offerSend, true);
+    assertEquals((await fx.invoices.getOwned(inv.id, U)).status, "scheduled");
+    assertEquals(fx.emails.length, 0);
+  });
+});
+
+Deno.test("REQ-656 M9: a job-done ask in a new chat naming a customer with a signed job binds that job and leads with Send now", async () => {
+  await withKv(async () => {
+    const fx = fresh();
+    await seedOnboarded();
+    const { quote, invoices: [inv] } = await mariaJob(fx);
+    const conv = await fx.conversations.create({ userId: U });
+    const chat = scriptLlm(fx);
+    const res = await fx.flow.run({
+      userId: U,
+      conversationId: conv.id,
+      content: "Job done for Maria Lopez, need to invoice her",
+    });
+    const text = textOf(res.newMessages);
+    assertEquals(chat.length, 0, text);
+    assertEquals(res.conversation.quoteId, quote.id);
+    assertStringIncludes(text, "Send now");
+    assertEquals(
+      cardsOf(res.newMessages).find((p) => p.invoiceId === inv.id)?.offerSend,
+      true,
+    );
+    assertEquals((await fx.invoices.getOwned(inv.id, U)).status, "scheduled");
+  });
+});

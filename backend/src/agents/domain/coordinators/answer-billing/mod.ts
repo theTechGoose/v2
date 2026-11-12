@@ -89,6 +89,9 @@ export class AnswerBilling {
     userId: string;
     conversation: AgentConversation;
     lang: Lang;
+    /** REQ-656 (demo-loop cycle 5, M9): "the job is done" was said — a
+     *  scheduled invoice is answered with Send now. */
+    jobDone?: boolean;
   }): Promise<AnswerBillingResult | undefined> {
     const conv = input.conversation;
     if (!conv.quoteId) return undefined;
@@ -98,7 +101,9 @@ export class AnswerBilling {
     const invoices = (await this.invoices.listByUser(input.userId)
       .catch(() => []))
       .filter((i) => i.quoteId === quote.id);
-    const reply = billingReply(input.lang, quote, invoices);
+    const reply = billingReply(input.lang, quote, invoices, {
+      jobDone: input.jobDone === true,
+    });
 
     const newMessages: AgentMessage[] = [
       await this.messages.append({

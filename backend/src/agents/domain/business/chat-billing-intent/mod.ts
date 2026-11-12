@@ -26,11 +26,19 @@
  *   unsentInvoiceOf    — the job's invoice not sent yet (scheduled / draft).
  *   invoicesContext    — the job's invoices, as the chat model reads them.
  *   namedCustomer      — the one customer the message names.
+ *
+ * REQ-656 (demo-loop cycle 5, M9):
+ *   parseJobDoneInvoiceAsk — "Trabajo terminado, necesito facturar: Jorge
+ *                        Ruiz, …, $200" / "Job done, need to invoice": the
+ *                        work is finished AND it is to be billed. Pair 8's
+ *                        typed chip words drafted a quote; pair 1's on a
+ *                        signed job only said when the invoice was scheduled.
  */
 import type { PaymentMethod } from "@paperwork/dto/invoice.ts";
 import { typedAmountsCents } from "@agents/domain/business/change-order-intent/mod.ts";
 import { sameDocNumber } from "@agents/domain/business/invoice-removal-intent/mod.ts";
 import { findCustomerNamedInText } from "#quote-flow/customer-dedupe.ts";
+import { extractQuickQuotePrefill } from "#quote-flow/quick-quote-prefill.ts";
 
 // ---------------------------------------------------------------------------
 // "Linda paid the deposit $1,425 by Zelle"
@@ -540,4 +548,138 @@ export function namedCustomer<C extends { id: string; name: string }>(
     return first.length >= 3 && typed.has(fold(first));
   });
   return hits.length === 1 ? hits[0] : undefined;
+}
+
+// ---------------------------------------------------------------------------
+// REQ-656 (demo-loop cycle 5, M9) — "Job done, need to invoice"
+// ---------------------------------------------------------------------------
+
+export interface JobDoneInvoiceAsk {
+  /** The amount typed, INTEGER CENTS. */
+  amountCents?: number;
+  /** "Jorge Ruiz" — who to bill, as typed. */
+  customerName?: string;
+  customerEmail?: string;
+}
+
+/** The work is finished: "job done", "just finished", "the job is complete",
+ *  "trabajo terminado", "ya terminé", "acabamos", "ya está hecho". */
+const DONE_RES: readonly RegExp[] = [
+  new RegExp(
+    String
+      .raw`${L}(?:done|finished|completed?|wrapped\s+up|all\s+set)${R}`,
+    "iu",
+  ),
+  new RegExp(
+    String
+      .raw`${L}(?:terminad[oa]s?|termin[eé]|terminamos|terminaron|termin[oó]|acabad[oa]s?|acab[eé]|acabamos|acabaron|acab[oó]|completad[oa]s?|complet[eé]|completamos|finalizad[oa]s?|finalic[eé]|finalizamos)${R}`,
+    "iu",
+  ),
+  new RegExp(
+    String
+      .raw`${L}(?:trabajo|obra|proyecto|servicio)\s+(?:ya\s+)?(?:est[aá]\s+|qued[oó]\s+)?(?:hech[oa]|list[oa])${R}`,
+    "iu",
+  ),
+];
+/** Not finished yet, or only once it is: "when it's done", "isn't done",
+ *  "todavía no termino", "cuando termine". */
+const NOT_DONE_RES: readonly RegExp[] = [
+  new RegExp(
+    String
+      .raw`${L}(?:when|once|after|until|before|if|as\s+soon\s+as)\s+(?:\p{L}+['’]?\p{L}*\s+){0,4}?(?:done|finish|finished|complete|completed|wrapped)${R}`,
+    "iu",
+  ),
+  new RegExp(
+    String
+      .raw`${L}(?:not|isn['’]?t|aren['’]?t|wasn['’]?t|haven['’]?t|hasn['’]?t|never)\s+(?:\p{L}+\s+){0,2}?(?:done|finished|complete|completed)${R}`,
+    "iu",
+  ),
+  new RegExp(
+    String
+      .raw`${L}(?:no|todav[ií]a\s+no|a[uú]n\s+no)\s+(?:\p{L}+\s+){0,2}?(?:termin|acab|complet|finaliz|est[aá]\s+(?:hech|list|terminad))`,
+    "iu",
+  ),
+  new RegExp(
+    String
+      .raw`${L}(?:cuando|una\s+vez\s+que|en\s+cuanto|hasta\s+que|si)\s+(?:\p{L}+\s+){0,3}?(?:termin|acab|complet|finalic|finalice|est[eé]\s+(?:hech|list))`,
+    "iu",
+  ),
+];
+/** And it is to be billed: "invoice", "bill him", "factura(r)", "cobrar". */
+const BILL_RES: readonly RegExp[] = [
+  new RegExp(String.raw`${L}invoic(?:e|es|ed|ing)${R}`, "iu"),
+  new RegExp(String.raw`${L}bill${R}`, "iu"),
+  new RegExp(String.raw`${L}fact[uú]r\p{L}*`, "iu"),
+  new RegExp(String.raw`${L}c[oó]br(?:ar|arle|arles|ale|ales|a|o)${R}`, "iu"),
+];
+/** A quote asked for — that is drafting, not billing a finished job. */
+const QUOTE_ASK_RE = new RegExp(
+  String
+    .raw`${L}(?:(?:make|draft|create|write|need|send)\s+(?:me\s+)?(?:a|an|the)\s+(?:quote|estimate|bid)|(?:haz(?:me)?|prepara(?:me)?|necesito)\s+(?:una\s+)?cotizaci[oó]n)${R}`,
+  "iu",
+);
+/** Someone already paid / is reporting money in — REQ-583's payment path. */
+const PAYMENT_REPORTED_RE = new RegExp(
+  String
+    .raw`${L}(?:paid|pag[oó]|pagaron|me\s+pag)${R}`,
+  "iu",
+);
+const EMAIL_RE = /[\w.+-]+@[\w-]+(?:\.[\w-]+)+/u;
+/** A person's name: 2–3 capitalised words. */
+const PERSON = String.raw`\p{Lu}[\p{L}'’-]+(?:\s+\p{Lu}[\p{L}'’-]+){1,2}`;
+const NAME_AFTER_RES: readonly RegExp[] = [
+  // "facturar: Jorge Ruiz", "invoice Mike Ross", "factura a María López",
+  // "bill Tom Baker", "for Carmen Ruiz", "de Juan Pérez", "para Ana Gómez"
+  new RegExp(
+    String
+      .raw`${L}(?:invoice|bill|fact[uú]r\p{L}*|c[oó]br\p{L}*|for|para|de|a|to)\s*:?\s+(?:(?:a|to|for)\s+)?(${PERSON})`,
+    "u",
+  ),
+];
+/** Never a name: words that only look like one ("Que pague hoy"). */
+const NOT_A_NAME_RE =
+  /^(?:Que|The|This|That|Job|Trabajo|Q-\d+|INV-\d+)(?:\s|$)/u;
+
+/**
+ * Read "the job is finished — bill it" (REQ-656): the work is done (and not
+ * "when it's done" / "todavía no"), billing is asked, no quote is asked, and
+ * no payment is being reported. Undefined otherwise; else what the sentence
+ * says about who and how much.
+ */
+export function parseJobDoneInvoiceAsk(
+  text: string,
+): JobDoneInvoiceAsk | undefined {
+  const s = (text ?? "").trim();
+  if (!s) return undefined;
+  if (!DONE_RES.some((re) => re.test(s))) return undefined;
+  if (NOT_DONE_RES.some((re) => re.test(s))) return undefined;
+  if (!BILL_RES.some((re) => re.test(s))) return undefined;
+  if (QUOTE_ASK_RE.test(s) || PAYMENT_REPORTED_RE.test(s)) return undefined;
+  // a question about it ("Is the job done? Did you invoice her?")
+  if (sentences(s).every((x) => /\?\s*$/.test(x) || x.startsWith("¿"))) {
+    return undefined;
+  }
+  if (/^\s*(?:is|was|did|does|has|have|are)\b/i.test(s)) return undefined;
+
+  const out: JobDoneInvoiceAsk = {};
+  const prefill = extractQuickQuotePrefill(s);
+  const amount = prefill.priceCents ?? amountIn(s);
+  if (amount && amount > 0) out.amountCents = amount;
+  let name = prefill.customerName?.trim() || undefined;
+  if (!name) {
+    for (const re of NAME_AFTER_RES) {
+      for (const m of s.matchAll(new RegExp(re.source, re.flags + "g"))) {
+        const candidate = m[1]?.trim();
+        if (candidate && !NOT_A_NAME_RE.test(candidate)) {
+          name = candidate;
+          break;
+        }
+      }
+      if (name) break;
+    }
+  }
+  if (name) out.customerName = name;
+  const email = s.match(EMAIL_RE)?.[0];
+  if (email) out.customerEmail = email.toLowerCase();
+  return out;
 }

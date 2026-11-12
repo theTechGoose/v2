@@ -112,9 +112,13 @@ import {
   invoicesContext,
   liveSendOffer,
   namedCustomer,
+  parseJobDoneInvoiceAsk,
   parsePaymentReport,
   parseSendInvoiceAsk,
 } from "@agents/domain/business/chat-billing-intent/mod.ts";
+// REQ-656 (demo-loop cycle 5, M9): "Job done, need to invoice" → the flow.
+import type { InvoiceFlowOffer } from "#quote-flow/chat-invoice-flow-offer.ts";
+import { offerAmount } from "#quote-flow/chat-draft-offer.ts";
 import { isAccepted } from "#quote-flow/quote-status.ts";
 import {
   ReviseQuote,
@@ -1786,11 +1790,17 @@ export class HandleChatMessage {
       ? await this.quotes.getOwned(conv.quoteId, input.userId)
         .catch(() => undefined)
       : undefined;
+    // REQ-656 (demo-loop cycle 5, M9): "Trabajo terminado, necesito
+    // facturar…" — the job is finished and is to be billed.
+    const jobDoneAsk = !llmResponse && typeof input.content === "string"
+      ? parseJobDoneInvoiceAsk(input.content)
+      : undefined;
     const answerBilling = () =>
       new AnswerBilling(this.conversations, this.messages).run({
         userId: input.userId,
         conversation: conv,
         lang: replyLang,
+        jobDone: !!jobDoneAsk,
       });
     const finishEarly = async (
       r: { conversation: AgentConversation; newMessages: AgentMessage[] },
@@ -1917,7 +1927,7 @@ export class HandleChatMessage {
     // find a line called "invoice for" on Q-001…').
     if (
       !llmResponse && !conv.quoteId && typeof input.content === "string" &&
-      isInvoiceRequest(input.content)
+      (isInvoiceRequest(input.content) || jobDoneAsk)
     ) {
       const jobId = await this.namedCustomersJob(input.userId, input.content);
       if (jobId) {
@@ -1926,9 +1936,54 @@ export class HandleChatMessage {
           this.conversations,
           this.messages,
         )
-          .run({ userId: input.userId, conversation: bound, lang: replyLang });
+          .run({
+            userId: input.userId,
+            conversation: bound,
+            lang: replyLang,
+            jobDone: !!jobDoneAsk,
+          });
         if (billed) return await finishEarly(billed);
       }
+    }
+    // REQ-656 (demo-loop cycle 5, M9): pair 8 typed the starter chip's words
+    // in a new chat — "Trabajo terminado, necesito facturar: Jorge Ruiz, …,
+    // $200" — and the model drafted a quote (Q-002). No job to bill: the
+    // reply carries the invoice flow (the chip's own), prefilled with the
+    // words, the amount and who to bill; the chat opens it. No quote.
+    if (!llmResponse && !conv.quoteId && jobDoneAsk) {
+      const offer: InvoiceFlowOffer = {
+        details: input.content.trim(),
+        ...(jobDoneAsk.amountCents
+          ? { amountCents: jobDoneAsk.amountCents }
+          : {}),
+        ...(jobDoneAsk.customerName
+          ? { customerName: jobDoneAsk.customerName }
+          : {}),
+        ...(jobDoneAsk.customerEmail
+          ? { customerEmail: jobDoneAsk.customerEmail }
+          : {}),
+      };
+      const key = offer.customerName && offer.amountCents
+        ? "start"
+        : offer.customerName
+        ? "startName"
+        : offer.amountCents
+        ? "startAmount"
+        : "startPlain";
+      const reply = await this.messages.append({
+        conversationId: conv.id,
+        role: "assistant",
+        kind: "text",
+        content: t(replyLang, `chatCoordinator.jobDoneInvoice.${key}`, {
+          name: offer.customerName ?? "",
+          amount: offer.amountCents ? offerAmount(offer.amountCents) : "",
+        }),
+        payload: { invoiceFlow: offer },
+      });
+      const updated = await this.conversations.update(conv.id, {
+        preview: derivePreview(reply.content),
+      });
+      return await finishEarly({ conversation: updated, newMessages: [reply] });
     }
     // ---- REQ-388 (M23): "Draft a quote at $1,500" — the pricing answer's
     // offer, taken (the chat's button sends those words). The draft is the

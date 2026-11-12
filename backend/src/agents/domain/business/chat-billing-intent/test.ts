@@ -18,6 +18,7 @@ import {
   invoicesContext,
   liveSendOffer,
   namedCustomer,
+  parseJobDoneInvoiceAsk,
   parsePaymentReport,
   parseSendInvoiceAsk,
   pickPaymentInvoice,
@@ -439,4 +440,63 @@ Deno.test("REQ-583 M2 namedCustomer: the whole name typed, else one customer's f
     ),
     undefined,
   );
+});
+
+// ---------------------------------------------------------------------------
+// REQ-656 (demo-loop cycle 5, M9) — "job done, invoice X"
+// ---------------------------------------------------------------------------
+
+Deno.test("REQ-656 M9 parseJobDoneInvoiceAsk: pair 8's chip words — customer, email and amount", () => {
+  assertEquals(
+    parseJobDoneInvoiceAsk(
+      "Trabajo terminado, necesito facturar: Jorge Ruiz, jorge.ruiz@example.com, sacamos un refrigerador y una lavadora viejos, $200. Que pague hoy.",
+    ),
+    {
+      amountCents: 20_000,
+      customerName: "Jorge Ruiz",
+      customerEmail: "jorge.ruiz@example.com",
+    },
+  );
+});
+
+Deno.test("REQ-656 M9 parseJobDoneInvoiceAsk: the finished-job asks, en and es", () => {
+  for (
+    const s of [
+      "Job done, need to invoice.",
+      "Trabajo terminado, necesito facturar.",
+      "Trabajo terminado, factura a María López por la cotización Q-001",
+      "Job done for Carmen Ruiz, faucet and the 2 doors. Make the invoice for $450 please.",
+      "Just finished the deck for Tom Baker, bill him $1,200",
+      "The job is complete, send the invoice",
+      "No quiero cotización, el trabajo ya está hecho. Hazme la factura.",
+      "Ya terminé el trabajo de Juan Pérez, mándale la factura",
+      "Acabamos la obra, hay que cobrarle a Ana",
+      "Finished the job — invoice Mike Ross $350",
+    ]
+  ) {
+    assertEquals(parseJobDoneInvoiceAsk(s) !== undefined, true, s);
+  }
+  assertEquals(
+    parseJobDoneInvoiceAsk("Finished the job — invoice Mike Ross $350"),
+    { amountCents: 35_000, customerName: "Mike Ross" },
+  );
+});
+
+Deno.test("REQ-656 M9 parseJobDoneInvoiceAsk: not done yet, a question, or no bill asked → undefined", () => {
+  for (
+    const s of [
+      "When the job is done, invoice her",
+      "Once it's finished I'll bill him",
+      "Todavía no termino, luego le facturo",
+      "The job isn't done yet, don't invoice",
+      "Is the job done? Did you invoice her?",
+      "Job done!",
+      "Trabajo terminado.",
+      "Send her the invoice",
+      "Make a quote for a finished basement, $40,000",
+      "Linda paid the deposit $1,425 by Zelle today. Send her the invoice",
+    ]
+  ) {
+    assertEquals(parseJobDoneInvoiceAsk(s), undefined, s);
+  }
 });

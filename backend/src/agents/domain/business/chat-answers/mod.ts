@@ -200,6 +200,9 @@ export function billingReply(
   lang: Lang,
   quote: BillingQuote,
   invoices: BillingInvoice[],
+  /** REQ-656 (demo-loop cycle 5, M9): the contractor said the job is done
+   *  ("Trabajo terminado, factura a María López…"). */
+  opts: { jobDone?: boolean } = {},
 ): BillingReply {
   const live = invoices.filter((i) => (i.status ?? "") !== "void");
   const name = quote.customerSnapshot?.name?.trim() ||
@@ -218,6 +221,25 @@ export function billingReply(
     const notSent = status === "draft" && !quote.sentAt;
     return {
       text: say(notSent ? "notSent" : "notSigned"),
+      offerInvoiceCta: false,
+    };
+  }
+
+  // REQ-656 (demo-loop cycle 5, M9): the job is done and an invoice is still
+  // waiting for its date — sending it now is the answer, with Send now on
+  // its card. Pair 1 got "nothing is billed yet" and the date it would go
+  // out. Nothing is sent without the tap (REQ-583).
+  const waiting = live.filter((i) => i.status === "scheduled")
+    .sort(byInstallment)[0];
+  if (opts.jobDone && waiting) {
+    const when = waiting.scheduledFor ?? waiting.dueDate;
+    return {
+      text: say(when ? "jobDoneSendNow" : "jobDoneSendNowNoDate", {
+        number: docNumberOf(waiting),
+        amount: money(waiting.amount ?? 0),
+        date: when ? formatShortDate(when, lang) : "",
+      }),
+      invoice: invoiceCard(lang, waiting),
       offerInvoiceCta: false,
     };
   }
