@@ -2,6 +2,13 @@ import type { LLMAction } from "@agents/domain/business/llm/base/mod.ts";
 import { t } from "@core/i18n/mod.ts";
 import { PAYMENT_TERMS_PRESETS } from "@agents/domain/business/terms-prefill/mod.ts";
 
+/** REQ-315: "q-001" / "Q-001 bathroom" → "Q-001"; anything else → undefined. */
+function docNumber(v: unknown): string | undefined {
+  if (typeof v !== "string") return undefined;
+  const m = v.match(/\bQ-\d+\b/i);
+  return m ? m[0].toUpperCase() : undefined;
+}
+
 /**
  * OpenAI function-tool schemas. The names + parameter shapes are pinned
  * to LLMAction's variants so `parseToolCall` can switch on `name` and
@@ -93,10 +100,49 @@ export const TOOL_DEFS = [
         type: "object",
         properties: {
           customerName: { type: "string", description: t("en", "prompts.tools.changeOrder.customerName") },
+          // REQ-315: "… on Q-001" names the quote outright.
+          quoteNumber: { type: "string", description: t("en", "prompts.tools.changeOrder.quoteNumber") },
           description: { type: "string", description: t("en", "prompts.tools.changeOrder.descriptionField") },
           deltaAmountCents: { type: "integer", description: t("en", "prompts.tools.changeOrder.deltaAmountCents") },
         },
         required: ["description", "deltaAmountCents"],
+        additionalProperties: false,
+      },
+    },
+  },
+  // REQ-315 (demo-loop cycle 1, M26): "change plumbing fixtures to $1,300"
+  // reprices THAT line; change_order would have appended one.
+  {
+    type: "function" as const,
+    function: {
+      name: "revise_quote",
+      description: t("en", "prompts.tools.reviseQuote.description"),
+      parameters: {
+        type: "object",
+        properties: {
+          customerName: { type: "string", description: t("en", "prompts.tools.reviseQuote.customerName") },
+          quoteNumber: { type: "string", description: t("en", "prompts.tools.reviseQuote.quoteNumber") },
+          lines: {
+            type: "array",
+            description: t("en", "prompts.tools.reviseQuote.lines"),
+            items: {
+              type: "object",
+              properties: {
+                match: { type: "string", description: t("en", "prompts.tools.reviseQuote.match") },
+                description: { type: "string", description: t("en", "prompts.tools.reviseQuote.lineDescription") },
+                amountCents: { type: "integer", description: t("en", "prompts.tools.reviseQuote.amountCents") },
+              },
+              required: ["match"],
+              additionalProperties: false,
+            },
+          },
+          remove: {
+            type: "array",
+            description: t("en", "prompts.tools.reviseQuote.remove"),
+            items: { type: "string" },
+          },
+        },
+        required: ["lines"],
         additionalProperties: false,
       },
     },
@@ -187,12 +233,51 @@ export function parseToolCall(call: { function: { name: string; arguments: strin
       const delta = args.deltaAmountCents;
       if (!description || typeof delta !== "number" || !Number.isFinite(delta)) return undefined;
       const customerName = typeof args.customerName === "string" ? args.customerName.trim() : "";
+      const quoteNumber = docNumber(args.quoteNumber); // REQ-315
       return {
         type: "change_order",
         payload: {
           ...(customerName ? { customerName } : {}),
+          ...(quoteNumber ? { quoteNumber } : {}),
           description,
           deltaAmountCents: Math.trunc(delta),
+        },
+      };
+    }
+    // REQ-315 (demo-loop cycle 1, M26): only entries that name a line AND
+    // change something survive; a remove-only call is fine; nothing → undefined.
+    case "revise_quote": {
+      const lines: { match: string; description?: string; amountCents?: number }[] = [];
+      for (const raw of Array.isArray(args.lines) ? args.lines : []) {
+        if (typeof raw !== "object" || raw === null) continue;
+        const r = raw as Record<string, unknown>;
+        const match = typeof r.match === "string" ? r.match.trim() : "";
+        if (!match) continue;
+        const description = typeof r.description === "string" ? r.description.trim() : "";
+        const cents = typeof r.amountCents === "number" && Number.isFinite(r.amountCents)
+          ? Math.trunc(r.amountCents)
+          : undefined;
+        if (!description && cents === undefined) continue;
+        lines.push({
+          match,
+          ...(description ? { description } : {}),
+          ...(cents !== undefined ? { amountCents: cents } : {}),
+        });
+      }
+      const remove = (Array.isArray(args.remove) ? args.remove : [])
+        .filter((x): x is string => typeof x === "string")
+        .map((x) => x.trim())
+        .filter(Boolean);
+      if (lines.length === 0 && remove.length === 0) return undefined;
+      const customerName = typeof args.customerName === "string" ? args.customerName.trim() : "";
+      const quoteNumber = docNumber(args.quoteNumber);
+      return {
+        type: "revise_quote",
+        payload: {
+          ...(customerName ? { customerName } : {}),
+          ...(quoteNumber ? { quoteNumber } : {}),
+          lines,
+          remove,
         },
       };
     }

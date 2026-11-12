@@ -93,9 +93,41 @@ Deno.test("OpenAILLMClient smoke: respond() sends Bearer auth + system prompt + 
   assertEquals(body.messages[1].role, "user");
   assertEquals(body.messages[1].content, "Garage epoxy");
   assertEquals(body.messages[3].content, "Lock it in");
-  // REQ-238 (demo M27): + change_order; REQ-262 (demo M25): + update_job_details
-  assertEquals(body.tools.length, 5);
-  assertEquals(body.tools.map((t) => t.function.name).sort(), ["change_order", "create_quote", "lock_quote", "request_terms_transition", "update_job_details"]);
+  // REQ-238 (demo M27): + change_order; REQ-262 (demo M25): + update_job_details;
+  // REQ-315 (demo-loop cycle 1, M26): + revise_quote
+  assertEquals(body.tools.length, 6);
+  assertEquals(body.tools.map((t) => t.function.name).sort(), ["change_order", "create_quote", "lock_quote", "request_terms_transition", "revise_quote", "update_job_details"]);
+});
+
+Deno.test("REQ-315 OpenAILLMClient smoke: a revise_quote tool_call → the revise_quote action (reprice the line, never append)", async () => {
+  const mock = makeMockFetch(() => chatCompletion(
+    null,
+    [{
+      id: "call_rq",
+      name: "revise_quote",
+      arguments: JSON.stringify({
+        customerName: "Dana Whitfield",
+        quoteNumber: "Q-001",
+        lines: [{ match: "plumbing fixtures", amountCents: 130_000 }],
+        remove: [],
+      }),
+    }],
+  ));
+  const client = new OpenAILLMClient({ apiKey: "sk-test-1234", fetch: mock.fetch });
+  const out = await client.respond({
+    systemPrompt: "p",
+    messages: [{ role: "user", content: "Change plumbing fixtures to $1,300 on Q-001" }],
+    userId: "u-1",
+  });
+  assertEquals(out.action, {
+    type: "revise_quote",
+    payload: {
+      customerName: "Dana Whitfield",
+      quoteNumber: "Q-001",
+      lines: [{ match: "plumbing fixtures", amountCents: 130_000 }],
+      remove: [],
+    },
+  });
 });
 
 Deno.test("OpenAILLMClient smoke: respond() inserts businessContext as a second system message", async () => {

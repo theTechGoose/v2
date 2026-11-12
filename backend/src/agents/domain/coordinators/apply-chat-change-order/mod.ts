@@ -19,21 +19,26 @@ export interface ChatChangeOrderInput {
   /** The conversation's bound quote, if any. */
   boundQuoteId?: string;
   customerName?: string;
+  /** REQ-315: an explicit "Q-001" — resolves straight to that quote. */
+  quoteNumber?: string;
   description: string;
   /** Signed INTEGER CENTS. */
   deltaAmountCents: number;
 }
 
+/** REQ-315 (m49): outcomes that name a quote carry its number too, so the
+ *  chat can render "Open Q-001 → Publish revision". */
 export type ChatChangeOrderOutcome =
   | {
     kind: "change_order";
     quoteId: string;
+    quoteNumber?: string;
     invoiceId: string;
     changeOrderId: string;
   }
-  | { kind: "pending_revision"; quoteId: string }
-  | { kind: "draft_updated"; quoteId: string }
-  | { kind: "needs_invoice"; quoteId: string }
+  | { kind: "pending_revision"; quoteId: string; quoteNumber?: string }
+  | { kind: "draft_updated"; quoteId: string; quoteNumber?: string }
+  | { kind: "needs_invoice"; quoteId: string; quoteNumber?: string }
   | { kind: "ambiguous"; quoteIds: string[] }
   | { kind: "none" }
   | { kind: "ask_customer" };
@@ -106,9 +111,11 @@ export class ApplyChatChangeOrder {
         customerId: q.customerId,
         status: q.status,
         createdAt: q.createdAt,
+        number: q.number,
       })),
       customers: customers.map((c) => ({ id: c.id, name: c.name })),
       customerName: input.customerName,
+      quoteNumber: input.quoteNumber,
       boundQuoteId: input.boundQuoteId,
     });
 
@@ -121,7 +128,8 @@ export class ApplyChatChangeOrder {
     if (target.kind === "none") {
       return {
         text: t(lang, "chatCoordinator.changeOrder.none", {
-          name: input.customerName ?? "",
+          // REQ-315: an explicit number is what was looked up (and missed)
+          name: input.quoteNumber ?? input.customerName ?? "",
         }),
         outcome: target,
       };
@@ -171,6 +179,7 @@ export class ApplyChatChangeOrder {
         outcome: {
           kind: "change_order",
           quoteId: quote.id,
+          quoteNumber: quote.number,
           invoiceId: invoice.id,
           changeOrderId: co.id,
         },
@@ -181,7 +190,11 @@ export class ApplyChatChangeOrder {
     if (isQuoteLocked(quote)) {
       return {
         text: t(lang, "chatCoordinator.changeOrder.needsInvoice", vars),
-        outcome: { kind: "needs_invoice", quoteId: quote.id },
+        outcome: {
+          kind: "needs_invoice",
+          quoteId: quote.id,
+          quoteNumber: quote.number,
+        },
       };
     }
 
@@ -204,7 +217,11 @@ export class ApplyChatChangeOrder {
       });
       return {
         text: t(lang, "chatCoordinator.changeOrder.pendingRevision", vars),
-        outcome: { kind: "pending_revision", quoteId: quote.id },
+        outcome: {
+          kind: "pending_revision",
+          quoteId: quote.id,
+          quoteNumber: quote.number,
+        },
       };
     }
 
@@ -216,7 +233,11 @@ export class ApplyChatChangeOrder {
     });
     return {
       text: t(lang, "chatCoordinator.changeOrder.draftUpdated", vars),
-      outcome: { kind: "draft_updated", quoteId: quote.id },
+      outcome: {
+        kind: "draft_updated",
+        quoteId: quote.id,
+        quoteNumber: quote.number,
+      },
     };
   }
 }
