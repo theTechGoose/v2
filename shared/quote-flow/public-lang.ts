@@ -63,8 +63,12 @@ export function resolvePublicLangFrom(parts: {
   return "en";
 }
 
-/** Resolve the language a public page should render in, from RAW headers. */
+/** Resolve the language a public page should render in, from RAW headers.
+ *  REQ-272: an explicit ?lang= on the link (the visitor's EN | ES pick on
+ *  /i and /co) beats everything else, exactly as on /q (REQ-048). */
 export function resolvePublicLang(args: {
+  /** The link's ?lang= query value, raw. */
+  query?: string | null;
   /** The RAW Cookie request header. */
   cookie?: string | null;
   /** The document's generation language (contractor.commsLanguage). */
@@ -72,6 +76,7 @@ export function resolvePublicLang(args: {
   /** The Accept-Language request header. */
   header?: string | null;
 }): PublicLang {
+  if (args.query === "en" || args.query === "es") return args.query;
   return resolvePublicLangFrom({
     cookieLang: pmLangFromCookie(args.cookie),
     docLang: args.docLang,
@@ -94,6 +99,17 @@ export function resolveContractLang(parts: {
 }): PublicLang {
   if (parts.query === "en" || parts.query === "es") return parts.query;
   return pmLangFromCookie(parts.cookie) ?? "en";
+}
+
+/**
+ * REQ-272: the href of a public page's EN | ES toggle link — the same page
+ * (path + every other query param) with ?lang= set to `lang`. Same-origin
+ * and relative, so it can never point at another site.
+ */
+export function langToggleHref(currentUrl: string, lang: PublicLang): string {
+  const url = new URL(currentUrl);
+  url.searchParams.set("lang", lang);
+  return `${url.pathname}${url.search}`;
 }
 
 export interface MoneyPageStrings {
