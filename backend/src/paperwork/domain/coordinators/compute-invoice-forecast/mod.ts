@@ -20,12 +20,13 @@ export interface ForecastEntry {
 }
 
 export interface ForecastResult {
-  /** Total expected to land within the 7-day forward window from `now`. */
+  /** Total expected to land this calendar week: today through Sunday
+   *  (REQ-484). */
   thisWeekCents: number;
-  /** Detail entries within the 7-day window. Sorted by expectedLandDate. */
+  /** Detail entries within this week. Sorted by expectedLandDate. */
   thisWeek: ForecastEntry[];
-  /** Total expected in the *next* 7-day window. Used as fallback copy
-   *  when the current week is quiet. */
+  /** Total expected next week — the Monday–Sunday after this one. Used as
+   *  fallback copy when the current week is quiet. */
   nextWeekCents: number;
   /** Aggregated overdue / at-risk callout: any sent invoices whose
    *  dueDate is in the past and which haven't been claimed yet. */
@@ -69,9 +70,12 @@ export class ComputeInvoiceForecast {
     // land day's noon against the current instant dropped a same-day claim
     // made in the afternoon out of "this week" — and the hero read "All
     // clear" over it.
+    // REQ-484 (demo m12): "this week" is the calendar week — today through
+    // Sunday — and "next week" is the Monday–Sunday after it. The old rolling
+    // today..today+7 window was 8 days and called next Thursday "this week".
     const today = isoDay(now);
-    const thisWeekEnd = isoDay(addDays(now, 7));
-    const nextWeekEnd = isoDay(addDays(now, 14));
+    const thisWeekEnd = isoDay(addDays(now, daysUntilSunday(now)));
+    const nextWeekEnd = isoDay(addDays(now, daysUntilSunday(now) + 7));
 
     const thisWeek: ForecastEntry[] = [];
     const nextWeek: ForecastEntry[] = [];
@@ -228,6 +232,12 @@ function methodLabel(m: PaymentMethod): string {
 /** YYYY-MM-DD (UTC) — the same form as every expectedLandDate. */
 function isoDay(d: Date): string {
   return d.toISOString().slice(0, 10);
+}
+
+/** Days from `d` to the Sunday that closes its (Monday–Sunday) week; 0 on
+ *  a Sunday. UTC, like isoDay. */
+function daysUntilSunday(d: Date): number {
+  return (7 - d.getUTCDay()) % 7;
 }
 
 function addDays(d: Date, days: number): Date {

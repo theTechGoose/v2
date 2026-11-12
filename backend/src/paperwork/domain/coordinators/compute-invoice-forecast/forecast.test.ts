@@ -180,3 +180,67 @@ Deno.test("REQ-243: a sent invoice due later today is still expected this week",
   assertEquals(r.thisWeek.map((e) => e.invoiceId), ["due-today"]);
   assertEquals(r.atRiskCents, 0);
 });
+
+// REQ-484 (demo-loop cycle 3, m12): "this week" is the calendar week —
+// today through Sunday — and "next week" is the Monday–Sunday after it.
+// The rolling, inclusive today..today+7 window called a Nov 19 due date
+// "expected this week" on Thursday Nov 12.
+Deno.test("REQ-484 m12: on Thu Nov 12 an invoice due Thu Nov 19 (today+7) is next week, not this week", async () => {
+  const now = new Date("2026-11-12T15:00:00Z"); // a Thursday
+  const r = await forecastWith([
+    inv({
+      id: "due-19",
+      status: "sent",
+      dueDate: "2026-11-19",
+      amount: 500_00,
+    }),
+  ]).run("u-1", now);
+  assertEquals(r.thisWeek, []);
+  assertEquals(r.thisWeekCents, 0);
+  assertEquals(r.nextWeekCents, 500_00);
+});
+
+Deno.test("REQ-484 m12: this week runs through Sunday; next week is the following Monday–Sunday", async () => {
+  const now = new Date("2026-11-12T15:00:00Z"); // Thursday
+  const r = await forecastWith([
+    inv({ id: "sun", status: "sent", dueDate: "2026-11-15", amount: 1_00 }),
+    inv({ id: "mon", status: "sent", dueDate: "2026-11-16", amount: 10_00 }),
+    inv({
+      id: "next-sun",
+      status: "sent",
+      dueDate: "2026-11-22",
+      amount: 100_00,
+    }),
+    inv({
+      id: "later",
+      status: "sent",
+      dueDate: "2026-11-23",
+      amount: 1000_00,
+    }),
+  ]).run("u-1", now);
+  assertEquals(r.thisWeek.map((e) => e.invoiceId), ["sun"]);
+  assertEquals(r.thisWeekCents, 1_00);
+  assertEquals(r.nextWeekCents, 110_00);
+});
+
+Deno.test("REQ-484 m12: on a Sunday, this week is just today and Monday starts next week", async () => {
+  const now = new Date("2026-11-15T10:00:00Z"); // Sunday
+  const r = await forecastWith([
+    inv({ id: "today", status: "sent", dueDate: "2026-11-15", amount: 1_00 }),
+    inv({ id: "mon", status: "sent", dueDate: "2026-11-16", amount: 10_00 }),
+    inv({
+      id: "next-sun",
+      status: "sent",
+      dueDate: "2026-11-22",
+      amount: 100_00,
+    }),
+    inv({
+      id: "later",
+      status: "sent",
+      dueDate: "2026-11-23",
+      amount: 1000_00,
+    }),
+  ]).run("u-1", now);
+  assertEquals(r.thisWeek.map((e) => e.invoiceId), ["today"]);
+  assertEquals(r.nextWeekCents, 110_00);
+});
