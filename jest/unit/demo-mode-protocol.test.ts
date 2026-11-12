@@ -299,7 +299,13 @@ describe("REQ-179 instant feedback on Demo", () => {
 
   test("the Demo button reads Opening… at once and the pill is told before the server answers", () => {
     const admin = read3("front-end/islands/AdminPage.tsx");
-    expect(admin).toMatch(/busyId === u\.id \? "Opening…" : "Demo"/);
+    // REQ-269: the labels come from the dictionaries (adminPage.opening / adminPage.demo)
+    expect(admin).toMatch(
+      /busyId === u\.id\s*\?\s*t\("adminPage\.opening"\)\s*:\s*t\("adminPage\.demo"\)/,
+    );
+    const en3 = JSON.parse(read3("lang/en.json")) as Record<string, string>;
+    expect(en3["adminPage.opening"]).toBe("Opening…");
+    expect(en3["adminPage.demo"]).toBe("Demo");
     const demoFn = admin.slice(
       admin.indexOf("async function demo("),
       admin.indexOf("async function impersonate("),
@@ -417,7 +423,9 @@ describe("REQ-153 AMENDMENT — the same element on both screens", () => {
   });
 
   test("the banner is marked so it never counts, and the resolver walks the path before trusting querySelector", () => {
-    const banner = read("front-end/islands/ImpersonationBanner.tsx");
+    // REQ-269: the bar's markup lives in its (translated) view component
+    const banner = read("front-end/islands/ImpersonationBanner.tsx") +
+      read("front-end/components/ImpersonationBannerView.tsx");
     expect(banner).toMatch(/data-demo-skip/);
     // REQ-188: the selector names scrolled elements now; the resolver lives in the replica lib
     const lib = read("front-end/lib/demo-mode/replica.ts");

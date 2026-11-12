@@ -55,7 +55,11 @@ describe("REQ-181 the banner's room", () => {
     expect(src).toMatch(/setBannerRoom\(/);
     expect(src).toMatch(/clearBannerRoom\(/);
     expect(src).toMatch(/ResizeObserver/);
-    expect(src).toMatch(/data-cy="imp-banner"/);
+    // REQ-269: the bar's markup lives in its (translated) view component
+    expect(src).toMatch(/<ImpersonationBannerView\b/);
+    expect(read("front-end/components/ImpersonationBannerView.tsx")).toMatch(
+      /data-cy="imp-banner"/,
+    );
   });
 
   test("every viewport-height shell subtracts --banner-h", () => {
