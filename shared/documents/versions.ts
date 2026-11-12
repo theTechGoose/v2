@@ -500,6 +500,32 @@ export function quoteState(
   return versionOf(q) > 1 ? "revised" : "sent";
 }
 
+/** The lifecycle pill on the open-quote panel (roadmap p.10). */
+export type QuoteBadgeStatus =
+  | "draft"
+  | "sent"
+  | "viewed"
+  | "revised"
+  | "accepted"
+  | "declined";
+
+/** REQ-467 (demo p8-pair5-a): the panel pill derives from quoteState, so it
+ *  says "Revised" whenever the document line does. The only extra word it
+ *  carries is "viewed" — the client opened a Version 1 quote. */
+export function quoteBadgeStatus(
+  q: {
+    status?: string;
+    acceptedAt?: string;
+    sentAt?: string;
+    version?: number;
+  },
+): QuoteBadgeStatus {
+  const raw = typeof q.status === "string" ? q.status.toLowerCase() : "";
+  const state = quoteState({ ...q, status: raw || undefined });
+  if (state === "sent" && raw === "viewed") return "viewed";
+  return state as QuoteBadgeStatus;
+}
+
 export function invoiceState(
   i: { status?: string; version?: number },
 ): DocState {
