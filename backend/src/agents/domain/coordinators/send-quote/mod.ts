@@ -5,6 +5,7 @@ import { QuoteStore } from "@paperwork/domain/data/quote-store/mod.ts";
 import { SendPaperworkEmail } from "@paperwork/domain/coordinators/send-paperwork-email/mod.ts";
 import { SendPaperworkSms } from "@paperwork/domain/coordinators/send-paperwork-sms/mod.ts";
 import { UserStore } from "@users/domain/data/user-store/mod.ts";
+import { CustomerStore } from "@crm/domain/data/customer-store/mod.ts";
 import { EventBus } from "@core/business/events/mod.ts";
 import { TranslateQuote } from "@agents/domain/coordinators/translate-quote/mod.ts";
 import { t } from "@core/i18n/mod.ts";
@@ -83,6 +84,8 @@ export class SendQuote {
     private users: UserStore,
     /** REQ-264 (M15): fills every document language before dispatch. */
     private translator?: TranslateQuote,
+    /** REQ-476: names the customer on the `quote:sent` event. */
+    private customers?: CustomerStore,
   ) {}
 
   async run(input: SendQuoteInput): Promise<SendQuoteResult> {
@@ -241,12 +244,25 @@ export class SendQuote {
     });
     // Emit only on the actual draft→sent transition (REQ-234: a locked quote
     // is still a draft, so lock-quote never emitted it).
+    // REQ-476 (demo cycle 3, p8-pair9-a / p8-pair10-c): the event names the
+    // customer and the job, like quote:accepted does, so the feed (and the
+    // topbar ticker that reads it) says "Quote sent to María García" — not
+    // the "your client" fallback.
     if (statusFlip) {
+      const customerName = await this.customerName(
+        fresh.customerId ?? quote.customerId,
+        input.userId,
+      );
+      const jobName = fresh.jobName ?? quote.jobName;
       await this.bus.emit({
         userId: input.userId,
         entityType: "quote",
         entityId: quote.id,
         action: "sent",
+        data: {
+          ...(customerName ? { customerName } : {}),
+          ...(jobName ? { jobName } : {}),
+        },
       });
     }
 
@@ -300,6 +316,20 @@ export class SendQuote {
     });
 
     return { conversation: updatedConv, newMessages: [note] };
+  }
+
+  /** REQ-476: the customer's name for the event, or nothing (never throws). */
+  private async customerName(
+    customerId: string | undefined,
+    userId: string,
+  ): Promise<string | undefined> {
+    if (!customerId || !this.customers) return undefined;
+    try {
+      return (await this.customers.getOwned(customerId, userId)).name?.trim() ||
+        undefined;
+    } catch {
+      return undefined;
+    }
   }
 
   private async uiLanguage(userId: string): Promise<"en" | "es"> {

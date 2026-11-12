@@ -224,7 +224,11 @@ export default function DashTopbar(
             aria-label={tFor(lang, "dashTopbar.liveActivity")}
             // UX-21: sighted users hovering "● hace 4m" get the same
             // explanation the aria-label already gives screen readers.
-            title={tFor(lang, "dashTopbar.liveActivity")}
+            // REQ-476: plus the whole sentence, wherever on the pill the
+            // pointer rests — the text may be clamped at two lines.
+            title={`${tFor(lang, "dashTopbar.liveActivity")}: ${
+              tickerPlainText(ticker.html)
+            }`}
           >
             <span class="topbar__ticker-dot" />
             <span class="topbar__ticker-track" aria-live="polite">
