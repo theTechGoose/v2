@@ -141,6 +141,7 @@
   "assistantThread.pageTitle": "Asistente · DocuMonster",
   "assistantThread.phasePrefix": "Fase: {phase}",
   "assistantThread.statusFallback": "Cuéntale a tu asistente sobre un trabajo — por voz o texto",
+  "asstChat.actionCard.editPrompt": "Cambiar la cotización: ",
   "asstChat.actionCard.jobDetails": "Detalles del trabajo",
   "asstChat.actionCard.lockIn": "Confirmar",
   "asstChat.actionCard.reopen": "Reabrir",
