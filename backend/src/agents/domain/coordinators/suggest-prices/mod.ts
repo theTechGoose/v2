@@ -5,6 +5,7 @@ import {
 } from "@agents/domain/business/llm/base/mod.ts";
 import { t } from "@core/i18n/mod.ts";
 import { extractPriceCents } from "#quote-flow/quick-quote-prefill.ts";
+import { deriveBasis, type PriceBasis } from "@agents/domain/business/price-basis/mod.ts";
 
 export interface SuggestPricesInput {
   userId: string;
@@ -38,11 +39,10 @@ export interface PriceOption {
 export interface SuggestPricesResult {
   options: PriceOption[];
   /** REQ-017 (NW-12): what the numbers include — stated to the model and
-   *  shown on the tier cards. */
-  basis: "labor_and_materials";
+   *  shown on the tier cards. REQ-332 (m30): derived from the job, never a
+   *  constant — "labor_materials_as_noted" when the customer supplies items. */
+  basis: PriceBasis;
 }
-
-const BASIS = "labor_and_materials" as const;
 
 const SYSTEM_PROMPT = t("en", "prompts.suggestPrices");
 
@@ -82,7 +82,13 @@ export class SuggestPrices {
     const job = scope && scope !== raw
       ? `Contractor's original message:\n${raw}\n\nConfirmed scope (the bullets the contractor agreed to):\n${scope}`
       : `Raw job description:\n${raw}`;
-    const content = `${job}${locationLine}${langLine}`;
+    // REQ-332 (m30): the basis is read off the job. When the customer
+    // supplies an item, the model is told so in as many words.
+    const basis = deriveBasis(raw, scope);
+    const basisLine = basis === "labor_materials_as_noted"
+      ? "\n\nThe customer supplies some of the materials (see the message): price the labor and only the materials the contractor provides."
+      : "";
+    const content = `${job}${locationLine}${basisLine}${langLine}`;
 
     // REQ-260 (M24): the largest dollar amount the contractor stated (a
     // subcontractor's quote, the materials) is a floor no tier may sit under.
@@ -123,7 +129,7 @@ export class SuggestPrices {
       options = [];
     }
     if (options.length !== 3) options = fallbackTiers(lang);
-    return { options: liftAboveFloor(options, floorCents), basis: BASIS };
+    return { options: liftAboveFloor(options, floorCents), basis };
   }
 }
 

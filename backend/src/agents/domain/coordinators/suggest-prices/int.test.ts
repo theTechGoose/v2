@@ -209,3 +209,43 @@ Deno.test("REQ-260 M24 suggest-prices: no stated cost → the model's tiers pass
   assertEquals(calls, 1);
   assertEquals(res.options.map((o) => o.priceCents), [300000, 450000, 600000]);
 });
+
+// ── REQ-332 — demo cycle 1, m30 ─────────────────────────────────────────
+// "Prices include labor and materials" was hard-coded for every result; the
+// contractor's "they're buying the vanity themselves" never reached it.
+
+const VANITY_RAW =
+  "Replace the vanity and faucet in the hall bath, re-caulk the tub. They're buying the vanity themselves.";
+
+Deno.test("REQ-332 suggest-prices: the basis follows the job — customer-supplied items → labor; materials as noted", async () => {
+  const { llm, flow } = fresh();
+  let user = "";
+  llm.setHandler((req) => {
+    user = req.messages.find((m) => m.role === "user")?.content ?? "";
+    return { text: MODEL_JSON };
+  });
+  const res = await flow.run({ userId: "u-1", raw: VANITY_RAW, lang: "en" });
+  assertEquals(res.basis, "labor_materials_as_noted");
+  assert(/customer supplies/i.test(user), `the model is told the customer supplies some materials: ${user}`);
+});
+
+Deno.test("REQ-332 suggest-prices: a plain job keeps labor_and_materials and no customer-supplies line", async () => {
+  const { llm, flow } = fresh();
+  let user = "";
+  llm.setHandler((req) => {
+    user = req.messages.find((m) => m.role === "user")?.content ?? "";
+    return { text: MODEL_JSON };
+  });
+  const res = await flow.run({ userId: "u-1", raw: "Paint 2000 sq ft interior, two coats", lang: "en" });
+  assertEquals(res.basis, "labor_and_materials");
+  assert(!/customer supplies/i.test(user), user);
+});
+
+Deno.test("REQ-332 suggest-prices: the fallback tiers carry the derived basis too", async () => {
+  const { llm, flow } = fresh();
+  llm.setHandler(() => {
+    throw new Error("boom");
+  });
+  const res = await flow.run({ userId: "u-1", raw: VANITY_RAW, lang: "en" });
+  assertEquals(res.basis, "labor_materials_as_noted");
+});

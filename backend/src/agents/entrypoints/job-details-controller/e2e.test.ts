@@ -80,3 +80,66 @@ Deno.test("REQ-260 M24 e2e: POST /agents/job-details/prices with {raw, scope} an
     assertEquals(body.basis, "labor_and_materials");
   });
 });
+
+// ── REQ-332 — demo cycle 1, m30 over the booted app ────────────────────
+// 'Professionalize' changed the meaning (a job-wide permit re-scoped onto one
+// item) and "Prices include labor and materials" though the client buys the
+// vanity. Stub LLM: the professionalize path takes the deterministic split,
+// the pricing path takes the generic tiers — the basis is derived server-side
+// either way.
+
+Deno.test("REQ-332 m30 e2e: POST /agents/job-details/prices says 'labor; materials as noted' when the customer buys an item", async () => {
+  await withServer(async (base) => {
+    const sid = await login(base, "+15125552601");
+    const res = await fetch(`${base}/agents/job-details/prices`, {
+      method: "POST",
+      headers: { ...J, "x-session-id": sid },
+      body: JSON.stringify({
+        raw:
+          "Replace the vanity and faucet in the hall bath. They're buying the vanity themselves.",
+      }),
+    });
+    assertEquals(res.status, 200);
+    const body = await res.json();
+    assertEquals(body.basis, "labor_materials_as_noted");
+    assertEquals((body.options as unknown[]).length, 3);
+  });
+});
+
+Deno.test("REQ-332 m30 e2e: POST /agents/job-details/professionalize keeps 'A + B' as two lines and accepts job context", async () => {
+  await withServer(async (base) => {
+    const sid = await login(base, "+15125552602");
+    const res = await fetch(`${base}/agents/job-details/professionalize`, {
+      method: "POST",
+      headers: { ...J, "x-session-id": sid },
+      body: JSON.stringify({
+        text: "4 recesed lights + City of Austin permit",
+        context: {
+          raw: "4 recesed lights + City of Austin permit, repaint ceiling",
+          siblings: ["Repaint ceiling"],
+        },
+      }),
+    });
+    assertEquals(res.status, 200);
+    const body = await res.json();
+    assertEquals(body.lines, ["4 recesed lights", "City of Austin permit"]);
+    assertEquals(body.text, "4 recesed lights");
+
+    // The multi-line { details } shape flattens the split too.
+    const multi = await fetch(`${base}/agents/job-details/professionalize`, {
+      method: "POST",
+      headers: { ...J, "x-session-id": sid },
+      body: JSON.stringify({
+        details:
+          "4 recesed lights + City of Austin permit\nrepaint the ceiling",
+      }),
+    });
+    assertEquals(multi.status, 200);
+    const items = (await multi.json()).items as string[];
+    assertEquals(items.length, 3, `three items: ${items}`);
+    assert(
+      items.some((i) => /City of Austin permit/.test(i)),
+      `permit is its own item: ${items}`,
+    );
+  });
+});

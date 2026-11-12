@@ -9,11 +9,19 @@ export interface ProfessionalizeBulletInput {
   userId: string;
   /** The rough bullet text the contractor typed or edited. */
   text: string;
+  /** REQ-332 (demo m30): the JOB the bullet belongs to — the contractor's
+   *  original message and the other bullets of the option — so a one-line
+   *  rewrite never re-scopes a job-wide item ("City of Austin permit") onto
+   *  the item it happens to share a line with. Context only; never rewritten. */
+  context?: { raw?: string; siblings?: string[] };
 }
 
 export interface ProfessionalizeBulletResult {
-  /** One clean scope-of-work line. */
+  /** The first clean scope-of-work line (legacy single-line consumers). */
   text: string;
+  /** REQ-332: every line the bullet became — an "A + B" bullet that names
+   *  two separate items comes back as two lines, never merged into one. */
+  lines: string[];
 }
 
 const SYSTEM_PROMPT = t("en", "prompts.professionalizeBullet");
@@ -33,34 +41,91 @@ export class ProfessionalizeBullet {
   ): Promise<ProfessionalizeBulletResult> {
     const text = input.text.trim();
     if (!text) throw new Error("text is required");
+    // REQ-332: the separate items a "+"-joined bullet names. They must come
+    // back as that many lines — the model may not fold them into one.
+    const items = splitJoinedItems(text);
+    const fallback = () => {
+      const lines = items.map(professionalizeFallback);
+      return { text: lines[0], lines };
+    };
 
     let raw: string;
     try {
       const res = await this.llm.respond({
         systemPrompt: SYSTEM_PROMPT,
-        messages: [{ role: "user", content: `Rough bullet:\n${text}` }],
+        messages: [{
+          role: "user",
+          content: buildUserContent(text, input.context),
+        }],
         userId: input.userId,
       });
       raw = res.text ?? "";
     } catch (err) {
       console.error("[professionalize-bullet] llm call failed:", err);
-      return { text: professionalizeFallback(text) };
+      return fallback();
     }
 
     const parsed = tryParseJson(raw);
-    const cleaned = typeof parsed?.text === "string" && parsed.text.trim()
-      ? parsed.text.trim()
-      : stripLine(raw) || text;
-    // Scope-faithfulness gate: a professionalized line must still be ABOUT
-    // the bullet it came from. A reply that shares no content word with the
-    // input (the dev stub's "(stub) Rough bullet:" echo, a refusal preamble,
-    // or a hallucinated unrelated scope) is discarded in favor of the
-    // deterministic rewrite — same fallback discipline as polish-job-details.
-    const line = isFaithfulTo(cleaned, text)
-      ? cleaned
-      : professionalizeFallback(text);
-    return { text: line.replace(/\s+/g, " ").replace(/[.;]+$/, "") };
+    const candidates =
+      (Array.isArray(parsed?.lines)
+        ? parsed.lines.filter((l): l is string => typeof l === "string")
+        : typeof parsed?.text === "string"
+        ? [parsed.text]
+        : [stripLine(raw) || text])
+        .map(tidy)
+        .filter((l) => l.length > 0)
+        .slice(0, 6);
+    // Scope-faithfulness gate: every professionalized line must still be
+    // ABOUT the bullet it came from. A reply that shares no content word
+    // with the input (the dev stub's "(stub) Rough bullet:" echo, a refusal
+    // preamble, or a hallucinated unrelated scope) is discarded in favor of
+    // the deterministic rewrite — same fallback discipline as
+    // polish-job-details. REQ-332: an "A + B" bullet must come back as one
+    // line per item, each about ITS item — "Install 4 recessed lights with
+    // permit" for "4 recesed lights + City of Austin permit" is overruled.
+    const faithful = items.length > 1
+      ? candidates.length === items.length &&
+        candidates.every((l, i) => isFaithfulTo(l, items[i]))
+      : candidates.length > 0 && candidates.every((l) => isFaithfulTo(l, text));
+    if (!faithful) return fallback();
+    return { text: candidates[0], lines: candidates };
   }
+}
+
+function tidy(s: string): string {
+  return s.replace(/\s+/g, " ").replace(/[.;]+$/, "").trim();
+}
+
+/** REQ-332: "4 recesed lights + City of Austin permit" → two items. Only an
+ *  explicit joiner ("+", "plus") splits; "and" is left to the model, since
+ *  "tile, vanity and glass" is one install. */
+export function splitJoinedItems(text: string): string[] {
+  const parts = text.split(/\s*\+\s*|\s+plus\s+/i).map((p) => p.trim()).filter((
+    p,
+  ) => p.length > 0);
+  return parts.length > 1 ? parts : [text];
+}
+
+/** The bullet first (the stub echoes the first line, which the gate then
+ *  rejects as before), then the job it belongs to, marked as context. */
+function buildUserContent(
+  text: string,
+  ctx?: ProfessionalizeBulletInput["context"],
+): string {
+  let content = `Rough bullet:\n${text}`;
+  const siblings = (ctx?.siblings ?? []).map((s) => s.trim()).filter((s) =>
+    s && s !== text
+  );
+  if (siblings.length) {
+    content +=
+      `\n\nThe other lines of this job (context only — do NOT rewrite, merge into, or restate these):\n` +
+      siblings.map((s) => `- ${s}`).join("\n");
+  }
+  const raw = ctx?.raw?.trim();
+  if (raw) {
+    content += `\n\nContractor's original message (context only):\n${raw}`;
+  }
+  return content;
 }
 
 /** Words too generic to prove a line is about the same job. */
@@ -143,7 +208,9 @@ function professionalizeFallback(text: string): string {
   return clean.charAt(0).toUpperCase() + clean.slice(1);
 }
 
-function tryParseJson(s: string): { text?: unknown } | undefined {
+function tryParseJson(
+  s: string,
+): { text?: unknown; lines?: unknown } | undefined {
   if (!s) return undefined;
   const fenced = s.match(/```(?:json)?\s*([\s\S]*?)```/i);
   const candidate = (fenced ? fenced[1] : s).trim();

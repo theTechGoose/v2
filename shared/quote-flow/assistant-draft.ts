@@ -75,6 +75,8 @@ export interface AssistantDraft {
   priceCents: number | null;
   /** The suggested tiers shown on the price step ("help me price it"). */
   priceSuggestions: DraftPriceSuggestion[] | null;
+  /** REQ-332 (m30): what those tiers include, as the server derived it. */
+  priceBasis: "labor_and_materials" | "labor_materials_as_noted" | null;
   /** The "Ready to send" CTA whose quote review is open. */
   previewCtaId: string | null;
   /** Raw details that still owe the end-of-wizard Job Details picker. */
@@ -98,6 +100,7 @@ export function emptyAssistantDraft(): AssistantDraft {
     priceCaptureOpen: false,
     priceCents: null,
     priceSuggestions: null,
+    priceBasis: null,
     previewCtaId: null,
     polishRaw: null,
   };
@@ -222,6 +225,11 @@ export function parseAssistantDraft(input: unknown): AssistantDraft | null {
     priceCents: cents(input.priceCents),
     priceSuggestions: suggestions && suggestions.length > 0
       ? suggestions
+      : null,
+    priceBasis: input.priceBasis === "labor_materials_as_noted"
+      ? "labor_materials_as_noted"
+      : input.priceBasis === "labor_and_materials"
+      ? "labor_and_materials"
       : null,
     previewCtaId: str(input.previewCtaId, MAX_ID),
     polishRaw: str(input.polishRaw, MAX_TEXT),

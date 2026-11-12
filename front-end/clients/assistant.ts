@@ -386,10 +386,17 @@ export const assistantClient = {
     api.post<
       {
         options: Array<
-          { tier: "competitive" | "market" | "premium"; label: string; priceCents: number; rationale: string }
+          {
+            tier: "competitive" | "market" | "premium";
+            label: string;
+            priceCents: number;
+            rationale: string;
+          }
         >;
-        /** REQ-017 (NW-12): what the numbers include. */
-        basis?: "labor_and_materials";
+        /** REQ-017 (NW-12): what the numbers include. REQ-332 (m30): derived
+         *  from the job — "labor_materials_as_noted" when the customer
+         *  supplies an item. */
+        basis?: "labor_and_materials" | "labor_materials_as_noted";
       }
     >(
       "/agents/job-details/prices",
@@ -399,11 +406,18 @@ export const assistantClient = {
 
   /** Single-line cleanup: rewrites one rough bullet into a tidy scope
    *  line. Called when the user edits/adds a bullet and opts in to the
-   *  "professionalize that?" prompt on the Job Details screen. */
-  professionalizeBullet: (text: string, opts: ApiOptions = {}) =>
-    api.post<{ text: string }>(
+   *  "professionalize that?" prompt on the Job Details screen. REQ-332
+   *  (m30): `context` is the job the bullet belongs to (original message +
+   *  sibling bullets) so the rewrite never re-scopes a job-wide item; an
+   *  "A + B" bullet comes back as two `lines`. */
+  professionalizeBullet: (
+    text: string,
+    context?: { raw?: string; siblings?: string[] },
+    opts: ApiOptions = {},
+  ) =>
+    api.post<{ text: string; lines?: string[] }>(
       "/agents/job-details/professionalize",
-      { text },
+      { text, ...(context ? { context } : {}) },
       opts,
     ),
 
