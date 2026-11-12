@@ -27,6 +27,11 @@ import {
   type TermValue,
   termValueText,
 } from "@agents/domain/business/terms-edit/mod.ts"; // REQ-585
+import {
+  type ChatI18nRef,
+  type ChatI18nVar,
+  renderChatI18n,
+} from "#quote-flow/chat-i18n.ts"; // REQ-589
 import { BusinessIdentityStore } from "@profile/domain/data/business-identity-store/mod.ts";
 import type { AgentConversation } from "@agents/dto/conversation.ts";
 import type { AgentMessage } from "@agents/dto/message.ts";
@@ -227,38 +232,48 @@ export class HandleWizardAnswer {
     // For the customer step, prefer the resolved customer's name so the
     // chat transcript reads "Customer: Jane Doe" rather than "Customer:
     // Create a new customer".
-    const pickValue = input.stepId === "customer" && boundCustomerName
-      ? boundCustomerName
-      : optionDef.isCustom
-      // REQ-495 (m17): a picked date (stored ISO) reads in the contractor's
-      // language — "1 dic 2026" / "Dec 1, 2026"; other values pass through.
-      // REQ-585: a duration the chat set ("2.5 weeks") reads "2.5 semanas".
-      ? (customerCustomValue !== undefined
-        ? (input.stepId === "customer"
-          ? formatTermDate(customerCustomValue, lang)
-          : termValueText(customerCustomValue, lang))
-        : t(lang, "wizardAnswer.pick.customFallback"))
-      : t(lang, optionDef.label);
+    // REQ-495 (m17): a picked date (stored ISO) reads in the reader's
+    // language — "1 dic 2026" / "Dec 1, 2026"; other values pass through.
+    // REQ-585: a duration the chat set ("2.5 weeks") reads "2.5 semanas".
+    // REQ-589 (cycle 4, M15): the line is stored as key + vars too, so it
+    // re-renders after an EN/ES switch (the rendered text stays `content`).
+    const customVar = (v: string): ChatI18nVar =>
+      input.stepId === "customer" || formatTermDate(v, "es") !== v
+        ? { date: v }
+        : { byLang: { en: termValueText(v, "en"), es: termValueText(v, "es") } };
+    const pickValue: ChatI18nVar =
+      input.stepId === "customer" && boundCustomerName
+        ? boundCustomerName
+        : optionDef.isCustom
+        ? (customerCustomValue !== undefined
+          ? customVar(customerCustomValue)
+          : { key: "wizardAnswer.pick.customFallback" })
+        : { key: optionDef.label };
 
     // REQ-386 (demo m17): the customer line also carries the job address, so
     // the thread still shows it after a reload ("Customer: Dave Roof — 88 Oak
     // Hollow Dr, Austin TX 78745").
-    const pickLine = stepAddress
-      ? t(lang, "wizardAnswer.pick.transcriptAddress", {
-        label: t(lang, stepDef.label),
-        value: pickValue,
-        address: stepAddress,
-      })
-      : t(lang, "wizardAnswer.pick.transcript", {
-        label: t(lang, stepDef.label),
-        value: pickValue,
-      });
+    const pickRef: ChatI18nRef = stepAddress
+      ? {
+        key: "wizardAnswer.pick.transcriptAddress",
+        vars: {
+          label: { key: stepDef.label },
+          value: pickValue,
+          address: stepAddress,
+        },
+      }
+      : {
+        key: "wizardAnswer.pick.transcript",
+        vars: { label: { key: stepDef.label }, value: pickValue },
+      };
+    const pickLine = renderChatI18n(pickRef, lang, t);
     const userPick = await this.messages.append({
       conversationId: input.conversationId,
       role: "user",
       kind: "text",
       content: pickLine,
       payload: {
+        i18n: pickRef,
         wizardStepId: input.stepId,
         optionId: input.optionId,
         customValue: input.customValue,
@@ -268,7 +283,10 @@ export class HandleWizardAnswer {
     const newMessages: AgentMessage[] = [userPick];
     const progress = computeProgress(spec, next);
 
-    const convPatch: Partial<AgentConversation> = { preview: pickLine };
+    const convPatch: Partial<AgentConversation> = {
+      preview: pickLine,
+      previewI18n: pickRef,
+    };
     if (
       input.stepId === "customer" && boundCustomerId &&
       boundCustomerId !== conv.customerId
@@ -323,6 +341,7 @@ export class HandleWizardAnswer {
         kind: "wizard",
         content: t(lang, step.question),
         payload: {
+          i18n: { key: step.question }, // REQ-589
           specId: spec.id,
           stepIdx: next.activeStepIdx,
           stepId: step.id,

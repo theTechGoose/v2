@@ -14,6 +14,12 @@ import {
   storedQuotePriceProblem,
 } from "#quote-flow/quote-price-guard.ts";
 import type { SmsFailureCode } from "#quote-flow/sms-failure.ts";
+import {
+  type ChatI18nRef,
+  type ChatI18nVar,
+  isChatI18nRef,
+  renderChatI18n,
+} from "#quote-flow/chat-i18n.ts"; // REQ-589
 import { versionOf } from "#documents/versions.ts";
 import { getKv } from "@core/data/kv/mod.ts";
 import type { AgentConversation } from "@agents/dto/conversation.ts";
@@ -272,24 +278,33 @@ export class SendQuote {
     const publishedVersion = versionOf(fresh) > versionOf(quote)
       ? versionOf(fresh)
       : undefined;
+    // REQ-276 (demo i18n-formatting-m8): the note is chat copy the
+    // contractor reads — their UI language, like the SMS reason inside it
+    // (REQ-030) — never the document's send language. REQ-589 (cycle 4,
+    // m15): stored as key + vars too, so it follows a later EN/ES switch.
+    const lang = await this.uiLanguage(input.userId);
+    const emailFailure = reasonRef(emailFailureReason);
+    const smsFailure = reasonRef(smsFailureReason, smsFailureCode);
     const delivery = buildDivider({
       channel,
       emailedTo,
-      emailFailureReason,
+      emailFailure,
       textedTo,
-      smsFailureReason,
-      // REQ-276 (demo i18n-formatting-m8): the note is chat copy the
-      // contractor reads — their UI language, like the SMS reason inside it
-      // (REQ-030) — never the document's send language.
-      lang: await this.uiLanguage(input.userId),
+      smsFailure,
     });
-    const dividerContent = publishedVersion
-      ? `${
-        t(input.language ?? "en", "sendQuote.divider.revisionPublished", {
-          version: String(publishedVersion),
-        })
-      } · ${delivery}`
+    const dividerRef: ChatI18nRef = publishedVersion
+      ? {
+        key: "sendQuote.divider.withRevision",
+        vars: {
+          revision: {
+            key: "sendQuote.divider.revisionPublished",
+            vars: { version: String(publishedVersion) },
+          },
+          delivery,
+        },
+      }
       : delivery;
+    const dividerContent = renderChatI18n(dividerRef, lang, t);
     const note = await this.messages.append({
       conversationId: conv.id,
       role: "system",
@@ -298,6 +313,7 @@ export class SendQuote {
       payload: {
         phase: 3,
         label: dividerContent,
+        i18n: dividerRef,
         quoteId: quote.id,
         channel,
         ...(publishedVersion ? { publishedVersion } : {}),
@@ -306,6 +322,10 @@ export class SendQuote {
         ...(textedTo ? { textedTo } : {}),
         ...(smsFailureReason ? { smsFailureReason } : {}),
         ...(smsFailureCode ? { smsFailureCode } : {}),
+        ...(isChatI18nRef(emailFailure)
+          ? { emailFailureI18n: emailFailure }
+          : {}),
+        ...(isChatI18nRef(smsFailure) ? { smsFailureI18n: smsFailure } : {}),
       },
     });
 
@@ -352,77 +372,101 @@ async function claimRequest(key: Deno.KvKey): Promise<boolean> {
   return res.ok;
 }
 
+/** REQ-589 (cycle 4, m15): the note as key + vars, so the island renders
+ *  it in the reader's language; `content` is this rendered at send time. */
 function buildDivider(o: {
   channel: SendChannel;
   emailedTo?: string;
-  emailFailureReason?: string;
+  emailFailure?: ChatI18nVar;
   textedTo?: string;
-  smsFailureReason?: string;
-  lang: "en" | "es";
-}): string {
-  const { channel, emailedTo, textedTo, lang } = o;
-  const emailFailureReason = readableReason(o.emailFailureReason, lang);
-  const smsFailureReason = readableReason(o.smsFailureReason, lang);
+  smsFailure?: ChatI18nVar;
+}): ChatI18nRef {
+  const { channel, emailedTo, textedTo } = o;
+  const emailFailureReason = o.emailFailure;
+  const smsFailureReason = o.smsFailure;
+  const noRecipient = { key: "sendQuote.divider.noRecipient" };
   const emailOk = !!emailedTo;
   const smsOk = !!textedTo;
 
   if (channel === "email") {
     if (emailOk) {
-      return t(lang, "sendQuote.divider.emailed", { emailedTo: emailedTo! });
+      return {
+        key: "sendQuote.divider.emailed",
+        vars: { emailedTo: emailedTo! },
+      };
     }
     if (emailFailureReason) {
-      return t(lang, "sendQuote.divider.emailFailed", {
-        reason: emailFailureReason,
-      });
+      return {
+        key: "sendQuote.divider.emailFailed",
+        vars: { reason: emailFailureReason },
+      };
     }
-    return t(lang, "sendQuote.divider.noEmail");
+    return { key: "sendQuote.divider.noEmail" };
   }
 
   if (channel === "sms") {
     if (smsOk) {
-      return t(lang, "sendQuote.divider.texted", { textedTo: textedTo! });
+      return { key: "sendQuote.divider.texted", vars: { textedTo: textedTo! } };
     }
     // REQ-525 (demo cycle 3, p8-pair2-a): the reason has one home — the
     // send card reads it from this divider's payload — so the label stays
     // short instead of restating it a second (and third) time.
-    if (smsFailureReason) return t(lang, "sendQuote.divider.textNotDelivered");
-    return t(lang, "sendQuote.divider.noPhone");
+    if (smsFailureReason) return { key: "sendQuote.divider.textNotDelivered" };
+    return { key: "sendQuote.divider.noPhone" };
   }
 
   // both
   if (emailOk && smsOk) {
-    return t(lang, "sendQuote.divider.emailedAndTexted", {
-      emailedTo: emailedTo!,
-      textedTo: textedTo!,
-    });
+    return {
+      key: "sendQuote.divider.emailedAndTexted",
+      vars: { emailedTo: emailedTo!, textedTo: textedTo! },
+    };
   }
   if (emailOk) {
-    return t(lang, "sendQuote.divider.emailedTextFailed", {
-      emailedTo: emailedTo!,
-      reason: smsFailureReason ?? t(lang, "sendQuote.divider.noRecipient"),
-    });
+    return {
+      key: "sendQuote.divider.emailedTextFailed",
+      vars: { emailedTo: emailedTo!, reason: smsFailureReason ?? noRecipient },
+    };
   }
   if (smsOk) {
-    return t(lang, "sendQuote.divider.textedEmailFailed", {
-      textedTo: textedTo!,
-      reason: emailFailureReason ?? t(lang, "sendQuote.divider.noRecipient"),
-    });
+    return {
+      key: "sendQuote.divider.textedEmailFailed",
+      vars: { textedTo: textedTo!, reason: emailFailureReason ?? noRecipient },
+    };
   }
-  return t(lang, "sendQuote.divider.notDelivered", {
-    emailReason: emailFailureReason ?? t(lang, "sendQuote.divider.noRecipient"),
-    smsReason: smsFailureReason ?? t(lang, "sendQuote.divider.noRecipient"),
-  });
+  return {
+    key: "sendQuote.divider.notDelivered",
+    vars: {
+      emailReason: emailFailureReason ?? noRecipient,
+      smsReason: smsFailureReason ?? noRecipient,
+    },
+  };
 }
 
 /** REQ-276: the dispatchers' "no recipient: pass `to` …" is a developer
  *  message in English; in the contractor's note it reads as the localized
- *  "no recipient" (the note's own key), so the line stays one language. */
-function readableReason(
+ *  "no recipient" (the note's own key), so the line stays one language.
+ *  REQ-589 (cycle 4, m15): a reason with a known key is kept as that key —
+ *  the SMS failure code names it (sms.fictionalNumber, …) — so it re-renders
+ *  in the reader's language; any other reason stays the text it is. */
+function reasonRef(
   reason: string | undefined,
-  lang: "en" | "es",
-): string | undefined {
-  if (reason && /^no recipient\b/.test(reason)) {
-    return t(lang, "sendQuote.divider.noRecipient");
+  smsCode?: SmsFailureCode,
+): ChatI18nVar | undefined {
+  if (!reason) return undefined;
+  if (/^no recipient\b/.test(reason)) {
+    return { key: "sendQuote.divider.noRecipient" };
   }
-  return reason;
+  const key = smsCode ? SMS_REASON_KEY[smsCode] : undefined;
+  return key ? { key } : reason;
 }
+
+/** The dictionary line a failed text's code stands for (the copy the SMS
+ *  path translates: customer-sms + the Twilio adapter's reason keys). */
+const SMS_REASON_KEY: Partial<Record<SmsFailureCode, string>> = {
+  missing: "sendQuote.divider.noRecipient",
+  fictional: "sms.fictionalNumber",
+  invalid: "sms.invalidNumber",
+  notMobile: "sms.notMobile",
+  optedOut: "sms.optedOut",
+};

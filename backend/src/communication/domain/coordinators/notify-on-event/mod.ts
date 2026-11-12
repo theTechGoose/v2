@@ -115,7 +115,7 @@ function notificationEntityType(
  * `mapEventToNotification` contract keeps its exact prose.
  */
 function renderNotifString(lang: Lang, key: string, params?: Vars): string {
-  return renderShared((k, v) => t(lang, k, v), key, params);
+  return renderShared((k, v) => t(lang, k, v), key, params, lang);
 }
 
 /**
@@ -129,7 +129,7 @@ export function localizeNotification(
   lang: Lang,
 ): Notification {
   if (!n.titleKey) return n;
-  const title = notificationTitle((k, v) => t(lang, k, v), n);
+  const title = notificationTitle((k, v) => t(lang, k, v), n, lang);
   const body = n.bodyKey
     ? renderNotifString(lang, n.bodyKey, n.bodyParams)
     : n.body;
@@ -178,10 +178,20 @@ export function notificationL10n(event: DomainEvent): NotificationL10n | null {
     // a generic sentence. Job-less events keep the original key.
     const jobName = event.data?.jobName as string | undefined;
     if (jobName) {
+      // REQ-589 (demo-loop cycle 4, m15): the per-language names ride along
+      // so the feed names the job in the READER's language.
+      const byLang = event.data?.jobNameByLang as
+        | Record<string, string>
+        | undefined;
+      const perLang: Vars = {};
+      for (const l of ["en", "es"] as const) {
+        const v = byLang?.[l]?.trim();
+        if (v) perLang[`job_${l}`] = v;
+      }
       return {
         type: "quote_accepted",
         titleKey: "notify.quote.acceptedJob",
-        titleParams: { ...(nameParams ?? {}), job: jobName },
+        titleParams: { ...(nameParams ?? {}), job: jobName, ...perLang },
       };
     }
     return {

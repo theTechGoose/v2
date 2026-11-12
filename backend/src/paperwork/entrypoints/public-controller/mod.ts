@@ -833,6 +833,10 @@ export class PaperworkPublicController {
         ...(customerName ? { customerName } : {}),
         // UX-20: the feed event names the job, not just "tu cotización".
         ...(updated.jobName ? { jobName: updated.jobName } : {}),
+        // REQ-589 (cycle 4, m15): the feed names it in the reader's language.
+        ...(updated.jobNameByLang
+          ? { jobNameByLang: updated.jobNameByLang }
+          : {}),
       },
     });
     // Completion Text + Email to the contractor (roadmap p.10). Best-effort —

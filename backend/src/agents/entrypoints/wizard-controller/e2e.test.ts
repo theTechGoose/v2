@@ -215,3 +215,86 @@ Deno.test("REQ-531 p8-pair6-a agents wizard e2e: use_active posts 'Cliente: <nam
     assertEquals(result.newMessages[0].content, "Cliente: Maria Lopez");
   });
 });
+
+// REQ-589 (demo-loop cycle 4, M15): over HTTP, the wizard lines a Spanish
+// contractor was shown come back with their i18n keys, so the island
+// re-renders them — and the thread-list preview — in English after a switch.
+Deno.test("REQ-589 M15 agents wizard e2e: a reloaded Spanish wizard thread re-renders in English from its keys", async () => {
+  const { localizeChatMessage, localizedPreview } = await import(
+    "#quote-flow/chat-i18n.ts"
+  );
+  const { t } = await import("@core/i18n/mod.ts");
+  const tr = (
+    l: "en" | "es",
+    k: string,
+    v?: Record<string, string | number>,
+  ) => t(l, k, v);
+  await withServer(async (port) => {
+    const phone = "+15125550178";
+    const sid = await login(port, phone);
+    const users = new UserStore();
+    const me = (await users.findByPhone(phone))!;
+    await users.update(me.id, { language: "es" });
+    const carmen = await new CustomerStore().create(me.id, {
+      name: "Carmen Ruiz",
+    });
+    const h = { "content-type": "application/json", "x-session-id": sid };
+    const conv = await fetch(`http://localhost:${port}/agents/conversations`, {
+      method: "POST",
+      headers: h,
+      body: JSON.stringify({ customerId: carmen.id }),
+    }).then((r) => r.json());
+    await fetch(
+      `http://localhost:${port}/agents/conversations/${conv.id}/transition-to-terms`,
+      {
+        method: "POST",
+        headers: { "x-session-id": sid },
+      },
+    ).then(drain);
+    for (
+      const [stepId, optionId] of [["customer", "use_active"], [
+        "start_date",
+        "next_week",
+      ]]
+    ) {
+      await fetch(`http://localhost:${port}/agents/wizard/answer`, {
+        method: "POST",
+        headers: h,
+        body: JSON.stringify({ conversationId: conv.id, stepId, optionId }),
+      }).then(drain);
+    }
+    const detail = await fetch(
+      `http://localhost:${port}/agents/conversations/${conv.id}`,
+      {
+        headers: { "x-session-id": sid },
+      },
+    ).then((r) => r.json());
+    const shown = (detail.messages as {
+      kind?: string;
+      content: string;
+      payload?: unknown;
+    }[])
+      .map((m) => localizeChatMessage(m, "en", tr));
+    const texts = shown.map((m) => m.content);
+    assertEquals(texts.includes("A little more info"), true, texts.join(" | "));
+    assertEquals(texts.includes("Start: Next week"), true, texts.join(" | "));
+    assertEquals(
+      texts.includes(t("en", "termsWizard.wraps.question")),
+      true,
+      texts.join(" | "),
+    );
+    assertEquals(
+      texts.some((x) => /Inicio|información|¿/.test(x)),
+      false,
+      texts.join(" | "),
+    );
+
+    const list = await fetch(`http://localhost:${port}/agents/conversations`, {
+      headers: { "x-session-id": sid },
+    }).then((r) => r.json());
+    const row = (list as { id: string; preview?: string }[]).find((c) =>
+      c.id === conv.id
+    )!;
+    assertEquals(localizedPreview(row, "en", tr), "Start: Next week");
+  });
+});

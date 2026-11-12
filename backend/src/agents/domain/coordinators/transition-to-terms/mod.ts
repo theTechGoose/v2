@@ -87,14 +87,17 @@ export class TransitionToTerms {
         (await this.identity?.get(input.userId).catch(() => null))
           ?.invoiceNetDays,
       );
+      const questionKey = step
+        ? stepQuestionKey(step, !!conv.customerId) // REQ-331
+        : "transitionToTerms.allTermsAnswered";
       const wizardMsg = await this.messages.append({
         conversationId: conv.id,
         role: "assistant",
         kind: "wizard",
-        content: step
-          ? t(lang, stepQuestionKey(step, !!conv.customerId)) // REQ-331
-          : t(lang, "transitionToTerms.allTermsAnswered"),
+        content: t(lang, questionKey),
         payload: {
+          // REQ-589 (cycle 4, M15): the key, so the line follows EN/ES.
+          i18n: { key: questionKey },
           specId: spec.id,
           stepIdx,
           stepId: step?.id,
@@ -133,7 +136,12 @@ export class TransitionToTerms {
       role: "system",
       kind: "phase_divider",
       content: t(lang, "transitionToTerms.phaseDivider"),
-      payload: { phase: 2, label: t(lang, "transitionToTerms.phaseDivider") },
+      payload: {
+        phase: 2,
+        label: t(lang, "transitionToTerms.phaseDivider"),
+        // REQ-589 (cycle 4, M15): re-rendered in the reader's language.
+        i18n: { key: "transitionToTerms.phaseDivider" },
+      },
     });
 
     const firstStep = spec.steps[0];
@@ -144,6 +152,8 @@ export class TransitionToTerms {
       // REQ-331 (demo m7/m44): a bound customer is offered, not re-asked.
       content: t(lang, stepQuestionKey(firstStep, !!conv.customerId)),
       payload: {
+        // REQ-589 (cycle 4, M15): the key, so the question follows EN/ES.
+        i18n: { key: stepQuestionKey(firstStep, !!conv.customerId) },
         specId: spec.id,
         stepIdx: 0,
         stepId: firstStep.id,

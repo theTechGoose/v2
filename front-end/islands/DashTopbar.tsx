@@ -163,7 +163,7 @@ export default function DashTopbar(
     ? {
       // REQ-496 (demo m36, cycle 3): rendered from the feed's titleKey in the
       // LIVE language, so the EN/ES switch re-localizes it at once.
-      html: tickerTitleHtml(tickerItem, (k, v) => tFor(lang, k, v)),
+      html: tickerTitleHtml(tickerItem, (k, v) => tFor(lang, k, v), lang),
       time: !age
         ? ""
         : age.key === "dashTopbar.justNow"

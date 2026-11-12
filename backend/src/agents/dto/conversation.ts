@@ -1,5 +1,6 @@
 import { IsOptional, IsString, validateSync } from "#class-validator";
 import { plainToInstance } from "#class-transformer";
+import type { ChatI18nRef } from "#quote-flow/chat-i18n.ts"; // REQ-589
 
 /**
  * Two-phase agent flow:
@@ -26,6 +27,10 @@ export interface AgentConversation {
   currentPhase: AgentPhase;
   title?: string; // first user message, truncated
   preview?: string; // last meaningful message snippet
+  /** REQ-589 (cycle 4, M15): the key `preview` was rendered from, so the
+   *  thread list re-renders it in the reader's language. Dropped by the
+   *  store whenever a later write sets `preview` without one. */
+  previewI18n?: ChatI18nRef;
   /** Threads-sidebar badge. Set by accept-quote; cleared by load-conversation on next read. */
   hasUnreadEvent?: boolean;
   /** Denormalized quote.status, written by Lock / Send / AcceptQuote only —
