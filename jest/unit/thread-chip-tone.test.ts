@@ -27,6 +27,8 @@ const EXPECTED: Record<ThreadStatus, ThreadChipKind | null> = {
   drafted: "draft",
   locked: "progress",
   gathering: "progress",
+  // REQ-454 (merged on demo-fixes): locked + in the terms wizard — progress
+  addingTerms: "progress",
   pickingDetails: "progress",
   readyToSend: "progress",
   undelivered: "needs",

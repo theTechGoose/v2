@@ -93,6 +93,9 @@ Deno.test("REQ-493 m7 (pair 9): the open /q page's re-read sees the deposit paid
       terms: [{ stepId: "payment_terms", label: "Payment", value: "Due Now" }],
       status: "sent",
     });
+    // REQ-460 (merged on demo-fixes): POST /quotes makes a draft; the
+    // customer signs a SENT quote.
+    await call("PUT", `/quotes/${quote.id}`, auth, { status: "sent" });
     const accepted = await call(
       "POST",
       `/quotes/${quote.id}/accept`,

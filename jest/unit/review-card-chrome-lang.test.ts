@@ -50,6 +50,7 @@ const DOCUMENT_ARGS = new Set([
   "TERM_LABEL_KEYS[t.stepId]", // term labels on the document
   "o.labelKey", // term option values written into the document
   "o.subKey",
+  "o.subAmountsKey", // REQ-491 (merged on demo-fixes): the deposit option's $ split, same as o.subKey
 ]);
 
 /** The contractor's controls named by the RCA — each must follow `lang`. */

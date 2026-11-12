@@ -214,6 +214,9 @@ Deno.test("REQ-474 M17 e2e: the demo's books over HTTP — Ana Pérez signs a $1
       }],
       status: "sent",
     });
+    // REQ-460 (merged on demo-fixes): POST /quotes makes a draft; the
+    // customer signs a SENT quote.
+    await call("PUT", `/quotes/${quote.id}`, { status: "sent" });
     const accepted = await api()<{ ok: boolean }>(
       "POST",
       `/quotes/${quote.id}/accept`,

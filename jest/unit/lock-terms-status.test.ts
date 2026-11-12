@@ -80,7 +80,9 @@ describe("REQ-454 m34: the terms wizard on a locked quote reads forward", () => 
     expect(threadStatusKey("addingTerms")).toBe(KEY);
     expect(en[KEY]).toBe("Quote locked · adding terms");
     expect(es[KEY]).toBe("Cotización confirmada · agregando términos");
-    expect(threadChip("addingTerms")).toEqual({ kind: "needs", key: KEY });
+    // REQ-454 AMENDMENT (reconciled on demo-fixes): the chip takes REQ-453's
+    // neutral "progress" tone — a locked quote gaining terms is moving along.
+    expect(threadChip("addingTerms")).toEqual({ kind: "progress", key: KEY });
   });
 
   it("the walk drafted → locked → adding terms → ready to send only ever moves forward", () => {

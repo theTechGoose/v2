@@ -336,6 +336,9 @@ const CHIP_KIND: Record<Exclude<ThreadStatus, "none">, ThreadChipKind> = {
   drafted: "draft",
   locked: "progress",
   gathering: "progress",
+  // REQ-454 (merged with REQ-453 on demo-fixes): a locked quote in the terms
+  // wizard is moving along too — the neutral tone.
+  addingTerms: "progress",
   pickingDetails: "progress",
   readyToSend: "progress",
   undelivered: "needs",

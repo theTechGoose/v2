@@ -99,6 +99,9 @@ Deno.test("REQ-493 m7: the customer's signature, their payment claim and the own
       terms: [{ stepId: "payment_terms", label: "Payment", value: "Due Now" }],
       status: "sent",
     });
+    // REQ-460 (merged on demo-fixes): POST /quotes makes a draft; the
+    // customer signs a SENT quote.
+    await call("PUT", `/quotes/${quote.id}`, auth, { status: "sent" });
 
     // the customer signs on /q (no session)
     const accepted = await call(
