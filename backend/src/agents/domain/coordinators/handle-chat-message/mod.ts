@@ -83,6 +83,23 @@ import type { Customer } from "@crm/dto/customer.ts";
 import { isValidJobName, jobNameCase } from "#quote-flow/job-name.ts";
 import type { AgentConversation } from "@agents/dto/conversation.ts";
 import type { AgentMessage } from "@agents/dto/message.ts";
+// REQ-392 (demo-loop cycle 2, M7): a message typed on a guided step.
+import {
+  type ChatStepHint,
+  statedPriceCents,
+} from "#quote-flow/step-composer.ts";
+import {
+  isFallbackPricing,
+  jobOptionsStepReply,
+  priceStepReply,
+  stepContextLine,
+  stepJobOptionsRaw,
+  stepLangs,
+  stepScopeText,
+  stepTools,
+} from "@agents/domain/business/chat-step/mod.ts";
+import { GenerateJobOptions } from "@agents/domain/coordinators/generate-job-options/mod.ts";
+import { getWizardSpec } from "@agents/domain/business/terms-wizard-spec/mod.ts";
 
 /** Confirmation phrases that mean "lock the active draft quote." When the
  *  user types one of these AND the conversation already carries a draft
@@ -192,6 +209,11 @@ export interface HandleChatInput {
    *  render an image bubble pointing at /api/files/:fileId — and so
    *  history-replay can re-fetch image bytes for the LLM each turn. */
   payload?: Record<string, unknown>;
+  /** REQ-392 (demo-loop cycle 2, M7): the guided step a text was typed on
+   *  (the compact "Tell the assistant…" box). Pick a price re-prices, Job
+   *  details rewrites the versions, a wizard question / the Ready-to-send
+   *  review reach the model with the step in its context. Never onboarding. */
+  step?: ChatStepHint;
 }
 
 export interface HandleChatResult {
@@ -287,16 +309,190 @@ export class HandleChatMessage {
     return c?.name;
   }
 
+  /** REQ-392: the open wizard question the message was typed on, as the
+   *  model reads it ("Customer: …"); undefined off a wizard step. */
+  private async stepQuestion(
+    conversationId: string,
+    step: ChatStepHint | undefined,
+  ): Promise<string | undefined> {
+    if (step?.id !== "wizard" || !step.wizardStepId) return undefined;
+    try {
+      const state = await this.conversations.getWizardState(conversationId);
+      const spec = state ? getWizardSpec(state.specId) : undefined;
+      const s = spec?.steps.find((x) => x.id === step.wizardStepId);
+      return s ? `${t("en", s.label)}: ${t("en", s.question)}` : undefined;
+    } catch {
+      return undefined;
+    }
+  }
+
+  /** REQ-392: the job the contractor typed — the step's own copy, else the
+   *  thread's first typed message (the details note), never a step turn. */
+  private typedJob(
+    step: ChatStepHint,
+    history: AgentMessage[],
+    userMsg: AgentMessage,
+  ): string {
+    if (step.job?.trim()) return step.job.trim();
+    const note = history.find((m) =>
+      m.id !== userMsg.id && m.role === "user" && m.kind === "text" &&
+      !(m.payload as { step?: unknown } | undefined)?.step &&
+      typeof m.content === "string" && m.content.trim()
+    );
+    return note?.content.trim() ?? "";
+  }
+
+  /** REQ-392: store a step reply and touch the conversation (preview; the
+   *  title only on a thread's very first message — from the job, never the
+   *  correction). */
+  private async finishStep(
+    conv: AgentConversation,
+    history: AgentMessage[],
+    userMsg: AgentMessage,
+    job: string,
+    reply: { content: string; payload: Record<string, unknown> },
+  ): Promise<HandleChatResult> {
+    const msg = await this.messages.append({
+      conversationId: conv.id,
+      role: "assistant",
+      kind: "text",
+      content: reply.content,
+      payload: reply.payload,
+    });
+    const first = history.length === 1 && history[0].id === userMsg.id;
+    const updated = await this.conversations.update(conv.id, {
+      preview: derivePreview(msg.content),
+      ...(first
+        ? { title: deriveTitleFromFirstUserMessage(job || userMsg.content) }
+        : {}),
+    });
+    return { conversation: updated, newMessages: [userMsg, msg] };
+  }
+
+  /**
+   * REQ-392 (demo-loop cycle 2, M7) — typed on Pick a price ("no that's wrong,
+   * it's the whole gut job — more like $28k"). With the tiers on screen the
+   * pricing engine re-prices the job with the correction riding beside the
+   * confirmed scope — never in the job text, whose amounts are the cost floor
+   * (a price the contractor names is their price, not a cost). The reply
+   * carries the new tiers and the one price the correction named, for the
+   * price box. No quote is made: the price step's Continue does that.
+   */
+  private async repriceOnStep(
+    input: HandleChatInput,
+    conv: AgentConversation,
+    userMsg: AgentMessage,
+    history: AgentMessage[],
+    step: ChatStepHint,
+    lang: "en" | "es",
+  ): Promise<HandleChatResult> {
+    const correction = input.content;
+    const job = this.typedJob(step, history, userMsg);
+    const tiers = step.tiers === true;
+    let priced:
+      | Awaited<ReturnType<SuggestPrices["run"]>>
+      | undefined;
+    if (tiers) {
+      const addr = await this.addresses.get(input.userId).catch(() => null);
+      priced = await new SuggestPrices(this.llm).run({
+        userId: input.userId,
+        raw: job || correction,
+        scope: stepScopeText(step.scope, correction),
+        lang,
+        ...(addr
+          ? {
+            address: {
+              city: addr.city,
+              state: addr.state,
+              postal: addr.postal,
+            },
+          }
+          : {}),
+      });
+    }
+    const stated = statedPriceCents(correction);
+    // The engine's generic tiers (model unreachable / junk) say nothing about
+    // the correction: the tiers on screen stay and the reply says so.
+    const repriced = priced && !isFallbackPricing(priced.options)
+      ? priced
+      : undefined;
+    return await this.finishStep(conv, history, userMsg, job, {
+      content: priceStepReply(lang, {
+        tiers,
+        options: priced?.options,
+        statedCents: stated,
+      }),
+      payload: {
+        step: "price",
+        ...(repriced ? { priceSuggestions: repriced } : {}),
+        ...(stated ? { statedPriceCents: stated } : {}),
+      },
+    });
+  }
+
+  /**
+   * REQ-392 (demo-loop cycle 2, M7) — typed on the Job details picker ("add
+   * the heated floor and the permit"). The three versions are rewritten from
+   * the job, the version on screen and the correction, in the app and comms
+   * languages plus any the job or the correction asks for; the reply carries
+   * them for the picker (whose Continue writes the picked one to the quote).
+   * When the writer can't be reached the versions on screen stay as they are:
+   * the heuristic fallback would split this prompt's own framing into
+   * bullets, so the reply says so honestly and carries no versions.
+   */
+  private async rewriteJobOnStep(
+    input: HandleChatInput,
+    conv: AgentConversation,
+    userMsg: AgentMessage,
+    history: AgentMessage[],
+    step: ChatStepHint,
+    lang: "en" | "es",
+  ): Promise<HandleChatResult> {
+    const correction = input.content;
+    const job = this.typedJob(step, history, userMsg);
+    const ident = await this.identity.get(input.userId).catch(() => null);
+    const comms = ident?.commsLanguages && ident.commsLanguages.length
+      ? ident.commsLanguages
+      : [ident?.commsLanguage ?? "en"];
+    const res = await new GenerateJobOptions(this.llm).run({
+      userId: input.userId,
+      raw: stepJobOptionsRaw(job, step.scope, correction),
+      langs: stepLangs(lang, comms, `${job}\n${correction}`),
+    });
+    return await this.finishStep(conv, history, userMsg, job, {
+      content: jobOptionsStepReply(lang, res.degraded),
+      payload: {
+        step: "job_details",
+        ...(res.degraded
+          ? {}
+          : { jobOptions: { options: res.options, degraded: false } }),
+      },
+    });
+  }
+
   async run(input: HandleChatInput): Promise<HandleChatResult> {
     const conv = await this.conversations.get(input.conversationId);
     if (conv.userId !== input.userId) throw new Error("forbidden");
 
+    // REQ-392 (demo-loop cycle 2, M7): typed in the compact composer on a
+    // guided step. Recorded on the message (`step`, and the open question as
+    // `stepQuestion` — never `wizardStepId`, which would mark it answered).
+    const step = (input.kind ?? "text") === "text" ? input.step : undefined;
+    const stepTag = step
+      ? {
+        step: step.id,
+        ...(step.wizardStepId ? { stepQuestion: step.wizardStepId } : {}),
+      }
+      : undefined;
+    const userPayload = input.payload || stepTag
+      ? { ...(input.payload ?? {}), ...(stepTag ?? {}) }
+      : undefined;
     const userMsg = await this.messages.append({
       conversationId: conv.id,
       role: "user",
       kind: input.kind ?? "text",
       content: input.content,
-      ...(input.payload ? { payload: input.payload } : {}),
+      ...(userPayload ? { payload: userPayload } : {}),
     });
 
     const history = await this.messages.listByConversation(conv.id);
@@ -314,7 +510,8 @@ export class HandleChatMessage {
     // block real work behind a name prompt.
     const inputIsText = (input.kind ?? "text") === "text" &&
       typeof input.content === "string";
-    if (inputIsText) {
+    // REQ-392: a step turn is mid-flow — never answered with a profile ask.
+    if (inputIsText && !step) {
       const me = await this.users.get(input.userId).catch(() => null);
       const lang = me?.language === "es" ? "es" : "en";
       const ident = await this.identity.get(input.userId).catch(() => null);
@@ -749,6 +946,31 @@ export class HandleChatMessage {
     );
     const replyLang = contractor?.language === "es" ? "es" : "en";
 
+    // ---- REQ-392 (demo-loop cycle 2, M7): typed on Pick a price / Job
+    // details. There is no quote yet on those steps (or the picker is about
+    // to overwrite its details), so the step itself is what changes: the
+    // tiers re-priced, the versions rewritten — carried on the reply.
+    if (step?.id === "price") {
+      return await this.repriceOnStep(
+        input,
+        conv,
+        userMsg,
+        history,
+        step,
+        replyLang,
+      );
+    }
+    if (step?.id === "job_details") {
+      return await this.rewriteJobOnStep(
+        input,
+        conv,
+        userMsg,
+        history,
+        step,
+        replyLang,
+      );
+    }
+
     // ---- N5 fast-path: confirmation → fire lock_quote without the LLM ----
     // The model is unreliable at calling lock_quote on short confirmations
     // ("send it", "looks good", "yep") even with example-rich prompting on
@@ -1008,6 +1230,16 @@ export class HandleChatMessage {
           input.userId,
         ).then(quoteContext).catch(() => undefined);
       }
+      // REQ-392 (M7): the wizard question / the Ready-to-send review the
+      // message was typed on.
+      const stepLine = stepContextLine(step, {
+        question: await this.stepQuestion(conv.id, step),
+      });
+      if (stepLine) {
+        businessContext = [businessContext, stepLine].filter(Boolean).join(
+          "\n\n",
+        );
+      }
       llmResponse = await this.llm.respond({
         systemPrompt,
         messages: llmTurns,
@@ -1015,7 +1247,8 @@ export class HandleChatMessage {
         ...(businessContext ? { businessContext } : {}),
         // REQ-368 (M32): only the tools this state allows — no lock / terms
         // once the quote is past drafting, no create / lock in the terms phase.
-        tools: chatToolsFor(conv.currentPhase, boundQuote),
+        // REQ-392: the review may also revise a line already on the quote.
+        tools: stepTools(chatToolsFor(conv.currentPhase, boundQuote), step),
       });
     }
 
@@ -1132,12 +1365,22 @@ export class HandleChatMessage {
         description: llmResponse.action.payload.description,
         deltaAmountCents: llmResponse.action.payload.deltaAmountCents,
       });
+      // REQ-392 (M7): a line added to the bound draft (or its pending
+      // revision) flags the reply, as a revise does, so an open Ready-to-send
+      // review re-reads the quote instead of showing the old lines.
+      const co = result.outcome;
+      const coChangedBound =
+        (co.kind === "draft_updated" || co.kind === "pending_revision") &&
+        co.quoteId === conv.quoteId;
       const reply = await this.messages.append({
         conversationId: conv.id,
         role: "assistant",
         kind: "text",
         content: result.text,
-        payload: { changeOrder: result.outcome },
+        payload: {
+          changeOrder: result.outcome,
+          ...(coChangedBound ? { quoteUpdated: co.quoteId } : {}),
+        },
       });
       const patch: Partial<AgentConversation> = {
         preview: derivePreview(reply.content),

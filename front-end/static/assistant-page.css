@@ -7612,6 +7612,119 @@ body {
   color: var(--brand-teal);
 }
 
+/* REQ-392 (demo-loop cycle 2, M7): the compact "Tell the assistant…" box on
+   the guided flow's tap steps — a quiet secondary control under the step's
+   own primary action (REQ-041 NW-53b: never a second big text box). */
+.composer--step {
+  padding: 8px 18px calc(10px + env(safe-area-inset-bottom, 0px));
+}
+.composer__step-open {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  appearance: none;
+  border: 1px solid var(--border);
+  background: #fff;
+  color: var(--brand-teal);
+  border-radius: 999px;
+  padding: 7px 14px;
+  font-family: var(--font-body);
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: border-color 140ms, background 140ms;
+}
+.composer__step-open:hover,
+.composer__step-open:focus-visible {
+  border-color: var(--brand-teal);
+  background: var(--coffee-50);
+}
+/* REQ-392: Pick a price and the Job details picker are bounded to the panel
+   (REQ-338: the picker fits at 1280×720), so their closed box is the button
+   on the left of their own Continue row — the row is Continue's height, the
+   bar under the panel appears only once it is tapped. One solid primary
+   (Continue), one outlined secondary. */
+.chat__step-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px 10px;
+  flex: 0 0 auto;
+}
+.chat__step-actions > .chat__price-continue {
+  align-self: auto;
+  margin-left: auto;
+}
+.composer__step-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--coffee-50);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 4px 6px 4px 12px;
+  transition: border-color 160ms;
+}
+.composer__step-row:focus-within {
+  border-color: var(--brand-green);
+  background: #fff;
+}
+.composer__step-input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  outline: none;
+  background: transparent;
+  font-family: var(--font-body);
+  /* >= 16px, like .composer__input: iOS Safari zooms a smaller field. */
+  font-size: 16px;
+  color: var(--brand-teal);
+  padding: 7px 0;
+}
+.composer__step-input::placeholder {
+  color: var(--fg-subtle);
+}
+.composer__step-row .composer__send:disabled {
+  opacity: 0.45;
+  box-shadow: none;
+  cursor: default;
+}
+.composer__step-close {
+  width: 30px;
+  height: 30px;
+  border: none;
+  background: transparent;
+  color: var(--fg-muted);
+  border-radius: 8px;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+}
+.composer__step-close:hover {
+  background: rgba(20, 72, 82, 0.06);
+  color: var(--brand-teal);
+}
+.composer__step-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-bottom: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--coffee-50);
+  color: var(--brand-teal);
+  font-size: 13px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+}
+.composer__step-note img {
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+}
+
 /* ----- Document preview column ----- */
 .docpane {
   background: #fff;
