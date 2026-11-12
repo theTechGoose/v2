@@ -53,7 +53,11 @@ import { fmtPhone } from "../lib/format.ts";
 import { TransferAccount } from "../components/TransferAccount.tsx"; // REQ-220
 import { type Lang, langSignal, setLang, tFor } from "../lib/i18n.ts";
 import { normalizeWebsiteUrl } from "../../shared/quote-flow/format-helpers.ts";
-import { businessTimezone } from "../../shared/quote-flow/business-timezone.ts";
+import {
+  businessTimezone,
+  PICKER_TIMEZONES,
+  timezoneLabelKey,
+} from "../../shared/quote-flow/business-timezone.ts";
 import { sendLanguagesOf } from "../../shared/quote-flow/comms-language.ts";
 import {
   CardGridSkeleton,
@@ -655,15 +659,20 @@ function EditCard(
           <span style={labelStyle}>{t.timezone}</span>
           <select
             data-cy="settings-timezone"
+            style={inputStyle}
             value={zone}
             disabled={busy === "identity"}
             onChange={(e) => saveIdentity({
               timezone: (e.target as HTMLSelectElement).value,
             })}
           >
-            {(TIMEZONES.includes(zone) ? TIMEZONES : [zone, ...TIMEZONES]).map((
-              z,
-            ) => <option key={z} value={z}>{z}</option>)}
+            {(PICKER_TIMEZONES.includes(zone)
+              ? PICKER_TIMEZONES
+              : [zone, ...PICKER_TIMEZONES]).map((z) => (
+                <option key={z} value={z}>
+                  {timezoneLabel(langSignal.value === "es" ? "es" : "en", z)}
+                </option>
+              ))}
           </select>
           <span style="display:block;margin-top:4px;font-size:12px;color:var(--fg-muted)">
             {t.timezoneHint}
@@ -674,17 +683,13 @@ function EditCard(
   );
 }
 
-/** REQ-172 — the zones a US business picks from (the current value is kept even when it is not one of these) */
-const TIMEZONES = [
-  "America/New_York",
-  "America/Chicago",
-  "America/Denver",
-  "America/Phoenix",
-  "America/Los_Angeles",
-  "America/Anchorage",
-  "Pacific/Honolulu",
-  "America/Puerto_Rico",
-];
+/** REQ-346 — a zone's label in the UI language ("Eastern (New York)"); a
+ *  zone with no label (one kept from an older pick) shows its IANA id */
+function timezoneLabel(lang: Lang, id: string): string {
+  const key = timezoneLabelKey(id);
+  const label = tFor(lang, key);
+  return label === key ? id : label;
+}
 
 /** AddressEditCard — editable mailing address (roadmap p.8). P-42: honors
  *  the page's "changes save as you go" promise — every edit autosaves

@@ -105,3 +105,23 @@ export function businessTimezone(
   return validTimezone(input.timezone) ?? timezoneForState(input.state) ??
     DEFAULT_TIMEZONE;
 }
+
+/** REQ-172 / REQ-346 — the zones a US business picks from on Settings (the
+ *  current value is kept even when it is not one of these). Each has a label
+ *  in lang/{en,es}.json under `timezoneLabelKey(id)`; the option's value stays
+ *  the IANA id. */
+export const PICKER_TIMEZONES: readonly string[] = [
+  "America/New_York",
+  "America/Chicago",
+  "America/Denver",
+  "America/Phoenix",
+  "America/Los_Angeles",
+  "America/Anchorage",
+  "Pacific/Honolulu",
+  "America/Puerto_Rico",
+];
+
+/** REQ-346 — the dictionary key of a zone's human label */
+export function timezoneLabelKey(id: string): string {
+  return `settings.tz.${id}`;
+}
