@@ -10,6 +10,7 @@ import {
   settledSendCtaIds,
 } from "../lib/send-cta-settled.ts";
 import { hiddenOnReloadIds } from "../lib/thread-reload-prune.ts";
+import { heroFieldKeyAction } from "../lib/hero-field-edit.ts";
 import {
   computePaymentSplit,
   depositBalanceSubVars,
@@ -4278,14 +4279,17 @@ export default function AsstChat({
 
   /** Generic inline-edit handler for the customer's email + phone in the
    *  quote-review hero. Empty next value clears the field (allowed); the
-   *  PUT goes through whether the field had a prior value or not. */
+   *  PUT goes through whether the field had a prior value or not.
+   *  REQ-634 (cycle 5, m34): the fields are real <input>s — their value is
+   *  read here; `original` is what the input showed (the phone's display
+   *  form), so an untouched blur saves nothing. */
   async function onEditCustomerField(
     field: "email" | "phoneNumber",
     customerId: string | undefined,
     original: string | undefined,
-    el: HTMLElement,
+    el: HTMLInputElement,
   ) {
-    const next = (el.innerText ?? "").trim();
+    const next = (el.value ?? "").trim();
     const prev = (original ?? "").trim();
     if (!customerId || next === prev) return;
     try {
@@ -4298,9 +4302,20 @@ export default function AsstChat({
         c ? { ...c, [field]: next.length === 0 ? undefined : next } : c
       );
     } catch (err) {
-      el.innerText = prev;
+      el.value = prev;
       setError(err instanceof Error ? err.message : "couldn't save edit");
     }
+  }
+
+  /** REQ-634 (cycle 5, m34): Enter commits the hero field (its blur saves)
+   *  instead of typing a line break; Escape puts the shown value back. */
+  function onHeroFieldKeyDown(e: KeyboardEvent) {
+    const input = e.currentTarget as HTMLInputElement;
+    const action = heroFieldKeyAction(e.key, e.isComposing);
+    if (action === null) return;
+    e.preventDefault();
+    if (action === "revert") input.value = input.defaultValue;
+    input.blur();
   }
 
   /**
@@ -7615,57 +7630,83 @@ export default function AsstChat({
                                   {customer.name}
                                 </div>
                                 <div class="quote-review__hero-meta">
-                                  <span
-                                    class={`quote-review__editable quote-review__hero-field${
-                                      customer.email
-                                        ? ""
-                                        : " quote-review__hero-field--empty"
-                                    }`}
-                                    contentEditable
-                                    spellcheck={false}
-                                    data-placeholder={tFor(
-                                      lang,
-                                      "asstChat.preview.addEmail",
-                                    )}
-                                    onBlur={(e) =>
-                                      onEditCustomerField(
-                                        "email",
-                                        customer.id,
-                                        customer.email,
-                                        e.currentTarget as HTMLElement,
+                                  {/* REQ-634 (cycle 5, m34): real inputs —
+                                      native placeholder, a min-width, Enter
+                                      commits, Escape reverts; the label
+                                      carries the pencil (inputs draw no
+                                      ::after). */}
+                                  <label class="quote-review__editable quote-review__hero-field">
+                                    <input
+                                      type="email"
+                                      class="quote-review__hero-input"
+                                      data-cy="quote-review-email"
+                                      // uncontrolled: a re-render while typing
+                                      // never resets the text; a new stored
+                                      // value remounts it
+                                      key={`email:${customer.id}:${
+                                        customer.email ?? ""
+                                      }`}
+                                      defaultValue={customer.email ?? ""}
+                                      placeholder={tFor(
+                                        lang,
+                                        "asstChat.preview.addEmail",
                                       )}
-                                  >
-                                    {customer.email ?? ""}
-                                  </span>
+                                      aria-label={tFor(
+                                        lang,
+                                        "asstChat.preview.addEmail",
+                                      )}
+                                      autoComplete="off"
+                                      spellcheck={false}
+                                      onKeyDown={onHeroFieldKeyDown}
+                                      onBlur={(e) =>
+                                        onEditCustomerField(
+                                          "email",
+                                          customer.id,
+                                          customer.email,
+                                          e.currentTarget,
+                                        )}
+                                    />
+                                  </label>
                                   <span class="quote-review__dot">·</span>
-                                  <span
-                                    class={`quote-review__editable quote-review__hero-field${
-                                      customer.phoneNumber
-                                        ? ""
-                                        : " quote-review__hero-field--empty"
-                                    }`}
-                                    contentEditable
-                                    spellcheck={false}
-                                    data-placeholder={tFor(
-                                      lang,
-                                      "asstChat.preview.addPhone",
-                                    )}
-                                    onBlur={(e) =>
-                                      onEditCustomerField(
-                                        "phoneNumber",
-                                        customer.id,
-                                        customer.phoneNumber,
-                                        e.currentTarget as HTMLElement,
+                                  <label class="quote-review__editable quote-review__hero-field">
+                                    <input
+                                      type="tel"
+                                      class="quote-review__hero-input"
+                                      data-cy="quote-review-phone"
+                                      // UX-15: display-formatted, not the
+                                      // raw stored digits.
+                                      key={`phone:${customer.id}:${
+                                        customer.phoneNumber ?? ""
+                                      }`}
+                                      defaultValue={customer.phoneNumber
+                                        ? formatPhoneDisplay(
+                                          customer.phoneNumber,
+                                        )
+                                        : ""}
+                                      placeholder={tFor(
+                                        lang,
+                                        "asstChat.preview.addPhone",
                                       )}
-                                  >
-                                    {/* UX-15: display-formatted, not the
-                                        raw stored digits. */}
-                                    {customer.phoneNumber
-                                      ? formatPhoneDisplay(
-                                        customer.phoneNumber,
-                                      )
-                                      : ""}
-                                  </span>
+                                      aria-label={tFor(
+                                        lang,
+                                        "asstChat.preview.addPhone",
+                                      )}
+                                      autoComplete="off"
+                                      spellcheck={false}
+                                      onKeyDown={onHeroFieldKeyDown}
+                                      onBlur={(e) =>
+                                        onEditCustomerField(
+                                          "phoneNumber",
+                                          customer.id,
+                                          customer.phoneNumber
+                                            ? formatPhoneDisplay(
+                                              customer.phoneNumber,
+                                            )
+                                            : undefined,
+                                          e.currentTarget,
+                                        )}
+                                    />
+                                  </label>
                                 </div>
                                 {/* REQ-263: where the job is. */}
                                 {quote?.serviceAddress
