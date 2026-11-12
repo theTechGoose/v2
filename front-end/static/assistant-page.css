@@ -714,7 +714,10 @@ body {
 /* Live activity ticker — rotates through recent events */
 .topbar__ticker {
   flex-shrink: 1;
-  min-width: 0;
+  /* REQ-273: never narrower than its content (dot + 120px of text + time);
+     an overflow:hidden flex item's auto minimum is 0, which let the text
+     collapse until only "● hace 1m" was left. */
+  min-width: min-content;
   max-width: 280px;
   height: 36px;
   display: inline-flex;
@@ -757,7 +760,7 @@ body {
 }
 .topbar__ticker-track {
   flex: 1;
-  min-width: 0;
+  min-width: 120px; /* REQ-273: the event text always gets room */
   position: relative;
   height: 18px;
   overflow: hidden;
@@ -2909,7 +2912,10 @@ body {
 /* Live activity ticker — rotates through recent events */
 .topbar__ticker {
   flex-shrink: 1;
-  min-width: 0;
+  /* REQ-273: never narrower than its content (dot + 120px of text + time);
+     an overflow:hidden flex item's auto minimum is 0, which let the text
+     collapse until only "● hace 1m" was left. */
+  min-width: min-content;
   max-width: 280px;
   height: 36px;
   display: inline-flex;
@@ -2952,7 +2958,7 @@ body {
 }
 .topbar__ticker-track {
   flex: 1;
-  min-width: 0;
+  min-width: 120px; /* REQ-273: the event text always gets room */
   position: relative;
   height: 18px;
   overflow: hidden;
@@ -2993,6 +2999,13 @@ body {
   color: var(--fg-subtle);
   font-family: var(--font-mono, ui-monospace, monospace);
   letter-spacing: 0;
+}
+/* REQ-273: phones hide the ticker, as dashboard.css does — there is no room
+   for its text beside the menu, the greeting and the language switch. */
+@media (max-width: 640px) {
+  .topbar__ticker {
+    display: none;
+  }
 }
 
 /* ------ Main column ------ */

@@ -4,6 +4,7 @@ import { dashboardClient, type Notification } from "../clients/dashboard.ts";
 import { langSignal, setLang, tFor } from "../lib/i18n.ts";
 import { profileClient } from "../clients/profile.ts";
 import { formatGreetingDate } from "../../shared/quote-flow/locale-format.ts";
+import { tickerAge } from "../lib/ticker-age.ts";
 import GlobalSearch from "./GlobalSearch.tsx";
 import { TOPBAR_CSS } from "../lib/topbar-css.ts";
 import { startPoll } from "../lib/poll.ts";
@@ -27,15 +28,7 @@ interface Props {
 // No fallback ticker — when the user has zero real notifications we hide
 // the ticker entirely. Showing seeded "Cobblestone Cafe paid $1,000" to a
 // brand-new account read as fake activity and misled first-run users.
-function fmtAgo(iso: string): string {
-  const t = new Date(iso).getTime();
-  if (!Number.isFinite(t)) return "";
-  const m = Math.max(1, Math.floor((Date.now() - t) / 60_000));
-  if (m < 60) return `${m}m`;
-  const h = Math.floor(m / 60);
-  if (h < 24) return `${h}h`;
-  return `${Math.floor(h / 24)}d`;
-}
+// The pill's age ("just now" / "4m ago") comes from tickerAge (REQ-273).
 
 export default function DashTopbar(
   {
@@ -98,10 +91,17 @@ export default function DashTopbar(
   }, []);
 
   const liveItems = items.length > 0 ? items : null;
-  const ticker = liveItems
+  const tickerItem = liveItems ? liveItems[tickerIdx % liveItems.length] : null;
+  // Recomputed on every rotation tick (3.8 s), so a shown event's age counts up.
+  const age = tickerItem ? tickerAge(tickerItem.createdAt) : null;
+  const ticker = tickerItem
     ? {
-      html: liveItems[tickerIdx % liveItems.length].title,
-      time: fmtAgo(liveItems[tickerIdx % liveItems.length].createdAt),
+      html: tickerItem.title,
+      time: !age
+        ? ""
+        : age.key === "dashTopbar.justNow"
+        ? tFor(lang, age.key)
+        : tFor(lang, age.key, { time: age.time }),
     }
     : null;
 
@@ -161,9 +161,7 @@ export default function DashTopbar(
                 dangerouslySetInnerHTML={{ __html: ticker.html }}
               />
             </span>
-            <span class="topbar__ticker-time">
-              {tFor(lang, "dashTopbar.timeAgo", { time: ticker.time })}
-            </span>
+            <span class="topbar__ticker-time">{ticker.time}</span>
           </a>
         )
         : null}

@@ -1083,6 +1083,7 @@
   "dashSeed.time.yesterday": "Ayer",
   "dashTopbar.greeting": "Hola, {name} 👋",
   "dashTopbar.greetingNoName": "Hola 👋",
+  "dashTopbar.justNow": "ahora mismo",
   "dashTopbar.language": "Idioma",
   "dashTopbar.liveActivity": "Actividad en vivo — abrir feed",
   "dashTopbar.timeAgo": "hace {time}",

@@ -761,7 +761,10 @@ body {
 /* Live activity ticker — rotates through recent events */
 .topbar__ticker {
   flex-shrink: 1;
-  min-width: 0;
+  /* REQ-273: never narrower than its content (dot + 120px of text + time);
+     an overflow:hidden flex item's auto minimum is 0, which let the text
+     collapse until only "● hace 1m" was left. */
+  min-width: min-content;
   max-width: 280px;
   height: 36px;
   display: inline-flex;
@@ -804,7 +807,7 @@ body {
 }
 .topbar__ticker-track {
   flex: 1;
-  min-width: 0;
+  min-width: 120px; /* REQ-273: the event text always gets room */
   position: relative;
   height: 18px;
   overflow: hidden;
