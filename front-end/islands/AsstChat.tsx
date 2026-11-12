@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import { I, ICN } from "../lib/dash-icons.tsx";
 import { detailLines } from "../lib/format.ts";
 import { settledSendCtaIds } from "../lib/send-cta-settled.ts";
+import { hiddenOnReloadIds } from "../lib/thread-reload-prune.ts";
 import {
   computePaymentSplit,
   type MilestoneRole,
@@ -5566,7 +5567,14 @@ export default function AsstChat({
                   break;
                 }
               }
+              // REQ-318 (demo m50): the live view drops the draft card on
+              // "Lock it in" and the terms CTA once Business/Person is
+              // answered; the server keeps both, so hide them on reload
+              // too instead of showing a dimmed "Superseded" card and live
+              // buttons for an already-answered question.
+              const hiddenOnReload = hiddenOnReloadIds(messages);
               const visible = messages.filter((m) => {
+                if (hiddenOnReload.has(m.id)) return false;
                 if (m.kind !== "wizard") return true;
                 const stepId = (m.payload as { stepId?: string } | undefined)
                   ?.stepId;
