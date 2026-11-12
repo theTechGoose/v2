@@ -132,6 +132,10 @@ export class LockQuote {
         quoteId: fresh.id,
         ...(fresh.customerId ? { customerId: fresh.customerId } : {}),
         ...(fresh.description ? { description: fresh.description } : {}),
+        // REQ-435 (demo-loop cycle 3, M4): the card shows the job address.
+        ...(fresh.serviceAddress
+          ? { serviceAddress: fresh.serviceAddress }
+          : {}),
         lineItems,
         totalCents,
       },

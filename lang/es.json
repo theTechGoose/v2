@@ -145,6 +145,7 @@
   "asstChat.actionCard.editHint": "Escribe el cambio, p. ej. azulejo $3,600",
   "asstChat.actionCard.editPrompt": "Cambiar la cotización: ",
   "asstChat.actionCard.jobDetails": "Detalles del trabajo",
+  "asstChat.actionCard.jobAddress": "Dirección del trabajo",
   "asstChat.actionCard.lockIn": "Confirmar",
   "asstChat.actionCard.reopen": "Reabrir",
   "asstChat.actionCard.superseded": "Reemplazada",

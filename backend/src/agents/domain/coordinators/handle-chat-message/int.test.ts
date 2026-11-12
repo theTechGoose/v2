@@ -3027,3 +3027,41 @@ Deno.test("REQ-447 m14 handle-chat-message integration: a plain first message st
   assertEquals(result.conversation.title, "Need help pricing a fence");
   await resetKv();
 });
+
+// ---------------------------------------------------------------------------
+// REQ-435 (demo-loop cycle 3, M4): the draft action_card carries the job
+// address the quote was stored with, house number included, so the chat's
+// draft card can show it.
+// ---------------------------------------------------------------------------
+
+Deno.test("REQ-435 M4 handle-chat-message integration: the draft action_card carries the stored serviceAddress, house number kept (the demo's sentence)", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const { conversations, llm, quotes, flow } = fresh();
+  await seedOnboarded("u-1");
+  llm.setScript([{
+    text: "Here's your quote.",
+    action: {
+      type: "create_quote",
+      payload: {
+        summary: "Quote: Paint living room — Linda Moreno",
+        lineItems: [{ description: "Paint living room", amountCents: 185_000 }],
+      },
+    },
+  }]);
+  const conv = await conversations.create({ userId: "u-1" });
+  const result = await flow.run({
+    userId: "u-1",
+    conversationId: conv.id,
+    content:
+      "Paint my living room and hallway, $1,850. It's for Linda Moreno. Her phone 512-555-0177, linda.moreno@example.com, 4410 Avenue F Austin TX 78751",
+  });
+  const stored = await quotes.getOwned(result.conversation.quoteId!, "u-1");
+  assertEquals(stored.serviceAddress, "4410 Avenue F Austin TX 78751");
+  const card = result.newMessages.find((m) => m.kind === "action_card");
+  assertEquals(
+    (card?.payload as { serviceAddress?: string } | undefined)?.serviceAddress,
+    "4410 Avenue F Austin TX 78751",
+  );
+  await resetKv();
+});

@@ -107,6 +107,10 @@ export class ReopenQuote {
             quoteId: quote.id,
             ...(quote.customerId ? { customerId: quote.customerId } : {}),
             ...(quote.description ? { description: quote.description } : {}),
+            // REQ-435 (demo-loop cycle 3, M4): the job address stays shown.
+            ...(quote.serviceAddress
+              ? { serviceAddress: quote.serviceAddress }
+              : {}),
             lineItems: (quote.lineItems ?? []).map((li) => ({
               description: li.description,
               amountCents: Math.round((li.price ?? 0) * (li.quantity ?? 1)),

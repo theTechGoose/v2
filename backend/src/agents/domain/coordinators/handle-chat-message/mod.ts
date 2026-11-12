@@ -2672,6 +2672,11 @@ export class HandleChatMessage {
             status: "draft",
             quoteId: quote.id, // real id from the store
             customerId: quote.customerId,
+            // REQ-435 (demo-loop cycle 3, M4): the draft card shows the job
+            // address the quote carries.
+            ...(quote.serviceAddress
+              ? { serviceAddress: quote.serviceAddress }
+              : {}),
             lineItems: action.payload.lineItems, // keep cents-shape for the frontend
             totalCents: action.payload.lineItems.reduce(
               (s, l) => s + l.amountCents,
@@ -2763,6 +2768,10 @@ export class HandleChatMessage {
               actionType: "quote",
               status,
               quoteId,
+              // REQ-435 (M4): the locked card keeps the job address.
+              ...(locked.serviceAddress
+                ? { serviceAddress: locked.serviceAddress }
+                : {}),
               lineItems: sentLineItems,
               totalCents,
             },
