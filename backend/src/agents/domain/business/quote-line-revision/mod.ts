@@ -246,10 +246,18 @@ const NOT_A_LINE = new Set([
   "trabajo",
 ]);
 
+/** REQ-445 (demo-loop cycle 3, B2): how sure a price is — never part of a
+ *  line's name ("make it around $18,000", "make the tile about $4,000"). */
+const APPROX_TAIL =
+  /(?:^|\s+)(?:around|about|roughly|approximately|approx\.?|like|more\s+like|closer\s+to|como|unos|alrededor\s+de)$/i;
+
 /** "the price of the vanity" → "vanity"; "labor line" → "labor";
- *  "plumbing fixtures on Q-001" → "plumbing fixtures". */
+ *  "plumbing fixtures on Q-001" → "plumbing fixtures"; REQ-445: "that
+ *  vanity" → "vanity", "it around" → "" (the job, not a line). */
 function cleanLineName(raw: string): string {
   return raw.trim()
+    .replace(/^(?:it|that|this|these|those)\s+/i, "")
+    .replace(APPROX_TAIL, "")
     .replace(/^(?:the|a|an|la|el|los|las)\s+/i, "")
     .replace(
       /^(?:price|cost|precio)\s+(?:of|on|for|de|del)\s+(?:(?:the|la|el|los|las)\s+)?/i,
