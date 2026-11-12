@@ -143,7 +143,7 @@ Deno.test("REQ-456 M25: a chat change order on an invoiced job says it was sent 
     await open.waitFor({ timeout: 20_000 });
     expect.eq(
       (await open.innerText()).trim(),
-      `Open ${coNumber} as customer`,
+      `View ${coNumber} as customer`,
       "the reply names the change order",
     );
     const href = await open.getAttribute("href");
