@@ -8,14 +8,28 @@ import * as fs from "fs";
 import * as path from "path";
 import {
   clampRect,
+  clearPillRoom,
   CONTROL_SELECTOR,
   cornerRect,
+  countsAsPage,
+  PAGE_MEDIA_SELECTOR,
   pickPillSlot,
+  PILL_BOX_STEP,
   PILL_COMPACT_MAX_W,
   PILL_CORNERS,
   PILL_MARGIN,
+  PILL_MOVE_MS,
+  PILL_ROOM_VAR,
+  pillGhostBox,
   pillSlots,
+  pillStore,
+  planPill,
+  recallPillBox,
+  rectsOverlap,
+  rememberPillBox,
+  reservedBox,
   samplePoints,
+  setPillRoom,
   STAGE_PILL_BOTTOM,
   STAGE_PILL_GAP,
   stageInsetBottom,
@@ -104,13 +118,12 @@ describe("REQ-228 — the customer's pill picks a clear corner", () => {
     expect(pickPillSlot(null, slots, n)).toBe(slots[2]);
   });
 
-  test("nowhere clear: the fewest, the current box on a tie", () => {
+  test("nowhere clear: nothing — it never falls back onto the page (REQ-295)", () => {
     const cur = { left: 99, top: 99, width: 10, height: 10 };
     const n = (r: { left: number }) =>
       r.left === 20 ? 1 : r.left === 99 ? 1 : 3;
-    expect(pickPillSlot(cur, slots, n)).toBe(cur);
-    const m = (r: { left: number }) => (r.left === 20 ? 1 : 3);
-    expect(pickPillSlot(cur, slots, m)).toBe(slots[1]);
+    expect(pickPillSlot(cur, slots, n)).toBeNull();
+    expect(pickPillSlot(null, slots, () => 1)).toBeNull();
   });
 
   test("a remembered box is kept on the screen after a resize", () => {
@@ -152,10 +165,9 @@ describe("REQ-228 — the stage reserves the band its pill really takes", () => 
 });
 
 describe("REQ-228 — the islands use it", () => {
-  test("the customer's pill is one line and placed by pickPillSlot", () => {
+  test("the customer's pill is one line and placed by the slot picker (planPill, REQ-295)", () => {
     const o = read("front-end/islands/DemoModeOverlay.tsx");
-    expect(o).toMatch(/pickPillSlot\(/);
-    expect(o).toMatch(/pillSlots\(/);
+    expect(o).toMatch(/planPill\(/);
     expect(o).toMatch(/elementsFromPoint/);
     expect(o).toMatch(/white-space:nowrap/);
     expect(o).not.toMatch(/pillStyle = `[^`]*flex-wrap:wrap/);
@@ -168,5 +180,214 @@ describe("REQ-228 — the islands use it", () => {
     expect(s).toMatch(/ResizeObserver/);
     expect(s).not.toMatch(/bottom: 76/);
     expect(s).toMatch(/title=\{t\("demoMode\.pointOnlyHint"\)\}/);
+  });
+});
+
+describe("REQ-295 — the pill holds one clear spot over nothing of the page (demo-loop cycle 1, M1)", () => {
+  const view = { w: 390, h: 844 };
+  const none = {
+    root: false,
+    control: false,
+    media: false,
+    text: false,
+    painted: false,
+    areaFrac: 0,
+  };
+
+  test("what counts as the page under the pill: controls, media, dialogs, text, a painted box — not the root", () => {
+    expect(countsAsPage({ ...none, root: true })).toBe(false);
+    expect(countsAsPage(none)).toBe(false);
+    expect(countsAsPage({ ...none, control: true })).toBe(true);
+    expect(countsAsPage({ ...none, media: true })).toBe(true);
+    expect(countsAsPage({ ...none, text: true })).toBe(true);
+    // a card or a bar is page; a page-wide background is not
+    expect(countsAsPage({ ...none, painted: true, areaFrac: 0.2 })).toBe(true);
+    expect(countsAsPage({ ...none, painted: true, areaFrac: 0.9 })).toBe(false);
+    // the root painted is still the root
+    expect(countsAsPage({ ...none, root: true, painted: true, areaFrac: 0.1 }))
+      .toBe(false);
+    for (const s of ["img", "canvas", "svg", "video", "dialog"]) {
+      expect(PAGE_MEDIA_SELECTOR).toContain(s);
+    }
+    expect(PAGE_MEDIA_SELECTOR).toContain('[role="dialog"]');
+    expect(PAGE_MEDIA_SELECTOR).toContain('[aria-modal="true"]');
+  });
+
+  test("boxes overlap when they share area, not when they only touch", () => {
+    const a = { left: 10, top: 10, width: 100, height: 40 };
+    expect(rectsOverlap(a, { left: 100, top: 40, width: 50, height: 50 })).toBe(
+      true,
+    );
+    expect(rectsOverlap(a, { left: 110, top: 10, width: 50, height: 50 })).toBe(
+      false,
+    );
+    expect(rectsOverlap(a, { left: 0, top: 50, width: 500, height: 5 })).toBe(
+      false,
+    );
+    expect(rectsOverlap(a, { left: 0, top: 0, width: 500, height: 500 })).toBe(
+      true,
+    );
+  });
+
+  test("the slots come from a reserved box: the pill's size rounded up to steps, so a status change does not move them", () => {
+    expect(PILL_BOX_STEP).toEqual({ w: 40, h: 8 });
+    expect(reservedBox({ w: 290, h: 34 })).toEqual({ w: 320, h: 40 });
+    expect(reservedBox({ w: 300, h: 34 })).toEqual({ w: 320, h: 40 });
+    expect(reservedBox({ w: 320, h: 40 })).toEqual({ w: 320, h: 40 });
+    expect(pillSlots(view, reservedBox({ w: 290, h: 34 }))).toEqual(
+      pillSlots(view, reservedBox({ w: 305, h: 36 })),
+    );
+  });
+
+  test("planPill: a clear full-size slot is taken (the current one first)", () => {
+    const cur = { left: 12, top: 700, width: 320, height: 40 };
+    const p = planPill({
+      current: cur,
+      view,
+      size: { w: 300, h: 34 },
+      compact: false,
+      blocked: () => 0,
+    });
+    expect(p.box).toEqual(cur);
+    expect(p.room).toBe(0);
+  });
+
+  test("planPill: the full-size box never shrinks on a page, so a shorter status does not move the pill", () => {
+    const cur = { left: 908, top: 12, width: 360, height: 40 };
+    const p = planPill({
+      current: cur,
+      view: { w: 1280, h: 800 },
+      size: { w: 290, h: 34 },
+      compact: false,
+      blocked: () => 0,
+    });
+    expect(p.box).toEqual(cur);
+    // the compact form takes its own, smaller box
+    const c = planPill({
+      current: cur,
+      view: { w: 1280, h: 800 },
+      size: { w: 150, h: 34 },
+      compact: true,
+      blocked: () => 0,
+    });
+    expect(c.box).toEqual({ left: 908, top: 12, width: 160, height: 40 });
+  });
+
+  test("planPill: nothing clear at full size asks for the compact form, never a busy slot", () => {
+    const p = planPill({
+      current: null,
+      view,
+      size: { w: 300, h: 34 },
+      compact: false,
+      blocked: () => 1,
+    });
+    expect(p.box).toBeNull();
+    expect(p.room).toBe(0);
+  });
+
+  test("planPill: nothing clear even compact reserves room at the bottom and sits bottom-left in it", () => {
+    const p = planPill({
+      current: { left: 200, top: 12, width: 160, height: 40 },
+      view,
+      size: { w: 150, h: 34 },
+      compact: true,
+      blocked: () => 1,
+    });
+    expect(p.box).toEqual(cornerRect("bl", view, { w: 160, h: 40 }));
+    expect(p.room).toBe(40 + 2 * PILL_MARGIN);
+  });
+
+  test("the chosen box is remembered per page path for the tab", () => {
+    const store = new Map<string, string>();
+    const like = {
+      getItem: (k: string) => store.get(k) ?? null,
+      setItem: (k: string, v: string) => void store.set(k, v),
+      removeItem: (k: string) => void store.delete(k),
+    };
+    const box = { left: 12, top: 700, width: 320, height: 40 };
+    rememberPillBox(like, "/assistant", box);
+    expect(recallPillBox(like, "/assistant")).toEqual(box);
+    expect(recallPillBox(like, "/dashboard")).toBeNull();
+    expect([...store.keys()][0]).toMatch(/^pm-demo-pill:/);
+    like.setItem([...store.keys()][0], "junk");
+    expect(recallPillBox(like, "/assistant")).toBeNull();
+    rememberPillBox(like, "/assistant", null);
+    expect(store.size).toBe(0);
+  });
+
+  test("the pill's room: --demo-pill-h on html and body padding, cleared when there is none", () => {
+    const calls: string[] = [];
+    const style = (tag: string) => ({
+      setProperty: (n: string, v: string) =>
+        void calls.push(`${tag} set ${n}=${v}`),
+      removeProperty: (n: string) => void calls.push(`${tag} rm ${n}`),
+    });
+    setPillRoom(style("html"), style("body"), 64.4);
+    expect(calls).toEqual([
+      `html set ${PILL_ROOM_VAR}=64px`,
+      `body set padding-bottom=var(${PILL_ROOM_VAR}, 0px)`,
+    ]);
+    calls.length = 0;
+    clearPillRoom(style("html"), style("body"));
+    expect(calls).toEqual([
+      `html rm ${PILL_ROOM_VAR}`,
+      "body rm padding-bottom",
+    ]);
+    calls.length = 0;
+    setPillRoom(style("html"), style("body"), 0);
+    expect(calls).toEqual([
+      `html rm ${PILL_ROOM_VAR}`,
+      "body rm padding-bottom",
+    ]);
+  });
+
+  test("the stage draws the pill's box where the frame puts it", () => {
+    const fit = { left: 100, top: 50, width: 195, height: 422, s: 0.5 };
+    expect(
+      pillGhostBox({ left: 12, top: 800, width: 320, height: 40 }, fit),
+    ).toEqual({ left: 106, top: 450, width: 160, height: 20 });
+  });
+
+  test("the store is the tab's sessionStorage, none in node", () => {
+    expect(pillStore()).toBeNull();
+    const g = globalThis as { sessionStorage?: unknown };
+    g.sessionStorage = { getItem: () => null, setItem() {}, removeItem() {} };
+    expect(pillStore()).toBe(g.sessionStorage);
+    delete g.sessionStorage;
+  });
+
+  test("a move glides", () => {
+    expect(PILL_MOVE_MS).toBeGreaterThanOrEqual(150);
+    expect(PILL_MOVE_MS).toBeLessThanOrEqual(400);
+  });
+
+  test("the overlay is wired to it: page-aware checks, the memory, the glide, the message to the stage", () => {
+    const o = read("front-end/islands/DemoModeOverlay.tsx");
+    expect(o).toMatch(/planPill\(/);
+    expect(o).toMatch(/countsAsPage\(/);
+    expect(o).toMatch(/recallPillBox\(/);
+    expect(o).toMatch(/rememberPillBox\(/);
+    expect(o).toMatch(/setPillRoom\(/);
+    expect(o).toMatch(
+      /left \$\{PILL_MOVE_MS\}ms ease,top \$\{PILL_MOVE_MS\}ms ease/,
+    );
+    expect(o).toMatch(/glide: atRef\.current !== null/);
+    expect(o).toMatch(/min-width:\$\{pos\.width\}px/);
+    expect(o).toMatch(/k: "pill"/);
+    expect(o).not.toMatch(/controlsUnder/);
+    // what hit-testing cannot see (pointer-events:none ribbons, toasts) still counts
+    expect(o).toMatch(/pointerEvents === "none"/);
+    expect(o).toMatch(/rectsOverlap\(/);
+  });
+
+  test("the stage draws the ghost, in both languages", () => {
+    const s = read("front-end/islands/DemoStage.tsx");
+    expect(s).toMatch(/pillGhostBox\(/);
+    expect(s).toMatch(/data-cy="demo-pill-ghost"/);
+    expect(s).toMatch(/case "pill":/);
+    const en = JSON.parse(read("lang/en.json"));
+    const es = JSON.parse(read("lang/es.json"));
+    expect(en["demoMode.pillGhost"]).toMatch(/\{name\}/);
+    expect(es["demoMode.pillGhost"]).toMatch(/\{name\}/);
   });
 });

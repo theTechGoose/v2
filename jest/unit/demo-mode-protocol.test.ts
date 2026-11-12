@@ -61,6 +61,17 @@ describe("REQ-153 demo mode protocol", () => {
     expect(parsePeerMessage(null)).toBeNull();
   });
 
+  test("REQ-295: the customer's pill box rides to the stage — a rect or null, junk dropped", () => {
+    const r = { left: 12, top: 790, width: 320, height: 40 };
+    expect(parsePeerMessage({ k: "pill", r })).toEqual({ k: "pill", r });
+    expect(parsePeerMessage({ k: "pill", r: null })).toEqual({
+      k: "pill",
+      r: null,
+    });
+    expect(parsePeerMessage({ k: "pill", r: { left: "x" } })).toBeNull();
+    expect(parsePeerMessage({ k: "pill" })).toBeNull();
+  });
+
   test("server messages parse and carry who they are from", () => {
     expect(
       parseServerMessage(
@@ -148,6 +159,7 @@ describe("REQ-153 demo mode wiring", () => {
     const stage = read("front-end/islands/DemoStage.tsx");
     expect(stage).toContain(`t("demoMode.waitingFor", { name`);
     // AMENDMENT — auto-join: the customer is never asked; no prompt, no accept, no decline, nothing remembered
+    // (REQ-295 remembers the pill's PLACE per path through shared/demo-mode/pill.ts `pillStore`, not here)
     for (
       const gone of [
         "demo-accept",

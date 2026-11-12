@@ -83,7 +83,9 @@ export type PeerMessage =
   | { k: "click"; a: Anchor }
   | { k: "leave" }
   | ({ k: "dom" } & DomChunk)
-  | { k: "resync" };
+  | { k: "resync" }
+  // REQ-295 — the customer's demo pill box in their viewport (null: no pill), for the stage's ghost
+  | { k: "pill"; r: Rect | null };
 
 /** REQ-214 — a presenter's relay may go to the other presenters only (their pointer rides to the
  *  customer directly). REQ-232 — a signal's `to` addresses ONE socket (its `cid`): a stage's offer
@@ -235,6 +237,11 @@ export function parsePeerMessage(x: unknown): PeerMessage | null {
     }
     case "resync":
       return { k: "resync" };
+    case "pill": {
+      if (o.r === null) return { k: "pill", r: null };
+      const r = parseRect(o.r);
+      return r ? { k: "pill", r } : null;
+    }
     default:
       return null;
   }
@@ -340,6 +347,16 @@ export interface Rect {
   top: number;
   width: number;
   height: number;
+}
+
+/** REQ-295 — a Rect off the wire, or nothing */
+export function parseRect(x: unknown): Rect | null {
+  if (!x || typeof x !== "object") return null;
+  const o = x as Record<string, unknown>;
+  const n = (v: unknown): v is number =>
+    typeof v === "number" && Number.isFinite(v);
+  if (!n(o.left) || !n(o.top) || !n(o.width) || !n(o.height)) return null;
+  return { left: o.left, top: o.top, width: o.width, height: o.height };
 }
 
 /** REQ-188 — the point a fraction names inside a box */
