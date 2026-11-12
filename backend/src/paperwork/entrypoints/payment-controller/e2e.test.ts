@@ -42,7 +42,7 @@ Deno.test("payment e2e: create + list-by-invoice + cross-user 403", async () => 
 
     const inv = await fetch(`http://localhost:${PORT}/invoices`, {
       method: "POST", headers: authA,
-      body: JSON.stringify({ contractId: "c-1", dueDate: "2026-05-01", amount: 200, status: "pending" }),
+      body: JSON.stringify({ contractId: "c-1", dueDate: "2026-05-01", amount: 200, status: "pending", billTo: { name: "Ann Lee" } }),
     }).then((r) => r.json());
 
     const pay = await fetch(`http://localhost:${PORT}/payments`, {
@@ -89,7 +89,7 @@ Deno.test("payment e2e: closing the balance flips the invoice to paid", async ()
 
     const inv = await fetch(`http://localhost:${PORT}/invoices`, {
       method: "POST", headers: auth,
-      body: JSON.stringify({ contractId: "c-1", dueDate: "2026-05-01", amount: 100, status: "pending" }),
+      body: JSON.stringify({ contractId: "c-1", dueDate: "2026-05-01", amount: 100, status: "pending", billTo: { name: "Ann Lee" } }),
     }).then((r) => r.json());
 
     await drain(await fetch(`http://localhost:${PORT}/payments`, {
@@ -121,7 +121,7 @@ Deno.test("payment e2e: DELETE removes the payment and reopens the invoice", asy
 
     const inv = await fetch(`http://localhost:${PORT}/invoices`, {
       method: "POST", headers: auth,
-      body: JSON.stringify({ contractId: "c-1", dueDate: "2026-05-01", amount: 100, status: "pending" }),
+      body: JSON.stringify({ contractId: "c-1", dueDate: "2026-05-01", amount: 100, status: "pending", billTo: { name: "Ann Lee" } }),
     }).then((r) => r.json());
 
     const pay = await fetch(`http://localhost:${PORT}/payments`, {

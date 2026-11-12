@@ -150,10 +150,10 @@ describe("REQ-480 M18 invoice 'not delivered' copy", () => {
 });
 
 describe("REQ-480 M18 'Issue invoice' never stamps sent before delivery", () => {
-  it("REQ-480 newInvoiceStatus: issuing with a dispatch → draft (the send stamps sent); issuing with no contact → sent; save → draft / scheduled", () => {
+  it("REQ-480 (amended by REQ-550) newInvoiceStatus: issuing with a dispatch → draft (the send stamps sent); issuing with no contact → draft too, never sent; save → draft / scheduled", () => {
     const { newInvoiceStatus } = invoiceForm();
     expect(newInvoiceStatus({ issue: true, dispatch: true })).toBe("draft");
-    expect(newInvoiceStatus({ issue: true, dispatch: false })).toBe("sent");
+    expect(newInvoiceStatus({ issue: true, dispatch: false })).toBe("draft");
     expect(newInvoiceStatus({ issue: false, dispatch: true })).toBe("draft");
     expect(
       newInvoiceStatus({

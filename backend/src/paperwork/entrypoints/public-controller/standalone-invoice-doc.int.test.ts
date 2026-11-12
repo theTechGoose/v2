@@ -94,6 +94,7 @@ Deno.test("REQ-487 (demo m58, cycle 3): a standalone invoice's public projection
       headers: auth,
       body: JSON.stringify({
         status: "sent",
+        billTo: { name: "Ann Lee" }, // REQ-550: an issued invoice bills someone
         amount: 90_00,
         lineItems: [
           {

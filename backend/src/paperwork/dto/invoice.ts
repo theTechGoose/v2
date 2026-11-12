@@ -5,9 +5,11 @@ import {
   IsObject,
   IsOptional,
   IsString,
+  Max,
   ValidateNested,
   validateSync,
 } from "#class-validator";
+import { MAX_CENTS } from "#quote-flow/assistant-draft.ts";
 import { plainToInstance, Type } from "#class-transformer";
 import type { InvoiceUrgency } from "@paperwork/domain/business/invoice-urgency/mod.ts";
 import type {
@@ -114,8 +116,9 @@ export class CreateInvoiceDto {
 
   @IsOptional() @IsString()
   customerId?: string;
-  /** Invoice amount in INTEGER CENTS. Audit1 #3. */
-  @IsOptional() @IsNumber()
+  /** Invoice amount in INTEGER CENTS. Audit1 #3. REQ-550: at most the $1bn
+   *  cap (assistant-draft's MAX_CENTS). */
+  @IsOptional() @IsNumber() @Max(MAX_CENTS)
   amount?: number;
   /** Cumulative discount applied, INTEGER CENTS — shown as a line on the
    *  public invoice (roadmap p.12). `amount` is the net total due. */
@@ -204,8 +207,9 @@ export class UpdateInvoiceDto {
   description?: string;
   @IsOptional() @IsString()
   customerId?: string;
-  /** Invoice amount in INTEGER CENTS. Audit1 #3. */
-  @IsOptional() @IsNumber()
+  /** Invoice amount in INTEGER CENTS. Audit1 #3. REQ-550: at most the $1bn
+   *  cap (assistant-draft's MAX_CENTS). */
+  @IsOptional() @IsNumber() @Max(MAX_CENTS)
   amount?: number;
   @IsOptional() @IsNumber()
   discountCents?: number;

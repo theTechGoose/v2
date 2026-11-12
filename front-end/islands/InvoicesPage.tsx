@@ -84,9 +84,13 @@ import {
   EMPTY_BILL_TO,
   formatInvoiceHeadline,
   type FormLine,
+  INVOICE_CONFIRM_CENTS,
+  invoiceIssueBlock,
+  invoiceNotSentCopy,
   isPresetNetDays,
   type LedgerPrefill,
   missingInfo,
+  needsAmountConfirm,
   NET_DAYS_OPTIONS,
   newInvoiceCopy,
   newInvoiceStatus,
@@ -413,13 +417,17 @@ export default function InvoicesPage(_props: { lang?: Lang }) {
    *  "Payment received" form saves — the page confirms, not just closes. */
   const [payFlash, setPayFlash] = useState<string | null>(null);
   const [sendFlash] = useState<
-    { text: string; partial: boolean } | null
+    { text: string; partial: boolean; notSent?: boolean } | null
   >(() => {
     try {
       const raw = globalThis.sessionStorage?.getItem(SEND_FLASH_KEY);
       if (!raw) return null;
       globalThis.sessionStorage.removeItem(SEND_FLASH_KEY);
-      return JSON.parse(raw) as { text: string; partial: boolean };
+      return JSON.parse(raw) as {
+        text: string;
+        partial: boolean;
+        notSent?: boolean;
+      };
     } catch {
       return null;
     }
@@ -592,8 +600,12 @@ export default function InvoicesPage(_props: { lang?: Lang }) {
       {sendFlash && (
         <p
           class="qcard__sendfail"
-          role="alert"
-          data-cy={sendFlash.partial ? "send-partial" : "invoice-send-failure"}
+          role={sendFlash.notSent ? "status" : "alert"}
+          data-cy={sendFlash.notSent
+            ? "invoice-not-sent" // REQ-550: issued to nobody's inbox — a draft
+            : sendFlash.partial
+            ? "send-partial"
+            : "invoice-send-failure"}
         >
           {sendFlash.text}
         </p>
@@ -3371,6 +3383,8 @@ function NewInvoiceModal(
   const [scheduledFor, setScheduledFor] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /** REQ-550: the large total the contractor was asked to confirm. */
+  const [confirmCents, setConfirmCents] = useState<number | null>(null);
   // REQ-205: the quote's ledger, when the form opened from a quote
   const [ledger, setLedger] = useState<LedgerPrefill | null>(null);
   const [ledgerErr, setLedgerErr] = useState(false);
@@ -3597,6 +3611,27 @@ function NewInvoiceModal(
       setError(tFor(lang, "invoicesPage.new.errClientName"));
       return;
     }
+    // REQ-550 (demo cycle 4, B1): Issue needs someone to bill, and nothing
+    // bills past the $1bn cap — the missing-info list stays a prompt.
+    const block = invoiceIssueBlock({
+      issue,
+      totalCents: totals.totalCents,
+      customerId: clientSel && clientSel !== NEW_SENTINEL
+        ? clientSel
+        : undefined,
+      newClientName: clientSel === NEW_SENTINEL ? newName : undefined,
+      billToName: billTo.name,
+    });
+    if (block) {
+      setError(tFor(lang, `invoicesPage.new.${block}`));
+      return;
+    }
+    // REQ-550: a total over $250,000 is issued only on a second press.
+    if (issue && needsAmountConfirm(totals.totalCents, confirmCents)) {
+      setError(null);
+      setConfirmCents(totals.totalCents);
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
@@ -3651,8 +3686,9 @@ function NewInvoiceModal(
           requestId,
           // REQ-480 (demo cycle 3, M18): Issue with a dispatch to follow →
           // created unissued; the send endpoints stamp "sent" only once a
-          // channel delivers. Issue with no contact → sent (issued by hand);
-          // draft → the Drafting track; a "Send on" date (REQ-022) →
+          // channel delivers. REQ-550 (cycle 4, B1): Issue with no contact →
+          // a draft too, never "sent" (the page says "not sent — share the
+          // link"); draft → the Drafting track; a "Send on" date (REQ-022) →
           // scheduled, in the Upcoming track.
           status: newInvoiceStatus({
             issue,
@@ -3688,6 +3724,25 @@ function NewInvoiceModal(
             );
           } catch { /* storage unavailable — the reload still happens */ }
         }
+      } else if (issue && invoice?.id) {
+        // REQ-550: nobody to send it to — say it was NOT sent, and hand over
+        // the link to share by hand.
+        try {
+          globalThis.sessionStorage?.setItem(
+            SEND_FLASH_KEY,
+            JSON.stringify({
+              text: invoiceNotSentCopy(
+                (key, params) => tFor(lang, key, params),
+                {
+                  number: invoice.number,
+                  link: `${globalThis.location.origin}/i/${invoice.id}`,
+                },
+              ),
+              partial: false,
+              notSent: true,
+            }),
+          );
+        } catch { /* storage unavailable — the reload still happens */ }
       }
       // Reload so the new invoice enriches into the right track — without the
       // ?new=1 deep link, or the modal would reopen over the fresh card.
@@ -4333,6 +4388,20 @@ function NewInvoiceModal(
               ))}
             </ul>
           </div>
+        )}
+
+        {/* REQ-550: a large total is issued only once it is confirmed */}
+        {confirmCents !== null && confirmCents === totals.totalCents &&
+          totals.totalCents > INVOICE_CONFIRM_CENTS && (
+          <p
+            data-cy="new-invoice-confirm-large"
+            role="alert"
+            style="margin:0;font-size:13.5px;font-weight:700;color:#5A3D08;background:#FFF4DC;border-radius:10px;padding:10px 12px"
+          >
+            {tFor(lang, "invoicesPage.new.confirmLarge", {
+              amount: fmtMoneyExact(totals.totalCents),
+            })}
+          </p>
         )}
 
         {error && (
