@@ -222,7 +222,7 @@ Deno.test("handle-chat-message integration: action 'create_quote' creates a real
   await resetKv();
 });
 
-Deno.test("handle-chat-message integration: action 'lock_quote' uses conv.quoteId (NOT the LLM-provided one) and flips status to 'sent'", async () => {
+Deno.test("handle-chat-message integration: REQ-234 action 'lock_quote' uses conv.quoteId (NOT the LLM-provided one) and locks it WITHOUT sending", async () => {
   Deno.env.set("KV_PATH", ":memory:");
   await resetKv();
   const { conversations, llm, quotes, flow } = fresh();
@@ -246,7 +246,12 @@ Deno.test("handle-chat-message integration: action 'lock_quote' uses conv.quoteI
     content: "lock it in",
   });
   const reloaded = await quotes.getOwned(draft.id, "u-1");
-  assertEquals(reloaded.status, "sent");
+  // REQ-234 (demo M3): locking is not sending.
+  assertEquals(reloaded.status, "draft");
+  assertEquals(reloaded.sentAt, undefined);
+  assert(reloaded.lockedAt, "lockedAt stamped");
+  const convAfter = await conversations.get(conv.id);
+  assertEquals(convAfter.quoteStatus, "locked");
   await resetKv();
 });
 
@@ -280,7 +285,7 @@ Deno.test("handle-chat-message integration: 'create_quote' emits a 'drafted' Dom
   await resetKv();
 });
 
-Deno.test("handle-chat-message integration: 'lock_quote' emits a 'sent' DomainEvent", async () => {
+Deno.test("handle-chat-message integration: REQ-234 'lock_quote' emits NO 'sent' DomainEvent and a 'locked' card", async () => {
   Deno.env.set("KV_PATH", ":memory:");
   await resetKv();
   const { conversations, llm, quotes, bus, flow } = fresh();
@@ -300,10 +305,15 @@ Deno.test("handle-chat-message integration: 'lock_quote' emits a 'sent' DomainEv
     text: "Locked.",
     action: { type: "lock_quote", payload: { quoteId: draft.id } },
   }]);
-  await flow.run({ userId: "u-1", conversationId: conv.id, content: "lock" });
+  const result = await flow.run({
+    userId: "u-1",
+    conversationId: conv.id,
+    content: "lock",
+  });
 
-  assertEquals(seen.length, 1);
-  assertEquals(seen[0].entityId, draft.id);
+  assertEquals(seen.length, 0);
+  const card = result.newMessages.find((m) => m.kind === "action_card");
+  assertEquals((card?.payload as { status?: string })?.status, "locked");
   await resetKv();
 });
 
@@ -393,7 +403,7 @@ Deno.test("handle-chat-message integration: voice kind is preserved on the user 
   await resetKv();
 });
 
-Deno.test("handle-chat-message integration: 'lock_quote' auto-emails the linked customer", async () => {
+Deno.test("handle-chat-message integration: REQ-234 'lock_quote' does NOT email the linked customer (Send does)", async () => {
   Deno.env.set("KV_PATH", ":memory:");
   await resetKv();
   const { conversations, llm, quotes, customers, sentEmails, flow } = fresh();
@@ -420,9 +430,10 @@ Deno.test("handle-chat-message integration: 'lock_quote' auto-emails the linked 
 
   await flow.run({ userId: "u-1", conversationId: conv.id, content: "lock" });
 
-  assertEquals(sentEmails.length, 1);
-  assertEquals(sentEmails[0].to, "ops@acme.test");
-  assert(sentEmails[0].subject.includes("Roof"));
+  assertEquals(sentEmails.length, 0);
+  const after = await quotes.getOwned(draft.id, "u-1");
+  assertEquals(after.status, "draft");
+  assertEquals(after.sentAt, undefined);
   await resetKv();
 });
 
@@ -445,8 +456,10 @@ Deno.test("handle-chat-message integration: 'lock_quote' without a customer emai
 
   await flow.run({ userId: "u-1", conversationId: conv.id, content: "lock" });
 
-  // Quote still got locked.
-  assertEquals((await quotes.getOwned(draft.id, "u-1")).status, "sent");
+  // Quote still got locked (REQ-234: locked, not sent).
+  const lockedQ = await quotes.getOwned(draft.id, "u-1");
+  assertEquals(lockedQ.status, "draft");
+  assert(lockedQ.lockedAt, "lockedAt stamped");
   // No SMTP call captured.
   assertEquals(sentEmails.length, 0);
   await resetKv();

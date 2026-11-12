@@ -116,6 +116,10 @@ export class CreateQuoteDto {
   @IsOptional() @IsString()
   estimatedCompletionDate?: string;
 
+  /** REQ-234 (demo M3): when the price was locked in the chat. Locking is
+   *  NOT sending — status stays "draft" and sentAt unset until Send. */
+  @IsOptional() @IsString()
+  lockedAt?: string;
   @IsOptional() @IsString()
   sentAt?: string;
   @IsOptional() @IsString()
@@ -174,6 +178,10 @@ export class UpdateQuoteDto {
   startDate?: string;
   @IsOptional() @IsString()
   estimatedCompletionDate?: string;
+  /** REQ-234 (demo M3): when the price was locked in the chat. Locking is
+   *  NOT sending — status stays "draft" and sentAt unset until Send. */
+  @IsOptional() @IsString()
+  lockedAt?: string;
   @IsOptional() @IsString()
   sentAt?: string;
   @IsOptional() @IsString()

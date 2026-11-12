@@ -215,3 +215,42 @@ Deno.test("agents conversations e2e: GET without session is rejected", async () 
     assertEquals(ok, false);
   });
 });
+
+Deno.test("agents conversations e2e: REQ-234 (demo M3) POST /:id/lock-quote locks the quote but does NOT send it", async () => {
+  await withServer(async (port) => {
+    const sid = await login(port);
+    const h = { "content-type": "application/json", "x-session-id": sid };
+    const customer = await fetch(`http://localhost:${port}/customers`, {
+      method: "POST", headers: h,
+      body: JSON.stringify({ name: "Acme", email: "ops@acme.test" }),
+    }).then((r) => r.json());
+    const quote = await fetch(`http://localhost:${port}/quotes`, {
+      method: "POST", headers: h,
+      body: JSON.stringify({
+        summary: "Roof",
+        customerId: customer.id,
+        lineItems: [{ description: "x", quantity: 1, unit: "ea", price: 10000 }],
+        estimatedTotal: 10000,
+      }),
+    }).then((r) => r.json());
+    const conv = await fetch(`http://localhost:${port}/agents/conversations`, {
+      method: "POST", headers: h, body: "{}",
+    }).then((r) => r.json());
+
+    const res = await fetch(`http://localhost:${port}/agents/conversations/${conv.id}/lock-quote`, {
+      method: "POST", headers: h, body: JSON.stringify({ quoteId: quote.id }),
+    });
+    assertEquals(res.status, 200);
+    const result = await res.json();
+    assertEquals(result.conversation.quoteStatus, "locked");
+    assertEquals(result.newMessages[0].kind, "action_card");
+    assertEquals(result.newMessages[0].payload.status, "locked");
+
+    const after = await fetch(`http://localhost:${port}/quotes/${quote.id}`, {
+      headers: { "x-session-id": sid },
+    }).then((r) => r.json());
+    assertEquals(after.status, "draft");
+    assertEquals(after.sentAt, undefined);
+    assertEquals(typeof after.lockedAt, "string");
+  });
+});

@@ -38,6 +38,11 @@ import {
 } from "../../shared/quote-flow/customer-step.ts";
 import { termLabel } from "../../shared/quote-flow/terms-i18n.ts";
 import { versionTitle } from "../../shared/quote-flow/version-titles.ts";
+import {
+  cardChipKey,
+  isLockedOrIssued,
+  QUOTE_LOCKED,
+} from "../../shared/quote-flow/quote-lock.ts";
 import { scopeBulletsFromRaw } from "../../shared/quote-flow/scope-from-raw.ts";
 import {
   acceptedJobChipLabel,
@@ -368,23 +373,9 @@ function composerPlaceholder(msgs: Message[], lang: Lang): string {
  *  Quote+Agreement card. Keeps the chip in sync with the doc's
  *  lifecycle: Draft → Sent → Viewed → Accepted. */
 function statusChipLabel(status: string | undefined, lang: Lang): string {
-  switch ((status ?? "draft").toLowerCase()) {
-    case "sent":
-      return tFor(lang, "status.sent");
-    case "opened":
-    case "viewed":
-      return tFor(lang, "status.viewed");
-    case "won":
-    case "accepted":
-    case "signed":
-      return tFor(lang, "asstChat.statusChip.approved");
-    case "void":
-    case "declined":
-    case "lost":
-      return tFor(lang, "status.declined");
-    default:
-      return tFor(lang, "status.draft");
-  }
+  // REQ-234 (demo M3): "locked" (price locked, not yet sent) has its own
+  // chip — the shared map keeps it from ever reading "Sent".
+  return tFor(lang, cardChipKey(status));
 }
 
 function fmtUSD(cents: number): string {
@@ -1492,6 +1483,9 @@ export default function AsstChat({
       status = tFor(lang, "asstChat.header.quoteAccepted");
     } else if (quoteStatus === "sent") {
       status = tFor(lang, "asstChat.header.quoteSent");
+    } else if (quoteStatus === QUOTE_LOCKED) {
+      // REQ-234: locked is not sent — the quote is ready to send.
+      status = tFor(lang, "asstChat.header.quoteLocked");
     } else if (lastQuoteCard) {
       status = tFor(lang, "asstChat.header.quoteDrafted");
     }
@@ -5471,14 +5465,17 @@ export default function AsstChat({
                   if (previewing) {
                     const docId = payload.quoteId ?? quote?.id ?? quoteId ?? "";
                     // Pull line items from the most recent locked/sent action_card
-                    // (status="sent" is the locked quote; fall back to "draft").
+                    // (REQ-234: "locked", or "sent" on older threads; fall
+                    // back to "draft").
                     const lockedCard = [...messages]
                       .reverse()
                       .find(
                         (x) =>
                           x.kind === "action_card" &&
-                          ((x.payload as ActionCardPayload | undefined)
-                                ?.status === "sent" ||
+                          (isLockedOrIssued(
+                            (x.payload as ActionCardPayload | undefined)
+                              ?.status,
+                          ) ||
                             (x.payload as ActionCardPayload | undefined)
                                 ?.status === "draft"),
                       );
@@ -5657,7 +5654,12 @@ export default function AsstChat({
                             <div class="quote-review__head-right">
                               <span class="quote-review__chip">
                                 {statusChipLabel(
-                                  quote?.status ?? lockedPayload.status,
+                                  // REQ-234: a locked quote is still a
+                                  // draft on the store — the card says
+                                  // "locked".
+                                  quote?.status && quote.status !== "draft"
+                                    ? quote.status
+                                    : lockedPayload.status ?? quote?.status,
                                   previewLang,
                                 )}
                               </span>
@@ -7550,7 +7552,7 @@ export default function AsstChat({
                               </div>
                             )
                             : null}
-                          {payload.status === "sent"
+                          {isLockedOrIssued(payload.status)
                             ? (
                               <div class="action-card__cta">
                                 <button
@@ -10180,7 +10182,7 @@ function latestSentQuoteCents(messages: Message[]): number {
     if (m.kind !== "action_card") continue;
     const p = m.payload as ActionCardPayload | undefined;
     if (!p) continue;
-    if (p.status === "sent" && typeof p.totalCents === "number") {
+    if (isLockedOrIssued(p.status) && typeof p.totalCents === "number") {
       return p.totalCents;
     }
   }
