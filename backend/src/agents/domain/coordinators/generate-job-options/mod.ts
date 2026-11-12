@@ -12,6 +12,7 @@ import {
   MAX_OPTION_BULLETS as MAX_BULLETS,
   widerBullets,
 } from "#quote-flow/option-bullets.ts";
+import { mentionsMoney } from "#quote-flow/private-cost.ts";
 
 export interface GenerateJobOptionsInput {
   userId: string;
@@ -176,6 +177,9 @@ function normalizeOneLang(o: unknown, lang: Lang): JobOptionLang | null {
     ? obj.bullets
       .map((b) => realText(b))
       .filter((b): b is string => !!b)
+      // REQ-261 (M26): a bullet naming a money amount is a private cost
+      // ("Plumber Ray charges $2,800") — never customer job details.
+      .filter((b) => !mentionsMoney(b))
       .map((b) => b.replace(/\s+/g, " ").replace(/[.;]+$/, ""))
       .slice(0, MAX_BULLETS) // REQ-266: was a hard cap of 4
     : [];

@@ -255,3 +255,53 @@ Deno.test("REQ-266 ai-assistant-p7-options the fallback 'wider scope' version ne
   const res = await coord.run({ userId: "u1", raw: GUT_JOB_ITEMS.join("\n"), langs: ["en"] });
   assertEquals(res.options[2].bullets, [...GUT_JOB_ITEMS, "Jobsite cleanup"]);
 });
+
+// REQ-261 (demo M26): a contractor's private cost ("Ray the plumber is
+// $2800") must never become a customer-facing scope bullet. The model was
+// told to drop prices; a bullet that still names a money amount is dropped
+// deterministically, in every language.
+Deno.test("REQ-261 M26 a model bullet naming a money amount is dropped in every language", async () => {
+  const { llm, coord } = fresh();
+  llm.setHandler(() => ({
+    text: JSON.stringify({
+      options: [{
+        en: {
+          jobName: "Bathroom Rough-In",
+          summary: "Bathroom plumbing rough-in",
+          bullets: [
+            "Bathroom plumbing rough-in",
+            "Plumber Ray charges $2,800 for the rough-in",
+            "Install shutoff valves",
+          ],
+        },
+        es: {
+          jobName: "Instalación de baño",
+          summary: "Instalación de plomería del baño",
+          bullets: [
+            "Instalación de plomería del baño",
+            "El plomero Ray cobra $2,800 por la instalación",
+            "Instalar válvulas de cierre",
+          ],
+        },
+      }],
+    }),
+  }));
+  const res = await coord.run({
+    userId: "u1",
+    raw: "$2800 plumbing rough-in. Ray the plumber is $2800",
+    langs: ["en", "es"],
+  });
+  assertEquals(res.degraded, false);
+  for (const b of allBullets(res.options)) {
+    assert(!/\$\s?\d/.test(b), `bullet leaks a private cost: ${b}`);
+    assert(!/Ray/.test(b), `bullet names the sub: ${b}`);
+  }
+  assertEquals(res.options[0].byLang.en.bullets, [
+    "Bathroom plumbing rough-in",
+    "Install shutoff valves",
+  ]);
+  assertEquals(res.options[0].byLang.es.bullets, [
+    "Instalación de plomería del baño",
+    "Instalar válvulas de cierre",
+  ]);
+});
