@@ -166,12 +166,13 @@ export default function AdminsPage() {
                 />
               </label>
               <label class="field">
-                {t("admins.nameOptional")}
+                {t("admins.nameLabel")}
                 <input
                   name="name"
                   data-cy="adm-name"
                   autocomplete="off"
                   maxlength={120}
+                  placeholder={t("admins.namePlaceholder")}
                   value={form.name}
                   onInput={(e) =>
                     setForm({
@@ -181,6 +182,13 @@ export default function AdminsPage() {
                 />
               </label>
             </div>
+            {
+              /* REQ-624: the name is what the editor is greeted by — encouraged, not required (an
+                unnamed editor is asked hers on her first sign-in) */
+            }
+            <p class="hint" data-cy="adm-name-hint" style="margin:6px 0 0">
+              {t("admins.nameHint")}
+            </p>
             <div
               class="row"
               style="margin-top:10px;align-items:center;justify-content:flex-end"

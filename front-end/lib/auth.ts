@@ -19,6 +19,15 @@ export interface User {
    *  /admin surface + the sidebar Admin tab. Server-enforced — the client
    *  only uses it to show/hide UI, never as the authority. */
   superAdmin?: boolean;
+  /** REQ-624 — present while the session acts for someone else's account: the person signed in.
+   *  Every greeting reads it over `name` (shared/person-name). */
+  actor?: {
+    id: string;
+    name: string;
+    needsName: boolean;
+    phoneNumber: string;
+    email?: string;
+  };
   createdAt: number;
   updatedAt: number;
 }

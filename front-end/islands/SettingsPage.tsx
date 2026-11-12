@@ -45,6 +45,8 @@ import { filesClient } from "../clients/files.ts";
 import { ApiError } from "../lib/api.ts";
 import { fmtPhone } from "../lib/format.ts";
 import { TransferAccount } from "../components/TransferAccount.tsx"; // REQ-220
+import { editableName, personName } from "../../shared/person-name/mod.ts"; // REQ-624
+import { refreshDash } from "../lib/dash-cache.ts";
 import { type Lang, langSignal, setLang, tFor } from "../lib/i18n.ts";
 import { normalizeWebsiteUrl } from "../../shared/quote-flow/format-helpers.ts";
 import {
@@ -347,8 +349,16 @@ function EditCard(
     onSaved: (partial: Partial<ProfileSnapshot>) => void;
   },
 ) {
-  const [name, setName] = useState(snapshot.user.name ?? "");
-  const [email, setEmail] = useState(snapshot.user.email ?? "");
+  // REQ-624: while an editor acts for the owner's account, "your name" and "your email" are HERS
+  // (PUT /me writes her record then, never the owner's)
+  const savedName = editableName(snapshot.user, snapshot.actor);
+  const savedEmail = snapshot.actor
+    ? (snapshot.actor.email ?? "")
+    : (snapshot.user.email ?? "");
+  const [name, setName] = useState(
+    editableName(snapshot.user, snapshot.actor),
+  );
+  const [email, setEmail] = useState(savedEmail);
   const [biz, setBiz] = useState(snapshot.identity?.businessName ?? "");
   // REQ-038 (NW-06b): the business website — surfaces on every From block.
   const [site, setSite] = useState(snapshot.identity?.websiteUrl ?? "");
@@ -365,8 +375,12 @@ function EditCard(
     setBusy("user");
     setErr(null);
     try {
-      const u = await profileClient.updateUser(patch);
-      onSaved({ user: { ...snapshot.user, ...u } as typeof snapshot.user });
+      const { actor, ...u } = await profileClient.updateUser(patch);
+      onSaved({
+        user: { ...snapshot.user, ...u } as typeof snapshot.user,
+        ...(actor ? { actor } : {}), // REQ-624: her record, as saved
+      });
+      refreshDash(); // the sidebar's user block names the person as saved
     } catch (e) {
       setErr(e instanceof Error ? e.message : t.saveFailed);
     } finally {
@@ -423,8 +437,9 @@ function EditCard(
             value={name}
             disabled={busy === "user"}
             onInput={(e) => setName((e.target as HTMLInputElement).value)}
+            data-cy="settings-name"
             onBlur={() =>
-              name.trim() !== (snapshot.user.name ?? "") &&
+              name.trim() !== savedName &&
               saveUser({ name: name.trim() })}
             aria-label={t.ariaEditName}
           />
@@ -439,7 +454,7 @@ function EditCard(
             disabled={busy === "user"}
             onInput={(e) => setEmail((e.target as HTMLInputElement).value)}
             onBlur={() =>
-              email.trim() !== (snapshot.user.email ?? "") &&
+              email.trim() !== savedEmail &&
               saveUser({ email: email.trim() })}
             aria-label={t.ariaEditEmail}
           />
@@ -2382,16 +2397,17 @@ export default function SettingsPage() {
               title={t.account}
               empty={t.nothingSet}
               rows={[
-                [t.name, p.user.name],
+                [t.name, personName(p.user, p.actor)], // REQ-624: the person signed in
                 [
                   t.phone,
                   // REQ-220: the phone is the sign-in, so it is not a field — it moves by
                   // "Transfer account" (owner only; an admin acting never sees the button)
-                  p.user.phoneNumber
+                  // REQ-624: an editor acting for the account sees her own number here
+                  (p.actor?.phoneNumber ?? p.user.phoneNumber)
                     ? (
                       <span style="display:inline-flex;align-items:center;gap:10px;flex-wrap:wrap">
                         <span data-cy="settings-phone">
-                          {fmtPhone(p.user.phoneNumber)}
+                          {fmtPhone(p.actor?.phoneNumber ?? p.user.phoneNumber)}
                         </span>
                         {!acting && <TransferAccount lang={lang} />}
                       </span>

@@ -1,6 +1,6 @@
 /** REQ-146 — the pure rules of account admins: where a sign-in lands, how an account is labelled, what an invite refuses. */
 import { assertEquals } from "#std/assert";
-import { accountLabel, inviteCheck, pickSignInAccount } from "./mod.ts";
+import { accountLabel, actorName, inviteCheck, pickSignInAccount, splitActingPatch } from "./mod.ts";
 
 Deno.test("REQ-146 pickSignInAccount — no memberships: the person's own account, not acting", () => {
   assertEquals(pickSignInAccount("u-self", []), { userId: "u-self", actorId: undefined });
@@ -22,4 +22,43 @@ Deno.test("REQ-146 accountLabel — the business name, else the owner's name, el
 Deno.test("REQ-146 inviteCheck — the owner's own number is refused, any other E.164 passes", () => {
   assertEquals(inviteCheck("+15125550001", "+15125550001"), "own_number");
   assertEquals(inviteCheck("+15125550001", "+15125550002"), null);
+});
+
+Deno.test("REQ-624 actorName — the signed-in person's own real name wins over the invite's", () => {
+  assertEquals(actorName({ phoneNumber: "+18435550101", name: "Daughter Test" }, "Hija"), {
+    name: "Daughter Test",
+    needsName: false,
+  });
+});
+
+Deno.test("REQ-624 actorName — no real name of her own (the sign-up placeholder): the name the owner typed on the invite", () => {
+  assertEquals(actorName({ phoneNumber: "+18435550101", name: "New user" }, "Daughter Test"), {
+    name: "Daughter Test",
+    needsName: false,
+  });
+  assertEquals(actorName({ phoneNumber: "+18435550101", name: "Nuevo usuario" }, "  Hija  "), {
+    name: "Hija",
+    needsName: false,
+  });
+});
+
+Deno.test("REQ-624 actorName — neither: her formatted phone, and she is asked her name", () => {
+  assertEquals(actorName({ phoneNumber: "+18435550101", name: "New user" }, undefined), {
+    name: "(843) 555-0101",
+    needsName: true,
+  });
+  assertEquals(actorName({ phoneNumber: "+18435550101" }, "   "), {
+    name: "(843) 555-0101",
+    needsName: true,
+  });
+  assertEquals(actorName({ phoneNumber: "+447700900123" }, undefined).name, "+447700900123", "a non-US number as stored");
+});
+
+Deno.test("REQ-624 actorPatch — while acting, the name and the email are the person's own; the language stays the account's", () => {
+  assertEquals(splitActingPatch({ name: "Daughter Test", email: "d@x.co", language: "es" }), {
+    actor: { name: "Daughter Test", email: "d@x.co" },
+    account: { language: "es" },
+  });
+  assertEquals(splitActingPatch({ name: "Daughter Test" }), { actor: { name: "Daughter Test" }, account: {} });
+  assertEquals(splitActingPatch({ language: "en" }), { actor: {}, account: { language: "en" } });
 });

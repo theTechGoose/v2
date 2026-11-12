@@ -49,6 +49,15 @@ const DEFAULT_FETCHERS: Fetchers = {
 };
 let fetchers: Fetchers = DEFAULT_FETCHERS;
 
+/** REQ-624 — forget the last session's snapshot (sign-out, a switch of account): the next person
+ *  in this tab must never see the previous one's name in the sidebar, not even for a frame */
+export function clearDashCache(): void {
+  cached = null;
+  try {
+    globalThis.sessionStorage?.removeItem(STORAGE_KEY);
+  } catch { /* SSR / private mode */ }
+}
+
 export function readCached(): CachedDash | null {
   if (cached) return cached;
   try {

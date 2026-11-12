@@ -1,6 +1,10 @@
 import { useEffect, useState } from "preact/hooks";
 import { langSignal, STRINGS } from "../lib/lang.ts";
 import { t } from "../lib/i18n.ts";
+import {
+  greetingFirstName,
+  type PersonLike,
+} from "../../shared/person-name/mod.ts";
 
 const PINK = "#FF6B6B";
 const TEAL = "#144852";
@@ -27,10 +31,10 @@ export default function WelcomeBackToast() {
       try {
         const r = await fetch("/api/me", { credentials: "include" });
         if (!r.ok) return;
-        const me = await r.json() as { name?: string };
+        const me = await r.json() as PersonLike;
         if (!cancelled) {
-          const first = (me.name ?? "").trim().split(/\s+/)[0] ?? "";
-          setName(first);
+          // REQ-624: the person signed in — an editor's own name, never the owner's
+          setName(greetingFirstName(me) ?? "");
           setShow(true);
         }
       } catch { /* network blip — render the generic version */ }

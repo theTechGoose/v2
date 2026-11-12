@@ -74,6 +74,15 @@ function asError(raw: unknown): VerifyOtpError {
   return KNOWN_ERRORS.has(code) ? code as VerifyOtpError : "invalid_code";
 }
 
+/** REQ-624 — a new session in this tab: drop the previous person's dashboard snapshot (lib/dash-cache's
+ *  key) so the sidebar never opens on someone else's name. Inline, so the sign-in bundle does not pull
+ *  the dashboard clients in. */
+function forgetPreviousSession() {
+  try {
+    globalThis.sessionStorage?.removeItem("pm:dash-cache:v1");
+  } catch { /* SSR / private mode */ }
+}
+
 export const verifyClient = {
   async verifyOtp(
     input: VerifyOtpInput,
@@ -91,9 +100,14 @@ export const verifyClient = {
         }
       >("/auth/verify-otp", input, opts);
       if (raw.recoverable === true && typeof raw.recoveryToken === "string") {
-        return { ok: true, recoverable: true, recoveryToken: raw.recoveryToken };
+        return {
+          ok: true,
+          recoverable: true,
+          recoveryToken: raw.recoveryToken,
+        };
       }
       if (typeof raw.sessionId === "string" && typeof raw.userId === "string") {
+        forgetPreviousSession();
         return {
           ok: true,
           sessionId: raw.sessionId,
@@ -123,16 +137,27 @@ export const verifyClient = {
   ): Promise<VerifyOtpResult> {
     try {
       const raw = await api.post<
-        { ok?: boolean; sessionId?: string; userId?: string; isNewUser?: boolean; redirectTo?: string }
+        {
+          ok?: boolean;
+          sessionId?: string;
+          userId?: string;
+          isNewUser?: boolean;
+          redirectTo?: string;
+        }
       >("/auth/verify-email-otp", input, opts);
-      if (raw.ok === true && typeof raw.sessionId === "string" && typeof raw.userId === "string") {
+      if (
+        raw.ok === true && typeof raw.sessionId === "string" &&
+        typeof raw.userId === "string"
+      ) {
+        forgetPreviousSession();
         const isNewUser = raw.isNewUser === true;
         return {
           ok: true,
           sessionId: raw.sessionId,
           userId: raw.userId,
           isNewUser,
-          redirectTo: raw.redirectTo ?? (isNewUser ? "/welcome" : "/dashboard?welcome=back"),
+          redirectTo: raw.redirectTo ??
+            (isNewUser ? "/welcome" : "/dashboard?welcome=back"),
         };
       }
       return { ok: false, error: "invalid_code" };
@@ -168,6 +193,10 @@ export const verifyClient = {
     input: ResendOtpInput,
     opts: ApiOptions = {},
   ): Promise<{ sent: true; devCode?: string }> {
-    return api.post<{ sent: true; devCode?: string }>("/auth/send-otp", input, opts);
+    return api.post<{ sent: true; devCode?: string }>(
+      "/auth/send-otp",
+      input,
+      opts,
+    );
   },
 };

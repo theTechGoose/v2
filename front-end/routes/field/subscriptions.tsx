@@ -3,6 +3,7 @@
  * data comes from /api/field/* (clients/field.ts). The sidebar's active tab is "subscriptions".
  */
 import { asset, Head } from "fresh/runtime";
+import { greetingFirstName } from "../../../shared/person-name/mod.ts"; // REQ-624
 import { define } from "../../utils.ts";
 import SiteFooter from "../../components/SiteFooter.tsx";
 import { type Lang, tFor } from "../../lib/i18n.ts";
@@ -13,8 +14,8 @@ import FieldSubscriptionsPage from "../../islands/FieldSubscriptionsPage.tsx";
 export default define.page(function FieldFieldSubscriptionsPageRoute(ctx) {
   const user = ctx.state.user;
   const lang: Lang = user?.language === "es" ? "es" : "en";
-  const greetingName =
-    (user?.name?.trim() || tFor(lang, "common.thereFallback")).split(" ")[0];
+  const greetingName = greetingFirstName(user) ||
+    tFor(lang, "common.thereFallback");
 
   return (
     <>

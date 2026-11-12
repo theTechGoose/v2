@@ -2,6 +2,7 @@ import { useEffect, useState } from "preact/hooks";
 import { profileClient, type ProfileSnapshot } from "../clients/profile.ts";
 import { langSignal, tFor } from "../lib/i18n.ts";
 import { isPlaceholderName } from "../../shared/quote-flow/outbound-identity.ts";
+import { editableName } from "../../shared/person-name/mod.ts"; // REQ-624
 
 /**
  * SetupChecklist — post-onboarding "finish setting up" card on the
@@ -54,7 +55,7 @@ export default function SetupChecklist() {
       // UX-27: the seeded placeholder ("Nuevo usuario") is not a real name —
       // the one field this user most needs to supply must not read as done.
       label: tFor(lang, "setupChecklist.item.name"),
-      done: !isPlaceholderName(snap.user.name),
+      done: !isPlaceholderName(editableName(snap.user, snap.actor)), // REQ-624: the person signed in
       href: "/settings",
     },
     {
