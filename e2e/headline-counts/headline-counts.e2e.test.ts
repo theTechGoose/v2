@@ -80,7 +80,9 @@ async function sentInvoice(
       customerId: customer.id,
       status: "sent",
       jobName: "Back fence",
-      dueDate: inDays(2),
+      // REQ-484: "this week" ends Sunday — due today is this week on any
+      // weekday the lane runs (today+2 is next week on a Friday).
+      dueDate: inDays(0),
       lineItems: [{
         description: "Back fence",
         quantity: 1,
