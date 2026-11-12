@@ -399,6 +399,7 @@
   "asstChat.previewLang.es": "Español",
   "asstChat.price.backToPrompts": "Volver a las opciones",
   "asstChat.price.buildSub": "Crearé los detalles del trabajo en torno a él.",
+  "asstChat.price.tidyNote": "Lo dejaremos en limpio antes de enviarlo.",
   "asstChat.price.forJob": "Detalles del trabajo",
   "asstChat.price.orCustom": "O ingresa un precio personalizado",
   "asstChat.price.pickTitle": "Elige un precio",

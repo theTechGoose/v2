@@ -15,11 +15,22 @@
 import { extractCustomerName } from "./quick-quote-prefill.ts";
 import { type DurationUnit, termLabel } from "./terms-i18n.ts";
 
+/** REQ-387 (demo M25): a schedule the text states that is not a preset —
+ *  "30% deposit, 40% at cabinets install, 30% at completion". `milestones`
+ *  holds each payment's words as typed ("at cabinets install"), null when
+ *  the text gave none. */
+export interface CustomPaymentSchedule {
+  kind: "custom";
+  splits: number[];
+  milestones: (string | null)[];
+}
+
 export type PrefillPaymentTerms =
   | "50_50"
   | "30_30_40"
   | "deposit_bal"
-  | "net_15";
+  | "net_15"
+  | CustomPaymentSchedule;
 
 export interface QuoteFacts {
   customerName: string | null;
@@ -256,9 +267,65 @@ export function extractStartDate(
   return null;
 }
 
-/** The payment schedule the text states, mapped onto the wizard's options. */
+const PERCENT_RE =
+  /(?<![\d.])(\d{1,3}(?:\.\d+)?)\s*(?:%|percent\b|por\s*ciento\b)/giu;
+/** A word that makes a run of percentages a PAYMENT schedule. */
+const PAYMENT_WORD_RE =
+  /(?:deposit|down\b|upfront|up front|payment|\bpay|balance|completion|complete|finish|done\b|install|milestone|pago|paga|anticipo|adelanto|enganche|dep[oó]sito|saldo|terminar|final)/iu;
+
+/**
+ * REQ-387 (demo M25): the first run of 2+ consecutive percentages that adds
+ * up to exactly 100, with each payment's own words — the text after its
+ * figure up to the next figure or separator. Null when the text states no
+ * such run, or says nothing about payment.
+ */
+function extractSplitSchedule(raw: string): CustomPaymentSchedule | null {
+  if (!PAYMENT_WORD_RE.test(raw)) return null;
+  const hits = [...raw.matchAll(PERCENT_RE)].map((m) => ({
+    pct: Number(m[1]),
+    start: m.index!,
+    end: m.index! + m[0].length,
+  }));
+  for (let i = 0; i < hits.length; i++) {
+    let sum = 0;
+    for (let j = i; j < hits.length && j - i < 6; j++) {
+      sum += hits[j].pct;
+      if (sum > 100) break;
+      if (sum === 100 && j > i) {
+        const run = hits.slice(i, j + 1);
+        if (run.some((h) => h.pct <= 0)) break;
+        return {
+          kind: "custom",
+          splits: run.map((h) => h.pct),
+          milestones: run.map((h, k) => {
+            const stop = k + 1 < run.length ? run[k + 1].start : raw.length;
+            const words = raw.slice(h.end, stop).split(/[,;.\n/]/)[0]
+              .replace(/\s+/g, " ")
+              .replace(/\s+(?:and|y|then|luego|e)\s*$/iu, "")
+              .trim();
+            return words && words.length <= 40 ? words : null;
+          }),
+        };
+      }
+    }
+  }
+  return null;
+}
+
+/** The payment schedule the text states, mapped onto the wizard's options —
+ *  a preset when it is one, else (REQ-387) the stated custom schedule. */
 export function extractPaymentTerms(raw: string): PrefillPaymentTerms | null {
   const s = raw.toLowerCase();
+  // REQ-387 (demo M25): a stated multi-payment schedule wins over the
+  // single-figure "N% deposit" rule below (which read 30/40/30 as
+  // "Deposit + balance").
+  const schedule = extractSplitSchedule(raw);
+  if (schedule) {
+    const key = schedule.splits.join("/");
+    if (key === "30/30/40") return "30_30_40";
+    if (key === "50/50") return "50_50";
+    return schedule;
+  }
   if (/\b30\s*\/\s*30\s*\/\s*40\b/.test(s)) return "30_30_40";
   if (/\b50\s*\/\s*50\b/.test(s)) return "50_50";
   const depositWord =
@@ -376,6 +443,10 @@ export function extractQuoteFacts(raw: string, today: Date): QuoteFacts {
 export interface WizardPrefill {
   optionId: string;
   customValue?: string;
+  /** REQ-387: a custom payment schedule's percentages — seeds the Custom
+   *  payment form when the contractor opens it instead of taking the
+   *  prefill as is. */
+  splits?: number[];
 }
 
 /** The wizard step's pre-selection from the facts; null when the text said
@@ -391,7 +462,20 @@ export function wizardPrefillFor(
     return { optionId: "custom", customValue: facts.startDate.us };
   }
   if (stepId === "payment_terms" && facts.paymentTerms) {
-    return { optionId: facts.paymentTerms };
+    const pt = facts.paymentTerms;
+    if (typeof pt === "string") return { optionId: pt };
+    // REQ-387 (demo M25): the typed schedule pre-fills the Custom option.
+    // Named milestones ride in the value ("30% deposit / 40% at cabinets
+    // install / 30% at completion") — computePaymentSplit still reads its
+    // percentages; without names it is the custom form's own "30 / 40 / 30".
+    const named = pt.milestones.every((m) => !!m);
+    return {
+      optionId: "custom",
+      customValue: named
+        ? pt.splits.map((n, i) => `${n}% ${pt.milestones[i]}`).join(" / ")
+        : termLabel({ kind: "payment", value: { splits: pt.splits } }, lang),
+      splits: pt.splits,
+    };
   }
   // REQ-330 (M21): a typed duration lands on the wraps step — a preset when
   // it matches one (1 day / 1 week / 2 weeks), else the custom value.

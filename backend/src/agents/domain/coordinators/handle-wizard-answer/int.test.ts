@@ -12,6 +12,11 @@ import { TERMS_WIZARD_V1 } from "@agents/domain/business/terms-wizard-spec/mod.t
 import type { AgentMessage } from "@agents/dto/message.ts";
 import { resetKv } from "@core/data/kv/mod.ts";
 import { previewTermRows } from "#quote-flow/wizard-terms.ts";
+import {
+  extractQuoteFacts,
+  wizardPrefillFor,
+} from "#quote-flow/quote-facts.ts";
+import { computePaymentSplit } from "#payment-split";
 
 function fresh() {
   const conversations = new AgentConversationStore();
@@ -1144,6 +1149,58 @@ Deno.test("REQ-386 m17 handle-wizard-answer: picking a customer with an address 
   assertEquals(
     r.newMessages[0].content,
     "Customer: Maria Lopez — 412 Oak St Austin",
+  );
+  await resetKv();
+});
+
+// ---------------------------------------------------------------------------
+// REQ-387 (demo-loop cycle 2, M25): "Payment: 30% deposit, 40% at cabinets
+// install, 30% at completion" used to pre-select "Deposit + balance" (a 20/80
+// bill). The message's own schedule now pre-fills the Custom option; taking
+// it stores the named schedule on the quote, and the one payment split bills
+// 30 / 40 / 30.
+// ---------------------------------------------------------------------------
+Deno.test("REQ-387 (M25) handle-wizard-answer integration: the typed 30/40/30 schedule, taken from the prefill, lands on the quote and bills 30/40/30", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const { flow, conv, quote, quotes } = await setupTermsConversationWithQuote();
+  const facts = extractQuoteFacts(
+    "Cocina Okafor, $46,500. Payment: 30% deposit, 40% at cabinets install, 30% at completion",
+    new Date(2026, 10, 12),
+  );
+  const prefill = wizardPrefillFor("payment_terms", facts, "en");
+  assert(prefill, "the payment step has a prefill");
+  assertEquals(prefill.optionId, "custom");
+
+  for (const step of TERMS_WIZARD_V1.steps) {
+    if (step.id === "payment_terms") {
+      await flow.run({
+        userId: "u-1",
+        conversationId: conv.id,
+        stepId: step.id,
+        optionId: prefill.optionId,
+        customValue: prefill.customValue,
+      });
+      continue;
+    }
+    const opt = step.options.find((o) => !o.isCustom)!;
+    await flow.run({
+      userId: "u-1",
+      conversationId: conv.id,
+      stepId: step.id,
+      optionId: opt.id,
+    });
+  }
+
+  const q = await quotes.getOwned(quote.id, "u-1");
+  const pay = (q.terms ?? []).find((t) => t.stepId === "payment_terms");
+  assertEquals(
+    pay?.value,
+    "30% deposit / 40% at cabinets install / 30% at completion",
+  );
+  assertEquals(
+    computePaymentSplit(pay?.value, 4_650_000).map((p) => p.amountCents),
+    [1_395_000, 1_860_000, 1_395_000],
   );
   await resetKv();
 });

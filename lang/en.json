@@ -399,6 +399,7 @@
   "asstChat.previewLang.es": "Español",
   "asstChat.price.backToPrompts": "Back to prompts",
   "asstChat.price.buildSub": "I'll build the job details around it.",
+  "asstChat.price.tidyNote": "We'll tidy this up before you send.",
   "asstChat.price.forJob": "Job details",
   "asstChat.price.orCustom": "Or enter a custom price",
   "asstChat.price.pickTitle": "Pick a price",
