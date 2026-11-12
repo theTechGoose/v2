@@ -58,7 +58,9 @@ export class AccountAdmins {
   async invite(
     owner: User,
     input: { phoneNumber?: unknown; name?: unknown },
-  ): Promise<AccountAdmin & { texted: boolean }> {
+  ): Promise<
+    AccountAdmin & { texted: boolean; signInUrl: string; shareText: string }
+  > {
     let phone: string;
     try {
       phone = normalizePhone(
@@ -86,17 +88,16 @@ export class AccountAdmins {
     const who = realName(owner.name);
     const biz = identity?.businessName?.trim();
     const ownerText = who && biz ? `${who} (${biz})` : accountLabel(owner, biz);
-    const body = t(lang, "sms.adminInvite", {
-      owner: ownerText,
-      url: appUrl(),
-    });
+    const url = appUrl();
+    const body = t(lang, "sms.adminInvite", { owner: ownerText, url });
     const sent = await this.sms.send({ to: phone, body });
     if (!sent.ok) {
       console.error(
         `[account-admins] invite text to ${phone} failed: ${sent.reason}`,
       );
     }
-    return { ...rec, texted: sent.ok };
+    // REQ-601 — the sign-in address and the very text, so the page can hand them over when the text failed
+    return { ...rec, texted: sent.ok, signInUrl: url, shareText: body };
   }
 
   list(owner: User): Promise<AccountAdmin[]> {

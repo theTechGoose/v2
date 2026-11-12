@@ -93,40 +93,38 @@ interface WelcomeDeps {
   sms: SmsService;
 }
 
-/** REQ-151 — the welcome text to one worker, in the owner's language; false (and a log line) when it could not go out */
+/**
+ * REQ-151 — the welcome text to one worker, in the owner's language; `ok` false (and a log line) when it
+ * could not go out. REQ-601 — also the sign-in address and the exact text, so the owner can share them.
+ */
 async function welcomeWorker(
   d: WelcomeDeps,
   user: User,
   w: FieldWorker,
   override?: "en" | "es",
-): Promise<boolean> {
+): Promise<{ ok: boolean; url: string; body: string }> {
   const lang = override ?? workerLang(w, user); // REQ-155 — the worker's language
   const identity = await d.identities.get(user.id);
   const who = realName(user.name);
   const biz = identity?.businessName?.trim();
   const owner = who && biz ? `${who} (${biz})` : accountLabel(user, biz);
+  const url = workerSignInUrl(appUrl(), lang); // REQ-285 — the screen opens in it
+  const body = workerWelcome(lang, { owner, url, pin: w.pin });
   try {
-    const sent = await d.sms.send({
-      to: normalizePhone(w.phoneNumber),
-      body: workerWelcome(lang, {
-        owner,
-        url: workerSignInUrl(appUrl(), lang), // REQ-285 — the screen opens in it
-        pin: w.pin,
-      }),
-    });
+    const sent = await d.sms.send({ to: normalizePhone(w.phoneNumber), body });
     if (!sent.ok) {
       console.error(
         `[field/workers] welcome text to ${w.phoneNumber} failed: ${sent.reason}`,
       );
     }
-    return sent.ok;
+    return { ok: sent.ok, url, body };
   } catch (err) {
     console.error(
       `[field/workers] welcome text to ${w.phoneNumber} failed: ${
         (err as Error).message
       }`,
     );
-    return false;
+    return { ok: false, url, body };
   }
 }
 
@@ -266,8 +264,14 @@ export class FieldWorkersController {
     w.language = language ?? "es"; // REQ-155 — Spanish by default
     await this.workers.put(w);
     // REQ-151 — the welcome text: who added them, the /worker address, the PIN; its failure is logged, never thrown
-    const texted = await welcomeWorker(deps(this), user, w);
-    return ctx.json({ ...safeWorker(w), texted }, 201);
+    const welcome = await welcomeWorker(deps(this), user, w);
+    // REQ-601 — the link and the very text, so a page whose text failed can hand them to the owner to share
+    return ctx.json({
+      ...safeWorker(w),
+      texted: welcome.ok,
+      signInUrl: welcome.url,
+      shareText: welcome.body,
+    }, 201);
   }
 
   /**
@@ -314,12 +318,12 @@ export class FieldWorkersController {
         language: override ?? workerLang(w, user),
       };
       if (!dryRun) {
-        row.texted = await welcomeWorker(
+        row.texted = (await welcomeWorker(
           deps(this),
           user,
           w,
           override ?? undefined,
-        );
+        )).ok;
       }
       out.push(row);
     }
