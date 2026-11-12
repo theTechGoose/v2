@@ -199,7 +199,10 @@ import {
   showEditHint,
 } from "../../shared/quote-flow/draft-edit.ts";
 import { customerStepFeedback } from "../../shared/quote-flow/customer-contact.ts"; // REQ-278, REQ-390
-import { parseDurationNumber } from "../../shared/quote-flow/duration-input.ts"; // REQ-390
+import {
+  durationPreviewHint,
+  parseDurationNumber,
+} from "../../shared/quote-flow/duration-input.ts"; // REQ-390, REQ-458
 import { isPlaceholderName } from "../../shared/quote-flow/outbound-identity.ts";
 import {
   TimeoutError,
@@ -11080,8 +11083,13 @@ function CustomDurationPickerForm(props: {
   // ("3 weeks") and submit it verbatim into a Spanish agreement. Preview AND
   // submitted value now go through termLabel, so an ES contractor locks in
   // "3 semanas".
+  // REQ-458 (demo M38): an empty number asks for one ("Type a number")
+  // instead of a bare "—" that read as a dead end.
+  const emptyHint = durationPreviewHint(n);
   const preview = valid
     ? termLabel({ kind: "duration", value: { n: num, unit } }, lang)
+    : emptyHint
+    ? tFor(lang, emptyHint)
     : "—";
 
   const presets: {
@@ -11252,9 +11260,19 @@ function CustomDurationPickerForm(props: {
           : null}
       </div>
       <div class="dur__row">
+        {/* REQ-458 (demo M38): visible labels + an "e.g. 3" placeholder so
+            the empty number box reads as the thing to fill in. */}
+        <label class="dur__label" for="dur-num">
+          {tFor(lang, "asstChat.duration.numberLabel")}
+        </label>
+        <label class="dur__label" for="dur-unit">
+          {tFor(lang, "asstChat.duration.unitLabel")}
+        </label>
         <input
+          id="dur-num"
           type="number"
           class="cust-pick__search dur__num"
+          placeholder={tFor(lang, "asstChat.duration.numberPlaceholder")}
           inputMode="numeric"
           min={1}
           max={99}
@@ -11267,18 +11285,17 @@ function CustomDurationPickerForm(props: {
             setN((e.target as HTMLInputElement).value);
           }}
           autoFocus
-          aria-label={tFor(lang, "asstChat.verify.number")}
           aria-invalid={parsedNum.error ? "true" : undefined}
           aria-describedby={parsedNum.error ? "dur-num-err" : undefined}
         />
         <select
+          id="dur-unit"
           class="cust-pick__search dur__unit"
           value={unit}
           onChange={(e) =>
             setUnit(
               (e.currentTarget as HTMLSelectElement).value as typeof unit,
             )}
-          aria-label={tFor(lang, "asstChat.verify.unit")}
         >
           <option value="hours">{tFor(lang, "asstChat.unit.hours")}</option>
           <option value="days">{tFor(lang, "asstChat.unit.days")}</option>
