@@ -343,3 +343,79 @@ Deno.test("cross-module e2e: notification is scoped per-user — contractor B ne
     );
   });
 });
+
+Deno.test("REQ-224 cross-module e2e: claim by Zelle → confirm → the Spanish feed names the client, $450 and 'por Zelle'", async () => {
+  await withCrossModuleServer(async (port) => {
+    const sid = await loginXmod(port);
+    const auth = { "content-type": "application/json", "x-session-id": sid };
+    await drain(
+      await fetch(`http://localhost:${port}/me`, {
+        method: "PUT",
+        headers: auth,
+        body: JSON.stringify({ language: "es" }),
+      }),
+    );
+    // Materialize the singleton notifier before any event fires.
+    await drain(
+      await fetch(`http://localhost:${port}/notifications`, {
+        headers: { "x-session-id": sid },
+      }),
+    );
+
+    const customer = await fetch(`http://localhost:${port}/customers`, {
+      method: "POST",
+      headers: auth,
+      body: JSON.stringify({ name: "María Pérez" }),
+    }).then((r) => r.json());
+    const quote = await fetch(`http://localhost:${port}/quotes`, {
+      method: "POST",
+      headers: auth,
+      body: JSON.stringify({
+        customerId: customer.id,
+        summary: "Cerca",
+        lineItems: [],
+      }),
+    }).then((r) => r.json());
+    const inv = await fetch(`http://localhost:${port}/invoices`, {
+      method: "POST",
+      headers: auth,
+      body: JSON.stringify({
+        quoteId: quote.id,
+        customerId: customer.id,
+        dueDate: "2026-12-01",
+        amount: 450_00,
+        status: "sent",
+      }),
+    }).then((r) => r.json());
+
+    const claim = await fetch(
+      `http://localhost:${port}/invoices/${inv.id}/claim-payment`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ method: "zelle" }),
+      },
+    ).then((r) => r.json());
+    assertEquals(claim.ok, true);
+    const confirm = await fetch(
+      `http://localhost:${port}/invoices/${inv.id}/confirm-payment`,
+      { method: "POST", headers: auth },
+    ).then((r) => r.json());
+    assertEquals(confirm.ok, true);
+
+    const list = await fetch(`http://localhost:${port}/notifications`, {
+      headers: { "x-session-id": sid },
+    }).then((r) => r.json()) as Array<{ type: string; title: string }>;
+    const titles = list.map((n) => `${n.type}: ${n.title}`);
+    assert(
+      titles.includes(
+        "invoice_claimed: María Pérez dice que pagó por Zelle — confirma que lo recibiste",
+      ),
+      titles.join("\n"),
+    );
+    assert(
+      titles.includes("invoice_paid: María Pérez pagó $450"),
+      titles.join("\n"),
+    );
+  });
+});

@@ -1679,7 +1679,7 @@
   "notify.invoice.claimed": "{name} dice que ya pagó — confirma que lo recibiste",
   "notify.invoice.nudgeDue": "Factura programada para el {date} — ¿terminó el trabajo? Envíala",
   "notify.invoice.nudgeDueBody": "Confirma que el trabajo está terminado y envía la factura final desde Facturas › Próximas.",
-  "notify.invoice.claimedVia": "{name} dice que pagó por {method} — confirma que lo recibiste",
+  "notify.invoice.claimedVia": "{name} dice que pagó {method} — confirma que lo recibiste",
   "notify.invoice.overdue": "La factura de {name} está vencida",
   "notify.invoice.paid": "{name} pagó",
   "notify.invoice.paidAmount": "{name} pagó {amount}",

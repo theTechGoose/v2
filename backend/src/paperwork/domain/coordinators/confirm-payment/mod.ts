@@ -91,6 +91,9 @@ export class ConfirmPayment {
     const paidAt = new Date().toISOString();
     const updated = await this.invoices.update(invoice.id, userId, { paymentIntent: null });
 
+    // REQ-224: the feed line names the client as the bill shows them.
+    let customerName: string | undefined;
+
     // 3. Best-effort receipt dispatch.
     try {
       const [customer, contractor, biz] = await Promise.all([
@@ -102,6 +105,9 @@ export class ConfirmPayment {
         this.users.get(userId).catch(() => undefined),
         this.identity.get(userId).catch(() => null),
       ]);
+      const onBill = customerOnDocument(updated, customer);
+      customerName = (onBill?.name ?? onBill?.businessName)?.trim() ||
+        undefined;
       const businessName = biz?.businessName?.trim() ||
         biz?.legalName?.trim() || contractor?.name?.trim();
       const lang: Lang = biz?.commsLanguage === "es" ? "es" : "en";
@@ -216,8 +222,11 @@ export class ConfirmPayment {
         entityId: invoice.id,
         action: "paid",
         data: {
-          amount: intent.amount,
+          // REQ-224 (demo M36): integer cents, named as such — the notifier
+          // formats the money per viewer. Never the bare number as `amount`.
+          amountCents: intent.amount,
           method: intent.method,
+          ...(customerName ? { customerName } : {}),
           ...(intent.reference ? { reference: intent.reference } : {}),
         },
       });
