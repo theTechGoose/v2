@@ -70,11 +70,18 @@ export default function PublicQuoteView(
 
   useEffect(() => {
     let alive = true;
+    load(() => alive);
+    return () => {
+      alive = false;
+    };
+  }, [id]);
+
+  function load(alive: () => boolean) {
     fetch(`/api/quotes/${id}/public`, {
       headers: { accept: "application/json" },
     })
       .then(async (r) => {
-        if (!alive) return;
+        if (!alive()) return;
         if (r.ok) {
           setS({ phase: "ok", quote: (await r.json()) as QuotePublic });
         } else {
@@ -82,18 +89,23 @@ export default function PublicQuoteView(
         }
       })
       .catch(() => {
-        if (alive) setS({ phase: "error", message: LINK_GONE });
+        if (alive()) setS({ phase: "error", message: LINK_GONE });
       });
-    return () => {
-      alive = false;
-    };
-  }, [id]);
+  }
+
+  // REQ-311 (demo-loop c1 m19): the signature ceremony hands its success up
+  // here; we refetch the projection (now accepted, with the invoice the
+  // signature billed) and swap the signed document in place — no reload, so
+  // the page never jumps to the top away from the next step.
+  function onSigned() {
+    load(() => true);
+  }
 
   if (s.phase === "ok" && s.quote) {
     return (
       <>
         {toggle}
-        <QuoteDoc quote={s.quote} lang={lang} />
+        <QuoteDoc quote={s.quote} lang={lang} onSigned={onSigned} />
       </>
     );
   }
