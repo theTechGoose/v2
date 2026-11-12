@@ -173,6 +173,7 @@ export class SendSignedConfirmation {
         quote.startDate,
         quote.estimatedCompletionDate,
         today,
+        quote.terms,
       );
       const installmentTotal = milestoneAmounts.length;
       // "Due Now" payment terms (roadmap p.6): the single invoice is due the
@@ -424,23 +425,31 @@ export function computeMilestoneAmounts(
  *  scheduledFor — we return its slot as today's date anyway for the
  *  array shape, but callers should ignore it.
  *
- *  Window math:
- *    - If the quote has both startDate and estimatedCompletionDate, span
- *      that interval.
- *    - Otherwise fall back to a 14-day default window from today.
- *    - Each subsequent milestone gets (i / N) of the window.
+ *  Window math (REQ-475, demo-loop cycle 3, m63 — the same job window
+ *  completionScheduledFor uses):
+ *    - start: the quote's ISO startDate, else the start TERM ("Next week",
+ *      a picked "11/20/2026"), else today — never before today.
+ *    - end: the quote's ISO estimatedCompletionDate, else start + the
+ *      duration TERM ("1 day", "4 weeks"), else start + 14 days.
+ *    - Each subsequent milestone gets (i / N) of the window, so the last
+ *      one lands on the job's end (a 1-day job starting Nov 20 bills its
+ *      balance Nov 21, not signing + 14).
  */
 export function computeScheduledDates(
   count: number,
   startDate: string | undefined,
   estimatedCompletionDate: string | undefined,
   today: Date,
+  terms?: Quote["terms"],
 ): string[] {
   if (count <= 0) return [];
-  const start = startDate ? parseIsoDate(startDate) : today;
-  const end = estimatedCompletionDate
+  const input = { terms, startDate, today };
+  const start = parseIsoDate(startDayFromTerms(input));
+  const end = estimatedCompletionDate && ISO_DAY.test(estimatedCompletionDate)
     ? parseIsoDate(estimatedCompletionDate)
-    : addDays(today, 14);
+    : parseIsoDate(
+      completionFromTerms(input) ?? addDaysIso(start, 14),
+    );
   const windowMs = Math.max(end.getTime() - start.getTime(), 24 * 3600 * 1000);
   const out: string[] = [];
   for (let i = 0; i < count; i++) {
