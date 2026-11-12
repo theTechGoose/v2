@@ -50,6 +50,7 @@
  */
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import { t } from "../lib/i18n.ts";
+import { fenceClicks } from "../lib/backdrop-dismiss.ts";
 import {
   DEMO_OPENING_EVENT,
   DEMO_STARTED_EVENT,
@@ -980,7 +981,7 @@ export default function DemoModeOverlay() {
       text: t(said.key, said.vars),
     };
     return (
-      <div data-demo-overlay>
+      <div data-demo-overlay ref={fenceClicks}>
         <div
           ref={pillRef}
           data-cy="demo-ended"
@@ -1014,7 +1015,7 @@ export default function DemoModeOverlay() {
     };
     // REQ-179 — Demo was just clicked: the pill is up before the server answers
     return (
-      <div data-demo-overlay>
+      <div data-demo-overlay ref={fenceClicks}>
         <div
           ref={pillRef}
           data-cy="demo-pill"
@@ -1040,7 +1041,7 @@ export default function DemoModeOverlay() {
   // (REQ-232: another window, /admin after Return to your account) offer the way back — never take it
   if (demo.role === "presenter") {
     return (
-      <div data-demo-overlay>
+      <div data-demo-overlay ref={fenceClicks}>
         <div
           ref={pillRef}
           data-cy="demo-pill"
@@ -1125,7 +1126,7 @@ export default function DemoModeOverlay() {
   }
 
   return (
-    <div data-demo-overlay>
+    <div data-demo-overlay ref={fenceClicks}>
       {presenters.map((p) => (
         <PeerPointer
           key={p.userId}

@@ -28,6 +28,7 @@ import {
   storyLineFor,
 } from "../lib/clients-display.ts";
 import { messageHrefFor, nudgeActionFor } from "../lib/client-actions.ts";
+import { isChromeClick } from "../lib/backdrop-dismiss.ts";
 import {
   formatPhoneDisplay,
   telHref,
@@ -466,7 +467,10 @@ export default function ClientsBoard(
     if (!openId) return;
     function onDocClick(e: MouseEvent) {
       const target = e.target as HTMLElement;
-      if (!target.closest(".ccard2")) setOpenId(null);
+      if (target.closest(".ccard2")) return;
+      // REQ-432 (m29, m40): the topbar's EN/ES, the sidebar, the demo pill are not "outside"
+      if (isChromeClick(target)) return;
+      setOpenId(null);
     }
     function onKey(e: KeyboardEvent) {
       if (e.key === "Escape") setOpenId(null);
