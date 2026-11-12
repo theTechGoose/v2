@@ -163,6 +163,10 @@ Deno.test("REQ-054: in onboarding the person picks a paid plan, pays on the link
     await expect.see("Monster Free");
     await expect.see("$99");
     await expect.see("$199");
+    // REQ-356 (demo-loop c1 m8) — a card IS the pick, so before it is pressed each card says what
+    // pressing it does: the amount today, the monthly price, and the secure payment page next
+    await expect.see("$99 today · prorated on the 1st · then $99/month — you'll pay on a secure payment page next");
+    await expect.see("Free · nothing to pay, no card needed");
     // the paid pick GOES to the pay page — the link builder's link — in this tab (REQ-055/059)
     const payPage = await pickGoesToPayPage(page, "plan-pick-monster");
     expect(payPage.searchParams.get("return")?.includes("/plan/return?due="), `the link carries the way back (${payPage.searchParams.get("return")})`);

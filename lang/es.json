@@ -2775,6 +2775,8 @@
   "plan.pastDue": "{name}: el pago del último mes no se procesó — págalo ahora y listo.",
   "plan.payNow": "Pagar ahora",
   "welcome.plan.oneTime": " pago único",
+  "welcome.plan.note.paid": "{due} hoy · prorrateado el día 1 · luego {monthly}/mes — pagarás en una página de pago segura a continuación",
+  "welcome.plan.note.free": "Gratis · nada que pagar, sin tarjeta",
   "plan.paidOnce": "{name} — pagado una vez el {date}. Sin cobro mensual.",
   "planTest.title": "Cobro de prueba",
   "planTest.heading": "Un cobro de prueba de $1",
