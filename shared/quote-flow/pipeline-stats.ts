@@ -23,6 +23,8 @@ export interface PipelineQuote {
   /** REQ-236: the stored send outcome (see ./delivery.ts). */
   lastDelivery?: QuoteDelivery | null;
   deliveredAt?: string | null;
+  /** REQ-572: "link" — the owner shared the link and marked it sent. */
+  sentVia?: string | null;
   [key: string]: unknown;
 }
 

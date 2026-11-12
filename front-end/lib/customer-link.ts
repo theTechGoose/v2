@@ -33,8 +33,53 @@ export function customerLinkUrl(origin: string, quoteId: string): string {
   return `${origin}${customerLinkPath(quoteId)}`;
 }
 
-/** Outcome of a copy attempt — what the toast shows. */
-export type LinkToast = { kind: "copied" | "failed"; url: string };
+/** Outcome of a copy attempt — what the toast shows. REQ-572: `markQuoteId`
+ *  set → the toast also asks "mark as sent?" for that quote; `marking` while
+ *  the PUT runs; `markFailed` when it did not land. */
+export type LinkToast = {
+  kind: "copied" | "failed";
+  url: string;
+  markQuoteId?: string;
+  marking?: boolean;
+  markFailed?: boolean;
+};
+
+/**
+ * REQ-572 (demo-loop cycle 4, p4-p7c): "Copy link" offers "mark as sent" only
+ * for a quote that has not gone out — a draft, locked, ready-to-send or
+ * not-delivered quote. Never one a channel delivered, the customer opened,
+ * signed or declined, or one already marked shared by link.
+ */
+export function linkCopyOffersMarkSent(
+  q:
+    | {
+      status?: string | null;
+      sentAt?: string | null;
+      acceptedAt?: string | null;
+      lostAt?: string | null;
+      deliveredAt?: string | null;
+      lastDelivery?: { emailedTo?: string; textedTo?: string } | null;
+      sentVia?: string | null;
+    }
+    | null
+    | undefined,
+): boolean {
+  if (!q) return false;
+  if (q.acceptedAt || q.lostAt || q.deliveredAt || q.sentVia) return false;
+  if (q.lastDelivery?.emailedTo || q.lastDelivery?.textedTo) return false;
+  const s = (q.status ?? "draft").toLowerCase();
+  if (s === "draft" || s === "") return true;
+  // LockQuote's legacy "sent" with no delivery: still on the owner's desk
+  // when a send was tried and reached nobody, or nothing stamped sentAt.
+  if (s === "sent") return Boolean(q.lastDelivery) || !q.sentAt;
+  return false;
+}
+
+/** REQ-572: the owner's "Mark as sent" — PUT /quotes/:id with this body. */
+export const SHARED_BY_LINK_PATCH = Object.freeze({
+  status: "sent",
+  sentVia: "link",
+}) as { readonly status: "sent"; readonly sentVia: "link" };
 
 /**
  * A send divider is one SendQuote wrote: it names its quote and carries a

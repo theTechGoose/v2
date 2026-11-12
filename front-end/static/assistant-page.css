@@ -9661,6 +9661,33 @@ body {
 .link-toast__close:hover {
   opacity: 1;
 }
+/* REQ-572 (demo cycle 4, p4-p7c): "Link copied — mark as sent?" */
+.link-toast__mark {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.link-toast__mark-btn {
+  appearance: none;
+  border: none;
+  border-radius: 8px;
+  background: #fff;
+  color: var(--brand-teal, #144852);
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 700;
+  padding: 5px 10px;
+  cursor: pointer;
+}
+.link-toast__mark-btn:disabled {
+  opacity: 0.6;
+  cursor: progress;
+}
+.link-toast__mark-err {
+  font-size: 12px;
+  font-weight: 500;
+}
 @keyframes link-toast-in {
   from {
     opacity: 0;
