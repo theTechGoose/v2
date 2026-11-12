@@ -112,6 +112,22 @@ export function langToggleHref(currentUrl: string, lang: PublicLang): string {
   return `${url.pathname}${url.search}`;
 }
 
+/**
+ * REQ-492 (demo-loop cycle 3, M29): a hand-off link from one public page to
+ * another (the signed quote's "Pay now" → /i, Related documents → /i and
+ * /co) carries the language the reader is looking at. /q is English first
+ * (resolveContractLang) while /i and /co fall back to the contractor's
+ * commsLanguage, so a link without ?lang= could flip the reader's language
+ * mid-flow. Keeps every other query param and the hash; a relative link
+ * stays relative, an absolute one absolute.
+ */
+export function withLang(href: string, lang: PublicLang): string {
+  const absolute = /^[a-z][a-z0-9+.-]*:/i.test(href) || href.startsWith("//");
+  const url = new URL(href, "http://relative.invalid");
+  url.searchParams.set("lang", lang);
+  return absolute ? url.href : `${url.pathname}${url.search}${url.hash}`;
+}
+
 export interface MoneyPageStrings {
   billTo: string;
   amountDue: string;

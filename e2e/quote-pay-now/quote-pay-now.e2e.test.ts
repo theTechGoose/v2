@@ -42,11 +42,11 @@ async function signIn(
     body: JSON.stringify({ language: lang, name: "Pay Now Story" }),
   });
   await me.body?.cancel();
-  const [name, value] = cookie.split("=");
+  // The browser is the CUSTOMER's: only their pm_lang pick, never the
+  // owner's session (the owner gets a preview with no sign form, REQ-306).
   const hosts = new Set([new URL(baseUrl).hostname, "localhost", "127.0.0.1"]);
   await page.context().addCookies(
     [...hosts].flatMap((domain) => [
-      { name, value, domain, path: "/" },
       { name: "pm_lang", value: lang, domain, path: "/" },
     ]),
   );
@@ -146,9 +146,14 @@ Deno.test("REQ-251: signing a 'Pago inmediato' quote shows 'Pagar ahora $4,800.0
     expect.eq(billed.length, 1, "the signature billed one invoice");
     expect.eq(
       await pay.getAttribute("href"),
-      `/i/${billed[0].id}`,
+      `/i/${billed[0].id}?lang=es`, // REQ-492: carries the page language
       "Pay now links the billed invoice's public page",
     );
     await pay.click();
-    await page.waitForURL(`**/i/${billed[0].id}`, { timeout: 15_000 });
+    await page.waitForURL(
+      (u) =>
+        u.pathname === `/i/${billed[0].id}` &&
+        u.searchParams.get("lang") === "es",
+      { timeout: 15_000 },
+    );
   }));

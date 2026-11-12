@@ -76,7 +76,8 @@ Deno.test("REQ-311: the signed document opens with a thank-you banner above the 
   );
   const link = banner.querySelector("a[data-cy='quote-signed-banner-pay']");
   assert(link, "the banner's next step is a link");
-  assertEquals(link.getAttribute("href"), "/i/inv-311");
+  // REQ-492: the hand-off carries the page language
+  assertEquals(link.getAttribute("href"), "/i/inv-311?lang=en");
   // ABOVE the article: the banner precedes the document card in source order
   const article = doc.querySelector("article.ctr")!;
   const order = banner.compareDocumentPosition(article);
