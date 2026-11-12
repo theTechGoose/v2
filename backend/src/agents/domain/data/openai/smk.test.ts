@@ -291,6 +291,7 @@ Deno.test("REQ-368 OpenAILLMClient smoke: no allowlist keeps every tool (callers
     "lock_quote",
     "request_terms_transition",
     "change_order",
+    "revise_quote", // REQ-315 / REQ-375: TOOL_DEFS carries it
     "update_job_details",
   ]);
 });

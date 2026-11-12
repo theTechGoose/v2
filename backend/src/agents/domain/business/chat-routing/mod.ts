@@ -507,22 +507,27 @@ const ALL_TOOLS: readonly LLMToolName[] = [
   "request_terms_transition",
   "change_order",
   "update_job_details",
+  // REQ-375 (demo-loop cycle 2, M11 + B1): both prompts tell the model to
+  // reprice / reword a line with revise_quote; it was never offered.
+  "revise_quote",
 ];
 
 /**
  * The chat tools the model is offered this turn.
  *   - quote phase: drafting, change orders and job details always; lock and
  *     terms only while the bound quote is an open draft.
- *   - terms phase: change orders and job details only — the quote is past
- *     drafting and locking (what SYSTEM_PROMPT_TERMS always meant; pair 1's
- *     model was handed lock_quote here anyway).
+ *   - terms phase: line revisions, change orders and job details only — the
+ *     quote is past drafting and locking (what SYSTEM_PROMPT_TERMS always
+ *     meant; pair 1's model was handed lock_quote here anyway). A sent
+ *     quote's price changes go through revise_quote as its next Version
+ *     (REQ-375) — there is no Re-open on a sent quote.
  */
 export function chatToolsFor(
   phase: AgentPhase,
   quote: GateQuote | undefined,
 ): LLMToolName[] {
   if (phase === "terms") {
-    return ["change_order", "update_job_details"];
+    return ["revise_quote", "change_order", "update_job_details"];
   }
   const advance = !!quote && isOpenDraft(quote);
   return ALL_TOOLS.filter((t) =>

@@ -14,7 +14,7 @@ import type {
 import { LLM_CLIENT } from "@agents/domain/business/llm/base/mod.ts";
 import {
   SYSTEM_PROMPT_QUOTE,
-  SYSTEM_PROMPT_TERMS,
+  systemPromptTermsFor,
 } from "@agents/domain/business/llm-prompts/mod.ts";
 import { isInQuotePhase } from "@agents/domain/business/derive-phase/mod.ts";
 // REQ-368 (demo-loop cycle 1, M30 + M32): pricing / billing asks + tool gate.
@@ -1271,9 +1271,21 @@ export class HandleChatMessage {
         }),
     );
 
+    // REQ-375 (demo-loop cycle 2, M11): the terms prompt follows the bound
+    // quote's state — after the send it said "tap Re-open on the quote
+    // card above", a button a sent quote doesn't have.
     const base = isInQuotePhase(conv)
       ? SYSTEM_PROMPT_QUOTE
-      : SYSTEM_PROMPT_TERMS;
+      : systemPromptTermsFor(boundQuote, {
+        hasActionCard: !!conv.quoteId && history.some((m) => {
+          const p = (m.payload ?? {}) as {
+            actionType?: string;
+            quoteId?: string;
+          };
+          return m.kind === "action_card" && p.actionType !== "invoice" &&
+            p.quoteId === conv.quoteId;
+        }),
+      });
     // Roadmap p.13: the assistant talks to the CONTRACTOR, so it follows
     // their UI language (user.language) — it would be odd for the app to
     // be in Spanish while the assistant replies in English.

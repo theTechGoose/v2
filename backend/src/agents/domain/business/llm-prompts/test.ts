@@ -1,5 +1,9 @@
 import { assert, assertEquals } from "#std/assert";
-import { SYSTEM_PROMPT_QUOTE, SYSTEM_PROMPT_TERMS } from "./mod.ts";
+import {
+  SYSTEM_PROMPT_QUOTE,
+  SYSTEM_PROMPT_TERMS,
+  systemPromptTermsFor,
+} from "./mod.ts";
 import { t } from "@core/i18n/mod.ts";
 
 Deno.test("llm-prompts: quote system prompt is a non-empty string", () => {
@@ -103,4 +107,56 @@ Deno.test("REQ-388 M19 the Spanish override names the documents in Spanish — '
     t("en", "prompts.pricingAndBilling"),
     t("es", "prompts.pricingAndBilling"),
   );
+});
+
+// REQ-375 (demo-loop cycle 2, M11): after the send, the terms prompt still said
+// "tell them to tap Re-open on the quote card above" — on a sent quote there is
+// no such button (and ReopenQuote refuses an issued quote). The instruction now
+// depends on the bound quote's state.
+const REOPEN = /tap Re-open on the quote card/i;
+const SENT = { status: "sent", sentAt: "2026-11-12T05:00:00Z" };
+
+Deno.test("REQ-375 M11 base terms prompt carries no Re-open instruction", () => {
+  for (const lang of ["en", "es"] as const) {
+    assert(!REOPEN.test(t(lang, "prompts.systemTerms")), lang);
+  }
+  assert(!REOPEN.test(SYSTEM_PROMPT_TERMS));
+});
+
+Deno.test("REQ-375 M11 sent quote: make the change with revise_quote, say it is saved as the next Version — never 'tap Re-open'", () => {
+  for (const hasActionCard of [false, true]) {
+    for (const quote of [SENT, { status: "viewed" }]) {
+      const p = systemPromptTermsFor(quote, { hasActionCard });
+      assert(!REOPEN.test(p), `${JSON.stringify(quote)} card=${hasActionCard}`);
+      assert(/`revise_quote`/.test(p));
+      assert(/next Version/.test(p), "says the change is saved as a new Version");
+      assert(/publish/i.test(p), "says the Version is waiting to be published");
+      assert(/never tell the user to tap Re-open/i.test(p));
+    }
+  }
+});
+
+Deno.test("REQ-375 M11 signed quote: lines can't change — change_order, no Re-open", () => {
+  const p = systemPromptTermsFor({ status: "accepted" }, { hasActionCard: true });
+  assert(!REOPEN.test(p));
+  assert(/SIGNED/.test(p) && /`change_order`/.test(p));
+});
+
+Deno.test("REQ-375 M11 Re-open is mentioned only for a locked, unsent quote that has a quote card", () => {
+  const locked = { status: "draft", lockedAt: "2026-11-12T05:00:00Z" };
+  const withCard = systemPromptTermsFor(locked, { hasActionCard: true });
+  assert(REOPEN.test(withCard), withCard);
+  assert(/`revise_quote`/.test(withCard));
+  assert(!REOPEN.test(systemPromptTermsFor(locked, { hasActionCard: false })));
+  assert(!REOPEN.test(systemPromptTermsFor({ status: "draft" }, { hasActionCard: false })));
+  assert(!REOPEN.test(systemPromptTermsFor(undefined, { hasActionCard: false })));
+});
+
+Deno.test("REQ-375 every state-specific terms section exists in en and es", () => {
+  for (const k of ["issued", "signed", "lockedCard", "open"]) {
+    for (const lang of ["en", "es"] as const) {
+      const key = `prompts.termsPriceChange.${k}`;
+      assert(t(lang, key) !== key, `${lang}: ${key}`);
+    }
+  }
 });

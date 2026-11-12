@@ -6,6 +6,12 @@
  */
 import { assertEquals } from "#std/assert";
 import { t } from "@core/i18n/mod.ts";
+import { TOOL_DEFS } from "@agents/domain/business/openai-tools/mod.ts";
+import {
+  SYSTEM_PROMPT_QUOTE,
+  systemPromptTermsFor,
+} from "@agents/domain/business/llm-prompts/mod.ts";
+import type { LLMToolName } from "@agents/domain/business/llm/base/mod.ts";
 import {
   asksHowPriced,
   chatToolsFor,
@@ -156,6 +162,7 @@ Deno.test("REQ-368 M32 chatToolsFor: a draft in the quote phase can be locked an
     "request_terms_transition",
     "change_order",
     "update_job_details",
+    "revise_quote", // REQ-375
   ]);
   // already locked (still a draft): locking again re-shows the terms CTA
   assertEquals(
@@ -168,7 +175,12 @@ Deno.test("REQ-368 M32 chatToolsFor: a draft in the quote phase can be locked an
 });
 
 Deno.test("REQ-368 M32 chatToolsFor: nothing to lock — no quote, or a quote already sent / signed / declined", () => {
-  const noAdvance = ["create_quote", "change_order", "update_job_details"];
+  const noAdvance = [
+    "create_quote",
+    "change_order",
+    "update_job_details",
+    "revise_quote", // REQ-375
+  ];
   assertEquals(chatToolsFor("quote", undefined), noAdvance);
   for (const status of ["sent", "viewed", "accepted", "lost", "declined"]) {
     assertEquals(chatToolsFor("quote", { status }), noAdvance, status);
@@ -181,7 +193,7 @@ Deno.test("REQ-368 M32 chatToolsFor: nothing to lock — no quote, or a quote al
 });
 
 Deno.test("REQ-368 M32 chatToolsFor: the terms phase (pair 1: signed quote, finished wizard) never offers create / lock / terms", () => {
-  const termsTools = ["change_order", "update_job_details"];
+  const termsTools = ["revise_quote", "change_order", "update_job_details"]; // REQ-375
   assertEquals(chatToolsFor("terms", { status: "accepted" }), termsTools);
   assertEquals(chatToolsFor("terms", { status: "draft" }), termsTools);
   assertEquals(chatToolsFor("terms", undefined), termsTools);
@@ -461,5 +473,94 @@ Deno.test("REQ-388 M23 parseDraftRequest: what the chat's 'Draft a quote' button
   for (const lang of ["en", "es"] as const) {
     const said = t(lang, "asstChat.draftOffer", { amount: "$1,500" });
     assertEquals(parseDraftRequest(said), { amountCents: 150_000 }, said);
+  }
+});
+
+// REQ-375 (demo-loop cycle 2, M11 + B1): the terms prompt told the model to
+// call revise_quote, but chatToolsFor never offered it — so after the send it
+// fell back to "tap Re-open on the quote card above", a button that isn't
+// there. Every tool a prompt says to call must be one the phase offers.
+// ---------------------------------------------------------------------------
+
+Deno.test("REQ-375 M11 chatToolsFor: revise_quote is offered in both phases, whatever the quote's state", () => {
+  for (
+    const q of [
+      undefined,
+      { status: "draft" },
+      { status: "draft", lockedAt: "2026-11-12T05:00:00Z" },
+      { status: "sent", sentAt: "2026-11-12T05:00:00Z" },
+      { status: "viewed" },
+      { status: "accepted" },
+    ]
+  ) {
+    for (const phase of ["quote", "terms"] as const) {
+      assertEquals(
+        chatToolsFor(phase, q).includes("revise_quote"),
+        true,
+        `${phase} ${JSON.stringify(q)}`,
+      );
+    }
+  }
+});
+
+/** The tools a prompt tells the model to call ("call `x`", "fires `x`",
+ *  "with `x`") — "NEVER call `x`" is not an instruction to call it. */
+function toolsToCall(prompt: string): string[] {
+  const names = new Set<string>(TOOL_DEFS.map((d) => d.function.name));
+  const out = new Set<string>();
+  for (
+    const m of prompt.matchAll(
+      /(?<!never\s)(?:call|fires?|with)\s+`([a-z_]+)`/gi,
+    )
+  ) {
+    if (names.has(m[1])) out.add(m[1]);
+  }
+  return [...out];
+}
+
+Deno.test("REQ-375 guard: every tool the quote-phase prompt says to call is offered in the quote phase", () => {
+  const offered = new Set(
+    [undefined, { status: "draft" }, { status: "sent" }].flatMap((q) =>
+      chatToolsFor("quote", q)
+    ),
+  );
+  const asked = toolsToCall(SYSTEM_PROMPT_QUOTE);
+  assertEquals(
+    asked.includes("revise_quote"),
+    true,
+    "the guard reads the prompt",
+  );
+  for (const tool of asked) {
+    assertEquals(offered.has(tool as LLMToolName), true, tool);
+  }
+});
+
+Deno.test("REQ-375 guard: every tool the terms prompt says to call is offered in the terms phase, in every quote state", () => {
+  const states = [
+    { quote: undefined, card: false },
+    { quote: { status: "draft" }, card: false },
+    {
+      quote: { status: "draft", lockedAt: "2026-11-12T05:00:00Z" },
+      card: true,
+    },
+    { quote: { status: "sent", sentAt: "2026-11-12T05:00:00Z" }, card: false },
+    { quote: { status: "sent", sentAt: "2026-11-12T05:00:00Z" }, card: true },
+    { quote: { status: "accepted" }, card: true },
+  ];
+  for (const { quote, card } of states) {
+    // PRICING_AND_BILLING is shared by both phases; its create_quote line is
+    // scoped "In phase 1" — the terms phase is phase 2.
+    const prompt = systemPromptTermsFor(quote, { hasActionCard: card })
+      .split(/(?<=[.\n])/)
+      .filter((s: string) => !/in phase 1/i.test(s))
+      .join("");
+    const offered = chatToolsFor("terms", quote);
+    for (const tool of toolsToCall(prompt)) {
+      assertEquals(
+        offered.includes(tool as LLMToolName),
+        true,
+        `${tool} — ${JSON.stringify(quote)}`,
+      );
+    }
   }
 });
