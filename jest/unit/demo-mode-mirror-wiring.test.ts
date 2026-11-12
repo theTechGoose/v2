@@ -54,10 +54,13 @@ describe("REQ-242 the replica is gone", () => {
       "selectorFor",
       "walkSelector",
     ];
+    // REQ-242 AMENDMENT (reconciled on demo-fixes): REQ-270's persistLang guard in
+    // lib/lang.ts names the old frame, like REQ-229's pixel guard — the one allowed hit.
+    const allowed = new Set(["front-end/lib/lang.ts: pm-demo-replica"]);
     const hits = files.flatMap((f) => {
       const src = read(f);
       return gone.filter((g) => src.includes(g)).map((g) => `${f}: ${g}`);
-    });
+    }).filter((h) => !allowed.has(h));
     expect(hits).toEqual([]);
   });
 

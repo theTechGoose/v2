@@ -1,4 +1,4 @@
-import { Head } from "fresh/runtime";
+import { asset, Head } from "fresh/runtime";
 import { define } from "../../utils.ts";
 import { type Lang, tFor } from "../../lib/i18n.ts";
 import DemoStage from "../../islands/DemoStage.tsx";
@@ -13,8 +13,15 @@ export default define.page(function DemoStageRoute(ctx) {
           {tFor(lang, "demoMode.title")} · {tFor(lang, "brand.name")}
         </title>
         <meta name="robots" content="noindex" />
+        {/* REQ-270: the pill and banner use font:inherit — give the page a font */}
+        <link
+          key="css-demo-stage"
+          rel="stylesheet"
+          href={asset("/demo-stage.css")}
+        />
       </Head>
-      <DemoStage />
+      {/* REQ-270: the staff's own language, not whatever the replica frame last stored */}
+      <DemoStage initialLang={lang} />
     </>
   );
 });

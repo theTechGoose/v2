@@ -3498,7 +3498,7 @@
   "demoMode.live": "En vivo",
   "demoMode.end": "Terminar demo",
   "demoMode.theirScreen": "La pantalla de {name}, {w} × {h}",
-  "demoMode.pointOnlyHint": "Ves lo que ven. Tú señalas, ellos hacen clic.",
+  "demoMode.pointOnlyHint": "Ves lo que ve el cliente. Tú señalas, el cliente hace clic.",
   "demoMode.noDemo": "No hay ninguna demo abierta.",
   "demoMode.backToAdmin": "Volver a admin",
   "demoMode.ended": "La demo terminó",

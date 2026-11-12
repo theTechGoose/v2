@@ -31,7 +31,7 @@
  * demo", "{customer} ended the demo", "{colleague} ended the demo"), where the overlay keeps it.
  */
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
-import { t } from "../lib/i18n.ts";
+import { type Lang, langSignal, t } from "../lib/i18n.ts";
 import { demoModeClient } from "../clients/demo-mode.ts";
 import { adminClient } from "../clients/admin.ts";
 import {
@@ -117,7 +117,14 @@ const HIDDEN: Screen = { w: 1, h: 1, path: "" };
 /** REQ-242 — when a snapshot's scrolls are applied again (its stylesheets and images loading) */
 const SETTLE_MS = [150, 600, 1_500];
 
-export default function DemoStage() {
+export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
+  // REQ-270: seed the staff's language (from the server's user.language) before the first
+  // client render — the module-load seed reads pm:lang, shared with the same-origin replica.
+  useState(() => {
+    if (initialLang && typeof document !== "undefined") {
+      langSignal.value = initialLang;
+    }
+  });
   const [demo, setDemo] = useState<Demo | null>(null);
   /** the server said there is no demo for this session */
   const [gone, setGone] = useState(false);
