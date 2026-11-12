@@ -108,6 +108,25 @@ export function chipGridCents(anchorCents: number): number {
 }
 
 /**
+ * REQ-389 (demo m31, cycle 2): the anchor the assistant's amount pad scales its chips to — the AI's
+ * "market" tier (the first tier if none is "market", REQ-329); with no tiers (the quick-quote and
+ * "I know my price" paths) the amount the pad was prefilled with, e.g. the $18,500 typed in the
+ * sentence; null when there is neither, so the fixed chips stay.
+ */
+export function priceChipAnchorCents(
+  suggestions:
+    | ReadonlyArray<{ tier: string; priceCents: number }>
+    | null
+    | undefined,
+  prefillCents: number | null | undefined,
+): number | null {
+  const tier = suggestions?.find((t) => t.tier === "market") ??
+    suggestions?.[0];
+  if (tier && tier.priceCents > 0) return tier.priceCents;
+  return prefillCents && prefillCents > 0 ? prefillCents : null;
+}
+
+/**
  * Quick-amount chips for an amount pad. With a positive anchor (the AI's market price, the draft
  * total) the chips are 0.5×, 0.75×, 1×, 1.25×, 1.5× of it snapped to `chipGridCents`, unique and
  * ascending; without one the fixed list.

@@ -113,6 +113,10 @@ describe("REQ-329 wiring", () => {
     expect(at).toBeGreaterThan(-1);
     const usage = chat.slice(at, chat.indexOf("/>", at));
     expect(usage).toMatch(/anchorCents=\{priceAnchorCents\}/);
-    expect(chat).toMatch(/tier === "market"/);
+    // REQ-389: the market-tier pick moved into priceChipAnchorCents (lib/money-input.ts)
+    expect(chat).toMatch(/priceAnchorCents = priceChipAnchorCents\(/);
+    expect(
+      readFileSync(join(ROOT, "front-end/lib/money-input.ts"), "utf8"),
+    ).toMatch(/tier === "market"/);
   });
 });
