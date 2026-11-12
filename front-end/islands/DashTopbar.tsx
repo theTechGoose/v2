@@ -5,6 +5,7 @@ import { langSignal, setLang, tFor } from "../lib/i18n.ts";
 import { profileClient } from "../clients/profile.ts";
 import { capitalizeDateLine } from "../../shared/quote-flow/format-helpers.ts";
 import GlobalSearch from "./GlobalSearch.tsx";
+import { startPoll } from "../lib/poll.ts";
 
 interface Props {
   /** @deprecated Ignored — the date is now computed reactively in-component
@@ -93,22 +94,20 @@ export default function DashTopbar(
 
   useEffect(() => {
     let stopped = false;
-    const idA = setInterval(async () => {
-      try {
-        const { count } = await dashboardClient.unreadCount();
-        if (!stopped) setUnread(count);
-      } catch { /* ignore */ }
+    // REQ-221: the shared scheduler skips the demo replica frame and hidden
+    // tabs (one catch-up when shown again); a failed fetch keeps the last list.
+    const stopA = startPoll(async () => {
+      const { count } = await dashboardClient.unreadCount();
+      if (!stopped) setUnread(count);
     }, 30_000);
-    const idB = setInterval(async () => {
-      try {
-        const next = await dashboardClient.notifications(10);
-        if (!stopped) setItems(next);
-      } catch { /* ignore */ }
+    const stopB = startPoll(async () => {
+      const next = await dashboardClient.notifications(10);
+      if (!stopped) setItems(next);
     }, 10_000);
     const teardown = () => {
       stopped = true;
-      clearInterval(idA);
-      clearInterval(idB);
+      stopA();
+      stopB();
     };
     // P-67: stop both polls the moment logout starts ("pm:logout", fired by
     // DashSidebar before it kills the session) or the page starts navigating
