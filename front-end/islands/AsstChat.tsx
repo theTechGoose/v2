@@ -128,7 +128,13 @@ import {
   sendDividerFailed,
   sendOutcomePayload,
 } from "../lib/send-delivery.ts";
-import { missingContactKey, recommendedChannel } from "../lib/send-dialog.ts";
+import {
+  addFieldLabelKey,
+  channelNeedsKey,
+  defaultSendChannel,
+  missingContactKey,
+  recommendedChannel,
+} from "../lib/send-dialog.ts";
 import {
   customerStepPrefillView,
   extractQuoteFacts,
@@ -404,20 +410,6 @@ function localFallbackOptions(
   // REQ-330 (p15-7): a short job makes the "short" version equal to the
   // full one — equal bullet sets collapse, never two cards alike.
   return { options: dedupeOptionsByBullets(options), degraded: scoped.degraded };
-}
-
-/** P-26: the preview's send button brands the ACTION ("Send by Text +
- *  Email"), never a "Click here to …" imperative. The EN channel dict values
- *  still carry the legacy prefix, so strip it here (ES values are already
- *  clean — this is the identity for them). */
-function sendActionLabel(lang: Lang, key: string): string {
-  const raw = tFor(lang, key);
-  const stripped = raw.replace(
-    /^\s*(click here to|haz clic aqu[ií] para)\s+/i,
-    "",
-  );
-  if (stripped === raw) return raw;
-  return stripped.charAt(0).toUpperCase() + stripped.slice(1);
 }
 
 /** Split a chip reply into a bold lead + the rest for the details bubble
@@ -1524,13 +1516,9 @@ export default function AsstChat({
 
   // Pick the send channel based on what contact info we actually have
   // for this customer. The user can still override via the chevron menu.
+  // REQ-402 (demo m5): the same rule that tags "Recommended".
   useEffect(() => {
-    const hasEmail = !!customer?.email;
-    const hasPhone = !!customer?.phoneNumber;
-    if (hasEmail && hasPhone) setSendChannel("both");
-    else if (hasEmail) setSendChannel("email");
-    else if (hasPhone) setSendChannel("sms");
-    else setSendChannel("both");
+    setSendChannel(defaultSendChannel(customer));
   }, [customer?.email, customer?.phoneNumber]);
 
   // Whenever the active quoteId changes, fetch the full quote so the
@@ -7466,10 +7454,17 @@ export default function AsstChat({
                                             id="send-dialog-title"
                                             class="send-dialog__title"
                                           >
-                                            {tFor(
-                                              lang,
-                                              "asstChat.send.howTitle",
-                                            )}
+                                            {/* REQ-402 (demo m5): name who it goes to. */}
+                                            {customer?.name
+                                              ? tFor(
+                                                lang,
+                                                "asstChat.send.howTitle",
+                                                { name: customer.name },
+                                              )
+                                              : tFor(
+                                                lang,
+                                                "asstChat.send.howTitleNoName",
+                                              )}
                                           </h4>
                                           <div
                                             class="send-dialog__options"
@@ -7498,6 +7493,20 @@ export default function AsstChat({
                                               >
                                                 <I d={icon} size={13} sw={2.4} />
                                                 <span>{tFor(lang, key)}</span>
+                                                {/* REQ-402 (demo m5): say what this channel still lacks. */}
+                                                {channelNeedsKey(ch, customer)
+                                                  ? (
+                                                    <span
+                                                      class="send-dialog__needs"
+                                                      data-cy={`send-needs-${ch}`}
+                                                    >
+                                                      {tFor(
+                                                        lang,
+                                                        channelNeedsKey(ch, customer)!,
+                                                      )}
+                                                    </span>
+                                                  )
+                                                  : null}
                                                 {ch === recommendedChannel(customer)
                                                   ? (
                                                     <span class="quote-review__send-menu-tag">
@@ -7522,14 +7531,17 @@ export default function AsstChat({
                                                 data-cy="send-add-email"
                                               >
                                                 <span>
-                                                  {tFor(lang, "asstChat.send.addEmail")}
+                                                  {tFor(
+                                                    lang,
+                                                    addFieldLabelKey("email", dialogChannel),
+                                                  )}
                                                 </span>
                                                 <input
                                                   type="email"
                                                   class="cust-pick__search"
                                                   placeholder={tFor(
                                                     lang,
-                                                    "asstChat.customerStep.emailPlaceholder",
+                                                    "asstChat.send.emailPlaceholder",
                                                   )}
                                                   value={dialogEmail}
                                                   onInput={(e) =>
@@ -7548,7 +7560,10 @@ export default function AsstChat({
                                                 data-cy="send-add-phone"
                                               >
                                                 <span>
-                                                  {tFor(lang, "asstChat.send.addPhone")}
+                                                  {tFor(
+                                                    lang,
+                                                    addFieldLabelKey("phone", dialogChannel),
+                                                  )}
                                                 </span>
                                                 <input
                                                   type="tel"
@@ -7627,19 +7642,12 @@ export default function AsstChat({
                                         previewLang,
                                         "asstChat.preview.sendInvoice",
                                       )
-                                      : sendChannel === "both"
-                                      ? sendActionLabel(
+                                      // REQ-402 (demo m5): this opens the
+                                      // "How do you want to send" chooser,
+                                      // so it never promises "by Text".
+                                      : tFor(
                                         previewLang,
-                                        "asstChat.preview.sendBoth",
-                                      )
-                                      : sendChannel === "sms"
-                                      ? sendActionLabel(
-                                        previewLang,
-                                        "asstChat.preview.sendSms",
-                                      )
-                                      : sendActionLabel(
-                                        previewLang,
-                                        "asstChat.preview.sendEmail",
+                                        "asstChat.preview.sendOpen",
                                       )}
                                   </button>
                               <button
@@ -7663,75 +7671,55 @@ export default function AsstChat({
                                     class="quote-review__send-menu"
                                     role="menu"
                                   >
-                                    <button
-                                      type="button"
-                                      role="menuitem"
-                                      class={`quote-review__send-menu-item${
-                                        sendChannel === "both"
-                                          ? " is-current"
-                                          : ""
-                                      }`}
-                                      onClick={() => {
-                                        setSendChannel("both");
-                                        setChannelMenuOpen(false);
-                                      }}
-                                    >
-                                      <I d={ICN.send} size={13} sw={2.4} />
-                                      <span class="quote-review__send-menu-label">
-                                        {tFor(
-                                          previewLang,
-                                          "asstChat.preview.menuBoth",
-                                        )}
-                                      </span>
-                                      <span class="quote-review__send-menu-tag">
-                                        {tFor(
-                                          previewLang,
-                                          "asstChat.preview.recommended",
-                                        )}
-                                      </span>
-                                    </button>
-                                    <button
-                                      type="button"
-                                      role="menuitem"
-                                      class={`quote-review__send-menu-item${
-                                        sendChannel === "sms"
-                                          ? " is-current"
-                                          : ""
-                                      }`}
-                                      onClick={() => {
-                                        setSendChannel("sms");
-                                        setChannelMenuOpen(false);
-                                      }}
-                                    >
-                                      <I d={ICN.phone} size={13} sw={2.4} />
-                                      <span class="quote-review__send-menu-label">
-                                        {tFor(
-                                          previewLang,
-                                          "asstChat.preview.menuSms",
-                                        )}
-                                      </span>
-                                    </button>
-                                    <button
-                                      type="button"
-                                      role="menuitem"
-                                      class={`quote-review__send-menu-item${
-                                        sendChannel === "email"
-                                          ? " is-current"
-                                          : ""
-                                      }`}
-                                      onClick={() => {
-                                        setSendChannel("email");
-                                        setChannelMenuOpen(false);
-                                      }}
-                                    >
-                                      <I d={ICN.mail} size={13} sw={2.4} />
-                                      <span class="quote-review__send-menu-label">
-                                        {tFor(
-                                          previewLang,
-                                          "asstChat.preview.menuEmail",
-                                        )}
-                                      </span>
-                                    </button>
+                                    {/* REQ-402 (demo m5): the menu tags
+                                        Recommended and the missing contact
+                                        exactly as the dialog does. */}
+                                    {([
+                                      ["both", "asstChat.preview.menuBoth", ICN.send],
+                                      ["sms", "asstChat.preview.menuSms", ICN.phone],
+                                      ["email", "asstChat.preview.menuEmail", ICN.mail],
+                                    ] as const).map(([ch, key, icon]) => (
+                                      <button
+                                        key={ch}
+                                        type="button"
+                                        role="menuitem"
+                                        data-cy={`send-menu-${ch}`}
+                                        class={`quote-review__send-menu-item${
+                                          sendChannel === ch
+                                            ? " is-current"
+                                            : ""
+                                        }`}
+                                        onClick={() => {
+                                          setSendChannel(ch);
+                                          setChannelMenuOpen(false);
+                                        }}
+                                      >
+                                        <I d={icon} size={13} sw={2.4} />
+                                        <span class="quote-review__send-menu-label">
+                                          {tFor(previewLang, key)}
+                                        </span>
+                                        {channelNeedsKey(ch, customer)
+                                          ? (
+                                            <span class="send-dialog__needs">
+                                              {tFor(
+                                                previewLang,
+                                                channelNeedsKey(ch, customer)!,
+                                              )}
+                                            </span>
+                                          )
+                                          : null}
+                                        {recommendedChannel(customer) === ch
+                                          ? (
+                                            <span class="quote-review__send-menu-tag">
+                                              {tFor(
+                                                previewLang,
+                                                "asstChat.preview.recommended",
+                                              )}
+                                            </span>
+                                          )
+                                          : null}
+                                      </button>
+                                    ))}
                                     {
                                       /* Copy link — an immediate action, not a
                                         channel pick: copies the public
