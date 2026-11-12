@@ -76,6 +76,7 @@ import {
   startedText,
 } from "../../shared/demo-mode/restart.ts";
 import {
+  ARROW_BOX,
   MOVE_GAP_DIRECT_MS,
   MOVE_GAP_RELAY_MS,
   moveThrottle,
@@ -84,6 +85,7 @@ import {
   type Pt,
 } from "../../shared/demo-mode/motion.ts";
 import { type ActivePoll, activePoll } from "../lib/demo-mode/active-poll.ts";
+import { handCursor, sessionStore } from "../lib/demo-mode/cursor-handoff.ts";
 import {
   connectDemo,
   type DemoLink,
@@ -318,6 +320,8 @@ export default function DemoModeOverlay() {
   const placingRef = useRef(false);
   /** REQ-232 — this staff page is on its way to the stage (the pill says Opening…) */
   const [placing, setPlacing] = useState(false);
+  /** REQ-393 — where this page's mouse is (null: not over it), handed to the stage it opens */
+  const cursorRef = useRef<Pt | null>(null);
   const peerOnlineRef = useRef(false);
   peerOnlineRef.current = peerOnline;
   const pollRef = useRef<(() => void) | null>(null);
@@ -381,8 +385,10 @@ export default function DemoModeOverlay() {
     return fracToPoint(a, viewportBox());
   };
   /** REQ-305 — where an anchor's pointer is drawn: on the window's edge, pointing outside, when
-   *  the element it names is out of view */
-  const placeOnScreen = (a: Anchor) => placeIn(toScreen(a), viewportBox());
+   *  the element it names is out of view; REQ-393 — and when the presenter's mouse is beside the
+   *  frame on his stage (`o`: the anchor names the edge's point) */
+  const placeOnScreen = (a: Anchor) =>
+    placeIn(toScreen(a), viewportBox(), ARROW_BOX, a.o === 1);
 
   /** REQ-305 — this side's resting pointer, once more: a stage that was just handed a fresh
    *  snapshot (it joined, or asked for one) has not seen it — the stage's resendPointer, mirrored */
@@ -436,6 +442,9 @@ export default function DemoModeOverlay() {
       }
       if (globalThis.location.pathname !== STAGE_PATH) {
         moving = true;
+        // REQ-393 — the stage loads under a still mouse and gets no pointer event: it starts
+        // where this page last saw the mouse (the click on Demo, Back to the demo)
+        handCursor(sessionStore(), cursorRef.current);
         globalThis.location.assign(STAGE_PATH);
       }
     } finally {
@@ -444,6 +453,27 @@ export default function DemoModeOverlay() {
       if (!moving) setPlacing(false);
     }
   }
+
+  // REQ-393 — where this page's mouse is, for the stage placePresenter may open (a page that
+  // loads under a still mouse hears nothing of it)
+  useEffect(() => {
+    if (inert) return;
+    const seen = (e: PointerEvent) => {
+      cursorRef.current = { x: e.clientX, y: e.clientY };
+    };
+    const gone = () => {
+      cursorRef.current = null;
+    };
+    const opts = { capture: true, passive: true };
+    document.addEventListener("pointermove", seen, opts);
+    document.addEventListener("pointerdown", seen, opts);
+    document.documentElement.addEventListener("pointerleave", gone);
+    return () => {
+      document.removeEventListener("pointermove", seen, opts);
+      document.removeEventListener("pointerdown", seen, opts);
+      document.documentElement.removeEventListener("pointerleave", gone);
+    };
+  }, []);
 
   // 0. REQ-235 — a stage that ended its demo hands its presenter to /admin with who ended it: say
   //    it here, and take it out of the address (before the first ask reports where this app is)

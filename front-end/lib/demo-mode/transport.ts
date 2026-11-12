@@ -295,7 +295,9 @@ export function connectDemo(o: DemoLinkOptions): DemoLink {
   };
 
   /** REQ-232 — the tab to follow: the one claimed last, else the one that arrived last. A switch
-   *  hides the old tab's pointer, asks the new tab for its whole view and offers it a connection */
+   *  hides the old tab's pointer, asks the new tab for its whole view and offers it a connection.
+   *  REQ-393 — and tells the tab it left (still open) to take this presenter's pointer away: it
+   *  kept the last one, and showed it again, stale, when the customer came back to it */
   const follow = () => {
     let best: string | null = null;
     let top: Tab | null = null;
@@ -308,6 +310,9 @@ export function connectDemo(o: DemoLinkOptions): DemoLink {
     if (best === followed) return;
     const was = followed;
     if (was !== null) {
+      if (was !== NO_CID && !gone.has(was)) {
+        wsSend({ t: "relay", data: { k: "leave" }, tab: was });
+      }
       teardown(was);
       o.onPeer({ k: "leave" }, { role: "viewer", cid: was });
     }
@@ -499,7 +504,13 @@ export function connectDemo(o: DemoLinkOptions): DemoLink {
             return;
           } catch { /* fall through to the relay */ }
         }
-        wsSend({ t: "relay", data: m });
+        // REQ-393 — to the tab this stage follows only, as the data channel is (the hub handed a
+        // bare relay to every tab of the customer's)
+        wsSend({
+          t: "relay",
+          data: m,
+          ...(followed ? { tab: followed } : {}),
+        });
         return;
       }
       if (direct()) {

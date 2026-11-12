@@ -11,9 +11,10 @@
  * invented phone, no page the customer is not on). A frame that does not fit the replay, or a gap
  * that lasts, asks the customer for a fresh snapshot (`resync`).
  *
- * Point only: a transparent layer covers the frame; the presenter's moves and clicks go out as
- * fractions of the frame (REQ-188) plus the mirrored element under them (REQ-242 — the customer's
- * app puts the pointer on that same element) and never reach the frame. The customer's pointer is
+ * Point only: a transparent layer covers the frame; the presenter's moves (REQ-393: tracked over
+ * the whole stage) and clicks go out as fractions of the frame (REQ-188) plus the mirrored element
+ * under them (REQ-242 — the customer's app puts the pointer on that same element) and never reach
+ * the frame. The customer's pointer is
  * drawn the same way back. The presenter's resting pointer is sent again when the customer's page
  * joins and after every snapshot; the customer's pointer goes when their page changes or their app
  * drops. The pill: the customer's name, the link status, the frame size, End — which hands the
@@ -29,8 +30,19 @@
  * same one. This presenter's pointer names a mirrored node only once the replay's stylesheets are
  * in (before that the browser lays the frame out without them: the page's links stacked top-left,
  * a drawer in the flow) — a page mirrored afresh gets the resting pointer at once as a fraction of
- * the frame, then on the node under it, anchored again on every layout pass while the snapshot
- * settles and sent whenever that node changed.
+ * the frame, then on the node under it, sent whenever that node changed.
+ *
+ * REQ-393 (demo M2, M8 — cycle 2) — one model on both screens: the presenter's resting pointer is
+ * the spot under his still mouse. The mouse is followed document-wide — the frame, the margins
+ * round a phone, the pill — and only leaving the window is a `leave`. After every layout pass of
+ * the replay (a scroll, a change, its styles in, a settle, the stage resized) the resting pointer
+ * is looked up again and sent when it names another place, rated like a move, on the reliable
+ * channel (REQ-305 did that only while a snapshot settled; the customer's arrow then rode away
+ * with its element). Beside the frame the anchor is where the mouse meets the frame's edge,
+ * marked off their screen (`o`): their arrow sits on that edge, and the stage outlines the frame
+ * and says "Your pointer is off {name}'s screen". A stage opened under a still mouse gets no
+ * pointer event, so it starts where the page that opened it last saw the mouse (cursor-handoff),
+ * and hands its own over when it goes. The frame layer only eats the presenter's clicks.
  *
  * REQ-232 — the pill says plainly whether the demo is live: "Live", "Connecting…", or "Waiting for
  * {name}'s app…" — the last only when none of the customer's tabs is left, after a few seconds'
@@ -70,13 +82,20 @@ import {
   type MirrorStats,
 } from "../../shared/demo-mode/mirror.ts";
 import {
+  ARROW_BOX,
   MOVE_GAP_DIRECT_MS,
   MOVE_GAP_RELAY_MS,
   moveThrottle,
   newerMove,
+  outsideBox,
   placeIn,
   type Pt,
 } from "../../shared/demo-mode/motion.ts";
+import {
+  handCursor,
+  sessionStore,
+  takeCursor,
+} from "../lib/demo-mode/cursor-handoff.ts";
 import {
   connectDemo,
   type DemoLink,
@@ -208,8 +227,12 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
     typeof location !== "undefined" &&
     /^(localhost|127\.0\.0\.1)$/.test(location.hostname)
   );
-  /** REQ-242 — where this presenter's pointer rests on the stage; null once it left the frame */
+  /** REQ-242 — where this presenter's pointer rests on the stage; REQ-393 — anywhere on it (the
+   *  frame, beside it); null once it left the window, or before it was ever seen */
   const lastMoveRef = useRef<Pt | null>(null);
+  /** REQ-393 — his mouse is beside the frame: the customer sees the arrow on their screen's edge;
+   *  the stage outlines the frame and says so */
+  const [off, setOff] = useState(false);
   /** REQ-180 — the customer's last move clock seen; REQ-242 — it is their page's performance.now(),
    *  which starts over with every page, so it is forgotten whenever their page changes */
   const lastTRef = useRef(0);
@@ -222,10 +245,6 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
   const placedRef = useRef<Map<string, Pt & { outside: boolean }>>(new Map());
   /** REQ-305 — this presenter's pointer as last sent (its node belongs to one page load) */
   const sentRef = useRef<Anchor | null>(null);
-  /** REQ-305 — a snapshot is settling: the resting pointer is anchored again on every layout pass
-   *  once the replay is styled; `open` until that snapshot's last settle timer (`gen`: which one) */
-  const restRef = useRef<{ gen: number; open: boolean } | null>(null);
-  const snapGenRef = useRef(0);
   /** REQ-214 — how a colleague's pointer is driven, for the placing again */
   const commandRef = useRef<
     ((pid: string, cmd: Omit<PointerCmd, "seq">) => void) | null
@@ -240,6 +259,9 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
   const [pillBox, setPillBox] = useState<Rect | null>(null);
 
   const screen = mirrored ?? HIDDEN;
+  /** REQ-393 — the screen the frame on the stage is fitted to (HIDDEN: none yet) */
+  const screenRef = useRef(screen);
+  screenRef.current = screen;
   const fit = useMemo(
     () =>
       fitScale(stage, screen, {
@@ -253,12 +275,29 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
   fitRef.current = fit;
   /** REQ-188 — the frame's box on this screen: fractions of the customer's viewport map onto it */
   const fitBox = () => fitRef.current;
+  /** REQ-393 — the frame on the stage is fitted to the replay's screen, so a point of the stage
+   *  says a point of theirs (before the first snapshot, or with one of a new size not fitted yet,
+   *  it says nothing: the fitted frame's layout pass sends the resting pointer) */
+  const fitted = () => {
+    const size = replayerRef.current?.size();
+    const s = screenRef.current;
+    return !!size && s !== HIDDEN && size.w === s.w && size.h === s.h;
+  };
+  /** REQ-393 — the mark of a point beside the frame: off the customer's screen */
+  const offFrame = (p: Pt) => outsideBox(p, fitBox()) ? { o: 1 as const } : {};
 
   /** REQ-242 — a point of this screen as the customer's: the fraction of the frame and, when the
    *  replay has one there, the mirrored element under it and where in its box */
   const anchorOf = (p: Pt): Anchor => {
     const f = fitBox();
     const a = pointToFrac(p, f);
+    // REQ-393 — beside the frame: where his mouse meets the frame's edge, marked off their screen
+    // (never a node: nothing of theirs is under it)
+    if (outsideBox(p, f)) {
+      const edge: Anchor = { ...a, o: 1 };
+      sentRef.current = edge;
+      return edge;
+    }
     const load = loadRef.current;
     const rep = replayerRef.current;
     // REQ-305 — never a node of a replay whose stylesheets are not in: the node under the point
@@ -304,28 +343,44 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
    *  unstyled page stacked under the point: a sidebar link, the phone drawer) */
   const resendPointer = () => {
     const p = lastMoveRef.current;
-    if (!p) return;
+    if (!p || !fitted()) return;
     const sent = sentRef.current;
     const a = sent?.n?.l && sent.n.l === loadRef.current
       ? sent
-      : pointToFrac(p, fitBox());
+      : { ...pointToFrac(p, fitBox()), ...offFrame(p) };
     sentRef.current = a;
     linkRef.current?.send({ k: "move", a, t: performance.now() });
   };
   /** REQ-305 — the resting pointer on the node under it in the styled replay, sent when that is
-   *  not what went last (the frame settled under a still mouse) */
+   *  not what went last (the frame settled under a still mouse); REQ-393 — after every layout
+   *  pass, whatever moved under the mouse (their scroll, a change, the stage resized) */
   const restAgain = () => {
     const p = lastMoveRef.current;
-    if (!p) return;
+    if (!p || !fitted()) return;
     const was = sentRef.current;
     const a = anchorOf(p);
     if (sameAnchor(was, a)) return;
     linkRef.current?.send({ k: "move", a, t: performance.now() });
   };
+  /** REQ-393 — restAgain after a layout pass, rated like a move (a scroll is a burst of passes),
+   *  on the reliable channel (the last look-up must arrive) */
+  const rest = useMemo(() =>
+    moveThrottle<null>({
+      gap: () =>
+        linkRef.current?.isDirect() ? MOVE_GAP_DIRECT_MS : MOVE_GAP_RELAY_MS,
+      send: () => restAgain(),
+    }), []);
+  /** REQ-393 — whether his mouse is beside the fitted frame (the outline and the hint) */
+  const markOff = () => {
+    const p = lastMoveRef.current;
+    setOff(!!p && fitted() && outsideBox(p, fitBox()));
+  };
 
   /** REQ-305 — where an anchor's pointer is drawn: on the frame's edge, pointing outside, when the
-   *  element it names is out of the frame (scrolled away, or a frame not yet scrolled) */
-  const placeOnStage = (a: Anchor) => placeIn(toStage(a), fitBox());
+   *  element it names is out of the frame (scrolled away, or a frame not yet scrolled); REQ-393 —
+   *  and when a colleague's mouse is beside their frame */
+  const placeOnStage = (a: Anchor) =>
+    placeIn(toStage(a), fitBox(), ARROW_BOX, a.o === 1);
   const showCustomer = () => {
     const a = customerRef.current;
     if (!a) return;
@@ -338,9 +393,8 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
     commandRef.current?.(pid, { kind, at: p.at, outside: p.outside });
   };
   /** REQ-305 — the replay's layout may have moved (a frame applied, its styles, images or fonts
-   *  in, a settle, the stage resized): every pointer anchored to its nodes is placed again; and
-   *  while a snapshot settles, this presenter's resting pointer is anchored again to the node
-   *  under it once the replay is styled */
+   *  in, a settle, the stage resized): every pointer anchored to its nodes is placed again;
+   *  REQ-393 — and this presenter's resting pointer is looked up again under his still mouse */
   const replace = () => {
     showCustomer();
     for (const [pid, a] of peersRef.current) {
@@ -352,12 +406,9 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
       ) continue;
       placePeer(pid, a, "move");
     }
-    const rest = restRef.current;
-    if (rest && replayerRef.current?.styled()) {
-      restAgain();
-      // the snapshot has settled: from now on the customer's arrow follows its node
-      if (!rest.open) restRef.current = null;
-    }
+    // REQ-393 — the spot under his still mouse may hold another element now: theirs too
+    markOff();
+    if (lastMoveRef.current) rest.push(null);
   };
   const replaceRef = useRef(replace);
   replaceRef.current = replace;
@@ -413,16 +464,9 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
         resendPointer(); // REQ-305 — at once, a fraction of the frame
       }
       // its scrolls once more as its styles come in; REQ-305 — the pointers too
-      const gen = ++snapGenRef.current;
-      restRef.current = { gen, open: true };
-      SETTLE_MS.forEach((ms, k) => {
+      SETTLE_MS.forEach((ms) => {
         setTimeout(() => {
           replayerRef.current?.settle();
-          // REQ-305 — this snapshot's last timer closes its window (a newer one owns its own)
-          const rest = restRef.current;
-          if (k === SETTLE_MS.length - 1 && rest?.gen === gen) {
-            rest.open = false;
-          }
           replaceRef.current();
         }, ms);
       });
@@ -715,6 +759,7 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
     return () => {
       clearInterval(stall);
       throttle.cancel();
+      rest.cancel();
       link.close();
       linkRef.current = null;
       commandRef.current = null;
@@ -724,7 +769,6 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
       peersRef.current.clear();
       placedRef.current.clear();
       sentRef.current = null;
-      restRef.current = null;
       glide.hide();
       setCmds({});
       setMirrored(null);
@@ -733,6 +777,44 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
       setStatus("connecting");
     };
   }, [demo?.id]);
+
+  // 3. REQ-393 — the presenter's mouse, anywhere on the stage: on the frame it points there; beside
+  //    it (the margins round a phone, the pill) the customer sees the arrow on their screen's edge
+  //    and the stage says so; only leaving the window takes the pointer away. A stage opened under
+  //    a still mouse gets no pointer event at all, so it starts where the page that opened it last
+  //    saw the mouse (taken once), and hands its own over when it goes (a reload, End)
+  useEffect(() => {
+    const seeded = takeCursor(sessionStore());
+    if (seeded && !lastMoveRef.current) lastMoveRef.current = seeded;
+    const at = (e: PointerEvent) => {
+      const p = { x: e.clientX, y: e.clientY };
+      lastMoveRef.current = p;
+      markOff();
+      if (fitted() && linkRef.current) throttle.push(p);
+    };
+    const gone = () => {
+      lastMoveRef.current = null;
+      sentRef.current = null;
+      throttle.cancel();
+      rest.cancel();
+      setOff(false);
+      linkRef.current?.send({ k: "leave" });
+    };
+    const hand = () => handCursor(sessionStore(), lastMoveRef.current);
+    const opts = { capture: true, passive: true };
+    document.addEventListener("pointermove", at, opts);
+    document.addEventListener("pointerover", at, opts);
+    document.addEventListener("pointerdown", at, opts);
+    document.documentElement.addEventListener("pointerleave", gone);
+    addEventListener("pagehide", hand);
+    return () => {
+      document.removeEventListener("pointermove", at, opts);
+      document.removeEventListener("pointerover", at, opts);
+      document.removeEventListener("pointerdown", at, opts);
+      document.documentElement.removeEventListener("pointerleave", gone);
+      removeEventListener("pagehide", hand);
+    };
+  }, []);
 
   /** REQ-153 — the demo over, the presenter is handed their own account back; REQ-235 — on
    *  /admin, which says who ended it */
@@ -835,7 +917,9 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
               </div>
             )}
             <div
-              style={`${box};border-radius:6px;box-shadow:0 10px 40px rgba(0,0,0,.6);background:#fff;overflow:hidden;visibility:${look.visibility};filter:${look.filter};transition:filter .3s`}
+              style={`${box};border-radius:6px;box-shadow:0 10px 40px rgba(0,0,0,.6);background:#fff;overflow:hidden;visibility:${look.visibility};filter:${look.filter};transition:filter .3s;outline:${
+                mirrored && off ? "2px dashed rgba(255,255,255,.85)" : "none"
+              };outline-offset:4px`}
             >
               <iframe
                 ref={frameRef}
@@ -892,28 +976,28 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
                 data-cy="demo-stage-layer"
                 aria-hidden="true"
                 style={`${box};z-index:${Z};cursor:crosshair;touch-action:none;background:transparent`}
-                onPointerMove={(e) => {
-                  lastMoveRef.current = { x: e.clientX, y: e.clientY };
-                  if (linkRef.current) {
-                    throttle.push({
-                      x: e.clientX,
-                      y: e.clientY,
-                    });
-                  }
-                }}
                 onPointerDown={(e) => {
                   e.preventDefault();
                   sendClick(e.clientX, e.clientY);
                 }}
-                onPointerLeave={() => {
-                  lastMoveRef.current = null;
-                  sentRef.current = null;
-                  restRef.current = null;
-                  throttle.cancel();
-                  linkRef.current?.send({ k: "leave" });
-                }}
                 onContextMenu={(e) => e.preventDefault()}
               />
+            )}
+            {/* REQ-393 (demo M8) — his mouse is beside the frame: said, on its outline */}
+            {mirrored && off && (
+              <div
+                data-cy="demo-pointer-off"
+                role="status"
+                style={`position:absolute;left:${
+                  fit.left + fit.width / 2
+                }px;top:${
+                  fit.top - bannerH
+                }px;transform:translate(-50%,-50%);z-index:${
+                  Z + 2
+                };pointer-events:none;white-space:nowrap;padding:4px 12px;border-radius:999px;border:1px solid rgba(255,255,255,.85);background:#1f3d1b;color:#fff;font:inherit;font-size:12.5px;font-weight:700;box-shadow:0 2px 10px rgba(0,0,0,.45)`}
+              >
+                {t("demoMode.pointerOff", { name })}
+              </div>
             )}
           </>
         )}

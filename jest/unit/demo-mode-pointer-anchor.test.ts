@@ -529,16 +529,14 @@ describe("REQ-305 the stage: anchors kept and placed again; its presenter's poin
     );
   });
 
-  test("after a snapshot nothing is anchored at once: a new page gets the resting pointer as a fraction of the frame (resendPointer), then — on every layout pass while the snapshot settles, once styled — on the node under it, sent only when that changed", () => {
+  // REQ-393 AMENDMENT (demo M2, cycle 2) — the resting pointer is looked up again on EVERY layout
+  // pass, not only while a snapshot settles: the settle window is gone
+  test("after a snapshot nothing is anchored at once: a new page gets the resting pointer as a fraction of the frame (resendPointer), then — on every layout pass (REQ-393: not only while the snapshot settles), once styled — on the node under it, sent only when that changed", () => {
     expect(snapBranch).not.toMatch(/anchorOf\(|anchorAt\(|restAgain\(/);
     expect(snapBranch).toMatch(/if \(newLoad\)[\s\S]{0,400}resendPointer\(\)/);
-    // the settle window: armed for this snapshot, closed by ITS last timer only
-    expect(snapBranch).toMatch(
-      /const gen = \+\+snapGenRef\.current;\s*restRef\.current = \{ gen, open: true \}/,
-    );
-    expect(snapBranch).toMatch(
-      /\.settle\(\);[\s\S]{0,200}k === SETTLE_MS\.length - 1 && rest\?\.gen === gen[\s\S]{0,80}replaceRef\.current\(\)/,
-    );
+    // no settle window: each settle timer settles the scrolls and places everything again
+    expect(snapBranch).not.toMatch(/restRef|snapGenRef/);
+    expect(snapBranch).toMatch(/\.settle\(\);\s*replaceRef\.current\(\);/);
     // the fraction-only resend never reads the replay's nodes
     const resend = fn("resendPointer");
     expect(resend).not.toMatch(/anchorOf\(|anchorAt\(/);
@@ -548,7 +546,7 @@ describe("REQ-305 the stage: anchors kept and placed again; its presenter's poin
       /const was = sentRef\.current;\s*const a = anchorOf\(p\);\s*if \(sameAnchor\(was, a\)\) return;/,
     );
     expect(fn("replace")).toMatch(
-      /if \(rest && replayerRef\.current\?\.styled\(\)\) \{\s*restAgain\(\);/,
+      /if \(lastMoveRef\.current\) rest\.push\(null\)/,
     );
   });
 
@@ -568,7 +566,10 @@ describe("REQ-305 the stage: anchors kept and placed again; its presenter's poin
     );
     expect(stage).toMatch(/peersRef\.current\.set\(pid, m\.a\)/);
     expect(stage).toMatch(/case "leave":\s*customerRef\.current = null/);
-    expect(fn("placeOnStage")).toMatch(/placeIn\(toStage\(a\), fitBox\(\)\)/);
+    // REQ-393 — and an off-screen anchor (a colleague's mouse beside their frame) on the edge
+    expect(fn("placeOnStage")).toMatch(
+      /placeIn\(toStage\(a\), fitBox\(\)(, ARROW_BOX, a\.o === 1)?\)/,
+    );
     expect(stage).toMatch(
       /createReplayer\(doc, \{[\s\S]{0,160}onLayout: \(\) => replaceRef\.current\(\)/,
     );
@@ -587,7 +588,10 @@ describe("REQ-305 the customer's overlay: presenters' anchors follow their nodes
   test("each presenter's last anchor is kept and placed again (clamped to the window) on scroll, resize, the body growing and every recorded change", () => {
     expect(overlay).toMatch(/const anchorsRef = useRef<Map<string, Anchor>>/);
     expect(overlay).toMatch(/anchorsRef\.current\.set\(pid, m\.a\)/);
-    expect(overlay).toMatch(/placeIn\(toScreen\(a\), viewportBox\(\)\)/);
+    // REQ-393 — and an off-screen anchor (the presenter's mouse beside the frame) on the edge
+    expect(overlay).toMatch(
+      /placeIn\(toScreen\(a\), viewportBox\(\)(, ARROW_BOX, a\.o === 1)?\)/,
+    );
     expect(overlay).toMatch(/addEventListener\("resize", shifted\)/);
     expect(overlay).toMatch(
       /document\.addEventListener\("scroll", shifted, \{\s*capture: true,/,

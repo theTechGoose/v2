@@ -12,8 +12,9 @@
  *      the still mouse (one whose stylesheets the stage has never loaded), then reloads it: each
  *      time the customer's arrow is on the element under the presenter's cursor in the new mirror
  *      (the stage looks for that node only once the mirror is styled — never in the unstyled page
- *      the browser lays out first); once the mirror has settled, the arrow follows its element
- *      when the customer scrolls.
+ *      the browser lays out first); REQ-393 AMENDMENT (demo M2, cycle 2): once the mirror has
+ *      settled and the customer scrolls, the arrow stays under the presenter's still cursor, on the
+ *      element the mirror now has there.
  */
 import { story, type StoryTools } from "#shots";
 import { answerQuestions } from "../_shared/onboarding-answers.ts";
@@ -446,7 +447,7 @@ Deno.test("REQ-305 (demo M7, m16, setup-m6): the customer scrolls /q by window.s
     }
   }));
 
-Deno.test("REQ-305 (demo M2): the presenter's resting pointer is on the element under it after the customer goes to another page and after a reload — never on what an unstyled mirror put there — and, once the mirror has settled, it follows that element when the customer scrolls", (t) =>
+Deno.test("REQ-305 (demo M2): the presenter's resting pointer is on the element under it after the customer goes to another page and after a reload — never on what an unstyled mirror put there — and (REQ-393) when the customer scrolls it stays under his still cursor, on the element now there", (t) =>
   story(t, async (tools) => {
     const { page, expect, baseUrl } = tools;
     const d = await demoOn(tools, () => "/customers");
@@ -510,12 +511,14 @@ Deno.test("REQ-305 (demo M2): the presenter's resting pointer is on the element 
         25_000,
       );
       await presenterOnItsNode("after the customer's reload");
-      // the reloaded page's mirror has settled (the stage anchors the resting pointer again only
-      // while a snapshot settles; from then on the arrow follows its element)
+      // the reloaded page's mirror has settled
       await page.waitForTimeout(2_000);
       await presenterOnItsNode("once the mirror has settled");
 
-      // 3. the customer scrolls: the presenter's arrow moves with its element, still on it
+      // 3. REQ-393 AMENDMENT (demo M2, cycle 2) — one model on both screens: the resting pointer
+      //    is the spot under the presenter's still mouse. The customer scrolls; the mirror scrolls
+      //    under his cursor; the arrow stays at that spot of their screen, on the element the
+      //    mirror now has under his cursor (it no longer rides away with the old element)
       const before = await pointerAt(userPage, "Hans");
       if (!before) throw new Error("no presenter arrow before the scroll");
       const meant = await underMirror(page, rest.x, rest.y);
@@ -523,20 +526,23 @@ Deno.test("REQ-305 (demo M2): the presenter's resting pointer is on the element 
       const to = from >= 250 ? from - 250 : from + 250;
       await userPage.evaluate((y) => globalThis.scrollTo(0, y), to);
       const after = await frameFollows(
-        "the customer's scroll under the presenter's arrow",
+        "the customer's scroll under the presenter's still mouse",
       );
       const delta = after - from;
       expect(Math.abs(delta) >= 200, `the customer's page scrolled (${delta})`);
       await until(
-        `the presenter's arrow moved by the scroll (${-delta}px) with its element, still on it`,
+        `REQ-393: the presenter's arrow stays under his still cursor (the page scrolled ${delta}px), on the element the mirror has there now`,
         async () => {
           const at = await pointerAt(userPage, "Hans");
           if (!at) throw new Error("no presenter arrow");
+          const now = await underMirror(page, rest.x, rest.y);
           const shown = await underCustomer(userPage, at.x, at.y);
-          const moved = before.y - at.y;
-          if (at.outside || Math.abs(moved - delta) > 3 || shown !== meant) {
+          const drift = Math.hypot(at.x - before.x, at.y - before.y);
+          if (at.outside || drift > 3 || !now || shown !== now) {
             throw new Error(
-              `arrow moved ${moved} (scroll ${delta}), on ${shown} (meant ${meant}, outside ${at.outside})`,
+              `arrow ${JSON.stringify(at)} (before the scroll ${
+                JSON.stringify(before)
+              }, on ${meant}) on ${shown}; the mirror has ${now} under his cursor`,
             );
           }
           return true;

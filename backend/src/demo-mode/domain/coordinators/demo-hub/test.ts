@@ -549,6 +549,70 @@ Deno.test("REQ-232 a stage's signal addressed to one tab reaches that tab only, 
   }
 });
 
+// REQ-393 (demo-loop cycle 2, M2) — a presenter's relay may name ONE customer tab (`tab`: its
+// cid): the stage's pointer goes to the tab it follows, and its `leave` to the tab it just left; the
+// customer's other tabs and the colleagues never get that copy (the colleagues have their own,
+// `to: "presenters"`).
+Deno.test("REQ-393 a presenter's relay addressed to one tab reaches that tab only — never the customer's other tab nor a colleague — in one hub and across two", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const a = DemoHub.isolated("a");
+  const b = DemoHub.isolated("b");
+  const hans = socketPeer("presenter", "hans");
+  const lia = socketPeer("presenter", "lia");
+  const tab1 = socketPeer("viewer");
+  const tab2 = socketPeer("viewer");
+  const far = socketPeer("viewer");
+  const relays = (p: { inbox: ServerMessage[] }) =>
+    p.inbox.filter((m) => m.t === "relay");
+  try {
+    const hj = await a.join("s9", hans);
+    await a.join("s9", lia);
+    const t1 = await a.join("s9", tab1);
+    await a.join("s9", tab2);
+    const fj = await b.join("s9", far);
+    const stamp = { from: "presenter" as const, pid: "hans", cid: hj.cid };
+
+    // the stage left tab 1: tab 1 alone hears the leave
+    await a.send("s9", { role: "presenter", pid: "hans", cid: hj.cid }, {
+      t: "relay",
+      data: { k: "leave" },
+      tab: t1.cid,
+    });
+    assertEquals(relays(tab1), [{
+      t: "relay",
+      ...stamp,
+      data: { k: "leave" },
+    }]);
+
+    // it follows the tab on the other isolate now: its move (off their screen) goes there only
+    const off = {
+      k: "move" as const,
+      a: { vx: 0, vy: 0.4, o: 1 as const },
+      t: 12,
+    };
+    await a.send("s9", { role: "presenter", pid: "hans", cid: hj.cid }, {
+      t: "relay",
+      data: off,
+      tab: fj.cid,
+    });
+    await until(
+      "the far tab gets the move addressed to it",
+      () => relays(far).some((m) => m.t === "relay" && m.data.k === "move"),
+    );
+    await sleep(200);
+    assertEquals(relays(far), [{ t: "relay", ...stamp, data: off }]);
+    assertEquals(relays(tab1).length, 1, "tab 1 got only its own leave");
+    assertEquals(relays(tab2), [], "the customer's other tab gets none of it");
+    assertEquals(relays(lia), [], "a colleague gets none of the tabs' copies");
+    assertEquals(relays(hans), [], "never the sender");
+  } finally {
+    await a.close();
+    await b.close();
+    await resetKv();
+  }
+});
+
 Deno.test("REQ-232 a second stage of the same staff account replaces the first — in the same hub and across hubs: the older is told and closed, the customer hears it go and the newer come, a colleague is untouched", async () => {
   Deno.env.set("KV_PATH", ":memory:");
   await resetKv();
