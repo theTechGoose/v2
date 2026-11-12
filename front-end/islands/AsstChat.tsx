@@ -63,6 +63,7 @@ import {
   previewTermRows,
 } from "../../shared/quote-flow/wizard-terms.ts"; // REQ-347
 import { quoteUpdatedBy } from "../lib/chat-quote-refresh.ts";
+import { attachBottomPin } from "../lib/chat-bottom-pin.ts";
 import { chatChangeOrderLink, chatQuoteLink } from "../lib/chat-quote-link.ts";
 import {
   liveDraftOffer,
@@ -2110,40 +2111,7 @@ export default function AsstChat({
   useEffect(() => {
     const scroller = scrollRef.current;
     if (!scroller) return;
-    const inner = scroller.firstElementChild as HTMLElement | null;
-    if (!inner) return;
-    let nearBottom = true;
-    const STICK_THRESHOLD = 120;
-    function updateNearBottom() {
-      const distFromBottom = scroller!.scrollHeight - scroller!.scrollTop -
-        scroller!.clientHeight;
-      nearBottom = distFromBottom <= STICK_THRESHOLD;
-    }
-    function pin() {
-      scroller!.scrollTo({ top: scroller!.scrollHeight, behavior: "smooth" });
-    }
-    updateNearBottom();
-    scroller.addEventListener("scroll", updateNearBottom, { passive: true });
-    // REQ-425 p13-b: the welcome state is never pinned — it stays where it
-    // opened (its top) or wherever the person scrolled it. Leaving it for a
-    // step panel pins once, as before, so the panel's controls come into view.
-    let wasWelcome = welcomeRef.current;
-    const ro = new ResizeObserver(() => {
-      if (welcomeRef.current) {
-        wasWelcome = true;
-        return;
-      }
-      if (nearBottom || wasWelcome) requestAnimationFrame(pin);
-      wasWelcome = false;
-    });
-    ro.observe(inner);
-    // First paint — drop straight to bottom (no smooth on initial load); the
-    // welcome state opens at its top, so the mascot is in view.
-    scroller.scrollTop = welcomeRef.current ? 0 : scroller.scrollHeight;
-    return () => {
-      ro.disconnect();
-      scroller.removeEventListener("scroll", updateNearBottom);
-    };
+    return attachBottomPin(scroller, { isWelcome: () => welcomeRef.current });
   }, []);
 
   // REQ-383 (demo M26, cycle 2): the job-options picker takes its natural
