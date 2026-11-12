@@ -55,7 +55,7 @@ export default define.page(function ClientsRoute(ctx) {
       </Head>
 
       <div class="app">
-        <DashSidebar active="clients" />
+        <DashSidebar active="customers" />
         <main class="main">
           <DashTopbar
             greetingDate={greetingDate}
