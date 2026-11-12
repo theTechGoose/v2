@@ -8,6 +8,11 @@ import { tickerAge } from "../lib/ticker-age.ts";
 import GlobalSearch from "./GlobalSearch.tsx";
 import { TOPBAR_CSS } from "../lib/topbar-css.ts";
 import { startPoll } from "../lib/poll.ts";
+import {
+  PROFILE_UPDATED,
+  type ProfileUpdatedDetail,
+} from "../lib/profile-events.ts";
+import { greetingFirstName } from "../../shared/quote-flow/outbound-identity.ts";
 
 interface Props {
   /** @deprecated Ignored — the date is now computed reactively in-component
@@ -54,6 +59,17 @@ export default function DashTopbar(
   // pre-hydration clicks were the "hamburger does not work" bug (PDF p8).
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
+  // REQ-355 — the name saved on this page (Settings, the staff name prompt);
+  // undefined until one is. The SSR greeting would otherwise stay stale.
+  const [savedName, setSavedName] = useState<string | undefined>(undefined);
+  useEffect(() => {
+    const onProfile = (e: Event) => {
+      const name = (e as CustomEvent<ProfileUpdatedDetail>).detail?.name;
+      if (name !== undefined) setSavedName(name);
+    };
+    globalThis.addEventListener(PROFILE_UPDATED, onProfile);
+    return () => globalThis.removeEventListener(PROFILE_UPDATED, onProfile);
+  }, []);
 
   useEffect(() => {
     let stopped = false;
@@ -124,10 +140,17 @@ export default function DashTopbar(
       <div class="topbar__greet">
         <div class="topbar__greet-line">{greetingDate}</div>
         <div class="topbar__greet-name">
-          {(greetingOverrideKey
-            ? tFor(lang, greetingOverrideKey)
-            : greetingOverride) ??
-            tFor(lang, "dashTopbar.greeting", { name: greetingName })}
+          {savedName !== undefined
+            // REQ-355 — re-greet the saved name; a placeholder or blank greets namelessly
+            ? (greetingFirstName(savedName)
+              ? tFor(lang, "dashTopbar.greeting", {
+                name: greetingFirstName(savedName)!,
+              })
+              : tFor(lang, "dashTopbar.greetingNoName"))
+            : (greetingOverrideKey
+              ? tFor(lang, greetingOverrideKey)
+              : greetingOverride) ??
+              tFor(lang, "dashTopbar.greeting", { name: greetingName })}
         </div>
       </div>
       {

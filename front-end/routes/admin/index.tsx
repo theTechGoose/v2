@@ -5,6 +5,11 @@ import DashSidebar from "../../islands/DashSidebar.tsx";
 import DashTopbar from "../../islands/DashTopbar.tsx";
 import AdminPage from "../../islands/AdminPage.tsx";
 import SiteFooterLive from "../../islands/SiteFooterLive.tsx";
+import StaffNamePrompt from "../../islands/StaffNamePrompt.tsx";
+import {
+  greetingFirstName,
+  isPlaceholderName,
+} from "../../../shared/quote-flow/outbound-identity.ts";
 
 const WEEKDAY_KEYS = [
   "date.weekday.sunday",
@@ -33,8 +38,10 @@ const MONTH_KEYS = [
 export default define.page(function AdminRoute(ctx) {
   const user = ctx.state.user;
   const lang: Lang = user?.language === "es" ? "es" : "en";
-  const greetingName =
-    (user?.name?.trim() || tFor(lang, "common.thereFallback")).split(" ")[0];
+  const greetingName = greetingFirstName(user?.name) ??
+    tFor(lang, "common.thereFallback");
+  // REQ-355 — staff never meet the customer wizard's name question (REQ-227): ask here
+  const askName = user?.superAdmin === true && isPlaceholderName(user?.name);
   const now = new Date();
   const greetingDate = `${tFor(lang, WEEKDAY_KEYS[now.getDay()])} · ${
     tFor(lang, MONTH_KEYS[now.getMonth()])
@@ -51,6 +58,7 @@ export default define.page(function AdminRoute(ctx) {
         <main class="main">
           <DashTopbar greetingDate={greetingDate} greetingName={greetingName} />
           <div class="content">
+            {askName && <StaffNamePrompt />}
             <AdminPage selfId={user?.id} />
             {/* REQ-269: the footer follows the topbar's EN/ES toggle */}
             <SiteFooterLive lang={lang} />

@@ -21,6 +21,10 @@ import {
 } from "@demo-mode/domain/coordinators/demo-access/mod.ts";
 import { isSafePath, nextColor } from "#demo-mode/protocol.ts";
 import { presentersOf } from "@demo-mode/domain/business/demo-role/mod.ts";
+import {
+  presenterNameOf,
+  targetNameOf,
+} from "@demo-mode/domain/business/display-name/mod.ts";
 
 /** REQ-227 — a super admin cannot open a demo on their own account */
 class DemoOnSelfError extends Error {
@@ -29,8 +33,6 @@ class DemoOnSelfError extends Error {
     super("a demo cannot be opened on your own account");
   }
 }
-
-const nameOf = (u: User) => u.name?.trim() || u.phoneNumber;
 
 /** REQ-214 / REQ-232 — a presenter off a demo: it goes on for the others (who hear them go, and
  *  their sockets close everywhere), and ends for everyone when nobody is left on it. A module
@@ -111,7 +113,7 @@ export class DemoModeController {
     if (live) {
       const joined = await this.demos.join(live.id, {
         userId: admin.id,
-        name: nameOf(admin),
+        name: presenterNameOf(admin),
         color: nextColor(presentersOf(live).map((p) => p.color)),
       });
       if (joined) {
@@ -125,7 +127,7 @@ export class DemoModeController {
     }
     const demo = await this.demos.create(target.id, {
       userId: admin.id,
-      name: nameOf(admin),
+      name: presenterNameOf(admin),
       color: nextColor([]),
     });
     return ctx.json({
@@ -150,7 +152,11 @@ export class DemoModeController {
     if (!current) {
       return { role: null, session: null, targetPath: null, pid: null };
     }
-    const presenters = presentersOf(current.demo);
+    // REQ-355 — a presenter stored under the sign-in placeholder shows as the brand
+    const presenters = presentersOf(current.demo).map((p) => ({
+      ...p,
+      name: p.name ? presenterNameOf(p) : "",
+    }));
     const [opener, target, targetPath] = await Promise.all([
       presenters[0]?.name
         ? Promise.resolve(null)
@@ -164,8 +170,9 @@ export class DemoModeController {
       role: current.role,
       session: {
         id: current.demo.id,
-        presenterName: presenters[0]?.name || (opener ? nameOf(opener) : ""),
-        targetName: target ? nameOf(target) : "",
+        presenterName: presenters[0]?.name ||
+          (opener ? presenterNameOf(opener) : ""),
+        targetName: target ? targetNameOf(target) : "",
         targetUserId: current.demo.targetUserId,
         // REQ-214 — everyone presenting, each with their colour
         presenters,

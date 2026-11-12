@@ -4,6 +4,7 @@ import SiteFooter from "../../components/SiteFooter.tsx";
 import { tFor } from "../../lib/i18n.ts";
 import DashSidebar from "../../islands/DashSidebar.tsx";
 import DashTopbar from "../../islands/DashTopbar.tsx";
+import { greetingFirstName } from "../../../shared/quote-flow/outbound-identity.ts";
 
 /** Accounts-manager view.
  *
@@ -16,9 +17,8 @@ import DashTopbar from "../../islands/DashTopbar.tsx";
 export default define.page(function AccountsManager(ctx) {
   const user = ctx.state.user;
   const lang = user?.language === "es" ? "es" : "en";
-  const greetingName =
-    (user?.name?.trim() || tFor(lang, "common.thereFallback"))
-      .split(" ")[0];
+  const greetingName = greetingFirstName(user?.name) ??
+    tFor(lang, "common.thereFallback");
 
   return (
     <>
