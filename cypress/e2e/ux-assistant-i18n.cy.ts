@@ -239,10 +239,9 @@ describe("UX-14 thread list titles and mobile keyboard hint", () => {
     // The conversation dock rides along with the drawer (AsstThreads.tsx:
     // 33-67, P-22 fix) — wait for it, then assert the kbd chip is absent.
     cy.contains(/Conversaciones/i, { timeout: 10_000 }).should("be.visible");
-    // RED today: .threads__new-kbd renders unconditionally (AsstThreads.tsx:
-    // 192-194) — a desktop-keyboard hint ("⌘N") inside a phone drawer
-    // (P-53's cousin).
-    cy.get(".threads__new-kbd").should("not.be.visible");
+    // REQ-287 (demo test-setup-claims-m2): the ⌘N chip is gone everywhere —
+    // nothing handled it, and Cmd/Ctrl+N is the browser's new-window key.
+    cy.get(".threads__new-kbd").should("not.exist");
   });
 });
 

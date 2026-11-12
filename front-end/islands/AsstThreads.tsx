@@ -185,9 +185,6 @@ export default function AsstThreads(
           <span class="threads__new-label">
             {tFor(lang, "asstThreads.newConversation")}
           </span>
-          <span class="threads__new-kbd">
-            {tFor(lang, "asstThreads.newKbd")}
-          </span>
         </a>
         <div class="threads__list">
           {groups.length === 0
