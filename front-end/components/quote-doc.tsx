@@ -20,7 +20,10 @@ import PublicSignQuote from "../islands/PublicSignQuote.tsx";
 import PublicQuoteActions from "../islands/PublicQuoteActions.tsx";
 import { buildSignatureBlock } from "../../shared/quote-flow/signature-block.ts";
 import { agreementTitle } from "../../shared/quote-flow/agreement-title.ts";
-import { deriveQuoteView } from "../../shared/quote-flow/public-doc-state.ts";
+import {
+  deriveQuoteView,
+  publicHeadlineState,
+} from "../../shared/quote-flow/public-doc-state.ts";
 import {
   localizeLineItems,
   quoteDescription,
@@ -303,8 +306,9 @@ export function QuoteDoc(
       {
         number: docNumber,
         version: quote.version ?? 1,
-        state: quote.state ??
-          (signed ? "accepted" : declined ? "declined" : "sent"),
+        // REQ-320 (demo m15): the state word follows the signature pad's
+        // derive — none at all while the server still calls it a draft.
+        state: publicHeadlineState(quote),
         date: signed ? view.acceptedAt : quote.publishedAt,
       },
       lang,

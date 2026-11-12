@@ -16,6 +16,8 @@ import { isAccepted } from "./quote-status.ts";
 export interface PublicQuotePayloadLike {
   id: string;
   status?: string;
+  /** REQ-198/201: the headline state the server projected (quoteState). */
+  state?: string;
   acceptedName?: string;
   acceptedAt?: string;
   acceptedSignature?: string;
@@ -69,6 +71,24 @@ export function deriveQuoteView(payload: PublicQuotePayloadLike): QuoteView {
     footerVariant: "beforeSigning",
     pendingSignature: true,
   };
+}
+
+/**
+ * REQ-320 (demo m15): the state word in the /q headline ("Q-001 · Version 1 ·
+ * Sent") comes from the SAME derive as the signature pad, so the page never
+ * reads "Borrador" above "PENDIENTE DE FIRMA". A quote the server still calls
+ * `draft` (a text-only send that failed stamps nothing) has a public link and
+ * a pad but was issued to no one: it shows no state word at all. Accepted and
+ * declined follow the view; an issued quote keeps the server's sent/revised.
+ */
+export function publicHeadlineState(
+  payload: PublicQuotePayloadLike,
+): "accepted" | "declined" | "sent" | "revised" | undefined {
+  const view = deriveQuoteView(payload);
+  if (view.mode === "accepted") return "accepted";
+  if (view.mode === "declined") return "declined";
+  if (payload.state === "draft") return undefined;
+  return payload.state === "revised" ? "revised" : "sent";
 }
 
 /* ---------- per-language line items ---------- */
