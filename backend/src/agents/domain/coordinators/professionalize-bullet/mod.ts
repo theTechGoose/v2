@@ -98,12 +98,31 @@ function tidy(s: string): string {
 
 /** REQ-332: "4 recesed lights + City of Austin permit" → two items. Only an
  *  explicit joiner ("+", "plus") splits; "and" is left to the model, since
- *  "tile, vanity and glass" is one install. */
+ *  "tile, vanity and glass" is one install.
+ *  REQ-443 (demo m46): only a TOP-LEVEL joiner splits — one inside (), [] or
+ *  {} belongs to its parenthetical ("island (trench + patch)" is one item) —
+ *  and only when every piece names an item of its own (has a letter). */
 export function splitJoinedItems(text: string): string[] {
-  const parts = text.split(/\s*\+\s*|\s+plus\s+/i).map((p) => p.trim()).filter((
-    p,
-  ) => p.length > 0);
-  return parts.length > 1 ? parts : [text];
+  const parts: string[] = [];
+  let depth = 0;
+  let start = 0;
+  const joiner = /\s*\+\s*|\s+plus\s+/iy;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (ch === "(" || ch === "[" || ch === "{") depth++;
+    else if ((ch === ")" || ch === "]" || ch === "}") && depth > 0) depth--;
+    if (depth > 0) continue;
+    joiner.lastIndex = i;
+    const m = joiner.exec(text);
+    if (!m) continue;
+    parts.push(text.slice(start, i));
+    start = i + m[0].length;
+    i = start - 1;
+  }
+  parts.push(text.slice(start));
+  const items = parts.map((p) => p.trim());
+  const real = items.every((p) => /\p{L}/u.test(p));
+  return items.length > 1 && real ? items : [text];
 }
 
 /** The bullet first (the stub echoes the first line, which the gate then

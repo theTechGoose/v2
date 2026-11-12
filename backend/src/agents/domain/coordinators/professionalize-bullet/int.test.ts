@@ -136,3 +136,23 @@ Deno.test("REQ-332 professionalize: a returned line that is about something else
   });
   assertEquals(res.lines, ["4 recesed lights", "City of Austin permit"]);
 });
+
+Deno.test("REQ-443 m46 professionalize: '(trench + patch)' stays one line through the model and the fallback", async () => {
+  const text = "New drain line thru slab to island (trench + patch)";
+  // The model answers one line — that is faithful, not a fold of two items.
+  const { llm, flow } = fresh();
+  llm.setHandler(() => ({
+    text: JSON.stringify({
+      lines: [
+        "Install new drain line through slab to island (trench and patch)",
+      ],
+    }),
+  }));
+  const res = await flow.run({ userId: "u-1", text });
+  assertEquals(res.lines, [
+    "Install new drain line through slab to island (trench and patch)",
+  ]);
+  // The stub / offline fallback keeps the parenthetical whole.
+  const off = await fresh().flow.run({ userId: "u-1", text });
+  assertEquals(off.lines, [text]);
+});
