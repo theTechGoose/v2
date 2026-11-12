@@ -829,20 +829,28 @@ body {
   flex: 0 1 auto;
   min-width: 120px; /* REQ-273: the event text always gets room */
   position: relative;
-  height: 18px;
+  /* REQ-476 (demo cycle 3, p8-pair9-a / p8-pair10-c): up to two lines.
+     Near the pill's 220px floor (1280px, REQ-406) one line held ~120px —
+     "Quote sent to your c…", "Cotización enviada a t…" — and the search box
+     has no width to spare, so the sentence wraps inside the 36px pill. */
+  max-height: 28px;
   overflow: hidden;
 }
 .topbar__ticker-item {
   position: relative;
-  display: block;
   max-width: 100%;
-  line-height: 18px;
+  line-height: 14px;
   font-size: 12.5px;
   color: var(--brand-teal);
   font-weight: 500;
   letter-spacing: -0.005em;
-  white-space: nowrap;
-  text-overflow: ellipsis;
+  /* REQ-476: one line when it fits, two when the pill is narrow, an
+     ellipsis only past the second; the pill's title has the whole sentence. */
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow-wrap: anywhere;
   overflow: hidden;
   animation: tickerSlideIn 360ms var(--ease-bounce) both;
 }

@@ -24,6 +24,7 @@ import { TranslateQuote } from "@agents/domain/coordinators/translate-quote/mod.
 import { TranslateBullets } from "@agents/domain/coordinators/translate-bullets/mod.ts";
 import { StubLLMClient } from "@agents/domain/business/llm/implementations/stub/mod.ts";
 import { QuotePriceError } from "#quote-flow/quote-price-guard.ts";
+import { notificationL10n } from "@communication/domain/coordinators/notify-on-event/mod.ts";
 
 function fresh(translator?: TranslateQuote) {
   const conversations = new AgentConversationStore();
@@ -78,6 +79,7 @@ function fresh(translator?: TranslateQuote) {
     smser,
     users,
     translator,
+    customers,
   );
   return {
     conversations,
@@ -198,6 +200,32 @@ Deno.test("send-quote: emits 'quote:sent' DomainEvent on the bus", async () => {
   const ev = seen.find((e) => e.entityType === "quote" && e.action === "sent");
   assert(ev, "expected a quote:sent DomainEvent");
   assertEquals(ev!.entityId, ctx.quote.id);
+  await resetKv();
+});
+
+Deno.test("REQ-476 (demo cycle 3, p8-pair9-a / p8-pair10-c): the quote:sent event names the customer and the job, so the feed reads 'Quote sent to <name>', not 'your client'", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const ctx = await makeReadyConversation();
+  await ctx.quotes.update(ctx.quote.id, "u-1", { jobName: "Roof repair" });
+  const seen: DomainEvent[] = [];
+  ctx.bus.subscribe((e) => {
+    seen.push(e);
+  });
+
+  await ctx.flow.run({
+    userId: "u-1",
+    conversationId: ctx.conv.id,
+    quoteId: ctx.quote.id,
+  });
+
+  const ev = seen.find((e) => e.entityType === "quote" && e.action === "sent");
+  assert(ev, "expected a quote:sent DomainEvent");
+  assertEquals(ev!.data?.customerName, "Tom & Linda K.");
+  assertEquals(ev!.data?.jobName, "Roof repair");
+  // The notification feed (and the topbar ticker that reads it) fills
+  // {name} from the event — no "your client" / "tu cliente" fallback.
+  assertEquals(notificationL10n(ev!)?.titleParams, { name: "Tom & Linda K." });
   await resetKv();
 });
 
