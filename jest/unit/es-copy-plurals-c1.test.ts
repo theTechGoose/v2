@@ -446,7 +446,8 @@ describe("REQ-413 (p7) plain copy instead of idioms", () => {
         es["clientsHero.titlePost.one"]
       }`,
     )
-      .toBe("La persona para la que trabajas.");
+      // REQ-530 (cycle 3, p7): the singular names a customer, not a boss.
+      .toBe("Tu primer cliente ya está en tu lista.");
     expect(read("front-end/components/ClientsSections.tsx")).not.toMatch(
       /emptyTitlePost/,
     );
