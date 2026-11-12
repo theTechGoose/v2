@@ -149,6 +149,25 @@ Deno.test("REQ-332 m30 e2e: POST /agents/job-details/professionalize keeps 'A + 
   });
 });
 
+// ── REQ-443 — demo-loop cycle 3, m46 over the booted app ───────────────
+// "Polish this line?" turned "(trench + patch)" into "(trench" / "Patch)".
+
+Deno.test("REQ-443 m46 e2e: POST /agents/job-details/professionalize keeps a '+' inside parentheses on one line", async () => {
+  await withServer(async (base) => {
+    const sid = await login(base, "+15125552643");
+    const text = "New drain line thru slab to island (trench + patch)";
+    const res = await fetch(`${base}/agents/job-details/professionalize`, {
+      method: "POST",
+      headers: { ...J, "x-session-id": sid },
+      body: JSON.stringify({ text }),
+    });
+    assertEquals(res.status, 200);
+    const body = await res.json();
+    assertEquals(body.lines, [text]);
+    assertEquals(body.text, text);
+  });
+});
+
 // ── REQ-400 — demo-loop cycle 2 (M5, M21, m32) over the booted app ─────────
 // The app's LLM is the StubLLMClient its injector builds; these stories script
 // it for their length (the prototype is this test file's own — deno test runs

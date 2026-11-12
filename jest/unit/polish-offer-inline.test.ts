@@ -72,6 +72,49 @@ describe("REQ-384 m16: polishOffer — offer only a real rewrite, with a before/
   });
 });
 
+/**
+ * REQ-443 (demo-loop cycle 3, m46): the offer previewed "(trench" / "Patch)"
+ * for "(trench + patch)" — the same words, re-cased and cut inside a
+ * parenthetical. A single-line result that differs from the line only in case
+ * or punctuation is not a rewrite, and a split that leaves a line with an
+ * unbalanced bracket is a broken split — neither is offered.
+ */
+describe("REQ-443 m46: polishOffer — no offer for a case / punctuation-only change or a broken split", () => {
+  it("REQ-443 the broken '(trench' / 'Patch)' split is not offered", () => {
+    expect(
+      polishOffer("New drain line thru slab to island (trench + patch)", [
+        "New drain line thru slab to island (trench",
+        "Patch)",
+      ]),
+    ).toBeNull();
+  });
+
+  it("REQ-443 a single line that only changes case or punctuation is not offered", () => {
+    expect(
+      polishOffer("new drain line (trench + patch)", [
+        "New drain line (trench + patch)",
+      ]),
+    ).toBeNull();
+    expect(
+      polishOffer("drain line (trench + patch)", ["Drain line: trench, patch"]),
+    ).toBeNull();
+  });
+
+  it("REQ-443 a real rewrite and a well-formed 'A + B' split are still offered", () => {
+    expect(
+      polishOffer("drain line (trench + patch)", [
+        "Install drain line (trench and patch)",
+      ]),
+    ).not.toBeNull();
+    expect(
+      polishOffer("Trench to island (dig + patch) + City permit", [
+        "Trench to island (dig + patch)",
+        "City permit",
+      ]),
+    ).not.toBeNull();
+  });
+});
+
 describe("REQ-384 m16: the offer is inline under the bullet, not a covering modal", () => {
   const island = read("front-end/islands/AsstChat.tsx");
   const css = read("front-end/static/assistant-page.css");
