@@ -169,3 +169,19 @@ Deno.test("REQ-360 m11: global search never returns the onboarding sample quote"
   );
   await resetKv();
 });
+
+Deno.test("REQ-519 (demo cycle 3, M33) global-search integration: accent-blind and word-by-word — 'maria' and 'maria pena' find 'María José Peña'", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const { customers, flow } = fresh();
+  await customers.create("u-1", { name: "María José Peña" });
+  await customers.create("u-1", { name: "Bob Smith" });
+
+  for (const q of ["maria", "pena", "maria pena", "MARÍA"]) {
+    const hits = await flow.run("u-1", { q });
+    assertEquals(hits.map((h) => h.label), ["María José Peña"], q);
+  }
+  assertEquals(await flow.run("u-1", { q: "maria smith" }), []);
+
+  await resetKv();
+});

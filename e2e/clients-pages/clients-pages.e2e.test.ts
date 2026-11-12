@@ -166,6 +166,22 @@ Deno.test("REQ-279 (demo M32): the customers search is accent-blind — 'maria' 
     }
   }));
 
+Deno.test("REQ-519 (demo cycle 3, M33): the customers search matches word by word — 'maria pena' finds María José Peña (middle name skipped)", (t) =>
+  story(t, async ({ page, expect, http, baseUrl }) => {
+    const { auth } = await signIn(http, page, baseUrl);
+    for (const name of ["María José Peña", "Bob Smith"]) {
+      const r = await http("/api/customers", { method: "POST", headers: auth, body: JSON.stringify({ name }) });
+      await r.body?.cancel();
+    }
+    await page.goto("/customers");
+    await expect.see("2 on the books");
+    const cards = page.locator(".ccard2");
+    await page.locator("[data-cy='clients-search']").fill("maria pena");
+    for (let i = 0; i < 25 && (await cards.count()) !== 1; i++) await page.waitForTimeout(200);
+    expect((await cards.count()) === 1, `one card for "maria pena" (${await cards.count()})`);
+    await expect.see("María José Peña");
+  }));
+
 Deno.test("REQ-419 (demo-loop cycle 2: m40, S7c, p13-k): one customer — no pager; the closed back is hidden from AT; the open back shows every row unclipped", (t) =>
   story(t, async ({ page, expect, http, baseUrl }) => {
     const { auth } = await signIn(http, page, baseUrl);
