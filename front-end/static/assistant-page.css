@@ -3016,6 +3016,14 @@ body {
   flex-direction: column;
   overflow: hidden;
 }
+/* REQ-353 (M40): on a phone <main> clips, it never scrolls — anything a few
+   px too wide is cut and cannot shift the whole app sideways (it had a hidden
+   17px range that a composer focus() scrolled into). */
+@media (max-width: 640px) {
+  .main {
+    overflow: clip;
+  }
+}
 .topbar {
   height: 60px;
   flex-shrink: 0;

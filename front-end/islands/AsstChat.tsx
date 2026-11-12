@@ -1372,7 +1372,7 @@ export default function AsstChat({
     if (snap.awaitingJobDetails && typedDetails) {
       setDraft(typedDetails);
       requestAnimationFrame(() => {
-        taRef.current?.focus();
+        taRef.current?.focus({ preventScroll: true });
         autosize();
       });
     }
@@ -1694,7 +1694,7 @@ export default function AsstChat({
     url.searchParams.delete("seed");
     globalThis.history.replaceState({}, "", url.toString());
     // Focus on next paint so the composer expands and the user can edit/send.
-    queueMicrotask(() => taRef.current?.focus());
+    queueMicrotask(() => taRef.current?.focus({ preventScroll: true }));
   }, []);
 
   // /assistant?c=<conversationId> deep link: open THAT conversation in place.
@@ -1876,7 +1876,7 @@ export default function AsstChat({
   // Without this the textarea was getting blurred whenever it was disabled,
   // forcing a click back into the input between every message.
   useEffect(() => {
-    if (!sending) taRef.current?.focus();
+    if (!sending) taRef.current?.focus({ preventScroll: true });
   }, [sending]);
 
   // Auto-focus the composer when the "awaiting job details" view appears
@@ -1884,7 +1884,7 @@ export default function AsstChat({
   // has to manually click the textarea before typing.
   useEffect(() => {
     if (awaitingJobDetails && !submittedJobDetails) {
-      queueMicrotask(() => taRef.current?.focus());
+      queueMicrotask(() => taRef.current?.focus({ preventScroll: true }));
     }
   }, [awaitingJobDetails, submittedJobDetails]);
 
@@ -4005,7 +4005,7 @@ export default function AsstChat({
     setAwaitingJobDetails(true);
     // Synchronous focus inside the user gesture so iOS Safari pops the
     // keyboard. The effect at the awaitingJobDetails mount is a fallback.
-    taRef.current?.focus();
+    taRef.current?.focus({ preventScroll: true });
   }
 
   /**
@@ -4021,7 +4021,7 @@ export default function AsstChat({
     setPriceSuggestions(null);
     setPendingJobDetailsRaw(null);
     setAwaitingJobDetails(true);
-    taRef.current?.focus();
+    taRef.current?.focus({ preventScroll: true });
   }
 
   /**
@@ -4037,7 +4037,7 @@ export default function AsstChat({
     setPriceSuggestions(null);
     setPendingJobDetailsRaw(null);
     setAwaitingJobDetails(true);
-    taRef.current?.focus();
+    taRef.current?.focus({ preventScroll: true });
   }
 
   /**
@@ -4090,7 +4090,7 @@ export default function AsstChat({
         .filter((j) => j.jobName.length > 0);
       setAcceptedJobChips(list);
     }).catch(() => {});
-    taRef.current?.focus();
+    taRef.current?.focus({ preventScroll: true });
   }
 
   /** UX-31: the reviewed save — fires only after the contractor confirmed

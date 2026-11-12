@@ -10,6 +10,13 @@
  * in a <style> inside the island — part of its vdom, so hydration keeps it
  * (a route-level <style> can be dropped, see GlobalSearch) — and every route
  * that renders the bar gets the same chrome.
+ *
+ * REQ-353 (demo-loop cycle 1, M40/m23): at ≤640px the greeting is the one
+ * item that gives — it shrinks with an ellipsis — so the menu, the greeting
+ * and the EN/ES pill always fit a 390px phone. Before, the greeting could not
+ * shrink (flex-shrink:0, nowrap) and "What can I take off your plate?" pushed
+ * the pill 17px past the edge: "ES" was cut off and <main> gained a hidden
+ * 17px sideways range that a focus() scrolled the whole app into.
  */
 export const TOPBAR_CSS = `
 .topbar__lang{display:flex;gap:2px;background:var(--mint-100);border:1px solid var(--border);border-radius:999px;padding:3px;flex-shrink:0;margin-left:10px}
@@ -17,4 +24,5 @@ export const TOPBAR_CSS = `
 .topbar__lang-btn:hover{color:var(--brand-teal)}
 .topbar__lang-btn--on{background:#fff;color:var(--brand-teal);box-shadow:0 1px 3px rgba(20,72,82,.12)}
 @media (max-width:640px){.topbar__search{display:none}.topbar__ticker{display:none}}
+@media (max-width:640px){.topbar{padding:0 12px;gap:8px}.topbar__greet{flex:1 1 auto;flex-shrink:1;min-width:0;overflow:hidden}.topbar__greet-line,.topbar__greet-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.topbar__greet-name{font-size:14px}.topbar__lang{margin-left:auto}.topbar__lang-btn{padding:4px 8px}}
 `;
