@@ -68,7 +68,14 @@ export interface LLMRequest {
 export type LLMAction =
   | { type: "create_quote"; payload: { summary: string; lineItems: { description: string; amountCents: number }[] } }
   | { type: "lock_quote"; payload: { quoteId: string } }
-  | { type: "request_terms_transition"; payload: { quoteId: string } };
+  | { type: "request_terms_transition"; payload: { quoteId: string } }
+  /** REQ-262 (demo M25): rewrite / translate the bound quote's job details.
+   *  The coordinator applies it to conv.quoteId — never to a model-named id —
+   *  and never to a signed quote. Text per language, bullets newline-joined. */
+  | {
+    type: "update_job_details";
+    payload: { descriptionByLang: Partial<Record<"en" | "es", string>> };
+  };
 
 export interface LLMResponse {
   text: string;

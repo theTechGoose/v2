@@ -93,8 +93,9 @@ Deno.test("OpenAILLMClient smoke: respond() sends Bearer auth + system prompt + 
   assertEquals(body.messages[1].role, "user");
   assertEquals(body.messages[1].content, "Garage epoxy");
   assertEquals(body.messages[3].content, "Lock it in");
-  assertEquals(body.tools.length, 3);
-  assertEquals(body.tools.map((t) => t.function.name).sort(), ["create_quote", "lock_quote", "request_terms_transition"]);
+  // REQ-262 (demo M25): update_job_details joined the chat tools.
+  assertEquals(body.tools.length, 4);
+  assertEquals(body.tools.map((t) => t.function.name).sort(), ["create_quote", "lock_quote", "request_terms_transition", "update_job_details"]);
 });
 
 Deno.test("OpenAILLMClient smoke: respond() inserts businessContext as a second system message", async () => {

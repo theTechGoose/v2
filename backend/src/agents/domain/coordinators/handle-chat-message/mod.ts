@@ -41,6 +41,7 @@ import {
   isStarterChipText,
 } from "@agents/domain/business/onboarding/mod.ts";
 import { BusinessAddressStore } from "@profile/domain/data/business-address-store/mod.ts";
+import { toPlainChatText } from "@agents/domain/business/plain-chat-text/mod.ts";
 import { QuoteStore } from "@paperwork/domain/data/quote-store/mod.ts";
 import { FileStore } from "@files/domain/data/file-store/mod.ts";
 import { UserStore } from "@users/domain/data/user-store/mod.ts";
@@ -74,6 +75,59 @@ function stripCustomerAsk(text: string): string {
     .replace(/[ \t]{2,}/g, " ")
     .replace(/\s+\n/g, "\n")
     .trim();
+}
+
+/** REQ-262 (demo M25): a signed / closed quote's job details never change
+ *  from chat — they are what the customer agreed to (or turned down). */
+const JOB_DETAILS_LOCKED_STATUSES = new Set([
+  "accepted",
+  "declined",
+  "lost",
+  "void",
+]);
+
+/** REQ-262 (demo M25): the saved quote, as the model should see it. The
+ *  wizard makes the quote with POST /quotes — no action_card in the thread —
+ *  so without this the terms-phase model never saw the real document and
+ *  rewrote "job details" from the contractor's first raw message. */
+function quoteContext(q: {
+  status?: string;
+  jobName?: string;
+  summary?: string;
+  description?: string;
+  descriptionByLang?: Record<string, string>;
+  lineItems?: { description: string; price?: number }[];
+  estimatedTotal?: number;
+}): string {
+  const money = (c: number) =>
+    `$${(c / 100).toLocaleString("en-US", {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    })}`;
+  const out = [
+    `Active quote (status: ${q.status ?? "draft"})`,
+    `Job: ${q.jobName || q.summary || "(untitled)"}`,
+  ];
+  if (q.summary && q.summary !== q.jobName) out.push(`Summary: ${q.summary}`);
+  const byLang = q.descriptionByLang ?? {};
+  const langs = Object.keys(byLang).filter((l) => byLang[l]?.trim());
+  if (langs.length) {
+    for (const l of langs) out.push(`Job details [${l}]:\n${byLang[l].trim()}`);
+  } else if (q.description?.trim()) {
+    out.push(`Job details:\n${q.description.trim()}`);
+  } else {
+    out.push("Job details: (none yet)");
+  }
+  out.push(
+    `Job details languages: ${langs.length ? langs.join(", ") : "(base only)"}`,
+  );
+  for (const li of q.lineItems ?? []) {
+    out.push(`Line item: ${li.description} — ${money(li.price ?? 0)}`);
+  }
+  if (typeof q.estimatedTotal === "number") {
+    out.push(`Total: ${money(q.estimatedTotal)}`);
+  }
+  return out.join("\n");
 }
 
 /** Pick the message that should drive the conversation list preview.
@@ -130,6 +184,9 @@ export interface HandleChatResult {
  *   - lock_quote: ignore the LLM-supplied quoteId and use conv.quoteId
  *     (the coordinator is ground truth, not the model). Flip the quote's
  *     status to 'sent'. Emit a domain event so notifications fan out.
+ *   - update_job_details (REQ-262): merge the per-language job details onto
+ *     conv.quoteId's quote (never a signed one) and flag the reply with
+ *     payload.quoteUpdated so the chat island re-reads it.
  *   - request_terms_transition: emit a continue_cta the user clicks to
  *     advance phases.
  *
@@ -711,10 +768,19 @@ export class HandleChatMessage {
       const systemPrompt = replyLang === "es"
         ? `${base}\n\n${t("en", "prompts.contractorLanguageEsOverride")}`
         : base;
+      // REQ-262 (demo M25): ground the model in the saved quote.
+      let businessContext: string | undefined;
+      if (conv.quoteId) {
+        businessContext = await this.quotes.getOwned(
+          conv.quoteId,
+          input.userId,
+        ).then(quoteContext).catch(() => undefined);
+      }
       llmResponse = await this.llm.respond({
         systemPrompt,
         messages: llmTurns,
         userId: input.userId,
+        ...(businessContext ? { businessContext } : {}),
       });
     }
 
@@ -741,7 +807,8 @@ export class HandleChatMessage {
     let replyText: string;
     let suppressTextBubble = false;
     if (llmText) {
-      replyText = stripCustomerAsk(llmText);
+      // REQ-262 (demo M25): the bubble shows text verbatim — no markdown.
+      replyText = toPlainChatText(stripCustomerAsk(llmText));
       // If stripping nuked everything (the LLM only said the ask), and we
       // emitted an action card anyway, don't persist an empty bubble.
       if (!replyText.trim() && cardBearingAction) {
@@ -757,6 +824,44 @@ export class HandleChatMessage {
       replyText = t(replyLang, "chatCoordinator.noActionFallback");
     }
 
+    // ---- update_job_details (REQ-262, demo M25): rewrite / translate the
+    // bound quote's job details. Applied BEFORE the reply is stored, because
+    // the reply carries the outcome: `payload.quoteUpdated` tells the chat
+    // island to re-read the quote; a refusal replaces any claim of success.
+    // The quote is conv.quoteId — the model never names it — and prices and
+    // line items are untouched.
+    let replyPayload: Record<string, unknown> | undefined;
+    if (llmResponse.action?.type === "update_job_details") {
+      const byLang = llmResponse.action.payload.descriptionByLang;
+      const current = conv.quoteId
+        ? await this.quotes.getOwned(conv.quoteId, input.userId).catch(() =>
+          undefined
+        )
+        : undefined;
+      if (!current) {
+        replyText = t(replyLang, "chatCoordinator.noActionFallback");
+      } else if (
+        JOB_DETAILS_LOCKED_STATUSES.has((current.status ?? "").toLowerCase())
+      ) {
+        replyText = t(replyLang, "chatCoordinator.jobDetailsLocked");
+      } else {
+        const merged: Record<string, string> = {
+          ...(current.descriptionByLang ?? {}),
+        };
+        for (const [l, v] of Object.entries(byLang)) if (v) merged[l] = v;
+        const base = byLang[replyLang];
+        await this.quotes.update(current.id, input.userId, {
+          descriptionByLang: merged,
+          ...(base ? { description: base } : {}),
+        });
+        if (!llmText) {
+          replyText = t(replyLang, "chatCoordinator.jobDetailsUpdated");
+        }
+        replyPayload = { quoteUpdated: current.id };
+      }
+      suppressTextBubble = false;
+    }
+
     const newMessages: AgentMessage[] = [userMsg];
     if (!suppressTextBubble) {
       const assistantMsg = await this.messages.append({
@@ -764,6 +869,7 @@ export class HandleChatMessage {
         role: "assistant",
         kind: "text",
         content: replyText,
+        ...(replyPayload ? { payload: replyPayload } : {}),
       });
       newMessages.push(assistantMsg);
     }

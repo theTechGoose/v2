@@ -21,6 +21,7 @@ import { clientsClient } from "../clients/clients.ts";
 import { readCached, refreshDash, subscribeDash } from "../lib/dash-cache.ts";
 import { type Lang, langSignal, tFor } from "../lib/i18n.ts";
 import { localizeTermValue } from "../lib/term-i18n.ts";
+import { quoteUpdatedBy } from "../lib/chat-quote-refresh.ts";
 import {
   type ChipKey,
   chipReply,
@@ -1749,6 +1750,18 @@ export default function AsstChat({
           ...m.filter((msg) => msg.id !== tmpId),
           ...res.newMessages!,
         ]);
+        // REQ-262 (demo M25): the assistant rewrote / translated the quote's
+        // job details — re-read it so the open preview shows the new text.
+        const updatedQuoteId = quoteUpdatedBy(res.newMessages);
+        if (updatedQuoteId) {
+          quotesClient.get(updatedQuoteId).then((fresh) => {
+            setQuote((cur) =>
+              cur && cur.id === updatedQuoteId
+                ? { ...cur, ...fresh } as typeof cur
+                : cur
+            );
+          }).catch(() => {/* best-effort — the next load shows it */});
+        }
         // If this turn produced an onboarding ack/handoff, the user just
         // saved a profile field (name / business / state / address) —
         // refresh the dash cache so the sidebar's identity card rebuilds

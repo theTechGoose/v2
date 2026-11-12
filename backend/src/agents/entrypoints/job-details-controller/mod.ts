@@ -10,6 +10,7 @@ import { SessionStore } from "@users/domain/data/session-store/mod.ts";
 import { BusinessIdentityStore } from "@profile/domain/data/business-identity-store/mod.ts";
 import { BusinessAddressStore } from "@profile/domain/data/business-address-store/mod.ts";
 import { requireUser } from "@users/domain/coordinators/require-user/mod.ts";
+import { requestedLangs } from "@agents/domain/business/requested-langs/mod.ts";
 
 /**
  * Outgoing-comms language (customer-facing copy). Defaults to "en".
@@ -31,19 +32,22 @@ async function commsLang(
 /**
  * Every language the job options should be generated in: the contractor's app
  * language (primary — they review in it) ∪ their selected outgoing-comms
- * languages (the customer's quote renders in one of these). Deduped, app-first.
+ * languages (the customer's quote renders in one of these) ∪ any language the
+ * job text itself asks for ("… in Spanish and English" — REQ-262, demo M25:
+ * that ask used to be dropped). Deduped, app-first.
  */
-async function targetLangs(
+export async function targetLangs(
   identity: BusinessIdentityStore,
   userId: string,
   appLang: string,
+  raw = "",
 ): Promise<string[]> {
   const ident = await identity.get(userId).catch(() => null);
   const comms = ident?.commsLanguages && ident.commsLanguages.length
     ? ident.commsLanguages
     : [ident?.commsLanguage ?? "en"];
   const langs: string[] = [];
-  for (const l of [appLang, ...comms]) {
+  for (const l of [appLang, ...comms, ...requestedLangs(raw)]) {
     const v = l === "es" ? "es" : "en";
     if (!langs.includes(v)) langs.push(v);
   }
@@ -162,6 +166,7 @@ export class JobDetailsController {
           this.identity,
           user.id,
           user.language === "es" ? "es" : "en",
+          b.raw,
         ),
       }),
     );

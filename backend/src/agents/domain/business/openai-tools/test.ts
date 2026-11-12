@@ -1,5 +1,5 @@
 import { assertEquals } from "#std/assert";
-import { parseToolCall } from "./mod.ts";
+import { parseToolCall, TOOL_DEFS } from "./mod.ts";
 
 function call(name: string, args: unknown) {
   return { function: { name, arguments: typeof args === "string" ? args : JSON.stringify(args) } };
@@ -95,4 +95,39 @@ Deno.test("parseToolCall: empty summary in create_quote returns undefined", () =
     lineItems: [{ description: "x", amountCents: 1 }],
   }));
   assertEquals(out, undefined);
+});
+
+// REQ-262 (demo M25): after the quote exists the assistant had no way to
+// change its job details ("I can't change the job details at this stage").
+// update_job_details carries the description per language.
+Deno.test("REQ-262 TOOL_DEFS: offers update_job_details with a per-language description", () => {
+  const def = TOOL_DEFS.find((d) => d.function.name === "update_job_details");
+  if (!def) throw new Error("update_job_details tool is missing");
+  const props = (def.function.parameters as { properties: Record<string, unknown> }).properties;
+  assertEquals(Object.keys(props).includes("descriptionByLang"), true);
+});
+
+Deno.test("REQ-262 parseToolCall: update_job_details keeps en/es text, joins bullet arrays, drops other keys", () => {
+  const out = parseToolCall(call("update_job_details", {
+    descriptionByLang: {
+      en: "Repaint kitchen walls\nTwo coats",
+      es: ["Repintar paredes de la cocina", " Dos capas "],
+      fr: "Repeindre",
+    },
+  }));
+  assertEquals(out, {
+    type: "update_job_details",
+    payload: {
+      descriptionByLang: {
+        en: "Repaint kitchen walls\nTwo coats",
+        es: "Repintar paredes de la cocina\nDos capas",
+      },
+    },
+  });
+});
+
+Deno.test("REQ-262 parseToolCall: update_job_details with no usable language returns undefined", () => {
+  assertEquals(parseToolCall(call("update_job_details", { descriptionByLang: {} })), undefined);
+  assertEquals(parseToolCall(call("update_job_details", { descriptionByLang: { en: "  " } })), undefined);
+  assertEquals(parseToolCall(call("update_job_details", {})), undefined);
 });
