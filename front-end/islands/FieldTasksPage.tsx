@@ -28,6 +28,9 @@ import FieldHead from "../components/FieldHead.tsx";
 import { ApiError } from "../lib/api.ts";
 import { I, ICN } from "../lib/dash-icons.tsx";
 import {
+  addTaskProblem,
+  addTaskServerProblem,
+  centsOf,
   customerOptions,
   fmtDay,
   fmtMoneyExact,
@@ -81,13 +84,6 @@ async function loadAllCustomers(): Promise<Customer[]> {
   return out.sort((a, b) => a.name.localeCompare(b.name));
 }
 
-/** "120" / "120.50" → cents, or null when it is not a price */
-function centsOf(raw: string): number | null {
-  const n = Number(raw);
-  if (raw.trim() === "" || !Number.isFinite(n) || n < 0) return null;
-  return Math.round(n * 100);
-}
-
 const isOpen = (x: TaskView) =>
   x.status !== "skipped" && x.status !== "deferred";
 
@@ -124,6 +120,10 @@ export default function FieldTasksPage() {
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [add, setAdd] = useState<AddForm | null>(null);
   const [addErr, setAddErr] = useState<string | null>(null);
+  // REQ-283 — the field the last Save found missing, marked aria-invalid
+  const [addBad, setAddBad] = useState<
+    "customer" | "type" | "price" | "worker" | null
+  >(null);
   const [service, setService] = useState<
     { taskId: string; typeName: string; price: string } | null
   >(null);
@@ -228,6 +228,7 @@ export default function FieldTasksPage() {
   // REQ-164 — the one-off form
   function openAdd() {
     setAddErr(null);
+    setAddBad(null);
     lastPick.current = null;
     setAdd({
       customerId: "",
@@ -243,12 +244,15 @@ export default function FieldTasksPage() {
     e.preventDefault();
     if (!add) return;
     const cents = centsOf(add.price);
-    if (!add.customerId || !add.typeName.trim() || cents === null) {
-      setAddErr(t("field.common.error"));
+    const problem = addTaskProblem(add);
+    if (problem || cents === null) {
+      setAddBad(problem?.field ?? "price");
+      setAddErr(t(problem?.key ?? "field.tk.badPrice"));
       return;
     }
     setBusy(true);
     setAddErr(null);
+    setAddBad(null);
     try {
       const made = await fieldClient.createTask({
         customerId: add.customerId,
@@ -269,6 +273,39 @@ export default function FieldTasksPage() {
       }
       setFlash(t("field.tk.added"));
       setAdd(null);
+    } catch (err) {
+      const msg = errMsg(err);
+      const bad = addTaskServerProblem(msg);
+      setAddBad(bad?.field ?? null);
+      setAddErr(bad ? t(bad.key) : msg);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  // REQ-283 — the typed name is not a customer yet: add it (with the typed address) and pick it
+  async function createCustomer(name: string) {
+    setBusy(true);
+    setAddErr(null);
+    try {
+      const address = add?.address.trim() || undefined;
+      const made = await clientsClient.create({ name, address });
+      const c: Customer = {
+        id: made.id,
+        name: made.name ?? name,
+        address: made.address ?? address,
+      };
+      setCustomers((rows) =>
+        [...rows.filter((x) => x.id !== c.id), c].sort((a, b) =>
+          a.name.localeCompare(b.name)
+        )
+      );
+      lastPick.current = c.id;
+      setAdd((f) =>
+        f && { ...f, customerId: c.id, address: f.address || c.address || "" }
+      );
+      if (addBad === "customer") setAddBad(null);
+      setFlash(t("field.tk.customerAdded", { name: c.name }));
     } catch (err) {
       setAddErr(errMsg(err));
     } finally {
@@ -745,6 +782,9 @@ export default function FieldTasksPage() {
                   options={customerOptions(customers)}
                   value={add.customerId}
                   placeholder={t("field.tk.pickCustomer")}
+                  invalid={addBad === "customer"}
+                  onCreate={createCustomer}
+                  createLabel={(n) => t("field.tk.addCustomer", { name: n })}
                   onSelect={(o) => {
                     const previous = customers.find((c) =>
                       c.id === lastPick.current
@@ -780,6 +820,7 @@ export default function FieldTasksPage() {
                 list="tk-types"
                 data-cy="tk-add-type"
                 placeholder={t("field.tk.typePh")}
+                aria-invalid={addBad === "type" || undefined}
                 value={add.typeName}
                 required
                 onInput={(e) => {
@@ -796,6 +837,7 @@ export default function FieldTasksPage() {
                 step="0.01"
                 inputMode="decimal"
                 data-cy="tk-add-price"
+                aria-invalid={addBad === "price" || undefined}
                 value={add.price}
                 required
                 onInput={(e) => {
@@ -810,6 +852,7 @@ export default function FieldTasksPage() {
               <span>{t("field.tk.worker")}</span>
               <select
                 data-cy="tk-add-worker"
+                aria-invalid={addBad === "worker" || undefined}
                 value={add.workerId}
                 onChange={(e) => {
                   const v = (e.currentTarget as HTMLSelectElement).value;

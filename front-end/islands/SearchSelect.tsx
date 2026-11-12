@@ -6,6 +6,7 @@
  */
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import {
+  createOffer,
   filterOptions,
   moveActive,
   SEARCH_SELECT_LIMIT,
@@ -25,6 +26,12 @@ export interface SearchSelectProps<T extends SearchOption = SearchOption> {
   onQuery?: (query: string) => void;
   /** REQ-152 — the box is locked: it shows the pick and never opens. */
   disabled?: boolean;
+  /** REQ-283 — offer to create the typed text when no option carries it ("+ Add …"). */
+  onCreate?: (query: string) => void;
+  /** REQ-283 — the create row's text for a name (default `+ Add "<name>"`). */
+  createLabel?: (name: string) => string;
+  /** REQ-283 — the owner's check failed on this field: the box is aria-invalid. */
+  invalid?: boolean;
 }
 
 export default function SearchSelect<T extends SearchOption = SearchOption>(
@@ -37,6 +44,9 @@ export default function SearchSelect<T extends SearchOption = SearchOption>(
     onSelect,
     onQuery,
     disabled = false,
+    onCreate,
+    createLabel = (n) => `+ Add "${n}"`,
+    invalid = false,
   }: SearchSelectProps<T>,
 ) {
   const initial = value ? options.find((o) => o.id === value) ?? null : null;
@@ -58,6 +68,7 @@ export default function SearchSelect<T extends SearchOption = SearchOption>(
   ]);
   const rows = result.items;
   const more = result.total - rows.length;
+  const offer = onCreate && !picked ? createOffer(options, query) : null;
 
   useEffect(() => {
     const onDoc = (e: MouseEvent) => {
@@ -91,6 +102,13 @@ export default function SearchSelect<T extends SearchOption = SearchOption>(
     onSelect?.(o);
   }
 
+  function create(name: string) {
+    setQuery(name);
+    setOpen(false);
+    setActive(-1);
+    onCreate?.(name);
+  }
+
   function onInput(e: Event) {
     const v = (e.currentTarget as HTMLInputElement).value;
     setQuery(v);
@@ -114,6 +132,9 @@ export default function SearchSelect<T extends SearchOption = SearchOption>(
       } else if (open && rows.length === 1) {
         e.preventDefault();
         pick(rows[0]);
+      } else if (open && rows.length === 0 && offer) {
+        e.preventDefault();
+        create(offer);
       }
     } else if (e.key === "Escape") {
       setOpen(false);
@@ -161,6 +182,7 @@ export default function SearchSelect<T extends SearchOption = SearchOption>(
           placeholder={placeholder}
           value={query}
           disabled={disabled}
+          aria-invalid={invalid || undefined}
           onInput={onInput}
           onKeyDown={onKey}
           onFocus={() => !disabled && setOpen(true)}
@@ -216,7 +238,19 @@ export default function SearchSelect<T extends SearchOption = SearchOption>(
                 {o.hint && <span class="ss__hint">{o.hint}</span>}
               </li>
             ))}
-            {rows.length === 0 && (
+            {offer && (
+              <li
+                class="ss__opt ss__create"
+                role="option"
+                aria-selected={false}
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => create(offer)}
+                data-cy="search-select-create"
+              >
+                {createLabel(offer)}
+              </li>
+            )}
+            {rows.length === 0 && !offer && (
               <li class="ss__empty" data-cy="search-select-empty">
                 No matches
               </li>
