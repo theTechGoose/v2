@@ -6,6 +6,7 @@ import type { Quote, QuoteTerm } from "@paperwork/dto/quote.ts";
 import { InvoiceStore } from "@paperwork/domain/data/invoice-store/mod.ts";
 import { isAccepted } from "#quote-flow/quote-status.ts";
 import { isTbdTermValue } from "#quote-flow/terms-i18n.ts";
+import { invoiceTerms } from "#quote-flow/invoice-terms.ts";
 import { formatTermDate, termDateIso } from "#quote-flow/format-helpers.ts";
 import { QuoteStore } from "@paperwork/domain/data/quote-store/mod.ts";
 import { CustomerStore } from "@crm/domain/data/customer-store/mod.ts";
@@ -679,8 +680,14 @@ export class RenderInvoicePdf {
     }
 
     // Section: Terms (wizard-captured grid; NO legal clauses, NO signature).
-    if (quote?.terms && quote.terms.length > 0) {
-      const visible = quote.terms.filter((term) => term.stepId !== "customer");
+    // REQ-659 (cycle 5, m53): a relative start the bill has outlived is
+    // dropped, as on the public invoice.
+    const billTerms = invoiceTerms(quote?.terms, {
+      quotedAt: quote?.sentAt ?? quote?.createdAt,
+      issuedAt: invoice.issuedDate ?? invoice.sentAt ?? invoice.createdAt,
+    });
+    if (billTerms.length > 0) {
+      const visible = billTerms.filter((term) => term.stepId !== "customer");
       if (visible.length > 0) {
         addPageIfNeeded(120);
         y = drawSectionHeader(

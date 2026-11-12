@@ -981,3 +981,49 @@ Deno.test("REQ-584 (cycle 4, p4-p1d) the degraded fallback keeps its three title
   assertEquals(res.options.length, 3);
   assertEquals(res.options[0].bullets, GUT_JOB_ITEMS);
 });
+
+// REQ-659 (demo-loop cycle 5, M14): a markup or a labor rate is private
+// pricing too — fleet-6 saw "Materials at cost +15%" in both options. Neither
+// names a "$" amount, so REQ-261's filter let them through.
+Deno.test("REQ-659 M14 a model bullet carrying a markup or a labor rate is dropped in every language", async () => {
+  const { llm, coord } = fresh();
+  llm.setHandler(() => ({
+    text: JSON.stringify({
+      options: [{
+        en: {
+          jobName: "Backsplash Tile",
+          summary: "Kitchen backsplash tile",
+          bullets: [
+            "Kitchen backsplash tile",
+            "Materials at cost +15%",
+            "Labor 85/hr",
+            "Grout and seal",
+          ],
+        },
+        es: {
+          jobName: "Azulejo de cocina",
+          summary: "Azulejo de la cocina",
+          bullets: [
+            "Azulejo de la cocina",
+            "Materiales al costo más 15%",
+            "Mano de obra 85 por hora",
+            "Lechada y sellado",
+          ],
+        },
+      }],
+    }),
+  }));
+  const res = await coord.run({
+    userId: "u1",
+    raw: "Kitchen backsplash tile, grout and seal. Materials at cost +15%, labor 85/hr",
+    langs: ["en", "es"],
+  });
+  assertEquals(res.options[0].byLang.en.bullets, [
+    "Kitchen backsplash tile",
+    "Grout and seal",
+  ]);
+  assertEquals(res.options[0].byLang.es.bullets, [
+    "Azulejo de la cocina",
+    "Lechada y sellado",
+  ]);
+});
