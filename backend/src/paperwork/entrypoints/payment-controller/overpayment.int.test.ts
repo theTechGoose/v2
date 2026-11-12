@@ -20,6 +20,7 @@ import { AnalyticsModule } from "@analytics/mod-root.ts";
 import { UsersModule } from "@users/mod-root.ts";
 import { OtpStore } from "@users/domain/data/otp-store/mod.ts";
 import { resetKv } from "@core/data/kv/mod.ts";
+import { InvoiceStore } from "@paperwork/domain/data/invoice-store/mod.ts";
 
 @Module({ imports: [UsersModule, CrmModule, PaperworkModule, AnalyticsModule] })
 class TestApp {}
@@ -173,10 +174,24 @@ Deno.test("REQ-551 B2: a payment up to the balance still records with no flag (p
   });
 });
 
+// REQ-696 AMENDMENT (cycle 5, M5/M22): an invoice issued over HTTP with a
+// bill-to name now carries that customer, so "no customer" is an invoice
+// written before REQ-696 — seeded straight into the store here.
 Deno.test("REQ-551 B2: the leaderboard reports paid invoices with no customer as unassigned, instead of hiding them", async () => {
   await withServer(async () => {
     const auth = await login();
-    const inv = await sentInvoice(auth, 50000);
+    const owner = (await sentInvoice(auth, 100)) as {
+      id: string;
+      userId?: string;
+    };
+    const legacy = await new InvoiceStore().create(owner.userId!, {
+      jobName: "Test job",
+      amount: 50000,
+      status: "sent",
+      dueDate: "2026-12-01",
+      billTo: { name: "Pat Doe" },
+    });
+    const inv = { id: legacy.id };
     const pay = await call("POST", "/payments", auth, {
       invoiceId: inv.id,
       amount: 50000,
@@ -186,6 +201,7 @@ Deno.test("REQ-551 B2: the leaderboard reports paid invoices with no customer as
     assertEquals(pay.status < 400, true, JSON.stringify(pay.body));
     const top = await call("GET", "/analytics/clients/top", auth);
     assertEquals(top.status, 200, JSON.stringify(top.body));
+    // the REQ-696 bill-to invoice ($1, unpaid) is Pat Doe's: nothing to rank
     assertEquals(top.body.results, []);
     assertEquals(top.body.unassigned, {
       invoiceCount: 1,

@@ -198,6 +198,16 @@ export function balanceDisplay(
       }),
     };
   }
+  // REQ-696 (demo-loop cycle 5, M5): nothing owed yet, but a scheduled
+  // installment is still to bill — "$350 to bill", never "Settled".
+  if (c.balanceSubParts?.kind === "toBill") {
+    return {
+      cls: "ccard2__bal-val--zero",
+      text: tFor(lang, "clientsDisplay.balance.toBill", {
+        amount: dollars(c.balanceSubParts.amountCents ?? 0),
+      }),
+    };
+  }
   // REQ-323 (demo-loop cycle 1, m20): "Settled" is a claim that something was
   // billed and paid; a lead with an open quote and no invoice has nothing to
   // settle, so it reads "Nothing billed yet" until an invoice has been issued.

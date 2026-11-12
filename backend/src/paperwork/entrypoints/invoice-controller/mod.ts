@@ -62,6 +62,7 @@ import {
   invoiceIssuedEvent,
   isIssuingTransition,
 } from "@paperwork/domain/business/owner-activity/mod.ts"; // REQ-566
+import { billToCustomerPlan } from "@paperwork/domain/business/bill-to-customer/mod.ts"; // REQ-696
 
 /** number order for an export (INV-001 before INV-002; unnumbered rows by age) */
 const bySeq = (
@@ -372,6 +373,21 @@ export class InvoiceController {
       !(typeof dto.billTo?.name === "string" && dto.billTo.name.trim())
     ) {
       return ctx.json({ error: "invoice_needs_recipient" }, 422);
+    }
+    // REQ-696 (demo-loop cycle 5, M5/M22): a typed bill-to name with no
+    // customer is that customer — attached when the account has them, else
+    // created — so the customers page, its owed total and the invoice list
+    // all see whom the invoice bills.
+    if (!dto.customerId?.trim()) {
+      const plan = billToCustomerPlan(
+        dto.billTo,
+        await this.customers.listByUser(user.id),
+      );
+      if (plan) {
+        dto.customerId = "attach" in plan
+          ? plan.attach
+          : (await this.customers.create(user.id, plan.create)).id;
+      }
     }
     // REQ-206: an invoice issued at birth carries its sentAt.
     if (

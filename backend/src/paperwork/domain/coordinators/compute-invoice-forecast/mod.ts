@@ -3,6 +3,7 @@ import { InvoiceStore } from "@paperwork/domain/data/invoice-store/mod.ts";
 import { CustomerStore } from "@crm/domain/data/customer-store/mod.ts";
 import { QuoteStore } from "@paperwork/domain/data/quote-store/mod.ts";
 import type { Invoice, PaymentMethod } from "@paperwork/dto/invoice.ts";
+import { docNumberOf } from "#documents/numbering.ts";
 
 export interface ForecastEntry {
   /** ISO date when funds are *expected* to land (best-effort estimate). */
@@ -99,7 +100,7 @@ export class ComputeInvoiceForecast {
         inv.quoteId,
         jobNameCache,
       );
-      const labelBase = customer ?? job ?? "Invoice";
+      const labelBase = forecastLabelBase(customer, inv, job);
 
       // At-risk pass: sent/viewed + past-due + no intent.
       if (
@@ -164,6 +165,32 @@ export function settlementOffsetDays(method: PaymentMethod): number {
     default:
       return 3;
   }
+}
+
+/**
+ * REQ-696 (demo-loop cycle 5, M22) — the name an entry is shown under: the
+ * customer, else the typed bill-to (its name, then business), else the job
+ * (the quote's, the invoice's own, or its name in any language), else the
+ * invoice's own number. Never an English literal: the old `"Invoice"`
+ * fallback read "jue: Invoice $200" on the Spanish hero.
+ */
+export function forecastLabelBase(
+  customer: string | undefined,
+  inv: Pick<Invoice, "billTo" | "jobName" | "number" | "id"> & {
+    jobNameByLang?: Record<string, string>;
+  },
+  job: string | undefined,
+): string {
+  const pick = (...xs: Array<string | undefined>) =>
+    xs.map((x) => x?.trim()).find((x) => !!x);
+  return pick(
+    customer,
+    inv.billTo?.name,
+    inv.billTo?.businessName,
+    job,
+    inv.jobName,
+    ...Object.values(inv.jobNameByLang ?? {}),
+  ) ?? docNumberOf(inv);
 }
 
 export function forecastEntryFor(

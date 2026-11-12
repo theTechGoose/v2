@@ -226,3 +226,76 @@ Deno.test("REQ-565 m33 documentsFor — a quote with no approved change order ke
   assertEquals(quote.amountCents, 705_000);
   assertEquals("changeOrdersCents" in quote, false);
 });
+
+// ---------------------------------------------------------------------------
+// REQ-696 (demo-loop cycle 5, M5): pair 6's only bill was the $350 completion
+// invoice, still `scheduled` — the card read "SALDO Saldado" while the stage
+// said "Queda por facturar $350". Pair 9's INV-002 had no customer, so the
+// roster's "$0 que te deben" never counted it.
+import { buildBalanceSub, unassignedOwedCents } from "./mod.ts";
+
+function invoice(over: Partial<Invoice>): Invoice {
+  return {
+    id: crypto.randomUUID(),
+    userId: "u",
+    dueDate: "2026-11-30",
+    amount: 350_00,
+    status: "sent",
+    createdAt: "2026-11-01T00:00:00Z",
+    updatedAt: "2026-11-01T00:00:00Z",
+    ...over,
+  } as Invoice;
+}
+
+const NOW = new Date("2026-11-12T12:00:00Z");
+
+Deno.test("REQ-696 M5 buildBalanceSub — nothing owed, a scheduled installment: 'to bill' with its amount and send date, never 'settled'", () => {
+  const sched = invoice({ status: "scheduled", scheduledFor: "2026-11-20" });
+  assertEquals(buildBalanceSub(0, [sched], [], NOW), {
+    kind: "toBill",
+    amountCents: 350_00,
+    date: "2026-11-20",
+  });
+});
+
+Deno.test("REQ-696 M5 buildBalanceSub — two scheduled installments sum; the date is the soonest; no send date falls back to the due date", () => {
+  const a = invoice({
+    status: "scheduled",
+    amount: 100_00,
+    dueDate: "2026-12-05",
+  });
+  const b = invoice({
+    status: "scheduled",
+    amount: 50_00,
+    scheduledFor: "2026-12-01",
+  });
+  assertEquals(buildBalanceSub(0, [a, b], [], NOW), {
+    kind: "toBill",
+    amountCents: 150_00,
+    date: "2026-12-01",
+  });
+});
+
+Deno.test("REQ-696 M5 buildBalanceSub — paid or void installments are not to bill: still settled", () => {
+  const paid = invoice({ status: "paid", paidAt: "2026-11-02T00:00:00Z" });
+  const v = invoice({ status: "void" });
+  assertEquals(buildBalanceSub(0, [paid, v], [], NOW), { kind: "settled" });
+});
+
+Deno.test("REQ-696 M5 unassignedOwedCents — open receivables whose customer is missing or gone, at what is still owed", () => {
+  const ids = new Set(["c-1"]);
+  assertEquals(
+    unassignedOwedCents(
+      [
+        invoice({ customerId: "c-1", amount: 999_00 }), // on a card already
+        invoice({ amount: 200_00 }), // billed to a typed name only
+        invoice({ customerId: "gone", amount: 75_00 }), // customer deleted
+        { ...invoice({ amount: 100_00 }), paidCents: 40_00 } as Invoice, // part paid
+        invoice({ status: "scheduled", amount: 500_00 }), // not billed yet
+        invoice({ status: "draft", amount: 500_00 }),
+      ],
+      ids,
+    ),
+    200_00 + 75_00 + 60_00,
+  );
+});

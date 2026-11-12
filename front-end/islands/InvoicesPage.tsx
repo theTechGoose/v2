@@ -59,6 +59,7 @@ import {
   scheduledHeroSubKey,
 } from "../lib/headline-counts.ts";
 import { followChanges, isDocChange } from "../lib/change-feed.ts";
+import { invoiceClientName } from "../lib/invoice-client.ts"; // REQ-696
 import { isChangeOrderMutable } from "../../shared/quote-flow/adjustment-guards.ts";
 import {
   formatPhoneInput,
@@ -290,7 +291,8 @@ function enrich(
   customers: Map<string, string>,
   now: Date,
 ): EnrichedInvoice {
-  const client = (inv.customerId && customers.get(inv.customerId)) || "—";
+  // REQ-696 (cycle 5, M22): no customer on file → the typed bill-to name
+  const client = invoiceClientName(inv, customers);
   const today = now.toISOString().slice(0, 10);
   const due = inv.dueDate ?? "";
   const issued = inv.issuedDate ?? inv.createdAt ?? "";

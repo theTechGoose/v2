@@ -2,6 +2,7 @@ import { Context, Controller, Get, Query } from "#danet/core";
 import type { ExecutionContext } from "#danet/core";
 import {
   BuildCustomerCards,
+  unassignedOwedCents,
   unassignedPaidRevenue,
 } from "@analytics/domain/coordinators/build-customer-cards/mod.ts";
 import { InvoiceStore } from "@paperwork/domain/data/invoice-store/mod.ts";
@@ -59,8 +60,13 @@ export class ClientsController {
   ): Promise<ClientsPageResponse> {
     const user = await requireUser(ctx, this.sessions, this.users);
     // REQ-367: the cards are data — the client words them in the live language
-    const cards = await this.flow.run(user.id, new Date());
-    return clientsPage(cards, { page: Number(page), pageSize: Number(pageSize), q, status });
+    const [cards, invoices] = await Promise.all([
+      this.flow.run(user.id, new Date()),
+      this.invoices.listByUser(user.id),
+    ]);
+    // REQ-696 (cycle 5, M5): what is owed on invoices no card carries counts too
+    const unassigned = unassignedOwedCents(invoices, new Set(cards.map((c) => c.id)));
+    return clientsPage(cards, { page: Number(page), pageSize: Number(pageSize), q, status }, unassigned);
   }
 
   @Get("analytics/clients/top")
