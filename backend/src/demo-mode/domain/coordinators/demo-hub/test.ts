@@ -803,3 +803,55 @@ Deno.test("REQ-296 a demo that reaches its TTL ends for everyone across hubs: bo
     await resetKv();
   }
 });
+
+Deno.test("REQ-378 (demo-loop cycle 2, m22) a joining stage is greeted — welcome and who is here — BEFORE anyone hears it arrive: a tab that answers the arrival at once (its first snapshot) is never ahead of the stage's welcome", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const a = DemoHub.isolated("a");
+  /** what reached the stage's socket, in order — the greeting included */
+  const order: string[] = [];
+  const stage = {
+    role: "presenter" as Role,
+    pid: "hans",
+    send: (m: ServerMessage) => void order.push(m.t),
+  };
+  // the customer's tab: hearing a stage arrive, it sends its whole view at once (the transport's
+  // onPeerOnline → snapshot), before anything else happens
+  const tab = {
+    role: "viewer" as Role,
+    cid: "tab-1",
+    send: (m: ServerMessage) => {
+      if (m.t === "peer" && m.online && m.pid === "hans") {
+        void a.send("s-m22", { role: "viewer", cid: "tab-1" }, {
+          t: "relay",
+          data: { k: "dom", l: "lp0q1x2-ab12", s: 0, i: 0, n: 1, d: "{}" },
+        });
+      }
+    },
+  };
+  try {
+    await a.join("s-m22", tab);
+    let greeted: { cid: string; peers: { cid: string }[] } | null = null;
+    await a.join("s-m22", stage, (g) => {
+      greeted = g;
+      order.push("greet");
+    });
+    await until(
+      "the tab's snapshot reaches the stage",
+      () => order.includes("relay"),
+    );
+    assertEquals(
+      order[0],
+      "greet",
+      `the stage is greeted before the tab's answer: ${order.join(",")}`,
+    );
+    assertEquals(
+      greeted!.peers.map((p) => p.cid),
+      ["tab-1"],
+      "the greeting lists the tab already here",
+    );
+  } finally {
+    await a.close();
+    await resetKv();
+  }
+});

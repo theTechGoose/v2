@@ -132,6 +132,44 @@ export class DemoSessionStore {
     return this.live(K.presenting(userId));
   }
 
+  /** REQ-378 (demo-loop cycle 2, m22) — a watch on the demo pointers of these users (`active`: a
+   *  demo shown TO them; `presenting`: one presented BY them). It is live once this resolves, so a
+   *  check made after it misses nothing; `next` resolves when a pointer changes, after `ms`, or
+   *  when `signal` aborts, whichever is first; `stop` ends the watch. */
+  async watchPointers(
+    who: { active?: string[]; presenting?: string[] },
+  ): Promise<
+    { next(ms: number, signal?: AbortSignal): Promise<void>; stop(): void }
+  > {
+    const kv = await getKv();
+    const keys: Deno.KvKey[] = [
+      ...(who.active ?? []).map((u) => K.active(u)),
+      ...(who.presenting ?? []).map((u) => K.presenting(u)),
+    ];
+    const reader = kv.watch(keys).getReader();
+    // the first entry is the pointers as they are now
+    await reader.read();
+    let stopped = false;
+    const stop = () => {
+      if (stopped) return;
+      stopped = true;
+      reader.cancel().catch(() => {});
+    };
+    const next = (ms: number, signal?: AbortSignal) =>
+      new Promise<void>((resolve) => {
+        if (signal?.aborted) return resolve();
+        const done = () => {
+          clearTimeout(timer);
+          signal?.removeEventListener("abort", done);
+          resolve();
+        };
+        const timer = setTimeout(done, ms);
+        signal?.addEventListener("abort", done);
+        reader.read().then(done, done);
+      });
+    return { next, stop };
+  }
+
   /** AMENDMENT — same screen at once: the page `userId`'s own app is on, for the next WHERE_TTL_MS */
   async here(userId: string, path: string): Promise<void> {
     const kv = await getKv();

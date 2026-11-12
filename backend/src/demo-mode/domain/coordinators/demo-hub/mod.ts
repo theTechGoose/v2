@@ -35,6 +35,13 @@ export interface PeerInfo {
   cid: string;
 }
 
+/** REQ-378 — what a joining socket is told first: its own id, whether the other side is here, who is */
+export interface Greeting {
+  cid: string;
+  peerOnline: boolean;
+  peers: PeerInfo[];
+}
+
 /** what crosses isolates: a message for one role (or everyone) in a demo, stamped with the isolate that wrote it */
 interface Mail {
   id: string;
@@ -109,13 +116,15 @@ export class DemoHub {
    *  lists: a customer tab is told of the stages, a stage of the tabs and of the other accounts'
    *  stages. Everyone else hears the arrival (with its cid; a presenter's names them too) and,
    *  elsewhere, replies to it with their own presence. REQ-232 — a presenter's newer window takes
-   *  over: their older sockets, here and elsewhere, are told they are replaced and closed. */
+   *  over: their older sockets, here and elsewhere, are told they are replaced and closed.
+   *  REQ-378 (demo-loop cycle 2, m22) — `greet` runs the moment the socket is in the room, BEFORE
+   *  anyone hears it arrive: the socket's welcome and who is here go out first, so an answer to
+   *  its arrival (a tab's snapshot, sent the instant it hears a stage) never overtakes them. */
   async join(
     sessionId: string,
     peer: Peer,
-  ): Promise<
-    { cid: string; peerOnline: boolean; peers: PeerInfo[]; leave: () => void }
-  > {
+    greet?: (g: Greeting) => void,
+  ): Promise<Greeting & { leave: () => void }> {
     const cid = peer.cid ??= crypto.randomUUID();
     const room = await this.room(sessionId);
     this.joinedAt.set(peer, Date.now());
@@ -134,6 +143,7 @@ export class DemoHub {
     }));
     // in the room before anything is awaited: a last peer leaving meanwhile must not drop it
     room.peers.add(peer);
+    greet?.({ cid, peerOnline, peers });
     await this.armExpiry(sessionId, room);
     if (peer.role === "presenter" && peer.pid) {
       await this.broadcast(sessionId, {

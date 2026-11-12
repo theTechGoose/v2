@@ -70,28 +70,31 @@ export class DemoModeSocketController {
     };
 
     socket.onopen = async () => {
-      const joined = await this.hub.join(sessionId, peer);
+      // welcome first (with this socket's cid), then who is already here — a tab hears of the
+      // stages (REQ-214: by pid), a stage of the tabs and of the other accounts' stages, each by
+      // cid (REQ-232). REQ-378 (m22): sent from inside the join, BEFORE the others hear this socket
+      // arrive — a tab answers a stage's arrival with its snapshot at once, and a stage that got
+      // that snapshot ahead of its peer list dropped it (it follows no tab yet)
+      const joined = await this.hub.join(sessionId, peer, (g) => {
+        sendJson({
+          t: "welcome",
+          role,
+          sessionId,
+          peerOnline: g.peerOnline,
+          ...(pid ? { pid } : {}),
+          cid,
+        });
+        for (const p of g.peers) {
+          sendJson({
+            t: "peer",
+            online: true,
+            ...(p.pid ? { pid: p.pid } : {}),
+            cid: p.cid,
+          });
+        }
+      });
       leave = joined.leave;
       if (closed) return leave();
-      // welcome first (with this socket's cid): join tells the OTHERS only, so nothing reached
-      // this socket yet; then who is already here — a tab hears of the stages (REQ-214: by pid),
-      // a stage of the tabs and of the other accounts' stages, each by cid (REQ-232)
-      sendJson({
-        t: "welcome",
-        role,
-        sessionId,
-        peerOnline: joined.peerOnline,
-        ...(pid ? { pid } : {}),
-        cid,
-      });
-      for (const p of joined.peers) {
-        sendJson({
-          t: "peer",
-          online: true,
-          ...(p.pid ? { pid: p.pid } : {}),
-          cid: p.cid,
-        });
-      }
     };
     socket.onmessage = async (e) => {
       if (typeof e.data !== "string") return;

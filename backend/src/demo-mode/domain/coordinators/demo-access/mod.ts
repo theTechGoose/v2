@@ -85,6 +85,17 @@ export class DemoAccess {
     };
   }
 
+  /** REQ-378 (m22) — a watch on the pointers `current` reads for this caller: it fires when a demo
+   *  is opened for them (or by them) */
+  watchCurrent(caller: Caller) {
+    const { session, user } = caller;
+    return this.demos.watchPointers(
+      session.impersonatorId
+        ? { presenting: [session.impersonatorId] }
+        : { active: [user.id], presenting: [user.id] },
+    );
+  }
+
   /** the live demo the caller is in, as presenter (own or impersonation session) or viewer */
   async current(
     caller: Caller,
