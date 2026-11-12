@@ -82,6 +82,14 @@ export class CreateQuoteDto {
   @IsObject()
   summaryByLang?: Record<string, string>;
 
+  /** REQ-263 (demo ai-assistant-m2): where the job is — the address the
+   *  contractor typed ("412 Oak St Austin"), taken in the customer step or
+   *  from the picked customer's address. Same name as the invoice's and the
+   *  work order's `serviceAddress`. Rendered on the agreement (/q) and PDF. */
+  @IsOptional()
+  @IsString()
+  serviceAddress?: string;
+
   @IsArray()
   @ValidateNested({ each: true })
   @Type(() => LineItemDto)
@@ -156,6 +164,9 @@ export class UpdateQuoteDto {
   jobNameByLang?: Record<string, string>;
   @IsOptional() @IsObject()
   summaryByLang?: Record<string, string>;
+  /** REQ-263: the job's service address. */
+  @IsOptional() @IsString()
+  serviceAddress?: string;
   @IsOptional()
   @IsArray()
   @ValidateNested({ each: true })

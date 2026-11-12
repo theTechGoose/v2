@@ -21,6 +21,7 @@ export const TOOL_DEFS = [
         type: "object",
         properties: {
           summary:    { type: "string", description: t("en", "prompts.tools.createQuote.summary") },
+          serviceAddress: { type: "string", description: t("en", "prompts.tools.createQuote.serviceAddress") },
           lineItems: {
             type: "array",
             description: t("en", "prompts.tools.createQuote.lineItems"),
@@ -102,7 +103,12 @@ export function parseToolCall(call: { function: { name: string; arguments: strin
         lineItems.push({ description: i.description, amountCents: Math.trunc(i.amountCents) });
       }
       if (!summary || lineItems.length === 0) return undefined;
-      return { type: "create_quote", payload: { summary, lineItems } };
+      // REQ-263: the job address, when the user gave one
+      const serviceAddress = typeof args.serviceAddress === "string" ? args.serviceAddress.trim() : "";
+      return {
+        type: "create_quote",
+        payload: { summary, lineItems, ...(serviceAddress ? { serviceAddress } : {}) },
+      };
     }
     case "lock_quote": {
       const quoteId = typeof args.quoteId === "string" ? args.quoteId : "";

@@ -24,6 +24,9 @@ export interface WizardAnswerInput {
   stepId: string;
   optionId: string;
   customValue?: string;
+  /** REQ-263 (demo ai-assistant-m2): the job address typed (or pre-filled)
+   *  in the customer step — lands on the quote as `serviceAddress`. */
+  serviceAddress?: string;
   /** Customer-step payload (only meaningful when stepId === "customer"). */
   customer?: {
     id?: string;
@@ -125,6 +128,12 @@ export class HandleWizardAnswer {
       boundCustomerId = handled.customerId ?? boundCustomerId;
       boundCustomerName = handled.customerName;
       customerCustomValue = handled.customValue ?? customerCustomValue;
+      await this.applyServiceAddress(
+        conv,
+        input.userId,
+        input.serviceAddress,
+        handled.customerAddress,
+      );
     }
 
     const next = applyAnswer(spec, current, {
@@ -235,11 +244,17 @@ export class HandleWizardAnswer {
    * isCustom create_new option.
    */
   private async handleCustomerStep(
-    _conversationId: string,
+    conversationId: string,
     input: WizardAnswerInput,
     lang: "en" | "es",
   ): Promise<
-    { customerId?: string; customerName?: string; customValue?: string }
+    {
+      customerId?: string;
+      customerName?: string;
+      customValue?: string;
+      /** REQ-263: the resolved customer's own address, if any. */
+      customerAddress?: string;
+    }
   > {
     if (input.optionId === "create_new") {
       // Prefer the structured customer.create payload; fall back to a
@@ -289,6 +304,10 @@ export class HandleWizardAnswer {
         ...(create?.businessName?.trim()
           ? { businessName: create.businessName.trim() }
           : {}),
+        // REQ-263: a new customer's address is the job address typed with it
+        ...(input.serviceAddress?.trim()
+          ? { address: input.serviceAddress.trim() }
+          : {}),
       });
       return {
         customerId: created.id,
@@ -302,10 +321,45 @@ export class HandleWizardAnswer {
         throw new Error("pick_existing requires customer.id");
       }
       const existing = await this.customers.getOwned(id, input.userId);
-      return { customerId: existing.id, customerName: existing.name };
+      return {
+        customerId: existing.id,
+        customerName: existing.name,
+        customerAddress: existing.address,
+      };
     }
     // use_active — no work needed; coordinator falls back to conv.customerId.
+    if (input.optionId === "use_active" && conversationId) {
+      const conv = await this.conversations.get(conversationId);
+      if (conv.customerId) {
+        const bound = await this.customers.getOwned(conv.customerId, input.userId)
+          .catch(() => null);
+        if (bound?.address) return { customerAddress: bound.address };
+      }
+    }
     return {};
+  }
+
+  /**
+   * REQ-263 (demo ai-assistant-m2): the quote's job address after the
+   * customer step. An address typed in the step wins (the contractor saw it,
+   * pre-filled or not, and confirmed it); otherwise an empty job address is
+   * filled from the customer's own address. An address already on the quote
+   * is never replaced by the customer's.
+   */
+  private async applyServiceAddress(
+    conv: AgentConversation,
+    userId: string,
+    typed: string | undefined,
+    customerAddress: string | undefined,
+  ): Promise<void> {
+    if (!conv.quoteId) return;
+    const quote = await this.quotes.getOwned(conv.quoteId, userId)
+      .catch(() => null);
+    if (!quote) return;
+    const next = typed?.trim() ||
+      (quote.serviceAddress?.trim() ? undefined : customerAddress?.trim());
+    if (!next || next === quote.serviceAddress) return;
+    await this.quotes.update(quote.id, userId, { serviceAddress: next });
   }
 
   /**

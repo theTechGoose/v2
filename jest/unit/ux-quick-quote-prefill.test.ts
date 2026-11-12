@@ -192,12 +192,22 @@ describe("UX-04 extractQuickQuotePrefill — both halves in one call", () => {
     const got = mod.extractQuickQuotePrefill(
       "Instalación de patio de adoquines 20x15 para la familia Nguyen, $3,700 todo incluido",
     );
-    expect(got).toEqual({ priceCents: 370000, customerName: "Familia Nguyen" });
+    // REQ-263: the prefill also carries the job address (none in this sentence)
+    expect(got).toEqual({
+      priceCents: 370000,
+      customerName: "Familia Nguyen",
+      serviceAddress: null,
+    });
   });
 
   it("UX-04 a sentence with neither yields both nulls (prefill never invents)", () => {
     const got = mod.extractQuickQuotePrefill("Reparar la puerta del garaje");
-    expect(got).toEqual({ priceCents: null, customerName: null });
+    // REQ-263: … and never invents a job address
+    expect(got).toEqual({
+      priceCents: null,
+      customerName: null,
+      serviceAddress: null,
+    });
   });
 });
 

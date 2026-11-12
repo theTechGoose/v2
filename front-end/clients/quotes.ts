@@ -40,6 +40,8 @@ export interface QuoteCard {
   /** Per-language job title + summary, populated from the picked job option. */
   jobNameByLang?: Record<string, string>;
   summaryByLang?: Record<string, string>;
+  /** REQ-263: where the job is (the "412 Oak St Austin" the contractor typed). */
+  serviceAddress?: string;
   lineItems?: {
     description: string;
     quantity?: number;

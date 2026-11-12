@@ -11,6 +11,8 @@
 export interface QuickQuotePrefill {
   priceCents: number | null;
   customerName: string | null;
+  /** REQ-263: the job (service) address typed in the sentence. */
+  serviceAddress: string | null;
 }
 
 const CURRENCY_WORDS = /^(d[oó]lares|dollars|usd|pesos)$/i;
@@ -96,11 +98,58 @@ export function extractCustomerName(raw: string): string | null {
   return null;
 }
 
-/** Both deterministic halves in one call. */
+/** Street-type words that close the street part of a US address. */
+const STREET_SUFFIX =
+  "St|Street|Ave|Av|Avenue|Rd|Road|Dr|Drive|Blvd|Boulevard|Ln|Lane|Ct|Court|Way|Pl|Place|Pkwy|Parkway|Cir|Circle|Ter|Terrace|Trl|Trail|Hwy|Highway|Cv|Cove|Sq|Square";
+/** Abbreviated street types: a period after one is the abbreviation's, not
+ *  the end of the sentence ("412 Oak St. Austin"). */
+const STREET_ABBREV =
+  /^(St|Ave|Av|Rd|Dr|Blvd|Ln|Ct|Pl|Pkwy|Cir|Ter|Trl|Hwy|Cv|Sq)$/;
+
+/**
+ * REQ-263 (demo ai-assistant-m2) — the job (service) address in the typed
+ * sentence: a house number, one to four street-name words, a street-type word
+ * (St / Ave / Rd / Dr / …), then the Capitalized city, two-letter state and
+ * ZIP that follow it. The address ends at a colon, a "$", a lowercase word or
+ * the end of the text:
+ *   - "…for Maria Lopez, 412 Oak St Austin, $350" → "412 Oak St Austin";
+ *   - "1800 Barton Hills Dr, Austin, TX 78704" → kept whole;
+ *   - no street-type word → null (never a made-up address; "6 paneles",
+ *     "3 bedrooms", a phone number are never one).
+ */
+export function extractServiceAddress(raw: string): string | null {
+  const street = new RegExp(
+    `(?<![\\d$.,\\-/])(\\d{1,6}[A-Za-z]?)\\s+((?:[\\p{Lu}\\d][\\p{L}\\d'’.-]*\\s+){1,4}?)(${STREET_SUFFIX})\\.?(?=[\\s,;:]|$)`,
+    "u",
+  );
+  const m = street.exec(raw);
+  if (!m) return null;
+  let out = `${m[1]} ${m[2]}${m[3]}`.replace(/\s+/g, " ").trim();
+  // "…Lake Avenue. Total $900" — a full street word then a period ends it.
+  if (m[0].endsWith(".") && !STREET_ABBREV.test(m[3])) return out;
+  // City / state / ZIP: Capitalized words, a 2-letter state, a 5(+4)-digit
+  // ZIP, separated by spaces or single commas.
+  const rest = raw.slice(m.index + m[0].length);
+  const tail = /^(\s*,?\s*)([\p{Lu}][\p{L}'’-]*|\d{5}(?:-\d{4})?)/u;
+  let cursor = rest;
+  let words = 0;
+  for (;;) {
+    const t = tail.exec(cursor);
+    if (!t || words >= 5) break;
+    out += `${t[1].includes(",") ? ", " : " "}${t[2]}`;
+    cursor = cursor.slice(t[0].length);
+    words++;
+    if (/^\d/.test(t[2])) break; // the ZIP closes it
+  }
+  return out;
+}
+
+/** All the deterministic facts in one call. */
 export function extractQuickQuotePrefill(raw: string): QuickQuotePrefill {
   return {
     priceCents: extractPriceCents(raw),
     customerName: extractCustomerName(raw),
+    serviceAddress: extractServiceAddress(raw),
   };
 }
 

@@ -567,3 +567,77 @@ Deno.test("REQ-029 NW-22 own-contact create_new rejects with the English diction
   );
   await resetKv();
 });
+
+// ---------------------------------------------------------------------------
+// REQ-263 (demo ai-assistant-m2): the customer step takes the job address —
+// typed (or pre-filled) there, or the picked customer's own address — and it
+// lands on the quote as serviceAddress.
+// ---------------------------------------------------------------------------
+
+Deno.test("REQ-263 handle-wizard-answer: create_new with a serviceAddress stores it on the quote and on the new customer", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const { flow, conv, quote, quotes, customers } =
+    await setupTermsConversationWithQuote();
+  await flow.run({
+    userId: "u-1",
+    conversationId: conv.id,
+    stepId: "customer",
+    optionId: "create_new",
+    serviceAddress: "  412 Oak St Austin ",
+    customer: { create: { name: "Maria Lopez", phoneNumber: "5125550199" } },
+  });
+  const stored = await quotes.getOwned(quote.id, "u-1");
+  assertEquals(stored.serviceAddress, "412 Oak St Austin");
+  const [created] = await customers.listByUser("u-1");
+  assertEquals(created.name, "Maria Lopez");
+  assertEquals(created.address, "412 Oak St Austin");
+  await resetKv();
+});
+
+Deno.test("REQ-263 handle-wizard-answer: picking an existing customer fills an empty job address from the customer's address", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const { flow, conv, quote, quotes, customers } =
+    await setupTermsConversationWithQuote();
+  const maria = await customers.create("u-1", {
+    name: "Maria Lopez",
+    address: "412 Oak St Austin",
+  });
+  await flow.run({
+    userId: "u-1",
+    conversationId: conv.id,
+    stepId: "customer",
+    optionId: "pick_existing",
+    customer: { id: maria.id },
+  });
+  assertEquals(
+    (await quotes.getOwned(quote.id, "u-1")).serviceAddress,
+    "412 Oak St Austin",
+  );
+  await resetKv();
+});
+
+Deno.test("REQ-263 handle-wizard-answer: an address already on the quote is not overwritten by the picked customer's", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const { flow, conv, quote, quotes, customers } =
+    await setupTermsConversationWithQuote();
+  await quotes.update(quote.id, "u-1", { serviceAddress: "12 Oak St Austin" });
+  const maria = await customers.create("u-1", {
+    name: "Maria Lopez",
+    address: "9 Home Ln Austin",
+  });
+  await flow.run({
+    userId: "u-1",
+    conversationId: conv.id,
+    stepId: "customer",
+    optionId: "pick_existing",
+    customer: { id: maria.id },
+  });
+  assertEquals(
+    (await quotes.getOwned(quote.id, "u-1")).serviceAddress,
+    "12 Oak St Austin",
+  );
+  await resetKv();
+});

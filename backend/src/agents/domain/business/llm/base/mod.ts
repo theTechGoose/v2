@@ -66,7 +66,15 @@ export interface LLMRequest {
  * destructive ops). Add new variants as the action surface grows.
  */
 export type LLMAction =
-  | { type: "create_quote"; payload: { summary: string; lineItems: { description: string; amountCents: number }[] } }
+  | {
+    type: "create_quote";
+    payload: {
+      summary: string;
+      lineItems: { description: string; amountCents: number }[];
+      /** REQ-263: the job address the user typed, when they gave one. */
+      serviceAddress?: string;
+    };
+  }
   | { type: "lock_quote"; payload: { quoteId: string } }
   | { type: "request_terms_transition"; payload: { quoteId: string } };
 

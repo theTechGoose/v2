@@ -34,6 +34,7 @@ export class WizardController {
         optionId: dto.optionId,
         customValue: dto.customValue,
         customer: dto.customer,
+        serviceAddress: dto.serviceAddress,
       }),
     );
   }

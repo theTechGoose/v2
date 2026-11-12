@@ -576,3 +576,51 @@ Deno.test("public e2e: claim-payment is 409 when invoice already paid", async ()
     await resetKv();
   }
 });
+
+// REQ-263 (demo ai-assistant-m2): the quote carries the job's service address
+// and the customer's agreement (/q) receives it.
+Deno.test("REQ-263 public e2e: a quote's serviceAddress is saved, editable, and served on /public", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const server = await bootstrapServer(TestApp, { port: PORT, swagger: false });
+  await server.listen();
+  try {
+    const sid = await login(PORT);
+    const headers = { "content-type": "application/json", "x-session-id": sid };
+    const created = await fetch(`http://localhost:${PORT}/quotes`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        summary: "Deep clean",
+        serviceAddress: "412 Oak St Austin",
+        lineItems: [{ description: "x", quantity: 1, unit: "ea", price: 35_000 }],
+      }),
+    }).then((r) => r.json());
+    let pub = await fetch(`http://localhost:${PORT}/quotes/${created.id}/public`)
+      .then((r) => r.json());
+    assertEquals(pub.serviceAddress, "412 Oak St Austin");
+
+    await drain(
+      await fetch(`http://localhost:${PORT}/quotes/${created.id}`, {
+        method: "PUT",
+        headers,
+        body: JSON.stringify({ serviceAddress: "412 Oak St, Austin TX 78704" }),
+      }),
+    );
+    pub = await fetch(`http://localhost:${PORT}/quotes/${created.id}/public`)
+      .then((r) => r.json());
+    assertEquals(pub.serviceAddress, "412 Oak St, Austin TX 78704");
+
+    // not a string → refused, nothing stored
+    const bad = await fetch(`http://localhost:${PORT}/quotes`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ summary: "x", serviceAddress: 412, lineItems: [] }),
+    });
+    assertEquals(bad.ok, false);
+    await drain(bad);
+  } finally {
+    await server.stop();
+    await resetKv();
+  }
+});

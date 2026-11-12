@@ -5,6 +5,8 @@ import { bootstrapServer } from "#mrg-keystone/danet";
 import { AgentsModule } from "@agents/mod-root.ts";
 import { OtpStore } from "@users/domain/data/otp-store/mod.ts";
 import { resetKv } from "@core/data/kv/mod.ts";
+import { QuoteStore } from "@paperwork/domain/data/quote-store/mod.ts";
+import { AgentConversationStore } from "@agents/domain/data/agent-conversation-store/mod.ts";
 
 @Module({ imports: [AgentsModule] })
 class TestApp {}
@@ -143,5 +145,43 @@ Deno.test("agents wizard e2e: custom option requires customValue", async () => {
     const ok = res.ok;
     await drain(res);
     assertEquals(ok, false);
+  });
+});
+
+// REQ-263 (demo ai-assistant-m2): the customer step's job address reaches the
+// quote through the HTTP answer (the DTO must carry it, the controller pass it).
+Deno.test("REQ-263 agents wizard e2e: the customer step's serviceAddress lands on the conversation's quote", async () => {
+  await withServer(async (port) => {
+    const sid = await login(port);
+    const conv = await fetch(`http://localhost:${port}/agents/conversations`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-session-id": sid },
+      body: "{}",
+    }).then((r) => r.json());
+    const userId: string = conv.userId;
+    const quote = await new QuoteStore().create(userId, {
+      summary: "Deep clean",
+      lineItems: [],
+      estimatedTotal: 35_000,
+    });
+    await new AgentConversationStore().update(conv.id, { quoteId: quote.id });
+    await fetch(`http://localhost:${port}/agents/conversations/${conv.id}/transition-to-terms`, {
+      method: "POST", headers: { "x-session-id": sid },
+    }).then(drain);
+    const res = await fetch(`http://localhost:${port}/agents/wizard/answer`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-session-id": sid },
+      body: JSON.stringify({
+        conversationId: conv.id,
+        stepId: "customer",
+        optionId: "create_new",
+        serviceAddress: "412 Oak St Austin",
+        customer: { create: { name: "Maria Lopez", phoneNumber: "5125550199" } },
+      }),
+    });
+    assertEquals(res.status, 200);
+    await drain(res);
+    const stored = await new QuoteStore().getOwned(quote.id, userId);
+    assertEquals(stored.serviceAddress, "412 Oak St Austin");
   });
 });
