@@ -97,6 +97,7 @@ import {
   anchorPoint,
   pointInBox,
 } from "../../shared/demo-mode/presenter-anchor.ts";
+import { anchorFrame } from "../../shared/demo-mode/customer-pointer.ts";
 import {
   type RestartNotice,
   restartNotice,
@@ -172,8 +173,8 @@ import {
   pillHome,
   pillOverflows,
   pillStore,
-  placePill,
   pillWraps,
+  placePill,
   recallPillOpen,
   rememberPillOpen,
   samplePoints,
@@ -433,13 +434,22 @@ export default function DemoModeOverlay() {
     const sender = senderRef.current;
     // REQ-371 (demo m10) — from the hit-test stack, the demo's own pill skipped: a point under
     // the pill names the page's element under it, never an ancestor's box
-    const out = anchorAt(
+    const made = anchorAt(
       p,
       viewportBox(),
       recorder && sender ? document.elementsFromPoint(p.x, p.y) : [],
       recorder,
       sender?.load ?? null,
     );
+    // REQ-639 (cycle 5, c3-M6) — the frame that carries this screen: the stage draws the pointer
+    // only once its replay has it, never on an older frame where the spot is another chip
+    const f = made.n && recorder && sender
+      ? anchorFrame(
+        sender.pushed(),
+        recorder.waiting(),
+      )
+      : null;
+    const out = made.n && f !== null ? { ...made, n: { ...made.n, f } } : made;
     sentRef.current = out; // REQ-305 — every anchor of this pointer goes out: the last one sent
     return out;
   };

@@ -74,6 +74,8 @@ export interface Recorder {
   /** REQ-309 — an empty frame when nothing went out for heartbeatMs while somebody watches: the
    *  stage can tell a lost frame from a quiet page (nothing while paused) */
   beat(): void;
+  /** REQ-639 — changes are waiting to go out: the next frame carries them */
+  waiting(): boolean;
   /** stop watching until the next snapshot */
   pause(): void;
   /** stop for good */
@@ -321,6 +323,11 @@ export function createRecorder(doc: Document, o: RecorderOptions): Recorder {
   let attached = false;
   let stopped = false;
   let flushTimer: ReturnType<typeof setTimeout> | undefined;
+  /** REQ-639 — an event that may change what the next frame carries (input, change, resize) */
+  let nudged = false;
+  /** REQ-639 — `waiting()` said the next frame carries the changes: a pointer anchor names that
+   *  frame's number, so the next flush sends a frame even when the changes cancelled out */
+  let promised = false;
   let sweepTimer: ReturnType<typeof setInterval> | undefined;
 
   const idFor = (n: Node) => {
@@ -523,6 +530,8 @@ export function createRecorder(doc: Document, o: RecorderOptions): Recorder {
     scrolled.clear();
     inked.clear();
     pending = [];
+    nudged = false;
+    promised = false;
   }
 
   function forget(id: number) {
@@ -541,7 +550,10 @@ export function createRecorder(doc: Document, o: RecorderOptions): Recorder {
     if (e.target) scrolled.add(e.target);
     schedule();
   };
-  const onEvent = () => schedule();
+  const onEvent = () => {
+    nudged = true;
+    schedule();
+  };
   /** REQ-534 — a pointer on a mirrored canvas: its ink goes out within inkMs, not on the sweep */
   const onInk = (e: Event) => {
     const t = e.target as Node | null;
@@ -666,6 +678,10 @@ export function createRecorder(doc: Document, o: RecorderOptions): Recorder {
     if (!attached) return;
     const recs = pending.concat(observer?.takeRecords() ?? []);
     pending = [];
+    // REQ-639 — a frame promised to a pointer anchor goes out, empty if need be
+    const owed = promised;
+    promised = false;
+    nudged = false;
     const b = base();
 
     // 1. what the records say: parents whose children changed, nodes that left the page at some
@@ -877,13 +893,28 @@ export function createRecorder(doc: Document, o: RecorderOptions): Recorder {
     }
 
     if (gone.length) ops.push({ o: "g", i: gone });
-    if (ops.length) emit({ t: "ops", ops });
+    if (ops.length || owed) emit({ t: "ops", ops });
+  }
+
+  /** REQ-639 — changes are waiting to go out (records not yet sent, a scroll, an input or a
+   *  resize): the next frame carries them, and it is promised to go out */
+  function waiting(): boolean {
+    if (!attached) return false;
+    const recs = observer?.takeRecords() ?? [];
+    if (recs.length) {
+      pending = pending.concat(recs);
+      schedule();
+    }
+    const w = pending.length > 0 || scrolled.size > 0 || nudged;
+    if (w) promised = true;
+    return w;
   }
 
   return {
     snapshot,
     flush,
     beat,
+    waiting,
     pause: detach,
     stop() {
       detach();
