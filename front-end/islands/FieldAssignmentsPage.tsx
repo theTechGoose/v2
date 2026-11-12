@@ -14,10 +14,12 @@ import { useEffect, useRef, useState } from "preact/hooks";
 import {
   fieldClient,
   type FieldWorker,
+  type MapCenter,
   type RegionView,
   type SubscriptionView,
 } from "../clients/field.ts";
 import FieldHead from "../components/FieldHead.tsx";
+import { assignmentsMapView, US_MAP_VIEW } from "../lib/field.ts";
 import { ApiError } from "../lib/api.ts";
 import { I, ICN } from "../lib/dash-icons.tsx";
 import { langSignal, t } from "../lib/i18n.ts";
@@ -134,6 +136,8 @@ export default function FieldAssignmentsPage() {
   const [dragging, setDragging] = useState<Drag | null>(null);
   const [over, setOver] = useState<string | null>(null);
   const [mapFailed, setMapFailed] = useState(false);
+  /** REQ-288 — the business's own place, for a map with no subscriptions on it */
+  const [center, setCenter] = useState<MapCenter | null>(null);
 
   const mapEl = useRef<HTMLDivElement>(null);
   const mapRef = useRef<LMap | null>(null);
@@ -159,6 +163,9 @@ export default function FieldAssignmentsPage() {
 
   useEffect(() => {
     load();
+    fieldClient.mapCenter().then(setCenter).catch(
+      () => {/* the US view stands */},
+    );
   }, []);
 
   // Leaflet: create the map once the CDN script is in; the zone list never waits for it.
@@ -171,10 +178,11 @@ export default function FieldAssignmentsPage() {
         return;
       }
       leafletRef.current = L;
-      const map = L.map(mapEl.current, { scrollWheelZoom: false }).setView([
-        33.69,
-        -78.93,
-      ], 11);
+      // REQ-288 — the whole US until the subscriptions or the business's place are known
+      const map = L.map(mapEl.current, { scrollWheelZoom: false }).setView(
+        [US_MAP_VIEW.lat, US_MAP_VIEW.lng],
+        US_MAP_VIEW.zoom,
+      );
       L.tileLayer(OSM_TILES, { attribution: OSM_ATTR, maxZoom: 18 }).addTo(map);
       mapRef.current = map;
       setMapReady(true);
@@ -248,8 +256,10 @@ export default function FieldAssignmentsPage() {
       }
     }
     map.invalidateSize();
-    if (pts.length) map.fitBounds(pts, { padding: [30, 30] });
-  }, [regions, mapReady]);
+    const view = assignmentsMapView(pts, center);
+    if ("fit" in view) map.fitBounds(view.fit, { padding: [30, 30] });
+    else map.setView(view.center, view.zoom, { animate: false });
+  }, [regions, mapReady, center]);
 
   async function run(fn: () => Promise<unknown>) {
     setBusy(true);

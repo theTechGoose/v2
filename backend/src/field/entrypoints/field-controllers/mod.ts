@@ -50,6 +50,7 @@ import {
   newId,
 } from "@field/domain/coordinators/field-zones/mod.ts";
 import { FieldDay } from "@field/domain/coordinators/field-day/mod.ts";
+import { FieldMapCenter } from "@field/domain/coordinators/field-map-center/mod.ts";
 import { FieldBatches } from "@field/domain/coordinators/field-batches/mod.ts";
 import { FieldNotices } from "@field/domain/coordinators/field-notices/mod.ts";
 import {
@@ -643,6 +644,7 @@ export class FieldRegionsController {
     private views: FieldViews,
     private users: UserStore,
     private sessions: SessionStore,
+    private mapCenter: FieldMapCenter,
   ) {}
 
   @Get()
@@ -651,6 +653,13 @@ export class FieldRegionsController {
     return (await this.views.regionsWithMembers(user.id)).sort((a, b) =>
       a.name.localeCompare(b.name)
     );
+  }
+
+  /** REQ-288: where the map starts with no subscriptions to fit — the business's address, else the whole US */
+  @Get("center")
+  async center(@Context() ctx: ExecutionContext) {
+    const user = await requireUser(ctx, this.sessions, this.users);
+    return await this.mapCenter.center(user.id);
   }
 
   @Post("regroup")

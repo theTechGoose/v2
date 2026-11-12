@@ -109,6 +109,14 @@ export interface RegionView extends Region {
   subscriptions: SubscriptionView[];
 }
 
+/** REQ-288 — GET /field/regions/center: where the map starts with no subscriptions to fit */
+export interface MapCenter {
+  lat: number;
+  lng: number;
+  zoom: number;
+  source: "business" | "none";
+}
+
 /** GET /field/tasks — the office's view: prices, notes, names */
 export interface TaskView {
   id: string;
@@ -291,6 +299,8 @@ export const fieldClient = {
 
   // ---- zones (REQ-140) ----
   regions: (opts?: ApiOptions) => api.get<RegionView[]>("/field/regions", opts),
+  mapCenter: (opts?: ApiOptions) =>
+    api.get<MapCenter>("/field/regions/center", opts),
   regroup: (opts?: ApiOptions) =>
     api.post<{ regions: number }>("/field/regions/regroup", {}, opts),
   staffRegion: (id: string, workerId: string | null, opts?: ApiOptions) =>

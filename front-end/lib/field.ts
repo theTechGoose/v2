@@ -115,3 +115,21 @@ export function workerScreenLang(
   if (chosen || !who) return null;
   return who.language === "en" || who.language === "es" ? who.language : null;
 }
+
+/** REQ-288 — the continental US: the map's view when nothing better is known (never the dev seed's town) */
+export const US_MAP_VIEW = { lat: 39.5, lng: -98.35, zoom: 4 } as const;
+
+export type MapViewPlan =
+  | { fit: [number, number][] }
+  | { center: [number, number]; zoom: number };
+
+/** REQ-288 — the assignments map: fit the subscriptions; with none, the business's
+ *  own place (GET /field/regions/center); with neither, the whole US */
+export function assignmentsMapView(
+  pts: [number, number][],
+  center: { lat: number; lng: number; zoom: number } | null,
+): MapViewPlan {
+  if (pts.length) return { fit: pts };
+  const at = center ?? US_MAP_VIEW;
+  return { center: [at.lat, at.lng], zoom: at.zoom };
+}
