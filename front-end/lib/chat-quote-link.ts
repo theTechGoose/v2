@@ -27,14 +27,32 @@ const LINKABLE = new Set([
   "no_such_line",
 ]);
 
+/** REQ-462 (demo-loop cycle 3, M26): the chat's edit of a change order by
+ *  its number (`changeOrderEdit`) links the order's quote, whose panel lists
+ *  it with Edit / Withdraw. An unknown number names no quote. */
+const EDIT_LINKABLE = new Set([
+  "updated",
+  "withdrawn",
+  "approved",
+  "no_change",
+  "needs_amount",
+  "ask",
+]);
+
+const LINKABLE_BY_KEY: Record<string, Set<string>> = {
+  quoteRevision: LINKABLE,
+  changeOrder: LINKABLE,
+  changeOrderEdit: EDIT_LINKABLE,
+};
+
 export function chatQuoteLink(payload: unknown): ChatQuoteLink | undefined {
   if (!payload || typeof payload !== "object") return undefined;
   const p = payload as Record<string, unknown>;
-  for (const key of ["quoteRevision", "changeOrder"]) {
+  for (const [key, linkable] of Object.entries(LINKABLE_BY_KEY)) {
     const outcome = p[key];
     if (!outcome || typeof outcome !== "object") continue;
     const { kind, quoteId, quoteNumber } = outcome as Record<string, unknown>;
-    if (typeof kind !== "string" || !LINKABLE.has(kind)) continue;
+    if (typeof kind !== "string" || !linkable.has(kind)) continue;
     if (typeof quoteId !== "string" || !quoteId) continue;
     return {
       quoteId,

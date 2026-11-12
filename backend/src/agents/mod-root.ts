@@ -33,6 +33,7 @@ import { ProfessionalizeBullet } from "@agents/domain/coordinators/professionali
 import { TranslateBullets } from "@agents/domain/coordinators/translate-bullets/mod.ts";
 import { TranslateQuote } from "@agents/domain/coordinators/translate-quote/mod.ts"; // REQ-264
 import { ListConversations } from "@agents/domain/coordinators/list-conversations/mod.ts"; // REQ-369
+import { UpdateChatChangeOrder } from "@agents/domain/coordinators/update-chat-change-order/mod.ts"; // REQ-462
 import { LLM_CLIENT } from "@agents/domain/business/llm/base/mod.ts";
 import type { LLMClient } from "@agents/domain/business/llm/base/mod.ts";
 import { StubLLMClient } from "@agents/domain/business/llm/implementations/stub/mod.ts";
@@ -127,6 +128,7 @@ const LlmClientClass = await selectLLMClass();
     TranslateBullets,
     TranslateQuote, // REQ-264
     ListConversations, // REQ-369
+    UpdateChatChangeOrder, // REQ-462
     { token: LLM_CLIENT, useClass: LlmClientClass },
   ],
 })

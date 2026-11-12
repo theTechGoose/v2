@@ -258,6 +258,241 @@ export function pickChangeOrderTarget(input: {
 }
 
 // ---------------------------------------------------------------------------
+// REQ-462 (demo-loop cycle 3, M26): an EXISTING change order, by its number.
+// ---------------------------------------------------------------------------
+//
+// "Change of plan on CO-001: make it $1,000 and the description should just
+// say "Upgrade to frameless glass shower door"." changes CO-001 itself.
+// Nothing read "CO-001": the model called revise_quote on the signed quote
+// and the reply was "…its lines can't change". The number, the new amount,
+// the new wording or a withdrawal are read here; anything less certain is
+// left to the model (update_change_order).
+
+const CO_NUMBER_RE = /\bCO-\d+\b/gi;
+
+/** Every distinct change-order number in the text, upper-cased, first
+ *  spelling kept ("co-001, CO-1 and CO-002" → ["CO-001", "CO-002"]). */
+export function changeOrderNumbersIn(text: string): string[] {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const m of (text ?? "").matchAll(CO_NUMBER_RE)) {
+    const n = m[0].toUpperCase();
+    if (seen.has(docNumberKey(n))) continue;
+    seen.add(docNumberKey(n));
+    out.push(n);
+  }
+  return out;
+}
+
+/** "CO-001" and "co-1" name the same order. */
+export function sameDocNumber(a: string, b: string): boolean {
+  return docNumberKey(a) === docNumberKey(b);
+}
+
+export interface ChangeOrderEditRequest {
+  /** "CO-001", upper-cased as typed. */
+  changeOrderNumber: string;
+  /** The order's new wording. */
+  description?: string;
+  /** The order's NEW amount, integer cents — negative when the contractor
+   *  said "credit"; otherwise the order keeps its direction
+   *  (editedChangeOrderDelta). */
+  amountCents?: number;
+  withdraw?: boolean;
+}
+
+/** "a new change order", "another change order like CO-001" — not an edit. */
+const NEW_CHANGE_ORDER_RE =
+  /\b(?:new|another|second|separate|extra)\s+change[\s-]*orders?\b|(?<!\p{L})(?:nueva|otra)\s+[oó]rden(?:es)?\s+de\s+cambio\b/iu;
+/** Advice wanted, not an instruction: "Should I make CO-001 $1,000?". */
+const ADVICE_RE =
+  /^\s*¿?\s*(?:should\s+(?:i|we)|do\s+you\s+think|what\s+if|would\s+it|is\s+it\s+(?:ok|okay|better)|deber[ií]a|crees\s+que)(?!\p{L})/iu;
+/** A word that changes an amount — "make it", "lower … to", "cambia". */
+const AMOUNT_CUE_RE =
+  /\b(?:make|set|lower|raise|reduce|increase|bump|drop|cut|knock|update|adjust|fix|correct|edit|revise|put)\b|\bchange\b(?![\s-]*orders?\b)|\bshould\s+(?:be|cost)\b|\binstead\b|\bto\s+(?:-|−)?\$|(?<!\p{L})(?:cambia|cambiar|cambie|pon|ponla|ponle|deja|baja|bájala|sube|súbela|ajusta|corrige|debe\s+ser|en\s+vez|en\s+lugar)(?!\p{L})/iu;
+/** The new amount is a credit. */
+const CREDIT_CUE_RE =
+  /\b(?:credit(?:s|ed)?|minus|refund|discount)\b|(?<!\p{L})(?:cr[eé]dito|descuento|reembolso)(?!\p{L})/iu;
+/** The new amount is a charge (turns a credit into added work). */
+const CHARGE_CUE_RE =
+  /\b(?:charge|surcharge)\b|(?<!\p{L})(?:cargo|cobro|cobrar)(?!\p{L})/iu;
+/** Words that ask for new wording. */
+const DESC_CUE_RE =
+  /\b(?:description|describe[ds]?|say|says|read|reads|wording|word(?:ed)?|call(?:ed)?|name[ds]?|rename|reword|retitle|title|label|text)\b|(?<!\p{L})(?:descripci[oó]n|diga|dice|ll[aá]mala|nombre|t[ií]tulo|texto)(?!\p{L})/iu;
+const QUOTED_RE =
+  /"([^"]{2,200})"|“([^”]{2,200})”|‘([^’]{2,200})’|(?<![\p{L}\d])'([^']{2,200})'(?![\p{L}\d])/u;
+const QUOTED_ALL_RE =
+  /"[^"]*"|“[^”]*”|‘[^’]*’|(?<![\p{L}\d])'[^']*'(?![\p{L}\d])/gu;
+/** Unquoted new wording: "description should say X", "call it X". */
+const DESC_UNQUOTED_RES = [
+  /\b(?:description|wording|text)\s+(?:should\s+(?:just\s+|now\s+)?(?:say|read|be)|to|as|:|=)\s*(?:just\s+)?(.+)$/i,
+  /\bshould\s+(?:just\s+|now\s+)?(?:say|read)\s+(.+)$/i,
+  /\b(?:call|rename|reword|retitle|describe)\s+(?:it|this|that|CO-\d+)\s+(?:as\s+|to\s+)?(.+)$/i,
+  /(?<!\p{L})que\s+diga\s+(.+)$/iu,
+  /(?<!\p{L})descripci[oó]n\s*(?::|=|debe\s+decir)\s*(.+)$/iu,
+];
+/** Where unquoted wording ends: the next instruction, a sentence end, an amount. */
+const DESC_END_RE =
+  /,?\s+(?:and|y)\s+(?:make|change|set|lower|raise|bump|put|update|adjust|c[aá]mbiala|ponla|baja|sube)\b|[.;!?](?:\s|$)|\s+[—–]\s+|\s+-\s+|\s+(?:for|at|to|a|por|en)\s+(?:-|−)?\$/iu;
+const WITHDRAW_VERB = String
+  .raw`(?:withdraw|cancel|delete|remove|scrap|void|retract|drop|kill|pull|rescind|take\s+back|retira|retirar|cancela|cancelar|elimina|eliminar|borra|borrar|anula|anular)`;
+/** Only an instruction withdraws — "Did she cancel CO-001?" never does. */
+const IMPERATIVE_LEAD = String
+  .raw`(?:^|[.!;:,—–-]\s*|\b(?:please|pls|so|and|then|just|now|ok|okay|go\s+ahead\s+and|(?:can|could|would|will)\s+you(?:\s+please)?)\s+|(?<!\p{L})(?:por\s+favor|y|entonces)\s+)`;
+const WITHDRAW_RES = [
+  new RegExp(
+    String
+      .raw`${IMPERATIVE_LEAD}${WITHDRAW_VERB}\s+(?:(?:the|la|el)\s+)?(?:(?:change[\s-]*order|orden\s+de\s+cambio)\s+)?CO-\d+\b(?!\s+(?:down\s+|up\s+)?(?:to|a)\s+(?:-|−)?\$)`,
+    "iu",
+  ),
+  new RegExp(
+    String
+      .raw`\bCO-\d+\b[^.!?]*?${IMPERATIVE_LEAD}${WITHDRAW_VERB}\s+(?:it|this(?:\s+one)?|that(?:\s+one)?)\b`,
+    "iu",
+  ),
+  /\bCO-\d+\b[^.!?]*?(?<!\p{L})(?:ret[ií]rala|canc[eé]lala|b[oó]rrala|elim[ií]nala|an[uú]lala)(?!\p{L})/iu,
+];
+const MONEY_G_RE = /(-|−)?\$\s?(\d{1,3}(?:,\d{3})+|\d+)(?:\.(\d{1,2}))?/g;
+/** What makes an amount the OLD one: "from $1,200", "not $1,200". */
+const OLD_AMOUNT_BEFORE_RE =
+  /(?:\bfrom|\bnot|\binstead\s+of|\brather\s+than|\bwas|\bwere|(?<!\p{L})(?:desde|no|en\s+vez\s+de|en\s+lugar\s+de))\s*$/iu;
+
+function withoutQuoted(text: string): string {
+  return text.replace(QUOTED_ALL_RE, " ");
+}
+
+/** The new wording, if the message gives one. */
+function editDescription(text: string, unquoted: string): string | undefined {
+  if (!DESC_CUE_RE.test(unquoted)) return undefined;
+  const q = text.match(QUOTED_RE);
+  let desc = q ? (q[1] ?? q[2] ?? q[3] ?? q[4] ?? "") : "";
+  if (!q) {
+    for (const re of DESC_UNQUOTED_RES) {
+      const m = unquoted.match(re);
+      if (!m) continue;
+      const end = m[1].search(DESC_END_RE);
+      desc = (end >= 0 ? m[1].slice(0, end) : m[1]).trim();
+      // one bare word is too thin to be sure it is wording ("should read better")
+      if (desc.split(/\s+/).filter((w) => /\p{L}/u.test(w)).length < 2) {
+        desc = "";
+      }
+      break;
+    }
+  }
+  desc = desc.replace(/^[\s"'“”‘’]+|[\s"'“”‘’.,;:!?]+$/g, "").trim();
+  return /\p{L}{2}/u.test(desc) ? capitalize(desc) : undefined;
+}
+
+/** The new amount in cents (signed by a typed minus or "credit"), if the
+ *  message gives exactly one and says to change it. */
+function editAmount(unquoted: string): number | undefined {
+  let corrected = false;
+  const fresh: RegExpMatchArray[] = [];
+  for (const m of unquoted.matchAll(MONEY_G_RE)) {
+    const at = m.index ?? 0;
+    const before = unquoted.slice(0, at);
+    const after = unquoted.slice(at + m[0].length);
+    const old = OLD_AMOUNT_BEFORE_RE.test(before) ||
+      // "de $1,200 a $900"
+      (/(?<!\p{L})de\s*$/iu.test(before) && /^\s+a\s+(?:-|−)?\$/i.test(after));
+    if (old) corrected = true;
+    else fresh.push(m);
+  }
+  if (fresh.length !== 1) return undefined;
+  if (!corrected && !AMOUNT_CUE_RE.test(unquoted)) return undefined;
+  const m = fresh[0];
+  const cents = Number(m[2].replace(/,/g, "")) * 100 +
+    (m[3] ? Number(m[3].padEnd(2, "0")) : 0);
+  return m[1] || CREDIT_CUE_RE.test(unquoted) ? -cents : cents;
+}
+
+/**
+ * Read an edit of an existing change order: exactly one CO number, and a new
+ * amount (with a word that changes it), a new wording, or an instruction to
+ * withdraw it. Undefined for anything else — a question, a NEW change order,
+ * two numbers, nothing to change, or a withdrawal mixed with an edit — which
+ * the model reads instead.
+ */
+export function parseChangeOrderEdit(
+  text: string,
+): ChangeOrderEditRequest | undefined {
+  const raw = (text ?? "").trim();
+  if (!raw) return undefined;
+  const numbers = changeOrderNumbersIn(raw);
+  if (numbers.length !== 1) return undefined;
+  if (NEW_CHANGE_ORDER_RE.test(raw) || ADVICE_RE.test(raw)) return undefined;
+  const unquoted = withoutQuoted(raw);
+  const description = editDescription(raw, unquoted);
+  const amountCents = editAmount(unquoted);
+  const withdraw = WITHDRAW_RES.some((re) => re.test(unquoted));
+  if (withdraw) {
+    if (description !== undefined || amountCents !== undefined) {
+      return undefined;
+    }
+    return { changeOrderNumber: numbers[0], withdraw: true };
+  }
+  if (description === undefined && amountCents === undefined) return undefined;
+  return {
+    changeOrderNumber: numbers[0],
+    ...(amountCents !== undefined ? { amountCents } : {}),
+    ...(description !== undefined ? { description } : {}),
+  };
+}
+
+/**
+ * The edited order's signed delta: the new amount keeps the order's own
+ * direction — a credit stays a credit — unless the contractor said "credit"
+ * (or typed a minus) or "charge". The model's sign alone never flips it.
+ */
+export function editedChangeOrderDelta(input: {
+  currentCents: number;
+  amountCents: number;
+  userText?: string;
+}): number {
+  const abs = Math.abs(Math.round(input.amountCents));
+  const said = withoutQuoted(input.userText ?? "");
+  if (CREDIT_CUE_RE.test(said) || /(?:-|−)\s?\$/.test(said)) return -abs;
+  if (CHARGE_CUE_RE.test(said)) return abs;
+  return input.currentCents < 0 ? -abs : abs;
+}
+
+export type AmountCheck =
+  | { kind: "ok"; amountCents: number }
+  /** the amount fits nothing typed — ask, write nothing */
+  | { kind: "ask" };
+
+/**
+ * REQ-377's guard, for an edit: the model's NEW amount for a change order
+ * (unsigned) stands when it is a dollar amount the contractor typed, or the
+ * order's current amount plus or minus one ("knock $200 off CO-001"). A ×10
+ * / ×100 slip from exactly one of those is corrected; anything else is asked
+ * about. No amount typed → nothing to check against: it stands.
+ */
+export function reconcileChangeOrderAmount(input: {
+  amountCents: number;
+  currentCents: number;
+  userText: string;
+}): AmountCheck {
+  const amount = Math.abs(Math.round(input.amountCents));
+  const typed = typedAmountsCents(input.userText);
+  if (typed.length === 0) return { kind: "ok", amountCents: amount };
+  const current = Math.abs(Math.round(input.currentCents));
+  const fits = new Set<number>();
+  for (const a of typed) {
+    fits.add(a);
+    fits.add(current + a);
+    if (current - a > 0) fits.add(current - a);
+  }
+  if (fits.has(amount)) return { kind: "ok", amountCents: amount };
+  const slips = new Set<number>();
+  for (const scaled of [amount * 10, amount * 100, amount / 10, amount / 100]) {
+    if (Number.isInteger(scaled) && fits.has(scaled)) slips.add(scaled);
+  }
+  if (slips.size === 1) return { kind: "ok", amountCents: [...slips][0] };
+  return { kind: "ask" };
+}
+
+// ---------------------------------------------------------------------------
 // REQ-377 (demo-loop cycle 2, B1): a NEW TOTAL, not an added amount.
 // ---------------------------------------------------------------------------
 //
