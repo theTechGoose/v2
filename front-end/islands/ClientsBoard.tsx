@@ -384,7 +384,11 @@ function ClientCard(
             >
               <span class="ccard2__panel-row-icon">
                 <I
-                  d={d.kind === "invoice" ? ICN.invoice : ICN.quote}
+                  d={d.kind === "invoice"
+                    ? ICN.invoice
+                    : d.kind === "change_order" // REQ-565 (demo m33)
+                    ? ICN.pencil
+                    : ICN.quote}
                   size={13}
                   sw={2.2}
                 />
@@ -395,7 +399,22 @@ function ClientCard(
                   {tFor(lang, `clientsBoard.docState.${d.state}`)}
                 </div>
                 <div class="ccard2__panel-row-val">
-                  {d.number} · {fmtMoneyExact(d.amountCents)}
+                  {d.number} · {d.kind === "change_order"
+                    ? `${d.amountCents < 0 ? "−" : "+"}${
+                      fmtMoneyExact(Math.abs(d.amountCents))
+                    }`
+                    : fmtMoneyExact(d.amountCents)}
+                  {/* REQ-565 (demo m33): the quote at its agreed total, and
+                      what its approved change orders added */}
+                  {d.kind === "quote" && d.changeOrdersCents
+                    ? ` · ${
+                      tFor(lang, "clientsBoard.doc.inclChangeOrders", {
+                        amount: `${d.changeOrdersCents < 0 ? "−" : "+"}${
+                          fmtMoneyExact(Math.abs(d.changeOrdersCents))
+                        }`,
+                      })
+                    }`
+                    : ""}
                 </div>
               </span>
               <span class="ccard2__panel-row-arrow">

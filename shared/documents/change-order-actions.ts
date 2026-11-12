@@ -6,6 +6,7 @@
  * and the tests read the same rules.
  */
 import { isChangeOrderMutable } from "../quote-flow/adjustment-guards.ts";
+import { telHref } from "../quote-flow/format-helpers.ts";
 
 /** Invoice statuses a change order can no longer land on. */
 const CLOSED_INVOICE = new Set(["paid", "void", "canceled", "cancelled"]);
@@ -69,4 +70,33 @@ export function changeOrderBody(
   const cents = changeOrderCents(input.dollars);
   if (cents === null) return { ok: false, reason: "amount" };
   return { ok: true, body: { description, deltaAmountCents: cents } };
+}
+
+/**
+ * REQ-565 (demo-loop cycle 4, m33) — the ways a change order leaves its row on
+ * the quote panel: its full link (Copy link), a text to the customer's phone
+ * and an email to her address, both prefilled with that link. With no phone or
+ * email on file the text / email still open, prefilled, for the contractor to
+ * pick the recipient — never a dead button.
+ */
+export function changeOrderShareLinks(input: {
+  origin: string;
+  /** the order's own page, "/co/<id>" */
+  path: string;
+  phone?: string | null;
+  email?: string | null;
+  subject: string;
+  text: string;
+}): { url: string; sms: string; email: string } {
+  const url = `${input.origin.replace(/\/+$/, "")}${input.path}`;
+  const phone = input.phone?.trim();
+  const to = phone ? telHref(phone).replace(/^tel:/, "") : "";
+  const email = input.email?.trim() ?? "";
+  return {
+    url,
+    sms: `sms:${to}?body=${encodeURIComponent(input.text)}`,
+    email: `mailto:${email}?subject=${encodeURIComponent(input.subject)}&body=${
+      encodeURIComponent(input.text)
+    }`,
+  };
 }

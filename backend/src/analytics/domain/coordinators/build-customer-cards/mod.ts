@@ -3,6 +3,7 @@ import { CustomerStore } from "@crm/domain/data/customer-store/mod.ts";
 import { QuoteStore } from "@paperwork/domain/data/quote-store/mod.ts";
 import { InvoiceStore } from "@paperwork/domain/data/invoice-store/mod.ts";
 import { ViewStore } from "@paperwork/domain/data/view-store/mod.ts";
+import { ChangeOrderStore } from "@paperwork/domain/data/change-order-store/mod.ts";
 import type {
   Customer,
   CustomerCard,
@@ -12,6 +13,7 @@ import type {
 } from "@crm/dto/customer.ts";
 import type { Quote } from "@paperwork/dto/quote.ts";
 import type { Invoice } from "@paperwork/dto/invoice.ts";
+import type { ChangeOrder } from "@paperwork/dto/change-order.ts";
 import {
   isOpenReceivable,
   receivableBalanceCents,
@@ -51,18 +53,22 @@ export class BuildCustomerCards {
     private quotes: QuoteStore,
     private invoices: InvoiceStore,
     private views: ViewStore,
+    // REQ-565 (demo m33): the card lists the customer's change orders too
+    private changeOrders: ChangeOrderStore = new ChangeOrderStore(),
   ) {}
 
   async run(
     userId: string,
     now: Date = new Date(),
   ): Promise<CustomerCard[]> {
-    const [customers, quotes, invoices, views] = await Promise.all([
-      this.customers.listByUser(userId),
-      this.quotes.listByUser(userId),
-      this.invoices.listByUser(userId),
-      this.views.listByType("quote"),
-    ]);
+    const [customers, quotes, invoices, views, changeOrders] = await Promise
+      .all([
+        this.customers.listByUser(userId),
+        this.quotes.listByUser(userId),
+        this.invoices.listByUser(userId),
+        this.views.listByType("quote"),
+        this.changeOrders.listByUser(userId),
+      ]);
 
     // Index quote → customerId so we can attribute view events back without
     // a second pass per customer.
@@ -70,7 +76,7 @@ export class BuildCustomerCards {
     for (const q of quotes) quoteToCustomer.set(q.id, q.customerId);
 
     return customers.map((c) =>
-      buildOne(c, quotes, invoices, views, quoteToCustomer, now)
+      buildOne(c, quotes, invoices, views, quoteToCustomer, now, changeOrders)
     );
   }
 }
@@ -82,9 +88,20 @@ function buildOne(
   allViews: View[],
   quoteToCustomer: Map<string, string | undefined>,
   now: Date,
+  allChangeOrders: ChangeOrder[] = [],
 ): CustomerCard {
   const myQuotes = allQuotes.filter((q) => q.customerId === c.id);
   const myInvoices = allInvoices.filter((i) => i.customerId === c.id);
+  // REQ-565: an order is the customer's when it names her, or (rows written
+  // before it carried customerId) its quote or invoice is hers
+  const myQuoteIds = new Set(myQuotes.map((q) => q.id));
+  const myInvoiceIds = new Set(myInvoices.map((i) => i.id));
+  const myChangeOrders = allChangeOrders.filter((co) =>
+    co.customerId
+      ? co.customerId === c.id
+      : (co.quoteId != null && myQuoteIds.has(co.quoteId)) ||
+        myInvoiceIds.has(co.invoiceId)
+  );
   const myViews = allViews.filter((v) => {
     const cid = quoteToCustomer.get(v.paperworkId);
     return cid === c.id;
@@ -198,7 +215,7 @@ function buildOne(
     temp,
     daysSinceContact,
     revenue12moCents,
-    documents: documentsFor(myQuotes, myInvoices),
+    documents: documentsFor(myQuotes, myInvoices, myChangeOrders),
   };
 }
 
@@ -207,6 +224,11 @@ function buildOne(
  * one row per quote and per invoice (the onboarding sample excluded), newest
  * first, each with its own number (REQ-204: never an id slice), its lifecycle
  * state and the page that opens it.
+ *
+ * REQ-565 (demo-loop cycle 4, m33): and one row per change order (its number,
+ * state, signed amount and /co link); a quote is worded at the agreed total —
+ * the quote plus its approved change orders, as the quote's ledger and card
+ * count it (REQ-205/481) — with what those orders added alongside.
  */
 /** REQ-551 (demo-loop cycle 4, B2): the paid revenue no customer card can
  *  carry — invoices with no customer, or whose customer is gone — on the
@@ -235,18 +257,40 @@ export function unassignedPaidRevenue(
 export function documentsFor(
   quotes: Quote[],
   invoices: Invoice[],
+  changeOrders: ChangeOrder[] = [],
 ): CustomerDocument[] {
   const rows: CustomerDocument[] = [];
+  const approvedByQuote = new Map<string, number>();
+  for (const co of changeOrders) {
+    if (co.status !== "approved" || !co.quoteId) continue;
+    approvedByQuote.set(
+      co.quoteId,
+      (approvedByQuote.get(co.quoteId) ?? 0) + Math.round(co.deltaAmountCents),
+    );
+  }
   for (const q of quotes) {
     if (q.isSample) continue;
+    const approved = approvedByQuote.get(q.id) ?? 0;
     rows.push({
       kind: "quote",
       id: q.id,
       number: docNumberOf(q),
       state: quoteState(q),
-      amountCents: q.estimatedTotal ?? 0,
+      amountCents: Math.max(0, (q.estimatedTotal ?? 0) + approved),
+      ...(approved !== 0 ? { changeOrdersCents: approved } : {}),
       url: `/quotes?open=${q.id}`,
       updatedAt: q.updatedAt,
+    });
+  }
+  for (const co of changeOrders) {
+    rows.push({
+      kind: "change_order",
+      id: co.id,
+      number: docNumberOf(co),
+      state: co.status,
+      amountCents: Math.round(co.deltaAmountCents),
+      url: `/co/${co.id}`,
+      updatedAt: co.updatedAt,
     });
   }
   for (const i of invoices) {
