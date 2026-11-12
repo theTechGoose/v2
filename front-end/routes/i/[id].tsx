@@ -78,6 +78,9 @@ interface Contractor {
 }
 
 interface InvoicePublic {
+  /** REQ-586 (cycle 4, M11): the document's language (shared
+   *  invoiceDocLang), when one is recorded. */
+  docLang?: string;
   /** REQ-479 (demo M30): the viewer is the business itself (owner, admin,
    *  staff impersonating) — a preview, not the customer. */
   internal?: boolean;
@@ -209,7 +212,10 @@ export default define.page(async function PublicInvoice(ctx) {
   const lang: Lang = resolvePublicLang({
     query: url.searchParams.get("lang"),
     cookie: ctx.req.headers.get("cookie"),
-    docLang: invoice?.contractor?.commsLanguage,
+    // REQ-586 (cycle 4, M11): the invoice's own document language (its
+    // `lang`, else the language its quote was sent in) ahead of the
+    // contractor's default.
+    docLang: invoice?.docLang ?? invoice?.contractor?.commsLanguage,
     header: ctx.req.headers.get("accept-language"),
   });
   const err = r.ok ? undefined : tFor(lang, "publicInvoice.error.expired");

@@ -57,6 +57,8 @@ import {
 } from "../components/Skeletons.tsx";
 import { langSignal, tFor } from "../lib/i18n.ts";
 import { quoteJobTitle } from "../../shared/quote-flow/job-name.ts";
+import { quoteSendLang } from "../../shared/quote-flow/share-link.ts"; // REQ-586
+import { customerLinkPath, customerLinkUrl } from "../lib/customer-link.ts";
 import { changeOrdersClient } from "../clients/change-orders.ts"; // REQ-462
 import QuoteSendDialog, {
   type SendDialogCustomer,
@@ -142,6 +144,9 @@ function mapCard(c: BackendQuoteCard, lang: "en" | "es"): Quote {
     sentDays: c.sentDays,
     decidedDays: c.decidedDays ?? undefined,
     ...(c.lastDelivery?.channel ? { channel: c.lastDelivery.channel } : {}),
+    // REQ-586 (cycle 4, M11): the card's customer link opens in the language
+    // the quote went out in.
+    ...(quoteSendLang(c) ? { sendLang: quoteSendLang(c) } : {}),
     band: ["#FFB3B3", "#FF6B6B"],
     shadow: "rgba(255,107,107,0.35)",
     ...(c.isSample === true ? { isSample: true } : {}),
@@ -1563,8 +1568,9 @@ function OpenQuotePanel(
   async function copyLink() {
     try {
       // Always the FULL public quote URL (/q/:id) — never a summary variant.
+      // REQ-586 (cycle 4, M11): in the language the quote went out in.
       await navigator.clipboard.writeText(
-        `${globalThis.location.origin}/q/${quoteId}`,
+        customerLinkUrl(globalThis.location.origin, quoteId, quoteSendLang(q)),
       );
       setCopied(true);
       setTimeout(() => setCopied(false), 1500);
@@ -1676,7 +1682,7 @@ function OpenQuotePanel(
           </button>
           <a
             class="qopen__btn"
-            href={`/q/${q.id}`}
+            href={customerLinkPath(q.id, quoteSendLang(q))}
             target="_blank"
             rel="noopener"
           >

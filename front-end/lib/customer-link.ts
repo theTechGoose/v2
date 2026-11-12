@@ -7,9 +7,26 @@
  * never a silent catch.
  */
 
-/** Where the customer reads the quote. */
-export function customerLinkPath(quoteId: string): string {
-  return `/q/${quoteId}`;
+import { withSendLang } from "../../shared/quote-flow/share-link.ts";
+
+/** Where the customer reads the quote. REQ-586 (demo-loop cycle 4, M11):
+ *  with the language the quote went out in (`sendLang` — the send divider's
+ *  `lang`, or `quoteSendLang(quote)`) as `?lang=`, so a cookie-less customer
+ *  opens it in that language; no language → the bare path. */
+export function customerLinkPath(
+  quoteId: string,
+  sendLang?: string | null,
+): string {
+  return withSendLang(`/q/${quoteId}`, sendLang);
+}
+
+/** REQ-586 (M11): where the customer reads the invoice, in its document
+ *  language (`invoice.lang`) when known. */
+export function invoiceLinkPath(
+  invoiceId: string,
+  lang?: string | null,
+): string {
+  return withSendLang(`/i/${invoiceId}`, lang);
 }
 
 /**
@@ -29,8 +46,12 @@ export function customerLinkDisplay(
 }
 
 /** The absolute link to paste anywhere (WhatsApp, DMs). */
-export function customerLinkUrl(origin: string, quoteId: string): string {
-  return `${origin}${customerLinkPath(quoteId)}`;
+export function customerLinkUrl(
+  origin: string,
+  quoteId: string,
+  sendLang?: string | null,
+): string {
+  return `${origin}${customerLinkPath(quoteId, sendLang)}`;
 }
 
 /** Outcome of a copy attempt — what the toast shows. REQ-572: `markQuoteId`

@@ -1017,3 +1017,61 @@ Deno.test("REQ-589 m15 send-quote: a missing recipient inside a 'both' note re-r
   );
   await resetKv();
 });
+
+// REQ-586 (demo-loop cycle 4, M11): the customer link the owner opens or
+// copies in the app ("Open as customer", "Copy") must open in the language
+// the quote went out in. The send records that language on the quote
+// (lastDelivery.lang) and on the send divider (payload.lang) — including a
+// send that reached nobody, whose link is exactly the fallback.
+Deno.test("REQ-586 (cycle 4, M11) send-quote: the language a quote is sent in is stored on lastDelivery and on the divider payload", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const ctx = await makeReadyConversation();
+  const r = await ctx.flow.run({
+    userId: "u-1",
+    conversationId: ctx.conv.id,
+    quoteId: ctx.quote.id,
+    channel: "email",
+    language: "es",
+  });
+  const reloaded = await ctx.quotes.getOwned(ctx.quote.id, "u-1");
+  assertEquals(reloaded.lastDelivery?.lang, "es");
+  const payload = r.newMessages[0].payload as { lang?: string };
+  assertEquals(payload.lang, "es");
+  await resetKv();
+});
+
+Deno.test("REQ-586 (cycle 4, M11) send-quote: with no per-send pick, the stored send language (Settings) is the one recorded", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const ctx = await makeReadyConversation();
+  await new BusinessIdentityStore().upsert("u-1", { commsLanguage: "es" });
+  const r = await ctx.flow.run({
+    userId: "u-1",
+    conversationId: ctx.conv.id,
+    quoteId: ctx.quote.id,
+    channel: "email",
+  });
+  const reloaded = await ctx.quotes.getOwned(ctx.quote.id, "u-1");
+  assertEquals(reloaded.lastDelivery?.lang, "es");
+  assertEquals((r.newMessages[0].payload as { lang?: string }).lang, "es");
+  await resetKv();
+});
+
+Deno.test("REQ-586 (cycle 4, M11) send-quote: a text that reached nobody still records its language (the link is the fallback)", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const ctx = await makeNoEmailConversation();
+  const r = await ctx.flow.run({
+    userId: "u-1",
+    conversationId: ctx.conv.id,
+    quoteId: ctx.quote.id,
+    channel: "sms",
+    language: "es",
+  });
+  const reloaded = await ctx.quotes.getOwned(ctx.quote.id, "u-1");
+  assertEquals(reloaded.deliveredAt, undefined);
+  assertEquals(reloaded.lastDelivery?.lang, "es");
+  assertEquals((r.newMessages[0].payload as { lang?: string }).lang, "es");
+  await resetKv();
+});
