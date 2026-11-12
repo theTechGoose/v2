@@ -12,6 +12,7 @@ import { BusinessAddressStore } from "@profile/domain/data/business-address-stor
 import { EventBus } from "@core/business/events/mod.ts";
 import { NotFoundError } from "@core/data/repository/mod.ts";
 import { SendSignedConfirmation } from "@paperwork/domain/coordinators/send-signed-confirmation/mod.ts";
+import { signedConfirmChannel } from "@paperwork/domain/business/customer-sms/mod.ts";
 import { SendAcceptedAlert } from "@paperwork/domain/coordinators/send-accepted-alert/mod.ts";
 import { SendInquiryAlert } from "@paperwork/domain/coordinators/send-inquiry-alert/mod.ts";
 import { RenderInvoicePdf } from "@paperwork/domain/coordinators/render-invoice-pdf/mod.ts";
@@ -667,6 +668,9 @@ export class PaperworkPublicController {
         invoices,
         changeOrders: cos.map(projectLinkedChangeOrder),
         ...(changesFromPrevious ? { changesFromPrevious } : {}),
+        // REQ-403 (demo m11): the confirmation the signed page may promise —
+        // a text only to a textable number whose latest text did not fail.
+        confirmChannel: signedConfirmChannel(customer, q.lastDelivery),
         // REQ-306 (demo B3): tell the business's own viewer they are
         // previewing — the page swaps the pad for a banner. Absent for the
         // customer so the public shape is unchanged for them.

@@ -1,6 +1,6 @@
 import { Injectable } from "#danet/core";
 import { publishPendingInvoice, publishPendingQuote, senderAsPublisher } from "@paperwork/domain/business/publish-pending/mod.ts";
-import { isFictionalUsNumber } from "@users/domain/business/normalize-phone/mod.ts";
+import { dispatchCustomerSms } from "@paperwork/domain/business/customer-sms/mod.ts";
 import { t } from "@core/i18n/mod.ts";
 import { QuoteStore } from "@paperwork/domain/data/quote-store/mod.ts";
 import { InvoiceStore } from "@paperwork/domain/data/invoice-store/mod.ts";
@@ -17,10 +17,7 @@ import {
 } from "#quote-flow/outbound-identity.ts";
 import { resolveCommsLanguage } from "#quote-flow/comms-language.ts";
 import { withSendLang } from "#quote-flow/share-link.ts";
-import {
-  smsFailureCodeForReasonKey,
-  type SmsFailureCode,
-} from "#quote-flow/sms-failure.ts";
+import type { SmsFailureCode } from "#quote-flow/sms-failure.ts";
 import {
   customerOnDocument,
   docRefWithVersion,
@@ -164,50 +161,15 @@ export class SendPaperworkSms {
       );
     }
 
-    if (!recipient) {
-      return {
-        ok: false,
-        reason:
-          "no recipient: pass `to` or attach a customer with a phone number",
-        to: "",
-        failureCode: "missing",
-      };
-    }
-
-    const e164 = normalizeE164(recipient);
-    if (!e164) {
-      return {
-        ok: false,
-        reason: `invalid phone: ${recipient}`,
-        to: recipient,
-        failureCode: "invalid",
-      };
-    }
     // REQ-030 (NW-25): the contractor reads the reason — their UI language.
     const uiLang: "en" | "es" = sender?.language === "es" ? "es" : "en";
-    // A fictional 555 number never reaches Twilio (it would answer 21211);
-    // say so in words instead of a raw provider error. REQ-226: the provider
-    // and its code stay in `detail` (logs), never in the contractor's copy.
-    if (isFictionalUsNumber(e164)) {
-      return {
-        ok: false,
-        reason: t(uiLang, "sms.fictionalNumber"),
-        detail: `fictional number: ${e164} (Twilio would answer 21211)`,
-        to: e164,
-        failureCode: "fictional",
-      };
-    }
-
-    const sent = await this.sms.send({ to: e164, body });
-    // A recognised Twilio rejection arrives as a lang key — translate it.
-    const result: SendPaperworkSmsResult = sent.ok ? { ...sent, to: e164 } : {
-      ...sent,
-      to: e164,
-      reason: sent.reason && /^sms\./.test(sent.reason)
-        ? t(uiLang, sent.reason)
-        : sent.reason,
-      failureCode: smsFailureCodeForReasonKey(sent.reason),
-    };
+    // REQ-403: the one guarded dispatch (missing / invalid / fictional never
+    // reach the provider) shared with every other customer text.
+    const result: SendPaperworkSmsResult = await dispatchCustomerSms(
+      this.sms,
+      { to: recipient ?? "", body, uiLang },
+    );
+    const e164 = result.to;
 
     // NW-10 (REQ-003): stamp the quote's lifecycle on the first successful
     // text — status→"sent" + sentAt→now, idempotent, mirroring
@@ -234,7 +196,7 @@ export class SendPaperworkSms {
       });
     }
 
-    return { ...result, to: e164 };
+    return result;
   }
 
   private async tryGetCustomer(
@@ -426,16 +388,4 @@ export function renderInvoiceBody(
     url,
     lang,
   }) + "\n\n" + docTitle("invoice", i, lang) + "\n\n" + t(lang, "paperworkSms.body.invoiceClosing");
-}
-
-// ---------- phone normalization --------------------------------------------
-
-function normalizeE164(raw: string): string | undefined {
-  const trimmed = raw.trim();
-  if (!trimmed) return undefined;
-  if (/^\+[1-9]\d{6,14}$/.test(trimmed)) return trimmed;
-  const digits = trimmed.replace(/\D/g, "");
-  if (digits.length === 10) return `+1${digits}`;
-  if (digits.length === 11 && digits.startsWith("1")) return `+${digits}`;
-  return undefined;
 }

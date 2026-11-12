@@ -21,6 +21,10 @@ import PublicQuoteActions from "../islands/PublicQuoteActions.tsx";
 import { buildSignatureBlock } from "../../shared/quote-flow/signature-block.ts";
 import { agreementTitle } from "../../shared/quote-flow/agreement-title.ts";
 import {
+  type ConfirmChannel,
+  signedNoteKey,
+} from "../../shared/quote-flow/signed-note.ts";
+import {
   deriveQuoteView,
   internalPreview,
   publicHeadlineState,
@@ -112,6 +116,8 @@ export interface QuotePublic {
   acceptedSignature?: string;
   contractor?: Contractor;
   customer?: { name?: string; phoneNumber?: string; email?: string };
+  /** REQ-403 (m11): which confirmation the signed page may promise. */
+  confirmChannel?: ConfirmChannel;
   summary?: string;
   jobName?: string;
   description?: string;
@@ -206,8 +212,6 @@ function cstr(lang: Lang) {
     clientSignature: tFor(lang, "quoteDoc.clientSignature"),
     signatureOf: (n: string) => tFor(lang, "quoteDoc.signatureOf", { name: n }),
     signedBinding: tFor(lang, "quoteDoc.signedBinding"),
-    signedNote: tFor(lang, "quoteDoc.signedNote"),
-    signedNoteSms: tFor(lang, "quoteDoc.signedNoteSms"),
     acceptedPill: tFor(lang, "status.accepted"),
     qBefore: tFor(lang, "quoteDoc.qBefore"),
     qSigned: tFor(lang, "quoteDoc.qSigned"),
@@ -919,12 +923,11 @@ export function QuoteDoc(
                     </div>
                     <div style={`margin-top:2px;color:${MUTED};font-size:13px`}>
                       {
-                        /* UX-39: never promise an email to a customer who has
-                          none on file — name the channel that exists. */
+                        /* UX-39 / REQ-403 (m11): promise only a confirmation
+                          that can arrive — email, a text to a number whose
+                          last text did not fail, else the signed copy + PDF. */
                       }
-                      {quote.customer?.email?.trim()
-                        ? t.signedNote
-                        : t.signedNoteSms}
+                      {tFor(lang, signedNoteKey(quote))}
                     </div>
                   </div>
                 </div>
