@@ -129,9 +129,10 @@ describe("REQ-308 M3 the island wires the dialog to the app language and the der
     );
   });
   it("REQ-308 keepAndSend asks for the contact that is actually missing, in the app language", () => {
-    const k = src.indexOf("async function keepAndSend(");
+    const k = src.indexOf("function keepAndSend(");
     const body = src.slice(k, src.indexOf("setSendChannel(ch);", k));
-    expect(body).toMatch(/missingContactKey\(/);
+    // REQ-399: sendDialogErrorKey runs missingContactKey first, then format.
+    expect(body).toMatch(/(missingContactKey|sendDialogErrorKey)\(/);
     expect(body).not.toMatch(/"asstChat\.customerStep\.needContact"/);
     expect(body).not.toMatch(/tFor\(\s*previewLang/);
   });

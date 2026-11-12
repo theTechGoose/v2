@@ -14,6 +14,7 @@ import {
 } from "#quote-flow/quote-price-guard.ts";
 import type { SmsFailureCode } from "#quote-flow/sms-failure.ts";
 import { versionOf } from "#documents/versions.ts";
+import { getKv } from "@core/data/kv/mod.ts";
 import type { AgentConversation } from "@agents/dto/conversation.ts";
 import type { AgentMessage } from "@agents/dto/message.ts";
 import {
@@ -36,7 +37,14 @@ export interface SendQuoteInput {
   /** Which language to send the paperwork in (the "Send in <lang>" button).
    *  Overrides the contractor's stored default for THIS dispatch only. */
   language?: "en" | "es";
+  /** REQ-399 (demo M16): one Send's id, minted by the client per click. A
+   *  repeat of the same id within SEND_DEDUPE_MS (a double-click, a retried
+   *  request) delivers nothing again and answers with no new messages. */
+  requestId?: string;
 }
+
+/** REQ-399: how long a Send's requestId is remembered. */
+export const SEND_DEDUPE_MS = 10_000;
 
 export interface SendQuoteResult {
   conversation: AgentConversation;
@@ -78,6 +86,26 @@ export class SendQuote {
   ) {}
 
   async run(input: SendQuoteInput): Promise<SendQuoteResult> {
+    const requestId = input.requestId?.trim();
+    if (!requestId) return this.send(input);
+    // REQ-399 (demo M16): claim the requestId atomically BEFORE dispatch, so
+    // two requests in flight together cannot both deliver. A Send that
+    // throws gives its id back (the user can retry the same click).
+    const key = ["send-quote-request", input.userId, requestId];
+    if (!(await claimRequest(key))) {
+      const conv = await this.conversations.get(input.conversationId);
+      if (conv.userId !== input.userId) throw new Error("forbidden");
+      return { conversation: conv, newMessages: [] };
+    }
+    try {
+      return await this.send(input);
+    } catch (err) {
+      await (await getKv()).delete(key).catch(() => {});
+      throw err;
+    }
+  }
+
+  private async send(input: SendQuoteInput): Promise<SendQuoteResult> {
     const conv = await this.conversations.get(input.conversationId);
     if (conv.userId !== input.userId) throw new Error("forbidden");
     if (conv.quoteId !== input.quoteId) {
@@ -278,6 +306,20 @@ export class SendQuote {
     const me = await this.users.get(userId).catch(() => null);
     return me?.language === "es" ? "es" : "en";
   }
+}
+
+/** REQ-399: true when this call owns the requestId (first within the window).
+ *  The stored `at` is checked too — KV's expireIn only bounds deletion. */
+async function claimRequest(key: Deno.KvKey): Promise<boolean> {
+  const kv = await getKv();
+  const now = Date.now();
+  const cur = await kv.get<{ at: number }>(key);
+  if (cur.value && now - cur.value.at < SEND_DEDUPE_MS) return false;
+  const res = await kv.atomic()
+    .check(cur)
+    .set(key, { at: now }, { expireIn: SEND_DEDUPE_MS })
+    .commit();
+  return res.ok;
 }
 
 function buildDivider(o: {

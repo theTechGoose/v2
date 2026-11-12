@@ -422,6 +422,7 @@
   "asstChat.send.addEmail": "Agrega un correo para también enviarlo por correo",
   "asstChat.send.addPhone": "Agrega un teléfono para también enviarlo por texto",
   "asstChat.send.cancel": "Cancelar",
+  "asstChat.send.contactSaveFailed": "No se pudo guardar el contacto. Revísalo e inténtalo de nuevo.",
   "asstChat.send.howTitle": "¿Cómo quieres enviárselo al cliente?",
   "asstChat.send.keep": "Enviar",
   "asstChat.setManually": "O configúralo manualmente",

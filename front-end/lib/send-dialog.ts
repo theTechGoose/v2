@@ -5,7 +5,13 @@
  * and which contact an attempt still lacks both follow what the customer
  * actually has on file (plus what was just typed) — never a hard-wired
  * "both", never a generic "add a phone or email" when only one is missing.
+ *
+ * REQ-399 (demo-loop cycle 2, M16 + M17): the Send itself — one in flight at
+ * a time (`runExclusive`), a typed contact checked for format before it is
+ * saved (`sendDialogErrorKey`), and a refused save shown as dictionary copy,
+ * never lib/api's "PUT /customers/<id> failed: 400" (`contactSaveErrorKey`).
  */
+import { customerContactError } from "../../shared/quote-flow/customer-contact.ts";
 
 export type SendChannel = "both" | "sms" | "email";
 
@@ -51,4 +57,62 @@ export function missingContactKey(
   if (needsEmail) return "asstChat.customerStep.needEmail";
   if (needsPhone) return "asstChat.customerStep.needPhone";
   return undefined;
+}
+
+/**
+ * REQ-399 (demo M17): the dialog's whole pre-flight — the missing contact
+ * (REQ-308) first, then the format of what was typed (the backend's own
+ * REQ-278 rule), so "bob at gmail" never reaches PUT /customers. Undefined
+ * when the send can go.
+ */
+export function sendDialogErrorKey(
+  channel: SendChannel,
+  customer: ContactOnFile | undefined,
+  typed: { email: string; phone: string },
+): string | undefined {
+  const missing = missingContactKey(channel, customer, typed);
+  if (missing) return missing;
+  return customerContactError({
+    email: typed.email,
+    phoneNumber: typed.phone,
+  }) ?? undefined;
+}
+
+/** REQ-399 (demo M17): the copy for a contact save the backend refused. */
+export function contactSaveErrorKey(err: unknown): string {
+  const body = (err as { body?: unknown } | null)?.body;
+  const key = body && typeof body === "object"
+    ? (body as { message?: unknown }).message
+    : undefined;
+  if (key === "customer.invalidEmail" || key === "customer.invalidPhone") {
+    return key;
+  }
+  return "asstChat.send.contactSaveFailed";
+}
+
+/** REQ-399 (demo M16): one Send click's id — the server drops a repeat. */
+export function newSendRequestId(): string {
+  const c = globalThis.crypto as Crypto | undefined;
+  return typeof c?.randomUUID === "function"
+    ? c.randomUUID()
+    : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+}
+
+/**
+ * REQ-399 (demo M16): run `fn` only when nothing else holds `flag` — a
+ * synchronous check-and-set, so a double-click's second click, landing before
+ * any re-render, sees the first one in flight and does nothing. A ref from
+ * useRef(false) is the flag; it is released when `fn` settles, thrown or not.
+ */
+export async function runExclusive<T>(
+  flag: { current: boolean },
+  fn: () => Promise<T>,
+): Promise<T | undefined> {
+  if (flag.current) return undefined;
+  flag.current = true;
+  try {
+    return await fn();
+  } finally {
+    flag.current = false;
+  }
 }
