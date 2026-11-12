@@ -76,12 +76,20 @@ describe("REQ-569 m46 Text is marked 'This number can't receive texts'", () => {
       .toBe("asstChat.send.cantText");
     expect(channelNeedsKey("sms", { phoneNumber: real })).toBeUndefined();
   });
-  it("REQ-569 the copy exists in en and es", () => {
+  // REQ-681 (demo-loop cycle 5, m12) supersedes REQ-569's bare copy: the
+  // note gives its reason, in the sms.fictionalNumber wording.
+  it("REQ-681 m12 the cantText note gives its reason in en and es", () => {
     expect(en["asstChat.send.cantText"]).toBe(
-      "This number can't receive texts",
+      "This number can't receive texts — it's a reserved test number (555-01XX or area code 555)",
     );
     expect(es["asstChat.send.cantText"]).toBe(
-      "Este número no puede recibir mensajes de texto",
+      "Este número no puede recibir mensajes de texto — es un número de prueba reservado (555-01XX o código de área 555)",
+    );
+    expect(en["sms.fictionalNumber"]).toContain(
+      "reserved test number (555-01XX or area code 555)",
+    );
+    expect(es["sms.fictionalNumber"]).toContain(
+      "número de prueba reservado (555-01XX o código de área 555)",
     );
   });
 });
