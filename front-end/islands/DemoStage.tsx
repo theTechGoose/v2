@@ -64,10 +64,12 @@
  * arrow is back on it; not found, no arrow, and the stage keeps saying so. A fraction the replay
  * could not name a node for goes out as `pending` ("pointing…" on their screen), never as an
  * arrow (`wire`). Another of their browser tabs followed: his anchor is kept for its page load
- * and dropped (`tabSwitched`, `keepHeld`), and the stage says which tab it shows; that page load
- * followed again gets it back (`restoreKept`). Holding nothing (the demo's start) is "not on their
- * screen — move to show it". The ghost and the colleagues' pointers whose element is out of view
- * are a chevron at the edge of where the replay shows it (`placeView` over `clipOf`).
+ * and dropped (`followTabs` — the tab's key said with its socket or after it, `onPeerTab`;
+ * nothing of his goes to a page whose tab is not known yet; `keepHeld`), and the stage says which
+ * tab it shows; that page load followed again gets it back (`restoreKept`). Holding nothing (the
+ * demo's start) is "not on their screen — move to show it". The ghost and the colleagues'
+ * pointers whose element is out of view are a chevron at the edge of where the replay shows it
+ * (`placeView` over `clipOf`).
  *
  * REQ-232 — the pill says plainly whether the demo is live: "Live", "Connecting…", or "Waiting for
  * {name}'s app…" — the last only when none of the customer's tabs is left, after a few seconds'
@@ -159,6 +161,7 @@ import {
   anchorDead,
   anchorPoint,
   type Dir,
+  followTabs,
   ghostAt,
   type Held,
   keepHeld,
@@ -173,7 +176,6 @@ import {
   seedUse,
   SEEK_RETRY_MS,
   seekPrint,
-  tabSwitched,
 } from "../../shared/demo-mode/presenter-anchor.ts";
 import PointerGhost from "../components/demo-mode/PointerGhost.tsx";
 import DemoPointer, { WAVE_MS } from "../components/demo-mode/DemoPointer.tsx";
@@ -380,6 +382,10 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
    *  first snapshot has not come yet (the stage then says which tab it shows) */
   const keptRef = useRef(new Map<string, Held>());
   const switchedRef = useRef(false);
+  /** REQ-645 (m36) — which browser tab of theirs the stage follows (its key, once said); a page
+   *  that came in before the tab it is of was known (given its due when it is) */
+  const tabsRef = useRef(followTabs());
+  const waitTabRef = useRef<{ load: string; path: string } | null>(null);
   /** REQ-451 (M14) — the mouse the page that opened the stage handed over: counted once the frame
    *  is fitted, and only on it; dropped by a real pointer event */
   const seedRef = useRef<CursorSeed | null>(null);
@@ -649,6 +655,8 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
    *  another tab gets nothing until he moves — never a fraction of the frame under his still
    *  mouse, which put the arrow on whatever the new page had at that spot */
   const resendPointer = () => {
+    // REQ-645 (m36) — nothing to a page whose browser tab is not known yet (another tab's, maybe)
+    if (tabsRef.current.unsure()) return;
     const h = heldNow();
     const a = resendable(h, loadRef.current);
     if (a) {
@@ -674,6 +682,8 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
    *  his anchor on it, at the same spot of its box, sent. Not found: no arrow — the stage keeps
    *  saying his pointer is not on their screen */
   const seekAgain = () => {
+    // REQ-645 (m36) — never on a page whose browser tab is not known yet (another tab's, maybe)
+    if (tabsRef.current.unsure()) return;
     const h = heldNow();
     const rep = replayerRef.current;
     const load = loadRef.current;
@@ -854,11 +864,27 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
   const checkStyledRef = useRef(checkStyled);
   checkStyledRef.current = checkStyled;
 
+  /** REQ-645 (cycle 5 m36) — the stage follows ANOTHER of their browser tabs (its key said with
+   *  its socket, or after it): what he pointed at was on the other tab — kept for its page load (it
+   *  comes back when that is followed again, unchanged) and dropped here, never looked for on this
+   *  tab; the stage says which tab it shows once its page is in */
+  const otherTab = () => {
+    keepHeld(keptRef.current, heldNow());
+    drop();
+    if (seekTimerRef.current) clearTimeout(seekTimerRef.current);
+    seekTimerRef.current = null;
+    switchedRef.current = true;
+  };
   /** REQ-645 (cycle 5 m36) — a page load mirrored afresh: a tab followed again with its page
    *  unchanged gets back the anchor he left on that page load (sent) — when he has pointed at
    *  nothing on a page since the switch; the first page of another tab is said (noteTab). True:
-   *  his anchor came back */
+   *  his anchor came back. A page whose browser tab is not known yet waits for its key (onPeerTab;
+   *  resendPointer sends it nothing meanwhile) */
   const restoreKept = (load: string, path: string) => {
+    if (tabsRef.current.unsure()) {
+      waitTabRef.current = { load, path };
+      return false;
+    }
     const k = keptFor(keptRef.current, load);
     const h = heldNow();
     const back = !!k?.a && (!h.a || (h.provisional && h.load === null));
@@ -1097,8 +1123,9 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
     dirtyRef.current = false;
     // REQ-292 — the customer's tab the stage follows: a switch starts the mirror's ordering over
     let followedCid: string | undefined;
-    // REQ-645 (m36) — and the BROWSER tab it is a page of (its key, when it said one)
-    let followedTab: string | undefined;
+    // REQ-645 (m36) — and the BROWSER tab it is a page of (its key, once said)
+    tabsRef.current = followTabs();
+    waitTabRef.current = null;
     const link = connectDemo({
       sessionId: demo.id,
       role: "presenter",
@@ -1165,17 +1192,11 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
         setAwaiting(true);
         if (cid !== followedCid) {
           // REQ-645 (cycle 5 m36) — ANOTHER of their browser tabs (not the same tab's next page):
-          // what he pointed at was on the other tab — kept for its page load (it comes back when
-          // that is followed again, unchanged) and dropped here, never looked for on this tab;
-          // the stage says which tab it shows once its page is in
-          if (tabSwitched(followedTab, tab)) {
-            keepHeld(keptRef.current, heldNow());
-            drop();
-            if (seekTimerRef.current) clearTimeout(seekTimerRef.current);
-            seekTimerRef.current = null;
-            switchedRef.current = true;
-          }
-          followedTab = tab;
+          // his anchor is kept for its page load and dropped here (otherTab) — known now when the
+          // socket's claim said its key first, else once it says it (onPeerTab); the last socket's
+          // page waits for nothing more
+          if (tabsRef.current.follow(cid, tab)) otherTab();
+          waitTabRef.current = null;
           // REQ-292 — another of the customer's tabs: its page load may be OLDER than the one
           // shown; the receiver starts over so that tab's snapshot is taken (the mirrored page
           // stays on screen until it comes)
@@ -1189,6 +1210,20 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
         // connecting and cannot say so: its face rides the link that is opening) — never a blank
         // and then a "Connected" the customer's pill never showed
         setPillFace((f) => pillFaceAwaiting(f));
+      },
+      onPeerTab: (cid, tab) => {
+        // REQ-645 (cycle 5 m36) — the followed socket says which browser tab it is only now: another
+        // tab — his anchor kept and dropped (otherTab); then what waited for it — its page, when it
+        // came in meanwhile (his anchor left on that load, else resendPointer; the tab notice), or
+        // his pointer as onPeerOnline would have sent it
+        const was = tabsRef.current.unsure();
+        if (tabsRef.current.learn(cid, tab)) otherTab();
+        if (!was || tabsRef.current.unsure()) return;
+        const w = waitTabRef.current;
+        waitTabRef.current = null;
+        if (w && w.load === loadRef.current) {
+          if (!restoreKept(w.load, w.path)) resendPointer();
+        } else resendPointer();
       },
       onPeer: (m: PeerMessage, from: PeerFrom) => {
         if (from.role === "presenter") {
@@ -1341,6 +1376,7 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
       deadAtRef.current = null;
       keptRef.current.clear();
       switchedRef.current = false;
+      waitTabRef.current = null;
       if (tabNoteTimerRef.current) clearTimeout(tabNoteTimerRef.current);
       tabNoteTimerRef.current = null;
       setTabNote(null);

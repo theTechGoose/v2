@@ -22,7 +22,10 @@
  *     with a cue in words, never an arrow over the app's chrome;
  *   - an arrow whose element moved more than DRIFT_FADE_PX since he pointed is faded (`drifted`);
  *   - another browser tab followed: his anchor is kept for its page load (`keepHeld`, `keptFor`)
- *     and dropped (`tabSwitched`) — it comes back only to that page load;
+ *     and dropped (`tabSwitched`) — it comes back only to that page load. Which tab a socket is of
+ *     is often said only AFTER the stage followed it (the hub announces a socket before its page's
+ *     claim names its tab): the transport tells the stage then (`onPeerTab`), the stage tracks it
+ *     (`followTabs`), and a page whose tab is not known yet gets nothing of his meanwhile;
  *   - nothing held (the demo's start, another tab) counts as absent: the stage tells him to move.
  */
 import * as fs from "fs";
@@ -97,6 +100,11 @@ const pa = () =>
       was: string | null | undefined,
       now: string | null | undefined,
     ): boolean;
+    followTabs(): {
+      follow(cid: string | undefined, key?: string): boolean;
+      learn(cid: string, key: string): boolean;
+      unsure(): boolean;
+    };
     KEEP_MAX: number;
     keepHeld(kept: Map<string, Held>, h: Held): void;
     keptFor(kept: Map<string, Held>, load: string | null): Held | null;
@@ -728,6 +736,39 @@ describe("REQ-645 tabSwitched, keepHeld, keptFor: another browser tab followed d
     expect(tabSwitched(null, null)).toBe(false);
   });
 
+  test("followTabs: a socket's browser-tab key said AFTER the stage followed it (its claim comes behind its socket) still tells another tab from the same tab's next page; until then it is unsure", () => {
+    const { followTabs } = pa();
+    const t = followTabs();
+    // the demo's first page: nothing followed before — no switch, nothing to wait for
+    expect(t.follow("a1", undefined)).toBe(false);
+    expect(t.unsure()).toBe(false);
+    expect(t.learn("a1", "tab-A")).toBe(false);
+    // another socket followed before its claim said its key: which tab is not known yet
+    expect(t.follow("b1", undefined)).toBe(false);
+    expect(t.unsure()).toBe(true);
+    // a claim of a socket the stage does not follow: nothing
+    expect(t.learn("zz", "tab-Z")).toBe(false);
+    expect(t.unsure()).toBe(true);
+    // its key comes: ANOTHER browser tab
+    expect(t.learn("b1", "tab-B")).toBe(true);
+    expect(t.unsure()).toBe(false);
+    // the key said again: nothing
+    expect(t.learn("b1", "tab-B")).toBe(false);
+    // tab A again, its key said with its claim: a switch at once
+    expect(t.follow("a1", "tab-A")).toBe(true);
+    expect(t.unsure()).toBe(false);
+    // tab A's next page, its key late: the same browser tab — no switch
+    expect(t.follow("a2", undefined)).toBe(false);
+    expect(t.unsure()).toBe(true);
+    expect(t.learn("a2", "tab-A")).toBe(false);
+    expect(t.unsure()).toBe(false);
+    // a socket whose key never came, then another: against the last key known
+    expect(t.follow("c1", undefined)).toBe(false);
+    expect(t.follow("d1", "tab-D")).toBe(true);
+    // the same socket again: nothing
+    expect(t.follow("d1", "tab-D")).toBe(false);
+  });
+
   test("keepHeld keeps a node anchor by the page load it was made on (the newest KEEP_MAX); keptFor gives it back for that load only; a fraction, the off edge or nothing is not kept", () => {
     const { keepHeld, keptFor, KEEP_MAX } = pa();
     expect(KEEP_MAX).toBeGreaterThanOrEqual(2);
@@ -990,14 +1031,48 @@ describe("REQ-645 the stage: the print rides with his anchor; a dead one is re-f
     expect(resend).toMatch(/seekAgain\(\)/);
   });
 
-  test("m36: onPeerOnline hears the followed browser tab's key; another tab keeps his anchor for its page load and drops it (no look-up on the new tab), and says so", () => {
+  test("m36: the stage follows browser tabs by their keys (followTabs) — said with the socket (onPeerOnline) or after it (onPeerTab); another tab keeps his anchor for its page load and drops it (otherTab: no look-up on the new tab), and says so", () => {
     const online = stage.slice(stage.indexOf("onPeerOnline: (cid"));
     const body = online.slice(0, online.indexOf("\n      },\n"));
     expect(body).toMatch(/onPeerOnline: \(cid, tab\)/);
-    expect(body).toMatch(/tabSwitched\(followedTab, tab\)/);
-    expect(body).toMatch(/keepHeld\(keptRef\.current, heldNow\(\)\)/);
-    expect(body).toMatch(/drop\(\)/);
-    expect(body).toMatch(/switchedRef\.current = true/);
+    expect(body).toMatch(
+      /if \(tabsRef\.current\.follow\(cid, tab\)\) otherTab\(\);/,
+    );
+    expect(body).toMatch(/waitTabRef\.current = null;/);
+    const late = stage.slice(stage.indexOf("onPeerTab: (cid"));
+    expect(late.length).toBeGreaterThan(0);
+    const lateBody = late.slice(0, late.indexOf("\n      },\n"));
+    expect(lateBody).toMatch(/onPeerTab: \(cid, tab\)/);
+    expect(lateBody).toMatch(
+      /if \(tabsRef\.current\.learn\(cid, tab\)\) otherTab\(\);/,
+    );
+    // a page that came in while its tab was not known: given what it is owed now
+    expect(lateBody).toMatch(/waitTabRef\.current/);
+    expect(lateBody).toMatch(/restoreKept\(/);
+    expect(lateBody).toMatch(/resendPointer\(\)/);
+    const other = fn("otherTab");
+    expect(other).toMatch(/keepHeld\(keptRef\.current, heldNow\(\)\)/);
+    expect(other).toMatch(/drop\(\)/);
+    expect(other).toMatch(/switchedRef\.current = true/);
+    // a new link starts with no tab known
+    expect(stage).toMatch(/tabsRef\.current = followTabs\(\);/);
+  });
+
+  test("m36: a page whose browser tab is not known yet gets nothing of his — it waits for its key (waitTabRef), and no print is looked for on it", () => {
+    const snap = stage.slice(stage.indexOf('if (f.t === "snap")'));
+    const newLoad = snap.slice(0, snap.indexOf("SETTLE_MS"));
+    expect(newLoad).toMatch(
+      /if \(!restoreKept\(load, path\)\) resendPointer\(\);/,
+    );
+    expect(fn("restoreKept")).toMatch(
+      /if \(tabsRef\.current\.unsure\(\)\) \{\s*waitTabRef\.current = \{ load, path \};\s*return false;\s*\}/,
+    );
+    expect(fn("seekAgain")).toMatch(
+      /if \(tabsRef\.current\.unsure\(\)\) return;/,
+    );
+    expect(fn("resendPointer")).toMatch(
+      /if \(tabsRef\.current\.unsure\(\)\) return;/,
+    );
   });
 
   test("a new page load: a kept anchor of that very load is given back (keptFor) — else resendPointer; the search's clock starts over on it", () => {
@@ -1130,5 +1205,105 @@ describe("REQ-645 PeerPointer, DemoPointer and the transport", () => {
     const tr = read("front-end/lib/demo-mode/transport.ts");
     expect(tr).toMatch(/onPeerOnline\(cid\?: string, tab\?: string\): void;/);
     expect(tr).toMatch(/o\.onPeerOnline\(best, tabs\.get\(best\)\?\.key\)/);
+    expect(tr).toMatch(/onPeerTab\?\(cid: string, tab: string\): void;/);
+  });
+});
+
+// ── the transport, on a fake socket ────────────────────────────────────────────────────────────
+
+describe("REQ-645 (m36) the transport: the followed socket's browser tab, said AFTER the stage followed it, reaches the stage (onPeerTab)", () => {
+  // deno-lint-ignore no-explicit-any
+  type Any = any;
+  class FakeWS {
+    static OPEN = 1;
+    static CLOSED = 3;
+    static last: FakeWS | null = null;
+    readyState = 0;
+    onopen: (() => void) | null = null;
+    onmessage: ((e: { data: string }) => void) | null = null;
+    onclose: (() => void) | null = null;
+    onerror: (() => void) | null = null;
+    constructor(public url: string) {
+      FakeWS.last = this;
+    }
+    send(_s: string) {}
+    close() {
+      if (this.readyState === FakeWS.CLOSED) return;
+      this.readyState = FakeWS.CLOSED;
+      this.onclose?.();
+    }
+    open() {
+      this.readyState = FakeWS.OPEN;
+      this.onopen?.();
+    }
+    recv(m: unknown) {
+      this.onmessage?.({ data: JSON.stringify(m) });
+    }
+  }
+  const g = globalThis as Any;
+  const saved = { WebSocket: g.WebSocket, location: g.location };
+  beforeEach(() => {
+    jest.useFakeTimers();
+    g.WebSocket = FakeWS;
+    Object.defineProperty(globalThis, "location", {
+      value: { protocol: "http:", host: "demo.test" },
+      configurable: true,
+      writable: true,
+    });
+  });
+  afterEach(() => {
+    jest.useRealTimers();
+    g.WebSocket = saved.WebSocket;
+    Object.defineProperty(globalThis, "location", {
+      value: saved.location,
+      configurable: true,
+      writable: true,
+    });
+  });
+
+  test("a page followed as its socket came (before its claim): its key reaches the stage when the claim says it — once; a socket followed after its claim is named with its key (no onPeerTab)", () => {
+    const { connectDemo } = require(
+      "../../front-end/lib/demo-mode/transport",
+    ) as { connectDemo(o: Any): { close(): void } };
+    const heard: string[] = [];
+    const link = connectDemo({
+      sessionId: "s1",
+      role: "presenter",
+      pid: "hans",
+      onPeer: () => {},
+      onStatus: () => {},
+      onEnded: () => {},
+      onPeerOnline: (cid?: string, tab?: string) =>
+        heard.push(`online ${cid} ${tab ?? "?"}`),
+      onPeerTab: (cid: string, tab: string) => heard.push(`tab ${cid} ${tab}`),
+    });
+    const ws = FakeWS.last!;
+    ws.open();
+    ws.recv({
+      t: "welcome",
+      role: "presenter",
+      sessionId: "s1",
+      peerOnline: false,
+      pid: "hans",
+      cid: "stage-1",
+    });
+    // her first page: followed as its socket comes; its claim (her browser tab's key) after
+    ws.recv({ t: "peer", online: true, cid: "a1" });
+    ws.recv({ t: "claim", cid: "a1", at: 0, tab: "tab-A" });
+    // said again: nothing new
+    ws.recv({ t: "claim", cid: "a1", at: 0, tab: "tab-A" });
+    // another tab's socket comes and is followed (the newest; nothing claimed) before its claim
+    ws.recv({ t: "peer", online: true, cid: "b1" });
+    ws.recv({ t: "claim", cid: "b1", at: 0, tab: "tab-B" });
+    // tab A used again: followed with its key already said
+    ws.recv({ t: "claim", cid: "a1", at: 500, tab: "tab-A" });
+    expect(heard).toEqual([
+      "online a1 ?",
+      "tab a1 tab-A",
+      "online b1 ?",
+      "tab b1 tab-B",
+      "online a1 tab-A",
+    ]);
+    link.close();
   });
 });

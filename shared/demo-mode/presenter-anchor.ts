@@ -326,6 +326,41 @@ export function tabSwitched(
   return !!was && !!now && was !== now;
 }
 
+/** REQ-645 (m36) — the browser tab the stage follows, as the transport names its sockets: `follow`
+ *  — another socket of theirs followed, with its tab's key when its claim said it first; `learn` —
+ *  the followed socket's key, said by its claim AFTER the stage followed it (a socket is announced
+ *  before its page says which tab it is). Each answers whether the stage shows ANOTHER browser tab
+ *  than before (`tabSwitched` against the last key known). `unsure` — another socket is followed and
+ *  which tab it is of is not known yet: nothing of his is sent to it or looked for on it until it is */
+export function followTabs(): {
+  follow(cid: string | undefined, key?: string): boolean;
+  learn(cid: string, key: string): boolean;
+  unsure(): boolean;
+} {
+  let cid: string | undefined;
+  let key: string | undefined;
+  /** the key of what was followed before `cid`, while `cid`'s own is not known */
+  let before: string | undefined;
+  return {
+    follow(c, k) {
+      if (c === cid) return false;
+      const was = key ?? before;
+      cid = c;
+      key = k;
+      before = k ? undefined : was;
+      return tabSwitched(was, k);
+    },
+    learn(c, k) {
+      if (c !== cid || key) return false;
+      key = k;
+      const was = before;
+      before = undefined;
+      return tabSwitched(was, k);
+    },
+    unsure: () => !key && !!before,
+  };
+}
+
 /** REQ-645 (m36) — the anchors kept per page load: so many of the newest */
 export const KEEP_MAX = 8;
 

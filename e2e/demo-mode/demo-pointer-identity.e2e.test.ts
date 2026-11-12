@@ -12,10 +12,11 @@
  *      scrolls up under the topbar: a chevron at the top edge of where the page can be seen —
  *      under the topbar, never on it — with "Hans is pointing above — scroll ↑"; no arrow, no
  *      dashed ring. Scrolled back, the arrow is on it again.
- *   3. M2 — a desktop customer: at the start the stage asks him to move ("isn't on Ana Torres's
- *      screen — move to show it") and her screen has no arrow; he points at the topbar's ES; she
- *      goes to another page: the arrow is back on ES within 1.5 s of the stage showing that page,
- *      with no move.
+ *   3. M2 (start) — a desktop customer: the stage opens with nothing of his on her screen and
+ *      asks him to move ("isn't on Ana Torres's screen — move to show it"); his move puts the
+ *      arrow there and the prompt goes.
+ *   4. M2 (page change) — he points at her topbar's ES; she goes to another page: the arrow is
+ *      back on ES within 1.5 s of the stage showing that page, with no move.
  */
 import { story, type StoryTools } from "#shots";
 import { answerQuestions } from "../_shared/onboarding-answers.ts";
@@ -466,21 +467,20 @@ Deno.test("REQ-645 (demo c4-M6): on a phone, what he points at scrolled up under
     }
   }));
 
-Deno.test("REQ-645 (demo cycle 5 M2): a desktop customer — at the start the stage asks him to move and her screen has no arrow; on the topbar's ES, her next page has the arrow back on ES within 1.5 s of the stage showing it, with no move", (t) =>
+Deno.test("REQ-645 (demo cycle 5 M2, start): a desktop customer — the stage opens with nothing of his on her screen, and it asks him to move there; his move puts the arrow on her screen and the prompt goes", (t) =>
   story(t, async (tools) => {
-    const { page, expect, baseUrl } = tools;
+    const { page, expect } = tools;
     const view = { width: 1280, height: 800 };
     const d = await demoOn(tools, view, "/dashboard");
-    const { userPage, userCtx } = d;
+    const { userPage } = d;
     try {
-      // the start: /admin's hand-off is a hint only (REQ-539) — nothing of his on her screen, and
-      // the stage asks him to move (unless his mouse is beside the frame: then it says so)
+      // the start: /admin's hand-off is a hint only (REQ-539: on a desktop customer's frame) —
+      // nothing of his on her screen, and the stage asks him to move
       await until(
         "REQ-645 (M2): at the start the stage asks him to move onto her screen",
         async () =>
           (await stageSays(page, "demo-pointer-absent")) ===
-            "Your pointer isn't on Ana Torres's screen — move to show it" ||
-          (await stageSays(page, "demo-pointer-off")) !== null,
+            "Your pointer isn't on Ana Torres's screen — move to show it",
         10_000,
       );
       expect.eq(
@@ -488,18 +488,35 @@ Deno.test("REQ-645 (demo cycle 5 M2): a desktop customer — at the start the st
         null,
         "REQ-539: no pointer of his on her screen before he moves",
       );
-
-      // he points at the topbar's ES
       await pointAt(page, view.width, "[data-cy='topbar-lang-es']");
       await until(
-        "his arrow is on her ES",
+        "his move puts his arrow on her screen (her ES)",
         async () => (await arrowOf(userPage))?.under === "topbar-lang-es",
         10_000,
       );
       expect.eq(
         await stageSays(page, "demo-pointer-absent"),
         null,
-        "the stage's prompt is gone once his arrow is on her screen",
+        "REQ-645 (M2): the stage's prompt is gone once his arrow is on her screen",
+      );
+    } finally {
+      await d.userCtx.close();
+    }
+  }));
+
+Deno.test("REQ-645 (demo cycle 5 M2, page change): a desktop customer — he points at the topbar's ES; her next page has the arrow back on ES within 1.5 s of the stage showing it, with no move", (t) =>
+  story(t, async (tools) => {
+    const { page, expect, baseUrl } = tools;
+    const view = { width: 1280, height: 800 };
+    const d = await demoOn(tools, view, "/dashboard");
+    const { userPage, userCtx } = d;
+    try {
+      // he points at the topbar's ES
+      await pointAt(page, view.width, "[data-cy='topbar-lang-es']");
+      await until(
+        "his arrow is on her ES",
+        async () => (await arrowOf(userPage))?.under === "topbar-lang-es",
+        10_000,
       );
 
       // her next page: when the stage shows it, and when her screen has his arrow on ES again

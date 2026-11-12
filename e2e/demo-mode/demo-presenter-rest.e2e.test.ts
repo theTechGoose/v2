@@ -243,6 +243,17 @@ const tabNote = (pg: Page) =>
     return el ? (el as HTMLElement).innerText.trim() : null;
   }) as Promise<string | null>;
 
+/** REQ-645 (m36) — the notice for Ana Torres's /settings tab, or what the stage says instead */
+const OTHER_TAB =
+  "Now showing Ana Torres's other tab (/settings) — move to point there";
+const saysOtherTab = async (pg: Page) => {
+  const note = await tabNote(pg);
+  if (note !== OTHER_TAB) {
+    throw new Error(`the stage's tab notice is ${JSON.stringify(note)}`);
+  }
+  return true;
+};
+
 /** the stage's "your pointer is off their screen" hint, when it shows */
 const offHint = (pg: Page) =>
   pg.evaluate(() => {
@@ -571,15 +582,13 @@ Deno.test("REQ-393 (demo M2 tab switch) + REQ-451 (demo M1) + REQ-645 (cycle 5 m
         20_000,
       );
       await until(
-        "M2: the tab the stage left (tab 1) loses the presenter's arrow",
-        async () => (await arrowOn(tab1)) === null,
+        "REQ-645 (m36): the stage says it shows her other tab now, and to move to point there",
+        () => saysOtherTab(page),
         10_000,
       );
       await until(
-        "REQ-645 (m36): the stage says it shows her other tab now, and to move to point there",
-        async () =>
-          (await tabNote(page)) ===
-            "Now showing Ana Torres's other tab (/settings) — move to point there",
+        "M2: the tab the stage left (tab 1) loses the presenter's arrow",
+        async () => (await arrowOn(tab1)) === null,
         10_000,
       );
       await noArrowFor(
@@ -634,15 +643,13 @@ Deno.test("REQ-393 (demo M2 tab switch) + REQ-451 (demo M1) + REQ-645 (cycle 5 m
         20_000,
       );
       await until(
-        "M2: tab 1, left, loses the arrow",
-        async () => (await arrowOn(tab1)) === null,
+        "REQ-645 (m36): the stage says it shows her other tab again",
+        () => saysOtherTab(page),
         10_000,
       );
       await until(
-        "REQ-645 (m36): the stage says it shows her other tab again",
-        async () =>
-          (await tabNote(page)) ===
-            "Now showing Ana Torres's other tab (/settings) — move to point there",
+        "M2: tab 1, left, loses the arrow",
+        async () => (await arrowOn(tab1)) === null,
         10_000,
       );
       await noArrowFor(

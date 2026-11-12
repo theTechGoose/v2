@@ -92,6 +92,9 @@ export interface DemoLinkOptions {
    *  when it changes). REQ-645 (m36) — `tab`: that socket's BROWSER tab key, when it said one (a
    *  new page of the same tab says the same key; another tab, another key) */
   onPeerOnline(cid?: string, tab?: string): void;
+  /** REQ-645 (cycle 5 m36) — a stage: the followed socket's BROWSER tab key, said by its claim
+   *  after the stage followed it (a socket is announced before its page says which tab it is) */
+  onPeerTab?(cid: string, tab: string): void;
   /** REQ-214 — a presenter came or went (on the customer's side: any of them; on a stage: a
    *  colleague) — per account: the first window of theirs to come, the last to go */
   onPresence?(pid: string, online: boolean): void;
@@ -411,6 +414,8 @@ export function connectDemo(o: DemoLinkOptions): DemoLink {
       t.f = f;
     }
     if (key) {
+      // REQ-645 (m36) — the socket the stage follows says its browser tab only now
+      const late = cid === followed && t.key !== key;
       t.key = key;
       if (held?.key === key) {
         // the followed browser tab's next page: the stage goes back to it at once
@@ -418,6 +423,7 @@ export function connectDemo(o: DemoLinkOptions): DemoLink {
         release();
         inherit(t, key, h.at, h.f);
       }
+      if (late) o.onPeerTab?.(cid, key);
     }
     endGrace();
     follow();
