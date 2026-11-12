@@ -14,6 +14,13 @@ import {
   LANDING_OFFER,
 } from "../../shared/quote-flow/landing-offers.ts";
 import { PUBLIC_PLANS } from "../../shared/quote-flow/pricing-plans.ts";
+import {
+  formatMockUsd,
+  lineTotalCents,
+  MOCK_QUOTE,
+  MOCK_QUOTE_LINES,
+  mockQuoteBoot,
+} from "../../shared/quote-flow/landing-mock-quote.ts";
 import { LANDING_DICT } from "../lib/landing-dict.ts";
 import {
   absoluteUrl,
@@ -66,7 +73,18 @@ const OFFER_BOOT =
         },
       },
     })
-  };`;
+  };` +
+  // REQ-412: the sample job's figures for the Quote / Contract / Invoice
+  // showcase and the scripted phone card — computed, never re-typed (m41).
+  `window.__PM_MOCK_QUOTE=${JSON.stringify(mockQuoteBoot())};`;
+
+/** Hero document card rows — dictionary key per sample-job line (REQ-412). */
+const HERO_DOC_KEY = {
+  demo: "doc.q.l0",
+  cabinets: "doc.q.l1",
+  counters: "doc.q.l2",
+  labor: "doc.q.l3",
+} as const;
 
 const DEMO_SCRIPT_EN: Bubble[] = [
   {
@@ -504,21 +522,23 @@ export default define.page(async function Landing(ctx) {
                   {t("doc.q.client")}
                 </div>
                 <div class="hs-doc__rows">
-                  <div class="hs-doc__row">
-                    <span data-i18n="doc.q.l1">{t("doc.q.l1")}</span>
-                    <strong>$4,200.00</strong>
-                  </div>
-                  <div class="hs-doc__row">
-                    <span data-i18n="doc.q.l2">{t("doc.q.l2")}</span>
-                    <strong>$3,990.00</strong>
-                  </div>
-                  <div class="hs-doc__row">
-                    <span data-i18n="doc.q.l3">{t("doc.q.l3")}</span>
-                    <strong>$1,950.00</strong>
-                  </div>
+                  {MOCK_QUOTE_LINES.map((l) => (
+                    <div class="hs-doc__row" key={l.id}>
+                      <span data-i18n={HERO_DOC_KEY[l.id]}>
+                        {t(HERO_DOC_KEY[l.id])}
+                      </span>
+                      <strong>
+                        {formatMockUsd(lineTotalCents(l), { decimals: true })}
+                      </strong>
+                    </div>
+                  ))}
                   <div class="hs-doc__row hs-doc__row--total">
                     <span data-i18n="doc.total">{t("doc.total")}</span>
-                    <strong>$10,990.00</strong>
+                    <strong>
+                      {formatMockUsd(MOCK_QUOTE.subtotalCents, {
+                        decimals: true,
+                      })}
+                    </strong>
                   </div>
                 </div>
                 <div class="hs-doc__sign">
@@ -559,25 +579,33 @@ export default define.page(async function Landing(ctx) {
                         <span data-i18n="hero.mock.l1">
                           {t("hero.mock.l1")}
                         </span>
-                        <strong>$4,200</strong>
+                        <strong>
+                          {formatMockUsd(MOCK_QUOTE.compact.cabinetsCents)}
+                        </strong>
                       </div>
                       <div class="hs-rich__row">
                         <span data-i18n="hero.mock.l2">
                           {t("hero.mock.l2")}
                         </span>
-                        <strong>$3,990</strong>
+                        <strong>
+                          {formatMockUsd(MOCK_QUOTE.compact.countersCents)}
+                        </strong>
                       </div>
                       <div class="hs-rich__row">
                         <span data-i18n="hero.mock.l3">
                           {t("hero.mock.l3")}
                         </span>
-                        <strong>$1,950</strong>
+                        <strong>
+                          {formatMockUsd(MOCK_QUOTE.compact.demoLaborCents)}
+                        </strong>
                       </div>
                       <div class="hs-rich__total">
                         <span data-i18n="hero.mock.total">
                           {t("hero.mock.total")}
                         </span>
-                        <strong>$10,990</strong>
+                        <strong>
+                          {formatMockUsd(MOCK_QUOTE.subtotalCents)}
+                        </strong>
                       </div>
                       <div class="hs-rich__cta" data-i18n="hero.mock.cta">
                         {t("hero.mock.cta")}
@@ -721,7 +749,9 @@ export default define.page(async function Landing(ctx) {
               <div class="label" data-i18n="docs.counter.label">
                 {t("docs.counter.label")}
               </div>
-              <div class="big" id="doc-counter-num">0</div>
+              <div class="big" id="doc-counter-num">
+                {formatSocialProof(LANDING_OFFER.socialProof.docsSent, lang)}
+              </div>
             </div>
             <div class="types">
               <span data-i18n="docs.counter.t1">{t("docs.counter.t1")}</span>

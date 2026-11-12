@@ -18,6 +18,19 @@
 import { useEffect, useRef, useState } from "preact/hooks";
 import { langSignal } from "../lib/lang.ts";
 import { tFor } from "../lib/i18n.ts";
+import {
+  formatMockUsd,
+  MOCK_QUOTE,
+} from "../../shared/quote-flow/landing-mock-quote.ts";
+
+/** The compact card's figures, from the landing's one sample job (REQ-412). */
+const usd = (cents: number) => formatMockUsd(cents, { spaced: true });
+const CARD_AMOUNTS = {
+  l1: usd(MOCK_QUOTE.compact.cabinetsCents),
+  l2: usd(MOCK_QUOTE.compact.countersCents),
+  l3: usd(MOCK_QUOTE.compact.demoLaborCents),
+  total: usd(MOCK_QUOTE.subtotalCents),
+};
 
 export interface Bubble {
   side: "left" | "right";
@@ -60,19 +73,19 @@ function QuoteCard({ q, lang }: { q: QuoteCopy; lang: "en" | "es" }) {
       </div>
       <div class="row">
         <span>{q.l1}</span>
-        <strong>{tFor(lang, "phoneChat.quote.amount1")}</strong>
+        <strong>{CARD_AMOUNTS.l1}</strong>
       </div>
       <div class="row">
         <span>{q.l2}</span>
-        <strong>{tFor(lang, "phoneChat.quote.amount2")}</strong>
+        <strong>{CARD_AMOUNTS.l2}</strong>
       </div>
       <div class="row">
         <span>{q.l3}</span>
-        <strong>{tFor(lang, "phoneChat.quote.amount3")}</strong>
+        <strong>{CARD_AMOUNTS.l3}</strong>
       </div>
       <div class="total">
         <span>{q.total}</span>
-        <span>{tFor(lang, "phoneChat.quote.amountTotal")}</span>
+        <span>{CARD_AMOUNTS.total}</span>
       </div>
     </div>
   );
