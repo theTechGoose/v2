@@ -17,6 +17,7 @@ import { filesClient } from "../clients/files.ts";
 import { type QuoteCard, quotesClient } from "../clients/quotes.ts";
 import { billedTotalCents } from "../../shared/quote-flow/milestone-reconcile.ts";
 import { isTbdTermValue } from "../../shared/quote-flow/terms-i18n.ts";
+import { smsRecoveryAsk } from "../../shared/quote-flow/sms-failure.ts";
 import { clientsClient } from "../clients/clients.ts";
 import { readCached, refreshDash, subscribeDash } from "../lib/dash-cache.ts";
 import { type Lang, langSignal, tFor } from "../lib/i18n.ts";
@@ -5219,13 +5220,13 @@ export default function AsstChat({
                   textedTo?: string;
                   emailFailureReason?: string;
                   smsFailureReason?: string;
+                  smsFailureCode?: string;
                 };
                 if (!cp.quoteId) continue;
                 const eMissing = !cp.emailedTo && !!cp.emailFailureReason &&
                   !customer?.email;
-                const pMissing = !cp.textedTo && !!cp.smsFailureReason &&
-                  (!customer?.phoneNumber ||
-                    /Invalid|21211/i.test(cp.smsFailureReason ?? ""));
+                // REQ-226: the structured code decides, never the reason text.
+                const pMissing = !!smsRecoveryAsk(cp, customer?.phoneNumber);
                 if (eMissing || pMissing) {
                   lastRecoveryDividerId = cand.id;
                   break;
@@ -5266,6 +5267,7 @@ export default function AsstChat({
                     textedTo?: string;
                     emailFailureReason?: string;
                     smsFailureReason?: string;
+                    smsFailureCode?: string;
                   };
                   const label = dp.label ?? m.content;
                   // Show the recovery form when this divider belongs to a
@@ -5287,9 +5289,11 @@ export default function AsstChat({
                   const emailMissing = !dp.emailedTo &&
                     !!dp.emailFailureReason &&
                     !customer?.email;
-                  const phoneMissing = !dp.textedTo && !!dp.smsFailureReason &&
-                    (!customer?.phoneNumber ||
-                      /Invalid|21211/i.test(dp.smsFailureReason));
+                  // REQ-226: "add" (no phone on file) vs "check" (the phone on
+                  // file can't take texts) — from the send's structured code,
+                  // never a regex over the translated reason.
+                  const phoneAsk = smsRecoveryAsk(dp, customer?.phoneNumber);
+                  const phoneMissing = !!phoneAsk;
                   const needRecovery = !!dp.quoteId && !!customer?.id &&
                     !!inferredChannel &&
                     (emailMissing || phoneMissing) &&
@@ -5313,9 +5317,16 @@ export default function AsstChat({
                             <div class="recovery-card__head">
                               <strong>
                                 {askEmail && askPhone
-                                  ? tFor(lang, "asstChat.recovery.addBoth")
+                                  ? tFor(
+                                    lang,
+                                    phoneAsk === "check"
+                                      ? "asstChat.recovery.addEmailCheckPhone"
+                                      : "asstChat.recovery.addBoth",
+                                  )
                                   : askEmail
                                   ? tFor(lang, "asstChat.recovery.addEmail")
+                                  : phoneAsk === "check"
+                                  ? tFor(lang, "asstChat.recovery.checkPhone")
                                   : tFor(lang, "asstChat.recovery.addPhone")}
                               </strong>
                               <span class="recovery-card__hint">
@@ -5357,7 +5368,12 @@ export default function AsstChat({
                                       lang,
                                       "asstChat.recovery.phonePlaceholder",
                                     )}
-                                    value={formatPhoneInput(draft.phone ?? "")} /* NW-34 (REQ-012) */
+                                    value={formatPhoneInput(
+                                      draft.phone ??
+                                        (phoneAsk === "check"
+                                          ? customer?.phoneNumber ?? ""
+                                          : ""),
+                                    )} /* NW-34 (REQ-012); REQ-226: "check" pre-fills the number on file */
                                     disabled={saving}
                                     onInput={(e) => {
                                       const v =

@@ -17,6 +17,10 @@ import {
 } from "#quote-flow/outbound-identity.ts";
 import { resolveCommsLanguage } from "#quote-flow/comms-language.ts";
 import {
+  smsFailureCodeForReasonKey,
+  type SmsFailureCode,
+} from "#quote-flow/sms-failure.ts";
+import {
   customerOnDocument,
   docRefWithVersion,
   docTitle,
@@ -53,6 +57,9 @@ export interface SendPaperworkSmsResult {
   detail?: string;
   /** P-06/UX-26 machine-readable needs-name refusal marker. */
   needsName?: boolean;
+  /** REQ-226: why the text didn't go out, as a code — the UI branches on
+   *  this, never on the translated `reason`. Set on every failure. */
+  failureCode?: SmsFailureCode;
 }
 
 /**
@@ -93,7 +100,7 @@ export class SendPaperworkSms {
       userName: sender?.name,
       businessName: rawBiz?.businessName ?? rawBiz?.legalName,
     });
-    if (refusal) return refusal;
+    if (refusal) return { ...refusal, failureCode: "other" };
 
     // UX-28: ONE commsLanguage resolution for every outbound (explicit
     // per-send pick → stored Settings default → en). An explicit pick is
@@ -162,6 +169,7 @@ export class SendPaperworkSms {
         reason:
           "no recipient: pass `to` or attach a customer with a phone number",
         to: "",
+        failureCode: "missing",
       };
     }
 
@@ -171,26 +179,34 @@ export class SendPaperworkSms {
         ok: false,
         reason: `invalid phone: ${recipient}`,
         to: recipient,
+        failureCode: "invalid",
       };
     }
     // REQ-030 (NW-25): the contractor reads the reason — their UI language.
     const uiLang: "en" | "es" = sender?.language === "es" ? "es" : "en";
     // A fictional 555 number never reaches Twilio (it would answer 21211);
-    // say so in words instead of a raw provider error.
+    // say so in words instead of a raw provider error. REQ-226: the provider
+    // and its code stay in `detail` (logs), never in the contractor's copy.
     if (isFictionalUsNumber(e164)) {
       return {
         ok: false,
         reason: t(uiLang, "sms.fictionalNumber"),
-        detail: `fictional number: ${e164}`,
+        detail: `fictional number: ${e164} (Twilio would answer 21211)`,
         to: e164,
+        failureCode: "fictional",
       };
     }
 
     const sent = await this.sms.send({ to: e164, body });
     // A recognised Twilio rejection arrives as a lang key — translate it.
-    const result = !sent.ok && sent.reason && /^sms\./.test(sent.reason)
-      ? { ...sent, reason: t(uiLang, sent.reason) }
-      : sent;
+    const result: SendPaperworkSmsResult = sent.ok ? { ...sent, to: e164 } : {
+      ...sent,
+      to: e164,
+      reason: sent.reason && /^sms\./.test(sent.reason)
+        ? t(uiLang, sent.reason)
+        : sent.reason,
+      failureCode: smsFailureCodeForReasonKey(sent.reason),
+    };
 
     // NW-10 (REQ-003): stamp the quote's lifecycle on the first successful
     // text — status→"sent" + sentAt→now, idempotent, mirroring
