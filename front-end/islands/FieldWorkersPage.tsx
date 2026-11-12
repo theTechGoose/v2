@@ -10,10 +10,14 @@ import {
   type RegionView,
 } from "../clients/field.ts";
 import FieldHead from "../components/FieldHead.tsx";
-import { ApiError } from "../lib/api.ts";
 import { initialsOf } from "../lib/clients-display.ts";
 import { I, ICN } from "../lib/dash-icons.tsx";
 import { fmtCell, PHONE_PLACEHOLDER } from "../lib/field.ts";
+import {
+  type WorkerErr,
+  workerError,
+  zoneName,
+} from "../lib/field-worker-errors.ts";
 import { langSignal, t } from "../lib/i18n.ts";
 
 interface AddForm {
@@ -35,32 +39,20 @@ const BLANK: AddForm = {
   language: "es",
 };
 
-/** the server's message when it sent one (a 409 names the zones still covered); the house fallback otherwise */
-function errMsg(err: unknown): string {
-  if (err instanceof ApiError) {
-    const b = err.body as { error?: unknown; message?: unknown } | null;
-    if (b && typeof b === "object") {
-      if (typeof b.error === "string") return b.error;
-      if (typeof b.message === "string") return b.message;
-    }
-  }
-  if (err instanceof Error && err.message) return err.message;
-  return t("field.common.error");
-}
-
-/** "Zona 3" reads "Zone 3" in English (the server names zones in Spanish) */
-function zoneName(name: string, lang: "en" | "es"): string {
-  return lang === "en" ? name.replace(/^Zona /, "Zone ") : name;
+/** REQ-421 (demo m42) — the server's refusal code, worded in the page's language (never its English) */
+function errMsg(err: WorkerErr): string {
+  return t(err.key, err.vars);
 }
 
 export default function FieldWorkersPage() {
   const lang = langSignal.value;
   const [workers, setWorkers] = useState<FieldWorker[] | null>(null);
   const [regions, setRegions] = useState<RegionView[]>([]);
-  const [loadErr, setLoadErr] = useState<string | null>(null);
+  const [loadErr, setLoadErr] = useState<WorkerErr | null>(null);
   const [form, setForm] = useState<AddForm>(BLANK);
   const [adding, setAdding] = useState(false);
-  const [addErr, setAddErr] = useState<string | null>(null);
+  /** REQ-421 — a refusal with the box it belongs under (worded at render, so a language flip re-words it) */
+  const [addErr, setAddErr] = useState<WorkerErr | null>(null);
   /** REQ-151 — the last add: whether the worker was texted the link and the PIN */
   const [added, setAdded] = useState<{ name: string; texted: boolean } | null>(
     null,
@@ -68,7 +60,7 @@ export default function FieldWorkersPage() {
   /** the row whose Remove is waiting for its Confirm */
   const [confirmId, setConfirmId] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
-  const [rowErr, setRowErr] = useState<{ id: string; msg: string } | null>(
+  const [rowErr, setRowErr] = useState<{ id: string; err: WorkerErr } | null>(
     null,
   );
 
@@ -95,7 +87,7 @@ export default function FieldWorkersPage() {
       })
       .catch((err: unknown) => {
         if (!alive) return;
-        setLoadErr(errMsg(err));
+        setLoadErr(workerError(err, langSignal.value));
         setWorkers([]);
       });
     return () => {
@@ -125,7 +117,7 @@ export default function FieldWorkersPage() {
       setForm(BLANK);
       await reload();
     } catch (err) {
-      setAddErr(errMsg(err));
+      setAddErr(workerError(err, langSignal.value));
     } finally {
       setAdding(false);
     }
@@ -144,7 +136,7 @@ export default function FieldWorkersPage() {
         )
       );
     } catch (err) {
-      setRowErr({ id: w.id, msg: errMsg(err) });
+      setRowErr({ id: w.id, err: workerError(err, langSignal.value) });
     } finally {
       setBusyId(null);
     }
@@ -159,7 +151,7 @@ export default function FieldWorkersPage() {
       setWorkers((list) => (list ?? []).filter((x) => x.id !== w.id));
     } catch (err) {
       // a 409 — the worker still covers zones; the server says which
-      setRowErr({ id: w.id, msg: errMsg(err) });
+      setRowErr({ id: w.id, err: workerError(err, langSignal.value) });
     } finally {
       setBusyId(null);
     }
@@ -179,7 +171,7 @@ export default function FieldWorkersPage() {
         </a>
       </FieldHead>
 
-      {loadErr && <p class="alert">{loadErr}</p>}
+      {loadErr && <p class="alert">{errMsg(loadErr)}</p>}
 
       <form class="panel" onSubmit={submit} data-cy="wk-form">
         <h2 class="panel__title">
@@ -193,6 +185,7 @@ export default function FieldWorkersPage() {
               data-cy="wk-name"
               required
               autocomplete="off"
+              aria-invalid={addErr?.field === "name" ? "true" : undefined}
               value={form.name}
               onInput={(e) =>
                 setForm({
@@ -200,6 +193,11 @@ export default function FieldWorkersPage() {
                   name: (e.currentTarget as HTMLInputElement).value,
                 })}
             />
+            {addErr?.field === "name" && (
+              <span class="field-error" role="alert" data-cy="wk-name-error">
+                {errMsg(addErr)}
+              </span>
+            )}
           </label>
           <label class="field">
             {t("settings.phone")}
@@ -213,16 +211,33 @@ export default function FieldWorkersPage() {
               placeholder={PHONE_PLACEHOLDER}
               maxlength={10}
               pattern="\d{10}"
+              aria-invalid={addErr?.field === "phone" ? "true" : undefined}
+              aria-describedby={addErr?.field === "phone"
+                ? "wk-phone-error"
+                : undefined}
               value={form.phone}
-              onInput={(e) =>
+              onInput={(e) => {
                 setForm({
                   ...form,
                   phone: (e.currentTarget as HTMLInputElement).value.replace(
                     /\D/g,
                     "",
                   ).slice(0, 10),
-                })}
+                });
+                // a new number clears the refusal of the old one
+                if (addErr?.field === "phone") setAddErr(null);
+              }}
             />
+            {addErr?.field === "phone" && (
+              <span
+                id="wk-phone-error"
+                class="field-error"
+                role="alert"
+                data-cy="wk-phone-error"
+              >
+                {errMsg(addErr)}
+              </span>
+            )}
           </label>
           <label class="field" style="flex:0 0 140px;min-width:120px">
             {t("field.wk.pin")}
@@ -235,6 +250,7 @@ export default function FieldWorkersPage() {
               autocomplete="new-password"
               maxlength={4}
               pattern="\d{4}"
+              aria-invalid={addErr?.field === "pin" ? "true" : undefined}
               value={form.pin}
               onInput={(e) =>
                 setForm({
@@ -245,6 +261,11 @@ export default function FieldWorkersPage() {
                   ).slice(0, 4),
                 })}
             />
+            {addErr?.field === "pin" && (
+              <span class="field-error" role="alert" data-cy="wk-pin-error">
+                {errMsg(addErr)}
+              </span>
+            )}
           </label>
           <label class="field" style="flex:0 0 150px;min-width:130px">
             {t("field.wk.language")}
@@ -299,7 +320,9 @@ export default function FieldWorkersPage() {
             {adding ? t("field.common.loading") : t("common.add")}
           </button>
         </div>
-        {addErr && <p class="alert" data-cy="wk-error">{addErr}</p>}
+        {addErr && addErr.field === null && (
+          <p class="alert" data-cy="wk-error">{errMsg(addErr)}</p>
+        )}
         {added && (
           <p
             class={added.texted ? "hint" : "alert"}
@@ -411,7 +434,7 @@ export default function FieldWorkersPage() {
                   </div>
                   {rowErr?.id === w.id && (
                     <p class="alert" style="margin:0" data-cy="wk-row-error">
-                      {rowErr.msg}
+                      {errMsg(rowErr.err)}
                     </p>
                   )}
                   <div class="sub__foot">

@@ -1845,3 +1845,88 @@ Deno.test("REQ-365 a one-off task for a customer with no subscription answers re
     ]);
   });
 });
+
+Deno.test("REQ-421 (demo cycle 2, m42) POST /field/workers answers a stable `code` for every refusal — the page words it; a cell already in use (any account) is worker_phone_taken", async () => {
+  await withServer(async (call) => {
+    const H = await login(call);
+    const add = (b: Record<string, unknown>) =>
+      call("POST", "/field/workers", b, H);
+    const first = await add({
+      name: "Pedro",
+      phoneNumber: "8435550777",
+      pin: "4321",
+    });
+    assertEquals(first.status, 201);
+    const cases: [Record<string, unknown>, number, string][] = [
+      [{ phoneNumber: "8435550776", pin: "1234" }, 400, "name_required"],
+      [
+        { name: "x".repeat(301), phoneNumber: "8435550776", pin: "1234" },
+        400,
+        "name_too_long",
+      ],
+      [
+        { name: "A", phoneNumber: "843555", pin: "1234" },
+        400,
+        "phone_10_digits",
+      ],
+      [
+        { name: "A", phoneNumber: "8435550776", pin: "12" },
+        400,
+        "pin_4_digits",
+      ],
+      [
+        { name: "Dup", phoneNumber: "(843) 555-0777", pin: "0000" },
+        409,
+        "worker_phone_taken",
+      ],
+      [
+        { name: "A", phoneNumber: "8435550776", pin: "1234", language: "fr" },
+        400,
+        "language_invalid",
+      ],
+    ];
+    for (const [b, status, code] of cases) {
+      const r = await add(b);
+      assertEquals(r.status, status, `${code}: ${JSON.stringify(r.body)}`);
+      assertEquals(r.body?.code, code, JSON.stringify(r.body));
+    }
+    // another account's crew holds the cell too (findByPhone is global) — the same code
+    const H2 = await login(call, "+15125551401", "Other Owner");
+    const other = await call("POST", "/field/workers", {
+      name: "Dup",
+      phoneNumber: "8435550777",
+      pin: "0000",
+    }, H2);
+    assertEquals(other.status, 409);
+    assertEquals(other.body?.code, "worker_phone_taken");
+    // the row's own refusals on the same page: a bad language, a worker still covering a zone
+    const badLang = await call("PUT", `/field/workers/${first.body.id}`, {
+      language: "fr",
+    }, H);
+    assertEquals([badLang.status, badLang.body?.code], [
+      400,
+      "language_invalid",
+    ]);
+    const customer =
+      (await call("POST", "/customers", { name: "Zone Owner" }, H)).body;
+    const sub = (await call("POST", "/field/subscriptions", {
+      customerId: customer.id,
+      address: "900 Broadway St, Myrtle Beach, SC",
+      items: [{ taskTypeName: "Cut", priceCents: 100 }],
+    }, H)).body;
+    await call("PUT", `/field/regions/${sub.region.id}/worker`, {
+      workerId: first.body.id,
+    }, H);
+    const covers = await call(
+      "DELETE",
+      `/field/workers/${first.body.id}`,
+      undefined,
+      H,
+    );
+    assertEquals([covers.status, covers.body?.code], [
+      409,
+      "worker_covers_zones",
+    ]);
+    assertEquals(covers.body?.detail?.zones, [sub.region.name]);
+  });
+});
