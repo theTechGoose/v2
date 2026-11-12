@@ -78,6 +78,9 @@ export type LLMAction =
     type: "create_quote";
     payload: {
       summary: string;
+      /** REQ-337 (demo m6/p15-1): the model's own short job name, when it
+       *  gave one — preferred over the summary-derived fallback. */
+      jobName?: string;
       lineItems: { description: string; amountCents: number }[];
       /** REQ-263: the job address the user typed, when they gave one. */
       serviceAddress?: string;

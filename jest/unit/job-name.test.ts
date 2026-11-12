@@ -6,7 +6,12 @@
  * Pins the deterministic fallback summarizer + the validator the LLM path
  * must also satisfy. Target: shared/quote-flow/job-name.ts
  */
-import { isValidJobName, summarizeJobName } from "../../shared/quote-flow/job-name";
+import {
+  isValidJobName,
+  JOB_NAME_MAX_CHARS,
+  JOB_NAME_MAX_WORDS,
+  summarizeJobName,
+} from "../../shared/quote-flow/job-name";
 
 describe("summarizeJobName", () => {
   it("produces at most three words", () => {
@@ -55,12 +60,58 @@ describe("isValidJobName", () => {
     expect(isValidJobName("Backyard Junk Removal")).toBe(true);
   });
 
-  it("rejects four or more words", () => {
-    expect(isValidJobName("Removing Junk From Backyard")).toBe(false);
+  // REQ-337 (demo p15-1): the hard 3-word cap became a 5-word / 30-char
+  // budget so a name can cover every area named ("Bedroom & Hallway Repaint").
+  it("REQ-337 accepts a four-word name inside the budget, rejects one over it", () => {
+    expect(JOB_NAME_MAX_WORDS).toBe(5);
+    expect(JOB_NAME_MAX_CHARS).toBe(30);
+    expect(isValidJobName("Bedroom & Hallway Repaint")).toBe(true);
+    expect(isValidJobName("Repintar dormitorios y pasillo")).toBe(true);
+    expect(isValidJobName("Removing All The Junk From The Backyard")).toBe(false);
+    expect(isValidJobName("Full Kitchen Refresh With Lighting")).toBe(false); // 34 chars
   });
 
   it("rejects empty and whitespace-only names", () => {
     expect(isValidJobName("")).toBe(false);
     expect(isValidJobName("   ")).toBe(false);
+  });
+});
+
+/**
+ * REQ-337 (demo-loop cycle 1, m6): the model's summary carries the customer
+ * ("Bathroom remodel — Dana") and the contractor's sentence carries the
+ * recipient ("… for Maria Lopez"); neither belongs in the document title.
+ */
+describe("REQ-337 m6: summaries with a customer tail or recipient derive a clean title", () => {
+  it("strips the '— <customer>' tail before deriving (es, sentence case)", () => {
+    expect(summarizeJobName("Mantenimiento de jardín mensual — María López", "es"))
+      .toBe("Mantenimiento de jardín");
+  });
+
+  it("strips the '— <customer>' tail before deriving (en)", () => {
+    expect(summarizeJobName("Panel swap — customer x")).toBe("Panel Swap");
+    expect(summarizeJobName("Bathroom remodel — Dana")).toBe("Bathroom Remodel");
+    expect(summarizeJobName("Bathroom remodel - Dana Whitfield", "en")).toBe("Bathroom Remodel");
+  });
+
+  it("drops a leading 'Quote:' label", () => {
+    expect(summarizeJobName("Quote: Deep clean — Maria Lopez")).toBe("Deep Clean");
+    expect(summarizeJobName("Cotización: Limpieza profunda — María", "es")).toBe("Limpieza profunda");
+  });
+
+  it("cuts at 'for'/'para' when the recipient follows, and skips digit-led fragments (en)", () => {
+    expect(summarizeJobName("Deep clean 3-bed house for Maria Lopez")).toBe("Deep Clean House");
+    expect(summarizeJobName("Roof repair for Jim Roof and gutters")).toBe("Roof Repair");
+    expect(summarizeJobName("Kitchen backsplash para la señora Gómez")).toBe("Kitchen Backsplash");
+  });
+
+  it("cuts at 'para' before a recipient (es) and never ends on a number", () => {
+    expect(summarizeJobName("Pintura exterior para María López", "es")).toBe("Pintura exterior");
+    expect(summarizeJobName("Cambiar 12 tablas del deck", "es")).toBe("Cambiar 12 tablas");
+    expect(summarizeJobName("Reparar puertas 2", "es")).toBe("Reparar puertas");
+  });
+
+  it("still keeps 'for' when no recipient follows", () => {
+    expect(summarizeJobName("Quote for kitchen remodel")).toBe("Kitchen Remodel");
   });
 });

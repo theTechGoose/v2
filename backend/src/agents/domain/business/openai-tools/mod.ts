@@ -29,6 +29,9 @@ export const TOOL_DEFS = [
         type: "object",
         properties: {
           summary:    { type: "string", description: t("en", "prompts.tools.createQuote.summary") },
+          // REQ-337 (demo m6/p15-1): the model names the job; the summary's
+          // customer tail is never sliced into a title.
+          jobName:    { type: "string", description: t("en", "prompts.tools.createQuote.jobName") },
           serviceAddress: { type: "string", description: t("en", "prompts.tools.createQuote.serviceAddress") },
           lineItems: {
             type: "array",
@@ -200,6 +203,8 @@ export function parseToolCall(call: { function: { name: string; arguments: strin
         lineItems.push({ description: i.description, amountCents: Math.trunc(i.amountCents) });
       }
       if (!summary || lineItems.length === 0) return undefined;
+      // REQ-337: the model's own job name, when it gave one
+      const jobName = typeof args.jobName === "string" ? args.jobName.trim() : "";
       // REQ-263: the job address, when the user gave one
       const serviceAddress = typeof args.serviceAddress === "string" ? args.serviceAddress.trim() : "";
       // REQ-258: only a preset payment option id survives; anything else is
@@ -212,6 +217,7 @@ export function parseToolCall(call: { function: { name: string; arguments: strin
         type: "create_quote",
         payload: {
           summary,
+          ...(jobName ? { jobName } : {}),
           lineItems,
           ...(serviceAddress ? { serviceAddress } : {}),
           ...(paymentTerms ? { paymentTerms } : {}),

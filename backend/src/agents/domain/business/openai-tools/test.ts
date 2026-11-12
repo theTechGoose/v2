@@ -362,3 +362,25 @@ Deno.test("REQ-315 TOOL_DEFS: change_order is for ADDING or CREDITING work and s
   assertEquals(/add/i.test(d) && /credit/i.test(d), true, d);
   assertEquals(/add, remove or credit/.test(d), false, d);
 });
+
+// REQ-337 (demo m6/p15-1): the model may name the job itself.
+Deno.test("REQ-337 parseToolCall: create_quote carries a model-supplied jobName; the schema offers it", () => {
+  const def = TOOL_DEFS.find((d) => d.function.name === "create_quote")!;
+  const props = def.function.parameters.properties as Record<string, unknown>;
+  assertEquals(typeof props.jobName, "object");
+  const out = parseToolCall(call("create_quote", {
+    summary: "Repaint 3 bedrooms and hallway — John Miller",
+    jobName: "  Bedroom & Hallway Repaint ",
+    lineItems: [{ description: "Repaint", amountCents: 240_000 }],
+  }));
+  assertEquals(out?.type, "create_quote");
+  if (out?.type === "create_quote") {
+    assertEquals(out.payload.jobName, "Bedroom & Hallway Repaint");
+  }
+  const none = parseToolCall(call("create_quote", {
+    summary: "x",
+    jobName: "   ",
+    lineItems: [{ description: "y", amountCents: 1 }],
+  }));
+  if (none?.type === "create_quote") assertEquals(none.payload.jobName, undefined);
+});

@@ -5,7 +5,11 @@ import {
 } from "@agents/domain/business/llm/base/mod.ts";
 import { type Lang, t } from "@core/i18n/mod.ts";
 import { disambiguateTitle, versionTitle } from "#quote-flow/version-titles.ts";
-import { summarizeJobName } from "#quote-flow/job-name.ts";
+import {
+  fitJobNameToBudget,
+  JOB_NAME_MAX_WORDS,
+  summarizeJobName,
+} from "#quote-flow/job-name.ts";
 import { clampSummary } from "#quote-flow/summary-clamp.ts";
 import { scopeBulletsFromRaw } from "#quote-flow/scope-from-raw.ts";
 import {
@@ -267,14 +271,21 @@ function tryParseJson(s: string): { options?: unknown } | undefined {
 
 /** UX-05/UX-41: Spanish names are sentence case with lowercase connectors,
  *  never blanket Title Case — the shared lang-aware derivation owns that. */
+// REQ-337 (demo p15-1): the hard 3-word slice turned "bedrooms AND hallway"
+// into "Bedroom Repaint"; the name now fits the shared word/char budget so
+// it can cover every area named ("Bedroom & Hallway Repaint").
 function clampJobName(s: string, lang: Lang): string {
-  if (lang === "es") return summarizeJobName(s, "es");
-  const cleaned = s.trim().replace(/[^\p{L}\p{N}\s-]/gu, "").replace(
+  if (lang === "es") {
+    return fitJobNameToBudget(
+      summarizeJobName(s, "es", { maxWords: JOB_NAME_MAX_WORDS }),
+    );
+  }
+  const cleaned = s.trim().replace(/[^\p{L}\p{N}\s&-]/gu, "").replace(
     /\s+/g,
     " ",
   );
-  const words = cleaned.split(" ").filter(Boolean).slice(0, 3);
-  return words.map(titleCaseWord).join(" ");
+  const words = cleaned.split(" ").filter(Boolean).slice(0, JOB_NAME_MAX_WORDS);
+  return fitJobNameToBudget(words.map(titleCaseWord).join(" "));
 }
 
 function deriveJobName(summary: string, lang: Lang): string {

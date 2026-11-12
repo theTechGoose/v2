@@ -41,6 +41,7 @@ import { getKv, resetKv } from "@core/data/kv/mod.ts";
 import { ChangeOrderStore } from "@paperwork/domain/data/change-order-store/mod.ts";
 import type { SendChangeOrderAlert } from "@paperwork/domain/coordinators/send-change-order-alert/mod.ts";
 import { ApplyChatChangeOrder } from "@agents/domain/coordinators/apply-chat-change-order/mod.ts";
+import { ReviseQuote } from "@agents/domain/coordinators/revise-quote/mod.ts";
 import { wizardSpecFor } from "@agents/domain/business/terms-wizard-spec/mod.ts";
 import type { AgentMessage } from "@agents/dto/message.ts";
 
@@ -115,6 +116,7 @@ function fresh() {
     emailer,
     llm,
     changeOrder,
+    new ReviseQuote(quotes, customers), // REQ-315
   );
   return { conversations, messages, llm, quotes, invoices, flow };
 }

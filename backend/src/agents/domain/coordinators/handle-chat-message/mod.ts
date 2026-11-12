@@ -80,6 +80,7 @@ import { extractQuoteFacts } from "#quote-flow/quote-facts.ts"; // REQ-331
 import { findExistingCustomer } from "#quote-flow/customer-dedupe.ts"; // REQ-331
 import { CustomerStore } from "@crm/domain/data/customer-store/mod.ts";
 import type { Customer } from "@crm/dto/customer.ts";
+import { isValidJobName, jobNameCase } from "#quote-flow/job-name.ts";
 import type { AgentConversation } from "@agents/dto/conversation.ts";
 import type { AgentMessage } from "@agents/dto/message.ts";
 
@@ -1391,14 +1392,23 @@ export class HandleChatMessage {
           }
         }
         if (!quote) {
+          // REQ-337 (demo m6): the model's own job name when it gave a
+          // valid one; otherwise the store derives it — in the CONTRACTOR's
+          // language (a Spanish summary must not come out "Mantenimiento De
+          // Jardín"), the summary's "— <customer>" tail stripped.
+          const modelJobName = action.payload.jobName?.trim() ?? "";
+          const jobName = isValidJobName(modelJobName)
+            ? jobNameCase(modelJobName, replyLang)
+            : undefined;
           quote = await this.quotes.create(input.userId, {
             summary: action.payload.summary,
+            ...(jobName ? { jobName } : {}),
             lineItems: dtoLineItems,
             estimatedTotal,
             status: "draft",
             ...(customerId ? { customerId } : {}),
             ...(serviceAddress ? { serviceAddress } : {}),
-          });
+          }, { jobNameLang: replyLang });
         }
 
         const card = await this.messages.append({

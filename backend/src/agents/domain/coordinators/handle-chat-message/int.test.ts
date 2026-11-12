@@ -2256,3 +2256,91 @@ Deno.test("REQ-302 B1 handle-chat-message integration: a real reprice of the bou
   assertEquals(quoteUpdatedBy(result.newMessages), draft.id);
   await resetKv();
 });
+
+// REQ-337 (demo-loop cycle 1, m6): the chat path derives the job name in
+// the CONTRACTOR's language and without the summary's "— <customer>" tail.
+async function seedOnboardedEs(userId: string) {
+  await seedOnboarded(userId);
+  const kv = await getKv();
+  const row = (await kv.get<Record<string, unknown>>(["user", userId])).value!;
+  await kv.set(["user", userId], { ...row, language: "es" });
+}
+
+Deno.test("REQ-337 m6 handle-chat-message integration: a Spanish contractor's chat quote is titled in sentence case without the customer tail", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const { conversations, llm, quotes, flow } = fresh();
+  await seedOnboardedEs("u-es");
+  llm.setScript([{
+    text: "Aquí está tu cotización.",
+    action: {
+      type: "create_quote",
+      payload: {
+        summary: "Mantenimiento de jardín mensual — María López",
+        lineItems: [{ description: "Mantenimiento mensual", amountCents: 12_000 }],
+      },
+    },
+  }]);
+  const conv = await conversations.create({ userId: "u-es" });
+  const result = await flow.run({
+    userId: "u-es",
+    conversationId: conv.id,
+    content: "Mantenimiento de jardín mensual para María López, $120",
+  });
+  const stored = await quotes.getOwned(result.conversation.quoteId!, "u-es");
+  assertEquals(stored.jobName, "Mantenimiento de jardín");
+  await resetKv();
+});
+
+Deno.test("REQ-337 m6 handle-chat-message integration: an English chat quote never doubles the customer into its title", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const { conversations, llm, quotes, flow } = fresh();
+  await seedOnboarded("u-1");
+  llm.setScript([{
+    text: "Here's your quote.",
+    action: {
+      type: "create_quote",
+      payload: {
+        summary: "Bathroom remodel — Dana",
+        lineItems: [{ description: "Bathroom remodel", amountCents: 850_000 }],
+      },
+    },
+  }]);
+  const conv = await conversations.create({ userId: "u-1" });
+  const result = await flow.run({
+    userId: "u-1",
+    conversationId: conv.id,
+    content: "Bathroom remodel for Dana Whitfield, $8,500",
+  });
+  const stored = await quotes.getOwned(result.conversation.quoteId!, "u-1");
+  assertEquals(stored.jobName, "Bathroom Remodel");
+  await resetKv();
+});
+
+Deno.test("REQ-337 m6 handle-chat-message integration: a model-supplied jobName on create_quote is stored over the derived one", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const { conversations, llm, quotes, flow } = fresh();
+  await seedOnboarded("u-1");
+  llm.setScript([{
+    text: "Here's your quote.",
+    action: {
+      type: "create_quote",
+      payload: {
+        summary: "Repaint 3 bedrooms and hallway — John Miller",
+        jobName: "Bedroom & Hallway Repaint",
+        lineItems: [{ description: "Repaint", amountCents: 240_000 }],
+      },
+    },
+  }]);
+  const conv = await conversations.create({ userId: "u-1" });
+  const result = await flow.run({
+    userId: "u-1",
+    conversationId: conv.id,
+    content: "Repaint 3 bedrooms and the hallway for John Miller, $2,400",
+  });
+  const stored = await quotes.getOwned(result.conversation.quoteId!, "u-1");
+  assertEquals(stored.jobName, "Bedroom & Hallway Repaint");
+  await resetKv();
+});
