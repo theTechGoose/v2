@@ -45,6 +45,9 @@ export class QuoteController {
     // dispatch that has not happened at creation time, so the API refuses to
     // record them here — the send coordinators stamp status + sentAt.
     if (dto.status === "sent" || dto.status === "viewed") dto.status = "draft";
+    // REQ-572: "shared by link" is the owner's mark on an existing quote
+    // (PUT), never something a new draft is born with.
+    delete (dto as { sentVia?: unknown }).sentVia;
     // UX-29: derive a missing jobName in the owner's language.
     return await this.store.create(user.id, dto, {
       jobNameLang: user.language === "es" ? "es" : "en",
@@ -93,6 +96,14 @@ export class QuoteController {
     const user = await requireUser(ctx, this.sessions, this.users);
     const patch = parseUpdateQuote(body);
     const existing = await this.store.getOwned(id, user.id);
+    // REQ-572 (demo-loop cycle 4, p4-p7c): "Mark as sent" after Copy link is
+    // {status:"sent", sentVia:"link"} — the owner says they shared it. The
+    // mark only rides a send (or an already-sent quote), never a draft.
+    if (
+      patch.sentVia && patch.status !== "sent" && existing.status !== "sent"
+    ) {
+      return ctx.json({ ok: false, reason: "sent_via_needs_sent" }, 400);
+    }
     const decision = quoteEditDecision(
       existing,
       patch as unknown as Record<string, unknown>,

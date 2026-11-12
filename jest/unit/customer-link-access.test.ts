@@ -155,7 +155,8 @@ describe("REQ-310 the chat renders the customer's link after a send, outside the
     expect(handlerAt).toBeGreaterThan(0);
     const handler = chat.slice(handlerAt, chat.indexOf("\n  }\n", handlerAt));
     expect(handler).toMatch(/copyCustomerLink\(/);
-    expect(handler).toMatch(/setLinkToast\(out\)/);
+    // REQ-572: the outcome may carry the "mark as sent?" offer on top
+    expect(handler).toMatch(/setLinkToast\((out|offer \? \{ \.\.\.out[^)]*: out)\)/);
     // the old silent paths are gone
     expect(item).not.toMatch(/setLinkCopied/);
     expect(item).not.toMatch(/catch \{\s*setChannelMenuOpen\(false\);\s*\}/);

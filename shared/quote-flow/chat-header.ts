@@ -66,6 +66,8 @@ export interface ChatHeaderQuote {
   /** REQ-236: the latest send's outcome, and the first time one delivered. */
   lastDelivery?: QuoteDelivery | null;
   deliveredAt?: string | null;
+  /** REQ-572: "link" — the owner copied the link and marked it sent. */
+  sentVia?: string | null;
 }
 
 export interface ChatHeaderInput {
@@ -156,6 +158,7 @@ export const THREAD_STATUSES = [
   "pickingDetails",
   "readyToSend",
   "undelivered",
+  "sharedByLink",
   "sent",
   "declined",
   "accepted",
@@ -239,6 +242,17 @@ export function threadStatus(input: ThreadStatusInput): ThreadStatus {
   }
   if (DECLINED.has(status) || Boolean(q?.lostAt)) return "declined";
 
+  // REQ-572 (demo-loop cycle 4, p4-p7c): the owner copied the link, shared it
+  // and marked the quote sent — "Shared by link", even over an earlier send
+  // that reached nobody; a delivery or the customer opening it reads on as
+  // "Out for signature".
+  if (
+    q?.sentVia === "link" && status === "sent" && !q.deliveredAt &&
+    !deliverySucceeded(q.lastDelivery) && t.lastDividerSend !== "delivered"
+  ) {
+    return "sharedByLink";
+  }
+
   // REQ-236: the newest attempt reached nobody and none ever did — unless
   // the chat's newest divider is a good send the row has not caught up with.
   if (
@@ -312,6 +326,7 @@ const STATUS_KEY: Record<ThreadStatus, string> = {
   pickingDetails: `${K}pickingDetails`,
   readyToSend: `${K}readyToSend`,
   undelivered: `${K}notDelivered`,
+  sharedByLink: `${K}sharedByLink`, // REQ-572
   sent: `${K}outForSignature`,
   declined: `${K}quoteDeclined`,
   accepted: `${K}quoteAccepted`,
@@ -342,6 +357,7 @@ const CHIP_KIND: Record<Exclude<ThreadStatus, "none">, ThreadChipKind> = {
   pickingDetails: "progress",
   readyToSend: "progress",
   undelivered: "needs",
+  sharedByLink: "sent", // REQ-572: it went out — the owner's way
   sent: "sent",
   declined: "needs",
   accepted: "paid",

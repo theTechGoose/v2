@@ -59,14 +59,19 @@ export function CustomerLinkRow(
 }
 
 export function LinkToast(
-  { toast, lang, onDismiss }: {
+  { toast, lang, onDismiss, onMarkSent }: {
     toast: LinkToastState | null;
     lang: Lang;
     onDismiss: () => void;
+    /** REQ-572: "Mark as sent" — offered when the toast names a quote. */
+    onMarkSent?: (quoteId: string) => void;
   },
 ) {
   if (!toast) return null;
   const failed = toast.kind === "failed";
+  // REQ-572 (demo-loop cycle 4, p4-p7c): a copy of a quote that has not gone
+  // out asks "Link copied — mark as sent?".
+  const markId = onMarkSent ? toast.markQuoteId : undefined;
   return (
     <div
       class={`link-toast ${failed ? "link-toast--failed" : ""}`}
@@ -83,6 +88,8 @@ export function LinkToast(
             lang,
             failed
               ? "asstChat.customerLink.copyFailed"
+              : markId
+              ? "asstChat.customerLink.markSentAsk"
               : "asstChat.customerLink.copied",
           )}
         </span>
@@ -91,6 +98,28 @@ export function LinkToast(
             <code class="link-toast__url" data-cy="link-toast-url">
               {toast.url}
             </code>
+          )
+          : null}
+        {markId
+          ? (
+            <span class="link-toast__mark">
+              <button
+                type="button"
+                class="link-toast__mark-btn"
+                data-cy="link-toast-mark-sent"
+                disabled={toast.marking}
+                onClick={() => onMarkSent?.(markId)}
+              >
+                {tFor(lang, "asstChat.customerLink.markSent")}
+              </button>
+              {toast.markFailed
+                ? (
+                  <span class="link-toast__mark-err" role="alert">
+                    {tFor(lang, "asstChat.customerLink.markSentFailed")}
+                  </span>
+                )
+                : null}
+            </span>
           )
           : null}
       </span>

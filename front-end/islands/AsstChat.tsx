@@ -51,7 +51,9 @@ import {
   copyCustomerLink,
   customerLinkUrl,
   dividerShowsCustomerLink,
+  linkCopyOffersMarkSent,
   type LinkToast as LinkToastState,
+  SHARED_BY_LINK_PATCH,
 } from "../lib/customer-link.ts";
 import { CustomerLinkRow, LinkToast } from "../components/CustomerLinkRow.tsx";
 import StepComposer, { StepComposerOpen } from "../components/StepComposer.tsx"; // REQ-392
@@ -875,6 +877,8 @@ export default function AsstChat({
       /** REQ-236: the latest send's outcome + first delivery time. */
       lastDelivery?: QuoteDelivery;
       deliveredAt?: string;
+      /** REQ-572: "link" — the owner shared the link and marked it sent. */
+      sentVia?: string;
       /** REQ-263: the job's service address. */
       serviceAddress?: string;
       /** REQ-248: an issued quote's edits wait here until a send publishes
@@ -1130,11 +1134,43 @@ export default function AsstChat({
     const out = await copyCustomerLink(
       customerLinkUrl(globalThis.location.origin, quoteId),
     );
-    setLinkToast(out);
+    // REQ-572 (demo-loop cycle 4, p4-p7c): copying proves nothing went out
+    // (REQ-236), so a quote still on the owner's desk gets the question
+    // "Link copied — mark as sent?" — the owner says they shared it.
+    const offer = quote?.id === quoteId && linkCopyOffersMarkSent(quote);
+    setLinkToast(offer ? { ...out, markQuoteId: quoteId } : out);
     if (linkToastTimer.current) clearTimeout(linkToastTimer.current);
-    // a failure stays until dismissed so the url can be selected
+    // a failure stays until dismissed so the url can be selected; the
+    // mark-as-sent question stays long enough to be answered
     if (out.kind === "copied") {
-      linkToastTimer.current = setTimeout(() => setLinkToast(null), 2600);
+      linkToastTimer.current = setTimeout(
+        () => setLinkToast(null),
+        offer ? 12000 : 2600,
+      );
+    }
+  }
+  /** REQ-572: "Mark as sent" — PUT {status:"sent", sentVia:"link"}; the
+   *  header then reads "Shared by link". A failure says so in the toast. */
+  async function markSharedByLink(quoteId: string) {
+    if (linkToastTimer.current) clearTimeout(linkToastTimer.current);
+    setLinkToast((t) => t && { ...t, marking: true, markFailed: false });
+    try {
+      const row = await api.put<
+        { status?: string; sentAt?: string | null; sentVia?: string }
+      >(`/quotes/${quoteId}`, SHARED_BY_LINK_PATCH);
+      setQuote((q) =>
+        q && q.id === quoteId
+          ? {
+            ...q,
+            status: row?.status ?? SHARED_BY_LINK_PATCH.status,
+            sentAt: row?.sentAt ?? q.sentAt,
+            sentVia: row?.sentVia ?? SHARED_BY_LINK_PATCH.sentVia,
+          }
+          : q
+      );
+      setLinkToast(null);
+    } catch {
+      setLinkToast((t) => t && { ...t, marking: false, markFailed: true });
     }
   }
   /** The pick popped by the last wizard rewind — highlighted on the
@@ -1979,6 +2015,7 @@ export default function AsstChat({
     });
     const undelivered = header.status !== "accepted" &&
       header.status !== "declined" && // REQ-369: the customer's answer stands
+      header.status !== "sharedByLink" && // REQ-572: the owner's mark stands
       headerStatusKey({
           quoteAccepted,
           quote: ruleQuote, // REQ-369: the rule's own quote
@@ -2014,6 +2051,7 @@ export default function AsstChat({
     quote?.terms,
     quote?.lockedAt,
     quote?.sentAt,
+    quote?.sentVia, // REQ-572
     quote?.jobName,
     quote?.number, // REQ-465
     convoId,
@@ -5317,6 +5355,7 @@ export default function AsstChat({
         toast={linkToast}
         lang={lang}
         onDismiss={() => setLinkToast(null)}
+        onMarkSent={(id) => void markSharedByLink(id)}
       />
       <div class="chat__scroll" ref={scrollRef}>
         {(empty || panelOpen)

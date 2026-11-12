@@ -1,6 +1,7 @@
 import {
   IsArray,
   IsBoolean,
+  IsIn,
   IsNumber,
   IsObject,
   IsOptional,
@@ -11,7 +12,11 @@ import {
 } from "#class-validator";
 import { plainToInstance, Type } from "#class-transformer";
 import type { NumberedFields } from "@core/data/numbered-store/mod.ts";
-import type { QuoteDelivery } from "#quote-flow/delivery.ts";
+import {
+  type QuoteDelivery,
+  SENT_VIA_VALUES,
+  type SentVia,
+} from "#quote-flow/delivery.ts";
 
 export type { QuoteDelivery };
 
@@ -210,6 +215,10 @@ export class UpdateQuoteDto {
   estimatedTotal?: number;
   @IsOptional() @IsString()
   status?: string;
+  /** REQ-572 (demo-loop cycle 4, p4-p7c): the owner's "Mark as sent" after
+   *  Copy link — {status:"sent", sentVia:"link"}. Only "link" is accepted. */
+  @IsOptional() @IsIn([...SENT_VIA_VALUES])
+  sentVia?: SentVia;
   @IsOptional() @IsArray()
   terms?: QuoteTerm[];
   @IsOptional() @IsString()
@@ -251,6 +260,8 @@ export interface QuoteDeliveryFields {
   lastDelivery?: QuoteDelivery;
   /** First time any channel actually delivered the quote. */
   deliveredAt?: string;
+  /** REQ-572: set by the owner's "Mark as sent" after Copy link (PUT). */
+  sentVia?: SentVia;
 }
 
 export interface Quote

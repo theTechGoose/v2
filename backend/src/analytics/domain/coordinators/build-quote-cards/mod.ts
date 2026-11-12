@@ -157,6 +157,7 @@ function deriveStage(args: {
     lostAt: quote.lostAt,
     lastDelivery: quote.lastDelivery,
     deliveredAt: quote.deliveredAt,
+    sentVia: quote.sentVia, // REQ-572
   });
   if (cls === "won") return "won";
   if (cls === "lost") return "lost";
