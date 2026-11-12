@@ -77,3 +77,18 @@ Deno.test("REQ-135: thirty customers — the page shows twenty-five, says Page 1
     expect((await cards.count()) === 1, `one card for the search (${await cards.count()})`);
     await expect.see("30 on the books");
   }));
+
+Deno.test("REQ-274: /customers in English — the tab title, the sidebar and the crumb all say Customers (demo i18n-formatting-m12)", (t) =>
+  story(t, async ({ page, expect, http, baseUrl }) => {
+    await signIn(http, page, baseUrl);
+    await page.goto("/customers");
+    await expect.see("0 on the books");
+    const title = await page.title();
+    expect(title === "Customers · DocuMonster", `the tab title says Customers (${title})`);
+    // the crumb is CSS-uppercased, so read its source text, not innerText
+    const crumb = (await page.locator(".ph2__crumb").textContent())?.trim() ?? "";
+    expect(crumb === "Customers · 0 on the books", `the hero crumb says Customers (${crumb})`);
+    const body = await page.locator("body").innerText();
+    expect(!/\bclients?\b/i.test(body), "no client(s) anywhere on the English page");
+    expect(body.includes("Customers"), "the sidebar label says Customers");
+  }));
