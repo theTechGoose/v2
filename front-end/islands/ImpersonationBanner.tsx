@@ -15,15 +15,26 @@
  *
  * REQ-242 — it is marked `data-demo-skip`: the stage measures it by that, and the demo mirror never
  * records it (the customer's screen has no banner).
+ *
+ * REQ-232 (M21) — during a demo this staff presents, "Return to your account" asks first ("…takes
+ * you out of the demo with {name}"), then LEAVES the demo (POST /demo-mode/sessions/:id/leave: it
+ * ends when the last presenter leaves) and only then hands the account back — so /admin is where
+ * it stays, not a stop on the way back to the stage.
  */
 import { useEffect, useRef, useState } from "preact/hooks";
 import { adminClient, type WhoAmI } from "../clients/admin.ts";
+import { demoModeClient } from "../clients/demo-mode.ts";
+import { t } from "../lib/i18n.ts";
 import { fmtPhone } from "../lib/format.ts";
 import { clearBannerRoom, setBannerRoom } from "../lib/banner-room.ts";
 
 export default function ImpersonationBanner() {
   const [who, setWho] = useState<WhoAmI | null>(null);
   const [busy, setBusy] = useState(false);
+  /** REQ-232 — the demo this staff presents, while the banner asks whether to leave it */
+  const [leaving, setLeaving] = useState<{ id: string; name: string } | null>(
+    null,
+  );
   const el = useRef<HTMLDivElement>(null);
   const shown = Boolean(who?.impersonating);
 
@@ -65,15 +76,34 @@ export default function ImpersonationBanner() {
     ? (acting.name || acting.businessName || fmtPhone(acting.phoneNumber))
     : "another user";
 
-  async function stop() {
+  /** REQ-232 (M21) — `confirmed`: the staff said yes to leaving the demo they present */
+  async function stop(confirmed = false) {
     setBusy(true);
+    if (!confirmed) {
+      // a demo this staff presents? ask first — Return takes them out of it
+      try {
+        const a = await demoModeClient.active();
+        if (a.session && a.role === "presenter") {
+          setLeaving({ id: a.session.id, name: a.session.targetName });
+          setBusy(false);
+          return;
+        }
+      } catch {
+        // the demo side is away: nothing to leave
+      }
+    }
     try {
+      // leave first: an account handed back with the demo still on would be sent to the stage again
+      if (leaving) await demoModeClient.leave(leaving.id).catch(() => {});
       await adminClient.stopImpersonating();
       globalThis.location.href = "/admin";
     } catch {
       setBusy(false);
     }
   }
+
+  const btn =
+    "padding:5px 12px;border-radius:8px;border:0;background:#fff;color:#7a2e2e;cursor:pointer;font:inherit;font-weight:700";
 
   return (
     <div
@@ -88,14 +118,40 @@ export default function ImpersonationBanner() {
         Impersonating <strong>{actingLabel}</strong>
         {who.impersonator?.name ? ` (as ${who.impersonator.name})` : ""}
       </span>
-      <button
-        type="button"
-        onClick={stop}
-        disabled={busy}
-        style="padding:5px 12px;border-radius:8px;border:0;background:#fff;color:#7a2e2e;cursor:pointer;font:inherit;font-weight:700"
-      >
-        {busy ? "Returning…" : "Return to your account"}
-      </button>
+      {leaving
+        ? (
+          <>
+            <span>{t("demoMode.returnAsk", { name: leaving.name })}</span>
+            <button
+              type="button"
+              data-cy="imp-leave-demo"
+              onClick={() => stop(true)}
+              disabled={busy}
+              style={btn}
+            >
+              {busy ? "Returning…" : t("demoMode.leave")}
+            </button>
+            <button
+              type="button"
+              data-cy="imp-leave-cancel"
+              onClick={() => setLeaving(null)}
+              disabled={busy}
+              style="padding:5px 12px;border-radius:8px;border:1px solid rgba(255,255,255,.7);background:transparent;color:#fff;cursor:pointer;font:inherit;font-weight:700"
+            >
+              {t("common.cancel")}
+            </button>
+          </>
+        )
+        : (
+          <button
+            type="button"
+            onClick={() => stop()}
+            disabled={busy}
+            style={btn}
+          >
+            {busy ? "Returning…" : "Return to your account"}
+          </button>
+        )}
     </div>
   );
 }

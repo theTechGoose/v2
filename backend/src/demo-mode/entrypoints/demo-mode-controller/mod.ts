@@ -16,12 +16,31 @@ import { DemoSessionStore } from "@demo-mode/domain/data/demo-session-store/mod.
 import { DemoHub } from "@demo-mode/domain/coordinators/demo-hub/mod.ts";
 import {
   DemoAccess,
+  DemoForbiddenError,
   DemoNotFoundError,
 } from "@demo-mode/domain/coordinators/demo-access/mod.ts";
 import { isSafePath, nextColor } from "#demo-mode/protocol.ts";
 import { presentersOf } from "@demo-mode/domain/business/demo-role/mod.ts";
 
 const nameOf = (u: User) => u.name?.trim() || u.phoneNumber;
+
+/** REQ-214 / REQ-232 — a presenter off a demo: it goes on for the others (who hear them go, and
+ *  their sockets close everywhere), and ends for everyone when nobody is left on it. A module
+ *  function: Danet routes every controller method. */
+async function leaveDemo(
+  demos: DemoSessionStore,
+  hub: DemoHub,
+  id: string,
+  userId: string,
+): Promise<void> {
+  const rest = await demos.leave(id, userId);
+  if (rest && !rest.endedAt && presentersOf(rest).length === 0) {
+    await demos.end(id);
+    await hub.end(id, "presenter");
+  } else if (rest && !rest.endedAt) {
+    await hub.dropPresenter(id, userId);
+  }
+}
 
 /**
  * REQ-153 — demo mode over HTTP (the socket is DemoModeSocketController, at `api/demo-mode`).
@@ -38,6 +57,9 @@ const nameOf = (u: User) => u.name?.trim() || u.phoneNumber;
  *                                         session); `targetPath` tells the presenter where the customer is; `pid` is which
  *                                         presenter the caller is (REQ-214)
  *   POST /demo-mode/sessions/:id/end      a participant, `{ reason?: "declined" }` → { ok: true }; 403 anyone else; 404 unknown
+ *   POST /demo-mode/sessions/:id/leave    a presenter (REQ-232 — "Return to your account" during the demo) → { ok: true }: they
+ *                                         are off it; it goes on for the other presenters and ends when nobody is left; 403 the
+ *                                         customer (who ends a demo, never leaves it) and anyone not presenting it; 404 unknown
  */
 @Controller("demo-mode")
 export class DemoModeController {
@@ -72,15 +94,7 @@ export class DemoModeController {
         createdAt: prev.createdAt,
       }, 200);
     }
-    if (prev) {
-      const rest = await this.demos.leave(prev.id, admin.id);
-      if (rest && !rest.endedAt && presentersOf(rest).length === 0) {
-        await this.demos.end(prev.id);
-        await this.hub.end(prev.id, "presenter");
-      } else if (rest && !rest.endedAt) {
-        await this.hub.dropPresenter(prev.id, admin.id);
-      }
-    }
+    if (prev) await leaveDemo(this.demos, this.hub, prev.id, admin.id);
     // REQ-214 — the customer is already being guided: join that demo as another presenter
     const live = await this.demos.activeFor(target.id);
     if (live) {
@@ -149,6 +163,15 @@ export class DemoModeController {
       // REQ-214 — which presenter the caller is (null for the viewer)
       pid: current.pid,
     };
+  }
+
+  @Post("sessions/:id/leave")
+  async leave(@Context() ctx: ExecutionContext, @Param("id") id: string) {
+    const caller = await this.access.caller(ctx);
+    const { demo, role, pid } = await this.access.roleIn(caller, id);
+    if (role !== "presenter" || !pid) throw new DemoForbiddenError();
+    if (!demo.endedAt) await leaveDemo(this.demos, this.hub, id, pid);
+    return { ok: true };
   }
 
   @Post("sessions/:id/end")

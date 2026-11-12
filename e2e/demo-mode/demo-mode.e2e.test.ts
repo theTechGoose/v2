@@ -182,7 +182,8 @@ Deno.test("REQ-153 + REQ-179 + REQ-180 + REQ-181 + REQ-187 + REQ-188: the admin 
         timeout: 20_000,
       });
       await page.locator("[data-cy='demo-pill']").waitFor({ timeout: 15_000 });
-      await expect.see("Waiting for Ana Torres to accept");
+      // REQ-232 (demo-lifecycle-p1) — it waits for the customer's APP; nobody is asked to accept
+      await expect.see("Waiting for Ana Torres's app");
       // REQ-242 — no invented page: the stage says it is connecting until the customer's app
       // reports, then mirrors the page the customer is really on
       await until(
@@ -233,11 +234,12 @@ Deno.test("REQ-153 + REQ-179 + REQ-180 + REQ-181 + REQ-187 + REQ-188: the admin 
       );
       await page.locator("[data-cy='demo-pill']").waitFor({ timeout: 15_000 });
       await expect.see("Guiding Ana Torres");
+      // REQ-232 (demo-lifecycle-p1) — plain words: the staff's pill says Live, the customer's Connected
       await page.locator("[data-cy='demo-status']").filter({
-        hasText: /direct|relay/,
+        hasText: /^\s*Live\s*$/,
       }).waitFor({ timeout: 20_000 });
       await userPage.locator("[data-cy='demo-status']").filter({
-        hasText: /direct|relay/,
+        hasText: /^\s*Connected\s*$/,
       }).waitFor({ timeout: 20_000 });
 
       // REQ-181 — the staff page has the impersonation banner; the stage starts below it

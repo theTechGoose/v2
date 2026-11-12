@@ -7,11 +7,21 @@
  * nobody in it) ends in `closed` so the overlay can ask `active` again.
  *
  * REQ-214 — several presenters: a presenter holds ONE connection, to the customer; the
- * customer holds one PER presenter (keyed by pid — the offer says who it is from, the answer
- * is addressed back). The customer's message goes to every presenter (on every channel when
- * all are open, else through the relay); a presenter's goes to the customer on the channel or
- * the relay AND to the other presenters through the relay (`to: "presenters"`), so every stage
- * shows the colleagues' pointers. `onPeer` says who a message is from.
+ * customer holds one PER presenter. The customer's message goes to every presenter (on every
+ * channel when all are open, else through the relay); a presenter's goes to the customer on the
+ * channel or the relay AND to the other presenters through the relay (`to: "presenters"`), so
+ * every stage shows the colleagues' pointers. `onPeer` says who a message is from.
+ *
+ * REQ-232 — every socket is its own connection (`cid`, stamped by the server): a customer's tabs
+ * and a presenter's stages are SETS, never one yes/no flag. A stage keeps the customer's tabs and
+ * says "waiting" only when none is left — and only after PRESENCE_GRACE_MS, since a page change
+ * in the customer's app is a new socket. It follows ONE tab, the one the customer used last (a
+ * tab `claim`s it when it is in front, gets focus or is clicked; the claim carries the tab's own
+ * clock, so every stage picks the same tab); it connects to that tab only, asks it for its whole
+ * view (`sync`) whenever it starts following it, and never hands the stage another tab's
+ * messages. The customer keeps one connection per stage — two windows of one staff account
+ * included — and signals are addressed to one socket. A stage replaced by a newer window of the
+ * same account stops for good (`replaced`).
  *
  * REQ-242 — the customer's screen rides the same link as `dom` chunks (the reliable channel, or
  * the relay); a stage's `resync` goes to the customer alone — colleagues get pointers only.
@@ -21,6 +31,7 @@ import {
   parsePeerMessage,
   parseServerMessage,
   type PeerMessage,
+  PRESENCE_GRACE_MS,
   type Role,
   SOCKET_PATH,
 } from "../../../shared/demo-mode/protocol.ts";
@@ -31,12 +42,15 @@ export type LinkStatus =
   | "relay"
   | "direct"
   | "ended"
-  | "closed";
+  | "closed"
+  /** REQ-232 — the same staff account opened the demo in a newer window */
+  | "replaced";
 
-/** REQ-214 — who a message came from: the viewer, or a presenter by pid */
+/** REQ-214 — who a message came from: the viewer, or a presenter by pid; REQ-232 — and which socket */
 export interface PeerFrom {
   role: Role;
   pid?: string;
+  cid?: string;
 }
 
 export interface DemoLinkOptions {
@@ -46,9 +60,12 @@ export interface DemoLinkOptions {
   pid?: string;
   onPeer(m: PeerMessage, from: PeerFrom): void;
   onStatus(s: LinkStatus): void;
-  /** the other side arrived (or was there on welcome) */
+  /** the other side arrived (or was there on welcome); REQ-232 — on the customer's side also: a
+   *  stage asks this tab for its whole view (it follows this tab now); on a stage: it follows
+   *  another of the customer's tabs */
   onPeerOnline(): void;
-  /** REQ-214 — a presenter came or went (on the customer's side: any of them; on a stage: a colleague) */
+  /** REQ-214 — a presenter came or went (on the customer's side: any of them; on a stage: a
+   *  colleague) — per account: the first window of theirs to come, the last to go */
   onPresence?(pid: string, online: boolean): void;
   onEnded(by: Role, reason?: "declined"): void;
 }
@@ -57,6 +74,8 @@ export interface DemoLink {
   /** `lossy` — a pointer move: dropped rather than queued when the channel is behind */
   send(m: PeerMessage, lossy?: boolean): void;
   isDirect(): boolean;
+  /** REQ-232 — the customer's side: this tab is the one the customer is using now */
+  claim(): void;
   /** end the demo for both sides */
   end(): void;
   close(): void;
@@ -69,32 +88,51 @@ const MAX_ATTEMPTS = 5;
 /** REQ-242 — what a presenter's colleagues see of it: its pointer, never its resyncs */
 const isPointer = (m: PeerMessage) =>
   m.k === "move" || m.k === "click" || m.k === "leave";
-/** the customer's connection to a presenter whose offer carried no pid (a demo written before the list) */
-const NO_PID = "";
+/** a far socket the server did not name (a message from before REQ-232) */
+const NO_CID = "";
 
 type Signal = {
   description?: RTCSessionDescriptionInit;
   candidate?: RTCIceCandidateInit;
 };
 
-/** one WebRTC connection and its two channels */
+/** one WebRTC connection and its two channels; `pid`: the presenter on the far side (the customer's) */
 interface Conn {
   pc: RTCPeerConnection;
   lossy: RTCDataChannel | null;
   reliable: RTCDataChannel | null;
+  pid?: string;
+}
+
+/** REQ-232 — a customer tab as a stage knows it: when it last claimed (its own clock; 0 never)
+ *  and the order it arrived in */
+interface Tab {
+  at: number;
+  n: number;
 }
 
 export function connectDemo(o: DemoLinkOptions): DemoLink {
   let ws: WebSocket | null = null;
-  /** the presenter's one connection lives under NO_PID; the customer's are by presenter pid */
+  /** by far socket (cid): a presenter's one connection is to the tab it follows; the customer's
+   *  are one per stage */
   const conns = new Map<string, Conn>();
-  /** REQ-214 — the presenters the customer knows to be online (the viewer only) */
-  const presenters = new Set<string>();
-  /** REQ-214 — the colleagues a presenter knows to be online */
-  const colleagues = new Set<string>();
-  let peerOnline = false;
+  /** REQ-232 — a presenter: the customer's tabs online, by cid */
+  const tabs = new Map<string, Tab>();
+  let arrivals = 0;
+  /** REQ-232 — a presenter: the tab it follows (null: none) */
+  let followed: string | null = null;
+  /** REQ-232 — tabs that left: a late claim never brings one back */
+  const gone = new Set<string>();
+  /** REQ-214/232 — the stages online, cid → pid: the customer's presenters, a presenter's colleagues */
+  const stages = new Map<string, string>();
+  /** REQ-232 — the customer's side: when this tab last claimed the stage (0: never) */
+  let claimedAt = 0;
+  /** REQ-232 — the other side's last socket went a moment ago: still "live" until the grace ends */
+  let lingering = false;
+  let grace: number | undefined;
   let closed = false;
   let ended = false;
+  let replaced = false;
   let attempt = 0;
   let status: LinkStatus = "connecting";
   let retry: number | undefined;
@@ -111,16 +149,35 @@ export function connectDemo(o: DemoLinkOptions): DemoLink {
     c?.reliable?.readyState === "open" && c?.lossy?.readyState === "open";
   /** every connection this side should have is open */
   const direct = () => {
-    if (o.role === "presenter") return open(conns.get(NO_PID));
-    const want = presenters.size > 0 ? [...presenters] : [];
-    return want.length > 0 && want.every((pid) => open(conns.get(pid)));
+    if (o.role === "presenter") {
+      return followed !== null && open(conns.get(followed));
+    }
+    return stages.size > 0 &&
+      [...stages.keys()].every((c) => open(conns.get(c)));
   };
+  /** the other side is here: a tab (a presenter), a stage (the customer), or was a moment ago */
+  const online = () =>
+    (o.role === "presenter" ? tabs.size : stages.size) > 0 || lingering;
   const refresh = () => {
     if (ended) return setStatus("ended");
+    if (replaced) return setStatus("replaced");
     if (closed) return setStatus("closed");
     if (ws?.readyState !== WebSocket.OPEN) return setStatus("connecting");
-    if (!peerOnline) return setStatus("waiting");
+    if (!online()) return setStatus("waiting");
     setStatus(direct() ? "direct" : "relay");
+  };
+  const endGrace = () => {
+    lingering = false;
+    clearTimeout(grace);
+  };
+  /** REQ-232 — the last socket of the other side went: hold "live" for the grace */
+  const startGrace = () => {
+    lingering = true;
+    clearTimeout(grace);
+    grace = setTimeout(() => {
+      lingering = false;
+      refresh();
+    }, PRESENCE_GRACE_MS);
   };
 
   const teardown = (key: string) => {
@@ -137,33 +194,49 @@ export function connectDemo(o: DemoLinkOptions): DemoLink {
     for (const key of [...conns.keys()]) teardown(key);
   };
 
-  const wire = (ch: RTCDataChannel, from: PeerFrom) => {
+  /** the far side of a connection: a customer's tab for a presenter, a stage for the customer */
+  const farSide = (key: string): PeerFrom => {
+    if (o.role === "presenter") {
+      return key === NO_CID ? { role: "viewer" } : { role: "viewer", cid: key };
+    }
+    const pid = conns.get(key)?.pid ?? stages.get(key);
+    return {
+      role: "presenter",
+      ...(pid ? { pid } : {}),
+      ...(key === NO_CID ? {} : { cid: key }),
+    };
+  };
+  /** a message for the app — REQ-232: on a stage, only the followed tab's */
+  const take = (m: PeerMessage, from: PeerFrom) => {
+    if (
+      o.role === "presenter" && from.role === "viewer" &&
+      (from.cid ?? NO_CID) !== (followed ?? NO_CID)
+    ) return;
+    o.onPeer(m, from);
+  };
+  const wire = (ch: RTCDataChannel, key: string) => {
     ch.onopen = refresh;
     ch.onclose = refresh;
     ch.onmessage = (e) => {
       try {
         const m = parsePeerMessage(JSON.parse(String(e.data)));
-        if (m) o.onPeer(m, from);
+        if (m) take(m, farSide(key));
       } catch { /* not ours */ }
     };
   };
+  /** a signal's address: the one socket it is for */
+  const signalTo = (key: string) => key === NO_CID ? {} : { to: key };
 
-  /** the far side of a connection keyed `key`: the customer for a presenter, a presenter for the customer */
-  const farSide = (key: string): PeerFrom =>
-    o.role === "presenter"
-      ? { role: "viewer" }
-      : key === NO_PID
-      ? { role: "presenter" }
-      : { role: "presenter", pid: key };
-  /** the signal's address: the customer answers the presenter it is for */
-  const signalTo = (key: string) =>
-    o.role === "viewer" && key !== NO_PID ? { to: key } : {};
-
-  const newConn = (key: string): Conn | null => {
+  const newConn = (key: string, pid?: string): Conn | null => {
     teardown(key);
     if (typeof RTCPeerConnection === "undefined") return null;
     const pc = new RTCPeerConnection(ICE);
-    const c: Conn = { pc, lossy: null, reliable: null };
+    const c: Conn = {
+      pc,
+      lossy: null,
+      reliable: null,
+      ...(pid ? { pid } : {}),
+    };
     conns.set(key, c);
     pc.onicecandidate = (e) => {
       if (e.candidate) {
@@ -186,45 +259,122 @@ export function connectDemo(o: DemoLinkOptions): DemoLink {
     pc.ondatachannel = (e) => {
       if (e.channel.label === "lossy") c.lossy = e.channel;
       else c.reliable = e.channel;
-      wire(e.channel, farSide(key));
+      wire(e.channel, key);
     };
     return c;
   };
 
-  /** the presenter offers the customer a connection */
-  const offer = async () => {
-    const c = newConn(NO_PID);
+  /** a presenter offers the tab it follows a connection */
+  const offer = async (key: string) => {
+    const c = newConn(key);
     if (!c) return;
     c.lossy = c.pc.createDataChannel("lossy", {
       ordered: false,
       maxRetransmits: 0,
     });
     c.reliable = c.pc.createDataChannel("reliable");
-    wire(c.lossy, farSide(NO_PID));
-    wire(c.reliable, farSide(NO_PID));
+    wire(c.lossy, key);
+    wire(c.reliable, key);
     try {
       await c.pc.setLocalDescription(await c.pc.createOffer());
-      if (conns.get(NO_PID) === c && c.pc.localDescription) {
+      if (conns.get(key) === c && c.pc.localDescription) {
         wsSend({
           t: "signal",
           data: {
             description: c.pc.localDescription.toJSON(),
           } satisfies Signal,
+          ...signalTo(key),
         });
       }
     } catch {
-      teardown(NO_PID);
+      teardown(key);
       refresh();
+    }
+  };
+
+  /** REQ-232 — the tab to follow: the one claimed last, else the one that arrived last. A switch
+   *  hides the old tab's pointer, asks the new tab for its whole view and offers it a connection */
+  const follow = () => {
+    let best: string | null = null;
+    let top: Tab | null = null;
+    for (const [cid, t] of tabs) {
+      if (!top || t.at > top.at || (t.at === top.at && t.n > top.n)) {
+        best = cid;
+        top = t;
+      }
+    }
+    if (best === followed) return;
+    const was = followed;
+    if (was !== null) {
+      teardown(was);
+      o.onPeer({ k: "leave" }, { role: "viewer", cid: was });
+    }
+    followed = best;
+    if (best === null) return;
+    wsSend({ t: "sync", to: best });
+    void offer(best);
+    o.onPeerOnline();
+  };
+  /** REQ-232 — a presenter: a customer's tab came, went or claimed */
+  const tabSeen = (cid: string, at = 0) => {
+    if (gone.has(cid)) return;
+    const t = tabs.get(cid);
+    if (t) t.at = Math.max(t.at, at);
+    else tabs.set(cid, { at, n: ++arrivals });
+    endGrace();
+    follow();
+    refresh();
+  };
+  const tabLeft = (cid: string) => {
+    gone.add(cid);
+    if (gone.size > 200) gone.delete(gone.values().next().value!);
+    if (!tabs.delete(cid)) return;
+    if (tabs.size === 0) startGrace();
+    follow();
+    refresh();
+  };
+  /** REQ-232 — the customer's side: say again that this tab is the one in use */
+  const reclaim = () => {
+    if (claimedAt > 0) wsSend({ t: "claim", at: claimedAt });
+  };
+  const hasPid = (pid: string) => [...stages.values()].includes(pid);
+  /** REQ-214/232 — a stage came or went (by cid; a presenter dropped from the demo: all of theirs) */
+  const stageSeen = (online: boolean, pid: string, cid?: string) => {
+    // a presenter's own account in another window is never a colleague (the newer one replaces it)
+    if (o.role === "presenter" && pid === o.pid) return;
+    const had = hasPid(pid);
+    let fresh = false;
+    if (online) {
+      const key = cid ?? pid;
+      fresh = !stages.has(key);
+      stages.set(key, pid);
+    } else {
+      for (const [key, p] of [...stages]) {
+        if (cid !== undefined ? key === cid : p === pid) {
+          stages.delete(key);
+          teardown(key);
+        }
+      }
+    }
+    if (hasPid(pid) !== had) o.onPresence?.(pid, !had);
+    if (o.role !== "viewer") return;
+    if (online) endGrace();
+    else if (stages.size === 0) startGrace();
+    refresh();
+    if (online && fresh) {
+      reclaim();
+      o.onPeerOnline();
     }
   };
 
   const onSignal = async (data: unknown, from: PeerFrom) => {
     const d = (data ?? {}) as Signal;
-    // the customer keeps one connection per presenter; a presenter has the one
-    const key = o.role === "viewer" ? from.pid ?? NO_PID : NO_PID;
+    const key = from.cid ?? NO_CID;
     try {
       if (d.description?.type === "offer") {
-        const c = newConn(key);
+        // the customer: a stage offers this tab a connection — one per stage
+        if (o.role !== "viewer") return;
+        const c = newConn(key, from.pid);
         if (!c) return;
         await c.pc.setRemoteDescription(d.description);
         await c.pc.setLocalDescription(await c.pc.createAnswer());
@@ -238,6 +388,7 @@ export function connectDemo(o: DemoLinkOptions): DemoLink {
           });
         }
       } else {
+        // an answer or a candidate for a connection this side made (a stage: only the followed tab's)
         const c = conns.get(key);
         if (d.description && c) await c.pc.setRemoteDescription(d.description);
         else if (d.candidate && c) await c.pc.addIceCandidate(d.candidate);
@@ -248,7 +399,7 @@ export function connectDemo(o: DemoLinkOptions): DemoLink {
   };
 
   const openSocket = () => {
-    if (closed || ended) return;
+    if (closed || ended || replaced) return;
     const proto = globalThis.location.protocol === "https:" ? "wss" : "ws";
     const sock = new WebSocket(
       `${proto}://${globalThis.location.host}${SOCKET_PATH}?session=${
@@ -265,48 +416,38 @@ export function connectDemo(o: DemoLinkOptions): DemoLink {
       if (!m) return;
       switch (m.t) {
         case "welcome":
-          peerOnline = m.peerOnline;
+          // who is here comes next, one `peer` each (REQ-232); this tab says again it is in use
+          reclaim();
           refresh();
-          if (peerOnline) {
-            o.onPeerOnline();
-            if (o.role === "presenter") void offer();
-          }
           break;
         case "peer":
-          if (m.pid !== undefined && o.role === "presenter") {
-            // REQ-214 — a colleague came or went: the customer's presence is unchanged
-            if (m.online) colleagues.add(m.pid);
-            else colleagues.delete(m.pid);
-            o.onPresence?.(m.pid, m.online);
-            break;
+          if (m.pid !== undefined) stageSeen(m.online, m.pid, m.cid);
+          else if (o.role === "presenter") {
+            if (m.online) tabSeen(m.cid ?? NO_CID);
+            else tabLeft(m.cid ?? NO_CID);
           }
-          if (m.pid !== undefined) {
-            // the customer: a presenter came or went; online while any is
-            if (m.online) presenters.add(m.pid);
-            else {
-              presenters.delete(m.pid);
-              teardown(m.pid);
-            }
-            o.onPresence?.(m.pid, m.online);
-            const was = peerOnline;
-            peerOnline = presenters.size > 0;
-            refresh();
-            if (peerOnline && (!was || m.online)) o.onPeerOnline();
-            break;
-          }
-          peerOnline = m.online;
-          if (!m.online) teardownAll();
-          refresh();
-          if (m.online) {
-            o.onPeerOnline();
-            if (o.role === "presenter") void offer();
-          }
+          break;
+        case "claim":
+          if (o.role === "presenter") tabSeen(m.cid, m.at);
+          break;
+        case "sync":
+          if (o.role === "viewer") o.onPeerOnline();
           break;
         case "signal":
-          void onSignal(m.data, { role: m.from, pid: m.pid });
+          void onSignal(m.data, { role: m.from, pid: m.pid, cid: m.cid });
           break;
         case "relay":
-          o.onPeer(m.data, { role: m.from, pid: m.pid });
+          take(m.data, {
+            role: m.from,
+            ...(m.pid ? { pid: m.pid } : {}),
+            ...(m.cid ? { cid: m.cid } : {}),
+          });
+          break;
+        case "replaced":
+          replaced = true;
+          teardownAll();
+          refresh();
+          sock.close();
           break;
         case "ended":
           ended = true;
@@ -320,10 +461,11 @@ export function connectDemo(o: DemoLinkOptions): DemoLink {
     sock.onclose = () => {
       if (ws !== sock) return;
       teardownAll();
-      presenters.clear();
-      colleagues.clear();
-      peerOnline = false;
-      if (closed || ended) return refresh();
+      tabs.clear();
+      followed = null;
+      stages.clear();
+      endGrace();
+      if (closed || ended || replaced) return refresh();
       if (attempt >= MAX_ATTEMPTS) {
         closed = true;
         return refresh();
@@ -345,10 +487,10 @@ export function connectDemo(o: DemoLinkOptions): DemoLink {
     send(m, lossyOk = false) {
       if (o.role === "presenter") {
         // REQ-214 — the colleagues see this pointer through the relay
-        if (colleagues.size > 0 && isPointer(m)) {
+        if (stages.size > 0 && isPointer(m)) {
           wsSend({ t: "relay", data: m, to: "presenters" });
         }
-        const c = conns.get(NO_PID);
+        const c = followed === null ? undefined : conns.get(followed);
         if (open(c)) {
           try {
             sendOn(c!, m, lossyOk);
@@ -360,7 +502,7 @@ export function connectDemo(o: DemoLinkOptions): DemoLink {
       }
       if (direct()) {
         try {
-          for (const pid of presenters) sendOn(conns.get(pid)!, m, lossyOk);
+          for (const cid of stages.keys()) sendOn(conns.get(cid)!, m, lossyOk);
           return;
         } catch {
           /* fall through to the relay, which reaches every presenter */
@@ -369,12 +511,18 @@ export function connectDemo(o: DemoLinkOptions): DemoLink {
       wsSend({ t: "relay", data: m });
     },
     isDirect: () => Boolean(direct()),
+    claim() {
+      if (o.role !== "viewer") return;
+      claimedAt = Date.now();
+      wsSend({ t: "claim", at: claimedAt });
+    },
     end() {
       wsSend({ t: "end" });
     },
     close() {
       closed = true;
       clearTimeout(retry);
+      endGrace();
       teardownAll();
       const sock = ws;
       ws = null;

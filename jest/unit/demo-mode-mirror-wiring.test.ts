@@ -68,7 +68,8 @@ describe("REQ-242 the replica is gone", () => {
     expect(map).not.toMatch(/demo-mode\//);
     expect(map).not.toMatch(/lastMapRef|mirrorRef/);
     const banner = read("front-end/islands/ImpersonationBanner.tsx");
-    expect(banner).not.toMatch(/demo-mode\//);
+    // REQ-232 — the banner may call the demo API (leave), never the demo-mode lib (no frame branch)
+    expect(banner).not.toMatch(/lib\/demo-mode\//);
     // the stage still measures the banner by its marker, and the recorder never mirrors it
     expect(banner).toMatch(/data-demo-skip/);
   });
@@ -109,14 +110,14 @@ describe("REQ-242 the stage replays into a script-less frame", () => {
     expect(frame).toMatch(/height=\{screen\.h\}/);
     expect(frame).toMatch(/scale\(\$\{fit\.s\}\)/);
     expect(stage).toMatch(/data-cy="demo-connecting"/);
-    expect(stage).toContain('t("demoMode.connecting", { name })');
+    expect(stage).toContain('t("demoMode.connectingTo", { name })');
     expect(stage).not.toMatch(/targetPath/);
     expect(stage).not.toMatch(/location\.replace\(/);
     const en = JSON.parse(read("lang/en.json")) as Record<string, string>;
     const es = JSON.parse(read("lang/es.json")) as Record<string, string>;
-    expect(en["demoMode.connecting"]).toContain("{name}");
-    expect(es["demoMode.connecting"]).toContain("{name}");
-    expect(en["demoMode.connecting"]).not.toBe(es["demoMode.connecting"]);
+    expect(en["demoMode.connectingTo"]).toContain("{name}");
+    expect(es["demoMode.connectingTo"]).toContain("{name}");
+    expect(en["demoMode.connectingTo"]).not.toBe(es["demoMode.connectingTo"]);
   });
 
   test("the stage takes dom chunks through the receiver into the replayer, asks for a snapshot when it stalls or desyncs, and anchors pointers to mirrored nodes", () => {
