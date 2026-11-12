@@ -30,6 +30,7 @@ import { I, ICN } from "../lib/dash-icons.tsx";
 import { daySummary } from "../lib/field-task-summary.ts";
 import { groupTasks, workerZoneLabel } from "../lib/field-task-groups.ts";
 import {
+  addedNotice,
   addTaskProblem,
   addTaskServerProblem,
   centsOf,
@@ -292,7 +293,11 @@ export default function FieldTasksPage() {
           createdAt: "",
         }]);
       }
-      setFlash(t("field.tk.added"));
+      // REQ-526 (demo m50) — a task on another day moves the list to that day
+      // (go() clears the flash, so the flash is set after it) and names the day
+      const notice = addedNotice(made.date, date, lang);
+      if (notice.goTo) go(notice.goTo);
+      setFlash(t(notice.key, notice.vars));
       setAdd(null);
     } catch (err) {
       const msg = errMsg(err);
@@ -949,7 +954,13 @@ export default function FieldTasksPage() {
       </div>
 
       {flash && (
-        <div class="chip chip--green" style="margin-bottom:12px">{flash}</div>
+        <div
+          class="chip chip--green"
+          data-cy="tk-flash"
+          style="margin-bottom:12px"
+        >
+          {flash}
+        </div>
       )}
       {error && (
         <div class="alert" style="margin:0 0 12px" role="alert">{error}</div>

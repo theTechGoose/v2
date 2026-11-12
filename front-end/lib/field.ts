@@ -142,6 +142,26 @@ export function fmtDay(iso: string, lang: Lang): string {
   });
 }
 
+/**
+ * REQ-526 (demo m50, cycle 3) — what Save on "Add task" does once the task is made: a task on
+ * the day being viewed stays put with "Task added"; one on another day moves the list there
+ * (`goTo`) and the flash names that day, so the new task is never out of sight.
+ */
+export function addedNotice(
+  madeDate: string,
+  viewedDate: string,
+  lang: Lang,
+): { goTo: string | null; key: string; vars: Record<string, string> } {
+  if (madeDate === viewedDate) {
+    return { goTo: null, key: "field.tk.added", vars: {} };
+  }
+  return {
+    goTo: madeDate,
+    key: "field.tk.addedFor",
+    vars: { day: fmtDay(madeDate, lang) },
+  };
+}
+
 /** Split "Each client's <em>recurring</em> maintenance." into text and the emphasised run. */
 export function splitEm(
   s: string,
