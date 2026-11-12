@@ -21,6 +21,7 @@ import {
 } from "@paperwork/domain/business/doc-render/mod.ts";
 import type { User } from "@users/dto/user.ts";
 import type { Customer } from "@crm/dto/customer.ts";
+import type { CustomerSnapshot } from "@core/data/numbered-store/mod.ts";
 import { SITE_ORIGIN } from "#quote-flow/site-meta.ts";
 
 const COLOR_TEAL = "#144852";
@@ -58,7 +59,7 @@ const APP_URL = (() => {
  *   2. Auto-creates the milestone invoices from the quote's payment terms
  *      (the deposit, if 30/30/40 or 50/50; otherwise the full net-15
  *      invoice, etc.). Accept always bills: a quote with no payment terms
- *      yields ONE full-amount invoice due now.
+ *      yields ONE full-amount invoice on net-7 (REQ-240).
  *   3. Dispatches a confirmation email to the customer with the PDF
  *      attached and a payment-link button to the new invoice.
  *   4. Sends a completion SMS to the customer (roadmap p.2) — best-effort,
@@ -163,13 +164,26 @@ export class SendSignedConfirmation {
       );
       const installmentTotal = milestoneAmounts.length;
       // "Due Now" payment terms (roadmap p.6): the single invoice is due the
-      // day of signing, not the usual net-7 grace window. A quote with NO
-      // payment terms bills the same way — one full invoice, due now.
+      // day of signing, not the usual net-7 grace window. REQ-240 (demo M29):
+      // a quote with NO payment terms still bills one full invoice, but nobody
+      // agreed to "due now" — it gets the standard net-7, or the agreed
+      // completion date when that is later.
       const paymentTermsValue = quote.terms?.find((t) =>
         t.stepId === "payment_terms"
       )?.value;
-      const dueNow = !paymentTermsValue ||
+      const dueNow = !!paymentTermsValue &&
         /\bdue now\b/i.test(paymentTermsValue);
+      const netDue = addDaysIso(today, 7);
+      const firstDue = dueNow
+        ? todayIso
+        : !paymentTermsValue && quote.estimatedCompletionDate &&
+            /^\d{4}-\d{2}-\d{2}$/.test(quote.estimatedCompletionDate) &&
+            quote.estimatedCompletionDate > netDue
+        ? quote.estimatedCompletionDate
+        : netDue;
+      // REQ-240 (demo M29): a quote signed with no customer on file still
+      // bills a named person — the snapshot, else the name they signed with.
+      const billTo = quote.customerId ? undefined : billToFromSigner(quote);
       for (let i = 0; i < milestoneAmounts.length; i++) {
         const amount = milestoneAmounts[i];
         const isFirst = i === 0;
@@ -178,11 +192,12 @@ export class SendSignedConfirmation {
           // the rest are scheduled placeholders the contractor nudge cron
           // will surface on their scheduledFor date.
           const dueDate = isFirst
-            ? (dueNow ? todayIso : addDaysIso(today, 7))
+            ? firstDue
             : addDaysIso(parseIsoDate(scheduledDates[i]), 7);
           const invoice = await this.invoices.create(userId, {
             quoteId: quote.id,
             ...(quote.customerId ? { customerId: quote.customerId } : {}),
+            ...(billTo ? { billTo } : {}),
             amount,
             dueDate,
             installmentIndex: i + 1,
@@ -414,6 +429,15 @@ export function computeScheduledDates(
     out.push(d.toISOString().slice(0, 10));
   }
   return out;
+}
+
+/** REQ-240: who an invoice bills when its quote has no customer on file —
+ *  the quote's customer snapshot, else the name typed at signing. */
+function billToFromSigner(quote: Quote): CustomerSnapshot | undefined {
+  const snap = quote.customerSnapshot;
+  if (snap && (snap.name?.trim() || snap.businessName?.trim())) return snap;
+  const name = quote.acceptedName?.trim();
+  return name ? { name } : undefined;
 }
 
 function parseIsoDate(iso: string): Date {
