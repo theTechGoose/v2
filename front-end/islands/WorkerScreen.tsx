@@ -19,7 +19,7 @@ import {
 } from "../clients/field.ts";
 import { ApiError } from "../lib/api.ts";
 import { I, ICN } from "../lib/dash-icons.tsx";
-import { fmtDay, shiftIso, todayIso } from "../lib/field.ts";
+import { fmtDay, shiftIso, todayIso, workerScreenLang } from "../lib/field.ts";
 import { type Lang, langSignal, setLang, t } from "../lib/i18n.ts";
 
 const CELL_KEY = "pm:worker-cell";
@@ -148,11 +148,13 @@ interface Toast {
 }
 
 export default function WorkerScreen(
-  { initialLang, initialDate, office }: {
+  { initialLang, initialDate, office, langChosen = false }: {
     initialLang: Lang;
     initialDate?: string;
     /** REQ-282 — an owner session rode in: show the way back to the office */
     office?: boolean;
+    /** REQ-285 — the address chose the language (?lang=); the worker's own does not override it */
+    langChosen?: boolean;
   },
 ) {
   const lang = langSignal.value;
@@ -189,6 +191,8 @@ export default function WorkerScreen(
   meRef.current = me;
   const dateRef = useRef(date);
   dateRef.current = date;
+  /** REQ-285 — the person chose the language (the switch, or ?lang=): keep it over the worker's */
+  const langChosenRef = useRef(langChosen);
 
   useEffect(() => {
     setLang(initialLang);
@@ -219,6 +223,9 @@ export default function WorkerScreen(
       const raw = await workerClient.me();
       const who = raw && typeof raw === "object" ? raw : null;
       setMe(who);
+      // REQ-285 — signed in: the screen takes the worker's language
+      const wl = workerScreenLang(who, langChosenRef.current);
+      if (wl) setLang(wl);
       if (who) {
         const [rows, tt] = await Promise.all([
           workerClient.tasks(d, who.role === "foreman"),
@@ -297,6 +304,7 @@ export default function WorkerScreen(
   function logout() {
     act("logout", async () => {
       await workerClient.logout();
+      langChosenRef.current = langChosen; // the next worker's language applies
       setMe(null);
       setTasks([]);
       setOpen({});
@@ -712,7 +720,10 @@ export default function WorkerScreen(
               key={c}
               class={lang === c ? "on" : ""}
               aria-pressed={lang === c}
-              onClick={() => setLang(c)}
+              onClick={() => {
+                langChosenRef.current = true;
+                setLang(c);
+              }}
             >
               {c.toUpperCase()}
             </button>

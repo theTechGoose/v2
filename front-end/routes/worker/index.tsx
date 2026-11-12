@@ -36,6 +36,7 @@ export default define.page(async function WorkerRoute(ctx) {
       </Head>
       <WorkerScreen
         initialLang={lang}
+        langChosen={qLang === "en" || qLang === "es"}
         initialDate={date}
         office={office}
       />

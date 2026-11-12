@@ -101,3 +101,17 @@ export function subscriptionsByCustomer<
 export function perVisitCents(s: { items: { priceCents: number }[] }): number {
   return s.items.reduce((sum, i) => sum + i.priceCents, 0);
 }
+
+/**
+ * REQ-285 — the language the /worker screen switches to once a worker is
+ * signed in: the worker's own (the backend answers it, REQ-155's rule), unless
+ * the person already chose one (the EN/ES switch, or ?lang= in the address).
+ * null = leave the screen as it is.
+ */
+export function workerScreenLang(
+  who: { language?: string } | null,
+  chosen: boolean,
+): Lang | null {
+  if (chosen || !who) return null;
+  return who.language === "en" || who.language === "es" ? who.language : null;
+}

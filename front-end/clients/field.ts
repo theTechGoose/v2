@@ -242,6 +242,8 @@ export interface WorkerMe {
   id: string;
   name: string;
   role: "worker" | "foreman";
+  /** REQ-285 — the language the worker's screen opens in (theirs, else the owner's) */
+  language?: "en" | "es";
 }
 
 export const fieldClient = {

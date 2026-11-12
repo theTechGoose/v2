@@ -32,6 +32,7 @@ import type { User } from "@users/dto/user.ts";
 import {
   parseLang,
   workerLang,
+  workerSignInUrl,
   workerWelcome,
 } from "@field/domain/business/worker-welcome/mod.ts";
 import { CustomerStore } from "@crm/domain/data/customer-store/mod.ts";
@@ -108,7 +109,7 @@ async function welcomeWorker(
       to: normalizePhone(w.phoneNumber),
       body: workerWelcome(lang, {
         owner,
-        url: `${appUrl()}/worker`,
+        url: workerSignInUrl(appUrl(), lang), // REQ-285 — the screen opens in it
         pin: w.pin,
       }),
     });
