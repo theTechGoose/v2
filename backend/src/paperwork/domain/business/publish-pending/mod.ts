@@ -84,15 +84,16 @@ export function asDelivered<T extends { status?: string }>(invoice: T): T {
 }
 
 /** REQ-480: stamp an unissued invoice "sent" + sentAt after a delivery
- *  succeeded (idempotent: an issued invoice is left alone). */
+ *  succeeded (idempotent: an issued invoice is left alone). REQ-566: returns
+ *  the invoice when THIS call issued it, so the caller announces it once. */
 export async function stampInvoiceDelivered(
   invoices: InvoiceStore,
   id: string,
   userId: string,
-): Promise<void> {
+): Promise<Invoice | undefined> {
   const current = await invoices.getOwned(id, userId);
-  if (!isUnissuedInvoice(current)) return;
-  await invoices.update(id, userId, {
+  if (!isUnissuedInvoice(current)) return undefined;
+  return await invoices.update(id, userId, {
     status: "sent",
     sentAt: current.sentAt ?? new Date().toISOString(),
   });

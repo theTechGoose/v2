@@ -14,6 +14,7 @@ import { ConversationStore as CommConversationStore } from "@communication/domai
 import { MessageStore as CommMessageStore } from "@communication/domain/data/message-store/mod.ts";
 import { getKv, resetKv } from "@core/data/kv/mod.ts";
 import { ReplyTokenStore } from "@paperwork/domain/data/reply-token-store/mod.ts";
+import { type DomainEvent, EventBus } from "@core/business/events/mod.ts";
 
 interface SetupResult {
   flow: SendPaperworkEmail;
@@ -25,7 +26,7 @@ interface SetupResult {
   sent: SendEmailInput[];
 }
 
-function fresh(): SetupResult {
+function fresh(bus?: EventBus): SetupResult {
   const customers = new CustomerStore();
   const quotes = new QuoteStore();
   const invoices = new InvoiceStore();
@@ -51,6 +52,7 @@ function fresh(): SetupResult {
       new CommConversationStore(),
       new CommMessageStore(),
     ),
+    bus,
   );
   return { flow, customers, quotes, invoices, identities, email, sent };
 }
@@ -706,5 +708,45 @@ Deno.test("REQ-480 M18 send-paperwork-email: re-emailing an already viewed invoi
   const r = await flow.run("u-1", { kind: "invoice", resourceId: invoice.id });
   assertEquals(r.ok, true, r.reason);
   assertEquals((await invoices.getOwned(invoice.id, "u-1")).status, "viewed");
+  await resetKv();
+});
+
+// REQ-566 (demo-loop cycle 4, m11): the email that issues a draft invoice is
+// the owner's activity — one `invoice:issued` event for the dashboard feed,
+// and none for a send that reached nobody or an invoice already issued.
+Deno.test("REQ-566 (cycle 4, m11) send-paperwork-email: the delivery that issues a draft invoice announces it once; a failed one does not", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const bus = new EventBus();
+  const seen: DomainEvent[] = [];
+  bus.subscribe((e) => {
+    seen.push(e);
+  });
+  const { flow, customers, invoices } = fresh(bus);
+  await seedContractor("u-1");
+  const ana = await customers.create("u-1", { name: "Ana", email: "ana@acme.test" });
+  const invoice = await invoices.create("u-1", {
+    customerId: ana.id,
+    dueDate: "2099-01-01",
+    amount: 120_000,
+    status: "draft",
+  });
+  assertEquals((await flow.run("u-1", { kind: "invoice", resourceId: invoice.id })).ok, true);
+  assertEquals(seen.map((e) => [e.entityType, e.action, e.entityId, e.data]), [
+    ["invoice", "issued", invoice.id, { amountCents: 120_000, customerName: "Ana" }],
+  ]);
+  // re-sent: already issued, no second row
+  await flow.run("u-1", { kind: "invoice", resourceId: invoice.id });
+  assertEquals(seen.length, 1);
+  // nobody to email: stays a draft, nothing announced
+  const noEmail = await customers.create("u-1", { name: "Bo" });
+  const other = await invoices.create("u-1", {
+    customerId: noEmail.id,
+    dueDate: "2099-01-01",
+    amount: 5_000,
+    status: "draft",
+  });
+  assertEquals((await flow.run("u-1", { kind: "invoice", resourceId: other.id })).ok, false);
+  assertEquals(seen.length, 1);
   await resetKv();
 });

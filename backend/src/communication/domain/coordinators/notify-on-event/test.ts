@@ -172,3 +172,55 @@ Deno.test("REQ-589 m15: quote accepted names the job in the reader's language", 
   assertEquals(es, "María aceptó tu cotización de Retiro de muebles");
   assertEquals(en, "María accepted your quote for Furniture Removal");
 });
+
+// REQ-566 (demo-loop cycle 4, m11): the dashboard's "What we handled today"
+// reads this feed, and it only knew customer-side events — an invoice the
+// owner issued, a payment the owner recorded and a field job a worker
+// finished never showed up, so the panel said "Nothing yet".
+Deno.test("REQ-566 (cycle 4, m11): an issued invoice maps to an 'Invoice sent' row in both languages", () => {
+  for (const action of ["issued", "sent"]) {
+    const e = ev(action, { amountCents: 45000, customerName: "Bob Smith" });
+    assertEquals(notificationL10n(e)?.type, "invoice_sent");
+    assertEquals(feedTitle(e, "en"), "Invoice for $450 sent to Bob Smith");
+    assertEquals(feedTitle(e, "es"), "Factura de $450 enviada a Bob Smith");
+  }
+  const bare = ev("issued", {});
+  assertEquals(feedTitle(bare, "en"), "Invoice sent to your client");
+  assertEquals(feedTitle(bare, "es"), "Factura enviada a tu cliente");
+});
+
+Deno.test("REQ-566 (cycle 4, m11): a payment the owner recorded maps to a 'Payment recorded' row", () => {
+  const e = ev("payment_recorded", {
+    amountCents: 142500,
+    customerName: "Linda Perez",
+  });
+  assertEquals(notificationL10n(e)?.type, "invoice_paid");
+  assertEquals(feedTitle(e, "en"), "Payment recorded: $1,425 from Linda Perez");
+  assertEquals(feedTitle(e, "es"), "Pago registrado: $1,425 de Linda Perez");
+});
+
+Deno.test("REQ-566 (cycle 4, m11): a finished field task maps to a 'Job done' row naming the worker", () => {
+  const e: DomainEvent = {
+    userId: "u-1",
+    entityType: "task",
+    entityId: "t-1",
+    action: "completed",
+    data: { customerName: "Ana Torres", task: "Lawn mowing", worker: "Carlos" },
+    timestamp: "2026-11-11T12:00:00.000Z",
+  };
+  assertEquals(notificationL10n(e)?.type, "task_completed");
+  assertEquals(
+    feedTitle(e, "en"),
+    "Carlos finished a job for Ana Torres: Lawn mowing",
+  );
+  assertEquals(
+    feedTitle(e, "es"),
+    "Carlos terminó un trabajo para Ana Torres: Lawn mowing",
+  );
+  const office = { ...e, data: { customerName: "Ana Torres", task: "Lawn mowing" } };
+  assertEquals(feedTitle(office, "en"), "Job done for Ana Torres: Lawn mowing");
+  assertEquals(
+    feedTitle(office, "es"),
+    "Trabajo terminado para Ana Torres: Lawn mowing",
+  );
+});

@@ -880,6 +880,7 @@ function InvoicesHero(
     claimedCount,
     scheduledCount,
     scheduledCents,
+    outstandingCents: outstandingTotal, // REQ-566
     forecast,
   });
   const trulyEmpty = mode === "empty";

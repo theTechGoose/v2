@@ -9,6 +9,9 @@ import { UserStore } from "@users/domain/data/user-store/mod.ts";
 import { SessionStore } from "@users/domain/data/session-store/mod.ts";
 import { requireUser } from "@users/domain/coordinators/require-user/mod.ts";
 import { overpaymentCheck } from "#documents/overpayment.ts"; // REQ-551
+import { CustomerStore } from "@crm/domain/data/customer-store/mod.ts";
+import { EventBus } from "@core/business/events/mod.ts";
+import { paymentRecordedEvent } from "@paperwork/domain/business/owner-activity/mod.ts"; // REQ-566
 
 /** REQ-551: the over-the-balance acknowledgement is a request flag, never a
  *  stored field (same shape as REQ-233's over-billing `override`). */
@@ -82,6 +85,8 @@ export class PaymentController {
     private balances: ComputeInvoiceBalance,
     private users: UserStore,
     private sessions: SessionStore,
+    private customers: CustomerStore,
+    private bus: EventBus,
   ) {}
 
   @Post()
@@ -94,6 +99,13 @@ export class PaymentController {
     if (refused) return ctx.json(refused.body, refused.status);
     const created = await this.store.create(user.id, dto);
     await this.balances.run(dto.invoiceId, user.id);
+    // REQ-566 (cycle 4, m11): money the owner recorded is activity — the
+    // dashboard's "What we handled today" feed says so.
+    const customerName = invoice.customerId
+      ? await this.customers.getOwned(invoice.customerId, user.id)
+        .then((c) => c.name || undefined, () => undefined)
+      : undefined;
+    await this.bus.emit(paymentRecordedEvent(user.id, created, customerName));
     return created;
   }
 

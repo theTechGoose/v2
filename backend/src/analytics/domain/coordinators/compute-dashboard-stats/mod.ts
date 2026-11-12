@@ -3,6 +3,7 @@ import {
   aggregatePipeline,
   isSampleQuote,
 } from "#quote-flow/pipeline-stats.ts";
+import { isUndelivered } from "#quote-flow/delivery.ts";
 import { CustomerStore } from "@crm/domain/data/customer-store/mod.ts";
 import { QuoteStore } from "@paperwork/domain/data/quote-store/mod.ts";
 import { InvoiceStore } from "@paperwork/domain/data/invoice-store/mod.ts";
@@ -63,6 +64,11 @@ export class ComputeDashboardStats {
       draft: realQuotes.filter((q) => q.status === "draft").length,
       sent: realQuotes.filter((q) => q.status === "sent").length,
       accepted: realQuotes.filter((q) => q.status === "accepted").length,
+      // REQ-566 (demo-loop cycle 4, m11): of the drafts, those whose send
+      // reached nobody — the dashboard says "Not delivered", not "ready".
+      undelivered: realQuotes.filter((q) =>
+        q.status === "draft" && isUndelivered(q)
+      ).length,
     };
 
     const todayIso = now.toISOString().slice(0, 10);

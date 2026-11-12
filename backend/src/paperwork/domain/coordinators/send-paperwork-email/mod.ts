@@ -1,4 +1,6 @@
 import { Injectable } from "#danet/core";
+import { EventBus } from "@core/business/events/mod.ts";
+import { invoiceIssuedEvent } from "@paperwork/domain/business/owner-activity/mod.ts"; // REQ-566
 import { asDelivered, isUnissuedInvoice, publishPendingInvoice, publishPendingQuote, senderAsPublisher, stampInvoiceDelivered } from "@paperwork/domain/business/publish-pending/mod.ts";
 import { type Lang, t } from "@core/i18n/mod.ts";
 import { QuoteStore } from "@paperwork/domain/data/quote-store/mod.ts";
@@ -108,6 +110,8 @@ export class SendPaperworkEmail {
     private identity: BusinessIdentityStore,
     private email: EmailService,
     private commsLog: LogPaperworkMessage,
+    /** REQ-566: announces an invoice this delivery issued (optional for direct test construction) */
+    private bus?: EventBus,
   ) {}
 
   async run(
@@ -168,6 +172,7 @@ export class SendPaperworkEmail {
     let quoteForStamp: Quote | undefined;
     let invoiceToIssue = false;
     let customerIdForLog: string | undefined;
+    let customerNameForEvent: string | undefined;
     if (input.kind === "quote") {
       // REQ-201: a send publishes what is pending — the link must show what was sent
       const quote = await publishPendingQuote(this.quotes, input.resourceId, userId, senderAsPublisher(userId, sender?.name));
@@ -188,6 +193,7 @@ export class SendPaperworkEmail {
       const invoice = invoiceToIssue ? asDelivered(stored) : stored;
       const customer = await this.tryGetCustomer(userId, invoice.customerId);
       customerIdForLog = customer?.id;
+      customerNameForEvent = customer?.name || undefined;
       if (!recipient) recipient = customer?.email ?? customerOnDocument(invoice, customer)?.email;
       // The email goes to the customer, so it follows the contractor's
       // outgoing-comms language (default en), not their UI language.
@@ -262,7 +268,9 @@ export class SendPaperworkEmail {
     // REQ-480 (demo-loop cycle 3, M18): a draft / scheduled invoice becomes
     // "sent" only now that the email was delivered.
     if (result.ok && invoiceToIssue) {
-      await stampInvoiceDelivered(this.invoices, input.resourceId, userId);
+      const issued = await stampInvoiceDelivered(this.invoices, input.resourceId, userId);
+      // REQ-566 (cycle 4, m11): the owner's activity feed says it went out.
+      if (issued) await this.bus?.emit(invoiceIssuedEvent(userId, issued, customerNameForEvent));
     }
 
     // Comms trail (roadmap p.8): record the dispatch in the customer's

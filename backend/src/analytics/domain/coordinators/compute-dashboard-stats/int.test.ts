@@ -28,7 +28,13 @@ Deno.test("compute-dashboard-stats integration: empty user → all zeros + 12-bu
   const { flow } = fresh();
   const stats = await flow.run("u-1", NOW);
   assertEquals(stats.customers, 0);
-  assertEquals(stats.quotes, { total: 0, draft: 0, sent: 0, accepted: 0 });
+  assertEquals(stats.quotes, {
+    total: 0,
+    draft: 0,
+    sent: 0,
+    accepted: 0,
+    undelivered: 0,
+  });
   assertEquals(stats.invoices.overdue, 0);
   assertEquals(stats.invoices.agingBuckets, {
     current: 0,
@@ -162,7 +168,13 @@ Deno.test("compute-dashboard-stats integration: counts roll up status filters pe
 
   const stats = await flow.run("u-1", NOW);
   assertEquals(stats.customers, 2);
-  assertEquals(stats.quotes, { total: 4, draft: 1, sent: 2, accepted: 1 });
+  assertEquals(stats.quotes, {
+    total: 4,
+    draft: 1,
+    sent: 2,
+    accepted: 1,
+    undelivered: 0,
+  });
   assertEquals(stats.invoices.total, 3);
   assertEquals(stats.invoices.pending, 2);
   assertEquals(stats.invoices.paid, 1);
@@ -297,7 +309,13 @@ Deno.test("compute-dashboard-stats integration: the onboarding sample pollutes n
     estimatedTotal: 3_700_00,
   });
   const stats = await flow.run("u-1", NOW);
-  assertEquals(stats.quotes, { total: 0, draft: 0, sent: 0, accepted: 0 });
+  assertEquals(stats.quotes, {
+    total: 0,
+    draft: 0,
+    sent: 0,
+    accepted: 0,
+    undelivered: 0,
+  });
   assertEquals(stats.quotedValueCents, 0);
   assertEquals(stats.awaitingResponse, 0);
   await resetKv();
@@ -322,8 +340,43 @@ Deno.test("compute-dashboard-stats integration: an unsigned agreement leaves the
     }],
   });
   const stats = await flow.run("u-1", NOW);
-  assertEquals(stats.quotes, { total: 1, draft: 0, sent: 1, accepted: 0 });
+  assertEquals(stats.quotes, {
+    total: 1,
+    draft: 0,
+    sent: 1,
+    accepted: 0,
+    undelivered: 0,
+  });
   assertEquals(stats.quotedValueCents, 850_00);
   assertEquals(stats.awaitingResponse, 1);
+  await resetKv();
+});
+
+// REQ-566 (demo-loop cycle 4, m11): a quote whose send reached nobody (a 555
+// number) stays a draft (REQ-320/NW-10), so "Quotes pending 0" is right — but
+// the dashboard must say it was not delivered, not "1 draft is ready to send"
+// right after the owner pressed Send.
+Deno.test("REQ-566 (cycle 4, m11): stats count an undelivered draft apart from the drafts ready to send", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const { quotes, flow } = fresh();
+  const failed = await quotes.create("u-1", {
+    summary: "faucet",
+    lineItems: [],
+    status: "draft",
+    estimatedTotal: 450_00,
+  });
+  await quotes.update(failed.id, "u-1", {
+    lastDelivery: {
+      at: NOW.toISOString(),
+      channel: "sms",
+      smsFailureReason: "fictional number",
+    },
+  });
+  await quotes.create("u-1", { summary: "fence", lineItems: [], status: "draft" });
+  const stats = await flow.run("u-1", NOW);
+  assertEquals(stats.quotes.draft, 2);
+  assertEquals(stats.quotes.sent, 0);
+  assertEquals(stats.quotes.undelivered, 1);
   await resetKv();
 });
