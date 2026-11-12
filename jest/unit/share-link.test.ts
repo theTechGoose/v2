@@ -30,3 +30,37 @@ describe("quote share links", () => {
     expect(resolveShareTarget(quote)).toBe(`/q/${quote.id}`);
   });
 });
+
+// REQ-342 (demo-loop cycle 1, M13): the send language rides on every link
+// the customer receives, so a cookie-less visitor opens the document in the
+// language it was sent in (REQ-048: "?lang= on the link" is the visitor's pick).
+describe("REQ-342 share links carry the send language", () => {
+  it("the short link carries ?lang= when a send language is given", () => {
+    expect(quoteShareLink(quote, base, "es")).toBe(
+      `${base}/s/${quote.shortCode}?lang=es`,
+    );
+  });
+
+  it("a quote without a short code links /q/<id>?lang=", () => {
+    expect(quoteShareLink({ id: quote.id }, base, "es")).toBe(
+      `${base}/q/${quote.id}?lang=es`,
+    );
+  });
+
+  it("view-as-client carries ?lang= too", () => {
+    expect(quoteClientViewLink(quote, base, "en")).toBe(
+      `${base}/q/${quote.id}?lang=en`,
+    );
+  });
+
+  it("the /s redirect target forwards the link's lang onto /q", () => {
+    expect(resolveShareTarget(quote, "es")).toBe(`/q/${quote.id}?lang=es`);
+  });
+
+  it("no send language → the links are unchanged (REQ-048 English first)", () => {
+    expect(quoteShareLink(quote, base)).toBe(`${base}/s/${quote.shortCode}`);
+    expect(quoteClientViewLink(quote, base)).toBe(`${base}/q/${quote.id}`);
+    expect(resolveShareTarget(quote)).toBe(`/q/${quote.id}`);
+    expect(resolveShareTarget(quote, "fr")).toBe(`/q/${quote.id}`);
+  });
+});
