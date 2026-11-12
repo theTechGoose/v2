@@ -4,7 +4,10 @@ import SiteFooter from "../../components/SiteFooter.tsx";
 import { ssrBackendGet } from "../../lib/backend-fetch.ts";
 import { fmtMoneyExact, fmtPhone, telHref } from "../../lib/format.ts";
 import { type Lang, tFor } from "../../lib/i18n.ts";
-import { resolvePublicLang } from "../../../shared/quote-flow/public-lang.ts";
+import {
+  langToggleHref,
+  resolvePublicLang,
+} from "../../../shared/quote-flow/public-lang.ts";
 import { projectLineItems } from "../../../shared/quote-flow/public-doc-state.ts";
 import { localizeLineItems } from "../../../shared/quote-flow/quote-translations.ts";
 import {
@@ -12,6 +15,7 @@ import {
   type VisitGroup,
 } from "../../../shared/quote-flow/visit-groups.ts";
 import PublicInvoiceClaim from "../../islands/PublicInvoiceClaim.tsx";
+import PublicLangToggle from "../../islands/PublicLangToggle.tsx";
 import {
   invoiceHeadline,
   shortDate,
@@ -158,26 +162,44 @@ export default define.page(async function PublicInvoice(ctx) {
   const id = ctx.params.id;
   const r = await ssrBackendGet<InvoicePublic>(`/invoices/${id}/public`);
   const invoice = r.ok ? r.data : undefined;
-  // Chrome language — the visitor's own saved choice (pm_lang cookie) wins over
-  // the document's generation language, exactly like /q (P-12). The
-  // claim + change-order islands below receive this same resolved language.
+  // Chrome language — REQ-272: the link's ?lang= (the EN | ES toggle below)
+  // first, then the visitor's own saved choice (pm_lang cookie), over the
+  // document's generation language (P-12). The claim + change-order islands
+  // below receive this same resolved language.
+  const url = new URL(ctx.req.url);
   const lang: Lang = resolvePublicLang({
+    query: url.searchParams.get("lang"),
     cookie: ctx.req.headers.get("cookie"),
     docLang: invoice?.contractor?.commsLanguage,
     header: ctx.req.headers.get("accept-language"),
   });
   const err = r.ok ? undefined : tFor(lang, "publicInvoice.error.expired");
+  // <html lang> says what this page actually paints (REQ-122 contract).
+  ctx.state.lang = lang;
 
   return (
     <>
       <Head>
         <title>{tFor(lang, "publicInvoice.docTitle")}</title>
-        <link rel="stylesheet" href={asset("/landing.css")} />
+        <link key="css-landing" rel="stylesheet" href={asset("/landing.css")} />
+        <link
+          key="css-public-lang"
+          rel="stylesheet"
+          href={asset("/public-lang.css")}
+        />
       </Head>
       <div
         style={`min-height:100dvh;background:${BG};font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:${INK};display:flex;flex-direction:column;scroll-padding-bottom:var(--kb-inset, 0px)`}
       >
         <div style="flex:1;width:100%;max-width:712px;margin:0 auto;padding:32px 16px calc(64px + var(--kb-inset, 0px))">
+          {/* REQ-272: the same EN | ES switch the contract has (REQ-048) */}
+          <PublicLangToggle
+            lang={lang}
+            hrefs={{
+              en: langToggleHref(url.href, "en"),
+              es: langToggleHref(url.href, "es"),
+            }}
+          />
           {err || !invoice
             ? (
               <ErrorCard
