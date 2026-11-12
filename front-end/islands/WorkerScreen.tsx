@@ -66,9 +66,15 @@ const css = `
   /* REQ-353 (m23): on a phone the header wraps — the title and the EN/ES pill
      on the first row, "Volver a la oficina" and "Salir" on the next — instead
      of squeezing "Mis tareas" under the pill with Salir at the edge */
+  /* REQ-612 (cycle 4, p4-p8c): Back to office and Sign out are ONE flex item,
+     so on a phone they drop to the next row together (not "Sign out" alone)
+     and a label never breaks over two lines */
+  .top__actions { display: flex; align-items: center; gap: 10px; }
+  .top__actions .btn { white-space: nowrap; }
   @media (max-width: 480px) {
     .top { flex-wrap: wrap; row-gap: 8px; }
     .top .brand { flex: 1 0 auto; }
+    .top__actions { flex-basis: 100%; justify-content: flex-end; }
   }
   /* one card per visit, its services as check-offs, Note + Services on each */
   .crew { font-family: var(--font-heading); font-weight: 800; font-size: 15px; color: var(--brand-teal); display: flex; align-items: center; gap: 8px; margin-top: 6px; }
@@ -854,27 +860,31 @@ export default function WorkerScreen(
             </button>
           ))}
         </div>
-        {office && (
-          <a
-            href={officeHref}
-            class="btn btn--ghost btn--sm"
-            data-cy="w-office"
-            style="min-height:44px"
-          >
-            {t("worker.backToOffice")}
-          </a>
-        )}
-        {me && (
-          <button
-            type="button"
-            class="btn btn--ghost btn--sm"
-            data-cy="w-logout"
-            style="min-height:44px"
-            disabled={busy.has("logout")}
-            onClick={logout}
-          >
-            {t("worker.logout")}
-          </button>
+        {(office || me) && (
+          <div class="top__actions">
+            {office && (
+              <a
+                href={officeHref}
+                class="btn btn--ghost btn--sm"
+                data-cy="w-office"
+                style="min-height:44px"
+              >
+                {t("worker.backToOffice")}
+              </a>
+            )}
+            {me && (
+              <button
+                type="button"
+                class="btn btn--ghost btn--sm"
+                data-cy="w-logout"
+                style="min-height:44px"
+                disabled={busy.has("logout")}
+                onClick={logout}
+              >
+                {t("worker.logout")}
+              </button>
+            )}
+          </div>
         )}
       </div>
 
