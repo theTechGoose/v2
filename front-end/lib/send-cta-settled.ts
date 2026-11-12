@@ -94,3 +94,66 @@ export function sentCtaTimestamp(
   }
   return dispatchedAt ?? cta.createdAt;
 }
+
+/**
+ * REQ-452 (demo-loop cycle 3, issue p8-pair7-b — "'Couldn't send' card
+ * renders above a later message"): the send outcome is not a message of its
+ * own — it is the send/invoice continue_cta re-rendered "Sent ✓" or
+ * "Couldn't send". Drawn where the CTA was created (when the wizard
+ * finished), it sat ABOVE anything typed on the review step afterwards,
+ * while REQ-339 already stamps it with the dispatch time. So a reviewed CTA
+ * whose outcome divider is in the thread is drawn right before the LATEST
+ * such divider (the same divider its sent/failed state is read from), i.e.
+ * by the send's own time. Unreviewed CTAs, CTAs with no outcome divider yet,
+ * and other kinds keep their place. Returns the input array unchanged when
+ * nothing moves.
+ */
+export function orderSendOutcomes<T extends ThreadMessage>(
+  messages: readonly T[],
+  isReviewed: (m: T) => boolean,
+): readonly T[] {
+  // CTA id → id of the divider it is drawn before.
+  const moveBefore = new Map<string, string>();
+  messages.forEach((m, i) => {
+    if (m.kind !== "continue_cta") return;
+    const p = (m.payload ?? {}) as { toPhase?: string; quoteId?: string };
+    if (p.toPhase !== "send" && p.toPhase !== "invoice") return;
+    if (!isReviewed(m)) return;
+    let outcome: T | undefined;
+    for (let j = i + 1; j < messages.length; j++) {
+      const d = messages[j];
+      if (d.kind !== "phase_divider") continue;
+      const dp = (d.payload ?? {}) as {
+        quoteId?: string;
+        emailedTo?: string;
+        textedTo?: string;
+        emailFailureReason?: string;
+        smsFailureReason?: string;
+      };
+      if (p.quoteId && dp.quoteId && dp.quoteId !== p.quoteId) continue;
+      if (
+        dp.emailedTo || dp.textedTo || dp.emailFailureReason ||
+        dp.smsFailureReason
+      ) outcome = d;
+    }
+    // Already right before its outcome → nothing to move.
+    if (outcome && messages[i + 1] !== outcome) {
+      moveBefore.set(m.id, outcome.id);
+    }
+  });
+  if (moveBefore.size === 0) return messages;
+  const moving = new Set(moveBefore.keys());
+  const byDivider = new Map<string, T[]>();
+  for (const m of messages) {
+    const d = moveBefore.get(m.id);
+    if (d) byDivider.set(d, [...(byDivider.get(d) ?? []), m]);
+  }
+  const out: T[] = [];
+  for (const m of messages) {
+    if (moving.has(m.id)) continue;
+    const before = byDivider.get(m.id);
+    if (before) out.push(...before);
+    out.push(m);
+  }
+  return out;
+}

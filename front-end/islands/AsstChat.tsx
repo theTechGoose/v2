@@ -5,6 +5,7 @@ import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import { I, ICN } from "../lib/dash-icons.tsx";
 import { detailLines, fmtPhone } from "../lib/format.ts";
 import {
+  orderSendOutcomes,
   sentCtaTimestamp,
   settledSendCtaIds,
 } from "../lib/send-cta-settled.ts";
@@ -6632,7 +6633,15 @@ export default function AsstChat({
               // REQ-388 (demo-loop cycle 2, M23): a pricing answer offers
               // the draft — on the newest message, while no quote is bound.
               const draftOffer = liveDraftOffer(visible, quoteId);
-              return visible.map((m) => {
+              // REQ-452 (demo cycle 3, p8-pair7-b): a sent / "Couldn't send"
+              // CTA is drawn at its send divider, not where the wizard left
+              // it — below anything typed on the review step before the send.
+              // The CTA still reads its outcome from `visible` (unchanged).
+              const ordered = orderSendOutcomes(
+                visible,
+                (x) => reviewedCtas.has(x.id) || settledCtas.has(x.id),
+              );
+              return ordered.map((m) => {
                 const wizardStepId = (
                   m.payload as { wizardStepId?: string } | undefined
                 )?.wizardStepId;
