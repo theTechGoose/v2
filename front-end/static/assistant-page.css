@@ -6603,34 +6603,52 @@ body {
   background: rgba(255, 107, 107, 0.10);
   box-shadow: inset 0 -1.5px 0 rgba(255, 107, 107, 0.65);
 }
-/* Pencil affordance — appended after every editable surface so users
-   see at a glance that the field is tappable. Pink to match the rest
-   of the edit hover/focus story. SVG uses url-encoded `#` for color. */
-.quote-review__editable::after,
-.quote-review__term-edit::after {
+/* Pencil affordance — appended after every contentEditable surface so users
+   see at a glance that the field is tappable. SVG uses url-encoded `#` for
+   color. REQ-617 (demo p4-p3a): legible at rest — the darker #d94e4e stroke,
+   13px, opacity 0.85 (touch has no hover; the old 11px #FF6B6B at 0.40 was
+   near-invisible). TERMS values draw their pencil as an <Icon> instead
+   (components/TermEditValue.tsx, .quote-review__term-pencil below). */
+.quote-review__editable::after {
   content: "";
   display: inline-block;
-  width: 11px;
-  height: 11px;
+  width: 13px;
+  height: 13px;
   margin-left: 6px;
   vertical-align: -1px;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23FF6B6B' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5z'/%3E%3C/svg%3E");
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23d94e4e' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5z'/%3E%3C/svg%3E");
   background-repeat: no-repeat;
   background-position: center;
-  background-size: 11px 11px;
-  opacity: 0.40;
+  background-size: 13px 13px;
+  opacity: 0.85;
   transition: opacity 140ms, transform 140ms;
   pointer-events: none;
 }
-.quote-review__editable:hover::after,
-.quote-review__term-edit:hover::after {
-  opacity: 0.95;
+.quote-review__editable:hover::after {
+  opacity: 1;
   transform: rotate(-6deg);
 }
 .quote-review__editable:focus::after {
   opacity: 0;
 }
-.quote-review__term-edit:disabled::after {
+/* REQ-617: a TERMS value's last word + its pencil never break apart. */
+.quote-review__term-tail {
+  white-space: nowrap;
+}
+.quote-review__term-pencil {
+  display: inline-block;
+  margin-left: 6px;
+  vertical-align: -2px;
+  color: #d94e4e;
+  opacity: 0.85;
+  transition: opacity 140ms, transform 140ms;
+  pointer-events: none;
+}
+.quote-review__term-edit:hover .quote-review__term-pencil {
+  opacity: 1;
+  transform: rotate(-6deg);
+}
+.quote-review__term-edit:disabled .quote-review__term-pencil {
   display: none;
 }
 .quote-review__line-amt {

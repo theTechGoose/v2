@@ -237,6 +237,7 @@ import { startPoll } from "../lib/poll.ts";
 import { followChanges } from "../lib/change-feed.ts";
 import { boundQuoteMoved } from "../lib/live-doc-refresh.ts";
 import { Icon } from "../components/ui/Icon.tsx";
+import { TermEditValue } from "../components/TermEditValue.tsx";
 
 /**
  * REQ-024 (NW-18): the invoice's due date derives from the agreement the
@@ -8011,9 +8012,11 @@ export default function AsstChat({
                                                     "Estimated"-wrapped (for
                                                     durations) by the termAnswers
                                                     map above — render as-is to
-                                                    avoid double-wrapping. */
+                                                    avoid double-wrapping.
+                                                    REQ-617: the pencil rides
+                                                    with the last word. */
                                                 }
-                                                {t.value}
+                                                <TermEditValue value={t.value} />
                                               </button>
                                             </dd>
                                           )}
