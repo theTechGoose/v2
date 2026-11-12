@@ -473,8 +473,9 @@ export default function DemoModeOverlay() {
       if (globalThis.location.pathname !== STAGE_PATH) {
         moving = true;
         // REQ-393 — the stage loads under a still mouse and gets no pointer event: it starts
-        // where this page last saw the mouse (the click on Demo, Back to the demo)
-        handCursor(sessionStore(), cursorRef.current);
+        // where this page last saw the mouse (the click on Demo, Back to the demo); REQ-539 (m24)
+        // — tagged /admin's: the stage uses it for its off hint only, never sends it
+        handCursor(sessionStore(), cursorRef.current, Date.now(), "admin");
         globalThis.location.assign(STAGE_PATH);
       }
     } finally {

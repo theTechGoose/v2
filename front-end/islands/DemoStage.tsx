@@ -53,6 +53,9 @@
  * a reload or another tab gets no arrow until he moves — never a fraction under his still mouse.
  * The hand-off counts only once the frame is fitted, and only on it (`seedOn`): beside the frame
  * it is unknown until he moves. Off the frame, their screen shows a small edge marker, no tag.
+ * REQ-539 (demo m24 — cycle 4) — amends that: only the stage's own hand-off (a reload) is sent;
+ * /admin's (the Demo click, on a desktop customer's frame) is a hint for the off outline only, and
+ * their screen gets no arrow until he makes a real pointer move (`seedUse`).
  *
  * REQ-232 — the pill says plainly whether the demo is live: "Live", "Connecting…", or "Waiting for
  * {name}'s app…" — the last only when none of the customer's tabs is left, after a few seconds'
@@ -112,6 +115,7 @@ import {
   type Pt,
 } from "../../shared/demo-mode/motion.ts";
 import {
+  type CursorSeed,
   handCursor,
   sessionStore,
   takeCursor,
@@ -134,7 +138,7 @@ import {
   ghostAt,
   lookAgain,
   resendable,
-  seedOn,
+  seedUse,
 } from "../../shared/demo-mode/presenter-anchor.ts";
 import PointerGhost from "../components/demo-mode/PointerGhost.tsx";
 import DemoPointer, {
@@ -318,7 +322,10 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
   const provisionalRef = useRef(false);
   /** REQ-451 (M14) — the mouse the page that opened the stage handed over: counted once the frame
    *  is fitted, and only on it; dropped by a real pointer event */
-  const seedRef = useRef<Pt | null>(null);
+  const seedRef = useRef<CursorSeed | null>(null);
+  /** REQ-539 (m24) — /admin's hand-off: where his mouse is, for the off hint only (never sent,
+   *  never his pointer); dropped by a real pointer event */
+  const hintRef = useRef<Pt | null>(null);
   /** REQ-451 — the ghost of his arrow where their screen has it, while that is apart from his
    *  cursor (their page moved it with its element, or the frame moved) */
   const [ghost, setGhost] = useState<{ at: Pt; outside: boolean } | null>(
@@ -515,21 +522,27 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
     }), []);
   /** REQ-393 — whether his mouse is beside the fitted frame (the outline and the hint) */
   const markOff = () => {
-    const p = lastMoveRef.current;
+    const p = lastMoveRef.current ?? hintRef.current;
     setOff(!!p && fitted() && outsideBox(p, fitBox()));
   };
-  /** REQ-393 / REQ-451 (M14) — the mouse the opening page handed over, once the frame is fitted
-   *  to their screen: on the frame he points there from the start; beside it (the Demo button at
-   *  the right of /admin's row) it says nothing of their screen — unknown until he moves */
+  /** REQ-393 / REQ-451 (M14) — the mouse handed over, once the frame is fitted to their screen;
+   *  REQ-539 (m24) — only the stage's own (a reload) on the frame is where he points and is sent;
+   *  /admin's (the Demo click — on a desktop customer's frame, over her mic button) is only where
+   *  his mouse is: the off hint, nothing on their screen until he moves */
   const takeSeed = () => {
     const s = seedRef.current;
     if (!s || !fitted()) return;
     seedRef.current = null;
-    const p = seedOn(s, fitBox());
-    if (!p || lastMoveRef.current) return;
-    lastMoveRef.current = p;
+    const use = seedUse(s, fitBox());
+    if (!use || lastMoveRef.current) return;
+    if (!use.send) {
+      hintRef.current = use.at;
+      markOff();
+      return;
+    }
+    lastMoveRef.current = use.at;
     markOff();
-    if (linkRef.current) throttle.push(p);
+    if (linkRef.current) throttle.push(use.at);
   };
 
   /** REQ-305 — where an anchor's pointer is drawn: on the frame's edge, pointing outside, when the
@@ -1049,6 +1062,7 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
     const at = (e: PointerEvent) => {
       const p = { x: e.clientX, y: e.clientY };
       seedRef.current = null; // REQ-451 — a real event says where the mouse is
+      hintRef.current = null;
       lastMoveRef.current = p;
       markOff();
       if (fitted() && linkRef.current) throttle.push(p);
@@ -1056,13 +1070,16 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
     const gone = () => {
       lastMoveRef.current = null;
       seedRef.current = null;
+      hintRef.current = null;
       drop();
       throttle.cancel();
       rest.cancel();
       setOff(false);
       linkRef.current?.send({ k: "leave" });
     };
-    const hand = () => handCursor(sessionStore(), lastMoveRef.current);
+    // REQ-539 (m24) — the stage's own hand-off: a reload is the same page, the same spot
+    const hand = () =>
+      handCursor(sessionStore(), lastMoveRef.current, Date.now(), "stage");
     const opts = { capture: true, passive: true };
     document.addEventListener("pointermove", at, opts);
     document.addEventListener("pointerover", at, opts);

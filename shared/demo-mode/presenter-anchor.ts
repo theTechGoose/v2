@@ -20,6 +20,8 @@
  *     phone, and the arrow stayed on it); and while his mouse is beside the frame (where it meets
  *     the frame's edge moves with the frame).
  *   - `seedOn`: the mouse handed over by the page that opened the stage counts only on the frame.
+ *     REQ-539 (cycle 4, m24) — `seedUse`: and only the stage's own hand-off (a reload) is sent;
+ *     /admin's is where his mouse is, not what he points at — a hint for the stage only.
  *   - `ghostAt`: where the stage draws his arrow as their screen has it, faint, when that is apart
  *     from where he put it (their page moved it with its element, or the frame moved).
  *   - `offEdge`, `offMark`: a pointer off their screen is a small translucent marker against the
@@ -91,6 +93,22 @@ export function lookAgain(
 /** the mouse handed over by the page that opened the stage, counted only on the fitted frame */
 export function seedOn(seed: Pt | null, frame: Rect): Pt | null {
   return seed && !outsideBox(seed, frame) ? seed : null;
+}
+
+/** REQ-539 (demo m24) — what the stage makes of a hand-off once the frame is fitted. The stage's
+ *  own (its pagehide: a reload, the same page, the same spot) on the frame is where he points:
+ *  `send`. /admin's (the click on Demo) says only where his mouse is — for a desktop customer the
+ *  Demo button falls on the fitted frame, over whatever her page has there (her mic button) — so
+ *  it is a hint for the stage's on/off-frame outline only, never sent: nothing reaches their
+ *  screen until he moves. The stage's own beside the frame: nothing (REQ-451). */
+export function seedUse(
+  seed: (Pt & { from: "admin" | "stage" }) | null,
+  frame: Rect,
+): { at: Pt; send: boolean } | null {
+  if (!seed) return null;
+  const at = { x: seed.x, y: seed.y };
+  if (seed.from !== "stage") return { at, send: false };
+  return seedOn(at, frame) ? { at, send: true } : null;
 }
 
 /** within this of where he put it, his arrow on their screen is under his own cursor: no ghost */

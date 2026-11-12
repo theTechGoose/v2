@@ -59,7 +59,7 @@ const handoff = () =>
     CURSOR_KEY: string;
     CURSOR_HANDOFF_MS: number;
     handCursor(store: unknown, p: Pt | null, now?: number): void;
-    takeCursor(store: unknown, now?: number): Pt | null;
+    takeCursor(store: unknown, now?: number): (Pt & { from: string }) | null;
   };
 
 describe("REQ-393 the wire: an anchor off the shared screen, and a relay for one customer tab", () => {
@@ -178,7 +178,8 @@ describe("REQ-393 the cursor hand-off: a stage opened under a still mouse starts
     const { handCursor, takeCursor } = handoff();
     const s = memStore();
     handCursor(s, { x: 610, y: 145 }, 1_000);
-    expect(takeCursor(s, 2_000)).toEqual({ x: 610, y: 145 });
+    // REQ-539 AMENDMENT (demo m24, cycle 4) — it says which page handed it over (untagged: /admin)
+    expect(takeCursor(s, 2_000)).toEqual({ x: 610, y: 145, from: "admin" });
     expect(takeCursor(s, 2_100)).toBeNull();
   });
   test("an old hand-off is not where the mouse is any more; a hand-off of nothing clears it", () => {
@@ -509,7 +510,8 @@ describe("REQ-393 the stage: the resting pointer is the spot under the presenter
       /addEventListener\("pagehide", hand\)/,
     );
     expect(stageSrc).toMatch(
-      /const hand = \(\) => handCursor\(sessionStore\(\), lastMoveRef\.current\)/,
+      // REQ-539 AMENDMENT (demo m24) — tagged as the stage's own hand-off
+      /const hand = \(\) =>\s*handCursor\(sessionStore\(\), lastMoveRef\.current, Date\.now\(\), "stage"\)/,
     );
   });
 
@@ -542,7 +544,10 @@ describe("REQ-393 the customer's overlay: an off anchor sits on the window's edg
       overlay.indexOf("async function placePresenter("),
     );
     const assign = place.indexOf("globalThis.location.assign(STAGE_PATH)");
-    const hand = place.indexOf("handCursor(sessionStore(), cursorRef.current)");
+    // REQ-539 AMENDMENT (demo m24) — tagged /admin's: a hint for the stage, never sent
+    const hand = place.indexOf(
+      'handCursor(sessionStore(), cursorRef.current, Date.now(), "admin")',
+    );
     expect(hand).toBeGreaterThan(-1);
     expect(assign).toBeGreaterThan(hand);
     expect(overlay).toMatch(
