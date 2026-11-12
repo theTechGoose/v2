@@ -115,9 +115,10 @@ Deno.test("REQ-235 / REQ-300: End asks first — Keep going, or a click outside,
         });
         // a page that saw a demo end stops asking for a new one (M11, its own issue): reload
         await userPage.reload();
+        // REQ-232's plain words: the staff's pill says Live, the customer's Connected
         for (const pg of [page, userPage]) {
           await pg.locator("[data-cy='demo-status']").filter({
-            hasText: /direct|relay/,
+            hasText: /^\s*(Live|Connected)\s*$/,
           }).waitFor({ timeout: 20_000 });
         }
       };
@@ -178,7 +179,7 @@ Deno.test("REQ-235 / REQ-300: End asks first — Keep going, or a click outside,
       });
       expect(await live(), "clicked outside: the demo is still on");
       await page.locator("[data-cy='demo-status']").filter({
-        hasText: /direct|relay/,
+        hasText: /^\s*Live\s*$/,
       }).waitFor({ timeout: 5_000 });
 
       // 2. Ana ends it: her pill turns into the notice AT ONCE — the server's answer held back
@@ -255,8 +256,9 @@ Deno.test("REQ-235 / REQ-300: End asks first — Keep going, or a click outside,
         ),
         `/admin's notice is still there ${LASTING_MS / 1000} s later`,
       );
-      // the frames: /admin's notice (a stamped action), and the customer's screen beside it
-      await page.locator("[data-cy='demo-ended']").hover();
+      // the frames: /admin's notice (a stamped action), and the customer's screen beside it.
+      // REQ-379 (M28): the notice lets a pointer through to the page; its × is what takes one
+      await page.locator("[data-cy='demo-ended-dismiss']").hover();
       await userPage.screenshot({ path: `${folder}/customer-you-ended.png` });
       expect(!(await live()), "the demo is over on the server");
       await page.locator("[data-cy='demo-ended-dismiss']").click();
@@ -311,7 +313,7 @@ Deno.test("REQ-235 / REQ-300: End asks first — Keep going, or a click outside,
         (await textOf(page, "demo-ended")).includes("You ended the demo"),
         `/admin's notice is still there ${LASTING_MS / 1000} s later`,
       );
-      await page.locator("[data-cy='demo-ended']").hover();
+      await page.locator("[data-cy='demo-ended-dismiss']").hover();
       await userPage.screenshot({ path: `${folder}/customer-hans-ended.png` });
       await userPage.locator("[data-cy='demo-ended-dismiss']").click();
       await userPage.locator("[data-cy='demo-ended']").waitFor({

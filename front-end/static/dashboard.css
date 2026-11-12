@@ -379,8 +379,10 @@ body {
      visualViewport.height via MobileViewport), so it also shrinks when the soft
      keyboard opens; falls back to 100dvh without JS. */
   /* REQ-181: minus the impersonation banner's room (--banner-h, set by the
-     banner island while it is on screen; 0 otherwise), so nothing hides under it. */
-  height: calc(var(--app-vh, 100dvh) - var(--banner-h, 0px));
+     banner island while it is on screen; 0 otherwise), so nothing hides under it.
+     REQ-379: and minus the demo pill's band (--demo-pill-h, set by the demo
+     overlay while its pill is up), so the shell's foot ends above the pill. */
+  height: calc(var(--app-vh, 100dvh) - var(--banner-h, 0px) - var(--demo-pill-h, 0px));
   display: flex;
   min-height: 0;
   overflow: hidden;
@@ -2526,7 +2528,7 @@ a.activity-item--link:hover {
     position: fixed;
     top: var(--banner-h, 0px); /* REQ-181: the drawer is fixed too — it starts under the banner */
     left: 0;
-    bottom: 0;
+    bottom: var(--demo-pill-h, 0px); /* REQ-379: and ends above the demo pill */
     z-index: 60;
     width: 260px;
     transform: translateX(-100%);
@@ -2559,7 +2561,7 @@ a.activity-item--link:hover {
      fixed overlay on mobile, so dropping the flex shell is safe. */
   .app {
     height: auto;
-    min-height: 100dvh;
+    min-height: calc(100dvh - var(--demo-pill-h, 0px)); /* REQ-379: the demo pill's band */
     display: block;
     overflow: visible;
     /* Bottom scroll-room equal to the keyboard height so form fields near the

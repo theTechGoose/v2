@@ -447,7 +447,8 @@ export default function ClientsPage({ lang: _lang }: { lang?: "en" | "es" }) {
           role="status"
           aria-live="polite"
           class="clients-flash"
-          style="position:fixed;left:50%;bottom:28px;transform:translateX(-50%);z-index:1001;background:var(--brand-green,#519843);color:#fff;padding:12px 20px;border-radius:12px;font-weight:700;font-size:14.5px;box-shadow:0 12px 32px rgba(20,72,82,0.22)"
+          // REQ-379 — above the demo pill's band (--demo-pill-h, 0 when no demo)
+          style="position:fixed;left:50%;bottom:calc(28px + var(--demo-pill-h, 0px));transform:translateX(-50%);z-index:1001;background:var(--brand-green,#519843);color:#fff;padding:12px 20px;border-radius:12px;font-weight:700;font-size:14.5px;box-shadow:0 12px 32px rgba(20,72,82,0.22)"
         >
           {flash}
         </div>

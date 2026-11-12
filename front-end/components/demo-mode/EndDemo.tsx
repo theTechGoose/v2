@@ -5,13 +5,17 @@
  * counts after END_ARM_MS (a double click on End never ends a demo) and calls `onEnd` at once, so
  * the pill says so before the server answers (REQ-179). Drawn in the customer's pill and on every
  * stage.
+ *
+ * REQ-379 (M28) — the customer's pill lets a click on its empty area through to the page; End, its
+ * question and both answers take their own clicks (`pointer-events:auto`), so a click on the
+ * question's words is never "outside" it.
  */
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import { t } from "../../lib/i18n.ts";
 import { type EndAsk, endConfirm } from "../../../shared/demo-mode/ended.ts";
 
 const BTN =
-  "padding:5px 12px;border-radius:8px;border:0;cursor:pointer;font:inherit;font-size:12px;font-weight:700";
+  "padding:5px 12px;border-radius:8px;border:0;cursor:pointer;font:inherit;font-size:12px;font-weight:700;pointer-events:auto";
 
 export default function EndDemo(
   { onEnd, disabled = false }: { onEnd: () => void; disabled?: boolean },
@@ -71,7 +75,7 @@ export default function EndDemo(
       onKeyDown={(e) => {
         if (e.key === "Escape") ask.cancel();
       }}
-      style="display:inline-flex;align-items:center;gap:8px;flex-wrap:wrap"
+      style="display:inline-flex;align-items:center;gap:8px;flex-wrap:wrap;pointer-events:auto"
     >
       <span style="font-weight:700">{t("demoMode.endAsk")}</span>
       <button
@@ -90,7 +94,7 @@ export default function EndDemo(
         type="button"
         data-cy="demo-end-cancel"
         onClick={ask.cancel}
-        style="padding:5px 6px;border:0;background:transparent;color:#fff;text-decoration:underline;cursor:pointer;font:inherit;font-size:12px;font-weight:600"
+        style="padding:5px 6px;border:0;background:transparent;color:#fff;text-decoration:underline;cursor:pointer;font:inherit;font-size:12px;font-weight:600;pointer-events:auto"
       >
         {t("demoMode.endNo")}
       </button>

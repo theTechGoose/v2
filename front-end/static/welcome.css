@@ -6,7 +6,8 @@
 @import url("/verify.css");
 
 .welcome-shell {
-  min-height: 100dvh;
+  /* REQ-379: the demo pill's band (--demo-pill-h) stays free under the footer */
+  min-height: calc(100dvh - var(--demo-pill-h, 0px));
   width: 100%;
   display: flex;
   flex-direction: column;

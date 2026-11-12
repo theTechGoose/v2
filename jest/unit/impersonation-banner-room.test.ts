@@ -65,8 +65,9 @@ describe("REQ-181 the banner's room", () => {
   test("every viewport-height shell subtracts --banner-h", () => {
     const dash = read("front-end/static/dashboard.css");
     const asst = read("front-end/static/assistant-page.css");
+    // REQ-379: a shell may also subtract the demo pill's band after the banner's room
     const sub =
-      /height:\s*calc\(var\(--app-vh,\s*100dvh\)\s*-\s*var\(--banner-h,\s*0px\)\)/g;
+      /height:\s*calc\(var\(--app-vh,\s*100dvh\)\s*-\s*var\(--banner-h,\s*0px\)(?:\s*-\s*var\(--demo-pill-h,\s*0px\))?\)/g;
     expect(dash.match(sub)?.length ?? 0).toBeGreaterThanOrEqual(1);
     expect(asst.match(sub)?.length ?? 0).toBeGreaterThanOrEqual(2);
     // no shell left on the bare viewport height
@@ -75,7 +76,7 @@ describe("REQ-181 the banner's room", () => {
     // the phone chat overlay starts under the banner and is shorter by it
     expect(asst).toMatch(/top:\s*var\(--banner-h,\s*0px\);/);
     expect(asst).toMatch(
-      /height:\s*calc\(var\(--vvh,\s*100dvh\)\s*-\s*var\(--banner-h,\s*0px\)\)/,
+      /height:\s*calc\(var\(--vvh,\s*100dvh\)\s*-\s*var\(--banner-h,\s*0px\)(?:\s*-\s*var\(--demo-pill-h,\s*0px\))?\)/,
     );
     // the phone's sticky top bar pins under the banner, not under it
     expect(dash).toMatch(
