@@ -29,15 +29,20 @@ export function countOpenClients(
   return keys.size;
 }
 
-/** "Out for response" track: the real quotes it counts, and the badged
- *  onboarding sample it shows besides (UX-17 / P-15 — the sample counts in
- *  no aggregate, but the header says it is there). */
-export function outTrackCounts(
+/** A /quotes track: the real quotes it counts, and the badged onboarding
+ *  sample it shows besides (UX-17 / P-15 — the sample counts in no
+ *  aggregate, but the header says it is there). REQ-360 (demo-loop cycle 1,
+ *  m11): every track reads this — the sample is a draft since REQ-256, and
+ *  the Drafting track said "0 quotes" over its card. */
+export function sampleTrackCounts(
   cards: ReadonlyArray<{ isSample?: boolean }>,
 ): { real: number; sample: number } {
   const sample = cards.filter((c) => c.isSample === true).length;
   return { real: cards.length - sample, sample };
 }
+
+/** "Out for response" track counts (REQ-243's name for the same rule). */
+export const outTrackCounts = sampleTrackCounts;
 
 export type InvoicesHeroMode =
   | "empty"

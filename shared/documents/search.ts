@@ -16,7 +16,13 @@
  * `searchRecords`; the island groups the rows with `groupHits`. Nothing here
  * touches I/O, so the ranking is the same in the unit tests, the backend and
  * the browser.
+ *
+ * REQ-360 (demo-loop cycle 1, m11): the onboarding sample quote (P-15's
+ * `isSample`, or the legacy summary tag) is not a record the contractor made —
+ * it never enters the candidate set, so it is never a row ("#9876481D … Draft")
+ * nor counted on a customer's row.
  */
+import { isSampleQuote } from "../quote-flow/pipeline-stats.ts";
 import { docNumberOf, matchesDocNumber } from "./numbering.ts";
 import {
   invoiceBalance,
@@ -118,6 +124,8 @@ export interface SearchQuote {
   startDate?: string;
   createdAt?: string;
   customerSnapshot?: Snapshot;
+  /** P-15: the onboarding sample — never searchable (REQ-360) */
+  isSample?: boolean;
 }
 
 export interface SearchInvoice {
@@ -364,6 +372,8 @@ export function searchRecords(
   if (!q) return [];
   const limit = Math.max(1, opts.limit ?? 10);
   const types = new Set<SearchType>(opts.types ?? SEARCH_TYPES);
+  // REQ-360: the onboarding sample is not the contractor's record.
+  data = { ...data, quotes: data.quotes.filter((x) => !isSampleQuote(x)) };
   const changeOrders = data.changeOrders ?? [];
   const workOrders = data.workOrders ?? [];
 

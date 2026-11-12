@@ -260,14 +260,20 @@ export default function QuoteCard(
               {tFor(lang, "quoteCard.back.open")}
             </button>
           )}
-          <button type="button" onClick={(e) => e.stopPropagation()}>
-            {tFor(lang, "quoteCard.back.resend")}
-          </button>
-          <button type="button" onClick={copyPublicLink}>
-            {copied
-              ? tFor(lang, "quoteCard.back.linkCopied")
-              : tFor(lang, "quoteCard.back.copyLink")}
-          </button>
+          {
+            /* REQ-360 (demo-loop cycle 1, m11): no "Resend" here — it was a
+              dead button (its handler only stopped the click) and offered a
+              resend of the never-sent sample. Sending lives in the
+              assistant. The sample has no customer to share a link with, so
+              it offers no "Copy link" either; "View as customer" stays. */
+          }
+          {!q.isSample && (
+            <button type="button" onClick={copyPublicLink}>
+              {copied
+                ? tFor(lang, "quoteCard.back.linkCopied")
+                : tFor(lang, "quoteCard.back.copyLink")}
+            </button>
+          )}
           <a
             href={`/q/${q.id}`}
             target="_blank"

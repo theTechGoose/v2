@@ -48,7 +48,7 @@ import {
   ShimmerStyle,
 } from "../components/Skeletons.tsx";
 import { langSignal, tFor } from "../lib/i18n.ts";
-import { countOpenClients, outTrackCounts } from "../lib/headline-counts.ts";
+import { countOpenClients, sampleTrackCounts } from "../lib/headline-counts.ts";
 import {
   buildViewedReceipt,
   classifyReceipts,
@@ -850,9 +850,12 @@ export default function QuotesPage(_props: { lang?: "en" | "es" }) {
   const openTotal = open.reduce((acc, q) => acc + q.value, 0);
   const stale = real.filter((q) => q.stage === "stale");
   const out = outCards.filter(isReal);
-  const outCounts = outTrackCounts(outCards);
+  const outCounts = sampleTrackCounts(outCards);
   const outVal = out.reduce((acc, q) => acc + q.value, 0);
   const drafts = draftCards.filter(isReal);
+  // REQ-360 (m11): the sample is a draft — the Drafting header says it is
+  // there instead of "0 quotes" over its card.
+  const draftCounts = sampleTrackCounts(draftCards);
   const decided = decidedCards.filter(isReal);
 
   // Inner sort: opened > sent > cooling > stale within "Out for response".
@@ -945,6 +948,7 @@ export default function QuotesPage(_props: { lang?: "en" | "es" }) {
             num="02"
             title={tFor(lang, "quotesPage.track.drafting")}
             count={drafts.length}
+            sampleCount={draftCounts.sample}
             /* A draft the user is mid-writing must not hide behind a
                collapsed track (same rule as the invoice tracks, P-31). */
             defaultOpen={draftCards.length > 0}
