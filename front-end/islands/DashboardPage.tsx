@@ -32,6 +32,7 @@ import { docNumberOf } from "../../shared/documents/numbering.ts";
 import { versionOf } from "../../shared/documents/versions.ts";
 import { readCached, refreshDash } from "../lib/dash-cache.ts";
 import { pickKpis } from "../lib/dashboard-kpis.ts";
+import { jobRowTitle, quoteRowTitle } from "../lib/dashboard-titles.ts";
 import {
   readNotifications,
   refreshNotifications,
@@ -121,7 +122,7 @@ function jobToRow(j: Job, idx: number, now: Date, lang: Lang): JobRow {
     : "green";
   return {
     client: j.customer.name,
-    task: j.quote.summary,
+    task: jobRowTitle(j, lang),
     amount: `$${Math.round(total).toLocaleString()}`,
     paid: paidLabel,
     pct: j.pctPaid,
@@ -154,7 +155,7 @@ function quoteToRow(q: QuoteCard, now: Date, lang: Lang): QuoteRow {
     : tFor(lang, "dashboardPage.quote.drafted");
   return {
     client: q.customerName ?? clientFromSummary(q.summary),
-    desc: q.summary ?? "",
+    desc: quoteRowTitle(q, lang),
     amt: fmtMoney(q.estimatedTotal ?? 0),
     sent: sentLabel,
     hot: q.stage === "opened" && q.opens >= 2,

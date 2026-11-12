@@ -54,6 +54,7 @@ import {
 import { appUrl } from "@users/domain/business/app-url/mod.ts";
 import { invoiceCapDecision } from "#documents/ledger.ts"; // REQ-233
 import { hasCreatedFor } from "@core/data/numbered-store/mod.ts";
+import { InvoiceTranslatorPort } from "@paperwork/domain/coordinators/invoice-translator-port/mod.ts"; // REQ-497
 
 /** number order for an export (INV-001 before INV-002; unnumbered rows by age) */
 const bySeq = (
@@ -65,6 +66,29 @@ const bySeq = (
 
 function project(invoice: Invoice, now: Date): Invoice {
   return { ...invoice, urgency: deriveUrgency(invoice, now) };
+}
+
+/**
+ * REQ-497 (demo-loop cycle 3, m23): a standalone invoice's typed title and
+ * concepts get their other-language text before the customer is sent the
+ * link, so /i?lang=en on a Spanish-typed invoice reads English. Quote-linked
+ * invoices take theirs from the quote. Returns the re-read invoice. (A module
+ * function, not a controller method: Danet routes every method it finds.)
+ */
+async function translateStandalone(
+  translator: InvoiceTranslatorPort | undefined,
+  store: InvoiceStore,
+  inv: Invoice,
+  user: { id: string; language?: string },
+): Promise<Invoice> {
+  if (!translator || inv.quoteId) return inv;
+  if (!inv.jobName?.trim() && !inv.description?.trim()) return inv;
+  await translator.run({
+    userId: user.id,
+    invoiceId: inv.id,
+    baseLang: user.language === "es" ? "es" : "en",
+  });
+  return await store.getOwned(inv.id, user.id);
 }
 
 @Controller("invoices")
@@ -80,6 +104,7 @@ export class InvoiceController {
     private changeOrderAlert: SendChangeOrderAlert,
     private users: UserStore,
     private sessions: SessionStore,
+    private translator?: InvoiceTranslatorPort,
   ) {}
 
   /** Apply a discount to an invoice in place (roadmap p.12). Reduces the
@@ -315,8 +340,9 @@ export class InvoiceController {
     ) {
       dto.sentAt = new Date().toISOString();
     }
+    const created = await this.store.create(user.id, dto, { requestId });
     return project(
-      await this.store.create(user.id, dto, { requestId }),
+      await translateStandalone(this.translator, this.store, created, user),
       new Date(),
     );
   }
@@ -463,8 +489,16 @@ export class InvoiceController {
       const pending = await this.store.setPending(id, user.id, content);
       return project({ ...updated, ...pending }, new Date());
     }
+    const updated = await this.store.update(id, user.id, {
+      ...content,
+      ...meta,
+    });
+    // REQ-497: a live edit of the title / concepts is translated afresh.
+    const retitled = "jobName" in content || "description" in content;
     return project(
-      await this.store.update(id, user.id, { ...content, ...meta }),
+      retitled
+        ? await translateStandalone(this.translator, this.store, updated, user)
+        : updated,
       new Date(),
     );
   }

@@ -266,6 +266,17 @@ export class UpdateInvoiceDto {
   /** REQ-202: sum of confirmed payments, maintained by the balance coordinator. */
   @IsOptional() @IsNumber()
   paidCents?: number | null;
+  /** REQ-497 (demo-loop cycle 3, m23): a STANDALONE invoice's text per
+   *  language, written by TranslateInvoice — `lang` is the language the
+   *  contractor typed in, and its slot is the typed text verbatim (the cache
+   *  key: shared/documents/invoice-lang.ts projects a map only while it
+   *  matches). Quote-linked invoices read the quote's maps instead. */
+  @IsOptional() @IsString()
+  lang?: string;
+  @IsOptional() @IsObject()
+  jobNameByLang?: Record<string, string>;
+  @IsOptional() @IsObject()
+  descriptionByLang?: Record<string, string>;
 }
 
 export interface Invoice extends CreateInvoiceDto, NumberedFields {
@@ -283,6 +294,10 @@ export interface Invoice extends CreateInvoiceDto, NumberedFields {
   updatedAt: string;
   /** Computed read-only field: never accepted from request bodies; projected on read. */
   urgency?: InvoiceUrgency;
+  /** REQ-497: see UpdateInvoiceDto — set by TranslateInvoice only. */
+  lang?: string;
+  jobNameByLang?: Record<string, string>;
+  descriptionByLang?: Record<string, string>;
 }
 
 export function parseCreateInvoice(input: unknown): CreateInvoiceDto {
