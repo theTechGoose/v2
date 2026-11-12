@@ -2344,3 +2344,99 @@ Deno.test("REQ-337 m6 handle-chat-message integration: a model-supplied jobName 
   assertEquals(stored.jobName, "Bedroom & Hallway Repaint");
   await resetKv();
 });
+
+// ---------------------------------------------------------------------------
+// REQ-375 (demo-loop cycle 2, M11): after the send, the assistant said "To
+// change the quote, please tap Re-open on the quote card above" — the sent
+// know-my-price quote had no card, and Re-open can't un-send anyway. The terms
+// prompt now follows the bound quote's state, and revise_quote is offered.
+// ---------------------------------------------------------------------------
+
+const TAP_REOPEN = /tap Re-open on the quote card/i;
+
+Deno.test("REQ-375 M11: a sent quote in the terms phase — the model is never told to send the contractor to Re-open, and is offered revise_quote", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const fx = fresh();
+  const { conv } = await wizardQuoteInTerms(fx, "sent");
+  let prompt = "";
+  let tools: readonly string[] = [];
+  fx.llm.setHandler((req) => {
+    prompt = req.systemPrompt;
+    tools = req.tools ?? [];
+    return { text: "ok" };
+  });
+  await fx.flow.run({
+    userId: "u-1",
+    conversationId: conv.id,
+    content: "can I change the price on the one I sent?",
+  });
+  assert(prompt, "LLM was not called");
+  assert(!TAP_REOPEN.test(prompt), prompt);
+  assert(/next Version/.test(prompt), "the prompt says a change is the next Version");
+  assert(tools.includes("revise_quote"), `tools: ${tools}`);
+  await resetKv();
+});
+
+Deno.test("REQ-375 M11: the model's revise_quote in the terms phase on the bound sent quote saves Version 2 and says where to publish it", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const fx = fresh();
+  const { quote, conv } = await wizardQuoteInTerms(fx, "sent");
+  fx.llm.setScript([{
+    text: "",
+    action: {
+      type: "revise_quote",
+      payload: {
+        lines: [{ match: "kitchen repaint", amountCents: 200_000 }],
+        remove: [],
+      },
+    },
+  }]);
+  const res = await fx.flow.run({
+    userId: "u-1",
+    conversationId: conv.id,
+    content: "make the kitchen repaint $2,000",
+  });
+  const stored = await fx.quotes.getOwned(quote.id, "u-1");
+  assertEquals(stored.estimatedTotal, 180_000, "the sent version is untouched");
+  assertEquals(
+    (stored.pendingRevision as { estimatedTotal?: number } | undefined)
+      ?.estimatedTotal,
+    200_000,
+  );
+  const reply = res.newMessages.at(-1)!;
+  assertEquals(reply.role, "assistant");
+  assert(/Version 2/.test(reply.content), reply.content);
+  assert(!/Re-open/i.test(reply.content), reply.content);
+  await resetKv();
+});
+
+Deno.test("REQ-375 M11: a locked, unsent quote with its card in the thread — Re-open on the card is offered as the by-hand path", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const fx = fresh();
+  const { quote, conv } = await wizardQuoteInTerms(fx, "draft");
+  await fx.quotes.update(quote.id, "u-1", {
+    lockedAt: "2026-11-12T05:00:00Z",
+  } as never);
+  await fx.messages.append({
+    conversationId: conv.id,
+    role: "assistant",
+    kind: "action_card",
+    content: "Kitchen repaint",
+    payload: { actionType: "quote", status: "locked", quoteId: quote.id },
+  });
+  let prompt = "";
+  fx.llm.setHandler((req) => {
+    prompt = req.systemPrompt;
+    return { text: "ok" };
+  });
+  await fx.flow.run({
+    userId: "u-1",
+    conversationId: conv.id,
+    content: "how do I change the price?",
+  });
+  assert(TAP_REOPEN.test(prompt), prompt);
+  await resetKv();
+});

@@ -45,13 +45,22 @@ describe("REQ-334 Re-open on the locked quote card", () => {
     expect(src).toMatch(/reopenQuote:[\s\S]{0,400}\/reopen-quote/);
   });
 
-  test("REQ-334 the terms prompt (en + es) has no 'phase 1' dead end and points at the card's Re-open button", () => {
+  // REQ-375 AMENDMENT (demo-loop cycle 2, M11): the Re-open pointer moved out
+  // of the always-on systemTerms into the locked-unsent-with-card section —
+  // a sent quote has no Re-open button to point at.
+  test("REQ-334 / REQ-375 the terms prompt (en + es) has no 'phase 1' dead end; only the locked-with-card section points at the card's Re-open button", () => {
     for (const dict of [en, es]) {
       const p = dict["prompts.systemTerms"];
       expect(p).not.toMatch(/phase 1/i);
       expect(p).not.toContain('Tap "Re-open the quote"');
-      expect(p).toMatch(/Re-open/);
-      expect(p).toMatch(/quote card/i);
+      expect(p).not.toMatch(/tap Re-open/i);
+      const locked = dict["prompts.termsPriceChange.lockedCard"];
+      expect(locked).toMatch(/tap Re-open on the quote card/);
+      for (const k of ["issued", "signed", "open"]) {
+        expect(dict[`prompts.termsPriceChange.${k}`]).not.toMatch(
+          /tap Re-open on the quote card/,
+        );
+      }
     }
   });
 });
