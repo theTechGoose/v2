@@ -17,6 +17,7 @@ import {
 } from "@communication/domain/data/email-service/mod.ts";
 import { LogPaperworkMessage } from "@communication/domain/coordinators/log-paperwork-message/mod.ts";
 import { aliasFrom } from "@communication/domain/business/sender/mod.ts";
+import { senderInitials as senderInitialsOf } from "#identity/initials.ts";
 import {
   fmtPaperworkDate,
   invoiceStatusLabel,
@@ -729,15 +730,11 @@ export function renderQuoteHtml(
 
   const customerFirst = customer?.name?.trim().split(/\s+/)[0];
   const senderFirst = sender?.name?.trim()?.split(/\s+/)[0];
-  const senderInitials = (() => {
-    const n = sender?.name?.trim();
-    if (!n) return "PM";
-    const parts = n.split(/\s+/).filter(Boolean);
-    if (parts.length >= 2) {
-      return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
-    }
-    return parts[0].slice(0, 2).toUpperCase();
-  })();
+  // REQ-502: the sidebar's rule (name + business), not a local two-letter one
+  const senderInitials = senderInitialsOf(
+    { name: sender?.name, businessName: senderBiz?.businessName },
+    "PM",
+  );
 
   const summaryClean =
     (q.summary ?? t(lang, "paperworkEmail.quote.summaryFallback"))
@@ -1172,15 +1169,11 @@ export function renderInvoiceHtml(
 
   const customerFirst = customer?.name?.trim().split(/\s+/)[0];
   const senderFirst = sender?.name?.trim()?.split(/\s+/)[0];
-  const senderInitials = (() => {
-    const n = sender?.name?.trim();
-    if (!n) return "PM";
-    const parts = n.split(/\s+/).filter(Boolean);
-    if (parts.length >= 2) {
-      return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
-    }
-    return parts[0].slice(0, 2).toUpperCase();
-  })();
+  // REQ-502: the sidebar's rule (name + business), not a local two-letter one
+  const senderInitials = senderInitialsOf(
+    { name: sender?.name, businessName: senderBiz?.businessName },
+    "PM",
+  );
   const senderRoleLine = sender?.name?.trim()
     ? escapeHtml(sender.name.trim())
     : L.yourContractor;

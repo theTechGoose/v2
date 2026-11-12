@@ -15,6 +15,7 @@ import {
   greetingFirstName,
   isPlaceholderName,
 } from "../../shared/quote-flow/outbound-identity.ts";
+import { computeInitials } from "../../shared/identity/initials.ts";
 
 /** A translator bound to the live language. */
 export type Translate = (key: string, vars?: Record<string, string>) => string;
@@ -57,12 +58,21 @@ export interface SidebarIdentity {
   initials: string;
 }
 
-export function deriveInitials(src: string | undefined): string {
-  const s = src?.trim();
-  if (!s) return "•";
-  const parts = s.split(/\s+/).filter(Boolean);
-  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
-  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+/** REQ-502: the server's own rule (shared/identity/initials.ts) — a one-word
+ *  name pairs with the business ("Carl" + "Jensen Electric" → "CJ"). */
+export function deriveInitials(
+  src: string | undefined,
+  businessName?: string,
+): string {
+  const i = computeInitials(src?.trim(), businessName);
+  return i === "?" ? "•" : i;
+}
+
+/** The real business name the sidebar shows (never the placeholder). */
+function businessOf(profile: IdentitySource): string | undefined {
+  const bizRaw =
+    (profile.identity?.businessName ?? profile.identity?.displayName)?.trim();
+  return bizRaw && !isPlaceholderName(bizRaw) ? bizRaw : undefined;
 }
 
 export function sidebarIdentity(
@@ -72,19 +82,21 @@ export function sidebarIdentity(
   if (!profile) return null;
   const raw = profile.user?.name?.trim();
   const userName = raw && !isPlaceholderName(raw) ? raw : undefined;
-  const bizRaw =
-    (profile.identity?.businessName ?? profile.identity?.displayName)?.trim();
-  const bizName = bizRaw && !isPlaceholderName(bizRaw) ? bizRaw : undefined;
+  const bizName = businessOf(profile);
   if (userName) {
     // the server's initials are computed from this same real name
     const server = profile.initials?.trim();
     return {
       display: userName,
       ...(bizName ? { biz: bizName } : {}),
-      initials: server && server !== "?" ? server : deriveInitials(userName),
+      initials: server && server !== "?"
+        ? server
+        : deriveInitials(userName, bizName),
     };
   }
-  if (bizName) return { display: bizName, initials: deriveInitials(bizName) };
+  if (bizName) {
+    return { display: bizName, initials: deriveInitials(undefined, bizName) };
+  }
   return { display: t("common.account"), initials: deriveInitials(undefined) };
 }
 
@@ -98,6 +110,6 @@ export function withSavedName<P extends IdentitySource>(
     ...profile,
     user: { ...profile.user, name },
     // the server initials were derived from the old name — re-derive
-    initials: real ? deriveInitials(name) : undefined,
+    initials: real ? deriveInitials(name, businessOf(profile)) : undefined,
   };
 }
