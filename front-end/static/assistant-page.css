@@ -4619,6 +4619,12 @@ body {
   background: var(--green-50);
   color: var(--green-600);
 }
+/* REQ-453: a quote moving along normally (locked, terms wizard, picking
+   details, ready to send) — neutral teal, not the pink alert tone. */
+.thread__chip--progress {
+  background: var(--teal-50);
+  color: var(--teal-600);
+}
 .thread__chip--needs {
   background: var(--pink-50);
   color: var(--pink-700);
