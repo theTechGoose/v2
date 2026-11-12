@@ -97,15 +97,25 @@ export class DemoModeSocketController {
       if (typeof e.data !== "string") return;
       const m = parseClientMessage(e.data);
       if (!m) return;
-      if (m.t === "end") {
-        const demo = await this.demos.end(sessionId);
-        // REQ-235 — everyone hears who ended it
-        if (demo) {
-          await this.hub.end(sessionId, role, undefined, pid ?? undefined);
+      // A message still in flight when the store goes away (a shutdown, a test's teardown) must
+      // not become an unhandled rejection — Deno ends the whole process on one.
+      try {
+        if (m.t === "end") {
+          const demo = await this.demos.end(sessionId);
+          // REQ-235 — everyone hears who ended it
+          if (demo) {
+            await this.hub.end(sessionId, role, undefined, pid ?? undefined);
+          }
+          return;
         }
-        return;
+        await this.hub.send(
+          sessionId,
+          { role, ...(pid ? { pid } : {}), cid },
+          m,
+        );
+      } catch (err) {
+        console.warn("[demo-socket] message not delivered:", err);
       }
-      await this.hub.send(sessionId, { role, ...(pid ? { pid } : {}), cid }, m);
     };
     socket.onclose = onGone;
     socket.onerror = onGone;
