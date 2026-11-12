@@ -476,7 +476,13 @@ Deno.test("REQ-205: GET /quotes/:id/ledger — invoices with numbers and statuse
     );
     assertEquals(ledger1.invoicedCents, 100000);
     assertEquals(ledger1.remainingToInvoiceCents, 0);
-    assertEquals(ledger1.invoicedUnpaidCents, 100000);
+    // REQ-481 (demo M28): the second milestone is scheduled, not billed —
+    // only INV-001 is "invoiced but unpaid"; INV-002 is the Scheduled row.
+    assertEquals(ledger1.invoices[1].status, "scheduled");
+    assertEquals(ledger1.billedCents, 50000);
+    assertEquals(ledger1.scheduledCents, 50000);
+    assertEquals(ledger1.invoicedUnpaidCents, 50000);
+    assertEquals(ledger1.nextScheduled.number, "INV-002");
     // a change order on the first invoice, approved → agreed total grows, remaining to invoice grows
     const first = ledger1.invoices[0];
     const co = await post(`/invoices/${first.id}/change-orders`, auth(sid), {
@@ -505,7 +511,9 @@ Deno.test("REQ-205: GET /quotes/:id/ledger — invoices with numbers and statuse
       "the approved change order is on INV-001",
     );
     assertEquals(ledger2.paidCents, 70000);
-    assertEquals(ledger2.invoicedUnpaidCents, 50000);
+    // REQ-481: INV-001 is paid and INV-002 is still scheduled — nothing billed is unpaid.
+    assertEquals(ledger2.invoicedUnpaidCents, 0);
+    assertEquals(ledger2.scheduledCents, 50000);
     assertEquals(ledger2.remainingToInvoiceCents, 0);
     assertEquals(ledger2.changeOrders[0].number, "CO-001");
     assertEquals(ledger2.changeOrders[0].invoiceNumber, "INV-001");

@@ -129,11 +129,34 @@ export type QuotesHeroMode =
   | "warm"
   | "stale";
 
+/** REQ-481 (demo-loop cycle 3, m10): which headline the /quotes hero shows.
+ *  "Nothing sent yet — N drafts ready" is only for an account with NO
+ *  history: once a quote was signed or lost, drafts beside it are a note
+ *  under the settled headline, never "nothing sent". One rule for
+ *  quotesHeroNumbers and the QuotesHero component. */
+export function quotesHeroMode(
+  { total, out, stale, drafts, decided }: {
+    total: number;
+    out: number;
+    stale: number;
+    drafts: number;
+    decided: number;
+  },
+): QuotesHeroMode {
+  if (total === 0) return "empty";
+  if (out > 0) return stale > 0 ? "stale" : "warm";
+  if (drafts > 0 && decided === 0) return "draftsOnly";
+  return "settled";
+}
+
 /** REQ-404 (demo-loop cycle 2, m13): the /quotes hero's numbers. The money
  *  "sitting with clients" and the "N open quotes across M clients" line count
  *  only quotes that actually went out (OUT_STAGES); unsent drafts are
  *  reported apart ("$X drafting"), and when drafts are all there is the
- *  headline says nothing has been sent yet. Pass REAL quotes only (P-15). */
+ *  headline says nothing has been sent yet. Pass REAL quotes only (P-15).
+ *  REQ-481: `decidedCount` (won + lost) keeps a signed quote from reading
+ *  "Nothing sent yet"; `undeliveredCount` is the part of the drafts whose
+ *  send reached nobody — the hero says "Not delivered", not "draft". */
 export function quotesHeroNumbers(
   real: ReadonlyArray<
     {
@@ -151,6 +174,9 @@ export function quotesHeroNumbers(
   staleCount: number;
   draftCount: number;
   draftTotal: number;
+  decidedCount: number;
+  undeliveredCount: number;
+  undeliveredTotal: number;
 } {
   const out = real.filter((q) => OUT_STAGES.includes(q.stage as Stage));
   const drafts = real.filter((q) =>
@@ -158,13 +184,16 @@ export function quotesHeroNumbers(
   );
   const sum = (xs: typeof real) => xs.reduce((a, q) => a + (q.value || 0), 0);
   const staleCount = out.filter((q) => q.stage === "stale").length;
-  const mode: QuotesHeroMode = real.length === 0
-    ? "empty"
-    : out.length > 0
-    ? (staleCount > 0 ? "stale" : "warm")
-    : drafts.length > 0
-    ? "draftsOnly"
-    : "settled";
+  const undelivered = drafts.filter((q) => q.stage === "undelivered");
+  const decidedCount =
+    real.filter((q) => q.stage === "won" || q.stage === "lost").length;
+  const mode = quotesHeroMode({
+    total: real.length,
+    out: out.length,
+    stale: staleCount,
+    drafts: drafts.length,
+    decided: decidedCount,
+  });
   return {
     mode,
     outCount: out.length,
@@ -173,7 +202,63 @@ export function quotesHeroNumbers(
     staleCount,
     draftCount: drafts.length,
     draftTotal: sum(drafts),
+    decidedCount,
+    undeliveredCount: undelivered.length,
+    undeliveredTotal: sum(undelivered),
   };
+}
+
+/** REQ-481 (demo-loop cycle 3, m10): the hero's change-order line. A
+ *  change order waiting on the customer is something waiting on a client —
+ *  "CO-001 is waiting on Karen." — so "Nothing is waiting" is never shown
+ *  over one. Null when none is pending. */
+export function heroCoWaiting(
+  pending: ReadonlyArray<{ number: string; client: string }>,
+): {
+  key: "quotesHero.coWaiting.one" | "quotesHero.coWaiting.other";
+  vars: { number: string; client: string; n: number };
+} | null {
+  if (pending.length === 0) return null;
+  const first = pending[0];
+  return {
+    key: pending.length === 1
+      ? "quotesHero.coWaiting.one"
+      : "quotesHero.coWaiting.other",
+    vars: { number: first.number, client: first.client, n: pending.length },
+  };
+}
+
+/** REQ-481 (demo-loop cycle 3, M28): a /quotes card's money is the
+ *  agreement — the quote plus its approved change orders (what the quote
+ *  ledger calls the agreement total), not the bare quote. */
+export function quoteCardValue(
+  c: { estimatedTotal?: number; approvedChangeOrdersCents?: number },
+): number {
+  return Math.max(
+    0,
+    (c.estimatedTotal ?? 0) + (c.approvedChangeOrdersCents ?? 0),
+  );
+}
+
+/** REQ-481 (demo-loop cycle 3, m10): the /invoices Drafting KPI's sub-line.
+ *  With no draft open but an installment scheduled, it names the scheduled
+ *  one instead of "no drafts open" beside a row that reads Scheduled. */
+export function draftingKpiSub(
+  draftingCount: number,
+  scheduledCount: number,
+): { key: string; n: number } {
+  if (draftingCount > 0) {
+    return { key: "invoicesPage.kpi.draftingSub", n: draftingCount };
+  }
+  if (scheduledCount > 0) {
+    return {
+      key: `invoicesPage.kpi.draftingSubScheduled.${
+        scheduledCount === 1 ? "one" : "other"
+      }`,
+      n: scheduledCount,
+    };
+  }
+  return { key: "invoicesPage.kpi.draftingSubEmpty", n: 0 };
 }
 
 /** REQ-404 (m13): the dashboard's "Quotes awaiting signature" empty line.

@@ -116,6 +116,7 @@ export type CustomerLastTone = "hot" | "warm" | "cold";
 /** REQ-323 — the lifecycle states `quoteState` / `invoiceState` (shared/documents/versions.ts) name. */
 export type CustomerDocState =
   | "draft"
+  | "scheduled"
   | "sent"
   | "accepted"
   | "declined"

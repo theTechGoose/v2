@@ -77,6 +77,11 @@ export interface QuoteCard {
   lastOpenAt: string | null;
   sentDays: number | null;
   decidedDays: number | null;
+  /** REQ-481: approved change orders, summed (cents) — the card's value is
+   *  the quote plus these (the ledger's agreement total). */
+  approvedChangeOrdersCents?: number;
+  /** REQ-481: numbers of the change orders still waiting on the customer. */
+  pendingChangeOrders?: string[];
   [k: string]: unknown;
 }
 

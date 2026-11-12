@@ -8,6 +8,7 @@ import { fmtMoney } from "../lib/format.ts";
 import { type Lang, tFor } from "../lib/i18n.ts";
 import { type Quote } from "../lib/quotes-seed.ts";
 import DeleteQuoteButton from "../islands/DeleteQuoteButton.tsx";
+import { heroCoWaiting, quotesHeroMode } from "../lib/headline-counts.ts";
 
 /** Explicit-language plural picker for SSR components (mirrors tn() but
  *  honors the resolved `lang` prop instead of the reactive langSignal). */
@@ -42,6 +43,15 @@ interface HeroProps {
    *  when the user has zero quotes, period — never above a resolved card
    *  (P-37). Defaults to openCount for legacy call sites. */
   totalCount?: number;
+  /** REQ-481 (m10): signed + lost quotes — with any, drafts never read
+   *  "Nothing sent yet". */
+  decidedCount?: number;
+  /** REQ-481 (m10): the part of draftCount whose send reached nobody. */
+  undeliveredCount?: number;
+  /** REQ-481: the value of those undelivered quotes (part of draftTotal). */
+  undeliveredTotal?: number;
+  /** REQ-481 (m10): change orders waiting on the customer. */
+  pendingChangeOrders?: ReadonlyArray<{ number: string; client: string }>;
   lang?: Lang;
 }
 
@@ -54,28 +64,58 @@ export function QuotesHero(
     staleCount,
     clientCount,
     totalCount,
+    decidedCount = 0,
+    undeliveredCount = 0,
+    undeliveredTotal = 0,
+    pendingChangeOrders = [],
     lang = "en",
   }: HeroProps,
 ) {
   // P-37: the giant empty-state hero used to shout over an APROBADA card
-  // because it only counted OPEN quotes.
-  const empty = (totalCount ?? openCount) === 0;
-  // REQ-404 (m13): nothing sent, but drafts are ready — say exactly that,
-  // never "$X of work sitting with clients" over unsent drafts.
-  const draftsOnly = !empty && openCount === 0 && draftCount > 0;
-  // Nothing open, but there IS history — say that instead of "no pipeline".
-  const settled = !empty && !draftsOnly && openCount === 0;
-  const allWarm = !empty && !draftsOnly && !settled && staleCount === 0;
+  // because it only counted OPEN quotes. REQ-404 (m13): nothing sent, but
+  // drafts are ready — say exactly that, never "$X of work sitting with
+  // clients" over unsent drafts. REQ-481 (m10): only with no signed/lost
+  // history — otherwise it is the settled headline plus the drafting note.
+  const mode = quotesHeroMode({
+    total: totalCount ?? openCount,
+    out: openCount,
+    stale: staleCount,
+    drafts: draftCount,
+    decided: decidedCount,
+  });
+  const empty = mode === "empty";
+  const draftsOnly = mode === "draftsOnly";
+  const settled = mode === "settled";
+  const allWarm = mode === "warm";
   const openQuotes = tnFor(lang, "quotesHero.openQuotes", openCount);
   const clients = tnFor(lang, "quotesHero.clients", clientCount);
+  // REQ-481 (m10): a send that reached nobody is "Not delivered", not a draft.
+  const readyDrafts = Math.max(0, draftCount - undeliveredCount);
+  const onlyUndelivered = undeliveredCount > 0 && readyDrafts === 0;
   // REQ-404: drafts beside an out pipeline get their own line.
-  const draftingNote = draftCount > 0
+  const draftingNote = readyDrafts > 0
     ? (
       <p class="qph__sub" data-cy="quotes-hero-drafting">
         {tFor(lang, "quotesHero.draftingNote", {
-          amount: fmtMoney(draftTotal),
-          drafts: tnFor(lang, "quotesHero.drafts", draftCount),
+          amount: fmtMoney(Math.max(0, draftTotal - undeliveredTotal)),
+          drafts: tnFor(lang, "quotesHero.drafts", readyDrafts),
         })}
+      </p>
+    )
+    : null;
+  const undeliveredNote = undeliveredCount > 0
+    ? (
+      <p class="qph__sub" data-cy="quotes-hero-undelivered">
+        {tnFor(lang, "quotesHero.undeliveredNote", undeliveredCount)}
+      </p>
+    )
+    : null;
+  // REQ-481 (m10): a change order waiting on the customer is named.
+  const coWaiting = heroCoWaiting(pendingChangeOrders);
+  const coLine = coWaiting
+    ? (
+      <p class="qph__sub" data-cy="quotes-hero-co-waiting">
+        <strong>{tFor(lang, coWaiting.key, coWaiting.vars)}</strong>
       </p>
     )
     : null;
@@ -99,30 +139,54 @@ export function QuotesHero(
               </p>
             </>
           )
+          : draftsOnly && onlyUndelivered
+          ? (
+            <>
+              <h1 class="qph__title" data-cy="quotes-hero-undelivered">
+                <em>
+                  {tnFor(lang, "quotesHero.undeliveredTitle", undeliveredCount)}
+                </em>
+              </h1>
+              <p class="qph__sub">
+                {tFor(lang, "quotesHero.undeliveredSub")}
+              </p>
+            </>
+          )
           : draftsOnly
           ? (
             <>
               <h1 class="qph__title" data-cy="quotes-hero-drafts-only">
                 <em>
-                  {tnFor(lang, "quotesHero.draftsOnlyTitle", draftCount)}
+                  {tnFor(lang, "quotesHero.draftsOnlyTitle", readyDrafts)}
                 </em>
               </h1>
               <p class="qph__sub">
                 {tFor(lang, "quotesHero.draftsOnlySub", {
-                  amount: fmtMoney(draftTotal),
+                  amount: fmtMoney(Math.max(0, draftTotal - undeliveredTotal)),
                 })}
               </p>
+              {undeliveredNote}
             </>
           )
           : settled
           ? (
             <>
-              <h1 class="qph__title">
-                <em>{tFor(lang, "quotesHero.settledTitle")}</em>
-              </h1>
+              {coWaiting
+                ? (
+                  <h1 class="qph__title" data-cy="quotes-hero-co-waiting">
+                    <em>{tFor(lang, coWaiting.key, coWaiting.vars)}</em>
+                  </h1>
+                )
+                : (
+                  <h1 class="qph__title">
+                    <em>{tFor(lang, "quotesHero.settledTitle")}</em>
+                  </h1>
+                )}
               <p class="qph__sub">
                 {tFor(lang, "quotesHero.settledSub")}
               </p>
+              {draftingNote}
+              {undeliveredNote}
             </>
           )
           : allWarm
@@ -136,6 +200,8 @@ export function QuotesHero(
                 {tFor(lang, "quotesHero.warmSub", { openQuotes, clients })}
               </p>
               {draftingNote}
+              {undeliveredNote}
+              {coLine}
             </>
           )
           : (
@@ -159,6 +225,8 @@ export function QuotesHero(
                 {tFor(lang, "quotesHero.staleSubPost")}
               </p>
               {draftingNote}
+              {undeliveredNote}
+              {coLine}
             </>
           )}
       </div>

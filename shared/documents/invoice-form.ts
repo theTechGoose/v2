@@ -371,7 +371,7 @@ export function invoiceHeadline(
     version,
     state,
     revised: version > 1 && state !== "paid" && state !== "void" &&
-      state !== "draft",
+      state !== "draft" && state !== "scheduled",
   };
 }
 
