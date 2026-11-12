@@ -81,3 +81,41 @@ Deno.test("composeAddressLine: leading/trailing whitespace on real values is tri
     "123 Main St, Austin, TX 78701",
   );
 });
+
+// REQ-420 (demo-loop cycle 2, issue m28): rows saved before the save path split
+// one-line streets still hold the whole address in `street` — the line must not
+// repeat the state (or ZIP / city) the street already ends with.
+Deno.test("REQ-420 m28: a street that already ends with 'City, ST ZIP' is not followed by the state again", () => {
+  assertEquals(
+    composeAddressLine({ street: "1200 E Cesar Chavez St, Austin, TX 78702", state: "TX" }),
+    "1200 E Cesar Chavez St, Austin, TX 78702",
+  );
+  assertEquals(
+    composeAddressLine({
+      street: "1200 E Cesar Chavez St, Austin, TX 78702",
+      city: "Austin",
+      state: "TX",
+      postal: "78702",
+    }),
+    "1200 E Cesar Chavez St, Austin, TX 78702",
+  );
+  assertEquals(
+    composeAddressLine({ street: "1200 E Cesar Chavez St, Austin, Texas", state: "TX" }),
+    "1200 E Cesar Chavez St, Austin, Texas",
+  );
+  assertEquals(
+    composeAddressLine({ street: "1200 E Cesar Chavez St, Austin, TX 78702", state: "tx" }),
+    "1200 E Cesar Chavez St, Austin, TX 78702",
+  );
+});
+
+Deno.test("REQ-420 m28: a street that merely contains the state's letters still gets the city/state half", () => {
+  assertEquals(
+    composeAddressLine({ street: "12 Texas Ave", city: "Houston", state: "TX", postal: "77002" }),
+    "12 Texas Ave, Houston, TX 77002",
+  );
+  assertEquals(
+    composeAddressLine({ street: "5 Tx Rd", city: "Austin", state: "TX" }),
+    "5 Tx Rd, Austin, TX",
+  );
+});
