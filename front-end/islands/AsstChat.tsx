@@ -37,6 +37,7 @@ import {
   swapInvoiceCents,
 } from "../../shared/documents/ledger.ts";
 import { smsRecoveryAsk } from "../../shared/quote-flow/sms-failure.ts";
+import { localizeChatMessage } from "../../shared/quote-flow/chat-i18n.ts"; // REQ-589
 import {
   confirmedDescriptionByLang,
   descriptionLines,
@@ -6674,7 +6675,13 @@ export default function AsstChat({
               // too instead of showing a dimmed "Superseded" card and live
               // buttons for an already-answered question.
               const hiddenOnReload = hiddenOnReloadIds(messages);
-              const visible = messages.filter((m) => {
+              // REQ-589 (demo-loop cycle 4, M15 / m15): a server-written
+              // line (wizard question + options, pick line, dividers, the
+              // send reason) re-renders from its i18n key in the live
+              // language; rows without a key render as stored.
+              const visible = messages.map((m) =>
+                localizeChatMessage(m, lang, tFor)
+              ).filter((m) => {
                 if (hiddenOnReload.has(m.id)) return false;
                 if (m.kind !== "wizard") return true;
                 const stepId = (m.payload as { stepId?: string } | undefined)

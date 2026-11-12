@@ -148,3 +148,27 @@ Deno.test("REQ-488: invoice claim_rejected maps to a 'marked as not received' ro
     "Marcaste el pago de María Pérez como no recibido",
   );
 });
+
+// REQ-589 (demo-loop cycle 4, m15): a Spanish quote accepted while the
+// contractor reads in English (or the reverse) named the job in the language
+// the event happened to carry ("aceptó tu cotización de Furniture Removal").
+// The event now carries the per-language job names and the feed picks the
+// reader's.
+Deno.test("REQ-589 m15: quote accepted names the job in the reader's language", () => {
+  const e = {
+    userId: "u-1",
+    entityType: "quote",
+    entityId: "q-1",
+    action: "accepted",
+    data: {
+      customerName: "María",
+      jobName: "Furniture Removal",
+      jobNameByLang: { en: "Furniture Removal", es: "Retiro de muebles" },
+    },
+    timestamp: "2026-11-11T12:00:00.000Z",
+  } as DomainEvent;
+  const es = feedTitle(e, "es");
+  const en = feedTitle(e, "en");
+  assertEquals(es, "María aceptó tu cotización de Retiro de muebles");
+  assertEquals(en, "María accepted your quote for Furniture Removal");
+});

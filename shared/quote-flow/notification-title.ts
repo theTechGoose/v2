@@ -54,9 +54,20 @@ function fmtCents(cents: number): string {
  *     `amount` is pre-formatted.
  *   - `method` (the PaymentMethod enum, "zelle") → its localized phrase.
  */
-function renderParams(tr: NotifTranslate, params?: NotifVars): NotifVars {
+function renderParams(
+  tr: NotifTranslate,
+  params?: NotifVars,
+  lang?: "en" | "es",
+): NotifVars {
   if (!params) return {};
   const out: NotifVars = { ...params };
+  // REQ-589 (demo-loop cycle 4, m15): the job's name in the reader's
+  // language (`job_en` / `job_es`, from the quote's jobNameByLang), else the
+  // one name the event carried.
+  const jobInLang = lang ? params[`job_${lang}`] : undefined;
+  if (typeof jobInLang === "string" && jobInLang.trim()) out.job = jobInLang;
+  delete out.job_en;
+  delete out.job_es;
   if (typeof params.amountCents === "number") {
     out.amount = fmtCents(params.amountCents);
   } else if (typeof params.amount === "number") {
@@ -79,10 +90,11 @@ export function renderNotifString(
   tr: NotifTranslate,
   key: string,
   params?: NotifVars,
+  lang?: "en" | "es",
 ): string {
   return tr(key, {
     name: tr("notify.fallbackClient"),
-    ...renderParams(tr, params),
+    ...renderParams(tr, params, lang),
   });
 }
 
@@ -93,7 +105,10 @@ export function renderNotifString(
 export function notificationTitle(
   tr: NotifTranslate,
   n: LocalizableNotification,
+  lang?: "en" | "es",
 ): string {
   if (!n.titleKey) return n.title;
-  return sentenceCase(renderNotifString(tr, n.titleKey, n.titleParams));
+  return sentenceCase(
+    renderNotifString(tr, n.titleKey, n.titleParams, lang),
+  );
 }

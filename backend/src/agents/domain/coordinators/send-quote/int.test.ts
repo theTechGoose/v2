@@ -950,3 +950,70 @@ Deno.test("REQ-525 send-quote: a failed text's divider label is short and does n
   );
   await resetKv();
 });
+
+// REQ-589 (demo-loop cycle 4, m15): pair 7 sent while in English and switched
+// to Spanish — the divider still read "Text not delivered" over "that's a
+// reserved test number…". The label and the reason were baked in the UI
+// language at send time; now they carry their keys.
+Deno.test("REQ-589 m15 send-quote: the send divider's label and SMS reason re-render in the other language", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const { ctx: _ctx, payload, label } = await sendSmsTo("+15125550123");
+  assertEquals(label, "Text not delivered");
+  const { localizeChatMessage } = await import("#quote-flow/chat-i18n.ts");
+  const { t } = await import("@core/i18n/mod.ts");
+  const es = localizeChatMessage(
+    { content: label, payload },
+    "es",
+    (l: "en" | "es", k: string, v?: Record<string, string | number>) =>
+      t(l, k, v),
+  );
+  const p = es.payload as { label?: string; smsFailureReason?: string };
+  assertEquals(es.content, t("es", "sendQuote.divider.textNotDelivered"));
+  assertEquals(p.label, t("es", "sendQuote.divider.textNotDelivered"));
+  assertEquals(p.smsFailureReason, t("es", "sms.fictionalNumber"));
+  await resetKv();
+});
+
+Deno.test("REQ-589 m15 send-quote: a missing recipient inside a 'both' note re-renders whole", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const ctx = fresh();
+  await seedContractor("u-es3", "es");
+  const customer = await ctx.customers.create("u-es3", { name: "Sin Correo" });
+  const quote = await ctx.quotes.create("u-es3", {
+    summary: "Roof",
+    lineItems: [],
+    estimatedTotal: 12_500,
+    status: "draft",
+    customerId: customer.id,
+  });
+  const conv = await ctx.conversations.create({
+    userId: "u-es3",
+    quoteId: quote.id,
+    customerId: customer.id,
+  });
+  const r = await ctx.flow.run({
+    userId: "u-es3",
+    conversationId: conv.id,
+    quoteId: quote.id,
+    channel: "both",
+  });
+  const { localizeChatMessage } = await import("#quote-flow/chat-i18n.ts");
+  const { t } = await import("@core/i18n/mod.ts");
+  const en = localizeChatMessage(
+    r.newMessages[0],
+    "en",
+    (l: "en" | "es", k: string, v?: Record<string, string | number>) =>
+      t(l, k, v),
+  );
+  const noRecipient = t("en", "sendQuote.divider.noRecipient");
+  assertEquals(
+    en.content,
+    t("en", "sendQuote.divider.notDelivered", {
+      emailReason: noRecipient,
+      smsReason: noRecipient,
+    }),
+  );
+  await resetKv();
+});

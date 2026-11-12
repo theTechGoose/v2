@@ -69,9 +69,11 @@ const HTML_ESCAPES: Record<string, string> = {
 export function tickerTitleHtml(
   item: LocalizableNotification,
   tr: NotifTranslate,
+  lang?: "en" | "es",
 ): string {
   if (!item.titleKey) return item.title;
-  return notificationTitle(tr, item).replace(
+  // REQ-589 (cycle 4, m15): `lang` picks the job's name in that language.
+  return notificationTitle(tr, item, lang).replace(
     /[&<>"']/g,
     (c) => HTML_ESCAPES[c],
   );

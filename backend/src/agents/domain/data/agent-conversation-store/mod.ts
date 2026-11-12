@@ -86,8 +86,14 @@ export class AgentConversationStore {
     const definedPatch = Object.fromEntries(
       Object.entries(patch).filter(([_, v]) => v !== undefined),
     );
+    // REQ-589 (cycle 4, M15): a preview written without a key replaces the
+    // keyed one — the old key must not re-render over the new text.
+    const base: AgentConversation = { ...existing };
+    if (patch.preview !== undefined && patch.previewI18n === undefined) {
+      delete base.previewI18n;
+    }
     const next: AgentConversation = {
-      ...existing,
+      ...base,
       ...definedPatch,
       id: existing.id,
       userId: existing.userId,

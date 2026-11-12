@@ -3,6 +3,7 @@ import { I, ICN } from "../lib/dash-icons.tsx";
 import { assistantClient, type Conversation } from "../clients/assistant.ts";
 import { type Lang, langSignal, tFor } from "../lib/i18n.ts";
 import { threadTitle } from "../../shared/quote-flow/thread-title.ts";
+import { localizedPreview } from "../../shared/quote-flow/chat-i18n.ts"; // REQ-589
 import {
   threadChip,
   type ThreadChipKind,
@@ -289,7 +290,10 @@ export default function AsstThreads(
                           {fmtTime(c.updatedAt, lang)}
                         </span>
                       </div>
-                      <div class="thread__preview">{c.preview ?? "—"}</div>
+                      <div class="thread__preview">
+                        {/* REQ-589 (cycle 4, M15): in the live language. */}
+                        {localizedPreview(c, lang, tFor) ?? "—"}
+                      </div>
                       {chip && (
                         <div class="thread__chips">
                           <span

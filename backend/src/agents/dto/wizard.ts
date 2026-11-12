@@ -1,5 +1,6 @@
 import { IsOptional, IsString, validateSync } from "#class-validator";
 import { plainToInstance } from "#class-transformer";
+import type { ChatOptionI18n } from "#quote-flow/chat-i18n.ts"; // REQ-589
 
 /**
  * Wizard data shapes for phase 2.
@@ -22,6 +23,8 @@ export interface WizardOption {
   subAmounts?: string;
   /** When true, the user is expected to supply a free-text customValue. */
   isCustom?: boolean;
+  /** REQ-589: on an emitted option, the keys its label/sub came from. */
+  i18n?: ChatOptionI18n;
 }
 
 export interface WizardStep {

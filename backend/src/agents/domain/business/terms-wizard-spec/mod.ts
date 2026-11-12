@@ -102,6 +102,12 @@ export function localizeOptions(
       ...o,
       label: t(lang, o.label),
       ...(subKey ? { sub: t(lang, subKey, subVars) } : {}),
+      // REQ-589 (cycle 4, M15): the keys ride along, so the island
+      // re-renders the option after an EN/ES switch.
+      i18n: {
+        label: o.label,
+        ...(subKey ? { sub: { key: subKey, vars: subVars } } : {}),
+      },
     };
   });
 }
