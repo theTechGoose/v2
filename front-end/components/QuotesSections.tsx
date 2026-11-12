@@ -28,8 +28,14 @@ function wonLostLine(lang: Lang, won: number, lost: number): string {
 }
 
 interface HeroProps {
+  /** REQ-404 (m13): quotes that actually went OUT (OUT_STAGES) — never
+   *  drafts; openTotal is their value, clientCount their clients. */
   openCount: number;
   openTotal: number;
+  /** REQ-404: unsent real drafts, reported apart from the money with
+   *  clients ("$X drafting"); with nothing out they ARE the headline. */
+  draftCount?: number;
+  draftTotal?: number;
   staleCount: number;
   clientCount: number;
   /** REAL quotes total (open + resolved). The empty-state hero renders only
@@ -40,17 +46,39 @@ interface HeroProps {
 }
 
 export function QuotesHero(
-  { openCount, openTotal, staleCount, clientCount, totalCount, lang = "en" }:
-    HeroProps,
+  {
+    openCount,
+    openTotal,
+    draftCount = 0,
+    draftTotal = 0,
+    staleCount,
+    clientCount,
+    totalCount,
+    lang = "en",
+  }: HeroProps,
 ) {
   // P-37: the giant empty-state hero used to shout over an APROBADA card
   // because it only counted OPEN quotes.
   const empty = (totalCount ?? openCount) === 0;
+  // REQ-404 (m13): nothing sent, but drafts are ready — say exactly that,
+  // never "$X of work sitting with clients" over unsent drafts.
+  const draftsOnly = !empty && openCount === 0 && draftCount > 0;
   // Nothing open, but there IS history — say that instead of "no pipeline".
-  const settled = !empty && openCount === 0;
-  const allWarm = !empty && !settled && staleCount === 0;
+  const settled = !empty && !draftsOnly && openCount === 0;
+  const allWarm = !empty && !draftsOnly && !settled && staleCount === 0;
   const openQuotes = tnFor(lang, "quotesHero.openQuotes", openCount);
   const clients = tnFor(lang, "quotesHero.clients", clientCount);
+  // REQ-404: drafts beside an out pipeline get their own line.
+  const draftingNote = draftCount > 0
+    ? (
+      <p class="qph__sub" data-cy="quotes-hero-drafting">
+        {tFor(lang, "quotesHero.draftingNote", {
+          amount: fmtMoney(draftTotal),
+          drafts: tnFor(lang, "quotesHero.drafts", draftCount),
+        })}
+      </p>
+    )
+    : null;
   return (
     <div class="qph">
       <div>
@@ -68,6 +96,21 @@ export function QuotesHero(
               </h1>
               <p class="qph__sub">
                 {tFor(lang, "quotesHero.emptySub")}
+              </p>
+            </>
+          )
+          : draftsOnly
+          ? (
+            <>
+              <h1 class="qph__title" data-cy="quotes-hero-drafts-only">
+                <em>
+                  {tnFor(lang, "quotesHero.draftsOnlyTitle", draftCount)}
+                </em>
+              </h1>
+              <p class="qph__sub">
+                {tFor(lang, "quotesHero.draftsOnlySub", {
+                  amount: fmtMoney(draftTotal),
+                })}
               </p>
             </>
           )
@@ -92,6 +135,7 @@ export function QuotesHero(
               <p class="qph__sub">
                 {tFor(lang, "quotesHero.warmSub", { openQuotes, clients })}
               </p>
+              {draftingNote}
             </>
           )
           : (
@@ -114,6 +158,7 @@ export function QuotesHero(
                 <strong>{staleCount}</strong>{" "}
                 {tFor(lang, "quotesHero.staleSubPost")}
               </p>
+              {draftingNote}
             </>
           )}
       </div>

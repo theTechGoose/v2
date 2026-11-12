@@ -58,7 +58,10 @@ import {
   linesPatch,
   nextVersionOf,
 } from "../lib/quote-line-edit.ts";
-import { countOpenClients, sampleTrackCounts } from "../lib/headline-counts.ts";
+import {
+  quotesHeroNumbers,
+  sampleTrackCounts,
+} from "../lib/headline-counts.ts";
 import {
   buildViewedReceipt,
   classifyReceipts,
@@ -1181,12 +1184,10 @@ export default function QuotesPage(_props: { lang?: "en" | "es" }) {
   const draftCards = quotes.filter((q) => DRAFT_TRACK_STAGES.includes(q.stage));
   const decidedCards = quotes.filter((q) => ["won", "lost"].includes(q.stage));
 
-  // Aggregates (real quotes only):
-  const open = real.filter((q) =>
-    DRAFT_TRACK_STAGES.includes(q.stage) || OUT_STAGES.includes(q.stage)
-  );
-  const openTotal = open.reduce((acc, q) => acc + q.value, 0);
-  const stale = real.filter((q) => q.stage === "stale");
+  // Aggregates (real quotes only). REQ-404 (demo cycle 2, m13): the hero's
+  // money and client count are what actually went out — unsent drafts are
+  // reported apart, never as "work sitting with clients".
+  const heroNums = quotesHeroNumbers(real);
   const out = outCards.filter(isReal);
   const outCounts = sampleTrackCounts(outCards);
   const outVal = out.reduce((acc, q) => acc + q.value, 0);
@@ -1218,13 +1219,16 @@ export default function QuotesPage(_props: { lang?: "en" | "es" }) {
         // P-37: "empty" means zero REAL quotes TOTAL (open or resolved) —
         // the giant empty-state hero never shouts above a real card.
         totalCount={real.length}
-        openCount={open.length}
-        openTotal={openTotal}
-        staleCount={stale.length}
+        openCount={heroNums.outCount}
+        openTotal={heroNums.outTotal}
+        staleCount={heroNums.staleCount}
         // REQ-243: count clients from the same field the card shows (the
         // linked customer, else the card's name). Placeholder "—" names count
         // for nobody, so unlinked quotes never become a phantom client (#31).
-        clientCount={countOpenClients(open)}
+        // REQ-404: over the OUT quotes only (quotesHeroNumbers).
+        clientCount={heroNums.outClients}
+        draftCount={heroNums.draftCount}
+        draftTotal={heroNums.draftTotal}
       />
       <QuotesKpis
         lang={lang}
