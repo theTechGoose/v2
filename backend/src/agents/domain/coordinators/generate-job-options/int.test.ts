@@ -545,8 +545,24 @@ Deno.test("REQ-400 (M21) a model that splits the job twice: the parts merge into
   const res = await coord.run({ userId: "u1", raw: PRIYA_RAW, langs: ["en", "es"] });
   assertEquals(n, 2);
   assertEquals(res.degraded, false);
-  assertEquals(res.options[0].bullets, [...V1, ...V2, ...V3]);
-  assertEquals(res.options[0].byLang.es.bullets, [...V1_ES, ...V2_ES, ...V3_ES]);
+  // REQ-439 (M9) amendment: the typed "60in" and "4 recessed lights" that
+  // both replies dropped go back into the lines that name them.
+  const kept = (lines: string[], swap: Record<string, string>) =>
+    lines.map((l) => swap[l] ?? l);
+  assertEquals(
+    res.options[0].bullets,
+    kept([...V1, ...V2, ...V3], {
+      "Double vanity": "Double vanity (60in)",
+      "Exhaust fan and recessed lights": "Exhaust fan and 4 recessed lights",
+    }),
+  );
+  assertEquals(
+    res.options[0].byLang.es.bullets,
+    kept([...V1_ES, ...V2_ES, ...V3_ES], {
+      "Mueble de baño doble": "Mueble de baño doble (60in)",
+      "Extractor y luces empotradas": "Extractor y luces empotradas (4 recessed lights)",
+    }),
+  );
   assertWholeJob(res.options, PRIYA_KEYS);
   // the "· Short version" keeps every item too — grouped, never cut
   for (const o of res.options) {
@@ -644,4 +660,138 @@ Deno.test("REQ-400 (M21) neither the prompt nor the output structure shows a fix
   }
   assert(/whole job/i.test(systemPrompt));
   assert(/customer's name/i.test(systemPrompt), "no rule against the customer's name as a bullet");
+});
+
+// ── REQ-439 (demo-loop cycle 3, M9) ────────────────────────────────────────
+// Pair 7's kitchen: every option dropped "22 lf", "48 sq ft", "35 sq ft",
+// "3x6" and "5" LEDs, and the slab drain was missing from all three; pair 2's
+// lawn job lost "4 cuartos de acre". REQ-400's check compared the options
+// with EACH OTHER, so what all of them dropped was invisible. Now the typed
+// text is the yardstick: a reply missing a typed quantity or item is asked
+// again once with them listed, and a quantity still missing goes back into
+// the line that names its item.
+
+const KITCHEN_RAW =
+  "Kitchen remodel for the Hendersons. Demo the old cabinets and haul away. " +
+  "Install 22 lf of shaker cabinets (customer supplied). " +
+  "48 sq ft quartz countertops with undermount sink cutout. 35 sq ft subway tile backsplash 3x6. " +
+  "New drain line thru slab to island (trench + patch). " +
+  "5 LED strips under the cabinets. About 3 weeks, $18,500.";
+const KITCHEN_DROPPED = [
+  "Demolish old cabinets and haul away debris",
+  "Install customer-supplied shaker cabinets",
+  "Quartz countertops with undermount sink cutout",
+  "Subway tile backsplash",
+  "LED strips under the cabinets",
+];
+const KITCHEN_KEPT = [
+  "Demolish old cabinets and haul away debris",
+  "Install 22 lf of customer-supplied shaker cabinets",
+  "48 sq ft quartz countertops with undermount sink cutout",
+  "35 sq ft subway tile backsplash, 3x6",
+  "New drain line through the slab to the island (trench and patch)",
+  "5 LED strips under the cabinets",
+];
+const kitchenReply = (bullets: string[]) =>
+  JSON.stringify({
+    options: [
+      { en: { jobName: "Kitchen Remodel", summary: "Kitchen remodel", bullets } },
+      { en: { jobName: "Kitchen Renovation", summary: "Kitchen renovation", bullets: [...bullets].reverse() } },
+      { en: { jobName: "Kitchen Update", summary: "Kitchen update", bullets: [bullets.slice(0, 2).join("; "), ...bullets.slice(2)] } },
+    ],
+  });
+
+function assertKeeps(options: Array<{ jobName: string; bullets: string[] }>, needles: RegExp[]) {
+  for (const o of options) {
+    const text = o.bullets.join(" | ");
+    for (const n of needles) assert(n.test(text), `"${o.jobName}" lost ${n}: ${JSON.stringify(o.bullets)}`);
+  }
+}
+
+Deno.test("REQ-439 (M9) options that drop the typed quantities and the slab drain are asked again once, naming them; the reply that keeps them is used", async () => {
+  const { llm, coord } = fresh();
+  const calls: string[][] = [];
+  llm.setHandler((req) => {
+    calls.push(req.messages.map((m) => String(m.content)));
+    return { text: kitchenReply(calls.length === 1 ? KITCHEN_DROPPED : KITCHEN_KEPT) };
+  });
+  const res = await coord.run({ userId: "u1", raw: KITCHEN_RAW, langs: ["en"] });
+  assertEquals(calls.length, 2, "re-asked exactly once");
+  const reask = calls[1][2];
+  for (const n of ["22 lf", "48 sq ft", "35 sq ft", "3x6", "slab"]) {
+    assert(reask.includes(n), `the re-ask names "${n}": ${reask}`);
+  }
+  assertKeeps(res.options, [/\b22 lf\b/, /\b48 sq ft\b/, /\b35 sq ft\b/, /\b3x6\b/, /slab/i, /\b5 LED\b/]);
+});
+
+Deno.test("REQ-439 (M9) a model that drops the quantities twice: every option gets each one back in the line that names its item", async () => {
+  const { llm, coord } = fresh();
+  let n = 0;
+  llm.setHandler(() => ({ text: (n++, kitchenReply(KITCHEN_DROPPED)) }));
+  const res = await coord.run({ userId: "u1", raw: KITCHEN_RAW, langs: ["en"] });
+  assertEquals(n, 2);
+  assertKeeps(res.options, [/\b22 lf\b/, /\b48 sq ft\b/, /\b35 sq ft\b/, /\b3x6\b/, /\b5 LED\b/]);
+  const first = res.options[0].bullets;
+  assert(first.some((b) => /shaker cabinets/.test(b) && /22 lf/.test(b)), JSON.stringify(first));
+  assert(first.some((b) => /^Quartz countertops/.test(b) && /48 sq ft/.test(b)), JSON.stringify(first));
+  assertEquals(first.length, KITCHEN_DROPPED.length, "a quantity joins its line — no new line for it");
+});
+
+Deno.test("REQ-439 (M9) the lawn job keeps '4 cuartos de acre' in every option, in every language", async () => {
+  const { llm, coord } = fresh();
+  llm.setHandler(() => ({
+    text: JSON.stringify({
+      options: [
+        {
+          es: { jobName: "Corte de césped y limpieza", summary: "s", bullets: ["Corte de césped semanal", "Limpieza de hojas"] },
+          en: { jobName: "Lawn Mowing & Cleanup", summary: "s", bullets: ["Weekly lawn mowing", "Leaf cleanup"] },
+        },
+        {
+          es: { jobName: "Mantenimiento de jardín", summary: "s", bullets: ["Corte de césped semanal y limpieza de hojas"] },
+          en: { jobName: "Yard Maintenance", summary: "s", bullets: ["Weekly mowing and leaf cleanup"] },
+        },
+      ],
+    }),
+  }));
+  const res = await coord.run({
+    userId: "u1",
+    raw: "Corte de césped semanal y limpieza de hojas para la casa de Ana Pérez, 4 cuartos de acre, $180",
+    langs: ["es", "en"],
+  });
+  for (const o of res.options) {
+    for (const [l, v] of Object.entries(o.byLang)) {
+      assert(v.bullets.some((b) => /\b4 cuartos de acre\b/.test(b)), `${l} "${v.jobName}" lost the lot size: ${JSON.stringify(v.bullets)}`);
+      assert(!v.bullets.some((b) => /\$?180/.test(b)), `the price became scope: ${JSON.stringify(v.bullets)}`);
+    }
+  }
+});
+
+Deno.test("REQ-439 (M9) a reply that keeps every typed quantity and item is not asked again", async () => {
+  const { llm, coord } = fresh();
+  let n = 0;
+  llm.setHandler(() => ({ text: (n++, kitchenReply(KITCHEN_KEPT)) }));
+  const res = await coord.run({ userId: "u1", raw: KITCHEN_RAW, langs: ["en"] });
+  assertEquals(n, 1);
+  assertEquals(res.options[0].bullets, KITCHEN_KEPT);
+});
+
+Deno.test("REQ-439 (M9) on a step correction only the contractor's words are the yardstick — the request's framing is never a missing item", async () => {
+  const { llm, coord } = fresh();
+  let n = 0;
+  llm.setHandler(() => ({ text: (n++, kitchenReply(KITCHEN_KEPT)) }));
+  const framed = `${KITCHEN_RAW}\n\nThe version of the job details the contractor is looking at:\n${
+    KITCHEN_DROPPED.join("\n")
+  }\n\nThe contractor's correction (it overrides the above where they disagree): add the slab drain`;
+  await coord.run({ userId: "u1", raw: framed, typed: `${KITCHEN_RAW}\nadd the slab drain`, langs: ["en"] });
+  assertEquals(n, 1);
+});
+
+Deno.test("REQ-439 (M9) the prompt keeps every typed number, measurement and quantity verbatim and lifts the word cap for those lines", () => {
+  for (const lang of ["en", "es"] as const) {
+    const p = t(lang, "prompts.generateJobOptions");
+    assert(/every number, measurement and quantity the contractor typed/i.test(p), `${lang}: no keep-the-numbers rule`);
+    assert(/verbatim/i.test(p), `${lang}: not verbatim`);
+    assert(/22 lf/.test(p) && /4 cuartos de acre/.test(p), `${lang}: no examples`);
+    assert(/no word limit/i.test(p), `${lang}: the 3–7 word cap still binds a quantity line`);
+  }
 });

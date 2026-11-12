@@ -14,6 +14,16 @@ import {
 import { clampSummary } from "#quote-flow/summary-clamp.ts";
 import { scopeBulletsFromRaw } from "#quote-flow/scope-from-raw.ts";
 import {
+  bulletFor,
+  missedTypedItems,
+  missingQuantities,
+  typedQuantities,
+  type TypedQuantity,
+  typedScopeItems,
+  typedWorkItems,
+  withQuantity,
+} from "#quote-flow/typed-coverage.ts";
+import {
   cleanScopeBullet,
   type CustomerFacts,
   customerFactsFrom,
@@ -43,6 +53,13 @@ export interface GenerateJobOptionsInput {
    * (used as the fallback when a translation is missing). Defaults to ["en"].
    */
   langs?: string[];
+  /**
+   * REQ-439 (M9): the contractor's own words — the yardstick every option is
+   * checked against for typed items and quantities. Defaults to `raw`; a
+   * step correction passes the job and the correction, without the
+   * request's framing ("The version … the contractor is looking at").
+   */
+  typed?: string;
 }
 
 /** Per-language content for one option. */
@@ -195,25 +212,58 @@ export class GenerateJobOptions {
     // REQ-400 (M21): every option must be the whole job. When none is — or
     // the most detailed one holds less than half of what was typed — ask
     // once more with the job's items listed, and keep the better reply.
-    const typed = typedScopeItems(raw, primary, facts);
-    let verdict = coverageVerdict(options, typed);
+    // REQ-439 (M9): and what the contractor TYPED is the yardstick too — a
+    // reply whose options leave out a typed item or quantity is asked again
+    // with them listed.
+    const typedText = input.typed?.trim() || raw;
+    const typedFacts = input.typed ? customerFactsFrom(typedText) : facts;
+    const typed = typedScopeItems(typedText, primary, typedFacts);
+    const yardstick: Yardstick = {
+      typed,
+      work: typedWorkItems(typedText, primary, typedFacts),
+      quantities: typedQuantities(typedText, primary, typedFacts),
+    };
+    let verdict = coverageVerdict(options, yardstick);
     if (verdict.score < 2) {
+      const split = verdict.complete.length === 0 || verdict.shortOfTyped;
       const items = distinctScopeItems([
         ...options.flatMap((o) => o.bullets),
         ...(verdict.shortOfTyped ? typed : []),
       ]);
       console.warn(
-        `[generate-job-options] options do not each cover the job (${verdict.complete.length}/${options.length} whole, ${verdict.detail} of ${typed.length} typed items) — asking again:`,
+        `[generate-job-options] options do not each cover the job (${verdict.complete.length}/${options.length} whole, ${verdict.detail} of ${typed.length} typed items, missing ${
+          JSON.stringify([
+            ...verdict.missedItems,
+            ...verdict.missedQuantities.map((q) => q.text),
+          ])
+        }) — asking again:`,
         JSON.stringify(text.slice(0, 600)),
       );
+      const retryAsk = [
+        split
+          ? t("en", "prompts.generateJobOptions.coverageRetry", {
+            items: items.map((i) => `- ${i}`).join("\n"),
+          })
+          : "",
+        verdict.gaps > 0
+          ? t("en", "prompts.generateJobOptions.typedRetry", {
+            items: [
+              ...verdict.missedItems,
+              ...verdict.missedQuantities
+                .filter((q) => !verdict.missedItems.includes(q.item))
+                .map((q) =>
+                  q.text === q.item ? q.text : `${q.text} (${q.item})`
+                ),
+            ].map((i) => `- ${i}`).join("\n"),
+          })
+          : "",
+      ].filter(Boolean).join("\n\n");
       try {
         const again = await this.llm.respond({
           systemPrompt: SYSTEM_PROMPT,
           messages: [ask, { role: "assistant", content: text }, {
             role: "user",
-            content: t("en", "prompts.generateJobOptions.coverageRetry", {
-              items: items.map((i) => `- ${i}`).join("\n"),
-            }),
+            content: retryAsk,
           }],
           userId: input.userId,
           responseFormat: "json",
@@ -225,7 +275,7 @@ export class GenerateJobOptions {
           facts,
         );
         const retriedVerdict = retried.length
-          ? coverageVerdict(retried, typed)
+          ? coverageVerdict(retried, yardstick)
           : null;
         if (retriedVerdict && better(retriedVerdict, verdict)) {
           options = retried;
@@ -237,9 +287,14 @@ export class GenerateJobOptions {
     }
     // Parts of the job are never offered as versions of it: keep the whole
     // ones, else merge the parts into one version that holds every item.
-    const whole = verdict.complete.length > 0
-      ? verdict.complete
-      : [mergeParts(options, langs)];
+    // REQ-439 (M9): a typed quantity the model still left out goes back
+    // into the line that names its item, in every option and language.
+    const whole =
+      (verdict.complete.length > 0
+        ? verdict.complete
+        : [mergeParts(options, langs)]).map((o) =>
+          keepQuantities(o, yardstick.quantities, langs)
+        );
     if (whole.length < 3) {
       // The picker promises three versions (P-24); a short answer is worth
       // a look in the logs even though it is usable.
@@ -256,6 +311,16 @@ export class GenerateJobOptions {
   }
 }
 
+/** REQ-400 / REQ-439: what the contractor typed, read three ways. */
+interface Yardstick {
+  /** Every typed item (REQ-400's count check). */
+  typed: string[];
+  /** The typed items that are work on the job (REQ-439). */
+  work: string[];
+  /** The numbers, measurements and quantities they carry (REQ-439). */
+  quantities: TypedQuantity[];
+}
+
 /** REQ-400 (M21): how well one reply covers the job. */
 interface CoverageVerdict {
   /** The options that hold the whole job (partitionByCoverage). */
@@ -264,40 +329,94 @@ interface CoverageVerdict {
   detail: number;
   /** That option holds less than half of the items the contractor typed. */
   shortOfTyped: boolean;
-  /** 2 = whole-job options, 1 = whole but short of what was typed, 0 = parts. */
+  /** REQ-439 (M9): typed work items that even the best option leaves out. */
+  missedItems: string[];
+  /** REQ-439 (M9): typed quantities some option leaves out. */
+  missedQuantities: TypedQuantity[];
+  /** missedItems + missedQuantities. */
+  gaps: number;
+  /** 2 = whole-job options holding all that was typed, 1 = whole but short
+   *  of what was typed, 0 = parts. */
   score: number;
+}
+
+/** Everything an option says, in every language — the typed text may be in
+ *  a language other than the primary one. */
+function optionLines(o: JobOption): string[] {
+  return Object.values(o.byLang).flatMap((l) => [
+    l.jobName,
+    l.summary,
+    ...l.bullets,
+  ]);
 }
 
 function coverageVerdict(
   options: JobOption[],
-  typed: readonly string[],
+  yardstick: Yardstick,
 ): CoverageVerdict {
+  const { typed, work, quantities } = yardstick;
   const { complete } = partitionByCoverage(options);
   const detail = Math.max(0, ...options.map((o) => o.bullets.length));
   const shortOfTyped = typed.length >= 6 && detail * 2 < typed.length;
-  const score = complete.length === 0 ? 0 : shortOfTyped ? 1 : 2;
-  return { complete, detail, shortOfTyped, score };
+  const pool = complete.length > 0 ? complete : options;
+  const missedItems = pool.map((o) => missedTypedItems(optionLines(o), work))
+    .reduce((a, b) => (b.length < a.length ? b : a));
+  const missedQuantities = quantities.filter((q) =>
+    pool.some((o) => missingQuantities(o.bullets, [q]).length > 0)
+  );
+  const gaps = missedItems.length + missedQuantities.length;
+  const score = complete.length === 0 ? 0 : shortOfTyped || gaps > 0 ? 1 : 2;
+  return {
+    complete,
+    detail,
+    shortOfTyped,
+    missedItems,
+    missedQuantities,
+    gaps,
+    score,
+  };
 }
 
 function better(a: CoverageVerdict, b: CoverageVerdict): boolean {
-  return a.score > b.score || (a.score === b.score && a.detail > b.detail);
+  if (a.score !== b.score) return a.score > b.score;
+  if (a.gaps !== b.gaps) return a.gaps < b.gaps;
+  return a.detail > b.detail;
 }
 
-/** REQ-400 (M21): the items the contractor typed — the message's lines and
- *  their comma-separated parts, without the customer's name, contact or a
- *  duration — to tell a reply that dropped most of the job. */
-function typedScopeItems(
-  raw: string,
-  lang: Lang,
-  facts: CustomerFacts,
-): string[] {
-  const scoped = scopeBulletsFromRaw(raw, lang);
-  if (scoped.degraded) return [];
-  const parts = scoped.bullets
-    .flatMap((line) => line.split(/\s*,\s+/))
-    .map((part) => stripCustomerDetails(part, facts))
-    .filter((part): part is string => !!part);
-  return distinctScopeItems(parts);
+/**
+ * REQ-439 (M9): every typed quantity in the option. One the model left out
+ * goes into the line that names its item (picked on the primary language and
+ * used at the same index in every language whose bullets line up), or — when
+ * no line names it — becomes its own line in every language.
+ */
+function keepQuantities(
+  option: JobOption,
+  quantities: readonly TypedQuantity[],
+  langs: Lang[],
+): JobOption {
+  const primary = langs[0];
+  const byLang: Record<string, JobOptionLang> = {};
+  for (const [l, v] of Object.entries(option.byLang)) {
+    byLang[l] = { ...v, bullets: [...v.bullets] };
+  }
+  const anchor = byLang[primary] ?? option;
+  for (const q of missingQuantities(anchor.bullets, quantities)) {
+    const at = bulletFor(anchor.bullets, q);
+    for (const v of Object.values(byLang)) {
+      if (at < 0) {
+        v.bullets.push(q.item);
+        continue;
+      }
+      if (missingQuantities(v.bullets, [q]).length === 0) continue;
+      const i = v.bullets.length === anchor.bullets.length
+        ? at
+        : bulletFor(v.bullets, q);
+      if (i >= 0) v.bullets[i] = withQuantity(v.bullets[i], q);
+      else v.bullets.push(q.item);
+    }
+  }
+  const main = byLang[primary] ?? { ...option, bullets: anchor.bullets };
+  return { ...option, ...main, id: option.id, byLang };
 }
 
 /**
