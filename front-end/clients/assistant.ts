@@ -6,6 +6,7 @@
  * returns an empty list (or 404).
  */
 import { api, ApiError, type ApiOptions } from "../lib/api.ts";
+import type { AssistantDraft } from "../../shared/quote-flow/assistant-draft.ts";
 
 /** Minimal mirror of the backend Quote DTO — the frontend only needs the
  *  fields read from `getQuote`. Defined here (not in dashboard.ts) because
@@ -130,6 +131,8 @@ export interface ConversationDetail {
   customer?: CustomerLite;
   /** Bound quote (the agreement) — populated once a quote is locked. */
   quote?: Quote;
+  /** REQ-230 (demo M14): the assistant's in-flight flow, server-side. */
+  draft?: AssistantDraft;
   [k: string]: unknown;
 }
 

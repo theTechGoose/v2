@@ -3,10 +3,12 @@ import { getKv } from "@core/data/kv/mod.ts";
 import { NotFoundError } from "@core/data/repository/mod.ts";
 import type { AgentConversation, AgentPhase } from "@agents/dto/conversation.ts";
 import type { WizardState } from "@agents/dto/wizard.ts";
+import type { AssistantDraft } from "#quote-flow/assistant-draft.ts";
 
 const PREFIX = "agent_conversation";
 const INDEX_PREFIX = "agent_conversation_by_user";       // [INDEX_PREFIX, userId, createdAt, id] → id
 const WIZARD_PREFIX = "agent_wizard_state";              // [WIZARD_PREFIX, conversationId] → WizardState
+const DRAFT_PREFIX = "agent_assistant_draft";            // [DRAFT_PREFIX, conversationId] → AssistantDraft (REQ-230)
 
 const TTL_MS = 30 * 24 * 60 * 60 * 1_000;                // 30 days
 
@@ -15,6 +17,8 @@ const TTL_MS = 30 * 24 * 60 * 60 * 1_000;                // 30 days
  *   - the conversation record itself
  *   - a per-user index for cheap "list newest first" reads
  *   - the wizard state, scoped 1:1 to a conversation
+ *   - the assistant's in-flight flow (REQ-230), scoped 1:1 to a conversation
+ *     — its own key, so a draft save never races a conversation update
  *
  * 30-day TTL on everything; the dashboard's recency-grouping (Today /
  * Yesterday / This week) doesn't surface anything older anyway.
@@ -117,6 +121,7 @@ export class AgentConversationStore {
       .delete([PREFIX, id])
       .delete([INDEX_PREFIX, conv.userId, conv.createdAt, id])
       .delete([WIZARD_PREFIX, id])
+      .delete([DRAFT_PREFIX, id])
       .commit();
   }
 
@@ -139,5 +144,24 @@ export class AgentConversationStore {
   async deleteWizardState(conversationId: string): Promise<void> {
     const kv = await getKv();
     await kv.delete([WIZARD_PREFIX, conversationId]);
+  }
+
+  // --- assistant draft (REQ-230, per-conversation, 1:1) ---
+
+  async getDraft(conversationId: string): Promise<AssistantDraft | null> {
+    const kv = await getKv();
+    const result = await kv.get<AssistantDraft>([DRAFT_PREFIX, conversationId]);
+    return result.value ?? null;
+  }
+
+  async putDraft(conversationId: string, draft: AssistantDraft): Promise<AssistantDraft> {
+    const kv = await getKv();
+    await kv.set([DRAFT_PREFIX, conversationId], draft, { expireIn: TTL_MS });
+    return draft;
+  }
+
+  async deleteDraft(conversationId: string): Promise<void> {
+    const kv = await getKv();
+    await kv.delete([DRAFT_PREFIX, conversationId]);
   }
 }

@@ -11,6 +11,7 @@ import type { WizardState } from "@agents/dto/wizard.ts";
 import type { WizardProgress } from "@agents/domain/business/wizard-progress/mod.ts";
 import type { Quote } from "@paperwork/dto/quote.ts";
 import type { Customer } from "@crm/dto/customer.ts";
+import type { AssistantDraft } from "#quote-flow/assistant-draft.ts";
 
 export interface ConversationSnapshot {
   conversation: AgentConversation;
@@ -21,6 +22,9 @@ export interface ConversationSnapshot {
   quote?: Quote;
   /** Bound customer — resolved from conv.customerId or quote.customerId. */
   customer?: Customer;
+  /** REQ-230: the assistant's in-flight flow (options, pick, price, view),
+   *  so any window's reload rebuilds it. Absent when none was saved. */
+  draft?: AssistantDraft;
 }
 
 /**
@@ -80,6 +84,15 @@ export class LoadConversation {
       } catch { /* surface the rest of the snapshot without customer */ }
     }
 
-    return { conversation: conv, messages: msgs, wizard, quote, customer };
+    const draft = await this.conversations.getDraft(input.conversationId);
+
+    return {
+      conversation: conv,
+      messages: msgs,
+      wizard,
+      quote,
+      customer,
+      ...(draft ? { draft } : {}),
+    };
   }
 }

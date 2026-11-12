@@ -23,6 +23,7 @@ import { BindConversationCustomer } from "@agents/domain/coordinators/bind-conve
 import { EnsureSampleQuote } from "@agents/domain/coordinators/ensure-sample-quote/mod.ts";
 import { parseCreateAgentConversation } from "@agents/dto/conversation.ts";
 import { shouldTransitionToTerms } from "@agents/domain/business/derive-phase/mod.ts";
+import { parseAssistantDraft } from "#quote-flow/assistant-draft.ts";
 import { UserStore } from "@users/domain/data/user-store/mod.ts";
 import { SessionStore } from "@users/domain/data/session-store/mod.ts";
 import { requireUser } from "@users/domain/coordinators/require-user/mod.ts";
@@ -260,7 +261,7 @@ export class ConversationsController {
   }
 
   /**
-   * POST /agents/conversations/:id/draft   { note?, quoteId? }
+   * POST /agents/conversations/:id/draft   { note?, quoteId?, draft? }
    *
    * Records in-flight assistant work on a conversation the MOMENT it starts
    * (P-22: "mid-flow work silently lost"). The details-first flow used to
@@ -272,6 +273,11 @@ export class ConversationsController {
    *             a reload of /assistant/:id shows what they already typed.
    *   quoteId — bind the quote to this (already-minted) conversation instead
    *             of starting a second one.
+   *   draft   — REQ-230 (demo M14): the assistant's in-flight flow (job
+   *             options, the pick, the price, the open panel) — replaces the
+   *             stored one; `null` clears it; anything not a draft object is
+   *             ignored. GET /:id hands it back so ANY window's reload (the
+   *             contractor's own, the demo stage) rebuilds the flow.
    */
   @Post(":id/draft")
   async draft(
@@ -282,7 +288,11 @@ export class ConversationsController {
     const user = await requireUser(ctx, this.sessions, this.users);
     const conv = await this.store.get(id);
     if (conv.userId !== user.id) throw new Error("forbidden");
-    const b = (body ?? {}) as { note?: unknown; quoteId?: unknown };
+    const b = (body ?? {}) as {
+      note?: unknown;
+      quoteId?: unknown;
+      draft?: unknown;
+    };
     if (typeof b.note === "string" && b.note.trim().length > 0) {
       await this.messages.append({
         conversationId: id,
@@ -290,6 +300,12 @@ export class ConversationsController {
         kind: "text",
         content: b.note.trim(),
       });
+    }
+    if (b.draft === null) {
+      await this.store.deleteDraft(id);
+    } else if (b.draft !== undefined) {
+      const draft = parseAssistantDraft(b.draft);
+      if (draft) await this.store.putDraft(id, draft);
     }
     if (typeof b.quoteId === "string" && b.quoteId.length > 0) {
       return ctx.json(await this.store.update(id, { quoteId: b.quoteId }));
