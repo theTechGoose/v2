@@ -50,6 +50,8 @@ import {
   quoteSummary,
 } from "#quote-flow/quote-translations.ts";
 import type { Quote } from "@paperwork/dto/quote.ts";
+import { ChangeOrderStore } from "@paperwork/domain/data/change-order-store/mod.ts";
+import { agreedTotalCents } from "#documents/ledger.ts"; // REQ-679
 import type { Invoice } from "@paperwork/dto/invoice.ts";
 import type { Customer } from "@crm/dto/customer.ts";
 import type { User } from "@users/dto/user.ts";
@@ -113,6 +115,8 @@ export class SendPaperworkEmail {
     private commsLog: LogPaperworkMessage,
     /** REQ-566: announces an invoice this delivery issued (optional for direct test construction) */
     private bus?: EventBus,
+    /** REQ-679: the agreement's approved change orders (optional for direct test construction) */
+    private changeOrders: ChangeOrderStore = new ChangeOrderStore(),
   ) {}
 
   /**
@@ -230,6 +234,13 @@ export class SendPaperworkEmail {
       subject = paid
         ? renderInvoicePaidSubject(invoice, senderBiz, safeSender, lang)
         : renderInvoiceSubject(invoice, safeSender, lang, senderBiz);
+      // REQ-679 (cycle 5, M18): the agreement value counts the approved
+      // change orders — the same figure /i and the PDF show.
+      const invQuoteCos = invQuote
+        ? await this.changeOrders.listByQuote(userId, invQuote.id).catch(
+          () => [],
+        )
+        : [];
       htmlBody = renderInvoiceHtml(
         invoice,
         customer,
@@ -237,6 +248,7 @@ export class SendPaperworkEmail {
         senderBiz,
         invQuote,
         paid,
+        invQuoteCos,
       );
     }
 
@@ -1151,6 +1163,8 @@ export function renderInvoiceHtml(
   senderBiz: BusinessIdentity | undefined,
   quote?: Quote,
   paid = false,
+  /** REQ-679: the quote's change orders — the approved ones join the agreement */
+  changeOrders: readonly { status?: string; deltaAmountCents: number }[] = [],
 ): string {
   const es = senderBiz?.commsLanguage === "es";
   const lang: Lang = es ? "es" : "en";
@@ -1158,10 +1172,13 @@ export function renderInvoiceHtml(
   const customer = customerOnDocument(i, liveCustomer);
   // REQ-264 (M15): the agreement's line items in the email's language.
   const items = localizeLineItems(quote?.lineItems, lang, quote?.lang); // REQ-333
-  const agreementTotal = quote?.estimatedTotal ??
-    (items.length
-      ? items.reduce((s, li) => s + (li.price ?? 0) * (li.quantity ?? 1), 0)
-      : undefined);
+  const agreementTotal = quote &&
+      (typeof quote.estimatedTotal === "number" || items.length)
+    ? agreedTotalCents(
+      { estimatedTotal: quote.estimatedTotal, lineItems: items },
+      changeOrders,
+    )
+    : undefined;
   // Standalone invoice → lightweight amount-only email (unchanged behavior).
   if (items.length === 0 && agreementTotal == null) {
     return renderInvoiceBasicHtml(i, customer, sender, senderBiz, lang, paid);

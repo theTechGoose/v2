@@ -2691,6 +2691,7 @@
   "quotesPage.open.createInvoice": "Crear la factura →",
   "quotesPage.open.createInvoiceFor": "Crear la factura para {name} →",
   "quotesPage.open.customer": "Para {name}",
+  "quotesPage.open.inclChangeOrders": "incl. {amount} en órdenes de cambio",
   "quotesPage.open.linkCopied": "¡Copiado!",
   "quotesPage.open.loading": "Cargando cotización…",
   "quotesPage.open.notFound": "No se encontró esa cotización.",

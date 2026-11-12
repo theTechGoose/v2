@@ -4,6 +4,7 @@ import { CustomerStore } from "@crm/domain/data/customer-store/mod.ts";
 import { QuoteStore } from "@paperwork/domain/data/quote-store/mod.ts";
 import { InvoiceStore } from "@paperwork/domain/data/invoice-store/mod.ts";
 import { resetKv } from "@core/data/kv/mod.ts";
+import { ChangeOrderStore } from "@paperwork/domain/data/change-order-store/mod.ts";
 
 const NOW = new Date(Date.UTC(2026, 3, 15)); // Apr 15, 2026
 
@@ -352,5 +353,59 @@ Deno.test("REQ-447 m14 list-active-jobs integration: the job carries the quote's
   });
   const jobs = await flow.run("u-1", NOW);
   assertEquals(jobs[0].quote.jobName, "Kitchen Renovation & Cleanup");
+  await resetKv();
+});
+
+/**
+ * REQ-679 — demo-loop cycle 5 (run r37f88707), issue M19: after CO-001
+ * (+$1,600) was approved on the $16,300 job, the dashboard row (and its % paid)
+ * still read the bare quote total. The row's total is the agreement — the
+ * quote plus its APPROVED change orders (a pending one is not agreed yet).
+ */
+Deno.test("REQ-679 M19 list-active-jobs: the row's total is quote + approved change orders ($17,900), and pctPaid is against it", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const { customers, quotes, invoices, flow } = fresh();
+  const cust = await customers.create("u-1", { name: "Dana Whitfield" });
+  const q = await quotes.create("u-1", {
+    summary: "Deck rebuild",
+    lineItems: [],
+    status: "accepted",
+    customerId: cust.id,
+    estimatedTotal: 1_630_000,
+  });
+  await invoices.create("u-1", {
+    quoteId: q.id,
+    customerId: cust.id,
+    amount: 815_000,
+    status: "paid",
+    dueDate: "2026-04-01",
+  } as never);
+  const balance = await invoices.create("u-1", {
+    quoteId: q.id,
+    customerId: cust.id,
+    amount: 975_000,
+    status: "sent",
+    dueDate: "2026-05-01",
+  } as never);
+  const cos = new ChangeOrderStore();
+  const approved = await cos.create("u-1", balance.id, {
+    description: "Composite railing",
+    deltaAmountCents: 160_000,
+    quoteId: q.id,
+  });
+  await cos.decide(approved.id, "approved", {});
+  await cos.create("u-1", balance.id, {
+    description: "Still pending",
+    deltaAmountCents: 50_000,
+    quoteId: q.id,
+  });
+  const jobs = await new ListActiveJobs(customers, quotes, invoices, cos).run(
+    "u-1",
+    NOW,
+  );
+  assertEquals(jobs.length, 1);
+  assertEquals(jobs[0].totalCents, 1_790_000);
+  assertEquals(jobs[0].pctPaid, Math.round((815_000 / 1_790_000) * 100));
   await resetKv();
 });

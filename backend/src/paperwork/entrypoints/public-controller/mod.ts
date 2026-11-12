@@ -37,6 +37,7 @@ import { AcceptedPaymentMethods } from "@profile/dto/business-identity.ts";
 import { PaymentStore } from "@paperwork/domain/data/payment-store/mod.ts";
 import type { ChangeOrder } from "@paperwork/dto/change-order.ts";
 import { docNumberOf } from "#documents/numbering.ts";
+import { agreedTotalCents } from "#documents/ledger.ts"; // REQ-679
 import {
   invoiceBalance,
   invoiceState,
@@ -1077,11 +1078,16 @@ export class PaperworkPublicController {
           summaryByLang: quote.summaryByLang,
           lineItems: quote.lineItems,
         };
-        agreementTotal = quote.estimatedTotal ??
-          ((quote.lineItems ?? []).reduce(
-            (s, li) => s + (li.price ?? 0) * (li.quantity ?? 1),
-            0,
-          ) || undefined);
+        // REQ-679 (cycle 5, M18): the agreement is the quote PLUS its
+        // approved change orders — approving one revises only its invoice.
+        const quoteCos = await this.changeOrders.listByQuote(
+          i.userId,
+          quote.id,
+        ).catch(() => [] as ChangeOrder[]);
+        const agreed = agreedTotalCents(quote, quoteCos);
+        agreementTotal = typeof quote.estimatedTotal === "number"
+          ? agreed
+          : agreed || undefined;
       }
       // Standalone invoices (no quote) carry their own jobName +
       // description — the assistant's "Job done, need to invoice." flow and

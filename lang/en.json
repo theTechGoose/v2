@@ -2691,6 +2691,7 @@
   "quotesPage.open.createInvoice": "Create the invoice →",
   "quotesPage.open.createInvoiceFor": "Create the invoice for {name} →",
   "quotesPage.open.customer": "For {name}",
+  "quotesPage.open.inclChangeOrders": "incl. {amount} in change orders",
   "quotesPage.open.linkCopied": "Copied!",
   "quotesPage.open.loading": "Loading quote…",
   "quotesPage.open.notFound": "That quote couldn't be found.",

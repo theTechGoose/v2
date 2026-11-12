@@ -72,6 +72,7 @@ import {
   changeOrderShareLinks,
   newChangeOrderTarget,
 } from "../../shared/documents/change-order-actions.ts"; // REQ-462, REQ-565
+import { panelAgreedTotal } from "../../shared/documents/ledger.ts"; // REQ-679
 import {
   canReviseQuote,
   editableJobDetails,
@@ -1556,6 +1557,7 @@ function OpenQuotePanel(
 
   const badge = quoteBadgeStatus(q);
   const quoteId = q.id;
+  const agreed = panelAgreedTotal(q, state.ledger); // REQ-679
   // REQ-394 (cycle 2, p9): the title and summary in the app's language.
   const title = quoteJobTitle(q, lang) ??
     tFor(lang, "quotesPage.untitledQuote");
@@ -1616,7 +1618,23 @@ function OpenQuotePanel(
         </p>
       )}
       <div class="qopen__meta">
-        <div class="qopen__amount">{fmtMoney(q.estimatedTotal ?? 0)}</div>
+        {
+          /* REQ-679 (cycle 5, M19): the agreed total — the quote plus its
+            approved change orders, the ledger's Agreed row — with REQ-565's
+            "incl. +$X in change orders" line */
+        }
+        <div class="qopen__amount">
+          {fmtMoney(agreed.totalCents)}
+          {agreed.changeOrdersCents !== 0 && (
+            <div class="qopen__amount-incl" data-cy="quote-panel-incl-co">
+              {tFor(lang, "quotesPage.open.inclChangeOrders", {
+                amount: `${agreed.changeOrdersCents < 0 ? "−" : "+"}${
+                  fmtMoneyExact(Math.abs(agreed.changeOrdersCents))
+                }`,
+              })}
+            </div>
+          )}
+        </div>
         <div class="qopen__actions">
           {
             /* REQ-570 (demo m41): send it from here — the chat's send dialog

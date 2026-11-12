@@ -1154,6 +1154,13 @@
   font-weight: 800;
   color: var(--brand-teal);
 }
+/* REQ-679: "incl. +$1,600.00 in change orders" under the agreed total */
+.qopen__amount-incl {
+  font-family: var(--font-body, inherit);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--fg-muted);
+}
 .qopen__actions {
   display: flex;
   gap: 8px;
