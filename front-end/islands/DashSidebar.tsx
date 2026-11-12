@@ -1,3 +1,4 @@
+import Backdrop from "../components/Backdrop.tsx";
 import { useEffect, useState } from "preact/hooks";
 import { I, ICN } from "../lib/dash-icons.tsx";
 import { type DashboardStats } from "../clients/dashboard.ts";
@@ -199,9 +200,9 @@ export default function DashSidebar(
   return (
     <>
       {mobileOpen && (
-        <div
+        <Backdrop
           class="sb-backdrop"
-          onClick={() => setMobileOpen(false)}
+          onClose={() => setMobileOpen(false)}
           aria-hidden="true"
         />
       )}

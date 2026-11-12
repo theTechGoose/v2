@@ -7,6 +7,7 @@
  * REQ-152 — the customer field is the SearchSelect (REQ-136): type to narrow,
  * pick; the pick fills the address (REQ-144); retyping un-picks.
  */
+import Backdrop from "../components/Backdrop.tsx";
 import { useEffect, useRef, useState } from "preact/hooks";
 import {
   fieldClient,
@@ -692,11 +693,9 @@ export default function FieldSubscriptionsPage() {
         )}
 
       {form && (
-        <div
+        <Backdrop
           class="modal-bg"
-          onClick={(e) => {
-            if (e.target === e.currentTarget) close();
-          }}
+          onClose={() => close()}
         >
           <form class="modal" onSubmit={submit} data-cy="subs-form">
             <h2>
@@ -1048,7 +1047,7 @@ export default function FieldSubscriptionsPage() {
               </button>
             </div>
           </form>
-        </div>
+        </Backdrop>
       )}
     </>
   );

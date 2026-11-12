@@ -6,6 +6,7 @@
  * what it was handed. The hero's totals and the loop strip are the roster's,
  * computed by the backend — nothing here derives from a list.
  */
+import Backdrop from "../components/Backdrop.tsx";
 import { useEffect, useState } from "preact/hooks";
 import { formatPhoneInput } from "../../shared/quote-flow/format-helpers.ts";
 import { customerContactError } from "../../shared/quote-flow/customer-contact.ts"; // REQ-278
@@ -257,8 +258,8 @@ export default function ClientsPage({ lang: _lang }: { lang?: "en" | "es" }) {
       </ClientsBoard>
 
       {addOpen && (
-        <div
-          onClick={() => !adding && setAddOpen(false)}
+        <Backdrop
+          onClose={() => !adding && setAddOpen(false)}
           style="position:fixed;inset:0;background:rgba(20,40,45,0.45);display:flex;align-items:center;justify-content:center;z-index:1000;padding:20px"
         >
           <form
@@ -345,7 +346,7 @@ export default function ClientsPage({ lang: _lang }: { lang?: "en" | "es" }) {
               </button>
             </div>
           </form>
-        </div>
+        </Backdrop>
       )}
     </>
   );

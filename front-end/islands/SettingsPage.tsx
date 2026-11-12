@@ -8,6 +8,7 @@
  * card owns its own save state and bubbles the saved value up via onSaved
  * so neighbouring cards stay in sync without a full refetch.
  */
+import Backdrop from "../components/Backdrop.tsx";
 import { useEffect, useRef, useState } from "preact/hooks";
 import type { ComponentChildren } from "preact";
 import { adminsClient, isActing } from "../clients/admins.ts";
@@ -2186,10 +2187,10 @@ function DangerZoneCard(
       </div>
       {resetOpen
         ? (
-          <div
+          <Backdrop
             data-cy="settings-reset-modal"
             style="position:fixed;inset:0;z-index:60;background:rgba(20,72,82,0.35);display:flex;align-items:center;justify-content:center;padding:20px"
-            onClick={() => !resetBusy && setResetOpen(false)}
+            onClose={() => !resetBusy && setResetOpen(false)}
           >
             <div
               role="dialog"
@@ -2256,7 +2257,7 @@ function DangerZoneCard(
                 </button>
               </div>
             </div>
-          </div>
+          </Backdrop>
         )
         : null}
       <p style="margin:0 0 14px;font-size:13px;color:var(--fg-muted,#6b7560)">
