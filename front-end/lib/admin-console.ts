@@ -13,12 +13,19 @@
  *     REQ-424 (demo cycle 2, p2): an idle /admin backs off to ADMIN_REFRESH_MAX_MS (any input
  *     brings it back to ADMIN_REFRESH_MS), and a tab switch — focus and visibilitychange
  *     together — is one refresh, none when the last is under CATCHUP_MIN_MS old.
+ *   - `patchSelfName` / `onSelfRenamed` (REQ-606, demo cycle 4, m20): a saved name
+ *     (PROFILE_UPDATED, e.g. the staff name prompt) renames the admin's own row at once —
+ *     not on the next refresh, which a locked or idle page never makes.
  */
 import { ApiError } from "./api.ts";
 import type { AdminUserView, WhoAmI } from "../clients/admin.ts";
 import { fmtPhone } from "./format.ts";
 import { isPlaceholderName } from "../../shared/quote-flow/outbound-identity.ts";
 import { startPoll } from "./poll.ts";
+import {
+  PROFILE_UPDATED,
+  type ProfileUpdatedDetail,
+} from "./profile-events.ts";
 
 /** REQ-507 (demo cycle 3, m25) — the users table's empty state names the query it ran,
  *  so "abc!!" reads "No users match “abc!!”." instead of a silent full list */
@@ -122,4 +129,34 @@ export function refreshWhileVisible(
     poll();
     win.removeEventListener("focus", onFocus);
   };
+}
+
+/** REQ-606 (demo cycle 4, m20) — the rows with the signed-in admin's own row renamed;
+ *  the same array when there is nothing to rename (no self id, no such row, a placeholder) */
+export function patchSelfName<R extends { id: string; name?: string }>(
+  rows: R[],
+  selfId: string | undefined,
+  name: string | undefined,
+): R[] {
+  const next = name?.trim();
+  if (!selfId || isPlaceholderName(next)) return rows;
+  if (!rows.some((r) => r.id === selfId && r.name !== next)) return rows;
+  return rows.map((r) => (r.id === selfId ? { ...r, name: next } : r));
+}
+
+/** REQ-606 — follow this admin's saved name (PROFILE_UPDATED) into the users list,
+ *  whatever the page's lock or refresh state; returns stop() */
+export function onSelfRenamed<R extends { id: string; name?: string }>(
+  selfId: string | undefined,
+  setRows: (fn: (rows: R[]) => R[]) => void,
+  target: Pick<EventTarget, "addEventListener" | "removeEventListener"> =
+    globalThis,
+): () => void {
+  const onProfile = (e: Event) => {
+    const name = (e as CustomEvent<ProfileUpdatedDetail>).detail?.name;
+    if (name === undefined) return;
+    setRows((rows) => patchSelfName(rows, selfId, name));
+  };
+  target.addEventListener(PROFILE_UPDATED, onProfile);
+  return () => target.removeEventListener(PROFILE_UPDATED, onProfile);
 }
