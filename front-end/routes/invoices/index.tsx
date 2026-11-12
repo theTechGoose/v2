@@ -6,6 +6,7 @@ import { tFor } from "../../lib/i18n.ts";
 import DashSidebar from "../../islands/DashSidebar.tsx";
 import DashTopbar from "../../islands/DashTopbar.tsx";
 import InvoicesPage from "../../islands/InvoicesPage.tsx";
+import { greetingFirstName } from "../../../shared/quote-flow/outbound-identity.ts";
 
 const WEEKDAY_KEYS = [
   "date.weekday.sunday",
@@ -34,9 +35,8 @@ const MONTH_KEYS = [
 export default define.page(function InvoicesRoute(ctx) {
   const user = ctx.state.user;
   const lang = user?.language ?? "en";
-  const greetingName =
-    (user?.name?.trim() || tFor(lang, "common.greetingNameFallback"))
-      .split(" ")[0];
+  const greetingName = greetingFirstName(user?.name) ??
+    tFor(lang, "common.greetingNameFallback");
   const now = new Date();
   const greetingDate = `${tFor(lang, WEEKDAY_KEYS[now.getDay()])} · ${
     tFor(lang, MONTH_KEYS[now.getMonth()])

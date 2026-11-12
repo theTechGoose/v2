@@ -8,6 +8,7 @@ import DashTopbar from "../../islands/DashTopbar.tsx";
 import SettingsPage from "../../islands/SettingsPage.tsx";
 import { MetaPixelEvent } from "../../components/MetaPixel.tsx";
 import { subscribeEventFrom } from "../../../shared/meta-pixel/pixel.ts";
+import { greetingFirstName } from "../../../shared/quote-flow/outbound-identity.ts";
 
 const WEEKDAY_KEYS = [
   "date.weekday.sunday",
@@ -36,8 +37,8 @@ const MONTH_KEYS = [
 export default define.page(function SettingsRoute(ctx) {
   const user = ctx.state.user;
   const lang: Lang = user?.language === "es" ? "es" : "en";
-  const greetingName =
-    (user?.name?.trim() || tFor(lang, "common.thereFallback")).split(" ")[0];
+  const greetingName = greetingFirstName(user?.name) ??
+    tFor(lang, "common.thereFallback");
   const now = new Date();
   const greetingDate = `${tFor(lang, WEEKDAY_KEYS[now.getDay()])} · ${
     tFor(lang, MONTH_KEYS[now.getMonth()])

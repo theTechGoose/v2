@@ -6,14 +6,15 @@ import { tFor } from "../../lib/i18n.ts";
 import DashSidebar from "../../islands/DashSidebar.tsx";
 import DashTopbar from "../../islands/DashTopbar.tsx";
 import QuotesPage from "../../islands/QuotesPage.tsx";
+import { greetingFirstName } from "../../../shared/quote-flow/outbound-identity.ts";
 
 export default define.page(function QuotesRoute(ctx) {
   const user = ctx.state.user;
   const lang = user?.language === "es" ? "es" : "en";
   // The greeting date is computed reactively inside DashTopbar now; here we
   // only supply the name, with a localized "there" fallback.
-  const greetingName =
-    (user?.name?.trim() || tFor(lang, "common.thereFallback")).split(" ")[0];
+  const greetingName = greetingFirstName(user?.name) ??
+    tFor(lang, "common.thereFallback");
 
   return (
     <>

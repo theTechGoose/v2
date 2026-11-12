@@ -9,6 +9,7 @@ import DashTopbar from "../../islands/DashTopbar.tsx";
 import DashboardPage from "../../islands/DashboardPage.tsx";
 import AssistantCoachmark from "../../islands/AssistantCoachmark.tsx";
 import WelcomeBackToast from "../../islands/WelcomeBackToast.tsx";
+import StaffNamePrompt from "../../islands/StaffNamePrompt.tsx";
 
 const WEEKDAY_KEYS = [
   "dashboardPage.weekday.sunday",
@@ -49,6 +50,8 @@ export default define.page(function Dashboard(ctx) {
   const greetingOverrideKey = realName
     ? undefined
     : "dashTopbar.greetingNoName";
+  // REQ-355 — staff skip the customer wizard (REQ-227), its name question too: ask here
+  const askName = user?.superAdmin === true && isPlaceholderName(user?.name);
   const now = new Date();
   const greetingDate = `${tFor(lang, WEEKDAY_KEYS[now.getDay()])} · ${
     tFor(lang, MONTH_KEYS[now.getMonth()])
@@ -79,6 +82,7 @@ export default define.page(function Dashboard(ctx) {
             greetingOverrideKey={greetingOverrideKey}
           />
           <div class="content">
+            {askName && <StaffNamePrompt />}
             <DashboardPage />
             <SiteFooter lang={lang} />
           </div>

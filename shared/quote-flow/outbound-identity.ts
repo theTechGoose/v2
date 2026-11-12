@@ -70,3 +70,10 @@ export function senderIdentityRefusal(args: {
     to: "",
   };
 }
+
+/**
+ * REQ-355 — the first name an in-app greeting may use ("Hey, Hans 👋"): the
+ * same rule as outbound copy — the seeded placeholder is never a name, so a
+ * user still on "Nuevo usuario" / "New user" is greeted without one.
+ */
+export const greetingFirstName = outboundSenderFirstName;

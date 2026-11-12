@@ -16,6 +16,7 @@ import {
   profileClient,
   type ProfileSnapshot,
 } from "../clients/profile.ts";
+import { announceProfile } from "../lib/profile-events.ts";
 import { DOC_KINDS, type DocKind } from "../../shared/documents/numbering.ts";
 import {
   formOf,
@@ -378,6 +379,10 @@ function EditCard(
     try {
       const u = await profileClient.updateUser(patch);
       onSaved({ user: { ...snapshot.user, ...u } as typeof snapshot.user });
+      // REQ-355 — the topbar greets the new name at once, not after a reload
+      if ("name" in patch) {
+        announceProfile({ name: u?.name ?? String(patch.name ?? "") });
+      }
     } catch (e) {
       setErr(e instanceof Error ? e.message : t.saveFailed);
     } finally {

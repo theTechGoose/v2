@@ -17,6 +17,7 @@ import {
 import { profileClient, type ProfileSnapshot } from "../../clients/profile.ts";
 import OnboardingProgress from "../../islands/OnboardingProgress.tsx";
 import { tFor } from "../../lib/i18n.ts";
+import { greetingFirstName } from "../../../shared/quote-flow/outbound-identity.ts";
 
 export default define.page(async function AssistantThread(ctx) {
   const threadId = ctx.params.threadId;
@@ -52,9 +53,8 @@ export default define.page(async function AssistantThread(ctx) {
   );
 
   const lang = profile?.user?.language ?? "en";
-  const greetingName =
-    (user?.name?.trim() || tFor(lang, "assistantThread.greetingFallback"))
-      .split(" ")[0];
+  const greetingName = greetingFirstName(user?.name) ??
+    tFor(lang, "assistantThread.greetingFallback");
 
   const businessName = profile?.identity?.businessName ??
     profile?.identity?.displayName;

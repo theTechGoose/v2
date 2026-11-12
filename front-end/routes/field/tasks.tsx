@@ -10,12 +10,13 @@ import { type Lang, tFor } from "../../lib/i18n.ts";
 import DashSidebar from "../../islands/DashSidebar.tsx";
 import DashTopbar from "../../islands/DashTopbar.tsx";
 import FieldTasksPage from "../../islands/FieldTasksPage.tsx";
+import { greetingFirstName } from "../../../shared/quote-flow/outbound-identity.ts";
 
 export default define.page(function FieldFieldTasksPageRoute(ctx) {
   const user = ctx.state.user;
   const lang: Lang = user?.language === "es" ? "es" : "en";
-  const greetingName =
-    (user?.name?.trim() || tFor(lang, "common.thereFallback")).split(" ")[0];
+  const greetingName = greetingFirstName(user?.name) ??
+    tFor(lang, "common.thereFallback");
 
   return (
     <>

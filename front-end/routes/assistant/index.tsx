@@ -13,6 +13,7 @@ import RedirectToast from "../../islands/RedirectToast.tsx";
 import { type Conversation } from "../../clients/assistant.ts";
 import { profileClient, type ProfileSnapshot } from "../../clients/profile.ts";
 import { tFor } from "../../lib/i18n.ts";
+import { greetingFirstName } from "../../../shared/quote-flow/outbound-identity.ts";
 
 export default define.page(async function AssistantHome(ctx) {
   const user = ctx.state.user;
@@ -58,9 +59,8 @@ export default define.page(async function AssistantHome(ctx) {
   );
   const lang = profile?.user?.language === "es" ? "es" : "en";
 
-  const greetingName = user?.name?.trim()
-    ? user.name.trim().split(" ")[0]
-    : tFor(lang, "common.thereFallback");
+  const greetingName = greetingFirstName(user?.name) ??
+    tFor(lang, "common.thereFallback");
 
   const businessName = profile?.identity?.businessName ??
     profile?.identity?.displayName;

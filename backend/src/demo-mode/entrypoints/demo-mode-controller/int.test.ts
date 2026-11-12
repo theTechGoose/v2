@@ -1414,3 +1414,45 @@ Deno.test("REQ-235 who ended it rides `ended`: a colleague's HTTP End, a present
     await ph4.closed;
   });
 });
+
+Deno.test("REQ-355 (demo cycle 1, m1 / setup-m8) the sign-in placeholder is never a demo name: a staff member who never set a name guides as DocuMonster, never 'Nuevo usuario'; an unnamed customer is their phone", async () => {
+  await withServer(async (call) => {
+    // both sign in and never set a name — each carries the seeded placeholder
+    const ana = await signIn(call, "+15125553041");
+    const hans = await signIn(call, "+15125553042");
+    const me = await call("GET", "/api/me", undefined, H(hans.body.sessionId));
+    assertEquals(
+      me.body.name,
+      "Nuevo usuario",
+      "precondition: the placeholder is seeded at sign-in",
+    );
+    assertEquals(
+      (await call("POST", "/api/admin/bootstrap", {
+        phoneNumber: "+15125553042",
+      })).status,
+      200,
+    );
+    const made = await call("POST", "/api/demo-mode/sessions", {
+      userId: ana.body.userId,
+    }, H(hans.body.sessionId));
+    assertEquals(made.status, 201, JSON.stringify(made.body));
+
+    const forAna = await call(
+      "GET",
+      "/api/demo-mode/active",
+      undefined,
+      H(ana.body.sessionId),
+    );
+    assertEquals(forAna.body.session.presenterName, "DocuMonster");
+    assertEquals(
+      forAna.body.session.presenters.map((p: { name: string }) => p.name),
+      ["DocuMonster"],
+    );
+    assertEquals(forAna.body.session.targetName, "+15125553041");
+    const raw = JSON.stringify(forAna.body);
+    assert(
+      !raw.includes("Nuevo usuario") && !raw.includes("New user"),
+      `no placeholder anywhere in the demo payload (${raw})`,
+    );
+  });
+});
