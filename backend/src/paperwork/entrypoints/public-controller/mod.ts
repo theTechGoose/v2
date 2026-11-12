@@ -520,10 +520,15 @@ export class PaperworkPublicController {
         ? await this.sessions.get(sessionId).catch(() => null)
         : null;
       const internal = isInternalViewer(session, q.userId);
+      // REQ-396 (demo-loop c2 M13): the open /q page re-reads this every
+      // 10 s with ?refresh=1 to follow a signature or a revision — a poll is
+      // not the customer opening the link, so it records no open and leaves
+      // the status (the page's first, plain load already did both).
+      const polled = new URL(ctx.req.url).searchParams.get("refresh") === "1";
       // Record the open so the /quotes pipeline card can derive the
       // "Viewed" stage + opens count (roadmap p.13). BuildQuoteCards
       // dedupes to ≤1 open per hour, so SSR double-fetches don't inflate.
-      if (!internal) {
+      if (!internal && !polled) {
         try {
           await this.views.create({
             paperworkType: "quote",
@@ -537,7 +542,7 @@ export class PaperworkPublicController {
       // First open flips sent → viewed so the contractor's pipeline card
       // reflects that the link actually landed.
       // Idempotent: subsequent GETs find a non-"sent" status and skip.
-      if (!internal && q.status === "sent") {
+      if (!internal && !polled && q.status === "sent") {
         try {
           q = await this.quotes.update(id, q.userId, { status: "viewed" });
           await this.bus.emit({
