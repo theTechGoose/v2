@@ -24,6 +24,7 @@ import { sidebarIdentity, withSavedName } from "../lib/greeting-identity.ts";
 import {
   type CountKey,
   countLabelKey,
+  followBadgeChanges,
   pickSidebarCounts,
 } from "../lib/sidebar-counts.ts";
 import { fieldClient } from "../clients/field.ts";
@@ -184,9 +185,14 @@ export default function DashSidebar(
       refreshDash().catch(() => {/* the next page load refetches */});
     };
     globalThis.addEventListener(PROFILE_UPDATED, onProfile);
+    // REQ-698 (demo-loop cycle 5, m14): a quote or invoice moved (the
+    // customer signed in another tab, a payment landed) — re-read the counts
+    // so the badge never says "Cotizaciones 1" next to "0 awaiting".
+    const unfollow = followBadgeChanges(() => refreshDash());
     return () => {
       alive = false;
       unsub();
+      unfollow();
       globalThis.removeEventListener(PROFILE_UPDATED, onProfile);
     };
   }, []);

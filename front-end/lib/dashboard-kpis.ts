@@ -14,9 +14,12 @@ export function pickKpis(stats: DashboardStats | undefined) {
 
   // REQ-562 (demo-loop cycle 4, m21): average over distinct paid JOBS — a
   // 50/50 job paid in two installments is one job, not two.
+  // REQ-698 (demo-loop cycle 5, m14): over COMPLETED jobs, by what they were
+  // paid — a $725 deposit on a $1,450 job read "AVG. PAID JOB $725".
   const paidJobs = stats?.revenue.paidJobsYtd ?? stats?.invoices.paid ?? 0;
-  const ytd = (stats?.revenue.ytdCents ?? 0) / 100;
-  const avgJob = paidJobs > 0 ? Math.round(ytd / paidJobs) : 0;
+  const paidCents = stats?.revenue.paidJobsYtdCents ??
+    stats?.revenue.ytdCents ?? 0;
+  const avgJob = paidJobs > 0 ? Math.round(paidCents / 100 / paidJobs) : 0;
 
   // REQ-397 (demo-loop cycle 2, M14): the buckets are the open receivables'
   // balances in CENTS, so Outstanding is exactly what they add up to. The old

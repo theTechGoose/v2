@@ -1,5 +1,6 @@
 import { assertEquals } from "#std/assert";
 import { ComputeDashboardStats } from "./mod.ts";
+import { AgentConversationStore } from "@agents/domain/data/agent-conversation-store/mod.ts";
 import { ListActiveJobs } from "@analytics/domain/coordinators/list-active-jobs/mod.ts";
 import { BuildCustomerCards } from "@analytics/domain/coordinators/build-customer-cards/mod.ts";
 import { SendSignedConfirmation } from "@paperwork/domain/coordinators/send-signed-confirmation/mod.ts";
@@ -80,6 +81,7 @@ Deno.test("REQ-397 (M14) accept 50/50 → dashboard outstanding = the deposit in
       quotes,
       invoices,
       payments,
+      new AgentConversationStore(),
     )
       .run("u-1", now);
     assertEquals(
@@ -149,6 +151,7 @@ Deno.test("REQ-397 (M14) an overdue sent invoice is overdue on the dashboard, th
       quotes,
       invoices,
       payments,
+      new AgentConversationStore(),
     )
       .run("u-1", NOW);
     assertEquals(stats.invoices.pending, 1);
@@ -264,11 +267,15 @@ Deno.test("REQ-562 (cycle 4, M38/m21) 50/50 signed, deposit paid, balance schedu
       quotes,
       invoices,
       payments,
+      new AgentConversationStore(),
     ).run("u-1", now);
+    // REQ-698 (demo-loop cycle 5, m14) supersedes REQ-562's "one job paid
+    // on": the deposit alone is no paid job — the average waits for the
+    // balance (pair 1's "AVG. PAID JOB $725" on a $1,450 job).
     assertEquals(
       stats.revenue.paidJobsYtd,
-      1,
-      "one job has been paid on, not one per installment",
+      0,
+      "a job with its balance still scheduled is not a paid job",
     );
   } finally {
     await resetKv();
@@ -309,6 +316,7 @@ Deno.test("REQ-562 (cycle 4, m21) both 50/50 installments paid → avg paid job 
       quotes,
       invoices,
       payments,
+      new AgentConversationStore(),
     ).run("u-1", now);
     assertEquals(stats.invoices.paid, 2);
     assertEquals(stats.revenue.paidJobsYtd, 1);

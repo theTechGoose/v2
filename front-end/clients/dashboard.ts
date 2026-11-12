@@ -81,11 +81,15 @@ export interface QuoteCounts {
   accepted: number;
   /** REQ-566: drafts whose last send reached nobody (part of `draft`). */
   undelivered?: number;
+  /** REQ-698: drafts whose terms wizard finished (part of `draft`). */
+  readyToSend?: number;
 }
 export interface RevenueStats {
   ytdCents: number;
   /** REQ-562: distinct jobs paid on this year (the avg-paid-job divisor). */
   paidJobsYtd?: number;
+  /** REQ-698: what those completed jobs were paid (cents) — the numerator. */
+  paidJobsYtdCents?: number;
   lastMonthCents: number;
   monthOverMonthPct: number;
   /** Length-12 array, oldest → newest, monthly paid-invoice totals (cents). */

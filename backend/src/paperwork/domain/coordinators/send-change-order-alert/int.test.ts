@@ -17,6 +17,7 @@ import {
 } from "@communication/domain/data/email-service/mod.ts";
 import { SmsService } from "@users/domain/data/sms/mod.ts";
 import { getKv, resetKv } from "@core/data/kv/mod.ts";
+import { type DomainEvent, EventBus } from "@core/business/events/mod.ts";
 
 async function seed(
   commsLanguage: "en" | "es",
@@ -25,6 +26,10 @@ async function seed(
     customerPhone?: string;
     contractorLanguage?: "en" | "es";
     realSms?: boolean;
+    /** REQ-698: the bus the alert announces the send on */
+    bus?: EventBus;
+    /** REQ-698: the customer's email bounces */
+    emailFails?: boolean;
   } = {},
 ) {
   Deno.env.set("KV_PATH", ":memory:");
@@ -66,6 +71,9 @@ async function seed(
   const texts: string[] = [];
   email.send = (input: SendEmailInput) => {
     sent.push(input);
+    if (opts.emailFails && input.to === "juan@test.dev") {
+      return Promise.resolve({ ok: false, reason: "bounced" });
+    }
     return Promise.resolve({ ok: true, reason: "test_capture" });
   };
   if (!opts.realSms) {
@@ -82,8 +90,9 @@ async function seed(
     email,
     sms,
     new InvoiceStore(),
+    opts.bus,
   );
-  return { flow, coId: co.id, sent, texts };
+  return { flow, coId: co.id, invoiceId: inv.id, sent, texts };
 }
 
 for (const lang of ["es", "en"] as const) {
@@ -175,3 +184,50 @@ for (
     }
   });
 }
+
+/**
+ * REQ-698 (demo-loop cycle 5, m14): pair 5's CO-002, sent from the assistant,
+ * never showed in "What we handled today" — the feed is built from
+ * notifications and no change-order SEND event existed. Every CO send path
+ * (assistant, chat edit, invoice controller) goes through this alert.
+ */
+Deno.test("REQ-698 (cycle 5, m14): a change order that reached the customer announces invoice 'change_order_sent' with its number, delta and customer", async () => {
+  const bus = new EventBus();
+  const events: DomainEvent[] = [];
+  bus.subscribe((e) => {
+    events.push(e);
+  });
+  const { flow, coId, invoiceId } = await seed("en", { ok: true }, { bus });
+  try {
+    await flow.run(coId);
+    const sent = events.filter((e) => e.action === "change_order_sent");
+    assertEquals(sent.length, 1);
+    assertEquals(sent[0].entityType, "invoice");
+    assertEquals(sent[0].entityId, invoiceId);
+    assertEquals(sent[0].userId, "u-1");
+    assertEquals(sent[0].data?.number, "CO-001");
+    assertEquals(sent[0].data?.delta, "+$850.00");
+    assertEquals(sent[0].data?.customerName, "Juan");
+  } finally {
+    await resetKv();
+  }
+});
+
+Deno.test("REQ-698 (cycle 5, m14): a change order that reached nobody announces no send", async () => {
+  const bus = new EventBus();
+  const events: DomainEvent[] = [];
+  bus.subscribe((e) => {
+    events.push(e);
+  });
+  const { flow, coId } = await seed(
+    "en",
+    { ok: false, reason: "invalid number" },
+    { bus, emailFails: true },
+  );
+  try {
+    await flow.run(coId);
+    assertEquals(events.filter((e) => e.action === "change_order_sent"), []);
+  } finally {
+    await resetKv();
+  }
+});

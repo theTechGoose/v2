@@ -9,7 +9,13 @@
 import { assertEquals } from "#std/assert";
 import type { Invoice } from "@paperwork/dto/invoice.ts";
 import type { Quote } from "@paperwork/dto/quote.ts";
-import { countJobs, countPaidJobs, isJobComplete, isSignedJob } from "./mod.ts";
+import {
+  completedJobsInYear,
+  countJobs,
+  countPaidJobs,
+  isJobComplete,
+  isSignedJob,
+} from "./mod.ts";
 
 const quote = (over: Partial<Quote>): Quote =>
   ({
@@ -98,5 +104,27 @@ Deno.test("REQ-562 (cycle 4, m21) countPaidJobs — two paid installments of one
       inv({ quoteId: undefined, status: "paid" }),
     ]),
     2,
+  );
+});
+
+Deno.test("REQ-698 (cycle 5, m14) completedJobsInYear — a paid deposit with the balance scheduled is no paid job; a fully paid job counts once with its whole amount; last year's job does not", () => {
+  const at = "2026-11-12T18:00:00.000Z";
+  assertEquals(
+    completedJobsInYear([
+      { id: "i1", quoteId: "q1", status: "paid", paidAt: at, amount: 725_00 },
+      { id: "i2", quoteId: "q1", status: "scheduled", amount: 725_00 },
+      { id: "i3", quoteId: "q2", status: "paid", paidAt: at, amount: 500_00 },
+      { id: "i4", quoteId: "q2", status: "paid", paidAt: at, amount: 500_00 },
+      { id: "i5", quoteId: "q2", status: "void", amount: 99_00 },
+      {
+        id: "i6",
+        quoteId: "q3",
+        status: "paid",
+        paidAt: "2025-12-30T00:00:00.000Z",
+        amount: 300_00,
+      },
+      { id: "i7", status: "paid", paidAt: at, amount: 200_00 },
+    ] as never, 2026),
+    { count: 2, cents: 1_200_00 },
   );
 });

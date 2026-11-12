@@ -299,6 +299,24 @@ export function notificationL10n(event: DomainEvent): NotificationL10n | null {
         : undefined,
     };
   }
+  // REQ-698 (demo-loop cycle 5, m14): the owner sent a change order (the
+  // assistant, a chat edit, the invoice page) — pair 5's CO-002 never showed
+  // in "What we handled today" because no send event existed.
+  if (event.entityType === "invoice" && event.action === "change_order_sent") {
+    const delta = event.data?.delta as string | undefined;
+    const number = (event.data?.number as string | undefined) ?? "";
+    return {
+      type: "generic",
+      titleKey: delta
+        ? "notify.invoice.changeOrderSentAmount"
+        : "notify.invoice.changeOrderSent",
+      titleParams: {
+        ...(nameParams ?? {}),
+        number,
+        ...(delta ? { delta } : {}),
+      },
+    };
+  }
   // REQ-566 (demo-loop cycle 4, m11): the owner's own work is activity too.
   // The dashboard's "What we handled today" reads this feed (REQ-299); with
   // only customer-side events mapped it said "Nothing yet" after the owner

@@ -1,5 +1,6 @@
 import { assertEquals } from "#std/assert";
 import { ComputeDashboardStats } from "./mod.ts";
+import { AgentConversationStore } from "@agents/domain/data/agent-conversation-store/mod.ts";
 import { CustomerStore } from "@crm/domain/data/customer-store/mod.ts";
 import { QuoteStore } from "@paperwork/domain/data/quote-store/mod.ts";
 import { InvoiceStore } from "@paperwork/domain/data/invoice-store/mod.ts";
@@ -18,7 +19,13 @@ function fresh() {
     quotes,
     invoices,
     payments,
-    flow: new ComputeDashboardStats(customers, quotes, invoices, payments),
+    flow: new ComputeDashboardStats(
+      customers,
+      quotes,
+      invoices,
+      payments,
+      new AgentConversationStore(),
+    ),
   };
 }
 
@@ -34,6 +41,7 @@ Deno.test("compute-dashboard-stats integration: empty user → all zeros + 12-bu
     sent: 0,
     accepted: 0,
     undelivered: 0,
+    readyToSend: 0,
   });
   assertEquals(stats.invoices.overdue, 0);
   assertEquals(stats.invoices.agingBuckets, {
@@ -174,6 +182,8 @@ Deno.test("compute-dashboard-stats integration: counts roll up status filters pe
     sent: 2,
     accepted: 1,
     undelivered: 0,
+    // REQ-698: a bare draft (no terms, no finished wizard) is in progress
+    readyToSend: 0,
   });
   assertEquals(stats.invoices.total, 3);
   assertEquals(stats.invoices.pending, 2);
@@ -315,6 +325,7 @@ Deno.test("compute-dashboard-stats integration: the onboarding sample pollutes n
     sent: 0,
     accepted: 0,
     undelivered: 0,
+    readyToSend: 0,
   });
   assertEquals(stats.quotedValueCents, 0);
   assertEquals(stats.awaitingResponse, 0);
@@ -346,6 +357,7 @@ Deno.test("compute-dashboard-stats integration: an unsigned agreement leaves the
     sent: 1,
     accepted: 0,
     undelivered: 0,
+    readyToSend: 0,
   });
   assertEquals(stats.quotedValueCents, 850_00);
   assertEquals(stats.awaitingResponse, 1);

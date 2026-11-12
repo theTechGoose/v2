@@ -401,9 +401,13 @@ export function draftingKpiSub(
  *  pending), but a ready-to-send draft is named instead of "No quotes out
  *  yet. Draft one". */
 export function dashQuotesEmpty(
-  { draftCount, hasDecidedHistory, undeliveredCount = 0 }: {
+  { draftCount, hasDecidedHistory, undeliveredCount = 0, readyCount }: {
     draftCount: number;
     hasDecidedHistory: boolean;
+    /** REQ-698: of the drafts, those whose terms wizard finished (the
+     *  server's `quotes.readyToSend`). Absent: every draft counts as ready
+     *  (an older server). */
+    readyCount?: number;
     /** REQ-566: of the drafts, those whose send reached nobody */
     undeliveredCount?: number;
   },
@@ -419,9 +423,20 @@ export function dashQuotesEmpty(
       n: undeliveredCount,
     };
   }
+  // REQ-698 (demo-loop cycle 5, m14): "ready to send" only for drafts whose
+  // wizard finished — pair 10's draft was mid-steps; the rest are in progress.
+  const ready = Math.min(readyCount ?? draftCount, draftCount);
+  if (ready > 0) {
+    return {
+      key: `quotesAwaiting.emptyDrafts.${ready === 1 ? "one" : "other"}`,
+      n: ready,
+    };
+  }
   if (draftCount > 0) {
     return {
-      key: `quotesAwaiting.emptyDrafts.${draftCount === 1 ? "one" : "other"}`,
+      key: `quotesAwaiting.emptyInProgress.${
+        draftCount === 1 ? "one" : "other"
+      }`,
       n: draftCount,
     };
   }

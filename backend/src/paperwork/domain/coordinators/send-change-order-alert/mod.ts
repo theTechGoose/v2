@@ -14,6 +14,7 @@ import { SmsService } from "@users/domain/data/sms/mod.ts";
 import { dispatchCustomerSms } from "@paperwork/domain/business/customer-sms/mod.ts";
 import { type Lang, t } from "@core/i18n/mod.ts";
 import { SITE_ORIGIN } from "#quote-flow/site-meta.ts";
+import { EventBus } from "@core/business/events/mod.ts";
 
 const APP_URL = (() => {
   const explicit = Deno.env.get("APP_URL")?.trim() || undefined;
@@ -82,6 +83,7 @@ export class SendChangeOrderAlert {
     private email: EmailService,
     private sms: SmsService,
     private invoices: InvoiceStore,
+    private bus?: EventBus,
   ) {}
 
   async run(changeOrderId: string): Promise<ChangeOrderAlertResult> {
@@ -243,6 +245,32 @@ export class SendChangeOrderAlert {
       } catch (err) {
         console.error("[send-change-order-alert] sms failed:", err);
       }
+    }
+
+    // REQ-698 (demo-loop cycle 5, m14): a change order that reached the
+    // customer is the owner's work — "What we handled today" (built from
+    // notifications) never showed pair 5's CO-002. Every send path (the
+    // assistant, a chat edit, the invoice controller) comes through here.
+    if (delivered.emailedTo || delivered.textedTo) {
+      await this.bus?.emit({
+        userId: co.userId,
+        entityType: "invoice",
+        entityId: co.invoiceId,
+        action: "change_order_sent",
+        data: {
+          number: delivered.number,
+          delta,
+          ...(customer?.name?.trim() || customer?.businessName?.trim()
+            ? {
+              customerName: customer?.name?.trim() ||
+                customer?.businessName?.trim(),
+            }
+            : {}),
+          ...(contractor.language ? { language: contractor.language } : {}),
+        },
+      }).catch((err) =>
+        console.error("[send-change-order-alert] emit failed:", err)
+      );
     }
 
     return sentAny

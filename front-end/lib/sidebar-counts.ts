@@ -6,6 +6,7 @@
  * A zero is omitted, and every pill is labelled (`countLabelKey`) for its title / aria-label.
  */
 import type { DashboardStats } from "../clients/dashboard.ts";
+import { followChanges, isDocChange } from "./change-feed.ts";
 
 export type CountKey = "quotes" | "invoices";
 
@@ -21,4 +22,13 @@ export function pickSidebarCounts(
 /** The i18n key that says what a pill counts — "{count}" is interpolated. */
 export function countLabelKey(countKey: string): string {
   return `nav.count.${countKey}`;
+}
+
+/** REQ-698 (demo-loop cycle 5, m14): the counts move when a quote or an
+ *  invoice does — re-read them (`refreshDash`) on every document change the
+ *  change feed hears. The badge said "Cotizaciones 1" on /quotes after the
+ *  customer signed in another tab: the page re-read its own list, but the
+ *  sidebar kept its mount snapshot. Returns stop(). */
+export function followBadgeChanges(refresh: () => unknown): () => void {
+  return followChanges(isDocChange, refresh);
 }

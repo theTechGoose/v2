@@ -30,6 +30,11 @@ export class QuoteCountsDto {
   /** REQ-566: drafts whose last send reached nobody (part of `draft`). */
   @IsNumber()
   undelivered!: number;
+  /** REQ-698 (demo-loop cycle 5, m14): drafts whose terms wizard finished —
+   *  the thread status "Ready to send" (part of `draft`). The rest are still
+   *  in progress, and the dashboard says so. */
+  @IsNumber()
+  readyToSend!: number;
 }
 
 /** REQ-397: money still owed on open receivables, INTEGER CENTS per bucket. */
@@ -64,11 +69,17 @@ export class RevenueStatsDto {
   /** Sum of paid-invoice amounts year-to-date. */
   @IsNumber()
   ytdCents!: number;
-  /** REQ-562 (demo-loop cycle 4, m21): distinct jobs paid on this year — one
-   *  per quote, a standalone invoice its own — the "Avg. paid job" divisor
-   *  (two installments of one job are one job). */
+  /** REQ-562 (demo-loop cycle 4, m21): distinct jobs — one per quote, a
+   *  standalone invoice its own — the "Avg. paid job" divisor (two
+   *  installments of one job are one job). REQ-698 (cycle 5, m14): only jobs
+   *  COMPLETED (every non-void invoice paid) with their last payment this
+   *  year — a paid deposit is not a paid job. */
   @IsNumber()
   paidJobsYtd!: number;
+  /** REQ-698: what those completed jobs were paid in total (cents) — the
+   *  "Avg. paid job" numerator. */
+  @IsNumber()
+  paidJobsYtdCents!: number;
   /** Sum of paid-invoice amounts in the previous calendar month. */
   @IsNumber()
   lastMonthCents!: number;
