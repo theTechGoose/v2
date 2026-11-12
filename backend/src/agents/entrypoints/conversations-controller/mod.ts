@@ -25,6 +25,10 @@ import { EnsureSampleQuote } from "@agents/domain/coordinators/ensure-sample-quo
 import { parseCreateAgentConversation } from "@agents/dto/conversation.ts";
 import { shouldTransitionToTerms } from "@agents/domain/business/derive-phase/mod.ts";
 import { parseAssistantDraft } from "#quote-flow/assistant-draft.ts";
+import {
+  derivePreview,
+  deriveTitleFromFirstUserMessage,
+} from "@agents/domain/business/conversation-title/mod.ts";
 import { ListConversations } from "@agents/domain/coordinators/list-conversations/mod.ts";
 import { UserStore } from "@users/domain/data/user-store/mod.ts";
 import { SessionStore } from "@users/domain/data/session-store/mod.ts";
@@ -300,12 +304,33 @@ export class ConversationsController {
       quoteId?: unknown;
       draft?: unknown;
     };
+    let current = conv;
     if (typeof b.note === "string" && b.note.trim().length > 0) {
+      const note = b.note.trim();
+      const prior = await this.messages.listByConversation(id);
       await this.messages.append({
         conversationId: id,
         role: "user",
         kind: "text",
-        content: b.note.trim(),
+        content: note,
+      });
+      // REQ-580 (demo-loop cycle 4, p4-p7b): the note is the details-first
+      // thread's first message — it names the thread and is its preview, as
+      // a first chat message does, so the list never reads "New
+      // conversation —" while the contractor picks options. A thread that
+      // already has a title (a quote's jobName, REQ-447) or a user message
+      // keeps its title.
+      const first = !conv.title && !prior.some((m) => m.role === "user");
+      current = await this.store.update(id, {
+        preview: derivePreview(note),
+        ...(first
+          ? {
+            title: deriveTitleFromFirstUserMessage(
+              note,
+              user.language === "es" ? "es" : "en",
+            ),
+          }
+          : {}),
       });
     }
     if (b.draft === null) {
@@ -324,7 +349,7 @@ export class ConversationsController {
         }),
       );
     }
-    return ctx.json(conv);
+    return ctx.json(current);
   }
 
   @Post(":id/bind-customer")

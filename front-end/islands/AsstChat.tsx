@@ -238,7 +238,6 @@ import {
 // the conversation list shows it.
 import { threadStatusKey } from "../../shared/quote-flow/chat-header.ts";
 import {
-  isFirstUserTurn,
   publishThreadStatus,
   publishThreadTurn,
   THREAD_SERVER_STATUS_EVENT,
@@ -2415,7 +2414,6 @@ export default function AsstChat({
     setCanRetryTurn(false);
     setBusy(true);
     // REQ-442 (M22): the thread's first turn names it — the list refreshes.
-    const firstTurn = optimistic.role === "user" && isFirstUserTurn(messages);
     const tmpId = `tmp-${Date.now()}`;
     const stub: Message = {
       id: tmpId,
@@ -2440,10 +2438,10 @@ export default function AsstChat({
         }
       }
       const turnConvoId = newConvoId ?? convoId;
-      if (
-        firstTurn && turnConvoId && typeof globalThis.window !== "undefined"
-      ) {
-        publishThreadTurn(turnConvoId);
+      // REQ-442 / REQ-580 (cycle 4, p4-p2d): every turn — not only the
+      // first — hands the list the thread's new title and preview.
+      if (turnConvoId && typeof globalThis.window !== "undefined") {
+        publishThreadTurn(turnConvoId, res.conversation);
       }
       // REQ-331 (demo m7): the turn resolved "for <Name>" to one of the
       // contractor's customers and bound them — show them as known now, so
@@ -3705,7 +3703,13 @@ export default function AsstChat({
       if (typeof globalThis.history !== "undefined") {
         globalThis.history.replaceState(null, "", `/assistant/${id}`);
       }
-      await api.post(`/agents/conversations/${id}/draft`, { note });
+      const saved = await api.post<{ title?: string; preview?: string }>(
+        `/agents/conversations/${id}/draft`,
+        { note },
+      );
+      // REQ-580 (demo-loop cycle 4, p4-p7b): the note titled the thread —
+      // the list names it now, never "New conversation —".
+      publishThreadTurn(id, saved);
     } catch {
       // Best-effort: a failed mint must never block the flow the user is in.
     }
@@ -4596,6 +4600,9 @@ export default function AsstChat({
         conversationId: convoId,
         ...body,
       });
+      // REQ-580 (demo-loop cycle 4, p4-p2d): the answer is the thread's new
+      // preview — the list shows it now, not one answer behind.
+      publishThreadTurn(convoId, res.conversation);
       // Pick up the freshly-bound customer from the conversation patch
       // (the create_new and pick_existing flows mutate conv.customerId).
       if (res.conversation && typeof res.conversation === "object") {
