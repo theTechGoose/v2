@@ -31,6 +31,11 @@ import { dueDateLine } from "../../shared/quote-flow/pipeline-stats.ts";
 import { docNumberOf } from "../../shared/documents/numbering.ts";
 import { versionOf } from "../../shared/documents/versions.ts";
 import { readCached, refreshDash } from "../lib/dash-cache.ts";
+import {
+  readNotifications,
+  refreshNotifications,
+  subscribeNotifications,
+} from "../lib/notifications-feed.ts";
 import { ShimmerStyle, SkelBlock } from "../components/Skeletons.tsx";
 import SetupChecklist from "./SetupChecklist.tsx";
 import { type Lang, langSignal, tFor } from "../lib/i18n.ts";
@@ -332,7 +337,6 @@ interface State {
   quoteCards: QuoteCard[];
   pendingInvoices: Invoice[];
   customers: Customer[];
-  notifications: Notification[];
 }
 
 const INITIAL: State = {
@@ -343,7 +347,6 @@ const INITIAL: State = {
   quoteCards: [],
   pendingInvoices: [],
   customers: [],
-  notifications: [],
 };
 
 function DashboardSkeleton() {
@@ -405,6 +408,18 @@ export default function DashboardPage(_props: { lang?: Lang } = {}) {
     return c?.stats ? { ...INITIAL, loading: false, stats: c.stats } : INITIAL;
   });
 
+  // REQ-299: the Activity panel reads the one notifications feed DashTopbar's
+  // poll refreshes — no fetch of its own, and it follows the ticker live.
+  const [notifications, setNotifications] = useState<Notification[]>(
+    readNotifications,
+  );
+  useEffect(() => {
+    const unsub = subscribeNotifications(setNotifications);
+    // single-flight: shares the topbar's request if one is in flight
+    refreshNotifications().catch(() => {});
+    return unsub;
+  }, []);
+
   useEffect(() => {
     let alive = true;
     // Keep the shared cache fresh for other islands (sidebar badges, etc).
@@ -417,11 +432,8 @@ export default function DashboardPage(_props: { lang?: Lang } = {}) {
       quotesClient.list("sent").catch(() => [] as QuoteCard[]),
       dashboardClient.invoices("pending").catch(() => [] as Invoice[]),
       dashboardClient.customers().catch(() => [] as Customer[]),
-      dashboardClient.notifications(10).catch(() => [] as Notification[]),
     ]).then(
-      (
-        [stats, jobs, quoteCards, pendingInvoices, customers, notifications],
-      ) => {
+      ([stats, jobs, quoteCards, pendingInvoices, customers]) => {
         if (!alive) return;
         setS({
           loading: false,
@@ -431,7 +443,6 @@ export default function DashboardPage(_props: { lang?: Lang } = {}) {
           quoteCards,
           pendingInvoices,
           customers,
-          notifications,
         });
       },
     ).catch((err: Error) => {
@@ -510,8 +521,7 @@ export default function DashboardPage(_props: { lang?: Lang } = {}) {
     );
   }
 
-  const { stats, jobs, quoteCards, pendingInvoices, customers, notifications } =
-    s;
+  const { stats, jobs, quoteCards, pendingInvoices, customers } = s;
   const now = new Date();
 
   const kpis = { ...pickKpis(stats), activeJobs: jobs.length };

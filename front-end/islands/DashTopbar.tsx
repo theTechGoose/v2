@@ -8,6 +8,11 @@ import { tickerAge } from "../lib/ticker-age.ts";
 import GlobalSearch from "./GlobalSearch.tsx";
 import { TOPBAR_CSS } from "../lib/topbar-css.ts";
 import { startPoll } from "../lib/poll.ts";
+import {
+  readNotifications,
+  refreshNotifications,
+  subscribeNotifications,
+} from "../lib/notifications-feed.ts";
 
 interface Props {
   /** @deprecated Ignored — the date is now computed reactively in-component
@@ -47,7 +52,11 @@ export default function DashTopbar(
   // as the line opens the greeting (P-65); en "Wednesday · November 11".
   const greetingDate = formatGreetingDate(now, lang);
   const [, setUnread] = useState(initialUnread);
-  const [items, setItems] = useState<Notification[]>(initialNotifications);
+  // REQ-299: the list is the shared feed's (DashboardPage reads the same one)
+  const [items, setItems] = useState<Notification[]>(() => {
+    const live = readNotifications();
+    return live.length > 0 ? live : initialNotifications;
+  });
   const [tickerIdx, setTickerIdx] = useState(0);
   // The data-cy hook appears only after hydration so a test can never click
   // the hamburger before the pm:sb-toggle listener (DashSidebar) is live —
@@ -63,14 +72,16 @@ export default function DashTopbar(
       const { count } = await dashboardClient.unreadCount();
       if (!stopped) setUnread(count);
     }, 30_000);
-    const stopB = startPoll(async () => {
-      const next = await dashboardClient.notifications(10);
+    // REQ-299: the poll refreshes the shared feed; the ticker follows it
+    const stopB = startPoll(refreshNotifications, 10_000);
+    const unsub = subscribeNotifications((next) => {
       if (!stopped) setItems(next);
-    }, 10_000);
+    });
     const teardown = () => {
       stopped = true;
       stopA();
       stopB();
+      unsub();
     };
     // P-67: stop both polls the moment logout starts ("pm:logout", fired by
     // DashSidebar before it kills the session) or the page starts navigating
