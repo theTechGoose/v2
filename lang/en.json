@@ -141,6 +141,7 @@
   "assistantThread.pageTitle": "Assistant · DocuMonster",
   "assistantThread.phasePrefix": "Phase: {phase}",
   "assistantThread.statusFallback": "Tell your assistant about a job — voice or text",
+  "asstChat.actionCard.editPrompt": "Change the quote: ",
   "asstChat.actionCard.jobDetails": "Job details",
   "asstChat.actionCard.lockIn": "Lock it in",
   "asstChat.actionCard.reopen": "Re-open",

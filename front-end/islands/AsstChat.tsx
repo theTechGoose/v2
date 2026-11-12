@@ -95,6 +95,7 @@ import {
   type QuoteFacts,
   wizardPrefillFor,
 } from "../../shared/quote-flow/quote-facts.ts";
+import { editDraftSeed } from "../../shared/quote-flow/draft-edit.ts";
 import { isPlaceholderName } from "../../shared/quote-flow/outbound-identity.ts";
 import {
   TimeoutError,
@@ -1863,6 +1864,29 @@ export default function AsstChat({
       break;
     }
   }, [messages, previewCtaId, reviewedCtas, quote?.status]);
+
+  /**
+   * REQ-246 (demo quote-invoice-money-m7): Edit on the draft quote card.
+   * It used to be `setDraft("")` — it wiped the composer and showed nothing.
+   * Now it seeds the composer with the edit prompt (keeping anything already
+   * typed), focuses it and puts the caret at the end, so the contractor types
+   * the correction and sends it to the assistant.
+   */
+  function openDraftEdit() {
+    const next = editDraftSeed(
+      draft,
+      tFor(lang, "asstChat.actionCard.editPrompt"),
+    );
+    setDraft(next);
+    // After the re-render has written `next` into the textarea.
+    setTimeout(() => {
+      const ta = taRef.current;
+      if (!ta) return;
+      ta.focus();
+      ta.setSelectionRange(ta.value.length, ta.value.length);
+      autosize();
+    }, 0);
+  }
 
   function autosize() {
     const ta = taRef.current;
@@ -7963,7 +7987,7 @@ export default function AsstChat({
                                 <button
                                   type="button"
                                   class="action-card__btn"
-                                  onClick={() => setDraft("")}
+                                  onClick={openDraftEdit}
                                   disabled={sending}
                                 >
                                   {tFor(lang, "common.edit")}
