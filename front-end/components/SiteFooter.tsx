@@ -29,11 +29,20 @@ export function siteFooterCopy(lang: Lang): SiteFooterCopy {
  * words, which paints the SSR language first (hydration matches) and then
  * every switch. The words travel as props, so the browser loads no dictionary
  * for the footer.
+ *
+ * REQ-425 (demo-loop cycle 2, p6): the signed-in app routes pass `compact` —
+ * the same links, phone and address on one line, so the footer no
+ * longer takes 120-150 px from the chat, the in-chat calendar and the panes.
+ * The public pages (login, the customer documents, the error page…) keep the
+ * full block.
  */
-export default function SiteFooter({ lang = "en" }: { lang?: Lang }) {
+export default function SiteFooter(
+  { lang = "en", compact = false }: { lang?: Lang; compact?: boolean },
+) {
   return (
     <SiteFooterLive
       lang={lang}
+      compact={compact}
       copy={{ en: siteFooterCopy("en"), es: siteFooterCopy("es") }}
     />
   );

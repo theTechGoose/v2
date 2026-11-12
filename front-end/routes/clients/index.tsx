@@ -62,7 +62,7 @@ export default define.page(function ClientsRoute(ctx) {
           />
           <div class="content">
             <ClientsPage />
-            <SiteFooter lang={lang} />
+            <SiteFooter lang={lang} compact />
           </div>
         </main>
       </div>

@@ -143,7 +143,7 @@ describe("REQ-269 the staff side follows the app language (demo i18n-formatting-
     // REQ-367 made the one SiteFooter the live island on every page: /admin renders it like the rest
     const route = read("front-end/routes/admin/index.tsx");
     expect(route).toMatch(/import SiteFooter from "\.\.\/\.\.\/components\/SiteFooter\.tsx"/);
-    expect(route).toMatch(/<SiteFooter lang=\{lang\} \/>/);
+    expect(route).toMatch(/<SiteFooter lang=\{lang\}( compact)? \/>/); // REQ-425: the app routes pass compact
     expect(read("front-end/components/SiteFooter.tsx")).toMatch(/<SiteFooterLive\b/);
     const island = read("front-end/islands/SiteFooterLive.tsx");
     expect(island).toMatch(/useLiveLang\(lang\)/);

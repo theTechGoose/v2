@@ -34,7 +34,7 @@ export default define.page(function FieldFieldWorkersPageRoute(ctx) {
           <DashTopbar greetingName={greetingName} />
           <div class="content">
             <FieldWorkersPage />
-            <SiteFooter lang={lang} />
+            <SiteFooter lang={lang} compact />
           </div>
         </main>
       </div>

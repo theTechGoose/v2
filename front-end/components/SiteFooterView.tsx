@@ -50,9 +50,12 @@ export interface SiteFooterCopy {
  * (components/SiteFooter.tsx), which mounts it in the SiteFooterLive island so
  * it follows the EN/ES switch; the island is the only thing that renders it.
  */
-export default function SiteFooterView({ copy }: { copy: SiteFooterCopy }) {
+export default function SiteFooterView(
+  { copy, compact = false }: { copy: SiteFooterCopy; compact?: boolean },
+) {
   const item =
     "display:inline-block;min-height:24px;padding:0 3px;line-height:24px;white-space:nowrap;color:inherit;";
+  if (compact) return <CompactFooter copy={copy} item={item} />;
   return (
     <footer
       class="site-footer"
@@ -89,6 +92,56 @@ export default function SiteFooterView({ copy }: { copy: SiteFooterCopy }) {
         </a>
         <span data-site-address style={item}>{BUSINESS_ADDRESS}</span>
       </div>
+    </footer>
+  );
+}
+
+/**
+ * REQ-425 (demo-loop cycle 2, p6) — the footer of the signed-in app routes.
+ * The full block above (a two-by-two grid, then the phone, then the address:
+ * 120-150 px) took that height from the assistant's chat and its in-chat
+ * calendar, and from every pane. Here the same four policy links and
+ * REQ-044's phone and address sit on ONE line (11px type, 24px tap boxes,
+ * 4px of padding: a 32px strip). The Spanish line is the long one: it fits
+ * the app's pane at 1280px with these gaps, which is why there is no © on it
+ * (with one it wrapped to two rows). Narrower than the line it wraps instead
+ * of scrolling sideways. Same teal, same full width, same data hooks.
+ */
+function CompactFooter(
+  { copy, item }: { copy: SiteFooterCopy; item: string },
+) {
+  return (
+    <footer
+      class="site-footer site-footer--compact"
+      data-site-footer
+      data-site-footer-compact
+      style="display:flex;flex-direction:row;flex-wrap:wrap;align-items:center;justify-content:center;column-gap:12px;row-gap:0;box-sizing:border-box;padding:4px 12px calc(4px + env(safe-area-inset-bottom, 0px));background:var(--brand-teal,#1a535c);color:rgba(255,255,255,0.82);text-align:center;font-size:11px;line-height:24px;flex-shrink:0;"
+    >
+      <nav
+        data-site-footer-links
+        aria-label={copy.policiesAria}
+        style="display:flex;flex-wrap:wrap;justify-content:center;column-gap:8px;"
+      >
+        {copy.links.map((l) => (
+          <a
+            key={l.id}
+            href={l.path}
+            data-legal-link={l.id}
+            data-terms-link={l.id === "terms" ? "" : undefined}
+            style={`${item}text-decoration:underline;text-underline-offset:3px;text-decoration-thickness:1px`}
+          >
+            {l.label}
+          </a>
+        ))}
+      </nav>
+      <a
+        href={SUPPORT_PHONE_HREF}
+        data-site-phone
+        style={`${item}text-decoration:none;font-weight:700;color:#fff`}
+      >
+        {SUPPORT_PHONE_DISPLAY}
+      </a>
+      <span data-site-address style={item}>{BUSINESS_ADDRESS}</span>
     </footer>
   );
 }

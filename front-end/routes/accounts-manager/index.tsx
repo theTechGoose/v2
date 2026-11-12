@@ -36,7 +36,7 @@ export default define.page(function AccountsManager(ctx) {
           <DashTopbar greetingName={greetingName} />
           <div class="content">
             {/* Blank slate — build the accounts-manager view here. */}
-            <SiteFooter lang={lang} />
+            <SiteFooter lang={lang} compact />
           </div>
         </main>
       </div>

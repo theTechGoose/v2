@@ -66,7 +66,7 @@ export default define.page(function PaymentsRoute(ctx) {
           <DashTopbar greetingDate={greetingDate} greetingName={greetingName} />
           <div class="content">
             <PaymentsPage />
-            <SiteFooter lang={lang} />
+            <SiteFooter lang={lang} compact />
           </div>
         </main>
       </div>

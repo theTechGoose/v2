@@ -65,7 +65,7 @@ export default define.page(function AdminRoute(ctx) {
             {askName && <StaffNamePrompt />}
             <AdminPage selfId={user?.id} />
             {/* REQ-269/367: the footer follows the topbar's EN/ES toggle */}
-            <SiteFooter lang={lang} />
+            <SiteFooter lang={lang} compact />
           </div>
         </main>
       </div>

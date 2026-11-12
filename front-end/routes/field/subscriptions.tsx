@@ -39,7 +39,7 @@ export default define.page(function FieldFieldSubscriptionsPageRoute(ctx) {
           <DashTopbar greetingName={greetingName} />
           <div class="content">
             <FieldSubscriptionsPage />
-            <SiteFooter lang={lang} />
+            <SiteFooter lang={lang} compact />
           </div>
         </main>
       </div>

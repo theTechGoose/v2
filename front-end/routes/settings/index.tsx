@@ -70,7 +70,7 @@ export default define.page(function SettingsRoute(ctx) {
           <DashTopbar greetingDate={greetingDate} greetingName={greetingName} />
           <div class="content">
             <SettingsPage />
-            <SiteFooter lang={lang} />
+            <SiteFooter lang={lang} compact />
           </div>
         </main>
       </div>
