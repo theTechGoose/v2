@@ -76,6 +76,8 @@ describe("quote wizard — back navigation through the steps", () => {
     cy.get(".chat__price-capture input").first().type("500{enter}");
 
     cy.contains(/who is this for/i, { timeout: 10_000 }).should("be.visible");
+    // REQ-532 (demo p8-pair5-b): for a person it sits behind "+ Add a business name".
+    cy.get("[data-cy=wizard-add-business-name]").click();
     cy.get("[data-cy=wizard-business-name]").should("be.visible");
 
     // It is optional: leaving it empty must not block Next.

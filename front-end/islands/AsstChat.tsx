@@ -74,6 +74,8 @@ import {
   wizardCursor,
 } from "../../shared/quote-flow/assistant-back.ts";
 import {
+  customerCreateBusinessName,
+  customerCreateShape,
   customerStepEntryView,
   type CustomerStepView,
   formOffersPickExisting,
@@ -9620,8 +9622,11 @@ function CustomerStepPanel(props: {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialName]);
   /** Roadmap p.7: the "Who is this for?" step also collects a Business
-   *  Name. Optional — an empty value never blocks Next. */
+   *  Name. Optional — an empty value never blocks Next. REQ-532 (demo
+   *  p8-pair5-b): for a person it hides behind "+ Add a business name";
+   *  for a business the required name field IS the business name. */
   const [createBusiness, setCreateBusiness] = useState("");
+  const [addBusinessOpen, setAddBusinessOpen] = useState(false);
   const [createEmail, setCreateEmail] = useState(initialEmail ?? "");
   const [createPhone, setCreatePhone] = useState(initialPhone ?? "");
   // REQ-265: like the name, the typed contact can arrive after mount (the
@@ -9780,7 +9785,14 @@ function CustomerStepPanel(props: {
       })
       : null;
     const formHeading = tFor(lang, "asstChat.customerStep.whoFor");
-    const namePlaceholder = tFor(lang, "asstChat.customerStep.name");
+    // REQ-532 (demo p8-pair5-b): the Business / Person pick shapes the form.
+    const shape = customerCreateShape(kind, addBusinessOpen);
+    const namePlaceholder = tFor(lang, shape.nameKey);
+    const businessName = customerCreateBusinessName(
+      kind,
+      trimmedName,
+      createBusiness,
+    );
     return (
       <div ref={rootRef}>
         <h3 class="wiz__step-q">{formHeading}</h3>
@@ -9808,22 +9820,38 @@ function CustomerStepPanel(props: {
               </div>
             )
             : null}
-          <input
-            type="text"
-            data-cy="wizard-business-name"
-            class="cust-pick__search"
-            placeholder={tFor(
-              lang,
-              "asstChat.customerStep.businessNamePlaceholder",
-            )}
-            aria-label={tFor(
-              lang,
-              "asstChat.customerStep.businessNamePlaceholder",
-            )}
-            value={createBusiness}
-            onInput={(e) =>
-              setCreateBusiness((e.target as HTMLInputElement).value)}
-          />
+          {shape.showBusinessField
+            ? (
+              <input
+                type="text"
+                data-cy="wizard-business-name"
+                class="cust-pick__search"
+                placeholder={tFor(
+                  lang,
+                  "asstChat.customerStep.businessNamePlaceholder",
+                )}
+                aria-label={tFor(
+                  lang,
+                  "asstChat.customerStep.businessNamePlaceholder",
+                )}
+                value={createBusiness}
+                onInput={(e) =>
+                  setCreateBusiness((e.target as HTMLInputElement).value)}
+                autoFocus
+              />
+            )
+            : shape.offerAddBusiness
+            ? (
+              <button
+                type="button"
+                class="cust-create__add"
+                data-cy="wizard-add-business-name"
+                onClick={() => setAddBusinessOpen(true)}
+              >
+                {tFor(lang, "asstChat.customerStep.addBusinessName")}
+              </button>
+            )
+            : null}
           <div class="cust-create__row">
             <input
               type="tel"
@@ -9969,9 +9997,7 @@ function CustomerStepPanel(props: {
                         ? { phoneNumber: createPhone.trim() }
                         : {}),
                       isBusiness,
-                      ...(createBusiness.trim()
-                        ? { businessName: createBusiness.trim() }
-                        : {}),
+                      ...(businessName ? { businessName } : {}), // REQ-532
                       ...(createAnyway ? { allowDuplicate: true } : {}), // REQ-331
                     },
                   },

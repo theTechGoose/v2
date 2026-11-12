@@ -32,3 +32,52 @@ export function formOffersPickExisting(
 ): boolean {
   return (customerCount ?? 0) > 0 || hasBoundCustomer;
 }
+
+/**
+ * REQ-532 (demo-loop cycle 3, p8-pair5-b): the create form follows the
+ * Business / Person pick from the lock-quote CTA.
+ *  - person   → the required field is the person's "Name"; the business name
+ *               is not shown, only a "+ Add a business name" link that
+ *               reveals it (optional);
+ *  - business → the required field IS the business name ("Business name");
+ *               there is no second business-name input.
+ */
+export type CustomerKind = "business" | "person";
+
+export interface CustomerCreateShape {
+  /** i18n key for the one required name field's placeholder/label. */
+  nameKey: string;
+  /** Render the optional business-name input (data-cy wizard-business-name). */
+  showBusinessField: boolean;
+  /** Render the "+ Add a business name" link (data-cy wizard-add-business-name). */
+  offerAddBusiness: boolean;
+}
+
+export function customerCreateShape(
+  kind: CustomerKind,
+  addBusinessOpen = false,
+): CustomerCreateShape {
+  if (kind === "business") {
+    return {
+      nameKey: "asstChat.customerStep.businessNameRequired",
+      showBusinessField: false,
+      offerAddBusiness: false,
+    };
+  }
+  return {
+    nameKey: "asstChat.customerStep.name",
+    showBusinessField: addBusinessOpen,
+    offerAddBusiness: !addBusinessOpen,
+  };
+}
+
+/** The `businessName` to save: a business's is the required name itself; a
+ *  person's is the optional field, when filled. */
+export function customerCreateBusinessName(
+  kind: CustomerKind,
+  name: string,
+  businessInput: string,
+): string | undefined {
+  const v = (kind === "business" ? name : businessInput).trim();
+  return v ? v : undefined;
+}

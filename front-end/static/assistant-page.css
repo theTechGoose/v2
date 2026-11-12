@@ -6142,6 +6142,21 @@ body {
   display: flex;
   gap: 8px;
 }
+/* REQ-532 (demo p8-pair5-b): a person's business name hides behind a quiet
+   "+ Add a business name" text link. */
+.cust-create__add {
+  align-self: flex-start;
+  padding: 2px 0;
+  border: 0;
+  background: none;
+  color: var(--brand-pink);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.cust-create__add:hover {
+  text-decoration: underline;
+}
 .cust-create__row .cust-pick__search {
   flex: 1;
   min-width: 0;
