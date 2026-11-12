@@ -53,12 +53,11 @@ describe("REQ-271 a brand-new customer is labelled new, never regular", () => {
       createdAt: "2026-11-11T00:00:00Z",
       updatedAt: "2026-11-11T00:00:00Z",
       lastWhen: "2026-11-11T00:00:00Z",
-      lastWhenRel: "hace 1 min",
       lastTone: "hot",
       balanceCents: 0,
       balanceSub: "",
       activeJobs: 0,
-      jobsSub: "",
+      jobsSub: "none",
       status: "new",
       temp: 100,
       daysSinceContact: 0,
@@ -71,10 +70,12 @@ describe("REQ-271 a brand-new customer is labelled new, never regular", () => {
     expect(moodFor(card, "es").label).not.toBe(
       ES["clientsDisplay.status.regular"],
     );
-    expect(storyLineFor(card, "es")).toBe(
+    // REQ-367: the time is worded at render from lastWhen — here a minute after it
+    const minuteLater = Date.parse("2026-11-11T00:01:00Z");
+    expect(storyLineFor(card, "es", minuteLater)).toBe(
       ES["clientsDisplay.story.new"].replace("{when}", "hace 1 min"),
     );
-    expect(storyLineFor(card, "es")).not.toContain("habitual");
+    expect(storyLineFor(card, "es", minuteLater)).not.toContain("habitual");
   });
 
   it("the board offers a New filter chip", () => {

@@ -20,6 +20,7 @@ import {
   balanceDisplay,
   ctaFor,
   initialsOf,
+  lastWhenFor,
   moodFor,
   segmentLabel,
   sinceBadge,
@@ -148,7 +149,8 @@ function ClientCard(
               <span class="ccard2__seg-dot" />
             </>
           )}
-          <span>{c.lastWhenRel}</span>
+          {/* REQ-367: worded here, in the live language, from the timestamp */}
+          <span>{lastWhenFor(c, lang)}</span>
         </div>
         <p class="ccard2__story">{story}</p>
         {subs.length > 0 && (

@@ -1,5 +1,6 @@
 import { asset, Head } from "fresh/runtime";
 import { define } from "../utils.ts";
+import DocTitle from "../components/DocTitle.tsx";
 import SiteFooter from "../components/SiteFooter.tsx";
 import { loadUser } from "../lib/auth.ts";
 import {
@@ -54,7 +55,10 @@ export default define.page(async function Verify(ctx) {
   return (
     <>
       <Head>
-        <title>{s["verify.h1"]} · {tFor(lang, "brand.name")}</title>
+        <DocTitle
+          lang={lang}
+          title={(l) => `${STRINGS[l]["verify.h1"]} · ${tFor(l, "brand.name")}`}
+        />
         <link rel="stylesheet" href={asset("/verify.css")} />
         {
           /* REQ-080: reached by sending the code from a landing page (the

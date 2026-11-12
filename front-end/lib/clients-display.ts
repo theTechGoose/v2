@@ -10,9 +10,13 @@ import type {
   ClientSegmentKey,
   ClientStatus,
   CustomerCard,
+  CustomerJobsSub,
 } from "../clients/clients.ts";
 import { type Lang, tFor } from "./i18n.ts";
-import { hasAddress } from "../../shared/quote-flow/format-helpers.ts";
+import {
+  hasAddress,
+  relativeTime,
+} from "../../shared/quote-flow/format-helpers.ts";
 import { type CtaKind, ctaKindFor } from "./client-actions.ts";
 
 export interface MoodPalette {
@@ -215,8 +219,40 @@ export function addressFor(c: CustomerCard, lang: Lang = "en"): string {
   return tFor(lang, "clientsDisplay.address.none");
 }
 
+/**
+ * REQ-367 (demo-loop cycle 1, m10) — how long ago the customer's last activity
+ * was, in `lang`: "hace un momento" / "just now", "hace 5 min" / "5m ago"…
+ * Worded HERE, from the card's timestamp, in the language live on screen. The
+ * backend used to send it worded in the request's language (`lastWhenRel`), so
+ * after an EN/ES switch the card read "New customer — added hace un momento."
+ */
+export function lastWhenFor(
+  c: CustomerCard,
+  lang: Lang = "en",
+  nowMs: number = Date.now(),
+): string {
+  return c.lastWhen ? relativeTime(c.lastWhen, nowMs, lang) : "";
+}
+
+const JOBS_SUB_KEYS: Record<CustomerJobsSub, string> = {
+  overdue: "clientsDisplay.jobsSub.overdue",
+  active: "clientsDisplay.jobsSub.active",
+  scheduled: "clientsDisplay.jobsSub.scheduled",
+  none: "clientsDisplay.jobsSub.none",
+};
+
+/** REQ-367 — the card's jobs line ("activo" / "active"), worded from its kind in `lang`. */
+export function jobsSubLabel(kind: CustomerJobsSub, lang: Lang = "en"): string {
+  return tFor(lang, JOBS_SUB_KEYS[kind] ?? JOBS_SUB_KEYS.none);
+}
+
 /** One-line "what's going on" copy for the card body. */
-export function storyLineFor(c: CustomerCard, lang: Lang = "en"): string {
+export function storyLineFor(
+  c: CustomerCard,
+  lang: Lang = "en",
+  nowMs: number = Date.now(),
+): string {
+  const when = lastWhenFor(c, lang, nowMs);
   if (c.notes && c.notes.trim()) return c.notes.trim();
   if (c.balanceCents > 0) {
     return tFor(lang, "clientsDisplay.story.balance", {
@@ -230,11 +266,11 @@ export function storyLineFor(c: CustomerCard, lang: Lang = "en"): string {
       c.activeJobs === 1
         ? "clientsDisplay.story.active.one"
         : "clientsDisplay.story.active.other",
-      { n: c.activeJobs, sub: c.jobsSub },
+      { n: c.activeJobs, sub: jobsSubLabel(c.jobsSub, lang) },
     );
   }
   if (c.status === "lead") {
-    return tFor(lang, "clientsDisplay.story.lead", { when: c.lastWhenRel });
+    return tFor(lang, "clientsDisplay.story.lead", { when });
   }
   if (c.status === "cold") {
     return tFor(
@@ -246,12 +282,12 @@ export function storyLineFor(c: CustomerCard, lang: Lang = "en"): string {
     );
   }
   if (c.status === "regular") {
-    return tFor(lang, "clientsDisplay.story.regular", { when: c.lastWhenRel });
+    return tFor(lang, "clientsDisplay.story.regular", { when });
   }
   if (c.status === "new") {
-    return tFor(lang, "clientsDisplay.story.new", { when: c.lastWhenRel });
+    return tFor(lang, "clientsDisplay.story.new", { when });
   }
-  return tFor(lang, "clientsDisplay.story.default", { when: c.lastWhenRel });
+  return tFor(lang, "clientsDisplay.story.default", { when });
 }
 
 /** REQ-277: the label of the nudge whose action `nudgeActionFor` decides — one precedence for both */

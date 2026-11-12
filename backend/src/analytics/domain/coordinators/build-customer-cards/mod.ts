@@ -12,22 +12,10 @@ import type {
 import type { Quote } from "@paperwork/dto/quote.ts";
 import type { Invoice } from "@paperwork/dto/invoice.ts";
 import type { View } from "@paperwork/dto/view.ts";
-import { relativeTime } from "#quote-flow/format-helpers.ts";
 import { docNumberOf } from "#documents/numbering.ts";
-import { type Lang, t } from "@core/i18n/mod.ts";
 
 /** Invoice statuses that still count as owed (REQ-016). */
 const OWED_STATUSES = new Set(["pending", "sent", "viewed", "claimed"]);
-
-const JOBS_SUB_KEY: Record<
-  "overdue" | "active" | "scheduled" | "none",
-  string
-> = {
-  overdue: "clientsDisplay.jobsSub.overdue",
-  active: "clientsDisplay.jobsSub.active",
-  scheduled: "clientsDisplay.jobsSub.scheduled",
-  none: "clientsDisplay.jobsSub.none",
-};
 
 const MS_PER_DAY = 86_400_000;
 const TWELVE_MONTHS_MS = 365 * MS_PER_DAY;
@@ -41,6 +29,12 @@ const TWELVE_MONTHS_MS = 365 * MS_PER_DAY;
  *
  * Status precedence + temp formula are encoded here exactly as §2.2 of
  * reference/backend.md describes — the frontend must not re-derive.
+ *
+ * REQ-367 (demo-loop cycle 1, m10): the card carries DATA, never words in the
+ * viewer's language — `lastWhen` (the timestamp, not "hace un momento") and
+ * `jobsSub` (a kind, not "sin trabajos activos"). The client words both in the
+ * language that is live when it renders, so an EN/ES switch reaches them
+ * without a refetch. The coordinator takes no language on purpose.
  */
 @Injectable()
 export class BuildCustomerCards {
@@ -54,7 +48,6 @@ export class BuildCustomerCards {
   async run(
     userId: string,
     now: Date = new Date(),
-    lang: Lang = "en",
   ): Promise<CustomerCard[]> {
     const [customers, quotes, invoices, views] = await Promise.all([
       this.customers.listByUser(userId),
@@ -69,7 +62,7 @@ export class BuildCustomerCards {
     for (const q of quotes) quoteToCustomer.set(q.id, q.customerId);
 
     return customers.map((c) =>
-      buildOne(c, quotes, invoices, views, quoteToCustomer, now, lang)
+      buildOne(c, quotes, invoices, views, quoteToCustomer, now)
     );
   }
 }
@@ -81,7 +74,6 @@ function buildOne(
   allViews: View[],
   quoteToCustomer: Map<string, string | undefined>,
   now: Date,
-  lang: Lang,
 ): CustomerCard {
   const myQuotes = allQuotes.filter((q) => q.customerId === c.id);
   const myInvoices = allInvoices.filter((i) => i.customerId === c.id);
@@ -100,7 +92,6 @@ function buildOne(
   const lastTs = Math.max(...eventTimes);
   const lastWhen = new Date(lastTs).toISOString();
   const daysSinceContact = Math.floor((now.getTime() - lastTs) / MS_PER_DAY);
-  const lastWhenRel = relativeTime(lastWhen, now, lang);
   const lastTone: CustomerLastTone = daysSinceContact <= 7
     ? "hot"
     : daysSinceContact <= 30
@@ -135,17 +126,15 @@ function buildOne(
   const overdueCount = myInvoices.filter(
     (i) => i.status === "pending" && i.dueDate < now.toISOString().slice(0, 10),
   ).length;
-  // Localized to the viewer so the story line never leaks an EN "· active"
-  // suffix into a Spanish card (P-34/P-64).
-  const jobsSubKind: "overdue" | "active" | "scheduled" | "none" =
-    overdueCount > 0
-      ? "overdue"
-      : activeJobs > 0
-      ? "active"
-      : acceptedQuotes.length > 0
-      ? "scheduled"
-      : "none";
-  const jobsSub = t(lang, JOBS_SUB_KEY[jobsSubKind]);
+  // P-34/P-64: the story line's "· active" in the viewer's language — REQ-367:
+  // a kind the client words in the live language (clientsDisplay.jobsSub.*).
+  const jobsSub: CustomerCard["jobsSub"] = overdueCount > 0
+    ? "overdue"
+    : activeJobs > 0
+    ? "active"
+    : acceptedQuotes.length > 0
+    ? "scheduled"
+    : "none";
 
   // ---------------- 12-month revenue ----------------
   const twelveMoAgo = now.getTime() - TWELVE_MONTHS_MS;
@@ -182,7 +171,6 @@ function buildOne(
   return {
     ...c,
     lastWhen,
-    lastWhenRel,
     lastTone,
     balanceCents,
     balanceSub,

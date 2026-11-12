@@ -1,5 +1,6 @@
 import { asset, Head } from "fresh/runtime";
 import { define } from "../../utils.ts";
+import DocTitle from "../../components/DocTitle.tsx";
 import SiteFooter from "../../components/SiteFooter.tsx";
 import { type Lang, langFromCookie, pickLangFromAcceptLanguage } from "../../lib/lang.ts";
 import { tFor } from "../../lib/i18n.ts";
@@ -33,9 +34,10 @@ export default define.page(function PayFake(ctx) {
   return (
     <>
       <Head>
-        <title>
-          {tFor(lang, "payFake.title")} · {tFor(lang, "brand.name")}
-        </title>
+        <DocTitle
+          lang={lang}
+          title={(l) => `${tFor(l, "payFake.title")} · ${tFor(l, "brand.name")}`}
+        />
         <meta name="robots" content="noindex" />
         <link key="css-verify" rel="stylesheet" href={asset("/verify.css")} />
       </Head>

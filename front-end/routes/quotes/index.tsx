@@ -1,5 +1,6 @@
 import { asset, Head } from "fresh/runtime";
 import { define } from "../../utils.ts";
+import DocTitle from "../../components/DocTitle.tsx";
 import SiteFooter from "../../components/SiteFooter.tsx";
 import { tFor } from "../../lib/i18n.ts";
 import DashSidebar from "../../islands/DashSidebar.tsx";
@@ -18,7 +19,7 @@ export default define.page(function QuotesRoute(ctx) {
     <>
       <Head>
         {/* UX-16: dictionary-driven like dashboard/invoices/settings. */}
-        <title>{tFor(lang, "quotesPage.docTitle")}</title>
+        <DocTitle lang={lang} title={(l) => tFor(l, "quotesPage.docTitle")} />
         <link
           key="css-dashboard"
           rel="stylesheet"

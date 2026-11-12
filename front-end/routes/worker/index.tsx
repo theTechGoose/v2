@@ -9,6 +9,7 @@
  */
 import { asset, Head } from "fresh/runtime";
 import { define } from "../../utils.ts";
+import DocTitle from "../../components/DocTitle.tsx";
 import { type Lang, tFor } from "../../lib/i18n.ts";
 import { langFromCookie } from "../../lib/lang.ts";
 import { loadUser } from "../../lib/auth.ts";
@@ -26,7 +27,7 @@ export default define.page(async function WorkerRoute(ctx) {
   return (
     <>
       <Head>
-        <title>{tFor(lang, "worker.docTitle")}</title>
+        <DocTitle lang={lang} title={(l) => tFor(l, "worker.docTitle")} />
         <link
           key="css-dashboard"
           rel="stylesheet"

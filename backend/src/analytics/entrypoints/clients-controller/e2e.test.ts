@@ -68,7 +68,9 @@ Deno.test("clients e2e: GET /clients returns CustomerCard[] with derived fields"
     assert(typeof card.temp === "number");
     assert(typeof card.balanceCents === "number");
     assert(typeof card.daysSinceContact === "number");
-    assert(typeof card.lastWhenRel === "string");
+    // REQ-367: the raw timestamp — the client words "how long ago" in the live language
+    assert(typeof card.lastWhen === "string");
+    assertEquals("lastWhenRel" in card, false);
   });
 });
 

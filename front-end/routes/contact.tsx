@@ -1,5 +1,6 @@
 import { asset, Head } from "fresh/runtime";
 import { define } from "../utils.ts";
+import DocTitle from "../components/DocTitle.tsx";
 import SiteFooter from "../components/SiteFooter.tsx";
 import type { Lang } from "../lib/lang.ts";
 import { tFor } from "../lib/i18n.ts";
@@ -58,9 +59,11 @@ export default define.page<typeof handler>(function Contact(ctx) {
   return (
     <>
       <Head>
-        <title>
-          {tFor(lang, "contactPage.title")} · {tFor(lang, "brand.name")}
-        </title>
+        <DocTitle
+          lang={lang}
+          title={(l) =>
+            `${tFor(l, "contactPage.title")} · ${tFor(l, "brand.name")}`}
+        />
         {
           /* REQ-218: /contact, /contact?lang=en and /contact?lang=es are one
             page; the sitemap lists the bare URL, and so does this. */

@@ -1,5 +1,6 @@
 import { asset, Head } from "fresh/runtime";
 import { define } from "../../utils.ts";
+import DocTitle from "../../components/DocTitle.tsx";
 import SiteFooter from "../../components/SiteFooter.tsx";
 import { getSessionId } from "../../lib/auth.ts";
 import { ssrBackendGetAuthed } from "../../lib/backend-fetch.ts";
@@ -74,7 +75,10 @@ export default define.page(async function AssistantHome(ctx) {
   return (
     <>
       <Head>
-        <title>{tFor(lang, "assistantPage.docTitle")}</title>
+        <DocTitle
+          lang={lang}
+          title={(l) => tFor(l, "assistantPage.docTitle")}
+        />
         <link rel="stylesheet" href={asset("/assistant-page.css")} />
       </Head>
 

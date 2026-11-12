@@ -1,5 +1,6 @@
 import { asset, Head } from "fresh/runtime";
 import { define } from "../../utils.ts";
+import DocTitle from "../../components/DocTitle.tsx";
 import { type Lang, tFor } from "../../lib/i18n.ts";
 import DemoStage from "../../islands/DemoStage.tsx";
 
@@ -9,9 +10,11 @@ export default define.page(function DemoStageRoute(ctx) {
   return (
     <>
       <Head>
-        <title>
-          {tFor(lang, "demoMode.title")} · {tFor(lang, "brand.name")}
-        </title>
+        <DocTitle
+          lang={lang}
+          title={(l) =>
+            `${tFor(l, "demoMode.title")} · ${tFor(l, "brand.name")}`}
+        />
         <meta name="robots" content="noindex" />
         {/* REQ-270: the pill and banner use font:inherit — give the page a font */}
         <link

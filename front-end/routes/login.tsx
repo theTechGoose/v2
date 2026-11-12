@@ -1,5 +1,6 @@
 import { asset, Head } from "fresh/runtime";
 import { define } from "../utils.ts";
+import DocTitle from "../components/DocTitle.tsx";
 import SiteFooter from "../components/SiteFooter.tsx";
 import { loadUser } from "../lib/auth.ts";
 import {
@@ -31,9 +32,10 @@ export default define.page(async function Login(ctx) {
   return (
     <>
       <Head>
-        <title>
-          {tFor(lang, "loginPage.title")} · {tFor(lang, "brand.name")}
-        </title>
+        <DocTitle
+          lang={lang}
+          title={(l) => `${tFor(l, "loginPage.title")} · ${tFor(l, "brand.name")}`}
+        />
         <link rel="stylesheet" href={asset("/verify.css")} />
       </Head>
       <div class="verify-shell">

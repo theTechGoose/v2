@@ -1,5 +1,6 @@
 import { asset, Head } from "fresh/runtime";
 import { define } from "../../utils.ts";
+import DocTitle from "../../components/DocTitle.tsx";
 import SiteFooter from "../../components/SiteFooter.tsx";
 import { ssrBackendGet } from "../../lib/backend-fetch.ts";
 import { fmtMoneyExact, fmtPhone, telHref } from "../../lib/format.ts";
@@ -181,7 +182,10 @@ export default define.page(async function PublicInvoice(ctx) {
   return (
     <>
       <Head>
-        <title>{tFor(lang, "publicInvoice.docTitle")}</title>
+        <DocTitle
+          lang={lang}
+          title={(l) => tFor(l, "publicInvoice.docTitle")}
+        />
         <link key="css-landing" rel="stylesheet" href={asset("/landing.css")} />
         <link
           key="css-public-lang"

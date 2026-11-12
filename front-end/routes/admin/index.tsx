@@ -1,10 +1,11 @@
 import { asset, Head } from "fresh/runtime";
 import { define } from "../../utils.ts";
+import DocTitle from "../../components/DocTitle.tsx";
 import { type Lang, tFor } from "../../lib/i18n.ts";
 import DashSidebar from "../../islands/DashSidebar.tsx";
 import DashTopbar from "../../islands/DashTopbar.tsx";
 import AdminPage from "../../islands/AdminPage.tsx";
-import SiteFooterLive from "../../islands/SiteFooterLive.tsx";
+import SiteFooter from "../../components/SiteFooter.tsx";
 
 const WEEKDAY_KEYS = [
   "date.weekday.sunday",
@@ -43,7 +44,11 @@ export default define.page(function AdminRoute(ctx) {
   return (
     <>
       <Head>
-        <title>Admin · {tFor(lang, "brand.name")}</title>
+        {/* "Admin" is the role's name in both languages (REQ-191) */}
+        <DocTitle
+          lang={lang}
+          title={(l) => `Admin · ${tFor(l, "brand.name")}`}
+        />
         <link rel="stylesheet" href={asset("/dashboard.css")} />
       </Head>
       <div class="app">
@@ -52,8 +57,8 @@ export default define.page(function AdminRoute(ctx) {
           <DashTopbar greetingDate={greetingDate} greetingName={greetingName} />
           <div class="content">
             <AdminPage selfId={user?.id} />
-            {/* REQ-269: the footer follows the topbar's EN/ES toggle */}
-            <SiteFooterLive lang={lang} />
+            {/* REQ-269/367: the footer follows the topbar's EN/ES toggle */}
+            <SiteFooter lang={lang} />
           </div>
         </main>
       </div>

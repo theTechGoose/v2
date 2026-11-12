@@ -2,6 +2,7 @@ import { asset, Head } from "fresh/runtime";
 import { type Lang, tFor } from "../lib/i18n.ts";
 import { LANDING_DICT } from "../lib/landing-dict.ts";
 import SiteFooter from "./SiteFooter.tsx";
+import DocTitle from "./DocTitle.tsx";
 import {
   type LegalBlock,
   legalDocFor,
@@ -36,9 +37,11 @@ export default function LegalPage(
   return (
     <>
       <Head>
-        <title>
-          {doc.title} · {tFor(lang, "brand.name")}
-        </title>
+        <DocTitle
+          lang={lang}
+          title={(l) =>
+            `${legalDocFor(l, id).title} · ${tFor(l, "brand.name")}`}
+        />
         {
           /* REQ-218: the document answers at three URLs (bare, ?lang=en,
             ?lang=es); this names the one that is the page, so a crawler does
