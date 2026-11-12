@@ -900,18 +900,23 @@ export function QuoteDoc(
                     <>
                       {t.emailWord} {
                         /* P-58: long contractor emails overflowed the 390px
-                          viewport — the address may break mid-string so it
-                          never paints past the card edge. */
+                          viewport — overflow-wrap:anywhere lets the address
+                          break mid-string ONLY when it fits no line by itself.
+                          REQ-328 (demo p10): no word-break:break-all — that
+                          allowed a break between any two characters, so the
+                          address split "exampl|e!" at whatever character hit
+                          the line end even when the whole address fit the
+                          next line. */
                       }
                       <a
                         href={`mailto:${contractor.email}`}
-                        style={`color:${TEAL};text-decoration:none;font-weight:700;overflow-wrap:anywhere;word-break:break-all`}
+                        style={`color:${TEAL};text-decoration:none;font-weight:700;overflow-wrap:anywhere`}
                       >
                         {contractor.email}
                       </a>
                     </>
                   )}
-                  {t.lookForward}
+                  <span data-cy="quote-contact-close">{t.lookForward}</span>
                 </div>
               </div>
             </footer>
