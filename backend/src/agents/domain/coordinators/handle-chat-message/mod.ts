@@ -40,6 +40,7 @@ import {
   stateFromPhone,
   isStarterChipText,
 } from "@agents/domain/business/onboarding/mod.ts";
+import { describeQuoteRevision } from "@agents/domain/business/quote-revision-reply/mod.ts";
 import { BusinessAddressStore } from "@profile/domain/data/business-address-store/mod.ts";
 import { QuoteStore } from "@paperwork/domain/data/quote-store/mod.ts";
 import { FileStore } from "@files/domain/data/file-store/mod.ts";
@@ -841,6 +842,40 @@ export class HandleChatMessage {
       replyText = t(replyLang, "chatCoordinator.noActionFallback");
     }
 
+    // REQ-267 (demo ai-assistant-p1-noreply) — the #36 suppression is for a
+    // FIRST draft only. A create_quote that revises the bound draft is the
+    // answer to a correction; landing it as a bare card read as "no reply",
+    // and anything create_quote can't carry (a deposit) vanished silently.
+    // When the model gave no usable prose, write the reply server-side from
+    // the old → new line items.
+    let existingDraft: Awaited<ReturnType<QuoteStore["getOwned"]>> | undefined;
+    if (llmResponse.action?.type === "create_quote" && conv.quoteId) {
+      try {
+        const existing = await this.quotes.getOwned(conv.quoteId, input.userId);
+        if (existing.status === "draft") existingDraft = existing;
+      } catch {
+        // Lookup failed — treated as a first draft below.
+      }
+    }
+    if (
+      suppressTextBubble && existingDraft &&
+      llmResponse.action?.type === "create_quote"
+    ) {
+      replyText = describeQuoteRevision(
+        replyLang,
+        existingDraft.lineItems.map((l) => ({
+          description: l.description,
+          priceCents: l.price * (l.quantity ?? 1),
+        })),
+        llmResponse.action.payload.lineItems.map((l) => ({
+          description: l.description,
+          priceCents: l.amountCents,
+        })),
+        input.content,
+      );
+      suppressTextBubble = false;
+    }
+
     const newMessages: AgentMessage[] = [userMsg];
     if (!suppressTextBubble) {
       const assistantMsg = await this.messages.append({
@@ -899,23 +934,17 @@ export class HandleChatMessage {
         // immutable, so fall through to creating a new one if the bound
         // quote is no longer in 'draft'.
         let quote;
-        if (conv.quoteId) {
+        if (existingDraft) {
           try {
-            const existing = await this.quotes.getOwned(
-              conv.quoteId,
-              input.userId,
-            );
-            if (existing.status === "draft") {
-              quote = await this.quotes.update(conv.quoteId, input.userId, {
-                summary: action.payload.summary,
-                lineItems: dtoLineItems,
-                estimatedTotal,
-                // a correction without an address keeps the one on file
-                ...(serviceAddress ? { serviceAddress } : {}),
-              });
-            }
+            quote = await this.quotes.update(existingDraft.id, input.userId, {
+              summary: action.payload.summary,
+              lineItems: dtoLineItems,
+              estimatedTotal,
+              // a correction without an address keeps the one on file
+              ...(serviceAddress ? { serviceAddress } : {}),
+            });
           } catch {
-            // Lookup failed — fall through to create.
+            // Update failed — fall through to create.
           }
         }
         if (!quote) {

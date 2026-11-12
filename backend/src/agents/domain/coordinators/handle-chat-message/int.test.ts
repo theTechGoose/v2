@@ -1095,3 +1095,191 @@ Deno.test("REQ-263 handle-chat-message integration: a later correction without a
   assertEquals(stored.serviceAddress, "412 Oak St Austin");
   await resetKv();
 });
+
+// REQ-267 (demo issue ai-assistant-p1-noreply): a correction re-drafts the
+// quote via create_quote, the model often returns no prose, and the turn
+// used to land as an updated card with no text at all. A revision of an
+// existing draft now always gets a server-written reply naming the change —
+// and a deposit ask (create_quote has no deposit field) is acknowledged.
+async function draftThenCorrect(correctionText: string, content: string) {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const ctx = fresh();
+  await seedOnboarded("u-1");
+  ctx.llm.setScript([
+    {
+      text: "",
+      action: {
+        type: "create_quote",
+        payload: {
+          summary: "Interior repaint",
+          lineItems: [
+            { description: "Interior walls — 2 coats", amountCents: 180_000 },
+            { description: "Paint (materials)", amountCents: 30_000 },
+          ],
+        },
+      },
+    },
+    {
+      text: correctionText,
+      action: {
+        type: "create_quote",
+        payload: {
+          summary: "Interior repaint",
+          lineItems: [
+            { description: "Interior walls — 2 coats", amountCents: 180_000 },
+            {
+              description: "Paint supplied by Castro Painting",
+              amountCents: 0,
+            },
+          ],
+        },
+      },
+    },
+  ]);
+  const conv = await ctx.conversations.create({ userId: "u-1" });
+  const first = await ctx.flow.run({
+    userId: "u-1",
+    conversationId: conv.id,
+    content: "Interior repaint, 3 bedrooms, $2,100",
+  });
+  const second = await ctx.flow.run({
+    userId: "u-1",
+    conversationId: conv.id,
+    content,
+  });
+  return { ...ctx, first, second };
+}
+
+Deno.test("REQ-267 handle-chat-message integration: a correction that re-drafts with no prose still gets a text reply naming the change", async () => {
+  const { first, second, quotes } = await draftThenCorrect(
+    "",
+    "I'll supply the paint myself and I want a 50% deposit",
+  );
+  // First draft: card only (the #36 suppression stays for a fresh draft).
+  assertEquals(first.newMessages.map((m) => m.kind), ["text", "action_card"]);
+  assertEquals(first.newMessages[0].role, "user");
+
+  const kinds = second.newMessages.map((m) => `${m.role}:${m.kind}`);
+  assertEquals(kinds, ["user:text", "assistant:text", "assistant:action_card"]);
+  const reply = second.newMessages[1].content;
+  assert(reply.includes("Updated the quote"), reply);
+  assert(reply.includes("removed Paint (materials)"), reply);
+  assert(reply.includes("added Paint supplied by Castro Painting"), reply);
+  assert(reply.includes("Total $2,100 → $1,800"), reply);
+  assert(reply.toLowerCase().includes("deposit"), reply);
+
+  // Same quote updated in place.
+  const card1 = first.newMessages[1].payload as { quoteId: string };
+  const card2 = second.newMessages[2].payload as { quoteId: string };
+  assertEquals(card2.quoteId, card1.quoteId);
+  const stored = await quotes.getOwned(card2.quoteId, "u-1");
+  assertEquals(stored.estimatedTotal, 180_000);
+  await resetKv();
+});
+
+Deno.test("REQ-267 handle-chat-message integration: a correction whose prose was only a customer ask still gets a text reply", async () => {
+  const { second } = await draftThenCorrect(
+    "Who's this for?",
+    "supply the paint myself",
+  );
+  const kinds = second.newMessages.map((m) => `${m.role}:${m.kind}`);
+  assertEquals(kinds, ["user:text", "assistant:text", "assistant:action_card"]);
+  const reply = second.newMessages[1].content;
+  assert(reply.includes("Updated the quote"), reply);
+  assert(!reply.toLowerCase().includes("deposit"), reply);
+  await resetKv();
+});
+
+Deno.test("REQ-267 ai-assistant-p1-noreply: a correction that re-drafts the quote with no LLM prose still gets a text reply saying what changed (incl. the deposit)", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const { conversations, llm, quotes, flow } = fresh();
+  await seedOnboarded("u-1");
+  const draft = await quotes.create("u-1", {
+    summary: "Interior repaint",
+    lineItems: [
+      {
+        description: "Interior walls — 2 coats",
+        quantity: 1,
+        unit: "ea",
+        price: 180_000,
+      },
+      {
+        description: "Paint (materials)",
+        quantity: 1,
+        unit: "ea",
+        price: 30_000,
+      },
+    ],
+    estimatedTotal: 210_000,
+    status: "draft",
+  });
+  const conv = await conversations.create({ userId: "u-1", quoteId: draft.id });
+  // The model re-issues create_quote and says nothing (fallbackTextFor → "").
+  llm.setScript([{
+    text: "",
+    action: {
+      type: "create_quote",
+      payload: {
+        summary: "Interior repaint",
+        lineItems: [
+          { description: "Interior walls — 2 coats", amountCents: 180_000 },
+          { description: "Paint supplied by Castro Painting", amountCents: 0 },
+        ],
+      },
+    },
+  }]);
+  const result = await flow.run({
+    userId: "u-1",
+    conversationId: conv.id,
+    content:
+      "Castro Painting will supply the paint myself, and I want a 50% deposit",
+  });
+  const texts = result.newMessages.filter((m) =>
+    m.role === "assistant" && m.kind === "text"
+  );
+  assertEquals(
+    texts.length,
+    1,
+    "a correction must not be answered by a bare card",
+  );
+  const reply = texts[0].content;
+  assert(reply.includes("removed Paint (materials)"), reply);
+  assert(reply.includes("added Paint supplied by Castro Painting"), reply);
+  assert(reply.toLowerCase().includes("deposit"), reply);
+  // Card still lands, updated in place on the same draft.
+  const card = result.newMessages.find((m) => m.kind === "action_card")!;
+  assertEquals((card.payload as { quoteId: string }).quoteId, draft.id);
+  await resetKv();
+});
+
+Deno.test("REQ-267 ai-assistant-p1-noreply: the FIRST draft keeps the #36 suppression (card only, no filler bubble)", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const { conversations, llm, flow } = fresh();
+  await seedOnboarded("u-1");
+  const conv = await conversations.create({ userId: "u-1" });
+  llm.setScript([{
+    text: "",
+    action: {
+      type: "create_quote",
+      payload: {
+        summary: "Interior repaint",
+        lineItems: [{ description: "Walls", amountCents: 100_000 }],
+      },
+    },
+  }]);
+  const result = await flow.run({
+    userId: "u-1",
+    conversationId: conv.id,
+    content: "quote interior repaint 1200 sqft",
+  });
+  assertEquals(
+    result.newMessages.filter((m) =>
+      m.kind === "text" && m.role === "assistant"
+    ).length,
+    0,
+  );
+  await resetKv();
+});
