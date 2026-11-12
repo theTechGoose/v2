@@ -488,7 +488,11 @@ function EditCard(
       dataCy="settings-edit-details"
     >
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px">
-        <label style="display:block">
+        {
+          /* REQ-512 (demo cycle 3, p8-pair1-f): name and email span the row like the
+            fields below — in one minmax(180px) track a 24-char email clipped. */
+        }
+        <label style="display:block;grid-column:1 / -1">
           <span style={labelStyle}>{t.name}</span>
           <input
             type="text"
@@ -507,7 +511,7 @@ function EditCard(
             aria-label={t.ariaEditName}
           />
         </label>
-        <label style="display:block">
+        <label style="display:block;grid-column:1 / -1">
           <span style={labelStyle}>{t.email}</span>
           <input
             type="email"
