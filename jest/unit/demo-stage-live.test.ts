@@ -541,9 +541,19 @@ describe("REQ-391 the pill's words: Live only when the frame shows the followed 
   });
 
   test("the frame between pages: as it is (the pill says it), unless it is already the stale screen — then still dimmed under the banner", () => {
-    expect(stageFrameLook({ status: "between", mirrored: true, stale: false }))
+    expect(stageFrameLook({
+      status: "between",
+      mirrored: true,
+      stale: false,
+      styled: true,
+    }))
       .toEqual({ visibility: "visible", filter: "none", waiting: false });
-    expect(stageFrameLook({ status: "between", mirrored: true, stale: true }))
+    expect(stageFrameLook({
+      status: "between",
+      mirrored: true,
+      stale: true,
+      styled: true,
+    }))
       .toEqual({
         visibility: "visible",
         filter: WAITING_FILTER,

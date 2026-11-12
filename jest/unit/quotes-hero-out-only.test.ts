@@ -105,7 +105,12 @@ describe("REQ-404 (m13): the dashboard's 'No quotes out yet' mentions ready-to-s
   it("DashboardPage passes the draft count; the KPI stays stats.quotes.sent", () => {
     const src = read("front-end/islands/DashboardPage.tsx");
     expect(src).toMatch(/draftCount=\{stats\?\.quotes\.draft \?\? 0\}/);
-    expect(src).toMatch(/pendingQuotes: stats\?\.quotes\.sent \?\? 0/);
+    // REQ-397 moved the KPI pick into lib/dashboard-kpis.ts (pickKpis) — the
+    // count is still stats.quotes.sent (reconciled on demo-fixes)
+    expect(src).toMatch(/pickKpis\(stats\)/);
+    expect(read("front-end/lib/dashboard-kpis.ts")).toMatch(
+      /pendingQuotes: stats\?\.quotes\.sent \?\? 0/,
+    );
   });
   it("en + es say the drafts are ready to send", () => {
     expect(en["quotesAwaiting.emptyDrafts.one"]).toMatch(/ready to send/);

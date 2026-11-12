@@ -195,8 +195,10 @@ describe("REQ-370 m23 — the stage is wired to it", () => {
     expect(src).toMatch(
       /\{look\.visibility === "hidden" && \(\s*<div\s+data-cy="demo-connecting"/,
     );
+    // REQ-391 words the pill through stageStatus: the frame counts as mirrored only once it is
+    // styled, so "Live" waits for the same fact (reconciled on demo-fixes)
     expect(src).toMatch(
-      /look\.visibility === "visible"\s*\? t\("demoMode\.live"\)\s*: t\("demoMode\.connecting"\)/,
+      /stageStatus\(\{[\s\S]{0,300}mirrored: !!mirrored && styled/,
     );
   });
 });

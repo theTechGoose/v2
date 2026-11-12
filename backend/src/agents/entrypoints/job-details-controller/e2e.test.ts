@@ -169,7 +169,8 @@ async function withScriptedLlm(
 }
 
 const isTranslate = (req: LLMRequest) =>
-  /translate short construction scope-of-work/i.test(req.systemPrompt ?? "");
+  // REQ-410 dropped "short" from the prompt (reconciled on demo-fixes)
+  /translate (short )?construction scope-of-work/i.test(req.systemPrompt ?? "");
 
 /** TranslateBullets' contract: {"texts": [...]} in, same count out. */
 function translated(req: LLMRequest, map: Record<string, string>): LLMResponse {
