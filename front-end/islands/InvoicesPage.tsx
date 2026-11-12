@@ -408,7 +408,7 @@ export default function InvoicesPage(_props: { lang?: Lang }) {
   /** REQ-030 (NW-25): the "Create & send" modal navigates away after
    *  dispatching — a half-delivered or failed send is carried across the
    *  reload (sessionStorage) and shown here instead of being dropped. */
-  const [sendFlash, setSendFlash] = useState<
+  const [sendFlash] = useState<
     { text: string; partial: boolean } | null
   >(() => {
     try {
