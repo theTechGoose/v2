@@ -3,7 +3,11 @@ import { type Lang, t } from "@core/i18n/mod.ts";
 import { QuoteStore } from "@paperwork/domain/data/quote-store/mod.ts";
 import { InvoiceStore } from "@paperwork/domain/data/invoice-store/mod.ts";
 import { ChangeOrderStore } from "@paperwork/domain/data/change-order-store/mod.ts";
-import { SendChangeOrderAlert } from "@paperwork/domain/coordinators/send-change-order-alert/mod.ts";
+import {
+  type ChangeOrderAlertResult,
+  SendChangeOrderAlert,
+} from "@paperwork/domain/coordinators/send-change-order-alert/mod.ts";
+import { changeOrderSentLine } from "@agents/domain/business/change-order-delivery/mod.ts";
 import { CustomerStore } from "@crm/domain/data/customer-store/mod.ts";
 import {
   isInvoiceLocked,
@@ -48,6 +52,17 @@ export type ChatChangeOrderOutcome =
     quoteNumber?: string;
     invoiceId: string;
     changeOrderId: string;
+    /** REQ-456 (M25): "CO-001", for the chat's chip. */
+    changeOrderNumber?: string;
+    /** REQ-456: the customer's approval page, origin-free ("/co/<id>?lang=en"). */
+    approvalPath: string;
+    /** REQ-456: what reached the customer — absent when the alert failed. */
+    delivery?: {
+      emailedTo?: string;
+      textedTo?: string;
+      emailFailureReason?: string;
+      smsFailureReason?: string;
+    };
   }
   | { kind: "pending_revision"; quoteId: string; quoteNumber?: string }
   | { kind: "draft_updated"; quoteId: string; quoteNumber?: string }
@@ -270,17 +285,43 @@ export class ApplyChatChangeOrder {
           : {}),
         originalAmountCents: invoice.amount ?? 0,
       });
-      this.alert.run(co.id).catch((err) =>
-        console.error(`[chat:change_order] alert failed for ${co.id}:`, err)
-      );
+      // REQ-456 (demo-loop cycle 3, M25): the alert emails and texts the
+      // CUSTOMER the /co link. Wait for it, so the reply says what actually
+      // reached them instead of "I've sent you the link to share".
+      let sent: ChangeOrderAlertResult | undefined;
+      let alertError: string | undefined;
+      try {
+        sent = await this.alert.run(co.id);
+      } catch (err) {
+        console.error(`[chat:change_order] alert failed for ${co.id}:`, err);
+        alertError = err instanceof Error ? err.message : String(err);
+      }
+      const delivered = sent?.customer;
+      const number = delivered?.number ?? co.number ?? co.id;
+      const { number: _n, approvalPath, ...delivery } = delivered ??
+        { number, approvalPath: `/co/${co.id}` };
+      const sentLine = changeOrderSentLine(lang, {
+        number,
+        name: vars.name,
+        ...(delivered
+          ? delivery
+          : { error: alertError ?? sent?.reason ?? "not sent" }),
+      });
       return {
-        text: t(lang, "chatCoordinator.changeOrder.created", vars),
+        text: t(lang, "chatCoordinator.changeOrder.created", {
+          ...vars,
+          number,
+          sent: sentLine,
+        }),
         outcome: {
           kind: "change_order",
           quoteId: quote.id,
           quoteNumber: quote.number,
           invoiceId: invoice.id,
           changeOrderId: co.id,
+          changeOrderNumber: number,
+          approvalPath,
+          ...(delivered ? { delivery } : {}),
         },
       };
     }

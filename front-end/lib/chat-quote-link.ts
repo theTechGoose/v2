@@ -64,3 +64,40 @@ export function chatQuoteLink(payload: unknown): ChatQuoteLink | undefined {
   }
   return undefined;
 }
+
+/**
+ * REQ-456 (demo-loop cycle 3, M25) — a reply that created a change order
+ * names it ("CO-001") and links the customer's approval page, so the
+ * contractor can copy the link or open it as the customer. The demo saw only
+ * "Open Q-001" and took "send it to her" as ignored.
+ */
+export interface ChatChangeOrderLink {
+  changeOrderId: string;
+  number?: string;
+  /** Origin-free "/co/<id>[?lang=xx]". */
+  path: string;
+}
+
+export function chatChangeOrderLink(
+  payload: unknown,
+): ChatChangeOrderLink | undefined {
+  if (!payload || typeof payload !== "object") return undefined;
+  const outcome = (payload as Record<string, unknown>).changeOrder;
+  if (!outcome || typeof outcome !== "object") return undefined;
+  const { kind, changeOrderId, changeOrderNumber, approvalPath } =
+    outcome as Record<string, unknown>;
+  if (kind !== "change_order") return undefined;
+  if (typeof changeOrderId !== "string" || !changeOrderId) return undefined;
+  const own = `/co/${encodeURIComponent(changeOrderId)}`;
+  const path = typeof approvalPath === "string" &&
+      (approvalPath === own || approvalPath.startsWith(`${own}?`))
+    ? approvalPath
+    : own;
+  return {
+    changeOrderId,
+    number: typeof changeOrderNumber === "string" && changeOrderNumber
+      ? changeOrderNumber
+      : undefined,
+    path,
+  };
+}
