@@ -33,6 +33,7 @@ import { SendAcceptedAlert } from "@paperwork/domain/coordinators/send-accepted-
 import { SendInquiryAlert } from "@paperwork/domain/coordinators/send-inquiry-alert/mod.ts";
 import { SendChangeOrderAlert } from "@paperwork/domain/coordinators/send-change-order-alert/mod.ts";
 import { ConfirmPayment } from "@paperwork/domain/coordinators/confirm-payment/mod.ts";
+import { RecordCardPayment } from "@paperwork/domain/coordinators/record-card-payment/mod.ts"; // REQ-213
 import { SendPaymentReminder } from "@paperwork/domain/coordinators/send-payment-reminder/mod.ts";
 import { ScheduleInvoiceNudges } from "@paperwork/domain/coordinators/schedule-invoice-nudges/mod.ts";
 import { ComputeInvoiceForecast } from "@paperwork/domain/coordinators/compute-invoice-forecast/mod.ts";
@@ -79,6 +80,7 @@ import { WorkOrderStore } from "@paperwork/domain/data/work-order-store/mod.ts";
     SendInquiryAlert,
     SendChangeOrderAlert,
     ConfirmPayment,
+    RecordCardPayment, // REQ-213
     SendPaymentReminder,
     ScheduleInvoiceNudges,
     ComputeInvoiceForecast,
