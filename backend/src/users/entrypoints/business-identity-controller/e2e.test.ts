@@ -180,3 +180,57 @@ Deno.test("REQ-252 business-identity e2e: a file id that does not exist, or is a
     assertEquals(foreign.body.error, "logo_not_image");
   });
 });
+
+// ---------------------------------------------------------------------------
+// REQ-348 (demo-loop cycle 1, issue m34): a Spanish-landing signup's first
+// identity write seeds the languages they send in from their own language —
+// Settings used to show English alone because nothing ever wrote the set.
+// ---------------------------------------------------------------------------
+
+async function loginIn(port: number, phone: string, language: "en" | "es"): Promise<string> {
+  await drain(await fetch(`http://localhost:${port}/auth/send-otp`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ phoneNumber: phone, language }),
+  }));
+  const stored = await new OtpStore().get(phone);
+  const v = await fetch(`http://localhost:${port}/auth/verify-otp`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ phoneNumber: phone, code: stored!.code }),
+  }).then((r) => r.json());
+  return v.sessionId;
+}
+
+async function putIdentity(port: number, sid: string, body: Record<string, unknown>): Promise<Record<string, unknown>> {
+  const res = await fetch(`http://localhost:${port}/profile/identity`, {
+    method: "PUT",
+    headers: { "content-type": "application/json", "x-session-id": sid },
+    body: JSON.stringify(body),
+  });
+  assertEquals(res.status, 200);
+  return await res.json();
+}
+
+Deno.test("REQ-348 business-identity e2e: a Spanish signup's first identity write seeds commsLanguages [en, es]; an English one [en] (demo m34)", async () => {
+  await withServer(async (port) => {
+    const es = await loginIn(port, "+15125550101", "es");
+    const esSaved = await putIdentity(port, es, { businessName: "Techos Rivera" });
+    assertEquals(esSaved.commsLanguages, ["en", "es"]);
+    // the default send language is untouched — the first send still adopts its pick
+    assertEquals(esSaved.commsLanguage, undefined);
+    const en = await loginIn(port, "+15125550102", "en");
+    assertEquals((await putIdentity(port, en, { businessName: "Rivera Roofing" })).commsLanguages, ["en"]);
+  });
+});
+
+Deno.test("REQ-348 business-identity e2e: a pick is never overridden — an explicit set stands, later writes keep it", async () => {
+  await withServer(async (port) => {
+    const sid = await loginIn(port, "+15125550103", "es");
+    assertEquals((await putIdentity(port, sid, { businessName: "Techos", commsLanguages: ["es"] })).commsLanguages, ["es"]);
+    assertEquals((await putIdentity(port, sid, { websiteUrl: "https://techos.example" })).commsLanguages, ["es"]);
+    const legacy = await loginIn(port, "+15125550104", "es");
+    const kept = await putIdentity(port, legacy, { commsLanguage: "en" });
+    assertEquals(kept.commsLanguages, undefined, "a legacy single choice stands — nothing is seeded over it");
+  });
+});

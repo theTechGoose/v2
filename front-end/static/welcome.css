@@ -55,6 +55,73 @@
   gap: 20px;
 }
 
+/* REQ-348 (demo m34): the wizard's own EN/ES switch — the app topbar's pill */
+.welcome__lang {
+  align-self: flex-end;
+  display: flex;
+  gap: 2px;
+  background: var(--mint-100);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 3px;
+  margin-bottom: -8px;
+}
+.welcome__lang-btn {
+  border: none;
+  background: transparent;
+  font-weight: 800;
+  font-size: 11px;
+  letter-spacing: 0.05em;
+  color: var(--fg-muted);
+  padding: 4px 10px;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: background 160ms, color 160ms;
+}
+.welcome__lang-btn:hover {
+  color: var(--brand-teal);
+}
+.welcome__lang-btn--on {
+  background: #fff;
+  color: var(--brand-teal);
+  box-shadow: 0 1px 3px rgba(20, 72, 82, 0.12);
+}
+
+/* REQ-348: the business step's "Languages you send in" */
+.welcome__send-in {
+  border: none;
+  margin: 16px 0 0;
+  padding: 0;
+}
+.welcome__send-in-label {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--fg-subtle);
+  margin-bottom: 8px;
+  padding: 0;
+}
+.welcome__send-in-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.welcome__send-in-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 12px;
+  background: #fff;
+  font-weight: 700;
+  font-size: 13.5px;
+  color: var(--fg);
+}
+.welcome__send-in-option:has(input:checked) {
+  border-color: var(--brand-green);
+}
+
 .welcome__progress-wrap {
   display: flex;
   flex-direction: column;

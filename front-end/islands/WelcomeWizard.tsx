@@ -24,7 +24,11 @@
 import type { ComponentChildren } from "preact";
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import { type Lang, langSignal, persistLang } from "../lib/lang.ts";
-import { t } from "../lib/i18n.ts";
+import { setLang, t } from "../lib/i18n.ts";
+import {
+  type CommsLang,
+  sendLanguagesOf,
+} from "../../shared/quote-flow/comms-language.ts";
 import { SUPPORT_PHONE_DISPLAY } from "../../shared/legal/contact.ts";
 import {
   type BusinessAddress,
@@ -300,6 +304,18 @@ function BusinessNameStep({ ctx }: { ctx: StepCtx }) {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const valid = value.trim().length > 0;
+  // REQ-348 (demo m34): the languages the business sends in, shown here so a Spanish signup sees
+  // English AND Spanish picked (the one rule, shared/quote-flow/comms-language.ts). Until the
+  // person touches a box the pick follows the account's language — the header switch included.
+  const [picked, setPicked] = useState<CommsLang[] | null>(null);
+  const sendIn = picked ?? sendLanguagesOf(ctx.snap.identity, ctx.snap.user.language);
+  function toggleSendIn(code: CommsLang, on: boolean) {
+    const set = new Set(sendIn);
+    if (on) set.add(code);
+    else set.delete(code);
+    if (set.size === 0) return; // always at least one language
+    setPicked((["en", "es"] as const).filter((c) => set.has(c)));
+  }
 
   async function save() {
     if (!valid || busy) return;
@@ -308,6 +324,10 @@ function BusinessNameStep({ ctx }: { ctx: StepCtx }) {
     try {
       const updated = await profileClient.updateIdentity({
         businessName: value.trim(),
+        commsLanguages: sendIn,
+        // the default send language must be one of the set (Settings' rule); English stays the
+        // unset default so the first send's adopt-the-pick rule still runs
+        ...(sendIn.includes("en") ? {} : { commsLanguage: sendIn[0] }),
       });
       ctx.patchSnap({
         identity: { ...(ctx.snap.identity ?? {}), ...updated },
@@ -343,6 +363,26 @@ function BusinessNameStep({ ctx }: { ctx: StepCtx }) {
           }
         }}
       />
+      <fieldset class="welcome__send-in">
+        <legend class="welcome__send-in-label">{t("settings.commsLang")}</legend>
+        <div class="welcome__send-in-options">
+          {([["en", "settings.english"], ["es", "settings.spanish"]] as const)
+            .map(([code, key]) => (
+              <label key={code} class="welcome__send-in-option">
+                <input
+                  type="checkbox"
+                  data-cy={`welcome-comms-${code}`}
+                  checked={sendIn.includes(code)}
+                  disabled={busy}
+                  // deno-lint-ignore no-explicit-any
+                  onChange={(e: any) =>
+                    toggleSendIn(code, e.currentTarget.checked)}
+                />
+                <span>{t(key)}</span>
+              </label>
+            ))}
+        </div>
+      </fieldset>
       {err ? <p class="welcome__error" role="alert">{err}</p> : null}
       <StepFooter ctx={ctx} valid={valid} busy={busy} onContinue={save} />
     </StepBody>
@@ -1423,8 +1463,41 @@ export default function WelcomeWizard(
     globalThis.location.href = "/assistant";
   }
 
+  // REQ-348 (demo m34): the EN/ES switch, in the wizard itself — /welcome mounts no app topbar,
+  // so onboarding had no way to change language. The topbar's behaviour: flip the signal at once,
+  // persist locally + the cookie (setLang), save the account's language (best effort).
+  const lang = langSignal.value;
+  function switchLang(code: Lang) {
+    if (langSignal.value === code) return;
+    setLang(code);
+    setSnap((prev) => ({ ...prev, user: { ...prev.user, language: code } }));
+    profileClient.updateUser({ language: code }).catch(() => {
+      /* best effort — the UI already flipped */
+    });
+  }
+
   return (
     <div class="welcome">
+      <div
+        class="welcome__lang"
+        role="group"
+        aria-label={t("dashTopbar.language")}
+      >
+        {(["en", "es"] as const).map((code) => (
+          <button
+            key={code}
+            type="button"
+            class={`welcome__lang-btn ${
+              lang === code ? "welcome__lang-btn--on" : ""
+            }`}
+            aria-pressed={lang === code ? "true" : "false"}
+            data-cy={`welcome-lang-${code}`}
+            onClick={() => switchLang(code)}
+          >
+            {code.toUpperCase()}
+          </button>
+        ))}
+      </div>
       <div class="welcome__progress-wrap">
         <div
           class="welcome__progressbar"
