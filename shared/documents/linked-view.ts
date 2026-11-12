@@ -312,6 +312,7 @@ function invoiceStateOf(status: string | undefined): DocState {
 // ---------- the quote panel's ledger ----------
 
 export type LedgerRowKey =
+  | "quoted"
   | "agreed"
   | "invoiced"
   | "paid"
@@ -325,9 +326,13 @@ export interface LedgerSummary {
   canCreateNextInvoice: boolean;
 }
 
+/** The panel's totals. The first row is the agreement total; it is
+ *  "agreed" only once the customer has signed — until then nothing was
+ *  agreed, so it reads "quoted" (REQ-249). */
 export function ledgerSummary(
   l: Pick<
     QuoteLedger,
+    | "quote"
     | "agreementTotalCents"
     | "invoicedCents"
     | "paidCents"
@@ -338,7 +343,10 @@ export function ledgerSummary(
 ): LedgerSummary {
   return {
     rows: [
-      { key: "agreed", cents: l.agreementTotalCents },
+      {
+        key: l.quote.accepted ? "agreed" : "quoted",
+        cents: l.agreementTotalCents,
+      },
       { key: "invoiced", cents: l.invoicedCents },
       { key: "paid", cents: l.paidCents },
       { key: "invoicedUnpaid", cents: l.invoicedUnpaidCents },

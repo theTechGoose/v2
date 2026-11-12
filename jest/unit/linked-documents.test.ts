@@ -187,7 +187,7 @@ describe("REQ-205 ledgerSummary — the quote panel's totals", () => {
       id: "q",
       number: "Q-001",
       version: 1,
-      accepted: false,
+      accepted: true,
       url: "/q/q",
     },
     quoteTotalCents: 100000,
@@ -231,6 +231,56 @@ describe("REQ-205 ledgerSummary — the quote panel's totals", () => {
     expect(s.canCreateNextInvoice).toBe(false);
     expect(s.overpaid).toBe(true);
     expect(s.overpaidCents).toBe(1000);
+  });
+});
+
+describe("REQ-249 ledgerSummary — an unsigned quote is 'Quoted', never 'Agreed' (demo quote-invoice-money-m10)", () => {
+  const base = {
+    quoteTotalCents: 1570000,
+    approvedChangeOrdersCents: 0,
+    agreementTotalCents: 1570000,
+    invoicedCents: 0,
+    paidCents: 0,
+    invoicedUnpaidCents: 0,
+    remainingToInvoiceCents: 1570000,
+    overpaidCents: 0,
+    invoices: [],
+    changeOrders: [],
+    workOrders: [],
+  };
+  const quote = (accepted: boolean) => ({
+    id: "q",
+    number: "Q-005",
+    version: 1,
+    accepted,
+    url: "/q/q",
+  });
+  const keys = (s: { rows: { key: string; cents: number }[] }) =>
+    s.rows.map((r) => [r.key, r.cents]);
+
+  it("REQ-249 a quote that is not signed shows its total as 'quoted', and no row is 'agreed'", () => {
+    const { ledgerSummary } = lv();
+    const s = ledgerSummary({ ...base, quote: quote(false) });
+    expect(keys(s)[0]).toEqual(["quoted", 1570000]);
+    expect(s.rows.some((r: { key: string }) => r.key === "agreed")).toBe(false);
+  });
+
+  it("REQ-249 once the quote is signed the same row reads 'agreed'", () => {
+    const { ledgerSummary } = lv();
+    const s = ledgerSummary({ ...base, quote: quote(true) });
+    expect(keys(s)[0]).toEqual(["agreed", 1570000]);
+    expect(s.rows.some((r: { key: string }) => r.key === "quoted")).toBe(false);
+  });
+
+  it("REQ-249 both languages label the row: 'Quoted' / 'Cotizado'", () => {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const en = require("../../lang/en.json");
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const es = require("../../lang/es.json");
+    expect(en["quotes.ledger.quoted"]).toBe("Quoted");
+    expect(es["quotes.ledger.quoted"]).toBe("Cotizado");
+    expect(en["quotes.ledger.agreed"]).toBe("Agreed");
+    expect(es["quotes.ledger.agreed"]).toBe("Acordado");
   });
 });
 

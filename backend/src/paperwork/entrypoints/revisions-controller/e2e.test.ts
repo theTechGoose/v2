@@ -421,6 +421,26 @@ Deno.test("REQ-201/202: a discount or an approved change order publishes a new v
   });
 });
 
+Deno.test("REQ-249: GET /quotes/:id/ledger — quote.accepted is false while the quote is only sent, true once it is signed (the panel's 'Quoted' vs 'Agreed')", async () => {
+  await withServer(async () => {
+    const sid = await login();
+    const c = await mkCustomer(sid);
+    const q = await mkQuote(sid, c.id);
+    await drain(await put(`/quotes/${q.id}`, auth(sid), { status: "sent" }));
+    const before = await get(`/quotes/${q.id}/ledger`, auth(sid));
+    assertEquals(before.quote.accepted, false, "a sent quote is not agreed");
+    const accept = await post(`/quotes/${q.id}/accept`, json, {
+      name: "Ann",
+      version: 1,
+    });
+    assertEquals(accept.status, 200);
+    await drain(accept);
+    const after = await get(`/quotes/${q.id}/ledger`, auth(sid));
+    assertEquals(after.quote.accepted, true, "a signed quote is agreed");
+    assertEquals(after.agreementTotalCents, before.agreementTotalCents);
+  });
+});
+
 Deno.test("REQ-205: GET /quotes/:id/ledger — invoices with numbers and statuses, approved change orders in the agreed total, remaining-to-invoice apart from invoiced-unpaid", async () => {
   await withServer(async () => {
     const sid = await login();
