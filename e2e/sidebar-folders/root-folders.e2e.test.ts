@@ -99,8 +99,8 @@ Deno.test("REQ-176: the root is Dashboard, Customers, Billing, Recurring, Admin;
     seen = await labels();
     expect.eq(
       seen.join(" | "),
-      "Back | Workers | Editors",
-      "inside Admin (Workers moved here — REQ-178)",
+      "Back | Workers | Timesheet | Editors",
+      "inside Admin (Workers moved here — REQ-178; Timesheet beside it — REQ-192)",
     );
     await nav.locator("[data-cy='nav-back']").click();
     // 4. Recurring, on the root: the five; Back lands on the root

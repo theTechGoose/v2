@@ -19,6 +19,20 @@ export function todayIso(now = new Date()): string {
   }`;
 }
 
+/** REQ-197 — today in the field's time zone (the backend's FIELD_TZ, America/New_York by
+ *  default), for a server render that has no browser clock to ask */
+export function fieldTodayIso(now = new Date()): string {
+  const tz =
+    (typeof Deno !== "undefined" ? Deno.env.get("FIELD_TZ") : undefined) ||
+    "America/New_York";
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: tz,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(now);
+}
+
 /** YYYY-MM-DD ± n days */
 export function shiftIso(iso: string, days: number): string {
   const d = new Date(`${iso}T00:00:00`);

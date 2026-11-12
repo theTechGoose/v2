@@ -1,0 +1,197 @@
+/* REQ-195 — the app's motion system, linked on every page by routes/_app.tsx.
+ *
+ * Research applied (see requirements.md REQ-195):
+ *  - ease-out by default, nothing over ~300 ms, exits faster than entrances
+ *    (Emil Kowalski's guidance; Material 3 "standard" curve for things that move on screen)
+ *  - only transform + opacity animate; press feedback scales to .97
+ *  - cross-document View Transitions (Chrome 126+, Safari 18.2+; Firefox just navigates) so
+ *    every link in the app slides the content while the dashboard rail stays put
+ *  - reduced motion keeps a gentle cross-fade instead of removing everything
+ */
+:root {
+  --pm-dur-fast: 120ms;
+  --pm-dur-base: 200ms;
+  --pm-dur-slow: 320ms;
+  --pm-ease-out: cubic-bezier(0, 0, 0.2, 1);
+  --pm-ease-emph: cubic-bezier(0.2, 0, 0, 1);
+  --pm-ease-ios: cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+/* ---- page transitions ----------------------------------------------------- */
+@view-transition {
+  navigation: auto;
+}
+
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation-timing-function: var(--pm-ease-emph);
+  mix-blend-mode: normal;
+}
+::view-transition-old(root) {
+  animation: vt-fade-out var(--pm-dur-fast) var(--pm-ease-out) both;
+}
+::view-transition-new(root) {
+  animation: vt-fade-in var(--pm-dur-base) var(--pm-ease-out) both,
+    vt-rise var(--pm-dur-slow) var(--pm-ease-emph) both;
+}
+/* back navigation (set by the pagereveal script in _app.tsx) slides the other way */
+html:active-view-transition-type(back)::view-transition-new(root) {
+  animation: vt-fade-in var(--pm-dur-base) var(--pm-ease-out) both,
+    vt-sink var(--pm-dur-slow) var(--pm-ease-emph) both;
+}
+html:active-view-transition-type(same)::view-transition-new(root) {
+  animation: vt-fade-in var(--pm-dur-base) var(--pm-ease-out) both;
+}
+
+/* the dashboard rail is one element across pages: it stays still while the page moves */
+.sb {
+  view-transition-name: pm-rail;
+}
+::view-transition-group(pm-rail) {
+  animation-duration: var(--pm-dur-base);
+  animation-timing-function: var(--pm-ease-emph);
+}
+::view-transition-old(pm-rail),
+::view-transition-new(pm-rail) {
+  animation: none;
+  mix-blend-mode: normal;
+}
+::view-transition-old(pm-rail) {
+  display: none;
+}
+
+@keyframes vt-fade-in {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes vt-fade-out {
+  to {
+    opacity: 0;
+  }
+}
+@keyframes vt-rise {
+  from {
+    transform: translateY(12px);
+  }
+}
+@keyframes vt-sink {
+  from {
+    transform: translateY(-12px);
+  }
+}
+
+/* ---- entrances --------------------------------------------------------------
+ * `[data-stagger] > *` rises in, one child after the next (the first 8 are staggered).
+ * main.main gets the same for its top-level children on every dashboard page. */
+@keyframes pm-rise {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+}
+[data-stagger] > *,
+main.main > * {
+  animation: pm-rise var(--pm-dur-slow) var(--pm-ease-emph) both;
+  animation-delay: calc(var(--i, 0) * 40ms);
+}
+[data-stagger] > :nth-child(1),
+main.main > :nth-child(1) {
+  --i: 0;
+}
+[data-stagger] > :nth-child(2),
+main.main > :nth-child(2) {
+  --i: 1;
+}
+[data-stagger] > :nth-child(3),
+main.main > :nth-child(3) {
+  --i: 2;
+}
+[data-stagger] > :nth-child(4),
+main.main > :nth-child(4) {
+  --i: 3;
+}
+[data-stagger] > :nth-child(5),
+main.main > :nth-child(5) {
+  --i: 4;
+}
+[data-stagger] > :nth-child(6),
+main.main > :nth-child(6) {
+  --i: 5;
+}
+[data-stagger] > :nth-child(7),
+main.main > :nth-child(7) {
+  --i: 6;
+}
+[data-stagger] > :nth-child(n + 8),
+main.main > :nth-child(n + 8) {
+  --i: 7;
+}
+
+/* a pane that was display:none and comes back replays its entrance */
+[data-pane]:not([hidden]) {
+  animation: pm-rise var(--pm-dur-base) var(--pm-ease-out) both;
+}
+
+/* ---- micro-interactions ------------------------------------------------------ */
+button,
+[role="button"],
+a.btn,
+.btn,
+summary {
+  transition:
+    transform var(--pm-dur-fast) var(--pm-ease-out),
+    background-color var(--pm-dur-base) var(--pm-ease-out),
+    border-color var(--pm-dur-base) var(--pm-ease-out),
+    color var(--pm-dur-base) var(--pm-ease-out),
+    box-shadow var(--pm-dur-base) var(--pm-ease-out),
+    opacity var(--pm-dur-base) var(--pm-ease-out);
+}
+button:not([disabled]):active,
+[role="button"]:active,
+a.btn:active,
+.btn:not([disabled]):active {
+  transform: scale(0.97);
+  transition-duration: 60ms;
+}
+a {
+  transition: color var(--pm-dur-base) var(--pm-ease-out), opacity
+    var(--pm-dur-base)
+    var(--pm-ease-out);
+}
+input,
+select,
+textarea {
+  transition: border-color var(--pm-dur-base) var(--pm-ease-out), box-shadow
+    var(--pm-dur-base) var(--pm-ease-out);
+}
+:focus-visible {
+  transition: outline-offset var(--pm-dur-fast) var(--pm-ease-out);
+}
+
+/* ---- reduced motion: keep the fades, drop the movement ---------------------- */
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-old(root),
+  ::view-transition-new(root),
+  html:active-view-transition-type(back)::view-transition-new(root) {
+    animation: vt-fade-in var(--pm-dur-fast) linear both;
+  }
+  ::view-transition-old(root) {
+    animation-name: vt-fade-out;
+  }
+  ::view-transition-group(*) {
+    animation-duration: 1ms;
+  }
+  [data-stagger] > *,
+  main.main > *,
+  [data-pane]:not([hidden]) {
+    animation: vt-fade-in var(--pm-dur-fast) linear both;
+    animation-delay: 0ms;
+  }
+  button:not([disabled]):active,
+  [role="button"]:active,
+  a.btn:active,
+  .btn:not([disabled]):active {
+    transform: none;
+  }
+}
