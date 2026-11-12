@@ -29,3 +29,66 @@ export function resolveCommsLanguage(args: {
   return normalize(args.override) ?? normalize(args.identityCommsLanguage) ??
     "en";
 }
+
+/**
+ * REQ-348 (demo-loop cycle 1, m34) — the SET of languages a contractor can
+ * send paperwork in (identity.commsLanguages, Settings → "Languages you send
+ * in"), defaulted from the contractor's own language when they never picked:
+ * a Spanish speaker sends in English AND Spanish — "Spanish in, English
+ * out", English first so the default send language stays English — anyone
+ * else in English. This is THE one rule; Settings, the onboarding wizard and
+ * the backend's identity write all read it.
+ */
+export function defaultCommsLanguages(
+  userLanguage: string | null | undefined,
+): CommsLang[] {
+  return normalize(userLanguage) === "es" ? ["en", "es"] : ["en"];
+}
+
+interface CommsLanguagesHolder {
+  commsLanguages?: string[] | null;
+  commsLanguage?: string | null;
+}
+
+function validList(list: string[] | null | undefined): CommsLang[] {
+  const out: CommsLang[] = [];
+  for (const v of list ?? []) {
+    const n = normalize(v);
+    if (n && !out.includes(n)) out.push(n);
+  }
+  return out;
+}
+
+/**
+ * The languages this contractor sends in: the stored set when there is one;
+ * else the legacy single `commsLanguage` (an account that picked one before
+ * the set existed); else the default from their own language.
+ */
+export function sendLanguagesOf(
+  identity: CommsLanguagesHolder | null | undefined,
+  userLanguage: string | null | undefined,
+): CommsLang[] {
+  const stored = validList(identity?.commsLanguages);
+  if (stored.length) return stored;
+  const legacy = normalize(identity?.commsLanguage);
+  if (legacy) return [legacy];
+  return defaultCommsLanguages(userLanguage);
+}
+
+/**
+ * What an identity write should seed into `commsLanguages`: the default from
+ * the contractor's language when neither the stored record nor this write
+ * carries a choice (no set, no legacy single language); `undefined` when there
+ * is a choice to keep. Seeds the set only — never `commsLanguage`, so the
+ * first send's adopt-the-pick rule (send-paperwork-sms/email) still runs.
+ */
+export function commsLanguagesSeed(
+  existing: CommsLanguagesHolder | null | undefined,
+  patch: CommsLanguagesHolder,
+  userLanguage: string | null | undefined,
+): CommsLang[] | undefined {
+  const chosen = (h: CommsLanguagesHolder | null | undefined) =>
+    validList(h?.commsLanguages).length > 0 || !!normalize(h?.commsLanguage);
+  if (chosen(existing) || chosen(patch)) return undefined;
+  return defaultCommsLanguages(userLanguage);
+}

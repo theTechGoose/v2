@@ -52,6 +52,7 @@ import { TransferAccount } from "../components/TransferAccount.tsx"; // REQ-220
 import { type Lang, langSignal, setLang, tFor } from "../lib/i18n.ts";
 import { normalizeWebsiteUrl } from "../../shared/quote-flow/format-helpers.ts";
 import { businessTimezone } from "../../shared/quote-flow/business-timezone.ts";
+import { sendLanguagesOf } from "../../shared/quote-flow/comms-language.ts";
 import {
   CardGridSkeleton,
   PageHeaderSkeleton,
@@ -597,12 +598,13 @@ function EditCard(
               label: t.spanish,
             }]
               .map((lng) => {
-                // Selected set: the explicit list, else fall back to the legacy
-                // single commsLanguage (so existing accounts show their language
-                // pre-checked), else English.
-                const selected = snapshot.identity?.commsLanguages?.length
-                  ? snapshot.identity.commsLanguages
-                  : [snapshot.identity?.commsLanguage ?? "en"];
+                // REQ-348: the one rule — the explicit list, else the legacy
+                // single commsLanguage, else the default from the account's
+                // own language (a Spanish signup sends in English and Spanish).
+                const selected: string[] = sendLanguagesOf(
+                  snapshot.identity,
+                  snapshot.user.language,
+                );
                 const on = selected.includes(lng.code);
                 return (
                   <label

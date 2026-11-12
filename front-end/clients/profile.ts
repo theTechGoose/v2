@@ -30,7 +30,8 @@ export interface BusinessIdentity {
   commsLanguage?: string;
   /** The set of languages the contractor can SEND paperwork in — drives the
    *  Settings checkboxes and the "Send in" buttons on the quote-review card.
-   *  Unset → derive from `commsLanguage` (or ["en"]). */
+   *  Unset → `sendLanguagesOf` (shared/quote-flow/comms-language.ts, REQ-348):
+   *  the legacy `commsLanguage`, else the default from user.language. */
   commsLanguages?: string[];
   /** REQ-172: the business's IANA time zone (the 9 am schedule texts follow it) */
   timezone?: string;
