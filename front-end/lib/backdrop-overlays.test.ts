@@ -107,7 +107,8 @@ Deno.test("REQ-354 M39: the CSS scan knows the app's full-screen overlay classes
       "send-dialog__backdrop",
       "modal-bg",
       "sb-backdrop",
-      "chat__pro-pop",
+      // REQ-384 (m16): "chat__pro-pop" is gone — the polish offer is an
+      // inline row under its bullet now, not a full-screen overlay.
     ]
   ) {
     assert(classes.has(c), `${c} not recognised as a fixed inset:0 overlay`);

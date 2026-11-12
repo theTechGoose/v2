@@ -9004,69 +9004,75 @@ body {
   cursor: not-allowed;
 }
 
-/* "Want me to professionalize that?" popup — fired after a bullet edit
-   or a custom-bullet add. */
-.chat__pro-pop {
-  position: fixed;
-  inset: 0;
-  z-index: 60;
+/* REQ-384 (m16): the "Polish this line?" offer — an inline row right under
+   the bullet it rewrites (never a modal over it), with a before → after. */
+.chat__pro-row {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  justify-content: center;
-  background: rgba(20, 36, 21, 0.32);
+  gap: 6px 10px;
+  margin: 2px 0 6px 22px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: #f1f8ec;
+  border: 1px solid #d6ecc8;
+  font-size: 13px;
   animation: chat-price-in 140ms ease;
 }
-.chat__pro-pop-card {
-  background: #fff;
-  border-radius: 16px;
-  padding: 20px 22px;
-  width: min(320px, calc(100vw - 48px));
-  box-shadow: 0 18px 48px -12px rgba(20, 36, 21, 0.4);
-  text-align: center;
-}
-.chat__pro-pop-msg {
-  margin: 0 0 16px;
-  font-size: 15px;
-  font-weight: 600;
+.chat__pro-row-msg {
+  font-weight: 700;
   color: var(--fg, #1a2415);
 }
-.chat__pro-pop-actions {
+.chat__pro-row-diff {
+  flex: 1 1 220px;
+  min-width: 0;
   display: flex;
-  gap: 10px;
-  justify-content: center;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 6px;
 }
-.chat__pro-pop-no,
-.chat__pro-pop-yes {
+.chat__pro-row-before {
+  color: var(--fg-muted, #6b7560);
+}
+.chat__pro-row-arrow {
+  color: var(--fg-muted, #6b7560);
+}
+.chat__pro-row-after {
+  color: var(--fg, #1a2415);
+  font-weight: 600;
+  white-space: pre-line;
+}
+.chat__pro-row-actions {
+  display: flex;
+  gap: 6px;
+  margin-left: auto;
+}
+.chat__pro-row-no,
+.chat__pro-row-yes {
   appearance: none;
   font: inherit;
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 700;
-  padding: 9px 22px;
+  padding: 5px 14px;
   border-radius: 999px;
   cursor: pointer;
-  transition: background 0.14s ease, opacity 0.14s ease;
+  transition: background 0.14s ease;
 }
-.chat__pro-pop-no {
+.chat__pro-row-no {
   border: 1.5px solid var(--line, #d8e0d4);
   background: #fff;
   color: var(--fg-muted, #6b7560);
 }
-.chat__pro-pop-no:hover:not(:disabled) {
+.chat__pro-row-no:hover {
   background: #f3f6f1;
 }
-.chat__pro-pop-yes {
+.chat__pro-row-yes {
   border: 0;
   background: var(--brand-green, #519843);
   color: #fff;
-  box-shadow: 0 6px 18px -6px rgba(81, 152, 67, 0.55);
 }
-.chat__pro-pop-yes:hover:not(:disabled) {
+.chat__pro-row-yes:hover {
   background: #437b37;
-}
-.chat__pro-pop-no:disabled,
-.chat__pro-pop-yes:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
 }
 
 .chat__empty-debug {
