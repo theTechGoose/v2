@@ -3828,6 +3828,8 @@
   "field.common.close": "Cerrar",
   "field.common.loading": "Cargando…",
   "field.common.error": "Algo salió mal — intenta de nuevo.",
+  "worker.ownerNote": "Esta es la pantalla donde tus trabajadores entran con su celular + PIN. Los trabajadores y sus PIN se agregan en la página de Trabajadores.",
+  "worker.ownerManage": "Administrar trabajadores",
   "worker.cell": "Tu celular",
   "worker.cellPh": "(555) 123-4567",
   "field.subs.pickCustomer": "Busca un cliente…",
