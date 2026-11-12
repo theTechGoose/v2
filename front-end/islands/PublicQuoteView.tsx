@@ -14,6 +14,7 @@ import {
 } from "../components/quote-doc.tsx";
 import { type Lang, tFor } from "../lib/i18n.ts";
 import { langSignal, persistLang, writeLangToUrl } from "../lib/lang.ts";
+import { enterSignInPerson } from "../lib/sign-in-person.ts";
 
 interface State {
   phase: "loading" | "error" | "ok";
@@ -51,6 +52,11 @@ export default function PublicQuoteView(
     setLang(next);
     persistLang(next);
     writeLangToUrl(next);
+    // REQ-405 (demo m14): keep the view's query in step with the ?lang= just
+    // written, so nothing built from `search` carries the pre-toggle query.
+    try {
+      setSearch(globalThis.location?.search ?? "");
+    } catch { /* SSR-safe */ }
     langSignal.value = next;
     if (typeof document !== "undefined") {
       document.title = tFor(next, "quoteDoc.docTitle");
@@ -102,6 +108,26 @@ export default function PublicQuoteView(
       });
   }
 
+  // REQ-405 (demo-loop c2 m14): "Sign in person" — the override is laid onto
+  // the CURRENT query (lang kept) with replaceState, `search` flips the
+  // preview to the pad in place, and once it renders the pad is scrolled into
+  // view. No navigation: no reload, no jump to the top.
+  const [scrollToPad, setScrollToPad] = useState(false);
+  function onSignInPerson() {
+    setSearch(enterSignInPerson());
+    setScrollToPad(true);
+  }
+  useEffect(() => {
+    if (!scrollToPad) return;
+    setScrollToPad(false);
+    try {
+      document.querySelector("form.ctr__sign-form")?.scrollIntoView({
+        block: "center",
+        behavior: "smooth",
+      });
+    } catch { /* noop */ }
+  }, [scrollToPad]);
+
   // REQ-311 (demo-loop c1 m19): the signature ceremony hands its success up
   // here; we refetch the projection (now accepted, with the invoice the
   // signature billed) and swap the signed document in place — no reload, so
@@ -119,6 +145,7 @@ export default function PublicQuoteView(
           lang={lang}
           onSigned={onSigned}
           search={search}
+          onSignInPerson={onSignInPerson}
         />
       </>
     );
