@@ -91,6 +91,7 @@ import {
 } from "../../shared/quote-flow/quote-lock.ts";
 import {
   deriveChatHeader,
+  draftOwesDetails,
   headerTone,
 } from "../../shared/quote-flow/chat-header.ts";
 import { pendingRevisionNotice } from "../../shared/documents/versions.ts";
@@ -1835,11 +1836,14 @@ export default function AsstChat({
   // ready to send" under "Gathering a little more info" until the row came).
   const ruleQuote = quote ??
     (convoId === conversationId ? initialQuote : undefined);
+  // REQ-385 (cycle 2, m6): the pencil's re-opened job picker owes the pick
+  // too — the same rule the server reads off the parked draft.
   const threadHeader = deriveChatHeader({
     customerName: customer?.name,
     quote: ruleQuote,
     messages,
-    detailsPending: needsJobPolish,
+    detailsPending: needsJobPolish ||
+      draftOwesDetails({ jobOptionsOpen, pickerMode }),
   });
   useEffect(() => {
     if (typeof globalThis.window === "undefined") return;

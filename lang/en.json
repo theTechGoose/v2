@@ -3733,7 +3733,7 @@
   "clientsBoard.panel.docOpen": "Open document",
   "clientsBoard.doc.quote": "Quote",
   "clientsBoard.doc.invoice": "Invoice",
-  "clientsBoard.docState.draft": "Draft",
+  "clientsBoard.docState.draft": "Not sent",
   "clientsBoard.docState.sent": "Sent",
   "clientsBoard.docState.accepted": "Accepted",
   "clientsBoard.docState.declined": "Declined",

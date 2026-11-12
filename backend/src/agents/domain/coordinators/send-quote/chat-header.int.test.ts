@@ -242,7 +242,7 @@ Deno.test("REQ-245 chat header over the real flow: a send that reaches the custo
     await finishWizard(s, conv.id);
     let h = await header(s, conv.id);
     assertEquals(h.statusKey, `${H}readyToSend`);
-    assertEquals(h.clientName, "Ana Ruiz");
+    assertEquals(h.clientName, "Roof · Ana Ruiz"); // REQ-385: job, then customer
 
     await s.send.run({
       userId: USER,
@@ -252,6 +252,6 @@ Deno.test("REQ-245 chat header over the real flow: a send that reaches the custo
     });
     h = await header(s, conv.id);
     assertEquals(h.statusKey, `${H}outForSignature`);
-    assertEquals(h.clientName, "Ana Ruiz");
+    assertEquals(h.clientName, "Roof · Ana Ruiz"); // REQ-385: job, then customer
   });
 });

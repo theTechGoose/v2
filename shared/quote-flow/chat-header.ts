@@ -41,6 +41,7 @@ import {
   isUndelivered,
   type QuoteDelivery,
 } from "./delivery.ts";
+import { threadName } from "./thread-title.ts";
 
 /** A chat message, as much of it as the header reads. */
 export interface ChatHeaderMessage {
@@ -271,6 +272,28 @@ export function threadStatus(input: ThreadStatusInput): ThreadStatus {
   return "none";
 }
 
+/** What a parked assistant draft (REQ-230) says about the job-details
+ *  picker — the fields of `AssistantDraft` this rule reads. */
+export interface DetailsDraft {
+  polishRaw?: string | null;
+  jobOptionsOpen?: boolean;
+  pickerMode?: string;
+}
+
+/** Whether the thread still owes a job-details pick: the end-of-wizard
+ *  picker (`polishRaw`), or — REQ-385 (demo-loop cycle 2, m6) — the job
+ *  picker open in its "polish" mode, which is how the review card's pencil
+ *  re-opens it ("Ready to send" sat over the details being rewritten). The
+ *  pre-quote "confirm" picker of "help me price it" is not that pick. */
+export function draftOwesDetails(
+  draft: DetailsDraft | null | undefined,
+): boolean {
+  if (!draft) return false;
+  if (draft.polishRaw?.trim()) return true;
+  return draft.jobOptionsOpen === true &&
+    (draft.pickerMode ?? "polish") === "polish";
+}
+
 const STATUS_KEY: Record<ThreadStatus, string> = {
   none: `${K}default`,
   drafted: `${K}quoteDrafted`,
@@ -295,21 +318,21 @@ export type ThreadChipKind = "draft" | "needs" | "sent" | "paid";
 
 /**
  * REQ-369: the conversation list's chip — the thread's status in the
- * header's words; "Drafting" before there is a quote; and, past the quote,
- * the bill (the header is about the quote; the list also follows the
- * invoice the signature created).
+ * header's words; and, past the quote, the bill (the header is about the
+ * quote; the list also follows the invoice the signature created).
+ * REQ-385 (demo-loop cycle 2, m6): a thread with no quote has NO chip — its
+ * header names no quote status either. It used to say "Drafting" /
+ * "Redactando" for a plain question under a "New conversation" header.
  */
 export function threadChip(
   status: ThreadStatus | null | undefined,
   invoiceStatus?: string | null,
-): { kind: ThreadChipKind; key: string } {
+): { kind: ThreadChipKind; key: string } | null {
   if (invoiceStatus === "paid") return { kind: "paid", key: "status.paid" };
   if (invoiceStatus === "sent") {
     return { kind: "sent", key: "asstThreads.chip.invoiced" };
   }
-  if (!status || !(status in STATUS_KEY) || status === "none") {
-    return { kind: "draft", key: "asstThreads.chip.drafting" };
-  }
+  if (!status || !(status in STATUS_KEY) || status === "none") return null;
   const kind: ThreadChipKind = status === "accepted"
     ? "paid"
     : status === "sent"
@@ -324,7 +347,13 @@ export function deriveChatHeader(input: ChatHeaderInput): ChatHeader {
   const { quote, messages } = input;
   const status = threadStatus(input);
   const statusKey = threadStatusKey(status);
-  const name = input.customerName?.trim() || quote?.jobName?.trim();
+  // REQ-385 (demo-loop cycle 2, m6): one title rule, the list's — the job
+  // name, then "· customer" appended — so the title grows as the thread
+  // learns them instead of swapping New conversation → job → customer.
+  const name = threadName({
+    jobName: quote?.jobName,
+    customerName: input.customerName,
+  });
   if (name) return { clientName: name, statusKey, status };
   return {
     clientKey: quote || messages.some(isQuoteCard)

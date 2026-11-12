@@ -6,6 +6,7 @@ import { CustomerStore } from "@crm/domain/data/customer-store/mod.ts";
 import { QuoteStore } from "@paperwork/domain/data/quote-store/mod.ts";
 import type { AgentConversation } from "@agents/dto/conversation.ts";
 import {
+  draftOwesDetails,
   type ThreadStatus,
   threadStatus,
   type WizardStage,
@@ -94,7 +95,7 @@ export class ListConversations {
     }
     return {
       ...(wizard ? { wizard } : {}),
-      detailsPending: !!draft?.polishRaw?.trim(),
+      detailsPending: draftOwesDetails(draft),
     };
   }
 }
