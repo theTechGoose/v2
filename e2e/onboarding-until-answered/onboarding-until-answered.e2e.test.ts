@@ -164,20 +164,21 @@ Deno.test("REQ-121: a later login asks only the questions still open — with th
     landed = await codeIn(page, local);
     expect.eq(landed.pathname, "/welcome", `two open questions still land the code in the wizard (${landed})`);
 
-    // the wizard is the two open questions and the closing screen: three steps, the business name first
+    // the wizard is the two open questions and the closing screen, the business name first — counted
+    // against the whole onboarding, the seven answered ahead of them (REQ-253 amends REQ-121's "Step 1 of 3")
     await expect.see("business called");
-    await expect.see("Step 1 of 3");
+    await expect.see("Step 8 of 10");
     await fillStep(page, "input.welcome__input", "Story Roofing LLC");
     await page.locator("[data-cy='welcome-continue']").click();
     // straight to the logo: not the email, the plan, the state, the address or the payment methods, all answered
     await expect.see("Add your logo");
-    await expect.see("Step 2 of 3");
+    await expect.see("Step 9 of 10");
     const card = await page.locator(".welcome__card").innerText();
     expect(!/best email|Pick your plan|Which state|business based|get paid/.test(card), `no answered question is asked again (${card.slice(0, 80)})`);
     // the logo put off: the closing screen, the last of the three — never the insurance, answered
     await page.locator("[data-cy='welcome-skip']").click();
     await expect.see("See what your customer sees");
-    await expect.see("Step 3 of 3");
+    await expect.see("Step 10 of 10");
     const closing = await page.locator(".welcome__card").innerText();
     expect(!/insured/.test(closing), "the insurance, answered, is not asked again");
   }));

@@ -35,7 +35,7 @@ import { isPlaceholderName } from "../../shared/quote-flow/outbound-identity.ts"
 import { ONBOARDING_PLANS, PRICING_PLANS } from "../../shared/quote-flow/pricing-plans.ts";
 import { PlanCards } from "../components/PlanCards.tsx";
 import { handoffPage, pickErrorOf, planViewOf, resumesAfterPlan } from "../lib/plan-return.ts";
-import { indexAfterPlan, openSteps } from "../lib/welcome-steps.ts";
+import { indexAfterPlan, openSteps, stepCounter } from "../lib/welcome-steps.ts";
 import { filesClient } from "../clients/files.ts";
 import { stateName, US_STATE_OPTIONS } from "../lib/us-states.ts";
 import { api } from "../lib/api.ts";
@@ -1243,7 +1243,10 @@ export default function WelcomeWizard(
     return () => unsub();
   }, []);
 
+  // the visit's own length drives the navigation; the counter the person reads counts the whole
+  // onboarding, so the plan pick's reload goes on to "Step 5 of 10", never "Step 1 of 6" (REQ-253)
   const total = steps.length;
+  const progress = stepCounter(registry, steps, index);
   const step = steps[index];
   const StepComp = step.Component;
 
@@ -1285,21 +1288,18 @@ export default function WelcomeWizard(
           class="welcome__progressbar"
           role="progressbar"
           aria-valuemin={1}
-          aria-valuemax={total}
-          aria-valuenow={index + 1}
-          aria-valuetext={t("welcome.stepOf", {
-            current: index + 1,
-            total,
-          })}
+          aria-valuemax={progress.total}
+          aria-valuenow={progress.current}
+          aria-valuetext={t("welcome.stepOf", progress)}
           aria-label={t("welcome.progressAria")}
         >
           <div
             class="welcome__progressbar-fill"
-            style={{ width: `${((index + 1) / total) * 100}%` }}
+            style={{ width: `${(progress.current / progress.total) * 100}%` }}
           />
         </div>
         <span class="welcome__step-count">
-          {t("welcome.stepOf", { current: index + 1, total })}
+          {t("welcome.stepOf", progress)}
         </span>
       </div>
 
