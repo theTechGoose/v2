@@ -2221,6 +2221,7 @@
   "paymentsPage.kpi.heldUp": "{amount} retenido",
   "paymentsPage.kpi.landedLabel": "Recibido este mes",
   "paymentsPage.kpi.noHistory": "aún no hay historial de pagos",
+  "paymentsPage.kpi.sameDay": "pagado el mismo día",
   "paymentsPage.kpi.onTheWay": "{n} en camino",
   "paymentsPage.kpi.nothingInTransit": "Nada en camino",
   "paymentsPage.kpi.payments.one": "{n} pago",

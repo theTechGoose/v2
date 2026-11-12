@@ -273,3 +273,37 @@ Deno.test("clients e2e: GET /analytics/clients/segments shape contract", async (
     assert(typeof row.pct === "number");
   });
 });
+
+/**
+ * REQ-562 (demo-loop cycle 4, M38 + m21): Linda signs a 50/50 quote and pays the deposit.
+ * The dashboard (GET /jobs) said ACTIVE JOBS 1; the Customers hero (GET /clients) said
+ * "0 signed jobs" and her card read "Regular". Over HTTP, both now count 1 and she is active.
+ */
+Deno.test("REQ-562 (cycle 4, M38/m21) clients e2e: 50/50 signed, deposit paid → GET /clients summary.activeJobs 1 = GET /jobs in flight; Linda is active, not regular", async () => {
+  await withServer(async (port) => {
+    const sid = await login(port, "+15125551562");
+    const H = { "content-type": "application/json", "x-session-id": sid };
+    const c = await fetch(`http://localhost:${port}/customers`, { method: "POST", headers: H, body: JSON.stringify({ name: "Linda Park", email: "linda@example.com" }) }).then((r) => r.json());
+    const q = await fetch(`http://localhost:${port}/quotes`, {
+      method: "POST", headers: H,
+      body: JSON.stringify({ customerId: c.id, summary: "Deck", lineItems: [], estimatedTotal: 2_850_00, terms: [{ stepId: "payment_terms", value: "50/50" }] }),
+    }).then((r) => r.json());
+    await drain(await fetch(`http://localhost:${port}/quotes/${q.id}`, { method: "PUT", headers: H, body: JSON.stringify({ status: "sent" }) }));
+    const out = await fetch(`http://localhost:${port}/quotes/${q.id}/accept`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ name: "Linda Park" }) }).then((r) => r.json());
+    assertEquals(out.ok, true);
+    const invs = await fetch(`http://localhost:${port}/invoices`, { headers: H }).then((r) => r.json()) as { id: string; status: string }[];
+    assertEquals(invs.map((i) => i.status).sort(), ["scheduled", "sent"]);
+    const deposit = invs.find((i) => i.status === "sent")!;
+    await drain(await fetch(`http://localhost:${port}/invoices/${deposit.id}`, { method: "PUT", headers: H, body: JSON.stringify({ status: "paid", paidAt: new Date().toISOString() }) }));
+
+    const jobs = await fetch(`http://localhost:${port}/jobs`, { headers: H }).then((r) => r.json()) as { status: string }[];
+    const inFlight = jobs.filter((j) => j.status !== "complete").length;
+    assertEquals(inFlight, 1, "dashboard: 1 job in flight");
+    const page = await fetch(`http://localhost:${port}/clients`, { headers: H }).then((r) => r.json());
+    assertEquals(page.summary.activeJobs, inFlight, "Customers hero agrees with the dashboard");
+    assertEquals(page.summary.owedCents, 0, "the scheduled balance is not owed yet");
+    assertEquals(page.items[0].status, "active", "a first job in progress is active, not regular");
+    const active = await fetch(`http://localhost:${port}/clients?status=active`, { headers: H }).then((r) => r.json());
+    assertEquals(active.items.map((x: { name: string }) => x.name), ["Linda Park"]);
+  });
+});

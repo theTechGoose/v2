@@ -28,7 +28,9 @@ export default function PaymentsKpis(
     transitTotal: number;
     attentionCount: number;
     attentionTotal: number;
-    avgDays: number;
+    /** REQ-562: average days to pay over landed payments; null = none landed
+     *  (0 is a real average: paid the same day). */
+    avgDays: number | null;
   },
 ) {
   return (
@@ -77,17 +79,19 @@ export default function PaymentsKpis(
           })}
         </div>
       </div>
-      <div class="qkpi__cell">
+      <div class="qkpi__cell" data-cy="payments-kpi-avg">
         <div class="qkpi__lbl">{tFor(lang, "paymentsPage.kpi.avgLabel")}</div>
         <div class="qkpi__val">
-          {avgDays > 0
+          {avgDays !== null
             ? tFor(lang, "paymentsPage.value.days", { n: avgDays })
             : "—"}
         </div>
         <div class="qkpi__sub">
-          {avgDays > 0
-            ? tFor(lang, "paymentsPage.kpi.acrossLanded")
-            : tFor(lang, "paymentsPage.kpi.noHistory")}
+          {avgDays === null
+            ? tFor(lang, "paymentsPage.kpi.noHistory")
+            : avgDays === 0
+            ? tFor(lang, "paymentsPage.kpi.sameDay")
+            : tFor(lang, "paymentsPage.kpi.acrossLanded")}
         </div>
       </div>
     </div>

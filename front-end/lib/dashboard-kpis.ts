@@ -12,9 +12,11 @@ export function pickKpis(stats: DashboardStats | undefined) {
   const thisMonthBilled =
     (sparkline.length > 0 ? sparkline[sparkline.length - 1] : 0) / 100;
 
-  const paidCount = stats?.invoices.paid ?? 0;
+  // REQ-562 (demo-loop cycle 4, m21): average over distinct paid JOBS — a
+  // 50/50 job paid in two installments is one job, not two.
+  const paidJobs = stats?.revenue.paidJobsYtd ?? stats?.invoices.paid ?? 0;
   const ytd = (stats?.revenue.ytdCents ?? 0) / 100;
-  const avgJob = paidCount > 0 ? Math.round(ytd / paidCount) : 0;
+  const avgJob = paidJobs > 0 ? Math.round(ytd / paidJobs) : 0;
 
   // REQ-397 (demo-loop cycle 2, M14): the buckets are the open receivables'
   // balances in CENTS, so Outstanding is exactly what they add up to. The old

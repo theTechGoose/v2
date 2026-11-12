@@ -64,6 +64,11 @@ export class RevenueStatsDto {
   /** Sum of paid-invoice amounts year-to-date. */
   @IsNumber()
   ytdCents!: number;
+  /** REQ-562 (demo-loop cycle 4, m21): distinct jobs paid on this year — one
+   *  per quote, a standalone invoice its own — the "Avg. paid job" divisor
+   *  (two installments of one job are one job). */
+  @IsNumber()
+  paidJobsYtd!: number;
   /** Sum of paid-invoice amounts in the previous calendar month. */
   @IsNumber()
   lastMonthCents!: number;

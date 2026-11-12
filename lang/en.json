@@ -2221,6 +2221,7 @@
   "paymentsPage.kpi.heldUp": "{amount} held up",
   "paymentsPage.kpi.landedLabel": "Landed this month",
   "paymentsPage.kpi.noHistory": "no paid history yet",
+  "paymentsPage.kpi.sameDay": "paid the same day",
   "paymentsPage.kpi.onTheWay": "{n} on the way",
   "paymentsPage.kpi.nothingInTransit": "Nothing in transit",
   "paymentsPage.kpi.payments.one": "{n} payment",

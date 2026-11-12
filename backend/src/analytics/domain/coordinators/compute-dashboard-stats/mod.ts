@@ -13,6 +13,7 @@ import type { Invoice } from "@paperwork/dto/invoice.ts";
 import type { Payment } from "@paperwork/dto/payment.ts";
 import { bucketPendingInvoices } from "@paperwork/domain/business/invoice-aging-buckets/mod.ts";
 import { isOpenReceivable } from "@paperwork/domain/business/open-receivable/mod.ts";
+import { countPaidJobs } from "@analytics/domain/business/signed-jobs/mod.ts";
 import {
   bucketBy12Months,
   lastMonthRevenue,
@@ -113,6 +114,12 @@ export class ComputeDashboardStats {
       awaitingResponse: quoteCounts.sent,
       revenue: {
         ytdCents: ytdRevenue(revenueRows, now),
+        paidJobsYtd: countPaidJobs(
+          invoices.filter((i) =>
+            i.status === "paid" && i.paidAt &&
+            new Date(i.paidAt).getUTCFullYear() === now.getUTCFullYear()
+          ),
+        ),
         lastMonthCents: lastMonthRevenue(revenueRows, now),
         monthOverMonthPct: monthOverMonthPct(revenueRows, now),
         sparkline12mo: bucketBy12Months(revenueRows, now),

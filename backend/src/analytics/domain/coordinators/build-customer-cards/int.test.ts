@@ -99,20 +99,87 @@ Deno.test("status: lead when only draft/sent quotes", async () => {
   });
 });
 
-Deno.test("status: regular when 12mo revenue > 0 and no active job", async () => {
+Deno.test("status: regular when 12mo revenue > 0 and no active job (REQ-562: two completed jobs)", async () => {
   await withKv(async () => {
     const { customers, invoices, flow } = fresh();
     const c = await customers.create("u-1", { name: "Acme" });
-    await invoices.create("u-1", {
-      quoteId: "k",
-      customerId: c.id,
-      dueDate: "2026-03-15",
-      status: "paid",
-      amount: 500,
-      paidAt: isoOffset(40),
-    });
+    for (const quoteId of ["k", "k2"]) {
+      await invoices.create("u-1", {
+        quoteId,
+        customerId: c.id,
+        dueDate: "2026-03-15",
+        status: "paid",
+        amount: 500,
+        paidAt: isoOffset(40),
+      });
+    }
     const [card] = await flow.run("u-1", NOW_FIXED);
     assertEquals(card.status, "regular");
+  });
+});
+
+Deno.test("REQ-562 (cycle 4, M38) a signed job whose deposit is paid and balance scheduled is 1 active job — not accepted − paid = 0", async () => {
+  await withKv(async () => {
+    const { customers, quotes, invoices, flow } = fresh();
+    const c = await customers.create("u-1", { name: "Linda Park" });
+    const q = await quotes.create("u-1", {
+      customerId: c.id,
+      summary: "Deck",
+      lineItems: [],
+      status: "accepted",
+    });
+    await quotes.update(q.id, "u-1", { acceptedAt: isoOffset(1) });
+    await invoices.create("u-1", {
+      quoteId: q.id,
+      customerId: c.id,
+      dueDate: "2026-04-28",
+      status: "paid",
+      amount: 1_425_00,
+      paidAt: isoOffset(0),
+    });
+    await invoices.create("u-1", {
+      quoteId: q.id,
+      customerId: c.id,
+      dueDate: "2026-05-28",
+      status: "scheduled",
+      amount: 1_425_00,
+    });
+    const [card] = await flow.run("u-1", NOW_FIXED);
+    assertEquals(card.activeJobs, 1);
+    assertEquals(card.status, "active");
+    assertEquals(card.balanceCents, 0, "a scheduled balance is not owed yet");
+  });
+});
+
+Deno.test("REQ-562 (cycle 4, m21) one fully paid job is completed but not yet regular; a void invoice doesn't keep a paid job open", async () => {
+  await withKv(async () => {
+    const { customers, quotes, invoices, flow } = fresh();
+    const c = await customers.create("u-1", { name: "Linda Park" });
+    const q = await quotes.create("u-1", {
+      customerId: c.id,
+      summary: "Deck",
+      lineItems: [],
+      status: "accepted",
+    });
+    await quotes.update(q.id, "u-1", { acceptedAt: isoOffset(3) });
+    await invoices.create("u-1", {
+      quoteId: q.id,
+      customerId: c.id,
+      dueDate: "2026-04-28",
+      status: "paid",
+      amount: 2_850_00,
+      paidAt: isoOffset(1),
+    });
+    await invoices.create("u-1", {
+      quoteId: q.id,
+      customerId: c.id,
+      dueDate: "2026-04-28",
+      status: "void",
+      amount: 2_850_00,
+    });
+    const [card] = await flow.run("u-1", NOW_FIXED);
+    assertEquals(card.activeJobs, 0);
+    assertEquals(card.status === "regular", false, `one job is not a regular: ${card.status}`);
   });
 });
 
