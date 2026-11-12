@@ -385,19 +385,18 @@ const SHARE =
  * a price. Conservative: exactly one amount, and either it is the whole
  * message ("$4,500") or a price cue sits right before it ("more like $28k",
  * "cóbrale unos $3,700") or "total" right after it. Never a cost the
- * contractor pays ("my plumber quoted $2,800"), a deposit or a percentage, or
- * one of several amounts. Null otherwise.
+ * contractor pays ("my plumber quoted $2,800"), a deposit or a percentage in
+ * the amount's own sentence (REQ-658), or one of several amounts. Null
+ * otherwise.
  */
 export function statedPriceCents(t: string): number | null {
   const s = (t ?? "").normalize("NFC");
-  if (!s.trim() || SHARE.test(s)) return null;
+  if (!s.trim()) return null;
   const found = amounts(s);
   if (found.length !== 1) return null;
   const a = found[0];
   const before = s.slice(0, a.start);
   const after = s.slice(a.end);
-  const bare = !/[\p{L}\d]/u.test(before + after);
-  if (bare) return a.cents;
   const clause = before.slice(
     Math.max(
       before.lastIndexOf("."),
@@ -406,6 +405,15 @@ export function statedPriceCents(t: string): number | null {
       before.lastIndexOf("\n"),
     ) + 1,
   );
+  // REQ-658 (demo-loop cycle 5, M17): a deposit, a share or a percent
+  // disqualifies only the amount it sits beside — the sentence the amount is
+  // in. "85/hr + cost+15%, … make it around 18k" names $18,000.
+  const end = after.search(/[.!?\n](?!\d)/u);
+  if (SHARE.test(clause + (end < 0 ? after : after.slice(0, end)))) {
+    return null;
+  }
+  const bare = !/[\p{L}\d]/u.test(before + after);
+  if (bare) return a.cents;
   if (COST_BEFORE.test(clause)) return null;
   const near = before.slice(-40).replace(/[\s,;:—–-]+$/u, "").trimEnd();
   const cued = PRICE_BEFORE.test(near) || PRICE_AFTER.test(after);

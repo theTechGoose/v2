@@ -4358,3 +4358,24 @@ Tests:
 - unit: `demo-loop/demo20b_test.ts` "REQ-621: the rules file names every category, in order, each with an action" (the rules file is executed by agents, so it gets a content test).
 - int: `demo-loop/demo20b_test.ts` "REQ-621: both testers are told to read the rules and tag every issue" runs the real harness with a fake fleet-claude.
 - e2e: the next demo cycle; its reports carry category tags.
+
+## REQ-658 — Pick a price: a breakdown ask is answered, a markup elsewhere doesn't cancel the stated price, and a failed answer never becomes the thread summary (demo-loop cycle 5, issues M17 + m51)
+**Source:** Raphael, the demo loop: "fix every issue the demo found, loop until there are none". Demo-loop cycle 5 (run r37f88707), issues M17 "Assistant reply fails with 200 and the error becomes the summary" (pair 7: "how did you get 17,500? 85/hr + cost+15%, break down labor vs materials... make it around 18k" → "I couldn't answer that just now, so nothing changed — ask me again.", which then showed as the sidebar preview) and m51 "'Break down labor vs materials' only re-prices" (fleet-6 stdout:305).
+**RCA (analyst + skeptic UPHELD, at 2444608a):** `statedPriceCents` (shared/quote-flow/step-composer.ts) tested SHARE (`%`, deposit, upfront…) on the whole message, so "cost+15%" cancelled "make it around 18k". With no stated price, an empty model answer left `parts` empty in `HandleChatMessage.answerOnPriceStep`, which pushed `askFailed`, and `finishStep` wrote it as `conversation.preview`. Separately, `priceStepIntent("break down labor vs materials please")` had no "?" and no question opener, so it went to `repriceOnStep`, which only rolls the three tiers again.
+**Requirement:**
+- A deposit, share or percent disqualifies only an amount in its own sentence.
+- Breakdown and explain wording goes to the chat model, never the re-pricer. English: "break down", "breakdown", "labor vs/and materials", "explain", "how did you get / come up with". Spanish: "desglosa", "mano de obra y materiales", "cómo llegaste". The model's context tells it to split the price into labor (estimated hours × the contractor's stated hourly rate) and materials (estimated cost plus their stated markup), say these are estimates, and leave the prices on screen unchanged.
+- An empty model answer (no text and no tool call) is asked again once with a "you must answer" nudge (`prompts.chatStep.mustAnswer`).
+- If the second answer is also empty, the reply is the honest `chatCoordinator.step.askEmpty` (en + es).
+- A failed answer (empty, or the model call threw) never overwrites the thread's preview; the previous preview stays.
+**Tests:** unit `jest/unit/price-step-breakdown.test.ts` ("REQ-658 …" ×3), `backend/src/agents/domain/business/chat-step/price-breakdown.test.ts` ("REQ-658 …" ×5) · integration `backend/src/agents/domain/coordinators/handle-chat-message/price-question.int.test.ts` ("REQ-658 …" ×5: breakdown goes to the model with the brief; the demo message keeps $18,000; empty → re-asked once; empty twice → askEmpty with the preview unchanged; a throw → preview unchanged) · e2e `backend/src/agents/entrypoints/chat-controller/step.e2e.test.ts` ("REQ-658 M17+m51 e2e …", over HTTP: the demo message is answered, not re-priced, and carries statedPriceCents 1,800,000).
+**Evidence (2026-11-12, branch fix/c5-price-step-intent off demo-fixes 2444608a):**
+- RED:
+  - jest unit: 2 failed ("Expected: 1800000, Received: null"; "Expected: 2100000, Received: null").
+  - backend unit: `asksForBreakdown` did not exist.
+  - int (`deno test … price-question.int.test.ts`): "7 passed | 5 failed". Failures were "no re-price", the context missing "hourly rate", "asked twice", "re-asked once" and "preview unchanged".
+  - e2e: 1 failed (statedPriceCents not equal).
+- GREEN:
+  - `deno test -A --unstable-kv src/agents/domain/coordinators/handle-chat-message/ src/agents/domain/business/chat-step/ src/agents/entrypoints/chat-controller/step.e2e.test.ts` → "ok | 221 passed | 0 failed".
+  - `npx jest --selectProjects unit` → "Test Suites: 393 passed · Tests: 1 skipped, 3852 passed".
+  - `deno lint` and `deno check` are clean on the touched files, which are fmt-clean.

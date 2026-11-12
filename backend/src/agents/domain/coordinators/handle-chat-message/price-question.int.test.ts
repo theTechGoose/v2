@@ -410,3 +410,125 @@ Deno.test("REQ-444 M21 price step: a plain price correction still goes to the pr
   assertStringIncludes(res.newMessages[1].content, "Re-priced");
   await resetKv();
 });
+
+// ---------------------------------------------------------------------------
+// REQ-658 (demo-loop cycle 5, M17 + m51): "how did you get 17,500? 85/hr +
+// cost+15%, break down labor vs materials... make it around 18k" got "I
+// couldn't answer that just now, so nothing changed — ask me again." with a
+// 200 — and that line became the thread's sidebar preview. "break down labor
+// vs materials please" only re-priced the tiers.
+// ---------------------------------------------------------------------------
+
+const BREAKDOWN_DEMO =
+  "how did you get 17,500? 85/hr + cost+15%, break down labor vs materials... make it around 18k";
+
+Deno.test("REQ-658 m51 price step: 'break down labor vs materials please' reaches the chat model with a breakdown brief — never the re-pricer", async () => {
+  const ctx = await setup();
+  const ANSWER =
+    "Market $20,000: about $9,000 labor and $11,000 materials (estimates).";
+  const seen = record(ctx.llm, () => ({ text: ANSWER }));
+  const res = await ctx.flow.run({
+    userId: "u-1",
+    conversationId: ctx.convId,
+    content: "break down labor vs materials please",
+    step: STEP,
+  });
+  assertEquals(seen.filter(isPricing).length, 0, "no re-price");
+  assertEquals(seen.length, 1);
+  const brief = (seen[0].businessContext ?? "").toLowerCase();
+  assertStringIncludes(brief, "hourly rate");
+  assertStringIncludes(brief, "markup");
+  const reply = res.newMessages[1];
+  assertStringIncludes(reply.content, ANSWER);
+  assert(!reply.content.includes("Re-priced"), reply.content);
+  assertEquals((reply.payload as StepPayload).priceSuggestions, undefined);
+  await resetKv();
+});
+
+Deno.test("REQ-658 M17 price step: the demo's message keeps its stated $18,000 and the rate rides to the model", async () => {
+  const ctx = await setup();
+  const seen = record(
+    ctx.llm,
+    () => ({ text: "At $85/hr that's about 90 hours of labor…" }),
+  );
+  const res = await ctx.flow.run({
+    userId: "u-1",
+    conversationId: ctx.convId,
+    content: BREAKDOWN_DEMO,
+    step: STEP,
+  });
+  assertEquals(seen.filter(isPricing).length, 0);
+  assertEquals(
+    seen[0].messages[seen[0].messages.length - 1].content,
+    BREAKDOWN_DEMO,
+    "the contractor's rate and markup reach the model",
+  );
+  assertStringIncludes(seen[0].businessContext ?? "", "$18,000");
+  const p = res.newMessages[1].payload as StepPayload;
+  assertEquals(p.statedPriceCents, 1_800_000);
+  await resetKv();
+});
+
+Deno.test("REQ-658 M17 price step: an empty model answer is re-asked once — the second answer is the reply", async () => {
+  const ctx = await setup();
+  const ANSWER =
+    "Labor ≈ $8,500 at your $85/hr; materials ≈ $9,500 with your 15%.";
+  let n = 0;
+  const seen = record(ctx.llm, () => ({ text: n++ === 0 ? "" : ANSWER }));
+  const res = await ctx.flow.run({
+    userId: "u-1",
+    conversationId: ctx.convId,
+    content: "break down labor vs materials please",
+    step: STEP,
+  });
+  assertEquals(seen.filter((r) => !isPricing(r)).length, 2, "asked twice");
+  const reply = res.newMessages[1];
+  assertEquals(reply.content, ANSWER);
+  assertEquals(res.conversation.preview?.includes("Labor"), true);
+  await resetKv();
+});
+
+Deno.test("REQ-658 M17 price step: when the model answers nothing twice, the fallback is honest and never becomes the thread's preview", async () => {
+  const ctx = await setup();
+  const before = (await ctx.conversations.get(ctx.convId))?.preview;
+  const seen = record(ctx.llm, () => ({ text: "" }));
+  const res = await ctx.flow.run({
+    userId: "u-1",
+    conversationId: ctx.convId,
+    content: "break down labor vs materials please",
+    step: STEP,
+  });
+  assertEquals(seen.filter((r) => !isPricing(r)).length, 2, "re-asked once");
+  const reply = res.newMessages[1];
+  assertEquals(reply.content, t("en", "chatCoordinator.step.askEmpty"));
+  assert(
+    !reply.content.includes("couldn't answer that just now"),
+    reply.content,
+  );
+  assertEquals(res.conversation.preview, before, "preview unchanged");
+  assert(
+    !(res.conversation.preview ?? "").includes(reply.content),
+    "the fallback is never the summary",
+  );
+  await resetKv();
+});
+
+Deno.test("REQ-658 M17 price step: a model call that throws is not written to the thread's preview either", async () => {
+  const ctx = await setup();
+  const before = (await ctx.conversations.get(ctx.convId))?.preview;
+  ctx.llm.setHandler(() => {
+    throw new Error("upstream 500");
+  });
+  const res = await ctx.flow.run({
+    userId: "u-1",
+    conversationId: ctx.convId,
+    content: "is the permit included?",
+    step: STEP,
+  });
+  assertEquals(
+    res.newMessages[1].content,
+    t("en", "chatCoordinator.step.askFailed"),
+  );
+  assertEquals(res.conversation.preview, before, "preview unchanged");
+  await resetKv();
+});
