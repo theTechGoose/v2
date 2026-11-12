@@ -22,6 +22,7 @@
  * Tracks for transit/attention render conditionally — when there's no data
  * for them the page reads cleanly without empty sections.
  */
+import Backdrop from "../components/Backdrop.tsx";
 import { useEffect, useMemo, useState } from "preact/hooks";
 import {
   type Payment,
@@ -623,10 +624,10 @@ function PaymentsHero(
           </a>
         </div>
         {recordOpen && (
-          <div
+          <Backdrop
             data-cy="payments-record-modal"
             style="position:fixed;inset:0;z-index:60;background:rgba(20,72,82,0.35);display:flex;align-items:center;justify-content:center;padding:20px"
-            onClick={() => setRecordOpen(false)}
+            onClose={() => setRecordOpen(false)}
           >
             <div
               role="dialog"
@@ -671,7 +672,7 @@ function PaymentsHero(
                 />
               )}
             </div>
-          </div>
+          </Backdrop>
         )}
       </div>
       <div class="pph__stack" aria-hidden="true">

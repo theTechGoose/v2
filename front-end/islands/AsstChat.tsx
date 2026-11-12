@@ -1,3 +1,4 @@
+import Backdrop from "../components/Backdrop.tsx";
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import { I, ICN } from "../lib/dash-icons.tsx";
 import { detailLines } from "../lib/format.ts";
@@ -5108,9 +5109,9 @@ export default function AsstChat({
                       )}
                     {proPopup
                       ? (
-                        <div
+                        <Backdrop
                           class="chat__pro-pop"
-                          onClick={dismissProfessionalize}
+                          onClose={dismissProfessionalize}
                         >
                           <div
                             class="chat__pro-pop-card"
@@ -5140,7 +5141,7 @@ export default function AsstChat({
                               </button>
                             </div>
                           </div>
-                        </div>
+                        </Backdrop>
                       )
                       : null}
                   </div>
@@ -7300,9 +7301,9 @@ export default function AsstChat({
                                       the dialog's Keep is the actual send. */}
                                   {sendDialogOpen
                                     ? (
-                                      <div
+                                      <Backdrop
                                         class="send-dialog__backdrop"
-                                        onClick={() => setSendDialogOpen(false)}
+                                        onClose={() => setSendDialogOpen(false)}
                                       >
                                         <div
                                           class="send-dialog"
@@ -7446,7 +7447,7 @@ export default function AsstChat({
                                             </button>
                                           </div>
                                         </div>
-                                      </div>
+                                      </Backdrop>
                                     )
                                     : null}
                                   <button

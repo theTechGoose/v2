@@ -14,6 +14,7 @@
  *     03 Drafting                    (defaultOpen=false)
  *     04 Paid this month             (defaultOpen=false)
  */
+import Backdrop from "../components/Backdrop.tsx";
 import { useEffect, useMemo, useState } from "preact/hooks";
 import {
   type Customer,
@@ -3399,8 +3400,8 @@ function NewInvoiceModal(
   }
 
   return (
-    <div
-      onClick={() => !busy && onClose()}
+    <Backdrop
+      onClose={() => !busy && onClose()}
       style="position:fixed;inset:0;background:rgba(20,40,45,0.45);display:flex;align-items:flex-start;justify-content:center;z-index:1000;padding:20px;overflow-y:auto"
     >
       <form
@@ -3966,6 +3967,6 @@ function NewInvoiceModal(
           </p>
         )}
       </form>
-    </div>
+    </Backdrop>
   );
 }

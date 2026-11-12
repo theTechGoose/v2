@@ -1,3 +1,4 @@
+import Backdrop from "./Backdrop.tsx";
 import { useState } from "preact/hooks";
 import { ApiError } from "../lib/api.ts";
 import { profileClient } from "../clients/profile.ts";
@@ -76,10 +77,10 @@ export function TransferAccount({ lang }: { lang: Lang }) {
       </button>
       {open
         ? (
-          <div
+          <Backdrop
             data-cy="transfer-modal"
             style="position:fixed;inset:0;z-index:60;background:rgba(20,72,82,0.35);display:flex;align-items:center;justify-content:center;padding:20px"
-            onClick={() => !busy && setOpen(false)}
+            onClose={() => !busy && setOpen(false)}
           >
             <form
               role="dialog"
@@ -158,7 +159,7 @@ export function TransferAccount({ lang }: { lang: Lang }) {
                 </button>
               </div>
             </form>
-          </div>
+          </Backdrop>
         )
         : null}
     </>

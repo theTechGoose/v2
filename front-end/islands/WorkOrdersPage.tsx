@@ -5,6 +5,7 @@
  * order" modal. Data: clients/work-orders.ts; the pickers read the customer,
  * quote and invoice lists the other pages already use.
  */
+import Backdrop from "../components/Backdrop.tsx";
 import { useEffect, useState } from "preact/hooks";
 import {
   type WorkOrder,
@@ -361,7 +362,7 @@ function NewWorkOrderModal(
   }
 
   return (
-    <div class="modal-bg" onClick={() => !busy && onClose()}>
+    <Backdrop class="modal-bg" onClose={() => !busy && onClose()}>
       <form
         class="modal"
         data-cy="wo-new-modal"
@@ -502,6 +503,6 @@ function NewWorkOrderModal(
           </button>
         </div>
       </form>
-    </div>
+    </Backdrop>
   );
 }
