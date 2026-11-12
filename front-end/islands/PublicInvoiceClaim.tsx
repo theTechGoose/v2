@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "preact/hooks";
 import { type Lang, tFor } from "../lib/i18n.ts";
 import { fmtMoneyExact, fmtPayHandle } from "../lib/format.ts";
 import { startInvoiceRefresh } from "../lib/public-invoice-refresh.ts";
+import { announceChange } from "../lib/change-announce.ts";
 import {
   claimBody,
   claimDecision,
@@ -208,6 +209,9 @@ export default function PublicInvoiceClaim(
         );
       }
       setDone(true);
+      // REQ-493 (demo-loop c3 m7): the owner's /invoices in this browser
+      // ("View as customer") follows at once.
+      announceChange({ entityType: "invoice", entityId: invoiceId });
       // UX-35: the SSR chrome OUTSIDE this island must reflect the claim
       // without a manual reload — flip the header badge to the awaiting-
       // confirmation state and retire the "questions before paying?" footer.

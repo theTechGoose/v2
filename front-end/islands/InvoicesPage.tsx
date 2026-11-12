@@ -42,6 +42,7 @@ import {
   reloadInvoiceData,
   scheduledHeroSubKey,
 } from "../lib/headline-counts.ts";
+import { followChanges, isDocChange } from "../lib/change-feed.ts";
 import { isChangeOrderMutable } from "../../shared/quote-flow/adjustment-guards.ts";
 import {
   formatPhoneInput,
@@ -474,6 +475,14 @@ export default function InvoicesPage(_props: { lang?: Lang }) {
       alive = false;
     };
   }, []);
+
+  // REQ-493 (demo-loop c3 m7): the list was re-read only after this page's
+  // own actions, so a payment the client claimed stayed "Enviada" while the
+  // topbar chip already said they paid. Follow the change feed — the
+  // notifications the topbar polls, and the client's actions in this
+  // browser's other tabs: a quote or invoice the client moved re-reads the
+  // list and the forecast (refreshInvoices only touches stable setters).
+  useEffect(() => followChanges(isDocChange, refreshInvoices), []);
 
   const customerNames = useMemo(
     () =>
