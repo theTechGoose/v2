@@ -1165,6 +1165,7 @@
   "ensureSampleQuote.jobName": "Instalación de patio de adoquines",
   "ensureSampleQuote.lineItem.labor": "Instalación de patio de adoquines (mano de obra)",
   "ensureSampleQuote.lineItem.materials": "Instalación de patio de adoquines (materiales)",
+  "ensureSampleQuote.number": "MUESTRA",
   "errorPage.home": "Volver al inicio",
   "errorPage.notFound.body": "La página que buscas se movió o nunca existió. Te llevamos de regreso.",
   "errorPage.notFound.heading": "No encontramos esa página",

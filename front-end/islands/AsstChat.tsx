@@ -14,6 +14,7 @@ import {
   type Quote as AsstQuote,
 } from "../clients/assistant.ts";
 import { filesClient } from "../clients/files.ts";
+import { reviewCardNumber } from "../../shared/documents/numbering.ts";
 import { type QuoteCard, quotesClient } from "../clients/quotes.ts";
 import { billedTotalCents } from "../../shared/quote-flow/milestone-reconcile.ts";
 import { isTbdTermValue } from "../../shared/quote-flow/terms-i18n.ts";
@@ -590,6 +591,8 @@ export default function AsstChat({
   const [quote, setQuote] = useState<
     | {
       id: string;
+      /** REQ-198/241: "Q-001" — the number the documents carry. */
+      number?: string;
       summary?: string;
       /** ≤3-word job title — the platform-wide identifier (roadmap p.10). */
       jobName?: string;
@@ -1320,6 +1323,7 @@ export default function AsstChat({
         if (!cancelled) {
           setQuote({
             id: q.id,
+            number: (q as { number?: string }).number,
             summary: q.summary,
             jobName: q.jobName,
             description: q.description,
@@ -5649,7 +5653,7 @@ export default function AsstChat({
                               {docId
                                 ? (
                                   <div class="quote-review__num">
-                                    #{docId.slice(0, 8).toUpperCase()}
+                                    {reviewCardNumber(docId, quote)}
                                   </div>
                                 )
                                 : null}
