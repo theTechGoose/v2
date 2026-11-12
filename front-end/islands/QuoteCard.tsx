@@ -49,6 +49,9 @@ interface Props {
   /** Deep-link (/quotes?open=<id>): mount the card already flipped to its
    *  detail back so the opened quote's actions are immediately visible. */
   flipOnMount?: boolean;
+  /** REQ-239 (M28): open the quote panel (/quotes?open=<id>) — the same
+   *  entry point the decided rows have. */
+  onOpen?: (id: string) => void;
 }
 
 function OpenDots({ count, max = 5 }: { count: number; max?: number }) {
@@ -65,7 +68,7 @@ function OpenDots({ count, max = 5 }: { count: number; max?: number }) {
 }
 
 export default function QuoteCard(
-  { q, idx, lang = "en", flipOnMount = false }: Props,
+  { q, idx, lang = "en", flipOnMount = false, onOpen }: Props,
 ) {
   const [flipped, setFlipped] = useState(flipOnMount);
   const [copied, setCopied] = useState(false);
@@ -241,6 +244,19 @@ export default function QuoteCard(
           </p>
         </div>
         <div class="qcard__back-foot">
+          {onOpen && (
+            <button
+              type="button"
+              class="qcard__back-btn--primary qcard__back-open"
+              data-cy="qcard-open"
+              onClick={(e) => {
+                e.stopPropagation();
+                onOpen(q.id);
+              }}
+            >
+              {tFor(lang, "quoteCard.back.open")}
+            </button>
+          )}
           <button type="button" onClick={(e) => e.stopPropagation()}>
             {tFor(lang, "quoteCard.back.resend")}
           </button>
