@@ -168,6 +168,12 @@
   border-color: var(--brand-green);
   box-shadow: var(--shadow-focus);
 }
+/* REQ-421 — a refused box's message, right under it (the red border is REQ-283's aria-invalid rule) */
+.field-error {
+  color: #a83b3b;
+  font-size: 12.5px;
+  font-weight: 600;
+}
 .row {
   display: flex;
   gap: 10px;

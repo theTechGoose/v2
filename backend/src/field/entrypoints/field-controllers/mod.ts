@@ -210,17 +210,48 @@ export class FieldWorkersController {
     const name = str(b.name),
       pin = String(b.pin ?? "").trim(),
       phone = digitsOf(b.phoneNumber);
-    if (!name) throw new FieldError("name required");
-    if (name.length > CAP.text) throw new FieldError("name too long");
-    if (phone.length < 10) {
-      throw new FieldError("phoneNumber required (10 digits)");
+    // REQ-421 (demo m42) — every refusal carries a stable `code` the page words in en/es
+    if (!name) {
+      throw new FieldError("name required", 400, undefined, "name_required");
     }
-    if (!/^\d{4}$/.test(pin)) throw new FieldError("pin must be 4 digits");
+    if (name.length > CAP.text) {
+      throw new FieldError("name too long", 400, undefined, "name_too_long");
+    }
+    if (phone.length < 10) {
+      throw new FieldError(
+        "phoneNumber required (10 digits)",
+        400,
+        undefined,
+        "phone_10_digits",
+      );
+    }
+    if (!/^\d{4}$/.test(pin)) {
+      throw new FieldError(
+        "pin must be 4 digits",
+        400,
+        undefined,
+        "pin_4_digits",
+      );
+    }
+    // the cell is the worker's login name, unique across every account — so the refusal
+    // says only that the number is in use, never whose crew holds it
     if (await this.workers.findByPhone(phone)) {
-      throw new FieldError("a worker with that cell already exists", 409);
+      throw new FieldError(
+        "that cell is already in use by a worker",
+        409,
+        undefined,
+        "worker_phone_taken",
+      );
     }
     const language = parseLang(b.language);
-    if (language === null) throw new FieldError("language must be en or es");
+    if (language === null) {
+      throw new FieldError(
+        "language must be en or es",
+        400,
+        undefined,
+        "language_invalid",
+      );
+    }
     const now = new Date().toISOString();
     const w: FieldWorker = {
       id: newId(),
@@ -316,7 +347,14 @@ export class FieldWorkersController {
     const w = await this.workers.getOwned(id, user.id);
     const b = body(raw);
     const language = parseLang(b.language);
-    if (!language) throw new FieldError("language must be en or es");
+    if (!language) {
+      throw new FieldError(
+        "language must be en or es",
+        400,
+        undefined,
+        "language_invalid",
+      );
+    }
     w.language = language;
     w.updatedAt = new Date().toISOString();
     await this.workers.put(w);
@@ -335,6 +373,7 @@ export class FieldWorkersController {
         "worker still covers zones — reassign them first",
         409,
         { zones },
+        "worker_covers_zones", // REQ-421 — the page words it and names the zones
       );
     }
     await this.workers.delete(w);

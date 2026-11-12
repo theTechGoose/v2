@@ -124,12 +124,17 @@ export interface Batch {
   createdAt: string;
 }
 
-/** An error with the HTTP status Danet should answer with (`error.status || 500`). */
+/**
+ * An error with the HTTP status Danet should answer with (`error.status || 500`).
+ * REQ-421 — `code`: a stable machine code the page maps to its own words (en/es);
+ * `message` stays the developer's English for logs and API callers.
+ */
 export class FieldError extends Error {
   constructor(
     message: string,
     readonly status = 400,
     readonly detail?: Record<string, unknown>,
+    readonly code?: string,
   ) {
     super(message);
     this.name = "FieldError";
