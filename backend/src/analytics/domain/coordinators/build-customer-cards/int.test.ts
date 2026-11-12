@@ -338,3 +338,78 @@ Deno.test("REQ-204 balanceSub: an overdue invoice reads 'INV-5000 · overdue' (i
     assert(!card.balanceSub.includes(inv.id.slice(0, 8)), "no id slice");
   });
 });
+
+// REQ-350 (demo-loop cycle 1, m9): the balance sub-line is localized — a
+// Spanish account read "$600 pendiente · owes." because the backend returned
+// English literals into the es story template.
+Deno.test("REQ-350 balanceSub in Spanish: an overdue invoice reads 'INV-001 · vencida'", async () => {
+  await withKv(async () => {
+    const { customers, invoices, flow } = fresh();
+    const c = await customers.create("u-1", { name: "Acme" });
+    await invoices.create("u-1", {
+      quoteId: "k",
+      customerId: c.id,
+      dueDate: "2026-04-01",
+      status: "pending",
+      amount: 500_00,
+    });
+    const [card] = await flow.run("u-1", NOW_FIXED, "es");
+    assertEquals(card.balanceSub, "INV-001 · vencida");
+  });
+});
+
+Deno.test("REQ-350 balanceSub in Spanish: an owed balance with no pending invoice never says 'owes'", async () => {
+  await withKv(async () => {
+    const { customers, invoices, flow } = fresh();
+    const c = await customers.create("u-1", { name: "Acme" });
+    await invoices.create("u-1", {
+      quoteId: "k",
+      customerId: c.id,
+      dueDate: "2026-04-01",
+      status: "sent",
+      amount: 600_00,
+    });
+    const [es] = await flow.run("u-1", NOW_FIXED, "es");
+    assertEquals(es.balanceCents, 600_00);
+    assertEquals(es.balanceSub, "esperando el pago");
+    const [en] = await flow.run("u-1", NOW_FIXED, "en");
+    assertEquals(en.balanceSub, "awaiting payment");
+  });
+});
+
+Deno.test("REQ-350 balanceSub: 'due in 1 day' is singular in both languages", async () => {
+  await withKv(async () => {
+    const { customers, invoices, flow } = fresh();
+    const c = await customers.create("u-1", { name: "Acme" });
+    const due = new Date(NOW_FIXED.getTime() + 86_400_000).toISOString()
+      .slice(0, 10);
+    await invoices.create("u-1", {
+      quoteId: "k",
+      customerId: c.id,
+      dueDate: due,
+      status: "pending",
+      amount: 100_00,
+    });
+    const [es] = await flow.run("u-1", NOW_FIXED, "es");
+    const [en] = await flow.run("u-1", NOW_FIXED, "en");
+    assert(/^INV-001 · vence (en 1 día|hoy)$/.test(es.balanceSub), es.balanceSub);
+    assert(/^INV-001 · due (in 1 day|today)$/.test(en.balanceSub), en.balanceSub);
+  });
+});
+
+Deno.test("REQ-350 balanceSub in Spanish: a credit reads '$500 a favor', not 'on file'", async () => {
+  await withKv(async () => {
+    const { customers, invoices, flow } = fresh();
+    const c = await customers.create("u-1", { name: "Acme" });
+    await invoices.create("u-1", {
+      quoteId: "k",
+      customerId: c.id,
+      dueDate: "2026-04-01",
+      status: "credit",
+      amount: 500_00,
+    });
+    const [card] = await flow.run("u-1", NOW_FIXED, "es");
+    assertEquals(card.balanceCents, -500_00);
+    assertEquals(card.balanceSub, "$500 a favor");
+  });
+});

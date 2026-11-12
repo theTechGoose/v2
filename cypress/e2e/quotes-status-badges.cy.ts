@@ -100,7 +100,7 @@ describe("quote status badge lifecycle", () => {
 // ===========================================================================
 describe("REQ-003 NW-10 the price flow creates a draft", () => {
   const PHONE = "+15125550926";
-  const KNOWN_PRICE_CHIP = "Sé mi precio, redáctalo.";
+  const KNOWN_PRICE_CHIP = "Ya tengo el precio, redáctalo.";
 
   beforeEach(() => {
     cy.clearCookies();

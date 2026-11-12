@@ -14,7 +14,7 @@ import type { Invoice } from "@paperwork/dto/invoice.ts";
 import type { View } from "@paperwork/dto/view.ts";
 import { relativeTime } from "#quote-flow/format-helpers.ts";
 import { docNumberOf } from "#documents/numbering.ts";
-import { type Lang, t } from "@core/i18n/mod.ts";
+import { type Lang, t, tn } from "@core/i18n/mod.ts";
 
 /** Invoice statuses that still count as owed (REQ-016). */
 const OWED_STATUSES = new Set(["pending", "sent", "viewed", "claimed"]);
@@ -123,7 +123,13 @@ function buildOne(
       balanceCents -= cents;
     }
   }
-  const balanceSub = buildBalanceSub(balanceCents, myInvoices, myQuotes, now);
+  const balanceSub = buildBalanceSub(
+    balanceCents,
+    myInvoices,
+    myQuotes,
+    now,
+    lang,
+  );
 
   // ---------------- jobs ----------------
   // "active job" = accepted quote without a paid invoice covering it
@@ -232,11 +238,18 @@ export function deriveStatus(args: {
   return "regular";
 }
 
+/**
+ * REQ-350 (demo-loop cycle 1, m9): the balance sub-line is resolved in the
+ * contractor's language — it used to return English literals ("owes",
+ * "· overdue", "due in N days", "on file") that a Spanish story template
+ * then printed verbatim ("$600 pendiente · owes.").
+ */
 function buildBalanceSub(
   balanceCents: number,
   invoices: Invoice[],
   quotes: Quote[],
   now: Date,
+  lang: Lang,
 ): string {
   const today = now.toISOString().slice(0, 10);
   if (balanceCents > 0) {
@@ -250,20 +263,29 @@ function buildBalanceSub(
       );
       // REQ-204: the invoice's own number ("INV-5000"), never an id slice
       const ref = docNumberOf(next);
-      if (next.dueDate < today) return `${ref} · overdue`;
-      return `${ref} · due in ${dueDays} day${dueDays === 1 ? "" : "s"}`;
+      if (next.dueDate < today) {
+        return t(lang, "clientsDisplay.balanceSub.overdue", { ref });
+      }
+      if (dueDays <= 0) {
+        return t(lang, "clientsDisplay.balanceSub.dueToday", { ref });
+      }
+      return tn(lang, "clientsDisplay.balanceSub.dueIn", dueDays, { ref });
     }
-    return "owes";
+    return t(lang, "clientsDisplay.balanceSub.owes");
   }
-  if (balanceCents < 0) return `${formatDollars(-balanceCents)} on file`;
+  if (balanceCents < 0) {
+    return t(lang, "clientsDisplay.balanceSub.onFile", {
+      amount: formatDollars(-balanceCents),
+    });
+  }
   const openQuote = quotes.find((q) => q.status === "sent");
   if (openQuote) {
     // estimatedTotal is INTEGER CENTS now (audit1 #3).
-    return `settled · quote out ${
-      formatDollars(openQuote.estimatedTotal ?? 0)
-    }`;
+    return t(lang, "clientsDisplay.balanceSub.quoteOut", {
+      amount: formatDollars(openQuote.estimatedTotal ?? 0),
+    });
   }
-  return "settled";
+  return t(lang, "clientsDisplay.balanceSub.settled");
 }
 
 function formatDollars(cents: number): string {

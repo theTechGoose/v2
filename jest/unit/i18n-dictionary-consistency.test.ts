@@ -110,17 +110,20 @@ describe("P-48 ES plural agreement for overdue days", () => {
 });
 
 describe("P-61 win-rate template has a separator between the two fragments", () => {
-  it("P-61 es 'wonLost' + 'needMore' does not butt 'perdidas' against 'faltan'", () => {
-    // The FE concatenates quotesRate.wonLost ("… {lost} perdidas") with
-    // quotesRate.needMore ("faltan {n} más …"); today that renders
-    // "…0 perdidasfaltan 4 más…". A separator must sit between them.
-    const run = es["quotesRate.wonLost"] + es["quotesRate.needMore"];
-    expect(run).not.toMatch(/perdidasfaltan/i);
+  // REQ-350 retired the concatenated quotesRate.wonLost template: the counts
+  // are now separate one/other keys joined with " · " in QuotesSections.
+  it("P-61 es the won/lost/need-more pieces carry no glued separator", () => {
+    for (const k of ["quotesKpi.lost.other", "quotesRate.needMore.other"]) {
+      expect(es[k]).not.toMatch(/^\s|\s$|·\s*$/);
+    }
+    expect(`${es["quotesKpi.lost.other"]} · ${es["quotesKpi.needMore.other"]}`)
+      .not.toMatch(/perdidasfaltan/i);
   });
 
-  it("P-61 en 'wonLost' + 'needMore' does not butt 'lost' against 'need'", () => {
-    const run = en["quotesRate.wonLost"] + en["quotesRate.needMore"];
-    expect(run).not.toMatch(/lostneed/i);
+  it("P-61 en the won/lost/need-more pieces carry no glued separator", () => {
+    for (const k of ["quotesKpi.lost.other", "quotesRate.needMore.other"]) {
+      expect(en[k]).not.toMatch(/^\s|\s$|·\s*$/);
+    }
   });
 });
 
@@ -135,7 +138,8 @@ describe("P-46 EN customers-surface: one term, sentence case", () => {
     "clientsHero.emptyTitleEm", // "first client"
     "asstChat.customerStep.pickTitle",
     "asstChat.customerStep.newCustomer",
-    "quoteCard.back.viewAsClient", // "View as client"
+    "quoteCard.back.viewAsClient", // "View as customer"
+    "quotesPage.open.viewAsClient", // REQ-350: same action, same noun
   ];
 
   it("P-46 the customers surface does not mix 'client' and 'customer'", () => {
@@ -239,11 +243,11 @@ describe("REQ-014 NW-54 the clause list is headed 'Terms and Conditions' on web 
   // p62: rename "fine print, in plain english" to "Terms and Conditions".
   it("REQ-014 NW-54 web heading key exists in both dictionaries", () => {
     expect(en["quoteDoc.termsAndConditions"]).toBe("Terms and Conditions");
-    expect(es["quoteDoc.termsAndConditions"]).toBe("Términos y Condiciones");
+    expect(es["quoteDoc.termsAndConditions"]).toBe("Términos y condiciones"); // REQ-350 sentence case
   });
   it("REQ-014 NW-54 the PDF section heading says the same thing", () => {
     expect(en["renderQuotePdf.section.finePrint"]).toBe("Terms and Conditions");
-    expect(es["renderQuotePdf.section.finePrint"]).toBe("Términos y Condiciones");
+    expect(es["renderQuotePdf.section.finePrint"]).toBe("Términos y condiciones"); // REQ-350
   });
 });
 

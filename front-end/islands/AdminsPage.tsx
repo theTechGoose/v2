@@ -13,7 +13,7 @@ import FieldHead from "../components/FieldHead.tsx";
 import { ApiError } from "../lib/api.ts";
 import { I, ICN } from "../lib/dash-icons.tsx";
 import { fmtCell } from "../lib/field.ts";
-import { langSignal, t } from "../lib/i18n.ts";
+import { langSignal, t, tn } from "../lib/i18n.ts";
 
 interface InviteForm {
   /** digits only, at most 10 */
@@ -129,7 +129,7 @@ export default function AdminsPage() {
   return (
     <>
       <FieldHead
-        eyebrow={t("admins.eyebrow", { n: list.length })}
+        eyebrow={tn("admins.eyebrow", list.length)}
         title={t("admins.title")}
         sub={t("admins.sub")}
       />

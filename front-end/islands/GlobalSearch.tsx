@@ -12,7 +12,7 @@
  */
 import { useEffect, useRef, useState } from "preact/hooks";
 import { dashboardClient, type SearchHit } from "../clients/dashboard.ts";
-import { langSignal, tFor } from "../lib/i18n.ts";
+import { langSignal, tFor, tnFor } from "../lib/i18n.ts";
 import { bestHit, groupHits } from "../../shared/documents/search.ts";
 
 const DEBOUNCE_MS = 250;
@@ -295,10 +295,14 @@ export default function GlobalSearch() {
                     {line && <div class="gsearch__sub">{line}</div>}
                     {h.counts && (
                       <div class="gsearch__sub" data-cy="global-search-counts">
-                        {tFor(lang, "search.counts", {
-                          quotes: h.counts.quotes,
-                          invoices: h.counts.invoices,
-                        })}
+                        {/* REQ-350: each count agrees with its noun */}
+                        {tnFor(lang, "search.counts.quotes", h.counts.quotes)}
+                        {" · "}
+                        {tnFor(
+                          lang,
+                          "search.counts.invoices",
+                          h.counts.invoices,
+                        )}
                       </div>
                     )}
                     {h.related.length > 0 && (
