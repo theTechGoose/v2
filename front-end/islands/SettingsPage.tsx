@@ -42,6 +42,10 @@ import {
   settingsTabOf,
 } from "../lib/plan-return.ts";
 import { filesClient } from "../clients/files.ts";
+import {
+  isLogoImageType,
+  LOGO_IMAGE_ACCEPT,
+} from "../../shared/quote-flow/logo-image.ts"; // REQ-252
 import { ApiError } from "../lib/api.ts";
 import { fmtPhone } from "../lib/format.ts";
 import { TransferAccount } from "../components/TransferAccount.tsx"; // REQ-220
@@ -118,6 +122,7 @@ function tr(es: boolean) {
     saved: tFor(lang, "settings.saved"),
     saveFailed: tFor(lang, "settings.saveFailed"),
     logoUploadFailed: tFor(lang, "settings.logoUploadFailed"),
+    logoNotImage: tFor(lang, "settings.logoNotImage"),
     uploadFailed: tFor(lang, "settings.uploadFailed"),
     uploadTooLarge: tFor(lang, "settings.uploadTooLarge"),
     nothingSet: tFor(lang, "settings.nothingSet"),
@@ -385,7 +390,10 @@ function EditCard(
         } as typeof snapshot.identity,
       });
     } catch (e) {
-      setErr(e instanceof Error ? e.message : t.saveFailed);
+      // REQ-252: the server refuses a logo that is not an image (422 logo_not_image)
+      if (e instanceof ApiError && e.status === 422 && "logoFileId" in patch) {
+        setErr(t.logoNotImage);
+      } else setErr(e instanceof Error ? e.message : t.saveFailed);
     } finally {
       setBusy(null);
     }
@@ -393,6 +401,12 @@ function EditCard(
   async function onLogoPick(e: Event) {
     const file = (e.target as HTMLInputElement).files?.[0];
     if (!file) return;
+    // REQ-252 (M30): only an image is a logo — refused here, before any upload
+    if (!isLogoImageType(file.type)) {
+      (e.target as HTMLInputElement).value = "";
+      setErr(t.logoNotImage);
+      return;
+    }
     setBusy("logo");
     setErr(null);
     try {
@@ -525,15 +539,23 @@ function EditCard(
           <input
             ref={logoInputRef}
             type="file"
-            accept="image/*"
+            accept={LOGO_IMAGE_ACCEPT}
+            data-cy="settings-logo-file"
             aria-label={t.ariaLogoFile}
             style="display:none"
             onChange={onLogoPick}
           />
           {snapshot.identity?.logoFileId
             ? (
-              <span style="font-size:12px;color:var(--fg-muted)">
-                {t.logoSet} · {snapshot.identity.logoFileId.slice(0, 8)}…
+              <span style="display:inline-flex;align-items:center;gap:8px;font-size:12px;color:var(--fg-muted)">
+                {/* REQ-252: the logo itself, so a broken one is seen here first */}
+                <img
+                  data-cy="settings-logo-preview"
+                  src={`/api/files/${snapshot.identity.logoFileId}`}
+                  alt={t.logoSet}
+                  style="max-height:32px;max-width:96px;object-fit:contain;border-radius:4px"
+                />
+                {t.logoSet}
               </span>
             )
             : (

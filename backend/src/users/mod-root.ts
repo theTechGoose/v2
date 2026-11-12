@@ -58,6 +58,7 @@ import { NumberingStore } from "@users/domain/data/numbering-store/mod.ts"; // R
 import { NumberingController } from "@users/entrypoints/numbering-controller/mod.ts"; // REQ-199
 import { SetupReset } from "@users/domain/coordinators/setup-reset/mod.ts"; // REQ-199
 import { TransferAccount } from "@users/domain/coordinators/transfer-account/mod.ts"; // REQ-220
+import { FileStore } from "@files/domain/data/file-store/mod.ts"; // REQ-252 — the logo is checked to be an image
 
 /**
  * UsersModule — owns the full user identity surface:
@@ -134,6 +135,7 @@ import { TransferAccount } from "@users/domain/coordinators/transfer-account/mod
     NumberingStore, // REQ-199
     SetupReset, // REQ-199
     TransferAccount, // REQ-220
+    FileStore, // REQ-252
   ],
 })
 export class UsersModule {}
