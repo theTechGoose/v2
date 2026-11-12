@@ -17,8 +17,8 @@ import { docNumberOf } from "#documents/numbering.ts";
 import { invoiceState, quoteState } from "#documents/versions.ts";
 import { t } from "@core/i18n/mod.ts";
 import {
-  type BalanceSubParts,
   balanceSubLabel,
+  type BalanceSubParts,
 } from "#quote-flow/balance-sub.ts";
 
 /** Invoice statuses that still count as owed (REQ-016). */

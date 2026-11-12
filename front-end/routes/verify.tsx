@@ -79,7 +79,9 @@ export default define.page(async function Verify(ctx) {
             />
             <span>
               {tFor(lang, "brand.namePrefix")}
-              <em style="font-style:normal;color:var(--brand-green)">{tFor(lang, "brand.nameSuffix")}</em>
+              <em style="font-style:normal;color:var(--brand-green)">
+                {tFor(lang, "brand.nameSuffix")}
+              </em>
             </span>
           </a>
           <ol class="pm-steps" aria-label={tFor(lang, "verify.steps.aria")}>

@@ -146,7 +146,9 @@ export function sinceBadge(days: number, lang: Lang = "en"): SinceBadgeData {
       num: String(days).padStart(2, "0"),
       unit: tFor(
         lang,
-        days === 1 ? "clientsDisplay.since.day.one" : "clientsDisplay.since.day.other",
+        days === 1
+          ? "clientsDisplay.since.day.one"
+          : "clientsDisplay.since.day.other",
       ),
     };
   }
@@ -156,7 +158,9 @@ export function sinceBadge(days: number, lang: Lang = "en"): SinceBadgeData {
     num: String(weeks),
     unit: tFor(
       lang,
-      weeks === 1 ? "clientsDisplay.since.week.one" : "clientsDisplay.since.week.other",
+      weeks === 1
+        ? "clientsDisplay.since.week.one"
+        : "clientsDisplay.since.week.other",
     ),
   };
 }

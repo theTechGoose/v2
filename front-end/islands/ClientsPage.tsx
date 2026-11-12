@@ -10,8 +10,8 @@ import Backdrop from "../components/Backdrop.tsx";
 import { useEffect, useState } from "preact/hooks";
 import { formatPhoneInput } from "../../shared/quote-flow/format-helpers.ts";
 import {
-  type CustomerFormErrors,
   customerDraftDirty,
+  type CustomerFormErrors,
   customerFormErrors,
 } from "../../shared/quote-flow/customer-contact.ts"; // REQ-278, REQ-300, REQ-352
 import { ApiError } from "../lib/api.ts";

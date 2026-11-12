@@ -982,7 +982,7 @@ export default function AsstChat({
   // REQ-310 (demo m32): the copy-link confirmation — rendered at the island
   // root, outside the send menu; "copied" or "couldn't copy, here it is".
   const [linkToast, setLinkToast] = useState<LinkToastState | null>(null);
-  const linkToastTimer = useRef<number | null>(null);
+  const linkToastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   async function copyLinkFor(quoteId: string) {
     const out = await copyCustomerLink(
       customerLinkUrl(globalThis.location.origin, quoteId),
