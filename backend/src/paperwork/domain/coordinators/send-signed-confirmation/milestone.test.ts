@@ -1,9 +1,12 @@
 import { assert, assertEquals } from "#std/assert";
 import {
+  completionTerms,
   computeMilestoneAmounts,
   computeScheduledDates,
   SendSignedConfirmation,
 } from "./mod.ts";
+import { t } from "@core/i18n/mod.ts";
+import { payNowTarget } from "#documents/linked-view.ts";
 import type { QuoteTerm } from "@paperwork/dto/quote.ts";
 import { QuoteStore } from "@paperwork/domain/data/quote-store/mod.ts";
 import { InvoiceStore } from "@paperwork/domain/data/invoice-store/mod.ts";
@@ -494,5 +497,162 @@ Deno.test("REQ-204 send-signed-confirmation run: the email subject, body and PDF
       !mail.htmlBody.includes("Someone"),
       "the renamed live record does not rewrite the agreement",
     );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// REQ-316 (demo-loop cycle 1, M12) — "Payment upon completion" / "Net N"
+// terms bill AFTER the job: signing schedules the single milestone for the
+// completion date, it is never `sent` at signing, and the signed /q shows no
+// "Pay now".
+// ---------------------------------------------------------------------------
+
+Deno.test("REQ-316 (M12) completionTerms: 'Payment upon completion' is a completion term with 15 net days; 'Net N' carries N; due-now / splits / custom are not", () => {
+  assertEquals(completionTerms("Payment upon completion"), { netDays: 15 });
+  assertEquals(completionTerms("payment on completion"), { netDays: 15 });
+  assertEquals(completionTerms("Net 30"), { netDays: 30 });
+  assertEquals(completionTerms("net-7"), { netDays: 7 });
+  assertEquals(completionTerms("Due now"), undefined);
+  assertEquals(completionTerms("50 / 50"), undefined);
+  assertEquals(completionTerms("Deposit + balance"), undefined);
+  assertEquals(completionTerms("haggle in person"), undefined);
+  assertEquals(completionTerms(undefined), undefined);
+});
+
+Deno.test("REQ-316 (M12) the net_15 option's sub-line no longer contradicts its label with 'Same-day payment' (en + es)", () => {
+  for (
+    const key of [
+      "termsWizard.paymentTerms.net15.sub",
+      "asstChat.terms.payment.onCompletionSub",
+      "assistantDemo.wiz.optCompletionSub",
+    ]
+  ) {
+    assert(
+      !/same-day/i.test(t("en", key)),
+      `${key} (en) still says same-day: ${t("en", key)}`,
+    );
+    assert(
+      !/mismo día/i.test(t("es", key)),
+      `${key} (es) still says mismo día: ${t("es", key)}`,
+    );
+    assert(
+      /15/.test(t("en", key)) && /15/.test(t("es", key)),
+      `${key} names the 15 days`,
+    );
+  }
+  // The label is the stored EN base every reader localizes — unchanged.
+  assertEquals(
+    t("en", "termsWizard.paymentTerms.net15.label"),
+    "Payment upon completion",
+  );
+});
+
+Deno.test("REQ-316 (M12) send-signed-confirmation run: 'Payment upon completion' + a completion date → ONE scheduled invoice for that date, due +15, nothing sent, no Pay now", async () => {
+  await withKv(async () => {
+    const s = freshRun();
+    const completion = plusDaysIso(30);
+    const quote = await s.quotes.create("u-1", {
+      summary: "Bathroom tile",
+      lineItems: [],
+      estimatedTotal: 280_00,
+      status: "accepted",
+      acceptedAt: new Date().toISOString(),
+      startDate: plusDaysIso(3),
+      estimatedCompletionDate: completion,
+      terms: [{
+        stepId: "payment_terms",
+        label: "Payment terms",
+        value: "Payment upon completion",
+      }],
+    });
+
+    const result = await s.flow.run(quote.id);
+
+    const rows = await s.invoices.listByUser("u-1");
+    assertEquals(rows.length, 1);
+    assertEquals(rows[0].amount, 280_00);
+    assertEquals(rows[0].status, "scheduled");
+    assertEquals(rows[0].issuedDate, undefined, "not issued at signing");
+    assertEquals(rows[0].scheduledFor, completion);
+    assertEquals(
+      rows[0].dueDate,
+      plusDaysIso(45),
+      "due 15 days after completion",
+    );
+    assertEquals(rows[0].installmentIndex, 1);
+    assertEquals(rows[0].installmentTotal, 1);
+    assertEquals(result.invoiceId, undefined, "no invoice to pay yet");
+    assertEquals(result.ok, true, "the milestone was still billed");
+    const reloaded = await s.quotes.getOwned(quote.id, "u-1");
+    assert(reloaded.acceptedNotifiedAt, "acceptedNotifiedAt stamped");
+
+    // The signed /q page's "Pay now" (REQ-251) finds nothing to pay.
+    assertEquals(
+      payNowTarget({
+        status: "accepted",
+        invoices: rows.map((i) => ({
+          id: i.id,
+          number: i.number ?? "",
+          status: i.status,
+          amountCents: i.amount,
+          paidCents: 0,
+        })),
+      }),
+      undefined,
+    );
+  });
+});
+
+Deno.test("REQ-316 (M12) send-signed-confirmation run: 'Payment upon completion' with NO completion date → scheduled 14 days after the later of start and today", async () => {
+  await withKv(async () => {
+    const s = freshRun();
+    const quote = await s.quotes.create("u-1", {
+      summary: "Fence",
+      lineItems: [],
+      estimatedTotal: 450_00,
+      status: "accepted",
+      acceptedAt: new Date().toISOString(),
+      terms: [{
+        stepId: "payment_terms",
+        label: "Payment terms",
+        value: "Payment upon completion",
+      }],
+    });
+
+    await s.flow.run(quote.id);
+
+    const rows = await s.invoices.listByUser("u-1");
+    assertEquals(rows.length, 1);
+    assertEquals(rows[0].status, "scheduled");
+    assertEquals(rows[0].scheduledFor, plusDaysIso(14));
+    assertEquals(rows[0].dueDate, plusDaysIso(29));
+  });
+});
+
+Deno.test("REQ-316 (M12) send-signed-confirmation run: 'Net 30' → scheduled for completion, due completion+30", async () => {
+  await withKv(async () => {
+    const s = freshRun();
+    const completion = plusDaysIso(10);
+    const quote = await s.quotes.create("u-1", {
+      summary: "Roof",
+      lineItems: [],
+      estimatedTotal: 900_00,
+      status: "accepted",
+      acceptedAt: new Date().toISOString(),
+      estimatedCompletionDate: completion,
+      terms: [{
+        stepId: "payment_terms",
+        label: "Payment terms",
+        value: "Net 30",
+      }],
+    });
+
+    await s.flow.run(quote.id);
+
+    const rows = await s.invoices.listByUser("u-1");
+    assertEquals(rows.length, 1);
+    assertEquals(rows[0].status, "scheduled");
+    assertEquals(rows[0].scheduledFor, completion);
+    assertEquals(rows[0].dueDate, plusDaysIso(40));
   });
 });

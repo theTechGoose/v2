@@ -153,6 +153,9 @@ export class SendSignedConfirmation {
       );
     }
     let invoiceId: string | undefined;
+    // REQ-316: a scheduled-only billing (payment after completion) is still a
+    // successful accept even when there is nothing to pay yet.
+    let billed = false;
     if (milestoneAmounts.length > 0) {
       const today = new Date();
       const todayIso = today.toISOString().slice(0, 10);
@@ -173,6 +176,17 @@ export class SendSignedConfirmation {
       )?.value;
       const dueNow = !!paymentTermsValue &&
         /\bdue now\b/i.test(paymentTermsValue);
+      // REQ-316 (demo-loop cycle 1, M12): "Payment upon completion" / "Net N"
+      // bill AFTER the job. The single milestone is SCHEDULED for the
+      // completion date (never `sent` at signing — so the signed /q shows no
+      // "Pay now" and the customer owes nothing yet) and due N days after it;
+      // the nudge sweep surfaces it to the contractor when the job wraps.
+      const afterCompletion = plannedMilestones.length === 1
+        ? completionTerms(paymentTermsValue)
+        : undefined;
+      const completionSlot = afterCompletion
+        ? completionScheduledFor(quote, today)
+        : undefined;
       const netDue = addDaysIso(today, 7);
       const firstDue = dueNow
         ? todayIso
@@ -191,7 +205,9 @@ export class SendSignedConfirmation {
           // First milestone fires immediately (matches prior behavior);
           // the rest are scheduled placeholders the contractor nudge cron
           // will surface on their scheduledFor date.
-          const dueDate = isFirst
+          const dueDate = afterCompletion && completionSlot
+            ? addDaysIso(parseIsoDate(completionSlot), afterCompletion.netDays)
+            : isFirst
             ? firstDue
             : addDaysIso(parseIsoDate(scheduledDates[i]), 7);
           const invoice = await this.invoices.create(userId, {
@@ -202,11 +218,14 @@ export class SendSignedConfirmation {
             dueDate,
             installmentIndex: i + 1,
             installmentTotal,
-            ...(isFirst
+            ...(afterCompletion && completionSlot
+              ? { status: "scheduled", scheduledFor: completionSlot }
+              : isFirst
               ? { issuedDate: todayIso, status: "sent" }
               : { status: "scheduled", scheduledFor: scheduledDates[i] }),
           });
-          if (isFirst) invoiceId = invoice.id;
+          billed = true;
+          if (isFirst && !afterCompletion) invoiceId = invoice.id;
         } catch (err) {
           console.error(
             `[send-signed-confirmation] milestone ${
@@ -349,7 +368,7 @@ export class SendSignedConfirmation {
     }
 
     return {
-      ok: sent.ok || !!invoiceId,
+      ok: sent.ok || !!invoiceId || billed,
       ...(sent.reason ? { reason: sent.reason } : {}),
       ...(sent.messageId ? { messageId: sent.messageId } : {}),
       ...(invoiceId ? { invoiceId } : {}),
@@ -429,6 +448,40 @@ export function computeScheduledDates(
     out.push(d.toISOString().slice(0, 10));
   }
   return out;
+}
+
+/** REQ-316 (demo M12): payment terms that bill AFTER the job, not at signing.
+ *  Reads the stored EN base only (terms are persisted as the EN option label —
+ *  handle-wizard-answer's captureTerms — and localized by every reader):
+ *  "Payment upon completion" is the wizard's net_15 option → 15 net days;
+ *  "Net N" (net 30, net-7) → N. Everything else (Due now, the splits, custom
+ *  text) is not a completion term. */
+export function completionTerms(
+  value: string | undefined,
+): { netDays: number } | undefined {
+  if (!value) return undefined;
+  if (/\b(?:upon|on|at) completion\b/i.test(value)) return { netDays: 15 };
+  const net = /\bnet\s*-?\s*(\d{1,3})\b/i.exec(value);
+  if (net) return { netDays: Number(net[1]) };
+  return undefined;
+}
+
+const ISO_DAY = /^\d{4}-\d{2}-\d{2}$/;
+
+/** REQ-316: the day a pay-after-completion invoice is scheduled to go out —
+ *  the quote's estimated completion date, else 14 days after the later of its
+ *  start date and today (the same fallback window computeScheduledDates uses). */
+export function completionScheduledFor(
+  quote: Pick<Quote, "startDate" | "estimatedCompletionDate">,
+  today: Date,
+): string {
+  const completion = quote.estimatedCompletionDate;
+  if (completion && ISO_DAY.test(completion)) return completion;
+  const start = quote.startDate && ISO_DAY.test(quote.startDate)
+    ? parseIsoDate(quote.startDate)
+    : today;
+  const base = start.getTime() > today.getTime() ? start : today;
+  return addDaysIso(base, 14);
 }
 
 /** REQ-240: who an invoice bills when its quote has no customer on file —
