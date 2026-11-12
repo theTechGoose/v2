@@ -45,8 +45,16 @@ export function t(key: string, vars?: Vars): string {
  * Settings calls it for an instant change, and the dashboard profile cache calls
  * it to seed from the server's `user.language`. Every island that reads
  * `langSignal` (via `t()` or `langSignal.value`) re-renders in response.
+ *
+ * REQ-416: `{ persist: false }` switches the screen for this session only and
+ * leaves the browser's stored choice (pm:lang + the pm_lang cookie) alone —
+ * the /worker screen showing a signed-in worker's language on someone else's
+ * browser.
  */
-export function setLang(lang: Lang): void {
+export function setLang(
+  lang: Lang,
+  opts: { persist?: boolean } = {},
+): void {
   if (langSignal.value !== lang) langSignal.value = lang;
   // P-65: <html lang> must follow the app language too. Mirrored HERE (not
   // only via the HtmlLang island's signal subscription) because seeding the
@@ -59,7 +67,7 @@ export function setLang(lang: Lang): void {
   // Keep localStorage + the SSR cookie in sync (Settings change, or the
   // dashboard seeding from the server's user.language) so a later SSR route
   // render (verify/login) matches the app language.
-  persistLang(lang);
+  if (opts.persist !== false) persistLang(lang);
 }
 
 /** Plural helper in an explicit language (SSR / known-lang call sites). */

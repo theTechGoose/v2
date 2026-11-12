@@ -205,8 +205,11 @@ export default function WorkerScreen(
   dateRef.current = date;
   /** REQ-285 — the person chose the language (the switch, or ?lang=): keep it over the worker's */
   const langChosenRef = useRef(langChosen);
+  /** REQ-416 — the page's own language (opened in, or picked on the switch); Salir returns to it */
+  const pageLangRef = useRef<Lang>(initialLang);
 
   useEffect(() => {
+    pageLangRef.current = initialLang;
     setLang(initialLang);
   }, [initialLang]);
 
@@ -235,9 +238,10 @@ export default function WorkerScreen(
       const raw = await workerClient.me();
       const who = raw && typeof raw === "object" ? raw : null;
       setMe(who);
-      // REQ-285 — signed in: the screen takes the worker's language
+      // REQ-285 — signed in: the screen takes the worker's language;
+      // REQ-416 — for this session only, never over the browser's own pm_lang
       const wl = workerScreenLang(who, langChosenRef.current);
-      if (wl) setLang(wl);
+      if (wl) setLang(wl, { persist: false });
       if (who) {
         const [rows, tt] = await Promise.all([
           workerClient.tasks(d, who.role === "foreman"),
@@ -317,6 +321,8 @@ export default function WorkerScreen(
     act("logout", async () => {
       await workerClient.logout();
       langChosenRef.current = langChosen; // the next worker's language applies
+      // REQ-416 — the sign-in form is back in the page's own language
+      setLang(pageLangRef.current, { persist: false });
       setMe(null);
       setTasks([]);
       setOpen({});
@@ -737,6 +743,7 @@ export default function WorkerScreen(
               class={lang === c ? "on" : ""}
               aria-pressed={lang === c}
               onClick={() => {
+                pageLangRef.current = c;
                 langChosenRef.current = true;
                 setLang(c);
               }}
