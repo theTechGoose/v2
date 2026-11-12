@@ -91,6 +91,7 @@ import {
 import { ApplyChatChangeOrder } from "@agents/domain/coordinators/apply-chat-change-order/mod.ts";
 import {
   ReviseQuote,
+  type ReviseQuoteInput,
   type ReviseQuoteResult,
 } from "@agents/domain/coordinators/revise-quote/mod.ts";
 import { changeOrderAsReprice } from "@agents/domain/business/quote-line-revision/mod.ts";
@@ -116,13 +117,33 @@ import {
 import {
   isFallbackPricing,
   jobOptionsStepReply,
+  priceStepContext,
+  type PriceStepIntent,
+  priceStepIntent,
   priceStepReply,
   stepContextLine,
   stepJobOptionsRaw,
   stepLangs,
+  stepMoney,
   stepScopeText,
   stepTools,
 } from "@agents/domain/business/chat-step/mod.ts";
+// REQ-444 (demo-loop cycle 3, M21): every tool call the model made, and a
+// reply built from what actually changed.
+import {
+  type EditAction,
+  type JobDetailsChange,
+  jobDetailsChangeLine,
+  jobDetailsChangeOf,
+  notDoneLine,
+  planToolCalls,
+  pricesSameLine,
+  sameJobDetails,
+  toolCallsOf,
+  totalMoveLine,
+  workingTotalCents,
+} from "@agents/domain/business/tool-calls/mod.ts";
+import { typedAmountsCents } from "@agents/domain/business/change-order-intent/mod.ts";
 import { GenerateJobOptions } from "@agents/domain/coordinators/generate-job-options/mod.ts";
 import { getWizardSpec } from "@agents/domain/business/terms-wizard-spec/mod.ts";
 
@@ -508,6 +529,339 @@ export class HandleChatMessage {
           : { jobOptions: { options: res.options, degraded: false } }),
       },
     });
+  }
+
+  /**
+   * REQ-444 (demo-loop cycle 3, M21) — a question or a change to the job
+   * typed on Pick a price ("does this include the quartz slab material or
+   * just labor?? … ¿y el precio incluye el permiso de plomería? add permit if
+   * not"). The chat model answers with the job, the details on screen, the
+   * tiers on screen and what they include in its context. Its one tool is
+   * update_job_details, which here rewrites the job details on screen (no
+   * quote exists yet): then the reply says what changed, the tiers are
+   * re-priced for the new details, and the reply carries them for the step.
+   * Otherwise the tiers on screen stay — only a price correction re-prices
+   * (repriceOnStep). A price the message named for the job fills the box.
+   */
+  private async answerOnPriceStep(
+    input: HandleChatInput,
+    conv: AgentConversation,
+    userMsg: AgentMessage,
+    history: AgentMessage[],
+    step: ChatStepHint,
+    lang: "en" | "es",
+    intent: PriceStepIntent,
+  ): Promise<HandleChatResult> {
+    const said = input.content;
+    const job = this.typedJob(step, history, userMsg);
+    const shown = step.scope?.trim() || job;
+    const stated = intent.statedCents;
+    const filled = stated ? { statedPriceCents: stated } : {};
+    // The thread's typed turns (the job, earlier step turns and their
+    // answers), this message last.
+    const turns: LLMTurn[] = history
+      .filter((m) =>
+        (m.role === "user" || m.role === "assistant") &&
+        (m.kind === "text" || m.kind === "voice") &&
+        typeof m.content === "string" && m.content.trim().length > 0
+      )
+      .map((m) => ({ role: m.role, content: m.content }));
+    const langRule = lang === "es"
+      ? `\n\n${t("en", "prompts.contractorLanguageEsOverride")}`
+      : "";
+    const res = await this.llm.respond({
+      systemPrompt: `${t("en", "prompts.chatStep.price")}${langRule}`,
+      messages: turns,
+      userId: input.userId,
+      businessContext: priceStepContext({
+        job,
+        scope: shown,
+        lang,
+        options: step.options,
+        basis: step.basis,
+        statedCents: stated,
+      }),
+      tools: ["update_job_details"],
+    }).catch((err) => {
+      console.error("[handle-chat] price-step answer failed:", err);
+      return undefined;
+    });
+    if (!res) {
+      return await this.finishStep(conv, history, userMsg, job, {
+        content: t(lang, "chatCoordinator.step.askFailed"),
+        payload: { step: "price", ...filled },
+      });
+    }
+
+    const answer = toPlainChatText(res.text ?? "").trim();
+    const rewrite = toolCallsOf(res).find((a) =>
+      a.type === "update_job_details"
+    );
+    const byLang: Record<string, string> = {};
+    if (rewrite?.type === "update_job_details") {
+      for (const [l, v] of Object.entries(rewrite.payload.descriptionByLang)) {
+        if (v?.trim()) byLang[l] = v.trim();
+      }
+    }
+    const next = byLang[lang] ?? Object.values(byLang)[0];
+    const changed = !!next && !sameJobDetails(next, shown);
+    const parts = answer ? [answer] : [];
+    let repriced: Awaited<ReturnType<SuggestPrices["run"]>> | undefined;
+    if (changed) {
+      parts.push(jobDetailsChangeLine(lang, { before: shown, after: next }));
+      if (step.tiers === true) {
+        const addr = await this.addresses.get(input.userId).catch(() => null);
+        const priced = await new SuggestPrices(this.llm).run({
+          userId: input.userId,
+          raw: job || said,
+          scope: stepScopeText(next, said),
+          lang,
+          ...(addr
+            ? {
+              address: {
+                city: addr.city,
+                state: addr.state,
+                postal: addr.postal,
+              },
+            }
+            : {}),
+        }).catch(() => undefined);
+        repriced = priced && !isFallbackPricing(priced.options)
+          ? priced
+          : undefined;
+        parts.push(
+          repriced
+            ? t(lang, "chatCoordinator.step.repricedScope", {
+              tiers: repriced.options
+                .map((o) => `${o.label} ${stepMoney(o.priceCents)}`)
+                .join(" · "),
+            })
+            : t(lang, "chatCoordinator.step.repriceFailed"),
+        );
+      }
+    } else if (intent.scopeChange) {
+      // It asked for a change the model did not make: never let an answer
+      // pass for one.
+      parts.push(t(lang, "chatCoordinator.step.scopeUnchanged"));
+    }
+    if (stated && !answer.includes(stepMoney(stated))) {
+      parts.push(
+        t(
+          lang,
+          step.tiers === true
+            ? "chatCoordinator.step.priceSetTiers"
+            : "chatCoordinator.step.priceSet",
+          { amount: stepMoney(stated) },
+        ),
+      );
+    }
+    if (parts.length === 0) {
+      parts.push(t(lang, "chatCoordinator.step.askFailed"));
+    }
+    return await this.finishStep(conv, history, userMsg, job, {
+      content: parts.join(" "),
+      payload: {
+        step: "price",
+        ...(changed ? { scope: next, scopeByLang: byLang } : {}),
+        ...(repriced ? { priceSuggestions: repriced } : {}),
+        ...filled,
+      },
+    });
+  }
+
+  /**
+   * REQ-262 (demo M25) / REQ-444: merge the model's per-language job details
+   * onto the bound quote — conv.quoteId, never a model-named one, and never a
+   * signed one. Prices and line items are untouched. Says what changed so the
+   * reply can be built from it.
+   */
+  private async writeJobDetails(
+    conv: AgentConversation,
+    userId: string,
+    byLang: Partial<Record<"en" | "es", string>>,
+    lang: "en" | "es",
+  ): Promise<
+    | { kind: "none" }
+    | { kind: "locked" }
+    | {
+      kind: "updated";
+      quoteId: string;
+      change: JobDetailsChange;
+      totalCents: number;
+    }
+  > {
+    const current = conv.quoteId
+      ? await this.quotes.getOwned(conv.quoteId, userId).catch(() => undefined)
+      : undefined;
+    if (!current) return { kind: "none" };
+    if (JOB_DETAILS_LOCKED_STATUSES.has((current.status ?? "").toLowerCase())) {
+      return { kind: "locked" };
+    }
+    const merged: Record<string, string> = {
+      ...(current.descriptionByLang ?? {}),
+    };
+    for (const [l, v] of Object.entries(byLang)) if (v) merged[l] = v;
+    const base = byLang[lang];
+    await this.quotes.update(current.id, userId, {
+      descriptionByLang: merged,
+      ...(base ? { description: base } : {}),
+    });
+    return {
+      kind: "updated",
+      quoteId: current.id,
+      change: jobDetailsChangeOf(lang, current, byLang),
+      totalCents: workingTotalCents(current),
+    };
+  }
+
+  /**
+   * REQ-444 (demo-loop cycle 3, M21) — several changes to the quote in one
+   * turn ("fix the Spanish … and add a plumbing permit line $450"): EVERY one
+   * runs — the job details first, then each line change in the model's order
+   * (planToolCalls) — and ONE reply says what actually changed: the job
+   * details' languages and lines, each line change's own words (the change
+   * order and revise coordinators'), and the total's move. When only the job
+   * details changed on a message that named an amount, it says no price did.
+   */
+  private async applyEditCalls(
+    input: HandleChatInput,
+    conv: AgentConversation,
+    userMsg: AgentMessage,
+    history: AgentMessage[],
+    edits: EditAction[],
+    lang: "en" | "es",
+    dropped: readonly string[],
+  ): Promise<HandleChatResult> {
+    const userId = input.userId;
+    const userText = typeof input.content === "string" ? input.content : "";
+    const readBound = () =>
+      conv.quoteId
+        ? this.quotes.getOwned(conv.quoteId, userId).catch(() => undefined)
+        : Promise.resolve(undefined);
+    const before = await readBound();
+    const parts: string[] = [];
+    const payload: Record<string, unknown> = {};
+    // A revise's own reply states the total it left; the closing total line
+    // is only added when the total moved again after it.
+    let totalSaid: number | undefined;
+    // A line change on the bound quote flags the reply, so an open review
+    // re-reads the quote (REQ-392).
+    const landed = (o: { kind: string; quoteId?: string }) => {
+      if (
+        (o.kind === "draft_updated" || o.kind === "pending_revision") &&
+        o.quoteId === conv.quoteId
+      ) payload.quoteUpdated = o.quoteId;
+    };
+    const revise = (
+      p: Pick<
+        ReviseQuoteInput,
+        "customerName" | "quoteNumber" | "lines" | "remove"
+      >,
+    ) =>
+      this.reviseQuote.run({
+        userId,
+        lang,
+        boundQuoteId: conv.quoteId,
+        customerName: p.customerName,
+        quoteNumber: p.quoteNumber,
+        lines: p.lines,
+        remove: p.remove,
+        userText,
+      });
+    for (const edit of edits) {
+      if (edit.type === "update_job_details") {
+        const done = await this.writeJobDetails(
+          conv,
+          userId,
+          edit.payload.descriptionByLang,
+          lang,
+        );
+        if (done.kind === "updated") {
+          parts.push(jobDetailsChangeLine(lang, done.change));
+          payload.quoteUpdated = done.quoteId;
+        } else {
+          parts.push(
+            t(
+              lang,
+              done.kind === "locked"
+                ? "chatCoordinator.jobDetailsLocked"
+                : "chatCoordinator.jobDetails.noQuote",
+            ),
+          );
+        }
+        continue;
+      }
+      if (edit.type === "change_order") {
+        const p = edit.payload;
+        // REQ-315: a change order that is a reprice changes that line —
+        // unless the quote is signed (its lines never change, REQ-202).
+        const reprice = p.targetTotalCents === undefined
+          ? changeOrderAsReprice(p, userText)
+          : undefined;
+        if (reprice) {
+          const revised = await revise({ ...p, lines: [reprice], remove: [] });
+          if (revised.outcome.kind !== "locked") {
+            parts.push(revised.text);
+            payload.quoteRevision = revised.outcome;
+            landed(revised.outcome);
+            const now = await readBound();
+            totalSaid = now ? workingTotalCents(now) : totalSaid;
+            continue;
+          }
+        }
+        const result = await this.changeOrder.run({
+          userId,
+          lang,
+          boundQuoteId: conv.quoteId,
+          customerName: p.customerName,
+          quoteNumber: p.quoteNumber,
+          description: p.description,
+          deltaAmountCents: p.deltaAmountCents,
+          targetTotalCents: p.targetTotalCents, // REQ-377: settled in code
+          userText,
+        });
+        parts.push(result.text);
+        payload.changeOrder = result.outcome;
+        landed(result.outcome);
+        continue;
+      }
+      const revised = await revise(edit.payload);
+      parts.push(revised.text);
+      payload.quoteRevision = revised.outcome;
+      landed(revised.outcome);
+      const now = await readBound();
+      totalSaid = now ? workingTotalCents(now) : totalSaid;
+    }
+    const after = await readBound();
+    if (before && after) {
+      const from = workingTotalCents(before);
+      const to = workingTotalCents(after);
+      const lineEdits = edits.some((e) => e.type !== "update_job_details");
+      if (from !== to && totalSaid !== to) {
+        parts.push(totalMoveLine(lang, from, to));
+      } else if (
+        from === to && !lineEdits && typedAmountsCents(userText).length > 0
+      ) {
+        parts.push(pricesSameLine(lang, to));
+      }
+    }
+    const notDone = notDoneLine(lang, dropped);
+    if (notDone) parts.push(notDone);
+    const reply = await this.messages.append({
+      conversationId: conv.id,
+      role: "assistant",
+      kind: "text",
+      content: parts.filter(Boolean).join(" "),
+      payload,
+    });
+    const first = history.length === 1 && history[0].id === userMsg.id;
+    const updated = await this.conversations.update(conv.id, {
+      preview: derivePreview(reply.content),
+      ...(first
+        ? { title: deriveTitleFromFirstUserMessage(input.content) }
+        : {}),
+    });
+    return { conversation: updated, newMessages: [userMsg, reply] };
   }
 
   async run(input: HandleChatInput): Promise<HandleChatResult> {
@@ -990,7 +1344,24 @@ export class HandleChatMessage {
     // details. There is no quote yet on those steps (or the picker is about
     // to overwrite its details), so the step itself is what changes: the
     // tiers re-priced, the versions rewritten — carried on the reply.
+    // REQ-444 (demo-loop cycle 3, M21): on Pick a price a question or a
+    // change to the job is answered by the chat model with the tiers in
+    // context ("does this include the quartz material? … add permit if not"
+    // got only "Re-priced with your note — …"); only a price correction
+    // re-prices.
     if (step?.id === "price") {
+      const intent = priceStepIntent(input.content);
+      if (intent.route === "ask") {
+        return await this.answerOnPriceStep(
+          input,
+          conv,
+          userMsg,
+          history,
+          step,
+          replyLang,
+          intent,
+        );
+      }
       return await this.repriceOnStep(
         input,
         conv,
@@ -1469,6 +1840,31 @@ export class HandleChatMessage {
       });
     }
 
+    // ---- REQ-444 (demo-loop cycle 3, M21): every tool call the model made.
+    // Several changes to the quote all run — the job details first — and
+    // one reply says what changed ("fix the Spanish and add a plumbing permit
+    // line $450" used to lose the permit and answer "Done"). A mix that can't
+    // all run keeps the first call (below, as before); the reply names what
+    // it didn't do, and any call whose arguments didn't parse.
+    const plan = planToolCalls(toolCallsOf(llmResponse));
+    if (plan.edits) {
+      return await this.applyEditCalls(
+        input,
+        conv,
+        userMsg,
+        history,
+        plan.edits,
+        replyLang,
+        llmResponse.dropped ?? [],
+      );
+    }
+    const notDone = notDoneLine(replyLang, [
+      ...plan.notDone,
+      ...(llmResponse.dropped ?? []),
+    ]);
+    const withNotDone = (text: string) =>
+      notDone ? [text.trim(), notDone].filter(Boolean).join(" ") : text;
+
     // ---- REQ-368 (M32): lock_quote / request_terms_transition act only on
     // an open draft in the quote phase. Pair 1's terms-phase model re-locked
     // the SIGNED quote — an APPROVED card plus "Is this for a business or a
@@ -1527,7 +1923,7 @@ export class HandleChatMessage {
         conversationId: conv.id,
         role: "assistant",
         kind: "text",
-        content: result.text,
+        content: withNotDone(result.text), // REQ-444
         payload: {
           quoteRevision: o,
           ...(changedBound ? { quoteUpdated: o.quoteId } : {}),
@@ -1596,7 +1992,7 @@ export class HandleChatMessage {
         conversationId: conv.id,
         role: "assistant",
         kind: "text",
-        content: result.text,
+        content: withNotDone(result.text), // REQ-444
         payload: {
           changeOrder: result.outcome,
           ...(coChangedBound ? { quoteUpdated: co.quoteId } : {}),
@@ -1731,36 +2127,38 @@ export class HandleChatMessage {
     // the reply carries the outcome: `payload.quoteUpdated` tells the chat
     // island to re-read the quote; a refusal replaces any claim of success.
     // The quote is conv.quoteId — the model never names it — and prices and
-    // line items are untouched.
+    // line items are untouched (writeJobDetails).
     let replyPayload: Record<string, unknown> | undefined;
     if (llmResponse.action?.type === "update_job_details") {
-      const byLang = llmResponse.action.payload.descriptionByLang;
-      const current = conv.quoteId
-        ? await this.quotes.getOwned(conv.quoteId, input.userId).catch(() =>
-          undefined
-        )
-        : undefined;
-      if (!current) {
+      const done = await this.writeJobDetails(
+        conv,
+        input.userId,
+        llmResponse.action.payload.descriptionByLang,
+        replyLang,
+      );
+      if (done.kind === "none") {
         replyText = t(replyLang, "chatCoordinator.noActionFallback");
-      } else if (
-        JOB_DETAILS_LOCKED_STATUSES.has((current.status ?? "").toLowerCase())
-      ) {
+      } else if (done.kind === "locked") {
         replyText = t(replyLang, "chatCoordinator.jobDetailsLocked");
       } else {
-        const merged: Record<string, string> = {
-          ...(current.descriptionByLang ?? {}),
-        };
-        for (const [l, v] of Object.entries(byLang)) if (v) merged[l] = v;
-        const base = byLang[replyLang];
-        await this.quotes.update(current.id, input.userId, {
-          descriptionByLang: merged,
-          ...(base ? { description: base } : {}),
-        });
-        if (!llmText) {
-          replyText = t(replyLang, "chatCoordinator.jobDetailsUpdated");
+        // REQ-444 (demo-loop cycle 3, M21): said from what changed — never a
+        // bare "Done — the job details on the quote are updated." — and a
+        // message that named an amount hears that no price moved.
+        if (!llmText) replyText = jobDetailsChangeLine(replyLang, done.change);
+        if (typedAmountsCents(userText).length > 0) {
+          replyText = `${replyText} ${
+            pricesSameLine(replyLang, done.totalCents)
+          }`;
         }
-        replyPayload = { quoteUpdated: current.id };
+        replyPayload = { quoteUpdated: done.quoteId };
       }
+      suppressTextBubble = false;
+    }
+
+    // REQ-444: what this turn didn't do (a mix that couldn't all run, a call
+    // that didn't parse) is said, never passed for done.
+    if (notDone) {
+      replyText = withNotDone(replyText);
       suppressTextBubble = false;
     }
 

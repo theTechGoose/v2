@@ -136,7 +136,16 @@ export type LLMToolName = LLMAction["type"];
 
 export interface LLMResponse {
   text: string;
+  /** The model's first tool call (the single-action path). */
   action?: LLMAction;
+  /** REQ-444 (demo-loop cycle 3, M21): EVERY tool call the model made this
+   *  turn, in its order — `action` is the first. "Fix the Spanish and add a
+   *  plumbing permit line $450" is update_job_details AND change_order; the
+   *  second used to be dropped silently. */
+  actions?: LLMAction[];
+  /** REQ-444: tool calls whose arguments didn't parse — never run, so the
+   *  reply must not pass them for done. */
+  dropped?: LLMToolName[];
 }
 
 export interface LLMClient {

@@ -49,6 +49,8 @@ import {
   type ChatStepHint,
   type ChatStepId,
   composerMode,
+  stepScopeOf, // REQ-444
+  withStepScope, // REQ-444
 } from "../../shared/quote-flow/step-composer.ts"; // REQ-392
 import { localizeTermValue } from "../lib/term-i18n.ts";
 import {
@@ -2516,6 +2518,18 @@ export default function AsstChat({
         // help me price it: the confirmed bullets, priced beside the job
         ...(suggestPricing && shown && shown !== typed ? { scope: shown } : {}),
         ...(suggestPricing ? { tiers: true } : {}),
+        // REQ-444 (M21): the tiers on screen and what they include — a
+        // question about them is answered from what the contractor sees.
+        ...(suggestPricing && priceSuggestions?.length
+          ? {
+            options: priceSuggestions.map((t) => ({
+              label: t.label,
+              priceCents: t.priceCents,
+              ...(t.rationale ? { rationale: t.rationale } : {}),
+            })),
+            basis: priceBasis,
+          }
+          : {}),
       };
     }
     if (step === "job_details") {
@@ -2565,6 +2579,22 @@ export default function AsstChat({
         setPriceCents(p.statedPriceCents);
         // REQ-389 — a stated price sizes the pad's quick chips too
         setPrefillPriceCents(p.statedPriceCents);
+        setPriceSeedRev((n) => n + 1);
+      }
+      // REQ-444 (M21): the assistant rewrote the job details on screen ("add
+      // permit if not") — they show, and the quote is made from them; a
+      // language it didn't rewrite leaves the confirmed option (the send
+      // translates it again). The bump keeps the price box from re-focusing.
+      const rewritten = stepScopeOf(answer.payload);
+      if (rewritten) {
+        setPendingJobDetailsRaw(rewritten.scope);
+        if (confirmedOptionRef.current) {
+          confirmedOptionRef.current = withStepScope(
+            confirmedOptionRef.current,
+            rewritten,
+            lang,
+          );
+        }
         setPriceSeedRev((n) => n + 1);
       }
     }
