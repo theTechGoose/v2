@@ -391,3 +391,18 @@ Deno.test("REQ-629 pdf-batch refuses: no ids / >500 → 400; another owner's id 
     );
   });
 });
+
+Deno.test("REQ-627 AMENDMENT a bare POST (no body) to void / void-duplicate is 401 without a session, and voids with no reason with one — never a 500", async () => {
+  await withServer(async () => {
+    for (const p of ["/invoices/x/void", "/invoices/x/void-duplicate"]) {
+      assertEquals((await call("POST", p)).status, 401, p);
+    }
+    const sid = await login("+15125557021");
+    const a = await mk(sid, { status: "sent" });
+    const va = await call("POST", `/invoices/${a.id}/void`, undefined, sid);
+    assertEquals([va.status, va.body.status], [200, "void"]);
+    const b = await mk(sid, { status: "sent" });
+    const vb = await call("POST", `/invoices/${b.id}/void-duplicate`, undefined, sid);
+    assertEquals(vb.status, 200);
+  });
+});
