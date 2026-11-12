@@ -116,7 +116,9 @@ describe("REQ-387 (M25) wizardPrefillFor — the Custom option carries the sched
     );
     expect(facts.wizardPrefillFor("payment_terms", f)).toEqual({
       optionId: "custom",
-      customValue: "30 / 40 / 30",
+      // REQ-665 (cycle 5, m47): the split label carries its units — never a
+      // bare "30 / 40 / 30" on the agreement.
+      customValue: "30% / 40% / 30%",
       splits: [30, 40, 30],
     });
   });

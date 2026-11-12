@@ -1,3 +1,4 @@
+import { isDueNowTermValue } from "#quote-flow/terms-i18n.ts";
 import { Injectable } from "#danet/core";
 import { QuoteStore } from "@paperwork/domain/data/quote-store/mod.ts";
 import { InvoiceStore } from "@paperwork/domain/data/invoice-store/mod.ts";
@@ -185,7 +186,7 @@ export class SendSignedConfirmation {
         t.stepId === "payment_terms"
       )?.value;
       const dueNow = !!paymentTermsValue &&
-        /\bdue now\b/i.test(paymentTermsValue);
+        isDueNowTermValue(paymentTermsValue);
       // REQ-316 (demo-loop cycle 1, M12): "Payment upon completion" / "Net N"
       // bill AFTER the job. The single milestone is SCHEDULED for the
       // completion date (never `sent` at signing — so the signed /q shows no
@@ -502,7 +503,10 @@ export function completionTerms(
   invoiceNetDays?: number | null,
 ): { netDays: number } | undefined {
   if (!value) return undefined;
-  if (/\b(?:upon|on|at) completion\b/i.test(value)) {
+  // REQ-665 (m47): the Spanish picker stores 0/100 as "Pago al finalizar".
+  if (
+    /\b(?:upon|on|at) completion\b|\bal (?:finalizar|terminar)\b/i.test(value)
+  ) {
     return { netDays: accountNetDays(invoiceNetDays) };
   }
   const net = /\bnet\s*-?\s*(\d{1,3})\b/i.exec(value);

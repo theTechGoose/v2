@@ -9,6 +9,7 @@
  * ledger → form prefill, and the headline a card shows next to its number.
  * No I/O, no DOM, no dates read from the clock — the caller passes "today".
  */
+import { isDueNowTermValue } from "../quote-flow/terms-i18n.ts";
 import { docNumberOf } from "./numbering.ts";
 import { MAX_CENTS } from "../quote-flow/assistant-draft.ts";
 import {
@@ -147,7 +148,7 @@ export function defaultInvoiceNetDays(
     : 30;
   const value = quoteTerms?.find((t) => t?.stepId === "payment_terms")?.value;
   if (!value) return account;
-  if (/\bdue now\b/i.test(value)) return 0;
+  if (isDueNowTermValue(value)) return 0;
   const net = /\bnet\s*-?\s*(\d{1,3})\b/i.exec(value);
   if (net) return Number(net[1]);
   return account;

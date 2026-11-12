@@ -25,7 +25,10 @@ import { type Lang, tFor } from "../lib/i18n.ts";
 import { localizeTermValue } from "../lib/term-i18n.ts";
 import { formatLongDate } from "../../shared/quote-flow/format-helpers.ts";
 import { websiteLabel } from "../../shared/quote-flow/format-helpers.ts";
-import { isTbdTermValue } from "../../shared/quote-flow/terms-i18n.ts";
+import {
+  isDueNowTermValue,
+  isTbdTermValue,
+} from "../../shared/quote-flow/terms-i18n.ts";
 import { isNoWarrantyValue } from "../../shared/documents/warranty-clause.ts";
 
 /* ---------- palette ---------- */
@@ -370,7 +373,7 @@ export function computeMilestones(
     full: { label: L.final, when: L.onCompletion },
   };
   const term = termValue(terms, "payment_terms");
-  const dueNow = /\bdue now\b/i.test(term ?? "");
+  const dueNow = isDueNowTermValue(term);
   return computePaymentSplit(term, total).map((p) => ({
     ...roleLabel[p.role],
     ...(dueNow && p.role === "full" ? { when: L.onSigning } : {}),

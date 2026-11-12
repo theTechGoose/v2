@@ -23,6 +23,7 @@ import { LogPaperworkMessage } from "@communication/domain/coordinators/log-pape
 import { ConversationStore as CommConversationStore } from "@communication/domain/data/conversation-store/mod.ts";
 import { MessageStore as CommMessageStore } from "@communication/domain/data/message-store/mod.ts";
 import { resetKv } from "@core/data/kv/mod.ts";
+import { termLabel } from "#quote-flow/terms-i18n.ts";
 
 function pterms(value: string): QuoteTerm[] {
   return [{ stepId: "payment_terms", label: "Payment", value }];
@@ -660,4 +661,53 @@ Deno.test("REQ-316 (M12) send-signed-confirmation run: 'Net 30' → scheduled fo
     assertEquals(rows[0].scheduledFor, completion);
     assertEquals(rows[0].dueDate, plusDaysIso(40));
   });
+});
+
+// REQ-665 (demo-loop cycle 5, m47): the custom payment picker now stores a
+// worded split ("Due Now" / "Pago inmediato" for 100/0, "50% upfront, 50% on
+// completion", "30% / 40% / 30%") instead of a bare "100 / 0". The bill read
+// off the signed agreement must match the words on it.
+for (const lang of ["en", "es"] as const) {
+  Deno.test(`REQ-665 send-signed-confirmation run: the picker's 100/0 (${lang}) bills ONE invoice due the day of signing`, async () => {
+    await withKv(async () => {
+      const s = freshRun();
+      const quote = await s.quotes.create("u-1", {
+        summary: "Repair",
+        lineItems: [],
+        estimatedTotal: 300_00,
+        status: "accepted",
+        acceptedAt: new Date().toISOString(),
+        terms: [{
+          stepId: "payment_terms",
+          label: "Payment terms",
+          value: termLabel({ kind: "payment", value: { splits: [100, 0] } }, lang),
+        }],
+      });
+
+      await s.flow.run(quote.id);
+
+      const rows = await s.invoices.listByUser("u-1");
+      assertEquals(rows.length, 1);
+      assertEquals(rows[0].amount, 300_00);
+      assertEquals(rows[0].dueDate, todayIso());
+    });
+  });
+}
+
+Deno.test("REQ-665 computeMilestoneAmounts: the picker's worded splits bill the stated shares", () => {
+  const label = (splits: number[], lang: "en" | "es") =>
+    termLabel({ kind: "payment", value: { splits } }, lang);
+  assertEquals(computeMilestoneAmounts(100_00, pterms(label([30, 70], "en"))), [30_00, 70_00]);
+  assertEquals(computeMilestoneAmounts(100_00, pterms(label([30, 70], "es"))), [30_00, 70_00]);
+  assertEquals(
+    computeMilestoneAmounts(1_000_00, pterms(label([30, 40, 30], "en"))),
+    [300_00, 400_00, 300_00],
+  );
+});
+
+Deno.test("REQ-665 completionTerms: the picker's 0/100 bills after completion in both languages", () => {
+  for (const lang of ["en", "es"] as const) {
+    const v = termLabel({ kind: "payment", value: { splits: [0, 100] } }, lang);
+    assertEquals(completionTerms(v, 15), { netDays: 15 });
+  }
 });

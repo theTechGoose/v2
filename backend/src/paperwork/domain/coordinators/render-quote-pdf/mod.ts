@@ -7,7 +7,7 @@ import type { Quote, QuoteTerm } from "@paperwork/dto/quote.ts";
 import type { Customer } from "@crm/dto/customer.ts";
 import type { User } from "@users/dto/user.ts";
 import { isAccepted } from "#quote-flow/quote-status.ts";
-import { isTbdTermValue } from "#quote-flow/terms-i18n.ts";
+import { isDueNowTermValue, isTbdTermValue } from "#quote-flow/terms-i18n.ts";
 import { agreementClauses } from "#documents/warranty-clause.ts";
 import {
   formatTermDate,
@@ -968,7 +968,12 @@ export function localizeTermValue(value: string, lang: "en" | "es"): string {
     .replace(/\bweeks\b/gi, "semanas").replace(/\bweek\b/gi, "semana")
     // REQ-343: service-trade durations ("2 hours", "4 hours").
     .replace(/\bhours\b/gi, "horas").replace(/\bhour\b/gi, "hora")
-    .replace(/\bdays\b/gi, "días").replace(/\bday\b/gi, "día");
+    .replace(/\bdays\b/gi, "días").replace(/\bday\b/gi, "día")
+    // REQ-665 (m47): the custom picker's worded two-payment split.
+    .replace(
+      /^(\d+(?:\.\d+)?)% upfront, (\d+(?:\.\d+)?)% on completion$/i,
+      "$1% por adelantado, $2% al terminar",
+    );
 }
 
 function computeMilestones(
@@ -999,7 +1004,7 @@ function computeMilestones(
   const term = termValue(terms, "payment_terms");
   // "Due Now" terms collapse to a single full payment — but it's owed at
   // signing, not "on completion".
-  const dueNow = /\bdue now\b/i.test(term ?? "");
+  const dueNow = isDueNowTermValue(term);
   return computePaymentSplit(term, total).map((
     p,
   ) => ({
