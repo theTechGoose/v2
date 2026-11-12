@@ -17,6 +17,7 @@
  *                        that preset)
  *   termsPicks         — the update_terms payload in wizard order
  *   mentionedTerms     — the start / time to complete a message asks for
+ *   askedTerms         — every term a message talks about (REQ-663 gate)
  *   termsChangeLine    — "Changed the start date: Next month → Next week."
  *   termsNotAppliedLine — "I didn't change the start date …"
  */
@@ -490,12 +491,61 @@ export function mentionedTerms(text: string): ("start_date" | "wraps")[] {
   return out;
 }
 
+const ASK_START = new RegExp(
+  [
+    START_WORD,
+    String
+      .raw`\b(?:(?:next|this|coming)\s+(?:week|month|${WEEKDAY_RE})|tomorrow|today|asap|right away|immediately|whenever|proxim\w*|que viene|manana|hoy|de inmediato|cuanto antes|${WEEKDAY_RE}|${MONTH_RE})\b`,
+    String
+      .raw`\b(?:date|dates|fecha\w*|schedul\w*|reschedul\w*|push\w*|delay\w*|postpon\w*|pospon\w*|retras\w*|thanksgiving|christmas|navidad|holidays?)\b`,
+    String.raw`\b\d{1,2}(?:st|nd|rd|th)\b|\b\d{1,2}\/\d{1,2}\b`,
+  ].join("|"),
+);
+const ASK_WRAPS = new RegExp(
+  [
+    DURATION_PHRASE,
+    DURATION_WORD.source,
+    String
+      .raw`\b(?:long|finish(?:es|ed)?|done|complet(?:e|ed|ion)|wraps?\s+up|lasts?|deadline|half a day|termin\w*|tarda\w*|dura\w*|acab\w*|listo|medio dia)\b`,
+  ].join("|"),
+);
+const ASK_PAYMENT = new RegExp(
+  [
+    String
+      .raw`\b(?:pay\w*|paid|deposit\w*|upfront|up front|down ?payment|installments?|milestones?|due|net ?\d+|split|half (?:up|now|down|at|before|when|on|after|and half)|balance|pag(?:o|os|ar|ue|uen|a|an|amos|ando|ado)|deposito\w*|anticipo\w*|adelant\w*|cuotas?|mitad|saldo|plazos?|al final)\b`,
+    String.raw`\d+ ?%|\b\d+\/\d+\b|\b(?:${PAYMENT_TERMS_PRESETS.join("|")})\b`,
+  ].join("|"),
+);
+
+/**
+ * REQ-663 (demo-loop cycle 5, m40 + p18-7c): the terms a message talks
+ * about at all — loose on purpose, unlike mentionedTerms: it gates the
+ * update_terms picks, and the model re-sends the job's current terms on a
+ * message about something else ("add $400 change order" got three "The
+ * agreement is signed, so I can't change …" lines, fleet-0 stdout:254). A
+ * pick for a term the message never names is dropped; a miss here would drop
+ * a real edit, so any word near a term counts.
+ */
+export function askedTerms(text: string): TermStepId[] {
+  const s = fold(text).replace(/[’`]/g, "'");
+  const out: TermStepId[] = [];
+  if (ASK_START.test(s)) out.push("start_date");
+  if (ASK_WRAPS.test(s)) out.push("wraps");
+  if (ASK_PAYMENT.test(s)) out.push("payment_terms");
+  return out;
+}
+
 /** "the start date" / "la fecha de inicio" — the term as a reply names it. */
 function termName(lang: Lang, stepId: string): string {
   return (TERM_STEPS as readonly string[]).includes(stepId)
     ? t(lang, `chatCoordinator.terms.name.${stepId}`)
     : t(lang, "chatCoordinator.terms.name.other");
 }
+
+/** A term whose name is a plural noun ("the payment terms", "the terms"). */
+const pluralTerm = (stepId: string) =>
+  stepId === "payment_terms" ||
+  !(TERM_STEPS as readonly string[]).includes(stepId);
 
 const capitalize = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 
@@ -557,10 +607,18 @@ export function termsChangeLine(lang: Lang, o: TermsOutcome): string {
         to: value,
       });
     case "same":
-      return t(lang, "chatCoordinator.terms.same", {
-        term: capitalize(term),
-        value,
-      });
+      // REQ-663 (p18-7c): "the payment terms" / "the terms" are plural —
+      // "The payment terms is already 50/50." read wrong.
+      return t(
+        lang,
+        pluralTerm(o.step.id)
+          ? "chatCoordinator.terms.samePlural"
+          : "chatCoordinator.terms.same",
+        {
+          term: capitalize(term),
+          value,
+        },
+      );
     case "later":
       return o.prefilled
         ? t(lang, "chatCoordinator.terms.later", { term, value })

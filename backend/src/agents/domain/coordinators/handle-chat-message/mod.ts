@@ -191,6 +191,7 @@ import { getWizardSpec } from "@agents/domain/business/terms-wizard-spec/mod.ts"
 // REQ-585 (demo-loop cycle 4, M4 + M30): the terms typed in the chat.
 import { HandleWizardAnswer } from "@agents/domain/coordinators/handle-wizard-answer/mod.ts";
 import {
+  askedTerms,
   mentionedTerms,
   termsChangeLine,
   termsNotAppliedLine,
@@ -968,8 +969,15 @@ export class HandleChatMessage {
       });
     for (const edit of edits) {
       if (edit.type === "update_terms") {
-        const { picks, unread } = termsPicks(edit.payload);
-        termsNotSet.push(...unread);
+        // REQ-663 (demo-loop cycle 5, m40 + p18-7c): the model re-sends the
+        // job's current terms on a message about something else — "add $400
+        // change order" on a signed agreement got three "I can't change …"
+        // lines, an echo "The payment terms is already 50/50.". A term the
+        // message never names is not touched and not said.
+        const asked: string[] = askedTerms(userText);
+        const { picks: all, unread } = termsPicks(edit.payload);
+        const picks = all.filter((p) => asked.includes(p.stepId));
+        termsNotSet.push(...unread.filter((id) => asked.includes(id)));
         const state = await this.conversations.getWizardState(conv.id)
           .catch(() => undefined);
         const spec = state ? getWizardSpec(state.specId) : undefined;
