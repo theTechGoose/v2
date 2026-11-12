@@ -117,7 +117,7 @@ Deno.test("REQ-269: a Spanish staff member's /admin is Spanish end to end; EN fl
     const ph = await page.locator("[data-cy='adm-q']").getAttribute(
       "placeholder",
     );
-    expect(ph?.startsWith("Buscar por teléfono"), `placeholder (${ph})`);
+    expect(ph?.startsWith("Buscar por nombre"), `placeholder (${ph})`);
     expect.eq(
       await text(page, "[data-legal-link='terms']"),
       "Términos de servicio",

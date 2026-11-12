@@ -45,6 +45,9 @@ interface Props {
   initialUnread?: number;
   initialNotifications?: Notification[];
   lang?: "en" | "es";
+  /** REQ-507 (demo m25) — false drops the account search (GlobalSearch): /admin's own
+   *  users search is the page's only search, not a second box with another scope */
+  search?: boolean;
 }
 
 // No fallback ticker — when the user has zero real notifications we hide
@@ -63,6 +66,7 @@ export default function DashTopbar(
     greetingOverrideKey,
     initialUnread = 0,
     initialNotifications = [],
+    search,
   }: Props,
 ) {
   // Reactive app language (seeded from user.language, flipped live by Settings).
@@ -204,7 +208,7 @@ export default function DashTopbar(
           The notifications drawer is still not built; its affordance stays
           hidden rather than advertise a dead control (audit #7). */
       }
-      <GlobalSearch />
+      {search !== false && <GlobalSearch />}
       {ticker
         ? (
           // Anchored to /dashboard#activity so the pill is no longer inert:

@@ -27,6 +27,7 @@ import { fmtPhone } from "../lib/format.ts";
 import { t } from "../lib/i18n.ts";
 import { type FeatureKey, FEATURES } from "../../shared/features.ts";
 import {
+  adminEmptyText,
   type AdminLock,
   displayName,
   impersonateLabel,
@@ -66,6 +67,8 @@ function featureText(key: string, fallback: string): string {
 export default function AdminPage({ selfId }: { selfId?: string }) {
   const [q, setQ] = useState("");
   const [rows, setRows] = useState<AdminUserView[]>([]);
+  /** REQ-507 — the query the shown rows came from (the empty state names it) */
+  const [shownQ, setShownQ] = useState("");
   const [loading, setLoading] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -102,7 +105,9 @@ export default function AdminPage({ selfId }: { selfId?: string }) {
       setError(null);
     }
     try {
-      setRows(await adminClient.search(qRef.current.trim()));
+      const asked = qRef.current.trim();
+      setRows(await adminClient.search(asked));
+      setShownQ(asked);
     } catch (err) {
       await fail(err, "adminPage.err.search");
     } finally {
@@ -256,7 +261,6 @@ export default function AdminPage({ selfId }: { selfId?: string }) {
             data-cy="adm-q"
             style={inputStyle}
             type="search"
-            inputMode="tel"
             placeholder={t("adminPage.search.placeholder")}
             value={q}
             onInput={(e) => setQ((e.target as HTMLInputElement).value)}
@@ -531,7 +535,7 @@ export default function AdminPage({ selfId }: { selfId?: string }) {
       )}
       {!loading && rows.length === 0 && (
         <div style="text-align:center;color:var(--fg-muted,#9aa394);font-size:13.5px;padding:24px">
-          {t("adminPage.empty")}
+          {adminEmptyText(t, shownQ)}
         </div>
       )}
     </div>

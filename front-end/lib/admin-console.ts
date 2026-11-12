@@ -20,6 +20,16 @@ import { fmtPhone } from "./format.ts";
 import { isPlaceholderName } from "../../shared/quote-flow/outbound-identity.ts";
 import { startPoll } from "./poll.ts";
 
+/** REQ-507 (demo cycle 3, m25) — the users table's empty state names the query it ran,
+ *  so "abc!!" reads "No users match “abc!!”." instead of a silent full list */
+export function adminEmptyText(
+  t: (key: string, vars?: Record<string, string>) => string,
+  query: string,
+): string {
+  const q = query.trim();
+  return q ? t("adminPage.emptyFor", { q }) : t("adminPage.empty");
+}
+
 /** how often a visible /admin someone is using re-reads its users list */
 export const ADMIN_REFRESH_MS = 5_000;
 /** REQ-424 — the slowest an idle /admin re-reads it */
