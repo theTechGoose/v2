@@ -171,7 +171,9 @@ Deno.test("REQ-153 + REQ-179 + REQ-180 + REQ-181 + REQ-187 + REQ-188: the admin 
       await userPage.locator("[data-cy='demo-pill']").waitFor({
         timeout: 15_000,
       });
+      // REQ-235 — End asks first: End, then Yes
       await page.locator("[data-cy='demo-end']").click();
+      await page.locator("[data-cy='demo-end-confirm']").click();
       await userPage.locator("[data-cy='demo-pill']").waitFor({
         state: "hidden",
         timeout: 15_000,
@@ -597,8 +599,9 @@ Deno.test("REQ-153 + REQ-179 + REQ-180 + REQ-181 + REQ-187 + REQ-188: the admin 
           ) <= 1,
       );
 
-      // 7. End from the presenter clears both
+      // 7. End from the presenter clears both (REQ-235: End, then Yes)
       await page.locator("[data-cy='demo-end']").click();
+      await page.locator("[data-cy='demo-end-confirm']").click();
       await page.locator("[data-cy='demo-pill']").waitFor({
         state: "hidden",
         timeout: 15_000,

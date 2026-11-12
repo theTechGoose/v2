@@ -92,7 +92,8 @@ export type ClientMessage =
   | { t: "end" };
 
 /** REQ-214 — `pid`: which presenter a message is from (never on the viewer's), which presenter
- *  came or went (a `peer` without one is the viewer), and a presenter's own id on their welcome */
+ *  came or went (a `peer` without one is the viewer), and a presenter's own id on their welcome.
+ *  REQ-235 — and which presenter ended the demo (an `ended` by the viewer never has one) */
 export type ServerMessage =
   | {
     t: "welcome";
@@ -104,7 +105,7 @@ export type ServerMessage =
   | { t: "peer"; online: boolean; pid?: string }
   | { t: "signal"; from: Role; pid?: string; data: unknown }
   | { t: "relay"; from: Role; pid?: string; data: PeerMessage }
-  | { t: "ended"; by: Role; reason?: "declined" };
+  | { t: "ended"; by: Role; reason?: "declined"; pid?: string };
 
 /** how often a browser with no demo asks `active` again — the customer sees the invitation within this */
 export const ACTIVE_POLL_MS = 5_000;
@@ -313,9 +314,13 @@ export function parseServerMessage(raw: string): ServerMessage | null {
     }
     case "ended":
       if (!isRole(o.by)) return null;
-      return o.reason === "declined"
-        ? { t: "ended", by: o.by, reason: "declined" }
-        : { t: "ended", by: o.by };
+      return {
+        t: "ended",
+        by: o.by,
+        ...(o.reason === "declined" ? { reason: "declined" as const } : {}),
+        // REQ-235 — the presenter who ended it; the viewer's end names nobody
+        ...(o.by === "presenter" ? pidOf(o) : {}),
+      };
     default:
       return null;
   }

@@ -171,11 +171,22 @@ export class DemoHub {
     });
   }
 
-  /** the demo is over: everyone hears it and is closed */
-  end(sessionId: string, by: Role, reason?: "declined"): Promise<void> {
+  /** the demo is over: everyone hears it and is closed. REQ-235 — `pid`: the presenter who ended
+   *  it, said to everyone (the viewer's end names nobody) */
+  end(
+    sessionId: string,
+    by: Role,
+    reason?: "declined",
+    pid?: string,
+  ): Promise<void> {
     return this.broadcast(sessionId, {
       to: "all",
-      msg: reason ? { t: "ended", by, reason } : { t: "ended", by },
+      msg: {
+        t: "ended",
+        by,
+        ...(reason ? { reason } : {}),
+        ...(by === "presenter" && pid ? { pid } : {}),
+      },
     });
   }
 

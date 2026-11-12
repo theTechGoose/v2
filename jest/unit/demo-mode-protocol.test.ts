@@ -192,9 +192,11 @@ describe("REQ-153 demo mode wiring", () => {
     );
     expect(shell).toMatch(/hasSession \? <DemoModeOverlay \/> : null/);
     const island = read("front-end/islands/DemoModeOverlay.tsx");
-    for (const k of ["end", "waiting"]) {
-      expect(island).toContain(`t("demoMode.${k}")`);
-    }
+    expect(island).toContain(`t("demoMode.waiting")`);
+    // REQ-235: End is one component both pills draw, and it asks first
+    const endDemo = read("front-end/components/demo-mode/EndDemo.tsx");
+    expect(endDemo).toContain(`t("demoMode.end")`);
+    expect(island).toMatch(/<EndDemo\b/);
     // REQ-153 AMENDMENT (2026-11-05): the presenter's pill lives on the stage now
     const stage = read("front-end/islands/DemoStage.tsx");
     expect(stage).toContain(`t("demoMode.waitingFor", { name`);
@@ -224,9 +226,10 @@ describe("REQ-153 demo mode wiring", () => {
       expect(en[gone]).toBeUndefined();
       expect(es[gone]).toBeUndefined();
     }
-    for (const cy of ["demo-pill", "demo-status", "demo-end"]) {
+    for (const cy of ["demo-pill", "demo-status"]) {
       expect(island).toContain(`data-cy="${cy}"`);
     }
+    expect(endDemo).toContain(`data-cy="demo-end"`);
     // the pointer and the wave are one component, drawn by both the overlay and the stage
     const pointer = read("front-end/components/demo-mode/DemoPointer.tsx");
     for (const cy of ["demo-pointer", "demo-wave"]) {

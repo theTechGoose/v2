@@ -20,6 +20,11 @@
  *
  * REQ-214 — several staff may present at once: one pointer per presenter, each in that
  * presenter's colour with their name on it; the pill names them all with their colour dots.
+ *
+ * REQ-235 — the end is said and stays: End asks first (EndDemo); when the demo ends the pill
+ * turns at once into a notice of who ended it ("{name} ended the demo", "You ended the demo"),
+ * kept until dismissed or a new demo starts. On /admin it says what a stage handed over on its
+ * way there (`?demo=ended&by=…`), once.
  */
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import { t } from "../lib/i18n.ts";
@@ -65,6 +70,14 @@ import PeerPointer, {
   type PointerCmd,
 } from "../components/demo-mode/PeerPointer.tsx";
 import PresenterChips from "../components/demo-mode/PresenterChips.tsx";
+import EndDemo from "../components/demo-mode/EndDemo.tsx";
+import {
+  ADMIN_PATH,
+  type EndedNotice,
+  endedText,
+  readEndedNotice,
+  whoEnded,
+} from "../../shared/demo-mode/ended.ts";
 
 interface Demo {
   id: string;
@@ -104,7 +117,8 @@ export default function DemoModeOverlay() {
   /** REQ-214 — the latest thing each presenter did, by pid */
   const [cmds, setCmds] = useState<Record<string, PointerCmd>>({});
   const seq = useRef(0);
-  const [ended, setEnded] = useState(false);
+  /** REQ-235 — the demo is over: who ended it, said until dismissed (or a new demo starts) */
+  const [notice, setNotice] = useState<EndedNotice | null>(null);
   const linkRef = useRef<DemoLink | null>(null);
   const impersonatingRef = useRef<boolean | null>(null);
   const placingRef = useRef(false);
@@ -195,6 +209,25 @@ export default function DemoModeOverlay() {
       placingRef.current = false;
     }
   }
+
+  // 0. REQ-235 — a stage that ended its demo hands its presenter to /admin with who ended it: say
+  //    it here, and take it out of the address (before the first ask reports where this app is)
+  //    so a reload does not say it again
+  useEffect(() => {
+    if (inert || globalThis.location.pathname !== ADMIN_PATH) return;
+    const got = readEndedNotice(globalThis.location.search);
+    if (!got) return;
+    setNotice(got.notice);
+    history.replaceState(
+      history.state,
+      "",
+      ADMIN_PATH + got.rest + globalThis.location.hash,
+    );
+  }, []);
+  // REQ-235 — a new demo takes the notice's place
+  useEffect(() => {
+    if (demo) setNotice(null);
+  }, [demo?.id]);
 
   // 1. is there a demo for this session? on load, every 5 s while this side is not connected to the
   //    other, and when /admin opens one here. Every ask says where this app is.
@@ -327,13 +360,16 @@ export default function DemoModeOverlay() {
             break;
         }
       },
-      onEnded: () => {
-        setEnded(true);
+      onEnded: (by, _reason, pid) => {
+        // REQ-235 — who ended it, in the pill's place at once, kept until dismissed
+        const d = demoRef.current;
+        setNotice(whoEnded({ by, pid }, {
+          role: "viewer",
+          presenters: d?.presenters ?? [],
+          presenterName: d?.presenterName,
+        }));
         setCmds({});
-        setTimeout(() => {
-          setDemo(null);
-          setEnded(false);
-        }, 1500);
+        setDemo(null);
       },
     });
     linkRef.current = link;
@@ -419,6 +455,30 @@ export default function DemoModeOverlay() {
     Z + 3
   };display:flex;gap:10px;align-items:center;flex-wrap:wrap;max-width:calc(100vw - 24px);padding:9px 14px;border-radius:14px;background:#1f3d1b;color:#fff;font:inherit;font-size:13px;box-shadow:0 4px 18px rgba(0,0,0,.35)`;
 
+  // REQ-235 — the demo is over: who ended it, in the pill's place, until dismissed (Demo clicked
+  // here again takes over)
+  if (notice && !opening) {
+    const said = endedText(notice);
+    return (
+      <div data-demo-overlay>
+        <div data-cy="demo-ended" role="status" style={pillStyle}>
+          <strong>{t("demoMode.title")}</strong>
+          <span>{t(said.key, said.vars)}</span>
+          <button
+            type="button"
+            data-cy="demo-ended-dismiss"
+            aria-label={t("demoMode.dismiss")}
+            title={t("demoMode.dismiss")}
+            onClick={() => setNotice(null)}
+            style="padding:0 6px;border:0;background:transparent;color:#fff;cursor:pointer;font:inherit;font-size:18px;line-height:1;opacity:.85"
+          >
+            ×
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   if (!demo) {
     if (!opening) return null;
     // REQ-179 — Demo was just clicked: the pill is up before the server answers
@@ -461,7 +521,7 @@ export default function DemoModeOverlay() {
     ? demo.presenters
     : [{ userId: "", name: demo.presenterName, color: "#2f6d29" }];
   const names = presenters.map((p) => p.name).join(", ");
-  const statusLabel = ended || status === "ended"
+  const statusLabel = status === "ended"
     ? t("demoMode.ended")
     : status === "direct"
     ? t("demoMode.direct")
@@ -472,18 +532,17 @@ export default function DemoModeOverlay() {
     : "…";
 
   async function end() {
-    const link = linkRef.current;
-    link?.end();
+    const id = demo!.id;
+    linkRef.current?.end();
+    // REQ-235 + REQ-179 — said at once, before the server answers; the link stays up until the
+    // server has it, so the presenters hear `ended` before this side's socket goes
+    setNotice({ by: "you" });
     try {
-      await demoModeClient.end(demo!.id);
+      await demoModeClient.end(id);
     } catch {
       // the socket's end reaches the server too; either way this side is done
     }
-    setEnded(true);
-    setTimeout(() => {
-      setDemo(null);
-      setEnded(false);
-    }, 800);
+    setDemo(null);
   }
 
   return (
@@ -511,15 +570,8 @@ export default function DemoModeOverlay() {
         >
           {statusLabel}
         </span>
-        <button
-          type="button"
-          data-cy="demo-end"
-          disabled={ended}
-          onClick={end}
-          style="padding:5px 12px;border-radius:8px;border:0;background:#fff;color:#7a2e2e;cursor:pointer;font:inherit;font-size:12px;font-weight:700"
-        >
-          {t("demoMode.end")}
-        </button>
+        {/* REQ-235 — End asks first */}
+        <EndDemo onEnd={end} />
       </div>
     </div>
   );

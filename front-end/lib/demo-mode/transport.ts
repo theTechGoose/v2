@@ -47,7 +47,8 @@ export interface DemoLinkOptions {
   onPeerOnline(): void;
   /** REQ-214 — a presenter came or went (on the customer's side: any of them; on a stage: a colleague) */
   onPresence?(pid: string, online: boolean): void;
-  onEnded(by: Role, reason?: "declined"): void;
+  /** REQ-235 — `pid`: the presenter who ended it (none when the viewer did) */
+  onEnded(by: Role, reason?: "declined", pid?: string): void;
 }
 
 export interface DemoLink {
@@ -306,7 +307,7 @@ export function connectDemo(o: DemoLinkOptions): DemoLink {
           ended = true;
           teardownAll();
           refresh();
-          o.onEnded(m.by, m.reason);
+          o.onEnded(m.by, m.reason, m.pid);
           sock.close();
           break;
       }

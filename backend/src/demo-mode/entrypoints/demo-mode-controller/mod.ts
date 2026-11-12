@@ -76,7 +76,8 @@ export class DemoModeController {
       const rest = await this.demos.leave(prev.id, admin.id);
       if (rest && !rest.endedAt && presentersOf(rest).length === 0) {
         await this.demos.end(prev.id);
-        await this.hub.end(prev.id, "presenter");
+        // REQ-235 — the customer hears it was this presenter
+        await this.hub.end(prev.id, "presenter", undefined, admin.id);
       } else if (rest && !rest.endedAt) {
         await this.hub.dropPresenter(prev.id, admin.id);
       }
@@ -156,7 +157,7 @@ export class DemoModeController {
     const caller = await this.access.caller(ctx);
     // the body is optional (a plain End sends none) — read it by hand, @Body() 500s on an empty one
     const body: unknown = await ctx.req.json().catch(() => null);
-    const { demo, role } = await this.access.roleIn(caller, id, {
+    const { demo, role, pid } = await this.access.roleIn(caller, id, {
       evenEnded: true,
     });
     // AMENDMENT — "Not now": the viewer's decline rides the ended message so the presenter's pill can say so
@@ -165,7 +166,8 @@ export class DemoModeController {
       : undefined;
     if (!demo.endedAt) {
       await this.demos.end(id);
-      await this.hub.end(id, role, reason);
+      // REQ-235 — and who ended it
+      await this.hub.end(id, role, reason, pid ?? undefined);
     }
     return { ok: true };
   }

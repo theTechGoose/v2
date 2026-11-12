@@ -292,3 +292,52 @@ Deno.test("REQ-214 two presenters on one demo: presence, stamped relays, present
     await resetKv();
   }
 });
+
+// REQ-235 — who ended it: an end a presenter caused names them (`pid`) to every peer, in this
+// hub at once and in the other through the mailbox; the customer's end never carries one.
+Deno.test("REQ-235 an end by a presenter names them to every peer, across hubs; the customer's end carries no pid", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const a = DemoHub.isolated("a");
+  const b = DemoHub.isolated("b");
+  const hans = stampedPeer("presenter", "hans");
+  const lia = stampedPeer("presenter", "lia");
+  const viewer = stampedPeer("viewer");
+  const hans2 = stampedPeer("presenter", "hans");
+  const viewer2 = stampedPeer("viewer");
+  try {
+    await a.join("s4", hans);
+    await a.join("s4", lia);
+    await b.join("s4", viewer);
+    await a.end("s4", "presenter", undefined, "lia");
+    const byLia: ServerMessage = { t: "ended", by: "presenter", pid: "lia" };
+    assertEquals(
+      hans.inbox.find((m) => m.t === "ended"),
+      byLia,
+      "the colleague in the same hub hears who ended it, at once",
+    );
+    assertEquals(lia.inbox.find((m) => m.t === "ended"), byLia);
+    await until(
+      "the customer in the other hub hears who ended it",
+      () => viewer.inbox.some((m) => m.t === "ended"),
+    );
+    assertEquals(viewer.inbox.find((m) => m.t === "ended"), byLia);
+
+    await a.join("s5", hans2);
+    await b.join("s5", viewer2);
+    await b.end("s5", "viewer", undefined, "hans");
+    await until(
+      "the presenter hears the customer's end",
+      () => hans2.inbox.some((m) => m.t === "ended"),
+    );
+    assertEquals(
+      hans2.inbox.find((m) => m.t === "ended"),
+      { t: "ended", by: "viewer" },
+      "the customer's end names no presenter",
+    );
+  } finally {
+    await a.close();
+    await b.close();
+    await resetKv();
+  }
+});

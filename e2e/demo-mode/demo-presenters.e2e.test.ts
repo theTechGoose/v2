@@ -246,8 +246,9 @@ Deno.test("REQ-214: two staff present to one customer — Lia's Demo on an alrea
         "Lia's frame is on Ana's page",
       );
 
-      // 5. End from Hans clears all three
+      // 5. End from Hans clears all three (REQ-235: End, then Yes)
       await page.locator("[data-cy='demo-end']").click();
+      await page.locator("[data-cy='demo-end-confirm']").click();
       await userPage.locator("[data-cy='demo-pill']").waitFor({
         state: "hidden",
         timeout: 15_000,

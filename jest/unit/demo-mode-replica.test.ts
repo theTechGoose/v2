@@ -252,18 +252,21 @@ describe("REQ-187 the stage and the replica frame — wiring", () => {
       /onPointerDown=\{\(e\) => \{\s*e\.preventDefault\(\);/,
     );
     expect(stage).not.toMatch(/setPointOnly|setFollow|demoMode\.interact/);
-    // the stage ends like the overlay did: the presenter gets their own account back
+    // the stage ends like the overlay did: the presenter gets their own account back — on
+    // /admin, saying who ended it (REQ-235: `endedHref` is an /admin address)
     expect(stage).toMatch(/adminClient\.stopImpersonating\(\)/);
-    expect(stage).toMatch(/location\.href = "\/admin"/);
+    expect(stage).toMatch(/location\.href = endedHref\(/);
     // the pill: the customer's name, the status, the frame size, End
     for (
-      const k of ["presenting", "waitingFor", "theirScreen", "end", "ended"]
+      const k of ["presenting", "waitingFor", "theirScreen", "ended"]
     ) {
       expect(stage).toContain(`t("demoMode.${k}"`);
     }
-    for (const cy of ["demo-pill", "demo-status", "demo-end"]) {
+    for (const cy of ["demo-pill", "demo-status"]) {
       expect(stage).toContain(`data-cy="${cy}"`);
     }
+    // REQ-235: End is the shared component, which asks first
+    expect(stage).toMatch(/<EndDemo\b/);
     // the pointer and the waves are the shared component (the overlay draws the same)
     expect(stage).toMatch(/<DemoPointer/);
     const pointer = read("front-end/components/demo-mode/DemoPointer.tsx");
