@@ -70,6 +70,23 @@ export class NotifyOnEvent {
       entityType: notificationEntityType(event.entityType),
       entityId: event.entityId,
     });
+    // REQ-488 (demo m57): "Didn't get it" closes the claim it answers — the
+    // invoice's open "says they paid" rows are marked read, and the row just
+    // written is the newest, so the topbar chip shows it instead.
+    if (
+      event.entityType === "invoice" && event.action === "claim_rejected" &&
+      event.entityId
+    ) {
+      const open = await this.store.listByUser(event.userId, {
+        unreadOnly: true,
+        limit: 500,
+      });
+      for (const n of open) {
+        if (n.type === "invoice_claimed" && n.entityId === event.entityId) {
+          await this.store.markRead(n.id, event.userId);
+        }
+      }
+    }
   }
 }
 
@@ -246,6 +263,18 @@ export function notificationL10n(event: DomainEvent): NotificationL10n | null {
       titleParams: method ? { ...nameParams, method } : nameParams,
       bodyKey: reference ? "notify.invoice.refLabel" : undefined,
       bodyParams: reference ? { reference } : undefined,
+    };
+  }
+  // REQ-488 (demo m57): the contractor answered a claim with "Didn't get
+  // it" — a row of its own, newer than the claim it closes.
+  if (event.entityType === "invoice" && event.action === "claim_rejected") {
+    const method = event.data?.method as string | undefined;
+    return {
+      type: "generic",
+      titleKey: method
+        ? "notify.invoice.claimRejectedVia"
+        : "notify.invoice.claimRejected",
+      titleParams: method ? { ...nameParams, method } : nameParams,
     };
   }
   if (event.entityType === "invoice" && event.action === "paid") {

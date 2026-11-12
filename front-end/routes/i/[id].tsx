@@ -24,6 +24,7 @@ import {
   stateLabel,
 } from "../../../shared/documents/linked-view.ts";
 import { receivedNoteBody } from "../../../shared/documents/received-note.ts";
+import { claimRejectedNote } from "../../../shared/documents/claim-rejected-note.ts";
 import {
   BG,
   computeMilestones,
@@ -122,6 +123,9 @@ interface InvoicePublic {
     claimedAt: string;
     claimedBy?: string;
   };
+  /** REQ-488: the contractor said the last claim never arrived. */
+  claimRejectedAt?: string;
+  claimRejectedMethod?: string;
   contractor?: Contractor;
   customer?: { name?: string; email?: string; phoneNumber?: string };
   jobDetails?: {
@@ -729,14 +733,21 @@ function InvoiceDoc(
               </>
             )
             : (
-              <PublicInvoiceClaim
-                invoiceId={invoice.id}
-                acceptedMethods={invoice.acceptedMethods ?? []}
-                customerName={invoice.customer?.name}
-                balanceCents={balanceCents}
-                version={invoice.version}
-                lang={es ? "es" : "en"}
-              />
+              <>
+                {
+                  /* REQ-488 (demo m56): the contractor answered the last
+                  claim with "Didn't get it" — say so, and where to check. */
+                }
+                <ClaimRejectedNote invoice={invoice} lang={lang} />
+                <PublicInvoiceClaim
+                  invoiceId={invoice.id}
+                  acceptedMethods={invoice.acceptedMethods ?? []}
+                  customerName={invoice.customer?.name}
+                  balanceCents={balanceCents}
+                  version={invoice.version}
+                  lang={es ? "es" : "en"}
+                />
+              </>
             )}
 
           {
@@ -1166,6 +1177,41 @@ function ClaimedNote(
           : null}
         <br />
         {tFor(lang, "publicInvoice.claimed.body", { who })}
+      </p>
+    </section>
+  );
+}
+
+function ClaimRejectedNote(
+  { invoice, lang }: { invoice: InvoicePublic; lang: Lang },
+) {
+  const l = lang === "es" ? "es" : "en";
+  const method = invoice.claimRejectedMethod;
+  const note = claimRejectedNote((k, v) => tFor(l, k, v), {
+    status: invoice.status,
+    claimRejectedAt: invoice.claimRejectedAt,
+    methodName: method ? methodFriendly(method, l) : "",
+    handle: (invoice.acceptedMethods ?? []).find((m) => m.method === method)
+      ?.handle,
+    who: invoice.contractor?.name?.split(/\s+/)[0] ??
+      tFor(l, "publicInvoice.contractorFallback.lower"),
+  });
+  if (!note) return null;
+  return (
+    <section
+      data-claim-rejected
+      role="status"
+      style={`margin-top:24px;background:rgba(220,60,60,0.05);border:1px solid rgba(220,60,60,0.30);border-radius:14px;padding:18px 22px`}
+    >
+      <div
+        style={`font-size:11px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:#b03030`}
+      >
+        {note.heading}
+      </div>
+      <p
+        style={`margin:8px 0 0;color:${INK};font-size:14.5px;line-height:1.55`}
+      >
+        {note.body}
       </p>
     </section>
   );
