@@ -14,6 +14,7 @@ import {
 } from "../clients/quotes.ts";
 import { api, ApiError } from "../lib/api.ts";
 import { startListRefresh } from "../lib/list-refresh.ts";
+import { openQuoteMoved } from "../lib/live-doc-refresh.ts";
 import { I, ICN } from "../lib/dash-icons.tsx";
 import { fmtMoney, fmtMoneyExact } from "../lib/format.ts";
 import {
@@ -1054,7 +1055,13 @@ export default function QuotesPage(_props: { lang?: "en" | "es" }) {
     versions: [],
   });
   // REQ-201: bumped after a publish so the panel re-reads quote + ledger.
+  // REQ-396: also bumped by the 30 s list re-read when the open quote's card
+  // moved under the panel (the client signed / declined / viewed it).
   const [openTick, setOpenTick] = useState(0);
+  const openIdRef = useRef(openId);
+  openIdRef.current = openId;
+  const openQRef = useRef(openQ);
+  openQRef.current = openQ;
 
   function openQuote(id: string) {
     setOpenQ({
@@ -1191,6 +1198,16 @@ export default function QuotesPage(_props: { lang?: "en" | "es" }) {
         quotesClient.winRate(90).catch(() => null as WinRate | null),
       ]);
       if (!alive || !Array.isArray(cards)) return;
+      // REQ-396 (demo-loop c2 M13): the open panel reads its quote once per
+      // [openId, openTick]; when the list says the open quote changed (the
+      // client signed it while the panel said "Sent · Out for response"),
+      // re-get it so the badge, the version and the actions follow.
+      const openNow = openIdRef.current;
+      const shown = openQRef.current;
+      if (
+        openNow && !shown.loading &&
+        openQuoteMoved(shown.quote, cards.find((c) => c.id === openNow))
+      ) setOpenTick((t) => t + 1);
       setS((prev) =>
         prev.loading || prev.error ? prev : {
           ...prev,

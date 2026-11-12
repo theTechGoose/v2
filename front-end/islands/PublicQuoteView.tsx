@@ -6,7 +6,7 @@
  * skeleton immediately, then fetches `/quotes/:id/public` through the
  * same-origin /api proxy and swaps in the real document (or an error card).
  */
-import { useEffect, useState } from "preact/hooks";
+import { useEffect, useRef, useState } from "preact/hooks";
 import {
   ErrorCard,
   QuoteDoc,
@@ -14,6 +14,7 @@ import {
 } from "../components/quote-doc.tsx";
 import { type Lang, tFor } from "../lib/i18n.ts";
 import { langSignal, persistLang, writeLangToUrl } from "../lib/lang.ts";
+import { startPublicQuoteRefresh } from "../lib/live-doc-refresh.ts";
 
 interface State {
   phase: "loading" | "error" | "ok";
@@ -84,6 +85,25 @@ export default function PublicQuoteView(
       alive = false;
     };
   }, [id]);
+
+  // REQ-396 (demo-loop c2 M13): the projection used to be read once, so a
+  // tab left open kept its pad after the quote was signed on another device
+  // and never saw a published revision. Re-read it every 10 s (REQ-221's
+  // scheduler; `?refresh=1` records no open) and swap the fresh projection
+  // in place the moment its view (open / signed / declined, issued, version)
+  // differs from the one shown — the baseline is read at every tick, so this
+  // tab's own signature (onSigned's reload) never counts as a move.
+  const shownRef = useRef<State>(s);
+  shownRef.current = s;
+  useEffect(
+    () =>
+      startPublicQuoteRefresh<QuotePublic>({
+        quoteId: id,
+        shown: () => shownRef.current.quote ?? null,
+        onMoved: (fresh) => setS({ phase: "ok", quote: fresh }),
+      }),
+    [id],
+  );
 
   function load(alive: () => boolean) {
     fetch(`/api/quotes/${id}/public`, {
