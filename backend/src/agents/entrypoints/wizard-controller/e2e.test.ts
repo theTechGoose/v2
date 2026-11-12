@@ -7,6 +7,8 @@ import { OtpStore } from "@users/domain/data/otp-store/mod.ts";
 import { resetKv } from "@core/data/kv/mod.ts";
 import { QuoteStore } from "@paperwork/domain/data/quote-store/mod.ts";
 import { AgentConversationStore } from "@agents/domain/data/agent-conversation-store/mod.ts";
+import { UserStore } from "@users/domain/data/user-store/mod.ts";
+import { CustomerStore } from "@crm/domain/data/customer-store/mod.ts";
 
 @Module({ imports: [AgentsModule] })
 class TestApp {}
@@ -183,5 +185,33 @@ Deno.test("REQ-263 agents wizard e2e: the customer step's serviceAddress lands o
     await drain(res);
     const stored = await new QuoteStore().getOwned(quote.id, userId);
     assertEquals(stored.serviceAddress, "412 Oak St Austin");
+  });
+});
+
+// REQ-531 (demo-loop cycle 3, p8-pair6-a): over HTTP, a Spanish contractor
+// answering "Usar el cliente del chat" gets the customer's name on the
+// transcript line, not the option label.
+Deno.test("REQ-531 p8-pair6-a agents wizard e2e: use_active posts 'Cliente: <name>' for a Spanish contractor", async () => {
+  await withServer(async (port) => {
+    const phone = "+15125550177";
+    const sid = await login(port, phone);
+    const users = new UserStore();
+    const me = (await users.findByPhone(phone))!;
+    await users.update(me.id, { language: "es" });
+    const maria = await new CustomerStore().create(me.id, { name: "Maria Lopez" });
+    const conv = await fetch(`http://localhost:${port}/agents/conversations`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-session-id": sid },
+      body: JSON.stringify({ customerId: maria.id }),
+    }).then((r) => r.json());
+    await fetch(`http://localhost:${port}/agents/conversations/${conv.id}/transition-to-terms`, {
+      method: "POST", headers: { "x-session-id": sid },
+    }).then(drain);
+    const result = await fetch(`http://localhost:${port}/agents/wizard/answer`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-session-id": sid },
+      body: JSON.stringify({ conversationId: conv.id, stepId: "customer", optionId: "use_active" }),
+    }).then((r) => r.json());
+    assertEquals(result.newMessages[0].content, "Cliente: Maria Lopez");
   });
 });
