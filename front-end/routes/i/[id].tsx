@@ -21,6 +21,7 @@ import {
   shortDate,
   stateLabel,
 } from "../../../shared/documents/linked-view.ts";
+import { receivedNoteBody } from "../../../shared/documents/received-note.ts";
 import {
   BG,
   computeMilestones,
@@ -1163,9 +1164,6 @@ function ReceivedNote(
   const lang = es ? "es" : "en";
   const who = contractorFirst ??
     tFor(lang, "publicInvoice.contractorFallback.capital");
-  const when = paidAt
-    ? tFor(lang, "publicInvoice.received.onDate", { date: paidAt })
-    : "";
   return (
     <section
       style={`margin-top:24px;background:rgba(81,152,67,0.08);border:1px solid rgba(81,152,67,0.30);border-radius:14px;padding:18px 22px`}
@@ -1178,7 +1176,7 @@ function ReceivedNote(
       <p
         style={`margin:8px 0 0;color:${INK};font-size:14.5px;line-height:1.55`}
       >
-        {tFor(lang, "publicInvoice.received.body", { who, when })}
+        {receivedNoteBody((k, v) => tFor(lang, k, v), lang, { paidAt, who })}
       </p>
     </section>
   );
