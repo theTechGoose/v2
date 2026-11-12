@@ -32,6 +32,10 @@ export interface AgentConversation {
   quoteStatus?: string;
   /** Denormalized invoice.status (sent/paid) for the sidebar chip. */
   invoiceStatus?: string;
+  /** REQ-258 (demo M22): terms already stated in the chat, wizard step id →
+   *  option id (e.g. `{ payment_terms: "50_50" }`). The terms wizard shows
+   *  that option pre-selected. */
+  termsPrefill?: Record<string, string>;
   createdAt: string;
   updatedAt: string;
 }

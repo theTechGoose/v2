@@ -9,6 +9,7 @@ import {
   wizardSpecFor,
 } from "@agents/domain/business/terms-wizard-spec/mod.ts";
 import { t } from "@core/i18n/mod.ts";
+import { suggestedOptionId } from "@agents/domain/business/terms-prefill/mod.ts";
 import type { AgentConversation } from "@agents/dto/conversation.ts";
 import type { AgentMessage } from "@agents/dto/message.ts";
 
@@ -72,6 +73,7 @@ export class TransitionToTerms {
           stepIdx,
           stepId: step?.id,
           options: step ? localizeOptions(step.options, lang) : undefined,
+          suggestedOptionId: suggestedOptionId(conv.termsPrefill, step),
         },
       });
       return { conversation: conv, newMessages: [wizardMsg] };
@@ -110,6 +112,7 @@ export class TransitionToTerms {
         stepId: firstStep.id,
         options: localizeOptions(firstStep.options, lang),
         hint: firstStep.hint,
+        suggestedOptionId: suggestedOptionId(conv.termsPrefill, firstStep),
       },
     });
 

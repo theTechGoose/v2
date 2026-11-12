@@ -7457,6 +7457,9 @@ export default function AsstChat({
                     stepIdx?: number;
                     options?: WizardOption[];
                     hint?: string;
+                    /** REQ-258 (demo M22): the option the chat already
+                     *  named ("half deposit" → 50/50), shown pre-selected. */
+                    suggestedOptionId?: string;
                   };
                   const opts = payload.options ?? [];
                   const isCustomerStep = payload.stepId === "customer";
@@ -7693,6 +7696,10 @@ export default function AsstChat({
                                             payload.stepId &&
                                           rewindAnswer.optionId === opt.id
                                           ? "wiz-opt--prev"
+                                          : rewindAnswer?.stepId !==
+                                                payload.stepId &&
+                                              payload.suggestedOptionId === opt.id
+                                          ? "wiz-opt--suggested"
                                           : ""
                                       } ${
                                         showPrefill &&
@@ -7705,6 +7712,10 @@ export default function AsstChat({
                                             payload.stepId &&
                                           rewindAnswer.optionId === opt.id
                                         ? tFor(lang, "asstChat.wiz.prevChoice")
+                                        : rewindAnswer?.stepId !==
+                                              payload.stepId &&
+                                            payload.suggestedOptionId === opt.id
+                                        ? tFor(lang, "asstChat.wiz.fromYourMessage")
                                         : undefined}
                                       onClick={() => {
                                         if (opt.followUp) {

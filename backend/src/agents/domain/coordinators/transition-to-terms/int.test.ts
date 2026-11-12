@@ -100,3 +100,17 @@ Deno.test("REQ-024 transition-to-terms integration: the default stays the quote 
   assertEquals(state?.specId, "terms-v1");
   await resetKv();
 });
+
+// REQ-258 (demo M22): the invoice wizard's first steps are customer then
+// completion date; a prefill whose step IS the first step is suggested at
+// transition time too (here: a spec-agnostic check via the payload field).
+Deno.test("REQ-258 transition-to-terms integration: the first wizard step carries a suggestion only when the prefill names that step", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const { conversations, flow } = fresh();
+  const conv = await conversations.create({ userId: "u-1" });
+  await conversations.update(conv.id, { termsPrefill: { customer: "use_active" } });
+  const r = await flow.run({ userId: "u-1", conversationId: conv.id });
+  assertEquals((r.newMessages[1].payload as { suggestedOptionId?: string }).suggestedOptionId, "use_active");
+  await resetKv();
+});
