@@ -3699,3 +3699,11 @@ The dashboard's Active jobs row keeps REQ-497's `jobRowTitle(j, lang)` (→ `quo
 The "addingTerms" status (a locked quote in the terms wizard, REQ-454) takes REQ-453's neutral `progress` chip tone, like `locked` and `gathering` — not the pre-REQ-453 default pink `needs`. `shared/quote-flow/chat-header.ts` CHIP_KIND gains `addingTerms: "progress"`. **Tests:** unit `jest/unit/lock-terms-status.test.ts`, `jest/unit/thread-chip-tone.test.ts` expect `progress` · integration/e2e: unchanged.
 ## REQ-445 AMENDMENT — reconciled on demo-fixes
 With REQ-439 merged, a first draft that also leaves typed items out is re-asked for them first; REQ-445's floor re-ask then runs once, as the last call (3 model calls in the demo's master-bath case). REQ-490's chrome-language test also counts REQ-491's `o.subAmountsKey` as document content, and REQ-525's sms-recovery story matches REQ-523's reserved-number wording. **Tests:** integration `backend/src/agents/domain/coordinators/handle-chat-message/price-target.int.test.ts` ("REQ-445 M20: with no price stated …"), unit `jest/unit/review-card-chrome-lang.test.ts`, e2e `e2e/sms-recovery/sms-recovery.e2e.test.ts` (REQ-525).
+
+## REQ-533 — demo agents click in a tab after switching to it (demo-loop cycle 3, harness)
+
+The cycle 3 root-cause pass (M2) found that switching tabs with Playwright in a headless browser fires no focus or visibilitychange event. Every page stays "visible" and focus-emulated, so a switch followed only by a scroll or a look never claims the stage. That turned the harness's behaviour into a reported "regression" in 4 pairs. A real person's tab switch does focus the page. Requirement: both agents' prompts say the browser is headless and tell them to click once on a neutral spot after switching tabs, before judging what the other side sees.
+
+- unit: n/a — a prompt string; covered by the harness test.
+- int: `demo-loop/demo20b_test.ts` "REQ-533 …" runs the real harness with a fake fleet-claude and checks both prompts.
+- e2e: n/a — the next demo cycle is the run that uses it.

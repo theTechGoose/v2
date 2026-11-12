@@ -143,3 +143,12 @@ Deno.test("REQ-428 (nc-pair6-report, S3): the prompts ask for a draft report at 
   assertStringIncludes(d, 'the name "Alex"');
   assert(!d.includes("Alex from DocuMonster"));
 });
+
+Deno.test("REQ-533: both agents are told that a headless tab switch is not a real one — click in the tab after switching", async () => {
+  const { work } = await runHarness({ FAKE_DEMOER: "ok", FAKE_CUSTOMER: "ok" });
+  for (const who of ["demoer", "customer"]) {
+    const p = await Deno.readTextFile(`${work}/${who}.txt`);
+    assertMatch(p, /switch(ing)? (to )?(another|a different|an older) tab[^.]*click/i, `${who} prompt`);
+    assertMatch(p, /headless/i, `${who} prompt names why`);
+  }
+});
