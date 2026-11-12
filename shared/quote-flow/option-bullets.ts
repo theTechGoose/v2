@@ -40,15 +40,66 @@ export function sameBullets(a: string[], b: string[]): boolean {
   return true;
 }
 
-/** REQ-330 (p15-7): options whose bullet sets are equal collapse to the
- *  first one — the picker never shows "Shingle Replacement" and "Roof
- *  Shingle Installation" with the identical list. Order is kept. */
+// ── REQ-584 (demo-loop cycle 4, p4-p1d): near-twins are twins too ─────────
+// Pair 1's one-scope paint job showed Concise / Standard / Detailed cards
+// that "differ by a word": exact-match dedupe let them through, and so did
+// the padded "· Short version" (the same words, regrouped into fewer lines).
+
+/** Two versions whose word sets overlap this much (Jaccard) read the same. */
+export const NEAR_TWIN_OVERLAP = 0.85;
+
+/** The words a version shows, as a set: case, accents, punctuation, line
+ *  breaks and a plural "s" are not differences. */
+function bulletTokens(bullets: readonly string[]): Set<string> {
+  const out = new Set<string>();
+  for (const b of bullets) {
+    const words = (b ?? "").normalize("NFD").replace(/\p{M}+/gu, "")
+      .toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? [];
+    for (const w of words) {
+      out.add(
+        w.length > 3 && w.endsWith("s") && !w.endsWith("ss")
+          ? w.slice(0, -1)
+          : w,
+      );
+    }
+  }
+  return out;
+}
+
+/** REQ-584: token-set Jaccard of two versions' bullets (0 … 1). */
+export function bulletTokenOverlap(
+  a: readonly string[],
+  b: readonly string[],
+): number {
+  const ta = bulletTokens(a);
+  const tb = bulletTokens(b);
+  if (ta.size === 0 && tb.size === 0) return 1;
+  let both = 0;
+  for (const w of ta) if (tb.has(w)) both++;
+  return both / (ta.size + tb.size - both);
+}
+
+/** REQ-584: true when two versions say the same thing — equal bullets
+ *  (REQ-330), or word sets overlapping by NEAR_TWIN_OVERLAP or more. */
+export function nearTwinBullets(a: string[], b: string[]): boolean {
+  return sameBullets(a, b) || bulletTokenOverlap(a, b) >= NEAR_TWIN_OVERLAP;
+}
+
+/** REQ-330 (p15-7) / REQ-584 (p4-p1d): options whose bullets are equal or
+ *  near-twins collapse to the first one — the picker never shows "Shingle
+ *  Replacement" and "Roof Shingle Installation" with the identical list, nor
+ *  three cards that differ by a word. Order is kept. `exact` keeps the
+ *  REQ-330 equal-bullets rule only: the degraded heuristic fallback's three
+ *  versions are built (and titled "· Short version" / "· Wider scope") to
+ *  show the same scope three ways. */
 export function dedupeOptionsByBullets<T extends { bullets: string[] }>(
   options: readonly T[],
+  opts: { exact?: boolean } = {},
 ): T[] {
+  const twin = opts.exact ? sameBullets : nearTwinBullets;
   const out: T[] = [];
   for (const o of options) {
-    if (out.some((k) => sameBullets(k.bullets, o.bullets))) continue;
+    if (out.some((k) => twin(k.bullets, o.bullets))) continue;
     out.push(o);
   }
   return out;
