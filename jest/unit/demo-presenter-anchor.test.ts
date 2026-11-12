@@ -306,14 +306,17 @@ describe("REQ-451 the stage: his anchor stays on what he pointed at; a new page 
 
   test("M1 scroll: a layout pass never looks the resting pointer up again unconditionally — only a provisional fraction, once the same page has settled, or his mouse beside the frame (lookAgain)", () => {
     const replace = fn("replace");
+    // REQ-538 AMENDMENT (cycle 4 M1) — the held anchor is read once (`held`) and lookAgain is also
+    // told whether it is still drawn (`alive`): a dead anchor is looked up again once settled
     expect(replace).toMatch(
-      /lookAgain\(heldNow\(\), \{\s*load: loadRef\.current,\s*settled: !!replayerRef\.current\?\.settled\(\),?\s*\}\)/,
+      /lookAgain\(held, \{\s*load: loadRef\.current,\s*settled: !!replayerRef\.current\?\.settled\(\),\s*alive,?\s*\}\)/,
     );
     expect(replace).not.toMatch(
       /if \(lastMoveRef\.current\) rest\.push\(null\)/,
     );
+    // REQ-538 AMENDMENT — a dead node anchor goes through reanchorSoon; the rest as before
     expect(replace).toMatch(
-      /if \(\s*lookAgain\([\s\S]{0,260}\)\s*\)\s*rest\.push\(null\)/,
+      /if \(\s*lookAgain\([\s\S]{0,260}\)\s*\)\s*\{\s*if \(held\.a\?\.n\) reanchorSoon\(\);\s*else rest\.push\(null\);/,
     );
     expect(stage).toMatch(
       /from "\.\.\/\.\.\/shared\/demo-mode\/presenter-anchor\.ts"/,
@@ -445,5 +448,230 @@ describe("REQ-451 PeerPointer and DemoPointer: an off pointer is a small translu
     ) {
       expect([later, pointer.indexOf(later) > mark]).toEqual([later, true]);
     }
+  });
+});
+
+/**
+ * REQ-538 (REQ-451 AMENDMENT, demo-loop cycle 4, M1) — "Presenter pointer disappears on customer
+ * screen after every page/card change and when idle". REQ-451 kept a node anchor on its node and
+ * drew nothing once that node was gone (a card swapped or flipped, a button replaced, a new page),
+ * and nothing ever re-anchored it: the arrow came back only on his next move. A DEAD anchor (its
+ * node no longer resolves in the replay, or another page load is shown) is now looked up again
+ * ONCE under his still mouse, after that replay has settled; a live one never is (REQ-451 kept).
+ */
+type Shown = { load: string | null; settled: boolean; alive?: boolean };
+const pa2 = () =>
+  pa() as ReturnType<typeof pa> & {
+    lookAgain(h: Held, shown: Shown): boolean;
+    pointerAbsent(h: Held, alive: boolean): boolean;
+  };
+
+/** a model of the stage's replay and its layout passes: nodes with boxes, the page load shown,
+ *  whether it has settled, and the node under his still mouse */
+function stageModel() {
+  const rep = {
+    load: "L1" as string,
+    settled: true,
+    nodes: new Map<number, Box>([[7, {
+      left: 0,
+      top: 100,
+      width: 400,
+      height: 200,
+    }]]),
+    under: 7 as number | null,
+  };
+  let h: Held = held({
+    a: { vx: 0.5, vy: 0.25, n: node(7, "L1") },
+    load: "L1",
+    at: { x: 200, y: 200 },
+  });
+  const sent: Anchor[] = [];
+  const alive = () =>
+    !!h.a &&
+    pa().anchorPoint(
+        h.a,
+        VIEW,
+        rep.load,
+        (n) => pa().pointInBox(n, rep.nodes.get(n.id) ?? null),
+      ) !== null;
+  /** one layout pass of the stage: look his still mouse up again when lookAgain says so */
+  const pass = () => {
+    if (
+      !pa2().lookAgain(h, {
+        load: rep.load,
+        settled: rep.settled,
+        alive: alive(),
+      })
+    ) return;
+    const a: Anchor = rep.under !== null && rep.settled
+      ? { vx: 0.5, vy: 0.25, n: node(rep.under, rep.load) }
+      : { vx: 0.5, vy: 0.25 };
+    h = held({ a, load: rep.load, at: { x: 200, y: 200 } });
+    sent.push(a);
+  };
+  return { rep, pass, sent, alive, held: () => h };
+}
+
+describe("REQ-538 lookAgain (REQ-451 AMENDMENT, cycle 4 M1): a dead node anchor is looked up again under his still mouse once the replay has settled — a live one never", () => {
+  const a: Anchor = { vx: 0.5, vy: 0.5, n: node(7, "L1") };
+
+  test("its node gone on the page shown (a card swapped, flipped, a button replaced): looked up once settled, not before", () => {
+    const h = held({ a, load: "L1" });
+    expect(pa2().lookAgain(h, { load: "L1", settled: true, alive: false }))
+      .toBe(true);
+    expect(pa2().lookAgain(h, { load: "L1", settled: false, alive: false }))
+      .toBe(false);
+  });
+
+  test("a new page load shown: looked up once that replay has settled, not before", () => {
+    const h = held({ a, load: "L1" });
+    expect(pa2().lookAgain(h, { load: "L2", settled: true, alive: false }))
+      .toBe(true);
+    expect(pa2().lookAgain(h, { load: "L2", settled: true })).toBe(true);
+    expect(pa2().lookAgain(h, { load: "L2", settled: false, alive: false }))
+      .toBe(false);
+    expect(pa2().lookAgain(h, { load: null, settled: true, alive: false }))
+      .toBe(false);
+  });
+
+  test("REQ-451 kept: its node still there on the page shown — never, settled or not", () => {
+    const h = held({ a, load: "L1" });
+    expect(pa2().lookAgain(h, { load: "L1", settled: true, alive: true }))
+      .toBe(false);
+    expect(pa2().lookAgain(h, { load: "L1", settled: false, alive: true }))
+      .toBe(false);
+    expect(pa2().lookAgain(h, { load: "L1", settled: true })).toBe(false);
+  });
+
+  test("a card swap: exactly one re-anchor once the replay settles, onto the node now under his still mouse — and none after", () => {
+    const s = stageModel();
+    s.pass();
+    s.pass();
+    expect(s.sent).toHaveLength(0); // the node is there: none
+    // the card is swapped by Preact: node 7 leaves, node 9 takes its place
+    s.rep.nodes.delete(7);
+    s.rep.nodes.set(9, { left: 0, top: 100, width: 400, height: 200 });
+    s.rep.under = 9;
+    s.rep.settled = false; // its image still coming in
+    s.pass();
+    expect(s.sent).toHaveLength(0);
+    s.rep.settled = true;
+    s.pass();
+    s.pass();
+    s.pass();
+    expect(s.sent).toEqual([{ vx: 0.5, vy: 0.25, n: node(9, "L1") }]);
+    expect(s.alive()).toBe(true);
+  });
+
+  test("a page change: exactly one re-anchor once the new page's replay settles — and none after", () => {
+    const s = stageModel();
+    s.rep.load = "L2";
+    s.rep.settled = false;
+    s.rep.nodes = new Map([[3, { left: 0, top: 0, width: 400, height: 400 }]]);
+    s.rep.under = 3;
+    s.pass();
+    s.pass();
+    expect(s.sent).toHaveLength(0);
+    s.rep.settled = true;
+    s.pass();
+    s.pass();
+    expect(s.sent).toEqual([{ vx: 0.5, vy: 0.25, n: node(3, "L2") }]);
+    expect(s.held().load).toBe("L2");
+  });
+
+  test("never while the node exists: their scroll moves it, a settle, the stage resized — no re-anchor", () => {
+    const s = stageModel();
+    for (let top = 100; top > -150; top -= 50) {
+      s.rep.nodes.set(7, { left: 0, top, width: 400, height: 200 });
+      s.rep.under = top > 0 ? 7 : null;
+      s.pass();
+    }
+    expect(s.sent).toHaveLength(0);
+  });
+
+  test("reanchorDelay: at least REANCHOR_QUIET_MS; after a snapshot, not before its last settle pass", () => {
+    const { reanchorDelay, REANCHOR_QUIET_MS } = pa() as unknown as {
+      reanchorDelay(
+        now: number,
+        snapAt: number | null,
+        settleEnd: number,
+      ): number;
+      REANCHOR_QUIET_MS: number;
+    };
+    expect(REANCHOR_QUIET_MS).toBeGreaterThan(0);
+    expect(REANCHOR_QUIET_MS).toBeLessThanOrEqual(500);
+    // a card swap long after the page's snapshot: just the quiet wait
+    expect(reanchorDelay(10_000, 1_000, 1_500)).toBe(REANCHOR_QUIET_MS);
+    expect(reanchorDelay(10_000, null, 1_500)).toBe(REANCHOR_QUIET_MS);
+    // a new page 100 ms ago: until its last settle pass (1.5 s after it)
+    expect(reanchorDelay(10_100, 10_000, 1_500)).toBe(1_400);
+  });
+
+  test("pointerAbsent: his node anchor not drawn on their screen — the stage says so; drawn, a fraction, the off marker or nothing held — not", () => {
+    expect(pa2().pointerAbsent(held({ a, load: "L1" }), false)).toBe(true);
+    expect(pa2().pointerAbsent(held({ a, load: "L1" }), true)).toBe(false);
+    expect(
+      pa2().pointerAbsent(held({ a: { vx: 0.5, vy: 0.5 }, load: "L1" }), false),
+    ).toBe(false);
+    expect(
+      pa2().pointerAbsent(
+        held({ a: { vx: 0, vy: 0.5, o: 1 }, load: "L1" }),
+        false,
+      ),
+    ).toBe(false);
+    expect(pa2().pointerAbsent(held({}), false)).toBe(false);
+  });
+});
+
+describe("REQ-538 the stage (REQ-451 AMENDMENT, cycle 4 M1): a dead anchor is looked up again once settled; the stage tells him when his arrow is not on their screen", () => {
+  const stage = read("front-end/islands/DemoStage.tsx");
+  const fn = (name: string) => {
+    const at = stage.indexOf(`const ${name} = `);
+    expect([name, at > -1]).toEqual([name, true]);
+    return stage.slice(at, stage.indexOf("\n  };\n", at));
+  };
+
+  test("replace(): lookAgain is told whether his anchor is still drawn there (presenterOnStage), settled or not", () => {
+    const replace = fn("replace");
+    expect(replace).toMatch(
+      /const alive = [^\n]*presenterOnStage\([\s\S]{0,300}lookAgain\(held, \{[\s\S]{0,200}alive,?\s*\}\)\s*\)\s*\{\s*if \(held\.a\?\.n\) reanchorSoon\(\);/,
+    );
+    expect(replace).toMatch(/setAbsent\(pointerAbsent\(held, alive\)\)/);
+    expect(fn("hold")).toMatch(/setAbsent\(false\)/);
+  });
+
+  test("resendPointer: a new page that gets nothing from resendable looks his still mouse up again through lookAgain (once settled)", () => {
+    const resend = fn("resendPointer");
+    expect(resend).toMatch(/resendable\(/);
+    expect(resend).toMatch(/lookAgain\(/);
+    expect(resend).toMatch(/reanchorSoon\(\)/);
+  });
+
+  test("the look-up of a dead anchor waits for a still replay and its snapshot's settle passes (reanchorDelay), restarts on every layout pass, and checks again that it is still dead", () => {
+    const soon = fn("reanchorSoon");
+    expect(soon).toMatch(/clearTimeout\(reanchorTimerRef\.current\)/);
+    expect(soon).toMatch(
+      /reanchorDelay\(\s*Date\.now\(\),\s*snapAtRef\.current,\s*SETTLE_MS\[SETTLE_MS\.length - 1\],?\s*\)/,
+    );
+    const again = fn("reanchor");
+    expect(again).toMatch(/if \(!held\.a\?\.n\) return;/);
+    expect(again).toMatch(
+      /lookAgain\(held, \{[\s\S]{0,200}alive: !!presenterOnStage\(held\.a\),?\s*\}\)\s*\)\s*rest\.push\(null\)/,
+    );
+    expect(stage).toMatch(/snapAtRef\.current = Date\.now\(\);/);
+  });
+
+  test("the hint: while his arrow is absent there the stage says \"Your pointer isn't on {name}'s screen — move to show it\", in en and es", () => {
+    expect(stage).toMatch(/pointerAbsent\(/);
+    expect(stage).toMatch(/data-cy="demo-pointer-absent"/);
+    expect(stage).toContain('t("demoMode.pointerAbsent", { name })');
+    const en = JSON.parse(read("lang/en.json")) as Record<string, string>;
+    const es = JSON.parse(read("lang/es.json")) as Record<string, string>;
+    expect(en["demoMode.pointerAbsent"]).toBe(
+      "Your pointer isn't on {name}'s screen — move to show it",
+    );
+    expect(es["demoMode.pointerAbsent"]).toBe(
+      "Tu puntero no está en la pantalla de {name} — muévelo para mostrarlo",
+    );
   });
 });

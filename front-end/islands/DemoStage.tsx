@@ -133,6 +133,8 @@ import {
   anchorPoint,
   ghostAt,
   lookAgain,
+  pointerAbsent,
+  reanchorDelay,
   resendable,
   seedOn,
 } from "../../shared/demo-mode/presenter-anchor.ts";
@@ -259,6 +261,10 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
   const styledRef = useRef(false);
   /** REQ-370 — when the first snapshot of this demo was applied, and the fallback timer */
   const firstSnapAtRef = useRef<number | null>(null);
+  /** REQ-538 — when the latest snapshot landed (its settle passes run for SETTLE_MS after it) */
+  const snapAtRef = useRef<number | null>(null);
+  /** REQ-538 — the pending look-up of his still mouse for a dead anchor */
+  const reanchorTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const styleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   /** REQ-235 — this stage's End ended it */
   const endedHere = useRef(false);
@@ -324,6 +330,9 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
   const [ghost, setGhost] = useState<{ at: Pt; outside: boolean } | null>(
     null,
   );
+  /** REQ-538 (cycle 4 M1) — his arrow is not on their screen (what he pointed at went: a card
+   *  swapped, a new page) until he moves or the settled replay looks his still mouse up again */
+  const [absent, setAbsent] = useState(false);
   /** REQ-214 — how a colleague's pointer is driven, for the placing again */
   const commandRef = useRef<
     ((pid: string, cmd: Omit<PointerCmd, "seq">) => void) | null
@@ -378,6 +387,7 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
     sentAtRef.current = at;
     provisionalRef.current = provisional;
     setGhost(null);
+    setAbsent(false); // REQ-538 — made where he points now: drawn there
     return a;
   };
   /** REQ-451 — nothing pointed at (his mouse left the window, the demo went) */
@@ -387,6 +397,7 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
     sentAtRef.current = null;
     provisionalRef.current = false;
     setGhost(null);
+    setAbsent(false);
   };
   /** REQ-242 — a point of this screen as the customer's: the fraction of the frame and, when the
    *  replay has one there, the mirrored element under it and where in its box */
@@ -493,7 +504,46 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
   const resendPointer = () => {
     const a = resendable(heldNow(), loadRef.current);
     if (a) linkRef.current?.send({ k: "move", a, t: performance.now() });
+    // REQ-538 (cycle 4 M1) — a node anchor of another page is dead here: once this page's replay
+    // has settled, his still mouse is looked up again, once (else the next layout pass does it)
+    else if (
+      lookAgain(heldNow(), {
+        load: loadRef.current,
+        settled: !!replayerRef.current?.settled(),
+      })
+    ) reanchorSoon();
   };
+  /** REQ-538 (cycle 4 M1) — his anchor died (its node gone, another page): his still mouse is
+   *  looked up again once the replay's layout has been still for a moment and its snapshot's
+   *  settle passes are done (reanchorDelay) — each layout pass meanwhile starts the wait again —
+   *  and only if the anchor is still dead then (he has not moved) */
+  const reanchorSoon = () => {
+    if (reanchorTimerRef.current) clearTimeout(reanchorTimerRef.current);
+    reanchorTimerRef.current = setTimeout(
+      () => {
+        reanchorTimerRef.current = null;
+        reanchorRef.current();
+      },
+      reanchorDelay(
+        Date.now(),
+        snapAtRef.current,
+        SETTLE_MS[SETTLE_MS.length - 1],
+      ),
+    );
+  };
+  const reanchor = () => {
+    const held = heldNow();
+    if (!held.a?.n) return;
+    if (
+      lookAgain(held, {
+        load: loadRef.current,
+        settled: !!replayerRef.current?.settled(),
+        alive: !!presenterOnStage(held.a),
+      })
+    ) rest.push(null);
+  };
+  const reanchorRef = useRef(reanchor);
+  reanchorRef.current = reanchor;
   /** REQ-305 — the resting pointer on the node under it in the styled replay, sent when that is
    *  not what went last; REQ-451 — only for a fraction made before the replay could name a node
    *  (lookAgain), or his mouse beside a frame that moved — never because the page moved under it */
@@ -584,13 +634,25 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
     takeSeed();
     // REQ-451 (M1) — never the spot under his still mouse again (the customer's arrow stayed over
     // whatever their scroll or a new page put there): only a fraction made before this page's
-    // replay settled is looked up, once it has — and his mouse beside the frame, which moves
+    // replay settled is looked up, once it has — and his mouse beside the frame, which moves.
+    // REQ-538 (cycle 4 M1) — and an anchor that died (its node gone from the replay: a card
+    // swapped or flipped; another page shown), once the replay has settled: one look-up, which
+    // makes a live anchor again; never while its node is there. A dead node anchor waits for
+    // the replay to be still (reanchorSoon); a provisional fraction and his mouse beside the
+    // frame are looked up at once
+    const held = heldNow();
+    const alive = !!held.a && !!presenterOnStage(held.a);
+    setAbsent(pointerAbsent(held, alive));
     if (
-      lookAgain(heldNow(), {
+      lookAgain(held, {
         load: loadRef.current,
         settled: !!replayerRef.current?.settled(),
+        alive,
       })
-    ) rest.push(null);
+    ) {
+      if (held.a?.n) reanchorSoon();
+      else rest.push(null);
+    }
     showGhost();
   };
   const replaceRef = useRef(replace);
@@ -654,6 +716,7 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
     }
     if (f.t === "snap") {
       dirtyRef.current = false;
+      snapAtRef.current = Date.now(); // REQ-538 — its settle passes run from now
       if (newLoad) {
         // a new page: the customer's pointer was on the old one
         if (customerRef.current?.n?.l !== load) {
@@ -1031,6 +1094,10 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
       if (styleTimerRef.current) clearTimeout(styleTimerRef.current);
       styleTimerRef.current = null;
       firstSnapAtRef.current = null;
+      // REQ-538 — no look-up of his mouse for a demo that went
+      if (reanchorTimerRef.current) clearTimeout(reanchorTimerRef.current);
+      reanchorTimerRef.current = null;
+      snapAtRef.current = null;
       styledRef.current = false;
       setStyled(false);
       setPeerOnline(false);
@@ -1338,6 +1405,22 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
                 };pointer-events:none;white-space:nowrap;padding:4px 12px;border-radius:999px;border:1px solid rgba(255,255,255,.85);background:#1f3d1b;color:#fff;font:inherit;font-size:12.5px;font-weight:700;box-shadow:0 2px 10px rgba(0,0,0,.45)`}
               >
                 {t("demoMode.pointerOff", { name })}
+              </div>
+            )}
+            {/* REQ-538 (demo cycle 4 M1) — his arrow is not on their screen: said, until it is */}
+            {mirrored && absent && !off && (
+              <div
+                data-cy="demo-pointer-absent"
+                role="status"
+                style={`position:absolute;left:${
+                  fit.left + fit.width / 2
+                }px;top:${
+                  fit.top - bannerH
+                }px;transform:translate(-50%,-50%);z-index:${
+                  Z + 2
+                };pointer-events:none;white-space:nowrap;padding:4px 12px;border-radius:999px;border:1px solid rgba(255,255,255,.85);background:#3d2e1b;color:#fff;font:inherit;font-size:12.5px;font-weight:700;box-shadow:0 2px 10px rgba(0,0,0,.45)`}
+              >
+                {t("demoMode.pointerAbsent", { name })}
               </div>
             )}
           </>

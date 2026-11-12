@@ -3918,6 +3918,7 @@
   "demoMode.connectingTo": "Conectando con la pantalla de {name}…",
   "demoMode.pointerOff": "Tu puntero está fuera de la pantalla de {name}",
   "demoMode.pointerGhost": "Tu puntero en la pantalla de {name}",
+  "demoMode.pointerAbsent": "Tu puntero no está en la pantalla de {name} — muévelo para mostrarlo",
   "demoMode.loadingNext": "Cargando su siguiente página…",
   "demoMode.catchingUp": "Poniéndose al día…",
   "demoMode.behind": "{n} s de retraso",
