@@ -91,6 +91,7 @@ import {
 import {
   clampRect,
   CONTROL_SELECTOR,
+  coversView,
   pickPillSlot,
   PILL_COMPACT_MAX_W,
   PILL_MARGIN,
@@ -120,14 +121,23 @@ const here = () => globalThis.location.pathname + globalThis.location.search;
 /** REQ-228 — how often the pill re-checks what is under it (the page changes under a fixed box) */
 const PILL_CHECK_MS = 700;
 
-/** REQ-228 — how many distinct page controls lie under a box (the demo's own chrome not counted) */
+/**
+ * REQ-228 — how many distinct page controls lie under a box (the demo's own chrome not counted).
+ * REQ-300 — an open dialog's backdrop (a fixed box over the whole view) under a point counts too:
+ * every slot over it is equally blocked, so the pill keeps its place while the dialog is up.
+ */
 function controlsUnder(r: Rect): number {
   const found = new Set<Element>();
+  const view = { w: globalThis.innerWidth, h: globalThis.innerHeight };
   for (const { x, y } of samplePoints(r)) {
     const top = document.elementsFromPoint(x, y)
       .find((el) => !el.closest("[data-demo-overlay]"));
     const ctl = top?.closest(CONTROL_SELECTOR);
     if (ctl) found.add(ctl);
+    else if (
+      top && top !== document.documentElement && top !== document.body &&
+      coversView(top.getBoundingClientRect(), view)
+    ) found.add(top);
   }
   return found.size;
 }
@@ -533,6 +543,10 @@ export default function DemoModeOverlay() {
     const place = () => {
       const el = pillRef.current;
       if (!el || typeof document.elementsFromPoint !== "function") return;
+      // REQ-300 — End's question is up: the pill's box is frozen, so the Yes a hand is reaching
+      // for stays where it was seen (the wider question used to re-place the pill 150 ms later
+      // and the click landed on the page beneath — a dialog's backdrop closed the dialog)
+      if (el.querySelector('[data-cy="demo-end-ask"]')) return;
       setCompact(narrow());
       const next = placePill(el, posRef.current);
       const cur = posRef.current;

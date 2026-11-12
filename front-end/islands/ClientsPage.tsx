@@ -8,7 +8,10 @@
  */
 import { useEffect, useState } from "preact/hooks";
 import { formatPhoneInput } from "../../shared/quote-flow/format-helpers.ts";
-import { customerContactError } from "../../shared/quote-flow/customer-contact.ts"; // REQ-278
+import {
+  customerContactError,
+  customerDraftDirty,
+} from "../../shared/quote-flow/customer-contact.ts"; // REQ-278, REQ-300
 import { ApiError } from "../lib/api.ts";
 import {
   clientsClient,
@@ -258,7 +261,16 @@ export default function ClientsPage({ lang: _lang }: { lang?: "en" | "es" }) {
 
       {addOpen && (
         <div
-          onClick={() => !adding && setAddOpen(false)}
+          data-cy="add-client-backdrop"
+          // REQ-300 (demo M20): a click beside the form closes it only while nothing is typed;
+          // a dirty draft stays up (Cancel / Escape still close it, and the draft is kept)
+          onClick={() =>
+            !adding && !customerDraftDirty({
+              name: addName,
+              businessName: addBusiness,
+              phoneNumber: addPhone,
+              email: addEmail,
+            }) && setAddOpen(false)}
           style="position:fixed;inset:0;background:rgba(20,40,45,0.45);display:flex;align-items:center;justify-content:center;z-index:1000;padding:20px"
         >
           <form

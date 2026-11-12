@@ -1,9 +1,10 @@
 /**
  * REQ-235 — End, which asks first, in place (no modal): the first click turns End into "End for
- * everyone?" with "Yes, end it" and "Keep going"; Keep going, Escape, or END_ASK_MS without an
- * answer puts End back; Yes counts after END_ARM_MS (a double click on End never ends a demo) and
- * calls `onEnd` at once, so the pill says so before the server answers (REQ-179). Drawn in the
- * customer's pill and on every stage.
+ * everyone?" with "Yes, end it" and "Keep going"; Keep going, Escape, or a click outside the
+ * question puts End back (REQ-300: never a clock — the 4 s self-cancel beat the answer); Yes
+ * counts after END_ARM_MS (a double click on End never ends a demo) and calls `onEnd` at once, so
+ * the pill says so before the server answers (REQ-179). Drawn in the customer's pill and on every
+ * stage.
  */
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import { t } from "../../lib/i18n.ts";
@@ -29,8 +30,22 @@ export default function EndDemo(
   }, [disabled]);
   // the keyboard lands on the safe answer
   const keepRef = useRef<HTMLButtonElement | null>(null);
+  const askRef = useRef<HTMLSpanElement | null>(null);
   useEffect(() => {
     if (s.asking) keepRef.current?.focus();
+  }, [s.asking]);
+  // REQ-300 — a click anywhere outside the question is Keep going (the pill's own box is frozen
+  // while asking, so a click aimed at Yes lands on Yes; a click elsewhere means "not that")
+  useEffect(() => {
+    if (!s.asking) return;
+    const onDown = (e: PointerEvent) => {
+      const target = e.target as Node | null;
+      if (target && askRef.current?.contains(target)) return;
+      ask.cancel();
+    };
+    document.addEventListener("pointerdown", onDown, { capture: true });
+    return () =>
+      document.removeEventListener("pointerdown", onDown, { capture: true });
   }, [s.asking]);
 
   if (!s.asking) {
@@ -50,6 +65,7 @@ export default function EndDemo(
   }
   return (
     <span
+      ref={askRef}
       data-cy="demo-end-ask"
       role="group"
       onKeyDown={(e) => {

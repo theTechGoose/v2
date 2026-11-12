@@ -2,15 +2,19 @@
  * REQ-235 — the end of a demo is said on both sides and stays; End asks first (the 20-agent
  * demo's issue demo-lifecycle-m2: "No lasting 'demo ended' message on either side, and End has
  * no confirmation"). Who ended it rides the wire; each side says it in its own words; a stage's
- * notice rides the hop to /admin and leaves the address once read; End's question has a clock
- * (armed after a beat, gone after 4 s); both dictionaries carry the lines; the islands are wired.
+ * notice rides the hop to /admin and leaves the address once read; End's question arms after a
+ * beat; both dictionaries carry the lines; the islands are wired.
+ *
+ * REQ-300 (demo cycle 1, M4 + M20) — the question no longer cancels itself: it stays up until
+ * answered, Escape, or a click outside the pill; the pill's box is frozen while it is up; an open
+ * dialog's backdrop blocks every slot; the New customer dialog keeps a dirty draft on a backdrop
+ * click.
  */
 import * as fs from "fs";
 import * as path from "path";
 import {
   ADMIN_PATH,
   END_ARM_MS,
-  END_ASK_MS,
   type EndAsk,
   endConfirm,
   endedHref,
@@ -226,7 +230,7 @@ describe("REQ-235 End asks first", () => {
     h.ask.confirm();
     expect(h.ended()).toBe(1);
     // nothing left ticking: the question never comes back on its own
-    h.tick(END_ASK_MS * 2);
+    h.tick(END_ARM_MS * 100);
     expect(h.last()).toEqual({ asking: false, armed: false });
     expect(h.live()).toBe(0);
   });
@@ -242,27 +246,71 @@ describe("REQ-235 End asks first", () => {
     expect(h.live()).toBe(0);
   });
 
-  test("left unanswered, the question goes away after END_ASK_MS and nothing ended", () => {
+  // REQ-300 (demo cycle 1, M4): the agents and a reading human took longer than the 4 s the
+  // question used to wait — Yes then found the question gone and End did nothing
+  test("REQ-300 left unanswered, the question stays up (no clock) until Keep going", () => {
     const h = harness();
     h.ask.ask();
-    h.tick(END_ASK_MS - 1);
+    h.tick(END_ARM_MS * 100);
     expect(h.last()).toEqual({ asking: true, armed: true });
-    h.tick(END_ASK_MS);
-    expect(h.last()).toEqual({ asking: false, armed: false });
     expect(h.ended()).toBe(0);
-    h.ask.confirm();
-    expect(h.ended()).toBe(0);
-    // asked again: a fresh question with a fresh clock
-    h.ask.ask();
-    expect(h.last()).toEqual({ asking: true, armed: false });
-    h.ask.dispose();
+    // only the arm was ever ticking
     expect(h.live()).toBe(0);
+    h.ask.confirm();
+    expect(h.ended()).toBe(1);
+    expect(h.last()).toEqual({ asking: false, armed: false });
   });
 
-  test("4 s to answer; the arm is shorter than a deliberate click, longer than a double click's second", () => {
-    expect(END_ASK_MS).toBe(4_000);
+  test("REQ-300 no self-cancel is exported; the arm is shorter than a deliberate click, longer than a double click's second", () => {
+    const mod = require("../../shared/demo-mode/ended.ts") as Record<
+      string,
+      unknown
+    >;
+    expect(mod.END_ASK_MS).toBeUndefined();
     expect(END_ARM_MS).toBeGreaterThanOrEqual(300);
     expect(END_ARM_MS).toBeLessThanOrEqual(600);
+  });
+});
+
+describe("REQ-300 the question stays put and the pill under it stays still", () => {
+  test("End's question cancels on a click outside the pill, not on a clock", () => {
+    const comp = read("front-end/components/demo-mode/EndDemo.tsx");
+    expect(comp).not.toMatch(/END_ASK_MS/);
+    // a pointerdown anywhere outside the group puts End back
+    expect(comp).toMatch(
+      /document\.addEventListener\(\s*"pointerdown"/,
+    );
+    expect(comp).toMatch(/data-cy="demo-end-ask"/);
+  });
+
+  test("the overlay never re-places the pill while the question is up", () => {
+    const island = read("front-end/islands/DemoModeOverlay.tsx");
+    // place() bails when the ask group is drawn in the pill
+    expect(island).toMatch(
+      /querySelector\(\s*['"]\[data-cy=["']?demo-end-ask["']?\]['"]\s*\)/,
+    );
+  });
+
+  test("an open dialog's backdrop under a slot counts as blocking", () => {
+    const { coversView } = require("../../shared/demo-mode/pill.ts") as {
+      coversView: (
+        r: { left: number; top: number; width: number; height: number },
+        view: { w: number; h: number },
+      ) => boolean;
+    };
+    const view = { w: 1280, h: 800 };
+    expect(coversView({ left: 0, top: 0, width: 1280, height: 800 }, view))
+      .toBe(true);
+    // a hair of rounding still covers
+    expect(coversView({ left: 0.4, top: 0, width: 1279.5, height: 800 }, view))
+      .toBe(true);
+    // a card, a sidebar, a header: not a backdrop
+    expect(coversView({ left: 0, top: 0, width: 1280, height: 64 }, view))
+      .toBe(false);
+    expect(coversView({ left: 0, top: 0, width: 280, height: 800 }, view))
+      .toBe(false);
+    const island = read("front-end/islands/DemoModeOverlay.tsx");
+    expect(island).toMatch(/coversView\(/);
   });
 });
 

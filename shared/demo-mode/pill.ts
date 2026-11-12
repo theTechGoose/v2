@@ -100,6 +100,17 @@ export function pickPillSlot(
   return best ?? slots[0];
 }
 
+/**
+ * REQ-300 — a box that covers the whole view is a dialog's backdrop (or a sheet): a pill over it
+ * is in the way of the dialog, and a slot over it is no clearer than the current one — so the
+ * pill stays put while a dialog is open instead of hopping onto the backdrop.
+ */
+export function coversView(r: Rect, view: Size, tolerance = 1): boolean {
+  return r.left <= tolerance && r.top <= tolerance &&
+    r.left + r.width >= view.w - tolerance &&
+    r.top + r.height >= view.h - tolerance;
+}
+
 /** keep a remembered box on the screen after a resize */
 export function clampRect(r: Rect, view: Size, margin = PILL_MARGIN): Rect {
   const maxLeft = Math.max(margin, view.w - margin - r.width);

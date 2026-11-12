@@ -55,3 +55,19 @@ export function customerContactError(
   if (email && !isValidCustomerEmail(email)) return "customer.invalidEmail";
   return null;
 }
+
+/**
+ * REQ-300 (demo cycle 1, M20) — a New customer draft with anything typed in it: the dialog's
+ * backdrop click closes the dialog only while this is false, so a stray click (the demo pill
+ * moving under a hand, a mis-aimed tap) never throws typed text away.
+ */
+export function customerDraftDirty(d: {
+  name: string;
+  businessName: string;
+  phoneNumber: string;
+  email: string;
+}): boolean {
+  return [d.name, d.businessName, d.phoneNumber, d.email].some((v) =>
+    v.trim() !== ""
+  );
+}

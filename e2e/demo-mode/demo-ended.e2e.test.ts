@@ -4,7 +4,8 @@
  * /admin and lands on the stage; Ana's app joins on its own; both connect.
  *
  *   1. Ana clicks End: it asks "End for everyone?" and nothing has ended; Keep going puts End
- *      back; asked and left alone, End comes back by itself after 4 s — the demo still on.
+ *      back; asked and left alone the question STAYS (REQ-300: no 4 s self-cancel) and the pill
+ *      does not move; a click outside the pill puts End back — the demo still on.
  *   2. Ana ends it (End, Yes): her pill turns at once — before the server answers — into "You
  *      ended the demo"; Hans's stage lands on /admin, which says "Ana Torres ended the demo" with
  *      the address bare; seconds later both are still there; dismissed, a reload does not repeat it.
@@ -67,7 +68,7 @@ async function useCookie(ctx: any, baseUrl: string, cookie: string) {
   ]));
 }
 
-Deno.test("REQ-235: End asks first — Keep going, or 4 s, puts it back and the demo goes on; the customer's End says 'You ended the demo' at once on her screen and 'Ana Torres ended the demo' on /admin, both lasting; the staff's End says 'You ended the demo' on /admin and 'Hans ended the demo' on hers until she dismisses it", (t) =>
+Deno.test("REQ-235 / REQ-300: End asks first — Keep going, or a click outside, puts it back (never a clock) and the demo goes on; the customer's End says 'You ended the demo' at once on her screen and 'Ana Torres ended the demo' on /admin, both lasting; the staff's End says 'You ended the demo' on /admin and 'Hans ended the demo' on hers until she dismisses it", (t) =>
   story(t, async ({ page, expect, http, baseUrl, folder }) => {
     await page.setViewportSize({ width: 1280, height: 800 });
     const userPhone = `+1512${digits()}`;
@@ -145,21 +146,37 @@ Deno.test("REQ-235: End asks first — Keep going, or 4 s, puts it back and the 
         timeout: 2_000,
       });
       expect(await live(), "Keep going: the demo is still on");
-      // asked and left alone: End comes back by itself after 4 s
+      // REQ-300 — asked and left alone: the question stays, and the pill stays where it was
       await userPage.locator("[data-cy='demo-end']").click();
-      const asked = Date.now();
       await userPage.locator("[data-cy='demo-end-ask']").waitFor({
         timeout: 2_000,
       });
-      await userPage.locator("[data-cy='demo-end']").waitFor({
-        timeout: 8_000,
-      });
-      const gone = Date.now() - asked;
-      expect(
-        gone >= 3_500 && gone <= 6_500,
-        `the unanswered question went away on its own after ${gone} ms (4 s)`,
+      const pillBox = async () =>
+        await userPage.locator("[data-cy='demo-end-ask']").evaluate((el) => {
+          const r = el.closest("[data-demo-overlay]")!.firstElementChild!
+            .getBoundingClientRect();
+          return { left: Math.round(r.left), top: Math.round(r.top) };
+        });
+      const before = await pillBox();
+      await userPage.waitForTimeout(6_500);
+      expect.eq(
+        await userPage.locator("[data-cy='demo-end-ask']").count(),
+        1,
+        "left alone 6.5 s, the question is still up (no 4 s self-cancel)",
+      );
+      const after = await pillBox();
+      expect.eq(
+        `${after.left},${after.top}`,
+        `${before.left},${before.top}`,
+        "the pill did not move while the question was up",
       );
       expect(await live(), "unanswered: the demo is still on");
+      // a click outside the pill is Keep going
+      await userPage.mouse.click(5, 5);
+      await userPage.locator("[data-cy='demo-end']").waitFor({
+        timeout: 2_000,
+      });
+      expect(await live(), "clicked outside: the demo is still on");
       await page.locator("[data-cy='demo-status']").filter({
         hasText: /direct|relay/,
       }).waitFor({ timeout: 5_000 });
