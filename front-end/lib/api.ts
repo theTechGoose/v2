@@ -138,11 +138,56 @@ async function request<T>(
   return parsed as T;
 }
 
+/**
+ * REQ-670 (demo-loop cycle 5, p7): a POST whose answer is read as it arrives
+ * (text/event-stream) — the caller reads `res.body`. A non-2xx answer throws
+ * the same ApiError `request` does, with its body parsed.
+ */
+async function postStream(
+  path: string,
+  body: unknown,
+  opts: ApiOptions,
+): Promise<Response> {
+  const headers: Record<string, string> = {
+    "accept": "text/event-stream",
+    "content-type": "application/json",
+  };
+  if (opts.sessionId) headers["x-session-id"] = opts.sessionId;
+  const res = await fetch(buildUrl(path, opts), {
+    method: "POST",
+    headers,
+    body: JSON.stringify(body),
+    credentials: "include",
+    signal: opts.signal,
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    let parsed: unknown = text;
+    if (text.length > 0) {
+      try {
+        parsed = JSON.parse(text);
+      } catch { /* keep raw */ }
+    }
+    throw new ApiError(
+      res.status,
+      parsed,
+      `POST ${path} failed: ${res.status}`,
+    );
+  }
+  return res;
+}
+
 export const api = {
   get: <T>(path: string, opts: ApiOptions = {}): Promise<T> =>
     request<T>("GET", path, undefined, opts),
   post: <T>(path: string, body?: unknown, opts: ApiOptions = {}): Promise<T> =>
     request<T>("POST", path, body, opts),
+  /** REQ-670: a POST answered as a stream — see postStream. */
+  postStream: (
+    path: string,
+    body: unknown,
+    opts: ApiOptions = {},
+  ): Promise<Response> => postStream(path, body, opts),
   put: <T>(path: string, body?: unknown, opts: ApiOptions = {}): Promise<T> =>
     request<T>("PUT", path, body, opts),
   delete: <T>(path: string, opts: ApiOptions = {}): Promise<T> =>

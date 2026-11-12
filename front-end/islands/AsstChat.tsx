@@ -24,6 +24,14 @@ import {
   type Quote as AsstQuote,
 } from "../clients/assistant.ts";
 import { filesClient } from "../clients/files.ts";
+// REQ-670 (demo-loop cycle 5, p7): the reply as it is written.
+import {
+  type ChatStreamEvent,
+  NO_REPLY_YET,
+  pendingLabelKey,
+  pendingReply,
+  type PendingReply,
+} from "../lib/chat-stream.ts";
 import {
   actionCardNumber,
   numberedLabel,
@@ -1447,6 +1455,9 @@ export default function AsstChat({
    *  "Setting up…" over the ORIGINAL message while the correction was being
    *  rewritten. */
   const [stepSending, setStepSending] = useState(false);
+  /** REQ-670 (demo-loop cycle 5, p7): what the pending reply bubble shows —
+   *  the reply so far as the server streams it, else what the turn is doing. */
+  const [liveReply, setLiveReply] = useState<PendingReply>(NO_REPLY_YET);
   // REQ-399 (demo M16): the synchronous "a Send is in flight" lock — state
   // lags a render, so a double-click's second click read `sending` false.
   const sendInFlight = useRef(false);
@@ -2387,6 +2398,9 @@ export default function AsstChat({
    * provided `submit` to talk to the backend, then either replaces the
    * stub with the authoritative messages from the server or rolls back
    * on error. `submit` returns the chat response shape.
+   *
+   * REQ-670 (demo-loop cycle 5, p7): `submit` gets `onEvent` — the turn's
+   * stream — and the pending bubble shows the reply as it is written.
    */
   async function submitTurn(
     optimistic: {
@@ -2394,7 +2408,7 @@ export default function AsstChat({
       kind: "text" | "voice" | "image";
       content: string;
     },
-    submit: () => Promise<{
+    submit: (onEvent: (event: ChatStreamEvent) => void) => Promise<{
       conversation?: { id: string };
       newMessages?: Message[];
       message?: Message;
@@ -2426,7 +2440,10 @@ export default function AsstChat({
       // P-10: bound the turn client-side too — a hung backend/LLM call used
       // to spin forever with no error and no way out. After ~30s the send
       // rejects with a typed TimeoutError and the error strip offers Retry.
-      const res = await withChatTimeout(submit());
+      setLiveReply(NO_REPLY_YET);
+      const res = await withChatTimeout(
+        submit((event) => setLiveReply((s) => pendingReply(s, event))),
+      );
       const newConvoId = res.conversation?.id ?? res.conversationId;
       if (newConvoId && newConvoId !== convoId) {
         setConvoId(newConvoId);
@@ -2561,6 +2578,7 @@ export default function AsstChat({
       setMessages((m) => m.filter((msg) => msg.id !== tmpId));
       onError?.();
     } finally {
+      setLiveReply(NO_REPLY_YET);
       setBusy(false);
     }
   }
@@ -2596,12 +2614,12 @@ export default function AsstChat({
     pushHistory();
     await submitTurn(
       { role: "user", kind: "text", content: trimmed },
-      () =>
-        assistantClient.chat({
+      (onEvent) =>
+        assistantClient.chatStream({
           conversationId: convoId,
           content: trimmed,
           kind: "text",
-        }) as Promise<{
+        }, onEvent) as Promise<{
           conversation?: { id: string };
           newMessages?: Message[];
           message?: Message;
@@ -2642,19 +2660,19 @@ export default function AsstChat({
         kind: "voice",
         content: optimisticContent,
       },
-      async () => {
+      async (onEvent) => {
         const file = await filesClient.uploadBlob(
           blob,
           `voice-${Date.now()}.webm`,
         );
-        return (await assistantClient.chat({
+        return (await assistantClient.chatStream({
           conversationId: convoId,
           kind: "voice",
           payload: {
             fileId: file.id,
             ...(liveTranscript ? { transcript: liveTranscript } : {}),
           },
-        })) as {
+        }, onEvent)) as {
           conversation?: { id: string };
           newMessages?: Message[];
           message?: Message;
@@ -2700,13 +2718,13 @@ export default function AsstChat({
     try {
       await submitTurn(
         { role: "user", kind: "text", content: said },
-        async () => {
-          const res = await assistantClient.chat({
+        async (onEvent) => {
+          const res = await assistantClient.chatStream({
             conversationId: convoId,
             content: said,
             kind: "text",
             step: hint,
-          }) as {
+          }, onEvent) as {
             conversation?: { id: string };
             newMessages?: Message[];
             message?: Message;
@@ -9889,15 +9907,36 @@ export default function AsstChat({
               class="msg"
               aria-live="polite"
               aria-label={tFor(lang, "asstChat.bossieThinking")}
+              aria-busy={liveReply.text ? "true" : undefined}
             >
               <div class="msg__avatar">
                 <img src="/logo-monster.png" alt="" />
               </div>
-              <div class="msg__bubble msg__bubble--typing">
-                <span class="typing-dot" />
-                <span class="typing-dot" />
-                <span class="typing-dot" />
-              </div>
+              {
+                /* REQ-670 (demo-loop cycle 5, p7): the reply as the server
+                streams it; until then the dots say in words what the turn is
+                doing ("Assistant is thinking…", "Pricing the job…"). */
+              }
+              {liveReply.text
+                ? (
+                  <div
+                    class="msg__bubble msg__bubble--streaming"
+                    data-cy="msg-streaming"
+                    style="white-space:pre-wrap"
+                  >
+                    {liveReply.text}
+                  </div>
+                )
+                : (
+                  <div class="msg__bubble msg__bubble--typing">
+                    <span class="typing-dot" />
+                    <span class="typing-dot" />
+                    <span class="typing-dot" />
+                    <span class="typing-label" data-cy="msg-typing-label">
+                      {tFor(lang, pendingLabelKey(liveReply.stage))}
+                    </span>
+                  </div>
+                )}
             </div>
           )
           : null}

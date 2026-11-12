@@ -66,6 +66,24 @@ export interface LLMRequest {
    * deposit invoice" became a re-lock of the signed quote.
    */
   tools?: readonly LLMToolName[];
+  /**
+   * REQ-670 (demo-loop cycle 5, p7): stream the reply into this sink as the
+   * model writes it — the chat's SSE turn. The response is the same whole one
+   * either way. Ignored for a JSON-mode call (a one-shot structured answer).
+   */
+  stream?: LLMStreamSink;
+}
+
+/**
+ * REQ-670 (demo-loop cycle 5, p7 — "Assistant replies never stream"): where a
+ * streamed reply goes while the model writes it. `text` gets each piece of the
+ * prose, in order, until the model starts a tool call; then `tool` is told
+ * once, with the tool's name, and no more prose is passed on — a tool turn's
+ * reply is the coordinator's, said from what the tool did.
+ */
+export interface LLMStreamSink {
+  text(delta: string): void;
+  tool?(name: LLMToolName): void;
 }
 
 /**

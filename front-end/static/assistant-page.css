@@ -4922,6 +4922,13 @@ body {
 .typing-dot:nth-child(3) {
   animation-delay: 0.30s;
 }
+/* REQ-670 (demo-loop cycle 5, p7): the typing bubble says in words what the
+   turn is doing — "Assistant is thinking…", "Pricing the job…". */
+.typing-label {
+  margin-left: 4px;
+  font-size: 13px;
+  color: var(--fg-muted);
+}
 @keyframes typing-bounce {
   0%, 60%, 100% {
     transform: translateY(0);
