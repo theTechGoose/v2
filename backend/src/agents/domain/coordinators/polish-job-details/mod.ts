@@ -7,6 +7,7 @@ import { t } from "@core/i18n/mod.ts";
 import { summarizeJobName } from "#quote-flow/job-name.ts";
 import { clampSummary } from "#quote-flow/summary-clamp.ts";
 import { scopeBulletsFromRaw } from "#quote-flow/scope-from-raw.ts";
+import { withoutMoneySentences } from "#quote-flow/private-cost.ts";
 
 export interface PolishJobDetailsInput {
   userId: string;
@@ -92,10 +93,12 @@ export class PolishJobDetails {
     }
 
     const parsed = tryParseJson(text);
-    if (
-      parsed && typeof parsed.summary === "string" &&
-      typeof parsed.description === "string"
-    ) {
+    // REQ-261 (M26): the paragraph is customer-facing — a sentence naming a
+    // money amount (a sub's fee, a material cost) is a private cost; drop it.
+    const description = typeof parsed?.description === "string"
+      ? withoutMoneySentences(parsed.description.trim())
+      : "";
+    if (parsed && typeof parsed.summary === "string" && description) {
       const summary = clampSummary(parsed.summary);
       const jobName =
         typeof parsed.jobName === "string" && parsed.jobName.trim()
@@ -104,7 +107,7 @@ export class PolishJobDetails {
       return {
         summary,
         jobName,
-        description: parsed.description.trim(),
+        description,
         degraded: false,
       };
     }

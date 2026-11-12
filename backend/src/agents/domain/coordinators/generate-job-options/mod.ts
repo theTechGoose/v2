@@ -8,6 +8,7 @@ import { disambiguateTitle, versionTitle } from "#quote-flow/version-titles.ts";
 import { summarizeJobName } from "#quote-flow/job-name.ts";
 import { clampSummary } from "#quote-flow/summary-clamp.ts";
 import { scopeBulletsFromRaw } from "#quote-flow/scope-from-raw.ts";
+import { mentionsMoney } from "#quote-flow/private-cost.ts";
 
 export interface GenerateJobOptionsInput {
   userId: string;
@@ -172,6 +173,9 @@ function normalizeOneLang(o: unknown, lang: Lang): JobOptionLang | null {
     ? obj.bullets
       .map((b) => realText(b))
       .filter((b): b is string => !!b)
+      // REQ-261 (M26): a bullet naming a money amount is a private cost
+      // ("Plumber Ray charges $2,800") — never customer job details.
+      .filter((b) => !mentionsMoney(b))
       .map((b) => b.replace(/\s+/g, " ").replace(/[.;]+$/, ""))
       .slice(0, 4)
     : [];

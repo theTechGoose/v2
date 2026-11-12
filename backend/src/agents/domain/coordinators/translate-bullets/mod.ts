@@ -3,6 +3,7 @@ import {
   LLM_CLIENT,
   type LLMClient,
 } from "@agents/domain/business/llm/base/mod.ts";
+import { mentionsMoney } from "#quote-flow/private-cost.ts";
 
 export interface TranslateBulletsInput {
   userId: string;
@@ -64,7 +65,13 @@ export class TranslateBullets {
       : [];
     // Length mismatch ⇒ the model dropped/merged lines; fall back to the
     // originals rather than risk misaligned bullets.
-    return out.length === texts.length ? { texts: out } : { texts };
+    if (out.length !== texts.length) return { texts };
+    // REQ-261 (M26): a translation that ADDS a money amount the source line
+    // did not have is the model pulling a private cost into customer copy.
+    const addsMoney = out.some((o, i) =>
+      mentionsMoney(o) && !mentionsMoney(texts[i])
+    );
+    return addsMoney ? { texts } : { texts: out };
   }
 }
 
