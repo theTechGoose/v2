@@ -1407,22 +1407,43 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
               );
             })()}
             {mirrored && pillBox && pillFace.tucked === true && (() => {
-              // REQ-545 — the pill tucked to its edge tab on their screen: a tab here too
+              // REQ-545 — the pill tucked to its edge tab on their screen: a tab here too.
+              // REQ-637 (demo-loop cycle 5, m5) — the labelled mini-pill: "● Demo" and its ×
               const ghost = pillGhost(pillBox, fit);
               if (!ghost) return null;
               const g = ghost.box;
+              const r = Math.max(3, g.height / 2);
               return (
                 <div
                   data-cy="demo-pill-ghost"
                   data-tucked=""
                   aria-hidden="true"
                   title={t("demoMode.pillGhost", { name })}
-                  style={`position:fixed;left:${g.left}px;top:${g.top}px;width:${g.width}px;height:${g.height}px;z-index:${Z};box-sizing:border-box;border-radius:0 ${
-                    Math.max(3, 10 * fit.s)
-                  }px ${
-                    Math.max(3, 10 * fit.s)
-                  }px 0;background:rgba(31,61,27,.78);pointer-events:none`}
-                />
+                  style={`position:fixed;left:${g.left}px;top:${g.top}px;width:${g.width}px;height:${g.height}px;z-index:${Z};box-sizing:border-box;border-radius:0 ${r}px ${r}px 0;background:rgba(31,61,27,.78);color:#fff;pointer-events:none;display:flex;align-items:center;gap:${
+                    Math.max(2, 6 * fit.s)
+                  }px;padding:0 ${Math.max(2, 8 * fit.s)}px 0 ${
+                    Math.max(2, 10 * fit.s)
+                  }px;overflow:hidden;white-space:nowrap;font-family:${PILL_FONT};font-size:${
+                    Math.max(7, 12.5 * fit.s)
+                  }px;font-weight:700;line-height:1`}
+                >
+                  <span
+                    style={`flex:none;width:${
+                      Math.max(3, 8 * fit.s)
+                    }px;height:${
+                      Math.max(3, 8 * fit.s)
+                    }px;border-radius:50%;background:${
+                      pillFace.status === "live" ? "#7ee081" : "#f2c14e"
+                    }`}
+                  />
+                  <span
+                    data-cy="demo-pill-ghost-tab-label"
+                    style="flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis"
+                  >
+                    {t("demoMode.tabLabel")}
+                  </span>
+                  <span style="flex:none;opacity:.6">×</span>
+                </div>
               );
             })()}
             {mirrored && pillBox && pillFace.tucked !== true && (() => {

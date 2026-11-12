@@ -35,7 +35,7 @@ export function endDemoWords(t: DemoT) {
 }
 
 export default function EndDemo(
-  { onEnd, disabled = false, ownRow = false, onAsking, t }: {
+  { onEnd, disabled = false, ownRow = false, onAsking, t, askAtOnce = false }: {
     onEnd: () => void;
     disabled?: boolean;
     /** REQ-548 — the question takes a whole row of a wrapping host (the phone's compact pill) */
@@ -44,6 +44,9 @@ export default function EndDemo(
     onAsking?: (asking: boolean) => void;
     /** REQ-544 — the host's demo-chrome t (the viewer's language, never the page's) */
     t: DemoT;
+    /** REQ-637 (demo-loop cycle 5, m5) — shown already asking: the folded mini-pill's × was End's
+     *  first click (Yes still waits END_ARM_MS, so no tap ends a demo on its own) */
+    askAtOnce?: boolean;
   },
 ) {
   const words = endDemoWords(t);
@@ -64,6 +67,10 @@ export default function EndDemo(
       }),
     [],
   );
+  // REQ-637 — mounted out of the mini-pill's ×: the question is up from the first frame
+  useEffect(() => {
+    if (askAtOnce) ask.ask();
+  }, []);
   useEffect(() => () => {
     ask.dispose();
     // REQ-548 — gone (the demo ended): the host is no longer asked anything
