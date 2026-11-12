@@ -11,6 +11,9 @@
  *
  * REQ-372 (demo-loop cycle 2, m1 + m8) — the ghost is not an empty dashed box: it carries the
  * pill's status (in the presenter's words), and on the phone it stays inside the phone frame.
+ *
+ * REQ-540 (demo-loop cycle 4, m9) — the ghost says the whole pill: the "Demo mode" title, the
+ * line, the status and End (a disabled chip), word for word as on the customer's pill.
  */
 import { story, type StoryTools } from "#shots";
 
@@ -260,6 +263,50 @@ Deno.test("REQ-228 + REQ-291: the customer's demo pill covers no control of the 
           ? null
           : `ghost status "${said}"`;
       });
+      // REQ-540 (cycle 4, m9): the ghost says the WHOLE pill, word for word and in order —
+      // "Demo mode · Hans … is guiding you · Connected · End demo", End as a disabled chip
+      await until(
+        "the ghost carries the whole pill's copy (REQ-540)",
+        async () => {
+          const g = await page.evaluate(() => {
+            const q = (s: string) =>
+              document.querySelector(s)?.textContent?.trim() ?? "";
+            return {
+              all: (document.querySelector("[data-cy='demo-pill-ghost']")
+                ?.textContent ?? "").replace(/\s+/g, " ").trim(),
+              title: q("[data-cy='demo-pill-ghost-title']"),
+              end: q("[data-cy='demo-pill-ghost-end']"),
+              endDisabled: document.querySelector(
+                "[data-cy='demo-pill-ghost-end']",
+              )?.getAttribute("aria-disabled") === "true",
+            };
+          });
+          const pill = (await userPage.locator("[data-cy='demo-pill']")
+            .innerText()).replace(/\s+/g, " ").trim();
+          const want = [
+            "Demo mode",
+            "Hans from DocuMonster is guiding you",
+            "Connected",
+            "End demo",
+          ];
+          for (const w of want) {
+            if (
+              !pill.includes(w)
+            ) return `the pill itself lacks "${w}": "${pill}"`;
+          }
+          let at = 0;
+          for (const w of want) {
+            const i = g.all.indexOf(w, at);
+            if (i < 0) return `the ghost lacks "${w}" (in order): "${g.all}"`;
+            at = i + w.length;
+          }
+          if (g.title !== "Demo mode") return `ghost title "${g.title}"`;
+          if (g.end !== "End demo" || !g.endDisabled) {
+            return `ghost End "${g.end}" (disabled: ${g.endDisabled})`;
+          }
+          return null;
+        },
+      );
 
       // 2. phone size: still one line, still covering nothing
       await userPage.setViewportSize({ width: 390, height: 844 });

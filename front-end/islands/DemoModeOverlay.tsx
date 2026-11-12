@@ -974,6 +974,8 @@ export default function DemoModeOverlay() {
           clipped,
           label: f.label,
           guide: f.guide,
+          title: f.title,
+          end: f.end,
         }
         : {};
       const faceKey = JSON.stringify(face);
@@ -1099,6 +1101,7 @@ export default function DemoModeOverlay() {
       status: "ended",
       text: t(said.key, said.vars),
       label: t("demoMode.ended"),
+      title: t("demoMode.title"),
     };
     return (
       <div data-demo-overlay ref={fenceClicks}>
@@ -1235,6 +1238,10 @@ export default function DemoModeOverlay() {
     text: line,
     label: statusLabel,
     guide: showGuide ? copy.shortName : undefined,
+    // REQ-540 (cycle 4, m9) — the title and End in this pill's own words, so the stage's ghost
+    // draws the whole pill (it hides the title on the compact pill, as this pill does)
+    title: t("demoMode.title"),
+    end: t("demoMode.end"),
   };
 
   async function end() {
