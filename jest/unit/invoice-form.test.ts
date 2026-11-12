@@ -287,6 +287,7 @@ describe("REQ-205/206 prefill from the quote's ledger", () => {
       .toEqual({
         quoteId: "q1",
         quoteNumber: "Q-001",
+        quoteAccepted: true,
         customerId: "c1",
         jobName: "Roof",
         amountCents: 60000,

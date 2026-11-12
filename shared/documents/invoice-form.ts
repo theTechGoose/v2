@@ -274,7 +274,8 @@ export function buildInvoiceBody(
 /* ---------------- prefill from the quote's ledger (REQ-205) ---------------- */
 
 export interface LedgerView {
-  quote: { id: string; number: string };
+  /** `accepted`: the customer signed (REQ-249); absent reads as not accepted */
+  quote: { id: string; number: string; accepted?: boolean };
   agreementTotalCents: number;
   invoicedCents: number;
   remainingToInvoiceCents: number;
@@ -283,6 +284,8 @@ export interface LedgerView {
 export interface LedgerPrefill {
   quoteId: string;
   quoteNumber: string;
+  /** the customer accepted (signed) the quote — only then is it "agreed" */
+  quoteAccepted: boolean;
   customerId?: string;
   jobName?: string;
   amountCents: number;
@@ -303,12 +306,48 @@ export function prefillFromLedger(
   return {
     quoteId: ledger.quote.id,
     quoteNumber: ledger.quote.number,
+    quoteAccepted: ledger.quote.accepted === true,
     ...(quote?.customerId ? { customerId: quote.customerId } : {}),
     ...(jobName ? { jobName } : {}),
     amountCents: remaining,
     agreedCents: Math.max(0, Math.round(ledger.agreementTotalCents)),
     invoicedCents: Math.max(0, Math.round(ledger.invoicedCents)),
     remainingCents: remaining,
+  };
+}
+
+/** The New invoice modal's copy (REQ-409, demo-loop cycle 2 m39). With no
+ *  quote it is the direct bill ("no quote needed"); drawn from a quote it
+ *  names the quote, and its total reads "Agreed" only once the customer
+ *  accepted it — until then "Quoted", with a not-accepted warning — the
+ *  same rule as the ledger panel's agreed/quoted row (REQ-249). */
+export interface NewInvoiceCopy {
+  introKey: "invoicesPage.new.intro" | "invoicesPage.new.introFromQuote";
+  ledgerKey:
+    | "invoices.form.originalQuote"
+    | "invoices.form.originalQuoteQuoted"
+    | null;
+  notAcceptedKey: "invoices.form.quoteNotAccepted" | null;
+}
+
+export function newInvoiceCopy(
+  ledger: Pick<LedgerPrefill, "quoteAccepted"> | null | undefined,
+): NewInvoiceCopy {
+  if (!ledger) {
+    return {
+      introKey: "invoicesPage.new.intro",
+      ledgerKey: null,
+      notAcceptedKey: null,
+    };
+  }
+  return {
+    introKey: "invoicesPage.new.introFromQuote",
+    ledgerKey: ledger.quoteAccepted
+      ? "invoices.form.originalQuote"
+      : "invoices.form.originalQuoteQuoted",
+    notAcceptedKey: ledger.quoteAccepted
+      ? null
+      : "invoices.form.quoteNotAccepted",
   };
 }
 

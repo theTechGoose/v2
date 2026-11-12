@@ -68,6 +68,7 @@ import {
   type LedgerPrefill,
   missingInfo,
   NET_DAYS_OPTIONS,
+  newInvoiceCopy,
   paymentSummary,
   percentToBp,
   prefillFromLedger,
@@ -3472,6 +3473,8 @@ function NewInvoiceModal(
   function setBill(patch: Partial<BillTo>) {
     setBillTo((b) => ({ ...b, ...patch }));
   }
+  // REQ-409: the intro and ledger line follow the quote (and its acceptance)
+  const copy = newInvoiceCopy(ledger);
 
   return (
     <Backdrop
@@ -3488,21 +3491,30 @@ function NewInvoiceModal(
           {tFor(lang, "invoicesPage.new.title")}
         </h2>
         <p style="margin:0;font-size:13px;color:var(--fg-muted,#6b7560)">
-          {tFor(lang, "invoicesPage.new.intro")}
+          {tFor(lang, copy.introKey, { number: ledger?.quoteNumber ?? "" })}
         </p>
 
-        {/* REQ-205: the quote this bill draws on */}
-        {ledger && (
+        {/* REQ-205 / REQ-409: the quote this bill draws on */}
+        {ledger && copy.ledgerKey && (
           <p
             data-cy="new-invoice-ledger"
             style="margin:0;font-size:13px;font-weight:700;color:var(--brand-teal,#144852);background:rgba(20,72,82,0.06);border-radius:10px;padding:10px 12px"
           >
-            {tFor(lang, "invoices.form.originalQuote", {
+            {tFor(lang, copy.ledgerKey, {
               number: ledger.quoteNumber,
               agreed: fmtMoneyExact(ledger.agreedCents),
+              quoted: fmtMoneyExact(ledger.agreedCents),
               invoiced: fmtMoneyExact(ledger.invoicedCents),
               remaining: fmtMoneyExact(ledger.remainingCents),
             })}
+          </p>
+        )}
+        {copy.notAcceptedKey && (
+          <p
+            data-cy="new-invoice-quote-not-accepted"
+            style="margin:0;font-size:12.5px;color:#8a5a00"
+          >
+            {tFor(lang, copy.notAcceptedKey)}
           </p>
         )}
         {ledgerErr && (
