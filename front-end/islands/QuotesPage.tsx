@@ -61,6 +61,10 @@ import { quoteJobTitle } from "../../shared/quote-flow/job-name.ts";
 import { quoteSendLang } from "../../shared/quote-flow/share-link.ts"; // REQ-586
 import { customerLinkPath, customerLinkUrl } from "../lib/customer-link.ts"; // REQ-570 + REQ-586
 import { changeOrdersClient } from "../clients/change-orders.ts"; // REQ-462
+import {
+  type ChangeOrderDelivery,
+  changeOrderSentLineWith,
+} from "../../shared/documents/change-order-sent-line.ts"; // REQ-684
 import QuoteSendDialog, {
   type SendDialogCustomer,
 } from "../components/QuoteSendDialog.tsx"; // REQ-570
@@ -179,6 +183,23 @@ interface OpenQuoteState {
   customer?: SendDialogCustomer | null;
 }
 
+/** REQ-684 (demo-loop cycle 5, m39): a hand-made change order says what its
+ *  alert delivered to the customer — the chat's REQ-456 line ("Sent CO-001 to
+ *  Maria by email (…) — text failed (…)"), or that nothing was sent and the
+ *  link is theirs to share. */
+function coDeliveryLine(
+  lang: "en" | "es",
+  number: string,
+  name: string | null | undefined,
+  delivery: ChangeOrderDelivery,
+): string {
+  return changeOrderSentLineWith((key, vars) => tFor(lang, key, vars), {
+    number,
+    name: name?.trim() || tFor(lang, "quotesPage.edit.theCustomer"),
+    ...delivery,
+  });
+}
+
 /** REQ-462 (demo-loop cycle 3, M26) — "Signed — later changes go on a change
  *  order" now makes one. The button opens a form that puts the order on the
  *  quote's open invoice (POST /invoices/:id/change-orders — the customer
@@ -198,6 +219,9 @@ function SignedChangeOrder(
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [created, setCreated] = useState<string | null>(null);
+  const [createdDelivery, setCreatedDelivery] = useState<
+    ChangeOrderDelivery | null
+  >(null);
   const target = newChangeOrderTarget(ledger);
   // the "created" note stands while that order still waits as it was made —
   // an edit or a withdrawal below says its own thing
@@ -228,6 +252,7 @@ function SignedChangeOrder(
       setDesc("");
       setDollars("");
       setCreated(co.number ?? "");
+      setCreatedDelivery(co.delivery ?? null);
       onChanged();
     } catch {
       setErr(tFor(lang, "quotes.ledger.coError"));
@@ -372,7 +397,18 @@ function SignedChangeOrder(
           role="status"
           style="margin:8px 0 0;font-size:12.5px;color:var(--brand-green,#519843);font-weight:700"
         >
-          {tFor(lang, "quotes.ledger.coCreated", { number: created ?? "" })}
+          {createdDelivery
+            ? (
+              <span data-cy="quote-co-delivery">
+                {coDeliveryLine(
+                  lang,
+                  created ?? "",
+                  q.customerName,
+                  createdDelivery,
+                )}
+              </span>
+            )
+            : tFor(lang, "quotes.ledger.coCreated", { number: created ?? "" })}
         </p>
       )}
     </>
@@ -435,6 +471,9 @@ function LedgerChangeOrderRow(
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [savedVersion, setSavedVersion] = useState<number | null>(null);
+  const [savedDelivery, setSavedDelivery] = useState<
+    ChangeOrderDelivery | null
+  >(null);
   const actions = changeOrderRowActions(co);
   const rowStyle =
     "display:flex;justify-content:space-between;gap:10px;align-items:baseline;padding:6px 0;border-bottom:1px solid rgba(26,83,92,0.08);font-size:13px";
@@ -472,6 +511,7 @@ function LedgerChangeOrderRow(
       );
       setEditing(false);
       setSavedVersion(updated.version ?? co.version + 1);
+      setSavedDelivery(updated.delivery ?? null);
       onChanged();
     } catch {
       setErr(tFor(lang, "quotes.ledger.coError"));
@@ -666,6 +706,11 @@ function LedgerChangeOrderRow(
               number: co.number,
               n: savedVersion,
             })}
+            {savedDelivery && (
+              <span data-cy="ledger-co-delivery" style="display:block">
+                {coDeliveryLine(lang, co.number, customer.name, savedDelivery)}
+              </span>
+            )}
           </span>
         )}
         {err && (
