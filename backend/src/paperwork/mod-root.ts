@@ -23,6 +23,7 @@ import { ShortLinkStore } from "@paperwork/domain/data/shortlink-store/mod.ts";
 import { SummarizePaperworkViews } from "@paperwork/domain/coordinators/summarize-paperwork-views/mod.ts";
 import { SendPaperworkEmail } from "@paperwork/domain/coordinators/send-paperwork-email/mod.ts";
 import { SendPaperworkSms } from "@paperwork/domain/coordinators/send-paperwork-sms/mod.ts";
+import { PreviewQuoteSend } from "@paperwork/domain/coordinators/preview-quote-send/mod.ts"; // REQ-461
 import { ComputeInvoiceBalance } from "@paperwork/domain/coordinators/compute-invoice-balance/mod.ts";
 import { MarkInvoicePaid } from "@paperwork/domain/coordinators/mark-invoice-paid/mod.ts";
 import { RenderQuotePdf } from "@paperwork/domain/coordinators/render-quote-pdf/mod.ts";
@@ -69,6 +70,7 @@ import { WorkOrderStore } from "@paperwork/domain/data/work-order-store/mod.ts";
     SummarizePaperworkViews,
     SendPaperworkEmail,
     SendPaperworkSms,
+    PreviewQuoteSend, // REQ-461
     MarkInvoicePaid,
     ComputeInvoiceBalance,
     RenderQuotePdf,

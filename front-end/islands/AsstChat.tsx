@@ -1,3 +1,4 @@
+import SendLangPreview from "../components/SendLangPreview.tsx";
 import Backdrop from "../components/Backdrop.tsx";
 import { Fragment } from "preact";
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
@@ -7939,6 +7940,25 @@ export default function AsstChat({
                                               </button>
                                             ))}
                                           </div>
+                                          {/* REQ-461 (demo m8): the language the quote goes out
+                                              in — the same previewLang the Send uses — and
+                                              what the client gets, before Send. */}
+                                          {reviewDocType !== "invoice"
+                                            ? (
+                                              <SendLangPreview
+                                                quoteId={(m.payload as { quoteId?: string } | undefined)
+                                                  ?.quoteId ?? quote?.id ?? quoteId}
+                                                channel={dialogChannel}
+                                                sendLang={previewLang}
+                                                langs={sendLangs}
+                                                uiLang={lang}
+                                                onPickLang={(l) => {
+                                                  previewLangPickedRef.current = true;
+                                                  setPreviewLang(l);
+                                                }}
+                                              />
+                                            )
+                                            : null}
                                           {/* REQ-037 (NW-43b): "both, always" —
                                               collect what the chosen channel
                                               still lacks, right here. */}

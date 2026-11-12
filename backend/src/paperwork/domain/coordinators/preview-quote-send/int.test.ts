@@ -1,0 +1,192 @@
+/**
+ * REQ-461 — Raphael: "fix every issue the demo found, loop until there are
+ * none." Demo-loop cycle 3, issue m8: the send dialog showed no preview of
+ * the email/SMS the client gets and no send-language choice. PreviewQuoteSend
+ * renders the SAME subject / email body / text the send coordinators would
+ * dispatch, in the picked language, without sending, publishing or logging
+ * anything.
+ */
+import {
+  assert,
+  assertEquals,
+  assertRejects,
+  assertStringIncludes,
+} from "#std/assert";
+import { PreviewQuoteSend } from "./mod.ts";
+import { QuoteStore } from "@paperwork/domain/data/quote-store/mod.ts";
+import { UserStore } from "@users/domain/data/user-store/mod.ts";
+import { BusinessIdentityStore } from "@profile/domain/data/business-identity-store/mod.ts";
+import { CustomerStore } from "@crm/domain/data/customer-store/mod.ts";
+import { ShortLinkStore } from "@paperwork/domain/data/shortlink-store/mod.ts";
+import { getKv, resetKv } from "@core/data/kv/mod.ts";
+
+function fresh() {
+  const quotes = new QuoteStore();
+  const customers = new CustomerStore();
+  const shortlinks = new ShortLinkStore();
+  const identity = new BusinessIdentityStore();
+  const flow = new PreviewQuoteSend(
+    quotes,
+    customers,
+    new UserStore(),
+    identity,
+    shortlinks,
+  );
+  return { flow, quotes, customers, shortlinks, identity };
+}
+
+async function seedContractor(userId: string, name = "Rosa Diaz") {
+  const kv = await getKv();
+  const now = new Date().toISOString();
+  await kv.set(["user", userId], {
+    id: userId,
+    phoneNumber: "+15125550000",
+    name,
+    email: "me@test.dev",
+    createdAt: now,
+    updatedAt: now,
+  });
+}
+
+async function seedQuote(ctx: ReturnType<typeof fresh>, userId = "u-1") {
+  const customer = await ctx.customers.create(userId, {
+    name: "Juan Perez",
+    email: "juan@example.com",
+    phoneNumber: "+15125551234",
+  });
+  const quote = await ctx.quotes.create(
+    userId,
+    {
+      customerId: customer.id,
+      summary: "Paint the bathroom",
+      jobName: "Bathroom paint",
+      jobNameByLang: { en: "Bathroom paint", es: "Pintura del baño" },
+      lineItems: [{
+        description: "Paint",
+        quantity: 1,
+        unit: "ea",
+        price: 50000,
+      }],
+      estimatedTotal: 50000,
+    } as Parameters<QuoteStore["create"]>[1],
+  );
+  return { customer, quote };
+}
+
+Deno.test("REQ-461 (m8) preview-quote-send: Spanish preview renders the Spanish subject, email body and text with the ?lang=es link", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const ctx = fresh();
+  await seedContractor("u-1");
+  await ctx.identity.upsert("u-1", { businessName: "Diaz Painting" });
+  const { quote } = await seedQuote(ctx);
+
+  const p = await ctx.flow.run("u-1", {
+    quoteId: quote.id,
+    channel: "both",
+    lang: "es",
+  });
+  assertEquals(p.lang, "es");
+  assert(p.email, "email preview present");
+  assert(p.sms, "sms preview present");
+  assert(p.email.subject.startsWith("Cotización"), p.email.subject);
+  assertStringIncludes(p.email.subject, "Diaz Painting");
+  assertStringIncludes(p.email.subject, "Pintura del baño");
+  assertEquals(p.email.to, "juan@example.com");
+  assertStringIncludes(p.email.html, "<html");
+  assertStringIncludes(p.sms.body, "Pintura del baño");
+  assertStringIncludes(p.sms.body, "?lang=es");
+  assertStringIncludes(p.sms.body, "Juan");
+  assertEquals(p.sms.to, "+15125551234");
+  await resetKv();
+});
+
+Deno.test("REQ-461 (m8) preview-quote-send: English preview renders English copy; the channel picks the sections", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const ctx = fresh();
+  await seedContractor("u-1");
+  const { quote } = await seedQuote(ctx);
+
+  const sms = await ctx.flow.run("u-1", {
+    quoteId: quote.id,
+    channel: "sms",
+    lang: "en",
+  });
+  assertEquals(sms.email, undefined);
+  assert(sms.sms);
+  assertStringIncludes(sms.sms.body, "Bathroom paint");
+  assertStringIncludes(sms.sms.body, "?lang=en");
+
+  const email = await ctx.flow.run("u-1", {
+    quoteId: quote.id,
+    channel: "email",
+    lang: "en",
+  });
+  assertEquals(email.sms, undefined);
+  assert(email.email);
+  assert(email.email.subject.startsWith("Quote"), email.email.subject);
+  await resetKv();
+});
+
+Deno.test("REQ-461 (m8) preview-quote-send: previewing sends nothing, publishes nothing, stamps nothing, adopts no default language", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const ctx = fresh();
+  await seedContractor("u-1");
+  const { quote } = await seedQuote(ctx);
+  // An issued quote with a pending edit: the preview shows what the send
+  // would publish, but the stored quote keeps its pending revision.
+  await ctx.quotes.update(quote.id, "u-1", {
+    status: "sent",
+    sentAt: new Date().toISOString(),
+  });
+  await ctx.quotes.setPending(quote.id, "u-1", {
+    jobName: "Bathroom paint and trim",
+    jobNameByLang: { en: "Bathroom paint and trim" },
+  });
+  const before = await ctx.quotes.getOwned(quote.id, "u-1");
+
+  const p = await ctx.flow.run("u-1", {
+    quoteId: quote.id,
+    channel: "both",
+    lang: "en",
+  });
+  assertStringIncludes(p.sms!.body, "Bathroom paint and trim");
+  assertStringIncludes(p.email!.subject, "Bathroom paint and trim");
+
+  const after = await ctx.quotes.getOwned(quote.id, "u-1");
+  assertEquals(after.version, before.version, "no version published");
+  assert(after.pendingRevision, "pending revision kept");
+  assertEquals(after.lastDelivery, undefined, "no delivery recorded");
+  assertEquals(after.status, "sent");
+  assertEquals(
+    (await ctx.identity.get("u-1"))?.commsLanguage,
+    undefined,
+    "a preview pick is not adopted as the default",
+  );
+  await resetKv();
+});
+
+Deno.test("REQ-461 (m8) preview-quote-send: another user's quote is refused; no sender name flags needsName", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const ctx = fresh();
+  await seedContractor("u-1");
+  await seedContractor("u-2", "Nuevo usuario");
+  const { quote } = await seedQuote(ctx);
+  await assertRejects(() =>
+    ctx.flow.run("u-2", { quoteId: quote.id, channel: "both", lang: "en" })
+  );
+
+  const mine = await seedQuote(ctx, "u-2");
+  const p = await ctx.flow.run("u-2", {
+    quoteId: mine.quote.id,
+    channel: "both",
+    lang: "en",
+  });
+  assertEquals(p.needsName, true);
+  assertEquals(p.email, undefined);
+  assertEquals(p.sms, undefined);
+  await resetKv();
+});

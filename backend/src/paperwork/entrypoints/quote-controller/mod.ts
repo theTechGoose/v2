@@ -7,6 +7,7 @@ import {
   Param,
   Post,
   Put,
+  Query,
 } from "#danet/core";
 import type { ExecutionContext } from "#danet/core";
 import { QuoteStore } from "@paperwork/domain/data/quote-store/mod.ts";
@@ -15,6 +16,8 @@ import { UserStore } from "@users/domain/data/user-store/mod.ts";
 import { SessionStore } from "@users/domain/data/session-store/mod.ts";
 import { requireUser } from "@users/domain/coordinators/require-user/mod.ts";
 import { requestIdOf } from "@core/business/request-id/mod.ts";
+import { PreviewQuoteSend } from "@paperwork/domain/coordinators/preview-quote-send/mod.ts";
+import { parseSendPreviewQuery } from "#quote-flow/send-preview.ts";
 import {
   QUOTE_CONTENT_FIELDS,
   quoteEditDecision,
@@ -27,6 +30,7 @@ export class QuoteController {
     private store: QuoteStore,
     private users: UserStore,
     private sessions: SessionStore,
+    private sendPreview: PreviewQuoteSend,
   ) {}
 
   @Post()
@@ -49,6 +53,25 @@ export class QuoteController {
   async get(@Context() ctx: ExecutionContext, @Param("id") id: string) {
     const user = await requireUser(ctx, this.sessions, this.users);
     return await this.store.getOwned(id, user.id);
+  }
+
+  /**
+   * REQ-461 (demo-loop cycle 3, m8): GET /quotes/:id/send-preview?channel&lang
+   * — the email subject + body and the text the client gets if the quote is
+   * sent now, in the picked language. Sends nothing.
+   */
+  @Get(":id/send-preview")
+  async preview(
+    @Context() ctx: ExecutionContext,
+    @Param("id") id: string,
+    @Query("channel") channel?: string,
+    @Query("lang") lang?: string,
+  ) {
+    const user = await requireUser(ctx, this.sessions, this.users);
+    return await this.sendPreview.run(user.id, {
+      quoteId: id,
+      ...parseSendPreviewQuery({ channel, lang }),
+    });
   }
 
   /**
