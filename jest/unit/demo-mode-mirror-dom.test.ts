@@ -8,7 +8,10 @@
  */
 import { createRecorder } from "../../front-end/lib/demo-mode/mirror-record";
 import { createReplayer } from "../../front-end/lib/demo-mode/mirror-replay";
-import type { MirrorFrame } from "../../shared/demo-mode/mirror";
+import {
+  MIRROR_HEARTBEAT_MS,
+  type MirrorFrame,
+} from "../../shared/demo-mode/mirror";
 import {
   canon,
   docWith,
@@ -740,5 +743,125 @@ describe("REQ-242 M4 — the pointer is anchored to the same node on both screen
     // nothing mirrored under the point
     stage.hit = () => null;
     expect(rep.anchorAt(5, 5)).toBeNull();
+  });
+});
+
+describe("REQ-309 (demo M19) — the recorder's heartbeat: the stage can tell a lost frame from a quiet page", () => {
+  test("nothing went out for MIRROR_HEARTBEAT_MS: an empty ops frame; none sooner, none twice, none while paused; a real frame restarts the clock", () => {
+    const doc = customerPage();
+    const frames: MirrorFrame[] = [];
+    let now = 10_000;
+    const rec = createRecorder(doc as unknown as Document, {
+      emit: (f) => frames.push(JSON.parse(JSON.stringify(f))),
+      Observer: FakeMutationObserver as unknown as typeof MutationObserver,
+      manual: true,
+      now: () => now,
+    });
+    rec.beat();
+    expect(frames.length).toBe(0); // nobody watching yet: no heartbeat
+    rec.snapshot();
+    expect(frames.length).toBe(1);
+    rec.beat();
+    expect(frames.length).toBe(1); // the snapshot just went out
+    now += MIRROR_HEARTBEAT_MS - 1;
+    rec.beat();
+    expect(frames.length).toBe(1);
+    now += 1;
+    rec.beat();
+    expect(frames.length).toBe(2);
+    expect(frames[1]).toEqual({ t: "ops", ops: [] });
+    rec.beat();
+    expect(frames.length).toBe(2); // not twice
+    // a change going out is the heartbeat
+    now += MIRROR_HEARTBEAT_MS;
+    el(doc, (e) => e.localName === "main").appendChild(
+      h(doc, "p", {}, "Fri Nov 13"),
+    );
+    rec.flush();
+    expect(frames.length).toBe(3);
+    expect(frames[2].t === "ops" && frames[2].ops.length > 0).toBe(true);
+    rec.beat();
+    expect(frames.length).toBe(3);
+    now += MIRROR_HEARTBEAT_MS;
+    rec.beat();
+    expect(frames.length).toBe(4);
+    expect(frames[3]).toEqual({ t: "ops", ops: [] });
+    // paused (nobody watching): silence
+    rec.pause();
+    now += MIRROR_HEARTBEAT_MS * 5;
+    rec.beat();
+    expect(frames.length).toBe(4);
+    rec.stop();
+  });
+});
+
+describe("REQ-309 (demo M19) — an op that does not fit no longer freezes the mirror", () => {
+  test("the op is skipped and the frame reported (apply false); the rest of the frame and the frames after it still apply", () => {
+    const doc = customerPage();
+    const frames: MirrorFrame[] = [];
+    const rec = record(doc, frames);
+    rec.snapshot();
+    const { rep } = replay();
+    expect(rep.apply(frames[0])).toBe(true);
+    const mainId = rec.idOf(el(doc, (e) => e.localName === "main"))!;
+    expect(
+      rep.apply({
+        t: "ops",
+        ops: [
+          { o: "a", i: 99_997, n: "class", v: "x" }, // a node the replay lacks: skipped
+          { o: "x", i: 99_996, x: "nowhere" }, // skipped
+          {
+            o: "k",
+            i: mainId,
+            c: [{ i: 5_001, t: "p", c: [{ i: 5_002, x: "Fri Nov 13" }] }],
+          }, // fits: the day change shows
+        ],
+      }),
+    ).toBe(false);
+    const main = rep.nodeOf(mainId) as unknown as FElement;
+    expect(main.childNodes.map((n) => (n as FElement).localName)).toEqual([
+      "p",
+    ]);
+    expect(main.textContent).toBe("Fri Nov 13");
+    // the next frames fit: the mirror did not freeze until the snapshot
+    expect(rep.apply({ t: "ops", ops: [{ o: "x", i: 5_002, x: "Add task" }] }))
+      .toBe(true);
+    expect(main.textContent).toBe("Add task");
+    expect(rep.apply({ t: "ops", ops: [] })).toBe(true); // a heartbeat
+  });
+
+  test("a kept child the replay has elsewhere is moved, a missing one left out, a node said gone but still here is removed — each reported, none fatal", () => {
+    const doc = customerPage();
+    const frames: MirrorFrame[] = [];
+    const rec = record(doc, frames);
+    rec.snapshot();
+    const { rep } = replay();
+    expect(rep.apply(frames[0])).toBe(true);
+    const mainId = rec.idOf(el(doc, (e) => e.localName === "main"))!;
+    const h1Id = rec.idOf(el(doc, (e) => e.localName === "h1"))!;
+    const bodyId = rec.idOf(el(doc, (e) => e.localName === "body"))!;
+    const body = rep.nodeOf(bodyId) as unknown as FElement;
+    const main = rep.nodeOf(mainId) as unknown as FElement;
+    const h1 = rep.nodeOf(h1Id) as unknown as FElement;
+    expect(h1.parentNode).toBe(main);
+    // the customer says body's children are the h1 (here under main) and 777 777 (unknown here)
+    expect(
+      rep.apply({ t: "ops", ops: [{ o: "k", i: bodyId, c: [h1Id, 777_777] }] }),
+    ).toBe(false);
+    expect(body.childNodes.length).toBe(1);
+    expect(body.childNodes[0]).toBe(h1);
+    expect(h1.parentNode).toBe(body);
+    // gone for good, says the customer, but still here: removed and forgotten
+    expect(rep.apply({ t: "ops", ops: [{ o: "g", i: [h1Id] }] })).toBe(false);
+    expect(body.childNodes.length).toBe(0);
+    expect(rep.nodeOf(h1Id)).toBeNull();
+    // and the mirror goes on
+    expect(
+      rep.apply({
+        t: "ops",
+        ops: [{ o: "a", i: bodyId, n: "class", v: "quiet" }],
+      }),
+    ).toBe(true);
+    expect(body.getAttribute("class")).toBe("quiet");
   });
 });

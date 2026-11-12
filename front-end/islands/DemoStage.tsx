@@ -39,6 +39,13 @@
  * says "Open in another window" and offers "Use this window" (a reload takes it back).
  * REQ-235 — End asks first (EndDemo); the end goes to /admin saying who ended it ("You ended the
  * demo", "{customer} ended the demo", "{colleague} ended the demo"), where the overlay keeps it.
+ *
+ * REQ-309 (demo M19/m14/m26) — the pill's "Live" is the FRAME's truth: said only once the followed
+ * tab's snapshot is in the frame, "Connecting…" in between — the same fact the "Connecting to
+ * {name}'s screen…" overlay uses. A frame that does not fit leaves the stage dirty, and it asks
+ * for a snapshot every MIRROR_GAP_MS until one lands (a stall asks the same way; the customer's
+ * heartbeat makes a lost frame a stall within ~3 s even while they are idle). Following another
+ * of the customer's tabs starts the receiver over. In dev the pill shows what the mirror counted.
  */
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import { type Lang, langSignal, t } from "../lib/i18n.ts";
@@ -60,6 +67,7 @@ import {
   createMirrorReceiver,
   MIRROR_GAP_MS,
   type MirrorFrame,
+  type MirrorStats,
 } from "../../shared/demo-mode/mirror.ts";
 import {
   MOVE_GAP_DIRECT_MS,
@@ -131,6 +139,25 @@ const HIDDEN: Screen = { w: 1, h: 1, path: "" };
 /** REQ-242 — when a snapshot's scrolls are applied again (its stylesheets and images loading) */
 const SETTLE_MS = [150, 600, 1_500];
 
+/** REQ-309 — the stage's own counters (the receiver counts the rest) */
+interface OwnStats {
+  /** frames that did not fit the replay */
+  failed: number;
+  /** resyncs asked for */
+  resyncs: number;
+  /** when the last frame came (0: none yet) */
+  lastAt: number;
+}
+/** REQ-309 — the mirror's counters on the pill (dev only): one short line, the legend in its title */
+const MIRROR_STATS_LEGEND =
+  "mirror (dev): f frames · hb heartbeats · x frames that did not fit · st stalls · rs resyncs asked · old dropped as older · bad undecodable · held waiting for an earlier frame · the last frame's age";
+function mirrorStatsText(s: MirrorStats, own: OwnStats): string {
+  const age = own.lastAt
+    ? `${((Date.now() - own.lastAt) / 1000).toFixed(1)}s`
+    : "–";
+  return `mirror f${s.frames} hb${s.beats} x${own.failed} st${s.stalls} rs${own.resyncs} old${s.older} bad${s.undecodable} held${s.held} ${age}`;
+}
+
 export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
   // REQ-270: seed the staff's language (from the server's user.language) before the first
   // client render — the module-load seed reads pm:lang, shared with the same-origin replica.
@@ -169,6 +196,15 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
   /** the customer's page load the replay shows (a pointer's element id belongs to one) */
   const loadRef = useRef<string | null>(null);
   const lastAskRef = useRef(0);
+  /** REQ-309 — a frame did not fit (or a snapshot failed): ask for a snapshot until one lands */
+  const dirtyRef = useRef(false);
+  /** REQ-309 — what this stage counted; with the receiver's counters on the pill in dev */
+  const ownRef = useRef<OwnStats>({ failed: 0, resyncs: 0, lastAt: 0 });
+  const [statsText, setStatsText] = useState("");
+  const [dev] = useState(() =>
+    typeof location !== "undefined" &&
+    /^(localhost|127\.0\.0\.1)$/.test(location.hostname)
+  );
   /** REQ-242 — where this presenter's pointer rests on the stage; null once it left the frame */
   const lastMoveRef = useRef<Pt | null>(null);
   /** REQ-180 — the customer's last move clock seen; REQ-242 — it is their page's performance.now(),
@@ -328,6 +364,7 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
     const now = Date.now();
     if (now - lastAskRef.current < MIRROR_GAP_MS) return;
     lastAskRef.current = now;
+    ownRef.current.resyncs++;
     linkRef.current?.send({ k: "resync" });
   };
 
@@ -341,9 +378,14 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
         : [...queueRef.current, [f, load]];
       return;
     }
+    ownRef.current.lastAt = Date.now();
     if (!rep.apply(f)) {
+      // REQ-309 — what did not fit was skipped, not fatal: the stage is dirty until a snapshot
+      // lands (the stall poll keeps asking); a snapshot that failed shows nothing of itself
+      dirtyRef.current = true;
+      ownRef.current.failed++;
       askResync();
-      return;
+      if (f.t === "snap") return;
     }
     const newLoad = load !== loadRef.current;
     if (newLoad) lastTRef.current = 0; // another page: another clock
@@ -358,6 +400,7 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
       );
     }
     if (f.t === "snap") {
+      dirtyRef.current = false;
       if (newLoad) {
         // a new page: the customer's pointer was on the old one
         if (customerRef.current?.n?.l !== load) {
@@ -502,6 +545,8 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
     };
     commandRef.current = command;
     const rx = createMirrorReceiver({ onFrame: take });
+    ownRef.current = { failed: 0, resyncs: 0, lastAt: 0 };
+    dirtyRef.current = false;
     const link = connectDemo({
       sessionId: demo.id,
       role: "presenter",
@@ -549,7 +594,10 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
       },
       onPeerOnline: () => {
         // the customer's page joined (a new clock) and its snapshot is on the way: show it this
-        // pointer at rest
+        // pointer at rest. REQ-309 — another tab (or page) of theirs: the mirror starts over —
+        // its page may have loaded earlier, and a frame of the old tab still decoding is dropped
+        rx.reset();
+        dirtyRef.current = false;
         lastTRef.current = 0;
         resendPointer();
         // REQ-295 — their new page tells where its pill is; the old ghost goes
@@ -631,9 +679,11 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
       },
     });
     linkRef.current = link;
-    // a frame missing for too long: the customer starts the mirror over
+    // a frame missing for too long, or one that did not fit (REQ-309): the customer starts the
+    // mirror over — asked again every MIRROR_GAP_MS until a snapshot lands
     const stall = setInterval(() => {
-      if (rx.stalled()) askResync();
+      if (rx.stalled() || dirtyRef.current) askResync();
+      if (dev) setStatsText(mirrorStatsText(rx.stats(), ownRef.current));
     }, 500);
     return () => {
       clearInterval(stall);
@@ -686,12 +736,13 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
 
   const name = demo?.targetName ?? "";
   // REQ-232 (demo-lifecycle-p1, m1, m3) — plain words, never the transport
+  // REQ-309 (demo m26) — "Live" is the frame's truth: the followed tab's screen is in it
   const statusLabel = ended || status === "ended"
     ? t("demoMode.ended")
     : status === "replaced"
     ? t("demoMode.elsewhere")
     : status === "direct" || status === "relay"
-    ? t("demoMode.live")
+    ? mirrored ? t("demoMode.live") : t("demoMode.connecting")
     : status === "waiting"
     ? t("demoMode.waitingFor", { name })
     : t("demoMode.connecting");
@@ -848,6 +899,15 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
           >
             {statusLabel}
           </span>
+          {dev && statsText && (
+            <span
+              data-cy="demo-mirror-stats"
+              title={MIRROR_STATS_LEGEND}
+              style="opacity:.7;font-size:11px;font-family:ui-monospace,monospace;cursor:help"
+            >
+              {statsText}
+            </span>
+          )}
           {status === "replaced" && !ended && (
             <button
               type="button"
