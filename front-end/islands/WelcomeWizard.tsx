@@ -1370,7 +1370,7 @@ function PlanStep({ ctx }: { ctx: StepCtx }) {
               back="/welcome"
               // REQ-356 — a card IS the pick: its line says what pressing it does
               note={(p) =>
-                wizardPlanNote(t, plan, p.id, new Date().toISOString())}
+                wizardPlanNote(t, plan, p.id, new Date().toISOString(), lang)}
             />
             <p class="welcome__plan-custom">
               {t("welcome.plan.custom", { phone: SUPPORT_PHONE_DISPLAY })}
