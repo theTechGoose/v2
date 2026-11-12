@@ -4112,6 +4112,7 @@
   "demoMode.pointerGhost": "Your pointer on {name}'s screen",
   "demoMode.pointerAbsent": "Your pointer isn't on {name}'s screen — move to show it",
   "demoMode.loadingNext": "Loading their next page…",
+  "demoMode.loadingNextBehind": "Loading their next page… {n} s behind",
   "demoMode.catchingUp": "Catching up…",
   "demoMode.behind": "Behind {n} s",
   "nav.workOrders": "Work orders",

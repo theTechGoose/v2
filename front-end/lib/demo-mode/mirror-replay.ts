@@ -65,6 +65,13 @@
  * in once they are (from the cache: styled at once), or HOLD_CAP_MS after it came. Its ops apply
  * to it meanwhile; `styled()` and `settled()` say false until it is in. The first snapshot is
  * never held: there is nothing to keep, and the stage hides the frame until it is styled (REQ-370).
+ *
+ * REQ-648 (demo-loop cycle 5, M3 + c4-m28) — the stage is told when a snapshot's page is ON SHOW
+ * (`onShown`: at once, or — held — when it goes in; `held()` says it is held meanwhile): the stage
+ * said "Live" over the page they had left while the new one was held. And a later snapshot that
+ * comes while one is held (the customer answers a stage's arrival AND its sync: two in a row)
+ * keeps the hold going — the sheets already loading and the first hold's deadline — instead of
+ * starting it over with fresh preloads; a snapshot whose sheets the frame has goes in at once.
  */
 import type {
   MirrorFrame,
@@ -99,6 +106,10 @@ export const STILL_CSS = "*,*::before,*::after{transition:none!important;" +
  *  show anyway (under the stage's STYLE_WAIT_MS, which reveals a new demo's frame regardless) */
 export const HOLD_CAP_MS = 1_200;
 
+/** REQ-547 — a later snapshot, built and kept out of the frame: the preloads of its sheets not in
+ *  yet, and how to cancel its deadline */
+type Held = { root: Node; preloads: Set<Element>; cancel: () => void };
+
 export interface ReplayerOptions {
   /** paint a canvas with a bitmap (a data URL); the default draws it with an Image */
   paintCanvas?(c: HTMLCanvasElement, url: string): void;
@@ -115,6 +126,8 @@ export interface ReplayerOptions {
   now?(): number;
   /** REQ-451 — run `fn` once after `ms` (the cap's layout pass); says how to cancel it */
   later?(fn: () => void, ms: number): () => void;
+  /** REQ-648 — a snapshot's page is on show in the frame (at once, or when its hold ends) */
+  onShown?(): void;
 }
 
 export interface Replayer {
@@ -144,6 +157,9 @@ export interface Replayer {
   /** REQ-547 — the frame's transitions and animations are held still (a snapshot, or a stylesheet
    *  an op added, is not settled yet) */
   still(): boolean;
+  /** REQ-648 — a later snapshot is kept out of the frame while its sheets load (REQ-547): the
+   *  page on show is the one before it */
+  held(): boolean;
   /** REQ-305 — stop watching the frame's document */
   dispose(): void;
   /** REQ-380 — canvas bitmaps that arrived (`cv` ops), were applied to a canvas, and were
@@ -278,9 +294,7 @@ export function createReplayer(
   let bridge: CSSStyleSheet[] = [];
   /** REQ-547 — a later snapshot, built and kept out of the frame while its sheets preload; and
    *  whether an op just added a stylesheet the frame has to wait for */
-  let pending:
-    | { root: Node; preloads: Set<Element>; cancel: () => void }
-    | null = null;
+  let pending: Held | null = null;
   let newSheet = false;
 
   /** REQ-547 — the still rule into the frame (again: a snapshot replaced the page, an op its head) */
@@ -684,6 +698,7 @@ export function createReplayer(
     }, SETTLE_CAP_MS);
     holdStill(true);
     putBridge();
+    opts.onShown?.(); // REQ-648 — the stage's page clock stops here
   }
 
   /** REQ-547 — the stylesheet hrefs the new page links that this frame neither has loaded (or
@@ -705,20 +720,32 @@ export function createReplayer(
   }
 
   /** REQ-547 — the new page is kept out of the frame while its sheets load into the page on show
-   *  (`media="not all"`: fetched, never applied to it); HOLD_CAP_MS at most */
-  function hold(root: Node, hrefs: string[]) {
+   *  (`media="not all"`: fetched, never applied to it); HOLD_CAP_MS at most. REQ-648 — `was`: the
+   *  hold this snapshot comes into: its preloads still needed keep loading (none fetched again),
+   *  the rest go, and its deadline stands — the hold never starts over */
+  function hold(root: Node, hrefs: string[], was: Held | null) {
     const at = doc.head ?? doc.documentElement;
+    const kept = new Map<string, Element>();
+    for (const l of was?.preloads ?? []) {
+      const href = (l.getAttribute("href") ?? "").trim();
+      if (hrefs.includes(href) && !kept.has(href) && doc.contains(l)) {
+        kept.set(href, l);
+      } else l.parentNode?.removeChild(l);
+    }
     const preloads = new Set<Element>();
     for (const href of hrefs) {
-      const l = doc.createElement("link");
-      l.setAttribute("rel", "stylesheet");
-      l.setAttribute("media", "not all");
-      l.setAttribute("data-mirror-preload", "");
-      l.setAttribute("href", href);
+      let l = kept.get(href);
+      if (!l) {
+        l = doc.createElement("link");
+        l.setAttribute("rel", "stylesheet");
+        l.setAttribute("media", "not all");
+        l.setAttribute("data-mirror-preload", "");
+        l.setAttribute("href", href);
+        at?.appendChild(l);
+      }
       preloads.add(l);
-      at?.appendChild(l);
     }
-    const cancel = later(() => swapIn(), HOLD_CAP_MS);
+    const cancel = was?.cancel ?? later(() => swapIn(), HOLD_CAP_MS);
     pending = { root, preloads, cancel };
   }
 
@@ -742,6 +769,19 @@ export function createReplayer(
     pending = null;
     p.cancel();
     for (const l of p.preloads) l.parentNode?.removeChild(l);
+  }
+  /** REQ-648 — a held page a newer snapshot came into: still held, its hold given up only if the
+   *  new one is not held in turn (see `hold`) */
+  function takePending(): Held | null {
+    const p = pending;
+    pending = null;
+    return p;
+  }
+  /** REQ-648 — the hold a snapshot came into, not kept by it: given up */
+  function giveUp(p: Held | null) {
+    if (!p) return;
+    pending = p;
+    dropPending();
   }
 
   /** REQ-451 — see Replayer.settled */
@@ -785,11 +825,13 @@ export function createReplayer(
   return {
     apply(f) {
       if (f.t === "snap") {
+        let was: Held | null = null;
         try {
           // REQ-547 — a page is on show (an earlier snapshot): it stays while this one's sheets load
           const had = ok && !!doc.documentElement;
           const prev = sheets;
-          dropPending();
+          // REQ-648 — a page still held: this snapshot keeps its hold if it is held in turn
+          was = takePending();
           byId = new Map();
           idOf = new WeakMap();
           scrolls.clear();
@@ -803,8 +845,9 @@ export function createReplayer(
           ok = true;
           isSettled = false;
           const missing = had ? unloaded(prev) : [];
-          if (missing.length) hold(root, missing);
+          if (missing.length) hold(root, missing, was);
           else {
+            giveUp(was);
             const old = doc.documentElement;
             if (old) doc.replaceChild(root, old);
             else doc.appendChild(root);
@@ -813,6 +856,7 @@ export function createReplayer(
         } catch {
           ok = false;
           dropPending();
+          giveUp(was);
           return false;
         }
       } else if (!ok) return false;
@@ -879,6 +923,7 @@ export function createReplayer(
     settled: settledNow,
     stats: () => ({ ...counts }),
     still: () => stillOn,
+    held: () => pending !== null,
     dispose() {
       disposed = true;
       dropPending();

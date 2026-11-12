@@ -1646,7 +1646,12 @@ Deno.test("REQ-391 (demo-loop cycle 2, M4 + m21) over the composed router's sock
       });
       if (why !== undefined) tab.send({ t: "leaving", why });
       await tab.close();
-      return { c, gone: await stage.next(`${what}: leaves`, 1500) };
+      // REQ-648 AMENDMENT — a departure that said why also says when (`at`): its own test below
+      const { at: _at, ...gone } =
+        (await stage.next(`${what}: leaves`, 1500)) as
+          & ServerMessage
+          & { at?: number };
+      return { c, gone };
     };
     const nav = await goes("navigating", "a page change");
     assertEquals(nav.gone, {
@@ -1667,6 +1672,52 @@ Deno.test("REQ-391 (demo-loop cycle 2, M4 + m21) over the composed router's sock
     const junk = await goes("bored", "a tab that said junk");
     assertEquals(junk.gone, { t: "peer", online: false, cid: junk.c });
     await quiet(stage, "the leaving itself is never relayed");
+    await stage.close();
+  });
+});
+
+Deno.test("REQ-648 (demo-loop cycle 5, M3 + c4-m28) over the composed router's socket: a tab's `leaving` is stamped with the deploy's clock and its departure carries it (`at`) — the stage times the page change from it; a tab that said nothing, or junk, has no stamp", async () => {
+  await withServer(async (call) => {
+    const ana = await signIn(call, "+15125556481");
+    const hans = await signIn(call, "+15125556482");
+    await call("POST", "/api/admin/bootstrap", { phoneNumber: "+15125556482" });
+    const made = await call("POST", "/api/demo-mode/sessions", {
+      userId: ana.body.userId,
+    }, H(hans.body.sessionId));
+    const stage = open(made.body.id, hans.body.sessionId);
+    await stage.next("the stage's welcome");
+
+    /** a tab joins, says `why` (or nothing), and closes: when it said so, and what the stage hears */
+    const goes = async (why: unknown, what: string) => {
+      const tab = open(made.body.id, ana.body.sessionId);
+      const c = cidOf(await tab.next(`${what}: welcome`));
+      await tab.next(`${what}: the stage is here`);
+      await stage.next(`${what}: arrives`);
+      const before = Date.now();
+      if (why !== undefined) tab.send({ t: "leaving", why });
+      await new Promise((r) => setTimeout(r, 30)); // the leaving is in before the close
+      const said = Date.now();
+      await tab.close();
+      return {
+        c,
+        before,
+        said,
+        gone: await stage.next(`${what}: leaves`, 1500),
+      };
+    };
+    for (const why of ["navigating", "closing"] as const) {
+      const g = await goes(why, `a tab ${why}`);
+      const { at, ...rest } = g.gone as { at?: number };
+      assertEquals(rest, { t: "peer", online: false, cid: g.c, why });
+      assert(
+        typeof at === "number" && at >= g.before && at <= g.said,
+        `the departure says when its page said it was going (${at}, within ${g.before}..${g.said})`,
+      );
+    }
+    const silent = await goes(undefined, "a tab that said nothing");
+    assertEquals(silent.gone, { t: "peer", online: false, cid: silent.c });
+    const junk = await goes("bored", "a tab that said junk");
+    assertEquals(junk.gone, { t: "peer", online: false, cid: junk.c });
     await stage.close();
   });
 });

@@ -26,7 +26,9 @@ import { DemoAccess } from "@demo-mode/domain/coordinators/demo-access/mod.ts";
  *
  * REQ-391 — two messages stay with the socket: `time` is answered with the deploy's clock (each
  * browser's offset to it, so the stage can measure how late a frame is), and `leaving` keeps why
- * the page is going on the peer — its departure (`peer … online:false`) carries it.
+ * the page is going on the peer — its departure (`peer … online:false`) carries it. REQ-648
+ * (demo-loop cycle 5, M3) — and when: the deploy's clock stamps the `leaving` (`at` on the
+ * departure), so the stage times a page change from the moment the page went.
  */
 @Controller("api/demo-mode")
 export class DemoModeSocketController {
@@ -110,6 +112,7 @@ export class DemoModeSocketController {
       // the close comes right behind it) for the departure the hub announces
       if (m.t === "leaving") {
         peer.leaving = m.why;
+        peer.leftAt = Date.now(); // REQ-648 — when, on the deploy's clock
         return;
       }
       // A message still in flight when the store goes away (a shutdown, a test's teardown) must

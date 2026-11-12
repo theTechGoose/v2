@@ -43,6 +43,15 @@
  * a `leave` or handed the presenter's pointer — for PRESENCE_GRACE_MS: its next page takes the
  * stage back the moment it names the key. Another tab is followed only when the grace ends, when
  * the page said it is closing (or said nothing), or when another tab is really claimed since.
+ *
+ * REQ-648 (demo-loop cycle 5, M3 + c4-m28) — a stage hears when the page it follows went
+ * (`onPageGone`): the server's stamp of the page's `leaving` (on the deploy's clock), or this
+ * link's own `now()` when the page said nothing. Not for a page CLOSING — no next page is coming.
+ * The stage times the page change from it to the next page on show. And every link asks the
+ * deploy's time again after its welcome (TIME_AGAIN_MS): the customer's link now starts while its
+ * page is still loading (early-link.ts), when an answer can sit behind the page's own work — a
+ * round trip that long skews the clock by half of it, and the stage read every frame as late; the
+ * quickest round trip still wins.
  */
 import {
   type ClientMessage,
@@ -55,6 +64,9 @@ import {
   SILENT_GRACE_MS,
   SOCKET_PATH,
 } from "../../../shared/demo-mode/protocol.ts";
+
+/** REQ-648 — after its welcome a link asks the deploy's time again this long after it (ms) */
+export const TIME_AGAIN_MS = [1_500, 5_000, 15_000];
 
 export type LinkStatus =
   | "connecting"
@@ -96,6 +108,9 @@ export interface DemoLinkOptions {
   onPresence?(pid: string, online: boolean): void;
   /** REQ-235 — `pid`: the presenter who ended it (none when the viewer did) */
   onEnded(by: Role, reason?: "declined" | "expired", pid?: string): void;
+  /** REQ-648 — a stage: the page of the followed tab went (not closing) — `at`: when it said so,
+   *  on the deploy's clock (this link's `now()` when it said nothing); `why`: what it said */
+  onPageGone?(at: number, why?: LeaveWhy): void;
 }
 
 export interface DemoLink {
@@ -425,11 +440,15 @@ export function connectDemo(o: DemoLinkOptions): DemoLink {
   /** REQ-391 — `why`: what its page said as it went. The last tab gone: closing — nobody to wait
    *  for (waiting at once, m21); navigating — its next page comes (the full grace, M4); nothing
    *  said — a short grace */
-  const tabLeft = (cid: string, why?: LeaveWhy) => {
+  const tabLeft = (cid: string, why?: LeaveWhy, at?: number) => {
     gone.add(cid);
     if (gone.size > 200) gone.delete(gone.values().next().value!);
     const t = tabs.get(cid);
     if (!tabs.delete(cid)) return;
+    // REQ-648 — the followed page went and a next one may come: the stage times the change
+    if (cid === followed && why !== "closing") {
+      o.onPageGone?.(at ?? Date.now() + skew, why);
+    }
     if (cid === followed && t?.key) {
       // REQ-436 — a page of the same browser tab is already here: it is the stage's now
       const next = [...tabs.values()].find((u) => u.key === t.key);
@@ -462,6 +481,13 @@ export function connectDemo(o: DemoLinkOptions): DemoLink {
   };
   /** REQ-391 — ask the deploy's time; the answer sets `skew` (Cristian: halfway through the trip) */
   const askTime = () => wsSend({ t: "time", c: Date.now() });
+  /** REQ-648 — and again at each TIME_AGAIN_MS after the welcome: the quickest trip wins */
+  let timeAgain: ReturnType<typeof setTimeout>[] = [];
+  const askTimes = () => {
+    for (const h of timeAgain) clearTimeout(h);
+    askTime();
+    timeAgain = TIME_AGAIN_MS.map((ms) => setTimeout(askTime, ms));
+  };
   const tookTime = (c: number, s: number) => {
     const now = Date.now();
     const rtt = now - c;
@@ -563,7 +589,7 @@ export function connectDemo(o: DemoLinkOptions): DemoLink {
           // who is here comes next, one `peer` each (REQ-232); this tab says again it is in use
           reclaim();
           refresh();
-          askTime(); // REQ-391
+          askTimes(); // REQ-391, REQ-648
           break;
         case "time":
           tookTime(m.c, m.s);
@@ -572,7 +598,7 @@ export function connectDemo(o: DemoLinkOptions): DemoLink {
           if (m.pid !== undefined) stageSeen(m.online, m.pid, m.cid);
           else if (o.role === "presenter") {
             if (m.online) tabSeen(m.cid ?? NO_CID);
-            else tabLeft(m.cid ?? NO_CID, m.why);
+            else tabLeft(m.cid ?? NO_CID, m.why, m.at);
           }
           break;
         case "claim":
@@ -681,6 +707,7 @@ export function connectDemo(o: DemoLinkOptions): DemoLink {
     close() {
       closed = true;
       clearTimeout(retry);
+      for (const h of timeAgain) clearTimeout(h);
       endGrace();
       release();
       teardownAll();

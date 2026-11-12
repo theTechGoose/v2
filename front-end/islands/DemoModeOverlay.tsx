@@ -120,6 +120,7 @@ import {
   type PeerFrom,
 } from "../lib/demo-mode/transport.ts";
 import { demoTabKey } from "../lib/demo-mode/tab-key.ts";
+import { takeEarlyLink } from "../lib/demo-mode/early-link.ts";
 import {
   carriedDemo,
   forgetDemo,
@@ -811,19 +812,23 @@ export default function DemoModeOverlay() {
     // REQ-242 — this screen, recorded (paused until a presenter is there) and sent over the link;
     // REQ-391 — every frame stamped with the deploy's clock, so the stage can tell how late it is
     let link: DemoLink | null = null;
-    const sender = createMirrorSender({
+    // REQ-648 (cycle 5, M3 + c4-m28) — the link this page's early script opened for this demo
+    // before the islands were in: taken over (its sender, recorder and socket), never a second one
+    const early = takeEarlyLink(globalThis, demo.id);
+    const sender = early?.sender ?? createMirrorSender({
       send: (m) => link?.send(m),
       clock: () => link?.now() ?? Date.now(),
     });
-    const recorder = createRecorder(document, {
+    const recorder = early?.recorder ?? createRecorder(document, {
       emit: (f) => {
         void sender.push(f);
         shifted(); // REQ-305 — the page changed: the pointers on it with it
       },
     });
+    early?.onFrame(shifted);
     senderRef.current = sender;
     recorderRef.current = recorder;
-    link = connectDemo({
+    link = (early?.adopt ?? connectDemo)({
       sessionId: demo.id,
       role: demo.role,
       // REQ-436 (cycle 3, M2b) — every page of this browser tab says the same key, so the stage
