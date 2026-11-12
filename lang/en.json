@@ -1979,6 +1979,7 @@
   "paymentsPage.kpi.landedLabel": "Landed this month",
   "paymentsPage.kpi.noHistory": "no paid history yet",
   "paymentsPage.kpi.onTheWay": "{n} on the way",
+  "paymentsPage.kpi.nothingInTransit": "Nothing in transit",
   "paymentsPage.kpi.payments.one": "{n} payment",
   "paymentsPage.kpi.payments.other": "{n} payments",
   "paymentsPage.kpi.transitLabel": "In transit",
