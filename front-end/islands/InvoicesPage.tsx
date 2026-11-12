@@ -1640,14 +1640,14 @@ function InvoiceDetail(
               </button>
             </span>
           )
-          : (
+          /* REQ-485 (m22): a paid invoice is part of the record — no
+             Delete at all, not a greyed one (the API refuses it too). */
+          : !locked && (
             <button
               type="button"
               data-cy="invoice-delete"
               onClick={() => setConfirmDelete(true)}
-              disabled={locked}
-              title={locked ? tFor(lang, "invoices.lockedPaid") : undefined}
-              style={locked ? lockedBtn : secondaryBtn}
+              style={secondaryBtn}
             >
               {tFor(lang, "invoicesPage.detail.deleteBtn")}
             </button>
@@ -2716,21 +2716,13 @@ function InvoiceCard(
                   </button>
                 </>
               )
-              : (
+              /* REQ-202/485 (m22): a paid invoice is locked — no Delete */
+              : !isInvoiceLocked(inv) && (
                 <button
                   type="button"
                   data-cy="invoice-card-delete"
                   onClick={() => setConfirmDelete(true)}
-                  /* REQ-202: a paid invoice is locked — nothing on it changes */
-                  disabled={isInvoiceLocked(inv)}
-                  title={isInvoiceLocked(inv)
-                    ? tFor(lang, "invoices.lockedPaid")
-                    : undefined}
-                  style={`appearance:none;background:none;border:none;color:var(--brand-pink-dark,#d94f4f);font:inherit;font-size:12.5px;font-weight:700;padding:2px 0;${
-                    isInvoiceLocked(inv)
-                      ? "cursor:not-allowed;opacity:.5"
-                      : "cursor:pointer"
-                  }`}
+                  style="appearance:none;background:none;border:none;color:var(--brand-pink-dark,#d94f4f);font:inherit;font-size:12.5px;font-weight:700;padding:2px 0;cursor:pointer"
                 >
                   {tFor(lang, "invoicesPage.detail.deleteBtn")}
                 </button>

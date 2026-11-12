@@ -306,7 +306,8 @@ export default function QuoteCard(
           >
             {tFor(lang, "quoteCard.back.viewAsClient")}
           </a>
-          <DeleteQuoteButton id={q.id} />
+          {/* REQ-485 (m22): a signed quote is the agreement — no Delete. */}
+          {q.stage !== "won" && <DeleteQuoteButton id={q.id} />}
         </div>
       </div>
     </article>

@@ -354,7 +354,8 @@ export function DecidedRow(
         {fmtMoney(q.value)}
       </div>
       <div class="qdone__when">{when}</div>
-      <DeleteQuoteButton id={q.id} variant="icon" />
+      {/* REQ-485 (m22): a signed quote is the agreement — no Delete. */}
+      {q.stage !== "won" && <DeleteQuoteButton id={q.id} variant="icon" />}
     </div>
   );
 }
