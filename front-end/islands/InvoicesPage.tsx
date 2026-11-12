@@ -2924,6 +2924,31 @@ function InvoiceCard(
         <h3 class="qcard__title">{fmtMoney(inv.amount)}</h3>
         <PaymentState inv={inv} lang={lang} />
         <p class="qcard__story">{subline}</p>
+        {
+          /* REQ-555 (M24): the front face opens the invoice itself — Open is
+            no longer reachable only by flipping the card. */
+        }
+        <a
+          class="qcard__open-link"
+          data-cy="invoice-card-open"
+          href={`/i/${inv.id}`}
+          target="_blank"
+          rel="noopener noreferrer"
+          onClick={(e) => e.stopPropagation()}
+        >
+          {tFor(lang, "invoicesPage.back.open")} ↗
+        </a>
+        {
+          /* REQ-555 (M24): send notes live INSIDE the body, so they never
+            sit over the back face's hit area; while flipped they render on
+            the back instead (the front body is hidden then). */
+        }
+        {!flipped && (
+          <CardSendNotes
+            fail={sendFail}
+            note={sendNote}
+          />
+        )}
       </div>
       <div class="qcard__foot">
         <button
@@ -2952,21 +2977,6 @@ function InvoiceCard(
           </div>
         </div>
       </div>
-      {sendFail && (
-        <p class="qcard__sendfail" role="alert" data-cy="invoice-send-failure">
-          {sendFail}
-        </p>
-      )}
-      {sendNote && (
-        <p
-          class="qcard__sendfail"
-          role="status"
-          data-cy="invoice-send-note"
-          style="color:var(--brand-green,#519843)"
-        >
-          {sendNote}
-        </p>
-      )}
 
       <div class="qcard__back" aria-hidden={!flipped}>
         <div class="qcard__back-head">
@@ -2991,6 +3001,12 @@ function InvoiceCard(
         </div>
         <div class="qcard__back-body">
           {readText && <p class="qcard__read">{readText}</p>}
+          {flipped && (
+            <CardSendNotes
+              fail={sendFail}
+              note={sendNote}
+            />
+          )}
           {/* REQ-167: every card can delete its invoice — asks first */}
           <div
             style="margin-top:6px;display:flex;align-items:center;gap:8px;flex-wrap:wrap"
@@ -3531,6 +3547,43 @@ function InvoiceCard(
         </div>
       </div>
     </article>
+  );
+}
+
+/** P-09 / REQ-030 / REQ-555: a card's honest send notes — failure, partial,
+ *  or a plain note. Rendered inside the face that is showing. */
+function CardSendNotes(
+  { fail, partial, note }: {
+    fail: string | null;
+    /** REQ-554 moved the half-delivered note to the page (cardFlash); kept
+     *  optional for any caller that still has one. */
+    partial?: string | null;
+    note: string | null;
+  },
+) {
+  return (
+    <>
+      {fail && (
+        <p class="qcard__sendfail" role="alert" data-cy="invoice-send-failure">
+          {fail}
+        </p>
+      )}
+      {partial && (
+        <p class="qcard__sendfail" role="alert" data-cy="send-partial">
+          {partial}
+        </p>
+      )}
+      {note && (
+        <p
+          class="qcard__sendfail"
+          role="status"
+          data-cy="invoice-send-note"
+          style="color:var(--brand-green,#519843)"
+        >
+          {note}
+        </p>
+      )}
+    </>
   );
 }
 

@@ -49,6 +49,8 @@ import { type PaymentClaim, pendingClaims } from "../lib/payment-claims.ts";
 import { cashFlowWeeks } from "../lib/cash-flow-weeks.ts";
 import { creditedPayments } from "../lib/headline-counts.ts";
 import { refreshDash } from "../lib/dash-cache.ts";
+import { paymentCardCtaHref, paymentCardLinks } from "../lib/payment-card.ts";
+import { interpretSendResult } from "../../shared/quote-flow/send-result.ts";
 
 /** Plural helper bound to an explicit language (the reactive `tn` reads the
  *  global lang signal; the logged-in app threads `lang` explicitly). */
@@ -796,12 +798,60 @@ function PaymentCard(
   { lang, p, idx }: { lang: Lang; p: EnrichedPayment; idx: number },
 ) {
   const [flipped, setFlipped] = useState(false);
+  // REQ-555 (M24): "Text client" texts the invoice link (the receipt once
+  // paid) and says what happened — never a silent no-op.
+  const [texting, setTexting] = useState(false);
+  const [textResult, setTextResult] = useState<
+    { ok: boolean; msg: string } | null
+  >(null);
   const mood = STATUS_MOOD[p.status];
   const moodLabel = tFor(lang, `paymentsPage.mood.${p.status}.label`);
   const moodCta = tFor(lang, `paymentsPage.mood.${p.status}.cta`);
+  const links = paymentCardLinks(p.invoiceId);
+  async function doTextClient(e: Event) {
+    e.stopPropagation();
+    if (texting) return;
+    setTexting(true);
+    setTextResult(null);
+    try {
+      const r = await fetch(`/api/invoices/${p.invoiceId}/text`, {
+        method: "POST",
+        credentials: "include",
+      });
+      let body: unknown = null;
+      try {
+        body = await r.json();
+      } catch { /* empty / non-JSON body — interpret on r.ok alone */ }
+      const outcome = interpretSendResult({ httpOk: r.ok, body });
+      const raw = body && typeof body === "object" &&
+          typeof (body as { reason?: unknown }).reason === "string"
+        ? (body as { reason: string }).reason
+        : undefined;
+      setTextResult(
+        outcome.delivered
+          ? { ok: true, msg: tFor(lang, "paymentsPage.card.textSent") }
+          : outcome.reason === "noPhone"
+          ? { ok: false, msg: tFor(lang, "invoicesPage.new.needContact") }
+          : {
+            ok: false,
+            msg: tFor(lang, "paymentsPage.card.textFailed", {
+              reason: raw ?? outcome.reason ?? "unknown",
+            }),
+          },
+      );
+    } catch {
+      setTextResult({
+        ok: false,
+        msg: tFor(lang, "paymentsPage.card.textFailed", { reason: "http" }),
+      });
+    } finally {
+      setTexting(false);
+    }
+  }
   return (
     <article
       class={`qcard ${flipped ? "qcard--flipped" : ""}`}
+      data-cy="payment-card"
       onClick={(e) => {
         if (flipped) return;
         const t = e.target as HTMLElement;
@@ -827,14 +877,20 @@ function PaymentCard(
         <p class="qcard__story">{p.note}</p>
       </div>
       <div class="qcard__foot">
-        <button
-          type="button"
+        {/* REQ-555 (M24): the CTA goes somewhere — the receipt (landed) or
+            the invoice detail (in transit). */}
+        <a
           class="qcard__cta"
-          onClick={(e) => e.stopPropagation()}
+          data-cy="payment-card-cta"
+          href={paymentCardCtaHref(p.status, p.invoiceId)}
+          {...(p.status === "landed"
+            ? { target: "_blank", rel: "noopener noreferrer" }
+            : {})}
+          style="text-decoration:none"
         >
           {moodCta}{" "}
           <span style="display:inline-block;transition:transform 240ms">→</span>
-        </button>
+        </a>
         <div class="qcard__val-wrap">
           <div class="qcard__val-lbl">
             {p.status === "transit"
@@ -872,16 +928,40 @@ function PaymentCard(
         </div>
         <div class="qcard__back-body">
           <p class="qcard__read">{p.note}</p>
+          {textResult && (
+            <p
+              class="qcard__sendfail"
+              role={textResult.ok ? "status" : "alert"}
+              data-cy="payment-card-text-result"
+              style={textResult.ok
+                ? "padding:8px 0 0;color:var(--brand-green,#519843)"
+                : "padding:8px 0 0"}
+            >
+              {textResult.msg}
+            </p>
+          )}
         </div>
-        <div class="qcard__back-foot">
-          <button type="button" onClick={(e) => e.stopPropagation()}>
+        {/* REQ-555 (M24): every action has a destination — the receipt is
+            the paid invoice's page, the invoice opens its own detail. */}
+        <div class="qcard__back-foot" style="grid-template-columns:repeat(3,1fr)">
+          <a
+            data-cy="payment-card-receipt"
+            href={links.receipt}
+            target="_blank"
+            rel="noopener noreferrer"
+          >
             {tFor(lang, "paymentsPage.card.receipt")}
-          </button>
-          <button type="button" onClick={(e) => e.stopPropagation()}>
+          </a>
+          <a data-cy="payment-card-invoice" href={links.invoice}>
             {tFor(lang, "paymentsPage.card.matchInvoice")}
-          </button>
-          <button type="button" onClick={(e) => e.stopPropagation()}>
-            {tFor(lang, "paymentsPage.card.textClient")}
+          </a>
+          <button
+            type="button"
+            data-cy="payment-card-text"
+            onClick={doTextClient}
+            disabled={texting}
+          >
+            {texting ? "…" : tFor(lang, "paymentsPage.card.textClient")}
           </button>
         </div>
       </div>
