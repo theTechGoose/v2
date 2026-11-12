@@ -108,8 +108,8 @@ function uploadErrorMessage(
 }
 
 /** Roadmap p.13: neutral Latin-American Spanish for the Settings UI, keyed
- *  off the contractor's `user.language`. One dictionary so the whole screen
- *  flips together (no mixed-language state). */
+ *  off `langSignal` (REQ-254 — never the fetched `user.language`). One
+ *  dictionary so the whole screen flips together (no mixed-language state). */
 function tr(es: boolean) {
   const lang: Lang = es ? "es" : "en";
   return {
@@ -1802,7 +1802,7 @@ const PILL_KEY = {
 } as const;
 
 function BillingTab({ snapshot }: { snapshot: ProfileSnapshot }) {
-  const lang: Lang = snapshot.user.language === "es" ? "es" : "en";
+  const lang: Lang = langSignal.value === "es" ? "es" : "en"; // REQ-254
   const plan = snapshot.plan ?? null;
   // REQ-064 — the hidden test tier has a name and a price too, though it is never a card
   const planById = (id: string) => PRICING_PLANS.find((p) => p.id === id);
@@ -2325,16 +2325,19 @@ export default function SettingsPage() {
   if (s.error || !s.profile) {
     return (
       <div class="dashpage-error">
-        {tFor("en", "settings.loadError", {
-          error: s.error ?? tFor("en", "settings.unknownError"),
+        {tFor(langSignal.value, "settings.loadError", {
+          error: s.error ?? tFor(langSignal.value, "settings.unknownError"),
         })}
       </div>
     );
   }
 
   const p = s.profile;
-  const lang: Lang = p.user.language === "es" ? "es" : "en";
-  const t = tr(p.user.language === "es");
+  // REQ-254: the UI language is langSignal — the one switch the topbar EN/ES toggle and the
+  // app-language select both flip — never this island's fetched copy of the profile, which a
+  // toggle does not update (the top of the page stayed in the old language until a reload)
+  const lang: Lang = langSignal.value === "es" ? "es" : "en";
+  const t = tr(lang === "es");
   const onSaved = (next: Partial<ProfileSnapshot>) =>
     setS((cur) =>
       cur.profile ? { ...cur, profile: { ...cur.profile, ...next } } : cur
@@ -2401,7 +2404,7 @@ export default function SettingsPage() {
                 // UX-35: the email lives on ONE surface — the editable form
                 // below. Repeating it read-only here competed with the form and
                 // clipped long addresses at the card edge.
-                [t.language, p.user.language === "es" ? t.spanish : t.english],
+                [t.language, lang === "es" ? t.spanish : t.english],
               ]}
             />
             <Card
