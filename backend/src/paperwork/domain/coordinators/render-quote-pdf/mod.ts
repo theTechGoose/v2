@@ -18,6 +18,11 @@ import {
   renderWord,
   revisedNote,
 } from "@paperwork/domain/business/doc-render/mod.ts";
+import {
+  drawBrandMark,
+  embedLogo,
+  type LogoBytes,
+} from "@paperwork/domain/business/pdf-logo/mod.ts";
 
 export interface RenderQuotePdfInput {
   quote: Quote;
@@ -31,6 +36,8 @@ export interface RenderQuotePdfInput {
   /** Outgoing-comms language (roadmap p.13) — the PDF is the customer's
    *  copy, so it renders in their language. Defaults to "en". */
   commsLanguage?: string;
+  /** REQ-628: the business's logo — heads the document; absent → name wordmark. */
+  logo?: LogoBytes;
 }
 
 /**
@@ -57,7 +64,8 @@ export interface RenderQuotePdfInput {
 export class RenderQuotePdf {
   async run(raw: RenderQuotePdfInput): Promise<Uint8Array> {
     // REQ-161: the standard fonts encode WinAnsi only
-    const input = winAnsiSafeDeep(raw);
+    const { logo, ...rest } = raw;
+    const input = { ...winAnsiSafeDeep(rest), logo };
     const { quote, contractor, businessName } = input;
     // Roadmap p.13: the PDF is the customer's copy → outgoing-comms language.
     const es = input.commsLanguage === "es";
@@ -105,12 +113,23 @@ export class RenderQuotePdf {
     page.drawRectangle({ x: 0, y: H - 8, width: W, height: 8, color: PINK });
     y = H - 8;
 
-    // business eyebrow
-    const biz = (businessName ?? contractor?.name ??
-      t(lang, "renderQuotePdf.businessFallback"))
-      .toUpperCase();
-    y -= 32;
-    drawCenteredText(page, biz, W, y, bold, 9, PINK_DARK, 0.18);
+    // REQ-628: the business's logo (fit in a fixed box) or its name as a
+    // wordmark — never the house brand.
+    const logoImage = await embedLogo(pdf, input.logo);
+    const biz = businessName ?? contractor?.name ??
+      t(lang, "renderQuotePdf.businessFallback");
+    y -= 18;
+    y -= drawBrandMark(page, {
+      image: logoImage,
+      name: biz,
+      x: M,
+      top: y,
+      boxW: W - 2 * M,
+      boxH: 56,
+      font: bold,
+      color: TEAL,
+      align: "center",
+    });
 
     // doc tag pill (left) + status (right)
     y -= 32;

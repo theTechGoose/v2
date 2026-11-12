@@ -14,6 +14,10 @@ import {
 } from "../components/quote-doc.tsx";
 import { type Lang, tFor } from "../lib/i18n.ts";
 import { langSignal, persistLang, writeLangToUrl } from "../lib/lang.ts";
+import {
+  publicBusinessLabel,
+  publicDocTitle,
+} from "../../shared/documents/public-brand.ts";
 
 interface State {
   phase: "loading" | "error" | "ok";
@@ -37,6 +41,18 @@ export default function PublicQuoteView(
   // REQ-048: one tap flips the whole document — no reload — and the pick is
   // remembered (cookie + localStorage) and mirrored into ?lang= so the link
   // stays shareable; <html lang> (HtmlLang) and the tab title follow.
+  /** REQ-628: the tab names the business ("Quote + Agreement · A2Z Landscape LLC") */
+  function titleFor(l: Lang): string {
+    return publicDocTitle(
+      tFor(l, "quoteDoc.docTitle"),
+      s.phase === "ok" ? publicBusinessLabel(s.quote?.contractor) : undefined,
+    );
+  }
+  useEffect(() => {
+    if (s.phase === "ok" && typeof document !== "undefined") {
+      document.title = titleFor(lang);
+    }
+  }, [s.phase]);
   function pick(next: Lang) {
     if (next === lang) return;
     setLang(next);
@@ -44,7 +60,7 @@ export default function PublicQuoteView(
     writeLangToUrl(next);
     langSignal.value = next;
     if (typeof document !== "undefined") {
-      document.title = tFor(next, "quoteDoc.docTitle");
+      document.title = titleFor(next);
     }
   }
   const toggle = (

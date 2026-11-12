@@ -10,6 +10,8 @@ import { UserStore } from "@users/domain/data/user-store/mod.ts";
 import { BusinessIdentityStore } from "@profile/domain/data/business-identity-store/mod.ts";
 import { EmailService } from "@communication/domain/data/email-service/mod.ts";
 import { SmsService } from "@users/domain/data/sms/mod.ts";
+import { businessFrom } from "@communication/domain/business/sender/mod.ts";
+import { emailLogo, emailLogoHtml } from "@paperwork/domain/business/email-logo/mod.ts";
 import { type Lang, t } from "@core/i18n/mod.ts";
 import { SITE_ORIGIN } from "#quote-flow/site-meta.ts";
 
@@ -88,7 +90,7 @@ export class SendChangeOrderAlert {
     const coLang: Lang = ident?.commsLanguage === "es" ? "es" : "en";
     const businessName = ident?.businessName?.trim() ||
       (ident as { legalName?: string } | null)?.legalName?.trim() ||
-      contractor.name?.trim() || t(coLang, "brand.name");
+      contractor.name?.trim() || t(coLang, "changeOrderPublic.contractorFallback");
     const customerName = customer?.name?.trim() || customer?.businessName?.trim() ||
       t(cxLang, "notify.fallbackClient");
     const delta = fmtDelta(co.deltaAmountCents);
@@ -108,8 +110,17 @@ export class SendChangeOrderAlert {
               business: businessName,
             })
           } — ${refCo}`,
+          // REQ-628: the customer's copy leaves under the business's name, headed by its logo
+          from: businessFrom({ alias: ident?.emailAlias, name: businessName }),
           htmlBody: renderCustomerHtml({
             businessName,
+            logoHtml: emailLogoHtml(emailLogo({
+              appUrl: APP_URL,
+              kind: "invoice",
+              id: co.invoiceId,
+              biz: ident,
+              fallbackName: businessName,
+            })),
             delta,
             description: co.description,
             url,
@@ -210,6 +221,8 @@ export class SendChangeOrderAlert {
 /** Customer-facing approval request (commsLanguage). */
 function renderCustomerHtml(opts: {
   businessName: string;
+  /** REQ-628: the business's logo, or its name as a wordmark */
+  logoHtml: string;
   delta: string;
   description: string;
   url: string;
@@ -224,10 +237,8 @@ function renderCustomerHtml(opts: {
   return `<!doctype html>
 <html><body style="margin:0;padding:32px 16px;background:#f7f6f1;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#1c2c30">
   <div style="max-width:560px;margin:0 auto;background:#fff;border-radius:18px;padding:28px 32px;box-shadow:0 8px 32px rgba(20,72,82,0.08)">
-    <div style="font-size:11px;font-weight:800;letter-spacing:.18em;text-transform:uppercase;color:#d94e4e">${
-    escapeHtml(opts.businessName)
-  }</div>
-    <div data-doc-ref style="margin-top:10px;font-size:12px;font-weight:800;color:#6b7a7e">${
+    ${opts.logoHtml}
+    <div data-doc-ref style="margin-top:14px;font-size:12px;font-weight:800;color:#6b7a7e">${
     escapeHtml(opts.ref)
   }</div>
     <div style="margin-top:18px;font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;font-weight:900;font-size:24px;letter-spacing:-0.02em;color:#144852">${headline}</div>

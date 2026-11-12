@@ -11,6 +11,11 @@ import {
   docRefWithVersion,
   renderWord,
 } from "@paperwork/domain/business/doc-render/mod.ts";
+import {
+  drawBrandMark,
+  embedLogo,
+  type LogoBytes,
+} from "@paperwork/domain/business/pdf-logo/mod.ts";
 
 export interface RenderReceiptPdfInput {
   invoice: Invoice;
@@ -23,6 +28,8 @@ export interface RenderReceiptPdfInput {
   reference?: string;
   /** When the contractor confirmed receipt (ISO string). */
   confirmedAt: string;
+  /** REQ-628: the business's logo — heads the receipt; absent → name wordmark. */
+  logo?: LogoBytes;
 }
 
 /**
@@ -43,7 +50,8 @@ export interface RenderReceiptPdfInput {
 export class RenderReceiptPdf {
   async run(raw: RenderReceiptPdfInput): Promise<Uint8Array> {
     // REQ-161: the standard fonts encode WinAnsi only
-    const input = winAnsiSafeDeep(raw);
+    const { logo, ...rest } = raw;
+    const input = winAnsiSafeDeep(rest);
     const {
       invoice,
       contractor,
@@ -84,15 +92,19 @@ export class RenderReceiptPdf {
       color: rgb(1, 0.42, 0.42),
     });
 
-    // Brand eyebrow
-    const businessLabel =
-      (businessName ?? contractor?.name ?? t(lang, "brand.name")).toUpperCase();
-    page.drawText(businessLabel, {
+    // REQ-628: the business's logo or its name as a wordmark — never the
+    // house brand.
+    drawBrandMark(page, {
+      image: await embedLogo(pdf, logo),
+      name: businessName ?? contractor?.name ??
+        t(lang, "receiptPdf.contractorFallback"),
       x: M,
-      y: H - 50,
-      size: 9,
+      top: H - 22,
+      boxW: 260,
+      boxH: 46,
       font: bold,
-      color: rgb(0.85, 0.31, 0.31),
+      color: rgb(0.08, 0.28, 0.32),
+      maxTextSize: 16,
     });
 
     // RECEIPT eyebrow + invoice number
@@ -258,16 +270,7 @@ export class RenderReceiptPdf {
         color: rgb(0.08, 0.28, 0.32),
       });
     }
-    page.drawText(
-      t(lang, "receiptPdf.poweredBy", { brand: t(lang, "brand.name") }),
-      {
-        x: M,
-        y: footerY - 30,
-        size: 8,
-        font: reg,
-        color: rgb(0.66, 0.70, 0.70),
-      },
-    );
+    // REQ-628: no "Powered by" credit on a document the customer keeps.
 
     return await pdf.save();
   }

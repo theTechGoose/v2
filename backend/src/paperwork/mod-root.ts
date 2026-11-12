@@ -28,6 +28,8 @@ import { MarkInvoicePaid } from "@paperwork/domain/coordinators/mark-invoice-pai
 import { RenderQuotePdf } from "@paperwork/domain/coordinators/render-quote-pdf/mod.ts";
 import { RenderReceiptPdf } from "@paperwork/domain/coordinators/render-receipt-pdf/mod.ts";
 import { RenderInvoicePdf } from "@paperwork/domain/coordinators/render-invoice-pdf/mod.ts";
+import { RenderInvoicePrintPdf } from "@paperwork/domain/coordinators/render-invoice-print-pdf/mod.ts"; // REQ-629
+import { LoadBusinessLogo } from "@paperwork/domain/coordinators/load-business-logo/mod.ts";
 import { SendSignedConfirmation } from "@paperwork/domain/coordinators/send-signed-confirmation/mod.ts";
 import { SendAcceptedAlert } from "@paperwork/domain/coordinators/send-accepted-alert/mod.ts";
 import { SendInquiryAlert } from "@paperwork/domain/coordinators/send-inquiry-alert/mod.ts";
@@ -75,6 +77,8 @@ import { WorkOrderStore } from "@paperwork/domain/data/work-order-store/mod.ts";
     RenderQuotePdf,
     RenderReceiptPdf,
     RenderInvoicePdf,
+    LoadBusinessLogo, // REQ-628
+    RenderInvoicePrintPdf, // REQ-629
     SendSignedConfirmation,
     SendAcceptedAlert,
     SendInquiryAlert,

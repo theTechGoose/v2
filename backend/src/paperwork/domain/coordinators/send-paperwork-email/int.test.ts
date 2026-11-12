@@ -68,13 +68,15 @@ Deno.test("REQ-123 send-paperwork-email: a quote leaves from <alias>@documonster
 
   const bare = await flow.run("u-1", { kind: "quote", resourceId: quote.id });
   assertEquals(bare.ok, true);
-  assertEquals(sent[0].from, "noreply@documonster.com");
+  // REQ-628: the display name is the sender (no business yet → the contractor's name)
+  assertEquals(sent[0].from, '"Test Contractor" <noreply@documonster.com>');
 
   const identity = await identities.upsert("u-1", { businessName: "Demo Roofing LLC" });
   assertEquals(identity.emailAlias, "demo-roofing-llc");
   const aliased = await flow.run("u-1", { kind: "quote", resourceId: quote.id });
   assertEquals(aliased.ok, true);
-  assertEquals(sent[1].from, "demo-roofing-llc@documonster.com");
+  // REQ-628: under the business's name
+  assertEquals(sent[1].from, '"Demo Roofing LLC" <demo-roofing-llc@documonster.com>');
 
   await resetKv();
 });
@@ -448,7 +450,7 @@ Deno.test("REQ-020 NW-29 send-paperwork-email integration: the paid variant of a
 
 // REQ-160 — Raphael, previewing A2Z's October batch in his inbox: "these have the paperwork
 // monster on it not the client logo in this case a2z logo"
-Deno.test("REQ-160 send-paperwork-email: a standalone invoice's email carries the contractor's logo (the public-logo URL) once one is on file, and the house logo until then", async () => {
+Deno.test("REQ-160 REQ-628 send-paperwork-email: a standalone invoice's email carries the contractor's logo (the public-logo URL) once one is on file, and the business name as a wordmark until then — never the house logo", async () => {
   Deno.env.set("KV_PATH", ":memory:");
   await resetKv();
   const { flow, customers, invoices, identities, sent } = fresh();
@@ -459,7 +461,8 @@ Deno.test("REQ-160 send-paperwork-email: a standalone invoice's email carries th
   await identities.upsert("u-1", { businessName: "A2Z Landscape LLC" });
   const before = await flow.run("u-1", { kind: "invoice", resourceId: invoice.id });
   assertEquals(before.ok, true);
-  assertStringIncludes(sent[0].htmlBody, "/logo-email.png");
+  assert(!sent[0].htmlBody.includes("/logo-email.png"), "REQ-628: never the house logo");
+  assertStringIncludes(sent[0].htmlBody, "data-biz-wordmark");
   assert(!sent[0].htmlBody.includes("/api/public-logo/"), "no business logo yet → no public-logo URL");
 
   await identities.upsert("u-1", { logoFileId: "file-a2z" });

@@ -5,6 +5,8 @@ import { UserStore } from "@users/domain/data/user-store/mod.ts";
 import { BusinessIdentityStore } from "@profile/domain/data/business-identity-store/mod.ts";
 import { EmailService } from "@communication/domain/data/email-service/mod.ts";
 import { SmsService } from "@users/domain/data/sms/mod.ts";
+import { businessFrom } from "@communication/domain/business/sender/mod.ts";
+import { emailLogo, emailLogoHtml } from "@paperwork/domain/business/email-logo/mod.ts";
 import { ShortLinkStore } from "@paperwork/domain/data/shortlink-store/mod.ts";
 import { EventBus } from "@core/business/events/mod.ts";
 import { t } from "@core/i18n/mod.ts";
@@ -121,18 +123,20 @@ export class SendPaymentReminder {
       this.identity.get(userId).catch(() => null),
     ]);
     const lang: "en" | "es" = biz?.commsLanguage === "es" ? "es" : "en";
-    const businessName = biz?.businessName?.trim() || biz?.legalName?.trim() || sender?.name?.trim() || t(lang, "brand.name");
+    const businessName = biz?.businessName?.trim() || biz?.legalName?.trim() || sender?.name?.trim() || t(lang, "paymentReminder.senderFallback");
     // REQ-204: the reminder greets the customer as snapshotted on the bill
     const shown = customerOnDocument(invoice, customer);
     const customerFirst = (shown?.name ?? shown?.businessName)?.trim().split(/\s+/)[0];
     const senderFirst = sender?.name?.trim().split(/\s+/)[0];
-    const copy = composeReminderCopy({ day, customerFirst, senderFirst, businessName, invoice, lang });
+    const appUrl = Deno.env.get("APP_URL") ?? SITE_ORIGIN;
+    // REQ-628: headed by the business's own logo, or its name as a wordmark
+    const logoHtml = emailLogoHtml(emailLogo({ appUrl, kind: "invoice", id: invoice.id, biz, fallbackName: businessName }));
+    const copy = composeReminderCopy({ day, customerFirst, senderFirst, businessName, invoice, lang, logoHtml });
 
     // Mint a shortlink to the public invoice page for the SMS + email CTA.
     let url = "";
     try {
       const link = await this.shortlinks.findOrCreate(userId, "invoice", invoice.id);
-      const appUrl = Deno.env.get("APP_URL") ?? SITE_ORIGIN;
       url = `${appUrl}/s/${link.code}`;
     } catch { /* fall through */ }
 
@@ -145,6 +149,8 @@ export class SendPaymentReminder {
           to: toEmail,
           subject: copy.emailSubject,
           htmlBody: copy.emailHtml(url),
+          // REQ-628: under the business's name, never DocuMonster
+          from: businessFrom({ alias: biz?.emailAlias, name: businessName }),
           ...(sender?.email ? { cc: [sender.email] } : {}),
         });
         channels.push("email");
@@ -221,6 +227,8 @@ export function composeReminderCopy(opts: {
   businessName: string;
   invoice: Invoice;
   lang?: "en" | "es";
+  /** REQ-628: the business's logo (or wordmark) heading the email */
+  logoHtml?: string;
 }): {
   emailSubject: string;
   emailHtml: (url: string) => string;
@@ -250,6 +258,7 @@ export function composeReminderCopy(opts: {
     emailHtml: (url: string) => `<!doctype html>
 <html><body style="margin:0;padding:32px 16px;background:#f7f6f1;font-family:-apple-system,sans-serif;color:#1c2c30">
   <div style="max-width:560px;margin:0 auto;background:#fff;border-radius:18px;padding:28px 32px">
+    ${opts.logoHtml ? `<div style="margin:0 0 16px">${opts.logoHtml}</div>` : ""}
     <div data-doc-ref style="margin:0 0 12px;font-size:12px;font-weight:800;color:#6b7a7e">${docTitle("invoice", invoice, lang)}</div>
     <p style="margin:0;font-size:15px;line-height:1.55">${hi}${tone}</p>
     <p style="margin:14px 0 0;font-size:15px"><strong>${t(lang, "paymentReminder.amountDueLabel")}</strong> ${amount}${dueLine}</p>
