@@ -11,8 +11,10 @@ import {
   isQuoteLocked,
 } from "#documents/versions.ts";
 import {
+  askAmountExamples,
   pickChangeOrderTarget,
   reconcileChangeOrderDelta,
+  typedAmountsCents,
 } from "@agents/domain/business/change-order-intent/mod.ts";
 import type { Quote } from "@paperwork/dto/quote.ts";
 
@@ -222,6 +224,12 @@ export class ApplyChatChangeOrder {
             description,
             job: label,
             number: quote.number ?? label,
+            // REQ-438 (demo-loop cycle 3, M7): examples from this job's own
+            // amounts — never the fixed "$1,250" / "$19,750".
+            ...askAmountExamples({
+              currentTotalCents: currentTotal,
+              typed: typedAmountsCents(input.userText),
+            }),
           }),
           outcome: { kind: "needs_amount", ...named },
         };

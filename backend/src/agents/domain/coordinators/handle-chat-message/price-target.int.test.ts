@@ -394,8 +394,12 @@ Deno.test("REQ-445 M20: with no price stated, a bathroom-remodel draft under the
     conversationId: conv.id,
     content: JOB_ES,
   });
-  assertEquals(seen.length, 2);
-  const note = seen[1].messages[seen[1].messages.length - 1].content;
+  // REQ-439 (merged on demo-fixes): this draft also leaves the typed bench and
+  // mold out, so it is first re-asked for them (seen[1]); the floor re-ask is
+  // the last call — once.
+  assertEquals(seen.length, 3);
+  const last = seen[seen.length - 1];
+  const note = last.messages[last.messages.length - 1].content;
   assertStringIncludes(note, "$2,585");
   assertStringIncludes(note, "bathroom");
   const floor = plausibilityFloorCents(JOB_ES);

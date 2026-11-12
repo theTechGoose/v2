@@ -5,7 +5,9 @@
  */
 import { assertEquals } from "#std/assert";
 import {
+  askAmountExamples,
   isChangeOrderRequest,
+  isNewQuoteRequest,
   parseChangeOrderRequest,
   parseTargetTotalChange,
   pickChangeOrderTarget,
@@ -564,5 +566,97 @@ Deno.test("REQ-377 B1 reconcileChangeOrderDelta: no dollar amount typed → the 
       bases: [1_850_000],
     }),
     { kind: "ask" },
+  );
+});
+
+// ---------------------------------------------------------------------------
+// REQ-438 (demo-loop cycle 3, M7): pair 6 typed "No es change order, es una
+// cotización NUEVA…" and the denial itself read as a change order — the
+// REQ-238 coercion then turned the model's create_quote into a change order
+// with no customer, and the chat looped on "Which customer's job is this
+// change order for?".
+// ---------------------------------------------------------------------------
+
+Deno.test("REQ-438 M7 isChangeOrderRequest: a denied 'change order' is not one", () => {
+  for (
+    const s of [
+      "No es change order, es una cotización NUEVA para María José Peña, $180.",
+      "No es change order, es una cotización NUEVA…",
+      "It's not a change order, it's a new quote for Maria",
+      "this isn't a change order — new job for Dana",
+      "Not a change-order. Quote for Maria: faucet $180",
+      "no es una orden de cambio, es un trabajo nuevo",
+      "No change order please, just a new quote",
+    ]
+  ) {
+    assertEquals(isChangeOrderRequest(s), false, s);
+    assertEquals(parseChangeOrderRequest(s), undefined, s);
+  }
+  // an affirmed one next to a denial still counts
+  assertEquals(
+    isChangeOrderRequest(
+      "Not a new quote — a change order for Maria: add fridge cleaning $40",
+    ),
+    true,
+  );
+});
+
+Deno.test("REQ-438 M7 isNewQuoteRequest: 'cotización nueva / new quote' wins over change-order wording", () => {
+  for (
+    const s of [
+      "No es change order, es una cotización NUEVA para María José Peña, $180.",
+      "Nueva cotización para mi cliente María José Peña: llave $180",
+      "Cotización para María José Peña: cambiar la llave del fregadero de la cocina, $180 todo incluido.",
+      "New quote for Maria: replace kitchen faucet $180",
+      "Quote for Maria: fridge cleaning $40",
+      "make a separate quote for Dana, deck stain $900",
+      "presupuesto nuevo para Ana: pintar cerca $300",
+    ]
+  ) assertEquals(isNewQuoteRequest(s), true, s);
+  for (
+    const s of [
+      "Change order for Maria: add fridge cleaning $40",
+      "Orden de cambio para Maria: limpieza del refri $40",
+      "change Q-001 to $19,750",
+      "how much should I quote for a panel swap?",
+      "send the quote to Maria",
+    ]
+  ) assertEquals(isNewQuoteRequest(s), false, s);
+  // an explicit NEW quote beats the change-order words in the same sentence
+  assertEquals(
+    isChangeOrderRequest(
+      "Change order? No — a new quote for Maria: fridge cleaning $40",
+    ),
+    false,
+  );
+});
+
+Deno.test("REQ-438 M7 askAmountExamples: the examples come from the job's own amounts, never $1,250 / $19,750", () => {
+  // the demo: a $180 job, "$180" typed
+  assertEquals(
+    askAmountExamples({ currentTotalCents: 18_000, typed: [18_000] }),
+    {
+      exampleAdd: "$180",
+      exampleTotal: "$360",
+    },
+  );
+  // nothing typed: a tenth of the job, rounded to a round figure
+  assertEquals(
+    askAmountExamples({ currentTotalCents: 1_850_000, typed: [] }),
+    { exampleAdd: "$1,850", exampleTotal: "$20,350" },
+  );
+  assertEquals(askAmountExamples({ currentTotalCents: 35_000, typed: [] }), {
+    exampleAdd: "$35",
+    exampleTotal: "$385",
+  });
+  // an empty job still gets a sensible example
+  assertEquals(askAmountExamples({ currentTotalCents: 0, typed: [] }), {
+    exampleAdd: "$100",
+    exampleTotal: "$100",
+  });
+  // cents survive when the typed amount has them
+  assertEquals(
+    askAmountExamples({ currentTotalCents: 18_000, typed: [4_050] }),
+    { exampleAdd: "$40.50", exampleTotal: "$220.50" },
   );
 });

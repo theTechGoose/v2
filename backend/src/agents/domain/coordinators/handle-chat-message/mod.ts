@@ -86,10 +86,23 @@ import { EventBus } from "@core/business/events/mod.ts";
 import { lockStatusFor, QUOTE_LOCKED } from "#quote-flow/quote-lock.ts";
 import {
   changeOrderNumbersIn, // REQ-462
+  type ChangeOrderTarget,
+  isNewQuoteRequest,
   parseChangeOrderEdit, // REQ-462
   parseChangeOrderRequest,
   parseTargetTotalChange,
+  pickChangeOrderTarget,
+  typedAmountsCents,
 } from "@agents/domain/business/change-order-intent/mod.ts";
+// REQ-438 (demo-loop cycle 3, M7): delete-an-invoice asks, and the language
+// of the message itself.
+import {
+  parseInvoiceRemoval,
+  sameDocNumber,
+} from "@agents/domain/business/invoice-removal-intent/mod.ts";
+import { messageLang } from "@agents/domain/business/message-language/mod.ts";
+import { InvoiceStore } from "@paperwork/domain/data/invoice-store/mod.ts";
+import { isInvoiceLocked } from "#documents/versions.ts";
 import { ApplyChatChangeOrder } from "@agents/domain/coordinators/apply-chat-change-order/mod.ts";
 import { UpdateChatChangeOrder } from "@agents/domain/coordinators/update-chat-change-order/mod.ts"; // REQ-462
 import {
@@ -154,7 +167,6 @@ import {
   totalMoveLine,
   workingTotalCents,
 } from "@agents/domain/business/tool-calls/mod.ts";
-import { typedAmountsCents } from "@agents/domain/business/change-order-intent/mod.ts";
 import { GenerateJobOptions } from "@agents/domain/coordinators/generate-job-options/mod.ts";
 import {
   missedTypedItems,
@@ -353,6 +365,62 @@ export class HandleChatMessage {
      *  named by its number ("CO-001"). */
     private changeOrderEdit?: UpdateChatChangeOrder,
   ) {}
+
+  /** REQ-438 (M7): which of the contractor's quotes a change order would
+   *  land on — the same pick ApplyChatChangeOrder makes. */
+  private async changeOrderTarget(
+    userId: string,
+    ask: { customerName?: string; quoteNumber?: string; boundQuoteId?: string },
+  ): Promise<ChangeOrderTarget> {
+    const [quotes, customers] = await Promise.all([
+      this.quotes.listByUser(userId).catch(() => []),
+      (this.customers ?? new CustomerStore()).listByUser(userId)
+        .catch(() => []),
+    ]);
+    return pickChangeOrderTarget({
+      quotes: quotes.map((q) => ({
+        id: q.id,
+        customerId: q.customerId,
+        status: q.status,
+        createdAt: q.createdAt,
+        number: q.number,
+      })),
+      customers: customers.map((c) => ({ id: c.id, name: c.name })),
+      ...ask,
+    });
+  }
+
+  /** REQ-438 (M7): the answer to "delete invoice INV-001" — where to delete
+   *  it (Invoices › the invoice › Delete invoice), or that a paid one stays. */
+  private async invoiceRemovalReply(
+    userId: string,
+    lang: "en" | "es",
+    number: string | undefined,
+  ): Promise<string> {
+    if (!number) return t(lang, "chatCoordinator.invoiceRemoval.generic");
+    const invoices = await new InvoiceStore().listByUser(userId)
+      .catch(() => []);
+    const inv = invoices.find((i) =>
+      typeof i.number === "string" && sameDocNumber(i.number, number)
+    );
+    if (!inv) {
+      return t(lang, "chatCoordinator.invoiceRemoval.notFound", { number });
+    }
+    const label = inv.number ?? number;
+    if (isInvoiceLocked(inv)) {
+      return t(lang, "chatCoordinator.invoiceRemoval.paid", { number: label });
+    }
+    const cents = inv.amount ?? 0;
+    return t(lang, "chatCoordinator.invoiceRemoval.how", {
+      number: label,
+      amount: `$${
+        (cents / 100).toLocaleString("en-US", {
+          minimumFractionDigits: 2,
+          maximumFractionDigits: 2,
+        })
+      }`,
+    });
+  }
 
   /** REQ-331: the same-owner customer the thread's typed facts name — by
    *  phone, email, then accent-folded name; REQ-386 (demo m17): else the one
@@ -1360,7 +1428,14 @@ export class HandleChatMessage {
     const contractor = await this.users.get(input.userId).catch(() =>
       undefined
     );
-    const replyLang = contractor?.language === "es" ? "es" : "en";
+    // REQ-438 (demo-loop cycle 3, M7): …in the language the contractor TYPED
+    // this message in, when it reads clearly as one — pair 6's app was in
+    // English, they wrote Spanish, and every reply came back in English.
+    const replyLang =
+      (typeof input.content === "string"
+        ? messageLang(input.content)
+        : undefined) ??
+        (contractor?.language === "es" ? "es" : "en");
 
     // ---- REQ-392 (demo-loop cycle 2, M7): typed on Pick a price / Job
     // details. There is no quote yet on those steps (or the picker is about
@@ -1556,6 +1631,34 @@ export class HandleChatMessage {
         : r.conversation;
       return { conversation, newMessages: [userMsg, ...r.newMessages] };
     };
+    // ---- REQ-438 (demo-loop cycle 3, M7): "Borra la factura repetida
+    // INV-001" — the chat has no invoice tool, so the model made it a change
+    // order ("¿Cuánto debe sumar Eliminar factura INV-001 a Q-001…?"). It is
+    // answered here, from the contractor's own invoices: how to delete it on
+    // Invoices (a paid one stays on the record). Nothing is written.
+    const removalAsk = !llmResponse && typeof input.content === "string"
+      ? parseInvoiceRemoval(input.content)
+      : undefined;
+    if (removalAsk) {
+      const text = await this.invoiceRemovalReply(
+        input.userId,
+        replyLang,
+        removalAsk.invoiceNumber,
+      );
+      const reply = await this.messages.append({
+        conversationId: conv.id,
+        role: "assistant",
+        kind: "text",
+        content: text,
+      });
+      const updated = await this.conversations.update(conv.id, {
+        preview: derivePreview(reply.content),
+      });
+      return await finishEarly({
+        conversation: updated,
+        newMessages: [reply],
+      });
+    }
     // ---- REQ-388 (demo-loop cycle 2, M19): "¿Cuánto me debe Ana López?" —
     // what a customer owes and when, from their own quotes and invoices, with
     // or without a quote bound. Pair 2's model had neither (and a prompt that
@@ -2059,7 +2162,21 @@ export class HandleChatMessage {
 
     // REQ-238: a create_quote on a change-order request is the demo's bug
     // (a new separate quote) — run it as the change order it was asked for.
-    if (changeOrderAsk && llmResponse.action?.type === "create_quote") {
+    // REQ-438 (demo-loop cycle 3, M7): …unless the customer it names has no
+    // quote at all — then there is no job to change, and the model's draft
+    // stands (pair 6 looped on "Which job is this change order for?").
+    const namedHasNoQuote = changeOrderAsk?.customerName &&
+        !changeOrderAsk.quoteNumber &&
+        llmResponse.action?.type === "create_quote"
+      ? (await this.changeOrderTarget(input.userId, {
+        customerName: changeOrderAsk.customerName,
+        boundQuoteId: conv.quoteId,
+      })).kind === "none"
+      : false;
+    if (
+      changeOrderAsk && !namedHasNoQuote &&
+      llmResponse.action?.type === "create_quote"
+    ) {
       const items = llmResponse.action.payload.lineItems;
       llmResponse = {
         text: "",
@@ -2097,6 +2214,44 @@ export class HandleChatMessage {
           action: {
             type: "update_change_order",
             payload: { changeOrderNumber: named[0] },
+          },
+        };
+      }
+    }
+    // REQ-438 (demo-loop cycle 3, M7): the other way round — "Cotización para
+    // María José Peña: cambiar la llave … $180" asks for a NEW quote, and
+    // pair 6's model called change_order; with no quote of hers to change,
+    // the reply was "I couldn't find a quote… Which job is this change order
+    // for?". In a conversation with no quote yet, that change_order is the
+    // draft it was asked for.
+    if (
+      !changeOrderAsk && !conv.quoteId &&
+      llmResponse.action?.type === "change_order" &&
+      llmResponse.action.payload.targetTotalCents === undefined &&
+      typeof input.content === "string" && isNewQuoteRequest(input.content)
+    ) {
+      const co = llmResponse.action.payload;
+      const typed = typedAmountsCents(input.content);
+      const amountCents = typed.length === 1 ? typed[0] : co.deltaAmountCents;
+      const description = co.description?.trim() ?? "";
+      const target = await this.changeOrderTarget(input.userId, {
+        customerName: co.customerName,
+        quoteNumber: co.quoteNumber,
+      });
+      if (
+        description && amountCents > 0 &&
+        (target.kind === "none" || target.kind === "ask_customer")
+      ) {
+        llmResponse = {
+          text: "",
+          action: {
+            type: "create_quote",
+            payload: {
+              summary: co.customerName
+                ? `${description} — ${co.customerName}`
+                : description,
+              lineItems: [{ description, amountCents }],
+            },
           },
         };
       }
