@@ -51,8 +51,18 @@
  * element only, and hidden while this page has no such element (another page load, the element
  * gone or not laid out) — never at the fraction it had, which is over something else now. His
  * pointer off this screen (`o: 1`) is a small marker on the edge, no name tag.
+ * REQ-535 (demo-loop cycle 4, m13) — the customer's pill survives a page load (every link is a
+ * full load): the tab keeps its demo and whether its page was connected (pill-carry.ts); the next
+ * page draws the pill from it at once, and after a load from a connected page keeps saying
+ * Connected for a ~5 s grace while its own link comes up — "Connecting…" only if it does not.
  */
-import { useEffect, useMemo, useRef, useState } from "preact/hooks";
+import {
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "preact/hooks";
 import { langSignal, tFor, type Vars } from "../lib/i18n.ts";
 import { demoChromeLang, storedLang } from "../lib/lang.ts";
 import { fenceClicks } from "../lib/backdrop-dismiss.ts";
@@ -111,6 +121,13 @@ import {
   type PeerFrom,
 } from "../lib/demo-mode/transport.ts";
 import { demoTabKey } from "../lib/demo-mode/tab-key.ts";
+import {
+  carriedDemo,
+  forgetDemo,
+  keepDemo,
+  PILL_CARRY_GRACE_MS,
+  showsConnected,
+} from "../lib/demo-mode/pill-carry.ts";
 import {
   createRecorder,
   type Recorder,
@@ -313,6 +330,8 @@ export default function DemoModeOverlay() {
   const [opening, setOpening] = useState<{ targetName: string } | null>(null);
   const [status, setStatus] = useState<LinkStatus>("connecting");
   const [peerOnline, setPeerOnline] = useState(false);
+  /** REQ-535 — this page loaded from a connected one: Connected for a grace while the link comes up */
+  const [carrying, setCarrying] = useState(false);
   /** REQ-214 — the latest thing each presenter did, by pid */
   const [cmds, setCmds] = useState<Record<string, PointerCmd>>({});
   const seq = useRef(0);
@@ -502,6 +521,57 @@ export default function DemoModeOverlay() {
       document.removeEventListener("pointermove", seen, opts);
       document.removeEventListener("pointerdown", seen, opts);
       document.documentElement.removeEventListener("pointerleave", gone);
+    };
+  }, []);
+
+  // REQ-535 (cycle 4, m13) — the demo this tab was in a moment ago, drawn at once (before the first
+  // /active answers); a load from a connected page keeps the Connected face for the grace
+  useLayoutEffect(() => {
+    if (inert) return;
+    const carried = carriedDemo(sessionStore(), Date.now());
+    if (!carried || carried.demo.role !== "viewer") return;
+    setDemo(carried.demo);
+    if (!carried.connected) return;
+    setCarrying(true);
+    const grace = setTimeout(() => setCarrying(false), PILL_CARRY_GRACE_MS);
+    return () => clearTimeout(grace);
+  }, []);
+  // REQ-535 — the link is up on its own: the grace has done its job (a drop after this is said)
+  useEffect(() => {
+    if (status === "direct" || status === "relay") setCarrying(false);
+  }, [status]);
+  // REQ-535 — the tab keeps its demo and whether it is connected; a demo gone is forgotten. As the
+  // page goes it says so last (a socket closing under the unload is not "disconnected")
+  const hadDemoRef = useRef(false);
+  const goneRef = useRef(false);
+  useEffect(() => {
+    if (inert || goneRef.current) return;
+    if (demo?.role === "viewer") {
+      hadDemoRef.current = true;
+      keepDemo(sessionStore(), demo, peerOnline, Date.now());
+    } else if (!demo && hadDemoRef.current) {
+      hadDemoRef.current = false;
+      forgetDemo(sessionStore());
+    }
+  }, [demo, peerOnline]);
+  useEffect(() => {
+    if (inert) return;
+    const keepOnHide = () => {
+      const d = demoRef.current;
+      if (d?.role === "viewer") {
+        keepDemo(sessionStore(), d, peerOnlineRef.current, Date.now());
+      }
+      goneRef.current = true;
+    };
+    // back from the back/forward cache: this page is live again
+    const liveAgain = () => {
+      goneRef.current = false;
+    };
+    globalThis.addEventListener("pagehide", keepOnHide);
+    globalThis.addEventListener("pageshow", liveAgain);
+    return () => {
+      globalThis.removeEventListener("pagehide", keepOnHide);
+      globalThis.removeEventListener("pageshow", liveAgain);
     };
   }, []);
 
@@ -1212,10 +1282,12 @@ export default function DemoModeOverlay() {
     ? startedText(demo.presenters, demo.presenterName)
     : null;
   const line = started ? t(started.key, started.vars) : guidingText;
-  // REQ-232 (demo-lifecycle-p1) — plain words: is the staff here or not; never how the bytes travel
+  // REQ-232 (demo-lifecycle-p1) — plain words: is the staff here or not; never how the bytes travel.
+  // REQ-535 — a page loaded from a connected one says Connected through the grace
+  const live = showsConnected(status, carrying);
   const statusLabel = status === "ended"
     ? t("demoMode.ended")
-    : status === "direct" || status === "relay"
+    : live
     ? t("demoMode.connected")
     : t("demoMode.connecting");
   // REQ-373 (demo m2, p13-h) — the guide's first name on the compact pill; the name said once
@@ -1227,11 +1299,7 @@ export default function DemoModeOverlay() {
   faceRef.current = {
     compact,
     open: compact && open,
-    status: status === "ended"
-      ? "ended"
-      : status === "direct" || status === "relay"
-      ? "live"
-      : "connecting",
+    status: status === "ended" ? "ended" : live ? "live" : "connecting",
     text: line,
     label: statusLabel,
     guide: showGuide ? copy.shortName : undefined,
