@@ -68,7 +68,14 @@ export interface LLMRequest {
 export type LLMAction =
   | { type: "create_quote"; payload: { summary: string; lineItems: { description: string; amountCents: number }[] } }
   | { type: "lock_quote"; payload: { quoteId: string } }
-  | { type: "request_terms_transition"; payload: { quoteId: string } };
+  | { type: "request_terms_transition"; payload: { quoteId: string } }
+  /** REQ-238 (demo M27): change an EXISTING job — a change order on its
+   *  invoice, a pending revision on its issued quote, a line on its draft.
+   *  Never a new quote. `deltaAmountCents` is signed (− is a credit). */
+  | {
+    type: "change_order";
+    payload: { customerName?: string; description: string; deltaAmountCents: number };
+  };
 
 export interface LLMResponse {
   text: string;

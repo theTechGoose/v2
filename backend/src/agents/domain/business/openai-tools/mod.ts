@@ -74,6 +74,25 @@ export const TOOL_DEFS = [
       },
     },
   },
+  // REQ-238 (demo M27): "change order for Maria: add …" changes Maria's
+  // existing job instead of drafting a new quote.
+  {
+    type: "function" as const,
+    function: {
+      name: "change_order",
+      description: t("en", "prompts.tools.changeOrder.description"),
+      parameters: {
+        type: "object",
+        properties: {
+          customerName: { type: "string", description: t("en", "prompts.tools.changeOrder.customerName") },
+          description: { type: "string", description: t("en", "prompts.tools.changeOrder.descriptionField") },
+          deltaAmountCents: { type: "integer", description: t("en", "prompts.tools.changeOrder.deltaAmountCents") },
+        },
+        required: ["description", "deltaAmountCents"],
+        additionalProperties: false,
+      },
+    },
+  },
 ] as const;
 
 /**
@@ -113,6 +132,20 @@ export function parseToolCall(call: { function: { name: string; arguments: strin
       const quoteId = typeof args.quoteId === "string" ? args.quoteId : "";
       if (!quoteId) return undefined;
       return { type: "request_terms_transition", payload: { quoteId } };
+    }
+    case "change_order": {
+      const description = typeof args.description === "string" ? args.description.trim() : "";
+      const delta = args.deltaAmountCents;
+      if (!description || typeof delta !== "number" || !Number.isFinite(delta)) return undefined;
+      const customerName = typeof args.customerName === "string" ? args.customerName.trim() : "";
+      return {
+        type: "change_order",
+        payload: {
+          ...(customerName ? { customerName } : {}),
+          description,
+          deltaAmountCents: Math.trunc(delta),
+        },
+      };
     }
     default:
       return undefined;

@@ -1,5 +1,5 @@
 import { assertEquals } from "#std/assert";
-import { parseToolCall } from "./mod.ts";
+import { parseToolCall, TOOL_DEFS } from "./mod.ts";
 
 function call(name: string, args: unknown) {
   return { function: { name, arguments: typeof args === "string" ? args : JSON.stringify(args) } };
@@ -95,4 +95,27 @@ Deno.test("parseToolCall: empty summary in create_quote returns undefined", () =
     lineItems: [{ description: "x", amountCents: 1 }],
   }));
   assertEquals(out, undefined);
+});
+
+// REQ-238 (demo M27): the assistant can ask for a change order instead of a
+// brand-new quote.
+Deno.test("REQ-238 TOOL_DEFS: the assistant has a change_order tool", () => {
+  const names = TOOL_DEFS.map((d) => d.function.name);
+  assertEquals(names.includes("change_order"), true);
+});
+
+Deno.test("REQ-238 parseToolCall: change_order happy path carries customer, description and signed cents", () => {
+  assertEquals(
+    parseToolCall(call("change_order", { customerName: "Maria", description: "Fridge cleaning", deltaAmountCents: 4000.9 })),
+    { type: "change_order", payload: { customerName: "Maria", description: "Fridge cleaning", deltaAmountCents: 4000 } },
+  );
+  assertEquals(
+    parseToolCall(call("change_order", { description: "Skip the deck stain", deltaAmountCents: -20000 })),
+    { type: "change_order", payload: { description: "Skip the deck stain", deltaAmountCents: -20000 } },
+  );
+});
+
+Deno.test("REQ-238 parseToolCall: change_order without a description or amount returns undefined", () => {
+  assertEquals(parseToolCall(call("change_order", { customerName: "Maria", deltaAmountCents: 4000 })), undefined);
+  assertEquals(parseToolCall(call("change_order", { customerName: "Maria", description: "Fridge" })), undefined);
 });
