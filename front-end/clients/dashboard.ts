@@ -15,6 +15,7 @@
 import { api, type ApiOptions } from "../lib/api.ts";
 import type { QuoteCard } from "./quotes.ts";
 import type { SearchHit } from "../../shared/documents/search.ts";
+import type { AcceptedMethods } from "../../shared/documents/invoice-form.ts";
 
 export type { SearchHit };
 
@@ -29,6 +30,17 @@ export interface Profile {
   businessIdentity?:
     & { displayName?: string; logoUrl?: string }
     & Record<string, unknown>;
+  /** REQ-483: what GET /profile names the business identity — Settings'
+   *  days to pay and the payment methods saved at onboarding. */
+  identity?:
+    | (
+      & {
+        invoiceNetDays?: number;
+        acceptedPaymentMethods?: AcceptedMethods;
+      }
+      & Record<string, unknown>
+    )
+    | null;
   /** REQ-206: the payment instructions the invoice form starts from. */
   contractDefaults?:
     | (
@@ -324,6 +336,13 @@ export const dashboardClient = {
   /** The quote record — its customer and job name seed the invoice form. */
   quote: (quoteId: string, opts: ApiOptions = {}) =>
     api.get<
-      { id: string; customerId?: string; jobName?: string; summary?: string }
+      {
+        id: string;
+        customerId?: string;
+        jobName?: string;
+        summary?: string;
+        /** REQ-483: the wizard terms — payment_terms seeds the invoice's days */
+        terms?: Array<{ stepId?: string; value?: string }>;
+      }
     >(`/quotes/${quoteId}`, opts),
 };

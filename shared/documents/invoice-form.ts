@@ -116,6 +116,134 @@ export function dueDateFrom(issuedDate: string, netDays: number): string {
   return d.toISOString().slice(0, 10);
 }
 
+/** REQ-483 (demo-loop cycle 3, m18): the picker's preset day counts. Any
+ *  other count opens as custom terms with its due date filled in. */
+export function isPresetNetDays(n: number): boolean {
+  return (NET_DAYS_OPTIONS as readonly number[]).includes(n);
+}
+
+/** REQ-483 (m18): the days a New invoice starts with. Drawn from a quote,
+ *  its payment terms decide — "Due now" → 0, "Net N" → N, "upon completion"
+ *  → the account's days (REQ-411: the bill goes out when the job is done and
+ *  the customer then has those days). Otherwise — no quote, a split, custom
+ *  text — Settings' "Days to pay an invoice" (`invoiceNetDays`), else 30.
+ *  Terms are stored as the EN option label (handle-wizard-answer). */
+export function defaultInvoiceNetDays(
+  invoiceNetDays: number | null | undefined,
+  quoteTerms:
+    | ReadonlyArray<{ stepId?: string; value?: string }>
+    | null
+    | undefined,
+): number {
+  const account = typeof invoiceNetDays === "number" &&
+      Number.isInteger(invoiceNetDays) && invoiceNetDays >= 0
+    ? invoiceNetDays
+    : 30;
+  const value = quoteTerms?.find((t) => t?.stepId === "payment_terms")?.value;
+  if (!value) return account;
+  if (/\bdue now\b/i.test(value)) return 0;
+  const net = /\bnet\s*-?\s*(\d{1,3})\b/i.exec(value);
+  if (net) return Number(net[1]);
+  return account;
+}
+
+/* ---------------- payment instructions (REQ-483, M40) ---------------- */
+
+type PayMethod = {
+  enabled?: boolean;
+  handle?: string;
+  cashtag?: string;
+  mailTo?: string;
+  instructions?: string;
+};
+export type AcceptedMethods = Partial<Record<string, PayMethod | undefined>>;
+
+const METHOD_LABELS: Record<"en" | "es", Record<string, string>> = {
+  en: {
+    check: "Check",
+    venmo: "Venmo",
+    zelle: "Zelle",
+    cashapp: "Cash App",
+    paypal: "PayPal",
+    cash: "Cash",
+    ach: "Bank transfer",
+    card: "Card",
+  },
+  es: {
+    check: "Cheque",
+    venmo: "Venmo",
+    zelle: "Zelle",
+    cashapp: "Cash App",
+    paypal: "PayPal",
+    cash: "Efectivo",
+    ach: "Transferencia bancaria",
+    card: "Tarjeta",
+  },
+};
+
+/** The order the public invoice page lists them (projectAcceptedMethods). */
+const METHOD_ORDER = [
+  "check",
+  "venmo",
+  "zelle",
+  "cashapp",
+  "paypal",
+  "cash",
+  "ach",
+  "card",
+  "other",
+] as const;
+
+/** The methods saved at onboarding / in Settings as one line of payment
+ *  instructions: "Zelle: 5125550102 · Cash". Enabled methods only, each with
+ *  the handle the customer needs (never ACH's routing/account numbers —
+ *  only its own instructions); "other" is its free text alone. */
+export function paymentInstructionsFromMethods(
+  methods: AcceptedMethods | null | undefined,
+  lang: string,
+): string {
+  if (!methods) return "";
+  const labels = METHOD_LABELS[lang === "es" ? "es" : "en"];
+  const parts: string[] = [];
+  for (const key of METHOD_ORDER) {
+    const m = methods[key];
+    if (!m?.enabled) continue;
+    const detail = (key === "check"
+      ? m.mailTo
+      : key === "cashapp"
+      ? m.cashtag
+      : key === "ach" || key === "card" || key === "other"
+      ? m.instructions
+      : m.handle)?.trim();
+    if (key === "other") {
+      if (detail) {
+        parts.push(detail);
+      }
+      continue;
+    }
+    parts.push(detail ? `${labels[key]}: ${detail}` : labels[key]);
+  }
+  return parts.join(" · ");
+}
+
+/** REQ-483 (M40): what "Payment instructions" starts with — Settings' own
+ *  text first, else what was last typed on this device, else the accepted
+ *  methods (so onboarding's Zelle is never a blank field). */
+export function defaultPaymentInstructions(input: {
+  settings?: string | null;
+  remembered?: string | null;
+  methods?: AcceptedMethods | null;
+  lang: string;
+}): string {
+  if (typeof input.settings === "string" && input.settings.trim()) {
+    return input.settings;
+  }
+  if (typeof input.remembered === "string" && input.remembered.trim()) {
+    return input.remembered;
+  }
+  return paymentInstructionsFromMethods(input.methods, input.lang);
+}
+
 /* ---------------- bill-to ---------------- */
 
 export interface BillTo {
