@@ -26,6 +26,9 @@ type Name =
   | "pencil"
   | "x"
   | "chevron-right"
+  | "chevron-left"
+  | "chevron-down"
+  | "play"
   | "menu"
   | "logo";
 
@@ -91,6 +94,9 @@ const PATHS: Record<Name, JSX.Element> = {
   pencil: <path d="M4 20l1-4L16 5l3 3L8 19zM14 7l3 3" />,
   x: <path d="M6 6l12 12M18 6L6 18" />,
   "chevron-right": <path d="M9 6l6 6-6 6" />,
+  "chevron-left": <path d="M15 6l-6 6 6 6" />,
+  "chevron-down": <path d="M6 9l6 6 6-6" />,
+  play: <path d="M8 5v14l11-7z" />,
   menu: <path d="M3 6h18M3 12h18M3 18h18" />,
   logo: <path d="M4 18h16l-2-9-3 3-3-6-3 6-3-3z" />,
 };

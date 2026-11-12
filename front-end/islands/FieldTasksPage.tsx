@@ -41,6 +41,7 @@ import {
 } from "../lib/field.ts";
 import { langSignal, t } from "../lib/i18n.ts";
 import SearchSelect from "./SearchSelect.tsx";
+import { Icon } from "../components/ui/Icon.tsx";
 
 const ISO = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -730,7 +731,7 @@ export default function FieldTasksPage() {
               title="−1"
               onClick={() => go(shiftIso(date, -1))}
             >
-              ◀
+              <Icon name="chevron-left" size={14} />
             </button>
             <input
               type="date"
@@ -745,7 +746,7 @@ export default function FieldTasksPage() {
               title="+1"
               onClick={() => go(shiftIso(date, 1))}
             >
-              ▶
+              <Icon name="chevron-right" size={14} />
             </button>
             <button
               type="button"
