@@ -17,6 +17,7 @@ import {
   receivableBalanceCents,
 } from "@paperwork/domain/business/open-receivable/mod.ts";
 import type { View } from "@paperwork/dto/view.ts";
+import { countJobs } from "@analytics/domain/business/signed-jobs/mod.ts";
 import { docNumberOf } from "#documents/numbering.ts";
 import { invoiceState, quoteState } from "#documents/versions.ts";
 import { t } from "@core/i18n/mod.ts";
@@ -134,12 +135,18 @@ function buildOne(
   const balanceSub = balanceSubLabel(balanceSubParts, "en", t);
 
   // ---------------- jobs ----------------
-  // "active job" = accepted quote without a paid invoice covering it
+  // REQ-562 (demo-loop cycle 4, M38): an active job is a signed quote whose
+  // linked non-void invoices — scheduled ones included — are not all paid:
+  // the dashboard's ListActiveJobs rule, shared. "Accepted quotes − paid
+  // invoices" read a 50/50 job with its deposit paid as 1 − 1 = 0 jobs.
   const acceptedQuotes = myQuotes.filter((q) =>
     q.status === "accepted" || q.acceptedAt
   );
   const paidInvoiceCount = myInvoices.filter((i) => i.status === "paid").length;
-  const activeJobs = Math.max(0, acceptedQuotes.length - paidInvoiceCount);
+  const { active: activeJobs, completed: completedJobs } = countJobs(
+    myQuotes,
+    myInvoices,
+  );
   const overdueCount = myInvoices.filter(
     (i) => isOpenReceivable(i) && i.dueDate < now.toISOString().slice(0, 10),
   ).length;
@@ -172,6 +179,7 @@ function buildOne(
     revenue12moCents,
     daysSinceContact,
     paidInvoiceCount,
+    completedJobs,
   });
 
   // ---------------- temp ----------------
@@ -247,6 +255,8 @@ export function deriveStatus(args: {
   revenue12moCents: number;
   daysSinceContact: number;
   paidInvoiceCount: number;
+  /** REQ-562: signed jobs fully paid (standalone paid invoices count one each). */
+  completedJobs: number;
 }): CustomerStatus {
   const {
     balanceCents,
@@ -257,23 +267,25 @@ export function deriveStatus(args: {
     daysSinceContact,
   } = args;
   if (balanceCents > 0) return "owes";
-  if (acceptedQuotes.length > args.paidInvoiceCount) return "active";
+  // REQ-562 (cycle 4, m21): a signed job in flight — the shared rule, so a
+  // first job with its deposit paid and its balance scheduled is "active".
+  if (activeJobs > 0) return "active";
   if (myQuotes.length > 0 && acceptedQuotes.length === 0) {
     const onlyOpen = myQuotes.every((q) =>
       q.status === "draft" || q.status === "sent"
     );
     if (onlyOpen) return "lead";
   }
-  if (revenue12moCents > 0 && activeJobs === 0 && balanceCents === 0) {
-    return "regular";
-  }
+  // REQ-562: "regular" takes at least two completed jobs — one job is not a
+  // regular customer, however much it paid.
+  const repeat = args.completedJobs >= 2;
+  if (repeat && revenue12moCents > 0 && balanceCents === 0) return "regular";
   if (daysSinceContact > 60 && balanceCents <= 0) return "cold";
   // Fallback: if there's any non-decided open quote treat as lead
   if (myQuotes.length > 0 && acceptedQuotes.length === 0) return "lead";
-  // REQ-271 (demo i18n-formatting-m5): nothing on the books yet — no quote, no paid invoice —
-  // is a new customer, never a "regular".
-  if (myQuotes.length === 0 && args.paidInvoiceCount === 0) return "new";
-  return "regular";
+  // REQ-271 (demo i18n-formatting-m5): nothing on the books yet is a new
+  // customer, never a "regular"; REQ-562: nor is a single finished job.
+  return repeat ? "regular" : "new";
 }
 
 /**

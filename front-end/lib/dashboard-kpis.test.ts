@@ -51,3 +51,16 @@ Deno.test("REQ-397 pickKpis: Outstanding is the buckets' money, never clamped by
   assertEquals(k.outstanding, 175);
   assertEquals(k.outstanding, k.owed);
 });
+
+// REQ-562 (demo-loop cycle 4, m21): "Avg. paid job $1,425" — a $2,850 50/50
+// job paid in two installments counted as two jobs (ytd / paid invoices).
+Deno.test("REQ-562 (cycle 4, m21) pickKpis: avg paid job divides by distinct paid jobs, not paid invoices", () => {
+  const s = stats(
+    { current: 0, aging1_14d: 0, overdue15_30d: 0, overdue30plus: 0 },
+    0,
+  );
+  s.invoices.paid = 2;
+  s.revenue.ytdCents = 2_850_00;
+  s.revenue.paidJobsYtd = 1;
+  assertEquals(pickKpis(s).avgJob, 2_850);
+});

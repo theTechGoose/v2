@@ -15,15 +15,21 @@ const base = {
   revenue12moCents: 0,
   daysSinceContact: 0,
   paidInvoiceCount: 0,
+  completedJobs: 0,
 };
 
 Deno.test("REQ-271 deriveStatus — no quotes, no invoices, contacted today: new, not regular", () => {
   assertEquals(deriveStatus(base), "new");
 });
 
-Deno.test("REQ-271 deriveStatus — paid work in the last year stays regular", () => {
+Deno.test("REQ-271 deriveStatus — paid work in the last year stays regular (REQ-562: two completed jobs)", () => {
   assertEquals(
-    deriveStatus({ ...base, revenue12moCents: 50_000, paidInvoiceCount: 1 }),
+    deriveStatus({
+      ...base,
+      revenue12moCents: 50_000,
+      paidInvoiceCount: 2,
+      completedJobs: 2,
+    }),
     "regular",
   );
 });
@@ -32,9 +38,59 @@ Deno.test("REQ-271 deriveStatus — an untouched customer quiet for 90 days is c
   assertEquals(deriveStatus({ ...base, daysSinceContact: 90 }), "cold");
 });
 
-Deno.test("REQ-271 deriveStatus — paid before (older than a year), nothing open: regular, not new", () => {
+Deno.test("REQ-271 deriveStatus — paid before (older than a year), nothing open: regular, not new (REQ-562: two completed jobs)", () => {
   assertEquals(
-    deriveStatus({ ...base, paidInvoiceCount: 1, daysSinceContact: 10 }),
+    deriveStatus({
+      ...base,
+      paidInvoiceCount: 2,
+      completedJobs: 2,
+      daysSinceContact: 10,
+    }),
+    "regular",
+  );
+});
+
+/**
+ * REQ-562 — demo-loop cycle 4, m21: a brand-new client whose first (50/50) job
+ * had its deposit paid wore "Regular". A first job in progress is "active";
+ * "regular" takes at least two completed jobs.
+ */
+Deno.test("REQ-562 (cycle 4, m21) deriveStatus — first job in flight, deposit paid, balance scheduled: active, not regular", () => {
+  assertEquals(
+    deriveStatus({
+      ...base,
+      acceptedQuotes: [{ id: "q" } as Quote],
+      myQuotes: [{ id: "q" } as Quote],
+      activeJobs: 1,
+      revenue12moCents: 1_425_00,
+      paidInvoiceCount: 1,
+    }),
+    "active",
+  );
+});
+
+Deno.test("REQ-562 (cycle 4, m21) deriveStatus — one completed job, nothing open, contacted recently: not regular yet", () => {
+  const status = deriveStatus({
+    ...base,
+    acceptedQuotes: [{ id: "q" } as Quote],
+    myQuotes: [{ id: "q" } as Quote],
+    revenue12moCents: 2_850_00,
+    paidInvoiceCount: 2,
+    completedJobs: 1,
+  });
+  assertEquals(status, "new");
+});
+
+Deno.test("REQ-562 (cycle 4, m21) deriveStatus — two completed jobs, nothing open: regular", () => {
+  assertEquals(
+    deriveStatus({
+      ...base,
+      acceptedQuotes: [{ id: "a" } as Quote, { id: "b" } as Quote],
+      myQuotes: [{ id: "a" } as Quote, { id: "b" } as Quote],
+      revenue12moCents: 5_000_00,
+      paidInvoiceCount: 3,
+      completedJobs: 2,
+    }),
     "regular",
   );
 });

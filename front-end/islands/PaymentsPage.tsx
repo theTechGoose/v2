@@ -364,9 +364,11 @@ export default function PaymentsPage({ lang: _lang }: { lang?: Lang } = {}) {
     if (!Number.isFinite(issued) || !Number.isFinite(received)) return [];
     return [Math.max(0, Math.floor((received - issued) / (24 * 3600 * 1000)))];
   });
+  // REQ-562 (demo-loop cycle 4, m21): null = no landed payment yet; a
+  // same-day payment averages 0 days, which is history, not "no history".
   const avgDays = daysToPay.length > 0
     ? Math.round(daysToPay.reduce((s, d) => s + d, 0) / daysToPay.length)
-    : 0;
+    : null;
 
   // Top three landed for the hero stub stack (rotated cards)
   const stubs = recentLanded.slice(0, 3);

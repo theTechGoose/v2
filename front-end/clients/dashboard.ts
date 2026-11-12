@@ -80,6 +80,8 @@ export interface QuoteCounts {
 }
 export interface RevenueStats {
   ytdCents: number;
+  /** REQ-562: distinct jobs paid on this year (the avg-paid-job divisor). */
+  paidJobsYtd?: number;
   lastMonthCents: number;
   monthOverMonthPct: number;
   /** Length-12 array, oldest → newest, monthly paid-invoice totals (cents). */
