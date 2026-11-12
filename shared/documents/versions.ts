@@ -489,6 +489,42 @@ export function pendingRevisionChanges(
   return versionChanges(live, { ...live, ...pending });
 }
 
+/** REQ-466 (demo m38): one row of the draft revision's line list. */
+export interface DraftLine {
+  description: string;
+  quantity: number;
+  unit: string;
+  totalCents: number;
+}
+
+/**
+ * REQ-466 (demo m38): the draft revision as the contractor will publish it —
+ * its line items (the live ones when the draft does not touch them) and its
+ * total. `null` when nothing is pending.
+ */
+export function pendingDraftLines(
+  doc:
+    | (Record<string, unknown> & { pendingRevision?: Record<string, unknown> })
+    | null
+    | undefined,
+): { lines: DraftLine[]; totalCents?: number } | null {
+  const pending = doc?.pendingRevision;
+  if (!doc || !pending || Object.keys(pending).length === 0) return null;
+  const { pendingRevision: _p, ...live } = doc;
+  const draft = { ...live, ...pending };
+  const lines = linesOfValue(draft.lineItems).map((l) => {
+    const quantity = typeof l?.quantity === "number" ? l.quantity : 1;
+    return {
+      description: (l?.description ?? "").trim(),
+      quantity,
+      unit: l?.unit ?? "",
+      totalCents: lineSummary(l ?? {}).totalCents,
+    };
+  });
+  const total = draft.estimatedTotal ?? draft.amount;
+  return typeof total === "number" ? { lines, totalCents: total } : { lines };
+}
+
 /** What a customer sees, with the pending revision folded in (the contractor's working copy). */
 export function workingCopy<T extends VersionedDoc>(doc: T): T {
   if (!doc.pendingRevision) return doc;

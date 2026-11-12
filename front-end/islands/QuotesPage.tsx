@@ -27,6 +27,7 @@ import {
 } from "../../shared/documents/linked-view.ts";
 import {
   invoiceState,
+  pendingDraftLines,
   pendingOtherContentChanged,
   pendingRevisionChanges,
   quoteState,
@@ -655,6 +656,8 @@ function QuoteLedgerSection(
   const [discarding, setDiscarding] = useState(false);
   // REQ-462 (M26): the change order just withdrawn from this panel
   const [withdrawnCo, setWithdrawnCo] = useState<string | null>(null);
+  // REQ-466 (demo m38): the draft revision can be read before Publish.
+  const [showDraft, setShowDraft] = useState(false);
   const summary = ledgerSummary(ledger);
   // REQ-481 (demo M28): why the next invoice is off — "The rest is on
   // INV-002, scheduled Nov 26", not "already invoiced" over an unsent bill.
@@ -692,6 +695,15 @@ function QuoteLedgerSection(
     },
   );
   const nothingToPublish = !previewLine && !otherChanged;
+  const pendingLine = previewLine ||
+    (otherChanged
+      ? tFor(lang, "quotes.ledger.publishOtherChanges")
+      : tFor(lang, "quotes.ledger.nothingToPublish"));
+  const draft = pendingDraftLines(
+    q as Record<string, unknown> & {
+      pendingRevision?: Record<string, unknown>;
+    },
+  );
   const locked = ledger.quote.accepted;
   const rowStyle =
     "display:flex;justify-content:space-between;gap:10px;align-items:baseline;padding:6px 0;border-bottom:1px solid rgba(26,83,92,0.08);font-size:13px";
@@ -780,6 +792,65 @@ function QuoteLedgerSection(
           </span>
         )}
       </div>
+
+      {/* REQ-466 (demo m38): what Version N changes, and the draft's lines, before Publish */}
+      {pending && !locked && !confirming && (
+        <div style="margin-top:8px">
+          <div
+            data-cy="quote-pending-changes"
+            style="font-size:13px;font-weight:700;color:#8a5a10"
+          >
+            {pendingLine}
+          </div>
+          {draft && draft.lines.length > 0 && (
+            <button
+              type="button"
+              class="qopen__btn"
+              data-cy="quote-view-draft"
+              aria-expanded={showDraft}
+              onClick={() => setShowDraft(!showDraft)}
+              style="margin-top:4px;background:transparent;border-color:transparent;color:var(--brand-teal,#144852);padding:2px 0;font-size:12px"
+            >
+              {showDraft
+                ? tFor(lang, "quotes.ledger.hideDraft")
+                : tFor(lang, "quotes.ledger.viewDraft", {
+                  n: ledger.quote.version + 1,
+                })}
+            </button>
+          )}
+          {draft && showDraft && (
+            <ul
+              data-cy="quote-draft-lines"
+              style="list-style:none;margin:6px 0 0;padding:8px 12px;border-radius:10px;background:#fffaf0;border:1px dashed rgba(138,90,16,0.3)"
+            >
+              {draft.lines.map((l, i) => (
+                <li key={i} data-cy="quote-draft-line" style={rowStyle}>
+                  <span>
+                    {l.description}
+                    {l.quantity !== 1 && (
+                      <span style={` ${mutedStyle}`}>
+                        {` · ${l.quantity}${l.unit ? ` ${l.unit}` : ""}`}
+                      </span>
+                    )}
+                  </span>
+                  <span style={numStyle}>{fmtMoneyExact(l.totalCents)}</span>
+                </li>
+              ))}
+              {typeof draft.totalCents === "number" && (
+                <li
+                  data-cy="quote-draft-total"
+                  style={`${rowStyle};border-bottom:none;font-weight:800`}
+                >
+                  <span>{tFor(lang, "quotes.ledger.draftTotal")}</span>
+                  <span style={numStyle}>
+                    {fmtMoneyExact(draft.totalCents)}
+                  </span>
+                </li>
+              )}
+            </ul>
+          )}
+        </div>
+      )}
 
       {/* REQ-462 (M26): the lock note, with the change order it points to */}
       {locked && (
