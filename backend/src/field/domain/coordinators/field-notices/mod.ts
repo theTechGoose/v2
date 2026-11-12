@@ -10,6 +10,8 @@ import { Injectable } from "#danet/core";
 import { getKv } from "@core/data/kv/mod.ts";
 import { UserStore } from "@users/domain/data/user-store/mod.ts";
 import { BusinessIdentityStore } from "@profile/domain/data/business-identity-store/mod.ts";
+import { BusinessAddressStore } from "@profile/domain/data/business-address-store/mod.ts";
+import { businessTimezone } from "@users/domain/business/timezone/mod.ts";
 import { SmsService } from "@users/domain/data/sms/mod.ts";
 import { normalizePhone } from "@users/domain/business/normalize-phone/mod.ts";
 import {
@@ -28,11 +30,9 @@ import {
   customerCanceledText,
   customerDeferredText,
   customerTodayText,
-  DEFAULT_TIMEZONE,
   type NoticeLang,
   scheduleDue,
   servicesLine,
-  validTimezone,
   workerNewTaskText,
 } from "@field/domain/business/notices/mod.ts";
 import { todayIn } from "@field/domain/business/schedule/mod.ts";
@@ -67,7 +67,17 @@ export class FieldNotices {
     private subs: SubscriptionStore,
     private day: FieldDay,
     private sms: SmsService,
+    private addresses: BusinessAddressStore = new BusinessAddressStore(),
   ) {}
+
+  /** REQ-172/255 — the zone the 9 am texts follow: the one picked, else the address's state's, else New York */
+  private async zone(
+    userId: string,
+    timezone: string | undefined,
+  ): Promise<string> {
+    const address = await this.addresses.get(userId).catch(() => null);
+    return businessTimezone({ timezone, state: address?.state });
+  }
 
   /** who signs the text; null (logged) when the account still carries a placeholder name */
   private async sender(userId: string): Promise<Sender | null> {
@@ -94,7 +104,7 @@ export class FieldNotices {
       owner,
       ownerLang: user.language === "es" ? "es" : "en",
       commsLang: identity?.commsLanguage === "es" ? "es" : "en",
-      tz: validTimezone(identity?.timezone) ?? DEFAULT_TIMEZONE,
+      tz: await this.zone(userId, identity?.timezone),
     };
   }
 
@@ -234,7 +244,7 @@ export class FieldNotices {
 
   private async sweepAccount(userId: string, now: Date): Promise<number> {
     const identity = await this.identities.get(userId).catch(() => null);
-    const tz = validTimezone(identity?.timezone) ?? DEFAULT_TIMEZONE;
+    const tz = await this.zone(userId, identity?.timezone);
     const kv = await getKv();
     const sentForDate =
       (await kv.get<string>(["field_notice", "schedule-day", userId])).value ??
