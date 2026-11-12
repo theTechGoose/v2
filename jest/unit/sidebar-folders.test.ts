@@ -78,7 +78,9 @@ describe("REQ-156 the sidebar's folders", () => {
     expect(src).toContain('data-cy="nav-back"');
     expect(src).toContain("data-cy={`nav-folder-${item.id}`}");
     expect(src).toMatch(/tFor\(lang, "nav\.back"\)/);
-    expect(src).toMatch(/folderPathTo\(NAV, active\)/);
+    // REQ-358 — the active entry's folder is lib/sb-drawer.ts's restingPath (start AND every drawer close)
+    expect(src).toMatch(/useState<string\[\]>\(\(\) => restingPath\(active\)\)/);
+    expect(read("front-end/lib/sb-drawer.ts")).toMatch(/folderPathTo\(NAV, active\)/);
   });
 
   test("both dictionaries carry the folder's name and Back", () => {

@@ -3649,6 +3649,7 @@
   "nav.billing": "Facturación",
   "nav.manage": "Roles",
   "nav.back": "Atrás",
+  "nav.closeMenu": "Cerrar menú",
   "invoicesPage.detail.deleteBtn": "Eliminar factura",
   "invoicesPage.detail.deleteAsk": "¿Eliminar esta factura? No se puede deshacer.",
   "invoicesPage.detail.deleteYes": "Sí, eliminarla",

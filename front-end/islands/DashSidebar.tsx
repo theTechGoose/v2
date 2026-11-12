@@ -14,7 +14,8 @@ import {
   adminsClient,
   isActing,
 } from "../clients/admins.ts";
-import { folderPathTo, isFolder, viewAt } from "../lib/nav-folders.ts";
+import { isFolder, viewAt } from "../lib/nav-folders.ts";
+import { restingPath, SB_DRAWER_CSS } from "../lib/sb-drawer.ts";
 import { NAV } from "../lib/nav-tree.ts";
 
 type CountKey = "clients" | "quotes" | "invoices";
@@ -93,9 +94,7 @@ export default function DashSidebar(
   { active = "home", showNav = true }: Props,
 ) {
   // REQ-156 — which folder is open: the active entry's, until Back or a folder row is clicked
-  const [path, setPath] = useState<string[]>(() =>
-    active === "admin" ? ["manage"] : folderPathTo(NAV, active)
-  );
+  const [path, setPath] = useState<string[]>(() => restingPath(active));
   const view = viewAt(NAV, path);
 
   const [collapsed, setCollapsed] = useState<boolean>(() => {
@@ -103,6 +102,20 @@ export default function DashSidebar(
     return globalThis.localStorage.getItem("pm:sb-collapsed") === "1";
   });
   const [mobileOpen, setMobileOpen] = useState(false);
+  // REQ-358 — every close (✕, backdrop, ☰, Escape) puts the drawer back at the page's folder,
+  // so it never re-opens on the folder browsed last.
+  useEffect(() => {
+    if (!mobileOpen) setPath(restingPath(active));
+  }, [mobileOpen]);
+  // REQ-358 — Escape closes the phone drawer.
+  useEffect(() => {
+    if (!mobileOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setMobileOpen(false);
+    };
+    globalThis.addEventListener("keydown", onKey);
+    return () => globalThis.removeEventListener("keydown", onKey);
+  }, [mobileOpen]);
   // Seed from the shared cache so a navigation between pages renders the
   // last-known counts/identity immediately and the badge doesn't flash
   // empty before the refetch lands.
@@ -206,6 +219,7 @@ export default function DashSidebar(
           aria-hidden="true"
         />
       )}
+      <style>{SB_DRAWER_CSS}</style>
       <aside
         class={`sb ${collapsed ? "sb--collapsed" : ""} ${
           mobileOpen ? "sb--open" : ""
@@ -243,6 +257,17 @@ export default function DashSidebar(
                 <div class="sb__brand-name">{tFor(lang, "brand.name")}</div>
               </div>
             </a>
+            {/* REQ-358 — the drawer covers the ☰, so it carries its own close (phone widths only) */}
+            <button
+              type="button"
+              class="sb__close"
+              data-cy="sb-close"
+              aria-label={tFor(lang, "nav.closeMenu")}
+              title={tFor(lang, "nav.closeMenu")}
+              onClick={() => setMobileOpen(false)}
+            >
+              <I d={<path d="M6 6l12 12M18 6L6 18" />} size={20} />
+            </button>
           </div>
 
           <a

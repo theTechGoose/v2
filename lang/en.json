@@ -3649,6 +3649,7 @@
   "nav.billing": "Billing",
   "nav.manage": "Roles",
   "nav.back": "Back",
+  "nav.closeMenu": "Close menu",
   "invoicesPage.detail.deleteBtn": "Delete invoice",
   "invoicesPage.detail.deleteAsk": "Delete this invoice? This can't be undone.",
   "invoicesPage.detail.deleteYes": "Yes, delete it",
