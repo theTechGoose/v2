@@ -3,6 +3,7 @@ import { QuoteStore } from "@paperwork/domain/data/quote-store/mod.ts";
 import { UserStore } from "@users/domain/data/user-store/mod.ts";
 import { TranslateBullets } from "@agents/domain/coordinators/translate-bullets/mod.ts";
 import type { Quote } from "@paperwork/dto/quote.ts";
+import { QuoteTranslatorPort } from "@paperwork/domain/coordinators/quote-translator-port/mod.ts";
 import {
   type MissingHeading,
   missingHeadingTranslations,
@@ -63,7 +64,11 @@ export class TranslateQuote {
     private quotes: QuoteStore,
     private translator: TranslateBullets,
     private users?: UserStore,
-  ) {}
+    port?: QuoteTranslatorPort,
+  ) {
+    // REQ-591 (cycle 4, M32): PreviewQuoteSend translates through this port.
+    port?.register((req) => this.run(req));
+  }
 
   async run(input: TranslateQuoteInput): Promise<Quote> {
     const quote = await this.quotes.getOwned(input.quoteId, input.userId);

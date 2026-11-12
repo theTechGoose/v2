@@ -12,6 +12,7 @@ import type { LLMRequest } from "@agents/domain/business/llm/base/mod.ts";
 import { QuoteStore } from "@paperwork/domain/data/quote-store/mod.ts";
 import { getKv, resetKv } from "@core/data/kv/mod.ts";
 import { UserStore } from "@users/domain/data/user-store/mod.ts";
+import { QuoteTranslatorPort } from "@paperwork/domain/coordinators/quote-translator-port/mod.ts";
 
 /** A fake translator: EN maps Spanish to English; ES returns lines as-is. */
 const EN: Record<string, string> = {
@@ -637,5 +638,26 @@ Deno.test("REQ-441 (M23, cycle 3) a cached copy missing the contractor's added l
   // Now in step: a second run has nothing left to do.
   await flow.run({ userId: "u-1", quoteId: q.id });
   assertEquals(calls.length, 1);
+  await resetKv();
+});
+
+Deno.test("REQ-591 (cycle 4, M32) TranslateQuote registers on paperwork's QuoteTranslatorPort, so the send preview can translate a quote first", async () => {
+  const { quotes, llm } = await setup();
+  const port = new QuoteTranslatorPort();
+  new TranslateQuote(quotes, new TranslateBullets(llm), new UserStore(), port);
+  const q = await quotes.create("u-1", {
+    summary: "Pintar el baño",
+    lineItems: [
+      { description: "Pintar el baño", quantity: 1, unit: "ea", price: 40_000 },
+    ],
+    estimatedTotal: 40_000,
+    status: "draft",
+  });
+
+  await port.run({ userId: "u-1", quoteId: q.id, langs: ["en"] });
+
+  const after = await quotes.getOwned(q.id, "u-1");
+  assertEquals(after.summaryByLang?.en, "Paint the bathroom");
+  assertEquals(after.lineItems[0].descriptionByLang?.en, "Paint the bathroom");
   await resetKv();
 });

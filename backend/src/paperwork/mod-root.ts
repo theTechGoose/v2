@@ -43,6 +43,7 @@ import { RevisionsController } from "@paperwork/entrypoints/revisions-controller
 import { WorkOrderController } from "@paperwork/entrypoints/work-order-controller/mod.ts"; // REQ-210
 import { WorkOrderStore } from "@paperwork/domain/data/work-order-store/mod.ts"; // REQ-210
 import { InvoiceTranslatorPort } from "@paperwork/domain/coordinators/invoice-translator-port/mod.ts"; // REQ-497
+import { QuoteTranslatorPort } from "@paperwork/domain/coordinators/quote-translator-port/mod.ts"; // REQ-591
 
 @Module({
   imports: [UsersModule, CrmModule, CommunicationModule, FilesModule],
@@ -89,6 +90,7 @@ import { InvoiceTranslatorPort } from "@paperwork/domain/coordinators/invoice-tr
     DocNumbering, // REQ-198
     WorkOrderStore, // REQ-210
     InvoiceTranslatorPort, // REQ-497
+    QuoteTranslatorPort, // REQ-591
   ],
 })
 export class PaperworkModule {}
