@@ -449,6 +449,8 @@
   "asstChat.warranty.typeLabel": "Tipo de garantía",
   "asstChat.warranty.warnFail": "No pude interpretar eso como un plazo de garantía — configúralo manualmente.",
   "asstChat.wiz.prevChoice": "Tu elección anterior",
+  "asstChat.wiz.fromMessage": "De tu mensaje",
+  "asstChat.wiz.usePrefill": "Usar esto",
   "asstChat.writeSelf.accept": "Aceptar",
   "asstChat.writeSelf.error": "No se pudo pulir el texto. Intenta de nuevo.",
   "asstChat.writeSelf.hint": "Un elemento por línea — tu asistente puede pulirlo por ti.",

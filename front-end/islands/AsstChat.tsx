@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "preact/hooks";
+import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import { I, ICN } from "../lib/dash-icons.tsx";
 import { detailLines } from "../lib/format.ts";
 import {
@@ -49,6 +49,13 @@ import {
   websiteLabel,
 } from "../../shared/quote-flow/format-helpers.ts";
 import { summarizeJobName } from "../../shared/quote-flow/job-name.ts";
+import {
+  customerStepPrefillView,
+  extractQuoteFacts,
+  matchPrefillCustomer,
+  type QuoteFacts,
+  wizardPrefillFor,
+} from "../../shared/quote-flow/quote-facts.ts";
 import { isPlaceholderName } from "../../shared/quote-flow/outbound-identity.ts";
 import {
   TimeoutError,
@@ -367,6 +374,22 @@ function composerPlaceholder(msgs: Message[], lang: Lang): string {
 /** Map a quote status to the human-facing chip label on the in-chat
  *  Quote+Agreement card. Keeps the chip in sync with the doc's
  *  lifecycle: Draft → Sent → Viewed → Accepted. */
+/** REQ-265 (demo ai-assistant-m1): the text the user typed for THIS job —
+ *  the quote's description (the starter-chip flow stores the raw sentence
+ *  there) and the thread's own user text (the free-chat flow). Both are
+ *  persisted, so the wizard's pre-fills survive a reload. */
+function quoteFactsSource(
+  quoteDescription: string | undefined,
+  msgs: Message[],
+): string {
+  return [
+    quoteDescription ?? "",
+    ...msgs
+      .filter((m) => m.role === "user" && (m.kind ?? "text") === "text")
+      .map((m) => m.content ?? ""),
+  ].filter((s) => s.trim().length > 0).join("\n");
+}
+
 function statusChipLabel(status: string | undefined, lang: Lang): string {
   switch ((status ?? "draft").toLowerCase()) {
     case "sent":
@@ -614,6 +637,16 @@ export default function AsstChat({
   /** UX-02: the customer already accepted this deal on /q. */
   const quoteAccepted = quote?.status === "accepted" ||
     Boolean(quote?.acceptedAt);
+  /** REQ-265: what the user already typed (customer, phone, email, start
+   *  date, deposit) — the wizard pre-fills / pre-selects it, never re-asks. */
+  const quoteFacts: QuoteFacts = useMemo(
+    () =>
+      extractQuoteFacts(
+        quoteFactsSource(quote?.description, messages),
+        new Date(),
+      ),
+    [quote?.description, messages],
+  );
   const [draft, setDraft] = useState("");
   /** Inline price-capture flow opened by the "I already have my price"
    *  empty-state prompt. When set, renders the MoneyInput card in place
@@ -7201,8 +7234,14 @@ export default function AsstChat({
                                       setPrecommittedKind(null)}
                                     ownerEmail={from?.email}
                                     ownerPhone={from?.phone}
-                                    initialName={prefillCustomerName ??
+                                    initialName={quoteFacts.customerName ??
+                                      prefillCustomerName ??
                                       undefined}
+                                    initialPhone={quoteFacts.customerPhone ??
+                                      undefined}
+                                    initialEmail={quoteFacts.customerEmail ??
+                                      undefined}
+                                    prefillFacts={quoteFacts}
                                     sending={sending}
                                     lang={lang}
                                     onSubmit={(optionId, body) =>
@@ -7317,7 +7356,58 @@ export default function AsstChat({
                                   />
                                 );
                               }
+                              // REQ-265: what the job sentence already
+                              // said for this step ("start Dec 1", "half
+                              // deposit") is pre-selected — one tap confirms
+                              // it, any option still overrides. A rewind's
+                              // previous choice wins over the sentence.
+                              const prefill = wizardPrefillFor(
+                                payload.stepId,
+                                quoteFacts,
+                              );
+                              const prefillOpt = prefill
+                                ? opts.find((o) => o.id === prefill.optionId)
+                                : undefined;
+                              const showPrefill = !!(prefill && prefillOpt) &&
+                                !(rewindAnswer &&
+                                  rewindAnswer.stepId === payload.stepId);
                               return (
+                                <>
+                                {showPrefill && prefill && prefillOpt
+                                  ? (
+                                    <div
+                                      class="wiz-prefill"
+                                      data-testid="wiz-prefill"
+                                    >
+                                      <span class="wiz-prefill__label">
+                                        {tFor(lang, "asstChat.wiz.fromMessage")}
+                                        {": "}
+                                        <strong>
+                                          {prefill.customValue ??
+                                            prefillOpt.label}
+                                        </strong>
+                                      </span>
+                                      <button
+                                        type="button"
+                                        class="cust-create__btn cust-create__btn--primary"
+                                        disabled={sending}
+                                        onClick={() =>
+                                          postWizardAnswer(m, {
+                                            stepId: payload.stepId!,
+                                            optionId: prefill.optionId,
+                                            ...(prefill.customValue
+                                              ? {
+                                                customValue:
+                                                  prefill.customValue,
+                                              }
+                                              : {}),
+                                          })}
+                                      >
+                                        {tFor(lang, "asstChat.wiz.usePrefill")}
+                                      </button>
+                                    </div>
+                                  )
+                                  : null}
                                 <div class="wiz__opts">
                                   {opts.map((opt) => (
                                     <button
@@ -7331,6 +7421,11 @@ export default function AsstChat({
                                             payload.stepId &&
                                           rewindAnswer.optionId === opt.id
                                           ? "wiz-opt--prev"
+                                          : ""
+                                      } ${
+                                        showPrefill &&
+                                          prefillOpt?.id === opt.id
+                                          ? "wiz-opt--prev wiz-opt--prefill"
                                           : ""
                                       }`}
                                       title={rewindAnswer &&
@@ -7402,6 +7497,7 @@ export default function AsstChat({
                                     </button>
                                   ))}
                                 </div>
+                                </>
                               );
                             })()}
                             {
@@ -8087,6 +8183,13 @@ function CustomerStepPanel(props: {
    *  sentence ("para la familia Nguyen" → "Familia Nguyen") — prefills the
    *  create-form name input so the user isn't asked what they already said. */
   initialName?: string;
+  /** REQ-265: the phone / email typed in the job sentence. */
+  initialPhone?: string;
+  initialEmail?: string;
+  /** REQ-265: every typed fact — a typed customer the account already has
+   *  is offered on the pick list; a new one opens the create form, filled
+   *  (the demo got "Elige un cliente" and lost what was typed). */
+  prefillFacts?: QuoteFacts;
   sending: boolean;
   lang?: Lang;
   onSubmit: (
@@ -8112,6 +8215,9 @@ function CustomerStepPanel(props: {
     ownerEmail,
     ownerPhone,
     initialName,
+    initialPhone,
+    initialEmail,
+    prefillFacts,
     sending,
     lang = "en",
     onSubmit,
@@ -8148,9 +8254,42 @@ function CustomerStepPanel(props: {
   /** Roadmap p.7: the "Who is this for?" step also collects a Business
    *  Name. Optional — an empty value never blocks Next. */
   const [createBusiness, setCreateBusiness] = useState("");
-  const [createEmail, setCreateEmail] = useState("");
-  const [createPhone, setCreatePhone] = useState("");
+  const [createEmail, setCreateEmail] = useState(initialEmail ?? "");
+  const [createPhone, setCreatePhone] = useState(initialPhone ?? "");
+  // REQ-265: like the name, the typed contact can arrive after mount (the
+  // quote loads after the step renders) — adopt it while untouched.
+  useEffect(() => {
+    if (initialEmail && createEmail.trim().length === 0) {
+      setCreateEmail(initialEmail);
+    }
+    if (initialPhone && createPhone.trim().length === 0) {
+      setCreatePhone(initialPhone);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialEmail, initialPhone]);
   const [localErr, setLocalErr] = useState<string | undefined>();
+  // REQ-265: once the account's customers AND the typed facts are known,
+  // decide once — a typed customer the account has is searched for on the
+  // pick list; a new one opens the create form (already filled). A customer
+  // already bound to the thread wins.
+  const prefillAppliedRef = useRef(false);
+  useEffect(() => {
+    if (prefillAppliedRef.current || boundCustomer) return;
+    if (!customers || !prefillFacts) return;
+    if (
+      !prefillFacts.customerName && !prefillFacts.customerPhone &&
+      !prefillFacts.customerEmail
+    ) return;
+    prefillAppliedRef.current = true;
+    const match = matchPrefillCustomer(customers, prefillFacts);
+    if (match) {
+      setSearch(match.name);
+      setPickerOpen(true);
+      return;
+    }
+    setView((v) => customerStepPrefillView(v, prefillFacts, false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [customers, prefillFacts]);
   const rootRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {

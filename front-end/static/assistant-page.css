@@ -5502,6 +5502,24 @@ body {
   box-shadow: inset 0 0 0 1px var(--brand-green);
 }
 
+/* REQ-265: the step's answer the job sentence already gave — one tap. */
+.wiz-prefill {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--brand-green);
+  border-radius: 10px;
+  background: var(--green-50, #eef6ea);
+}
+.wiz-prefill__label {
+  font-size: 13px;
+  color: var(--fg);
+}
+
 /* Customer step — clickable list + create form */
 .cust-pick__list {
   display: flex;
