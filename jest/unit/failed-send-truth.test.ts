@@ -31,6 +31,10 @@ import {
   sendDividerFailed,
 } from "../../front-end/lib/send-delivery.ts";
 import {
+  threadChip,
+  threadStatus,
+} from "../../shared/quote-flow/chat-header.ts";
+import {
   DRAFT_TRACK_STAGES,
   moodForQuote,
   OUT_STAGES,
@@ -295,9 +299,21 @@ describe("REQ-236: wiring — icons, list chip, header, send", () => {
   });
 
   test("the thread list shows 'Not delivered' for an undelivered conversation", () => {
-    expect(threads).toMatch(/quoteStatus === "undelivered"/);
-    expect(en["asstThreads.chip.notDelivered"]).toBeTruthy();
-    expect(es["asstThreads.chip.notDelivered"]).toBeTruthy();
+    // REQ-369: the list chip is the thread's one status — the server applies
+    // threadStatus to the quote row — named in the header's words.
+    const status = threadStatus({
+      quote: {
+        status: "draft",
+        lastDelivery: {
+          at: "2026-11-11T00:00:00Z",
+          channel: "sms",
+          smsFailureReason: "x",
+        },
+      },
+    });
+    expect(status).toBe("undelivered");
+    expect(threadChip(status).key).toBe("asstChat.header.notDelivered");
+    expect(threads).toMatch(/threadChip\(/);
     expect(en["asstChat.header.notDelivered"]).toBeTruthy();
     expect(es["asstChat.header.notDelivered"]).toBeTruthy();
   });

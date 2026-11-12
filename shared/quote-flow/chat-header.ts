@@ -19,7 +19,28 @@
  *   accepted → sent (delivered: "Out for signature" / reached nobody:
  *   "Not delivered") → in the terms wizard ("Gathering a little more info")
  *   → wizard done ("Ready to send") → locked ("Quote locked") → drafted.
+ *
+ * REQ-369 (demo-loop cycle 1, demo issue m2): that precedence is now THE
+ * status of an assistant thread — `threadStatus` — and every surface names
+ * it with `threadStatusKey`, the same words: this header, the conversation
+ * list's chip (`threadChip`, computed by the server from the quote row in
+ * GET /agents/conversations) and the quote cards in the chat. The list used
+ * to read the denormalized conv.quoteStatus / currentPhase (never touched by
+ * the customer's public accept) and the cards their append-time status, so
+ * the demo saw "Quote accepted" over "Quote sent", "Locked · ready to send"
+ * against "Drafting", and a "Terms" chip. The quote ROW leads (acceptance,
+ * decline, its REQ-236 delivery record, lockedAt); the chat's transcript only
+ * fills in what a row it has not re-fetched yet cannot say; the terms wizard
+ * comes from the transcript (chat) or the wizard state (server); and the
+ * end-of-wizard job-details pick still owed reads "Picking job details", not
+ * "Ready to send".
  */
+import {
+  deliveryFromDivider,
+  deliverySucceeded,
+  isUndelivered,
+  type QuoteDelivery,
+} from "./delivery.ts";
 
 /** A chat message, as much of it as the header reads. */
 export interface ChatHeaderMessage {
@@ -37,12 +58,19 @@ export interface ChatHeaderQuote {
   jobName?: string | null;
   /** Wizard-captured terms — present once the terms wizard finished. */
   terms?: readonly unknown[] | null;
+  /** REQ-369: the customer declined (status "lost"). */
+  lostAt?: string | null;
+  /** REQ-236: the latest send's outcome, and the first time one delivered. */
+  lastDelivery?: QuoteDelivery | null;
+  deliveredAt?: string | null;
 }
 
 export interface ChatHeaderInput {
   customerName?: string | null;
   quote?: ChatHeaderQuote | null;
   messages: readonly ChatHeaderMessage[];
+  /** REQ-369: the end-of-wizard job-details pick is still owed. */
+  detailsPending?: boolean;
 }
 
 export interface ChatHeader {
@@ -52,6 +80,8 @@ export interface ChatHeader {
   clientKey?: string;
   /** The i18n key of the status line. */
   statusKey: string;
+  /** REQ-369: the thread's one status — the list chip and the cards too. */
+  status: ThreadStatus;
 }
 
 const K = "asstChat.header.";
@@ -78,11 +108,18 @@ function isQuoteCard(m: ChatHeaderMessage): boolean {
 const lower = (s: unknown): string =>
   typeof s === "string" ? s.toLowerCase() : "";
 
-/** Where the terms wizard stands: the latest of "a phase-2 divider" (asking)
- *  and "a continue_cta to send" (finished) decides. */
+const DECLINED = new Set(["lost", "declined", "void"]);
+
+/** REQ-369: where the terms wizard stands — "asking" while a question is
+ *  open, "done" once it finished. */
+export type WizardStage = "asking" | "done";
+
+/** Where the terms wizard stands, read off the transcript: the latest of
+ *  "a phase-2 divider" (asking) and "a continue_cta to send" (finished)
+ *  decides. */
 function wizardStage(
   messages: readonly ChatHeaderMessage[],
-): "asking" | "done" | undefined {
+): WizardStage | undefined {
   for (let i = messages.length - 1; i >= 0; i--) {
     const m = messages[i];
     if (m.kind === "continue_cta" && payloadOf(m)?.toPhase === "send") {
@@ -93,65 +130,198 @@ function wizardStage(
   return undefined;
 }
 
-export function deriveChatHeader(input: ChatHeaderInput): ChatHeader {
-  const { quote, messages } = input;
-  const qStatus = lower(quote?.status);
+/** REQ-369: every status an assistant thread's quote can be in. */
+export const THREAD_STATUSES = [
+  "none",
+  "drafted",
+  "locked",
+  "gathering",
+  "pickingDetails",
+  "readyToSend",
+  "undelivered",
+  "sent",
+  "declined",
+  "accepted",
+] as const;
+export type ThreadStatus = (typeof THREAD_STATUSES)[number];
 
-  const cards = messages.filter(isQuoteCard);
-  const lastCardStatus = lower(
-    cards.length ? payloadOf(cards[cards.length - 1])?.status : undefined,
-  );
-  let lastPhase: number | undefined;
-  let sendRecord: Payload;
+export interface ThreadStatusInput {
+  /** The quote row — it leads. */
+  quote?: ChatHeaderQuote | null;
+  /** The chat's transcript; the server's list has none. */
+  messages?: readonly ChatHeaderMessage[];
+  /** Where the terms wizard stands. Omitted: read off the transcript (the
+   *  server passes its wizard state instead). */
+  wizard?: WizardStage;
+  /** The end-of-wizard job-details pick is still owed (the "I know my
+   *  price" flow's polish marker / the assistant draft's `polishRaw`). */
+  detailsPending?: boolean;
+}
+
+/** What only the chat's transcript can tell — newest first. */
+interface Transcript {
+  /** The newest phase_divider's phase (4 = AcceptQuote's). */
+  lastPhase?: number;
+  /** REQ-245: the newest phase-3 divider's outcome — SendQuote's record. */
+  sendRecord?: "sent" | "undelivered";
+  /** REQ-236: the newest phase_divider, when it is a send naming its quote:
+   *  did it reach anyone? */
+  lastDividerSend?: "delivered" | "failed";
+  /** The newest quote action_card's status. */
+  lastCardStatus: string;
+  hasCard: boolean;
+}
+
+function readTranscript(messages: readonly ChatHeaderMessage[]): Transcript {
+  const t: Transcript = { lastCardStatus: "", hasCard: false };
+  let sawDivider = false;
   for (let i = messages.length - 1; i >= 0; i--) {
-    const p = phaseOf(messages[i]);
-    if (p == null) continue;
-    if (lastPhase == null) lastPhase = p;
-    if (p === 3 && !sendRecord) sendRecord = payloadOf(messages[i]) ?? {};
-    if (lastPhase != null && sendRecord) break;
+    const m = messages[i];
+    if (!t.hasCard && isQuoteCard(m)) {
+      t.hasCard = true;
+      t.lastCardStatus = lower(payloadOf(m)?.status);
+    }
+    if (m.kind !== "phase_divider") continue;
+    const p = payloadOf(m);
+    if (!sawDivider) {
+      sawDivider = true;
+      const d = deliveryFromDivider(p);
+      if (d) t.lastDividerSend = deliverySucceeded(d) ? "delivered" : "failed";
+    }
+    const phase = phaseOf(m);
+    if (phase == null) continue;
+    if (t.lastPhase == null) t.lastPhase = phase;
+    if (phase === 3 && !t.sendRecord) {
+      t.sendRecord = p?.emailedTo || p?.textedTo ? "sent" : "undelivered";
+    }
+  }
+  return t;
+}
+
+/**
+ * REQ-369 — THE status of an assistant thread's quote, for every surface.
+ *
+ * Precedence: the customer signed → declined → a send that reached nobody
+ * (REQ-236: the row's record, or the chat's newest divider when the row has
+ * not caught up) → out for signature (opened, delivered once, the chat's send
+ * record, an issued row) → the terms wizard asking → finished: the
+ * job-details pick still owed, else ready to send → locked → drafted → none.
+ */
+export function threadStatus(input: ThreadStatusInput): ThreadStatus {
+  const q = input.quote ?? undefined;
+  const messages = input.messages ?? [];
+  const status = lower(q?.status);
+  const t = readTranscript(messages);
+
+  if (
+    ACCEPTED.has(status) || Boolean(q?.acceptedAt) || t.lastPhase === 4 ||
+    ACCEPTED.has(t.lastCardStatus)
+  ) {
+    return "accepted";
+  }
+  if (DECLINED.has(status) || Boolean(q?.lostAt)) return "declined";
+
+  // REQ-236: the newest attempt reached nobody and none ever did — unless
+  // the chat's newest divider is a good send the row has not caught up with.
+  if (
+    (t.lastDividerSend === "failed" && !q?.deliveredAt) ||
+    (q && isUndelivered({
+      lastDelivery: q.lastDelivery,
+      deliveredAt: q.deliveredAt,
+    }) && t.lastDividerSend !== "delivered")
+  ) {
+    return "undelivered";
   }
 
-  const statusKey = ((): string => {
-    if (
-      ACCEPTED.has(qStatus) || Boolean(quote?.acceptedAt) || lastPhase === 4 ||
-      ACCEPTED.has(lastCardStatus)
-    ) {
-      return `${K}quoteAccepted`;
-    }
-    // The customer opened it — it reached them, whatever the chat says.
-    if (qStatus === "viewed" || qStatus === "opened") {
-      return `${K}outForSignature`;
-    }
-    // SendQuote's record of the dispatch: who it reached, if anyone.
-    if (sendRecord) {
-      return sendRecord.emailedTo || sendRecord.textedTo
-        ? `${K}outForSignature`
-        : `${K}notDelivered`;
-    }
-    // A quote action_card only ever says "sent" when Lock emitted it (Lock
-    // used to flip the quote to "sent"; REQ-234 makes it "locked"). With no
-    // send record, a "sent" quote behind such a card was locked, not sent.
-    const lockCard = lastCardStatus === "sent" || lastCardStatus === "locked";
-    if (ISSUED.has(qStatus) && lastCardStatus !== "sent") {
-      return `${K}outForSignature`;
-    }
+  // The customer opened it — it reached them, whatever the chat says.
+  if (status === "viewed" || status === "opened") return "sent";
+  if (
+    q?.deliveredAt || deliverySucceeded(q?.lastDelivery) ||
+    t.lastDividerSend === "delivered"
+  ) {
+    return "sent";
+  }
+  // A row with no delivery record of its own: SendQuote's divider decides.
+  if (t.sendRecord && !q?.lastDelivery) return t.sendRecord;
+  // A quote action_card only ever says "sent" when a pre-REQ-234 Lock
+  // emitted it: with no send record, a "sent" quote behind it was locked.
+  if (ISSUED.has(status) && t.lastCardStatus !== "sent") return "sent";
 
-    const stage = wizardStage(messages);
-    if (stage === "asking") return `${K}gatheringInfo`;
-    if (stage === "done" || (quote?.terms?.length ?? 0) > 0) {
-      return `${K}readyToSend`;
-    }
-    if (lockCard || Boolean(quote?.lockedAt)) return `${K}quoteLocked`;
-    if (quote || cards.length) return `${K}quoteDrafted`;
-    return `${K}default`;
-  })();
+  const wizard = input.wizard ?? wizardStage(messages);
+  if (wizard === "asking") return "gathering";
+  if (wizard === "done" || (q?.terms?.length ?? 0) > 0) {
+    return input.detailsPending ? "pickingDetails" : "readyToSend";
+  }
+  if (
+    t.lastCardStatus === "sent" || t.lastCardStatus === "locked" ||
+    Boolean(q?.lockedAt)
+  ) {
+    return "locked";
+  }
+  if (q || t.hasCard) return "drafted";
+  return "none";
+}
 
+const STATUS_KEY: Record<ThreadStatus, string> = {
+  none: `${K}default`,
+  drafted: `${K}quoteDrafted`,
+  locked: `${K}quoteLocked`,
+  gathering: `${K}gatheringInfo`,
+  pickingDetails: `${K}pickingDetails`,
+  readyToSend: `${K}readyToSend`,
+  undelivered: `${K}notDelivered`,
+  sent: `${K}outForSignature`,
+  declined: `${K}quoteDeclined`,
+  accepted: `${K}quoteAccepted`,
+};
+
+/** REQ-369: the one i18n key a status is named by — the header, the list
+ *  chip and the quote cards all say these words. */
+export function threadStatusKey(status: ThreadStatus): string {
+  return STATUS_KEY[status] ?? STATUS_KEY.none;
+}
+
+/** The conversation list's chip colours (assistant-page.css). */
+export type ThreadChipKind = "draft" | "needs" | "sent" | "paid";
+
+/**
+ * REQ-369: the conversation list's chip — the thread's status in the
+ * header's words; "Drafting" before there is a quote; and, past the quote,
+ * the bill (the header is about the quote; the list also follows the
+ * invoice the signature created).
+ */
+export function threadChip(
+  status: ThreadStatus | null | undefined,
+  invoiceStatus?: string | null,
+): { kind: ThreadChipKind; key: string } {
+  if (invoiceStatus === "paid") return { kind: "paid", key: "status.paid" };
+  if (invoiceStatus === "sent") {
+    return { kind: "sent", key: "asstThreads.chip.invoiced" };
+  }
+  if (!status || !(status in STATUS_KEY) || status === "none") {
+    return { kind: "draft", key: "asstThreads.chip.drafting" };
+  }
+  const kind: ThreadChipKind = status === "accepted"
+    ? "paid"
+    : status === "sent"
+    ? "sent"
+    : status === "drafted"
+    ? "draft"
+    : "needs";
+  return { kind, key: STATUS_KEY[status] };
+}
+
+export function deriveChatHeader(input: ChatHeaderInput): ChatHeader {
+  const { quote, messages } = input;
+  const status = threadStatus(input);
+  const statusKey = threadStatusKey(status);
   const name = input.customerName?.trim() || quote?.jobName?.trim();
-  if (name) return { clientName: name, statusKey };
+  if (name) return { clientName: name, statusKey, status };
   return {
-    clientKey: quote || cards.length
+    clientKey: quote || messages.some(isQuoteCard)
       ? `${K}conversation`
       : `${K}newConversation`,
     statusKey,
+    status,
   };
 }

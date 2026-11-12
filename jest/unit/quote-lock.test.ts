@@ -16,6 +16,10 @@ import {
   lockStatusFor,
   QUOTE_LOCKED,
 } from "../../shared/quote-flow/quote-lock";
+import {
+  deriveChatHeader,
+  threadChip,
+} from "../../shared/quote-flow/chat-header";
 
 const ROOT = path.resolve(__dirname, "../..");
 const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), "utf8");
@@ -60,7 +64,6 @@ describe("REQ-234 the chat card's chip and helpers know the locked state", () =>
       const key of [
         "asstChat.statusChip.locked",
         "asstChat.header.quoteLocked",
-        "asstThreads.chip.quoteLocked",
         "lockQuote.preview.locked",
         "chatCoordinator.quoteLocked",
       ]
@@ -70,6 +73,8 @@ describe("REQ-234 the chat card's chip and helpers know the locked state", () =>
       expect(en[key]).not.toMatch(/sent/i);
       expect(es[key]).not.toMatch(/enviad/i);
     }
+    // REQ-369: the thread list names a locked quote in the header's words.
+    expect(threadChip("locked").key).toBe("asstChat.header.quoteLocked");
   });
 });
 
@@ -88,7 +93,14 @@ describe("REQ-234 AsstChat wiring", () => {
     expect(src).toMatch(/lastCardStatus: \(\s*lastQuoteCard\?\.payload/);
     const header = read("shared/quote-flow/chat-header.ts");
     expect(header).toMatch(/lastCardStatus === "locked"/);
-    expect(header).toMatch(/quote\?\.lockedAt\)\) return `\$\{K\}quoteLocked`/);
+    // REQ-369: the rule moved into threadStatus — a locked quote (lockedAt,
+    // status still draft) is named "Quote locked", never "Quote sent".
+    expect(
+      deriveChatHeader({
+        quote: { status: "draft", lockedAt: "2026-11-11T00:00:00Z" },
+        messages: [],
+      }).statusKey,
+    ).toBe("asstChat.header.quoteLocked");
     const delivery = fs.readFileSync(
       path.join(__dirname, "../../front-end/lib/send-delivery.ts"),
       "utf8",

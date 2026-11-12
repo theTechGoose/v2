@@ -114,6 +114,14 @@ import {
   TimeoutError,
   withChatTimeout,
 } from "../../shared/quote-flow/chat-timeout.ts";
+// REQ-369 (demo m2): the thread's one status names the quote cards too, and
+// the conversation list shows it.
+import { threadStatusKey } from "../../shared/quote-flow/chat-header.ts";
+import {
+  publishThreadStatus,
+  THREAD_SERVER_STATUS_EVENT,
+  type ThreadStatusDetail,
+} from "../lib/thread-status-sync.ts";
 import {
   interpretSendResult,
   sendResultLangKey,
@@ -865,10 +873,16 @@ export default function AsstChat({
    *  flow and still owes the Job Details picker before the quote review.
    *  Driven by a sessionStorage marker so it survives the page load that
    *  hands off into the terms wizard. */
-  const [needsJobPolish, setNeedsJobPolish] = useState(false);
+  const [needsJobPolish, setNeedsJobPolish] = useState(
+    () => !!seed?.polishRaw?.trim(), // REQ-369: the SSR header knows it too
+  );
   /** Raw job-details text carried from phase 1, used to (re)generate the
    *  scope-of-work options in phase 2. */
-  const jobPolishRawRef = useRef<string | null>(null);
+  const jobPolishRawRef = useRef<string | null>(
+    // REQ-369: with needsJobPolish, the first render's draft is the restored
+    // one (REQ-230: a window that only restored the flow never writes).
+    seed?.polishRaw?.trim() ? seed.polishRaw : null,
+  );
   /** The "Ready to send" CTA whose review we deferred until the picker is
    *  done. Set when we intercept it; consumed by applyJobOption. */
   const pendingReviewCtaRef = useRef<string | null>(null);
@@ -1673,16 +1687,27 @@ export default function AsstChat({
   // "New conversation" and never updates. Broadcast a CustomEvent whenever
   // the bound customer or quote status changes so a sibling island can
   // swap the title in place — no page reload needed.
+  // REQ-369 (demo-loop cycle 1, m2): ONE status for this thread, computed
+  // once per render — this header, the quote cards below and the
+  // conversation list (pushed in the next effect) all name it. "Picking job
+  // details" while the end-of-wizard job pick is still owed. Until the quote
+  // row is fetched the rule reads the route's snapshot of it, so the first
+  // paint already says what the page was served with (a card read "Locked ·
+  // ready to send" under "Gathering a little more info" until the row came).
+  const ruleQuote = quote ??
+    (convoId === conversationId ? initialQuote : undefined);
+  const threadHeader = deriveChatHeader({
+    customerName: customer?.name,
+    quote: ruleQuote,
+    messages,
+    detailsPending: needsJobPolish,
+  });
   useEffect(() => {
     if (typeof globalThis.window === "undefined") return;
     // REQ-245 (demo m6): the header follows the quote's lifecycle and the
     // server's send record, not the last divider / card — see
     // shared/quote-flow/chat-header.ts for the precedence.
-    const header = deriveChatHeader({
-      customerName: customer?.name,
-      quote,
-      messages,
-    });
+    const header = threadHeader;
     // REQ-236 (demo M8) on top of REQ-245: a send that reached nobody reads
     // "Not delivered" — the quote's persisted lastDelivery counts too, not
     // only the chat's send divider (reconciled on demo-fixes).
@@ -1694,10 +1719,11 @@ export default function AsstChat({
       const p = m.payload as ActionCardPayload | undefined;
       return p?.actionType === "quote" || p?.actionType == null;
     });
-    const undelivered = header.statusKey !== "asstChat.header.quoteAccepted" &&
+    const undelivered = header.status !== "accepted" &&
+      header.status !== "declined" && // REQ-369: the customer's answer stands
       headerStatusKey({
           quoteAccepted,
-          quote,
+          quote: ruleQuote, // REQ-369: the rule's own quote
           lastDividerPayload: lastDivider?.payload as
             | SendDividerPayload
             | undefined,
@@ -1730,7 +1756,57 @@ export default function AsstChat({
     convoId,
     messages.length,
     lang,
+    needsJobPolish, // REQ-369
+    threadHeader.statusKey, // REQ-369: whatever moves the rule moves this
   ]);
+
+  // REQ-369 (demo-loop cycle 1, m2): the conversation list shows this
+  // thread's chip from the SAME status the header just named — pushed the
+  // moment it changes, never left for the list's next poll ("Drafting"
+  // under "Quote locked", "Terms" after the send).
+  useEffect(() => {
+    if (typeof globalThis.window === "undefined" || !convoId) return;
+    publishThreadStatus({
+      conversationId: convoId,
+      status: threadHeader.status,
+    });
+  }, [convoId, threadHeader.status]);
+
+  // REQ-369: the list's poll saw the server name this thread differently —
+  // the customer signed or declined on the public page while the chat sat
+  // open. Re-read the quote row so the header, the cards and the list say it
+  // together (one read per hand-back, never two at once).
+  useEffect(() => {
+    if (typeof globalThis.window === "undefined") return;
+    const rowId = quote?.id;
+    if (!convoId || !rowId) return;
+    let cancelled = false;
+    let reading = false;
+    const onServerStatus = (e: Event) => {
+      const d = (e as CustomEvent<ThreadStatusDetail>).detail;
+      if (!d || d.conversationId !== convoId || reading) return;
+      reading = true;
+      quotesClient.get(rowId)
+        .then((fresh) => {
+          if (cancelled) return;
+          setQuote((cur) =>
+            cur && cur.id === rowId ? { ...cur, ...fresh } as typeof cur : cur
+          );
+        })
+        .catch(() => {/* the next hand-back retries */})
+        .finally(() => {
+          reading = false;
+        });
+    };
+    globalThis.addEventListener(THREAD_SERVER_STATUS_EVENT, onServerStatus);
+    return () => {
+      cancelled = true;
+      globalThis.removeEventListener(
+        THREAD_SERVER_STATUS_EVENT,
+        onServerStatus,
+      );
+    };
+  }, [convoId, quote?.id]);
 
   // Keep the composer focused: on first mount (so users can just start typing)
   // and again whenever the assistant finishes a turn (sending: true → false).
@@ -6054,14 +6130,11 @@ export default function AsstChat({
                             </div>
                             <div class="quote-review__head-right">
                               <span class="quote-review__chip">
-                                {statusChipLabel(
-                                  // REQ-234: a locked quote is still a
-                                  // draft on the store — the card says
-                                  // "locked".
-                                  quote?.status && quote.status !== "draft"
-                                    ? quote.status
-                                    : lockedPayload.status ?? quote?.status,
+                                {tFor(
                                   previewLang,
+                                  // REQ-369: the thread's one status — what
+                                  // the header and the list say.
+                                  threadStatusKey(threadHeader.status),
                                 )}
                               </span>
                               <button
@@ -8040,7 +8113,15 @@ export default function AsstChat({
                   // Roadmap p.5: progress the badge Draft → Sent → Viewed →
                   // Approved via the shared label map (backend flips the
                   // underlying status as the customer opens/signs).
-                  const statusLabel = statusChipLabel(payload.status, lang);
+                  // REQ-369 (demo m2): the card of this thread's quote names
+                  // the thread's ONE status — the header's words — not the
+                  // status it was appended with ("Locked · ready to send"
+                  // forever). A card for another quote keeps its own.
+                  const statusLabel = payload.quoteId && ruleQuote &&
+                      payload.quoteId === ruleQuote.id &&
+                      payload.actionType !== "invoice"
+                    ? tFor(lang, threadStatusKey(threadHeader.status))
+                    : statusChipLabel(payload.status, lang);
                   // Detect a later action_card for the same quote that has
                   // already advanced past draft. The earlier DRAFT card stays
                   // visible in chat history (audit #18) but its action buttons

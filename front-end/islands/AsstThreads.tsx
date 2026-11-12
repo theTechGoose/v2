@@ -3,15 +3,26 @@ import { I, ICN } from "../lib/dash-icons.tsx";
 import { assistantClient, type Conversation } from "../clients/assistant.ts";
 import { type Lang, langSignal, tFor } from "../lib/i18n.ts";
 import { threadTitle } from "../../shared/quote-flow/thread-title.ts";
+import {
+  threadChip,
+  type ThreadChipKind,
+} from "../../shared/quote-flow/chat-header.ts";
 import { startPoll } from "../lib/poll.ts";
+import {
+  latestThreadStatus,
+  listNeedsRefresh,
+  listStatusFor,
+  serverDisagreement,
+  THREAD_SERVER_STATUS_EVENT,
+  THREAD_STATUS_EVENT,
+  type ThreadStatusDetail,
+} from "../lib/thread-status-sync.ts";
 
 interface Props {
   initialThreads: Conversation[];
   activeId?: string;
   lang?: Lang;
 }
-
-type Chip = "sent" | "draft" | "needs" | "paid";
 
 const POLL_MS = 8_000;
 const HOUR = 3_600_000;
@@ -24,6 +35,13 @@ export default function AsstThreads(
   // language flips (SettingsPage), rather than freezing on the SSR seed.
   const lang = langSignal.value;
   const [threads, setThreads] = useState<Conversation[]>(initialThreads);
+  // REQ-369 (demo m2): the open chat's live status for its thread — that
+  // row shows it, so the row and the chat header never disagree.
+  const [live, setLive] = useState<ThreadStatusDetail | null>(null);
+  const threadsRef = useRef(threads);
+  threadsRef.current = threads;
+  const liveRef = useRef(live);
+  liveRef.current = live;
   // Roadmap p.4: QuickBooks-style minimize for the conversation list. We
   // toggle a class on the parent .asst grid so its first column narrows to a
   // rail, and a class on the aside so the inner content collapses to icons.
@@ -100,16 +118,50 @@ export default function AsstThreads(
     async function refresh() {
       try {
         const next = await assistantClient.conversations(50);
-        if (!cancelled) setThreads(next);
+        if (cancelled) return;
+        setThreads(next);
+        // REQ-369: the server names the open thread differently (the
+        // customer signed on the public page while the chat sat open) —
+        // hand it back so the chat re-reads its quote and both move.
+        const open = liveRef.current;
+        const server = serverDisagreement(next, open);
+        if (open && server) {
+          globalThis.dispatchEvent(
+            new CustomEvent<ThreadStatusDetail>(THREAD_SERVER_STATUS_EVENT, {
+              detail: { conversationId: open.conversationId, status: server },
+            }),
+          );
+        }
       } catch {
         // Stay on the last good list rather than blanking the sidebar
         // on a transient network blip.
       }
     }
     const stop = startPoll(refresh, POLL_MS, { immediate: true });
+    // REQ-369 (demo m2): the open chat pushes its thread's status the moment
+    // it changes. Its row shows it at once; the list refreshes now — not at
+    // the next poll — when its row is missing (a thread just started) or
+    // the server's status is behind. A hidden tab waits for the poll.
+    let soon: ReturnType<typeof setTimeout> | undefined;
+    function showLive(d: ThreadStatusDetail | null | undefined) {
+      if (!d?.conversationId || !d.status) return;
+      liveRef.current = d;
+      setLive(d);
+      if (!listNeedsRefresh(threadsRef.current, d)) return;
+      if (typeof document !== "undefined" && document.hidden) return;
+      clearTimeout(soon);
+      soon = setTimeout(refresh, 300);
+    }
+    const onStatus = (e: Event) =>
+      showLive((e as CustomEvent<ThreadStatusDetail>).detail);
+    globalThis.addEventListener(THREAD_STATUS_EVENT, onStatus);
+    // The chat may have hydrated (and pushed) before this list did.
+    showLive(latestThreadStatus());
     return () => {
       cancelled = true;
       stop();
+      clearTimeout(soon);
+      globalThis.removeEventListener(THREAD_STATUS_EVENT, onStatus);
     };
   }, []);
 
@@ -197,7 +249,7 @@ export default function AsstThreads(
               <div key={group.label}>
                 <div class="threads__group-label">{group.label}</div>
                 {group.items.map((c) => {
-                  const chip = deriveChip(c, lang);
+                  const chip = chipFor(c, live, lang);
                   return (
                     <a
                       key={c.id}
@@ -248,44 +300,20 @@ function titleFor(c: Conversation, lang: Lang): string {
 }
 
 /**
- * Map the most-advanced known status to one of the four chip CSS
- * variants (draft / sent / paid / needs). Walks the chain backwards —
- * invoice → quote — so the chip reflects the latest stage the
- * conversation has reached, not the earliest.
+ * REQ-369 (demo-loop cycle 1, demo issue m2): the row's chip is the thread's
+ * ONE status — the chat header's words (`threadChip` over `threadStatus`,
+ * applied by the server to the quote row), the open chat's live status on
+ * its own row, and the bill on top once it is out. It used to read the
+ * denormalized conv.quoteStatus / currentPhase, which the customer's public
+ * accept never touched ("Quote sent" under "Quote accepted", "Terms").
  */
-function deriveChip(
+function chipFor(
   c: Conversation,
+  live: ThreadStatusDetail | null,
   lang: Lang,
-): { kind: Chip; label: string } {
-  // Walk the chain backwards (latest stage wins).
-  if (c.invoiceStatus === "paid") {
-    return { kind: "paid", label: tFor(lang, "status.paid") };
-  }
-  if (c.invoiceStatus === "sent") {
-    return { kind: "sent", label: tFor(lang, "asstThreads.chip.invoiced") };
-  }
-  if (c.quoteStatus === "accepted") {
-    return { kind: "paid", label: tFor(lang, "status.signed") };
-  }
-  // REQ-236 (demo M8): the send reached nobody — never "Quote sent".
-  if (c.quoteStatus === "undelivered") {
-    return {
-      kind: "needs",
-      label: tFor(lang, "asstThreads.chip.notDelivered"),
-    };
-  }
-  if (c.quoteStatus === "sent" || c.quoteStatus === "viewed") {
-    return { kind: "sent", label: tFor(lang, "asstThreads.chip.quoteSent") };
-  }
-  // Audit2 #5: locking is not sending. A locked quote with no customer bound
-  // gets its own chip instead of borrowing "Cotización enviada".
-  if (c.quoteStatus === "locked") {
-    return { kind: "needs", label: tFor(lang, "asstThreads.chip.quoteLocked") };
-  }
-  if (c.currentPhase === "terms") {
-    return { kind: "needs", label: tFor(lang, "asstThreads.chip.terms") };
-  }
-  return { kind: "draft", label: tFor(lang, "asstThreads.chip.drafting") };
+): { kind: ThreadChipKind; label: string } {
+  const { kind, key } = threadChip(listStatusFor(c, live), c.invoiceStatus);
+  return { kind, label: tFor(lang, key) };
 }
 
 function tsOf(iso: string): number {

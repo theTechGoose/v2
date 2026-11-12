@@ -7,6 +7,7 @@
  */
 import { api, ApiError, type ApiOptions } from "../lib/api.ts";
 import type { AssistantDraft } from "../../shared/quote-flow/assistant-draft.ts";
+import type { ThreadStatus } from "../../shared/quote-flow/chat-header.ts";
 
 /** Minimal mirror of the backend Quote DTO — the frontend only needs the
  *  fields read from `getQuote`. Defined here (not in dashboard.ts) because
@@ -87,8 +88,12 @@ export interface Conversation {
   preview?: string;
   /** Set by accept-quote; cleared by load-conversation on next read. */
   hasUnreadEvent?: boolean;
-  /** Denormalized quote.status — sent / accepted. */
+  /** Denormalized quote.status — sent / accepted. Stale once the customer
+   *  acts on the public page; the list chip reads `threadStatus`. */
   quoteStatus?: string;
+  /** REQ-369: the thread's one status, as the chat header names it — the
+   *  server applies `threadStatus` to the quote row on every list read. */
+  threadStatus?: ThreadStatus;
   /** Denormalized invoice.status — sent / paid. */
   invoiceStatus?: string;
   /** ISO-8601 strings (backend returns `new Date().toISOString()`). */
