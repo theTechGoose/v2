@@ -169,9 +169,10 @@ export class InvoiceController {
   async voidInvoice(
     @Context() ctx: ExecutionContext,
     @Param("id") id: string,
-    @Body() body: unknown,
   ) {
     const user = await requireUser(ctx, this.sessions, this.users);
+    // REQ-627 AMENDMENT: auth first, and the reason is optional — a bare POST is no 500
+    const body = await optionalJsonBody(ctx);
     const by = await publisherOf(ctx, this.sessions, this.users, user);
     const r = await removeOne(this.store, this.payments, id, user.id, "void", {
       by,
@@ -196,9 +197,10 @@ export class InvoiceController {
   async voidAndDuplicate(
     @Context() ctx: ExecutionContext,
     @Param("id") id: string,
-    @Body() body: unknown,
   ) {
     const user = await requireUser(ctx, this.sessions, this.users);
+    // REQ-627 AMENDMENT: auth first, and the reason is optional — a bare POST is no 500
+    const body = await optionalJsonBody(ctx);
     const by = await publisherOf(ctx, this.sessions, this.users, user);
     const inv = await this.store.getOwned(id, user.id);
     const r = await removeOne(this.store, this.payments, id, user.id, "void", {
@@ -762,4 +764,15 @@ async function removeOne(
     ...(opts.reason ? { voidReason: opts.reason } : {}),
   });
   return { outcome: "voided" };
+}
+
+/** REQ-627 AMENDMENT: the JSON body when one was sent, {} when none (a bare POST is a 500 through @Body) */
+async function optionalJsonBody(ctx: ExecutionContext): Promise<unknown> {
+  const raw = await ctx.req.text().catch(() => "");
+  if (!raw.trim()) return {};
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return {};
+  }
 }
