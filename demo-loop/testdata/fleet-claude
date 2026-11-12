@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+# Fake fleet-claude for demo-loop/demo20b_test.ts (REQ-428). The role comes from the prompt;
+# FAKE_<ROLE>=ok | ok-noreport | hang picks what this agent does.
+D="$DEMO_WORK"; prompt="$2"
+case "$prompt" in *"You are the EMPLOYEE"*) role=demoer; mode="$FAKE_DEMOER";; *) role=customer; mode="$FAKE_CUSTOMER";; esac
+printf '%s\n' "$@" > "$D/$role.args"
+echo "fleet-claude: token chosen by the rotator (stderr line 1)" >&2
+echo "agent warning: playwright slow (stderr line 2)" >&2
+echo "fleet-claude: token chosen by the rotator (stderr line 3)" >&2
+emit() { echo '{"type":"assistant","message":{"content":[{"type":"text","text":"'"$1"'"},{"type":"tool_use","name":"mcp__playwright__browser_navigate","input":{}}]}}'; }
+case "$mode" in
+  ok) echo "# $role REPORT FROM FILE" > "$D/$role-report.md"; emit "working"
+      echo '{"type":"result","subtype":"success","result":"final message of '"$role"'"}' ;;
+  ok-noreport) emit "working"; echo '{"type":"result","subtype":"success","result":"FINAL REPORT TEXT of '"$role"'"}' ;;
+  hang) trap 'echo TERM > "$D/$role.signal"; exit 143' TERM
+        emit "checking the quotes page as $role"
+        while :; do sleep 0.1; done ;;
+esac
