@@ -49,6 +49,7 @@ import { type Lang, langSignal, tFor } from "../lib/i18n.ts";
 import {
   cardShowsCustomerLink,
   copyCustomerLink,
+  customerLinkPath,
   customerLinkUrl,
   dividerShowsCustomerLink,
   type LinkToast as LinkToastState,
@@ -8497,6 +8498,30 @@ export default function AsstChat({
                                           : null}
                                       </button>
                                     ))}
+                                    {/* REQ-570 (demo m41): see it as the
+                                        customer will — /q/<id>, new tab. */}
+                                    {reviewDocType !== "invoice" && (docId || quote?.id)
+                                      ? (
+                                        <a
+                                          role="menuitem"
+                                          class="quote-review__send-menu-item"
+                                          data-cy="send-menu-preview"
+                                          href={customerLinkPath(docId || quote?.id || "")}
+                                          target="_blank"
+                                          rel="noopener"
+                                          onClick={() =>
+                                            setChannelMenuOpen(false)}
+                                        >
+                                          <I d={ICN.eye} size={13} sw={2.4} />
+                                          <span class="quote-review__send-menu-label">
+                                            {tFor(
+                                              lang,
+                                              "asstChat.preview.menuPreview",
+                                            )}
+                                          </span>
+                                        </a>
+                                      )
+                                      : null}
                                     {
                                       /* Copy link — an immediate action, not a
                                         channel pick: copies the public

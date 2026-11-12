@@ -9693,3 +9693,8 @@ body {
 .send-dialog__needs + .quote-review__send-menu-tag {
   margin-left: 6px;
 }
+
+/* REQ-570 (demo m41): "Preview as customer" is a link in the Send ▾ menu. */
+a.quote-review__send-menu-item {
+  text-decoration: none;
+}
