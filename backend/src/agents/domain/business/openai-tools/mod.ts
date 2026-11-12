@@ -18,6 +18,16 @@ function coNumber(v: unknown): string | undefined {
   return m ? m[0].toUpperCase() : undefined;
 }
 
+/** REQ-583: "inv-001" / "INV-2 for Linda" → "INV-001" / "INV-2"; anything else → undefined. */
+function invNumber(v: unknown): string | undefined {
+  if (typeof v !== "string") return undefined;
+  const m = v.match(/\bINV-\d+\b/i);
+  return m ? m[0].toUpperCase() : undefined;
+}
+
+/** REQ-583: how a customer can pay — anything else the model says is "other". */
+const PAYMENT_METHODS = ["cash", "check", "zelle", "venmo", "cashapp", "paypal", "card", "ach", "other"] as const;
+
 /**
  * OpenAI function-tool schemas. The names + parameter shapes are pinned
  * to LLMAction's variants so `parseToolCall` can switch on `name` and
@@ -209,6 +219,44 @@ export const TOOL_DEFS = [
       },
     },
   },
+  // REQ-583 (demo-loop cycle 4, M2): "send it to her now please" got "I can't
+  // send the invoice directly…" — the model had no tool to send it with. The
+  // server picks the invoice (scheduled / drafted, or the signed job's first)
+  // and reports what was delivered.
+  {
+    type: "function" as const,
+    function: {
+      name: "send_invoice",
+      description: t("en", "prompts.tools.sendInvoice.description"),
+      parameters: {
+        type: "object",
+        properties: {
+          invoiceNumber: { type: "string", description: t("en", "prompts.tools.sendInvoice.invoiceNumber") },
+        },
+        additionalProperties: false,
+      },
+    },
+  },
+  // REQ-583: "she paid the deposit by check" got "You can check the payment
+  // status in the Invoices section." — nothing recorded it.
+  {
+    type: "function" as const,
+    function: {
+      name: "record_payment",
+      description: t("en", "prompts.tools.recordPayment.description"),
+      parameters: {
+        type: "object",
+        properties: {
+          amountDollars: { type: "number", description: t("en", "prompts.tools.recordPayment.amountDollars") },
+          method: { type: "string", enum: [...PAYMENT_METHODS], description: t("en", "prompts.tools.recordPayment.method") },
+          invoiceNumber: { type: "string", description: t("en", "prompts.tools.recordPayment.invoiceNumber") },
+          which: { type: "string", enum: ["deposit", "balance"], description: t("en", "prompts.tools.recordPayment.which") },
+          reference: { type: "string", description: t("en", "prompts.tools.recordPayment.reference") },
+        },
+        additionalProperties: false,
+      },
+    },
+  },
 ] as const;
 
 /**
@@ -369,6 +417,39 @@ export function parseToolCall(call: { function: { name: string; arguments: strin
       }
       if (!Object.keys(byLang).length) return undefined;
       return { type: "update_job_details", payload: { descriptionByLang: byLang } };
+    }
+    // REQ-583: only an INV-number survives; no number → the server picks.
+    case "send_invoice": {
+      const invoiceNumber = invNumber(args.invoiceNumber);
+      return { type: "send_invoice", payload: invoiceNumber ? { invoiceNumber } : {} };
+    }
+    // REQ-583: dollars → integer cents here, in code; an unknown method is
+    // "other" (never a guess); a junk amount / which is dropped — "she paid"
+    // alone is still a payment for the coordinator to match.
+    case "record_payment": {
+      const dollars = args.amountDollars;
+      const amountCents = typeof dollars === "number" && Number.isFinite(dollars) && dollars > 0
+        ? Math.round(dollars * 100)
+        : undefined;
+      const rawMethod = typeof args.method === "string" ? args.method.trim().toLowerCase() : "";
+      const method = rawMethod
+        ? (PAYMENT_METHODS as readonly string[]).includes(rawMethod)
+          ? rawMethod as (typeof PAYMENT_METHODS)[number]
+          : "other"
+        : undefined;
+      const invoiceNumber = invNumber(args.invoiceNumber);
+      const which = args.which === "deposit" || args.which === "balance" ? args.which : undefined;
+      const reference = typeof args.reference === "string" ? args.reference.trim() : "";
+      return {
+        type: "record_payment",
+        payload: {
+          ...(amountCents !== undefined ? { amountCents } : {}),
+          ...(method ? { method } : {}),
+          ...(invoiceNumber ? { invoiceNumber } : {}),
+          ...(which ? { which } : {}),
+          ...(reference ? { reference } : {}),
+        },
+      };
     }
     default:
       return undefined;

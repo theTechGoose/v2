@@ -156,7 +156,9 @@ import {
 } from "../../shared/quote-flow/job-name.ts";
 import { formatClockTime } from "../../shared/quote-flow/locale-format.ts";
 import {
+  invoiceCardChipKey, // REQ-583
   invoiceCardHref,
+  invoiceCardSendOffer, // REQ-583
   isInvoiceCardPayload,
   isQuoteCardPayload,
 } from "../../shared/quote-flow/chat-invoice-card.ts"; // REQ-368
@@ -9105,6 +9107,15 @@ export default function AsstChat({
                 ) {
                   const payload = (m.payload ?? {}) as ActionCardPayload;
                   const href = invoiceCardHref(m.payload);
+                  // REQ-583 (demo-loop cycle 4, M2): an invoice not sent yet
+                  // offers "Send now" — until a later card for it (sent, or
+                  // offered again) retires the button. It posts its own
+                  // words ("Send INV-001 now"); the server sends THAT one.
+                  const at = messages.findIndex((x) => x.id === m.id);
+                  const sendOffer = invoiceCardSendOffer(
+                    m.payload,
+                    messages.slice(at + 1).map((x) => x.payload),
+                  );
                   return (
                     <div key={m.id} class="msg">
                       <div class="msg__avatar">
@@ -9120,7 +9131,7 @@ export default function AsstChat({
                               <div class="action-card__title">{m.content}</div>
                             </div>
                             <span class="action-card__chip">
-                              {statusChipLabel(payload.status, lang)}
+                              {tFor(lang, invoiceCardChipKey(payload.status))}
                             </span>
                           </div>
                           <div class="action-card__body">
@@ -9131,20 +9142,45 @@ export default function AsstChat({
                               </div>
                             ))}
                           </div>
-                          {href
+                          {href || sendOffer
                             ? (
                               <div class="action-card__cta">
-                                <a
-                                  class="action-card__btn"
-                                  style="text-decoration:none"
-                                  href={href}
-                                  data-cy="chat-invoice-card-open"
-                                >
-                                  <I d={ICN.invoice} size={11} /> {tFor(
-                                    lang,
-                                    "asstChat.invoiceFlow.viewInvoice",
-                                  )}
-                                </a>
+                                {sendOffer
+                                  ? (
+                                    <button
+                                      type="button"
+                                      class="action-card__btn action-card__btn--primary"
+                                      data-cy="chat-invoice-card-send"
+                                      disabled={sending}
+                                      onClick={() =>
+                                        void sendText(
+                                          tFor(
+                                            lang,
+                                            "asstChat.invoiceCard.sendNowText",
+                                            { number: sendOffer.number },
+                                          ),
+                                        )}
+                                    >
+                                      <I d={ICN.send} size={11} />{" "}
+                                      {tFor(lang, "asstChat.invoiceCard.sendNow")}
+                                    </button>
+                                  )
+                                  : null}
+                                {href
+                                  ? (
+                                    <a
+                                      class="action-card__btn"
+                                      style="text-decoration:none"
+                                      href={href}
+                                      data-cy="chat-invoice-card-open"
+                                    >
+                                      <I d={ICN.invoice} size={11} /> {tFor(
+                                        lang,
+                                        "asstChat.invoiceFlow.viewInvoice",
+                                      )}
+                                    </a>
+                                  )
+                                  : null}
                               </div>
                             )
                             : null}

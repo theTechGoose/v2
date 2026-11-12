@@ -25,6 +25,7 @@
 import type { AgentPhase } from "@agents/dto/conversation.ts";
 import type { LLMToolName } from "@agents/domain/business/llm/base/mod.ts";
 import { isChangeOrderRequest } from "@agents/domain/business/change-order-intent/mod.ts";
+import { isAccepted } from "#quote-flow/quote-status.ts";
 
 // ---------------------------------------------------------------------------
 // M30 — pricing questions
@@ -493,6 +494,44 @@ export interface GateQuote {
   status?: string | null;
   sentAt?: string | null;
   lockedAt?: string | null;
+  /** REQ-583: the customer's signature stamp — a signed quote bills. */
+  acceptedAt?: string | null;
+}
+
+/** REQ-583: one of the bound quote's invoices, as far as the gate needs it. */
+export interface GateInvoice {
+  status?: string | null;
+}
+
+/** REQ-583: an invoice that has not gone out yet — scheduled or drafted. */
+const UNSENT_INVOICE = new Set(["scheduled", "draft"]);
+/** REQ-583: an invoice nothing more can be paid on. */
+const SETTLED_INVOICE = new Set(["paid", "void"]);
+
+/**
+ * REQ-583 (demo-loop cycle 4, M2): the billing tools a SIGNED quote's own
+ * invoices allow. send_invoice while one has not gone out yet (scheduled /
+ * drafted) — or nothing is billed yet, which SendInvoice bills;
+ * record_payment while one is still to be paid. A quote nobody signed, or
+ * invoices that were not read (`undefined`), allow neither.
+ */
+function billingToolsFor(
+  quote: GateQuote | undefined,
+  invoices: readonly GateInvoice[] | undefined,
+): LLMToolName[] {
+  if (!quote || !invoices || !isAccepted(quote)) return [];
+  const live = invoices.filter((i) => (i.status ?? "") !== "void");
+  const tools: LLMToolName[] = [];
+  if (
+    live.length === 0 ||
+    live.some((i) => UNSENT_INVOICE.has(i.status ?? "draft"))
+  ) {
+    tools.push("send_invoice");
+  }
+  if (live.some((i) => !SETTLED_INVOICE.has(i.status ?? "draft"))) {
+    tools.push("record_payment");
+  }
+  return tools;
 }
 
 /** A draft not yet sent — the only quote that can still be locked and taken
@@ -523,23 +562,33 @@ const ALL_TOOLS: readonly LLMToolName[] = [
  *     meant; pair 1's model was handed lock_quote here anyway). A sent
  *     quote's price changes go through revise_quote as its next Version
  *     (REQ-375) — there is no Re-open on a sent quote.
+ *   - REQ-583 (demo-loop cycle 4, M2), either phase: a signed quote also gets
+ *     send_invoice / record_payment as its `invoices` allow (billingToolsFor).
+ *     Pair 3's "send it to her now please" got "I can't send the invoice
+ *     directly…" — the model had no tool to send it with.
  */
 export function chatToolsFor(
   phase: AgentPhase,
   quote: GateQuote | undefined,
+  invoices?: readonly GateInvoice[],
 ): LLMToolName[] {
+  const billing = billingToolsFor(quote, invoices); // REQ-583
   if (phase === "terms") {
     return [
       "revise_quote",
       "change_order",
       "update_job_details",
       "update_change_order", // REQ-462
+      ...billing,
     ];
   }
   const advance = !!quote && isOpenDraft(quote);
-  return ALL_TOOLS.filter((t) =>
-    advance || (t !== "lock_quote" && t !== "request_terms_transition")
-  );
+  return [
+    ...ALL_TOOLS.filter((t) =>
+      advance || (t !== "lock_quote" && t !== "request_terms_transition")
+    ),
+    ...billing,
+  ];
 }
 
 /**

@@ -4,7 +4,10 @@ import { AgentConversationStore } from "@agents/domain/data/agent-conversation-s
 import { AgentMessageStore } from "@agents/domain/data/agent-message-store/mod.ts";
 import { QuoteStore } from "@paperwork/domain/data/quote-store/mod.ts";
 import { InvoiceStore } from "@paperwork/domain/data/invoice-store/mod.ts";
-import { billingReply } from "@agents/domain/business/chat-answers/mod.ts";
+import {
+  type BillingReply,
+  billingReply,
+} from "@agents/domain/business/chat-answers/mod.ts";
 import { derivePreview } from "@agents/domain/business/conversation-title/mod.ts";
 import type { AgentConversation } from "@agents/dto/conversation.ts";
 import type { AgentMessage } from "@agents/dto/message.ts";
@@ -12,6 +15,41 @@ import type { AgentMessage } from "@agents/dto/message.ts";
 export interface AnswerBillingResult {
   conversation: AgentConversation;
   newMessages: AgentMessage[];
+}
+
+/**
+ * The chat's invoice action_card for one invoice — what AnswerBilling shows
+ * and (REQ-583, demo-loop cycle 4, M2) what ChatBilling shows after a send
+ * or a payment. Its number rides on the payload, and `offerSend` (scheduled
+ * / drafted) gives the card its "Send now" button, whose words ("Send
+ * INV-001 now") the chat reads back as the send.
+ */
+export function invoiceCardMessage(
+  conversationId: string,
+  inv: NonNullable<BillingReply["invoice"]>,
+  owner: { quoteId?: string; customerId?: string },
+): Omit<AgentMessage, "id" | "createdAt"> {
+  return {
+    conversationId,
+    role: "assistant",
+    kind: "action_card",
+    content: inv.title,
+    payload: {
+      actionType: "invoice",
+      status: inv.status,
+      invoiceId: inv.id,
+      ...(inv.number ? { number: inv.number } : {}),
+      ...(owner.quoteId ? { quoteId: owner.quoteId } : {}),
+      ...(owner.customerId ? { customerId: owner.customerId } : {}),
+      lineItems: [{
+        description: inv.line,
+        amountCents: inv.amountCents,
+      }],
+      totalCents: inv.amountCents,
+      ...(inv.dueDate ? { dueDate: inv.dueDate } : {}),
+      ...(inv.offerSend ? { offerSend: true } : {}),
+    },
+  };
 }
 
 /**
@@ -76,25 +114,12 @@ export class AnswerBilling {
     if (reply.invoice) {
       const inv = reply.invoice;
       newMessages.push(
-        await this.messages.append({
-          conversationId: conv.id,
-          role: "assistant",
-          kind: "action_card",
-          content: inv.title,
-          payload: {
-            actionType: "invoice",
-            status: inv.status,
-            invoiceId: inv.id,
+        await this.messages.append(
+          invoiceCardMessage(conv.id, inv, {
             quoteId: quote.id,
-            ...(quote.customerId ? { customerId: quote.customerId } : {}),
-            lineItems: [{
-              description: inv.line,
-              amountCents: inv.amountCents,
-            }],
-            totalCents: inv.amountCents,
-            ...(inv.dueDate ? { dueDate: inv.dueDate } : {}),
-          },
-        }),
+            customerId: quote.customerId,
+          }),
+        ),
       );
       if (!conv.invoiceId) {
         patch.invoiceId = inv.id;

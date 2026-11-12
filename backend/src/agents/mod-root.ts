@@ -35,6 +35,7 @@ import { TranslateQuote } from "@agents/domain/coordinators/translate-quote/mod.
 import { TranslateInvoice } from "@agents/domain/coordinators/translate-invoice/mod.ts"; // REQ-497
 import { ListConversations } from "@agents/domain/coordinators/list-conversations/mod.ts"; // REQ-369
 import { UpdateChatChangeOrder } from "@agents/domain/coordinators/update-chat-change-order/mod.ts"; // REQ-462
+import { ChatBilling } from "@agents/domain/coordinators/chat-billing/mod.ts"; // REQ-583
 import { LLM_CLIENT } from "@agents/domain/business/llm/base/mod.ts";
 import type { LLMClient } from "@agents/domain/business/llm/base/mod.ts";
 import { StubLLMClient } from "@agents/domain/business/llm/implementations/stub/mod.ts";
@@ -131,6 +132,7 @@ const LlmClientClass = await selectLLMClass();
     TranslateInvoice, // REQ-497 — registers itself on paperwork's InvoiceTranslatorPort
     ListConversations, // REQ-369
     UpdateChatChangeOrder, // REQ-462
+    ChatBilling, // REQ-583: the chat sends invoices and records payments
     { token: LLM_CLIENT, useClass: LlmClientClass },
   ],
 })

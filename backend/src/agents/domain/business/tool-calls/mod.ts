@@ -46,6 +46,8 @@ const TOOLS: ReadonlySet<string> = new Set<LLMToolName>([
   "change_order",
   "revise_quote",
   "update_job_details",
+  "send_invoice", // REQ-583
+  "record_payment", // REQ-583
 ]);
 
 export function isEditAction(a: LLMAction): a is EditAction {
