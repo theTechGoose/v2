@@ -166,3 +166,47 @@ describe("P-63 deriveQuoteView — accepted footer variant and PDF url", () => {
     expect(view.pdfUrl).toBeUndefined();
   });
 });
+
+// ---------------------------------------------------------------------------
+// REQ-320 (demo m15, cycle 1) — the public headline never says "Draft" /
+// "Borrador" above a signature pad that says "Pending signature": a text-only
+// send that failed leaves the quote `draft` (send-paperwork-sms stamps `sent`
+// only on success), while deriveQuoteView marks anything not accepted /
+// declined as pendingSignature. One source of truth: the headline state is
+// derived from the same view, and an unissued quote shows no state word.
+// ---------------------------------------------------------------------------
+
+import { publicHeadlineState } from "../../shared/quote-flow/public-doc-state";
+import { docHeadline } from "../../shared/documents/linked-view";
+import { readFileSync } from "fs";
+import { join } from "path";
+
+describe("REQ-320 publicHeadlineState — the /q headline follows deriveQuoteView, never 'draft'", () => {
+  it("REQ-320 a draft quote (failed text-only send) shows no state word: 'Q-001 · Versión 1', not '· Borrador'", () => {
+    const state = publicHeadlineState({ ...openQuotePayload, status: "draft", state: "draft" });
+    expect(state).toBeUndefined();
+    const headline = docHeadline({ number: "Q-001", version: 1, state }, "es");
+    expect(headline).toBe("Q-001 · Versión 1");
+    expect(headline).not.toMatch(/Borrador|Draft/);
+  });
+
+  it("REQ-320 a sent quote keeps its issued state (sent / revised)", () => {
+    expect(publicHeadlineState({ ...openQuotePayload, status: "sent", state: "sent" })).toBe("sent");
+    expect(publicHeadlineState({ ...openQuotePayload, status: "sent", state: "revised" })).toBe("revised");
+  });
+
+  it("REQ-320 accepted and declined come from the view, whatever the payload's state says", () => {
+    expect(publicHeadlineState({ ...acceptedQuotePayload, state: "sent" })).toBe("accepted");
+    expect(publicHeadlineState({ ...openQuotePayload, status: "lost", state: "sent" })).toBe("declined");
+  });
+
+  it("REQ-320 an old payload without `state` on an open quote reads as sent (the pre-REQ-198 fallback)", () => {
+    expect(publicHeadlineState({ ...openQuotePayload, status: "sent" })).toBe("sent");
+  });
+
+  it("REQ-320 quote-doc.tsx derives its headline state through publicHeadlineState, not quote.state", () => {
+    const src = readFileSync(join(__dirname, "..", "..", "front-end", "components", "quote-doc.tsx"), "utf8");
+    expect(src).toMatch(/publicHeadlineState\(/);
+    expect(src).not.toMatch(/state:\s*quote\.state\s*\?\?/);
+  });
+});

@@ -71,16 +71,34 @@ export function pageOf<T>(items: readonly T[], page: number | undefined, pageSiz
   return { items: items.slice((p - 1) * size, p * size), page: p, pageSize: size, total, totalPages };
 }
 
+/** REQ-320 (demo m15): a signed job in flight is the card's own `activeJobs` (accepted quotes − paid
+ *  invoices), not the exclusive status bucket — accept bills the invoice at once, so a freshly signed
+ *  customer is "owes" first and would otherwise never count as in flight. */
+export function hasJobInFlight(c: Pick<CustomerCard, "activeJobs">): boolean {
+  return c.activeJobs > 0;
+}
+
+/** the card belongs under a chip: "active" is every card with a job in flight (it may owe too), the
+ *  rest are the card's one status */
+export function inFilter(c: Pick<CustomerCard, "status" | "activeJobs">, status: ClientsFilter): boolean {
+  if (status === "all") return true;
+  if (status === "active") return hasJobInFlight(c);
+  return c.status === status;
+}
+
 export function countByStatus(cards: readonly CustomerCard[]): ClientsCounts {
   const counts: ClientsCounts = { all: cards.length, new: 0, active: 0, lead: 0, owes: 0, regular: 0, cold: 0 };
-  for (const c of cards) counts[c.status]++;
+  for (const c of cards) {
+    counts[c.status]++;
+    if (c.status !== "active" && hasJobInFlight(c)) counts.active++;
+  }
   return counts;
 }
 
 export function summarize(cards: readonly CustomerCard[]): ClientsSummary {
   return {
     totalClients: cards.length,
-    activeJobs: cards.filter((c) => c.status === "active").length,
+    activeJobs: cards.filter(hasJobInFlight).length,
     owedCents: cards.reduce((sum, c) => sum + (c.balanceCents > 0 ? c.balanceCents : 0), 0),
     quietCount: cards.filter((c) => c.status === "cold").length,
   };
@@ -105,7 +123,7 @@ export function isClientsFilter(s: unknown): s is ClientsFilter {
 export function clientsPage(cards: readonly CustomerCard[], query: ClientsPageQuery = {}): ClientsPageResponse {
   const status: ClientsFilter = isClientsFilter(query.status) ? query.status : "all";
   const matched = cards.filter((c) => matchesQuery(c, query.q));
-  const cut = status === "all" ? matched : matched.filter((c) => c.status === status);
+  const cut = matched.filter((c) => inFilter(c, status));
   return {
     ...pageOf(sortByName(cut), query.page, query.pageSize),
     counts: countByStatus(matched),

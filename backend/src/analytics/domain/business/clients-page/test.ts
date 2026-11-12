@@ -96,3 +96,18 @@ Deno.test("REQ-364 (demo p15-16, cycle 1) clients-page — the loop takes only l
   ];
   assertEquals(loopPicks(cards).map((c) => c.name), ["owes-7", "lead-3"], "an invoice sent today is not chased, a lead from yesterday is not nagged");
 });
+
+Deno.test("REQ-320 (demo m15, cycle 1) clients-page — a signed job in flight counts even when its customer owes: summarize sums activeJobs > 0, the 'active' chip counts and lists the same cards", () => {
+  // accept bills INV-001 as `sent` at once, so a freshly signed customer owes → status "owes", never "active"
+  const signedAndOwing = card({ name: "Ana Pérez", status: "owes", balanceCents: 28_000, activeJobs: 1 });
+  const twoJobs = card({ name: "Beto", status: "active", activeJobs: 2 });
+  const lead = card({ name: "Carla", status: "lead" });
+  const cards = [signedAndOwing, twoJobs, lead];
+  assertEquals(summarize(cards).activeJobs, 2, "signed + sent invoice → 1 signed job in flight (plus Beto's)");
+  assertEquals(countByStatus(cards).active, 2, "the Active jobs chip counts customers with a job in flight");
+  assertEquals(countByStatus(cards).owes, 1, "and the owes chip still holds her");
+  const active = clientsPage(cards, { status: "active" });
+  assertEquals(active.items.map((c) => c.name), ["Ana Pérez", "Beto"], "the chip lists the cards it counts");
+  assertEquals(active.total, active.counts.active, "count and list agree");
+  assertEquals(clientsPage(cards, { status: "owes" }).items.map((c) => c.name), ["Ana Pérez"]);
+});
