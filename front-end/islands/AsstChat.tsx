@@ -12,6 +12,7 @@ import {
 import { hiddenOnReloadIds } from "../lib/thread-reload-prune.ts";
 import {
   computePaymentSplit,
+  depositBalanceSubVars,
   type MilestoneRole,
 } from "../lib/payment-split.ts";
 import { api, ApiError } from "../lib/api.ts";
@@ -295,7 +296,7 @@ interface WizardOption {
  */
 const TERM_OPTIONS_FALLBACK: Record<
   string,
-  { labelKey: string; subKey?: string }[]
+  { labelKey: string; subKey?: string; subAmountsKey?: string }[]
 > = {
   config: [
     {
@@ -340,6 +341,8 @@ const TERM_OPTIONS_FALLBACK: Record<
     {
       labelKey: "asstChat.payment.preset.depositBalance",
       subKey: "asstChat.terms.payment.depositBalanceSub",
+      // REQ-491 (demo m60): "20% upfront, rest when done · $90 / $360".
+      subAmountsKey: "asstChat.terms.payment.depositBalanceSubAmounts",
     },
   ],
   warranty: [
@@ -7753,15 +7756,27 @@ export default function AsstChat({
                                     // doesn't carry the options (older threads, pruned
                                     // history, etc.). Otherwise the picker would render
                                     // with only Custom + Cancel.
+                                    // REQ-491 (m60): {pct}, and the $ split
+                                    // once this card has a total.
+                                    const depVars = depositBalanceSubVars(
+                                      totalCentsForBreakdown,
+                                    );
                                     const wizOpts: WizardOption[] =
                                       wizOptsRaw.length > 0 ? wizOptsRaw : (
                                         TERM_OPTIONS_FALLBACK[t.stepId] ?? []
                                       ).map((o, i) => ({
                                         id: `fallback-${i}`,
                                         label: tFor(previewLang, o.labelKey),
-                                        sub: o.subKey
+                                        sub: o.subAmountsKey && depVars.deposit
+                                          ? tFor(
+                                            previewLang,
+                                            o.subAmountsKey,
+                                            depVars,
+                                          )
+                                          : o.subKey
                                           ? tFor(previewLang, o.subKey, {
                                             n: accountNetDays(invoiceNetDays),
+                                            ...depVars,
                                           })
                                           : undefined,
                                       }));

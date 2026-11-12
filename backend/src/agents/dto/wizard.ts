@@ -18,6 +18,8 @@ export interface WizardOption {
   id: string;
   label: string;
   sub?: string;
+  /** REQ-491: i18n key used instead of `sub` once the quote total is known. */
+  subAmounts?: string;
   /** When true, the user is expected to supply a free-text customValue. */
   isCustom?: boolean;
 }
