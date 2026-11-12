@@ -3548,7 +3548,7 @@
   "field.wk.new": "Nuevo trabajador",
   "field.wk.pin": "PIN (4 dígitos)",
   "field.wk.covers": "Cubre",
-  "field.wk.coversNone": "Sin zona asignada — asígnale una en Asignaciones.",
+  "field.wk.coversNone": "ninguna zona aún — asígnale una en Asignaciones",
   "field.wk.delete": "Quitar acceso",
   "field.wk.confirm": "¿Quitar el acceso de {name}?",
   "field.wk.empty": "Aún no hay trabajadores.",

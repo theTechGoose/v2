@@ -448,6 +448,12 @@
 .sub__items div {
   display: flex;
   justify-content: space-between;
+  gap: 12px;
+  align-items: baseline;
+}
+/* REQ-529: a long value (the worker card's no-zone link) wraps flush right, never into the label */
+.sub__items div > :last-child:not(:first-child) {
+  text-align: right;
 }
 .sub__foot {
   display: flex;
