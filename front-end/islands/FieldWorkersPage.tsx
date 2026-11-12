@@ -395,7 +395,15 @@ export default function FieldWorkersPage() {
                             </span>
                           ))
                           : (
-                            <span class="hint">{t("field.wk.coversNone")}</span>
+                            // REQ-361 (demo M36): Assignments is in the Field folder, Workers in
+                            // Roles — the hint is the way across
+                            <a
+                              class="hint"
+                              href="/field/assignments"
+                              data-cy="wk-covers-none"
+                            >
+                              {t("field.wk.coversNone")}
+                            </a>
                           )}
                       </span>
                     </div>

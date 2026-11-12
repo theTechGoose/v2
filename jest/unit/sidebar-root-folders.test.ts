@@ -1,7 +1,7 @@
 /**
  * REQ-176 — the sidebar's root: Dashboard, Customers, the Billing folder (Quotes, Invoices,
- * Payments) and the Admin folder (the Recurring folder, Admins); the tree is data in
- * front-end/lib/nav-tree.ts and the sidebar renders it.
+ * Payments), the Field folder (REQ-361, was Recurring) and the Admin folder (Workers, Admins);
+ * the tree is data in front-end/lib/nav-tree.ts and the sidebar renders it.
  */
 import * as fs from "fs";
 import * as path from "path";
@@ -17,33 +17,33 @@ const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), "utf8");
 const ids = (p: string[]) => viewAt(NAV, p).items.map((n) => n.id);
 
 describe("REQ-176 the sidebar's root folders", () => {
-  test("the root is Dashboard, Customers, Billing, Recurring, Admin — nothing else (REQ-176 amendment: Recurring is not nested)", () => {
+  test("the root is Dashboard, Customers, Billing, Field, Admin — nothing else (REQ-176 amendment: the field folder is not nested; REQ-361: Field, was Recurring)", () => {
     expect(ids([])).toEqual([
       "home",
       "customers",
       "billing",
-      "recurring",
+      "field",
       "manage",
     ]);
     expect(viewAt(NAV, []).items.filter(isFolder).map((n) => n.id)).toEqual([
       "billing",
-      "recurring",
+      "field",
       "manage",
     ]);
   });
 
-  test("Billing holds Quotes, Invoices, Payments, Work orders; Recurring the four; Admin holds Workers and Admins (REQ-178)", () => {
+  test("Billing holds Quotes, Invoices, Payments, Work orders; Field the four (REQ-361); Admin holds Workers and Admins (REQ-178)", () => {
     // REQ-210: Work orders joined Billing next to the documents they belong to
     expect(ids(["billing"])).toEqual(["quotes", "invoices", "payments", "workOrders"]);
     expect(ids(["manage"])).toEqual(["workers", "admins"]); // REQ-178 — Workers is Admin's
-    expect(ids(["recurring"])).toEqual([
+    expect(ids(["field"])).toEqual([
       "subscriptions",
       "assignments",
       "tasks",
       "batches",
     ]);
     expect(folderPathTo(NAV, "workers")).toEqual(["manage"]);
-    expect(folderPathTo(NAV, "tasks")).toEqual(["recurring"]);
+    expect(folderPathTo(NAV, "tasks")).toEqual(["field"]);
     expect(folderPathTo(NAV, "invoices")).toEqual(["billing"]);
     expect(folderPathTo(NAV, "admins")).toEqual(["manage"]);
     expect(folderPathTo(NAV, "customers")).toEqual([]);
