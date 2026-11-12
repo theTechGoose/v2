@@ -73,7 +73,7 @@ Deno.test("REQ-509 m24: /q, /i and /co render the document footer", () => {
     const r of ["routes/q/[id].tsx", "routes/i/[id].tsx", "routes/co/[id].tsx"]
   ) {
     const src = read(r);
-    assertMatch(src, /<SiteFooter lang=\{lang\} document \/>/, r);
+    assertMatch(src, /<SiteFooter lang=\{lang\} document( credited)? \/>/, r);
     assertEquals(/<SiteFooter lang=\{lang\} \/>/.test(src), false, r);
   }
 });
@@ -99,4 +99,54 @@ Deno.test("REQ-509 m24: on a phone the dashboard shell is a min-height flex colu
   assertMatch(block(".content"), /flex: 1 0 auto;/);
   // the footer's auto top margin (REQ-079) is what pushes it down
   assertMatch(css, /\.content > \.site-footer \{\s*margin: auto /);
+});
+
+/**
+ * REQ-573 — demo-loop cycle 4, issue p4-p3c ("fix every issue the demo found,
+ * loop until there are none"): "'Powered by DocuMonster' shown twice". The
+ * signed quote already ends with "Powered by DocuMonster · Agreement Q-001"
+ * (components/quote-doc.tsx) and the invoice with "Powered by DocuMonster ·
+ * Invoice …" (routes/i/[id].tsx); REQ-509's document footer printed the
+ * credit a second time right under it. A document whose body credits
+ * DocuMonster passes `credited`, and its footer drops the line.
+ */
+const countPowered = (html: string) =>
+  (html.match(/Powered by DocuMonster|Con la tecnología de DocuMonster/g) ??
+    []).length;
+
+for (const lang of ["en", "es"] as const) {
+  Deno.test(`REQ-573 p4-p3c: a credited document footer (${lang}) keeps the four policy links and drops "Powered by DocuMonster"`, () => {
+    const html = renderToString(<SiteFooter lang={lang} document credited />);
+    assertMatch(html, /data-site-footer-document/);
+    for (const l of LEGAL_LINKS) {
+      assert(html.includes(`href="${l.path}"`), `link ${l.path}`);
+    }
+    assert(!html.includes("data-site-powered-by"), "no powered-by span");
+    assertEquals(countPowered(html), 0);
+  });
+}
+
+Deno.test("REQ-573 p4-p3c: an uncredited document footer still credits DocuMonster once", () => {
+  assertEquals(
+    countPowered(renderToString(<SiteFooter lang="en" document />)),
+    1,
+  );
+});
+
+Deno.test("REQ-573 p4-p3c: /q and /i (their body credits DocuMonster) pass `credited`; /co (it does not) keeps the footer's credit", () => {
+  assertMatch(
+    read("components/quote-doc.tsx"),
+    /\{t\.poweredBy\} \{docNumber\}/,
+  );
+  assertMatch(read("routes/i/[id].tsx"), /public\.doc\.poweredByInvoice/);
+  for (const r of ["routes/q/[id].tsx", "routes/i/[id].tsx"]) {
+    assertMatch(read(r), /<SiteFooter lang=\{lang\} document credited \/>/, r);
+  }
+  const co = read("routes/co/[id].tsx");
+  assertEquals(
+    /poweredBy|Powered by/.test(co),
+    false,
+    "/co body has no credit",
+  );
+  assertMatch(co, /<SiteFooter lang=\{lang\} document \/>/);
 });

@@ -53,16 +53,25 @@ export interface SiteFooterCopy {
  * it follows the EN/ES switch; the island is the only thing that renders it.
  */
 export default function SiteFooterView(
-  { copy, compact = false, document: forDocument = false }: {
+  {
+    copy,
+    compact = false,
+    document: forDocument = false,
+    credited = false,
+  }: {
     copy: SiteFooterCopy;
     compact?: boolean;
     /** REQ-509: the contractor's customer documents (/q, /i, /co) */
     document?: boolean;
+    /** REQ-573: the document's body already says "Powered by DocuMonster" */
+    credited?: boolean;
   },
 ) {
   const item =
     "display:inline-block;min-height:24px;padding:0 3px;line-height:24px;white-space:nowrap;color:inherit;";
-  if (forDocument) return <DocumentFooter copy={copy} item={item} />;
+  if (forDocument) {
+    return <DocumentFooter copy={copy} item={item} credited={credited} />;
+  }
   if (compact) return <CompactFooter copy={copy} item={item} />;
   return (
     <footer
@@ -175,9 +184,20 @@ function CompactFooter(
  * DocuMonster", one wrapping line in the compact footer's measures. No
  * DocuMonster phone, no address; the document's own header names the
  * contractor and how to reach them.
+ *
+ * REQ-573 (demo-loop cycle 4, p4-p3c): the quote doc already ends with
+ * "Powered by DocuMonster · Agreement Q-001" (components/quote-doc.tsx) and
+ * the invoice with "Powered by DocuMonster · Invoice …" (routes/i/[id].tsx),
+ * so on /q and /i the credit printed twice, one line apart. Those pages pass
+ * `credited` and the footer is the policy links alone; /co, whose body has no
+ * such line, keeps the footer's credit.
  */
 function DocumentFooter(
-  { copy, item }: { copy: SiteFooterCopy; item: string },
+  { copy, item, credited }: {
+    copy: SiteFooterCopy;
+    item: string;
+    credited: boolean;
+  },
 ) {
   return (
     <footer
@@ -203,12 +223,14 @@ function DocumentFooter(
           </a>
         ))}
       </nav>
-      <span
-        data-site-powered-by
-        style={`${item}font-weight:700;color:#fff`}
-      >
-        {copy.poweredBy}
-      </span>
+      {credited ? null : (
+        <span
+          data-site-powered-by
+          style={`${item}font-weight:700;color:#fff`}
+        >
+          {copy.poweredBy}
+        </span>
+      )}
     </footer>
   );
 }

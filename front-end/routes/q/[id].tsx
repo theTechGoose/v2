@@ -52,7 +52,7 @@ export default define.page(function PublicQuote(ctx) {
         <div style="flex:1;width:100%;max-width:792px;margin:0 auto;padding:32px 16px calc(64px + var(--kb-inset, 0px))">
           <PublicQuoteView id={id} lang={lang} />
         </div>
-        <SiteFooter lang={lang} document />
+        <SiteFooter lang={lang} document credited />
       </div>
     </>
   );
