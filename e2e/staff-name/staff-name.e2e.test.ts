@@ -5,7 +5,7 @@
  * "What's your name?", and saving it re-greets the topbar at once — no reload.
  * Run with SUPERADMIN_BOOTSTRAP_TOKEN set (shots' serve is stamped DENO_DEPLOY=true).
  */
-import { story } from "#shots";
+import { story, type StoryTools } from "#shots";
 
 const JSON_HEADERS = { "content-type": "application/json" };
 const digits = () => String(Math.floor(Math.random() * 9_000_000) + 1_000_000);
@@ -114,5 +114,139 @@ Deno.test("REQ-355: a super admin still on 'Nuevo usuario' is never greeted as '
       await page.locator("[data-cy='staff-name-prompt']").count(),
       0,
       "a named staff member is not asked again",
+    );
+  }));
+
+/** REQ-423 — click until `done` holds (a click before hydration is a no-op: house clickUntil). */
+async function clickUntil(
+  page: StoryTools["page"],
+  selector: string,
+  done: () => Promise<boolean>,
+): Promise<void> {
+  for (let attempt = 0; attempt < 10; attempt++) {
+    if (await done()) return;
+    try {
+      await page.locator(selector).click({ timeout: 2_000 });
+    } catch {
+      // not clickable yet: the polls below say whether the effect landed
+    }
+    for (let i = 0; i < 5; i++) {
+      if (await done()) return;
+      await page.waitForTimeout(200);
+    }
+  }
+  throw new Error(`${selector}: the click never took`);
+}
+
+Deno.test("REQ-423: a fresh unnamed Spanish staff account reads 'Hola 👋' (never 'Hola, hola'), 'Hey 👋' after EN (never 'Hey, hola'), the sidebar never shows 'Nuevo usuario', and follows the saved name without a reload", (t) =>
+  story(t, async ({ page, expect, http, baseUrl }) => {
+    const phone = `+1512${digits()}`;
+    let r = await http("/api/auth/verify", {
+      method: "POST",
+      headers: JSON_HEADERS,
+      body: JSON.stringify({ phoneNumber: phone, code: "000000" }),
+    });
+    let body = await r.json();
+    let cookie = (r.headers.get("set-cookie") ?? "").split(";")[0];
+    if (body.recoverable === true) {
+      r = await http("/api/auth/start-fresh", {
+        method: "POST",
+        headers: JSON_HEADERS,
+        body: JSON.stringify({ token: body.recoveryToken }),
+      });
+      body = await r.json();
+      cookie = (r.headers.get("set-cookie") ?? "").split(";")[0];
+    }
+    if (!cookie) {
+      throw new Error(`sign-in: no cookie (${JSON.stringify(body)})`);
+    }
+    const auth = { ...JSON_HEADERS, cookie };
+    await (await http("/api/me", {
+      method: "PUT",
+      headers: auth,
+      body: JSON.stringify({ language: "es" }),
+    })).body?.cancel();
+    const me = await (await http("/api/me", { headers: auth })).json();
+    expect(
+      me.name === "Nuevo usuario" || me.name === "New user",
+      `precondition: the placeholder name (${me.name})`,
+    );
+    const boot = await http("/api/admin/bootstrap", {
+      method: "POST",
+      headers: auth,
+      body: JSON.stringify({
+        phoneNumber: phone,
+        token: Deno.env.get("SUPERADMIN_BOOTSTRAP_TOKEN") ?? "",
+      }),
+    });
+    expect.eq(boot.status, 200, `bootstrap super admin (${await boot.text()})`);
+    const [name, value] = cookie.split("=");
+    const hosts = new Set([
+      new URL(baseUrl).hostname,
+      "localhost",
+      "127.0.0.1",
+    ]);
+    await page.context().addCookies([...hosts].flatMap((domain) => [
+      { name, value, domain, path: "/" },
+      { name: "pm_lang", value: "es", domain, path: "/" },
+    ]));
+
+    await page.goto("/admin");
+    const greet = page.locator(".topbar__greet-name");
+    await greet.waitFor({ timeout: 15_000 });
+    const es = ((await greet.textContent()) ?? "").trim();
+    expect.eq(es, "Hola 👋", "ES: the nameless greeting");
+    const footer = page.locator(".sb__footer");
+    await footer.waitFor({ timeout: 15_000 });
+    const sbEs = (await footer.textContent()) ?? "";
+    expect(
+      !/Nuevo usuario|New user/.test(sbEs),
+      `ES: the sidebar never shows the placeholder (${sbEs})`,
+    );
+    expect(
+      ((await footer.locator("[aria-hidden='true']").first().textContent()) ??
+        "").trim() !== "NU",
+      "ES: no 'NU' initials for the placeholder",
+    );
+
+    await page.evaluate(() => {
+      (globalThis as unknown as { __noReload: boolean }).__noReload = true;
+    });
+    await clickUntil(
+      page,
+      "[data-cy='topbar-lang-en']",
+      async () =>
+        (await page.evaluate(() => document.documentElement.lang)) === "en",
+    );
+    const en = ((await greet.textContent()) ?? "").trim();
+    expect.eq(en, "Hey 👋", "EN: the nameless greeting (never 'Hey, hola')");
+    const sbEn = (await footer.textContent()) ?? "";
+    expect(
+      !/Nuevo usuario|New user/.test(sbEn),
+      `EN: the sidebar never shows the placeholder (${sbEn})`,
+    );
+
+    const input = page.locator("[data-cy='staff-name-input'][data-ready]");
+    await input.waitFor({ timeout: 15_000 });
+    await input.fill("Rafa Staff");
+    await page.locator("[data-cy='staff-name-save']").click();
+    await page.waitForFunction(
+      () =>
+        document.querySelector(".sb__footer")?.textContent?.includes(
+          "Rafa Staff",
+        ) === true,
+      undefined,
+      { timeout: 15_000 },
+    );
+    expect(
+      ((await greet.textContent()) ?? "").includes("Hey, Rafa"),
+      "the topbar greets the saved name",
+    );
+    expect.eq(
+      await page.evaluate(() =>
+        (globalThis as unknown as { __noReload?: boolean }).__noReload === true
+      ),
+      true,
+      "the sidebar followed the save without a reload",
     );
   }));

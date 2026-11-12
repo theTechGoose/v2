@@ -3,6 +3,10 @@ import { profileClient, type ProfileSnapshot } from "../clients/profile.ts";
 import { langSignal, tFor } from "../lib/i18n.ts";
 import { Icon } from "../components/ui/Icon.tsx";
 import { isPlaceholderName } from "../../shared/quote-flow/outbound-identity.ts";
+import {
+  PROFILE_UPDATED,
+  type ProfileUpdatedDetail,
+} from "../lib/profile-events.ts";
 
 /**
  * SetupChecklist — post-onboarding "finish setting up" card on the
@@ -32,8 +36,17 @@ export default function SetupChecklist() {
     profileClient.get().then((p) => {
       if (alive) setSnap(p);
     }).catch(() => {});
+    // REQ-423 — a name saved on this page (the staff name prompt, Settings)
+    // ticks the "name" item at once, no reload
+    const onProfile = (e: Event) => {
+      const name = (e as CustomEvent<ProfileUpdatedDetail>).detail?.name;
+      if (name === undefined || !alive) return;
+      setSnap((cur) => cur ? { ...cur, user: { ...cur.user, name } } : cur);
+    };
+    globalThis.addEventListener(PROFILE_UPDATED, onProfile);
     return () => {
       alive = false;
+      globalThis.removeEventListener(PROFILE_UPDATED, onProfile);
     };
   }, []);
 

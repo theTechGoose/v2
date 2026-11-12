@@ -17,6 +17,11 @@ import {
 import { isFolder, viewAt } from "../lib/nav-folders.ts";
 import { restingPath, SB_DRAWER_CSS } from "../lib/sb-drawer.ts";
 import { NAV } from "../lib/nav-tree.ts";
+import {
+  PROFILE_UPDATED,
+  type ProfileUpdatedDetail,
+} from "../lib/profile-events.ts";
+import { sidebarIdentity, withSavedName } from "../lib/greeting-identity.ts";
 
 type CountKey = "clients" | "quotes" | "invoices";
 
@@ -48,17 +53,6 @@ const INITIAL_STATE: SbState = {
   superAdmin: false,
 };
 
-function deriveInitials(
-  name: string | undefined,
-  fallback: string | undefined,
-): string {
-  const src = name?.trim() || fallback?.trim();
-  if (!src) return "•";
-  const parts = src.split(/\s+/).filter(Boolean);
-  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
-  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
-}
-
 function pickCounts(stats: DashboardStats): Partial<Record<CountKey, number>> {
   // "Active" totals only — drafts shouldn't badge as new work since the user
   // hasn't sent them yet. Quotes uses sent (not total) for the same reason.
@@ -73,21 +67,12 @@ function pickCounts(stats: DashboardStats): Partial<Record<CountKey, number>> {
 function projectSidebar(snap: CachedDash | null): SbState {
   if (!snap) return INITIAL_STATE;
   const { stats, profile } = snap;
-  const userName = profile?.user.name?.trim();
-  const bizName =
-    (profile?.identity?.businessName ?? profile?.identity?.displayName)?.trim();
   const counts = stats ? pickCounts(stats) : {};
   const lang = profile?.user.language === "es" ? "es" : "en";
   const superAdmin = profile?.user.superAdmin === true;
-  if (!userName && !bizName) {
-    return { counts, identity: null, lang, superAdmin };
-  }
-  const display = userName || bizName || tFor(lang, "common.account");
-  const biz = userName && bizName ? bizName : undefined;
-  const fallback = profile?.initials?.trim();
-  const initials = (fallback && fallback !== "?" ? fallback : null) ??
-    deriveInitials(userName, bizName);
-  return { counts, identity: { display, biz, initials }, lang, superAdmin };
+  // REQ-423 — the sign-in placeholder is no name: the business stands in, else "Account"
+  const identity = sidebarIdentity(profile, (k, v) => tFor(lang, k, v));
+  return { counts, identity, lang, superAdmin };
 }
 
 export default function DashSidebar(
@@ -175,9 +160,25 @@ export default function DashSidebar(
       if (!alive) return;
       setS(projectSidebar(snap));
     });
+    // REQ-423 — a name saved on this page (Settings, the staff name prompt)
+    // shows at once, then the refetch brings the server's view (initials, checklist)
+    const onProfile = (e: Event) => {
+      const name = (e as CustomEvent<ProfileUpdatedDetail>).detail?.name;
+      if (name === undefined || !alive) return;
+      const snap = readCached();
+      if (snap?.profile) {
+        setS(projectSidebar({
+          ...snap,
+          profile: withSavedName(snap.profile, name),
+        }));
+      }
+      refreshDash().catch(() => {/* the next page load refetches */});
+    };
+    globalThis.addEventListener(PROFILE_UPDATED, onProfile);
     return () => {
       alive = false;
       unsub();
+      globalThis.removeEventListener(PROFILE_UPDATED, onProfile);
     };
   }, []);
 

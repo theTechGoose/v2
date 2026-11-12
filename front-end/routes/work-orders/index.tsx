@@ -17,8 +17,7 @@ import { greetingFirstName } from "../../../shared/quote-flow/outbound-identity.
 export default define.page(function WorkOrdersRoute(ctx) {
   const user = ctx.state.user;
   const lang: Lang = user?.language === "es" ? "es" : "en";
-  const greetingName = greetingFirstName(user?.name) ??
-    tFor(lang, "common.thereFallback");
+  const greetingName = greetingFirstName(user?.name);
 
   return (
     <>

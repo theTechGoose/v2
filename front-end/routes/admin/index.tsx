@@ -39,8 +39,7 @@ const MONTH_KEYS = [
 export default define.page(function AdminRoute(ctx) {
   const user = ctx.state.user;
   const lang: Lang = user?.language === "es" ? "es" : "en";
-  const greetingName = greetingFirstName(user?.name) ??
-    tFor(lang, "common.thereFallback");
+  const greetingName = greetingFirstName(user?.name);
   // REQ-355 — staff never meet the customer wizard's name question (REQ-227): ask here
   const askName = user?.superAdmin === true && isPlaceholderName(user?.name);
   const now = new Date();

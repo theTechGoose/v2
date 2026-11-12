@@ -35,8 +35,7 @@ const MONTH_KEYS = [
 export default define.page(function InvoicesRoute(ctx) {
   const user = ctx.state.user;
   const lang = user?.language ?? "en";
-  const greetingName = greetingFirstName(user?.name) ??
-    tFor(lang, "common.greetingNameFallback");
+  const greetingName = greetingFirstName(user?.name);
   const now = new Date();
   const greetingDate = `${tFor(lang, WEEKDAY_KEYS[now.getDay()])} · ${
     tFor(lang, MONTH_KEYS[now.getMonth()])
