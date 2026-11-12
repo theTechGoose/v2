@@ -7738,6 +7738,29 @@ body {
   height: 20px;
   flex-shrink: 0;
 }
+/* REQ-442 (demo-loop cycle 3, M22 + m49): the step's own transcript — the
+   contractor's line over the assistant's answer; the strip scrolls rather
+   than pushing the picker out of the window (REQ-338). */
+.composer__step-log {
+  max-height: 168px;
+  overflow-y: auto;
+}
+.composer__step-said {
+  margin: 0 0 4px auto;
+  max-width: 85%;
+  width: fit-content;
+  padding: 6px 10px;
+  border-radius: 12px;
+  background: var(--brand-teal);
+  color: #fff;
+  font-size: 13px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+}
+.composer__step-note .spinner {
+  flex-shrink: 0;
+  margin-top: 2px;
+}
 
 /* ----- Document preview column ----- */
 .docpane {
