@@ -366,6 +366,19 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
     }
     return fracToPoint(a, f);
   };
+  /** REQ-437 — the box of the element an anchor names, on this screen (the replay has it) */
+  const rectOnStage = (a: Anchor): Rect | null => {
+    if (!a.n?.l || a.n.l !== loadRef.current) return null;
+    const r = replayerRef.current?.rectOf(a.n);
+    if (!r) return null;
+    const f = fitBox();
+    return {
+      left: f.left + r.left * f.s,
+      top: f.top + r.top * f.s,
+      width: r.width * f.s,
+      height: r.height * f.s,
+    };
+  };
 
   /** this side's moves, rated leading + trailing so the rest position always goes out */
   const throttle = useMemo(() =>
@@ -432,12 +445,17 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
     const a = customerRef.current;
     if (!a) return;
     const p = placeOnStage(a);
-    glide.glideTo(p.at, p.outside);
+    glide.glideTo(p.at, p.outside, p.outside ? null : rectOnStage(a));
   };
   const placePeer = (pid: string, a: Anchor, kind: "move" | "click") => {
     const p = placeOnStage(a);
     placedRef.current.set(pid, { ...p.at, outside: p.outside });
-    commandRef.current?.(pid, { kind, at: p.at, outside: p.outside });
+    commandRef.current?.(pid, {
+      kind,
+      at: p.at,
+      outside: p.outside,
+      rect: p.outside ? null : rectOnStage(a), // REQ-437 — the tag sits outside it
+    });
   };
   /** REQ-305 — the replay's layout may have moved (a frame applied, its styles, images or fonts
    *  in, a settle, the stage resized): every pointer anchored to its nodes is placed again;
@@ -789,7 +807,11 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
           case "click": {
             customerRef.current = m.a;
             const p = placeOnStage(m.a);
-            glide.glideTo(p.at, p.outside);
+            glide.glideTo(
+              p.at,
+              p.outside,
+              p.outside ? null : rectOnStage(m.a),
+            );
             const id = ++waveId.current;
             setWaves((w) => [...w, { id, ...p.at, a: m.a }]);
             setTimeout(
@@ -1180,6 +1202,7 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
       <DemoPointer
         pointer={glide.pointer}
         outside={glide.outside}
+        rect={glide.rect}
         waves={waves}
         name={name}
         color={CUSTOMER_COLOR}

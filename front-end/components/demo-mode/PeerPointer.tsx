@@ -6,7 +6,7 @@
  * REQ-242 — `bounds`: the box the name tag stays inside (the stage's frame, the customer's window).
  */
 import { useEffect, useRef, useState } from "preact/hooks";
-import type { Pt } from "../../../shared/demo-mode/motion.ts";
+import type { Pt, Rect } from "../../../shared/demo-mode/motion.ts";
 import { useGlide } from "../../lib/demo-mode/use-glide.ts";
 import DemoPointer, {
   type Bounds,
@@ -20,6 +20,8 @@ export interface PointerCmd {
   at?: Pt;
   /** REQ-305 — `at` is on the edge of the box: the element pointed at is out of view */
   outside?: boolean;
+  /** REQ-437 — the box of the element `at` is anchored to: the name tag sits outside it */
+  rect?: Rect | null;
 }
 
 export default function PeerPointer(
@@ -38,12 +40,12 @@ export default function PeerPointer(
     if (!cmd) return;
     switch (cmd.kind) {
       case "move":
-        if (cmd.at) glide.glideTo(cmd.at, cmd.outside);
+        if (cmd.at) glide.glideTo(cmd.at, cmd.outside, cmd.rect);
         break;
       case "click": {
         if (!cmd.at) break;
         const at = cmd.at;
-        glide.glideTo(at, cmd.outside);
+        glide.glideTo(at, cmd.outside, cmd.rect);
         const id = ++waveId.current;
         setWaves((w) => [...w, { id, ...at }]);
         setTimeout(
@@ -61,6 +63,7 @@ export default function PeerPointer(
     <DemoPointer
       pointer={glide.pointer}
       outside={glide.outside}
+      rect={glide.rect}
       waves={waves}
       name={name}
       color={color}

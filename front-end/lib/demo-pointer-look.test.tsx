@@ -64,16 +64,17 @@ for (const outside of [false, true]) {
   });
 }
 
-Deno.test("REQ-374 (demo m9) the name tag shows, sits above-left of the tip (off the content) and is hidden from AT", () => {
+// REQ-437 REVISION (demo m3, cycle 3): above-left of the tip covered a control hovered at its
+// centre; with no element known the tag now sits below-right past the arrow's tail
+Deno.test("REQ-374 (demo m9) the name tag shows, sits off the arrow (REQ-437: past its tail) and is hidden from AT", () => {
   const ptr = draw(false);
   const tag = ptr.querySelector('[data-cy="demo-pointer-tag"]') as Element;
   assert(tag, "the tag is drawn");
   assertEquals(tag.textContent, "Rosa");
   assertEquals(tag.getAttribute("aria-hidden"), "true");
   const style = tag.getAttribute("style") ?? "";
-  assert(
-    /(^|;)right:/.test(style) && /(^|;)bottom:/.test(style),
-    `above-left of the tip: ${style}`,
-  );
+  const top = Number(style.match(/(^|;)top:(-?[\d.]+)px/)?.[2] ?? NaN);
+  assert(top >= 30 + 6, `below the arrow's tail: ${style}`);
+  assertEquals(tag.getAttribute("data-tag-side"), "tail");
   assertEquals(opacityOf(tag), 1, "fully shown when placed");
 });

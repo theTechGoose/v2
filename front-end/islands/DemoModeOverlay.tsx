@@ -346,16 +346,21 @@ export default function DemoModeOverlay() {
     sentRef.current = out; // REQ-305 — every anchor of this pointer goes out: the last one sent
     return out;
   };
-  /** a presenter's pointer on this screen: on the element they point at when this page has it */
-  const toScreen = (a: Anchor): Pt => {
+  /** REQ-437 — the box of the element a presenter's anchor names, when this page has it */
+  const rectOnScreen = (a: Anchor): Rect | null => {
     const recorder = recorderRef.current;
     const sender = senderRef.current;
-    if (a.n && recorder && sender && a.n.l === sender.load) {
-      const el = recorder.nodeOf(a.n.id);
-      const r = el?.getBoundingClientRect();
-      if (r && r.width > 0 && r.height > 0) {
-        return { x: r.left + r.width * a.n.x, y: r.top + r.height * a.n.y };
-      }
+    if (!a.n || !recorder || !sender || a.n.l !== sender.load) return null;
+    const r = recorder.nodeOf(a.n.id)?.getBoundingClientRect();
+    return r && r.width > 0 && r.height > 0
+      ? { left: r.left, top: r.top, width: r.width, height: r.height }
+      : null;
+  };
+  /** a presenter's pointer on this screen: on the element they point at when this page has it */
+  const toScreen = (a: Anchor): Pt => {
+    const r = rectOnScreen(a);
+    if (r && a.n) {
+      return { x: r.left + r.width * a.n.x, y: r.top + r.height * a.n.y };
     }
     return fracToPoint(a, viewportBox());
   };
@@ -581,7 +586,13 @@ export default function DemoModeOverlay() {
     const place = (pid: string, a: Anchor, kind: "move" | "click") => {
       const p = placeOnScreen(a);
       placed.set(pid, { ...p.at, outside: p.outside });
-      command(pid, { kind, at: p.at, outside: p.outside });
+      // REQ-437 — the element's box goes with the point: the tag sits outside it
+      command(pid, {
+        kind,
+        at: p.at,
+        outside: p.outside,
+        rect: p.outside ? null : rectOnScreen(a),
+      });
     };
     let raf = 0;
     /** REQ-305 — this page moved under the pointers (a scroll of any scroller, a resize, a change

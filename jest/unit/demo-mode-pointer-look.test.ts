@@ -22,25 +22,24 @@ describe("REQ-374 (demo m9/p8, cycle 2) the pointer's tag stays readable and off
   const box = { left: 100, top: 50, width: 400, height: 300 };
   const tag = { w: 90, h: 22 };
 
-  test("the tag sits above-left of the tip, away from what it points at", () => {
-    expect(tagPlacement({ x: 300, y: 200 }, box, tag)).toEqual({
-      left: true,
-      up: true,
-    });
+  // REQ-437 REVISION (demo m3, cycle 3): above-left of the tip still covered a control hovered
+  // at its centre; the tag now sits outside the element pointed at, else past the arrow's tail
+  // (jest/unit/demo-pointer-tag-spot.test.ts) — always inside the box
+  test("the tag sits off the arrow (past its tail when no element is known), inside the box", () => {
+    const at = tagPlacement({ x: 300, y: 200 }, box, tag);
+    expect(at.side).toBe("tail");
+    expect(at.y).toBeGreaterThanOrEqual(200 + 30 + 6);
   });
-  test("it flips right only where the box's left edge leaves no room, and down only at the top", () => {
-    expect(tagPlacement({ x: 120, y: 200 }, box, tag)).toEqual({
-      left: false,
-      up: true,
-    });
-    expect(tagPlacement({ x: 300, y: 60 }, box, tag)).toEqual({
-      left: true,
-      up: false,
-    });
-    expect(tagPlacement({ x: 120, y: 60 }, box, tag)).toEqual({
-      left: false,
-      up: false,
-    });
+  test("near the box's edges it is clamped inside the box", () => {
+    for (
+      const p of [{ x: 120, y: 200 }, { x: 300, y: 60 }, { x: 495, y: 345 }]
+    ) {
+      const at = tagPlacement(p, box, tag);
+      expect(at.x).toBeGreaterThanOrEqual(box.left);
+      expect(at.y).toBeGreaterThanOrEqual(box.top);
+      expect(at.x + tag.w).toBeLessThanOrEqual(box.left + box.width);
+      expect(at.y + tag.h).toBeLessThanOrEqual(box.top + box.height);
+    }
   });
 
   test("at rest the tag fades to ~0.6, never to 0; the arrow is always fully opaque", () => {
