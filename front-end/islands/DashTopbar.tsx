@@ -16,7 +16,7 @@ import {
   PROFILE_UPDATED,
   type ProfileUpdatedDetail,
 } from "../lib/profile-events.ts";
-import { greetingFirstName } from "../../shared/quote-flow/outbound-identity.ts";
+import { topbarGreeting } from "../lib/greeting-identity.ts";
 import {
   readNotifications,
   refreshNotifications,
@@ -32,7 +32,9 @@ interface Props {
   /** @deprecated Ignored — the date is now computed reactively in-component
    *  so it re-localizes live on a language change instead of arriving frozen. */
   greetingDate?: string;
-  greetingName: string;
+  /** REQ-423 — the real first name; undefined greets namelessly
+   *  (`dashTopbar.greetingNoName`, in the live language). */
+  greetingName?: string;
   /** @deprecated SSR-frozen string — it can't re-localize when the topbar
    *  language toggle flips. Pass `greetingOverrideKey` instead. */
   greetingOverride?: string;
@@ -181,17 +183,16 @@ export default function DashTopbar(
       <div class="topbar__greet">
         <div class="topbar__greet-line">{greetingDate}</div>
         <div class="topbar__greet-name">
-          {savedName !== undefined
-            // REQ-355 — re-greet the saved name; a placeholder or blank greets namelessly
-            ? (greetingFirstName(savedName)
-              ? tFor(lang, "dashTopbar.greeting", {
-                name: greetingFirstName(savedName)!,
-              })
-              : tFor(lang, "dashTopbar.greetingNoName"))
-            : (greetingOverrideKey
-              ? tFor(lang, greetingOverrideKey)
-              : greetingOverride) ??
-              tFor(lang, "dashTopbar.greeting", { name: greetingName })}
+          {
+            // REQ-355 — a saved name re-greets; REQ-423 — no name (or the
+            // placeholder) greets namelessly in the LIVE language
+            topbarGreeting((k, v) => tFor(lang, k, v), {
+              greetingName,
+              savedName,
+              greetingOverrideKey,
+              greetingOverride,
+            })
+          }
         </div>
       </div>
       {

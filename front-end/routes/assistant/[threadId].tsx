@@ -53,8 +53,7 @@ export default define.page(async function AssistantThread(ctx) {
   );
 
   const lang = profile?.user?.language ?? "en";
-  const greetingName = greetingFirstName(user?.name) ??
-    tFor(lang, "assistantThread.greetingFallback");
+  const greetingName = greetingFirstName(user?.name);
 
   const businessName = profile?.identity?.businessName ??
     profile?.identity?.displayName;

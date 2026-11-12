@@ -59,8 +59,7 @@ export default define.page(async function AssistantHome(ctx) {
   );
   const lang = profile?.user?.language === "es" ? "es" : "en";
 
-  const greetingName = greetingFirstName(user?.name) ??
-    tFor(lang, "common.thereFallback");
+  const greetingName = greetingFirstName(user?.name);
 
   const businessName = profile?.identity?.businessName ??
     profile?.identity?.displayName;

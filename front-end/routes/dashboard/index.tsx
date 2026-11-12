@@ -43,8 +43,8 @@ export default define.page(function Dashboard(ctx) {
   const realName = isPlaceholderName(user?.name)
     ? undefined
     : user?.name?.trim();
-  const greetingName = (realName || tFor(lang, "common.thereFallback"))
-    .split(" ")[0];
+  // REQ-423 — no server-translated fallback baked in as a name ("Hola, hola")
+  const greetingName = realName?.split(/\s+/)[0];
   // Passed as a dict KEY so the topbar re-localizes it live when the
   // language toggle flips (an SSR string would stay frozen).
   const greetingOverrideKey = realName

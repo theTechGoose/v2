@@ -66,7 +66,11 @@ describe("REQ-355 the topbar greeting follows a rename without a reload", () => 
     const topbar = read("front-end/islands/DashTopbar.tsx");
     expect(topbar).toMatch(/PROFILE_UPDATED/);
     expect(topbar).toMatch(/addEventListener\(\s*PROFILE_UPDATED/);
-    expect(topbar).toMatch(/greetingFirstName\(/);
+    // REQ-423: the greeting rule moved to lib/greeting-identity.ts (topbarGreeting)
+    expect(topbar).toMatch(/topbarGreeting\(/);
+    expect(read("front-end/lib/greeting-identity.ts")).toMatch(
+      /greetingFirstName\(/,
+    );
   });
 });
 

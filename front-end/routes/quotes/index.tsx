@@ -13,8 +13,7 @@ export default define.page(function QuotesRoute(ctx) {
   const lang = user?.language === "es" ? "es" : "en";
   // The greeting date is computed reactively inside DashTopbar now; here we
   // only supply the name, with a localized "there" fallback.
-  const greetingName = greetingFirstName(user?.name) ??
-    tFor(lang, "common.thereFallback");
+  const greetingName = greetingFirstName(user?.name);
 
   return (
     <>
