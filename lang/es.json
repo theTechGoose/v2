@@ -1387,6 +1387,7 @@
   "search.type.changeOrder": "Orden de cambio",
   "search.type.workOrder": "Orden de trabajo",
   "search.status.draft": "Borrador",
+  "search.status.scheduled": "Programada",
   "search.status.sent": "Enviada",
   "search.status.revised": "Revisada",
   "search.status.accepted": "Aceptada",

@@ -1387,6 +1387,7 @@
   "search.type.changeOrder": "Change order",
   "search.type.workOrder": "Work order",
   "search.status.draft": "Draft",
+  "search.status.scheduled": "Scheduled",
   "search.status.sent": "Sent",
   "search.status.revised": "Revised",
   "search.status.accepted": "Accepted",
