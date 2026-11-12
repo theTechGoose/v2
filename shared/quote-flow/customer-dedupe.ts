@@ -66,6 +66,42 @@ export function findExistingCustomer<C extends DedupableCustomer>(
   return null;
 }
 
+/** Letter words of a text or a name, in order ("María López," → two). */
+const words = (s: string): string[] =>
+  s.split(/[^\p{L}\p{N}'’-]+/u).filter(Boolean);
+
+/**
+ * REQ-386 (demo-loop cycle 2, m17) — the one same-owner customer whose WHOLE
+ * name is typed in the text as Capitalized words ("Bob wants 6 recessed
+ * lights" → the existing "Bob"; "Maria Lopez" → "María López"), accent- and
+ * case-blind on the letters. A lowercase word ("bob the roof"), a longer word
+ * ("Bobby") or part of a name ("Maria" for "María López") never matches; two
+ * different customers named → null (never a guess).
+ */
+export function findCustomerNamedInText<C extends DedupableCustomer>(
+  customers: C[] | null | undefined,
+  text: string | null | undefined,
+): C | null {
+  const typed = words(text ?? "");
+  const folded = typed.map((w) => foldName(w));
+  const hits = new Map<string, C>();
+  for (const c of customers ?? []) {
+    const name = words(c.name).map((w) => foldName(w));
+    if (name.length === 0 || name.join(" ").length < 2) continue;
+    for (let i = 0; i + name.length <= typed.length; i++) {
+      const same = name.every((w, k) =>
+        folded[i + k] === w && /^\p{Lu}/u.test(typed[i + k])
+      );
+      if (same) {
+        hits.set(c.id, c);
+        break;
+      }
+    }
+  }
+  if (hits.size !== 1) return null;
+  return [...hits.values()][0];
+}
+
 export interface KnownCustomer<C extends DedupableCustomer> {
   /** "bound": the thread already carries them; "match": the typed facts
    *  name a customer the account has. */

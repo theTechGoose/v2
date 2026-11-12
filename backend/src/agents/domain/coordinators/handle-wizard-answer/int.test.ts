@@ -1056,3 +1056,49 @@ Deno.test("REQ-347 M16 a Spanish contractor's transcript previews as the same En
   });
   await resetKv();
 });
+
+// ---- REQ-386 (demo-loop cycle 2, m17): the customer line keeps the address ----
+Deno.test("REQ-386 m17 handle-wizard-answer: the customer transcript line carries the job address typed in the step", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const { flow, conv } = await setupTermsConversationWithQuote();
+  const r = await flow.run({
+    userId: "u-1",
+    conversationId: conv.id,
+    stepId: "customer",
+    optionId: "create_new",
+    serviceAddress: "88 Oak Hollow Dr, Austin TX 78745",
+    customer: { create: { name: "Dave Roof", phoneNumber: "5125550123" } },
+  });
+  assertEquals(
+    r.newMessages[0].content,
+    "Customer: Dave Roof — 88 Oak Hollow Dr, Austin TX 78745",
+  );
+  assertEquals(
+    r.conversation.preview,
+    "Customer: Dave Roof — 88 Oak Hollow Dr, Austin TX 78745",
+  );
+  await resetKv();
+});
+
+Deno.test("REQ-386 m17 handle-wizard-answer: picking a customer with an address on file shows it on the transcript line", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const { flow, conv, customers } = await setupTermsConversationWithQuote();
+  const maria = await customers.create("u-1", {
+    name: "Maria Lopez",
+    address: "412 Oak St Austin",
+  });
+  const r = await flow.run({
+    userId: "u-1",
+    conversationId: conv.id,
+    stepId: "customer",
+    optionId: "pick_existing",
+    customer: { id: maria.id },
+  });
+  assertEquals(
+    r.newMessages[0].content,
+    "Customer: Maria Lopez — 412 Oak St Austin",
+  );
+  await resetKv();
+});

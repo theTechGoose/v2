@@ -2867,6 +2867,7 @@
   "wizardAnswer.cta.readyToSendSummary": "All terms answered. Review and send to your client.",
   "wizardAnswer.pick.customFallback": "Custom",
   "wizardAnswer.pick.transcript": "{label}: {value}",
+  "wizardAnswer.pick.transcriptAddress": "{label}: {value} — {address}",
   "quotesPage.status.accepted": "Accepted",
   "welcome.plan.question": "Pick your plan",
   "welcome.plan.why": "Start free, or go paid today — you can upgrade any time from Settings.",

@@ -235,9 +235,101 @@ const NOT_A_NAME =
  *     ("quote for customer x" → "X");
  *   - ES household form: "para la familia Nguyen" → "Familia Nguyen";
  *   - EN postfix form: "for the Smith family" → "Smith family";
+ *   - REQ-386 (demo m17): a full name elsewhere in the message that shares
+ *     a word with a surname / household lead-in wins over it — "for the
+ *     Gutierrez family. Maria Gutierrez, …" → "Maria Gutierrez", "para
+ *     Okafor (Daniel Okafor)" → "Daniel Okafor";
+ *   - REQ-386: with no lead-in, "<Name> wants / needs / asked …" (ES
+ *     "quiere / necesita / pidió") names the customer — "Bob wants 6
+ *     recessed lights" → "Bob";
  *   - no phrase → null (never a hallucinated name).
  */
 export function extractCustomerName(raw: string): string | null {
+  const lead = leadInName(raw);
+  if (lead) return fullNameFor(raw, lead) ?? lead;
+  return subjectName(raw);
+}
+
+/** Words that read as a household / honorific / pronoun, never a name. */
+const NAME_STOP =
+  /^(?:family|familia|the|el|la|los|las|mr|mrs|ms|miss|dr|sr|sra|srta|se[ñn]ora?|don|do[ñn]a|i|he|she|they|we|you|it|this|that|my|our|his|her|their|your|ella|[ée]l|ellos|ellas|mi|su|nosotros|customer|client|cliente|clienta|someone|somebody|everyone|alguien)$/i;
+
+/** REQ-386 (demo m17): every run of two to four Capitalized words in the
+ *  text — "(Daniel Okafor)", "Maria Gutierrez," — a run ends at punctuation
+ *  or at a household / honorific / pronoun word. */
+function fullNameRuns(raw: string): string[][] {
+  const runs: string[][] = [];
+  let run: string[] = [];
+  const close = () => {
+    if (run.length >= 2 && run.length <= 4) runs.push(run);
+    run = [];
+  };
+  for (const piece of raw.split(/\s+/)) {
+    if (/^[(\["“'‘]/.test(piece)) close();
+    const tok = piece.replace(/^[(\["“'‘]+/, "").replace(
+      /[)\]"”’,;:.!?]+$/,
+      "",
+    );
+    if (!tok || !CAP_TOKEN.test(tok) || NAME_STOP.test(tok)) {
+      close();
+      continue;
+    }
+    run.push(tok);
+    if (tok !== piece.replace(/^[(\["“'‘]+/, "")) close();
+  }
+  close();
+  return runs;
+}
+
+const foldWord = (s: string) =>
+  s.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase();
+
+/**
+ * REQ-386 (demo m17): a lead-in that only caught a surname or a household
+ * ("for the Gutierrez family", "para Okafor") gives way to a full name in
+ * the same message that shares one of its words ("Maria Gutierrez",
+ * "(Daniel Okafor)"). An unrelated Capitalized pair never wins.
+ */
+function fullNameFor(raw: string, lead: string): string | null {
+  const leadWords = lead.split(/\s+/).filter((w) => !NAME_STOP.test(w))
+    .map(foldWord);
+  if (leadWords.length === 0) return null;
+  for (const run of fullNameRuns(raw)) {
+    if (run.length <= leadWords.length) continue;
+    if (run.some((w) => leadWords.includes(foldWord(w)))) return run.join(" ");
+  }
+  return null;
+}
+
+/** "<Name> wants / needs / asked …" and the ES "<Name> quiere / necesita". */
+const SUBJECT_VERB =
+  /\s(?:wants|wanted|needs|needed|asked|asks|is\s+asking|is\s+looking|would\s+like|quiere|quer[ií]a|necesita|pidi[oó]|pide)\b/giu;
+
+/**
+ * REQ-386 (demo m17): with no lead-in, the Capitalized words right before a
+ * "wants / needs / asked" verb are the customer — "Need a quote: Bob wants 6
+ * recessed lights" → "Bob". A pronoun or a lowercase word there ("I need",
+ * "The kitchen needs") is never a name.
+ */
+function subjectName(raw: string): string | null {
+  for (const m of raw.matchAll(SUBJECT_VERB)) {
+    const before = raw.slice(0, m.index!).split(/\s+/);
+    const run: string[] = [];
+    for (let i = before.length - 1; i >= 0 && run.length < 4; i--) {
+      const piece = before[i];
+      if (/[,;:.!?)]$/.test(piece) && run.length > 0) break;
+      const tok = piece.replace(/^[(\["“'‘]+/, "");
+      if (!CAP_TOKEN.test(tok) || NAME_STOP.test(tok)) break;
+      run.unshift(tok);
+      if (tok !== piece) break;
+    }
+    if (run.length > 0) return run.join(" ");
+  }
+  return null;
+}
+
+/** The "this is / for / para <Name>" lead-in candidate (UX-04, REQ-331). */
+function leadInName(raw: string): string | null {
   const lead =
     /\b(?:this\s+is|para|for)\s+(?:(?:el|la|los|las|the|un|una|a)\s+)?(?:(?<conn>cliente|clienta|customer|client)\s+|(?:se[ñn]ora?|srt?a\.?|sr\.?|don|do[ñn]a|mr\.?|mrs\.?|ms\.?|miss|dr\.?)\s+)?/giu;
   for (const m of raw.matchAll(lead)) {
@@ -337,6 +429,21 @@ export function extractServiceAddress(raw: string): string | null {
       return `${b[1]}${b[2]}`.replace(/\s+/g, " ").trim() + tail.text;
     }
   }
+  // REQ-386 (demo m17): no street, but the place is still typed — "Austin,
+  // TX 78745" keeps city / state / ZIP; "zip 78745" / "código postal 78745"
+  // keeps the ZIP, so the address box starts with it instead of empty. A
+  // bare 5-digit number with neither is never taken for a ZIP.
+  const cityState =
+    /(?:([\p{Lu}][\p{L}'’-]*(?:\s+[\p{Lu}][\p{L}'’-]*){0,2})(,?)\s+)?\b([A-Z]{2})\s+(\d{5}(?:-\d{4})?)\b/u
+      .exec(raw);
+  if (cityState) {
+    const [, city, comma, state, zip] = cityState;
+    return city ? `${city}${comma} ${state} ${zip}` : `${state} ${zip}`;
+  }
+  const zip =
+    /\b(?:zip(?:\s*code)?|c[oó]digo\s+postal|c\.p\.?|cp)\s*[:#]?\s*(\d{5}(?:-\d{4})?)\b/iu
+      .exec(raw);
+  if (zip) return zip[1];
   return null;
 }
 

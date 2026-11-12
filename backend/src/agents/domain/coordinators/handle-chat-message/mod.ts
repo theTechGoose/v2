@@ -77,7 +77,10 @@ import {
 import { changeOrderAsReprice } from "@agents/domain/business/quote-line-revision/mod.ts";
 import { extractServiceAddress } from "#quote-flow/quick-quote-prefill.ts";
 import { extractQuoteFacts } from "#quote-flow/quote-facts.ts"; // REQ-331
-import { findExistingCustomer } from "#quote-flow/customer-dedupe.ts"; // REQ-331
+import {
+  findCustomerNamedInText, // REQ-386
+  findExistingCustomer, // REQ-331
+} from "#quote-flow/customer-dedupe.ts";
 import { CustomerStore } from "@crm/domain/data/customer-store/mod.ts";
 import type { Customer } from "@crm/dto/customer.ts";
 import { isValidJobName, jobNameCase } from "#quote-flow/job-name.ts";
@@ -253,7 +256,9 @@ export class HandleChatMessage {
   ) {}
 
   /** REQ-331: the same-owner customer the thread's typed facts name — by
-   *  phone, email, then accent-folded name; null when nobody matches. */
+   *  phone, email, then accent-folded name; REQ-386 (demo m17): else the one
+   *  customer whose whole name is typed as Capitalized words ("Bob wants 6
+   *  recessed lights" → the existing Bob); null when nobody matches. */
   private async customerFromTypedFacts(
     userId: string,
     history: AgentMessage[],
@@ -263,17 +268,15 @@ export class HandleChatMessage {
       .filter((m) => m.role === "user" && typeof m.content === "string")
       .map((m) => m.content as string)
       .join("\n");
+    if (!typed.trim()) return null;
     const facts = extractQuoteFacts(typed, new Date());
-    if (!facts.customerName && !facts.customerPhone && !facts.customerEmail) {
-      return null;
-    }
     const mine: Customer[] = await this.customers.listByUser(userId)
       .catch(() => []);
     return findExistingCustomer(mine, {
       name: facts.customerName,
       email: facts.customerEmail,
       phoneNumber: facts.customerPhone,
-    });
+    }) ?? findCustomerNamedInText(mine, typed);
   }
 
   /** REQ-331: the bound customer's name for the terms CTA, if any. */
