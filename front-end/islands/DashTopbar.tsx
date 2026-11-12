@@ -3,6 +3,7 @@ import { I } from "../lib/dash-icons.tsx";
 import { dashboardClient, type Notification } from "../clients/dashboard.ts";
 import { langSignal, setLang, tFor } from "../lib/i18n.ts";
 import { profileClient } from "../clients/profile.ts";
+import { patchCachedLanguage } from "../lib/dash-cache.ts";
 import { formatGreetingDate } from "../../shared/quote-flow/locale-format.ts";
 import { tickerAge } from "../lib/ticker-age.ts";
 import GlobalSearch from "./GlobalSearch.tsx";
@@ -241,6 +242,7 @@ export default function DashTopbar(
             onClick={() => {
               if (langSignal.value === code) return;
               setLang(code);
+              patchCachedLanguage(code); // REQ-422: the cache agrees at once
               profileClient.updateUser({ language: code }).catch(() => {
                 /* profile save is best-effort — the UI already flipped */
               });
