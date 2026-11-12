@@ -72,7 +72,11 @@ import {
   PICKER_TIMEZONES,
   timezoneLabelKey,
 } from "../../shared/quote-flow/business-timezone.ts";
-import { sendLanguagesOf } from "../../shared/quote-flow/comms-language.ts";
+import {
+  isLastSendLanguage,
+  sendLanguagesOf,
+  toggleSendLanguage,
+} from "../../shared/quote-flow/comms-language.ts";
 import { Icon } from "../components/ui/Icon.tsx";
 import {
   CardGridSkeleton,
@@ -190,6 +194,8 @@ function tr(es: boolean) {
     // Outgoing-comms languages (what the contractor can SEND quotes in).
     commsLang: tFor(lang, "settings.commsLang"),
     commsLangHint: tFor(lang, "settings.commsLangHint"),
+    // REQ-500: the wizard's own keep-one line
+    commsLangKeepOne: tFor(lang, "welcome.commsLangKeepOne"),
     timezone: tFor(lang, "field.settings.timezone"),
     timezoneHint: tFor(lang, "field.settings.timezoneHint"),
     // Insurance
@@ -743,16 +749,24 @@ function EditCard(
                   >
                     <input
                       type="checkbox"
+                      data-cy={`settings-comms-${lng.code}`}
                       checked={on}
-                      disabled={busy === "identity"}
+                      // REQ-500 (M34): the last ticked language is locked on,
+                      // as in the wizard — it can never be unticked.
+                      disabled={busy === "identity" ||
+                        isLastSendLanguage(selected, lng.code)}
                       onChange={(e) => {
-                        const want = (e.target as HTMLInputElement).checked;
-                        const set = new Set(selected);
-                        if (want) set.add(lng.code);
-                        else set.delete(lng.code);
-                        // Always keep at least one language enabled.
-                        if (set.size === 0) return;
-                        const list = ["en", "es"].filter((c) => set.has(c));
+                        const input = e.target as HTMLInputElement;
+                        const list = toggleSendLanguage(
+                          selected,
+                          lng.code,
+                          input.checked,
+                        );
+                        // never leave the DOM box out of step with the state
+                        if (!list) {
+                          input.checked = on;
+                          return;
+                        }
                         saveIdentity({
                           commsLanguages: list,
                           commsLanguage: list[0],
@@ -769,6 +783,17 @@ function EditCard(
           <span style="display:block;margin-top:4px;font-size:12px;color:var(--fg-muted)">
             {t.commsLangHint}
           </span>
+          {sendLanguagesOf(snapshot.identity, snapshot.user.language)
+              .length === 1
+            ? (
+              <span
+                data-cy="settings-comms-keep-one"
+                style="display:block;margin-top:4px;font-size:12px;color:var(--fg-muted)"
+              >
+                {t.commsLangKeepOne}
+              </span>
+            )
+            : null}
         </div>
         {/* REQ-172/255 — the business's time zone (picked, else the address's state's): the 9 am schedule texts follow it */}
         <label style="display:block;grid-column:1 / -1">
