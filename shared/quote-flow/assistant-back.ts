@@ -148,3 +148,39 @@ export function backViewFromMessages(
     ...flags,
   };
 }
+
+// ── REQ-676 (demo-loop cycle 5, c1-M9): the review's X is a pure close ──
+// It used to rewind the wizard (dropping the last term answer). Now it
+// only hides the review; the send CTA then renders as a "Ready to send"
+// banner whose Review button reopens it.
+
+/** What a `toPhase: "send"` continue_cta renders as in the thread. */
+export type SendCtaView = "preview" | "reopen" | "hidden" | "done";
+
+export function sendCtaView(s: {
+  /** Sent / settled (REQ-244). */
+  reviewed: boolean;
+  /** The review card is open on this CTA. */
+  previewing: boolean;
+  /** The contractor closed this CTA's review with its X. */
+  closedByUser: boolean;
+}): SendCtaView {
+  if (s.previewing) return "preview";
+  if (s.reviewed) return "done";
+  // Never closed → it auto-opens; the banner would be redundant.
+  return s.closedByUser ? "reopen" : "hidden";
+}
+
+/**
+ * A history snapshot that renders nothing: the wizard is complete, no
+ * panel is open and the review was not closed by the user (a closed
+ * review shows its reopen banner, so it IS a visible state). Restoring a
+ * dead end rewinds one question instead.
+ */
+export function isDeadEndSnapshot(s: {
+  wizardStepIdx: number | null;
+  noPanel: boolean;
+  reviewClosedCtaId?: string | null;
+}): boolean {
+  return s.wizardStepIdx === WIZARD_DONE && s.noPanel && !s.reviewClosedCtaId;
+}
