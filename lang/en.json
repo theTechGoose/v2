@@ -2538,6 +2538,7 @@
   "quotesPage.open.viewAsClient": "View as customer",
   "quotesPage.status.declined": "Declined",
   "quotesPage.status.draft": "Draft",
+  "quotesPage.status.revised": "Revised",
   "quotesPage.status.sent": "Sent",
   "quotesPage.status.viewed": "Viewed",
   "quotesPage.track.decidedThisMonth": "Decided this month",

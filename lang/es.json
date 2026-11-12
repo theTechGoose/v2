@@ -2538,6 +2538,7 @@
   "quotesPage.open.viewAsClient": "Ver como cliente",
   "quotesPage.status.declined": "Rechazada",
   "quotesPage.status.draft": "Borrador",
+  "quotesPage.status.revised": "Revisada",
   "quotesPage.status.sent": "Enviada",
   "quotesPage.status.viewed": "Vista",
   "quotesPage.track.decidedThisMonth": "Decididas este mes",

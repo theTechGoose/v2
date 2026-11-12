@@ -264,3 +264,56 @@ Deno.test("REQ-304: Publish previews 'Total $1,000.00 → $1,200.00', asks once,
       `the public page says what changed: "${line}"`,
     );
   }));
+
+Deno.test("REQ-467 (demo cycle 3, p8-pair5-a): the open quote's pill reads 'Revised' once Version 2 is published, matching the document line — not 'Sent'", (t) =>
+  story(t, async ({ page, expect, http, baseUrl }) => {
+    const { auth } = await signIn(http, page, baseUrl);
+    const customer = await call(http, auth, "POST", "/api/customers", {
+      name: "Hans Hansen",
+      email: "hans@blackhole.postmarkapp.com",
+      address: "725 Frederick Rd, Rockingham, VA",
+    });
+    const quote = await call(http, auth, "POST", "/api/quotes", {
+      customerId: customer.id,
+      summary: "Deck rebuild — Hans Hansen",
+      jobName: "Deck rebuild",
+      lineItems: [{
+        description: "Deck rebuild",
+        quantity: 1,
+        unit: "job",
+        price: 100000,
+      }],
+      estimatedTotal: 100000,
+      status: "draft",
+    });
+    await call(http, auth, "PUT", `/api/quotes/${quote.id}`, {
+      status: "sent",
+    });
+
+    // Version 1, sent: the pill says Sent.
+    await page.goto(`/quotes?open=${quote.id}`);
+    const badge = page.locator("[data-cy='quote-status-badge']");
+    await badge.waitFor({ timeout: 15_000 });
+    expect.eq((await badge.textContent())?.trim(), "Sent", "Version 1 is Sent");
+
+    await call(http, auth, "PUT", `/api/quotes/${quote.id}`, {
+      estimatedTotal: 120000,
+    });
+    const published = await call(
+      http,
+      auth,
+      "POST",
+      `/api/quotes/${quote.id}/publish`,
+      { notify: false },
+    );
+    expect.eq(published.version, 2, "publishing makes Version 2");
+
+    await page.goto(`/quotes?open=${quote.id}`);
+    await page.locator("[data-cy='quote-ledger']").waitFor({ timeout: 15_000 });
+    await badge.waitFor({ timeout: 15_000 });
+    expect.eq(
+      (await badge.textContent())?.trim(),
+      "Revised",
+      "the Version 2 pill agrees with the document line",
+    );
+  }));

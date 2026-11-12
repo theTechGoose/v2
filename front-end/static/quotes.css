@@ -1099,6 +1099,10 @@
   background: rgba(168, 67, 31, 0.12);
   color: #a8431f;
 }
+.qopen__badge--revised {
+  background: rgba(26, 83, 92, 0.16);
+  color: var(--brand-teal);
+}
 .qopen__badge--approved {
   background: rgba(63, 122, 51, 0.12);
   color: #3f7a33;

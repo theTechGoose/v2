@@ -31,6 +31,7 @@ import {
   pendingDraftLines,
   pendingOtherContentChanged,
   pendingRevisionChanges,
+  quoteBadgeStatus,
   quoteState,
   versionChanges,
 } from "../../shared/documents/versions.ts";
@@ -145,25 +146,6 @@ interface State {
   quotes: Quote[];
   winRate: WinRate | null;
   insight: Insight | null;
-}
-
-/** Lifecycle badge on the open-quote surface (roadmap p.10): the RAW quote
- *  `status` walks draft → sent → viewed → accepted on the backend;
- *  "lost" renders as declined. */
-type BadgeStatus = "draft" | "sent" | "viewed" | "accepted" | "declined";
-
-function badgeStatusFor(q: BackendQuoteCard): BadgeStatus {
-  const raw = typeof q.status === "string" ? q.status.toLowerCase() : "";
-  // Never regress after signature: accepted (or a recorded acceptedAt)
-  // wins over any later "viewed" bookkeeping.
-  if (raw === "accepted" || q.acceptedAt) {
-    return "accepted";
-  }
-  if (raw === "lost") return "declined";
-  if (raw === "viewed") return "viewed";
-  if (raw === "sent") return "sent";
-  if (q.sentAt) return "sent";
-  return "draft";
 }
 
 interface OpenQuoteState {
@@ -1413,7 +1395,7 @@ function OpenQuotePanel(
     );
   }
 
-  const badge = badgeStatusFor(q);
+  const badge = quoteBadgeStatus(q);
   const quoteId = q.id;
   // REQ-394 (cycle 2, p9): the title and summary in the app's language.
   const title = quoteJobTitle(q, lang) ??
