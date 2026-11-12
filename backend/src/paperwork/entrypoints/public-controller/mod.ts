@@ -1001,10 +1001,22 @@ export class PaperworkPublicController {
       // Standalone invoices (no quote) carry their own jobName +
       // description — the assistant's "Job done, need to invoice." flow and
       // the /invoices "New invoice" modal write them directly (roadmap p.3).
-      if (!jobDetails && (i.jobName || i.description)) {
+      // REQ-487 (demo m58): its OWN line items fill the itemized table too —
+      // except a batch invoice, whose visits render grouped by address.
+      const ownItems = !jobDetails && i.lineItems?.length &&
+          !groupVisits(i.lineItems)
+        ? i.lineItems.map((li) => ({
+          description: li.description,
+          quantity: li.quantity,
+          unit: li.unit,
+          price: li.price,
+        }))
+        : undefined;
+      if (!jobDetails && (i.jobName || i.description || ownItems)) {
         jobDetails = {
           ...(i.jobName ? { jobName: i.jobName } : {}),
           ...(i.description ? { description: i.description } : {}),
+          ...(ownItems ? { lineItems: ownItems } : {}),
         };
       }
       // Project sibling invoices into a public-safe shape, sorted by

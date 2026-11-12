@@ -123,7 +123,13 @@ interface InvoicePublic {
     claimedBy?: string;
   };
   contractor?: Contractor;
-  customer?: { name?: string; email?: string; phoneNumber?: string };
+  customer?: {
+    name?: string;
+    email?: string;
+    phoneNumber?: string;
+    businessName?: string;
+    address?: string;
+  };
   jobDetails?: {
     summary?: string;
     jobName?: string;
@@ -309,9 +315,9 @@ function InvoiceDoc(
     invoice.paymentInstructions || invoice.taxCents || invoice.discountCents ||
     invoice.subtotalCents);
 
-  // Agreement mirror — present only for quote-linked invoices (getInvoicePublic
-  // projects the linked quote's line items, total, and term grid). Standalone
-  // invoices have none of this and keep the lightweight amount-only document.
+  // Agreement mirror — for quote-linked invoices getInvoicePublic projects the
+  // linked quote's line items, total, and term grid. A standalone invoice
+  // carries its own line items in the same field (REQ-487) and no agreement.
   // The itemized job in the BILL's language (descriptions only — the money
   // is language-neutral).
   // REQ-264 (M15): each line's server-filled translation first.
@@ -466,27 +472,32 @@ function InvoiceDoc(
             )
             : null}
 
-          {/* Bill to / From — only on the rich (quote-linked) document */}
-          {rich
-            ? (
-              <section style="margin-top:22px;display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px">
-                <PartyCard
-                  role={tFor(lang, "publicInvoice.billTo")}
-                  name={invoice.customer?.name}
-                  email={invoice.customer?.email}
-                  phone={invoice.customer?.phoneNumber}
-                />
-                <PartyCard
-                  role={tFor(lang, "quoteDoc.from")}
-                  name={invoice.contractor?.name}
-                  businessName={invoice.contractor?.businessName}
-                  email={invoice.contractor?.email}
-                  phone={invoice.contractor?.phoneNumber}
-                  address={invoice.contractor?.addressLine}
-                />
-              </section>
-            )
-            : null}
+          {
+            /* Bill to / From — on every invoice, standalone ones included
+              (REQ-487, demo m58). `customer` is the bill-to snapshot, else
+              the CRM record (getInvoicePublic). */
+          }
+          <section
+            data-cy="invoice-parties"
+            style="margin-top:22px;display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px"
+          >
+            <PartyCard
+              role={tFor(lang, "publicInvoice.billTo")}
+              name={invoice.customer?.name}
+              businessName={invoice.customer?.businessName}
+              email={invoice.customer?.email}
+              phone={invoice.customer?.phoneNumber}
+              address={invoice.customer?.address}
+            />
+            <PartyCard
+              role={tFor(lang, "quoteDoc.from")}
+              name={invoice.contractor?.name}
+              businessName={invoice.contractor?.businessName}
+              email={invoice.contractor?.email}
+              phone={invoice.contractor?.phoneNumber}
+              address={invoice.contractor?.addressLine}
+            />
+          </section>
 
           {
             /* Balance block (REQ-202): Amount, Paid, Balance due — one
@@ -741,7 +752,8 @@ function InvoiceDoc(
 
           {
             /* What this invoice covers — mirrors the signed agreement, minus the
-            14 legal clauses + the signature block. Quote-linked invoices only. */
+            14 legal clauses + the signature block. A standalone invoice shows
+            its own line items here (REQ-487). */
           }
           {rich
             ? (
@@ -762,8 +774,9 @@ function InvoiceDoc(
                     // renders when it DIFFERS from this invoice's amount
                     // (i.e. this bill is one installment of a larger job) —
                     // the amount-due card up top is the single total.
-                    showTotal={(agreementTotal ?? sumLineTotals(items)) !==
-                      invoice.amount}
+                    // A standalone bill (REQ-487) has no agreement at all.
+                    showTotal={invoice.agreementTotal != null &&
+                      invoice.agreementTotal !== invoice.amount}
                     labels={{
                       tableDescription: tFor(
                         lang,
