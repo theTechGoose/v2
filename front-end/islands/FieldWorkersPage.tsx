@@ -174,7 +174,11 @@ export default function FieldWorkersPage() {
         title={t("field.wk.title")}
         sub={t("field.wk.sub")}
       >
-        <a class="btn btn--ghost" href="/worker" data-cy="wk-open">
+        <a
+          class="btn btn--ghost"
+          href="/worker?from=%2Ffield%2Fworkers"
+          data-cy="wk-open"
+        >
           <I d={ICN.hardhat} size={14} /> {t("field.wk.open")}
         </a>
       </FieldHead>
