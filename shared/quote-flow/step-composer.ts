@@ -39,6 +39,52 @@ export interface ChatStepHint {
   scope?: string;
   /** price: the three suggested tiers are on screen — re-price them. */
   tiers?: boolean;
+  /** price: REQ-444 (demo-loop cycle 3, M21) — the tiers on screen, so a
+   *  question about them ("does this include the quartz material?") is
+   *  answered from what the contractor sees. */
+  options?: StepTier[];
+  /** price: REQ-444 — what the tiers on screen include. */
+  basis?: StepPriceBasis;
+}
+
+/** REQ-444: one suggested tier as the price step shows it. */
+export interface StepTier {
+  label: string;
+  /** INTEGER CENTS. */
+  priceCents: number;
+  rationale?: string;
+}
+
+/** REQ-444: what the suggested prices include (the tier cards' basis line). */
+export type StepPriceBasis = "labor_and_materials" | "labor_materials_as_noted";
+
+const STEP_BASES: readonly StepPriceBasis[] = [
+  "labor_and_materials",
+  "labor_materials_as_noted",
+];
+
+/** The most tiers a hint carries (the step shows three). */
+const STEP_TIERS_MAX = 4;
+
+/** REQ-444: the tiers off the wire — a label and a positive whole-cents price
+ *  each, at most four; anything else is dropped. */
+function tiersOf(raw: unknown): StepTier[] {
+  if (!Array.isArray(raw)) return [];
+  const out: StepTier[] = [];
+  for (const r of raw) {
+    if (!r || typeof r !== "object" || Array.isArray(r)) continue;
+    const o = r as Record<string, unknown>;
+    const label = text(o.label, 60);
+    const cents = o.priceCents;
+    if (
+      !label || typeof cents !== "number" || !Number.isInteger(cents) ||
+      cents <= 0
+    ) continue;
+    const rationale = text(o.rationale, 200);
+    out.push({ label, priceCents: cents, ...(rationale ? { rationale } : {}) });
+    if (out.length === STEP_TIERS_MAX) break;
+  }
+  return out;
 }
 
 /** The longest job / scope text a hint carries (the job-details endpoints'
@@ -68,7 +114,89 @@ export function parseChatStepHint(raw: unknown): ChatStepHint | undefined {
   const scope = text(r.scope, STEP_TEXT_MAX);
   if (scope) hint.scope = scope;
   if (r.tiers === true) hint.tiers = true;
+  // REQ-444: the tiers on screen and what they include.
+  const options = tiersOf(r.options);
+  if (options.length) hint.options = options;
+  if (STEP_BASES.includes(r.basis as StepPriceBasis)) {
+    hint.basis = r.basis as StepPriceBasis;
+  }
   return hint;
+}
+
+// ---------------------------------------------------------------------------
+// REQ-444 (demo-loop cycle 3, M21): the job details the assistant rewrote on
+// Pick a price ("add permit if not")
+// ---------------------------------------------------------------------------
+
+/** The new job details a price-step reply carries: the app-language text
+ *  and any other language the assistant rewrote. */
+export interface StepScope {
+  scope: string;
+  byLang: Record<string, string>;
+}
+
+/** The rewritten job details off a price-step reply's payload (`scope`,
+ *  `scopeByLang`); undefined when the reply changed none. */
+export function stepScopeOf(payload: unknown): StepScope | undefined {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    return undefined;
+  }
+  const p = payload as Record<string, unknown>;
+  const scope = typeof p.scope === "string" ? p.scope.trim() : "";
+  if (!scope) return undefined;
+  const byLang: Record<string, string> = {};
+  const raw = p.scopeByLang;
+  if (raw && typeof raw === "object" && !Array.isArray(raw)) {
+    for (const [l, v] of Object.entries(raw as Record<string, unknown>)) {
+      if (typeof v === "string" && v.trim()) byLang[l] = v.trim();
+    }
+  }
+  return { scope, byLang };
+}
+
+/** The confirmed option, as far as the new job details touch it. */
+export interface StepScopedOption {
+  bullets: { id: string; text: string; deleted: boolean }[];
+  byLang?: Record<
+    string,
+    { jobName: string; summary: string; bullets: string[] }
+  >;
+}
+
+const scopeLines = (s: string) =>
+  s.split("\n").map((l) => l.trim()).filter(Boolean);
+
+/**
+ * The confirmed option with the job details the assistant rewrote on Pick a
+ * price: its lines become the new ones (the quote is made from them), the app
+ * language's copy too, and another language keeps its copy only when the
+ * reply rewrote it — a stale one would drop the new line from the customer's
+ * copy, so it is dropped and the send translates it again (REQ-264).
+ */
+export function withStepScope<O extends StepScopedOption>(
+  option: O,
+  update: StepScope,
+  appLang: string,
+): O {
+  const lines = scopeLines(update.scope);
+  const next: O = {
+    ...option,
+    bullets: lines.map((text, i) => ({
+      id: `scope-${i + 1}`,
+      text,
+      deleted: false,
+    })),
+  };
+  if (option.byLang) {
+    const byLang: NonNullable<StepScopedOption["byLang"]> = {};
+    for (const [l, v] of Object.entries(option.byLang)) {
+      const text = l === appLang ? update.scope : update.byLang[l];
+      if (!text?.trim()) continue;
+      byLang[l] = { ...v, bullets: scopeLines(text) };
+    }
+    next.byLang = byLang;
+  }
+  return next;
 }
 
 // ---------------------------------------------------------------------------

@@ -19,9 +19,21 @@
  *   priceStepReply / jobOptionsStepReply — the server's own reply on the two
  *                         pre-quote steps, in the contractor's language
  *   stepLangs           — the languages the rewritten versions carry
+ *
+ * REQ-444 (demo-loop cycle 3, M21) — on Pick a price "does this include the
+ * quartz slab material or just labor?? … add permit if not" was re-priced and
+ * answered with a template; nobody read the question:
+ *
+ *   priceStepIntent     — a question or a change to the job goes to the chat
+ *                         model; only a price correction re-prices
+ *   priceStepContext    — what that model answers from: the job, the details
+ *                         and the tiers on screen, and what the tiers include
  */
 import { type Lang, t } from "@core/i18n/mod.ts";
-import type { ChatStepHint } from "#quote-flow/step-composer.ts";
+import {
+  type ChatStepHint,
+  statedPriceCents,
+} from "#quote-flow/step-composer.ts";
 import type { LLMToolName } from "@agents/domain/business/llm/base/mod.ts";
 import { requestedLangs } from "@agents/domain/business/requested-langs/mod.ts";
 
@@ -197,4 +209,148 @@ export function stepLangs(
     if (!out.includes(v)) out.push(v);
   }
   return out;
+}
+
+// ---------------------------------------------------------------------------
+// REQ-444 (demo-loop cycle 3, M21) — a question or a change to the job typed
+// on Pick a price
+// ---------------------------------------------------------------------------
+
+/** Where a clause starts: the message's start, after a sentence or clause
+ *  mark, or after a connector ("and", "also", "but", "please", "can you",
+ *  "y", "también", "pero", "puedes"). "¿" is not one: "¿incluye …?" asks. */
+const CLAUSE = String
+  .raw`(?:^|[.!?;:,\n—–]\s*|\s-\s+|(?<![\p{L}\d])(?:and|also|then|but|please|pls|so|(?:can|could|would|will)\s+you(?:\s+please)?|y|tambi[eé]n|adem[aá]s|pero|luego|por\s+favor|pued(?:es|e|en))\s+)`;
+
+/** A verb that changes what the job covers — add, include, remove — in
+ *  English or Spanish (with its clitic forms: "agrégalo", "quítalo"). */
+const CHANGE_VERB = String
+  .raw`(?:add(?:ing)?|include|put\s+in|throw\s+in|remove|take\s+(?:out|off)|delete|scratch|agr[eé]g\p{L}*|a[ñn][aá]d\p{L}*|incl[uú](?:y\p{L}*|ir)|s[uú]m(?:a|ar|ale|alo|e)|qu[ií]t\p{L}*|s[aá]c(?:a|ar|alo|ala|alos|alas|ale|en)|elimin\p{L}*|borr\p{L}*)(?![\p{L}\d])`;
+
+const SCOPE_CHANGE = new RegExp(`${CLAUSE}${CHANGE_VERB}`, "iu");
+
+/** "you forgot the permit", "the permit is missing", "falta el permiso". */
+const MISSING =
+  /(?<![\p{L}\d])(?:missing|forgot|forgotten|left\s+(?:out|off)|leave\s+(?:out|off)|don['’]?t\s+forget|falta(?:n|ba|r[ií]a)?|falt[oó]|olvid\p{L}*)(?![\p{L}\d])/iu;
+
+/** A question with no mark: an interrogative opener. Only the accented
+ *  Spanish forms — "como 18 mil" and "que sea $3,700" are prices, not asks —
+ *  and never "do" / "should", which open corrections ("should be $28k"). */
+const QUESTION_OPENER =
+  /^\s*(?:(?:and|so|but|also|ok(?:ay)?|hey|y|pero|oye|entonces)[\s,]+)?(?:is|are|isn['’]?t|aren['’]?t|does|doesn['’]?t|did|didn['’]?t|(?:can|could|would|will)\s+(?:you|we|i|it|this|that|they)|what['’]?s|whats|what|how|why|which|who|where|when|qué|cu[aá]nt[oa]s?|cu[aá]l(?:es)?|cómo|por\s*qué|dónde|cuándo|hay)(?![\p{L}\d])/iu;
+
+export interface PriceStepIntent {
+  /** "ask": the chat model answers (and may change the job details on
+   *  screen); "reprice": the pricing engine re-prices with the correction. */
+  route: "ask" | "reprice";
+  /** The message asks to add / include / remove an item of the job. */
+  scopeChange: boolean;
+  /** The one price it names for the WHOLE job, for the price box — never the
+   *  price of an item it adds ("add the permit, it's $450"). */
+  statedCents: number | null;
+}
+
+function firstMatch(s: string, res: readonly RegExp[]): number {
+  let at = -1;
+  for (const re of res) {
+    const m = re.exec(s);
+    if (m && (at < 0 || m.index < at)) at = m.index;
+  }
+  return at;
+}
+
+/**
+ * What a text typed on Pick a price is (REQ-444). A change to the job ("add
+ * permit if not", "agrega el permiso", "remove the vanity", "you forgot the
+ * permit") or a question ("?", "¿…?", "is X included", "what does … cover")
+ * goes to the chat model — with the tiers in context it answers, and it can
+ * rewrite the job details on screen. Only a price correction ("no, it's the
+ * whole gut job — more like $28k") re-prices (REQ-392). A price named before
+ * the change is the job's; an amount after it is the added item's and never
+ * fills the price box.
+ */
+export function priceStepIntent(text: string): PriceStepIntent {
+  const s = (text ?? "").normalize("NFC");
+  if (!s.trim()) {
+    return { route: "reprice", scopeChange: false, statedCents: null };
+  }
+  const change = firstMatch(s, [SCOPE_CHANGE, MISSING]);
+  if (change >= 0) {
+    return {
+      route: "ask",
+      scopeChange: true,
+      statedCents: statedPriceCents(s.slice(0, change)),
+    };
+  }
+  const asks = /[?¿]/.test(s) || QUESTION_OPENER.test(s);
+  return {
+    route: asks ? "ask" : "reprice",
+    scopeChange: false,
+    statedCents: statedPriceCents(s),
+  };
+}
+
+export interface PriceStepContextInput {
+  /** The job as the contractor typed it. */
+  job: string;
+  /** The job details on screen (the confirmed bullets); none → the job. */
+  scope?: string;
+  /** The language the details on screen are written in (the app's). */
+  lang: Lang;
+  /** The tiers on screen; none → "I know my price" (no suggestions). */
+  options?: readonly {
+    label: string;
+    priceCents: number;
+    rationale?: string;
+  }[];
+  /** What the tiers include. */
+  basis?: string;
+  /** The price the message named for the job (now in the price box). */
+  statedCents?: number | null;
+}
+
+/** The business context the chat model answers a Pick-a-price question
+ *  from (REQ-444): the step, the job, the details and the tiers on screen,
+ *  what the tiers include, and a price the message put in the box. */
+export function priceStepContext(input: PriceStepContextInput): string {
+  const job = input.job.trim();
+  const shown = input.scope?.trim() || job;
+  const out = [
+    "Step: Pick a price — no quote exists yet; the contractor picks or types the price on this screen.",
+    `The job as the contractor typed it:\n${job || "(not given)"}`,
+    `The job details on screen (${input.lang}):\n${shown || "(none)"}`,
+  ];
+  if (input.options?.length) {
+    out.push(
+      `The prices on screen: ${
+        input.options.map((o) =>
+          `${o.label} ${stepMoney(o.priceCents)}${
+            o.rationale?.trim() ? ` (${o.rationale.trim()})` : ""
+          }`
+        ).join(" · ")
+      }`,
+    );
+    out.push(
+      `What these prices include: ${
+        t(
+          "en",
+          input.basis === "labor_materials_as_noted"
+            ? "suggestPrices.basis.laborMaterialsAsNoted"
+            : "suggestPrices.basis.laborAndMaterials",
+        )
+      }`,
+    );
+  } else {
+    out.push(
+      "No suggested prices are on screen — the contractor types their own price.",
+    );
+  }
+  if (typeof input.statedCents === "number" && input.statedCents > 0) {
+    out.push(
+      `Their message names ${
+        stepMoney(input.statedCents)
+      } for the whole job — that amount is now in the price box.`,
+    );
+  }
+  return out.join("\n\n");
 }

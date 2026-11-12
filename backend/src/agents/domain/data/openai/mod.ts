@@ -1,6 +1,7 @@
 import OpenAI from "#openai";
 import { encodeBase64 } from "#std/encoding/base64";
 import type {
+  LLMAction,
   LLMClient,
   LLMRequest,
   LLMResponse,
@@ -180,19 +181,37 @@ export class OpenAILLMClient implements LLMClient {
     const text = choice?.message?.content ?? "";
     const toolCalls = choice?.message?.tool_calls ?? [];
 
-    // We only honor the FIRST tool call per turn; multi-tool fan-out is
-    // intentionally not supported yet (keeps the action handler simple).
-    // If the LLM tries multiple, the rest are dropped — log if needed.
+    // REQ-444 (demo-loop cycle 3, M21): EVERY valid tool call comes back, in
+    // the model's order — the coordinator runs them all ("fix the Spanish
+    // and add a $450 permit" is two). Only the first used to be honoured and
+    // the rest were dropped silently, so the reply said "Done" over a change
+    // that never happened. A call whose arguments don't parse is named in
+    // `dropped` so the reply can say it wasn't made.
+    const actions: LLMAction[] = [];
+    const dropped: LLMToolName[] = [];
     for (const tc of toolCalls) {
       if (tc.type !== "function") continue;
+      const name = tc.function?.name as LLMToolName;
+      // REQ-368: a tool this turn did not offer is never acted on (and not
+      // reported — the turn never offered it).
+      if (req.tools && !req.tools.includes(name)) continue;
       const action = parseToolCall(tc);
-      // REQ-368: a tool this turn did not offer is never acted on.
-      if (action && req.tools && !req.tools.includes(action.type)) continue;
-      if (action) return { text: text || fallbackTextFor(action), action };
+      if (action) actions.push(action);
+      else if (TOOL_NAMES.has(name)) dropped.push(name);
     }
-    return { text };
+    const notMade = dropped.length ? { dropped } : {};
+    if (actions.length === 0) return { text, ...notMade };
+    return {
+      text: text || fallbackTextFor(actions[0]),
+      action: actions[0],
+      actions,
+      ...notMade,
+    };
   }
 }
+
+/** The chat tools by name — a call to anything else is not a tool of ours. */
+const TOOL_NAMES = new Set<string>(TOOL_DEFS.map((d) => d.function.name));
 
 /** When the model returns a tool call but no surrounding prose, give the
  *  user a short readable filler. For actions that emit their own

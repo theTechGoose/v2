@@ -1,0 +1,246 @@
+/**
+ * REQ-444 (demo-loop cycle 3, M21) — "says changes are done when they are
+ * not". On Ready to send pair 7 asked, in one message, to fix the Spanish job
+ * details AND "add a plumbing permit line $450". The model's tool calls were
+ * cut to the first (OpenAILLMClient honoured one per turn), the job details
+ * changed, nothing was priced, and the reply was the fixed "Done — the job
+ * details on the quote are updated." with the total still $20,000.
+ *
+ * The pure rules: which of the model's calls run and in what order, and the
+ * reply lines built from what actually changed.
+ */
+import { assert, assertEquals, assertStringIncludes } from "#std/assert";
+import type { LLMAction } from "@agents/domain/business/llm/base/mod.ts";
+import {
+  jobDetailsChangeLine,
+  jobDetailsChangeOf,
+  notDoneLine,
+  planToolCalls,
+  pricesSameLine,
+  sameJobDetails,
+  toolCallsOf,
+  totalMoveLine,
+  workingTotalCents,
+} from "./mod.ts";
+
+const DETAILS: LLMAction = {
+  type: "update_job_details",
+  payload: { descriptionByLang: { en: "Demo\nPlumbing permit" } },
+};
+const PERMIT: LLMAction = {
+  type: "change_order",
+  payload: { description: "Plumbing permit", deltaAmountCents: 45_000 },
+};
+const REVISE: LLMAction = {
+  type: "revise_quote",
+  payload: { lines: [{ match: "Cabinets", amountCents: 500_000 }], remove: [] },
+};
+const DRAFT: LLMAction = {
+  type: "create_quote",
+  payload: {
+    summary: "Fence repair",
+    lineItems: [{ description: "Fence repair", amountCents: 120_000 }],
+  },
+};
+const LOCK: LLMAction = { type: "lock_quote", payload: { quoteId: "q-1" } };
+const TERMS: LLMAction = {
+  type: "request_terms_transition",
+  payload: { quoteId: "q-1" },
+};
+
+Deno.test("REQ-444 toolCallsOf: every call the model made, else the one action, else none", () => {
+  assertEquals(
+    toolCallsOf({ text: "", action: DETAILS, actions: [DETAILS, PERMIT] }),
+    [DETAILS, PERMIT],
+  );
+  assertEquals(toolCallsOf({ text: "", action: PERMIT }), [PERMIT]);
+  assertEquals(toolCallsOf({ text: "hi" }), []);
+  assertEquals(toolCallsOf({ text: "", actions: [] }), []);
+});
+
+Deno.test("REQ-444 planToolCalls: several changes to the quote all run — the job details first, then each line change in the model's order", () => {
+  assertEquals(planToolCalls([PERMIT, DETAILS, REVISE]), {
+    edits: [DETAILS, PERMIT, REVISE],
+    notDone: [],
+  });
+  assertEquals(planToolCalls([DETAILS, PERMIT]), {
+    edits: [DETAILS, PERMIT],
+    notDone: [],
+  });
+  const second: LLMAction = {
+    type: "change_order",
+    payload: { description: "Dumpster", deltaAmountCents: 60_000 },
+  };
+  assertEquals(planToolCalls([PERMIT, second]), {
+    edits: [PERMIT, second],
+    notDone: [],
+  });
+});
+
+Deno.test("REQ-444 planToolCalls: one call runs on the single-action path as before; none is nothing", () => {
+  assertEquals(planToolCalls([DRAFT]), { single: DRAFT, notDone: [] });
+  assertEquals(planToolCalls([DETAILS]), { single: DETAILS, notDone: [] });
+  assertEquals(planToolCalls([]), { notDone: [] });
+});
+
+Deno.test("REQ-444 planToolCalls: a mix that can't all run keeps the first call and names the rest", () => {
+  assertEquals(planToolCalls([DRAFT, LOCK]), {
+    single: DRAFT,
+    notDone: ["lock_quote"],
+  });
+  assertEquals(planToolCalls([PERMIT, LOCK, TERMS]), {
+    single: PERMIT,
+    notDone: ["lock_quote", "request_terms_transition"],
+  });
+  // The same tool again is not reported as undone (one of it ran).
+  assertEquals(planToolCalls([DRAFT, DRAFT, DETAILS]), {
+    single: DRAFT,
+    notDone: ["update_job_details"],
+  });
+});
+
+Deno.test("REQ-444 notDoneLine: says what wasn't done, in the contractor's language; nothing → no line", () => {
+  assertEquals(notDoneLine("en", []), "");
+  const en = notDoneLine("en", ["lock_quote"]);
+  assertStringIncludes(en, "lock the quote");
+  assertStringIncludes(en, "ask me again");
+  const es = notDoneLine("es", ["lock_quote", "change_order"]);
+  assertStringIncludes(es, "bloquear la cotización");
+  assertStringIncludes(es, " y ");
+  assert(!es.includes("lock"), es);
+});
+
+const BEFORE = "Demo existing kitchen\nInstall cabinets\nTile backsplash";
+
+Deno.test("REQ-444 jobDetailsChangeLine: built from what changed — the languages, the lines added and removed", () => {
+  assertEquals(
+    jobDetailsChangeLine("en", {
+      before: BEFORE,
+      after: `${BEFORE}\nPlumbing permit`,
+      langs: ["en", "es"],
+    }),
+    "Updated the job details (English, Spanish): added Plumbing permit.",
+  );
+  assertEquals(
+    jobDetailsChangeLine("en", {
+      before: BEFORE,
+      after: "Demo existing kitchen\nTile backsplash\nPlumbing permit",
+      langs: ["en"],
+    }),
+    "Updated the job details (English): added Plumbing permit; removed Install cabinets.",
+  );
+  assertEquals(
+    jobDetailsChangeLine("es", {
+      before: "Demoler la cocina",
+      after: "Demoler la cocina\nPermiso de plomería",
+      langs: ["en", "es"],
+    }),
+    "Actualicé los detalles del trabajo (inglés, español): agregué Permiso de plomería.",
+  );
+});
+
+Deno.test("REQ-444 jobDetailsChangeLine: only another language changed → the languages, no invented lines; nothing changed → said so", () => {
+  assertEquals(
+    jobDetailsChangeLine("en", {
+      before: BEFORE,
+      after: BEFORE,
+      langs: ["es"],
+    }),
+    "Updated the job details (Spanish).",
+  );
+  assertEquals(
+    jobDetailsChangeLine("en", { before: BEFORE, after: BEFORE, langs: [] }),
+    "The job details already say that — nothing changed.",
+  );
+  // Whitespace and case-only line differences are not changes.
+  assertEquals(
+    jobDetailsChangeLine("en", {
+      before: "Demo existing kitchen\n",
+      after: "  demo existing kitchen",
+      langs: [],
+    }),
+    "The job details already say that — nothing changed.",
+  );
+  // No language list (the price step's details on screen): no parentheses.
+  assertEquals(
+    jobDetailsChangeLine("en", { before: BEFORE, after: `${BEFORE}\nPermit` }),
+    "Updated the job details: added Permit.",
+  );
+});
+
+Deno.test("REQ-444 totalMoveLine / pricesSameLine: the total's move, or that no price changed", () => {
+  assertEquals(
+    totalMoveLine("en", 2_000_000, 2_045_000),
+    "Total $20,000.00 → $20,450.00.",
+  );
+  assertEquals(totalMoveLine("en", 2_000_000, 2_000_000), "");
+  const same = pricesSameLine("en", 2_000_000);
+  assertStringIncludes(same, "No price changed");
+  assertStringIncludes(same, "$20,000.00");
+  const sameEs = pricesSameLine("es", 2_000_000);
+  assertStringIncludes(sameEs, "$20,000.00");
+  assert(!sameEs.includes("No price changed"), sameEs);
+});
+
+Deno.test("REQ-444 jobDetailsChangeOf: what an update did to the quote — the reply language's lines before and after, and the languages whose text changed", () => {
+  const current = {
+    description: "Demo\nCabinets",
+    descriptionByLang: { en: "Demo\nCabinets", es: "Demoler\nGabinetes" },
+  };
+  assertEquals(
+    jobDetailsChangeOf("en", current, {
+      en: "Demo\nCabinets\nPermit",
+      es: "Demoler\nGabinetes\nPermiso",
+    }),
+    {
+      before: "Demo\nCabinets",
+      after: "Demo\nCabinets\nPermit",
+      langs: ["en", "es"],
+    },
+  );
+  // Only Spanish rewritten: English is unchanged, Spanish is named.
+  assertEquals(
+    jobDetailsChangeOf("en", current, { es: "Demoler\nGabinetes\nPermiso" }),
+    { before: "Demo\nCabinets", after: "Demo\nCabinets", langs: ["es"] },
+  );
+  // The same text again is no change in that language.
+  assertEquals(
+    jobDetailsChangeOf("en", current, { en: " demo\ncabinets " }).langs,
+    [],
+  );
+  // A language the quote never had is new — measured against the base text.
+  assertEquals(
+    jobDetailsChangeOf("es", { description: "Demo" }, { es: "Demoler" }),
+    { before: "Demo", after: "Demoler", langs: ["es"] },
+  );
+});
+
+Deno.test("REQ-444 sameJobDetails: the same lines, whitespace and case aside", () => {
+  assert(sameJobDetails("Demo\nCabinets", "  demo \n\nCABINETS "));
+  assert(!sameJobDetails("Demo\nCabinets", "Demo\nCabinets\nPermit"));
+  assert(!sameJobDetails("Demo\nCabinets", "Cabinets\nDemo"));
+});
+
+Deno.test("REQ-444 workingTotalCents: the pending revision's total when one waits, else the quote's", () => {
+  assertEquals(workingTotalCents({ estimatedTotal: 2_000_000 }), 2_000_000);
+  assertEquals(
+    workingTotalCents({
+      estimatedTotal: 2_000_000,
+      pendingRevision: { estimatedTotal: 2_045_000 },
+    }),
+    2_045_000,
+  );
+  assertEquals(
+    workingTotalCents({
+      estimatedTotal: 2_000_000,
+      pendingRevision: { lineItems: [{ price: 45_000, quantity: 2 }] },
+    }),
+    90_000,
+  );
+  assertEquals(
+    workingTotalCents({
+      lineItems: [{ price: 100 }, { price: 50, quantity: 3 }],
+    }),
+    250,
+  );
+});
