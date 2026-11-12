@@ -94,6 +94,7 @@ import {
   sendDividerFailed,
   sendOutcomePayload,
 } from "../lib/send-delivery.ts";
+import { missingContactKey, recommendedChannel } from "../lib/send-dialog.ts";
 import {
   customerStepPrefillView,
   extractQuoteFacts,
@@ -3400,7 +3401,7 @@ export default function AsstChat({
   }
 
   /**
-   * REQ-037 (NW-43b): the send dialog's Keep. Saves any contact typed inline
+   * REQ-037 (NW-43b) / REQ-308: the send dialog's Send. Saves any contact typed inline
    * to the customer (so this send AND every later alert have both channels),
    * refuses to send a channel the customer still can't receive, then sends
    * on the chosen channel.
@@ -3415,8 +3416,11 @@ export default function AsstChat({
     const phone = dialogPhone.trim();
     const needsEmail = ch !== "sms" && !customer?.email;
     const needsPhone = ch !== "email" && !customer?.phoneNumber;
-    if ((needsEmail && !email) || (needsPhone && !phone)) {
-      setDialogErr(tFor(previewLang, "asstChat.customerStep.needContact"));
+    // REQ-308 (demo M3): name the contact that is actually missing, in the
+    // app's language — previewLang is the document's, not the dialog's.
+    const missing = missingContactKey(ch, customer, { email, phone });
+    if (missing) {
+      setDialogErr(tFor(lang, missing));
       return;
     }
     if (customer?.id && (email || phone)) {
@@ -7092,7 +7096,7 @@ export default function AsstChat({
                               : (
                                 <div class="quote-review__send-split">
                                   {/* REQ-035 (NW-55): Send asks HOW first —
-                                      the dialog's Keep is the actual send. */}
+                                      the dialog's Send is the actual send (REQ-308). */}
                                   {sendDialogOpen
                                     ? (
                                       <div
@@ -7112,7 +7116,7 @@ export default function AsstChat({
                                             class="send-dialog__title"
                                           >
                                             {tFor(
-                                              previewLang,
+                                              lang,
                                               "asstChat.send.howTitle",
                                             )}
                                           </h4>
@@ -7142,12 +7146,12 @@ export default function AsstChat({
                                                   setDialogChannel(ch)}
                                               >
                                                 <I d={icon} size={13} sw={2.4} />
-                                                <span>{tFor(previewLang, key)}</span>
-                                                {ch === "both"
+                                                <span>{tFor(lang, key)}</span>
+                                                {ch === recommendedChannel(customer)
                                                   ? (
                                                     <span class="quote-review__send-menu-tag">
                                                       {tFor(
-                                                        previewLang,
+                                                        lang,
                                                         "asstChat.preview.recommended",
                                                       )}
                                                     </span>
@@ -7167,13 +7171,13 @@ export default function AsstChat({
                                                 data-cy="send-add-email"
                                               >
                                                 <span>
-                                                  {tFor(previewLang, "asstChat.send.addEmail")}
+                                                  {tFor(lang, "asstChat.send.addEmail")}
                                                 </span>
                                                 <input
                                                   type="email"
                                                   class="cust-pick__search"
                                                   placeholder={tFor(
-                                                    previewLang,
+                                                    lang,
                                                     "asstChat.customerStep.emailPlaceholder",
                                                   )}
                                                   value={dialogEmail}
@@ -7193,13 +7197,13 @@ export default function AsstChat({
                                                 data-cy="send-add-phone"
                                               >
                                                 <span>
-                                                  {tFor(previewLang, "asstChat.send.addPhone")}
+                                                  {tFor(lang, "asstChat.send.addPhone")}
                                                 </span>
                                                 <input
                                                   type="tel"
                                                   class="cust-pick__search"
                                                   placeholder={tFor(
-                                                    previewLang,
+                                                    lang,
                                                     "asstChat.customerStep.phonePlaceholder",
                                                   )}
                                                   value={formatPhoneInput(dialogPhone)}
@@ -7222,7 +7226,7 @@ export default function AsstChat({
                                               onClick={() =>
                                                 setSendDialogOpen(false)}
                                             >
-                                              {tFor(previewLang, "asstChat.send.cancel")}
+                                              {tFor(lang, "asstChat.send.cancel")}
                                             </button>
                                             <button
                                               type="button"
@@ -7237,7 +7241,7 @@ export default function AsstChat({
                                                 );
                                               }}
                                             >
-                                              {tFor(previewLang, "asstChat.send.keep")}
+                                              {tFor(lang, "asstChat.send.keep")}
                                             </button>
                                           </div>
                                         </div>
