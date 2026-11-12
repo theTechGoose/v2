@@ -437,8 +437,10 @@ describe("REQ-451 PeerPointer and DemoPointer: an off pointer is a small translu
     expect(pointer).toMatch(/offMark\(/);
     expect(pointer).toMatch(/OFF_MARK_OPACITY/);
     // one or the other: the marker when off; else the ring (outside), the arrow and the name tag
+    // REQ-635 AMENDMENT (demo m37, cycle 5): the marker is a span holding the chevron and the
+    // presenter's initial, not a bare svg
     expect(pointer).toMatch(
-      /\{off(?: && mark)?\s*\?\s*\(\s*<svg\s+data-cy="demo-pointer-off-mark"/,
+      /\{off(?: && mark(?: && badge)?)?\s*\?\s*\(\s*<(?:svg|span)\s+(?:key=\{[^}]+\}\s+)?data-cy="demo-pointer-off-mark"/,
     );
     const mark = pointer.indexOf('data-cy="demo-pointer-off-mark"');
     for (
@@ -450,6 +452,33 @@ describe("REQ-451 PeerPointer and DemoPointer: an off pointer is a small translu
     ) {
       expect([later, pointer.indexOf(later) > mark]).toEqual([later, true]);
     }
+  });
+});
+
+/**
+ * REQ-635 (demo m37, cycle 5) — the bare off-screen chevron read as a stray '<' on every page of
+ * the customer's phone, above the app's modal dims. On the customer's screen the marker sits at
+ * OFF_MARK_Z (under the dims); the stage keeps its pointers on top. Rendering is tested in
+ * front-end/lib/demo-pointer-off-mark.test.tsx.
+ */
+describe("REQ-635 the off marker's layer: under modal dims on the customer's screen (m37)", () => {
+  test("PeerPointer passes offZ on to DemoPointer", () => {
+    const peer = read("front-end/components/demo-mode/PeerPointer.tsx");
+    expect(peer).toMatch(/offZ\?: number/);
+    expect(peer).toMatch(/offZ=\{offZ\}/);
+  });
+  test("the customer's overlay gives its presenters' pointers offZ={OFF_MARK_Z}", () => {
+    const overlay = read("front-end/islands/DemoModeOverlay.tsx");
+    const peer = overlay.slice(overlay.indexOf("<PeerPointer"));
+    expect(peer.slice(0, peer.indexOf("/>"))).toMatch(/offZ=\{OFF_MARK_Z\}/);
+  });
+  test("the stage's pointers keep the top layer (no offZ)", () => {
+    const stage = read("front-end/islands/DemoStage.tsx");
+    expect(stage).not.toMatch(/offZ=/);
+  });
+  test("DemoPointer puts its layer at offZ only while off", () => {
+    const pointer = read("front-end/components/demo-mode/DemoPointer.tsx");
+    expect(pointer).toMatch(/off && offZ !== undefined \? offZ : z \+ 1/);
   });
 });
 

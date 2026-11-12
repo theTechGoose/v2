@@ -27,6 +27,12 @@
  * the screen's controls: a small translucent marker against the edge it is off, pointing that way
  * (`offMark`), no tag, no ring (`data-off`).
  *
+ * REQ-635 (demo m37, cycle 5) — the bare chevron read as a stray '<' on every page of the
+ * customer's phone: the marker now carries the sender's initial on a dot in their colour
+ * (`offBadge`, `initialOf`), fades out after OFF_MARK_SHOW_MS (a new spot shows it again: it is
+ * keyed on the rounded point), and with `offZ` (the customer's overlay: OFF_MARK_Z) its layer
+ * sits under the app's modal dims while off.
+ *
  * REQ-546 (demo m14, cycle 4) — the waves and the last-click dot are drawn inside a clip with
  * `bounds`' box (`data-cy="demo-wave-clip"`, overflow:hidden), never over what is around it.
  */
@@ -45,8 +51,13 @@ import {
   tagPlacement,
 } from "../../../shared/demo-mode/motion.ts";
 import {
+  initialOf,
+  OFF_BADGE_PX,
+  OFF_MARK_FADE_MS,
   OFF_MARK_OPACITY,
   OFF_MARK_PX,
+  OFF_MARK_SHOW_MS,
+  offBadge,
   offMark,
 } from "../../../shared/demo-mode/presenter-anchor.ts";
 
@@ -174,11 +185,25 @@ export function placeTag(
 }
 
 export default function DemoPointer(
-  { pointer, outside, off, rect, waves, name, color, z, attach, bounds }: {
+  {
+    pointer,
+    outside,
+    off,
+    offZ,
+    rect,
+    waves,
+    name,
+    color,
+    z,
+    attach,
+    bounds,
+  }: {
     pointer: Pt | null;
     outside?: boolean;
     /** REQ-451 — the sender's pointer is off the shared screen: the small edge marker */
     off?: boolean;
+    /** REQ-635 — the layer while off (the customer's overlay: under the app's modal dims) */
+    offZ?: number;
     /** REQ-437 — the box of the element the pointer is anchored to (null: none, or out of view) */
     rect?: Rect | null;
     waves: Wave[];
@@ -247,11 +272,22 @@ export default function DemoPointer(
     )
     : null;
   const mark = pointer && off ? offMark(pointer, bounds ?? windowBox()) : null;
+  const badge = pointer && off
+    ? offBadge(pointer, bounds ?? windowBox())
+    : null;
+  /** REQ-635 — shown for OFF_MARK_SHOW_MS, then faded out over OFF_MARK_FADE_MS */
+  const showFor = OFF_MARK_SHOW_MS / (OFF_MARK_SHOW_MS + OFF_MARK_FADE_MS);
+  /** a new spot remounts the marker (its fade starts again); the same spot re-sent does not */
+  const markKey = pointer
+    ? `${Math.round(pointer.x)},${Math.round(pointer.y)}`
+    : "";
   const clip = bounds ?? windowBox();
   return (
     <>
       <style>
-        {`@keyframes pmDemoWave{0%{transform:translate(-50%,-50%) scale(.15);opacity:.95}100%{transform:translate(-50%,-50%) scale(1);opacity:0}}@keyframes pmDemoClickDot{0%{opacity:.95}60%{opacity:.8}100%{opacity:0}}`}
+        {`@keyframes pmDemoWave{0%{transform:translate(-50%,-50%) scale(.15);opacity:.95}100%{transform:translate(-50%,-50%) scale(1);opacity:0}}@keyframes pmDemoClickDot{0%{opacity:.95}60%{opacity:.8}100%{opacity:0}}@keyframes pmDemoOffFade{0%{opacity:${OFF_MARK_OPACITY}}${
+          Math.round(showFor * 100)
+        }%{opacity:${OFF_MARK_OPACITY}}100%{opacity:0}}`}
       </style>
       {waves.length > 0 && (
         // REQ-546 (demo m14, cycle 4) — the waves are clipped to `bounds` (the stage's fitted
@@ -294,36 +330,49 @@ export default function DemoPointer(
           data-off={off ? "" : undefined}
           ref={ref}
           style={`position:fixed;left:0;top:0;width:24px;height:30px;overflow:visible;pointer-events:none;z-index:${
-            z + 1
+            off && offZ !== undefined ? offZ : z + 1
           }`}
         >
-          {off && mark
+          {off && mark && badge
             ? (
-              <svg
+              <span
+                key={markKey}
                 data-cy="demo-pointer-off-mark"
-                width={OFF_MARK_PX}
-                height={OFF_MARK_PX}
-                viewBox="0 0 14 14"
                 aria-hidden="true"
-                style={`position:absolute;left:${mark.left}px;top:${mark.top}px;overflow:visible;opacity:${OFF_MARK_OPACITY};transform:rotate(${mark.deg}deg);filter:drop-shadow(0 1px 1px rgba(0,0,0,.35))`}
+                style={`position:absolute;left:${mark.left}px;top:${mark.top}px;width:${OFF_MARK_PX}px;height:${OFF_MARK_PX}px;opacity:0;animation:pmDemoOffFade ${
+                  OFF_MARK_SHOW_MS + OFF_MARK_FADE_MS
+                }ms linear forwards`}
               >
-                <path
-                  d={OFF_MARK_PATH}
-                  fill="none"
-                  stroke="#fff"
-                  stroke-width="5"
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                />
-                <path
-                  d={OFF_MARK_PATH}
-                  fill="none"
-                  stroke={color}
-                  stroke-width="2.6"
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                />
-              </svg>
+                <svg
+                  width={OFF_MARK_PX}
+                  height={OFF_MARK_PX}
+                  viewBox="0 0 14 14"
+                  style={`position:absolute;left:0;top:0;overflow:visible;transform:rotate(${mark.deg}deg);filter:drop-shadow(0 1px 1px rgba(0,0,0,.35))`}
+                >
+                  <path
+                    d={OFF_MARK_PATH}
+                    fill="none"
+                    stroke="#fff"
+                    stroke-width="5"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  />
+                  <path
+                    d={OFF_MARK_PATH}
+                    fill="none"
+                    stroke={color}
+                    stroke-width="2.6"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  />
+                </svg>
+                <span
+                  data-cy="demo-pointer-off-initial"
+                  style={`position:absolute;left:${badge.left}px;top:${badge.top}px;width:${OFF_BADGE_PX}px;height:${OFF_BADGE_PX}px;border-radius:50%;background:${color};color:#fff;border:1.5px solid #fff;box-sizing:border-box;box-shadow:0 1px 2px rgba(0,0,0,.35);font:700 9px/13px system-ui,sans-serif;text-align:center;white-space:nowrap`}
+                >
+                  {initialOf(name)}
+                </span>
+              </span>
             )
             : (
               <>

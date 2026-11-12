@@ -7,6 +7,9 @@
  *
  * REQ-451 (demo M14) — `off` on a command: that side's pointer is off the shared screen (its
  * mouse beside the frame on its stage) — drawn as DemoPointer's small edge marker, no name tag.
+ *
+ * REQ-635 (demo m37, cycle 5) — `offZ`: the marker's layer while off (the customer's overlay puts
+ * it under the app's modal dims); the stage passes none and keeps it on top.
  */
 import { useEffect, useRef, useState } from "preact/hooks";
 import type { Pt, Rect } from "../../../shared/demo-mode/motion.ts";
@@ -30,10 +33,12 @@ export interface PointerCmd {
 }
 
 export default function PeerPointer(
-  { name, color, z, cmd, bounds }: {
+  { name, color, z, offZ, cmd, bounds }: {
     name: string;
     color: string;
     z: number;
+    /** REQ-635 — the layer while off the shared screen */
+    offZ?: number;
     cmd: PointerCmd | null;
     bounds?: Bounds;
   },
@@ -80,6 +85,7 @@ export default function PeerPointer(
       name={name}
       color={color}
       z={z}
+      offZ={offZ}
       attach={glide.attach}
       bounds={bounds}
     />

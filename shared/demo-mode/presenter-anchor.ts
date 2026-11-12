@@ -29,6 +29,10 @@
  *     from where he put it (their page moved it with its element, or the frame moved).
  *   - `offEdge`, `offMark`: a pointer off their screen is a small translucent marker against the
  *     edge it is off, pointing that way — no arrow, no name tag over their controls.
+ *   - REQ-635 (demo m37, cycle 5): `offBadge`, `initialOf` — the marker carries the sender's
+ *     initial on a dot in their colour (a bare chevron read as a stray '<'), is shown for
+ *     OFF_MARK_SHOW_MS then fades out over OFF_MARK_FADE_MS, and on the customer's screen sits at
+ *     OFF_MARK_Z, under the app's modal dims.
  */
 import { ARROW_BOX, outsideBox, type Pt } from "./motion.ts";
 import {
@@ -211,4 +215,33 @@ export function offMark(
     ? 0
     : Math.round(Math.atan2(dy, dx) * 180 / Math.PI);
   return { left, top, deg };
+}
+
+/** REQ-635 (demo m37, cycle 5) — how long the off marker is shown before it fades, and the fade */
+export const OFF_MARK_SHOW_MS = 2_500;
+export const OFF_MARK_FADE_MS = 400;
+/** REQ-635 — the off marker's layer on the customer's screen: under the app's modal dims (the
+ *  lowest is z-index 50) — a hint, never over a dialog. The arrow keeps the overlay's top layer. */
+export const OFF_MARK_Z = 45;
+/** REQ-635 — the dot with the sender's initial beside the chevron */
+export const OFF_BADGE_PX = 16;
+/** the gap between the chevron and the dot */
+const OFF_BADGE_GAP = 1;
+
+/** REQ-635 — where the initial's dot sits, relative to the marker's box (`offMark`'s left/top):
+ *  on the chevron's inner side (away from the edge it is off), so it never leaves the screen */
+export function offBadge(at: Pt, box: Rect): { left: number; top: number } {
+  const { dx, dy } = offEdge(at, box);
+  const mid = (OFF_MARK_PX - OFF_BADGE_PX) / 2;
+  const after = OFF_MARK_PX + OFF_BADGE_GAP;
+  const before = -OFF_BADGE_PX - OFF_BADGE_GAP;
+  const left = dx === -1 ? after : dx === 1 ? before : dy === 0 ? after : mid;
+  const top = dy === -1 ? after : dy === 1 ? before : mid;
+  return { left, top };
+}
+
+/** REQ-635 — the sender's initial: the name's first letter, upper-cased ('?' for no name) */
+export function initialOf(name: string): string {
+  const first = Array.from(name.trim())[0];
+  return first ? first.toLocaleUpperCase() : "?";
 }

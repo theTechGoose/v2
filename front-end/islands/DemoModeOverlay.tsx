@@ -95,6 +95,7 @@ import {
 } from "../../shared/demo-mode/mirror.ts";
 import {
   anchorPoint,
+  OFF_MARK_Z,
   pointInBox,
 } from "../../shared/demo-mode/presenter-anchor.ts";
 import {
@@ -1498,6 +1499,7 @@ export default function DemoModeOverlay() {
           name={p.name}
           color={p.color}
           z={Z + 1}
+          offZ={OFF_MARK_Z}
           cmd={cmds[p.userId] ?? null}
           bounds={viewportBox()}
         />
