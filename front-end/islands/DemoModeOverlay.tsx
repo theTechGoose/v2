@@ -188,6 +188,9 @@ const sameDemo = (a: Demo | null, b: Demo) =>
 const Z = 2147483000;
 /** REQ-379 (M28) — the pill lets a click through to the page; its buttons take theirs */
 const HIT = "pointer-events:auto";
+/** REQ-536 — the customer pill's status chip ("Connected"), in the toggle or on its own */
+const STATUS_CHIP =
+  "padding:2px 8px;border-radius:999px;background:rgba(255,255,255,.18);font-size:11.5px;font-weight:700";
 
 const here = () => globalThis.location.pathname + globalThis.location.search;
 /** REQ-379 — how often the pill looks for a dialog over its home (it never hunts for a spot) */
@@ -1311,31 +1314,42 @@ export default function DemoModeOverlay() {
             <span style={cut}>{copy.shortName}</span>
           </span>
         )}
-        <button
-          type="button"
-          data-cy="demo-more"
-          aria-expanded={!compact || open}
-          aria-label={copy.moreLabel}
-          onClick={toggleOpen}
-          style={`display:inline-flex;align-items:center;gap:6px;padding:0;border:0;background:none;color:inherit;font:inherit;cursor:${
-            compact ? "pointer" : "default"
-          };${HIT}`}
-        >
-          {compact && !showGuide && (
-            <span
-              aria-hidden="true"
-              style={`width:10px;height:10px;border-radius:50%;background:${
-                presenters[0].color
-              };box-shadow:0 0 0 2px rgba(255,255,255,.85)`}
-            />
+        {
+          /* REQ-536 (cycle 4, m29) — the details toggle is the phone's compact pill's only: the
+            full-size pill always shows its details, so there its status is a plain span (it was
+            a button announced "expanded" whose click changed nothing) */
+        }
+        {compact
+          ? (
+            <button
+              type="button"
+              data-cy="demo-more"
+              aria-expanded={open}
+              aria-label={copy.moreLabel}
+              onClick={toggleOpen}
+              style={`display:inline-flex;align-items:center;gap:6px;padding:0;border:0;background:none;color:inherit;font:inherit;cursor:pointer;${HIT}`}
+            >
+              {!showGuide && (
+                <span
+                  aria-hidden="true"
+                  style={`width:10px;height:10px;border-radius:50%;background:${
+                    presenters[0].color
+                  };box-shadow:0 0 0 2px rgba(255,255,255,.85)`}
+                />
+              )}
+              <span
+                data-cy="demo-status"
+                style={STATUS_CHIP}
+              >
+                {statusLabel}
+              </span>
+            </button>
+          )
+          : (
+            <span data-cy="demo-status" style={STATUS_CHIP}>
+              {statusLabel}
+            </span>
           )}
-          <span
-            data-cy="demo-status"
-            style="padding:2px 8px;border-radius:999px;background:rgba(255,255,255,.18);font-size:11.5px;font-weight:700"
-          >
-            {statusLabel}
-          </span>
-        </button>
         {/* REQ-235 — End asks first */}
         <EndDemo onEnd={end} />
       </div>
