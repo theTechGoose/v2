@@ -11,6 +11,7 @@
  * re-render (REQ-321's invoice pattern).
  */
 import { type PollEnv, startPoll } from "./poll.ts";
+import { browserStore, markSelfReload } from "./demo-mode/tab-claim.ts";
 
 export interface ShownChangeOrder {
   status?: string;
@@ -53,6 +54,9 @@ async function browserFetchJson(url: string): Promise<unknown> {
 }
 
 function browserReload() {
+  // REQ-549 (cycle 4, S4) — the app reloads this tab, not the customer: the next page must not
+  // take the demo stage for it
+  markSelfReload(browserStore("session"));
   try {
     globalThis.location.reload();
   } catch { /* SSR-safe */ }

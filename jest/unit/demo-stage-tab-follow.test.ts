@@ -357,8 +357,10 @@ describe("REQ-436 the overlay's claim wiring (M2/M2c/M5)", () => {
     expect(overlay).toMatch(
       /const inFront = \(\) =>\s*document\.visibilityState === "visible" && document\.hasFocus\(\)/,
     );
-    expect(overlay).toMatch(/if \(inFront\(\)\) claim\(\);/);
-    expect(overlay).toMatch(/\n {4}onShow\(\);/);
+    // REQ-549 (cycle 4, S4) — the mount claim goes through loadClaim (in front, not the app's
+    // own reload, no other tab used since); pageshow re-claims only a back-forward-cache restore
+    expect(overlay).toMatch(/loadClaim\(\{\s*inFront: inFront\(\),/);
+    expect(overlay).toMatch(/if \(e\.persisted && inFront\(\)\) claim\(\);/);
     expect(overlay).toMatch(/addEventListener\("pageshow"/);
   });
 
