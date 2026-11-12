@@ -160,6 +160,9 @@ export interface BillingInvoice {
   createdAt?: string;
   customerSnapshot?: { name?: string } | null;
   billTo?: { name?: string } | null;
+  /** REQ-556: how signing's confirmation reached the customer ([] = nobody;
+   *  absent on invoices billed before it was recorded). */
+  deliveredVia?: string[];
 }
 
 export interface BillingReply {
@@ -255,6 +258,19 @@ export function billingReply(
     parts.push(say("claimed", { number, amount }));
   } else if (shown.status === "draft") {
     parts.push(say("draftInvoice", { number, amount }));
+  } else if (
+    billedAtSigning && Array.isArray(shown.deliveredVia) &&
+    shown.deliveredVia.length === 0
+  ) {
+    // REQ-556 (demo-loop cycle 4, M7): signing billed it but no email or
+    // text reached the customer — never "went out automatically".
+    parts.push(
+      say(total > 1 ? "depositUndelivered" : "invoiceUndelivered", {
+        number,
+        amount,
+        due,
+      }),
+    );
   } else if (billedAtSigning) {
     parts.push(
       say(total > 1 ? "depositSent" : "invoiceSent", { number, amount, due }),

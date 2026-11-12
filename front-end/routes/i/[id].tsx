@@ -14,6 +14,7 @@ import { projectLineItems } from "../../../shared/quote-flow/public-doc-state.ts
 import { localizeLineItems } from "../../../shared/quote-flow/quote-translations.ts";
 import {
   claimedNoteKey,
+  type ReceiptChannel,
   receiptChannelOf,
 } from "../../../shared/documents/receipt-note.ts";
 import {
@@ -29,6 +30,7 @@ import {
   stateLabel,
 } from "../../../shared/documents/linked-view.ts";
 import { receivedNoteBody } from "../../../shared/documents/received-note.ts";
+import { receiptSentViaOf } from "../../../shared/documents/delivery-truth.ts";
 import { claimRejectedNote } from "../../../shared/documents/claim-rejected-note.ts";
 import {
   BG,
@@ -180,6 +182,9 @@ interface InvoicePublic {
   /** REQ-523 (demo m16): where the payment receipt can arrive — "email",
    *  "text" (a number that can take one) or "none". */
   receiptChannel?: string;
+  /** REQ-556 (demo-loop cycle 4, M7): where the paid receipt actually went —
+   *  "email" | "text" | "none" (absent on invoices paid before it was kept). */
+  receiptSentVia?: string;
 }
 
 export default define.page(async function PublicInvoice(ctx) {
@@ -740,6 +745,8 @@ function InvoiceDoc(
             ? (
               <ReceivedNote
                 paidAt={invoice.paidAt}
+                channel={receiptSentViaOf(invoice.receiptSentVia) ??
+                  receiptChannelOf(invoice)}
                 contractorFirst={invoice.contractor?.name?.split(/\s+/)[0]}
                 es={es}
               />
@@ -1271,10 +1278,12 @@ function ClaimRejectedNote(
 }
 
 function ReceivedNote(
-  { paidAt, contractorFirst, es }: {
+  { paidAt, contractorFirst, es, channel }: {
     paidAt?: string;
     contractorFirst?: string;
     es: boolean;
+    /** REQ-556: where the receipt went — the inbox sentence only for email */
+    channel?: ReceiptChannel;
   },
 ) {
   const lang = es ? "es" : "en";
@@ -1292,7 +1301,11 @@ function ReceivedNote(
       <p
         style={`margin:8px 0 0;color:${INK};font-size:14.5px;line-height:1.55`}
       >
-        {receivedNoteBody((k, v) => tFor(lang, k, v), lang, { paidAt, who })}
+        {receivedNoteBody((k, v) => tFor(lang, k, v), lang, {
+          paidAt,
+          who,
+          channel,
+        })}
       </p>
     </section>
   );
