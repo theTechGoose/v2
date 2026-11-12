@@ -18,6 +18,10 @@
  * arrow (the glide's painter, `attach`'s second argument) with the tag's measured size, the side
  * on `data-tag-side` — never from the glide's target with a guessed width.
  *
+ * REQ-543 (demo m6, cycle 4) — the tag sits NEXT to the arrow (within TAG_REACH = 40 px of the
+ * tip, the nearest free side, not the roomiest), off the other controls of the page under it
+ * (`coversControl`), TAG_EDGE px inside `bounds`.
+ *
  * REQ-451 (demo M14, cycle 3) — `off`: the sender's pointer is OFF the shared screen (a
  * presenter's mouse beside the phone frame on his stage, `o: 1`). Not the arrow and the name over
  * the screen's controls: a small translucent marker against the edge it is off, pointing that way
@@ -83,21 +87,82 @@ const windowBox = (): Bounds => ({
 /** REQ-437 — the tag's size before it is laid out (SSR, the first paint): 12px bold, padded */
 const estimate = (name: string) => ({ w: 18 + name.length * 7.5, h: 22 });
 
-/** REQ-437 — place the tag element for an arrow drawn at `tip`: its MEASURED size (the estimate
- *  only while it has none), outside `rect`, inside `box`; left/top relative to the tip (the
- *  pointer box is translated to it) and the side on `data-tag-side` */
+/** REQ-543 (demo m6, cycle 4) — what counts as a control the tag must not sit on */
+export const CONTROL_SELECTOR =
+  "button,a[href],input,select,textarea,summary,label,[role=button],[role=link],[role=option],[role=tab],[role=radio],[role=checkbox],[role=menuitem]";
+
+/** REQ-543 — the topmost control at (x, y) of `doc` other than the one `tip` is on (the target,
+ *  or a control holding it), looking through a same-origin iframe (the stage's mirror of the
+ *  customer's page, scaled into its frame) */
+function otherControlAt(
+  doc: Document,
+  x: number,
+  y: number,
+  tip: Pt,
+  depth = 0,
+): boolean {
+  const el = typeof doc.elementFromPoint === "function"
+    ? doc.elementFromPoint(x, y)
+    : null;
+  if (!el) return false;
+  if (el.tagName === "IFRAME" && depth < 2) {
+    const f = el as HTMLIFrameElement;
+    let inner: Document | null = null;
+    try {
+      inner = f.contentDocument;
+    } catch {
+      inner = null;
+    }
+    if (!inner) return false;
+    const b = f.getBoundingClientRect();
+    const s = f.clientWidth ? b.width / f.clientWidth : 1;
+    const map = (p: Pt): Pt => ({
+      x: (p.x - b.left) / s - f.clientLeft,
+      y: (p.y - b.top) / s - f.clientTop,
+    });
+    const at = map({ x, y });
+    return otherControlAt(inner, at.x, at.y, map(tip), depth + 1);
+  }
+  const c = el.closest(CONTROL_SELECTOR);
+  if (!c) return false;
+  const r = c.getBoundingClientRect();
+  return !(tip.x >= r.left && tip.x <= r.left + r.width &&
+    tip.y >= r.top && tip.y <= r.top + r.height);
+}
+
+/** REQ-543 (demo m6) — would a tag drawn at `r` cover a control other than the one the arrow at
+ *  `tip` points at ('Carl' over Cancel)? Hit-tests its centre and inset corners on the page */
+export function coversControl(doc: Document, r: Rect, tip: Pt): boolean {
+  const i = 2;
+  const xs = [r.left + i, r.left + r.width / 2, r.left + r.width - i];
+  const ys = [r.top + i, r.top + r.height / 2, r.top + r.height - i];
+  const pts: Pt[] = [
+    { x: xs[1], y: ys[1] },
+    { x: xs[0], y: ys[0] },
+    { x: xs[2], y: ys[0] },
+    { x: xs[0], y: ys[2] },
+    { x: xs[2], y: ys[2] },
+  ];
+  return pts.some((p) => otherControlAt(doc, p.x, p.y, tip));
+}
+
+/** REQ-437 + REQ-543 — place the tag element for an arrow drawn at `tip`: its MEASURED size (the
+ *  estimate only while it has none), outside `rect`, next to the arrow, off the controls `covers`
+ *  finds, inside `box`; left/top relative to the tip (the pointer box is translated to it) and
+ *  the side on `data-tag-side` */
 export function placeTag(
   el: HTMLElement,
   tip: Pt,
   box: Bounds,
   rect: Rect | null,
   fallback: { w: number; h: number },
+  covers?: (r: Rect) => boolean,
 ): void {
   const tag = {
     w: el.offsetWidth || fallback.w,
     h: el.offsetHeight || fallback.h,
   };
-  const at = tagPlacement(tip, box, tag, rect);
+  const at = tagPlacement(tip, box, tag, rect, covers);
   el.style.left = `${at.x - tip.x}px`;
   el.style.top = `${at.y - tip.y}px`;
   el.setAttribute("data-tag-side", at.side);
@@ -143,7 +208,17 @@ export default function DemoPointer(
     const el = tagRef.current;
     if (!el) return;
     const l = live.current;
-    placeTag(el, p, l.bounds ?? windowBox(), l.rect, l.fallback);
+    // REQ-543 — off the other controls of the page under it (the tag and arrow are
+    // pointer-events:none, so the hit-test sees through them)
+    const doc = globalThis.document;
+    placeTag(
+      el,
+      p,
+      l.bounds ?? windowBox(),
+      l.rect,
+      l.fallback,
+      doc && l.rect ? (r) => coversControl(doc, r, p) : undefined,
+    );
   }, []);
   const ref = useCallback(
     (el: HTMLDivElement | null) => attach(el, el ? paintTag : undefined),
