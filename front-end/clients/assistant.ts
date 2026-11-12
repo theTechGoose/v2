@@ -374,8 +374,10 @@ export const assistantClient = {
     ),
 
   /** Three suggested price tiers for the "I know the job, help me price it"
-   *  flow (roadmap p.10). The 4th "custom" option is the manual entry. */
-  suggestPrices: (raw: string, opts: ApiOptions = {}) =>
+   *  flow (roadmap p.10). The 4th "custom" option is the manual entry.
+   *  REQ-260 (M24): `raw` is the contractor's ORIGINAL message; `scope` the
+   *  bullets they confirmed — priced together, never the bullets alone. */
+  suggestPrices: (raw: string, scope?: string, opts: ApiOptions = {}) =>
     api.post<
       {
         options: Array<
@@ -384,7 +386,11 @@ export const assistantClient = {
         /** REQ-017 (NW-12): what the numbers include. */
         basis?: "labor_and_materials";
       }
-    >("/agents/job-details/prices", { raw }, opts),
+    >(
+      "/agents/job-details/prices",
+      { raw, ...(scope && scope.trim() ? { scope } : {}) },
+      opts,
+    ),
 
   /** Single-line cleanup: rewrites one rough bullet into a tidy scope
    *  line. Called when the user edits/adds a bullet and opts in to the

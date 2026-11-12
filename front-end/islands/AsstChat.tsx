@@ -2368,6 +2368,12 @@ export default function AsstChat({
     // option and advance to the pricing screen. Suggestions are computed on
     // the CONFIRMED scope, so the three tiers price what was actually agreed.
     if (pickerMode === "confirm") {
+      // REQ-260 (M24): the message the contractor TYPED — still held in
+      // pendingJobDetailsRaw until the line below overwrites it with the
+      // bullets. Pricing reads it beside the confirmed bullets: the bullets
+      // alone drop every stated cost and size, and a full bathroom gut came
+      // back priced as a small job.
+      const typedRaw = (pendingJobDetailsRaw ?? "").trim();
       confirmedOptionRef.current = {
         ...opt,
         jobName,
@@ -2381,7 +2387,10 @@ export default function AsstChat({
       setPickerMode("polish");
       setPriceCaptureOpen(true);
       setPriceSuggestions(null);
-      void fetchPriceSuggestions(description || summary);
+      void fetchPriceSuggestions(
+        typedRaw || description || summary,
+        description || summary,
+      );
       return;
     }
     setError(undefined);
@@ -3717,9 +3726,9 @@ export default function AsstChat({
     }
   }
 
-  async function fetchPriceSuggestions(raw: string) {
+  async function fetchPriceSuggestions(raw: string, scope?: string) {
     try {
-      const res = await assistantClient.suggestPrices(raw);
+      const res = await assistantClient.suggestPrices(raw, scope);
       setPriceSuggestions(res.options ?? []);
     } catch {
       setPriceSuggestions([]);

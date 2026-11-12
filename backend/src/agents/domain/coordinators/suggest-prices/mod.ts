@@ -4,11 +4,18 @@ import {
   type LLMClient,
 } from "@agents/domain/business/llm/base/mod.ts";
 import { t } from "@core/i18n/mod.ts";
+import { extractPriceCents } from "#quote-flow/quick-quote-prefill.ts";
 
 export interface SuggestPricesInput {
   userId: string;
-  /** Raw job description the contractor typed. */
+  /** Raw job description the contractor typed — their ORIGINAL message,
+   *  with every quantity, material and cost they named (REQ-260 / M24). */
   raw: string;
+  /** REQ-260 (M24): the scope bullets the contractor confirmed in the "help
+   *  me price it" picker. Sent beside `raw`, never instead of it — the
+   *  bullets are 3–4 short lines with prices dropped, and pricing on them
+   *  alone priced a full bathroom gut as "a typical small job". */
+  scope?: string;
   /** Contractor UI language (roadmap p.13) — these tiers are shown to the
    *  contractor while pricing, so label/rationale follow their language. */
   lang?: string;
@@ -71,30 +78,77 @@ export class SuggestPrices {
     const location = `${cityState} ${a.postal?.trim() ?? ""}`.trim();
     const locationLine = location ? `\n\nContractor location: ${location}` : "";
 
-    let text: string;
-    try {
+    const scope = input.scope?.trim() ?? "";
+    const job = scope && scope !== raw
+      ? `Contractor's original message:\n${raw}\n\nConfirmed scope (the bullets the contractor agreed to):\n${scope}`
+      : `Raw job description:\n${raw}`;
+    const content = `${job}${locationLine}${langLine}`;
+
+    // REQ-260 (M24): the largest dollar amount the contractor stated (a
+    // subcontractor's quote, the materials) is a floor no tier may sit under.
+    const floorCents = extractPriceCents(raw) ?? 0;
+
+    const ask = async (messages: { role: "user" | "assistant"; content: string }[]) => {
       const res = await this.llm.respond({
         systemPrompt: SYSTEM_PROMPT,
-        messages: [{
-          role: "user",
-          content: `Raw job description:\n${raw}${locationLine}${langLine}`,
-        }],
+        messages,
         userId: input.userId,
         model: PRICING_MODEL,
+        // REQ-260: JSON mode — no chat tools ride along on this one-shot call.
+        responseFormat: "json",
       });
-      text = res.text ?? "";
+      return { text: res.text ?? "", options: normalize(tryParseJson(res.text ?? "")?.options, lang) };
+    };
+
+    let options: PriceOption[];
+    try {
+      const first = await ask([{ role: "user", content }]);
+      options = first.options;
+      if (options.length === 3 && floorCents > 0 && options[0].priceCents <= floorCents) {
+        // Re-ask once, naming the cost the tiers fell under.
+        const again = await ask([
+          { role: "user", content },
+          { role: "assistant", content: first.text },
+          {
+            role: "user",
+            content: `Every one of those prices is at or below ${dollars(floorCents)}, a cost the contractor stated ` +
+              `in their message. Stated costs are a FLOOR: each tier must cover them plus the rest of the labor, ` +
+              `materials and markup for the full scope. Return the corrected JSON.`,
+          },
+        ]).catch(() => undefined);
+        if (again && again.options.length === 3) options = again.options;
+      }
     } catch (err) {
       console.error("[suggest-prices] llm call failed:", err);
-      return { options: fallbackTiers(lang), basis: BASIS };
+      options = [];
     }
-
-    const parsed = tryParseJson(text);
-    const options = normalize(parsed?.options, lang);
-    return {
-      options: options.length === 3 ? options : fallbackTiers(lang),
-      basis: BASIS,
-    };
+    if (options.length !== 3) options = fallbackTiers(lang);
+    return { options: liftAboveFloor(options, floorCents), basis: BASIS };
   }
+}
+
+/** "$2,800" from 280000. */
+function dollars(cents: number): string {
+  return `$${Math.round(cents / 100).toLocaleString("en-US")}`;
+}
+
+/**
+ * REQ-260 (M24): last line of defence — if the tiers (the model's after one
+ * re-ask, or the generic fallback) still sit at or under a cost the
+ * contractor stated, scale them up so the competitive tier clears it by a
+ * markup, keeping their spread and order. Rounded to whole $50.
+ */
+function liftAboveFloor(options: PriceOption[], floorCents: number): PriceOption[] {
+  if (floorCents <= 0 || options[0].priceCents > floorCents) return options;
+  const factor = (floorCents * 1.2) / options[0].priceCents;
+  const step = 5000;
+  let prev = 0;
+  return options.map((o) => {
+    let cents = Math.ceil((o.priceCents * factor) / step) * step;
+    if (cents <= prev) cents = prev + step;
+    prev = cents;
+    return { ...o, priceCents: cents };
+  });
 }
 
 function normalize(raw: unknown, lang: "en" | "es"): PriceOption[] {
