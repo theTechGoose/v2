@@ -36,6 +36,7 @@ import {
   type CustomerStepView,
   formOffersPickExisting,
 } from "../../shared/quote-flow/customer-step.ts";
+import { customerMatchesQuery } from "../../shared/quote-flow/customer-search.ts";
 import { termLabel } from "../../shared/quote-flow/terms-i18n.ts";
 import { versionTitle } from "../../shared/quote-flow/version-titles.ts";
 import { scopeBulletsFromRaw } from "../../shared/quote-flow/scope-from-raw.ts";
@@ -8207,15 +8208,10 @@ function CustomerStepPanel(props: {
   }
 
   const isBusiness = kind === "business";
-  const filtered = (customers ?? []).filter((c) => {
-    const q = search.trim().toLowerCase();
-    if (!q) return true;
-    return (
-      c.name.toLowerCase().includes(q) ||
-      (c.email ?? "").toLowerCase().includes(q) ||
-      (c.phoneNumber ?? "").toLowerCase().includes(q)
-    );
-  });
+  // REQ-279 (demo M32): accent-blind — "Maria" finds "María", not an offer to create her twice
+  const filtered = (customers ?? []).filter((c) =>
+    customerMatchesQuery(c, search)
+  );
 
   // ---- View: form ----
   if (view === "form") {
