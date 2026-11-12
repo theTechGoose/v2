@@ -11,7 +11,6 @@ import type {
 import { UserStore } from "@users/domain/data/user-store/mod.ts";
 import { SessionStore } from "@users/domain/data/session-store/mod.ts";
 import { requireUser } from "@users/domain/coordinators/require-user/mod.ts";
-import type { Lang } from "@core/i18n/mod.ts";
 import { clientsPage, type ClientsPageResponse } from "@analytics/domain/business/clients-page/mod.ts"; // REQ-135
 
 const SEGMENT_LABELS: Record<ClientSegment | "unsorted", string> = {
@@ -54,7 +53,8 @@ export class ClientsController {
     @Query("status") status?: string,
   ): Promise<ClientsPageResponse> {
     const user = await requireUser(ctx, this.sessions, this.users);
-    const cards = await this.flow.run(user.id, new Date(), (user.language ?? "en") as Lang);
+    // REQ-367: the cards are data — the client words them in the live language
+    const cards = await this.flow.run(user.id, new Date());
     return clientsPage(cards, { page: Number(page), pageSize: Number(pageSize), q, status });
   }
 

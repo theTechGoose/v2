@@ -1,5 +1,6 @@
 import { asset, Head } from "fresh/runtime";
 import { define } from "../../utils.ts";
+import DocTitle from "../../components/DocTitle.tsx";
 import SiteFooter from "../../components/SiteFooter.tsx";
 import { ssrBackendGet } from "../../lib/backend-fetch.ts";
 import { type Lang, tFor } from "../../lib/i18n.ts";
@@ -62,7 +63,10 @@ export default define.page(async function PublicChangeOrder(ctx) {
   return (
     <>
       <Head>
-        <title>{tFor(lang, "changeOrderPublic.docTitle")}</title>
+        <DocTitle
+          lang={lang}
+          title={(l) => tFor(l, "changeOrderPublic.docTitle")}
+        />
         <link rel="stylesheet" href={asset("/landing.css")} />
       </Head>
       <div

@@ -16,6 +16,8 @@ export type ClientStatus =
   | "cold"
   | "new";
 export type ClientLastTone = "hot" | "warm" | "cold";
+/** REQ-367 — the card's jobs line as a kind; clients-display words it in the live language */
+export type CustomerJobsSub = "overdue" | "active" | "scheduled" | "none";
 export type ClientSegmentKey =
   | "property_mgmt"
   | "homeowner"
@@ -37,13 +39,13 @@ export interface CustomerCard {
   createdAt: string;
   updatedAt: string;
 
+  /** REQ-367: the timestamp — clients-display words "how long ago" in the live language */
   lastWhen: string | null;
-  lastWhenRel: string;
   lastTone: ClientLastTone;
   balanceCents: number;
   balanceSub: string;
   activeJobs: number;
-  jobsSub: string;
+  jobsSub: CustomerJobsSub;
   status: ClientStatus;
   temp: number;
   daysSinceContact: number;

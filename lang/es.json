@@ -10,6 +10,7 @@
   "acceptedAlert.email.subjectJob": "¡{name} aprobó tu cotización de {job}! 🎉",
   "acceptedAlert.sms.body": "{name} acaba de aprobar tu cotización. Siguiente paso: envía el contrato o la factura → {url}",
   "acceptedAlert.sms.bodyJob": "{name} acaba de aprobar tu cotización de {job}. Siguiente paso: envía el contrato o la factura → {url}",
+  "accountsManager.docTitle": "Gestor de cuentas",
   "activeJobs.count": "{n} activos",
   "activeJobs.due": "Vence {due}",
   "activeJobs.empty.action": "Ver embudo →",

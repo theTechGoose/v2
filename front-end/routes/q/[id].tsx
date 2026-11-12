@@ -1,5 +1,6 @@
 import { asset, Head } from "fresh/runtime";
 import { define } from "../../utils.ts";
+import DocTitle from "../../components/DocTitle.tsx";
 import SiteFooter from "../../components/SiteFooter.tsx";
 import PublicQuoteView from "../../islands/PublicQuoteView.tsx";
 import { BG, INK } from "../../components/quote-doc.tsx";
@@ -23,12 +24,18 @@ export default define.page(function PublicQuote(ctx) {
     query: new URL(ctx.req.url).searchParams.get("lang"),
     cookie: ctx.req.headers.get("cookie"),
   });
+  // REQ-367: the page tells the shell what it paints (as /i does), so the
+  // browser's langSignal starts in the contract's language — a visitor with
+  // no saved choice opens it in English, and the island's ES must be a CHANGE
+  // of the signal for the footer, the tab title and <html lang> to follow
+  // (Fresh renders the page before the app shell reads ctx.state.lang).
+  ctx.state.lang = lang;
 
   return (
     <>
       <Head>
         {/* UX-40: localized like /i and /co (tFor docTitle). */}
-        <title>{tFor(lang, "quoteDoc.docTitle")}</title>
+        <DocTitle lang={lang} title={(l) => tFor(l, "quoteDoc.docTitle")} />
         <link key="css-landing" rel="stylesheet" href={asset("/landing.css")} />
         {
           /* P-62: the phone-layout + @media print rules live in a LINKED

@@ -103,6 +103,11 @@ export interface Customer
   updatedAt: string;
 }
 
+/**
+ * REQ-367 (demo-loop cycle 1, m10): the card's jobs line as a kind — the client
+ * words it (`clientsDisplay.jobsSub.<kind>`) in the language live on screen.
+ */
+export type CustomerJobsSub = "overdue" | "active" | "scheduled" | "none";
 /** REQ-271: "new" — nothing on the books yet (no quote, no paid invoice); was mislabelled "regular". */
 export type CustomerStatus = "active" | "lead" | "owes" | "regular" | "cold" | "new";
 export type CustomerLastTone = "hot" | "warm" | "cold";
@@ -112,13 +117,13 @@ export type CustomerLastTone = "hot" | "warm" | "cold";
  * rollups computed by `BuildCustomerCards`. Never persisted — pure projection.
  */
 export interface CustomerCard extends Customer {
+  /** REQ-367: the last activity's timestamp — the client words "how long ago" in the live language */
   lastWhen: string | null;
-  lastWhenRel: string;
   lastTone: CustomerLastTone;
   balanceCents: number;
   balanceSub: string;
   activeJobs: number;
-  jobsSub: string;
+  jobsSub: CustomerJobsSub;
   status: CustomerStatus;
   temp: number;
   daysSinceContact: number;

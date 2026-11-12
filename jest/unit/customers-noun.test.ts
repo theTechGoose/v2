@@ -59,8 +59,9 @@ describe("REQ-274 /customers says one EN noun: Customers (demo i18n-formatting-m
   });
 
   test("REQ-274 the route takes its title from clientsRoute.docTitle and /customers re-exports it", () => {
+    // REQ-367: a DocTitle, so the tab title follows the EN/ES switch
     expect(read("front-end/routes/clients/index.tsx")).toMatch(
-      /<title>\{tFor\(lang, "clientsRoute\.docTitle"\)\}<\/title>/,
+      /<DocTitle lang=\{lang\} title=\{\(l\) => tFor\(l, "clientsRoute\.docTitle"\)\} \/>/,
     );
     expect(read("front-end/routes/customers/index.tsx")).toMatch(
       /export \{ default \} from "\.\.\/clients\/index\.tsx"/,

@@ -139,13 +139,15 @@ describe("REQ-269 the staff side follows the app language (demo i18n-formatting-
     expect(own(es)).toEqual(own(en));
   });
 
-  it("REQ-269 /admin's footer is the live island that follows langSignal, not the static SiteFooter", () => {
+  it("REQ-269 /admin's footer is the live island that follows langSignal, not a static footer", () => {
+    // REQ-367 made the one SiteFooter the live island on every page: /admin renders it like the rest
     const route = read("front-end/routes/admin/index.tsx");
-    expect(route).toMatch(/import SiteFooterLive from "\.\.\/\.\.\/islands\/SiteFooterLive\.tsx"/);
-    expect(route).toMatch(/<SiteFooterLive lang=\{lang\} \/>/);
-    expect(route).not.toMatch(/<SiteFooter\b/);
+    expect(route).toMatch(/import SiteFooter from "\.\.\/\.\.\/components\/SiteFooter\.tsx"/);
+    expect(route).toMatch(/<SiteFooter lang=\{lang\} \/>/);
+    expect(read("front-end/components/SiteFooter.tsx")).toMatch(/<SiteFooterLive\b/);
     const island = read("front-end/islands/SiteFooterLive.tsx");
-    expect(island).toMatch(/langSignal/);
-    expect(island).toMatch(/<SiteFooter lang=/);
+    expect(island).toMatch(/useLiveLang\(lang\)/);
+    expect(read("front-end/lib/live-lang.ts")).toMatch(/langSignal\.subscribe/);
+    expect(island).toMatch(/<SiteFooterView copy=/);
   });
 });

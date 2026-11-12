@@ -1,5 +1,6 @@
 import { asset, Head } from "fresh/runtime";
 import { define } from "../../utils.ts";
+import DocTitle from "../../components/DocTitle.tsx";
 import SiteFooter from "../../components/SiteFooter.tsx";
 import { tFor } from "../../lib/i18n.ts";
 import DashSidebar from "../../islands/DashSidebar.tsx";
@@ -44,7 +45,7 @@ export default define.page(function InvoicesRoute(ctx) {
   return (
     <>
       <Head>
-        <title>{tFor(lang, "invoicesPage.docTitle")}</title>
+        <DocTitle lang={lang} title={(l) => tFor(l, "invoicesPage.docTitle")} />
         <link
           key="css-dashboard"
           rel="stylesheet"

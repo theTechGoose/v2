@@ -5,6 +5,7 @@
  */
 import { asset, Head } from "fresh/runtime";
 import { define } from "../../utils.ts";
+import DocTitle from "../../components/DocTitle.tsx";
 import SiteFooter from "../../components/SiteFooter.tsx";
 import { type Lang, tFor } from "../../lib/i18n.ts";
 import DashSidebar from "../../islands/DashSidebar.tsx";
@@ -20,7 +21,7 @@ export default define.page(function WorkOrderRoute(ctx) {
   return (
     <>
       <Head>
-        <title>{tFor(lang, "workOrders.docTitle")}</title>
+        <DocTitle lang={lang} title={(l) => tFor(l, "workOrders.docTitle")} />
         <link
           key="css-dashboard"
           rel="stylesheet"

@@ -72,7 +72,10 @@ describe("REQ-076 the policy links are broken out again: four links in every foo
     expect(LEGAL_LINKS.map((l) => l.path)).toEqual(["/terms", "/refund-policy", "/privacy", "/sms-terms"]);
     // the three footers render LEGAL_LINKS — not a hand-written link, not one link
     for (const file of FOOTERS) {
-      const src = read(file);
+      // REQ-367: the app footer's words come from the one list in SiteFooter.tsx, its markup is SiteFooterView.tsx
+      const src = file === "front-end/components/SiteFooter.tsx"
+        ? read(file) + read("front-end/components/SiteFooterView.tsx")
+        : read(file);
       expect(src).toMatch(/LEGAL_LINKS\.map/);
       expect(src).toMatch(/data-legal-link=\{l\.id\}/);
       expect(src).not.toMatch(/LEGAL_FOOTER_LINK/);
@@ -80,7 +83,7 @@ describe("REQ-076 the policy links are broken out again: four links in every foo
       expect(src).not.toMatch(/href="\/terms"/);
     }
     // REQ-043's hook stays on the Terms link
-    expect(read("front-end/components/SiteFooter.tsx")).toMatch(/data-terms-link=\{l\.id === "terms" \? "" : undefined\}/);
+    expect(read("front-end/components/SiteFooterView.tsx")).toMatch(/data-terms-link=\{l\.id === "terms" \? "" : undefined\}/);
     // no page in the site source spells a policy path by hand
     const offenders: string[] = [];
     for (const file of siteFiles()) {

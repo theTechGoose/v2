@@ -1,5 +1,6 @@
 import { useEffect } from "preact/hooks";
 import { type Lang, langSignal } from "../lib/lang.ts";
+import { followTitle } from "../lib/doc-title.ts";
 
 /**
  * Mirrors the active UI language (`langSignal`) into `<html lang>` on the
@@ -8,6 +9,10 @@ import { type Lang, langSignal } from "../lib/lang.ts";
  * app resolves the language a different way — e.g. the dashboard seeding
  * `langSignal` from the logged-in user's profile language when there is no
  * pm_lang cookie, or an in-app language toggle. Renders nothing.
+ *
+ * REQ-367 (demo-loop cycle 1, m10): the tab title follows too — on every
+ * switch it becomes the language's title the page's DocTitle carries
+ * (lib/doc-title.ts). A title that is not live (a landing's own) is left alone.
  */
 export default function HtmlLang({ initial }: { initial?: Lang }) {
   useEffect(() => {
@@ -30,6 +35,7 @@ export default function HtmlLang({ initial }: { initial?: Lang }) {
         return;
       }
       apply(lang);
+      followTitle(document, lang);
     });
     return () => stop();
   }, [initial]);
