@@ -2700,7 +2700,7 @@
   "settings.legalName": "Legal name",
   "settings.license": "License",
   "settings.loadError": "Couldn't load profile: {error}",
-  "settings.logoHint": "PNG or JPG · shows on quotes & invoices",
+  "settings.logoHint": "PNG, JPG, GIF or WebP · max 8 MB · shows on quotes & invoices",
   "settings.logoNotImage": "That file is not an image. Pick a PNG, JPG, GIF or WebP logo.",
   "settings.logoSet": "Logo set",
   "settings.logoUploadFailed": "Couldn't upload the logo. Try again.",
