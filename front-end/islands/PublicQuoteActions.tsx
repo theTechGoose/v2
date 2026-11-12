@@ -12,6 +12,9 @@ interface Props {
   customerName?: string;
   /** Outgoing-comms language (roadmap p.13). Customer-facing. */
   lang?: "en" | "es";
+  /** REQ-559 (demo-loop c4 m17): the business's own preview — Ask and
+   *  Decline are the customer's verbs, so they are off (with a tooltip). */
+  preview?: boolean;
 }
 
 type Mode = "actions" | "decline" | "ask";
@@ -61,7 +64,7 @@ function friendlyError(raw: string, es = false): string {
  * renders its persisted declined state.
  */
 export default function PublicQuoteActions(
-  { quoteId, customerName, lang = "en" }: Props,
+  { quoteId, customerName, lang = "en", preview = false }: Props,
 ) {
   const [mode, setMode] = useState<Mode>("actions");
   const [resolved, setResolved] = useState<Resolved>(null);
@@ -70,6 +73,10 @@ export default function PublicQuoteActions(
   // with Decline still available (no reload needed).
   const [askSent, setAskSent] = useState(false);
   const es = lang === "es";
+  const offTip = preview
+    ? tFor(lang, "publicQuoteActions.previewDisabled")
+    : undefined;
+  const off = preview ? ";opacity:0.55;cursor:not-allowed" : "";
 
   return (
     <div>
@@ -96,15 +103,21 @@ export default function PublicQuoteActions(
         <div style="margin-top:14px;display:flex;gap:10px;justify-content:center;flex-wrap:wrap">
           <button
             type="button"
+            data-cy="quote-ask"
+            disabled={preview}
+            title={offTip}
             onClick={() => setMode("ask")}
-            style="background:#fff;border:1px solid #d8e0db;color:#144852;font-weight:700;font-size:13px;padding:10px 18px;border-radius:10px;cursor:pointer"
+            style={`background:#fff;border:1px solid #d8e0db;color:#144852;font-weight:700;font-size:13px;padding:10px 18px;border-radius:10px;cursor:pointer${off}`}
           >
             {tFor(lang, "publicQuoteActions.askButton")}
           </button>
           <button
             type="button"
+            data-cy="quote-decline"
+            disabled={preview}
+            title={offTip}
             onClick={() => setMode("decline")}
-            style="background:#fff;border:1px solid #d8e0db;color:#6b7a7e;font-weight:700;font-size:13px;padding:10px 18px;border-radius:10px;cursor:pointer"
+            style={`background:#fff;border:1px solid #d8e0db;color:#6b7a7e;font-weight:700;font-size:13px;padding:10px 18px;border-radius:10px;cursor:pointer${off}`}
           >
             {tFor(lang, "publicQuoteActions.declineButton")}
           </button>
