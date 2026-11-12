@@ -81,9 +81,14 @@ describe("REQ-234 AsstChat wiring", () => {
   });
 
   it("the header names a locked quote as locked, not 'Quote sent'", () => {
-    // REQ-236 moved the header's reading into lib/send-delivery.ts headerStatusKey, fed the
-    // last card's status
-    expect(src).toMatch(/lastCardStatus: quoteStatus/);
+    // REQ-245 (quote-m6) derives the header from the quote's lifecycle in
+    // shared/quote-flow/chat-header.ts; REQ-236's headerStatusKey (fed the last
+    // card's status) still decides "Not delivered" (reconciled on demo-fixes).
+    expect(src).toMatch(/deriveChatHeader\(/);
+    expect(src).toMatch(/lastCardStatus: \(\s*lastQuoteCard\?\.payload/);
+    const header = read("shared/quote-flow/chat-header.ts");
+    expect(header).toMatch(/lastCardStatus === "locked"/);
+    expect(header).toMatch(/quote\?\.lockedAt\)\) return `\$\{K\}quoteLocked`/);
     const delivery = fs.readFileSync(
       path.join(__dirname, "../../front-end/lib/send-delivery.ts"),
       "utf8",
