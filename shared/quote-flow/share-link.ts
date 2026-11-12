@@ -51,3 +51,40 @@ export function resolveShareTarget(
 ): string {
   return withSendLang(`/q/${quote.id}`, lang);
 }
+
+/** REQ-586 (demo-loop cycle 4, M11): a public language, or nothing. */
+function publicLang(v: unknown): SendLang | undefined {
+  return v === "en" || v === "es" ? v : undefined;
+}
+
+/**
+ * REQ-586 (demo-loop cycle 4, M11): the language a quote last went out in
+ * (SendQuote records it on `lastDelivery.lang`). Every in-app customer link
+ * — the chat's "Open as customer" / "Copy", the /quotes panel and card —
+ * carries it as `?lang=`, so a cookie-less customer opens the document in
+ * the language it was sent in. Nothing recorded → undefined (link unchanged).
+ */
+export function quoteSendLang(
+  q: { lastDelivery?: { lang?: string | null } | null } | null | undefined,
+): SendLang | undefined {
+  return publicLang(q?.lastDelivery?.lang);
+}
+
+/**
+ * REQ-586 (demo-loop cycle 4, M11): an invoice's document language — its
+ * own `lang` (a standalone invoice, REQ-497), else the language its quote
+ * was sent in, else the quote's base language. /i reads it ahead of the
+ * contractor's default commsLanguage.
+ */
+export function invoiceDocLang(
+  inv: { lang?: string | null } | null | undefined,
+  quote?:
+    | {
+      lang?: string | null;
+      lastDelivery?: { lang?: string | null } | null;
+    }
+    | null,
+): SendLang | undefined {
+  return publicLang(inv?.lang) ?? quoteSendLang(quote) ??
+    publicLang(quote?.lang);
+}

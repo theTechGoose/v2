@@ -200,6 +200,7 @@ Deno.test("REQ-368 M32 chatToolsFor: the terms phase (pair 1: signed quote, fini
     "change_order",
     "update_job_details",
     "update_change_order", // REQ-462
+    "update_terms", // REQ-585
   ];
   assertEquals(chatToolsFor("terms", { status: "accepted" }), termsTools);
   assertEquals(chatToolsFor("terms", { status: "draft" }), termsTools);
@@ -570,4 +571,155 @@ Deno.test("REQ-375 guard: every tool the terms prompt says to call is offered in
       );
     }
   }
+});
+
+// ---------------------------------------------------------------------------
+// REQ-583 (demo-loop cycle 4, M2): the chat model is offered send_invoice and
+// record_payment — gated on the bound quote's own invoices. Pair 3 asked
+// "send it to her now please" about a scheduled invoice and got "I can't send
+// the invoice directly…"; pair 7's "she paid the deposit by check" got "You
+// can check the payment status in the Invoices section." — the model had no
+// tool for either.
+// ---------------------------------------------------------------------------
+
+const SIGNED = { status: "accepted", acceptedAt: "2026-11-12T15:07:00Z" };
+
+Deno.test("REQ-583 M2 chatToolsFor: a signed quote with an invoice still to send and one to pay gets send_invoice and record_payment, in both phases", () => {
+  const invoices = [
+    { status: "sent", amount: 142_500 },
+    { status: "scheduled", amount: 142_500 },
+  ];
+  for (const phase of ["quote", "terms"] as const) {
+    const tools = chatToolsFor(phase, SIGNED, invoices);
+    assertEquals(tools.includes("send_invoice"), true, phase);
+    assertEquals(tools.includes("record_payment"), true, phase);
+  }
+});
+
+Deno.test("REQ-583 M2 chatToolsFor: what the invoices allow — nothing to send once all went out, nothing to record once all is paid", () => {
+  const offered = (invoices: { status: string; amount?: number }[]) =>
+    chatToolsFor("terms", SIGNED, invoices).filter((t) =>
+      t === "send_invoice" || t === "record_payment"
+    );
+  // pair 3: pay on completion, its only invoice scheduled
+  assertEquals(offered([{ status: "scheduled", amount: 32_000 }]), [
+    "send_invoice",
+    "record_payment",
+  ]);
+  // the deposit out, nothing scheduled: a payment can be recorded
+  assertEquals(offered([{ status: "sent", amount: 32_000 }]), [
+    "record_payment",
+  ]);
+  // signed, nothing billed yet: SendInvoice bills it
+  assertEquals(offered([]), ["send_invoice"]);
+  // all paid (a void one never counts)
+  assertEquals(
+    offered([
+      { status: "paid", amount: 32_000 },
+      { status: "void", amount: 32_000 },
+    ]),
+    [],
+  );
+});
+
+Deno.test("REQ-583 M2 chatToolsFor: never for a quote nobody signed, nor without the quote's invoices read", () => {
+  for (const q of [{ status: "sent" }, { status: "draft" }, undefined]) {
+    const tools = chatToolsFor("quote", q, [{ status: "scheduled" }]);
+    assertEquals(tools.includes("send_invoice"), false, JSON.stringify(q));
+    assertEquals(tools.includes("record_payment"), false, JSON.stringify(q));
+  }
+  // the old two-argument call (no invoices read) is unchanged
+  assertEquals(chatToolsFor("terms", SIGNED).includes("send_invoice"), false);
+});
+
+Deno.test("REQ-583 M2 prompts.pricingAndBilling: no more 'say where to see it (Invoices)'; a reported payment is recorded and an invoice is sent with the tools, never 'I can't'", () => {
+  for (
+    const prompt of [
+      SYSTEM_PROMPT_QUOTE,
+      systemPromptTermsFor(SIGNED, { hasActionCard: false }),
+    ]
+  ) {
+    assertEquals(/say where to see it \(Invoices\)/i.test(prompt), false);
+    assertEquals(/record (?:it|the payment)/i.test(prompt), true);
+    assertEquals(/send (?:it|the invoice)/i.test(prompt), true);
+    assertEquals(/never say you can'?t send/i.test(prompt), true);
+  }
+  // the tools themselves say when to fire
+  const defs = TOOL_DEFS as unknown as readonly {
+    function: { name: string; description: string };
+  }[];
+  const send = defs.find((d) => d.function.name === "send_invoice");
+  const pay = defs.find((d) => d.function.name === "record_payment");
+  assertEquals(
+    !!send && /send it now|m[aá]ndala/i.test(send.function.description),
+    true,
+  );
+  assertEquals(!!pay && /paid/i.test(pay.function.description), true);
+});
+
+// ---------------------------------------------------------------------------
+// REQ-579 (demo-loop cycle 4, M14, run r857a9d67): pair 2's quote was titled
+// "Poner césped nuevo (sod St" — the '.' after "St" ended the clause, inside
+// an open parenthesis. A '.' after an abbreviation is not a sentence end,
+// and a clause never ends inside open parentheses.
+// ---------------------------------------------------------------------------
+
+Deno.test("REQ-579 M14 pricingSubjects: pair 2's sentence keeps '(sod St. Augustine)' whole", () => {
+  const subs = pricingSubjects(
+    "¿cuánto debo cobrar por poner césped nuevo (sod St. Augustine) en un patio de 1,200 pies cuadrados?",
+  );
+  assertEquals(subs.length, 1);
+  assertEquals(
+    subs[0].job,
+    "poner césped nuevo (sod St. Augustine) en un patio de 1,200 pies cuadrados",
+  );
+  assertEquals(
+    jobTitle(subs[0].job),
+    "Poner césped nuevo (sod St. Augustine) en un patio de 1,200 pies cuadrados",
+  );
+});
+
+Deno.test("REQ-579 M14 a '.' after St / Dr / Ave / Mt / Mr / Mrs / Jr / No / approx is not a sentence end", () => {
+  const cases: [string, string][] = [
+    [
+      "how much should I charge for a fence on Oak Dr. Smith wants cedar",
+      "a fence on Oak Dr. Smith wants cedar",
+    ],
+    [
+      "what should I charge for a deck at 12 Main Ave. Austin TX",
+      "a deck at 12 Main Ave. Austin TX",
+    ],
+    [
+      "how much do I charge for gutters for Mrs. Lee on Mt. Bonnell",
+      "gutters for Mrs. Lee on Mt. Bonnell",
+    ],
+    [
+      "how much do I charge for a porch for Bob Jones Jr. On Elm St",
+      "a porch for Bob Jones Jr. On Elm St",
+    ],
+    [
+      "how much do I charge for a slab approx. 400 sq ft",
+      "a slab approx. 400 sq ft",
+    ],
+    ["how much do I charge for unit No. 4 repaint", "unit No. 4 repaint"],
+  ];
+  for (const [text, job] of cases) {
+    assertEquals(parsePricingQuestion(text)?.job, job, text);
+  }
+});
+
+Deno.test("REQ-579 M14 a clause never ends inside open parentheses — '?' / ';' in them included", () => {
+  assertEquals(
+    parsePricingQuestion(
+      "how much do I charge for a sod install (St. Augustine; about 1,200 sq ft) in the backyard? Thanks",
+    )?.job,
+    "a sod install (St. Augustine; about 1,200 sq ft) in the backyard",
+  );
+  // A real sentence end after the parenthesis still ends the job.
+  assertEquals(
+    parsePricingQuestion(
+      "how much do I charge for a fence (cedar). The customer wants it by May",
+    )?.job,
+    "a fence (cedar)",
+  );
 });

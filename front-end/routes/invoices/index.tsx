@@ -55,7 +55,11 @@ export default define.page(function InvoicesRoute(ctx) {
       <div class="app">
         <DashSidebar active="invoices" />
         <main class="main">
-          <DashTopbar greetingDate={greetingDate} greetingName={greetingName} />
+          <DashTopbar
+            pageTitleKey="nav.invoices"
+            greetingDate={greetingDate}
+            greetingName={greetingName}
+          />
           <div class="content">
             <InvoicesPage />
             <SiteFooter lang={lang} compact />

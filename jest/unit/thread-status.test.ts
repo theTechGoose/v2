@@ -267,7 +267,13 @@ describe("REQ-369 the conversation list's chip is the same status", () => {
 
   it("a thread with no quote yet has no chip (REQ-385, cycle 2 m6); the bill rides on top once it is out", () => {
     expect(threadChip("none")).toBeNull();
+    // REQ-563 AMENDMENT (cycle 4, m3): a signed quote's bill reads the
+    // header's words, "Signed · Invoiced"; "Invoiced" alone is unsigned.
     expect(threadChip("accepted", "sent")).toEqual({
+      kind: "sent",
+      key: "asstChat.header.signedInvoiced",
+    });
+    expect(threadChip("sent", "sent")).toEqual({
       kind: "sent",
       key: "asstThreads.chip.invoiced",
     });

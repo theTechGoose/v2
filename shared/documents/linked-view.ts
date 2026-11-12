@@ -57,6 +57,8 @@ const WORDS: Record<
     customer: string;
     by: string;
     awaitingApproval: string;
+    invoice: string;
+    due: string;
   }
 > = {
   en: {
@@ -66,6 +68,8 @@ const WORDS: Record<
     customer: "the customer",
     by: "by",
     awaitingApproval: "Waiting for your approval",
+    invoice: "Invoice",
+    due: "due",
   },
   es: {
     version: "Versión",
@@ -74,6 +78,8 @@ const WORDS: Record<
     customer: "el cliente",
     by: "por",
     awaitingApproval: "Esperando tu aprobación",
+    invoice: "Factura",
+    due: "vence",
   },
 };
 
@@ -153,10 +159,36 @@ export function docHeadline(doc: HeadlineDoc, lang: Lang = "en"): string {
   return parts.join(" · ");
 }
 
-/** "INV-5000 · Version 2 · Revised invoice — replaces previous version" / "INV-5000 · Version 1 · Paid" */
-export function invoiceHeadline(doc: HeadlineDoc, lang: Lang = "en"): string {
+/** REQ-558: states only the business sees — never named to a customer. */
+const OWNER_ONLY_INVOICE_STATES: ReadonlySet<string> = new Set([
+  "draft",
+  "scheduled",
+]);
+
+export interface InvoiceHeadlineDoc extends HeadlineDoc {
+  /** REQ-558: the viewer is the business itself (the public payload's
+   *  `internal`); only then are owner-only states named. */
+  internal?: boolean;
+  /** REQ-558: what a customer reads instead of an owner-only state. */
+  dueDate?: string;
+}
+
+/** "INV-5000 · Version 2 · Revised invoice — replaces previous version" / "INV-5000 · Version 1 · Paid";
+ *  REQ-558: a customer never reads "Scheduled"/"Draft" — "INV-5001 · Version 1 · Invoice · due Dec 1, 2026". */
+export function invoiceHeadline(
+  doc: InvoiceHeadlineDoc,
+  lang: Lang = "en",
+): string {
   const w = WORDS[lang === "es" ? "es" : "en"];
   const parts = [doc.number, `${w.version} ${doc.version ?? 1}`];
+  if (
+    !doc.internal && doc.state && OWNER_ONLY_INVOICE_STATES.has(doc.state)
+  ) {
+    parts.push(w.invoice);
+    const due = shortDate(doc.dueDate, lang);
+    if (due) parts.push(`${w.due} ${due}`);
+    return parts.join(" · ");
+  }
   if (doc.state === "revised") parts.push(w.revisedInvoice);
   else if (doc.state) parts.push(stateLabel(doc.state, lang));
   const date = shortDate(doc.date, lang);
@@ -193,6 +225,8 @@ const CHANGE_WORDS: Record<
     removedNamed: string;
     changedNamed: string;
     untitled: string;
+    /** REQ-561 (demo M28): the job-detail bullets changed. */
+    jobDetails: string;
   }
 > = {
   en: {
@@ -204,6 +238,7 @@ const CHANGE_WORDS: Record<
     removedNamed: "Removed",
     changedNamed: "Changed",
     untitled: "Untitled line",
+    jobDetails: "Job details changed",
   },
   es: {
     total: "Total",
@@ -214,6 +249,7 @@ const CHANGE_WORDS: Record<
     removedNamed: "Eliminado",
     changedNamed: "Cambiado",
     untitled: "Línea sin título",
+    jobDetails: "Detalles del trabajo cambiados",
   },
 };
 
@@ -268,6 +304,7 @@ export function versionChangeLine(
       }`,
     );
   } else count(c.linesChanged, w.changed);
+  if (c.descriptionChanged) parts.push(w.jobDetails);
   return parts.join(" · ");
 }
 

@@ -99,20 +99,87 @@ Deno.test("status: lead when only draft/sent quotes", async () => {
   });
 });
 
-Deno.test("status: regular when 12mo revenue > 0 and no active job", async () => {
+Deno.test("status: regular when 12mo revenue > 0 and no active job (REQ-562: two completed jobs)", async () => {
   await withKv(async () => {
     const { customers, invoices, flow } = fresh();
     const c = await customers.create("u-1", { name: "Acme" });
-    await invoices.create("u-1", {
-      quoteId: "k",
-      customerId: c.id,
-      dueDate: "2026-03-15",
-      status: "paid",
-      amount: 500,
-      paidAt: isoOffset(40),
-    });
+    for (const quoteId of ["k", "k2"]) {
+      await invoices.create("u-1", {
+        quoteId,
+        customerId: c.id,
+        dueDate: "2026-03-15",
+        status: "paid",
+        amount: 500,
+        paidAt: isoOffset(40),
+      });
+    }
     const [card] = await flow.run("u-1", NOW_FIXED);
     assertEquals(card.status, "regular");
+  });
+});
+
+Deno.test("REQ-562 (cycle 4, M38) a signed job whose deposit is paid and balance scheduled is 1 active job — not accepted − paid = 0", async () => {
+  await withKv(async () => {
+    const { customers, quotes, invoices, flow } = fresh();
+    const c = await customers.create("u-1", { name: "Linda Park" });
+    const q = await quotes.create("u-1", {
+      customerId: c.id,
+      summary: "Deck",
+      lineItems: [],
+      status: "accepted",
+    });
+    await quotes.update(q.id, "u-1", { acceptedAt: isoOffset(1) });
+    await invoices.create("u-1", {
+      quoteId: q.id,
+      customerId: c.id,
+      dueDate: "2026-04-28",
+      status: "paid",
+      amount: 1_425_00,
+      paidAt: isoOffset(0),
+    });
+    await invoices.create("u-1", {
+      quoteId: q.id,
+      customerId: c.id,
+      dueDate: "2026-05-28",
+      status: "scheduled",
+      amount: 1_425_00,
+    });
+    const [card] = await flow.run("u-1", NOW_FIXED);
+    assertEquals(card.activeJobs, 1);
+    assertEquals(card.status, "active");
+    assertEquals(card.balanceCents, 0, "a scheduled balance is not owed yet");
+  });
+});
+
+Deno.test("REQ-562 (cycle 4, m21) one fully paid job is completed but not yet regular; a void invoice doesn't keep a paid job open", async () => {
+  await withKv(async () => {
+    const { customers, quotes, invoices, flow } = fresh();
+    const c = await customers.create("u-1", { name: "Linda Park" });
+    const q = await quotes.create("u-1", {
+      customerId: c.id,
+      summary: "Deck",
+      lineItems: [],
+      status: "accepted",
+    });
+    await quotes.update(q.id, "u-1", { acceptedAt: isoOffset(3) });
+    await invoices.create("u-1", {
+      quoteId: q.id,
+      customerId: c.id,
+      dueDate: "2026-04-28",
+      status: "paid",
+      amount: 2_850_00,
+      paidAt: isoOffset(1),
+    });
+    await invoices.create("u-1", {
+      quoteId: q.id,
+      customerId: c.id,
+      dueDate: "2026-04-28",
+      status: "void",
+      amount: 2_850_00,
+    });
+    const [card] = await flow.run("u-1", NOW_FIXED);
+    assertEquals(card.activeJobs, 0);
+    assertEquals(card.status === "regular", false, `one job is not a regular: ${card.status}`);
   });
 });
 
@@ -487,21 +554,21 @@ Deno.test("REQ-323 the card carries number and documents: a sent quote and a pen
     assertEquals(quoteRow, {
       kind: "quote",
       id: q.id,
-      number: q.number,
+      number: q.number!,
       state: "sent",
       amountCents: 950_000,
       url: `/quotes?open=${q.id}`,
-      updatedAt: quoteRow?.updatedAt,
+      updatedAt: quoteRow!.updatedAt,
     });
     assert(q.number?.startsWith("Q-"), `quote number ${q.number}`);
     assertEquals(invRow, {
       kind: "invoice",
       id: inv.id,
-      number: inv.number,
+      number: inv.number!,
       state: "sent",
       amountCents: 400_000,
       url: `/i/${inv.id}`,
-      updatedAt: invRow?.updatedAt,
+      updatedAt: invRow!.updatedAt,
     });
     assert(inv.number?.startsWith("INV-"), `invoice number ${inv.number}`);
   });
@@ -513,5 +580,65 @@ Deno.test("REQ-323 a customer with nothing on the books has an empty documents l
     await customers.create("u-1", { name: "Blank" });
     const [card] = await flow.run("u-1", NOW_FIXED);
     assertEquals(card.documents, []);
+  });
+});
+
+/**
+ * REQ-565 (demo-loop cycle 4, m33): the customer's card lists the change
+ * orders made on her quote, and the quote at its agreed total.
+ */
+import { ChangeOrderStore } from "@paperwork/domain/data/change-order-store/mod.ts";
+
+Deno.test("REQ-565 m33 the card lists the customer's change orders and the quote at quote + approved change orders", async () => {
+  await withKv(async () => {
+    const { customers, quotes, invoices, views } = fresh();
+    const changeOrders = new ChangeOrderStore();
+    const flow = new BuildCustomerCards(
+      customers,
+      quotes,
+      invoices,
+      views,
+      changeOrders,
+    );
+    const maria = await customers.create("u-1", { name: "Maria Lopez" });
+    const other = await customers.create("u-1", { name: "Dave Roof" });
+    const q = await quotes.create("u-1", {
+      customerId: maria.id,
+      summary: "Bathroom",
+      lineItems: [],
+      estimatedTotal: 705_000,
+      status: "accepted",
+    });
+    const inv = await invoices.create("u-1", {
+      quoteId: q.id,
+      customerId: maria.id,
+      dueDate: "2026-12-01",
+      status: "sent",
+      amount: 705_000,
+    });
+    const co1 = await changeOrders.create("u-1", inv.id, {
+      description: "Glass door",
+      deltaAmountCents: 120_000,
+      quoteId: q.id,
+      customerId: maria.id,
+    });
+    await changeOrders.decide(co1.id, "approved");
+    // a legacy row without customerId still belongs to Maria through its invoice
+    await changeOrders.create("u-1", inv.id, {
+      description: "Towel bar",
+      deltaAmountCents: 15_000,
+    });
+    const cards = await flow.run("u-1", NOW_FIXED);
+    const card = cards.find((c) => c.id === maria.id)!;
+    const cos = card.documents.filter((d) => d.kind === "change_order");
+    assertEquals(cos.map((d) => [d.number, d.state, d.amountCents]).sort(), [
+      ["CO-001", "approved", 120_000],
+      ["CO-002", "pending", 15_000],
+    ]);
+    assertEquals(cos[0].url.startsWith("/co/"), true);
+    const quoteRow = card.documents.find((d) => d.kind === "quote")!;
+    assertEquals(quoteRow.amountCents, 825_000);
+    const daves = cards.find((c) => c.id === other.id)!;
+    assertEquals(daves.documents, []);
   });
 });

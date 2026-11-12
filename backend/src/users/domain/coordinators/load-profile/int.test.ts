@@ -147,3 +147,39 @@ Deno.test("load-profile integration: per-user isolation — one user's data does
 
   await resetKv();
 });
+
+// REQ-622 (demo-loop cycle 4, p4-p6c): invoiceNetDays is the one payment-term setting. A
+// paymentTermsDays the retired Contract defaults card stored moves into it on load when the
+// contractor never set "Days to pay an invoice" — and never overrides one they did set.
+Deno.test("REQ-622 p4-p6c load-profile: a stored paymentTermsDays becomes invoiceNetDays when unset", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const { users, identity, defaults, flow } = freshFlow();
+
+  const user = await users.create({ phoneNumber: "+15125551234" });
+  await identity.upsert(user.id, { businessName: "Riley Roofing Co." });
+  // what PUT /profile/contract-defaults stored from the old card's body
+  await defaults.upsert(user.id, { paymentTermsDays: 45 } as never);
+
+  const snapshot = await flow.load(user.id);
+  assertEquals(snapshot.identity?.invoiceNetDays, 45);
+  assertEquals((await identity.get(user.id))?.invoiceNetDays, 45, "persisted, not just projected");
+
+  await resetKv();
+});
+
+Deno.test("REQ-622 p4-p6c load-profile: a set invoiceNetDays is never overridden by paymentTermsDays", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const { users, identity, defaults, flow } = freshFlow();
+
+  const user = await users.create({ phoneNumber: "+15125551234" });
+  await identity.upsert(user.id, { invoiceNetDays: 30 });
+  await defaults.upsert(user.id, { paymentTermsDays: 45 } as never);
+
+  const snapshot = await flow.load(user.id);
+  assertEquals(snapshot.identity?.invoiceNetDays, 30);
+  assertEquals((await identity.get(user.id))?.invoiceNetDays, 30);
+
+  await resetKv();
+});

@@ -15,6 +15,7 @@
  */
 import { story, type StoryTools } from "#shots";
 import { answerQuestions } from "../_shared/onboarding-answers.ts";
+import { pillUp } from "../_shared/demo-pill.ts";
 
 const JSON_HEADERS = { "content-type": "application/json" };
 const digits = () => String(Math.floor(Math.random() * 9_000_000) + 1_000_000);
@@ -216,10 +217,15 @@ Deno.test("REQ-379: the customer's demo pill has one home in a band the page lea
         timeout: 20_000,
       });
       await userPage.reload();
-      const connected = async () =>
+      // REQ-545 (cycle 4, m2) AMENDMENT — the pill yields to the page: with anything of it under
+      // the home (a phone page's cards past the fold) it folds to its edge tab. At the document's
+      // end the band is free, and the pill sits home in it — where this story checks it
+      const connected = async () => {
+        await pillUp(userPage, { live: true });
         await userPage.locator("[data-cy='demo-status']").filter({
           hasText: /^\s*(Connected|Conectado)\s*$/,
         }).waitFor({ timeout: 20_000 });
+      };
       await connected();
 
       /** the pill's box once it has held still for a moment (a dock glides) */
@@ -273,6 +279,28 @@ Deno.test("REQ-379: the customer's demo pill has one home in a band the page lea
         (await userPage.evaluate(sidebarBlocked)).join(" | "),
         "",
         "every link and button of the sidebar is on top at its own middle",
+      );
+      // REQ-536 (cycle 4, m29) — at desktop width "Connected" is a plain status: no details
+      // toggle that is always "expanded" and whose click changes nothing
+      const desktopStatus = await userPage.evaluate(() => {
+        const pill = document.querySelector("[data-cy='demo-pill']");
+        const status = pill?.querySelector("[data-cy='demo-status']");
+        return {
+          more: pill?.querySelectorAll("[data-cy='demo-more']").length ?? -1,
+          expanded: pill?.querySelectorAll("[aria-expanded]").length ?? -1,
+          inButton: Boolean(status?.closest("button")),
+          text: (status?.textContent ?? "").trim(),
+        };
+      });
+      expect.eq(
+        JSON.stringify(desktopStatus),
+        JSON.stringify({
+          more: 0,
+          expanded: 0,
+          inButton: false,
+          text: "Connected",
+        }),
+        "REQ-536 m29: the desktop pill's status is a plain span, not a dead expanded button",
       );
 
       // 2. M28 — after a reload, the sidebar's Dashboard link works (a real click: Playwright

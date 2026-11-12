@@ -1,9 +1,9 @@
 import { Injectable } from "#danet/core";
+import { resolveJobCustomerId } from "#quote-flow/pipeline-stats.ts";
 import {
-  classifyQuoteForPipeline,
-  isSampleQuote,
-  resolveJobCustomerId,
-} from "#quote-flow/pipeline-stats.ts";
+  isJobComplete,
+  isSignedJob,
+} from "@analytics/domain/business/signed-jobs/mod.ts";
 import { CustomerStore } from "@crm/domain/data/customer-store/mod.ts";
 import { QuoteStore } from "@paperwork/domain/data/quote-store/mod.ts";
 import { InvoiceStore } from "@paperwork/domain/data/invoice-store/mod.ts";
@@ -101,17 +101,9 @@ export class ListActiveJobs {
     // Build one Job per WON quote — the customer accepted/signed (P-14).
     // A merely-sent quote is not a job: the panel's own empty-state promises
     // "jobs appear once a customer signs", and the KPI must agree.
+    // REQ-562: the shared signed-job rule (the sample is never a job, P-15).
     for (const q of quotes) {
-      if (isSampleQuote(q)) continue; // P-15: the sample is never a job
-      const cls = classifyQuoteForPipeline(
-        {
-          status: q.status,
-          sentAt: q.sentAt,
-          acceptedAt: q.acceptedAt,
-          lostAt: q.lostAt,
-        },
-      );
-      if (cls !== "won") continue;
+      if (!isSignedJob(q)) continue;
 
       const customerId = resolveJobCustomerId(q);
       const customer = customerId ? customerById.get(customerId) : undefined;
@@ -133,8 +125,9 @@ export class ListActiveJobs {
       const overdueInvoices = pendingInvoices.filter((i) =>
         i.dueDate < todayIso
       );
-      const allInvoicesPaid = relatedInvoices.length > 0 &&
-        relatedInvoices.every((i) => i.status === "paid");
+      // REQ-562: the shared rule /clients counts by — every non-void
+      // invoice paid; a scheduled installment keeps the job in flight.
+      const allInvoicesPaid = isJobComplete(relatedInvoices);
 
       let status: JobStatusKind;
       let statusLabel: string;

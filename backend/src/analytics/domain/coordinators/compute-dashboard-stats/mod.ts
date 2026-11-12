@@ -3,6 +3,7 @@ import {
   aggregatePipeline,
   isSampleQuote,
 } from "#quote-flow/pipeline-stats.ts";
+import { isUndelivered } from "#quote-flow/delivery.ts";
 import { CustomerStore } from "@crm/domain/data/customer-store/mod.ts";
 import { QuoteStore } from "@paperwork/domain/data/quote-store/mod.ts";
 import { InvoiceStore } from "@paperwork/domain/data/invoice-store/mod.ts";
@@ -12,6 +13,7 @@ import type { Invoice } from "@paperwork/dto/invoice.ts";
 import type { Payment } from "@paperwork/dto/payment.ts";
 import { bucketPendingInvoices } from "@paperwork/domain/business/invoice-aging-buckets/mod.ts";
 import { isOpenReceivable } from "@paperwork/domain/business/open-receivable/mod.ts";
+import { countPaidJobs } from "@analytics/domain/business/signed-jobs/mod.ts";
 import {
   bucketBy12Months,
   lastMonthRevenue,
@@ -63,6 +65,11 @@ export class ComputeDashboardStats {
       draft: realQuotes.filter((q) => q.status === "draft").length,
       sent: realQuotes.filter((q) => q.status === "sent").length,
       accepted: realQuotes.filter((q) => q.status === "accepted").length,
+      // REQ-566 (demo-loop cycle 4, m11): of the drafts, those whose send
+      // reached nobody — the dashboard says "Not delivered", not "ready".
+      undelivered: realQuotes.filter((q) =>
+        q.status === "draft" && isUndelivered(q)
+      ).length,
     };
 
     const todayIso = now.toISOString().slice(0, 10);
@@ -107,6 +114,12 @@ export class ComputeDashboardStats {
       awaitingResponse: quoteCounts.sent,
       revenue: {
         ytdCents: ytdRevenue(revenueRows, now),
+        paidJobsYtd: countPaidJobs(
+          invoices.filter((i) =>
+            i.status === "paid" && i.paidAt &&
+            new Date(i.paidAt).getUTCFullYear() === now.getUTCFullYear()
+          ),
+        ),
         lastMonthCents: lastMonthRevenue(revenueRows, now),
         monthOverMonthPct: monthOverMonthPct(revenueRows, now),
         sparkline12mo: bucketBy12Months(revenueRows, now),

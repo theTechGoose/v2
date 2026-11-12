@@ -161,3 +161,14 @@ export function invoiceJobNamePlaceholderKey(
     ? "invoicesPage.new.jobNamePlaceholder"
     : `invoicesPage.new.jobNamePlaceholder.${trade}`;
 }
+
+/** REQ-581 (demo-loop cycle 4, p3): the hint under the composer while
+ *  Edit's "Change the quote: " seed sits there — a change of the business's
+ *  own trade (never "tile $3,600" for a fence company); the trade-free
+ *  generic key when the name names no trade. */
+export function editHintKey(businessName?: string | null): string {
+  const trade = composerTradeFor(businessName);
+  return trade === "general"
+    ? "asstChat.actionCard.editHint"
+    : `asstChat.actionCard.editHint.${trade}`;
+}

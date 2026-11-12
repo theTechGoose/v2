@@ -31,7 +31,10 @@ export default define.page(function AdminsPageRoute(ctx) {
       <div class="app">
         <DashSidebar active="admins" />
         <main class="main">
-          <DashTopbar greetingName={greetingName} />
+          <DashTopbar
+            pageTitleKey="nav.admins"
+            greetingName={greetingName}
+          />
           <div class="content">
             <AdminsPage />
             <SiteFooter lang={lang} compact />

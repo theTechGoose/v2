@@ -334,7 +334,10 @@ const isConnector = (w: string) =>
  * words keep their case; anything after a standalone dash (the summary's
  * "— <customer>" tail) is left as written.
  */
-export function jobNameInSentence(text: string): string {
+export function jobNameInSentence(
+  text: string,
+  opts?: { keep?: ReadonlySet<string> },
+): string {
   const all = text.trim().split(/\s+/).filter((w) => w.length > 0);
   const dash = all.findIndex((w) => /^[—–-]$/.test(w));
   const head = dash === -1 ? all : all.slice(0, dash);
@@ -344,8 +347,29 @@ export function jobNameInSentence(text: string): string {
   );
   const isTitle = counted.length >= 2 &&
     counted.every((w) => /^\P{L}*\p{Lu}/u.test(w));
-  const lowered = head.map((w, i) => (i === 0 || isTitle) ? lowerLead(w) : w);
+  // REQ-579 (cycle 4, m7): a proper token keeps its capital — an
+  // abbreviation and the name after it ("St. Augustine", "Mt. Bonnell"),
+  // or a word the caller names (the customer's name).
+  const proper = (w: string, i: number) =>
+    PROPER_ABBREV_RE.test(w) ||
+    (i > 0 && PROPER_ABBREV_RE.test(head[i - 1])) ||
+    (opts?.keep?.has(nameKey(w)) ?? false);
+  const lowered = head.map((w, i) =>
+    (i === 0 || isTitle) && !proper(w, i) ? lowerLead(w) : w
+  );
   return [...lowered, ...tail].join(" ");
+}
+
+/** REQ-579: "St.", "Dr.", "Mt." — an abbreviation that opens a proper name. */
+const PROPER_ABBREV_RE = /^(?:St|Dr|Mt|Ave|Mr|Mrs|Ms|Jr|Sr|Sra|Dra)\.$/;
+
+/** REQ-579: a word as a name compares — lower case, no punctuation or
+ *  possessive ("Henderson's" → "henderson"). */
+export function nameKey(word: string): string {
+  return word.toLowerCase().replace(/['’]s$/u, "").replace(
+    /[^\p{L}\p{N}]/gu,
+    "",
+  );
 }
 
 /**

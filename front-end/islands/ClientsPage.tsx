@@ -7,13 +7,15 @@
  * computed by the backend — nothing here derives from a list.
  */
 import Backdrop from "../components/Backdrop.tsx";
+import AddressAutocomplete from "../components/AddressAutocomplete.tsx";
 import { useEffect, useState } from "preact/hooks";
 import { formatPhoneInput } from "../../shared/quote-flow/format-helpers.ts";
 import {
   customerDraftDirty,
   type CustomerFormErrors,
   customerFormErrors,
-} from "../../shared/quote-flow/customer-contact.ts"; // REQ-278, REQ-300, REQ-352
+  newCustomerPayload,
+} from "../../shared/quote-flow/customer-contact.ts"; // REQ-278, REQ-300, REQ-352, REQ-599
 import { ApiError } from "../lib/api.ts";
 import {
   clientsClient,
@@ -27,6 +29,7 @@ import {
   TopClients,
 } from "../components/ClientsSections.tsx";
 import ClientsBoard, { filterFromSearch } from "./ClientsBoard.tsx";
+import { openIdFromSearch } from "../lib/customer-card-edit.ts";
 import { fieldClient, type SubscriptionView } from "../clients/field.ts";
 import { subscriptionsByCustomer } from "../lib/field.ts";
 import {
@@ -108,6 +111,8 @@ export default function ClientsPage({ lang: _lang }: { lang?: "en" | "es" }) {
   const [addBusiness, setAddBusiness] = useState("");
   const [addPhone, setAddPhone] = useState("");
   const [addEmail, setAddEmail] = useState("");
+  // REQ-599 (demo-loop cycle 4, m30): the customer's address, optional
+  const [addAddress, setAddAddress] = useState("");
   // REQ-135 — what the API is asked for: the page, the search, the chip (seeded from ?segment=)
   const [page, setPage] = useState(1);
   const [query, setQuery] = useState("");
@@ -187,16 +192,18 @@ export default function ClientsPage({ lang: _lang }: { lang?: "en" | "es" }) {
     setAddErr(null);
     const name = addName.trim();
     try {
-      await clientsClient.create({
+      await clientsClient.create(newCustomerPayload({
         name,
-        ...(addBusiness.trim() ? { businessName: addBusiness.trim() } : {}),
-        ...(addPhone.trim() ? { phoneNumber: addPhone.trim() } : {}),
-        ...(addEmail.trim() ? { email: addEmail.trim() } : {}),
-      });
+        businessName: addBusiness,
+        phoneNumber: addPhone,
+        email: addEmail,
+        address: addAddress,
+      }));
       setAddName("");
       setAddBusiness("");
       setAddPhone("");
       setAddEmail("");
+      setAddAddress("");
       setFieldErrs({});
       setAddOpen(false);
       setFlash(tFor(lang, "clientsPage.added", { name }));
@@ -249,6 +256,23 @@ export default function ClientsPage({ lang: _lang }: { lang?: "en" | "es" }) {
     };
   }, [page, q, filter]);
 
+  // REQ-600 (cycle 4, M5): a linked card (?open=<id>) that is not on the first
+  // page is searched for by name, once, so the board can open it
+  const [linkChecked, setLinkChecked] = useState(false);
+  useEffect(() => {
+    if (linkChecked || !s.data || typeof globalThis.location === "undefined") {
+      return;
+    }
+    setLinkChecked(true);
+    const id = openIdFromSearch(globalThis.location.search);
+    if (!id || s.data.items.some((c) => c.id === id)) return;
+    clientsClient.get(id).then((c) => {
+      if (c?.name) setQuery(c.name);
+    }).catch(() => {
+      // a stale or foreign link simply opens nothing
+    });
+  }, [s.data, linkChecked]);
+
   if (s.loading || !s.data) {
     return (
       <>
@@ -297,8 +321,13 @@ export default function ClientsPage({ lang: _lang }: { lang?: "en" | "es" }) {
         onPage={setPage}
         lang={lang}
         subsByCustomer={subsByCustomer}
+        onCustomerSaved={refreshClients}
       >
-        <TopClients rows={top.results} lang={lang} />
+        <TopClients
+          rows={top.results}
+          unassigned={top.unassigned}
+          lang={lang}
+        />
         {
           /* NW-36 (REQ-013): the "Who's on your books" segments chart is gone —
             no part of the app ever collects a customer segment. */
@@ -317,6 +346,7 @@ export default function ClientsPage({ lang: _lang }: { lang?: "en" | "es" }) {
               businessName: addBusiness,
               phoneNumber: addPhone,
               email: addEmail,
+              address: addAddress,
             }) && setAddOpen(false)}
           style="position:fixed;inset:0;background:rgba(20,40,45,0.45);display:flex;align-items:center;justify-content:center;z-index:1000;padding:20px"
         >
@@ -414,6 +444,21 @@ export default function ClientsPage({ lang: _lang }: { lang?: "en" | "es" }) {
               id="add-client-email-err"
               msg={fieldErrs.email && tFor(lang, fieldErrs.email)}
             />
+            {/* REQ-599 (demo-loop cycle 4, m30): optional, with the street autocomplete */}
+            <div style="display:flex;flex-direction:column;gap:5px;font-size:13px;font-weight:700;color:var(--fg-muted,#6b7560)">
+              <span>{tFor(lang, "clientsPage.address")}</span>
+              <AddressAutocomplete
+                id="add-client-address"
+                data-cy="add-client-address"
+                label={tFor(lang, "clientsPage.address")}
+                useTypedLabel={tFor(lang, "welcome.address.useTyped")}
+                lang={lang}
+                value={addAddress}
+                onInput={setAddAddress}
+                inputStyle={inputStyle(false) +
+                  ";width:100%;box-sizing:border-box"}
+              />
+            </div>
             {addErr && (
               <p
                 role="alert"

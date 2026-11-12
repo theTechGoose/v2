@@ -32,6 +32,8 @@ const EXPECTED: Record<ThreadStatus, ThreadChipKind | null> = {
   pickingDetails: "progress",
   readyToSend: "progress",
   undelivered: "needs",
+  // REQ-572 (cycle 4, p4-p7c): the owner shared the link — it went out
+  sharedByLink: "sent",
   sent: "sent",
   declined: "needs",
   accepted: "paid",

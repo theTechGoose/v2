@@ -75,3 +75,23 @@ describe("REQ-353 M40/m23: a 390 px phone never scrolls sideways and the headers
     );
   });
 });
+
+describe("REQ-612 p4-p8c (demo-loop cycle 4): the worker header's actions wrap together on a phone", () => {
+  const src = read("islands/WorkerScreen.tsx");
+
+  test("Back to office and Sign out sit in one .top__actions group inside .top", () => {
+    const at = src.indexOf('<div class="top__actions">');
+    expect(at).toBeGreaterThan(src.indexOf('<div class="top">'));
+    const group = src.slice(at, src.indexOf("</div>", at));
+    expect(group).toContain('data-cy="w-office"');
+    expect(group).toContain('data-cy="w-logout"');
+  });
+
+  test("on a phone the group takes a whole row, end-aligned, and its labels never wrap", () => {
+    const phone = rule(phoneBlocks(src, 480), ".top__actions");
+    expect(phone).toMatch(/flex-basis\s*:\s*100%|flex\s*:\s*[01] [01] 100%/);
+    expect(phone).toMatch(/justify-content\s*:\s*flex-end/);
+    expect(rule(src, ".top__actions")).toMatch(/display\s*:\s*flex/);
+    expect(rule(src, ".top__actions .btn")).toMatch(/white-space\s*:\s*nowrap/);
+  });
+});

@@ -21,6 +21,11 @@ import { getKv, resetKv } from "@core/data/kv/mod.ts";
 async function seed(
   commsLanguage: "en" | "es",
   smsResult: { ok: boolean; reason?: string } = { ok: true },
+  opts: {
+    customerPhone?: string;
+    contractorLanguage?: "en" | "es";
+    realSms?: boolean;
+  } = {},
 ) {
   Deno.env.set("KV_PATH", ":memory:");
   await resetKv();
@@ -31,6 +36,7 @@ async function seed(
     phoneNumber: "+15125550000",
     name: "Test Contractor",
     email: "me@test.dev",
+    ...(opts.contractorLanguage ? { language: opts.contractorLanguage } : {}),
     createdAt: now,
     updatedAt: now,
   });
@@ -41,7 +47,7 @@ async function seed(
   const customer = await new CustomerStore().create("u-1", {
     name: "Juan",
     email: "juan@test.dev",
-    phoneNumber: "+15125550973",
+    phoneNumber: opts.customerPhone ?? "+15125550973",
   } as never);
   const inv = await new InvoiceStore().create("u-1", {
     customerId: customer.id,
@@ -62,10 +68,12 @@ async function seed(
     sent.push(input);
     return Promise.resolve({ ok: true, reason: "test_capture" });
   };
-  sms.send = (input: { to: string; body: string }) => {
-    texts.push(input.body);
-    return Promise.resolve(smsResult as never);
-  };
+  if (!opts.realSms) {
+    sms.send = (input: { to: string; body: string }) => {
+      texts.push(input.body);
+      return Promise.resolve(smsResult as never);
+    };
+  }
   const flow = new SendChangeOrderAlert(
     new ChangeOrderStore(),
     new CustomerStore(),
@@ -136,3 +144,34 @@ Deno.test("REQ-456 M25: emailed and texted → both addresses are reported", asy
     await resetKv();
   }
 });
+
+/**
+ * REQ-588 (demo-loop cycle 4, M29): a change order texted to a reserved 555
+ * number reported the raw lang key — "text: sms.fictionalNumber." — because
+ * the alert stored SmsService's untranslated reason. The customer text now
+ * goes through the guarded customer-SMS dispatch, which words the reason in
+ * the contractor's UI language.
+ */
+for (
+  const [lang, phrase] of [
+    ["en", "reserved test number"],
+    ["es", "número de prueba reservado"],
+  ] as const
+) {
+  Deno.test(`REQ-588 M29: a CO texted to a 555 number reports a ${lang} sentence, never the sms.fictionalNumber key`, async () => {
+    const { flow, coId } = await seed("en", { ok: true }, {
+      customerPhone: "(512) 555-0123",
+      contractorLanguage: lang,
+      realSms: true,
+    });
+    try {
+      const res = await flow.run(coId);
+      const reason = res.customer?.smsFailureReason ?? "";
+      assert(!res.customer?.textedTo, "a 555 number is never texted");
+      assert(!/^sms\./.test(reason), `raw lang key leaked: ${reason}`);
+      assertStringIncludes(reason, phrase);
+    } finally {
+      await resetKv();
+    }
+  });
+}

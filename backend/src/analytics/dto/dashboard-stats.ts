@@ -27,6 +27,9 @@ export class QuoteCountsDto {
   sent!: number;
   @IsNumber()
   accepted!: number;
+  /** REQ-566: drafts whose last send reached nobody (part of `draft`). */
+  @IsNumber()
+  undelivered!: number;
 }
 
 /** REQ-397: money still owed on open receivables, INTEGER CENTS per bucket. */
@@ -61,6 +64,11 @@ export class RevenueStatsDto {
   /** Sum of paid-invoice amounts year-to-date. */
   @IsNumber()
   ytdCents!: number;
+  /** REQ-562 (demo-loop cycle 4, m21): distinct jobs paid on this year — one
+   *  per quote, a standalone invoice its own — the "Avg. paid job" divisor
+   *  (two installments of one job are one job). */
+  @IsNumber()
+  paidJobsYtd!: number;
   /** Sum of paid-invoice amounts in the previous calendar month. */
   @IsNumber()
   lastMonthCents!: number;

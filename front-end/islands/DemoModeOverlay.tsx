@@ -51,10 +51,19 @@
  * element only, and hidden while this page has no such element (another page load, the element
  * gone or not laid out) — never at the fraction it had, which is over something else now. His
  * pointer off this screen (`o: 1`) is a small marker on the edge, no name tag.
+ * REQ-535 (demo-loop cycle 4, m13) — the customer's pill survives a page load (every link is a
+ * full load): the tab keeps its demo and whether its page was connected (pill-carry.ts); the next
+ * page draws the pill from it at once, and after a load from a connected page keeps saying
+ * Connected for a ~5 s grace while its own link comes up — "Connecting…" only if it does not.
  */
-import { useEffect, useMemo, useRef, useState } from "preact/hooks";
-import { langSignal, tFor, type Vars } from "../lib/i18n.ts";
-import { demoChromeLang, storedLang } from "../lib/lang.ts";
+import {
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "preact/hooks";
+import { demoChromeT as t } from "../lib/demo-chrome-t.ts";
 import { fenceClicks } from "../lib/backdrop-dismiss.ts";
 import {
   DEMO_OPENING_EVENT,
@@ -112,6 +121,20 @@ import {
 } from "../lib/demo-mode/transport.ts";
 import { demoTabKey } from "../lib/demo-mode/tab-key.ts";
 import {
+  carriedDemo,
+  forgetDemo,
+  keepDemo,
+  PILL_CARRY_GRACE_MS,
+  showsConnected,
+} from "../lib/demo-mode/pill-carry.ts";
+import {
+  browserStore,
+  loadClaim,
+  newestInput,
+  noteInput,
+  takeSelfReload,
+} from "../lib/demo-mode/tab-claim.ts";
+import {
   createRecorder,
   type Recorder,
 } from "../lib/demo-mode/mirror-record.ts";
@@ -137,16 +160,20 @@ import {
   CONTROL_SELECTOR,
   countsAsPage,
   coversView,
-  dockPill,
+  isPublicDocPath,
   PAGE_MEDIA_SELECTOR,
   PILL_BAND_GAP,
   PILL_COMPACT_MAX_W,
   PILL_FONT,
   PILL_MARGIN,
   PILL_MOVE_MS,
+  PILL_PEEK_MS,
+  PILL_TAB,
   pillHome,
   pillOverflows,
   pillStore,
+  placePill,
+  pillWraps,
   recallPillOpen,
   rememberPillOpen,
   samplePoints,
@@ -155,20 +182,8 @@ import {
 import { pillCopy } from "../../shared/demo-mode/pill-copy.ts";
 import type { PillFace, Rect } from "../../shared/demo-mode/protocol.ts";
 
-/**
- * REQ-494 (demo-loop cycle 3, M43) — the demo chrome speaks the viewer's
- * language. On /worker the page runs in a signed-in worker's language for the
- * session (REQ-285/416); the pill keeps the viewer's stored choice there
- * (demoChromeLang). Reads langSignal, so a toggle still re-renders it.
- */
-function t(key: string, vars?: Vars): string {
-  const lang = demoChromeLang({
-    path: globalThis.location?.pathname ?? "",
-    live: langSignal.value,
-    stored: storedLang(),
-  });
-  return tFor(lang, key, vars);
-}
+// REQ-494 / REQ-544 — `t` is the demo chrome's (lib/demo-chrome-t.ts): on /worker it keeps
+// the viewer's stored language, not the signed-in worker's.
 
 interface Demo {
   id: string;
@@ -188,6 +203,9 @@ const sameDemo = (a: Demo | null, b: Demo) =>
 const Z = 2147483000;
 /** REQ-379 (M28) — the pill lets a click through to the page; its buttons take theirs */
 const HIT = "pointer-events:auto";
+/** REQ-536 — the customer pill's status chip ("Connected"), in the toggle or on its own */
+const STATUS_CHIP =
+  "padding:2px 8px;border-radius:999px;background:rgba(255,255,255,.18);font-size:11.5px;font-weight:700";
 
 const here = () => globalThis.location.pathname + globalThis.location.search;
 /** REQ-379 — how often the pill looks for a dialog over its home (it never hunts for a spot) */
@@ -313,6 +331,8 @@ export default function DemoModeOverlay() {
   const [opening, setOpening] = useState<{ targetName: string } | null>(null);
   const [status, setStatus] = useState<LinkStatus>("connecting");
   const [peerOnline, setPeerOnline] = useState(false);
+  /** REQ-535 — this page loaded from a connected one: Connected for a grace while the link comes up */
+  const [carrying, setCarrying] = useState(false);
   /** REQ-214 — the latest thing each presenter did, by pid */
   const [cmds, setCmds] = useState<Record<string, PointerCmd>>({});
   const seq = useRef(0);
@@ -327,9 +347,39 @@ export default function DemoModeOverlay() {
   const linkRef = useRef<DemoLink | null>(null);
   /** REQ-228 — the pill, where it sits, and whether it is the phone's compact one */
   const pillRef = useRef<HTMLDivElement | null>(null);
-  /** REQ-379 — how far up from its home a dialog docked the pill (0: home); a move glides */
-  const [dock, setDock] = useState(0);
-  const atRef = useRef<{ left: number; top: number } | null>(null);
+  /** REQ-379 — how far from its home a dialog docked the pill (0: home); a move glides.
+   *  REQ-545 (cycle 4, m2) — across too: the top-right is the third place */
+  const [dock, setDock] = useState({ x: 0, y: 0 });
+  /** REQ-545 — where the visible pill (or its tab) is, as told to the stage */
+  const atRef = useRef<{ left: number; top: number; tab: boolean } | null>(
+    null,
+  );
+  /** REQ-545 (demo-loop cycle 4, m2) — the pill yielded to the page: only its edge tab shows (a
+   *  public /q /i /co page: from the first render) */
+  const [tucked, setTucked] = useState(() =>
+    typeof globalThis.location !== "undefined" &&
+    isPublicDocPath(globalThis.location.pathname)
+  );
+  /** REQ-545 — the tab hovered or tapped: the whole pill shows, at home, until it is left */
+  const [peek, setPeek] = useState(false);
+  const peekRef = useRef(false);
+  peekRef.current = peek;
+  const tuckedRef = useRef(tucked);
+  tuckedRef.current = tucked;
+  /** REQ-545 — the pill's own size when last shown whole (folded to its tab, its home is still
+   *  where the whole pill would sit) */
+  const fullRef = useRef<{ w: number; h: number } | null>(null);
+  const peekTimer = useRef<ReturnType<typeof setTimeout> | undefined>(
+    undefined,
+  );
+  /** REQ-545 — the band is painted only while the pill sits home on it (never over the page) */
+  const [bandOn, setBandOn] = useState(false);
+  /** REQ-545 — the band as last placed, for the stage (px; 0: not painted) and its colour */
+  const bandRef = useRef({ h: 0, bg: "#fff", tucked: false });
+  const placeRef = useRef<() => void>(() => {});
+  /** REQ-545 — only the customer's live pill yields to the page; the ended notice (a message to
+   *  read and dismiss), Opening… and the presenter's way back stay home (a dialog still docks) */
+  const yieldsRef = useRef(false);
   /** REQ-379 — the phone's compact form from the first render: a full-size first measure is what
    *  grew to a 400 px pill on a 390 px phone (M6) */
   const [compact, setCompact] = useState(narrow);
@@ -344,6 +394,8 @@ export default function DemoModeOverlay() {
   const faceRef = useRef<PillFace>({});
   const sentFaceRef = useRef<string>("");
   const [open, setOpen] = useState(false);
+  /** REQ-548 — End is asking (the compact pill gives the question its own row) */
+  const [asking, setAsking] = useState(false);
   const impersonatingRef = useRef<boolean | null>(null);
   const placingRef = useRef(false);
   /** REQ-232 — this staff page is on its way to the stage (the pill says Opening…) */
@@ -473,8 +525,9 @@ export default function DemoModeOverlay() {
       if (globalThis.location.pathname !== STAGE_PATH) {
         moving = true;
         // REQ-393 — the stage loads under a still mouse and gets no pointer event: it starts
-        // where this page last saw the mouse (the click on Demo, Back to the demo)
-        handCursor(sessionStore(), cursorRef.current);
+        // where this page last saw the mouse (the click on Demo, Back to the demo); REQ-539 (m24)
+        // — tagged /admin's: the stage uses it for its off hint only, never sends it
+        handCursor(sessionStore(), cursorRef.current, Date.now(), "admin");
         globalThis.location.assign(STAGE_PATH);
       }
     } finally {
@@ -502,6 +555,85 @@ export default function DemoModeOverlay() {
       document.removeEventListener("pointermove", seen, opts);
       document.removeEventListener("pointerdown", seen, opts);
       document.documentElement.removeEventListener("pointerleave", gone);
+    };
+  }, []);
+
+  // REQ-535 (cycle 4, m13) — the demo this tab was in a moment ago, drawn at once (before the first
+  // /active answers); a load from a connected page keeps the Connected face for the grace
+  useLayoutEffect(() => {
+    if (inert) return;
+    const carried = carriedDemo(sessionStore(), Date.now());
+    if (!carried || carried.demo.role !== "viewer") return;
+    setDemo(carried.demo);
+    if (!carried.connected) return;
+    setCarrying(true);
+    const grace = setTimeout(() => setCarrying(false), PILL_CARRY_GRACE_MS);
+    return () => clearTimeout(grace);
+  }, []);
+  // REQ-535 — the link is up on its own: the grace has done its job (a drop after this is said)
+  useEffect(() => {
+    if (status === "direct" || status === "relay") setCarrying(false);
+  }, [status]);
+  // REQ-535 — the tab keeps its demo and whether it is connected; a demo gone is forgotten. As the
+  // page goes it says so last (a socket closing under the unload is not "disconnected")
+  const hadDemoRef = useRef(false);
+  const goneRef = useRef(false);
+  useEffect(() => {
+    if (inert || goneRef.current) return;
+    if (demo?.role === "viewer") {
+      hadDemoRef.current = true;
+      keepDemo(sessionStore(), demo, peerOnline, Date.now());
+    } else if (!demo && hadDemoRef.current) {
+      hadDemoRef.current = false;
+      forgetDemo(sessionStore());
+    }
+  }, [demo, peerOnline]);
+  useEffect(() => {
+    if (inert) return;
+    const keepOnHide = () => {
+      const d = demoRef.current;
+      if (d?.role === "viewer") {
+        keepDemo(sessionStore(), d, peerOnlineRef.current, Date.now());
+      }
+      goneRef.current = true;
+    };
+    // back from the back/forward cache: this page is live again
+    const liveAgain = () => {
+      goneRef.current = false;
+    };
+    globalThis.addEventListener("pagehide", keepOnHide);
+    globalThis.addEventListener("pageshow", liveAgain);
+    return () => {
+      globalThis.removeEventListener("pagehide", keepOnHide);
+      globalThis.removeEventListener("pageshow", liveAgain);
+    };
+  }, []);
+  // REQ-549 (cycle 4, S4) — did the app reload this page on its own (a public page re-reading the
+  // server)? Taken once per page; such a page never claims the stage without the customer's input
+  const selfReloadRef = useRef<boolean | null>(null);
+  const cameBySelfReload = () => {
+    if (selfReloadRef.current === null) {
+      selfReloadRef.current = !inert &&
+        takeSelfReload(browserStore("session"));
+    }
+    return selfReloadRef.current;
+  };
+  // REQ-549 — every press or key in this tab, demo or not, says "the customer is in this tab" to
+  // the browser's other tabs: at a demo's start only the tab used last claims
+  useEffect(() => {
+    if (inert) return;
+    cameBySelfReload();
+    const tab = demoTabKey(sessionStore());
+    const used = () => {
+      selfReloadRef.current = false;
+      noteInput(browserStore("local"), tab);
+    };
+    const opts = { capture: true, passive: true };
+    document.addEventListener("pointerdown", used, opts);
+    document.addEventListener("keydown", used, opts);
+    return () => {
+      document.removeEventListener("pointerdown", used, opts);
+      document.removeEventListener("keydown", used, opts);
     };
   }, []);
 
@@ -818,10 +950,23 @@ export default function DemoModeOverlay() {
     const onVisible = () => {
       if (document.visibilityState === "visible") claim();
     };
-    const onShow = () => {
-      if (inFront()) claim();
+    // REQ-549 (cycle 4, S4) — at load and at a demo's start "in front" is not enough (headless
+    // browsers say it of every page): not after the app's own reload, and not when another tab
+    // was used since this page loaded
+    const tabKey = demoTabKey(sessionStore());
+    if (
+      loadClaim({
+        inFront: inFront(),
+        selfReload: cameBySelfReload(),
+        tab: tabKey,
+        loadedAt: performance.timeOrigin || Date.now(),
+        newest: newestInput(browserStore("local")),
+      })
+    ) claim();
+    // a page restored from the back-forward cache: the customer came back to it in this tab
+    const onShow = (e: PageTransitionEvent) => {
+      if (e.persisted && inFront()) claim();
     };
-    onShow();
     globalThis.addEventListener("pageshow", onShow);
     globalThis.addEventListener("focus", claim);
     document.addEventListener("visibilitychange", onVisible);
@@ -951,8 +1096,8 @@ export default function DemoModeOverlay() {
         ? {
           left: at.left,
           top: at.top,
-          width: el.offsetWidth,
-          height: el.offsetHeight,
+          width: at.tab ? PILL_TAB.w : el.offsetWidth,
+          height: at.tab ? PILL_TAB.h : el.offsetHeight,
         }
         : null;
       // REQ-372 (cycle 2, m1) — what the pill says rides along: compact, open, status, text,
@@ -974,6 +1119,12 @@ export default function DemoModeOverlay() {
           clipped,
           label: f.label,
           guide: f.guide,
+          // REQ-545 — tucked to its tab, and the band the customer sees (the mirror skips both)
+          tucked: bandRef.current.tucked,
+          band: bandRef.current.h,
+          bandBg: bandRef.current.bg,
+          title: f.title,
+          end: f.end,
         }
         : {};
       const faceKey = JSON.stringify(face);
@@ -1003,22 +1154,54 @@ export default function DemoModeOverlay() {
         w: globalThis.innerWidth,
         h: vv ? vv.offsetTop + vv.height : globalThis.innerHeight,
       };
-      // its own size: nothing measured is ever written back into its style (M6's min-width loop)
+      // its own size: nothing measured is ever written back into its style (M6's min-width loop).
+      // REQ-545 — folded to its tab, the size it has when whole
+      const folded = yieldsRef.current && tuckedRef.current &&
+        !peekRef.current;
+      if (!folded) fullRef.current = { w: el.offsetWidth, h: el.offsetHeight };
       const home = pillHome({
         view,
-        size: { w: el.offsetWidth, h: el.offsetHeight },
+        size: fullRef.current ?? { w: el.offsetWidth, h: PILL_TAB.h },
       });
       room(home.room);
       // REQ-440 (cycle 3, m2) — the band is painted in the page's own background, so a document
       // that scrolls goes under the band's edge, never under the pill
-      setBandBg(bandBackground(bandColors(view)));
-      // REQ-379 — a dialog is up: out of its content (REQ-300 froze the pill over it instead)
-      const box = typeof document.elementsFromPoint === "function" &&
-          dialogBackdropUp()
-        ? dockPill({ home: home.box, view, top: bannerH(), blocked: pageUnder })
-        : home.box;
-      setDock(Math.round(box.top - home.box.top));
-      atRef.current = { left: box.left, top: box.top };
+      const bg = bandBackground(bandColors(view));
+      setBandBg(bg);
+      // REQ-545 (demo-loop cycle 4, m2) — the pill YIELDS: anything of the page under its home
+      // (mid-scroll: what scrolled into the bottom strip) tucks it into its edge tab and the band
+      // goes unpainted; a dialog docks it home, top-left, top-right, else tucks it (REQ-379 left
+      // it home over the dialog); a public /q /i /co page keeps it a tab
+      const can = typeof document.elementsFromPoint === "function";
+      const p = placePill({
+        home: home.box,
+        view,
+        top: bannerH(),
+        dialog: can && dialogBackdropUp(),
+        minimal: yieldsRef.current &&
+          isPublicDocPath(globalThis.location.pathname),
+        blocked: can ? pageUnder : () => 0,
+        yields: yieldsRef.current,
+      });
+      setTucked(p.tucked);
+      if (!p.tucked) setPeek(false);
+      setBandOn(p.band);
+      const shownTab = p.tucked && !peekRef.current;
+      bandRef.current = {
+        h: p.band ? home.room : 0,
+        bg,
+        tucked: shownTab,
+      };
+      // tucked: a hover or tap shows the whole pill out of its tab — flush with the left edge,
+      // so the pointer that opened it is on it (leaving it folds it again)
+      const box = p.tucked ? { ...home.box, left: 0 } : p.box;
+      setDock({
+        x: Math.round(box.left - home.box.left),
+        y: Math.round(box.top - home.box.top),
+      });
+      atRef.current = shownTab
+        ? { left: p.box.left, top: p.box.top, tab: true }
+        : { left: box.left, top: box.top, tab: false };
       sendPill();
     };
     const later = () => {
@@ -1031,9 +1214,12 @@ export default function DemoModeOverlay() {
       setCompact(narrow());
       later();
     };
+    placeRef.current = place;
     place();
     const timer = setInterval(place, PILL_CHECK_MS);
     addEventListener("resize", onResize);
+    // REQ-545 — what scrolls into the bottom strip tucks the pill (any scroller: capture)
+    addEventListener("scroll", later, { capture: true, passive: true });
     const ro = typeof ResizeObserver === "undefined"
       ? null
       : new ResizeObserver(later);
@@ -1043,6 +1229,9 @@ export default function DemoModeOverlay() {
       clearTimeout(settle);
       ro?.disconnect();
       removeEventListener("resize", onResize);
+      removeEventListener("scroll", later, { capture: true });
+      clearTimeout(peekTimer.current);
+      placeRef.current = () => {};
       sendPillRef.current = () => {};
       if (roomRef.current) {
         roomRef.current = 0;
@@ -1062,26 +1251,68 @@ export default function DemoModeOverlay() {
   useEffect(() => {
     sendPillRef.current();
   });
+  // REQ-545 — the tab opened or closed: the stage hears where the pill is now
+  useEffect(() => {
+    placeRef.current();
+  }, [peek, open, fresh]);
 
   if (inert) return null;
+
+  /** REQ-545 — the tucked pill shows whole: on hover until left, on a tap for PILL_PEEK_MS */
+  const folded = tucked && !peek;
+  const unpeekIn = (ms: number) => {
+    clearTimeout(peekTimer.current);
+    peekTimer.current = setTimeout(() => {
+      // End's question is up: the pill stays until it is answered
+      if (pillRef.current?.querySelector('[data-cy="demo-end-ask"]')) {
+        unpeekIn(ms);
+        return;
+      }
+      setPeek(false);
+    }, ms);
+  };
+  /** the tab hovered or tapped: whole, until the pointer has been in and left (or PILL_PEEK_MS) */
+  const openPeek = () => {
+    setPeek(true);
+    unpeekIn(PILL_PEEK_MS);
+  };
+  /** the pointer is on the whole pill: it stays */
+  const holdPeek = () => {
+    if (peekRef.current) clearTimeout(peekTimer.current);
+  };
+  const leavePeek = () => {
+    if (peekRef.current) unpeekIn(300);
+  };
 
   // REQ-379 — ONE home: bottom-left in the band reserved under the page, its bottom on the visible
   // bottom (above an iOS keyboard, like the shells' --vvh); a dialog over the home docks it (a
   // glide). No measure is written back: it is as wide as its content, capped by the window. Its
   // empty area lets a click through to the page (M28): only its buttons (HIT) take one
   const at =
-    `left:${PILL_MARGIN}px;bottom:calc(100% - var(--vvt, 0px) - var(--vvh, 100%) + ${PILL_BAND_GAP}px);transform:translateY(${dock}px);transition:transform ${PILL_MOVE_MS}ms ease`;
+    `left:${PILL_MARGIN}px;bottom:calc(100% - var(--vvt, 0px) - var(--vvh, 100%) + ${PILL_BAND_GAP}px);transform:translate(${dock.x}px, ${dock.y}px);transition:transform ${PILL_MOVE_MS}ms ease`;
   const pillStyle = `position:fixed;${at};z-index:${
     Z + 3
   };display:flex;gap:10px;align-items:center;justify-content:space-between;flex-wrap:nowrap;white-space:nowrap;max-width:calc(100vw - ${
     2 * PILL_MARGIN
-  }px);box-sizing:border-box;padding:7px 12px;border-radius:14px;background:#1f3d1b;color:#fff;font-family:${PILL_FONT};font-size:13px;box-shadow:0 4px 18px rgba(0,0,0,.35);pointer-events:none`;
+  }px);box-sizing:border-box;padding:7px 12px;border-radius:14px;background:#1f3d1b;color:#fff;font-family:${PILL_FONT};font-size:13px;box-shadow:0 4px 18px rgba(0,0,0,.35);${
+    // REQ-545 — shown whole from its tab, it takes the pointer, so leaving it folds it again
+    tucked ? "pointer-events:auto" : "pointer-events:none"}`;
+  // REQ-545 (demo-loop cycle 4, m2) — the pill folded to a small tab on the window's left edge,
+  // its foot on the home's foot: only the tab (a button) takes a click
+  const tabStyle =
+    `position:fixed;left:0;bottom:calc(100% - var(--vvt, 0px) - var(--vvh, 100%) + ${PILL_BAND_GAP}px);z-index:${
+      Z + 3
+    };display:flex;width:${PILL_TAB.w}px;height:${PILL_TAB.h}px;box-sizing:border-box;padding:0;border-radius:0 10px 10px 0;background:#1f3d1b;box-shadow:0 2px 10px rgba(0,0,0,.3);pointer-events:none`;
   // REQ-440 (demo-loop cycle 3, m2) — the band reserved for the pill (REQ-379), made real on a page
   // whose document scrolls: window-wide, the band's height (0 with no room), opaque in the page's
   // own background. z-index 1: over the page's flow, under its own fixed layers (a dialog's
   // backdrop, a toast); it never takes a click
-  const bandStyle =
-    `position:fixed;left:0;right:0;bottom:0;height:var(--demo-pill-h, 0px);z-index:1;background:${bandBg};pointer-events:none`;
+  const bandStyle = `position:fixed;left:0;right:0;bottom:0;height:${
+    // REQ-545 (cycle 4, m2) — painted only under the pill at home: with the pill tucked, what
+    // scrolled into the strip shows (the opaque band hid tiles, fields and buttons mid-scroll)
+    bandOn
+      ? "var(--demo-pill-h, 0px)"
+      : "0px"};z-index:1;background:${bandBg};pointer-events:none`;
   const band = <div data-cy="demo-band" aria-hidden="true" style={bandStyle} />;
   /** one line: a long name is cut, not wrapped (the live pill's rule, REQ-228) */
   const cut = "overflow:hidden;text-overflow:ellipsis;min-width:0";
@@ -1091,6 +1322,7 @@ export default function DemoModeOverlay() {
 
   // REQ-235 — the demo is over: who ended it, in the pill's place, until dismissed (Demo clicked
   // here again takes over)
+  yieldsRef.current = false;
   if (notice && !opening) {
     const said = endedText(notice);
     faceRef.current = {
@@ -1099,6 +1331,7 @@ export default function DemoModeOverlay() {
       status: "ended",
       text: t(said.key, said.vars),
       label: t("demoMode.ended"),
+      title: t("demoMode.title"),
     };
     return (
       <div data-demo-overlay ref={fenceClicks}>
@@ -1199,6 +1432,9 @@ export default function DemoModeOverlay() {
     );
   }
 
+  // the phone pill's details opened (a tap, to read them): shown until closed — never tucked away
+  // under the hand that opened them; nor while it says a new demo started (REQ-298)
+  yieldsRef.current = !(compact && open) && !fresh;
   // REQ-214 — the presenters, by name; a demo written before the list has the one
   const presenters: Presenter[] = demo.presenters.length > 0
     ? demo.presenters
@@ -1212,10 +1448,12 @@ export default function DemoModeOverlay() {
     ? startedText(demo.presenters, demo.presenterName)
     : null;
   const line = started ? t(started.key, started.vars) : guidingText;
-  // REQ-232 (demo-lifecycle-p1) — plain words: is the staff here or not; never how the bytes travel
+  // REQ-232 (demo-lifecycle-p1) — plain words: is the staff here or not; never how the bytes travel.
+  // REQ-535 — a page loaded from a connected one says Connected through the grace
+  const live = showsConnected(status, carrying);
   const statusLabel = status === "ended"
     ? t("demoMode.ended")
-    : status === "direct" || status === "relay"
+    : live
     ? t("demoMode.connected")
     : t("demoMode.connecting");
   // REQ-373 (demo m2, p13-h) — the guide's first name on the compact pill; the name said once
@@ -1227,14 +1465,14 @@ export default function DemoModeOverlay() {
   faceRef.current = {
     compact,
     open: compact && open,
-    status: status === "ended"
-      ? "ended"
-      : status === "direct" || status === "relay"
-      ? "live"
-      : "connecting",
+    status: status === "ended" ? "ended" : live ? "live" : "connecting",
     text: line,
     label: statusLabel,
     guide: showGuide ? copy.shortName : undefined,
+    // REQ-540 (cycle 4, m9) — the title and End in this pill's own words, so the stage's ghost
+    // draws the whole pill (it hides the title on the compact pill, as this pill does)
+    title: t("demoMode.title"),
+    end: t("demoMode.end"),
   };
 
   async function end() {
@@ -1271,73 +1509,123 @@ export default function DemoModeOverlay() {
       )}
       <div
         ref={pillRef}
+        onMouseEnter={tucked ? holdPeek : undefined}
+        onMouseLeave={tucked ? leavePeek : undefined}
         data-cy="demo-pill"
         data-restarted={started ? "" : undefined}
+        data-tucked={folded ? "" : undefined}
+        // REQ-545 — the link's state, said even while the pill is folded to its tab
+        data-status={faceRef.current.status}
         role="status"
-        style={(started
-          ? `${pillStyle};animation:pmDemoPulse 1.1s ease-out 3`
-          : pillStyle) + (compact && open ? ";flex-wrap:wrap" : "")}
+        style={folded
+          ? tabStyle
+          : (started
+            ? `${pillStyle};animation:pmDemoPulse 1.1s ease-out 3`
+            : pillStyle) +
+            // REQ-548 (cycle 4, p4-p3e) — opened details, or End asking, take a row of their own on
+            // the phone: never a squeeze of the guide's name
+            (pillWraps({ compact, open, asking }) ? ";flex-wrap:wrap" : "")}
       >
-        <span
-          data-cy="demo-details"
-          // REQ-298 — a restart is said even on the phone's compact pill
-          style={`display:${
-            compact && !open && !started ? "none" : "inline-flex"
-          };gap:10px;align-items:center;${
-            compact ? `flex-basis:100%;${wrap}` : cut
-          }`}
-        >
-          {!compact && <strong>{t("demoMode.title")}</strong>}
-          {started
-            ? (
-              <span data-cy="demo-restarted" style={compact ? wrap : cut}>
-                {line}
-              </span>
-            )
-            : <span style={compact ? wrap : cut}>{guidingText}</span>}
-          {copy.showChips && <PresenterChips presenters={presenters} nowrap />}
-        </span>
-        {showGuide && (
-          <span
-            data-cy="demo-guide"
-            style={`display:inline-flex;align-items:center;gap:6px;${cut}`}
+        {folded && (
+          // REQ-545 — the tucked pill: its status dot on a tab; hover or tap shows it whole
+          <button
+            type="button"
+            data-cy="demo-pill-tab"
+            aria-label={`${statusLabel} · ${t("demoMode.showPill")}`}
+            title={`${statusLabel} · ${t("demoMode.showPill")}`}
+            aria-expanded="false"
+            onMouseEnter={openPeek}
+            onFocus={openPeek}
+            onClick={openPeek}
+            style={`flex:1;display:flex;align-items:center;justify-content:center;margin:0;padding:0;border:0;background:transparent;cursor:pointer;${HIT}`}
           >
             <span
               aria-hidden="true"
-              style={`flex:none;width:10px;height:10px;border-radius:50%;background:${
-                presenters[0].color
-              };box-shadow:0 0 0 2px rgba(255,255,255,.85)`}
+              style={`width:8px;height:8px;border-radius:50%;background:${
+                status === "direct" || status === "relay"
+                  ? "#7ee081"
+                  : "#f2c14e"
+              }`}
             />
-            <span style={cut}>{copy.shortName}</span>
-          </span>
+          </button>
         )}
-        <button
-          type="button"
-          data-cy="demo-more"
-          aria-expanded={!compact || open}
-          aria-label={copy.moreLabel}
-          onClick={toggleOpen}
-          style={`display:inline-flex;align-items:center;gap:6px;padding:0;border:0;background:none;color:inherit;font:inherit;cursor:${
-            compact ? "pointer" : "default"
-          };${HIT}`}
-        >
-          {compact && !showGuide && (
+        {!folded && (
+          <>
             <span
-              aria-hidden="true"
-              style={`width:10px;height:10px;border-radius:50%;background:${
-                presenters[0].color
-              };box-shadow:0 0 0 2px rgba(255,255,255,.85)`}
-            />
-          )}
-          <span
-            data-cy="demo-status"
-            style="padding:2px 8px;border-radius:999px;background:rgba(255,255,255,.18);font-size:11.5px;font-weight:700"
-          >
-            {statusLabel}
-          </span>
-        </button>
-        {/* REQ-235 — End asks first */}
-        <EndDemo onEnd={end} />
+              data-cy="demo-details"
+              // REQ-298 — a restart is said even on the phone's compact pill
+              style={`display:${
+                compact && !open && !started ? "none" : "inline-flex"
+              };gap:10px;align-items:center;${
+                compact ? `flex-basis:100%;${wrap}` : cut
+              }`}
+            >
+              {!compact && <strong>{t("demoMode.title")}</strong>}
+              {started
+                ? (
+                  <span data-cy="demo-restarted" style={compact ? wrap : cut}>
+                    {line}
+                  </span>
+                )
+                : <span style={compact ? wrap : cut}>{guidingText}</span>}
+              {copy.showChips && (
+                <PresenterChips presenters={presenters} nowrap t={t} />
+              )}
+            </span>
+            {showGuide && (
+              <span
+                data-cy="demo-guide"
+                style={`display:inline-flex;align-items:center;gap:6px;${cut}`}
+              >
+                <span
+                  aria-hidden="true"
+                  style={`flex:none;width:10px;height:10px;border-radius:50%;background:${
+                    presenters[0].color
+                  };box-shadow:0 0 0 2px rgba(255,255,255,.85)`}
+                />
+                <span style={cut}>{copy.shortName}</span>
+              </span>
+            )}
+            {
+              /* REQ-536 (cycle 4, m29) — the details toggle is the phone's compact pill's only: the
+                full-size pill always shows its details, so there its status is a plain span (it was
+                a button announced "expanded" whose click changed nothing) */
+            }
+            {compact
+              ? (
+                <button
+                  type="button"
+                  data-cy="demo-more"
+                  aria-expanded={open}
+                  aria-label={copy.moreLabel}
+                  onClick={toggleOpen}
+                  style={`display:inline-flex;align-items:center;gap:6px;padding:0;border:0;background:none;color:inherit;font:inherit;cursor:pointer;${HIT}`}
+                >
+                  {!showGuide && (
+                    <span
+                      aria-hidden="true"
+                      style={`width:10px;height:10px;border-radius:50%;background:${
+                        presenters[0].color
+                      };box-shadow:0 0 0 2px rgba(255,255,255,.85)`}
+                    />
+                  )}
+                  <span
+                    data-cy="demo-status"
+                    style={STATUS_CHIP}
+                  >
+                    {statusLabel}
+                  </span>
+                </button>
+              )
+              : (
+                <span data-cy="demo-status" style={STATUS_CHIP}>
+                  {statusLabel}
+                </span>
+              )}
+            {/* REQ-235 — End asks first */}
+            <EndDemo onEnd={end} ownRow={compact} onAsking={setAsking} t={t} />
+          </>
+        )}
       </div>
     </div>
   );

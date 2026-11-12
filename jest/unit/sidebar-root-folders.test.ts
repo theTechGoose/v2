@@ -36,24 +36,26 @@ describe("REQ-176 the sidebar's root folders", () => {
     // REQ-210: Work orders joined Billing next to the documents they belong to
     expect(ids(["billing"])).toEqual(["quotes", "invoices", "payments", "workOrders"]);
     expect(ids(["manage"])).toEqual(["workers", "admins"]); // REQ-178 — Workers is Admin's
+    // REQ-604 (demo m18): Workers is listed in Field too — the same node as in Roles
     expect(ids(["field"])).toEqual([
       "subscriptions",
       "assignments",
       "tasks",
       "batches",
+      "workers",
     ]);
-    expect(folderPathTo(NAV, "workers")).toEqual(["manage"]);
+    expect(folderPathTo(NAV, "workers")).toEqual(["field"]);
     expect(folderPathTo(NAV, "tasks")).toEqual(["field"]);
     expect(folderPathTo(NAV, "invoices")).toEqual(["billing"]);
     expect(folderPathTo(NAV, "admins")).toEqual(["manage"]);
     expect(folderPathTo(NAV, "customers")).toEqual([]);
   });
 
-  test("the sidebar renders the tree module and keeps the super-admin tab inside the Roles folder — labelled Admin (REQ-191)", () => {
+  test("the sidebar renders the tree module and shows the super-admin tab on the root and inside Roles (REQ-604) — labelled Admin (REQ-191)", () => {
     const src = read("front-end/islands/DashSidebar.tsx");
-    expect(src).toMatch(/import \{ NAV \} from "\.\.\/lib\/nav-tree\.ts"/);
+    expect(src).toMatch(/import \{ NAV, superAdminTabAt \} from "\.\.\/lib\/nav-tree\.ts"/);
     expect(src).not.toMatch(/const NAV\b/);
-    expect(src).toMatch(/view\.folder\?\.id === "manage"/);
+    expect(src).toMatch(/superAdminTabAt\(s\.superAdmin, view\.folder\?\.id \?\? null\)/);
     expect(src).toMatch(/<span class="nav-item__label">Admin<\/span>/); // REQ-191
     expect(src).not.toContain("Super admin");
   });

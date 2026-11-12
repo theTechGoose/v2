@@ -123,6 +123,24 @@ export interface TranslatableHeading {
   summaryByLang?: Record<string, string>;
 }
 
+/**
+ * REQ-591 (demo-loop cycle 4, M32) — a quote's summary in `lang`: the typed
+ * summary when `lang` is the quote's own language, else `summaryByLang[lang]`,
+ * else the job name in `lang`, else the typed summary. The email hero read
+ * the raw summary, so the English email of a Spanish quote had an English
+ * subject ("Faucet Repair") under a Spanish heading.
+ */
+export function quoteSummary(
+  q: TranslatableHeading | undefined | null,
+  lang: string,
+): string | undefined {
+  if (!q) return undefined;
+  const typed = q.summary?.trim() || undefined;
+  if (q.lang && q.lang === lang && typed) return typed;
+  return q.summaryByLang?.[lang]?.trim() || q.jobNameByLang?.[lang]?.trim() ||
+    typed;
+}
+
 /** What one language still needs of the heading. */
 export interface MissingHeading {
   lang: string;

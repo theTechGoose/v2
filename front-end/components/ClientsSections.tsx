@@ -4,9 +4,13 @@
  * bar was removed — NW-36 / REQ-013: the app never collects a segment.)
  */
 import { I, ICN } from "../lib/dash-icons.tsx";
-import type { CustomerCard, TopClient } from "../clients/clients.ts";
+import type {
+  CustomerCard,
+  TopClient,
+  UnassignedRevenue,
+} from "../clients/clients.ts";
 import { dollars, initialsOf, numberWord } from "../lib/clients-display.ts";
-import { type Lang, tFor } from "../lib/i18n.ts";
+import { type Lang, tFor, tnFor } from "../lib/i18n.ts";
 
 interface ClientsHeroProps {
   totalClients: number;
@@ -196,10 +200,27 @@ export function LoopBar({ picks, lang = "en" }: LoopBarProps) {
 
 interface TopClientsProps {
   rows: TopClient[];
+  /** REQ-551: paid invoices with no customer — not ranked, but said. */
+  unassigned?: UnassignedRevenue;
   lang?: Lang;
 }
 
-export function TopClients({ rows, lang = "en" }: TopClientsProps) {
+/** REQ-551 (demo-loop cycle 4, B2): "1 paid invoice with no customer
+ *  ($500) isn't ranked." — instead of "no paid invoices" over them. */
+function UnassignedLine(
+  { unassigned, lang }: { unassigned?: UnassignedRevenue; lang: Lang },
+) {
+  if (!unassigned || unassigned.invoiceCount <= 0) return null;
+  return (
+    <div class="ctop2__empty" data-cy="top-clients-unassigned">
+      {tnFor(lang, "topClients.unassigned", unassigned.invoiceCount, {
+        amount: dollars(unassigned.revenue12moCents),
+      })}
+    </div>
+  );
+}
+
+export function TopClients({ rows, unassigned, lang = "en" }: TopClientsProps) {
   if (rows.length === 0) {
     return (
       <div class="ctop2">
@@ -207,7 +228,9 @@ export function TopClients({ rows, lang = "en" }: TopClientsProps) {
           <div class="ctop2__title">{tFor(lang, "topClients.title")}</div>
           <div class="ctop2__period">{tFor(lang, "topClients.period")}</div>
         </div>
-        <div class="ctop2__empty">{tFor(lang, "topClients.empty")}</div>
+        {unassigned && unassigned.invoiceCount > 0
+          ? <UnassignedLine unassigned={unassigned} lang={lang} />
+          : <div class="ctop2__empty">{tFor(lang, "topClients.empty")}</div>}
       </div>
     );
   }
@@ -233,6 +256,7 @@ export function TopClients({ rows, lang = "en" }: TopClientsProps) {
           </div>
         ))}
       </div>
+      <UnassignedLine unassigned={unassigned} lang={lang} />
     </div>
   );
 }

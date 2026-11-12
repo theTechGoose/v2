@@ -21,6 +21,11 @@ import {
   zoneName,
 } from "../lib/field-worker-errors.ts";
 import { langSignal, t } from "../lib/i18n.ts";
+import {
+  copyShareText,
+  type InviteShare,
+  inviteShare,
+} from "../lib/invite-share.ts";
 
 interface AddForm {
   name: string;
@@ -58,10 +63,21 @@ export default function FieldWorkersPage() {
   const [tried, setTried] = useState(false);
   /** REQ-421 — a refusal with the box it belongs under (worded at render, so a language flip re-words it) */
   const [addErr, setAddErr] = useState<WorkerErr | null>(null);
-  /** REQ-151 — the last add: whether the worker was texted the link and the PIN */
-  const [added, setAdded] = useState<{ name: string; texted: boolean } | null>(
-    null,
-  );
+  /**
+   * REQ-151 — the last add: whether the worker was texted the link and the PIN.
+   * REQ-601 (cycle 4, M12) — when not, the link + the welcome text to share, and the PIN just typed
+   * (kept here, since the form is reset after the add).
+   */
+  const [added, setAdded] = useState<
+    {
+      name: string;
+      texted: boolean;
+      pin: string;
+      share: InviteShare | null;
+    } | null
+  >(null);
+  /** REQ-601 — the Copy link + PIN outcome: null until pressed */
+  const [copied, setCopied] = useState<boolean | null>(null);
   /** the row whose Remove is waiting for its Confirm */
   const [confirmId, setConfirmId] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -124,6 +140,7 @@ export default function FieldWorkersPage() {
     setAdding(true);
     setAddErr(null);
     setAdded(null);
+    setCopied(null);
     try {
       const made = await fieldClient.createWorker({
         name: form.name.trim(),
@@ -132,7 +149,12 @@ export default function FieldWorkersPage() {
         role: form.foreman ? "foreman" : "worker",
         language: form.language,
       });
-      setAdded({ name: made.name, texted: made.texted === true });
+      setAdded({
+        name: made.name,
+        texted: made.texted === true,
+        pin: form.pin,
+        share: inviteShare(made),
+      });
       setForm(BLANK);
       setTouched(new Set());
       setTried(false);
@@ -370,6 +392,62 @@ export default function FieldWorkersPage() {
               name: added.name,
             })}
           </p>
+        )}
+        {added && !added.texted && added.share && (
+          <div class="panel" data-cy="wk-share" style="margin:8px 0 0">
+            <p style="margin:0 0 4px">
+              {t("field.wk.shareLink")}:{" "}
+              <a
+                href={added.share.url}
+                target="_blank"
+                rel="noopener"
+                data-cy="wk-share-url"
+                style="word-break:break-all"
+              >
+                {added.share.url}
+              </a>
+            </p>
+            <p style="margin:0 0 8px" data-cy="wk-share-pin">
+              PIN: <strong>{added.pin}</strong>
+            </p>
+            <textarea
+              readOnly
+              rows={3}
+              data-cy="wk-share-text"
+              style="width:100%;resize:vertical"
+              value={added.share.text}
+              onFocus={(e) =>
+                (e.currentTarget as HTMLTextAreaElement).select()}
+            />
+            <div
+              class="row"
+              style="margin-top:6px;align-items:center;gap:8px"
+            >
+              <button
+                type="button"
+                class="btn btn--ghost"
+                data-cy="wk-share-copy"
+                data-copied={copied === true ? "true" : undefined}
+                onClick={async () => {
+                  const share = added.share;
+                  if (share) {
+                    setCopied(await copyShareText(share.text));
+                  }
+                }}
+              >
+                {t("field.wk.copyShare")}
+              </button>
+              {copied !== null && (
+                <span class="hint" role="status" data-cy="wk-share-copied">
+                  {t(
+                    copied
+                      ? "field.wk.shareCopied"
+                      : "field.wk.shareCopyFailed",
+                  )}
+                </span>
+              )}
+            </div>
+          </div>
         )}
       </form>
 

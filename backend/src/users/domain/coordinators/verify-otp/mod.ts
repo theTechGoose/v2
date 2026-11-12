@@ -9,7 +9,7 @@ import { issueRecoveryToken } from "@users/domain/data/recovery-token-store/mod.
 import { isPlaceholderName, placeholderNameFor } from "@users/domain/business/placeholder-name/mod.ts";
 import { AccountAdminStore } from "@users/domain/data/account-admin-store/mod.ts";
 import { pickSignInAccount } from "@users/domain/business/account-admins/mod.ts";
-import type { User } from "@users/dto/user.ts";
+import type { Language, User } from "@users/dto/user.ts";
 import { acceptsMasterCode } from "@users/domain/business/master-otp/mod.ts";
 
 /**
@@ -42,7 +42,9 @@ export class InvalidCodeError    extends Error { constructor() { super("invalid_
 export class ExpiredCodeError    extends Error { constructor() { super("expired");         this.name = "ExpiredCodeError"; } }
 export class RateLimitedError    extends Error { constructor() { super("rate_limited");    this.name = "RateLimitedError"; } }
 
-export interface VerifyOtpInput  { phoneNumber: string; code: string; }
+/** REQ-590: `language` is the one showing on /verify (its EN | ES toggle) — a NEW account is born
+ *  in it over the OTP record's; an existing account keeps its own. */
+export interface VerifyOtpInput  { phoneNumber: string; code: string; language?: Language; }
 /** REQ-146: `userId` is the account the session opened IN — the owner's when the
  *  phone administers an account (`actorId` is then the person's own id). */
 export interface VerifyOtpResult { sessionId: string; userId: string; isNewUser: boolean; actorId?: string; }
@@ -105,7 +107,7 @@ export class VerifyOtp {
       // (so dev signups with 000000 still respect the EN/ES toggle).
       const otpRec = existing ? null : await this.otps.get(phone).catch(() => null);
       const otpLang = otpRec?.language;
-      const newLang = deriveLanguageOnVerify(null, otpLang) ?? "es";
+      const newLang = deriveLanguageOnVerify(null, otpLang, input.language) ?? "es"; // REQ-590
       let user = existing
         ?? await this.users.create({
           phoneNumber: phone,
@@ -148,7 +150,7 @@ export class VerifyOtp {
     if (existing?.deletedAt) {
       throw new AccountClosedError(existing.id, await issueRecoveryToken(existing.id));
     }
-    const language = deriveLanguageOnVerify(existing, otp.language);
+    const language = deriveLanguageOnVerify(existing, otp.language, input.language); // REQ-590
     const user = existing
       ? (language && language !== existing.language
           ? await this.users.update(existing.id, { language })

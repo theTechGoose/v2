@@ -743,20 +743,31 @@ export default function FieldTasksPage() {
         title={t("field.tk.title")}
         sub={t("field.tk.sub")}
       >
-        <label class="field" style="min-width:0">
-          {t("field.tk.date")}
+        {
+          /* REQ-611 — a group, not a <label>: a label names its FIRST labelable
+            descendant, which made the prev chevron read "Day 2026-11-12 Today" */
+        }
+        <div
+          class="field"
+          style="min-width:0"
+          role="group"
+          aria-labelledby="tk-date-label"
+        >
+          <label id="tk-date-label" for="tk-date">{t("field.tk.date")}</label>
           <span style="display:flex;gap:4px;align-items:center">
             <button
               type="button"
               class="btn btn--ghost btn--sm"
               data-cy="tk-prev"
-              title="−1"
+              aria-label={t("field.tk.prevDay")}
+              title={t("field.tk.prevDay")}
               onClick={() => go(shiftIso(date, -1))}
             >
               <Icon name="chevron-left" size={14} />
             </button>
             <input
               type="date"
+              id="tk-date"
               data-cy="tk-date"
               value={date}
               onChange={(e) => go((e.currentTarget as HTMLInputElement).value)}
@@ -765,7 +776,8 @@ export default function FieldTasksPage() {
               type="button"
               class="btn btn--ghost btn--sm"
               data-cy="tk-next"
-              title="+1"
+              aria-label={t("field.tk.nextDay")}
+              title={t("field.tk.nextDay")}
               onClick={() => go(shiftIso(date, 1))}
             >
               <Icon name="chevron-right" size={14} />
@@ -778,7 +790,7 @@ export default function FieldTasksPage() {
               {t("field.common.today")}
             </button>
           </span>
-        </label>
+        </div>
         {/* REQ-164 — the page's one primary action */}
         <button
           type="button"

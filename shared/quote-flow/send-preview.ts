@@ -6,6 +6,7 @@
  *
  * Pure logic, no side effects.
  */
+import { formatPhoneDisplay } from "./format-helpers.ts";
 
 export type SendPreviewChannel = "email" | "sms" | "both";
 export type SendPreviewLang = "en" | "es";
@@ -28,6 +29,13 @@ export function sendPreviewPath(
   return `/quotes/${
     encodeURIComponent(quoteId)
   }/send-preview?channel=${channel}&lang=${lang}`;
+}
+
+/** REQ-593 (cycle 4, m12): the number the text preview names, formatted
+ *  ("+1 (512) 867-5309") — "" when the preview has no text recipient. */
+export function sendPreviewSmsTo(preview: QuoteSendPreview): string {
+  const to = preview.sms?.to?.trim();
+  return to ? formatPhoneDisplay(to) : "";
 }
 
 export function sendPreviewSections(

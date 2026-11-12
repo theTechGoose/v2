@@ -162,6 +162,53 @@ describe("P-46 EN customers-surface: one term, sentence case", () => {
   });
 });
 
+describe("REQ-595 P-46 one term for job length (cycle 4, p4-p2a)", () => {
+  // The wizard step label, the pick line it prefixes, the chat preview rows
+  // and the quote document all name the same thing.
+  const JOB_LENGTH_KEYS = [
+    "termsWizard.wraps.label", // step label + "<label>: <value>" pick line
+    "asstChat.preview.termLabel.timeToComplete",
+    "asstChat.preview.termLabel.wraps",
+    "quoteDoc.termLabel.wraps",
+  ];
+
+  it.each(["en", "es"])(
+    "REQ-595 P-46 %s uses one term for job length across wizard, preview and document",
+    (lang) => {
+      const dict = lang === "en" ? en : es;
+      for (const k of JOB_LENGTH_KEYS) expect(typeof dict[k]).toBe("string");
+      const terms = new Set(JOB_LENGTH_KEYS.map((k) => dict[k].trim()));
+      // Red at ad104a19 (es): {"Tiempo para completar","Tiempo de entrega"}.
+      expect([...terms]).toHaveLength(1);
+    },
+  );
+
+  it("REQ-595 P-46 es job length is 'Duración del trabajo' (matches the PDF's DURACIÓN)", () => {
+    expect(es["termsWizard.wraps.label"]).toBe("Duración del trabajo");
+  });
+});
+
+describe("REQ-595 natural Spanish copy (cycle 4, p4-p2e)", () => {
+  it("REQ-595 the lock prompts say the quote is confirmed, not 'fijada'", () => {
+    for (const k of ["lockQuote.cta.lockedPrompt", "lockQuote.cta.lockedPromptKnown"]) {
+      expect(es[k]).not.toMatch(/fijada/i);
+      expect(es[k]).toMatch(/^¡Listo, cotización confirmada!/);
+    }
+    expect(es["lockQuote.cta.lockedPromptKnown"]).toContain("{name}");
+  });
+
+  it("REQ-595 the payments hero has no calque 'ventana de compensación'", () => {
+    expect(es["paymentsPage.hero.freshSub"]).not.toMatch(/ventana de compensación/i);
+    expect(es["paymentsPage.hero.freshSub"]).toContain(
+      "Cada método tarda distinto en acreditarse",
+    );
+  });
+
+  it("REQ-595 the top-clients card is titled 'Tus mejores clientes'", () => {
+    expect(es["topClients.title"]).toBe("Tus mejores clientes");
+  });
+});
+
 describe("P-34 clients headline agrees in number for one client (es)", () => {
   it("P-34 the one-client headline is not 'Las uno persona … que mantienen'", () => {
     // FE builds: titlePre + people.one(word=numberWord(1)) + titlePost.

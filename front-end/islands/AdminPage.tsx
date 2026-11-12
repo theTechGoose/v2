@@ -32,6 +32,7 @@ import {
   displayName,
   impersonateLabel,
   lockFor,
+  onSelfRenamed,
   refreshWhileVisible,
 } from "../lib/admin-console.ts";
 import { onImpersonation } from "../lib/demo-mode/impersonation-signal.ts";
@@ -129,9 +130,13 @@ export default function AdminPage({ selfId }: { selfId?: string }) {
     const stopSignal = onImpersonation((d) =>
       setLock({ kind: "demo", customer: d.targetName })
     );
+    // REQ-606 (cycle 4, m20) — the staff name prompt's save renames this admin's own row at
+    // once; not left to the refresh, which a locked (Demo) or idle page never makes
+    const stopSelf = onSelfRenamed(selfId, setRows);
     return () => {
       stopRefresh();
       stopSignal();
+      stopSelf();
     };
   }, []);
   // REQ-424 (cycle 2, p2) — a locked page (a demo made this browser the customer, or the

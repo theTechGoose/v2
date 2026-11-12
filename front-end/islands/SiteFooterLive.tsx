@@ -17,13 +17,21 @@ import SiteFooterView, {
 } from "../components/SiteFooterView.tsx";
 
 export default function SiteFooterLive(
-  { lang, copy, compact = false, document: forDocument = false }: {
+  {
+    lang,
+    copy,
+    compact = false,
+    document: forDocument = false,
+    credited = false,
+  }: {
     lang: Lang;
     copy: Record<Lang, SiteFooterCopy>;
     /** REQ-425: the one-line footer of the signed-in app routes */
     compact?: boolean;
     /** REQ-509: the footer of the contractor's customer documents */
     document?: boolean;
+    /** REQ-573: the document's body already credits DocuMonster */
+    credited?: boolean;
   },
 ) {
   const shown = useLiveLang(lang);
@@ -32,6 +40,7 @@ export default function SiteFooterLive(
       copy={copy[shown]}
       compact={compact}
       document={forDocument}
+      credited={credited}
     />
   );
 }

@@ -84,22 +84,67 @@ export function serverDisagreement(
   return server && server !== live.status ? server : undefined;
 }
 
-/** REQ-442 (demo-loop cycle 3, M22): AsstChat → AsstThreads — this thread's
- *  first turn landed (its title is set on it), so the list refreshes now
- *  rather than at its next poll. */
+/** REQ-442 (demo-loop cycle 3, M22): AsstChat → AsstThreads — a turn on
+ *  this thread landed, so the list refreshes now rather than at its next
+ *  poll. REQ-580 (demo-loop cycle 4, p4-p2d / p4-p7b): EVERY landed turn
+ *  publishes — the details-first draft note, each wizard answer, each chat
+ *  turn — carrying the server's new title / preview, so the list patches the
+ *  row at once instead of showing the previous answer (or "New conversation
+ *  —") until it re-reads. */
 export const THREAD_TURN_EVENT = "pm:asst-thread-turn";
 
 export interface ThreadTurnDetail {
   conversationId: string;
+  /** The thread's title as the server now stores it. */
+  title?: string;
+  /** The thread's preview as the server now stores it. */
+  preview?: string;
 }
 
-/** The chat's first-turn push. Browser-only. */
-export function publishThreadTurn(conversationId: string): void {
+function filled(v: unknown): string | undefined {
+  return typeof v === "string" && v.trim().length > 0 ? v : undefined;
+}
+
+/** The chat's turn push. `conversation` is the server's patched row (the
+ *  turn's response); only its title and preview travel. Browser-only. */
+export function publishThreadTurn(
+  conversationId: string,
+  conversation?: object | null,
+): void {
+  const row = conversation as { title?: unknown; preview?: unknown } | null;
+  const title = filled(row?.title);
+  const preview = filled(row?.preview);
+  const detail: ThreadTurnDetail = {
+    conversationId,
+    ...(title ? { title } : {}),
+    ...(preview ? { preview } : {}),
+  };
   globalThis.dispatchEvent(
-    new CustomEvent<ThreadTurnDetail>(THREAD_TURN_EVENT, {
-      detail: { conversationId },
-    }),
+    new CustomEvent<ThreadTurnDetail>(THREAD_TURN_EVENT, { detail }),
   );
+}
+
+/** REQ-580: the list with the turned thread's row patched in place — its new
+ *  title and preview (blank ones never blank the row). The same array when
+ *  the list doesn't hold that thread or nothing changes. */
+export function applyThreadTurn<
+  R extends { id: string; title?: string; preview?: string },
+>(rows: R[], turn: ThreadTurnDetail): R[] {
+  const i = rows.findIndex((r) => r.id === turn.conversationId);
+  if (i < 0) return rows;
+  const title = filled(turn.title);
+  const preview = filled(turn.preview);
+  const row = rows[i];
+  if (
+    (!title || title === row.title) && (!preview || preview === row.preview)
+  ) return rows;
+  const next = rows.slice();
+  next[i] = {
+    ...row,
+    ...(title ? { title } : {}),
+    ...(preview ? { preview } : {}),
+  };
+  return next;
 }
 
 /** A turn sent while the thread holds no message of the contractor's is its

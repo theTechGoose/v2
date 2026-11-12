@@ -41,10 +41,15 @@ import {
 import { switchQuote } from "../../shared/quote-flow/plan-switch.ts";
 import { accountNetDays } from "../../shared/quote-flow/completion-schedule.ts"; // REQ-411
 import {
+  PAYMENT_METHOD_CATALOG,
+  type PaymentMethodDef,
+} from "../../shared/identity/payment-methods.ts"; // REQ-620
+import {
   insurerError,
   policyNumberError,
 } from "../../shared/quote-flow/business-fields.ts"; // REQ-503
 import { dollars, PlanCards } from "../components/PlanCards.tsx";
+import { firstPickNote } from "../lib/plan-pick-note.ts";
 import {
   handoffOf,
   handoffPage,
@@ -77,6 +82,13 @@ import {
   sendLanguagesOf,
   toggleSendLanguage,
 } from "../../shared/quote-flow/comms-language.ts";
+import {
+  isLastReminderDay,
+  REMINDER_DAY_CHOICES,
+  type ReminderSettings,
+  reminderSettingsOf,
+  toggleReminderDay,
+} from "../../shared/quote-flow/reminder-settings.ts"; // REQ-623
 import { Icon } from "../components/ui/Icon.tsx";
 import {
   CardGridSkeleton,
@@ -159,7 +171,6 @@ function tr(es: boolean) {
     mailingAddress: tFor(lang, "settings.mailingAddress"),
     insurance: tFor(lang, "settings.insurance"),
     tax: tFor(lang, "settings.tax"),
-    contractDefaults: tFor(lang, "settings.contractDefaults"),
     payments: tFor(lang, "settings.payments"),
     editDetails: tFor(lang, "settings.editDetails"),
     // Account / identity rows + fields
@@ -215,10 +226,6 @@ function tr(es: boolean) {
     uploaded: tFor(lang, "settings.uploaded"),
     w9Hint: tFor(lang, "settings.w9Hint"),
     // Contract defaults
-    paymentTerms: tFor(lang, "settings.paymentTerms"),
-    deposit: tFor(lang, "settings.deposit"),
-    warranty: tFor(lang, "settings.warranty"),
-    days: tFor(lang, "settings.days"),
     // Payments
     paymentsIntro: tFor(lang, "settings.paymentsIntro"),
     yourHandle: tFor(lang, "settings.yourHandle"),
@@ -1294,76 +1301,10 @@ function TaxEditCard(
   );
 }
 
-interface PayRow {
-  key:
-    | "venmo"
-    | "cashapp"
-    | "zelle"
-    | "paypal"
-    | "check"
-    | "cash"
-    | "ach"
-    | "card";
-  label: string;
-  /** Backend field that stores the handle. null → no handle (cash). */
-  field: "handle" | "cashtag" | "mailTo" | "instructions" | null;
-  placeholder: string;
-  /** Money-routing handles (Venmo/Zelle/etc.) are required when the method is
-   *  enabled and get a retype-to-confirm guard — a typo sends funds to the
-   *  wrong place. A check's mailing address is optional (the contractor's
-   *  address already prints on the invoice) and needs no confirm field. */
-  optional?: boolean;
-}
-
-// `label` and `placeholder` hold i18n KEYS (resolved per-language at render).
-const PAY_ROWS: PayRow[] = [
-  {
-    key: "venmo",
-    label: "paymentMethod.venmo",
-    field: "handle",
-    placeholder: "settings.pay.venmoPh",
-  },
-  {
-    key: "cashapp",
-    label: "paymentMethod.cashApp",
-    field: "cashtag",
-    placeholder: "settings.pay.cashappPh",
-  },
-  {
-    key: "zelle",
-    label: "paymentMethod.zelle",
-    field: "handle",
-    placeholder: "settings.pay.zellePh",
-  },
-  {
-    key: "paypal",
-    label: "paymentMethod.paypal",
-    field: "handle",
-    placeholder: "settings.pay.paypalPh",
-  },
-  {
-    key: "check",
-    label: "paymentMethod.check",
-    field: "mailTo",
-    placeholder: "settings.pay.checkPh",
-    optional: true,
-  },
-  {
-    key: "ach",
-    label: "paymentMethod.ach",
-    field: "instructions",
-    placeholder: "settings.pay.achPh",
-    optional: true,
-  },
-  {
-    key: "card",
-    label: "paymentMethod.card",
-    field: "instructions",
-    placeholder: "settings.pay.cardPh",
-    optional: true,
-  },
-  { key: "cash", label: "paymentMethod.cash", field: null, placeholder: "" },
-];
+// REQ-620 (cycle 4, p4-p6b): the rows are the shared payment-method catalogue
+// (shared/identity/payment-methods.ts) — the same list, order and labels the
+// onboarding wizard's payment step renders. labelKey / placeholderKey are i18n
+// KEYS (resolved per-language at render).
 
 interface PayState {
   enabled: boolean;
@@ -1382,7 +1323,7 @@ function PaymentsEditCard(
 ) {
   const apm = snapshot.identity?.acceptedPaymentMethods ?? {};
   const init: Record<string, PayState> = {};
-  for (const r of PAY_ROWS) {
+  for (const r of PAYMENT_METHOD_CATALOG) {
     const cur = (apm as Record<
       string,
       {
@@ -1392,9 +1333,9 @@ function PaymentsEditCard(
         mailTo?: string;
         instructions?: string;
       }
-    >)[r.key];
-    const val = r.field ? (cur?.[r.field] ?? "") : "";
-    init[r.key] = { enabled: !!cur?.enabled, value: val, confirm: val };
+    >)[r.id];
+    const val = r.handleField ? (cur?.[r.handleField] ?? "") : "";
+    init[r.id] = { enabled: !!cur?.enabled, value: val, confirm: val };
   }
   const [rows, setRows] = useState<Record<string, PayState>>(init);
   const [busy, setBusy] = useState(false);
@@ -1419,9 +1360,9 @@ function PaymentsEditCard(
     if (saveNow) autosave(merged);
   }
 
-  const mismatch = (r: PayRow) => {
-    const st = rows[r.key];
-    return st.enabled && r.field !== null && st.value.trim() !== "" &&
+  const mismatch = (r: PaymentMethodDef) => {
+    const st = rows[r.id];
+    return st.enabled && r.handleField !== null && st.value.trim() !== "" &&
       st.confirm.trim() !== "" && st.value.trim() !== st.confirm.trim();
   };
 
@@ -1433,11 +1374,11 @@ function PaymentsEditCard(
     const apmPatch: Record<string, Record<string, unknown>> = {
       ...(apm as Record<string, Record<string, unknown>>),
     };
-    for (const r of PAY_ROWS) {
-      const st = cur[r.key];
+    for (const r of PAYMENT_METHOD_CATALOG) {
+      const st = cur[r.id];
       const entry: Record<string, unknown> = { enabled: st.enabled };
-      if (r.field) entry[r.field] = st.value.trim();
-      apmPatch[r.key] = entry;
+      if (r.handleField) entry[r.handleField] = st.value.trim();
+      apmPatch[r.id] = entry;
     }
     return apmPatch;
   }
@@ -1446,9 +1387,9 @@ function PaymentsEditCard(
    *  for a SILENT instant-save (incomplete rows wait for the explicit Save,
    *  which surfaces the validation copy). */
   function autosaveReady(cur: Record<string, PayState>): boolean {
-    return PAY_ROWS.every((r) => {
-      const st = cur[r.key];
-      if (!st.enabled || r.field === null || r.optional) return true;
+    return PAYMENT_METHOD_CATALOG.every((r) => {
+      const st = cur[r.id];
+      if (!st.enabled || r.handleField === null || r.optional) return true;
       return st.value.trim() !== "" && st.value.trim() === st.confirm.trim();
     });
   }
@@ -1481,12 +1422,12 @@ function PaymentsEditCard(
 
   async function save() {
     // Validate every enabled handle-bearing method has a matching confirm.
-    for (const r of PAY_ROWS) {
-      const st = rows[r.key];
-      if (!st.enabled || r.field === null) continue;
+    for (const r of PAYMENT_METHOD_CATALOG) {
+      const st = rows[r.id];
+      if (!st.enabled || r.handleField === null) continue;
       // Optional fields (check's mailing address) may be left blank.
       if (r.optional) continue;
-      const label = tFor(lang, r.label);
+      const label = tFor(lang, r.labelKey);
       if (st.value.trim() === "") {
         setErr(t.enterHandle(label));
         return;
@@ -1531,14 +1472,17 @@ function PaymentsEditCard(
         {t.paymentsIntro}
       </p>
       <div style="display:flex;flex-direction:column;gap:12px">
-        {PAY_ROWS.map((r) => {
-          const st = rows[r.key];
+        {PAYMENT_METHOD_CATALOG.map((r) => {
+          const st = rows[r.id];
           const bad = mismatch(r);
-          const label = tFor(lang, r.label);
-          const placeholder = r.placeholder ? tFor(lang, r.placeholder) : "";
+          const label = tFor(lang, r.labelKey);
+          const placeholder = r.placeholderKey
+            ? tFor(lang, r.placeholderKey)
+            : "";
           return (
             <div
-              key={r.key}
+              key={r.id}
+              data-pay-method={r.id}
               style={`border:1px solid ${
                 st.enabled
                   ? "var(--brand-green,#519843)"
@@ -1551,7 +1495,7 @@ function PaymentsEditCard(
                   checked={st.enabled}
                   onChange={(e) =>
                     // P-42: a toggle IS the edit — persist it instantly.
-                    patchRow(r.key, {
+                    patchRow(r.id, {
                       enabled: (e.target as HTMLInputElement).checked,
                     }, true)}
                 />
@@ -1559,11 +1503,11 @@ function PaymentsEditCard(
                   {label}
                 </span>
               </label>
-              {st.enabled && r.field !== null && (
+              {st.enabled && r.handleField !== null && (
                 <div style="margin-top:10px;display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px">
                   <label style="display:block">
                     <span style={labelStyle}>
-                      {r.field === "instructions"
+                      {r.handleField === "instructions"
                         ? t.instructionsOptional
                         : r.optional
                         ? t.mailingOptional
@@ -1575,7 +1519,7 @@ function PaymentsEditCard(
                       value={st.value}
                       placeholder={placeholder}
                       onInput={(e) =>
-                        patchRow(r.key, {
+                        patchRow(r.id, {
                           value: (e.target as HTMLInputElement).value,
                         })}
                       onBlur={() => autosave(rowsRef.current)}
@@ -1592,7 +1536,7 @@ function PaymentsEditCard(
                         value={st.confirm}
                         placeholder={placeholder}
                         onInput={(e) =>
-                          patchRow(r.key, {
+                          patchRow(r.id, {
                             confirm: (e.target as HTMLInputElement).value,
                           })}
                         onBlur={() => autosave(rowsRef.current)}
@@ -1614,124 +1558,6 @@ function PaymentsEditCard(
         <button type="button" style={btnPrimary} disabled={busy} onClick={save}>
           {busy ? t.saving : t.savePayments}
         </button>
-      </div>
-    </EditPanel>
-  );
-}
-
-/** ContractDefaultsEditCard — the "Valores del contrato" card, made live
- *  (P-42): three editable fields wired to GET/PUT /profile/contract-defaults
- *  ({ paymentTermsDays, depositPct, warrantyDays }), instant-saved on
- *  change/blur like everything else on this page. */
-function ContractDefaultsEditCard(
-  { snapshot, onSaved }: {
-    snapshot: ProfileSnapshot;
-    onSaved: (partial: Partial<ProfileSnapshot>) => void;
-  },
-) {
-  const cd = snapshot.contractDefaults;
-  const [terms, setTerms] = useState(
-    cd?.paymentTermsDays != null ? String(cd.paymentTermsDays) : "",
-  );
-  const [deposit, setDeposit] = useState(
-    cd?.depositPct != null ? String(cd.depositPct) : "",
-  );
-  const [warranty, setWarranty] = useState(
-    cd?.warrantyDays != null ? String(cd.warrantyDays) : "",
-  );
-  const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
-  const [saved, setSaved] = useState(false);
-  const t = tr(langSignal.value === "es");
-
-  function autosave(
-    patch: Partial<Record<"terms" | "deposit" | "warranty", string>> = {},
-  ) {
-    const num = (raw: string) => {
-      const n = Math.round(Number(raw));
-      return raw.trim() !== "" && Number.isFinite(n) && n >= 0 ? n : undefined;
-    };
-    const body = {
-      ...(num(patch.terms ?? terms) != null
-        ? { paymentTermsDays: num(patch.terms ?? terms) }
-        : {}),
-      ...(num(patch.deposit ?? deposit) != null
-        ? { depositPct: num(patch.deposit ?? deposit) }
-        : {}),
-      ...(num(patch.warranty ?? warranty) != null
-        ? { warrantyDays: num(patch.warranty ?? warranty) }
-        : {}),
-    };
-    if (Object.keys(body).length === 0) return;
-    setBusy(true);
-    setErr(null);
-    putKeepalive("/profile/contract-defaults", body)
-      .then(async (r) => {
-        if (!r.ok) throw new Error(t.saveFailed);
-        const next = await r.json().catch(() => null);
-        if (next) onSaved({ contractDefaults: next });
-        setSaved(true);
-      })
-      .catch((e) => setErr(e instanceof Error ? e.message : t.saveFailed))
-      .finally(() => setBusy(false));
-  }
-
-  const fields: Array<{
-    key: "terms" | "deposit" | "warranty";
-    label: string;
-    suffix: string;
-    value: string;
-    set: (v: string) => void;
-  }> = [
-    {
-      key: "terms",
-      label: t.paymentTerms,
-      suffix: t.days,
-      value: terms,
-      set: setTerms,
-    },
-    {
-      key: "deposit",
-      label: t.deposit,
-      suffix: "%",
-      value: deposit,
-      set: setDeposit,
-    },
-    {
-      key: "warranty",
-      label: t.warranty,
-      suffix: t.days,
-      value: warranty,
-      set: setWarranty,
-    },
-  ];
-
-  return (
-    <EditPanel
-      title={t.contractDefaults}
-      busy={busy}
-      err={err}
-      saved={saved}
-      saving={t.saving}
-      savedLabel={t.saved}
-      dataCy="settings-contract-defaults"
-    >
-      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px">
-        {fields.map((f) => (
-          <label key={f.key} style="display:block">
-            <span style={labelStyle}>{f.label} ({f.suffix})</span>
-            <input
-              type="number"
-              min="0"
-              step="1"
-              style={inputStyle}
-              value={f.value}
-              onInput={(e) => f.set((e.target as HTMLInputElement).value)}
-              onBlur={(e) =>
-                autosave({ [f.key]: (e.target as HTMLInputElement).value })}
-            />
-          </label>
-        ))}
       </div>
     </EditPanel>
   );
@@ -2077,7 +1903,14 @@ function BillingTab({ snapshot }: { snapshot: ProfileSnapshot }) {
       });
     }
     if (q.kind === "first") {
-      return tFor(lang, "billing.note.first", { monthly });
+      // REQ-615 — each charge with its date, from the one anchored schedule
+      return firstPickNote(
+        (k, v) => tFor(lang, k, v),
+        "billing.note.first",
+        q.monthlyCents,
+        new Date().toISOString(),
+        lang,
+      );
     }
     if (q.kind === "free") {
       if (currentId === "free") return null;
@@ -2440,6 +2273,133 @@ function DangerZoneCard(
   );
 }
 
+/**
+ * REQ-623 (demo cycle 4, M26) — the business's automatic payment reminders:
+ * an on/off switch for every invoice and the cadence days (3 / 7 / 14 / 30)
+ * as chips. Saves `identity.reminders` at once; the overdue sweep
+ * (SendPaymentReminder.runAll) reads the same setting. At least one day stays
+ * picked — turning reminders off is the switch, not an empty cadence.
+ */
+function RemindersEditCard(
+  { snapshot, onSaved }: {
+    snapshot: ProfileSnapshot;
+    onSaved: (partial: Partial<ProfileSnapshot>) => void;
+  },
+) {
+  const lang: Lang = langSignal.value === "es" ? "es" : "en";
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const [saved, setSaved] = useState(false);
+  const settings: ReminderSettings = reminderSettingsOf(snapshot.identity);
+
+  async function save(next: ReminderSettings) {
+    setBusy(true);
+    setErr(null);
+    setSaved(false);
+    try {
+      const id = await profileClient.updateIdentity({ reminders: next });
+      onSaved({
+        identity: {
+          ...(snapshot.identity ?? {} as never),
+          ...id,
+        } as typeof snapshot.identity,
+      });
+      setSaved(true);
+    } catch (e) {
+      setErr(
+        e instanceof Error ? e.message : tFor(lang, "settings.saveFailed"),
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <EditPanel
+      title={tFor(lang, "settings.reminders.title")}
+      busy={busy}
+      err={err}
+      saved={saved}
+      saving={tFor(lang, "settings.saving")}
+      savedLabel={tFor(lang, "settings.saved")}
+      dataCy="settings-reminders"
+      id="reminders"
+    >
+      <label style="display:flex;align-items:center;gap:10px;cursor:pointer">
+        <input
+          type="checkbox"
+          role="switch"
+          data-cy="settings-reminders-enabled"
+          checked={settings.enabled}
+          disabled={busy}
+          onChange={(e) =>
+            save({
+              ...settings,
+              enabled: (e.target as HTMLInputElement).checked,
+            })}
+        />
+        <span style="font-weight:700;font-size:13.5px;color:var(--fg)">
+          {tFor(lang, "settings.reminders.enabled")}
+        </span>
+      </label>
+      <span style="display:block;margin-top:4px;font-size:12px;color:var(--fg-muted,#6b7560)">
+        {tFor(lang, "settings.reminders.hint")}
+      </span>
+      {settings.enabled
+        ? (
+          <div style="margin-top:12px">
+            <span style={labelStyle}>
+              {tFor(lang, "settings.reminders.days")}
+            </span>
+            <div style="display:flex;flex-wrap:wrap;gap:8px">
+              {REMINDER_DAY_CHOICES.map((d) => {
+                const on = settings.days.includes(d);
+                return (
+                  <button
+                    key={d}
+                    type="button"
+                    data-cy={`settings-reminders-day-${d}`}
+                    aria-pressed={on}
+                    disabled={busy || isLastReminderDay(settings.days, d)}
+                    onClick={() => {
+                      const days = toggleReminderDay(settings.days, d, !on);
+                      if (days) save({ ...settings, days });
+                    }}
+                    style={`padding:6px 12px;border-radius:999px;font:inherit;font-size:13px;font-weight:700;cursor:pointer;border:1px solid ${
+                      on
+                        ? "var(--brand-green,#519843);background:var(--brand-green,#519843);color:#fff"
+                        : "var(--border,#d8dcd5);background:#fff;color:var(--fg)"
+                    }`}
+                  >
+                    {tFor(lang, "settings.reminders.day", { n: String(d) })}
+                  </button>
+                );
+              })}
+            </div>
+            {settings.days.length === 1
+              ? (
+                <span
+                  data-cy="settings-reminders-keep-one"
+                  style="display:block;margin-top:6px;font-size:12px;color:var(--fg-muted,#6b7560)"
+                >
+                  {tFor(lang, "settings.reminders.keepOne")}
+                </span>
+              )
+              : null}
+          </div>
+        )
+        : (
+          <p
+            data-cy="settings-reminders-off"
+            style="margin:10px 0 0;font-size:12.5px;color:var(--fg-muted,#6b7560)"
+          >
+            {tFor(lang, "settings.reminders.offNote")}
+          </p>
+        )}
+    </EditPanel>
+  );
+}
+
 export default function SettingsPage() {
   const [s, setS] = useState<State>(INITIAL);
   // REQ-146: an admin acting for the account never sees the danger zone (the
@@ -2616,19 +2576,20 @@ export default function SettingsPage() {
             <InsuranceEditCard snapshot={p} onSaved={onSaved} />
           </div>
 
-          <div class="grid">
-            <TaxEditCard snapshot={p} onSaved={onSaved} />
-            {
-              /* P-42: live editor wired to GET/PUT /profile/contract-defaults —
-            the card is no longer a dead read-only panel. */
-            }
-            <ContractDefaultsEditCard snapshot={p} onSaved={onSaved} />
-          </div>
+          {
+            /* REQ-622 (demo cycle 4, p4-p6c): no Contract defaults card — its
+            payment terms / deposit / warranty days were read by nothing; the
+            payment terms are "Days to pay an invoice" in Edit details. */
+          }
+          <TaxEditCard snapshot={p} onSaved={onSaved} />
 
           {/* REQ-198/199: the account number and the starting numbers */}
           <NumberingCard refreshKey={numberingKey} />
 
           <PaymentsEditCard snapshot={p} onSaved={onSaved} />
+
+          {/* REQ-623 (demo cycle 4, M26): automatic payment reminders */}
+          <RemindersEditCard snapshot={p} onSaved={onSaved} />
 
           {!acting && (
             <DangerZoneCard

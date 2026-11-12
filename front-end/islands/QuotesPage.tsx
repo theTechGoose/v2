@@ -19,6 +19,7 @@ import { openQuoteMoved } from "../lib/live-doc-refresh.ts";
 import { followChanges, isDocChange } from "../lib/change-feed.ts";
 import { I, ICN } from "../lib/dash-icons.tsx";
 import { fmtMoney, fmtMoneyExact } from "../lib/format.ts";
+import { formatPhoneDisplay } from "../../shared/quote-flow/format-helpers.ts";
 import {
   docHeadline,
   ledgerSummary,
@@ -57,19 +58,31 @@ import {
 } from "../components/Skeletons.tsx";
 import { langSignal, tFor } from "../lib/i18n.ts";
 import { quoteJobTitle } from "../../shared/quote-flow/job-name.ts";
+import { quoteSendLang } from "../../shared/quote-flow/share-link.ts"; // REQ-586
+import { customerLinkPath, customerLinkUrl } from "../lib/customer-link.ts"; // REQ-570 + REQ-586
 import { changeOrdersClient } from "../clients/change-orders.ts"; // REQ-462
+import QuoteSendDialog, {
+  type SendDialogCustomer,
+} from "../components/QuoteSendDialog.tsx"; // REQ-570
+import { panelCanSend, type PanelSendResult } from "../lib/quote-panel-send.ts"; // REQ-570
+import type { SendChannel } from "../lib/send-dialog.ts"; // REQ-570
 import {
   changeOrderBody,
   changeOrderRowActions,
+  changeOrderShareLinks,
   newChangeOrderTarget,
-} from "../../shared/documents/change-order-actions.ts"; // REQ-462
+} from "../../shared/documents/change-order-actions.ts"; // REQ-462, REQ-565
 import {
   canReviseQuote,
+  editableJobDetails,
   editableLines,
   type EditableQuoteLine,
   editorTotalCents,
+  jobDetailsPatch,
   linesPatch,
   nextVersionOf,
+  type PublishedMark,
+  publishedNoteVisible,
 } from "../lib/quote-line-edit.ts";
 import {
   quoteCardValue,
@@ -131,6 +144,9 @@ function mapCard(c: BackendQuoteCard, lang: "en" | "es"): Quote {
     sentDays: c.sentDays,
     decidedDays: c.decidedDays ?? undefined,
     ...(c.lastDelivery?.channel ? { channel: c.lastDelivery.channel } : {}),
+    // REQ-586 (cycle 4, M11): the card's customer link opens in the language
+    // the quote went out in.
+    ...(quoteSendLang(c) ? { sendLang: quoteSendLang(c) } : {}),
     band: ["#FFB3B3", "#FF6B6B"],
     shadow: "rgba(255,107,107,0.35)",
     ...(c.isSample === true ? { isSample: true } : {}),
@@ -159,6 +175,8 @@ interface OpenQuoteState {
   ledger: QuoteLedger | null;
   /** REQ-201: the quote's own version history (current last). */
   versions: QuoteVersion[];
+  /** REQ-570 (m41): who the panel's Send goes to — contact on file. */
+  customer?: SendDialogCustomer | null;
 }
 
 /** REQ-462 (demo-loop cycle 3, M26) — "Signed — later changes go on a change
@@ -363,19 +381,54 @@ function SignedChangeOrder(
 
 type LedgerCoRow = QuoteLedger["changeOrders"][number];
 
+/** REQ-565: who a change order goes to — the quote's customer as filed on it. */
+interface CoRecipient {
+  name: string | null;
+  phone?: string;
+  email?: string;
+}
+
 /** REQ-462 (M26) — one change order in the ledger: number, version, state,
  *  invoice, wording and amount; while the customer has not approved it, Edit
  *  (PUT — its next version, back to pending, the alert sent again) and
  *  Withdraw (asks first, then DELETE). The number still opens /co/:id. */
 function LedgerChangeOrderRow(
-  { lang, co, onChanged, onWithdrawn }: {
+  { lang, co, customer, onChanged, onWithdrawn }: {
     lang: "en" | "es";
     co: LedgerCoRow;
+    customer: CoRecipient;
     onChanged: () => void;
     onWithdrawn: (number: string) => void;
   },
 ) {
   const [editing, setEditing] = useState(false);
+  // REQ-565 (demo m33): the order reaches the customer from its row — its
+  // link copied, texted or emailed, or opened as she sees it.
+  const [copied, setCopied] = useState(false);
+  const who = customer.name ?? tFor(lang, "quotesPage.edit.theCustomer");
+  const origin = typeof globalThis.location === "undefined"
+    ? ""
+    : globalThis.location.origin;
+  const coUrl = `${origin}${co.url}`;
+  const share = changeOrderShareLinks({
+    origin,
+    path: co.url,
+    phone: customer.phone,
+    email: customer.email,
+    subject: tFor(lang, "quotes.ledger.coSendSubject", { number: co.number }),
+    text: tFor(lang, "quotes.ledger.coSendBody", {
+      name: customer.name ?? "",
+      number: co.number,
+      url: coUrl,
+    }).replace(/\s+,/, ","),
+  });
+  async function copyCoLink() {
+    try {
+      await navigator.clipboard.writeText(share.url);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch { /* clipboard unavailable — leave the label as-is */ }
+  }
   const [desc, setDesc] = useState("");
   const [dollars, setDollars] = useState("");
   const [confirming, setConfirming] = useState(false);
@@ -553,6 +606,56 @@ function LedgerChangeOrderRow(
             </button>
           </span>
         )}
+        {!editing && !confirming && (
+          <span
+            data-cy="ledger-co-share"
+            style="display:flex;gap:4px;flex-wrap:wrap;align-items:center;margin-top:2px"
+          >
+            <button
+              type="button"
+              class="qopen__btn"
+              data-cy="ledger-co-copy"
+              style={small}
+              onClick={copyCoLink}
+            >
+              {copied
+                ? tFor(lang, "quotes.ledger.coLinkCopied")
+                : tFor(lang, "quotes.ledger.coCopyLink")}
+            </button>
+            <a
+              class="qopen__btn"
+              data-cy="ledger-co-text"
+              style={small}
+              href={share.sms}
+            >
+              {tFor(lang, "quotes.ledger.coText")}
+            </a>
+            <a
+              class="qopen__btn"
+              data-cy="ledger-co-email"
+              style={small}
+              href={share.email}
+            >
+              {tFor(lang, "quotes.ledger.coEmail")}
+            </a>
+            <a
+              class="qopen__btn"
+              data-cy="ledger-co-view"
+              style={`${small};background:transparent;border-color:transparent`}
+              href={co.url}
+              target="_blank"
+              rel="noopener"
+            >
+              {tFor(lang, "quotes.ledger.coViewAsCustomer")}
+            </a>
+          </span>
+        )}
+        <span
+          data-cy="ledger-co-banner-note"
+          style={`${mutedStyle};font-size:12px`}
+        >
+          {tFor(lang, "quotes.ledger.coBannerNote", { name: who })}
+        </span>
         {savedVersion !== null && !editing && (
           <span
             data-cy="ledger-co-saved"
@@ -631,7 +734,10 @@ function QuoteLedgerSection(
 ) {
   const [publishing, setPublishing] = useState(false);
   const [publishErr, setPublishErr] = useState<string | null>(null);
-  const [published, setPublished] = useState(false);
+  // REQ-565 (demo m33): what the "Revision published" note is true of — it
+  // drops once the quote is signed, a later version lands or a change order
+  // is made (it used to stay until the panel remounted).
+  const [published, setPublished] = useState<PublishedMark | null>(null);
   // REQ-304 (demo M28): publishing is a two-step — the button opens a
   // preview that says what Version N changes, and only its Publish posts.
   const [confirming, setConfirming] = useState(false);
@@ -642,6 +748,16 @@ function QuoteLedgerSection(
   // REQ-466 (demo m38): the draft revision can be read before Publish.
   const [showDraft, setShowDraft] = useState(false);
   const summary = ledgerSummary(ledger);
+  // REQ-565: the change orders go to the quote's customer as filed on it
+  const snapshot = (q as { customerSnapshot?: Record<string, unknown> })
+    .customerSnapshot;
+  const coRecipient: CoRecipient = {
+    name: q.customerName ?? null,
+    ...(typeof snapshot?.phoneNumber === "string"
+      ? { phone: snapshot.phoneNumber }
+      : {}),
+    ...(typeof snapshot?.email === "string" ? { email: snapshot.email } : {}),
+  };
   // REQ-481 (demo M28): why the next invoice is off — "The rest is on
   // INV-002, scheduled Nov 26", not "already invoiced" over an unsent bill.
   const fullyInvoicedText = tFor(lang, summary.fullyInvoicedKey, {
@@ -713,8 +829,15 @@ function QuoteLedgerSection(
     setPublishing(true);
     setPublishErr(null);
     try {
-      await quotesClient.publish(q.id, { notify: true, language: lang });
-      setPublished(true);
+      const res = await quotesClient.publish(q.id, {
+        notify: true,
+        language: lang,
+      });
+      setPublished({
+        version: res?.version ?? ledger.quote.version + 1,
+        status: res?.status ?? q.status ?? "",
+        changeOrders: ledger.changeOrders.length,
+      });
       setConfirming(false);
       onPublished();
     } catch (err) {
@@ -956,6 +1079,7 @@ function QuoteLedgerSection(
               key={co.id}
               lang={lang}
               co={co}
+              customer={coRecipient}
               onChanged={onPublished}
               onWithdrawn={setWithdrawnCo}
             />
@@ -1154,7 +1278,11 @@ function QuoteLedgerSection(
           </span>
         )}
       </div>
-      {published && (
+      {publishedNoteVisible(published, {
+        version: ledger.quote.version,
+        status: q.status ?? "",
+        changeOrders: ledger.changeOrders.length,
+      }) && (
         <p
           data-cy="quote-published-note"
           style="margin:8px 0 0;font-size:12.5px;color:var(--brand-green,#519843);font-weight:700"
@@ -1190,6 +1318,9 @@ function QuoteLineEditor(
   const [lines, setLines] = useState<EditableQuoteLine[]>(() =>
     editableLines(q)
   );
+  // REQ-561 (demo M28): the job-detail bullets the customer reads.
+  const [initialDetails] = useState(() => editableJobDetails(q));
+  const [details, setDetails] = useState(initialDetails);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const n = nextVersionOf(q);
@@ -1221,6 +1352,7 @@ function QuoteLineEditor(
       await quotesClient.update(q.id, {
         lineItems: body.lineItems,
         estimatedTotal: body.estimatedTotal,
+        ...jobDetailsPatch(initialDetails, details),
       });
       onSaved(n);
     } catch {
@@ -1239,6 +1371,26 @@ function QuoteLineEditor(
       <p style={`margin:0 0 8px;font-size:12.5px;${mutedStyle}`}>
         {tFor(lang, "quotesPage.edit.heading", { n })}
       </p>
+      <label style="display:block;margin:0 0 10px">
+        <span
+          style={`display:block;font-size:11px;font-weight:700;${mutedStyle}`}
+        >
+          {tFor(lang, "quotesPage.edit.jobDetails")}
+        </span>
+        <textarea
+          data-cy="quote-edit-job-details"
+          rows={Math.min(8, Math.max(3, details.split("\n").length + 1))}
+          value={details}
+          disabled={busy}
+          onInput={(e) => setDetails((e.target as HTMLTextAreaElement).value)}
+          style={`${field};margin-top:4px;resize:vertical;line-height:1.45`}
+        />
+        <span
+          style={`display:block;margin-top:2px;font-size:11px;${mutedStyle}`}
+        >
+          {tFor(lang, "quotesPage.edit.jobDetailsHint")}
+        </span>
+      </label>
       <div style={`${grid};font-size:11px;font-weight:700;${mutedStyle}`}>
         <span>{tFor(lang, "quotesPage.edit.description")}</span>
         <span>{tFor(lang, "quotesPage.edit.qty")}</span>
@@ -1373,10 +1525,17 @@ function OpenQuotePanel(
   // editor and its "saved" note reset whenever another quote is opened.
   const [editing, setEditing] = useState(false);
   const [savedVersion, setSavedVersion] = useState<number | null>(null);
+  // REQ-570 (demo m41): Send ▾ — its menu, the dialog's channel, the outcome.
+  const [sendMenuOpen, setSendMenuOpen] = useState(false);
+  const [sendChannel, setSendChannel] = useState<SendChannel | null>(null);
+  const [sendResult, setSendResult] = useState<PanelSendResult | null>(null);
   const openedId = state.quote?.id;
   useEffect(() => {
     setEditing(false);
     setSavedVersion(null);
+    setSendMenuOpen(false);
+    setSendChannel(null);
+    setSendResult(null);
   }, [openedId]);
 
   if (state.loading) {
@@ -1409,8 +1568,9 @@ function OpenQuotePanel(
   async function copyLink() {
     try {
       // Always the FULL public quote URL (/q/:id) — never a summary variant.
+      // REQ-586 (cycle 4, M11): in the language the quote went out in.
       await navigator.clipboard.writeText(
-        `${globalThis.location.origin}/q/${quoteId}`,
+        customerLinkUrl(globalThis.location.origin, quoteId, quoteSendLang(q)),
       );
       setCopied(true);
       setTimeout(() => setCopied(false), 1500);
@@ -1445,6 +1605,11 @@ function OpenQuotePanel(
       {summaryText && q.jobName?.trim() && (
         <p class="qopen__summary">{summaryText}</p>
       )}
+      {q.isSample && (
+        <p class="qopen__summary" data-cy="quote-sample-note">
+          {tFor(lang, "quotesPage.open.sampleNote")}
+        </p>
+      )}
       {q.customerName && (
         <p class="qopen__client" style="font-size:13px;color:var(--fg-muted)">
           {tFor(lang, "quotesPage.open.customer", { name: q.customerName })}
@@ -1453,14 +1618,80 @@ function OpenQuotePanel(
       <div class="qopen__meta">
         <div class="qopen__amount">{fmtMoney(q.estimatedTotal ?? 0)}</div>
         <div class="qopen__actions">
-          <button type="button" class="qopen__btn" onClick={copyLink}>
-            {copied
-              ? tFor(lang, "quotesPage.open.linkCopied")
-              : tFor(lang, "quotesPage.open.copyLink")}
-          </button>
+          {
+            /* REQ-570 (demo m41): send it from here — the chat's send dialog
+              and SendQuote — or preview it as the customer will see it.
+              REQ-614 (cycle 4, m16): the onboarding sample has no customer —
+              nothing here shares or sends it (REQ-360 did the card's back). */
+          }
+          {panelCanSend(q) && !q.isSample && (
+            <div class="qopen-send">
+              <button
+                type="button"
+                class="qopen__btn"
+                data-cy="quote-panel-send"
+                aria-haspopup="menu"
+                aria-expanded={sendMenuOpen ? "true" : "false"}
+                aria-label={tFor(lang, "quotesPage.open.chooseSend")}
+                onClick={() => setSendMenuOpen((o) => !o)}
+              >
+                <I d={ICN.send} size={13} sw={2.4} />
+                {tFor(lang, "quotesPage.open.send")}
+                <I d={ICN.chev} size={11} sw={2.4} />
+              </button>
+              {sendMenuOpen && (
+                <div
+                  class="qopen-send__menu"
+                  role="menu"
+                  data-cy="quote-panel-send-menu"
+                >
+                  {([
+                    ["both", "asstChat.preview.menuBoth", ICN.send],
+                    ["sms", "asstChat.preview.menuSms", ICN.phone],
+                    ["email", "asstChat.preview.menuEmail", ICN.mail],
+                  ] as const).map(([ch, key, icon]) => (
+                    <button
+                      key={ch}
+                      type="button"
+                      role="menuitem"
+                      class="qopen-send__item"
+                      data-cy={`quote-panel-send-${ch}`}
+                      onClick={() => {
+                        setSendMenuOpen(false);
+                        setSendResult(null);
+                        setSendChannel(ch);
+                      }}
+                    >
+                      <I d={icon} size={13} sw={2.4} />
+                      <span>{tFor(lang, key)}</span>
+                    </button>
+                  ))}
+                  <a
+                    role="menuitem"
+                    class="qopen-send__item"
+                    data-cy="quote-panel-send-preview"
+                    href={customerLinkPath(q.id, quoteSendLang(q))}
+                    target="_blank"
+                    rel="noopener"
+                    onClick={() => setSendMenuOpen(false)}
+                  >
+                    <I d={ICN.eye} size={13} sw={2.4} />
+                    <span>{tFor(lang, "asstChat.preview.menuPreview")}</span>
+                  </a>
+                </div>
+              )}
+            </div>
+          )}
+          {!q.isSample && (
+            <button type="button" class="qopen__btn" onClick={copyLink}>
+              {copied
+                ? tFor(lang, "quotesPage.open.linkCopied")
+                : tFor(lang, "quotesPage.open.copyLink")}
+            </button>
+          )}
           <a
             class="qopen__btn"
-            href={`/q/${q.id}`}
+            href={customerLinkPath(q.id, quoteSendLang(q))}
             target="_blank"
             rel="noopener"
           >
@@ -1498,6 +1729,42 @@ function OpenQuotePanel(
           )}
         </div>
       </div>
+      {sendChannel && (
+        <QuoteSendDialog
+          lang={lang}
+          quoteId={q.id}
+          customer={state.customer ??
+            (q.customerName
+              ? { id: q.customerId, name: q.customerName }
+              : null)}
+          initialChannel={sendChannel}
+          onClose={() => setSendChannel(null)}
+          onSent={(r) => {
+            setSendChannel(null);
+            setSendResult(r);
+            onRefresh();
+          }}
+        />
+      )}
+      {sendResult && (
+        <p
+          class={`qopen-send__result${
+            sendResult.delivered ? "" : " qopen-send__result--failed"
+          }`}
+          data-cy="quote-panel-send-result"
+          role="status"
+        >
+          {sendResult.delivered
+            ? tFor(lang, "quotesPage.open.sentTo", {
+              to: [sendResult.outcome?.emailedTo, sendResult.outcome?.textedTo]
+                .filter(Boolean).join(" · "),
+            })
+            : tFor(lang, "quotesPage.open.sendFailed", {
+              reason: sendResult.outcome?.emailFailureReason ||
+                sendResult.outcome?.smsFailureReason || "",
+            })}
+        </p>
+      )}
       {editing && (
         <QuoteLineEditor
           lang={lang}
@@ -1541,7 +1808,8 @@ function OpenQuotePanel(
                 r.channel === "email"
                   ? "quotesPage.open.receipt.emailedTo"
                   : "quotesPage.open.receipt.textedTo",
-                { to: r.to },
+                // REQ-593 (cycle 4, m12): a number reads like one
+                { to: r.channel === "email" ? r.to : formatPhoneDisplay(r.to) },
               )}
             </div>
           ))}
@@ -1656,8 +1924,8 @@ export default function QuotesPage(
         .catch(() => ({ opens: [] as { at: string }[] })),
       // UX-08: GET /quotes/:id is the raw row (customerId only) — join the
       // customer so the panel can say WHO the deal is with.
-      api.get<{ id: string; name?: string }[]>("/customers")
-        .catch(() => [] as { id: string; name?: string }[]),
+      api.get<SendDialogCustomer[]>("/customers")
+        .catch(() => [] as SendDialogCustomer[]),
       // REQ-205 / REQ-201: the documents ledger and the version history.
       quotesClient.ledger(openId).catch(() => null as QuoteLedger | null),
       quotesClient.versions(openId).catch(() => [] as QuoteVersion[]),
@@ -1666,10 +1934,14 @@ export default function QuotesPage(
     ) => {
       if (!alive) return;
       let quote = quoteRaw as BackendQuoteCard | null;
-      if (quote && !quote.customerName && quote.customerId) {
-        const found = (Array.isArray(customersList) ? customersList : [])
-          .find((c) => c.id === quote!.customerId);
-        if (found?.name) quote = { ...quote, customerName: found.name };
+      // REQ-570 (m41): the customer row also carries the contact on file
+      // the panel's send dialog tags channels by.
+      const customer = quote?.customerId
+        ? (Array.isArray(customersList) ? customersList : [])
+          .find((c) => c.id === quote!.customerId) ?? null
+        : null;
+      if (quote && !quote.customerName && customer?.name) {
+        quote = { ...quote, customerName: customer.name };
       }
       const receipts = classifyReceipts(
         Array.isArray(messages) ? messages : [],
@@ -1692,6 +1964,7 @@ export default function QuotesPage(
           ? ledger
           : null,
         versions: Array.isArray(versions) ? versions : [],
+        customer,
       });
     });
     return () => {

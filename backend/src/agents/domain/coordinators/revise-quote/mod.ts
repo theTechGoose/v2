@@ -9,6 +9,7 @@ import {
 } from "#documents/versions.ts";
 import { pickChangeOrderTarget } from "@agents/domain/business/change-order-intent/mod.ts";
 import {
+  findLine,
   type LineChange,
   reviseLineItems,
   totalOf,
@@ -28,6 +29,13 @@ export interface ReviseQuoteInput {
   remove: string[];
   /** What the user typed — the reply mentions a deposit ask (REQ-267). */
   userText: string;
+  /** REQ-585 (demo-loop cycle 4, M4): the bound quote's job details, every
+   *  language. A named "line" that is one of their bullets is said to be in
+   *  the job details — never "I couldn't find a line called …". */
+  jobDetails?: string;
+  /** REQ-585: the job details were rewritten this same turn — a bullet the
+   *  model also tried to revise needs no reply of its own. */
+  jobDetailsUpdated?: boolean;
 }
 
 export type ReviseQuoteOutcome =
@@ -40,12 +48,14 @@ export type ReviseQuoteOutcome =
   | { kind: "draft_updated"; quoteId: string; quoteNumber?: string }
   /** signed — nothing changes (REQ-202) */
   | { kind: "locked"; quoteId: string; quoteNumber?: string }
-  /** a named line is not on the quote — nothing written */
+  /** a named line is not on the quote — nothing written. REQ-585:
+   *  `inJobDetails` — every one is a job-details bullet, not a priced line. */
   | {
     kind: "no_such_line";
     quoteId: string;
     quoteNumber?: string;
     unmatched: string[];
+    inJobDetails?: boolean;
   }
   | { kind: "ambiguous"; quoteIds: string[] }
   | { kind: "none" }
@@ -58,6 +68,16 @@ export interface ReviseQuoteResult {
 }
 
 type LineItem = Quote["lineItems"][number];
+
+/** REQ-585: the job details' bullets, one per line, list marks gone. */
+function jobDetailsBullets(
+  text: string | undefined,
+): { description: string }[] {
+  return (text ?? "").split(/\n+/)
+    .map((l) => l.replace(/^\s*(?:[-•*·]|\d+[.)])\s*/u, "").trim())
+    .filter(Boolean)
+    .map((description) => ({ description }));
+}
 
 function money(cents: number): string {
   const sign = cents < 0 ? "−" : "";
@@ -164,7 +184,40 @@ export class ReviseQuote {
     // The working copy: the pending revision when one exists (REQ-201).
     const base = (quote.pendingRevision?.lineItems as LineItem[] | undefined) ??
       quote.lineItems ?? [];
-    const rev = reviseLineItems(base, input.lines, input.remove);
+    // REQ-585 (demo-loop cycle 4, M4): pair 7's "change the cabinet line to
+    // just say white shaker cabinets" named a JOB-DETAILS bullet; the reply
+    // was "I couldn't find a line called … so I changed nothing" beside the
+    // job details the same turn had just rewritten. A bullet is not a priced
+    // line: it is left to the job details and said so — or, when they were
+    // rewritten this turn, nothing more is said.
+    const bullets = jobDetailsBullets(input.jobDetails);
+    const isBullet = (name: string) =>
+      bullets.length > 0 && findLine(base, name) < 0 &&
+      findLine(bullets, name) >= 0;
+    const inDetails = [...input.lines.map((l) => l.match), ...input.remove]
+      .filter(isBullet);
+    const lines = input.lines.filter((l) => !inDetails.includes(l.match));
+    const remove = input.remove.filter((r) => !inDetails.includes(r));
+    const detailsNote = inDetails.length > 0 && !input.jobDetailsUpdated
+      ? t(lang, "chatCoordinator.reviseQuote.jobDetailsLine", {
+        ...vars,
+        line: inDetails.join('", "'),
+      })
+      : "";
+    if (inDetails.length > 0 && lines.length === 0 && remove.length === 0) {
+      return {
+        text: detailsNote,
+        outcome: {
+          kind: "no_such_line",
+          ...ref,
+          unmatched: inDetails,
+          inJobDetails: true,
+        },
+      };
+    }
+    const withNote = (text: string) =>
+      detailsNote ? `${text} ${detailsNote}` : text;
+    const rev = reviseLineItems(base, lines, remove);
     if (rev.unmatched.length > 0) {
       const list = base
         .map((l) =>
@@ -172,11 +225,11 @@ export class ReviseQuote {
         )
         .join("\n");
       return {
-        text: t(lang, "chatCoordinator.reviseQuote.noSuchLine", {
+        text: withNote(t(lang, "chatCoordinator.reviseQuote.noSuchLine", {
           ...vars,
           line: rev.unmatched.join('", "'),
           list,
-        }),
+        })),
         outcome: { kind: "no_such_line", ...ref, unmatched: rev.unmatched },
       };
     }
@@ -201,18 +254,20 @@ export class ReviseQuote {
       await this.quotes.setPending(quote.id, userId, patch);
       const nextVersion = versionOf(quote) + 1;
       return {
-        text: `${text} ${
-          t(lang, "chatCoordinator.reviseQuote.publishHint", {
-            ...vars,
-            version: nextVersion,
-          })
-        }`,
+        text: withNote(
+          `${text} ${
+            t(lang, "chatCoordinator.reviseQuote.publishHint", {
+              ...vars,
+              version: nextVersion,
+            })
+          }`,
+        ),
         outcome: { kind: "pending_revision", ...ref, nextVersion },
       };
     }
 
     // A draft → edited in place.
     await this.quotes.update(quote.id, userId, patch);
-    return { text, outcome: { kind: "draft_updated", ...ref } };
+    return { text: withNote(text), outcome: { kind: "draft_updated", ...ref } };
   }
 }

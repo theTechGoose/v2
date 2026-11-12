@@ -78,6 +78,20 @@ function withLanguage(snap: CachedDash, lang: "en" | "es"): CachedDash {
   };
 }
 
+/** REQ-592 (demo-loop cycle 4, m5): the page's explicit `?lang=`, or null.
+ *  lib/lang.ts seeds the UI from it at load and the topbar toggle writes it
+ *  back (writeLangToUrl), so it is the user's choice for this page. */
+function urlLangChoice(): "en" | "es" | null {
+  try {
+    const search = (globalThis as { location?: { search?: string } })
+      .location?.search;
+    const v = search ? new URLSearchParams(search).get("lang") : null;
+    return v === "en" || v === "es" ? v : null;
+  } catch {
+    return null;
+  }
+}
+
 /** `choiceMarkAtStart` is `langChoiceMark()` when the read was issued. */
 function writeCached(
   snap: CachedDash,
@@ -85,7 +99,11 @@ function writeCached(
 ): CachedDash {
   const plang = snap.profile?.user?.language;
   if (plang === "en" || plang === "es") {
-    if (langChoiceMark() === choiceMarkAtStart) {
+    if (urlLangChoice()) {
+      // REQ-592 (m5): a page opened with ?lang= keeps that language — the
+      // profile's `user.language` (an es staff account on /admin?lang=en)
+      // must not flip it on the mount read or a later PROFILE_UPDATED one.
+    } else if (langChoiceMark() === choiceMarkAtStart) {
       // Seed the app's UI language from the server's source of truth so every
       // island reading langSignal renders in the contractor's chosen language.
       setLang(plang, { fromServer: true });

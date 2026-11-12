@@ -15,7 +15,7 @@ import {
 } from "../clients/admins.ts";
 import { isFolder, viewAt } from "../lib/nav-folders.ts";
 import { restingPath, SB_DRAWER_CSS } from "../lib/sb-drawer.ts";
-import { NAV } from "../lib/nav-tree.ts";
+import { NAV, superAdminTabAt } from "../lib/nav-tree.ts";
 import {
   PROFILE_UPDATED,
   type ProfileUpdatedDetail,
@@ -26,6 +26,8 @@ import {
   countLabelKey,
   pickSidebarCounts,
 } from "../lib/sidebar-counts.ts";
+import { fieldClient } from "../clients/field.ts";
+import { workerViewHref } from "../lib/worker-view-link.ts";
 
 // REQ-176 — the tree itself is data in lib/nav-tree.ts; this island renders one level of it.
 
@@ -106,6 +108,20 @@ export default function DashSidebar(
     adminsClient.accounts().then((v) => {
       if (alive) setAccounts(v);
     }).catch(() => {/* no session yet, or the API is down — no switcher */});
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  // REQ-602 (M35) — how many workers the account has; null until known
+  const [workerCount, setWorkerCount] = useState<number | null>(null);
+  useEffect(() => {
+    let alive = true;
+    fieldClient.workers().then((ws) => {
+      if (alive) setWorkerCount(ws.length);
+    }).catch(
+      () => {/* no session or no access — keep the plain /worker link */},
+    );
     return () => {
       alive = false;
     };
@@ -381,12 +397,12 @@ export default function DashSidebar(
                 );
               })}
               {
-                /* Super-admin tab — super-admins only, inside the Admin folder
-                (REQ-176). Server enforces the /admin gate too (route middleware
+                /* Super-admin tab — super-admins only, on the root and inside the
+                Roles folder (REQ-176; REQ-604 demo m18: on the root too). Server enforces the /admin gate too (route middleware
                 + every endpoint); this just hides the entry for everyone else.
                 Label is intentionally not i18n'd (internal operator tool). */
               }
-              {s.superAdmin && view.folder?.id === "manage" && (
+              {superAdminTabAt(s.superAdmin, view.folder?.id ?? null) && (
                 <a
                   href="/admin"
                   class={`nav-item ${
@@ -487,10 +503,12 @@ export default function DashSidebar(
             )}
             {
               /* REQ-143: the worker screen is always one click away — it is a
-              separate login (cell + PIN), so this is a plain link. */
+              separate login (cell + PIN), so this is a plain link.
+              REQ-602 (M35): with no workers nobody can sign in there, so it
+              goes to /field/workers, where workers are added. */
             }
             <a
-              href="/worker"
+              href={workerViewHref(workerCount)}
               class="nav-item"
               style="color:rgba(255,255,255,0.7)"
               data-cy="nav-worker-view"

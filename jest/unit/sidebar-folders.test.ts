@@ -62,7 +62,7 @@ describe("REQ-156 the tree walk", () => {
 });
 
 describe("REQ-156 the sidebar's folders", () => {
-  test("the four field entries are the field folder's (REQ-361, was recurring; Workers is Admin's since REQ-178); the sidebar renders Back and the folder rows", () => {
+  test("the four field entries are the field folder's (REQ-361, was recurring; REQ-604: Workers is shared with Roles); the sidebar renders Back and the folder rows", () => {
     const src = read("front-end/islands/DashSidebar.tsx");
     // REQ-176 — the tree itself lives in lib/nav-tree.ts; the island renders it
     const tree = read("front-end/lib/nav-tree.ts");
@@ -74,7 +74,8 @@ describe("REQ-156 the sidebar's folders", () => {
     for (
       const id of ["subscriptions", "assignments", "tasks", "batches"]
     ) expect(folder).toContain(`id: "${id}"`);
-    expect(folder).not.toContain('id: "workers"'); // REQ-178 — Workers moved to Admin
+    // REQ-604 (demo m18): Workers is listed in Field again — the shared node, also in Roles
+    expect(folder).toContain("WORKERS");
     expect(src).toContain('data-cy="nav-back"');
     expect(src).toContain("data-cy={`nav-folder-${item.id}`}");
     expect(src).toMatch(/tFor\(lang, "nav\.back"\)/);

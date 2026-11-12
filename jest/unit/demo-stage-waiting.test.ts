@@ -63,9 +63,11 @@ describe("REQ-297 m27 — the frame's look from the link status", () => {
     expect(look.waiting).toBe(false);
   });
 
-  test("REQ-297 ended / replaced / closed never dim: their own banners say what happened", () => {
+  // REQ-541 AMENDMENT (cycle 4, M22) — "replaced" now greys the frame under its own moved
+  // banner (demo-stage-replaced-handback.test.ts): a chip alone left the stale mirror looking live
+  test("REQ-297 ended / closed never dim: their own banners say what happened", () => {
     for (
-      const status of ["ended", "replaced", "closed", "connecting"] as const
+      const status of ["ended", "closed", "connecting"] as const
     ) {
       const look = stageFrameLook({
         status,

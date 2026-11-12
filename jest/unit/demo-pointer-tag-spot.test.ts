@@ -75,7 +75,7 @@ describe("REQ-437 (demo m3 + p8-pair3-a, cycle 3) the pointer's name tag sits ou
     expect(inside(t, win)).toBe(true);
   });
 
-  test("the edge with the most room wins: a button at the window's bottom puts the tag above it; at the top, below it", () => {
+  test("a button at the window's bottom puts the tag above it; at the top, below it (REQ-543: the nearest free side within reach, no longer the roomiest)", () => {
     const low: R = { left: 600, top: 760, width: 120, height: 36 };
     const a = tagRect({ x: 660, y: 778 }, win, tom, low);
     expect(a.side).toBe("above");

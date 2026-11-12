@@ -5,7 +5,8 @@
  * note for the office, a services panel (remove / put back / defer one / add),
  * and "Defer visit". A foreman sees their own visits first, then one section
  * per crew. `?date=` replays a past day; the list refreshes every 5 s while the
- * tab is visible and nothing is being typed.
+ * tab is visible and nothing is being typed, backing off to 60 s while idle; a
+ * refresh reads only the tasks (REQ-605).
  *
  * Ported from a2z/web/trabajador.html (its <style> block lives here; the demo
  * driver was not ported). Strings: worker.* in lang/*.json via t().
@@ -18,6 +19,7 @@ import {
   type WorkerTaskView,
 } from "../clients/field.ts";
 import { ApiError } from "../lib/api.ts";
+import { formatPhoneInput } from "../../shared/quote-flow/format-helpers.ts";
 import { I, ICN } from "../lib/dash-icons.tsx";
 import {
   fmtDay,
@@ -28,12 +30,17 @@ import {
   workerDayNav,
   workerScreenLang,
 } from "../lib/field.ts";
-import { lockLabelKey } from "../lib/field-batches.ts";
+import { lockLabelKey, NOTE_SAVED_MS } from "../lib/field-batches.ts";
+import { WORKERS_PAGE_HREF } from "../lib/worker-view-link.ts";
 import { refreshTickDue } from "../lib/refresh-tick.ts";
+import {
+  startWorkerRefresh,
+  WORKER_REFRESH_MS,
+} from "../lib/worker-refresh.ts";
 import { type Lang, langSignal, setLang, t } from "../lib/i18n.ts";
 
 const CELL_KEY = "pm:worker-cell";
-const REFRESH_MS = 5000;
+const REFRESH_MS = WORKER_REFRESH_MS;
 
 const css = `
   /* the worker's phone screen — one column, big tap targets, nothing else */
@@ -46,6 +53,9 @@ const css = `
   .greet small { display: block; font-family: var(--font-body); font-weight: 500; font-size: 14px; color: var(--fg-muted); margin-top: 4px; }
   .login { background: #fff; border: 1px solid var(--border); border-radius: var(--radius-xl); padding: 22px; display: flex; flex-direction: column; gap: 14px; margin-top: 30px; }
   .login input, .login select { font-size: 18px; padding: 14px; }
+  /* REQ-602 (M35): an owner on the sign-in card is told whose screen it is */
+  .owner-note { background: var(--mint-100); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; font-size: 15px; color: var(--fg); margin-top: 18px; }
+  .owner-note + .login { margin-top: 0; }
   .pin { letter-spacing: .4em; text-align: center; font-family: var(--font-mono); }
   .pinwrap { position: relative; display: flex; }
   .pinwrap input { flex: 1; min-width: 0; padding-right: 52px; }
@@ -60,9 +70,15 @@ const css = `
   /* REQ-353 (m23): on a phone the header wraps — the title and the EN/ES pill
      on the first row, "Volver a la oficina" and "Salir" on the next — instead
      of squeezing "Mis tareas" under the pill with Salir at the edge */
+  /* REQ-612 (cycle 4, p4-p8c): Back to office and Sign out are ONE flex item,
+     so on a phone they drop to the next row together (not "Sign out" alone)
+     and a label never breaks over two lines */
+  .top__actions { display: flex; align-items: center; gap: 10px; }
+  .top__actions .btn { white-space: nowrap; }
   @media (max-width: 480px) {
     .top { flex-wrap: wrap; row-gap: 8px; }
     .top .brand { flex: 1 0 auto; }
+    .top__actions { flex-basis: 100%; justify-content: flex-end; }
   }
   /* one card per visit, its services as check-offs, Note + Services on each */
   .crew { font-family: var(--font-heading); font-weight: 800; font-size: 15px; color: var(--brand-teal); display: flex; align-items: center; gap: 8px; margin-top: 6px; }
@@ -219,6 +235,10 @@ export default function WorkerScreen(
   const toastTimer = useRef<ReturnType<typeof setTimeout> | undefined>(
     undefined,
   );
+  /** REQ-608 — one "Note saved" timer per visit; a newer save restarts it */
+  const flashTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>(
+    {},
+  );
   const busyRef = useRef(busy);
   busyRef.current = busy;
   const draftsRef = useRef(drafts);
@@ -271,6 +291,7 @@ export default function WorkerScreen(
       // REQ-416 — for this session only, never over the browser's own pm_lang
       const wl = workerScreenLang(who, langChosenRef.current);
       if (wl) setLang(wl, { persist: false });
+      meRef.current = who;
       if (who) {
         const [rows, tt] = await Promise.all([
           workerClient.tasks(d, who.role === "foreman"),
@@ -287,30 +308,55 @@ export default function WorkerScreen(
     }
   }
 
-  // First load once the day is known; then a 5 s refresh while visible and idle.
+  /** REQ-605 — the poll's read: the day's tasks only (me and task types rarely change) */
+  async function loadTasks() {
+    const d = dateRef.current;
+    const who = meRef.current;
+    if (!d || !who) return;
+    lastLoadRef.current = Date.now();
+    try {
+      setTasks(await workerClient.tasks(d, who.role === "foreman"));
+    } catch (e) {
+      // the session ended elsewhere: a full read puts the sign-in form back
+      if (e instanceof ApiError && e.status === 401) return load();
+      showToast(t("worker.fail", { msg: friendly(e) }));
+    }
+  }
+
+  // First (full) load once the day is known; then REQ-605: a tasks-only refresh every 5 s
+  // while visible and in use, backing off to 60 s while idle, and a full read on the
+  // catch-up after the tab was hidden.
   useEffect(() => {
     if (!date) return;
     load();
-    const id = setInterval(() => {
-      if (
-        meRef.current && document.visibilityState === "visible" &&
-        busyRef.current.size === 0 &&
+    return startWorkerRefresh({
+      full: load,
+      tasks: loadTasks,
+      due: () =>
+        !!meRef.current && busyRef.current.size === 0 &&
         Object.keys(draftsRef.current).length === 0 && !deferringRef.current &&
-        refreshTickDue(lastLoadRef.current, Date.now(), REFRESH_MS) // REQ-508: not right after an act()'s reload
-      ) load();
-    }, REFRESH_MS);
-    return () => clearInterval(id);
+        refreshTickDue(lastLoadRef.current, Date.now(), REFRESH_MS), // REQ-508: not right after an act()'s reload
+    });
   }, [date]);
 
-  /** one in-flight request per control; failures become a toast, never silence */
-  async function act(key: string, fn: () => Promise<unknown>) {
-    if (busyRef.current.has(key)) return;
+  /**
+   * one in-flight request per control; failures become a toast, never silence.
+   * Resolves true once the action AND its reload are done (REQ-608).
+   */
+  async function act(
+    key: string,
+    fn: () => Promise<unknown>,
+    after: () => Promise<unknown> = loadTasks, // REQ-605: an action changes tasks only
+  ): Promise<boolean> {
+    if (busyRef.current.has(key)) return false;
     setBusy((b) => new Set(b).add(key));
     try {
       await fn();
-      await load();
+      await after();
+      return true;
     } catch (e) {
       showToast(t("worker.fail", { msg: friendly(e) }));
+      return false;
     } finally {
       setBusy((b) => {
         const n = new Set(b);
@@ -359,35 +405,46 @@ export default function WorkerScreen(
       setOpen({});
       setDrafts({});
       setDeferring(null);
-    });
+    }, load);
   }
 
   function toggleOpen(vid: string, which: "note" | "services") {
     setOpen((o) => ({ ...o, [vid]: o[vid] === which ? null : which }));
   }
 
-  function saveNote(v: Visit) {
+  /** REQ-608 — drop a visit's "Note saved" line (its timer ran out, or the note was edited) */
+  function clearFlash(vid: string) {
+    clearTimeout(flashTimers.current[vid]);
+    delete flashTimers.current[vid];
+    setFlash((f) => {
+      if (!(vid in f)) return f;
+      const n = { ...f };
+      delete n[vid];
+      return n;
+    });
+  }
+
+  async function saveNote(v: Visit) {
     const first = live(v)[0] ?? v.services[0];
     if (!first) return;
     const note = drafts[v.id] ?? noteOf(v);
-    act(`note:${v.id}`, async () => {
+    const ok = await act(`note:${v.id}`, async () => {
       await workerClient.note(first.id, note);
       setDrafts((d) => {
         const n = { ...d };
         delete n[v.id];
         return n;
       });
-      setFlash((f) => ({ ...f, [v.id]: t("worker.saved") }));
-      setTimeout(
-        () =>
-          setFlash((f) => {
-            const n = { ...f };
-            delete n[v.id];
-            return n;
-          }),
-        1500,
-      );
     });
+    if (!ok) return;
+    // REQ-608 (demo m47): shown once the reload is done, and held until the note is
+    // edited again or NOTE_SAVED_MS passes — 1.5 s from before the reload was unseen
+    clearTimeout(flashTimers.current[v.id]);
+    setFlash((f) => ({ ...f, [v.id]: t("worker.saved") }));
+    flashTimers.current[v.id] = setTimeout(
+      () => clearFlash(v.id),
+      NOTE_SAVED_MS,
+    );
   }
 
   function deferGo(v: Visit) {
@@ -633,6 +690,7 @@ export default function WorkerScreen(
                   const el = e.target as HTMLTextAreaElement;
                   growNote(el);
                   setDrafts((d) => ({ ...d, [v.id]: el.value }));
+                  clearFlash(v.id); // REQ-608 — an edit is no longer "saved"
                 }}
               />
               <button
@@ -643,7 +701,11 @@ export default function WorkerScreen(
                 {t("worker.save")}
               </button>
             </form>
-            {flash[v.id] && <div class="saved">{flash[v.id]}</div>}
+            {flash[v.id] && (
+              <div class="saved" data-cy="w-note-saved" role="status">
+                {flash[v.id]}
+              </div>
+            )}
           </>
         )}
         {!locked && panel === "services" && (
@@ -795,33 +857,38 @@ export default function WorkerScreen(
                 langChosenRef.current = true;
                 setLang(c);
                 rememberWorkerLangPick(c); // REQ-494 — survives re-entry
+                if (meRef.current) load(); // REQ-605: a language pick re-reads me + task types
               }}
             >
               {c.toUpperCase()}
             </button>
           ))}
         </div>
-        {office && (
-          <a
-            href={officeHref}
-            class="btn btn--ghost btn--sm"
-            data-cy="w-office"
-            style="min-height:44px"
-          >
-            {t("worker.backToOffice")}
-          </a>
-        )}
-        {me && (
-          <button
-            type="button"
-            class="btn btn--ghost btn--sm"
-            data-cy="w-logout"
-            style="min-height:44px"
-            disabled={busy.has("logout")}
-            onClick={logout}
-          >
-            {t("worker.logout")}
-          </button>
+        {(office || me) && (
+          <div class="top__actions">
+            {office && (
+              <a
+                href={officeHref}
+                class="btn btn--ghost btn--sm"
+                data-cy="w-office"
+                style="min-height:44px"
+              >
+                {t("worker.backToOffice")}
+              </a>
+            )}
+            {me && (
+              <button
+                type="button"
+                class="btn btn--ghost btn--sm"
+                data-cy="w-logout"
+                style="min-height:44px"
+                disabled={busy.has("logout")}
+                onClick={logout}
+              >
+                {t("worker.logout")}
+              </button>
+            )}
+          </div>
         )}
       </div>
 
@@ -838,6 +905,24 @@ export default function WorkerScreen(
             {t("worker.title")}
             <small>{dayLine()}</small>
           </div>
+          {
+            /* REQ-602 (M35): the owner (office session, no worker signed in)
+            has no cell + PIN here — say whose screen this is and where
+            workers are added. */
+          }
+          {office && (
+            <div class="owner-note" data-cy="w-owner-note">
+              <span>{t("worker.ownerNote")}</span>
+              <a
+                href={WORKERS_PAGE_HREF}
+                class="btn btn--ghost btn--sm"
+                data-cy="w-owner-workers"
+                style="min-height:44px;align-self:flex-start"
+              >
+                {t("worker.ownerManage")}
+              </a>
+            </div>
+          )}
           <form class="login" onSubmit={login}>
             <label class="field">
               {t("worker.cell")}
@@ -848,7 +933,7 @@ export default function WorkerScreen(
                 inputMode="tel"
                 autoComplete="tel"
                 placeholder={t("worker.cellPh")}
-                value={cell}
+                value={formatPhoneInput(cell)} /* REQ-593 */
                 required
                 onInput={(e) => setCell((e.target as HTMLInputElement).value)}
               />

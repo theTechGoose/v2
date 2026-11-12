@@ -74,6 +74,8 @@ export function invoicesHeroMode(input: {
   scheduledCount?: number;
   /** the money those scheduled installments carry */
   scheduledCents?: number;
+  /** REQ-566: every balance still owed (overdue + out + claimed), cents */
+  outstandingCents?: number;
   forecast?: {
     thisWeekCents: number;
     nextWeekCents: number;
@@ -92,7 +94,13 @@ export function invoicesHeroMode(input: {
   }
   if (outstandingCount === 0 && !haveForecast) return "clear";
   if (haveForecast && forecast!.thisWeekCents > 0) return "thisWeek";
-  if (haveForecast && forecast!.nextWeekCents > 0) return "nextWeek";
+  // REQ-566 (demo-loop cycle 4, m11): "Quiet week — $450 coming next week"
+  // beside $100,000,449 out for payment. The quiet line is only the headline
+  // when next week's money is all that is out; more owed → "outstanding".
+  if (
+    haveForecast && forecast!.nextWeekCents > 0 &&
+    (input.outstandingCents ?? 0) <= forecast!.nextWeekCents
+  ) return "nextWeek";
   return "outstanding";
 }
 
@@ -109,6 +117,70 @@ export function invoiceBalanceCents(
     ? inv.paidCents
     : 0;
   return Math.max(0, amount - paid);
+}
+
+/** REQ-551 (demo-loop cycle 4, B2): the one definition of "paid" every
+ *  money KPI uses — what was collected AGAINST the bill, min(paid, amount).
+ *  An overpayment is flagged (REQ-202) but never counted as revenue, so a
+ *  $999,999,999 payment on a $99,999,999 invoice counts $99,999,999 on
+ *  /invoices and on /payments alike. A paid invoice from before paidCents
+ *  was stored counts its amount. INTEGER CENTS. */
+export function paidKpiInvoiceCents(
+  inv: { amount?: number | null; paidCents?: number | null },
+): number {
+  const amount = typeof inv.amount === "number" && Number.isFinite(inv.amount)
+    ? Math.max(0, inv.amount)
+    : 0;
+  const paid = typeof inv.paidCents === "number" &&
+      Number.isFinite(inv.paidCents)
+    ? Math.max(0, inv.paidCents)
+    : amount;
+  return Math.min(paid, amount);
+}
+
+/** REQ-551: the same definition per payment, for /payments. Each invoice's
+ *  payments are applied oldest first (receivedAt, then createdAt) against
+ *  its amount; a payment is credited only what the bill still owed when it
+ *  arrived, the rest is `overCents`. A payment whose invoice is not on the
+ *  books is credited in full (nothing to cap it against). */
+export function creditedPayments(
+  payments: ReadonlyArray<
+    {
+      id: string;
+      invoiceId: string;
+      amount: number;
+      receivedAt: string;
+      createdAt?: string;
+    }
+  >,
+  invoices: ReadonlyArray<{ id: string; amount?: number | null }>,
+): Map<string, { creditedCents: number; overCents: number }> {
+  const owed = new Map<string, number>();
+  for (const i of invoices) {
+    owed.set(
+      i.id,
+      typeof i.amount === "number" && Number.isFinite(i.amount)
+        ? Math.max(0, i.amount)
+        : 0,
+    );
+  }
+  const ordered = [...payments].sort((a, b) =>
+    a.receivedAt.localeCompare(b.receivedAt) ||
+    (a.createdAt ?? "").localeCompare(b.createdAt ?? "")
+  );
+  const out = new Map<string, { creditedCents: number; overCents: number }>();
+  for (const p of ordered) {
+    const cents = Math.max(0, p.amount || 0);
+    const left = owed.get(p.invoiceId);
+    if (left === undefined) {
+      out.set(p.id, { creditedCents: cents, overCents: 0 });
+      continue;
+    }
+    const credited = Math.min(cents, left);
+    owed.set(p.invoiceId, left - credited);
+    out.set(p.id, { creditedCents: credited, overCents: cents - credited });
+  }
+  return out;
 }
 
 /** REQ-478 (demo-loop cycle 3, M32): the /invoices KPI tiles and hero total.
@@ -329,11 +401,24 @@ export function draftingKpiSub(
  *  pending), but a ready-to-send draft is named instead of "No quotes out
  *  yet. Draft one". */
 export function dashQuotesEmpty(
-  { draftCount, hasDecidedHistory }: {
+  { draftCount, hasDecidedHistory, undeliveredCount = 0 }: {
     draftCount: number;
     hasDecidedHistory: boolean;
+    /** REQ-566: of the drafts, those whose send reached nobody */
+    undeliveredCount?: number;
   },
 ): { key: string; n: number } {
+  // REQ-566 (demo-loop cycle 4, m11): right after Send to a 555 number the
+  // quote stays a draft (REQ-320) — the line says it was not delivered, not
+  // "1 draft is ready to send".
+  if (undeliveredCount > 0) {
+    return {
+      key: `quotesAwaiting.emptyUndelivered.${
+        undeliveredCount === 1 ? "one" : "other"
+      }`,
+      n: undeliveredCount,
+    };
+  }
   if (draftCount > 0) {
     return {
       key: `quotesAwaiting.emptyDrafts.${draftCount === 1 ? "one" : "other"}`,
@@ -346,4 +431,23 @@ export function dashQuotesEmpty(
       : "quotesAwaiting.empty",
     n: 0,
   };
+}
+
+/** REQ-566 (demo-loop cycle 4, m11): the "Quotes pending" KPI's sub-line.
+ *  Money in flight reads "$X in flight"; with nothing in flight but a send
+ *  that reached nobody, "Not delivered (n)" — never a bare "—" under the 0
+ *  the owner just tried to send. Null → "—". */
+export function quotesPendingSub(
+  { pendingTotalCents, undeliveredCount }: {
+    pendingTotalCents: number;
+    undeliveredCount: number;
+  },
+): { key: string; n: number } | null {
+  if (pendingTotalCents > 0) {
+    return { key: "kpis.quotesPending.inFlight", n: 0 };
+  }
+  if (undeliveredCount > 0) {
+    return { key: "kpis.quotesPending.notDelivered", n: undeliveredCount };
+  }
+  return null;
 }

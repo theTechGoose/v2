@@ -15,6 +15,7 @@
  */
 import { assert, assertEquals, assertStringIncludes } from "#std/assert";
 import {
+  foldZeroLines,
   missesTarget,
   moneyAmounts,
   type PricedLine,
@@ -22,6 +23,7 @@ import {
   revisesSameJob,
   revisionJump,
   scaleLinesToTotal,
+  settleCreateQuote,
   settleQuotePrice,
   statedTotalCents,
 } from "./mod.ts";
@@ -531,4 +533,178 @@ Deno.test("REQ-445 B2 priceJumpAsk: names both totals and the unpriced lines (la
   assertStringIncludes(es, "Mold remediation allowance ($30,000)");
   assertStringIncludes(es, "más");
   assert(es !== en);
+});
+
+// ---------------------------------------------------------------------------
+// REQ-575 (demo-loop cycle 4, M3 + M13): one money reader for both sides
+// ---------------------------------------------------------------------------
+
+Deno.test("REQ-575 the stated-price money reader IS the shared one — the client's price picker and the suggest-prices floor read 'k' / 'mil' the same way", async () => {
+  const shared = await import("#quote-flow/money-amounts.ts");
+  assertEquals(moneyAmounts, shared.moneyAmounts);
+  // pair 7's spoken Spanish total and her stated costs
+  assertEquals(
+    moneyAmounts("Ponle precio, no sé, como 18 mil?").map((a) => a.cents),
+    [1_800_000],
+  );
+  assertEquals(
+    moneyAmounts(
+      "my crew is 3 guys x 3 weeks x $65/hr = ~$23k labor alone, cabinets are $9.5k",
+    ).map((a) => [a.cents, a.rate]),
+    [[6_500, true], [2_300_000, false], [950_000, false]],
+  );
+});
+
+// ---------------------------------------------------------------------------
+// REQ-578 (demo-loop cycle 4, m34) — no $0.00 line on a stated-price draft.
+// Pair 5 typed "Bathroom vanity swap for Derek Chen … $2,400 — actually make
+// it $2,250"; gpt-4o-mini split the job into three steps and put the whole
+// $2,250 on one of them: "Remove old vanity $0.00 / Install 36in vanity
+// $2,250.00 / Install faucet $0.00". The total matched, so nothing touched
+// the lines, and the client read two lines of free work.
+// ---------------------------------------------------------------------------
+
+const M34_TEXT =
+  "Bathroom vanity swap for Derek Chen, remove the old vanity, install a 36in vanity and the faucet, $2,400 — actually make it $2,250";
+const M34_LINES: PricedLine[] = [
+  { description: "Remove old vanity", amountCents: 0 },
+  { description: "Install 36in vanity", amountCents: 225_000 },
+  { description: "Install faucet", amountCents: 0 },
+];
+
+Deno.test("REQ-578 m34 statedTotalCents: the demo's '$2,400 — actually make it $2,250' is two amounts — no stated total is read (the fold must not depend on it)", () => {
+  assertEquals(statedTotalCents(M34_TEXT), undefined);
+});
+
+Deno.test("REQ-578 m34 foldZeroLines: the $0 steps fold into the priced line's description, total unchanged", () => {
+  assertEquals(foldZeroLines(M34_LINES, "en"), [
+    {
+      description:
+        "Install 36in vanity (incl. remove old vanity, install faucet)",
+      amountCents: 225_000,
+    },
+  ]);
+});
+
+Deno.test("REQ-578 m34 foldZeroLines: Spanish wording", () => {
+  assertEquals(
+    foldZeroLines([
+      { description: "Quitar el lavabo viejo", amountCents: 0 },
+      { description: "Instalar lavabo de 36 pulgadas", amountCents: 225_000 },
+    ], "es"),
+    [{
+      description:
+        "Instalar lavabo de 36 pulgadas (incluye quitar el lavabo viejo)",
+      amountCents: 225_000,
+    }],
+  );
+});
+
+Deno.test("REQ-578 m34 foldZeroLines: into the LARGEST priced line; other priced lines and their order stay", () => {
+  assertEquals(
+    foldZeroLines([
+      { description: "Demo", amountCents: 50_000 },
+      { description: "Haul-away", amountCents: 0 },
+      { description: "Cabinets installed", amountCents: 650_000 },
+    ], "en"),
+    [
+      { description: "Demo", amountCents: 50_000 },
+      {
+        description: "Cabinets installed (incl. haul-away)",
+        amountCents: 650_000,
+      },
+    ],
+  );
+});
+
+Deno.test("REQ-578 m34 foldZeroLines: all priced, or nothing priced, comes back unchanged", () => {
+  const priced = [
+    { description: "A", amountCents: 100 },
+    { description: "B", amountCents: 200 },
+  ];
+  assertEquals(foldZeroLines(priced, "en"), priced);
+  const none = [{ description: "Panel swap", amountCents: 0 }];
+  assertEquals(foldZeroLines(none, "en"), none);
+});
+
+Deno.test("REQ-578 m34 settleCreateQuote: the demo's stated-price draft is saved with no $0.00 line", async () => {
+  const out = await settleCreateQuote({
+    payload: {
+      summary: "Bathroom vanity swap — Derek Chen",
+      lineItems: M34_LINES,
+    },
+    userText: M34_TEXT,
+    statedCents: 225_000,
+    lang: "en",
+    reask: () => Promise.resolve(undefined),
+  });
+  assertEquals(out.kind, "save");
+  if (out.kind !== "save") return;
+  assertEquals(out.payload.lineItems, [{
+    description:
+      "Install 36in vanity (incl. remove old vanity, install faucet)",
+    amountCents: 225_000,
+  }]);
+  assertEquals(out.payload.summary, "Bathroom vanity swap — Derek Chen");
+});
+
+Deno.test("REQ-578 m34 settleCreateQuote: a $0 lines-scaled-to-the-stated-total draft is folded too", async () => {
+  const out = await settleCreateQuote({
+    payload: {
+      summary: "Vanity swap",
+      lineItems: [
+        { description: "Remove old vanity", amountCents: 0 },
+        { description: "Install 36in vanity", amountCents: 100_000 },
+      ],
+    },
+    userText: M34_TEXT,
+    statedCents: 225_000,
+    lang: "en",
+    reask: () => Promise.resolve(undefined),
+  });
+  assertEquals(out.kind, "save");
+  if (out.kind !== "save") return;
+  assertEquals(out.payload.lineItems, [{
+    description: "Install 36in vanity (incl. remove old vanity)",
+    amountCents: 225_000,
+  }]);
+});
+
+Deno.test("REQ-578 m34 settleCreateQuote: the demo's draft with NO stated total read — its lines add up to the $2,250 typed — is saved with no $0.00 line", async () => {
+  const out = await settleCreateQuote({
+    payload: { summary: "Vanity swap", lineItems: M34_LINES },
+    userText: M34_TEXT,
+    lang: "en",
+    reask: () => Promise.resolve(undefined),
+  });
+  assertEquals(out.kind, "save");
+  if (out.kind !== "save") return;
+  assertEquals(out.payload.lineItems.map((l) => l.amountCents), [225_000]);
+  assertEquals(
+    out.payload.lineItems[0].description,
+    "Install 36in vanity (incl. remove old vanity, install faucet)",
+  );
+});
+
+Deno.test("REQ-578 m34 settleCreateQuote: with no price from the contractor a $0 included line stays (REQ-267)", async () => {
+  const out = await settleCreateQuote({
+    payload: {
+      summary: "Interior repaint",
+      lineItems: [
+        { description: "Interior walls — 2 coats", amountCents: 180_000 },
+        { description: "Paint supplied by Castro Painting", amountCents: 0 },
+      ],
+    },
+    userText: "I'll supply the paint myself",
+    draft: {
+      summary: "Interior repaint",
+      lineItems: [
+        { description: "Interior walls — 2 coats", price: 180_000 },
+        { description: "Paint (materials)", price: 30_000 },
+      ],
+    },
+    lang: "en",
+    reask: () => Promise.resolve(undefined),
+  });
+  assertEquals(out.kind, "keep");
 });

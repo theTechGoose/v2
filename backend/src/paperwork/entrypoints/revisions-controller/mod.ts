@@ -24,6 +24,8 @@ import {
   versionOf,
 } from "#documents/versions.ts";
 import { quoteLedger } from "#documents/ledger.ts";
+import { EventBus } from "@core/business/events/mod.ts";
+import { CustomerStore } from "@crm/domain/data/customer-store/mod.ts";
 
 /**
  * RevisionsController — REQ-201/202/205: publishing, versions, the ledger.
@@ -51,6 +53,8 @@ export class RevisionsController {
     private sms: SendPaperworkSms,
     private users: UserStore,
     private sessions: SessionStore,
+    private bus: EventBus,
+    private customers: CustomerStore,
   ) {}
 
   @Post("quotes/:id/publish")
@@ -77,6 +81,7 @@ export class RevisionsController {
       quote.pendingRevision,
       by,
     );
+    await emitRevised(this.bus, this.customers, user.id, "quote", published);
     const notified = opts.notify
       ? await notify(this.email, this.sms, user.id, "quote", id, opts.language)
       : undefined;
@@ -152,6 +157,7 @@ export class RevisionsController {
       by,
       (next) => flagOverpayment(next),
     );
+    await emitRevised(this.bus, this.customers, user.id, "invoice", published);
     const notified = opts.notify
       ? await notify(
         this.email,
@@ -210,6 +216,44 @@ export async function publisherOf(
     }
   }
   return { userId: user.id, ...(user.name ? { name: user.name } : {}) };
+}
+
+/**
+ * REQ-564 (demo-loop cycle 4, m35): a publish is a domain event — the
+ * notifications feed (topbar ticker, Activity) shows "Q-001 Version 2
+ * published to María" instead of still reading "Quote sent".
+ */
+async function emitRevised(
+  bus: EventBus,
+  customers: CustomerStore,
+  userId: string,
+  entityType: "quote" | "invoice",
+  doc: {
+    id: string;
+    number?: string;
+    version?: number;
+    customerId?: string;
+    customerSnapshot?: { name?: string };
+  },
+): Promise<void> {
+  const customerName =
+    (doc.customerId
+      ? await customers.getOwned(doc.customerId, userId).then(
+        (c) => c.name?.trim() || undefined,
+        () => undefined,
+      )
+      : undefined) ?? (doc.customerSnapshot?.name?.trim() || undefined);
+  await bus.emit({
+    userId,
+    entityType,
+    entityId: doc.id,
+    action: "revised",
+    data: {
+      version: versionOf(doc),
+      ...(doc.number ? { number: doc.number } : {}),
+      ...(customerName ? { customerName } : {}),
+    },
+  });
 }
 
 /** The filed versions plus the live record as the current one, oldest first. */

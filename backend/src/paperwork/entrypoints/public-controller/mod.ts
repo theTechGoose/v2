@@ -15,6 +15,7 @@ import { NotFoundError } from "@core/data/repository/mod.ts";
 import { SendSignedConfirmation } from "@paperwork/domain/coordinators/send-signed-confirmation/mod.ts";
 import { signedConfirmChannel } from "@paperwork/domain/business/customer-sms/mod.ts";
 import { SendAcceptedAlert } from "@paperwork/domain/coordinators/send-accepted-alert/mod.ts";
+import { QuoteSignedPort } from "@paperwork/domain/coordinators/quote-signed-port/mod.ts"; // REQ-563
 import { SendInquiryAlert } from "@paperwork/domain/coordinators/send-inquiry-alert/mod.ts";
 import { RenderInvoicePdf } from "@paperwork/domain/coordinators/render-invoice-pdf/mod.ts";
 import { RenderQuotePdf } from "@paperwork/domain/coordinators/render-quote-pdf/mod.ts";
@@ -27,6 +28,7 @@ import { isAccepted } from "#quote-flow/quote-status.ts";
 import { hasSignOverride } from "#quote-flow/public-doc-state.ts";
 import { groupVisits } from "#quote-flow/visit-groups.ts";
 import { sniffLogoImage } from "#quote-flow/logo-image.ts";
+import { logoVersion } from "#quote-flow/public-logo-url.ts";
 import {
   isValidSignerName,
   normalizeSignerName,
@@ -51,6 +53,7 @@ import { readSessionId } from "@users/domain/coordinators/require-user/mod.ts";
 import { isInternalViewer } from "@paperwork/domain/business/internal-viewer/mod.ts";
 import { changeOrderJobTotals } from "#quote-flow/change-order-view.ts";
 import { invoiceTextByLang } from "#documents/invoice-lang.ts"; // REQ-497
+import { invoiceDocLang } from "#quote-flow/share-link.ts"; // REQ-586
 
 /**
  * Map a NotFoundError into a 404 JSON response. Public endpoints used to
@@ -204,6 +207,8 @@ export class PaperworkPublicController {
     private quotePdf: RenderQuotePdf,
     private payments: PaymentStore,
     private sessions: SessionStore,
+    // REQ-563: optional so a hand-built controller (tests) needs no chat
+    private signedChat?: QuoteSignedPort,
   ) {}
 
   /**
@@ -231,14 +236,31 @@ export class PaperworkPublicController {
       // REQ-252 (M30): only an image is ever served as the logo, typed by its bytes
       const type = await logoImageType(this.files, fileId, ownerId);
       if (!type) return ctx.json({ error: "no_logo" }, 404);
+      // REQ-613 (M31): the pages and emails ask for ?v=<logoVersion>. That URL's bytes never
+      // change (a new logo is a new version, so a new URL) → cache it for good. A bare URL or a
+      // stale ?v= is revalidated on every load against the version as its ETag, so a replaced
+      // logo shows at once instead of after a cache lifetime.
+      const version = logoVersion(fileId);
+      const etag = `"${version}"`;
+      const requested = new URL(ctx.req.url).searchParams.get("v");
+      const cacheControl = requested === version
+        ? "public, max-age=31536000, immutable"
+        : "no-cache";
+      const inm = ctx.req.header("if-none-match");
+      if (inm && inm.split(",").some((t) => t.trim().replace(/^W\//, "") === etag)) {
+        return new Response(null, {
+          status: 304,
+          headers: { etag, "cache-control": cacheControl },
+        });
+      }
       const bytes = await this.files.readBytes(fileId);
       return new Response(bytes as BodyInit, {
         status: 200,
         headers: {
           "content-type": type,
           "content-length": String(bytes.length),
-          // Short-lived cache: replacing the logo shows up within minutes.
-          "cache-control": "public, max-age=300",
+          etag,
+          "cache-control": cacheControl,
         },
       });
     } catch (e) {
@@ -833,6 +855,10 @@ export class PaperworkPublicController {
         ...(customerName ? { customerName } : {}),
         // UX-20: the feed event names the job, not just "tu cotización".
         ...(updated.jobName ? { jobName: updated.jobName } : {}),
+        // REQ-589 (cycle 4, m15): the feed names it in the reader's language.
+        ...(updated.jobNameByLang
+          ? { jobNameByLang: updated.jobNameByLang }
+          : {}),
       },
     });
     // Completion Text + Email to the contractor (roadmap p.10). Best-effort —
@@ -854,11 +880,22 @@ export class PaperworkPublicController {
     // because a second accept 409s before reaching here, and the coordinator
     // stamps acceptedNotifiedAt as its own replay guard. Errors MUST NOT
     // fail the customer's accept — the acceptance is captured regardless.
-    await this.signedConfirmation.run(updated.id).catch((err) => {
-      console.error(
-        `[quotes/${updated.id}/accept] signed-confirmation failed:`,
-        err,
-      );
+    const confirmed = await this.signedConfirmation.run(updated.id).catch(
+      (err) => {
+        console.error(
+          `[quotes/${updated.id}/accept] signed-confirmation failed:`,
+          err,
+        );
+        return undefined;
+      },
+    );
+    // REQ-563 (demo-loop cycle 4, m3): the owner's chat says who signed and
+    // the invoice that went out — after the confirmation, so it can name it.
+    // Never fails the accept (the port logs its own errors).
+    await this.signedChat?.run({
+      userId: existing.userId,
+      quoteId: updated.id,
+      ...(confirmed?.invoiceId ? { invoiceId: confirmed.invoiceId } : {}),
     });
     return ctx.json({ ok: true, quoteId: updated.id });
   }
@@ -1109,6 +1146,10 @@ export class PaperworkPublicController {
       const acceptedMethods = projectAcceptedMethods(contractor);
       // REQ-173: a batch invoice's visits, grouped under their address
       const visits = groupVisits(i.lineItems);
+      const docLang = invoiceDocLang(
+        i,
+        quote && quote.userId === i.userId ? quote : undefined,
+      );
       // REQ-479 (demo M30): the business's own viewer previews the claim
       const internal = await isInternalRequest(ctx, this.sessions, i.userId);
       return ctx.json({
@@ -1123,6 +1164,9 @@ export class PaperworkPublicController {
         contractor,
         customer,
         jobDetails,
+        // REQ-586 (cycle 4, M11): the document's language — /i reads it
+        // ahead of the contractor's default commsLanguage.
+        ...(docLang ? { docLang } : {}),
         ...(visits ? { visits } : {}),
         siblings: sortedSiblings,
         changeOrders: cos.map(projectLinkedChangeOrder),
@@ -1396,6 +1440,10 @@ interface PublicContractor {
    *  use it to render GET /public-logo/:kind/:id (roadmap p.2 — the logo
    *  shows on quotes & invoices). */
   hasLogo?: boolean;
+  /** REQ-613 (M31): a short tag of the current logo file (never the file id). Pages render
+   *  GET /public-logo/:kind/:id?v=<logoVersion>, so a replaced logo is a new URL. Present
+   *  only with hasLogo. */
+  logoVersion?: string;
 }
 
 /** Public-safe contractor projection — never returns internal IDs or
@@ -1443,9 +1491,11 @@ async function loadContractor(
         ident?.acceptedPaymentMethods,
       ),
       commsLanguage: ident?.commsLanguage === "es" ? "es" : "en",
-      // REQ-252: no <img> for a logo that would not draw
-      hasLogo: !!ident?.logoFileId &&
-        (await logoImageType(files, ident.logoFileId, ownerId)) !== null,
+      // REQ-252: no <img> for a logo that would not draw; REQ-613: its version rides along
+      ...(ident?.logoFileId &&
+          (await logoImageType(files, ident.logoFileId, ownerId)) !== null
+        ? { hasLogo: true, logoVersion: logoVersion(ident.logoFileId) }
+        : { hasLogo: false }),
     };
   } catch {
     return undefined;
@@ -1480,6 +1530,10 @@ export function composeAddressLine(
   const city = addr.city?.trim();
   const state = addr.state?.trim();
   const postal = addr.postal?.trim();
+  // REQ-610 (demo m51): a state and/or ZIP with no street or city is not a
+  // mailing address — onboarding's state step saves `{ state }` alone, and the
+  // client's quote printed the business address as just "FL". No line at all.
+  if (!street && !city) return undefined;
   // REQ-420 (demo m28): a row saved before the address save path split
   // one-line streets can hold the whole "street, City, ST ZIP" in `street`.
   // Don't repeat what the street already ends with ("…, TX 78702, TX").
@@ -1589,6 +1643,8 @@ function redactInvoice(i: Invoice) {
     dueDate: i.dueDate,
     status: i.status,
     paidAt: i.paidAt,
+    // REQ-556 (demo-loop cycle 4, M7): where the paid receipt actually went
+    receiptSentVia: i.receiptSentVia,
     createdAt: i.createdAt,
     installmentIndex: i.installmentIndex,
     installmentTotal: i.installmentTotal,

@@ -66,6 +66,8 @@ export interface ChatHeaderQuote {
   /** REQ-236: the latest send's outcome, and the first time one delivered. */
   lastDelivery?: QuoteDelivery | null;
   deliveredAt?: string | null;
+  /** REQ-572: "link" — the owner copied the link and marked it sent. */
+  sentVia?: string | null;
 }
 
 export interface ChatHeaderInput {
@@ -76,6 +78,9 @@ export interface ChatHeaderInput {
   messages: readonly ChatHeaderMessage[];
   /** REQ-369: the end-of-wizard job-details pick is still owed. */
   detailsPending?: boolean;
+  /** REQ-563: the bill the signature created (the conversation's
+   *  invoiceStatus); without it the newest signed divider's is read. */
+  invoiceStatus?: string | null;
 }
 
 export interface ChatHeader {
@@ -92,6 +97,8 @@ export interface ChatHeader {
 }
 
 const K = "asstChat.header.";
+/** REQ-563: a signed quote whose bill went out — header and list alike. */
+const SIGNED_INVOICED = `${K}signedInvoiced`;
 
 /** REQ-327: how the status line should look — "bad" paints the header's dot
  *  and sub-line red instead of the default green. */
@@ -156,6 +163,7 @@ export const THREAD_STATUSES = [
   "pickingDetails",
   "readyToSend",
   "undelivered",
+  "sharedByLink",
   "sent",
   "declined",
   "accepted",
@@ -239,6 +247,17 @@ export function threadStatus(input: ThreadStatusInput): ThreadStatus {
   }
   if (DECLINED.has(status) || Boolean(q?.lostAt)) return "declined";
 
+  // REQ-572 (demo-loop cycle 4, p4-p7c): the owner copied the link, shared it
+  // and marked the quote sent — "Shared by link", even over an earlier send
+  // that reached nobody; a delivery or the customer opening it reads on as
+  // "Out for signature".
+  if (
+    q?.sentVia === "link" && status === "sent" && !q.deliveredAt &&
+    !deliverySucceeded(q.lastDelivery) && t.lastDividerSend !== "delivered"
+  ) {
+    return "sharedByLink";
+  }
+
   // REQ-236: the newest attempt reached nobody and none ever did — unless
   // the chat's newest divider is a good send the row has not caught up with.
   if (
@@ -312,6 +331,7 @@ const STATUS_KEY: Record<ThreadStatus, string> = {
   pickingDetails: `${K}pickingDetails`,
   readyToSend: `${K}readyToSend`,
   undelivered: `${K}notDelivered`,
+  sharedByLink: `${K}sharedByLink`, // REQ-572
   sent: `${K}outForSignature`,
   declined: `${K}quoteDeclined`,
   accepted: `${K}quoteAccepted`,
@@ -342,6 +362,7 @@ const CHIP_KIND: Record<Exclude<ThreadStatus, "none">, ThreadChipKind> = {
   pickingDetails: "progress",
   readyToSend: "progress",
   undelivered: "needs",
+  sharedByLink: "sent", // REQ-572: it went out — the owner's way
   sent: "sent",
   declined: "needs",
   accepted: "paid",
@@ -361,16 +382,59 @@ export function threadChip(
 ): { kind: ThreadChipKind; key: string } | null {
   if (invoiceStatus === "paid") return { kind: "paid", key: "status.paid" };
   if (invoiceStatus === "sent") {
-    return { kind: "sent", key: "asstThreads.chip.invoiced" };
+    // REQ-563 (cycle 4, m3): a signed quote's bill reads the header's words
+    // ("Signed · Invoiced"); "Invoiced" alone stays for an unsigned thread.
+    return {
+      kind: "sent",
+      key: status === "accepted"
+        ? SIGNED_INVOICED
+        : "asstThreads.chip.invoiced",
+    };
   }
   if (!status || !(status in STATUS_KEY) || status === "none") return null;
   return { kind: CHIP_KIND[status], key: STATUS_KEY[status] };
 }
 
+/** REQ-563: the invoice status the newest signed divider carries (AcceptQuote
+ *  writes it when the customer's signature billed). */
+function signedInvoiceStatus(
+  messages: readonly ChatHeaderMessage[],
+): string | undefined {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const m = messages[i];
+    if (m.kind !== "phase_divider") continue;
+    const p = payloadOf(m);
+    if (p?.signed === true && typeof p.invoiceStatus === "string") {
+      return p.invoiceStatus;
+    }
+  }
+  return undefined;
+}
+
+/**
+ * REQ-563 (demo-loop cycle 4, m3): the header of a SIGNED quote names the
+ * bill the signature created with the list chip's words — "Signed ·
+ * Invoiced", or "Paid" — so the header no longer says "Quote accepted" over a
+ * list row that says "Invoiced". Any other status keeps REQ-369's key.
+ */
+function headerStatusKeyFor(
+  status: ThreadStatus,
+  invoiceStatus: string | null | undefined,
+): string {
+  if (status === "accepted" && invoiceStatus) {
+    const chip = threadChip(status, invoiceStatus);
+    if (chip) return chip.key;
+  }
+  return threadStatusKey(status);
+}
+
 export function deriveChatHeader(input: ChatHeaderInput): ChatHeader {
   const { quote, messages } = input;
   const status = threadStatus(input);
-  const statusKey = threadStatusKey(status);
+  const statusKey = headerStatusKeyFor(
+    status,
+    input.invoiceStatus ?? signedInvoiceStatus(messages),
+  );
   // REQ-385 (demo-loop cycle 2, m6): one title rule, the list's — the job
   // name, then "· customer" appended — so the title grows as the thread
   // learns them instead of swapping New conversation → job → customer.

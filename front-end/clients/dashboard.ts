@@ -40,6 +40,8 @@ export interface Profile {
         acceptedPaymentMethods?: AcceptedMethods;
         businessName?: string;
         displayName?: string;
+        /** REQ-623: automatic payment reminders (unset → on, 3/7/14/30) */
+        reminders?: { enabled?: boolean; days?: number[] };
       }
       & Record<string, unknown>
     )
@@ -77,9 +79,13 @@ export interface QuoteCounts {
   draft: number;
   sent: number;
   accepted: number;
+  /** REQ-566: drafts whose last send reached nobody (part of `draft`). */
+  undelivered?: number;
 }
 export interface RevenueStats {
   ytdCents: number;
+  /** REQ-562: distinct jobs paid on this year (the avg-paid-job divisor). */
+  paidJobsYtd?: number;
   lastMonthCents: number;
   monthOverMonthPct: number;
   /** Length-12 array, oldest → newest, monthly paid-invoice totals (cents). */
@@ -113,6 +119,9 @@ export interface Notification {
     | "invoice_paid"
     | "invoice_overdue"
     | "invoice_nudge_due"
+    // REQ-566 (demo-loop cycle 4, m11): owner-side activity
+    | "invoice_sent"
+    | "task_completed"
     | "customer_replied"
     | "generic";
   title: string;
@@ -140,6 +149,9 @@ export interface Invoice {
   jobName?: string;
   /** What the bill covers, one line per item. */
   description?: string;
+  /** REQ-497: the language the invoice's text was typed in. REQ-586
+   *  (cycle 4, M11): "Open" carries it as `?lang=`. */
+  lang?: string;
   amount?: number;
   issuedDate?: string;
   dueDate: string;
@@ -153,6 +165,10 @@ export interface Invoice {
     | "paid"
     | "void";
   paidAt?: string;
+  /** REQ-556: where the paid receipt went — "email" | "text" | "none". */
+  receiptSentVia?: string;
+  /** REQ-556: how signing's confirmation reached the customer ([] = nobody). */
+  deliveredVia?: string[];
   createdAt: string;
   updatedAt: string;
   urgency?: {

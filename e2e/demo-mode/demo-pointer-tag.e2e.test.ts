@@ -411,3 +411,121 @@ Deno.test("REQ-437 (demo p8-pair3-a): a glide to the frame's left edge never dra
       await d.userCtx.close();
     }
   }));
+
+/** REQ-543 — the distance from the tip to the nearest point of the tag */
+const reachOf = (p: { x: number; y: number }, t: Box) =>
+  Math.hypot(
+    Math.max(t.left - p.x, 0, p.x - (t.left + t.width)),
+    Math.max(t.top - p.y, 0, p.y - (t.top + t.height)),
+  );
+
+Deno.test("REQ-543 (demo m6, cycle 4): the presenter's tag sits next to his arrow (≤ 40 px), off the button and every other control, and 4 px clear of the window's right edge", (t) =>
+  story(t, async (tools) => {
+    const { page } = tools;
+    const d = await demoOn(tools, (q) => `/q/${q.id}`);
+    const { userPage, toStage } = d;
+    const view = { left: 0, top: 0, width: VIEW.width, height: VIEW.height };
+    try {
+      await d.mirrorAsTall("the quote page");
+      // 1. at rest on the centre of a button of the customer's page
+      const btn = await userPage.evaluate(() => {
+        const vw = innerWidth, vh = innerHeight;
+        for (const el of Array.from(document.querySelectorAll("button, a"))) {
+          if (el.closest("[data-demo-overlay]")) continue;
+          const r = el.getBoundingClientRect();
+          if (
+            r.width >= 60 && r.height >= 28 && r.left >= 0 && r.top >= 60 &&
+            r.right <= vw && r.bottom <= vh - 60
+          ) {
+            return {
+              left: r.left,
+              top: r.top,
+              width: r.width,
+              height: r.height,
+            };
+          }
+        }
+        return null;
+      });
+      if (!btn) throw new Error("no button in view on the customer's page");
+      const centre = {
+        x: btn.left + btn.width / 2,
+        y: btn.top + btn.height / 2,
+      };
+      const at = toStage(centre);
+      await page.mouse.move(at.x - 40, at.y - 20);
+      await page.mouse.move(at.x, at.y);
+      await until(
+        `Alex's tag is within 40 px of his arrow on ${
+          JSON.stringify(btn)
+        }, off it and off every other control, inside the window`,
+        async () => {
+          const p = await pointerAndTag(userPage, "Alex");
+          if (!p) {
+            throw new Error("no presenter pointer on the customer's screen");
+          }
+          const onBtn = Math.abs(p.x - centre.x) <= 3 &&
+            Math.abs(p.y - centre.y) <= 3;
+          // the tag is pointer-events:none: the hit-test sees the page under it
+          const other = await userPage.evaluate(
+            ({ r, tip }) => {
+              const sel =
+                "button,a[href],input,select,textarea,summary,label,[role=button],[role=link],[role=option],[role=tab],[role=radio],[role=checkbox],[role=menuitem]";
+              const pts = [
+                [r.left + r.width / 2, r.top + r.height / 2],
+                [r.left + 2, r.top + 2],
+                [r.left + r.width - 2, r.top + 2],
+                [r.left + 2, r.top + r.height - 2],
+                [r.left + r.width - 2, r.top + r.height - 2],
+              ];
+              for (const [x, y] of pts) {
+                const c = document.elementFromPoint(x, y)?.closest(sel);
+                if (!c) continue;
+                const b = c.getBoundingClientRect();
+                const holdsTip = tip.x >= b.left && tip.x <= b.right &&
+                  tip.y >= b.top && tip.y <= b.bottom;
+                if (!holdsTip) return c.outerHTML.slice(0, 80);
+              }
+              return null;
+            },
+            { r: p.tag, tip: { x: p.x, y: p.y } },
+          );
+          const reach = reachOf(p, p.tag);
+          if (
+            p.outside || !onBtn || overlaps(p.tag, btn) || reach > 40.5 ||
+            other !== null ||
+            !within(p.tag, {
+              left: 4,
+              top: 4,
+              width: view.width - 8,
+              height: view.height - 8,
+            })
+          ) {
+            throw new Error(JSON.stringify({ ...p, reach, other }));
+          }
+          return true;
+        },
+        10_000,
+      );
+      // 2. pair 3: 'my Alex tag runs off the right edge (x 350–390)' — at the frame's right edge
+      const r = toStage({ x: VIEW.width - 2, y: 300 });
+      await page.mouse.move(r.x - 30, r.y);
+      await page.mouse.move(r.x, r.y);
+      await until(
+        "Alex's tag at the window's right edge is 4 px clear of it",
+        async () => {
+          const p = await pointerAndTag(userPage, "Alex");
+          if (!p || Math.abs(p.x - (VIEW.width - 2)) > 3) {
+            throw new Error(`not there yet: ${JSON.stringify(p)}`);
+          }
+          if (p.tag.left + p.tag.width > view.width - 4 + 0.5) {
+            throw new Error(`flush: ${JSON.stringify(p)}`);
+          }
+          return true;
+        },
+        10_000,
+      );
+    } finally {
+      await d.userCtx.close();
+    }
+  }));

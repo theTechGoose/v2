@@ -244,7 +244,17 @@ const NOT_A_LINE = new Set([
   "cotizacion",
   "presupuesto",
   "trabajo",
+  // REQ-583 (demo-loop cycle 4, M2): an invoice is never a line on the quote
+  "invoice",
+  "factura",
+  "bill",
 ]);
+
+/** REQ-583 (demo-loop cycle 4, M2): pair 6's "Make the invoice for $450
+ *  please." was read as a reprice of a line called "invoice for" — any
+ *  invoice / bill / factura ("the deposit invoice", "la factura final") is
+ *  billing, never a line. */
+const INVOICE_WORD_RE = /\b(?:invoices?|bills?|facturas?)\b/i;
 
 /** REQ-445 (demo-loop cycle 3, B2): how sure a price is — never part of a
  *  line's name ("make it around $18,000", "make the tile about $4,000"). */
@@ -256,6 +266,8 @@ const APPROX_TAIL =
  *  vanity" → "vanity", "it around" → "" (the job, not a line). */
 function cleanLineName(raw: string): string {
   return raw.trim()
+    // REQ-583: "make the cabinets for $400" — "for" belongs to the price
+    .replace(/\s+(?:for|para|por)$/i, "")
     .replace(/^(?:it|that|this|these|those)\s+/i, "")
     .replace(APPROX_TAIL, "")
     .replace(/^(?:the|a|an|la|el|los|las)\s+/i, "")
@@ -289,6 +301,7 @@ export function parseLineReprice(text: string): LineReprice | undefined {
     const match = cleanLineName(g.line);
     if (!match || !/\p{L}/u.test(match) || match.length > 80) continue;
     if (NOT_A_LINE.has(lineKey(match))) continue;
+    if (INVOICE_WORD_RE.test(match)) continue; // REQ-583
     if (/\bQ-\d+\b|\bchange[\s-]*orders?\b/i.test(match)) continue;
     const frac = g.frac ? Number(g.frac.padEnd(2, "0")) : 0;
     return {

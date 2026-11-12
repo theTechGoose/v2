@@ -106,6 +106,16 @@ import { InvoiceStore } from "@paperwork/domain/data/invoice-store/mod.ts";
 import { isInvoiceLocked } from "#documents/versions.ts";
 import { ApplyChatChangeOrder } from "@agents/domain/coordinators/apply-chat-change-order/mod.ts";
 import { UpdateChatChangeOrder } from "@agents/domain/coordinators/update-chat-change-order/mod.ts"; // REQ-462
+// REQ-583 (demo-loop cycle 4, M2): send the invoice / record a payment.
+import { ChatBilling } from "@agents/domain/coordinators/chat-billing/mod.ts";
+import {
+  invoicesContext,
+  liveSendOffer,
+  namedCustomer,
+  parsePaymentReport,
+  parseSendInvoiceAsk,
+} from "@agents/domain/business/chat-billing-intent/mod.ts";
+import { isAccepted } from "#quote-flow/quote-status.ts";
 import {
   ReviseQuote,
   type ReviseQuoteInput,
@@ -126,6 +136,7 @@ import {
 } from "#quote-flow/quick-quote-prefill.ts";
 import { extractQuoteFacts } from "#quote-flow/quote-facts.ts"; // REQ-331
 import {
+  findCustomerNamedInSummary, // REQ-576
   findCustomerNamedInText, // REQ-386
   findExistingCustomer, // REQ-331
 } from "#quote-flow/customer-dedupe.ts";
@@ -140,6 +151,7 @@ import {
   statedPriceCents,
 } from "#quote-flow/step-composer.ts";
 import {
+  appliedStepTurnIds, // REQ-585
   isFallbackPricing,
   jobOptionsStepReply,
   priceStepContext,
@@ -163,6 +175,7 @@ import {
   notDoneLine,
   planToolCalls,
   pricesSameLine,
+  proseAnswer, // REQ-585
   sameJobDetails,
   toolCallsOf,
   totalMoveLine,
@@ -175,6 +188,14 @@ import {
 } from "#quote-flow/typed-coverage.ts";
 import { customerFactsFrom } from "#quote-flow/option-bullets.ts";
 import { getWizardSpec } from "@agents/domain/business/terms-wizard-spec/mod.ts";
+// REQ-585 (demo-loop cycle 4, M4 + M30): the terms typed in the chat.
+import { HandleWizardAnswer } from "@agents/domain/coordinators/handle-wizard-answer/mod.ts";
+import {
+  mentionedTerms,
+  termsChangeLine,
+  termsNotAppliedLine,
+  termsPicks,
+} from "@agents/domain/business/terms-edit/mod.ts";
 
 /** Confirmation phrases that mean "lock the active draft quote." When the
  *  user types one of these AND the conversation already carries a draft
@@ -365,7 +386,33 @@ export class HandleChatMessage {
     /** REQ-462 (demo-loop cycle 3, M26): edits / withdraws a change order
      *  named by its number ("CO-001"). */
     private changeOrderEdit?: UpdateChatChangeOrder,
+    /** REQ-583 (demo-loop cycle 4, M2): sends the invoice and records the
+     *  payment the contractor reports. */
+    private billing?: ChatBilling,
+    /** REQ-585 (demo-loop cycle 4, M4 + M30): sets the agreement terms the
+     *  contractor gives in the chat (update_terms) through the wizard. */
+    private wizard?: HandleWizardAnswer,
   ) {}
+
+  /** REQ-585 (demo-loop cycle 4, M4): the terms-phase start date / time to
+   *  complete the message asks to change that no call set — said in the
+   *  reply, never passed over (pair 7's "the start should be next week …"
+   *  got a price answer only). Steps the conversation's wizard doesn't have
+   *  are not asked for. */
+  private async termsMissed(
+    conv: AgentConversation,
+    text: unknown,
+    set: readonly string[],
+  ): Promise<string[]> {
+    if (isInQuotePhase(conv) || typeof text !== "string") return [];
+    const state = await this.conversations.getWizardState(conv.id)
+      .catch(() => undefined);
+    if (!state) return [];
+    const steps = getWizardSpec(state.specId).steps.map((s) => s.id);
+    return mentionedTerms(text).filter((id) =>
+      steps.includes(id) && !set.includes(id)
+    );
+  }
 
   /** REQ-438 (M7): which of the contractor's quotes a change order would
    *  land on — the same pick ApplyChatChangeOrder makes. */
@@ -389,6 +436,37 @@ export class HandleChatMessage {
       customers: customers.map((c) => ({ id: c.id, name: c.name })),
       ...ask,
     });
+  }
+
+  /** REQ-583 (demo-loop cycle 4, M2, pair 6): the job of the customer a
+   *  billing ask names ("Job done for Carmen Ruiz … make the invoice") — as a
+   *  conversation binding — when there is one to bill: their one open job,
+   *  else the one of theirs that is signed. Undefined when nobody on file is
+   *  named, or which job is unclear. */
+  private async namedCustomersJob(
+    userId: string,
+    text: string,
+  ): Promise<{ quoteId: string; customerId: string } | undefined> {
+    const customers = this.customers
+      ? await this.customers.listByUser(userId).catch(() => [])
+      : [];
+    const who = namedCustomer(customers, text);
+    if (!who) return undefined;
+    const target = await this.changeOrderTarget(userId, {
+      customerName: who.name,
+    });
+    if (target.kind === "quote") {
+      return { quoteId: target.quoteId, customerId: who.id };
+    }
+    if (target.kind !== "ambiguous") return undefined;
+    const signed = (await Promise.all(
+      target.quoteIds.map((id) =>
+        this.quotes.getOwned(id, userId).catch(() => undefined)
+      ),
+    )).filter((q) => !!q && isAccepted(q));
+    return signed.length === 1
+      ? { quoteId: signed[0]!.id, customerId: who.id }
+      : undefined;
   }
 
   /** REQ-438 (M7): the answer to "delete invoice INV-001" — where to delete
@@ -426,17 +504,21 @@ export class HandleChatMessage {
   /** REQ-331: the same-owner customer the thread's typed facts name — by
    *  phone, email, then accent-folded name; REQ-386 (demo m17): else the one
    *  customer whose whole name is typed as Capitalized words ("Bob wants 6
-   *  recessed lights" → the existing Bob); null when nobody matches. */
+   *  recessed lights" → the existing Bob); REQ-576 (demo-loop cycle 4, m26):
+   *  else the one customer the model's summary names after its dash
+   *  ("Electrical outlet installation — Bob Smith"), matched only against
+   *  the account's own customers; null when nobody matches. */
   private async customerFromTypedFacts(
     userId: string,
     history: AgentMessage[],
+    summary?: string,
   ): Promise<{ id: string; name: string } | null> {
     if (!this.customers) return null;
     const typed = history
       .filter((m) => m.role === "user" && typeof m.content === "string")
       .map((m) => m.content as string)
       .join("\n");
-    if (!typed.trim()) return null;
+    if (!typed.trim() && !summary) return null;
     const facts = extractQuoteFacts(typed, new Date());
     const mine: Customer[] = await this.customers.listByUser(userId)
       .catch(() => []);
@@ -444,7 +526,8 @@ export class HandleChatMessage {
       name: facts.customerName,
       email: facts.customerEmail,
       phoneNumber: facts.customerPhone,
-    }) ?? findCustomerNamedInText(mine, typed);
+    }) ?? findCustomerNamedInText(mine, typed) ??
+      findCustomerNamedInSummary(mine, summary);
   }
 
   /** REQ-331: the bound customer's name for the terms CTA, if any. */
@@ -813,6 +896,13 @@ export class HandleChatMessage {
    * details' languages and lines, each line change's own words (the change
    * order and revise coordinators'), and the total's move. When only the job
    * details changed on a message that named an amount, it says no price did.
+   *
+   * REQ-585 (demo-loop cycle 4, M4 + M30): update_terms runs here too — each
+   * term through the wizard (HandleWizardAnswer.change), its pick and next
+   * question going out before the reply — and a term the message asked for
+   * that nothing set is said. The model's own answer to what was asked
+   * ("is 50% normal in texas?") follows the outcome lines, minus its claims
+   * of what changed (`prose`, proseAnswer).
    */
   private async applyEditCalls(
     input: HandleChatInput,
@@ -822,6 +912,7 @@ export class HandleChatMessage {
     edits: EditAction[],
     lang: "en" | "es",
     dropped: readonly string[],
+    prose = "",
   ): Promise<HandleChatResult> {
     const userId = input.userId;
     const userText = typeof input.content === "string" ? input.content : "";
@@ -835,6 +926,20 @@ export class HandleChatMessage {
     // A revise's own reply states the total it left; the closing total line
     // is only added when the total moved again after it.
     let totalSaid: number | undefined;
+    // REQ-585: the wizard messages a term made (its pick, the next question)
+    // go out before the reply, as they sit in the transcript; terms that
+    // could not be set are named.
+    const wizardMessages: AgentMessage[] = [];
+    const termsSet: string[] = [];
+    const termsNotSet: string[] = [];
+    // REQ-585 (M4): a revise naming a job-details bullet is said to be one —
+    // and says nothing more once this turn rewrote the job details.
+    let detailsUpdated = false;
+    const jobDetails = before
+      ? [before.description, ...Object.values(before.descriptionByLang ?? {})]
+        .filter((d): d is string => typeof d === "string" && !!d.trim())
+        .join("\n")
+      : undefined;
     // A line change on the bound quote flags the reply, so an open review
     // re-reads the quote (REQ-392).
     const landed = (o: { kind: string; quoteId?: string }) => {
@@ -858,8 +963,53 @@ export class HandleChatMessage {
         lines: p.lines,
         remove: p.remove,
         userText,
+        jobDetails,
+        jobDetailsUpdated: detailsUpdated,
       });
     for (const edit of edits) {
+      if (edit.type === "update_terms") {
+        const { picks, unread } = termsPicks(edit.payload);
+        termsNotSet.push(...unread);
+        const state = await this.conversations.getWizardState(conv.id)
+          .catch(() => undefined);
+        const spec = state ? getWizardSpec(state.specId) : undefined;
+        for (const pick of picks) {
+          termsSet.push(pick.stepId);
+          const step = spec?.steps.find((s) => s.id === pick.stepId);
+          const done = this.wizard && step
+            ? await this.wizard.change({
+              userId,
+              conversationId: conv.id,
+              ...pick,
+            })
+            : undefined;
+          if (!done || !step || done.kind === "missing") {
+            termsNotSet.push(pick.stepId);
+            continue;
+          }
+          if (done.kind === "answered") {
+            wizardMessages.push(...done.result.newMessages);
+          }
+          if (done.kind === "changed") wizardMessages.push(done.pick);
+          if (
+            done.kind === "answered" || done.kind === "changed" ||
+            (done.kind === "later" && done.prefilled)
+          ) {
+            payload.termsChanged = true;
+            if (done.kind !== "later" && conv.quoteId) {
+              payload.quoteUpdated = conv.quoteId;
+            }
+          }
+          parts.push(termsChangeLine(lang, {
+            kind: done.kind,
+            step,
+            to: done.to,
+            ...("from" in done ? { from: done.from } : {}),
+            ...(done.kind === "later" ? { prefilled: done.prefilled } : {}),
+          }));
+        }
+        continue;
+      }
       if (edit.type === "update_job_details") {
         const done = await this.writeJobDetails(
           conv,
@@ -870,6 +1020,7 @@ export class HandleChatMessage {
         if (done.kind === "updated") {
           parts.push(jobDetailsChangeLine(lang, done.change));
           payload.quoteUpdated = done.quoteId;
+          detailsUpdated = true;
         } else {
           parts.push(
             t(
@@ -917,6 +1068,8 @@ export class HandleChatMessage {
         continue;
       }
       const revised = await revise(edit.payload);
+      // REQ-585: a bullet the job details already reworded says nothing.
+      if (!revised.text) continue;
       parts.push(revised.text);
       payload.quoteRevision = revised.outcome;
       landed(revised.outcome);
@@ -927,7 +1080,9 @@ export class HandleChatMessage {
     if (before && after) {
       const from = workingTotalCents(before);
       const to = workingTotalCents(after);
-      const lineEdits = edits.some((e) => e.type !== "update_job_details");
+      const lineEdits = edits.some((e) =>
+        e.type !== "update_job_details" && e.type !== "update_terms"
+      );
       if (from !== to && totalSaid !== to) {
         parts.push(totalMoveLine(lang, from, to));
       } else if (
@@ -936,8 +1091,21 @@ export class HandleChatMessage {
         parts.push(pricesSameLine(lang, to));
       }
     }
+    // REQ-585: a term the message asked for that nothing set is said.
+    const missed = [
+      ...new Set([
+        ...termsNotSet,
+        ...await this.termsMissed(conv, userText, termsSet),
+      ]),
+    ];
+    const notSet = termsNotAppliedLine(lang, missed);
+    if (notSet) parts.push(notSet);
     const notDone = notDoneLine(lang, dropped);
     if (notDone) parts.push(notDone);
+    // REQ-585 (M4): the model's answer to what was asked follows — minus its
+    // own claims of what changed, which the lines above say from the facts.
+    const answer = toPlainChatText(proseAnswer(stripCustomerAsk(prose)));
+    if (answer) parts.push(answer);
     const reply = await this.messages.append({
       conversationId: conv.id,
       role: "assistant",
@@ -952,7 +1120,10 @@ export class HandleChatMessage {
         ? { title: deriveTitleFromFirstUserMessage(input.content) }
         : {}),
     });
-    return { conversation: updated, newMessages: [userMsg, reply] };
+    return {
+      conversation: updated,
+      newMessages: [userMsg, ...wizardMessages, reply],
+    };
   }
 
   async run(input: HandleChatInput): Promise<HandleChatResult> {
@@ -1687,6 +1858,49 @@ export class HandleChatMessage {
       });
       return await finishEarly(owed);
     }
+    // ---- REQ-583 (demo-loop cycle 4, M2): a payment the customer made, and
+    // an invoice to send NOW, are done here in code. The chat model had no
+    // tool for either: pair 1's "Linda paid the deposit $1,425 by Zelle
+    // today" was never recorded, pair 3's "send it to her now please" got "I
+    // can't send the invoice directly…". "it" is the invoice the last reply
+    // offered with Send now (or the card's own "Send INV-001 now"); without
+    // that offer the model decides, with its send_invoice tool.
+    const billingText = !llmResponse && typeof input.content === "string"
+      ? input.content
+      : "";
+    const paymentReport = this.billing && billingText
+      ? parsePaymentReport(billingText)
+      : undefined;
+    const recorded = this.billing && paymentReport
+      ? await this.billing.recordPayment({
+        userId: input.userId,
+        conversation: conv,
+        lang: replyLang,
+        report: paymentReport,
+        text: billingText,
+        fromWords: true,
+      })
+      : undefined;
+    if (recorded) return await finishEarly(recorded);
+    const sendAsk = this.billing && billingText
+      ? parseSendInvoiceAsk(billingText)
+      : undefined;
+    const sendOffer = sendAsk && !sendAsk.invoiceNumber
+      ? liveSendOffer(history.filter((m) => m.id !== userMsg.id))
+      : undefined;
+    if (this.billing && sendAsk && (sendAsk.invoiceNumber || sendOffer)) {
+      return await finishEarly(
+        await this.billing.send({
+          userId: input.userId,
+          conversation: conv,
+          lang: replyLang,
+          ...(sendAsk.invoiceNumber
+            ? { invoiceNumber: sendAsk.invoiceNumber }
+            : { invoiceId: sendOffer!.invoiceId }),
+          ...(sendAsk.channel ? { channel: sendAsk.channel } : {}),
+        }),
+      );
+    }
     // M32: "John signed! Please send him the deposit invoice" → where the
     // bill stands (signing already sent the deposit invoice).
     if (
@@ -1695,6 +1909,26 @@ export class HandleChatMessage {
     ) {
       const billed = await answerBilling();
       if (billed) return await finishEarly(billed);
+    }
+    // REQ-583 (M2, pair 6): "Job done for Carmen Ruiz, faucet and the 2
+    // doors. Make the invoice for $450 please." in a NEW chat — no job bound.
+    // The customer it names has a job: bind it and answer where its bill
+    // stands. The demo read "invoice for" as a line to reprice ('I couldn't
+    // find a line called "invoice for" on Q-001…').
+    if (
+      !llmResponse && !conv.quoteId && typeof input.content === "string" &&
+      isInvoiceRequest(input.content)
+    ) {
+      const jobId = await this.namedCustomersJob(input.userId, input.content);
+      if (jobId) {
+        const bound = await this.conversations.update(conv.id, jobId);
+        const billed = await new AnswerBilling(
+          this.conversations,
+          this.messages,
+        )
+          .run({ userId: input.userId, conversation: bound, lang: replyLang });
+        if (billed) return await finishEarly(billed);
+      }
     }
     // ---- REQ-388 (M23): "Draft a quote at $1,500" — the pricing answer's
     // offer, taken (the chat's button sends those words). The draft is the
@@ -1729,8 +1963,13 @@ export class HandleChatMessage {
     // and the model was blind to its own prior actions.
     // Image bytes are still re-fetched per turn so vision-capable models can
     // re-read attached photos on follow-up turns.
+    // REQ-585 (demo-loop cycle 4, M4): an earlier step turn whose request was
+    // applied (and its reply) is not replayed — on the start-date card pair
+    // 7's model re-issued her Pick-a-price request from the history.
+    const appliedTurns = appliedStepTurnIds(history, userMsg.id);
     const llmTurns: LLMTurn[] = await Promise.all(
       history
+        .filter((m) => !appliedTurns.has(m.id))
         .filter((m) =>
           m.kind === "text" || m.kind === "voice" || m.kind === "image" ||
           m.kind === "action_card" || m.kind === "continue_cta"
@@ -1983,11 +2222,22 @@ export class HandleChatMessage {
           "\n\n",
         );
       }
+      // REQ-583 (demo-loop cycle 4, M2): a signed job's invoices — what the
+      // model reads (what is billed, scheduled, paid) and what its
+      // send_invoice / record_payment tools may do.
+      const jobInvoices = this.billing && boundQuote && isAccepted(boundQuote)
+        ? await this.billing.invoicesOf(input.userId, boundQuote.id)
+        : undefined;
+      const invoiceLines = jobInvoices ? invoicesContext(jobInvoices) : "";
+      if (invoiceLines) {
+        businessContext = [businessContext, invoiceLines].filter(Boolean)
+          .join("\n\n");
+      }
       // REQ-368 (M32): only the tools this state allows — no lock / terms
       // once the quote is past drafting, no create / lock in the terms phase.
       // REQ-392: the review may also revise a line already on the quote.
       const tools = stepTools(
-        chatToolsFor(conv.currentPhase, boundQuote),
+        chatToolsFor(conv.currentPhase, boundQuote, jobInvoices),
         step,
       );
       // REQ-445 (demo-loop cycle 3, B2 + M20): a price the contractor gives
@@ -2122,21 +2372,39 @@ export class HandleChatMessage {
     // all run keeps the first call (below, as before); the reply names what
     // it didn't do, and any call whose arguments didn't parse.
     const plan = planToolCalls(toolCallsOf(llmResponse));
-    if (plan.edits) {
+    // REQ-585 (demo-loop cycle 4, M4 + M30): a term change alone is a change
+    // like the others — the reply says what the wizard did and keeps the
+    // model's answer.
+    const edits = plan.edits ??
+      (plan.single?.type === "update_terms" ? [plan.single] : undefined);
+    if (edits) {
       return await this.applyEditCalls(
         input,
         conv,
         userMsg,
         history,
-        plan.edits,
+        edits,
         replyLang,
         llmResponse.dropped ?? [],
+        llmResponse.text ?? "",
       );
     }
-    const notDone = notDoneLine(replyLang, [
-      ...plan.notDone,
-      ...(llmResponse.dropped ?? []),
-    ]);
+    // REQ-585 (M4): the call that runs is the plan's — a create_quote carries
+    // the job details the model wrote beside it (pair 6).
+    if (plan.single) llmResponse = { ...llmResponse, action: plan.single };
+    const notDone = [
+      notDoneLine(replyLang, [
+        ...plan.notDone,
+        ...(llmResponse.dropped ?? []),
+      ]),
+      // REQ-585 (M4): a start date / time to complete the message asked for
+      // that no call set ("the start should be next week … what should I
+      // charge for the heated floor?" got the price only).
+      termsNotAppliedLine(
+        replyLang,
+        await this.termsMissed(conv, input.content, []),
+      ),
+    ].filter(Boolean).join(" ");
     const withNotDone = (text: string) =>
       notDone ? [text.trim(), notDone].filter(Boolean).join(" ") : text;
 
@@ -2289,6 +2557,43 @@ export class HandleChatMessage {
     };
     const userText = typeof input.content === "string" ? input.content : "";
 
+    // ---- REQ-583 (demo-loop cycle 4, M2): the model's send_invoice /
+    // record_payment run through ChatBilling, and the reply is what was
+    // actually done — never the model's own "Sending it now!".
+    const billingAction = llmResponse.action;
+    if (
+      this.billing && (billingAction?.type === "send_invoice" ||
+        billingAction?.type === "record_payment")
+    ) {
+      const done = billingAction.type === "send_invoice"
+        ? await this.billing.send({
+          userId: input.userId,
+          conversation: conv,
+          lang: replyLang,
+          ...(billingAction.payload.invoiceNumber
+            ? { invoiceNumber: billingAction.payload.invoiceNumber }
+            : {}),
+        })
+        : (await this.billing.recordPayment({
+          userId: input.userId,
+          conversation: conv,
+          lang: replyLang,
+          report: billingAction.payload,
+          text: userText,
+        }))!;
+      if (notDone) {
+        done.newMessages.push(
+          await this.messages.append({
+            conversationId: conv.id,
+            role: "assistant",
+            kind: "text",
+            content: notDone,
+          }),
+        );
+      }
+      return await finishEarly(done);
+    }
+
     // ---- REQ-462 (demo-loop cycle 3, M26): edit / withdraw a change order
     // by its number. The reply is the coordinator's; its payload names the
     // order and its quote (the chat links the quote, whose panel lists it).
@@ -2410,6 +2715,14 @@ export class HandleChatMessage {
           lines: p.lines,
           remove: p.remove,
           userText,
+          // REQ-585 (M4): a job-details bullet is said to be one.
+          jobDetails: boundQuote
+            ? [
+              boundQuote.description,
+              ...Object.values(boundQuote.descriptionByLang ?? {}),
+            ].filter((d): d is string => typeof d === "string" && !!d.trim())
+              .join("\n")
+            : undefined,
         }),
       );
     }
@@ -2486,22 +2799,43 @@ export class HandleChatMessage {
       suppressTextBubble = false;
     }
     if (
-      suppressTextBubble && existingDraft && !priceProblem &&
+      existingDraft && !priceProblem &&
       llmResponse.action?.type === "create_quote"
     ) {
-      replyText = describeQuoteRevision(
-        replyLang,
-        existingDraft.lineItems.map((l) => ({
-          description: l.description,
-          priceCents: l.price * (l.quantity ?? 1),
-        })),
-        llmResponse.action.payload.lineItems.map((l) => ({
-          description: l.description,
-          priceCents: l.amountCents,
-        })),
-        input.content,
-      );
-      suppressTextBubble = false;
+      const was = existingDraft.lineItems.map((l) => ({
+        description: l.description,
+        priceCents: l.price * (l.quantity ?? 1),
+      }));
+      const now = llmResponse.action.payload.lineItems.map((l) => ({
+        description: l.description,
+        priceCents: l.amountCents,
+      }));
+      // REQ-585 (demo-loop cycle 4, M4): a re-draft that changed nothing —
+      // no line, no price, not the summary nor the job details — is said to
+      // have changed nothing even when the model wrote prose ("I've added a
+      // second option…" over an identical card); its answer, minus the
+      // claim, follows.
+      const payload = llmResponse.action.payload;
+      const otherChange =
+        (existingDraft.summary ?? "").trim() !== payload.summary.trim() ||
+        Object.keys(payload.descriptionByLang ?? {}).length > 0;
+      const unchanged = !otherChange && was.length === now.length &&
+        was.every((l, i) =>
+          l.description.trim() === now[i].description.trim() &&
+          l.priceCents === now[i].priceCents
+        );
+      if (suppressTextBubble || unchanged) {
+        const said = describeQuoteRevision(
+          replyLang,
+          was,
+          now,
+          input.content,
+          { otherChange },
+        );
+        const answer = suppressTextBubble ? "" : proseAnswer(replyText);
+        replyText = [said, answer].filter(Boolean).join(" ");
+        suppressTextBubble = false;
+      }
     }
 
     // ---- update_job_details (REQ-262, demo M25): rewrite / translate the
@@ -2594,6 +2928,7 @@ export class HandleChatMessage {
           const known = await this.customerFromTypedFacts(
             input.userId,
             history,
+            action.payload.summary, // REQ-576 (m26): "— Bob Smith"
           );
           if (known) {
             customerId = known.id;
@@ -2624,6 +2959,29 @@ export class HandleChatMessage {
         // draft if one exists; otherwise create. Locked/sent quotes are
         // immutable, so fall through to creating a new one if the bound
         // quote is no longer in 'draft'.
+        // REQ-585 (demo-loop cycle 4, M4): the job details the model wrote
+        // beside the draft (folded in by planToolCalls) land on it — pair 6's
+        // Spanish details were refused as a separate call under a correct
+        // card ("Todavía no pude actualizar los detalles del trabajo…").
+        const byLang = Object.fromEntries(
+          Object.entries(action.payload.descriptionByLang ?? {})
+            .map(([l, v]) => [l, v?.trim() ?? ""])
+            .filter(([, v]) => v),
+        ) as Record<string, string>;
+        const typedLangs = Object.keys(byLang);
+        const details = typedLangs.length
+          ? {
+            descriptionByLang: {
+              ...(existingDraft?.descriptionByLang ?? {}),
+              ...byLang,
+            },
+            // the reply language's copy is the base; else the first one —
+            // unless a draft already has a base this turn didn't rewrite
+            ...(byLang[replyLang] || !existingDraft?.description?.trim()
+              ? { description: byLang[replyLang] || byLang[typedLangs[0]] }
+              : {}),
+          }
+          : {};
         let quote;
         if (existingDraft) {
           try {
@@ -2631,6 +2989,7 @@ export class HandleChatMessage {
               summary: action.payload.summary,
               lineItems: dtoLineItems,
               estimatedTotal,
+              ...details, // REQ-585
               // a correction without an address keeps the one on file
               ...(serviceAddress ? { serviceAddress } : {}),
               // REQ-331: a customer resolved this turn lands on the draft
@@ -2656,6 +3015,7 @@ export class HandleChatMessage {
             ...(jobName ? { jobName } : {}),
             lineItems: dtoLineItems,
             estimatedTotal,
+            ...details, // REQ-585
             status: "draft",
             ...(customerId ? { customerId } : {}),
             ...(serviceAddress ? { serviceAddress } : {}),

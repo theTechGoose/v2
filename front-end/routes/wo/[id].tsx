@@ -32,7 +32,10 @@ export default define.page(function WorkOrderRoute(ctx) {
       <div class="app">
         <DashSidebar active="workOrders" />
         <main class="main">
-          <DashTopbar greetingName={greetingName} />
+          <DashTopbar
+            pageTitleKey="nav.workOrders"
+            greetingName={greetingName}
+          />
           <div class="content">
             <WorkOrderPage id={ctx.params.id} />
             <SiteFooter lang={lang} />

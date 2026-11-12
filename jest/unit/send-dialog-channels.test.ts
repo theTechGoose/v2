@@ -22,9 +22,9 @@ const read = (p: string) => fs.readFileSync(path.join(ROOT, p), "utf8");
 const en = JSON.parse(read("lang/en.json")) as Record<string, string>;
 const es = JSON.parse(read("lang/es.json")) as Record<string, string>;
 
-const bob = { phoneNumber: "+15125550123" }; // phone, no email
+const bob = { phoneNumber: "+15126550123" }; // phone, no email (REQ-569: a textable number)
 const ana = { email: "ana@example.com" }; // email, no phone
-const both = { email: "a@b.co", phoneNumber: "+15125550123" };
+const both = { email: "a@b.co", phoneNumber: "+15126550123" }; // REQ-569: textable
 
 describe("REQ-402 m5 channelNeedsKey names what a channel lacks on file", () => {
   it("REQ-402 phone-only customer: Email and Text + Email need an email; Text needs nothing", () => {

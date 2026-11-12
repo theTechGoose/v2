@@ -3,7 +3,7 @@
  * there are none." Demo-loop cycle 3 (run re05e1cbb), issue m5 — "Landing
  * promises a 30-day free trial; plan step charges $99 today".
  *
- * Billing has no trial (the plan step reads "$99 today · prorated on the 1st ·
+ * Billing has no trial (the plan step reads "$99 today (covers …) · Dec 1: $… for … ·
  * then $99/month"), so neither landing page — in either language, before or
  * after the EN/ES toggle — may promise one. The pricing note says what billing
  * does: cancel anytime.

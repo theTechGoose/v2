@@ -16,6 +16,7 @@ import {
   stageLabelFor,
 } from "../lib/quotes-seed.ts";
 import DeleteQuoteButton from "./DeleteQuoteButton.tsx";
+import { customerLinkPath, customerLinkUrl } from "../lib/customer-link.ts";
 
 /** Real engagement entry from GET /quotes/:id/opens. */
 interface RealOpen {
@@ -96,8 +97,9 @@ export default function QuoteCard(
   async function copyPublicLink(e: MouseEvent) {
     e.stopPropagation();
     try {
+      // REQ-586 (cycle 4, M11): in the language the quote went out in.
       await navigator.clipboard.writeText(
-        `${globalThis.location.origin}/q/${q.id}`,
+        customerLinkUrl(globalThis.location.origin, q.id, q.sendLang),
       );
       setCopied(true);
       setTimeout(() => setCopied(false), 1500);
@@ -105,7 +107,11 @@ export default function QuoteCard(
   }
   const mood = moodForQuote(q);
   const story = QSTORIES[q.id] ?? tFor(lang, "quoteCard.storyFallback");
-  const cta = q.stage === "draft"
+  // REQ-614 (cycle 4, m16): the onboarding sample is an unnumbered draft with
+  // no customer — it is looked at, never finished and sent.
+  const cta = q.isSample
+    ? tFor(lang, "quoteCard.cta.viewSample")
+    : q.stage === "draft"
     ? tFor(lang, "quoteCard.cta.finishSend")
     : q.stage === "undelivered"
     ? tFor(lang, "quoteCard.cta.fixContact")
@@ -184,19 +190,41 @@ export default function QuoteCard(
             the quote panel (the same as the back's Open), so the customer's
             link is reachable without flipping. No panel wired → flip. */
         }
-        <button
-          class="qcard__cta"
-          type="button"
-          data-cy="qcard-cta"
-          onClick={(e) => {
-            e.stopPropagation();
-            if (onOpen) onOpen(q.id);
-            else setFlipped(true);
-          }}
-        >
-          {cta}{" "}
-          <span style="display:inline-block;transition:transform 240ms">→</span>
-        </button>
+        {!q.isSample
+          ? (
+            <button
+              class="qcard__cta"
+              type="button"
+              data-cy="qcard-cta"
+              onClick={(e) => {
+                e.stopPropagation();
+                if (onOpen) onOpen(q.id);
+                else setFlipped(true);
+              }}
+            >
+              {cta}{" "}
+              <span style="display:inline-block;transition:transform 240ms">
+                →
+              </span>
+            </button>
+          )
+          : (
+            /* REQ-614 (cycle 4, m16): the sample's CTA shows the quote as a
+              customer would see it — it never opens the send flow. */
+            <a
+              class="qcard__cta"
+              data-cy="qcard-cta"
+              href={customerLinkPath(q.id, q.sendLang)} // REQ-586
+              target="_blank"
+              rel="noopener"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {cta}{" "}
+              <span style="display:inline-block;transition:transform 240ms">
+                →
+              </span>
+            </a>
+          )}
         <div class="qcard__val-wrap">
           <div class="qcard__val-lbl">
             {q.isSample
@@ -306,7 +334,7 @@ export default function QuoteCard(
             </button>
           )}
           <a
-            href={`/q/${q.id}`}
+            href={customerLinkPath(q.id, q.sendLang)}
             target="_blank"
             rel="noopener"
             onClick={(e) => e.stopPropagation()}

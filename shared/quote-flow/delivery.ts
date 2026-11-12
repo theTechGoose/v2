@@ -18,6 +18,11 @@ export interface QuoteDelivery {
   textedTo?: string;
   emailFailureReason?: string;
   smsFailureReason?: string;
+  /** REQ-586 (demo-loop cycle 4, M11): the language the document went out
+   *  in — the in-app customer links ("Open as customer", "Copy") carry it as
+   *  `?lang=`, like the links inside the SMS / email do (REQ-342). Recorded
+   *  on failed attempts too: the link is the fallback then. */
+  lang?: "en" | "es";
 }
 
 /** True when at least one channel of this attempt delivered. */
@@ -27,13 +32,25 @@ export function deliverySucceeded(
   return !!d && (!!d.emailedTo || !!d.textedTo);
 }
 
-/** A quote whose last send reached nobody and that was never delivered. */
+/**
+ * REQ-572 (demo-loop cycle 4, p4-p7c): how a quote went out when no channel
+ * of ours carried it — the owner copied the link, shared it themselves and
+ * pressed "Mark as sent". The one non-delivery way a quote becomes sent
+ * (amends REQ-236 / REQ-480).
+ */
+export type SentVia = "link";
+export const SENT_VIA_VALUES: readonly SentVia[] = ["link"];
+
+/** A quote whose last send reached nobody and that was never delivered.
+ *  REQ-572: a quote the owner marked shared by link is not — they sent it. */
 export function isUndelivered(
   q: {
     lastDelivery?: QuoteDelivery | null;
     deliveredAt?: string | null;
+    sentVia?: string | null;
   },
 ): boolean {
+  if (q.sentVia === "link") return false;
   if (!q.lastDelivery) return false;
   if (q.deliveredAt) return false;
   return !deliverySucceeded(q.lastDelivery);
@@ -74,5 +91,7 @@ export function deliveryFromDivider(
     ...(textedTo ? { textedTo } : {}),
     ...(emailFailureReason ? { emailFailureReason } : {}),
     ...(smsFailureReason ? { smsFailureReason } : {}),
+    // REQ-586: the send's language rides along to the local quote.
+    ...(p.lang === "en" || p.lang === "es" ? { lang: p.lang } : {}),
   };
 }

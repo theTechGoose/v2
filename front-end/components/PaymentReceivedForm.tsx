@@ -3,18 +3,27 @@
  *
  * The contractor says "payment received" for an invoice the customer never
  * claimed online (cash, check, Zelle told to them in person): pick how they
- * paid (all nine methods), the amount (prefilled with the invoice total),
+ * paid (all nine methods), the amount (prefilled with the balance still
+ * owed — REQ-551),
  * the date, an optional reference, then POST /payments. The backend re-runs
  * ComputeInvoiceBalance and flips the invoice to paid when the balance hits
  * zero, and the row lands on /payments.
+ *
+ * REQ-551 (demo-loop cycle 4, B2): an amount above the balance asks
+ * "record it anyway?" inline before anything is sent (the request then says
+ * `override: true`); above 10x the invoice it is refused. POST /payments
+ * applies the same rule, so a stale balance comes back as the same question.
  *
  * Rendered inside the InvoicesPage island (detail panel, "pay" mode).
  */
 import { useState } from "preact/hooks";
 import { type PaymentMethod, paymentsClient } from "../clients/payments.ts";
 import { type Lang, tFor } from "../lib/i18n.ts";
+import { formatLongDate } from "../../shared/quote-flow/format-helpers.ts";
 import {
+  overpaymentFromError,
   paymentErrorText,
+  type PaymentReceivedResult,
   validatePaymentReceived,
 } from "../lib/payment-received.ts";
 
@@ -47,10 +56,13 @@ const GREEN = "var(--brand-green,#519843)";
 const INK = "var(--fg,#144852)";
 
 export default function PaymentReceivedForm(
-  { invoiceId, amountCents, lang, onSaved, onCancel }: {
+  { invoiceId, amountCents, paidCents, lang, onSaved, onCancel }: {
     invoiceId: string;
-    /** Invoice total, INTEGER CENTS — prefills the amount field. */
+    /** Invoice total, INTEGER CENTS. */
     amountCents?: number;
+    /** REQ-551: already received on the invoice, INTEGER CENTS. The amount
+     *  field is prefilled with the balance (total − this). */
+    paidCents?: number;
     lang: Lang;
     /** REQ-322: told the recorded amount (INTEGER CENTS) so the page can
      *  confirm "Payment of $X recorded". */
@@ -59,31 +71,58 @@ export default function PaymentReceivedForm(
   },
 ) {
   const [method, setMethod] = useState<PaymentMethod | null>(null);
-  const [dollars, setDollars] = useState(
-    amountCents != null ? String(amountCents / 100) : "",
-  );
+  const [dollars, setDollars] = useState(() => {
+    if (amountCents == null) return "";
+    const balance = Math.max(0, amountCents - (paidCents ?? 0));
+    return String((balance > 0 ? balance : amountCents) / 100);
+  });
   const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [reference, setReference] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  // REQ-551: the "record it anyway?" question, when the amount is above
+  // the balance.
+  const [overAsk, setOverAsk] = useState<string | null>(null);
 
   const fieldStyle =
     `width:100%;box-sizing:border-box;padding:8px 10px;border:1px solid ${LINE};border-radius:8px;font:inherit;font-size:13.5px`;
   const labelStyle =
     "display:flex;flex-direction:column;gap:4px;font-size:12px;font-weight:700;color:var(--fg-muted,#6b7560)";
 
-  async function submit(e: Event) {
+  /** REQ-551: show a refusal — the overpayment question gets its own box
+   *  with a "Record anyway" button, everything else is the error line. */
+  function showRefusal(v: Extract<PaymentReceivedResult, { ok: false }>) {
+    const text = tFor(lang, v.errKey, v.vars);
+    if (v.confirmOver) {
+      setErr(null);
+      setOverAsk(text);
+    } else {
+      setOverAsk(null);
+      setErr(text);
+    }
+  }
+
+  async function submit(e: Event, confirmedOver = false) {
     e.preventDefault();
     if (busy) return;
     // REQ-322 (demo m36): method → amount → date, each with its own reason,
     // and the date is checked BEFORE any instant is built so a cleared
     // "Received on" never throws its way into the generic errSave.
-    const v = validatePaymentReceived({ method, dollars, date });
+    // REQ-551: then the amount against the balance still owed.
+    const v = validatePaymentReceived({
+      method,
+      dollars,
+      date,
+      amountCents,
+      paidCents,
+      confirmedOver,
+    });
     if (!v.ok) {
-      setErr(tFor(lang, v.errKey));
+      showRefusal(v);
       return;
     }
     setErr(null);
+    setOverAsk(null);
     setBusy(true);
     try {
       await paymentsClient.create({
@@ -92,10 +131,13 @@ export default function PaymentReceivedForm(
         method: v.method,
         receivedAt: v.receivedAt,
         ...(reference.trim() ? { reference: reference.trim() } : {}),
+        ...(v.override ? { override: true } : {}),
       });
       await onSaved(v.cents);
     } catch (e) {
-      setErr(paymentErrorText(lang, e));
+      const over = overpaymentFromError(e);
+      if (over && !over.ok) showRefusal(over);
+      else setErr(paymentErrorText(lang, e));
     } finally {
       setBusy(false);
     }
@@ -145,7 +187,10 @@ export default function PaymentReceivedForm(
             inputMode="decimal"
             data-cy="pay-received-amount"
             value={dollars}
-            onInput={(e) => setDollars((e.target as HTMLInputElement).value)}
+            onInput={(e) => {
+              setDollars((e.target as HTMLInputElement).value);
+              setOverAsk(null); // REQ-551: a new amount is a new question
+            }}
             style={fieldStyle}
           />
         </label>
@@ -159,6 +204,19 @@ export default function PaymentReceivedForm(
             onInput={(e) => setDate((e.target as HTMLInputElement).value)}
             style={fieldStyle}
           />
+          {
+            /* REQ-587 (cycle 4, M27): a native date input draws the BROWSER
+              locale (11/12/2026 in an en-US browser) whatever the app
+              language, so the picked day is also spelled out in it. */
+          }
+          {date && (
+            <span
+              data-cy="pay-received-date-text"
+              style="font-size:12px;font-weight:600"
+            >
+              {formatLongDate(date, lang)}
+            </span>
+          )}
         </label>
       </div>
       <label style={labelStyle}>
@@ -171,6 +229,24 @@ export default function PaymentReceivedForm(
           style={fieldStyle}
         />
       </label>
+      {overAsk && (
+        <div
+          role="alert"
+          data-cy="pay-received-over"
+          style="display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:10px 12px;border-radius:9px;background:var(--amber-50,#fff7e6);border:1px solid var(--amber-300,#f0c36d);font-size:12.5px;font-weight:700;color:var(--fg,#144852)"
+        >
+          <span style="flex:1 1 200px">{overAsk}</span>
+          <button
+            type="button"
+            data-cy="pay-received-over-confirm"
+            disabled={busy}
+            onClick={(e) => submit(e, true)}
+            style={`appearance:none;cursor:pointer;background:#fff;color:${INK};border:1px solid ${LINE};border-radius:9px;padding:6px 12px;font:inherit;font-size:12.5px;font-weight:800`}
+          >
+            {tFor(lang, "invoicesPage.pay.confirmOverBtn")}
+          </button>
+        </div>
+      )}
       {err && (
         <div
           data-cy="pay-received-error"

@@ -923,3 +923,29 @@ Deno.test("REQ-401 (demo M30/m45, cycle 2): a pull onto drafts says 'on draft in
     await page.locator("[data-cy='w-visit']").first().waitFor({ timeout: 20_000 });
     await expect.see("on a draft invoice");
   }));
+
+Deno.test("REQ-611 (demo p4-p8a, cycle 4): the /field/tasks day stepper's buttons read Previous day / Next day, and 'Day' names only the date input", (t) =>
+  story(t, async ({ page, expect, http, baseUrl }) => {
+    await officeDay({ page, http, baseUrl });
+    await page.goto("/field/tasks");
+    await page.locator("[data-cy='tk-task']").first().waitFor({ timeout: 15_000 });
+    const prev = page.getByRole("button", { name: "Previous day", exact: true });
+    const next = page.getByRole("button", { name: "Next day", exact: true });
+    expect.eq(await prev.count(), 1, "one button named Previous day");
+    expect.eq(await next.count(), 1, "one button named Next day");
+    expect.eq(await prev.getAttribute("data-cy"), "tk-prev", "Previous day is the left chevron");
+    expect.eq(await next.getAttribute("data-cy"), "tk-next", "Next day is the right chevron");
+    expect.eq(await page.getByRole("button", { name: /^Day\b/ }).count(), 0, "no button is named after the 'Day' label");
+    expect.eq(await page.getByRole("button", { name: "+1", exact: true }).count(), 0, "no button named +1");
+    // "Day" names exactly two things: the stepper group and the date input — never a button
+    expect.eq(await page.getByLabel("Day", { exact: true }).and(page.locator("input")).getAttribute("data-cy"), "tk-date", "'Day' labels the date input");
+    expect.eq(await page.getByRole("group", { name: "Day", exact: true }).count(), 1, "the stepper is a group named Day");
+    const before = await page.locator("[data-cy='tk-date']").inputValue();
+    await next.click();
+    await page.waitForFunction(
+      (b) => (document.querySelector("[data-cy='tk-date']") as HTMLInputElement | null)?.value !== b,
+      before,
+      { timeout: 15_000 },
+    );
+    expect(await page.locator("[data-cy='tk-date']").inputValue() > before, "Next day moves the day forward");
+  }));

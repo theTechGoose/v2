@@ -8,6 +8,10 @@
  *    and the address are hidden), and on a short page (/work-orders, empty) it
  *    sits at the bottom of the screen, not mid-screen with blank space below.
  *
+ *  - REQ-573 (cycle 4, p4-p3c): the quote doc already ends with "Powered by
+ *    DocuMonster · Agreement …", so the page says it once — the footer drops
+ *    its own credit.
+ *
  * Pages: front-end/components/SiteFooterView.tsx, front-end/routes/q/[id].tsx,
  * front-end/static/dashboard.css.
  */
@@ -103,7 +107,7 @@ function footer(page: StoryTools["page"]): Promise<Footer | null> {
   });
 }
 
-Deno.test("REQ-509 (m24): the customer's quote ends with the document footer — policy links + Powered by DocuMonster, no DocuMonster phone or address", (t) =>
+Deno.test("REQ-509 (m24) REQ-573 (p4-p3c): the customer's quote ends with the document footer — policy links, no DocuMonster phone or address — and says Powered by DocuMonster once", (t) =>
   story(t, async ({ page, expect, http, baseUrl }) => {
     const auth = await signIn(http, page, baseUrl);
     const customer = await post(http, auth, "/api/customers", {
@@ -130,12 +134,22 @@ Deno.test("REQ-509 (m24): the customer's quote ends with the document footer —
     expect(f !== null, "the quote has a footer");
     expect(f!.document, "the quote's footer is the document variant");
     expect.eq(f!.links, 4, "the four policy links");
-    expect(
-      f!.text.includes("Powered by DocuMonster"),
-      `"Powered by DocuMonster" (got "${f!.text}")`,
-    );
     expect(!f!.text.includes("855-362-8666"), "no DocuMonster phone");
     expect(!f!.text.includes("Socastee"), "no DocuMonster address");
+    // REQ-573 (cycle 4, p4-p3c): the quote doc itself ends with "Powered by
+    // DocuMonster · Agreement …", so the page says it once — not again in
+    // the footer.
+    await page.getByText("Powered by DocuMonster · Agreement").waitFor({
+      timeout: 15000,
+    });
+    expect(
+      !f!.text.includes("Powered by DocuMonster"),
+      `the footer does not repeat the credit (got "${f!.text}")`,
+    );
+    const said = await page.evaluate(() =>
+      (document.body.innerText.match(/Powered by DocuMonster/g) ?? []).length
+    );
+    expect.eq(said, 1, '"Powered by DocuMonster" appears once on the quote');
   }));
 
 Deno.test("REQ-509 (m24): on a 390x844 phone the app's compact footer is the links alone and sits at the bottom of a short page (/work-orders)", (t) =>

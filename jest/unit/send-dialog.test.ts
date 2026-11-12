@@ -23,11 +23,11 @@ const es = JSON.parse(read("lang/es.json")) as Record<string, string>;
 
 describe("REQ-308 M3 recommendedChannel follows what the customer has on file", () => {
   it("REQ-308 both only when email AND phone are on file", () => {
-    expect(recommendedChannel({ email: "a@b.co", phoneNumber: "+15125550123" }))
+    expect(recommendedChannel({ email: "a@b.co", phoneNumber: "+15126550123" }))
       .toBe("both");
   });
   it("REQ-308 phone only → sms; email only → email", () => {
-    expect(recommendedChannel({ phoneNumber: "+15125550123" })).toBe("sms");
+    expect(recommendedChannel({ phoneNumber: "+15126550123" })).toBe("sms");
     expect(recommendedChannel({ email: "a@b.co" })).toBe("email");
   });
   it("REQ-308 neither (or no customer) → nothing is recommended", () => {

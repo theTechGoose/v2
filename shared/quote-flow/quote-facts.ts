@@ -32,13 +32,30 @@ export type PrefillPaymentTerms =
   | "net_15"
   | CustomPaymentSchedule;
 
+/** The typed START date — `iso` YYYY-MM-DD (the value the wizard's date
+ *  picker submits and the term stores, REQ-495), `us` MM/DD/YYYY. */
+export interface StartDateFact {
+  iso: string;
+  us: string;
+  /** REQ-575 (demo-loop cycle 4, M3): "next week" / "la próxima semana",
+   *  "next month", "right away" — the wizard's own option for it (`iso` is
+   *  the day it means), never a made-up date. */
+  preset?: "asap" | "next_week" | "next_month";
+  /** REQ-575 (M3): "monday nov 24" when Nov 24 is a Tuesday — the typed
+   *  date wins, and the wizard says which weekday it falls on. */
+  weekdayMismatch?: true;
+}
+
 export interface QuoteFacts {
   customerName: string | null;
   customerPhone: string | null;
   customerEmail: string | null;
-  /** The typed START date — `iso` YYYY-MM-DD (the value the wizard's date
-   *  picker submits and the term stores, REQ-495), `us` MM/DD/YYYY. */
-  startDate: { iso: string; us: string } | null;
+  /** REQ-575 (demo-loop cycle 4, M3): a number typed as the phone that no
+   *  phone can be ("phone 555", "tel 555-0123") — as typed, so the customer
+   *  form can say so; absent when the text has a usable phone or none. */
+  unusablePhone?: string;
+  /** The typed START date (see StartDateFact). */
+  startDate: StartDateFact | null;
   paymentTerms: PrefillPaymentTerms | null;
   /** The job's own time to complete, EN or ES — REQ-343: "4 weeks", "a
    *  4-hour clean" seeds the wizard's custom duration picker; REQ-330 (M21):
@@ -66,6 +83,37 @@ export function extractEmail(raw: string): string | null {
 export function extractPhone(raw: string): string | null {
   const m = raw.match(PHONE_RE);
   return m ? m[0].trim() : null;
+}
+
+/** REQ-575 (M3): a word that says the number after it is a phone. */
+const PHONE_CUE =
+  /(?<![\p{L}])(?:phone|tel|telephone|cell|cellphone|mobile|m[oó]vil|cel|celular|tel[eé]fono|whatsapp|(?:number|n[uú]mero)\s+(?:is|es))(?![\p{L}])/giu;
+/** What follows the cue: "number", "is / es / de", ":" — then the digits as
+ *  typed, single separators between their groups. */
+const PHONE_AFTER_CUE =
+  /^\.?\s*(?:(?:number|n[uú]mero|no\.?|num\.?)\s*)?(?:(?:is|es|de)\s+)?[:#]?\s*(\+?\(?\d+\)?(?:[\s.-]\(?\d+\)?)*)/iu;
+
+/**
+ * REQ-575 (demo-loop cycle 4, M3): pair 10 typed the phone "555" and the
+ * assistant dropped it without a word. A number typed right after a phone
+ * word ("phone 555", "tel: 555-0123", "su teléfono es 512 555", "his number
+ * is 555") that is not a 10-digit US phone (11 with a leading 1) comes back
+ * as typed; null when the text carries a usable phone, or no phone word.
+ */
+export function extractUnusablePhone(raw: string): string | null {
+  const text = raw ?? "";
+  if (extractPhone(text)) return null;
+  for (const m of text.matchAll(PHONE_CUE)) {
+    const typed = PHONE_AFTER_CUE.exec(text.slice(m.index! + m[0].length));
+    if (!typed) continue;
+    const value = typed[1].trim();
+    const digits = value.replace(/\D/g, "");
+    if (digits.length === 10 || (digits.length === 11 && digits[0] === "1")) {
+      continue;
+    }
+    return value;
+  }
+  return null;
 }
 
 const MONTHS: Record<string, number> = {
@@ -116,9 +164,10 @@ const MONTHS: Record<string, number> = {
  *  "comienza el" — the date that follows is the START date. */
 const START_KEYWORD =
   /\b(?:start(?:s|ing|ed)?|begin(?:s|ning)?|kick(?:s|ing)?\s+off|empez\p{L}*|empiez\p{L}*|inici\p{L}*|comienz\p{L}*|comenz\p{L}*)\b/giu;
-/** Filler allowed between the keyword and the date. */
+/** Filler allowed between the keyword and the date. REQ-575 (M3): "move
+ *  the start to next week", "empezamos para el lunes". */
 const FILLER =
-  /^(?:\s|,|:|\bon\b|\bthe\b|\bdate\b|\bel\b|\bdía\b|\bdia\b|\bdel\b|\ba partir\b)*/iu;
+  /^(?:\s|,|:|\bon\b|\bthe\b|\bdate\b|\bel\b|\bdía\b|\bdia\b|\bdel\b|\ba partir\b|\bto\b|\bpara\b)*/iu;
 
 const pad = (n: number) => String(n).padStart(2, "0");
 
@@ -127,7 +176,7 @@ function resolve(
   day: number,
   year: number | null,
   today: Date,
-): { iso: string; us: string } | null {
+): StartDateFact | null {
   if (month < 1 || month > 12 || day < 1 || day > 31) return null;
   let y = year ?? today.getFullYear();
   if (y < 100) y += 2000;
@@ -194,26 +243,54 @@ function nextWeekday(
   return ymd(d);
 }
 
-/** Parse a date at the very start of `s` (after the start keyword). */
-function parseDateAt(
-  s: string,
-  today: Date,
-): { iso: string; us: string } | null {
-  const t = s.replace(FILLER, "");
-  // REQ-331: "lunes", "next Monday", "this Friday", "tomorrow", "mañana".
-  const w = t.replace(WEEKDAY_LEAD, "").match(/^(\p{L}+)\b/u);
-  if (w) {
-    const word = w[1].normalize("NFD").replace(/\p{M}/gu, "").toLowerCase();
-    if (word in WEEKDAYS) return nextWeekday(WEEKDAYS[word], today);
-    if (word === "tomorrow" || word === "manana") {
-      const d = new Date(
-        today.getFullYear(),
-        today.getMonth(),
-        today.getDate() + 1,
-      );
-      return ymd(d);
-    }
+/** REQ-575 (demo-loop cycle 4, M3): relative starts. Pair 7 corrected her
+ *  start with "empezamos la próxima semana" — no reader knew it. */
+const NEXT_WEEK =
+  /^(?:de\s+)?(?:(?:la|the|this)\s+)?(?:(?:next|coming|following)\s+week|pr[oó]xima\s+semana|siguiente\s+semana|semana\s+(?:que\s+viene|pr[oó]xima|entrante|siguiente))(?![\p{L}])/iu;
+const NEXT_MONTH =
+  /^(?:de\s+)?(?:(?:el|the|this)\s+)?(?:(?:next|coming|following)\s+month|pr[oó]ximo\s+mes|siguiente\s+mes|mes\s+(?:que\s+viene|pr[oó]ximo|entrante|siguiente))(?![\p{L}])/iu;
+const ASAP =
+  /^(?:right\s+(?:away|now)|asap|a\.s\.a\.p\.?|immediately|de\s+inmediato|inmediatamente|ya\s+mismo|cuanto\s+antes|lo\s+(?:antes|m[aá]s\s+pronto)\s+posible)(?![\p{L}])/iu;
+/** "in 2 weeks", "en 3 días", "dentro de un mes" — counted from today. */
+const IN_SPAN =
+  /^(?:in|en|dentro\s+de)\s+(\d{1,2}|\p{L}+)\s+(days?|weeks?|months?|d[ií]as?|semanas?|mes(?:es)?)(?![\p{L}])/iu;
+
+const addDays = (today: Date, n: number) =>
+  new Date(today.getFullYear(), today.getMonth(), today.getDate() + n);
+
+function addMonths(today: Date, n: number): Date {
+  const d = new Date(today.getFullYear(), today.getMonth() + n, 1);
+  const last = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
+  d.setDate(Math.min(today.getDate(), last));
+  return d;
+}
+
+/** REQ-575 (M3): "next week" → the wizard's Next week (a week from today,
+ *  as completion-schedule counts it), "next month", "right away", "in N
+ *  days / weeks / months"; null when `t` starts with none of them. */
+function relativeStart(t: string, today: Date): StartDateFact | null {
+  if (NEXT_WEEK.test(t)) {
+    return { ...ymd(addDays(today, 7)), preset: "next_week" };
   }
+  if (NEXT_MONTH.test(t)) {
+    return { ...ymd(addMonths(today, 1)), preset: "next_month" };
+  }
+  if (ASAP.test(t)) return { ...ymd(addDays(today, 0)), preset: "asap" };
+  const span = IN_SPAN.exec(t);
+  if (span) {
+    const tok = span[1].toLowerCase();
+    const n = /^\d/.test(tok) ? Number(tok) : DURATION_WORD_NUMS[tok];
+    if (!n) return null;
+    const unit = span[2].toLowerCase();
+    if (/^(?:month|mes)/.test(unit)) return ymd(addMonths(today, n));
+    return ymd(addDays(today, /^(?:week|semana)/.test(unit) ? n * 7 : n));
+  }
+  return null;
+}
+
+/** "Dec 1", "December 1st", "Dec. 1, 2027", "1 de diciembre (de 2027)",
+ *  "1st of December", "12/1", "12/01/2026", "12-1-26" at the start of `t`. */
+function explicitDate(t: string, today: Date): StartDateFact | null {
   // "Dec 1", "December 1st", "Dec. 1, 2027"
   let m = t.match(
     /^(\p{L}+)\.?\s+(\d{1,2})(?:st|nd|rd|th)?\b(?:,?\s+(\d{4}))?/iu,
@@ -251,11 +328,104 @@ function parseDateAt(
   return null;
 }
 
+const weekdayOfIso = (iso: string) => {
+  const [y, mo, d] = iso.split("-").map(Number);
+  return new Date(y, mo - 1, d).getDay();
+};
+
+const WEEKDAY_LABELS: Record<"en" | "es", readonly string[]> = {
+  en: [
+    "Sunday",
+    "Monday",
+    "Tuesday",
+    "Wednesday",
+    "Thursday",
+    "Friday",
+    "Saturday",
+  ],
+  es: [
+    "domingo",
+    "lunes",
+    "martes",
+    "miércoles",
+    "jueves",
+    "viernes",
+    "sábado",
+  ],
+};
+
+/** REQ-575 (M3): the weekday a YYYY-MM-DD date falls on, in `lang` — the
+ *  wizard names it when the typed weekday is another ("monday nov 24"). */
+export function weekdayLabel(iso: string, lang: "en" | "es"): string {
+  return WEEKDAY_LABELS[lang === "es" ? "es" : "en"][weekdayOfIso(iso)] ?? "";
+}
+
+/** REQ-575 (M3): "el lunes 23", "Monday the 23rd" — a bare day of the month
+ *  after a weekday, taken only when that day IS that weekday (in this month
+ *  or the next two): "monday 3 guys" or "Monday 8 am" stay the weekday. */
+function dayOfMonthOn(
+  t: string,
+  weekday: number,
+  today: Date,
+): StartDateFact | null {
+  const m = t.match(/^(\d{1,2})(?:st|nd|rd|th)?\b/i);
+  if (!m) return null;
+  const dom = Number(m[1]);
+  if (dom < 1 || dom > 31) return null;
+  const start = addDays(today, 0);
+  for (let k = 0; k < 3; k++) {
+    const d = new Date(today.getFullYear(), today.getMonth() + k, dom);
+    if (d.getDate() !== dom || d < start) continue;
+    if (d.getDay() === weekday) return ymd(d);
+  }
+  return null;
+}
+
+/** Parse a date at the very start of `s` (after the start keyword). */
+function parseDateAt(
+  s: string,
+  today: Date,
+): StartDateFact | null {
+  const t = s.replace(FILLER, "");
+  // REQ-575 (M3): "next week", "la próxima semana", "right away", "in 2 weeks".
+  const rel = relativeStart(t, today);
+  if (rel) return rel;
+  // REQ-331: "lunes", "next Monday", "this Friday", "tomorrow", "mañana".
+  const lead = t.replace(WEEKDAY_LEAD, "");
+  const w = lead.match(/^(\p{L}+)\b/u);
+  if (w) {
+    const word = w[1].normalize("NFD").replace(/\p{M}/gu, "").toLowerCase();
+    if (word in WEEKDAYS) {
+      // REQ-575 (M3): pair 7's "we start monday nov 23" — a date typed after
+      // the weekday wins over "the next Monday" (Nov 16); a weekday it does
+      // not fall on is flagged.
+      const rest = lead.slice(w[0].length).replace(
+        /^[\s,]*(?:(?:the|el)\s+)?/iu,
+        "",
+      );
+      const typed = explicitDate(rest, today);
+      if (typed) {
+        return weekdayOfIso(typed.iso) === WEEKDAYS[word]
+          ? typed
+          : { ...typed, weekdayMismatch: true };
+      }
+      return dayOfMonthOn(rest, WEEKDAYS[word], today) ??
+        nextWeekday(WEEKDAYS[word], today);
+    }
+    if (word === "tomorrow" || word === "manana") {
+      return ymd(addDays(today, 1));
+    }
+    // REQ-575 (M3): "we start today" / "empezamos hoy".
+    if (word === "today" || word === "hoy") return ymd(addDays(today, 0));
+  }
+  return explicitDate(t, today);
+}
+
 /** The START date the text states — only a date tied to a start word. */
 export function extractStartDate(
   raw: string,
   today: Date,
-): { iso: string; us: string } | null {
+): StartDateFact | null {
   for (const m of raw.matchAll(START_KEYWORD)) {
     const after = raw.slice(
       m.index! + m[0].length,
@@ -382,13 +552,21 @@ const DURATION_WORD_NUMS: Record<string, number> = {
   diez: 10,
 };
 
-const DURATION_RE =
-  /(?<![\d.,])(\d{1,2}(?:[.,]5)?|\p{L}+)\s*(?:[-–]\s*(?:\d{1,2}\s*)?)?(hours?|hrs?|horas?|d[ií]as?|days?|semanas?|weeks?|wks?|meses|mes|months?|mos?)\b/giu;
+/** REQ-575 (demo-loop cycle 4, M3): "and a half" / "y media(o)" — pair 7's
+ *  "Dos semanas y media" was read as 2 weeks. */
+const HALF = String.raw`(?:and\s+a\s+half|y\s+medi[ao])`;
+const DURATION_RE = new RegExp(
+  String
+    .raw`(?<![\d.,])(\d{1,2}(?:[.,]5)?|\p{L}+)(\s*½|\s+${HALF})?\s*(?:[-–]\s*(?:\d{1,2}\s*)?)?(hours?|hrs?|horas?|d[ií]as?|days?|semanas?|weeks?|wks?|meses|mes|months?|mos?)\b(\s+${HALF}(?![\p{L}]))?`,
+  "giu",
+);
 
 /**
  * The time to complete the text states, EN or ES — "Thinking 4 weeks",
  * "3 días", "dos semanas" (REQ-330, M21), "a 4-hour deep clean", "toma 5
- * horas" (REQ-343: service trades quote in hours). A span that is a START
+ * horas" (REQ-343: service trades quote in hours). REQ-575 (M3): a half is
+ * kept — "Dos semanas y media", "two and a half weeks", "2.5 weeks", "2½
+ * weeks" are 2.5 weeks; "a week and a half" is 1.5. A span that is a START
  * offset ("start in 2 weeks", "empezamos en 2 semanas"), a warranty ("2 week
  * warranty") or a payment term ("net 30 days") is not a duration. Null when
  * the text says nothing.
@@ -397,10 +575,11 @@ export function extractDuration(raw: string): ExtractedDuration | null {
   const text = raw ?? "";
   for (const m of text.matchAll(DURATION_RE)) {
     const numTok = m[1].toLowerCase();
-    const n = /^\d/.test(numTok)
+    const whole = /^\d/.test(numTok)
       ? Number(numTok.replace(",", "."))
       : DURATION_WORD_NUMS[numTok];
-    if (!n || !Number.isFinite(n) || n <= 0) continue;
+    if (!whole || !Number.isFinite(whole) || whole <= 0) continue;
+    const n = whole + (m[2] || m[4] ? 0.5 : 0);
     const before = text.slice(Math.max(0, m.index! - 40), m.index!)
       .toLowerCase();
     // "start in 2 weeks" / "starting in 3 days" / "empezamos en 2 semanas"
@@ -414,7 +593,7 @@ export function extractDuration(raw: string): ExtractedDuration | null {
     if (/^(?:of\s+|de\s+)?(?:warranty|guarantee|garant[ií]a)/.test(after)) {
       continue;
     }
-    const u = m[2].toLowerCase();
+    const u = m[3].toLowerCase();
     const unit: DurationUnit = /^(?:h|hora)/.test(u)
       ? "hours"
       : /^d/.test(u)
@@ -422,7 +601,7 @@ export function extractDuration(raw: string): ExtractedDuration | null {
       : /^(?:semana|week|wk)/.test(u)
       ? "weeks"
       : "months";
-    return { n: Math.max(1, Math.min(99, Math.round(n))), unit };
+    return { n: Math.max(1, Math.min(99, Math.round(n * 2) / 2)), unit };
   }
   return null;
 }
@@ -430,14 +609,32 @@ export function extractDuration(raw: string): ExtractedDuration | null {
 /** Every fact in one call. `today` anchors a year-less start date. */
 export function extractQuoteFacts(raw: string, today: Date): QuoteFacts {
   const text = raw ?? "";
+  const unusablePhone = extractUnusablePhone(text);
   return {
     customerName: extractCustomerName(text),
     customerPhone: extractPhone(text),
     customerEmail: extractEmail(text),
+    ...(unusablePhone ? { unusablePhone } : {}),
     startDate: extractStartDate(text, today),
     paymentTerms: extractPaymentTerms(text),
     duration: extractDuration(text),
   };
+}
+
+/**
+ * REQ-575 (demo-loop cycle 4, M3): the text the facts are read from — what
+ * the user typed in the thread FIRST, then the quote's description (the
+ * starter-chip flow's raw sentence, or the picked / polished job details).
+ * Pair 7's description "…for the Hendersons" was read before her own "Carol
+ * Henderson", and the household won.
+ */
+export function factsSourceText(
+  description: string | null | undefined,
+  userTexts: readonly string[],
+): string {
+  return [...userTexts, description ?? ""]
+    .filter((s) => s.trim().length > 0)
+    .join("\n");
 }
 
 export interface WizardPrefill {
@@ -459,6 +656,9 @@ export function wizardPrefillFor(
   lang: "en" | "es" = "en",
 ): WizardPrefill | null {
   if (stepId === "start_date" && facts.startDate) {
+    // REQ-575 (M3): "next week" / "la próxima semana" is the wizard's own
+    // option — the term then reads as the contractor said it.
+    if (facts.startDate.preset) return { optionId: facts.startDate.preset };
     // REQ-495 (m17): the start term is stored ISO, like the picker submits.
     return { optionId: "custom", customValue: facts.startDate.iso };
   }

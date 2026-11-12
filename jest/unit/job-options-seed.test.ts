@@ -66,7 +66,10 @@ describe("REQ-330 M23 the current details seed the picker", () => {
         id: "opt1",
         jobName: "Bathroom Remodel",
         summary: "s",
-        bullets: THIRTEEN.slice(0, 12),
+        // REQ-584 AMENDMENT: twelve of the thirteen lines is a near-twin of
+        // the current option (the last line repeats words already there);
+        // ten lines really differs.
+        bullets: THIRTEEN.slice(0, 10),
         byLang: {},
       },
       {

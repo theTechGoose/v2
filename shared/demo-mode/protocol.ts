@@ -133,7 +133,21 @@ export interface PillFace {
   label?: string;
   /** REQ-430 — the guide's short name, drawn on the compact pill while its details are hidden */
   guide?: string;
+  /** REQ-545 (cycle 4, m2) — the pill yielded to the page: only its small edge tab shows */
+  tucked?: boolean;
+  /** REQ-545 — the band painted at the foot of the customer's screen (px, theirs; 0: none) */
+  band?: number;
+  /** REQ-545 — the band's colour (the page's own background) */
+  bandBg?: string;
+  /** REQ-540 (cycle 4, m9) — the pill's "Demo mode" title in the customer's words (unset: the
+   *  pill hides it — the compact phone pill — or an older page) */
+  title?: string;
+  /** REQ-540 — the pill's End label in the customer's words (the stage draws it as a disabled chip) */
+  end?: string;
 }
+
+/** REQ-545 — a colour the stage may paint: hex, rgb() or rgba() only */
+const BAND_BG = /^(#[0-9a-f]{3,8}|rgba?\([0-9.,\s/%]+\))$/i;
 
 /** REQ-372 — the face fields of a pill message, each checked; junk is dropped, not fatal */
 function parsePillFace(o: Record<string, unknown>): PillFace {
@@ -147,6 +161,15 @@ function parsePillFace(o: Record<string, unknown>): PillFace {
   if (typeof o.clipped === "boolean") f.clipped = o.clipped;
   if (typeof o.label === "string") f.label = o.label.slice(0, PILL_LABEL_MAX);
   if (typeof o.guide === "string") f.guide = o.guide.slice(0, PILL_LABEL_MAX);
+  if (typeof o.tucked === "boolean") f.tucked = o.tucked;
+  if (typeof o.band === "number" && Number.isFinite(o.band) && o.band >= 0) {
+    f.band = Math.min(o.band, 4000);
+  }
+  if (typeof o.bandBg === "string" && BAND_BG.test(o.bandBg)) {
+    f.bandBg = o.bandBg;
+  }
+  if (typeof o.title === "string") f.title = o.title.slice(0, PILL_LABEL_MAX);
+  if (typeof o.end === "string") f.end = o.end.slice(0, PILL_LABEL_MAX);
   return f;
 }
 

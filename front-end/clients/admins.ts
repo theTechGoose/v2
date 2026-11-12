@@ -19,6 +19,9 @@ export interface AccountAdmin {
 /** REQ-523 (demo m16): the invite's answer says whether the text went out */
 export interface InvitedAdmin extends AccountAdmin {
   texted?: boolean;
+  /** REQ-601 (cycle 4, M12): the sign-in address and the invite text, to share when it was not texted */
+  signInUrl?: string;
+  shareText?: string;
 }
 
 export interface AccountEntry {

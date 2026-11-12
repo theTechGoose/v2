@@ -14,6 +14,7 @@
  *      it until she dismisses it.
  */
 import { story, type StoryTools } from "#shots";
+import { pillUp } from "../_shared/demo-pill.ts";
 
 const JSON_HEADERS = { "content-type": "application/json" };
 const digits = () => String(Math.floor(Math.random() * 9_000_000) + 1_000_000);
@@ -116,11 +117,14 @@ Deno.test("REQ-235 / REQ-300: End asks first — Keep going, or a click outside,
         // a page that saw a demo end stops asking for a new one (M11, its own issue): reload
         await userPage.reload();
         // REQ-232's plain words: the staff's pill says Live, the customer's Connected
-        for (const pg of [page, userPage]) {
-          await pg.locator("[data-cy='demo-status']").filter({
-            hasText: /^\s*(Live|Connected)\s*$/,
-          }).waitFor({ timeout: 20_000 });
-        }
+        await page.locator("[data-cy='demo-status']").filter({
+          hasText: /^\s*(Live|Connected)\s*$/,
+        }).waitFor({ timeout: 20_000 });
+        // REQ-545 — the customer's pill whole (it folds to a tab over page content)
+        await pillUp(userPage, { live: true });
+        await userPage.locator("[data-cy='demo-status']").filter({
+          hasText: /^\s*(Live|Connected)\s*$/,
+        }).waitFor({ timeout: 20_000 });
       };
       const textOf = async (pg: typeof page, cy: string) =>
         (await pg.locator(`[data-cy='${cy}']`).innerText()).trim();

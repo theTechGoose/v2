@@ -3,6 +3,7 @@ import { CustomerStore } from "@crm/domain/data/customer-store/mod.ts";
 import { QuoteStore } from "@paperwork/domain/data/quote-store/mod.ts";
 import { InvoiceStore } from "@paperwork/domain/data/invoice-store/mod.ts";
 import { ViewStore } from "@paperwork/domain/data/view-store/mod.ts";
+import { ChangeOrderStore } from "@paperwork/domain/data/change-order-store/mod.ts";
 import type {
   Customer,
   CustomerCard,
@@ -12,11 +13,13 @@ import type {
 } from "@crm/dto/customer.ts";
 import type { Quote } from "@paperwork/dto/quote.ts";
 import type { Invoice } from "@paperwork/dto/invoice.ts";
+import type { ChangeOrder } from "@paperwork/dto/change-order.ts";
 import {
   isOpenReceivable,
   receivableBalanceCents,
 } from "@paperwork/domain/business/open-receivable/mod.ts";
 import type { View } from "@paperwork/dto/view.ts";
+import { countJobs } from "@analytics/domain/business/signed-jobs/mod.ts";
 import { docNumberOf } from "#documents/numbering.ts";
 import { invoiceState, quoteState } from "#documents/versions.ts";
 import { t } from "@core/i18n/mod.ts";
@@ -51,18 +54,22 @@ export class BuildCustomerCards {
     private quotes: QuoteStore,
     private invoices: InvoiceStore,
     private views: ViewStore,
+    // REQ-565 (demo m33): the card lists the customer's change orders too
+    private changeOrders: ChangeOrderStore = new ChangeOrderStore(),
   ) {}
 
   async run(
     userId: string,
     now: Date = new Date(),
   ): Promise<CustomerCard[]> {
-    const [customers, quotes, invoices, views] = await Promise.all([
-      this.customers.listByUser(userId),
-      this.quotes.listByUser(userId),
-      this.invoices.listByUser(userId),
-      this.views.listByType("quote"),
-    ]);
+    const [customers, quotes, invoices, views, changeOrders] = await Promise
+      .all([
+        this.customers.listByUser(userId),
+        this.quotes.listByUser(userId),
+        this.invoices.listByUser(userId),
+        this.views.listByType("quote"),
+        this.changeOrders.listByUser(userId),
+      ]);
 
     // Index quote → customerId so we can attribute view events back without
     // a second pass per customer.
@@ -70,7 +77,7 @@ export class BuildCustomerCards {
     for (const q of quotes) quoteToCustomer.set(q.id, q.customerId);
 
     return customers.map((c) =>
-      buildOne(c, quotes, invoices, views, quoteToCustomer, now)
+      buildOne(c, quotes, invoices, views, quoteToCustomer, now, changeOrders)
     );
   }
 }
@@ -82,9 +89,20 @@ function buildOne(
   allViews: View[],
   quoteToCustomer: Map<string, string | undefined>,
   now: Date,
+  allChangeOrders: ChangeOrder[] = [],
 ): CustomerCard {
   const myQuotes = allQuotes.filter((q) => q.customerId === c.id);
   const myInvoices = allInvoices.filter((i) => i.customerId === c.id);
+  // REQ-565: an order is the customer's when it names her, or (rows written
+  // before it carried customerId) its quote or invoice is hers
+  const myQuoteIds = new Set(myQuotes.map((q) => q.id));
+  const myInvoiceIds = new Set(myInvoices.map((i) => i.id));
+  const myChangeOrders = allChangeOrders.filter((co) =>
+    co.customerId
+      ? co.customerId === c.id
+      : (co.quoteId != null && myQuoteIds.has(co.quoteId)) ||
+        myInvoiceIds.has(co.invoiceId)
+  );
   const myViews = allViews.filter((v) => {
     const cid = quoteToCustomer.get(v.paperworkId);
     return cid === c.id;
@@ -134,12 +152,18 @@ function buildOne(
   const balanceSub = balanceSubLabel(balanceSubParts, "en", t);
 
   // ---------------- jobs ----------------
-  // "active job" = accepted quote without a paid invoice covering it
+  // REQ-562 (demo-loop cycle 4, M38): an active job is a signed quote whose
+  // linked non-void invoices — scheduled ones included — are not all paid:
+  // the dashboard's ListActiveJobs rule, shared. "Accepted quotes − paid
+  // invoices" read a 50/50 job with its deposit paid as 1 − 1 = 0 jobs.
   const acceptedQuotes = myQuotes.filter((q) =>
     q.status === "accepted" || q.acceptedAt
   );
   const paidInvoiceCount = myInvoices.filter((i) => i.status === "paid").length;
-  const activeJobs = Math.max(0, acceptedQuotes.length - paidInvoiceCount);
+  const { active: activeJobs, completed: completedJobs } = countJobs(
+    myQuotes,
+    myInvoices,
+  );
   const overdueCount = myInvoices.filter(
     (i) => isOpenReceivable(i) && i.dueDate < now.toISOString().slice(0, 10),
   ).length;
@@ -172,6 +196,7 @@ function buildOne(
     revenue12moCents,
     daysSinceContact,
     paidInvoiceCount,
+    completedJobs,
   });
 
   // ---------------- temp ----------------
@@ -198,7 +223,7 @@ function buildOne(
     temp,
     daysSinceContact,
     revenue12moCents,
-    documents: documentsFor(myQuotes, myInvoices),
+    documents: documentsFor(myQuotes, myInvoices, myChangeOrders),
   };
 }
 
@@ -207,22 +232,73 @@ function buildOne(
  * one row per quote and per invoice (the onboarding sample excluded), newest
  * first, each with its own number (REQ-204: never an id slice), its lifecycle
  * state and the page that opens it.
+ *
+ * REQ-565 (demo-loop cycle 4, m33): and one row per change order (its number,
+ * state, signed amount and /co link); a quote is worded at the agreed total —
+ * the quote plus its approved change orders, as the quote's ledger and card
+ * count it (REQ-205/481) — with what those orders added alongside.
  */
+/** REQ-551 (demo-loop cycle 4, B2): the paid revenue no customer card can
+ *  carry — invoices with no customer, or whose customer is gone — on the
+ *  same 12-month, paid-amount rule as a card's `revenue12moCents`. The
+ *  leaderboard reports it rather than saying there are no paid invoices. */
+export function unassignedPaidRevenue(
+  invoices: ReadonlyArray<
+    { customerId?: string; status?: string; paidAt?: string; amount?: number }
+  >,
+  customerIds: ReadonlySet<string>,
+  now: Date = new Date(),
+): { invoiceCount: number; revenue12moCents: number } {
+  const twelveMoAgo = now.getTime() - TWELVE_MONTHS_MS;
+  let invoiceCount = 0;
+  let revenue12moCents = 0;
+  for (const i of invoices) {
+    if (i.customerId && customerIds.has(i.customerId)) continue;
+    if (i.status !== "paid" || !i.paidAt) continue;
+    if (new Date(i.paidAt).getTime() < twelveMoAgo) continue;
+    invoiceCount++;
+    revenue12moCents += i.amount ?? 0;
+  }
+  return { invoiceCount, revenue12moCents };
+}
+
 export function documentsFor(
   quotes: Quote[],
   invoices: Invoice[],
+  changeOrders: ChangeOrder[] = [],
 ): CustomerDocument[] {
   const rows: CustomerDocument[] = [];
+  const approvedByQuote = new Map<string, number>();
+  for (const co of changeOrders) {
+    if (co.status !== "approved" || !co.quoteId) continue;
+    approvedByQuote.set(
+      co.quoteId,
+      (approvedByQuote.get(co.quoteId) ?? 0) + Math.round(co.deltaAmountCents),
+    );
+  }
   for (const q of quotes) {
     if (q.isSample) continue;
+    const approved = approvedByQuote.get(q.id) ?? 0;
     rows.push({
       kind: "quote",
       id: q.id,
       number: docNumberOf(q),
       state: quoteState(q),
-      amountCents: q.estimatedTotal ?? 0,
+      amountCents: Math.max(0, (q.estimatedTotal ?? 0) + approved),
+      ...(approved !== 0 ? { changeOrdersCents: approved } : {}),
       url: `/quotes?open=${q.id}`,
       updatedAt: q.updatedAt,
+    });
+  }
+  for (const co of changeOrders) {
+    rows.push({
+      kind: "change_order",
+      id: co.id,
+      number: docNumberOf(co),
+      state: co.status,
+      amountCents: Math.round(co.deltaAmountCents),
+      url: `/co/${co.id}`,
+      updatedAt: co.updatedAt,
     });
   }
   for (const i of invoices) {
@@ -247,6 +323,8 @@ export function deriveStatus(args: {
   revenue12moCents: number;
   daysSinceContact: number;
   paidInvoiceCount: number;
+  /** REQ-562: signed jobs fully paid (standalone paid invoices count one each). */
+  completedJobs: number;
 }): CustomerStatus {
   const {
     balanceCents,
@@ -257,23 +335,25 @@ export function deriveStatus(args: {
     daysSinceContact,
   } = args;
   if (balanceCents > 0) return "owes";
-  if (acceptedQuotes.length > args.paidInvoiceCount) return "active";
+  // REQ-562 (cycle 4, m21): a signed job in flight — the shared rule, so a
+  // first job with its deposit paid and its balance scheduled is "active".
+  if (activeJobs > 0) return "active";
   if (myQuotes.length > 0 && acceptedQuotes.length === 0) {
     const onlyOpen = myQuotes.every((q) =>
       q.status === "draft" || q.status === "sent"
     );
     if (onlyOpen) return "lead";
   }
-  if (revenue12moCents > 0 && activeJobs === 0 && balanceCents === 0) {
-    return "regular";
-  }
+  // REQ-562: "regular" takes at least two completed jobs — one job is not a
+  // regular customer, however much it paid.
+  const repeat = args.completedJobs >= 2;
+  if (repeat && revenue12moCents > 0 && balanceCents === 0) return "regular";
   if (daysSinceContact > 60 && balanceCents <= 0) return "cold";
   // Fallback: if there's any non-decided open quote treat as lead
   if (myQuotes.length > 0 && acceptedQuotes.length === 0) return "lead";
-  // REQ-271 (demo i18n-formatting-m5): nothing on the books yet — no quote, no paid invoice —
-  // is a new customer, never a "regular".
-  if (myQuotes.length === 0 && args.paidInvoiceCount === 0) return "new";
-  return "regular";
+  // REQ-271 (demo i18n-formatting-m5): nothing on the books yet is a new
+  // customer, never a "regular"; REQ-562: nor is a single finished job.
+  return repeat ? "regular" : "new";
 }
 
 /**

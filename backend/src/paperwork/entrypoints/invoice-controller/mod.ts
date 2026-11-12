@@ -14,6 +14,7 @@ import { InvoiceStore } from "@paperwork/domain/data/invoice-store/mod.ts";
 import { CustomerStore } from "@crm/domain/data/customer-store/mod.ts";
 import { QuoteStore } from "@paperwork/domain/data/quote-store/mod.ts";
 import {
+  type CreateInvoiceDto,
   type Invoice,
   parseCreateInvoice,
   parseUpdateInvoice,
@@ -57,6 +58,10 @@ import { invoiceCapDecision } from "#documents/ledger.ts"; // REQ-233
 import { hasCreatedFor } from "@core/data/numbered-store/mod.ts";
 import { InvoiceTranslatorPort } from "@paperwork/domain/coordinators/invoice-translator-port/mod.ts"; // REQ-497
 import { EventBus } from "@core/business/events/mod.ts";
+import {
+  invoiceIssuedEvent,
+  isIssuingTransition,
+} from "@paperwork/domain/business/owner-activity/mod.ts"; // REQ-566
 
 /** number order for an export (INV-001 before INV-002; unnumbered rows by age) */
 const bySeq = (
@@ -91,6 +96,22 @@ async function translateStandalone(
     baseLang: user.language === "es" ? "es" : "en",
   });
   return await store.getOwned(inv.id, user.id);
+}
+
+/** REQ-566 (cycle 4, m11): tell the bus the owner issued this invoice — the
+ *  dashboard's activity feed. A module function: Danet routes every method
+ *  of a controller class, so no undecorated helper lives on it. */
+async function announceIssued(
+  bus: EventBus,
+  customers: CustomerStore,
+  userId: string,
+  inv: { id: string; amount?: number; customerId?: string },
+): Promise<void> {
+  const customerName = inv.customerId
+    ? await customers.getOwned(inv.customerId, userId)
+      .then((c) => c.name || undefined, () => undefined)
+    : undefined;
+  await bus.emit(invoiceIssuedEvent(userId, inv, customerName));
 }
 
 @Controller("invoices")
@@ -289,7 +310,14 @@ export class InvoiceController {
     if (body && typeof body === "object") {
       delete (body as { override?: unknown }).override;
     }
-    const dto = parseCreateInvoice(body);
+    // REQ-550 (demo-loop cycle 4, B1): a body that fails validation (e.g.
+    // an amount past the $1bn cap) is the caller's error — 422, not a throw.
+    let dto: CreateInvoiceDto;
+    try {
+      dto = parseCreateInvoice(body);
+    } catch {
+      return ctx.json({ error: "invalid_invoice" }, 422);
+    }
 
     // Derive-from-quote (roadmap p.6): the invoice carries all the quote's
     // information — job name, description, customer, line items, amount —
@@ -336,6 +364,15 @@ export class InvoiceController {
         .toISOString().slice(0, 10);
     }
 
+    // REQ-550 (demo-loop cycle 4, B1): an invoice issued at birth bills
+    // someone — a customer (given, or the quote's) or a typed bill-to name.
+    // Nobody to bill is a draft, never "sent".
+    if (
+      isIssuedAtBirth(dto.status) && !dto.customerId?.trim() &&
+      !(typeof dto.billTo?.name === "string" && dto.billTo.name.trim())
+    ) {
+      return ctx.json({ error: "invoice_needs_recipient" }, 422);
+    }
     // REQ-206: an invoice issued at birth carries its sentAt.
     if (
       dto.status && dto.status !== "draft" && dto.status !== "scheduled" &&
@@ -343,7 +380,14 @@ export class InvoiceController {
     ) {
       dto.sentAt = new Date().toISOString();
     }
+    // REQ-566 (cycle 4, m11): an invoice issued at birth is the owner's
+    // activity — the dashboard feed says so. A REQ-200 retry returns the
+    // invoice it already made and announces nothing twice.
+    const retry = await hasCreatedFor(user.id, "invoice", requestId);
     const created = await this.store.create(user.id, dto, { requestId });
+    if (!retry && isIssuingTransition(undefined, created.status)) {
+      await announceIssued(this.bus, this.customers, user.id, created);
+    }
     return project(
       await translateStandalone(this.translator, this.store, created, user),
       new Date(),
@@ -504,6 +548,10 @@ export class InvoiceController {
       ...content,
       ...meta,
     });
+    // REQ-566 (cycle 4, m11): a draft / scheduled invoice issued by an edit.
+    if (isIssuingTransition(existing.status, updated.status)) {
+      await announceIssued(this.bus, this.customers, user.id, updated);
+    }
     // REQ-497: a live edit of the title / concepts is translated afresh.
     const retitled = "jobName" in content || "description" in content;
     return project(
@@ -655,4 +703,10 @@ async function revertApprovedDelta(
   const reverted = Math.max(0, current - co.deltaAmountCents);
   await store.update(co.invoiceId, userId, { amount: reverted });
   return reverted;
+}
+
+/** REQ-550: a create status that issues the invoice (anything but the
+ *  unissued draft / scheduled tracks — an omitted status is a draft). */
+function isIssuedAtBirth(status: string | undefined): boolean {
+  return !!status && status !== "draft" && status !== "scheduled";
 }

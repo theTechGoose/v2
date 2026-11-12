@@ -191,3 +191,17 @@ Deno.test("REQ-204 composeReminderCopy: subject, email body and text name the in
   });
   assertEquals(es.emailSubject.includes("INV-5000"), true, es.emailSubject);
 });
+
+// REQ-623 (demo cycle 4, M26): the cadence is the business's setting, not a constant
+Deno.test("REQ-623 M26 pickNextDay: follows the business's cadence days", () => {
+  // 31 days past due, cadence [7, 14] → Day 14 (the largest elapsed step in the list)
+  assertEquals(pickNextDay(inv({}), NOW, [7, 14]), 14);
+  // 4 days past due, cadence [7] → nothing yet (Day 3 is not in the list)
+  const fourPast = new Date("2026-05-05T12:00:00Z");
+  assertEquals(pickNextDay(inv({}), fourPast, [7]), undefined);
+  // 8 days past due, cadence [7] → Day 7
+  const eightPast = new Date("2026-05-09T12:00:00Z");
+  assertEquals(pickNextDay(inv({}), eightPast, [7]), 7);
+  // no list → the default 3/7/14/30
+  assertEquals(pickNextDay(inv({}), fourPast), 3);
+});

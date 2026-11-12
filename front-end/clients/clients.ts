@@ -42,12 +42,17 @@ export type CustomerDocState =
 
 /** REQ-323 — one of the customer's documents as the card back lists it (mirrors the CRM DTO) */
 export interface CustomerDocument {
-  kind: "quote" | "invoice";
+  /** REQ-565 (demo m33): change orders are listed too */
+  kind: "quote" | "invoice" | "change_order";
   id: string;
   number: string;
   state: CustomerDocState;
+  /** a quote: the agreed total (quote + approved change orders); a change
+   *  order: its signed delta */
   amountCents: number;
-  /** `/quotes?open=<id>` for a quote, `/i/<id>` for an invoice */
+  /** REQ-565: a quote's approved change orders, summed — only when non-zero */
+  changeOrdersCents?: number;
+  /** `/quotes?open=<id>` for a quote, `/i/<id>` for an invoice, `/co/<id>` for a change order */
   url: string;
   updatedAt: string;
 }
@@ -122,8 +127,16 @@ export interface TopClient {
   barPct: number;
 }
 
+/** REQ-551: paid revenue (last 12 months) no customer card carries. */
+export interface UnassignedRevenue {
+  invoiceCount: number;
+  revenue12moCents: number;
+}
+
 export interface TopClientsResponse {
   results: TopClient[];
+  /** REQ-551: set when paid invoices with no customer are left unranked. */
+  unassigned?: UnassignedRevenue;
 }
 
 export const clientsClient = {

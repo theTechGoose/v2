@@ -7,6 +7,10 @@
  *
  * Pure logic, no side effects.
  */
+import { moneyAmounts } from "./money-amounts.ts";
+
+import { jobNameCase, summarizeJobName } from "./job-name.ts";
+import { messageLang } from "./message-language.ts";
 
 export interface QuickQuotePrefill {
   priceCents: number | null;
@@ -24,8 +28,6 @@ export interface PriceLine {
   cents: number;
 }
 
-const CURRENCY_WORDS = /^(d[oó]lares|dollars|usd|pesos)$/i;
-
 /** A word that marks an amount as the whole job's price. */
 const TOTAL_WORD =
   /\b(total|in all|all[- ]in|todo incluido|en total|grand total)\b/i;
@@ -37,12 +39,6 @@ const DEPOSIT_WORD =
 const RANGE_GAP = /^\s*(-|–|—|to|or|a|o|hasta)\s*$/i;
 /** Where one item's text ends and the next begins. */
 const ITEM_BREAK = /[,;:\n]/;
-
-function toCents(whole: string, frac: string | undefined): number {
-  const dollars = Number(whole.replace(/,/g, ""));
-  const cents = frac ? Number(frac.padEnd(2, "0").slice(0, 2)) : 0;
-  return dollars * 100 + cents;
-}
 
 interface Amount {
   cents: number;
@@ -57,30 +53,12 @@ interface Amount {
   colonLabel: string;
 }
 
-/** Every money amount in the sentence, in order, each counted once. */
+/** Every money amount in the sentence, in order, each counted once.
+ *  REQ-575 (demo-loop cycle 4, M3 + M13): read by the shared reader, so
+ *  "como 18 mil", "18k", "~$23k" and "$9.5k" are amounts here as they are on
+ *  the server; a rate ("$65/hr", "$40 a foot") is no amount of the job. */
 function scanAmounts(raw: string): Amount[] {
-  const found: { cents: number; start: number; end: number }[] = [];
-
-  const dollarRe = /\$\s*(\d{1,3}(?:,\d{3})+|\d+)(?:\.(\d{1,2}))?/g;
-  for (const m of raw.matchAll(dollarRe)) {
-    found.push({
-      cents: toCents(m[1], m[2]),
-      start: m.index!,
-      end: m.index! + m[0].length,
-    });
-  }
-
-  const wordRe =
-    /(?<![\d.,$])(\d{1,3}(?:,\d{3})+|\d+)(?:\.(\d{1,2}))?\s+(\p{L}+)/gu;
-  for (const m of raw.matchAll(wordRe)) {
-    if (!CURRENCY_WORDS.test(m[3])) continue;
-    const start = m.index!;
-    // "$3700 dollars" is the $ amount again, not a second one.
-    if (found.some((f) => start >= f.start && start < f.end)) continue;
-    found.push({ cents: toCents(m[1], m[2]), start, end: start + m[0].length });
-  }
-
-  found.sort((a, b) => a.start - b.start);
+  const found = moneyAmounts(raw).filter((a) => !a.rate);
   return found.map((f, i) => {
     const prevEnd = i > 0 ? found[i - 1].end : 0;
     const nextStart = i + 1 < found.length ? found[i + 1].start : raw.length;
@@ -132,6 +110,8 @@ function cleanLabel(s: string): string {
  * The price in the sentence, INTEGER CENTS:
  *   - "$3,700" → 370000; "$1,850.50" → 185050; "$3700" → 370000;
  *   - "3700 dólares" (number + currency word) → 370000;
+ *   - REQ-575: "como 18 mil", "18k", "18 thousand", "$9.5k" → their
+ *     thousands; a rate ("$65/hr", "$40 a foot") is never part of it;
  *   - bare numbers/dimensions (20x15, 6 paneles) are never a price;
  *   - an amount marked "total" / "todo incluido" wins;
  *   - amounts marked as a deposit ("deposit", "down", "anticipo", "%") are
@@ -214,6 +194,44 @@ export function quoteLineItemsFromPrefill(
   return [{ description: summary, quantity: 1, unit: "ea", price: cents }];
 }
 
+/** REQ-579: what a quote started from typed details is called. */
+export interface QuickQuoteNames {
+  /** The quote's summary: the confirmed option's, else the typed first
+   *  line's first 8 words. */
+  summary: string;
+  /** The job's one name — the header, the list and the thread title read it. */
+  jobName: string;
+  /** The single line item's text when the typed lines don't itemise the
+   *  price: the confirmed option's summary, else the job name — never the
+   *  raw 8-word slice ("Baño principal de la señora Tran en Round"). */
+  line: string;
+}
+
+/**
+ * REQ-579 (demo-loop cycle 4, M14): name a quick quote. The typed text's own
+ * language names the job (pair 7 typed Spanish in the English app and got
+ * "Baño Principal De"); the app language decides only when the text can't
+ * tell. A confirmed picker option names it as the contractor picked it.
+ */
+export function quickQuoteNames(args: {
+  raw: string;
+  lang: "en" | "es";
+  fallback: string;
+  confirmed?: { summary?: string; jobName?: string } | null;
+}): QuickQuoteNames {
+  const firstLine = (args.raw ?? "").split("\n")[0].trim();
+  const typedLang = messageLang(args.raw ?? "") ?? args.lang;
+  const confirmedSummary = args.confirmed?.summary?.trim();
+  const summary = confirmedSummary ||
+    firstLine.split(/\s+/).slice(0, 8).join(" ") ||
+    args.fallback;
+  const confirmedName = args.confirmed?.jobName?.trim();
+  const jobName = (confirmedName && jobNameCase(confirmedName, args.lang)) ||
+    summarizeJobName(summary, typedLang) ||
+    args.fallback;
+  return { summary, jobName, line: confirmedSummary || jobName };
+}
+
 /** A run token: Capitalized Unicode-letter word (apostrophes/hyphens ok). */
 const CAP_TOKEN = /^[\p{Lu}][\p{L}'’-]*$/u;
 /** REQ-331: a lowercase word that can only be a name after "customer" /
@@ -242,12 +260,53 @@ const NOT_A_NAME =
  *   - REQ-386: with no lead-in, "<Name> wants / needs / asked …" (ES
  *     "quiere / necesita / pidió") names the customer — "Bob wants 6
  *     recessed lights" → "Bob";
+ *   - REQ-575 (demo-loop cycle 4, M3): a role or an honorific names the
+ *     customer with no "for / para" — "…, cliente Juan Pérez 5125550199" →
+ *     "Juan Pérez", "Baño principal de la señora Tran" → "Tran", "client:
+ *     Mary Jones", "Mrs. Henderson's deck" → "Henderson"; and a household
+ *     lead-in gives way to one of its members — "for the Hendersons. Carol
+ *     Henderson" → "Carol Henderson";
  *   - no phrase → null (never a hallucinated name).
  */
 export function extractCustomerName(raw: string): string | null {
-  const lead = leadInName(raw);
+  const lead = leadInName(raw) ?? labelledName(raw);
   if (lead) return fullNameFor(raw, lead) ?? lead;
   return subjectName(raw);
+}
+
+/** REQ-575 (M3): a role or an honorific right before a name — "cliente",
+ *  "client:", "customer is", "la señora", "Sra.", "Mrs.", "don". Written
+ *  without the `i` flag: a lowercase "don" is the Spanish honorific, a
+ *  Capitalized "Don" is a first name; "Dr" is a street ("Barton Hills Dr
+ *  Austin"), never an honorific here. */
+const LABEL_LEAD = new RegExp(
+  String
+    .raw`(?<![\p{L}])(?:(?:[Cc]liente|[Cc]lienta|[Cc]ustomer|[Cc]lient)(?:\s*:|\s+(?:is|es|name|nombre)(?![\p{L}])\s*:?)?|[Ss]e[ñn]ora|[Ss]e[ñn]orita|[Ss]e[ñn]or|[Ss]rta\.?|[Ss]ra\.?|[Ss]r\.?|M(?:rs|r|s)\.?|do[ñn]a|don)\s+`,
+  "gu",
+);
+
+/**
+ * REQ-575 (demo-loop cycle 4, M3): pair 9's "…, cliente Juan Pérez
+ * 5125550199" and pair 7's "Baño principal de la señora Tran" left the name
+ * empty — only "for / para <Name>" was read. The Capitalized run after a
+ * role or an honorific is the customer; it stops like the "para" run (a
+ * comma, a digit, a "$", a lowercase word) and drops a possessive "'s". A
+ * lowercase word there ("el cliente quiere", "la señora quiere") is no name.
+ */
+function labelledName(raw: string): string | null {
+  for (const m of raw.matchAll(LABEL_LEAD)) {
+    const tokens = raw.slice(m.index! + m[0].length).split(/\s+/);
+    const run: string[] = [];
+    for (const piece of tokens) {
+      if (!piece || /^[$\d]/.test(piece)) break;
+      const tok = piece.replace(/[,;:.!?)]+$/, "").replace(/['’]s$/u, "");
+      if (!CAP_TOKEN.test(tok) || NAME_STOP.test(tok)) break;
+      run.push(tok);
+      if (tok !== piece || run.length === 4) break;
+    }
+    if (run.length > 0) return run.join(" ");
+  }
+  return null;
 }
 
 /** Words that read as a household / honorific / pronoun, never a name. */
@@ -284,11 +343,19 @@ function fullNameRuns(raw: string): string[][] {
 const foldWord = (s: string) =>
   s.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase();
 
+/** REQ-575 (M3): "Hendersons" / "Joneses" (the household) and "Henderson" /
+ *  "Jones" (one of them) are the same family name. */
+const sameName = (a: string, b: string) =>
+  a === b || a === `${b}s` || b === `${a}s` || a === `${b}es` ||
+  b === `${a}es`;
+
 /**
  * REQ-386 (demo m17): a lead-in that only caught a surname or a household
  * ("for the Gutierrez family", "para Okafor") gives way to a full name in
  * the same message that shares one of its words ("Maria Gutierrez",
  * "(Daniel Okafor)"). An unrelated Capitalized pair never wins.
+ * REQ-575 (demo-loop cycle 4, M3): plural-tolerant — pair 7's "for the
+ * Hendersons" gives way to "Carol Henderson".
  */
 function fullNameFor(raw: string, lead: string): string | null {
   const leadWords = lead.split(/\s+/).filter((w) => !NAME_STOP.test(w))
@@ -296,7 +363,9 @@ function fullNameFor(raw: string, lead: string): string | null {
   if (leadWords.length === 0) return null;
   for (const run of fullNameRuns(raw)) {
     if (run.length <= leadWords.length) continue;
-    if (run.some((w) => leadWords.includes(foldWord(w)))) return run.join(" ");
+    if (run.some((w) => leadWords.some((l) => sameName(l, foldWord(w))))) {
+      return run.join(" ");
+    }
   }
   return null;
 }

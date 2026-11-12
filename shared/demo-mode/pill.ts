@@ -25,6 +25,15 @@ export { PILL_LABEL_MAX } from "./protocol.ts";
 export const PILL_MARGIN = 12;
 /** at or below this width the customer's pill shows only its status and End (details on tap) */
 export const PILL_COMPACT_MAX_W = 640;
+/** REQ-548 (demo-loop cycle 4, p4-p3e) — the customer's pill takes a second row only on the
+ *  phone's compact form, while its details are open or End is asking: the question then gets its
+ *  own row, so it never squeezes the guide's name (REQ-373) to "A..". At rest the pill stays one
+ *  row (a long name is cut, REQ-228); the desktop pill has room for the question on its row. */
+export function pillWraps(
+  o: { compact: boolean; open: boolean; asking: boolean },
+): boolean {
+  return o.compact && (o.open || o.asking);
+}
 /** REQ-294 — the pills' own font: the app's `--font-body` stack, so a pill reads the same on a
  *  page that loads no app stylesheet (the 404 page), where `font:inherit` fell back to the
  *  browser's default face */
@@ -140,8 +149,10 @@ export function pillHome(o: {
 /**
  * REQ-379 — a dialog is up (REQ-300 froze the pill instead, over whatever the dialog put under
  * it): the pill stays home while nothing of the dialog is under it, else docks at the top-left —
- * under the impersonation banner (`top`, its height) — while that is clear, else stays home. Two
- * places, asked in that order: never a third, never a hunt.
+ * under the impersonation banner (`top`, its height) — while that is clear.
+ * REQ-545 (demo-loop cycle 4, m2) — then the top-right; all three covered: null, and the
+ * pill tucks into its edge tab (`placePill`) instead of staying home over the dialog (the Publish
+ * confirm, the Add task sheet, the send modal had their fields and buttons under it).
  */
 export function dockPill(o: {
   home: Rect;
@@ -149,15 +160,97 @@ export function dockPill(o: {
   top?: number;
   blocked: (r: Rect) => number;
   margin?: number;
-}): Rect {
+}): Rect | null {
   if (o.blocked(o.home) === 0) return o.home;
   const margin = o.margin ?? PILL_MARGIN;
-  const dock = clampRect(
-    { ...o.home, top: (o.top ?? 0) + margin },
+  const top = (o.top ?? 0) + margin;
+  const left = clampRect({ ...o.home, top }, o.view, margin);
+  if (o.blocked(left) === 0) return left;
+  const right = clampRect(
+    { ...o.home, top, left: o.view.w - margin - o.home.width },
     o.view,
     margin,
   );
-  return o.blocked(dock) === 0 ? dock : o.home;
+  return o.blocked(right) === 0 ? right : null;
+}
+
+/** REQ-545 (demo-loop cycle 4, m2) — the tucked pill: a small tab on the window's left edge */
+export const PILL_TAB = { w: 16, h: 40 } as const;
+/** REQ-545 — a tab tapped open shows the whole pill this long (a hover: until it leaves) */
+export const PILL_PEEK_MS = 6000;
+
+/**
+ * REQ-545 — the public pages a customer is sent (/q quote, /i invoice, /co change order): in
+ * the owner's browser during a demo the pill stays a tab there (minimal), never a band over the
+ * document they are reading.
+ */
+export function isPublicDocPath(path: string): boolean {
+  return /^\/(q|i|co)\/[^/]/.test(path);
+}
+
+/** REQ-545 — the tab's box: flush with the window's left edge, its foot on the home's foot */
+export function tabBox(home: Rect): Rect {
+  return {
+    left: 0,
+    top: home.top + home.height - PILL_TAB.h,
+    width: PILL_TAB.w,
+    height: PILL_TAB.h,
+  };
+}
+
+/**
+ * REQ-545 (demo-loop cycle 4, m2) — where the pill is right now. REQ-379's band only frees
+ * the END of a document that scrolls: mid-scroll, what scrolled into the window's bottom strip
+ * (tiles, "Export customers (CSV)", a service address, "Registrar un pago…") was under the band
+ * and the pill. So the pill YIELDS instead of reserving the strip: with anything of the page under
+ * its home it tucks into a small edge tab (`tabBox`) and the band is not painted — the page shows;
+ * with the home clear (a shell that subtracts the band, the document's end) it sits home on the
+ * painted band. A dialog docks it (`dockPill`: home, top-left, top-right) or, all covered, tucks
+ * it. On a public document page (`minimal`) it is always the tab.
+ */
+export function placePill(o: {
+  home: Rect;
+  view: Size;
+  top?: number;
+  dialog: boolean;
+  minimal?: boolean;
+  /** false: a pill that never tucks (the ended notice, a message to read and dismiss) — a
+   *  dialog still docks it, and with no place free it stays home */
+  yields?: boolean;
+  blocked: (r: Rect) => number;
+}): { box: Rect; tucked: boolean; band: boolean } {
+  const yields = o.yields ?? true;
+  const tucked = { box: tabBox(o.home), tucked: true, band: false };
+  if (yields && o.minimal) return tucked;
+  if (o.dialog) {
+    const box = dockPill(o);
+    if (box) return { box, tucked: false, band: box === o.home };
+    return yields ? tucked : { box: o.home, tucked: false, band: true };
+  }
+  if (!yields) return { box: o.home, tucked: false, band: true };
+  return o.blocked(o.home) === 0
+    ? { box: o.home, tucked: false, band: true }
+    : tucked;
+}
+
+/**
+ * REQ-545 — the customer's band on the stage: window-wide at the foot of their screen,
+ * scaled and offset like the frame (the mirror skips the overlay, so the stage draws it — both
+ * screens show the same strip). No band (0): nothing.
+ */
+export function bandGhostBox(
+  band: number,
+  screen: Size,
+  fit: { left: number; top: number; s: number },
+): Rect | null {
+  const h = Math.min(Math.max(0, band), screen.h);
+  if (!(h > 0)) return null;
+  return {
+    left: fit.left,
+    top: fit.top + (screen.h - h) * fit.s,
+    width: screen.w * fit.s,
+    height: h * fit.s,
+  };
 }
 
 /** the slice of Storage this needs — fakeable in a unit test */
@@ -317,20 +410,47 @@ export function statusKeyOf(s: PillStatus): string {
  * words when their pill sent its label (an older page: the stage's words, `statusKeyOf`); the
  * line unless the phone pill is compact and closed, and then the guide's short name, as the phone
  * shows it.
+ *
+ * REQ-540 (demo-loop cycle 4, m9) — and the rest of the pill, word for word: the "Demo mode"
+ * title (never on the compact phone pill, as on the phone) and End (the stage draws it as a
+ * disabled chip; none once the demo ended), in the customer's words when their pill sent them.
+ * A pill never heard says nothing.
  */
 export function ghostWords(
   face: PillFace,
   t: (key: string) => string,
-): { status?: string; text?: string; guide?: string } {
+): {
+  title?: string;
+  text?: string;
+  guide?: string;
+  status?: string;
+  end?: string;
+} {
   const closed = face.compact === true && face.open !== true;
-  const status = face.status
-    ? face.label || t(statusKeyOf(face.status))
-    : undefined;
+  const heard = face.status !== undefined;
+  const status = heard ? face.label || t(statusKeyOf(face.status!)) : undefined;
   return {
-    status,
+    title: heard && face.compact !== true
+      ? face.title || t("demoMode.title")
+      : undefined,
     text: !closed && face.text ? face.text : undefined,
     guide: closed && face.guide ? face.guide : undefined,
+    status,
+    end: heard && face.status !== "ended"
+      ? face.end || t("demoMode.end")
+      : undefined,
   };
+}
+
+/**
+ * REQ-540 (demo-loop cycle 4, m9) — a new page of the customer joined (onPeerOnline): its pill
+ * is still connecting and cannot say so (its face rides the very link that is opening), so the
+ * stage's ghost keeps the last pill and says "Connecting…" in the stage's words until the new
+ * page's pill speaks — never a blank, never a stale "Connected". An ended demo stays ended.
+ */
+export function pillFaceAwaiting(face: PillFace): PillFace {
+  const { label: _label, ...rest } = face;
+  return { ...rest, status: face.status === "ended" ? "ended" : "connecting" };
 }
 
 /**

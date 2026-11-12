@@ -24,93 +24,21 @@ import {
   lineKey,
   totalOf,
 } from "@agents/domain/business/quote-line-revision/mod.ts";
+import { jobNameInSentence } from "#quote-flow/job-name.ts";
 import {
   describeJobSize,
   plausibilityFloorCents,
 } from "@agents/domain/business/price-floor/mod.ts";
+import { type MoneyAmount, moneyAmounts } from "#quote-flow/money-amounts.ts";
 
 // ---------------------------------------------------------------------------
 // Money in the text
 // ---------------------------------------------------------------------------
 
-/** One money amount in the text: integer cents and where it sits. */
-export interface MoneyAmount {
-  cents: number;
-  start: number;
-  end: number;
-}
-
-const NUM = String.raw`(\d{1,3}(?:,\d{3})+|\d+)(?:\.(\d{1,2}))?`;
-const CURRENCY = String.raw`(?:d[oó]lares|dollars|usd|bucks)`;
-/** "18k btu", "18 thousand sq ft" — a size or a rating, not money. */
-const UNIT_AFTER = String
-  .raw`(?!\s*(?:btus?|sq|sf|sqft|square|ft|feet|foot|gal|gallons?|lbs?|pounds?|w|watts?|kw|volts?|amps?|mi|miles?|rpm|gpm|cfm|psi|pies|metros?|m2|galones|libras|units?|unidades|pcs|pieces|tiles|azulejos|ladrillos|bricks)(?![\p{L}]))`;
-/** What may follow a bare Spanish "18 mil" for it to be money: the end, a
- *  pause, a currency or a joining word — never "6 mil vapor barrier". */
-const MIL_FOLLOW = String
-  .raw`(?=\s*(?:$|[.,;:!?)\]…"'”]|(?:${CURRENCY}|y|e|o|u|and|or|por|para|en|total|todo|aprox\w*|m[aá]s|menos|max|m[aá]ximo|tops|plus|but|pero|con|with)(?![\p{L}])))`;
-
-const SCALE: Record<string, number> = {
-  k: 1_000,
-  mil: 1_000,
-  thousand: 1_000,
-  grand: 1_000,
-  million: 1_000_000,
-  millones: 1_000_000,
-  "millón": 1_000_000,
-  millon: 1_000_000,
-};
-
-const MONEY_PATTERNS: RegExp[] = [
-  // "$2,585", "$18k", "$18 mil", "$18.5k", "$18,000 dollars"
-  new RegExp(
-    String
-      .raw`\$\s?${NUM}(?:\s?(k|mil|thousand|grand|million|millones|mill[oó]n)(?![\p{L}\d]))?(?:\s+${CURRENCY}(?![\p{L}]))?`,
-    "giu",
-  ),
-  // "18k", "18 thousand", "18 grand" — not "12k btu"
-  new RegExp(
-    String
-      .raw`(?<![\p{L}\d$.,])${NUM}\s?(k|thousand|grand|million|millones|mill[oó]n)(?![\p{L}\d])${UNIT_AFTER}(?:\s+${CURRENCY}(?![\p{L}]))?`,
-    "giu",
-  ),
-  // "18 mil", "18 mil dólares" — Spanish thousands, as money only
-  new RegExp(
-    String
-      .raw`(?<![\p{L}\d$.,])${NUM}\s?(mil)(?![\p{L}])${MIL_FOLLOW}(?:\s+${CURRENCY}(?![\p{L}]))?`,
-    "giu",
-  ),
-  // "4500 dollars", "4,500 dólares"
-  new RegExp(
-    String.raw`(?<![\p{L}\d$.,])${NUM}\s*${CURRENCY}(?![\p{L}])`,
-    "giu",
-  ),
-];
-
-function centsOf(whole: string, frac: string | undefined, scale?: string) {
-  const n = Number(`${whole.replace(/,/g, "")}${frac ? `.${frac}` : ""}`);
-  const k = scale ? SCALE[scale.toLowerCase()] ?? 1 : 1;
-  return Number.isFinite(n) ? Math.round(n * k * 100) : 0;
-}
-
-/** Every money amount typed — "$2,585", "$18,000", "$18k", "$18 mil", "18k",
- *  "18 thousand", "18 grand", "4500 dollars", "18 mil dólares" and a spoken
- *  Spanish "18 mil" — each once, in order. Never "6 mil vapor barrier" or a
- *  "12k btu" unit. */
-export function moneyAmounts(text: string): MoneyAmount[] {
-  const s = text ?? "";
-  const found: MoneyAmount[] = [];
-  for (const re of MONEY_PATTERNS) {
-    for (const m of s.matchAll(re)) {
-      const start = m.index!;
-      const end = start + m[0].length;
-      if (found.some((f) => start < f.end && end > f.start)) continue;
-      const cents = centsOf(m[1], m[2], m[3]);
-      if (cents > 0) found.push({ cents, start, end });
-    }
-  }
-  return found.sort((a, b) => a.start - b.start);
-}
+// REQ-575 (demo-loop cycle 4, M3 + M13): the reader lives in shared/quote-flow
+// now, so the client's quick-quote price picker and the help-me-price cost
+// floor read "18k" / "18 mil" / "18 thousand" exactly as this module does.
+export { type MoneyAmount, moneyAmounts };
 
 // ---------------------------------------------------------------------------
 // The stated total
@@ -478,6 +406,43 @@ export function scaleLinesToTotal<T extends PricedLine>(
   return out;
 }
 
+/**
+ * REQ-578 (demo-loop cycle 4, m34) — the lines with no price folded into the
+ * largest priced line's description: "Remove old vanity $0 / Install 36in
+ * vanity $2,250 / Install faucet $0" → "Install 36in vanity (incl. remove old
+ * vanity, install faucet) $2,250". Same total, same work named, no line the
+ * client reads as free. Lines that are all priced, or none priced, come back
+ * unchanged (a priceless quote is REQ-302's to refuse).
+ */
+export function foldZeroLines<T extends PricedLine>(
+  lines: readonly T[],
+  lang: Lang,
+): T[] {
+  const zero = lines.filter((l) => l.amountCents === 0);
+  const priced = lines.filter((l) => l.amountCents > 0);
+  if (zero.length === 0 || priced.length === 0) {
+    return lines.map((l) => ({ ...l }));
+  }
+  const host = priced.reduce((a, b) => b.amountCents > a.amountCents ? b : a);
+  const included = zero
+    .map((l) => jobNameInSentence(l.description))
+    .filter((d) => d.length > 0)
+    .join(", ");
+  return lines
+    .filter((l) => l.amountCents !== 0)
+    .map((l) =>
+      l === host && included
+        ? {
+          ...l,
+          description: t(lang, "chatCoordinator.priceCheck.includes", {
+            line: l.description.trim(),
+            included,
+          }),
+        }
+        : { ...l }
+    );
+}
+
 export interface RevisionJump {
   fromCents: number;
   toCents: number;
@@ -752,12 +717,24 @@ export async function settleCreateQuote<
         { role: "user", content: note },
       ]),
   });
-  if (settled.kind === "keep") return settled;
   if (settled.kind === "ask") {
     return { kind: "ask", text: priceJumpAsk(input.lang, settled.jump) };
   }
-  return {
-    kind: "save",
-    payload: { ...payload, lineItems: settled.lineItems },
-  };
+  const lines = settled.kind === "lines" ? settled.lineItems : undefined;
+  // REQ-578 (m34): the contractor gave the whole job's price — a stated
+  // total, or an amount typed in this message that the lines add up to
+  // ("$2,400 — actually make it $2,250") — and the model put all of it on
+  // one step and 0 on the rest: the 0 lines fold into the priced one. With
+  // no price from the contractor a $0 line stays an included item (REQ-267:
+  // "Paint supplied by Castro Painting").
+  const all = lines ?? payload.lineItems;
+  const typed = moneyAmounts(input.userText).map((a) => a.cents);
+  if (input.statedCents || typed.includes(sumOf(all))) {
+    const folded = foldZeroLines(all, input.lang);
+    if (folded.length !== all.length) {
+      return { kind: "save", payload: { ...payload, lineItems: folded } };
+    }
+  }
+  if (!lines) return { kind: "keep" };
+  return { kind: "save", payload: { ...payload, lineItems: lines } };
 }

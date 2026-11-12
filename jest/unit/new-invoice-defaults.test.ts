@@ -31,13 +31,13 @@ const ONBOARDED = {
 };
 
 describe("REQ-483 M40 payment instructions from the accepted methods", () => {
-  it("REQ-483 M40 the onboarding methods become 'Zelle: 5125550102 · Cash'", () => {
+  it("REQ-483 M40 the onboarding methods become 'Zelle: +1 (512) 555-0102 · Cash' (REQ-593 formats the number)", () => {
     const { paymentInstructionsFromMethods } = mod();
     expect(paymentInstructionsFromMethods(ONBOARDED, "en")).toBe(
-      "Zelle: 5125550102 · Cash",
+      "Zelle: +1 (512) 555-0102 · Cash",
     );
     expect(paymentInstructionsFromMethods(ONBOARDED, "es")).toBe(
-      "Zelle: 5125550102 · Efectivo",
+      "Zelle: +1 (512) 555-0102 · Efectivo",
     );
   });
 
@@ -66,7 +66,7 @@ describe("REQ-483 M40 payment instructions from the accepted methods", () => {
       remembered: null,
       methods: ONBOARDED,
       lang: "en",
-    })).toBe("Zelle: 5125550102 · Cash");
+    })).toBe("Zelle: +1 (512) 555-0102 · Cash");
     expect(defaultPaymentInstructions({
       settings: "  Pay by check  ",
       remembered: "old",

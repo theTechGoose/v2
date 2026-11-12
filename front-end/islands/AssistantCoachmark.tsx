@@ -1,5 +1,9 @@
 import { useEffect, useState } from "preact/hooks";
 import { type Lang, langSignal, tFor } from "../lib/i18n.ts";
+import {
+  COACHMARK_COARSE_QUERY,
+  coachmarkCopyKeys,
+} from "../lib/coachmark-copy.ts";
 
 const STORAGE_KEY = "pm:assistant-coachmark-shown";
 const PINK = "#FF6B6B";
@@ -41,6 +45,19 @@ export default function AssistantCoachmark(
   >(null);
   const [fadingOut, setFadingOut] = useState(false);
   const [phase, setPhase] = useState<0 | 1 | 2>(0); // 0 = pre-mount, 1 = entering, 2 = settled
+  // REQ-616 (demo cycle 4, p4-p8e): the copy follows the primary pointer —
+  // "Click here…" for a mouse (the usual pointer wherever the sidebar pill is
+  // on screen), "Tap here…" only for a coarse/touch primary pointer.
+  const [coarse, setCoarse] = useState(false);
+  useEffect(() => {
+    if (typeof globalThis.matchMedia !== "function") return;
+    const mq = globalThis.matchMedia(COACHMARK_COARSE_QUERY);
+    const apply = () => setCoarse(mq.matches);
+    apply();
+    mq.addEventListener?.("change", apply);
+    return () => mq.removeEventListener?.("change", apply);
+  }, []);
+  const copy = coachmarkCopyKeys(coarse);
 
   useEffect(() => {
     if (typeof globalThis.window === "undefined") return;
@@ -118,7 +135,7 @@ export default function AssistantCoachmark(
     setBox({ top: r.top, left: r.left, width: r.width, height: r.height });
   }
 
-  // "Tap anywhere to dismiss" — bound at the document level (capture)
+  // "Click/Tap anywhere to dismiss" — bound at the document level (capture)
   // because the overlay itself is pointer-events:none: it must never trap a
   // click aimed at the app underneath (e.g. the sidebar collapse arrow or
   // the assistant CTA). The user's first gesture both acts AND dismisses.
@@ -181,7 +198,7 @@ export default function AssistantCoachmark(
       style={`position:fixed;inset:0;z-index:9999;pointer-events:none;transition:opacity 320ms ease-out;opacity:${
         fadingOut ? 0 : 1
       }`}
-      aria-label={tFor(lang, "assistantCoachmark.ariaLabel")}
+      aria-label={tFor(lang, copy.ariaLabel)}
       role="dialog"
     >
       {
@@ -353,10 +370,10 @@ export default function AssistantCoachmark(
           <span style="display:inline-block;animation:coach-wave 2.8s ease-in-out infinite;transform-origin:70% 80%">
             👋
           </span>
-          <span>{tFor(lang, "assistantCoachmark.heading")}</span>
+          <span>{tFor(lang, copy.heading)}</span>
         </div>
         <div style="margin-top:6px;font-size:12px;opacity:0.92;line-height:1.4">
-          {tFor(lang, "assistantCoachmark.body")}
+          {tFor(lang, copy.body)}
         </div>
         {
           /* Arrow notch pointing left toward the highlighted button —
@@ -379,7 +396,7 @@ export default function AssistantCoachmark(
           phase === 0 ? "8px" : "0"
         })`}
       >
-        {tFor(lang, "assistantCoachmark.dismissHint")}
+        {tFor(lang, copy.dismissHint)}
       </div>
 
       <style>

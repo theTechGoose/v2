@@ -7,9 +7,26 @@
  * never a silent catch.
  */
 
-/** Where the customer reads the quote. */
-export function customerLinkPath(quoteId: string): string {
-  return `/q/${quoteId}`;
+import { withSendLang } from "../../shared/quote-flow/share-link.ts";
+
+/** Where the customer reads the quote. REQ-586 (demo-loop cycle 4, M11):
+ *  with the language the quote went out in (`sendLang` — the send divider's
+ *  `lang`, or `quoteSendLang(quote)`) as `?lang=`, so a cookie-less customer
+ *  opens it in that language; no language → the bare path. */
+export function customerLinkPath(
+  quoteId: string,
+  sendLang?: string | null,
+): string {
+  return withSendLang(`/q/${quoteId}`, sendLang);
+}
+
+/** REQ-586 (M11): where the customer reads the invoice, in its document
+ *  language (`invoice.lang`) when known. */
+export function invoiceLinkPath(
+  invoiceId: string,
+  lang?: string | null,
+): string {
+  return withSendLang(`/i/${invoiceId}`, lang);
 }
 
 /**
@@ -29,12 +46,61 @@ export function customerLinkDisplay(
 }
 
 /** The absolute link to paste anywhere (WhatsApp, DMs). */
-export function customerLinkUrl(origin: string, quoteId: string): string {
-  return `${origin}${customerLinkPath(quoteId)}`;
+export function customerLinkUrl(
+  origin: string,
+  quoteId: string,
+  sendLang?: string | null,
+): string {
+  return `${origin}${customerLinkPath(quoteId, sendLang)}`;
 }
 
-/** Outcome of a copy attempt — what the toast shows. */
-export type LinkToast = { kind: "copied" | "failed"; url: string };
+/** Outcome of a copy attempt — what the toast shows. REQ-572: `markQuoteId`
+ *  set → the toast also asks "mark as sent?" for that quote; `marking` while
+ *  the PUT runs; `markFailed` when it did not land. */
+export type LinkToast = {
+  kind: "copied" | "failed";
+  url: string;
+  markQuoteId?: string;
+  marking?: boolean;
+  markFailed?: boolean;
+};
+
+/**
+ * REQ-572 (demo-loop cycle 4, p4-p7c): "Copy link" offers "mark as sent" only
+ * for a quote that has not gone out — a draft, locked, ready-to-send or
+ * not-delivered quote. Never one a channel delivered, the customer opened,
+ * signed or declined, or one already marked shared by link.
+ */
+export function linkCopyOffersMarkSent(
+  q:
+    | {
+      status?: string | null;
+      sentAt?: string | null;
+      acceptedAt?: string | null;
+      lostAt?: string | null;
+      deliveredAt?: string | null;
+      lastDelivery?: { emailedTo?: string; textedTo?: string } | null;
+      sentVia?: string | null;
+    }
+    | null
+    | undefined,
+): boolean {
+  if (!q) return false;
+  if (q.acceptedAt || q.lostAt || q.deliveredAt || q.sentVia) return false;
+  if (q.lastDelivery?.emailedTo || q.lastDelivery?.textedTo) return false;
+  const s = (q.status ?? "draft").toLowerCase();
+  if (s === "draft" || s === "") return true;
+  // LockQuote's legacy "sent" with no delivery: still on the owner's desk
+  // when a send was tried and reached nobody, or nothing stamped sentAt.
+  if (s === "sent") return Boolean(q.lastDelivery) || !q.sentAt;
+  return false;
+}
+
+/** REQ-572: the owner's "Mark as sent" — PUT /quotes/:id with this body. */
+export const SHARED_BY_LINK_PATCH = Object.freeze({
+  status: "sent",
+  sentVia: "link",
+}) as { readonly status: "sent"; readonly sentVia: "link" };
 
 /**
  * A send divider is one SendQuote wrote: it names its quote and carries a
@@ -81,6 +147,40 @@ export function cardShowsCustomerLink(
     return Boolean(live.sentAt) || (s !== "" && s !== "draft");
   }
   return ISSUED_CARD.has((cardStatus ?? "").toLowerCase());
+}
+
+/** The parts of a chat message the owner pick reads. */
+type LinkMessage = {
+  id: string;
+  kind?: string;
+  payload?: unknown;
+};
+
+/**
+ * REQ-571 (demo-loop cycle 4, p4-p2c): ONE customer-link row per quote.
+ * After a send the send divider (REQ-310) and the sent action card (REQ-310 /
+ * REQ-460) both carried a row for the same quote — two identical "Open as
+ * customer" links. Walk the rendered messages in order and give each quote's
+ * row to the NEWEST message that would show it; returns those message ids.
+ * `cardShows` is the card's own gate (cardShowsCustomerLink, fed the live
+ * quote row where the caller has it).
+ */
+export function customerLinkOwnerIds<P extends { quoteId?: string }>(
+  messages: readonly LinkMessage[],
+  cardShows: (payload: P) => boolean,
+): Set<string> {
+  const owner = new Map<string, string>();
+  for (const m of messages) {
+    const p = (m.payload ?? {}) as P & Record<string, unknown>;
+    if (!p.quoteId) continue;
+    const shows = m.kind === "phase_divider"
+      ? dividerShowsCustomerLink(p)
+      : m.kind === "action_card"
+      ? cardShows(p)
+      : false;
+    if (shows) owner.set(p.quoteId, m.id);
+  }
+  return new Set(owner.values());
 }
 
 /**

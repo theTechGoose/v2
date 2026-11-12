@@ -19,15 +19,18 @@ import {
 } from "../lib/customer-link.ts";
 
 export function CustomerLinkRow(
-  { quoteId, quoteNumber, lang, onCopy }: {
+  { quoteId, quoteNumber, sendLang, lang, onCopy }: {
     quoteId: string;
     /** REQ-472: "Q-001" — shown in place of the link when known. */
     quoteNumber?: string;
+    /** REQ-586 (cycle 4, M11): the language the quote went out in — Open
+     *  and Copy carry it as `?lang=`. */
+    sendLang?: string;
     lang: Lang;
-    onCopy: (quoteId: string) => void;
+    onCopy: (quoteId: string, sendLang?: string) => void;
   },
 ) {
-  const path = customerLinkPath(quoteId);
+  const path = customerLinkPath(quoteId, sendLang);
   return (
     <div class="customer-link" data-cy="customer-link">
       <span class="customer-link__label">
@@ -41,7 +44,7 @@ export function CustomerLinkRow(
         type="button"
         class="customer-link__btn"
         data-cy="customer-link-copy"
-        onClick={() => onCopy(quoteId)}
+        onClick={() => onCopy(quoteId, sendLang)}
       >
         {tFor(lang, "asstChat.customerLink.copy")}
       </button>
@@ -59,14 +62,19 @@ export function CustomerLinkRow(
 }
 
 export function LinkToast(
-  { toast, lang, onDismiss }: {
+  { toast, lang, onDismiss, onMarkSent }: {
     toast: LinkToastState | null;
     lang: Lang;
     onDismiss: () => void;
+    /** REQ-572: "Mark as sent" — offered when the toast names a quote. */
+    onMarkSent?: (quoteId: string) => void;
   },
 ) {
   if (!toast) return null;
   const failed = toast.kind === "failed";
+  // REQ-572 (demo-loop cycle 4, p4-p7c): a copy of a quote that has not gone
+  // out asks "Link copied — mark as sent?".
+  const markId = onMarkSent ? toast.markQuoteId : undefined;
   return (
     <div
       class={`link-toast ${failed ? "link-toast--failed" : ""}`}
@@ -83,6 +91,8 @@ export function LinkToast(
             lang,
             failed
               ? "asstChat.customerLink.copyFailed"
+              : markId
+              ? "asstChat.customerLink.markSentAsk"
               : "asstChat.customerLink.copied",
           )}
         </span>
@@ -91,6 +101,28 @@ export function LinkToast(
             <code class="link-toast__url" data-cy="link-toast-url">
               {toast.url}
             </code>
+          )
+          : null}
+        {markId
+          ? (
+            <span class="link-toast__mark">
+              <button
+                type="button"
+                class="link-toast__mark-btn"
+                data-cy="link-toast-mark-sent"
+                disabled={toast.marking}
+                onClick={() => onMarkSent?.(markId)}
+              >
+                {tFor(lang, "asstChat.customerLink.markSent")}
+              </button>
+              {toast.markFailed
+                ? (
+                  <span class="link-toast__mark-err" role="alert">
+                    {tFor(lang, "asstChat.customerLink.markSentFailed")}
+                  </span>
+                )
+                : null}
+            </span>
           )
           : null}
       </span>

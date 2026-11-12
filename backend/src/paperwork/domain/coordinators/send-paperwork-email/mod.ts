@@ -1,4 +1,6 @@
 import { Injectable } from "#danet/core";
+import { EventBus } from "@core/business/events/mod.ts";
+import { invoiceIssuedEvent } from "@paperwork/domain/business/owner-activity/mod.ts"; // REQ-566
 import { asDelivered, isUnissuedInvoice, publishPendingInvoice, publishPendingQuote, senderAsPublisher, stampInvoiceDelivered } from "@paperwork/domain/business/publish-pending/mod.ts";
 import { type Lang, t } from "@core/i18n/mod.ts";
 import { QuoteStore } from "@paperwork/domain/data/quote-store/mod.ts";
@@ -45,6 +47,7 @@ import { withSendLang } from "#quote-flow/share-link.ts";
 import {
   localizeLineItems,
   quoteDescription,
+  quoteSummary,
 } from "#quote-flow/quote-translations.ts";
 import type { Quote } from "@paperwork/dto/quote.ts";
 import type { Invoice } from "@paperwork/dto/invoice.ts";
@@ -108,7 +111,26 @@ export class SendPaperworkEmail {
     private identity: BusinessIdentityStore,
     private email: EmailService,
     private commsLog: LogPaperworkMessage,
+    /** REQ-566: announces an invoice this delivery issued (optional for direct test construction) */
+    private bus?: EventBus,
   ) {}
+
+  /**
+   * REQ-586 (demo-loop cycle 4, M11): the language a send goes out in — the
+   * same resolution `run` (and the SMS dispatcher) applies: the per-send
+   * pick, else the stored Settings default, else en. SendQuote records it on
+   * the quote so the in-app customer links carry it as `?lang=`.
+   */
+  async sendLanguage(
+    userId: string,
+    override?: string | null,
+  ): Promise<"en" | "es"> {
+    const biz = await this.tryGetBusinessIdentity(userId);
+    return resolveCommsLanguage({
+      override,
+      identityCommsLanguage: biz?.commsLanguage,
+    });
+  }
 
   async run(
     userId: string,
@@ -168,6 +190,7 @@ export class SendPaperworkEmail {
     let quoteForStamp: Quote | undefined;
     let invoiceToIssue = false;
     let customerIdForLog: string | undefined;
+    let customerNameForEvent: string | undefined;
     if (input.kind === "quote") {
       // REQ-201: a send publishes what is pending — the link must show what was sent
       const quote = await publishPendingQuote(this.quotes, input.resourceId, userId, senderAsPublisher(userId, sender?.name));
@@ -188,6 +211,7 @@ export class SendPaperworkEmail {
       const invoice = invoiceToIssue ? asDelivered(stored) : stored;
       const customer = await this.tryGetCustomer(userId, invoice.customerId);
       customerIdForLog = customer?.id;
+      customerNameForEvent = customer?.name || undefined;
       if (!recipient) recipient = customer?.email ?? customerOnDocument(invoice, customer)?.email;
       // The email goes to the customer, so it follows the contractor's
       // outgoing-comms language (default en), not their UI language.
@@ -262,7 +286,9 @@ export class SendPaperworkEmail {
     // REQ-480 (demo-loop cycle 3, M18): a draft / scheduled invoice becomes
     // "sent" only now that the email was delivered.
     if (result.ok && invoiceToIssue) {
-      await stampInvoiceDelivered(this.invoices, input.resourceId, userId);
+      const issued = await stampInvoiceDelivered(this.invoices, input.resourceId, userId);
+      // REQ-566 (cycle 4, m11): the owner's activity feed says it went out.
+      if (issued) await this.bus?.emit(invoiceIssuedEvent(userId, issued, customerNameForEvent));
     }
 
     // Comms trail (roadmap p.8): record the dispatch in the customer's
@@ -474,6 +500,18 @@ function fmtDate(iso: string | undefined, lang: Lang, tz?: string): string {
   return fmtPaperworkDate(iso ?? "", lang, tz);
 }
 
+/**
+ * REQ-542 (demo-loop cycle 4, m8): the send dialog's ~350px preview frame (and
+ * a phone's mail app) clipped the email on the right — the card was a fixed
+ * 600/640px table. The card is now fluid (width 100%, max-width 600/640px),
+ * and on a narrow screen the gutters around and inside it tighten and the
+ * four "what happens next" steps sit two by two and the total drops under its
+ * label, so its content fits. Clients that drop <style> (Outlook desktop)
+ * keep the wide layout, where there is room for it.
+ */
+const NARROW_SCREEN_STYLE =
+  `<style>@media only screen and (max-width:480px){.pw-outer{padding:16px 6px!important}.pw-card>tbody>tr>td,.pw-card>tr>td{padding-left:18px!important;padding-right:18px!important}.pw-step{display:inline-block!important;width:50%!important;box-sizing:border-box;padding:0 4px 14px!important}.pw-amt{display:block!important;text-align:left!important;padding:16px 18px!important}.pw-amt+.pw-amt{padding-top:0!important}.pw-amt-n{font-size:32px!important}}</style>`;
+
 /** Wraps the per-doc body in a brand-consistent shell (header, sender block,
  *  CTA button row, footer). All inline-styled — Gmail/Outlook strip <style>. */
 function shell(opts: {
@@ -537,14 +575,15 @@ function shell(opts: {
   <meta name="color-scheme" content="light only">
   <meta name="supported-color-schemes" content="light only">
   <title>${escapeHtml(kindLabel)} ${escapeHtml(docNumber)}</title>
+  ${NARROW_SCREEN_STYLE}
 </head>
 <body style="margin:0;padding:0;background:${COLOR_BG};font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:${COLOR_INK};line-height:1.5;">
   <span style="display:none!important;visibility:hidden;opacity:0;color:transparent;height:0;width:0;overflow:hidden;mso-hide:all">${
     escapeHtml(preheader)
   }</span>
   <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="background:${COLOR_BG};">
-    <tr><td align="center" style="padding:32px 16px;">
-      <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="600" style="max-width:600px;background:${COLOR_CARD};border-radius:18px;overflow:hidden;box-shadow:0 8px 32px rgba(20,72,82,0.08);">
+    <tr><td class="pw-outer" align="center" style="padding:32px 16px;">
+      <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" class="pw-card" style="width:100%;max-width:600px;background:${COLOR_CARD};border-radius:18px;overflow:hidden;box-shadow:0 8px 32px rgba(20,72,82,0.08);">
         <tr><td align="center" style="padding:24px 32px 0;">
           <img src="${escapeAttr(logo.src)}" alt="${escapeAttr(logo.alt)}" width="160" style="display:block;border:0;outline:none;text-decoration:none;height:auto;max-width:160px;">
         </td></tr>
@@ -736,8 +775,11 @@ export function renderQuoteHtml(
     "PM",
   );
 
+  // REQ-591 (cycle 4, M32): the hero (and the preheader) in the send
+  // language — summaryByLang, else the job name in that language, else the
+  // typed summary — never the raw summary under a translated subject.
   const summaryClean =
-    (q.summary ?? t(lang, "paperworkEmail.quote.summaryFallback"))
+    (quoteSummary(q, lang) ?? t(lang, "paperworkEmail.quote.summaryFallback"))
       .replace(/^\s*quote\s*:\s*/i, "")
       .trim();
   // Title case for visual weight in the hero. P-07: Unicode-aware (the old
@@ -843,14 +885,15 @@ export function renderQuoteHtml(
   <meta name="color-scheme" content="light only">
   <meta name="supported-color-schemes" content="light only">
   <title>${L.titleWord} ${escapeHtml(docNumber)}</title>
+  ${NARROW_SCREEN_STYLE}
 </head>
 <body style="margin:0;padding:0;background:${COLOR_BG};font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:${COLOR_INK};line-height:1.5;">
   <span style="display:none!important;visibility:hidden;opacity:0;color:transparent;height:0;width:0;overflow:hidden;mso-hide:all">${
     escapeHtml(preheader)
   }</span>
   <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="background:${COLOR_BG};">
-    <tr><td align="center" style="padding:40px 16px;">
-      <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="640" style="max-width:640px;background:${COLOR_CARD};border-radius:24px;overflow:hidden;box-shadow:0 12px 40px rgba(20,72,82,0.10);">
+    <tr><td class="pw-outer" align="center" style="padding:40px 16px;">
+      <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" class="pw-card" style="width:100%;max-width:640px;background:${COLOR_CARD};border-radius:24px;overflow:hidden;box-shadow:0 12px 40px rgba(20,72,82,0.10);">
 
         <!-- pink ribbon header -->
         <tr><td style="height:6px;background:linear-gradient(90deg,${COLOR_PINK} 0%,${COLOR_PINK_DARK} 100%);font-size:0;line-height:0">&nbsp;</td></tr>
@@ -938,12 +981,12 @@ export function renderQuoteHtml(
         <tr><td style="padding:24px 36px 0">
           <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="background:linear-gradient(135deg,#e8f3e2 0%,#dceadb 100%);border:1px solid rgba(81,152,67,0.25);border-radius:18px">
             <tr>
-              <td style="padding:22px 24px">
+              <td class="pw-amt" style="padding:22px 24px">
                 <div style="font-size:11px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:${COLOR_GREEN}">${L.estimatedTotal}</div>
                 <div style="margin-top:4px;color:${COLOR_MUTED};font-size:12px">${L.allIn}</div>
               </td>
-              <td style="padding:22px 24px;text-align:right;vertical-align:middle">
-                <div style="font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;font-weight:900;font-size:42px;letter-spacing:-0.03em;color:${COLOR_TEAL};line-height:1;font-variant-numeric:tabular-nums">${
+              <td class="pw-amt" style="padding:22px 24px;text-align:right;vertical-align:middle">
+                <div class="pw-amt-n" style="font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;font-weight:900;font-size:42px;letter-spacing:-0.03em;color:${COLOR_TEAL};line-height:1;font-variant-numeric:tabular-nums">${
     fmtUSD(total)
   }</div>
               </td>
@@ -972,7 +1015,7 @@ export function renderQuoteHtml(
             <tr>
               ${
     L.steps.map(([n, t, sub]) =>
-      `<td valign="top" align="center" style="width:25%;padding:0 6px">
+      `<td class="pw-step" valign="top" align="center" style="width:25%;padding:0 6px">
                 <div style="display:inline-block;width:30px;height:30px;border-radius:50%;background:${COLOR_PINK};color:#fff;font-weight:800;line-height:30px;text-align:center;font-size:13px">${n}</div>
                 <div style="margin-top:8px;color:${COLOR_INK};font-weight:700;font-size:13px">${t}</div>
                 <div style="margin-top:2px;color:${COLOR_MUTED};font-size:11px;line-height:1.4">${sub}</div>
@@ -1279,14 +1322,15 @@ export function renderInvoiceHtml(
   <meta name="color-scheme" content="light only">
   <meta name="supported-color-schemes" content="light only">
   <title>${escapeHtml(L.kindLabel)} ${escapeHtml(docNumber)}</title>
+  ${NARROW_SCREEN_STYLE}
 </head>
 <body style="margin:0;padding:0;background:${COLOR_BG};font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:${COLOR_INK};line-height:1.5;">
   <span style="display:none!important;visibility:hidden;opacity:0;color:transparent;height:0;width:0;overflow:hidden;mso-hide:all">${
     escapeHtml(preheader)
   }</span>
   <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="background:${COLOR_BG};">
-    <tr><td align="center" style="padding:40px 16px;">
-      <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="640" style="max-width:640px;background:${COLOR_CARD};border-radius:24px;overflow:hidden;box-shadow:0 12px 40px rgba(20,72,82,0.10);">
+    <tr><td class="pw-outer" align="center" style="padding:40px 16px;">
+      <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" class="pw-card" style="width:100%;max-width:640px;background:${COLOR_CARD};border-radius:24px;overflow:hidden;box-shadow:0 12px 40px rgba(20,72,82,0.10);">
 
         <!-- pink ribbon header -->
         <tr><td style="height:6px;background:linear-gradient(90deg,${COLOR_PINK} 0%,${COLOR_PINK_DARK} 100%);font-size:0;line-height:0">&nbsp;</td></tr>
@@ -1368,15 +1412,15 @@ export function renderInvoiceHtml(
         <tr><td style="padding:24px 36px 0">
           <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="background:linear-gradient(135deg,#e8f3e2 0%,#dceadb 100%);border:1px solid rgba(81,152,67,0.25);border-radius:18px">
             <tr>
-              <td style="padding:22px 24px">
+              <td class="pw-amt" style="padding:22px 24px">
                 <div style="font-size:11px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:${COLOR_GREEN}">${
     escapeHtml(L.amountDue)
   }</div>
                 ${dueSub}
                 ${milestoneSub}
               </td>
-              <td style="padding:22px 24px;text-align:right;vertical-align:middle">
-                <div style="font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;font-weight:900;font-size:42px;letter-spacing:-0.03em;color:${COLOR_TEAL};line-height:1;font-variant-numeric:tabular-nums">${
+              <td class="pw-amt" style="padding:22px 24px;text-align:right;vertical-align:middle">
+                <div class="pw-amt-n" style="font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;font-weight:900;font-size:42px;letter-spacing:-0.03em;color:${COLOR_TEAL};line-height:1;font-variant-numeric:tabular-nums">${
     fmtUSD(amount)
   }</div>
               </td>

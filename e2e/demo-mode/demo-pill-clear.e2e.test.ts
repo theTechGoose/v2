@@ -11,8 +11,13 @@
  *
  * REQ-372 (demo-loop cycle 2, m1 + m8) — the ghost is not an empty dashed box: it carries the
  * pill's status (in the presenter's words), and on the phone it stays inside the phone frame.
+ *
+ * REQ-540 (demo-loop cycle 4, m9) — the ghost says the whole pill: the "Demo mode" title, the
+ * line, the status and End (a disabled chip), word for word as on the customer's pill.
  */
 import { story, type StoryTools } from "#shots";
+import { answerQuestions } from "../_shared/onboarding-answers.ts";
+import { pillUp } from "../_shared/demo-pill.ts";
 
 const JSON_HEADERS = { "content-type": "application/json" };
 const digits = () => String(Math.floor(Math.random() * 9_000_000) + 1_000_000);
@@ -147,6 +152,12 @@ Deno.test("REQ-228 + REQ-291: the customer's demo pill covers no control of the 
       headers: user.auth,
       body: JSON.stringify({ language: "en", name: "Ana Torres" }),
     })).body?.cancel();
+    // REQ-545 (cycle 4, m2) AMENDMENT — onboarded, so the demo finds the app's shell (which
+    // subtracts the band), not the wizard, whose content under the home tucks the pill to its tab
+    await answerQuestions(http, user.auth, {
+      name: "Ana Torres",
+      businessName: "Torres Plumbing",
+    });
     const admin = await verify(http, adminPhone);
     await (await http("/api/me", {
       method: "PUT",
@@ -184,9 +195,7 @@ Deno.test("REQ-228 + REQ-291: the customer's demo pill covers no control of the 
         timeout: 20_000,
       });
       await userPage.reload();
-      await userPage.locator("[data-cy='demo-status']").waitFor({
-        timeout: 15_000,
-      });
+      await pillUp(userPage);
       // REQ-232 — the stage's pill says Live once the customer's tab is on the link
       await page.locator("[data-cy='demo-status']").filter({
         hasText: /^\s*Live\s*$/,
@@ -218,9 +227,7 @@ Deno.test("REQ-228 + REQ-291: the customer's demo pill covers no control of the 
       };
       const before = await settled();
       await userPage.reload();
-      await userPage.locator("[data-cy='demo-status']").waitFor({
-        timeout: 15_000,
-      });
+      await pillUp(userPage);
       const after = await settled();
       expect(
         after.left === before.left && after.top === before.top,
@@ -260,9 +267,54 @@ Deno.test("REQ-228 + REQ-291: the customer's demo pill covers no control of the 
           ? null
           : `ghost status "${said}"`;
       });
+      // REQ-540 (cycle 4, m9): the ghost says the WHOLE pill, word for word and in order —
+      // "Demo mode · Hans … is guiding you · Connected · End demo", End as a disabled chip
+      await until(
+        "the ghost carries the whole pill's copy (REQ-540)",
+        async () => {
+          const g = await page.evaluate(() => {
+            const q = (s: string) =>
+              document.querySelector(s)?.textContent?.trim() ?? "";
+            return {
+              all: (document.querySelector("[data-cy='demo-pill-ghost']")
+                ?.textContent ?? "").replace(/\s+/g, " ").trim(),
+              title: q("[data-cy='demo-pill-ghost-title']"),
+              end: q("[data-cy='demo-pill-ghost-end']"),
+              endDisabled: document.querySelector(
+                "[data-cy='demo-pill-ghost-end']",
+              )?.getAttribute("aria-disabled") === "true",
+            };
+          });
+          const pill = (await userPage.locator("[data-cy='demo-pill']")
+            .innerText()).replace(/\s+/g, " ").trim();
+          const want = [
+            "Demo mode",
+            "Hans from DocuMonster is guiding you",
+            "Connected",
+            "End demo",
+          ];
+          for (const w of want) {
+            if (
+              !pill.includes(w)
+            ) return `the pill itself lacks "${w}": "${pill}"`;
+          }
+          let at = 0;
+          for (const w of want) {
+            const i = g.all.indexOf(w, at);
+            if (i < 0) return `the ghost lacks "${w}" (in order): "${g.all}"`;
+            at = i + w.length;
+          }
+          if (g.title !== "Demo mode") return `ghost title "${g.title}"`;
+          if (g.end !== "End demo" || !g.endDisabled) {
+            return `ghost End "${g.end}" (disabled: ${g.endDisabled})`;
+          }
+          return null;
+        },
+      );
 
       // 2. phone size: still one line, still covering nothing
       await userPage.setViewportSize({ width: 390, height: 844 });
+      await pillUp(userPage);
       await until("phone: the pill covers no control", async () => {
         const c = await userPage.evaluate(coveredControls);
         return c.length ? c.join("; ") : null;

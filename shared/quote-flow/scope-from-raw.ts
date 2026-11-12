@@ -93,3 +93,26 @@ export function scopeBulletsFromRaw(
   }
   return { bullets, degraded: bullets.length === 0 };
 }
+
+// REQ-585: the customer's contact typed in the sentence is never a job line.
+const EMAIL =
+  /[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}/g;
+const PHONE =
+  /(?<![\d$.,])(?:\+?1[\s.-]?)?(?:\(\d{3}\)|\d{3})[\s.-]?\d{3}[\s.-]?\d{4}(?!\d)/g;
+
+/**
+ * REQ-585 (demo-loop cycle 4, M30) — the job details a QUICK quote is born
+ * with. Pair 7 took "Just give me a quick quote.", typed a long Spanish
+ * bathroom job and set the price; the quote's description was the message
+ * itself (`raw.trim()` in AsstChat.startQuoteFromRaw) — one job line holding
+ * all of it — and the next chat edit echoed it back twice ("agregué <her
+ * message>; quité <her message>"). The quote now starts from the message's
+ * scope lines: one per sentence, the intent opener and the price clause gone
+ * (scopeBulletsFromRaw), the customer's phone / email left out. "" when
+ * nothing scope-like survives — never the raw text. The end-of-wizard polish
+ * still rewrites them from the message as typed.
+ */
+export function scopeDescriptionFromRaw(raw: string, lang: ScopeLang): string {
+  const text = (raw ?? "").replace(EMAIL, " ").replace(PHONE, " ");
+  return scopeBulletsFromRaw(text, lang).bullets.join("\n");
+}

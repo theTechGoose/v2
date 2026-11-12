@@ -53,6 +53,9 @@
  * a reload or another tab gets no arrow until he moves — never a fraction under his still mouse.
  * The hand-off counts only once the frame is fitted, and only on it (`seedOn`): beside the frame
  * it is unknown until he moves. Off the frame, their screen shows a small edge marker, no tag.
+ * REQ-539 (demo m24 — cycle 4) — amends that: only the stage's own hand-off (a reload) is sent;
+ * /admin's (the Demo click, on a desktop customer's frame) is a hint for the off outline only, and
+ * their screen gets no arrow until he makes a real pointer move (`seedUse`).
  *
  * REQ-232 — the pill says plainly whether the demo is live: "Live", "Connecting…", or "Waiting for
  * {name}'s app…" — the last only when none of the customer's tabs is left, after a few seconds'
@@ -61,6 +64,11 @@
  * says "Open in another window" and offers "Use this window" (a reload takes it back).
  * REQ-235 — End asks first (EndDemo); the end goes to /admin saying who ended it ("You ended the
  * demo", "{customer} ended the demo", "{colleague} ended the demo"), where the overlay keeps it.
+ *
+ * REQ-537 (demo-loop cycle 4, m36) — the stage has one exit: the impersonation banner is not drawn
+ * here (so `bannerH` measures 0 and the stage starts at the top of the window), End is in the pill,
+ * and only with other presenters does the pill also offer "Leave the demo" (it leaves, hands the
+ * account back and goes to /admin; the demo goes on with the others).
  *
  * REQ-309 (demo M19/m14/m26) — the pill's "Live" is the FRAME's truth: said only once the followed
  * tab's snapshot is in the frame, "Connecting…" in between — the same fact the "Connecting to
@@ -112,6 +120,7 @@ import {
   type Pt,
 } from "../../shared/demo-mode/motion.ts";
 import {
+  type CursorSeed,
   handCursor,
   sessionStore,
   takeCursor,
@@ -128,38 +137,46 @@ import {
   type Replayer,
 } from "../lib/demo-mode/mirror-replay.ts";
 import { useGlide } from "../lib/demo-mode/use-glide.ts";
-import { placeWavesAgain } from "../lib/demo-mode/pointer-anchor.ts";
+import {
+  newStageWave,
+  placeWavesAgain,
+  type StageWave,
+  type WaveFrame,
+} from "../lib/demo-mode/pointer-anchor.ts";
 import {
   anchorPoint,
   ghostAt,
   lookAgain,
+  pointerAbsent,
+  reanchorDelay,
   resendable,
-  seedOn,
+  seedUse,
 } from "../../shared/demo-mode/presenter-anchor.ts";
 import PointerGhost from "../components/demo-mode/PointerGhost.tsx";
-import DemoPointer, {
-  type Wave,
-  WAVE_MS,
-} from "../components/demo-mode/DemoPointer.tsx";
+import DemoPointer, { WAVE_MS } from "../components/demo-mode/DemoPointer.tsx";
 import PeerPointer, {
   type PointerCmd,
 } from "../components/demo-mode/PeerPointer.tsx";
 import PresenterChips from "../components/demo-mode/PresenterChips.tsx";
 import EndDemo from "../components/demo-mode/EndDemo.tsx";
+import { stageLeaveShown } from "../../shared/demo-mode/stage-chrome.ts";
 import {
   endedHref,
   type EndedNotice,
   whoEnded,
 } from "../../shared/demo-mode/ended.ts";
 import {
+  bandGhostBox,
   ghostWords,
   PILL_FONT,
+  pillFaceAwaiting,
   pillFaceOffline,
   pillGhost,
   STAGE_PILL_BOTTOM,
   stageInsetBottom,
 } from "../../shared/demo-mode/pill.ts";
 import {
+  afterActiveCheck,
   behindSeconds,
   frameReady,
   stageFrameLook,
@@ -240,9 +257,15 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
   const [demo, setDemo] = useState<Demo | null>(null);
   /** the server said there is no demo for this session */
   const [gone, setGone] = useState(false);
+  /** REQ-541 (cycle 4, M22) — a demo has been shown on this stage */
+  const shownRef = useRef(false);
+  /** REQ-541 — the stage is already on its way back to the presenter's own account */
+  const leavingRef = useRef(false);
   const [status, setStatus] = useState<LinkStatus>("connecting");
   const [peerOnline, setPeerOnline] = useState(false);
   const [ended, setEnded] = useState(false);
+  /** REQ-537 — Leave the demo was clicked here: on the way to /admin */
+  const [leavingHere, setLeavingHere] = useState(false);
   /** REQ-242 — null until the customer's first snapshot is in the frame */
   const [mirrored, setMirrored] = useState<Screen | null>(null);
   /** REQ-297 — the screen in the frame is from before the customer's app dropped */
@@ -259,6 +282,10 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
   const styledRef = useRef(false);
   /** REQ-370 — when the first snapshot of this demo was applied, and the fallback timer */
   const firstSnapAtRef = useRef<number | null>(null);
+  /** REQ-538 — when the latest snapshot landed (its settle passes run for SETTLE_MS after it) */
+  const snapAtRef = useRef<number | null>(null);
+  /** REQ-538 — the pending look-up of his still mouse for a dead anchor */
+  const reanchorTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const styleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   /** REQ-235 — this stage's End ended it */
   const endedHere = useRef(false);
@@ -267,8 +294,9 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
   /** REQ-228 — the pill's real height: the frame keeps out of that band, however it wraps */
   const [pillH, setPillH] = useState(0);
   const pillRef = useRef<HTMLDivElement | null>(null);
-  /** REQ-371 (demo m10) — each wave keeps the anchor it was sent with: placed again with the pointer */
-  const [waves, setWaves] = useState<(Wave & { a: Anchor })[]>([]);
+  /** REQ-371 (demo m10) — each wave keeps the anchor it was sent with; REQ-546 (demo m14,
+   *  cycle 4) — frozen where it was placed, gone with its node (`placeWavesAgain`) */
+  const [waves, setWaves] = useState<StageWave[]>([]);
   /** REQ-214 — the latest thing each colleague did, by pid */
   const [cmds, setCmds] = useState<Record<string, PointerCmd>>({});
   const seq = useRef(0);
@@ -318,12 +346,18 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
   const provisionalRef = useRef(false);
   /** REQ-451 (M14) — the mouse the page that opened the stage handed over: counted once the frame
    *  is fitted, and only on it; dropped by a real pointer event */
-  const seedRef = useRef<Pt | null>(null);
+  const seedRef = useRef<CursorSeed | null>(null);
+  /** REQ-539 (m24) — /admin's hand-off: where his mouse is, for the off hint only (never sent,
+   *  never his pointer); dropped by a real pointer event */
+  const hintRef = useRef<Pt | null>(null);
   /** REQ-451 — the ghost of his arrow where their screen has it, while that is apart from his
    *  cursor (their page moved it with its element, or the frame moved) */
   const [ghost, setGhost] = useState<{ at: Pt; outside: boolean } | null>(
     null,
   );
+  /** REQ-538 (cycle 4 M1) — his arrow is not on their screen (what he pointed at went: a card
+   *  swapped, a new page) until he moves or the settled replay looks his still mouse up again */
+  const [absent, setAbsent] = useState(false);
   /** REQ-214 — how a colleague's pointer is driven, for the placing again */
   const commandRef = useRef<
     ((pid: string, cmd: Omit<PointerCmd, "seq">) => void) | null
@@ -378,6 +412,7 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
     sentAtRef.current = at;
     provisionalRef.current = provisional;
     setGhost(null);
+    setAbsent(false); // REQ-538 — made where he points now: drawn there
     return a;
   };
   /** REQ-451 — nothing pointed at (his mouse left the window, the demo went) */
@@ -387,6 +422,7 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
     sentAtRef.current = null;
     provisionalRef.current = false;
     setGhost(null);
+    setAbsent(false);
   };
   /** REQ-242 — a point of this screen as the customer's: the fraction of the frame and, when the
    *  replay has one there, the mirrored element under it and where in its box */
@@ -421,6 +457,20 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
       if (p) return { x: f.left + p.x * f.s, y: f.top + p.y * f.s };
     }
     return fracToPoint(a, f);
+  };
+  /** REQ-546 (demo m14, cycle 4) — the frame as a click wave sees it: its node's point while the
+   *  replay shows that page load and has the node, else none — never the click's fraction */
+  const waveFrame = (): WaveFrame => {
+    const f = fitBox();
+    return {
+      box: f,
+      load: loadRef.current,
+      nodeAt: (a) => {
+        if (!a.n?.l || a.n.l !== loadRef.current) return null;
+        const p = replayerRef.current?.pointOf(a.n);
+        return p ? { x: f.left + p.x * f.s, y: f.top + p.y * f.s } : null;
+      },
+    };
   };
   /** REQ-451 — a presenter's pointer on this frame (a colleague's, or this one's ghost): on the
    *  node it names while the replay shows that page load and has the node; else nowhere — never
@@ -493,7 +543,46 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
   const resendPointer = () => {
     const a = resendable(heldNow(), loadRef.current);
     if (a) linkRef.current?.send({ k: "move", a, t: performance.now() });
+    // REQ-538 (cycle 4 M1) — a node anchor of another page is dead here: once this page's replay
+    // has settled, his still mouse is looked up again, once (else the next layout pass does it)
+    else if (
+      lookAgain(heldNow(), {
+        load: loadRef.current,
+        settled: !!replayerRef.current?.settled(),
+      })
+    ) reanchorSoon();
   };
+  /** REQ-538 (cycle 4 M1) — his anchor died (its node gone, another page): his still mouse is
+   *  looked up again once the replay's layout has been still for a moment and its snapshot's
+   *  settle passes are done (reanchorDelay) — each layout pass meanwhile starts the wait again —
+   *  and only if the anchor is still dead then (he has not moved) */
+  const reanchorSoon = () => {
+    if (reanchorTimerRef.current) clearTimeout(reanchorTimerRef.current);
+    reanchorTimerRef.current = setTimeout(
+      () => {
+        reanchorTimerRef.current = null;
+        reanchorRef.current();
+      },
+      reanchorDelay(
+        Date.now(),
+        snapAtRef.current,
+        SETTLE_MS[SETTLE_MS.length - 1],
+      ),
+    );
+  };
+  const reanchor = () => {
+    const held = heldNow();
+    if (!held.a?.n) return;
+    if (
+      lookAgain(held, {
+        load: loadRef.current,
+        settled: !!replayerRef.current?.settled(),
+        alive: !!presenterOnStage(held.a),
+      })
+    ) rest.push(null);
+  };
+  const reanchorRef = useRef(reanchor);
+  reanchorRef.current = reanchor;
   /** REQ-305 — the resting pointer on the node under it in the styled replay, sent when that is
    *  not what went last; REQ-451 — only for a fraction made before the replay could name a node
    *  (lookAgain), or his mouse beside a frame that moved — never because the page moved under it */
@@ -515,21 +604,27 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
     }), []);
   /** REQ-393 — whether his mouse is beside the fitted frame (the outline and the hint) */
   const markOff = () => {
-    const p = lastMoveRef.current;
+    const p = lastMoveRef.current ?? hintRef.current;
     setOff(!!p && fitted() && outsideBox(p, fitBox()));
   };
-  /** REQ-393 / REQ-451 (M14) — the mouse the opening page handed over, once the frame is fitted
-   *  to their screen: on the frame he points there from the start; beside it (the Demo button at
-   *  the right of /admin's row) it says nothing of their screen — unknown until he moves */
+  /** REQ-393 / REQ-451 (M14) — the mouse handed over, once the frame is fitted to their screen;
+   *  REQ-539 (m24) — only the stage's own (a reload) on the frame is where he points and is sent;
+   *  /admin's (the Demo click — on a desktop customer's frame, over her mic button) is only where
+   *  his mouse is: the off hint, nothing on their screen until he moves */
   const takeSeed = () => {
     const s = seedRef.current;
     if (!s || !fitted()) return;
     seedRef.current = null;
-    const p = seedOn(s, fitBox());
-    if (!p || lastMoveRef.current) return;
-    lastMoveRef.current = p;
+    const use = seedUse(s, fitBox());
+    if (!use || lastMoveRef.current) return;
+    if (!use.send) {
+      hintRef.current = use.at;
+      markOff();
+      return;
+    }
+    lastMoveRef.current = use.at;
     markOff();
-    if (linkRef.current) throttle.push(p);
+    if (linkRef.current) throttle.push(use.at);
   };
 
   /** REQ-305 — where an anchor's pointer is drawn: on the frame's edge, pointing outside, when the
@@ -567,7 +662,7 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
   const replace = () => {
     checkStyled(); // REQ-370 — a stylesheet of the replay may just have loaded
     showCustomer();
-    setWaves((w) => placeWavesAgain(w, (a) => placeOnStage(a).at));
+    setWaves((w) => placeWavesAgain(w, waveFrame()));
     for (const [pid, a] of peersRef.current) {
       const p = presenterOnStage(a);
       const was = placedRef.current.get(pid);
@@ -584,13 +679,25 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
     takeSeed();
     // REQ-451 (M1) — never the spot under his still mouse again (the customer's arrow stayed over
     // whatever their scroll or a new page put there): only a fraction made before this page's
-    // replay settled is looked up, once it has — and his mouse beside the frame, which moves
+    // replay settled is looked up, once it has — and his mouse beside the frame, which moves.
+    // REQ-538 (cycle 4 M1) — and an anchor that died (its node gone from the replay: a card
+    // swapped or flipped; another page shown), once the replay has settled: one look-up, which
+    // makes a live anchor again; never while its node is there. A dead node anchor waits for
+    // the replay to be still (reanchorSoon); a provisional fraction and his mouse beside the
+    // frame are looked up at once
+    const held = heldNow();
+    const alive = !!held.a && !!presenterOnStage(held.a);
+    setAbsent(pointerAbsent(held, alive));
     if (
-      lookAgain(heldNow(), {
+      lookAgain(held, {
         load: loadRef.current,
         settled: !!replayerRef.current?.settled(),
+        alive,
       })
-    ) rest.push(null);
+    ) {
+      if (held.a?.n) reanchorSoon();
+      else rest.push(null);
+    }
     showGhost();
   };
   const replaceRef = useRef(replace);
@@ -654,6 +761,7 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
     }
     if (f.t === "snap") {
       dirtyRef.current = false;
+      snapAtRef.current = Date.now(); // REQ-538 — its settle passes run from now
       if (newLoad) {
         // a new page: the customer's pointer was on the old one
         if (customerRef.current?.n?.l !== load) {
@@ -763,13 +871,21 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
       try {
         const a = await demoModeClient.active();
         if (!alive) return;
-        if (a.session && a.role === "presenter") {
+        const next = afterActiveCheck({
+          found: Boolean(a.session && a.role === "presenter"),
+          shown: shownRef.current,
+        });
+        if (next === "show" && a.session) {
           const found: Demo = { ...a.session, pid: a.pid };
+          shownRef.current = true;
           setDemo((d) => sameDemo(d, found) ? d : found);
           setGone(false);
         } else {
           setDemo(null);
           setGone(true);
+          // REQ-541 (M22) — the demo this stage showed is over (ended from another window of
+          // this account, which a replaced window never hears): never left as the customer
+          if (next === "handBack") handBack();
         }
       } catch {
         // signed out, or the backend is away
@@ -864,9 +980,14 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
         }
         if (s === "closed") {
           demoModeClient.active().then((a) => {
-            if (!a.session) {
+            const next = afterActiveCheck({
+              found: Boolean(a.session),
+              shown: shownRef.current,
+            });
+            if (next !== "show") {
               setDemo(null);
               setGone(true);
+              if (next === "handBack") handBack(); // REQ-541 (M22)
             }
           }).catch(() => setDemo(null));
         }
@@ -889,9 +1010,11 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
           loadRef.current = null;
         }
         resendPointer();
-        // REQ-295 — their new page tells where its pill is; the old ghost goes
-        setPillBox(null);
-        setPillFace({});
+        // REQ-295 — their new page tells where its pill is. REQ-540 (cycle 4, m9) — until it
+        // does, the ghost stays where the pill was and says "Connecting…" (the new page's pill is
+        // connecting and cannot say so: its face rides the link that is opening) — never a blank
+        // and then a "Connected" the customer's pill never showed
+        setPillFace((f) => pillFaceAwaiting(f));
       },
       onPeer: (m: PeerMessage, from: PeerFrom) => {
         if (from.role === "presenter") {
@@ -932,7 +1055,7 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
               p.outside ? null : rectOnStage(m.a),
             );
             const id = ++waveId.current;
-            setWaves((w) => [...w, { id, ...p.at, a: m.a }]);
+            setWaves((w) => [...w, newStageWave(id, m.a, waveFrame())]);
             setTimeout(
               () => setWaves((w) => w.filter((x) => x.id !== id)),
               WAVE_MS,
@@ -953,11 +1076,18 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
               clipped: m.clipped,
               label: m.label,
               guide: m.guide,
+              // REQ-545 (cycle 4, m2) — tucked to its tab, and the band the customer sees
+              tucked: m.tucked,
+              band: m.band,
+              bandBg: m.bandBg,
+              title: m.title,
+              end: m.end,
             });
             break;
         }
       },
       onEnded: (by, reason, pid) => {
+        leavingRef.current = true; // REQ-541 — the notice below says who ended it
         setEnded(true);
         customerRef.current = null;
         peersRef.current.clear();
@@ -1031,6 +1161,10 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
       if (styleTimerRef.current) clearTimeout(styleTimerRef.current);
       styleTimerRef.current = null;
       firstSnapAtRef.current = null;
+      // REQ-538 — no look-up of his mouse for a demo that went
+      if (reanchorTimerRef.current) clearTimeout(reanchorTimerRef.current);
+      reanchorTimerRef.current = null;
+      snapAtRef.current = null;
       styledRef.current = false;
       setStyled(false);
       setPeerOnline(false);
@@ -1049,6 +1183,7 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
     const at = (e: PointerEvent) => {
       const p = { x: e.clientX, y: e.clientY };
       seedRef.current = null; // REQ-451 — a real event says where the mouse is
+      hintRef.current = null;
       lastMoveRef.current = p;
       markOff();
       if (fitted() && linkRef.current) throttle.push(p);
@@ -1056,13 +1191,16 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
     const gone = () => {
       lastMoveRef.current = null;
       seedRef.current = null;
+      hintRef.current = null;
       drop();
       throttle.cancel();
       rest.cancel();
       setOff(false);
       linkRef.current?.send({ k: "leave" });
     };
-    const hand = () => handCursor(sessionStore(), lastMoveRef.current);
+    // REQ-539 (m24) — the stage's own hand-off: a reload is the same page, the same spot
+    const hand = () =>
+      handCursor(sessionStore(), lastMoveRef.current, Date.now(), "stage");
     const opts = { capture: true, passive: true };
     document.addEventListener("pointermove", at, opts);
     document.addEventListener("pointerover", at, opts);
@@ -1090,9 +1228,18 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
     globalThis.location.href = endedHref(notice);
   }
 
+  /** REQ-541 (cycle 4, M22) — the demo went without this stage hearing who ended it: back to
+   *  the presenter's own account, once */
+  function handBack() {
+    if (leavingRef.current) return;
+    leavingRef.current = true;
+    void backToOwnAccount({ by: "unknown" });
+  }
+
   async function end() {
     // REQ-235 + REQ-179 — said at once, before the server answers
     endedHere.current = true;
+    leavingRef.current = true;
     setEnded(true);
     linkRef.current?.end();
     try {
@@ -1101,6 +1248,21 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
       // the socket's end reaches the server too
     }
     setTimeout(() => void backToOwnAccount({ by: "you" }), 800);
+  }
+
+  /** REQ-537 (m36) — with others presenting: leave the demo (it goes on with them), hand the
+   *  account back, and go to /admin — what the banner's Return did on the stage, now in the pill */
+  async function leave() {
+    if (!demo || leavingHere) return;
+    setLeavingHere(true);
+    await demoModeClient.leave(demo.id).catch(() => {});
+    try {
+      const who = await adminClient.whoami();
+      if (who.impersonating) await adminClient.stopImpersonating();
+    } catch {
+      // not impersonating, or signed out
+    }
+    globalThis.location.href = "/admin";
   }
 
   const sendClick = (x: number, y: number) =>
@@ -1164,18 +1326,24 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
           >
             <div style="text-align:center;display:grid;gap:12px">
               <strong>{t("demoMode.noDemo")}</strong>
-              <a
-                href="/admin"
-                style="color:#fff;text-decoration:underline;font-size:13px"
+              {
+                /* REQ-541 (M22) — stop impersonating first: a plain link left the presenter as
+                  the customer, under /admin's "You are guiding … in this browser" */
+              }
+              <button
+                type="button"
+                data-cy="demo-stage-back"
+                onClick={() => void backToOwnAccount({ by: "unknown" })}
+                style="color:#fff;text-decoration:underline;font-size:13px;background:none;border:0;padding:0;cursor:pointer;font:inherit"
               >
                 {t("demoMode.backToAdmin")}
-              </a>
+              </button>
             </div>
           </div>
         )
         : demo && (
           <>
-            {look.visibility === "hidden" && (
+            {look.visibility === "hidden" && !look.elsewhere && (
               <div
                 data-cy="demo-connecting"
                 role="status"
@@ -1220,11 +1388,49 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
                 style={`display:block;border:0;width:${screen.w}px;height:${screen.h}px;transform:scale(${fit.s});transform-origin:0 0;pointer-events:none;background:#fff`}
               />
             </div>
-            {mirrored && pillBox && (() => {
+            {mirrored && (() => {
+              // REQ-545 (demo-loop cycle 4, m2) — the customer's band, where their screen paints
+              // it: the mirror skips the overlay, so without this the presenter saw content
+              // (QUOTES PENDING) that the customer's band hid
+              const b = bandGhostBox(pillFace.band ?? 0, screen, fit);
+              if (!b) return null;
+              return (
+                <div
+                  data-cy="demo-band-ghost"
+                  aria-hidden="true"
+                  style={`position:fixed;left:${b.left}px;top:${b.top}px;width:${b.width}px;height:${b.height}px;z-index:${
+                    Z - 1
+                  };background:${
+                    pillFace.bandBg ?? "#fff"
+                  };pointer-events:none`}
+                />
+              );
+            })()}
+            {mirrored && pillBox && pillFace.tucked === true && (() => {
+              // REQ-545 — the pill tucked to its edge tab on their screen: a tab here too
+              const ghost = pillGhost(pillBox, fit);
+              if (!ghost) return null;
+              const g = ghost.box;
+              return (
+                <div
+                  data-cy="demo-pill-ghost"
+                  data-tucked=""
+                  aria-hidden="true"
+                  title={t("demoMode.pillGhost", { name })}
+                  style={`position:fixed;left:${g.left}px;top:${g.top}px;width:${g.width}px;height:${g.height}px;z-index:${Z};box-sizing:border-box;border-radius:0 ${
+                    Math.max(3, 10 * fit.s)
+                  }px ${
+                    Math.max(3, 10 * fit.s)
+                  }px 0;background:rgba(31,61,27,.78);pointer-events:none`}
+                />
+              );
+            })()}
+            {mirrored && pillBox && pillFace.tucked !== true && (() => {
               // REQ-372 (cycle 2, m1 + m8) — cut to the frame, and a read-only replica of what
               // the pill says, and a marker when the pill runs off their screen or past the frame.
               // REQ-430 (cycle 3, m4) — its status in the CUSTOMER's words (their pill's label),
               // its line unless compact and closed, then the guide's short name, as on the phone
+              // REQ-540 (cycle 4, m9) — the whole pill: its "Demo mode" title and End (a disabled chip)
               const ghost = pillGhost(pillBox, fit);
               if (!ghost) return null;
               const g = ghost.box;
@@ -1245,6 +1451,14 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
                     Math.max(2, 8 * fit.s)
                   }px;overflow:hidden;white-space:nowrap;font-family:${PILL_FONT};font-size:${px}px;line-height:1.1`}
                 >
+                  {words.title && (
+                    <strong
+                      data-cy="demo-pill-ghost-title"
+                      style="flex:none"
+                    >
+                      {words.title}
+                    </strong>
+                  )}
                   {words.text && (
                     <span
                       data-cy="demo-pill-ghost-text"
@@ -1267,6 +1481,16 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
                       style="flex:none;padding:1px 4px;border-radius:999px;background:rgba(255,255,255,.18);font-weight:700"
                     >
                       {words.status}
+                    </span>
+                  )}
+                  {words.end && (
+                    // REQ-540 (cycle 4, m9) — the pill's End, drawn as a chip the stage cannot use
+                    <span
+                      data-cy="demo-pill-ghost-end"
+                      aria-disabled="true"
+                      style="flex:none;padding:1px 5px;border-radius:5px;background:#fff;color:#7a2e2e;font-weight:700;opacity:.6"
+                    >
+                      {words.end}
                     </span>
                   )}
                   {cut && (
@@ -1300,7 +1524,32 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
                 </div>
               </div>
             )}
-            {mirrored && (
+            {look.elsewhere && !ended && (
+              // REQ-541 (cycle 4, M22) — another window of this account has the demo: the greyed
+              // frame says so across it, with the way to take it back
+              <div
+                data-cy="demo-elsewhere"
+                role="status"
+                style={`position:absolute;left:${fit.left}px;top:${
+                  fit.top - bannerH + fit.height / 2
+                }px;width:${fit.width}px;transform:translateY(-50%);z-index:${
+                  Z + 2
+                };box-sizing:border-box;padding:0 12px;color:#fff;font:inherit`}
+              >
+                <div style="display:flex;flex-wrap:wrap;gap:8px 12px;align-items:center;justify-content:center;text-align:center;padding:14px 16px;border-radius:10px;background:rgba(18,26,22,.92);box-shadow:0 4px 18px rgba(0,0,0,.45);font-size:14px;line-height:1.35">
+                  <strong>{t("demoMode.movedElsewhere")}</strong>
+                  <button
+                    type="button"
+                    data-cy="demo-elsewhere-use-here"
+                    onClick={() => globalThis.location.reload()}
+                    style="padding:5px 12px;border-radius:8px;border:0;background:#fff;color:#1f3d1b;cursor:pointer;font:inherit;font-size:13px;font-weight:700"
+                  >
+                    {t("demoMode.useHere")}
+                  </button>
+                </div>
+              </div>
+            )}
+            {mirrored && !look.elsewhere && (
               <div
                 data-cy="demo-stage-layer"
                 aria-hidden="true"
@@ -1338,6 +1587,22 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
                 };pointer-events:none;white-space:nowrap;padding:4px 12px;border-radius:999px;border:1px solid rgba(255,255,255,.85);background:#1f3d1b;color:#fff;font:inherit;font-size:12.5px;font-weight:700;box-shadow:0 2px 10px rgba(0,0,0,.45)`}
               >
                 {t("demoMode.pointerOff", { name })}
+              </div>
+            )}
+            {/* REQ-538 (demo cycle 4 M1) — his arrow is not on their screen: said, until it is */}
+            {mirrored && absent && !off && (
+              <div
+                data-cy="demo-pointer-absent"
+                role="status"
+                style={`position:absolute;left:${
+                  fit.left + fit.width / 2
+                }px;top:${
+                  fit.top - bannerH
+                }px;transform:translate(-50%,-50%);z-index:${
+                  Z + 2
+                };pointer-events:none;white-space:nowrap;padding:4px 12px;border-radius:999px;border:1px solid rgba(255,255,255,.85);background:#3d2e1b;color:#fff;font:inherit;font-size:12.5px;font-weight:700;box-shadow:0 2px 10px rgba(0,0,0,.45)`}
+              >
+                {t("demoMode.pointerAbsent", { name })}
               </div>
             )}
           </>
@@ -1380,7 +1645,7 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
             />
             {t("demoMode.presenting", { name })}
           </span>
-          <PresenterChips presenters={demo.presenters} me={demo.pid} />
+          <PresenterChips presenters={demo.presenters} me={demo.pid} t={t} />
           <span
             data-cy="demo-status"
             style="padding:2px 8px;border-radius:999px;background:rgba(255,255,255,.18);font-size:11.5px;font-weight:700"
@@ -1419,8 +1684,20 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
               })}
             </span>
           )}
+          {/* REQ-537 (m36) — with other presenters, Leave is the secondary way out (outlined) */}
+          {stageLeaveShown(demo.presenters.length) && !ended && (
+            <button
+              type="button"
+              data-cy="demo-leave"
+              onClick={() => void leave()}
+              disabled={leavingHere}
+              style="padding:4px 11px;border-radius:8px;border:1px solid rgba(255,255,255,.75);background:transparent;color:#fff;cursor:pointer;font:inherit;font-size:12px;font-weight:700"
+            >
+              {t("demoMode.leave")}
+            </button>
+          )}
           {/* REQ-235 — End asks first */}
-          <EndDemo onEnd={end} disabled={ended} />
+          <EndDemo onEnd={end} disabled={ended || leavingHere} t={t} />
         </div>
       )}
     </div>

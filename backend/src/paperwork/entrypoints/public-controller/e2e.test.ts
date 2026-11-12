@@ -489,6 +489,7 @@ Deno.test("public e2e: POST /invoices/:id/claim-payment flips status to claimed 
         dueDate: "2026-06-01",
         amount: 100_00,
         status: "sent",
+        billTo: { name: "Ann Lee" }, // REQ-550: an issued invoice bills someone
       }),
     }).then((r) => r.json());
 
@@ -542,6 +543,7 @@ Deno.test("public e2e: claim-payment rejects unknown methods", async () => {
         dueDate: "2026-06-01",
         amount: 100,
         status: "sent",
+        billTo: { name: "Ann Lee" }, // REQ-550: an issued invoice bills someone
       }),
     }).then((r) => r.json());
 
@@ -582,6 +584,7 @@ Deno.test("public e2e: claim-payment is 409 when invoice already paid", async ()
         dueDate: "2026-06-01",
         amount: 100,
         status: "paid",
+        billTo: { name: "Ann Lee" }, // REQ-550: an issued invoice bills someone
       }),
     }).then((r) => r.json());
 
@@ -742,6 +745,87 @@ Deno.test("REQ-252 public e2e: a logo on record that is not an image (left by th
     await drain(ok);
     const pub2 = await fetch(`http://localhost:${PORT}/quotes/${q.id}/public`).then((r) => r.json());
     assertEquals(pub2.contractor.hasLogo, true);
+  } finally {
+    await server.stop();
+    await resetKv();
+  }
+});
+
+// ── REQ-613 (demo-loop cycle 4, issue M31): a replaced logo reaches a sent quote at once ──
+
+Deno.test("REQ-613 public e2e: the public quote/invoice carry logoVersion, replacing the logo changes it; ?v=<current> is cached immutably, a bare or stale URL revalidates (no-cache + ETag, 304 on a match)", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const server = await bootstrapServer(TestApp, { port: PORT, swagger: false });
+  await server.listen();
+  try {
+    const sid = await login(PORT);
+    const headers = { "content-type": "application/json", "x-session-id": sid };
+    const q = await fetch(`http://localhost:${PORT}/quotes`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ summary: "Job", lineItems: [] }),
+    }).then((r) => r.json());
+    const inv = await fetch(`http://localhost:${PORT}/invoices`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ dueDate: "2026-05-01", amount: 1_000 }),
+    }).then((r) => r.json());
+    const pngB64 =
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==";
+    const upload = async () =>
+      (await fetch(`http://localhost:${PORT}/files`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ filename: "logo.png", mimeType: "image/png", base64: pngB64 }),
+      }).then((r) => r.json())) as { id: string; userId: string };
+
+    const orange = await upload();
+    await new BusinessIdentityStore().upsert(orange.userId, { businessName: "Ana Roofing", logoFileId: orange.id });
+    const pubQ1 = await fetch(`http://localhost:${PORT}/quotes/${q.id}/public`).then((r) => r.json());
+    const v1 = pubQ1.contractor.logoVersion as string;
+    assert(typeof v1 === "string" && v1.length > 0, "the public quote carries the logo's version");
+    assertEquals(v1.includes(orange.id), false, "the file id never leaks");
+    const pubI1 = await fetch(`http://localhost:${PORT}/invoices/${inv.id}/public`).then((r) => r.json());
+    assertEquals(pubI1.contractor.logoVersion, v1, "the public invoice carries the same version");
+
+    // the versioned URL: a long immutable cache — its bytes can never change under it
+    const versioned = await fetch(`http://localhost:${PORT}/public-logo/quote/${q.id}?v=${v1}`);
+    assertEquals(versioned.status, 200);
+    await drain(versioned);
+    const vcc = versioned.headers.get("cache-control") ?? "";
+    assert(vcc.includes("immutable") && vcc.includes("max-age=31536000"), `versioned: ${vcc}`);
+
+    // the bare URL (an old page or email): always revalidated, with the version as its ETag
+    const bare = await fetch(`http://localhost:${PORT}/public-logo/quote/${q.id}`);
+    assertEquals(bare.status, 200);
+    await drain(bare);
+    assertEquals(bare.headers.get("cache-control"), "no-cache");
+    const etag = bare.headers.get("etag");
+    assertEquals(etag, `"${v1}"`);
+    const same = await fetch(`http://localhost:${PORT}/public-logo/quote/${q.id}`, {
+      headers: { "if-none-match": etag! },
+    });
+    await drain(same);
+    assertEquals(same.status, 304, "an unchanged logo revalidates to 304");
+
+    // the demo's step: "Reemplazar logo" → blue
+    const blue = await upload();
+    await new BusinessIdentityStore().upsert(blue.userId, { logoFileId: blue.id });
+    const pubQ2 = await fetch(`http://localhost:${PORT}/quotes/${q.id}/public`).then((r) => r.json());
+    const v2 = pubQ2.contractor.logoVersion as string;
+    assert(v2 && v2 !== v1, "a new logo is a new version → the sent quote's <img> URL changes");
+    const after = await fetch(`http://localhost:${PORT}/public-logo/quote/${q.id}`, {
+      headers: { "if-none-match": etag! },
+    });
+    assertEquals(after.status, 200, "the old ETag no longer matches — the new logo is served");
+    assertEquals(after.headers.get("etag"), `"${v2}"`);
+    await drain(after);
+    // a stale ?v= (an old email) gets the current logo but must not be cached as immutable
+    const stale = await fetch(`http://localhost:${PORT}/public-logo/quote/${q.id}?v=${v1}`);
+    assertEquals(stale.status, 200);
+    await drain(stale);
+    assertEquals(stale.headers.get("cache-control"), "no-cache");
   } finally {
     await server.stop();
     await resetKv();

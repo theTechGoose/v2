@@ -271,7 +271,10 @@ export const fieldClient = {
       language?: "en" | "es";
     },
     opts?: ApiOptions,
-  ) => api.post<FieldWorker & { texted: boolean }>("/field/workers", b, opts), // REQ-151 — texted: the welcome text went out
+  ) =>
+    api.post<
+      FieldWorker & { texted: boolean; signInUrl?: string; shareText?: string }
+    >("/field/workers", b, opts), // REQ-151 — texted: the welcome text went out; REQ-601 — signInUrl + shareText: what to share when it didn't
   /** REQ-155 — the worker's language, changed from the row */
   setWorkerLanguage: (id: string, language: "en" | "es", opts?: ApiOptions) =>
     api.put<FieldWorker>(`/field/workers/${id}`, { language }, opts),

@@ -36,6 +36,11 @@ export class VerifyOtpDto {
   @MinLength(6)
   @MaxLength(6)
   code!: string;
+
+  /** REQ-590: the language showing on /verify — a new account is born in it */
+  @IsOptional()
+  @IsIn(["en", "es"])
+  language?: Language;
 }
 
 /** REQ-130: POST /auth/dev-login { token, phoneNumber } — the service token

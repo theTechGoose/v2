@@ -47,11 +47,23 @@ import PaymentsKpis from "../components/PaymentsKpis.tsx";
 import { docNumberOf } from "../../shared/documents/numbering.ts";
 import { type PaymentClaim, pendingClaims } from "../lib/payment-claims.ts";
 import { cashFlowWeeks } from "../lib/cash-flow-weeks.ts";
+import { creditedPayments } from "../lib/headline-counts.ts";
+import { refreshDash } from "../lib/dash-cache.ts";
+import { paymentCardCtaHref, paymentCardLinks } from "../lib/payment-card.ts";
+import { interpretSendResult } from "../../shared/quote-flow/send-result.ts";
+import {
+  recordOptionLabel,
+  type RecordOptionInvoice,
+} from "../lib/payment-record-option.ts";
 
 /** Plural helper bound to an explicit language (the reactive `tn` reads the
  *  global lang signal; the logged-in app threads `lang` explicitly). */
-const tnFor = (lang: Lang, key: string, n: number, vars?: Record<string, string | number>): string =>
-  tFor(lang, `${key}.${n === 1 ? "one" : "other"}`, { n, ...vars });
+const tnFor = (
+  lang: Lang,
+  key: string,
+  n: number,
+  vars?: Record<string, string | number>,
+): string => tFor(lang, `${key}.${n === 1 ? "one" : "other"}`, { n, ...vars });
 import QuoteTrack from "./QuoteTrack.tsx";
 
 interface State {
@@ -351,7 +363,23 @@ export default function PaymentsPage({ lang: _lang }: { lang?: Lang } = {}) {
   const recentLanded = landed.filter((p) => p.daysAgo <= 1);
   const olderLanded = landed.filter((p) => p.daysAgo > 1);
 
-  const monthTotal = landed.reduce((sum, p) => sum + p.amount, 0);
+  // REQ-551 (demo B2): one "paid" definition with /invoices — a payment
+  // counts what its bill still owed when it arrived; the overpaid rest is
+  // its own line under the hero, never part of the total.
+  const credited = creditedPayments(
+    s.payments,
+    Array.isArray(s.invoices) ? s.invoices : [],
+  );
+  const creditOf = (p: { id: string; amount: number }) =>
+    credited.get(p.id) ?? { creditedCents: p.amount, overCents: 0 };
+  const monthTotal = landed.reduce(
+    (sum, p) => sum + creditOf(p).creditedCents,
+    0,
+  );
+  const monthOverpaid = landed.reduce(
+    (sum, p) => sum + creditOf(p).overCents,
+    0,
+  );
   const transitTotal = transit.reduce((sum, p) => sum + p.amount, 0);
   const attentionTotal = attention.reduce((sum, p) => sum + p.amount, 0);
 
@@ -364,9 +392,11 @@ export default function PaymentsPage({ lang: _lang }: { lang?: Lang } = {}) {
     if (!Number.isFinite(issued) || !Number.isFinite(received)) return [];
     return [Math.max(0, Math.floor((received - issued) / (24 * 3600 * 1000)))];
   });
+  // REQ-562 (demo-loop cycle 4, m21): null = no landed payment yet; a
+  // same-day payment averages 0 days, which is history, not "no history".
   const avgDays = daysToPay.length > 0
     ? Math.round(daysToPay.reduce((s, d) => s + d, 0) / daysToPay.length)
-    : 0;
+    : null;
 
   // Top three landed for the hero stub stack (rotated cards)
   const stubs = recentLanded.slice(0, 3);
@@ -376,6 +406,7 @@ export default function PaymentsPage({ lang: _lang }: { lang?: Lang } = {}) {
       <PaymentsHero
         lang={lang}
         monthTotal={monthTotal}
+        monthOverpaid={monthOverpaid}
         transitTotal={transitTotal}
         attentionCount={attention.length}
         stubs={stubs}
@@ -384,9 +415,14 @@ export default function PaymentsPage({ lang: _lang }: { lang?: Lang } = {}) {
           .map((i) => ({
             id: i.id,
             amountCents: i.amount,
-            label: `${(i as { jobName?: string }).jobName ?? "Invoice"} · ${
-              customerNames.get(i.customerId ?? "") ?? "—"
-            } · ${fmtMoney(i.amount ?? 0)}`,
+            paidCents: i.paidCents, // REQ-551
+            // REQ-587 (cycle 4, M27): number → job name in the app's
+            // language → the localized word; never a hard-coded "Invoice".
+            label: recordOptionLabel(
+              lang,
+              i as Invoice & RecordOptionInvoice,
+              customerNames.get(i.customerId ?? ""),
+            ),
           }))}
         onRecorded={load}
       />
@@ -492,14 +528,27 @@ export default function PaymentsPage({ lang: _lang }: { lang?: Lang } = {}) {
 /* ---------------- Hero ---------------- */
 
 function PaymentsHero(
-  { lang, monthTotal, transitTotal, attentionCount, stubs, recordOptions, onRecorded }: {
+  {
+    lang,
+    monthTotal,
+    monthOverpaid = 0,
+    transitTotal,
+    attentionCount,
+    stubs,
+    recordOptions,
+    onRecorded,
+  }: {
     lang: Lang;
     monthTotal: number;
+    /** REQ-551: received this month beyond what the bills owed. */
+    monthOverpaid?: number;
     transitTotal: number;
     attentionCount: number;
     stubs: EnrichedPayment[];
     /** REQ-019 (NW-33): unpaid invoices the contractor can record against. */
-    recordOptions: Array<{ id: string; label: string; amountCents?: number }>;
+    recordOptions: Array<
+      { id: string; label: string; amountCents?: number; paidCents?: number }
+    >;
     onRecorded: () => Promise<void>;
   },
 ) {
@@ -508,7 +557,10 @@ function PaymentsHero(
   const [recordId, setRecordId] = useState("");
   const recordInvoice = recordOptions.find((o) => o.id === recordId);
   const today = new Date();
-  const exportHref = `/api/invoices/export.csv?year=${today.getFullYear()}&month=${today.getMonth() + 1}`;
+  const exportHref =
+    `/api/invoices/export.csv?year=${today.getFullYear()}&month=${
+      today.getMonth() + 1
+    }`;
   // UX-35: the hero chip month renders in the page language ("PAGOS ·
   // AGOSTO"), never the en-US month inside the Spanish UI.
   const MONTH_KEYS = [
@@ -529,7 +581,8 @@ function PaymentsHero(
     lang,
     `dashboardPage.month.${MONTH_KEYS[new Date().getMonth()]}`,
   );
-  const fresh = monthTotal === 0 && transitTotal === 0 && attentionCount === 0;
+  const fresh = monthTotal === 0 && transitTotal === 0 &&
+    attentionCount === 0 && monthOverpaid === 0;
   return (
     <header class="pph">
       <div class="pph__main">
@@ -565,46 +618,51 @@ function PaymentsHero(
             )}
         </h1>
         <p class="pph__sub">
-          {fresh
-            ? <>{tFor(lang, "paymentsPage.hero.freshSub")}</>
-            : (
-              <>
-                {transitTotal > 0
-                  ? (
-                    <>
-                      {tFor(lang, "paymentsPage.hero.subPlus")}{" "}
-                      <strong>{fmtMoney(transitTotal)}</strong>{" "}
-                      {tFor(lang, "paymentsPage.hero.subOnTheWay")}
-                    </>
-                  )
-                  : attentionCount > 0
-                  // REQ-350: one counted sentence — never "logged. and 1 waiting"
-                  ? (
-                    <>
-                      {tnFor(
-                        lang,
-                        "paymentsPage.hero.everyDollarWaiting",
-                        attentionCount,
-                      )}
-                    </>
-                  )
-                  : <>{tFor(lang, "paymentsPage.hero.everyDollar")}</>}
-                {transitTotal > 0 && attentionCount > 0
-                  ? (
-                    <>
-                      {" "}
-                      {tFor(lang, "paymentsPage.hero.subAnd")}{" "}
-                      <strong>{attentionCount}</strong>{" "}
-                      {tFor(lang, "paymentsPage.hero.subUnstick")}
-                    </>
-                  )
-                  : null}
-                {transitTotal > 0
-                  ? <>{tFor(lang, "paymentsPage.hero.subMonsters")}</>
-                  : null}
-              </>
-            )}
+          {fresh ? <>{tFor(lang, "paymentsPage.hero.freshSub")}</> : (
+            <>
+              {transitTotal > 0
+                ? (
+                  <>
+                    {tFor(lang, "paymentsPage.hero.subPlus")}{" "}
+                    <strong>{fmtMoney(transitTotal)}</strong>{" "}
+                    {tFor(lang, "paymentsPage.hero.subOnTheWay")}
+                  </>
+                )
+                : attentionCount > 0
+                // REQ-350: one counted sentence — never "logged. and 1 waiting"
+                ? (
+                  <>
+                    {tnFor(
+                      lang,
+                      "paymentsPage.hero.everyDollarWaiting",
+                      attentionCount,
+                    )}
+                  </>
+                )
+                : <>{tFor(lang, "paymentsPage.hero.everyDollar")}</>}
+              {transitTotal > 0 && attentionCount > 0
+                ? (
+                  <>
+                    {" "}
+                    {tFor(lang, "paymentsPage.hero.subAnd")}{" "}
+                    <strong>{attentionCount}</strong>{" "}
+                    {tFor(lang, "paymentsPage.hero.subUnstick")}
+                  </>
+                )
+                : null}
+              {transitTotal > 0
+                ? <>{tFor(lang, "paymentsPage.hero.subMonsters")}</>
+                : null}
+            </>
+          )}
         </p>
+        {monthOverpaid > 0 && (
+          <p class="pph__sub" data-cy="payments-overpaid">
+            {tFor(lang, "paymentsPage.hero.overpaid", {
+              amount: fmtMoney(monthOverpaid),
+            })}
+          </p>
+        )}
         <div class="pph__cta-row">
           <button
             type="button"
@@ -645,10 +703,13 @@ function PaymentsHero(
                 <select
                   data-cy="payments-record-invoice"
                   value={recordId}
-                  onChange={(e) => setRecordId((e.target as HTMLSelectElement).value)}
+                  onChange={(e) =>
+                    setRecordId((e.target as HTMLSelectElement).value)}
                   style="width:100%;box-sizing:border-box;padding:9px 10px;border:1px solid var(--border,#d8dcd5);border-radius:8px;font:inherit;font-size:13.5px;background:#fff"
                 >
-                  <option value="">{tFor(lang, "paymentsPage.record.pick")}</option>
+                  <option value="">
+                    {tFor(lang, "paymentsPage.record.pick")}
+                  </option>
                   {recordOptions.map((o) => (
                     <option key={o.id} value={o.id}>{o.label}</option>
                   ))}
@@ -664,6 +725,7 @@ function PaymentsHero(
                   key={recordInvoice.id}
                   invoiceId={recordInvoice.id}
                   amountCents={recordInvoice.amountCents}
+                  paidCents={recordInvoice.paidCents}
                   lang={lang}
                   onSaved={async () => {
                     await onRecorded();
@@ -744,12 +806,60 @@ function PaymentCard(
   { lang, p, idx }: { lang: Lang; p: EnrichedPayment; idx: number },
 ) {
   const [flipped, setFlipped] = useState(false);
+  // REQ-555 (M24): "Text client" texts the invoice link (the receipt once
+  // paid) and says what happened — never a silent no-op.
+  const [texting, setTexting] = useState(false);
+  const [textResult, setTextResult] = useState<
+    { ok: boolean; msg: string } | null
+  >(null);
   const mood = STATUS_MOOD[p.status];
   const moodLabel = tFor(lang, `paymentsPage.mood.${p.status}.label`);
   const moodCta = tFor(lang, `paymentsPage.mood.${p.status}.cta`);
+  const links = paymentCardLinks(p.invoiceId);
+  async function doTextClient(e: Event) {
+    e.stopPropagation();
+    if (texting) return;
+    setTexting(true);
+    setTextResult(null);
+    try {
+      const r = await fetch(`/api/invoices/${p.invoiceId}/text`, {
+        method: "POST",
+        credentials: "include",
+      });
+      let body: unknown = null;
+      try {
+        body = await r.json();
+      } catch { /* empty / non-JSON body — interpret on r.ok alone */ }
+      const outcome = interpretSendResult({ httpOk: r.ok, body });
+      const raw = body && typeof body === "object" &&
+          typeof (body as { reason?: unknown }).reason === "string"
+        ? (body as { reason: string }).reason
+        : undefined;
+      setTextResult(
+        outcome.delivered
+          ? { ok: true, msg: tFor(lang, "paymentsPage.card.textSent") }
+          : outcome.reason === "noPhone"
+          ? { ok: false, msg: tFor(lang, "invoicesPage.new.needContact") }
+          : {
+            ok: false,
+            msg: tFor(lang, "paymentsPage.card.textFailed", {
+              reason: raw ?? outcome.reason ?? "unknown",
+            }),
+          },
+      );
+    } catch {
+      setTextResult({
+        ok: false,
+        msg: tFor(lang, "paymentsPage.card.textFailed", { reason: "http" }),
+      });
+    } finally {
+      setTexting(false);
+    }
+  }
   return (
     <article
       class={`qcard ${flipped ? "qcard--flipped" : ""}`}
+      data-cy="payment-card"
       onClick={(e) => {
         if (flipped) return;
         const t = e.target as HTMLElement;
@@ -775,14 +885,20 @@ function PaymentCard(
         <p class="qcard__story">{p.note}</p>
       </div>
       <div class="qcard__foot">
-        <button
-          type="button"
+        {/* REQ-555 (M24): the CTA goes somewhere — the receipt (landed) or
+            the invoice detail (in transit). */}
+        <a
           class="qcard__cta"
-          onClick={(e) => e.stopPropagation()}
+          data-cy="payment-card-cta"
+          href={paymentCardCtaHref(p.status, p.invoiceId)}
+          {...(p.status === "landed"
+            ? { target: "_blank", rel: "noopener noreferrer" }
+            : {})}
+          style="text-decoration:none"
         >
           {moodCta}{" "}
           <span style="display:inline-block;transition:transform 240ms">→</span>
-        </button>
+        </a>
         <div class="qcard__val-wrap">
           <div class="qcard__val-lbl">
             {p.status === "transit"
@@ -820,16 +936,40 @@ function PaymentCard(
         </div>
         <div class="qcard__back-body">
           <p class="qcard__read">{p.note}</p>
+          {textResult && (
+            <p
+              class="qcard__sendfail"
+              role={textResult.ok ? "status" : "alert"}
+              data-cy="payment-card-text-result"
+              style={textResult.ok
+                ? "padding:8px 0 0;color:var(--brand-green,#519843)"
+                : "padding:8px 0 0"}
+            >
+              {textResult.msg}
+            </p>
+          )}
         </div>
-        <div class="qcard__back-foot">
-          <button type="button" onClick={(e) => e.stopPropagation()}>
+        {/* REQ-555 (M24): every action has a destination — the receipt is
+            the paid invoice's page, the invoice opens its own detail. */}
+        <div class="qcard__back-foot" style="grid-template-columns:repeat(3,1fr)">
+          <a
+            data-cy="payment-card-receipt"
+            href={links.receipt}
+            target="_blank"
+            rel="noopener noreferrer"
+          >
             {tFor(lang, "paymentsPage.card.receipt")}
-          </button>
-          <button type="button" onClick={(e) => e.stopPropagation()}>
+          </a>
+          <a data-cy="payment-card-invoice" href={links.invoice}>
             {tFor(lang, "paymentsPage.card.matchInvoice")}
-          </button>
-          <button type="button" onClick={(e) => e.stopPropagation()}>
-            {tFor(lang, "paymentsPage.card.textClient")}
+          </a>
+          <button
+            type="button"
+            data-cy="payment-card-text"
+            onClick={doTextClient}
+            disabled={texting}
+          >
+            {texting ? "…" : tFor(lang, "paymentsPage.card.textClient")}
           </button>
         </div>
       </div>
@@ -880,6 +1020,9 @@ function ClaimCard(
         setFailed(true);
         return;
       }
+      // REQ-554 (demo-loop cycle 4, m23): the sidebar's Invoices badge
+      // reads the dash cache — a settled claim re-counts it.
+      refreshDash().catch(() => {/* the badge keeps its last count */});
       await onSettled();
     } catch {
       setFailed(true);
@@ -1006,8 +1149,8 @@ function PSideFlow(
       <svg width={w} height={h} style="display:block;width:100%;height:auto">
         <defs>
           <linearGradient id="cfArea" x1="0" x2="0" y1="0" y2="1">
-            <stop offset="0%" stopColor="#FF6B6B" stopOpacity="0.32" />
-            <stop offset="100%" stopColor="#FF6B6B" stopOpacity="0" />
+            <stop offset="0%" stop-color="#FF6B6B" stop-opacity="0.32" />
+            <stop offset="100%" stop-color="#FF6B6B" stop-opacity="0" />
           </linearGradient>
         </defs>
         <path d={area} fill="url(#cfArea)" />

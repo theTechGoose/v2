@@ -254,6 +254,17 @@ const NOTIF_ICON: Record<
     bg: "var(--teal-50)",
     fg: "var(--teal-600)",
   },
+  // REQ-566 (demo-loop cycle 4, m11): the owner's own work in the feed.
+  invoice_sent: {
+    icon: "invoice",
+    bg: "var(--pink-50)",
+    fg: "var(--pink-700)",
+  },
+  task_completed: {
+    icon: "hardhat",
+    bg: "var(--green-50)",
+    fg: "var(--green-600)",
+  },
   customer_replied: {
     icon: "msg",
     bg: "var(--coffee-50)",
@@ -314,6 +325,9 @@ interface State {
   /** REQ-473: scheduled installments — the "Upcoming" line. */
   scheduledInvoices: Invoice[];
   customers: Customer[];
+  /** REQ-566 (m11): the lists have landed. A warm start paints the cached
+   *  stats before them — no list panel claims "none" until this is true. */
+  listsLoaded: boolean;
 }
 
 const INITIAL: State = {
@@ -325,6 +339,7 @@ const INITIAL: State = {
   openInvoices: [],
   scheduledInvoices: [],
   customers: [],
+  listsLoaded: false,
 };
 
 function DashboardSkeleton() {
@@ -436,6 +451,7 @@ export default function DashboardPage(_props: { lang?: Lang } = {}) {
           openInvoices,
           scheduledInvoices,
           customers,
+          listsLoaded: true,
         });
       },
     ).catch((err: Error) => {
@@ -605,6 +621,7 @@ export default function DashboardPage(_props: { lang?: Lang } = {}) {
         outstandingOverdue={kpis.outstandingOverdue}
         pendingQuotes={kpis.pendingQuotes}
         pendingTotal={kpis.pendingTotal}
+        undeliveredQuotes={stats?.quotes.undelivered ?? 0}
         avgJob={kpis.avgJob}
         lang={lang}
       />
@@ -615,6 +632,8 @@ export default function DashboardPage(_props: { lang?: Lang } = {}) {
           lang={lang}
           hasDecidedHistory={(stats?.quotes.accepted ?? 0) > 0}
           draftCount={stats?.quotes.draft ?? 0}
+          undeliveredCount={stats?.quotes.undelivered ?? 0}
+          pending={!s.listsLoaded}
         />
       </div>
       <div class="grid">

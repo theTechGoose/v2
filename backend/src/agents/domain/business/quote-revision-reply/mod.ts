@@ -26,6 +26,31 @@ export function asksForDeposit(userText: string): boolean {
   return DEPOSIT_RE.test(userText);
 }
 
+/** REQ-585 (demo-loop cycle 4, M4) — "give Derek a second option … so he can
+ *  pick one?" / "dale otra opción". A quote has no options: every line on it
+ *  is billed. The model re-sent the same lines and the reply said "Updated
+ *  the quote." — so an option ask is answered plainly instead. */
+const OPTION_RE = new RegExp(
+  [
+    String
+      .raw`(?:second|another|other|2nd|two|three|multiple|different|several)\s+(?:options?|choices?|versions?)`,
+    String.raw`alternatives?`,
+    String.raw`(?:choose|pick|decide)\s+(?:one|between|which)`,
+    String.raw`good[\s,/-]+better[\s,/-]+best`,
+    String
+      .raw`(?:otra|segunda|dos|tres|varias|distintas|2|3)\s+opci(?:[oó]n|ones)`,
+    String.raw`alternativas?`,
+    String.raw`(?:para\s+que|que)\s+(?:escoja|elija|escojan|elijan|decida)`,
+    String.raw`(?:escoger|elegir|decidir)\s+entre`,
+  ].map((p) => String.raw`(?<![\p{L}\d])` + p + String.raw`(?![\p{L}\d])`)
+    .join("|"),
+  "iu",
+);
+
+export function asksForOption(userText: string): boolean {
+  return OPTION_RE.test(userText ?? "");
+}
+
 function key(description: string): string {
   return description.trim().toLowerCase().replace(/\s+/g, " ");
 }
@@ -49,6 +74,9 @@ export function describeQuoteRevision(
   before: RevisionLine[],
   after: RevisionLine[],
   userText: string,
+  /** REQ-585: something besides the lines changed (the summary, the job
+   *  details) — then an unchanged set of lines is still "Updated the quote." */
+  opts: { otherChange?: boolean } = {},
 ): string {
   const beforeByKey = new Map(before.map((l) => [key(l.description), l]));
   const afterKeys = new Set(after.map((l) => key(l.description)));
@@ -83,15 +111,20 @@ export function describeQuoteRevision(
     }
   }
 
+  const from = total(before);
+  const to = total(after);
+  // REQ-585 (M4): a re-draft that changed no line and no total says so —
+  // "Updated the quote." over an identical card claimed a change that never
+  // happened.
   const parts = [
     changes.length
       ? t(lang, "chatCoordinator.revision.updated", {
         changes: changes.join("; "),
       })
+      : from === to && !opts.otherChange
+      ? t(lang, "chatCoordinator.revision.noChange")
       : t(lang, "chatCoordinator.revision.updatedNoChange"),
   ];
-  const from = total(before);
-  const to = total(after);
   if (from !== to) {
     parts.push(
       t(lang, "chatCoordinator.revision.total", {
@@ -99,6 +132,9 @@ export function describeQuoteRevision(
         to: money(to),
       }),
     );
+  }
+  if (asksForOption(userText)) {
+    parts.push(t(lang, "chatCoordinator.revision.noOptions"));
   }
   if (asksForDeposit(userText)) {
     parts.push(t(lang, "chatCoordinator.revision.depositLater"));

@@ -99,9 +99,12 @@ export function pointerLook(resting: boolean): { arrow: number; tag: number } {
 }
 /** REQ-374 / REQ-437 — the gap between the tag and what it sits beside (the arrow, an element) */
 export const TAG_GAP = 6;
-/** REQ-437 — how far from the tip the tag may sit when it goes past an element's edge; an element
- *  larger than this around the tip (a card, a page) gives way to the tail placement */
-export const TAG_REACH = 140;
+/** REQ-543 (demo m6, cycle 4; was REQ-437's 140) — how far from the tip (to the tag's nearest
+ *  point) the tag may sit: next to the arrow, never past the far edge of a card or a chip, over
+ *  the next control. A side farther than this gives way to the arrow's tail. */
+export const TAG_REACH = 40;
+/** REQ-543 (demo m6) — the tag stays this far inside the box: never flush against its edge */
+export const TAG_EDGE = 4;
 
 export interface Rect {
   left: number;
@@ -113,86 +116,83 @@ export interface Rect {
  *  tail ("tail"; above the tip, "tail-up", only where the box's bottom leaves no room) */
 export type TagSide = "below" | "above" | "right" | "left" | "tail" | "tail-up";
 
-/** REQ-437 (demo m3 + p8-pair3-a, cycle 3; supersedes REQ-374's above-left) — the tag's own
- *  top-left, in the same px as `tip`, `box` and `rect`:
- *   - `rect` (the element the pointer is anchored to): past that element's edge with the most
- *     room in the box — below, above, right or left of it, and never over the arrow — so the tag
- *     covers none of what is pointed at;
- *   - no rect (or none of its edges is within TAG_REACH of the tip, or fits): below-right of the
- *     tip past the arrow's tail (ARROW_H + TAG_GAP down), above the tip only at the box's bottom;
- *   - always clamped inside `box` (the stage's frame, the customer's window), whatever the tip —
- *     `tip` is the DRAWN arrow (a glide in progress included) and `tag` its measured size. */
+const overlap = (a: Rect, b: Rect) =>
+  a.left < b.left + b.width && b.left < a.left + a.width &&
+  a.top < b.top + b.height && b.top < a.top + a.height;
+/** the distance from `p` to the nearest point of `r` */
+const reachOf = (p: Pt, r: Rect) =>
+  Math.hypot(
+    Math.max(r.left - p.x, 0, p.x - (r.left + r.width)),
+    Math.max(r.top - p.y, 0, p.y - (r.top + r.height)),
+  );
+
+/** REQ-437 + REQ-543 (demo m6, cycle 4) — the tag's own top-left, in the same px as `tip`, `box`
+ *  and `rect`:
+ *   - `rect` (the element the pointer is anchored to): just past one of its edges — above,
+ *     below, right or left of it — or under the arrow's tail, whichever covers neither the
+ *     element nor the arrow and sits within TAG_REACH of the tip once fitted into the box; of
+ *     those, one that `covers` no OTHER control (the caller's hit-test of the page under it)
+ *     wins, then the NEAREST to the tip — never the side with the most room, which put the tag
+ *     past a card's far edge, over the next control;
+ *   - no rect, or no such side (an element bigger than the reach around the tip: a card, a
+ *     page): below-right of the tip past the arrow's tail (ARROW_H + TAG_GAP down), above the
+ *     tip only at the box's bottom;
+ *   - always TAG_EDGE inside `box` (the stage's frame, the customer's window), whatever the tip
+ *     — `tip` is the DRAWN arrow (a glide in progress included) and `tag` its measured size. */
 export function tagPlacement(
   tip: Pt,
   box: Rect,
   tag: { w: number; h: number },
   rect?: Rect | null,
+  covers?: (r: Rect) => boolean,
 ): { x: number; y: number; side: TagSide } {
   const right = box.left + box.width;
   const bottom = box.top + box.height;
   const clamp = (v: number, lo: number, hi: number) =>
     Math.max(lo, Math.min(v, Math.max(lo, hi)));
   const fit = (x: number, y: number, side: TagSide) => ({
-    x: clamp(x, box.left, right - tag.w),
-    y: clamp(y, box.top, bottom - tag.h),
+    x: clamp(x, box.left + TAG_EDGE, right - TAG_EDGE - tag.w),
+    y: clamp(y, box.top + TAG_EDGE, bottom - TAG_EDGE - tag.h),
     side,
   });
-  const arrowR = tip.x + ARROW_BOX.w;
+  const arrow: Rect = {
+    left: tip.x,
+    top: tip.y,
+    width: ARROW_BOX.w,
+    height: ARROW_BOX.h,
+  };
   const arrowB = tip.y + ARROW_BOX.h;
+  const ty = arrowB + TAG_GAP;
   if (rect && rect.width > 0 && rect.height > 0) {
     const rr = rect.left + rect.width;
     const rb = rect.top + rect.height;
-    const sides: {
-      side: TagSide;
-      x: number;
-      y: number;
-      room: number;
-      far: number;
-    }[] = [];
-    // below: past the element and the arrow's tail
-    const by = Math.max(rb, arrowB) + TAG_GAP;
-    sides.push({
-      side: "below",
-      x: tip.x,
-      y: by,
-      room: bottom - (by + tag.h),
-      far: by - tip.y,
-    });
-    // above: its bottom a gap over the element's top
-    const ay = Math.min(rect.top, tip.y) - TAG_GAP - tag.h;
-    sides.push({
-      side: "above",
-      x: tip.x,
-      y: ay,
-      room: ay - box.top,
-      far: tip.y - (ay + tag.h),
-    });
-    // right: past the element and the arrow's body, level with the tip
-    const rx = Math.max(rr, arrowR) + TAG_GAP;
-    sides.push({
-      side: "right",
-      x: rx,
-      y: tip.y,
-      room: right - (rx + tag.w),
-      far: rx - tip.x,
-    });
-    // left: its right edge a gap before the element's left
-    const lx = Math.min(rect.left, tip.x) - TAG_GAP - tag.w;
-    sides.push({
-      side: "left",
-      x: lx,
-      y: tip.y,
-      room: lx - box.left,
-      far: tip.x - (lx + tag.w),
-    });
-    const ok = sides.filter((s) => s.room >= 0 && s.far <= TAG_REACH);
+    const wanted: [TagSide, number, number][] = [
+      // above: its bottom a gap over the element's top (and the tip)
+      ["above", tip.x, Math.min(rect.top, tip.y) - TAG_GAP - tag.h],
+      // below: past the element and the arrow's tail
+      ["below", tip.x, Math.max(rb, arrowB) + TAG_GAP],
+      // right: past the element and the arrow's body, level with the tip
+      ["right", Math.max(rr, tip.x + ARROW_BOX.w) + TAG_GAP, tip.y],
+      // left: its right edge a gap before the element's left (and the tip)
+      ["left", Math.min(rect.left, tip.x) - TAG_GAP - tag.w, tip.y],
+      // the arrow's tail, when the element is small enough to leave it clear
+      ["tail", tip.x + TAG_GAP, ty],
+    ];
+    const ok = wanted
+      .map(([side, x, y]) => {
+        const at = fit(x, y, side);
+        const r = { left: at.x, top: at.y, width: tag.w, height: tag.h };
+        return { at, r, far: reachOf(tip, r) };
+      })
+      .filter((c) =>
+        c.far <= TAG_REACH && !overlap(c.r, rect) && !overlap(c.r, arrow)
+      )
+      .sort((a, b) => a.far - b.far);
     if (ok.length) {
-      const best = ok.reduce((a, b) => (b.room > a.room ? b : a));
-      return fit(best.x, best.y, best.side);
+      return ((covers && ok.find((c) => !covers(c.r))) || ok[0]).at;
     }
   }
-  const ty = arrowB + TAG_GAP;
-  if (ty + tag.h <= bottom) return fit(tip.x + TAG_GAP, ty, "tail");
+  if (ty + tag.h <= bottom - TAG_EDGE) return fit(tip.x + TAG_GAP, ty, "tail");
   return fit(tip.x + TAG_GAP, tip.y - TAG_GAP - tag.h, "tail-up");
 }
 

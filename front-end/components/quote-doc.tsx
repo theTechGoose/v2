@@ -20,10 +20,12 @@ import PublicSignQuote from "../islands/PublicSignQuote.tsx";
 import PublicQuoteActions from "../islands/PublicQuoteActions.tsx";
 import { buildSignatureBlock } from "../../shared/quote-flow/signature-block.ts";
 import { agreementTitle } from "../../shared/quote-flow/agreement-title.ts";
+import { publicLogoUrl } from "../../shared/quote-flow/public-logo-url.ts";
 import { senderInitials as senderInitialsOf } from "../../shared/identity/initials.ts";
 import {
   type ConfirmChannel,
   signedNoteKey,
+  signedNoteParams,
 } from "../../shared/quote-flow/signed-note.ts";
 import {
   deriveQuoteView,
@@ -89,6 +91,8 @@ interface Contractor {
   /** True when the contractor uploaded a business logo — rendered via the
    *  public-logo endpoint above the brand strip (roadmap p.2). */
   hasLogo?: boolean;
+  /** REQ-613 (M31): the logo's version — part of its URL, so a replaced logo is a new URL. */
+  logoVersion?: string;
 }
 
 export interface QuotePublic {
@@ -234,7 +238,12 @@ function cstr(lang: Lang, terms?: Term[]) {
 }
 
 export function ErrorCard(
-  { message, lang = "en" }: { message: string; lang?: Lang },
+  { message, lang = "en", onRetry }: {
+    message: string;
+    lang?: Lang;
+    /** REQ-574: a load that failed (network / 5xx) offers a Retry. */
+    onRetry?: () => void;
+  },
 ) {
   return (
     <>
@@ -248,6 +257,16 @@ export function ErrorCard(
           {tFor(lang, "quoteDoc.cantOpen")}
         </div>
         <p style={`margin:8px 0 0;color:${MUTED};font-size:14px`}>{message}</p>
+        {onRetry && (
+          <button
+            type="button"
+            data-cy="quote-retry"
+            onClick={onRetry}
+            style={`margin-top:16px;padding:10px 22px;border-radius:999px;border:0;background:${TEAL};color:#fff;font-weight:700;font-size:14px;cursor:pointer`}
+          >
+            {tFor(lang, "publicQuote.retry")}
+          </button>
+        )}
       </div>
     </>
   );
@@ -390,6 +409,40 @@ export function QuoteDoc(
 
   return (
     <>
+      {preview && (
+        // REQ-559 (demo-loop c4 m17 + p4-p1c): the owner's preview says so at
+        // the top — who they are previewing as, that signing / questions /
+        // decline are off — and offers the in-person signing as a solid
+        // button (same handler as the signature card's link).
+        <div
+          data-cy="quote-preview-banner"
+          role="status"
+          class="ctr__no-print"
+          style="position:sticky;top:0;z-index:20;margin-bottom:18px;padding:12px 16px;background:#fff6e5;border:1px solid rgba(255,170,40,0.55);border-radius:14px;box-shadow:0 4px 14px rgba(138,90,16,0.12);display:flex;align-items:center;gap:12px;flex-wrap:wrap;color:#8a5a10;font-size:14px;line-height:1.45"
+        >
+          <div style="flex:1;min-width:200px">
+            <span style="font-weight:800">
+              {customerName
+                ? tFor(lang, "public.doc.previewBanner.as", {
+                  name: customerName,
+                })
+                : tFor(lang, "public.doc.previewBanner.asCustomer")}
+            </span>{" "}
+            — {tFor(lang, "public.doc.previewBanner.off")}
+            <span style="display:block;margin-top:2px;font-size:13px">
+              {tFor(lang, "public.doc.previewBanner.here")}
+            </span>
+          </div>
+          <button
+            type="button"
+            data-cy="quote-preview-sign-in-person"
+            onClick={() => onSignInPerson?.()}
+            style="background:#144852;color:#fff;border:0;border-radius:10px;padding:10px 18px;font:inherit;font-size:14px;font-weight:800;cursor:pointer;white-space:nowrap"
+          >
+            {tFor(lang, "public.doc.previewBanner.signInPerson")}
+          </button>
+        </div>
+      )}
       {signed && signerName && (
         <div
           data-cy="quote-signed-banner"
@@ -469,7 +522,7 @@ export function QuoteDoc(
         {contractor?.hasLogo
           ? (
             <img
-              src={`/api/public-logo/quote/${quote.id}`}
+              src={publicLogoUrl("quote", quote.id, contractor.logoVersion)}
               alt=""
               style="max-height:48px;max-width:160px;object-fit:contain;display:block;margin:0 auto 8px;border-radius:8px"
             />
@@ -882,7 +935,11 @@ export function QuoteDoc(
                       >
                         {customerName ?? t.clientSignature}
                       </div>
-                      {unready ? null : (
+                      {
+                        /* REQ-559 (demo c4 m17): no "sign below ↓" in the
+                          owner's preview — the pad is off there. */
+                      }
+                      {unready || preview ? null : (
                         <div
                           style={`margin-top:8px;font-size:12px;font-weight:700;color:${TEAL}`}
                         >
@@ -976,13 +1033,28 @@ export function QuoteDoc(
                     >
                       {t.signedBinding}
                     </div>
-                    <div style={`margin-top:2px;color:${MUTED};font-size:13px`}>
+                    <div
+                      data-cy="quote-signed-note"
+                      style={`margin-top:2px;color:${MUTED};font-size:13px`}
+                    >
                       {
                         /* UX-39 / REQ-403 (m11): promise only a confirmation
                           that can arrive — email, a text to a number whose
                           last text did not fail, else the signed copy + PDF. */
                       }
-                      {tFor(lang, signedNoteKey(quote))}
+                      {
+                        /* REQ-560 (cycle 4, p4-p2b): signed in person on the
+                          business's device — the note names the customer's
+                          copy instead of "check your email". */
+                      }
+                      {tFor(
+                        lang,
+                        signedNoteKey(quote, search),
+                        signedNoteParams(
+                          quote,
+                          tFor(lang, "quoteDoc.signedNoteCustomerFallback"),
+                        ),
+                      )}
                     </div>
                   </div>
                 </div>
@@ -1054,6 +1126,7 @@ export function QuoteDoc(
                     contractorFirstName={contractorFirst}
                     customerName={customerName}
                     lang={lang}
+                    preview={preview}
                   />
                 </div>
               )}

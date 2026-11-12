@@ -25,6 +25,12 @@ type Rec = {
   idOf(n: unknown): number | null;
   nodeOf(id: number): FElement | null;
 };
+type W = { id: number; x: number; y: number; a: Anchor };
+type WaveFrame = {
+  box: { left: number; top: number; width: number; height: number };
+  load: string | null;
+  nodeAt(a: Anchor): Pt | null;
+};
 // looked up at run time: a missing export fails its own tests, not the whole file
 const m = mod as unknown as {
   anchorAt(
@@ -35,10 +41,8 @@ const m = mod as unknown as {
     load: string | null,
   ): Anchor;
   pageTopAt(stack: readonly FElement[]): FElement | null;
-  placeWavesAgain<W extends { x: number; y: number; a: Anchor }>(
-    waves: W[],
-    place: (a: Anchor) => Pt,
-  ): W[];
+  newStageWave(id: number, a: Anchor, f: WaveFrame): W;
+  placeWavesAgain(waves: W[], f: WaveFrame): W[];
   createTouchFade(o: { ms: number; fade: () => void }): {
     seen(pointerType: string): void;
     cancel(): void;
@@ -146,19 +150,26 @@ describe("REQ-371 (demo m10, cycle 2) — the customer's anchor skips the demo's
   });
 });
 
-describe("REQ-371 (demo m10, cycle 2) — the stage's click wave follows its node", () => {
-  test("a wave whose node moved is placed again; one that did not keeps its array", () => {
+describe("REQ-371 (demo m10, cycle 2) — the stage's click wave follows its node (REQ-546: while it is there)", () => {
+  test("a wave whose frame was refitted is placed again; one whose frame did not move keeps its array", () => {
     const a: Anchor = {
       vx: 0.5,
       vy: 0.5,
       n: { id: 3, x: 0.5, y: 0.5, l: "L" },
     };
-    const waves = [{ id: 1, x: 10, y: 20, a }];
-    const moved = m.placeWavesAgain(waves, () => ({ x: 10, y: 120 }));
+    const box = { left: 0, top: 0, width: 100, height: 100 };
+    const at = { x: 10, y: 20 };
+    const f = { box, load: "L", nodeAt: () => at };
+    const waves = [m.newStageWave(1, a, f)];
+    expect(m.placeWavesAgain(waves, f)).toBe(waves);
+    // the stage resized: the frame (and the node in it) moved 100 px down
+    const moved = m.placeWavesAgain(waves, {
+      box: { ...box, top: 100 },
+      load: "L",
+      nodeAt: () => ({ x: 10, y: 120 }),
+    });
     expect(moved).not.toBe(waves);
     expect(moved[0]).toMatchObject({ id: 1, x: 10, y: 120, a });
-    const same = m.placeWavesAgain(waves, () => ({ x: 10, y: 20 }));
-    expect(same).toBe(waves);
   });
 });
 
@@ -220,7 +231,8 @@ describe("REQ-371 (demo m10, cycle 2) — the islands are wired to it", () => {
   });
 
   test("the stage keeps each click wave's anchor and places it again on a layout pass", () => {
-    expect(stage).toMatch(/\{ id, \.\.\.p\.at, a: m\.a \}/);
+    // REQ-546 — made by newStageWave, which keeps the anchor (and freezes where it was placed)
+    expect(stage).toMatch(/newStageWave\(id, m\.a, waveFrame\(\)\)/);
     const replace = stage.slice(stage.indexOf("const replace = () => {"));
     expect(replace.slice(0, replace.indexOf("\n  };"))).toMatch(
       /placeWavesAgain\(/,

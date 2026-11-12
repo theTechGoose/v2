@@ -15,15 +15,21 @@ const base = {
   revenue12moCents: 0,
   daysSinceContact: 0,
   paidInvoiceCount: 0,
+  completedJobs: 0,
 };
 
 Deno.test("REQ-271 deriveStatus — no quotes, no invoices, contacted today: new, not regular", () => {
   assertEquals(deriveStatus(base), "new");
 });
 
-Deno.test("REQ-271 deriveStatus — paid work in the last year stays regular", () => {
+Deno.test("REQ-271 deriveStatus — paid work in the last year stays regular (REQ-562: two completed jobs)", () => {
   assertEquals(
-    deriveStatus({ ...base, revenue12moCents: 50_000, paidInvoiceCount: 1 }),
+    deriveStatus({
+      ...base,
+      revenue12moCents: 50_000,
+      paidInvoiceCount: 2,
+      completedJobs: 2,
+    }),
     "regular",
   );
 });
@@ -32,9 +38,59 @@ Deno.test("REQ-271 deriveStatus — an untouched customer quiet for 90 days is c
   assertEquals(deriveStatus({ ...base, daysSinceContact: 90 }), "cold");
 });
 
-Deno.test("REQ-271 deriveStatus — paid before (older than a year), nothing open: regular, not new", () => {
+Deno.test("REQ-271 deriveStatus — paid before (older than a year), nothing open: regular, not new (REQ-562: two completed jobs)", () => {
   assertEquals(
-    deriveStatus({ ...base, paidInvoiceCount: 1, daysSinceContact: 10 }),
+    deriveStatus({
+      ...base,
+      paidInvoiceCount: 2,
+      completedJobs: 2,
+      daysSinceContact: 10,
+    }),
+    "regular",
+  );
+});
+
+/**
+ * REQ-562 — demo-loop cycle 4, m21: a brand-new client whose first (50/50) job
+ * had its deposit paid wore "Regular". A first job in progress is "active";
+ * "regular" takes at least two completed jobs.
+ */
+Deno.test("REQ-562 (cycle 4, m21) deriveStatus — first job in flight, deposit paid, balance scheduled: active, not regular", () => {
+  assertEquals(
+    deriveStatus({
+      ...base,
+      acceptedQuotes: [{ id: "q" } as Quote],
+      myQuotes: [{ id: "q" } as Quote],
+      activeJobs: 1,
+      revenue12moCents: 1_425_00,
+      paidInvoiceCount: 1,
+    }),
+    "active",
+  );
+});
+
+Deno.test("REQ-562 (cycle 4, m21) deriveStatus — one completed job, nothing open, contacted recently: not regular yet", () => {
+  const status = deriveStatus({
+    ...base,
+    acceptedQuotes: [{ id: "q" } as Quote],
+    myQuotes: [{ id: "q" } as Quote],
+    revenue12moCents: 2_850_00,
+    paidInvoiceCount: 2,
+    completedJobs: 1,
+  });
+  assertEquals(status, "new");
+});
+
+Deno.test("REQ-562 (cycle 4, m21) deriveStatus — two completed jobs, nothing open: regular", () => {
+  assertEquals(
+    deriveStatus({
+      ...base,
+      acceptedQuotes: [{ id: "a" } as Quote, { id: "b" } as Quote],
+      myQuotes: [{ id: "a" } as Quote, { id: "b" } as Quote],
+      revenue12moCents: 5_000_00,
+      paidInvoiceCount: 3,
+      completedJobs: 2,
+    }),
     "regular",
   );
 });
@@ -93,4 +149,80 @@ Deno.test("REQ-323 documentsFor — the onboarding sample quote is not a documen
     updatedAt: "2026-04-21T00:00:00.000Z",
   } as unknown as Quote;
   assertEquals(documentsFor([sample], []), []);
+});
+
+/**
+ * REQ-565 (demo-loop cycle 4, m33): the customer card left change orders out
+ * and showed the quote at its original total. documentsFor lists each change
+ * order (its number, state, signed amount and /co link) and words the quote at
+ * the agreed total — the quote plus its approved change orders.
+ */
+import type { ChangeOrder } from "@paperwork/dto/change-order.ts";
+
+const signed = {
+  id: "q-9",
+  number: "Q-001",
+  status: "accepted",
+  acceptedAt: "2026-11-10T00:00:00.000Z",
+  estimatedTotal: 705_000,
+  updatedAt: "2026-11-10T00:00:00.000Z",
+} as unknown as Quote;
+const co = (
+  id: string,
+  number: string,
+  status: ChangeOrder["status"],
+  deltaAmountCents: number,
+  updatedAt: string,
+) =>
+  ({
+    id,
+    userId: "u-1",
+    invoiceId: "i-9",
+    quoteId: "q-9",
+    number,
+    description: "Glass door",
+    deltaAmountCents,
+    status,
+    createdAt: updatedAt,
+    updatedAt,
+  }) as ChangeOrder;
+
+Deno.test("REQ-565 m33 documentsFor — a change order is a row of its own: number, state, signed amount, its /co link", () => {
+  const docs = documentsFor([signed], [], [
+    co("co-1", "CO-001", "pending", 120_000, "2026-11-11T00:00:00.000Z"),
+  ]);
+  assertEquals(docs[0], {
+    kind: "change_order",
+    id: "co-1",
+    number: "CO-001",
+    state: "pending",
+    amountCents: 120_000,
+    url: "/co/co-1",
+    updatedAt: "2026-11-11T00:00:00.000Z",
+  });
+  assertEquals(docs.length, 2);
+});
+
+Deno.test("REQ-565 m33 documentsFor — the quote row shows the agreed total: the quote plus its APPROVED change orders only", () => {
+  const docs = documentsFor([signed], [], [
+    co("co-1", "CO-001", "approved", 120_000, "2026-11-11T00:00:00.000Z"),
+    co("co-2", "CO-002", "approved", -20_000, "2026-11-11T01:00:00.000Z"),
+    co("co-3", "CO-003", "pending", 50_000, "2026-11-11T02:00:00.000Z"),
+    co("co-4", "CO-004", "declined", 90_000, "2026-11-11T03:00:00.000Z"),
+  ]);
+  const quote = docs.find((d) => d.kind === "quote")!;
+  assertEquals(quote.amountCents, 805_000);
+  assertEquals(quote.changeOrdersCents, 100_000);
+  assertEquals(
+    docs.filter((d) => d.kind === "change_order").map((d) => d.number),
+    ["CO-004", "CO-003", "CO-002", "CO-001"],
+  );
+});
+
+Deno.test("REQ-565 m33 documentsFor — a quote with no approved change order keeps its own total and no change-order note", () => {
+  const [quote] = documentsFor([signed], [], [
+    co("co-3", "CO-003", "pending", 50_000, "2026-11-09T00:00:00.000Z"),
+  ]).filter((d) => d.kind === "quote");
+  assertEquals(quote.amountCents, 705_000);
+  assertEquals("changeOrdersCents" in quote, false);
 });

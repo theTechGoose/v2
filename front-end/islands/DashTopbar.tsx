@@ -23,6 +23,7 @@ import {
   refreshNotifications,
   subscribeNotifications,
 } from "../lib/notifications-feed.ts";
+import { subscribeChanges } from "../lib/change-feed.ts"; // REQ-563
 import {
   MUTATION_EVENT,
   newestNotification,
@@ -43,6 +44,9 @@ interface Props {
   /** Dict key that replaces the default "Hey, {name} 👋" line. Resolved
    *  reactively against the live language so the toggle re-localizes it. */
   greetingOverrideKey?: string;
+  /** REQ-619 (cycle 4, p4-p3d) — the page's nav label key; the heading names
+   *  the page (live language) instead of "Hey, {name}". Omit on /dashboard. */
+  pageTitleKey?: string;
   initialUnread?: number;
   initialNotifications?: Notification[];
   lang?: "en" | "es";
@@ -65,6 +69,7 @@ export default function DashTopbar(
     greetingName,
     greetingOverride,
     greetingOverrideKey,
+    pageTitleKey,
     initialUnread = 0,
     initialNotifications = [],
     search,
@@ -121,6 +126,11 @@ export default function DashTopbar(
     const unsub = subscribeNotifications((next) => {
       if (!stopped) setItems(next);
     });
+    // REQ-563 (demo-loop cycle 4, m3): the topbar follows the change feed, so
+    // a signature announced from another tab of this browser (the /q tab)
+    // refreshes the feed — and the ticker — at once on every page it is on,
+    // not after the 60 s idle poll. The batch itself is the pages' business.
+    const unchanges = subscribeChanges(() => {});
     // REQ-319: a mutation that went through lib/api (quote sent, invoice
     // claimed…) refreshes the feed at once instead of waiting for the poll.
     // REQ-424 (cycle 2, p2): at most once per 5 s, and never for a chat post.
@@ -135,6 +145,7 @@ export default function DashTopbar(
       stopA();
       stopB();
       unsub();
+      unchanges();
       mutated.stop();
       globalThis.removeEventListener(MUTATION_EVENT, onMutated);
     };
@@ -163,7 +174,7 @@ export default function DashTopbar(
     ? {
       // REQ-496 (demo m36, cycle 3): rendered from the feed's titleKey in the
       // LIVE language, so the EN/ES switch re-localizes it at once.
-      html: tickerTitleHtml(tickerItem, (k, v) => tFor(lang, k, v)),
+      html: tickerTitleHtml(tickerItem, (k, v) => tFor(lang, k, v), lang),
       time: !age
         ? ""
         : age.key === "dashTopbar.justNow"
@@ -201,6 +212,7 @@ export default function DashTopbar(
               savedName,
               greetingOverrideKey,
               greetingOverride,
+              pageTitleKey,
             })
           }
         </div>

@@ -36,8 +36,8 @@ import {
   distinctScopeItems,
   groupedBullets,
   labelVersionStyles,
+  nearTwinBullets,
   partitionByCoverage,
-  sameBullets,
   stripCustomerDetails,
   widerBullets,
 } from "#quote-flow/option-bullets.ts";
@@ -611,11 +611,16 @@ function titleCaseWord(w: string): string {
  * to drop the last line, i.e. be part of the job.
  * REQ-330 (p15-7): a variant whose bullets equal an option already on the
  * list is skipped — a one-bullet job gets one or two cards, never two alike.
+ * REQ-584 (cycle 4, p4-p1d): a variant that is a NEAR-twin of an option on
+ * the list (nearTwinBullets — the short version is the same words regrouped,
+ * the wider one often only "+ Jobsite cleanup") is skipped too, and a
+ * one-item job is not padded at all: its variants can only differ by a word.
  */
 function padToThree(options: JobOption[], langs: Lang[]): JobOption[] {
   if (options.length >= 3) return options;
   const primary = langs[0];
   const base = options[0];
+  if (!base || base.bullets.length <= 1) return options;
   const variants: Array<"short" | "wider"> = ["short", "wider"];
   const out = [...options];
   const seen = new Set(out.map((o) => o.jobName.toLowerCase()));
@@ -633,7 +638,7 @@ function padToThree(options: JobOption[], langs: Lang[]): JobOption[] {
         bullets,
       };
     }
-    if (out.some((o) => sameBullets(o.bullets, byLang[primary].bullets))) {
+    if (out.some((o) => nearTwinBullets(o.bullets, byLang[primary].bullets))) {
       continue;
     }
     let name = byLang[primary].jobName;
@@ -696,12 +701,14 @@ function fallbackOptions(
   const primary = langs[0];
   // REQ-330 (p15-7): a one-line job makes the "short" variant equal to the
   // full one — equal bullet sets collapse, so the picker never shows two
-  // cards with the same scope.
+  // cards with the same scope. REQ-584: exact only — this degraded path's
+  // titled versions are the same scope by design.
   return renumber(dedupeOptionsByBullets(
     ([0, 1, 2] as const).map((variant) => {
       const byLang: Record<string, JobOptionLang> = {};
       for (const l of langs) byLang[l] = perLang(l, variant);
       return { id: `opt${variant + 1}`, ...byLang[primary], byLang };
     }),
+    { exact: true },
   ));
 }

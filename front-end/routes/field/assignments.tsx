@@ -31,7 +31,10 @@ export default define.page(function FieldFieldAssignmentsPageRoute(ctx) {
       <div class="app">
         <DashSidebar active="assignments" />
         <main class="main">
-          <DashTopbar greetingName={greetingName} />
+          <DashTopbar
+            pageTitleKey="nav.assignments"
+            greetingName={greetingName}
+          />
           <div class="content">
             <FieldAssignmentsPage />
             <SiteFooter lang={lang} compact />

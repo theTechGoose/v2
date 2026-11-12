@@ -186,3 +186,63 @@ Deno.test("REQ-405 (demo m14, cycle 2): 'Sign in person' shows the pad in place 
       "still Spanish",
     );
   }));
+
+Deno.test("REQ-560 (demo-loop cycle 4, p4-p2b): signed in person on the owner's device — the note names the customer's copy, never 'check your email'", (t) =>
+  story(t, async ({ page, expect, http, baseUrl }) => {
+    const { auth } = await signIn(http, page, baseUrl, "en");
+    const customer = await post(http, auth, "/api/customers", {
+      name: "Ana Pérez",
+      email: "ana@blackhole.postmarkapp.com",
+    });
+    const quote = await post(http, auth, "/api/quotes", {
+      customerId: customer.id,
+      summary: "Bathroom remodel",
+      jobName: "Bathroom remodel",
+      lineItems: [{
+        description: "Bathroom remodel",
+        quantity: 1,
+        unit: "job",
+        price: 480000,
+      }],
+      estimatedTotal: 480000,
+      terms: [{ stepId: "payment_terms", value: "Due Now" }],
+      status: "draft",
+    });
+    const sent = await http(`/api/quotes/${quote.id}`, {
+      method: "PUT",
+      headers: auth,
+      body: JSON.stringify({ status: "sent" }),
+    });
+    await sent.body?.cancel();
+
+    await page.goto(`/q/${quote.id}`);
+    await page.locator("[data-cy='quote-internal-preview']").waitFor({
+      timeout: 15_000,
+    });
+    const form = page.locator("form.ctr__sign-form");
+    await clickUntil(
+      page,
+      "[data-cy='quote-sign-in-person']",
+      async () => (await form.count()) > 0,
+    );
+    await form.locator("input[type='text']").fill("Ana Pérez");
+    const note = page.locator("[data-cy='quote-signed-note']");
+    await clickUntil(
+      page,
+      "form.ctr__sign-form button[type='submit']",
+      async () => (await note.count()) > 0,
+    );
+    const text = (await note.textContent()) ?? "";
+    expect.eq(
+      /checking your email/i.test(text),
+      false,
+      `no "check your email" on the owner's device: ${text}`,
+    );
+    expect.eq(
+      text.includes(
+        "Signed in person — Ana Pérez gets a copy at ana@blackhole.postmarkapp.com",
+      ),
+      true,
+      `the in-person note: ${text}`,
+    );
+  }));

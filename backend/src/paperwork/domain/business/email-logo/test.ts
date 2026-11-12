@@ -1,5 +1,6 @@
 import { assertEquals } from "#std/assert";
 import { emailLogo } from "./mod.ts";
+import { logoVersion } from "#quote-flow/public-logo-url.ts";
 
 // REQ-160 — "these have the house logo on it not the client logo"
 Deno.test("REQ-160 emailLogo: a business with a logo on file brands the email with it (the public-logo URL, named after the business); without one the house logo stays", () => {
@@ -12,7 +13,7 @@ Deno.test("REQ-160 emailLogo: a business with a logo on file brands the email wi
       biz: { businessName: "A2Z Landscape LLC", logoFileId: "f-9" },
     }),
     {
-      src: "https://documonster.com/api/public-logo/invoice/inv-1",
+      src: `https://documonster.com/api/public-logo/invoice/inv-1?v=${logoVersion("f-9")}`,
       alt: "A2Z Landscape LLC",
     },
   );
@@ -24,7 +25,7 @@ Deno.test("REQ-160 emailLogo: a business with a logo on file brands the email wi
       biz: { businessName: "A2Z Landscape LLC", logoFileId: "f-9" },
     }),
     {
-      src: "https://documonster.com/api/public-logo/quote/q-1",
+      src: `https://documonster.com/api/public-logo/quote/q-1?v=${logoVersion("f-9")}`,
       alt: "A2Z Landscape LLC",
     },
   );
@@ -56,4 +57,14 @@ Deno.test("REQ-160 emailLogo: a business with a logo on file brands the email wi
     emailLogo({ appUrl: app, kind: "invoice", id: "inv-1", biz: undefined }),
     house,
   );
+});
+
+// REQ-613 (demo-loop cycle 4, M31) — a replaced logo must not hide behind the old URL's cache
+Deno.test("REQ-613 emailLogo: the logo URL carries the logo's version, so a replaced logo gets a new URL", () => {
+  const app = "https://documonster.com";
+  const orange = emailLogo({ appUrl: app, kind: "quote", id: "q-1", biz: { logoFileId: "f-orange" } });
+  const blue = emailLogo({ appUrl: app, kind: "quote", id: "q-1", biz: { logoFileId: "f-blue" } });
+  assertEquals(orange.src, `${app}/api/public-logo/quote/q-1?v=${logoVersion("f-orange")}`);
+  assertEquals(blue.src === orange.src, false, "a new logo is a new URL");
+  assertEquals(orange.src.includes("f-orange"), false, "the file id never leaks");
 });

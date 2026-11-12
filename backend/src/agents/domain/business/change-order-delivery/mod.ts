@@ -30,8 +30,8 @@ export function changeOrderSentLine(
 ): string {
   const base = { number: o.number, name: o.name };
   const noRecipient = t(lang, "sendQuote.divider.noRecipient");
-  const emailReason = readable(o.emailFailureReason, noRecipient);
-  const smsReason = readable(o.smsFailureReason, noRecipient);
+  const emailReason = readable(lang, o.emailFailureReason, noRecipient);
+  const smsReason = readable(lang, o.smsFailureReason, noRecipient);
   const k = "chatCoordinator.changeOrder.sent";
 
   if (o.error) {
@@ -73,12 +73,15 @@ export function changeOrderSentLine(
 }
 
 /** REQ-276 parity: a dispatcher's developer "no recipient: pass `to` …"
- *  reads as the localized "no recipient". */
+ *  reads as the localized "no recipient". REQ-588 (cycle 4, M29): a reason
+ *  that is an SMS lang key ("sms.fictionalNumber") is worded, never raw. */
 function readable(
+  lang: Lang,
   reason: string | undefined,
   noRecipient: string,
 ): string | undefined {
   const r = reason?.trim();
   if (!r) return undefined;
-  return /^no recipient\b/.test(r) ? noRecipient : r;
+  if (/^no recipient\b/.test(r)) return noRecipient;
+  return /^sms\.[\w.]+$/.test(r) ? t(lang, r) : r;
 }

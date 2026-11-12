@@ -34,6 +34,7 @@ const CSS = `
 .gsearch__amt{font-weight:700;color:var(--fg)}
 .gsearch__status{padding:1px 7px;border-radius:999px;background:rgba(100,69,54,.08);font-size:11px;color:var(--fg-muted)}
 .gsearch__status--paid,.gsearch__status--accepted,.gsearch__status--approved,.gsearch__status--done{background:rgba(81,152,67,.14);color:#2f6b25}
+.gsearch__status--scheduled{background:rgba(20,72,82,.08);color:var(--brand-teal)}
 .gsearch__sub,.gsearch__related{grid-column:1/-1;font-size:12px;color:var(--fg-muted);min-width:0;overflow:hidden;text-overflow:ellipsis}
 .gsearch__related a{margin-left:6px;color:var(--brand-teal);text-decoration:underline;white-space:nowrap}
 .gsearch__note{padding:10px;font-size:13px;color:var(--fg-muted)}

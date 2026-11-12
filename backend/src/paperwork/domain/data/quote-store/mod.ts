@@ -4,6 +4,7 @@ import {
   storedQuotePriceProblem,
 } from "#quote-flow/quote-price-guard.ts";
 import { summarizeJobName } from "#quote-flow/job-name.ts";
+import { messageLang } from "#quote-flow/message-language.ts";
 import { getKv, indexedIds, readMany } from "@core/data/kv/mod.ts";
 import { ForbiddenError, NotFoundError } from "@core/data/repository/mod.ts";
 import { DocNumbering } from "@core/data/doc-numbering/mod.ts";
@@ -91,7 +92,16 @@ export class QuoteStore {
     // Title-Cased with a stopword tail ("El Patio De").
     if (!quote.jobName?.trim()) {
       const source = quote.summary?.trim() || quote.description?.trim();
-      if (source) quote.jobName = summarizeJobName(source, opts?.jobNameLang);
+      // REQ-579 (cycle 4, M14): the language the job was TYPED in names it —
+      // Spanish typed in an English account is "Baño principal", never
+      // "Baño Principal De"; the account language decides only when the
+      // text can't tell.
+      const typed = messageLang(
+        `${quote.summary ?? ""} ${quote.description ?? ""}`,
+      );
+      if (source) {
+        quote.jobName = summarizeJobName(source, typed ?? opts?.jobNameLang);
+      }
     }
     // REQ-204: the customer as they are today travels with the document.
     const customerSnapshot = await snapshotCustomer(quote.customerId, userId);
@@ -149,6 +159,14 @@ export class QuoteStore {
       live as unknown as Record<string, unknown>,
       { ...(prior ?? {}), ...defined },
     );
+    // REQ-561 (demo M28): new job details make the per-language copies of
+    // the old ones stale — Version N+1 carries none, so readers fall back to
+    // the new text and the next translate run (send / preview) refills them.
+    // Job details edited back to the live text take the cleared copies along.
+    if (!("descriptionByLang" in defined)) {
+      if ("description" in pending) pending.descriptionByLang = {};
+      else delete pending.descriptionByLang;
+    }
     const updated: Quote = {
       ...live,
       ...(Object.keys(pending).length ? { pendingRevision: pending } : {}),

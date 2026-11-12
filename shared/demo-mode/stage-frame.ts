@@ -58,6 +58,9 @@ export interface StageFrameLook {
   filter: string;
   /** the "Waiting for {name}'s app…" notice sits on the frame */
   waiting: boolean;
+  /** REQ-541 (cycle 4, M22) — another window of this account has the demo: the frame is greyed
+   *  under "This demo moved to another window · Use this window" (set only then) */
+  elsewhere?: boolean;
 }
 
 export function stageFrameLook(
@@ -71,6 +74,16 @@ export function stageFrameLook(
     styled: boolean;
   },
 ): StageFrameLook {
+  if (status === "replaced") {
+    // REQ-541 (M22) — the frame is no longer followed here: never looks live, and the banner
+    // (not the connecting spinner) says why, mirrored yet or not
+    return {
+      visibility: mirrored && styled ? "visible" : "hidden",
+      filter: WAITING_FILTER,
+      waiting: false,
+      elsewhere: true,
+    };
+  }
   if (!mirrored || !styled) {
     return { visibility: "hidden", filter: "none", waiting: false };
   }
@@ -82,6 +95,22 @@ export function stageFrameLook(
     filter: waiting ? WAITING_FILTER : "none",
     waiting,
   };
+}
+
+/** REQ-541 (cycle 4, M22) — what the stage does with an /active answer. A stage that showed a
+ *  demo and now finds none (ended from another window of this account, which this one — replaced
+ *  — never heard) hands the presenter their own account back; it is never left impersonating
+ *  the customer behind "No demo is open". A stage that never had one shows the empty screen. */
+export function afterActiveCheck(
+  { found, shown }: {
+    /** /active returned this presenter's session */
+    found: boolean;
+    /** a demo was shown on this stage before */
+    shown: boolean;
+  },
+): "show" | "handBack" | "empty" {
+  if (found) return "show";
+  return shown ? "handBack" : "empty";
 }
 
 /** REQ-391 — frames arriving more than this behind the customer's screen: "Behind N s" */

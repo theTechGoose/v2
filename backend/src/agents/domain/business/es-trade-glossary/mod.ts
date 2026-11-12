@@ -11,11 +11,17 @@
  * (trench), "un corte para la cocina" (cooktop cutout), "gabinetes de shaker"
  * and left "sq ft" untranslated — only TranslateBullets had a glossary, and it
  * had none of these.
+ * REQ-594 (demo-loop cycle 4, m40): "sink / basin → lavabo" turned a kitchen
+ * sink into a bathroom basin, and "soffit" stayed in English — a kitchen sink
+ * is a fregadero, only a bathroom sink is a lavabo, and soffit has an entry.
  */
 export const ES_TRADE_GLOSSARY =
   "Spanish trade glossary (whenever you write Spanish, use these terms): " +
   "vanity → mueble de baño (or tocador), never lavabo; " +
-  "sink / basin → lavabo; countertop → encimera; backsplash → salpicadero; " +
+  "kitchen sink → fregadero (or tarja), never lavabo; " +
+  "bathroom sink / basin → lavabo; " +
+  'soffit → plafón del alero (or sofito), never left as "soffit"; ' +
+  "countertop → encimera; backsplash → salpicadero; " +
   "drywall → tablaroca; studs → montantes; trim → molduras; grout → lechada; " +
   "trench → zanja, never trinchado; " +
   "cooktop cutout → corte para la estufa, never corte para la cocina; " +

@@ -5,9 +5,11 @@ import {
   IsObject,
   IsOptional,
   IsString,
+  Max,
   ValidateNested,
   validateSync,
 } from "#class-validator";
+import { MAX_CENTS } from "#quote-flow/assistant-draft.ts";
 import { plainToInstance, Type } from "#class-transformer";
 import type { InvoiceUrgency } from "@paperwork/domain/business/invoice-urgency/mod.ts";
 import type {
@@ -114,8 +116,9 @@ export class CreateInvoiceDto {
 
   @IsOptional() @IsString()
   customerId?: string;
-  /** Invoice amount in INTEGER CENTS. Audit1 #3. */
-  @IsOptional() @IsNumber()
+  /** Invoice amount in INTEGER CENTS. Audit1 #3. REQ-550: at most the $1bn
+   *  cap (assistant-draft's MAX_CENTS). */
+  @IsOptional() @IsNumber() @Max(MAX_CENTS)
   amount?: number;
   /** Cumulative discount applied, INTEGER CENTS — shown as a line on the
    *  public invoice (roadmap p.12). `amount` is the net total due. */
@@ -204,8 +207,9 @@ export class UpdateInvoiceDto {
   description?: string;
   @IsOptional() @IsString()
   customerId?: string;
-  /** Invoice amount in INTEGER CENTS. Audit1 #3. */
-  @IsOptional() @IsNumber()
+  /** Invoice amount in INTEGER CENTS. Audit1 #3. REQ-550: at most the $1bn
+   *  cap (assistant-draft's MAX_CENTS). */
+  @IsOptional() @IsNumber() @Max(MAX_CENTS)
   amount?: number;
   @IsOptional() @IsNumber()
   discountCents?: number;
@@ -282,6 +286,15 @@ export class UpdateInvoiceDto {
   claimRejectedAt?: string | null;
   @IsOptional() @IsString()
   claimRejectedMethod?: string | null;
+  /** REQ-556: where the paid receipt reached the customer — "email" | "text"
+   *  | "none". Set by MarkInvoicePaid / ConfirmPayment; never from a request. */
+  @IsOptional() @IsString()
+  receiptSentVia?: string;
+  /** REQ-556: how signing's confirmation reached the customer for the
+   *  milestone it billed — ["email", "text"]; [] = nobody. Set by
+   *  SendSignedConfirmation; never from a request. */
+  @IsOptional() @IsArray() @IsString({ each: true })
+  deliveredVia?: string[];
 }
 
 export interface Invoice extends CreateInvoiceDto, NumberedFields {
@@ -304,6 +317,9 @@ export interface Invoice extends CreateInvoiceDto, NumberedFields {
   updatedAt: string;
   /** Computed read-only field: never accepted from request bodies; projected on read. */
   urgency?: InvoiceUrgency;
+  /** REQ-556: see UpdateInvoiceDto — the delivery results, server-written. */
+  receiptSentVia?: string;
+  deliveredVia?: string[];
   /** REQ-497: see UpdateInvoiceDto — set by TranslateInvoice only. */
   lang?: string;
   jobNameByLang?: Record<string, string>;

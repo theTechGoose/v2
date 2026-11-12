@@ -1,6 +1,7 @@
 import { assert, assertEquals } from "#std/assert";
 import { GenerateJobOptions } from "./mod.ts";
 import { t } from "@core/i18n/mod.ts";
+import { nearTwinBullets } from "#quote-flow/option-bullets.ts";
 import { StubLLMClient } from "@agents/domain/business/llm/implementations/stub/mod.ts";
 
 /**
@@ -138,7 +139,9 @@ Deno.test("REQ-026 NW-05 nothing scope-like ('ok') → the localized 'New job' b
 // Live: gpt-4o-mini answered one option object carrying three duplicate
 // "byLang" keys (JSON.parse keeps the last) → one card. A short but usable
 // answer is padded to three distinct variants of the first option.
-Deno.test("REQ-028 NW-05 a usable one-option reply is padded to three distinct versions", async () => {
+// REQ-584 AMENDMENT: the "· Short version" pad is the same words regrouped
+// — a near-twin — so a three-line job is padded with the wider version only.
+Deno.test("REQ-028 NW-05 a usable one-option reply is padded with distinct versions only (REQ-584: no near-twins)", async () => {
   const { llm, coord } = fresh();
   llm.setHandler(() => ({
     text: JSON.stringify({
@@ -158,14 +161,13 @@ Deno.test("REQ-028 NW-05 a usable one-option reply is padded to three distinct v
   }));
   const res = await coord.run({ userId: "u1", raw: "Reparar la cerca", langs: ["es", "en"] });
   assertEquals(res.degraded, false);
-  assertEquals(res.options.length, 3);
+  assertEquals(res.options.length, 2);
   const names = res.options.map((o) => o.jobName);
-  assertEquals(new Set(names).size, 3, `distinct titles: ${names}`);
+  assertEquals(new Set(names).size, 2, `distinct titles: ${names}`);
   assertEquals(res.options[0].bullets, ["Reemplazar tres postes", "Ajustar la estructura", "Pintar la madera"]);
-  assertEquals(res.options[1].bullets.length, 2);
-  assertEquals(res.options[2].bullets.length, 4);
-  assertEquals(res.options[2].byLang.en.bullets[3], "Jobsite cleanup");
-  assertEquals(res.options.map((o) => o.id), ["opt1", "opt2", "opt3"]);
+  assertEquals(res.options[1].bullets.length, 4);
+  assertEquals(res.options[1].byLang.en.bullets[3], "Jobsite cleanup");
+  assertEquals(res.options.map((o) => o.id), ["opt1", "opt2"]);
 });
 
 // REQ-266 (demo issue ai-assistant-p7-options): a 900-character gut job
@@ -885,4 +887,97 @@ Deno.test("REQ-434 M10 a model jobName over the budget is never cut after a conn
   });
   assertEquals(res.options[0].byLang.en.jobName, "Bathroom Renovation");
   assertEquals(res.options[0].byLang.es.jobName, "Renovación de cocina");
+});
+
+// ── REQ-584 (demo-loop cycle 4, p4-p1d) ────────────────────────────────────
+// "Job Details options differ only by a word": pair 1's one-scope paint job
+// showed Concise / Standard / Detailed cards that read the same. Exact-match
+// dedupe let one-word twins through, and padToThree padded with variants
+// that are the same words regrouped or + "Jobsite cleanup".
+
+const PAINT_RAW =
+  "Interior paint for Linda Perez, 3 bedrooms, walls only, two coats, materials included, $2850";
+
+Deno.test("REQ-584 (cycle 4, p4-p1d) three model options that differ by a word collapse to one card", async () => {
+  const { llm, coord } = fresh();
+  const opt = (jobName: string, bullets: string[]) => ({
+    en: { jobName, summary: jobName, bullets },
+  });
+  llm.setHandler(() => ({
+    text: JSON.stringify({
+      options: [
+        opt("Interior Painting 3 Bedrooms", [
+          "Paint walls in 3 bedrooms, two coats",
+          "Materials included",
+        ]),
+        opt("3-Bedroom Interior Paint", [
+          "Paint the walls in 3 bedrooms, two coats",
+          "Materials included",
+        ]),
+        opt("Bedroom Wall Painting", [
+          "Paint walls in 3 bedrooms, two full coats",
+          "Materials included",
+        ]),
+      ],
+    }),
+  }));
+  const res = await coord.run({ userId: "u1", raw: PAINT_RAW, langs: ["en"] });
+  assertEquals(res.degraded, false);
+  assertEquals(res.options.length, 1, JSON.stringify(res.options.map((o) => o.bullets)));
+  assertEquals(res.options[0].jobName, "Interior Painting 3 Bedrooms");
+  assertEquals(res.options[0].id, "opt1");
+});
+
+Deno.test("REQ-584 (cycle 4, p4-p1d) a one-item job is not padded with near-twin versions", async () => {
+  const { llm, coord } = fresh();
+  llm.setHandler(() => ({
+    text: JSON.stringify({
+      options: [{
+        en: {
+          jobName: "Bedroom Painting",
+          summary: "Paint three bedrooms",
+          bullets: ["Paint walls in 3 bedrooms, two coats, materials included"],
+        },
+      }],
+    }),
+  }));
+  const res = await coord.run({ userId: "u1", raw: PAINT_RAW, langs: ["en"] });
+  assertEquals(res.options.length, 1, JSON.stringify(res.options.map((o) => o.bullets)));
+});
+
+Deno.test("REQ-584 (cycle 4, p4-p1d) padding never adds a version that is a near-twin of one already offered", async () => {
+  const { llm, coord } = fresh();
+  const lines = [
+    "Prep walls: patch nail holes and sand",
+    "Prime patched spots",
+    "Paint walls in 3 bedrooms, two coats",
+    "Cut in along ceilings and trim",
+    "Eggshell finish on every wall",
+  ];
+  llm.setHandler(() => ({
+    text: JSON.stringify({
+      options: [{ en: { jobName: "Bedroom Painting", summary: "Paint three bedrooms", bullets: lines } }],
+    }),
+  }));
+  const res = await coord.run({ userId: "u1", raw: PAINT_RAW, langs: ["en"] });
+  for (let i = 0; i < res.options.length; i++) {
+    for (let j = i + 1; j < res.options.length; j++) {
+      assert(
+        !nearTwinBullets(res.options[i].bullets, res.options[j].bullets),
+        `near-twins: ${JSON.stringify([res.options[i].bullets, res.options[j].bullets])}`,
+      );
+    }
+  }
+  assertEquals(res.options[0].bullets, lines);
+});
+
+Deno.test("REQ-584 (cycle 4, p4-p1d) the degraded fallback keeps its three titled versions (exact-twin dedupe only)", async () => {
+  const { llm, coord } = fresh();
+  llm.setHandler(() => {
+    throw new Error("boom");
+  });
+  const res = await coord.run({ userId: "u1", raw: GUT_JOB_ITEMS.join("\n"), langs: ["en"] });
+  assertEquals(res.degraded, true);
+  assertEquals(res.options.length, 3);
+  assertEquals(res.options[0].bullets, GUT_JOB_ITEMS);
 });

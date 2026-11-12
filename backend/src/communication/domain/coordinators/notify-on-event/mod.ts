@@ -101,7 +101,7 @@ export class NotifyOnEvent {
 function notificationEntityType(
   t: DomainEvent["entityType"],
 ): "quote" | "invoice" | "customer" | "conversation" | undefined {
-  if (t === "payment" || t === "message") return undefined;
+  if (t === "payment" || t === "message" || t === "task") return undefined;
   return t;
 }
 
@@ -115,7 +115,7 @@ function notificationEntityType(
  * `mapEventToNotification` contract keeps its exact prose.
  */
 function renderNotifString(lang: Lang, key: string, params?: Vars): string {
-  return renderShared((k, v) => t(lang, k, v), key, params);
+  return renderShared((k, v) => t(lang, k, v), key, params, lang);
 }
 
 /**
@@ -129,7 +129,7 @@ export function localizeNotification(
   lang: Lang,
 ): Notification {
   if (!n.titleKey) return n;
-  const title = notificationTitle((k, v) => t(lang, k, v), n);
+  const title = notificationTitle((k, v) => t(lang, k, v), n, lang);
   const body = n.bodyKey
     ? renderNotifString(lang, n.bodyKey, n.bodyParams)
     : n.body;
@@ -178,10 +178,20 @@ export function notificationL10n(event: DomainEvent): NotificationL10n | null {
     // a generic sentence. Job-less events keep the original key.
     const jobName = event.data?.jobName as string | undefined;
     if (jobName) {
+      // REQ-589 (demo-loop cycle 4, m15): the per-language names ride along
+      // so the feed names the job in the READER's language.
+      const byLang = event.data?.jobNameByLang as
+        | Record<string, string>
+        | undefined;
+      const perLang: Vars = {};
+      for (const l of ["en", "es"] as const) {
+        const v = byLang?.[l]?.trim();
+        if (v) perLang[`job_${l}`] = v;
+      }
       return {
         type: "quote_accepted",
         titleKey: "notify.quote.acceptedJob",
-        titleParams: { ...(nameParams ?? {}), job: jobName },
+        titleParams: { ...(nameParams ?? {}), job: jobName, ...perLang },
       };
     }
     return {
@@ -287,6 +297,64 @@ export function notificationL10n(event: DomainEvent): NotificationL10n | null {
           ? `${description.slice(0, 139)}…`
           : description)
         : undefined,
+    };
+  }
+  // REQ-566 (demo-loop cycle 4, m11): the owner's own work is activity too.
+  // The dashboard's "What we handled today" reads this feed (REQ-299); with
+  // only customer-side events mapped it said "Nothing yet" after the owner
+  // issued an invoice, recorded a payment or a worker finished a job.
+  // `sent` is SendInvoice's first-send event, `issued` every other path's.
+  if (
+    event.entityType === "invoice" &&
+    (event.action === "issued" || event.action === "sent")
+  ) {
+    const amountCents = event.data?.amountCents;
+    const money = typeof amountCents === "number" && amountCents > 0;
+    return {
+      type: "invoice_sent",
+      titleKey: money ? "notify.invoice.issuedAmount" : "notify.invoice.issued",
+      titleParams: money ? { ...nameParams, amountCents } : nameParams,
+    };
+  }
+  if (event.entityType === "invoice" && event.action === "payment_recorded") {
+    const amountCents = event.data?.amountCents;
+    const money = typeof amountCents === "number" && amountCents > 0;
+    return {
+      type: "invoice_paid",
+      titleKey: money
+        ? "notify.payment.recordedAmount"
+        : "notify.payment.recorded",
+      titleParams: money ? { ...nameParams, amountCents } : nameParams,
+    };
+  }
+  if (event.entityType === "task" && event.action === "completed") {
+    const task = (event.data?.task as string | undefined) ?? "";
+    const worker = event.data?.worker as string | undefined;
+    return {
+      type: "task_completed",
+      titleKey: worker ? "notify.task.completedBy" : "notify.task.completed",
+      titleParams: worker
+        ? { ...nameParams, task, worker }
+        : { ...nameParams, task },
+    };
+  }
+  // REQ-564 (demo-loop cycle 4, m35): a published revision is a feed row —
+  // "Q-001 Version 2 published to María" — so the ticker and Activity stop
+  // reading the older "Quote sent" after the contractor publishes.
+  if (
+    (event.entityType === "quote" || event.entityType === "invoice") &&
+    event.action === "revised"
+  ) {
+    const number = event.data?.number as string | undefined;
+    const version = event.data?.version as number | undefined;
+    return {
+      type: "generic",
+      titleKey: `notify.${event.entityType}.revised`,
+      titleParams: {
+        ...(nameParams ?? {}),
+        number: number ?? "",
+        version: version ?? "",
+      },
     };
   }
   if (event.entityType === "message" && event.action === "received") {

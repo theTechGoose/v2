@@ -30,8 +30,11 @@ describe("REQ-501 M35 Settings field validation", () => {
     expect(accountEmailError(undefined)).toBeNull();
   });
 
-  test("businessNameError: blank once a name is set → welcome.nameBlank; otherwise null", () => {
-    expect(businessNameError("", "Jensen Roofing")).toBe("welcome.nameBlank");
+  test("businessNameError: blank once a name is set → an error key; otherwise null", () => {
+    // REQ-598 (cycle 4, p4-p10a): empty asks for the name; spaces alone keep welcome.nameBlank
+    expect(businessNameError("", "Jensen Roofing")).toBe(
+      "settings.businessNameRequired",
+    );
     expect(businessNameError("   ", "Jensen Roofing")).toBe(
       "welcome.nameBlank",
     );

@@ -148,3 +148,110 @@ Deno.test("REQ-488: invoice claim_rejected maps to a 'marked as not received' ro
     "Marcaste el pago de María Pérez como no recibido",
   );
 });
+
+// REQ-589 (demo-loop cycle 4, m15): a Spanish quote accepted while the
+// contractor reads in English (or the reverse) named the job in the language
+// the event happened to carry ("aceptó tu cotización de Furniture Removal").
+// The event now carries the per-language job names and the feed picks the
+// reader's.
+Deno.test("REQ-589 m15: quote accepted names the job in the reader's language", () => {
+  const e = {
+    userId: "u-1",
+    entityType: "quote",
+    entityId: "q-1",
+    action: "accepted",
+    data: {
+      customerName: "María",
+      jobName: "Furniture Removal",
+      jobNameByLang: { en: "Furniture Removal", es: "Retiro de muebles" },
+    },
+    timestamp: "2026-11-11T12:00:00.000Z",
+  } as DomainEvent;
+  const es = feedTitle(e, "es");
+  const en = feedTitle(e, "en");
+  assertEquals(es, "María aceptó tu cotización de Retiro de muebles");
+  assertEquals(en, "María accepted your quote for Furniture Removal");
+});
+
+// REQ-566 (demo-loop cycle 4, m11): the dashboard's "What we handled today"
+// reads this feed, and it only knew customer-side events — an invoice the
+// owner issued, a payment the owner recorded and a field job a worker
+// finished never showed up, so the panel said "Nothing yet".
+Deno.test("REQ-566 (cycle 4, m11): an issued invoice maps to an 'Invoice sent' row in both languages", () => {
+  for (const action of ["issued", "sent"]) {
+    const e = ev(action, { amountCents: 45000, customerName: "Bob Smith" });
+    assertEquals(notificationL10n(e)?.type, "invoice_sent");
+    assertEquals(feedTitle(e, "en"), "Invoice for $450 sent to Bob Smith");
+    assertEquals(feedTitle(e, "es"), "Factura de $450 enviada a Bob Smith");
+  }
+  const bare = ev("issued", {});
+  assertEquals(feedTitle(bare, "en"), "Invoice sent to your client");
+  assertEquals(feedTitle(bare, "es"), "Factura enviada a tu cliente");
+});
+
+Deno.test("REQ-566 (cycle 4, m11): a payment the owner recorded maps to a 'Payment recorded' row", () => {
+  const e = ev("payment_recorded", {
+    amountCents: 142500,
+    customerName: "Linda Perez",
+  });
+  assertEquals(notificationL10n(e)?.type, "invoice_paid");
+  assertEquals(feedTitle(e, "en"), "Payment recorded: $1,425 from Linda Perez");
+  assertEquals(feedTitle(e, "es"), "Pago registrado: $1,425 de Linda Perez");
+});
+
+Deno.test("REQ-566 (cycle 4, m11): a finished field task maps to a 'Job done' row naming the worker", () => {
+  const e: DomainEvent = {
+    userId: "u-1",
+    entityType: "task",
+    entityId: "t-1",
+    action: "completed",
+    data: { customerName: "Ana Torres", task: "Lawn mowing", worker: "Carlos" },
+    timestamp: "2026-11-11T12:00:00.000Z",
+  };
+  assertEquals(notificationL10n(e)?.type, "task_completed");
+  assertEquals(
+    feedTitle(e, "en"),
+    "Carlos finished a job for Ana Torres: Lawn mowing",
+  );
+  assertEquals(
+    feedTitle(e, "es"),
+    "Carlos terminó un trabajo para Ana Torres: Lawn mowing",
+  );
+  const office = { ...e, data: { customerName: "Ana Torres", task: "Lawn mowing" } };
+  assertEquals(feedTitle(office, "en"), "Job done for Ana Torres: Lawn mowing");
+  assertEquals(
+    feedTitle(office, "es"),
+    "Trabajo terminado para Ana Torres: Lawn mowing",
+  );
+});
+
+// REQ-564 (demo-loop cycle 4, m35): publishing a revision is a feed event —
+// the topbar ticker and Activity say which document went to which version
+// and who it went to, instead of still reading "Quote sent".
+Deno.test("REQ-564: quote/invoice 'revised' maps to '<number> Version <n> published to <customer>' in both languages", () => {
+  const q: DomainEvent = {
+    ...ev("revised", { number: "Q-001", version: 2, customerName: "Maria" }),
+    entityType: "quote",
+    entityId: "q-1",
+  };
+  assertEquals(notificationL10n(q)?.titleKey, "notify.quote.revised");
+  assertEquals(feedTitle(q, "en"), "Q-001 Version 2 published to Maria");
+  assertEquals(feedTitle(q, "es"), "Versión 2 de Q-001 publicada para Maria");
+  const inv = ev("revised", {
+    number: "INV-003",
+    version: 3,
+    customerName: "Maria",
+  });
+  assertEquals(notificationL10n(inv)?.titleKey, "notify.invoice.revised");
+  assertEquals(feedTitle(inv, "en"), "INV-003 Version 3 published to Maria");
+  assertEquals(
+    feedTitle(inv, "es"),
+    "Versión 3 de INV-003 publicada para Maria",
+  );
+  // no customer on the event → the localized "your client" fallback
+  const bare = ev("revised", { number: "INV-003", version: 3 });
+  assertEquals(
+    feedTitle(bare, "en"),
+    "INV-003 Version 3 published to your client",
+  );
+});

@@ -53,6 +53,7 @@ import { FieldDay } from "@field/domain/coordinators/field-day/mod.ts";
 import { FieldMapCenter } from "@field/domain/coordinators/field-map-center/mod.ts";
 import { FieldBatches } from "@field/domain/coordinators/field-batches/mod.ts";
 import { FieldNotices } from "@field/domain/coordinators/field-notices/mod.ts";
+import { FieldActivity } from "@field/domain/coordinators/field-activity/mod.ts";
 import {
   FieldViews,
   safeWorker,
@@ -93,40 +94,38 @@ interface WelcomeDeps {
   sms: SmsService;
 }
 
-/** REQ-151 — the welcome text to one worker, in the owner's language; false (and a log line) when it could not go out */
+/**
+ * REQ-151 — the welcome text to one worker, in the owner's language; `ok` false (and a log line) when it
+ * could not go out. REQ-601 — also the sign-in address and the exact text, so the owner can share them.
+ */
 async function welcomeWorker(
   d: WelcomeDeps,
   user: User,
   w: FieldWorker,
   override?: "en" | "es",
-): Promise<boolean> {
+): Promise<{ ok: boolean; url: string; body: string }> {
   const lang = override ?? workerLang(w, user); // REQ-155 — the worker's language
   const identity = await d.identities.get(user.id);
   const who = realName(user.name);
   const biz = identity?.businessName?.trim();
   const owner = who && biz ? `${who} (${biz})` : accountLabel(user, biz);
+  const url = workerSignInUrl(appUrl(), lang); // REQ-285 — the screen opens in it
+  const body = workerWelcome(lang, { owner, url, pin: w.pin });
   try {
-    const sent = await d.sms.send({
-      to: normalizePhone(w.phoneNumber),
-      body: workerWelcome(lang, {
-        owner,
-        url: workerSignInUrl(appUrl(), lang), // REQ-285 — the screen opens in it
-        pin: w.pin,
-      }),
-    });
+    const sent = await d.sms.send({ to: normalizePhone(w.phoneNumber), body });
     if (!sent.ok) {
       console.error(
         `[field/workers] welcome text to ${w.phoneNumber} failed: ${sent.reason}`,
       );
     }
-    return sent.ok;
+    return { ok: sent.ok, url, body };
   } catch (err) {
     console.error(
       `[field/workers] welcome text to ${w.phoneNumber} failed: ${
         (err as Error).message
       }`,
     );
-    return false;
+    return { ok: false, url, body };
   }
 }
 
@@ -266,8 +265,14 @@ export class FieldWorkersController {
     w.language = language ?? "es"; // REQ-155 — Spanish by default
     await this.workers.put(w);
     // REQ-151 — the welcome text: who added them, the /worker address, the PIN; its failure is logged, never thrown
-    const texted = await welcomeWorker(deps(this), user, w);
-    return ctx.json({ ...safeWorker(w), texted }, 201);
+    const welcome = await welcomeWorker(deps(this), user, w);
+    // REQ-601 — the link and the very text, so a page whose text failed can hand them to the owner to share
+    return ctx.json({
+      ...safeWorker(w),
+      texted: welcome.ok,
+      signInUrl: welcome.url,
+      shareText: welcome.body,
+    }, 201);
   }
 
   /**
@@ -314,12 +319,12 @@ export class FieldWorkersController {
         language: override ?? workerLang(w, user),
       };
       if (!dryRun) {
-        row.texted = await welcomeWorker(
+        row.texted = (await welcomeWorker(
           deps(this),
           user,
           w,
           override ?? undefined,
-        );
+        )).ok;
       }
       out.push(row);
     }
@@ -796,6 +801,7 @@ export class FieldTasksController {
     private regions: RegionStore,
     private customers: CustomerStore,
     private notices: FieldNotices,
+    private activity: FieldActivity,
   ) {}
 
   /** REQ-164: a one-off task by hand — one customer, one day, no subscription */
@@ -977,6 +983,7 @@ export class FieldTasksController {
       t.adminNote = String(b.adminNote ?? "").trim() || undefined;
     }
     // REQ-159 — the office marks the task done, or re-opens it
+    let completedNow = false;
     if ("status" in b) {
       const st = str(b.status);
       if (st !== "complete" && st !== "assigned") {
@@ -988,6 +995,7 @@ export class FieldTasksController {
           409,
         );
       }
+      completedNow = st === "complete" && t.status !== "complete"; // REQ-566
       t.status = st;
       if (st === "complete") t.completedAt = new Date().toISOString();
       else delete t.completedAt;
@@ -1023,6 +1031,7 @@ export class FieldTasksController {
       t.priceCents = p;
     }
     await this.tasks.put(t);
+    if (completedNow) await this.activity.taskCompleted(t); // REQ-566
     return this.views.task(t, await this.views.names(user.id));
   }
 }

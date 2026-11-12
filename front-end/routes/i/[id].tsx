@@ -11,9 +11,11 @@ import {
   resolvePublicLang,
 } from "../../../shared/quote-flow/public-lang.ts";
 import { projectLineItems } from "../../../shared/quote-flow/public-doc-state.ts";
+import { publicLogoUrl } from "../../../shared/quote-flow/public-logo-url.ts";
 import { localizeLineItems } from "../../../shared/quote-flow/quote-translations.ts";
 import {
   claimedNoteKey,
+  type ReceiptChannel,
   receiptChannelOf,
 } from "../../../shared/documents/receipt-note.ts";
 import {
@@ -22,6 +24,7 @@ import {
 } from "../../../shared/quote-flow/visit-groups.ts";
 import PublicInvoiceClaim from "../../islands/PublicInvoiceClaim.tsx";
 import PublicInvoiceRefresh from "../../islands/PublicInvoiceRefresh.tsx";
+import OwnerClaimReview from "../../islands/OwnerClaimReview.tsx";
 import PublicLangToggle from "../../islands/PublicLangToggle.tsx";
 import {
   invoiceHeadline,
@@ -29,7 +32,12 @@ import {
   stateLabel,
 } from "../../../shared/documents/linked-view.ts";
 import { receivedNoteBody } from "../../../shared/documents/received-note.ts";
+import { receiptSentViaOf } from "../../../shared/documents/delivery-truth.ts";
 import { claimRejectedNote } from "../../../shared/documents/claim-rejected-note.ts";
+import {
+  ownerClaimNote,
+  ownerClaimNoteShown,
+} from "../../../shared/documents/owner-claim-note.ts";
 import {
   BG,
   computeMilestones,
@@ -68,9 +76,14 @@ interface Contractor {
   commsLanguage?: string;
   /** True when the contractor uploaded a business logo (roadmap p.2). */
   hasLogo?: boolean;
+  /** REQ-613 (M31): the logo's version — part of its URL, so a replaced logo is a new URL. */
+  logoVersion?: string;
 }
 
 interface InvoicePublic {
+  /** REQ-586 (cycle 4, M11): the document's language (shared
+   *  invoiceDocLang), when one is recorded. */
+  docLang?: string;
   /** REQ-479 (demo M30): the viewer is the business itself (owner, admin,
    *  staff impersonating) — a preview, not the customer. */
   internal?: boolean;
@@ -180,6 +193,9 @@ interface InvoicePublic {
   /** REQ-523 (demo m16): where the payment receipt can arrive — "email",
    *  "text" (a number that can take one) or "none". */
   receiptChannel?: string;
+  /** REQ-556 (demo-loop cycle 4, M7): where the paid receipt actually went —
+   *  "email" | "text" | "none" (absent on invoices paid before it was kept). */
+  receiptSentVia?: string;
 }
 
 export default define.page(async function PublicInvoice(ctx) {
@@ -199,7 +215,10 @@ export default define.page(async function PublicInvoice(ctx) {
   const lang: Lang = resolvePublicLang({
     query: url.searchParams.get("lang"),
     cookie: ctx.req.headers.get("cookie"),
-    docLang: invoice?.contractor?.commsLanguage,
+    // REQ-586 (cycle 4, M11): the invoice's own document language (its
+    // `lang`, else the language its quote was sent in) ahead of the
+    // contractor's default.
+    docLang: invoice?.docLang ?? invoice?.contractor?.commsLanguage,
     header: ctx.req.headers.get("accept-language"),
   });
   const err = r.ok ? undefined : tFor(lang, "publicInvoice.error.expired");
@@ -241,7 +260,7 @@ export default define.page(async function PublicInvoice(ctx) {
             )
             : <InvoiceDoc invoice={invoice} lang={lang} search={url.search} />}
         </div>
-        <SiteFooter lang={lang} document />
+        <SiteFooter lang={lang} document credited />
       </div>
     </>
   );
@@ -284,6 +303,7 @@ function InvoiceDoc(
   const claimed = invoice.status === "claimed" && !!invoice.paymentIntent;
   const pastDue = !paid && !claimed && isPastDue(invoice.dueDate);
   const es = lang === "es";
+  const contractorFirst = invoice.contractor?.name?.split(/\s+/)[0];
   const businessLabel = invoice.contractor?.businessName?.trim() ||
     invoice.contractor?.name?.trim() ||
     tFor(lang, "brand.name");
@@ -322,6 +342,9 @@ function InvoiceDoc(
       version: invoice.version ?? 1,
       state: invoice.state ?? (paid ? "paid" : claimed ? "claimed" : "sent"),
       date: paid ? invoice.paidAt : invoice.publishedAt,
+      // REQ-558: owner-only states (scheduled, draft) are named only to the business.
+      internal: invoice.internal === true,
+      dueDate: invoice.dueDate,
     },
     lang,
   );
@@ -381,7 +404,11 @@ function InvoiceDoc(
               {invoice.contractor?.hasLogo
                 ? (
                   <img
-                    src={`/api/public-logo/invoice/${invoice.id}`}
+                    src={publicLogoUrl(
+                      "invoice",
+                      invoice.id,
+                      invoice.contractor.logoVersion,
+                    )}
                     alt=""
                     style="max-height:44px;max-width:150px;object-fit:contain;display:block;margin-bottom:8px;border-radius:8px"
                   />
@@ -740,6 +767,8 @@ function InvoiceDoc(
             ? (
               <ReceivedNote
                 paidAt={invoice.paidAt}
+                channel={receiptSentViaOf(invoice.receiptSentVia) ??
+                  receiptChannelOf(invoice)}
                 contractorFirst={invoice.contractor?.name?.split(/\s+/)[0]}
                 es={es}
               />
@@ -747,11 +776,21 @@ function InvoiceDoc(
             : claimed
             ? (
               <>
-                <ClaimedNote
-                  invoice={invoice}
-                  contractorFirst={invoice.contractor?.name?.split(/\s+/)[0]}
-                  es={es}
-                />
+                {
+                  /* REQ-557 (demo M25): the business's own preview of a
+                  claimed invoice is addressed to her — who says they paid,
+                  and Confirm received / Didn't get it. The customer keeps
+                  their own note. */
+                }
+                {ownerClaimNoteShown(invoice, search)
+                  ? <OwnerClaimedNote invoice={invoice} lang={lang} />
+                  : (
+                    <ClaimedNote
+                      invoice={invoice}
+                      contractorFirst={contractorFirst}
+                      es={es}
+                    />
+                  )}
                 {
                   /* REQ-321 (demo M14): this page mounts no claim island, so it
                   re-reads the invoice itself — the owner's confirm flips it to
@@ -1192,6 +1231,26 @@ function Pill(
   );
 }
 
+/** REQ-557 (demo M25): the claimed note for the business's own viewer —
+ *  who says they paid, with Confirm received / Didn't get it. */
+function OwnerClaimedNote(
+  { invoice, lang }: { invoice: InvoicePublic; lang: Lang },
+) {
+  const l = lang === "es" ? "es" : "en";
+  const intent = invoice.paymentIntent!;
+  return (
+    <OwnerClaimReview
+      invoiceId={invoice.id}
+      copy={ownerClaimNote((k, v) => tFor(l, k, v), {
+        customer: (intent.claimedBy ?? invoice.customer?.name)?.trim()
+          .split(/\s+/)[0],
+        methodName: methodFriendly(intent.method, l),
+        reference: intent.reference,
+      })}
+    />
+  );
+}
+
 function ClaimedNote(
   { invoice, contractorFirst, es }: {
     /** the claimed invoice — its claim, and (REQ-523, demo m16) where the
@@ -1271,10 +1330,12 @@ function ClaimRejectedNote(
 }
 
 function ReceivedNote(
-  { paidAt, contractorFirst, es }: {
+  { paidAt, contractorFirst, es, channel }: {
     paidAt?: string;
     contractorFirst?: string;
     es: boolean;
+    /** REQ-556: where the receipt went — the inbox sentence only for email */
+    channel?: ReceiptChannel;
   },
 ) {
   const lang = es ? "es" : "en";
@@ -1292,7 +1353,11 @@ function ReceivedNote(
       <p
         style={`margin:8px 0 0;color:${INK};font-size:14.5px;line-height:1.55`}
       >
-        {receivedNoteBody((k, v) => tFor(lang, k, v), lang, { paidAt, who })}
+        {receivedNoteBody((k, v) => tFor(lang, k, v), lang, {
+          paidAt,
+          who,
+          channel,
+        })}
       </p>
     </section>
   );
