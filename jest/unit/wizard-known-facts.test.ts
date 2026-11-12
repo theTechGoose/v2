@@ -151,7 +151,7 @@ describe("REQ-331 extractStartDate — weekday words", () => {
       TODAY,
     );
     expect(facts.wizardPrefillFor("start_date", f))
-      .toEqual({ optionId: "custom", customValue: "11/16/2026" });
+      .toEqual({ optionId: "custom", customValue: "2026-11-16" }); // REQ-495: ISO
   });
 });
 

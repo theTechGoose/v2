@@ -7,12 +7,20 @@
  * Quote+Agreement preview (`islands/AsstChat.tsx`) so the contractor's preview
  * always matches what the customer actually receives.
  *
+ * A date term (REQ-495) is formatted per language; otherwise
  * EN is the identity (returns the value unchanged); ES uses an exact-match map
  * for the preset picks, then a word-level fallback for free-text durations.
  */
 import { type Lang, tFor } from "./i18n.ts";
+import {
+  formatTermDate,
+  termDateIso,
+} from "../../shared/quote-flow/format-helpers.ts";
 
 export function localizeTermValue(value: string, lang: Lang): string {
+  // REQ-495 (m17): a picked start date is stored ISO (older quotes carry
+  // MM/DD/YYYY) — read it in the reader's language, in both languages.
+  if (termDateIso(value)) return formatTermDate(value, lang);
   if (lang !== "es") return value;
   const trimmed = (value ?? "").trim();
   const exact: Record<string, string> = {

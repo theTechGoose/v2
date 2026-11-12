@@ -36,8 +36,8 @@ export interface QuoteFacts {
   customerName: string | null;
   customerPhone: string | null;
   customerEmail: string | null;
-  /** The typed START date — `iso` YYYY-MM-DD, `us` MM/DD/YYYY (the value the
-   *  wizard's date picker submits). */
+  /** The typed START date — `iso` YYYY-MM-DD (the value the wizard's date
+   *  picker submits and the term stores, REQ-495), `us` MM/DD/YYYY. */
   startDate: { iso: string; us: string } | null;
   paymentTerms: PrefillPaymentTerms | null;
   /** The job's own time to complete, EN or ES — REQ-343: "4 weeks", "a
@@ -459,7 +459,8 @@ export function wizardPrefillFor(
   lang: "en" | "es" = "en",
 ): WizardPrefill | null {
   if (stepId === "start_date" && facts.startDate) {
-    return { optionId: "custom", customValue: facts.startDate.us };
+    // REQ-495 (m17): the start term is stored ISO, like the picker submits.
+    return { optionId: "custom", customValue: facts.startDate.iso };
   }
   if (stepId === "payment_terms" && facts.paymentTerms) {
     const pt = facts.paymentTerms;

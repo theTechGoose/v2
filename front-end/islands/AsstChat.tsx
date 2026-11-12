@@ -142,6 +142,7 @@ import {
 import {
   formatPhoneDisplay,
   formatPhoneInput,
+  formatTermDate,
   websiteLabel,
 } from "../../shared/quote-flow/format-helpers.ts";
 import {
@@ -8922,8 +8923,12 @@ export default function AsstChat({
                                         {tFor(lang, "asstChat.wiz.fromMessage")}
                                         {": "}
                                         <strong>
-                                          {prefill.customValue ??
-                                            prefillOpt.label}
+                                          {prefill.customValue
+                                            ? formatTermDate(
+                                              prefill.customValue,
+                                              lang,
+                                            )
+                                            : prefillOpt.label}
                                         </strong>
                                       </span>
                                       <button
@@ -10822,10 +10827,6 @@ function CustomDatePickerForm(props: {
     `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${
       String(d.getDate()).padStart(2, "0")
     }`;
-  const toUsDate = (d: Date) =>
-    `${String(d.getMonth() + 1).padStart(2, "0")}/${
-      String(d.getDate()).padStart(2, "0")
-    }/${d.getFullYear()}`;
 
   const firstOfMonth = new Date(
     viewMonth.getFullYear(),
@@ -10856,7 +10857,9 @@ function CustomDatePickerForm(props: {
     cells.push({ date: next, outside: true });
   }
 
-  const monthLabel = viewMonth.toLocaleString("default", {
+  // REQ-495 (m17): the picker speaks the app's language, not the browser's.
+  const dateLocale = lang === "es" ? "es-MX" : "en-US";
+  const monthLabel = viewMonth.toLocaleString(dateLocale, {
     month: "long",
     year: "numeric",
   });
@@ -10877,7 +10880,7 @@ function CustomDatePickerForm(props: {
     );
 
   const submitDisabled = sending || picked < today;
-  const longLabel = picked.toLocaleDateString("default", {
+  const longLabel = picked.toLocaleDateString(dateLocale, {
     weekday: "short",
     month: "short",
     day: "numeric",
@@ -10965,7 +10968,9 @@ function CustomDatePickerForm(props: {
         <button
           type="button"
           class="cust-create__btn cust-create__btn--primary"
-          onClick={() => onSubmit(toUsDate(picked))}
+          // REQ-495 (m17): the start term is stored ISO; every reader
+          // formats it in its own language (localizeTermValue).
+          onClick={() => onSubmit(toIso(picked))}
           disabled={submitDisabled}
         >
           {tFor(lang, "asstChat.cal.useDate")}

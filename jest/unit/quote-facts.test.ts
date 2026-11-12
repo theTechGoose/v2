@@ -123,10 +123,10 @@ describe("REQ-265 wizardPrefillFor — the wizard step's pre-selection", () => {
       TODAY,
     );
 
-  test("start_date pre-selects 'Pick a date' with the typed date (the date picker's MM/DD/YYYY)", () => {
+  test("start_date pre-selects 'Pick a date' with the typed date (ISO since REQ-495, the date picker's value)", () => {
     expect(mod.wizardPrefillFor("start_date", facts())).toEqual({
       optionId: "custom",
-      customValue: "12/01/2026",
+      customValue: "2026-12-01", // REQ-495: ISO, was MM/DD/YYYY
     });
   });
 

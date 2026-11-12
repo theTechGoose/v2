@@ -6,6 +6,7 @@ import type { Quote, QuoteTerm } from "@paperwork/dto/quote.ts";
 import { InvoiceStore } from "@paperwork/domain/data/invoice-store/mod.ts";
 import { isAccepted } from "#quote-flow/quote-status.ts";
 import { isTbdTermValue } from "#quote-flow/terms-i18n.ts";
+import { formatTermDate, termDateIso } from "#quote-flow/format-helpers.ts";
 import { QuoteStore } from "@paperwork/domain/data/quote-store/mod.ts";
 import { CustomerStore } from "@crm/domain/data/customer-store/mod.ts";
 import { UserStore } from "@users/domain/data/user-store/mod.ts";
@@ -915,6 +916,9 @@ function termValue(
 }
 
 export function localizeTermValue(value: string, lang: "en" | "es"): string {
+  // REQ-495 (m17): a picked start date (ISO, or a legacy MM/DD/YYYY) prints
+  // in the reader's language — "1 dic 2026" / "Dec 1, 2026".
+  if (termDateIso(value)) return formatTermDate(value, lang);
   if (lang === "en") return value;
   const trimmed = (value ?? "").trim();
   const exactKey: Record<string, string> = {
