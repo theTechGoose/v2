@@ -11,6 +11,7 @@ import {
   resolvePublicLang,
 } from "../../../shared/quote-flow/public-lang.ts";
 import { projectLineItems } from "../../../shared/quote-flow/public-doc-state.ts";
+import { publicLogoUrl } from "../../../shared/quote-flow/public-logo-url.ts";
 import { localizeLineItems } from "../../../shared/quote-flow/quote-translations.ts";
 import {
   claimedNoteKey,
@@ -75,6 +76,8 @@ interface Contractor {
   commsLanguage?: string;
   /** True when the contractor uploaded a business logo (roadmap p.2). */
   hasLogo?: boolean;
+  /** REQ-613 (M31): the logo's version — part of its URL, so a replaced logo is a new URL. */
+  logoVersion?: string;
 }
 
 interface InvoicePublic {
@@ -398,7 +401,11 @@ function InvoiceDoc(
               {invoice.contractor?.hasLogo
                 ? (
                   <img
-                    src={`/api/public-logo/invoice/${invoice.id}`}
+                    src={publicLogoUrl(
+                      "invoice",
+                      invoice.id,
+                      invoice.contractor.logoVersion,
+                    )}
                     alt=""
                     style="max-height:44px;max-width:150px;object-fit:contain;display:block;margin-bottom:8px;border-radius:8px"
                   />

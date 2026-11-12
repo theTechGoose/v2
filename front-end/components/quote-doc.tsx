@@ -20,6 +20,7 @@ import PublicSignQuote from "../islands/PublicSignQuote.tsx";
 import PublicQuoteActions from "../islands/PublicQuoteActions.tsx";
 import { buildSignatureBlock } from "../../shared/quote-flow/signature-block.ts";
 import { agreementTitle } from "../../shared/quote-flow/agreement-title.ts";
+import { publicLogoUrl } from "../../shared/quote-flow/public-logo-url.ts";
 import { senderInitials as senderInitialsOf } from "../../shared/identity/initials.ts";
 import {
   type ConfirmChannel,
@@ -90,6 +91,8 @@ interface Contractor {
   /** True when the contractor uploaded a business logo — rendered via the
    *  public-logo endpoint above the brand strip (roadmap p.2). */
   hasLogo?: boolean;
+  /** REQ-613 (M31): the logo's version — part of its URL, so a replaced logo is a new URL. */
+  logoVersion?: string;
 }
 
 export interface QuotePublic {
@@ -519,7 +522,7 @@ export function QuoteDoc(
         {contractor?.hasLogo
           ? (
             <img
-              src={`/api/public-logo/quote/${quote.id}`}
+              src={publicLogoUrl("quote", quote.id, contractor.logoVersion)}
               alt=""
               style="max-height:48px;max-width:160px;object-fit:contain;display:block;margin:0 auto 8px;border-radius:8px"
             />
