@@ -533,6 +533,9 @@ export function createReplayer(
     }
     if (lt === "img" && fetched(e)) images.add(e); // REQ-451 — settled() waits for it
     if (s.c) { for (const c of s.c) e.appendChild(build(c)); }
+    // REQ-641 — a node built anew starts at its top: a scroll it had before is not settled back
+    // onto it (a scroll it has now comes as its own op, after this)
+    scrolls.delete(s.i);
     reg(s.i, e);
     return e;
   }

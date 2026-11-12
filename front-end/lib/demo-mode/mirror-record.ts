@@ -32,6 +32,14 @@
  * setupCanvas on mount and resize), so the bitmap reads as before and the sweep would never send
  * it again. Any width/height change on a canvas re-sends its bitmap in the same frame, after the
  * attribute ops. `stats()` counts the bitmaps sent.
+ *
+ * REQ-641 (demo-loop cycle 5, m11) — a scroll is not only what its events say. A page that runs
+ * no rendering steps (hidden, occluded, throttled) fires no scroll event at all, so a burst's
+ * resting place could stay on the customer's screen alone until their next scroll. Every element
+ * the recorder has seen scrolled is a known scroller: every frame reads it (and the window) again,
+ * and a poll every SCROLL_POLL_MS asks for a frame when one is not where it was last sent. A
+ * scroller sent anew at its top (moved in the page) is remembered at its top, so a later scroll
+ * back to its old place still goes out.
  */
 import {
   MIRROR_FLUSH_MS,
@@ -47,6 +55,10 @@ import { isSafePath } from "../../../shared/demo-mode/protocol.ts";
  *  (the 1 s sweep left a live signature up to a second behind, or unseen until after signing) */
 export const CANVAS_INK_MS = 100;
 
+/** REQ-641 — how often the known scrollers are read for a scroll no event announced: with the
+ *  flush (MIRROR_FLUSH_MS) and the wire, the stage has a resting scroll well inside 300 ms */
+export const SCROLL_POLL_MS = 150;
+
 export interface RecorderOptions {
   /** a frame to send */
   emit(f: MirrorFrame): void;
@@ -60,6 +72,8 @@ export interface RecorderOptions {
   sweepMs?: number;
   /** REQ-534 — how often a canvas being drawn on is re-sent (default CANVAS_INK_MS) */
   inkMs?: number;
+  /** REQ-641 — how often the known scrollers are read for a scroll no event announced */
+  scrollPollMs?: number;
   /** REQ-309 — a heartbeat (an empty frame) when nothing went out for this long */
   heartbeatMs?: number;
   /** the clock the heartbeat reads (jest hands in its own) */
@@ -269,6 +283,7 @@ export function createRecorder(doc: Document, o: RecorderOptions): Recorder {
   const Observer = o.Observer ?? globalThis.MutationObserver;
   const flushMs = o.flushMs ?? MIRROR_FLUSH_MS;
   const sweepMs = o.sweepMs ?? 500;
+  const scrollPollMs = o.scrollPollMs ?? SCROLL_POLL_MS;
   const inkMs = o.inkMs ?? CANVAS_INK_MS;
   const heartbeatMs = o.heartbeatMs ?? MIRROR_HEARTBEAT_MS;
   const now = o.now ?? (() => Date.now());
@@ -302,6 +317,8 @@ export function createRecorder(doc: Document, o: RecorderOptions): Recorder {
   const canvasIds = new Set<number>();
   const lastCanvas = new Map<number, string>();
   const lastScroll = new Map<number, string>();
+  /** REQ-641 — the elements seen scrolled: every frame reads them again */
+  const scrollers = new Set<number>();
   let lastWin = "";
   let lastSize = "";
   let lastUrl = "";
@@ -322,6 +339,7 @@ export function createRecorder(doc: Document, o: RecorderOptions): Recorder {
   let stopped = false;
   let flushTimer: ReturnType<typeof setTimeout> | undefined;
   let sweepTimer: ReturnType<typeof setInterval> | undefined;
+  let scrollTimer: ReturnType<typeof setInterval> | undefined;
 
   const idFor = (n: Node) => {
     let id = ids.get(n);
@@ -459,7 +477,11 @@ export function createRecorder(doc: Document, o: RecorderOptions): Recorder {
       const y = e.scrollTop || 0;
       if (x || y) {
         lastScroll.set(i, `${x},${y}`);
+        scrollers.add(i);
         out.push({ o: "s", i, x, y });
+      } else {
+        // REQ-641 — sent at its top: the stage's copy is at its top too
+        lastScroll.delete(i);
       }
     }
   }
@@ -520,6 +542,7 @@ export function createRecorder(doc: Document, o: RecorderOptions): Recorder {
     canvasIds.clear();
     lastCanvas.clear();
     lastScroll.clear();
+    scrollers.clear();
     scrolled.clear();
     inked.clear();
     pending = [];
@@ -534,6 +557,7 @@ export function createRecorder(doc: Document, o: RecorderOptions): Recorder {
     canvasIds.delete(id);
     lastCanvas.delete(id);
     lastScroll.delete(id);
+    scrollers.delete(id);
     inked.delete(id);
   }
 
@@ -568,6 +592,20 @@ export function createRecorder(doc: Document, o: RecorderOptions): Recorder {
         inkDue = false;
       }
     }, wait);
+  }
+
+  /** REQ-641 — a known scroller (or the window) is not where it was last sent: a frame */
+  function pollScrolls() {
+    if (!attached) return;
+    if (`${win?.scrollX ?? 0},${win?.scrollY ?? 0}` !== lastWin) {
+      return schedule();
+    }
+    for (const id of scrollers) {
+      const e = nodes.get(id) as Element | undefined;
+      if (!e) continue;
+      const at = `${e.scrollLeft || 0},${e.scrollTop || 0}`;
+      if (at !== (lastScroll.get(id) ?? "0,0")) return schedule();
+    }
   }
 
   function schedule() {
@@ -605,6 +643,7 @@ export function createRecorder(doc: Document, o: RecorderOptions): Recorder {
         flush();
         beat();
       }, sweepMs);
+      scrollTimer = setInterval(pollScrolls, scrollPollMs);
     }
   }
 
@@ -631,6 +670,8 @@ export function createRecorder(doc: Document, o: RecorderOptions): Recorder {
     inkTimer = undefined;
     clearInterval(sweepTimer);
     sweepTimer = undefined;
+    clearInterval(scrollTimer);
+    scrollTimer = undefined;
     reset();
   }
 
@@ -820,7 +861,13 @@ export function createRecorder(doc: Document, o: RecorderOptions): Recorder {
       }
     }
 
-    // 6. scrolls: the window's, and every scrolled element's
+    // 6. scrolls: the window's, and every scrolled element's — REQ-641: and every known
+    //    scroller's, whether or not an event said so
+    scrolled.add(doc);
+    for (const id of scrollers) {
+      const e = nodes.get(id);
+      if (e) scrolled.add(e);
+    }
     for (const t of scrolled) {
       const n = t as Node;
       if (
@@ -840,6 +887,7 @@ export function createRecorder(doc: Document, o: RecorderOptions): Recorder {
       const id = ids.get(e)!;
       const x = e.scrollLeft || 0;
       const y = e.scrollTop || 0;
+      scrollers.add(id);
       if (`${x},${y}` !== (lastScroll.get(id) ?? "0,0")) {
         lastScroll.set(id, `${x},${y}`);
         ops.push({ o: "s", i: id, x, y });
