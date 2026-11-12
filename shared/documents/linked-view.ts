@@ -9,7 +9,12 @@
  * dictionary: the two languages' labels live here so the backend renderers
  * and the pages never drift.
  */
-import type { DocState, DocVersionRecord, VersionChanges } from "./versions.ts";
+import type {
+  DocState,
+  DocVersionRecord,
+  LineSummary,
+  VersionChanges,
+} from "./versions.ts";
 import type { QuoteLedger } from "./ledger.ts";
 
 export type Lang = "en" | "es";
@@ -178,6 +183,11 @@ const CHANGE_WORDS: Record<
     added: [string, string];
     removed: [string, string];
     changed: [string, string];
+    /** REQ-395: the named-line labels — "Added: Tile backsplash ($700.00)" */
+    addedNamed: string;
+    removedNamed: string;
+    changedNamed: string;
+    untitled: string;
   }
 > = {
   en: {
@@ -185,12 +195,20 @@ const CHANGE_WORDS: Record<
     added: ["line added", "lines added"],
     removed: ["line removed", "lines removed"],
     changed: ["line changed", "lines changed"],
+    addedNamed: "Added",
+    removedNamed: "Removed",
+    changedNamed: "Changed",
+    untitled: "Untitled line",
   },
   es: {
     total: "Total",
     added: ["línea agregada", "líneas agregadas"],
     removed: ["línea eliminada", "líneas eliminadas"],
     changed: ["línea cambiada", "líneas cambiadas"],
+    addedNamed: "Agregado",
+    removedNamed: "Eliminado",
+    changedNamed: "Cambiado",
+    untitled: "Línea sin título",
   },
 };
 
@@ -203,7 +221,8 @@ function usd(cents: number): string {
   }`;
 }
 
-/** REQ-248: "Total $14,700.00 → $15,200.00 · 1 line added · 1 line changed"; "" when nothing changed. */
+/** REQ-248 / REQ-395: "Total $18,500.00 → $19,200.00 · Added: Tile backsplash ($700.00)";
+ *  counts ("2 lines removed") only when the change carries no line names; "" when nothing changed. */
 export function versionChangeLine(
   c: VersionChanges,
   lang: Lang = "en",
@@ -218,10 +237,39 @@ export function versionChangeLine(
   const count = (n: number, [one, many]: [string, string]) => {
     if (n > 0) parts.push(`${n} ${n === 1 ? one : many}`);
   };
-  count(c.linesAdded, w.added);
-  count(c.linesRemoved, w.removed);
-  count(c.linesChanged, w.changed);
+  const name = (l: LineSummary) => clip(l.description) || w.untitled;
+  const named = (label: string, lines: LineSummary[]) =>
+    parts.push(
+      `${label}: ${
+        lines.map((l) => `${name(l)} (${usd(l.totalCents)})`).join(", ")
+      }`,
+    );
+  if (c.added?.length) named(w.addedNamed, c.added);
+  else count(c.linesAdded, w.added);
+  if (c.removed?.length) named(w.removedNamed, c.removed);
+  else count(c.linesRemoved, w.removed);
+  if (c.changed?.length) {
+    parts.push(
+      `${w.changedNamed}: ${
+        c.changed.map(({ from, to }) => {
+          const label = name(from) === name(to)
+            ? name(to)
+            : `${name(from)} → ${name(to)}`;
+          const amount = from.totalCents === to.totalCents
+            ? usd(to.totalCents)
+            : `${usd(from.totalCents)} → ${usd(to.totalCents)}`;
+          return `${label} (${amount})`;
+        }).join(", ")
+      }`,
+    );
+  } else count(c.linesChanged, w.changed);
   return parts.join(" · ");
+}
+
+/** A line's description, kept to one short phrase in a summary. */
+function clip(s: string): string {
+  const one = s.replace(/\s+/g, " ").trim();
+  return one.length > 60 ? `${one.slice(0, 57).trimEnd()}…` : one;
 }
 
 // ---------- related documents on a public page ----------

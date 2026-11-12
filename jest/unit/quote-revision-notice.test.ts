@@ -139,6 +139,12 @@ describe("REQ-248 versionChanges + versionChangeLine — what a revision changed
       linesAdded: 1,
       linesRemoved: 0,
       linesChanged: 1,
+      // REQ-395 (demo m24): the lines travel by name
+      added: [{ description: "Dumpster", totalCents: 0 }],
+      changed: [{
+        from: { description: "Shingles", totalCents: 1000000 },
+        to: { description: "Shingles", totalCents: 1050000 },
+      }],
     });
   });
 
@@ -151,15 +157,18 @@ describe("REQ-248 versionChanges + versionChangeLine — what a revision changed
     });
   });
 
-  it("REQ-248 reads 'Total $14,700.00 → $15,200.00 · 1 line added · 1 line changed'", () => {
+  it("REQ-248 / REQ-395 reads 'Total $14,700.00 → $15,200.00 · Added: Dumpster ($0.00) · Changed: Shingles (…)', counts when no names", () => {
     const { versionChanges } = v();
     const { versionChangeLine } = lv();
     expect(versionChangeLine(versionChanges(before, after), "en")).toBe(
-      "Total $14,700.00 → $15,200.00 · 1 line added · 1 line changed",
+      "Total $14,700.00 → $15,200.00 · Added: Dumpster ($0.00) · Changed: Shingles ($10,000.00 → $10,500.00)",
     );
     expect(versionChangeLine(versionChanges(before, after), "es")).toBe(
-      "Total $14,700.00 → $15,200.00 · 1 línea agregada · 1 línea cambiada",
+      "Total $14,700.00 → $15,200.00 · Agregado: Dumpster ($0.00) · Cambiado: Shingles ($10,000.00 → $10,500.00)",
     );
+    expect(
+      versionChangeLine({ linesAdded: 1, linesRemoved: 0, linesChanged: 1 }),
+    ).toBe("1 line added · 1 line changed");
     expect(
       versionChangeLine({ linesAdded: 0, linesRemoved: 2, linesChanged: 0 }),
     ).toBe("2 lines removed");

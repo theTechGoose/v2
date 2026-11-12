@@ -14,7 +14,11 @@ import {
   publishNumbered,
   snapshotCustomer,
 } from "@core/data/numbered-store/mod.ts";
-import { type DocVersionRecord, firstIssueStamp } from "#documents/versions.ts";
+import {
+  type DocVersionRecord,
+  effectivePendingRevision,
+  firstIssueStamp,
+} from "#documents/versions.ts";
 import {
   descriptionTranslationsStale,
   headingTranslationsStale,
@@ -112,7 +116,12 @@ export class QuoteStore {
     }, { requestId: opts?.requestId });
   }
 
-  /** REQ-201: an edit to an issued quote waits here until published. */
+  /**
+   * REQ-201: an edit to an issued quote waits here until published.
+   * REQ-395 (demo M12): the patch is folded into what is already pending and
+   * only what still differs from the live quote is kept — an edit back to the
+   * published version leaves no pending revision at all.
+   */
   async setPending(
     id: string,
     userId: string,
@@ -122,11 +131,27 @@ export class QuoteStore {
     const defined = Object.fromEntries(
       Object.entries(patch).filter(([_, v]) => v !== undefined),
     );
+    const { pendingRevision: prior, ...live } = existing;
+    const pending = effectivePendingRevision(
+      live as unknown as Record<string, unknown>,
+      { ...(prior ?? {}), ...defined },
+    );
     const updated: Quote = {
-      ...existing,
-      pendingRevision: { ...(existing.pendingRevision ?? {}), ...defined },
+      ...live,
+      ...(Object.keys(pending).length ? { pendingRevision: pending } : {}),
       updatedAt: new Date().toISOString(),
     };
+    const kv = await getKv();
+    await kv.set([PREFIX, id], updated);
+    return updated;
+  }
+
+  /** REQ-395 (demo M12): drop an unwanted draft revision — the live quote stays as published. */
+  async clearPending(id: string, userId: string): Promise<Quote> {
+    const existing = await this.getOwned(id, userId);
+    if (!existing.pendingRevision) return existing;
+    const { pendingRevision: _p, ...rest } = existing;
+    const updated: Quote = { ...rest, updatedAt: new Date().toISOString() };
     const kv = await getKv();
     await kv.set([PREFIX, id], updated);
     return updated;
