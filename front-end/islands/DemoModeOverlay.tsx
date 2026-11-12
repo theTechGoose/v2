@@ -93,6 +93,7 @@ import {
   CONTROL_SELECTOR,
   pickPillSlot,
   PILL_COMPACT_MAX_W,
+  PILL_FONT,
   PILL_MARGIN,
   pillSlots,
   samplePoints,
@@ -574,9 +575,12 @@ export default function DemoModeOverlay() {
     Z + 3
   };display:flex;gap:10px;align-items:center;flex-wrap:nowrap;white-space:nowrap;max-width:calc(100vw - ${
     2 * PILL_MARGIN
-  }px);box-sizing:border-box;padding:7px 12px;border-radius:14px;background:#1f3d1b;color:#fff;font:inherit;font-size:13px;box-shadow:0 4px 18px rgba(0,0,0,.35)`;
-  /** one line: a long name is cut, not wrapped */
+  }px);box-sizing:border-box;padding:7px 12px;border-radius:14px;background:#1f3d1b;color:#fff;font-family:${PILL_FONT};font-size:13px;box-shadow:0 4px 18px rgba(0,0,0,.35)`;
+  /** one line: a long name is cut, not wrapped (the live pill's rule, REQ-228) */
   const cut = "overflow:hidden;text-overflow:ellipsis;min-width:0";
+  // REQ-294 (demo m21) — the words that carry a name wrap to as many lines as it needs: the ended
+  // notice always, the phone's details once opened; the title goes on a phone
+  const wrap = "white-space:normal;min-width:0;overflow-wrap:anywhere";
 
   // REQ-235 — the demo is over: who ended it, in the pill's place, until dismissed (Demo clicked
   // here again takes over)
@@ -590,8 +594,8 @@ export default function DemoModeOverlay() {
           role="status"
           style={pillStyle}
         >
-          <strong>{t("demoMode.title")}</strong>
-          <span style={cut}>{t(said.key, said.vars)}</span>
+          {!compact && <strong>{t("demoMode.title")}</strong>}
+          <span style={wrap}>{t(said.key, said.vars)}</span>
           <button
             type="button"
             data-cy="demo-ended-dismiss"
@@ -713,15 +717,22 @@ export default function DemoModeOverlay() {
           bounds={viewportBox()}
         />
       ))}
-      <div ref={pillRef} data-cy="demo-pill" role="status" style={pillStyle}>
+      <div
+        ref={pillRef}
+        data-cy="demo-pill"
+        role="status"
+        style={pillStyle + (compact && open ? ";flex-wrap:wrap" : "")}
+      >
         <span
           data-cy="demo-details"
           style={`display:${
             compact && !open ? "none" : "inline-flex"
-          };gap:10px;align-items:center;${cut}`}
+          };gap:10px;align-items:center;${
+            compact ? `flex-basis:100%;${wrap}` : cut
+          }`}
         >
-          <strong>{t("demoMode.title")}</strong>
-          <span style={cut}>{guidingText}</span>
+          {!compact && <strong>{t("demoMode.title")}</strong>}
+          <span style={compact ? wrap : cut}>{guidingText}</span>
           <PresenterChips presenters={presenters} nowrap />
         </span>
         <button

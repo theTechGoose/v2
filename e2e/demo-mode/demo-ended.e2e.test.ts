@@ -180,6 +180,30 @@ Deno.test("REQ-235: End asks first — Keep going, or 4 s, puts it back and the 
         (await textOf(userPage, "demo-ended")).includes("You ended the demo"),
         "REQ-179: the customer's own End says so at once, before the server answers",
       );
+      // REQ-294 (demo m21): on the 420 px customer's screen the notice is whole — no "Demo mode"
+      // title, nothing cut to an ellipsis
+      const notice = await userPage.locator("[data-cy='demo-ended']").evaluate((
+        el,
+      ) => ({
+        text: (el as HTMLElement).innerText.replace(/\s+/g, " ").trim(),
+        clipped: [el, ...el.querySelectorAll("span")]
+          .filter((n) => n.scrollWidth > n.clientWidth + 1)
+          .map((n) => (n.textContent ?? "").trim()),
+        font: getComputedStyle(el).fontFamily,
+      }));
+      expect(
+        !notice.text.includes("Demo mode"),
+        `the phone notice drops the title — "${notice.text}"`,
+      );
+      expect.eq(
+        notice.clipped.join(" | "),
+        "",
+        "nothing in the phone notice is cut",
+      );
+      expect(
+        /Inter/.test(notice.font),
+        `the notice is in the app's font — "${notice.font}"`,
+      );
       expect.eq(
         await userPage.locator("[data-cy='demo-pill']").count(),
         0,

@@ -75,6 +75,21 @@ describe("REQ-071 the brand is DocuMonster", () => {
     expect(named).toEqual([]);
   });
 
+  it("REQ-294 no route spells the old brand even with a tag between its words (demo m43: the 404's 'Paperwork <em>Monster</em>')", () => {
+    const files = execSync("git ls-files -- 'front-end/routes/*.tsx' 'front-end/components/*.tsx' 'front-end/islands/*.tsx'", { cwd: ROOT, encoding: "utf8" })
+      .split("\n").filter((f) => f.length > 0);
+    const hits: string[] = [];
+    for (const file of files) {
+      const stripped = fs.readFileSync(path.join(ROOT, file), "utf8")
+        .replace(/<[^<>]*>/g, "")
+        .replace(/\s+/g, " ");
+      const judged = KEPT.reduce((s, re) => s.replace(re, ""), stripped);
+      const hit = judged.match(/.{0,40}paperwork[\s_-]*monsters?.{0,40}/i);
+      if (hit) hits.push(`${file}: ${hit[0]}`);
+    }
+    expect(hits).toEqual([]);
+  });
+
   it("REQ-071 the dictionaries name the brand DocuMonster, and its two-tone halves join to the one word", () => {
     for (const [name, dict] of [["en", en], ["es", es]] as const) {
       expect([name, dict["brand.name"]]).toEqual([name, "DocuMonster"]);

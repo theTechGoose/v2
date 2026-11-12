@@ -17,6 +17,11 @@ export const PILL_CORNERS: readonly Corner[] = ["bl", "br", "tl", "tr"];
 export const PILL_MARGIN = 12;
 /** at or below this width the customer's pill shows only its status and End (details on tap) */
 export const PILL_COMPACT_MAX_W = 640;
+/** REQ-294 — the pills' own font: the app's `--font-body` stack, so a pill reads the same on a
+ *  page that loads no app stylesheet (the 404 page), where `font:inherit` fell back to the
+ *  browser's default face */
+export const PILL_FONT =
+  '"Inter", system-ui, -apple-system, "Segoe UI", sans-serif';
 /** what counts as a control of the page: a pill on top of one of these is in the way */
 export const CONTROL_SELECTOR =
   'a[href],button,input,select,textarea,summary,label,[role="button"],[role="link"],[role="tab"],[role="menuitem"],[role="checkbox"],[role="switch"]';

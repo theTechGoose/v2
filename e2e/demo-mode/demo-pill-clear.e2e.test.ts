@@ -89,7 +89,7 @@ async function until(
 }
 
 Deno.test("REQ-228: the customer's demo pill covers no control of the page, on a desktop and on a phone; the stage's pill stays below the frame on a narrow staff window", (t) =>
-  story(t, async ({ page, expect, http, baseUrl }) => {
+  story(t, async ({ page, expect, http, baseUrl, folder }) => {
     await page.setViewportSize({ width: 760, height: 700 });
     const userPhone = `+1512${digits()}`;
     const adminPhone = `+1843${digits()}`;
@@ -103,7 +103,8 @@ Deno.test("REQ-228: the customer's demo pill covers no control of the page, on a
     await (await http("/api/me", {
       method: "PUT",
       headers: admin.auth,
-      body: JSON.stringify({ language: "en", name: "Hans" }),
+      // REQ-294 — a long name, the demo's "Alex from DocuMonster"
+      body: JSON.stringify({ language: "en", name: "Hans from DocuMonster" }),
     })).body?.cancel();
     const boot = await http("/api/admin/bootstrap", {
       method: "POST",
@@ -158,6 +159,39 @@ Deno.test("REQ-228: the customer's demo pill covers no control of the page, on a
         (el) => el.getBoundingClientRect().height,
       );
       expect(pillH <= 48, `the phone pill is one line (${pillH}px tall)`);
+
+      // REQ-294 (demo m21): tapped, the phone pill says who is guiding — the full name, no
+      // "Demo mode" title in the way, and nothing cut to an ellipsis
+      await userPage.locator("[data-cy='demo-more']").click();
+      await userPage.locator("[data-cy='demo-details']").waitFor({
+        timeout: 5_000,
+      });
+      const details = await userPage.locator("[data-cy='demo-details']")
+        .evaluate((el) => {
+          const clipped = [el, ...el.querySelectorAll("span")]
+            .filter((n) => n.scrollWidth > n.clientWidth + 1)
+            .map((n) => (n.textContent ?? "").trim());
+          return {
+            text: (el as HTMLElement).innerText.replace(/\s+/g, " ").trim(),
+            clipped,
+            width: el.getBoundingClientRect().width,
+          };
+        });
+      expect(
+        details.text.includes("Hans from DocuMonster is guiding you"),
+        `the opened phone pill names the guide in full — "${details.text}"`,
+      );
+      expect(
+        !details.text.includes("Demo mode"),
+        `the phone pill drops the "Demo mode" title — "${details.text}"`,
+      );
+      expect.eq(
+        details.clipped.join(" | "),
+        "",
+        "nothing in the opened phone pill is cut",
+      );
+      await userPage.screenshot({ path: `${folder}/phone-pill-open.png` });
+      await userPage.locator("[data-cy='demo-more']").click();
 
       // 3. the stage, narrow, following the phone: the pill is below the frame
       await until("the stage pill is below the frame", async () => {

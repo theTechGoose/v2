@@ -1,0 +1,8 @@
+/* REQ-294 — the 404/500 page (routes/_error.tsx) links no app stylesheet, so
+   anything in <body> beside its div — the demo pill, styled inline — took the
+   browser's default face (monospace in the demo's headless box, serif on a
+   desktop). The body gets the app's own font. */
+body {
+  margin: 0;
+  font-family: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+}
