@@ -85,10 +85,13 @@ import { SendPaperworkEmail } from "@paperwork/domain/coordinators/send-paperwor
 import { EventBus } from "@core/business/events/mod.ts";
 import { lockStatusFor, QUOTE_LOCKED } from "#quote-flow/quote-lock.ts";
 import {
+  changeOrderNumbersIn, // REQ-462
+  parseChangeOrderEdit, // REQ-462
   parseChangeOrderRequest,
   parseTargetTotalChange,
 } from "@agents/domain/business/change-order-intent/mod.ts";
 import { ApplyChatChangeOrder } from "@agents/domain/coordinators/apply-chat-change-order/mod.ts";
+import { UpdateChatChangeOrder } from "@agents/domain/coordinators/update-chat-change-order/mod.ts"; // REQ-462
 import {
   ReviseQuote,
   type ReviseQuoteResult,
@@ -312,6 +315,9 @@ export class HandleChatMessage {
     /** REQ-331 (demo m7): resolves a typed "for <Name>" to the contractor's
      *  own customer, and names the bound customer on the terms CTA. */
     private customers?: CustomerStore,
+    /** REQ-462 (demo-loop cycle 3, M26): edits / withdraws a change order
+     *  named by its number ("CO-001"). */
+    private changeOrderEdit?: UpdateChatChangeOrder,
   ) {}
 
   /** REQ-331: the same-owner customer the thread's typed facts name — by
@@ -1037,6 +1043,22 @@ export class HandleChatMessage {
       }
     }
 
+    // ---- REQ-462 (demo-loop cycle 3, M26): "Change of plan on CO-001: make
+    // it $1,000 and the description should just say "…"" edits THAT change
+    // order. The model had no tool for it and revise_quote'd the signed
+    // quote ("…its lines can't change"); the number and the new amount /
+    // wording / withdrawal are read in code here, as N5 does for "send it".
+    const coEditAsk =
+      !llmResponse && this.changeOrderEdit && typeof input.content === "string"
+        ? parseChangeOrderEdit(input.content)
+        : undefined;
+    if (coEditAsk) {
+      llmResponse = {
+        text: "",
+        action: { type: "update_change_order", payload: coEditAsk },
+      };
+    }
+
     // ---- REQ-377 (demo-loop cycle 2, B1): "Dana wants a tile backsplash
     // too — change Q-001 to $19,750" is a NEW TOTAL for an existing job. The
     // model did that subtraction into cents itself and wrote 12500 for
@@ -1457,6 +1479,19 @@ export class HandleChatMessage {
           "\n\n",
         );
       }
+      // REQ-462 (M26): a message that names a change order carries its state
+      // and says to change it with update_change_order, never revise_quote.
+      const coLine = this.changeOrderEdit && typeof input.content === "string"
+        ? await this.changeOrderEdit.context(
+          input.userId,
+          changeOrderNumbersIn(input.content),
+        ).catch(() => undefined)
+        : undefined;
+      if (coLine) {
+        businessContext = [businessContext, coLine].filter(Boolean).join(
+          "\n\n",
+        );
+      }
       llmResponse = await this.llm.respond({
         systemPrompt,
         messages: llmTurns,
@@ -1515,6 +1550,25 @@ export class HandleChatMessage {
         },
       };
     }
+    // REQ-462 (M26): the demo's model answered "Change of plan on CO-001: …"
+    // with revise_quote on the signed quote. A message that names one change
+    // order (and no quote) is never a line revision: it goes to that order,
+    // which asks what to change when the model said nothing it can use.
+    if (
+      llmResponse.action?.type === "revise_quote" && this.changeOrderEdit &&
+      typeof input.content === "string" && !/\bQ-\d+\b/i.test(input.content)
+    ) {
+      const named = changeOrderNumbersIn(input.content);
+      if (named.length === 1) {
+        llmResponse = {
+          text: "",
+          action: {
+            type: "update_change_order",
+            payload: { changeOrderNumber: named[0] },
+          },
+        };
+      }
+    }
     // REQ-315: the reply to a revise — the coordinator's text; the payload
     // names the quote (the chat links it) and flags the bound one as updated
     // so the chat re-reads it.
@@ -1546,6 +1600,42 @@ export class HandleChatMessage {
       return { conversation: updated, newMessages: [userMsg, reply] };
     };
     const userText = typeof input.content === "string" ? input.content : "";
+
+    // ---- REQ-462 (demo-loop cycle 3, M26): edit / withdraw a change order
+    // by its number. The reply is the coordinator's; its payload names the
+    // order and its quote (the chat links the quote, whose panel lists it).
+    if (
+      llmResponse.action?.type === "update_change_order" && this.changeOrderEdit
+    ) {
+      const p = llmResponse.action.payload;
+      const result = await this.changeOrderEdit.run({
+        userId: input.userId,
+        lang: replyLang,
+        changeOrderNumber: p.changeOrderNumber,
+        description: p.description,
+        amountCents: p.amountCents,
+        withdraw: p.withdraw,
+        userText,
+      });
+      const reply = await this.messages.append({
+        conversationId: conv.id,
+        role: "assistant",
+        kind: "text",
+        content: result.text,
+        payload: { changeOrderEdit: result.outcome },
+      });
+      const patch: Partial<AgentConversation> = {
+        preview: derivePreview(reply.content),
+      };
+      if (
+        history.length === 0 ||
+        (history.length === 1 && history[0].id === userMsg.id)
+      ) {
+        patch.title = deriveTitleFromFirstUserMessage(input.content);
+      }
+      const updated = await this.conversations.update(conv.id, patch);
+      return { conversation: updated, newMessages: [userMsg, reply] };
+    }
 
     // The change-order reply is the coordinator's, not the model's prose.
     if (llmResponse.action?.type === "change_order") {

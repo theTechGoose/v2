@@ -510,6 +510,8 @@ const ALL_TOOLS: readonly LLMToolName[] = [
   // REQ-375 (demo-loop cycle 2, M11 + B1): both prompts tell the model to
   // reprice / reword a line with revise_quote; it was never offered.
   "revise_quote",
+  // REQ-462 (demo-loop cycle 3, M26): edit / withdraw a change order by number.
+  "update_change_order",
 ];
 
 /**
@@ -527,7 +529,12 @@ export function chatToolsFor(
   quote: GateQuote | undefined,
 ): LLMToolName[] {
   if (phase === "terms") {
-    return ["revise_quote", "change_order", "update_job_details"];
+    return [
+      "revise_quote",
+      "change_order",
+      "update_job_details",
+      "update_change_order", // REQ-462
+    ];
   }
   const advance = !!quote && isOpenDraft(quote);
   return ALL_TOOLS.filter((t) =>

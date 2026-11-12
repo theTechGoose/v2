@@ -123,6 +123,19 @@ export type LLMAction =
       remove: string[];
     };
   }
+  /** REQ-462 (demo-loop cycle 3, M26): edit or withdraw an EXISTING change
+   *  order named by its number ("CO-001"). `amountCents` is the order's NEW
+   *  amount, not a difference; the coordinator keeps the order's direction
+   *  unless the contractor said credit / charge. */
+  | {
+    type: "update_change_order";
+    payload: {
+      changeOrderNumber: string;
+      description?: string;
+      amountCents?: number;
+      withdraw?: boolean;
+    };
+  }
   /** REQ-262 (demo M25): rewrite / translate the bound quote's job details.
    *  The coordinator applies it to conv.quoteId — never to a model-named id —
    *  and never to a signed quote. Text per language, bullets newline-joined. */

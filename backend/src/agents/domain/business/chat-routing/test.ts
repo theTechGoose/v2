@@ -163,6 +163,7 @@ Deno.test("REQ-368 M32 chatToolsFor: a draft in the quote phase can be locked an
     "change_order",
     "update_job_details",
     "revise_quote", // REQ-375
+    "update_change_order", // REQ-462
   ]);
   // already locked (still a draft): locking again re-shows the terms CTA
   assertEquals(
@@ -180,6 +181,7 @@ Deno.test("REQ-368 M32 chatToolsFor: nothing to lock — no quote, or a quote al
     "change_order",
     "update_job_details",
     "revise_quote", // REQ-375
+    "update_change_order", // REQ-462
   ];
   assertEquals(chatToolsFor("quote", undefined), noAdvance);
   for (const status of ["sent", "viewed", "accepted", "lost", "declined"]) {
@@ -193,7 +195,12 @@ Deno.test("REQ-368 M32 chatToolsFor: nothing to lock — no quote, or a quote al
 });
 
 Deno.test("REQ-368 M32 chatToolsFor: the terms phase (pair 1: signed quote, finished wizard) never offers create / lock / terms", () => {
-  const termsTools = ["revise_quote", "change_order", "update_job_details"]; // REQ-375
+  const termsTools = [
+    "revise_quote", // REQ-375
+    "change_order",
+    "update_job_details",
+    "update_change_order", // REQ-462
+  ];
   assertEquals(chatToolsFor("terms", { status: "accepted" }), termsTools);
   assertEquals(chatToolsFor("terms", { status: "draft" }), termsTools);
   assertEquals(chatToolsFor("terms", undefined), termsTools);

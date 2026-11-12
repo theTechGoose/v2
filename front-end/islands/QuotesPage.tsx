@@ -53,6 +53,12 @@ import {
 } from "../components/Skeletons.tsx";
 import { langSignal, tFor } from "../lib/i18n.ts";
 import { quoteJobTitle } from "../../shared/quote-flow/job-name.ts";
+import { changeOrdersClient } from "../clients/change-orders.ts"; // REQ-462
+import {
+  changeOrderBody,
+  changeOrderRowActions,
+  newChangeOrderTarget,
+} from "../../shared/documents/change-order-actions.ts"; // REQ-462
 import {
   canReviseQuote,
   editableLines,
@@ -165,6 +171,461 @@ interface OpenQuoteState {
   versions: QuoteVersion[];
 }
 
+/** REQ-462 (demo-loop cycle 3, M26) — "Signed — later changes go on a change
+ *  order" now makes one. The button opens a form that puts the order on the
+ *  quote's open invoice (POST /invoices/:id/change-orders — the customer
+ *  approves it at its own link); with no open invoice it says what comes
+ *  first instead (the chat's REQ-238 rule; a paid invoice is locked, REQ-202). */
+function SignedChangeOrder(
+  { lang, q, ledger, onChanged }: {
+    lang: "en" | "es";
+    q: BackendQuoteCard;
+    ledger: QuoteLedger;
+    onChanged: () => void;
+  },
+) {
+  const [open, setOpen] = useState(false);
+  const [desc, setDesc] = useState("");
+  const [dollars, setDollars] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const [created, setCreated] = useState<string | null>(null);
+  const target = newChangeOrderTarget(ledger);
+  // the "created" note stands while that order still waits as it was made —
+  // an edit or a withdrawal below says its own thing
+  const createdWaits = created !== null &&
+    ledger.changeOrders.some((c) =>
+      c.number === created && c.version === 1 && c.status === "pending"
+    );
+  const mutedStyle = "color:var(--fg-muted,#6b7560)";
+  const boxStyle =
+    "margin-top:10px;padding:12px;border:1px solid rgba(26,83,92,0.16);border-radius:12px;background:rgba(26,83,92,0.03)";
+  const field =
+    "padding:7px 9px;border:1px solid rgba(26,83,92,0.22);border-radius:8px;font:inherit;font-size:13px;min-width:0;box-sizing:border-box;background:#fff";
+  const ghost =
+    "background:transparent;border-color:transparent;color:var(--fg-muted,#6b7560)";
+
+  async function create() {
+    if (busy || target.kind !== "invoice") return;
+    const parsed = changeOrderBody({ description: desc, dollars });
+    if (!parsed.ok) {
+      setErr(tFor(lang, "quotes.ledger.coFieldsError"));
+      return;
+    }
+    setBusy(true);
+    setErr(null);
+    try {
+      const co = await changeOrdersClient.create(target.invoiceId, parsed.body);
+      setOpen(false);
+      setDesc("");
+      setDollars("");
+      setCreated(co.number ?? "");
+      onChanged();
+    } catch {
+      setErr(tFor(lang, "quotes.ledger.coError"));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <>
+      <div style="margin:8px 0 0;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+        <p
+          data-cy="quote-lock-note"
+          style={`margin:0;font-size:12.5px;${mutedStyle}`}
+        >
+          {tFor(lang, "quotes.ledger.lockedNote")}
+        </p>
+        {!open && (
+          <button
+            type="button"
+            class="qopen__btn"
+            data-cy="quote-new-change-order"
+            style="padding:5px 10px"
+            onClick={() => {
+              setErr(null);
+              setCreated(null);
+              setOpen(true);
+            }}
+          >
+            {tFor(lang, "quotes.ledger.newChangeOrder")}
+          </button>
+        )}
+      </div>
+      {open && target.kind !== "invoice" && (
+        <div
+          data-cy={target.kind === "invoice_first"
+            ? "quote-co-invoice-first"
+            : "quote-co-new-invoice"}
+          style={boxStyle}
+        >
+          <p style="margin:0 0 8px;font-size:12.5px">
+            {tFor(
+              lang,
+              target.kind === "invoice_first"
+                ? "quotes.ledger.coInvoiceFirst"
+                : "quotes.ledger.coNewInvoice",
+            )}
+          </p>
+          <div class="qopen__actions">
+            <a
+              class="qopen__btn"
+              href={target.kind === "invoice_first"
+                ? `/invoices?new=1&quoteId=${encodeURIComponent(q.id)}`
+                : "/invoices?new=1"}
+            >
+              {tFor(
+                lang,
+                target.kind === "invoice_first"
+                  ? "quotes.ledger.createNextInvoice"
+                  : "quotes.ledger.coNewInvoiceCta",
+              )}
+            </a>
+            <button
+              type="button"
+              class="qopen__btn"
+              style={ghost}
+              onClick={() => setOpen(false)}
+            >
+              {tFor(lang, "common.cancel")}
+            </button>
+          </div>
+        </div>
+      )}
+      {open && target.kind === "invoice" && (
+        <div data-cy="quote-co-form" style={boxStyle}>
+          <p style={`margin:0 0 8px;font-size:12.5px;${mutedStyle}`}>
+            {tFor(lang, "quotes.ledger.coGoesOn", {
+              number: target.invoiceNumber,
+            })}
+          </p>
+          <div style="display:flex;flex-wrap:wrap;gap:6px">
+            <input
+              type="text"
+              data-cy="quote-co-desc"
+              aria-label={tFor(lang, "quotes.ledger.coDescription")}
+              placeholder={tFor(lang, "quotes.ledger.coDescription")}
+              value={desc}
+              disabled={busy}
+              onInput={(e) =>
+                setDesc((e.target as HTMLInputElement).value)}
+              style={`${field};flex:1 1 240px`}
+            />
+            <input
+              type="number"
+              step="0.01"
+              data-cy="quote-co-amount"
+              aria-label={tFor(lang, "quotes.ledger.coAmount")}
+              placeholder={tFor(lang, "quotes.ledger.coAmount")}
+              value={dollars}
+              disabled={busy}
+              onInput={(e) =>
+                setDollars((e.target as HTMLInputElement).value)}
+              style={`${field};flex:1 1 140px;max-width:200px`}
+            />
+          </div>
+          <div class="qopen__actions" style="margin-top:8px">
+            <button
+              type="button"
+              class="qopen__btn qopen__btn--primary"
+              data-cy="quote-co-create"
+              disabled={busy}
+              onClick={create}
+            >
+              {busy
+                ? tFor(lang, "quotes.ledger.coCreating")
+                : tFor(lang, "quotes.ledger.coCreate")}
+            </button>
+            <button
+              type="button"
+              class="qopen__btn"
+              data-cy="quote-co-cancel"
+              style={ghost}
+              disabled={busy}
+              onClick={() => setOpen(false)}
+            >
+              {tFor(lang, "common.cancel")}
+            </button>
+          </div>
+          {err && (
+            <p
+              role="alert"
+              style="margin:8px 0 0;font-size:12.5px;color:#a83b3b;font-weight:600"
+            >
+              {err}
+            </p>
+          )}
+        </div>
+      )}
+      {createdWaits && !open && (
+        <p
+          data-cy="quote-co-created"
+          role="status"
+          style="margin:8px 0 0;font-size:12.5px;color:var(--brand-green,#519843);font-weight:700"
+        >
+          {tFor(lang, "quotes.ledger.coCreated", { number: created ?? "" })}
+        </p>
+      )}
+    </>
+  );
+}
+
+type LedgerCoRow = QuoteLedger["changeOrders"][number];
+
+/** REQ-462 (M26) — one change order in the ledger: number, version, state,
+ *  invoice, wording and amount; while the customer has not approved it, Edit
+ *  (PUT — its next version, back to pending, the alert sent again) and
+ *  Withdraw (asks first, then DELETE). The number still opens /co/:id. */
+function LedgerChangeOrderRow(
+  { lang, co, onChanged, onWithdrawn }: {
+    lang: "en" | "es";
+    co: LedgerCoRow;
+    onChanged: () => void;
+    onWithdrawn: (number: string) => void;
+  },
+) {
+  const [editing, setEditing] = useState(false);
+  const [desc, setDesc] = useState("");
+  const [dollars, setDollars] = useState("");
+  const [confirming, setConfirming] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const [savedVersion, setSavedVersion] = useState<number | null>(null);
+  const actions = changeOrderRowActions(co);
+  const rowStyle =
+    "display:flex;justify-content:space-between;gap:10px;align-items:baseline;padding:6px 0;border-bottom:1px solid rgba(26,83,92,0.08);font-size:13px";
+  const mutedStyle = "color:var(--fg-muted,#6b7560)";
+  const linkStyle =
+    "color:var(--brand-teal,#144852);text-decoration:none;font-weight:700";
+  const small = "padding:3px 9px;font-size:11.5px;border-radius:8px";
+  const field =
+    "padding:7px 9px;border:1px solid rgba(26,83,92,0.22);border-radius:8px;font:inherit;font-size:13px;min-width:0;box-sizing:border-box;background:#fff";
+
+  function startEdit() {
+    setDesc(co.description ?? "");
+    // credits are negative — the signed dollars, as the invoices page does
+    setDollars(String(co.deltaAmountCents / 100));
+    setErr(null);
+    setSavedVersion(null);
+    setConfirming(false);
+    setEditing(true);
+  }
+
+  async function save() {
+    if (busy || !co.invoiceId) return;
+    const parsed = changeOrderBody({ description: desc, dollars });
+    if (!parsed.ok) {
+      setErr(tFor(lang, "quotes.ledger.coFieldsError"));
+      return;
+    }
+    setBusy(true);
+    setErr(null);
+    try {
+      const updated = await changeOrdersClient.update(
+        co.invoiceId,
+        co.id,
+        parsed.body,
+      );
+      setEditing(false);
+      setSavedVersion(updated.version ?? co.version + 1);
+      onChanged();
+    } catch {
+      setErr(tFor(lang, "quotes.ledger.coError"));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function withdraw() {
+    if (busy || !co.invoiceId) return;
+    setBusy(true);
+    setErr(null);
+    try {
+      await changeOrdersClient.withdraw(co.invoiceId, co.id);
+      setConfirming(false);
+      onWithdrawn(co.number);
+      onChanged();
+    } catch {
+      setErr(tFor(lang, "quotes.ledger.coError"));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div data-cy="ledger-co-row" style={rowStyle}>
+      <span style="display:flex;flex-direction:column;gap:4px;min-width:0;flex:1">
+        <span style="display:flex;gap:8px;flex-wrap:wrap;align-items:baseline">
+          <a href={co.url} target="_blank" rel="noopener" style={linkStyle}>
+            {co.number}
+          </a>
+          <span style={mutedStyle}>
+            {tFor(lang, "quotes.ledger.versionN", { n: co.version })}
+          </span>
+          <span style={mutedStyle}>
+            {tFor(lang, `public.doc.state.${co.status}`)}
+          </span>
+          {co.invoiceNumber && (
+            <span style={mutedStyle}>
+              {tFor(lang, "quotes.ledger.onInvoice", {
+                number: co.invoiceNumber,
+              })}
+            </span>
+          )}
+        </span>
+        {co.description && !editing && (
+          <span
+            data-cy="ledger-co-description"
+            style={`${mutedStyle};font-size:12.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap`}
+          >
+            {co.description}
+          </span>
+        )}
+        {editing && (
+          <span style="display:flex;flex-direction:column;gap:6px;margin-top:2px">
+            <span style="display:flex;flex-wrap:wrap;gap:6px">
+              <input
+                type="text"
+                data-cy="ledger-co-edit-desc"
+                aria-label={tFor(lang, "quotes.ledger.coDescription")}
+                placeholder={tFor(lang, "quotes.ledger.coDescription")}
+                value={desc}
+                disabled={busy}
+                onInput={(e) => setDesc((e.target as HTMLInputElement).value)}
+                style={`${field};flex:1 1 220px`}
+              />
+              <input
+                type="number"
+                step="0.01"
+                data-cy="ledger-co-edit-amount"
+                aria-label={tFor(lang, "quotes.ledger.coAmount")}
+                placeholder={tFor(lang, "quotes.ledger.coAmount")}
+                value={dollars}
+                disabled={busy}
+                onInput={(e) =>
+                  setDollars((e.target as HTMLInputElement).value)}
+                style={`${field};flex:1 1 120px;max-width:180px`}
+              />
+            </span>
+            <span class="qopen__actions">
+              <button
+                type="button"
+                class="qopen__btn qopen__btn--primary"
+                data-cy="ledger-co-edit-save"
+                style={small}
+                disabled={busy}
+                onClick={save}
+              >
+                {busy
+                  ? tFor(lang, "quotes.ledger.coSaving")
+                  : tFor(lang, "quotes.ledger.coSave")}
+              </button>
+              <button
+                type="button"
+                class="qopen__btn"
+                data-cy="ledger-co-edit-cancel"
+                style={`${small};background:transparent;border-color:transparent;color:var(--fg-muted,#6b7560)`}
+                disabled={busy}
+                onClick={() => setEditing(false)}
+              >
+                {tFor(lang, "common.cancel")}
+              </button>
+            </span>
+          </span>
+        )}
+        {confirming && (
+          <span style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;font-size:12.5px">
+            <span style="color:#a83b3b;font-weight:700">
+              {tFor(lang, "quotes.ledger.coWithdrawAsk", {
+                number: co.number,
+              })}
+            </span>
+            <button
+              type="button"
+              class="qopen__btn"
+              data-cy="ledger-co-withdraw-confirm"
+              style={`${small};border-color:#a83b3b;color:#a83b3b`}
+              disabled={busy}
+              onClick={withdraw}
+            >
+              {tFor(lang, "quotes.ledger.coWithdrawConfirm")}
+            </button>
+            <button
+              type="button"
+              class="qopen__btn"
+              data-cy="ledger-co-withdraw-keep"
+              style={`${small};background:transparent;border-color:transparent;color:var(--fg-muted,#6b7560)`}
+              disabled={busy}
+              onClick={() => setConfirming(false)}
+            >
+              {tFor(lang, "quotes.ledger.coKeep")}
+            </button>
+          </span>
+        )}
+        {savedVersion !== null && !editing && (
+          <span
+            data-cy="ledger-co-saved"
+            role="status"
+            style="font-size:12px;color:var(--brand-green,#519843);font-weight:700"
+          >
+            {tFor(lang, "quotes.ledger.coSaved", {
+              number: co.number,
+              n: savedVersion,
+            })}
+          </span>
+        )}
+        {err && (
+          <span
+            role="alert"
+            style="font-size:12px;color:#a83b3b;font-weight:600"
+          >
+            {err}
+          </span>
+        )}
+      </span>
+      <span style="display:flex;flex-direction:column;align-items:flex-end;gap:4px">
+        <strong style="font-variant-numeric:tabular-nums;white-space:nowrap">
+          {co.deltaAmountCents >= 0 ? "+" : "−"}
+          {fmtMoneyExact(Math.abs(co.deltaAmountCents))}
+        </strong>
+        {!editing && !confirming && (actions.edit || actions.withdraw) && (
+          <span style="display:flex;gap:4px">
+            {actions.edit && (
+              <button
+                type="button"
+                class="qopen__btn"
+                data-cy="ledger-co-edit"
+                style={small}
+                disabled={busy}
+                onClick={startEdit}
+              >
+                {tFor(lang, "quotes.ledger.coEdit")}
+              </button>
+            )}
+            {actions.withdraw && (
+              <button
+                type="button"
+                class="qopen__btn"
+                data-cy="ledger-co-withdraw"
+                style={`${small};background:transparent;border-color:transparent;color:#a83b3b`}
+                disabled={busy}
+                onClick={() => {
+                  setErr(null);
+                  setSavedVersion(null);
+                  setConfirming(true);
+                }}
+              >
+                {tFor(lang, "quotes.ledger.coWithdraw")}
+              </button>
+            )}
+          </span>
+        )}
+      </span>
+    </div>
+  );
+}
+
 /** REQ-205 — the "Documents" ledger under the open quote: the headline
  *  (number · version · state · date), the totals, one row per invoice /
  *  change order / work order, the version history, and the publish /
@@ -186,6 +647,8 @@ function QuoteLedgerSection(
   const [confirming, setConfirming] = useState(false);
   // REQ-395 (demo M12): an unwanted draft revision can be thrown away.
   const [discarding, setDiscarding] = useState(false);
+  // REQ-462 (M26): the change order just withdrawn from this panel
+  const [withdrawnCo, setWithdrawnCo] = useState<string | null>(null);
   const summary = ledgerSummary(ledger);
   const state = quoteState(q);
   const headline = docHeadline(
@@ -220,8 +683,6 @@ function QuoteLedgerSection(
     "display:flex;justify-content:space-between;gap:10px;align-items:baseline;padding:6px 0;border-bottom:1px solid rgba(26,83,92,0.08);font-size:13px";
   const numStyle = "font-weight:800;color:var(--brand-teal,#144852)";
   const mutedStyle = "color:var(--fg-muted,#6b7560)";
-  const linkStyle =
-    "color:var(--brand-teal,#144852);text-decoration:none;font-weight:700";
 
   async function discard() {
     if (discarding || publishing) return;
@@ -306,13 +767,14 @@ function QuoteLedgerSection(
         )}
       </div>
 
+      {/* REQ-462 (M26): the lock note, with the change order it points to */}
       {locked && (
-        <p
-          data-cy="quote-lock-note"
-          style={`margin:8px 0 0;font-size:12.5px;${mutedStyle}`}
-        >
-          {tFor(lang, "quotes.ledger.lockedNote")}
-        </p>
+        <SignedChangeOrder
+          lang={lang}
+          q={q}
+          ledger={ledger}
+          onChanged={onPublished}
+        />
       )}
 
       {/* Totals */}
@@ -401,40 +863,30 @@ function QuoteLedgerSection(
           ))}
       </div>
 
-      {/* Change orders */}
-      {ledger.changeOrders.length > 0 && (
+      {/* Change orders — REQ-462 (M26): each row can be edited or withdrawn */}
+      {(ledger.changeOrders.length > 0 || withdrawnCo) && (
         <div style="margin-top:14px">
           <div class="qopen__eyebrow">
             {tFor(lang, "quotes.ledger.changeOrders")}
           </div>
           {ledger.changeOrders.map((co) => (
-            <div key={co.id} data-cy="ledger-co-row" style={rowStyle}>
-              <span style="display:flex;gap:8px;flex-wrap:wrap;align-items:baseline">
-                <a
-                  href={co.url}
-                  target="_blank"
-                  rel="noopener"
-                  style={linkStyle}
-                >
-                  {co.number}
-                </a>
-                <span style={mutedStyle}>
-                  {tFor(lang, `public.doc.state.${co.status}`)}
-                </span>
-                {co.invoiceNumber && (
-                  <span style={mutedStyle}>
-                    {tFor(lang, "quotes.ledger.onInvoice", {
-                      number: co.invoiceNumber,
-                    })}
-                  </span>
-                )}
-              </span>
-              <strong style="font-variant-numeric:tabular-nums;white-space:nowrap">
-                {co.deltaAmountCents >= 0 ? "+" : "−"}
-                {fmtMoneyExact(Math.abs(co.deltaAmountCents))}
-              </strong>
-            </div>
+            <LedgerChangeOrderRow
+              key={co.id}
+              lang={lang}
+              co={co}
+              onChanged={onPublished}
+              onWithdrawn={setWithdrawnCo}
+            />
           ))}
+          {withdrawnCo && (
+            <p
+              data-cy="ledger-co-withdrawn"
+              role="status"
+              style="margin:6px 0 0;font-size:12.5px;color:var(--brand-green,#519843);font-weight:700"
+            >
+              {tFor(lang, "quotes.ledger.coWithdrawn", { number: withdrawnCo })}
+            </p>
+          )}
         </div>
       )}
 

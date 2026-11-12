@@ -94,9 +94,10 @@ Deno.test("OpenAILLMClient smoke: respond() sends Bearer auth + system prompt + 
   assertEquals(body.messages[1].content, "Garage epoxy");
   assertEquals(body.messages[3].content, "Lock it in");
   // REQ-238 (demo M27): + change_order; REQ-262 (demo M25): + update_job_details;
-  // REQ-315 (demo-loop cycle 1, M26): + revise_quote
-  assertEquals(body.tools.length, 6);
-  assertEquals(body.tools.map((t) => t.function.name).sort(), ["change_order", "create_quote", "lock_quote", "request_terms_transition", "revise_quote", "update_job_details"]);
+  // REQ-315 (demo-loop cycle 1, M26): + revise_quote;
+  // REQ-462 (demo-loop cycle 3, M26): + update_change_order
+  assertEquals(body.tools.length, 7);
+  assertEquals(body.tools.map((t) => t.function.name).sort(), ["change_order", "create_quote", "lock_quote", "request_terms_transition", "revise_quote", "update_change_order", "update_job_details"]);
 });
 
 Deno.test("REQ-315 OpenAILLMClient smoke: a revise_quote tool_call → the revise_quote action (reprice the line, never append)", async () => {
@@ -292,6 +293,7 @@ Deno.test("REQ-368 OpenAILLMClient smoke: no allowlist keeps every tool (callers
     "request_terms_transition",
     "change_order",
     "revise_quote", // REQ-315 / REQ-375: TOOL_DEFS carries it
+    "update_change_order", // REQ-462
     "update_job_details",
   ]);
 });

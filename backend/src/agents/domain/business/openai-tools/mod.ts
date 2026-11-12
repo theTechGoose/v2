@@ -10,6 +10,13 @@ function docNumber(v: unknown): string | undefined {
   return m ? m[0].toUpperCase() : undefined;
 }
 
+/** REQ-462: "co-001" / "CO-1 door" → "CO-001" / "CO-1"; anything else → undefined. */
+function coNumber(v: unknown): string | undefined {
+  if (typeof v !== "string") return undefined;
+  const m = v.match(/\bCO-\d+\b/i);
+  return m ? m[0].toUpperCase() : undefined;
+}
+
 /**
  * OpenAI function-tool schemas. The names + parameter shapes are pinned
  * to LLMAction's variants so `parseToolCall` can switch on `name` and
@@ -150,6 +157,26 @@ export const TOOL_DEFS = [
           },
         },
         required: ["lines"],
+        additionalProperties: false,
+      },
+    },
+  },
+  // REQ-462 (demo-loop cycle 3, M26): "Change of plan on CO-001: make it
+  // $1,000" edits THAT change order; revise_quote can't touch one.
+  {
+    type: "function" as const,
+    function: {
+      name: "update_change_order",
+      description: t("en", "prompts.tools.updateChangeOrder.description"),
+      parameters: {
+        type: "object",
+        properties: {
+          changeOrderNumber: { type: "string", description: t("en", "prompts.tools.updateChangeOrder.changeOrderNumber") },
+          description: { type: "string", description: t("en", "prompts.tools.updateChangeOrder.descriptionField") },
+          amountDollars: { type: "number", description: t("en", "prompts.tools.updateChangeOrder.amountDollars") },
+          withdraw: { type: "boolean", description: t("en", "prompts.tools.updateChangeOrder.withdraw") },
+        },
+        required: ["changeOrderNumber"],
         additionalProperties: false,
       },
     },
@@ -298,6 +325,29 @@ export function parseToolCall(call: { function: { name: string; arguments: strin
           ...(quoteNumber ? { quoteNumber } : {}),
           lines,
           remove,
+        },
+      };
+    }
+    // REQ-462 (M26): a CO number plus a withdrawal, a new wording or a new
+    // amount — dollars → integer cents here, in code; nothing to change → undefined.
+    case "update_change_order": {
+      const changeOrderNumber = coNumber(args.changeOrderNumber);
+      if (!changeOrderNumber) return undefined;
+      if (args.withdraw === true) {
+        return { type: "update_change_order", payload: { changeOrderNumber, withdraw: true } };
+      }
+      const description = typeof args.description === "string" ? args.description.trim() : "";
+      const dollars = args.amountDollars;
+      const amountCents = typeof dollars === "number" && Number.isFinite(dollars) && dollars !== 0
+        ? Math.round(dollars * 100)
+        : undefined;
+      if (!description && amountCents === undefined) return undefined;
+      return {
+        type: "update_change_order",
+        payload: {
+          changeOrderNumber,
+          ...(description ? { description } : {}),
+          ...(amountCents !== undefined ? { amountCents } : {}),
         },
       };
     }
