@@ -6,6 +6,10 @@ import { lockStatusFor, QUOTE_LOCKED } from "#quote-flow/quote-lock.ts";
 import { TranslateQuote } from "@agents/domain/coordinators/translate-quote/mod.ts";
 import { UserStore } from "@users/domain/data/user-store/mod.ts";
 import { t } from "@core/i18n/mod.ts";
+import {
+  QuotePriceError,
+  storedQuotePriceProblem,
+} from "#quote-flow/quote-price-guard.ts";
 import type { AgentConversation } from "@agents/dto/conversation.ts";
 import type { AgentMessage } from "@agents/dto/message.ts";
 
@@ -72,6 +76,20 @@ export class LockQuote {
     const quote = await this.quotes.getOwned(input.quoteId, input.userId);
 
     if (lockStatusFor(quote) === QUOTE_LOCKED && !quote.lockedAt) {
+      // REQ-302 (demo B1): a draft with no price — a negative line or a
+      // total at or below zero — is never locked. The chat island disables
+      // the button for it; this is the server's own refusal. (A quote that
+      // is already locked or sent is a no-op re-lock, not judged here.)
+      const priceProblem = storedQuotePriceProblem(quote);
+      if (priceProblem) {
+        throw new QuotePriceError(
+          priceProblem,
+          t(lang, "chatCoordinator.priceMissing", {
+            item: quote.lineItems?.[0]?.description?.trim() ||
+              quote.summary || "this job",
+          }),
+        );
+      }
       await this.quotes.update(quote.id, input.userId, {
         lockedAt: new Date().toISOString(),
       });

@@ -10,7 +10,8 @@ import { SendPaperworkEmail } from "@paperwork/domain/coordinators/send-paperwor
 import { BusinessIdentityStore } from "@profile/domain/data/business-identity-store/mod.ts";
 import { EmailService } from "@communication/domain/data/email-service/mod.ts";
 import { EventBus } from "@core/business/events/mod.ts";
-import { resetKv } from "@core/data/kv/mod.ts";
+import { getKv, resetKv } from "@core/data/kv/mod.ts";
+import { QuotePriceError } from "#quote-flow/quote-price-guard.ts";
 import { LogPaperworkMessage } from "@communication/domain/coordinators/log-paperwork-message/mod.ts";
 import { ConversationStore as CommConversationStore } from "@communication/domain/data/conversation-store/mod.ts";
 import { MessageStore as CommMessageStore } from "@communication/domain/data/message-store/mod.ts";
@@ -281,5 +282,50 @@ Deno.test("REQ-264 (M15) lock-quote fills the English line items of a Spanish qu
     assert(after.lockedAt, "lockedAt stamped");
     assertEquals(after.lineItems[0].descriptionByLang?.en, "Paint the bathroom");
     assertEquals(after.lineItems[0].description, "Pintar el baño");
+  });
+});
+
+// REQ-302 (demo-loop cycle 1, B1): a quote with no price — a negative line or
+// a total at or below zero — cannot be locked. The demo locked a -$500 quote;
+// LockQuote never looked at the total (`fresh.estimatedTotal ?? 0`). The row
+// is written straight to KV because the store now refuses such a quote too.
+Deno.test("REQ-302 B1 lock-quote integration: refuses to lock a quote whose total is not above zero or that has a negative line", async () => {
+  await withKv(async () => {
+    const s = fresh();
+    const kv = await getKv();
+    const now = new Date().toISOString();
+    for (
+      const [id, price, total] of [
+        ["q-neg", -50_000, -50_000],
+        ["q-zero", 0, 0],
+      ] as const
+    ) {
+      await kv.set(["quote", id], {
+        id,
+        userId: "u-1",
+        summary: "Panel swap",
+        lineItems: [{ description: "Panel swap", quantity: 1, unit: "ea", price }],
+        estimatedTotal: total,
+        status: "draft",
+        createdAt: now,
+        updatedAt: now,
+      });
+      await kv.set(["quote_by_user", "u-1", id], id);
+      const conv = await s.conversations.create({
+        userId: "u-1",
+        currentPhase: "quote",
+      });
+      await assertRejects(
+        () => s.flow.run({ userId: "u-1", conversationId: conv.id, quoteId: id }),
+        QuotePriceError,
+      );
+      const after = await s.quotes.get(id);
+      assertEquals(after.lockedAt, undefined, `${id} must not be locked`);
+      assertEquals(
+        (await s.messages.listByConversation(conv.id)).length,
+        0,
+        "no locked card",
+      );
+    }
   });
 });

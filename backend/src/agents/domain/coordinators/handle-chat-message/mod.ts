@@ -1,5 +1,9 @@
 import { Inject, Injectable } from "#danet/core";
 import { t } from "@core/i18n/mod.ts";
+import {
+  priceProblemItem,
+  quotePriceProblem,
+} from "#quote-flow/quote-price-guard.ts";
 import { AgentConversationStore } from "@agents/domain/data/agent-conversation-store/mod.ts";
 import { AgentMessageStore } from "@agents/domain/data/agent-message-store/mod.ts";
 import type {
@@ -927,8 +931,24 @@ export class HandleChatMessage {
         // Lookup failed — treated as a first draft below.
       }
     }
+    // REQ-302 (demo-loop cycle 1, M29 + B1): a draft with no price — a
+    // negative line, or a total at or below zero ("price abc" → one line at
+    // 0; "-500") — is never persisted, bound or carded. The reply asks for
+    // the price instead, replacing whatever the model said about the draft.
+    const priceProblem = llmResponse.action?.type === "create_quote"
+      ? quotePriceProblem(llmResponse.action.payload.lineItems)
+      : undefined;
+    if (priceProblem && llmResponse.action?.type === "create_quote") {
+      replyText = t(replyLang, "chatCoordinator.priceMissing", {
+        item: priceProblemItem(
+          llmResponse.action.payload.lineItems,
+          llmResponse.action.payload.summary,
+        ),
+      });
+      suppressTextBubble = false;
+    }
     if (
-      suppressTextBubble && existingDraft &&
+      suppressTextBubble && existingDraft && !priceProblem &&
       llmResponse.action?.type === "create_quote"
     ) {
       replyText = describeQuoteRevision(
@@ -1001,7 +1021,8 @@ export class HandleChatMessage {
       const action = llmResponse.action;
 
       // ---- create_quote: persist real Quote → emit action_card with real id ----
-      if (action.type === "create_quote") {
+      // (REQ-302: a priceless draft was refused above — no persist, no card.)
+      if (action.type === "create_quote" && !priceProblem) {
         // Audit1 #3 — line item amounts persist as INTEGER CENTS, matching
         // the LLM's `amountCents` payload. The previous schema divided by
         // 100 here to store dollars; we no longer do that conversion.
@@ -1082,6 +1103,12 @@ export class HandleChatMessage {
               (s, l) => s + l.amountCents,
               0,
             ),
+            // REQ-302 (demo B1): a reprice of the bound draft tells the chat
+            // island to re-read the quote (as update_job_details does), so
+            // the review card's TOTAL is never the pre-correction one.
+            ...(existingDraft && quote.id === existingDraft.id
+              ? { quoteUpdated: existingDraft.id }
+              : {}),
           },
         });
         newMessages.push(card);

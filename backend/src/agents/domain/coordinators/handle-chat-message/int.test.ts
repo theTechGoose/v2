@@ -25,6 +25,8 @@ import { reviewJobDetails } from "../../../../../../shared/quote-flow/review-job
 import { ChangeOrderStore } from "@paperwork/domain/data/change-order-store/mod.ts";
 import type { SendChangeOrderAlert } from "@paperwork/domain/coordinators/send-change-order-alert/mod.ts";
 import { ApplyChatChangeOrder } from "@agents/domain/coordinators/apply-chat-change-order/mod.ts";
+import { t } from "@core/i18n/mod.ts";
+import { quoteUpdatedBy } from "../../../../../../front-end/lib/chat-quote-refresh.ts";
 
 /**
  * Seed a fully-onboarded contractor profile for `userId` so the phase-1
@@ -1539,5 +1541,126 @@ Deno.test("REQ-262 handle-chat-message integration: the quote-phase prompt deman
     content: "Quote for Bryant: gutter cleaning $220.",
   });
   assert(/plain text/i.test(prompt) && /markdown/i.test(prompt), "no plain-text rule in systemQuote");
+  await resetKv();
+});
+
+// REQ-302 (demo-loop cycle 1, M29 + B1) — the chat never persists a price
+// that is not a price. The demo typed "price abc": the model sent one line at
+// 0 and the coordinator drafted a $0 quote with "Lock it in" offered. Then
+// "-500": the bound draft was repriced to -$500, locked and sent, while the
+// review card's TOTAL stayed at the stale $0.
+Deno.test("REQ-302 M29 handle-chat-message integration: 'price abc' → a $0 draft is NOT persisted; the reply asks for the price", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const { conversations, llm, quotes, flow } = fresh();
+  await seedOnboarded("u-1");
+  llm.setScript([{
+    text: "Here's your quote.",
+    action: {
+      type: "create_quote",
+      payload: {
+        summary: "Panel swap — customer x",
+        lineItems: [{ description: "Panel swap", amountCents: 0 }],
+      },
+    },
+  }]);
+  const conv = await conversations.create({ userId: "u-1" });
+  const result = await flow.run({
+    userId: "u-1",
+    conversationId: conv.id,
+    content: "Panel swap for customer x, price abc",
+  });
+  assertEquals(
+    result.newMessages.filter((m) => m.kind === "action_card").length,
+    0,
+    "no draft card for a $0 quote",
+  );
+  assertEquals((await quotes.listByUser("u-1")).length, 0, "nothing persisted");
+  assertEquals(result.conversation.quoteId, undefined);
+  const texts = result.newMessages.filter((m) =>
+    m.role === "assistant" && m.kind === "text"
+  );
+  assertEquals(texts.length, 1);
+  assertEquals(
+    texts[0].content,
+    t("en", "chatCoordinator.priceMissing", { item: "Panel swap" }),
+  );
+  await resetKv();
+});
+
+Deno.test("REQ-302 B1 handle-chat-message integration: a -$500 reprice of the bound draft is refused — the draft keeps its price, the reply asks", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const { conversations, llm, quotes, flow } = fresh();
+  await seedOnboarded("u-1");
+  const draft = await quotes.create("u-1", {
+    summary: "Panel swap",
+    lineItems: [{ description: "Panel swap", quantity: 1, unit: "ea", price: 50_000 }],
+    estimatedTotal: 50_000,
+    status: "draft",
+  });
+  const conv = await conversations.create({ userId: "u-1", quoteId: draft.id });
+  llm.setScript([{
+    text: "",
+    action: {
+      type: "create_quote",
+      payload: {
+        summary: "Panel swap",
+        lineItems: [{ description: "Panel swap", amountCents: -50_000 }],
+      },
+    },
+  }]);
+  const result = await flow.run({
+    userId: "u-1",
+    conversationId: conv.id,
+    content: "-500",
+  });
+  const kept = await quotes.getOwned(draft.id, "u-1");
+  assertEquals(kept.estimatedTotal, 50_000);
+  assertEquals(kept.lineItems[0].price, 50_000);
+  assertEquals(
+    result.newMessages.filter((m) => m.kind === "action_card").length,
+    0,
+  );
+  const texts = result.newMessages.filter((m) =>
+    m.role === "assistant" && m.kind === "text"
+  );
+  assertEquals(texts.length, 1);
+  assertEquals(
+    texts[0].content,
+    t("en", "chatCoordinator.priceMissing", { item: "Panel swap" }),
+  );
+  await resetKv();
+});
+
+Deno.test("REQ-302 B1 handle-chat-message integration: a real reprice of the bound draft flags the turn with quoteUpdated so the island re-reads the total", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const { conversations, llm, quotes, flow } = fresh();
+  await seedOnboarded("u-1");
+  const draft = await quotes.create("u-1", {
+    summary: "Panel swap",
+    lineItems: [{ description: "Panel swap", quantity: 1, unit: "ea", price: 50_000 }],
+    estimatedTotal: 50_000,
+    status: "draft",
+  });
+  const conv = await conversations.create({ userId: "u-1", quoteId: draft.id });
+  llm.setScript([{
+    text: "",
+    action: {
+      type: "create_quote",
+      payload: {
+        summary: "Panel swap",
+        lineItems: [{ description: "Panel swap", amountCents: 70_000 }],
+      },
+    },
+  }]);
+  const result = await flow.run({
+    userId: "u-1",
+    conversationId: conv.id,
+    content: "make it 700",
+  });
+  assertEquals((await quotes.getOwned(draft.id, "u-1")).estimatedTotal, 70_000);
+  assertEquals(quoteUpdatedBy(result.newMessages), draft.id);
   await resetKv();
 });

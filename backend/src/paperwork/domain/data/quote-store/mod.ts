@@ -1,4 +1,8 @@
 import { Injectable } from "#danet/core";
+import {
+  QuotePriceError,
+  storedQuotePriceProblem,
+} from "#quote-flow/quote-price-guard.ts";
 import { summarizeJobName } from "#quote-flow/job-name.ts";
 import { getKv, indexedIds, readMany } from "@core/data/kv/mod.ts";
 import { ForbiddenError, NotFoundError } from "@core/data/repository/mod.ts";
@@ -45,6 +49,7 @@ export class QuoteStore {
       }
       & CreateNumberedOpts,
   ): Promise<Quote> {
+    assertQuotePriced(input);
     const id = crypto.randomUUID();
     const now = new Date().toISOString();
     const quote: Quote = {
@@ -230,6 +235,9 @@ export class QuoteStore {
     const definedPatch = Object.fromEntries(
       Object.entries(patch).filter(([_, v]) => v !== undefined),
     ) as Partial<Quote>;
+    // REQ-302: only the money fields the patch carries are judged — a lock
+    // stamp or a translation never re-validates an old row.
+    assertQuotePriced(definedPatch);
     // REQ-264 (M15): an edited text's cached translations are stale — drop
     // them (the next send re-translates); unchanged lines keep theirs.
     if (definedPatch.lineItems) {
@@ -262,5 +270,35 @@ export class QuoteStore {
     const now = new Date().toISOString();
     const kv = await getKv();
     await kv.set([PREFIX, id], { ...existing, deletedAt: now, updatedAt: now });
+  }
+}
+
+/**
+ * REQ-302 (demo-loop cycle 1, B1 + M29) — the last gate on the write path: a
+ * negative line, or an estimatedTotal at or below zero, never reaches KV,
+ * whoever the caller is (chat coordinator, API, wizard). Judges only the
+ * fields present: `lineItems` for the sign, `estimatedTotal` for the zero.
+ */
+function assertQuotePriced(
+  fields: { lineItems?: Quote["lineItems"]; estimatedTotal?: number },
+): void {
+  const lines = fields.lineItems;
+  if (lines) {
+    const problem = storedQuotePriceProblem({
+      lineItems: lines,
+      // without an explicit total the sum of the lines is not judged here —
+      // callers that persist lines without a total (an unpriced wizard
+      // draft) are allowed; the total is judged when it is written
+      estimatedTotal: typeof fields.estimatedTotal === "number"
+        ? fields.estimatedTotal
+        : 1,
+    });
+    if (problem) {
+      throw new QuotePriceError(problem, `quote: ${problem}`);
+    }
+  } else if (
+    typeof fields.estimatedTotal === "number" && !(fields.estimatedTotal > 0)
+  ) {
+    throw new QuotePriceError("no_total", "quote: no_total");
   }
 }

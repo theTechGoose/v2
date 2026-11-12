@@ -542,6 +542,7 @@
   "chatCoordinator.revision.updated": "Updated the quote: {changes}.",
   "chatCoordinator.revision.updatedNoChange": "Updated the quote.",
   "chatCoordinator.quoteLocked": "Quote locked",
+  "chatCoordinator.priceMissing": "I can't use that as a price. What should {item} cost? Give me a number, like $500.",
   "chatHeader.more": "More",
   "chatHeader.shareThread": "Share thread",
   "clientsBoard.balance": "Balance",
