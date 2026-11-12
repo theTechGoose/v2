@@ -14,6 +14,8 @@ import {
  */
 export interface SiteFooterCopy {
   policiesAria: string;
+  /** REQ-509: "Powered by DocuMonster", the document footer's credit */
+  poweredBy: string;
   links: { id: LegalDocId; path: string; label: string }[];
 }
 
@@ -51,10 +53,16 @@ export interface SiteFooterCopy {
  * it follows the EN/ES switch; the island is the only thing that renders it.
  */
 export default function SiteFooterView(
-  { copy, compact = false }: { copy: SiteFooterCopy; compact?: boolean },
+  { copy, compact = false, document: forDocument = false }: {
+    copy: SiteFooterCopy;
+    compact?: boolean;
+    /** REQ-509: the contractor's customer documents (/q, /i, /co) */
+    document?: boolean;
+  },
 ) {
   const item =
     "display:inline-block;min-height:24px;padding:0 3px;line-height:24px;white-space:nowrap;color:inherit;";
+  if (forDocument) return <DocumentFooter copy={copy} item={item} />;
   if (compact) return <CompactFooter copy={copy} item={item} />;
   return (
     <footer
@@ -106,7 +114,17 @@ export default function SiteFooterView(
  * the app's pane at 1280px with these gaps, which is why there is no © on it
  * (with one it wrapped to two rows). Narrower than the line it wraps instead
  * of scrolling sideways. Same teal, same full width, same data hooks.
+ *
+ * REQ-509 (demo-loop cycle 3, m24): on a phone (≤640px) the line still wrapped
+ * to three or four rows under the chat box, so there the phone and the address
+ * are hidden and the footer is the four links alone. The rule rides inside the
+ * footer as a <style> element — the footer is inline-styled and needs no page
+ * stylesheet, and a body <style> rendered by the island is in its own markup
+ * on both sides of hydration (unlike a Head <style>).
  */
+const COMPACT_PHONE_CSS =
+  "@media (max-width: 640px) { .site-footer--compact [data-site-phone], .site-footer--compact [data-site-address] { display: none !important; } }";
+
 function CompactFooter(
   { copy, item }: { copy: SiteFooterCopy; item: string },
 ) {
@@ -142,6 +160,55 @@ function CompactFooter(
         {SUPPORT_PHONE_DISPLAY}
       </a>
       <span data-site-address style={item}>{BUSINESS_ADDRESS}</span>
+      <style>{COMPACT_PHONE_CSS}</style>
+    </footer>
+  );
+}
+
+/**
+ * REQ-509 (demo-loop cycle 3, m24) — the footer of the contractor's public
+ * customer documents: the quote /q, the invoice /i, the change order /co. The
+ * full block printed DocuMonster's support phone and Myrtle Beach address
+ * right under the contractor's own contact block, so a customer read them as
+ * the contractor's. Here: the four policy links (they stay — REQ-067/076, the
+ * SMS terms and privacy policy every page links for A2P) and "Powered by
+ * DocuMonster", one wrapping line in the compact footer's measures. No
+ * DocuMonster phone, no address; the document's own header names the
+ * contractor and how to reach them.
+ */
+function DocumentFooter(
+  { copy, item }: { copy: SiteFooterCopy; item: string },
+) {
+  return (
+    <footer
+      class="site-footer site-footer--document"
+      data-site-footer
+      data-site-footer-document
+      style="display:flex;flex-direction:row;flex-wrap:wrap;align-items:center;justify-content:center;column-gap:12px;row-gap:0;box-sizing:border-box;padding:6px 12px calc(6px + env(safe-area-inset-bottom, 0px));background:var(--brand-teal,#1a535c);color:rgba(255,255,255,0.82);text-align:center;font-size:11px;line-height:24px;flex-shrink:0;"
+    >
+      <nav
+        data-site-footer-links
+        aria-label={copy.policiesAria}
+        style="display:flex;flex-wrap:wrap;justify-content:center;column-gap:8px;"
+      >
+        {copy.links.map((l) => (
+          <a
+            key={l.id}
+            href={l.path}
+            data-legal-link={l.id}
+            data-terms-link={l.id === "terms" ? "" : undefined}
+            style={`${item}text-decoration:underline;text-underline-offset:3px;text-decoration-thickness:1px`}
+          >
+            {l.label}
+          </a>
+        ))}
+      </nav>
+      <span
+        data-site-powered-by
+        style={`${item}font-weight:700;color:#fff`}
+      >
+        {copy.poweredBy}
+      </span>
     </footer>
   );
 }

@@ -3,10 +3,11 @@ import { LEGAL_LINKS } from "../../shared/legal/terms.ts";
 import SiteFooterLive from "../islands/SiteFooterLive.tsx";
 import type { SiteFooterCopy } from "./SiteFooterView.tsx";
 
-/** REQ-367 — the footer's words in `lang`: the grid's label and the four policy links, from the one list. */
+/** REQ-367 — the footer's words in `lang`: the grid's label and the four policy links, from the one list (REQ-509: and the document footer's "Powered by DocuMonster"). */
 export function siteFooterCopy(lang: Lang): SiteFooterCopy {
   return {
     policiesAria: tFor(lang, "siteFooter.policiesAria"),
+    poweredBy: tFor(lang, "siteFooter.poweredBy"),
     links: LEGAL_LINKS.map((l) => ({
       id: l.id,
       path: l.path,
@@ -33,16 +34,26 @@ export function siteFooterCopy(lang: Lang): SiteFooterCopy {
  * REQ-425 (demo-loop cycle 2, p6): the signed-in app routes pass `compact` —
  * the same links, phone and address on one line, so the footer no
  * longer takes 120-150 px from the chat, the in-chat calendar and the panes.
- * The public pages (login, the customer documents, the error page…) keep the
- * full block.
+ * The public pages (login, the error page…) keep the full block.
+ *
+ * REQ-509 (demo-loop cycle 3, m24): the contractor's public documents — the
+ * quote /q, the invoice /i, the change order /co — pass `document`: the four
+ * policy links and "Powered by DocuMonster", no DocuMonster phone or address
+ * under the contractor's own contact block.
  */
 export default function SiteFooter(
-  { lang = "en", compact = false }: { lang?: Lang; compact?: boolean },
+  { lang = "en", compact = false, document: forDocument = false }: {
+    lang?: Lang;
+    compact?: boolean;
+    /** REQ-509: the footer of the contractor's customer documents */
+    document?: boolean;
+  },
 ) {
   return (
     <SiteFooterLive
       lang={lang}
       compact={compact}
+      document={forDocument}
       copy={{ en: siteFooterCopy("en"), es: siteFooterCopy("es") }}
     />
   );

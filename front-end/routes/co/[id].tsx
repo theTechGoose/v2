@@ -357,7 +357,7 @@ export default define.page(async function PublicChangeOrder(ctx) {
               </article>
             )}
         </div>
-        <SiteFooter lang={lang} />
+        <SiteFooter lang={lang} document />
       </div>
     </>
   );
