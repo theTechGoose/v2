@@ -84,7 +84,7 @@ export default define.page(async function AssistantThread(ctx) {
     })
     : null;
   const headerTitle = ssrHeader?.clientName ??
-    tFor(lang, ssrHeader?.clientKey ?? "assistantThread.newConversation");
+    tFor(lang, ssrHeader?.clientKey ?? "asstChat.header.newConversation");
   // REQ-465 (demo cycle 3, m37): the first paint already names the number.
   const headerStatus = ssrHeader
     ? numberedLabel(ssrHeader.number, tFor(lang, ssrHeader.statusKey))
@@ -145,9 +145,11 @@ export default define.page(async function AssistantThread(ctx) {
         <DashSidebar active="messages" />
         <main class="main">
           <DashTopbar
-            greetingDate={tFor(lang, "assistantThread.greetingDate")}
+            greetingDate={tFor(lang, "assistantPage.greetingDate")}
             greetingName={greetingName}
-            greetingOverrideKey="assistantThread.greetingOverride"
+            // REQ-674 (cycle 5, p18-4a): the same greeting keys as /assistant —
+            // the first message moves this very screen here.
+            greetingOverrideKey="assistantPage.greetingOverride"
           />
           <div class="asst">
             <AsstThreads initialThreads={initialThreads} activeId={threadId} />

@@ -95,7 +95,7 @@ export default define.page(async function AssistantHome(ctx) {
             <div class="asst__chat-wrap">
               <section class="chat">
                 <ChatHeaderLive
-                  initialClient={tFor(lang, "assistantPage.newConversation")}
+                  initialClient={tFor(lang, "asstChat.header.newConversation")}
                   initialStatus={tFor(lang, "assistantPage.assistantHelp")}
                 />
                 <AsstChat
