@@ -13,6 +13,12 @@
  *   - the stage's and the overlay's wiring: the resting pointer is looked up again on EVERY layout
  *     pass (no settle window), the mouse is followed document-wide (only leaving the window is a
  *     `leave`), off the frame it is an off anchor, the stage says so and outlines the frame.
+ *
+ * REQ-451 AMENDMENT (demo M1 + M14, cycle 3) — his pointer is what he pointed at: a layout pass no
+ * longer looks it up again (only a fraction made before the replay was styled), a resend is the
+ * held anchor itself and only to the page load it was made on, the hand-off counts only on the
+ * fitted frame, and an off anchor is drawn as a small edge marker. The cases changed here say so;
+ * the new model is pinned in demo-presenter-anchor.test.ts.
  */
 import * as fs from "fs";
 import * as path from "path";
@@ -423,10 +429,14 @@ describe("REQ-393 the stage: the resting pointer is the spot under the presenter
     return stageSrc.slice(at, stageSrc.indexOf("/>", at));
   })();
 
-  test("M2 scroll: every layout pass looks the resting pointer up again (rated, reliable) — no settle window is left", () => {
-    expect(fn("replace")).toMatch(
+  // REQ-451 AMENDMENT (demo M1, cycle 3) — a layout pass no longer looks the resting pointer up
+  // again (the customer's arrow stayed at one screen spot over whatever moved under it); the rated,
+  // reliable look-up is kept for a fraction made before the replay could name a node only
+  test("M2 scroll: no settle window is left; the rated, reliable look-up runs only for a provisional fraction (REQ-451), never on every layout pass", () => {
+    expect(fn("replace")).not.toMatch(
       /if \(lastMoveRef\.current\) rest\.push\(null\)/,
     );
+    expect(fn("replace")).toMatch(/lookAgain\([\s\S]{0,260}rest\.push\(null\)/);
     expect(stageSrc).not.toMatch(/restRef|snapGenRef/);
     expect(stageSrc).toMatch(
       /const rest = useMemo\(\(\) =>\s*moveThrottle<null>\(\{\s*gap: \(\) =>\s*linkRef\.current\?\.isDirect\(\) \? MOVE_GAP_DIRECT_MS : MOVE_GAP_RELAY_MS,\s*send: \(\) => restAgain\(\),/,
@@ -437,21 +447,19 @@ describe("REQ-393 the stage: the resting pointer is the spot under the presenter
     );
   });
 
+  // REQ-451 AMENDMENT — a resend is the held anchor itself (its mark included), and only to the
+  // page load it was made on; a colleague's anchor is placed by presenterOnStage
   test("M8: beside the frame the anchor is the fraction where the mouse meets the frame's edge, marked off their screen, never a node; a resend keeps the mark", () => {
     const anchorOf = fn("anchorOf");
     const off = anchorOf.indexOf("outsideBox(p, f)");
     expect(off).toBeGreaterThan(-1);
     expect(anchorOf.slice(off, off + 200)).toMatch(/o: 1/);
     expect(off).toBeLessThan(anchorOf.indexOf("rep.anchorAt("));
-    expect(fn("resendPointer")).toMatch(
-      /\.\.\.pointToFrac\(p, fitBox\(\)\),\s*\.\.\.offFrame\(p\)/,
-    );
-    expect(fn("offFrame")).toMatch(
-      /outsideBox\(p, fitBox\(\)\) \? \{ o: 1 as const \} : \{\}/,
-    );
+    expect(fn("resendPointer")).toMatch(/resendable\(/);
+    expect(fn("resendPointer")).not.toMatch(/pointToFrac|offFrame/);
     // a colleague's off anchor is drawn on the frame's edge too
-    expect(fn("placeOnStage")).toMatch(
-      /placeIn\(toStage\(a\), fitBox\(\), ARROW_BOX, a\.o === 1\)/,
+    expect(fn("presenterOnStage")).toMatch(
+      /placeIn\(p, f, ARROW_BOX, a\.o === 1\)/,
     );
   });
 
@@ -483,20 +491,19 @@ describe("REQ-393 the stage: the resting pointer is the spot under the presenter
     expect(fn("fitted")).toMatch(
       /return !!size && s !== HIDDEN && size\.w === s\.w && size\.h === s\.h;/,
     );
-    for (const name of ["resendPointer", "restAgain"]) {
-      expect([name, fn(name)]).toEqual([
-        name,
-        expect.stringMatching(/if \(!p \|\| !fitted\(\)\) return;/),
-      ]);
-    }
+    // REQ-451 — resendPointer sends the held anchor as it is: it needs neither the mouse nor
+    // the frame; the look-up under the mouse still does
+    expect(fn("restAgain")).toMatch(/if \(!p \|\| !fitted\(\)\) return;/);
   });
 
+  // REQ-451 AMENDMENT (demo M14, cycle 3) — the hand-off is held as a seed until the frame is
+  // fitted, and counts only on the frame (beside it, it put the arrow on the phone's edge at once)
   test("start / restart: a stage opened under a still mouse takes the hand-off once, and hands its own over when it goes", () => {
     expect(stageSrc).toMatch(
       /from "\.\.\/lib\/demo-mode\/cursor-handoff\.ts"/,
     );
     expect(stageSrc).toMatch(
-      /const seeded = takeCursor\(sessionStore\(\)\);\s*if \(seeded && !lastMoveRef\.current\) lastMoveRef\.current = seeded;/,
+      /seedRef\.current = takeCursor\(sessionStore\(\)\)/,
     );
     expect(stageSrc).toMatch(
       /addEventListener\("pagehide", hand\)/,
@@ -524,9 +531,10 @@ describe("REQ-393 the stage: the resting pointer is the spot under the presenter
 
 describe("REQ-393 the customer's overlay: an off anchor sits on the window's edge; the page that opens the stage hands the mouse over", () => {
   const overlay = read("front-end/islands/DemoModeOverlay.tsx");
+  // REQ-451 AMENDMENT — placed only when toScreen has a point (the node he pointed at is here)
   test("placeOnScreen draws an off anchor on the edge, marked outside", () => {
     expect(overlay).toMatch(
-      /placeIn\(toScreen\(a\), viewportBox\(\), ARROW_BOX, a\.o === 1\)/,
+      /placeIn\(p, viewportBox\(\), ARROW_BOX, a\.o === 1\)/,
     );
   });
   test("placePresenter hands the staff's last pointer position over before sending them to the stage; the page keeps it from its pointer events", () => {

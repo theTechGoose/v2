@@ -47,6 +47,10 @@
  * REQ-391 (demo-loop cycle 2, M4 + m21) — as the page goes it tells the stage why (navigating to
  * another page of the app, or closing — leave-hint.ts), and every mirrored frame carries its push
  * time on the deploy's clock, so the stage can say how late it is.
+ * REQ-451 (demo-loop cycle 3, M1 + M14) — a presenter's arrow is what he pointed at: drawn on that
+ * element only, and hidden while this page has no such element (another page load, the element
+ * gone or not laid out) — never at the fraction it had, which is over something else now. His
+ * pointer off this screen (`o: 1`) is a small marker on the edge, no name tag.
  */
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import { t } from "../lib/i18n.ts";
@@ -63,7 +67,6 @@ import {
   ACTIVE_REASK_MS,
   ACTIVE_WAIT_MS,
   type Anchor,
-  fracToPoint,
   type PeerMessage,
   type Presenter,
   type Role,
@@ -79,6 +82,10 @@ import {
   createMirrorSender,
   type MirrorSender,
 } from "../../shared/demo-mode/mirror.ts";
+import {
+  anchorPoint,
+  pointInBox,
+} from "../../shared/demo-mode/presenter-anchor.ts";
 import {
   type RestartNotice,
   restartNotice,
@@ -346,24 +353,24 @@ export default function DemoModeOverlay() {
     sentRef.current = out; // REQ-305 — every anchor of this pointer goes out: the last one sent
     return out;
   };
-  /** a presenter's pointer on this screen: on the element they point at when this page has it */
-  const toScreen = (a: Anchor): Pt => {
+  /** a presenter's pointer on this screen: on the element they point at when this page has it;
+   *  REQ-451 (M1) — else nowhere (null): another page load, the element left the page or is not
+   *  laid out — never the fraction it had, which is over something else now */
+  const toScreen = (a: Anchor): Pt | null => {
     const recorder = recorderRef.current;
     const sender = senderRef.current;
-    if (a.n && recorder && sender && a.n.l === sender.load) {
-      const el = recorder.nodeOf(a.n.id);
-      const r = el?.getBoundingClientRect();
-      if (r && r.width > 0 && r.height > 0) {
-        return { x: r.left + r.width * a.n.x, y: r.top + r.height * a.n.y };
-      }
-    }
-    return fracToPoint(a, viewportBox());
+    return anchorPoint(a, viewportBox(), sender?.load ?? null, (n) => {
+      const el = recorder ? recorder.nodeOf(n.id) : null;
+      return el?.isConnected ? pointInBox(n, el.getBoundingClientRect()) : null;
+    });
   };
   /** REQ-305 — where an anchor's pointer is drawn: on the window's edge, pointing outside, when
    *  the element it names is out of view; REQ-393 — and when the presenter's mouse is beside the
-   *  frame on his stage (`o`: the anchor names the edge's point) */
-  const placeOnScreen = (a: Anchor) =>
-    placeIn(toScreen(a), viewportBox(), ARROW_BOX, a.o === 1);
+   *  frame on his stage (`o`: the anchor names the edge's point); REQ-451 — null: not drawn */
+  const placeOnScreen = (a: Anchor) => {
+    const p = toScreen(a);
+    return p ? placeIn(p, viewportBox(), ARROW_BOX, a.o === 1) : null;
+  };
 
   /** REQ-305 — this side's resting pointer, once more: a stage that was just handed a fresh
    *  snapshot (it joined, or asked for one) has not seen it — the stage's resendPointer, mirrored */
@@ -580,8 +587,14 @@ export default function DemoModeOverlay() {
     const placed = new Map<string, Pt & { outside: boolean }>();
     const place = (pid: string, a: Anchor, kind: "move" | "click") => {
       const p = placeOnScreen(a);
+      // REQ-451 — what he pointed at is not on this page (any more): no arrow, kept until it is
+      // back or he points elsewhere
+      if (!p) {
+        if (placed.delete(pid)) command(pid, { kind: "leave" });
+        return;
+      }
       placed.set(pid, { ...p.at, outside: p.outside });
-      command(pid, { kind, at: p.at, outside: p.outside });
+      command(pid, { kind, at: p.at, outside: p.outside, off: a.o === 1 });
     };
     let raf = 0;
     /** REQ-305 — this page moved under the pointers (a scroll of any scroller, a resize, a change
@@ -593,8 +606,10 @@ export default function DemoModeOverlay() {
         const p = placeOnScreen(a);
         const was = placed.get(pid);
         if (
-          was && was.x === p.at.x && was.y === p.at.y &&
-          was.outside === p.outside
+          p
+            ? was && was.x === p.at.x && was.y === p.at.y &&
+              was.outside === p.outside
+            : !was
         ) continue;
         place(pid, a, "move");
       }

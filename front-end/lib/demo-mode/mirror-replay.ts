@@ -33,6 +33,16 @@
  * the browser lays the frame out without them (the page's links stacked top-left, a drawer in the
  * flow), so the stage looks for no node under its presenter's pointer in it.
  *
+ * REQ-451 (demo-loop cycle 3, M1 + M14) — nor is a styled replay's layout the customer's yet while
+ * its web fonts and the images it fetches are still coming in (a logo with no height pulls the
+ * whole page up): `settled()` says it is — no font loading, every stylesheet's and image's load
+ * (or error) event in, never its `sheet` or `complete` alone (the frame was still laid out without
+ * them) —
+ * or SETTLE_CAP_MS after the snapshot (one that never comes holds nothing for good, and the stage
+ * is told then); once settled a snapshot stays so (a later change moves both screens alike). The
+ * stage takes the node under its presenter's still mouse only from a settled replay: his pointer
+ * is what he pointed at, so a node taken from a half-built page would stay the wrong one.
+ *
  * REQ-380 (demo-loop cycle 2, M10) — a canvas keeps its picture: setting a canvas's width or
  * height, even to the value it had, clears its bitmap, and the customer's page does exactly that
  * (the /q signature pad's setupCanvas, on mount and on every resize) before redrawing the same
@@ -62,6 +72,10 @@ export const MIRROR_SRCDOC =
   `<style>* { backdrop-filter: none !important; -webkit-backdrop-filter: none !important }</style>` +
   `</head><body></body></html>`;
 
+/** REQ-451 — how long after a snapshot its fonts and images are waited for, at most, before its
+ *  layout counts as the customer's anyway */
+export const SETTLE_CAP_MS = 2_500;
+
 export interface ReplayerOptions {
   /** paint a canvas with a bitmap (a data URL); the default draws it with an Image */
   paintCanvas?(c: HTMLCanvasElement, url: string): void;
@@ -74,6 +88,10 @@ export interface ReplayerOptions {
   /** REQ-305 — the ResizeObserver that watches the page's size (the frame window's by default;
    *  null for none; jest hands in its own) */
   Resize?: typeof ResizeObserver | null;
+  /** REQ-451 — the clock `settled()` measures SETTLE_CAP_MS with (jest hands in its own) */
+  now?(): number;
+  /** REQ-451 — run `fn` once after `ms` (the cap's layout pass); says how to cancel it */
+  later?(fn: () => void, ms: number): () => void;
 }
 
 export interface Replayer {
@@ -92,6 +110,10 @@ export interface Replayer {
   settle(): void;
   /** REQ-305 — every stylesheet the replay links has loaded (or failed): its layout is the customer's */
   styled(): boolean;
+  /** REQ-451 — styled, and its web fonts and images are in too (or SETTLE_CAP_MS has passed since
+   *  the snapshot): the node under a point is the one under it on the customer's screen. Stays
+   *  true until the next snapshot */
+  settled(): boolean;
   /** REQ-305 — stop watching the frame's document */
   dispose(): void;
   /** REQ-380 — canvas bitmaps that arrived (`cv` ops), were applied to a canvas, and were
@@ -128,6 +150,15 @@ function awaited(l: Element): boolean {
   const rel = (l.getAttribute("rel") ?? "").toLowerCase().split(/\s+/);
   return rel.includes("stylesheet") && !rel.includes("alternate") &&
     !l.hasAttribute("disabled") && (l.getAttribute("href") ?? "").trim() !== "";
+}
+
+/** REQ-451 — an image the browser fetches now: one with an address, and not one it holds back
+ *  until it is scrolled near (`loading="lazy"`: mostly below the fold, never waited for) */
+function fetched(e: Element): boolean {
+  const src = (e.getAttribute("src") ?? "").trim() ||
+    (e.getAttribute("srcset") ?? "").trim();
+  return src !== "" &&
+    (e.getAttribute("loading") ?? "").trim().toLowerCase() !== "lazy";
 }
 
 /** REQ-380 — the bitmap each canvas should show, and its decoded image once it has loaded */
@@ -182,6 +213,21 @@ export function createReplayer(
   /** REQ-305 — the stylesheets the replay links, and the nodes whose load (or error) has fired */
   let sheets = new Set<Element>();
   const loaded = new WeakSet<Node>();
+  /** REQ-451 — the images the replay fetches, when its snapshot was applied, whether it has
+   *  settled since, and the cap's pending pass */
+  let images = new Set<Element>();
+  let snapAt = 0;
+  let isSettled = false;
+  let cancelCap: (() => void) | null = null;
+  const now = opts.now ??
+    (() => typeof performance !== "undefined" ? performance.now() : Date.now());
+  const later = opts.later ??
+    ((fn: () => void, ms: number) => {
+      const t = setTimeout(fn, ms);
+      // never what keeps a process (jest) alive
+      (t as unknown as { unref?: () => void }).unref?.();
+      return () => clearTimeout(t);
+    });
   const schedule = opts.schedule ??
     ((fn: () => void) =>
       typeof requestAnimationFrame === "function"
@@ -296,6 +342,7 @@ export function createReplayer(
     if (lt === "link" && /(^|\s)stylesheet(\s|$)/i.test(s.a?.rel ?? "")) {
       sheets.add(e); // REQ-305 — styled() waits for it
     }
+    if (lt === "img" && fetched(e)) images.add(e); // REQ-451 — settled() waits for it
     if (s.c) { for (const c of s.c) e.appendChild(build(c)); }
     reg(s.i, e);
     return e;
@@ -418,6 +465,21 @@ export function createReplayer(
     }
   }
 
+  /** REQ-305 — every stylesheet the replay links has loaded (or failed) */
+  function styled(): boolean {
+    for (const l of sheets) {
+      if (!doc.contains(l)) {
+        sheets.delete(l);
+        continue;
+      }
+      if (loaded.has(l) || (l as HTMLLinkElement).sheet || !awaited(l)) {
+        continue;
+      }
+      return false;
+    }
+    return true;
+  }
+
   return {
     apply(f) {
       if (f.t === "snap") {
@@ -427,6 +489,7 @@ export function createReplayer(
           scrolls.clear();
           bitmaps.clear();
           sheets = new Set();
+          images = new Set();
           const root = build(f.root);
           const old = doc.documentElement;
           if (old) doc.replaceChild(root, old);
@@ -435,6 +498,15 @@ export function createReplayer(
           at = f.u;
           ok = true;
           watchSize();
+          // REQ-451 — its fonts and images are waited for, for SETTLE_CAP_MS at most: then the
+          // stage is told (a layout pass), settled or not
+          snapAt = now();
+          isSettled = false;
+          cancelCap?.();
+          cancelCap = later(() => {
+            cancelCap = null;
+            settleSoon();
+          }, SETTLE_CAP_MS);
         } catch {
           ok = false;
           return false;
@@ -487,22 +559,48 @@ export function createReplayer(
       return { x: r.left + r.width * a.x, y: r.top + r.height * a.y };
     },
     settle,
-    styled() {
-      for (const l of sheets) {
-        if (!doc.contains(l)) {
-          sheets.delete(l);
-          continue;
-        }
-        if (loaded.has(l) || (l as HTMLLinkElement).sheet || !awaited(l)) {
-          continue;
-        }
-        return false;
+    styled,
+    settled() {
+      if (isSettled) return true;
+      if (!view || !styled()) return false;
+      // a web font starts loading when a layout first needs it: lay the frame out, then ask
+      try {
+        doc.documentElement?.getBoundingClientRect();
+      } catch {
+        // no layout here
       }
+      const fonts = (doc as Document & { fonts?: { status?: string } }).fonts;
+      let busy = fonts?.status === "loading";
+      // a stylesheet's load (or error) event, never its `sheet` alone (what styled() counts, for
+      // the reveal): measured, both links had their sheets from the memory cache and the frame was
+      // still laid out without them (the wizard stacked at full width)
+      for (const l of sheets) {
+        if (busy) break;
+        if (doc.contains(l) && awaited(l) && !loaded.has(l)) busy = true;
+      }
+      for (const i of images) {
+        if (busy) break;
+        if (!doc.contains(i)) {
+          images.delete(i);
+          continue;
+        }
+        // its load (or error) event, never `complete` alone: measured, an image already
+        // `complete` had not given the frame its height yet (the logo: everything under it sat
+        // higher, the Continue button under the middle of the phone)
+        if (loaded.has(i)) continue;
+        busy = true;
+      }
+      if (busy && now() - snapAt < SETTLE_CAP_MS) return false;
+      isSettled = true;
+      cancelCap?.();
+      cancelCap = null;
       return true;
     },
     stats: () => ({ ...counts }),
     dispose() {
       disposed = true;
+      cancelCap?.();
+      cancelCap = null;
       doc.removeEventListener("load", onLoad, true);
       doc.removeEventListener("error", onLoad, true);
       doc.removeEventListener("scroll", onScroll, true);

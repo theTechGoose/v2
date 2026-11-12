@@ -44,6 +44,16 @@
  * pointer event, so it starts where the page that opened it last saw the mouse (cursor-handoff),
  * and hands its own over when it goes. The frame layer only eats the presenter's clicks.
  *
+ * REQ-451 (demo M1, M14 — cycle 3) — amends REQ-393: the presenter's pointer is what he POINTED
+ * AT. A layout pass never looks his still mouse up again (only a fraction made before the replay
+ * was styled is, once — `lookAgain`): the customer's overlay keeps the arrow on its element as
+ * their page moves, and the stage draws a faint ghost of it where their screen has it whenever
+ * that is apart from his cursor (PointerGhost) — one model on both screens. His anchor is kept
+ * with the page load it was made on and sent again only to that load (`resendable`): a new page,
+ * a reload or another tab gets no arrow until he moves — never a fraction under his still mouse.
+ * The hand-off counts only once the frame is fitted, and only on it (`seedOn`): beside the frame
+ * it is unknown until he moves. Off the frame, their screen shows a small edge marker, no tag.
+ *
  * REQ-232 — the pill says plainly whether the demo is live: "Live", "Connecting…", or "Waiting for
  * {name}'s app…" — the last only when none of the customer's tabs is left, after a few seconds'
  * grace (a page change in their app is a new socket). The stage follows the tab the customer used
@@ -80,6 +90,7 @@ import {
   type PillFace,
   pointToFrac,
   type Presenter,
+  PRESENTER_COLORS,
   type Rect,
   sameAnchor,
 } from "../../shared/demo-mode/protocol.ts";
@@ -118,6 +129,14 @@ import {
 } from "../lib/demo-mode/mirror-replay.ts";
 import { useGlide } from "../lib/demo-mode/use-glide.ts";
 import { placeWavesAgain } from "../lib/demo-mode/pointer-anchor.ts";
+import {
+  anchorPoint,
+  ghostAt,
+  lookAgain,
+  resendable,
+  seedOn,
+} from "../../shared/demo-mode/presenter-anchor.ts";
+import PointerGhost from "../components/demo-mode/PointerGhost.tsx";
 import DemoPointer, {
   type Wave,
   WAVE_MS,
@@ -290,6 +309,20 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
   const placedRef = useRef<Map<string, Pt & { outside: boolean }>>(new Map());
   /** REQ-305 — this presenter's pointer as last sent (its node belongs to one page load) */
   const sentRef = useRef<Anchor | null>(null);
+  /** REQ-451 — the page load the replay showed when it was made (sent again only to that load),
+   *  where on the stage his mouse was, and whether it is a bare fraction only for want of a styled
+   *  replay (looked up once the replay is styled) */
+  const sentLoadRef = useRef<string | null>(null);
+  const sentAtRef = useRef<Pt | null>(null);
+  const provisionalRef = useRef(false);
+  /** REQ-451 (M14) — the mouse the page that opened the stage handed over: counted once the frame
+   *  is fitted, and only on it; dropped by a real pointer event */
+  const seedRef = useRef<Pt | null>(null);
+  /** REQ-451 — the ghost of his arrow where their screen has it, while that is apart from his
+   *  cursor (their page moved it with its element, or the frame moved) */
+  const [ghost, setGhost] = useState<{ at: Pt; outside: boolean } | null>(
+    null,
+  );
   /** REQ-214 — how a colleague's pointer is driven, for the placing again */
   const commandRef = useRef<
     ((pid: string, cmd: Omit<PointerCmd, "seq">) => void) | null
@@ -330,31 +363,53 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
     const s = screenRef.current;
     return !!size && s !== HIDDEN && size.w === s.w && size.h === s.h;
   };
-  /** REQ-393 — the mark of a point beside the frame: off the customer's screen */
-  const offFrame = (p: Pt) => outsideBox(p, fitBox()) ? { o: 1 as const } : {};
-
+  /** REQ-305 — every anchor of this pointer goes out: the last one sent is kept; REQ-451 — with
+   *  the page load it was made on, the stage point it was made at, and whether it is a fraction
+   *  only for want of a styled replay. Made where he points now: no ghost */
+  const hold = (
+    a: Anchor,
+    at: Pt,
+    load: string | null,
+    provisional: boolean,
+  ): Anchor => {
+    sentRef.current = a;
+    sentLoadRef.current = load;
+    sentAtRef.current = at;
+    provisionalRef.current = provisional;
+    setGhost(null);
+    return a;
+  };
+  /** REQ-451 — nothing pointed at (his mouse left the window, the demo went) */
+  const drop = () => {
+    sentRef.current = null;
+    sentLoadRef.current = null;
+    sentAtRef.current = null;
+    provisionalRef.current = false;
+    setGhost(null);
+  };
   /** REQ-242 — a point of this screen as the customer's: the fraction of the frame and, when the
    *  replay has one there, the mirrored element under it and where in its box */
   const anchorOf = (p: Pt): Anchor => {
     const f = fitBox();
     const a = pointToFrac(p, f);
+    const load = loadRef.current;
     // REQ-393 — beside the frame: where his mouse meets the frame's edge, marked off their screen
     // (never a node: nothing of theirs is under it)
     if (outsideBox(p, f)) {
       const edge: Anchor = { ...a, o: 1 };
-      sentRef.current = edge;
-      return edge;
+      return hold(edge, p, load, false);
     }
-    const load = loadRef.current;
     const rep = replayerRef.current;
     // REQ-305 — never a node of a replay whose stylesheets are not in: the node under the point
-    // there is not the one under it on the customer's screen (the fraction is, near enough)
-    const n = load && rep?.styled()
+    // there is not the one under it on the customer's screen (the fraction is, near enough);
+    // REQ-451 — nor before its fonts and images are in (settled): a node taken then would be kept
+    const settled = !!load && rep?.settled() === true;
+    const n = settled
       ? rep.anchorAt((p.x - f.left) / f.s, (p.y - f.top) / f.s)
       : null;
     const out = n && load ? { ...a, n: { ...n, l: load } } : a;
-    sentRef.current = out; // REQ-305 — every anchor of this pointer goes out: the last one sent
-    return out;
+    // REQ-451 — a fraction only because the replay could not be asked yet: looked up once it can
+    return hold(out, p, load, !n && !settled);
   };
   /** a point of the customer's (or a colleague's) pointer on this screen: on the element it names
    *  when the replay has it, else at the same fraction of the frame */
@@ -365,6 +420,39 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
       if (p) return { x: f.left + p.x * f.s, y: f.top + p.y * f.s };
     }
     return fracToPoint(a, f);
+  };
+  /** REQ-451 — a presenter's pointer on this frame (a colleague's, or this one's ghost): on the
+   *  node it names while the replay shows that page load and has the node; else nowhere — never
+   *  the fraction it had (another page now, or the node gone) */
+  const presenterOnStage = (a: Anchor) => {
+    const f = fitBox();
+    const p = anchorPoint(a, f, loadRef.current, (n) => {
+      const q = replayerRef.current?.pointOf(n);
+      return q ? { x: f.left + q.x * f.s, y: f.top + q.y * f.s } : null;
+    });
+    return p ? placeIn(p, f, ARROW_BOX, a.o === 1) : null;
+  };
+  /** REQ-451 — what he points at, as the stage keeps it */
+  const heldNow = () => ({
+    a: sentRef.current,
+    load: sentLoadRef.current,
+    at: sentAtRef.current,
+    provisional: provisionalRef.current,
+  });
+  /** REQ-451 — the ghost of his arrow where their screen has it now, when apart from his cursor */
+  const showGhost = () => {
+    const a = sentRef.current;
+    const g = ghostAt(
+      heldNow(),
+      loadRef.current,
+      a ? presenterOnStage(a) : null,
+    );
+    setGhost((was) =>
+      was && g && was.outside === g.outside &&
+        Math.abs(was.at.x - g.at.x) < 0.5 && Math.abs(was.at.y - g.at.y) < 0.5
+        ? was
+        : g
+    );
   };
 
   /** this side's moves, rated leading + trailing so the rest position always goes out */
@@ -383,24 +471,18 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
         ),
     }), []);
 
-  /** REQ-242 — where this presenter's pointer rests, once more: the customer's page that just
-   *  joined (or was just mirrored afresh) has not seen it. As last sent when that named a node of
-   *  the page the replay shows; else as a fraction of the frame only — REQ-305: never on a node
-   *  looked for in a replay just built, its styles not in yet (that put it on whatever an
-   *  unstyled page stacked under the point: a sidebar link, the phone drawer) */
+  /** REQ-242 — what this presenter points at, once more: the customer's page that just joined (or
+   *  was just mirrored afresh) has not seen it. REQ-451 (M1) — only to the page load it was made
+   *  on (a tab followed again, its page unchanged; the stage's socket back); a new page, a reload,
+   *  another tab gets nothing until he moves — never a fraction of the frame under his still
+   *  mouse, which put the arrow on whatever the new page had at that spot */
   const resendPointer = () => {
-    const p = lastMoveRef.current;
-    if (!p || !fitted()) return;
-    const sent = sentRef.current;
-    const a = sent?.n?.l && sent.n.l === loadRef.current
-      ? sent
-      : { ...pointToFrac(p, fitBox()), ...offFrame(p) };
-    sentRef.current = a;
-    linkRef.current?.send({ k: "move", a, t: performance.now() });
+    const a = resendable(heldNow(), loadRef.current);
+    if (a) linkRef.current?.send({ k: "move", a, t: performance.now() });
   };
   /** REQ-305 — the resting pointer on the node under it in the styled replay, sent when that is
-   *  not what went last (the frame settled under a still mouse); REQ-393 — after every layout
-   *  pass, whatever moved under the mouse (their scroll, a change, the stage resized) */
+   *  not what went last; REQ-451 — only for a fraction made before the replay could name a node
+   *  (lookAgain), or his mouse beside a frame that moved — never because the page moved under it */
   const restAgain = () => {
     const p = lastMoveRef.current;
     if (!p || !fitted()) return;
@@ -410,7 +492,7 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
     linkRef.current?.send({ k: "move", a, t: performance.now() });
   };
   /** REQ-393 — restAgain after a layout pass, rated like a move (a scroll is a burst of passes),
-   *  on the reliable channel (the last look-up must arrive) */
+   *  on the reliable channel (the last look-up must arrive); REQ-451 — a provisional one only */
   const rest = useMemo(() =>
     moveThrottle<null>({
       gap: () =>
@@ -421,6 +503,19 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
   const markOff = () => {
     const p = lastMoveRef.current;
     setOff(!!p && fitted() && outsideBox(p, fitBox()));
+  };
+  /** REQ-393 / REQ-451 (M14) — the mouse the opening page handed over, once the frame is fitted
+   *  to their screen: on the frame he points there from the start; beside it (the Demo button at
+   *  the right of /admin's row) it says nothing of their screen — unknown until he moves */
+  const takeSeed = () => {
+    const s = seedRef.current;
+    if (!s || !fitted()) return;
+    seedRef.current = null;
+    const p = seedOn(s, fitBox());
+    if (!p || lastMoveRef.current) return;
+    lastMoveRef.current = p;
+    markOff();
+    if (linkRef.current) throttle.push(p);
   };
 
   /** REQ-305 — where an anchor's pointer is drawn: on the frame's edge, pointing outside, when the
@@ -435,29 +530,53 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
     glide.glideTo(p.at, p.outside);
   };
   const placePeer = (pid: string, a: Anchor, kind: "move" | "click") => {
-    const p = placeOnStage(a);
+    const p = presenterOnStage(a);
+    // REQ-451 — what the colleague pointed at is not in this frame (another page now): no arrow
+    if (!p) {
+      if (placedRef.current.delete(pid)) {
+        commandRef.current?.(pid, { kind: "leave" });
+      }
+      return;
+    }
     placedRef.current.set(pid, { ...p.at, outside: p.outside });
-    commandRef.current?.(pid, { kind, at: p.at, outside: p.outside });
+    commandRef.current?.(pid, {
+      kind,
+      at: p.at,
+      outside: p.outside,
+      off: a.o === 1,
+    });
   };
   /** REQ-305 — the replay's layout may have moved (a frame applied, its styles, images or fonts
    *  in, a settle, the stage resized): every pointer anchored to its nodes is placed again;
-   *  REQ-393 — and this presenter's resting pointer is looked up again under his still mouse */
+   *  REQ-451 — this presenter's anchor stays on what he pointed at (its ghost is placed again) */
   const replace = () => {
     checkStyled(); // REQ-370 — a stylesheet of the replay may just have loaded
     showCustomer();
     setWaves((w) => placeWavesAgain(w, (a) => placeOnStage(a).at));
     for (const [pid, a] of peersRef.current) {
-      const p = placeOnStage(a);
+      const p = presenterOnStage(a);
       const was = placedRef.current.get(pid);
       if (
-        was && was.x === p.at.x && was.y === p.at.y &&
-        was.outside === p.outside
+        p
+          ? was && was.x === p.at.x && was.y === p.at.y &&
+            was.outside === p.outside
+          : !was
       ) continue;
       placePeer(pid, a, "move");
     }
-    // REQ-393 — the spot under his still mouse may hold another element now: theirs too
     markOff();
-    if (lastMoveRef.current) rest.push(null);
+    // REQ-451 (M14) — the opening page's mouse, once the frame is fitted, and only on it
+    takeSeed();
+    // REQ-451 (M1) — never the spot under his still mouse again (the customer's arrow stayed over
+    // whatever their scroll or a new page put there): only a fraction made before this page's
+    // replay settled is looked up, once it has — and his mouse beside the frame, which moves
+    if (
+      lookAgain(heldNow(), {
+        load: loadRef.current,
+        settled: !!replayerRef.current?.settled(),
+      })
+    ) rest.push(null);
+    showGhost();
   };
   const replaceRef = useRef(replace);
   replaceRef.current = replace;
@@ -526,7 +645,7 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
           customerRef.current = null;
           glide.hide();
         }
-        resendPointer(); // REQ-305 — at once, a fraction of the frame
+        resendPointer(); // REQ-451 — only an anchor made on this very page load
       }
       // its scrolls once more as its styles come in; REQ-305 — the pointers too
       SETTLE_MS.forEach((ms) => {
@@ -877,7 +996,7 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
       customerRef.current = null;
       peersRef.current.clear();
       placedRef.current.clear();
-      sentRef.current = null;
+      drop();
       glide.hide();
       setCmds({});
       setMirrored(null);
@@ -901,17 +1020,19 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
   //    a still mouse gets no pointer event at all, so it starts where the page that opened it last
   //    saw the mouse (taken once), and hands its own over when it goes (a reload, End)
   useEffect(() => {
-    const seeded = takeCursor(sessionStore());
-    if (seeded && !lastMoveRef.current) lastMoveRef.current = seeded;
+    // REQ-451 (M14) — held until the frame is fitted, and counted only on it (takeSeed)
+    seedRef.current = takeCursor(sessionStore());
     const at = (e: PointerEvent) => {
       const p = { x: e.clientX, y: e.clientY };
+      seedRef.current = null; // REQ-451 — a real event says where the mouse is
       lastMoveRef.current = p;
       markOff();
       if (fitted() && linkRef.current) throttle.push(p);
     };
     const gone = () => {
       lastMoveRef.current = null;
-      sentRef.current = null;
+      seedRef.current = null;
+      drop();
       throttle.cancel();
       rest.cancel();
       setOff(false);
@@ -1157,6 +1278,18 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
                   sendClick(e.clientX, e.clientY);
                 }}
                 onContextMenu={(e) => e.preventDefault()}
+              />
+            )}
+            {/* REQ-451 (demo M1) — his arrow where their screen has it, while apart from his cursor */}
+            {mirrored && ghost && (
+              <PointerGhost
+                at={ghost.at}
+                outside={ghost.outside}
+                color={demo.presenters.find((p) => p.userId === demo.pid)
+                  ?.color ?? PRESENTER_COLORS[0]}
+                z={Z + 1}
+                label={t("demoMode.pointerGhost", { name })}
+                bounds={fit}
               />
             )}
             {/* REQ-393 (demo M8) — his mouse is beside the frame: said, on its outline */}

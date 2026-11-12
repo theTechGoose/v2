@@ -8,6 +8,8 @@
  * the Spanish page) and the embedded page never joins. The presenter's resting pointer comes back
  * on the customer's next page with no new movement; the customer's pointer leaves the stage on a
  * new page. All along the staff browser sends no write to /api and its frame loads no script.
+ * REQ-451 AMENDMENT (demo M1, cycle 3): the presenter's pointer is what he pointed at — the
+ * customer's next page shows no arrow while his mouse is still, and his next move brings it back.
  */
 import { story, type StoryTools } from "#shots";
 import { answerQuestions } from "../_shared/onboarding-answers.ts";
@@ -507,10 +509,33 @@ Deno.test("REQ-242: the stage mirrors the customer's actual screen — connectin
         "the embedded page is an empty box on the stage, never loaded",
       );
 
-      // 8. pointer-m1 — the presenter rests; the customer changes page; the pointer comes back by itself
+      // 8. pointer-m1 — the presenter rests; the customer changes page. REQ-451 AMENDMENT (demo M1,
+      //    cycle 3): what he pointed at was on the page that went — the new page shows no arrow
+      //    while his mouse is still (never the spot under it, over whatever the new page has
+      //    there); his next move brings it back, on the new page
       await userPage.goto(`${baseUrl}/customers`);
       await until(
-        "the presenter's resting pointer is on the customer's new page",
+        "the stage's mirror follows to /customers",
+        async () =>
+          (await page.locator(FRAME).getAttribute("data-path")) ===
+            "/customers",
+        20_000,
+      );
+      const stillT0 = Date.now();
+      let shownStill: unknown = null;
+      while (!shownStill && Date.now() - stillT0 < 1_500) {
+        shownStill = await pointerAt(userPage, "Hans");
+        await new Promise((r) => setTimeout(r, 150));
+      }
+      expect.eq(
+        shownStill,
+        null,
+        "REQ-451: no presenter arrow on the new page while his mouse is still",
+      );
+      await page.mouse.move(target.x + 1, target.y);
+      await page.mouse.move(target.x, target.y);
+      await until(
+        "the presenter's pointer is on the customer's new page once he moves",
         async () => (await pointerAt(userPage, "Hans")) !== null,
       );
 
