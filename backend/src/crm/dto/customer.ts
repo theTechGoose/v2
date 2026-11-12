@@ -1,3 +1,4 @@
+import type { BalanceSubParts } from "#quote-flow/balance-sub.ts";
 import {
   IsBoolean,
   IsIn,
@@ -121,7 +122,11 @@ export interface CustomerCard extends Customer {
   lastWhen: string | null;
   lastTone: CustomerLastTone;
   balanceCents: number;
+  /** The balance sub-line in English — the neutral base (REQ-204/350). */
   balanceSub: string;
+  /** REQ-350 + REQ-367: the same line as data; the client words it in the
+   *  live language (shared/quote-flow/balance-sub.ts balanceSubLabel). */
+  balanceSubParts?: BalanceSubParts;
   activeJobs: number;
   jobsSub: CustomerJobsSub;
   status: CustomerStatus;

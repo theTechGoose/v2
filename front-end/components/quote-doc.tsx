@@ -200,6 +200,7 @@ function cstr(lang: Lang) {
     callWord: tFor(lang, "quoteDoc.callWord"),
     orWord: tFor(lang, "quoteDoc.orWord"),
     emailWord: tFor(lang, "quoteDoc.emailWord"),
+    emailWordStart: tFor(lang, "quoteDoc.emailWordStart"),
     lookForward: tFor(lang, "quoteDoc.lookForward"),
     poweredBy: tFor(lang, "quoteDoc.poweredBy"),
     termLabels: {
@@ -898,7 +899,10 @@ export function QuoteDoc(
                   {contractor?.phoneNumber && contractor?.email ? t.orWord : ""}
                   {contractor?.email && (
                     <>
-                      {t.emailWord} {
+                      {/* REQ-350: with no phone, "email" opens the sentence */}
+                      {contractor?.phoneNumber ? t.emailWord : t.emailWordStart}
+                      {" "}
+                      {
                         /* P-58: long contractor emails overflowed the 390px
                           viewport — the address may break mid-string so it
                           never paints past the card edge. */
@@ -911,6 +915,11 @@ export function QuoteDoc(
                       </a>
                     </>
                   )}
+                  {
+                    /* REQ-350: the contact sentence ends here; the closing is
+                    its own sentence ("¡Espero poder trabajar contigo!") */
+                  }
+                  {". "}
                   {t.lookForward}
                 </div>
               </div>

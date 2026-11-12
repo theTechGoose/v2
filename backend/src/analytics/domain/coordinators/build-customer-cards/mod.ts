@@ -13,6 +13,11 @@ import type { Quote } from "@paperwork/dto/quote.ts";
 import type { Invoice } from "@paperwork/dto/invoice.ts";
 import type { View } from "@paperwork/dto/view.ts";
 import { docNumberOf } from "#documents/numbering.ts";
+import { t } from "@core/i18n/mod.ts";
+import {
+  type BalanceSubParts,
+  balanceSubLabel,
+} from "#quote-flow/balance-sub.ts";
 
 /** Invoice statuses that still count as owed (REQ-016). */
 const OWED_STATUSES = new Set(["pending", "sent", "viewed", "claimed"]);
@@ -114,7 +119,15 @@ function buildOne(
       balanceCents -= cents;
     }
   }
-  const balanceSub = buildBalanceSub(balanceCents, myInvoices, myQuotes, now);
+  // REQ-350 + REQ-367: the sub-line as data the client words in the live
+  // language; `balanceSub` is the same words in English (the neutral base).
+  const balanceSubParts = buildBalanceSub(
+    balanceCents,
+    myInvoices,
+    myQuotes,
+    now,
+  );
+  const balanceSub = balanceSubLabel(balanceSubParts, "en", t);
 
   // ---------------- jobs ----------------
   // "active job" = accepted quote without a paid invoice covering it
@@ -174,6 +187,7 @@ function buildOne(
     lastTone,
     balanceCents,
     balanceSub,
+    balanceSubParts,
     activeJobs,
     jobsSub,
     status,
@@ -220,12 +234,18 @@ export function deriveStatus(args: {
   return "regular";
 }
 
+/**
+ * REQ-350 (demo-loop cycle 1, m9): the balance sub-line used to be English
+ * literals ("owes", "· overdue", "due in N days", "on file") that a Spanish
+ * story template printed verbatim ("$600 pendiente · owes."). REQ-367: it is
+ * data — the reader words it (shared balanceSubLabel) in its own language.
+ */
 function buildBalanceSub(
   balanceCents: number,
   invoices: Invoice[],
   quotes: Quote[],
   now: Date,
-): string {
+): BalanceSubParts {
   const today = now.toISOString().slice(0, 10);
   if (balanceCents > 0) {
     const pending = invoices
@@ -238,25 +258,19 @@ function buildBalanceSub(
       );
       // REQ-204: the invoice's own number ("INV-5000"), never an id slice
       const ref = docNumberOf(next);
-      if (next.dueDate < today) return `${ref} · overdue`;
-      return `${ref} · due in ${dueDays} day${dueDays === 1 ? "" : "s"}`;
+      if (next.dueDate < today) return { kind: "overdue", ref };
+      if (dueDays <= 0) return { kind: "dueToday", ref };
+      return { kind: "dueIn", ref, days: dueDays };
     }
-    return "owes";
+    return { kind: "owes" };
   }
-  if (balanceCents < 0) return `${formatDollars(-balanceCents)} on file`;
+  if (balanceCents < 0) return { kind: "onFile", amountCents: -balanceCents };
   const openQuote = quotes.find((q) => q.status === "sent");
   if (openQuote) {
     // estimatedTotal is INTEGER CENTS now (audit1 #3).
-    return `settled · quote out ${
-      formatDollars(openQuote.estimatedTotal ?? 0)
-    }`;
+    return { kind: "quoteOut", amountCents: openQuote.estimatedTotal ?? 0 };
   }
-  return "settled";
-}
-
-function formatDollars(cents: number): string {
-  const dollars = Math.round(cents / 100);
-  return `$${dollars.toLocaleString("en-US")}`;
+  return { kind: "settled" };
 }
 
 function clamp(n: number, lo: number, hi: number): number {

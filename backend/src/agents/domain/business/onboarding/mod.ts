@@ -52,7 +52,7 @@ const QUOTE_SIGNAL_RE =
  * REQ-008 (NW-47): first tokens that mark a SENTENCE (pronoun / verb /
  * article), never a name. Checked on the name part regardless of length, so
  * the four starter-chip strings ("I know the job, …", "Job done, …",
- * "Sé mi precio, …", "Trabajo terminado, …") can never be locked in as the
+ * "Ya tengo el precio, …", "Trabajo terminado, …") can never be locked in as the
  * contractor's identity.
  */
 const FIRST_WORD_STOP = new Set([
@@ -61,7 +61,7 @@ const FIRST_WORD_STOP = new Set([
   "need", "want", "know", "have", "help", "give", "please", "can", "could",
   "make", "write", "send",
   // es
-  "yo", "necesito", "quiero", "tengo", "dame", "trabajo", "sé", "se", "solo",
+  "yo", "ya", "necesito", "quiero", "tengo", "dame", "trabajo", "sé", "se", "solo",
   "sólo", "conozco", "hazme", "quiero", "ayúdame", "mi", "el", "la", "un", "una",
 ]);
 

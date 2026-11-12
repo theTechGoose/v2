@@ -7,6 +7,7 @@
  *      GET /analytics/clients/top       → TopClientsResponse
  */
 import { api, type ApiOptions } from "../lib/api.ts";
+import type { BalanceSubParts } from "../../shared/quote-flow/balance-sub.ts";
 
 export type ClientStatus =
   | "active"
@@ -43,7 +44,10 @@ export interface CustomerCard {
   lastWhen: string | null;
   lastTone: ClientLastTone;
   balanceCents: number;
+  /** The balance sub-line in English — the neutral base (REQ-204/350). */
   balanceSub: string;
+  /** REQ-350 + REQ-367: the same line as data — clients-display words it in the live language */
+  balanceSubParts?: BalanceSubParts;
   activeJobs: number;
   jobsSub: CustomerJobsSub;
   status: ClientStatus;

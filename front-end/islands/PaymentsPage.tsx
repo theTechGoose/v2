@@ -574,8 +574,19 @@ function PaymentsHero(
                       {tFor(lang, "paymentsPage.hero.subOnTheWay")}
                     </>
                   )
+                  : attentionCount > 0
+                  // REQ-350: one counted sentence — never "logged. and 1 waiting"
+                  ? (
+                    <>
+                      {tnFor(
+                        lang,
+                        "paymentsPage.hero.everyDollarWaiting",
+                        attentionCount,
+                      )}
+                    </>
+                  )
                   : <>{tFor(lang, "paymentsPage.hero.everyDollar")}</>}
-                {attentionCount > 0
+                {transitTotal > 0 && attentionCount > 0
                   ? (
                     <>
                       {" "}

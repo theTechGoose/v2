@@ -20,6 +20,13 @@ function tnFor(
   return tFor(lang, `${key}.${n === 1 ? "one" : "other"}`, { n, ...vars });
 }
 
+/** REQ-350: "1 ganada · 0 perdidas" — each count agrees with its noun. */
+function wonLostLine(lang: Lang, won: number, lost: number): string {
+  return `${tnFor(lang, "quotesKpi.won", won)} · ${
+    tnFor(lang, "quotesKpi.lost", lost)
+  }`;
+}
+
 interface HeroProps {
   openCount: number;
   openTotal: number;
@@ -164,7 +171,7 @@ export function QuotesKpis(
         <div class="qkpi__lbl">{tFor(lang, "quotesKpi.decidedLbl")}</div>
         <div class="qkpi__val">{decidedCount}</div>
         <div class="qkpi__sub">
-          {tFor(lang, "quotesKpi.wonLost", { won: wonCount, lost: lostCount })}
+          {wonLostLine(lang, wonCount, lostCount)}
         </div>
       </div>
       <div class="qkpi__cell">
@@ -179,11 +186,13 @@ export function QuotesKpis(
             ? tFor(lang, "quotesKpi.notEnough")
             : winRateConfident
             ? tFor(lang, "quotesKpi.decidedN", { n: decidedCount })
-            : tFor(lang, "quotesKpi.needMore", {
-              won: wonCount,
-              lost: lostCount,
-              n: WIN_RATE_MIN_N - decidedCount,
-            })}
+            : `${wonLostLine(lang, wonCount, lostCount)} · ${
+              tnFor(
+                lang,
+                "quotesKpi.needMore",
+                WIN_RATE_MIN_N - decidedCount,
+              )
+            }`}
         </div>
       </div>
     </div>
@@ -339,7 +348,7 @@ export function QSideRate({ won, lost, lang = "en" }: QSideRateProps) {
                   <span class="qrate__num-pct">%</span>
                 </div>
                 <div class="qrate__lbl">
-                  {tFor(lang, "quotesRate.wonLost", { won, lost })}
+                  {wonLostLine(lang, won, lost)}
                   <br />
                   {tFor(lang, "quotesRate.ofDecided", { decided })}
                 </div>
@@ -358,11 +367,13 @@ export function QSideRate({ won, lost, lang = "en" }: QSideRateProps) {
                     ? <>{tFor(lang, "quotesRate.noneDecided")}</>
                     : (
                       <>
-                        {tFor(lang, "quotesRate.wonLost", { won, lost })}
+                        {wonLostLine(lang, won, lost)}
                         <br />
-                        {tFor(lang, "quotesRate.needMore", {
-                          n: WIN_RATE_MIN_N - decided,
-                        })}
+                        {tnFor(
+                          lang,
+                          "quotesRate.needMore",
+                          WIN_RATE_MIN_N - decided,
+                        )}
                       </>
                     )}
                 </div>

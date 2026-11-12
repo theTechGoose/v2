@@ -18,6 +18,7 @@ import {
   relativeTime,
 } from "../../shared/quote-flow/format-helpers.ts";
 import { type CtaKind, ctaKindFor } from "./client-actions.ts";
+import { balanceSubLabel } from "../../shared/quote-flow/balance-sub.ts";
 
 export interface MoodPalette {
   from: string;
@@ -246,6 +247,17 @@ export function jobsSubLabel(kind: CustomerJobsSub, lang: Lang = "en"): string {
   return tFor(lang, JOBS_SUB_KEYS[kind] ?? JOBS_SUB_KEYS.none);
 }
 
+/**
+ * REQ-350 + REQ-367 — the card's balance sub-line ("INV-001 · vencida",
+ * "esperando el pago"), worded from its parts in `lang`; a card without parts
+ * keeps the backend's English line.
+ */
+export function balanceSubFor(c: CustomerCard, lang: Lang = "en"): string {
+  return c.balanceSubParts
+    ? balanceSubLabel(c.balanceSubParts, lang, tFor)
+    : c.balanceSub;
+}
+
 /** One-line "what's going on" copy for the card body. */
 export function storyLineFor(
   c: CustomerCard,
@@ -257,7 +269,7 @@ export function storyLineFor(
   if (c.balanceCents > 0) {
     return tFor(lang, "clientsDisplay.story.balance", {
       amount: dollars(c.balanceCents),
-      sub: c.balanceSub,
+      sub: balanceSubFor(c, lang),
     });
   }
   if (c.status === "active") {

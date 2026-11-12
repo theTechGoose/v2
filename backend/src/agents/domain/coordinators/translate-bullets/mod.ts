@@ -23,6 +23,16 @@ export interface TranslateBulletsResult {
 }
 
 /**
+ * REQ-350 (demo-loop cycle 1, m9): trade terms the model mistranslates —
+ * "Customer supplied vanity installation" came back as "Instalación de
+ * lavabo …", and a lavabo is the sink, not the cabinet.
+ */
+export const ES_TRADE_GLOSSARY =
+  "Glossary (use these Spanish terms): vanity → mueble de baño (or tocador), never lavabo; " +
+  "sink / basin → lavabo; countertop → encimera; backsplash → salpicadero; " +
+  "drywall → tablaroca; studs → montantes; trim → molduras; grout → lechada.";
+
+/**
  * TranslateBullets — translates the contractor's (possibly hand-edited)
  * job-detail bullets into the customer's language when the quote is built.
  * The "Job Details" picker shows options in the contractor's app language;
@@ -46,7 +56,8 @@ export class TranslateBullets {
       `You translate short construction scope-of-work bullet lines into ${target}. ` +
       `Preserve meaning and trade terminology; keep each concise (3–8 words), third-person, no trailing period. ` +
       `Return JSON ONLY: {"texts":["...","..."]} — the SAME number of lines, in the SAME order. ` +
-      `If a line is already in ${target}, return it unchanged.`;
+      `If a line is already in ${target}, return it unchanged.` +
+      (input.to === "es" ? ` ${ES_TRADE_GLOSSARY}` : "");
 
     let raw: string;
     try {

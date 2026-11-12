@@ -1,4 +1,4 @@
-import { assertEquals } from "#std/assert";
+import { assert, assertEquals } from "#std/assert";
 import { TranslateBullets } from "./mod.ts";
 import { StubLLMClient } from "@agents/domain/business/llm/implementations/stub/mod.ts";
 import type { LLMRequest } from "@agents/domain/business/llm/base/mod.ts";
@@ -60,4 +60,25 @@ Deno.test("REQ-261 M26 a clean translation passes through", async () => {
     "Instalación de plomería",
     "Instalar válvulas de cierre",
   ]);
+});
+
+// REQ-350 (demo-loop cycle 1, m9): "Customer supplied vanity installation"
+// came back as "Instalación de lavabo …" — a lavabo is a sink. The Spanish
+// prompt carries a trade glossary so a vanity is a vanity.
+Deno.test("REQ-350 translate-bullets: the Spanish prompt carries the trade glossary (vanity ≠ lavabo)", async () => {
+  const llm = new StubLLMClient();
+  let sys = "";
+  llm.setHandler((req) => {
+    sys = req.systemPrompt ?? "";
+    return {
+      text: JSON.stringify({ texts: ["Instalación del mueble de baño"] }),
+    };
+  });
+  await new TranslateBullets(llm).run({
+    userId: "u-1",
+    texts: ["Customer supplied vanity installation"],
+    to: "es",
+  });
+  assert(/vanity\W+mueble de baño/i.test(sys), sys);
+  assert(/never\W+lavabo|not\W+lavabo/i.test(sys), sys);
 });
