@@ -129,6 +129,13 @@ import {
   showsConnected,
 } from "../lib/demo-mode/pill-carry.ts";
 import {
+  browserStore,
+  loadClaim,
+  newestInput,
+  noteInput,
+  takeSelfReload,
+} from "../lib/demo-mode/tab-claim.ts";
+import {
   createRecorder,
   type Recorder,
 } from "../lib/demo-mode/mirror-record.ts";
@@ -607,6 +614,34 @@ export default function DemoModeOverlay() {
       globalThis.removeEventListener("pageshow", liveAgain);
     };
   }, []);
+  // REQ-549 (cycle 4, S4) — did the app reload this page on its own (a public page re-reading the
+  // server)? Taken once per page; such a page never claims the stage without the customer's input
+  const selfReloadRef = useRef<boolean | null>(null);
+  const cameBySelfReload = () => {
+    if (selfReloadRef.current === null) {
+      selfReloadRef.current = !inert &&
+        takeSelfReload(browserStore("session"));
+    }
+    return selfReloadRef.current;
+  };
+  // REQ-549 — every press or key in this tab, demo or not, says "the customer is in this tab" to
+  // the browser's other tabs: at a demo's start only the tab used last claims
+  useEffect(() => {
+    if (inert) return;
+    cameBySelfReload();
+    const tab = demoTabKey(sessionStore());
+    const used = () => {
+      selfReloadRef.current = false;
+      noteInput(browserStore("local"), tab);
+    };
+    const opts = { capture: true, passive: true };
+    document.addEventListener("pointerdown", used, opts);
+    document.addEventListener("keydown", used, opts);
+    return () => {
+      document.removeEventListener("pointerdown", used, opts);
+      document.removeEventListener("keydown", used, opts);
+    };
+  }, []);
 
   // 0. REQ-235 — a stage that ended its demo hands its presenter to /admin with who ended it: say
   //    it here, and take it out of the address (before the first ask reports where this app is)
@@ -921,10 +956,23 @@ export default function DemoModeOverlay() {
     const onVisible = () => {
       if (document.visibilityState === "visible") claim();
     };
-    const onShow = () => {
-      if (inFront()) claim();
+    // REQ-549 (cycle 4, S4) — at load and at a demo's start "in front" is not enough (headless
+    // browsers say it of every page): not after the app's own reload, and not when another tab
+    // was used since this page loaded
+    const tabKey = demoTabKey(sessionStore());
+    if (
+      loadClaim({
+        inFront: inFront(),
+        selfReload: cameBySelfReload(),
+        tab: tabKey,
+        loadedAt: performance.timeOrigin || Date.now(),
+        newest: newestInput(browserStore("local")),
+      })
+    ) claim();
+    // a page restored from the back-forward cache: the customer came back to it in this tab
+    const onShow = (e: PageTransitionEvent) => {
+      if (e.persisted && inFront()) claim();
     };
-    onShow();
     globalThis.addEventListener("pageshow", onShow);
     globalThis.addEventListener("focus", claim);
     document.addEventListener("visibilitychange", onVisible);
