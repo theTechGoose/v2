@@ -10,7 +10,10 @@ import {
   isQuoteIssued,
   isQuoteLocked,
 } from "#documents/versions.ts";
-import { pickChangeOrderTarget } from "@agents/domain/business/change-order-intent/mod.ts";
+import {
+  pickChangeOrderTarget,
+  reconcileChangeOrderDelta,
+} from "@agents/domain/business/change-order-intent/mod.ts";
 import type { Quote } from "@paperwork/dto/quote.ts";
 
 export interface ChatChangeOrderInput {
@@ -21,9 +24,17 @@ export interface ChatChangeOrderInput {
   customerName?: string;
   /** REQ-315: an explicit "Q-001" — resolves straight to that quote. */
   quoteNumber?: string;
+  /** REQ-377: may be empty when a new total named no work — then it asks. */
   description: string;
   /** Signed INTEGER CENTS. */
   deltaAmountCents: number;
+  /** REQ-377 (demo-loop cycle 2, B1): the job's NEW total, integer cents.
+   *  When set, the delta is this minus the current total (the pending
+   *  revision's when there is one) — worked out here, never by the model. */
+  targetTotalCents?: number;
+  /** REQ-377 (B1): what the contractor typed. A model-supplied delta is
+   *  cross-checked against its dollar amounts before anything is written. */
+  userText?: string;
 }
 
 /** REQ-315 (m49): outcomes that name a quote carry its number too, so the
@@ -40,6 +51,12 @@ export type ChatChangeOrderOutcome =
   | { kind: "draft_updated"; quoteId: string; quoteNumber?: string }
   | { kind: "needs_invoice"; quoteId: string; quoteNumber?: string }
   | { kind: "ambiguous"; quoteIds: string[] }
+  /** REQ-377: a new total named no work — asks what the difference is for */
+  | { kind: "needs_description"; quoteId: string; quoteNumber?: string }
+  /** REQ-377: the model's amount fits nothing typed — asks, writes nothing */
+  | { kind: "needs_amount"; quoteId: string; quoteNumber?: string }
+  /** REQ-377: the new total is the total already */
+  | { kind: "no_change"; quoteId: string; quoteNumber?: string }
   | { kind: "none" }
   | { kind: "ask_customer" };
 
@@ -92,8 +109,9 @@ export class ApplyChatChangeOrder {
   ) {}
 
   async run(input: ChatChangeOrderInput): Promise<ChatChangeOrderResult> {
-    const { userId, lang, description } = input;
-    const delta = Math.trunc(input.deltaAmountCents);
+    const { userId, lang } = input;
+    const description = input.description?.trim() ?? "";
+    let delta = Math.trunc(input.deltaAmountCents);
     const [quotes, customers] = await Promise.all([
       this.quotes.listByUser(userId),
       this.customers.listByUser(userId),
@@ -150,6 +168,79 @@ export class ApplyChatChangeOrder {
     }
 
     const quote = quotes.find((q) => q.id === target.quoteId)!;
+    const named = { quoteId: quote.id, quoteNumber: quote.number };
+
+    // REQ-377 (demo-loop cycle 2, B1): the money is settled in code. The
+    // job's current total is the next revision's when one is waiting (that
+    // is what the line is appended to), else the quote's.
+    const baseLines = (quote.pendingRevision?.lineItems as
+      | LineItem[]
+      | undefined) ?? quote.lineItems ?? [];
+    const currentTotal = baseLines.length > 0
+      ? totalOf(baseLines)
+      : quote.estimatedTotal ?? 0;
+    const label = labelOf(quote);
+    if (
+      typeof input.targetTotalCents === "number" &&
+      Number.isFinite(input.targetTotalCents)
+    ) {
+      const to = Math.trunc(input.targetTotalCents);
+      delta = to - currentTotal;
+      const totals = {
+        job: label,
+        number: quote.number ?? label,
+        from: money(currentTotal),
+        to: money(to),
+        amount: money(delta),
+      };
+      if (delta === 0) {
+        return {
+          text: t(lang, "chatCoordinator.changeOrder.noChange", totals),
+          outcome: { kind: "no_change", ...named },
+        };
+      }
+      if (!description) {
+        return {
+          text: t(lang, "chatCoordinator.changeOrder.askDescription", totals),
+          outcome: { kind: "needs_description", ...named },
+        };
+      }
+    } else if (input.userText) {
+      // The demo's model wrote 12500 for "$19,750" on an $18,500 quote.
+      const check = reconcileChangeOrderDelta({
+        deltaCents: delta,
+        userText: input.userText,
+        bases: [
+          currentTotal,
+          quote.estimatedTotal ?? 0,
+          ...baseLines.map((l) => (l.price ?? 0) * (l.quantity ?? 1)),
+        ],
+      });
+      if (check.kind === "ask") {
+        return {
+          text: t(lang, "chatCoordinator.changeOrder.askAmount", {
+            description,
+            job: label,
+            number: quote.number ?? label,
+          }),
+          outcome: { kind: "needs_amount", ...named },
+        };
+      }
+      delta = check.deltaCents;
+    }
+    if (!description) {
+      return {
+        text: t(lang, "chatCoordinator.changeOrder.askDescription", {
+          job: label,
+          number: quote.number ?? label,
+          from: money(currentTotal),
+          to: money(currentTotal + delta),
+          amount: money(delta),
+        }),
+        outcome: { kind: "needs_description", ...named },
+      };
+    }
+
     const vars = {
       description,
       amount: money(delta),
@@ -207,10 +298,7 @@ export class ApplyChatChangeOrder {
 
     // 3) Issued, unsigned → the next revision (REQ-201), published by the contractor.
     if (isQuoteIssued(quote)) {
-      const base =
-        (quote.pendingRevision?.lineItems as LineItem[] | undefined) ??
-          quote.lineItems ?? [];
-      const lineItems = [...base, line];
+      const lineItems = [...baseLines, line];
       await this.quotes.setPending(quote.id, userId, {
         lineItems,
         estimatedTotal: totalOf(lineItems),

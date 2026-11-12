@@ -107,8 +107,11 @@ export const TOOL_DEFS = [
           quoteNumber: { type: "string", description: t("en", "prompts.tools.changeOrder.quoteNumber") },
           description: { type: "string", description: t("en", "prompts.tools.changeOrder.descriptionField") },
           deltaAmountCents: { type: "integer", description: t("en", "prompts.tools.changeOrder.deltaAmountCents") },
+          // REQ-377 (demo-loop cycle 2, B1): a new TOTAL, in dollars — the
+          // server subtracts the current total and converts to cents.
+          newTotalDollars: { type: "number", description: t("en", "prompts.tools.changeOrder.newTotalDollars") },
         },
-        required: ["description", "deltaAmountCents"],
+        required: ["description"],
         additionalProperties: false,
       },
     },
@@ -237,7 +240,13 @@ export function parseToolCall(call: { function: { name: string; arguments: strin
     case "change_order": {
       const description = typeof args.description === "string" ? args.description.trim() : "";
       const delta = args.deltaAmountCents;
-      if (!description || typeof delta !== "number" || !Number.isFinite(delta)) return undefined;
+      const hasDelta = typeof delta === "number" && Number.isFinite(delta);
+      // REQ-377 (B1): a new total in dollars → integer cents, here, in code.
+      const total = args.newTotalDollars;
+      const targetTotalCents = typeof total === "number" && Number.isFinite(total) && total > 0
+        ? Math.round(total * 100)
+        : undefined;
+      if (!description || (!hasDelta && targetTotalCents === undefined)) return undefined;
       const customerName = typeof args.customerName === "string" ? args.customerName.trim() : "";
       const quoteNumber = docNumber(args.quoteNumber); // REQ-315
       return {
@@ -246,7 +255,8 @@ export function parseToolCall(call: { function: { name: string; arguments: strin
           ...(customerName ? { customerName } : {}),
           ...(quoteNumber ? { quoteNumber } : {}),
           description,
-          deltaAmountCents: Math.trunc(delta),
+          deltaAmountCents: hasDelta ? Math.trunc(delta as number) : 0,
+          ...(targetTotalCents !== undefined ? { targetTotalCents } : {}),
         },
       };
     }

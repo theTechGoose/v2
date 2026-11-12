@@ -7,7 +7,9 @@ import { assertEquals } from "#std/assert";
 import {
   isChangeOrderRequest,
   parseChangeOrderRequest,
+  parseTargetTotalChange,
   pickChangeOrderTarget,
+  reconcileChangeOrderDelta,
   type TargetCustomer,
   type TargetQuote,
 } from "./mod.ts";
@@ -415,5 +417,152 @@ Deno.test("REQ-315 parseChangeOrderRequest: a job reference with no delimiter en
       description: "Railing",
       deltaAmountCents: 120_000,
     },
+  );
+});
+
+// ---------------------------------------------------------------------------
+// REQ-377 (demo-loop cycle 2, B1): "Dana wants a tile backsplash too — change
+// Q-001 to $19,750" on an $18,500 quote added a $125 line: nothing read the
+// target total in code, so the model did the subtraction into cents itself
+// (12500 instead of 125000) and nothing checked it.
+// ---------------------------------------------------------------------------
+
+const PAIR5 = "Dana wants a tile backsplash too — change Q-001 to $19,750";
+
+Deno.test("REQ-377 B1 parseTargetTotalChange: the demo's exact sentence is a new total for Q-001 plus a 'Tile backsplash' line", () => {
+  assertEquals(parseTargetTotalChange(PAIR5), {
+    quoteNumber: "Q-001",
+    targetTotalCents: 1_975_000,
+    description: "Tile backsplash",
+  });
+});
+
+Deno.test("REQ-377 B1 parseTargetTotalChange: a new total with no item reads the total and leaves the description for the coordinator to ask", () => {
+  assertEquals(parseTargetTotalChange("change Q-001 to $19,750"), {
+    quoteNumber: "Q-001",
+    targetTotalCents: 1_975_000,
+  });
+  assertEquals(parseTargetTotalChange("ok, make the total $19,200.50"), {
+    targetTotalCents: 1_920_050,
+  });
+});
+
+Deno.test("REQ-377 B1 parseTargetTotalChange: the other ways to say it (EN + ES)", () => {
+  assertEquals(
+    parseTargetTotalChange("add tile backsplash, new total $19,200"),
+    { targetTotalCents: 1_920_000, description: "Tile backsplash" },
+  );
+  assertEquals(
+    parseTargetTotalChange("Make Q-2's total $5,000 for the extra outlet"),
+    {
+      quoteNumber: "Q-2",
+      targetTotalCents: 500_000,
+      description: "Extra outlet",
+    },
+  );
+  assertEquals(
+    parseTargetTotalChange(
+      "Bring the quote up to $9,800 — adding a heated floor",
+    ),
+    { targetTotalCents: 980_000, description: "Heated floor" },
+  );
+  assertEquals(
+    parseTargetTotalChange(
+      "Dana quiere un backsplash de azulejo — cambia Q-001 a $19,750",
+    ),
+    {
+      quoteNumber: "Q-001",
+      targetTotalCents: 1_975_000,
+      description: "Backsplash de azulejo",
+    },
+  );
+});
+
+Deno.test("REQ-377 B1 parseTargetTotalChange: a line reprice, an added amount, or two amounts are not a new total", () => {
+  assertEquals(
+    parseTargetTotalChange("change plumbing fixtures to $1,300"),
+    undefined,
+  );
+  assertEquals(
+    parseTargetTotalChange("Change order for Maria: add fridge cleaning $40"),
+    undefined,
+  );
+  assertEquals(
+    parseTargetTotalChange("add tile $1,250 so the total is $19,750"),
+    undefined,
+  );
+  assertEquals(
+    parseTargetTotalChange("how much do i charge for panel swap 200a"),
+    undefined,
+  );
+  assertEquals(parseTargetTotalChange(""), undefined);
+});
+
+Deno.test("REQ-377 B1 reconcileChangeOrderDelta: the demo model's 12500 for '$19,750' on an $18,500 quote is a decimal slip — the delta is $1,250", () => {
+  assertEquals(
+    reconcileChangeOrderDelta({
+      deltaCents: 12_500,
+      userText: PAIR5,
+      bases: [1_850_000],
+    }),
+    { kind: "ok", deltaCents: 125_000 },
+  );
+});
+
+Deno.test("REQ-377 B1 reconcileChangeOrderDelta: a delta that is a typed amount, or a typed amount minus the total or a line, stands", () => {
+  // "add fridge cleaning $40" → +$40
+  assertEquals(
+    reconcileChangeOrderDelta({
+      deltaCents: 4_000,
+      userText: "Change order for Maria: add fridge cleaning $40",
+      bases: [35_000],
+    }),
+    { kind: "ok", deltaCents: 4_000 },
+  );
+  // a credit of a typed amount
+  assertEquals(
+    reconcileChangeOrderDelta({
+      deltaCents: -20_000,
+      userText: "credit Dana $200 for the skipped stain",
+      bases: [950_000],
+    }),
+    { kind: "ok", deltaCents: -20_000 },
+  );
+  // REQ-315: "change plumbing fixtures to $1,300" on a signed quote → +$150 (the line's difference)
+  assertEquals(
+    reconcileChangeOrderDelta({
+      deltaCents: 15_000,
+      userText: "change plumbing fixtures to $1,300",
+      bases: [950_000, 120_000, 115_000, 480_000, 235_000],
+    }),
+    { kind: "ok", deltaCents: 15_000 },
+  );
+  // the right target-total difference
+  assertEquals(
+    reconcileChangeOrderDelta({
+      deltaCents: 125_000,
+      userText: PAIR5,
+      bases: [1_850_000],
+    }),
+    { kind: "ok", deltaCents: 125_000 },
+  );
+});
+
+Deno.test("REQ-377 B1 reconcileChangeOrderDelta: no dollar amount typed → the model's delta stands; one that fits nothing typed → ask", () => {
+  assertEquals(
+    reconcileChangeOrderDelta({
+      deltaCents: 30_000,
+      userText: "yes, add the extra day of labor",
+      bases: [950_000],
+    }),
+    { kind: "ok", deltaCents: 30_000 },
+  );
+  assertEquals(
+    reconcileChangeOrderDelta({
+      deltaCents: 99_900,
+      userText: PAIR5,
+      bases: [1_850_000],
+    }),
+    { kind: "ask" },
   );
 });

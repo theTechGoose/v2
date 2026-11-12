@@ -84,7 +84,10 @@ import { BusinessIdentityStore } from "@profile/domain/data/business-identity-st
 import { SendPaperworkEmail } from "@paperwork/domain/coordinators/send-paperwork-email/mod.ts";
 import { EventBus } from "@core/business/events/mod.ts";
 import { lockStatusFor, QUOTE_LOCKED } from "#quote-flow/quote-lock.ts";
-import { parseChangeOrderRequest } from "@agents/domain/business/change-order-intent/mod.ts";
+import {
+  parseChangeOrderRequest,
+  parseTargetTotalChange,
+} from "@agents/domain/business/change-order-intent/mod.ts";
 import { ApplyChatChangeOrder } from "@agents/domain/coordinators/apply-chat-change-order/mod.ts";
 import {
   ReviseQuote,
@@ -1028,6 +1031,40 @@ export class HandleChatMessage {
       }
     }
 
+    // ---- REQ-377 (demo-loop cycle 2, B1): "Dana wants a tile backsplash
+    // too — change Q-001 to $19,750" is a NEW TOTAL for an existing job. The
+    // model did that subtraction into cents itself and wrote 12500 for
+    // 125000; the coordinator subtracts in code instead. Only for a named
+    // quote or the conversation's issued one — an open draft is still being
+    // written through create_quote.
+    const targetAsk = !llmResponse && typeof input.content === "string"
+      ? parseTargetTotalChange(input.content)
+      : undefined;
+    if (targetAsk) {
+      let onExistingJob = !!targetAsk.quoteNumber;
+      if (!onExistingJob && conv.quoteId) {
+        const bound = await this.quotes.getOwned(conv.quoteId, input.userId)
+          .catch(() => undefined);
+        onExistingJob = !!bound && !isOpenDraft(bound);
+      }
+      if (onExistingJob) {
+        llmResponse = {
+          text: "",
+          action: {
+            type: "change_order",
+            payload: {
+              ...(targetAsk.quoteNumber
+                ? { quoteNumber: targetAsk.quoteNumber }
+                : {}),
+              description: targetAsk.description ?? "",
+              deltaAmountCents: 0,
+              targetTotalCents: targetAsk.targetTotalCents,
+            },
+          },
+        };
+      }
+    }
+
     // ---- REQ-238 (demo M27): "change order for Maria: add … $40" ----
     // A change order changes an EXISTING job. When the sentence carries what
     // and how much, act on it without the LLM (as N5 does for "send it");
@@ -1499,10 +1536,10 @@ export class HandleChatMessage {
       // fixtures to $1,300" (+$150) — a FIFTH line. A change order that is a
       // reprice changes the line instead; on a signed quote (whose lines
       // never change, REQ-202) it stays the change order the model asked for.
-      const reprice = changeOrderAsReprice(
-        llmResponse.action.payload,
-        userText,
-      );
+      // REQ-377: a new total is never a line reprice.
+      const reprice = llmResponse.action.payload.targetTotalCents === undefined
+        ? changeOrderAsReprice(llmResponse.action.payload, userText)
+        : undefined;
       if (reprice) {
         const revised = await this.reviseQuote.run({
           userId: input.userId,
@@ -1526,6 +1563,9 @@ export class HandleChatMessage {
         quoteNumber: llmResponse.action.payload.quoteNumber,
         description: llmResponse.action.payload.description,
         deltaAmountCents: llmResponse.action.payload.deltaAmountCents,
+        // REQ-377 (B1): the money is settled against the quote in code.
+        targetTotalCents: llmResponse.action.payload.targetTotalCents,
+        userText,
       });
       // REQ-392 (M7): a line added to the bound draft (or its pending
       // revision) flags the reply, as a revise does, so an open Ready-to-send

@@ -384,3 +384,57 @@ Deno.test("REQ-337 parseToolCall: create_quote carries a model-supplied jobName;
   }));
   if (none?.type === "create_quote") assertEquals(none.payload.jobName, undefined);
 });
+
+// REQ-377 (demo-loop cycle 2, B1): the model turned "change Q-001 to $19,750"
+// on an $18,500 quote into deltaAmountCents 12500. A new TOTAL rides in
+// dollars on its own field; the server does the subtraction and the cents.
+Deno.test("REQ-377 B1 TOOL_DEFS: change_order takes the job's new total in dollars; only the description is required", () => {
+  const def = TOOL_DEFS.find((d) => d.function.name === "change_order")!;
+  const params = def.function.parameters as unknown as {
+    properties: Record<string, { type: string }>;
+    required: string[];
+  };
+  assertEquals(params.properties.newTotalDollars?.type, "number");
+  assertEquals(params.required, ["description"]);
+});
+
+Deno.test("REQ-377 B1 parseToolCall: change_order with newTotalDollars carries targetTotalCents (converted in code); a delta-only call is unchanged", () => {
+  assertEquals(
+    parseToolCall(call("change_order", {
+      quoteNumber: "Q-001",
+      description: "Tile backsplash",
+      newTotalDollars: 19750,
+    })),
+    {
+      type: "change_order",
+      payload: {
+        quoteNumber: "Q-001",
+        description: "Tile backsplash",
+        deltaAmountCents: 0,
+        targetTotalCents: 1_975_000,
+      },
+    },
+  );
+  assertEquals(
+    parseToolCall(call("change_order", {
+      description: "Tile backsplash",
+      newTotalDollars: 19750.5,
+      deltaAmountCents: 12500,
+    })),
+    {
+      type: "change_order",
+      payload: {
+        description: "Tile backsplash",
+        deltaAmountCents: 12500,
+        targetTotalCents: 1_975_050,
+      },
+    },
+  );
+  // a non-positive / non-numeric total is ignored → falls back to the delta rule
+  assertEquals(
+    parseToolCall(
+      call("change_order", { description: "Fridge", newTotalDollars: "lots" }),
+    ),
+    undefined,
+  );
+});

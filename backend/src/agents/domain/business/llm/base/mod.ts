@@ -100,8 +100,13 @@ export type LLMAction =
       customerName?: string;
       /** REQ-315: an explicit "Q-001" — resolves straight to that quote. */
       quoteNumber?: string;
+      /** REQ-377: empty when a new total named no work — the coordinator asks. */
       description: string;
       deltaAmountCents: number;
+      /** REQ-377 (demo-loop cycle 2, B1): the job's NEW total in cents. When
+       *  set, the delta is that minus the current total, worked out by the
+       *  coordinator — never by the model. */
+      targetTotalCents?: number;
     };
   }
   /** REQ-315 (demo-loop cycle 1, M26): change lines that are ALREADY on a
