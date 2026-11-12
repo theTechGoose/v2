@@ -5,6 +5,7 @@ import { computeProgress } from "@agents/domain/business/wizard-progress/mod.ts"
 import { getWizardSpec } from "@agents/domain/business/terms-wizard-spec/mod.ts";
 import { QuoteStore } from "@paperwork/domain/data/quote-store/mod.ts";
 import { CustomerStore } from "@crm/domain/data/customer-store/mod.ts";
+import { InvoiceStore } from "@paperwork/domain/data/invoice-store/mod.ts";
 import type { AgentConversation } from "@agents/dto/conversation.ts";
 import type { AgentMessage } from "@agents/dto/message.ts";
 import type { WizardState } from "@agents/dto/wizard.ts";
@@ -25,6 +26,11 @@ export interface ConversationSnapshot {
   /** REQ-230: the assistant's in-flight flow (options, pick, price, view),
    *  so any window's reload rebuilds it. Absent when none was saved. */
   draft?: AssistantDraft;
+  /** REQ-700 (cycle 5, m20): the bound invoice's LIVE status (the invoice
+   *  row's), the same value the conversation list carries — the chat header
+   *  names the bill with it. null when no invoice is bound (or it is gone),
+   *  so the header does not fall back to the signed divider's snapshot. */
+  invoiceStatus?: string | null;
 }
 
 /**
@@ -40,6 +46,9 @@ export class LoadConversation {
     private messages: AgentMessageStore,
     private quotes: QuoteStore,
     private customers: CustomerStore,
+    // REQ-700: optional so hand-built coordinators in older tests still run;
+    // the app always injects it.
+    private invoices?: InvoiceStore,
   ) {}
 
   async run(
@@ -86,6 +95,12 @@ export class LoadConversation {
 
     const draft = await this.conversations.getDraft(input.conversationId);
 
+    // REQ-700 (demo-loop cycle 5, m20): the bill as the invoice row says it
+    // now — sent or paid on /invoices included — not the conversation's
+    // stored copy, which only assistant coordinators write.
+    const invoiceStatus = await this.liveInvoiceStatus(conv);
+    conv = { ...conv, invoiceStatus: invoiceStatus ?? undefined };
+
     return {
       conversation: conv,
       messages: msgs,
@@ -93,6 +108,21 @@ export class LoadConversation {
       quote,
       customer,
       ...(draft ? { draft } : {}),
+      invoiceStatus,
     };
+  }
+
+  private async liveInvoiceStatus(
+    conv: AgentConversation,
+  ): Promise<string | null | undefined> {
+    // Hand-built without the store (older tests): the stored copy.
+    if (!this.invoices) return conv.invoiceStatus;
+    if (!conv.invoiceId) return conv.invoiceStatus ?? null;
+    try {
+      return (await this.invoices.getOwned(conv.invoiceId, conv.userId))
+        .status ?? null;
+    } catch {
+      return null; // the bill was deleted
+    }
   }
 }

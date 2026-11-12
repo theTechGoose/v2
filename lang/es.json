@@ -303,6 +303,7 @@
   "asstChat.header.newConversation": "Nueva conversación",
   "asstChat.header.quoteAccepted": "Cotización aceptada",
   "asstChat.header.signedInvoiced": "Firmada · Facturada",
+  "asstChat.header.signedScheduled": "Firmada · Factura programada",
   "asstChat.header.quoteDrafted": "Cotización redactada · revisar",
   "asstChat.header.quoteSent": "Cotización enviada",
   "asstChat.header.notDelivered": "No entregada",

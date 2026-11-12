@@ -4,6 +4,7 @@ import { computeProgress } from "@agents/domain/business/wizard-progress/mod.ts"
 import { getWizardSpec } from "@agents/domain/business/terms-wizard-spec/mod.ts";
 import { CustomerStore } from "@crm/domain/data/customer-store/mod.ts";
 import { QuoteStore } from "@paperwork/domain/data/quote-store/mod.ts";
+import { InvoiceStore } from "@paperwork/domain/data/invoice-store/mod.ts";
 import type { AgentConversation } from "@agents/dto/conversation.ts";
 import {
   draftOwesDetails,
@@ -20,6 +21,9 @@ export interface ConversationListItem extends AgentConversation {
   jobName?: string;
   /** REQ-369: the thread's one status — what the chat header says. */
   threadStatus: ThreadStatus;
+  /** REQ-700 (cycle 5, m20): the bound invoice's LIVE status, read off the
+   *  invoice row — not the conversation's stored copy. */
+  invoiceStatus?: string;
 }
 
 /**
@@ -35,6 +39,12 @@ export interface ConversationListItem extends AgentConversation {
  * currentPhase, which only some coordinators write and the public accept
  * never does — so it said "Quote sent" under a header saying "Quote
  * accepted", "Locked · ready to send" through the whole wizard, and "Terms".
+ *
+ * REQ-700 (demo-loop cycle 5, demo issue m20): the same for the bill. Each
+ * row's `invoiceStatus` is the bound invoice ROW's status (conv.invoiceId),
+ * not the denormalized conv.invoiceStatus that only assistant coordinators
+ * write — a bill sent or paid on /invoices left the chip "Signed · Invoiced"
+ * after the payment. The chat header reads the same value (LoadConversation).
  */
 @Injectable()
 export class ListConversations {
@@ -42,6 +52,9 @@ export class ListConversations {
     private conversations: AgentConversationStore,
     private customers: CustomerStore,
     private quotes: QuoteStore,
+    // REQ-700: optional so hand-built coordinators in older tests still run;
+    // the app always injects it.
+    private invoices?: InvoiceStore,
   ) {}
 
   async run(
@@ -53,12 +66,17 @@ export class ListConversations {
     // UX-14: denormalize customerName + jobName so the thread list can title
     // each conversation by what it is about ("Patio · María Nguyen") instead
     // of a wall of "Nueva conversación" rows.
-    const [customers, quotes] = await Promise.all([
+    const [customers, quotes, invoices] = await Promise.all([
       this.customers.listByUser(input.userId).catch(() => []),
       this.quotes.listByUser(input.userId).catch(() => []),
+      this.invoices?.listByUser(input.userId).catch(() => null) ??
+        Promise.resolve(null),
     ]);
     const customerById = new Map(customers.map((c) => [c.id, c]));
     const quoteById = new Map(quotes.map((q) => [q.id, q]));
+    const invoiceById = invoices
+      ? new Map(invoices.map((i) => [i.id, i]))
+      : null;
     return await Promise.all(rows.map(async (r) => {
       const customerName = r.customerId
         ? customerById.get(r.customerId)?.name
@@ -70,6 +88,10 @@ export class ListConversations {
         ...(customerName ? { customerName } : {}),
         ...(jobName ? { jobName } : {}),
         threadStatus: threadStatus({ quote, ...await this.flowOf(r) }),
+        // REQ-700: the bill as it is now; a deleted bill has none.
+        invoiceStatus: r.invoiceId && invoiceById
+          ? invoiceById.get(r.invoiceId)?.status
+          : r.invoiceStatus,
       };
     }));
   }

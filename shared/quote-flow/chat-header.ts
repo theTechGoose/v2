@@ -99,6 +99,12 @@ export interface ChatHeader {
 const K = "asstChat.header.";
 /** REQ-563: a signed quote whose bill went out — header and list alike. */
 const SIGNED_INVOICED = `${K}signedInvoiced`;
+/** REQ-700 (cycle 5, m20): a signed quote whose bill is scheduled, not out. */
+const SIGNED_SCHEDULED = `${K}signedScheduled`;
+/** REQ-700: the live invoice statuses of a bill that went out and is not
+ *  paid yet — the customer viewing it, claiming a payment or running late
+ *  still reads "Invoiced". */
+const INVOICE_OUT = new Set(["sent", "viewed", "claimed", "overdue"]);
 
 /** REQ-327: how the status line should look — "bad" paints the header's dot
  *  and sub-line red instead of the default green. */
@@ -381,7 +387,13 @@ export function threadChip(
   invoiceStatus?: string | null,
 ): { kind: ThreadChipKind; key: string } | null {
   if (invoiceStatus === "paid") return { kind: "paid", key: "status.paid" };
-  if (invoiceStatus === "sent") {
+  // REQ-700 (demo-loop cycle 5, m20): the signature scheduled the bill — the
+  // header and the list say so ("Signed · Invoice scheduled") instead of the
+  // header falling back to "Quote accepted" under a list saying "Invoiced".
+  if (invoiceStatus === "scheduled" && status === "accepted") {
+    return { kind: "sent", key: SIGNED_SCHEDULED };
+  }
+  if (invoiceStatus && INVOICE_OUT.has(invoiceStatus)) {
     // REQ-563 (cycle 4, m3): a signed quote's bill reads the header's words
     // ("Signed · Invoiced"); "Invoiced" alone stays for an unsigned thread.
     return {
@@ -433,7 +445,12 @@ export function deriveChatHeader(input: ChatHeaderInput): ChatHeader {
   const status = threadStatus(input);
   const statusKey = headerStatusKeyFor(
     status,
-    input.invoiceStatus ?? signedInvoiceStatus(messages),
+    // REQ-700 (cycle 5, m20): the server's LIVE status when the caller has
+    // it — null meaning "no bill" — and the signed divider's snapshot only
+    // until then.
+    input.invoiceStatus !== undefined
+      ? input.invoiceStatus
+      : signedInvoiceStatus(messages),
   );
   // REQ-385 (demo-loop cycle 2, m6): one title rule, the list's — the job
   // name, then "· customer" appended — so the title grows as the thread
