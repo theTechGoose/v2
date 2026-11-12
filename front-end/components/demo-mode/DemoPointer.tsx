@@ -28,7 +28,14 @@ export interface Wave {
   x: number;
   y: number;
 }
-export const WAVE_MS = 1100;
+/** REQ-431 (demo m28, cycle 3) — one ring lasted 1.1 s and was missed by eye: the ring repeats
+ *  WAVE_RINGS times (about 2.85 s in all), and the LAST click leaves a small dot that fades over
+ *  CLICK_DOT_MS. Drawn at the wave's x/y, the dot is re-placed with it (`placeWavesAgain`). */
+export const WAVE_RING_MS = 950;
+export const WAVE_RINGS = 3;
+export const CLICK_DOT_MS = 4000;
+/** how long a wave stays in state: until its ring and its dot are both done */
+export const WAVE_MS = Math.max(WAVE_RING_MS * WAVE_RINGS, CLICK_DOT_MS);
 
 /** the arrow, its tip at (2, 2) of a 22 × 28 box drawn at 24 × 30 */
 const ARROW_PATH = "M2 2 L2 22 L7.5 17 L11 26 L14.5 24.5 L11 16 L18 16 Z";
@@ -82,15 +89,26 @@ export default function DemoPointer(
   return (
     <>
       <style>
-        {`@keyframes pmDemoWave{0%{transform:translate(-50%,-50%) scale(.15);opacity:.95}100%{transform:translate(-50%,-50%) scale(1);opacity:0}}`}
+        {`@keyframes pmDemoWave{0%{transform:translate(-50%,-50%) scale(.15);opacity:.95}100%{transform:translate(-50%,-50%) scale(1);opacity:0}}@keyframes pmDemoClickDot{0%{opacity:.95}60%{opacity:.8}100%{opacity:0}}`}
       </style>
       {waves.map((w) => (
         <span
           key={w.id}
           data-cy="demo-wave"
-          style={`position:fixed;left:${w.x}px;top:${w.y}px;width:180px;height:180px;border-radius:50%;border:5px solid ${color};box-shadow:0 0 0 6px rgba(255,255,255,.7), 0 0 30px ${color};pointer-events:none;z-index:${z};animation:pmDemoWave ${WAVE_MS}ms ease-out forwards`}
+          style={`position:fixed;left:${w.x}px;top:${w.y}px;width:180px;height:180px;border-radius:50%;border:5px solid ${color};box-shadow:0 0 0 6px rgba(255,255,255,.7), 0 0 30px ${color};pointer-events:none;z-index:${z};opacity:0;animation:pmDemoWave ${WAVE_RING_MS}ms ease-out ${WAVE_RINGS} forwards`}
         />
       ))}
+      {waves.length > 0 && (() => {
+        // REQ-431 — the last click only: a small dot that marks "clicked here" a while longer
+        const w = waves[waves.length - 1];
+        return (
+          <span
+            key={`dot-${w.id}`}
+            data-cy="demo-click-dot"
+            style={`position:fixed;left:${w.x}px;top:${w.y}px;width:16px;height:16px;transform:translate(-50%,-50%);border-radius:50%;background:${color};border:2px solid #fff;box-shadow:0 0 0 1px rgba(0,0,0,.35), 0 0 8px ${color};pointer-events:none;z-index:${z};opacity:0;animation:pmDemoClickDot ${CLICK_DOT_MS}ms ease-in forwards`}
+          />
+        );
+      })()}
       {pointer && (
         <div
           data-cy="demo-pointer"
