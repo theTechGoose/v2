@@ -4,6 +4,7 @@ import { Icon } from "../components/ui/Icon.tsx";
 import { acceptDecision } from "../../shared/documents/linked-view.ts";
 import { SIGN_OVERRIDE_QUERY } from "../../shared/quote-flow/public-doc-state.ts";
 import { announceChange } from "../lib/change-announce.ts";
+import { strokeWidth } from "../lib/signature-ink.ts";
 import {
   isValidSignerName,
   normalizeSignerName,
@@ -132,9 +133,8 @@ export default function PublicSignQuote(
       const dt = Math.max(1, b.t - a.t);
       const dist = Math.hypot(b.x - a.x, b.y - a.y);
       const speed = dist / dt; // px / ms
-      // Faster = thinner. 0.05px/ms → ~3.2px; 1.5px/ms → ~1.0px.
-      const width = Math.max(0.9, Math.min(3.2, 3.4 - speed * 1.6));
-      ctx.lineWidth = width;
+      // Faster = thinner, never below MIN_STROKE_PX (REQ-534).
+      ctx.lineWidth = strokeWidth(speed);
       ctx.beginPath();
       ctx.moveTo(a.x, a.y);
       ctx.lineTo(b.x, b.y);

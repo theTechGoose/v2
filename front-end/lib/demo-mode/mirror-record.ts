@@ -43,6 +43,10 @@ import {
 } from "../../../shared/demo-mode/mirror.ts";
 import { isSafePath } from "../../../shared/demo-mode/protocol.ts";
 
+/** REQ-534 (cycle 4, M8) — while a canvas is drawn on, its bitmap goes out at most this often
+ *  (the 1 s sweep left a live signature up to a second behind, or unseen until after signing) */
+export const CANVAS_INK_MS = 100;
+
 export interface RecorderOptions {
   /** a frame to send */
   emit(f: MirrorFrame): void;
@@ -54,6 +58,8 @@ export interface RecorderOptions {
   flushMs?: number;
   /** how often the sweep looks for changes that come without an event */
   sweepMs?: number;
+  /** REQ-534 — how often a canvas being drawn on is re-sent (default CANVAS_INK_MS) */
+  inkMs?: number;
   /** REQ-309 — a heartbeat (an empty frame) when nothing went out for this long */
   heartbeatMs?: number;
   /** the clock the heartbeat reads (jest hands in its own) */
@@ -263,6 +269,7 @@ export function createRecorder(doc: Document, o: RecorderOptions): Recorder {
   const Observer = o.Observer ?? globalThis.MutationObserver;
   const flushMs = o.flushMs ?? MIRROR_FLUSH_MS;
   const sweepMs = o.sweepMs ?? 500;
+  const inkMs = o.inkMs ?? CANVAS_INK_MS;
   const heartbeatMs = o.heartbeatMs ?? MIRROR_HEARTBEAT_MS;
   const now = o.now ?? (() => Date.now());
   /** REQ-309 — when the last frame went out (the heartbeat's clock) */
@@ -299,6 +306,12 @@ export function createRecorder(doc: Document, o: RecorderOptions): Recorder {
   let lastSize = "";
   let lastUrl = "";
   let lastCanvasSweep = 0;
+  /** REQ-534 — canvases a pointer drew on since the last frame, and the ink throttle */
+  const inked = new Set<number>();
+  let lastInk = 0;
+  let inkTimer: ReturnType<typeof setTimeout> | undefined;
+  /** set while the ink timer's flush runs: only then (or on a manual flush) are inked canvases read */
+  let inkDue = false;
   /** REQ-380 — canvas bitmaps sent */
   let cvSent = 0;
 
@@ -508,6 +521,7 @@ export function createRecorder(doc: Document, o: RecorderOptions): Recorder {
     lastCanvas.clear();
     lastScroll.clear();
     scrolled.clear();
+    inked.clear();
     pending = [];
   }
 
@@ -520,6 +534,7 @@ export function createRecorder(doc: Document, o: RecorderOptions): Recorder {
     canvasIds.delete(id);
     lastCanvas.delete(id);
     lastScroll.delete(id);
+    inked.delete(id);
   }
 
   const onScroll = (e: Event) => {
@@ -527,6 +542,33 @@ export function createRecorder(doc: Document, o: RecorderOptions): Recorder {
     schedule();
   };
   const onEvent = () => schedule();
+  /** REQ-534 — a pointer on a mirrored canvas: its ink goes out within inkMs, not on the sweep */
+  const onInk = (e: Event) => {
+    const t = e.target as Node | null;
+    if (!t || t.nodeType !== ELEMENT || tagOf(t as Element) !== "canvas") {
+      return;
+    }
+    const id = ids.get(t);
+    if (id === undefined || !canvasIds.has(id)) return;
+    inked.add(id);
+    scheduleInk();
+  };
+  const INK_EVENTS = ["pointerdown", "pointermove", "pointerup"] as const;
+
+  function scheduleInk() {
+    if (o.manual || !attached || inkTimer !== undefined) return;
+    const wait = Math.max(0, inkMs - (now() - lastInk));
+    inkTimer = setTimeout(() => {
+      inkTimer = undefined;
+      lastInk = now();
+      inkDue = true;
+      try {
+        flush();
+      } finally {
+        inkDue = false;
+      }
+    }, wait);
+  }
 
   function schedule() {
     if (o.manual || !attached || flushTimer !== undefined) return;
@@ -555,6 +597,9 @@ export function createRecorder(doc: Document, o: RecorderOptions): Recorder {
     doc.addEventListener("change", onEvent, true);
     doc.addEventListener("scroll", onScroll, { capture: true, passive: true });
     win?.addEventListener("resize", onEvent);
+    for (const t of INK_EVENTS) {
+      doc.addEventListener(t, onInk, { capture: true, passive: true });
+    }
     if (!o.manual) {
       sweepTimer = setInterval(() => {
         flush();
@@ -577,8 +622,13 @@ export function createRecorder(doc: Document, o: RecorderOptions): Recorder {
     doc.removeEventListener("change", onEvent, true);
     doc.removeEventListener("scroll", onScroll, { capture: true });
     win?.removeEventListener("resize", onEvent);
+    for (const t of INK_EVENTS) {
+      doc.removeEventListener(t, onInk, { capture: true });
+    }
     clearTimeout(flushTimer);
     flushTimer = undefined;
+    clearTimeout(inkTimer);
+    inkTimer = undefined;
     clearInterval(sweepTimer);
     sweepTimer = undefined;
     reset();
@@ -809,9 +859,12 @@ export function createRecorder(doc: Document, o: RecorderOptions): Recorder {
       lastUrl = u;
       ops.push({ o: "u", u });
     }
-    if (!o.manual && Date.now() - lastCanvasSweep >= 1_000) {
-      lastCanvasSweep = Date.now();
-      for (const id of canvasIds) {
+    const sweep = !o.manual && Date.now() - lastCanvasSweep >= 1_000;
+    if (sweep) lastCanvasSweep = Date.now();
+    // REQ-534 — every canvas on the 1 s sweep; between sweeps, the ones a pointer drew on
+    const ink = (inkDue || o.manual) && inked.size > 0;
+    if (sweep || ink) {
+      for (const id of sweep ? canvasIds : inked) {
         const e = nodes.get(id) as Element | undefined;
         if (!e || fresh.has(e)) continue;
         const cu = canvasUrl(e);
@@ -820,6 +873,7 @@ export function createRecorder(doc: Document, o: RecorderOptions): Recorder {
           ops.push({ o: "cv", i: id, u: cu });
         }
       }
+      inked.clear();
     }
 
     if (gone.length) ops.push({ o: "g", i: gone });
