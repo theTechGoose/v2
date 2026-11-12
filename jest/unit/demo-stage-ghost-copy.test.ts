@@ -137,7 +137,8 @@ describe("REQ-540 (demo-loop cycle 4, m9) — the stage's ghost says the whole p
     expect(s).toMatch(/data-cy="demo-pill-ghost-title"/);
     expect(s).toMatch(/data-cy="demo-pill-ghost-end"/);
     expect(s).toMatch(/aria-disabled="true"/);
-    const on = s.slice(s.indexOf("onPeerOnline: (cid) => {"));
+    // REQ-645 AMENDMENT (demo-loop cycle 5, m36) — onPeerOnline also hears the browser tab's key
+    const on = s.slice(s.indexOf("onPeerOnline: (cid"));
     const body = on.slice(0, on.indexOf("onPeer: (m"));
     expect(body).not.toMatch(/setPillBox\(null\)/);
     expect(body).not.toMatch(/setPillFace\(\{\}\)/);

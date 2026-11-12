@@ -12,6 +12,10 @@
  * customer's next page shows no arrow while his mouse is still, and his next move brings it back.
  * REQ-538 AMENDMENT (demo M1, cycle 4): once that page's mirror has settled, his still mouse is
  * looked up again once — the arrow comes back on the new page with no move.
+ * REQ-645 AMENDMENT (demo M1 + M2, cycle 5) — supersedes REQ-538's look-up: what he pointed at
+ * (the dialog's Cancel, gone with the dialog) is looked for on the next page by what it is, never
+ * by what is under his still mouse; it is not there — no arrow until he moves, and his move brings
+ * it.
  */
 import { story, type StoryTools } from "#shots";
 import { pillUp } from "../_shared/demo-pill.ts";
@@ -130,7 +134,8 @@ const pointerAt = (page: Page, name: string) =>
       .find((e) => e.getAttribute("data-presenter") === n);
     if (!el) return null;
     const m = new DOMMatrixReadOnly(getComputedStyle(el).transform);
-    return { x: m.m41, y: m.m42 };
+    // REQ-645 — "pointing…" (being found again): no arrow, it points at nothing
+    return { x: m.m41, y: m.m42, pending: el.hasAttribute("data-pending") };
   }, name);
 
 Deno.test("REQ-242: the stage mirrors the customer's actual screen — connecting first, then their exact viewport; typed text, the assistant's bubble, a same-URL reload, a dialog with a typed number and Spanish all reach it; a nested app frame never joins; pointers come back and go away with pages; the staff browser writes nothing and runs no app code", (t) =>
@@ -514,9 +519,10 @@ Deno.test("REQ-242: the stage mirrors the customer's actual screen — connectin
 
       // 8. pointer-m1 — the presenter rests; the customer changes page. REQ-451 AMENDMENT (demo M1,
       //    cycle 3): what he pointed at was on the page that went — never the spot under his still
-      //    mouse over whatever the unsettled new page has there. REQ-538 AMENDMENT (demo M1, cycle
-      //    4): once the new page's mirror has settled his still mouse is looked up again, once —
-      //    the arrow is back on the new page with no move (it used to stay gone until he moved)
+      //    mouse over whatever the unsettled new page has there. REQ-645 AMENDMENT (demo M1 + M2,
+      //    cycle 5) — supersedes REQ-538's look-up of his still mouse: what he pointed at (the
+      //    dialog's Cancel) is not on /customers — no arrow while his mouse is still; his move
+      //    brings it
       await userPage.goto(`${baseUrl}/customers`);
       await until(
         "the stage's mirror follows to /customers",
@@ -525,9 +531,25 @@ Deno.test("REQ-242: the stage mirrors the customer's actual screen — connectin
             "/customers",
         20_000,
       );
+      const still = Date.now();
+      while (Date.now() - still < 2_500) {
+        const at = await pointerAt(userPage, "Hans");
+        if (at && !at.pending) {
+          throw new Error(
+            `REQ-645: an arrow on her new page with his mouse still ${
+              JSON.stringify(at)
+            }`,
+          );
+        }
+        await userPage.waitForTimeout(150);
+      }
+      await page.mouse.move(target.x + 8, target.y + 6);
       await until(
-        "REQ-538: the presenter's pointer is back on the customer's new page with his mouse still",
-        async () => (await pointerAt(userPage, "Hans")) !== null,
+        "REQ-645: his move puts his pointer on the customer's new page",
+        async () => {
+          const at = await pointerAt(userPage, "Hans");
+          return !!at && !at.pending;
+        },
         10_000,
       );
 

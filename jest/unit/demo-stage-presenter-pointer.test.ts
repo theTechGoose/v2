@@ -442,9 +442,10 @@ describe("REQ-393 the stage: the resting pointer is the spot under the presenter
     expect(stageSrc).toMatch(
       /const rest = useMemo\(\(\) =>\s*moveThrottle<null>\(\{\s*gap: \(\) =>\s*linkRef\.current\?\.isDirect\(\) \? MOVE_GAP_DIRECT_MS : MOVE_GAP_RELAY_MS,\s*send: \(\) => restAgain\(\),/,
     );
-    // the reliable channel: the last look-up must arrive
+    // the reliable channel: the last look-up must arrive. REQ-645 AMENDMENT (demo-loop cycle 5,
+    // M1) — through `wire`: a fraction still provisional goes as `pending`, never as an arrow
     expect(fn("restAgain")).toMatch(
-      /linkRef\.current\?\.send\(\{ k: "move", a, t: performance\.now\(\) \}\);/,
+      /linkRef\.current\?\.send\(wire\(\{ k: "move", a, t: performance\.now\(\) \}\)\);/,
     );
   });
 

@@ -65,6 +65,13 @@
  * in once they are (from the cache: styled at once), or HOLD_CAP_MS after it came. Its ops apply
  * to it meanwhile; `styled()` and `settled()` say false until it is in. The first snapshot is
  * never held: there is nothing to keep, and the stage hides the frame until it is styled (REQ-370).
+ *
+ * REQ-645 (demo-loop cycle 5, M1 + M2) — what a node IS: `printOf` (its tag, data-cy, role, a
+ * link's address, its accessible name — presenter-anchor.ts), and `findPrint`, the ONE laid-out
+ * node of the page in the frame with that print (none, or two alike: null) — how the stage finds
+ * what its presenter pointed at again after a card swap or a page change, never by where his mouse
+ * is. `clipOf`: the part of the frame a node can be seen in (`visibleBox`: cut by every ancestor
+ * that clips its overflow — the app's scroller under its topbar).
  */
 import type {
   MirrorFrame,
@@ -72,6 +79,15 @@ import type {
   SNode,
 } from "../../../shared/demo-mode/mirror.ts";
 import type { NodeAnchor } from "../../../shared/demo-mode/protocol.ts";
+import {
+  type ClipNode,
+  type ClipStyle,
+  type NodePrint,
+  pickByPrint,
+  type PrintNode,
+  printOf,
+  visibleBox,
+} from "../../../shared/demo-mode/presenter-anchor.ts";
 
 /** the frame's shell: nothing but the policy; the first snapshot replaces the rest */
 export const MIRROR_SRCDOC =
@@ -131,6 +147,16 @@ export interface Replayer {
   pointOf(a: NodeAnchor): { x: number; y: number } | null;
   /** REQ-437 — the box of the element an anchor names, in the frame; null when gone or boxless */
   rectOf(
+    a: NodeAnchor,
+  ): { left: number; top: number; width: number; height: number } | null;
+  /** REQ-645 — what the mirrored element `id` IS (its print); null when there is no such element */
+  printOf(id: number): NodePrint | null;
+  /** REQ-645 — the id of the ONE laid-out element of the page in the frame with print `p`; null
+   *  when there is none, or more than one alike (never a guess) */
+  findPrint(p: NodePrint): number | null;
+  /** REQ-645 — the part of the frame (its px) the element an anchor names can be seen in: the view
+   *  cut by every ancestor that clips its overflow; null when the element is gone */
+  clipOf(
     a: NodeAnchor,
   ): { left: number; top: number; width: number; height: number } | null;
   /** every node's latest scroll, applied again where the replay lost it */
@@ -873,6 +899,57 @@ export function createReplayer(
       const r = (n as Element).getBoundingClientRect();
       if (r.width <= 0 || r.height <= 0) return null;
       return { left: r.left, top: r.top, width: r.width, height: r.height };
+    },
+    printOf(id) {
+      const n = byId.get(id);
+      return n && n.nodeType === 1 ? printOf(n as unknown as PrintNode) : null;
+    },
+    findPrint(p) {
+      // REQ-645 — the page in the frame (a held snapshot's is not in it yet: nothing found)
+      const live: [number, Element][] = [];
+      for (const [id, n] of byId) {
+        if (n.nodeType !== 1) continue;
+        const e = n as Element;
+        if (e.localName?.toLowerCase() !== p.t || !doc.contains(e)) continue;
+        live.push([id, e]);
+      }
+      const hit = pickByPrint(
+        p,
+        live,
+        ([, e]) => printOf(e as unknown as PrintNode),
+        ([, e]) => {
+          const r = e.getBoundingClientRect();
+          return r.width > 0 && r.height > 0;
+        },
+      );
+      return hit ? hit[0] : null;
+    },
+    clipOf(a) {
+      const n = byId.get(a.id);
+      if (!n || n.nodeType !== 1 || !doc.contains(n)) return null;
+      const w = view ?? { w: 0, h: 0 };
+      const win = doc.defaultView as
+        | (Window & { getComputedStyle?: Window["getComputedStyle"] })
+        | null;
+      const styleOf = (e: ClipNode): ClipStyle | null => {
+        try {
+          const cs = win?.getComputedStyle?.(e as unknown as Element);
+          return cs
+            ? {
+              overflowX: cs.overflowX,
+              overflowY: cs.overflowY,
+              position: cs.position,
+            }
+            : null;
+        } catch {
+          return null;
+        }
+      };
+      return visibleBox(
+        n as unknown as ClipNode,
+        { left: 0, top: 0, width: w.w, height: w.h },
+        styleOf,
+      );
     },
     settle,
     styled,

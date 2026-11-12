@@ -55,6 +55,13 @@
  * full load): the tab keeps its demo and whether its page was connected (pill-carry.ts); the next
  * page draws the pill from it at once, and after a load from a connected page keeps saying
  * Connected for a ~5 s grace while its own link comes up — "Connecting…" only if it does not.
+ * REQ-645 (demo-loop cycle 5, M1 + M2 + c4-M6) — a presenter's element out of view is a small
+ * chevron at the edge of the box it can be seen in (the page's scroller under its topbar, the
+ * screen above the pill's band — `visibleBox`), with the way to it in words ("Hans is pointing
+ * below — scroll ↓") — never an arrow clamped onto the window's edge over the topbar's search
+ * bar or the strip under the footer; an arrow whose element moved more than DRIFT_FADE_PX since he
+ * pointed is faded (`drifted`); `pending` (his pointer being found again) says "Hans is
+ * pointing…" near its fraction, no arrow.
  */
 import {
   useEffect,
@@ -78,6 +85,7 @@ import {
   ACTIVE_REASK_MS,
   ACTIVE_WAIT_MS,
   type Anchor,
+  fracToPoint,
   type PeerMessage,
   type Presenter,
   type Role,
@@ -95,7 +103,13 @@ import {
 } from "../../shared/demo-mode/mirror.ts";
 import {
   anchorPoint,
+  type ClipNode,
+  type ClipStyle,
+  cueKey,
+  drifted,
+  placeView,
   pointInBox,
+  visibleBox,
 } from "../../shared/demo-mode/presenter-anchor.ts";
 import {
   type RestartNotice,
@@ -320,6 +334,19 @@ const viewportBox = () => ({
   width: globalThis.innerWidth || 1,
   height: globalThis.innerHeight || 1,
 });
+/** REQ-645 — what `visibleBox` reads of an element's computed style */
+const styleOf = (e: ClipNode): ClipStyle | null => {
+  try {
+    const cs = getComputedStyle(e as unknown as Element);
+    return {
+      overflowX: cs.overflowX,
+      overflowY: cs.overflowY,
+      position: cs.position,
+    };
+  } catch {
+    return null;
+  }
+};
 
 export default function DemoModeOverlay() {
   /** M5 — in a nested frame (an app page embedded in a page), or on the stage: never part of the demo */
@@ -453,6 +480,20 @@ export default function DemoModeOverlay() {
       ? { left: r.left, top: r.top, width: r.width, height: r.height }
       : null;
   };
+  /** REQ-645 — this screen as a presenter's arrow may be drawn on it: the window above the pill's
+   *  band (nothing of the page shows under it) */
+  const screenBox = (): Rect => {
+    const v = viewportBox();
+    return { ...v, height: Math.max(1, v.height - bandRef.current.h) };
+  };
+  /** REQ-645 — the element of this page a presenter's anchor names, while it is in the page */
+  const elOf = (a: Anchor): Element | null => {
+    const recorder = recorderRef.current;
+    const sender = senderRef.current;
+    if (!a.n || !recorder || !sender || a.n.l !== sender.load) return null;
+    const el = recorder.nodeOf(a.n.id);
+    return el?.isConnected ? el : null;
+  };
   /** a presenter's pointer on this screen: on the element they point at when this page has it;
    *  REQ-451 (M1) — else nowhere (null): another page load, the element left the page or is not
    *  laid out — never the fraction it had, which is over something else now */
@@ -464,12 +505,27 @@ export default function DemoModeOverlay() {
       return el?.isConnected ? pointInBox(n, el.getBoundingClientRect()) : null;
     });
   };
-  /** REQ-305 — where an anchor's pointer is drawn: on the window's edge, pointing outside, when
-   *  the element it names is out of view; REQ-393 — and when the presenter's mouse is beside the
-   *  frame on his stage (`o`: the anchor names the edge's point); REQ-451 — null: not drawn */
+  /** REQ-305 — where an anchor's pointer is drawn; REQ-393 — the presenter's mouse beside the
+   *  frame on his stage (`o`: the anchor names the edge's point): on this screen's edge;
+   *  REQ-451 — null: not drawn. REQ-645 (cycle 5 M1, c4-M6) — an element out of view: at the
+   *  edge of the box it CAN be seen in (`visibleBox`: its scroller, under the topbar, above the
+   *  pill's band) with the way to it (`dir`: a chevron and a cue) — never the window's edge over
+   *  the topbar's search bar or the strip under the footer */
   const placeOnScreen = (a: Anchor) => {
     const p = toScreen(a);
-    return p ? placeIn(p, viewportBox(), ARROW_BOX, a.o === 1) : null;
+    if (!p) return null;
+    const el = a.o === 1 ? null : elOf(a);
+    if (el) {
+      const box = visibleBox(el as unknown as ClipNode, screenBox(), styleOf);
+      return { ...placeView(p, box), box };
+    }
+    // his mouse beside the frame (REQ-393), a bare fraction: as before
+    const box = viewportBox();
+    return {
+      ...placeIn(p, viewportBox(), ARROW_BOX, a.o === 1),
+      dir: null,
+      box,
+    };
   };
 
   /** REQ-305 — this side's resting pointer, once more: a stage that was just handed a fresh
@@ -765,6 +821,15 @@ export default function DemoModeOverlay() {
       setCmds((c) => ({ ...c, [pid]: { seq: ++seq.current, ...cmd } }));
     /** REQ-305 — a presenter's pointer placed from its anchor, and where each was last placed */
     const placed = new Map<string, Pt & { outside: boolean }>();
+    /** REQ-645 — where each presenter's arrow was drawn when he pointed (null: out of view then) */
+    const origins = new Map<string, Pt | null>();
+    /** REQ-214 — a presenter's name, for the words his pointer carries */
+    const nameOf = (pid: string) =>
+      demoRef.current?.presenters.find((x) => x.userId === pid)?.name ??
+        demoRef.current?.presenterName ?? "";
+    /** REQ-645 — the presenters whose next placing is a new anchor of theirs (a move, a click) —
+     *  any other is placed again as the page moved */
+    const pointedNow = new Set<string>();
     const place = (pid: string, a: Anchor, kind: "move" | "click") => {
       const p = placeOnScreen(a);
       // REQ-451 — what he pointed at is not on this page (any more): no arrow, kept until it is
@@ -773,13 +838,24 @@ export default function DemoModeOverlay() {
         if (placed.delete(pid)) command(pid, { kind: "leave" });
         return;
       }
+      // REQ-645 (cycle 5 M1) — where it was when he pointed (in view); moved far from there under
+      // his still mouse (a card grew, the page moved): faded — no longer where he points
+      if (pointedNow.delete(pid)) {
+        origins.set(pid, p.dir || a.o === 1 ? null : p.at);
+      }
+      const faded = !p.dir && a.o !== 1 && drifted(origins.get(pid), p.at);
       placed.set(pid, { ...p.at, outside: p.outside });
       // REQ-437 — the element's box goes with the point: the tag sits outside it
       command(pid, {
         kind,
         at: p.at,
-        outside: p.outside,
+        outside: p.outside && !p.dir,
         off: a.o === 1,
+        // REQ-645 (c4-M6) — out of view: the chevron where it can be seen, and the way to it
+        cue: p.dir
+          ? { box: p.box, text: t(cueKey(p.dir), { name: nameOf(pid) }) }
+          : null,
+        faded,
         rect: p.outside ? null : rectOnScreen(a),
       });
     };
@@ -878,11 +954,28 @@ export default function DemoModeOverlay() {
             if (!newerMove(lastT.get(pid) ?? 0, m.t)) break;
             lastT.set(pid, m.t ?? lastT.get(pid) ?? 0);
             anchorsRef.current.set(pid, m.a);
+            pointedNow.add(pid);
             place(pid, m.a, "move");
             break;
           case "click":
             anchorsRef.current.set(pid, m.a);
+            pointedNow.add(pid);
             place(pid, m.a, "click");
+            break;
+          case "pending":
+            // REQ-645 (cycle 5 M1 + M2) — his pointer is being found again: his last anchor is not
+            // what he points at now; "{name} is pointing…" near this fraction — never an arrow
+            if (newerMove(lastT.get(pid) ?? 0, m.t)) {
+              lastT.set(pid, m.t ?? lastT.get(pid) ?? 0);
+              anchorsRef.current.delete(pid);
+              placed.delete(pid);
+              origins.delete(pid);
+              command(pid, {
+                kind: "pending",
+                at: fracToPoint(m.a, screenBox()),
+                text: t("demoMode.pointerPending", { name: nameOf(pid) }),
+              });
+            }
             break;
           case "leave":
             anchorsRef.current.delete(pid);

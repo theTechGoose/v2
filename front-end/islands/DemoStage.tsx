@@ -57,6 +57,18 @@
  * /admin's (the Demo click, on a desktop customer's frame) is a hint for the off outline only, and
  * their screen gets no arrow until he makes a real pointer move (`seedUse`).
  *
+ * REQ-645 (demo M1, M2, m36, c4-M6 — cycle 5) — supersedes REQ-538's look-up under his still
+ * mouse: his anchor carries the PRINT of the node it names (`printOf`); when it dies (a card
+ * swapped, the same tab's next page, a reload) the stage looks for the ONE laid-out node with that
+ * print as soon as the replay is styled, for at most REANCHOR_CAP_MS (`seekAgain`) — found, the
+ * arrow is back on it; not found, no arrow, and the stage keeps saying so. A fraction the replay
+ * could not name a node for goes out as `pending` ("pointing…" on their screen), never as an
+ * arrow (`wire`). Another of their browser tabs followed: his anchor is kept for its page load
+ * and dropped (`tabSwitched`, `keepHeld`), and the stage says which tab it shows; that page load
+ * followed again gets it back (`restoreKept`). Holding nothing (the demo's start) is "not on their
+ * screen — move to show it". The ghost and the colleagues' pointers whose element is out of view
+ * are a chevron at the edge of where the replay shows it (`placeView` over `clipOf`).
+ *
  * REQ-232 — the pill says plainly whether the demo is live: "Live", "Connecting…", or "Waiting for
  * {name}'s app…" — the last only when none of the customer's tabs is left, after a few seconds'
  * grace (a page change in their app is a new socket). The stage follows the tab the customer used
@@ -144,13 +156,24 @@ import {
   type WaveFrame,
 } from "../lib/demo-mode/pointer-anchor.ts";
 import {
+  anchorDead,
   anchorPoint,
+  type Dir,
   ghostAt,
+  type Held,
+  keepHeld,
+  keptFor,
   lookAgain,
+  type NodePrint,
+  placeView,
   pointerAbsent,
-  reanchorDelay,
+  printable,
+  reanchored,
   resendable,
   seedUse,
+  SEEK_RETRY_MS,
+  seekPrint,
+  tabSwitched,
 } from "../../shared/demo-mode/presenter-anchor.ts";
 import PointerGhost from "../components/demo-mode/PointerGhost.tsx";
 import DemoPointer, { WAVE_MS } from "../components/demo-mode/DemoPointer.tsx";
@@ -213,6 +236,8 @@ const INSET = { top: 16, right: 16, left: 16 };
 const HIDDEN: Screen = { w: 1, h: 1, path: "" };
 /** REQ-242 — when a snapshot's scrolls are applied again (its stylesheets and images loading) */
 const SETTLE_MS = [150, 600, 1_500];
+/** REQ-645 (m36) — how long the stage says it shows another of their tabs, at most (a move ends it) */
+const TAB_NOTE_MS = 8_000;
 
 /** REQ-309 — the stage's own counters (the receiver counts the rest) */
 interface OwnStats {
@@ -282,10 +307,11 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
   const styledRef = useRef(false);
   /** REQ-370 — when the first snapshot of this demo was applied, and the fallback timer */
   const firstSnapAtRef = useRef<number | null>(null);
-  /** REQ-538 — when the latest snapshot landed (its settle passes run for SETTLE_MS after it) */
-  const snapAtRef = useRef<number | null>(null);
-  /** REQ-538 — the pending look-up of his still mouse for a dead anchor */
-  const reanchorTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /** REQ-645 — when his anchor was found dead on a styled replay of which page load (the look for
+   *  its print runs for REANCHOR_CAP_MS from then; another page load starts it over), and the next
+   *  look */
+  const deadAtRef = useRef<{ at: number; load: string } | null>(null);
+  const seekTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const styleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   /** REQ-235 — this stage's End ended it */
   const endedHere = useRef(false);
@@ -344,6 +370,16 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
   const sentLoadRef = useRef<string | null>(null);
   const sentAtRef = useRef<Pt | null>(null);
   const provisionalRef = useRef(false);
+  /** REQ-645 — what the node his anchor names IS (found again by it when it goes), and the last
+   *  print taken (the same node as the last move: taken once) */
+  const printRef = useRef<NodePrint | null>(null);
+  const printCacheRef = useRef<
+    { id: number; load: string; print: NodePrint | null } | null
+  >(null);
+  /** REQ-645 (m36) — his anchors kept per page load when another tab was followed; a switch whose
+   *  first snapshot has not come yet (the stage then says which tab it shows) */
+  const keptRef = useRef(new Map<string, Held>());
+  const switchedRef = useRef(false);
   /** REQ-451 (M14) — the mouse the page that opened the stage handed over: counted once the frame
    *  is fitted, and only on it; dropped by a real pointer event */
   const seedRef = useRef<CursorSeed | null>(null);
@@ -352,12 +388,16 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
   const hintRef = useRef<Pt | null>(null);
   /** REQ-451 — the ghost of his arrow where their screen has it, while that is apart from his
    *  cursor (their page moved it with its element, or the frame moved) */
-  const [ghost, setGhost] = useState<{ at: Pt; outside: boolean } | null>(
-    null,
-  );
+  const [ghost, setGhost] = useState<
+    { at: Pt; outside: boolean; dir?: Dir | null } | null
+  >(null);
   /** REQ-538 (cycle 4 M1) — his arrow is not on their screen (what he pointed at went: a card
-   *  swapped, a new page) until he moves or the settled replay looks his still mouse up again */
+   *  swapped, a new page) until he moves or REQ-645 finds it again by its print; REQ-645 — and
+   *  while he holds nothing (the demo's start, another tab followed) */
   const [absent, setAbsent] = useState(false);
+  /** REQ-645 (m36) — the stage follows another of their tabs now: its page, said until he moves */
+  const [tabNote, setTabNote] = useState<string | null>(null);
+  const tabNoteTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   /** REQ-214 — how a colleague's pointer is driven, for the placing again */
   const commandRef = useRef<
     ((pid: string, cmd: Omit<PointerCmd, "seq">) => void) | null
@@ -372,6 +412,9 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
   const [pillBox, setPillBox] = useState<Rect | null>(null);
   /** REQ-372 (cycle 2, m1) — and what it says, for the ghost's read-only replica */
   const [pillFace, setPillFace] = useState<PillFace>({});
+  /** REQ-645 — the customer's band under their pill (their px): nothing of the page shows there */
+  const bandPxRef = useRef(0);
+  bandPxRef.current = Math.max(0, pillFace.band ?? 0);
 
   const screen = mirrored ?? HIDDEN;
   /** REQ-393 — the screen the frame on the stage is fitted to (HIDDEN: none yet) */
@@ -403,26 +446,32 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
    *  only for want of a styled replay. Made where he points now: no ghost */
   const hold = (
     a: Anchor,
-    at: Pt,
+    at: Pt | null,
     load: string | null,
     provisional: boolean,
+    print: NodePrint | null = null,
   ): Anchor => {
     sentRef.current = a;
     sentLoadRef.current = load;
     sentAtRef.current = at;
     provisionalRef.current = provisional;
+    printRef.current = print; // REQ-645 — what it names, found again by it
+    deadAtRef.current = null;
     setGhost(null);
     setAbsent(false); // REQ-538 — made where he points now: drawn there
     return a;
   };
-  /** REQ-451 — nothing pointed at (his mouse left the window, the demo went) */
+  /** REQ-451 — nothing pointed at (his mouse left the window, the demo went); REQ-645 — another
+   *  tab followed. Nothing of his is on their screen: the stage says so (pointerAbsent) */
   const drop = () => {
     sentRef.current = null;
     sentLoadRef.current = null;
     sentAtRef.current = null;
     provisionalRef.current = false;
+    printRef.current = null;
+    deadAtRef.current = null;
     setGhost(null);
-    setAbsent(false);
+    setAbsent(true);
   };
   /** REQ-242 — a point of this screen as the customer's: the fraction of the frame and, when the
    *  replay has one there, the mirrored element under it and where in its box */
@@ -445,8 +494,18 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
       ? rep.anchorAt((p.x - f.left) / f.s, (p.y - f.top) / f.s)
       : null;
     const out = n && load ? { ...a, n: { ...n, l: load } } : a;
+    // REQ-645 — what that node IS, kept with it: if it goes, it is found again by this, never by
+    // where his mouse is (the same node as the last move keeps the print taken then)
+    let print: NodePrint | null = null;
+    if (n && load) {
+      const c = printCacheRef.current;
+      print = c && c.id === n.id && c.load === load
+        ? c.print
+        : rep?.printOf(n.id) ?? null;
+      printCacheRef.current = { id: n.id, load, print };
+    }
     // REQ-451 — a fraction only because the replay could not be asked yet: looked up once it can
-    return hold(out, p, load, !n && !settled);
+    return hold(out, p, load, !n && !settled, print);
   };
   /** a point of the customer's (or a colleague's) pointer on this screen: on the element it names
    *  when the replay has it, else at the same fraction of the frame */
@@ -475,20 +534,58 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
   /** REQ-451 — a presenter's pointer on this frame (a colleague's, or this one's ghost): on the
    *  node it names while the replay shows that page load and has the node; else nowhere — never
    *  the fraction it had (another page now, or the node gone) */
-  const presenterOnStage = (a: Anchor) => {
+  const presenterOnStage = (
+    a: Anchor,
+  ): { at: Pt; outside: boolean; dir: Dir | null } | null => {
     const f = fitBox();
     const p = anchorPoint(a, f, loadRef.current, (n) => {
       const q = replayerRef.current?.pointOf(n);
       return q ? { x: f.left + q.x * f.s, y: f.top + q.y * f.s } : null;
     });
-    return p ? placeIn(p, f, ARROW_BOX, a.o === 1) : null;
+    if (!p) return null;
+    // REQ-645 (c4-M6) — the element it names out of view: at the edge of where the replay shows
+    // it, the way to it; a mouse beside the frame (REQ-393) on the frame's edge, as before
+    if (a.n && a.o !== 1) return placeView(p, visOnStage(a));
+    return { ...placeIn(p, f, ARROW_BOX, a.o === 1), dir: null };
+  };
+  /** REQ-645 (c4-M6) — where on the stage the element an anchor names can be seen: the frame
+   *  without the customer's band, cut by the replay's clipping ancestors (its scroller, under its
+   *  topbar) — never the frame's edge over their topbar's search bar */
+  const visOnStage = (a: Anchor): Rect => {
+    const f = fitBox();
+    const frame = {
+      left: f.left,
+      top: f.top,
+      width: f.width,
+      height: Math.max(0, f.height - bandPxRef.current * f.s),
+    };
+    if (!a.n?.l || a.n.l !== loadRef.current) return frame;
+    const c = replayerRef.current?.clipOf(a.n);
+    if (!c) return frame;
+    const left = Math.max(frame.left, f.left + c.left * f.s);
+    const top = Math.max(frame.top, f.top + c.top * f.s);
+    const right = Math.min(
+      frame.left + frame.width,
+      f.left + (c.left + c.width) * f.s,
+    );
+    const bottom = Math.min(
+      frame.top + frame.height,
+      f.top + (c.top + c.height) * f.s,
+    );
+    return {
+      left,
+      top,
+      width: Math.max(0, right - left),
+      height: Math.max(0, bottom - top),
+    };
   };
   /** REQ-451 — what he points at, as the stage keeps it */
-  const heldNow = () => ({
+  const heldNow = (): Held => ({
     a: sentRef.current,
     load: sentLoadRef.current,
     at: sentAtRef.current,
     provisional: provisionalRef.current,
+    print: printRef.current,
   });
   /** REQ-451 — the ghost of his arrow where their screen has it now, when apart from his cursor */
   const showGhost = () => {
@@ -500,6 +597,7 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
     );
     setGhost((was) =>
       was && g && was.outside === g.outside &&
+        was.dir?.dx === g.dir?.dx && was.dir?.dy === g.dir?.dy &&
         Math.abs(was.at.x - g.at.x) < 0.5 && Math.abs(was.at.y - g.at.y) < 0.5
         ? was
         : g
@@ -519,18 +617,28 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
     };
   };
 
+  /** REQ-645 (cycle 5 M1) — what goes on the wire for his move: itself — except a fraction made
+   *  only because the replay could not name a node yet (provisional), which goes as `pending`:
+   *  their screen says he is pointing, never an arrow at that fraction (on her layout it was the
+   *  next button: "Eliminar factura") */
+  const wire = (m: { k: "move"; a: Anchor; t: number }): PeerMessage =>
+    provisionalRef.current
+      ? { k: "pending", a: { vx: m.a.vx, vy: m.a.vy }, t: m.t }
+      : m;
+
   /** this side's moves, rated leading + trailing so the rest position always goes out */
   const throttle = useMemo(() =>
     moveThrottle<Pt>({
       gap: () =>
         linkRef.current?.isDirect() ? MOVE_GAP_DIRECT_MS : MOVE_GAP_RELAY_MS,
+      // REQ-645 — through wire (anchorOf and wire read refs only: the first render's do)
       send: ({ x, y }) =>
         linkRef.current?.send(
-          {
+          wire({
             k: "move",
             a: anchorOf({ x, y }),
             t: performance.now(),
-          },
+          }),
           true,
         ),
     }), []);
@@ -541,48 +649,68 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
    *  another tab gets nothing until he moves — never a fraction of the frame under his still
    *  mouse, which put the arrow on whatever the new page had at that spot */
   const resendPointer = () => {
-    const a = resendable(heldNow(), loadRef.current);
-    if (a) linkRef.current?.send({ k: "move", a, t: performance.now() });
-    // REQ-538 (cycle 4 M1) — a node anchor of another page is dead here: once this page's replay
-    // has settled, his still mouse is looked up again, once (else the next layout pass does it)
-    else if (
-      lookAgain(heldNow(), {
-        load: loadRef.current,
-        settled: !!replayerRef.current?.settled(),
-      })
-    ) reanchorSoon();
+    const h = heldNow();
+    const a = resendable(h, loadRef.current);
+    if (a) {
+      linkRef.current?.send(wire({ k: "move", a, t: performance.now() }));
+      return;
+    }
+    // REQ-645 (cycle 5 M2) — what he pointed at was on another page load (the same tab's next
+    // page, a reload): their page says he is pointing while it is looked for by its print
+    // (seekAgain) — never his still mouse looked up there (REQ-538)
+    if (h.a?.n && printable(h.print)) {
+      linkRef.current?.send({
+        k: "pending",
+        a: { vx: h.a.vx, vy: h.a.vy },
+        t: performance.now(),
+      });
+    }
+    seekAgain();
   };
-  /** REQ-538 (cycle 4 M1) — his anchor died (its node gone, another page): his still mouse is
-   *  looked up again once the replay's layout has been still for a moment and its snapshot's
-   *  settle passes are done (reanchorDelay) — each layout pass meanwhile starts the wait again —
-   *  and only if the anchor is still dead then (he has not moved) */
-  const reanchorSoon = () => {
-    if (reanchorTimerRef.current) clearTimeout(reanchorTimerRef.current);
-    reanchorTimerRef.current = setTimeout(
-      () => {
-        reanchorTimerRef.current = null;
-        reanchorRef.current();
-      },
-      reanchorDelay(
-        Date.now(),
-        snapAtRef.current,
-        SETTLE_MS[SETTLE_MS.length - 1],
-      ),
-    );
+  /** REQ-645 (cycle 5 M1 + M2) — his anchor died (its node gone: a card swapped; another page
+   *  load): the ONE laid-out node with its print (`findPrint`), looked for as soon as the replay
+   *  is styled and for REANCHOR_CAP_MS (again every SEEK_RETRY_MS meanwhile) — never the node
+   *  under his still mouse (REQ-538 put the arrow on whatever the new content had there). Found:
+   *  his anchor on it, at the same spot of its box, sent. Not found: no arrow — the stage keeps
+   *  saying his pointer is not on their screen */
+  const seekAgain = () => {
+    const h = heldNow();
+    const rep = replayerRef.current;
+    const load = loadRef.current;
+    const alive = !!h.a && !!presenterOnStage(h.a);
+    if (!anchorDead(h, { load, alive })) {
+      deadAtRef.current = null;
+      return;
+    }
+    if (!rep || load === null || !rep.styled()) return;
+    const now = Date.now();
+    // the look runs from when it was found dead on THIS page load (a new page: looked for afresh)
+    if (deadAtRef.current?.load !== load) deadAtRef.current = { at: now, load };
+    const shown = { load, styled: true, alive };
+    if (!seekPrint(h, shown, now - deadAtRef.current.at)) return;
+    const n = h.a?.n;
+    const id = h.print ? rep.findPrint(h.print) : null;
+    if (id === null || !n) {
+      // not there (yet): looked for again, until the cap
+      if (!seekTimerRef.current) {
+        seekTimerRef.current = setTimeout(() => {
+          seekTimerRef.current = null;
+          seekRef.current();
+        }, SEEK_RETRY_MS);
+      }
+      return;
+    }
+    const q = rep.pointOf({ id, x: n.x, y: n.y });
+    const size = rep.size();
+    const frac = q && size
+      ? pointToFrac(q, { left: 0, top: 0, width: size.w, height: size.h })
+      : { vx: h.a?.vx ?? 0.5, vy: h.a?.vy ?? 0.5 };
+    const a = reanchored(h, id, load, frac);
+    hold(a, h.at, load, false, h.print ?? null);
+    linkRef.current?.send({ k: "move", a, t: performance.now() });
   };
-  const reanchor = () => {
-    const held = heldNow();
-    if (!held.a?.n) return;
-    if (
-      lookAgain(held, {
-        load: loadRef.current,
-        settled: !!replayerRef.current?.settled(),
-        alive: !!presenterOnStage(held.a),
-      })
-    ) rest.push(null);
-  };
-  const reanchorRef = useRef(reanchor);
-  reanchorRef.current = reanchor;
+  const seekRef = useRef(seekAgain);
+  seekRef.current = seekAgain;
   /** REQ-305 — the resting pointer on the node under it in the styled replay, sent when that is
    *  not what went last; REQ-451 — only for a fraction made before the replay could name a node
    *  (lookAgain), or his mouse beside a frame that moved — never because the page moved under it */
@@ -592,7 +720,8 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
     const was = sentRef.current;
     const a = anchorOf(p);
     if (sameAnchor(was, a)) return;
-    linkRef.current?.send({ k: "move", a, t: performance.now() });
+    // REQ-645 — `pending` while still provisional
+    linkRef.current?.send(wire({ k: "move", a, t: performance.now() }));
   };
   /** REQ-393 — restAgain after a layout pass, rated like a move (a scroll is a burst of passes),
    *  on the reliable channel (the last look-up must arrive); REQ-451 — a provisional one only */
@@ -651,8 +780,10 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
     commandRef.current?.(pid, {
       kind,
       at: p.at,
-      outside: p.outside,
+      // REQ-645 — out of view: the chevron where the replay shows its element, no ring
+      outside: p.outside && !p.dir,
       off: a.o === 1,
+      cue: p.dir ? { box: visOnStage(a), text: "" } : null,
       rect: p.outside ? null : rectOnStage(a), // REQ-437 — the tag sits outside it
     });
   };
@@ -680,11 +811,9 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
     // REQ-451 (M1) — never the spot under his still mouse again (the customer's arrow stayed over
     // whatever their scroll or a new page put there): only a fraction made before this page's
     // replay settled is looked up, once it has — and his mouse beside the frame, which moves.
-    // REQ-538 (cycle 4 M1) — and an anchor that died (its node gone from the replay: a card
-    // swapped or flipped; another page shown), once the replay has settled: one look-up, which
-    // makes a live anchor again; never while its node is there. A dead node anchor waits for
-    // the replay to be still (reanchorSoon); a provisional fraction and his mouse beside the
-    // frame are looked up at once
+    // REQ-645 (cycle 5 M1) — supersedes REQ-538: an anchor that died (its node gone: a card
+    // swapped; another page shown) is never looked up under his still mouse — it is found again
+    // by its print (seekAgain), or not at all
     const held = heldNow();
     const alive = !!held.a && !!presenterOnStage(held.a);
     setAbsent(pointerAbsent(held, alive));
@@ -692,12 +821,9 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
       lookAgain(held, {
         load: loadRef.current,
         settled: !!replayerRef.current?.settled(),
-        alive,
       })
-    ) {
-      if (held.a?.n) reanchorSoon();
-      else rest.push(null);
-    }
+    ) rest.push(null);
+    seekAgain();
     showGhost();
   };
   const replaceRef = useRef(replace);
@@ -727,6 +853,40 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
   };
   const checkStyledRef = useRef(checkStyled);
   checkStyledRef.current = checkStyled;
+
+  /** REQ-645 (cycle 5 m36) — a page load mirrored afresh: a tab followed again with its page
+   *  unchanged gets back the anchor he left on that page load (sent) — when he has pointed at
+   *  nothing on a page since the switch; the first page of another tab is said (noteTab). True:
+   *  his anchor came back */
+  const restoreKept = (load: string, path: string) => {
+    const k = keptFor(keptRef.current, load);
+    const h = heldNow();
+    const back = !!k?.a && (!h.a || (h.provisional && h.load === null));
+    if (back && k?.a) {
+      keptRef.current.delete(load);
+      hold(k.a, k.at, load, false, k.print ?? null);
+      linkRef.current?.send({ k: "move", a: k.a, t: performance.now() });
+    }
+    noteTab(path, back);
+    return back;
+  };
+  /** REQ-645 (cycle 5 m36) — the first page of another of their tabs: the stage says which page
+   *  it shows now (until he moves) — unless the anchor he left there came back with it */
+  const noteTab = (path: string, back: boolean) => {
+    if (!switchedRef.current) return;
+    switchedRef.current = false;
+    if (tabNoteTimerRef.current) clearTimeout(tabNoteTimerRef.current);
+    tabNoteTimerRef.current = null;
+    if (back) {
+      setTabNote(null);
+      return;
+    }
+    setTabNote(path || "/");
+    tabNoteTimerRef.current = setTimeout(() => {
+      tabNoteTimerRef.current = null;
+      setTabNote(null);
+    }, TAB_NOTE_MS);
+  };
 
   /** REQ-242 — a frame of the customer's screen, into the replay */
   const take = (f: MirrorFrame, load: string) => {
@@ -761,14 +921,14 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
     }
     if (f.t === "snap") {
       dirtyRef.current = false;
-      snapAtRef.current = Date.now(); // REQ-538 — its settle passes run from now
       if (newLoad) {
         // a new page: the customer's pointer was on the old one
         if (customerRef.current?.n?.l !== load) {
           customerRef.current = null;
           glide.hide();
         }
-        resendPointer(); // REQ-451 — only an anchor made on this very page load
+        // REQ-451 — only an anchor made on this very page load; REQ-645 (m36) — or left on it
+        if (!restoreKept(load, path)) resendPointer();
       }
       // its scrolls once more as its styles come in; REQ-305 — the pointers too
       SETTLE_MS.forEach((ms) => {
@@ -937,6 +1097,8 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
     dirtyRef.current = false;
     // REQ-292 — the customer's tab the stage follows: a switch starts the mirror's ordering over
     let followedCid: string | undefined;
+    // REQ-645 (m36) — and the BROWSER tab it is a page of (its key, when it said one)
+    let followedTab: string | undefined;
     const link = connectDemo({
       sessionId: demo.id,
       role: "presenter",
@@ -992,7 +1154,7 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
           }).catch(() => setDemo(null));
         }
       },
-      onPeerOnline: (cid) => {
+      onPeerOnline: (cid, tab) => {
         // the customer's page joined (a new clock) and its snapshot is on the way: show it this
         // pointer at rest. REQ-309 — another tab (or page) of theirs: the mirror starts over —
         // its page may have loaded earlier, and a frame of the old tab still decoding is dropped
@@ -1002,6 +1164,18 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
         // REQ-391 (M4) — until this tab's snapshot is in, the frame is not its screen: never Live
         setAwaiting(true);
         if (cid !== followedCid) {
+          // REQ-645 (cycle 5 m36) — ANOTHER of their browser tabs (not the same tab's next page):
+          // what he pointed at was on the other tab — kept for its page load (it comes back when
+          // that is followed again, unchanged) and dropped here, never looked for on this tab;
+          // the stage says which tab it shows once its page is in
+          if (tabSwitched(followedTab, tab)) {
+            keepHeld(keptRef.current, heldNow());
+            drop();
+            if (seekTimerRef.current) clearTimeout(seekTimerRef.current);
+            seekTimerRef.current = null;
+            switchedRef.current = true;
+          }
+          followedTab = tab;
           // REQ-292 — another of the customer's tabs: its page load may be OLDER than the one
           // shown; the receiver starts over so that tab's snapshot is taken (the mirrored page
           // stays on screen until it comes)
@@ -1161,10 +1335,15 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
       if (styleTimerRef.current) clearTimeout(styleTimerRef.current);
       styleTimerRef.current = null;
       firstSnapAtRef.current = null;
-      // REQ-538 — no look-up of his mouse for a demo that went
-      if (reanchorTimerRef.current) clearTimeout(reanchorTimerRef.current);
-      reanchorTimerRef.current = null;
-      snapAtRef.current = null;
+      // REQ-645 — no look for his anchor's print, nothing kept, no tab notice for a demo that went
+      if (seekTimerRef.current) clearTimeout(seekTimerRef.current);
+      seekTimerRef.current = null;
+      deadAtRef.current = null;
+      keptRef.current.clear();
+      switchedRef.current = false;
+      if (tabNoteTimerRef.current) clearTimeout(tabNoteTimerRef.current);
+      tabNoteTimerRef.current = null;
+      setTabNote(null);
       styledRef.current = false;
       setStyled(false);
       setPeerOnline(false);
@@ -1184,6 +1363,7 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
       const p = { x: e.clientX, y: e.clientY };
       seedRef.current = null; // REQ-451 — a real event says where the mouse is
       hintRef.current = null;
+      setTabNote(null); // REQ-645 (m36) — he points again: said
       lastMoveRef.current = p;
       markOff();
       if (fitted() && linkRef.current) throttle.push(p);
@@ -1265,8 +1445,15 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
     globalThis.location.href = "/admin";
   }
 
-  const sendClick = (x: number, y: number) =>
-    linkRef.current?.send({ k: "click", a: anchorOf({ x, y }) });
+  const sendClick = (x: number, y: number) => {
+    const a = anchorOf({ x, y });
+    // REQ-645 — never a click wave at a fraction the replay could not name a node for
+    linkRef.current?.send(
+      provisionalRef.current
+        ? { k: "pending", a: { vx: a.vx, vy: a.vy }, t: performance.now() }
+        : { k: "click", a },
+    );
+  };
 
   const name = demo?.targetName ?? "";
   // REQ-297 — the frame's look: greyed, dimmed and under the waiting overlay while the screen in it
@@ -1566,6 +1753,7 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
               <PointerGhost
                 at={ghost.at}
                 outside={ghost.outside}
+                dir={ghost.dir}
                 color={demo.presenters.find((p) => p.userId === demo.pid)
                   ?.color ?? PRESENTER_COLORS[0]}
                 z={Z + 1}
@@ -1589,8 +1777,26 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
                 {t("demoMode.pointerOff", { name })}
               </div>
             )}
+            {/* REQ-645 (demo cycle 5 m36) — another of their tabs is shown now: said, until he moves */}
+            {mirrored && tabNote !== null && !off && (
+              <div
+                data-cy="demo-tab-switched"
+                role="status"
+                style={`position:absolute;left:${
+                  fit.left + fit.width / 2
+                }px;top:${
+                  fit.top - bannerH
+                }px;transform:translate(-50%,-50%);z-index:${
+                  Z + 2
+                };pointer-events:none;white-space:nowrap;max-width:${
+                  Math.max(200, fit.width)
+                }px;overflow:hidden;text-overflow:ellipsis;padding:4px 12px;border-radius:999px;border:1px solid rgba(255,255,255,.85);background:#3d2e1b;color:#fff;font:inherit;font-size:12.5px;font-weight:700;box-shadow:0 2px 10px rgba(0,0,0,.45)`}
+              >
+                {t("demoMode.tabSwitched", { name, path: tabNote })}
+              </div>
+            )}
             {/* REQ-538 (demo cycle 4 M1) — his arrow is not on their screen: said, until it is */}
-            {mirrored && absent && !off && (
+            {mirrored && absent && !off && tabNote === null && (
               <div
                 data-cy="demo-pointer-absent"
                 role="status"
