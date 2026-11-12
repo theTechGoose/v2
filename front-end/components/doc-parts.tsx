@@ -54,7 +54,8 @@ export interface DocContractor {
 
 export interface LineItem {
   description: string;
-  /** REQ-264 (M15): per-language text, keyed by lang code. */
+  /** REQ-264 (M15) / REQ-256: the line's text per language, keyed by lang
+   *  code; the document picks its own. */
   descriptionByLang?: Record<string, string>;
   price?: number;
   quantity?: number;

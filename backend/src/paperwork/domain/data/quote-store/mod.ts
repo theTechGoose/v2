@@ -34,11 +34,16 @@ export class QuoteStore {
   async create(
     userId: string,
     input: CreateQuoteDto,
-    opts?: {
-      jobNameLang?: "en" | "es";
-      /** REQ-241: the mark an isSample quote shows instead of a Q- number */
-      sampleNumber?: string;
-    } & CreateNumberedOpts,
+    opts?:
+      & {
+        jobNameLang?: "en" | "es";
+        /** REQ-241: the mark an isSample quote shows instead of a Q- number */
+        sampleNumber?: string;
+        /** REQ-256: the onboarding sample takes no Q- number — the first
+         *  real quote is Q-001. Written without an allocation. */
+        unnumbered?: boolean;
+      }
+      & CreateNumberedOpts,
   ): Promise<Quote> {
     const id = crypto.randomUUID();
     const now = new Date().toISOString();
@@ -68,6 +73,15 @@ export class QuoteStore {
     // REQ-204: the customer as they are today travels with the document.
     const customerSnapshot = await snapshotCustomer(quote.customerId, userId);
     if (customerSnapshot) quote.customerSnapshot = customerSnapshot;
+    if (opts?.unnumbered) {
+      const kv = await getKv();
+      const res = await kv.atomic()
+        .set([PREFIX, id], quote)
+        .set([INDEX_PREFIX, userId, id], id)
+        .commit();
+      if (!res.ok) throw new Error(`quote ${id}: write refused`);
+      return quote;
+    }
     // REQ-241: the onboarding sample (P-15) stays out of the owner's Q-
     // sequence — it would use up Q-001 and lock the starting number
     // (REQ-199). It carries its own mark instead of a Q- number.

@@ -112,6 +112,9 @@ export interface QuotePublic {
   summaryByLang?: Record<string, string>;
   /** REQ-263 (demo ai-assistant-m2): where the job is. */
   serviceAddress?: string;
+  /** REQ-256: the onboarding "see what your customer sees" sample — shown
+   *  as a sample (no number, not sent) to a placeholder customer. */
+  isSample?: boolean;
   lineItems?: LineItem[];
   terms?: Term[];
   createdAt?: string;
@@ -293,16 +296,19 @@ export function QuoteDoc(
   // its date come from the public projection. Rows written before numbering
   // keep the old #ID reference.
   const docNumber = quote.number ?? `#${quote.id.slice(0, 8).toUpperCase()}`;
-  const headline = docHeadline(
-    {
-      number: docNumber,
-      version: quote.version ?? 1,
-      state: quote.state ??
-        (signed ? "accepted" : declined ? "declined" : "sent"),
-      date: signed ? view.acceptedAt : quote.publishedAt,
-    },
-    lang,
-  );
+  // REQ-256: the onboarding sample has no number and was sent to no one.
+  const headline = quote.isSample
+    ? tFor(lang, "quoteDoc.sampleHeadline")
+    : docHeadline(
+      {
+        number: docNumber,
+        version: quote.version ?? 1,
+        state: quote.state ??
+          (signed ? "accepted" : declined ? "declined" : "sent"),
+        date: signed ? view.acceptedAt : quote.publishedAt,
+      },
+      lang,
+    );
   const related = relatedDocumentRows(quote, lang);
   // REQ-251 (demo m13): a signed agreement hands the customer straight to
   // the open invoice the signature billed — not just a small related row.
@@ -476,7 +482,10 @@ export function QuoteDoc(
           >
             <PartyCard
               role={t.to}
-              name={customerName}
+              name={customerName ??
+                (quote.isSample
+                  ? tFor(lang, "quoteDoc.sampleCustomer")
+                  : undefined)}
               email={quote.customer?.email}
               phone={quote.customer?.phoneNumber}
             />

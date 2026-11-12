@@ -32,6 +32,7 @@ export class LineItemDto {
   @IsString()
   description!: string;
 
+
   @IsNumber()
   quantity!: number;
 
@@ -42,9 +43,10 @@ export class LineItemDto {
   @IsNumber()
   price!: number;
 
-  /** REQ-264 (M15): per-language cache of `description`, keyed by lang code.
-   *  Filled server-side by TranslateQuote; readers render
-   *  descriptionByLang[lang] ?? description. */
+  /** REQ-264 (M15) / REQ-256: the line's text per language, keyed by lang
+   *  code — filled server-side by TranslateQuote, or written per language by
+   *  the onboarding sample, so the public page's EN | ES toggle flips it.
+   *  Readers render descriptionByLang[lang] ?? description. */
   @IsOptional()
   @IsObject()
   descriptionByLang?: Record<string, string>;

@@ -34,9 +34,17 @@ import {
 } from "../clients/profile.ts";
 import { isAnswered } from "../../shared/quote-flow/onboarding-questions.ts";
 import { isPlaceholderName } from "../../shared/quote-flow/outbound-identity.ts";
-import { ONBOARDING_PLANS, PRICING_PLANS } from "../../shared/quote-flow/pricing-plans.ts";
+import {
+  ONBOARDING_PLANS,
+  PRICING_PLANS,
+} from "../../shared/quote-flow/pricing-plans.ts";
 import { PlanCards } from "../components/PlanCards.tsx";
-import { handoffPage, pickErrorOf, planViewOf, resumesAfterPlan } from "../lib/plan-return.ts";
+import {
+  handoffPage,
+  pickErrorOf,
+  planViewOf,
+  resumesAfterPlan,
+} from "../lib/plan-return.ts";
 import { indexAfterPlan, openSteps, stepCounter } from "../lib/welcome-steps.ts";
 import { filesClient } from "../clients/files.ts";
 import {
@@ -965,6 +973,9 @@ function InsuranceStep({ ctx }: { ctx: StepCtx }) {
 function SampleQuoteStep({ ctx }: { ctx: StepCtx }) {
   const [busy, setBusy] = useState(false);
   const quoteId = ctx.sampleQuoteId;
+  // REQ-256: the sample opens in the wizard's language — the quote stores its
+  // content in both, so the frame follows the EN | ES toggle.
+  const sampleHref = `/q/${quoteId}?lang=${langSignal.value}`;
 
   // Final step: Continue marks onboarding finished and lands the user on the
   // assistant's NEW-chat view (/assistant renders an empty conversation) —
@@ -988,13 +999,13 @@ function SampleQuoteStep({ ctx }: { ctx: StepCtx }) {
             <div class="welcome__sample-frame-wrap">
               <iframe
                 class="welcome__sample-frame"
-                src={`/q/${quoteId}`}
+                src={sampleHref}
                 title={t("welcome.sample.question")}
               />
             </div>
             <a
               class="welcome__sample-link"
-              href={`/q/${quoteId}`}
+              href={sampleHref}
               target="_blank"
               rel="noopener noreferrer"
             >
@@ -1027,7 +1038,6 @@ function SampleQuoteStep({ ctx }: { ctx: StepCtx }) {
   );
 }
 
-
 // REQ-054 — "in onboarding a user can pick their plan": the public monthly plans of the one
 // pricing module (ONBOARDING_PLANS), as cards like the ones /settings shows (PlanCards) — though
 // not the hidden Monster Assist+, which is settings' alone (REQ-119). A card is a form (REQ-059): a
@@ -1047,12 +1057,21 @@ function PlanStep({ ctx }: { ctx: StepCtx }) {
   const lang = langSignal.value;
   const hasEmail = Boolean(ctx.snap.user.email?.trim());
   const plans = ONBOARDING_PLANS; // REQ-119 — the public monthly plans; the hidden Monster Assist+ is settings' alone
-  const nameOf = (id: string) => PRICING_PLANS.find((p) => p.id === id)?.name ?? id; // REQ-064 — the test tier has a name too
+  const nameOf = (id: string) =>
+    PRICING_PLANS.find((p) => p.id === id)?.name ?? id; // REQ-064 — the test tier has a name too
   // a pick the backend refused came back here saying why (/plan/pick)
   const [err, setErr] = useState("");
   useEffect(() => {
     const why = pickErrorOf(location.search);
-    if (why) setErr(t(why === "email-required" ? "welcome.plan.emailFirst" : why === "merchant-unknown" ? "plan.merchantUnknown" : "plan.error"));
+    if (why) {
+      setErr(t(
+        why === "email-required"
+          ? "welcome.plan.emailFirst"
+          : why === "merchant-unknown"
+          ? "plan.merchantUnknown"
+          : "plan.error",
+      ));
+    }
   }, []);
 
   const settled = plan?.status === "active" || plan?.status === "free";
@@ -1094,7 +1113,11 @@ function PlanStep({ ctx }: { ctx: StepCtx }) {
               <b>{nameOf(plan.planId)}</b> · {t("plan.pending")}
             </p>
             <div class="welcome__plan-actions">
-              <a class="welcome__btn welcome__btn--primary" data-cy="plan-pay-link" href={plan.payUrl}>
+              <a
+                class="welcome__btn welcome__btn--primary"
+                data-cy="plan-pay-link"
+                href={plan.payUrl}
+              >
                 {t("plan.continue")} →
               </a>
             </div>
@@ -1107,7 +1130,11 @@ function PlanStep({ ctx }: { ctx: StepCtx }) {
               <b>{nameOf(plan.planId)}</b> · {t("plan.preparing")}
             </p>
             <div class="welcome__plan-actions">
-              <a class="welcome__btn welcome__btn--primary" data-cy="plan-handoff-link" href={handoffPage("/welcome")}>
+              <a
+                class="welcome__btn welcome__btn--primary"
+                data-cy="plan-handoff-link"
+                href={handoffPage("/welcome")}
+              >
                 {t("plan.preparingOpen")} →
               </a>
             </div>
@@ -1122,12 +1149,21 @@ function PlanStep({ ctx }: { ctx: StepCtx }) {
               disabled={(p) => p.priceCents > 0 && !hasEmail}
               back="/welcome"
             />
-            <p class="welcome__plan-custom">{t("welcome.plan.custom", { phone: SUPPORT_PHONE_DISPLAY })}</p>
-            {!hasEmail ? <p class="welcome__plan-note">{t("welcome.plan.emailFirst")}</p> : null}
+            <p class="welcome__plan-custom">
+              {t("welcome.plan.custom", { phone: SUPPORT_PHONE_DISPLAY })}
+            </p>
+            {!hasEmail
+              ? <p class="welcome__plan-note">{t("welcome.plan.emailFirst")}</p>
+              : null}
           </div>
         )}
       {err ? <p class="welcome__error" role="alert">{err}</p> : null}
-      <StepFooter ctx={ctx} valid={settled} busy={false} onContinue={ctx.advance} />
+      <StepFooter
+        ctx={ctx}
+        valid={settled}
+        busy={false}
+        onContinue={ctx.advance}
+      />
     </StepBody>
   );
 }
@@ -1227,10 +1263,10 @@ export default function WelcomeWizard(
   );
   const [, force] = useState(0);
 
-  // Pre-generate the sample quote while the user fills the form so the
-  // "see what your customer sees" step renders instantly. Idempotent
-  // server-side (per-user tag), and the public page loads branding live,
-  // so business name / logo entered on later steps still show up.
+  // REQ-256: the sample quote is made when its step comes up — not at
+  // mount — so it is cut from the business the wizard just learned (its trade
+  // is read off the business name). Idempotent server-side (per-user flag),
+  // and the public page loads branding live.
   const [sampleQuoteId, setSampleQuoteId] = useState("");
   const [sampleQuoteFailed, setSampleQuoteFailed] = useState(false);
   const samplePending = useRef(false);
@@ -1248,9 +1284,6 @@ export default function WelcomeWizard(
         samplePending.current = false;
       });
   }
-  useEffect(() => {
-    ensureSampleQuote();
-  }, []);
 
   // Seed the client language, then re-render whenever the language toggles.
   //
@@ -1278,6 +1311,9 @@ export default function WelcomeWizard(
   const step = steps[index];
   const [skipping, setSkipping] = useState(false);
   const StepComp = step.Component;
+  useEffect(() => {
+    if (step.id === "sampleQuote") ensureSampleQuote();
+  }, [step.id]);
 
   const ctx: StepCtx = {
     snap,

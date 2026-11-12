@@ -46,7 +46,7 @@ async function login(base: string, phone: string): Promise<string> {
   return v.sessionId;
 }
 
-Deno.test("REQ-241 e2e: after POST /sample-quote the first real quote is Q-001 and the sample reads SAMPLE, not a Q- number", async () => {
+Deno.test("REQ-241 e2e: after POST /sample-quote the first real quote is Q-001 and the sample has no Q- number", async () => {
   await withServer(async (base) => {
     const sid = await login(base, "+15125552410");
     const auth = { ...J, "x-session-id": sid };
@@ -69,7 +69,8 @@ Deno.test("REQ-241 e2e: after POST /sample-quote the first real quote is Q-001 a
     const sampleRow = await fetch(`${base}/quotes/${sample.quoteId}`, {
       headers: auth,
     }).then((r) => r.json());
-    // the mark in the owner's language (a new account is Spanish by default)
-    assertEquals(["SAMPLE", "MUESTRA"].includes(sampleRow.number), true);
+    // REQ-256 supersedes REQ-241's "SAMPLE"/"MUESTRA" mark (reconciled on
+    // demo-fixes): the sample carries no number at all, never a Q- one.
+    assertEquals(sampleRow.number, undefined);
   });
 });
