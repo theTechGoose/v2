@@ -666,3 +666,48 @@ Deno.test("REQ-578 m34: the quote-phase prompt (en and es) says never output a $
   }
   await resetKv();
 });
+
+// ---------------------------------------------------------------------------
+// REQ-657 (demo-loop cycle 5, M13) — a folded $0 line does not repeat the host
+// ---------------------------------------------------------------------------
+
+Deno.test("REQ-657 M13: the demo's $1,450-total living-room job is saved as one line that names its detail once", async () => {
+  const ctx = await fresh();
+  const conv = await ctx.conversations.create({ userId: "u-1" });
+  // pair 1's answer from gpt-4o-mini (demo report M13)
+  const detail = "(270 sqft, 2 coats, paint supplied by contractor)";
+  script(ctx.llm, [{
+    text: "Drafting a quote.",
+    action: {
+      type: "create_quote",
+      payload: {
+        summary: "Living room painting — Linda Johnson",
+        lineItems: [
+          {
+            description: `Living room painting ${detail}`,
+            amountCents: 145_000,
+          },
+          {
+            description: `Walls and ceiling painting ${detail}`,
+            amountCents: 0,
+          },
+        ],
+      },
+    },
+  }]);
+  const result = await ctx.flow.run({
+    userId: "u-1",
+    conversationId: conv.id,
+    content:
+      "Quote for Linda Johnson, paint living room 15x18, walls and ceiling, 2 coats, $1,450 total",
+  });
+  const quoteId = result.conversation.quoteId!;
+  assert(quoteId, "a draft is bound");
+  const stored = await ctx.quotes.getOwned(quoteId, "u-1");
+  assertEquals(stored.estimatedTotal, 145_000);
+  assertEquals(
+    stored.lineItems.map((l) => l.description),
+    [`Living room painting ${detail} (incl. walls and ceiling painting)`],
+  );
+  await resetKv();
+});
