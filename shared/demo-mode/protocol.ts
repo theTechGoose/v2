@@ -93,10 +93,15 @@ export type LeaveWhy = "navigating" | "closing";
 
 /** REQ-436 — a browser tab's key on the wire: what front-end/lib/demo-mode/tab-key.ts makes */
 export const TAB_KEY = /^[A-Za-z0-9_-]{1,64}$/;
-/** REQ-436 — a claim's browser-tab key and focus, each checked; junk is dropped, never the claim */
-const claimExtras = (o: Record<string, unknown>): { tab?: string; f?: 1 } => ({
+/** REQ-436 — a claim's browser-tab key and focus, each checked; junk is dropped, never the claim.
+ *  REQ-640 (cycle 5, M29) — and `i: 1` when the claim is backed by the customer's input (a click,
+ *  a key, the tab brought to the front), which wins a tie over a load or focus claim */
+const claimExtras = (
+  o: Record<string, unknown>,
+): { tab?: string; f?: 1; i?: 1 } => ({
   ...(typeof o.tab === "string" && TAB_KEY.test(o.tab) ? { tab: o.tab } : {}),
   ...(o.f === 1 ? { f: 1 as const } : {}),
+  ...(o.i === 1 ? { i: 1 as const } : {}),
 });
 
 const isLeaveWhy = (x: unknown): x is LeaveWhy =>
@@ -186,7 +191,8 @@ export type ClientMessage =
   // REQ-436 — `tab`: the BROWSER tab's key (every page of one tab carries the same); `f: 1`: the
   // page has focus. A page sends one on every welcome (`at` 0 when it never claimed) so a stage
   // knows a new page as the same browser tab
-  | { t: "claim"; at: number; tab?: string; f?: 1 }
+  // REQ-640 — `i: 1`: the claim is backed by the customer's input (not a load or focus claim)
+  | { t: "claim"; at: number; tab?: string; f?: 1; i?: 1 }
   | { t: "sync"; to: string }
   | { t: "end" }
   // REQ-391 — this socket's page is going, and why (the server says so when it is gone)
@@ -213,11 +219,23 @@ export type ServerMessage =
     pid?: string;
     cid?: string;
   }
-  | { t: "peer"; online: boolean; pid?: string; cid?: string; why?: LeaveWhy }
+  // REQ-640 (cycle 5, m24) — a customer tab's arrival on a stage's roster carries the tab's last
+  // claim (`at`, `tab`, `f`, `i`) when it made one, so a joining stage ranks it at once
+  | {
+    t: "peer";
+    online: boolean;
+    pid?: string;
+    cid?: string;
+    why?: LeaveWhy;
+    at?: number;
+    tab?: string;
+    f?: 1;
+    i?: 1;
+  }
   | { t: "time"; c: number; s: number }
   | { t: "signal"; from: Role; pid?: string; cid?: string; data: unknown }
   | { t: "relay"; from: Role; pid?: string; cid?: string; data: PeerMessage }
-  | { t: "claim"; cid: string; at: number; tab?: string; f?: 1 }
+  | { t: "claim"; cid: string; at: number; tab?: string; f?: 1; i?: 1 }
   | { t: "sync" }
   | { t: "replaced" }
   | { t: "ended"; by: Role; reason?: EndReason; pid?: string };
@@ -442,6 +460,10 @@ export function parseServerMessage(raw: string): ServerMessage | null {
           ...cidOf(o),
           // REQ-391 — why a socket went: on a departure only
           ...(!o.online && isLeaveWhy(o.why) ? { why: o.why } : {}),
+          // REQ-640 — a customer tab's kept claim: on an arrival only
+          ...(o.online && !o.pid && num(o.at)
+            ? { at: o.at, ...claimExtras(o) }
+            : {}),
         }
         : null;
     case "time":

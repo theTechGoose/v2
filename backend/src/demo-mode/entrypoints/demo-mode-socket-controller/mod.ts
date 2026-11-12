@@ -94,6 +94,11 @@ export class DemoModeSocketController {
             online: true,
             ...(p.pid ? { pid: p.pid } : {}),
             cid: p.cid,
+            // REQ-640 (cycle 5, m24) — a tab's kept claim: the stage ranks it on arrival
+            ...(p.at !== undefined ? { at: p.at } : {}),
+            ...(p.tab ? { tab: p.tab } : {}),
+            ...(p.f === 1 ? { f: 1 as const } : {}),
+            ...(p.i === 1 ? { i: 1 as const } : {}),
           });
         }
       });

@@ -1115,3 +1115,122 @@ Deno.test("REQ-436 (demo-loop cycle 3, M2/M2b) a tab's claim carries its browser
     await b.close();
   }
 });
+
+// REQ-640 (demo-loop cycle 5, m24 + M29) — a stage that joins (or reloads) learned the customer's
+// tabs as bare `peer`s and followed the one that arrived LAST (at 0) until each tab reclaimed. The
+// hub now keeps each customer socket's last claim (at, browser-tab key, focus, input-backed) and
+// sends it with the roster: in the joining stage's greeting in this hub, and on the reply a hub
+// sends a stage that arrives on another. A tab that leaves takes its claim with it.
+Deno.test("REQ-640 (demo-loop cycle 5, m24) a joining stage's roster carries each tab's last claim — in its greeting in this hub and on the replies across hubs; an input-backed claim says so (i: 1)", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const a = DemoHub.isolated("a");
+  const b = DemoHub.isolated("b");
+  const tab1 = socketPeer("viewer");
+  const tab2 = socketPeer("viewer");
+  const hans = socketPeer("presenter", "hans");
+  const lia = socketPeer("presenter", "lia");
+  try {
+    const t1 = await a.join("s640", tab1);
+    const t2 = await a.join("s640", tab2);
+    const input = parseClientMessage(
+      JSON.stringify({ t: "claim", at: 300, tab: "tab-A", f: 1, i: 1 }),
+    );
+    assertEquals(input, { t: "claim", at: 300, tab: "tab-A", f: 1, i: 1 });
+    if (input?.t !== "claim") throw new Error("not a claim");
+    await a.send("s640", { role: "viewer", cid: t1.cid }, input);
+    await a.send("s640", { role: "viewer", cid: t2.cid }, {
+      t: "claim",
+      at: 0,
+      tab: "tab-Q",
+    });
+
+    // a stage joining THIS hub: its greeting lists both tabs with their claims
+    const g = await a.join("s640", hans);
+    const byCid = new Map(g.peers.map((p) => [p.cid, p]));
+    assertEquals(byCid.get(t1.cid), {
+      role: "viewer",
+      cid: t1.cid,
+      at: 300,
+      tab: "tab-A",
+      f: 1,
+      i: 1,
+    });
+    assertEquals(byCid.get(t2.cid), {
+      role: "viewer",
+      cid: t2.cid,
+      at: 0,
+      tab: "tab-Q",
+    });
+
+    // a stage joining ANOTHER hub: the replies from hub a carry the claims too
+    await b.join("s640", lia);
+    await until(
+      "the stage on hub b hears tab 1 with its claim",
+      () =>
+        lia.inbox.some((m) =>
+          m.t === "peer" && m.online && m.cid === t1.cid && m.at === 300
+        ),
+    );
+    // (the room's one-second look-back may also replay tab 1's bare arrival from before it claimed)
+    const heard = lia.inbox.find((m) =>
+      m.t === "peer" && m.online && m.cid === t1.cid && m.at !== undefined
+    )!;
+    assertEquals(heard, {
+      t: "peer",
+      online: true,
+      cid: t1.cid,
+      at: 300,
+      tab: "tab-A",
+      f: 1,
+      i: 1,
+    });
+    assertEquals(
+      parseServerMessage(JSON.stringify(heard)),
+      heard,
+      "the stage's parser keeps the roster claim",
+    );
+    // a tab that leaves takes its claim along: a later stage hears nothing of it
+    t1.leave();
+    const g2 = await a.join("s640", socketPeer("presenter", "max"));
+    assertEquals(g2.peers.some((p) => p.cid === t1.cid), false);
+  } finally {
+    await a.close();
+    await b.close();
+    await resetKv();
+  }
+});
+
+Deno.test("REQ-640 (demo-loop cycle 5, M29) a live claim reaches every stage with i: 1 when it was input-backed; junk `i` is dropped, never the claim", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const a = DemoHub.isolated("a");
+  const hans = socketPeer("presenter", "hans");
+  const tab1 = socketPeer("viewer");
+  try {
+    await a.join("s640b", hans);
+    const t1 = await a.join("s640b", tab1);
+    await a.send("s640b", { role: "viewer", cid: t1.cid }, {
+      t: "claim",
+      at: 900,
+      tab: "tab-A",
+      i: 1,
+    });
+    assertEquals(hans.inbox.filter((m) => m.t === "claim"), [
+      { t: "claim", cid: t1.cid, at: 900, tab: "tab-A", i: 1 },
+    ]);
+    assertEquals(
+      parseServerMessage(
+        JSON.stringify({ t: "claim", cid: "c", at: 5, i: 1 }),
+      ),
+      { t: "claim", cid: "c", at: 5, i: 1 },
+    );
+    assertEquals(
+      parseClientMessage(JSON.stringify({ t: "claim", at: 5, i: "yes" })),
+      { t: "claim", at: 5 },
+    );
+  } finally {
+    await a.close();
+    await resetKv();
+  }
+});

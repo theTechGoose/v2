@@ -466,14 +466,14 @@ describe("REQ-232 the customer's tab (demo-lifecycle-m3)", () => {
     jest.useFakeTimers();
     jest.setSystemTime(1_000);
     const t = tab();
-    t.link.claim();
+    t.link.claim(); // REQ-640 — a click: input-backed (i: 1)
     expect(t.ws.sent).toEqual([]); // the socket is not up yet
     t.welcome();
-    expect(t.ws.of("claim")).toEqual([{ t: "claim", at: 1_000 }]);
+    expect(t.ws.of("claim")).toEqual([{ t: "claim", at: 1_000, i: 1 }]);
     t.ws.recv({ t: "peer", online: true, pid: "hans", cid: "s1" });
     expect(t.ws.of("claim")).toEqual([
-      { t: "claim", at: 1_000 },
-      { t: "claim", at: 1_000 },
+      { t: "claim", at: 1_000, i: 1 },
+      { t: "claim", at: 1_000, i: 1 },
     ]);
     const before = t.asks();
     t.ws.recv({ t: "sync" });
@@ -491,7 +491,7 @@ describe("REQ-232 the customer's tab (demo-lifecycle-m3)", () => {
       peerOnline: true,
       cid: "t1b",
     });
-    expect(again.of("claim")).toEqual([{ t: "claim", at: 1_000 }]);
+    expect(again.of("claim")).toEqual([{ t: "claim", at: 1_000, i: 1 }]);
     t.link.close();
   });
 
@@ -633,7 +633,8 @@ describe("REQ-232 the wiring: plain words, no auto-placement, Return really retu
   });
 
   test("the customer's tab claims the stage when it is in front, gets focus or is clicked", () => {
-    expect(overlay).toMatch(/\.claim\(\)/);
+    // REQ-640 — the overlay hands the link what backs the claim (input, load, focus)
+    expect(overlay).toMatch(/\.claim\((how)?\)/);
     for (const ev of ['"focus"', '"visibilitychange"', '"pointerdown"']) {
       expect(overlay).toContain(ev);
     }

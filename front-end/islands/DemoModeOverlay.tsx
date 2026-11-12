@@ -115,6 +115,7 @@ import { type ActivePoll, activePoll } from "../lib/demo-mode/active-poll.ts";
 import { handCursor, sessionStore } from "../lib/demo-mode/cursor-handoff.ts";
 import {
   connectDemo,
+  type ClaimHow,
   type DemoLink,
   type LinkStatus,
   type PeerFrom,
@@ -823,6 +824,9 @@ export default function DemoModeOverlay() {
     });
     senderRef.current = sender;
     recorderRef.current = recorder;
+    // REQ-640 (cycle 5, M29) — when this page began loading, on the clock every tab of the browser
+    // shares: what its load and focus claims say (never the moment the overlay hydrated)
+    const pageLoadedAt = performance.timeOrigin || Date.now();
     link = connectDemo({
       sessionId: demo.id,
       role: demo.role,
@@ -830,6 +834,7 @@ export default function DemoModeOverlay() {
       // keeps following the tab while its next page loads; and whether this page has focus
       tab: demoTabKey(sessionStore()),
       hasFocus: () => document.hasFocus(),
+      loadedAt: pageLoadedAt,
       onPresence: (pid, online) => {
         lastT.delete(pid); // their stage came or went: its clock starts over
         // a presenter who left takes their pointer along
@@ -937,11 +942,17 @@ export default function DemoModeOverlay() {
     // REQ-436 (cycle 3, M2/M2c/M5) — "in front" at load is visible AND focused: a visible page
     // without focus (a background tab that reloaded itself, a window beside another) never takes
     // the stage; a keyboard, wheel or touch user claims as a click does (at most once a second)
+    // REQ-640 (cycle 5, M29) — a click, a key, the tab brought to the front claim at "now" and say
+    // the customer's input backs them; the load claim and a focus event (headless browsers
+    // emulate focus in every tab) say the page's load start, so they never outrank real use
     let lastClaim = 0;
-    const claim = () => {
-      lastClaim = Date.now();
-      link?.claim();
+    const claim = (how: ClaimHow = "input") => {
+      if (how === "input") lastClaim = Date.now();
+      link?.claim(how);
     };
+    const onFocus = () => claim("focus");
+    // a listener is handed the event: never let it pass for `how`
+    const onPointer = () => claim("input");
     const used = () => {
       if (Date.now() - lastClaim >= 1_000) claim();
     };
@@ -959,18 +970,18 @@ export default function DemoModeOverlay() {
         inFront: inFront(),
         selfReload: cameBySelfReload(),
         tab: tabKey,
-        loadedAt: performance.timeOrigin || Date.now(),
+        loadedAt: pageLoadedAt,
         newest: newestInput(browserStore("local")),
       })
-    ) claim();
+    ) claim("load");
     // a page restored from the back-forward cache: the customer came back to it in this tab
     const onShow = (e: PageTransitionEvent) => {
       if (e.persisted && inFront()) claim();
     };
     globalThis.addEventListener("pageshow", onShow);
-    globalThis.addEventListener("focus", claim);
+    globalThis.addEventListener("focus", onFocus);
     document.addEventListener("visibilitychange", onVisible);
-    document.addEventListener("pointerdown", claim, {
+    document.addEventListener("pointerdown", onPointer, {
       capture: true,
       passive: true,
     });
@@ -984,9 +995,11 @@ export default function DemoModeOverlay() {
       globalThis.removeEventListener("pagehide", onHide);
       hint.stop();
       globalThis.removeEventListener("pageshow", onShow);
-      globalThis.removeEventListener("focus", claim);
+      globalThis.removeEventListener("focus", onFocus);
       document.removeEventListener("visibilitychange", onVisible);
-      document.removeEventListener("pointerdown", claim, { capture: true });
+      document.removeEventListener("pointerdown", onPointer, {
+        capture: true,
+      });
       document.removeEventListener("keydown", used, { capture: true });
       document.removeEventListener("wheel", used, { capture: true });
       document.removeEventListener("touchstart", used, { capture: true });

@@ -32,8 +32,17 @@ export interface From {
   cid?: string;
 }
 
-/** REQ-232 — a socket already in the demo, as a joining one is told of it */
-export interface PeerInfo {
+/** REQ-640 (demo-loop cycle 5, m24) — a customer tab's last claim, as the hub keeps it */
+export interface KeptClaim {
+  at: number;
+  tab?: string;
+  f?: 1;
+  i?: 1;
+}
+
+/** REQ-232 — a socket already in the demo, as a joining one is told of it. REQ-640 — a customer
+ *  tab carries its last claim, so a joining stage ranks it without waiting for a reclaim */
+export interface PeerInfo extends Partial<KeptClaim> {
   role: Role;
   pid?: string;
   cid: string;
@@ -105,6 +114,8 @@ export class DemoHub {
   private isolateId: string = crypto.randomUUID();
   /** REQ-232 — when each socket here joined */
   private joinedAt = new WeakMap<Peer, number>();
+  /** REQ-640 (cycle 5, m24) — each customer socket's last claim here, by cid (gone when it leaves) */
+  private claims = new Map<string, KeptClaim>();
 
   constructor(private demos: DemoSessionStore) {}
 
@@ -144,6 +155,7 @@ export class DemoHub {
       role: p.role,
       ...(p.pid ? { pid: p.pid } : {}),
       cid: p.cid,
+      ...(p.role === "viewer" ? this.claims.get(p.cid) : {}),
     }));
     // in the room before anything is awaited: a last peer leaving meanwhile must not drop it
     room.peers.add(peer);
@@ -163,6 +175,7 @@ export class DemoHub {
       left = true;
       // a presenter dropped from the demo (REQ-214) was taken out and announced already
       const wasIn = room.peers.delete(peer);
+      this.claims.delete(cid);
       // fire-and-forget: a peer leaving after the KV closed (shutdown, test
       // teardown) must not surface as an unhandled rejection
       if (wasIn) {
@@ -191,9 +204,12 @@ export class DemoHub {
       };
     }
     const why = !online && peer.leaving ? { why: peer.leaving } : {};
+    // REQ-640 — a tab still here says its last claim with its presence (a stage on another hub
+    // learns it from this reply, and ranks the tab at once)
+    const kept = online && peer.cid ? this.claims.get(peer.cid) : undefined;
     return {
       to: otherRole(peer.role),
-      msg: { t: "peer", online, ...cid, ...why },
+      msg: { t: "peer", online, ...cid, ...why, ...kept },
       reply,
     };
   }
@@ -215,16 +231,18 @@ export class DemoHub {
     };
     if (m.t === "claim") {
       if (from.role !== "viewer" || !from.cid) return Promise.resolve();
+      // REQ-436 — and which browser tab it is, and whether its page has focus; REQ-640 — and
+      // whether the customer's input backs it. Kept, for a stage that joins later (m24)
+      const kept: KeptClaim = {
+        at: m.at,
+        ...(m.tab ? { tab: m.tab } : {}),
+        ...(m.f === 1 ? { f: 1 as const } : {}),
+        ...(m.i === 1 ? { i: 1 as const } : {}),
+      };
+      if (this.isHere(sessionId, from.cid)) this.claims.set(from.cid, kept);
       return this.broadcast(sessionId, {
         to: "presenter",
-        // REQ-436 — and which browser tab it is, and whether its page has focus
-        msg: {
-          t: "claim",
-          cid: from.cid,
-          at: m.at,
-          ...(m.tab ? { tab: m.tab } : {}),
-          ...(m.f === 1 ? { f: 1 as const } : {}),
-        },
+        msg: { t: "claim", cid: from.cid, ...kept },
       });
     }
     if (m.t === "sync") {
@@ -299,8 +317,16 @@ export class DemoHub {
     });
   }
 
+  /** REQ-640 — socket `cid` is in this hub's room for the demo (a claim kept for a gone socket
+   *  would never be cleared) */
+  private isHere(sessionId: string, cid: string): boolean {
+    const room = this.rooms.get(sessionId);
+    return !!room && [...room.peers].some((p) => p.cid === cid);
+  }
+
   /** stop every watcher (tests, shutdown) */
   async close(): Promise<void> {
+    this.claims.clear();
     for (const [id, room] of this.rooms) {
       room.peers.clear();
       this.drop(id, room);
