@@ -1752,6 +1752,7 @@ export class HandleChatMessage {
               : {}),
             description: changeOrderAsk.description,
             deltaAmountCents: changeOrderAsk.deltaAmountCents,
+            ...(changeOrderAsk.setsLinePrice ? { setsLinePrice: true } : {}),
           },
         },
       };
@@ -2666,6 +2667,8 @@ export class HandleChatMessage {
         deltaAmountCents: llmResponse.action.payload.deltaAmountCents,
         // REQ-377 (B1): the money is settled against the quote in code.
         targetTotalCents: llmResponse.action.payload.targetTotalCents,
+        // REQ-661 (M15): a correction reprices the line it names.
+        setsLinePrice: llmResponse.action.payload.setsLinePrice,
         userText,
       });
       // REQ-392 (M7): a line added to the bound draft (or its pending
