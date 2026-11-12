@@ -86,6 +86,9 @@ function mapCard(c: BackendQuoteCard, lang: "en" | "es"): Quote {
   const client = c.customerName ?? fallbackClient;
   return {
     id: c.id,
+    // REQ-313 (m48): the card shows the quote's own number, not its position.
+    number: c.number,
+    version: c.version,
     // Prefer the ≤3-word Job Name (roadmap p.10) so cards read the same as
     // the quote, agreement, and invoice headings; summary is the fallback.
     title: c.jobName?.trim() || c.summary ||

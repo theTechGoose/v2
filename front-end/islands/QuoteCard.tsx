@@ -148,6 +148,11 @@ export default function QuoteCard(
     >
       <div class="qcard__mood">
         <div class="qcard__numeral">{String(idx + 1).padStart(2, "0")}</div>
+        {q.number && (
+          /* REQ-313 (demo m48): the quote's own number — the big numeral
+             behind it is only the card's position in the track. */
+          <div class="qcard__number">{q.number}</div>
+        )}
         <div class="qcard__status">
           <span class="qcard__status-dot" />
           {q.isSample
@@ -205,10 +210,19 @@ export default function QuoteCard(
             <I d={ICN.x} size={14} sw={2.5} />
           </button>
           <div class="qcard__back-eyebrow">
+            {q.number
+              ? `${q.number} · ${
+                tFor(lang, "quotes.ledger.versionN", { n: q.version ?? 1 })
+              } · `
+              : null}
             {tFor(lang, "quoteCard.back.eyebrow")}
           </div>
           <p class="qcard__back-big">
-            {q.opens}
+            {
+              /* REQ-313 (p15-11): a real space before the unit, so the DOM
+                text reads "0 aperturas", not "0aperturas". */
+            }
+            {q.opens}{" "}
             <small>
               {tFor(
                 lang,

@@ -40,6 +40,11 @@ export interface Quote {
   /** REQ-236: the channel of the latest send attempt — a texted quote never
    *  gets "check your email / spam" copy. */
   channel?: "email" | "sms" | "both";
+  /** REQ-313 (demo m48): the quote's own REQ-198 number ("Q-001") and its
+   *  published version — what the card shows instead of a positional 01/02.
+   *  Absent on the onboarding sample (REQ-256: it takes no Q- number). */
+  number?: string;
+  version?: number;
 }
 
 /** REQ-236: the /quotes tracks. "Out for response" holds only quotes that
