@@ -11,6 +11,7 @@ import { type DomainEvent, EventBus } from "@core/business/events/mod.ts";
 import { TERMS_WIZARD_V1 } from "@agents/domain/business/terms-wizard-spec/mod.ts";
 import type { AgentMessage } from "@agents/dto/message.ts";
 import { resetKv } from "@core/data/kv/mod.ts";
+import { previewTermRows } from "#quote-flow/wizard-terms.ts";
 
 function fresh() {
   const conversations = new AgentConversationStore();
@@ -832,3 +833,71 @@ for (
     });
   }
 }
+
+// REQ-347 (demo-loop cycle 1, M16): the send card renders before the island
+// re-reads the quote, so its term rows come from the coordinator's transcript.
+// For a Spanish contractor that transcript is Spanish — the preview helper must
+// still land on exactly the English terms the agreement stores.
+Deno.test("REQ-347 M16 a Spanish contractor's transcript previews as the same English terms the quote stores", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const { flow, user, conv, quotes, conversations } = await setupTermsForRealUser({
+    phoneNumber: "+15403331347",
+    language: "es",
+  });
+  const quote = await quotes.create(user.id, {
+    summary: "Techo",
+    lineItems: [],
+    estimatedTotal: 12_500,
+    status: "sent",
+  });
+  await conversations.update(conv.id, {
+    quoteId: quote.id,
+    customerId: "cust-1",
+  });
+  const picks: Record<string, string> = {
+    customer: "use_active",
+    start_date: "next_week",
+    wraps: "1_day",
+    payment_terms: "due_now",
+    warranty: "12_months",
+  };
+  const transcript: AgentMessage[] = [];
+  for (const step of TERMS_WIZARD_V1.steps) {
+    const res = await flow.run({
+      userId: user.id,
+      conversationId: conv.id,
+      stepId: step.id,
+      optionId: picks[step.id],
+    });
+    transcript.push(...res.newMessages);
+  }
+  // The transcript really is Spanish (the reason the old split leaked it).
+  assert(
+    transcript.some((m) => m.content === "Inicio: La próxima semana"),
+    `Spanish transcript: ${transcript.map((m) => m.content).join(" | ")}`,
+  );
+  const stored = (await quotes.getOwned(quote.id, user.id)).terms ?? [];
+  const byStep = (rows: { stepId: string; value: string }[]) =>
+    Object.fromEntries(rows.map((r) => [r.stepId, r.value]));
+  assertEquals(byStep(stored), {
+    start_date: "Next week",
+    wraps: "1 day",
+    payment_terms: "Due Now",
+    warranty: "1 year",
+  });
+  const rows = previewTermRows({
+    quoteTerms: undefined,
+    messages: transcript,
+    previewLang: "en",
+    t,
+    localize: (v) => v,
+  });
+  assertEquals(byStep(rows), {
+    start_date: "Next week",
+    wraps: "Estimated: 1 day",
+    payment_terms: "Due Now",
+    warranty: "1 year",
+  });
+  await resetKv();
+});

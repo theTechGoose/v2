@@ -16,6 +16,7 @@ import { EventBus } from "@core/business/events/mod.ts";
 import { t } from "@core/i18n/mod.ts";
 import { suggestedOptionId } from "@agents/domain/business/terms-prefill/mod.ts";
 import { customerContactError } from "#quote-flow/customer-contact.ts"; // REQ-278
+import { termFromPick } from "#quote-flow/wizard-terms.ts"; // REQ-347
 import type { AgentConversation } from "@agents/dto/conversation.ts";
 import type { AgentMessage } from "@agents/dto/message.ts";
 import type { WizardAnswer, WizardSpec, WizardState } from "@agents/dto/wizard.ts";
@@ -470,15 +471,13 @@ export class HandleWizardAnswer {
       // from the step/option ids on the payload, NOT the transcript text (which
       // is now rendered in the contractor's UI language and would poison the
       // base — localizeTermValue assumes EN input).
-      const stepDef = spec.steps.find((s) => s.id === stepId);
-      if (!stepDef) continue;
-      const optionDef = stepDef.options.find((o) => o.id === p?.optionId);
-      const label = t("en", stepDef.label);
-      const value = (!optionDef || optionDef.isCustom)
-        ? (p?.customValue ?? "").trim()
-        : t("en", optionDef.label);
-      if (!value) continue;
-      picks.push({ stepId, label, value });
+      // REQ-347: the same rule the in-app preview uses (shared termFromPick).
+      const term = termFromPick(
+        { stepId, optionId: p?.optionId, customValue: p?.customValue },
+        t,
+        spec.steps,
+      );
+      if (term) picks.push(term);
     }
     return picks;
   }
