@@ -27,18 +27,21 @@ export function zipError(raw: string): ZipErrorKey | null {
   return zip && !isValidUsZip(zip) ? "welcome.address.zipInvalid" : null;
 }
 
-export type HandleMethod = "zelle" | "venmo" | "cashapp";
+export type HandleMethod = "zelle" | "venmo" | "cashapp" | "paypal";
 export type HandleErrorKey = `welcome.payment.invalid.${HandleMethod}`;
 
 /** Venmo usernames: letters, digits, "-" and "_" after the "@". */
 const VENMO_USER = /^@[A-Za-z0-9_-]{2,30}$/;
 /** Cash App cashtags: "$" then a letter-led name of up to 20 characters. */
 const CASHTAG = /^\$[A-Za-z][A-Za-z0-9_]{0,19}$/;
+/** REQ-620: a PayPal.Me link ("paypal.me/name", with or without https/www). */
+const PAYPAL_ME =
+  /^(https?:\/\/)?(www\.)?paypal\.me\/[A-Za-z0-9_.-]{1,40}\/?$/i;
 
 /**
  * The message key for a payment handle a customer could not pay to, or null.
  * Zelle is a phone or an email by definition; Venmo also takes an @username,
- * Cash App a $cashtag.
+ * Cash App a $cashtag, PayPal a paypal.me/name link (REQ-620).
  */
 export function paymentHandleError(
   method: HandleMethod,
@@ -49,6 +52,7 @@ export function paymentHandleError(
   if (isValidCustomerPhone(v) || isValidCustomerEmail(v)) return null;
   if (method === "venmo" && VENMO_USER.test(v)) return null;
   if (method === "cashapp" && CASHTAG.test(v)) return null;
+  if (method === "paypal" && PAYPAL_ME.test(v)) return null;
   return `welcome.payment.invalid.${method}`;
 }
 
