@@ -27,6 +27,7 @@ import { isAccepted } from "#quote-flow/quote-status.ts";
 import { hasSignOverride } from "#quote-flow/public-doc-state.ts";
 import { groupVisits } from "#quote-flow/visit-groups.ts";
 import { sniffLogoImage } from "#quote-flow/logo-image.ts";
+import { logoVersion } from "#quote-flow/public-logo-url.ts";
 import {
   isValidSignerName,
   normalizeSignerName,
@@ -231,14 +232,31 @@ export class PaperworkPublicController {
       // REQ-252 (M30): only an image is ever served as the logo, typed by its bytes
       const type = await logoImageType(this.files, fileId, ownerId);
       if (!type) return ctx.json({ error: "no_logo" }, 404);
+      // REQ-613 (M31): the pages and emails ask for ?v=<logoVersion>. That URL's bytes never
+      // change (a new logo is a new version, so a new URL) → cache it for good. A bare URL or a
+      // stale ?v= is revalidated on every load against the version as its ETag, so a replaced
+      // logo shows at once instead of after a cache lifetime.
+      const version = logoVersion(fileId);
+      const etag = `"${version}"`;
+      const requested = new URL(ctx.req.url).searchParams.get("v");
+      const cacheControl = requested === version
+        ? "public, max-age=31536000, immutable"
+        : "no-cache";
+      const inm = ctx.req.header("if-none-match");
+      if (inm && inm.split(",").some((t) => t.trim().replace(/^W\//, "") === etag)) {
+        return new Response(null, {
+          status: 304,
+          headers: { etag, "cache-control": cacheControl },
+        });
+      }
       const bytes = await this.files.readBytes(fileId);
       return new Response(bytes as BodyInit, {
         status: 200,
         headers: {
           "content-type": type,
           "content-length": String(bytes.length),
-          // Short-lived cache: replacing the logo shows up within minutes.
-          "cache-control": "public, max-age=300",
+          etag,
+          "cache-control": cacheControl,
         },
       });
     } catch (e) {
@@ -1396,6 +1414,10 @@ interface PublicContractor {
    *  use it to render GET /public-logo/:kind/:id (roadmap p.2 — the logo
    *  shows on quotes & invoices). */
   hasLogo?: boolean;
+  /** REQ-613 (M31): a short tag of the current logo file (never the file id). Pages render
+   *  GET /public-logo/:kind/:id?v=<logoVersion>, so a replaced logo is a new URL. Present
+   *  only with hasLogo. */
+  logoVersion?: string;
 }
 
 /** Public-safe contractor projection — never returns internal IDs or
@@ -1443,9 +1465,11 @@ async function loadContractor(
         ident?.acceptedPaymentMethods,
       ),
       commsLanguage: ident?.commsLanguage === "es" ? "es" : "en",
-      // REQ-252: no <img> for a logo that would not draw
-      hasLogo: !!ident?.logoFileId &&
-        (await logoImageType(files, ident.logoFileId, ownerId)) !== null,
+      // REQ-252: no <img> for a logo that would not draw; REQ-613: its version rides along
+      ...(ident?.logoFileId &&
+          (await logoImageType(files, ident.logoFileId, ownerId)) !== null
+        ? { hasLogo: true, logoVersion: logoVersion(ident.logoFileId) }
+        : { hasLogo: false }),
     };
   } catch {
     return undefined;
