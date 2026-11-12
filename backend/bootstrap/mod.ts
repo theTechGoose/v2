@@ -11,6 +11,7 @@ import { FilesModule } from "@files/mod-root.ts";
 import { AnalyticsModule } from "@analytics/mod-root.ts";
 import { FieldModule } from "@field/mod-root.ts";
 import { FieldNotices } from "@field/domain/coordinators/field-notices/mod.ts";
+import { ScheduleInvoiceNudges } from "@paperwork/domain/coordinators/schedule-invoice-nudges/mod.ts";
 import { DemoModeModule } from "@demo-mode/mod-root.ts";
 
 @Module({
@@ -51,6 +52,13 @@ await app.init(AppModule);
   const notices = app.get(FieldNotices);
   const minute = notices.registerSweep();
   console.log(`[field/notices] minute sweep ${minute ? "on a timer" : "not available"}`);
+}
+// REQ-508 (demo cycle 3, m20) — the scheduled-invoice nudges: the same minute timer, a KV lease so
+// one isolate sweeps every account per period; no page view triggers it any more
+{
+  const nudges = app.get(ScheduleInvoiceNudges);
+  const minute = nudges.registerSweep();
+  console.log(`[schedule-invoice-nudges] minute sweep ${minute ? "on a timer" : "not available"}`);
 }
 
 const hono = (app as unknown as {
