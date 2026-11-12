@@ -244,6 +244,22 @@ Deno.test("REQ-153 + REQ-179 + REQ-180 + REQ-181 + REQ-187 + REQ-188: the admin 
       await userPage.locator("[data-cy='demo-status']").filter({
         hasText: /^\s*Connected\s*$/,
       }).waitFor({ timeout: 20_000 });
+      // REQ-373 (demo-loop cycle 2, m2 + p13-h) — one presenter: no chip repeating the
+      // sentence's name; the details button is labelled by the status, never the sentence
+      expect.eq(
+        await userPage.locator(
+          "[data-cy='demo-pill'] [data-cy='demo-presenter']",
+        )
+          .count(),
+        0,
+        "one presenter: no chip next to 'Hans is guiding you'",
+      );
+      const moreLabel = await userPage.locator("[data-cy='demo-more']")
+        .getAttribute("aria-label") ?? "";
+      expect(
+        /^Connected(, (show|hide) details)?$/.test(moreLabel),
+        `the details button says the status only (${moreLabel})`,
+      );
 
       // REQ-181 — the staff page has the impersonation banner; the stage starts below it
       const room = await page.evaluate(() => {

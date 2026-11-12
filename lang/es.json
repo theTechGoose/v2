@@ -3750,6 +3750,8 @@
   "demoMode.presenting": "Guiando a {name}",
   "demoMode.connecting": "Conectando…",
   "demoMode.connected": "Conectado",
+  "demoMode.statusShowDetails": "{status}, ver detalles",
+  "demoMode.statusHideDetails": "{status}, ocultar detalles",
   "demoMode.live": "En vivo",
   "demoMode.end": "Terminar demo",
   "demoMode.theirScreen": "La pantalla de {name}, {w} × {h}",
