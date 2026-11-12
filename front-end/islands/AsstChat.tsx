@@ -6790,7 +6790,7 @@ export default function AsstChat({
                             <div class="quote-review__head-right">
                               <span class="quote-review__chip">
                                 {tFor(
-                                  previewLang,
+                                  lang,
                                   // REQ-369: the thread's one status — what
                                   // the header and the list say.
                                   threadStatusKey(threadHeader.status),
@@ -6800,7 +6800,7 @@ export default function AsstChat({
                                 type="button"
                                 class="quote-review__close"
                                 aria-label={tFor(
-                                  previewLang,
+                                  lang,
                                   "asstChat.preview.closePreview",
                                 )}
                                 // Same as the header back: leaving the
@@ -6816,10 +6816,12 @@ export default function AsstChat({
                           </header>
 
                           {
-                            /* Preview-language toggle — re-renders the card (and
-                              sets the send language) in each language the
-                              contractor enabled in Settings. Hidden when only
-                              one language is configured. */
+                            /* Preview-language toggle — re-renders the DOCUMENT
+                              (and sets the send language) in each language the
+                              contractor enabled in Settings. The card's own
+                              controls stay in the app language `lang`
+                              (REQ-490, demo M19). Hidden when only one
+                              language is configured. */
                           }
                           {sendLangs.length > 1
                             ? (
@@ -6827,13 +6829,13 @@ export default function AsstChat({
                                 class="quote-review__langtoggle"
                                 role="group"
                                 aria-label={tFor(
-                                  previewLang,
+                                  lang,
                                   "asstChat.preview.languageGroup",
                                 )}
                               >
                                 <span class="quote-review__langtoggle-label">
                                   {tFor(
-                                    previewLang,
+                                    lang,
                                     "asstChat.preview.previewIn",
                                   )}
                                 </span>
@@ -6854,7 +6856,7 @@ export default function AsstChat({
                                   >
                                     {SEND_LANG_LABEL_KEYS[lng]
                                       ? tFor(
-                                        previewLang,
+                                        lang,
                                         SEND_LANG_LABEL_KEYS[lng],
                                       )
                                       : lng}
@@ -6874,12 +6876,12 @@ export default function AsstChat({
                             class="quote-review__langtoggle"
                             role="group"
                             aria-label={tFor(
-                              previewLang,
+                              lang,
                               "asstChat.preview.docTypeGroup",
                             )}
                           >
                             <span class="quote-review__langtoggle-label">
-                              {tFor(previewLang, "asstChat.preview.sendAs")}
+                              {tFor(lang, "asstChat.preview.sendAs")}
                             </span>
                             <button
                               type="button"
@@ -6892,7 +6894,7 @@ export default function AsstChat({
                               onClick={() => setReviewDocType("quote")}
                               disabled={sending}
                             >
-                              {tFor(previewLang, "asstChat.preview.kind")}
+                              {tFor(lang, "asstChat.preview.kind")}
                             </button>
                             <button
                               type="button"
@@ -6908,7 +6910,7 @@ export default function AsstChat({
                               disabled={sending || quoteAccepted}
                             >
                               {tFor(
-                                previewLang,
+                                lang,
                                 "asstChat.preview.docTypeInvoice",
                               )}
                             </button>
@@ -6917,7 +6919,7 @@ export default function AsstChat({
                             ? (
                               <div style="margin:10px 14px 0;padding:10px 14px;background:var(--coffee-50,#f5f0e8);border:1px dashed var(--border,#d8dcd5);border-radius:10px;font-size:12.5px;color:var(--fg-muted,#6b7560)">
                                 {tFor(
-                                  previewLang,
+                                  lang,
                                   "asstChat.preview.invoiceModeNote",
                                 )}
                               </div>
@@ -6984,7 +6986,7 @@ export default function AsstChat({
                                     style="display:inline-flex;align-items:center;gap:6px;margin-top:6px;font-size:12px;font-weight:700;color:var(--pink-700,#d94e4e);text-decoration:none"
                                   >
                                     ⚠ {tFor(
-                                      previewLang,
+                                      lang,
                                       "asstChat.preview.fromNeedsName",
                                     )}
                                   </a>
@@ -7001,7 +7003,7 @@ export default function AsstChat({
                                     style="display:inline-flex;align-items:center;gap:6px;margin-top:6px;font-size:12px;font-weight:700;color:var(--pink-700,#d94e4e);text-decoration:none"
                                   >
                                     ⚠ {tFor(
-                                      previewLang,
+                                      lang,
                                       "asstChat.preview.fromNeedsEmail",
                                     )}
                                   </a>
@@ -7055,11 +7057,11 @@ export default function AsstChat({
                                   type="button"
                                   class="quote-review__swap"
                                   aria-label={tFor(
-                                    previewLang,
+                                    lang,
                                     "asstChat.preview.switchCustomer",
                                   )}
                                   title={tFor(
-                                    previewLang,
+                                    lang,
                                     "asstChat.preview.switchCustomer",
                                   )}
                                   onClick={openCustomerPicker}
@@ -7105,7 +7107,7 @@ export default function AsstChat({
                                     contentEditable
                                     spellcheck={false}
                                     data-placeholder={tFor(
-                                      previewLang,
+                                      lang,
                                       "asstChat.preview.addEmail",
                                     )}
                                     onBlur={(e) =>
@@ -7128,7 +7130,7 @@ export default function AsstChat({
                                     contentEditable
                                     spellcheck={false}
                                     data-placeholder={tFor(
-                                      previewLang,
+                                      lang,
                                       "asstChat.preview.addPhone",
                                     )}
                                     onBlur={(e) =>
@@ -7171,12 +7173,12 @@ export default function AsstChat({
                                         placeholder={customerPickerList &&
                                             customerPickerList.length > 5
                                           ? tFor(
-                                            previewLang,
+                                            lang,
                                             "asstChat.searchNCustomers",
                                             { n: customerPickerList.length },
                                           )
                                           : tFor(
-                                            previewLang,
+                                            lang,
                                             "common.searchCustomers",
                                           )}
                                         value={customerPickerSearch}
@@ -7196,7 +7198,7 @@ export default function AsstChat({
                                         ? (
                                           <div class="cust-pick__empty">
                                             {tFor(
-                                              previewLang,
+                                              lang,
                                               "common.loadingCustomers",
                                             )}
                                           </div>
@@ -7227,11 +7229,11 @@ export default function AsstChat({
                                               <div class="cust-pick__empty">
                                                 {q
                                                   ? tFor(
-                                                    previewLang,
+                                                    lang,
                                                     "common.noMatches",
                                                   )
                                                   : tFor(
-                                                    previewLang,
+                                                    lang,
                                                     "asstChat.noOtherCustomers",
                                                   )}
                                               </div>
@@ -7274,7 +7276,7 @@ export default function AsstChat({
                                         disabled={customerPickerBusy}
                                         style="margin-top:8px"
                                       >
-                                        {tFor(previewLang, "common.cancel")}
+                                        {tFor(lang, "common.cancel")}
                                       </button>
                                     </div>
                                   )
@@ -7335,11 +7337,11 @@ export default function AsstChat({
                                     data-cy="review-job-details-edit"
                                     disabled={sending || !quoteId}
                                     title={tFor(
-                                      previewLang,
+                                      lang,
                                       "asstChat.preview.editJobDetails",
                                     )}
                                     aria-label={tFor(
-                                      previewLang,
+                                      lang,
                                       "asstChat.preview.editJobDetails",
                                     )}
                                     onClick={editJobDetails}
@@ -7492,7 +7494,7 @@ export default function AsstChat({
                                                       type="text"
                                                       class="cust-pick__search"
                                                       placeholder={tFor(
-                                                        previewLang,
+                                                        lang,
                                                         "asstChat.preview.typeCustom",
                                                         {
                                                           label: t.label
@@ -7559,7 +7561,7 @@ export default function AsstChat({
                                                         }}
                                                       >
                                                         {tFor(
-                                                          previewLang,
+                                                          lang,
                                                           "common.save",
                                                         )}
                                                       </button>
@@ -7573,7 +7575,7 @@ export default function AsstChat({
                                                         disabled={sending}
                                                       >
                                                         {tFor(
-                                                          previewLang,
+                                                          lang,
                                                           "common.back",
                                                         )}
                                                       </button>
@@ -7629,7 +7631,7 @@ export default function AsstChat({
                                                       disabled={sending}
                                                     >
                                                       {tFor(
-                                                        previewLang,
+                                                        lang,
                                                         "asstChat.preview.customOption",
                                                       )}
                                                     </button>
@@ -7647,7 +7649,7 @@ export default function AsstChat({
                                                       disabled={sending}
                                                     >
                                                       {tFor(
-                                                        previewLang,
+                                                        lang,
                                                         "common.cancel",
                                                       )}
                                                     </button>
@@ -7666,7 +7668,7 @@ export default function AsstChat({
                                                   )}
                                                 disabled={!cid || !t.stepId}
                                                 title={tFor(
-                                                  previewLang,
+                                                  lang,
                                                   "common.edit",
                                                 )}
                                               >
@@ -7802,7 +7804,7 @@ export default function AsstChat({
                                     : (
                                       <div style="padding:12px 14px;background:var(--green-50,#eef6ea);border:1px solid var(--brand-green,#519843);border-radius:12px;font-weight:700;font-size:13.5px;color:var(--brand-teal,#144852)">
                                         {tFor(
-                                          previewLang,
+                                          lang,
                                           "asstChat.preview.invoiceSent",
                                         )}
                                       </div>
@@ -7828,11 +7830,11 @@ export default function AsstChat({
                                     >
                                       {swapLinkCopied
                                         ? tFor(
-                                          previewLang,
+                                          lang,
                                           "asstChat.preview.linkCopied",
                                         )
                                         : tFor(
-                                          previewLang,
+                                          lang,
                                           "asstChat.preview.menuCopyLink",
                                         )}
                                     </button>
@@ -7844,7 +7846,7 @@ export default function AsstChat({
                                       rel="noopener"
                                     >
                                       {tFor(
-                                        previewLang,
+                                        lang,
                                         "asstChat.invoiceFlow.viewInvoice",
                                       )}
                                     </a>
@@ -8053,19 +8055,19 @@ export default function AsstChat({
                                     <I d={ICN.send} size={14} sw={2.4} />
                                     {sending
                                       ? tFor(
-                                        previewLang,
+                                        lang,
                                         "asstChat.preview.sending",
                                       )
                                       : reviewDocType === "invoice"
                                       ? tFor(
-                                        previewLang,
+                                        lang,
                                         "asstChat.preview.sendInvoice",
                                       )
                                       // REQ-402 (demo m5): this opens the
                                       // "How do you want to send" chooser,
                                       // so it never promises "by Text".
                                       : tFor(
-                                        previewLang,
+                                        lang,
                                         "asstChat.preview.sendOpen",
                                       )}
                                   </button>
@@ -8073,7 +8075,7 @@ export default function AsstChat({
                                 type="button"
                                 class="quote-review__send-caret"
                                 aria-label={tFor(
-                                  previewLang,
+                                  lang,
                                   "asstChat.preview.chooseSend",
                                 )}
                                 aria-expanded={channelMenuOpen
@@ -8115,13 +8117,13 @@ export default function AsstChat({
                                       >
                                         <I d={icon} size={13} sw={2.4} />
                                         <span class="quote-review__send-menu-label">
-                                          {tFor(previewLang, key)}
+                                          {tFor(lang, key)}
                                         </span>
                                         {channelNeedsKey(ch, customer)
                                           ? (
                                             <span class="send-dialog__needs">
                                               {tFor(
-                                                previewLang,
+                                                lang,
                                                 channelNeedsKey(ch, customer)!,
                                               )}
                                             </span>
@@ -8131,7 +8133,7 @@ export default function AsstChat({
                                           ? (
                                             <span class="quote-review__send-menu-tag">
                                               {tFor(
-                                                previewLang,
+                                                lang,
                                                 "asstChat.preview.recommended",
                                               )}
                                             </span>
@@ -8163,7 +8165,7 @@ export default function AsstChat({
                                       <I d={ICN.clip} size={13} sw={2.4} />
                                       <span class="quote-review__send-menu-label">
                                         {tFor(
-                                          previewLang,
+                                          lang,
                                           "asstChat.preview.menuCopyLink",
                                         )}
                                       </span>
