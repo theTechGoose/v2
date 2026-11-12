@@ -30,6 +30,13 @@ import {
 import { clientsClient } from "../clients/clients.ts";
 import { readCached, refreshDash, subscribeDash } from "../lib/dash-cache.ts";
 import { type Lang, langSignal, tFor } from "../lib/i18n.ts";
+import {
+  copyCustomerLink,
+  customerLinkUrl,
+  dividerShowsCustomerLink,
+  type LinkToast as LinkToastState,
+} from "../lib/customer-link.ts";
+import { CustomerLinkRow, LinkToast } from "../components/CustomerLinkRow.tsx";
 import { localizeTermValue } from "../lib/term-i18n.ts";
 import {
   mergeFreshTerms,
@@ -923,7 +930,21 @@ export default function AsstChat({
   const [dialogErr, setDialogErr] = useState<string | undefined>(undefined);
   /** Transient "Link copied!" feedback for the send menu's copy-link action
    *  (roadmap: copy link alongside email / text / text+email). */
-  const [linkCopied, setLinkCopied] = useState(false);
+  // REQ-310 (demo m32): the copy-link confirmation — rendered at the island
+  // root, outside the send menu; "copied" or "couldn't copy, here it is".
+  const [linkToast, setLinkToast] = useState<LinkToastState | null>(null);
+  const linkToastTimer = useRef<number | null>(null);
+  async function copyLinkFor(quoteId: string) {
+    const out = await copyCustomerLink(
+      customerLinkUrl(globalThis.location.origin, quoteId),
+    );
+    setLinkToast(out);
+    if (linkToastTimer.current) clearTimeout(linkToastTimer.current);
+    // a failure stays until dismissed so the url can be selected
+    if (out.kind === "copied") {
+      linkToastTimer.current = setTimeout(() => setLinkToast(null), 2600);
+    }
+  }
   /** The pick popped by the last wizard rewind — highlighted on the
    *  re-asked step's matching option so Back restores the prior selection
    *  (roadmap p.8). Cleared on the next answer. */
@@ -4511,6 +4532,11 @@ export default function AsstChat({
 
   return (
     <>
+      <LinkToast
+        toast={linkToast}
+        lang={lang}
+        onDismiss={() => setLinkToast(null)}
+      />
       <div class="chat__scroll" ref={scrollRef}>
         {(empty || panelOpen)
           ? (
@@ -5775,6 +5801,17 @@ export default function AsstChat({
                         </div>
                         <div class="phase-divider__line" />
                       </div>
+                      {dividerShowsCustomerLink(dp) && dp.quoteId
+                        ? (
+                          // REQ-310 (m13): the customer's link stays one
+                          // click away after the send, outside the menu.
+                          <CustomerLinkRow
+                            quoteId={dp.quoteId}
+                            lang={lang}
+                            onCopy={copyLinkFor}
+                          />
+                        )
+                        : null}
                       {needRecovery
                         ? (
                           <div class="recovery-card">
@@ -7406,34 +7443,23 @@ export default function AsstChat({
                                       type="button"
                                       role="menuitem"
                                       class="quote-review__send-menu-item"
-                                      onClick={async () => {
+                                      onClick={() => {
                                         const cid = docId || quote?.id;
                                         if (!cid) return;
-                                        try {
-                                          await navigator.clipboard.writeText(
-                                            `${globalThis.location.origin}/q/${cid}`,
-                                          );
-                                          setLinkCopied(true);
-                                          setTimeout(() => {
-                                            setLinkCopied(false);
-                                            setChannelMenuOpen(false);
-                                          }, 1200);
-                                        } catch {
-                                          setChannelMenuOpen(false);
-                                        }
+                                        // REQ-310 (m32): the outcome shows
+                                        // as a toast outside this menu —
+                                        // copied, or couldn't-copy with the
+                                        // url; the menu closes either way.
+                                        setChannelMenuOpen(false);
+                                        void copyLinkFor(cid);
                                       }}
                                     >
                                       <I d={ICN.clip} size={13} sw={2.4} />
                                       <span class="quote-review__send-menu-label">
-                                        {linkCopied
-                                          ? tFor(
-                                            previewLang,
-                                            "asstChat.preview.linkCopied",
-                                          )
-                                          : tFor(
-                                            previewLang,
-                                            "asstChat.preview.menuCopyLink",
-                                          )}
+                                        {tFor(
+                                          previewLang,
+                                          "asstChat.preview.menuCopyLink",
+                                        )}
                                       </span>
                                     </button>
                                   </div>
@@ -8193,6 +8219,17 @@ export default function AsstChat({
                                   {tFor(lang, "asstChat.actionCard.reopen")}
                                 </button>
                               </div>
+                            )
+                            : null}
+                          {isLockedOrIssued(payload.status) && payload.quoteId
+                            ? (
+                              // REQ-310 (m13): the sent card carries the
+                              // customer's link too.
+                              <CustomerLinkRow
+                                quoteId={payload.quoteId}
+                                lang={lang}
+                                onCopy={copyLinkFor}
+                              />
                             )
                             : null}
                         </div>
