@@ -175,7 +175,7 @@ export default define.page(async function AssistantThread(ctx) {
               </section>
             </div>
           </div>
-          <SiteFooter lang={lang} />
+          <SiteFooter lang={lang} compact />
         </main>
       </div>
     </>

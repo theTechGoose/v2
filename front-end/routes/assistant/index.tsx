@@ -120,7 +120,7 @@ export default define.page(async function AssistantHome(ctx) {
               </section>
             </div>
           </div>
-          <SiteFooter lang={lang} />
+          <SiteFooter lang={lang} compact />
         </main>
       </div>
     </>

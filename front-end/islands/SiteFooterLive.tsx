@@ -17,8 +17,13 @@ import SiteFooterView, {
 } from "../components/SiteFooterView.tsx";
 
 export default function SiteFooterLive(
-  { lang, copy }: { lang: Lang; copy: Record<Lang, SiteFooterCopy> },
+  { lang, copy, compact = false }: {
+    lang: Lang;
+    copy: Record<Lang, SiteFooterCopy>;
+    /** REQ-425: the one-line footer of the signed-in app routes */
+    compact?: boolean;
+  },
 ) {
   const shown = useLiveLang(lang);
-  return <SiteFooterView copy={copy[shown]} />;
+  return <SiteFooterView copy={copy[shown]} compact={compact} />;
 }

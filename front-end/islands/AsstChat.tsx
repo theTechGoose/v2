@@ -1280,6 +1280,13 @@ export default function AsstChat({
   const analyserRef = useRef<AnalyserNode | null>(null);
   const levelRafRef = useRef<number | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
+  /** REQ-425 (demo-loop cycle 2, p13-b): true while the chat shows its
+   *  welcome state (no messages, no step panel) — the mascot, the title and
+   *  the four prompts. Set on every render; the auto-scroll effects read it so
+   *  they open that block at its TOP instead of pinning it to the bottom,
+   *  which scrolled the mascot out of view whenever the block was taller than
+   *  the chat. */
+  const welcomeRef = useRef(true);
   const taRef = useRef<HTMLTextAreaElement | null>(null);
   /** Wraps the price-capture MoneyInput so [data-cy=pricing-option-custom]
    *  can focus its (visually hidden) input without reaching into MoneyInput. */
@@ -1971,12 +1978,22 @@ export default function AsstChat({
     }
     updateNearBottom();
     scroller.addEventListener("scroll", updateNearBottom, { passive: true });
+    // REQ-425 p13-b: the welcome state is never pinned — it stays where it
+    // opened (its top) or wherever the person scrolled it. Leaving it for a
+    // step panel pins once, as before, so the panel's controls come into view.
+    let wasWelcome = welcomeRef.current;
     const ro = new ResizeObserver(() => {
-      if (nearBottom) requestAnimationFrame(pin);
+      if (welcomeRef.current) {
+        wasWelcome = true;
+        return;
+      }
+      if (nearBottom || wasWelcome) requestAnimationFrame(pin);
+      wasWelcome = false;
     });
     ro.observe(inner);
-    // First paint — drop straight to bottom (no smooth on initial load).
-    scroller.scrollTop = scroller.scrollHeight;
+    // First paint — drop straight to bottom (no smooth on initial load); the
+    // welcome state opens at its top, so the mascot is in view.
+    scroller.scrollTop = welcomeRef.current ? 0 : scroller.scrollHeight;
     return () => {
       ro.disconnect();
       scroller.removeEventListener("scroll", updateNearBottom);
@@ -1989,7 +2006,12 @@ export default function AsstChat({
   // above won't kick in if the user scrolled up to read history.
   useEffect(() => {
     const el = scrollRef.current;
-    if (el) el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
+    if (el) {
+      el.scrollTo({
+        top: welcomeRef.current ? 0 : el.scrollHeight,
+        behavior: "smooth",
+      });
+    }
   }, [messages.length]);
 
   // Pin to bottom when the inline quote-review preview opens — it's a
@@ -4703,6 +4725,7 @@ export default function AsstChat({
   // has messages — otherwise a popped pre-wizard snapshot would show nothing.
   const panelOpen = priceCaptureOpen || awaitingJobDetails || jobOptionsOpen ||
     invoiceReview !== null || invoiceResult !== null;
+  welcomeRef.current = empty && !panelOpen;
 
   return (
     <>

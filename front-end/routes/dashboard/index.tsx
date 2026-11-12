@@ -84,7 +84,7 @@ export default define.page(function Dashboard(ctx) {
           <div class="content">
             {askName && <StaffNamePrompt />}
             <DashboardPage />
-            <SiteFooter lang={lang} />
+            <SiteFooter lang={lang} compact />
           </div>
         </main>
         <DashSidebar active="home" />

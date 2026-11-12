@@ -150,7 +150,7 @@ describe("REQ-367 the footer follows the EN/ES switch on every page", () => {
     ) {
       expect([
         r,
-        /<SiteFooter lang=\{lang\} \/>/.test(read(`front-end/routes/${r}`)),
+        /<SiteFooter lang=\{lang\}( compact)? \/>/.test(read(`front-end/routes/${r}`)), // REQ-425: the app routes pass compact
       ]).toEqual([r, true]);
     }
   });

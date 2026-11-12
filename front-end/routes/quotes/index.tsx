@@ -35,7 +35,7 @@ export default define.page(function QuotesRoute(ctx) {
           <DashTopbar greetingName={greetingName} />
           <div class="content">
             <QuotesPage />
-            <SiteFooter lang={lang} />
+            <SiteFooter lang={lang} compact />
           </div>
         </main>
       </div>

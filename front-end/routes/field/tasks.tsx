@@ -40,7 +40,7 @@ export default define.page(function FieldFieldTasksPageRoute(ctx) {
           <DashTopbar greetingName={greetingName} />
           <div class="content">
             <FieldTasksPage />
-            <SiteFooter lang={lang} />
+            <SiteFooter lang={lang} compact />
           </div>
         </main>
       </div>
