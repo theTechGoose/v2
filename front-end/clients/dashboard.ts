@@ -31,12 +31,15 @@ export interface Profile {
     & { displayName?: string; logoUrl?: string }
     & Record<string, unknown>;
   /** REQ-483: what GET /profile names the business identity — Settings'
-   *  days to pay and the payment methods saved at onboarding. */
+   *  days to pay and the payment methods saved at onboarding. REQ-450: its
+   *  name picks the trade examples on the New-invoice form. */
   identity?:
     | (
       & {
         invoiceNetDays?: number;
         acceptedPaymentMethods?: AcceptedMethods;
+        businessName?: string;
+        displayName?: string;
       }
       & Record<string, unknown>
     )

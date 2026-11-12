@@ -79,28 +79,85 @@ export const COMPOSER_TRADES = [
   "cleaning",
   "landscaping",
   "junk",
+  // REQ-450 (demo-loop cycle 3, p4): the trades that used to fall back to
+  // the generic slab line get their own examples.
+  "moving",
+  "pest",
+  "fencing",
+  "concrete",
+  "handyman",
+  "kitchenbath",
   "general",
 ] as const;
 export type ComposerTrade = (typeof COMPOSER_TRADES)[number];
+
+/** REQ-450: kitchen & bath / remodel names (EN + ES). Read only when the
+ *  sample-quote trade list names nothing, so "Kitchen & Bath Plumbing"
+ *  stays a plumber. */
+const KITCHEN_BATH_STEMS = [
+  "kitchen",
+  "bath",
+  "remodel",
+  "cabinet",
+  "countertop",
+  "tile",
+  "cocina",
+  "baño",
+  "bano",
+  "remodela",
+  "gabinete",
+  "azulej",
+] as const;
 
 /** The composer example a business name points at; "general" when none. */
 export function composerTradeFor(businessName?: string | null): ComposerTrade {
   const name = (businessName ?? "").toLowerCase();
   if (!name.trim()) return "general";
   if (hasStem(name, JUNK_STEMS)) return "junk";
-  // REQ-360's sample trades without a composer example of their own (moving,
-  // pest, fencing, concrete, handyman) get the generic line.
   const trade: string = inferSampleTrade(name);
+  if (trade === "general" && hasStem(name, KITCHEN_BATH_STEMS)) {
+    return "kitchenbath";
+  }
   return (COMPOSER_TRADES as readonly string[]).includes(trade)
     ? trade as ComposerTrade
     : "general";
 }
 
-/** The dictionary key of the composer placeholder for this business. The
- *  generic example keeps its historical key, `asstChat.composer.default`. */
-export function composerPlaceholderKey(businessName?: string | null): string {
+/**
+ * REQ-450: which flow the composer is in. "priced" — the contractor names
+ * the price ("I know my price", "Just give me a quick quote", "Job done,
+ * need to invoice"): the example shows a job WITH a price. "ask" — "help me
+ * price it" or free chat: the example asks what to charge.
+ */
+export type ComposerFlow = "ask" | "priced";
+export function composerFlowFor(chip?: string | null): ComposerFlow {
+  return chip === "knownPrice" || chip === "quickQuote" ||
+      chip === "invoiceDone"
+    ? "priced"
+    : "ask";
+}
+
+/** The dictionary key of the composer placeholder for this business and
+ *  flow. The generic "ask" example keeps its historical key,
+ *  `asstChat.composer.default`. */
+export function composerPlaceholderKey(
+  businessName?: string | null,
+  flow: ComposerFlow = "ask",
+): string {
   const trade = composerTradeFor(businessName);
+  if (flow === "priced") return `asstChat.composer.priced.${trade}`;
   return trade === "general"
     ? "asstChat.composer.default"
     : `asstChat.composer.example.${trade}`;
+}
+
+/** REQ-450: the New-invoice job-name placeholder for this business — the
+ *  same trade read as the composer; the generic key when none. */
+export function invoiceJobNamePlaceholderKey(
+  businessName?: string | null,
+): string {
+  const trade = composerTradeFor(businessName);
+  return trade === "general"
+    ? "invoicesPage.new.jobNamePlaceholder"
+    : `invoicesPage.new.jobNamePlaceholder.${trade}`;
 }

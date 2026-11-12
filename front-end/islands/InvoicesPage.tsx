@@ -60,6 +60,7 @@ import {
   summarizeDispatch,
 } from "../../shared/quote-flow/send-result.ts";
 import { docNumberOf } from "../../shared/documents/numbering.ts";
+import { invoiceJobNamePlaceholderKey } from "../../shared/quote-flow/trade-fit.ts"; // REQ-450
 import { isExceedsAgreement } from "../../shared/documents/ledger.ts";
 import {
   type DocState,
@@ -3337,6 +3338,8 @@ function NewInvoiceModal(
   );
   // REQ-474: the account's quotes, fetched once a client is picked
   const [allQuotes, setAllQuotes] = useState<QuoteCard[] | null>(null);
+  /** REQ-450: the job-name example fits the business's trade. */
+  const [businessName, setBusinessName] = useState<string | undefined>();
 
   // Payment instructions: Settings' contract defaults first, else the last
   // ones typed here, else (REQ-483, M40) the accepted payment methods saved
@@ -3352,6 +3355,9 @@ function NewInvoiceModal(
     dashboardClient.profile().then((p) => {
       if (!alive) return;
       const identity = p?.identity ?? null;
+      // REQ-450: the job-name example fits the business's trade.
+      const name = p?.identity?.businessName ?? p?.identity?.displayName;
+      if (typeof name === "string") setBusinessName(name);
       const text = defaultPaymentInstructions({
         settings: p?.contractDefaults?.paymentInstructions,
         remembered,
@@ -3863,7 +3869,7 @@ function NewInvoiceModal(
           <input
             type="text"
             data-cy="new-invoice-jobname"
-            placeholder={tFor(lang, "invoicesPage.new.jobNamePlaceholder")}
+            placeholder={tFor(lang, invoiceJobNamePlaceholderKey(businessName))}
             value={jobName}
             disabled={busy}
             onInput={(e) => setJobName((e.target as HTMLInputElement).value)}

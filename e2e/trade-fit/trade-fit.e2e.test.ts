@@ -175,3 +175,53 @@ Deno.test("REQ-343 p3: a painter's composer shows a painting example, not the sl
     expect(!/slab/i.test(placeholder), `no slab example (${placeholder})`);
     expect(/paint/i.test(placeholder), `a painting example (${placeholder})`);
   }));
+
+/**
+ * REQ-450 — demo-loop cycle 3, issue p4 ("Placeholder examples don't fit the
+ * flow or the trade"). Tap a starter chip, read the composer's example: "I
+ * know my price" shows a priced job of the business's trade and never asks
+ * what to charge; "help me price it" asks. A fencing business — one of the
+ * trades that used to fall back to the slab — sees a fence.
+ */
+async function placeholderAfterChip(
+  page: StoryTools["page"],
+  chipText: string,
+): Promise<string> {
+  await page.goto("/assistant");
+  const chip = page.locator("button.chat__empty-prompt", { hasText: chipText });
+  await chip.waitFor({ state: "visible", timeout: 20_000 });
+  // Click until the island has hydrated and opened the details composer.
+  for (let i = 0; i < 20; i++) {
+    await chip.click().catch(() => {});
+    if (await page.locator(".chat__empty-prompts").count() === 0) break;
+    await page.waitForTimeout(250);
+  }
+  const box = page.locator("textarea.composer__input").first();
+  await box.waitFor({ state: "visible", timeout: 10_000 });
+  return (await box.getAttribute("placeholder")) ?? "";
+}
+
+Deno.test("REQ-450 p4: 'I know my price' shows a priced example of the trade; 'help me price it' asks what to charge", (t) =>
+  story(t, async ({ page, expect, http, baseUrl }) => {
+    await signIn("+15125553433", "Lone Star Fence Co.", http, page, baseUrl);
+    await page.setViewportSize({ width: 1280, height: 900 });
+    const priced = await placeholderAfterChip(
+      page,
+      "I know my price, write it up.",
+    );
+    expect(/fence/i.test(priced), `a fencing example (${priced})`);
+    expect(/\$\d/.test(priced), `the example names a price (${priced})`);
+    expect(
+      !/what should I charge/i.test(priced),
+      `the known-price example does not ask what to charge (${priced})`,
+    );
+    const ask = await placeholderAfterChip(
+      page,
+      "I know the job, help me price it.",
+    );
+    expect(/fence/i.test(ask), `a fencing example (${ask})`);
+    expect(
+      /what should I charge/i.test(ask),
+      `help-me-price asks what to charge (${ask})`,
+    );
+  }));

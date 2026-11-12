@@ -70,7 +70,8 @@ describe("REQ-343 p3 — the composer example and the wizard fit the trade", () 
   it("REQ-343: the composer reads the example off the business name", () => {
     const src = read("front-end/islands/AsstChat.tsx");
     expect(src).toMatch(/composerPlaceholderKey\(/);
-    expect(src).toMatch(/composerPlaceholder\(messages,\s*lang,\s*from\?\.business\)/);
+    // REQ-450 added the flow as a 4th argument.
+    expect(src).toMatch(/composerPlaceholder\(\s*messages,\s*lang,\s*from\?\.business[,)]/);
   });
 });
 
