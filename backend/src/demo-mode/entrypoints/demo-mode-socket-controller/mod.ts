@@ -17,10 +17,12 @@ import { DemoAccess } from "@demo-mode/domain/coordinators/demo-access/mod.ts";
  * host. Auth is the session cookie (the browser sends it with the upgrade), the header, or the
  * `token` query for clients that can set neither; the role comes from the demo (demo-role).
  *
- * Wire: the first frame is `welcome` (a presenter's carries their `pid`, REQ-214), then a `peer`
- * per other presenter already here; then `peer`, forwarded `signal`/`relay` stamped `from` (and
- * `pid` when from a presenter), and `ended` — after which the socket is closed. The fan-out
- * (across isolates too) is DemoHub.
+ * Wire: the first frame is `welcome` (a presenter's carries their `pid`, REQ-214; every one this
+ * socket's own `cid`, REQ-232), then a `peer` per socket already here that this one cares about;
+ * then `peer`, forwarded `signal`/`relay` stamped `from` (and `pid` when from a presenter, `cid`
+ * always), a tab's `claim`, a stage's `sync`, `replaced` (this staff account opened the demo in a
+ * newer window) and `ended` — after the last two the socket is closed. The fan-out (across
+ * isolates too) is DemoHub.
  */
 @Controller("api/demo-mode")
 export class DemoModeSocketController {
@@ -45,9 +47,12 @@ export class DemoModeSocketController {
     const sendJson = (m: ServerMessage) => {
       if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify(m));
     };
+    // REQ-232 — this socket's own id: a customer's tab or a staff stage, never "the" viewer
+    const cid = crypto.randomUUID();
     const peer: Peer = {
       role,
       ...(pid ? { pid } : {}),
+      cid,
       send: sendJson,
       close: () => {
         try {
@@ -60,17 +65,24 @@ export class DemoModeSocketController {
     socket.onopen = async () => {
       const joined = await this.hub.join(sessionId, peer);
       leave = joined.leave;
-      // welcome first: join tells the OTHERS only, so nothing reached this socket yet; then
-      // (REQ-214) the other presenters already here, by pid
+      // welcome first (with this socket's cid): join tells the OTHERS only, so nothing reached
+      // this socket yet; then who is already here — a tab hears of the stages (REQ-214: by pid),
+      // a stage of the tabs and of the other accounts' stages, each by cid (REQ-232)
       sendJson({
         t: "welcome",
         role,
         sessionId,
         peerOnline: joined.peerOnline,
         ...(pid ? { pid } : {}),
+        cid,
       });
-      for (const other of joined.others) {
-        sendJson({ t: "peer", online: true, pid: other });
+      for (const p of joined.peers) {
+        sendJson({
+          t: "peer",
+          online: true,
+          ...(p.pid ? { pid: p.pid } : {}),
+          cid: p.cid,
+        });
       }
     };
     socket.onmessage = async (e) => {
@@ -82,7 +94,7 @@ export class DemoModeSocketController {
         if (demo) await this.hub.end(sessionId, role);
         return;
       }
-      await this.hub.send(sessionId, pid ? { role, pid } : { role }, m);
+      await this.hub.send(sessionId, { role, ...(pid ? { pid } : {}), cid }, m);
     };
     socket.onclose = () => leave?.();
     socket.onerror = () => leave?.();

@@ -160,9 +160,10 @@ describe("REQ-153 demo mode wiring", () => {
     "title",
     "guiding",
     "presenting",
-    "waiting",
-    "direct",
-    "relay",
+    // REQ-232 (demo-lifecycle-p1): plain words — "waiting", "direct" and "relay" are gone
+    "connecting",
+    "connected",
+    "live",
     "end",
     "ended",
     // the staff side waits for the customer's app to join (AMENDMENT — auto-join, no prompt)
@@ -192,7 +193,8 @@ describe("REQ-153 demo mode wiring", () => {
     );
     expect(shell).toMatch(/hasSession \? <DemoModeOverlay \/> : null/);
     const island = read("front-end/islands/DemoModeOverlay.tsx");
-    for (const k of ["end", "waiting"]) {
+    // REQ-232 (demo-lifecycle-p1): the customer's pill says Connected / Connecting…, not "waiting"
+    for (const k of ["end", "connecting"]) {
       expect(island).toContain(`t("demoMode.${k}")`);
     }
     // REQ-153 AMENDMENT (2026-11-05): the presenter's pill lives on the stage now

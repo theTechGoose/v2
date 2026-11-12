@@ -22,7 +22,13 @@ import {
 
 @Module({ imports: [UsersModule, DemoModeModule] })
 class TestApp {}
-const PORT = 9193;
+/** a free port, so parallel worktrees running this file never collide */
+const PORT = (() => {
+  const l = Deno.listen({ port: 0, hostname: "127.0.0.1" });
+  const p = (l.addr as Deno.NetAddr).port;
+  l.close();
+  return p;
+})();
 const J = { "content-type": "application/json" };
 // deno-lint-ignore no-explicit-any
 type Res = { status: number; body: any };
@@ -124,6 +130,18 @@ function open(sessionId: string, token: string) {
     await closed;
   };
   return { ws, next, send, close, closed, failed: () => failed };
+}
+
+/** REQ-232 — the socket id a welcome names */
+const cidOf = (m: ServerMessage) => m.t === "welcome" ? m.cid : undefined;
+/** REQ-232 — nothing more arrives on `s` within `ms` */
+async function quiet(
+  s: ReturnType<typeof open>,
+  what: string,
+  ms = 300,
+): Promise<void> {
+  const got = await s.next(what, ms).then((m) => m, () => null);
+  assertEquals(got, null, `${what}: nothing more`);
 }
 
 Deno.test("REQ-153 a super admin opens a demo for a user; the user sees it on active with the presenter's name; a stranger sees none and may not open one", async () => {
@@ -316,49 +334,63 @@ Deno.test("REQ-153 the presenter (impersonating) and the viewer connect over the
 
     const presenter = open(made.body.id, imp.body.sessionId);
     const w1 = await presenter.next("the presenter's welcome");
+    // REQ-232 — every welcome names its own socket
+    const pc = cidOf(w1);
+    assert(typeof pc === "string" && pc.length > 8);
     assertEquals(w1, {
       t: "welcome",
       role: "presenter",
       sessionId: made.body.id,
       peerOnline: false,
       pid: hans.body.userId,
+      cid: pc,
     });
     const viewer = open(made.body.id, ana.body.sessionId);
     const w2 = await viewer.next("the viewer's welcome");
+    const vc = cidOf(w2);
+    assert(typeof vc === "string" && vc !== pc);
     assertEquals(w2, {
       t: "welcome",
       role: "viewer",
       sessionId: made.body.id,
       peerOnline: true,
+      cid: vc,
     });
-    // REQ-214 — after the welcome the viewer is told which presenters are here, by pid
+    // REQ-214 — after the welcome the viewer is told which presenters are here, by pid (and
+    // REQ-232 — by socket)
     assertEquals(await viewer.next("who is presenting"), {
       t: "peer",
       online: true,
       pid: hans.body.userId,
+      cid: pc,
     });
     assertEquals(await presenter.next("the presenter hears the viewer"), {
       t: "peer",
       online: true,
+      cid: vc,
     });
 
+    // a signal with no address (a client from before REQ-232) still reaches the other side
     presenter.send({ t: "signal", data: { type: "offer", sdp: "v=0" } });
     assertEquals(await viewer.next("the offer"), {
       t: "signal",
       from: "presenter",
       pid: hans.body.userId,
+      cid: pc,
       data: { type: "offer", sdp: "v=0" },
     });
     viewer.send({ t: "signal", data: { type: "answer", sdp: "v=1" } });
     assertEquals(await presenter.next("the answer"), {
       t: "signal",
       from: "viewer",
+      cid: vc,
       data: { type: "answer", sdp: "v=1" },
     });
     viewer.send({ t: "relay", data: { k: "view", v: { path: "/customers" } } });
     assertEquals(await presenter.next("the view"), {
       t: "relay",
       from: "viewer",
+      cid: vc,
       data: { k: "view", v: { path: "/customers" } },
     });
     presenter.send({
@@ -373,6 +405,7 @@ Deno.test("REQ-153 the presenter (impersonating) and the viewer connect over the
       t: "relay",
       from: "presenter",
       pid: hans.body.userId,
+      cid: pc,
       data: { k: "click", a: { vx: 0.2, vy: 0.3 } },
     });
     presenter.send("junk");
@@ -385,6 +418,7 @@ Deno.test("REQ-153 the presenter (impersonating) and the viewer connect over the
       t: "relay",
       from: "presenter",
       pid: hans.body.userId,
+      cid: pc,
       data: { k: "leave" },
     });
 
@@ -659,51 +693,73 @@ Deno.test("REQ-214 two staff present to one customer: the second Demo joins the 
     );
 
     // the sockets: Hans on his own session, Lia impersonating, then Ana
+    // REQ-232 — every message below also names the socket it is from (or about)
     const ph = open(made.body.id, hans.body.sessionId);
-    assertEquals(await ph.next("Hans's welcome"), {
+    const hw = await ph.next("Hans's welcome");
+    const hc = cidOf(hw);
+    assertEquals(hw, {
       t: "welcome",
       role: "presenter",
       sessionId: made.body.id,
       peerOnline: false,
       pid: hans.body.userId,
+      cid: hc,
     });
     const pl = open(made.body.id, imp.body.sessionId);
-    assertEquals(await pl.next("Lia's welcome"), {
+    const lw = await pl.next("Lia's welcome");
+    const lc = cidOf(lw);
+    assertEquals(lw, {
       t: "welcome",
       role: "presenter",
       sessionId: made.body.id,
       peerOnline: false,
       pid: lia.body.userId,
+      cid: lc,
     });
     assertEquals(await pl.next("Lia is told Hans is here"), {
       t: "peer",
       online: true,
       pid: hans.body.userId,
+      cid: hc,
     });
     assertEquals(await ph.next("Hans hears Lia arrive"), {
       t: "peer",
       online: true,
       pid: lia.body.userId,
+      cid: lc,
     });
     const v = open(made.body.id, ana.body.sessionId);
-    assertEquals(await v.next("Ana's welcome"), {
+    const aw = await v.next("Ana's welcome");
+    const vc = cidOf(aw);
+    assertEquals(aw, {
       t: "welcome",
       role: "viewer",
       sessionId: made.body.id,
       peerOnline: true,
+      cid: vc,
     });
     assertEquals(await v.next("who is here: Hans"), {
       t: "peer",
       online: true,
       pid: hans.body.userId,
+      cid: hc,
     });
     assertEquals(await v.next("who is here: Lia"), {
       t: "peer",
       online: true,
       pid: lia.body.userId,
+      cid: lc,
     });
-    assertEquals(await ph.next("Hans hears Ana"), { t: "peer", online: true });
-    assertEquals(await pl.next("Lia hears Ana"), { t: "peer", online: true });
+    assertEquals(await ph.next("Hans hears Ana"), {
+      t: "peer",
+      online: true,
+      cid: vc,
+    });
+    assertEquals(await pl.next("Lia hears Ana"), {
+      t: "peer",
+      online: true,
+      cid: vc,
+    });
 
     // Hans's click: Ana and Lia get it stamped hans
     ph.send({ t: "relay", data: { k: "click", a: { vx: 0.2, vy: 0.3 } } });
@@ -711,6 +767,7 @@ Deno.test("REQ-214 two staff present to one customer: the second Demo joins the 
       t: "relay",
       from: "presenter",
       pid: hans.body.userId,
+      cid: hc,
       data: { k: "click", a: { vx: 0.2, vy: 0.3 } },
     };
     assertEquals(await v.next("Ana gets Hans's click"), click);
@@ -721,6 +778,7 @@ Deno.test("REQ-214 two staff present to one customer: the second Demo joins the 
       t: "relay",
       from: "presenter",
       pid: lia.body.userId,
+      cid: lc,
       data: { k: "leave" },
     });
     ph.send({ t: "relay", data: { k: "click", a: { vx: 0.5, vy: 0.5 } } });
@@ -734,21 +792,24 @@ Deno.test("REQ-214 two staff present to one customer: the second Demo joins the 
       },
     );
     await pl.next("Lia gets it too");
-    // Ana's signal addressed to Lia reaches Lia only; Ana's move reaches both
+    // Ana's signal addressed to Lia (REQ-232: to her stage's socket) reaches Lia only; Ana's
+    // move reaches both
     v.send({
       t: "signal",
       data: { type: "answer", sdp: "v=1" },
-      to: lia.body.userId,
+      to: lc,
     });
     assertEquals(await pl.next("Lia gets the answer"), {
       t: "signal",
       from: "viewer",
+      cid: vc,
       data: { type: "answer", sdp: "v=1" },
     });
     v.send({ t: "relay", data: { k: "move", a: { vx: 0.1, vy: 0.1 } } });
     const move: ServerMessage = {
       t: "relay",
       from: "viewer",
+      cid: vc,
       data: { k: "move", a: { vx: 0.1, vy: 0.1 } },
     };
     assertEquals(
@@ -840,5 +901,263 @@ Deno.test("REQ-214 two staff present to one customer: the second Demo joins the 
         .id,
       again.body.id,
     );
+  });
+});
+
+Deno.test("REQ-232 two customer tabs over the composed router's socket: each welcome names its own cid; the stage hears each tab by cid; an offer addressed to tab 1 reaches tab 1 only and the answer the stage only; a claim and a sync cross; tab 2 closing tells the stage that tab 2 left while tab 1 stays", async () => {
+  await withServer(async (call) => {
+    const ana = await signIn(call, "+15125553051");
+    const hans = await signIn(call, "+15125553052");
+    await call("POST", "/api/admin/bootstrap", { phoneNumber: "+15125553052" });
+    const made = await call("POST", "/api/demo-mode/sessions", {
+      userId: ana.body.userId,
+    }, H(hans.body.sessionId));
+    const stage = open(made.body.id, hans.body.sessionId);
+    const ws = await stage.next("the stage's welcome");
+    const sc = cidOf(ws);
+    assert(
+      typeof sc === "string" && sc.length > 8,
+      `the stage's welcome names its socket (${JSON.stringify(ws)})`,
+    );
+    const tab1 = open(made.body.id, ana.body.sessionId);
+    const c1 = cidOf(await tab1.next("tab 1's welcome"));
+    assertEquals(await tab1.next("tab 1 is told the stage is here"), {
+      t: "peer",
+      online: true,
+      pid: hans.body.userId,
+      cid: sc,
+    });
+    assertEquals(await stage.next("tab 1 arrives"), {
+      t: "peer",
+      online: true,
+      cid: c1,
+    });
+    const tab2 = open(made.body.id, ana.body.sessionId);
+    const c2 = cidOf(await tab2.next("tab 2's welcome"));
+    assert(c1 && c2 && c1 !== c2, "each tab has its own socket id");
+    await tab2.next("tab 2 is told the stage is here");
+    assertEquals(await stage.next("tab 2 arrives"), {
+      t: "peer",
+      online: true,
+      cid: c2,
+    });
+
+    stage.send({ t: "signal", data: { type: "offer", sdp: "v=0" }, to: c1 });
+    assertEquals(await tab1.next("the offer"), {
+      t: "signal",
+      from: "presenter",
+      pid: hans.body.userId,
+      cid: sc,
+      data: { type: "offer", sdp: "v=0" },
+    });
+    tab1.send({ t: "signal", data: { type: "answer", sdp: "v=1" }, to: sc });
+    assertEquals(await stage.next("the answer"), {
+      t: "signal",
+      from: "viewer",
+      cid: c1,
+      data: { type: "answer", sdp: "v=1" },
+    });
+    tab2.send({ t: "claim", at: 1234 });
+    assertEquals(await stage.next("tab 2's claim"), {
+      t: "claim",
+      cid: c2,
+      at: 1234,
+    });
+    stage.send({ t: "sync", to: c2 });
+    assertEquals(await tab2.next("the stage asks tab 2 for its view"), {
+      t: "sync",
+    });
+    await tab2.close();
+    assertEquals(await stage.next("tab 2 left — tab 2 only"), {
+      t: "peer",
+      online: false,
+      cid: c2,
+    });
+    // tab 1 is still in: its view reaches the stage, stamped tab 1
+    tab1.send({ t: "relay", data: { k: "view", v: { path: "/customers" } } });
+    assertEquals(await stage.next("tab 1's view"), {
+      t: "relay",
+      from: "viewer",
+      cid: c1,
+      data: { k: "view", v: { path: "/customers" } },
+    });
+    await quiet(tab1, "tab 1 got nothing meant for tab 2");
+    await stage.close();
+    await tab1.close();
+  });
+});
+
+Deno.test("REQ-232 POST /demo-mode/sessions/:id/leave — the customer may not (403), a stranger neither (403), an unknown demo is 404; a presenter with a colleague leaves: the colleague and the customer hear them go and the demo goes on; the last presenter leaving ends it for everyone", async () => {
+  await withServer(async (call) => {
+    const ana = await signIn(call, "+15125553061");
+    const hans = await signIn(call, "+15125553062");
+    await call("POST", "/api/admin/bootstrap", { phoneNumber: "+15125553062" });
+    const lia = await signIn(call, "+15125553063");
+    await call("POST", "/api/admin/bootstrap", { phoneNumber: "+15125553063" });
+    const carl = await signIn(call, "+15125553064");
+    const A = H(ana.body.sessionId);
+    const P = H(hans.body.sessionId);
+    const L = H(lia.body.sessionId);
+    const made = await call("POST", "/api/demo-mode/sessions", {
+      userId: ana.body.userId,
+    }, P);
+    assertEquals(made.status, 201);
+    assertEquals(
+      (await call("POST", "/api/demo-mode/sessions", {
+        userId: ana.body.userId,
+      }, L)).body.id,
+      made.body.id,
+      "Lia joins Hans's demo",
+    );
+    const id = made.body.id;
+    const ph = open(id, hans.body.sessionId);
+    const hc = cidOf(await ph.next("Hans's welcome"));
+    const pl = open(id, lia.body.sessionId);
+    await pl.next("Lia's welcome");
+    await pl.next("Lia is told Hans is here");
+    await ph.next("Hans hears Lia arrive");
+    const v = open(id, ana.body.sessionId);
+    await v.next("Ana's welcome");
+    await v.next("Ana is told of Hans");
+    await v.next("Ana is told of Lia");
+    await ph.next("Hans hears Ana");
+    await pl.next("Lia hears Ana");
+
+    assertEquals(
+      (await call("POST", `/api/demo-mode/sessions/${id}/leave`, undefined, A))
+        .status,
+      403,
+      "the customer ends a demo, never leaves it",
+    );
+    assertEquals(
+      (await call(
+        "POST",
+        `/api/demo-mode/sessions/${id}/leave`,
+        undefined,
+        H(carl.body.sessionId),
+      )).status,
+      403,
+    );
+    assertEquals(
+      (await call("POST", `/api/demo-mode/sessions/nope/leave`, undefined, P))
+        .status,
+      404,
+    );
+
+    // Lia leaves: Hans and Ana hear her go; her socket is closed; the demo goes on with Hans
+    const left = await call(
+      "POST",
+      `/api/demo-mode/sessions/${id}/leave`,
+      undefined,
+      L,
+    );
+    assertEquals(left.status, 200, JSON.stringify(left.body));
+    assertEquals(await ph.next("Hans hears Lia go"), {
+      t: "peer",
+      online: false,
+      pid: lia.body.userId,
+    });
+    assertEquals(await v.next("Ana hears Lia go"), {
+      t: "peer",
+      online: false,
+      pid: lia.body.userId,
+    });
+    await pl.closed;
+    assertEquals(
+      (await call("GET", "/api/demo-mode/active", undefined, L)).body,
+      { role: null, session: null, targetPath: null, pid: null },
+      "Lia is out of it",
+    );
+    const still = await call("GET", "/api/demo-mode/active", undefined, A);
+    assertEquals(still.body.session.id, id, "the demo goes on");
+    assertEquals(
+      still.body.session.presenters.map((p: { userId: string }) => p.userId),
+      [hans.body.userId],
+    );
+
+    // Hans, the last one, leaves: it ends for everyone
+    assertEquals(
+      (await call("POST", `/api/demo-mode/sessions/${id}/leave`, undefined, P))
+        .status,
+      200,
+    );
+    assertEquals(await v.next("Ana hears the end"), {
+      t: "ended",
+      by: "presenter",
+    });
+    assertEquals(await ph.next("Hans hears it too"), {
+      t: "ended",
+      by: "presenter",
+    });
+    await v.closed;
+    await ph.closed;
+    for (const who of [A, P]) {
+      assertEquals(
+        (await call("GET", "/api/demo-mode/active", undefined, who)).body,
+        { role: null, session: null, targetPath: null, pid: null },
+      );
+    }
+    assert(hc, "Hans's stage had its own cid");
+    assertEquals(
+      (await call("POST", `/api/demo-mode/sessions/${id}/leave`, undefined, P))
+        .status,
+      403,
+      "a demo you are not on any more",
+    );
+  });
+});
+
+Deno.test("REQ-232 the same staff account opens a second stage: the first is told it is replaced and its socket closes; the customer hears the first stage go and the second arrive", async () => {
+  await withServer(async (call) => {
+    const ana = await signIn(call, "+15125553071");
+    const hans = await signIn(call, "+15125553072");
+    await call("POST", "/api/admin/bootstrap", { phoneNumber: "+15125553072" });
+    const made = await call("POST", "/api/demo-mode/sessions", {
+      userId: ana.body.userId,
+    }, H(hans.body.sessionId));
+    // window 2: the same account in another window (an impersonation session — the same pid)
+    const imp = await call(
+      "POST",
+      `/api/admin/impersonate/${ana.body.userId}`,
+      undefined,
+      H(hans.body.sessionId),
+    );
+    assertEquals(imp.status, 200, JSON.stringify(imp.body));
+    const w1 = open(made.body.id, hans.body.sessionId);
+    const c1 = cidOf(await w1.next("window 1's welcome"));
+    const v = open(made.body.id, ana.body.sessionId);
+    const vc = cidOf(await v.next("Ana's welcome"));
+    assertEquals(await v.next("Ana is told of window 1"), {
+      t: "peer",
+      online: true,
+      pid: hans.body.userId,
+      cid: c1,
+    });
+    await w1.next("window 1 hears Ana");
+
+    const w2 = open(made.body.id, imp.body.sessionId);
+    const c2 = cidOf(await w2.next("window 2's welcome"));
+    assert(c2 && c2 !== c1, "window 2 is a socket of its own");
+    assertEquals(await w1.next("window 1 is replaced"), { t: "replaced" });
+    await w1.closed;
+    const norm = (m: ServerMessage) =>
+      m.t === "peer" ? `${m.online}|${m.pid}|${m.cid}` : JSON.stringify(m);
+    const heard = [await v.next("Ana hears…"), await v.next("… both")];
+    assertEquals(
+      new Set(heard.map(norm)),
+      new Set([
+        `true|${hans.body.userId}|${c2}`,
+        `false|${hans.body.userId}|${c1}`,
+      ]),
+      "Ana hears window 2 come and window 1 go",
+    );
+    assertEquals(await w2.next("window 2 is told Ana is here"), {
+      t: "peer",
+      online: true,
+      cid: vc,
+    });
+    await quiet(w2, "window 2 is never told of its own account");
+    await w2.close();
+    await v.close();
   });
 });

@@ -5,6 +5,8 @@
  *   POST /demo-mode/sessions { userId }   → { id, targetUserId, targetPath, createdAt }   (super-admin; 200 = joined/same)
  *   GET  /demo-mode/active?path=/x        → DemoActive                        (any session; `path` = where this app is)
  *   POST /demo-mode/sessions/:id/end      → { ok: true }                      (a participant)
+ *   POST /demo-mode/sessions/:id/leave    → { ok: true }                      (a presenter, REQ-232: the
+ *                                           demo goes on for the others; the last one out ends it)
  * The socket is lib/demo-mode/transport.ts.
  */
 import { api, type ApiOptions } from "../lib/api.ts";
@@ -58,4 +60,7 @@ export const demoModeClient = {
       reason ? { reason } : undefined,
       opts,
     ),
+  /** REQ-232 — this presenter steps out ("Return to your account"); the demo ends only when nobody is left */
+  leave: (id: string, opts: ApiOptions = {}) =>
+    api.post<{ ok: true }>(`/demo-mode/sessions/${id}/leave`, undefined, opts),
 };

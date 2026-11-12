@@ -145,11 +145,12 @@ Deno.test("REQ-214: two staff present to one customer — Lia's Demo on an alrea
       const liaPage = await liaCtx.newPage();
       await useCookie(liaCtx, baseUrl, lia.cookie);
       await openDemo(liaPage);
+      // REQ-232 (demo-lifecycle-p1) — both stages say plainly that they are live
       await liaPage.locator("[data-cy='demo-status']").filter({
-        hasText: /direct|relay/,
+        hasText: /^\s*Live\s*$/,
       }).waitFor({ timeout: 20_000 });
       await page.locator("[data-cy='demo-status']").filter({
-        hasText: /direct|relay/,
+        hasText: /^\s*Live\s*$/,
       }).waitFor({ timeout: 20_000 });
 
       // Ana's pill names both, with two colour dots of different colours

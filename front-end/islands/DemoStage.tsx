@@ -12,6 +12,12 @@
  *
  * REQ-214 — several staff may present at once: the other presenters' pointers are drawn on the
  * frame too, each in their colour with their name, and the pill lists who is presenting.
+ *
+ * REQ-232 — the pill says plainly whether the demo is live: "Live", "Connecting…", or "Waiting for
+ * {name}'s app…" — the last only when none of the customer's tabs is left, after a few seconds'
+ * grace (a page change in their app is a new socket). The stage follows the tab the customer used
+ * last (the link picks it). A newer window of the same staff account takes the demo over: this one
+ * says "Open in another window" and offers "Use this window" (a reload takes it back).
  */
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import { t } from "../lib/i18n.ts";
@@ -291,6 +297,11 @@ export default function DemoStage() {
         setPeerOnline(online);
         if (wasOnline && !online && s !== "ended") pollRef.current?.();
         wasOnline = online;
+        if (s === "replaced") {
+          // REQ-232 — another window of this account has the demo now: nothing moves here
+          glide.hide();
+          setCmds({});
+        }
         if (s === "closed") {
           demoModeClient.active().then((a) => {
             if (!a.session) {
@@ -397,15 +408,16 @@ export default function DemoStage() {
     firstSrc.current = view.path;
   }
   const name = demo?.targetName ?? "";
+  // REQ-232 (demo-lifecycle-p1, m1, m3) — plain words, never the transport
   const statusLabel = ended || status === "ended"
     ? t("demoMode.ended")
-    : status === "direct"
-    ? t("demoMode.direct")
-    : status === "relay"
-    ? t("demoMode.relay")
+    : status === "replaced"
+    ? t("demoMode.elsewhere")
+    : status === "direct" || status === "relay"
+    ? t("demoMode.live")
     : status === "waiting"
     ? t("demoMode.waitingFor", { name })
-    : "…";
+    : t("demoMode.connecting");
   const pillStyle =
     `position:fixed;left:50%;transform:translateX(-50%);bottom:14px;z-index:${
       Z + 3
@@ -512,6 +524,16 @@ export default function DemoStage() {
           >
             {statusLabel}
           </span>
+          {status === "replaced" && !ended && (
+            <button
+              type="button"
+              data-cy="demo-use-here"
+              onClick={() => globalThis.location.reload()}
+              style="padding:4px 11px;border-radius:8px;border:1px solid rgba(255,255,255,.75);background:transparent;color:#fff;cursor:pointer;font:inherit;font-size:12px;font-weight:700"
+            >
+              {t("demoMode.useHere")}
+            </button>
+          )}
           <span
             data-cy="demo-screen"
             style="opacity:.8;font-size:12px"

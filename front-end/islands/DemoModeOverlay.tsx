@@ -20,6 +20,13 @@
  *
  * REQ-214 — several staff may present at once: one pointer per presenter, each in that
  * presenter's colour with their name on it; the pill names them all with their colour dots.
+ *
+ * REQ-232 — only opening the demo here (the started event) moves a staff page onto the stage. Any
+ * other staff page — another window of the same account, /admin after "Return to your account" —
+ * says "Guiding {name}" with "Back to the demo" and never moves on its own. Every customer tab is
+ * its own connection: the tab claims the stage when it is in front, gets focus or is clicked, so
+ * the stage shows the tab the customer is using. The pill says plainly whether the demo is live —
+ * Connected / Connecting… — never how the bytes travel.
  */
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import { t } from "../lib/i18n.ts";
@@ -108,6 +115,8 @@ export default function DemoModeOverlay() {
   const linkRef = useRef<DemoLink | null>(null);
   const impersonatingRef = useRef<boolean | null>(null);
   const placingRef = useRef(false);
+  /** REQ-232 — this staff page is on its way to the stage (the pill says Opening…) */
+  const [placing, setPlacing] = useState(false);
   const peerOnlineRef = useRef(false);
   peerOnlineRef.current = peerOnline;
   const pollRef = useRef<(() => void) | null>(null);
@@ -171,10 +180,13 @@ export default function DemoModeOverlay() {
   });
 
   /** AMENDMENT — same screen at once: the presenter's browser becomes the customer (impersonation,
-   *  the first time) and goes to the stage (REQ-187), which shows the customer's page. */
+   *  the first time) and goes to the stage (REQ-187), which shows the customer's page.
+   *  REQ-232 — only when this page opened the demo, or its staff asked (Back to the demo). */
   async function placePresenter(d: Demo) {
     if (placingRef.current) return;
     placingRef.current = true;
+    setPlacing(true);
+    let moving = false;
     try {
       if (impersonatingRef.current === null) {
         impersonatingRef.current = await knowImpersonating();
@@ -189,15 +201,20 @@ export default function DemoModeOverlay() {
         }
       }
       if (globalThis.location.pathname !== STAGE_PATH) {
+        moving = true;
         globalThis.location.assign(STAGE_PATH);
       }
     } finally {
       placingRef.current = false;
+      // on its way: the pill keeps saying Opening… until the stage loads
+      if (!moving) setPlacing(false);
     }
   }
 
   // 1. is there a demo for this session? on load, every 5 s while this side is not connected to the
-  //    other, and when /admin opens one here. Every ask says where this app is.
+  //    other, and when /admin opens one here. Every ask says where this app is. REQ-232 — the answer
+  //    only REPORTS: a staff page goes to the stage when it opened the demo (the started event) or
+  //    its staff click Back to the demo — never because a poll found the demo (demo-lifecycle-m3, M21).
   useEffect(() => {
     if (inert) return;
     let alive = true;
@@ -210,7 +227,6 @@ export default function DemoModeOverlay() {
         if (a.session && a.role) {
           const found: Demo = { role: a.role, ...a.session };
           setDemo((d) => sameDemo(d, found) ? d : found);
-          if (a.role === "presenter") void placePresenter(found);
         } else {
           setDemo(null);
         }
@@ -337,7 +353,23 @@ export default function DemoModeOverlay() {
       },
     });
     linkRef.current = link;
+    // REQ-232 (B3) — this tab is the one the customer is using: it claims the stage when it is in
+    // front (now, if it is), gets focus or is clicked; a tab behind another says nothing
+    const claim = () => link.claim();
+    const onVisible = () => {
+      if (document.visibilityState === "visible") claim();
+    };
+    if (document.visibilityState === "visible") claim();
+    globalThis.addEventListener("focus", claim);
+    document.addEventListener("visibilitychange", onVisible);
+    document.addEventListener("pointerdown", claim, {
+      capture: true,
+      passive: true,
+    });
     return () => {
+      globalThis.removeEventListener("focus", claim);
+      document.removeEventListener("visibilitychange", onVisible);
+      document.removeEventListener("pointerdown", claim, { capture: true });
       throttle.cancel();
       clearTimeout(viewTimer.current);
       viewTimer.current = undefined;
@@ -438,19 +470,33 @@ export default function DemoModeOverlay() {
     );
   }
 
-  // the presenter's own pill lives on the stage; until it gets there, say so
+  // the presenter's own pill lives on the stage. On the way there, say so; on any other staff page
+  // (REQ-232: another window, /admin after Return to your account) offer the way back — never take it
   if (demo.role === "presenter") {
     return (
       <div data-demo-overlay>
         <div data-cy="demo-pill" role="status" style={pillStyle}>
           <strong>{t("demoMode.title")}</strong>
           <span>{t("demoMode.presenting", { name: demo.targetName })}</span>
-          <span
-            data-cy="demo-opening"
-            style="padding:2px 8px;border-radius:999px;background:rgba(255,255,255,.18);font-size:11.5px;font-weight:700"
-          >
-            {t("demoMode.opening")}
-          </span>
+          {placing || opening
+            ? (
+              <span
+                data-cy="demo-opening"
+                style="padding:2px 8px;border-radius:999px;background:rgba(255,255,255,.18);font-size:11.5px;font-weight:700"
+              >
+                {t("demoMode.opening")}
+              </span>
+            )
+            : (
+              <button
+                type="button"
+                data-cy="demo-rejoin"
+                onClick={() => void placePresenter(demo)}
+                style="padding:5px 12px;border-radius:8px;border:0;background:#fff;color:#1f3d1b;cursor:pointer;font:inherit;font-size:12px;font-weight:700"
+              >
+                {t("demoMode.rejoin")}
+              </button>
+            )}
         </div>
       </div>
     );
@@ -461,15 +507,12 @@ export default function DemoModeOverlay() {
     ? demo.presenters
     : [{ userId: "", name: demo.presenterName, color: "#2f6d29" }];
   const names = presenters.map((p) => p.name).join(", ");
+  // REQ-232 (demo-lifecycle-p1) — plain words: is the staff here or not; never how the bytes travel
   const statusLabel = ended || status === "ended"
     ? t("demoMode.ended")
-    : status === "direct"
-    ? t("demoMode.direct")
-    : status === "relay"
-    ? t("demoMode.relay")
-    : status === "waiting"
-    ? t("demoMode.waiting")
-    : "…";
+    : status === "direct" || status === "relay"
+    ? t("demoMode.connected")
+    : t("demoMode.connecting");
 
   async function end() {
     const link = linkRef.current;

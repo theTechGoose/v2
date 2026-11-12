@@ -84,15 +84,23 @@ export type PeerMessage =
   | { k: "leave" }
   | { k: "view"; v: ViewPatch };
 
-/** REQ-214 — `to`: the viewer's signal may address ONE presenter (by pid); a presenter's relay
- *  may go to the other presenters only (their pointer rides to the customer directly) */
+/** REQ-214 — a presenter's relay may go to the other presenters only (their pointer rides to the
+ *  customer directly). REQ-232 — a signal's `to` addresses ONE socket (its `cid`): a stage's offer
+ *  the one customer tab it follows, the tab's answer the one stage it is for; a customer tab
+ *  `claim`s the stage (it is the tab the customer is using, since `at` on its own clock); a stage
+ *  asks one tab to `sync` (send its whole view) */
 export type ClientMessage =
   | { t: "signal"; data: unknown; to?: string }
   | { t: "relay"; data: PeerMessage; to?: "presenters" }
+  | { t: "claim"; at: number }
+  | { t: "sync"; to: string }
   | { t: "end" };
 
 /** REQ-214 — `pid`: which presenter a message is from (never on the viewer's), which presenter
- *  came or went (a `peer` without one is the viewer), and a presenter's own id on their welcome */
+ *  came or went (a `peer` without one is a customer tab), and a presenter's own id on their
+ *  welcome. REQ-232 — `cid`: which SOCKET — this one's own on its welcome, the one that came or
+ *  went on a `peer`, the sender on a signal, relay or claim; `sync`: a stage wants this tab's whole
+ *  view; `replaced`: the same staff account opened the demo in a newer window, this one is done */
 export type ServerMessage =
   | {
     t: "welcome";
@@ -100,14 +108,22 @@ export type ServerMessage =
     sessionId: string;
     peerOnline: boolean;
     pid?: string;
+    cid?: string;
   }
-  | { t: "peer"; online: boolean; pid?: string }
-  | { t: "signal"; from: Role; pid?: string; data: unknown }
-  | { t: "relay"; from: Role; pid?: string; data: PeerMessage }
+  | { t: "peer"; online: boolean; pid?: string; cid?: string }
+  | { t: "signal"; from: Role; pid?: string; cid?: string; data: unknown }
+  | { t: "relay"; from: Role; pid?: string; cid?: string; data: PeerMessage }
+  | { t: "claim"; cid: string; at: number }
+  | { t: "sync" }
+  | { t: "replaced" }
   | { t: "ended"; by: Role; reason?: "declined" };
 
 /** how often a browser with no demo asks `active` again — the customer sees the invitation within this */
 export const ACTIVE_POLL_MS = 5_000;
+/** REQ-232 — the other side's last socket went: the link stays "live" this long before it says it
+ *  is waiting. A page change in the customer's app is a new page and a new socket (the old one
+ *  closes, the new one joins once the page has loaded), and it must never flash "waiting". */
+export const PRESENCE_GRACE_MS = 5_000;
 /** a demo nobody ended expires on its own */
 export const SESSION_TTL_MS = 2 * 60 * 60 * 1000;
 /** how long the customer's last reported page is kept — the presenter lands there at once (AMENDMENT — same screen) */
@@ -272,6 +288,11 @@ export function parseClientMessage(raw: string): ClientMessage | null {
         ? { t: "relay", data, to: "presenters" }
         : { t: "relay", data };
     }
+    // REQ-232 — a claim with no usable time is still a claim (the oldest one)
+    case "claim":
+      return { t: "claim", at: num(o.at) ? o.at : 0 };
+    case "sync":
+      return typeof o.to === "string" && o.to ? { t: "sync", to: o.to } : null;
     case "end":
       return { t: "end" };
     default:
@@ -281,6 +302,9 @@ export function parseClientMessage(raw: string): ClientMessage | null {
 
 const pidOf = (o: Record<string, unknown>): { pid?: string } =>
   typeof o.pid === "string" && o.pid ? { pid: o.pid } : {};
+/** REQ-232 — the socket a message names */
+const cidOf = (o: Record<string, unknown>): { cid?: string } =>
+  typeof o.cid === "string" && o.cid ? { cid: o.cid } : {};
 
 export function parseServerMessage(raw: string): ServerMessage | null {
   const o = parseJson(raw);
@@ -295,22 +319,31 @@ export function parseServerMessage(raw: string): ServerMessage | null {
           sessionId: o.sessionId,
           peerOnline: o.peerOnline,
           ...pidOf(o),
+          ...cidOf(o),
         }
         : null;
     case "peer":
       return typeof o.online === "boolean"
-        ? { t: "peer", online: o.online, ...pidOf(o) }
+        ? { t: "peer", online: o.online, ...pidOf(o), ...cidOf(o) }
         : null;
     case "signal":
       return isRole(o.from) && o.data !== undefined
-        ? { t: "signal", from: o.from, ...pidOf(o), data: o.data }
+        ? { t: "signal", from: o.from, ...pidOf(o), ...cidOf(o), data: o.data }
         : null;
     case "relay": {
       const data = parsePeerMessage(o.data);
       return isRole(o.from) && data
-        ? { t: "relay", from: o.from, ...pidOf(o), data }
+        ? { t: "relay", from: o.from, ...pidOf(o), ...cidOf(o), data }
         : null;
     }
+    case "claim":
+      return typeof o.cid === "string" && o.cid && num(o.at)
+        ? { t: "claim", cid: o.cid, at: o.at }
+        : null;
+    case "sync":
+      return { t: "sync" };
+    case "replaced":
+      return { t: "replaced" };
     case "ended":
       if (!isRole(o.by)) return null;
       return o.reason === "declined"

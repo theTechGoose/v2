@@ -1,42 +1,58 @@
 import { Injectable } from "#danet/core";
 import { getKv } from "@core/data/kv/mod.ts";
 import {
+  type ClientMessage,
   otherRole,
-  type PeerMessage,
   type Role,
   type ServerMessage,
 } from "#demo-mode/protocol.ts";
 
 /** a connected browser as the hub sees it — a WebSocket in the controller, a fake in the test.
- *  REQ-214 — a presenter carries their `pid`; the viewer has none */
+ *  REQ-214 — a presenter carries their `pid`; the viewer has none. REQ-232 — every socket has its
+ *  own `cid` (a customer's tab, a staff stage): the controller's, or one `join` gives it */
 export interface Peer {
   role: Role;
   pid?: string;
+  cid?: string;
   send(m: ServerMessage): void;
-  /** the demo ended (or this presenter was dropped): the hub asks the socket to close after the last message */
+  /** the demo ended (or this presenter was dropped or replaced): the hub asks the socket to close after the last message */
   close?(): void;
 }
 
-/** REQ-214 — who a message is from: the viewer, or a presenter by pid */
+/** REQ-214 — who a message is from: the viewer, or a presenter by pid; REQ-232 — and which socket */
 export interface From {
   role: Role;
   pid?: string;
+  cid?: string;
+}
+
+/** REQ-232 — a socket already in the demo, as a joining one is told of it */
+export interface PeerInfo {
+  role: Role;
+  pid?: string;
+  cid: string;
 }
 
 /** what crosses isolates: a message for one role (or everyone) in a demo, stamped with the isolate that wrote it */
 interface Mail {
   id: string;
   origin: string;
+  /** REQ-232 — when it was written: a drop or a replacement reaches only the sockets that joined
+   *  before it (a new room looks a second back into the mailbox, and must not close a newcomer) */
+  at?: number;
   to: Role | "all";
-  /** REQ-214 — for ONE presenter (by pid) only */
-  pid?: string;
-  /** REQ-214 — never back to this presenter */
+  /** REQ-232 — for ONE socket only */
+  cid?: string;
+  /** REQ-214 — never to this presenter (any socket of theirs) */
   except?: string;
   msg: ServerMessage;
   /** a presence announce that wants the other side's presence back */
   reply?: boolean;
   /** REQ-214 — this presenter was dropped from the demo: their sockets everywhere close */
   drop?: string;
+  /** REQ-232 — this presenter opened the demo in a newer window (`keep`): their other sockets,
+   *  everywhere, are told (`replaced`) and closed */
+  replace?: { pid: string; keep: string };
 }
 
 interface Room {
@@ -66,6 +82,8 @@ const tickKey = (sessionId: string) =>
 export class DemoHub {
   private rooms = new Map<string, Room>();
   private isolateId: string = crypto.randomUUID();
+  /** REQ-232 — when each socket here joined */
+  private joinedAt = new WeakMap<Peer, number>();
 
   /** a hub standing in for a named isolate (tests: two hubs on one KV) */
   static isolated(isolateId: string): DemoHub {
@@ -74,22 +92,43 @@ export class DemoHub {
     return hub;
   }
 
-  /** join: `peerOnline` — the other side is in THIS hub (a presenter: the viewer; the viewer: any
-   *  presenter); `others` (REQ-214) — the other presenters in this hub, by pid, for the welcome to
-   *  list. Everyone else hears the arrival (a presenter's announce names them) and, elsewhere,
-   *  replies with their own presence. */
+  /** join: `cid` (REQ-232) — this socket's own id; `peerOnline` — the other side is in THIS hub (a
+   *  presenter: a customer tab; the viewer: any presenter); `peers` — who in this hub the welcome
+   *  lists: a customer tab is told of the stages, a stage of the tabs and of the other accounts'
+   *  stages. Everyone else hears the arrival (with its cid; a presenter's names them too) and,
+   *  elsewhere, replies to it with their own presence. REQ-232 — a presenter's newer window takes
+   *  over: their older sockets, here and elsewhere, are told they are replaced and closed. */
   async join(
     sessionId: string,
     peer: Peer,
-  ): Promise<{ peerOnline: boolean; others: string[]; leave: () => void }> {
+  ): Promise<
+    { cid: string; peerOnline: boolean; peers: PeerInfo[]; leave: () => void }
+  > {
+    const cid = peer.cid ??= crypto.randomUUID();
     const room = await this.room(sessionId);
+    this.joinedAt.set(peer, Date.now());
     const peerOnline = [...room.peers].some((p) =>
       p.role === otherRole(peer.role)
     );
-    const others = [...room.peers].flatMap((p) =>
-      p.role === "presenter" && p.pid && p !== peer ? [p.pid] : []
-    );
+    const listed = (p: Peer): p is Peer & { cid: string } => {
+      if (p === peer || !p.cid) return false;
+      if (p.role === "viewer") return peer.role === "presenter";
+      return !(peer.role === "presenter" && p.pid === peer.pid);
+    };
+    const peers = [...room.peers].filter(listed).map((p): PeerInfo => ({
+      role: p.role,
+      ...(p.pid ? { pid: p.pid } : {}),
+      cid: p.cid,
+    }));
+    // in the room before anything is awaited: a last peer leaving meanwhile must not drop it
     room.peers.add(peer);
+    if (peer.role === "presenter" && peer.pid) {
+      await this.broadcast(sessionId, {
+        to: "presenter",
+        msg: { t: "replaced" },
+        replace: { pid: peer.pid, keep: cid },
+      });
+    }
     await this.broadcast(sessionId, this.presence(peer, true, true));
     let left = false;
     const leave = () => {
@@ -104,49 +143,76 @@ export class DemoHub {
       }
       if (room.peers.size === 0) this.drop(sessionId, room);
     };
-    return { peerOnline, others, leave };
+    return { cid, peerOnline, peers, leave };
   }
 
-  /** REQ-214 — a presenter's presence goes to everyone else, named; the viewer's to the presenters */
+  /** REQ-214 — a presenter's presence goes to everyone else (never to their own account's other
+   *  sockets), named; a customer tab's to the presenters. REQ-232 — each says which socket */
   private presence(
     peer: Peer,
     online: boolean,
     reply = false,
   ): Omit<Mail, "id" | "origin"> {
+    const cid = peer.cid ? { cid: peer.cid } : {};
     if (peer.role === "presenter" && peer.pid) {
       return {
         to: "all",
         except: peer.pid,
-        msg: { t: "peer", online, pid: peer.pid },
+        msg: { t: "peer", online, pid: peer.pid, ...cid },
         reply,
       };
     }
-    return { to: otherRole(peer.role), msg: { t: "peer", online }, reply };
+    return {
+      to: otherRole(peer.role),
+      msg: { t: "peer", online, ...cid },
+      reply,
+    };
   }
 
-  /** a signal or a relay from `from`: a presenter's goes to the viewer and the other presenters
-   *  (`to: "presenters"` — the others only), stamped with their pid; the viewer's goes to the
-   *  presenters, a signal to the one it is addressed to */
+  /** a message from `from`, stamped with who sent it (pid) and from which socket (cid, REQ-232):
+   *  a signal goes to the other side — to ONE socket when it is addressed (`to`: a cid); a
+   *  presenter's relay to the customer and the other presenters (`to: "presenters"` — the others
+   *  only), a customer tab's to the presenters; a tab's `claim` to every stage; a stage's `sync` to
+   *  the one tab it names */
   send(
     sessionId: string,
     from: From,
-    m:
-      | { t: "signal"; data: unknown; to?: string }
-      | { t: "relay"; data: PeerMessage; to?: "presenters" },
+    m: Exclude<ClientMessage, { t: "end" }>,
   ): Promise<void> {
-    const stamp = from.pid ? { pid: from.pid } : {};
-    const msg: ServerMessage = m.t === "signal"
-      ? { t: "signal", from: from.role, ...stamp, data: m.data }
-      : { t: "relay", from: from.role, ...stamp, data: m.data };
-    if (from.role === "viewer") {
+    const stamp = {
+      ...(from.pid ? { pid: from.pid } : {}),
+      ...(from.cid ? { cid: from.cid } : {}),
+    };
+    if (m.t === "claim") {
+      if (from.role !== "viewer" || !from.cid) return Promise.resolve();
       return this.broadcast(sessionId, {
         to: "presenter",
-        ...(m.t === "signal" && m.to ? { pid: m.to } : {}),
-        msg,
+        msg: { t: "claim", cid: from.cid, at: m.at },
+      });
+    }
+    if (m.t === "sync") {
+      if (from.role !== "presenter") return Promise.resolve();
+      return this.broadcast(sessionId, {
+        to: "viewer",
+        cid: m.to,
+        msg: { t: "sync" },
       });
     }
     if (m.t === "signal") {
-      return this.broadcast(sessionId, { to: "viewer", msg });
+      return this.broadcast(sessionId, {
+        to: otherRole(from.role),
+        ...(m.to ? { cid: m.to } : {}),
+        msg: { t: "signal", from: from.role, ...stamp, data: m.data },
+      });
+    }
+    const msg: ServerMessage = {
+      t: "relay",
+      from: from.role,
+      ...stamp,
+      data: m.data,
+    };
+    if (from.role === "viewer") {
+      return this.broadcast(sessionId, { to: "presenter", msg });
     }
     // a presenter without a pid (a demo written before the list) has no colleagues to reach
     if (!from.pid) {
@@ -195,10 +261,11 @@ export class DemoHub {
     const full: Mail = {
       id: crypto.randomUUID(),
       origin: this.isolateId,
+      at: Date.now(),
       ...mail,
     };
     const room = this.rooms.get(sessionId);
-    if (room) this.deliver(room, full);
+    if (room) this.deliver(room, full, true);
     const kv = await getKv();
     await kv.atomic()
       .set([...mailPrefix(sessionId), Date.now(), full.id], full, {
@@ -208,15 +275,42 @@ export class DemoHub {
       .commit();
   }
 
-  private deliver(room: Room, mail: Mail): void {
+  /** `local`: written by this hub, now — every socket here joined before it */
+  private deliver(room: Room, mail: Mail, local = false): void {
     for (const p of [...room.peers]) {
+      // REQ-232 — a drop or a replacement from elsewhere reaches only the sockets that joined
+      // before it was written: a new room looks a second back into the mailbox, and a newer
+      // window of the same account must never be closed by an older one's mail
+      const joined = this.joinedAt.get(p) ?? 0;
+      const at = mail.at ?? Number.POSITIVE_INFINITY;
+      const older = local || joined < at;
       if (mail.drop && p.pid === mail.drop) {
-        room.peers.delete(p);
-        p.close?.();
+        if (older) {
+          room.peers.delete(p);
+          p.close?.();
+        }
+        continue;
+      }
+      if (mail.replace) {
+        const { pid, keep } = mail.replace;
+        // two windows that joined in the same millisecond on two isolates: the lower cid goes,
+        // the same on both sides, so exactly one stays
+        const first = older || (joined === at && (p.cid ?? "") < keep);
+        if (
+          p.role === "presenter" && p.pid === pid && p.cid !== keep && first
+        ) {
+          try {
+            p.send(mail.msg);
+          } catch {
+            // gone already
+          }
+          // its own close announces it gone, by cid
+          p.close?.();
+        }
         continue;
       }
       if (mail.to !== "all" && p.role !== mail.to) continue;
-      if (mail.pid && p.pid !== mail.pid) continue;
+      if (mail.cid && p.cid !== mail.cid) continue;
       if (mail.except && p.pid === mail.except) continue;
       try {
         p.send(mail.msg);
@@ -281,25 +375,25 @@ export class DemoHub {
       }
       if (mail.origin === this.isolateId) continue;
       this.deliver(room, mail);
-      // a presence announce from elsewhere: whoever it is for and is here says so back —
-      // REQ-214: the viewer's announce gets every local presenter's presence, named; a
-      // presenter's gets the viewer's (unnamed) and each local presenter's (named), to them only
-      if (mail.reply && mail.msg.t === "peer") {
-        const arrived = mail.msg.pid;
+      // a presence announce from elsewhere: whoever it is for and is here says so back, to THAT
+      // socket only (REQ-232) — a customer tab's announce gets every local stage's presence; a
+      // stage's gets every local tab's and every local stage of another account
+      if (mail.reply && mail.msg.t === "peer" && mail.msg.online) {
+        const { pid: arrived, cid } = mail.msg;
+        const to = cid ? { cid } : {};
         for (const p of room.peers) {
           if (arrived) {
             if (p.pid === arrived) continue;
             replies.push({
               to: "presenter",
-              pid: arrived,
-              msg: p.role === "viewer"
-                ? { t: "peer", online: true }
-                : { t: "peer", online: true, pid: p.pid },
+              ...to,
+              msg: this.presence(p, true).msg,
             });
           } else if (p.role === "presenter") {
             replies.push({
               to: "viewer",
-              msg: { t: "peer", online: true, pid: p.pid },
+              ...to,
+              msg: this.presence(p, true).msg,
             });
           }
         }
