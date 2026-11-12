@@ -51,6 +51,8 @@ interface Amount {
   /** "Tile: $1,200" — the words before a colon right in front of the
    *  amount (back to the previous item break); "" otherwise. */
   colonLabel: string;
+  /** REQ-680: typed with a minus ("-500 dollars", "minus $500"). */
+  negative: boolean;
 }
 
 /** Every money amount in the sentence, in order, each counted once.
@@ -119,11 +121,15 @@ function cleanLabel(s: string): string {
  *   - a range ("$3,000 to $4,000") → the largest;
  *   - otherwise several amounts are an itemised list → their SUM (REQ-259:
  *     "demo $2,500, cabinets $8,000, quartz $4,200" is $14,700, not $8,000);
- *   - none / zero → null.
+ *   - none / zero → null;
+ *   - REQ-680 (demo-loop cycle 5, M25): a negative amount ("price -500
+ *     dollars", "minus $500") → null: the picker opens empty and the price
+ *     step names it (negativePriceCents), never a silent $500.
  */
 export function extractPriceCents(raw: string): number | null {
   const amounts = scanAmounts(raw).filter((a) => a.cents > 0);
   if (amounts.length === 0) return null;
+  if (amounts.some((a) => a.negative)) return null;
   const max = (xs: Amount[]) => Math.max(...xs.map((a) => a.cents));
 
   const totals = amounts.filter((a) => hasWord(a, TOTAL_WORD));
@@ -149,6 +155,7 @@ export function extractPriceCents(raw: string): number | null {
 export function extractPriceLines(raw: string): PriceLine[] {
   const amounts = scanAmounts(raw).filter((a) => a.cents > 0);
   if (amounts.length < 2) return [];
+  if (amounts.some((a) => a.negative)) return []; // REQ-680
   if (amounts.some((a) => hasWord(a, TOTAL_WORD) || hasWord(a, DEPOSIT_WORD))) {
     return [];
   }
@@ -621,6 +628,16 @@ function cityTail(rest: string): { text: string; zip: boolean } {
     if (/^\d/.test(t[2])) return { text, zip: true }; // the ZIP closes it
   }
   return { text, zip: false };
+}
+
+/**
+ * REQ-680 (demo-loop cycle 5, M25): the first negative amount typed in the
+ * sentence ("price -500 dollars" → 50000), so the price step can say why it
+ * opened empty; null when none. A rate is not counted.
+ */
+export function negativePriceCents(raw: string): number | null {
+  return scanAmounts(raw).find((a) => a.negative && a.cents > 0)?.cents ??
+    null;
 }
 
 /** All the deterministic facts in one call. */

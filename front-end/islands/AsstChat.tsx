@@ -156,6 +156,7 @@ import {
 import {
   acceptedJobChipLabel,
   extractQuickQuotePrefill,
+  negativePriceCents,
   type PriceLine,
   quickQuoteNames,
   quoteLineItemsFromPrefill,
@@ -6686,6 +6687,30 @@ export default function AsstChat({
                         </button>
                       </div>
                     )}
+                    {/* REQ-680 (demo-loop cycle 5, M25): "price -500 dollars"
+                        no longer seeds the pad at $500 — it opens empty and
+                        says why, until a price is typed. */}
+                    {(() => {
+                      const neg = !suggestPricing && pendingJobDetailsRaw
+                        ? negativePriceCents(pendingJobDetailsRaw)
+                        : null;
+                      return neg && (priceCents ?? 0) <= 0
+                        ? (
+                          <div
+                            class="chat__price-negative-note"
+                            data-cy="price-negative-note"
+                            role="status"
+                            style="font-size:13px;color:#B23B3B;padding:0 2px 10px"
+                          >
+                            {tFor(lang, "asstChat.price.negativeNote", {
+                              amount: `$${
+                                (neg / 100).toLocaleString("en-US")
+                              }`,
+                            })}
+                          </div>
+                        )
+                        : null;
+                    })()}
                     <div ref={moneyBoxRef}>
                       <MoneyInput
                         // UX-04: seed the picker with the $-amount the user

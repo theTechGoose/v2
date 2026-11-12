@@ -26,6 +26,10 @@ export interface MoneyAmount {
   /** REQ-575: "$65/hr", "$40 a foot", "$5 per sq ft", "65 dólares la hora" —
    *  a price per hour / day / length / area, not an amount of the job. */
   rate: boolean;
+  /** REQ-680 (demo-loop cycle 5, M25): "-500 dollars", "-$500", "$-500",
+   *  "minus $500" — the contractor typed a negative amount. NUM has no sign,
+   *  so the amount is still read as 500; this flag says it was negative. */
+  negative: boolean;
 }
 
 const NUM = String.raw`(\d{1,3}(?:,\d{3})+|\d+)(?:\.(\d{1,2}))?`;
@@ -81,6 +85,12 @@ const MONEY_PATTERNS: RegExp[] = [
 const RATE_AFTER =
   /^\s*(?:\/\s*|(?:a|an|per|each|por|la|el|al|the)\s+)(?:h|hr|hrs|hour|hours|day|days|d[ií]a|d[ií]as|hora|horas|ft|foot|feet|sq|sqft|sf|square|lf|lin(?:ear)?|yard|yd|yds|pie|pies|metro|metros|m2)(?![\p{L}])/iu;
 
+/** REQ-680: a sign glued to the amount — "-500", "-$500", "$-500" — not a
+ *  range's dash ("$3,000-$4,000", "$3,000 - $4,000") or a hyphenated word
+ *  ("all-in $18,500"); or "minus" / "negative" / "negativo" right before it. */
+const NEGATIVE_BEFORE =
+  /(?:(?:^|[^\p{L}\d.,])[-\u2212]\$?|(?:^|[^\p{L}])(?:minus|negative|negativo)\s+\$?\s?)$/iu;
+
 function centsOf(whole: string, frac: string | undefined, scale?: string) {
   const n = Number(`${whole.replace(/,/g, "")}${frac ? `.${frac}` : ""}`);
   const k = scale ? SCALE[scale.toLowerCase()] ?? 1 : 1;
@@ -90,7 +100,8 @@ function centsOf(whole: string, frac: string | undefined, scale?: string) {
 /** Every money amount typed — "$2,585", "$18,000", "$18k", "$18 mil", "18k",
  *  "18 thousand", "18 grand", "4500 dollars", "18 mil dólares" and a spoken
  *  Spanish "18 mil" — each once, in order. Never "6 mil vapor barrier" or a
- *  "12k btu" unit. A rate is flagged (REQ-575). */
+ *  "12k btu" unit. A rate is flagged (REQ-575), and so is a negative amount
+ *  (REQ-680). */
 export function moneyAmounts(text: string): MoneyAmount[] {
   const s = text ?? "";
   const found: MoneyAmount[] = [];
@@ -101,7 +112,15 @@ export function moneyAmounts(text: string): MoneyAmount[] {
       if (found.some((f) => start < f.end && end > f.start)) continue;
       const cents = centsOf(m[1], m[2], m[3]);
       if (cents > 0) {
-        found.push({ cents, start, end, rate: RATE_AFTER.test(s.slice(end)) });
+        found.push({
+          cents,
+          start,
+          end,
+          rate: RATE_AFTER.test(s.slice(end)),
+          negative: NEGATIVE_BEFORE.test(
+            s.slice(Math.max(0, start - 16), start),
+          ),
+        });
       }
     }
   }
