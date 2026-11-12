@@ -68,7 +68,10 @@ export class TranslateBullets {
       `You translate construction scope-of-work bullet lines into ${target}. ` +
       `Translate faithfully, clause by clause: never shorten, never summarize, and never drop parentheticals, ` +
       `exclusions ("not included", "excluded"), quantities, sizes, or who-supplies-what ("supplied by client/owner"). ` +
-      `Keep trade terminology, third-person, no trailing period. ` +
+      `Keep trade terminology precise, third-person, no trailing period. ` +
+      // REQ-594 (demo-loop cycle 4, m40): "keep trade terminology" let the
+      // model leave "soffit" in English inside the Spanish copy.
+      `Translate trade nouns into ${target} too (e.g. soffit, kitchen sink) — leave a term untranslated only when ${target} has no word for it. ` +
       `Return JSON ONLY: {"texts":["...","..."]} — the SAME number of lines, in the SAME order. ` +
       `If a line is already entirely in ${target}, return it unchanged; a line mixing languages is translated in full.` +
       (input.to === "es" ? ` ${ES_TRADE_GLOSSARY}` : "") +
