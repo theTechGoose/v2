@@ -28,8 +28,9 @@ import {
   parseMirrorFrame,
 } from "../../shared/demo-mode/mirror";
 import {
-  ARROW_IDLE_MS,
+  pointerLook,
   TAG_IDLE_MS,
+  TAG_REST_OPACITY,
   tagPlacement,
 } from "../../shared/demo-mode/motion";
 
@@ -386,25 +387,26 @@ describe("REQ-242 the codec and the two ends", () => {
 describe("REQ-242 the pointer's name tag stays inside its box and rests when idle", () => {
   const box = { left: 100, top: 50, width: 400, height: 300 };
   const tag = { w: 90, h: 22 };
-  test("right of the arrow and below it, unless that runs past the box's right or bottom edge", () => {
-    expect(tagPlacement({ x: 200, y: 100 }, box, tag)).toEqual({
-      left: false,
-      up: false,
-    });
-    // near the frame's right edge (not the window's): the tag flips to the left
-    expect(tagPlacement({ x: 450, y: 100 }, box, tag)).toEqual({
+  // REQ-374 (demo m9, cycle 2): above-left of the tip by default, off the content pointed at
+  test("above-left of the arrow, unless that runs past the box's left or top edge", () => {
+    expect(tagPlacement({ x: 300, y: 200 }, box, tag)).toEqual({
       left: true,
-      up: false,
+      up: true,
     });
-    // near the bottom: above the arrow
-    expect(tagPlacement({ x: 200, y: 330 }, box, tag)).toEqual({
+    // near the frame's left edge (not the window's): the tag flips to the right
+    expect(tagPlacement({ x: 150, y: 200 }, box, tag)).toEqual({
       left: false,
       up: true,
     });
+    // near the top: below the tip
+    expect(tagPlacement({ x: 300, y: 70 }, box, tag)).toEqual({
+      left: true,
+      up: false,
+    });
   });
-  test("the tag fades first, the arrow dims later", () => {
+  test("the tag rests after TAG_IDLE_MS, faded but readable; the arrow never dims (REQ-374)", () => {
     expect(TAG_IDLE_MS).toBe(1_500);
-    expect(ARROW_IDLE_MS).toBeGreaterThan(TAG_IDLE_MS);
+    expect(pointerLook(true)).toEqual({ arrow: 1, tag: TAG_REST_OPACITY });
   });
 });
 

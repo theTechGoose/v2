@@ -236,7 +236,7 @@ describe("REQ-242 the customer's overlay records", () => {
     const pointer = read("front-end/components/demo-mode/DemoPointer.tsx");
     expect(pointer).toMatch(/tagPlacement\(/);
     expect(pointer).toMatch(/TAG_IDLE_MS/);
-    expect(pointer).toMatch(/ARROW_IDLE_MS/);
+    expect(pointer).toMatch(/pointerLook\(/); // REQ-374: the arrow no longer dims
     expect(pointer).not.toMatch(/innerWidth \|\| 0\) - 180/);
   });
 });
