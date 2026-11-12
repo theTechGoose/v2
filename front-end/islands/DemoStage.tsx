@@ -108,6 +108,7 @@ import {
   STAGE_PILL_BOTTOM,
   stageInsetBottom,
 } from "../../shared/demo-mode/pill.ts";
+import { stageFrameLook } from "../../shared/demo-mode/stage-frame.ts";
 
 interface Demo {
   id: string;
@@ -174,6 +175,8 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
   const [ended, setEnded] = useState(false);
   /** REQ-242 — null until the customer's first snapshot is in the frame */
   const [mirrored, setMirrored] = useState<Screen | null>(null);
+  /** REQ-297 — the screen in the frame is from before the customer's app dropped */
+  const [stale, setStale] = useState(false);
   /** REQ-235 — this stage's End ended it */
   const endedHere = useRef(false);
   const [stage, setStage] = useState({ w: 1, h: 1 });
@@ -423,6 +426,7 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
           replaceRef.current();
         }, ms);
       });
+      setStale(false); // REQ-297 — their screen is current again
     }
   };
 
@@ -580,12 +584,14 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
         setStatus(s);
         const online = s === "direct" || s === "relay";
         setPeerOnline(online);
-        // the customer's app dropped: their pointer is nowhere now (the mirror keeps their last screen)
+        // the customer's app dropped: their pointer is nowhere now (the mirror keeps their last
+        // screen; REQ-297 — dimmed and greyed, under the waiting overlay, until the next snapshot)
         if (!online) {
           customerRef.current = null;
           glide.hide();
           lastTRef.current = 0;
         }
+        if (s === "waiting") setStale(true);
         if (wasOnline && !online && s !== "ended") pollRef.current?.();
         wasOnline = online;
         if (s === "replaced") {
@@ -722,6 +728,7 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
       glide.hide();
       setCmds({});
       setMirrored(null);
+      setStale(false);
       setPeerOnline(false);
       setStatus("connecting");
     };
@@ -774,6 +781,9 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
   const box = `position:absolute;left:${fit.left}px;top:${
     fit.top - bannerH
   }px;width:${fit.width}px;height:${fit.height}px`;
+  // REQ-297 — the frame's look: greyed, dimmed and under the waiting overlay while the screen in it
+  // is the one from before the customer's app dropped
+  const look = stageFrameLook({ status, mirrored: !!mirrored, stale });
 
   return (
     <div
@@ -821,9 +831,7 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
               </div>
             )}
             <div
-              style={`${box};border-radius:6px;box-shadow:0 10px 40px rgba(0,0,0,.6);background:#fff;overflow:hidden;visibility:${
-                mirrored ? "visible" : "hidden"
-              }`}
+              style={`${box};border-radius:6px;box-shadow:0 10px 40px rgba(0,0,0,.6);background:#fff;overflow:hidden;visibility:${look.visibility};filter:${look.filter};transition:filter .3s`}
             >
               <iframe
                 ref={frameRef}
@@ -854,6 +862,22 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
                 />
               );
             })()}
+            {look.waiting && (
+              <div
+                data-cy="demo-waiting"
+                role="status"
+                style={`${box};z-index:${
+                  Z + 2
+                };display:grid;place-items:center;pointer-events:none;color:#fff;font:inherit`}
+              >
+                <div style="display:grid;gap:6px;justify-items:center;text-align:center;max-width:360px;padding:14px 20px;border-radius:12px;background:rgba(18,26,22,.85);box-shadow:0 6px 24px rgba(0,0,0,.4)">
+                  <strong>{t("demoMode.waitingFor", { name })}</strong>
+                  <span style="font-size:12.5px;opacity:.8">
+                    {t("demoMode.waitingKeep")}
+                  </span>
+                </div>
+              </div>
+            )}
             {mirrored && (
               <div
                 data-cy="demo-stage-layer"
