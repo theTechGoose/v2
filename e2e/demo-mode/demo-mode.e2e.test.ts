@@ -413,6 +413,19 @@ Deno.test("REQ-153 + REQ-179 + REQ-180 + REQ-181 + REQ-187 + REQ-188: the admin 
       await userPage.locator("[data-cy='demo-wave']").waitFor({
         timeout: 10_000,
       });
+      // REQ-431 (demo m28, cycle 3) — a glance two seconds later still sees the click: the ring
+      // repeats and the last click leaves a dot that fades over about 4 s
+      await new Promise((r) => setTimeout(r, 2_000));
+      expect(
+        (await userPage.locator("[data-cy='demo-wave']").count()) >= 1,
+        "REQ-431: the click ring is still there 2 s after the click",
+      );
+      const dotOpacity = await userPage.locator("[data-cy='demo-click-dot']")
+        .evaluate((el) => Number(getComputedStyle(el).opacity));
+      expect(
+        dotOpacity > 0.3,
+        `REQ-431: the last-click dot is still plain 2 s after the click (opacity ${dotOpacity})`,
+      );
       expect.eq(
         new URL(page.url()).pathname,
         "/demo/stage",
