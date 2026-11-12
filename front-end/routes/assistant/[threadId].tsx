@@ -8,6 +8,7 @@ import DashTopbar from "../../islands/DashTopbar.tsx";
 import AsstThreads from "../../islands/AsstThreads.tsx";
 import AsstChat, { deriveUserInitials } from "../../islands/AsstChat.tsx";
 import ChatHeaderLive from "../../islands/ChatHeaderLive.tsx";
+import { deriveChatHeader } from "../../../shared/quote-flow/chat-header.ts";
 import {
   type Conversation,
   type ConversationDetail,
@@ -67,10 +68,18 @@ export default define.page(async function AssistantThread(ctx) {
   const headerTitle = detail?.conversation?.customerName ??
     detail?.conversation?.title ??
     tFor(lang, "assistantThread.newConversation");
-  const headerStatus = detail?.conversation?.currentPhase
-    ? tFor(lang, "assistantThread.phasePrefix", {
-      phase: detail.conversation.currentPhase,
-    })
+  // REQ-369 (demo m2): the server-rendered status line is the rule the
+  // island dispatches once it hydrates — never "Phase: terms" first.
+  const headerStatus = detail
+    ? tFor(
+      lang,
+      deriveChatHeader({
+        customerName: detail.customer?.name,
+        quote: detail.quote,
+        messages: detail.messages ?? [],
+        detailsPending: !!detail.draft?.polishRaw?.trim(),
+      }).statusKey,
+    )
     : tFor(lang, "assistantThread.statusFallback");
 
   // Surface a soft "we're getting you set up" banner when the user

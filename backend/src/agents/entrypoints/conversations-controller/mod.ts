@@ -24,11 +24,10 @@ import { EnsureSampleQuote } from "@agents/domain/coordinators/ensure-sample-quo
 import { parseCreateAgentConversation } from "@agents/dto/conversation.ts";
 import { shouldTransitionToTerms } from "@agents/domain/business/derive-phase/mod.ts";
 import { parseAssistantDraft } from "#quote-flow/assistant-draft.ts";
+import { ListConversations } from "@agents/domain/coordinators/list-conversations/mod.ts";
 import { UserStore } from "@users/domain/data/user-store/mod.ts";
 import { SessionStore } from "@users/domain/data/session-store/mod.ts";
 import { requireUser } from "@users/domain/coordinators/require-user/mod.ts";
-import { CustomerStore } from "@crm/domain/data/customer-store/mod.ts";
-import { QuoteStore } from "@paperwork/domain/data/quote-store/mod.ts";
 
 @Controller("agents/conversations")
 export class ConversationsController {
@@ -47,35 +46,16 @@ export class ConversationsController {
     private sampleQuoteFlow: EnsureSampleQuote,
     private users: UserStore,
     private sessions: SessionStore,
-    private customers: CustomerStore,
-    private quotes: QuoteStore,
+    private listFlow: ListConversations,
   ) {}
 
   @Get()
   async list(@Context() ctx: ExecutionContext, @Query("limit") limit?: string) {
     const user = await requireUser(ctx, this.sessions, this.users);
     const cap = limit ? Math.min(200, Math.max(1, Number(limit) | 0)) : 50;
-    const rows = await this.store.listByUser(user.id, { limit: cap });
-    // UX-14: denormalize customerName + jobName so the thread list can title
-    // each conversation by what it is about ("Patio · María Nguyen") instead
-    // of a wall of "Nueva conversación" rows.
-    const [customers, quotes] = await Promise.all([
-      this.customers.listByUser(user.id).catch(() => []),
-      this.quotes.listByUser(user.id).catch(() => []),
-    ]);
-    const customerById = new Map(customers.map((c) => [c.id, c]));
-    const quoteById = new Map(quotes.map((q) => [q.id, q]));
-    return ctx.json(rows.map((r) => {
-      const customerName = r.customerId
-        ? customerById.get(r.customerId)?.name
-        : undefined;
-      const jobName = r.quoteId ? quoteById.get(r.quoteId)?.jobName : undefined;
-      return {
-        ...r,
-        ...(customerName ? { customerName } : {}),
-        ...(jobName ? { jobName } : {}),
-      };
-    }));
+    // UX-14 titles + REQ-369: each row's status is the chat header's rule
+    // over the quote row (see ListConversations).
+    return ctx.json(await this.listFlow.run({ userId: user.id, limit: cap }));
   }
 
   @Post()

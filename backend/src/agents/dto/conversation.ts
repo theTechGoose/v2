@@ -28,7 +28,9 @@ export interface AgentConversation {
   preview?: string; // last meaningful message snippet
   /** Threads-sidebar badge. Set by accept-quote; cleared by load-conversation on next read. */
   hasUnreadEvent?: boolean;
-  /** Denormalized quote.status so the sidebar chip can show sent/accepted without N+1. */
+  /** Denormalized quote.status, written by Lock / Send / AcceptQuote only —
+   *  the customer's public accept never touches it. REQ-369: never a status
+   *  to show; the thread list's chip is ListConversations' `threadStatus`. */
   quoteStatus?: string;
   /** Denormalized invoice.status (sent/paid) for the sidebar chip. */
   invoiceStatus?: string;
