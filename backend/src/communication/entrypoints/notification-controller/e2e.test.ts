@@ -324,7 +324,8 @@ Deno.test("cross-module e2e: notification is scoped per-user — contractor B ne
       await fetch(`http://localhost:${port}/quotes/${quote.id}/accept`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({}),
+        // REQ-470: the signer's legal name is required
+        body: JSON.stringify({ name: "Ana Cliente" }),
       }),
     );
 

@@ -27,6 +27,10 @@ import { isAccepted } from "#quote-flow/quote-status.ts";
 import { hasSignOverride } from "#quote-flow/public-doc-state.ts";
 import { groupVisits } from "#quote-flow/visit-groups.ts";
 import { sniffLogoImage } from "#quote-flow/logo-image.ts";
+import {
+  isValidSignerName,
+  normalizeSignerName,
+} from "#quote-flow/signer-name.ts";
 import { AcceptedPaymentMethods } from "@profile/dto/business-identity.ts";
 import { PaymentStore } from "@paperwork/domain/data/payment-store/mod.ts";
 import type { ChangeOrder } from "@paperwork/dto/change-order.ts";
@@ -83,6 +87,8 @@ async function ownerCannotApprove(
 class AcceptQuoteDto {
   @IsOptional() @IsString()
   signature?: string;
+  /** REQ-470 (demo m61): required — the typed legal name IS the signature
+   *  record; its shape is checked by `isValidSignerName` in acceptQuote. */
   @IsOptional() @IsString()
   name?: string;
   @IsOptional() @IsString()
@@ -694,6 +700,12 @@ export class PaperworkPublicController {
     @Body() body: unknown,
   ) {
     const dto = parseAccept(body);
+    // REQ-470 (demo m61): "x" signed a binding agreement. A missing name, or
+    // one that is not two lettered words / three letters, signs nothing.
+    if (!isValidSignerName(dto.name)) {
+      return ctx.json({ ok: false, reason: "invalid_name" }, 400);
+    }
+    dto.name = normalizeSignerName(dto.name!);
     const existing = await this.quotes.get(id);
     // REQ-306 (demo B3): the business's own session — the owner on "View as
     // customer", an admin acting for them, staff behind an impersonation —

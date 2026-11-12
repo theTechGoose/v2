@@ -3,6 +3,10 @@ import { tFor } from "../lib/i18n.ts";
 import { Icon } from "../components/ui/Icon.tsx";
 import { acceptDecision } from "../../shared/documents/linked-view.ts";
 import { SIGN_OVERRIDE_QUERY } from "../../shared/quote-flow/public-doc-state.ts";
+import {
+  isValidSignerName,
+  normalizeSignerName,
+} from "../../shared/quote-flow/signer-name.ts";
 
 interface Props {
   quoteId: string;
@@ -61,6 +65,9 @@ export default function PublicSignQuote(
   const drawingRef = useRef<Stroke | null>(null);
   const [hasInk, setHasInk] = useState(false);
   const [name, setName] = useState("");
+  // REQ-470 (demo m61): the typed name must pass the shared signer rule
+  const nameOk = isValidSignerName(name);
+  const nameTyped = name.trim().length > 0;
   // REQ-289: the typed-name label must name its input (else a screen reader
   // reads the placeholder, "Juan Pérez", as the field's name)
   const nameId = `sign-name-${quoteId}`;
@@ -278,8 +285,11 @@ export default function PublicSignQuote(
 
   async function onSign(e: Event) {
     e.preventDefault();
-    const trimmed = name.trim();
-    if (!trimmed) return;
+    // REQ-470 (demo m61): "x" is not a legal name — the shared rule (two
+    // lettered words, or three letters) gates the signature, as the backend
+    // does (400 invalid_name).
+    if (!nameOk) return;
+    const trimmed = normalizeSignerName(name);
     setSubmitting(true);
     setErr(undefined);
     try {
@@ -532,9 +542,23 @@ export default function PublicSignQuote(
         onInput={(e) => setName((e.target as HTMLInputElement).value)}
         placeholder={tFor(lang, "publicSign.namePlaceholder")}
         autoComplete="name"
+        aria-invalid={nameTyped && !nameOk ? "true" : undefined}
+        aria-describedby={nameTyped && !nameOk
+          ? `${nameId}-invalid`
+          : undefined}
         style={`width:100%;padding:14px 16px;border:1px solid ${LINE};border-radius:12px;font-size:16px;color:${INK};font-family:inherit;background:#fff;box-sizing:border-box`}
         required
       />
+      {nameTyped && !nameOk && (
+        <div
+          id={`${nameId}-invalid`}
+          data-cy="sign-name-invalid"
+          role="status"
+          style={`margin-top:6px;font-size:12px;font-weight:600;color:#b3261e`}
+        >
+          {tFor(lang, "publicSign.nameInvalid")}
+        </div>
+      )}
       <div style={`margin-top:8px;font-size:12px;color:${MUTED}`}>
         {tFor(lang, "publicSign.disclaimer")}
       </div>
@@ -547,17 +571,17 @@ export default function PublicSignQuote(
 
       <button
         type="submit"
-        disabled={submitting || !name.trim()}
+        disabled={submitting || !nameOk}
         style={`margin-top:18px;width:100%;background:${
-          submitting || !name.trim()
+          submitting || !nameOk
             ? "#a8c8a0"
             : `linear-gradient(135deg,${GREEN} 0%,#71a85f 100%)`
         };color:#fff;border:0;font-weight:800;font-size:16px;padding:18px 28px;border-radius:14px;box-shadow:${
-          submitting || !name.trim()
+          submitting || !nameOk
             ? "none"
             : "0 10px 22px -6px rgba(81,152,67,0.55)"
         };cursor:${
-          submitting || !name.trim() ? "default" : "pointer"
+          submitting || !nameOk ? "default" : "pointer"
         };transition:transform 160ms;display:flex;align-items:center;justify-content:center;gap:10px`}
       >
         {submitting
@@ -583,7 +607,7 @@ export default function PublicSignQuote(
                 <path d="M14 5l5 5" />
               </svg>
               <span>
-                {name.trim()
+                {nameOk
                   ? tFor(lang, "publicSign.submitEnabled")
                   : tFor(lang, "publicSign.submitDisabled")}
               </span>
