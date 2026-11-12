@@ -29,7 +29,12 @@ import { absoluteUrl } from "../../shared/quote-flow/site-meta.ts";
  * rendered whole, so a request with the language is the whole toggle.
  */
 export default function LegalPage(
-  { id, lang }: { id: LegalDocId; lang: Lang },
+  { id, lang, signedIn = false }: {
+    id: LegalDocId;
+    lang: Lang;
+    /** REQ-510: a signed-in visitor gets "Back to app" → /dashboard, not Log in */
+    signedIn?: boolean;
+  },
 ) {
   const doc = legalDocFor(lang, id);
   const site = LANDING_DICT[lang];
@@ -91,7 +96,13 @@ export default function LegalPage(
             <a href="/#how-it-works">{site["nav.how"]}</a>
             <a href="/#pricing">{site["nav.pricing"]}</a>
           </nav>
-          <a href="/login" class="btn btn-outline">{site["nav.login"]}</a>
+          {signedIn
+            ? (
+              <a href="/dashboard" class="btn btn-outline">
+                {site["nav.backToApp"]}
+              </a>
+            )
+            : <a href="/login" class="btn btn-outline">{site["nav.login"]}</a>}
         </div>
       </div>
 
