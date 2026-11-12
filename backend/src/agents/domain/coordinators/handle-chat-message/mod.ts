@@ -47,6 +47,7 @@ import { UserStore } from "@users/domain/data/user-store/mod.ts";
 import { BusinessIdentityStore } from "@profile/domain/data/business-identity-store/mod.ts";
 import { SendPaperworkEmail } from "@paperwork/domain/coordinators/send-paperwork-email/mod.ts";
 import { EventBus } from "@core/business/events/mod.ts";
+import { lockStatusFor, QUOTE_LOCKED } from "#quote-flow/quote-lock.ts";
 import type { AgentConversation } from "@agents/dto/conversation.ts";
 import type { AgentMessage } from "@agents/dto/message.ts";
 
@@ -861,25 +862,28 @@ export class HandleChatMessage {
           action: "drafted",
           data: { customerId, summary: action.payload.summary },
         });
-      } // ---- lock_quote: flip the active quote status to 'sent' ----
+      } // ---- lock_quote: lock the active quote (REQ-234: NOT send it) ----
       else if (action.type === "lock_quote") {
         // Use the conversation's quoteId, NOT the one the LLM made up. The
         // coordinator is the source of truth for which quote is "active".
         const quoteId = conv.quoteId ?? action.payload.quoteId;
         if (quoteId) {
-          const locked = await this.quotes.update(quoteId, input.userId, {
-            status: "sent",
-          });
+          // REQ-234 (demo M3): locking is not sending. The quote stays a
+          // draft with a lockedAt stamp — no status flip, no sentAt, no
+          // `quote sent` event, no customer email. Send (SendQuote) does
+          // all of that after the terms and the customer are on the quote.
+          let locked = await this.quotes.getOwned(quoteId, input.userId);
+          if (lockStatusFor(locked) === QUOTE_LOCKED && !locked.lockedAt) {
+            locked = await this.quotes.update(quoteId, input.userId, {
+              lockedAt: new Date().toISOString(),
+            });
+          }
+          const status = lockStatusFor(locked);
           convPatch.quoteId = quoteId; // ensure conv.quoteId is set
-          await this.bus.emit({
-            userId: input.userId,
-            entityType: "quote",
-            entityId: quoteId,
-            action: "sent",
-          });
+          convPatch.quoteStatus = status;
           // Mirror the button-driven /lock-quote flow: emit an updated
-          // action_card with status:"sent" + an automatic continue_cta so
-          // a chat-flow lock ('send it') produces the same UI as clicking
+          // action_card with status:"locked" + an automatic continue_cta so
+          // a chat-flow lock ('lock it in') produces the same UI as clicking
           // the Lock-it-in button. Multi-tool fan-out isn't supported in
           // the LLM client (only the first tool call is honored), so the
           // transition card is server-driven instead of model-driven.
@@ -899,10 +903,15 @@ export class HandleChatMessage {
             role: "assistant",
             kind: "action_card",
             content: locked.summary ??
-              t(replyLang, "chatCoordinator.quoteSent"),
+              t(
+                replyLang,
+                status === QUOTE_LOCKED
+                  ? "chatCoordinator.quoteLocked"
+                  : "chatCoordinator.quoteSent",
+              ),
             payload: {
               actionType: "quote",
-              status: "sent",
+              status,
               quoteId,
               lineItems: sentLineItems,
               totalCents,
@@ -920,20 +929,6 @@ export class HandleChatMessage {
             },
           });
           newMessages.push(cta);
-          // Best-effort customer email. Failure here MUST NOT abort the
-          // turn — the lock already succeeded, and the user can retry the
-          // dispatch from the UI.
-          try {
-            await this.emailer.run(input.userId, {
-              kind: "quote",
-              resourceId: quoteId,
-            });
-          } catch (err) {
-            console.error(
-              `[chat:lock_quote] email dispatch failed for quote ${quoteId}:`,
-              err,
-            );
-          }
         }
       } // ---- request_terms_transition: surface a "Continue to terms" card ----
       else if (action.type === "request_terms_transition") {

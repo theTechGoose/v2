@@ -2,8 +2,7 @@ import { Injectable } from "#danet/core";
 import { AgentConversationStore } from "@agents/domain/data/agent-conversation-store/mod.ts";
 import { AgentMessageStore } from "@agents/domain/data/agent-message-store/mod.ts";
 import { QuoteStore } from "@paperwork/domain/data/quote-store/mod.ts";
-import { SendPaperworkEmail } from "@paperwork/domain/coordinators/send-paperwork-email/mod.ts";
-import { EventBus } from "@core/business/events/mod.ts";
+import { lockStatusFor, QUOTE_LOCKED } from "#quote-flow/quote-lock.ts";
 import { UserStore } from "@users/domain/data/user-store/mod.ts";
 import { t } from "@core/i18n/mod.ts";
 import type { AgentConversation } from "@agents/dto/conversation.ts";
@@ -19,7 +18,7 @@ export interface LockQuoteInput {
 
 export interface LockQuoteResult {
   conversation: AgentConversation;
-  /** action_card (status=sent) + continue_cta(toPhase=terms) — the
+  /** action_card (status=locked) + continue_cta(toPhase=terms) — the
    *  user's prompt to advance to phase 2 (terms wizard). */
   newMessages: AgentMessage[];
 }
@@ -34,10 +33,12 @@ export interface LockQuoteResult {
  *
  * This is the phase-1 → phase-2 handoff in the chat:
  *   1. Verify ownership of conversation + quote.
- *   2. If quote already 'sent', short-circuit (idempotent).
- *   3. Flip quote.status = 'sent', emit `quote sent`, dispatch the
- *      customer email (best-effort — failure doesn't abort).
- *   4. Append the locked action_card (status=sent) + a continue_cta
+ *   2. Stamp quote.lockedAt (first lock only). REQ-234 (demo M3): locking
+ *      is NOT sending — status stays "draft", no sentAt, no `quote sent`
+ *      event, no customer email. Those belong to Send (SendQuote), after
+ *      the terms and the customer are on the quote.
+ *   3. (re-locking an already-sent quote leaves it as it is.)
+ *   4. Append the locked action_card (status=locked) + a continue_cta
  *      to the terms wizard, so the chat advances forward instead of
  *      dead-ending after the click.
  *   5. Set conv.quoteId so the wizard / send-quote know what to
@@ -54,8 +55,6 @@ export class LockQuote {
     private conversations: AgentConversationStore,
     private messages: AgentMessageStore,
     private quotes: QuoteStore,
-    private bus: EventBus,
-    private emailer: SendPaperworkEmail,
     private users: UserStore,
   ) {}
 
@@ -69,34 +68,10 @@ export class LockQuote {
 
     const quote = await this.quotes.getOwned(input.quoteId, input.userId);
 
-    const wasAlreadySent = quote.status === "sent";
-    if (!wasAlreadySent) {
-      // Stamp sentAt here too — the /quotes stage derivation reads sentAt
-      // (not status), and the email-side stamping in SendPaperworkEmail is
-      // skipped when there's no recipient on file. Without this, locking
-      // a quote with no customer email leaves stage="draft" forever even
-      // though status="sent" — which broke the pipeline view (audit #2).
+    if (lockStatusFor(quote) === QUOTE_LOCKED && !quote.lockedAt) {
       await this.quotes.update(quote.id, input.userId, {
-        status: "sent",
-        sentAt: new Date().toISOString(),
+        lockedAt: new Date().toISOString(),
       });
-      await this.bus.emit({
-        userId: input.userId,
-        entityType: "quote",
-        entityId: quote.id,
-        action: "sent",
-      });
-      try {
-        await this.emailer.run(input.userId, {
-          kind: "quote",
-          resourceId: quote.id,
-        });
-      } catch (err) {
-        console.error(
-          `[lock-quote] email dispatch failed for quote ${quote.id}:`,
-          err,
-        );
-      }
     }
 
     // Re-read so the action_card mirrors what's actually persisted.
@@ -109,6 +84,7 @@ export class LockQuote {
       amountCents: Math.round((li.price ?? 0) * (li.quantity ?? 1)),
     }));
     const totalCents = fresh.estimatedTotal ?? 0;
+    const status = lockStatusFor(fresh);
 
     const card = await this.messages.append({
       conversationId: conv.id,
@@ -117,7 +93,7 @@ export class LockQuote {
       content: fresh.summary ?? t(lang, "lockQuote.card.lockedFallback"),
       payload: {
         actionType: "quote",
-        status: "sent",
+        status,
         quoteId: fresh.id,
         ...(fresh.customerId ? { customerId: fresh.customerId } : {}),
         ...(fresh.description ? { description: fresh.description } : {}),
@@ -139,10 +115,16 @@ export class LockQuote {
 
     const updated = await this.conversations.update(conv.id, {
       quoteId: fresh.id,
-      quoteStatus: "sent",
-      preview: t(lang, "lockQuote.preview.sent", {
-        summary: fresh.summary ?? fresh.id,
-      }),
+      quoteStatus: status,
+      preview: t(
+        lang,
+        status === QUOTE_LOCKED
+          ? "lockQuote.preview.locked"
+          : "lockQuote.preview.sent",
+        {
+          summary: fresh.summary ?? fresh.id,
+        },
+      ),
     });
 
     return { conversation: updated, newMessages: [card, cta] };

@@ -89,17 +89,18 @@ export class SendQuote {
     let smsFailureCode: SmsFailureCode | undefined;
 
     // Stamp the send state on the FIRST dispatch. sentAt (not status) is the
-    // guard: lock-quote flips status to "sent" without a timestamp, and the
-    // SMS-only path used to skip the stamp entirely — which hid the freshly
-    // won job from /jobs and every dashboard number (UX-02).
+    // guard: quotes from before REQ-234 may carry status "sent" without a
+    // timestamp (lock-quote used to flip it; it now only stamps lockedAt),
+    // and the SMS-only path used to skip the stamp entirely — which hid the
+    // freshly won job from /jobs and every dashboard number (UX-02).
     if (!quote.sentAt) {
       const statusFlip = !quote.status || quote.status === "draft";
       await this.quotes.update(quote.id, input.userId, {
         ...(statusFlip ? { status: "sent" } : {}),
         sentAt: new Date().toISOString(),
       });
-      // Emit only on the actual draft→sent transition — lock-quote already
-      // emitted `quote sent` when it flipped the status ahead of us.
+      // Emit only on the actual draft→sent transition (a locked quote is
+      // still a draft — REQ-234 — so this is where it becomes "sent").
       if (statusFlip) {
         await this.bus.emit({
           userId: input.userId,
