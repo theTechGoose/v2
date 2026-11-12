@@ -1204,3 +1204,64 @@ Deno.test("REQ-387 (M25) handle-wizard-answer integration: the typed 30/40/30 sc
   );
   await resetKv();
 });
+
+// ---- REQ-531 (demo-loop cycle 3, p8-pair6-a): use_active names the customer ----
+// "Use the chat's customer" is a choice, not a value: the transcript line read
+// "Cliente: Usar el cliente del chat" because the use_active branch never
+// returned the bound customer's name.
+async function setupTermsWithBoundCustomer(
+  language: "en" | "es",
+  customer: { name: string; address?: string },
+) {
+  const ctx = fresh();
+  const user = await ctx.users.create({ phoneNumber: "+15125550188" });
+  await ctx.users.update(user.id, { language });
+  const bound = await ctx.customers.create(user.id, customer);
+  const conv = await ctx.conversations.create({
+    userId: user.id,
+    customerId: bound.id,
+  });
+  await ctx.transitionFlow.run({ userId: user.id, conversationId: conv.id });
+  return { ...ctx, user, conv, bound };
+}
+
+Deno.test("REQ-531 p8-pair6-a handle-wizard-answer: use_active in Spanish reads 'Cliente: <name>', not the option label", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const { flow, user, conv } = await setupTermsWithBoundCustomer("es", {
+    name: "Maria Lopez",
+  });
+  const r = await flow.run({
+    userId: user.id,
+    conversationId: conv.id,
+    stepId: "customer",
+    optionId: "use_active",
+  });
+  assertEquals(r.newMessages[0].content, "Cliente: Maria Lopez");
+  assert(
+    !r.newMessages[0].content.includes(
+      t("es", "termsWizard.customer.useActive"),
+    ),
+  );
+  await resetKv();
+});
+
+Deno.test("REQ-531 p8-pair6-a handle-wizard-answer: use_active with an address on file reads 'Customer: <name> — <address>'", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const { flow, user, conv } = await setupTermsWithBoundCustomer("en", {
+    name: "Dave Roof",
+    address: "88 Oak Hollow Dr, Austin TX 78745",
+  });
+  const r = await flow.run({
+    userId: user.id,
+    conversationId: conv.id,
+    stepId: "customer",
+    optionId: "use_active",
+  });
+  assertEquals(
+    r.newMessages[0].content,
+    "Customer: Dave Roof — 88 Oak Hollow Dr, Austin TX 78745",
+  );
+  await resetKv();
+});

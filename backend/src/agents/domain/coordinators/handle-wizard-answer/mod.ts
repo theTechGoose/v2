@@ -396,7 +396,10 @@ export class HandleWizardAnswer {
         customerAddress: existing.address,
       };
     }
-    // use_active — no work needed; coordinator falls back to conv.customerId.
+    // use_active — the customer already bound to the conversation. REQ-531
+    // (demo-loop cycle 3, p8-pair6-a): return its name too, so the transcript
+    // reads "Cliente: Maria Lopez", not the option label "Cliente: Usar el
+    // cliente del chat". A bound customer that doesn't load keeps the label.
     if (input.optionId === "use_active" && conversationId) {
       const conv = await this.conversations.get(conversationId);
       if (conv.customerId) {
@@ -405,7 +408,13 @@ export class HandleWizardAnswer {
           input.userId,
         )
           .catch(() => null);
-        if (bound?.address) return { customerAddress: bound.address };
+        if (bound) {
+          return {
+            customerId: bound.id,
+            customerName: bound.name?.trim() || undefined,
+            customerAddress: bound.address,
+          };
+        }
       }
     }
     return {};
