@@ -171,6 +171,7 @@ import {
   applySendOutcome,
   headerStatusKey,
   lastRecoveryDividerId,
+  retryChannel,
   type SendDividerPayload,
   sendDividerFailed,
   sendOutcomePayload,
@@ -6746,18 +6747,11 @@ export default function AsstChat({
                   // send-quote attempt that failed (or partially failed)
                   // due to missing/invalid contact info, AND we still have
                   // a customer bound (we need a row to patch).
-                  // Channel may be missing on older threads (pre-channel-
-                  // routing dividers). Infer from which failure reason is
-                  // present so the recovery UI still shows up.
-                  const inferredChannel: "email" | "sms" | "both" | undefined =
-                    dp.channel ??
-                      (dp.emailFailureReason && dp.smsFailureReason
-                        ? "both"
-                        : dp.smsFailureReason
-                        ? "sms"
-                        : dp.emailFailureReason
-                        ? "email"
-                        : undefined);
+                  // REQ-568 (m44): the resend retries ONLY the channel(s)
+                  // that failed, read from the outcome — never the original
+                  // send's channel, or fixing a bad phone number on a "both"
+                  // send would email the customer again.
+                  const inferredChannel = retryChannel(dp);
                   const emailMissing = !dp.emailedTo &&
                     !!dp.emailFailureReason &&
                     !customer?.email;

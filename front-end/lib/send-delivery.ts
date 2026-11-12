@@ -38,6 +38,26 @@ export function sendDividerFailed(
   return !!d && !deliverySucceeded(d);
 }
 
+/**
+ * REQ-568 (cycle 4, m44): the channel(s) a recovery resend must retry —
+ * ONLY the ones that failed, read from the outcome (`emailedTo`/`textedTo`
+ * vs the `*FailureReason` fields), never the original send's `channel`. A
+ * "both" send whose email went out and whose text failed retries "sms", so
+ * fixing the phone number does not email the customer a second time.
+ * Undefined when nothing failed.
+ */
+export function retryChannel(
+  p: SendDividerPayload | null | undefined,
+): "email" | "sms" | "both" | undefined {
+  if (!p) return undefined;
+  const emailFailed = !!p.emailFailureReason && !p.emailedTo;
+  const smsFailed = !!p.smsFailureReason && !p.textedTo;
+  if (emailFailed && smsFailed) return "both";
+  if (smsFailed) return "sms";
+  if (emailFailed) return "email";
+  return undefined;
+}
+
 /** A send divider is one SendQuote wrote (it names its quote and carries an
  *  outcome); wizard phase dividers are not. */
 function isSendDivider(p: SendDividerPayload | null | undefined): boolean {
