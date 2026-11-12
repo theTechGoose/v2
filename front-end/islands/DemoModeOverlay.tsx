@@ -130,6 +130,7 @@ import {
   whoEnded,
 } from "../../shared/demo-mode/ended.ts";
 import {
+  bandBackground,
   clearPillRoom,
   CONTROL_SELECTOR,
   countsAsPage,
@@ -189,6 +190,23 @@ function dialogBackdropUp(): boolean {
       getComputedStyle(el).position === "fixed" &&
       coversView(el.getBoundingClientRect(), view)
     );
+}
+
+/**
+ * REQ-440 (demo-loop cycle 3, m2) — the backgrounds under the pill's band, innermost first (the
+ * page's element at the band's left foot, up to <html>): the band is painted in the first opaque
+ * one, so a document that scrolls ends at the band's edge instead of running under the pill.
+ */
+function bandColors(view: { h: number }): string[] {
+  const at = typeof document.elementsFromPoint === "function"
+    ? document.elementsFromPoint(1, view.h - 1)
+      .find((el) => !el.closest("[data-demo-overlay]"))
+    : undefined;
+  const out: string[] = [];
+  for (let n: Element | null = at ?? document.body; n; n = n.parentElement) {
+    out.push(getComputedStyle(n).backgroundColor);
+  }
+  return out;
 }
 
 /** REQ-295 — does this element show text of its own (not just its children's)? */
@@ -300,6 +318,8 @@ export default function DemoModeOverlay() {
   const [compact, setCompact] = useState(narrow);
   /** REQ-295 — the room reserved under the page right now (0: none) */
   const roomRef = useRef(0);
+  /** REQ-440 — the colour the band under the pill is painted in (the page's own, opaque) */
+  const [bandBg, setBandBg] = useState("#fff");
   /** REQ-295 — the pill's box as last told to the stage */
   const sentPillRef = useRef<Rect | null>(null);
   const sendPillRef = useRef<() => void>(() => {});
@@ -879,6 +899,14 @@ export default function DemoModeOverlay() {
     }
     rememberPillOpen(store, open);
   }, [open]);
+  // REQ-440 — the tab keeps the choice the moment it is made: an effect runs only after the next
+  // frame, and a reload right after the tap (REQ-379's story) outran it and lost the choice
+  const toggleOpen = () => {
+    const next = !open;
+    const store = pillStore();
+    if (store) rememberPillOpen(store, next);
+    setOpen(next);
+  };
 
   // 5. REQ-228 — the pill never covers the page; REQ-235 — the ended notice is a pill too.
   // REQ-379 — ONE home, bottom-left in a band reserved under the page (REQ-295's room, which the
@@ -962,6 +990,9 @@ export default function DemoModeOverlay() {
         size: { w: el.offsetWidth, h: el.offsetHeight },
       });
       room(home.room);
+      // REQ-440 (cycle 3, m2) — the band is painted in the page's own background, so a document
+      // that scrolls goes under the band's edge, never under the pill
+      setBandBg(bandBackground(bandColors(view)));
       // REQ-379 — a dialog is up: out of its content (REQ-300 froze the pill over it instead)
       const box = typeof document.elementsFromPoint === "function" &&
           dialogBackdropUp()
@@ -1026,6 +1057,13 @@ export default function DemoModeOverlay() {
   };display:flex;gap:10px;align-items:center;justify-content:space-between;flex-wrap:nowrap;white-space:nowrap;max-width:calc(100vw - ${
     2 * PILL_MARGIN
   }px);box-sizing:border-box;padding:7px 12px;border-radius:14px;background:#1f3d1b;color:#fff;font-family:${PILL_FONT};font-size:13px;box-shadow:0 4px 18px rgba(0,0,0,.35);pointer-events:none`;
+  // REQ-440 (demo-loop cycle 3, m2) — the band reserved for the pill (REQ-379), made real on a page
+  // whose document scrolls: window-wide, the band's height (0 with no room), opaque in the page's
+  // own background. z-index 1: over the page's flow, under its own fixed layers (a dialog's
+  // backdrop, a toast); it never takes a click
+  const bandStyle =
+    `position:fixed;left:0;right:0;bottom:0;height:var(--demo-pill-h, 0px);z-index:1;background:${bandBg};pointer-events:none`;
+  const band = <div data-cy="demo-band" aria-hidden="true" style={bandStyle} />;
   /** one line: a long name is cut, not wrapped (the live pill's rule, REQ-228) */
   const cut = "overflow:hidden;text-overflow:ellipsis;min-width:0";
   // REQ-294 (demo m21) — the words that carry a name wrap to as many lines as it needs: the ended
@@ -1044,6 +1082,7 @@ export default function DemoModeOverlay() {
     };
     return (
       <div data-demo-overlay>
+        {band}
         <div
           ref={pillRef}
           data-cy="demo-ended"
@@ -1078,6 +1117,7 @@ export default function DemoModeOverlay() {
     // REQ-179 — Demo was just clicked: the pill is up before the server answers
     return (
       <div data-demo-overlay>
+        {band}
         <div
           ref={pillRef}
           data-cy="demo-pill"
@@ -1104,6 +1144,7 @@ export default function DemoModeOverlay() {
   if (demo.role === "presenter") {
     return (
       <div data-demo-overlay>
+        {band}
         <div
           ref={pillRef}
           data-cy="demo-pill"
@@ -1189,6 +1230,7 @@ export default function DemoModeOverlay() {
 
   return (
     <div data-demo-overlay>
+      {band}
       {presenters.map((p) => (
         <PeerPointer
           key={p.userId}
@@ -1251,7 +1293,7 @@ export default function DemoModeOverlay() {
           data-cy="demo-more"
           aria-expanded={!compact || open}
           aria-label={copy.moreLabel}
-          onClick={() => setOpen((o) => !o)}
+          onClick={toggleOpen}
           style={`display:inline-flex;align-items:center;gap:6px;padding:0;border:0;background:none;color:inherit;font:inherit;cursor:${
             compact ? "pointer" : "default"
           };${HIT}`}

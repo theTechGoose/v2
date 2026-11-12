@@ -174,20 +174,24 @@ describe("REQ-295 — the pill holds one clear spot over nothing of the page (de
       removeProperty: (n: string) => void calls.push(`${tag} rm ${n}`),
     });
     setPillRoom(style("html"), style("body"), 64.4);
+    // REQ-440 (cycle 3, m2): the room also scroll-pads the document by the band
     expect(calls).toEqual([
       `html set ${PILL_ROOM_VAR}=64px`,
+      `html set scroll-padding-bottom=var(${PILL_ROOM_VAR}, 0px)`,
       `body set padding-bottom=var(${PILL_ROOM_VAR}, 0px)`,
     ]);
     calls.length = 0;
     clearPillRoom(style("html"), style("body"));
     expect(calls).toEqual([
       `html rm ${PILL_ROOM_VAR}`,
+      "html rm scroll-padding-bottom",
       "body rm padding-bottom",
     ]);
     calls.length = 0;
     setPillRoom(style("html"), style("body"), 0);
     expect(calls).toEqual([
       `html rm ${PILL_ROOM_VAR}`,
+      "html rm scroll-padding-bottom",
       "body rm padding-bottom",
     ]);
   });
