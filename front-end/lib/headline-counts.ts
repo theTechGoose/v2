@@ -74,6 +74,8 @@ export function invoicesHeroMode(input: {
   scheduledCount?: number;
   /** the money those scheduled installments carry */
   scheduledCents?: number;
+  /** REQ-566: every balance still owed (overdue + out + claimed), cents */
+  outstandingCents?: number;
   forecast?: {
     thisWeekCents: number;
     nextWeekCents: number;
@@ -92,7 +94,13 @@ export function invoicesHeroMode(input: {
   }
   if (outstandingCount === 0 && !haveForecast) return "clear";
   if (haveForecast && forecast!.thisWeekCents > 0) return "thisWeek";
-  if (haveForecast && forecast!.nextWeekCents > 0) return "nextWeek";
+  // REQ-566 (demo-loop cycle 4, m11): "Quiet week — $450 coming next week"
+  // beside $100,000,449 out for payment. The quiet line is only the headline
+  // when next week's money is all that is out; more owed → "outstanding".
+  if (
+    haveForecast && forecast!.nextWeekCents > 0 &&
+    (input.outstandingCents ?? 0) <= forecast!.nextWeekCents
+  ) return "nextWeek";
   return "outstanding";
 }
 
@@ -329,11 +337,24 @@ export function draftingKpiSub(
  *  pending), but a ready-to-send draft is named instead of "No quotes out
  *  yet. Draft one". */
 export function dashQuotesEmpty(
-  { draftCount, hasDecidedHistory }: {
+  { draftCount, hasDecidedHistory, undeliveredCount = 0 }: {
     draftCount: number;
     hasDecidedHistory: boolean;
+    /** REQ-566: of the drafts, those whose send reached nobody */
+    undeliveredCount?: number;
   },
 ): { key: string; n: number } {
+  // REQ-566 (demo-loop cycle 4, m11): right after Send to a 555 number the
+  // quote stays a draft (REQ-320) — the line says it was not delivered, not
+  // "1 draft is ready to send".
+  if (undeliveredCount > 0) {
+    return {
+      key: `quotesAwaiting.emptyUndelivered.${
+        undeliveredCount === 1 ? "one" : "other"
+      }`,
+      n: undeliveredCount,
+    };
+  }
   if (draftCount > 0) {
     return {
       key: `quotesAwaiting.emptyDrafts.${draftCount === 1 ? "one" : "other"}`,
@@ -346,4 +367,23 @@ export function dashQuotesEmpty(
       : "quotesAwaiting.empty",
     n: 0,
   };
+}
+
+/** REQ-566 (demo-loop cycle 4, m11): the "Quotes pending" KPI's sub-line.
+ *  Money in flight reads "$X in flight"; with nothing in flight but a send
+ *  that reached nobody, "Not delivered (n)" — never a bare "—" under the 0
+ *  the owner just tried to send. Null → "—". */
+export function quotesPendingSub(
+  { pendingTotalCents, undeliveredCount }: {
+    pendingTotalCents: number;
+    undeliveredCount: number;
+  },
+): { key: string; n: number } | null {
+  if (pendingTotalCents > 0) {
+    return { key: "kpis.quotesPending.inFlight", n: 0 };
+  }
+  if (undeliveredCount > 0) {
+    return { key: "kpis.quotesPending.notDelivered", n: undeliveredCount };
+  }
+  return null;
 }

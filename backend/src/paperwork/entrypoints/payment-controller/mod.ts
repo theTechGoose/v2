@@ -8,6 +8,9 @@ import { ComputeInvoiceBalance } from "@paperwork/domain/coordinators/compute-in
 import { UserStore } from "@users/domain/data/user-store/mod.ts";
 import { SessionStore } from "@users/domain/data/session-store/mod.ts";
 import { requireUser } from "@users/domain/coordinators/require-user/mod.ts";
+import { CustomerStore } from "@crm/domain/data/customer-store/mod.ts";
+import { EventBus } from "@core/business/events/mod.ts";
+import { paymentRecordedEvent } from "@paperwork/domain/business/owner-activity/mod.ts"; // REQ-566
 
 @Controller("payments")
 export class PaymentController {
@@ -17,15 +20,24 @@ export class PaymentController {
     private balances: ComputeInvoiceBalance,
     private users: UserStore,
     private sessions: SessionStore,
+    private customers: CustomerStore,
+    private bus: EventBus,
   ) {}
 
   @Post()
   async create(@Context() ctx: ExecutionContext, @Body() body: unknown) {
     const user = await requireUser(ctx, this.sessions, this.users);
     const dto = parseCreatePayment(body);
-    await this.invoices.getOwned(dto.invoiceId, user.id);
+    const invoice = await this.invoices.getOwned(dto.invoiceId, user.id);
     const created = await this.store.create(user.id, dto);
     await this.balances.run(dto.invoiceId, user.id);
+    // REQ-566 (cycle 4, m11): money the owner recorded is activity — the
+    // dashboard's "What we handled today" feed says so.
+    const customerName = invoice.customerId
+      ? await this.customers.getOwned(invoice.customerId, user.id)
+        .then((c) => c.name || undefined, () => undefined)
+      : undefined;
+    await this.bus.emit(paymentRecordedEvent(user.id, created, customerName));
     return created;
   }
 

@@ -77,6 +77,8 @@ export interface QuoteCounts {
   draft: number;
   sent: number;
   accepted: number;
+  /** REQ-566: drafts whose last send reached nobody (part of `draft`). */
+  undelivered?: number;
 }
 export interface RevenueStats {
   ytdCents: number;
@@ -113,6 +115,9 @@ export interface Notification {
     | "invoice_paid"
     | "invoice_overdue"
     | "invoice_nudge_due"
+    // REQ-566 (demo-loop cycle 4, m11): owner-side activity
+    | "invoice_sent"
+    | "task_completed"
     | "customer_replied"
     | "generic";
   title: string;

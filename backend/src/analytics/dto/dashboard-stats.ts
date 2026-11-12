@@ -27,6 +27,9 @@ export class QuoteCountsDto {
   sent!: number;
   @IsNumber()
   accepted!: number;
+  /** REQ-566: drafts whose last send reached nobody (part of `draft`). */
+  @IsNumber()
+  undelivered!: number;
 }
 
 /** REQ-397: money still owed on open receivables, INTEGER CENTS per bucket. */

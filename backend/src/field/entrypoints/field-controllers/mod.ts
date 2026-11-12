@@ -53,6 +53,7 @@ import { FieldDay } from "@field/domain/coordinators/field-day/mod.ts";
 import { FieldMapCenter } from "@field/domain/coordinators/field-map-center/mod.ts";
 import { FieldBatches } from "@field/domain/coordinators/field-batches/mod.ts";
 import { FieldNotices } from "@field/domain/coordinators/field-notices/mod.ts";
+import { FieldActivity } from "@field/domain/coordinators/field-activity/mod.ts";
 import {
   FieldViews,
   safeWorker,
@@ -796,6 +797,7 @@ export class FieldTasksController {
     private regions: RegionStore,
     private customers: CustomerStore,
     private notices: FieldNotices,
+    private activity: FieldActivity,
   ) {}
 
   /** REQ-164: a one-off task by hand — one customer, one day, no subscription */
@@ -977,6 +979,7 @@ export class FieldTasksController {
       t.adminNote = String(b.adminNote ?? "").trim() || undefined;
     }
     // REQ-159 — the office marks the task done, or re-opens it
+    let completedNow = false;
     if ("status" in b) {
       const st = str(b.status);
       if (st !== "complete" && st !== "assigned") {
@@ -988,6 +991,7 @@ export class FieldTasksController {
           409,
         );
       }
+      completedNow = st === "complete" && t.status !== "complete"; // REQ-566
       t.status = st;
       if (st === "complete") t.completedAt = new Date().toISOString();
       else delete t.completedAt;
@@ -1023,6 +1027,7 @@ export class FieldTasksController {
       t.priceCents = p;
     }
     await this.tasks.put(t);
+    if (completedNow) await this.activity.taskCompleted(t); // REQ-566
     return this.views.task(t, await this.views.names(user.id));
   }
 }

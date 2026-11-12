@@ -10,6 +10,7 @@ import { WorkerSessionStore } from "@field/domain/data/worker-session-store/mod.
 import { FieldDay } from "@field/domain/coordinators/field-day/mod.ts";
 import { FieldViews } from "@field/domain/coordinators/field-views/mod.ts";
 import { FieldNotices } from "@field/domain/coordinators/field-notices/mod.ts";
+import { FieldActivity } from "@field/domain/coordinators/field-activity/mod.ts";
 import { newId } from "@field/domain/coordinators/field-zones/mod.ts";
 import { addService, canAct, deferTask, findOrCreateTaskType, inActionWindow } from "@field/domain/business/tasks/mod.ts";
 import { fieldToday, isValidDate, shiftDate } from "@field/domain/business/schedule/mod.ts";
@@ -59,6 +60,7 @@ export class FieldWorkerController {
     private views: FieldViews,
     private notices: FieldNotices,
     private users: UserStore,
+    private activity: FieldActivity,
   ) {}
 
 
@@ -149,10 +151,12 @@ export class FieldWorkerController {
     if (t.invoiceId) throw new FieldError("already invoiced", 409);
     const b = body(raw);
     if (tooLong(b.note, CAP.note)) throw new FieldError(`note too long (max ${CAP.note})`);
+    const wasComplete = t.status === "complete";
     t.status = "complete";
     t.completedAt = new Date().toISOString();
     if (typeof b.note === "string") t.note = b.note.trim() || undefined;
     await this.tasks.put(t);
+    if (!wasComplete) await this.activity.taskCompleted(t, w.name); // REQ-566
     return this.views.workerTask(t, await this.views.workerNames(w.userId));
   }
 

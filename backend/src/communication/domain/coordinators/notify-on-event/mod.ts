@@ -101,7 +101,7 @@ export class NotifyOnEvent {
 function notificationEntityType(
   t: DomainEvent["entityType"],
 ): "quote" | "invoice" | "customer" | "conversation" | undefined {
-  if (t === "payment" || t === "message") return undefined;
+  if (t === "payment" || t === "message" || t === "task") return undefined;
   return t;
 }
 
@@ -287,6 +287,45 @@ export function notificationL10n(event: DomainEvent): NotificationL10n | null {
           ? `${description.slice(0, 139)}…`
           : description)
         : undefined,
+    };
+  }
+  // REQ-566 (demo-loop cycle 4, m11): the owner's own work is activity too.
+  // The dashboard's "What we handled today" reads this feed (REQ-299); with
+  // only customer-side events mapped it said "Nothing yet" after the owner
+  // issued an invoice, recorded a payment or a worker finished a job.
+  // `sent` is SendInvoice's first-send event, `issued` every other path's.
+  if (
+    event.entityType === "invoice" &&
+    (event.action === "issued" || event.action === "sent")
+  ) {
+    const amountCents = event.data?.amountCents;
+    const money = typeof amountCents === "number" && amountCents > 0;
+    return {
+      type: "invoice_sent",
+      titleKey: money ? "notify.invoice.issuedAmount" : "notify.invoice.issued",
+      titleParams: money ? { ...nameParams, amountCents } : nameParams,
+    };
+  }
+  if (event.entityType === "invoice" && event.action === "payment_recorded") {
+    const amountCents = event.data?.amountCents;
+    const money = typeof amountCents === "number" && amountCents > 0;
+    return {
+      type: "invoice_paid",
+      titleKey: money
+        ? "notify.payment.recordedAmount"
+        : "notify.payment.recorded",
+      titleParams: money ? { ...nameParams, amountCents } : nameParams,
+    };
+  }
+  if (event.entityType === "task" && event.action === "completed") {
+    const task = (event.data?.task as string | undefined) ?? "";
+    const worker = event.data?.worker as string | undefined;
+    return {
+      type: "task_completed",
+      titleKey: worker ? "notify.task.completedBy" : "notify.task.completed",
+      titleParams: worker
+        ? { ...nameParams, task, worker }
+        : { ...nameParams, task },
     };
   }
   if (event.entityType === "message" && event.action === "received") {

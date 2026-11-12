@@ -6,7 +6,7 @@
 import { I, ICN, type IconName } from "../lib/dash-icons.tsx";
 import Ticker from "../islands/Ticker.tsx";
 import { type Lang, tFor } from "../lib/i18n.ts";
-import { dashQuotesEmpty } from "../lib/headline-counts.ts";
+import { dashQuotesEmpty, quotesPendingSub } from "../lib/headline-counts.ts";
 import {
   activeJobsCountLabel,
   formatMoneyCompact,
@@ -119,6 +119,8 @@ interface KpisProps {
   /** Pending-quote pipeline total in INTEGER CENTS (P-36: rendered via
    *  formatMoneyCompact — "$850", never "$0.8k"). */
   pendingTotal: number;
+  /** REQ-566 (m11): drafts whose send reached nobody — "Not delivered (n)" */
+  undeliveredQuotes?: number;
   avgJob: number;
   lang?: Lang;
 }
@@ -176,13 +178,19 @@ export function Kpis(props: KpisProps) {
       ic_fg: "var(--coffee-600)",
       label: tFor(lang, "kpis.quotesPending.label"),
       val: String(props.pendingQuotes),
-      sub: props.pendingTotal > 0
-        ? tFor(lang, "kpis.quotesPending.inFlight", {
+      sub: (() => {
+        const sub = quotesPendingSub({
+          pendingTotalCents: props.pendingTotal,
+          undeliveredCount: props.undeliveredQuotes ?? 0,
+        });
+        if (!sub) return "—";
+        return tFor(lang, sub.key, {
+          n: sub.n,
           // P-36: full sub-$1k amounts ("$850"), compacting only at ≥ $1k —
           // never the old dollars/1000 "$0.8k" artifact.
           amt: formatMoneyCompact(props.pendingTotal),
-        })
-        : "—",
+        });
+      })(),
       delta: null,
     },
     {
@@ -343,9 +351,21 @@ export interface QuoteRow {
 }
 
 export function QuotesAwaiting(
-  { quotes, lang = "en", hasDecidedHistory = false, draftCount = 0 }: {
+  {
+    quotes,
+    lang = "en",
+    hasDecidedHistory = false,
+    draftCount = 0,
+    undeliveredCount = 0,
+    pending = false,
+  }: {
     quotes: QuoteRow[];
     lang?: Lang;
+    /** REQ-566 (m11): of the drafts, those whose send reached nobody. */
+    undeliveredCount?: number;
+    /** REQ-566 (m11): the list has not landed yet (warm start) — say no
+     *  "none sent" over a tile that already counts one. */
+    pending?: boolean;
     /** REQ-404 (m13): real unsent drafts — the count above stays sent-only
      *  (REQ-320), but the empty line names the drafts ready to send. */
     draftCount?: number;
@@ -378,10 +398,15 @@ export function QuotesAwaiting(
           {tFor(lang, "dashPanel.seeAll")}
         </a>
       </div>
-      {empty && (
+      {empty && pending && <div class="panel__empty" aria-busy="true" />}
+      {empty && !pending && (
         <div class="panel__empty">
           {(() => {
-            const e = dashQuotesEmpty({ draftCount, hasDecidedHistory });
+            const e = dashQuotesEmpty({
+              draftCount,
+              hasDecidedHistory,
+              undeliveredCount,
+            });
             return tFor(lang, e.key, { n: e.n });
           })()}
         </div>
