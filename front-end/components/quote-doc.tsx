@@ -260,7 +260,7 @@ export function ErrorCard(
 }
 
 export function QuoteDoc(
-  { quote, lang, onSigned, search }: {
+  { quote, lang, onSigned, search, onSignInPerson }: {
     quote: QuotePublic;
     /** REQ-048: the viewer's language — English first, or their own pick /
      *  toggle (PublicQuoteView owns it). The contractor's outgoing-comms
@@ -272,18 +272,13 @@ export function QuoteDoc(
     /** REQ-306: the page's query string — `?as=customer&confirm=1` is the
      *  in-person override that shows the pad to the business's own viewer. */
     search?: string;
+    /** REQ-405 (demo m14): "Sign in person" — the view lays the override onto
+     *  the current URL in place and re-renders the pad (no navigation). */
+    onSignInPerson?: () => void;
   },
 ) {
   // REQ-306 (demo B3): the business's own preview — banner instead of pad.
   const preview = internalPreview(quote, search);
-  const overrideHref = (() => {
-    const q = new URLSearchParams(
-      (search ?? "").startsWith("?") ? (search ?? "").slice(1) : search ?? "",
-    );
-    q.set("as", "customer");
-    q.set("confirm", "1");
-    return `?${q.toString()}`;
-  })();
   // Shared view derivation (P-11/P-13/P-40/P-63) — accepted state, the
   // stored signature image, the post-signed footer variant, and the PDF
   // download URL all come from the same pure module the tests pin.
@@ -871,16 +866,21 @@ export function QuoteDoc(
                             <div style="margin-top:4px">
                               {tFor(lang, "public.doc.internalPreviewBody")}
                             </div>
-                            <a
-                              href={overrideHref}
+                            {
+                              /* REQ-405 (demo m14): a button, not a link —
+                                the pad appears in place, no reload. */
+                            }
+                            <button
+                              type="button"
                               data-cy="quote-sign-in-person"
-                              style="display:inline-block;margin-top:10px;font-weight:700;color:#8a5a10;text-decoration:underline"
+                              onClick={() => onSignInPerson?.()}
+                              style="display:inline-block;margin-top:10px;padding:0;background:none;border:0;cursor:pointer;font:inherit;font-weight:700;color:#8a5a10;text-decoration:underline;text-align:left"
                             >
                               {tFor(
                                 lang,
                                 "public.doc.internalPreviewSignInPerson",
                               )}
-                            </a>
+                            </button>
                           </div>
                         )
                         : (

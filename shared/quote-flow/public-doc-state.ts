@@ -92,6 +92,18 @@ export function hasSignOverride(search: string | undefined | null): boolean {
   return q.get("as") === "customer" && q.get("confirm") === "1";
 }
 
+/** REQ-405 (demo m14, cycle 2): the in-person override laid onto the
+ *  page's CURRENT query — `?lang=es` and anything else already there stay,
+ *  `as=customer` and `confirm=1` are set (never duplicated). */
+export function signOverrideSearch(search: string | undefined | null): string {
+  const q = new URLSearchParams(
+    (search ?? "").startsWith("?") ? (search ?? "").slice(1) : search ?? "",
+  );
+  q.set("as", "customer");
+  q.set("confirm", "1");
+  return `?${q.toString()}`;
+}
+
 /** REQ-306 (demo B3): the business's own viewer of a still-open quote is
  *  previewing — the page shows "you are viewing as the customer; signing is
  *  disabled" instead of the pad, unless the in-person override is on. A
