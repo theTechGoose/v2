@@ -11,9 +11,9 @@
  * other, so the demo stage mirrors it.
  *
  * A MutationObserver in the page records every state of the pending bubble;
- * the reply must have been seen growing (several prefixes of it) before it
- * landed. Works on the stub LLM (it streams its echo word by word) and on the
- * real model.
+ * the reply must have been seen growing (two states or more, the last one the
+ * start of the reply that lands) before it landed. Works on the stub LLM (it
+ * streams its echo word by word) and on the real model.
  *
  * Page: /assistant (island front-end/islands/AsstChat.tsx; the stream from
  * backend/src/agents/entrypoints/chat-controller, read by
@@ -155,12 +155,15 @@ Deno.test("REQ-670 p7: the assistant's reply streams into its bubble as it is wr
         JSON.stringify(seen.texts.slice(0, 4))
       })`,
     );
+    // (not "each state a prefix of the next": a real model's "- tip" becomes
+    // "• tip" once the bullet is whole — the server reshapes, the bubble is
+    // replaced, never left on raw markdown)
+    const first = seen.texts[0] ?? "";
     expect(
-      seen.texts.every((s, i) =>
-        i === 0 || s.startsWith(seen.texts[i - 1].trimEnd())
-      ),
-      `each state of the bubble grew from the one before (${
-        JSON.stringify(seen.texts.slice(0, 6))
+      first.length > 0 &&
+        first.length < (seen.texts[seen.texts.length - 1] ?? "").length,
+      `the bubble grew while the reply was written (first: ${
+        JSON.stringify(first.slice(0, 60))
       })`,
     );
     const last = (seen.texts[seen.texts.length - 1] ?? "").trim();
