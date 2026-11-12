@@ -19,6 +19,7 @@ import { customerContactError } from "#quote-flow/customer-contact.ts"; // REQ-2
 import { findExistingCustomer } from "#quote-flow/customer-dedupe.ts"; // REQ-331
 import { termFromPick } from "#quote-flow/wizard-terms.ts"; // REQ-347
 import { accountNetDays } from "#quote-flow/completion-schedule.ts"; // REQ-411
+import { formatTermDate } from "#quote-flow/format-helpers.ts"; // REQ-495
 import { BusinessIdentityStore } from "@profile/domain/data/business-identity-store/mod.ts";
 import type { AgentConversation } from "@agents/dto/conversation.ts";
 import type { AgentMessage } from "@agents/dto/message.ts";
@@ -170,7 +171,11 @@ export class HandleWizardAnswer {
     const pickValue = input.stepId === "customer" && boundCustomerName
       ? boundCustomerName
       : optionDef.isCustom
-      ? (customerCustomValue ?? t(lang, "wizardAnswer.pick.customFallback"))
+      // REQ-495 (m17): a picked date (stored ISO) reads in the contractor's
+      // language — "1 dic 2026" / "Dec 1, 2026"; other values pass through.
+      ? (customerCustomValue !== undefined
+        ? formatTermDate(customerCustomValue, lang)
+        : t(lang, "wizardAnswer.pick.customFallback"))
       : t(lang, optionDef.label);
 
     // REQ-386 (demo m17): the customer line also carries the job address, so

@@ -235,6 +235,40 @@ export function formatShortDate(iso: string, lang: Lang): string {
 }
 
 /**
+ * REQ-495 (demo-loop cycle 3, m17): a date-valued agreement term — the
+ * wizard's "Pick a date" start — as ISO "YYYY-MM-DD". New picks are stored
+ * ISO; quotes saved before REQ-495 carry the picker's old MM/DD/YYYY, which
+ * still parses. Null for anything that is not a real calendar day.
+ */
+export function termDateIso(value: string | undefined): string | null {
+  const v = (value ?? "").trim();
+  const iso = /^(\d{4})-(\d{2})-(\d{2})$/.exec(v);
+  const us = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(v);
+  const [y, m, d] = iso
+    ? [+iso[1], +iso[2], +iso[3]]
+    : us
+    ? [+us[3], +us[1], +us[2]]
+    : [0, 0, 0];
+  if (!y || m < 1 || m > 12 || d < 1) return null;
+  const date = new Date(Date.UTC(y, m - 1, d));
+  if (date.getUTCMonth() !== m - 1 || date.getUTCDate() !== d) return null;
+  return `${y}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+}
+
+/**
+ * REQ-495: a stored date term in the reader's language — es "1 dic 2026"
+ * (day-first), en "Dec 1, 2026". Any other value passes through untouched.
+ */
+export function formatTermDate(value: string, lang: Lang): string {
+  const iso = termDateIso(value);
+  if (!iso) return value;
+  const [y, m, d] = iso.split("-").map(Number);
+  const l: Lang = lang === "es" ? "es" : "en";
+  const month = SHORT_MONTHS[l][m - 1];
+  return l === "es" ? `${d} ${month} ${y}` : `${month} ${d}, ${y}`;
+}
+
+/**
  * Spanish weekday lines are lowercase from the locale ("viernes · agosto
  * 17") but a greeting line starts a sentence — capitalize the leading
  * character only (P-65).

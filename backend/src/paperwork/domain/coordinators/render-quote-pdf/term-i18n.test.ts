@@ -35,3 +35,17 @@ for (const [name, fn] of [["quote PDF", quotePdf], ["invoice PDF", invoicePdf]] 
     assertEquals(fn("TBD", "en"), "TBD");
   });
 }
+
+// REQ-495 (demo-loop cycle 3, m17): the wizard's "Pick a date" start term is
+// stored as ISO (older quotes carry MM/DD/YYYY). Both PDFs print it in the
+// reader's language — "1 dic 2026" / "Dec 1, 2026" — never "12/01/2026",
+// which a Spanish reader takes for 12 January.
+for (const [name, fn] of [["quote PDF", quotePdf], ["invoice PDF", invoicePdf]] as const) {
+  Deno.test(`REQ-495 m17 ${name}: a stored start date (ISO or MM/DD/YYYY) prints day-first in Spanish, 'Dec 1, 2026' in English`, () => {
+    assertEquals(fn("2026-12-01", "es"), "1 dic 2026");
+    assertEquals(fn("12/01/2026", "es"), "1 dic 2026");
+    assertEquals(fn("2026-12-01", "en"), "Dec 1, 2026");
+    assertEquals(fn("12/01/2026", "en"), "Dec 1, 2026");
+    assertEquals(fn("3 weeks", "es"), "3 semanas");
+  });
+}

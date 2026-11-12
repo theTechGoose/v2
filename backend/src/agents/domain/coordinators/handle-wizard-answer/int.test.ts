@@ -1204,3 +1204,53 @@ Deno.test("REQ-387 (M25) handle-wizard-answer integration: the typed 30/40/30 sc
   );
   await resetKv();
 });
+
+// REQ-495 (demo-loop cycle 3, m17): "Pick a date" posts the day as ISO. The
+// quote's start term keeps ISO (the neutral base every reader localizes),
+// and the contractor's transcript line reads it in their own language —
+// "Fecha de inicio: 1 dic 2026", never "12/01/2026".
+for (
+  const [language, shown] of [["es", "1 dic 2026"], ["en", "Dec 1, 2026"]] as const
+) {
+  Deno.test(`REQ-495 m17 handle-wizard-answer integration (${language}): a picked start date is stored ISO and the transcript reads '${shown}'`, async () => {
+    Deno.env.set("KV_PATH", ":memory:");
+    await resetKv();
+    const ctx = fresh();
+    const user = await ctx.users.create({ phoneNumber: "+15125550123" });
+    await ctx.users.update(user.id, { language });
+    const quote = await ctx.quotes.create(user.id, {
+      summary: "Kitchen",
+      lineItems: [],
+      estimatedTotal: 12_500,
+      status: "draft",
+    });
+    const conv = await ctx.conversations.create({
+      userId: user.id,
+      quoteId: quote.id,
+    });
+    await ctx.transitionFlow.run({ userId: user.id, conversationId: conv.id });
+    await ctx.flow.run({
+      userId: user.id,
+      conversationId: conv.id,
+      stepId: "customer",
+      optionId: "create_new",
+      customer: { create: { name: "Maria Lopez" } },
+    });
+    const r = await ctx.flow.run({
+      userId: user.id,
+      conversationId: conv.id,
+      stepId: "start_date",
+      optionId: "custom",
+      customValue: "2026-12-01",
+    });
+    const line = r.newMessages[0].content ?? "";
+    assert(line.endsWith(`: ${shown}`), line);
+    assert(!line.includes("2026-12-01") && !line.includes("12/01"), line);
+    const reloaded = await ctx.quotes.getOwned(quote.id, user.id);
+    const start = (reloaded.terms ?? []).find((t) =>
+      t.stepId === "start_date"
+    );
+    assertEquals(start?.value, "2026-12-01");
+    await resetKv();
+  });
+}

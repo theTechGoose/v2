@@ -8,7 +8,11 @@ import type { Customer } from "@crm/dto/customer.ts";
 import type { User } from "@users/dto/user.ts";
 import { isAccepted } from "#quote-flow/quote-status.ts";
 import { isTbdTermValue } from "#quote-flow/terms-i18n.ts";
-import { websiteLabel } from "#quote-flow/format-helpers.ts";
+import {
+  formatTermDate,
+  termDateIso,
+  websiteLabel,
+} from "#quote-flow/format-helpers.ts";
 import { agreementTitle } from "#quote-flow/agreement-title.ts";
 import { lineItemDescription } from "#quote-flow/quote-translations.ts";
 import {
@@ -942,6 +946,9 @@ function termValue(
  *  ("12 months" → "12 meses"); custom free-text and universal ratios
  *  ("50/50") pass through unchanged. */
 export function localizeTermValue(value: string, lang: "en" | "es"): string {
+  // REQ-495 (m17): a picked start date (ISO, or a legacy MM/DD/YYYY) prints
+  // in the reader's language — "1 dic 2026" / "Dec 1, 2026".
+  if (termDateIso(value)) return formatTermDate(value, lang);
   if (lang === "en") return value;
   const trimmed = (value ?? "").trim();
   // Map known wizard preset labels to localized i18n keys.
