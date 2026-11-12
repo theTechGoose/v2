@@ -164,6 +164,8 @@ Deno.test("REQ-395: the revision editor is labelled, the preview names the added
 
     // M12: Discard draft drops it; the customer's version is untouched
     await page.locator("[data-cy='quote-discard-draft']").click();
+    // REQ-693: the discard asks first
+    await page.locator("[data-cy='quote-discard-confirm']").click();
     await page.locator("[data-cy='quote-pending-badge']").waitFor({
       state: "detached",
       timeout: 15_000,

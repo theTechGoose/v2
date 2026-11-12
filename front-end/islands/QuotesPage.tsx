@@ -743,6 +743,8 @@ function QuoteLedgerSection(
   const [confirming, setConfirming] = useState(false);
   // REQ-395 (demo M12): an unwanted draft revision can be thrown away.
   const [discarding, setDiscarding] = useState(false);
+  // REQ-693 (cycle 5, p18-7a): Discard draft asks first, like the CO withdraw.
+  const [askDiscard, setAskDiscard] = useState(false);
   // REQ-462 (M26): the change order just withdrawn from this panel
   const [withdrawnCo, setWithdrawnCo] = useState<string | null>(null);
   // REQ-466 (demo m38): the draft revision can be read before Publish.
@@ -816,6 +818,7 @@ function QuoteLedgerSection(
     try {
       await quotesClient.discardRevision(q.id);
       setConfirming(false);
+      setAskDiscard(false);
       onPublished();
     } catch {
       setPublishErr(tFor(lang, "quotes.ledger.discardError"));
@@ -883,18 +886,57 @@ function QuoteLedgerSection(
               {tFor(lang, "quotes.ledger.unpublished")}
             </span>
             {/* REQ-395 (demo M12): a quiet ghost — the customer keeps the published version */}
-            <button
-              type="button"
-              class="qopen__btn"
-              data-cy="quote-discard-draft"
-              disabled={discarding || publishing}
-              onClick={discard}
-              style="background:transparent;border-color:transparent;color:var(--fg-muted,#6b7560);padding:4px 8px;font-size:12px"
-            >
-              {discarding
-                ? tFor(lang, "quotes.ledger.discarding")
-                : tFor(lang, "quotes.ledger.discardDraft")}
-            </button>
+            {!askDiscard && (
+              <button
+                type="button"
+                class="qopen__btn"
+                data-cy="quote-discard-draft"
+                disabled={discarding || publishing}
+                onClick={() => {
+                  setPublishErr(null);
+                  setConfirming(false);
+                  setAskDiscard(true);
+                }}
+                style="background:transparent;border-color:transparent;color:var(--fg-muted,#6b7560);padding:4px 8px;font-size:12px"
+              >
+                {tFor(lang, "quotes.ledger.discardDraft")}
+              </button>
+            )}
+            {/* REQ-693 (cycle 5, p18-7a): "Discard Version 2? Your edits are lost. [Discard] [Keep]" */}
+            {askDiscard && (
+              <span style="display:inline-flex;gap:8px;flex-wrap:wrap;align-items:center;font-size:12.5px">
+                <span
+                  data-cy="quote-discard-ask"
+                  style="color:#a83b3b;font-weight:700"
+                >
+                  {tFor(lang, "quotes.ledger.discardAsk", {
+                    n: ledger.quote.version + 1,
+                  })}
+                </span>
+                <button
+                  type="button"
+                  class="qopen__btn"
+                  data-cy="quote-discard-confirm"
+                  style="padding:4px 10px;font-size:12px;border-color:#a83b3b;color:#a83b3b"
+                  disabled={discarding || publishing}
+                  onClick={discard}
+                >
+                  {discarding
+                    ? tFor(lang, "quotes.ledger.discarding")
+                    : tFor(lang, "quotes.ledger.discardConfirm")}
+                </button>
+                <button
+                  type="button"
+                  class="qopen__btn"
+                  data-cy="quote-discard-keep"
+                  style="padding:4px 10px;font-size:12px;background:transparent;border-color:transparent;color:var(--fg-muted,#6b7560)"
+                  disabled={discarding}
+                  onClick={() => setAskDiscard(false)}
+                >
+                  {tFor(lang, "quotes.ledger.discardKeep")}
+                </button>
+              </span>
+            )}
           </span>
         )}
       </div>
@@ -1237,6 +1279,7 @@ function QuoteLedgerSection(
               disabled={publishing}
               onClick={() => {
                 setPublishErr(null);
+                setAskDiscard(false);
                 setConfirming(true);
               }}
             >
