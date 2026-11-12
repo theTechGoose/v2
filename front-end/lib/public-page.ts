@@ -1,6 +1,15 @@
 import { page } from "fresh";
 import { define } from "../utils.ts";
+import type { Lang } from "./lang.ts";
 import { resolvePageLang } from "./page-lang.ts";
+
+/** The response headers that persist an explicit ?lang= pick to pm_lang —
+ *  none when the URL named no language (REQ-122; REQ-414 /login, /verify). */
+export function pickedLangHeaders(picked: Lang | null): Record<string, string> {
+  return picked
+    ? { "set-cookie": `pm_lang=${picked};path=/;max-age=31536000;samesite=lax` }
+    : {};
+}
 
 /**
  * REQ-066/122 — the one GET handler the public pages share: the four legal
@@ -17,13 +26,6 @@ export const publicPageHandler = define.handlers({
   GET(ctx) {
     const { lang, picked } = resolvePageLang(ctx.req);
     ctx.state.lang = lang;
-    return page({ lang }, {
-      headers: picked
-        ? {
-          "set-cookie":
-            `pm_lang=${picked};path=/;max-age=31536000;samesite=lax`,
-        }
-        : {},
-    });
+    return page({ lang }, { headers: pickedLangHeaders(picked) });
   },
 });

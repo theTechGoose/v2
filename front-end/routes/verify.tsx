@@ -1,15 +1,15 @@
+import { page } from "fresh";
 import { asset, Head } from "fresh/runtime";
 import { define } from "../utils.ts";
 import DocTitle from "../components/DocTitle.tsx";
 import SiteFooter from "../components/SiteFooter.tsx";
 import { loadUser } from "../lib/auth.ts";
-import {
-  type Lang,
-  langFromCookie,
-  pickLangFromAcceptLanguage,
-  STRINGS,
-} from "../lib/lang.ts";
+import { type Lang, STRINGS } from "../lib/lang.ts";
 import { tFor } from "../lib/i18n.ts";
+import { resolvePageLang } from "../lib/page-lang.ts";
+import { pickedLangHeaders } from "../lib/public-page.ts";
+import { langToggleHref } from "../../shared/quote-flow/public-lang.ts";
+import PublicLangToggle from "../islands/PublicLangToggle.tsx";
 import CodeInput from "../islands/CodeInput.tsx";
 import { MetaPixelEvent } from "../components/MetaPixel.tsx";
 import { leadEvent } from "../../shared/meta-pixel/pixel.ts";
@@ -22,27 +22,35 @@ function formatPhoneDisplay(e164: string): string {
   return `(${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6)}`;
 }
 
-export default define.page(async function Verify(ctx) {
+export const handler = define.handlers({
+  async GET(ctx) {
+    const phone = new URL(ctx.req.url).searchParams.get("phone");
+    if (!phone) {
+      return new Response(null, { status: 302, headers: { Location: "/" } });
+    }
+
+    const user = await loadUser(ctx.req);
+    if (user) {
+      return new Response(null, {
+        status: 302,
+        headers: { Location: "/dashboard" },
+      });
+    }
+
+    // REQ-414 (demo p4): the public pages' ONE resolver — an explicit ?lang=
+    // (the EN | ES toggle, or the language /login's form hands on) wins and is
+    // persisted to pm_lang, then the saved choice, then the Spanish-first
+    // default. Recorded on ctx.state.lang so the static SSR copy, <html lang>
+    // and the CodeInput island all agree — never half-English / half-Spanish.
+    const { lang, picked } = resolvePageLang(ctx.req);
+    ctx.state.lang = lang;
+    return page({ lang, phone }, { headers: pickedLangHeaders(picked) });
+  },
+});
+
+export default define.page<typeof handler>(function Verify(ctx) {
   const url = new URL(ctx.req.url);
-  const phone = url.searchParams.get("phone");
-  if (!phone) {
-    return new Response(null, { status: 302, headers: { Location: "/" } });
-  }
-
-  const user = await loadUser(ctx.req);
-  if (user) {
-    return new Response(null, {
-      status: 302,
-      headers: { Location: "/dashboard" },
-    });
-  }
-
-  // Honor the user's saved choice (cookie) first — the browser's
-  // Accept-Language is only the first-visit fallback. Without this the static
-  // SSR copy renders in the browser locale while the island re-renders from
-  // localStorage, leaving the screen half-English / half-Spanish.
-  const lang: Lang = langFromCookie(ctx.req.headers.get("cookie")) ??
-    pickLangFromAcceptLanguage(ctx.req.headers.get("accept-language"));
+  const { lang, phone } = ctx.data as { lang: Lang; phone: string };
   const s = STRINGS[lang];
   const display = formatPhoneDisplay(phone);
 
@@ -59,7 +67,12 @@ export default define.page(async function Verify(ctx) {
           lang={lang}
           title={(l) => `${STRINGS[l]["verify.h1"]} · ${tFor(l, "brand.name")}`}
         />
-        <link rel="stylesheet" href={asset("/verify.css")} />
+        <link key="css-verify" rel="stylesheet" href={asset("/verify.css")} />
+        <link
+          key="css-public-lang"
+          rel="stylesheet"
+          href={asset("/public-lang.css")}
+        />
         {
           /* REQ-080: reached by sending the code from a landing page (the
             landings add ?px=lead; the login page does not) — a Lead for the
@@ -71,6 +84,13 @@ export default define.page(async function Verify(ctx) {
       </Head>
       <div class="verify-shell">
         <div class="verify-card">
+          <PublicLangToggle
+            lang={lang}
+            hrefs={{
+              en: langToggleHref(url.href, "en"),
+              es: langToggleHref(url.href, "es"),
+            }}
+          />
           <a href="/" class="brand" style="margin:0 auto 4px">
             <img
               src="/logo-monster.png"
