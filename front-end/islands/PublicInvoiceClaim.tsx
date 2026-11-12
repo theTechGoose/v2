@@ -1,6 +1,6 @@
 import { useState } from "preact/hooks";
 import { type Lang, tFor } from "../lib/i18n.ts";
-import { fmtMoneyExact } from "../lib/format.ts";
+import { fmtMoneyExact, fmtPayHandle } from "../lib/format.ts";
 import {
   claimBody,
   claimDecision,
@@ -377,7 +377,8 @@ function methodInstructions(m: Method, lang: Lang = "en"): string {
   const sendTo = (svc: string) =>
     m.handle
       ? tFor(lang, "publicInvoiceClaim.instructions.sendToHandle", {
-        handle: m.handle,
+        // REQ-326 (demo m39): a phone typed as the handle reads as a phone
+        handle: fmtPayHandle(m.handle),
         svc,
       })
       : tFor(lang, "publicInvoiceClaim.instructions.sendVia", { svc });
