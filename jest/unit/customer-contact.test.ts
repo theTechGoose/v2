@@ -95,8 +95,11 @@ describe("REQ-278 M16: both customer forms use the shared rule", () => {
     expect(src).toMatch(
       /from "\.\.\/\.\.\/shared\/quote-flow\/customer-contact\.ts"/,
     );
+    // REQ-352 amends: the modal asks the same rule per field
+    // (customerFormErrors, through its errorsFor helper) before POST.
+    expect(src).toMatch(/customerFormErrors\(/);
     const submit = src.slice(src.indexOf("async function submitAddClient"));
-    const check = submit.indexOf("customerContactError(");
+    const check = submit.indexOf("errorsFor(");
     const post = submit.indexOf("clientsClient.create(");
     expect(check).toBeGreaterThan(-1);
     expect(check).toBeLessThan(post);

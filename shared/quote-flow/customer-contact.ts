@@ -55,3 +55,35 @@ export function customerContactError(
   if (email && !isValidCustomerEmail(email)) return "customer.invalidEmail";
   return null;
 }
+
+/**
+ * REQ-352 (demo-loop cycle 1, demo M38) — the New customer modal's rule, one
+ * message PER FIELD so each sits under its own input: a name is required, the
+ * phone and the email are checked with the rules above. An empty object means
+ * the customer can be saved.
+ */
+export interface CustomerFormErrors {
+  name?: "customer.nameRequired";
+  phone?: "customer.invalidPhone";
+  email?: "customer.invalidEmail";
+}
+
+export function customerFormErrors(
+  form: {
+    name?: string | null;
+    email?: string | null;
+    phoneNumber?: string | null;
+  },
+): CustomerFormErrors {
+  const out: CustomerFormErrors = {};
+  if (!(form.name ?? "").trim()) out.name = "customer.nameRequired";
+  const phone = (form.phoneNumber ?? "").trim();
+  const email = (form.email ?? "").trim();
+  if (phone && !isValidCustomerPhone(phone)) {
+    out.phone = "customer.invalidPhone";
+  }
+  if (email && !isValidCustomerEmail(email)) {
+    out.email = "customer.invalidEmail";
+  }
+  return out;
+}

@@ -52,6 +52,11 @@ import {
   LOGO_IMAGE_ACCEPT,
 } from "../../shared/quote-flow/logo-image.ts"; // REQ-252
 import { stateName, US_STATE_OPTIONS } from "../lib/us-states.ts";
+import {
+  type HandleMethod,
+  paymentHandleError,
+  zipError,
+} from "../../shared/quote-flow/business-fields.ts"; // REQ-352
 import { api } from "../lib/api.ts";
 import { type AddressSuggestion, suggestAddresses } from "../lib/mapbox.ts";
 
@@ -544,8 +549,13 @@ function AddressStep({ ctx }: { ctx: StepCtx }) {
   const [postal, setPostal] = useState(a.postal ?? "");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
-  const valid = street.trim().length > 0 || city.trim().length > 0 ||
-    postal.trim().length > 0;
+  // REQ-352 (demo M38): a ZIP is 5 digits (or ZIP+4) — "7870" is named
+  // in-app once the field is left (a stored value counts as left).
+  const [zipTouched, setZipTouched] = useState(Boolean(a.postal));
+  const zipErr = zipError(postal);
+  const showZipErr = zipTouched && zipErr !== null;
+  const valid = (street.trim().length > 0 || city.trim().length > 0 ||
+    postal.trim().length > 0) && zipErr === null;
 
   // Mapbox autocomplete on the street input. The typed text is ALWAYS the
   // first option so a PO box, "misma dirección que arriba", or any address
@@ -714,11 +724,22 @@ function AddressStep({ ctx }: { ctx: StepCtx }) {
           autoComplete="postal-code"
           aria-label={t("welcome.address.zip")}
           placeholder={t("welcome.address.zip")}
+          maxLength={10}
+          aria-invalid={showZipErr ? "true" : undefined}
+          aria-describedby={showZipErr ? "welcome-zip-err" : undefined}
           value={postal}
           // deno-lint-ignore no-explicit-any
           onInput={(e: any) => setPostal(e.currentTarget.value)}
+          onBlur={() => setZipTouched(true)}
         />
       </div>
+      {showZipErr && zipErr
+        ? (
+          <p id="welcome-zip-err" class="welcome__error" role="alert">
+            {t(zipErr)}
+          </p>
+        )
+        : null}
       {err ? <p class="welcome__error" role="alert">{err}</p> : null}
       <StepFooter ctx={ctx} valid={valid} busy={busy} onContinue={save} />
     </StepBody>
@@ -759,11 +780,23 @@ function PaymentStep({ ctx }: { ctx: StepCtx }) {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
 
+  // REQ-352 (demo M38): a handle a customer could pay to — Zelle a phone or
+  // email, Venmo also an @username, Cash App a $cashtag. Named in-app once the
+  // field is left (a stored handle counts as left).
+  const [touched, setTouched] = useState<Record<string, boolean>>(() => {
+    const o: Record<string, boolean> = {};
+    for (const m of PAYMENT_METHODS) o[m.id] = handles[m.id].trim().length > 0;
+    return o;
+  });
+  const handleErr = (id: string) =>
+    paymentHandleError(id as HandleMethod, handles[id] ?? "");
+
   // Valid when at least one method is on, and every handle-requiring method
-  // that's on has a non-empty handle.
+  // that's on has a non-empty, well-formed handle.
   const anyOn = PAYMENT_METHODS.some((m) => enabled[m.id]);
   const handlesOk = PAYMENT_METHODS.every((m) =>
-    !m.handleField || !enabled[m.id] || handles[m.id].trim().length > 0
+    !m.handleField || !enabled[m.id] ||
+    (handles[m.id].trim().length > 0 && handleErr(m.id) === null)
   );
   const valid = anyOn && handlesOk;
 
@@ -819,21 +852,38 @@ function PaymentStep({ ctx }: { ctx: StepCtx }) {
               {t(`welcome.payment.method.${m.id}`)}
             </button>
             {m.handleField && enabled[m.id]
-              ? (
-                <input
-                  class="welcome__input welcome__input--handle"
-                  type="text"
-                  aria-label={t(`welcome.payment.handle.${m.id}`)}
-                  placeholder={t(`welcome.payment.handle.${m.id}`)}
-                  value={handles[m.id]}
-                  // deno-lint-ignore no-explicit-any
-                  onInput={(e: any) =>
-                    setHandles((prev) => ({
-                      ...prev,
-                      [m.id]: e.currentTarget.value,
-                    }))}
-                />
-              )
+              ? (() => {
+                const err = touched[m.id] ? handleErr(m.id) : null;
+                const errId = `welcome-handle-${m.id}-err`;
+                return (
+                  <>
+                    <input
+                      class="welcome__input welcome__input--handle"
+                      type="text"
+                      aria-label={t(`welcome.payment.handle.${m.id}`)}
+                      placeholder={t(`welcome.payment.handle.${m.id}`)}
+                      aria-invalid={err ? "true" : undefined}
+                      aria-describedby={err ? errId : undefined}
+                      value={handles[m.id]}
+                      // deno-lint-ignore no-explicit-any
+                      onInput={(e: any) =>
+                        setHandles((prev) => ({
+                          ...prev,
+                          [m.id]: e.currentTarget.value,
+                        }))}
+                      onBlur={() =>
+                        setTouched((prev) => ({ ...prev, [m.id]: true }))}
+                    />
+                    {err
+                      ? (
+                        <p id={errId} class="welcome__error" role="alert">
+                          {t(err)}
+                        </p>
+                      )
+                      : null}
+                  </>
+                );
+              })()
               : null}
           </div>
         ))}
