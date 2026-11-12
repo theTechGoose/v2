@@ -4,6 +4,10 @@ import { Module } from "#danet/core";
 import { bootstrapServer } from "#mrg-keystone/danet";
 import { AnalyticsModule } from "@analytics/mod-root.ts";
 import { OtpStore } from "@users/domain/data/otp-store/mod.ts";
+import { SessionStore } from "@users/domain/data/session-store/mod.ts";
+import { CustomerStore } from "@crm/domain/data/customer-store/mod.ts";
+import { QuoteStore } from "@paperwork/domain/data/quote-store/mod.ts";
+import { InvoiceStore } from "@paperwork/domain/data/invoice-store/mod.ts";
 import { resetKv } from "@core/data/kv/mod.ts";
 
 @Module({ imports: [AnalyticsModule] })
@@ -122,6 +126,56 @@ Deno.test("analytics e2e: GET /analytics/dashboard without session is rejected",
     const ok = res.ok;
     await drain(res);
     assertEquals(ok, false);
+  } finally {
+    await server.stop();
+    await resetKv();
+  }
+});
+
+// REQ-397 (demo-loop cycle 2, M14): over the wire, the two reads the
+// dashboard renders — a signed 50/50 job billed the way accept bills it
+// (INV-001 "sent", INV-002 "scheduled") is $9,600 outstanding across ONE
+// invoice, and the job card's next due date is INV-001's.
+Deno.test("REQ-397 analytics e2e: GET /analytics/dashboard + GET /jobs show a sent deposit as outstanding cents and the job's next due date", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const server = await bootstrapServer(TestApp, { port: PORT, swagger: false });
+  await server.listen();
+  try {
+    const sid = await login(PORT);
+    const userId = (await new SessionStore().get(sid))!.userId;
+    const cust = await new CustomerStore().create(userId, { name: "Dana Whitfield" });
+    const q = await new QuoteStore().create(userId, {
+      summary: "Kitchen remodel",
+      lineItems: [],
+      customerId: cust.id,
+      estimatedTotal: 19_200_00,
+      status: "accepted",
+      acceptedAt: new Date().toISOString(),
+    });
+    const inv = new InvoiceStore();
+    const due = new Date(Date.now() + 7 * 86_400_000).toISOString().slice(0, 10);
+    const later = new Date(Date.now() + 30 * 86_400_000).toISOString().slice(0, 10);
+    await inv.create(userId, {
+      quoteId: q.id, customerId: cust.id, amount: 9_600_00, dueDate: due,
+      installmentIndex: 1, installmentTotal: 2, status: "sent",
+    });
+    await inv.create(userId, {
+      quoteId: q.id, customerId: cust.id, amount: 9_600_00, dueDate: later,
+      installmentIndex: 2, installmentTotal: 2, status: "scheduled", scheduledFor: later,
+    });
+
+    const stats = await fetch(`http://localhost:${PORT}/analytics/dashboard`, {
+      headers: { "x-session-id": sid },
+    }).then((r) => r.json());
+    assertEquals(stats.invoices.pending, 1);
+    assertEquals(stats.invoices.agingBuckets.current, 9_600_00);
+
+    const jobs = await fetch(`http://localhost:${PORT}/jobs`, {
+      headers: { "x-session-id": sid },
+    }).then((r) => r.json());
+    assertEquals(jobs.length, 1);
+    assertEquals(jobs[0].nextDueDate, due);
   } finally {
     await server.stop();
     await resetKv();

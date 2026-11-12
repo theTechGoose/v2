@@ -9,6 +9,7 @@ import { QuoteStore } from "@paperwork/domain/data/quote-store/mod.ts";
 import { InvoiceStore } from "@paperwork/domain/data/invoice-store/mod.ts";
 import type { Customer } from "@crm/dto/customer.ts";
 import type { Invoice } from "@paperwork/dto/invoice.ts";
+import { isOpenReceivable } from "@paperwork/domain/business/open-receivable/mod.ts";
 
 /**
  * The view the dashboard's "Active jobs" panel renders.
@@ -107,9 +108,9 @@ export class ListActiveJobs {
         ? Math.round((paidCents / totalCents) * 100)
         : 0;
 
-      const pendingInvoices = relatedInvoices.filter((i) =>
-        i.status === "pending"
-      );
+      // REQ-397 (demo-loop cycle 2, M14): owed = open receivables, not the
+      // legacy "pending" accept never writes (the card read "No due date").
+      const pendingInvoices = relatedInvoices.filter(isOpenReceivable);
       const overdueInvoices = pendingInvoices.filter((i) =>
         i.dueDate < todayIso
       );

@@ -11,6 +11,7 @@ import { PAYMENT_METHODS, type PaymentMethod } from "@paperwork/dto/payment.ts";
 import type { Invoice } from "@paperwork/dto/invoice.ts";
 import type { Payment } from "@paperwork/dto/payment.ts";
 import { bucketPendingInvoices } from "@paperwork/domain/business/invoice-aging-buckets/mod.ts";
+import { isOpenReceivable } from "@paperwork/domain/business/open-receivable/mod.ts";
 import {
   bucketBy12Months,
   lastMonthRevenue,
@@ -65,13 +66,14 @@ export class ComputeDashboardStats {
     };
 
     const todayIso = now.toISOString().slice(0, 10);
+    // REQ-397 (demo-loop cycle 2, M14): "pending" = open receivables (sent /
+    // viewed / claimed, unpaid) — accept writes "sent", never "pending".
+    const open = invoices.filter(isOpenReceivable);
     const invoiceCounts = {
       total: invoices.length,
-      pending: invoices.filter((i) => i.status === "pending").length,
+      pending: open.length,
       paid: invoices.filter((i) => i.status === "paid").length,
-      overdue:
-        invoices.filter((i) => i.status === "pending" && i.dueDate < todayIso)
-          .length,
+      overdue: open.filter((i) => i.dueDate < todayIso).length,
       agingBuckets: bucketPendingInvoices(invoices, now),
     };
 

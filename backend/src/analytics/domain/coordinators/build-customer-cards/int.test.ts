@@ -364,7 +364,11 @@ Deno.test("REQ-350 balanceSub in Spanish: an overdue invoice reads 'INV-001 · v
   });
 });
 
-Deno.test("REQ-350 balanceSub in Spanish: an owed balance with no pending invoice never says 'owes'", async () => {
+// REQ-350, amended by REQ-397 (demo-loop cycle 2, M14): a SENT invoice is an
+// open receivable, so it now names itself ("INV-001 · vencida") instead of
+// falling through to the generic owes line; that line still never says the
+// English "owes" in either language.
+Deno.test("REQ-350 balanceSub in Spanish: an owed balance never says 'owes'; a sent overdue invoice names itself (REQ-397)", async () => {
   await withKv(async () => {
     const { customers, invoices, flow } = fresh();
     const c = await customers.create("u-1", { name: "Acme" });
@@ -378,10 +382,15 @@ Deno.test("REQ-350 balanceSub in Spanish: an owed balance with no pending invoic
     const [esRaw] = await flow.run("u-1", NOW_FIXED);
     const es = { ...esRaw, balanceSub: say(esRaw, "es") };
     assertEquals(es.balanceCents, 600_00);
-    assertEquals(es.balanceSub, "esperando el pago");
-    const [enRaw] = await flow.run("u-1", NOW_FIXED);
-    const en = { ...enRaw, balanceSub: say(enRaw, "en") };
-    assertEquals(en.balanceSub, "awaiting payment");
+    assertEquals(es.balanceSub, "INV-001 · vencida");
+    assertEquals(
+      balanceSubLabel({ kind: "owes" }, "es", t),
+      "esperando el pago",
+    );
+    assertEquals(
+      balanceSubLabel({ kind: "owes" }, "en", t),
+      "awaiting payment",
+    );
   });
 });
 
