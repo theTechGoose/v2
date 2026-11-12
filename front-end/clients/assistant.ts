@@ -296,6 +296,8 @@ export const assistantClient = {
       stepId: string;
       optionId: string;
       customValue?: string;
+      /** REQ-263: the customer step's job address → quote.serviceAddress. */
+      serviceAddress?: string;
       customer?: {
         id?: string;
         create?: {

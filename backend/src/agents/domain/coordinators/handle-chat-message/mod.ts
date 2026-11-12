@@ -50,6 +50,7 @@ import { EventBus } from "@core/business/events/mod.ts";
 import { lockStatusFor, QUOTE_LOCKED } from "#quote-flow/quote-lock.ts";
 import { parseChangeOrderRequest } from "@agents/domain/business/change-order-intent/mod.ts";
 import { ApplyChatChangeOrder } from "@agents/domain/coordinators/apply-chat-change-order/mod.ts";
+import { extractServiceAddress } from "#quote-flow/quick-quote-prefill.ts";
 import type { AgentConversation } from "@agents/dto/conversation.ts";
 import type { AgentMessage } from "@agents/dto/message.ts";
 
@@ -880,6 +881,16 @@ export class HandleChatMessage {
         // we inherit only that.
         const customerId = conv.customerId;
 
+        // REQ-263 (demo ai-assistant-m2): the job address. The model's
+        // `serviceAddress` when it set one; otherwise the address the user
+        // typed in this conversation (latest user turn first) — "412 Oak St
+        // Austin" must never be thrown away because the model left it off.
+        const serviceAddress = action.payload.serviceAddress?.trim() ||
+          [...history].reverse()
+            .filter((m) => m.role === "user" && typeof m.content === "string")
+            .map((m) => extractServiceAddress(m.content))
+            .find((a): a is string => !!a);
+
         // N7 — update-in-place when the conversation already has a draft
         // quote bound. Previously each create_quote re-issue created a new
         // Quote row in the store, leaving orphans on every correction
@@ -899,6 +910,8 @@ export class HandleChatMessage {
                 summary: action.payload.summary,
                 lineItems: dtoLineItems,
                 estimatedTotal,
+                // a correction without an address keeps the one on file
+                ...(serviceAddress ? { serviceAddress } : {}),
               });
             }
           } catch {
@@ -912,6 +925,7 @@ export class HandleChatMessage {
             estimatedTotal,
             status: "draft",
             ...(customerId ? { customerId } : {}),
+            ...(serviceAddress ? { serviceAddress } : {}),
           });
         }
 

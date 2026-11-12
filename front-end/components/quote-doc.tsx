@@ -105,6 +105,8 @@ export interface QuotePublic {
   descriptionByLang?: Record<string, string>;
   jobNameByLang?: Record<string, string>;
   summaryByLang?: Record<string, string>;
+  /** REQ-263 (demo ai-assistant-m2): where the job is. */
+  serviceAddress?: string;
   lineItems?: LineItem[];
   terms?: Term[];
   createdAt?: string;
@@ -146,6 +148,7 @@ function cstr(lang: Lang) {
         ? tFor(lang, "quoteDoc.plainEnglishNamed", { contractor, customer })
         : tFor(lang, "quoteDoc.plainEnglishUnnamed", { contractor }),
     to: tFor(lang, "quoteDoc.to"),
+    serviceAddress: tFor(lang, "quoteDoc.serviceAddress"),
     from: tFor(lang, "quoteDoc.from"),
     jobDetails: tFor(lang, "quoteDoc.jobDetails"),
     tableDescription: tFor(lang, "quoteDoc.tableDescription"),
@@ -477,6 +480,28 @@ export function QuoteDoc(
               address={contractor?.addressLine}
             />
           </section>
+          {
+            /* REQ-263 (demo ai-assistant-m2): the job site the contractor
+              typed ("412 Oak St Austin") — the customer agrees to work AT
+              this address. */
+          }
+          {quote.serviceAddress?.trim()
+            ? (
+              <div
+                data-cy="quote-doc-service-address"
+                style={`margin-top:12px;background:#fff;border:1px solid ${LINE};border-radius:12px;padding:12px 16px;font-size:13.5px;color:${INK}`}
+              >
+                <span
+                  style={`font-size:10px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:${MUTED};margin-right:10px`}
+                >
+                  {t.serviceAddress}
+                </span>
+                <strong style="overflow-wrap:anywhere">
+                  {quote.serviceAddress.trim()}
+                </strong>
+              </div>
+            )
+            : null}
 
           {
             /* The deal in plain English (deck p12) — one no-legalese sentence

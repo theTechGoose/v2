@@ -64,6 +64,11 @@ export class WizardAnswerDto {
   @IsString()
   customValue?: string;
 
+  /** REQ-263: the job address from the customer step. */
+  @IsOptional()
+  @IsString()
+  serviceAddress?: string;
+
   /** Customer-step payload. Validation is intentionally loose; the
    *  coordinator does the deeper checks (existence, ownership, required
    *  fields on `create`). */

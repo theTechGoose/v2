@@ -1004,3 +1004,94 @@ Deno.test("REQ-238 M27: a change order on the conversation's own draft adds the 
   assertEquals(stored.estimatedTotal, 39_000);
   await resetKv();
 });
+
+// ---------------------------------------------------------------------------
+// REQ-263 (demo ai-assistant-m2): "412 Oak St Austin" typed in the chat must
+// land on the quote as its service (job) address.
+// ---------------------------------------------------------------------------
+
+Deno.test("REQ-263 handle-chat-message integration: create_quote's serviceAddress is stored on the quote", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const { conversations, llm, quotes, flow } = fresh();
+  await seedOnboarded("u-1");
+  llm.setScript([{
+    text: "Here's your quote.",
+    action: {
+      type: "create_quote",
+      payload: {
+        summary: "Quote: Deep clean — Maria Lopez",
+        serviceAddress: "412 Oak St, Austin TX",
+        lineItems: [{ description: "Deep clean", amountCents: 35_000 }],
+      },
+    },
+  }]);
+  const conv = await conversations.create({ userId: "u-1" });
+  const result = await flow.run({
+    userId: "u-1",
+    conversationId: conv.id,
+    content: "Deep clean for Maria Lopez at her place, $350",
+  });
+  const stored = await quotes.getOwned(result.conversation.quoteId!, "u-1");
+  assertEquals(stored.serviceAddress, "412 Oak St, Austin TX");
+  await resetKv();
+});
+
+Deno.test("REQ-263 handle-chat-message integration: when the model leaves serviceAddress off, the address typed in the chat is still kept (the demo's exact sentence)", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const { conversations, llm, quotes, flow } = fresh();
+  await seedOnboarded("u-1");
+  llm.setScript([{
+    text: "Here's your quote.",
+    action: {
+      type: "create_quote",
+      payload: {
+        summary: "Quote: Deep clean — Maria Lopez",
+        lineItems: [{ description: "Deep clean", amountCents: 35_000 }],
+      },
+    },
+  }]);
+  const conv = await conversations.create({ userId: "u-1" });
+  const result = await flow.run({
+    userId: "u-1",
+    conversationId: conv.id,
+    content: "Deep clean for Maria Lopez, 412 Oak St Austin, $350",
+  });
+  const stored = await quotes.getOwned(result.conversation.quoteId!, "u-1");
+  assertEquals(stored.serviceAddress, "412 Oak St Austin");
+  await resetKv();
+});
+
+Deno.test("REQ-263 handle-chat-message integration: a later correction without an address keeps the one already on the draft", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const { conversations, llm, quotes, flow } = fresh();
+  await seedOnboarded("u-1");
+  const action = (amountCents: number) => ({
+    type: "create_quote" as const,
+    payload: {
+      summary: "Quote: Deep clean — Maria Lopez",
+      lineItems: [{ description: "Deep clean", amountCents }],
+    },
+  });
+  llm.setScript([
+    { text: "Here's your quote.", action: action(35_000) },
+    { text: "Updated.", action: action(40_000) },
+  ]);
+  const conv = await conversations.create({ userId: "u-1" });
+  const first = await flow.run({
+    userId: "u-1",
+    conversationId: conv.id,
+    content: "Deep clean for Maria Lopez, 412 Oak St Austin, $350",
+  });
+  await flow.run({
+    userId: "u-1",
+    conversationId: conv.id,
+    content: "make it $400",
+  });
+  const stored = await quotes.getOwned(first.conversation.quoteId!, "u-1");
+  assertEquals(stored.estimatedTotal, 40_000);
+  assertEquals(stored.serviceAddress, "412 Oak St Austin");
+  await resetKv();
+});

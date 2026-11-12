@@ -662,6 +662,8 @@ export default function AsstChat({
       /** REQ-236: the latest send's outcome + first delivery time. */
       lastDelivery?: QuoteDelivery;
       deliveredAt?: string;
+      /** REQ-263: the job's service address. */
+      serviceAddress?: string;
     }
     | undefined
   >();
@@ -688,6 +690,12 @@ export default function AsstChat({
   /** UX-04: the "para <Name>" candidate regex-extracted from the typed
    *  quick-quote sentence — prefills the customer step's name input. */
   const [prefillCustomerName, setPrefillCustomerName] = useState<
+    string | null
+  >(null);
+  /** REQ-263 (demo ai-assistant-m2): the job address regex-extracted from the
+   *  typed sentence ("…, 412 Oak St Austin, $350") — written on the quote
+   *  when it is created, so the customer step and the agreement show it. */
+  const [prefillServiceAddress, setPrefillServiceAddress] = useState<
     string | null
   >(null);
   /** Set after the user clicks Continue on the price step. While true,
@@ -1394,6 +1402,7 @@ export default function AsstChat({
             }).terms,
             lastDelivery: q.lastDelivery,
             deliveredAt: q.deliveredAt,
+            serviceAddress: q.serviceAddress,
           });
         }
       })
@@ -2377,6 +2386,10 @@ export default function AsstChat({
           price: cents,
         }],
         estimatedTotal: cents,
+        // REQ-263: the job address typed in the sentence rides on the quote.
+        ...(prefillServiceAddress
+          ? { serviceAddress: prefillServiceAddress }
+          : {}),
       };
 
       let convId: string;
@@ -2698,6 +2711,7 @@ export default function AsstChat({
       setPriceCents(prefill.priceCents);
     }
     setPrefillCustomerName(prefill.customerName);
+    setPrefillServiceAddress(prefill.serviceAddress);
     if (suggestPricing) {
       // "Help me price it" (roadmap p.18): confirm the job details FIRST,
       // then price the confirmed scope. The picker's Continue advances to
@@ -3387,6 +3401,8 @@ export default function AsstChat({
     message: Message,
     optionId: "use_active" | "pick_existing" | "create_new",
     payload?: {
+      /** REQ-263: the job address from the step's form. */
+      serviceAddress?: string;
       customer?: {
         id?: string;
         create?: {
@@ -3404,6 +3420,18 @@ export default function AsstChat({
       optionId,
       ...(payload ?? {}),
     });
+    // REQ-263: the step may have set the job address (typed, or the picked
+    // customer's own) — reflect it in the preview without a reload.
+    const qid = quote?.id;
+    if (qid) {
+      quotesClient.get(qid).then((q) =>
+        setQuote((cur) =>
+          cur && cur.id === qid
+            ? { ...cur, serviceAddress: q.serviceAddress }
+            : cur
+        )
+      ).catch(() => {/* preview keeps what it had */});
+    }
   }
 
   /** Shared post-and-replace flow for any wizard answer. */
@@ -3413,6 +3441,8 @@ export default function AsstChat({
       stepId: string;
       optionId: string;
       customValue?: string;
+      /** REQ-263: the customer step's job address. */
+      serviceAddress?: string;
       customer?: {
         id?: string;
         create?: {
@@ -6220,6 +6250,20 @@ export default function AsstChat({
                                       : ""}
                                   </span>
                                 </div>
+                                {/* REQ-263: where the job is. */}
+                                {quote?.serviceAddress
+                                  ? (
+                                    <div
+                                      class="quote-review__hero-meta"
+                                      data-cy="quote-review-service-address"
+                                    >
+                                      {tFor(
+                                        previewLang,
+                                        "asstChat.preview.serviceAddress",
+                                      )}: {quote.serviceAddress}
+                                    </div>
+                                  )
+                                  : null}
                                 {customerPickerOpen
                                   ? (
                                     <div class="quote-review__swap-panel">
@@ -7447,6 +7491,8 @@ export default function AsstChat({
                                     initialEmail={quoteFacts.customerEmail ??
                                       undefined}
                                     prefillFacts={quoteFacts}
+                                    initialServiceAddress={quote
+                                      ?.serviceAddress}
                                     sending={sending}
                                     lang={lang}
                                     onSubmit={(optionId, body) =>
@@ -8395,11 +8441,15 @@ function CustomerStepPanel(props: {
    *  is offered on the pick list; a new one opens the create form, filled
    *  (the demo got "Elige un cliente" and lost what was typed). */
   prefillFacts?: QuoteFacts;
+  /** REQ-263 (demo ai-assistant-m2): the job address already on the quote
+   *  (extracted from the typed sentence) — prefills the address input. */
+  initialServiceAddress?: string;
   sending: boolean;
   lang?: Lang;
   onSubmit: (
     optionId: "use_active" | "pick_existing" | "create_new",
     body?: {
+      serviceAddress?: string;
       customer?: {
         id?: string;
         create?: {
@@ -8423,6 +8473,7 @@ function CustomerStepPanel(props: {
     initialPhone,
     initialEmail,
     prefillFacts,
+    initialServiceAddress,
     sending,
     lang = "en",
     onSubmit,
@@ -8472,6 +8523,17 @@ function CustomerStepPanel(props: {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialEmail, initialPhone]);
+  /** REQ-263: the job address — pre-filled from the quote, editable. */
+  const [createAddress, setCreateAddress] = useState(
+    initialServiceAddress ?? "",
+  );
+  // The quote can load after mount — adopt its address while untouched.
+  useEffect(() => {
+    if (initialServiceAddress && createAddress.trim().length === 0) {
+      setCreateAddress(initialServiceAddress);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialServiceAddress]);
   const [localErr, setLocalErr] = useState<string | undefined>();
   // REQ-265: once the account's customers AND the typed facts are known,
   // decide once — a typed customer the account has is searched for on the
@@ -8643,6 +8705,23 @@ function CustomerStepPanel(props: {
                 setCreateEmail((e.target as HTMLInputElement).value)}
             />
           </div>
+          <input
+            type="text"
+            data-cy="wizard-service-address"
+            class="cust-pick__search"
+            autocomplete="street-address"
+            placeholder={tFor(
+              lang,
+              "asstChat.customerStep.serviceAddressPlaceholder",
+            )}
+            aria-label={tFor(
+              lang,
+              "asstChat.customerStep.serviceAddressPlaceholder",
+            )}
+            value={createAddress}
+            onInput={(e) =>
+              setCreateAddress((e.target as HTMLInputElement).value)}
+          />
           {localErr ?? contactErr
             ? (
               <div class="cust-pick__err" data-cy="cust-contact-hint">
@@ -8657,6 +8736,9 @@ function CustomerStepPanel(props: {
               disabled={submitDisabled}
               onClick={() =>
                 onSubmit("create_new", {
+                  ...(createAddress.trim()
+                    ? { serviceAddress: createAddress.trim() }
+                    : {}),
                   customer: {
                     create: {
                       name: trimmedName,

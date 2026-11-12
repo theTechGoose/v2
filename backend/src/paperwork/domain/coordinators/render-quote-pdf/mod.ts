@@ -230,6 +230,30 @@ export class RenderQuotePdf {
         }
         y -= 12;
       }
+      // REQ-263 (demo ai-assistant-m2): where the job is, full width under
+      // the parties — the customer reads the site they agreed to.
+      const site = quote.serviceAddress?.trim();
+      if (site) {
+        y -= 4;
+        page.drawText(`${renderWord(lang, "serviceAddress")}: `, {
+          x: M,
+          y,
+          size: 9,
+          font: bold,
+          color: INK,
+        });
+        page.drawText(site, {
+          x: M + bold.widthOfTextAtSize(
+            `${renderWord(lang, "serviceAddress")}: `,
+            9,
+          ),
+          y,
+          size: 9,
+          font: reg,
+          color: INK,
+        });
+        y -= 12;
+      }
       y -= 14;
     }
 

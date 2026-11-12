@@ -1276,6 +1276,8 @@ function redactQuote(q: Quote) {
     jobName: q.jobName,
     jobNameByLang: q.jobNameByLang,
     summaryByLang: q.summaryByLang,
+    // REQ-263: where the job is
+    serviceAddress: q.serviceAddress,
     customerId: q.customerId,
     lineItems: q.lineItems,
     estimatedTotal: q.estimatedTotal,
