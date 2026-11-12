@@ -7,8 +7,9 @@ import type { AgentConversation, AgentPhase } from "@agents/dto/conversation.ts"
  * in the 'quote' phase.
  *
  * The agent module never auto-flips back from 'terms' → 'quote' — that
- * has to be an explicit user action (e.g. clicking "Re-open the quote"
- * suggestion chip), and is handled by a separate coordinator.
+ * has to be an explicit user action: the locked card's "Re-open" button
+ * (ReopenQuote, REQ-334) or the header back at the wizard's first question
+ * (RewindWizard with toStepIdx -1, REQ-005).
  */
 export function shouldTransitionToTerms(conv: AgentConversation): boolean {
   return conv.currentPhase === "quote" && Boolean(conv.quoteId);

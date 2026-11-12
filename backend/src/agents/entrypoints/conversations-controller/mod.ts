@@ -15,6 +15,7 @@ import { StartConversation } from "@agents/domain/coordinators/start-conversatio
 import { LoadConversation } from "@agents/domain/coordinators/load-conversation/mod.ts";
 import { TransitionToTerms } from "@agents/domain/coordinators/transition-to-terms/mod.ts";
 import { LockQuote } from "@agents/domain/coordinators/lock-quote/mod.ts";
+import { ReopenQuote } from "@agents/domain/coordinators/reopen-quote/mod.ts";
 import { AcceptQuote } from "@agents/domain/coordinators/accept-quote/mod.ts";
 import { SendQuote } from "@agents/domain/coordinators/send-quote/mod.ts";
 import { SendInvoice } from "@agents/domain/coordinators/send-invoice/mod.ts";
@@ -39,6 +40,7 @@ export class ConversationsController {
     private loadFlow: LoadConversation,
     private transitionFlow: TransitionToTerms,
     private lockFlow: LockQuote,
+    private reopenFlow: ReopenQuote,
     private acceptFlow: AcceptQuote,
     private sendQuoteFlow: SendQuote,
     private sendInvoiceFlow: SendInvoice,
@@ -175,6 +177,26 @@ export class ConversationsController {
     }
     return ctx.json(
       await this.lockFlow.run({ userId: user.id, conversationId: id, quoteId }),
+    );
+  }
+
+  /** REQ-334 (demo-loop cycle 1, M25): the locked card's "Re-open" — the
+   *  inverse of lock-quote. Leaves the terms wizard, drops the locked card +
+   *  its CTA, clears lockedAt; the draft card is back. Refused for a sent
+   *  quote (the client routes those to the revision path). */
+  @Post(":id/reopen-quote")
+  async reopenQuote(
+    @Context() ctx: ExecutionContext,
+    @Param("id") id: string,
+    @Body() body: unknown,
+  ) {
+    const user = await requireUser(ctx, this.sessions, this.users);
+    const quoteId = (body as { quoteId?: unknown } | null | undefined)?.quoteId;
+    if (typeof quoteId !== "string" || !quoteId) {
+      throw new Error("quoteId is required");
+    }
+    return ctx.json(
+      await this.reopenFlow.run({ userId: user.id, conversationId: id, quoteId }),
     );
   }
 
