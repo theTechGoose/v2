@@ -1,4 +1,5 @@
 import Backdrop from "../components/Backdrop.tsx";
+import { Fragment } from "preact";
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import { I, ICN } from "../lib/dash-icons.tsx";
 import { detailLines, fmtPhone } from "../lib/format.ts";
@@ -50,6 +51,7 @@ import {
 import { quoteUpdatedBy } from "../lib/chat-quote-refresh.ts";
 import { chatQuoteLink } from "../lib/chat-quote-link.ts";
 import { quoteHasPrice } from "../../shared/quote-flow/quote-price-guard.ts";
+import { polishOffer } from "../../shared/quote-flow/polish-offer.ts";
 import {
   type ChipKey,
   chipReply,
@@ -883,12 +885,19 @@ export default function AsstChat({
   >(null);
   /** Which option's TITLE is open for inline edit (null = none). */
   const [editingTitleId, setEditingTitleId] = useState<string | null>(null);
-  /** When set, renders the "Want me to professionalize that?" popup for
-   *  the bullet that was just edited or added. */
-  const [proPopup, setProPopup] = useState<
-    { optionId: string; bulletId: string } | null
+  /** REQ-384 (m16): the inline "Polish this line?" offer under the bullet
+   *  that was just edited or added — set only once the polished text is
+   *  back AND differs from the line (before → after preview). */
+  const [proOffer, setProOffer] = useState<
+    {
+      optionId: string;
+      bulletId: string;
+      before: string;
+      after: string[];
+    } | null
   >(null);
-  const [proBusy, setProBusy] = useState(false);
+  /** Bumped per polish request so a stale reply never opens an offer. */
+  const proReqRef = useRef(0);
   /** "Write it myself" editor on the job-details step (roadmap p.5): the
    *  contractor types the scope one item per line, then can ask Bossie to
    *  "Professionalize that" — the polished items come back as a PROPOSAL
@@ -2622,7 +2631,7 @@ export default function AsstChat({
     const next = value.trim();
     if (!next || next === editOriginalRef.current.trim()) return;
     setBulletText(optionId, bulletId, next);
-    setProPopup({ optionId, bulletId });
+    void offerPolish(optionId, bulletId, next);
   }
 
   /** Append the trailing "add your own" bullet, then offer to professionalize. */
@@ -2638,46 +2647,56 @@ export default function AsstChat({
           : o
       ) ?? prev
     );
-    setProPopup({ optionId, bulletId: id });
+    void offerPolish(optionId, id, text);
   }
 
-  async function confirmProfessionalize() {
-    if (!proPopup || proBusy) return;
-    const { optionId, bulletId } = proPopup;
+  /** REQ-384 (m16): polish the line FIRST, then offer the result inline
+   *  under it as a before → after preview — and only when it is a real
+   *  rewrite (an already-clean line gets no offer). */
+  async function offerPolish(optionId: string, bulletId: string, text: string) {
+    const req = ++proReqRef.current;
+    setProOffer(null);
     const option = jobOptions?.find((o) => o.id === optionId);
-    const b = option?.bullets.find((x) => x.id === bulletId);
-    if (!option || !b) {
-      setProPopup(null);
-      return;
-    }
-    setProBusy(true);
     try {
       // REQ-332 (m30): send the JOB with the bullet — the original message
       // and the option's other bullets — so the rewrite never re-scopes a
       // job-wide item ("City of Austin permit") onto the item it shares a
       // line with; an "A + B" bullet comes back as two lines.
-      const siblings = option.bullets
+      const siblings = (option?.bullets ?? [])
         .filter((x) => x.id !== bulletId && !x.deleted)
         .map((x) => x.text);
-      const res = await assistantClient.professionalizeBullet(b.text, {
+      const res = await assistantClient.professionalizeBullet(text, {
         raw: pendingJobDetailsRaw ?? submittedJobDetails ?? undefined,
         siblings,
       });
-      const lines = (res?.lines ?? (res?.text ? [res.text] : []))
-        .map((l) => l.trim()).filter((l) => l.length > 0);
-      if (lines.length > 1) replaceBulletWithLines(optionId, bulletId, lines);
-      else if (lines[0]) setBulletText(optionId, bulletId, lines[0]);
+      if (req !== proReqRef.current) return;
+      const offer = polishOffer(
+        text,
+        res?.lines ?? (res?.text ? [res.text] : []),
+      );
+      if (offer) setProOffer({ optionId, bulletId, ...offer });
     } catch (err) {
       console.warn("[asst] professionalize failed, keeping text:", err);
-    } finally {
-      setProBusy(false);
-      setProPopup(null);
     }
   }
 
-  function dismissProfessionalize() {
-    if (proBusy) return;
-    setProPopup(null);
+  /** Yes: apply exactly the previewed rewrite — unless the line changed
+   *  since (then the preview is stale and nothing is applied). */
+  function acceptPolish() {
+    if (!proOffer) return;
+    const { optionId, bulletId, before, after } = proOffer;
+    setProOffer(null);
+    const b = jobOptions?.find((o) => o.id === optionId)?.bullets.find((x) =>
+      x.id === bulletId
+    );
+    if (!b || b.deleted || b.text !== before) return;
+    if (after.length > 1) replaceBulletWithLines(optionId, bulletId, after);
+    else setBulletText(optionId, bulletId, after[0]);
+  }
+
+  function dismissPolish() {
+    proReqRef.current++;
+    setProOffer(null);
   }
 
   /**
@@ -4890,9 +4909,15 @@ export default function AsstChat({
                                       const isEditing =
                                         editingBullet?.optionId === opt.id &&
                                         editingBullet?.bulletId === b.id;
+                                      const offer =
+                                        proOffer?.optionId === opt.id &&
+                                          proOffer.bulletId === b.id &&
+                                          !isEditing && !b.deleted
+                                          ? proOffer
+                                          : null;
                                       return (
+                                        <Fragment key={b.id}>
                                         <li
-                                          key={b.id}
                                           class={`chat__jobopt-bullet${
                                             b.deleted ? " is-deleted" : ""
                                           }`}
@@ -5013,6 +5038,69 @@ export default function AsstChat({
                                             {b.deleted ? "↺" : "×"}
                                           </button>
                                         </li>
+                                        {offer
+                                          ? (
+                                            // REQ-384 (m16): the offer sits
+                                            // right under its line — never
+                                            // a modal covering it.
+                                            <li
+                                              class="chat__pro-row"
+                                              data-cy="polish-offer"
+                                              onClick={(e) =>
+                                                e.stopPropagation()}
+                                            >
+                                              <span class="chat__pro-row-msg">
+                                                {tFor(
+                                                  lang,
+                                                  "asstChat.proPopup.msg",
+                                                )}
+                                              </span>
+                                              <span class="chat__pro-row-diff">
+                                                <s
+                                                  class="chat__pro-row-before"
+                                                  data-cy="polish-offer-before"
+                                                >
+                                                  {offer.before}
+                                                </s>
+                                                <span
+                                                  class="chat__pro-row-arrow"
+                                                  aria-hidden="true"
+                                                >
+                                                  →
+                                                </span>
+                                                <span
+                                                  class="chat__pro-row-after"
+                                                  data-cy="polish-offer-after"
+                                                >
+                                                  {offer.after.join("\n")}
+                                                </span>
+                                              </span>
+                                              <span class="chat__pro-row-actions">
+                                                <button
+                                                  type="button"
+                                                  class="chat__pro-row-no"
+                                                  onClick={dismissPolish}
+                                                >
+                                                  {tFor(
+                                                    lang,
+                                                    "asstChat.proPopup.no",
+                                                  )}
+                                                </button>
+                                                <button
+                                                  type="button"
+                                                  class="chat__pro-row-yes"
+                                                  onClick={acceptPolish}
+                                                >
+                                                  {tFor(
+                                                    lang,
+                                                    "asstChat.proPopup.yes",
+                                                  )}
+                                                </button>
+                                              </span>
+                                            </li>
+                                          )
+                                          : null}
+                                        </Fragment>
                                       );
                                     })}
                                     {selected
@@ -5236,43 +5324,6 @@ export default function AsstChat({
                             )}
                         </>
                       )}
-                    {proPopup
-                      ? (
-                        <Backdrop
-                          class="chat__pro-pop"
-                          onClose={dismissProfessionalize}
-                        >
-                          <div
-                            class="chat__pro-pop-card"
-                            onClick={(e) => e.stopPropagation()}
-                          >
-                            <p class="chat__pro-pop-msg">
-                              {tFor(lang, "asstChat.proPopup.msg")}
-                            </p>
-                            <div class="chat__pro-pop-actions">
-                              <button
-                                type="button"
-                                class="chat__pro-pop-no"
-                                disabled={proBusy}
-                                onClick={dismissProfessionalize}
-                              >
-                                {tFor(lang, "asstChat.proPopup.no")}
-                              </button>
-                              <button
-                                type="button"
-                                class="chat__pro-pop-yes"
-                                disabled={proBusy}
-                                onClick={confirmProfessionalize}
-                              >
-                                {proBusy
-                                  ? tFor(lang, "asstChat.proPopup.polishing")
-                                  : tFor(lang, "asstChat.proPopup.yes")}
-                              </button>
-                            </div>
-                          </div>
-                        </Backdrop>
-                      )
-                      : null}
                   </div>
                 )
                 : awaitingJobDetails

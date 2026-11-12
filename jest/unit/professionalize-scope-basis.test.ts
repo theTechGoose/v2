@@ -68,17 +68,20 @@ describe("REQ-332 m30 — professionalize keeps the scope, the basis follows the
 
   test("REQ-332 the picker sends the original message + sibling bullets and applies a multi-line answer as several bullets", () => {
     const src = read("front-end/islands/AsstChat.tsx");
-    const start = src.indexOf("async function confirmProfessionalize()");
+    // REQ-384 (m16) amendment: the request now runs BEFORE the inline offer
+    // (offerPolish) and Yes applies the previewed lines (acceptPolish).
+    const start = src.indexOf("async function offerPolish(");
     expect(start).toBeGreaterThan(0);
-    const fn = src.slice(
-      start,
-      src.indexOf("function dismissProfessionalize", start),
-    );
+    const fn = src.slice(start, src.indexOf("function acceptPolish", start));
     expect(fn).toMatch(
-      /professionalizeBullet\(b\.text,\s*\{[^}]*raw[^}]*siblings[^}]*\}\)/s,
+      /professionalizeBullet\(text,\s*\{[^}]*raw[^}]*siblings[^}]*\}\)/s,
     );
     expect(fn).toMatch(/res\??\.lines/);
-    expect(fn).toMatch(/replaceBulletWithLines\(/);
+    const accept = src.slice(
+      src.indexOf("function acceptPolish"),
+      src.indexOf("function dismissPolish"),
+    );
+    expect(accept).toMatch(/replaceBulletWithLines\(/);
   });
 
   test("REQ-332 the pricing screen renders the basis the server answered, not a fixed label", () => {
