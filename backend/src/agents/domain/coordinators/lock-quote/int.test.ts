@@ -400,3 +400,30 @@ Deno.test("REQ-333 (M24) lock-quote keeps an English contractor's typed lines ve
     assert(!prompts.some((p) => /into English/.test(p)));
   });
 });
+
+Deno.test("lock-quote integration: REQ-465 (demo cycle 3, m37) the locked action_card carries the quote's number", async () => {
+  await withKv(async () => {
+    const s = fresh();
+    const conv = await s.conversations.create({
+      userId: "u-1",
+      currentPhase: "quote",
+    });
+    const quote = await s.quotes.create("u-1", {
+      summary: "Roof",
+      lineItems: [{ description: "x", quantity: 1, unit: "ea", price: 100 }],
+      estimatedTotal: 100,
+    });
+    assert(quote.number, "the quote is numbered at create");
+    const r = await s.flow.run({
+      userId: "u-1",
+      conversationId: conv.id,
+      quoteId: quote.id,
+    });
+    const card = r.newMessages[0];
+    assertEquals(card.kind, "action_card");
+    assertEquals(
+      (card.payload as { number?: string } | undefined)?.number,
+      quote.number,
+    );
+  });
+});

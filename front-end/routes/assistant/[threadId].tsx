@@ -9,6 +9,7 @@ import DashTopbar from "../../islands/DashTopbar.tsx";
 import AsstThreads from "../../islands/AsstThreads.tsx";
 import AsstChat, { deriveUserInitials } from "../../islands/AsstChat.tsx";
 import ChatHeaderLive from "../../islands/ChatHeaderLive.tsx";
+import { numberedLabel } from "../../../shared/documents/numbering.ts";
 import {
   deriveChatHeader,
   draftOwesDetails,
@@ -82,8 +83,9 @@ export default define.page(async function AssistantThread(ctx) {
     : null;
   const headerTitle = ssrHeader?.clientName ??
     tFor(lang, ssrHeader?.clientKey ?? "assistantThread.newConversation");
+  // REQ-465 (demo cycle 3, m37): the first paint already names the number.
   const headerStatus = ssrHeader
-    ? tFor(lang, ssrHeader.statusKey)
+    ? numberedLabel(ssrHeader.number, tFor(lang, ssrHeader.statusKey))
     : tFor(lang, "assistantThread.statusFallback");
 
   // Surface a soft "we're getting you set up" banner when the user

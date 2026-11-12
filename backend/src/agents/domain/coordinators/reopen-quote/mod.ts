@@ -105,6 +105,7 @@ export class ReopenQuote {
             actionType: "quote",
             status: "draft",
             quoteId: quote.id,
+            ...(quote.number ? { number: quote.number } : {}), // REQ-465
             ...(quote.customerId ? { customerId: quote.customerId } : {}),
             ...(quote.description ? { description: quote.description } : {}),
             lineItems: (quote.lineItems ?? []).map((li) => ({

@@ -382,3 +382,30 @@ Deno.test("agents conversations e2e: REQ-234 (demo M3) POST /:id/lock-quote lock
     assertEquals(typeof after.lockedAt, "string");
   });
 });
+
+Deno.test("agents conversations e2e: REQ-465 (demo cycle 3, m37) POST /:id/lock-quote returns a locked card carrying the quote's Q- number", async () => {
+  await withServer(async (port) => {
+    const sid = await login(port, "+15125554650");
+    const h = { "content-type": "application/json", "x-session-id": sid };
+    const quote = await fetch(`http://localhost:${port}/quotes`, {
+      method: "POST", headers: h,
+      body: JSON.stringify({
+        summary: "Fence",
+        lineItems: [{ description: "x", quantity: 1, unit: "ea", price: 25000 }],
+        estimatedTotal: 25000,
+      }),
+    }).then((r) => r.json());
+    assertEquals(typeof quote.number, "string");
+    const conv = await fetch(`http://localhost:${port}/agents/conversations`, {
+      method: "POST", headers: h, body: "{}",
+    }).then((r) => r.json());
+
+    const res = await fetch(`http://localhost:${port}/agents/conversations/${conv.id}/lock-quote`, {
+      method: "POST", headers: h, body: JSON.stringify({ quoteId: quote.id }),
+    });
+    assertEquals(res.status, 200);
+    const result = await res.json();
+    assertEquals(result.newMessages[0].kind, "action_card");
+    assertEquals(result.newMessages[0].payload.number, quote.number);
+  });
+});

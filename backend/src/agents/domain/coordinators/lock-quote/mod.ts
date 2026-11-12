@@ -130,6 +130,8 @@ export class LockQuote {
         actionType: "quote",
         status,
         quoteId: fresh.id,
+        // REQ-465 (demo cycle 3, m37): the card names the quote's Q- number.
+        ...(fresh.number ? { number: fresh.number } : {}),
         ...(fresh.customerId ? { customerId: fresh.customerId } : {}),
         ...(fresh.description ? { description: fresh.description } : {}),
         lineItems,

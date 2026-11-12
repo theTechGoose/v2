@@ -1891,6 +1891,8 @@ export class HandleChatMessage {
             actionType: "quote",
             status: "draft",
             quoteId: quote.id, // real id from the store
+            // REQ-465 (demo cycle 3, m37): the draft card names its Q- number.
+            ...(quote.number ? { number: quote.number } : {}),
             customerId: quote.customerId,
             lineItems: action.payload.lineItems, // keep cents-shape for the frontend
             totalCents: action.payload.lineItems.reduce(
@@ -1978,6 +1980,8 @@ export class HandleChatMessage {
               actionType: "quote",
               status,
               quoteId,
+              // REQ-465 (demo cycle 3, m37): the locked card names its number.
+              ...(locked.number ? { number: locked.number } : {}),
               lineItems: sentLineItems,
               totalCents,
             },
