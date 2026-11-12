@@ -40,7 +40,7 @@ export class NotifyOnEvent {
     const l = notificationL10n(event);
     if (!l) return;
     // REQ-022 (NW-31c): the scheduled-invoice nudge is re-emitted by every
-    // /cron/run-nudges sweep (the /invoices page fires one per load) — keep
+    // /cron/run-nudges call and could meet the server sweep (REQ-508) — keep
     // ONE notification per invoice per day.
     if (l.type === "invoice_nudge_due" && event.entityId) {
       const day = (event.data?.dayBucket as string | undefined) ??

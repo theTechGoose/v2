@@ -455,12 +455,8 @@ export default function InvoicesPage(_props: { lang?: Lang }) {
 
   useEffect(() => {
     let alive = true;
-    // REQ-022 (NW-31c): sweep the scheduled invoices whose send date is here
-    // so the contractor gets the "job done? send it" nudge. Idempotent
-    // server-side (one notification per invoice per day). A real scheduler
-    // is a deploy decision — see plan §8.
-    fetch("/api/cron/run-nudges", { method: "POST", credentials: "include" })
-      .catch(() => {/* best-effort */});
+    // REQ-508 (demo cycle 3, m20): REQ-022's scheduled-invoice nudges are swept
+    // by the backend's own minute timer — a page view no longer triggers them.
     Promise.all([
       dashboardClient.invoices(undefined).catch(() => [] as Invoice[]),
       dashboardClient.customers().catch(() => [] as Customer[]),

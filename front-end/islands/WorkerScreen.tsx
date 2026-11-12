@@ -27,6 +27,7 @@ import {
   workerScreenLang,
 } from "../lib/field.ts";
 import { lockLabelKey } from "../lib/field-batches.ts";
+import { refreshTickDue } from "../lib/refresh-tick.ts";
 import { type Lang, langSignal, setLang, t } from "../lib/i18n.ts";
 
 const CELL_KEY = "pm:worker-cell";
@@ -224,6 +225,8 @@ export default function WorkerScreen(
   const langChosenRef = useRef(langChosen);
   /** REQ-416 — the page's own language (opened in, or picked on the switch); Salir returns to it */
   const pageLangRef = useRef<Lang>(initialLang);
+  // REQ-508 (demo cycle 3, m20) — when the last load started; the 5 s tick skips a fresh one
+  const lastLoadRef = useRef(0);
 
   useEffect(() => {
     pageLangRef.current = initialLang;
@@ -249,6 +252,7 @@ export default function WorkerScreen(
   async function load() {
     const d = dateRef.current;
     if (!d) return;
+    lastLoadRef.current = Date.now();
     try {
       // no worker session: the backend answers 200 with an empty body (Danet
       // serialises `null` as nothing), which the api helper hands back as ""
@@ -283,7 +287,8 @@ export default function WorkerScreen(
       if (
         meRef.current && document.visibilityState === "visible" &&
         busyRef.current.size === 0 &&
-        Object.keys(draftsRef.current).length === 0 && !deferringRef.current
+        Object.keys(draftsRef.current).length === 0 && !deferringRef.current &&
+        refreshTickDue(lastLoadRef.current, Date.now(), REFRESH_MS) // REQ-508: not right after an act()'s reload
       ) load();
     }, REFRESH_MS);
     return () => clearInterval(id);
