@@ -596,3 +596,68 @@ Deno.test("REQ-008 NW-47 handle-chat-message integration: a first turn that is t
   assertEquals(ident?.businessName ?? undefined, undefined);
   await resetKv();
 });
+
+// ---- REQ-258 (demo M22): "half deposit" reaches the terms wizard ----------
+Deno.test("REQ-258 handle-chat-message integration: create_quote with paymentTerms stores it on the conversation's terms prefill; a correction without it keeps it", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const { conversations, llm, flow } = fresh();
+  await seedOnboarded("u-1");
+  llm.setScript([
+    {
+      text: "Drafting a quote.",
+      action: {
+        type: "create_quote",
+        payload: {
+          summary: "Interior painting",
+          lineItems: [{
+            description: "Interior painting (3 bedrooms, walls and ceilings, 2 coats, paint supplied by contractor)",
+            amountCents: 240_000,
+          }],
+          paymentTerms: "50_50",
+        },
+      },
+    },
+    {
+      text: "Drafting a quote.",
+      action: {
+        type: "create_quote",
+        payload: {
+          summary: "Interior painting",
+          lineItems: [{ description: "Interior painting", amountCents: 250_000 }],
+        },
+      },
+    },
+  ]);
+
+  const conv = await conversations.create({ userId: "u-1" });
+  const first = await flow.run({
+    userId: "u-1",
+    conversationId: conv.id,
+    content: "Interior paint, 3 bedrooms, walls and ceilings, 2 coats, I supply paint. $2,400 total, half deposit.",
+  });
+  assertEquals(first.conversation.termsPrefill, { payment_terms: "50_50" });
+  assertEquals((await conversations.get(conv.id)).termsPrefill, { payment_terms: "50_50" });
+
+  const second = await flow.run({ userId: "u-1", conversationId: conv.id, content: "make it $2,500" });
+  assertEquals(second.conversation.termsPrefill, { payment_terms: "50_50" });
+  await resetKv();
+});
+
+Deno.test("REQ-258 handle-chat-message integration: create_quote without paymentTerms sets no prefill", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const { conversations, llm, flow } = fresh();
+  await seedOnboarded("u-1");
+  llm.setScript([{
+    text: "Drafting a quote.",
+    action: {
+      type: "create_quote",
+      payload: { summary: "Gutter cleaning", lineItems: [{ description: "Gutter cleaning", amountCents: 22_000 }] },
+    },
+  }]);
+  const conv = await conversations.create({ userId: "u-1" });
+  const r = await flow.run({ userId: "u-1", conversationId: conv.id, content: "gutter cleaning $220" });
+  assertEquals(r.conversation.termsPrefill, undefined);
+  await resetKv();
+});

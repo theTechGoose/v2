@@ -5501,6 +5501,13 @@ body {
   background: var(--green-50, #eef6ea);
   box-shadow: inset 0 0 0 1px var(--brand-green);
 }
+/* REQ-258 (demo M22): the option the chat already named ("half deposit" →
+   50/50) is shown pre-selected; the contractor still taps to confirm. */
+.wiz-opt--suggested {
+  border-color: var(--brand-green);
+  background: var(--green-50, #eef6ea);
+  box-shadow: inset 0 0 0 1px var(--brand-green);
+}
 
 /* Customer step — clickable list + create form */
 .cust-pick__list {

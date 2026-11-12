@@ -1,5 +1,6 @@
 import type { LLMAction } from "@agents/domain/business/llm/base/mod.ts";
 import { t } from "@core/i18n/mod.ts";
+import { PAYMENT_TERMS_PRESETS } from "@agents/domain/business/terms-prefill/mod.ts";
 
 /**
  * OpenAI function-tool schemas. The names + parameter shapes are pinned
@@ -37,6 +38,12 @@ export const TOOL_DEFS = [
               required: ["description", "amountCents"],
               additionalProperties: false,
             },
+          },
+          // REQ-258 (demo M22): "half deposit" had nowhere to go.
+          paymentTerms: {
+            type: "string",
+            enum: [...PAYMENT_TERMS_PRESETS],
+            description: t("en", "prompts.tools.createQuote.paymentTerms"),
           },
         },
         required: ["summary", "lineItems"],
@@ -102,7 +109,16 @@ export function parseToolCall(call: { function: { name: string; arguments: strin
         lineItems.push({ description: i.description, amountCents: Math.trunc(i.amountCents) });
       }
       if (!summary || lineItems.length === 0) return undefined;
-      return { type: "create_quote", payload: { summary, lineItems } };
+      // REQ-258: only a preset payment option id survives; anything else is
+      // dropped and the wizard asks as before.
+      const paymentTerms = typeof args.paymentTerms === "string" &&
+          PAYMENT_TERMS_PRESETS.includes(args.paymentTerms)
+        ? args.paymentTerms
+        : undefined;
+      return {
+        type: "create_quote",
+        payload: { summary, lineItems, ...(paymentTerms ? { paymentTerms } : {}) },
+      };
     }
     case "lock_quote": {
       const quoteId = typeof args.quoteId === "string" ? args.quoteId : "";

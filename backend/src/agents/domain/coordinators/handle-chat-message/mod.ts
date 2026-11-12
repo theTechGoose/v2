@@ -854,6 +854,16 @@ export class HandleChatMessage {
         // Bind to the conversation so a follow-up lock_quote knows what to lock.
         convPatch.quoteId = quote.id;
 
+        // REQ-258 (demo M22): a payment split the contractor stated ("half
+        // deposit") pre-selects the terms wizard's payment step. A later
+        // correction that doesn't restate it keeps the earlier one.
+        if (action.payload.paymentTerms) {
+          convPatch.termsPrefill = {
+            ...(conv.termsPrefill ?? {}),
+            payment_terms: action.payload.paymentTerms,
+          };
+        }
+
         await this.bus.emit({
           userId: input.userId,
           entityType: "quote",

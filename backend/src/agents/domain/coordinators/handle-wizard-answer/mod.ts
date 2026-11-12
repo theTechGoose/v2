@@ -14,6 +14,7 @@ import { CustomerStore } from "@crm/domain/data/customer-store/mod.ts";
 import { UserStore } from "@users/domain/data/user-store/mod.ts";
 import { EventBus } from "@core/business/events/mod.ts";
 import { t } from "@core/i18n/mod.ts";
+import { suggestedOptionId } from "@agents/domain/business/terms-prefill/mod.ts";
 import type { AgentConversation } from "@agents/dto/conversation.ts";
 import type { AgentMessage } from "@agents/dto/message.ts";
 import type { WizardAnswer, WizardSpec, WizardState } from "@agents/dto/wizard.ts";
@@ -211,6 +212,7 @@ export class HandleWizardAnswer {
           stepId: step.id,
           options: localizeOptions(step.options, lang),
           hint: step.hint,
+          suggestedOptionId: suggestedOptionId(conv.termsPrefill, step),
         },
       });
       newMessages.push(wizardMsg);

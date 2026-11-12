@@ -567,3 +567,49 @@ Deno.test("REQ-029 NW-22 own-contact create_new rejects with the English diction
   );
   await resetKv();
 });
+
+// ---- REQ-258 (demo M22): the payment step pre-selects what the chat said ----
+Deno.test("REQ-258 handle-wizard-answer integration: a conversation whose chat said 'half deposit' offers the payment_terms step with 50_50 pre-selected", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const { conversations, transitionFlow, flow } = fresh();
+  const conv = await conversations.create({ userId: "u-1" });
+  await conversations.update(conv.id, { termsPrefill: { payment_terms: "50_50" } });
+  const t0 = await transitionFlow.run({ userId: "u-1", conversationId: conv.id });
+  // The first step (customer) has no suggestion.
+  assertEquals((t0.newMessages[1].payload as { suggestedOptionId?: string }).suggestedOptionId, undefined);
+
+  let paymentMsg: AgentMessage | undefined;
+  for (const step of TERMS_WIZARD_V1.steps) {
+    if (step.id === "payment_terms") break;
+    const opt = step.options.find((o) => !o.isCustom)!;
+    const r = await flow.run({ userId: "u-1", conversationId: conv.id, stepId: step.id, optionId: opt.id });
+    const next = r.newMessages[1];
+    const p = next.payload as { stepId: string; suggestedOptionId?: string };
+    if (p.stepId === "payment_terms") paymentMsg = next;
+    else assertEquals(p.suggestedOptionId, undefined);
+  }
+  assert(paymentMsg, "the payment_terms step was emitted");
+  assertEquals((paymentMsg!.payload as { suggestedOptionId?: string }).suggestedOptionId, "50_50");
+  // Still a confirmable choice: the contractor taps it (or another option).
+  const r = await flow.run({ userId: "u-1", conversationId: conv.id, stepId: "payment_terms", optionId: "50_50" });
+  assertEquals((r.newMessages[1].payload as { stepId: string; suggestedOptionId?: string }).stepId, "warranty");
+  assertEquals((r.newMessages[1].payload as { suggestedOptionId?: string }).suggestedOptionId, undefined);
+  await resetKv();
+});
+
+Deno.test("REQ-258 handle-wizard-answer integration: no prefill → the payment_terms step carries no suggestion", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const { flow, conv } = await setupTermsConversation();
+  let payload: { stepId: string; suggestedOptionId?: string } | undefined;
+  for (const step of TERMS_WIZARD_V1.steps) {
+    if (step.id === "payment_terms") break;
+    const opt = step.options.find((o) => !o.isCustom)!;
+    const r = await flow.run({ userId: "u-1", conversationId: conv.id, stepId: step.id, optionId: opt.id });
+    payload = r.newMessages[1].payload as typeof payload;
+  }
+  assertEquals(payload?.stepId, "payment_terms");
+  assertEquals(payload?.suggestedOptionId, undefined);
+  await resetKv();
+});

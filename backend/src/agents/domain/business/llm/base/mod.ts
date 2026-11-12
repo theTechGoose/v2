@@ -66,7 +66,16 @@ export interface LLMRequest {
  * destructive ops). Add new variants as the action surface grows.
  */
 export type LLMAction =
-  | { type: "create_quote"; payload: { summary: string; lineItems: { description: string; amountCents: number }[] } }
+  | {
+    type: "create_quote";
+    payload: {
+      summary: string;
+      lineItems: { description: string; amountCents: number }[];
+      /** REQ-258 (demo M22): a payment split the contractor stated ("half
+       *  deposit" → "50_50") — a payment_terms wizard option id. */
+      paymentTerms?: string;
+    };
+  }
   | { type: "lock_quote"; payload: { quoteId: string } }
   | { type: "request_terms_transition"; payload: { quoteId: string } };
 
