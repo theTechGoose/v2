@@ -27,7 +27,8 @@ const read = (p: string) => fs.readFileSync(path.join(ROOT, p), "utf8");
 
 describe("REQ-623 payment-reminder settings (demo cycle 4, M26)", () => {
   test("REQ-623 unset → reminders on at day 3/7/14/30", () => {
-    expect(REMINDER_DAY_CHOICES).toEqual([3, 7, 14, 30]);
+    // REQ-704 (cycle 5, m60) adds the opt-in -3 (before due) and 0 (due date)
+    expect(REMINDER_DAY_CHOICES).toEqual([-3, 0, 3, 7, 14, 30]);
     expect(DEFAULT_REMINDER_DAYS).toEqual([3, 7, 14, 30]);
     expect(reminderSettingsOf(null)).toEqual({
       enabled: true,
@@ -119,7 +120,9 @@ describe("REQ-623 payment-reminder settings (demo cycle 4, M26)", () => {
     expect(es["settings.reminders.title"]).toMatch(/recordatorio/i);
     expect(en["settings.reminders.day"]).toContain("{n}");
     expect(es["settings.reminders.day"]).toContain("{n}");
-    expect(en["invoicesPage.detail.reminders.on"]).toContain("{days}");
-    expect(es["invoicesPage.detail.reminders.on"]).toContain("{days}");
+    // REQ-704 (cycle 5, m60): the cadence line is composed from steps
+    // (describeReminderCadence) so day 30 is split out as owner-only
+    expect(en["invoicesPage.detail.reminders.on"]).toContain("{steps}");
+    expect(es["invoicesPage.detail.reminders.on"]).toContain("{steps}");
   });
 });

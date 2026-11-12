@@ -195,7 +195,8 @@ Deno.test("REQ-623: Settings has a payment-reminders on/off switch and cadence c
       "on",
       "the detail says reminders are on",
     );
-    await expect.see("days 7, 14, 30 past due");
+    // REQ-704 (cycle 5, m60): day 30 is split out — it alerts the owner only
+    await expect.see("Reminders to Ana Ruiz: days 7, 14 after due · day 30 we alert you");
     await clickUntil(
       page,
       "[data-cy='invoice-detail-mute']",

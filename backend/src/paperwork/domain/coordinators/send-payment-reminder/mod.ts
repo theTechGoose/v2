@@ -16,17 +16,39 @@ import {
   docRefWithVersion,
   docTitle,
 } from "@paperwork/domain/business/doc-render/mod.ts";
-import { reminderSettingsOf } from "#quote-flow/reminder-settings.ts";
+import {
+  daysFromDue,
+  DEFAULT_REMINDER_DAYS,
+  REMINDER_DAY_CHOICES,
+  type ReminderDay,
+  reminderSettingsOf,
+} from "#quote-flow/reminder-settings.ts";
 
-/** The cadence steps fired by the overdue-reminder cron when the business
- *  has not picked its own (REQ-623: BusinessIdentity.reminders.days). */
-export const CADENCE_DAYS = [3, 7, 14, 30] as const;
-export type CadenceDay = typeof CADENCE_DAYS[number];
+/** Every cadence step, in order (days relative to the due date): -3 = three
+ *  days before, 0 = the due date (REQ-704, demo cycle 5 m60), 3 / 7 / 14 past
+ *  due, 30 = the owner-only escalation. A business picks which run
+ *  (REQ-623: BusinessIdentity.reminders.days); unset → 3 / 7 / 14 / 30. */
+export const CADENCE_DAYS = REMINDER_DAY_CHOICES;
+export type CadenceDay = ReminderDay;
+
+/** REQ-704: what a nudge would send, rendered without sending it. */
+export interface ReminderPreview {
+  invoiceId: string;
+  day: CadenceDay;
+  /** Day 30: nothing reaches the customer, the owner is alerted. */
+  escalated: boolean;
+  email?: string;
+  phone?: string;
+  emailSubject?: string;
+  smsBody?: string;
+  /** Why a send would reach nobody (same reasons as ReminderResult). */
+  reason?: ReminderSkipReason;
+}
 
 export interface ReminderResult {
   /** Invoice id we acted on. */
   invoiceId: string;
-  /** Day step we fired (3/7/14/30). */
+  /** Day step we fired (-3/0/3/7/14/30). */
   day: CadenceDay;
   /** Channels we successfully dispatched on. */
   channels: string[];
@@ -57,6 +79,7 @@ export type ReminderSkipReason =
  *     step. Used by tests and manual "send nudge" buttons.
  *
  * Roadmap §E:
+ *   - Day -3 / 0 (REQ-704, opt-in): text + email before / on the due date.
  *   - Day 3 / 7 / 14: text + email to customer.
  *   - Day 30: emit `invoice:escalated` for the contractor's bell only;
  *     no customer-facing dispatch (contractor decides whether to escalate
@@ -66,7 +89,8 @@ export type ReminderSkipReason =
  *   - Business setting (REQ-623, demo cycle 4 M26): `BusinessIdentity.reminders`
  *     = { enabled, days } — off stops the sweep for every invoice; `days`
  *     picks which steps run. Unset → on, 3/7/14/30.
- *   - Eligibility: status in (sent|viewed) AND dueDate past. A `claimed`
+ *   - Eligibility: status in (sent|viewed) AND the step's day reached
+ *     (dueDate − 3, the due date, or N days past it). A `claimed`
  *     invoice (the customer reported paying) is PAUSED — never dunned while
  *     the claim is pending; reject-claim flips it back to `sent`, which
  *     resumes the cadence where it left off (REQ-250, demo m12).
@@ -141,36 +165,17 @@ export class SendPaymentReminder {
       return { invoiceId, day, channels: [], escalated: true };
     }
 
-    // Days 3 / 7 / 14: dispatch to customer.
-    const [customer, sender, biz] = await Promise.all([
-      invoice.customerId
-        ? this.customers.getOwned(invoice.customerId, userId).catch(() => undefined)
-        : Promise.resolve(undefined),
-      this.users.get(userId).catch(() => undefined),
-      this.identity.get(userId).catch(() => null),
-    ]);
-    const lang: "en" | "es" = biz?.commsLanguage === "es" ? "es" : "en";
-    const businessName = biz?.businessName?.trim() || biz?.legalName?.trim() || sender?.name?.trim() || t(lang, "brand.name");
-    // REQ-204: the reminder greets the customer as snapshotted on the bill
-    const shown = customerOnDocument(invoice, customer);
-    const customerFirst = (shown?.name ?? shown?.businessName)?.trim().split(/\s+/)[0];
-    const senderFirst = sender?.name?.trim().split(/\s+/)[0];
-    const copy = composeReminderCopy({ day, customerFirst, senderFirst, businessName, invoice, lang });
-
-    // Mint a shortlink to the public invoice page for the SMS + email CTA.
-    let url = "";
-    try {
-      const link = await this.shortlinks.findOrCreate(userId, "invoice", invoice.id);
-      const appUrl = Deno.env.get("APP_URL") ?? SITE_ORIGIN;
-      url = `${appUrl}/s/${link.code}`;
-    } catch { /* fall through */ }
+    // Days -3 / 0 / 3 / 7 / 14: dispatch to customer.
+    const { copy, toEmail, toPhone, senderEmail, url } = await this.compose(
+      userId,
+      invoice,
+      day,
+    );
 
     // REQ-556 (demo-loop cycle 4, M7): a channel counts only when the
     // provider took the message; nothing delivered says why, and does not
     // burn the rung (add a contact and the next nudge goes out).
     const channels: string[] = [];
-    const toEmail = customer?.email || shown?.email;
-    const toPhone = customer?.phoneNumber || shown?.phoneNumber;
     if (!toEmail && !toPhone) {
       return {
         invoiceId,
@@ -186,7 +191,7 @@ export class SendPaymentReminder {
           to: toEmail,
           subject: copy.emailSubject,
           htmlBody: copy.emailHtml(url),
-          ...(sender?.email ? { cc: [sender.email] } : {}),
+          ...(senderEmail ? { cc: [senderEmail] } : {}),
         });
         if (res.ok) channels.push("email");
         else console.warn(`[send-payment-reminder] email not sent: ${res.reason}`);
@@ -217,6 +222,69 @@ export class SendPaymentReminder {
     return { invoiceId, day, channels, escalated: false };
   }
 
+  /** REQ-704 (demo cycle 5, m60): the reminder `runForInvoice` would send for
+   *  `day`, rendered — same copy, same recipients, same link — and sent to
+   *  nobody. Day 30 says it only alerts the owner. */
+  async preview(
+    userId: string,
+    invoiceId: string,
+    day: CadenceDay,
+    _now: Date = new Date(),
+  ): Promise<ReminderPreview> {
+    const invoice = await this.invoices.getOwned(invoiceId, userId);
+    const reason: ReminderSkipReason | undefined = invoice.remindersMuted
+      ? "muted"
+      : alreadyFiredOn(invoice, day)
+      ? "already_fired"
+      : undefined;
+    if (day === 30) {
+      return { invoiceId, day, escalated: true, ...(reason ? { reason } : {}) };
+    }
+    const { copy, toEmail, toPhone, url } = await this.compose(userId, invoice, day);
+    const noOne = !toEmail && !toPhone;
+    const why = reason ?? (noOne ? "no_recipient" : undefined);
+    return {
+      invoiceId,
+      day,
+      escalated: false,
+      ...(toEmail ? { email: toEmail } : {}),
+      ...(toPhone ? { phone: toPhone } : {}),
+      emailSubject: copy.emailSubject,
+      smsBody: copy.smsBody(url),
+      ...(why ? { reason: why } : {}),
+    };
+  }
+
+  /** The customer-facing copy, recipients and invoice link for one step. */
+  private async compose(userId: string, invoice: Invoice, day: CadenceDay) {
+    const [customer, sender, biz] = await Promise.all([
+      invoice.customerId
+        ? this.customers.getOwned(invoice.customerId, userId).catch(() => undefined)
+        : Promise.resolve(undefined),
+      this.users.get(userId).catch(() => undefined),
+      this.identity.get(userId).catch(() => null),
+    ]);
+    const lang: "en" | "es" = biz?.commsLanguage === "es" ? "es" : "en";
+    const businessName = biz?.businessName?.trim() || biz?.legalName?.trim() || sender?.name?.trim() || t(lang, "brand.name");
+    // REQ-204: the reminder greets the customer as snapshotted on the bill
+    const shown = customerOnDocument(invoice, customer);
+    const customerFirst = (shown?.name ?? shown?.businessName)?.trim().split(/\s+/)[0];
+    const senderFirst = sender?.name?.trim().split(/\s+/)[0];
+    const copy = composeReminderCopy({ day, customerFirst, senderFirst, businessName, invoice, lang });
+
+    // Mint a shortlink to the public invoice page for the SMS + email CTA.
+    let url = "";
+    try {
+      const link = await this.shortlinks.findOrCreate(userId, "invoice", invoice.id);
+      const appUrl = Deno.env.get("APP_URL") ?? SITE_ORIGIN;
+      url = `${appUrl}/s/${link.code}`;
+    } catch { /* fall through */ }
+
+    const toEmail = customer?.email || shown?.email || undefined;
+    const toPhone = customer?.phoneNumber || shown?.phoneNumber || undefined;
+    return { copy, toEmail, toPhone, senderEmail: sender?.email, url };
+  }
+
   private async appendHistory(userId: string, invoice: Invoice, day: CadenceDay, channels: string[]): Promise<void> {
     const next = [...(invoice.reminderHistory ?? []), { day, sentAt: new Date().toISOString(), channels }];
     await this.invoices.update(invoice.id, userId, { reminderHistory: next });
@@ -243,14 +311,14 @@ export function pickNextDay(
   invoice: Invoice,
   now: Date,
   /** REQ-623: the business's cadence (BusinessIdentity.reminders.days) */
-  days: readonly CadenceDay[] = CADENCE_DAYS,
+  days: readonly CadenceDay[] = DEFAULT_REMINDER_DAYS,
 ): CadenceDay | undefined {
   if (invoice.remindersMuted) return undefined;
   if (!REMINDER_ELIGIBLE.includes(invoice.status ?? "")) return undefined;
+  if (!invoice.dueDate) return undefined;
   const cadence = CADENCE_DAYS.filter((d) => days.includes(d));
   if (cadence.length === 0) return undefined;
-  const od = daysOverdue(invoice, now);
-  if (od < cadence[0]) return undefined;
+  if (!stepReached(invoice, now, cadence[0])) return undefined;
   const firedDays = new Set((invoice.reminderHistory ?? []).map((h) => h.day));
   let largestFired: number | undefined;
   for (const d of CADENCE_DAYS) {
@@ -258,12 +326,22 @@ export function pickNextDay(
   }
   for (let i = cadence.length - 1; i >= 0; i--) {
     const d = cadence[i];
-    if (od < d) continue;
+    if (!stepReached(invoice, now, d)) continue;
     if (firedDays.has(d)) continue;
     if (largestFired != null && d < largestFired) continue;
     return d;
   }
   return undefined;
+}
+
+/** Has the clock reached step `day`? Post-due steps count whole days past the
+ *  end of the due date (unchanged since REQ-021); the before-due / due-date
+ *  steps (REQ-704) count calendar days from it — -3 is three days before,
+ *  0 is the due date itself. */
+function stepReached(invoice: Invoice, now: Date, day: CadenceDay): boolean {
+  if (day > 0) return daysOverdue(invoice, now) >= day;
+  const d = daysFromDue(invoice.dueDate, now.toISOString().slice(0, 10));
+  return d != null && d >= day;
 }
 
 export function daysOverdue(invoice: Invoice, now: Date): number {
@@ -295,7 +373,11 @@ export function composeReminderCopy(opts: {
   const hi = customerFirst ? t(lang, "paymentReminder.greeting", { name: customerFirst }) : "";
   const sender = senderFirst ?? t(lang, "paymentReminder.senderFallback");
   const amount = `$${((invoice.amount ?? 0) / 100).toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
-  const tone = day === 3
+  const tone = day < 0
+    ? t(lang, "paymentReminder.tone.beforeDue", { businessName })
+    : day === 0
+    ? t(lang, "paymentReminder.tone.dueToday", { businessName })
+    : day === 3
     ? t(lang, "paymentReminder.tone.day3", { businessName })
     : day === 7
     ? t(lang, "paymentReminder.tone.day7", { businessName })
@@ -304,7 +386,11 @@ export function composeReminderCopy(opts: {
   // REQ-204 / REQ-201: every reminder names the bill — "INV-5000 · Version 2"
   const ref = docRef(invoice);
   const refVersion = docRefWithVersion(invoice, lang);
-  const subjectBase = day === 3
+  const subjectBase = day < 0
+    ? t(lang, "paymentReminder.subject.beforeDue", { businessName })
+    : day === 0
+    ? t(lang, "paymentReminder.subject.dueToday", { businessName })
+    : day === 3
     ? t(lang, "paymentReminder.subject.day3", { businessName })
     : day === 7
     ? t(lang, "paymentReminder.subject.day7", { businessName })

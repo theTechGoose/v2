@@ -85,6 +85,7 @@ import {
 import {
   isLastReminderDay,
   REMINDER_DAY_CHOICES,
+  reminderDayLabel,
   type ReminderSettings,
   reminderSettingsOf,
   toggleReminderDay,
@@ -2371,7 +2372,8 @@ function RemindersEditCard(
                         : "var(--border,#d8dcd5);background:#fff;color:var(--fg)"
                     }`}
                   >
-                    {tFor(lang, "settings.reminders.day", { n: String(d) })}
+                    {/* REQ-704: "3 days before due", "Due date", "Day 30 · alerts you" */}
+                    {reminderDayLabel(d, (k, v) => tFor(lang, k, v))}
                   </button>
                 );
               })}

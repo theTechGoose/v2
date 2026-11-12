@@ -115,7 +115,7 @@ export class AcceptedPaymentMethods {
 }
 
 /** REQ-623 (demo cycle 4, M26): the business's automatic payment reminders —
- *  on/off for every invoice, and which steps (days past due) run. Unset → on,
+ *  on/off for every invoice, and which steps run (days from the due date: -3, 0, 3, 7, 14, 30 — REQ-704). Unset → on,
  *  day 3/7/14/30 (`reminderSettingsOf`, shared/quote-flow/reminder-settings.ts). */
 export class ReminderSettingsDto {
   @IsBoolean()
