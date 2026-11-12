@@ -136,6 +136,14 @@ export const PRICING_PLANS: readonly PricingPlan[] = [
         en: "Unlimited quotes, agreements & invoices",
         es: "Cotizaciones, acuerdos y facturas ilimitados",
       },
+      // REQ-515 (demo m53) — field is not plan-gated, so every paid plan has worker logins and the
+      // field schedule: Monster names it (Assist and Assist+ inherit it through "Everything in").
+      // Third on purpose: the onboarding/settings cards show only a plan's first three lines.
+      {
+        id: "workers-field-schedule",
+        en: "Workers & field schedule",
+        es: "Trabajadores y agenda de campo",
+      },
       { id: "e-signatures", en: "E-signatures", es: "Firmas electrónicas" },
       {
         id: "sms-email-sending",
