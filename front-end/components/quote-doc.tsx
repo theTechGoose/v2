@@ -43,6 +43,8 @@ import {
   versionChangeLine,
 } from "../../shared/documents/linked-view.ts";
 import type { VersionChanges } from "../../shared/documents/versions.ts";
+import { agreementClauses } from "../../shared/documents/warranty-clause.ts";
+import { localizeTermValue } from "../lib/term-i18n.ts";
 import { fmtMoneyExact, fmtPhone, telHref } from "../lib/format.ts";
 import { type Lang, tFor } from "../lib/i18n.ts";
 import {
@@ -146,23 +148,7 @@ export interface QuotePublic {
 
 /** The public agreement's copy table — one table so the whole document
  *  flips together when the viewer toggles EN | ES (REQ-048). */
-function cstr(lang: Lang) {
-  const clauseKeys = [
-    "governingLaw",
-    "jobDetails",
-    "paymentTerms",
-    "changeOrders",
-    "customerResponsibilities",
-    "delays",
-    "warranty",
-    "limitationOfLiability",
-    "rightToStopWork",
-    "termination",
-    "disputeResolution",
-    "permits",
-    "indemnification",
-    "entireAgreement",
-  ];
+function cstr(lang: Lang, terms?: Term[]) {
   return {
     docTag: tFor(lang, "quoteDoc.docTag"),
     signed: (d: string) => tFor(lang, "quoteDoc.signed", { date: d }),
@@ -233,12 +219,15 @@ function cstr(lang: Lang) {
       warranty: tFor(lang, "quoteDoc.termLabel.warranty"),
       cancellation: tFor(lang, "quoteDoc.termLabel.cancellation"),
     } as Record<string, string>,
-    clauses: clauseKeys.map((k) =>
-      [
-        tFor(lang, `quoteDoc.clause.${k}.title`),
-        tFor(lang, `quoteDoc.clause.${k}.body`),
-      ] as [string, string]
-    ),
+    // REQ-463 (demo m31): clause 7 states the warranty from the terms —
+    // the period when one is set, a no-warranty body otherwise.
+    clauses: agreementClauses({
+      terms,
+      lang,
+      prefix: "quoteDoc.clause",
+      t: (key, vars) => tFor(lang, key, vars),
+      localize: localizeTermValue,
+    }),
   };
 }
 
@@ -296,7 +285,7 @@ export function QuoteDoc(
   const customerName = quote.customer?.name?.trim() ||
     quote.acceptedName?.trim() || undefined;
   const contractor = quote.contractor;
-  const t = cstr(lang);
+  const t = cstr(lang, quote.terms);
   const businessLabel = contractor?.businessName?.trim() ||
     contractor?.name?.trim() || tFor(lang, "brand.name");
   const contractorName = contractor?.name?.trim();
@@ -685,8 +674,8 @@ export function QuoteDoc(
               payment, warranty) and the plain-English legal clauses, under a
               single "Terms" header. The grid is conditional; the clauses are
               always present, so this whole section always renders. Warranty
-              row is hidden when "No warranty" was chosen — clause 7 still
-              applies. */
+              row is hidden when "No warranty" was chosen — clause 7 then
+              says no workmanship warranty is included (REQ-463). */
           }
           {(() => {
             return (
