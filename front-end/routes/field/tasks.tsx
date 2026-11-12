@@ -36,7 +36,10 @@ export default define.page(function FieldFieldTasksPageRoute(ctx) {
       <div class="app">
         <DashSidebar active="tasks" />
         <main class="main">
-          <DashTopbar greetingName={greetingName} />
+          <DashTopbar
+            pageTitleKey="nav.tasks"
+            greetingName={greetingName}
+          />
           <div class="content">
             <FieldTasksPage />
             <SiteFooter lang={lang} compact />

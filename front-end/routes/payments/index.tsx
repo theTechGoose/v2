@@ -63,7 +63,11 @@ export default define.page(function PaymentsRoute(ctx) {
       <div class="app">
         <DashSidebar active="payments" />
         <main class="main">
-          <DashTopbar greetingDate={greetingDate} greetingName={greetingName} />
+          <DashTopbar
+            pageTitleKey="nav.payments"
+            greetingDate={greetingDate}
+            greetingName={greetingName}
+          />
           <div class="content">
             <PaymentsPage />
             <SiteFooter lang={lang} compact />
