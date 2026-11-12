@@ -265,6 +265,8 @@ export interface Job {
   paidCents: number;
   pctPaid: number;
   nextDueDate: string | null;
+  /** REQ-473: the quote's agreed payment terms (stored EN wizard value). */
+  paymentTerms?: string | null;
   status: JobStatusKind;
   statusLabel: string;
 }

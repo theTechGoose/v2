@@ -25,6 +25,7 @@ import {
 } from "@paperwork/dto/change-order.ts";
 import { SendChangeOrderAlert } from "@paperwork/domain/coordinators/send-change-order-alert/mod.ts";
 import { deriveUrgency } from "@paperwork/domain/business/invoice-urgency/mod.ts";
+import { isOpenReceivable } from "@paperwork/domain/business/open-receivable/mod.ts";
 import { ConfirmPayment } from "@paperwork/domain/coordinators/confirm-payment/mod.ts";
 import { ComputeInvoiceForecast } from "@paperwork/domain/coordinators/compute-invoice-forecast/mod.ts";
 import { RecordPaymentFromUtterance } from "@paperwork/domain/coordinators/record-payment-from-utterance/mod.ts";
@@ -327,7 +328,12 @@ export class InvoiceController {
     @Query("status") status?: string,
   ) {
     const user = await requireUser(ctx, this.sessions, this.users);
-    const list = status
+    // REQ-473 (demo-loop cycle 3, M8): `?status=open` is the money owed
+    // right now — the REQ-397 open-receivable rule (sent/viewed/claimed and
+    // the legacy partly-paid "pending", with a balance), not one status.
+    const list = status === "open"
+      ? (await this.store.listByUser(user.id)).filter(isOpenReceivable)
+      : status
       ? await this.store.listByUserAndStatus(user.id, status)
       : await this.store.listByUser(user.id);
     const now = new Date();

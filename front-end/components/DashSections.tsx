@@ -438,12 +438,27 @@ export interface OutstandingRow {
 }
 
 export function Outstanding(
-  { owed, current, mid, overdue, items, lang = "en" }: {
+  {
+    owed,
+    current,
+    mid,
+    overdue,
+    items,
+    upcoming = null,
+    emptyKey,
+    lang = "en",
+  }: {
     owed: number;
     current: number;
     mid: number;
     overdue: number;
     items: OutstandingRow[];
+    /** REQ-473: "Upcoming: $925 bills Nov 26" — the next scheduled
+     *  installment, already localized; null when none. */
+    upcoming?: string | null;
+    /** REQ-473: the $0 empty text (outstandingEmptyKey) — null when the
+     *  upcoming line stands in for it. Omitted → the old items-based pick. */
+    emptyKey?: string | null;
     lang?: Lang;
   },
 ) {
@@ -469,14 +484,29 @@ export function Outstanding(
           </button>
         )}
       </div>
+      {upcoming && (
+        <div
+          class="money__upcoming"
+          style="font-size:13px;color:var(--fg-muted);padding:2px 0 10px"
+        >
+          {upcoming}
+        </div>
+      )}
       {allZero
-        ? (
-          <div style="font-size:13px;color:var(--fg-muted);padding:6px 0 14px">
-            {items.length === 0
-              ? tFor(lang, "outstanding.empty.noInvoices")
-              : tFor(lang, "outstanding.empty.allPaid")}
-          </div>
-        )
+        ? (() => {
+          const key = emptyKey !== undefined
+            ? emptyKey
+            : items.length === 0
+            ? "outstanding.empty.noInvoices"
+            : "outstanding.empty.allPaid";
+          return key
+            ? (
+              <div style="font-size:13px;color:var(--fg-muted);padding:6px 0 14px">
+                {tFor(lang, key)}
+              </div>
+            )
+            : null;
+        })()
         : (
           <>
             <div class="money__bar">

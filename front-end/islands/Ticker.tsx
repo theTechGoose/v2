@@ -3,6 +3,7 @@
  * Direct port of the prototype's `useTicker` + `<Ticker/>`.
  */
 import { useEffect, useState } from "preact/hooks";
+import { tickerFrame } from "../lib/ticker-frame.ts";
 
 interface Props {
   value: number;
@@ -17,10 +18,9 @@ export default function Ticker({ value, prefix = "", duration = 1400 }: Props) {
     const start = performance.now();
     let raf = 0;
     const tick = (now: number) => {
-      const t = Math.min((now - start) / duration, 1);
-      const eased = 1 - Math.pow(1 - t, 3);
-      setV(Math.round(value * eased));
-      if (t < 1) raf = requestAnimationFrame(tick);
+      // REQ-473: clamped to [0,1] and never -0 (the demo's "$-0").
+      setV(tickerFrame(value, start, now, duration));
+      if (now - start < duration) raf = requestAnimationFrame(tick);
     };
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);

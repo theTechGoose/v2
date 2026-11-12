@@ -232,3 +232,68 @@ Deno.test("list-active-jobs integration: the onboarding sample is never a job (p
   assertEquals(await flow.run("u-1", NOW), []);
   await resetKv();
 });
+
+// REQ-473 (demo-loop cycle 3, issue M8): a job whose only remaining bill is a
+// SCHEDULED installment ("Payment upon completion") read "Deposit · No due
+// date" — nextDueDate looked only at open receivables, and the row had no
+// payment terms to label itself from.
+Deno.test("REQ-473 list-active-jobs: only a scheduled installment left → nextDueDate is its due date, and the job carries the quote's payment terms", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const { customers, quotes, invoices, flow } = fresh();
+  const cust = await customers.create("u-1", { name: "Rosa Martinez" });
+  const q = await quotes.create("u-1", {
+    summary: "Bathroom door repair",
+    lineItems: [],
+    status: "accepted",
+    customerId: cust.id,
+    estimatedTotal: 925_00,
+    terms: [{
+      stepId: "payment_terms",
+      label: "Payment terms",
+      value: "Payment upon completion",
+    }],
+  });
+  await invoices.create("u-1", {
+    quoteId: q.id,
+    status: "scheduled",
+    amount: 925_00,
+    scheduledFor: "2026-04-26",
+    dueDate: "2026-05-26",
+  });
+  const [job] = await flow.run("u-1", NOW);
+  assertEquals(job.nextDueDate, "2026-05-26");
+  assertEquals(job.paymentTerms, "Payment upon completion");
+  await resetKv();
+});
+
+Deno.test("REQ-473 list-active-jobs: an open receivable still wins over a later scheduled installment; no terms → paymentTerms null", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const { customers, quotes, invoices, flow } = fresh();
+  const cust = await customers.create("u-1", { name: "Acme" });
+  const q = await quotes.create("u-1", {
+    summary: "Fence",
+    lineItems: [],
+    status: "accepted",
+    customerId: cust.id,
+    estimatedTotal: 2_000_00,
+  });
+  await invoices.create("u-1", {
+    quoteId: q.id,
+    status: "scheduled",
+    amount: 1_000_00,
+    scheduledFor: "2026-04-18",
+    dueDate: "2026-04-19",
+  });
+  await invoices.create("u-1", {
+    quoteId: q.id,
+    status: "sent",
+    amount: 1_000_00,
+    dueDate: "2026-04-22",
+  });
+  const [job] = await flow.run("u-1", NOW);
+  assertEquals(job.nextDueDate, "2026-04-22");
+  assertEquals(job.paymentTerms, null);
+  await resetKv();
+});
