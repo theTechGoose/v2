@@ -2574,7 +2574,9 @@ export default function AsstChat({
       optionsTouchedRef.current = false;
       setEditingBullet(null);
       setEditingTitleId(null);
-      setProPopup(null);
+      // REQ-384 — a polish offer (or one still in flight) is for the old drafts
+      proReqRef.current++;
+      setProOffer(null);
       setOptionsDegraded(p.jobOptions?.degraded === true);
       setJobOptions(drafts);
       setSelectedOptionId(drafts[0]?.id ?? null);
