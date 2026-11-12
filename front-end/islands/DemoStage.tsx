@@ -128,7 +128,12 @@ import {
   type Replayer,
 } from "../lib/demo-mode/mirror-replay.ts";
 import { useGlide } from "../lib/demo-mode/use-glide.ts";
-import { placeWavesAgain } from "../lib/demo-mode/pointer-anchor.ts";
+import {
+  newStageWave,
+  placeWavesAgain,
+  type StageWave,
+  type WaveFrame,
+} from "../lib/demo-mode/pointer-anchor.ts";
 import {
   anchorPoint,
   ghostAt,
@@ -137,10 +142,7 @@ import {
   seedOn,
 } from "../../shared/demo-mode/presenter-anchor.ts";
 import PointerGhost from "../components/demo-mode/PointerGhost.tsx";
-import DemoPointer, {
-  type Wave,
-  WAVE_MS,
-} from "../components/demo-mode/DemoPointer.tsx";
+import DemoPointer, { WAVE_MS } from "../components/demo-mode/DemoPointer.tsx";
 import PeerPointer, {
   type PointerCmd,
 } from "../components/demo-mode/PeerPointer.tsx";
@@ -267,8 +269,9 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
   /** REQ-228 — the pill's real height: the frame keeps out of that band, however it wraps */
   const [pillH, setPillH] = useState(0);
   const pillRef = useRef<HTMLDivElement | null>(null);
-  /** REQ-371 (demo m10) — each wave keeps the anchor it was sent with: placed again with the pointer */
-  const [waves, setWaves] = useState<(Wave & { a: Anchor })[]>([]);
+  /** REQ-371 (demo m10) — each wave keeps the anchor it was sent with; REQ-546 (demo m14,
+   *  cycle 4) — frozen where it was placed, gone with its node (`placeWavesAgain`) */
+  const [waves, setWaves] = useState<StageWave[]>([]);
   /** REQ-214 — the latest thing each colleague did, by pid */
   const [cmds, setCmds] = useState<Record<string, PointerCmd>>({});
   const seq = useRef(0);
@@ -422,6 +425,20 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
     }
     return fracToPoint(a, f);
   };
+  /** REQ-546 (demo m14, cycle 4) — the frame as a click wave sees it: its node's point while the
+   *  replay shows that page load and has the node, else none — never the click's fraction */
+  const waveFrame = (): WaveFrame => {
+    const f = fitBox();
+    return {
+      box: f,
+      load: loadRef.current,
+      nodeAt: (a) => {
+        if (!a.n?.l || a.n.l !== loadRef.current) return null;
+        const p = replayerRef.current?.pointOf(a.n);
+        return p ? { x: f.left + p.x * f.s, y: f.top + p.y * f.s } : null;
+      },
+    };
+  };
   /** REQ-451 — a presenter's pointer on this frame (a colleague's, or this one's ghost): on the
    *  node it names while the replay shows that page load and has the node; else nowhere — never
    *  the fraction it had (another page now, or the node gone) */
@@ -567,7 +584,7 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
   const replace = () => {
     checkStyled(); // REQ-370 — a stylesheet of the replay may just have loaded
     showCustomer();
-    setWaves((w) => placeWavesAgain(w, (a) => placeOnStage(a).at));
+    setWaves((w) => placeWavesAgain(w, waveFrame()));
     for (const [pid, a] of peersRef.current) {
       const p = presenterOnStage(a);
       const was = placedRef.current.get(pid);
@@ -932,7 +949,7 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
               p.outside ? null : rectOnStage(m.a),
             );
             const id = ++waveId.current;
-            setWaves((w) => [...w, { id, ...p.at, a: m.a }]);
+            setWaves((w) => [...w, newStageWave(id, m.a, waveFrame())]);
             setTimeout(
               () => setWaves((w) => w.filter((x) => x.id !== id)),
               WAVE_MS,
