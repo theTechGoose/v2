@@ -282,3 +282,28 @@ Deno.test("REQ-500 business-identity e2e: an empty send-in list is a 400 and the
     assertEquals(now.commsLanguages, ["es"], "the refused writes changed nothing");
   });
 });
+
+// ── REQ-623 (demo cycle 4, M26): the business's payment-reminder setting ──
+Deno.test("REQ-623 M26 business-identity e2e: reminders { enabled, days } is saved and read back; bad cadences are a 400", async () => {
+  await withServer(async (port) => {
+    const sid = await login(port, "+15125550623");
+    const put = (body: unknown) =>
+      fetch(`http://localhost:${port}/profile/identity`, {
+        method: "PUT",
+        headers: { "content-type": "application/json", "x-session-id": sid },
+        body: JSON.stringify(body),
+      });
+    const saved = await (await put({ reminders: { enabled: false, days: [7, 14] } })).json();
+    assertEquals(saved.reminders, { enabled: false, days: [7, 14] });
+    const got = await fetch(`http://localhost:${port}/profile/identity`, { headers: { "x-session-id": sid } }).then((r) => r.json());
+    assertEquals(got.reminders, { enabled: false, days: [7, 14] });
+
+    for (const reminders of [{ enabled: true, days: [] }, { enabled: true, days: [5] }, { enabled: "yes", days: [3] }]) {
+      const res = await put({ reminders });
+      assertEquals(res.status, 400, `reminders ${JSON.stringify(reminders)} is refused`);
+      await drain(res);
+    }
+    const after = await fetch(`http://localhost:${port}/profile/identity`, { headers: { "x-session-id": sid } }).then((r) => r.json());
+    assertEquals(after.reminders, { enabled: false, days: [7, 14] }, "the refused writes changed nothing");
+  });
+});

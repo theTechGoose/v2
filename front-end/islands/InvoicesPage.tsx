@@ -76,6 +76,11 @@ import { docNumberOf } from "../../shared/documents/numbering.ts";
 import { invoiceJobNamePlaceholderKey } from "../../shared/quote-flow/trade-fit.ts"; // REQ-450
 import { isExceedsAgreement } from "../../shared/documents/ledger.ts";
 import {
+  invoiceReminderState,
+  type ReminderSettings,
+  reminderSettingsOf,
+} from "../../shared/quote-flow/reminder-settings.ts"; // REQ-623
+import {
   type DocState,
   isInvoiceLocked,
   workingCopy,
@@ -1396,6 +1401,48 @@ function InvoiceDetail(
   const [err, setErr] = useState<string | null>(null);
   // REQ-167: delete asks inline first — never a browser dialog
   const [confirmDelete, setConfirmDelete] = useState(false);
+  // REQ-623 (demo cycle 4, M26): the business's reminder setting, so the
+  // detail can say whether automatic reminders run for this invoice
+  const [reminders, setReminders] = useState<ReminderSettings | null>(null);
+  const [muted, setMuted] = useState(!!inv.remindersMuted);
+  useEffect(() => {
+    let alive = true;
+    dashboardClient.profile()
+      .then((p) => {
+        if (alive) setReminders(reminderSettingsOf(p?.identity ?? null));
+      })
+      .catch(() => {/* unknown → the row stays hidden */});
+    return () => {
+      alive = false;
+    };
+  }, []);
+  async function doToggleReminders() {
+    if (busy) return;
+    setBusy(true);
+    setErr(null);
+    try {
+      const r = await fetch(`/api/invoices/${inv.id}`, {
+        method: "PUT",
+        credentials: "include",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ remindersMuted: !muted }),
+      });
+      if (!r.ok) {
+        setErr(tFor(lang, "settings.saveFailed"));
+        return;
+      }
+      setMuted(!muted);
+      await onChanged();
+    } finally {
+      setBusy(false);
+    }
+  }
+  const reminderState = reminders
+    ? invoiceReminderState(
+      { status: inv.status, remindersMuted: muted },
+      reminders,
+    )
+    : "none";
 
   async function doDelete() {
     if (busy) return;
@@ -1665,6 +1712,46 @@ function InvoiceDetail(
           <I d={ICN.x} size={16} sw={2.5} />
         </button>
       </div>
+
+      {
+        /* REQ-623 (demo cycle 4, M26): whether automatic reminders run for
+          this invoice, and its own mute */
+      }
+      {reminderState !== "none" && reminders && (
+        <div
+          data-cy="invoice-detail-reminders"
+          data-state={reminderState}
+          style="margin-top:14px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;background:var(--surface-2,#f6f7f3);border-radius:10px;padding:10px 12px"
+        >
+          <span style="flex:1;min-width:0;font-size:12.5px;color:var(--fg-muted,#6b7560)">
+            {reminderState === "on"
+              ? tFor(lang, "invoicesPage.detail.reminders.on", {
+                days: reminders.days.join(", "),
+              })
+              : reminderState === "off"
+              ? (
+                <a href="/settings#reminders" style="color:inherit">
+                  {tFor(lang, "invoicesPage.detail.reminders.off")}
+                </a>
+              )
+              : tFor(lang, "invoicesPage.detail.reminders.muted")}
+          </span>
+          {reminderState !== "off" && (
+            <button
+              type="button"
+              data-cy="invoice-detail-mute"
+              aria-pressed={muted}
+              onClick={doToggleReminders}
+              disabled={busy}
+              style={ghostBtn}
+            >
+              {muted
+                ? tFor(lang, "invoicesPage.detail.reminders.unmute")
+                : tFor(lang, "invoicesPage.detail.reminders.mute")}
+            </button>
+          )}
+        </div>
+      )}
 
       {/* REQ-201: a pending revision — publish it (and tell the customer) */}
       {hasPendingRevision(inv) && !locked && (

@@ -35,6 +35,9 @@ export interface BusinessIdentity {
   commsLanguages?: string[];
   /** REQ-172: the business's IANA time zone (the 9 am schedule texts follow it) */
   timezone?: string;
+  /** REQ-623: automatic payment reminders — unset → on, day 3/7/14/30
+   *  (shared/quote-flow/reminder-settings.ts) */
+  reminders?: { enabled: boolean; days: number[] };
   /** Per-method enable flags + handles (Venmo @, Zelle email, etc.).
    *  Shape mirrors backend AcceptedPaymentMethods but kept permissive so
    *  consumers only need the .enabled flag for gating logic. */

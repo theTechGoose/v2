@@ -40,6 +40,8 @@ export interface Profile {
         acceptedPaymentMethods?: AcceptedMethods;
         businessName?: string;
         displayName?: string;
+        /** REQ-623: automatic payment reminders (unset → on, 3/7/14/30) */
+        reminders?: { enabled?: boolean; days?: number[] };
       }
       & Record<string, unknown>
     )
