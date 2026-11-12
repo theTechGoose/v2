@@ -42,6 +42,9 @@ export const LANDING_DICT: Record<LandingLang, Record<string, string>> = {
     "hero.kicker": "Built for contractors who work with their hands",
     "hero.h1a": "You do the work.",
     "hero.h1b": "We handle the",
+    // REQ-349: the <h1>'s accessible name — the whole headline, read once,
+    // instead of whichever rotor words happen to be visible.
+    "hero.h1Sr": "You do the work. We handle the paperwork.",
     "hero.lead":
       "You communicate with us in Spanish. Everything goes out to your clients in perfect English. No apps to learn. Just chat with us.",
     "hero.cta1": "Get Started →",
@@ -208,6 +211,7 @@ export const LANDING_DICT: Record<LandingLang, Record<string, string>> = {
     "hero.kicker": "Hecho para contratistas que trabajan con las manos",
     "hero.h1a": "Tú haces el trabajo.",
     "hero.h1b": "Nosotros manejamos",
+    "hero.h1Sr": "Tú haces el trabajo. Nosotros manejamos el papeleo.",
     "hero.lead":
       "Nos escribes en español. Todo sale a tus clientes en inglés perfecto. Sin apps que aprender. Solo chatea con nosotros.",
     "hero.cta1": "Empezar →",

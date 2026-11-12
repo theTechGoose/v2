@@ -349,11 +349,24 @@ export default define.page(async function Landing(ctx) {
               <span data-i18n="hero.kicker">{t("hero.kicker")}</span>
             </div>
 
+            {
+              /* REQ-349 (demo p15-2): the rotor's words are live text and two
+                are visible mid-crossfade, so a screen reader heard "We handle
+                the quotes. contracts.". The <h1>'s accessible name is the ONE
+                visually-hidden sentence (swapped by the toggle like every
+                data-i18n node); the visible lines and the rotor are
+                aria-hidden. */
+            }
             <h1>
-              <span data-i18n="hero.h1a">{t("hero.h1a")}</span>
+              <span class="sr-only" data-i18n="hero.h1Sr">{t("hero.h1Sr")}</span>
+              <span data-i18n="hero.h1a" aria-hidden="true">
+                {t("hero.h1a")}
+              </span>
               <br />
-              <span data-i18n="hero.h1b">{t("hero.h1b")}</span>
-              <span class="rotor">
+              <span data-i18n="hero.h1b" aria-hidden="true">
+                {t("hero.h1b")}
+              </span>
+              <span class="rotor" aria-hidden="true">
                 <span class="rotor-track" id="rotor-track">
                   <span
                     class="word in"
