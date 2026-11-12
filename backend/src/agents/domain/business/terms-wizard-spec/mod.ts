@@ -82,8 +82,9 @@ export function stepQuestionKey(
 }
 
 /** REQ-411 (demo-loop cycle 2, m35): `vars` fill the sub-lines — `{n}` is
- *  the account's days to pay ("Full amount due within {n} days of the job's
- *  completion"), so the wizard never contradicts Settings. */
+ *  the account's days to pay ("Billed when the job is done · the customer
+ *  then has {n} days to pay", REQ-483), so the wizard never contradicts
+ *  Settings. */
 export function localizeOptions(
   options: WizardOption[],
   lang: "en" | "es",

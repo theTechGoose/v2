@@ -73,11 +73,14 @@ import {
   buildInvoiceBody,
   centsToDollars,
   computeTotals,
+  defaultInvoiceNetDays,
+  defaultPaymentInstructions,
   dollarsToCents,
   dueDateFrom,
   EMPTY_BILL_TO,
   formatInvoiceHeadline,
   type FormLine,
+  isPresetNetDays,
   type LedgerPrefill,
   missingInfo,
   NET_DAYS_OPTIONS,
@@ -3301,9 +3304,23 @@ function NewInvoiceModal(
   const [discountReason, setDiscountReason] = useState("");
   const [taxRate, setTaxRate] = useState("");
   const [issuedDate, setIssuedDate] = useState(today);
-  const [netDays, setNetDays] = useState<number>(30);
+  // REQ-483 (demo-loop cycle 3, m18): the terms start from Settings' days to
+  // pay and, drawn from a quote, that quote's payment terms — applied below
+  // once the profile / quote load, until the contractor picks terms himself.
+  const [netDays, setNetDays] = useState<number>(() =>
+    defaultInvoiceNetDays(undefined, null)
+  );
   const [customTerms, setCustomTerms] = useState(false);
-  const [dueDate, setDueDate] = useState(() => dueDateFrom(today, 30));
+  const [dueDate, setDueDate] = useState(() =>
+    dueDateFrom(today, defaultInvoiceNetDays(undefined, null))
+  );
+  const [termsTouched, setTermsTouched] = useState(false);
+  const [accountNetDays, setAccountNetDays] = useState<number | undefined>(
+    undefined,
+  );
+  const [quoteTerms, setQuoteTerms] = useState<
+    Array<{ stepId?: string; value?: string }> | null
+  >(null);
   const [paymentInstructions, setPaymentInstructions] = useState("");
   // REQ-022 (NW-31c): "Send on" — optional; when set the invoice is created
   // scheduled (Upcoming) instead of drafted/sent.
@@ -3322,17 +3339,28 @@ function NewInvoiceModal(
   const [allQuotes, setAllQuotes] = useState<QuoteCard[] | null>(null);
 
   // Payment instructions: Settings' contract defaults first, else the last
-  // ones typed here.
+  // ones typed here, else (REQ-483, M40) the accepted payment methods saved
+  // at onboarding — "Zelle: 5125550102 · Cash". The profile also carries
+  // Settings' days to pay (identity.invoiceNetDays) for the terms (m18).
   useEffect(() => {
     let alive = true;
+    let remembered: string | null = null;
     try {
-      const remembered = globalThis.localStorage?.getItem(PAY_INSTR_KEY);
+      remembered = globalThis.localStorage?.getItem(PAY_INSTR_KEY) ?? null;
       if (remembered) setPaymentInstructions(remembered);
     } catch { /* storage unavailable */ }
     dashboardClient.profile().then((p) => {
-      const fromSettings = p?.contractDefaults?.paymentInstructions;
-      if (alive && typeof fromSettings === "string" && fromSettings.trim()) {
-        setPaymentInstructions(fromSettings);
+      if (!alive) return;
+      const identity = p?.identity ?? null;
+      const text = defaultPaymentInstructions({
+        settings: p?.contractDefaults?.paymentInstructions,
+        remembered,
+        methods: identity?.acceptedPaymentMethods,
+        lang,
+      });
+      if (text) setPaymentInstructions(text);
+      if (typeof identity?.invoiceNetDays === "number") {
+        setAccountNetDays(identity.invoiceNetDays);
       }
     }).catch(() => {/* the field stays editable */});
     return () => {
@@ -3352,6 +3380,7 @@ function NewInvoiceModal(
       if (!alive) return;
       const p = prefillFromLedger(l, q);
       setLedger(p);
+      if (Array.isArray(q?.terms)) setQuoteTerms(q.terms);
       if (p.customerId) pickCustomer(p.customerId);
       if (p.jobName) setJobName(p.jobName);
       setAmount(centsToDollars(p.amountCents));
@@ -3427,6 +3456,16 @@ function NewInvoiceModal(
     }
   }
 
+  // REQ-483 (m18): apply the default terms as the profile and the quote
+  // arrive — never over terms the contractor already picked.
+  useEffect(() => {
+    if (termsTouched) return;
+    const n = defaultInvoiceNetDays(accountNetDays, quoteTerms);
+    setNetDays(n);
+    setCustomTerms(!isPresetNetDays(n));
+    setDueDate(dueDateFrom(issuedDate, n));
+  }, [accountNetDays, quoteTerms]);
+
   /** Pick a customer: bill-to and the service address follow (editable after). */
   function pickCustomer(id: string) {
     setClientSel(id);
@@ -3442,6 +3481,7 @@ function NewInvoiceModal(
   }
 
   function pickTerms(value: string) {
+    setTermsTouched(true);
     if (value === "custom") {
       setCustomTerms(true);
       return;
@@ -4181,6 +4221,7 @@ function NewInvoiceModal(
               value={dueDate}
               disabled={busy}
               onInput={(e) => {
+                setTermsTouched(true);
                 setCustomTerms(true);
                 setDueDate((e.target as HTMLInputElement).value);
               }}
