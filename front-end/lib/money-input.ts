@@ -127,6 +127,19 @@ export function priceChipAnchorCents(
 }
 
 /**
+ * REQ-449 (demo-loop cycle 3, m48): which of Pick a price's tiers is selected — the one whose
+ * price is in the price box (a tier tap fills the box; typing that same amount selects it too).
+ * -1 when the box is empty or holds a price no tier carries.
+ */
+export function selectedTierIndex(
+  suggestions: ReadonlyArray<{ priceCents: number }> | null | undefined,
+  priceCents: number | null | undefined,
+): number {
+  if (!suggestions || !priceCents || priceCents <= 0) return -1;
+  return suggestions.findIndex((t) => t.priceCents === priceCents);
+}
+
+/**
  * Quick-amount chips for an amount pad. With a positive anchor (the AI's market price, the draft
  * total) the chips are 0.5×, 0.75×, 1×, 1.25×, 1.5× of it snapped to `chipGridCents`, unique and
  * ascending; without one the fixed list.
