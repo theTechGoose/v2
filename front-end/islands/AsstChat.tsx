@@ -2,6 +2,10 @@ import { useEffect, useRef, useState } from "preact/hooks";
 import { I, ICN } from "../lib/dash-icons.tsx";
 import { detailLines } from "../lib/format.ts";
 import {
+  invoiceStatusFields,
+  scheduleDateProblem,
+} from "../lib/invoice-review-actions.ts";
+import {
   computePaymentSplit,
   type MilestoneRole,
 } from "../lib/payment-split.ts";
@@ -793,6 +797,16 @@ export default function AsstChat({
    *  with the public /i/:id link. The ref keeps the create idempotent if
    *  dispatch fails and the user retries. */
   const [swapInvoiceSent, setSwapInvoiceSent] = useState<string | null>(null);
+  /** REQ-627: the invoice preview's "Save as draft" / "Schedule" outcome
+   *  (and the ready card's "Schedule") — the invoice exists, nothing went to
+   *  the customer. */
+  const [swapInvoiceSaved, setSwapInvoiceSaved] = useState<
+    { id: string; scheduledFor?: string } | null
+  >(null);
+  /** REQ-627: the "Schedule" date picker (ready card and invoice preview). */
+  const [schedOpen, setSchedOpen] = useState(false);
+  const [schedDate, setSchedDate] = useState("");
+  const [schedErr, setSchedErr] = useState<string | undefined>(undefined);
   /** Honest swap-send outcome (P-09): the invoice endpoints report logical
    *  failure as HTTP 200 + {ok:false, reason}, so the swap panel must read
    *  the BODY — never just Response.ok. When a leg fails this holds the
@@ -3502,8 +3516,12 @@ export default function AsstChat({
       let custEmail: string | undefined;
       let custPhone: string | undefined;
       if (customerId) {
-        const picked = await clientsClient.list()
-          .then((cs) => cs.find((c) => c.id === customerId))
+        // REQ-627: read the customer itself — the paged /clients list has
+        // no `.find`, which left Send now with "no email or phone on file".
+        const picked = await api
+          .get<{ name?: string; email?: string; phoneNumber?: string }>(
+            `/customers/${customerId}`,
+          )
           .catch(() => undefined);
         custEmail = picked?.email ?? undefined;
         custPhone = picked?.phoneNumber ?? undefined;
@@ -3585,10 +3603,9 @@ export default function AsstChat({
         ...fromQuote,
         amount: cents,
         ...(invoiceDueDate ? { dueDate: invoiceDueDate } : {}),
-        issuedDate: today,
-        // The invoice send endpoints do not stamp invoice status (unlike the
-        // quote send path), so the flow marks it sent up front as before.
-        status: "sent",
+        // REQ-627: saved as a DRAFT — nothing reaches the customer until the
+        // ready card's "Send now" (or a "Schedule" date) issues it.
+        ...invoiceStatusFields("draft", { today }),
         jobName: invoiceReview.jobName ?? jobName,
         ...(invoiceReview.description
           ? { description: invoiceReview.description }
@@ -3617,6 +3634,95 @@ export default function AsstChat({
   }
 
   /**
+   * REQ-627: the invoice behind the shared invoice preview — minted ONCE from
+   * the reviewed quote (idempotent across retries via the ref) with the
+   * status the contractor chose: "Send now" → sent, "Save as draft" → draft,
+   * "Schedule" → scheduled + scheduledFor. A later choice on the same invoice
+   * (a draft then sent) patches it instead of minting a second one.
+   */
+  async function upsertSwapInvoice(
+    totalCents: number,
+    action: "send" | "draft" | "schedule",
+    scheduledFor?: string,
+  ): Promise<string> {
+    const today = new Date().toISOString().slice(0, 10);
+    const when = { today, ...(scheduledFor ? { scheduledFor } : {}) };
+    const existing = swapInvoiceIdRef.current;
+    if (existing) {
+      await api.put(`/invoices/${existing}`, invoiceStatusFields(action, when));
+      return existing;
+    }
+    // REQ-024: the wizard just wrote the terms + completion date onto the
+    // quote — read the LIVE row, never the copy loaded before the last step.
+    const live = quote?.id
+      ? await quotesClient.get(quote.id).catch(() => quote)
+      : quote;
+    const q = live as
+      | (typeof quote & {
+        estimatedCompletionDate?: string;
+        terms?: Array<{ stepId: string; value: string }>;
+      })
+      | null;
+    const inv = await api.post<{ id?: string }>("/invoices", {
+      ...(customer?.id ? { customerId: customer.id } : {}),
+      // REQ-023: the swapped invoice is derived from the reviewed quote.
+      ...(q?.id ? { quoteId: q.id } : {}),
+      ...(q?.lineItems && q.lineItems.length > 0
+        ? { lineItems: q.lineItems }
+        : {}),
+      amount: totalCents,
+      // REQ-024: due date from the wizard — completion date + payment
+      // terms (Due Now → that day; payment upon completion → +15;
+      // anything else → +30). Never "today" by default.
+      dueDate: invoiceDueDateFromQuote(q, today),
+      ...invoiceStatusFields(action, when),
+      ...(q?.jobName ? { jobName: q.jobName } : {}),
+      ...(q?.description ? { description: q.description } : {}),
+    });
+    if (!inv?.id) throw new Error("couldn't create the invoice");
+    swapInvoiceIdRef.current = inv.id;
+    return inv.id;
+  }
+
+  /** REQ-627: "Save as draft" / "Schedule" on the invoice preview — the
+   *  invoice is kept, nothing goes to the customer. */
+  async function saveSwapInvoice(
+    action: "draft" | "schedule",
+    totalCents: number,
+  ) {
+    if (sending) return;
+    const today = new Date().toISOString().slice(0, 10);
+    if (action === "schedule") {
+      const problem = scheduleDateProblem(schedDate, today);
+      if (problem) {
+        setSchedErr(tFor(lang, `asstChat.invoiceReview.schedule.${problem}`));
+        return;
+      }
+    }
+    setError(undefined);
+    setSchedErr(undefined);
+    setSending(true);
+    try {
+      const id = await upsertSwapInvoice(
+        totalCents,
+        action,
+        action === "schedule" ? schedDate : undefined,
+      );
+      setSchedOpen(false);
+      setSwapInvoiceSaved({
+        id,
+        ...(action === "schedule" ? { scheduledFor: schedDate } : {}),
+      });
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "couldn't save the invoice",
+      );
+    } finally {
+      setSending(false);
+    }
+  }
+
+  /**
    * Quote ⇄ Invoice swap on the finished-flow review (roadmap: "swap between
    * quote and invoice"). Mints ONE standalone invoice from the reviewed
    * quote's customer + total (idempotent across retries via the ref), then
@@ -3631,41 +3737,8 @@ export default function AsstChat({
     setError(undefined);
     setSending(true);
     try {
-      let invId = swapInvoiceIdRef.current;
-      if (!invId) {
-        const today = new Date().toISOString().slice(0, 10);
-        // REQ-024: the wizard just wrote the terms + completion date onto the
-        // quote — read the LIVE row, never the copy loaded before the last step.
-        const live = quote?.id
-          ? await quotesClient.get(quote.id).catch(() => quote)
-          : quote;
-        const q = live as
-          | (typeof quote & {
-            estimatedCompletionDate?: string;
-            terms?: Array<{ stepId: string; value: string }>;
-          })
-          | null;
-        const inv = await api.post<{ id?: string }>("/invoices", {
-          ...(customer?.id ? { customerId: customer.id } : {}),
-          // REQ-023: the swapped invoice is derived from the reviewed quote.
-          ...(q?.id ? { quoteId: q.id } : {}),
-          ...(q?.lineItems && q.lineItems.length > 0
-            ? { lineItems: q.lineItems }
-            : {}),
-          amount: totalCents,
-          // REQ-024: due date from the wizard — completion date + payment
-          // terms (Due Now → that day; payment upon completion → +15;
-          // anything else → +30). Never "today" by default.
-          dueDate: invoiceDueDateFromQuote(q, today),
-          issuedDate: today,
-          status: "sent",
-          ...(q?.jobName ? { jobName: q.jobName } : {}),
-          ...(q?.description ? { description: q.description } : {}),
-        });
-        if (!inv?.id) throw new Error("couldn't create the invoice");
-        invId = inv.id;
-        swapInvoiceIdRef.current = invId;
-      }
+      // REQ-627: the dialog's Keep IS the "Send now" tap — sent + dispatched.
+      const invId = await upsertSwapInvoice(totalCents, "send");
       // P-09: the invoice send endpoints report logical failure as HTTP 200
       // + {ok:false, reason} — interpret the BODY, never just Response.ok
       // (the old `await` chain read every 200 as delivered). A failed leg
@@ -4771,14 +4844,51 @@ export default function AsstChat({
                       </p>
                     </div>
                     <div style="display:flex;flex-direction:column;gap:8px">
+                      {/* REQ-627: the invoice is a DRAFT — nothing has
+                          gone out. One solid primary (Send now), outlined
+                          secondaries (Save as draft, Schedule). Once
+                          scheduled, the card says so instead. */}
+                      {swapInvoiceSaved?.id === invoiceResult.id &&
+                          swapInvoiceSaved.scheduledFor
+                        ? (
+                          <div
+                            data-cy="invoice-ready-scheduled"
+                            role="status"
+                            style="padding:12px 14px;background:var(--green-50,#eef6ea);border:1px solid var(--brand-green,#519843);border-radius:12px;font-weight:700;font-size:13.5px;color:var(--brand-teal,#144852)"
+                          >
+                            {tFor(lang, "asstChat.invoiceReview.scheduledFor", {
+                              date: swapInvoiceSaved.scheduledFor,
+                            })}
+                          </div>
+                        )
+                        : (
+                          <>
                       <button
                         type="button"
                         class="chat__price-continue"
+                        data-cy="invoice-ready-send"
                         disabled={sending}
                         onClick={async () => {
+                          if (
+                            !invoiceResult.customerEmail &&
+                            !invoiceResult.customerPhone
+                          ) {
+                            setError(
+                              tFor(lang, "asstChat.invoiceFlow.noContact"),
+                            );
+                            return;
+                          }
                           setError(undefined);
                           setSending(true);
                           try {
+                            // Send now: issue it (draft → sent, issued
+                            // today), then dispatch exactly as before.
+                            await api.put(
+                              `/invoices/${invoiceResult.id}`,
+                              invoiceStatusFields("send", {
+                                today: new Date().toISOString().slice(0, 10),
+                              }),
+                            );
                             if (invoiceResult.customerEmail) {
                               await api.post(
                                 `/invoices/${invoiceResult.id}/email`,
@@ -4790,15 +4900,6 @@ export default function AsstChat({
                                 `/invoices/${invoiceResult.id}/text`,
                                 {},
                               );
-                            }
-                            if (
-                              !invoiceResult.customerEmail &&
-                              !invoiceResult.customerPhone
-                            ) {
-                              setError(
-                                tFor(lang, "asstChat.invoiceFlow.noContact"),
-                              );
-                              return;
                             }
                             globalThis.location.href = "/invoices";
                           } catch (err) {
@@ -4816,11 +4917,91 @@ export default function AsstChat({
                           ? tFor(lang, "asstChat.preview.sending")
                           : tFor(lang, "asstChat.invoiceFlow.sendNow")}
                       </button>
+                      <div style="display:flex;gap:8px;flex-wrap:wrap">
+                        <a
+                          class="chat__price-back"
+                          data-cy="invoice-ready-draft"
+                          style="position:static;flex:1;min-width:130px;justify-content:center;border:1px solid var(--border,#d8dcd5);border-radius:10px;padding:10px;text-decoration:none;text-align:center"
+                          href={`/invoices?open=${invoiceResult.id}`}
+                        >
+                          {tFor(lang, "asstChat.invoiceReview.saveDraft")}
+                        </a>
+                        <button
+                          type="button"
+                          class="chat__price-back"
+                          data-cy="invoice-ready-schedule"
+                          aria-expanded={schedOpen ? "true" : "false"}
+                          disabled={sending}
+                          style="position:static;flex:1;min-width:130px;justify-content:center;border:1px solid var(--border,#d8dcd5);border-radius:10px;padding:10px"
+                          onClick={() => {
+                            setSchedErr(undefined);
+                            setSchedOpen((o) => !o);
+                          }}
+                        >
+                          {tFor(lang, "asstChat.invoiceReview.schedule")}
+                        </button>
+                      </div>
+                      {schedOpen
+                        ? (
+                          <InvoiceSchedulePicker
+                            lang={lang}
+                            value={schedDate}
+                            error={schedErr}
+                            busy={sending}
+                            onInput={setSchedDate}
+                            onConfirm={async () => {
+                              const today = new Date().toISOString().slice(
+                                0,
+                                10,
+                              );
+                              const problem = scheduleDateProblem(
+                                schedDate,
+                                today,
+                              );
+                              if (problem) {
+                                setSchedErr(
+                                  tFor(
+                                    lang,
+                                    `asstChat.invoiceReview.schedule.${problem}`,
+                                  ),
+                                );
+                                return;
+                              }
+                              setSchedErr(undefined);
+                              setSending(true);
+                              try {
+                                await api.put(
+                                  `/invoices/${invoiceResult.id}`,
+                                  invoiceStatusFields("schedule", {
+                                    today,
+                                    scheduledFor: schedDate,
+                                  }),
+                                );
+                                setSchedOpen(false);
+                                setSwapInvoiceSaved({
+                                  id: invoiceResult.id,
+                                  scheduledFor: schedDate,
+                                });
+                              } catch (err) {
+                                setSchedErr(
+                                  err instanceof Error
+                                    ? err.message
+                                    : "couldn't schedule the invoice",
+                                );
+                              } finally {
+                                setSending(false);
+                              }
+                            }}
+                          />
+                        )
+                        : null}
+                          </>
+                        )}
                       <div style="display:flex;gap:8px">
                         <button
                           type="button"
                           class="chat__price-back"
-                          style="flex:1;justify-content:center;border:1px solid var(--border,#d8dcd5);border-radius:10px;padding:10px"
+                          style="position:static;flex:1;justify-content:center;border:1px solid var(--border,#d8dcd5);border-radius:10px;padding:10px"
                           onClick={async () => {
                             try {
                               await navigator.clipboard.writeText(
@@ -4837,7 +5018,7 @@ export default function AsstChat({
                         </button>
                         <a
                           class="chat__price-back"
-                          style="flex:1;justify-content:center;border:1px solid var(--border,#d8dcd5);border-radius:10px;padding:10px;text-decoration:none"
+                          style="position:static;flex:1;justify-content:center;border:1px solid var(--border,#d8dcd5);border-radius:10px;padding:10px;text-decoration:none"
                           href={`/i/${invoiceResult.id}`}
                           target="_blank"
                           rel="noopener"
@@ -4847,7 +5028,7 @@ export default function AsstChat({
                       </div>
                       <a
                         class="chat__price-back"
-                        style="justify-content:center;padding:8px;text-decoration:none"
+                        style="position:static;justify-content:center;padding:8px;text-decoration:none"
                         href="/invoices"
                       >
                         {tFor(lang, "asstChat.invoiceFlow.goToInvoices")}
@@ -6558,7 +6739,38 @@ export default function AsstChat({
                           </section>
 
                           <footer class="quote-review__cta">
-                            {swapInvoiceSent
+                            {swapInvoiceSaved && !swapInvoiceSent
+                              ? (
+                                // REQ-627: kept, not sent — say so plainly.
+                                <div
+                                  data-cy="invoice-preview-saved"
+                                  style="display:flex;flex-direction:column;gap:8px;width:100%"
+                                >
+                                  <div style="padding:12px 14px;background:var(--green-50,#eef6ea);border:1px solid var(--brand-green,#519843);border-radius:12px;font-weight:700;font-size:13.5px;color:var(--brand-teal,#144852)">
+                                    {swapInvoiceSaved.scheduledFor
+                                      ? tFor(
+                                        previewLang,
+                                        "asstChat.invoiceReview.scheduledFor",
+                                        { date: swapInvoiceSaved.scheduledFor },
+                                      )
+                                      : tFor(
+                                        previewLang,
+                                        "asstChat.invoiceReview.savedDraft",
+                                      )}
+                                  </div>
+                                  <a
+                                    class="quote-review__send-main"
+                                    style="border-radius:12px;text-decoration:none"
+                                    href={`/invoices?open=${swapInvoiceSaved.id}`}
+                                  >
+                                    {tFor(
+                                      previewLang,
+                                      "asstChat.invoiceFlow.goToInvoices",
+                                    )}
+                                  </a>
+                                </div>
+                              )
+                              : swapInvoiceSent
                               ? (
                                 <div style="display:flex;flex-direction:column;gap:8px;width:100%">
                                   {swapSendFail
@@ -6964,6 +7176,66 @@ export default function AsstChat({
                                 : null}
                                 </div>
                               )}
+                            {/* REQ-627: an invoice can wait — keep it as a
+                                draft, or pick the day it goes out. Outlined
+                                secondaries under the one solid Send. */}
+                            {reviewDocType === "invoice" && !swapInvoiceSent &&
+                                !swapInvoiceSaved
+                              ? (
+                                <div style="margin-top:8px">
+                                  <div style="display:flex;gap:8px;flex-wrap:wrap">
+                                    <button
+                                      type="button"
+                                      data-cy="invoice-preview-draft"
+                                      disabled={sending}
+                                      style="flex:1;min-width:130px;padding:10px;border:1px solid var(--brand-teal,#144852);border-radius:10px;background:#fff;color:var(--brand-teal,#144852);font:inherit;font-weight:700;font-size:14px;cursor:pointer"
+                                      onClick={() =>
+                                        void saveSwapInvoice(
+                                          "draft",
+                                          totalCentsForBreakdown,
+                                        )}
+                                    >
+                                      {tFor(
+                                        previewLang,
+                                        "asstChat.invoiceReview.saveDraft",
+                                      )}
+                                    </button>
+                                    <button
+                                      type="button"
+                                      data-cy="invoice-preview-schedule"
+                                      aria-expanded={schedOpen ? "true" : "false"}
+                                      disabled={sending}
+                                      style="flex:1;min-width:130px;padding:10px;border:1px solid var(--brand-teal,#144852);border-radius:10px;background:#fff;color:var(--brand-teal,#144852);font:inherit;font-weight:700;font-size:14px;cursor:pointer"
+                                      onClick={() => {
+                                        setSchedErr(undefined);
+                                        setSchedOpen((o) => !o);
+                                      }}
+                                    >
+                                      {tFor(
+                                        previewLang,
+                                        "asstChat.invoiceReview.schedule",
+                                      )}
+                                    </button>
+                                  </div>
+                                  {schedOpen
+                                    ? (
+                                      <InvoiceSchedulePicker
+                                        lang={previewLang}
+                                        value={schedDate}
+                                        error={schedErr}
+                                        busy={sending}
+                                        onInput={setSchedDate}
+                                        onConfirm={() =>
+                                          void saveSwapInvoice(
+                                            "schedule",
+                                            totalCentsForBreakdown,
+                                          )}
+                                      />
+                                    )
+                                    : null}
+                                </div>
+                              )
+                              : null}
                           </footer>
                         </article>
                       </div>
@@ -10185,4 +10457,59 @@ function latestSentQuoteCents(messages: Message[]): number {
     }
   }
   return 0;
+}
+
+/** REQ-627: the "Schedule" date picker under an invoice review — the day the
+ *  invoice goes out (same meaning as /invoices' "Send on"). */
+function InvoiceSchedulePicker(
+  { lang, value, error, busy, onInput, onConfirm }: {
+    lang: Lang;
+    value: string;
+    error?: string;
+    busy: boolean;
+    onInput: (v: string) => void;
+    onConfirm: () => void;
+  },
+) {
+  const tomorrow = new Date(Date.now() + 24 * 3600 * 1000).toISOString()
+    .slice(0, 10);
+  return (
+    <div
+      data-cy="invoice-schedule"
+      style="margin-top:8px;display:flex;flex-direction:column;gap:8px;padding:12px;border:1px solid var(--border,#d8dcd5);border-radius:12px;background:#fff"
+    >
+      <label style="display:block;font-size:12px;font-weight:700;color:var(--fg-muted,#6b7560)">
+        {tFor(lang, "asstChat.invoiceReview.schedule.label")}
+        <input
+          type="date"
+          data-cy="invoice-schedule-date"
+          min={tomorrow}
+          value={value}
+          disabled={busy}
+          onInput={(e) => onInput((e.target as HTMLInputElement).value)}
+          style="display:block;margin-top:6px;padding:10px 12px;border:1px solid var(--border,#d8dcd5);border-radius:10px;font:inherit;width:100%;box-sizing:border-box"
+        />
+      </label>
+      {error
+        ? (
+          <p
+            role="alert"
+            data-cy="invoice-schedule-error"
+            style="margin:0;color:#a83b3b;font-size:13px;font-weight:600"
+          >
+            {error}
+          </p>
+        )
+        : null}
+      <button
+        type="button"
+        data-cy="invoice-schedule-confirm"
+        disabled={busy}
+        onClick={onConfirm}
+        style="padding:10px;border:1px solid var(--brand-teal,#144852);border-radius:10px;background:#fff;color:var(--brand-teal,#144852);font:inherit;font-weight:800;font-size:14px;cursor:pointer"
+      >
+        {tFor(lang, "asstChat.invoiceReview.schedule.confirm")}
+      </button>
+    </div>
+  );
 }

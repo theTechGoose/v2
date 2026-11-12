@@ -30,3 +30,22 @@ Deno.test("REQ-123 sender — every email leaves from documonster.com: the house
   assertEquals(fromDocumonster("x@notdocumonster.com"), false, "a suffix match is not the domain");
   assertEquals(fromDocumonster(""), false);
 });
+
+// REQ-628 — A2Z Landscape feedback, 2026-11-12: "They NEED THEIR LOGO NOT OURS" — the customer's
+// inbox names the business that sent the paperwork, never DocuMonster.
+Deno.test("REQ-628 businessFrom — a contractor's paperwork leaves as \"<Business name>\" <alias>@documonster.com; no name → the bare alias; never DocuMonster; a name cannot break the header", async () => {
+  const { businessFrom } = await import("./mod.ts");
+  assertEquals(
+    businessFrom({ alias: "a2z-landscape-llc", name: "A2Z Landscape LLC" }),
+    '"A2Z Landscape LLC" <a2z-landscape-llc@documonster.com>',
+  );
+  assertEquals(businessFrom({ alias: "a2z-landscape-llc" }), "a2z-landscape-llc@documonster.com");
+  assertEquals(businessFrom({ alias: undefined, name: "  " }), "noreply@documonster.com");
+  assertEquals(businessFrom({ alias: undefined, name: "Alexander Jerez" }), '"Alexander Jerez" <noreply@documonster.com>');
+  // quotes, angle brackets and line breaks never reach the header
+  const tricky = businessFrom({ alias: "x", name: 'Bob "The Builder" <b@evil.test>\r\nBcc: a@b.c' });
+  assertEquals(tricky.includes("\n") || tricky.includes("\r"), false);
+  assertEquals(senderAddress(tricky), "x@documonster.com");
+  assert(fromDocumonster(tricky));
+  assertEquals(/DocuMonster/i.test(businessFrom({ alias: "a2z", name: "A2Z" }).replace(/@documonster\.com/i, "")), false);
+});

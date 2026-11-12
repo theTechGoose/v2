@@ -1,6 +1,11 @@
 import { asset, Head } from "fresh/runtime";
 import { define } from "../../utils.ts";
 import SiteFooter from "../../components/SiteFooter.tsx";
+import BizBrand from "../../components/BizBrand.tsx";
+import {
+  publicBusinessLabel,
+  publicDocTitle,
+} from "../../../shared/documents/public-brand.ts";
 import { ssrBackendGet } from "../../lib/backend-fetch.ts";
 import { fmtMoneyExact, fmtPhone, telHref } from "../../lib/format.ts";
 import { type Lang, tFor } from "../../lib/i18n.ts";
@@ -105,6 +110,8 @@ interface InvoicePublic {
   dueDate?: string;
   issuedDate?: string;
   paidAt?: string;
+  /** REQ-627: set when the business voided this invoice */
+  voidedAt?: string;
   installmentIndex?: number;
   installmentTotal?: number;
   paymentIntent?: {
@@ -170,7 +177,13 @@ export default define.page(async function PublicInvoice(ctx) {
   return (
     <>
       <Head>
-        <title>{tFor(lang, "publicInvoice.docTitle")}</title>
+        {/* REQ-628: the tab names the business, never DocuMonster */}
+        <title>
+          {publicDocTitle(
+            tFor(lang, "publicInvoice.docTitle"),
+            publicBusinessLabel(invoice?.contractor),
+          )}
+        </title>
         <link rel="stylesheet" href={asset("/landing.css")} />
       </Head>
       <div
@@ -196,11 +209,6 @@ function ErrorCard({ message, lang }: { message: string; lang: Lang }) {
   return (
     <>
       <div
-        style={`font-size:11px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:${GREEN};text-align:center;margin-bottom:18px`}
-      >
-        {tFor(lang, "brand.name")}
-      </div>
-      <div
         style={`background:#fff;border-radius:18px;padding:32px;box-shadow:0 8px 32px rgba(20,72,82,0.08);text-align:center`}
       >
         <div style={`font-weight:800;color:${TEAL};font-size:18px`}>
@@ -220,13 +228,16 @@ function siteLabel(url: string): string {
 function InvoiceDoc(
   { invoice, lang }: { invoice: InvoicePublic; lang: Lang },
 ) {
-  const paid = invoice.status === "paid" || !!invoice.paidAt;
-  const claimed = invoice.status === "claimed" && !!invoice.paymentIntent;
-  const pastDue = !paid && !claimed && isPastDue(invoice.dueDate);
+  // REQ-627: a voided invoice says so and cannot be paid
+  const voided = invoice.status === "void";
+  const paid = !voided && (invoice.status === "paid" || !!invoice.paidAt);
+  const claimed = !voided && invoice.status === "claimed" &&
+    !!invoice.paymentIntent;
+  const pastDue = !voided && !paid && !claimed && isPastDue(invoice.dueDate);
   const es = lang === "es";
-  const businessLabel = invoice.contractor?.businessName?.trim() ||
-    invoice.contractor?.name?.trim() ||
-    tFor(lang, "brand.name");
+  // REQ-628: the business, else the contractor — never DocuMonster
+  const businessLabel = publicBusinessLabel(invoice.contractor) ??
+    tFor(lang, "publicInvoice.contractorFallback.capital");
   const jobName =
     (invoice.jobDetails?.jobNameByLang?.[lang] ?? invoice.jobDetails?.jobName)
       ?.trim() ||
@@ -317,20 +328,13 @@ function InvoiceDoc(
           {/* Eyebrow */}
           <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px">
             <div>
-              {invoice.contractor?.hasLogo
-                ? (
-                  <img
-                    src={`/api/public-logo/invoice/${invoice.id}`}
-                    alt=""
-                    style="max-height:44px;max-width:150px;object-fit:contain;display:block;margin-bottom:8px;border-radius:8px"
-                  />
-                )
-                : null}
-              <div
-                style={`font-size:11px;font-weight:800;letter-spacing:.18em;text-transform:uppercase;color:${PINK_DARK}`}
-              >
-                {businessLabel}
-              </div>
+              {/* REQ-628: their logo, or their name as a wordmark */}
+              <BizBrand
+                logoSrc={invoice.contractor?.hasLogo
+                  ? `/api/public-logo/invoice/${invoice.id}`
+                  : undefined}
+                name={businessLabel}
+              />
               {/* REQ-201: number · version · state (· date) */}
               <div
                 data-cy="invoice-headline"
@@ -361,6 +365,7 @@ function InvoiceDoc(
               paid={paid}
               claimed={claimed}
               pastDue={pastDue}
+              voided={voided}
               es={es}
             />
           </div>
@@ -471,11 +476,13 @@ function InvoiceDoc(
               <div
                 style={`font-size:11px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:${GREEN}`}
               >
-                {paid
+                {voided
+                  ? tFor(lang, "publicInvoice.cancelled.label")
+                  : paid
                   ? tFor(lang, "status.paid")
                   : tFor(lang, "public.doc.balanceDue")}
               </div>
-              {invoice.dueDate
+              {invoice.dueDate && !voided
                 ? (
                   <div style={`margin-top:4px;color:${MUTED};font-size:12px`}>
                     {paid
@@ -521,7 +528,9 @@ function InvoiceDoc(
               data-cy="invoice-balance-due"
               style={`font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;font-weight:900;font-size:38px;letter-spacing:-0.03em;color:${TEAL};line-height:1;font-variant-numeric:tabular-nums`}
             >
-              {fmtMoneyExact(paid ? amountCents : balanceCents)}
+              {voided
+                ? fmtMoneyExact(0)
+                : fmtMoneyExact(paid ? amountCents : balanceCents)}
             </div>
           </div>
 
@@ -669,8 +678,32 @@ function InvoiceDoc(
             )
             : null}
 
-          {/* Already-claimed strip OR active pay UI */}
-          {paid
+          {/* Already-claimed strip OR active pay UI — REQ-627: none on a void bill */}
+          {voided
+            ? (
+              <div
+                data-cy="invoice-cancelled-note"
+                role="status"
+                style={`margin-top:18px;padding:16px 18px;border-radius:14px;background:#f1f1ef;border:1px solid #d9d9d5;color:${INK};font-size:14px;line-height:1.5`}
+              >
+                <strong>
+                  {tFor(lang, "publicInvoice.cancelled.note", {
+                    business: businessLabel,
+                    date: invoice.voidedAt
+                      ? fmtDate(invoice.voidedAt.slice(0, 10), lang)
+                      : "",
+                  })}
+                </strong>
+                {paidCents > 0 && (
+                  <div style={`margin-top:6px;color:${MUTED};font-size:13px`}>
+                    {tFor(lang, "publicInvoice.cancelled.paymentsNote", {
+                      business: businessLabel,
+                    })}
+                  </div>
+                )}
+              </div>
+            )
+            : paid
             ? (
               <ReceivedNote
                 paidAt={invoice.paidAt}
@@ -954,17 +987,6 @@ function InvoiceDoc(
               : null}
           </footer>
         </div>
-        <div
-          style={`display:flex;align-items:center;justify-content:center;gap:8px;padding:16px;font-size:11px;color:#a8b2b3;letter-spacing:.04em`}
-        >
-          <img
-            src="/logo.png"
-            alt=""
-            height="16"
-            style="height:16px;width:auto;opacity:0.7;display:block"
-          />
-          {tFor(lang, "public.doc.poweredByInvoice", { number: docNumber })}
-        </div>
       </article>
 
       {
@@ -1030,14 +1052,24 @@ function InvoiceDoc(
 }
 
 function StatusPill(
-  { paid, claimed, pastDue, es }: {
+  { paid, claimed, pastDue, voided, es }: {
     paid: boolean;
     claimed: boolean;
     pastDue: boolean;
+    voided?: boolean;
     es: boolean;
   },
 ) {
   const lang = es ? "es" : "en";
+  if (voided) {
+    return (
+      <Pill
+        bg="rgba(80,80,80,0.10)"
+        color="#4a4a4a"
+        label={tFor(lang, "publicInvoice.cancelled.pill")}
+      />
+    );
+  }
   if (paid) {
     return (
       <Pill

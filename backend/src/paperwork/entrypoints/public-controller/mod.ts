@@ -16,6 +16,7 @@ import { SendAcceptedAlert } from "@paperwork/domain/coordinators/send-accepted-
 import { SendInquiryAlert } from "@paperwork/domain/coordinators/send-inquiry-alert/mod.ts";
 import { RenderInvoicePdf } from "@paperwork/domain/coordinators/render-invoice-pdf/mod.ts";
 import { RenderQuotePdf } from "@paperwork/domain/coordinators/render-quote-pdf/mod.ts";
+import { LoadBusinessLogo } from "@paperwork/domain/coordinators/load-business-logo/mod.ts";
 import { ViewStore } from "@paperwork/domain/data/view-store/mod.ts";
 import { ShortLinkStore } from "@paperwork/domain/data/shortlink-store/mod.ts";
 import { FileStore } from "@files/domain/data/file-store/mod.ts";
@@ -141,6 +142,7 @@ export class PaperworkPublicController {
     private invoicePdf: RenderInvoicePdf,
     private quotePdf: RenderQuotePdf,
     private payments: PaymentStore,
+    private logos: LoadBusinessLogo,
   ) {}
 
   /**
@@ -228,9 +230,10 @@ export class PaperworkPublicController {
     try {
       const quote = await this.quotes.get(id);
       const userId = quote.userId;
-      const [contractor, ident] = await Promise.all([
+      const [contractor, ident, logo] = await Promise.all([
         this.users.get(userId).catch(() => undefined),
         this.identity.get(userId).catch(() => null),
+        this.logos.run(userId), // REQ-628
       ]);
       const customer = quote.customerId
         ? await this.customers.getOwned(quote.customerId, userId)
@@ -247,6 +250,7 @@ export class PaperworkPublicController {
           ? { websiteUrl: ident.websiteUrl.trim() }
           : {}),
         ...(ident?.commsLanguage ? { commsLanguage: ident.commsLanguage } : {}),
+        ...(logo ? { logo } : {}),
       });
       return new Response(bytes as BodyInit, {
         status: 200,
@@ -1310,6 +1314,8 @@ function redactInvoice(i: Invoice) {
     dueDate: i.dueDate,
     status: i.status,
     paidAt: i.paidAt,
+    // REQ-627: when it was cancelled (who and why stay with the business)
+    ...(i.status === "void" && i.voidedAt ? { voidedAt: i.voidedAt } : {}),
     createdAt: i.createdAt,
     installmentIndex: i.installmentIndex,
     installmentTotal: i.installmentTotal,

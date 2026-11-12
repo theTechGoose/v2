@@ -1,6 +1,8 @@
 import { asset, Head } from "fresh/runtime";
 import { define } from "../../utils.ts";
 import SiteFooter from "../../components/SiteFooter.tsx";
+import BizBrand from "../../components/BizBrand.tsx";
+import { publicDocTitle } from "../../../shared/documents/public-brand.ts";
 import { ssrBackendGet } from "../../lib/backend-fetch.ts";
 import { type Lang, tFor } from "../../lib/i18n.ts";
 import { resolvePublicLang } from "../../../shared/quote-flow/public-lang.ts";
@@ -21,6 +23,8 @@ interface ChangeOrderPublic {
   currentAmount?: number;
   newAmount?: number;
   businessName?: string;
+  /** REQ-628: the business has a logo on file (served via /api/public-logo/invoice/:invoiceId) */
+  hasLogo?: boolean;
   commsLanguage?: "en" | "es";
   decidedAt?: string;
 }
@@ -62,7 +66,13 @@ export default define.page(async function PublicChangeOrder(ctx) {
   return (
     <>
       <Head>
-        <title>{tFor(lang, "changeOrderPublic.docTitle")}</title>
+        {/* REQ-628: the tab names the business, never DocuMonster */}
+        <title>
+          {publicDocTitle(
+            tFor(lang, "changeOrderPublic.docTitle"),
+            co?.businessName,
+          )}
+        </title>
         <link rel="stylesheet" href={asset("/landing.css")} />
       </Head>
       <div
@@ -88,12 +98,14 @@ export default define.page(async function PublicChangeOrder(ctx) {
                   style={`height:8px;background:linear-gradient(90deg,${PINK} 0%,${PINK_DARK} 100%)`}
                 />
                 <div style="padding:32px 32px 36px">
-                  <div
-                    style={`font-size:11px;font-weight:800;letter-spacing:.18em;text-transform:uppercase;color:${PINK_DARK}`}
-                  >
-                    {co.businessName ??
+                  {/* REQ-628: their logo, or their name as a wordmark */}
+                  <BizBrand
+                    logoSrc={co.hasLogo && co.invoice
+                      ? `/api/public-logo/invoice/${co.invoice.id}`
+                      : undefined}
+                    name={co.businessName ??
                       tFor(lang, "changeOrderPublic.contractorFallback")}
-                  </div>
+                  />
                   <h1
                     style={`margin:12px 0 0;font-weight:900;font-size:28px;letter-spacing:-0.02em;color:${TEAL};line-height:1.1`}
                   >
