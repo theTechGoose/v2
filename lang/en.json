@@ -3474,6 +3474,8 @@
   "field.tk.typePhFrom": "e.g. {examples}…",
   "field.tk.worker": "Worker",
   "field.tk.pickWorker": "Pick a worker",
+  "field.tk.noWorkers": "No workers yet.",
+  "field.tk.addWorkerLink": "Add a worker",
   "field.tk.address": "Address",
   "field.tk.added": "Task added",
   "field.tk.needCustomer": "Pick a customer from the list, or add a new one.",
