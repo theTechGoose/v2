@@ -5471,10 +5471,12 @@ body {
    button keeps a sticky :hover that, with the green border, looked identical
    to the .wiz-opt--selected state — so two options appeared selected. */
 @media (hover: hover) {
+  /* REQ-343 (p6): hover is teal, not the selected/suggested green — a
+     resting pointer must never read as a pre-selected option. */
   .wiz-opt:hover {
-    border-color: var(--brand-green);
+    border-color: var(--brand-teal);
     transform: translateY(-1px);
-    box-shadow: 0 4px 10px rgba(72, 158, 95, 0.12);
+    box-shadow: 0 4px 10px rgba(26, 83, 92, 0.12);
   }
 }
 .wiz-opt__sub {

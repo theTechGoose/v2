@@ -114,3 +114,64 @@ Deno.test("REQ-258 transition-to-terms integration: the first wizard step carrie
   assertEquals((r.newMessages[1].payload as { suggestedOptionId?: string }).suggestedOptionId, "use_active");
   await resetKv();
 });
+
+// REQ-343 — demo-loop cycle 1, p3 + p6: the wizard a conversation gets
+// follows the business's trade (read off the business name, like the sample
+// quote): a cleaner's quote wizard offers hours and asks no warranty; a
+// painter's keeps the warranty and never offers "Job completed".
+import { BusinessIdentityStore } from "@profile/domain/data/business-identity-store/mod.ts";
+import { getWizardSpec } from "@agents/domain/business/terms-wizard-spec/mod.ts";
+
+Deno.test("REQ-343 transition-to-terms: a cleaning business gets the service wizard (hours, no warranty)", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const conversations = new AgentConversationStore();
+  const messages = new AgentMessageStore();
+  const identity = new BusinessIdentityStore();
+  await identity.upsert("u-clean", { businessName: "Sparkle Home Cleaning" });
+  const flow = new TransitionToTerms(conversations, messages, identity);
+  const conv = await conversations.create({ userId: "u-clean", quoteId: "q-1" });
+
+  const result = await flow.run({ userId: "u-clean", conversationId: conv.id });
+  const payload = result.newMessages[1].payload as { specId: string };
+  assertEquals(payload.specId, "terms-service-v1");
+  const state = await conversations.getWizardState(conv.id);
+  assertEquals(state?.specId, "terms-service-v1");
+  const spec = getWizardSpec(state!.specId);
+  assertEquals(spec.steps.some((s) => s.id === "warranty"), false);
+  const wraps = spec.steps.find((s) => s.id === "wraps")!;
+  assertEquals(wraps.options[0].id, "2_hours");
+  await resetKv();
+});
+
+Deno.test("REQ-343 transition-to-terms: a painter keeps the generic wizard — warranty asked, no 'Job completed'", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const conversations = new AgentConversationStore();
+  const messages = new AgentMessageStore();
+  const identity = new BusinessIdentityStore();
+  await identity.upsert("u-paint", { businessName: "Jim Paints" });
+  const flow = new TransitionToTerms(conversations, messages, identity);
+  const conv = await conversations.create({ userId: "u-paint", quoteId: "q-1" });
+
+  const result = await flow.run({ userId: "u-paint", conversationId: conv.id });
+  const payload = result.newMessages[1].payload as { specId: string };
+  assertEquals(payload.specId, "terms-v1");
+  const spec = getWizardSpec(payload.specId);
+  assertEquals(spec.steps.some((s) => s.id === "warranty"), true);
+  const wraps = spec.steps.find((s) => s.id === "wraps")!;
+  assertEquals(wraps.options.some((o) => o.id === "job_completed"), false);
+  await resetKv();
+});
+
+Deno.test("REQ-343 transition-to-terms: no identity store / no business name → the generic wizard", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const conversations = new AgentConversationStore();
+  const messages = new AgentMessageStore();
+  const flow = new TransitionToTerms(conversations, messages);
+  const conv = await conversations.create({ userId: "u-none", quoteId: "q-1" });
+  const result = await flow.run({ userId: "u-none", conversationId: conv.id });
+  assertEquals((result.newMessages[1].payload as { specId: string }).specId, "terms-v1");
+  await resetKv();
+});

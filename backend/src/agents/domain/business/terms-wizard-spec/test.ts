@@ -55,9 +55,13 @@ Deno.test("REQ-009 NW-23 terms-wizard-spec: start_date offers asap / next_week /
   assertEquals(start.options.at(-1)?.isCustom, true, "'Pick a date' is the last option");
 });
 
-Deno.test("REQ-009 NW-23 terms-wizard-spec: the duration (wraps) step keeps its own job_completed", () => {
+// REVISION by REQ-343 (demo-loop cycle 1, p6): the duration step no longer
+// offers "Job completed" either — a quote's job has not started. The
+// sentence-case label (NW-24) still localizes on old quotes.
+Deno.test("REQ-009 NW-23 / REQ-343 terms-wizard-spec: no wraps job_completed; the label key stays for old quotes", () => {
   const wraps = TERMS_WIZARD_V1.steps.find((s) => s.id === "wraps")!;
-  assert(wraps.options.some((o) => o.id === "job_completed"));
+  assertEquals(wraps.options.some((o) => o.id === "job_completed"), false);
+  assertEquals(t("en", "termsWizard.wraps.jobCompleted"), "Job completed");
 });
 
 // REQ-024 — NW-13 / NW-18 (p9, p27): "if there is no quote to select, go
@@ -102,14 +106,14 @@ Deno.test("REQ-046 terms-wizard-spec: start_date offers a plain (non-custom) 'tb
   assertEquals(localizeOptions([tbd], "es")[0].label, "Por definir");
 });
 
-Deno.test("REQ-047 terms-wizard-spec: wraps offers a plain 'tbd' option between job_completed and custom, labelled TBD / Por definir", () => {
+Deno.test("REQ-047 terms-wizard-spec: wraps offers a plain 'tbd' option just before custom, labelled TBD / Por definir", () => {
   const wraps = TERMS_WIZARD_V1.steps.find((s) => s.id === "wraps")!;
+  // REQ-343: "job_completed" left the quote wizard's duration step.
   assertEquals(wraps.options.map((o) => o.id), [
     "1_day",
     "2_3_days",
     "1_week",
     "2_weeks",
-    "job_completed",
     "tbd",
     "custom",
   ]);
@@ -118,3 +122,54 @@ Deno.test("REQ-047 terms-wizard-spec: wraps offers a plain 'tbd' option between 
   assertEquals(localizeOptions([tbd], "en")[0].label, "TBD");
   assertEquals(localizeOptions([tbd], "es")[0].label, "Por definir");
 });
+
+// REQ-343 — demo-loop cycle 1, p3 + p6: the wizard fits the trade. A service
+// business (cleaning, lawn, junk removal) gets hours presets and no warranty
+// question; every quote wizard drops "Job completed" (a duration for a job
+// that has not started); the invoice wizard keeps its warranty step.
+import { TERMS_WIZARD_SERVICE_V1, wizardSpecFor } from "./mod.ts";
+
+Deno.test("REQ-343 p6 wizardSpecFor('quote'): no 'Job completed' on the quote wizard's duration step", () => {
+  const wraps = wizardSpecFor("quote").steps.find((s) => s.id === "wraps")!;
+  assertEquals(wraps.options.some((o) => o.id === "job_completed"), false);
+  assertEquals(wraps.options.map((o) => o.id), ["1_day", "2_3_days", "1_week", "2_weeks", "tbd", "custom"]);
+});
+
+Deno.test("REQ-343 p3/p6 wizardSpecFor('quote', 'service'): hours presets, no warranty step, own spec id", () => {
+  const spec = wizardSpecFor("quote", "service");
+  assertEquals(spec, TERMS_WIZARD_SERVICE_V1);
+  assertEquals(spec.id, "terms-service-v1");
+  assertEquals(spec.steps.map((s) => s.id), ["customer", "start_date", "wraps", "payment_terms"]);
+  const wraps = spec.steps.find((s) => s.id === "wraps")!;
+  assertEquals(wraps.options.map((o) => o.id), [
+    "2_hours",
+    "4_hours",
+    "half_day",
+    "1_day",
+    "2_3_days",
+    "tbd",
+    "custom",
+  ]);
+  assertEquals(wraps.options.at(-1)?.isCustom, true);
+  // Customer, start date and payment terms are the SAME step objects.
+  const q = (id: string) => TERMS_WIZARD_V1.steps.find((s) => s.id === id)!;
+  for (const id of ["customer", "start_date", "payment_terms"]) {
+    assert(spec.steps.find((s) => s.id === id) === q(id), `${id} is shared`);
+  }
+});
+
+Deno.test("REQ-343 wizardSpecFor: 'project' and undefined trade get the generic quote wizard; invoices ignore the trade and keep warranty", () => {
+  assertEquals(wizardSpecFor("quote", "project"), TERMS_WIZARD_V1);
+  assertEquals(wizardSpecFor("quote"), TERMS_WIZARD_V1);
+  assertEquals(wizardSpecFor(undefined, "service"), TERMS_WIZARD_SERVICE_V1);
+  assertEquals(wizardSpecFor("invoice", "service"), INVOICE_WIZARD_V1);
+  assert(INVOICE_WIZARD_V1.steps.some((s) => s.id === "warranty"));
+});
+
+Deno.test("REQ-343 getWizardSpec: the service spec is registered by id so a mid-wizard answer resolves it", () => {
+  assertEquals(getWizardSpec("terms-service-v1"), TERMS_WIZARD_SERVICE_V1);
+  const wraps = getWizardSpec("terms-service-v1").steps.find((s) => s.id === "wraps")!;
+  assertEquals(t("en", wraps.options[0].label), "2 hours");
+  assertEquals(t("es", wraps.options[2].label), "Medio día");
+});
+import { t } from "@core/i18n/mod.ts";

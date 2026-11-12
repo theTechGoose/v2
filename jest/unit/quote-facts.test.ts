@@ -104,6 +104,8 @@ describe("REQ-265 extractQuoteFacts — what the user already typed", () => {
       customerEmail: null,
       startDate: null,
       paymentTerms: null,
+      // REQ-343: "takes 3 weeks" IS typed — it seeds the custom duration.
+      duration: { n: 3, unit: "weeks" },
     });
     // a date that is not a START date is not taken
     expect(mod.extractQuoteFacts("finish by Dec 20", TODAY).startDate)

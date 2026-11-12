@@ -28,6 +28,15 @@ export interface QuoteFacts {
    *  wizard's date picker submits). */
   startDate: { iso: string; us: string } | null;
   paymentTerms: PrefillPaymentTerms | null;
+  /** REQ-343: the job's own duration ("4 weeks", "a 4-hour clean") — seeds
+   *  the wizard's custom duration picker instead of a made-up "3 weeks". */
+  duration: ExtractedDuration | null;
+}
+
+export type DurationUnit = "hours" | "days" | "weeks" | "months";
+export interface ExtractedDuration {
+  n: number;
+  unit: DurationUnit;
 }
 
 const EMAIL_RE =
@@ -224,7 +233,29 @@ export function extractQuoteFacts(raw: string, today: Date): QuoteFacts {
     customerEmail: extractEmail(text),
     startDate: extractStartDate(text, today),
     paymentTerms: extractPaymentTerms(text),
+    duration: extractDuration(text),
   };
+}
+
+const DURATION_RE =
+  /(?<!net\s)(?<!neto\s)\b(\d{1,2}(?:[.,]5)?)\s*(?:-|–)?\s*(hours?|hrs?|horas?|days?|d[ií]as?|weeks?|wks?|semanas?|months?|mos?|meses|mes)\b/i;
+
+/** REQ-343: the first "<n> <unit>" in the typed job, EN or ES — hours, days,
+ *  weeks or months. "net 30 days" is a payment term, not a duration. */
+export function extractDuration(raw: string): ExtractedDuration | null {
+  const m = DURATION_RE.exec(raw ?? "");
+  if (!m) return null;
+  const n = Number(m[1].replace(",", "."));
+  if (!Number.isFinite(n) || n <= 0) return null;
+  const u = m[2].toLowerCase();
+  const unit: DurationUnit = /^(h|hora)/.test(u)
+    ? "hours"
+    : /^(d)/.test(u)
+    ? "days"
+    : /^(w|semana)/.test(u)
+    ? "weeks"
+    : "months";
+  return { n: Math.max(1, Math.min(99, Math.round(n))), unit };
 }
 
 export interface WizardPrefill {

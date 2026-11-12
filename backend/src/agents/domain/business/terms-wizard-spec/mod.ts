@@ -1,5 +1,6 @@
 import type { WizardOption, WizardSpec } from "@agents/dto/wizard.ts";
 import { t } from "@core/i18n/mod.ts";
+import type { TradeKind } from "#quote-flow/trade-fit.ts";
 
 /**
  * 5-step terms wizard. Surfaced by the agent in phase 2 (terms).
@@ -45,8 +46,7 @@ export const TERMS_WIZARD_V1: WizardSpec = {
         // lands "TBD" on the agreement's Start row.
         { id: "tbd", label: "termsWizard.startDate.tbd" },
         // NW-23 (REQ-009): "Job completed" is NOT a start date — the client
-        // asked for Right away / Next week / Next month / Pick a date. The
-        // duration (wraps) step keeps its own job_completed option.
+        // asked for Right away / Next week / Next month / Pick a date.
         { id: "custom", label: "termsWizard.startDate.custom", isCustom: true },
       ],
     },
@@ -59,10 +59,9 @@ export const TERMS_WIZARD_V1: WizardSpec = {
         { id: "2_3_days", label: "termsWizard.wraps.twoThreeDays" },
         { id: "1_week", label: "termsWizard.wraps.oneWeek" },
         { id: "2_weeks", label: "termsWizard.wraps.twoWeeks" },
-        {
-          id: "job_completed",
-          label: "termsWizard.wraps.jobCompleted",
-        },
+        // REQ-343 (demo-loop cycle 1, p6): no "Job completed" here — a quote
+        // is for a job that has not started, so it is not a duration. Old
+        // quotes that stored it keep localizing (term-i18n / PDF maps).
         // REQ-047: "… and how long will the job take" — the stored "TBD"
         // prints bare on every reader (no "Estimated" wrapper).
         { id: "tbd", label: "termsWizard.wraps.tbd" },
@@ -137,6 +136,38 @@ function sharedStep(id: string) {
 }
 
 /**
+ * REQ-343 (demo-loop cycle 1, p3 + p6): the quote wizard for a SERVICE trade
+ * (cleaning, lawn care, junk removal — see `tradeKindFor`). Its jobs are
+ * measured in hours, so the duration step leads with 2 hours / 4 hours /
+ * half a day; and it carries no workmanship warranty, so the warranty step is
+ * gone (the same as answering "No warranty": no warranty row is printed).
+ * Customer, start date and payment terms are the generic wizard's step
+ * objects. Its own id, so a mid-wizard answer resolves it by `specId`.
+ */
+export const TERMS_WIZARD_SERVICE_V1: WizardSpec = {
+  id: "terms-service-v1",
+  steps: [
+    sharedStep("customer"),
+    sharedStep("start_date"),
+    {
+      id: "wraps",
+      label: "termsWizard.wraps.label",
+      question: "termsWizard.wraps.question",
+      options: [
+        { id: "2_hours", label: "termsWizard.wraps.twoHours" },
+        { id: "4_hours", label: "termsWizard.wraps.fourHours" },
+        { id: "half_day", label: "termsWizard.wraps.halfDay" },
+        { id: "1_day", label: "termsWizard.wraps.oneDay" },
+        { id: "2_3_days", label: "termsWizard.wraps.twoThreeDays" },
+        { id: "tbd", label: "termsWizard.wraps.tbd" },
+        { id: "custom", label: "termsWizard.wraps.custom", isCustom: true },
+      ],
+    },
+    sharedStep("payment_terms"),
+  ],
+};
+
+/**
  * REQ-024 (NW-13 / NW-18): "Job done, need to invoice" without an accepted
  * quote runs the SAME wizard as a quote — minus start date and duration,
  * plus the completion date ("skip how long it took, but ask for the
@@ -167,6 +198,7 @@ export const INVOICE_WIZARD_V1: WizardSpec = {
 export const WIZARD_SPECS: Record<string, WizardSpec> = {
   [TERMS_WIZARD_V1.id]: TERMS_WIZARD_V1,
   [INVOICE_WIZARD_V1.id]: INVOICE_WIZARD_V1,
+  [TERMS_WIZARD_SERVICE_V1.id]: TERMS_WIZARD_SERVICE_V1,
 };
 
 /** Fetch a spec by id — the quote wizard ("terms-v1") or the invoice
@@ -177,9 +209,15 @@ export function getWizardSpec(specId: string): WizardSpec {
   throw new Error(`unknown wizard spec: ${specId}`);
 }
 
-/** The wizard for a document kind (REQ-024). */
-export function wizardSpecFor(docKind: "quote" | "invoice" | undefined): WizardSpec {
-  return docKind === "invoice" ? INVOICE_WIZARD_V1 : TERMS_WIZARD_V1;
+/** The wizard for a document kind (REQ-024) and the business's trade
+ *  (REQ-343): a service trade's quote gets hours and no warranty step. The
+ *  invoice wizard ignores the trade. */
+export function wizardSpecFor(
+  docKind: "quote" | "invoice" | undefined,
+  tradeKind: TradeKind = "project",
+): WizardSpec {
+  if (docKind === "invoice") return INVOICE_WIZARD_V1;
+  return tradeKind === "service" ? TERMS_WIZARD_SERVICE_V1 : TERMS_WIZARD_V1;
 }
 
 /**
