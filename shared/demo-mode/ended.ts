@@ -6,19 +6,23 @@
  *     "{presenter} ended the demo" or "You ended the demo"; a stage reads "{customer} ended the
  *     demo", "{colleague} ended the demo" or "You ended the demo"; "The demo ended" when nobody
  *     can be named. The wire says it: `ended` carries the presenter's `pid` (protocol.ts).
+ *     REQ-296 — "The demo expired after two hours" when it reached its time (`reason: "expired"`):
+ *     nobody is named, on either side.
  *   - a stage's notice rides its hop to /admin as `?demo=ended&by=you|other&name=…`
  *     (`endedHref`); /admin reads it once (`readEndedNotice`) and drops it from the address.
  *   - End asks first (`endConfirm`): the first click asks "End for everyone?"; Yes counts after
  *     END_ARM_MS (the second click of a double click on End never ends a demo); Keep going, or
  *     END_ASK_MS without an answer, puts End back.
  */
-import type { Presenter, Role } from "./protocol.ts";
+import type { EndReason, Presenter, Role } from "./protocol.ts";
 
 /** who ended it, from the reader's side: themselves, someone by name, or nobody nameable */
 export type EndedNotice =
   | { by: "you" }
   | { by: "other"; name: string }
-  | { by: "unknown" };
+  | { by: "unknown" }
+  /** REQ-296 — it reached its two hours */
+  | { by: "expired" };
 
 /** the side reading the end: the customer (viewer), or a stage (a presenter, by pid) */
 export interface EndedReader {
@@ -48,9 +52,11 @@ const named = (name: string | undefined): EndedNotice => {
 
 /** who ended it, from `ended` and what the reader knows of the demo */
 export function whoEnded(
-  ended: { by: Role; pid?: string },
+  ended: { by: Role; pid?: string; reason?: EndReason },
   reader: EndedReader,
 ): EndedNotice {
+  // REQ-296 — the clock ended it: nobody to name, whatever `by` says
+  if (ended.reason === "expired") return { by: "expired" };
   const { presenters } = reader;
   if (reader.role === "viewer") {
     if (ended.by === "viewer") return { by: "you" };
@@ -77,6 +83,7 @@ export function endedText(
   n: EndedNotice,
 ): { key: string; vars?: { name: string } } {
   if (n.by === "you") return { key: "demoMode.endedByYou" };
+  if (n.by === "expired") return { key: "demoMode.expired" };
   if (n.by === "other") {
     return { key: "demoMode.endedBy", vars: { name: n.name } };
   }
@@ -87,6 +94,7 @@ export function endedText(
 export function endedHref(n: EndedNotice): string {
   const q = new URLSearchParams({ demo: "ended" });
   if (n.by === "you") q.set("by", "you");
+  if (n.by === "expired") q.set("by", "expired");
   if (n.by === "other") {
     q.set("by", "other");
     q.set("name", n.name.slice(0, NAME_MAX));
@@ -103,6 +111,8 @@ export function readEndedNotice(
   const by = q.get("by");
   const notice: EndedNotice = by === "you"
     ? { by: "you" }
+    : by === "expired"
+    ? { by: "expired" }
     : by === "other"
     ? named(q.get("name") ?? "")
     : { by: "unknown" };

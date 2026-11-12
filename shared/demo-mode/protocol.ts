@@ -104,7 +104,9 @@ export type ClientMessage =
  *  welcome. REQ-232 — `cid`: which SOCKET — this one's own on its welcome, the one that came or
  *  went on a `peer`, the sender on a signal, relay or claim; `sync`: a stage wants this tab's whole
  *  view; `replaced`: the same staff account opened the demo in a newer window, this one is done.
- *  REQ-235 — and which presenter ended the demo (an `ended` by the viewer never has one) */
+ *  REQ-235 — and which presenter ended the demo (an `ended` by the viewer never has one).
+ *  REQ-296 — `reason: "expired"`: the demo reached SESSION_TTL_MS; nobody ended it (`by` names no
+ *  side then, and there is no `pid`) */
 export type ServerMessage =
   | {
     t: "welcome";
@@ -120,7 +122,10 @@ export type ServerMessage =
   | { t: "claim"; cid: string; at: number }
   | { t: "sync" }
   | { t: "replaced" }
-  | { t: "ended"; by: Role; reason?: "declined"; pid?: string };
+  | { t: "ended"; by: Role; reason?: EndReason; pid?: string };
+
+/** REQ-296 — why a demo ended short of an End: declined (Not now), or expired (its two hours) */
+export type EndReason = "declined" | "expired";
 
 /** how often a browser with no demo asks `active` again — the customer sees the invitation within this */
 export const ACTIVE_POLL_MS = 5_000;
@@ -128,7 +133,7 @@ export const ACTIVE_POLL_MS = 5_000;
  *  is waiting. A page change in the customer's app is a new page and a new socket (the old one
  *  closes, the new one joins once the page has loaded), and it must never flash "waiting". */
 export const PRESENCE_GRACE_MS = 5_000;
-/** a demo nobody ended expires on its own */
+/** a demo nobody ended expires on its own — and says so (REQ-296: `ended … expired` to everyone) */
 export const SESSION_TTL_MS = 2 * 60 * 60 * 1000;
 /** how long the customer's last reported page is kept — the presenter lands there at once (AMENDMENT — same screen) */
 export const WHERE_TTL_MS = 20_000;
@@ -333,7 +338,9 @@ export function parseServerMessage(raw: string): ServerMessage | null {
       return {
         t: "ended",
         by: o.by,
-        ...(o.reason === "declined" ? { reason: "declined" as const } : {}),
+        ...(o.reason === "declined" || o.reason === "expired"
+          ? { reason: o.reason as EndReason }
+          : {}),
         // REQ-235 — the presenter who ended it; the viewer's end names nobody
         ...(o.by === "presenter" ? pidOf(o) : {}),
       };

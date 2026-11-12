@@ -2,10 +2,12 @@ import { Injectable } from "#danet/core";
 import { getKv } from "@core/data/kv/mod.ts";
 import {
   type ClientMessage,
+  type EndReason,
   otherRole,
   type Role,
   type ServerMessage,
 } from "#demo-mode/protocol.ts";
+import { DemoSessionStore } from "@demo-mode/domain/data/demo-session-store/mod.ts";
 
 /** a connected browser as the hub sees it — a WebSocket in the controller, a fake in the test.
  *  REQ-214 — a presenter carries their `pid`; the viewer has none. REQ-232 — every socket has its
@@ -62,6 +64,8 @@ interface Room {
   seen: Set<string>;
   cursor: number;
   done: Promise<void>;
+  /** REQ-296 — the demo's clock: when it expires, and the timer that ends it then */
+  expiry: { at: number; timer: ReturnType<typeof setTimeout> } | null;
 }
 
 const MAIL_TTL_MS = 60_000;
@@ -77,6 +81,12 @@ const tickKey = (sessionId: string) =>
  * watches the demo's tick key and delivers what it has not seen, skipping its own mail. A peer
  * in the same process therefore gets a message exactly once, and a peer elsewhere gets it as
  * soon as `kv.watch` fires. Mail expires after a minute; nothing is replayed to a late joiner.
+ *
+ * REQ-296 — a demo's two hours are kept here too (demo-loop cycle 1, nc-3: the KV expiry was
+ * silent). The first join in a hub arms one clock for the room at the demo's `expiresAt`; when it
+ * fires the demo is stamped ended in the store and `ended … expired` goes to everyone, in every
+ * isolate (each hub with a room has its own clock; the first broadcast closes the sockets, which
+ * empties the rooms and clears the rest). A room going empty, or the hub closing, clears it.
  */
 @Injectable()
 export class DemoHub {
@@ -85,9 +95,11 @@ export class DemoHub {
   /** REQ-232 — when each socket here joined */
   private joinedAt = new WeakMap<Peer, number>();
 
+  constructor(private demos: DemoSessionStore) {}
+
   /** a hub standing in for a named isolate (tests: two hubs on one KV) */
   static isolated(isolateId: string): DemoHub {
-    const hub = new DemoHub();
+    const hub = new DemoHub(new DemoSessionStore());
     hub.isolateId = isolateId;
     return hub;
   }
@@ -122,6 +134,7 @@ export class DemoHub {
     }));
     // in the room before anything is awaited: a last peer leaving meanwhile must not drop it
     room.peers.add(peer);
+    await this.armExpiry(sessionId, room);
     if (peer.role === "presenter" && peer.pid) {
       await this.broadcast(sessionId, {
         to: "presenter",
@@ -242,7 +255,7 @@ export class DemoHub {
   end(
     sessionId: string,
     by: Role,
-    reason?: "declined",
+    reason?: EndReason,
     pid?: string,
   ): Promise<void> {
     return this.broadcast(sessionId, {
@@ -263,6 +276,27 @@ export class DemoHub {
       this.drop(id, room);
       await room.done;
     }
+  }
+
+  /** REQ-296 — the room's clock, once: at the demo's `expiresAt` (a demo already over, or
+   *  unknown, gets none). Already due: it fires on the next tick, after the welcome is sent. */
+  private async armExpiry(sessionId: string, room: Room): Promise<void> {
+    if (room.expiry) return;
+    const demo = await this.demos.get(sessionId);
+    if (!demo || demo.endedAt || this.rooms.get(sessionId) !== room) return;
+    if (room.expiry) return;
+    const at = this.demos.expiresAt(demo);
+    const timer = setTimeout(() => {
+      room.expiry = null;
+      this.expire(sessionId).catch(() => {});
+    }, Math.max(0, at - Date.now()));
+    room.expiry = { at, timer };
+  }
+
+  /** the demo reached its time: over in the store (pointers gone), then said to everyone */
+  private async expire(sessionId: string): Promise<void> {
+    await this.demos.end(sessionId).catch(() => null);
+    await this.end(sessionId, "presenter", "expired");
   }
 
   private async broadcast(
@@ -342,6 +376,7 @@ export class DemoHub {
       seen: new Set(),
       cursor: Date.now() - 1000,
       done: Promise.resolve(),
+      expiry: null,
     };
     this.rooms.set(sessionId, room);
     const reader = kv.watch([tickKey(sessionId)]).getReader();
@@ -362,6 +397,8 @@ export class DemoHub {
 
   private drop(sessionId: string, room: Room): void {
     if (this.rooms.get(sessionId) === room) this.rooms.delete(sessionId);
+    if (room.expiry) clearTimeout(room.expiry.timer);
+    room.expiry = null;
     void room.reader?.cancel();
   }
 

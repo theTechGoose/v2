@@ -651,10 +651,11 @@ export default function DemoModeOverlay() {
             break;
         }
       },
-      onEnded: (by, _reason, pid) => {
+      onEnded: (by, reason, pid) => {
         // REQ-235 — who ended it, in the pill's place at once, kept until dismissed
+        // (REQ-296 — or that it expired)
         const d = demoRef.current;
-        setNotice(whoEnded({ by, pid }, {
+        setNotice(whoEnded({ by, reason, pid }, {
           role: "viewer",
           presenters: d?.presenters ?? [],
           presenterName: d?.presenterName,

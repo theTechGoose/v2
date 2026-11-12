@@ -3667,6 +3667,7 @@
   "demoMode.endNo": "Seguir",
   "demoMode.endedBy": "{name} terminó la demo",
   "demoMode.endedByYou": "Terminaste la demo",
+  "demoMode.expired": "La demo expiró a las dos horas",
   "demoMode.dismiss": "Cerrar",
   "demoMode.startedBy": "{name} empezó una nueva demo",
   "demoMode.started": "Empezó una nueva demo",

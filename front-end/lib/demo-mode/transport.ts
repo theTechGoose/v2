@@ -68,7 +68,7 @@ export interface DemoLinkOptions {
    *  colleague) — per account: the first window of theirs to come, the last to go */
   onPresence?(pid: string, online: boolean): void;
   /** REQ-235 — `pid`: the presenter who ended it (none when the viewer did) */
-  onEnded(by: Role, reason?: "declined", pid?: string): void;
+  onEnded(by: Role, reason?: "declined" | "expired", pid?: string): void;
 }
 
 export interface DemoLink {
