@@ -42,6 +42,7 @@ interface FilterEntry {
 }
 const FILTER_DEFS: FilterEntry[] = [
   { id: "all", labelKey: "clientsBoard.filter.all" },
+  { id: "new", labelKey: "clientsBoard.filter.new" },
   { id: "active", labelKey: "clientsBoard.filter.activeJobs" },
   { id: "lead", labelKey: "clientsBoard.filter.leads" },
   { id: "owes", labelKey: "clientsBoard.filter.oweYou" },

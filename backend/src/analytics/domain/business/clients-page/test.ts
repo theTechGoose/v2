@@ -1,7 +1,7 @@
 /** REQ-135 — the one set of rules a customers page is cut by: query, status, order, page, totals. */
 import { assertEquals } from "#std/assert";
 import type { CustomerCard } from "@crm/dto/customer.ts";
-import { CLIENTS_PAGE_SIZE, CLIENTS_PAGE_SIZE_MAX, clientsPage, countByStatus, loopPicks, matchesQuery, pageOf, sortByName, summarize } from "./mod.ts";
+import { CLIENTS_FILTERS, CLIENTS_PAGE_SIZE, CLIENTS_PAGE_SIZE_MAX, clientsPage, countByStatus, loopPicks, matchesQuery, pageOf, sortByName, summarize } from "./mod.ts";
 
 function card(over: Partial<CustomerCard>): CustomerCard {
   return {
@@ -44,7 +44,7 @@ Deno.test("REQ-135 clients-page — countByStatus, summarize and loopPicks read 
     card({ status: "owes", balanceCents: 12_000, daysSinceContact: 90 }), card({ status: "owes", balanceCents: 3_000, daysSinceContact: 10 }),
     card({ status: "cold" }), card({ status: "regular" }),
   ];
-  assertEquals(countByStatus(cards), { all: 7, active: 1, lead: 2, owes: 2, regular: 1, cold: 1 });
+  assertEquals(countByStatus(cards), { all: 7, new: 0, active: 1, lead: 2, owes: 2, regular: 1, cold: 1 });
   assertEquals(summarize(cards), { totalClients: 7, activeJobs: 1, owedCents: 15_000, quietCount: 1 });
   assertEquals(loopPicks(cards).map((c) => c.daysSinceContact), [90, 40, 10], "leads and owes, longest quiet first, three at most");
 });
@@ -61,4 +61,12 @@ Deno.test("REQ-135 clients-page — clientsPage composes: q narrows the counts, 
   const q = clientsPage(cards, { q: "olga", status: "all" });
   assertEquals([q.items.length, q.total, q.counts.all, q.counts.owes, q.summary.totalClients], [1, 1, 1, 1, 27]);
   assertEquals(q.loop.length, 3, "the loop is the roster's, never the query's");
+});
+
+Deno.test("REQ-271 clients-page — a new customer has its own chip: counted, filterable, never a regular", () => {
+  const cards = [card({ status: "new" }), card({ status: "new" }), card({ status: "regular" })];
+  assertEquals(CLIENTS_FILTERS.includes("new"), true);
+  assertEquals(countByStatus(cards).new, 2);
+  assertEquals(countByStatus(cards).regular, 1);
+  assertEquals(clientsPage(cards, { status: "new" }).total, 2);
 });

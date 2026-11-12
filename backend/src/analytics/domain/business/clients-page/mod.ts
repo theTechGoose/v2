@@ -13,7 +13,7 @@ export const CLIENTS_PAGE_SIZE = 25;
 export const CLIENTS_PAGE_SIZE_MAX = 100;
 
 export type ClientsFilter = CustomerStatus | "all";
-export const CLIENTS_FILTERS: readonly ClientsFilter[] = ["all", "active", "lead", "owes", "regular", "cold"];
+export const CLIENTS_FILTERS: readonly ClientsFilter[] = ["all", "new", "active", "lead", "owes", "regular", "cold"];
 
 export interface Page<T> {
   items: T[];
@@ -75,7 +75,7 @@ export function pageOf<T>(items: readonly T[], page: number | undefined, pageSiz
 }
 
 export function countByStatus(cards: readonly CustomerCard[]): ClientsCounts {
-  const counts: ClientsCounts = { all: cards.length, active: 0, lead: 0, owes: 0, regular: 0, cold: 0 };
+  const counts: ClientsCounts = { all: cards.length, new: 0, active: 0, lead: 0, owes: 0, regular: 0, cold: 0 };
   for (const c of cards) counts[c.status]++;
   return counts;
 }

@@ -102,7 +102,8 @@ export interface Customer
   updatedAt: string;
 }
 
-export type CustomerStatus = "active" | "lead" | "owes" | "regular" | "cold";
+/** REQ-271: "new" — nothing on the books yet (no quote, no paid invoice); was mislabelled "regular". */
+export type CustomerStatus = "active" | "lead" | "owes" | "regular" | "cold" | "new";
 export type CustomerLastTone = "hot" | "warm" | "cold";
 
 /**

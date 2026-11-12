@@ -113,6 +113,15 @@ Deno.test("status: regular when 12mo revenue > 0 and no active job", async () =>
   });
 });
 
+Deno.test("REQ-271 status: a customer just added, with no quote and no invoice, is new — not regular", async () => {
+  await withKv(async () => {
+    const { customers, flow } = fresh();
+    const c = await customers.create("u-1", { name: "Ana Pérez" });
+    const [card] = await flow.run("u-1", new Date(new Date(c.createdAt).getTime() + 60_000));
+    assertEquals(card.status, "new");
+  });
+});
+
 Deno.test("status: cold when daysSinceContact > 60 and not owes", async () => {
   await withKv(async () => {
     const { customers, flow } = fresh();

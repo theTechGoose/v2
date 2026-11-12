@@ -8,7 +8,13 @@
  */
 import { api, type ApiOptions } from "../lib/api.ts";
 
-export type ClientStatus = "active" | "lead" | "owes" | "regular" | "cold";
+export type ClientStatus =
+  | "active"
+  | "lead"
+  | "owes"
+  | "regular"
+  | "cold"
+  | "new";
 export type ClientLastTone = "hot" | "warm" | "cold";
 export type ClientSegmentKey =
   | "property_mgmt"
