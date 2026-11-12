@@ -5457,6 +5457,25 @@ export default function AsstChat({
               {jobOptionsOpen
                 ? (
                   <div class="chat__jobopts">
+                    {
+                      /* REQ-577 (cycle 4, m38): this panel replaces the
+                        message list, so in "help me price it" the message
+                        she just sent would vanish while the options are
+                        written. Her words open the panel as a user bubble,
+                        in the loading and the loaded state alike. */
+                    }
+                    {pickerMode === "confirm" && submittedJobDetails
+                      ? (
+                        <div class="chat__details-user">
+                          <div
+                            class="chat__details-user-bubble"
+                            data-cy="picker-user-bubble"
+                          >
+                            {submittedJobDetails}
+                          </div>
+                        </div>
+                      )
+                      : null}
                     <div class="chat__jobopts-head">
                       {
                         /* Single-back rule: no in-widget back button. The
