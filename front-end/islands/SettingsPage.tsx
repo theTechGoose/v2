@@ -386,6 +386,11 @@ function EditCard(
   // saved — the stored value stays (the keys come from shared/quote-flow/settings-fields.ts)
   const [emailErr, setEmailErr] = useState<string | null>(null);
   const [bizErr, setBizErr] = useState<string | null>(null);
+  // REQ-511 (demo m41): the logo's own error, drawn in the logo row — not at
+  // the bottom of the card, under the languages and off-screen
+  const [logoErr, setLogoErr] = useState<string | null>(null);
+  // REQ-511 (demo p8-pair6-d): "Saved ✓" after a save, cleared on the next edit
+  const [saved, setSaved] = useState(false);
   const logoInputRef = useRef<HTMLInputElement | null>(null);
   const t = tr(langSignal.value === "es");
   const fieldLang: Lang = langSignal.value === "es" ? "es" : "en";
@@ -398,9 +403,11 @@ function EditCard(
   async function saveUser(patch: Record<string, unknown>) {
     setBusy("user");
     setErr(null);
+    setSaved(false);
     try {
       const u = await profileClient.updateUser(patch);
       onSaved({ user: { ...snapshot.user, ...u } as typeof snapshot.user });
+      setSaved(true);
       // REQ-355 — the topbar greets the new name at once, not after a reload
       if ("name" in patch) {
         announceProfile({ name: u?.name ?? String(patch.name ?? "") });
@@ -414,6 +421,7 @@ function EditCard(
   async function saveIdentity(patch: Record<string, unknown>) {
     setBusy("identity");
     setErr(null);
+    setSaved(false);
     try {
       const id = await profileClient.updateIdentity(patch);
       onSaved({
@@ -422,10 +430,11 @@ function EditCard(
           ...id,
         } as typeof snapshot.identity,
       });
+      setSaved(true);
     } catch (e) {
       // REQ-252: the server refuses a logo that is not an image (422 logo_not_image)
       if (e instanceof ApiError && e.status === 422 && "logoFileId" in patch) {
-        setErr(t.logoNotImage);
+        setLogoErr(t.logoNotImage);
       } else setErr(e instanceof Error ? e.message : t.saveFailed);
     } finally {
       setBusy(null);
@@ -434,19 +443,22 @@ function EditCard(
   async function onLogoPick(e: Event) {
     const file = (e.target as HTMLInputElement).files?.[0];
     if (!file) return;
+    setSaved(false);
     // REQ-252 (M30): only an image is a logo — refused here, before any upload
     if (!isLogoImageType(file.type)) {
       (e.target as HTMLInputElement).value = "";
-      setErr(t.logoNotImage);
+      setLogoErr(t.logoNotImage);
       return;
     }
     setBusy("logo");
-    setErr(null);
+    setLogoErr(null);
     try {
       const rec = await filesClient.uploadBlob(file, file.name);
       await saveIdentity({ logoFileId: rec.id });
     } catch (ex) {
-      setErr(uploadErrorMessage(ex, t.uploadTooLarge, t.logoUploadFailed));
+      setLogoErr(
+        uploadErrorMessage(ex, t.uploadTooLarge, t.logoUploadFailed),
+      );
     } finally {
       setBusy(null);
     }
@@ -457,8 +469,10 @@ function EditCard(
       title={t.editDetails}
       busy={!!busy}
       err={err}
+      saved={saved}
       saving={t.saving}
       savedLabel={t.saved}
+      dataCy="settings-edit-details"
     >
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px">
         <label style="display:block">
@@ -469,7 +483,10 @@ function EditCard(
             style={inputStyle}
             value={name}
             disabled={busy === "user"}
-            onInput={(e) => setName((e.target as HTMLInputElement).value)}
+            onInput={(e) => {
+              setSaved(false);
+              setName((e.target as HTMLInputElement).value);
+            }}
             onBlur={() =>
               name.trim() !== (snapshot.user.name ?? "") &&
               saveUser({ name: name.trim() })}
@@ -487,6 +504,7 @@ function EditCard(
             disabled={busy === "user"}
             aria-invalid={emailErr ? "true" : undefined}
             onInput={(e) => {
+              setSaved(false);
               setEmail((e.target as HTMLInputElement).value);
               setEmailErr(null);
             }}
@@ -523,6 +541,7 @@ function EditCard(
             disabled={busy === "identity"}
             aria-invalid={bizErr ? "true" : undefined}
             onInput={(e) => {
+              setSaved(false);
               setBiz((e.target as HTMLInputElement).value);
               setBizErr(null);
             }}
@@ -561,7 +580,10 @@ function EditCard(
             value={site}
             placeholder="https://"
             disabled={busy === "identity"}
-            onInput={(e) => setSite((e.target as HTMLInputElement).value)}
+            onInput={(e) => {
+              setSaved(false);
+              setSite((e.target as HTMLInputElement).value);
+            }}
             onBlur={() => {
               const next = normalizeWebsiteUrl(site);
               if (next !== site) setSite(next);
@@ -584,7 +606,10 @@ function EditCard(
             data-cy="settings-net-days"
             value={netDays}
             disabled={busy === "identity"}
-            onInput={(e) => setNetDays((e.target as HTMLInputElement).value)}
+            onInput={(e) => {
+              setSaved(false);
+              setNetDays((e.target as HTMLInputElement).value);
+            }}
             onBlur={() => {
               const n = Number(netDays);
               if (!Number.isInteger(n) || n < 0 || n > 365) {
@@ -603,7 +628,7 @@ function EditCard(
             {t.netDaysHint}
           </span>
         </label>
-        <div style="grid-column:1 / -1;display:flex;align-items:center;gap:12px">
+        <div style="grid-column:1 / -1;display:flex;flex-wrap:wrap;align-items:center;gap:12px">
           <button
             type="button"
             class="btn btn-secondary"
@@ -638,12 +663,26 @@ function EditCard(
                 {t.logoSet}
               </span>
             )
-            : (
-              <span style="font-size:12px;color:var(--fg-muted)">
-                {t.logoHint}
-              </span>
-            )}
+            : null}
+          {/* REQ-511 (demo m41): the types + size limit, on Upload and on Replace */}
+          <span
+            data-cy="settings-logo-hint"
+            style="font-size:12px;color:var(--fg-muted)"
+          >
+            {t.logoHint}
+          </span>
         </div>
+        {logoErr
+          ? (
+            <div
+              data-cy="settings-logo-error"
+              role="alert"
+              style="grid-column:1 / -1;margin-top:-6px;color:#a83b3b;font-size:12.5px"
+            >
+              {logoErr}
+            </div>
+          )
+          : null}
         <label style="display:block;grid-column:1 / -1">
           <span style={labelStyle}>{t.appLang}</span>
           <select
