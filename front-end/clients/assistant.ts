@@ -245,17 +245,24 @@ export const assistantClient = {
 
   /** Fire the wizard's "Ready to send" CTA: flips quote→sent and
    *  dispatches via the requested channel (email, sms, or both).
-   *  Idempotent on state, but dispatch fires every time the user clicks. */
+   *  Idempotent on state; dispatch fires once per `requestId` (REQ-399 —
+   *  one id per Send click; a repeat within 10 s delivers nothing). */
   sendQuoteFlow: (
     conversationId: string,
     quoteId: string,
     channel: "email" | "sms" | "both" = "email",
     language?: "en" | "es",
+    requestId?: string,
     opts: ApiOptions = {},
   ) =>
     api.post<{ conversation: Conversation; newMessages: Message[] }>(
       `/agents/conversations/${conversationId}/send-quote`,
-      { quoteId, channel, ...(language ? { language } : {}) },
+      {
+        quoteId,
+        channel,
+        ...(language ? { language } : {}),
+        ...(requestId ? { requestId } : {}),
+      },
       opts,
     ),
 

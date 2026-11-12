@@ -211,6 +211,7 @@ export class ConversationsController {
       quoteId?: unknown;
       channel?: unknown;
       language?: unknown;
+      requestId?: unknown;
     };
     const quoteId = b.quoteId;
     if (typeof quoteId !== "string" || !quoteId) {
@@ -230,6 +231,10 @@ export class ConversationsController {
         quoteId,
         channel,
         language,
+        // REQ-399 (demo M16): one Send's id — a repeat is dropped.
+        requestId: typeof b.requestId === "string" && b.requestId.length <= 100
+          ? b.requestId
+          : undefined,
       }),
     );
   }

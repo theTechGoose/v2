@@ -145,7 +145,13 @@ import {
   sendDividerFailed,
   sendOutcomePayload,
 } from "../lib/send-delivery.ts";
-import { missingContactKey, recommendedChannel } from "../lib/send-dialog.ts";
+import {
+  contactSaveErrorKey,
+  newSendRequestId,
+  recommendedChannel,
+  runExclusive,
+  sendDialogErrorKey,
+} from "../lib/send-dialog.ts";
 import {
   customerStepPrefillView,
   extractQuoteFacts,
@@ -1300,6 +1306,9 @@ export default function AsstChat({
     return snap?.stats?.invoices.overdue ?? null;
   });
   const [sending, setSending] = useState(false);
+  // REQ-399 (demo M16): the synchronous "a Send is in flight" lock — state
+  // lags a render, so a double-click's second click read `sending` false.
+  const sendInFlight = useRef(false);
   const [recording, setRecording] = useState(false);
   const [recElapsed, setRecElapsed] = useState(0);
   /** Live transcript surfaced from the Web Speech API. `interim` updates
@@ -3624,15 +3633,17 @@ export default function AsstChat({
   /**
    * Fire the post-wizard "Ready to send" CTA: dispatches the assembled
    * Quote + Agreement to the customer via the SendQuote coordinator on the
-   * requested channel (text, email, or both). Idempotent server-side
-   * (re-clicks redeliver), so flipping local state optimistically is safe.
+   * requested channel (text, email, or both). State is idempotent
+   * server-side; delivery is once per `requestId` (REQ-399). Runs only under
+   * keepAndSend's `sendInFlight` lock.
    */
-  async function confirmSendQuote(
+  async function sendQuoteNow(
     message: Message,
-    channel: "email" | "sms" | "both" = "email",
-    language?: "en" | "es",
+    channel: "email" | "sms" | "both",
+    language: "en" | "es" | undefined,
+    requestId: string,
   ) {
-    if (sending || !convoId) return;
+    if (!convoId) return;
     const payload = (message.payload ?? {}) as { quoteId?: string };
     let id = payload.quoteId ?? quote?.id ?? quoteId;
     setError(undefined);
@@ -3649,6 +3660,7 @@ export default function AsstChat({
         id,
         channel,
         language,
+        requestId,
       );
       setReviewedCtas((prev) => {
         const next = new Set(prev);
@@ -3841,43 +3853,62 @@ export default function AsstChat({
    * refuses to send a channel the customer still can't receive, then sends
    * on the chosen channel.
    */
-  async function keepAndSend(
-    m: Parameters<typeof confirmSendQuote>[0],
+  function keepAndSend(
+    m: Message,
     previewLang: Lang,
     totalCents: number,
   ) {
-    const ch = dialogChannel;
-    const email = dialogEmail.trim();
-    const phone = dialogPhone.trim();
-    const needsEmail = ch !== "sms" && !customer?.email;
-    const needsPhone = ch !== "email" && !customer?.phoneNumber;
-    // REQ-308 (demo M3): name the contact that is actually missing, in the
-    // app's language — previewLang is the document's, not the dialog's.
-    const missing = missingContactKey(ch, customer, { email, phone });
-    if (missing) {
-      setDialogErr(tFor(lang, missing));
-      return;
-    }
-    if (customer?.id && (email || phone)) {
-      try {
-        const patch: Record<string, unknown> = {
-          ...(needsEmail && email ? { email } : {}),
-          ...(needsPhone && phone ? { phoneNumber: phone } : {}),
-        };
-        await clientsClient.update(customer.id, patch);
-        setCustomer((c) => c ? { ...c, ...patch } as typeof c : c);
-      } catch (err) {
-        setDialogErr(err instanceof Error ? err.message : "couldn't save");
+    // REQ-399 (demo M16): checked and set before the first await, so the
+    // second click of a double-click does nothing — no second PUT, no second
+    // send. sendQuoteNow / sendInvoiceSwapNow run only under this lock; the
+    // requestId lets the server drop a repeat that still gets through.
+    return runExclusive(sendInFlight, async () => {
+      const ch = dialogChannel;
+      const email = dialogEmail.trim();
+      const phone = dialogPhone.trim();
+      const needsEmail = ch !== "sms" && !customer?.email;
+      const needsPhone = ch !== "email" && !customer?.phoneNumber;
+      // REQ-308 (demo M3): name the contact that is actually missing, in the
+      // app's language — previewLang is the document's, not the dialog's.
+      // REQ-399 (demo M17): then the format of what was typed, so
+      // "bob at gmail" never reaches PUT /customers.
+      const invalid = sendDialogErrorKey(ch, customer ?? undefined, {
+        email,
+        phone,
+      });
+      if (invalid) {
+        setDialogErr(tFor(lang, invalid));
         return;
       }
-    }
-    setSendChannel(ch);
-    setSendDialogOpen(false);
-    if (reviewDocType === "invoice") {
-      void confirmSendInvoiceSwap(ch, totalCents);
-    } else {
-      void confirmSendQuote(m, ch, previewLang);
-    }
+      setDialogErr(undefined);
+      setSending(true);
+      try {
+        if (customer?.id && (email || phone)) {
+          try {
+            const patch: Record<string, unknown> = {
+              ...(needsEmail && email ? { email } : {}),
+              ...(needsPhone && phone ? { phoneNumber: phone } : {}),
+            };
+            await clientsClient.update(customer.id, patch);
+            setCustomer((c) => c ? { ...c, ...patch } as typeof c : c);
+          } catch (err) {
+            // REQ-399 (demo M17): dictionary copy — never lib/api's
+            // "PUT /customers/<id> failed: 400".
+            setDialogErr(tFor(lang, contactSaveErrorKey(err)));
+            return;
+          }
+        }
+        setSendChannel(ch);
+        setSendDialogOpen(false);
+        if (reviewDocType === "invoice") {
+          await sendInvoiceSwapNow(ch, totalCents);
+        } else {
+          await sendQuoteNow(m, ch, previewLang, newSendRequestId());
+        }
+      } finally {
+        setSending(false);
+      }
+    });
   }
 
   // Pick a new option for an already-answered wizard term. Patches the
@@ -4454,11 +4485,10 @@ export default function AsstChat({
    * dispatches it on the chosen channel through the invoice email/text
    * endpoints.
    */
-  async function confirmSendInvoiceSwap(
+  async function sendInvoiceSwapNow(
     channel: "email" | "sms" | "both",
     totalCents: number,
   ) {
-    if (sending) return;
     setError(undefined);
     setSending(true);
     try {

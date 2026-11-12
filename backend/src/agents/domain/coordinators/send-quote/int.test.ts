@@ -842,3 +842,64 @@ Deno.test("REQ-302 B1 send-quote: refuses to send a quote with a negative line o
   assertEquals(ctx.sentEmails.length, 0);
   await resetKv();
 });
+
+// REQ-399 (demo-loop cycle 2, M16): a double-click on Send POSTed /send-quote
+// twice and the customer got two emails. The client now tags one Send with a
+// requestId; a repeat of that id within the window delivers nothing again.
+Deno.test("REQ-399 M16 send-quote: the same requestId twice (even concurrently) delivers once", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const ctx = await makeReadyConversation();
+  const input = {
+    userId: "u-1",
+    conversationId: ctx.conv.id,
+    quoteId: ctx.quote.id,
+    requestId: "req-abc-1",
+  };
+  const [a, b] = await Promise.all([ctx.flow.run(input), ctx.flow.run(input)]);
+  assertEquals(ctx.sentEmails.length, 1, "one Send, one email");
+  const dividers = (await ctx.messages.listByConversation(ctx.conv.id))
+    .filter((m) => m.kind === "phase_divider");
+  assertEquals(dividers.length, 1, "one 'emailed to' card");
+  assertEquals(
+    a.newMessages.length + b.newMessages.length,
+    1,
+    "only the first answer carries the divider",
+  );
+  // A later run with the same id is still the same Send.
+  await ctx.flow.run(input);
+  assertEquals(ctx.sentEmails.length, 1);
+  await resetKv();
+});
+
+Deno.test("REQ-399 M16 send-quote: a new requestId is a new Send (a deliberate re-send still delivers)", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const ctx = await makeReadyConversation();
+  const base = {
+    userId: "u-1",
+    conversationId: ctx.conv.id,
+    quoteId: ctx.quote.id,
+  };
+  await ctx.flow.run({ ...base, requestId: "req-1" });
+  await ctx.flow.run({ ...base, requestId: "req-2" });
+  assertEquals(ctx.sentEmails.length, 2);
+  await resetKv();
+});
+
+Deno.test("REQ-399 M16 send-quote: a Send that threw does not hold its requestId", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const ctx = await makeReadyConversation();
+  const input = {
+    userId: "u-1",
+    conversationId: ctx.conv.id,
+    quoteId: "not-this-conversations-quote",
+    requestId: "req-throws",
+  };
+  await assertRejects(() => ctx.flow.run(input));
+  // The same id with the right quote now goes through.
+  await ctx.flow.run({ ...input, quoteId: ctx.quote.id });
+  assertEquals(ctx.sentEmails.length, 1);
+  await resetKv();
+});
