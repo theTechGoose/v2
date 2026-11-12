@@ -37,7 +37,9 @@ const tabStyle = (on: boolean) =>
 const btnDanger =
   "padding:7px 12px;border-radius:8px;border:1px solid #e3b7b7;background:#fff;color:#a83b3b;cursor:pointer;font:inherit;font-weight:600;white-space:nowrap";
 
-export default function AdminPage() {
+/** REQ-227 (demo-lifecycle-p2): `selfId` — the signed-in admin's own id; their own row offers
+ *  neither Impersonate nor Demo (a demo on yourself makes you the customer AND the presenter) */
+export default function AdminPage({ selfId }: { selfId?: string }) {
   const [q, setQ] = useState("");
   const [rows, setRows] = useState<AdminUserView[]>([]);
   const [loading, setLoading] = useState(false);
@@ -358,25 +360,31 @@ export default function AdminPage() {
                           ? "Revoke"
                           : "Grant"}
                       </button>
-                      <button
-                        type="button"
-                        style={btnSecondary + ";margin-left:8px"}
-                        disabled={busyId !== null}
-                        onClick={() => impersonate(u.id)}
-                      >
-                        Impersonate
-                      </button>
-                      <button
-                        type="button"
-                        data-cy="adm-demo"
-                        title="Demo mode: guide this user with a live pointer on their screen"
-                        style={btnSecondary + ";margin-left:8px" +
-                          (busyId === u.id ? ";opacity:.65;cursor:wait" : "")}
-                        disabled={busyId !== null}
-                        onClick={() => demo(u.id, u.name || u.phoneNumber)}
-                      >
-                        {busyId === u.id ? "Opening…" : "Demo"}
-                      </button>
+                      {u.id !== selfId && (
+                        <>
+                          <button
+                            type="button"
+                            style={btnSecondary + ";margin-left:8px"}
+                            disabled={busyId !== null}
+                            onClick={() => impersonate(u.id)}
+                          >
+                            Impersonate
+                          </button>
+                          <button
+                            type="button"
+                            data-cy="adm-demo"
+                            title="Demo mode: guide this user with a live pointer on their screen"
+                            style={btnSecondary + ";margin-left:8px" +
+                              (busyId === u.id
+                                ? ";opacity:.65;cursor:wait"
+                                : "")}
+                            disabled={busyId !== null}
+                            onClick={() => demo(u.id, u.name || u.phoneNumber)}
+                          >
+                            {busyId === u.id ? "Opening…" : "Demo"}
+                          </button>
+                        </>
+                      )}
                     </td>
                   </tr>
                 ))}

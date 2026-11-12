@@ -280,6 +280,23 @@ Deno.test("REQ-153 a super admin opens a demo for a user; the user sees it on ac
   });
 });
 
+/** REQ-227 (demo-lifecycle-p2) — a demo on yourself would make you both the customer and the presenter */
+Deno.test("REQ-227 a super admin may not open a demo on their own account: 400, and no demo is open", async () => {
+  await withServer(async (call) => {
+    const hans = await signIn(call, "+15125553011");
+    assertEquals(
+      (await call("POST", "/api/admin/bootstrap", { phoneNumber: "+15125553011" })).status,
+      200,
+    );
+    const self = await call("POST", "/api/demo-mode/sessions", {
+      userId: hans.body.userId,
+    }, H(hans.body.sessionId));
+    assertEquals(self.status, 400, `a demo on yourself is refused (${JSON.stringify(self.body)})`);
+    const active = await call("GET", "/api/demo-mode/active", undefined, H(hans.body.sessionId));
+    assertEquals(active.body.session, null, "no demo was opened");
+  });
+});
+
 Deno.test("REQ-153 the presenter (impersonating) and the viewer connect over the composed router's socket; signal and relay cross both ways with from; a stranger is refused; end tells both", async () => {
   await withServer(async (call) => {
     const ana = await signIn(call, "+15125553011");

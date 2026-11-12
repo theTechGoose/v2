@@ -106,3 +106,23 @@ Deno.test("REQ-091 sign-in-landing — a paid pick still waiting on its pay page
   assertEquals(await f.flow.run(user.id), "/welcome", "pending");
   await resetKv();
 });
+
+/**
+ * REQ-227 (demo M2, demo-lifecycle-p2) — a deferral lets the dashboard through, never the code:
+ * the next code still lands in the wizard to ask again. Staff (superAdmin) never go through the
+ * customer wizard.
+ */
+Deno.test("REQ-227 sign-in-landing — a deferred question still lands the code in the wizard; a super admin lands on the dashboard", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const f = freshFlow();
+  const user = await f.users.create({ phoneNumber: "+15125550915", language: "en", name: "New user" });
+  await answerAll(f, user.id, ["logo"]);
+  await f.users.deferOnboarding(user.id, "logo");
+  assertEquals(await f.flow.run(user.id), "/welcome", "deferred is not answered — the wizard asks again");
+
+  const staff = await f.users.create({ phoneNumber: "+15125550916", language: "en", name: "New user" });
+  await f.users.setSuperAdmin(staff.id, true);
+  assertEquals(await f.flow.run(staff.id), "/dashboard?welcome=back", "staff never meet the customer wizard");
+  await resetKv();
+});

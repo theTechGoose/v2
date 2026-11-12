@@ -21,6 +21,14 @@ import {
 import { isSafePath, nextColor } from "#demo-mode/protocol.ts";
 import { presentersOf } from "@demo-mode/domain/business/demo-role/mod.ts";
 
+/** REQ-227 — a super admin cannot open a demo on their own account */
+class DemoOnSelfError extends Error {
+  readonly status = 400;
+  constructor() {
+    super("a demo cannot be opened on your own account");
+  }
+}
+
 const nameOf = (u: User) => u.name?.trim() || u.phoneNumber;
 
 /**
@@ -54,6 +62,8 @@ export class DemoModeController {
     const admin = await requireSuperAdmin(ctx, this.sessions, this.users);
     const userId = (body as { userId?: unknown } | null)?.userId;
     if (typeof userId !== "string" || !userId) throw new DemoNotFoundError();
+    // REQ-227 (demo-lifecycle-p2) — a demo on yourself would make you the customer AND the presenter
+    if (userId === admin.id) throw new DemoOnSelfError();
     let target: User;
     try {
       target = await this.users.get(userId);

@@ -181,3 +181,107 @@ Deno.test("REQ-121: a later login asks only the questions still open — with th
     const closing = await page.locator(".welcome__card").innerText();
     expect(!/insured/.test(closing), "the insurance, answered, is not asked again");
   }));
+
+/**
+ * REQ-227 — the 20-agent demo (M2, test-setup-claims-nc-dashboard): the dashboard bounced every
+ * account without a logo back to "Add your logo", forever, because a step's Skip saved nothing.
+ * Decision (orchestrator, keeping REQ-091): Skip saves a per-question "deferred" stamp; the
+ * dashboard lets the person through when every open question is deferred, and its setup
+ * checklist asks for what is left; the next code still brings the wizard back to ask again.
+ */
+Deno.test("REQ-227: the logo skipped in the wizard is deferred — /dashboard opens with the setup checklist asking for it; the next code lands in the wizard at the logo again", (t) =>
+  story(t, async ({ page, expect, http, baseUrl }) => {
+    await page.setViewportSize(DESKTOP);
+    const host = new URL(baseUrl).hostname;
+    const english = () => page.context().addCookies([{ name: "pm_lang", value: "en", domain: host, path: "/" }]);
+    await english();
+    const local = `512${digits()}`;
+
+    let landed = await codeIn(page, local);
+    expect.eq(landed.pathname, "/welcome", `a new account's code lands in the wizard (${landed})`);
+    await answerQuestions(http, await sessionAuth(page), { except: ["logo"] });
+    await page.goto("/welcome");
+    await expect.see("Add your logo");
+
+    // before the skip, the logo is open and not deferred: the dashboard still sends the person back
+    await page.goto("/dashboard");
+    await page.waitForURL((u: URL) => u.pathname === "/welcome", { timeout: 60_000 });
+    await expect.see("Add your logo");
+
+    // Skip puts the logo off: the wizard moves on to its closing screen
+    await page.locator("[data-cy='welcome-skip']").waitFor({ timeout: 60_000 });
+    await page.locator("[data-cy='welcome-skip']").click();
+    await expect.see("See what your customer sees");
+
+    // the dashboard now opens, and its setup checklist asks for the logo
+    await page.goto("/dashboard");
+    await page.waitForLoadState("networkidle");
+    expect.eq(new URL(page.url()).pathname, "/dashboard", "a deferred logo no longer bounces the dashboard");
+    await expect.see("Upload your logo");
+
+    // the next code still asks again (REQ-091 stands): the wizard, at the logo
+    await page.context().clearCookies();
+    await english();
+    landed = await codeIn(page, local);
+    expect.eq(landed.pathname, "/welcome", `the next code brings the wizard back (${landed})`);
+    await expect.see("Add your logo");
+  }));
+
+/**
+ * REQ-227 — demo-lifecycle-p2: a staff login went through the customer onboarding ("Paso 1 de 10",
+ * a CompleteRegistration pixel), and the admin's own /admin row offered Demo (a demo on yourself).
+ */
+Deno.test("REQ-227: staff are never sent through the customer wizard — a super admin's code lands on the dashboard, /welcome lets them go, and their own /admin row has no Demo or Impersonate", (t) =>
+  story(t, async ({ page, expect, http, baseUrl }) => {
+    await page.setViewportSize(DESKTOP);
+    const host = new URL(baseUrl).hostname;
+    const english = () => page.context().addCookies([{ name: "pm_lang", value: "en", domain: host, path: "/" }]);
+    await english();
+    const staffLocal = `843${digits()}`;
+    const customerLocal = `512${digits()}`;
+
+    // a customer, so the admin's list has another row to compare with
+    let landed = await codeIn(page, customerLocal);
+    expect.eq(landed.pathname, "/welcome", `a customer's code lands in the wizard (${landed})`);
+    await page.context().clearCookies();
+    await english();
+
+    // a fresh account made staff: nothing of onboarding answered
+    landed = await codeIn(page, staffLocal);
+    const boot = await http("/api/admin/bootstrap", {
+      method: "POST",
+      headers: JSON_HEADERS,
+      body: JSON.stringify({ phoneNumber: `+1${staffLocal}` }),
+    });
+    expect.eq(boot.status, 200, "the staff phone is bootstrapped as a super admin");
+    await boot.body?.cancel();
+    await page.context().clearCookies();
+    await english();
+    landed = await codeIn(page, staffLocal);
+    expect.eq(landed.pathname, "/dashboard", `a staff code lands on the dashboard, not the wizard (${landed})`);
+
+    await page.goto("/dashboard");
+    await page.waitForLoadState("networkidle");
+    expect.eq(new URL(page.url()).pathname, "/dashboard", "the dashboard does not send staff to the wizard");
+    await page.goto("/welcome");
+    await page.waitForURL((u: URL) => u.pathname === "/dashboard", { timeout: 60_000 });
+    expect.eq(new URL(page.url()).pathname, "/dashboard", "/welcome lets staff go");
+
+    // /admin: the staff's own row has no Demo/Impersonate; the customer's row has both
+    await page.goto("/admin");
+    for (const [local, own] of [[staffLocal, true], [customerLocal, false]] as const) {
+      await page.locator("[data-cy='adm-q']").fill(local);
+      await page.locator("[data-cy='adm-search']").click();
+      // the row of this phone (formatted on the page — its last four digits are on it as typed)
+      const row = page.locator("tbody tr").filter({ hasText: local.slice(-4) }).first();
+      await row.waitFor({ timeout: 15_000 });
+      const demo = await row.locator("[data-cy='adm-demo']").count();
+      const imp = await row.locator("button", { hasText: "Impersonate" }).count();
+      if (own) {
+        expect.eq(demo + imp, 0, "the staff's own row offers neither Demo nor Impersonate");
+      } else {
+        expect.eq(demo, 1, "a customer's row offers Demo");
+        expect.eq(imp, 1, "a customer's row offers Impersonate");
+      }
+    }
+  }));

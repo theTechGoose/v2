@@ -8,7 +8,9 @@
  *
  * REQ-091: onboarding happens until every question is answered. A step is
  * skippable-or-not per its registry entry — Skip puts the question off, and
- * the wizard comes back on the next code and on the dashboard. REQ-121: a
+ * the wizard comes back on the next code. REQ-227: Skip saves that question's
+ * "deferred" stamp, so the dashboard lets the person in once every open
+ * question is deferred (its setup checklist asks for the rest). REQ-121: a
  * visit asks the open questions alone — never one the account has already
  * answered — and counts its steps over those (lib/welcome-steps.ts). The
  * low-key "Skip setup for now" escape records the leave and
@@ -41,6 +43,16 @@ import { stateName, US_STATE_OPTIONS } from "../lib/us-states.ts";
 import { api } from "../lib/api.ts";
 import { type AddressSuggestion, suggestAddresses } from "../lib/mapbox.ts";
 
+/** REQ-227 — a step's Skip: stamp the question deferred (best effort; the wizard moves on either way) */
+async function deferQuestion(question: string): Promise<void> {
+  await fetch("/api/me/onboarding/deferred", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    credentials: "include",
+    body: JSON.stringify({ question }),
+  }).then((r) => r.body?.cancel()).catch(() => {});
+}
+
 /** Mark onboarding finished (not skipped) before leaving the wizard. */
 async function markOnboardedFinish(): Promise<void> {
   await fetch("/api/me/onboarded", {
@@ -71,6 +83,8 @@ interface StepCtx {
   patchSnap: (partial: Partial<ProfileSnapshot>) => void;
   /** Advance to the next step (after a successful save, or a skip). */
   advance: () => void;
+  /** REQ-227 — the footer's Skip: save the question's deferred stamp, then advance */
+  skip: () => void;
   goBack: () => void;
   canGoBack: boolean;
   skippable: boolean;
@@ -167,7 +181,7 @@ function StepFooter(
               type="button"
               class="welcome__btn welcome__btn--ghost"
               data-cy="welcome-skip"
-              onClick={ctx.advance}
+              onClick={ctx.skip}
               disabled={busy}
             >
               {t("welcome.skip")}
@@ -1245,6 +1259,7 @@ export default function WelcomeWizard(
 
   const total = steps.length;
   const step = steps[index];
+  const [skipping, setSkipping] = useState(false);
   const StepComp = step.Component;
 
   const ctx: StepCtx = {
@@ -1252,6 +1267,14 @@ export default function WelcomeWizard(
     suggestedState,
     patchSnap: (partial) => setSnap((prev) => ({ ...prev, ...partial })),
     advance: () => setIndex((i) => Math.min(i + 1, total - 1)),
+    skip: () => {
+      if (skipping) return;
+      setSkipping(true);
+      deferQuestion(step.id).finally(() => {
+        setSkipping(false);
+        setIndex((i) => Math.min(i + 1, total - 1));
+      });
+    },
     goBack: () => setIndex((i) => Math.max(i - 1, 0)),
     canGoBack: index > 0,
     skippable: step.skippable,

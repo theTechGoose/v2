@@ -45,6 +45,13 @@ export interface User {
    */
   onboardedAt?: string;
   onboardingSkipped?: boolean;
+  /**
+   * REQ-227: question → ISO time the person pressed that step's Skip in the wizard. A deferred
+   * question is still open (the next code asks it again), but the dashboard lets the person
+   * through once every open question is deferred. NEVER part of UpdateUserDto — the only write
+   * path is `UserStore.deferOnboarding` (POST /me/onboarding/deferred).
+   */
+  onboardingDeferred?: Partial<Record<string, string>>;
   createdAt: string;
   updatedAt: string;
 }

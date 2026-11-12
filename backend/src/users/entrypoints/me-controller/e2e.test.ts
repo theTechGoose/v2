@@ -149,6 +149,54 @@ Deno.test("me e2e: POST /me/onboarded stamps onboardedAt; second call is a no-op
   });
 });
 
+/**
+ * REQ-227 (demo M2) — a step's Skip in the wizard saves a per-question "deferred" stamp, so the
+ * dashboard's gate can let a person past a question they put off. The name is never deferrable
+ * (its step has no Skip); an unknown question is a 400; the stamp is only ever written here.
+ */
+Deno.test("REQ-227 me e2e: POST /me/onboarding/deferred stamps the question on the user; the name and unknown questions are 400; no session is rejected", async () => {
+  await withServer(async (port) => {
+    const anon = await fetch(`http://localhost:${port}/me/onboarding/deferred`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ question: "logo" }),
+    });
+    assertEquals(anon.ok, false, "missing session must be rejected");
+    await drain(anon);
+
+    const session = await login(port, "+15125551234");
+    const h = { "content-type": "application/json", "x-session-id": session.sessionId };
+    const res = await fetch(`http://localhost:${port}/me/onboarding/deferred`, {
+      method: "POST", headers: h, body: JSON.stringify({ question: "logo" }),
+    });
+    assertEquals(res.status, 200);
+    const body = await res.json();
+    assert(body.onboardingDeferred?.logo, "the logo carries a deferred stamp");
+    assert(!Number.isNaN(Date.parse(body.onboardingDeferred.logo)), "the stamp is an ISO time");
+
+    await drain(await fetch(`http://localhost:${port}/me/onboarding/deferred`, {
+      method: "POST", headers: h, body: JSON.stringify({ question: "insurance" }),
+    }));
+    const me = await fetch(`http://localhost:${port}/me`, { headers: h }).then((r) => r.json());
+    assertEquals(Object.keys(me.onboardingDeferred).sort(), ["insurance", "logo"]);
+
+    for (const question of ["name", "nope", 42, undefined]) {
+      const bad = await fetch(`http://localhost:${port}/me/onboarding/deferred`, {
+        method: "POST", headers: h, body: JSON.stringify({ question }),
+      });
+      assertEquals(bad.status, 400, `${String(question)} cannot be deferred`);
+      await drain(bad);
+    }
+
+    // a PUT /me body cannot smuggle a deferral in
+    await drain(await fetch(`http://localhost:${port}/me`, {
+      method: "PUT", headers: h, body: JSON.stringify({ name: "Ana", onboardingDeferred: { name: "x", email: "x" } }),
+    }));
+    const after = await fetch(`http://localhost:${port}/me`, { headers: h }).then((r) => r.json());
+    assertEquals(Object.keys(after.onboardingDeferred).sort(), ["insurance", "logo"]);
+  });
+});
+
 const RESET_SECRET = "test-reset-secret-0123456789";
 
 Deno.test("reset-by-phone: refused when RESET_SECRET is unset (no backdoor by default)", async () => {
