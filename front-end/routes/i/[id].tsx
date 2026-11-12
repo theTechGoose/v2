@@ -15,6 +15,7 @@ import {
   type VisitGroup,
 } from "../../../shared/quote-flow/visit-groups.ts";
 import PublicInvoiceClaim from "../../islands/PublicInvoiceClaim.tsx";
+import PublicInvoiceRefresh from "../../islands/PublicInvoiceRefresh.tsx";
 import PublicLangToggle from "../../islands/PublicLangToggle.tsx";
 import {
   invoiceHeadline,
@@ -705,11 +706,23 @@ function InvoiceDoc(
             )
             : claimed
             ? (
-              <ClaimedNote
-                intent={invoice.paymentIntent!}
-                contractorFirst={invoice.contractor?.name?.split(/\s+/)[0]}
-                es={es}
-              />
+              <>
+                <ClaimedNote
+                  intent={invoice.paymentIntent!}
+                  contractorFirst={invoice.contractor?.name?.split(/\s+/)[0]}
+                  es={es}
+                />
+                {
+                  /* REQ-321 (demo M14): this page mounts no claim island, so it
+                  re-reads the invoice itself — the owner's confirm flips it to
+                  PAID without a manual reload. */
+                }
+                <PublicInvoiceRefresh
+                  invoiceId={invoice.id}
+                  status={invoice.status}
+                  version={invoice.version}
+                />
+              </>
             )
             : (
               <PublicInvoiceClaim
