@@ -2,6 +2,7 @@ import SendLangPreview from "../components/SendLangPreview.tsx";
 import Backdrop from "../components/Backdrop.tsx";
 import { Fragment } from "preact";
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
+import { useSignal } from "@preact/signals"; // REQ-670
 import { I, ICN } from "../lib/dash-icons.tsx";
 import { detailLines, fmtPhone } from "../lib/format.ts";
 import {
@@ -28,10 +29,10 @@ import { filesClient } from "../clients/files.ts";
 import {
   type ChatStreamEvent,
   NO_REPLY_YET,
-  pendingLabelKey,
   pendingReply,
   type PendingReply,
 } from "../lib/chat-stream.ts";
+import { PendingReplyBubble } from "../components/PendingReplyBubble.tsx";
 import {
   actionCardNumber,
   numberedLabel,
@@ -76,6 +77,7 @@ import {
   composerMode,
   echoWithCorrection, // REQ-442
   type StepLog, // REQ-442
+  stepOwnsAnswer, // REQ-670
   stepScopeOf, // REQ-444
   withStepScope, // REQ-444
 } from "../../shared/quote-flow/step-composer.ts"; // REQ-392
@@ -1456,8 +1458,10 @@ export default function AsstChat({
    *  rewritten. */
   const [stepSending, setStepSending] = useState(false);
   /** REQ-670 (demo-loop cycle 5, p7): what the pending reply bubble shows —
-   *  the reply so far as the server streams it, else what the turn is doing. */
-  const [liveReply, setLiveReply] = useState<PendingReply>(NO_REPLY_YET);
+   *  the reply so far as the server streams it, else what the turn is doing.
+   *  A signal only the bubble reads: a streamed piece re-renders the bubble,
+   *  not this island. */
+  const liveReply = useSignal<PendingReply>(NO_REPLY_YET);
   // REQ-399 (demo M16): the synchronous "a Send is in flight" lock — state
   // lags a render, so a double-click's second click read `sending` false.
   const sendInFlight = useRef(false);
@@ -2440,9 +2444,11 @@ export default function AsstChat({
       // P-10: bound the turn client-side too — a hung backend/LLM call used
       // to spin forever with no error and no way out. After ~30s the send
       // rejects with a typed TimeoutError and the error strip offers Retry.
-      setLiveReply(NO_REPLY_YET);
+      liveReply.value = NO_REPLY_YET;
       const res = await withChatTimeout(
-        submit((event) => setLiveReply((s) => pendingReply(s, event))),
+        submit((event) => {
+          liveReply.value = pendingReply(liveReply.peek(), event);
+        }),
       );
       const newConvoId = res.conversation?.id ?? res.conversationId;
       if (newConvoId && newConvoId !== convoId) {
@@ -2578,7 +2584,7 @@ export default function AsstChat({
       setMessages((m) => m.filter((msg) => msg.id !== tmpId));
       onError?.();
     } finally {
-      setLiveReply(NO_REPLY_YET);
+      liveReply.value = NO_REPLY_YET;
       setBusy(false);
     }
   }
@@ -2719,17 +2725,24 @@ export default function AsstChat({
       await submitTurn(
         { role: "user", kind: "text", content: said },
         async (onEvent) => {
-          const res = await assistantClient.chatStream({
+          const input = {
             conversationId: convoId,
             content: said,
-            kind: "text",
+            kind: "text" as const,
             step: hint,
-          }, onEvent) as {
-            conversation?: { id: string };
-            newMessages?: Message[];
-            message?: Message;
-            conversationId?: string;
           };
+          // REQ-670: Pick a price and the Job details picker cover the
+          // thread and say the turn on the step — nothing streamed into the
+          // thread would be seen there, so they ask the JSON way; a wizard
+          // question or the review answers in the thread, streamed.
+          const res = await (stepOwnsAnswer(step)
+            ? assistantClient.chat(input)
+            : assistantClient.chatStream(input, onEvent)) as {
+              conversation?: { id: string };
+              newMessages?: Message[];
+              message?: Message;
+              conversationId?: string;
+            };
           answered = res.newMessages ?? [];
           return res;
         },
@@ -9903,41 +9916,10 @@ export default function AsstChat({
             messages.length > 0 &&
             messages[messages.length - 1].role === "user"
           ? (
-            <div
-              class="msg"
-              aria-live="polite"
-              aria-label={tFor(lang, "asstChat.bossieThinking")}
-              aria-busy={liveReply.text ? "true" : undefined}
-            >
-              <div class="msg__avatar">
-                <img src="/logo-monster.png" alt="" />
-              </div>
-              {
-                /* REQ-670 (demo-loop cycle 5, p7): the reply as the server
-                streams it; until then the dots say in words what the turn is
-                doing ("Assistant is thinking…", "Pricing the job…"). */
-              }
-              {liveReply.text
-                ? (
-                  <div
-                    class="msg__bubble msg__bubble--streaming"
-                    data-cy="msg-streaming"
-                    style="white-space:pre-wrap"
-                  >
-                    {liveReply.text}
-                  </div>
-                )
-                : (
-                  <div class="msg__bubble msg__bubble--typing">
-                    <span class="typing-dot" />
-                    <span class="typing-dot" />
-                    <span class="typing-dot" />
-                    <span class="typing-label" data-cy="msg-typing-label">
-                      {tFor(lang, pendingLabelKey(liveReply.stage))}
-                    </span>
-                  </div>
-                )}
-            </div>
+            // REQ-670 (demo-loop cycle 5, p7): the reply as the server
+            // streams it; until then the dots say in words what the turn is
+            // doing ("Assistant is thinking…", "Pricing the job…").
+            <PendingReplyBubble reply={liveReply} lang={lang} />
           )
           : null}
       </div>

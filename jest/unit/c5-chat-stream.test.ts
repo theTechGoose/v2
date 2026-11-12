@@ -9,6 +9,10 @@
  *   front-end/clients/assistant.ts assistantClient.chatStream (SSE, JSON fallback)
  *   front-end/islands/AsstChat.tsx the pending bubble shows the reply as it is
  *                                  written, else a visible label
+ *   shared/quote-flow/step-composer.ts stepOwnsAnswer — Pick a price and the
+ *                                  Job details picker cover the thread with
+ *                                  their panel and show the turn on the step
+ *                                  (REQ-442), so their step turns stay JSON
  *
  * Lazy-required so a missing export reds only the tests that use it.
  */
@@ -19,6 +23,8 @@ import * as path from "path";
 const cs = () => require("../../front-end/lib/chat-stream");
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const timeout = () => require("../../shared/quote-flow/chat-timeout");
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const steps = () => require("../../shared/quote-flow/step-composer");
 
 const ROOT = path.resolve(__dirname, "../..");
 const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), "utf8");
@@ -271,16 +277,43 @@ describe("REQ-670 assistantClient.chatStream — the SSE route, with the JSON ro
 describe("REQ-670 AsstChat — the pending bubble streams, and has words while it waits", () => {
   const src = read("front-end/islands/AsstChat.tsx");
 
-  it("REQ-670 typed, spoken and step messages go through the streamed turn", () => {
+  it("REQ-670 typed and spoken messages, and a step message whose answer lands in the thread, go through the streamed turn", () => {
     const streamed = src.match(/assistantClient\.chatStream\(/g) ?? [];
     expect(streamed.length).toBeGreaterThanOrEqual(3);
     expect(src).not.toMatch(/assistantClient\.chat\(\{/);
   });
 
+  it("REQ-670 a step that owns its answer asks the JSON way — its panel covers the thread, so nothing streamed would be seen, and the step says the turn in its own words", () => {
+    const { stepOwnsAnswer } = steps();
+    expect(stepOwnsAnswer("price")).toBe(true);
+    expect(stepOwnsAnswer("job_details")).toBe(true);
+    expect(stepOwnsAnswer("wizard")).toBe(false);
+    expect(stepOwnsAnswer("review")).toBe(false);
+    // the one JSON turn left in the island is that step's
+    expect(src.match(/assistantClient\.chat\(/g) ?? []).toHaveLength(1);
+    expect(src).toMatch(
+      /stepOwnsAnswer\(step\)\s*\?\s*assistantClient\.chat\(/,
+    );
+    // the step composer shows the exchange on the same steps
+    const comp = read("front-end/components/StepComposer.tsx");
+    expect(comp).toMatch(/const ownsAnswer = stepOwnsAnswer\(step\)/);
+  });
+
   it("REQ-670 the pending bubble shows the reply so far, else a visible label (no longer dots alone)", () => {
-    expect(src).toMatch(/data-cy="msg-streaming"/);
-    expect(src).toMatch(/data-cy="msg-typing-label"/);
-    expect(src).toMatch(/pendingLabelKey\(/);
-    expect(src).toMatch(/pendingReply\(/);
+    const bubble = read("front-end/components/PendingReplyBubble.tsx");
+    expect(bubble).toMatch(/data-cy="msg-streaming"/);
+    expect(bubble).toMatch(/data-cy="msg-typing-label"/);
+    expect(bubble).toMatch(/pendingLabelKey\(/);
+    expect(src).toMatch(/<PendingReplyBubble reply=\{liveReply\}/);
+  });
+
+  it("REQ-670 a streamed piece re-renders the bubble, never the island: the live reply is a signal only the bubble reads", () => {
+    expect(src).toMatch(/const liveReply = useSignal<PendingReply>\(/);
+    expect(src).not.toMatch(/useState<PendingReply>/);
+    expect(src).toMatch(
+      /liveReply\.value = pendingReply\(liveReply\.peek\(\), event\)/,
+    );
+    // the island itself never reads it while rendering
+    expect(src.match(/liveReply\.value(?! =)/g) ?? []).toHaveLength(0);
   });
 });

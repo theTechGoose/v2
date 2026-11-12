@@ -25,9 +25,10 @@
 import { useRef, useState } from "preact/hooks";
 import { I, ICN } from "../lib/dash-icons.tsx";
 import { type Lang, tFor } from "../lib/i18n.ts";
-import type {
-  ChatStepId,
-  StepExchange,
+import {
+  type ChatStepId,
+  type StepExchange,
+  stepOwnsAnswer,
 } from "../../shared/quote-flow/step-composer.ts";
 
 export interface StepComposerProps {
@@ -99,7 +100,7 @@ export default function StepComposer(props: StepComposerProps) {
   wasOpenRef.current = open;
   // The two steps whose panel covers the thread show the turn's progress and
   // the answer here; on a wizard question / the review it lands in the thread.
-  const ownsAnswer = step === "price" || step === "job_details";
+  const ownsAnswer = stepOwnsAnswer(step);
 
   async function submit() {
     const said = text.trim();

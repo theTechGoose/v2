@@ -4929,6 +4929,10 @@ body {
   font-size: 13px;
   color: var(--fg-muted);
 }
+/* REQ-670: the reply as it streams keeps its line breaks */
+.msg__bubble--streaming {
+  white-space: pre-wrap;
+}
 @keyframes typing-bounce {
   0%, 60%, 100% {
     transform: translateY(0);

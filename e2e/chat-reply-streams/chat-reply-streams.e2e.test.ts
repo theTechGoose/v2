@@ -13,7 +13,10 @@
  * A MutationObserver in the page records every state of the pending bubble;
  * the reply must have been seen growing (two states or more, the last one the
  * start of the reply that lands) before it landed. Works on the stub LLM (it
- * streams its echo word by word) and on the real model.
+ * streams its echo word by word, 20 ms apart) and on the real model. The
+ * question is long so the echo streams for well over a second: on a loaded
+ * host a short one could reach the page in a single read and show as one
+ * state.
  *
  * Page: /assistant (island front-end/islands/AsstChat.tsx; the stream from
  * backend/src/agents/entrypoints/chat-controller, read by
@@ -25,7 +28,10 @@ import { answerQuestions } from "../_shared/onboarding-answers.ts";
 const JSON_HEADERS = { "content-type": "application/json" };
 const digits = () => String(Math.floor(Math.random() * 9_000_000) + 1_000_000);
 const QUESTION =
-  "how do I keep a client happy when a job runs a couple of days past the date we agreed on? give me a few short ideas";
+  "how do I keep a client happy when a job runs a couple of days past the date we agreed on? give me a few short ideas. " +
+  "I already called her once to let her know, the crew is stuck on another site until Thursday, and she has family " +
+  "coming in for the weekend, so I want to tell her the truth in a way that keeps her trust, keeps her talking to me, " +
+  "and still gets me the referral she promised for her neighbor next door";
 
 /** Signed in, past onboarding (Austin, TX), in English. */
 async function signIn(
