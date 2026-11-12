@@ -51,6 +51,8 @@ export interface ChatHeaderMessage {
 
 /** The quote row, as much of it as the header reads. */
 export interface ChatHeaderQuote {
+  /** REQ-465: the quote's Q- number — the header's status line leads with it. */
+  number?: string | null;
   status?: string | null;
   acceptedAt?: string | null;
   sentAt?: string | null;
@@ -85,6 +87,8 @@ export interface ChatHeader {
   statusKey: string;
   /** REQ-369: the thread's one status — the list chip and the cards too. */
   status: ThreadStatus;
+  /** REQ-465 (demo cycle 3, m37): the thread quote's Q- number, if any. */
+  number?: string;
 }
 
 const K = "asstChat.header.";
@@ -359,12 +363,15 @@ export function deriveChatHeader(input: ChatHeaderInput): ChatHeader {
     customerName: input.customerName,
     title: input.title,
   });
-  if (name) return { clientName: name, statusKey, status };
+  const number = quote?.number?.trim() || undefined;
+  const numbered = number ? { number } : {};
+  if (name) return { clientName: name, statusKey, status, ...numbered };
   return {
     clientKey: quote || messages.some(isQuoteCard)
       ? `${K}conversation`
       : `${K}newConversation`,
     statusKey,
     status,
+    ...numbered,
   };
 }

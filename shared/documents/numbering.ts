@@ -127,6 +127,33 @@ export function reviewCardNumber(
 }
 
 /**
+ * REQ-465 (demo cycle 3, m37): the Q- number a chat action card shows — the
+ * card's own `number` (the backend stamps it on draft / locked cards), else
+ * the fetched quote's when that quote is the card's. Undefined when neither
+ * is known; the card then shows its status alone (never the hex id).
+ */
+export function actionCardNumber(
+  payload: { quoteId?: string; number?: string } | null | undefined,
+  quote: { id?: string; number?: string } | null | undefined,
+): string | undefined {
+  const own = payload?.number?.trim();
+  if (own) return own;
+  if (!payload?.quoteId || !quote || quote.id !== payload.quoteId) {
+    return undefined;
+  }
+  return quote.number?.trim() || undefined;
+}
+
+/** REQ-465: "Q-001 · Quote locked" — `label` led by the number when known. */
+export function numberedLabel(
+  number: string | null | undefined,
+  label: string,
+): string {
+  const n = number?.trim();
+  return n ? `${n} · ${label}` : label;
+}
+
+/**
  * Does `query` name this number? Full or partial, case-insensitive, with or
  * without the prefix or dash: "inv-5", "5000", "INV5000" and "5" all hit
  * "INV-5000"; "600" does not.

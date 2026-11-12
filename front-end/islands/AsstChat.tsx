@@ -24,7 +24,11 @@ import {
   type Quote as AsstQuote,
 } from "../clients/assistant.ts";
 import { filesClient } from "../clients/files.ts";
-import { reviewCardNumber } from "../../shared/documents/numbering.ts";
+import {
+  actionCardNumber,
+  numberedLabel,
+  reviewCardNumber,
+} from "../../shared/documents/numbering.ts";
 import { type QuoteCard, quotesClient } from "../clients/quotes.ts";
 import { billedTotalCents } from "../../shared/quote-flow/milestone-reconcile.ts";
 import { accountNetDays } from "../../shared/quote-flow/completion-schedule.ts"; // REQ-411
@@ -510,6 +514,8 @@ interface ActionCardPayload {
   actionType?: string;
   status?: "draft" | "sent" | "viewed" | "accepted" | "void" | string;
   quoteId?: string;
+  /** REQ-465 (m37): the quote's Q- number, stamped on draft / locked cards. */
+  number?: string;
   customerId?: string;
   /** Polished narrative produced from the user's raw job-details input. */
   description?: string;
@@ -1987,7 +1993,9 @@ export default function AsstChat({
     const statusKey = undelivered
       ? "asstChat.header.notDelivered"
       : header.statusKey;
-    const status = tFor(lang, statusKey);
+    // REQ-465 (demo cycle 3, m37): "Q-001 · Quote locked" — the status line
+    // names the thread quote's number from the moment it exists.
+    const status = numberedLabel(header.number, tFor(lang, statusKey));
     const headerClient = header.clientName ??
       tFor(lang, header.clientKey ?? "asstChat.header.newConversation");
     // REQ-327: the tone rides with the status so "Not delivered" is red,
@@ -2007,6 +2015,7 @@ export default function AsstChat({
     quote?.lockedAt,
     quote?.sentAt,
     quote?.jobName,
+    quote?.number, // REQ-465
     convoId,
     messages.length,
     lang,
@@ -9189,6 +9198,10 @@ export default function AsstChat({
                         )
                       : undefined;
                   const isSuperseded = !!supersededBy;
+                  // REQ-465 (demo cycle 3, m37): "Q-001 · Quote locked" from
+                  // the first card — the card's own number, else the fetched
+                  // quote's when it is this card's quote.
+                  const cardNumber = actionCardNumber(payload, ruleQuote);
                   return (
                     <div key={m.id} class="msg">
                       <div class="msg__avatar">
@@ -9206,10 +9219,16 @@ export default function AsstChat({
                             <div style="flex:1;min-width:0">
                               <div class="action-card__title">{m.content}</div>
                             </div>
-                            <span class="action-card__chip">
-                              {isSuperseded
-                                ? tFor(lang, "asstChat.actionCard.superseded")
-                                : statusLabel}
+                            <span
+                              class="action-card__chip"
+                              data-cy="action-card-chip"
+                            >
+                              {numberedLabel(
+                                cardNumber,
+                                isSuperseded
+                                  ? tFor(lang, "asstChat.actionCard.superseded")
+                                  : statusLabel,
+                              )}
                             </span>
                           </div>
                           <div class="action-card__body">

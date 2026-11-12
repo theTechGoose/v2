@@ -105,6 +105,7 @@ export class ReopenQuote {
             actionType: "quote",
             status: "draft",
             quoteId: quote.id,
+            ...(quote.number ? { number: quote.number } : {}), // REQ-465
             ...(quote.customerId ? { customerId: quote.customerId } : {}),
             ...(quote.description ? { description: quote.description } : {}),
             // REQ-435 (demo-loop cycle 3, M4): the job address stays shown.

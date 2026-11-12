@@ -2671,6 +2671,8 @@ export class HandleChatMessage {
             actionType: "quote",
             status: "draft",
             quoteId: quote.id, // real id from the store
+            // REQ-465 (demo cycle 3, m37): the draft card names its Q- number.
+            ...(quote.number ? { number: quote.number } : {}),
             customerId: quote.customerId,
             // REQ-435 (demo-loop cycle 3, M4): the draft card shows the job
             // address the quote carries.
@@ -2772,6 +2774,8 @@ export class HandleChatMessage {
               ...(locked.serviceAddress
                 ? { serviceAddress: locked.serviceAddress }
                 : {}),
+              // REQ-465 (demo cycle 3, m37): the locked card names its number.
+              ...(locked.number ? { number: locked.number } : {}),
               lineItems: sentLineItems,
               totalCents,
             },

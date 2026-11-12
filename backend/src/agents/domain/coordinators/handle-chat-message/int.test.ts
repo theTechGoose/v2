@@ -3065,3 +3065,52 @@ Deno.test("REQ-435 M4 handle-chat-message integration: the draft action_card car
   );
   await resetKv();
 });
+
+Deno.test("handle-chat-message integration: REQ-465 (demo cycle 3, m37) the chat 'lock_quote' card and the 'create_quote' draft card carry the quote's number", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const { conversations, llm, quotes, flow } = fresh();
+  await seedOnboarded("u-1");
+
+  llm.setScript([{
+    text: "Here's your quote.",
+    action: {
+      type: "create_quote",
+      payload: {
+        summary: "Quote: Fence repair",
+        lineItems: [{ description: "Fence repair", amountCents: 50_000 }],
+      },
+    },
+  }]);
+  const conv = await conversations.create({ userId: "u-1" });
+  const drafted = await flow.run({
+    userId: "u-1",
+    conversationId: conv.id,
+    content: "draft the quote",
+  });
+  const draftCard = drafted.newMessages.find((m) => m.kind === "action_card");
+  const draftPayload = draftCard?.payload as
+    | { quoteId?: string; number?: string }
+    | undefined;
+  assert(draftPayload?.quoteId, "draft card names its quote");
+  const stored = await quotes.getOwned(draftPayload.quoteId, "u-1");
+  assert(stored.number, "the quote is numbered at create");
+  assertEquals(draftPayload.number, stored.number);
+
+  llm.setScript([{
+    text: "Locked.",
+    action: { type: "lock_quote", payload: { quoteId: stored.id } },
+  }]);
+  const locked = await flow.run({
+    userId: "u-1",
+    conversationId: conv.id,
+    content: "lock it in",
+  });
+  const lockCard = locked.newMessages.find((m) => m.kind === "action_card");
+  const lockPayload = lockCard?.payload as
+    | { status?: string; number?: string }
+    | undefined;
+  assertEquals(lockPayload?.status, "locked");
+  assertEquals(lockPayload?.number, stored.number);
+  await resetKv();
+});
