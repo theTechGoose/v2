@@ -117,9 +117,14 @@ export function QuotesHero(
             </>
           )}
       </div>
-      <button class="qph__cta" type="button">
+      {
+        /* REQ-307 (demo M11): a real link — this is a plain SSR component, so
+          the CTA must work without hydration. /assistant is the assistant's
+          new-conversation route, i.e. the quote composer. */
+      }
+      <a class="qph__cta" data-cy="quote-new" href="/assistant">
         <I d={ICN.plus} size={14} sw={2.5} /> {tFor(lang, "quotesHero.cta")}
-      </button>
+      </a>
     </div>
   );
 }
