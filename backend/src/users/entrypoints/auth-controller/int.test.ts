@@ -392,3 +392,60 @@ Deno.test("REQ-211 send-otp carries the page and the ad to the CRM lead's source
     await resetKv();
   }
 });
+
+/**
+ * REQ-590 — Raphael: "fix every issue the demo found, loop until there are none." Demo-loop cycle
+ * 4, M33: the EN | ES toggle on /verify never reached the account — verify-otp took no language,
+ * so an account sent from the English landing was born English even after ES was picked on the
+ * code page. Both verify routes take `language` now, and a new account is born in it; anything
+ * but en | es is refused.
+ */
+Deno.test("REQ-590 /auth/verify-otp and /auth/verify take the language picked on /verify for a new account", async () => {
+  const door = {
+    createCustomer(_input: { customerPhone?: string }) {
+      return Promise.resolve({ customerId: "c-lead-590" });
+    },
+  } as unknown as PaymentsLinkPort;
+  const twilio = Deno.env.get("TWILIO_ACCOUNT_SID");
+  Deno.env.set("KV_PATH", ":memory:");
+  Deno.env.delete("TWILIO_ACCOUNT_SID");
+  await resetKv();
+  const app = new DanetApplication();
+  await app.init(TestApp);
+  app.get(PaymentsLink).portOverride = door;
+  await app.listen(PORT + 5);
+  const base = `http://localhost:${PORT + 5}`;
+  try {
+    for (const [route, phone] of [["verify-otp", "+15125550593"], ["verify", "+15125550594"]]) {
+      const sent = await (await fetch(`${base}/auth/send-otp`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ phoneNumber: phone, language: "en" }), // the English landing
+      })).json();
+      const res = await fetch(`${base}/auth/${route}`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ phoneNumber: phone, code: sent.devCode, language: "es" }), // ES on /verify
+      });
+      const body = await res.json();
+      assertEquals(res.status, 200, `${route}: ${JSON.stringify(body)}`);
+      const user = await new UserStore().get(body.userId);
+      assertEquals(user.language, "es", `${route}: the account is born in the language picked on /verify`);
+    }
+    const bad = await fetch(`${base}/auth/verify-otp`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ phoneNumber: "+15125550595", code: "123456", language: "fr" }),
+    });
+    await bad.body?.cancel();
+    // refused like any malformed verify body (parseVerifyOtp throws — a 500 today, as for a 5-digit code)
+    assert(!bad.ok, `language fr is refused (${bad.status})`);
+    assertEquals(await new UserStore().findByPhone("+15125550595"), null, "no account for a refused body");
+  } finally {
+    await app.close();
+    twilio === undefined
+      ? Deno.env.delete("TWILIO_ACCOUNT_SID")
+      : Deno.env.set("TWILIO_ACCOUNT_SID", twilio);
+    await resetKv();
+  }
+});
