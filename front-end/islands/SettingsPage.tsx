@@ -159,7 +159,6 @@ function tr(es: boolean) {
     netDays: tFor(lang, "settings.netDays"),
     netDaysHint: tFor(lang, "settings.netDaysHint"),
     // Address
-    saveAddress: tFor(lang, "settings.saveAddress"),
     street: tFor(lang, "settings.street"),
     city: tFor(lang, "settings.city"),
     state: tFor(lang, "settings.state"),
@@ -698,9 +697,9 @@ function timezoneLabel(lang: Lang, id: string): string {
 
 /** AddressEditCard — editable mailing address (roadmap p.8). P-42: honors
  *  the page's "changes save as you go" promise — every edit autosaves
- *  (debounced on input, flushed on blur and on page-hide via keepalive), so
- *  persistence never depends on the explicit Save button (kept as a
- *  reassurance affordance). Contract: [data-cy=settings-mailing-address];
+ *  (debounced on input, flushed on blur and on page-hide via keepalive).
+ *  REQ-516: no explicit Save button — the panel's "Saving…" / "Saved ✓"
+ *  status is the only feedback. Contract: [data-cy=settings-mailing-address];
  *  input order is part of it: street first, city second, then
  *  state/zip/country. */
 function AddressEditCard(
@@ -774,23 +773,6 @@ function AddressEditCard(
       onHide();
     };
   }, []);
-
-  async function save() {
-    pendingRef.current = null;
-    clearTimeout(timerRef.current);
-    setBusy(true);
-    setErr(null);
-    setSaved(false);
-    try {
-      const next = await profileClient.updateAddress(payload());
-      onSaved({ address: next });
-      setSaved(true);
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : t.saveFailed);
-    } finally {
-      setBusy(false);
-    }
-  }
 
   return (
     <EditPanel
@@ -876,16 +858,6 @@ function AddressEditCard(
             onBlur={flushAutosave}
           />
         </label>
-      </div>
-      <div style="margin-top:16px">
-        <button
-          type="button"
-          style={btnPrimary}
-          disabled={busy}
-          onClick={save}
-        >
-          {busy ? t.saving : t.saveAddress}
-        </button>
       </div>
     </EditPanel>
   );

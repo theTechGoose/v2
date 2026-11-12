@@ -40,9 +40,11 @@ describe("settings — mailing address, insurance, W-9 are editable", () => {
       .should("be.visible")
       .within(() => {
         cy.get("input").first().clear().type("123 Main St");
-        cy.get("input").eq(1).clear().type("Austin");
+        cy.get("input").eq(1).clear().type("Austin").blur();
       });
-    cy.contains("button", /save|guardar/i).click();
+    // REQ-516: no Save button — the card autosaves and shows its Saved status.
+    cy.get("[data-cy=settings-mailing-address]")
+      .contains(/saved|guardado/i, { timeout: 10_000 });
 
     cy.reload();
     cy.get("[data-cy=settings-mailing-address]", { timeout: 10_000 }).scrollIntoView();
