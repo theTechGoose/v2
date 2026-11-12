@@ -13,11 +13,17 @@ import { FieldNotices } from "@field/domain/coordinators/field-notices/mod.ts";
 import { newId } from "@field/domain/coordinators/field-zones/mod.ts";
 import { addService, canAct, deferTask, findOrCreateTaskType, inActionWindow } from "@field/domain/business/tasks/mod.ts";
 import { fieldToday, isValidDate, shiftDate } from "@field/domain/business/schedule/mod.ts";
+import { workerLang } from "@field/domain/business/worker-welcome/mod.ts";
+import { UserStore } from "@users/domain/data/user-store/mod.ts";
 import { CAP, digitsOf, FieldError, type FieldTask, type FieldWorker, str, tooLong } from "@field/dto/field.ts";
 
 type Body_ = Record<string, unknown>;
 const body = (b: unknown): Body_ => (b && typeof b === "object" ? b as Body_ : {});
-const publicWorker = (w: FieldWorker) => ({ id: w.id, name: w.name, role: w.role ?? "worker" });
+/** REQ-285 — what the worker's screen gets: who, the role, and the language the screen opens in (REQ-155's rule: theirs, else the owner's) */
+async function publicWorker(w: FieldWorker, users: UserStore) {
+  const owner = w.language ? {} : await users.get(w.userId).catch(() => ({}));
+  return { id: w.id, name: w.name, role: w.role ?? "worker", language: workerLang(w, owner) };
+}
 
 async function me(ctx: ExecutionContext, sessions: WorkerSessionStore, workers: FieldWorkerStore): Promise<FieldWorker | null> {
   const token = WorkerSessionStore.tokenFrom(ctx.req.header("cookie"));
@@ -52,6 +58,7 @@ export class FieldWorkerController {
     private day: FieldDay,
     private views: FieldViews,
     private notices: FieldNotices,
+    private users: UserStore,
   ) {}
 
 
@@ -69,7 +76,7 @@ export class FieldWorkerController {
     await this.sessions.clearMisses(w.id);
     const s = await this.sessions.create(w.id, w.userId);
     ctx.header("Set-Cookie", WorkerSessionStore.cookie(s.token));
-    return publicWorker(w);
+    return publicWorker(w, this.users);
   }
 
   @Post("logout")
@@ -83,7 +90,7 @@ export class FieldWorkerController {
   @Get("me")
   async whoami(@Context() ctx: ExecutionContext) {
     const w = await me(ctx, this.sessions, this.workers);
-    return w ? publicWorker(w) : null;
+    return w ? publicWorker(w, this.users) : null;
   }
 
   /** REQ-141: only this worker's tasks, no prices; a foreman asking ?all=1 gets every crew, theirs first */

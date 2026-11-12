@@ -29,7 +29,11 @@ export default define.page(function WorkerRoute(ctx) {
         />
         <link key="css-field" rel="stylesheet" href={asset("/field.css")} />
       </Head>
-      <WorkerScreen initialLang={lang} initialDate={date} />
+      <WorkerScreen
+        initialLang={lang}
+        langChosen={qLang === "en" || qLang === "es"}
+        initialDate={date}
+      />
     </>
   );
 });

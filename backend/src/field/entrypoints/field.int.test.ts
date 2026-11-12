@@ -162,7 +162,12 @@ Deno.test("REQ-138 workers — created without the PIN in the answer; a wrong PI
       ok.headers.get("set-cookie")?.startsWith("pm_worker="),
       "the session cookie",
     );
-    assertEquals(ok.body, { id: made.body.id, name: "Pedro", role: "foreman" });
+    assertEquals(ok.body, {
+      id: made.body.id,
+      name: "Pedro",
+      role: "foreman",
+      language: "es", // REQ-285 — the screen's language (REQ-155: Spanish by default)
+    });
     const W = { cookie: ok.headers.get("set-cookie")!.split(";")[0] };
     assertEquals(
       (await call("GET", "/field/worker/me", undefined, W)).body.name,

@@ -10,6 +10,7 @@ import { FieldModule } from "@field/mod-root.ts";
 import { resetKv } from "@core/data/kv/mod.ts";
 import { OtpStore } from "@users/domain/data/otp-store/mod.ts";
 import { type SendSmsInput, SmsService } from "@users/domain/data/sms/mod.ts";
+import { FieldWorkerStore } from "@field/domain/data/field-stores/mod.ts";
 
 @Module({ imports: [FieldModule] })
 class TestApp {}
@@ -100,7 +101,7 @@ Deno.test("REQ-151 adding a worker texts the cell once with the owner, the /work
     assertEquals(texts[0].to, "+18435550201");
     assertEquals(
       texts[0].body,
-      "Raphael Castro added you as a worker on DocuMonster. Sign in at http://localhost:5280/worker with this number and your PIN 1234.",
+      "Raphael Castro added you as a worker on DocuMonster. Sign in at http://localhost:5280/worker?lang=en with this number and your PIN 1234.",
     );
   });
 });
@@ -443,5 +444,77 @@ Deno.test("REQ-155 PUT /field/workers/:id changes the language (the owner's work
       { ok: false, error: "bad_language" },
     );
     Deno.env.delete("RESET_SECRET");
+  });
+});
+
+// ---- REQ-285 — the worker's screen opens in the worker's language (demo customers-payments-fieldops-m3) ----
+Deno.test("REQ-285 a Spanish worker's welcome link carries ?lang=es and an English one's ?lang=en; login and /me answer the worker's language", async () => {
+  await withServer(async (call, texts) => {
+    const H = await login(call, "en"); // an ENGLISH owner, as in the demo
+    texts.length = 0;
+    const luis = await call("POST", "/field/workers", {
+      name: "Luis",
+      phoneNumber: "8435550501",
+      pin: "1234",
+      language: "es",
+    }, H);
+    assertEquals(luis.status, 201);
+    assert(
+      texts[0].body.includes("http://localhost:5280/worker?lang=es "),
+      texts[0].body,
+    );
+    const sam = await call("POST", "/field/workers", {
+      name: "Sam",
+      phoneNumber: "8435550502",
+      pin: "2345",
+      language: "en",
+    }, H);
+    assertEquals(sam.status, 201);
+    assert(
+      texts[1].body.includes("http://localhost:5280/worker?lang=en "),
+      texts[1].body,
+    );
+
+    const wl = await call("POST", "/field/worker/login", {
+      phoneNumber: "8435550501",
+      pin: "1234",
+    });
+    assertEquals(wl.status, 200);
+    assertEquals(
+      wl.body.language,
+      "es",
+      "the login answer carries the worker's language",
+    );
+    assertEquals("pin" in wl.body, false);
+    const W = { cookie: wl.headers.get("set-cookie")!.split(";")[0] };
+    const me = await call("GET", "/field/worker/me", undefined, W);
+    assertEquals(me.body.language, "es", "/me carries the worker's language");
+
+    const sl = await call("POST", "/field/worker/login", {
+      phoneNumber: "8435550502",
+      pin: "2345",
+    });
+    assertEquals(sl.body.language, "en");
+  });
+});
+
+Deno.test("REQ-285 a worker from before REQ-155 (no language on record) is answered in the owner's language, as the welcome text falls back", async () => {
+  await withServer(async (call, _texts, app) => {
+    const H = await login(call, "es"); // a Spanish owner
+    const made = await call("POST", "/field/workers", {
+      name: "Viejo",
+      phoneNumber: "8435550503",
+      pin: "1234",
+      language: "en",
+    }, H);
+    const store = app.get(FieldWorkerStore);
+    const rec = await store.get(made.body.id);
+    delete rec.language; // the record as it was before REQ-155
+    await store.put(rec);
+    const wl = await call("POST", "/field/worker/login", {
+      phoneNumber: "8435550503",
+      pin: "1234",
+    });
+    assertEquals(wl.body.language, "es", "falls back to the owner's language");
   });
 });
