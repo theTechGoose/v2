@@ -4,6 +4,10 @@
  * phone-size one — no link, button or field of the page has the pill on top of it: the topmost
  * thing at the middle of every visible control is the control, never the pill. On a narrow staff
  * window with a phone-size customer, the stage's pill sits below the frame, not over it.
+ *
+ * REQ-295 (demo-loop cycle 1, M1) — nor any TEXT of the page: no visible text node's middle has
+ * the pill on top. A full reload of the same page puts the pill back in the same spot (no hop),
+ * and the stage draws the pill's ghost inside the frame.
  */
 import { story, type StoryTools } from "#shots";
 
@@ -43,6 +47,39 @@ async function useCookie(ctx: any, baseUrl: string, cookie: string) {
     { name: "pm_lang", value: "en", domain, path: "/" },
   ]));
 }
+
+/** REQ-295 — the page's visible text whose middle has the demo pill on top (evaluated in the page) */
+const coveredText = () => {
+  const out: string[] = [];
+  const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+  for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+    const text = (n.nodeValue ?? "").trim();
+    if (!text) continue;
+    const el = n.parentElement;
+    if (!el || el.closest("[data-demo-overlay],script,style,noscript")) {
+      continue;
+    }
+    const range = document.createRange();
+    range.selectNodeContents(n);
+    const r = range.getBoundingClientRect();
+    if (r.width < 2 || r.height < 2) continue;
+    const x = r.left + r.width / 2;
+    const y = r.top + r.height / 2;
+    if (x < 0 || y < 0 || x >= innerWidth || y >= innerHeight) continue;
+    const top = document.elementFromPoint(x, y);
+    if (top?.closest("[data-cy='demo-pill']")) {
+      out.push(`"${text.slice(0, 30)}" @${Math.round(x)},${Math.round(y)}`);
+    }
+  }
+  return out;
+};
+
+/** the pill's box on the customer's screen */
+const pillBox = () => {
+  const r = document.querySelector("[data-cy='demo-pill']")
+    ?.getBoundingClientRect();
+  return r ? { left: Math.round(r.left), top: Math.round(r.top) } : null;
+};
 
 /** the page's visible controls whose middle has the demo pill on top (evaluated in the page) */
 const coveredControls = () => {
@@ -138,20 +175,80 @@ Deno.test("REQ-228: the customer's demo pill covers no control of the page, on a
       await userPage.locator("[data-cy='demo-status']").waitFor({
         timeout: 15_000,
       });
+      // REQ-232 — the stage's pill says Live once the customer's tab is on the link
       await page.locator("[data-cy='demo-status']").filter({
-        hasText: /direct|relay/,
+        hasText: /^\s*Live\s*$/,
       }).waitFor({ timeout: 20_000 });
 
-      // 1. desktop: no control of the customer's page sits under the pill
+      // 1. desktop: no control and no text of the customer's page sits under the pill
       await until("desktop: the pill covers no control", async () => {
         const c = await userPage.evaluate(coveredControls);
         return c.length ? c.join("; ") : null;
       });
+      await until("desktop: the pill covers no text (REQ-295)", async () => {
+        const c = await userPage.evaluate(coveredText);
+        return c.length ? c.join("; ") : null;
+      });
+
+      // 1b. REQ-295 — a full reload of the same page: the pill comes back to the same spot
+      // (read once it has held still — a move glides)
+      const settled = async () => {
+        let last = await userPage.evaluate(pillBox);
+        for (let i = 0; i < 40; i++) {
+          await new Promise((r) => setTimeout(r, 400));
+          const now = await userPage.evaluate(pillBox);
+          if (
+            now && last && now.left === last.left && now.top === last.top
+          ) return now;
+          last = now;
+        }
+        throw new Error(`the pill never held still: ${JSON.stringify(last)}`);
+      };
+      const before = await settled();
+      await userPage.reload();
+      await userPage.locator("[data-cy='demo-status']").waitFor({
+        timeout: 15_000,
+      });
+      const after = await settled();
+      expect(
+        after.left === before.left && after.top === before.top,
+        `after a reload the pill is back in the same spot — before ${
+          JSON.stringify(before)
+        }, after ${JSON.stringify(after)}`,
+      );
+
+      // 1c. REQ-295 — the stage shows the pill's ghost inside the frame
+      await until(
+        "the stage draws the pill's ghost inside the frame",
+        async () => {
+          const r = await page.evaluate(() => {
+            const box = (s: string) =>
+              document.querySelector(s)?.getBoundingClientRect() ?? null;
+            const frame = box("[data-cy='demo-stage-layer']");
+            const ghost = box("[data-cy='demo-pill-ghost']");
+            return frame && ghost
+              ? {
+                inside: ghost.left >= frame.left - 1 &&
+                  ghost.top >= frame.top - 1 &&
+                  ghost.right <= frame.right + 1 &&
+                  ghost.bottom <= frame.bottom + 1,
+                ghost: [ghost.left, ghost.top, ghost.width, ghost.height],
+              }
+              : null;
+          });
+          if (!r) return "no frame or ghost yet";
+          return r.inside ? null : `ghost outside the frame: ${r.ghost}`;
+        },
+      );
 
       // 2. phone size: still one line, still covering nothing
       await userPage.setViewportSize({ width: 390, height: 844 });
       await until("phone: the pill covers no control", async () => {
         const c = await userPage.evaluate(coveredControls);
+        return c.length ? c.join("; ") : null;
+      });
+      await until("phone: the pill covers no text (REQ-295)", async () => {
+        const c = await userPage.evaluate(coveredText);
         return c.length ? c.join("; ") : null;
       });
       const pillH = await userPage.locator("[data-cy='demo-pill']").evaluate(
@@ -183,9 +280,11 @@ Deno.test("REQ-228: the customer's demo pill covers no control of the page, on a
           : `pill top ${r.pillTop} above frame bottom ${r.frameBottom}`;
       });
 
+      // REQ-235 — End asks first
       await page.locator("[data-cy='demo-end']").click();
+      await page.locator("[data-cy='demo-end-confirm']").click();
       await userPage.locator("[data-cy='demo-pill']").waitFor({
-        state: "detached",
+        state: "hidden",
         timeout: 15_000,
       });
     } finally {

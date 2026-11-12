@@ -89,13 +89,20 @@ import {
   whoEnded,
 } from "../../shared/demo-mode/ended.ts";
 import {
-  clampRect,
+  clearPillRoom,
   CONTROL_SELECTOR,
-  pickPillSlot,
+  countsAsPage,
+  PAGE_MEDIA_SELECTOR,
   PILL_COMPACT_MAX_W,
   PILL_MARGIN,
-  pillSlots,
+  PILL_MOVE_MS,
+  pillStore,
+  planPill,
+  recallPillBox,
+  rectsOverlap,
+  rememberPillBox,
   samplePoints,
+  setPillRoom,
 } from "../../shared/demo-mode/pill.ts";
 import type { Rect } from "../../shared/demo-mode/protocol.ts";
 
@@ -120,27 +127,100 @@ const here = () => globalThis.location.pathname + globalThis.location.search;
 /** REQ-228 — how often the pill re-checks what is under it (the page changes under a fixed box) */
 const PILL_CHECK_MS = 700;
 
-/** REQ-228 — how many distinct page controls lie under a box (the demo's own chrome not counted) */
-function controlsUnder(r: Rect): number {
-  const found = new Set<Element>();
-  for (const { x, y } of samplePoints(r)) {
-    const top = document.elementsFromPoint(x, y)
-      .find((el) => !el.closest("[data-demo-overlay]"));
-    const ctl = top?.closest(CONTROL_SELECTOR);
-    if (ctl) found.add(ctl);
+/** REQ-295 — does this element show text of its own (not just its children's)? */
+function ownText(el: Element): boolean {
+  for (const n of el.childNodes) {
+    if (n.nodeType === 3 && /\S/.test(n.nodeValue ?? "")) return true;
   }
-  return found.size;
+  return false;
 }
 
-/** REQ-228 — the pill's next box: its current one while clear, else the first clear slot */
-function placePill(el: HTMLElement, current: Rect | null): Rect {
-  const view = { w: globalThis.innerWidth, h: globalThis.innerHeight };
-  const size = { w: el.offsetWidth, h: el.offsetHeight };
-  const cur = current
-    ? clampRect({ ...current, width: size.w, height: size.h }, view)
-    : null;
-  return pickPillSlot(cur, pillSlots(view, size), controlsUnder);
+/** REQ-295 — does this element draw a background or a border? */
+function painted(cs: CSSStyleDeclaration): boolean {
+  const bg = cs.backgroundColor;
+  const clear = !bg || bg === "transparent" ||
+    /^rgba\(\s*\d+\s*,\s*\d+\s*,\s*\d+\s*,\s*0\s*\)$/.test(bg);
+  if (!clear) return true;
+  if (cs.backgroundImage && cs.backgroundImage !== "none") return true;
+  return [
+    cs.borderTopWidth,
+    cs.borderBottomWidth,
+    cs.borderLeftWidth,
+    cs.borderRightWidth,
+  ]
+    .some((w) => parseFloat(w) > 0);
 }
+
+/** REQ-295 — the piece of the page the topmost element at a point belongs to, or null if none */
+function pageAt(x: number, y: number): Element | null {
+  const top = document.elementsFromPoint(x, y)
+    .find((el) => !el.closest("[data-demo-overlay]"));
+  if (!top) return null;
+  const owner = top.closest(CONTROL_SELECTOR) ??
+    top.closest(PAGE_MEDIA_SELECTOR);
+  if (owner) return owner;
+  const root = top === document.documentElement || top === document.body;
+  const box = top.getBoundingClientRect();
+  const area = Math.max(1, globalThis.innerWidth * globalThis.innerHeight);
+  const is = countsAsPage({
+    root,
+    control: false,
+    media: false,
+    text: ownText(top),
+    painted: root ? false : painted(getComputedStyle(top)),
+    areaFrac: (box.width * box.height) / area,
+  });
+  return is ? top : null;
+}
+
+/** REQ-295 — hit-testing never reports `pointer-events:none` elements (ribbons, toasts, badges,
+ *  decorations), yet they show: their boxes, found once per check, outermost only */
+const GHOST_SCAN_MAX = 5000;
+function ghostsOfPage(): Rect[] {
+  const out: Rect[] = [];
+  const all = document.body?.querySelectorAll("*") ?? [];
+  const n = Math.min(all.length, GHOST_SCAN_MAX);
+  for (let i = 0; i < n; i++) {
+    const el = all[i];
+    const cs = getComputedStyle(el);
+    if (cs.pointerEvents !== "none") continue;
+    const parent = el.parentElement;
+    if (
+      parent && parent !== document.body &&
+      getComputedStyle(parent).pointerEvents === "none"
+    ) continue;
+    if (el.closest("[data-demo-overlay]")) continue;
+    if (
+      cs.display === "none" || cs.visibility === "hidden" ||
+      parseFloat(cs.opacity) === 0
+    ) continue;
+    const b = el.getBoundingClientRect();
+    if (b.width < 2 || b.height < 2) continue;
+    const shows = (el.textContent ?? "").trim() !== "" || painted(cs) ||
+      el.matches(PAGE_MEDIA_SELECTOR) ||
+      el.querySelector(PAGE_MEDIA_SELECTOR) !== null;
+    if (!shows) continue;
+    out.push({ left: b.left, top: b.top, width: b.width, height: b.height });
+  }
+  return out;
+}
+
+/** REQ-228 / REQ-295 — how many distinct pieces of the page lie under a box (the demo's own chrome
+ *  not counted): controls, media, dialogs, text, cards and bars — and the ghosts hit-testing
+ *  cannot see */
+function pageUnder(r: Rect, ghosts: Rect[]): number {
+  const found = new Set<Element>();
+  for (const { x, y } of samplePoints(r)) {
+    const el = pageAt(x, y);
+    if (el) found.add(el);
+  }
+  let n = found.size;
+  for (const g of ghosts) if (rectsOverlap(r, g)) n++;
+  return n;
+}
+
+/** REQ-295 — a full-size spot must be clear this many checks in a row before the pill grows back */
+const UNCRAMP_CHECKS = 2;
 
 const narrow = () =>
   typeof globalThis.innerWidth === "number" &&
@@ -172,9 +252,24 @@ export default function DemoModeOverlay() {
   const linkRef = useRef<DemoLink | null>(null);
   /** REQ-228 — the pill, where it sits, and whether it is the phone's compact one */
   const pillRef = useRef<HTMLDivElement | null>(null);
+  /** REQ-295 — the reserved box the pill sits in (not the pill's own size) */
   const posRef = useRef<Rect | null>(null);
-  const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
+  /** REQ-295 — `glide`: a move from a known spot glides; the first placement snaps */
+  const [pos, setPos] = useState<
+    { left: number; top: number; width: number; glide: boolean } | null
+  >(null);
+  const atRef = useRef<{ left: number; top: number } | null>(null);
   const [compact, setCompact] = useState(false);
+  /** REQ-295 — compact because no full-size spot was clear (not because the screen is narrow) */
+  const crampedRef = useRef(false);
+  /** REQ-295 — the pill's last full-size measure, to know when it may grow back */
+  const fullSizeRef = useRef<{ w: number; h: number } | null>(null);
+  const clearFullRef = useRef(0);
+  /** REQ-295 — the room reserved under the page right now (0: none) */
+  const roomRef = useRef(0);
+  /** REQ-295 — the pill's box as last told to the stage */
+  const sentPillRef = useRef<Rect | null>(null);
+  const sendPillRef = useRef<() => void>(() => {});
   const [open, setOpen] = useState(false);
   const impersonatingRef = useRef<boolean | null>(null);
   const placingRef = useRef(false);
@@ -412,6 +507,9 @@ export default function DemoModeOverlay() {
         setStatus(s);
         const online = s === "direct" || s === "relay";
         setPeerOnline(online);
+        // REQ-295 — a stage that just arrived learns where this pill is
+        if (online) sentPillRef.current = null;
+        if (online) sendPillRef.current();
         // nobody watching: nothing to record
         if (!online) recorder.pause();
         // the other side dropped: ask the server again (the poll stops while connected)
@@ -524,22 +622,114 @@ export default function DemoModeOverlay() {
     };
   }, [demo?.id]);
 
-  // 5. REQ-228 — the pill sits where no control of the page is under it, and moves when one comes
-  // REQ-235 — the ended notice is a pill too: it keeps clear of the page's controls the same way
+  // 5. REQ-228 — the pill sits where nothing of the page is under it, and moves when something comes
+  // REQ-235 — the ended notice is a pill too: it keeps clear of the page the same way
+  // REQ-295 — never onto the page: compact first, then room under the page; the box is remembered
+  // per path so a reload does not hop it; the stage is told where the pill is
   const shown = !inert && Boolean(demo || opening || notice);
   useEffect(() => {
     if (!shown) return;
     let settle: ReturnType<typeof setTimeout> | undefined;
+    const path = () => globalThis.location.pathname;
+    const roomOf = () => ({
+      root: document.documentElement.style,
+      body: document.body.style,
+    });
+    const room = (h: number) => {
+      if (h === roomRef.current) return;
+      roomRef.current = h;
+      const { root, body } = roomOf();
+      setPillRoom(root, body, h);
+    };
+    const sendPill = () => {
+      const el = pillRef.current;
+      const at = atRef.current;
+      const r: Rect | null = el && at
+        ? {
+          left: at.left,
+          top: at.top,
+          width: el.offsetWidth,
+          height: el.offsetHeight,
+        }
+        : null;
+      const was = sentPillRef.current;
+      if (
+        was && r && was.left === r.left && was.top === r.top &&
+        was.width === r.width && was.height === r.height
+      ) return;
+      if (!was && !r) return;
+      sentPillRef.current = r;
+      linkRef.current?.send({ k: "pill", r });
+    };
+    sendPillRef.current = sendPill;
+    if (!posRef.current) {
+      const store = pillStore();
+      if (store) posRef.current = recallPillBox(store, path());
+    }
     const place = () => {
       const el = pillRef.current;
       if (!el || typeof document.elementsFromPoint !== "function") return;
-      setCompact(narrow());
-      const next = placePill(el, posRef.current);
-      const cur = posRef.current;
-      if (!cur || cur.left !== next.left || cur.top !== next.top) {
-        posRef.current = next;
-        setPos({ left: next.left, top: next.top });
+      const view = { w: globalThis.innerWidth, h: globalThis.innerHeight };
+      const size = { w: el.offsetWidth, h: el.offsetHeight };
+      const ghosts = ghostsOfPage();
+      const blocked = (r: Rect) => pageUnder(r, ghosts);
+      const isCompact = narrow() || crampedRef.current;
+      if (!isCompact) fullSizeRef.current = size;
+      // grown back only when a full-size spot has been clear a few checks in a row
+      if (crampedRef.current && !narrow() && fullSizeRef.current) {
+        const full = planPill({
+          current: posRef.current,
+          view,
+          size: fullSizeRef.current,
+          compact: false,
+          blocked,
+        });
+        clearFullRef.current = full.box ? clearFullRef.current + 1 : 0;
+        if (clearFullRef.current >= UNCRAMP_CHECKS) {
+          crampedRef.current = false;
+          clearFullRef.current = 0;
+          setCompact(narrow());
+          return; // measured again at the full size, then placed
+        }
       }
+      const plan = planPill({
+        current: posRef.current,
+        view,
+        size,
+        compact: isCompact,
+        blocked,
+      });
+      if (!plan.box) {
+        crampedRef.current = true;
+        setCompact(true);
+        return; // the compact pill is measured again, then placed
+      }
+      setCompact(isCompact);
+      room(plan.room);
+      const next = plan.box;
+      const cur = posRef.current;
+      if (
+        !cur || cur.left !== next.left || cur.top !== next.top ||
+        cur.width !== next.width || cur.height !== next.height
+      ) {
+        posRef.current = next;
+        const store = pillStore();
+        if (store) rememberPillBox(store, path(), next);
+      }
+      // the pill sits at its box's top-left, at least as wide as the box
+      const at = {
+        left: next.left,
+        top: next.top,
+        width: next.width,
+        glide: atRef.current !== null,
+      };
+      atRef.current = at;
+      setPos((p) =>
+        p && p.left === at.left && p.top === at.top && p.width === at.width
+          ? p
+          : at
+      );
+      sendPill();
     };
     const later = () => {
       clearTimeout(settle);
@@ -562,17 +752,33 @@ export default function DemoModeOverlay() {
       ro?.disconnect();
       removeEventListener("resize", later);
       document.removeEventListener("scroll", later, { capture: true });
+      sendPillRef.current = () => {};
+      if (roomRef.current) {
+        roomRef.current = 0;
+        const { root, body } = roomOf();
+        clearPillRoom(root, body);
+      }
+      // the pill is gone (or re-mounted): the stage drops its ghost
+      if (sentPillRef.current) {
+        sentPillRef.current = null;
+        linkRef.current?.send({ k: "pill", r: null });
+      }
     };
   }, [shown, demo?.role]);
 
   if (inert) return null;
 
+  // REQ-295 — a move glides; the pill is hidden until its first spot is known
   const at = pos
-    ? `left:${pos.left}px;top:${pos.top}px`
-    : `left:${PILL_MARGIN}px;bottom:${PILL_MARGIN}px`;
+    ? `left:${pos.left}px;top:${pos.top}px;min-width:${pos.width}px;transition:${
+      pos.glide
+        ? `left ${PILL_MOVE_MS}ms ease,top ${PILL_MOVE_MS}ms ease`
+        : "none"
+    }`
+    : `left:${PILL_MARGIN}px;bottom:${PILL_MARGIN}px;visibility:hidden`;
   const pillStyle = `position:fixed;${at};z-index:${
     Z + 3
-  };display:flex;gap:10px;align-items:center;flex-wrap:nowrap;white-space:nowrap;max-width:calc(100vw - ${
+  };display:flex;gap:10px;align-items:center;justify-content:space-between;flex-wrap:nowrap;white-space:nowrap;max-width:calc(100vw - ${
     2 * PILL_MARGIN
   }px);box-sizing:border-box;padding:7px 12px;border-radius:14px;background:#1f3d1b;color:#fff;font:inherit;font-size:13px;box-shadow:0 4px 18px rgba(0,0,0,.35)`;
   /** one line: a long name is cut, not wrapped */

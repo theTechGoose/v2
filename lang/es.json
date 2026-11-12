@@ -3506,6 +3506,7 @@
   "demoMode.live": "En vivo",
   "demoMode.end": "Terminar demo",
   "demoMode.theirScreen": "La pantalla de {name}, {w} × {h}",
+  "demoMode.pillGhost": "La píldora de demo de {name}: lo que el espejo oculta",
   "demoMode.pointOnlyHint": "Ves lo que ve el cliente. Tú señalas, el cliente hace clic.",
   "demoMode.noDemo": "No hay ninguna demo abierta.",
   "demoMode.backToAdmin": "Volver a admin",

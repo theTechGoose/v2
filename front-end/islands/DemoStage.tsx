@@ -43,6 +43,7 @@ import {
   type PeerMessage,
   pointToFrac,
   type Presenter,
+  type Rect,
 } from "../../shared/demo-mode/protocol.ts";
 import {
   createMirrorReceiver,
@@ -83,6 +84,7 @@ import {
   whoEnded,
 } from "../../shared/demo-mode/ended.ts";
 import {
+  pillGhostBox,
   STAGE_PILL_BOTTOM,
   stageInsetBottom,
 } from "../../shared/demo-mode/pill.ts";
@@ -166,6 +168,8 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
   const pollRef = useRef<(() => void) | null>(null);
   const waveId = useRef(0);
   const glide = useGlide();
+  /** REQ-295 — where the customer's own demo pill is on their screen (what the mirror hides) */
+  const [pillBox, setPillBox] = useState<Rect | null>(null);
 
   const screen = mirrored ?? HIDDEN;
   const fit = useMemo(
@@ -424,6 +428,8 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
         // pointer at rest
         lastTRef.current = 0;
         resendPointer();
+        // REQ-295 — their new page tells where its pill is; the old ghost goes
+        setPillBox(null);
       },
       onPeer: (m: PeerMessage, from: PeerFrom) => {
         if (from.role === "presenter") {
@@ -463,6 +469,9 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
           }
           case "leave":
             glide.hide();
+            break;
+          case "pill":
+            setPillBox(m.r);
             break;
         }
       },
@@ -621,6 +630,18 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
                 style={`display:block;border:0;width:${screen.w}px;height:${screen.h}px;transform:scale(${fit.s});transform-origin:0 0;pointer-events:none;background:#fff`}
               />
             </div>
+            {mirrored && pillBox && (() => {
+              const g = pillGhostBox(pillBox, fit);
+              return (
+                <div
+                  data-cy="demo-pill-ghost"
+                  title={t("demoMode.pillGhost", { name })}
+                  style={`position:fixed;left:${g.left}px;top:${g.top}px;width:${g.width}px;height:${g.height}px;z-index:${Z};box-sizing:border-box;border:1.5px dashed rgba(31,61,27,.55);border-radius:${
+                    Math.max(4, 14 * fit.s)
+                  }px;background:rgba(31,61,27,.08);pointer-events:none`}
+                />
+              );
+            })()}
             {mirrored && (
               <div
                 data-cy="demo-stage-layer"
