@@ -3434,6 +3434,7 @@
   "quotes.ledger.lockedNote": "Firmada — los cambios posteriores van en una orden de cambio",
   "quotes.ledger.nothingToPublish": "Nada que publicar — el cliente ya ve esta versión.",
   "quotes.ledger.publishError": "No se pudo publicar la revisión. Inténtalo de nuevo.",
+  "quotes.ledger.quoted": "Cotizado",
   "quotes.ledger.agreed": "Acordado",
   "quotes.ledger.invoiced": "Facturado",
   "quotes.ledger.paid": "Pagado",

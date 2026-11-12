@@ -3434,6 +3434,7 @@
   "quotes.ledger.lockedNote": "Signed — later changes go on a change order",
   "quotes.ledger.nothingToPublish": "Nothing to publish — the customer already sees this version.",
   "quotes.ledger.publishError": "Couldn't publish the revision. Try again.",
+  "quotes.ledger.quoted": "Quoted",
   "quotes.ledger.agreed": "Agreed",
   "quotes.ledger.invoiced": "Invoiced",
   "quotes.ledger.paid": "Paid",
