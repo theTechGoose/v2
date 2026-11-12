@@ -199,9 +199,10 @@ Deno.test("REQ-153 + REQ-179 + REQ-180 + REQ-181 + REQ-187 + REQ-188: the admin 
         "the customer is never asked to accept",
       );
       expect(
-        (await userPage.locator("[data-cy='demo-pill']").innerText()).includes(
-          "Hans is guiding you",
-        ),
+        (await userPage.locator("[data-cy='demo-pill']").textContent() ?? "")
+          .includes(
+            "Hans is guiding you",
+          ),
         "the customer's pill names the presenter",
       );
       await page.locator("[data-cy='demo-pill']").waitFor({ timeout: 15_000 });

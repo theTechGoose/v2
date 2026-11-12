@@ -6,10 +6,19 @@ import { t } from "../../lib/i18n.ts";
 import type { Presenter } from "../../../shared/demo-mode/protocol.ts";
 
 export default function PresenterChips(
-  { presenters, me }: { presenters: Presenter[]; me?: string | null },
+  { presenters, me, nowrap }: {
+    presenters: Presenter[];
+    me?: string | null;
+    /** REQ-228 — on one line (the customer's pill never grows over the page) */
+    nowrap?: boolean;
+  },
 ) {
   return (
-    <span style="display:inline-flex;gap:6px;flex-wrap:wrap;align-items:center">
+    <span
+      style={`display:inline-flex;gap:6px;flex-wrap:${
+        nowrap ? "nowrap" : "wrap"
+      };align-items:center`}
+    >
       {presenters.map((p) => (
         <span
           key={p.userId}
