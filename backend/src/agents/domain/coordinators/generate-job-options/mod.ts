@@ -8,6 +8,10 @@ import { disambiguateTitle, versionTitle } from "#quote-flow/version-titles.ts";
 import { summarizeJobName } from "#quote-flow/job-name.ts";
 import { clampSummary } from "#quote-flow/summary-clamp.ts";
 import { scopeBulletsFromRaw } from "#quote-flow/scope-from-raw.ts";
+import {
+  MAX_OPTION_BULLETS as MAX_BULLETS,
+  widerBullets,
+} from "#quote-flow/option-bullets.ts";
 
 export interface GenerateJobOptionsInput {
   userId: string;
@@ -173,7 +177,7 @@ function normalizeOneLang(o: unknown, lang: Lang): JobOptionLang | null {
       .map((b) => realText(b))
       .filter((b): b is string => !!b)
       .map((b) => b.replace(/\s+/g, " ").replace(/[.;]+$/, ""))
-      .slice(0, 4)
+      .slice(0, MAX_BULLETS) // REQ-266: was a hard cap of 4
     : [];
   if (bullets.length === 0) return null;
   const summaryText = realText(obj?.summary);
@@ -290,8 +294,7 @@ function padToThree(options: JobOption[], langs: Lang[]): JobOption[] {
       const src = base.byLang[l] ?? base.byLang[primary];
       const bullets = variant === "short"
         ? src.bullets.slice(0, Math.max(1, src.bullets.length - 1))
-        : [...src.bullets.slice(0, 3), t(l, "generateJobOptions.jobsiteCleanup")]
-          .slice(0, 4);
+        : widerBullets(src.bullets, t(l, "generateJobOptions.jobsiteCleanup"));
       byLang[l] = {
         jobName: versionTitle(src.jobName, variant, l),
         summary: src.summary,
@@ -320,7 +323,9 @@ function padToThree(options: JobOption[], langs: Lang[]): JobOption[] {
  */
 function fallbackOptions(raw: string, langs: Lang[]): JobOption[] {
   const scoped = scopeBulletsFromRaw(raw, langs[0]);
-  const scopeBase = scoped.degraded ? null : scoped.bullets.slice(0, 4);
+  const scopeBase = scoped.degraded
+    ? null
+    : scoped.bullets.slice(0, MAX_BULLETS);
 
   const perLang = (lang: Lang, variant: 0 | 1 | 2): JobOptionLang => {
     const base = scopeBase ?? [t(lang, "generateJobOptions.newJob")];
@@ -330,8 +335,7 @@ function fallbackOptions(raw: string, langs: Lang[]): JobOption[] {
       ? base
       : variant === 1
       ? base.slice(0, 3)
-      : [...base.slice(0, 3), t(lang, "generateJobOptions.jobsiteCleanup")]
-        .slice(0, 4);
+      : widerBullets(base, t(lang, "generateJobOptions.jobsiteCleanup"));
     // P-24: the three fallback variants get honest, localized qualifiers
     // ("· Versión breve" / "· Alcance ampliado") instead of "(2)" / "(3)",
     // which read as duplicates rather than versions.

@@ -40,6 +40,10 @@ import { termLabel } from "../../shared/quote-flow/terms-i18n.ts";
 import { versionTitle } from "../../shared/quote-flow/version-titles.ts";
 import { scopeBulletsFromRaw } from "../../shared/quote-flow/scope-from-raw.ts";
 import {
+  MAX_OPTION_BULLETS,
+  widerBullets,
+} from "../../shared/quote-flow/option-bullets.ts";
+import {
   acceptedJobChipLabel,
   extractQuickQuotePrefill,
 } from "../../shared/quote-flow/quick-quote-prefill.ts";
@@ -270,7 +274,7 @@ function localFallbackOptions(
   const scoped = scopeBulletsFromRaw(raw, lang);
   const base = scoped.degraded
     ? [tFor(lang, "asstChat.newJob")]
-    : scoped.bullets.slice(0, 4);
+    : scoped.bullets.slice(0, MAX_OPTION_BULLETS);
   const summary = base[0].split(/\s+/).slice(0, 8).join(" ");
   const jobName = summary.split(/\s+/).slice(0, 3).join(" ");
   // P-24: the three versions must be distinguishable at a glance. They used
@@ -289,8 +293,7 @@ function localFallbackOptions(
       id: "opt3",
       jobName: versionTitle(jobName, "wider", lang),
       summary,
-      bullets: [...base.slice(0, 3), tFor(lang, "asstChat.jobsiteCleanup")]
-        .slice(0, 4),
+      bullets: widerBullets(base, tFor(lang, "asstChat.jobsiteCleanup")),
     },
   ];
   return { options, degraded: scoped.degraded };
