@@ -1348,3 +1348,196 @@ Deno.test("REQ-258 handle-chat-message integration: create_quote without payment
   assertEquals(r.conversation.termsPrefill, undefined);
   await resetKv();
 });
+
+// ---------------------------------------------------------------------------
+// REQ-262 (demo M25): "AI ignored 'Spanish AND English', refused to change job
+// details, then replied in raw markdown". The quote was made by the wizard
+// (POST /quotes, no action_card) and the conversation moved to 'terms'; free
+// text then reached the LLM with a prompt that forbade job-details changes,
+// no tool to make them, no sight of the saved quote, and no plain-text rule.
+// ---------------------------------------------------------------------------
+
+async function wizardQuoteInTerms(
+  fx: ReturnType<typeof fresh>,
+  status = "sent",
+) {
+  await seedOnboarded("u-1");
+  const quote = await fx.quotes.create("u-1", {
+    summary: "Kitchen repaint",
+    jobName: "Kitchen repaint",
+    description: "Repaint kitchen walls\nTwo coats, semi-gloss",
+    lineItems: [{
+      description: "Kitchen repaint",
+      quantity: 1,
+      unit: "ea",
+      price: 180_000,
+    }],
+    estimatedTotal: 180_000,
+    status,
+  });
+  const conv = await fx.conversations.create({
+    userId: "u-1",
+    quoteId: quote.id,
+    currentPhase: "terms",
+  });
+  return { quote, conv };
+}
+
+Deno.test("REQ-262 handle-chat-message integration: terms phase — the model sees the saved quote (wizard-made, no action_card)", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const fx = fresh();
+  const { conv } = await wizardQuoteInTerms(fx);
+  let seen: { systemPrompt: string; businessContext?: string } | undefined;
+  fx.llm.setHandler((req) => {
+    seen = req;
+    return { text: "ok" };
+  });
+  await fx.flow.run({
+    userId: "u-1",
+    conversationId: conv.id,
+    content: "what's on the quote?",
+  });
+  assert(seen, "LLM was not called");
+  const ctx = seen!.businessContext ?? "";
+  assert(ctx.includes("Kitchen repaint"), `businessContext: ${ctx}`);
+  assert(ctx.includes("Repaint kitchen walls"), `businessContext: ${ctx}`);
+  assert(ctx.includes("$1,800.00"), `businessContext: ${ctx}`);
+  await resetKv();
+});
+
+Deno.test("REQ-262 handle-chat-message integration: terms prompt no longer forbids job-details changes and demands plain text", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const fx = fresh();
+  const { conv } = await wizardQuoteInTerms(fx);
+  let prompt = "";
+  fx.llm.setHandler((req) => {
+    prompt = req.systemPrompt;
+    return { text: "ok" };
+  });
+  await fx.flow.run({
+    userId: "u-1",
+    conversationId: conv.id,
+    content: "make the job details Spanish AND English",
+  });
+  assert(!prompt.includes("job-details changes — phase 1 is locked"), prompt);
+  assert(prompt.includes("update_job_details"), prompt);
+  assert(/plain text/i.test(prompt) && /markdown/i.test(prompt), prompt);
+  await resetKv();
+});
+
+Deno.test("REQ-262 handle-chat-message integration: update_job_details writes description + descriptionByLang on the bound quote and flags the reply", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const fx = fresh();
+  const { quote, conv } = await wizardQuoteInTerms(fx);
+  fx.llm.setScript([{
+    text: "",
+    action: {
+      type: "update_job_details",
+      payload: {
+        descriptionByLang: {
+          en: "Repaint kitchen walls\nTwo coats, semi-gloss",
+          es: "Repintar las paredes de la cocina\nDos capas, semibrillo",
+        },
+      },
+    },
+  }]);
+  const res = await fx.flow.run({
+    userId: "u-1",
+    conversationId: conv.id,
+    content: "make the job details Spanish AND English",
+  });
+  const stored = await fx.quotes.getOwned(quote.id, "u-1");
+  assertEquals(stored.descriptionByLang, {
+    en: "Repaint kitchen walls\nTwo coats, semi-gloss",
+    es: "Repintar las paredes de la cocina\nDos capas, semibrillo",
+  });
+  assertEquals(stored.description, "Repaint kitchen walls\nTwo coats, semi-gloss");
+  // Prices untouched.
+  assertEquals(stored.estimatedTotal, 180_000);
+  const reply = res.newMessages.find((m) =>
+    m.role === "assistant" && m.kind === "text"
+  );
+  assert(reply, "no assistant reply");
+  assert(reply!.content.trim().length > 0, "empty reply bubble");
+  assertEquals(
+    (reply!.payload as { quoteUpdated?: string } | undefined)?.quoteUpdated,
+    quote.id,
+  );
+  await resetKv();
+});
+
+Deno.test("REQ-262 handle-chat-message integration: update_job_details never touches a signed (accepted) quote", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const fx = fresh();
+  const { quote, conv } = await wizardQuoteInTerms(fx, "accepted");
+  fx.llm.setScript([{
+    text: "Done.",
+    action: {
+      type: "update_job_details",
+      payload: { descriptionByLang: { es: "Repintar" } },
+    },
+  }]);
+  const res = await fx.flow.run({
+    userId: "u-1",
+    conversationId: conv.id,
+    content: "add Spanish",
+  });
+  const stored = await fx.quotes.getOwned(quote.id, "u-1");
+  assertEquals(stored.descriptionByLang, undefined);
+  const reply = res.newMessages.find((m) =>
+    m.role === "assistant" && m.kind === "text"
+  );
+  assert(reply && reply.content !== "Done.", "claimed success on a signed quote");
+  assertEquals(
+    (reply!.payload as { quoteUpdated?: string } | undefined)?.quoteUpdated,
+    undefined,
+  );
+  await resetKv();
+});
+
+Deno.test("REQ-262 handle-chat-message integration: a markdown reply is stored as plain text", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const fx = fresh();
+  const { conv } = await wizardQuoteInTerms(fx);
+  fx.llm.setScript([{
+    text: "- **English:** Repaint kitchen walls\n- **Spanish:** Repintar paredes",
+  }]);
+  const res = await fx.flow.run({
+    userId: "u-1",
+    conversationId: conv.id,
+    content: "show me both",
+  });
+  const reply = res.newMessages.find((m) =>
+    m.role === "assistant" && m.kind === "text"
+  );
+  assertEquals(
+    reply?.content,
+    "• English: Repaint kitchen walls\n• Spanish: Repintar paredes",
+  );
+  await resetKv();
+});
+
+Deno.test("REQ-262 handle-chat-message integration: the quote-phase prompt demands plain text too", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const fx = fresh();
+  await seedOnboarded("u-1");
+  const conv = await fx.conversations.create({ userId: "u-1" });
+  let prompt = "";
+  fx.llm.setHandler((req) => {
+    prompt = req.systemPrompt;
+    return { text: "ok" };
+  });
+  await fx.flow.run({
+    userId: "u-1",
+    conversationId: conv.id,
+    content: "Quote for Bryant: gutter cleaning $220.",
+  });
+  assert(/plain text/i.test(prompt) && /markdown/i.test(prompt), "no plain-text rule in systemQuote");
+  await resetKv();
+});

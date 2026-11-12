@@ -93,9 +93,9 @@ Deno.test("OpenAILLMClient smoke: respond() sends Bearer auth + system prompt + 
   assertEquals(body.messages[1].role, "user");
   assertEquals(body.messages[1].content, "Garage epoxy");
   assertEquals(body.messages[3].content, "Lock it in");
-  // REQ-238 (demo M27): + change_order
-  assertEquals(body.tools.length, 4);
-  assertEquals(body.tools.map((t) => t.function.name).sort(), ["change_order", "create_quote", "lock_quote", "request_terms_transition"]);
+  // REQ-238 (demo M27): + change_order; REQ-262 (demo M25): + update_job_details
+  assertEquals(body.tools.length, 5);
+  assertEquals(body.tools.map((t) => t.function.name).sort(), ["change_order", "create_quote", "lock_quote", "request_terms_transition", "update_job_details"]);
 });
 
 Deno.test("OpenAILLMClient smoke: respond() inserts businessContext as a second system message", async () => {

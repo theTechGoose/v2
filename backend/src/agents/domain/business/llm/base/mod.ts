@@ -86,6 +86,13 @@ export type LLMAction =
   | {
     type: "change_order";
     payload: { customerName?: string; description: string; deltaAmountCents: number };
+  }
+  /** REQ-262 (demo M25): rewrite / translate the bound quote's job details.
+   *  The coordinator applies it to conv.quoteId — never to a model-named id —
+   *  and never to a signed quote. Text per language, bullets newline-joined. */
+  | {
+    type: "update_job_details";
+    payload: { descriptionByLang: Partial<Record<"en" | "es", string>> };
   };
 
 export interface LLMResponse {

@@ -101,6 +101,31 @@ export const TOOL_DEFS = [
       },
     },
   },
+  // REQ-262 (demo M25): the assistant could not change job details once the
+  // quote existed ("I can't change the job details at this stage").
+  {
+    type: "function" as const,
+    function: {
+      name: "update_job_details",
+      description: t("en", "prompts.tools.updateJobDetails.description"),
+      parameters: {
+        type: "object",
+        properties: {
+          descriptionByLang: {
+            type: "object",
+            description: t("en", "prompts.tools.updateJobDetails.descriptionByLang"),
+            properties: {
+              en: { type: "string", description: t("en", "prompts.tools.updateJobDetails.en") },
+              es: { type: "string", description: t("en", "prompts.tools.updateJobDetails.es") },
+            },
+            additionalProperties: false,
+          },
+        },
+        required: ["descriptionByLang"],
+        additionalProperties: false,
+      },
+    },
+  },
 ] as const;
 
 /**
@@ -170,6 +195,22 @@ export function parseToolCall(call: { function: { name: string; arguments: strin
           deltaAmountCents: Math.trunc(delta),
         },
       };
+    }
+    case "update_job_details": {
+      const raw = args.descriptionByLang;
+      if (typeof raw !== "object" || raw === null) return undefined;
+      const byLang: Partial<Record<"en" | "es", string>> = {};
+      for (const lang of ["en", "es"] as const) {
+        const v = (raw as Record<string, unknown>)[lang];
+        const text = Array.isArray(v)
+          ? v.filter((x): x is string => typeof x === "string").map((x) => x.trim()).filter(Boolean).join("\n")
+          : typeof v === "string"
+          ? v.trim()
+          : "";
+        if (text) byLang[lang] = text;
+      }
+      if (!Object.keys(byLang).length) return undefined;
+      return { type: "update_job_details", payload: { descriptionByLang: byLang } };
     }
     default:
       return undefined;
