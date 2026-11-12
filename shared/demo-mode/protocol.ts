@@ -91,6 +91,14 @@ export interface DomChunk {
  *  tab, the address bar pointed elsewhere, the browser's own reload button) */
 export type LeaveWhy = "navigating" | "closing";
 
+/** REQ-436 — a browser tab's key on the wire: what front-end/lib/demo-mode/tab-key.ts makes */
+export const TAB_KEY = /^[A-Za-z0-9_-]{1,64}$/;
+/** REQ-436 — a claim's browser-tab key and focus, each checked; junk is dropped, never the claim */
+const claimExtras = (o: Record<string, unknown>): { tab?: string; f?: 1 } => ({
+  ...(typeof o.tab === "string" && TAB_KEY.test(o.tab) ? { tab: o.tab } : {}),
+  ...(o.f === 1 ? { f: 1 as const } : {}),
+});
+
 const isLeaveWhy = (x: unknown): x is LeaveWhy =>
   x === "navigating" || x === "closing";
 
@@ -144,7 +152,10 @@ export type ClientMessage =
   // REQ-393 — `tab`: a presenter's relay for ONE customer tab (its cid) — the tab the stage
   // follows, or the one it just left (a `leave`); the customer's other tabs never get it
   | { t: "relay"; data: PeerMessage; to?: "presenters"; tab?: string }
-  | { t: "claim"; at: number }
+  // REQ-436 — `tab`: the BROWSER tab's key (every page of one tab carries the same); `f: 1`: the
+  // page has focus. A page sends one on every welcome (`at` 0 when it never claimed) so a stage
+  // knows a new page as the same browser tab
+  | { t: "claim"; at: number; tab?: string; f?: 1 }
   | { t: "sync"; to: string }
   | { t: "end" }
   // REQ-391 — this socket's page is going, and why (the server says so when it is gone)
@@ -175,7 +186,7 @@ export type ServerMessage =
   | { t: "time"; c: number; s: number }
   | { t: "signal"; from: Role; pid?: string; cid?: string; data: unknown }
   | { t: "relay"; from: Role; pid?: string; cid?: string; data: PeerMessage }
-  | { t: "claim"; cid: string; at: number }
+  | { t: "claim"; cid: string; at: number; tab?: string; f?: 1 }
   | { t: "sync" }
   | { t: "replaced" }
   | { t: "ended"; by: Role; reason?: EndReason; pid?: string };
@@ -355,7 +366,7 @@ export function parseClientMessage(raw: string): ClientMessage | null {
     }
     // REQ-232 — a claim with no usable time is still a claim (the oldest one)
     case "claim":
-      return { t: "claim", at: num(o.at) ? o.at : 0 };
+      return { t: "claim", at: num(o.at) ? o.at : 0, ...claimExtras(o) };
     case "sync":
       return typeof o.to === "string" && o.to ? { t: "sync", to: o.to } : null;
     case "end":
@@ -416,7 +427,7 @@ export function parseServerMessage(raw: string): ServerMessage | null {
     }
     case "claim":
       return typeof o.cid === "string" && o.cid && num(o.at)
-        ? { t: "claim", cid: o.cid, at: o.at }
+        ? { t: "claim", cid: o.cid, at: o.at, ...claimExtras(o) }
         : null;
     case "sync":
       return { t: "sync" };

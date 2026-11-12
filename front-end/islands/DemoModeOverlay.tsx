@@ -108,6 +108,7 @@ import {
   type LinkStatus,
   type PeerFrom,
 } from "../lib/demo-mode/transport.ts";
+import { demoTabKey } from "../lib/demo-mode/tab-key.ts";
 import {
   createRecorder,
   type Recorder,
@@ -656,6 +657,10 @@ export default function DemoModeOverlay() {
     link = connectDemo({
       sessionId: demo.id,
       role: demo.role,
+      // REQ-436 (cycle 3, M2b) — every page of this browser tab says the same key, so the stage
+      // keeps following the tab while its next page loads; and whether this page has focus
+      tab: demoTabKey(sessionStore()),
+      hasFocus: () => document.hasFocus(),
       onPresence: (pid, online) => {
         lastT.delete(pid); // their stage came or went: its clock starts over
         // a presenter who left takes their pointer along
@@ -759,24 +764,50 @@ export default function DemoModeOverlay() {
       : new ResizeObserver(shifted);
     ro?.observe(document.body);
     // REQ-232 (B3) — this tab is the one the customer is using: it claims the stage when it is in
-    // front (now, if it is), gets focus or is clicked; a tab behind another says nothing
-    const claim = () => link?.claim();
+    // front (now, if it is), gets focus or is clicked; a tab behind another says nothing.
+    // REQ-436 (cycle 3, M2/M2c/M5) — "in front" at load is visible AND focused: a visible page
+    // without focus (a background tab that reloaded itself, a window beside another) never takes
+    // the stage; a keyboard, wheel or touch user claims as a click does (at most once a second)
+    let lastClaim = 0;
+    const claim = () => {
+      lastClaim = Date.now();
+      link?.claim();
+    };
+    const used = () => {
+      if (Date.now() - lastClaim >= 1_000) claim();
+    };
+    const inFront = () =>
+      document.visibilityState === "visible" && document.hasFocus();
     const onVisible = () => {
       if (document.visibilityState === "visible") claim();
     };
-    if (document.visibilityState === "visible") claim();
+    const onShow = () => {
+      if (inFront()) claim();
+    };
+    onShow();
+    globalThis.addEventListener("pageshow", onShow);
     globalThis.addEventListener("focus", claim);
     document.addEventListener("visibilitychange", onVisible);
     document.addEventListener("pointerdown", claim, {
       capture: true,
       passive: true,
     });
+    document.addEventListener("keydown", used, { capture: true });
+    document.addEventListener("wheel", used, { capture: true, passive: true });
+    document.addEventListener("touchstart", used, {
+      capture: true,
+      passive: true,
+    });
     return () => {
       globalThis.removeEventListener("pagehide", onHide);
       hint.stop();
+      globalThis.removeEventListener("pageshow", onShow);
       globalThis.removeEventListener("focus", claim);
       document.removeEventListener("visibilitychange", onVisible);
       document.removeEventListener("pointerdown", claim, { capture: true });
+      document.removeEventListener("keydown", used, { capture: true });
+      document.removeEventListener("wheel", used, { capture: true });
+      document.removeEventListener("touchstart", used, { capture: true });
       removeEventListener("resize", shifted);
       document.removeEventListener("scroll", shifted, { capture: true });
       ro?.disconnect();
