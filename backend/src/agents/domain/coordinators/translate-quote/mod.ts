@@ -99,6 +99,12 @@ export class TranslateQuote {
         texts,
         from: base,
         to: m.lang as "en" | "es",
+        // REQ-447 (m14): the job name is a title, not a scope line.
+        ...(m.jobName
+          ? {
+            titleLines: [m.descriptionLines.length + m.lineIndexes.length],
+          }
+          : {}),
       });
       return { m, res, texts };
     }));

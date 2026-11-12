@@ -497,3 +497,113 @@ Deno.test("REQ-400 (M5) a failed translation caches no name — the base name is
   );
   await resetKv();
 });
+
+// ---------------------------------------------------------------------------
+// REQ-447 (demo-loop cycle 3, m14): the translated job name is a TITLE, not a
+// literal translation. "Cambio de llave de fregadero" came back "Replacement
+// of Faucet" and the English agreement read "María José Peña's Replacement of
+// Faucet Agreement" (fleet-5 l.93). The model is told which line is the job's
+// title and asked for the short noun phrase a contractor would use.
+// ---------------------------------------------------------------------------
+
+/** A model that answers a title line with a noun phrase only when the prompt
+ *  marks that line as the job's title; otherwise it translates literally. */
+function titleAwareLlm() {
+  const llm = new StubLLMClient();
+  const calls: LLMRequest[] = [];
+  const LITERAL: Record<string, string> = {
+    "Cambio de llave de fregadero": "replacement of sink faucet",
+    "Cambio de llave de fregadero de cocina — María José Peña":
+      "Replacement of kitchen sink faucet — María José Peña",
+    "Cambio de llave del fregadero de la cocina":
+      "Replacement of kitchen sink faucet",
+  };
+  const TITLE: Record<string, string> = {
+    "Cambio de llave de fregadero": "faucet replacement",
+  };
+  llm.setHandler((req) => {
+    calls.push(req);
+    const { texts } = JSON.parse(req.messages[0].content as string) as {
+      texts: string[];
+    };
+    const marked = new Set(
+      [...(req.systemPrompt ?? "").matchAll(/Line (\d+) is the job's TITLE/g)]
+        .map((m) => Number(m[1]) - 1),
+    );
+    return {
+      text: JSON.stringify({
+        texts: texts.map((t, i) =>
+          marked.has(i) ? (TITLE[t] ?? t) : (LITERAL[t] ?? t)
+        ),
+      }),
+    };
+  });
+  return { llm, calls };
+}
+
+Deno.test("REQ-447 (m14) a Spanish job name is translated as a short title ('Faucet Replacement'), not word for word ('Replacement of Sink Faucet')", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const quotes = new QuoteStore();
+  const users = new UserStore();
+  const me = await users.create({ phoneNumber: "+15550000447", language: "es" });
+  const { llm, calls } = titleAwareLlm();
+  const flow = new TranslateQuote(quotes, new TranslateBullets(llm), users);
+  const q = await quotes.create(me.id, {
+    summary: "Cambio de llave de fregadero de cocina — María José Peña",
+    jobName: "Cambio de llave de fregadero",
+    lineItems: [{
+      description: "Cambio de llave del fregadero de la cocina",
+      quantity: 1,
+      unit: "ea",
+      price: 18_000,
+    }],
+    status: "draft",
+  });
+
+  await flow.run({ userId: me.id, quoteId: q.id, baseLang: "es" });
+
+  const after = await quotes.getOwned(q.id, me.id);
+  assertEquals(after.jobNameByLang?.en, "Faucet Replacement");
+  assertEquals(after.jobNameByLang?.es, "Cambio de llave de fregadero");
+  // the scope lines are still translated in full, clause by clause
+  assertEquals(
+    after.lineItems[0].descriptionByLang?.en,
+    "Replacement of kitchen sink faucet",
+  );
+  assertEquals(calls.length, 1, "the title rides the lines' one call");
+  await resetKv();
+});
+
+Deno.test("REQ-447 (m14) a batch with no job name marks no title line", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const quotes = new QuoteStore();
+  const users = new UserStore();
+  const me = await users.create({ phoneNumber: "+15550000448", language: "es" });
+  const { llm, calls } = titleAwareLlm();
+  const flow = new TranslateQuote(quotes, new TranslateBullets(llm), users);
+  const q = await quotes.create(me.id, {
+    summary: "Cambio de llave del fregadero de la cocina",
+    jobName: "Cambio de llave de fregadero",
+    jobNameByLang: {
+      es: "Cambio de llave de fregadero",
+      en: "Faucet Replacement",
+    },
+    summaryByLang: {
+      es: "Cambio de llave del fregadero de la cocina",
+      en: "Replacement of kitchen sink faucet",
+    },
+    lineItems: [{
+      description: "Cambio de llave del fregadero de la cocina",
+      quantity: 1,
+      unit: "ea",
+      price: 18_000,
+    }],
+    status: "draft",
+  });
+  await flow.run({ userId: me.id, quoteId: q.id, baseLang: "es" });
+  assertEquals(calls.length, 1);
+  assert(!/TITLE/.test(calls[0].systemPrompt ?? ""), calls[0].systemPrompt);
+  await resetKv();
+});

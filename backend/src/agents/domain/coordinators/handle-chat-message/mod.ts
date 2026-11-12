@@ -49,6 +49,7 @@ import { TransitionToTerms } from "@agents/domain/coordinators/transition-to-ter
 import {
   derivePreview,
   deriveTitleFromFirstUserMessage,
+  titleFromJobName,
 } from "@agents/domain/business/conversation-title/mod.ts";
 import {
   classifyLastAsk,
@@ -2688,6 +2689,11 @@ export class HandleChatMessage {
 
         // Bind to the conversation so a follow-up lock_quote knows what to lock.
         convPatch.quoteId = quote.id;
+        // REQ-447 (demo-loop cycle 3, m14): the job has one name — the
+        // quote's jobName titles the thread from now on, not the first
+        // message's wording.
+        const jobTitled = titleFromJobName(quote.jobName);
+        if (jobTitled) convPatch.title = jobTitled;
 
         // REQ-258 (demo M22): a payment split the contractor stated ("half
         // deposit") pre-selects the terms wizard's payment step. A later
@@ -2816,10 +2822,13 @@ export class HandleChatMessage {
       }
     }
 
-    // Title locks in on the very first user message in the conversation.
+    // Title locks in on the very first user message in the conversation —
+    // unless this turn's quote already named the job (REQ-447).
     if (
-      history.length === 0 ||
-      (history.length === 1 && history[0].id === userMsg.id)
+      !convPatch.title && (
+        history.length === 0 ||
+        (history.length === 1 && history[0].id === userMsg.id)
+      )
     ) {
       convPatch.title = deriveTitleFromFirstUserMessage(input.content);
     }

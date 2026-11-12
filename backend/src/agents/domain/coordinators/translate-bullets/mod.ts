@@ -15,6 +15,10 @@ export interface TranslateBulletsInput {
    *  `to` there is nothing to translate — the lines come back verbatim and
    *  the model is never asked (it paraphrases "already-English" lines). */
   from?: "en" | "es";
+  /** REQ-447 (demo-loop cycle 3, m14): indexes (0-based) of lines that are
+   *  the job's TITLE, not scope lines — the model gives the short noun phrase
+   *  a contractor would name the job with, not a word-for-word rendering. */
+  titleLines?: readonly number[];
 }
 
 export interface TranslateBulletsResult {
@@ -72,7 +76,8 @@ export class TranslateBullets {
       `Keep trade terminology, third-person, no trailing period. ` +
       `Return JSON ONLY: {"texts":["...","..."]} — the SAME number of lines, in the SAME order. ` +
       `If a line is already entirely in ${target}, return it unchanged; a line mixing languages is translated in full.` +
-      (input.to === "es" ? ` ${ES_TRADE_GLOSSARY}` : "");
+      (input.to === "es" ? ` ${ES_TRADE_GLOSSARY}` : "") +
+      titleInstruction(input.titleLines ?? [], texts.length, input.to);
 
     const first = await this.ask(sys, texts, input.userId);
     if (first === undefined) return { texts, translated: false };
@@ -131,6 +136,33 @@ export class TranslateBullets {
     );
     return addsMoney ? undefined : out;
   }
+}
+
+/**
+ * REQ-447 (demo-loop cycle 3, m14): the job name rides the lines' batch but
+ * is a TITLE. Translated clause by clause, "Cambio de llave de fregadero"
+ * became "Replacement of Faucet" and the agreement read "María José Peña's
+ * Replacement of Faucet Agreement". Name the title line(s) (1-based, as the
+ * model counts) and ask for the noun phrase a contractor would use.
+ */
+export function titleInstruction(
+  titleLines: readonly number[],
+  count: number,
+  to: "en" | "es",
+): string {
+  const lines = titleLines.filter((i) => i >= 0 && i < count);
+  if (lines.length === 0) return "";
+  const example = to === "es"
+    ? `"Cambio de llave", "Reparación de techo"`
+    : `"Faucet Replacement", "Roof Repair"`;
+  const literal = to === "es"
+    ? `"Reemplazo del grifo del fregadero"`
+    : `"Replacement of Faucet"`;
+  return lines.map((i) =>
+    ` Line ${
+      i + 1
+    } is the job's TITLE, not a scope line: return the short noun phrase a contractor would name this job with in that language (e.g. ${example}), 2–4 words, never a word-for-word rendering like ${literal}.`
+  ).join("");
 }
 
 /**

@@ -587,6 +587,9 @@ interface Props {
   initialCustomer?: CustomerLite;
   /** Quote (the agreement) bound to this conversation. */
   initialQuote?: AsstQuote;
+  /** REQ-447 (cycle 3, p8-pair10-d): the conversation's stored title — the
+   *  header falls back to it the way the thread list does. */
+  initialTitle?: string;
   /** REQ-230 (demo M14): the in-flight flow stored on the conversation
    *  (options, pick, price, open panel) — seeds the view so ANY window's
    *  load, SSR included, rebuilds where the contractor is. */
@@ -734,6 +737,7 @@ export default function AsstChat({
   initialMessages,
   initialCustomer,
   initialQuote,
+  initialTitle,
   initialDraft,
   userInitials = "?",
   from,
@@ -767,6 +771,12 @@ export default function AsstChat({
     .filter((l) => l in SEND_LANG_LABEL_KEYS);
   const [convoId, setConvoId] = useState<string | undefined>(conversationId);
   const [messages, setMessages] = useState<Message[]>(initialMessages);
+  // REQ-447 (cycle 3, p8-pair10-d): the stored conversation title, re-read
+  // from every turn's conversation so the header names the thread the moment
+  // its first message titles it — as the list does.
+  const [convTitle, setConvTitle] = useState<string | undefined>(
+    initialTitle,
+  );
   const [customer, setCustomer] = useState<CustomerLite | undefined>(
     initialCustomer,
   );
@@ -1566,6 +1576,7 @@ export default function AsstChat({
     }
     setMessages(initialMessages);
     setCustomer(initialCustomer);
+    setConvTitle(initialTitle); // REQ-447
     // Seed the quote from the route's SSR detail (when present) so the
     // quote-fetch effect below kicks in without waiting for a CTA click.
     if (initialQuote?.id) setQuoteId(initialQuote.id);
@@ -1815,6 +1826,10 @@ export default function AsstChat({
       .then((detail) => {
         if (cancelled) return;
         setConvoId(target);
+        // REQ-447: the thread's stored title, as the list shows it.
+        setConvTitle(
+          (detail.conversation as { title?: string } | undefined)?.title,
+        );
         if (Array.isArray(detail.messages)) setMessages(detail.messages);
         if (detail.customer) setCustomer(detail.customer);
         const qId =
@@ -1865,6 +1880,7 @@ export default function AsstChat({
   // too — the same rule the server reads off the parked draft.
   const threadHeader = deriveChatHeader({
     customerName: customer?.name,
+    title: convTitle, // REQ-447: the list's fallback
     quote: ruleQuote,
     messages,
     detailsPending: needsJobPolish ||
@@ -1926,6 +1942,7 @@ export default function AsstChat({
     convoId,
     messages.length,
     lang,
+    convTitle, // REQ-447
     needsJobPolish, // REQ-369
     threadHeader.statusKey, // REQ-369: whatever moves the rule moves this
   ]);
@@ -2301,6 +2318,11 @@ export default function AsstChat({
       const boundId =
         (res.conversation as { id: string; customerId?: string } | undefined)
           ?.customerId;
+      // REQ-447 (cycle 3, p8-pair10-d): the turn titled the thread (its
+      // first message, or the job name of the quote it drafted).
+      const turnTitle = (res.conversation as { title?: string } | undefined)
+        ?.title;
+      if (turnTitle) setConvTitle(turnTitle);
       if (boundId && boundId !== customer?.id) {
         clientsClient.get(boundId)
           .then((c) => setCustomer(c as unknown as CustomerLite))

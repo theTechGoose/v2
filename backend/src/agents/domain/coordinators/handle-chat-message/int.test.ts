@@ -2977,3 +2977,53 @@ Deno.test("REQ-439 (M9) a first draft with a line for every typed item is not as
   assertEquals(stored.lineItems.length, M9_FULL.length);
   await resetKv();
 });
+
+// REQ-447 (demo-loop cycle 3, m14): the job has ONE name. The first message
+// used to title the thread ("Repaint 3 bedrooms and the hallway for John
+// Miller, $2,400") while the quote it drafted was "Bedroom & Hallway Repaint".
+Deno.test("REQ-447 m14 handle-chat-message integration: the quote a turn drafts titles the conversation by its jobName, even on the first message", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const { conversations, llm, quotes, flow } = fresh();
+  await seedOnboarded("u-1");
+  llm.setScript([{
+    text: "Here's your quote.",
+    action: {
+      type: "create_quote",
+      payload: {
+        summary: "Repaint 3 bedrooms and hallway — John Miller",
+        jobName: "Bedroom & Hallway Repaint",
+        lineItems: [{ description: "Repaint", amountCents: 240_000 }],
+      },
+    },
+  }]);
+  const conv = await conversations.create({ userId: "u-1" });
+  const result = await flow.run({
+    userId: "u-1",
+    conversationId: conv.id,
+    content: "Repaint 3 bedrooms and the hallway for John Miller, $2,400",
+  });
+  const stored = await quotes.getOwned(result.conversation.quoteId!, "u-1");
+  assertEquals(result.conversation.title, stored.jobName);
+  assertEquals(
+    (await conversations.get(conv.id)).title,
+    "Bedroom & Hallway Repaint",
+  );
+  await resetKv();
+});
+
+Deno.test("REQ-447 m14 handle-chat-message integration: a plain first message still titles a thread with no quote", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const { conversations, llm, flow } = fresh();
+  await seedOnboarded("u-1");
+  llm.setScript([{ text: "Sure — what's the job?" }]);
+  const conv = await conversations.create({ userId: "u-1" });
+  const result = await flow.run({
+    userId: "u-1",
+    conversationId: conv.id,
+    content: "Need help pricing a fence",
+  });
+  assertEquals(result.conversation.title, "Need help pricing a fence");
+  await resetKv();
+});

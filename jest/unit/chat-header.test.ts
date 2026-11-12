@@ -22,6 +22,7 @@ import {
   threadChip,
 } from "../../shared/quote-flow/chat-header";
 import { threadTitle } from "../../shared/quote-flow/thread-title";
+import { quoteJobTitle } from "../../shared/quote-flow/job-name";
 
 const H = "asstChat.header.";
 
@@ -437,5 +438,125 @@ describe("REQ-385 (cycle 2, m6) status labels and headers agree", () => {
   it("the customer card's unsent quote reads 'Not sent', never 'Draft' beside 'Ready to send'", () => {
     expect(en["clientsBoard.docState.draft"]).toBe("Not sent");
     expect(es["clientsBoard.docState.draft"]).toBe("Sin enviar");
+  });
+});
+
+/**
+ * REQ-447 (demo-loop cycle 3, demo issues p8-pair10-d + m14) — the header
+ * and the list name a thread by ONE rule. The list fell back to the stored
+ * conversation title (the first message) while the header had no title
+ * input at all, so a thread with messages but no quote read
+ * "New conversation" in the header and was titled in the list (fleet-9
+ * l.76). The quote's job name leads everywhere once there is one.
+ */
+describe("REQ-447 (cycle 3, p8-pair10-d/m14) header and list share one title rule", () => {
+  const root = path.resolve(__dirname, "../..");
+  const read = (p: string) => fs.readFileSync(path.join(root, p), "utf8");
+  const en = JSON.parse(read("lang/en.json"));
+  const es = JSON.parse(read("lang/es.json"));
+  const headerText = (
+    h: ReturnType<typeof deriveChatHeader>,
+    dict: Record<string, string>,
+  ) => h.clientName ?? dict[h.clientKey ?? ""];
+
+  it("a thread with a first message but no quote is titled by the conversation title, not 'New conversation' (fleet-9 l.76)", () => {
+    const h = deriveChatHeader({
+      title: "Fix the kitchen faucet for Ana",
+      messages: [{ kind: "text" }],
+    });
+    expect(h.clientName).toBe("Fix the kitchen faucet for Ana");
+    expect(h.clientKey).toBeUndefined();
+  });
+
+  it("the job name wins over the conversation title; the customer is appended", () => {
+    expect(
+      deriveChatHeader({
+        title: "cambiar la llave del fregadero",
+        quote: { status: "draft", jobName: "Faucet Replacement" },
+        messages: [],
+      }).clientName,
+    ).toBe("Faucet Replacement");
+    expect(
+      deriveChatHeader({
+        title: "cambiar la llave del fregadero",
+        customerName: "Ana Ruiz",
+        quote: { status: "draft", jobName: "Faucet Replacement" },
+        messages: [],
+      }).clientName,
+    ).toBe("Faucet Replacement · Ana Ruiz");
+  });
+
+  it("for every combination the header reads exactly what the list row reads (threadTitle)", () => {
+    const vals = {
+      jobName: [undefined, "", "Fence install"],
+      customerName: [undefined, "  ", "Ana Ruiz"],
+      title: [undefined, "   ", "Need a fence quote"],
+    };
+    for (const jobName of vals.jobName) {
+      for (const customerName of vals.customerName) {
+        for (const title of vals.title) {
+          const h = deriveChatHeader({
+            customerName,
+            title,
+            messages: [],
+          });
+          // no quote here: the list's fallback is "New conversation"
+          if (jobName) continue;
+          expect(headerText(h, en)).toBe(
+            threadTitle({ jobName, customerName, title }, "en"),
+          );
+          expect(headerText(h, es)).toBe(
+            threadTitle({ jobName, customerName, title }, "es"),
+          );
+        }
+        if (!jobName) continue;
+        for (const title of vals.title) {
+          const h = deriveChatHeader({
+            customerName,
+            title,
+            quote: { status: "draft", jobName },
+            messages: [],
+          });
+          expect(h.clientName).toBe(
+            threadTitle({ jobName, customerName, title }, "en"),
+          );
+        }
+      }
+    }
+  });
+
+  it("AsstChat feeds the conversation title into the header and refreshes it from the turn's conversation", () => {
+    const chat = read("front-end/islands/AsstChat.tsx");
+    const at = chat.indexOf("const threadHeader = deriveChatHeader(");
+    const call = chat.slice(at, chat.indexOf("});", at));
+    expect(call).toMatch(/title:\s*convTitle/);
+    // seeded from the route, and re-read after every turn
+    expect(chat).toMatch(/initialTitle/);
+    expect(chat).toMatch(/turnTitle = \(res\.conversation[^;]*\?\.title;/);
+    expect(chat).toMatch(/setConvTitle\(turnTitle\)/);
+  });
+
+  it("the server-rendered header passes the conversation title too", () => {
+    const route = read("front-end/routes/assistant/[threadId].tsx");
+    const at = route.indexOf("deriveChatHeader({");
+    const call = route.slice(at, route.indexOf("})", at));
+    expect(call).toMatch(/title:\s*detail\.conversation\?\.title/);
+    expect(route).toMatch(/initialTitle=\{detail\?\.conversation\?\.title\}/);
+  });
+});
+
+describe("REQ-447 (cycle 3, m14) the dashboard names the job by its jobName", () => {
+  const root = path.resolve(__dirname, "../..");
+  const read = (p: string) => fs.readFileSync(path.join(root, p), "utf8");
+  // REQ-497 AMENDMENT (reconciled on demo-fixes): the row goes through
+  // jobRowTitle(j, lang) → quoteJobTitle, which still puts the jobName first
+  // (per language), the summary only as a fallback.
+  it("DashboardPage's active-job row shows quote.jobName, the summary only as a fallback", () => {
+    const page = read("front-end/islands/DashboardPage.tsx");
+    expect(page).toMatch(/task:\s*jobRowTitle\(j,\s*lang\)/);
+    expect(page).not.toMatch(/task:\s*j\.quote\.summary,/);
+    const q = { jobName: "Faucet Replacement", summary: "Replace the kitchen faucet — Ana" };
+    expect(quoteJobTitle(q, "en")).toBe("Faucet Replacement");
+    expect(quoteJobTitle({ summary: q.summary }, "en")).toBe(q.summary);
   });
 });

@@ -32,8 +32,19 @@ export function threadTitle(
   parts: ThreadTitleParts,
   lang: "en" | "es",
 ): string {
-  return threadName(parts) ?? part(parts.title) ??
-    NEW_CONVERSATION[lang];
+  return threadLabel(parts) ?? NEW_CONVERSATION[lang];
+}
+
+/**
+ * REQ-447 (demo-loop cycle 3, p8-pair10-d / m14): the thread's literal
+ * label — its name (job, then "· customer"), else its stored conversation
+ * title — or undefined when it has none and the caller shows its own
+ * "New conversation". The list (`threadTitle`) and the chat header
+ * (`deriveChatHeader`) both read this, so a thread with messages but no
+ * quote is titled the same in both places.
+ */
+export function threadLabel(parts: ThreadTitleParts): string | undefined {
+  return threadName(parts) ?? part(parts.title);
 }
 
 /**

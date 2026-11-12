@@ -332,3 +332,25 @@ Deno.test("REQ-473 list-active-jobs: an open receivable still wins over a later 
   assertEquals(job.paymentTerms, null);
   await resetKv();
 });
+
+// REQ-447 (demo-loop cycle 3, m14): the dashboard's active job is named by the
+// quote's jobName — the name the quote, the thread and the notification use —
+// not its separate summary sentence (fleet-6: "Kitchen renovation and debris
+// removal" on the dashboard vs "Kitchen Renovation & Cleanup" everywhere else).
+Deno.test("REQ-447 m14 list-active-jobs integration: the job carries the quote's jobName", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const { customers, quotes, flow } = fresh();
+  const cust = await customers.create("u-1", { name: "Karen Henderson" });
+  await quotes.create("u-1", {
+    summary: "Kitchen renovation and debris removal",
+    jobName: "Kitchen Renovation & Cleanup",
+    lineItems: [],
+    status: "accepted",
+    customerId: cust.id,
+    estimatedTotal: 20_000_00,
+  });
+  const jobs = await flow.run("u-1", NOW);
+  assertEquals(jobs[0].quote.jobName, "Kitchen Renovation & Cleanup");
+  await resetKv();
+});
