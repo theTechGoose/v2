@@ -94,3 +94,74 @@ Deno.test("REQ-244: non-send CTAs are never reported", () => {
   ]);
   assertEquals(ids.size, 0);
 });
+
+/**
+ * REQ-339 (demo-loop cycle 1, issue p2 "Chat timestamps a minute early"):
+ * the "Quote + Agreement sent — emailed to …" card is the send CTA
+ * re-rendered in its sent state, so its time must be the dispatch time
+ * (the phase-3 divider's createdAt), not the moment the wizard finished.
+ */
+import { sentCtaTimestamp } from "./send-cta-settled.ts";
+
+const stamped = <T extends { id: string }>(m: T, createdAt: number) => ({
+  ...m,
+  createdAt,
+});
+const T_CTA = Date.UTC(2026, 10, 12, 5, 32, 10);
+const T_SENT = Date.UTC(2026, 10, 12, 5, 33, 57);
+
+Deno.test("REQ-339: a sent CTA stamps the phase-3 divider's time, not its own", () => {
+  const c = stamped(cta("c1", "q1"), T_CTA);
+  const t = sentCtaTimestamp(
+    [
+      stamped(text("t1"), T_CTA - 1),
+      c,
+      stamped(divider("d3", 3, "q1"), T_SENT),
+    ],
+    c,
+  );
+  assertEquals(t, T_SENT);
+});
+
+Deno.test("REQ-339: a CTA not yet sent keeps its own time", () => {
+  const c = stamped(cta("c1", "q1"), T_CTA);
+  assertEquals(sentCtaTimestamp([c], c), T_CTA);
+  assertEquals(
+    sentCtaTimestamp([c, stamped(divider("d2", 2, "q1"), T_SENT)], c),
+    T_CTA,
+  );
+});
+
+Deno.test("REQ-339: a divider for another quote, or one before the CTA, is not the send time", () => {
+  const c = stamped(cta("c1", "q1"), T_CTA);
+  assertEquals(
+    sentCtaTimestamp([c, stamped(divider("d3", 3, "q2"), T_SENT)], c),
+    T_CTA,
+  );
+  assertEquals(
+    sentCtaTimestamp([stamped(divider("d3", 3, "q1"), T_CTA - 5000), c], c),
+    T_CTA,
+  );
+});
+
+Deno.test("REQ-339: a failed send then a successful retry stamps the retry (latest dispatch wins)", () => {
+  const c = stamped(cta("c1", "q1"), T_CTA);
+  const retry = T_SENT + 120_000;
+  const t = sentCtaTimestamp(
+    [
+      c,
+      stamped(divider("d3a", 3, "q1"), T_SENT),
+      stamped(divider("d3b", 3, "q1"), retry),
+    ],
+    c,
+  );
+  assertEquals(t, retry);
+});
+
+Deno.test("REQ-339: an accepted quote with no divider in the thread falls back to the CTA's time", () => {
+  const c = stamped(cta("c1", "q1"), T_CTA);
+  assertEquals(
+    sentCtaTimestamp([c], c, { id: "q1", status: "accepted" }),
+    T_CTA,
+  );
+});
