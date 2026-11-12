@@ -31,7 +31,10 @@ export default define.page(function FieldFieldBatchesPageRoute(ctx) {
       <div class="app">
         <DashSidebar active="batches" />
         <main class="main">
-          <DashTopbar greetingName={greetingName} />
+          <DashTopbar
+            pageTitleKey="nav.batches"
+            greetingName={greetingName}
+          />
           <div class="content">
             <FieldBatchesPage />
             <SiteFooter lang={lang} compact />

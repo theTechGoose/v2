@@ -67,7 +67,11 @@ export default define.page(function SettingsRoute(ctx) {
       <div class="app">
         <DashSidebar active="settings" />
         <main class="main">
-          <DashTopbar greetingDate={greetingDate} greetingName={greetingName} />
+          <DashTopbar
+            pageTitleKey="appNav.settings"
+            greetingDate={greetingDate}
+            greetingName={greetingName}
+          />
           <div class="content">
             <SettingsPage />
             <SiteFooter lang={lang} compact />

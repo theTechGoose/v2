@@ -44,6 +44,9 @@ interface Props {
   /** Dict key that replaces the default "Hey, {name} 👋" line. Resolved
    *  reactively against the live language so the toggle re-localizes it. */
   greetingOverrideKey?: string;
+  /** REQ-619 (cycle 4, p4-p3d) — the page's nav label key; the heading names
+   *  the page (live language) instead of "Hey, {name}". Omit on /dashboard. */
+  pageTitleKey?: string;
   initialUnread?: number;
   initialNotifications?: Notification[];
   lang?: "en" | "es";
@@ -66,6 +69,7 @@ export default function DashTopbar(
     greetingName,
     greetingOverride,
     greetingOverrideKey,
+    pageTitleKey,
     initialUnread = 0,
     initialNotifications = [],
     search,
@@ -208,6 +212,7 @@ export default function DashTopbar(
               savedName,
               greetingOverrideKey,
               greetingOverride,
+              pageTitleKey,
             })
           }
         </div>

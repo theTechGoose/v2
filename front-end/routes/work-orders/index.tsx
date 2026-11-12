@@ -33,7 +33,10 @@ export default define.page(function WorkOrdersRoute(ctx) {
       <div class="app">
         <DashSidebar active="workOrders" />
         <main class="main">
-          <DashTopbar greetingName={greetingName} />
+          <DashTopbar
+            pageTitleKey="nav.workOrders"
+            greetingName={greetingName}
+          />
           <div class="content">
             <WorkOrdersPage />
             <SiteFooter lang={lang} compact />

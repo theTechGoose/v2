@@ -36,7 +36,10 @@ export default define.page(async function QuotesRoute(ctx) {
       <div class="app">
         <DashSidebar active="quotes" />
         <main class="main">
-          <DashTopbar greetingName={greetingName} />
+          <DashTopbar
+            pageTitleKey="nav.quotes"
+            greetingName={greetingName}
+          />
           <div class="content">
             <QuotesPage seed={seed} />
             <SiteFooter lang={lang} compact />

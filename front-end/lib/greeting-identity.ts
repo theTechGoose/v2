@@ -29,9 +29,15 @@ export interface GreetingInput {
   greetingOverrideKey?: string;
   /** @deprecated SSR-frozen override string. */
   greetingOverride?: string;
+  /** REQ-619 (cycle 4, p4-p3d) — the page's nav label key (nav.invoices,
+   *  appNav.settings…): the heading names the page instead of greeting. */
+  pageTitleKey?: string;
 }
 
 export function topbarGreeting(t: Translate, input: GreetingInput): string {
+  // REQ-619 — every page but /dashboard is named, not greeted; a name saved
+  // on the page (Settings) must not turn the page title back into a greeting
+  if (input.pageTitleKey) return t(input.pageTitleKey);
   const noName = () => t("dashTopbar.greetingNoName");
   if (input.savedName !== undefined) {
     const first = greetingFirstName(input.savedName);
