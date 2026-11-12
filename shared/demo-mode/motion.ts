@@ -88,24 +88,33 @@ export function moveThrottle<T>(o: {
   };
 }
 
-/** REQ-242 — the pointer's name tag fades after this long without a move (it hid what it pointed at) */
+/** REQ-242 — the pointer's name tag rests after this long without a re-placement */
 export const TAG_IDLE_MS = 1_500;
-/** REQ-242 — and the arrow itself dims after this long (a resting pointer stays, faint) */
-export const ARROW_IDLE_MS = 6_000;
-/** where the tag sits from the arrow's tip: right of it and below it */
+/** REQ-374 (demo m9) — a resting tag fades to this, never to 0: the name stays readable */
+export const TAG_REST_OPACITY = 0.6;
+/** REQ-374 (demo p8) — the arrow is always fully opaque (it read as faint when it dimmed); only
+ *  the tag rests */
+export function pointerLook(resting: boolean): { arrow: number; tag: number } {
+  return { arrow: 1, tag: resting ? TAG_REST_OPACITY : 1 };
+}
+/** where the tag sits from the arrow's tip when it flips right of it / below it */
 export const TAG_DX = 26;
 export const TAG_DY = 18;
+/** REQ-374 — the gap between the tip and the tag when it sits above-left */
+export const TAG_GAP = 6;
 
-/** REQ-242 — which side of the arrow the name tag goes: right and below, unless that runs past the
- *  box's right or bottom edge (the stage's frame, or the customer's window — never a guess) */
+/** REQ-242 / REQ-374 (demo m9) — which side of the arrow the name tag goes: above-left of the tip,
+ *  away from the arrow's body and the content it points at; right of it only where the box's left
+ *  edge leaves no room, below it only at the top (the box is the stage's frame, or the customer's
+ *  window — never a guess) */
 export function tagPlacement(
   p: Pt,
   box: { left: number; top: number; width: number; height: number },
   tag: { w: number; h: number },
 ): { left: boolean; up: boolean } {
   return {
-    left: p.x + TAG_DX + tag.w > box.left + box.width,
-    up: p.y + TAG_DY + tag.h > box.top + box.height,
+    left: p.x - TAG_GAP - tag.w >= box.left,
+    up: p.y - TAG_GAP - tag.h >= box.top,
   };
 }
 

@@ -945,7 +945,15 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
           style={pillStyle}
         >
           <strong>{t("demoMode.title")}</strong>
-          <span>{t("demoMode.presenting", { name })}</span>
+          {/* REQ-374 (demo p8) — the customer's pointer colour is named, as the chips name each presenter's */}
+          <span style="display:inline-flex;align-items:center;gap:6px">
+            <span
+              data-cy="demo-customer-dot"
+              aria-hidden="true"
+              style={`width:10px;height:10px;border-radius:50%;background:${CUSTOMER_COLOR};box-shadow:0 0 0 2px rgba(255,255,255,.85)`}
+            />
+            {t("demoMode.presenting", { name })}
+          </span>
           <PresenterChips presenters={demo.presenters} me={demo.pid} />
           <span
             data-cy="demo-status"
