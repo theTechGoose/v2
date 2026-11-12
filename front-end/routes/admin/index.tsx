@@ -2,6 +2,7 @@ import { asset, Head } from "fresh/runtime";
 import { define } from "../../utils.ts";
 import DocTitle from "../../components/DocTitle.tsx";
 import { type Lang, tFor } from "../../lib/i18n.ts";
+import { resolveSsrLang } from "../../lib/ssr-lang.ts";
 import DashSidebar from "../../islands/DashSidebar.tsx";
 import DashTopbar from "../../islands/DashTopbar.tsx";
 import AdminPage from "../../islands/AdminPage.tsx";
@@ -38,7 +39,10 @@ const MONTH_KEYS = [
 
 export default define.page(function AdminRoute(ctx) {
   const user = ctx.state.user;
-  const lang: Lang = user?.language === "es" ? "es" : "en";
+  // REQ-592 (demo-loop cycle 4, m5): the same language the islands render in
+  // (?lang= > the account's language > pm_lang), not user.language alone — an
+  // es staff account on /admin?lang=en got a Spanish footer under English.
+  const lang: Lang = resolveSsrLang(ctx) ?? "es";
   const greetingName = greetingFirstName(user?.name);
   // REQ-355 — staff never meet the customer wizard's name question (REQ-227): ask here
   const askName = user?.superAdmin === true && isPlaceholderName(user?.name);

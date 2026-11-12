@@ -368,3 +368,57 @@ Deno.test("REQ-422 (m48): patchCachedLanguage updates the cached profile and its
     uninstallStubStorage();
   }
 });
+
+// --- REQ-592 (demo-loop cycle 4, issue m5): /admin?lang=en flipped to Spanish
+// once the profile loaded — the staff account's user.language was "es", and the
+// server seed overrode the page's explicit ?lang=. A ?lang= link is a choice.
+function withPageUrl<T>(href: string, fn: () => Promise<T>): Promise<T> {
+  const had = Object.getOwnPropertyDescriptor(globalThis, "location");
+  Object.defineProperty(globalThis, "location", {
+    configurable: true,
+    value: new URL(href),
+  });
+  return fn().finally(() => {
+    if (had) Object.defineProperty(globalThis, "location", had);
+    // deno-lint-ignore no-explicit-any
+    else delete (globalThis as any).location;
+  });
+}
+
+Deno.test("REQ-592 (m5): on /admin?lang=en a profile saying es does not flip the page to Spanish", async () => {
+  installStubStorage();
+  try {
+    await withPageUrl("http://app/admin?lang=en", async () => {
+      langSignal.value = "en"; // what lang.ts seeds from ?lang=en at load
+      _resetForTest({
+        stats: () => Promise.resolve(SAMPLE_STATS),
+        profile: () => Promise.resolve(profileWithLang("es")),
+      });
+      await refreshDash(); // the mount read
+      assertEquals(langSignal.value, "en", "the mount read flipped EN to ES");
+      await refreshDash(); // StaffNamePrompt save → PROFILE_UPDATED → refresh
+      assertEquals(langSignal.value, "en", "a later refresh flipped EN to ES");
+    });
+  } finally {
+    setLang("es", { fromServer: true });
+    uninstallStubStorage();
+  }
+});
+
+Deno.test("REQ-592 (m5): without ?lang= the profile still seeds the language", async () => {
+  installStubStorage();
+  try {
+    await withPageUrl("http://app/admin", async () => {
+      langSignal.value = "en";
+      _resetForTest({
+        stats: () => Promise.resolve(SAMPLE_STATS),
+        profile: () => Promise.resolve(profileWithLang("es")),
+      });
+      await refreshDash();
+      assertEquals(langSignal.value, "es");
+    });
+  } finally {
+    setLang("es", { fromServer: true });
+    uninstallStubStorage();
+  }
+});
