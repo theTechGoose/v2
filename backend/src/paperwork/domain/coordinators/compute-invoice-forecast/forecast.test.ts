@@ -1,5 +1,9 @@
 import { assertEquals } from "#std/assert";
-import { forecastEntryFor, settlementOffsetDays } from "./mod.ts";
+import {
+  ComputeInvoiceForecast,
+  forecastEntryFor,
+  settlementOffsetDays,
+} from "./mod.ts";
 import type { Invoice } from "@paperwork/dto/invoice.ts";
 
 function inv(overrides: Partial<Invoice>): Invoice {
@@ -114,4 +118,65 @@ Deno.test("forecastEntryFor: sent without dueDate is excluded (no land date to f
     forecastEntryFor(inv({ status: "sent", dueDate: undefined }), "X"),
     undefined,
   );
+});
+
+// REQ-243 (demo quote-invoice-money-m3 d/e): the /invoices hero read "All
+// clear — nothing outstanding" over a waiting claim, and kept showing money
+// "expected this week" after it was paid. The forward window compared the
+// land DAY at noon UTC against the current instant, so a same-day claim made
+// in the afternoon fell out of "this week", and a payment recorded in the
+// morning was counted as money still to come.
+function forecastWith(invoices: Invoice[]) {
+  const stores = {
+    invoices: { listByUser: () => Promise.resolve(invoices) },
+    customers: { getOwned: () => Promise.reject(new Error("none")) },
+    quotes: { getOwned: () => Promise.reject(new Error("none")) },
+  };
+  return new ComputeInvoiceForecast(
+    stores.invoices as unknown as ConstructorParameters<
+      typeof ComputeInvoiceForecast
+    >[0],
+    stores.customers as unknown as ConstructorParameters<
+      typeof ComputeInvoiceForecast
+    >[1],
+    stores.quotes as unknown as ConstructorParameters<
+      typeof ComputeInvoiceForecast
+    >[2],
+  );
+}
+
+Deno.test("REQ-243: a same-day Zelle claim made this afternoon is money expected this week", async () => {
+  const now = new Date("2026-05-10T18:00:00Z");
+  const r = await forecastWith([
+    inv({
+      id: "claimed-1",
+      status: "claimed",
+      paymentIntent: {
+        method: "zelle",
+        amount: 100_00,
+        claimedAt: "2026-05-10T15:00:00Z",
+      },
+    }),
+  ]).run("u-1", now);
+  assertEquals(r.thisWeek.map((e) => e.invoiceId), ["claimed-1"]);
+  assertEquals(r.thisWeekCents, 100_00);
+});
+
+Deno.test("REQ-243: an invoice paid this morning is not money still expected this week", async () => {
+  const now = new Date("2026-05-10T09:00:00Z");
+  const r = await forecastWith([
+    inv({ id: "paid-1", status: "paid", paidAt: "2026-05-10T08:30:00Z" }),
+  ]).run("u-1", now);
+  assertEquals(r.thisWeek, []);
+  assertEquals(r.thisWeekCents, 0);
+  assertEquals(r.nextWeekCents, 0);
+});
+
+Deno.test("REQ-243: a sent invoice due later today is still expected this week", async () => {
+  const now = new Date("2026-05-10T20:00:00Z");
+  const r = await forecastWith([
+    inv({ id: "due-today", status: "sent", dueDate: "2026-05-10" }),
+  ]).run("u-1", now);
+  assertEquals(r.thisWeek.map((e) => e.invoiceId), ["due-today"]);
+  assertEquals(r.atRiskCents, 0);
 });

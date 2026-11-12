@@ -41,9 +41,9 @@ export interface ForecastResult {
  * the forecast hero on /invoices.
  *
  * Bucketing rules (roadmap §J):
- *   - status=`paid`     → expectedLandDate = paidAt (already landed; we
- *                         exclude from "this week" but it's recorded
- *                         here as a `paid` source for tests).
+ *   - status=`paid`     → expectedLandDate = paidAt (already landed:
+ *                         `forecastEntryFor` records it as a `paid` source,
+ *                         but `run` never counts it as money to come).
  *   - status=`claimed`  → expectedLandDate = claimedAt + settlement window
  *                         (ACH +2d / check +5d / Venmo/Zelle/Cash +0d /
  *                         other +3d).
@@ -65,9 +65,13 @@ export class ComputeInvoiceForecast {
 
   async run(userId: string, now: Date = new Date()): Promise<ForecastResult> {
     const all = await this.invoices.listByUser(userId);
-    const thisWeekStart = now;
-    const thisWeekEnd = addDays(now, 7);
-    const nextWeekEnd = addDays(now, 14);
+    // REQ-243: windows are whole days (land dates are days). Comparing the
+    // land day's noon against the current instant dropped a same-day claim
+    // made in the afternoon out of "this week" — and the hero read "All
+    // clear" over it.
+    const today = isoDay(now);
+    const thisWeekEnd = isoDay(addDays(now, 7));
+    const nextWeekEnd = isoDay(addDays(now, 14));
 
     const thisWeek: ForecastEntry[] = [];
     const nextWeek: ForecastEntry[] = [];
@@ -112,11 +116,12 @@ export class ComputeInvoiceForecast {
       }
 
       const entry = forecastEntryFor(inv, labelBase);
-      if (!entry) continue;
-      const ts = new Date(`${entry.expectedLandDate}T12:00:00Z`).getTime();
-      if (ts >= thisWeekStart.getTime() && ts <= thisWeekEnd.getTime()) {
+      // REQ-243: a paid invoice has landed — it is not money still expected.
+      if (!entry || entry.source === "paid") continue;
+      const day = entry.expectedLandDate;
+      if (day >= today && day <= thisWeekEnd) {
         thisWeek.push(entry);
-      } else if (ts > thisWeekEnd.getTime() && ts <= nextWeekEnd.getTime()) {
+      } else if (day > thisWeekEnd && day <= nextWeekEnd) {
         nextWeek.push(entry);
       }
     }
@@ -218,6 +223,11 @@ function methodLabel(m: PaymentMethod): string {
     case "other":
       return "other";
   }
+}
+
+/** YYYY-MM-DD (UTC) — the same form as every expectedLandDate. */
+function isoDay(d: Date): string {
+  return d.toISOString().slice(0, 10);
 }
 
 function addDays(d: Date, days: number): Date {

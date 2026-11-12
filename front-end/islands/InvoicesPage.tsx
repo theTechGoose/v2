@@ -30,6 +30,7 @@ import {
 import { fmtMoney, fmtMoneyExact } from "../lib/format.ts";
 import { type Lang, langSignal, tFor } from "../lib/i18n.ts";
 import QuoteTrack from "./QuoteTrack.tsx";
+import { invoicesHeroMode, reloadInvoiceData } from "../lib/headline-counts.ts";
 import { isChangeOrderMutable } from "../../shared/quote-flow/adjustment-guards.ts";
 import {
   formatPhoneInput,
@@ -384,6 +385,13 @@ interface ForecastResult {
   asOf: string;
 }
 
+/** The /invoices hero's forecast; `undefined` when the backend has none
+ *  (older backends 404 → the legacy "outstanding total" headline). */
+function fetchForecast(): Promise<ForecastResult | undefined> {
+  return fetch("/api/invoices/forecast/this-week", { credentials: "include" })
+    .then((r) => r.ok ? r.json() as Promise<ForecastResult> : undefined);
+}
+
 /** REQ-030: sessionStorage key carrying a send outcome across the reload. */
 const SEND_FLASH_KEY = "pm:invoice-send-flash";
 
@@ -433,12 +441,18 @@ export default function InvoicesPage(_props: { lang?: Lang }) {
   );
 
   // Re-pull the invoice list after a mutation (discount / edit / change
-  // order) so every displayed total is the live `amount` — no full reload.
+  // order / payment received) so every displayed total is the live
+  // `amount` — no full reload. REQ-243: the hero reads the forecast too, so
+  // it is re-pulled with the list (a paid invoice stops being "expected").
   async function refreshInvoices() {
-    try {
-      const invoices = await dashboardClient.invoices(undefined);
-      setS((prev) => ({ ...prev, invoices }));
-    } catch { /* keep the stale list rather than blanking the page */ }
+    const fresh = await reloadInvoiceData({
+      invoices: () => dashboardClient.invoices(undefined),
+      forecast: fetchForecast,
+    });
+    // A failed half keeps what it had rather than blanking the page.
+    const invoices = fresh.invoices;
+    if (invoices) setS((prev) => ({ ...prev, invoices }));
+    if (fresh.forecast) setForecast(fresh.forecast);
   }
 
   useEffect(() => {
@@ -461,8 +475,7 @@ export default function InvoicesPage(_props: { lang?: Lang }) {
     });
     // Forecast hero — fire-and-forget. If it 404s on older backends we
     // silently fall back to the legacy "outstanding total" headline.
-    fetch("/api/invoices/forecast/this-week", { credentials: "include" })
-      .then((r) => r.ok ? r.json() as Promise<ForecastResult> : undefined)
+    fetchForecast()
       .then((f) => {
         if (alive && f) setForecast(f);
       })
@@ -570,6 +583,8 @@ export default function InvoicesPage(_props: { lang?: Lang }) {
       <InvoicesHero
         outstandingTotal={outstandingTotal}
         outstandingCount={overdue.length + out.length}
+        // REQ-243: a claim waiting for confirmation is never "All clear".
+        claimedCount={claimed.length}
         overdueCount={overdue.length}
         totalInvoiceCount={enriched.length}
         forecast={forecast}
@@ -760,6 +775,7 @@ function InvoicesHero(
   {
     outstandingTotal,
     outstandingCount,
+    claimedCount,
     overdueCount,
     totalInvoiceCount,
     forecast,
@@ -768,6 +784,7 @@ function InvoicesHero(
   }: {
     outstandingTotal: number;
     outstandingCount: number;
+    claimedCount: number;
     overdueCount: number;
     totalInvoiceCount: number;
     forecast?: ForecastResult;
@@ -775,8 +792,13 @@ function InvoicesHero(
     onNew: () => void;
   },
 ) {
-  const trulyEmpty = totalInvoiceCount === 0;
-  const fresh = !trulyEmpty && outstandingCount === 0;
+  const mode = invoicesHeroMode({
+    totalInvoiceCount,
+    outstandingCount,
+    claimedCount,
+    forecast,
+  });
+  const trulyEmpty = mode === "empty";
   const haveForecast = !!forecast &&
     (forecast.thisWeekCents > 0 || forecast.nextWeekCents > 0 ||
       forecast.atRiskCents > 0);
@@ -794,14 +816,26 @@ function InvoicesHero(
                 <em>{tFor(lang, "invoicesPage.hero.emptyEm")}</em>.
               </>
             )
-            : fresh && !haveForecast
+            : mode === "claimed"
+            ? (
+              <>
+                {tFor(
+                  lang,
+                  claimedCount === 1
+                    ? "invoicesPage.hero.claimed.one"
+                    : "invoicesPage.hero.claimed.other",
+                  { n: claimedCount },
+                )} <em>{tFor(lang, "invoicesPage.hero.claimedEm")}</em>.
+              </>
+            )
+            : mode === "clear"
             ? (
               <>
                 {tFor(lang, "invoicesPage.hero.clearPre")}{" "}
                 <em>{tFor(lang, "invoicesPage.hero.clearEm")}</em>.
               </>
             )
-            : haveForecast && forecast!.thisWeekCents > 0
+            : mode === "thisWeek"
             ? (
               <>
                 <em>{fmtMoney(forecast!.thisWeekCents)}</em>{" "}
@@ -817,7 +851,7 @@ function InvoicesHero(
                   )}.
               </>
             )
-            : haveForecast && forecast!.nextWeekCents > 0
+            : mode === "nextWeek"
             ? (
               <>
                 {tFor(lang, "invoicesPage.hero.quietPre")}{" "}
@@ -844,6 +878,8 @@ function InvoicesHero(
         <p class="qph__sub">
           {trulyEmpty
             ? <>{tFor(lang, "invoicesPage.sub.empty")}</>
+            : mode === "claimed"
+            ? <>{tFor(lang, "invoicesPage.sub.claimed")}</>
             : haveForecast && forecast!.thisWeek.length > 0
             ? (
               <span data-cy="forecast-breakdown">

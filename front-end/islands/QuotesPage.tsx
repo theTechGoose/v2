@@ -39,6 +39,7 @@ import {
   ShimmerStyle,
 } from "../components/Skeletons.tsx";
 import { langSignal, tFor } from "../lib/i18n.ts";
+import { countOpenClients, outTrackCounts } from "../lib/headline-counts.ts";
 import {
   buildViewedReceipt,
   classifyReceipts,
@@ -823,6 +824,7 @@ export default function QuotesPage(_props: { lang?: "en" | "es" }) {
   const openTotal = open.reduce((acc, q) => acc + q.value, 0);
   const stale = real.filter((q) => q.stage === "stale");
   const out = outCards.filter(isReal);
+  const outCounts = outTrackCounts(outCards);
   const outVal = out.reduce((acc, q) => acc + q.value, 0);
   const drafts = draftCards.filter(isReal);
   const decided = decidedCards.filter(isReal);
@@ -852,13 +854,10 @@ export default function QuotesPage(_props: { lang?: "en" | "es" }) {
         openCount={open.length}
         openTotal={openTotal}
         staleCount={stale.length}
-        // Only count quotes with a real customer link. Two unlinked quotes
-        // shouldn't collapse into a single phantom "—" client (#31).
-        clientCount={new Set(
-          open.map((q) => q.customerId).filter((id): id is string =>
-            Boolean(id)
-          ),
-        ).size}
+        // REQ-243: count clients from the same field the card shows (the
+        // linked customer, else the card's name). Placeholder "—" names count
+        // for nobody, so unlinked quotes never become a phantom client (#31).
+        clientCount={countOpenClients(open)}
       />
       <QuotesKpis
         lang={lang}
@@ -893,7 +892,10 @@ export default function QuotesPage(_props: { lang?: "en" | "es" }) {
             title={tFor(lang, "quotesPage.track.outForResponse")}
             // UX-17: header count agrees with the KPI — real quotes only
             // (the badged sample card stays visible but counts nowhere).
+            // REQ-243: the header says the sample is there ("1 quote +
+            // sample") so the count never reads short of the cards.
             count={out.length}
+            sampleCount={outCounts.sample}
             defaultOpen
             forceOpen={openId != null && outCards.some((q) => q.id === openId)}
             storageKey="quotes:track:01"

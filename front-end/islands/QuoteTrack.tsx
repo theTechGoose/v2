@@ -17,6 +17,9 @@ interface Props {
    *  component is reused by /invoices and /payments which want different
    *  wording. When omitted, falls back to the localized "quote" unit. */
   unit?: string;
+  /** REQ-243: badged sample cards shown in the track but not in `count`;
+   *  when > 0 the label reads "1 quote + sample". */
+  sampleCount?: number;
   defaultOpen?: boolean;
   /** Deep-link override (/quotes?open=<id>): when true the track mounts
    *  expanded regardless of the stored preference, so the opened quote's
@@ -33,6 +36,7 @@ export default function QuoteTrack(
     title,
     count,
     unit,
+    sampleCount = 0,
     defaultOpen = true,
     forceOpen = false,
     storageKey,
@@ -76,6 +80,7 @@ export default function QuoteTrack(
             `quoteTrack.count.${count === 1 ? "one" : "other"}`,
             { n: count },
           )}
+          {sampleCount > 0 && tFor(lang, "quoteTrack.count.plusSample")}
         </span>
       </header>
       <div class="qtrack__body">
