@@ -213,13 +213,37 @@ export function setPillRoom(
     return;
   }
   root.setProperty(PILL_ROOM_VAR, `${h}px`);
+  // REQ-440 (cycle 3, m2) — body padding only frees the END of a scrolling document; scrolling to
+  // something (an anchor, focus, scrollIntoView, Page Down) must stop above the band too
+  root.setProperty("scroll-padding-bottom", `var(${PILL_ROOM_VAR}, 0px)`);
   body.setProperty("padding-bottom", `var(${PILL_ROOM_VAR}, 0px)`);
 }
 
 /** REQ-295 — the pill needs no room: the page ends at the window again */
 export function clearPillRoom(root: StyleLike, body: StyleLike): void {
   root.removeProperty(PILL_ROOM_VAR);
+  root.removeProperty("scroll-padding-bottom");
   body.removeProperty("padding-bottom");
+}
+
+/**
+ * REQ-440 (demo-loop cycle 3, m2) — the colour the overlay paints the pill's band with: the first
+ * fully opaque background of what is under the band (innermost first, then <html> and <body>), so
+ * a document that scrolls goes under the band's edge — as if it ended there — never under the
+ * pill. A see-through colour would let the text under the band show; nothing opaque → white.
+ */
+export function bandBackground(colors: readonly string[]): string {
+  for (const c of colors) {
+    const v = (c ?? "").trim();
+    if (!v || v === "transparent") continue;
+    const rgba = v.match(/^rgba\(([^)]*)\)$/);
+    if (rgba) {
+      const alpha = Number(rgba[1].split(/[\s,/]+/).filter(Boolean)[3]);
+      if (!(alpha >= 1)) continue;
+    }
+    return v;
+  }
+  return "#fff";
 }
 
 /**

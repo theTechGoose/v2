@@ -51,9 +51,16 @@ async function useCookie(ctx: any, baseUrl: string, cookie: string) {
   ]));
 }
 
-/** REQ-295 — the page's visible text whose middle has the demo pill on top (evaluated in the page) */
+/**
+ * REQ-295 — the page's visible text whose middle has the demo pill on top (evaluated in the page).
+ * REQ-440 (cycle 3, m2) — text that has scrolled into the pill's band is under the band's opaque
+ * paint, not shown: it is not covered by the pill.
+ */
 const coveredText = () => {
   const out: string[] = [];
+  const band = document.querySelector("[data-cy='demo-band']")
+    ?.getBoundingClientRect();
+  const bandTop = band && band.height > 0 ? band.top : Infinity;
   const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
   for (let n = walker.nextNode(); n; n = walker.nextNode()) {
     const text = (n.nodeValue ?? "").trim();
@@ -69,6 +76,7 @@ const coveredText = () => {
     const x = r.left + r.width / 2;
     const y = r.top + r.height / 2;
     if (x < 0 || y < 0 || x >= innerWidth || y >= innerHeight) continue;
+    if (y >= bandTop) continue;
     const top = document.elementFromPoint(x, y);
     if (top?.closest("[data-cy='demo-pill']")) {
       out.push(`"${text.slice(0, 30)}" @${Math.round(x)},${Math.round(y)}`);
