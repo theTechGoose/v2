@@ -343,8 +343,10 @@ describe("REQ-187 the stage and the replica frame — wiring", () => {
     expect(map).toMatch(/map\.on\("moveend"/);
     expect(map).toMatch(/reportView\(\{ map: \{ c: \[/);
     expect(map).toMatch(/onViewRequest\(/);
-    // the replica's own fitBounds never wins over the customer's view
-    const after = map.slice(map.indexOf("map.fitBounds(pts"));
+    // the replica's own fit (or, REQ-288, its business-centre view) never wins over the customer's view
+    const at = map.indexOf("map.fitBounds(view.fit");
+    expect(at).toBeGreaterThan(-1);
+    const after = map.slice(at);
     expect(after).toMatch(/lastMapRef\.current/);
   });
 

@@ -1631,3 +1631,66 @@ Deno.test("REQ-177 with the account's fieldTexts flag off nothing is texted and 
     });
   });
 });
+
+Deno.test("REQ-288 GET /field/regions/center — demo m5: an Austin, TX business with no subscriptions starts on Austin; no address → the whole US; geocoded once per address", async () => {
+  await withServer(async (call) => {
+    const H = await login(call, "+15125551880");
+    const none = await call("GET", "/field/regions/center", undefined, H);
+    assertEquals(none.status, 200, JSON.stringify(none.body));
+    assertEquals(none.body.source, "none");
+    assert(none.body.zoom <= 5, JSON.stringify(none.body));
+    assert(
+      Math.abs(none.body.lat - 33.69) > 1 ||
+        Math.abs(none.body.lng + 78.93) > 1,
+      `not Myrtle Beach: ${JSON.stringify(none.body)}`,
+    );
+
+    const put = await call("PUT", "/profile/address", {
+      street: "1600 Congress Ave",
+      city: "Austin",
+      state: "TX",
+      postal: "78701",
+    }, H);
+    assertEquals(put.status, 200, JSON.stringify(put.body));
+    const geo =
+      (await import("@field/domain/data/geocoder/mod.ts")).FakeGeocoder;
+    const before = geo.prototype.geocode;
+    let calls = 0;
+    geo.prototype.geocode = function (a: string) {
+      calls++;
+      return before.call(this, a);
+    };
+    try {
+      const at = await call("GET", "/field/regions/center", undefined, H);
+      assertEquals(at.status, 200, JSON.stringify(at.body));
+      assertEquals(at.body.source, "business");
+      assert(
+        Math.abs(at.body.lat - 30.27) < 0.25 &&
+          Math.abs(at.body.lng + 97.74) < 0.25,
+        `Austin: ${JSON.stringify(at.body)}`,
+      );
+      assert(at.body.zoom >= 9, JSON.stringify(at.body));
+      await call("GET", "/field/regions/center", undefined, H);
+      assertEquals(calls, 1, "the same address is geocoded once");
+      await call("PUT", "/profile/address", {
+        city: "Denver",
+        state: "CO",
+        street: "",
+        postal: "",
+      }, H);
+      const moved = await call("GET", "/field/regions/center", undefined, H);
+      assertEquals(calls, 2, "a new address is geocoded again");
+      assert(
+        Math.abs(moved.body.lat - 39.74) < 0.25,
+        JSON.stringify(moved.body),
+      );
+    } finally {
+      geo.prototype.geocode = before;
+    }
+    assertEquals(
+      (await call("GET", "/field/regions/center")).status,
+      401,
+      "signed out",
+    );
+  });
+});
