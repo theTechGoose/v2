@@ -14,7 +14,7 @@
 import * as fs from "fs";
 import * as path from "path";
 import * as lib from "../../front-end/lib/welcome-steps";
-import { indexAfterPlan, openSteps, stepCounter } from "../../front-end/lib/welcome-steps";
+import { indexAfterPlan, nextIndex, openSteps, startIndex, stepCounter } from "../../front-end/lib/welcome-steps";
 import {
   isAnswered,
   ONBOARDING_QUESTIONS,
@@ -95,18 +95,26 @@ describe("REQ-121 the wizard asks only the questions still open, and resumes pas
   });
 
   test("REQ-121 the wizard is bound to the rule: the open steps at mount, the first of them or the one after the plan; the asked hook and the first-incomplete search are gone", () => {
-    expect(Object.keys(lib).filter((k) => k !== "__esModule").sort()).toEqual(["indexAfterPlan", "openSteps", "stepCounter"]);
+    expect(Object.keys(lib).filter((k) => k !== "__esModule").sort()).toEqual([
+      "indexAfterPlan",
+      "nextIndex",
+      "openSteps",
+      "startIndex",
+      "stepCounter",
+    ]);
     const src = read("front-end/lib/welcome-steps.ts");
     expect(src).not.toMatch(/asksPlan|askedSteps|AskedStep|signupPlan|awaitsNamedPick|planStepView/);
     const wizard = read("front-end/islands/WelcomeWizard.tsx");
-    expect(wizard).toMatch(/import \{ indexAfterPlan, openSteps, stepCounter \} from "\.\.\/lib\/welcome-steps\.ts";/);
+    expect(wizard).toMatch(/import \{ nextIndex, openSteps, startIndex, stepCounter \} from "\.\.\/lib\/welcome-steps\.ts";/);
     expect(wizard).toMatch(/openSteps\(registry, snapshot\)/);
-    expect(wizard).toMatch(/indexAfterPlan\(registry, steps\)\n\s*: 0\b/);
+    // REQ-427: the start is the first open step, or the one after the plan (REQ-059) — a registry index
+    expect(wizard).toMatch(/startIndex\(\s*registry,\s*open,\s*typeof location !== "undefined" && resumesAfterPlan\(location\.search\),?\s*\)/);
     expect(wizard).not.toMatch(/firstIncomplete|asked\?:|asked: |asksPlan|askedSteps/);
     // the plan step is answered once a plan is on record active: no visit shows "✓ plan active" any more
     expect(wizard).not.toMatch(/plan-active|welcome__plan-active/);
-    // the visit's open steps drive the navigation; the counter the person reads is REQ-253's, the whole onboarding
-    expect(wizard).toMatch(/const total = steps\.length;/);
+    // REQ-427: the whole registry is the navigation (Back reaches an answered step); going forward
+    // stops only on the steps open at mount (nextIndex); the counter is REQ-253's, the whole onboarding
+    expect(wizard).toMatch(/const total = registry\.length;/);
   });
 });
 
@@ -170,48 +178,110 @@ describe("REQ-120 nothing from /landing2 changes the wizard's plan step: it is t
  * after the plan goes on to "Step 5 of 10", never back to 1.
  */
 describe("REQ-253 the step counter counts the whole onboarding, so the plan pick's reload never restarts it", () => {
-  const label = (open: readonly { id: string }[], index: number) => {
-    const c = stepCounter(REGISTRY, open, index);
+  /** the counter at a registry index — the wizard's index since REQ-427 */
+  const label = (index: number) => {
+    const c = stepCounter(REGISTRY, index);
     return `Step ${c.current} of ${c.total}`;
   };
 
   test("REQ-253 a new account: Step 4 of 10 on the plan, then Step 5 of 10 on the state after the pick's reload (demo: Step 1 of 6)", () => {
     const first = openSteps(REGISTRY, NOTHING);
     expect(first[3].id).toBe("plan");
-    expect(label(first, 0)).toBe("Step 1 of 10");
-    expect(label(first, 3)).toBe("Step 4 of 10");
+    expect(startIndex(REGISTRY, first, false)).toBe(0);
+    expect(label(0)).toBe("Step 1 of 10");
+    expect(label(3)).toBe("Step 4 of 10");
     // Monster Free picked: the page reloads at /welcome?after=plan with name, business, email and plan on record
     const afterPick = openSteps(REGISTRY, answered(["name", "businessName", "email", "plan"]));
-    const at = indexAfterPlan(REGISTRY, afterPick);
-    expect(afterPick[at].id).toBe("state");
-    expect(label(afterPick, at)).toBe("Step 5 of 10");
+    const at = startIndex(REGISTRY, afterPick, true);
+    expect(REGISTRY[at].id).toBe("state");
+    expect(label(at)).toBe("Step 5 of 10");
     // and on to the closing screen, the tenth
-    expect(label(afterPick, afterPick.length - 1)).toBe("Step 10 of 10");
+    expect(label(REGISTRY.length - 1)).toBe("Step 10 of 10");
     // a paid pick, back from its pay page with the plan active: the same
     const paid = openSteps(REGISTRY, answered(["name", "businessName", "email", "plan"], { status: "active" }));
-    expect(label(paid, indexAfterPlan(REGISTRY, paid))).toBe("Step 5 of 10");
+    expect(label(startIndex(REGISTRY, paid, true))).toBe("Step 5 of 10");
   });
 
   test("REQ-253 a question skipped on the way to the plan does not move the counter backwards after the reload", () => {
     // the email skipped: the plan was Step 4 of 10 all the same; after the pick the state is the fifth
     const skipped = openSteps(REGISTRY, answered(["name", "businessName", "plan"]));
-    expect(label(skipped, indexAfterPlan(REGISTRY, skipped))).toBe("Step 5 of 10");
+    expect(label(startIndex(REGISTRY, skipped, true))).toBe("Step 5 of 10");
   });
 
-  test("REQ-253 a later login keeps the same total: the two questions left and the closing screen are Step 8, 9 and 10 of 10", () => {
+  test("REQ-253 a later login keeps the same total: each open step reads its place in the whole onboarding (REQ-427 amends Step 8, 9, 10 to 2, 8, 10)", () => {
     const later = openSteps(REGISTRY, answered(["name", "email", "plan", "state", "address", "payment", "insurance"]));
-    expect([0, 1, 2].map((i) => label(later, i))).toEqual(["Step 8 of 10", "Step 9 of 10", "Step 10 of 10"]);
+    const visit: number[] = [startIndex(REGISTRY, later, false)];
+    while (visit.length < later.length) visit.push(nextIndex(REGISTRY, later, visit[visit.length - 1]));
+    expect(visit.map((i) => REGISTRY[i].id)).toEqual(["businessName", "logo", "sampleQuote"]);
+    expect(visit.map(label)).toEqual(["Step 2 of 10", "Step 8 of 10", "Step 10 of 10"]);
     // everything answered: the closing screen is the last of ten
-    expect(label(openSteps(REGISTRY, EVERYTHING), 0)).toBe("Step 10 of 10");
+    expect(label(startIndex(REGISTRY, openSteps(REGISTRY, EVERYTHING), false))).toBe("Step 10 of 10");
   });
 
   test("REQ-253 the wizard renders the counter, the bar and its aria values from stepCounter", () => {
     const wizard = read("front-end/islands/WelcomeWizard.tsx");
-    expect(wizard).toMatch(/import \{ indexAfterPlan, openSteps, stepCounter \} from "\.\.\/lib\/welcome-steps\.ts";/);
-    expect(wizard).toMatch(/stepCounter\(registry, steps, index\)/);
+    expect(wizard).toMatch(/import \{ nextIndex, openSteps, startIndex, stepCounter \} from "\.\.\/lib\/welcome-steps\.ts";/);
+    expect(wizard).toMatch(/stepCounter\(registry, index\)/);
     // every progress number reads the counter, none the visit's own index
     expect(wizard).not.toMatch(/current: index \+ 1/);
     expect(wizard).not.toMatch(/aria-valuenow=\{index \+ 1\}/);
     expect(wizard).not.toMatch(/\(\(index \+ 1\) \/ total\)/);
+  });
+});
+
+/**
+ * REQ-427 — Raphael, 2026-11-12: "fix every issue the demo found, loop until there are none."
+ * Demo-loop cycle 2, issue p13-s: after a reload the wizard's Back button was gone. REQ-121 built
+ * the visit's step list from the unanswered questions alone and started at index 0, so the first
+ * step after a reload had `canGoBack: index > 0` false and the footer drew an empty <span>. The
+ * wizard now navigates the whole registry: it opens at the first open step (or past the plan,
+ * REQ-059), Back reaches the answered question before it, and Continue / Skip retrace what Back walked
+ * through, and past that go only to the steps open when the wizard opened (REQ-121).
+ */
+describe("REQ-427 Back survives a reload: the wizard opens at the first open step of the whole registry", () => {
+  test("REQ-427 the plan pick's reload opens at the state with Back to the plan, the email, the business name and the name; Continue from a revisited step skips the answered ones", () => {
+    const afterPick = openSteps(REGISTRY, answered(["name", "businessName", "email", "plan"]));
+    const at = startIndex(REGISTRY, afterPick, true);
+    expect(REGISTRY[at].id).toBe("state");
+    // Back is there (the demo: it was gone) and walks the answered questions one by one
+    expect(at > 0).toBe(true);
+    expect([at - 1, at - 2, at - 3, at - 4].map((i) => REGISTRY[i].id)).toEqual(["plan", "email", "businessName", "name"]);
+    // Continue after Back retraces the steps walked back through, up to the furthest reached (the state)
+    expect([0, 1, 2, 3].map((i) => REGISTRY[nextIndex(REGISTRY, afterPick, i, at)].id)).toEqual(["businessName", "email", "plan", "state"]);
+    // nothing walked back through: an answered question is never asked going forward (REQ-121)
+    expect(REGISTRY[nextIndex(REGISTRY, afterPick, 2)].id).toBe("state");
+    expect(REGISTRY[nextIndex(REGISTRY, afterPick, 0)].id).toBe("state");
+    // and on through the open steps to the closing screen, the last
+    expect(REGISTRY[nextIndex(REGISTRY, afterPick, at, at)].id).toBe("address");
+    expect(nextIndex(REGISTRY, afterPick, REGISTRY.length - 1)).toBe(REGISTRY.length - 1);
+  });
+
+  test("REQ-427 a later login opens at the first open question with Back to the answered one before it; a new account opens at the name with no Back", () => {
+    const later = openSteps(REGISTRY, answered(["name", "email", "plan", "state", "address", "payment", "insurance"]));
+    const at = startIndex(REGISTRY, later, false);
+    expect(REGISTRY[at].id).toBe("businessName");
+    expect(REGISTRY[at - 1].id).toBe("name");
+    // Back to the name, then Continue: the business name again, then the logo — never the five answered between
+    expect(REGISTRY[nextIndex(REGISTRY, later, at - 1, at)].id).toBe("businessName");
+    expect(REGISTRY[nextIndex(REGISTRY, later, at, at)].id).toBe("logo");
+    // the name skipped on the way to the plan: the reload past the plan still has Back
+    const skippedName = openSteps(REGISTRY, answered(["businessName", "email", "plan"]));
+    expect(REGISTRY[startIndex(REGISTRY, skippedName, true)].id).toBe("state");
+    // a brand-new account: the first step, nothing to go back to
+    expect(startIndex(REGISTRY, openSteps(REGISTRY, NOTHING), false)).toBe(0);
+    expect(startIndex([], [], false)).toBe(0);
+  });
+
+  test("REQ-427 the wizard navigates the registry: Back whenever a step precedes the current one, Continue / Skip by nextIndex", () => {
+    const wizard = read("front-end/islands/WelcomeWizard.tsx");
+    // the open steps are the forward stops; the step shown is the registry's
+    expect(wizard).toMatch(/const open = useMemo\(\(\) => openSteps\(registry, snapshot\), \[registry\]\);/);
+    expect(wizard).toMatch(/const step = registry\[index\];/);
+    expect(wizard).not.toMatch(/const step = steps\[index\];/);
+    // forward: the next open step; back: the step before, answered or not
+    expect(wizard.match(/setIndex\(\(i\) => nextIndex\(registry, open, i, reached\.current\)\)/g)?.length).toBe(2);
+    expect(wizard).toMatch(/reached\.current = Math\.max\(reached\.current, index\);/);
+    expect(wizard).toMatch(/goBack: \(\) => setIndex\(\(i\) => Math\.max\(i - 1, 0\)\)/);
+    expect(wizard).toMatch(/canGoBack: index > 0,/);
   });
 });

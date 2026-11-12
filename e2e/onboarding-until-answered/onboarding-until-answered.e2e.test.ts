@@ -164,15 +164,16 @@ Deno.test("REQ-121: a later login asks only the questions still open — with th
     landed = await codeIn(page, local);
     expect.eq(landed.pathname, "/welcome", `two open questions still land the code in the wizard (${landed})`);
 
-    // the wizard is the two open questions and the closing screen, the business name first — counted
-    // against the whole onboarding, the seven answered ahead of them (REQ-253 amends REQ-121's "Step 1 of 3")
+    // the wizard asks the two open questions and the closing screen, the business name first — each
+    // counted at its place in the whole onboarding (REQ-253; REQ-427: the wizard navigates the whole
+    // registry, so the business name is the second step and the answered name is one Back away)
     await expect.see("business called");
-    await expect.see("Step 8 of 10");
+    await expect.see("Step 2 of 10");
     await fillStep(page, "input.welcome__input", "Story Roofing LLC");
     await page.locator("[data-cy='welcome-continue']").click();
     // straight to the logo: not the email, the plan, the state, the address or the payment methods, all answered
     await expect.see("Add your logo");
-    await expect.see("Step 9 of 10");
+    await expect.see("Step 8 of 10");
     const card = await page.locator(".welcome__card").innerText();
     expect(!/best email|Pick your plan|Which state|business based|get paid/.test(card), `no answered question is asked again (${card.slice(0, 80)})`);
     // the logo put off: the closing screen, the last of the three — never the insurance, answered
@@ -181,6 +182,73 @@ Deno.test("REQ-121: a later login asks only the questions still open — with th
     await expect.see("Step 10 of 10");
     const closing = await page.locator(".welcome__card").innerText();
     expect(!/insured/.test(closing), "the insurance, answered, is not asked again");
+  }));
+
+/** REQ-427: click until `done` holds — a click before the island hydrates does nothing */
+async function clickUntil(page: StoryTools["page"], selector: string, done: () => Promise<boolean>): Promise<void> {
+  for (let attempt = 0; attempt < 10; attempt++) {
+    if (await done()) return;
+    try {
+      await page.locator(selector).first().click({ timeout: 2_000 });
+    } catch { /* not clickable yet: the polls below say whether the effect landed */ }
+    for (let i = 0; i < 5; i++) {
+      if (await done()) return;
+      await page.waitForTimeout(200);
+    }
+  }
+  throw new Error(`clicking ${selector} never took effect`);
+}
+
+/**
+ * REQ-427 — demo-loop cycle 2, issue p13-s: after a reload the wizard's Back button was gone.
+ * REQ-121 built the visit from the open questions alone and started at its first, so the step a
+ * reload landed on had nothing before it. The wizard now navigates the whole onboarding: it opens
+ * at the first open question, Back reaches the answered one before it, and Continue still skips
+ * every question answered before the wizard opened.
+ */
+Deno.test("REQ-427: Back survives a reload — answered in the wizard, the page reloaded: Back is there and goes to the previous answered question, filled in; Continue goes forward again", (t) =>
+  story(t, async ({ page, expect, baseUrl }) => {
+    await page.setViewportSize(DESKTOP);
+    const host = new URL(baseUrl).hostname;
+    await page.context().addCookies([{ name: "pm_lang", value: "en", domain: host, path: "/" }]);
+    const local = `512${digits()}`;
+    const back = ".welcome__footer > button.welcome__btn--ghost";
+    const question = () => page.locator(".welcome__question").innerText().catch(() => "");
+
+    const landed = await codeIn(page, local);
+    expect.eq(landed.pathname, "/welcome", `a new account's code lands in the wizard (${landed})`);
+    await expect.see("what should we call you");
+    expect.eq(await page.locator(back).count(), 0, "the first question has no Back");
+    // the demo's path: the name and the business name answered in the wizard, then a reload
+    await fillStep(page, "input.welcome__input", "Story Person");
+    await page.locator("[data-cy='welcome-continue']").click();
+    await expect.see("business called");
+    await fillStep(page, "input.welcome__input", "Story Roofing LLC");
+    await page.locator("[data-cy='welcome-continue']").click();
+    await expect.see("best email");
+    await expect.see("Step 3 of 10");
+
+    await page.reload();
+    await page.waitForLoadState("networkidle");
+    await expect.see("best email");
+    await expect.see("Step 3 of 10");
+    await page.locator(back).waitFor({ state: "visible", timeout: 15_000 });
+    expect.eq(await page.locator(back).count(), 1, "after the reload the email step still has Back (the demo: it was gone)");
+
+    // Back: the business name, as answered
+    await clickUntil(page, back, async () => /business called/.test(await question()));
+    await expect.see("Step 2 of 10");
+    expect.eq(await page.locator("input.welcome__input").first().inputValue(), "Story Roofing LLC", "the answered business name is filled in");
+    // and Back again: the name
+    await clickUntil(page, back, async () => /call you/.test(await question()));
+    await expect.see("Step 1 of 10");
+    expect.eq(await page.locator("input.welcome__input").inputValue(), "Story Person", "the answered name is filled in");
+    // Continue walks forward again to the email
+    await page.locator("[data-cy='welcome-continue']:not([disabled])").click();
+    await expect.see("business called");
+    await page.locator("[data-cy='welcome-continue']:not([disabled])").click();
+    await expect.see("best email");
+    await expect.see("Step 3 of 10");
   }));
 
 /**

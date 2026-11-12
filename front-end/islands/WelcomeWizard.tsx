@@ -11,8 +11,11 @@
  * the wizard comes back on the next code. REQ-227: Skip saves that question's
  * "deferred" stamp, so the dashboard lets the person in once every open
  * question is deferred (its setup checklist asks for the rest). REQ-121: a
- * visit asks the open questions alone — never one the account has already
- * answered — and counts its steps over those (lib/welcome-steps.ts). The
+ * visit asks the open questions alone — Continue never lands on one the
+ * account has already answered — while REQ-427 keeps every step in the
+ * navigation, so Back reaches an answered question even after a reload, and
+ * the counter is the step's place in the whole onboarding
+ * (lib/welcome-steps.ts). The
  * low-key "Skip setup for now" escape records the leave and
  * drops the user in the assistant (the dashboard would send them straight
  * back). Which questions are open is the one rule the backend and the
@@ -50,7 +53,7 @@ import {
   planViewOf,
   resumesAfterPlan,
 } from "../lib/plan-return.ts";
-import { indexAfterPlan, openSteps, stepCounter } from "../lib/welcome-steps.ts";
+import { nextIndex, openSteps, startIndex, stepCounter } from "../lib/welcome-steps.ts";
 import { filesClient } from "../clients/files.ts";
 import {
   isLogoImageType,
@@ -1418,17 +1421,25 @@ export default function WelcomeWizard(
 ) {
   const registry = useMemo(() => buildSteps(), []);
   // REQ-121 — the steps this visit asks: the questions with no answer on record when the wizard
-  // opens, and the closing screen; a question answered on an earlier visit is never shown again
-  const steps = useMemo(() => openSteps(registry, snapshot), [registry]);
+  // opens, and the closing screen; going forward, a question answered on an earlier visit is
+  // never shown again
+  const open = useMemo(() => openSteps(registry, snapshot), [registry]);
   const [snap, setSnap] = useState<ProfileSnapshot>(snapshot);
-  // REQ-059 — back from a pick (free stored, or the receipt with the plan active): resume PAST
-  // the plan's slot, at the first open step after it — not at an earlier question the person
-  // skipped on the way to the plan; otherwise the first open step
+  // REQ-427 (demo p13-s) — the index is a place in the WHOLE registry, so after a reload Back
+  // still reaches the answered question before the current one. It opens at the first open step;
+  // REQ-059 — back from a pick (free stored, or the receipt with the plan active): PAST the
+  // plan's slot, at the first open step after it — not at an earlier question the person skipped
+  // on the way to the plan
   const [index, setIndex] = useState(() =>
-    typeof location !== "undefined" && resumesAfterPlan(location.search)
-      ? indexAfterPlan(registry, steps)
-      : 0
+    startIndex(
+      registry,
+      open,
+      typeof location !== "undefined" && resumesAfterPlan(location.search),
+    )
   );
+  // REQ-427 — the furthest step this visit reached: Continue after Back retraces up to it
+  const reached = useRef(index);
+  reached.current = Math.max(reached.current, index);
   const [, force] = useState(0);
 
   // REQ-256: the sample quote is made when its step comes up — not at
@@ -1472,11 +1483,11 @@ export default function WelcomeWizard(
     return () => unsub();
   }, []);
 
-  // the visit's own length drives the navigation; the counter the person reads counts the whole
-  // onboarding, so the plan pick's reload goes on to "Step 5 of 10", never "Step 1 of 6" (REQ-253)
-  const total = steps.length;
-  const progress = stepCounter(registry, steps, index);
-  const step = steps[index];
+  // the whole registry is the navigation (REQ-427); the counter counts the whole onboarding, so
+  // the plan pick's reload goes on to "Step 5 of 10", never "Step 1 of 6" (REQ-253)
+  const total = registry.length;
+  const progress = stepCounter(registry, index);
+  const step = registry[index];
   const [skipping, setSkipping] = useState(false);
   const StepComp = step.Component;
   useEffect(() => {
@@ -1487,13 +1498,14 @@ export default function WelcomeWizard(
     snap,
     suggestedState,
     patchSnap: (partial) => setSnap((prev) => ({ ...prev, ...partial })),
-    advance: () => setIndex((i) => Math.min(i + 1, total - 1)),
+    // REQ-121 / REQ-427: forward stops only on the steps open when the wizard opened
+    advance: () => setIndex((i) => nextIndex(registry, open, i, reached.current)),
     skip: () => {
       if (skipping) return;
       setSkipping(true);
       deferQuestion(step.id).finally(() => {
         setSkipping(false);
-        setIndex((i) => Math.min(i + 1, total - 1));
+        setIndex((i) => nextIndex(registry, open, i, reached.current));
       });
     },
     goBack: () => setIndex((i) => Math.max(i - 1, 0)),
