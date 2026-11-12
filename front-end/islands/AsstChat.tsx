@@ -11477,13 +11477,14 @@ function CustomDurationPickerForm(props: {
   // submitted value now go through termLabel, so an ES contractor locks in
   // "3 semanas".
   // REQ-458 (demo M38): an empty number asks for one ("Type a number")
-  // instead of a bare "—" that read as a dead end.
-  const emptyHint = durationPreviewHint(n);
+  // instead of a bare "—" that read as a dead end. REQ-677 (c4-m45): a bad
+  // number (0, 9999…) reads "Enter 1–99" — never "—".
+  const previewHint = durationPreviewHint(n);
   const preview = valid
     ? termLabel({ kind: "duration", value: { n: num, unit } }, lang)
-    : emptyHint
-    ? tFor(lang, emptyHint)
-    : "—";
+    : previewHint
+    ? tFor(lang, previewHint)
+    : "";
 
   const presets: {
     label: string;
@@ -11696,13 +11697,6 @@ function CustomDurationPickerForm(props: {
           <option value="months">{tFor(lang, "asstChat.unit.months")}</option>
         </select>
       </div>
-      {parsedNum.error
-        ? (
-          <div id="dur-num-err" class="cust-pick__err" data-cy="dur-num-err">
-            {tFor(lang, parsedNum.error)}
-          </div>
-        )
-        : null}
       <div class="dur__presets">
         {presets.map((p) => {
           const active = n === p.n && unit === p.unit;
@@ -11728,12 +11722,30 @@ function CustomDurationPickerForm(props: {
         </span>
         <span class="dur__preview-val">{preview}</span>
       </div>
+      {
+        /* REQ-677 (c4-m45): the reason sits right above the disabled Lock it
+          in (it used to hide between the inputs and the presets), and both
+          the number box and the button point at it. */
+      }
+      {parsedNum.error
+        ? (
+          <div
+            id="dur-num-err"
+            class="cust-pick__err dur__err"
+            data-cy="dur-num-err"
+            role="alert"
+          >
+            {tFor(lang, parsedNum.error)}
+          </div>
+        )
+        : null}
       <div class="cust-create__actions">
         <button
           type="button"
           class="cust-create__btn cust-create__btn--primary"
           onClick={() => onSubmit(preview)}
           disabled={!valid || sending}
+          aria-describedby={parsedNum.error ? "dur-num-err" : undefined}
         >
           {tFor(lang, "asstChat.lockIn")}
         </button>

@@ -280,6 +280,7 @@
   "asstChat.duration.preset.twoThreeDays": "2–3 days",
   "asstChat.duration.preset.twoWeeks": "2 weeks",
   "asstChat.duration.previewEmpty": "Type a number",
+  "asstChat.duration.previewInvalid": "Enter 1–99",
   "asstChat.duration.subPick": "Pick a number and a unit — I'll write it into the agreement.",
   "asstChat.duration.titleFail": "Set the duration",
   "asstChat.duration.unitLabel": "Unit of time",
