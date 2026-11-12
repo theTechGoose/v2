@@ -353,6 +353,16 @@ export default function DemoModeOverlay() {
     sentRef.current = out; // REQ-305 — every anchor of this pointer goes out: the last one sent
     return out;
   };
+  /** REQ-437 — the box of the element a presenter's anchor names, when this page has it */
+  const rectOnScreen = (a: Anchor): Rect | null => {
+    const recorder = recorderRef.current;
+    const sender = senderRef.current;
+    if (!a.n || !recorder || !sender || a.n.l !== sender.load) return null;
+    const r = recorder.nodeOf(a.n.id)?.getBoundingClientRect();
+    return r && r.width > 0 && r.height > 0
+      ? { left: r.left, top: r.top, width: r.width, height: r.height }
+      : null;
+  };
   /** a presenter's pointer on this screen: on the element they point at when this page has it;
    *  REQ-451 (M1) — else nowhere (null): another page load, the element left the page or is not
    *  laid out — never the fraction it had, which is over something else now */
@@ -594,7 +604,14 @@ export default function DemoModeOverlay() {
         return;
       }
       placed.set(pid, { ...p.at, outside: p.outside });
-      command(pid, { kind, at: p.at, outside: p.outside, off: a.o === 1 });
+      // REQ-437 — the element's box goes with the point: the tag sits outside it
+      command(pid, {
+        kind,
+        at: p.at,
+        outside: p.outside,
+        off: a.o === 1,
+        rect: p.outside ? null : rectOnScreen(a),
+      });
     };
     let raf = 0;
     /** REQ-305 — this page moved under the pointers (a scroll of any scroller, a resize, a change

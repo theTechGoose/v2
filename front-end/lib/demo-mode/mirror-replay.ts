@@ -106,6 +106,10 @@ export interface Replayer {
   anchorAt(x: number, y: number): NodeAnchor | null;
   /** the point an anchor names in the frame; null when the element is gone or has no box */
   pointOf(a: NodeAnchor): { x: number; y: number } | null;
+  /** REQ-437 — the box of the element an anchor names, in the frame; null when gone or boxless */
+  rectOf(
+    a: NodeAnchor,
+  ): { left: number; top: number; width: number; height: number } | null;
   /** every node's latest scroll, applied again where the replay lost it */
   settle(): void;
   /** REQ-305 — every stylesheet the replay links has loaded (or failed): its layout is the customer's */
@@ -557,6 +561,13 @@ export function createReplayer(
       const r = (n as Element).getBoundingClientRect();
       if (r.width <= 0 || r.height <= 0) return null;
       return { x: r.left + r.width * a.x, y: r.top + r.height * a.y };
+    },
+    rectOf(a) {
+      const n = byId.get(a.id);
+      if (!n || n.nodeType !== 1 || !doc.contains(n)) return null;
+      const r = (n as Element).getBoundingClientRect();
+      if (r.width <= 0 || r.height <= 0) return null;
+      return { left: r.left, top: r.top, width: r.width, height: r.height };
     },
     settle,
     styled,

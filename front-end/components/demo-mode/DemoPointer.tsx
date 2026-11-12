@@ -12,18 +12,28 @@
  * REQ-305 — `outside`: the element pointed at is out of view, the arrow sits on the edge of
  * `bounds` pointing at it (`data-outside`, marked by a dashed ring) — never off-screen.
  *
+ * REQ-437 (demo m3 + p8-pair3-a, cycle 3) — the tag sits OUTSIDE `rect` (the element the pointer
+ * is anchored to), past its edge with the most room, else below-right past the arrow's tail
+ * (`tagPlacement`), clamped inside `bounds`. It is placed on every painted frame from the DRAWN
+ * arrow (the glide's painter, `attach`'s second argument) with the tag's measured size, the side
+ * on `data-tag-side` — never from the glide's target with a guessed width.
+ *
  * REQ-451 (demo M14, cycle 3) — `off`: the sender's pointer is OFF the shared screen (a
  * presenter's mouse beside the phone frame on his stage, `o: 1`). Not the arrow and the name over
  * the screen's controls: a small translucent marker against the edge it is off, pointing that way
  * (`offMark`), no tag, no ring (`data-off`).
  */
-import { useEffect, useState } from "preact/hooks";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "preact/hooks";
 import {
   pointerLook,
   type Pt,
-  TAG_DX,
-  TAG_DY,
-  TAG_GAP,
+  type Rect,
   TAG_IDLE_MS,
   tagPlacement,
 } from "../../../shared/demo-mode/motion.ts";
@@ -63,17 +73,43 @@ const windowBox = (): Bounds => ({
   height: globalThis.innerHeight || 0,
 });
 
+/** REQ-437 — the tag's size before it is laid out (SSR, the first paint): 12px bold, padded */
+const estimate = (name: string) => ({ w: 18 + name.length * 7.5, h: 22 });
+
+/** REQ-437 — place the tag element for an arrow drawn at `tip`: its MEASURED size (the estimate
+ *  only while it has none), outside `rect`, inside `box`; left/top relative to the tip (the
+ *  pointer box is translated to it) and the side on `data-tag-side` */
+export function placeTag(
+  el: HTMLElement,
+  tip: Pt,
+  box: Bounds,
+  rect: Rect | null,
+  fallback: { w: number; h: number },
+): void {
+  const tag = {
+    w: el.offsetWidth || fallback.w,
+    h: el.offsetHeight || fallback.h,
+  };
+  const at = tagPlacement(tip, box, tag, rect);
+  el.style.left = `${at.x - tip.x}px`;
+  el.style.top = `${at.y - tip.y}px`;
+  el.setAttribute("data-tag-side", at.side);
+}
+
 export default function DemoPointer(
-  { pointer, outside, off, waves, name, color, z, attach, bounds }: {
+  { pointer, outside, off, rect, waves, name, color, z, attach, bounds }: {
     pointer: Pt | null;
     outside?: boolean;
     /** REQ-451 — the sender's pointer is off the shared screen: the small edge marker */
     off?: boolean;
+    /** REQ-437 — the box of the element the pointer is anchored to (null: none, or out of view) */
+    rect?: Rect | null;
     waves: Wave[];
     name: string;
     color: string;
     z: number;
-    attach(el: HTMLDivElement | null): void;
+    /** the glide's ref callback; `onPaint` gets every DRAWN position of the arrow */
+    attach(el: HTMLDivElement | null, onPaint?: (p: Pt) => void): void;
     bounds?: Bounds;
   },
 ) {
@@ -89,11 +125,40 @@ export default function DemoPointer(
   }, [pointer, outside]);
   const look = pointerLook(idle);
 
-  // the tag's size, near enough: 12px bold, padded
-  const tag = { w: 16 + name.length * 7.5, h: 22 };
+  /** what the painter places the tag in, as of the latest render */
+  const live = useRef<
+    { bounds?: Bounds; rect: Rect | null; fallback: { w: number; h: number } }
+  >({ rect: null, fallback: estimate(name) });
+  const tagRef = useRef<HTMLSpanElement | null>(null);
+  const drawn = useRef<Pt | null>(null);
+  const paintTag = useCallback((p: Pt) => {
+    drawn.current = p;
+    const el = tagRef.current;
+    if (!el) return;
+    const l = live.current;
+    placeTag(el, p, l.bounds ?? windowBox(), l.rect, l.fallback);
+  }, []);
+  const ref = useCallback(
+    (el: HTMLDivElement | null) => attach(el, el ? paintTag : undefined),
+    [attach],
+  );
+  // a re-render rewrites the tag's style (opacity, a new target): place it again from the drawn
+  // arrow, with its measured size
+  useLayoutEffect(() => {
+    if (drawn.current) paintTag(drawn.current);
+  });
+  // REQ-437 — the first render places the tag from the target with the estimated size; every
+  // painted frame then places it from the drawn arrow with the measured one
+  const fallback = estimate(name);
+  live.current = { bounds, rect: outside ? null : rect ?? null, fallback };
   const place = pointer
-    ? tagPlacement(pointer, bounds ?? windowBox(), tag)
-    : { left: false, up: false };
+    ? tagPlacement(
+      pointer,
+      bounds ?? windowBox(),
+      fallback,
+      outside ? null : rect,
+    )
+    : null;
   const mark = pointer && off ? offMark(pointer, bounds ?? windowBox()) : null;
   return (
     <>
@@ -114,7 +179,7 @@ export default function DemoPointer(
           data-idle={idle ? 1 : 0}
           data-outside={outside ? "" : undefined}
           data-off={off ? "" : undefined}
-          ref={attach}
+          ref={ref}
           style={`position:fixed;left:0;top:0;width:24px;height:30px;overflow:visible;pointer-events:none;z-index:${
             z + 1
           }`}
@@ -178,17 +243,15 @@ export default function DemoPointer(
                   />
                 </svg>
                 <span
+                  ref={tagRef}
                   data-cy="demo-pointer-tag"
+                  data-tag-side={place?.side}
                   aria-hidden="true"
-                  style={`position:absolute;${
-                    place.up
-                      ? `bottom:${ARROW_H + TAG_GAP}px`
-                      : `top:${TAG_DY}px`
-                  };${
-                    place.left
-                      ? `right:${ARROW_W + TAG_GAP}px`
-                      : `left:${TAG_DX}px`
-                  };padding:2px 8px;border-radius:999px;background:${color};color:#fff;font-size:12px;font-weight:700;white-space:nowrap;border:1px solid rgba(255,255,255,.85);box-shadow:0 1px 4px rgba(0,0,0,.35);opacity:${look.tag};transition:opacity .3s`}
+                  style={`position:absolute;left:${
+                    (place?.x ?? 0) - pointer.x
+                  }px;top:${
+                    (place?.y ?? 0) - pointer.y
+                  }px;padding:2px 8px;border-radius:999px;background:${color};color:#fff;font-size:12px;font-weight:700;white-space:nowrap;border:1px solid rgba(255,255,255,.85);box-shadow:0 1px 4px rgba(0,0,0,.35);opacity:${look.tag};transition:opacity .3s`}
                 >
                   {name}
                 </span>

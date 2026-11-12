@@ -6,13 +6,7 @@
  * screen" — both screens, one model. Pointer events off; never drawn under his own cursor
  * (`ghostAt` decides when it shows); on the frame's edge, ringed, when its element is out of view.
  */
-import {
-  type Pt,
-  TAG_DX,
-  TAG_DY,
-  TAG_GAP,
-  tagPlacement,
-} from "../../../shared/demo-mode/motion.ts";
+import { type Pt, tagPlacement } from "../../../shared/demo-mode/motion.ts";
 import { GHOST_OPACITY } from "../../../shared/demo-mode/presenter-anchor.ts";
 import { ARROW_H, ARROW_PATH, ARROW_W, type Bounds } from "./DemoPointer.tsx";
 
@@ -26,8 +20,14 @@ export default function PointerGhost(
     bounds: Bounds;
   },
 ) {
-  // the label's size, near enough: 11px bold, padded
-  const place = tagPlacement(at, bounds, { w: 14 + label.length * 6.5, h: 20 });
+  // the label's size, near enough: 11px bold, padded. REQ-437 placement: below-right past the
+  // arrow's tail (no anchored element here), above only at the frame's bottom
+  const place = tagPlacement(
+    at,
+    bounds,
+    { w: 14 + label.length * 6.5, h: 20 },
+    null,
+  );
   return (
     <div
       data-cy="demo-pointer-ghost"
@@ -63,11 +63,10 @@ export default function PointerGhost(
       </svg>
       <span
         data-cy="demo-pointer-ghost-label"
-        style={`position:absolute;${
-          place.up ? `bottom:${ARROW_H + TAG_GAP}px` : `top:${TAG_DY}px`
-        };${
-          place.left ? `right:${ARROW_W + TAG_GAP}px` : `left:${TAG_DX}px`
-        };padding:1px 7px;border-radius:999px;background:${color};color:#fff;font-size:11px;font-weight:700;white-space:nowrap;border:1px dashed rgba(255,255,255,.9)`}
+        data-tag-side={place.side}
+        style={`position:absolute;left:${place.x - at.x}px;top:${
+          place.y - at.y
+        }px;padding:1px 7px;border-radius:999px;background:${color};color:#fff;font-size:11px;font-weight:700;white-space:nowrap;border:1px dashed rgba(255,255,255,.9)`}
       >
         {label}
       </span>

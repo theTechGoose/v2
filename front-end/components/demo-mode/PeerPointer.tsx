@@ -9,7 +9,7 @@
  * mouse beside the frame on its stage) — drawn as DemoPointer's small edge marker, no name tag.
  */
 import { useEffect, useRef, useState } from "preact/hooks";
-import type { Pt } from "../../../shared/demo-mode/motion.ts";
+import type { Pt, Rect } from "../../../shared/demo-mode/motion.ts";
 import { useGlide } from "../../lib/demo-mode/use-glide.ts";
 import DemoPointer, {
   type Bounds,
@@ -25,6 +25,8 @@ export interface PointerCmd {
   outside?: boolean;
   /** REQ-451 — the pointer is off the shared screen: the small edge marker, no tag */
   off?: boolean;
+  /** REQ-437 — the box of the element `at` is anchored to: the name tag sits outside it */
+  rect?: Rect | null;
 }
 
 export default function PeerPointer(
@@ -45,14 +47,14 @@ export default function PeerPointer(
     switch (cmd.kind) {
       case "move":
         if (cmd.at) {
-          glide.glideTo(cmd.at, cmd.outside);
+          glide.glideTo(cmd.at, cmd.outside, cmd.rect);
           setOff(cmd.off === true);
         }
         break;
       case "click": {
         if (!cmd.at) break;
         const at = cmd.at;
-        glide.glideTo(at, cmd.outside);
+        glide.glideTo(at, cmd.outside, cmd.rect);
         setOff(cmd.off === true);
         const id = ++waveId.current;
         setWaves((w) => [...w, { id, ...at }]);
@@ -73,6 +75,7 @@ export default function PeerPointer(
       pointer={glide.pointer}
       outside={glide.outside}
       off={off}
+      rect={glide.rect}
       waves={waves}
       name={name}
       color={color}

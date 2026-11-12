@@ -387,22 +387,21 @@ describe("REQ-242 the codec and the two ends", () => {
 describe("REQ-242 the pointer's name tag stays inside its box and rests when idle", () => {
   const box = { left: 100, top: 50, width: 400, height: 300 };
   const tag = { w: 90, h: 22 };
-  // REQ-374 (demo m9, cycle 2): above-left of the tip by default, off the content pointed at
-  test("above-left of the arrow, unless that runs past the box's left or top edge", () => {
-    expect(tagPlacement({ x: 300, y: 200 }, box, tag)).toEqual({
-      left: true,
-      up: true,
-    });
-    // near the frame's left edge (not the window's): the tag flips to the right
-    expect(tagPlacement({ x: 150, y: 200 }, box, tag)).toEqual({
-      left: false,
-      up: true,
-    });
-    // near the top: below the tip
-    expect(tagPlacement({ x: 300, y: 70 }, box, tag)).toEqual({
-      left: true,
-      up: false,
-    });
+  // REQ-374 (demo m9, cycle 2) above-left — REVISED by REQ-437 (demo m3, cycle 3): outside the
+  // element pointed at, else past the arrow's tail; clamped inside the box (the frame, not the window)
+  test("the tag stays inside the box: near the frame's left edge, its top, its bottom-right", () => {
+    for (
+      const p of [{ x: 300, y: 200 }, { x: 101, y: 200 }, { x: 300, y: 51 }, {
+        x: 499,
+        y: 349,
+      }]
+    ) {
+      const at = tagPlacement(p, box, tag);
+      expect(at.x).toBeGreaterThanOrEqual(box.left);
+      expect(at.y).toBeGreaterThanOrEqual(box.top);
+      expect(at.x + tag.w).toBeLessThanOrEqual(box.left + box.width);
+      expect(at.y + tag.h).toBeLessThanOrEqual(box.top + box.height);
+    }
   });
   test("the tag rests after TAG_IDLE_MS, faded but readable; the arrow never dims (REQ-374)", () => {
     expect(TAG_IDLE_MS).toBe(1_500);
