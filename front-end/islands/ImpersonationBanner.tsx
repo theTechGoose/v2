@@ -20,12 +20,16 @@
  * you out of the demo with {name}"), then LEAVES the demo (POST /demo-mode/sessions/:id/leave: it
  * ends when the last presenter leaves) and only then hands the account back — so /admin is where
  * it stays, not a stop on the way back to the stage.
+ *
+ * REQ-537 (demo-loop cycle 4, m36) — not drawn on the stage (/demo/stage): the stage pill's End is
+ * its one exit (and, with other presenters, its "Leave the demo"); every other page keeps the bar.
  */
 import { useEffect, useRef, useState } from "preact/hooks";
 import { adminClient, type WhoAmI } from "../clients/admin.ts";
 import { demoModeClient } from "../clients/demo-mode.ts";
 import { clearBannerRoom, setBannerRoom } from "../lib/banner-room.ts";
 import { ImpersonationBannerView } from "../components/ImpersonationBannerView.tsx";
+import { impersonationBannerOn } from "../../shared/demo-mode/stage-chrome.ts";
 
 export default function ImpersonationBanner() {
   const [who, setWho] = useState<WhoAmI | null>(null);
@@ -36,9 +40,15 @@ export default function ImpersonationBanner() {
     { id: string; name: string; presenters: number } | null
   >(null);
   const el = useRef<HTMLDivElement>(null);
-  const shown = Boolean(who?.impersonating);
+  // REQ-537 — on the stage the pill is the one exit: no bar (and no whoami asked for it)
+  const [onPage] = useState(() =>
+    typeof globalThis.location === "undefined" ||
+    impersonationBannerOn(globalThis.location.pathname)
+  );
+  const shown = onPage && Boolean(who?.impersonating);
 
   useEffect(() => {
+    if (!onPage) return;
     let alive = true;
     adminClient.whoami()
       .then((w) => {

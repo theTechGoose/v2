@@ -65,6 +65,11 @@
  * REQ-235 — End asks first (EndDemo); the end goes to /admin saying who ended it ("You ended the
  * demo", "{customer} ended the demo", "{colleague} ended the demo"), where the overlay keeps it.
  *
+ * REQ-537 (demo-loop cycle 4, m36) — the stage has one exit: the impersonation banner is not drawn
+ * here (so `bannerH` measures 0 and the stage starts at the top of the window), End is in the pill,
+ * and only with other presenters does the pill also offer "Leave the demo" (it leaves, hands the
+ * account back and goes to /admin; the demo goes on with the others).
+ *
  * REQ-309 (demo M19/m14/m26) — the pill's "Live" is the FRAME's truth: said only once the followed
  * tab's snapshot is in the frame, "Connecting…" in between — the same fact the "Connecting to
  * {name}'s screen…" overlay uses. A frame that does not fit leaves the stage dirty, and it asks
@@ -154,6 +159,7 @@ import PeerPointer, {
 } from "../components/demo-mode/PeerPointer.tsx";
 import PresenterChips from "../components/demo-mode/PresenterChips.tsx";
 import EndDemo from "../components/demo-mode/EndDemo.tsx";
+import { stageLeaveShown } from "../../shared/demo-mode/stage-chrome.ts";
 import {
   endedHref,
   type EndedNotice,
@@ -257,6 +263,8 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
   const [status, setStatus] = useState<LinkStatus>("connecting");
   const [peerOnline, setPeerOnline] = useState(false);
   const [ended, setEnded] = useState(false);
+  /** REQ-537 — Leave the demo was clicked here: on the way to /admin */
+  const [leavingHere, setLeavingHere] = useState(false);
   /** REQ-242 — null until the customer's first snapshot is in the frame */
   const [mirrored, setMirrored] = useState<Screen | null>(null);
   /** REQ-297 — the screen in the frame is from before the customer's app dropped */
@@ -1237,6 +1245,21 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
     setTimeout(() => void backToOwnAccount({ by: "you" }), 800);
   }
 
+  /** REQ-537 (m36) — with others presenting: leave the demo (it goes on with them), hand the
+   *  account back, and go to /admin — what the banner's Return did on the stage, now in the pill */
+  async function leave() {
+    if (!demo || leavingHere) return;
+    setLeavingHere(true);
+    await demoModeClient.leave(demo.id).catch(() => {});
+    try {
+      const who = await adminClient.whoami();
+      if (who.impersonating) await adminClient.stopImpersonating();
+    } catch {
+      // not impersonating, or signed out
+    }
+    globalThis.location.href = "/admin";
+  }
+
   const sendClick = (x: number, y: number) =>
     linkRef.current?.send({ k: "click", a: anchorOf({ x, y }) });
 
@@ -1637,8 +1660,20 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
               })}
             </span>
           )}
+          {/* REQ-537 (m36) — with other presenters, Leave is the secondary way out (outlined) */}
+          {stageLeaveShown(demo.presenters.length) && !ended && (
+            <button
+              type="button"
+              data-cy="demo-leave"
+              onClick={() => void leave()}
+              disabled={leavingHere}
+              style="padding:4px 11px;border-radius:8px;border:1px solid rgba(255,255,255,.75);background:transparent;color:#fff;cursor:pointer;font:inherit;font-size:12px;font-weight:700"
+            >
+              {t("demoMode.leave")}
+            </button>
+          )}
           {/* REQ-235 — End asks first */}
-          <EndDemo onEnd={end} disabled={ended} />
+          <EndDemo onEnd={end} disabled={ended || leavingHere} />
         </div>
       )}
     </div>
