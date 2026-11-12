@@ -619,3 +619,27 @@ Deno.test("REQ-248: version 1 names who published it and when — issued by PUT,
     assertEquals(legacy[0].publishedAt, row.sentAt);
   });
 });
+
+Deno.test("REQ-686 (cycle 5, m45): a never-sent draft's version history carries no publishedAt — it was not published", async () => {
+  await withServer(async () => {
+    const sid = await login();
+    const c = await mkCustomer(sid);
+    const q = await mkQuote(sid, c.id);
+    // an edit stamps updatedAt — the old fallback read that as "published"
+    await drain(
+      await put(`/quotes/${q.id}`, auth(sid), { estimatedTotal: 120000 }),
+    );
+    const draft = await get(`/quotes/${q.id}`, auth(sid));
+    assertEquals(draft.status ?? "draft", "draft");
+    const versions = await get(`/quotes/${q.id}/versions`, auth(sid));
+    assertEquals(versions.length, 1);
+    assertEquals(versions[0].current, true);
+    assertEquals(versions[0].publishedAt, undefined);
+    // once sent, the same version reads published at the send
+    const sent = await put(`/quotes/${q.id}`, auth(sid), {
+      status: "sent",
+    }).then((r) => r.json());
+    const after = await get(`/quotes/${q.id}/versions`, auth(sid));
+    assertEquals(after[after.length - 1].publishedAt, sent.sentAt);
+  });
+});

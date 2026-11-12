@@ -161,7 +161,8 @@ describe("REQ-570 m41 the /quotes open panel has Send ▾", () => {
     expect(src).toContain('data-cy="quote-panel-send-menu"');
     expect(src).toContain("quote-panel-send-${ch}");
     expect(src).toContain('data-cy="quote-panel-send-preview"');
-    expect(src).toContain("panelCanSend(");
+    // REQ-686 (cycle 5): gated by panelSendAction — panelCanSend's "send" case
+    expect(src).toContain('panelSendAction(q) === "send"');
   });
   it("REQ-570 a channel pick opens the shared send dialog, which sends via sendFromQuotePanel → assistantClient.sendQuoteFlow", () => {
     expect(src).toContain("<QuoteSendDialog");

@@ -59,6 +59,8 @@ const WORDS: Record<
     awaitingApproval: string;
     invoice: string;
     due: string;
+    /** REQ-686: a version never published (an unsent draft) */
+    draftNotSent: string;
   }
 > = {
   en: {
@@ -70,6 +72,7 @@ const WORDS: Record<
     awaitingApproval: "Waiting for your approval",
     invoice: "Invoice",
     due: "due",
+    draftNotSent: "draft, not sent",
   },
   es: {
     version: "Versión",
@@ -80,6 +83,7 @@ const WORDS: Record<
     awaitingApproval: "Esperando tu aprobación",
     invoice: "Factura",
     due: "vence",
+    draftNotSent: "borrador, sin enviar",
   },
 };
 
@@ -196,7 +200,7 @@ export function invoiceHeadline(
   return parts.join(" · ");
 }
 
-/** "Version 1 · published Nov 3 by Rafa" */
+/** "Version 1 · published Nov 3 by Rafa"; "Version 1 · draft, not sent" (REQ-686) */
 export function versionHistoryLine(
   v: Pick<DocVersionRecord, "version" | "publishedAt"> & {
     publishedBy?: DocVersionRecord["publishedBy"];
@@ -208,6 +212,8 @@ export function versionHistoryLine(
     (v.publishedBy?.customer ? w.customer : "");
   const when = shortDate(v.publishedAt, lang, false);
   let line = `${w.version} ${v.version}`;
+  // REQ-686 (cycle 5, m45): no publish date — it was never sent
+  if (!when) return `${line} · ${w.draftNotSent}`;
   if (when) line += ` · ${w.publishedBy} ${when}`;
   if (who) line += ` ${w.by} ${who}`;
   return line;
@@ -514,6 +520,9 @@ export type LedgerRowKey =
   | "remaining";
 
 export interface LedgerSummary {
+  /** REQ-686 (cycle 5, m44): the quote is in front of the customer — an
+   *  unsent draft has nothing to invoice yet */
+  issued: boolean;
   rows: { key: LedgerRowKey; cents: number }[];
   overpaid: boolean;
   overpaidCents: number;
@@ -551,7 +560,9 @@ export function ledgerSummary(
   // scheduled installment or a draft gets its own "Scheduled" row.
   const scheduledCents = l.scheduledCents ?? 0;
   const next = l.nextScheduled;
+  const issued = l.quote.status !== "draft";
   return {
+    issued,
     rows: [
       {
         key: l.quote.accepted ? "agreed" : "quoted",
@@ -563,11 +574,13 @@ export function ledgerSummary(
       ...(scheduledCents > 0
         ? [{ key: "scheduled" as const, cents: scheduledCents }]
         : []),
-      { key: "remaining", cents: l.remainingToInvoiceCents },
+      ...(issued
+        ? [{ key: "remaining" as const, cents: l.remainingToInvoiceCents }]
+        : []),
     ],
     overpaid: l.overpaidCents > 0,
     overpaidCents: l.overpaidCents,
-    canCreateNextInvoice: l.remainingToInvoiceCents > 0,
+    canCreateNextInvoice: issued && l.remainingToInvoiceCents > 0,
     ...(next
       ? {
         scheduled: {

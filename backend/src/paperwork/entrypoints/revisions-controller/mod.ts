@@ -267,10 +267,15 @@ function withCurrent(
     sentAt?: string;
     updatedAt?: string;
     createdAt?: string;
+    status?: string;
     pendingRevision?: unknown;
   },
 ) {
   const { pendingRevision: _p, ...content } = live;
+  // REQ-686 (cycle 5, m45): a draft nobody was sent was never published —
+  // no publish date (an edit's updatedAt used to read "published Nov 12").
+  const unissued = !live.publishedAt && !live.sentAt &&
+    (!live.status || live.status === "draft");
   return [
     ...filed.map((v) => ({
       ...v,
@@ -284,8 +289,10 @@ function withCurrent(
     {
       version: versionOf(live),
       // REQ-248: never published by nobody — the owner, when it was sent
-      publishedAt: live.publishedAt ?? live.sentAt ?? live.updatedAt ??
-        live.createdAt,
+      ...(unissued ? {} : {
+        publishedAt: live.publishedAt ?? live.sentAt ?? live.updatedAt ??
+          live.createdAt,
+      }),
       publishedBy: publisherOrOwner(live),
       content,
       current: true,
