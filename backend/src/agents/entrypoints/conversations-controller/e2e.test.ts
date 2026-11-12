@@ -248,6 +248,7 @@ const PRE_CONTINUE_DRAFT = {
   priceCaptureOpen: true,
   priceCents: 370000,
   priceSuggestions: null,
+  priceBasis: null,
   previewCtaId: null,
   polishRaw: null,
 };

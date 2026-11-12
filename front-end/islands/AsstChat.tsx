@@ -823,6 +823,11 @@ export default function AsstChat({
       { tier: "competitive" | "market" | "premium"; label: string; priceCents: number; rationale: string }
     > | null
   >(seed?.priceSuggestions ?? null);
+  /** REQ-332 (m30): what the tiers include, as the server derived it from
+   *  the job — never a fixed "labor and materials" claim. */
+  const [priceBasis, setPriceBasis] = useState<
+    "labor_and_materials" | "labor_materials_as_noted"
+  >(seed?.priceBasis ?? "labor_and_materials");
   const [optionsLoading, setOptionsLoading] = useState(false);
   /** REQ-027 (NW-11): the model could not draft the options — the cards
    *  are heuristic scope bullets and the picker says so. */
@@ -1601,6 +1606,7 @@ export default function AsstChat({
       priceCaptureOpen,
       priceCents,
       priceSuggestions,
+      priceBasis,
       previewCtaId,
       polishRaw: needsJobPolish ? jobPolishRawRef.current : null,
     };
@@ -2465,6 +2471,35 @@ export default function AsstChat({
     );
   }
 
+  /** REQ-332 (m30): a professionalized bullet that came back as several
+   *  lines ("4 recesed lights + City of Austin permit" → two) replaces the
+   *  one bullet with one bullet per line, in place; the first keeps its id. */
+  function replaceBulletWithLines(
+    optionId: string,
+    bulletId: string,
+    lines: string[],
+  ) {
+    const [first, ...rest] = lines;
+    if (!first) return;
+    const extra = rest.map((text) => ({
+      id: `b${++bulletSeq}`,
+      text,
+      deleted: false,
+    }));
+    setJobOptions((prev) =>
+      prev?.map((o) =>
+        o.id === optionId
+          ? {
+            ...o,
+            bullets: o.bullets.flatMap((b) =>
+              b.id === bulletId ? [{ ...b, text: first }, ...extra] : [b]
+            ),
+          }
+          : o
+      ) ?? prev
+    );
+  }
+
   function startBulletEdit(
     optionId: string,
     bulletId: string,
@@ -2528,17 +2563,29 @@ export default function AsstChat({
   async function confirmProfessionalize() {
     if (!proPopup || proBusy) return;
     const { optionId, bulletId } = proPopup;
-    const b = jobOptions?.find((o) => o.id === optionId)?.bullets.find((x) =>
-      x.id === bulletId
-    );
-    if (!b) {
+    const option = jobOptions?.find((o) => o.id === optionId);
+    const b = option?.bullets.find((x) => x.id === bulletId);
+    if (!option || !b) {
       setProPopup(null);
       return;
     }
     setProBusy(true);
     try {
-      const res = await assistantClient.professionalizeBullet(b.text);
-      if (res?.text) setBulletText(optionId, bulletId, res.text);
+      // REQ-332 (m30): send the JOB with the bullet — the original message
+      // and the option's other bullets — so the rewrite never re-scopes a
+      // job-wide item ("City of Austin permit") onto the item it shares a
+      // line with; an "A + B" bullet comes back as two lines.
+      const siblings = option.bullets
+        .filter((x) => x.id !== bulletId && !x.deleted)
+        .map((x) => x.text);
+      const res = await assistantClient.professionalizeBullet(b.text, {
+        raw: pendingJobDetailsRaw ?? submittedJobDetails ?? undefined,
+        siblings,
+      });
+      const lines = (res?.lines ?? (res?.text ? [res.text] : []))
+        .map((l) => l.trim()).filter((l) => l.length > 0);
+      if (lines.length > 1) replaceBulletWithLines(optionId, bulletId, lines);
+      else if (lines[0]) setBulletText(optionId, bulletId, lines[0]);
     } catch (err) {
       console.warn("[asst] professionalize failed, keeping text:", err);
     } finally {
@@ -4219,6 +4266,7 @@ export default function AsstChat({
   async function fetchPriceSuggestions(raw: string, scope?: string) {
     try {
       const res = await assistantClient.suggestPrices(raw, scope);
+      setPriceBasis(res.basis ?? "labor_and_materials");
       setPriceSuggestions(res.options ?? []);
     } catch {
       setPriceSuggestions([]);
@@ -5538,7 +5586,12 @@ export default function AsstChat({
                           class="chat__price-basis"
                           style="font-size:12px;color:var(--fg-muted,#6b7560);padding:0 2px"
                         >
-                          {tFor(lang, "suggestPrices.basis.laborAndMaterials")}
+                          {tFor(
+                            lang,
+                            priceBasis === "labor_materials_as_noted"
+                              ? "suggestPrices.basis.laborMaterialsAsNoted"
+                              : "suggestPrices.basis.laborAndMaterials",
+                          )}
                         </div>
                         {priceSuggestions === null
                           ? (

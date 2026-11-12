@@ -30,6 +30,21 @@ async function commsLang(
   return ident?.commsLanguage === "es" ? "es" : "en";
 }
 
+/** REQ-332: the job context a professionalize call may carry — bounded,
+ *  strings only. */
+function parseProfessionalizeContext(
+  v: unknown,
+): { raw?: string; siblings?: string[] } | undefined {
+  if (!v || typeof v !== "object") return undefined;
+  const c = v as { raw?: unknown; siblings?: unknown };
+  const raw = typeof c.raw === "string" ? c.raw.slice(0, 8_000) : undefined;
+  const siblings = Array.isArray(c.siblings)
+    ? c.siblings.filter((s): s is string => typeof s === "string").slice(0, 40)
+      .map((s) => s.slice(0, 500))
+    : undefined;
+  return raw || siblings?.length ? { raw, siblings } : undefined;
+}
+
 /**
  * Every language the job options should be generated in: the contractor's app
  * language (primary — they review in it) ∪ their selected outgoing-comms
@@ -182,7 +197,12 @@ export class JobDetailsController {
    * POST /agents/job-details/professionalize
    *
    * Two shapes (TDD-QUOTE-FLOW contract):
-   *   { text: string }     → { text: string }      — legacy single-bullet cleanup
+   *   { text: string, context?: { raw?, siblings? } }
+   *     → { text: string, lines: string[] } — single-bullet cleanup. REQ-332
+   *     (demo m30): `context` is the job the bullet belongs to (the original
+   *     message + the option's other bullets), so the rewrite never re-scopes
+   *     a job-wide item; `lines` is what the bullet became (an "A + B" bullet
+   *     → two lines), `text` the first of them.
    *   { details: string }  → { items: string[] }   — roadmap p.5: break the
    *     contractor's raw multi-line "write it myself" input into professional
    *     line items. The result is a PROPOSAL — the client offers accept/edit,
@@ -194,7 +214,7 @@ export class JobDetailsController {
     @Body() body: unknown,
   ) {
     const user = await requireUser(ctx, this.sessions, this.users);
-    const b = (body ?? {}) as { text?: unknown; details?: unknown };
+    const b = (body ?? {}) as { text?: unknown; details?: unknown; context?: unknown };
 
     if (typeof b.details === "string") {
       const lines = b.details
@@ -202,12 +222,15 @@ export class JobDetailsController {
         .map((l) => l.replace(/^\s*[-•*·]\s*/, "").trim())
         .filter((l) => l.length > 0);
       if (!lines.length) throw new Error("details is empty");
-      const items = await Promise.all(
+      const items = (await Promise.all(
         lines.map((line) =>
-          this.professionalize.run({ userId: user.id, text: line })
-            .then((r) => r.text)
+          this.professionalize.run({
+            userId: user.id,
+            text: line,
+            context: { raw: b.details as string, siblings: lines.filter((l) => l !== line) },
+          }).then((r) => r.lines)
         ),
-      );
+      )).flat();
       return ctx.json({ items });
     }
 
@@ -215,7 +238,11 @@ export class JobDetailsController {
       throw new Error("text is required");
     }
     return ctx.json(
-      await this.professionalize.run({ userId: user.id, text: b.text }),
+      await this.professionalize.run({
+        userId: user.id,
+        text: b.text,
+        context: parseProfessionalizeContext(b.context),
+      }),
     );
   }
 
