@@ -44,6 +44,7 @@ import {
 } from "../../shared/quote-flow/wizard-terms.ts"; // REQ-347
 import { quoteUpdatedBy } from "../lib/chat-quote-refresh.ts";
 import { chatQuoteLink } from "../lib/chat-quote-link.ts";
+import { quoteHasPrice } from "../../shared/quote-flow/quote-price-guard.ts";
 import {
   type ChipKey,
   chipReply,
@@ -6061,10 +6062,18 @@ export default function AsstChat({
                       t: tFor,
                       localize: localizeTermValue,
                     });
-                    const totalCentsForBreakdown =
-                      typeof quote?.estimatedTotal === "number"
-                        ? quote.estimatedTotal
-                        : lineTotalCents;
+                    // REQ-302 (demo B1): the TOTAL is the sum of the lines
+                    // this card renders — `quote.estimatedTotal` is loaded
+                    // once per quoteId and went stale after a chat reprice
+                    // (lines said -$500, TOTAL said $0.00).
+                    const totalCentsForBreakdown = lineItems.length
+                      ? lineItems.reduce(
+                        (sum, li) => sum + (li.amountCents ?? 0),
+                        0,
+                      )
+                      : typeof quote?.estimatedTotal === "number"
+                      ? quote.estimatedTotal
+                      : lineTotalCents;
                     // Two decimals to match the public agreement's
                     // fmtMoneyExact() (lib/format.ts) — the "$" is rendered in
                     // a sibling span, so we format only the numeric portion.
@@ -8190,7 +8199,10 @@ export default function AsstChat({
                                   type="button"
                                   class="action-card__btn action-card__btn--primary"
                                   onClick={() => lockActionCard(m, payload)}
-                                  disabled={sending || !payload.quoteId}
+                                  // REQ-302 (demo M29): no lock on a draft
+                                  // with no price ("price abc" → $0.00)
+                                  disabled={sending || !payload.quoteId ||
+                                    !quoteHasPrice(lineItems, totalCents)}
                                 >
                                   <I d={ICN.bolt} size={11} />{" "}
                                   {tFor(lang, "asstChat.actionCard.lockIn")}

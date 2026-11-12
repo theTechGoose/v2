@@ -23,6 +23,7 @@ import { MessageStore as CommMessageStore } from "@communication/domain/data/mes
 import { TranslateQuote } from "@agents/domain/coordinators/translate-quote/mod.ts";
 import { TranslateBullets } from "@agents/domain/coordinators/translate-bullets/mod.ts";
 import { StubLLMClient } from "@agents/domain/business/llm/implementations/stub/mod.ts";
+import { QuotePriceError } from "#quote-flow/quote-price-guard.ts";
 
 function fresh(translator?: TranslateQuote) {
   const conversations = new AgentConversationStore();
@@ -780,5 +781,60 @@ Deno.test("REQ-276 send-quote: a missing recipient reads in the contractor's lan
     `no English reason: ${note}`,
   );
   assert(/sin destinatario/.test(note), `Spanish reason: ${note}`);
+  await resetKv();
+});
+
+// REQ-302 (demo-loop cycle 1, B1): a quote with no price cannot be sent
+// either — the demo sent the -$500 quote to the customer. Written straight to
+// KV because the store now refuses such a quote.
+Deno.test("REQ-302 B1 send-quote: refuses to send a quote with a negative line or a zero total — status stays draft, nothing is emailed", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const ctx = fresh();
+  await seedContractor("u-1");
+  const customer = await ctx.customers.create("u-1", {
+    name: "Tom & Linda K.",
+    email: "tom@example.com",
+  });
+  const kv = await getKv();
+  const now = new Date().toISOString();
+  for (
+    const [id, price, total] of [
+      ["q-neg", -50_000, -50_000],
+      ["q-zero", 0, 0],
+    ] as const
+  ) {
+    await kv.set(["quote", id], {
+      id,
+      userId: "u-1",
+      summary: "Panel swap",
+      lineItems: [{
+        description: "Panel swap",
+        quantity: 1,
+        unit: "ea",
+        price,
+      }],
+      estimatedTotal: total,
+      status: "draft",
+      customerId: customer.id,
+      createdAt: now,
+      updatedAt: now,
+    });
+    await kv.set(["quote_by_user", "u-1", id], id);
+    const conv = await ctx.conversations.create({
+      userId: "u-1",
+      quoteId: id,
+      customerId: customer.id,
+    });
+    await assertRejects(
+      () =>
+        ctx.flow.run({ userId: "u-1", conversationId: conv.id, quoteId: id }),
+      QuotePriceError,
+    );
+    const after = await ctx.quotes.getOwned(id, "u-1");
+    assertEquals(after.status, "draft");
+    assertEquals(after.sentAt, undefined);
+  }
+  assertEquals(ctx.sentEmails.length, 0);
   await resetKv();
 });

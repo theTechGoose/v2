@@ -5,6 +5,7 @@ import {
   IsObject,
   IsOptional,
   IsString,
+  Min,
   ValidateNested,
   validateSync,
 } from "#class-validator";
@@ -39,8 +40,11 @@ export class LineItemDto {
   @IsString()
   unit!: string;
 
-  /** Per-unit price in INTEGER CENTS. Line total is price * quantity. */
+  /** Per-unit price in INTEGER CENTS. Line total is price * quantity.
+   *  REQ-302 (demo B1): never negative. Zero is an included item (REQ-267);
+   *  the quote's total must still be above zero (see estimatedTotal). */
   @IsNumber()
+  @Min(0)
   price!: number;
 
   /** REQ-264 (M15) / REQ-256: the line's text per language, keyed by lang
@@ -108,9 +112,11 @@ export class CreateQuoteDto {
   lineItems!: LineItemDto[];
 
   /** Total quote value in INTEGER CENTS. Audit1 #3 unified the money
-   *  schema so dollars-as-floats no longer cross any boundary. */
+   *  schema so dollars-as-floats no longer cross any boundary.
+   *  REQ-302 (demo M29): when given, above zero — "price abc" is not $0. */
   @IsOptional()
   @IsNumber()
+  @Min(1)
   estimatedTotal?: number;
 
   @IsOptional()
@@ -188,8 +194,8 @@ export class UpdateQuoteDto {
   @ValidateNested({ each: true })
   @Type(() => LineItemDto)
   lineItems?: LineItemDto[];
-  /** INTEGER CENTS. */
-  @IsOptional() @IsNumber()
+  /** INTEGER CENTS. REQ-302: when given, above zero. */
+  @IsOptional() @IsNumber() @Min(1)
   estimatedTotal?: number;
   @IsOptional() @IsString()
   status?: string;

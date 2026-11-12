@@ -8,6 +8,10 @@ import { UserStore } from "@users/domain/data/user-store/mod.ts";
 import { EventBus } from "@core/business/events/mod.ts";
 import { TranslateQuote } from "@agents/domain/coordinators/translate-quote/mod.ts";
 import { t } from "@core/i18n/mod.ts";
+import {
+  QuotePriceError,
+  storedQuotePriceProblem,
+} from "#quote-flow/quote-price-guard.ts";
 import type { SmsFailureCode } from "#quote-flow/sms-failure.ts";
 import { versionOf } from "#documents/versions.ts";
 import type { AgentConversation } from "@agents/dto/conversation.ts";
@@ -81,6 +85,18 @@ export class SendQuote {
     }
 
     let quote = await this.quotes.getOwned(input.quoteId, input.userId);
+    // REQ-302 (demo B1): a quote with no price is never sent.
+    const priceProblem = storedQuotePriceProblem(quote);
+    if (priceProblem) {
+      const me = await this.users.get(input.userId).catch(() => null);
+      throw new QuotePriceError(
+        priceProblem,
+        t(me?.language === "es" ? "es" : "en", "chatCoordinator.priceMissing", {
+          item: quote.lineItems?.[0]?.description?.trim() || quote.summary ||
+            "this job",
+        }),
+      );
+    }
     // Bind the conversation's customer before dispatch so the recipient
     // (email/phone) resolves from the customer on file.
     if (!quote.customerId && conv.customerId) {

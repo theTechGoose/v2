@@ -574,6 +574,7 @@
   "chatCoordinator.revision.updated": "Actualicé la cotización: {changes}.",
   "chatCoordinator.revision.updatedNoChange": "Actualicé la cotización.",
   "chatCoordinator.quoteLocked": "Cotización confirmada",
+  "chatCoordinator.priceMissing": "No puedo usar eso como precio. ¿Cuánto debería costar {item}? Dame un número, como $500.",
   "chatHeader.more": "Más",
   "chatHeader.shareThread": "Compartir conversación",
   "clientsBoard.balance": "Saldo",
