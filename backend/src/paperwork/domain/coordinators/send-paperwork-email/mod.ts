@@ -482,6 +482,18 @@ function fmtDate(iso: string | undefined, lang: Lang, tz?: string): string {
   return fmtPaperworkDate(iso ?? "", lang, tz);
 }
 
+/**
+ * REQ-542 (demo-loop cycle 4, m8): the send dialog's ~350px preview frame (and
+ * a phone's mail app) clipped the email on the right — the card was a fixed
+ * 600/640px table. The card is now fluid (width 100%, max-width 600/640px),
+ * and on a narrow screen the gutters around and inside it tighten and the
+ * four "what happens next" steps sit two by two and the total drops under its
+ * label, so its content fits. Clients that drop <style> (Outlook desktop)
+ * keep the wide layout, where there is room for it.
+ */
+const NARROW_SCREEN_STYLE =
+  `<style>@media only screen and (max-width:480px){.pw-outer{padding:16px 6px!important}.pw-card>tbody>tr>td,.pw-card>tr>td{padding-left:18px!important;padding-right:18px!important}.pw-step{display:inline-block!important;width:50%!important;box-sizing:border-box;padding:0 4px 14px!important}.pw-amt{display:block!important;text-align:left!important;padding:16px 18px!important}.pw-amt+.pw-amt{padding-top:0!important}.pw-amt-n{font-size:32px!important}}</style>`;
+
 /** Wraps the per-doc body in a brand-consistent shell (header, sender block,
  *  CTA button row, footer). All inline-styled — Gmail/Outlook strip <style>. */
 function shell(opts: {
@@ -545,14 +557,15 @@ function shell(opts: {
   <meta name="color-scheme" content="light only">
   <meta name="supported-color-schemes" content="light only">
   <title>${escapeHtml(kindLabel)} ${escapeHtml(docNumber)}</title>
+  ${NARROW_SCREEN_STYLE}
 </head>
 <body style="margin:0;padding:0;background:${COLOR_BG};font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:${COLOR_INK};line-height:1.5;">
   <span style="display:none!important;visibility:hidden;opacity:0;color:transparent;height:0;width:0;overflow:hidden;mso-hide:all">${
     escapeHtml(preheader)
   }</span>
   <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="background:${COLOR_BG};">
-    <tr><td align="center" style="padding:32px 16px;">
-      <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="600" style="max-width:600px;background:${COLOR_CARD};border-radius:18px;overflow:hidden;box-shadow:0 8px 32px rgba(20,72,82,0.08);">
+    <tr><td class="pw-outer" align="center" style="padding:32px 16px;">
+      <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" class="pw-card" style="width:100%;max-width:600px;background:${COLOR_CARD};border-radius:18px;overflow:hidden;box-shadow:0 8px 32px rgba(20,72,82,0.08);">
         <tr><td align="center" style="padding:24px 32px 0;">
           <img src="${escapeAttr(logo.src)}" alt="${escapeAttr(logo.alt)}" width="160" style="display:block;border:0;outline:none;text-decoration:none;height:auto;max-width:160px;">
         </td></tr>
@@ -851,14 +864,15 @@ export function renderQuoteHtml(
   <meta name="color-scheme" content="light only">
   <meta name="supported-color-schemes" content="light only">
   <title>${L.titleWord} ${escapeHtml(docNumber)}</title>
+  ${NARROW_SCREEN_STYLE}
 </head>
 <body style="margin:0;padding:0;background:${COLOR_BG};font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:${COLOR_INK};line-height:1.5;">
   <span style="display:none!important;visibility:hidden;opacity:0;color:transparent;height:0;width:0;overflow:hidden;mso-hide:all">${
     escapeHtml(preheader)
   }</span>
   <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="background:${COLOR_BG};">
-    <tr><td align="center" style="padding:40px 16px;">
-      <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="640" style="max-width:640px;background:${COLOR_CARD};border-radius:24px;overflow:hidden;box-shadow:0 12px 40px rgba(20,72,82,0.10);">
+    <tr><td class="pw-outer" align="center" style="padding:40px 16px;">
+      <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" class="pw-card" style="width:100%;max-width:640px;background:${COLOR_CARD};border-radius:24px;overflow:hidden;box-shadow:0 12px 40px rgba(20,72,82,0.10);">
 
         <!-- pink ribbon header -->
         <tr><td style="height:6px;background:linear-gradient(90deg,${COLOR_PINK} 0%,${COLOR_PINK_DARK} 100%);font-size:0;line-height:0">&nbsp;</td></tr>
@@ -946,12 +960,12 @@ export function renderQuoteHtml(
         <tr><td style="padding:24px 36px 0">
           <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="background:linear-gradient(135deg,#e8f3e2 0%,#dceadb 100%);border:1px solid rgba(81,152,67,0.25);border-radius:18px">
             <tr>
-              <td style="padding:22px 24px">
+              <td class="pw-amt" style="padding:22px 24px">
                 <div style="font-size:11px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:${COLOR_GREEN}">${L.estimatedTotal}</div>
                 <div style="margin-top:4px;color:${COLOR_MUTED};font-size:12px">${L.allIn}</div>
               </td>
-              <td style="padding:22px 24px;text-align:right;vertical-align:middle">
-                <div style="font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;font-weight:900;font-size:42px;letter-spacing:-0.03em;color:${COLOR_TEAL};line-height:1;font-variant-numeric:tabular-nums">${
+              <td class="pw-amt" style="padding:22px 24px;text-align:right;vertical-align:middle">
+                <div class="pw-amt-n" style="font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;font-weight:900;font-size:42px;letter-spacing:-0.03em;color:${COLOR_TEAL};line-height:1;font-variant-numeric:tabular-nums">${
     fmtUSD(total)
   }</div>
               </td>
@@ -980,7 +994,7 @@ export function renderQuoteHtml(
             <tr>
               ${
     L.steps.map(([n, t, sub]) =>
-      `<td valign="top" align="center" style="width:25%;padding:0 6px">
+      `<td class="pw-step" valign="top" align="center" style="width:25%;padding:0 6px">
                 <div style="display:inline-block;width:30px;height:30px;border-radius:50%;background:${COLOR_PINK};color:#fff;font-weight:800;line-height:30px;text-align:center;font-size:13px">${n}</div>
                 <div style="margin-top:8px;color:${COLOR_INK};font-weight:700;font-size:13px">${t}</div>
                 <div style="margin-top:2px;color:${COLOR_MUTED};font-size:11px;line-height:1.4">${sub}</div>
@@ -1287,14 +1301,15 @@ export function renderInvoiceHtml(
   <meta name="color-scheme" content="light only">
   <meta name="supported-color-schemes" content="light only">
   <title>${escapeHtml(L.kindLabel)} ${escapeHtml(docNumber)}</title>
+  ${NARROW_SCREEN_STYLE}
 </head>
 <body style="margin:0;padding:0;background:${COLOR_BG};font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:${COLOR_INK};line-height:1.5;">
   <span style="display:none!important;visibility:hidden;opacity:0;color:transparent;height:0;width:0;overflow:hidden;mso-hide:all">${
     escapeHtml(preheader)
   }</span>
   <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="background:${COLOR_BG};">
-    <tr><td align="center" style="padding:40px 16px;">
-      <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="640" style="max-width:640px;background:${COLOR_CARD};border-radius:24px;overflow:hidden;box-shadow:0 12px 40px rgba(20,72,82,0.10);">
+    <tr><td class="pw-outer" align="center" style="padding:40px 16px;">
+      <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" class="pw-card" style="width:100%;max-width:640px;background:${COLOR_CARD};border-radius:24px;overflow:hidden;box-shadow:0 12px 40px rgba(20,72,82,0.10);">
 
         <!-- pink ribbon header -->
         <tr><td style="height:6px;background:linear-gradient(90deg,${COLOR_PINK} 0%,${COLOR_PINK_DARK} 100%);font-size:0;line-height:0">&nbsp;</td></tr>
@@ -1376,15 +1391,15 @@ export function renderInvoiceHtml(
         <tr><td style="padding:24px 36px 0">
           <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="background:linear-gradient(135deg,#e8f3e2 0%,#dceadb 100%);border:1px solid rgba(81,152,67,0.25);border-radius:18px">
             <tr>
-              <td style="padding:22px 24px">
+              <td class="pw-amt" style="padding:22px 24px">
                 <div style="font-size:11px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:${COLOR_GREEN}">${
     escapeHtml(L.amountDue)
   }</div>
                 ${dueSub}
                 ${milestoneSub}
               </td>
-              <td style="padding:22px 24px;text-align:right;vertical-align:middle">
-                <div style="font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;font-weight:900;font-size:42px;letter-spacing:-0.03em;color:${COLOR_TEAL};line-height:1;font-variant-numeric:tabular-nums">${
+              <td class="pw-amt" style="padding:22px 24px;text-align:right;vertical-align:middle">
+                <div class="pw-amt-n" style="font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;font-weight:900;font-size:42px;letter-spacing:-0.03em;color:${COLOR_TEAL};line-height:1;font-variant-numeric:tabular-nums">${
     fmtUSD(amount)
   }</div>
               </td>

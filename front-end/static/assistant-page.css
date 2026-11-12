@@ -775,8 +775,10 @@ body {
 }
 .topbar__ticker-track {
   /* REQ-319: sized by the sentence (the item is in flow), shrinking to the
-     floor below when the pill hits its cap. */
-  flex: 0 1 auto;
+     floor below when the pill hits its cap. REQ-542: it gives way before
+     the time does (shrink 100 vs 1), so the time wraps only once the track
+     is at its floor. */
+  flex: 0 100 auto;
   min-width: 120px; /* REQ-273: the event text always gets room */
   position: relative;
   /* REQ-476 (demo cycle 3, p8-pair9-a / p8-pair10-c): up to two lines.
@@ -800,17 +802,21 @@ body {
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
   line-clamp: 2;
-  overflow-wrap: anywhere;
+  /* REQ-542 (demo cycle 4, m8): break between words — "anywhere" split the
+     sentence mid-word ("aceptó tu cotizaci…"); break-word still splits a
+     single word too long for the track (an email address). */
+  overflow-wrap: break-word;
   overflow: hidden;
   animation: tickerSlideIn 360ms var(--ease-bounce) both;
 }
+/* REQ-542 (demo cycle 4, m31): the entrance moves the sentence, never fades
+   it — from opacity 0 a paused, throttled or restarted animation left the
+   pill reading only "● just now". */
 @keyframes tickerSlideIn {
   from {
-    opacity: 0;
     transform: translateY(8px);
   }
   to {
-    opacity: 1;
     transform: translateY(0);
   }
 }
@@ -821,7 +827,15 @@ body {
   margin-right: 4px;
 }
 .topbar__ticker-time {
-  flex-shrink: 0;
+  /* REQ-542 (demo cycle 4, m8): at the pill's 220px floor the 120px track
+     left ~44px, and a one-line, unshrinkable time was clipped at the pill's
+     edge ("ahora mism"). It stays on one line while the track gives way
+     (the track's shrink is 100); once the track is at its floor the time
+     takes the rest of the squeeze and wraps onto the pill's second line
+     ("ahora / mismo"). */
+  flex: 0 1 auto;
+  line-height: 14px;
+  max-height: 28px;
   font-size: 10.5px;
   color: var(--fg-subtle);
   font-family: var(--font-mono, ui-monospace, monospace);
@@ -3001,8 +3015,10 @@ body {
 }
 .topbar__ticker-track {
   /* REQ-319: sized by the sentence (the item is in flow), shrinking to the
-     floor below when the pill hits its cap. */
-  flex: 0 1 auto;
+     floor below when the pill hits its cap. REQ-542: it gives way before
+     the time does (shrink 100 vs 1), so the time wraps only once the track
+     is at its floor. */
+  flex: 0 100 auto;
   min-width: 120px; /* REQ-273: the event text always gets room */
   position: relative;
   /* REQ-476 (demo cycle 3, p8-pair9-a / p8-pair10-c): up to two lines.
@@ -3026,17 +3042,21 @@ body {
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
   line-clamp: 2;
-  overflow-wrap: anywhere;
+  /* REQ-542 (demo cycle 4, m8): break between words — "anywhere" split the
+     sentence mid-word ("aceptó tu cotizaci…"); break-word still splits a
+     single word too long for the track (an email address). */
+  overflow-wrap: break-word;
   overflow: hidden;
   animation: tickerSlideIn 360ms var(--ease-bounce) both;
 }
+/* REQ-542 (demo cycle 4, m31): the entrance moves the sentence, never fades
+   it — from opacity 0 a paused, throttled or restarted animation left the
+   pill reading only "● just now". */
 @keyframes tickerSlideIn {
   from {
-    opacity: 0;
     transform: translateY(8px);
   }
   to {
-    opacity: 1;
     transform: translateY(0);
   }
 }
@@ -3047,7 +3067,15 @@ body {
   margin-right: 4px;
 }
 .topbar__ticker-time {
-  flex-shrink: 0;
+  /* REQ-542 (demo cycle 4, m8): at the pill's 220px floor the 120px track
+     left ~44px, and a one-line, unshrinkable time was clipped at the pill's
+     edge ("ahora mism"). It stays on one line while the track gives way
+     (the track's shrink is 100); once the track is at its floor the time
+     takes the rest of the squeeze and wraps onto the pill's second line
+     ("ahora / mismo"). */
+  flex: 0 1 auto;
+  line-height: 14px;
+  max-height: 28px;
   font-size: 10.5px;
   color: var(--fg-subtle);
   font-family: var(--font-mono, ui-monospace, monospace);
