@@ -70,7 +70,11 @@ describe("REQ-440 (demo-loop cycle 3, m2) — the pill's band is real on pages w
     const band = src.match(/const bandStyle =\s*`[^`]*`/)?.[0] ?? "";
     expect(band).toContain("position:fixed");
     expect(band).toContain("left:0;right:0;bottom:0");
-    expect(band).toContain(`height:var(${PILL_ROOM_VAR}, 0px)`);
+    // REQ-545 (cycle 4, m2) AMENDMENT — the band's height while the pill sits home on it; 0
+    // while the pill is tucked to its tab (the band hid what scrolled into the strip)
+    expect(band.replace(/\s+/g, " ")).toContain(
+      `bandOn ? "var(${PILL_ROOM_VAR}, 0px)" : "0px"`,
+    );
     expect(band).toContain("pointer-events:none");
     expect(band).toContain("z-index:1;");
     expect(src).toContain("bandBackground(");

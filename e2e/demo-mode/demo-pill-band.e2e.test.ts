@@ -124,7 +124,19 @@ const probe = () => {
       /^quick summary$/i.test((d.textContent ?? "").trim())
     );
   const h = title?.parentElement?.getBoundingClientRect() ?? null;
+  // REQ-545 — the tucked pill's edge tab
+  const tab = document.querySelector<HTMLElement>("[data-cy='demo-pill-tab']")
+    ?.getBoundingClientRect() ?? null;
   return {
+    folded: pill.hasAttribute("data-tucked"),
+    tab: tab
+      ? {
+        left: Math.round(tab.left),
+        top: Math.round(tab.top),
+        right: Math.round(tab.right),
+        bottom: Math.round(tab.bottom),
+      }
+      : null,
     pill: {
       left: Math.round(r.left),
       top: Math.round(r.top),
@@ -157,8 +169,6 @@ const probe = () => {
 };
 type Probe = NonNullable<ReturnType<typeof probe>>;
 
-const opaque = (c: string) =>
-  c !== "transparent" && !/rgba\([^)]*,\s*0(\.\d+)?\s*\)$/.test(c);
 const meets = (
   a: { left: number; top: number; right: number; bottom: number },
   b: { left: number; top: number; right: number; bottom: number },
@@ -240,10 +250,10 @@ Deno.test("REQ-440 (demo-loop cycle 3, m2): on /q at 1280 px and 390 px the cust
         timeout: 20_000,
       });
 
+      // REQ-545 — on /q the pill is folded to its tab: Connected is its data-status
       const connected = async () =>
-        await userPage.locator("[data-cy='demo-status']").filter({
-          hasText: /^\s*(Connected|Conectado)\s*$/,
-        }).waitFor({ timeout: 20_000 });
+        await userPage.locator("[data-cy='demo-pill'][data-status='live']")
+          .waitFor({ state: "attached", timeout: 20_000 });
 
       /** the probe once the pill and the band have held still (the band follows the pill) */
       const settled = async (): Promise<Probe> => {
@@ -269,28 +279,28 @@ Deno.test("REQ-440 (demo-loop cycle 3, m2): on /q at 1280 px and 390 px the cust
           timeout: 15_000,
         });
 
-        // as the page opens: the pill is on the band, nothing of the page shows under it
+        // REQ-545 (demo-loop cycle 4, m2) AMENDMENT — the public /q in the owner's browser keeps
+        // the pill minimal: its small edge tab, no band painted over the document (REQ-440's band
+        // on /q hid whatever scrolled into the strip)
         const opened = await settled();
         await userPage.screenshot({
           path: `${folder}/q-${where}-opened.png`,
         });
-        expect.eq(
-          opened.visibleUnder.join(" | "),
-          "",
-          `${where}: no text of the page shows under the pill as /q opens`,
+        expect(
+          opened.folded && opened.tab !== null && opened.tab.left === 0 &&
+            opened.tab.right - opened.tab.left <= 16,
+          `${where}: on /q the pill is a small tab on the left edge — ${
+            JSON.stringify({ pill: opened.pill, tab: opened.tab })
+          }`,
         );
         expect(
-          opened.band !== null && opened.band.left <= 0 &&
-            opened.band.right >= opened.vw &&
-            opened.band.bottom >= opened.vh &&
-            opened.band.top <= opened.pill.top && opened.band.bg !== "" &&
-            opaque(opened.band.bg),
-          `${where}: the band runs the window's width under the pill, opaque — ${
-            JSON.stringify({ band: opened.band, pill: opened.pill })
+          opened.band !== null && opened.band.bottom - opened.band.top === 0,
+          `${where}: no band is painted over /q — ${
+            JSON.stringify(opened.band)
           }`,
         );
 
-        // the heading, scrolled to the window's foot (the worst case): above the band, clear of the pill
+        // the heading, scrolled to the window's foot (the worst case): whole on screen, clear of the tab
         await userPage.evaluate(() => {
           const title = Array.from(
             document.querySelectorAll<HTMLElement>("div"),
@@ -310,25 +320,16 @@ Deno.test("REQ-440 (demo-loop cycle 3, m2): on /q at 1280 px and 390 px the cust
         });
         const h = scrolled.heading!;
         expect(
-          !meets(h, scrolled.pill),
-          `${where}: the '01 Quick summary' heading, scrolled to, does not meet the pill — ${
-            JSON.stringify({
-              heading: h,
-              pill: scrolled.pill,
-              scrollPad: scrolled.scrollPad,
-            })
+          scrolled.tab !== null && !meets(h, scrolled.tab),
+          `${where}: the '01 Quick summary' heading, scrolled to, does not meet the tab — ${
+            JSON.stringify({ heading: h, tab: scrolled.tab })
           }`,
         );
         expect(
-          scrolled.band !== null && h.bottom <= scrolled.band.top + 1,
-          `${where}: the heading, scrolled to, ends above the band — ${
-            JSON.stringify({ heading: h, band: scrolled.band })
+          h.bottom <= scrolled.vh + 1,
+          `${where}: the heading, scrolled to, ends on screen — ${
+            JSON.stringify({ heading: h, vh: scrolled.vh })
           }`,
-        );
-        expect.eq(
-          scrolled.visibleUnder.join(" | "),
-          "",
-          `${where}: no text of the page shows under the pill once scrolled`,
         );
       };
 

@@ -13,6 +13,8 @@
  * pill's status (in the presenter's words), and on the phone it stays inside the phone frame.
  */
 import { story, type StoryTools } from "#shots";
+import { answerQuestions } from "../_shared/onboarding-answers.ts";
+import { pillUp } from "../_shared/demo-pill.ts";
 
 const JSON_HEADERS = { "content-type": "application/json" };
 const digits = () => String(Math.floor(Math.random() * 9_000_000) + 1_000_000);
@@ -147,6 +149,12 @@ Deno.test("REQ-228 + REQ-291: the customer's demo pill covers no control of the 
       headers: user.auth,
       body: JSON.stringify({ language: "en", name: "Ana Torres" }),
     })).body?.cancel();
+    // REQ-545 (cycle 4, m2) AMENDMENT — onboarded, so the demo finds the app's shell (which
+    // subtracts the band), not the wizard, whose content under the home tucks the pill to its tab
+    await answerQuestions(http, user.auth, {
+      name: "Ana Torres",
+      businessName: "Torres Plumbing",
+    });
     const admin = await verify(http, adminPhone);
     await (await http("/api/me", {
       method: "PUT",
@@ -184,9 +192,7 @@ Deno.test("REQ-228 + REQ-291: the customer's demo pill covers no control of the 
         timeout: 20_000,
       });
       await userPage.reload();
-      await userPage.locator("[data-cy='demo-status']").waitFor({
-        timeout: 15_000,
-      });
+      await pillUp(userPage);
       // REQ-232 — the stage's pill says Live once the customer's tab is on the link
       await page.locator("[data-cy='demo-status']").filter({
         hasText: /^\s*Live\s*$/,
@@ -218,9 +224,7 @@ Deno.test("REQ-228 + REQ-291: the customer's demo pill covers no control of the 
       };
       const before = await settled();
       await userPage.reload();
-      await userPage.locator("[data-cy='demo-status']").waitFor({
-        timeout: 15_000,
-      });
+      await pillUp(userPage);
       const after = await settled();
       expect(
         after.left === before.left && after.top === before.top,
@@ -263,6 +267,7 @@ Deno.test("REQ-228 + REQ-291: the customer's demo pill covers no control of the 
 
       // 2. phone size: still one line, still covering nothing
       await userPage.setViewportSize({ width: 390, height: 844 });
+      await pillUp(userPage);
       await until("phone: the pill covers no control", async () => {
         const c = await userPage.evaluate(coveredControls);
         return c.length ? c.join("; ") : null;

@@ -23,6 +23,7 @@
  *      of it on that element in the frame (his own cursor stays where it was).
  */
 import { story, type StoryTools } from "#shots";
+import { pillUp } from "../_shared/demo-pill.ts";
 import { answerQuestions } from "../_shared/onboarding-answers.ts";
 
 const JSON_HEADERS = { "content-type": "application/json" };
@@ -547,9 +548,9 @@ Deno.test("REQ-305 (demo M2) + REQ-451 (demo M1): after the customer goes to ano
       // 2. the customer reloads it: a new page load — no arrow until he moves, then it is back on
       //    the same element
       await userPage.reload();
-      await userPage.locator("[data-cy='demo-status']").filter({
-        hasText: "Connected",
-      }).waitFor({ timeout: 20_000 });
+      // REQ-545 — the link is up (the pill may be folded to its tab: this story scrolls)
+      await userPage.locator("[data-cy='demo-pill'][data-status='live']")
+        .waitFor({ state: "attached", timeout: 20_000 });
       await until(
         "the stage mirrors the reloaded page, scrolled where the customer's is",
         async () => {
@@ -627,6 +628,7 @@ Deno.test("REQ-305 (demo M2) + REQ-451 (demo M1): after the customer goes to ano
       );
 
       // 4. End from the customer (it asks first) clears both
+      await pillUp(userPage);
       await userPage.locator("[data-cy='demo-end']").click();
       await userPage.locator("[data-cy='demo-end-confirm']").click();
       await userPage.locator("[data-cy='demo-pill']").waitFor({

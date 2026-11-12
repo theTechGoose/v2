@@ -15,6 +15,7 @@
  */
 import { story, type StoryTools } from "#shots";
 import { answerQuestions } from "../_shared/onboarding-answers.ts";
+import { pillUp } from "../_shared/demo-pill.ts";
 
 const JSON_HEADERS = { "content-type": "application/json" };
 const digits = () => String(Math.floor(Math.random() * 9_000_000) + 1_000_000);
@@ -216,10 +217,15 @@ Deno.test("REQ-379: the customer's demo pill has one home in a band the page lea
         timeout: 20_000,
       });
       await userPage.reload();
-      const connected = async () =>
+      // REQ-545 (cycle 4, m2) AMENDMENT — the pill yields to the page: with anything of it under
+      // the home (a phone page's cards past the fold) it folds to its edge tab. At the document's
+      // end the band is free, and the pill sits home in it — where this story checks it
+      const connected = async () => {
+        await pillUp(userPage, { live: true });
         await userPage.locator("[data-cy='demo-status']").filter({
           hasText: /^\s*(Connected|Conectado)\s*$/,
         }).waitFor({ timeout: 20_000 });
+      };
       await connected();
 
       /** the pill's box once it has held still for a moment (a dock glides) */

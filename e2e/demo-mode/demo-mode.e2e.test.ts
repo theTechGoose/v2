@@ -15,6 +15,7 @@
  * before the user's app reports the stage says it is connecting instead of showing a page.
  */
 import { story, type StoryTools } from "#shots";
+import { pillUp } from "../_shared/demo-pill.ts";
 
 const JSON_HEADERS = { "content-type": "application/json" };
 const digits = () => String(Math.floor(Math.random() * 9_000_000) + 1_000_000);
@@ -220,9 +221,8 @@ Deno.test("REQ-153 + REQ-179 + REQ-180 + REQ-181 + REQ-187 + REQ-188: the admin 
         timeout: 20_000,
       });
       await userPage.reload();
-      await userPage.locator("[data-cy='demo-status']").waitFor({
-        timeout: 15_000,
-      });
+      // REQ-545 — the customer's pill whole (it folds to a tab over page content)
+      await pillUp(userPage);
       expect.eq(
         await userPage.locator("[data-cy='demo-accept']").count(),
         0,

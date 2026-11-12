@@ -93,7 +93,9 @@ describe("REQ-379 — a dialog over the home docks the pill; nothing else moves 
     });
   });
 
-  test("both covered: home — never a third place, never a hunt", () => {
+  // REQ-545 (demo-loop cycle 4, m2) AMENDMENT — staying home over the dialog left its fields and
+  // buttons under the pill: a third place (the top-right), then none (null → the edge tab)
+  test("REQ-545: all covered — the top-right is asked third, then no spot (null), never home over the dialog", () => {
     const home = homeBox();
     const asked: number[] = [];
     const box = dockPill({
@@ -105,8 +107,8 @@ describe("REQ-379 — a dialog over the home docks the pill; nothing else moves 
         return 1;
       },
     });
-    expect(box).toEqual(home);
-    expect(asked).toEqual([home.top, PILL_MARGIN]);
+    expect(box).toBeNull();
+    expect(asked).toEqual([home.top, PILL_MARGIN, PILL_MARGIN]);
   });
 });
 
@@ -204,7 +206,8 @@ describe("REQ-379 — the overlay keeps the pill home", () => {
 
   test("one home and the dock: no slot hunt, no per-path memory, no compact <-> full oscillation", () => {
     expect(o).toMatch(/pillHome\(/);
-    expect(o).toMatch(/dockPill\(/);
+    // REQ-545 (cycle 4, m2) AMENDMENT — placePill docks (dockPill) or tucks the pill
+    expect(o).toMatch(/placePill\(/);
     expect(o).not.toMatch(
       /pillSlots|pickPillSlot|planPill|recallPillBox|rememberPillBox|crampedRef|UNCRAMP_CHECKS|ghostsOfPage/,
     );

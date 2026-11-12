@@ -8,6 +8,7 @@
  * REQ-242 — each stage's frame mirrors Ana's document; its page is the frame's `data-path`.
  */
 import { story, type StoryTools } from "#shots";
+import { pillUp } from "../_shared/demo-pill.ts";
 
 const JSON_HEADERS = { "content-type": "application/json" };
 const digits = () => String(Math.floor(Math.random() * 9_000_000) + 1_000_000);
@@ -132,9 +133,8 @@ Deno.test("REQ-214: two staff present to one customer — Lia's Demo on an alrea
       await useCookie(page.context(), baseUrl, hans.cookie);
       await openDemo(page);
       await userPage.reload();
-      await userPage.locator("[data-cy='demo-status']").waitFor({
-        timeout: 15_000,
-      });
+      // REQ-545 — the customer's pill whole (it folds to a tab over page content)
+      await pillUp(userPage);
       expect(
         (await userPage.locator("[data-cy='demo-pill']").textContent() ?? "")
           .includes(

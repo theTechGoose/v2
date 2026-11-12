@@ -12,6 +12,7 @@
  * customer's next page shows no arrow while his mouse is still, and his next move brings it back.
  */
 import { story, type StoryTools } from "#shots";
+import { pillUp } from "../_shared/demo-pill.ts";
 import { answerQuestions } from "../_shared/onboarding-answers.ts";
 
 const JSON_HEADERS = { "content-type": "application/json" };
@@ -589,6 +590,7 @@ Deno.test("REQ-242: the stage mirrors the customer's actual screen — connectin
       );
 
       // 11. End from the customer clears both
+      await pillUp(userPage);
       await userPage.locator("[data-cy='demo-end']").click();
       await userPage.locator("[data-cy='demo-pill']").waitFor({
         state: "hidden",
