@@ -1998,6 +1998,9 @@ function InvoiceCard(
   // REQ-021: inline confirmation after a nudge (no reload — nothing on the
   // card changes except that the reminder went out).
   const [sendNote, setSendNote] = useState<string | null>(null);
+  // REQ-250 (demo m12): a nudge on a CLAIMED invoice — the customer said they
+  // paid — asks first, inline, naming the claim.
+  const [nudgeAsk, setNudgeAsk] = useState(false);
   // REQ-022 (NW-31c): inline "Change date" editor on an Upcoming card.
   const [dateEdit, setDateEdit] = useState<string | null>(null);
   async function doSaveScheduledFor(e: Event) {
@@ -2919,6 +2922,47 @@ function InvoiceCard(
             </button>
           </div>
         )}
+        {inv.stage === "claimed" && nudgeAsk && (
+          <div
+            data-cy="invoice-nudge-ask"
+            role="alert"
+            style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:0 0 10px;font-size:13px"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <span style="flex:1 1 100%">
+              {tFor(lang, "invoicesPage.back.nudgeClaimedAsk", {
+                name: inv.paymentIntent?.claimedBy?.trim() || inv.client,
+                method: methodLabel(inv.paymentIntent?.method, lang),
+                ref: inv.paymentIntent?.reference
+                  ? tFor(lang, "invoicesPage.subline.ref", {
+                    ref: inv.paymentIntent.reference,
+                  })
+                  : "",
+              })}
+            </span>
+            <button
+              type="button"
+              data-cy="invoice-nudge-ask-yes"
+              onClick={(e) => {
+                setNudgeAsk(false);
+                return doSendNudge(e);
+              }}
+              disabled={busy}
+            >
+              {tFor(lang, "invoicesPage.back.nudgeClaimedYes")}
+            </button>
+            <button
+              type="button"
+              data-cy="invoice-nudge-ask-no"
+              onClick={(e) => {
+                e.stopPropagation();
+                setNudgeAsk(false);
+              }}
+            >
+              {tFor(lang, "invoicesPage.back.nudgeClaimedNo")}
+            </button>
+          </div>
+        )}
         <div class="qcard__back-foot">
           {
             /* Design rule: exactly ONE solid primary per action row — the
@@ -2941,8 +2985,11 @@ function InvoiceCard(
             <button
               type="button"
               data-cy="invoice-nudge"
-              onClick={doSendNudge}
-              disabled={busy}
+              onClick={(e) => {
+                e.stopPropagation();
+                setNudgeAsk(true);
+              }}
+              disabled={busy || nudgeAsk}
             >
               {tFor(lang, "invoicesPage.back.nudge")}
             </button>
