@@ -338,3 +338,62 @@ Deno.test("REQ-204 balanceSub: an overdue invoice reads 'INV-5000 · overdue' (i
     assert(!card.balanceSub.includes(inv.id.slice(0, 8)), "no id slice");
   });
 });
+
+/**
+ * REQ-323 (demo-loop cycle 1, m20): the card carries the customer's C-number and
+ * its documents (quotes → /quotes?open=, invoices → /i/) with their stored numbers.
+ */
+Deno.test("REQ-323 the card carries number and documents: a sent quote and a pending invoice, linked", async () => {
+  await withKv(async () => {
+    const { customers, quotes, invoices, flow } = fresh();
+    const c = await customers.create("u-1", { name: "Lead" });
+    const q = await quotes.create("u-1", {
+      customerId: c.id,
+      summary: "Deck",
+      lineItems: [],
+      status: "sent",
+      estimatedTotal: 950_000,
+    });
+    const inv = await invoices.create("u-1", {
+      quoteId: q.id,
+      customerId: c.id,
+      dueDate: "2026-05-01",
+      status: "pending",
+      amount: 400_000,
+    });
+    const [card] = await flow.run("u-1", NOW_FIXED);
+    assertEquals(card.number, "C-001");
+    assertEquals(card.documents.length, 2);
+    const quoteRow = card.documents.find((d) => d.kind === "quote");
+    const invRow = card.documents.find((d) => d.kind === "invoice");
+    assertEquals(quoteRow, {
+      kind: "quote",
+      id: q.id,
+      number: q.number,
+      state: "sent",
+      amountCents: 950_000,
+      url: `/quotes?open=${q.id}`,
+      updatedAt: quoteRow?.updatedAt,
+    });
+    assert(q.number?.startsWith("Q-"), `quote number ${q.number}`);
+    assertEquals(invRow, {
+      kind: "invoice",
+      id: inv.id,
+      number: inv.number,
+      state: "sent",
+      amountCents: 400_000,
+      url: `/i/${inv.id}`,
+      updatedAt: invRow?.updatedAt,
+    });
+    assert(inv.number?.startsWith("INV-"), `invoice number ${inv.number}`);
+  });
+});
+
+Deno.test("REQ-323 a customer with nothing on the books has an empty documents list", async () => {
+  await withKv(async () => {
+    const { customers, flow } = fresh();
+    await customers.create("u-1", { name: "Blank" });
+    const [card] = await flow.run("u-1", NOW_FIXED);
+    assertEquals(card.documents, []);
+  });
+});

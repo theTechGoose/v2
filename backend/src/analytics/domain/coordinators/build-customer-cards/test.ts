@@ -38,3 +38,59 @@ Deno.test("REQ-271 deriveStatus — paid before (older than a year), nothing ope
     "regular",
   );
 });
+
+/**
+ * REQ-323 (demo-loop cycle 1, m20): the card carries the customer's documents —
+ * one row per quote / invoice with its number, state, amount and link.
+ */
+import type { Invoice } from "@paperwork/dto/invoice.ts";
+import { documentsFor } from "./mod.ts";
+
+Deno.test("REQ-323 documentsFor — a sent quote and a pending invoice become two linked rows, newest first", () => {
+  const quote = {
+    id: "q-1",
+    number: "Q-001",
+    status: "sent",
+    estimatedTotal: 950_000,
+    updatedAt: "2026-04-20T00:00:00.000Z",
+  } as unknown as Quote;
+  const invoice = {
+    id: "i-1",
+    number: "INV-5000",
+    status: "pending",
+    amount: 400_000,
+    updatedAt: "2026-04-21T00:00:00.000Z",
+  } as unknown as Invoice;
+  const docs = documentsFor([quote], [invoice]);
+  assertEquals(docs, [
+    {
+      kind: "invoice",
+      id: "i-1",
+      number: "INV-5000",
+      state: "sent",
+      amountCents: 400_000,
+      url: "/i/i-1",
+      updatedAt: "2026-04-21T00:00:00.000Z",
+    },
+    {
+      kind: "quote",
+      id: "q-1",
+      number: "Q-001",
+      state: "sent",
+      amountCents: 950_000,
+      url: "/quotes?open=q-1",
+      updatedAt: "2026-04-20T00:00:00.000Z",
+    },
+  ]);
+});
+
+Deno.test("REQ-323 documentsFor — the onboarding sample quote is not a document of the customer", () => {
+  const sample = {
+    id: "q-s",
+    status: "draft",
+    estimatedTotal: 1,
+    isSample: true,
+    updatedAt: "2026-04-21T00:00:00.000Z",
+  } as unknown as Quote;
+  assertEquals(documentsFor([sample], []), []);
+});

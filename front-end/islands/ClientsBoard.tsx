@@ -206,6 +206,10 @@ function ClientCard(
               <div class="ccard2__panel-biz">{c.businessName}</div>
             )}
             <div class="ccard2__panel-seg">
+              {/* REQ-323: the customer's own number, "C-001" */}
+              {c.number && (
+                <span data-cy="ccard2-number">{c.number} · </span>
+              )}
               {seg ? `${seg} · ` : ""}
               {mood.label}
             </div>
@@ -314,6 +318,59 @@ function ClientCard(
                 <div class="ccard2__panel-row-val">
                   {s.address} · {fmtMoneyExact(perVisitCents(s))}{" "}
                   {tFor(lang, "clientsBoard.panel.perVisit")}
+                </div>
+              </span>
+              <span class="ccard2__panel-row-arrow">
+                <I d={ICN.arrow} size={12} sw={2.4} />
+              </span>
+            </a>
+          ))}
+        </div>
+        {/* REQ-323 (demo-loop cycle 1, m20): every quote and invoice of this
+            customer, each a link to the page that opens it */}
+        <div
+          class="ccard2__panel-rows"
+          data-cy="ccard2-docs"
+          style="margin-top:8px;max-height:150px;overflow-y:auto"
+        >
+          <div class="ccard2__panel-row" style="pointer-events:none">
+            <span class="ccard2__panel-row-icon">
+              <I d={ICN.doc} size={13} sw={2.2} />
+            </span>
+            <span class="ccard2__panel-row-text">
+              <div class="ccard2__panel-row-lbl">
+                {tFor(lang, "clientsBoard.panel.docs")}
+                {c.documents.length ? ` · ${c.documents.length}` : ""}
+              </div>
+              {c.documents.length === 0 && (
+                <div class="ccard2__panel-row-val">
+                  {tFor(lang, "clientsBoard.panel.docsNone")}
+                </div>
+              )}
+            </span>
+          </div>
+          {c.documents.map((d) => (
+            <a
+              class="ccard2__panel-row"
+              href={d.url}
+              key={`${d.kind}-${d.id}`}
+              data-cy="ccard2-doc"
+              title={tFor(lang, "clientsBoard.panel.docOpen")}
+            >
+              <span class="ccard2__panel-row-icon">
+                <I
+                  d={d.kind === "invoice" ? ICN.invoice : ICN.quote}
+                  size={13}
+                  sw={2.2}
+                />
+              </span>
+              <span class="ccard2__panel-row-text">
+                <div class="ccard2__panel-row-lbl">
+                  {tFor(lang, `clientsBoard.doc.${d.kind}`)} ·{" "}
+                  {tFor(lang, `clientsBoard.docState.${d.state}`)}
+                </div>
+                <div class="ccard2__panel-row-val">
+                  {d.number} · {fmtMoneyExact(d.amountCents)}
                 </div>
               </span>
               <span class="ccard2__panel-row-arrow">
