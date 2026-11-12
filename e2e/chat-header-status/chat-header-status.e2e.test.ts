@@ -194,10 +194,11 @@ Deno.test("REQ-245: the chat header follows the quote — drafted, locked, gathe
       `/api/agents/conversations/${conv.id}/transition-to-terms`,
     );
     await page.goto(url);
-    h = await headerOnceSettled(page, /gathering/i);
+    // REQ-454 (cycle 3, m34): on the locked quote it reads forward.
+    h = await headerOnceSettled(page, /adding terms/i);
     expect(
-      /gathering a little more info/i.test(h.status),
-      `in the wizard: gathering (status: ${h.status})`,
+      /quote locked · adding terms/i.test(h.status),
+      `in the wizard: adding terms (status: ${h.status})`,
     );
 
     // (a) The wizard finished and the draft is open → "Ready to send".

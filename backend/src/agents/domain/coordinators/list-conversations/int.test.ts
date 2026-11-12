@@ -182,7 +182,7 @@ async function answerAll(s: ReturnType<typeof fresh>, convId: string) {
   }
 }
 
-Deno.test("REQ-369 the list and the header agree at every step: drafted → locked → gathering → picking job details → ready to send → not delivered → signed on the public page", async () => {
+Deno.test("REQ-369 the list and the header agree at every step: drafted → locked → adding terms (REQ-454) → picking job details → ready to send → not delivered → signed on the public page", async () => {
   await withKv(async () => {
     const s = fresh();
     // The "I know my price" thread: a quote, no customer, no action_card.
@@ -215,7 +215,7 @@ Deno.test("REQ-369 the list and the header agree at every step: drafted → lock
     await bothSay(s, conv.id, "locked", "after Lock it in");
 
     await s.toTerms.run({ userId: USER, conversationId: conv.id });
-    await bothSay(s, conv.id, "gathering", "the terms wizard asking");
+    await bothSay(s, conv.id, "addingTerms", "the terms wizard asking");
 
     // The price flow still owes the end-of-wizard job-details pick: the
     // client parked the raw details on the conversation (REQ-230 draft).
@@ -336,7 +336,7 @@ Deno.test("REQ-369 every row carries its own status: a chat with no quote yet, a
     await s.toTerms.run({ userId: USER, conversationId: inWizard.id });
 
     await bothSay(s, chatOnly.id, "none", "a chat with no quote");
-    await bothSay(s, inWizard.id, "gathering", "a quote in the wizard");
+    await bothSay(s, inWizard.id, "addingTerms", "a quote in the wizard");
   });
 });
 
@@ -380,5 +380,38 @@ Deno.test("REQ-385 (cycle 2, m6) the job-details picker re-opened from the revie
 
     await s.conversations.putDraft(conv.id, emptyAssistantDraft());
     await bothSay(s, conv.id, "readyToSend", "the picker closed");
+  });
+});
+
+Deno.test("REQ-454 (cycle 3, m34) lock → terms wizard reads forward: the list and the header say 'addingTerms' (Quote locked · adding terms), never 'gathering', then 'readyToSend'", async () => {
+  await withKv(async () => {
+    const s = fresh();
+    const quote = await s.quotes.create(USER, {
+      summary: "Fence install",
+      jobName: "Fence install",
+      lineItems: [{
+        description: "Fence",
+        quantity: 1,
+        unit: "ea",
+        price: 480_000,
+      }],
+      estimatedTotal: 480_000,
+      status: "draft",
+    });
+    const conv = await s.conversations.create({
+      userId: USER,
+      currentPhase: "quote",
+      quoteId: quote.id,
+    });
+    await s.lock.run({
+      userId: USER,
+      conversationId: conv.id,
+      quoteId: quote.id,
+    });
+    await bothSay(s, conv.id, "locked", "after Lock it in");
+    await s.toTerms.run({ userId: USER, conversationId: conv.id });
+    await bothSay(s, conv.id, "addingTerms", "the wizard on the locked quote");
+    await answerAll(s, conv.id);
+    await bothSay(s, conv.id, "readyToSend", "the terms done");
   });
 });

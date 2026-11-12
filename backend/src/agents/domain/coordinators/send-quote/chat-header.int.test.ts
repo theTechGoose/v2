@@ -149,7 +149,7 @@ async function withKv(fn: () => Promise<void>) {
   }
 }
 
-Deno.test("REQ-245 chat header over the real flow: drafted → locked → gathering → ready to send → not delivered (no customer)", async () => {
+Deno.test("REQ-245 chat header over the real flow: drafted → locked → adding terms (REQ-454) → ready to send → not delivered (no customer)", async () => {
   await withKv(async () => {
     const s = fresh();
     // The "I know my price" thread: a quote, no customer, no action_card.
@@ -185,10 +185,10 @@ Deno.test("REQ-245 chat header over the real flow: drafted → locked → gather
     h = await header(s, conv.id);
     assertEquals(h.statusKey, `${H}quoteLocked`);
 
-    // The wizard is asking → gathering.
+    // The wizard is asking on the locked quote → REQ-454 "adding terms".
     await s.toTerms.run({ userId: USER, conversationId: conv.id });
     h = await header(s, conv.id);
-    assertEquals(h.statusKey, `${H}gatheringInfo`);
+    assertEquals(h.statusKey, `${H}lockedAddingTerms`);
 
     // (a) The wizard finished: the full draft is ready → "Ready to send".
     await finishWizard(s, conv.id);

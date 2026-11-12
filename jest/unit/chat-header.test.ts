@@ -89,12 +89,12 @@ describe("REQ-245 deriveChatHeader — status", () => {
     expect(h.statusKey).toBe(`${H}readyToSend`);
   });
 
-  it("while the wizard is still asking (phase-2 divider is the latest marker) → 'Gathering a little more info'", () => {
+  it("while the wizard is still asking on the locked quote (phase-2 divider is the latest marker) → REQ-454 'Quote locked · adding terms'", () => {
     const h = deriveChatHeader({
       quote: { status: "draft" },
       messages: [lockCard("locked"), toTerms, termsDivider, wizardStep],
     });
-    expect(h.statusKey).toBe(`${H}gatheringInfo`);
+    expect(h.statusKey).toBe(`${H}lockedAddingTerms`);
   });
 
   it("re-entering the wizard after a finished one → back to 'Gathering a little more info'", () => {
@@ -323,6 +323,7 @@ describe("REQ-245 wiring + copy", () => {
         "quoteAccepted",
         "quoteDrafted",
         "gatheringInfo",
+        "lockedAddingTerms",
         "default",
         "conversation",
         "newConversation",

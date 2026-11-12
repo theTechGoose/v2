@@ -238,8 +238,12 @@ Deno.test("REQ-369: the open thread's list chip reads what the chat header reads
       `/api/agents/conversations/${convId}/transition-to-terms`,
     );
     await page.goto(url);
-    s = await headerAndChip(page, /gathering/i);
-    expect(/gathering/i.test(s.header), `gathering (header: ${s.header})`);
+    // REQ-454 (cycle 3, m34): the wizard on the locked quote reads forward.
+    s = await headerAndChip(page, /adding terms/i);
+    expect(
+      /adding terms/i.test(s.header),
+      `adding terms (header: ${s.header})`,
+    );
     expect.eq(
       s.chip,
       s.header,
@@ -331,7 +335,10 @@ Deno.test("REQ-369: while the chat's read of the quote row is still on its way, 
     await page.goto(`/assistant/${convId}`);
     await asked; // the chat hydrated and asked for its row
     let s = await chipCatchesUp(page, 5_000);
-    expect(/gathering/i.test(s.header), `gathering (header: ${s.header})`);
+    expect(
+      /adding terms/i.test(s.header),
+      `adding terms (header: ${s.header})`,
+    );
     expect.eq(released, false, "the quote row is still on its way");
     expect.eq(
       await cardChip(page),
@@ -350,8 +357,8 @@ Deno.test("REQ-369: while the chat's read of the quote row is still on its way, 
     await answered;
     s = await chipCatchesUp(page, 3_000);
     expect(
-      /gathering/i.test(s.header),
-      `still gathering (header: ${s.header})`,
+      /adding terms/i.test(s.header),
+      `still adding terms (header: ${s.header})`,
     );
     expect.eq(
       await cardChip(page),

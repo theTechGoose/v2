@@ -118,7 +118,7 @@ Deno.test("REQ-369 e2e: GET /agents/conversations and the chat header name one s
     await bothSay("locked", "after Lock it in");
 
     await post(`/agents/conversations/${convId}/transition-to-terms`, {});
-    await bothSay("gathering", "the terms wizard asking");
+    await bothSay("addingTerms", "the terms wizard asking (REQ-454)");
 
     // The price flow parks the raw job details: the pick is owed at the end.
     await post(`/agents/conversations/${convId}/draft`, {
