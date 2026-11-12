@@ -62,3 +62,35 @@ export function settledSendCtaIds(
   });
   return settled;
 }
+
+/**
+ * REQ-339 (demo-loop cycle 1, issue p2 "Chat timestamps a minute early"):
+ * the time to stamp on a send CTA. The "Quote + Agreement sent — emailed
+ * to …" card is the CTA re-rendered in its sent state, so once it is sent
+ * its time is the dispatch — the createdAt of the matching phase-3/4
+ * `phase_divider` the server appends after it (the latest one, so a
+ * retry after a failed attempt shows the retry) — not the moment the
+ * terms wizard finished, 1–2 minutes earlier. Unsent (or settled only by
+ * `quote.status`, with no divider in the thread) it keeps its own time.
+ */
+export function sentCtaTimestamp(
+  messages: readonly (ThreadMessage & { createdAt: number })[],
+  cta: ThreadMessage & { createdAt: number },
+  _quote?: BoundQuote | null,
+): number {
+  const p = (cta.payload ?? {}) as { toPhase?: string; quoteId?: string };
+  const start = messages.indexOf(cta);
+  if (start < 0 || p.toPhase !== "send") return cta.createdAt;
+  const sameQuote = (other?: string) =>
+    !p.quoteId || !other || other === p.quoteId;
+  let dispatchedAt: number | undefined;
+  for (let j = start + 1; j < messages.length; j++) {
+    const d = messages[j];
+    if (d.kind !== "phase_divider") continue;
+    const dp = (d.payload ?? {}) as { phase?: number; quoteId?: string };
+    if ((dp.phase ?? 0) >= DISPATCHED_PHASE && sameQuote(dp.quoteId)) {
+      dispatchedAt = d.createdAt;
+    }
+  }
+  return dispatchedAt ?? cta.createdAt;
+}

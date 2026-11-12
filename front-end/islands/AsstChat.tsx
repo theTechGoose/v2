@@ -1,7 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import { I, ICN } from "../lib/dash-icons.tsx";
 import { detailLines } from "../lib/format.ts";
-import { settledSendCtaIds } from "../lib/send-cta-settled.ts";
+import {
+  sentCtaTimestamp,
+  settledSendCtaIds,
+} from "../lib/send-cta-settled.ts";
 import {
   computePaymentSplit,
   type MilestoneRole,
@@ -7601,7 +7604,17 @@ export default function AsstChat({
                             </button>
                           )
                           : null}
-                        <div class="msg__time">{fmtTime(m.createdAt, lang)}</div>
+                        {/* REQ-339 (demo p2): a sent card is stamped with
+                            the dispatch time (the phase-3 divider), not
+                            the moment the wizard finished. */}
+                        <div class="msg__time">
+                          {fmtTime(
+                            reviewed
+                              ? sentCtaTimestamp(messages, m, quote)
+                              : m.createdAt,
+                            lang,
+                          )}
+                        </div>
                       </div>
                     </div>
                   );
