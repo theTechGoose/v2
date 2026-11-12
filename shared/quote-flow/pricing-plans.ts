@@ -136,13 +136,16 @@ export const PRICING_PLANS: readonly PricingPlan[] = [
         en: "Unlimited quotes, agreements & invoices",
         es: "Cotizaciones, acuerdos y facturas ilimitados",
       },
-      // REQ-515 (demo m53) — field is not plan-gated, so every paid plan has worker logins and the
-      // field schedule: Monster names it (Assist and Assist+ inherit it through "Everything in").
-      // Third on purpose: the onboarding/settings cards show only a plan's first three lines.
+      // REQ-515 (demo m53) — Monster names workers & the field schedule (Assist and Assist+ inherit
+      // it through "Everything in"). Third on purpose: the onboarding/settings cards show only a
+      // plan's first three lines. REQ-607 (demo m27, cycle 4) — field is NOT plan-gated: Free adds
+      // workers and uses the schedule too, so the line says so instead of reading as a Monster-only
+      // upgrade. It lives here, not on Free, because Free's lines are REQ-109's dictated three.
+      // Pending Raphael's call on gating field to paid plans; if he gates it, drop "Free included".
       {
         id: "workers-field-schedule",
-        en: "Workers & field schedule",
-        es: "Trabajadores y agenda de campo",
+        en: "Workers & field schedule — on every plan, Free included",
+        es: "Trabajadores y agenda de campo — en todos los planes, Free incluido",
       },
       { id: "e-signatures", en: "E-signatures", es: "Firmas electrónicas" },
       {
