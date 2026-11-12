@@ -91,3 +91,11 @@
     margin: 14mm;
   }
 }
+
+/* REQ-687 (demo-loop cycle 5, p14): the owner's preview keeps a sticky strip
+   (quote-preview-banner, ~48px once collapsed) pinned at the top. A section
+   scrolled to the top (an anchor, scrollIntoView) lands below it, so a header
+   like "05 SIGN HERE" is never hidden under the strip. */
+.ctr--previewing section {
+  scroll-margin-top: 64px;
+}

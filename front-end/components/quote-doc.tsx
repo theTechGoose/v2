@@ -16,6 +16,7 @@
  * (/i/:id) mirrors this layout without duplicating markup. This file keeps the
  * agreement-only bits: the 14 numbered legal clauses and the signature block.
  */
+import { useEffect, useRef, useState } from "preact/hooks";
 import PublicSignQuote from "../islands/PublicSignQuote.tsx";
 import PublicQuoteActions from "../islands/PublicQuoteActions.tsx";
 import { buildSignatureBlock } from "../../shared/quote-flow/signature-block.ts";
@@ -30,6 +31,8 @@ import {
 import {
   deriveQuoteView,
   internalPreview,
+  ownerSignedNext,
+  ownerSignedView,
   publicHeadlineState,
 } from "../../shared/quote-flow/public-doc-state.ts";
 import {
@@ -292,6 +295,28 @@ export function QuoteDoc(
 ) {
   // REQ-306 (demo B3): the business's own preview — banner instead of pad.
   const preview = internalPreview(quote, search);
+  // REQ-687 (demo-loop c5 p14): the sticky preview banner collapses to a
+  // one-line strip once its sentinel (just above it) scrolls off the top, so
+  // it no longer covers a section header like "05 SIGN HERE"; the sections
+  // reserve the strip's height (`.ctr--previewing section`, public-contract.css).
+  const [compact, setCompact] = useState(false);
+  const sentinel = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!preview) {
+      setCompact(false);
+      return;
+    }
+    const el = sentinel.current;
+    if (!el || typeof IntersectionObserver === "undefined") return;
+    const io = new IntersectionObserver(([e]) =>
+      setCompact(!e.isIntersecting && e.boundingClientRect.top < 0)
+    );
+    io.observe(el);
+    return () => io.disconnect();
+  }, [preview]);
+  // REQ-687 (demo-loop c5 m59): the business viewing its own signed quote is
+  // looking at the customer's copy — the signed banner speaks to the owner.
+  const ownerSigned = ownerSignedView(quote, search);
   // Shared view derivation (P-11/P-13/P-40/P-63) — accepted state, the
   // stored signature image, the post-signed footer variant, and the PDF
   // download URL all come from the same pure module the tests pin.
@@ -410,34 +435,64 @@ export function QuoteDoc(
   return (
     <>
       {preview && (
+        <div
+          ref={sentinel}
+          aria-hidden="true"
+          data-cy="quote-preview-sentinel"
+          style="height:1px;margin-bottom:-1px"
+        />
+      )}
+      {preview && (
         // REQ-559 (demo-loop c4 m17 + p4-p1c): the owner's preview says so at
         // the top — who they are previewing as, that signing / questions /
         // decline are off — and offers the in-person signing as a solid
         // button (same handler as the signature card's link).
+        // REQ-687 (c5 p14): scrolled, it is a one-line strip.
         <div
           data-cy="quote-preview-banner"
+          data-compact={String(compact)}
           role="status"
           class="ctr__no-print"
-          style="position:sticky;top:0;z-index:20;margin-bottom:18px;padding:12px 16px;background:#fff6e5;border:1px solid rgba(255,170,40,0.55);border-radius:14px;box-shadow:0 4px 14px rgba(138,90,16,0.12);display:flex;align-items:center;gap:12px;flex-wrap:wrap;color:#8a5a10;font-size:14px;line-height:1.45"
+          style={`position:sticky;top:0;z-index:20;margin-bottom:18px;${
+            compact ? "padding:6px 6px 6px 14px" : "padding:12px 16px"
+          };background:#fff6e5;border:1px solid rgba(255,170,40,0.55);border-radius:14px;box-shadow:0 4px 14px rgba(138,90,16,0.12);display:flex;align-items:center;gap:12px;flex-wrap:${
+            compact ? "nowrap" : "wrap"
+          };color:#8a5a10;font-size:14px;line-height:1.45`}
         >
-          <div style="flex:1;min-width:200px">
-            <span style="font-weight:800">
-              {customerName
-                ? tFor(lang, "public.doc.previewBanner.as", {
-                  name: customerName,
-                })
-                : tFor(lang, "public.doc.previewBanner.asCustomer")}
-            </span>{" "}
-            — {tFor(lang, "public.doc.previewBanner.off")}
-            <span style="display:block;margin-top:2px;font-size:13px">
-              {tFor(lang, "public.doc.previewBanner.here")}
-            </span>
-          </div>
+          {compact
+            ? (
+              <span style="flex:1;min-width:0;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">
+                {customerName
+                  ? tFor(lang, "public.doc.previewBanner.compact", {
+                    name: customerName,
+                  })
+                  : tFor(lang, "public.doc.previewBanner.compactCustomer")}
+              </span>
+            )
+            : (
+              <div style="flex:1;min-width:200px">
+                <span style="font-weight:800">
+                  {customerName
+                    ? tFor(lang, "public.doc.previewBanner.as", {
+                      name: customerName,
+                    })
+                    : tFor(lang, "public.doc.previewBanner.asCustomer")}
+                </span>{" "}
+                — {tFor(lang, "public.doc.previewBanner.off")}
+                <span style="display:block;margin-top:2px;font-size:13px">
+                  {tFor(lang, "public.doc.previewBanner.here")}
+                </span>
+              </div>
+            )}
           <button
             type="button"
             data-cy="quote-preview-sign-in-person"
             onClick={() => onSignInPerson?.()}
-            style="background:#144852;color:#fff;border:0;border-radius:10px;padding:10px 18px;font:inherit;font-size:14px;font-weight:800;cursor:pointer;white-space:nowrap"
+            style={`background:#144852;color:#fff;border:0;border-radius:10px;font:inherit;${
+              compact
+                ? "padding:6px 12px;font-size:13px"
+                : "padding:10px 18px;font-size:14px"
+            };font-weight:800;cursor:pointer;white-space:nowrap`}
           >
             {tFor(lang, "public.doc.previewBanner.signInPerson")}
           </button>
@@ -446,6 +501,7 @@ export function QuoteDoc(
       {signed && signerName && (
         <div
           data-cy="quote-signed-banner"
+          data-viewer={ownerSigned ? "owner" : "customer"}
           role="status"
           class="ctr__no-print"
           style={`margin-bottom:18px;padding:16px 20px;background:linear-gradient(135deg,rgba(81,152,67,0.14) 0%,rgba(81,152,67,0.05) 100%);border:1px solid rgba(72,158,95,0.35);border-radius:16px;display:flex;align-items:center;gap:14px;flex-wrap:wrap`}
@@ -469,13 +525,43 @@ export function QuoteDoc(
           </div>
           <div style="flex:1;min-width:200px">
             <div style={`font-weight:800;color:${GREEN};font-size:15px`}>
-              {tFor(lang, "quoteDoc.signedBanner.thanks", {
-                name: signerName,
-                date: view.acceptedAt ? fmtDate(view.acceptedAt, lang) : "",
-              })}
+              {tFor(
+                lang,
+                ownerSigned
+                  ? "quoteDoc.signedBanner.owner"
+                  : "quoteDoc.signedBanner.thanks",
+                {
+                  name: signerName,
+                  date: view.acceptedAt ? fmtDate(view.acceptedAt, lang) : "",
+                },
+              )}
             </div>
+            {ownerSigned && (
+              <div style={`margin-top:2px;font-size:13px;color:${MUTED}`}>
+                {tFor(lang, "quoteDoc.signedBanner.ownerCopy")}
+              </div>
+            )}
             <div style={`margin-top:4px;font-size:14px;color:${INK}`}>
-              {payNow
+              {ownerSigned
+                ? (() => {
+                  // REQ-687 (c5 m59): the owner's next step, in the app.
+                  const next = ownerSignedNext(quote);
+                  return (
+                    <a
+                      data-cy="quote-signed-banner-owner-next"
+                      href={next.href}
+                      style={`color:${PINK_DARK};font-weight:800;text-decoration:none`}
+                    >
+                      {next.kind === "invoice"
+                        ? tFor(lang, "quoteDoc.signedBanner.ownerNextInvoice", {
+                          number: next.number ?? "",
+                          amount: fmtMoneyExact(next.balanceCents),
+                        })
+                        : tFor(lang, "quoteDoc.signedBanner.ownerNextQuote")}
+                    </a>
+                  );
+                })()
+                : payNow
                 ? (
                   <a
                     data-cy="quote-signed-banner-pay"
@@ -543,7 +629,7 @@ export function QuoteDoc(
       </div>
 
       <article
-        class="ctr"
+        class={preview ? "ctr ctr--previewing" : "ctr"}
         style={`background:${CREAM};border-radius:24px;box-shadow:0 14px 50px rgba(20,72,82,0.10);overflow:hidden;border:1px solid rgba(255,107,107,0.10)`}
       >
         {/* Pink ribbon header */}

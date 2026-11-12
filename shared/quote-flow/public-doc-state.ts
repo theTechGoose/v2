@@ -12,6 +12,10 @@
  */
 
 import { isAccepted } from "./quote-status.ts";
+import {
+  type LinkedInvoiceLike,
+  payNowTarget,
+} from "../documents/linked-view.ts";
 
 export interface PublicQuotePayloadLike {
   id: string;
@@ -130,6 +134,44 @@ export function internalPreview(
   if (payload.internal !== true) return false;
   if (deriveQuoteView(payload).mode !== "open") return false;
   return !hasSignOverride(search);
+}
+
+/** REQ-687 (demo-loop cycle 5, m59): the business viewing its own SIGNED
+ *  quote — no in-person override on — is looking at the customer's copy.
+ *  The signed banner speaks to the owner ("Signed by Linda on …") with an
+ *  owner next step, never the customer's "Thanks, … your contractor will be
+ *  in touch". With the override on the customer holds the device. */
+export function ownerSignedView(
+  payload: PublicQuotePayloadLike,
+  search: string | undefined | null,
+): boolean {
+  if (payload.internal !== true) return false;
+  if (deriveQuoteView(payload).mode !== "accepted") return false;
+  return !hasSignOverride(search);
+}
+
+export type OwnerSignedNext =
+  | { kind: "invoice"; href: string; number?: string; balanceCents: number }
+  | { kind: "quote"; href: string };
+
+/** REQ-687: the owner's next step on a signed quote — the open invoice the
+ *  signature billed (in Invoices), else the quote itself in Quotes. */
+export function ownerSignedNext(
+  quote: PublicQuotePayloadLike & { invoices?: LinkedInvoiceLike[] },
+): OwnerSignedNext {
+  const pay = payNowTarget(quote);
+  if (pay) {
+    return {
+      kind: "invoice",
+      href: `/invoices?open=${encodeURIComponent(pay.invoiceId)}`,
+      number: pay.number,
+      balanceCents: pay.balanceCents,
+    };
+  }
+  return {
+    kind: "quote",
+    href: `/quotes?open=${encodeURIComponent(quote.id)}`,
+  };
 }
 
 /**
