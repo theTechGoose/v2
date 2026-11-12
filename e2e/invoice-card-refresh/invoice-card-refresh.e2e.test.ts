@@ -5,7 +5,7 @@
  *
  * In a browser, with a window marker that a page load would wipe:
  * (a) M9 + m52 — "Send now" on a scheduled invoice whose customer has an
- *     email but no phone: the card leaves Upcoming for Sent with no reload,
+ *     email and a fictional 555 phone (REQ-695): the card leaves Upcoming for Sent with no reload,
  *     its due date is today + its 30 days to pay (not the schedule's), and
  *     the half-delivered note shows what went in green, what failed in red.
  * (b) m43 + m23 — "Payment confirmed" on a claimed card: no reload, a
@@ -153,6 +153,10 @@ Deno.test("REQ-554 (demo M9 + m52, cycle 4): 'Send now' with the text failing re
     const customer = await post(http, auth, "/api/customers", {
       name: "Marisol Ortega",
       email: "mo@blackhole.postmarkapp.com",
+      // REQ-695 (cycle 5, M23): a client with NO phone is just "sent by
+      // email" now; the half-delivered note needs a text that really fails —
+      // a fictional 555 number never reaches Twilio.
+      phoneNumber: "+15125550142",
     });
     const job = `Porch rails ${digits()}`;
     await post(

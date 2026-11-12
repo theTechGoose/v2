@@ -77,6 +77,11 @@ export function summarizeDispatch(
 export interface ChannelResult {
   outcome: SendOutcome;
   rawReason?: string;
+  /** REQ-695: the endpoint's machine code — "missing" means there is no
+   *  address on file for this channel (both send endpoints set it). */
+  failureCode?: string;
+  /** REQ-695: never fired — the client has no address for this channel. */
+  skipped?: boolean;
 }
 
 export type Translate = (
@@ -88,9 +93,89 @@ export type Translate = (
  *  reason at all on a missing-contact verdict. Anything else is a real
  *  failure whose reason the contractor must read — the 555 reason mentions
  *  "email", so the classified reason alone can't tell these apart. */
-function missingRecipient(r: ChannelResult): boolean {
+export function missingRecipient(r: ChannelResult): boolean {
+  if (r.outcome.delivered) return false;
+  if (r.skipped || r.failureCode === "missing") return true;
   if (r.rawReason) return /^no recipient\b/i.test(r.rawReason.trim());
   return r.outcome.reason === "noEmail" || r.outcome.reason === "noPhone";
+}
+
+/**
+ * REQ-695 (demo-loop cycle 5, M23): why ONE channel did not go, in the
+ * contractor's words — "no phone on file" / "no email on file" for a missing
+ * recipient (the endpoints' "no recipient: pass `to` …" is a developer
+ * string and never shown), else the backend's own translated reason.
+ */
+export function channelFailReason(
+  t: Translate,
+  channel: DispatchChannel,
+  r: ChannelResult,
+): string {
+  if (missingRecipient(r)) {
+    return t(
+      channel === "text"
+        ? "invoicesPage.send.noPhoneOnFile"
+        : "invoicesPage.send.noEmailOnFile",
+    );
+  }
+  return r.rawReason ?? r.outcome.reason ?? "unknown";
+}
+
+export interface InvoiceDispatchSummary extends DispatchSummary {
+  /** REQ-695 (m55): neither channel had an address — adding an email or a
+   *  phone is the fix (the REQ-401 `noRecipient` verdict). */
+  noRecipient: boolean;
+}
+
+/**
+ * REQ-695 (demo-loop cycle 5, M23 + m55): the invoice dispatch's verdict.
+ * A channel the client has no address for (missing, or never fired) is not
+ * a failure once the other delivered — a phone-less bill is simply "sent by
+ * email", never half-delivered. Both missing is `noRecipient`.
+ */
+export function summarizeInvoiceDispatch(
+  input: { email: ChannelResult; text: ChannelResult },
+): InvoiceDispatchSummary {
+  const anyDelivered = input.email.outcome.delivered ||
+    input.text.outcome.delivered;
+  const failedChannels: DispatchChannel[] = [];
+  for (const ch of ["email", "text"] as const) {
+    const r = input[ch];
+    if (r.outcome.delivered) continue;
+    if (anyDelivered && missingRecipient(r)) continue;
+    failedChannels.push(ch);
+  }
+  return {
+    delivered: anyDelivered,
+    partial: anyDelivered && failedChannels.length > 0,
+    failedChannels,
+    noRecipient: missingRecipient(input.email) &&
+      missingRecipient(input.text),
+  };
+}
+
+/**
+ * REQ-030 / REQ-695: the half-delivered sentence — which channel went and
+ * why the other did not, through `channelFailReason` (never a raw
+ * "no recipient" reason).
+ */
+export function invoicePartialCopy(
+  t: Translate,
+  input: { email: ChannelResult; text: ChannelResult },
+): string {
+  const textFailed = !input.text.outcome.delivered;
+  return t(
+    textFailed
+      ? "invoicesPage.send.partialTextFailed"
+      : "invoicesPage.send.partialEmailFailed",
+    {
+      reason: channelFailReason(
+        t,
+        textFailed ? "text" : "email",
+        textFailed ? input.text : input.email,
+      ),
+    },
+  );
 }
 
 /**

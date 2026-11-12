@@ -4358,3 +4358,25 @@ Tests:
 - unit: `demo-loop/demo20b_test.ts` "REQ-621: the rules file names every category, in order, each with an action" (the rules file is executed by agents, so it gets a content test).
 - int: `demo-loop/demo20b_test.ts` "REQ-621: both testers are told to read the rules and tag every issue" runs the real harness with a fake fleet-claude.
 - e2e: the next demo cycle; its reports carry category tags.
+
+## REQ-695 — an invoice is sent only on the channels the client has, a missing contact is never a raw developer reason, and "Finish + send" with no contact offers to add one (demo-loop cycle 5, issues M23 + m55)
+**Source:** Raphael: "fix every issue the demo found, loop until there are none." Demo-loop cycle 5 (run r37f88707), issues `M23` "Raw English developer error after issuing an invoice" and `m55` "'Finish + send' with no contact is a dead end". RCA analyst CONFIRMED, skeptic UPHELD for both at demo-fixes `2444608a`.
+**Cause (RCA):** `dispatchInvoice` (front-end/islands/InvoicesPage.tsx) always POSTed to both `/email` and `/text`. For a client with an email and no phone, the SMS dispatcher answered "no recipient: pass `to` or attach a customer with a phone number" (customer-sms/mod.ts), the send counted as half-delivered, and `partialDispatchCopy` / `partialParts` passed that `rawReason` straight into "Factura enviada por correo — el texto no salió: {reason}". Only the not-delivered path (REQ-480 `missingRecipient`) mapped it. When both channels lacked an address, `CardSendNotes` rendered text only: no field, no link.
+**Requirement:**
+- New invoice dispatches only the channels its known contact can use (`sendChannel`), so a phone-less bill is just sent by email.
+- Every invoice dispatch is summarized by `summarizeInvoiceDispatch` (shared/quote-flow/send-result.ts): a channel with no address (backend `failureCode: "missing"`, a "no recipient" reason, or never fired) is not a failure when the other one delivered.
+- A failed channel's reason goes through `channelFailReason`: a missing recipient reads "no phone on file" / "no email on file" and the raw reason is never shown. The email dispatcher now returns `failureCode: "missing"`, the same code the SMS dispatcher already returned (REQ-226).
+- When neither channel has an address (`noRecipient`), the card shows an inline "Add email or phone" form. It saves the contact on the customer (PUT /api/customers/:id), or on the invoice's bill-to when there is no customer (PUT /api/invoices/:id), then sends again in place. It also links to the client's own card (`/customers?open=<id>`, REQ-600).
+**Tests:** unit `jest/unit/c5-invoice-dispatch-contact.test.ts` ("REQ-695 …" ×14: an es partial never contains "recipient"; failureCode-only missing; missing-plus-delivered is not partial; noRecipient; the island wiring; en/es keys) and `front-end/lib/invoice-card.test.ts` ("REQ-695 m55 …" ×4, `contactFixRequest`) · integration `backend/src/paperwork/domain/coordinators/send-paperwork-email/int.test.ts` ("REQ-695 (cycle 5, M23) … failureCode 'missing'") · e2e `e2e/c5-invoice-dispatch-contact/c5-invoice-dispatch-contact.e2e.test.ts` (M23: a Spanish issue to an email-only client fires no text and shows no "recipient"; m55: Finish + send → inline add email → saved on the customer, invoice sent). `e2e/invoice-card-refresh` REQ-554's half-delivered story now gives its client a fictional 555 phone, because a client with no phone is no longer half-delivered.
+**Evidence (2026-11-12, branch fix/c5-invoice-dispatch-contact off demo-fixes 2444608a):**
+- RED:
+  - unit (`cd jest && npx jest --selectProjects unit`): "Tests: 14 failed, 1 skipped, 3849 passed", with every failure in the new file (`channelFailReason` / `summarizeInvoiceDispatch` / `invoicePartialCopy` is not a function).
+  - integration: `failureCode` Actual `undefined` / Expected `"missing"`.
+  - front-end lib: `contactFixRequest` not exported.
+  - e2e on the original code: M23 "expectation failed: no developer 'recipient' text anywhere"; m55 timed out waiting for `[data-cy='invoice-add-contact']`.
+- GREEN:
+  - `npx jest --selectProjects unit`: "Test Suites: 393 passed · Tests: 1 skipped, 3863 passed".
+  - `deno test -A front-end/lib/invoice-card.test.ts`: 18 passed.
+  - `cd backend && deno test -A --unstable-kv` on send-paperwork-email/, send-paperwork-sms/ and customer-sms/: 42 passed.
+  - `deno check` and `deno lint` clean on InvoicesPage.tsx, invoice-card.ts and send-result.ts.
+  - shots (`PORT=5733 deno task serve`, `BASE_URL=http://localhost:5733 shots run e2e/c5-invoice-dispatch-contact e2e/invoice-card-refresh e2e/invoice-send-fail`): "6 pass · 0 fail".

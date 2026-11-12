@@ -12,6 +12,7 @@
 import { assert, assertEquals } from "@std/assert";
 import {
   cardDate,
+  contactFixRequest,
   hasSecondaryPaymentReceived,
   partialSendParts,
   paymentReceivedTarget,
@@ -209,4 +210,64 @@ Deno.test("REQ-552 m25: InvoicesPage reveals the pay form in an effect keyed on 
     true,
     "an effect keyed on [payNonce] calls revealPayForm(document)",
   );
+});
+
+// REQ-695 — demo-loop cycle 5, issue m55: "'Finish + send' with no contact
+// is a dead end". The card's inline "Add email or phone" saves the typed
+// contact where the send endpoints read it: the linked customer (PUT
+// /api/customers/:id), else the invoice's own bill-to (PUT /api/invoices/:id).
+Deno.test("REQ-695 m55: an email typed for a customer's invoice is saved on the customer", () => {
+  assertEquals(
+    contactFixRequest(" ana@acme.test ", {
+      invoiceId: "inv-1",
+      customerId: "cus-1",
+    }),
+    {
+      url: "/api/customers/cus-1",
+      body: { email: "ana@acme.test" },
+      channel: "email",
+    },
+  );
+});
+
+Deno.test("REQ-695 m55: a phone typed for a customer's invoice is saved on the customer", () => {
+  assertEquals(
+    contactFixRequest("(512) 555-0142", {
+      invoiceId: "inv-1",
+      customerId: "cus-1",
+    }),
+    {
+      url: "/api/customers/cus-1",
+      body: { phoneNumber: "(512) 555-0142" },
+      channel: "text",
+    },
+  );
+});
+
+Deno.test("REQ-695 m55: with no customer the contact lands on the invoice's bill-to, keeping its name", () => {
+  assertEquals(
+    contactFixRequest("ana@acme.test", {
+      invoiceId: "inv-1",
+      billTo: { name: "Ana Ruiz", address: "1 Main" },
+    }),
+    {
+      url: "/api/invoices/inv-1",
+      body: {
+        billTo: { name: "Ana Ruiz", address: "1 Main", email: "ana@acme.test" },
+      },
+      channel: "email",
+    },
+  );
+});
+
+Deno.test("REQ-695 m55: blank or invalid input is refused with a dictionary key, nothing is sent", () => {
+  assertEquals(contactFixRequest("  ", { invoiceId: "i" }), {
+    error: "invoicesPage.send.addContactInvalid",
+  });
+  assertEquals(contactFixRequest("ana@", { invoiceId: "i" }), {
+    error: "customer.invalidEmail",
+  });
+  assertEquals(contactFixRequest("555", { invoiceId: "i" }), {
+    error: "customer.invalidPhone",
+  });
 });
