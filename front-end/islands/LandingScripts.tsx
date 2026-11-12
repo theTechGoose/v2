@@ -673,7 +673,7 @@ export default function LandingScripts() {
           } catch { /* SSR-safe */ }
           globalThis.location.href = `/verify?phone=${
             encodeURIComponent(e164)
-          }&lang=${curLang}`;
+          }&lang=${curLang}&from=home`; // REQ-351
         } catch {
           if (cta) {
             cta.disabled = false;

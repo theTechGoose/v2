@@ -847,7 +847,7 @@
             localStorage.setItem("pm:last-phone", e164);
           } catch { /* ignore */ }
           location.href = "/verify?phone=" + encodeURIComponent(e164) +
-            "&lang=" + curLang + "&px=lead";
+            "&lang=" + curLang + "&px=lead&from=home"; // REQ-351: Edit → /#contact
           return;
         }
         if (!res.ok) throw new Error("send failed " + res.status);
@@ -866,7 +866,7 @@
           localStorage.setItem("pm:last-phone", e164);
         } catch { /* ignore */ }
         location.href = "/verify?phone=" + encodeURIComponent(e164) +
-          "&lang=" + curLang + "&px=lead";
+          "&lang=" + curLang + "&px=lead&from=home"; // REQ-351: Edit → /#contact
       } catch {
         if (cta) {
           cta.disabled = false;

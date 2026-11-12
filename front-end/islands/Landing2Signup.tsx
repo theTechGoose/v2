@@ -260,7 +260,7 @@ export default function Landing2Signup(
         leaving = true;
         globalThis.location.href = `/verify?phone=${
           encodeURIComponent(toE164(phone))
-        }&lang=${lang}`;
+        }&lang=${lang}&from=landing2`; // REQ-351: /verify's Edit returns here
         return;
       }
       if (result.ok) {

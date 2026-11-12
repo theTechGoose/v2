@@ -44,7 +44,7 @@ export default function LoginForm() {
       stashDevCode(e164, sent.devCode); // REQ-082 — /verify shows it on the fakes
       globalThis.location.href = `/verify?phone=${
         encodeURIComponent(e164)
-      }&lang=${lang}`;
+      }&lang=${lang}&from=login`; // REQ-351: /verify's Edit returns here
     } catch (error) {
       const msg = error instanceof ApiError
         ? `${error.status}`
