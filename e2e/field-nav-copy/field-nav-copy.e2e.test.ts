@@ -99,7 +99,7 @@ Deno.test("REQ-361 (demo M36): the field pages sit in a 'Field' folder, Tasks sa
     await link.waitFor({ timeout: 15_000 });
     expect.eq(
       (await link.innerText()).trim(),
-      "No zone yet — assign one in Assignments.",
+      "no zone yet — assign one in Assignments",
       "the hint is the link",
     );
     await link.click();

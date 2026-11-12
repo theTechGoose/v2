@@ -3665,7 +3665,7 @@
   "field.wk.new": "New worker",
   "field.wk.pin": "PIN (4 digits)",
   "field.wk.covers": "Covers",
-  "field.wk.coversNone": "No zone yet — assign one in Assignments.",
+  "field.wk.coversNone": "no zone yet — assign one in Assignments",
   "field.wk.delete": "Remove access",
   "field.wk.confirm": "Remove {name}'s access?",
   "field.wk.empty": "No workers yet.",
