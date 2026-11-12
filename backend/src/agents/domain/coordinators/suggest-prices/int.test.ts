@@ -391,3 +391,48 @@ Deno.test("REQ-382 M22 suggest-prices: a model that stays implausibly low never 
   for (const c of cents) assert(c >= 800000, `every tier clears a master-bath gut floor: ${cents}`);
   assert(cents[0] < cents[1] && cents[1] < cents[2], `still ascending: ${cents}`);
 });
+
+// ── REQ-575 — demo-loop cycle 4, M13 ────────────────────────────────────
+// Pair 7 stated ~$23k labor (3 guys × 3 weeks × $65/hr) and $9.5k cabinets;
+// the tiers came back $24,500 / $27,500 / $31,000 and nothing noticed: the
+// cost floor (REQ-260) read "~$23k" as $23 and "$9.5k" as $9.50.
+
+const PAIR7_RAW =
+  "Kitchen gut for the Hendersons, 12x14, soffit comes down, move the sink to the island. " +
+  "My crew is 3 guys x 3 weeks x $65/hr = ~$23k labor alone, cabinets are $9.5k, quartz on top of that.";
+const PAIR7_TIERS = JSON.stringify({
+  options: [
+    { tier: "competitive", price: 24500, rationale: "Focus on winning the bid" },
+    { tier: "market", price: 27500, rationale: "Standard Austin kitchen remodel rate" },
+    { tier: "premium", price: 31000, rationale: "Complexity with soffit and plumbing" },
+  ],
+});
+const PAIR7_REAL = JSON.stringify({
+  options: [
+    { tier: "competitive", price: 38000, rationale: "Covers crew, cabinets and quartz" },
+    { tier: "market", price: 42500, rationale: "Typical full kitchen gut" },
+    { tier: "premium", price: 48000, rationale: "Soffit and island plumbing" },
+  ],
+});
+
+Deno.test("REQ-575 M13 suggest-prices: pair 7's '~$23k labor … $9.5k cabinets' is a $32,500 floor — tiers under it are re-asked once, naming it", async () => {
+  const { llm, flow } = fresh();
+  const users: string[] = [];
+  llm.setHandler((req) => {
+    users.push(req.messages.filter((m) => m.role === "user").at(-1)?.content ?? "");
+    return { text: users.length === 1 ? PAIR7_TIERS : PAIR7_REAL };
+  });
+  const res = await flow.run({ userId: "u-1", raw: PAIR7_RAW, lang: "en" });
+  assertEquals(users.length, 2, "re-asked once");
+  assert(/\$32,500/.test(users[1]) && /FLOOR/.test(users[1]), `the retry names the stated costs: ${users[1]}`);
+  assertEquals(res.options.map((o) => o.priceCents), [3_800_000, 4_250_000, 4_800_000]);
+});
+
+Deno.test("REQ-575 M13 suggest-prices: a model that stays under pair 7's stated costs never ships a tier under $32,500", async () => {
+  const { llm, flow } = fresh();
+  llm.setHandler(() => ({ text: PAIR7_TIERS }));
+  const res = await flow.run({ userId: "u-1", raw: PAIR7_RAW, lang: "en" });
+  for (const o of res.options) {
+    assert(o.priceCents > 3_250_000, `tier ${o.tier} ${o.priceCents} is above the stated $32,500`);
+  }
+});
