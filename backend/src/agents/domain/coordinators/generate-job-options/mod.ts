@@ -9,7 +9,8 @@ import { summarizeJobName } from "#quote-flow/job-name.ts";
 import { clampSummary } from "#quote-flow/summary-clamp.ts";
 import { scopeBulletsFromRaw } from "#quote-flow/scope-from-raw.ts";
 import {
-  MAX_OPTION_BULLETS as MAX_BULLETS,
+  dedupeOptionsByBullets,
+  sameBullets,
   widerBullets,
 } from "#quote-flow/option-bullets.ts";
 import { mentionsMoney } from "#quote-flow/private-cost.ts";
@@ -181,7 +182,8 @@ function normalizeOneLang(o: unknown, lang: Lang): JobOptionLang | null {
       // ("Plumber Ray charges $2,800") — never customer job details.
       .filter((b) => !mentionsMoney(b))
       .map((b) => b.replace(/\s+/g, " ").replace(/[.;]+$/, ""))
-      .slice(0, MAX_BULLETS) // REQ-266: was a hard cap of 4
+    // REQ-330 (M21/M23): NO cap — REQ-266's 12 still cut a fourteen-item gut
+    // job (recessed lights, permit, vanity). The prompt groups past twelve.
     : [];
   if (bullets.length === 0) return null;
   const summaryText = realText(obj?.summary);
@@ -226,7 +228,13 @@ function normalizeOptions(
     // Flat fields = primary language (back-compat for the picker).
     out.push({ id: `opt${out.length + 1}`, ...byLang[primary], byLang });
   }
-  return out;
+  // REQ-330 (p15-7): the model answers a one-item job with three names on
+  // the same bullets — collapse equal bullet sets, then renumber the ids.
+  return renumber(dedupeOptionsByBullets(out));
+}
+
+function renumber(options: JobOption[]): JobOption[] {
+  return options.map((o, i) => ({ ...o, id: `opt${i + 1}` }));
 }
 
 /** Ensure a jobName is unique within the option set. On collision it takes
@@ -283,6 +291,8 @@ function titleCaseWord(w: string): string {
  * model answer (1–2 options) is padded with honest variants of the first
  * option — "· Short version" (fewer bullets) and "· Wider scope" (+ jobsite
  * cleanup) — exactly the way the heuristic fallback builds its three.
+ * REQ-330 (p15-7): a variant whose bullets equal an option already on the
+ * list is skipped — a one-bullet job gets one or two cards, never two alike.
  */
 function padToThree(options: JobOption[], langs: Lang[]): JobOption[] {
   if (options.length >= 3) return options;
@@ -304,6 +314,9 @@ function padToThree(options: JobOption[], langs: Lang[]): JobOption[] {
         summary: src.summary,
         bullets,
       };
+    }
+    if (out.some((o) => sameBullets(o.bullets, byLang[primary].bullets))) {
+      continue;
     }
     let name = byLang[primary].jobName;
     if (seen.has(name.toLowerCase())) {
@@ -327,9 +340,8 @@ function padToThree(options: JobOption[], langs: Lang[]): JobOption[] {
  */
 function fallbackOptions(raw: string, langs: Lang[]): JobOption[] {
   const scoped = scopeBulletsFromRaw(raw, langs[0]);
-  const scopeBase = scoped.degraded
-    ? null
-    : scoped.bullets.slice(0, MAX_BULLETS);
+  // REQ-330: every typed line survives — no cap.
+  const scopeBase = scoped.degraded ? null : scoped.bullets;
 
   const perLang = (lang: Lang, variant: 0 | 1 | 2): JobOptionLang => {
     const base = scopeBase ?? [t(lang, "generateJobOptions.newJob")];
@@ -355,9 +367,14 @@ function fallbackOptions(raw: string, langs: Lang[]): JobOption[] {
   };
 
   const primary = langs[0];
-  return ([0, 1, 2] as const).map((variant) => {
-    const byLang: Record<string, JobOptionLang> = {};
-    for (const l of langs) byLang[l] = perLang(l, variant);
-    return { id: `opt${variant + 1}`, ...byLang[primary], byLang };
-  });
+  // REQ-330 (p15-7): a one- to three-line job makes the "short" variant equal
+  // to the full one — equal bullet sets collapse, so the picker never shows
+  // two cards with the same scope.
+  return renumber(dedupeOptionsByBullets(
+    ([0, 1, 2] as const).map((variant) => {
+      const byLang: Record<string, JobOptionLang> = {};
+      for (const l of langs) byLang[l] = perLang(l, variant);
+      return { id: `opt${variant + 1}`, ...byLang[primary], byLang };
+    }),
+  ));
 }

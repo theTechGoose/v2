@@ -8,10 +8,7 @@
  */
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import {
-  MAX_OPTION_BULLETS,
-  widerBullets,
-} from "../../shared/quote-flow/option-bullets";
+import { widerBullets } from "../../shared/quote-flow/option-bullets";
 
 const ITEMS = [
   "Gutted old fixtures and tile",
@@ -27,8 +24,14 @@ const ITEMS = [
 ];
 
 describe("REQ-266 ai-assistant-p7-options option bullets", () => {
-  it("REQ-266 the cap holds a ten-item job whole", () => {
-    expect(MAX_OPTION_BULLETS).toBeGreaterThanOrEqual(10);
+  it("REQ-266 (amended by REQ-330) there is no cap at all: the island's fallback keeps every line", () => {
+    const src = readFileSync(
+      resolve(__dirname, "../../front-end/islands/AsstChat.tsx"),
+      "utf8",
+    );
+    const start = src.indexOf("function localFallbackOptions(");
+    const body = src.slice(start, src.indexOf("\n}\n", start));
+    expect(body).not.toMatch(/scoped\.bullets\.slice\(/);
   });
 
   it("REQ-266 the wider version is every item plus jobsite cleanup", () => {
@@ -50,7 +53,7 @@ describe("REQ-266 ai-assistant-p7-options option bullets", () => {
     const start = src.indexOf("function localFallbackOptions(");
     const body = src.slice(start, src.indexOf("\n}\n", start));
     expect(body).not.toMatch(/\.slice\(0, 4\)/);
-    expect(body).toMatch(/MAX_OPTION_BULLETS/);
+    expect(body).not.toMatch(/MAX_OPTION_BULLETS/); // REQ-330: no cap
     expect(body).toMatch(/widerBullets\(/);
   });
 

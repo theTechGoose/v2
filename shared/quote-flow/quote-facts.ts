@@ -13,6 +13,7 @@
  * state is null, and every pre-selection stays a confirmable suggestion.
  */
 import { extractCustomerName } from "./quick-quote-prefill.ts";
+import { type DurationUnit, termLabel } from "./terms-i18n.ts";
 
 export type PrefillPaymentTerms =
   | "50_50"
@@ -28,6 +29,9 @@ export interface QuoteFacts {
    *  wizard's date picker submits). */
   startDate: { iso: string; us: string } | null;
   paymentTerms: PrefillPaymentTerms | null;
+  /** REQ-330 (M21): the typed time to complete ("Thinking 4 weeks",
+   *  "3 días") — offered on the duration ("wraps") step. */
+  duration: { n: number; unit: DurationUnit } | null;
 }
 
 const EMAIL_RE =
@@ -215,6 +219,74 @@ export function extractPaymentTerms(raw: string): PrefillPaymentTerms | null {
   return null;
 }
 
+const DURATION_WORD_NUMS: Record<string, number> = {
+  a: 1,
+  an: 1,
+  one: 1,
+  two: 2,
+  three: 3,
+  four: 4,
+  five: 5,
+  six: 6,
+  seven: 7,
+  eight: 8,
+  nine: 9,
+  ten: 10,
+  un: 1,
+  una: 1,
+  uno: 1,
+  dos: 2,
+  tres: 3,
+  cuatro: 4,
+  cinco: 5,
+  seis: 6,
+  siete: 7,
+  ocho: 8,
+  nueve: 9,
+  diez: 10,
+};
+
+const DURATION_RE =
+  /(?<![\d.,])(\d{1,2}|\p{L}+)\s*(?:-\s*\d{1,2}\s*)?(d[ií]as?|days?|semanas?|weeks?|wks?|meses|mes|months?)\b/giu;
+
+/**
+ * REQ-330 (M21): the time to complete the text states — "Thinking 4 weeks",
+ * "3 días", "dos semanas". A span that is a START offset ("start in 2
+ * weeks", "empezamos en 2 semanas") or a warranty ("2 week warranty") is not
+ * a duration. Null when the text says nothing.
+ */
+export function extractDuration(
+  raw: string,
+): { n: number; unit: DurationUnit } | null {
+  const text = raw ?? "";
+  for (const m of text.matchAll(DURATION_RE)) {
+    const numTok = m[1].toLowerCase();
+    const n = /^\d+$/.test(numTok)
+      ? Number(numTok)
+      : DURATION_WORD_NUMS[numTok];
+    if (!n || n < 1 || n > 99) continue;
+    const before = text.slice(Math.max(0, m.index! - 40), m.index!)
+      .toLowerCase();
+    // "start in 2 weeks" / "starting in 3 days" / "empezamos en 2 semanas"
+    // / "dentro de 2 semanas" is a start offset, not a duration.
+    if (/\b(?:in|en|dentro de)\s*$/.test(before)) continue;
+    const after = text.slice(m.index! + m[0].length).trimStart()
+      .toLowerCase();
+    // "2 week warranty" / "2 semanas de garantía" is a warranty span.
+    if (/^(?:of\s+|de\s+)?(?:warranty|guarantee|garant[ií]a)/.test(after)) {
+      continue;
+    }
+    const u = m[2].toLowerCase();
+    const unit: DurationUnit = /^(?:d|day)/.test(u)
+      ? "days"
+      : /^(?:semana|week|wk)/.test(u)
+      ? "weeks"
+      : "months";
+    return { n, unit };
+  }
+  return null;
+}
+
 /** Every fact in one call. `today` anchors a year-less start date. */
 export function extractQuoteFacts(raw: string, today: Date): QuoteFacts {
   const text = raw ?? "";
@@ -224,6 +296,7 @@ export function extractQuoteFacts(raw: string, today: Date): QuoteFacts {
     customerEmail: extractEmail(text),
     startDate: extractStartDate(text, today),
     paymentTerms: extractPaymentTerms(text),
+    duration: extractDuration(text),
   };
 }
 
@@ -233,16 +306,31 @@ export interface WizardPrefill {
 }
 
 /** The wizard step's pre-selection from the facts; null when the text said
- *  nothing about that step. */
+ *  nothing about that step. `lang` is the wizard's language — a custom
+ *  duration is submitted as the localized term string ("4 semanas"), the
+ *  way the manual duration control submits it (P-25). */
 export function wizardPrefillFor(
   stepId: string | undefined,
   facts: QuoteFacts,
+  lang: "en" | "es" = "en",
 ): WizardPrefill | null {
   if (stepId === "start_date" && facts.startDate) {
     return { optionId: "custom", customValue: facts.startDate.us };
   }
   if (stepId === "payment_terms" && facts.paymentTerms) {
     return { optionId: facts.paymentTerms };
+  }
+  // REQ-330 (M21): a typed duration lands on the wraps step — a preset when
+  // it matches one (1 day / 1 week / 2 weeks), else the custom value.
+  if (stepId === "wraps" && facts.duration) {
+    const { n, unit } = facts.duration;
+    if (unit === "days" && n === 1) return { optionId: "1_day" };
+    if (unit === "weeks" && n === 1) return { optionId: "1_week" };
+    if (unit === "weeks" && n === 2) return { optionId: "2_weeks" };
+    return {
+      optionId: "custom",
+      customValue: termLabel({ kind: "duration", value: { n, unit } }, lang),
+    };
   }
   return null;
 }
