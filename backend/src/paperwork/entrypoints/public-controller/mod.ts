@@ -46,6 +46,7 @@ import { SessionStore } from "@users/domain/data/session-store/mod.ts";
 import { readSessionId } from "@users/domain/coordinators/require-user/mod.ts";
 import { isInternalViewer } from "@paperwork/domain/business/internal-viewer/mod.ts";
 import { changeOrderJobTotals } from "#quote-flow/change-order-view.ts";
+import { invoiceTextByLang } from "#documents/invoice-lang.ts"; // REQ-497
 
 /**
  * Map a NotFoundError into a 404 JSON response. Public endpoints used to
@@ -1020,10 +1021,13 @@ export class PaperworkPublicController {
       // Standalone invoices (no quote) carry their own jobName +
       // description — the assistant's "Job done, need to invoice." flow and
       // the /invoices "New invoice" modal write them directly (roadmap p.3).
+      // REQ-497 (demo m23): plus their per-language text (TranslateInvoice),
+      // while it still matches what was typed — /i reads map[lang] ?? jobName.
       if (!jobDetails && (i.jobName || i.description)) {
         jobDetails = {
           ...(i.jobName ? { jobName: i.jobName } : {}),
           ...(i.description ? { description: i.description } : {}),
+          ...invoiceTextByLang(i),
         };
       }
       // Project sibling invoices into a public-safe shape, sorted by

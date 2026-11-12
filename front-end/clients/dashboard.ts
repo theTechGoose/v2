@@ -260,7 +260,15 @@ export type JobStatusKind =
 export interface Job {
   id: string;
   customer: { id: string; name: string };
-  quote: { id: string; summary: string; estimatedTotalCents: number };
+  quote: {
+    id: string;
+    summary: string;
+    estimatedTotalCents: number;
+    /** REQ-497: the quote's title per language (GET /jobs). */
+    jobName?: string;
+    jobNameByLang?: Record<string, string>;
+    summaryByLang?: Record<string, string>;
+  };
   totalCents: number;
   paidCents: number;
   pctPaid: number;

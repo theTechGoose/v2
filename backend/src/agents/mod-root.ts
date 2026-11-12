@@ -32,6 +32,7 @@ import { SuggestPrices } from "@agents/domain/coordinators/suggest-prices/mod.ts
 import { ProfessionalizeBullet } from "@agents/domain/coordinators/professionalize-bullet/mod.ts";
 import { TranslateBullets } from "@agents/domain/coordinators/translate-bullets/mod.ts";
 import { TranslateQuote } from "@agents/domain/coordinators/translate-quote/mod.ts"; // REQ-264
+import { TranslateInvoice } from "@agents/domain/coordinators/translate-invoice/mod.ts"; // REQ-497
 import { ListConversations } from "@agents/domain/coordinators/list-conversations/mod.ts"; // REQ-369
 import { UpdateChatChangeOrder } from "@agents/domain/coordinators/update-chat-change-order/mod.ts"; // REQ-462
 import { LLM_CLIENT } from "@agents/domain/business/llm/base/mod.ts";
@@ -127,6 +128,7 @@ const LlmClientClass = await selectLLMClass();
     ProfessionalizeBullet,
     TranslateBullets,
     TranslateQuote, // REQ-264
+    TranslateInvoice, // REQ-497 — registers itself on paperwork's InvoiceTranslatorPort
     ListConversations, // REQ-369
     UpdateChatChangeOrder, // REQ-462
     { token: LLM_CLIENT, useClass: LlmClientClass },

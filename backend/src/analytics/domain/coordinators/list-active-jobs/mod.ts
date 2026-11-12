@@ -39,7 +39,17 @@ export interface Job {
   /** Quote summary + estimated total (INTEGER CENTS — same unit as the
    *  rest of the job, see audit1 #3). Renamed from `estimatedTotal` to
    *  `estimatedTotalCents` to make the unit visible at the call site. */
-  quote: { id: string; summary: string; estimatedTotalCents: number };
+  quote: {
+    id: string;
+    summary: string;
+    estimatedTotalCents: number;
+    /** REQ-497 (demo-loop cycle 3, m23): the quote's title per language, so
+     *  the dashboard row renders quoteJobTitle(job.quote, lang) — the /quotes
+     *  rule (REQ-394) — instead of the primary summary. */
+    jobName?: string;
+    jobNameByLang?: Record<string, string>;
+    summaryByLang?: Record<string, string>;
+  };
   totalCents: number;
   paidCents: number;
   /** 0..100 — paid / total. */
@@ -141,6 +151,9 @@ export class ListActiveJobs {
           id: q.id,
           summary: q.summary,
           estimatedTotalCents: q.estimatedTotal ?? 0,
+          ...(q.jobName ? { jobName: q.jobName } : {}),
+          ...(q.jobNameByLang ? { jobNameByLang: q.jobNameByLang } : {}),
+          ...(q.summaryByLang ? { summaryByLang: q.summaryByLang } : {}),
         },
         totalCents,
         paidCents,

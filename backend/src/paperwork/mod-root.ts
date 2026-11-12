@@ -42,6 +42,7 @@ import { DocNumbering } from "@core/data/doc-numbering/mod.ts"; // REQ-198
 import { RevisionsController } from "@paperwork/entrypoints/revisions-controller/mod.ts"; // REQ-201/205
 import { WorkOrderController } from "@paperwork/entrypoints/work-order-controller/mod.ts"; // REQ-210
 import { WorkOrderStore } from "@paperwork/domain/data/work-order-store/mod.ts"; // REQ-210
+import { InvoiceTranslatorPort } from "@paperwork/domain/coordinators/invoice-translator-port/mod.ts"; // REQ-497
 
 @Module({
   imports: [UsersModule, CrmModule, CommunicationModule, FilesModule],
@@ -87,6 +88,7 @@ import { WorkOrderStore } from "@paperwork/domain/data/work-order-store/mod.ts";
     RecordPaymentFromUtterance,
     DocNumbering, // REQ-198
     WorkOrderStore, // REQ-210
+    InvoiceTranslatorPort, // REQ-497
   ],
 })
 export class PaperworkModule {}

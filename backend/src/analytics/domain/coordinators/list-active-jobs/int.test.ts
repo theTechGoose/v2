@@ -232,3 +232,38 @@ Deno.test("list-active-jobs integration: the onboarding sample is never a job (p
   assertEquals(await flow.run("u-1", NOW), []);
   await resetKv();
 });
+
+// REQ-497 (demo-loop cycle 3, m23): the dashboard's Active jobs row titled a
+// job with the primary `summary` only, so an English quote stayed English in
+// the Spanish app. The job carries the quote's per-language name + summary so
+// the row can render quoteJobTitle(job.quote, lang) — the /quotes rule.
+Deno.test("REQ-497 list-active-jobs: the job's quote carries jobName, jobNameByLang and summaryByLang", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const { customers, quotes, flow } = fresh();
+  const cust = await customers.create("u-1", { name: "Maria Lopez" });
+  await quotes.create("u-1", {
+    summary: "Bathroom remodel — Maria Lopez",
+    jobName: "Bathroom Remodel",
+    jobNameByLang: { en: "Bathroom Remodel", es: "Remodelación de baño" },
+    summaryByLang: {
+      en: "Bathroom remodel — Maria Lopez",
+      es: "Remodelación de baño — Maria Lopez",
+    },
+    lineItems: [],
+    status: "accepted",
+    customerId: cust.id,
+    estimatedTotal: 9_600_00,
+  });
+  const [job] = await flow.run("u-1", NOW);
+  assertEquals(job.quote.jobName, "Bathroom Remodel");
+  assertEquals(job.quote.jobNameByLang, {
+    en: "Bathroom Remodel",
+    es: "Remodelación de baño",
+  });
+  assertEquals(
+    job.quote.summaryByLang?.es,
+    "Remodelación de baño — Maria Lopez",
+  );
+  await resetKv();
+});
