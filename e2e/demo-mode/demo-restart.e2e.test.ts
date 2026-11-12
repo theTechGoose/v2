@@ -8,6 +8,7 @@
  * "Hans started a new demo" when the next demo reaches her, never a silent swap of the notice.
  */
 import { story, type StoryTools } from "#shots";
+import { pillUp } from "../_shared/demo-pill.ts";
 
 const JSON_HEADERS = { "content-type": "application/json" };
 const digits = () => String(Math.floor(Math.random() * 9_000_000) + 1_000_000);
@@ -108,9 +109,8 @@ Deno.test("REQ-222 (M11) + REQ-298: a connected demo ends — from the staff sid
        *  REQ-232 (demo-lifecycle-p1): the pills say Connected (customer) and Live (staff) */
       const connected = async (what: string) => {
         // ACTIVE_POLL_MS (5 s) + the join + the WebRTC/relay handshake
-        await userPage.locator("[data-cy='demo-status']").filter({
-          hasText: /^\s*Connected\s*$/,
-        }).waitFor({ timeout: 20_000 }).catch(() => {
+        // REQ-545 — the customer's pill whole (it folds to a tab over page content)
+        await pillUp(userPage, { live: true }).catch(() => {
           throw new Error(`${what}: the customer's app never connected`);
         });
         await page.locator("[data-cy='demo-status']").filter({

@@ -12,6 +12,7 @@
  *       page. Their app back, the stage is Live again and the banner gone.
  */
 import { story, type StoryTools } from "#shots";
+import { pillUp } from "../_shared/demo-pill.ts";
 import { answerQuestions } from "../_shared/onboarding-answers.ts";
 
 const JSON_HEADERS = { "content-type": "application/json" };
@@ -174,7 +175,7 @@ Deno.test("REQ-391 (demo-loop cycle 2, M4 + m21): an in-app page change says 'Lo
       await useCookie(page.context(), baseUrl, who.admin.cookie);
       await openDemo(page, baseUrl, who.userPhone);
       await tab.reload();
-      await tab.locator("[data-cy='demo-status']").waitFor({ timeout: 20_000 });
+      await pillUp(tab);
       await liveOn(page, "/dashboard");
 
       // M4 — a page change made by the app itself
@@ -185,7 +186,7 @@ Deno.test("REQ-391 (demo-loop cycle 2, M4 + m21): an in-app page change says 'Lo
         }, 0)
       );
       await tab.waitForURL(/\/customers/, { timeout: 15_000 });
-      await tab.locator("[data-cy='demo-status']").waitFor({ timeout: 20_000 });
+      await pillUp(tab);
       await liveOn(page, "/customers");
       const during = await recorded(page);
       if (!during.includes("Loading their next page…")) {
@@ -267,7 +268,7 @@ Deno.test("REQ-391 (demo-loop cycle 2, M4 + m21): an in-app page change says 'Lo
 
       // their app back: Live again, the banner gone
       await tab.goto(`${baseUrl}/dashboard`);
-      await tab.locator("[data-cy='demo-status']").waitFor({ timeout: 20_000 });
+      await pillUp(tab);
       await liveOn(page, "/dashboard");
       await page.locator("[data-cy='demo-waiting']").waitFor({
         state: "hidden",

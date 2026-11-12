@@ -152,6 +152,7 @@ import {
   whoEnded,
 } from "../../shared/demo-mode/ended.ts";
 import {
+  bandGhostBox,
   ghostWords,
   PILL_FONT,
   pillFaceOffline,
@@ -953,6 +954,10 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
               clipped: m.clipped,
               label: m.label,
               guide: m.guide,
+              // REQ-545 (cycle 4, m2) — tucked to its tab, and the band the customer sees
+              tucked: m.tucked,
+              band: m.band,
+              bandBg: m.bandBg,
             });
             break;
         }
@@ -1220,7 +1225,44 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
                 style={`display:block;border:0;width:${screen.w}px;height:${screen.h}px;transform:scale(${fit.s});transform-origin:0 0;pointer-events:none;background:#fff`}
               />
             </div>
-            {mirrored && pillBox && (() => {
+            {mirrored && (() => {
+              // REQ-545 (demo-loop cycle 4, m2) — the customer's band, where their screen paints
+              // it: the mirror skips the overlay, so without this the presenter saw content
+              // (QUOTES PENDING) that the customer's band hid
+              const b = bandGhostBox(pillFace.band ?? 0, screen, fit);
+              if (!b) return null;
+              return (
+                <div
+                  data-cy="demo-band-ghost"
+                  aria-hidden="true"
+                  style={`position:fixed;left:${b.left}px;top:${b.top}px;width:${b.width}px;height:${b.height}px;z-index:${
+                    Z - 1
+                  };background:${
+                    pillFace.bandBg ?? "#fff"
+                  };pointer-events:none`}
+                />
+              );
+            })()}
+            {mirrored && pillBox && pillFace.tucked === true && (() => {
+              // REQ-545 — the pill tucked to its edge tab on their screen: a tab here too
+              const ghost = pillGhost(pillBox, fit);
+              if (!ghost) return null;
+              const g = ghost.box;
+              return (
+                <div
+                  data-cy="demo-pill-ghost"
+                  data-tucked=""
+                  aria-hidden="true"
+                  title={t("demoMode.pillGhost", { name })}
+                  style={`position:fixed;left:${g.left}px;top:${g.top}px;width:${g.width}px;height:${g.height}px;z-index:${Z};box-sizing:border-box;border-radius:0 ${
+                    Math.max(3, 10 * fit.s)
+                  }px ${
+                    Math.max(3, 10 * fit.s)
+                  }px 0;background:rgba(31,61,27,.78);pointer-events:none`}
+                />
+              );
+            })()}
+            {mirrored && pillBox && pillFace.tucked !== true && (() => {
               // REQ-372 (cycle 2, m1 + m8) — cut to the frame, and a read-only replica of what
               // the pill says, and a marker when the pill runs off their screen or past the frame.
               // REQ-430 (cycle 3, m4) — its status in the CUSTOMER's words (their pill's label),

@@ -3936,6 +3936,7 @@
   "clientsBoard.docState.approved": "Aprobada",
   "clientsBoard.docState.pending": "Pendiente",
   "demoMode.title": "Modo demo",
+  "demoMode.showPill": "Mostrar los controles de la demo",
   "demoMode.guiding": "{name} te está guiando",
   "demoMode.guidingMany": "{names} te están guiando",
   "demoMode.you": "tú",

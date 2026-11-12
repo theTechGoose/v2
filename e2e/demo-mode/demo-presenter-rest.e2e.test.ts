@@ -30,6 +30,7 @@
  *      his move puts it on the followed tab only.
  */
 import { story, type StoryTools } from "#shots";
+import { pillUp } from "../_shared/demo-pill.ts";
 
 const JSON_HEADERS = { "content-type": "application/json" };
 const digits = () => String(Math.floor(Math.random() * 9_000_000) + 1_000_000);
@@ -266,9 +267,7 @@ Deno.test("REQ-393 (demo M8) + REQ-451 (demo M14): the cursor handed over from /
       const clickedAt = await openDemo(page, baseUrl, who.userPhone);
       // the customer's app joins; the stage mirrors the phone
       await phone.reload();
-      await phone.locator("[data-cy='demo-status']").waitFor({
-        timeout: 20_000,
-      });
+      await pillUp(phone);
       await until(
         "the stage shows the customer's phone (390 × 844)",
         async () => (await screenOf(page)).includes("390 × 844"),
@@ -439,9 +438,7 @@ Deno.test("REQ-393 (demo M2 tab switch) + REQ-451 (demo M1): the tab the stage l
       await useCookie(page.context(), baseUrl, who.admin.cookie);
       await openDemo(page, baseUrl, who.userPhone);
       await tab1.reload();
-      await tab1.locator("[data-cy='demo-status']").waitFor({
-        timeout: 20_000,
-      });
+      await pillUp(tab1);
       await until(
         "the stage shows tab 1 (420 × 800)",
         async () => (await screenOf(page)).includes("420 × 800"),
@@ -472,9 +469,7 @@ Deno.test("REQ-393 (demo M2 tab switch) + REQ-451 (demo M1): the tab the stage l
       const tab2 = await userCtx.newPage();
       await tab2.setViewportSize({ width: 640, height: 760 });
       await tab2.goto(`${baseUrl}/settings`);
-      await tab2.locator("[data-cy='demo-status']").waitFor({
-        timeout: 20_000,
-      });
+      await pillUp(tab2);
       await until(
         "the stage follows tab 2 (640 × 760)",
         async () => (await screenOf(page)).includes("640 × 760"),
@@ -527,6 +522,7 @@ Deno.test("REQ-393 (demo M2 tab switch) + REQ-451 (demo M1): the tab the stage l
       );
 
       // 3. tab 2 again: still no arrow while he is still; his move reaches tab 2 only
+      await pillUp(tab2);
       await tab2.locator("[data-cy='demo-more']").click();
       await until(
         "a click in tab 2 takes the stage (640 × 760)",
@@ -558,6 +554,7 @@ Deno.test("REQ-393 (demo M2 tab switch) + REQ-451 (demo M1): the tab the stage l
 
       // 4. the customer clicks in tab 1: the stage follows it again; tab 2 loses the arrow; his
       //    last arrow was on tab 2's page, so tab 1 shows none until he moves (REQ-451)
+      await pillUp(tab1);
       await tab1.locator("[data-cy='demo-more']").click();
       await until(
         "a click in tab 1 takes the stage back (420 × 800)",

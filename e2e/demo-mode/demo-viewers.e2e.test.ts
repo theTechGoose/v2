@@ -18,6 +18,7 @@
  * 640 × 760"): the two tabs have different viewports.
  */
 import { story, type StoryTools } from "#shots";
+import { pillUp } from "../_shared/demo-pill.ts";
 
 const JSON_HEADERS = { "content-type": "application/json" };
 const digits = () => String(Math.floor(Math.random() * 9_000_000) + 1_000_000);
@@ -167,7 +168,7 @@ async function liveDemo(
   const first = await statusOf(page);
   await tab1.reload();
   // the customer's app has joined (its pill is up)
-  await tab1.locator("[data-cy='demo-status']").waitFor({ timeout: 20_000 });
+  await pillUp(tab1);
   return { ...who, userCtx, tab1, first };
 }
 
@@ -187,9 +188,7 @@ Deno.test("REQ-232 (demo-lifecycle-p1): the pills say plainly whether the demo i
       await page.locator("[data-cy='demo-status']").filter({
         hasText: /^\s*Live\s*$/,
       }).waitFor({ timeout: 20_000 });
-      await tab1.locator("[data-cy='demo-status']").filter({
-        hasText: /^\s*Connected\s*$/,
-      }).waitFor({ timeout: 20_000 });
+      await pillUp(tab1, { live: true });
       for (const [who, pg] of [["staff", page], ["customer", tab1]] as const) {
         const pill = await pillOf(pg);
         expect(
@@ -229,9 +228,7 @@ Deno.test("REQ-232 (demo-lifecycle-m1): the customer changes page twice — each
         await tab1.waitForURL((u: URL) => u.pathname === path, {
           timeout: 15_000,
         });
-        await tab1.locator("[data-cy='demo-status']").waitFor({
-          timeout: 15_000,
-        });
+        await pillUp(tab1);
       };
       await appGoesTo("/customers");
       await appGoesTo("/settings");
@@ -262,9 +259,7 @@ Deno.test("REQ-232 (B3): a second customer tab is followed; a click in the first
       const tab2 = await userCtx.newPage();
       await tab2.setViewportSize({ width: 640, height: 760 });
       await tab2.goto(`${baseUrl}/settings`);
-      await tab2.locator("[data-cy='demo-status']").waitFor({
-        timeout: 20_000,
-      });
+      await pillUp(tab2);
       await until(
         "the stage follows tab 2 (640 × 760)",
         async () => (await screenOf(page)).includes("640 × 760"),
@@ -351,7 +346,7 @@ Deno.test("REQ-232 (demo-lifecycle-m3): a second window of the same staff accoun
       await openDemo(page, baseUrl, userPhone);
       await tab.reload();
       // the customer's app has joined (its pill is up); the wording is story 1's business
-      await tab.locator("[data-cy='demo-status']").waitFor({ timeout: 20_000 });
+      await pillUp(tab);
       await sleep(1_500);
 
       // window 2: Hans logs in again in another window and opens /admin
@@ -430,7 +425,7 @@ Deno.test("REQ-232 (M21): Return to your account on the stage asks first, leaves
       await openDemo(page, baseUrl, userPhone);
       await tab.reload();
       // the customer's app has joined (its pill is up); the wording is story 1's business
-      await tab.locator("[data-cy='demo-status']").waitFor({ timeout: 20_000 });
+      await pillUp(tab);
       await sleep(1_500);
 
       // every page the staff window lands on from here
