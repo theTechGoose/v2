@@ -42,6 +42,11 @@ import {
   pricingReply,
 } from "@agents/domain/business/chat-answers/mod.ts";
 import { liveDraftOffer } from "#quote-flow/chat-draft-offer.ts";
+import {
+  acceptsChangeOrderOffer,
+  liveChangeOrderOffer,
+  signedOfferAmount,
+} from "#quote-flow/chat-change-order-offer.ts"; // REQ-664
 import { AnswerBilling } from "@agents/domain/coordinators/answer-billing/mod.ts";
 import { AnswerOwed } from "@agents/domain/coordinators/answer-owed/mod.ts";
 import { SuggestPrices } from "@agents/domain/coordinators/suggest-prices/mod.ts";
@@ -1649,6 +1654,47 @@ export class HandleChatMessage {
         step,
         replyLang,
       );
+    }
+
+    // ---- REQ-664 (demo-loop cycle 5, m43): a signed quote's line edit was
+    // answered with the change order it amounts to ("Make change order
+    // −$1,000 for Cabinets"). Its button sends those words; they (or a
+    // plain "yes") make exactly that change order — without the model.
+    const coOffer = typeof input.content === "string"
+      ? liveChangeOrderOffer(history.filter((m) => m.id !== userMsg.id))
+      : undefined;
+    if (
+      coOffer && typeof input.content === "string" &&
+      acceptsChangeOrderOffer(
+        input.content,
+        (["en", "es"] as const).map((l) =>
+          t(l, "asstChat.changeOrderOffer", {
+            amount: signedOfferAmount(coOffer.offer.deltaCents),
+            what: coOffer.offer.label,
+          })
+        ),
+      )
+    ) {
+      const { offer } = coOffer;
+      const result = await this.changeOrder.run({
+        userId: input.userId,
+        lang: replyLang,
+        boundQuoteId: offer.quoteId,
+        ...(offer.quoteNumber ? { quoteNumber: offer.quoteNumber } : {}),
+        description: offer.description,
+        deltaAmountCents: offer.deltaCents,
+      });
+      const reply = await this.messages.append({
+        conversationId: conv.id,
+        role: "assistant",
+        kind: "text",
+        content: result.text,
+        payload: { changeOrder: result.outcome },
+      });
+      const updated = await this.conversations.update(conv.id, {
+        preview: derivePreview(reply.content),
+      });
+      return { conversation: updated, newMessages: [userMsg, reply] };
     }
 
     // ---- N5 fast-path: confirmation → fire lock_quote without the LLM ----

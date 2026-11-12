@@ -87,6 +87,10 @@ import {
 import { quoteHasPrice } from "../../shared/quote-flow/quote-price-guard.ts";
 import { polishOffer } from "../../shared/quote-flow/polish-offer.ts";
 import {
+  liveChangeOrderOffer,
+  signedOfferAmount,
+} from "../../shared/quote-flow/chat-change-order-offer.ts"; // REQ-664
+import {
   type ChipKey,
   chipReply,
 } from "../../shared/quote-flow/starter-chips.ts";
@@ -9795,7 +9799,13 @@ export default function AsstChat({
                             href={`/quotes?open=${
                               encodeURIComponent(ql.quoteId)
                             }`}
-                            style="display:inline-flex;align-items:center;gap:6px;margin-top:6px;padding:7px 12px;border-radius:999px;background:#144852;color:#fff;font-size:12.5px;font-weight:800;text-decoration:none"
+                            style={`display:inline-flex;align-items:center;gap:6px;margin-top:6px;margin-right:6px;padding:7px 12px;border-radius:999px;font-size:12.5px;font-weight:800;text-decoration:none;${
+                              // REQ-664: the change-order offer is the one
+                              // primary; the quote link steps back.
+                              liveChangeOrderOffer(visible)?.id === m.id
+                                ? "border:1px solid #144852;background:#fff;color:#144852"
+                                : "background:#144852;color:#fff"
+                            }`}
                           >
                             {tFor(
                               lang,
@@ -9865,6 +9875,29 @@ export default function AsstChat({
                           <button
                             type="button"
                             data-cy="msg-draft-offer"
+                            disabled={sending}
+                            onClick={() => void sendText(label)}
+                            style="display:inline-flex;align-items:center;gap:6px;margin-top:6px;padding:7px 12px;border:0;border-radius:999px;background:#144852;color:#fff;font-size:12.5px;font-weight:800;cursor:pointer"
+                          >
+                            {label}
+                          </button>
+                        );
+                      })()}
+                      {(() => {
+                        // REQ-664 (demo-loop cycle 5, m43): a signed quote's
+                        // line edit offers the change order it amounts to.
+                        // The button sends its own words, which the server
+                        // reads as the yes and makes that change order.
+                        const coOffer = liveChangeOrderOffer(visible);
+                        if (coOffer?.id !== m.id) return null;
+                        const label = tFor(lang, "asstChat.changeOrderOffer", {
+                          amount: signedOfferAmount(coOffer.offer.deltaCents),
+                          what: coOffer.offer.label,
+                        });
+                        return (
+                          <button
+                            type="button"
+                            data-cy="msg-co-offer"
                             disabled={sending}
                             onClick={() => void sendText(label)}
                             style="display:inline-flex;align-items:center;gap:6px;margin-top:6px;padding:7px 12px;border:0;border-radius:999px;background:#144852;color:#fff;font-size:12.5px;font-weight:800;cursor:pointer"
