@@ -225,6 +225,23 @@ Deno.test("REQ-242: the stage mirrors the customer's actual screen — connectin
         "REQ-242: sandboxed, and scripts are not allowed",
       );
       await expect.see("Ana Torres's screen");
+      // REQ-293 (demo-loop cycle 1, p11): the replica is a picture to assistive tech —
+      // inert, aria-hidden, out of the tab order, a role=img carrying the title
+      expect.eq(
+        await page.evaluate((f) => {
+          const el = document.querySelector(f) as HTMLIFrameElement | null;
+          return el
+            ? [
+              el.hasAttribute("inert"),
+              el.getAttribute("aria-hidden"),
+              el.getAttribute("tabindex"),
+              el.getAttribute("role"),
+            ].join("|")
+            : "no frame";
+        }, FRAME),
+        "true|true|-1|img",
+        "REQ-293: the mirror frame is inert, aria-hidden, tabindex=-1, role=img",
+      );
       await until(
         "the mirror has the composer",
         async () => (await mirror.count(page, ".composer__input")) === 1,

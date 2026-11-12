@@ -615,6 +615,11 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
                 })}
                 sandbox="allow-same-origin"
                 srcdoc={MIRROR_SRCDOC}
+                // REQ-293: a picture to assistive tech — the replayed DOM is never focusable or read
+                inert
+                aria-hidden="true"
+                tabindex={-1}
+                role="img"
                 width={screen.w}
                 height={screen.h}
                 onLoad={onFrameLoad}
