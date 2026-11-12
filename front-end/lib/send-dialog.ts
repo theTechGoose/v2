@@ -12,6 +12,7 @@
  * never lib/api's "PUT /customers/<id> failed: 400" (`contactSaveErrorKey`).
  */
 import { customerContactError } from "../../shared/quote-flow/customer-contact.ts";
+import { phoneCantReceiveTexts } from "../../shared/quote-flow/sms-number.ts";
 
 export type SendChannel = "both" | "sms" | "email";
 
@@ -23,15 +24,21 @@ export interface ContactOnFile {
 const has = (v: string | null | undefined): boolean =>
   !!v && v.trim().length > 0;
 
+/** REQ-569 (cycle 4, m46): a phone on file that can't take a text. */
+const cantText = (customer: ContactOnFile | undefined): boolean =>
+  phoneCantReceiveTexts(customer?.phoneNumber);
+
 /**
  * The channel to tag "Recommended": both only when the customer has an email
  * AND a phone, else the one channel they have, nothing when they have neither.
+ * REQ-569 (demo m46): a phone that can't receive texts (the shared fictional
+ * rule the SMS guard refuses) does not count — email alone is recommended.
  */
 export function recommendedChannel(
   customer: ContactOnFile | undefined,
 ): SendChannel | undefined {
   const email = has(customer?.email);
-  const phone = has(customer?.phoneNumber);
+  const phone = has(customer?.phoneNumber) && !cantText(customer);
   if (email && phone) return "both";
   if (phone) return "sms";
   if (email) return "email";
@@ -126,18 +133,27 @@ export async function runExclusive<T>(
 export function defaultSendChannel(
   customer: ContactOnFile | undefined,
 ): SendChannel {
+  // REQ-569 (m46): a phone that can't take texts never starts the send on
+  // Text — Email, which asks for an address when none is on file.
+  if (cantText(customer)) return "email";
   return recommendedChannel(customer) ?? "both";
 }
 
 /**
  * REQ-402 (m5): the hint a channel option carries when the customer can't
  * be reached on it with what is on file — "needs an email" / "needs a
- * phone" / "needs a phone and email"; undefined when the channel is ready.
+ * phone" / "needs a phone and email" — or, REQ-569, "This number can't
+ * receive texts" for Text when the phone on file is fictional; undefined
+ * when the channel is ready.
  */
 export function channelNeedsKey(
   channel: SendChannel,
   customer: ContactOnFile | undefined,
 ): string | undefined {
+  // REQ-569 (m46): the phone on file is certain to refuse a text.
+  if (channel !== "email" && cantText(customer)) {
+    return "asstChat.send.cantText";
+  }
   const needsEmail = channel !== "sms" && !has(customer?.email);
   const needsPhone = channel !== "email" && !has(customer?.phoneNumber);
   if (needsEmail && needsPhone) return "asstChat.send.needsBoth";
