@@ -207,6 +207,72 @@ export function jobNameCase(name: string, lang?: "en" | "es"): string {
     .join(" ");
 }
 
+/** REQ-394: "LED", "HVAC", "A/C" — two or more letters, all upper case. */
+function isAcronym(word: string): boolean {
+  const letters = word.replace(/[^\p{L}]/gu, "");
+  return letters.length >= 2 && letters === letters.toUpperCase() &&
+    letters !== letters.toLowerCase();
+}
+
+/** REQ-394: lower a word's leading capital — unless it is an acronym or a
+ *  mixed-case word ("McDonald", "iPhone") whose case carries meaning. */
+function lowerLead(word: string): string {
+  if (isAcronym(word)) return word;
+  const m = word.match(/^(\P{L}*)(\p{L})(.*)$/su);
+  if (!m) return word;
+  const [, pre, first, rest] = m;
+  if (rest !== rest.toLowerCase()) return word;
+  return pre + first.toLowerCase() + rest;
+}
+
+const isConnector = (w: string) =>
+  STOPWORDS.has(w.toLowerCase()) || ES_STOPWORDS.has(w.toLowerCase());
+
+/**
+ * REQ-394 (demo-loop cycle 2, p9): a job name or line description placed
+ * MID-SENTENCE ("What should {item} cost?", "Acuerdo de {job} de …"). An
+ * English job name is a label and keeps its Title Case where it stands
+ * alone; inside a sentence it reads as a phrase. A sentence-case phrase
+ * loses its leading capital ("Recessed lighting installation" → "recessed
+ * lighting installation"); a Title Case label is lowered word by word
+ * ("Master Bath Remodel" → "master bath remodel"). Acronyms and mixed-case
+ * words keep their case; anything after a standalone dash (the summary's
+ * "— <customer>" tail) is left as written.
+ */
+export function jobNameInSentence(text: string): string {
+  const all = text.trim().split(/\s+/).filter((w) => w.length > 0);
+  const dash = all.findIndex((w) => /^[—–-]$/.test(w));
+  const head = dash === -1 ? all : all.slice(0, dash);
+  const tail = dash === -1 ? [] : all.slice(dash);
+  const counted = head.filter((w) =>
+    /^\P{L}*\p{L}/u.test(w) && !isConnector(w)
+  );
+  const isTitle = counted.length >= 2 &&
+    counted.every((w) => /^\P{L}*\p{Lu}/u.test(w));
+  const lowered = head.map((w, i) => (i === 0 || isTitle) ? lowerLead(w) : w);
+  return [...lowered, ...tail].join(" ");
+}
+
+/**
+ * REQ-394 (demo-loop cycle 2, p9): a quote's title in the language the app
+ * is showing — jobNameByLang[lang], then the stored primary jobName, then
+ * the summary in that language, then the primary summary. /quotes used the
+ * primary jobName only, so a quote made in English stayed English in the
+ * Spanish app.
+ */
+export function quoteJobTitle(
+  q: {
+    jobName?: string | null;
+    jobNameByLang?: Record<string, string> | null;
+    summary?: string | null;
+    summaryByLang?: Record<string, string> | null;
+  },
+  lang: string,
+): string | undefined {
+  return q.jobNameByLang?.[lang]?.trim() || q.jobName?.trim() ||
+    q.summaryByLang?.[lang]?.trim() || q.summary?.trim() || undefined;
+}
+
 /** A valid job name is non-empty and inside the budget (REQ-337: at most
  *  JOB_NAME_MAX_WORDS words and JOB_NAME_MAX_CHARS characters). */
 export function isValidJobName(name: string): boolean {

@@ -50,6 +50,7 @@ import {
   ShimmerStyle,
 } from "../components/Skeletons.tsx";
 import { langSignal, tFor } from "../lib/i18n.ts";
+import { quoteJobTitle } from "../../shared/quote-flow/job-name.ts";
 import {
   canReviseQuote,
   editableLines,
@@ -101,8 +102,8 @@ function mapCard(c: BackendQuoteCard, lang: "en" | "es"): Quote {
     version: c.version,
     // Prefer the ≤3-word Job Name (roadmap p.10) so cards read the same as
     // the quote, agreement, and invoice headings; summary is the fallback.
-    title: c.jobName?.trim() || c.summary ||
-      tFor(lang, "quotesPage.untitledQuote"),
+    // REQ-394 (cycle 2, p9): in the app's language — jobNameByLang[lang].
+    title: quoteJobTitle(c, lang) ?? tFor(lang, "quotesPage.untitledQuote"),
     client,
     customerId: c.customerId,
     initials: initialsFromName(c.customerName ?? fallbackClient),
@@ -805,8 +806,10 @@ function OpenQuotePanel(
 
   const badge = badgeStatusFor(q);
   const quoteId = q.id;
-  const title = q.jobName?.trim() || q.summary ||
+  // REQ-394 (cycle 2, p9): the title and summary in the app's language.
+  const title = quoteJobTitle(q, lang) ??
     tFor(lang, "quotesPage.untitledQuote");
+  const summaryText = q.summaryByLang?.[lang]?.trim() || q.summary;
   // REQ-315: while a revision waits, "Publish revision" is the one primary.
   const hasPending = Boolean(
     q.pendingRevision && Object.keys(q.pendingRevision).length > 0,
@@ -848,8 +851,8 @@ function OpenQuotePanel(
           <I d={ICN.x} size={16} sw={2.5} />
         </button>
       </div>
-      {q.summary && q.jobName?.trim() && (
-        <p class="qopen__summary">{q.summary}</p>
+      {summaryText && q.jobName?.trim() && (
+        <p class="qopen__summary">{summaryText}</p>
       )}
       {q.customerName && (
         <p class="qopen__client" style="font-size:13px;color:var(--fg-muted)">

@@ -12,6 +12,8 @@
  * All amounts are INTEGER CENTS (audit1 #3).
  */
 
+import { jobNameInSentence } from "./job-name.ts";
+
 export type QuotePriceProblem = "negative_line" | "no_total";
 
 export interface PricedLine {
@@ -84,7 +86,9 @@ export function storedQuotePriceProblem(q: {
 }
 
 /** The line to name in the "what should X cost?" ask: the first negative
- *  line, else the first line, else the fallback (the quote's summary). */
+ *  line, else the first line, else the fallback (the quote's summary).
+ *  REQ-394 (cycle 2, p9): it lands mid-sentence, so it is lowered —
+ *  "What should recessed lighting installation (6 lights) cost?". */
 export function priceProblemItem(
   lines: readonly PricedLine[],
   fallback: string,
@@ -92,5 +96,5 @@ export function priceProblemItem(
   const bad = lines.find((l) => finite(l.amountCents) && l.amountCents < 0) ??
     lines[0];
   const d = bad?.description?.trim();
-  return d || fallback;
+  return jobNameInSentence(d || fallback);
 }

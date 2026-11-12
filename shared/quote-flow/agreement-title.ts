@@ -4,7 +4,9 @@
  * agreement after the customer and the job, in both languages.
  *
  *   en: "<Customer>'s <Job> Agreement"     · no job: "<Customer>'s Agreement"
- *   es: "Acuerdo de <Job> de <Customer>"   · no job: "Acuerdo de <Customer>"
+ *   es: "Acuerdo de <job> de <Customer>"   · no job: "Acuerdo de <Customer>"
+ *       REQ-394 (cycle 2, p9): the job sits mid-sentence after "Acuerdo de",
+ *       so it is lowered — "Acuerdo de corte de césped semanal de Ana López".
  *   no customer: the job — or the caller's fallback when the job is unknown.
  *
  * A placeholder job name ("New job" / "Nuevo trabajo" — the fallbacks the
@@ -12,9 +14,16 @@
  * treated as unknown so it never leaks into a customer-facing title.
  */
 
+import { jobNameInSentence } from "./job-name.ts";
+
 export type AgreementLang = "en" | "es";
 
-const PLACEHOLDER_JOBS = new Set(["new job", "nuevo trabajo", "job", "trabajo"]);
+const PLACEHOLDER_JOBS = new Set([
+  "new job",
+  "nuevo trabajo",
+  "job",
+  "trabajo",
+]);
 
 function realJob(job: string | undefined): string | undefined {
   const s = job?.trim();
@@ -34,7 +43,9 @@ export function agreementTitle(args: {
   const lang: AgreementLang = args.lang === "es" ? "es" : "en";
   if (!customer) return job ?? args.fallback ?? "";
   if (lang === "es") {
-    return job ? `Acuerdo de ${job} de ${customer}` : `Acuerdo de ${customer}`;
+    return job
+      ? `Acuerdo de ${jobNameInSentence(job)} de ${customer}`
+      : `Acuerdo de ${customer}`;
   }
   return job ? `${customer}'s ${job} Agreement` : `${customer}'s Agreement`;
 }

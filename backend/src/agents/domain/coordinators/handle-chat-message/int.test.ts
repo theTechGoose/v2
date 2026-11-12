@@ -2175,7 +2175,45 @@ Deno.test("REQ-302 M29 handle-chat-message integration: 'price abc' → a $0 dra
   assertEquals(texts.length, 1);
   assertEquals(
     texts[0].content,
-    t("en", "chatCoordinator.priceMissing", { item: "Panel swap" }),
+    t("en", "chatCoordinator.priceMissing", { item: "panel swap" }),
+  );
+  await resetKv();
+});
+
+// REQ-394 (demo-loop cycle 2, p9) — the price ask names the line mid-sentence,
+// so its leading capital goes: the demo read "What should Recessed lighting
+// installation (6 lights) cost?".
+Deno.test("REQ-394 p9 handle-chat-message integration: the price ask lower-cases the line it names mid-sentence", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const { conversations, llm, flow } = fresh();
+  await seedOnboarded("u-1");
+  llm.setScript([{
+    text: "Here's your quote.",
+    action: {
+      type: "create_quote",
+      payload: {
+        summary: "Recessed Lighting Installation — Bob",
+        lineItems: [{
+          description: "Recessed lighting installation (6 lights)",
+          amountCents: 0,
+        }],
+      },
+    },
+  }]);
+  const conv = await conversations.create({ userId: "u-1" });
+  const result = await flow.run({
+    userId: "u-1",
+    conversationId: conv.id,
+    content: "6 recessed lights for Bob, $abc",
+  });
+  const texts = result.newMessages.filter((m) =>
+    m.role === "assistant" && m.kind === "text"
+  );
+  assertEquals(texts.length, 1);
+  assertEquals(
+    texts[0].content,
+    "I can't use that as a price. What should recessed lighting installation (6 lights) cost? Give me a number, like $500.",
   );
   await resetKv();
 });
@@ -2220,7 +2258,7 @@ Deno.test("REQ-302 B1 handle-chat-message integration: a -$500 reprice of the bo
   assertEquals(texts.length, 1);
   assertEquals(
     texts[0].content,
-    t("en", "chatCoordinator.priceMissing", { item: "Panel swap" }),
+    t("en", "chatCoordinator.priceMissing", { item: "panel swap" }),
   );
   await resetKv();
 });
