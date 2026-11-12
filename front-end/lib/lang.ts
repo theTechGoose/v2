@@ -108,6 +108,26 @@ export function pickClientLang(
   };
 }
 
+/**
+ * REQ-345 — the event a plain (non-island) script dispatches to change the
+ * language: `document.dispatchEvent(new CustomEvent("pm:lang", { detail }))`.
+ * The landing page's EN/ES toggle lives in static/landing-scripts.js, outside
+ * the island bundle, so it cannot import langSignal; without this bridge the
+ * PhoneChat island kept the old language until a reload (demo m3).
+ */
+export const LANG_EVENT = "pm:lang";
+
+/** Turn `pm:lang` events on `target` into langSignal. Persisting is the
+ *  dispatcher's job (it already wrote the choice). Returns the unsubscribe. */
+export function listenForLangEvents(target: EventTarget): () => void {
+  const onLang = (e: Event) => {
+    const lang = asLang((e as CustomEvent<unknown>).detail as string);
+    if (lang) langSignal.value = lang;
+  };
+  target.addEventListener(LANG_EVENT, onLang);
+  return () => target.removeEventListener(LANG_EVENT, onLang);
+}
+
 // Client-only seed: resolve the initial language exactly once at module load
 // (pickClientLang). Guarded because this module is imported in SSR.
 //
@@ -132,6 +152,14 @@ if (typeof document !== "undefined" && globalThis.location) {
   } catch {
     /* keep the default */
   }
+}
+
+// REQ-345: hear the language toggles that live outside the island bundle.
+if (
+  typeof document !== "undefined" &&
+  typeof document.addEventListener === "function"
+) {
+  listenForLangEvents(document);
 }
 
 interface Card {

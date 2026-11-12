@@ -449,6 +449,9 @@
       if (b.dataset.lang === lang) b.classList.add("on");
       else b.classList.remove("on");
     });
+    // REQ-345: the islands (PhoneChat's chat-to-quote mock) read langSignal,
+    // which this plain script cannot import — lib/lang.ts listens for this.
+    document.dispatchEvent(new CustomEvent("pm:lang", { detail: lang }));
   }
 
   // Reflect the chosen language into the URL's ?lang= param (no reload) so it
