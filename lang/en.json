@@ -3733,6 +3733,7 @@
   "demoMode.started": "A new demo started",
   "demoMode.returnAskAlone": "You are the only presenter — leaving ends the demo for {name}.",
   "demoMode.connectingTo": "Connecting to {name}'s screen…",
+  "demoMode.pointerOff": "Your pointer is off {name}'s screen",
   "demoMode.loadingNext": "Loading their next page…",
   "demoMode.catchingUp": "Catching up…",
   "demoMode.behind": "Behind {n} s",

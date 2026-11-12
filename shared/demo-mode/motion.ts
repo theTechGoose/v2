@@ -112,19 +112,30 @@ export function tagPlacement(
 /** REQ-305 — the arrow DemoPointer draws: 24 × 30 px, its tip at the point */
 export const ARROW_BOX = { w: 24, h: 30 };
 
+/** REQ-393 — a point is OFF a box: past one of its edges (a point on an edge is inside) */
+export function outsideBox(
+  p: Pt,
+  box: { left: number; top: number; width: number; height: number },
+): boolean {
+  return !(p.x >= box.left && p.x <= box.left + box.width &&
+    p.y >= box.top && p.y <= box.top + box.height);
+}
+
 /** REQ-305 — where a pointer resolved to `p` is drawn inside `box` (the stage's frame, the
  *  customer's window): the point itself when it is inside; else the box's edge nearest to it, far
  *  enough in that the whole arrow shows, marked `outside` — the element it names is out of view
  *  (scrolled away, or a frame not yet scrolled), and the arrow says so from the edge instead of
- *  being drawn off-screen */
+ *  being drawn off-screen. REQ-393 — `off`: the sender's pointer is off the shared screen (its
+ *  anchor names the edge's point): drawn the same way, on the edge and marked outside */
 export function placeIn(
   p: Pt,
   box: { left: number; top: number; width: number; height: number },
   arrow: { w: number; h: number } = ARROW_BOX,
+  off = false,
 ): { at: Pt; outside: boolean } {
   const right = box.left + box.width;
   const bottom = box.top + box.height;
-  if (p.x >= box.left && p.x <= right && p.y >= box.top && p.y <= bottom) {
+  if (!off && !outsideBox(p, box)) {
     return { at: { x: p.x, y: p.y }, outside: false };
   }
   const clamp = (v: number, lo: number, hi: number) =>

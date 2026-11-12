@@ -65,6 +65,10 @@ export interface Anchor {
   vx: number;
   vy: number;
   n?: NodeAnchor;
+  /** REQ-393 — the sender's pointer is OFF the shared screen (a presenter's mouse beside the
+   *  phone frame on his stage): `vx`/`vy` say where it meets the screen's edge, and the receiver
+   *  draws it there, marked outside. Never with a node. */
+  o?: 1;
 }
 
 /** REQ-242 — one piece of a mirror frame: `l` the page load it belongs to, `s` the frame's
@@ -106,7 +110,9 @@ export type PeerMessage =
  *  asks one tab to `sync` (send its whole view) */
 export type ClientMessage =
   | { t: "signal"; data: unknown; to?: string }
-  | { t: "relay"; data: PeerMessage; to?: "presenters" }
+  // REQ-393 — `tab`: a presenter's relay for ONE customer tab (its cid) — the tab the stage
+  // follows, or the one it just left (a `leave`); the customer's other tabs never get it
+  | { t: "relay"; data: PeerMessage; to?: "presenters"; tab?: string }
   | { t: "claim"; at: number }
   | { t: "sync"; to: string }
   | { t: "end" }
@@ -212,6 +218,8 @@ function parseAnchor(x: unknown): Anchor | null {
   if (!x || typeof x !== "object") return null;
   const o = x as Record<string, unknown>;
   if (!num(o.vx) || !num(o.vy)) return null;
+  // REQ-393 — off the shared screen: the edge's fraction, and no element of it
+  if (o.o === 1) return { vx: clamp01(o.vx), vy: clamp01(o.vy), o: 1 };
   const n = parseNodeAnchor(o.n);
   return n
     ? { vx: clamp01(o.vx), vy: clamp01(o.vy), n }
@@ -301,8 +309,10 @@ export function parseClientMessage(raw: string): ClientMessage | null {
     case "relay": {
       const data = parsePeerMessage(o.data);
       if (!data) return null;
-      return o.to === "presenters"
-        ? { t: "relay", data, to: "presenters" }
+      if (o.to === "presenters") return { t: "relay", data, to: "presenters" };
+      // REQ-393 — for one customer tab
+      return typeof o.tab === "string" && o.tab
+        ? { t: "relay", data, tab: o.tab }
         : { t: "relay", data };
     }
     // REQ-232 — a claim with no usable time is still a claim (the oldest one)
@@ -425,6 +435,8 @@ export function pointToFrac(p: { x: number; y: number }, box: Rect): Anchor {
  *  A resting pointer placed again is sent only when this says no. */
 export function sameAnchor(a: Anchor | null, b: Anchor | null): boolean {
   if (!a || !b) return a === b;
+  // REQ-393 — off the screen is never the same place as on it
+  if (!a.o !== !b.o) return false;
   const near = (p: number, q: number) => Math.abs(p - q) < 0.002;
   if (a.n || b.n) {
     return !!a.n && !!b.n && a.n.id === b.n.id && a.n.l === b.n.l &&

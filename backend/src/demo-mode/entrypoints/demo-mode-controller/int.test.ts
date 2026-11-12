@@ -1141,6 +1141,57 @@ Deno.test("REQ-232 two customer tabs over the composed router's socket: each wel
   });
 });
 
+Deno.test("REQ-393 (demo M2, M8 — cycle 2) over the composed router's socket: a stage's leave and move addressed to one tab (`tab`) reach that tab only — never the customer's other tab — and an anchor off the shared screen (o: 1) crosses intact", async () => {
+  await withServer(async (call) => {
+    const ana = await signIn(call, "+15125553931");
+    const hans = await signIn(call, "+15125553932");
+    await call("POST", "/api/admin/bootstrap", { phoneNumber: "+15125553932" });
+    const made = await call("POST", "/api/demo-mode/sessions", {
+      userId: ana.body.userId,
+    }, H(hans.body.sessionId));
+    const stage = open(made.body.id, hans.body.sessionId);
+    const sc = cidOf(await stage.next("the stage's welcome"));
+    const tab1 = open(made.body.id, ana.body.sessionId);
+    const c1 = cidOf(await tab1.next("tab 1's welcome"));
+    await tab1.next("tab 1 is told the stage is here");
+    await stage.next("tab 1 arrives");
+    const tab2 = open(made.body.id, ana.body.sessionId);
+    const c2 = cidOf(await tab2.next("tab 2's welcome"));
+    await tab2.next("tab 2 is told the stage is here");
+    await stage.next("tab 2 arrives");
+    assert(c1 && c2 && sc, "every socket is named");
+
+    // the stage follows tab 2 now: tab 1, the tab it left, hears its leave — tab 1 only
+    stage.send({ t: "relay", data: { k: "leave" }, tab: c1 });
+    assertEquals(await tab1.next("tab 1 hears the leave"), {
+      t: "relay",
+      from: "presenter",
+      pid: hans.body.userId,
+      cid: sc,
+      data: { k: "leave" },
+    });
+    // the presenter's mouse is beside the frame: tab 2 gets the move, off its screen
+    const off = {
+      k: "move" as const,
+      a: { vx: 0, vy: 0.4, o: 1 as const },
+      t: 12,
+    };
+    stage.send({ t: "relay", data: off, tab: c2 });
+    assertEquals(await tab2.next("tab 2 gets the off-screen move"), {
+      t: "relay",
+      from: "presenter",
+      pid: hans.body.userId,
+      cid: sc,
+      data: off,
+    });
+    await quiet(tab1, "tab 1 never got tab 2's move");
+    await quiet(tab2, "tab 2 never got tab 1's leave");
+    await stage.close();
+    await tab1.close();
+    await tab2.close();
+  });
+});
+
 Deno.test("REQ-292 M6 — a customer tab whose socket closes the instant it opens (before its welcome, while the join is still awaited) is announced to the stage as arrived and then gone: never a ghost tab that keeps the pill Live", async () => {
   await withServer(async (call) => {
     const ana = await signIn(call, "+15125553061");

@@ -234,6 +234,12 @@ export class DemoHub {
     if (from.role === "viewer") {
       return this.broadcast(sessionId, { to: "presenter", msg });
     }
+    // REQ-393 — a presenter's relay for ONE customer tab: the tab its stage follows, or the one it
+    // just left (a `leave`) — never the customer's other tabs, never the colleagues (theirs is the
+    // `to: "presenters"` copy)
+    if (m.tab) {
+      return this.broadcast(sessionId, { to: "viewer", cid: m.tab, msg });
+    }
     // a presenter without a pid (a demo written before the list) has no colleagues to reach
     if (!from.pid) {
       if (m.to === "presenters") return Promise.resolve();
