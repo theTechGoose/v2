@@ -121,6 +121,8 @@ export default function FieldTasksPage() {
   const [saving, setSaving] = useState<string | null>(null);
   // REQ-164..166 — what the forms pick from
   const [workers, setWorkers] = useState<FieldWorker[]>([]);
+  // REQ-521 — the empty-roster hint waits for the real list, never flashes on load
+  const [workersLoaded, setWorkersLoaded] = useState(false);
   const [types, setTypes] = useState<TaskType[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [add, setAdd] = useState<AddForm | null>(null);
@@ -159,7 +161,11 @@ export default function FieldTasksPage() {
 
   useEffect(() => {
     let alive = true;
-    fieldClient.workers().then((w) => alive && setWorkers(w)).catch(() => {});
+    fieldClient.workers().then((w) => {
+      if (!alive) return;
+      setWorkers(w);
+      setWorkersLoaded(true);
+    }).catch(() => {});
     fieldClient.taskTypes().then((x) => alive && setTypes(x)).catch(() => {});
     loadAllCustomers().then((c) => alive && setCustomers(c)).catch(() => {});
     return () => {
@@ -792,6 +798,9 @@ export default function FieldTasksPage() {
           class="panel"
           data-cy="tk-add-form"
           style="margin-bottom:14px"
+          // REQ-521 (demo m54) — the Customer box is a hidden input the browser never checks, so its
+          // own bubble landed on Service; addTaskProblem decides instead: customer → service → price
+          noValidate
           onSubmit={submitAdd}
         >
           <h3 class="panel__title">
@@ -889,6 +898,15 @@ export default function FieldTasksPage() {
                   <option key={w.id} value={w.id}>{w.name}</option>
                 ))}
               </select>
+              {
+                /* REQ-521 (demo m54) — no workers yet: say so, and the way to add one */
+              }
+              {workersLoaded && workers.length === 0 && (
+                <span class="hint" data-cy="tk-add-no-workers">
+                  {t("field.tk.noWorkers")}{" "}
+                  <a href="/field/workers">{t("field.tk.addWorkerLink")}</a>
+                </span>
+              )}
             </label>
             <label class="field">
               <span>{t("field.tk.address")}</span>

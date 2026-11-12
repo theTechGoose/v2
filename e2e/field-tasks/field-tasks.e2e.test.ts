@@ -771,6 +771,36 @@ Deno.test("REQ-415 (demo p11, cycle 2): a fence builder's Add-task Service box s
     expect(!/lawn|mulch|pool/i.test(ph), `no lawn-care example for a fence builder (got "${ph}")`);
   }));
 
+Deno.test("REQ-521 (demo m54, cycle 3): an account with no workers opens Add task — the Worker picker says so and links to /field/workers; an empty Save names Customer first, not Service", (t) =>
+  story(t, async ({ page, expect, http, baseUrl }) => {
+    await signIn(http, page, baseUrl);
+    const posts: string[] = [];
+    page.on("request", (r) => {
+      if (r.method() === "POST") posts.push(new URL(r.url()).pathname);
+    });
+    await page.goto("/field/tasks");
+    await page.locator("[data-cy='tk-add']").click();
+    const form = page.locator("[data-cy='tk-add-form']");
+    await form.waitFor({ timeout: 15_000 });
+    // 1. no workers yet — a hint under the picker, with the way to add one
+    const hint = form.locator("[data-cy='tk-add-no-workers']");
+    await hint.waitFor({ timeout: 15_000 });
+    expect((await hint.textContent() ?? "").includes("No workers yet."), "the hint says there are no workers");
+    const link = hint.locator("a[href='/field/workers']");
+    expect.eq((await link.textContent())?.trim(), "Add a worker", "the hint links to /field/workers");
+    // 2. an empty Save — the form's own check runs (customer first), not the browser's bubble on Service
+    await form.locator("[data-cy='tk-add-save']").click();
+    await expect.see("Pick a customer from the list, or add a new one.");
+    const box = form.locator("[data-cy='tk-customer'] [data-cy='search-select-input']");
+    expect.eq(await box.getAttribute("aria-invalid"), "true", "the customer box is marked invalid");
+    expect.eq(await form.locator("[data-cy='tk-add-type']").getAttribute("aria-invalid"), null, "Service is not the field flagged");
+    expect.eq(await form.evaluate((f) => (f as HTMLFormElement).noValidate), true, "the browser's 'Please fill out this field.' bubble is off — the form's own check speaks");
+    expect.eq(posts.filter((p) => p.endsWith("/field/tasks")).length, 0, "no task POST");
+    // 3. the link goes to the workers page
+    await link.click();
+    await page.waitForURL(/\/field\/workers/, { timeout: 15_000 });
+  }));
+
 Deno.test("REQ-165: Add service on the card → Edging $25 → a second card in the same group", (t) =>
   story(t, async ({ page, expect, http, baseUrl }) => {
     await officeDay({ page, http, baseUrl });
