@@ -52,8 +52,8 @@ import { paymentRecordedText } from "../lib/payment-received.ts";
 import {
   type DispatchChannel,
   interpretSendResult,
+  invoiceNotDeliveredCopy,
   type SendOutcome,
-  sendResultLangKey,
   summarizeDispatch,
 } from "../../shared/quote-flow/send-result.ts";
 import { docNumberOf } from "../../shared/documents/numbering.ts";
@@ -79,6 +79,7 @@ import {
   missingInfo,
   NET_DAYS_OPTIONS,
   newInvoiceCopy,
+  newInvoiceStatus,
   paymentSummary,
   percentToBp,
   prefillFromLedger,
@@ -2029,24 +2030,23 @@ function partialDispatchCopy(lang: Lang, d: DispatchResult): string {
   );
 }
 
-/** Honest failure copy when NO channel delivered — the same lang keys the
- *  assistant send divider uses. */
-function dispatchFailureCopy(lang: Lang, d: DispatchResult): string {
-  const key = sendResultLangKey(d.email.outcome) ??
-    "sendQuote.divider.emailFailed";
-  if (key === "sendQuote.divider.noEmail") {
-    return tFor(lang, "sendQuote.divider.noEmail");
-  }
-  const emailCopy = tFor(lang, key, {
-    reason: d.email.rawReason ?? d.email.outcome.reason ?? "unknown",
+/** Honest failure copy when NO channel delivered. REQ-480 (demo cycle 3,
+ *  M18): the invoice's own sentence — "INV-002 not delivered — no email on
+ *  file; the text failed: …" — never the quote divider's "Quote + Agreement
+ *  drafted" wording, and (REQ-030) neither channel's reason is dropped.
+ *  `keptDraft`: the invoice stays a draft (the send endpoints stamp "sent"
+ *  only on delivery), and the copy says so. */
+function dispatchFailureCopy(
+  lang: Lang,
+  d: DispatchResult,
+  opts: { number?: string; keptDraft?: boolean } = {},
+): string {
+  return invoiceNotDeliveredCopy((key, params) => tFor(lang, key, params), {
+    number: opts.number,
+    email: d.email,
+    text: d.text,
+    keptDraft: opts.keptDraft,
   });
-  // REQ-030: the text channel's reason is reported too, never dropped.
-  const textReason = d.text.rawReason ?? d.text.outcome.reason;
-  return textReason && d.text.outcome.reason !== "noPhone"
-    ? `${emailCopy} · ${
-      tFor(lang, "sendQuote.divider.textFailed", { reason: textReason })
-    }`
-    : emailCopy;
 }
 
 /** Honest failure copy for the single-channel "Text client" action. */
@@ -2276,47 +2276,58 @@ function InvoiceCard(
       // send says which channel went and which did not.
       if (d.delivered && !d.partial) globalThis.location.reload();
       else if (d.delivered) setSendPartial(partialDispatchCopy(lang, d));
-      else setSendFail(dispatchFailureCopy(lang, d));
+      else {
+        setSendFail(dispatchFailureCopy(lang, d, { number: inv.invoiceRef }));
+      }
     } finally {
       setBusy(false);
     }
   }
   // "Finish + send" on a draft: a fully deterministic dashboard action — no
-  // assistant round-trip. Finalize the invoice (draft → sent, stamp issuedDate
-  // if missing), then dispatch to the customer over both channels. The backend
-  // send coordinators only stamp quotes as "sent", so we flip the invoice
-  // status ourselves up front; that also moves the card to "Out for payment"
-  // even when there's no email/phone on file to deliver to.
+  // assistant round-trip. Stamp issuedDate / dueDate if missing, then
+  // dispatch to the customer over both channels. REQ-480 (demo cycle 3, M18):
+  // the status is NOT flipped up front — the send endpoints stamp the
+  // invoice "sent" once a channel delivers, so an invoice nobody received
+  // stays a draft instead of reading "Sent".
   async function doFinishDraft(e: Event) {
     e.stopPropagation();
     if (busy) return;
     setBusy(true);
     setSendFail(null);
     try {
-      await fetch(`/api/invoices/${inv.id}`, {
-        method: "PUT",
-        credentials: "include",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          status: "sent",
-          ...(inv.issuedDate
-            ? {}
-            : { issuedDate: new Date().toISOString().slice(0, 10) }),
-          // REQ-174: due = today + the invoice's days to pay, when it has them
-          ...(typeof inv.netDays === "number"
-            ? { dueDate: plusDays(inv.netDays) }
-            : {}),
-        }),
-      });
-      // Deliver over both channels. Finalizing (draft → sent) proceeds either
-      // way, but a delivery failure is SURFACED (P-09) — the contractor must
-      // never walk away believing an undeliverable invoice reached anyone.
+      const dates = {
+        ...(inv.issuedDate
+          ? {}
+          : { issuedDate: new Date().toISOString().slice(0, 10) }),
+        // REQ-174: due = today + the invoice's days to pay, when it has them
+        ...(typeof inv.netDays === "number"
+          ? { dueDate: plusDays(inv.netDays) }
+          : {}),
+      };
+      if (Object.keys(dates).length > 0) {
+        await fetch(`/api/invoices/${inv.id}`, {
+          method: "PUT",
+          credentials: "include",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(dates),
+        });
+      }
+      // Deliver over both channels; a delivery failure is SURFACED (P-09) —
+      // the contractor must never walk away believing an undeliverable
+      // invoice reached anyone.
       const d = await dispatchInvoice(inv.id);
       // REQ-030 (NW-25): reload only when NOTHING failed; a half-delivered
       // send says which channel went and which did not.
       if (d.delivered && !d.partial) globalThis.location.reload();
       else if (d.delivered) setSendPartial(partialDispatchCopy(lang, d));
-      else setSendFail(dispatchFailureCopy(lang, d));
+      else {
+        setSendFail(
+          dispatchFailureCopy(lang, d, {
+            number: inv.invoiceRef,
+            keptDraft: true,
+          }),
+        );
+      }
     } finally {
       setBusy(false);
     }
@@ -3407,10 +3418,16 @@ function NewInvoiceModal(
         },
         {
           requestId,
-          // Issue → sent up front (the send coordinators don't stamp invoice
-          // status); draft → the Drafting track; a "Send on" date (REQ-022)
-          // → scheduled, in the Upcoming track.
-          status: issue ? "sent" : scheduledFor ? "scheduled" : "draft",
+          // REQ-480 (demo cycle 3, M18): Issue with a dispatch to follow →
+          // created unissued; the send endpoints stamp "sent" only once a
+          // channel delivers. Issue with no contact → sent (issued by hand);
+          // draft → the Drafting track; a "Send on" date (REQ-022) →
+          // scheduled, in the Upcoming track.
+          status: newInvoiceStatus({
+            issue,
+            dispatch: issue && canSend,
+            scheduledFor,
+          }),
           ...(!issue && scheduledFor ? { scheduledFor } : {}),
         },
       );
@@ -3431,7 +3448,10 @@ function NewInvoiceModal(
               JSON.stringify({
                 text: d.delivered
                   ? partialDispatchCopy(lang, d)
-                  : dispatchFailureCopy(lang, d),
+                  : dispatchFailureCopy(lang, d, {
+                    number: invoice.number,
+                    keptDraft: true,
+                  }),
                 partial: d.delivered,
               }),
             );

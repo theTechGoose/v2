@@ -1,5 +1,5 @@
 import { Injectable } from "#danet/core";
-import { publishPendingInvoice, publishPendingQuote, senderAsPublisher } from "@paperwork/domain/business/publish-pending/mod.ts";
+import { asDelivered, isUnissuedInvoice, publishPendingInvoice, publishPendingQuote, senderAsPublisher, stampInvoiceDelivered } from "@paperwork/domain/business/publish-pending/mod.ts";
 import { dispatchCustomerSms } from "@paperwork/domain/business/customer-sms/mod.ts";
 import { t } from "@core/i18n/mod.ts";
 import { QuoteStore } from "@paperwork/domain/data/quote-store/mod.ts";
@@ -129,6 +129,7 @@ export class SendPaperworkSms {
     let body: string;
     let customerIdForLog: string | undefined;
     let quoteForStamp: Quote | undefined;
+    let invoiceToIssue = false;
 
     if (input.kind === "quote") {
       // REQ-201: a send publishes what is pending — the link must show what was sent
@@ -144,7 +145,11 @@ export class SendPaperworkSms {
       }, lang);
       body = renderQuoteBody(quote, customer, sender, senderBiz, shortUrl);
     } else {
-      const invoice = await publishPendingInvoice(this.invoices, input.resourceId, userId, senderAsPublisher(userId, sender?.name));
+      const stored = await publishPendingInvoice(this.invoices, input.resourceId, userId, senderAsPublisher(userId, sender?.name));
+      // REQ-480: an unissued invoice is issued by this delivery — the stamp
+      // lands only once the text actually went.
+      invoiceToIssue = isUnissuedInvoice(stored);
+      const invoice = invoiceToIssue ? asDelivered(stored) : stored;
       const customer = await this.tryGetCustomer(userId, invoice.customerId);
       customerIdForLog = customer?.id;
       if (!recipient) recipient = customer?.phoneNumber ?? customerOnDocument(invoice, customer)?.phoneNumber;
@@ -180,6 +185,12 @@ export class SendPaperworkSms {
         status: "sent",
         sentAt: new Date().toISOString(),
       });
+    }
+
+    // REQ-480 (demo-loop cycle 3, M18): a draft / scheduled invoice becomes
+    // "sent" only now that the text was delivered.
+    if (result.ok && invoiceToIssue) {
+      await stampInvoiceDelivered(this.invoices, input.resourceId, userId);
     }
 
     // Comms trail (roadmap p.8): record the dispatch in the customer's
