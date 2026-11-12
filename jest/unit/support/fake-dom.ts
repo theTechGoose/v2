@@ -252,7 +252,17 @@ export class FElement extends FNode {
   }
 }
 
+/** REQ-547 — a constructed stylesheet (what the replay adopts to hold the frame still) */
+export class FCSSStyleSheet {
+  cssText = "";
+  replaceSync(text: string): void {
+    this.cssText = text;
+  }
+}
+
 export class FWindow {
+  /** REQ-547 — constructed stylesheets, as a browser window has them */
+  CSSStyleSheet = FCSSStyleSheet;
   innerWidth: number;
   innerHeight: number;
   scrollX = 0;
@@ -314,6 +324,8 @@ export class FDocument extends FNode {
   #listeners = new Map<string, Set<(e: unknown) => void>>();
   /** what elementFromPoint answers, when a test wants to say so */
   hit: ((x: number, y: number) => FElement | null) | null = null;
+  /** REQ-547 — the document's adopted (constructed) stylesheets */
+  adoptedStyleSheets: FCSSStyleSheet[] = [];
   constructor(href = "https://app.test/", w = 420, h = 800) {
     super(null as unknown as FDocument, 9, "#document");
     this.ownerDocument = this;
