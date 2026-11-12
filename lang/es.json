@@ -3428,6 +3428,7 @@
   "settings.netDaysHint": "El valor por defecto de cada suscripción: cuántos días tiene el cliente desde el día en que se envía la factura.",
   "demoMode.waitingFor": "Esperando a que {name} acepte…",
   "demoMode.opening": "Abriendo…",
+  "demoMode.connecting": "Conectando con la pantalla de {name}…",
   "nav.workOrders": "Órdenes de trabajo",
   "quotes.ledger.title": "Documentos",
   "quotes.ledger.unpublished": "Cambios sin publicar",

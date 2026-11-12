@@ -87,3 +87,24 @@ export function moveThrottle<T>(o: {
     },
   };
 }
+
+/** REQ-242 — the pointer's name tag fades after this long without a move (it hid what it pointed at) */
+export const TAG_IDLE_MS = 1_500;
+/** REQ-242 — and the arrow itself dims after this long (a resting pointer stays, faint) */
+export const ARROW_IDLE_MS = 6_000;
+/** where the tag sits from the arrow's tip: right of it and below it */
+export const TAG_DX = 26;
+export const TAG_DY = 18;
+
+/** REQ-242 — which side of the arrow the name tag goes: right and below, unless that runs past the
+ *  box's right or bottom edge (the stage's frame, or the customer's window — never a guess) */
+export function tagPlacement(
+  p: Pt,
+  box: { left: number; top: number; width: number; height: number },
+  tag: { w: number; h: number },
+): { left: boolean; up: boolean } {
+  return {
+    left: p.x + TAG_DX + tag.w > box.left + box.width,
+    up: p.y + TAG_DY + tag.h > box.top + box.height,
+  };
+}

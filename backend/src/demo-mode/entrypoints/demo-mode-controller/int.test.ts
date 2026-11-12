@@ -15,10 +15,12 @@ import { OtpStore } from "@users/domain/data/otp-store/mod.ts";
 import { SmsService } from "@users/domain/data/sms/mod.ts";
 import { composeRouter } from "../../../../../compose-router.ts";
 import {
+  MIRROR_CHUNK_CHARS,
   parseServerMessage,
   PRESENTER_COLORS,
   type ServerMessage,
 } from "#demo-mode/protocol.ts";
+import { ChunkAssembler, chunkText, newLoadId } from "#demo-mode/mirror.ts";
 
 @Module({ imports: [UsersModule, DemoModeModule] })
 class TestApp {}
@@ -355,11 +357,20 @@ Deno.test("REQ-153 the presenter (impersonating) and the viewer connect over the
       from: "viewer",
       data: { type: "answer", sdp: "v=1" },
     });
-    viewer.send({ t: "relay", data: { k: "view", v: { path: "/customers" } } });
-    assertEquals(await presenter.next("the view"), {
+    // REQ-242 — the customer's screen crosses as mirror chunks (the old view patch is gone)
+    const chunk = {
+      k: "dom" as const,
+      l: "lp0q1x2-ab12",
+      s: 0,
+      i: 0,
+      n: 1,
+      d: "{}",
+    };
+    viewer.send({ t: "relay", data: chunk });
+    assertEquals(await presenter.next("the mirror chunk"), {
       t: "relay",
       from: "viewer",
-      data: { k: "view", v: { path: "/customers" } },
+      data: chunk,
     });
     presenter.send({
       t: "relay",
@@ -840,5 +851,107 @@ Deno.test("REQ-214 two staff present to one customer: the second Demo joins the 
         .id,
       again.body.id,
     );
+  });
+});
+
+Deno.test("REQ-242 the mirror crosses the composed router's relay: a 120 KB snapshot as dom chunks reassembles byte-identical on the presenter, in order; a presenter's resync reaches the viewer; oversized and malformed chunks are dropped", async () => {
+  await withServer(async (call) => {
+    const ana = await signIn(call, "+15125553061");
+    const hans = await signIn(call, "+15125553062");
+    await call("POST", "/api/admin/bootstrap", { phoneNumber: "+15125553062" });
+    const made = await call("POST", "/api/demo-mode/sessions", {
+      userId: ana.body.userId,
+    }, H(hans.body.sessionId));
+    assertEquals(made.status, 201, JSON.stringify(made.body));
+    const imp = await call(
+      "POST",
+      `/api/admin/impersonate/${ana.body.userId}`,
+      undefined,
+      H(hans.body.sessionId),
+    );
+    const presenter = open(made.body.id, imp.body.sessionId);
+    await presenter.next("the presenter's welcome");
+    const viewer = open(made.body.id, ana.body.sessionId);
+    await viewer.next("the viewer's welcome");
+    await viewer.next("who is presenting");
+    await presenter.next("the presenter hears the viewer");
+
+    // a snapshot-sized frame: quotes to escape, Spanish, an emoji (two-byte strings in the KV mail)
+    const bubbles = Array.from({ length: 1_000 }, (_, i) => ({
+      i: i + 10,
+      t: "div",
+      a: { class: "msg msg--user", "data-n": String(i) },
+      c: [{ i: 100_000 + i, x: `Cambiar el fregadero “${i}” 🚰 — ¿listo?` }],
+    }));
+    const text = JSON.stringify({
+      t: "snap",
+      w: 420,
+      h: 800,
+      u: "/assistant/abc",
+      root: { i: 1, t: "html", c: [{ i: 2, t: "body", c: bubbles }] },
+      ops: [],
+    });
+    assert(text.length > 120_000, `the frame is big (${text.length} chars)`);
+    const parts = chunkText(text);
+    assert(parts.length >= 8, `cut into ${parts.length} chunks`);
+    const l = newLoadId();
+    parts.forEach((d, i) =>
+      viewer.send({
+        t: "relay",
+        data: { k: "dom", l, s: 0, i, n: parts.length, d },
+      })
+    );
+    const asm = new ChunkAssembler();
+    let whole: { l: string; s: number; z: boolean; text: string } | null = null;
+    for (let k = 0; k < parts.length; k++) {
+      const m = await presenter.next(`chunk ${k}`);
+      assertEquals(m.t, "relay");
+      if (m.t !== "relay") return;
+      assertEquals(m.from, "viewer");
+      assertEquals(m.data.k, "dom");
+      if (m.data.k !== "dom") return;
+      assertEquals(m.data.i, k, "the relay keeps the order");
+      whole = asm.push(m.data) ?? whole;
+    }
+    assert(whole, "every chunk arrived");
+    assertEquals(whole!.text, text, "byte-identical");
+    assertEquals(whole!.l, l);
+
+    presenter.send({ t: "relay", data: { k: "resync" } });
+    assertEquals(await viewer.next("the resync"), {
+      t: "relay",
+      from: "presenter",
+      pid: hans.body.userId,
+      data: { k: "resync" },
+    });
+
+    // junk never crosses: a chunk over the size, an index past the count, a bad load id
+    viewer.send({
+      t: "relay",
+      data: {
+        k: "dom",
+        l,
+        s: 1,
+        i: 0,
+        n: 1,
+        d: "x".repeat(MIRROR_CHUNK_CHARS + 1),
+      },
+    });
+    viewer.send({
+      t: "relay",
+      data: { k: "dom", l, s: 2, i: 1, n: 1, d: "x" },
+    });
+    viewer.send({
+      t: "relay",
+      data: { k: "dom", l: "no spaces", s: 3, i: 0, n: 1, d: "x" },
+    });
+    viewer.send({ t: "relay", data: { k: "leave" } });
+    assertEquals(await presenter.next("only the leave after the junk"), {
+      t: "relay",
+      from: "viewer",
+      data: { k: "leave" },
+    });
+    await presenter.close();
+    await viewer.close();
   });
 });

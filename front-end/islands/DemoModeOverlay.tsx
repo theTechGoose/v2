@@ -11,12 +11,15 @@
  *   - the customer's app joins on its own the moment its poll sees the demo (AMENDMENT —
  *     auto-join): the pill says "{name} is guiding you" with End.
  *
- * REQ-187 — the customer's screen is the truth: connected, this side REPORTS its view (the whole
- * of it on join, patches after: viewport size, page, scrolled elements, and whatever the page
- * islands report — sidebar flags, map centre/zoom) and draws the presenter's pointer at the
- * fraction of its own viewport (REQ-188) plus a loud expanding wave where they clicked, above the
- * app with pointer events off: a click there is never an action here. Inside the stage's frame
- * and on the stage itself this island is inert.
+ * REQ-242 — the customer's screen is the truth, mirrored: while a presenter is connected this side
+ * RECORDS its document (mirror-record.ts — a snapshot when a presenter joins or a stage asks for
+ * one, then every change) and sends it as `dom` chunks; nobody watching, the recorder is paused;
+ * the link closed, it stops. It draws each presenter's pointer on the element they point at (the
+ * mirrored node's id and the point's place in its box; the fraction of this viewport, REQ-188,
+ * when the element is not here) plus a loud expanding wave where they clicked, above the app with
+ * pointer events off: a click there is never an action here. Its own pointer goes out the same
+ * way, and a `leave` when the page goes. A presenter who leaves takes their pointer along. In any
+ * nested frame (an app page embedded in a page) and on the stage itself this island is inert.
  *
  * REQ-214 — several staff may present at once: one pointer per presenter, each in that
  * presenter's colour with their name on it; the pill names them all with their colour dots.
@@ -32,15 +35,18 @@ import {
 import { adminClient } from "../clients/admin.ts";
 import {
   ACTIVE_POLL_MS,
+  type Anchor,
   fracToPoint,
   type PeerMessage,
   pointToFrac,
   type Presenter,
   type Role,
   STAGE_PATH,
-  VIEW_GAP_MS,
-  type ViewPatch,
 } from "../../shared/demo-mode/protocol.ts";
+import {
+  createMirrorSender,
+  type MirrorSender,
+} from "../../shared/demo-mode/mirror.ts";
 import {
   MOVE_GAP_DIRECT_MS,
   MOVE_GAP_RELAY_MS,
@@ -55,12 +61,9 @@ import {
   type PeerFrom,
 } from "../lib/demo-mode/transport.ts";
 import {
-  collectScroll,
-  isReplicaFrame,
-  onReportedView,
-  requestViews,
-  scrollPosOf,
-} from "../lib/demo-mode/replica.ts";
+  createRecorder,
+  type Recorder,
+} from "../lib/demo-mode/mirror-record.ts";
 import PeerPointer, {
   type PointerCmd,
 } from "../components/demo-mode/PeerPointer.tsx";
@@ -91,11 +94,13 @@ const viewportBox = () => ({
   width: globalThis.innerWidth || 1,
   height: globalThis.innerHeight || 1,
 });
+const clamp01 = (n: number) => Math.min(1, Math.max(0, n));
 
 export default function DemoModeOverlay() {
-  /** REQ-187 — inside the stage's frame, or on the stage: the stage owns the demo */
+  /** M5 — in a nested frame (an app page embedded in a page), or on the stage: never part of the demo */
   const inert = typeof globalThis.location !== "undefined" &&
-    (isReplicaFrame() || globalThis.location.pathname === STAGE_PATH);
+    (globalThis.top !== globalThis.self ||
+      globalThis.location.pathname === STAGE_PATH);
   const [demo, setDemo] = useState<Demo | null>(null);
   /** REQ-179 — Demo was just clicked on /admin: the pill says Opening… until the server answers */
   const [opening, setOpening] = useState<{ targetName: string } | null>(null);
@@ -119,6 +124,45 @@ export default function DemoModeOverlay() {
       .catch(() => false);
   const demoRef = useRef<Demo | null>(null);
   demoRef.current = demo;
+  /** REQ-242 — this page's recorder and the sender its frames go out through */
+  const recorderRef = useRef<Recorder | null>(null);
+  const senderRef = useRef<MirrorSender | null>(null);
+
+  /** REQ-242 — a point of this screen for the presenters: the fraction of this viewport and the
+   *  mirrored element under it (their stage puts the pointer on that same element) */
+  const anchorOf = (p: Pt): Anchor => {
+    const a = pointToFrac(p, viewportBox());
+    const recorder = recorderRef.current;
+    const sender = senderRef.current;
+    if (!recorder || !sender) return a;
+    const id = recorder.idOf(document.elementFromPoint(p.x, p.y));
+    const el = id === null ? null : recorder.nodeOf(id);
+    if (id === null || !el) return a;
+    const r = el.getBoundingClientRect();
+    if (r.width <= 0 || r.height <= 0) return a;
+    return {
+      ...a,
+      n: {
+        id,
+        x: clamp01((p.x - r.left) / r.width),
+        y: clamp01((p.y - r.top) / r.height),
+        l: sender.load,
+      },
+    };
+  };
+  /** a presenter's pointer on this screen: on the element they point at when this page has it */
+  const toScreen = (a: Anchor): Pt => {
+    const recorder = recorderRef.current;
+    const sender = senderRef.current;
+    if (a.n && recorder && sender && a.n.l === sender.load) {
+      const el = recorder.nodeOf(a.n.id);
+      const r = el?.getBoundingClientRect();
+      if (r && r.width > 0 && r.height > 0) {
+        return { x: r.left + r.width * a.n.x, y: r.top + r.height * a.n.y };
+      }
+    }
+    return fracToPoint(a, viewportBox());
+  };
 
   /** this side's moves, rated leading + trailing so the rest position always goes out */
   const throttle = useMemo(() =>
@@ -129,46 +173,12 @@ export default function DemoModeOverlay() {
         linkRef.current?.send(
           {
             k: "move",
-            a: pointToFrac({ x, y }, viewportBox()),
+            a: anchorOf({ x, y }),
             t: performance.now(),
           },
           true,
         ),
     }), []);
-
-  /** REQ-187 — this side's view patches, batched: scalar fields merge, scrolls merge by element */
-  const pending = useRef<ViewPatch | null>(null);
-  const viewTimer = useRef<number | undefined>(undefined);
-  const flushView = () => {
-    viewTimer.current = undefined;
-    const p = pending.current;
-    pending.current = null;
-    if (p && linkRef.current) linkRef.current.send({ k: "view", v: p });
-  };
-  const report = (patch: ViewPatch) => {
-    const cur = pending.current ?? {};
-    const scroll = patch.scroll
-      ? [
-        ...(cur.scroll ?? []).filter((s) =>
-          !patch.scroll!.some((n) => n.sel === s.sel)
-        ),
-        ...patch.scroll,
-      ]
-      : cur.scroll;
-    pending.current = { ...cur, ...patch, ...(scroll ? { scroll } : {}) };
-    if (viewTimer.current === undefined) {
-      viewTimer.current = setTimeout(flushView, VIEW_GAP_MS);
-    }
-  };
-  /** the whole view, on join */
-  const wholeView = (): ViewPatch => ({
-    w: globalThis.innerWidth,
-    h: globalThis.innerHeight,
-    path: here(),
-    sb: document.querySelector(".sb--collapsed") !== null,
-    drawer: document.querySelector(".sb--open") !== null,
-    scroll: collectScroll(document),
-  });
 
   /** AMENDMENT — same screen at once: the presenter's browser becomes the customer (impersonation,
    *  the first time) and goes to the stage (REQ-187), which shows the customer's page. */
@@ -280,14 +290,29 @@ export default function DemoModeOverlay() {
     };
     const command = (pid: string, cmd: Omit<PointerCmd, "seq">) =>
       setCmds((c) => ({ ...c, [pid]: { seq: ++seq.current, ...cmd } }));
-    const link = connectDemo({
+    // REQ-242 — this screen, recorded (paused until a presenter is there) and sent over the link
+    let link: DemoLink | null = null;
+    const sender = createMirrorSender({ send: (m) => link?.send(m) });
+    const recorder = createRecorder(document, {
+      emit: (f) => void sender.push(f),
+    });
+    senderRef.current = sender;
+    recorderRef.current = recorder;
+    link = connectDemo({
       sessionId: demo.id,
       role: demo.role,
-      onPresence: () => pollRef.current?.(),
+      onPresence: (pid, online) => {
+        lastT.delete(pid); // their stage came or went: its clock starts over
+        // a presenter who left takes their pointer along
+        if (!online) command(pid, { kind: "leave" });
+        pollRef.current?.();
+      },
       onStatus: (s) => {
         setStatus(s);
         const online = s === "direct" || s === "relay";
         setPeerOnline(online);
+        // nobody watching: nothing to record
+        if (!online) recorder.pause();
         // the other side dropped: ask the server again (the poll stops while connected)
         if (wasOnline && !online && s !== "ended") pollRef.current?.();
         wasOnline = online;
@@ -299,9 +324,8 @@ export default function DemoModeOverlay() {
         }
       },
       onPeerOnline: () => {
-        // REQ-187 — the whole view at once, then the page islands' own state
-        report(wholeView());
-        requestViews();
+        // REQ-242 — a presenter joined: the whole screen at once, then every change
+        recorder.snapshot();
       },
       onPeer: (m: PeerMessage, from: PeerFrom) => {
         if (from.role !== "presenter") return;
@@ -311,19 +335,17 @@ export default function DemoModeOverlay() {
             // REQ-180: a move that arrives after a later one is ignored; the rest glide
             if (!newerMove(lastT.get(pid) ?? 0, m.t)) break;
             lastT.set(pid, m.t ?? lastT.get(pid) ?? 0);
-            command(pid, { kind: "move", at: fracToPoint(m.a, viewportBox()) });
+            command(pid, { kind: "move", at: toScreen(m.a) });
             break;
           case "click":
-            command(pid, {
-              kind: "click",
-              at: fracToPoint(m.a, viewportBox()),
-            });
+            command(pid, { kind: "click", at: toScreen(m.a) });
             break;
           case "leave":
             command(pid, { kind: "leave" });
             break;
-          case "view":
-            // the stage never reports; nothing to apply here
+          case "resync":
+            // REQ-242 — a stage missed a frame: the whole screen again
+            recorder.snapshot();
             break;
         }
       },
@@ -337,12 +359,16 @@ export default function DemoModeOverlay() {
       },
     });
     linkRef.current = link;
+    // the page is going (a reload, another page): its pointer goes with it
+    const onHide = () => link?.send({ k: "leave" });
+    globalThis.addEventListener("pagehide", onHide);
     return () => {
+      globalThis.removeEventListener("pagehide", onHide);
       throttle.cancel();
-      clearTimeout(viewTimer.current);
-      viewTimer.current = undefined;
-      pending.current = null;
-      link.close();
+      recorder.stop();
+      recorderRef.current = null;
+      senderRef.current = null;
+      link?.close();
       linkRef.current = null;
       setCmds({});
       setPeerOnline(false);
@@ -350,42 +376,7 @@ export default function DemoModeOverlay() {
     };
   }, [demo?.id]);
 
-  // 3. REQ-187 — the customer's view: the page (partials, history), the size, every scroll, and
-  //    what the page islands report
-  useEffect(() => {
-    if (!demo || demo.role !== "viewer") return;
-    let last = here();
-    const tick = () => {
-      const now = here();
-      if (now !== last) {
-        last = now;
-        report({ path: now });
-      }
-    };
-    const timer = setInterval(tick, 500);
-    const onResize = () =>
-      report({ w: globalThis.innerWidth, h: globalThis.innerHeight });
-    const onScroll = (e: Event) => {
-      const s = scrollPosOf(e.target);
-      if (s) report({ scroll: [s] });
-    };
-    const off = onReportedView(report);
-    addEventListener("popstate", tick);
-    addEventListener("resize", onResize);
-    document.addEventListener("scroll", onScroll, {
-      capture: true,
-      passive: true,
-    });
-    return () => {
-      clearInterval(timer);
-      off();
-      removeEventListener("popstate", tick);
-      removeEventListener("resize", onResize);
-      document.removeEventListener("scroll", onScroll, { capture: true });
-    };
-  }, [demo?.id]);
-
-  // 4. this side's pointer, document-wide (REQ-188: as a fraction of this viewport)
+  // 3. this side's pointer, document-wide (REQ-188: as a fraction of this viewport)
   useEffect(() => {
     if (!demo || demo.role !== "viewer") return;
     const onMove = (e: PointerEvent) => {
@@ -394,7 +385,7 @@ export default function DemoModeOverlay() {
     const onDown = (e: PointerEvent) =>
       linkRef.current?.send({
         k: "click",
-        a: pointToFrac({ x: e.clientX, y: e.clientY }, viewportBox()),
+        a: anchorOf({ x: e.clientX, y: e.clientY }),
       });
     const onLeave = () => linkRef.current?.send({ k: "leave" });
     document.addEventListener("pointermove", onMove, {
@@ -495,6 +486,7 @@ export default function DemoModeOverlay() {
           color={p.color}
           z={Z + 1}
           cmd={cmds[p.userId] ?? null}
+          bounds={viewportBox()}
         />
       ))}
       <div data-cy="demo-pill" role="status" style={pillStyle}>

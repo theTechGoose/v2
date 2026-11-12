@@ -3428,6 +3428,7 @@
   "settings.netDaysHint": "The default for every subscription: how many days the customer has, from the day the invoice is sent.",
   "demoMode.waitingFor": "Waiting for {name} to accept…",
   "demoMode.opening": "Opening…",
+  "demoMode.connecting": "Connecting to {name}'s screen…",
   "nav.workOrders": "Work orders",
   "quotes.ledger.title": "Documents",
   "quotes.ledger.unpublished": "Unpublished changes",

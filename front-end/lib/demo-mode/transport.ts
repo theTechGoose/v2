@@ -12,6 +12,9 @@
  * all are open, else through the relay); a presenter's goes to the customer on the channel or
  * the relay AND to the other presenters through the relay (`to: "presenters"`), so every stage
  * shows the colleagues' pointers. `onPeer` says who a message is from.
+ *
+ * REQ-242 — the customer's screen rides the same link as `dom` chunks (the reliable channel, or
+ * the relay); a stage's `resync` goes to the customer alone — colleagues get pointers only.
  */
 import {
   type ClientMessage,
@@ -63,6 +66,9 @@ const ICE: RTCConfiguration = {
   iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
 };
 const MAX_ATTEMPTS = 5;
+/** REQ-242 — what a presenter's colleagues see of it: its pointer, never its resyncs */
+const isPointer = (m: PeerMessage) =>
+  m.k === "move" || m.k === "click" || m.k === "leave";
 /** the customer's connection to a presenter whose offer carried no pid (a demo written before the list) */
 const NO_PID = "";
 
@@ -339,7 +345,7 @@ export function connectDemo(o: DemoLinkOptions): DemoLink {
     send(m, lossyOk = false) {
       if (o.role === "presenter") {
         // REQ-214 — the colleagues see this pointer through the relay
-        if (colleagues.size > 0 && m.k !== "view") {
+        if (colleagues.size > 0 && isPointer(m)) {
           wsSend({ t: "relay", data: m, to: "presenters" });
         }
         const c = conns.get(NO_PID);

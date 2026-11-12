@@ -2,11 +2,17 @@
  * REQ-214 — one remote pointer with its own glide and waves: a presenter's on the customer's
  * screen, a colleague's on a stage. Driven by `cmd`, the latest thing that side did (a move or a
  * click at a point of THIS screen, or leaving); `seq` makes every command new.
+ *
+ * REQ-242 — `bounds`: the box the name tag stays inside (the stage's frame, the customer's window).
  */
 import { useEffect, useRef, useState } from "preact/hooks";
 import type { Pt } from "../../../shared/demo-mode/motion.ts";
 import { useGlide } from "../../lib/demo-mode/use-glide.ts";
-import DemoPointer, { type Wave, WAVE_MS } from "./DemoPointer.tsx";
+import DemoPointer, {
+  type Bounds,
+  type Wave,
+  WAVE_MS,
+} from "./DemoPointer.tsx";
 
 export interface PointerCmd {
   seq: number;
@@ -15,11 +21,12 @@ export interface PointerCmd {
 }
 
 export default function PeerPointer(
-  { name, color, z, cmd }: {
+  { name, color, z, cmd, bounds }: {
     name: string;
     color: string;
     z: number;
     cmd: PointerCmd | null;
+    bounds?: Bounds;
   },
 ) {
   const glide = useGlide();
@@ -56,6 +63,7 @@ export default function PeerPointer(
       color={color}
       z={z}
       attach={glide.attach}
+      bounds={bounds}
     />
   );
 }
