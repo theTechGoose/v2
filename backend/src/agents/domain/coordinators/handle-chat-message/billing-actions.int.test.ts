@@ -540,7 +540,7 @@ Deno.test("REQ-583 M2: pair 3 — 'Invoice Maria for the deep clean' shows the s
       conversationId: conv.id,
       content: "Invoice Maria for the deep clean",
     });
-    assertStringIncludes(textOf(asked.newMessages), "scheduled for Nov 19");
+    assertStringIncludes(textOf(asked.newMessages), "goes out Nov 19"); // REQ-673: one sentence
     const offer = cardsOf(asked.newMessages).find((p) =>
       p.invoiceId === inv.id
     );

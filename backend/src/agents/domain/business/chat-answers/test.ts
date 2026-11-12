@@ -262,7 +262,7 @@ Deno.test("REQ-388 M19 owedReply: pair 2 — Ana owes $400, billed after the job
   assertEquals(r.upcomingCents, 40_000);
   assertStringIncludes(
     r.text,
-    "Ana López todavía no te debe nada — $400 aún no se ha facturado",
+    "Ana López todavía no te debe nada — INV-001 por $400 está programada", // REQ-673: one sentence
   );
   assertStringIncludes(r.text, "INV-001");
   assertStringIncludes(r.text, "programada");
@@ -502,4 +502,118 @@ Deno.test("REQ-583 M2 billingReply: a drafted invoice is shown with Send now; a 
   const out = billingReply("en", SIGNED, [DEPOSIT, BALANCE]);
   assertEquals(out.invoice?.id, "inv-1");
   assertEquals(out.invoice?.offerSend, undefined);
+});
+
+// ---------------------------------------------------------------------------
+// REQ-673 (demo-loop cycle 5, p18-3e): "What does Maria owe me?" — Maria
+// signed Q-001 ($280, pay on completion: INV-001 scheduled for Nov 12, due
+// Dec 12) and the contractor had added CO-001 (+$40), still pending. The
+// reply said the $280 twice ("$280 isn't billed yet. The $280 invoice
+// (INV-001) hasn't gone out yet …") and never mentioned the change order.
+// ---------------------------------------------------------------------------
+
+const MARIA_QUOTE = {
+  id: "q-maria",
+  number: "Q-001",
+  status: "accepted",
+  acceptedAt: "2026-11-12T19:05:37Z",
+  estimatedTotal: 28_000,
+  customerSnapshot: { name: "Maria Lopez" },
+};
+const MARIA_INVOICE = {
+  id: "inv-maria",
+  number: "INV-001",
+  quoteId: "q-maria",
+  status: "scheduled",
+  amount: 28_000,
+  scheduledFor: "2026-11-12",
+  dueDate: "2026-12-12",
+  installmentIndex: 1,
+  installmentTotal: 1,
+};
+const MARIA_CO = {
+  id: "co-maria",
+  number: "CO-001",
+  invoiceId: "inv-maria",
+  quoteId: "q-maria",
+  status: "pending",
+  deltaAmountCents: 4_000,
+};
+const count = (text: string, s: string) => text.split(s).length - 1;
+
+Deno.test("REQ-673 owedReply: a scheduled-only bill is ONE sentence (the $280 said once) and the pending CO-001 +$40 is mentioned", () => {
+  const r = owedReply("en", {
+    name: "Maria Lopez",
+    quotes: [MARIA_QUOTE],
+    invoices: [MARIA_INVOICE],
+    changeOrders: [MARIA_CO],
+    today: "2026-11-12",
+  });
+  assertEquals(
+    r.text,
+    "Maria Lopez doesn't owe you anything yet — INV-001 for $280 goes out Nov 12, due Dec 12. Plus CO-001 (+$40) is waiting for Maria Lopez's approval.",
+  );
+  assertEquals(count(r.text, "$280"), 1, r.text);
+  // a pending change order is not owed and not billed yet
+  assertEquals(r.owedCents, 0);
+  assertEquals(r.upcomingCents, 28_000);
+});
+
+Deno.test("REQ-673 owedReply: Spanish — one sentence, the CO mentioned", () => {
+  const r = owedReply("es", {
+    name: "Maria Lopez",
+    quotes: [MARIA_QUOTE],
+    invoices: [MARIA_INVOICE],
+    changeOrders: [MARIA_CO],
+    today: "2026-11-12",
+  });
+  assertEquals(count(r.text, "$280"), 1, r.text);
+  assertStringIncludes(
+    r.text,
+    "Maria Lopez todavía no te debe nada — INV-001 por $280",
+  );
+  assertStringIncludes(r.text, "12 nov");
+  assertStringIncludes(r.text, "12 dic");
+  assertStringIncludes(r.text, "CO-001 (+$40)");
+  assertStringIncludes(r.text, "aprobación de Maria Lopez");
+  assert(!/invoice|change order/i.test(r.text), r.text);
+});
+
+Deno.test("REQ-673 owedReply: approved / declined change orders are not 'waiting'; a credit reads -$40", () => {
+  for (const status of ["approved", "declined"]) {
+    const r = owedReply("en", {
+      name: "Maria Lopez",
+      quotes: [MARIA_QUOTE],
+      invoices: [MARIA_INVOICE],
+      changeOrders: [{ ...MARIA_CO, status }],
+    });
+    assert(!r.text.includes("CO-001"), r.text);
+  }
+  const credit = owedReply("en", {
+    name: "Maria Lopez",
+    quotes: [MARIA_QUOTE],
+    invoices: [MARIA_INVOICE],
+    changeOrders: [{ ...MARIA_CO, deltaAmountCents: -4_000 }],
+  });
+  assertStringIncludes(credit.text, "CO-001 (-$40)");
+});
+
+Deno.test("REQ-673 billingReply: signed, only a scheduled invoice — one sentence, the amount once, and the pending CO mentioned", () => {
+  const r = billingReply("en", MARIA_QUOTE, [MARIA_INVOICE], [MARIA_CO]);
+  assertEquals(
+    r.text,
+    "Maria Lopez signed — nothing is billed yet: INV-001 for $280 goes out Nov 12, due Dec 12. Plus CO-001 (+$40) is waiting for Maria Lopez's approval.",
+  );
+  assertEquals(r.invoice?.id, "inv-maria");
+  const es = billingReply("es", MARIA_QUOTE, [MARIA_INVOICE], [MARIA_CO]);
+  assertEquals(count(es.text, "$280"), 1, es.text);
+  assertStringIncludes(es.text, "CO-001 (+$40)");
+  // the billed path mentions a pending CO too
+  const out = billingReply("en", SIGNED, [DEPOSIT, BALANCE], [
+    { ...MARIA_CO, number: "CO-002", invoiceId: "inv-1", quoteId: "q-1" },
+  ]);
+  assertStringIncludes(
+    out.text,
+    "CO-002 (+$40) is waiting for John Miller's approval",
+  );
 });
