@@ -273,15 +273,6 @@ export function sumLineTotals(items: LineItem[] | undefined): number {
   return items.reduce((s, li) => s + (li.price ?? 0) * (li.quantity ?? 1), 0);
 }
 
-export function initialsFromName(name?: string): string {
-  if (!name) return "DM";
-  const parts = name.trim().split(/\s+/).filter(Boolean);
-  if (parts.length >= 2) {
-    return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
-  }
-  return (parts[0] ?? "DM").slice(0, 2).toUpperCase();
-}
-
 /**
  * Long date in the DOCUMENT's language. Delegates to the one shared
  * formatter so the web page, the PDF and the email can never drift — and so

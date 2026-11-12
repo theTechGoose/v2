@@ -20,6 +20,7 @@ import PublicSignQuote from "../islands/PublicSignQuote.tsx";
 import PublicQuoteActions from "../islands/PublicQuoteActions.tsx";
 import { buildSignatureBlock } from "../../shared/quote-flow/signature-block.ts";
 import { agreementTitle } from "../../shared/quote-flow/agreement-title.ts";
+import { senderInitials as senderInitialsOf } from "../../shared/identity/initials.ts";
 import {
   type ConfirmChannel,
   signedNoteKey,
@@ -50,7 +51,6 @@ import {
   CREAM,
   fmtDate,
   GREEN,
-  initialsFromName,
   INK,
   JobDetailsSection,
   LINE,
@@ -296,7 +296,9 @@ export function QuoteDoc(
     contractor?.name?.trim() || tFor(lang, "brand.name");
   const contractorName = contractor?.name?.trim();
   const contractorFirst = contractorName?.split(/\s+/)[0];
-  const senderInitials = initialsFromName(contractorName ?? businessLabel);
+  // REQ-502 (demo c3 p8-pair10-b): the sidebar's rule — name + business —
+  // so "Carl" of "Jensen Electric LLC" is "CJ" here too, never "CA".
+  const senderInitials = senderInitialsOf(contractor, businessLabel);
 
   // REQ-264 (M15): line items in the document's language (server-filled
   // lineItems[].descriptionByLang), else their base text. REQ-333 (M24): in
