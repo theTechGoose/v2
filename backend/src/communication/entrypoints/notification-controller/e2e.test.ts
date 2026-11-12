@@ -434,3 +434,80 @@ Deno.test("REQ-224 cross-module e2e: claim by Zelle → confirm → the Spanish 
     );
   });
 });
+
+Deno.test("REQ-488 cross-module e2e: claim by Zelle → 'Didn't get it' → the feed's newest row says not received, the claim row is read, /public carries the rejection until a new claim", async () => {
+  await withCrossModuleServer(async (port) => {
+    const sid = await loginXmod(port);
+    const auth = { "content-type": "application/json", "x-session-id": sid };
+    await drain(
+      await fetch(`http://localhost:${port}/me`, {
+        method: "PUT",
+        headers: auth,
+        body: JSON.stringify({ language: "es" }),
+      }),
+    );
+    await drain(
+      await fetch(`http://localhost:${port}/notifications`, {
+        headers: { "x-session-id": sid },
+      }),
+    );
+    const customer = await fetch(`http://localhost:${port}/customers`, {
+      method: "POST",
+      headers: auth,
+      body: JSON.stringify({ name: "Maria Lopez" }),
+    }).then((r) => r.json());
+    const inv = await fetch(`http://localhost:${port}/invoices`, {
+      method: "POST",
+      headers: auth,
+      body: JSON.stringify({
+        customerId: customer.id,
+        dueDate: "2026-12-01",
+        amount: 250_00,
+        status: "sent",
+      }),
+    }).then((r) => r.json());
+    const claim = (body: unknown) =>
+      fetch(`http://localhost:${port}/invoices/${inv.id}/claim-payment`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(body),
+      }).then((r) => r.json());
+
+    assertEquals((await claim({ method: "zelle" })).ok, true);
+    await new Promise((r) => setTimeout(r, 5));
+    const rej = await fetch(
+      `http://localhost:${port}/invoices/${inv.id}/reject-claim`,
+      { method: "POST", headers: auth },
+    ).then((r) => r.json());
+    assertEquals(rej.ok, true);
+
+    const list = await fetch(`http://localhost:${port}/notifications`, {
+      headers: { "x-session-id": sid },
+    }).then((r) => r.json()) as Array<
+      { type: string; title: string; read: boolean; entityId?: string }
+    >;
+    assertEquals(
+      list[0].title,
+      "Marcaste el pago de Maria Lopez por Zelle como no recibido",
+      list.map((n) => n.title).join("\n"),
+    );
+    assertEquals(list[0].entityId, inv.id);
+    const claimed = list.find((n) => n.type === "invoice_claimed")!;
+    assertEquals(claimed.read, true, "the stale claim row is closed");
+
+    // the customer's /i learns the claim was not received
+    const pub = await fetch(`http://localhost:${port}/invoices/${inv.id}/public`)
+      .then((r) => r.json());
+    assertEquals(pub.status, "sent");
+    assert(typeof pub.claimRejectedAt === "string", JSON.stringify(pub));
+    assertEquals(pub.claimRejectedMethod, "zelle");
+
+    // a fresh claim clears the marker
+    assertEquals((await claim({ method: "check" })).ok, true);
+    const pub2 = await fetch(`http://localhost:${port}/invoices/${inv.id}/public`)
+      .then((r) => r.json());
+    assertEquals(pub2.status, "claimed");
+    assertEquals(pub2.claimRejectedAt, undefined);
+    assertEquals(pub2.claimRejectedMethod, undefined);
+  });
+});

@@ -56,6 +56,7 @@ import { appUrl } from "@users/domain/business/app-url/mod.ts";
 import { invoiceCapDecision } from "#documents/ledger.ts"; // REQ-233
 import { hasCreatedFor } from "@core/data/numbered-store/mod.ts";
 import { InvoiceTranslatorPort } from "@paperwork/domain/coordinators/invoice-translator-port/mod.ts"; // REQ-497
+import { EventBus } from "@core/business/events/mod.ts";
 
 /** number order for an export (INV-001 before INV-002; unnumbered rows by age) */
 const bySeq = (
@@ -105,6 +106,7 @@ export class InvoiceController {
     private changeOrderAlert: SendChangeOrderAlert,
     private users: UserStore,
     private sessions: SessionStore,
+    private bus: EventBus,
     private translator?: InvoiceTranslatorPort,
   ) {}
 
@@ -467,6 +469,9 @@ export class InvoiceController {
     // never from a request: the balance coordinator owns these
     delete patch.paidCents;
     delete patch.overpaidCents;
+    // REQ-488: reject-claim / the next claim own these
+    delete patch.claimRejectedAt;
+    delete patch.claimRejectedMethod;
     const existing = await this.store.getOwned(id, user.id);
     const decision = invoiceEditDecision(
       existing,
@@ -535,7 +540,13 @@ export class InvoiceController {
 
   /** "Didn't get it" — reopens an invoice the customer claimed but the
    *  contractor never actually received. Clears the intent (via store
-   *  patch) and flips status back to `sent`. */
+   *  patch) and flips status back to `sent`.
+   *
+   *  REQ-488 (demo m56/m57): the rejection is recorded on the invoice
+   *  (`claimRejectedAt` + the claimed method) so the customer's /i says the
+   *  payment hasn't arrived, and an invoice `claim_rejected` event puts a
+   *  newer row in the feed and closes the open claim notification — the
+   *  topbar chip no longer reads "… says they paid". */
   @Post(":id/reject-claim")
   async rejectClaim(@Context() ctx: ExecutionContext, @Param("id") id: string) {
     const user = await requireUser(ctx, this.sessions, this.users);
@@ -543,12 +554,34 @@ export class InvoiceController {
     if (inv.status !== "claimed") {
       return ctx.json({ ok: false, reason: "not_claimed" }, 409);
     }
+    const method = inv.paymentIntent?.method;
     // `null` tells the store to explicitly clear the intent. A plain
     // `undefined` is filtered out and would leave the stale claim behind —
     // which confirm-payment would then happily turn into a bogus payment.
     await this.store.update(id, user.id, {
       status: "sent",
       paymentIntent: null,
+      claimRejectedAt: new Date().toISOString(),
+      claimRejectedMethod: method ?? null,
+    });
+    let customerName: string | undefined;
+    if (inv.customerId) {
+      customerName = await this.customers.getOwned(inv.customerId, user.id)
+        .then((c) => c.name || undefined, () => undefined);
+    }
+    customerName ??= inv.paymentIntent?.claimedBy?.trim() || undefined;
+    await this.bus.emit({
+      userId: user.id,
+      entityType: "invoice",
+      entityId: id,
+      action: "claim_rejected",
+      data: {
+        ...(method ? { method } : {}),
+        ...(customerName ? { customerName } : {}),
+        ...(inv.paymentIntent?.amount !== undefined
+          ? { amountCents: inv.paymentIntent.amount }
+          : {}),
+      },
     });
     return ctx.json({ ok: true });
   }

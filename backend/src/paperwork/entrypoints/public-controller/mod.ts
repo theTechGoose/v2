@@ -1209,6 +1209,9 @@ export class PaperworkPublicController {
           claimedAt: new Date().toISOString(),
           ...(dto.claimedBy ? { claimedBy: dto.claimedBy } : {}),
         },
+        // REQ-488: a new claim replaces any earlier "not received" note.
+        claimRejectedAt: null,
+        claimRejectedMethod: null,
       });
       // Fire a domain event so the contractor's bell + activity feed
       // surface the claim ("you got a payment — confirm it"). customerName
@@ -1538,6 +1541,10 @@ function redactInvoice(i: Invoice) {
     // a "you said you paid by X on Y" confirmation strip after the
     // customer submits a claim.
     paymentIntent: i.paymentIntent,
+    // REQ-488 (demo m56): the contractor said the last claim never arrived —
+    // /i tells the customer and where to check.
+    claimRejectedAt: i.claimRejectedAt,
+    claimRejectedMethod: i.claimRejectedMethod,
     // Quote parity (roadmap p.6): the bill itself carries the job identity
     // and itemization the quote had.
     jobName: i.jobName,

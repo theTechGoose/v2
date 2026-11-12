@@ -277,6 +277,11 @@ export class UpdateInvoiceDto {
   jobNameByLang?: Record<string, string>;
   @IsOptional() @IsObject()
   descriptionByLang?: Record<string, string>;
+  /** REQ-488: set by reject-claim, cleared (null) by the next claim; never from a request. */
+  @IsOptional() @IsString()
+  claimRejectedAt?: string | null;
+  @IsOptional() @IsString()
+  claimRejectedMethod?: string | null;
 }
 
 export interface Invoice extends CreateInvoiceDto, NumberedFields {
@@ -284,6 +289,11 @@ export interface Invoice extends CreateInvoiceDto, NumberedFields {
   overpaidCents?: number;
   /** REQ-202: sum of confirmed payments. */
   paidCents?: number;
+  /** REQ-488 (demo m56): the contractor said "Didn't get it" to the last
+   *  claim — when, and the method the customer had claimed. Shown on /i
+   *  until the customer claims again (which clears both). */
+  claimRejectedAt?: string;
+  claimRejectedMethod?: string;
   id: string;
   /** Owner. Populated server-side from the auth context — never accept from request body. */
   userId: string;

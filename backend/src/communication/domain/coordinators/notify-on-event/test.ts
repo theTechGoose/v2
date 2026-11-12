@@ -123,3 +123,28 @@ Deno.test("REQ-224: a claim row already stored with the raw enum re-renders as t
     "María dice que pagó por Zelle — confirma que lo recibiste",
   );
 });
+
+// REQ-488 (demo-loop cycle 3, m56/m57): "Didn't get it" on a claimed invoice
+// is a feed event of its own — newer than the claim, so the topbar chip
+// stops reading "María says they paid via Zelle".
+Deno.test("REQ-488: invoice claim_rejected maps to a 'marked as not received' row in both languages", () => {
+  const e = ev("claim_rejected", { method: "zelle", customerName: "María Pérez" });
+  assertEquals(notificationL10n(e)?.titleKey, "notify.invoice.claimRejectedVia");
+  assertEquals(
+    feedTitle(e, "es"),
+    "Marcaste el pago de María Pérez por Zelle como no recibido",
+  );
+  assertEquals(
+    feedTitle(e, "en"),
+    "You marked María Pérez's payment via Zelle as not received",
+  );
+  const bare = ev("claim_rejected", { customerName: "María Pérez" });
+  assertEquals(
+    feedTitle(bare, "en"),
+    "You marked María Pérez's payment as not received",
+  );
+  assertEquals(
+    feedTitle(bare, "es"),
+    "Marcaste el pago de María Pérez como no recibido",
+  );
+});
