@@ -24,6 +24,7 @@ import { senderInitials as senderInitialsOf } from "../../shared/identity/initia
 import {
   type ConfirmChannel,
   signedNoteKey,
+  signedNoteParams,
 } from "../../shared/quote-flow/signed-note.ts";
 import {
   deriveQuoteView,
@@ -976,13 +977,28 @@ export function QuoteDoc(
                     >
                       {t.signedBinding}
                     </div>
-                    <div style={`margin-top:2px;color:${MUTED};font-size:13px`}>
+                    <div
+                      data-cy="quote-signed-note"
+                      style={`margin-top:2px;color:${MUTED};font-size:13px`}
+                    >
                       {
                         /* UX-39 / REQ-403 (m11): promise only a confirmation
                           that can arrive — email, a text to a number whose
                           last text did not fail, else the signed copy + PDF. */
                       }
-                      {tFor(lang, signedNoteKey(quote))}
+                      {
+                        /* REQ-560 (cycle 4, p4-p2b): signed in person on the
+                          business's device — the note names the customer's
+                          copy instead of "check your email". */
+                      }
+                      {tFor(
+                        lang,
+                        signedNoteKey(quote, search),
+                        signedNoteParams(
+                          quote,
+                          tFor(lang, "quoteDoc.signedNoteCustomerFallback"),
+                        ),
+                      )}
                     </div>
                   </div>
                 </div>
