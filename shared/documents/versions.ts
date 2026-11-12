@@ -519,6 +519,8 @@ export function invoiceBalance(
 /** The headline state a document shows next to its number and version. */
 export type DocState =
   | "draft"
+  /** REQ-481: an installment waiting for its send day — not a draft */
+  | "scheduled"
   | "sent"
   | "accepted"
   | "declined"
@@ -544,6 +546,8 @@ export function invoiceState(
   if (i.status === "paid") return "paid";
   if (i.status === "void") return "void";
   if (i.status === "claimed") return "claimed";
+  // REQ-481 (demo M28/m10): a scheduled installment reads "Scheduled", never "Draft".
+  if (i.status === "scheduled") return "scheduled";
   if (!isInvoiceIssued(i)) return "draft";
   return versionOf(i) > 1 ? "revised" : "sent";
 }

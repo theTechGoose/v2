@@ -69,6 +69,7 @@ import {
   nextVersionOf,
 } from "../lib/quote-line-edit.ts";
 import {
+  quoteCardValue,
   quotesHeroNumbers,
   sampleTrackCounts,
 } from "../lib/headline-counts.ts";
@@ -120,7 +121,8 @@ function mapCard(c: BackendQuoteCard, lang: "en" | "es"): Quote {
     customerId: c.customerId,
     initials: initialsFromName(c.customerName ?? fallbackClient),
     stage: c.stage,
-    value: c.estimatedTotal ?? 0,
+    // REQ-481 (demo M28): the agreement — quote plus approved change orders.
+    value: quoteCardValue(c),
     daysIn: c.daysIn,
     opens: c.opens,
     sentDays: c.sentDays,
@@ -129,6 +131,9 @@ function mapCard(c: BackendQuoteCard, lang: "en" | "es"): Quote {
     band: ["#FFB3B3", "#FF6B6B"],
     shadow: "rgba(255,107,107,0.35)",
     ...(c.isSample === true ? { isSample: true } : {}),
+    ...(c.pendingChangeOrders?.length
+      ? { pendingChangeOrders: c.pendingChangeOrders }
+      : {}),
   };
 }
 
@@ -651,6 +656,14 @@ function QuoteLedgerSection(
   // REQ-462 (M26): the change order just withdrawn from this panel
   const [withdrawnCo, setWithdrawnCo] = useState<string | null>(null);
   const summary = ledgerSummary(ledger);
+  // REQ-481 (demo M28): why the next invoice is off — "The rest is on
+  // INV-002, scheduled Nov 26", not "already invoiced" over an unsent bill.
+  const fullyInvoicedText = tFor(lang, summary.fullyInvoicedKey, {
+    number: summary.scheduled?.number ?? "",
+    date: summary.scheduled?.scheduledFor
+      ? shortDate(summary.scheduled.scheduledFor, lang)
+      : "",
+  });
   const state = quoteState(q);
   const headline = docHeadline(
     {
@@ -797,6 +810,13 @@ function QuoteLedgerSection(
             <strong style="display:block;font-size:16px;color:var(--brand-teal,#144852);font-variant-numeric:tabular-nums">
               {fmtMoneyExact(r.cents)}
             </strong>
+            {r.key === "scheduled" && summary.scheduled?.scheduledFor && (
+              <span style="display:block;font-size:11.5px">
+                {tFor(lang, "quotes.ledger.sends", {
+                  date: shortDate(summary.scheduled.scheduledFor, lang),
+                })}
+              </span>
+            )}
           </div>
         ))}
         {summary.overpaid && (
@@ -843,6 +863,13 @@ function QuoteLedgerSection(
                     }`,
                   )}
                 </span>
+                {inv.scheduledFor && inv.status === "scheduled" && (
+                  <span style={mutedStyle}>
+                    {tFor(lang, "quotes.ledger.sends", {
+                      date: shortDate(inv.scheduledFor, lang),
+                    })}
+                  </span>
+                )}
                 {inv.dueDate && (
                   <span style={mutedStyle}>
                     {tFor(lang, "quotes.ledger.due", {
@@ -1059,14 +1086,17 @@ function QuoteLedgerSection(
               aria-disabled="true"
               class="qopen__btn"
               style="opacity:.55;cursor:not-allowed"
-              title={tFor(lang, "quotes.ledger.fullyInvoiced")}
+              title={fullyInvoicedText}
             >
               {tFor(lang, "quotes.ledger.createNextInvoice")}
             </span>
           )}
         {!summary.canCreateNextInvoice && (
-          <span style={`font-size:12px;${mutedStyle}`}>
-            {tFor(lang, "quotes.ledger.fullyInvoiced")}
+          <span
+            data-cy="quote-fully-invoiced"
+            style={`font-size:12px;${mutedStyle}`}
+          >
+            {fullyInvoicedText}
           </span>
         )}
       </div>
@@ -1770,6 +1800,17 @@ export default function QuotesPage(_props: { lang?: "en" | "es" }) {
         clientCount={heroNums.outClients}
         draftCount={heroNums.draftCount}
         draftTotal={heroNums.draftTotal}
+        // REQ-481 (m10): signed/lost history, failed sends, and change
+        // orders waiting on a client all change what the headline says.
+        decidedCount={heroNums.decidedCount}
+        undeliveredCount={heroNums.undeliveredCount}
+        undeliveredTotal={heroNums.undeliveredTotal}
+        pendingChangeOrders={real.flatMap((q) =>
+          (q.pendingChangeOrders ?? []).map((number) => ({
+            number,
+            client: q.client,
+          }))
+        )}
       />
       <QuotesKpis
         lang={lang}

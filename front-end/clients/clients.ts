@@ -29,6 +29,7 @@ export type ClientSegmentKey =
 /** REQ-323 — the states `quoteState` / `invoiceState` name (shared/documents/versions.ts) */
 export type CustomerDocState =
   | "draft"
+  | "scheduled"
   | "sent"
   | "accepted"
   | "declined"

@@ -3,6 +3,7 @@ import { BuildQuoteCards } from "./mod.ts";
 import { QuoteStore } from "@paperwork/domain/data/quote-store/mod.ts";
 import { ViewStore } from "@paperwork/domain/data/view-store/mod.ts";
 import { CustomerStore } from "@crm/domain/data/customer-store/mod.ts";
+import { ChangeOrderStore } from "@paperwork/domain/data/change-order-store/mod.ts";
 import { resetKv } from "@core/data/kv/mod.ts";
 
 const MS_PER_DAY = 86_400_000;
@@ -330,5 +331,49 @@ Deno.test("REQ-236: acceptance beats a stale delivery failure", async () => {
     });
     const [c] = await flow.run("u-1", NOW);
     assertEquals(c.stage, "won");
+  });
+});
+
+// REQ-481 (demo-loop cycle 3, M28 + m10): the /quotes card carries the
+// approved change orders (its value is the agreement, not the bare quote) and
+// the numbers of the change orders still waiting on the customer.
+Deno.test("REQ-481 card: approvedChangeOrdersCents + pendingChangeOrders from the quote's change orders", async () => {
+  await withKv(async () => {
+    const quotes = new QuoteStore();
+    const views = new ViewStore();
+    const customers = new CustomerStore();
+    const cos = new ChangeOrderStore();
+    const flow = new BuildQuoteCards(quotes, views, customers, cos);
+    const q = await makeQuote(quotes, {
+      status: "accepted",
+      acceptedAt: minus(MS_PER_DAY),
+      sentAt: minus(2 * MS_PER_DAY),
+      estimatedTotal: 705000,
+    });
+    const other = await makeQuote(quotes, { estimatedTotal: 1000 });
+    const approved = await cos.create("u-1", "inv-1", {
+      quoteId: q.id,
+      description: "Extra coat",
+      deltaAmountCents: 120000,
+    });
+    await cos.setStatus(approved.id, "approved");
+    const declined = await cos.create("u-1", "inv-1", {
+      quoteId: q.id,
+      description: "Skip trim",
+      deltaAmountCents: -5000,
+    });
+    await cos.setStatus(declined.id, "declined");
+    const pending = await cos.create("u-1", "inv-1", {
+      quoteId: q.id,
+      description: "Add closet",
+      deltaAmountCents: 30000,
+    });
+    const cards = await flow.run("u-1", NOW);
+    const card = cards.find((c) => c.id === q.id)!;
+    assertEquals(card.approvedChangeOrdersCents, 120000);
+    assertEquals(card.pendingChangeOrders, [pending.number]);
+    const bare = cards.find((c) => c.id === other.id)!;
+    assertEquals(bare.approvedChangeOrdersCents, 0);
+    assertEquals(bare.pendingChangeOrders, []);
   });
 });

@@ -22,6 +22,7 @@ export type Lang = "en" | "es";
 const STATE_LABELS: Record<Lang, Record<DocState, string>> = {
   en: {
     draft: "Draft",
+    scheduled: "Scheduled",
     sent: "Sent",
     revised: "Revised",
     accepted: "Accepted and signed",
@@ -34,6 +35,7 @@ const STATE_LABELS: Record<Lang, Record<DocState, string>> = {
   },
   es: {
     draft: "Borrador",
+    scheduled: "Programada",
     sent: "Enviada",
     revised: "Revisada",
     accepted: "Aceptada y firmada",
@@ -397,7 +399,8 @@ function invoiceStateOf(status: string | undefined): DocState {
   if (status === "paid" || status === "void" || status === "claimed") {
     return status;
   }
-  if (!status || status === "draft" || status === "scheduled") return "draft";
+  if (status === "scheduled") return "scheduled";
+  if (!status || status === "draft") return "draft";
   return "sent";
 }
 
@@ -409,6 +412,7 @@ export type LedgerRowKey =
   | "invoiced"
   | "paid"
   | "invoicedUnpaid"
+  | "scheduled"
   | "remaining";
 
 export interface LedgerSummary {
@@ -416,37 +420,69 @@ export interface LedgerSummary {
   overpaid: boolean;
   overpaidCents: number;
   canCreateNextInvoice: boolean;
+  /** REQ-481: the first not-yet-sent invoice (the "Scheduled" row's subject) */
+  scheduled?: { number: string; scheduledFor?: string };
+  /** REQ-481: why "Create next invoice" is off — the rest may sit on a
+   *  scheduled invoice rather than on bills the customer already has */
+  fullyInvoicedKey:
+    | "quotes.ledger.fullyInvoiced"
+    | "quotes.ledger.restScheduled"
+    | "quotes.ledger.restDrafted";
 }
 
 /** The panel's totals. The first row is the agreement total; it is
  *  "agreed" only once the customer has signed — until then nothing was
  *  agreed, so it reads "quoted" (REQ-249). */
 export function ledgerSummary(
-  l: Pick<
-    QuoteLedger,
-    | "quote"
-    | "agreementTotalCents"
-    | "invoicedCents"
-    | "paidCents"
-    | "invoicedUnpaidCents"
-    | "remainingToInvoiceCents"
-    | "overpaidCents"
-  >,
+  l:
+    & Pick<
+      QuoteLedger,
+      | "quote"
+      | "agreementTotalCents"
+      | "invoicedCents"
+      | "paidCents"
+      | "invoicedUnpaidCents"
+      | "remainingToInvoiceCents"
+      | "overpaidCents"
+    >
+    & Partial<
+      Pick<QuoteLedger, "billedCents" | "scheduledCents" | "nextScheduled">
+    >,
 ): LedgerSummary {
+  // REQ-481 (demo M28): "Invoiced" is what the customer was billed; a
+  // scheduled installment or a draft gets its own "Scheduled" row.
+  const scheduledCents = l.scheduledCents ?? 0;
+  const next = l.nextScheduled;
   return {
     rows: [
       {
         key: l.quote.accepted ? "agreed" : "quoted",
         cents: l.agreementTotalCents,
       },
-      { key: "invoiced", cents: l.invoicedCents },
+      { key: "invoiced", cents: l.billedCents ?? l.invoicedCents },
       { key: "paid", cents: l.paidCents },
       { key: "invoicedUnpaid", cents: l.invoicedUnpaidCents },
+      ...(scheduledCents > 0
+        ? [{ key: "scheduled" as const, cents: scheduledCents }]
+        : []),
       { key: "remaining", cents: l.remainingToInvoiceCents },
     ],
     overpaid: l.overpaidCents > 0,
     overpaidCents: l.overpaidCents,
     canCreateNextInvoice: l.remainingToInvoiceCents > 0,
+    ...(next
+      ? {
+        scheduled: {
+          number: next.number,
+          ...(next.scheduledFor ? { scheduledFor: next.scheduledFor } : {}),
+        },
+      }
+      : {}),
+    fullyInvoicedKey: !next
+      ? "quotes.ledger.fullyInvoiced"
+      : next.scheduledFor
+      ? "quotes.ledger.restScheduled"
+      : "quotes.ledger.restDrafted",
   };
 }
 

@@ -287,6 +287,10 @@ export interface QuoteCard extends Quote {
   sentDays: number | null;
   decidedDays: number | null;
   customerName: string | null;
+  /** REQ-481: approved change orders on this quote, summed (cents) */
+  approvedChangeOrdersCents?: number;
+  /** REQ-481: numbers of this quote's change orders waiting on the customer */
+  pendingChangeOrders?: string[];
 }
 
 export interface QuoteOpenEntry {

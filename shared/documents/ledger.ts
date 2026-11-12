@@ -7,7 +7,7 @@
  *
  * All amounts are INTEGER CENTS.
  */
-import { invoiceBalance, versionOf } from "./versions.ts";
+import { invoiceBalance, isInvoiceIssued, versionOf } from "./versions.ts";
 import { docNumberOf } from "./numbering.ts";
 
 export interface LedgerQuote {
@@ -30,6 +30,8 @@ export interface LedgerInvoice {
   paidCents?: number;
   dueDate?: string;
   paidAt?: string;
+  /** REQ-481: the day a scheduled installment sends itself */
+  scheduledFor?: string;
   installmentIndex?: number;
   installmentTotal?: number;
   createdAt?: string;
@@ -86,6 +88,8 @@ export interface LedgerInvoiceRow {
   overpaidCents: number;
   dueDate?: string;
   paidAt?: string;
+  /** REQ-481: the day a scheduled installment sends itself */
+  scheduledFor?: string;
   installmentIndex?: number;
   installmentTotal?: number;
   url: string;
@@ -119,11 +123,24 @@ export interface QuoteLedger {
   approvedChangeOrdersCents: number;
   /** what was agreed: quote total + approved change orders */
   agreementTotalCents: number;
-  /** every non-void invoice, summed */
+  /** every non-void invoice, summed — sent or not yet sent (what the
+   *  agreement cap and "remaining to invoice" count against) */
   invoicedCents: number;
+  /** REQ-481: the issued (in front of the customer) part of invoicedCents */
+  billedCents: number;
+  /** REQ-481: the not-yet-sent part — scheduled installments and drafts */
+  scheduledCents: number;
+  /** REQ-481: the first not-yet-sent invoice, when there is one */
+  nextScheduled?: {
+    id: string;
+    number: string;
+    amountCents: number;
+    scheduledFor?: string;
+  };
   /** confirmed payments across those invoices */
   paidCents: number;
-  /** invoiced but not yet paid — the open balances */
+  /** invoiced but not yet paid — the open balances of ISSUED invoices only
+   *  (REQ-481: a scheduled installment is not owed yet) */
   invoicedUnpaidCents: number;
   /** agreement total not yet put on any invoice */
   remainingToInvoiceCents: number;
@@ -180,6 +197,7 @@ export function quoteLedger(
         overpaidCents: bal.overpaidCents,
         ...(i.dueDate ? { dueDate: i.dueDate } : {}),
         ...(i.paidAt ? { paidAt: i.paidAt } : {}),
+        ...(i.scheduledFor ? { scheduledFor: i.scheduledFor } : {}),
         ...(i.installmentIndex != null
           ? { installmentIndex: i.installmentIndex }
           : {}),
@@ -232,8 +250,17 @@ export function quoteLedger(
   const agreement = Math.max(0, quoteTotal + approved);
   const live = rows.filter((r) => !FREED.has(r.status));
   const invoiced = live.reduce((s, r) => s + r.amountCents, 0);
+  // REQ-481 (demo M28): a scheduled installment or a draft is committed
+  // against the agreement but not billed — never "invoiced but unpaid".
+  const issued = live.filter((r) => isInvoiceIssued(r));
+  const unsent = live.filter((r) => !isInvoiceIssued(r));
+  const billed = issued.reduce((s, r) => s + r.amountCents, 0);
+  const next =
+    unsent.slice().sort((a, b) =>
+      (a.scheduledFor ?? "9999").localeCompare(b.scheduledFor ?? "9999")
+    )[0];
   const paid = live.reduce((s, r) => s + r.paidCents, 0);
-  const unpaid = live.reduce((s, r) => s + r.balanceCents, 0);
+  const unpaid = issued.reduce((s, r) => s + r.balanceCents, 0);
   const overpaid = live.reduce((s, r) => s + r.overpaidCents, 0);
   return {
     quote: {
@@ -248,6 +275,18 @@ export function quoteLedger(
     approvedChangeOrdersCents: approved,
     agreementTotalCents: agreement,
     invoicedCents: invoiced,
+    billedCents: billed,
+    scheduledCents: invoiced - billed,
+    ...(next
+      ? {
+        nextScheduled: {
+          id: next.id,
+          number: next.number,
+          amountCents: next.amountCents,
+          ...(next.scheduledFor ? { scheduledFor: next.scheduledFor } : {}),
+        },
+      }
+      : {}),
     paidCents: paid,
     invoicedUnpaidCents: unpaid,
     remainingToInvoiceCents: Math.max(0, agreement - invoiced),

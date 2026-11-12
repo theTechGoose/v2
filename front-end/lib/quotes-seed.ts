@@ -45,6 +45,8 @@ export interface Quote {
    *  Absent on the onboarding sample (REQ-256: it takes no Q- number). */
   number?: string;
   version?: number;
+  /** REQ-481 (m10): change orders on this quote still waiting on the customer. */
+  pendingChangeOrders?: string[];
 }
 
 /** REQ-236: the /quotes tracks. "Out for response" holds only quotes that

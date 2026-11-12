@@ -39,6 +39,7 @@ import {
 } from "../lib/invoice-card.ts";
 import { Icon } from "../components/ui/Icon.tsx";
 import {
+  draftingKpiSub,
   invoicesHeroMode,
   reloadInvoiceData,
   scheduledHeroSubKey,
@@ -92,6 +93,8 @@ import {
 function headlineLabels(lang: Lang): Partial<Record<DocState, string>> {
   return {
     draft: tFor(lang, "invoices.state.draft"),
+    // REQ-481 (demo M28/m10): a scheduled installment is not a draft.
+    scheduled: tFor(lang, "invoices.state.scheduled"),
     sent: tFor(lang, "invoices.state.sent"),
     revised: tFor(lang, "invoices.state.revised"),
     claimed: tFor(lang, "invoices.state.claimed"),
@@ -634,6 +637,7 @@ export default function InvoicesPage(_props: { lang?: Lang }) {
         outCount={out.length}
         outTotal={outTotal}
         draftingCount={drafting.length}
+        scheduledCount={scheduled.length}
         paidCount={paidThisMonth.length}
         paidTotal={paidThisMonthTotal}
         lang={lang}
@@ -1063,6 +1067,7 @@ function InvoicesKpis(
     outCount,
     outTotal,
     draftingCount,
+    scheduledCount = 0,
     paidCount,
     paidTotal,
     lang,
@@ -1072,6 +1077,8 @@ function InvoicesKpis(
     outCount: number;
     outTotal: number;
     draftingCount: number;
+    /** REQ-481 (m10): installments waiting for their send day */
+    scheduledCount?: number;
     paidCount: number;
     paidTotal: number;
     lang: Lang;
@@ -1102,13 +1109,12 @@ function InvoicesKpis(
       <div class="qkpi__cell">
         <div class="qkpi__lbl">{tFor(lang, "invoicesPage.kpi.drafting")}</div>
         <div class="qkpi__val">{draftingCount}</div>
-        <div class="qkpi__sub">
-          {tFor(
-            lang,
-            draftingCount === 0
-              ? "invoicesPage.kpi.draftingSubEmpty"
-              : "invoicesPage.kpi.draftingSub",
-          )}
+        <div class="qkpi__sub" data-cy="invoices-kpi-drafting-sub">
+          {(() => {
+            // REQ-481 (m10): "no drafts open" never sits beside a scheduled one.
+            const sub = draftingKpiSub(draftingCount, scheduledCount);
+            return tFor(lang, sub.key, { n: sub.n });
+          })()}
         </div>
       </div>
       <div class="qkpi__cell">
