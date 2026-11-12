@@ -44,6 +44,8 @@ export const paymentsClient = {
       method: PaymentMethod;
       receivedAt: string;
       reference?: string;
+      /** REQ-551: the contractor confirmed an amount above the balance. */
+      override?: boolean;
     },
     opts: ApiOptions = {},
   ) => api.post<Payment>("/payments", body, opts),

@@ -298,7 +298,11 @@ export default function ClientsPage({ lang: _lang }: { lang?: "en" | "es" }) {
         lang={lang}
         subsByCustomer={subsByCustomer}
       >
-        <TopClients rows={top.results} lang={lang} />
+        <TopClients
+          rows={top.results}
+          unassigned={top.unassigned}
+          lang={lang}
+        />
         {
           /* NW-36 (REQ-013): the "Who's on your books" segments chart is gone —
             no part of the app ever collects a customer segment. */

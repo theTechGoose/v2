@@ -111,6 +111,70 @@ export function invoiceBalanceCents(
   return Math.max(0, amount - paid);
 }
 
+/** REQ-551 (demo-loop cycle 4, B2): the one definition of "paid" every
+ *  money KPI uses — what was collected AGAINST the bill, min(paid, amount).
+ *  An overpayment is flagged (REQ-202) but never counted as revenue, so a
+ *  $999,999,999 payment on a $99,999,999 invoice counts $99,999,999 on
+ *  /invoices and on /payments alike. A paid invoice from before paidCents
+ *  was stored counts its amount. INTEGER CENTS. */
+export function paidKpiInvoiceCents(
+  inv: { amount?: number | null; paidCents?: number | null },
+): number {
+  const amount = typeof inv.amount === "number" && Number.isFinite(inv.amount)
+    ? Math.max(0, inv.amount)
+    : 0;
+  const paid = typeof inv.paidCents === "number" &&
+      Number.isFinite(inv.paidCents)
+    ? Math.max(0, inv.paidCents)
+    : amount;
+  return Math.min(paid, amount);
+}
+
+/** REQ-551: the same definition per payment, for /payments. Each invoice's
+ *  payments are applied oldest first (receivedAt, then createdAt) against
+ *  its amount; a payment is credited only what the bill still owed when it
+ *  arrived, the rest is `overCents`. A payment whose invoice is not on the
+ *  books is credited in full (nothing to cap it against). */
+export function creditedPayments(
+  payments: ReadonlyArray<
+    {
+      id: string;
+      invoiceId: string;
+      amount: number;
+      receivedAt: string;
+      createdAt?: string;
+    }
+  >,
+  invoices: ReadonlyArray<{ id: string; amount?: number | null }>,
+): Map<string, { creditedCents: number; overCents: number }> {
+  const owed = new Map<string, number>();
+  for (const i of invoices) {
+    owed.set(
+      i.id,
+      typeof i.amount === "number" && Number.isFinite(i.amount)
+        ? Math.max(0, i.amount)
+        : 0,
+    );
+  }
+  const ordered = [...payments].sort((a, b) =>
+    a.receivedAt.localeCompare(b.receivedAt) ||
+    (a.createdAt ?? "").localeCompare(b.createdAt ?? "")
+  );
+  const out = new Map<string, { creditedCents: number; overCents: number }>();
+  for (const p of ordered) {
+    const cents = Math.max(0, p.amount || 0);
+    const left = owed.get(p.invoiceId);
+    if (left === undefined) {
+      out.set(p.id, { creditedCents: cents, overCents: 0 });
+      continue;
+    }
+    const credited = Math.min(cents, left);
+    owed.set(p.invoiceId, left - credited);
+    out.set(p.id, { creditedCents: credited, overCents: cents - credited });
+  }
+  return out;
+}
+
 /** REQ-478 (demo-loop cycle 3, M32): the /invoices KPI tiles and hero total.
  *  A payment the customer reported and the contractor has not confirmed
  *  (stage "claimed") is still money out — it counts in "Out for payment"

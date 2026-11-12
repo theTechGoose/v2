@@ -47,11 +47,16 @@ import PaymentsKpis from "../components/PaymentsKpis.tsx";
 import { docNumberOf } from "../../shared/documents/numbering.ts";
 import { type PaymentClaim, pendingClaims } from "../lib/payment-claims.ts";
 import { cashFlowWeeks } from "../lib/cash-flow-weeks.ts";
+import { creditedPayments } from "../lib/headline-counts.ts";
 
 /** Plural helper bound to an explicit language (the reactive `tn` reads the
  *  global lang signal; the logged-in app threads `lang` explicitly). */
-const tnFor = (lang: Lang, key: string, n: number, vars?: Record<string, string | number>): string =>
-  tFor(lang, `${key}.${n === 1 ? "one" : "other"}`, { n, ...vars });
+const tnFor = (
+  lang: Lang,
+  key: string,
+  n: number,
+  vars?: Record<string, string | number>,
+): string => tFor(lang, `${key}.${n === 1 ? "one" : "other"}`, { n, ...vars });
 import QuoteTrack from "./QuoteTrack.tsx";
 
 interface State {
@@ -351,7 +356,23 @@ export default function PaymentsPage({ lang: _lang }: { lang?: Lang } = {}) {
   const recentLanded = landed.filter((p) => p.daysAgo <= 1);
   const olderLanded = landed.filter((p) => p.daysAgo > 1);
 
-  const monthTotal = landed.reduce((sum, p) => sum + p.amount, 0);
+  // REQ-551 (demo B2): one "paid" definition with /invoices — a payment
+  // counts what its bill still owed when it arrived; the overpaid rest is
+  // its own line under the hero, never part of the total.
+  const credited = creditedPayments(
+    s.payments,
+    Array.isArray(s.invoices) ? s.invoices : [],
+  );
+  const creditOf = (p: { id: string; amount: number }) =>
+    credited.get(p.id) ?? { creditedCents: p.amount, overCents: 0 };
+  const monthTotal = landed.reduce(
+    (sum, p) => sum + creditOf(p).creditedCents,
+    0,
+  );
+  const monthOverpaid = landed.reduce(
+    (sum, p) => sum + creditOf(p).overCents,
+    0,
+  );
   const transitTotal = transit.reduce((sum, p) => sum + p.amount, 0);
   const attentionTotal = attention.reduce((sum, p) => sum + p.amount, 0);
 
@@ -376,6 +397,7 @@ export default function PaymentsPage({ lang: _lang }: { lang?: Lang } = {}) {
       <PaymentsHero
         lang={lang}
         monthTotal={monthTotal}
+        monthOverpaid={monthOverpaid}
         transitTotal={transitTotal}
         attentionCount={attention.length}
         stubs={stubs}
@@ -384,6 +406,7 @@ export default function PaymentsPage({ lang: _lang }: { lang?: Lang } = {}) {
           .map((i) => ({
             id: i.id,
             amountCents: i.amount,
+            paidCents: i.paidCents, // REQ-551
             label: `${(i as { jobName?: string }).jobName ?? "Invoice"} · ${
               customerNames.get(i.customerId ?? "") ?? "—"
             } · ${fmtMoney(i.amount ?? 0)}`,
@@ -492,14 +515,27 @@ export default function PaymentsPage({ lang: _lang }: { lang?: Lang } = {}) {
 /* ---------------- Hero ---------------- */
 
 function PaymentsHero(
-  { lang, monthTotal, transitTotal, attentionCount, stubs, recordOptions, onRecorded }: {
+  {
+    lang,
+    monthTotal,
+    monthOverpaid = 0,
+    transitTotal,
+    attentionCount,
+    stubs,
+    recordOptions,
+    onRecorded,
+  }: {
     lang: Lang;
     monthTotal: number;
+    /** REQ-551: received this month beyond what the bills owed. */
+    monthOverpaid?: number;
     transitTotal: number;
     attentionCount: number;
     stubs: EnrichedPayment[];
     /** REQ-019 (NW-33): unpaid invoices the contractor can record against. */
-    recordOptions: Array<{ id: string; label: string; amountCents?: number }>;
+    recordOptions: Array<
+      { id: string; label: string; amountCents?: number; paidCents?: number }
+    >;
     onRecorded: () => Promise<void>;
   },
 ) {
@@ -508,7 +544,10 @@ function PaymentsHero(
   const [recordId, setRecordId] = useState("");
   const recordInvoice = recordOptions.find((o) => o.id === recordId);
   const today = new Date();
-  const exportHref = `/api/invoices/export.csv?year=${today.getFullYear()}&month=${today.getMonth() + 1}`;
+  const exportHref =
+    `/api/invoices/export.csv?year=${today.getFullYear()}&month=${
+      today.getMonth() + 1
+    }`;
   // UX-35: the hero chip month renders in the page language ("PAGOS ·
   // AGOSTO"), never the en-US month inside the Spanish UI.
   const MONTH_KEYS = [
@@ -529,7 +568,8 @@ function PaymentsHero(
     lang,
     `dashboardPage.month.${MONTH_KEYS[new Date().getMonth()]}`,
   );
-  const fresh = monthTotal === 0 && transitTotal === 0 && attentionCount === 0;
+  const fresh = monthTotal === 0 && transitTotal === 0 &&
+    attentionCount === 0 && monthOverpaid === 0;
   return (
     <header class="pph">
       <div class="pph__main">
@@ -565,46 +605,51 @@ function PaymentsHero(
             )}
         </h1>
         <p class="pph__sub">
-          {fresh
-            ? <>{tFor(lang, "paymentsPage.hero.freshSub")}</>
-            : (
-              <>
-                {transitTotal > 0
-                  ? (
-                    <>
-                      {tFor(lang, "paymentsPage.hero.subPlus")}{" "}
-                      <strong>{fmtMoney(transitTotal)}</strong>{" "}
-                      {tFor(lang, "paymentsPage.hero.subOnTheWay")}
-                    </>
-                  )
-                  : attentionCount > 0
-                  // REQ-350: one counted sentence — never "logged. and 1 waiting"
-                  ? (
-                    <>
-                      {tnFor(
-                        lang,
-                        "paymentsPage.hero.everyDollarWaiting",
-                        attentionCount,
-                      )}
-                    </>
-                  )
-                  : <>{tFor(lang, "paymentsPage.hero.everyDollar")}</>}
-                {transitTotal > 0 && attentionCount > 0
-                  ? (
-                    <>
-                      {" "}
-                      {tFor(lang, "paymentsPage.hero.subAnd")}{" "}
-                      <strong>{attentionCount}</strong>{" "}
-                      {tFor(lang, "paymentsPage.hero.subUnstick")}
-                    </>
-                  )
-                  : null}
-                {transitTotal > 0
-                  ? <>{tFor(lang, "paymentsPage.hero.subMonsters")}</>
-                  : null}
-              </>
-            )}
+          {fresh ? <>{tFor(lang, "paymentsPage.hero.freshSub")}</> : (
+            <>
+              {transitTotal > 0
+                ? (
+                  <>
+                    {tFor(lang, "paymentsPage.hero.subPlus")}{" "}
+                    <strong>{fmtMoney(transitTotal)}</strong>{" "}
+                    {tFor(lang, "paymentsPage.hero.subOnTheWay")}
+                  </>
+                )
+                : attentionCount > 0
+                // REQ-350: one counted sentence — never "logged. and 1 waiting"
+                ? (
+                  <>
+                    {tnFor(
+                      lang,
+                      "paymentsPage.hero.everyDollarWaiting",
+                      attentionCount,
+                    )}
+                  </>
+                )
+                : <>{tFor(lang, "paymentsPage.hero.everyDollar")}</>}
+              {transitTotal > 0 && attentionCount > 0
+                ? (
+                  <>
+                    {" "}
+                    {tFor(lang, "paymentsPage.hero.subAnd")}{" "}
+                    <strong>{attentionCount}</strong>{" "}
+                    {tFor(lang, "paymentsPage.hero.subUnstick")}
+                  </>
+                )
+                : null}
+              {transitTotal > 0
+                ? <>{tFor(lang, "paymentsPage.hero.subMonsters")}</>
+                : null}
+            </>
+          )}
         </p>
+        {monthOverpaid > 0 && (
+          <p class="pph__sub" data-cy="payments-overpaid">
+            {tFor(lang, "paymentsPage.hero.overpaid", {
+              amount: fmtMoney(monthOverpaid),
+            })}
+          </p>
+        )}
         <div class="pph__cta-row">
           <button
             type="button"
@@ -645,10 +690,13 @@ function PaymentsHero(
                 <select
                   data-cy="payments-record-invoice"
                   value={recordId}
-                  onChange={(e) => setRecordId((e.target as HTMLSelectElement).value)}
+                  onChange={(e) =>
+                    setRecordId((e.target as HTMLSelectElement).value)}
                   style="width:100%;box-sizing:border-box;padding:9px 10px;border:1px solid var(--border,#d8dcd5);border-radius:8px;font:inherit;font-size:13.5px;background:#fff"
                 >
-                  <option value="">{tFor(lang, "paymentsPage.record.pick")}</option>
+                  <option value="">
+                    {tFor(lang, "paymentsPage.record.pick")}
+                  </option>
                   {recordOptions.map((o) => (
                     <option key={o.id} value={o.id}>{o.label}</option>
                   ))}
@@ -664,6 +712,7 @@ function PaymentsHero(
                   key={recordInvoice.id}
                   invoiceId={recordInvoice.id}
                   amountCents={recordInvoice.amountCents}
+                  paidCents={recordInvoice.paidCents}
                   lang={lang}
                   onSaved={async () => {
                     await onRecorded();

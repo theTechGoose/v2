@@ -1,6 +1,10 @@
 import { Context, Controller, Get, Query } from "#danet/core";
 import type { ExecutionContext } from "#danet/core";
-import { BuildCustomerCards } from "@analytics/domain/coordinators/build-customer-cards/mod.ts";
+import {
+  BuildCustomerCards,
+  unassignedPaidRevenue,
+} from "@analytics/domain/coordinators/build-customer-cards/mod.ts";
+import { InvoiceStore } from "@paperwork/domain/data/invoice-store/mod.ts";
 import { CLIENT_SEGMENTS, type ClientSegment } from "@crm/dto/customer.ts";
 import type {
   ClientSegmentRow,
@@ -41,6 +45,7 @@ export class ClientsController {
     private flow:     BuildCustomerCards,
     private users:    UserStore,
     private sessions: SessionStore,
+    private invoices: InvoiceStore,
   ) {}
 
   /** REQ-135 — one page of the roster: `?page=&pageSize=&q=&status=`, with the chip counts and the roster's totals */
@@ -64,7 +69,10 @@ export class ClientsController {
     @Query("limit") limit?: string,
   ): Promise<TopClientsResponse> {
     const user  = await requireUser(ctx, this.sessions, this.users);
-    const cards = await this.flow.run(user.id);
+    const [cards, invoices] = await Promise.all([
+      this.flow.run(user.id),
+      this.invoices.listByUser(user.id),
+    ]);
     const lim   = Math.max(1, Math.min(50, Number(limit ?? "5") || 5));
 
     const ranked = cards
@@ -81,7 +89,10 @@ export class ClientsController {
       barPct:           leader > 0 ? Math.round((c.revenue12moCents / leader) * 100) : 0,
     }));
 
-    return { results };
+    // REQ-551 (demo B2): paid invoices with no customer are not ranked —
+    // say so, so the board never reads "no paid invoices" over them.
+    const unassigned = unassignedPaidRevenue(invoices, new Set(cards.map((c) => c.id)));
+    return unassigned.invoiceCount > 0 ? { results, unassigned } : { results };
   }
 
   @Get("analytics/clients/segments")

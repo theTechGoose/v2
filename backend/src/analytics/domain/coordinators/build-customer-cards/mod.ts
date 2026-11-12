@@ -208,6 +208,30 @@ function buildOne(
  * first, each with its own number (REQ-204: never an id slice), its lifecycle
  * state and the page that opens it.
  */
+/** REQ-551 (demo-loop cycle 4, B2): the paid revenue no customer card can
+ *  carry — invoices with no customer, or whose customer is gone — on the
+ *  same 12-month, paid-amount rule as a card's `revenue12moCents`. The
+ *  leaderboard reports it rather than saying there are no paid invoices. */
+export function unassignedPaidRevenue(
+  invoices: ReadonlyArray<
+    { customerId?: string; status?: string; paidAt?: string; amount?: number }
+  >,
+  customerIds: ReadonlySet<string>,
+  now: Date = new Date(),
+): { invoiceCount: number; revenue12moCents: number } {
+  const twelveMoAgo = now.getTime() - TWELVE_MONTHS_MS;
+  let invoiceCount = 0;
+  let revenue12moCents = 0;
+  for (const i of invoices) {
+    if (i.customerId && customerIds.has(i.customerId)) continue;
+    if (i.status !== "paid" || !i.paidAt) continue;
+    if (new Date(i.paidAt).getTime() < twelveMoAgo) continue;
+    invoiceCount++;
+    revenue12moCents += i.amount ?? 0;
+  }
+  return { invoiceCount, revenue12moCents };
+}
+
 export function documentsFor(
   quotes: Quote[],
   invoices: Invoice[],

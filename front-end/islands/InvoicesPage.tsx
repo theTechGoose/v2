@@ -44,6 +44,7 @@ import {
   draftingKpiSub,
   invoiceKpiTotals,
   invoicesHeroMode,
+  paidKpiInvoiceCents,
   reloadInvoiceData,
   scheduledHeroSubKey,
 } from "../lib/headline-counts.ts";
@@ -580,8 +581,11 @@ export default function InvoicesPage(_props: { lang?: Lang }) {
   );
   const nextScheduled = scheduled.find((i) => !!i.scheduledFor);
   const nextScheduledFor = nextScheduled?.scheduledFor;
+  // REQ-551 (demo B2): one "paid" definition with /payments — what was
+  // collected against each bill, min(paid, amount); overpayments are
+  // flagged on the row (REQ-202), never counted as revenue.
   const paidThisMonthTotal = paidThisMonth.reduce(
-    (sum, i) => sum + (i.amount ?? 0),
+    (sum, i) => sum + paidKpiInvoiceCents(i),
     0,
   );
 
@@ -1714,6 +1718,7 @@ function InvoiceDetail(
           <PaymentReceivedForm
             invoiceId={inv.id}
             amountCents={inv.amount}
+            paidCents={inv.paidCents}
             lang={lang}
             onSaved={async (cents) => {
               await onChanged();

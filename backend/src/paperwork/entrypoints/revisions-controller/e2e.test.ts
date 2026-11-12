@@ -343,13 +343,15 @@ Deno.test("REQ-202/203: an invoice has one balance — a stale claim is refused,
       assertEquals(r.status, 409);
       assertEquals((await r.json()).reason, "locked_paid");
     }
-    // an extra payment on a paid invoice is an overpayment, flagged
+    // an extra payment on a paid invoice is an overpayment, flagged — the
+    // contractor confirms it (REQ-551: `override: true`, else a 409)
     await drain(
       await post("/payments", auth(sid), {
         invoiceId: inv.id,
         amount: 500,
         method: "cash",
         receivedAt: new Date().toISOString(),
+        override: true,
       }),
     );
     const over = await get(`/invoices/${inv.id}`, auth(sid));
