@@ -9,6 +9,7 @@ import { freshState } from "@agents/domain/business/wizard-progress/mod.ts";
 import {
   getWizardSpec,
   localizeOptions,
+  stepQuestionKey,
   wizardSpecFor,
 } from "@agents/domain/business/terms-wizard-spec/mod.ts";
 import { t } from "@core/i18n/mod.ts";
@@ -70,14 +71,16 @@ export class TransitionToTerms {
       // Already transitioned — just re-emit the current step (no divider duplicate).
       const state = await this.conversations.getWizardState(conv.id);
       const stepIdx = state?.activeStepIdx ?? 0;
-      const spec = state ? getWizardSpec(state.specId) : wizardSpecFor(conv.docKind);
+      const spec = state
+        ? getWizardSpec(state.specId)
+        : wizardSpecFor(conv.docKind);
       const step = spec.steps[stepIdx];
       const wizardMsg = await this.messages.append({
         conversationId: conv.id,
         role: "assistant",
         kind: "wizard",
         content: step
-          ? t(lang, step.question)
+          ? t(lang, stepQuestionKey(step, !!conv.customerId)) // REQ-331
           : t(lang, "transitionToTerms.allTermsAnswered"),
         payload: {
           specId: spec.id,
@@ -116,7 +119,8 @@ export class TransitionToTerms {
       conversationId: conv.id,
       role: "assistant",
       kind: "wizard",
-      content: t(lang, firstStep.question),
+      // REQ-331 (demo m7/m44): a bound customer is offered, not re-asked.
+      content: t(lang, stepQuestionKey(firstStep, !!conv.customerId)),
       payload: {
         specId: spec.id,
         stepIdx: 0,

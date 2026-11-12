@@ -1,4 +1,5 @@
-import { assertEquals, assertRejects } from "#std/assert";
+import { assert, assertEquals, assertRejects } from "#std/assert";
+import { t } from "@core/i18n/mod.ts";
 import { TransitionToTerms } from "./mod.ts";
 import { AgentConversationStore } from "@agents/domain/data/agent-conversation-store/mod.ts";
 import { AgentMessageStore } from "@agents/domain/data/agent-message-store/mod.ts";
@@ -24,7 +25,10 @@ Deno.test("transition-to-terms integration: flips phase, seeds wizard, appends d
   assertEquals(result.newMessages[0].kind, "phase_divider");
   assertEquals(result.newMessages[1].kind, "wizard");
 
-  const wizardPayload = result.newMessages[1].payload as { stepId: string; stepIdx: number };
+  const wizardPayload = result.newMessages[1].payload as {
+    stepId: string;
+    stepIdx: number;
+  };
   assertEquals(wizardPayload.stepIdx, 0);
   assertEquals(wizardPayload.stepId, "customer");
 
@@ -58,10 +62,10 @@ Deno.test("transition-to-terms integration: re-calling on already-terms conversa
   const { conversations, messages, flow } = fresh();
   const conv = await conversations.create({ userId: "u-1" });
 
-  await flow.run({ userId: "u-1", conversationId: conv.id });          // first transition
-  const second = await flow.run({ userId: "u-1", conversationId: conv.id });  // re-call
+  await flow.run({ userId: "u-1", conversationId: conv.id }); // first transition
+  const second = await flow.run({ userId: "u-1", conversationId: conv.id }); // re-call
 
-  assertEquals(second.newMessages.length, 1);                              // no new divider
+  assertEquals(second.newMessages.length, 1); // no new divider
   assertEquals(second.newMessages[0].kind, "wizard");
 
   // Total messages: divider + wizard (1st call) + wizard (2nd call) = 3.
@@ -78,13 +82,20 @@ Deno.test("REQ-024 transition-to-terms integration: docKind 'invoice' seeds the 
   const { conversations, flow } = fresh();
   const conv = await conversations.create({ userId: "u-1", quoteId: "q-1" });
 
-  const result = await flow.run({ userId: "u-1", conversationId: conv.id, docKind: "invoice" });
+  const result = await flow.run({
+    userId: "u-1",
+    conversationId: conv.id,
+    docKind: "invoice",
+  });
 
   assertEquals(result.conversation.currentPhase, "terms");
   assertEquals(result.conversation.docKind, "invoice");
   const state = await conversations.getWizardState(conv.id);
   assertEquals(state?.specId, "invoice-v1");
-  const wizardPayload = result.newMessages[1].payload as { specId: string; stepId: string };
+  const wizardPayload = result.newMessages[1].payload as {
+    specId: string;
+    stepId: string;
+  };
   assertEquals(wizardPayload.specId, "invoice-v1");
   assertEquals(wizardPayload.stepId, "customer");
   await resetKv();
@@ -109,8 +120,33 @@ Deno.test("REQ-258 transition-to-terms integration: the first wizard step carrie
   await resetKv();
   const { conversations, flow } = fresh();
   const conv = await conversations.create({ userId: "u-1" });
-  await conversations.update(conv.id, { termsPrefill: { customer: "use_active" } });
+  await conversations.update(conv.id, {
+    termsPrefill: { customer: "use_active" },
+  });
   const r = await flow.run({ userId: "u-1", conversationId: conv.id });
-  assertEquals((r.newMessages[1].payload as { suggestedOptionId?: string }).suggestedOptionId, "use_active");
+  assertEquals(
+    (r.newMessages[1].payload as { suggestedOptionId?: string })
+      .suggestedOptionId,
+    "use_active",
+  );
+  await resetKv();
+});
+
+// --- REQ-331 (demo-loop cycle 1, m7/m44) -------------------------------------
+
+Deno.test("REQ-331: a conversation with a bound customer gets the 'use them or change' customer question, not Business/Person", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const { conversations, flow } = fresh();
+  const conv = await conversations.create({ userId: "u-1", customerId: "c-1" });
+  const res = await flow.run({ userId: "u-1", conversationId: conv.id });
+  const wizard = res.newMessages.find((m) => m.kind === "wizard")!;
+  assertEquals(wizard.content, t("en", "termsWizard.customer.questionKnown"));
+  assert(!/business or a person/i.test(wizard.content));
+
+  const plain = await conversations.create({ userId: "u-1" });
+  const res2 = await flow.run({ userId: "u-1", conversationId: plain.id });
+  const w2 = res2.newMessages.find((m) => m.kind === "wizard")!;
+  assertEquals(w2.content, t("en", "termsWizard.customer.question"));
   await resetKv();
 });

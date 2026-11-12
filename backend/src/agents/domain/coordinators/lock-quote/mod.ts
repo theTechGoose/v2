@@ -5,6 +5,7 @@ import { QuoteStore } from "@paperwork/domain/data/quote-store/mod.ts";
 import { lockStatusFor, QUOTE_LOCKED } from "#quote-flow/quote-lock.ts";
 import { TranslateQuote } from "@agents/domain/coordinators/translate-quote/mod.ts";
 import { UserStore } from "@users/domain/data/user-store/mod.ts";
+import { CustomerStore } from "@crm/domain/data/customer-store/mod.ts";
 import { t } from "@core/i18n/mod.ts";
 import type { AgentConversation } from "@agents/dto/conversation.ts";
 import type { AgentMessage } from "@agents/dto/message.ts";
@@ -59,6 +60,8 @@ export class LockQuote {
     private users: UserStore,
     /** REQ-264 (M15): fills every document language before dispatch. */
     private translator?: TranslateQuote,
+    /** REQ-331: names the bound customer on the terms CTA. */
+    private customers?: CustomerStore,
   ) {}
 
   async run(input: LockQuoteInput): Promise<LockQuoteResult> {
@@ -112,14 +115,23 @@ export class LockQuote {
       },
     });
 
+    // REQ-331 (demo m7/m44): with a customer already bound, the CTA names
+    // them — never "Is this for a business or a person?" again.
+    const boundId = conv.customerId ?? fresh.customerId;
+    const known = boundId && this.customers
+      ? await this.customers.getOwned(boundId, input.userId).catch(() => null)
+      : null;
     const cta = await this.messages.append({
       conversationId: conv.id,
       role: "assistant",
       kind: "continue_cta",
-      content: t(lang, "lockQuote.cta.lockedPrompt"),
+      content: known
+        ? t(lang, "lockQuote.cta.lockedPromptKnown", { name: known.name })
+        : t(lang, "lockQuote.cta.lockedPrompt"),
       payload: {
         toPhase: "terms",
         quoteId: fresh.id,
+        ...(known ? { customerName: known.name } : {}),
       },
     });
 

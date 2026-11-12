@@ -42,6 +42,7 @@ import {
   extractStateOnly,
   isAffirmativeReply,
   isSkipReply,
+  isStarterChipText,
   looksLikeJobRequest,
   ONBOARD_ASK_ADDRESS,
   ONBOARD_ASK_BUSINESS,
@@ -51,7 +52,6 @@ import {
   ONBOARDING_ASK_TEXT,
   type ParsedAddress,
   stateFromPhone,
-  isStarterChipText,
 } from "@agents/domain/business/onboarding/mod.ts";
 import { describeQuoteRevision } from "@agents/domain/business/quote-revision-reply/mod.ts";
 import { BusinessAddressStore } from "@profile/domain/data/business-address-store/mod.ts";
@@ -72,6 +72,10 @@ import {
 } from "@agents/domain/coordinators/revise-quote/mod.ts";
 import { changeOrderAsReprice } from "@agents/domain/business/quote-line-revision/mod.ts";
 import { extractServiceAddress } from "#quote-flow/quick-quote-prefill.ts";
+import { extractQuoteFacts } from "#quote-flow/quote-facts.ts"; // REQ-331
+import { findExistingCustomer } from "#quote-flow/customer-dedupe.ts"; // REQ-331
+import { CustomerStore } from "@crm/domain/data/customer-store/mod.ts";
+import type { Customer } from "@crm/dto/customer.ts";
 import type { AgentConversation } from "@agents/dto/conversation.ts";
 import type { AgentMessage } from "@agents/dto/message.ts";
 
@@ -124,10 +128,12 @@ function quoteContext(q: {
   estimatedTotal?: number;
 }): string {
   const money = (c: number) =>
-    `$${(c / 100).toLocaleString("en-US", {
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
-    })}`;
+    `$${
+      (c / 100).toLocaleString("en-US", {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+      })
+    }`;
   const out = [
     `Active quote (status: ${q.status ?? "draft"})`,
     `Job: ${q.jobName || q.summary || "(untitled)"}`,
@@ -236,7 +242,45 @@ export class HandleChatMessage {
     private reviseQuote: ReviseQuote,
     /** REQ-264 (M15): fills every document language before dispatch. */
     private translator?: TranslateQuote,
+    /** REQ-331 (demo m7): resolves a typed "for <Name>" to the contractor's
+     *  own customer, and names the bound customer on the terms CTA. */
+    private customers?: CustomerStore,
   ) {}
+
+  /** REQ-331: the same-owner customer the thread's typed facts name — by
+   *  phone, email, then accent-folded name; null when nobody matches. */
+  private async customerFromTypedFacts(
+    userId: string,
+    history: AgentMessage[],
+  ): Promise<{ id: string; name: string } | null> {
+    if (!this.customers) return null;
+    const typed = history
+      .filter((m) => m.role === "user" && typeof m.content === "string")
+      .map((m) => m.content as string)
+      .join("\n");
+    const facts = extractQuoteFacts(typed, new Date());
+    if (!facts.customerName && !facts.customerPhone && !facts.customerEmail) {
+      return null;
+    }
+    const mine: Customer[] = await this.customers.listByUser(userId)
+      .catch(() => []);
+    return findExistingCustomer(mine, {
+      name: facts.customerName,
+      email: facts.customerEmail,
+      phoneNumber: facts.customerPhone,
+    });
+  }
+
+  /** REQ-331: the bound customer's name for the terms CTA, if any. */
+  private async boundCustomerName(
+    conv: AgentConversation,
+    userId: string,
+  ): Promise<string | undefined> {
+    if (!conv.customerId || !this.customers) return undefined;
+    const c = await this.customers.getOwned(conv.customerId, userId)
+      .catch(() => null);
+    return c?.name;
+  }
 
   async run(input: HandleChatInput): Promise<HandleChatResult> {
     const conv = await this.conversations.get(input.conversationId);
@@ -1274,8 +1318,21 @@ export class HandleChatMessage {
         // populated with raw names like "Mendez" and corrupting joins.
         // The conversation already carries a bound customerId when one
         // exists (set by start-conversation or the wizard's customer step);
-        // we inherit only that.
-        const customerId = conv.customerId;
+        // we inherit that — or, REQ-331 (demo m7): a typed "for <Name>" /
+        // phone / email that names one of the contractor's OWN customers
+        // binds them here, so the wizard offers "Use María López" instead
+        // of "Is this for a business or a person?".
+        let customerId = conv.customerId;
+        if (!customerId) {
+          const known = await this.customerFromTypedFacts(
+            input.userId,
+            history,
+          );
+          if (known) {
+            customerId = known.id;
+            convPatch.customerId = known.id;
+          }
+        }
 
         // REQ-263 (demo ai-assistant-m2): the job address. The model's
         // `serviceAddress` when it set one; otherwise the address the user
@@ -1303,6 +1360,10 @@ export class HandleChatMessage {
               estimatedTotal,
               // a correction without an address keeps the one on file
               ...(serviceAddress ? { serviceAddress } : {}),
+              // REQ-331: a customer resolved this turn lands on the draft
+              ...(customerId && !existingDraft.customerId
+                ? { customerId }
+                : {}),
             });
           } catch {
             // Update failed — fall through to create.
@@ -1414,14 +1475,22 @@ export class HandleChatMessage {
             },
           });
           newMessages.push(sentCard);
+          // REQ-331 (demo m7/m44): a bound customer is named on the CTA —
+          // never "Is this for a business or a person?" again.
+          const knownName = await this.boundCustomerName(conv, input.userId);
           const cta = await this.messages.append({
             conversationId: conv.id,
             role: "assistant",
             kind: "continue_cta",
-            content: t(replyLang, "chatCoordinator.lockedToTermsCta"),
+            content: knownName
+              ? t(replyLang, "chatCoordinator.lockedToTermsCtaKnown", {
+                name: knownName,
+              })
+              : t(replyLang, "chatCoordinator.lockedToTermsCta"),
             payload: {
               toPhase: "terms",
               quoteId,
+              ...(knownName ? { customerName: knownName } : {}),
             },
           });
           newMessages.push(cta);
@@ -1436,14 +1505,20 @@ export class HandleChatMessage {
       } // ---- request_terms_transition: surface a "Continue to terms" card ----
       else if (action.type === "request_terms_transition") {
         const quoteId = conv.quoteId ?? action.payload.quoteId;
+        const knownName = await this.boundCustomerName(conv, input.userId); // REQ-331
         const cta = await this.messages.append({
           conversationId: conv.id,
           role: "assistant",
           kind: "continue_cta",
-          content: t(replyLang, "chatCoordinator.lockedToTermsCta"),
+          content: knownName
+            ? t(replyLang, "chatCoordinator.lockedToTermsCtaKnown", {
+              name: knownName,
+            })
+            : t(replyLang, "chatCoordinator.lockedToTermsCta"),
           payload: {
             toPhase: "terms",
             quoteId,
+            ...(knownName ? { customerName: knownName } : {}),
           },
         });
         newMessages.push(cta);

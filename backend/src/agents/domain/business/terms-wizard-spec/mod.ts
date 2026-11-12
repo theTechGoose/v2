@@ -1,4 +1,8 @@
-import type { WizardOption, WizardSpec } from "@agents/dto/wizard.ts";
+import type {
+  WizardOption,
+  WizardSpec,
+  WizardStep,
+} from "@agents/dto/wizard.ts";
 import { t } from "@core/i18n/mod.ts";
 
 /**
@@ -155,7 +159,11 @@ export const INVOICE_WIZARD_V1: WizardSpec = {
         { id: "today", label: "termsWizard.completionDate.today" },
         { id: "yesterday", label: "termsWizard.completionDate.yesterday" },
         { id: "last_week", label: "termsWizard.completionDate.lastWeek" },
-        { id: "custom", label: "termsWizard.completionDate.custom", isCustom: true },
+        {
+          id: "custom",
+          label: "termsWizard.completionDate.custom",
+          isCustom: true,
+        },
       ],
     },
     sharedStep("payment_terms"),
@@ -178,7 +186,9 @@ export function getWizardSpec(specId: string): WizardSpec {
 }
 
 /** The wizard for a document kind (REQ-024). */
-export function wizardSpecFor(docKind: "quote" | "invoice" | undefined): WizardSpec {
+export function wizardSpecFor(
+  docKind: "quote" | "invoice" | undefined,
+): WizardSpec {
   return docKind === "invoice" ? INVOICE_WIZARD_V1 : TERMS_WIZARD_V1;
 }
 
@@ -188,6 +198,23 @@ export function wizardSpecFor(docKind: "quote" | "invoice" | undefined): WizardS
  * labels (+ sublabels) into `lang` at emission time. The step `question` and
  * `label` resolve with a plain `t(lang, step.question)` / `t(lang, step.label)`.
  */
+/**
+ * REQ-331 (demo m7 / m44): the customer step's question when the thread
+ * already carries a customer — "use them, or pick another?" instead of
+ * "Is this for a business or a person?" (which the demo read as the
+ * assistant forgetting a customer it had just been told about). Every
+ * other step, and the customer step with nobody bound, keeps its own key.
+ */
+export function stepQuestionKey(
+  step: Pick<WizardStep, "id" | "question">,
+  hasBoundCustomer: boolean,
+): string {
+  if (step.id === "customer" && hasBoundCustomer) {
+    return "termsWizard.customer.questionKnown";
+  }
+  return step.question;
+}
+
 export function localizeOptions(
   options: WizardOption[],
   lang: "en" | "es",

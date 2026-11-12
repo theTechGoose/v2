@@ -310,6 +310,9 @@ export const assistantClient = {
           email?: string;
           phoneNumber?: string;
           isBusiness?: boolean;
+          businessName?: string;
+          /** REQ-331: "create anyway" past the already-exists hint. */
+          allowDuplicate?: boolean;
         };
       };
       followUpValues?: Record<string, string | number>;
@@ -391,7 +394,12 @@ export const assistantClient = {
     api.post<
       {
         options: Array<
-          { tier: "competitive" | "market" | "premium"; label: string; priceCents: number; rationale: string }
+          {
+            tier: "competitive" | "market" | "premium";
+            label: string;
+            priceCents: number;
+            rationale: string;
+          }
         >;
         /** REQ-017 (NW-12): what the numbers include. */
         basis?: "labor_and_materials";

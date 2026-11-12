@@ -124,12 +124,74 @@ function resolve(
   };
 }
 
+/** REQ-331 (demo m7, pair 6 "I already said lunes!"): weekday words, EN
+ *  and ES, accent-blind — JS getDay() numbering (0 = Sunday). */
+const WEEKDAYS: Record<string, number> = {
+  sunday: 0,
+  sun: 0,
+  domingo: 0,
+  monday: 1,
+  mon: 1,
+  lunes: 1,
+  tuesday: 2,
+  tue: 2,
+  tues: 2,
+  martes: 2,
+  wednesday: 3,
+  wed: 3,
+  miercoles: 3,
+  thursday: 4,
+  thu: 4,
+  thurs: 4,
+  jueves: 4,
+  friday: 5,
+  fri: 5,
+  viernes: 5,
+  saturday: 6,
+  sat: 6,
+  sabado: 6,
+};
+/** "next Monday", "this Friday", "el próximo lunes", "este sábado". */
+const WEEKDAY_LEAD =
+  /^(?:(?:next|this|coming|pr[oó]ximo|proximo|este|que viene)\s+)?/iu;
+
+const ymd = (d: Date) => ({
+  iso: `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`,
+  us: `${pad(d.getMonth() + 1)}/${pad(d.getDate())}/${d.getFullYear()}`,
+});
+
+/** The next occurrence of `weekday` strictly after today — "start Monday"
+ *  said on a Monday means next week's, never a day already gone. */
+function nextWeekday(
+  weekday: number,
+  today: Date,
+): { iso: string; us: string } {
+  const d = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  const ahead = ((weekday - d.getDay()) + 7) % 7 || 7;
+  d.setDate(d.getDate() + ahead);
+  return ymd(d);
+}
+
 /** Parse a date at the very start of `s` (after the start keyword). */
 function parseDateAt(
   s: string,
   today: Date,
 ): { iso: string; us: string } | null {
   const t = s.replace(FILLER, "");
+  // REQ-331: "lunes", "next Monday", "this Friday", "tomorrow", "mañana".
+  const w = t.replace(WEEKDAY_LEAD, "").match(/^(\p{L}+)\b/u);
+  if (w) {
+    const word = w[1].normalize("NFD").replace(/\p{M}/gu, "").toLowerCase();
+    if (word in WEEKDAYS) return nextWeekday(WEEKDAYS[word], today);
+    if (word === "tomorrow" || word === "manana") {
+      const d = new Date(
+        today.getFullYear(),
+        today.getMonth(),
+        today.getDate() + 1,
+      );
+      return ymd(d);
+    }
+  }
   // "Dec 1", "December 1st", "Dec. 1, 2027"
   let m = t.match(
     /^(\p{L}+)\.?\s+(\d{1,2})(?:st|nd|rd|th)?\b(?:,?\s+(\d{4}))?/iu,
