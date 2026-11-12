@@ -172,3 +172,70 @@ for (
       expect(!reason.test(head), `recovery box restates the reason: "${head}"`);
     }));
 }
+
+// REQ-568 — demo-loop cycle 4, issue m44: "Fixing SMS number re-sends the
+// email too". A "both" send whose email went out and whose text failed:
+// fixing the number and pressing Save and resend retries the TEXT only — the
+// resend never asks for the email channel again.
+Deno.test("REQ-568: after a both-channel send whose email delivered, Save and resend retries only the text", (t) =>
+  story(t, async ({ page, expect, http, baseUrl }) => {
+    const auth = await signIn(http, page, baseUrl, "en");
+    const post = async (path: string, payload?: unknown) => {
+      const res = await http(path, {
+        method: "POST",
+        headers: auth,
+        body: payload === undefined ? undefined : JSON.stringify(payload),
+      });
+      return await res.json().catch(() => ({}));
+    };
+    const customer = await post("/api/customers", {
+      name: "Dana Both",
+      email: `dana-${crypto.randomUUID().slice(0, 8)}@example.com`,
+      phoneNumber: "(512) 555-0123",
+    });
+    const quote = await post("/api/quotes", {
+      summary: "Fence repair",
+      lineItems: [{
+        description: "Fence repair",
+        quantity: 1,
+        unit: "ea",
+        price: 50000,
+      }],
+      estimatedTotal: 50000,
+      status: "draft",
+      customerId: customer.id,
+    });
+    const conv = await post("/api/agents/conversations", {
+      quoteId: quote.id,
+      customerId: customer.id,
+    });
+    const sent = await post(
+      `/api/agents/conversations/${conv.id}/send-quote`,
+      { quoteId: quote.id, channel: "both", language: "en" },
+    );
+    const divider = (sent.newMessages ?? []).find((
+      m: { kind?: string; payload?: Record<string, unknown> },
+    ) => m.kind === "phase_divider" && m.payload?.quoteId);
+    expect(
+      !!divider?.payload?.emailedTo && !divider?.payload?.textedTo &&
+        !!divider?.payload?.smsFailureReason,
+      `the first send emailed and failed to text: ${
+        JSON.stringify(divider?.payload)
+      }`,
+    );
+
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await page.goto(`/assistant/${conv.id}`);
+    const card = page.locator(".recovery-card").first();
+    await card.waitFor({ state: "visible", timeout: 20_000 });
+    await card.locator("input[type=tel]").fill("(512) 867-5309");
+    const resend = page.waitForRequest((r) =>
+      r.method() === "POST" && /\/send-quote$/.test(r.url())
+    );
+    await card.locator(".recovery-card__save").click();
+    const body = JSON.parse((await resend).postData() ?? "{}");
+    expect(
+      body.channel === "sms",
+      `the resend retries only the text, not the email: channel "${body.channel}"`,
+    );
+  }));
