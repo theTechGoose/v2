@@ -1,6 +1,9 @@
 import { Injectable } from "#danet/core";
 import { AgentConversationStore } from "@agents/domain/data/agent-conversation-store/mod.ts";
 import { AgentMessageStore } from "@agents/domain/data/agent-message-store/mod.ts";
+import { QuoteStore } from "@paperwork/domain/data/quote-store/mod.ts"; // REQ-368
+import { AnswerBilling } from "@agents/domain/coordinators/answer-billing/mod.ts"; // REQ-368
+import { isOpenDraft } from "@agents/domain/business/chat-routing/mod.ts"; // REQ-368
 import { transitionPhase } from "@agents/domain/business/derive-phase/mod.ts";
 import { freshState } from "@agents/domain/business/wizard-progress/mod.ts";
 import {
@@ -55,6 +58,14 @@ export class TransitionToTerms {
     const lang = input.lang === "es" ? "es" : "en";
     const conv = await this.conversations.get(input.conversationId);
     if (conv.userId !== input.userId) throw new Error("forbidden");
+    // REQ-368 (demo-loop cycle 1, M32): a FINISHED wizard has no step to
+    // re-emit — below, that read "All terms answered." with no options, a
+    // dead end (pair 1, through a stale "business or person?" CTA after the
+    // customer signed). Hand back the step the wizard ends on instead.
+    if (conv.currentPhase === "terms") {
+      const finished = await this.afterFinishedWizard(conv, lang, input.userId);
+      if (finished) return finished;
+    }
     if (conv.currentPhase === "terms") {
       // Already transitioned — just re-emit the current step (no divider duplicate).
       const state = await this.conversations.getWizardState(conv.id);
@@ -118,5 +129,48 @@ export class TransitionToTerms {
 
     newMessages.push(divider, wizardMsg);
     return { conversation: updated, newMessages };
+  }
+
+  /**
+   * REQ-368 (M32): the reply for a terms phase whose wizard is done. Once the
+   * quote is issued (sent / signed / declined), where its bill stands — the
+   * deposit invoice signing sent, or "hasn't signed yet"; before that, the
+   * review/send CTA the wizard ends on (the one HandleWizardAnswer emits).
+   * Undefined while a step is still open.
+   */
+  private async afterFinishedWizard(
+    conv: AgentConversation,
+    lang: "en" | "es",
+    userId: string,
+  ): Promise<TransitionToTermsResult | undefined> {
+    const state = await this.conversations.getWizardState(conv.id);
+    const spec = state
+      ? getWizardSpec(state.specId)
+      : wizardSpecFor(conv.docKind);
+    if (spec.steps[state?.activeStepIdx ?? 0]) return undefined;
+    // QuoteStore is a stateless KV wrapper; built here so this coordinator
+    // keeps its constructor.
+    const quote = conv.quoteId
+      ? await new QuoteStore().getOwned(conv.quoteId, userId)
+        .catch(() => undefined)
+      : undefined;
+    if (quote && !isOpenDraft(quote)) {
+      const billing = await new AnswerBilling(this.conversations, this.messages)
+        .run({ userId, conversation: conv, lang });
+      if (billing) return billing;
+    }
+    const cta = await this.messages.append({
+      conversationId: conv.id,
+      role: "assistant",
+      kind: "continue_cta",
+      content: t(lang, "wizardAnswer.cta.readyToSend"),
+      payload: {
+        toPhase: "send",
+        summary: t(lang, "wizardAnswer.cta.readyToSendSummary"),
+        ...(conv.quoteId ? { quoteId: conv.quoteId } : {}),
+        ...(conv.docKind ? { docKind: conv.docKind } : {}),
+      },
+    });
+    return { conversation: conv, newMessages: [cta] };
   }
 }

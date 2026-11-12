@@ -13,6 +13,19 @@ import {
   SYSTEM_PROMPT_TERMS,
 } from "@agents/domain/business/llm-prompts/mod.ts";
 import { isInQuotePhase } from "@agents/domain/business/derive-phase/mod.ts";
+// REQ-368 (demo-loop cycle 1, M30 + M32): pricing / billing asks + tool gate.
+import {
+  chatToolsFor,
+  isInvoiceRequest,
+  isOpenDraft,
+  jobTitle,
+  mayAdvanceQuote,
+  parsePricingQuestion,
+} from "@agents/domain/business/chat-routing/mod.ts";
+import { pricingReply } from "@agents/domain/business/chat-answers/mod.ts";
+import { AnswerBilling } from "@agents/domain/coordinators/answer-billing/mod.ts";
+import { SuggestPrices } from "@agents/domain/coordinators/suggest-prices/mod.ts";
+import { TransitionToTerms } from "@agents/domain/coordinators/transition-to-terms/mod.ts";
 import {
   derivePreview,
   deriveTitleFromFirstUserMessage,
@@ -733,6 +746,106 @@ export class HandleChatMessage {
       };
     }
 
+    // ---- REQ-368 (demo-loop cycle 1, M30 + M32): a pricing question and a
+    // billing ask are answered from the app's own data, before any chat
+    // model — the model refused the first ("I can't provide pricing
+    // advice…") and re-locked a signed quote for the second.
+    const boundQuote = conv.quoteId
+      ? await this.quotes.getOwned(conv.quoteId, input.userId)
+        .catch(() => undefined)
+      : undefined;
+    const answerBilling = () =>
+      new AnswerBilling(this.conversations, this.messages).run({
+        userId: input.userId,
+        conversation: conv,
+        lang: replyLang,
+      });
+    const finishEarly = async (
+      r: { conversation: AgentConversation; newMessages: AgentMessage[] },
+    ): Promise<HandleChatResult> => {
+      const first = history.length === 1 && history[0].id === userMsg.id;
+      const conversation = first
+        ? await this.conversations.update(conv.id, {
+          title: deriveTitleFromFirstUserMessage(input.content),
+        })
+        : r.conversation;
+      return { conversation, newMessages: [userMsg, ...r.newMessages] };
+    };
+    // M32: "John signed! Please send him the deposit invoice" → where the
+    // bill stands (signing already sent the deposit invoice).
+    if (
+      !llmResponse && boundQuote && typeof input.content === "string" &&
+      isInvoiceRequest(input.content)
+    ) {
+      const billed = await answerBilling();
+      if (billed) return await finishEarly(billed);
+    }
+    // M30: "how much do i charge for panel swap 200a" → the three tiers of
+    // the "help me price it" engine (SuggestPrices) and, for a new job in
+    // the quote phase, a draft at the Market price.
+    const pricingAsk = !llmResponse && !changeOrderAsk &&
+        typeof input.content === "string"
+      ? parsePricingQuestion(input.content)
+      : undefined;
+    const pricedSubject = pricingAsk?.job ||
+      boundQuote?.jobName?.trim() || boundQuote?.summary?.trim() || "";
+    if (pricingAsk && pricedSubject) {
+      const draftIt = isInQuotePhase(conv) && !conv.quoteId && !!pricingAsk.job;
+      const canUpdate = isInQuotePhase(conv) && !!boundQuote &&
+        isOpenDraft(boundQuote) && !boundQuote.lockedAt;
+      // Asking about the bound quote ("what should I charge for this?"):
+      // price its words — never its amounts, which SuggestPrices would read
+      // as a cost floor.
+      const raw = pricingAsk.job || !boundQuote ? input.content : [
+        input.content,
+        `The job: ${pricedSubject}`,
+        boundQuote.description ?? "",
+        ...(boundQuote.lineItems ?? []).map((l) => l.description),
+      ].filter((s) => s.trim()).join("\n");
+      const addr = await this.addresses.get(input.userId).catch(() => null);
+      const priced = await new SuggestPrices(this.llm).run({
+        userId: input.userId,
+        raw,
+        lang: replyLang,
+        ...(addr
+          ? {
+            address: {
+              city: addr.city,
+              state: addr.state,
+              postal: addr.postal,
+            },
+          }
+          : {}),
+      });
+      const market = priced.options.find((o) => o.tier === "market") ??
+        priced.options[1] ?? priced.options[0];
+      const text = pricingReply(replyLang, {
+        job: pricedSubject,
+        where: [addr?.city?.trim(), addr?.state?.trim()].filter(Boolean)
+          .join(", "),
+        options: priced.options,
+        basis: priced.basis,
+        ...(draftIt ? { draftedAt: market.label } : {}),
+        offerUpdate: canUpdate,
+      });
+      const title = jobTitle(pricingAsk.job);
+      llmResponse = draftIt
+        ? {
+          text,
+          action: {
+            type: "create_quote",
+            payload: {
+              summary: title,
+              lineItems: [{
+                description: title,
+                amountCents: market.priceCents,
+              }],
+            },
+          },
+        }
+        : { text };
+    }
+
     // ---- N3: action_card / continue_cta → synthetic text turns so the LLM
     // can answer status questions ("what's the total?") about a quote it
     // already drafted. Without this, the filter below dropped these kinds
@@ -762,7 +875,10 @@ export class HandleChatMessage {
             const total = typeof p.totalCents === "number"
               ? `$${(p.totalCents / 100).toFixed(2)}`
               : "?";
-            const summary = `[Quote ${p.status ?? "draft"}: ${
+            // REQ-368 (M32): an invoice card is the invoice — "[Quote sent:
+            // … $1,600]" read the deposit as the quote's price and state.
+            const card = p.actionType === "invoice" ? "Invoice" : "Quote";
+            const summary = `[${card} ${p.status ?? "draft"}: ${
               m.content || ""
             }\n${lines}\nTotal: ${total}]`;
             return { role, content: summary };
@@ -817,7 +933,31 @@ export class HandleChatMessage {
         messages: llmTurns,
         userId: input.userId,
         ...(businessContext ? { businessContext } : {}),
+        // REQ-368 (M32): only the tools this state allows — no lock / terms
+        // once the quote is past drafting, no create / lock in the terms phase.
+        tools: chatToolsFor(conv.currentPhase, boundQuote),
       });
+    }
+
+    // ---- REQ-368 (M32): lock_quote / request_terms_transition act only on
+    // an open draft in the quote phase. Pair 1's terms-phase model re-locked
+    // the SIGNED quote — an APPROVED card plus "Is this for a business or a
+    // person?", which ended in "All terms answered.". Past drafting the answer
+    // is where the bill stands; mid-terms, where the wizard is.
+    const advance = llmResponse.action?.type;
+    if (
+      (advance === "lock_quote" || advance === "request_terms_transition") &&
+      !mayAdvanceQuote(conv.currentPhase, boundQuote)
+    ) {
+      const answered = boundQuote && !isOpenDraft(boundQuote)
+        ? await answerBilling()
+        : await new TransitionToTerms(this.conversations, this.messages).run({
+          userId: input.userId,
+          conversationId: conv.id,
+          lang: replyLang,
+        });
+      if (answered) return await finishEarly(answered);
+      llmResponse = { text: t(replyLang, "chatCoordinator.noActionFallback") };
     }
 
     // REQ-238: a create_quote on a change-order request is the demo's bug

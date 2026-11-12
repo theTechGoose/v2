@@ -80,6 +80,11 @@ import {
 } from "../../shared/quote-flow/job-name.ts";
 import { formatClockTime } from "../../shared/quote-flow/locale-format.ts";
 import {
+  invoiceCardHref,
+  isInvoiceCardPayload,
+  isQuoteCardPayload,
+} from "../../shared/quote-flow/chat-invoice-card.ts"; // REQ-368
+import {
   type AssistantDraft,
   maxBulletSeq,
   parseAssistantDraft,
@@ -5848,6 +5853,8 @@ export default function AsstChat({
                       .find(
                         (x) =>
                           x.kind === "action_card" &&
+                          // REQ-368: an invoice card's line is not the quote's.
+                          isQuoteCardPayload(x.payload) &&
                           (isLockedOrIssued(
                             (x.payload as ActionCardPayload | undefined)
                               ?.status,
@@ -7949,6 +7956,68 @@ export default function AsstChat({
                           </div>
                         </div>
                         <div class="msg__time">{fmtTime(m.createdAt, lang)}</div>
+                      </div>
+                    </div>
+                  );
+                }
+
+                // REQ-368 (demo-loop cycle 1, M32): an invoice card — the
+                // assistant's answer to "send him the deposit invoice", and
+                // SendInvoice's sent card — links to that invoice. It never
+                // takes the quote card's buttons below: "Re-open" posted
+                // "Re-open the quote." against the signed quote.
+                if (
+                  m.kind === "action_card" && isInvoiceCardPayload(m.payload)
+                ) {
+                  const payload = (m.payload ?? {}) as ActionCardPayload;
+                  const href = invoiceCardHref(m.payload);
+                  return (
+                    <div key={m.id} class="msg">
+                      <div class="msg__avatar">
+                        <img src="/logo-monster.png" alt="" />
+                      </div>
+                      <div style="flex:1;min-width:0">
+                        <div class="action-card" data-cy="chat-invoice-card">
+                          <div class="action-card__head">
+                            <div class="action-card__icon">
+                              <I d={ICN.invoice} size={16} />
+                            </div>
+                            <div style="flex:1;min-width:0">
+                              <div class="action-card__title">{m.content}</div>
+                            </div>
+                            <span class="action-card__chip">
+                              {statusChipLabel(payload.status, lang)}
+                            </span>
+                          </div>
+                          <div class="action-card__body">
+                            {(payload.lineItems ?? []).map((li, i) => (
+                              <div key={i} class="action-card__row">
+                                <span>{li.description}</span>
+                                <strong>{fmtUSD(li.amountCents)}</strong>
+                              </div>
+                            ))}
+                          </div>
+                          {href
+                            ? (
+                              <div class="action-card__cta">
+                                <a
+                                  class="action-card__btn"
+                                  style="text-decoration:none"
+                                  href={href}
+                                  data-cy="chat-invoice-card-open"
+                                >
+                                  <I d={ICN.invoice} size={11} /> {tFor(
+                                    lang,
+                                    "asstChat.invoiceFlow.viewInvoice",
+                                  )}
+                                </a>
+                              </div>
+                            )
+                            : null}
+                        </div>
+                        <div class="msg__time">
+                          {fmtTime(m.createdAt, lang)}
+                        </div>
                       </div>
                     </div>
                   );
@@ -10801,6 +10870,7 @@ function latestSentQuoteCents(messages: Message[]): number {
     if (m.kind !== "action_card") continue;
     const p = m.payload as ActionCardPayload | undefined;
     if (!p) continue;
+    if (!isQuoteCardPayload(p)) continue; // REQ-368: an invoice card's total
     if (isLockedOrIssued(p.status) && typeof p.totalCents === "number") {
       return p.totalCents;
     }
