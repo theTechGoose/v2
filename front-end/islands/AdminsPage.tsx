@@ -12,7 +12,7 @@ import {
 import FieldHead from "../components/FieldHead.tsx";
 import { ApiError } from "../lib/api.ts";
 import { I, ICN } from "../lib/dash-icons.tsx";
-import { fmtCell } from "../lib/field.ts";
+import { fmtCell, PHONE_PLACEHOLDER } from "../lib/field.ts";
 import { langSignal, t, tn } from "../lib/i18n.ts";
 
 interface InviteForm {
@@ -152,7 +152,7 @@ export default function AdminsPage() {
                   required
                   inputMode="numeric"
                   autocomplete="off"
-                  placeholder="8435550201"
+                  placeholder={PHONE_PLACEHOLDER}
                   maxlength={10}
                   pattern="\d{10}"
                   value={form.phone}

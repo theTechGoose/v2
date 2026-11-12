@@ -3601,7 +3601,7 @@
   "field.common.loading": "Loading…",
   "field.common.error": "Something went wrong — try again.",
   "worker.cell": "Your cell",
-  "worker.cellPh": "(843) 555-0201",
+  "worker.cellPh": "(555) 123-4567",
   "field.subs.pickCustomer": "Search a customer…",
   "field.subs.manageCustomers": "Customers are managed on the Customers page.",
   "field.common.confirm": "Confirm",
