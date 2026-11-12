@@ -47,10 +47,10 @@ describe("REQ-529 (demo cycle 3, p8-pair2-c / p8-pair8-b) the worker card's Cove
     expect(en["field.wk.covers"]).toBe("Covers");
     expect(es["field.wk.covers"]).toBe("Cubre");
     expect(en["field.wk.coversNone"]).toBe(
-      "no zone yet — assign one in Assignments",
+      "no area for repeat visits yet — assign one in Assignments",
     );
     expect(es["field.wk.coversNone"]).toBe(
-      "ninguna zona aún — asígnale una en Asignaciones",
+      "ningún área de visitas repetidas aún — asígnale una en Asignaciones",
     );
     for (const v of [en["field.wk.coversNone"], es["field.wk.coversNone"]]) {
       expect(v[0]).toBe(v[0].toLowerCase());
