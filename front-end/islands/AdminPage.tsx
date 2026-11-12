@@ -29,6 +29,7 @@ import { type FeatureKey, FEATURES } from "../../shared/features.ts";
 import {
   type AdminLock,
   displayName,
+  impersonateLabel,
   lockFor,
   refreshWhileVisible,
 } from "../lib/admin-console.ts";
@@ -401,9 +402,7 @@ export default function AdminPage({ selfId }: { selfId?: string }) {
               <option value="">{t("adminPage.selectUser")}</option>
               {rows.map((u) => (
                 <option key={u.id} value={u.id}>
-                  {(u.businessName || displayName(u.name, noName)) +
-                    " · " +
-                    fmtPhone(u.phoneNumber)}
+                  {impersonateLabel(u, noName)}
                 </option>
               ))}
             </select>
