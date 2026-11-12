@@ -3537,6 +3537,7 @@
   "demoMode.endNo": "Keep going",
   "demoMode.endedBy": "{name} ended the demo",
   "demoMode.endedByYou": "You ended the demo",
+  "demoMode.expired": "The demo expired after two hours",
   "demoMode.dismiss": "Dismiss",
   "demoMode.connectingTo": "Connecting to {name}'s screen…",
   "nav.workOrders": "Work orders",

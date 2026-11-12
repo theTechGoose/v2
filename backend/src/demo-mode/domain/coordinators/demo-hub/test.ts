@@ -726,3 +726,80 @@ Deno.test("REQ-235 an end by a presenter names them to every peer, across hubs; 
     await resetKv();
   }
 });
+
+// REQ-296 — demo-loop cycle 1, issue nc-3: the two-hour expiry was a silent KV `expireIn`; now the
+// hub arms a clock from the demo's createdAt and, at expiry, ends it for everyone, everywhere
+Deno.test("REQ-296 a demo that reaches its TTL ends for everyone across hubs: both hear `ended … expired` and are closed, the store says it is over; a demo already ended arms no clock", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  Deno.env.set("DEMO_SESSION_TTL_MS", "1500");
+  await resetKv();
+  const { DemoSessionStore } = await import(
+    "@demo-mode/domain/data/demo-session-store/mod.ts"
+  );
+  const store = new DemoSessionStore();
+  const a = DemoHub.isolated("a");
+  const b = DemoHub.isolated("b");
+  const closable = (role: Role, pid?: string) => {
+    const p = { ...stampedPeer(role, pid), closed: 0, close() {} };
+    p.close = () => void p.closed++;
+    return p;
+  };
+  const hans = closable("presenter", "hans");
+  const viewer = closable("viewer");
+  const hans2 = closable("presenter", "hans");
+  try {
+    const demo = await store.create("ana", {
+      userId: "hans",
+      name: "Hans",
+      color: "#2f6d29",
+    });
+    await a.join(demo.id, hans);
+    await b.join(demo.id, viewer);
+    await until(
+      "the presenter hears the customer arrive",
+      () => hans.inbox.some((m) => m.t === "peer" && m.online),
+    );
+    const expired: ServerMessage = {
+      t: "ended",
+      by: "presenter",
+      reason: "expired",
+    };
+    await until(
+      "the presenter hears the expiry",
+      () => hans.inbox.some((m) => m.t === "ended"),
+      4000,
+    );
+    await until(
+      "the customer in the other hub hears the expiry",
+      () => viewer.inbox.some((m) => m.t === "ended"),
+      4000,
+    );
+    assertEquals(hans.inbox.find((m) => m.t === "ended"), expired);
+    assertEquals(viewer.inbox.find((m) => m.t === "ended"), expired);
+    assert(hans.closed >= 1, "the presenter's socket is closed");
+    assert(viewer.closed >= 1, "the customer's socket is closed");
+    const after = await store.get(demo.id);
+    assert(
+      after === null || typeof after.endedAt === "string",
+      "the demo is over in the store",
+    );
+    assertEquals(await store.activeFor("ana"), null, "active says nothing");
+    assertEquals(await store.presentingBy("hans"), null);
+
+    // a demo ended before its time arms nothing: the hub closes without a clock to wait on
+    const demo2 = await store.create("ana", {
+      userId: "hans",
+      name: "Hans",
+      color: "#2f6d29",
+    });
+    await store.end(demo2.id);
+    await a.join(demo2.id, hans2);
+    await sleep(50);
+    assertEquals(hans2.inbox.filter((m) => m.t === "ended"), []);
+  } finally {
+    Deno.env.delete("DEMO_SESSION_TTL_MS");
+    await a.close();
+    await b.close();
+    await resetKv();
+  }
+});

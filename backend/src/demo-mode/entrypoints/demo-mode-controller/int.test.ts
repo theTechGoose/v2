@@ -305,14 +305,25 @@ Deno.test("REQ-227 a super admin may not open a demo on their own account: 400, 
   await withServer(async (call) => {
     const hans = await signIn(call, "+15125553011");
     assertEquals(
-      (await call("POST", "/api/admin/bootstrap", { phoneNumber: "+15125553011" })).status,
+      (await call("POST", "/api/admin/bootstrap", {
+        phoneNumber: "+15125553011",
+      })).status,
       200,
     );
     const self = await call("POST", "/api/demo-mode/sessions", {
       userId: hans.body.userId,
     }, H(hans.body.sessionId));
-    assertEquals(self.status, 400, `a demo on yourself is refused (${JSON.stringify(self.body)})`);
-    const active = await call("GET", "/api/demo-mode/active", undefined, H(hans.body.sessionId));
+    assertEquals(
+      self.status,
+      400,
+      `a demo on yourself is refused (${JSON.stringify(self.body)})`,
+    );
+    const active = await call(
+      "GET",
+      "/api/demo-mode/active",
+      undefined,
+      H(hans.body.sessionId),
+    );
     assertEquals(active.body.session, null, "no demo was opened");
   });
 });
@@ -1413,4 +1424,59 @@ Deno.test("REQ-235 who ended it rides `ended`: a colleague's HTTP End, a present
     });
     await ph4.closed;
   });
+});
+
+// REQ-296 — demo-loop cycle 1, issue nc-3: the two-hour expiry was silent (a KV `expireIn` and
+// nothing else); over the composed router's socket both sides now hear `ended … expired`
+Deno.test("REQ-296 a demo that reaches its TTL: the presenter's and the customer's sockets hear ended with reason expired and close; active is empty for both", async () => {
+  Deno.env.set("DEMO_SESSION_TTL_MS", "1500");
+  try {
+    await withServer(async (call) => {
+      const ana = await signIn(call, "+15125553041");
+      const hans = await signIn(call, "+15125553042");
+      await call("POST", "/api/admin/bootstrap", {
+        phoneNumber: "+15125553042",
+      });
+      const made = await call("POST", "/api/demo-mode/sessions", {
+        userId: ana.body.userId,
+      }, H(hans.body.sessionId));
+      assertEquals(made.status, 201);
+      const presenter = open(made.body.id, hans.body.sessionId);
+      await presenter.next("welcome");
+      const customer = open(made.body.id, ana.body.sessionId);
+      await customer.next("welcome");
+      await customer.next("the presenter is here");
+      await presenter.next("the customer arrived");
+      const expired: ServerMessage = {
+        t: "ended",
+        by: "presenter",
+        reason: "expired",
+      };
+      assertEquals(await presenter.next("the expiry", 4000), expired);
+      assertEquals(await customer.next("the expiry", 4000), expired);
+      await presenter.closed;
+      await customer.closed;
+      const none = { role: null, session: null, targetPath: null, pid: null };
+      assertEquals(
+        (await call(
+          "GET",
+          "/api/demo-mode/active",
+          undefined,
+          H(hans.body.sessionId),
+        )).body,
+        none,
+      );
+      assertEquals(
+        (await call(
+          "GET",
+          "/api/demo-mode/active",
+          undefined,
+          H(ana.body.sessionId),
+        )).body,
+        none,
+      );
+    });
+  } finally {
+    Deno.env.delete("DEMO_SESSION_TTL_MS");
+  }
 });

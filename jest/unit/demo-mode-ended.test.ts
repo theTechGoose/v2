@@ -270,7 +270,7 @@ describe("REQ-235 the islands are wired", () => {
   test("the transport hands onEnded who ended it", () => {
     const tr = read("front-end/lib/demo-mode/transport.ts");
     expect(tr).toMatch(
-      /onEnded\(by: Role, reason\?: "declined", pid\?: string\): void/,
+      /onEnded\(by: Role, reason\?: "declined" \| "expired", pid\?: string\): void/,
     );
     expect(tr).toMatch(/o\.onEnded\(m\.by, m\.reason, m\.pid\)/);
   });

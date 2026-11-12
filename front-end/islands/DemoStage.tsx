@@ -466,7 +466,7 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
             break;
         }
       },
-      onEnded: (by, _reason, pid) => {
+      onEnded: (by, reason, pid) => {
         setEnded(true);
         glide.hide();
         setCmds({});
@@ -474,7 +474,7 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
         const d = demoRef.current;
         const notice: EndedNotice = endedHere.current
           ? { by: "you" }
-          : whoEnded({ by, pid }, {
+          : whoEnded({ by, reason, pid }, {
             role: "presenter",
             pid: d?.pid,
             presenters: d?.presenters ?? [],
