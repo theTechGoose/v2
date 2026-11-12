@@ -257,3 +257,76 @@ export function quoteLedger(
     workOrders: woRows,
   };
 }
+
+/* ---------------- REQ-233: never bill past the agreement ---------------- */
+
+export type InvoiceCapDecision =
+  | { ok: true; remainingCents: number }
+  | {
+    ok: false;
+    reason: "exceeds_agreement";
+    agreementTotalCents: number;
+    invoicedCents: number;
+    remainingCents: number;
+    requestedCents: number;
+  };
+
+/**
+ * REQ-233 (demo B2): may a NEW invoice on this quote bill `requestedCents`?
+ * Only up to the ledger's remaining-to-invoice (quote total + approved change
+ * orders − every non-void invoice on the quote). Tax is not part of the
+ * agreed price, so it is left out of the request (`requestedTaxCents`) and of
+ * each billed invoice (`taxCents`). A quote with no agreed price is not capped.
+ */
+export function invoiceCapDecision(
+  quote: LedgerQuote,
+  invoices: readonly (LedgerInvoice & { taxCents?: number })[],
+  changeOrders: readonly LedgerChangeOrder[],
+  requestedCents: number,
+  requestedTaxCents = 0,
+): InvoiceCapDecision {
+  const pretax = invoices.map((i) => ({
+    ...i,
+    amount: Math.max(0, (i.amount ?? 0) - Math.max(0, i.taxCents ?? 0)),
+  }));
+  const l = quoteLedger(quote, pretax, changeOrders);
+  const requested = Math.max(
+    0,
+    Math.round(requestedCents) - Math.max(0, Math.round(requestedTaxCents)),
+  );
+  if (l.agreementTotalCents <= 0 || requested <= l.remainingToInvoiceCents) {
+    return { ok: true, remainingCents: l.remainingToInvoiceCents };
+  }
+  return {
+    ok: false,
+    reason: "exceeds_agreement",
+    agreementTotalCents: l.agreementTotalCents,
+    invoicedCents: l.invoicedCents,
+    remainingCents: l.remainingToInvoiceCents,
+    requestedCents: requested,
+  };
+}
+
+/**
+ * REQ-233: what the assistant's Quote ⇄ Invoice swap may bill for a quote
+ * whose total is `totalCents` and whose ledger still has `remainingCents`
+ * unbilled — the remainder, never more than the total; null when the
+ * agreement is already fully billed (no new invoice at all).
+ */
+export function swapInvoiceCents(
+  totalCents: number,
+  remainingCents: number,
+): number | null {
+  const amount = Math.min(
+    Math.max(0, Math.round(totalCents)),
+    Math.max(0, Math.round(remainingCents)),
+  );
+  return amount > 0 ? amount : null;
+}
+
+/** REQ-233: is this thrown API error the agreement cap's 409? */
+export function isExceedsAgreement(err: unknown): boolean {
+  const e = err as { status?: unknown; body?: unknown } | null;
+  const body = e?.body as { reason?: unknown } | null | undefined;
+  return e?.status === 409 && body?.reason === "exceeds_agreement";
+}

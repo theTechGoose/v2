@@ -44,6 +44,7 @@ import {
   summarizeDispatch,
 } from "../../shared/quote-flow/send-result.ts";
 import { docNumberOf } from "../../shared/documents/numbering.ts";
+import { isExceedsAgreement } from "../../shared/documents/ledger.ts";
 import {
   type DocState,
   isInvoiceLocked,
@@ -3293,7 +3294,9 @@ function NewInvoiceModal(
       globalThis.location.assign(back.toString());
     } catch (err) {
       setError(
-        err instanceof Error
+        isExceedsAgreement(err) // REQ-233: the agreement cap's 409
+          ? tFor(lang, "invoicesPage.new.errExceedsAgreement")
+          : err instanceof Error
           ? err.message
           : tFor(lang, "invoicesPage.new.errCreate"),
       );

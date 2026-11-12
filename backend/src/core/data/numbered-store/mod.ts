@@ -78,6 +78,22 @@ export interface CreateNumberedOpts {
 }
 
 /**
+ * REQ-200/233: has a create with this requestId already landed? A retry of a
+ * create that went through must get its document back, so guards that would
+ * refuse a NEW document (the REQ-233 agreement cap) skip a replay.
+ */
+export async function hasCreatedFor(
+  userId: string,
+  kind: DocKind,
+  requestId: string | undefined,
+): Promise<boolean> {
+  if (!requestId) return false;
+  const kv = await getKv();
+  const seen = await kv.get<string>([IDEM_PREFIX, userId, kind, requestId]);
+  return Boolean(seen.value);
+}
+
+/**
  * Take the next number of `kind` for `userId` and store `record` under
  * [prefix, id] + [indexPrefix, userId, id] in the same transaction. With a
  * requestId, the create is idempotent per (user, kind, requestId).

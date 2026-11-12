@@ -52,6 +52,8 @@ import {
   parseExportStatus,
 } from "#documents/exports.ts"; // REQ-208
 import { appUrl } from "@users/domain/business/app-url/mod.ts";
+import { invoiceCapDecision } from "#documents/ledger.ts"; // REQ-233
+import { hasCreatedFor } from "@core/data/numbered-store/mod.ts";
 
 /** number order for an export (INV-001 before INV-002; unnumbered rows by age) */
 const bySeq = (
@@ -253,6 +255,12 @@ export class InvoiceController {
   async create(@Context() ctx: ExecutionContext, @Body() body: unknown) {
     const user = await requireUser(ctx, this.sessions, this.users);
     const requestId = requestIdOf(ctx, body); // REQ-200
+    // REQ-233: the over-billing acknowledgement is a request flag, never a field.
+    const override = (body as { override?: unknown } | null)?.override ===
+      true;
+    if (body && typeof body === "object") {
+      delete (body as { override?: unknown }).override;
+    }
     const dto = parseCreateInvoice(body);
 
     // Derive-from-quote (roadmap p.6): the invoice carries all the quote's
@@ -269,6 +277,30 @@ export class InvoiceController {
           (s, li) => s + (li.price ?? 0) * (li.quantity ?? 1),
           0,
         ) || undefined);
+      // REQ-233 (demo B2): one billing source per agreement. A new invoice on
+      // a quote bills at most what the ledger still has unbilled (quote total
+      // + approved change orders − every non-void invoice on it), so signing
+      // a 50/50 quote and then "Send as Invoice" can never bill it twice.
+      // Extra work billed on purpose says so with `override: true`; a REQ-200
+      // retry of a create that already landed gets its invoice back.
+      if (
+        !override && !(await hasCreatedFor(user.id, "invoice", requestId))
+      ) {
+        const [siblings, cos] = await Promise.all([
+          this.store.listByUser(user.id).then((all) =>
+            all.filter((i) => i.quoteId === q.id)
+          ),
+          this.changeOrders.listByQuote(user.id, q.id),
+        ]);
+        const cap = invoiceCapDecision(
+          q,
+          siblings,
+          cos,
+          dto.amount ?? 0,
+          dto.taxCents ?? 0,
+        );
+        if (!cap.ok) return ctx.json(cap, 409);
+      }
     }
     // Every invoice gets a due date; +30 days is the trade default.
     if (!dto.dueDate) {

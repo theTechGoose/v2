@@ -16,6 +16,10 @@ import {
 import { filesClient } from "../clients/files.ts";
 import { type QuoteCard, quotesClient } from "../clients/quotes.ts";
 import { billedTotalCents } from "../../shared/quote-flow/milestone-reconcile.ts";
+import {
+  isExceedsAgreement,
+  swapInvoiceCents,
+} from "../../shared/documents/ledger.ts";
 import { isTbdTermValue } from "../../shared/quote-flow/terms-i18n.ts";
 import { clientsClient } from "../clients/clients.ts";
 import { readCached, refreshDash, subscribeDash } from "../lib/dash-cache.ts";
@@ -3609,7 +3613,11 @@ export default function AsstChat({
       });
     } catch (err) {
       setError(
-        err instanceof Error ? err.message : "couldn't create the invoice",
+        isExceedsAgreement(err)
+          ? tFor(lang, "asstChat.invoiceFlow.alreadyBilled")
+          : err instanceof Error
+          ? err.message
+          : "couldn't create the invoice",
       );
     } finally {
       setSending(false);
@@ -3645,6 +3653,28 @@ export default function AsstChat({
             terms?: Array<{ stepId: string; value: string }>;
           })
           | null;
+        // REQ-233 (demo B2): bill only what the agreement still has
+        // unbilled — a signed 50/50 quote already carries its deposit and
+        // balance invoices, so the swap must never mint a full-total third.
+        let amount = totalCents;
+        if (q?.id) {
+          const ledger = await api
+            .get<{ remainingToInvoiceCents?: number }>(
+              `/quotes/${q.id}/ledger`,
+            )
+            .catch(() => null);
+          if (typeof ledger?.remainingToInvoiceCents === "number") {
+            const left = swapInvoiceCents(
+              totalCents,
+              ledger.remainingToInvoiceCents,
+            );
+            if (left === null) {
+              setError(tFor(lang, "asstChat.invoiceFlow.alreadyBilled"));
+              return;
+            }
+            amount = left;
+          }
+        }
         const inv = await api.post<{ id?: string }>("/invoices", {
           ...(customer?.id ? { customerId: customer.id } : {}),
           // REQ-023: the swapped invoice is derived from the reviewed quote.
@@ -3652,7 +3682,7 @@ export default function AsstChat({
           ...(q?.lineItems && q.lineItems.length > 0
             ? { lineItems: q.lineItems }
             : {}),
-          amount: totalCents,
+          amount,
           // REQ-024: due date from the wizard — completion date + payment
           // terms (Due Now → that day; payment upon completion → +15;
           // anything else → +30). Never "today" by default.
@@ -3710,7 +3740,11 @@ export default function AsstChat({
       setSwapInvoiceSent(invId);
     } catch (err) {
       setError(
-        err instanceof Error ? err.message : "couldn't send the invoice",
+        isExceedsAgreement(err)
+          ? tFor(lang, "asstChat.invoiceFlow.alreadyBilled")
+          : err instanceof Error
+          ? err.message
+          : "couldn't send the invoice",
       );
     } finally {
       setSending(false);
@@ -5768,7 +5802,9 @@ export default function AsstChat({
                                 ? "true"
                                 : "false"}
                               onClick={() => setReviewDocType("invoice")}
-                              disabled={sending}
+                              // REQ-233 (B2): signing already billed the
+                              // agreement (deposit + balance) — no swap.
+                              disabled={sending || quoteAccepted}
                             >
                               {tFor(
                                 previewLang,
@@ -6798,10 +6834,10 @@ export default function AsstChat({
                                       setSendDialogOpen(true);
                                     }}
                                     // UX-02: an accepted deal offers no live
-                                    // re-send of the same agreement.
-                                    disabled={sending ||
-                                      (quoteAccepted &&
-                                        reviewDocType !== "invoice")}
+                                    // re-send of the same agreement — and
+                                    // (REQ-233, B2) no invoice swap either:
+                                    // signing already billed it.
+                                    disabled={sending || quoteAccepted}
                                   >
                                     <I d={ICN.send} size={14} sw={2.4} />
                                     {sending
