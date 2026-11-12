@@ -62,6 +62,16 @@ export function setLang(lang: Lang): void {
   persistLang(lang);
 }
 
+/** Plural helper in an explicit language (SSR / known-lang call sites). */
+export function tnFor(
+  lang: Lang,
+  key: string,
+  n: number,
+  vars?: Vars,
+): string {
+  return tFor(lang, `${key}.${n === 1 ? "one" : "other"}`, { n, ...vars });
+}
+
 /** Plural helper: picks `<key>.one` / `<key>.other` by count. */
 export function tn(key: string, n: number, vars?: Vars): string {
   return t(`${key}.${n === 1 ? "one" : "other"}`, { n, ...vars });

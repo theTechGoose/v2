@@ -334,13 +334,13 @@ describe("REQ-035 NW-55 agreement presentation copy", () => {
   // p63: "Cancelation (either side can cancel with 7-day notice; work
   // completed will be paid for)" — the clause said only the first half.
   it("REQ-035 the termination clause ends with the paid-for-work sentence — web and PDF twins, both dictionaries", () => {
-    expect(en["quoteDoc.clause.termination.body"]).toMatch(/Work completed before cancelation will be paid for\.$/);
+    expect(en["quoteDoc.clause.termination.body"]).toMatch(/Work completed before cancellation will be paid for\.$/);
     expect(es["quoteDoc.clause.termination.body"]).toMatch(/El trabajo realizado antes de la cancelación se pagará\.$/);
-    expect(en["renderQuotePdf.clause.termination.body"]).toMatch(/Work completed before cancelation will be paid for\.$/);
+    expect(en["renderQuotePdf.clause.termination.body"]).toMatch(/Work completed before cancellation will be paid for\.$/);
     expect(es["renderQuotePdf.clause.termination.body"]).toMatch(/El trabajo realizado antes de la cancelación se pagará\.$/);
   });
   it("REQ-035 the Cancelation term row and the send dialog copy exist in both dictionaries", () => {
-    expect(en["quoteDoc.termLabel.cancellation"]).toBe("Cancelation");
+    expect(en["quoteDoc.termLabel.cancellation"]).toBe("Cancellation");
     expect(es["quoteDoc.termLabel.cancellation"]).toBe("Cancelación");
     expect(en["quoteDoc.termValue.cancellation"]).toBe("7 days' notice");
     expect(es["quoteDoc.termValue.cancellation"]).toBe("Aviso de 7 días");
