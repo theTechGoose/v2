@@ -443,6 +443,35 @@ export function foldZeroLines<T extends PricedLine>(
     );
 }
 
+/**
+ * REQ-666 (demo-loop cycle 5, m48) — one price the contractor typed for
+ * several pieces of work, split by the model on its own ("reparar puerta … y
+ * cambiar llave del fregadero, $350" → $175 + $175), kept as ONE line: the
+ * largest line (the first on a tie) carries the whole price and names the
+ * rest — "Reparación de puerta de cocina (incluye cambio de llave del
+ * fregadero) $350". Same total, same work named, no per-line price nobody
+ * gave. Applies only when exactly one amount was typed, every line is priced
+ * and the lines add up to exactly that amount; anything else comes back
+ * undefined.
+ */
+export function keepOnePrice<T extends PricedLine>(
+  lines: readonly T[],
+  userText: string,
+  lang: Lang,
+): T[] | undefined {
+  if (lines.length < 2 || lines.some((l) => l.amountCents <= 0)) {
+    return undefined;
+  }
+  const typed = [...new Set(moneyAmounts(userText).map((a) => a.cents))];
+  const total = sumOf(lines);
+  if (typed.length !== 1 || typed[0] !== total) return undefined;
+  const host = lines.reduce((a, b) => b.amountCents > a.amountCents ? b : a);
+  return foldZeroLines(
+    lines.map((l) => ({ ...l, amountCents: l === host ? total : 0 })),
+    lang,
+  );
+}
+
 export interface RevisionJump {
   fromCents: number;
   toCents: number;
@@ -734,6 +763,16 @@ export async function settleCreateQuote<
     if (folded.length !== all.length) {
       return { kind: "save", payload: { ...payload, lineItems: folded } };
     }
+  }
+  // REQ-666 (m48): on a new quote, one typed price for several jobs stays
+  // one line — never spread over the jobs by the model ($350 → $175 + $175).
+  // A revision of the draft on file spreads a stated total over its lines
+  // (REQ-445), so it is left alone.
+  const single = sameJob
+    ? undefined
+    : keepOnePrice(all, input.userText, input.lang);
+  if (single) {
+    return { kind: "save", payload: { ...payload, lineItems: single } };
   }
   if (!lines) return { kind: "keep" };
   return { kind: "save", payload: { ...payload, lineItems: lines } };

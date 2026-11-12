@@ -1339,7 +1339,12 @@ Deno.test("REQ-267 handle-chat-message integration: a correction that re-drafts 
   assertEquals(kinds, ["user:text", "assistant:text", "assistant:action_card"]);
   const reply = second.newMessages[1].content;
   assert(reply.includes("Updated the quote"), reply);
-  assert(reply.includes("removed Paint (materials)"), reply);
+  // REQ-666 (m48): the one typed $2,100 drafted as two lines is kept as ONE
+  // line naming both, so that is the line the correction replaces.
+  assert(
+    reply.includes("removed Interior walls — 2 coats (incl. paint (materials))"),
+    reply,
+  );
   assert(reply.includes("added Paint supplied by Castro Painting"), reply);
   assert(reply.includes("Total $2,100 → $1,800"), reply);
   assert(reply.toLowerCase().includes("deposit"), reply);

@@ -708,3 +708,119 @@ Deno.test("REQ-578 m34 settleCreateQuote: with no price from the contractor a $0
   });
   assertEquals(out.kind, "keep");
 });
+
+// ---------------------------------------------------------------------------
+// REQ-666 (demo-loop cycle 5, m48) — one typed price is never split evenly
+// ---------------------------------------------------------------------------
+
+/** Pair 6's message, as the contractor typed it (fleet-5 stdout:230). */
+const M48_TEXT =
+  "Cotización para Carmen Núñez: reparar puerta de la cocina y cambiar llave del fregadero, $350";
+/** The demo model's answer: the one $350 spread 50/50 (fleet-5 stdout:231). */
+const M48_LINES: PricedLine[] = [
+  { description: "Reparación de puerta de cocina", amountCents: 17_500 },
+  { description: "Cambio de llave del fregadero", amountCents: 17_500 },
+];
+
+Deno.test("REQ-666 m48 statedTotalCents: the demo's Carmen sentence is not read as a stated total — the fix must not depend on it", () => {
+  assertEquals(statedTotalCents(M48_TEXT), undefined);
+  assertEquals(moneyAmounts(M48_TEXT).map((a) => a.cents), [35_000]);
+});
+
+Deno.test("REQ-666 m48 settleCreateQuote: the demo's one typed $350 split $175 + $175 is saved as ONE $350 line naming both jobs", async () => {
+  const out = await settleCreateQuote({
+    payload: {
+      summary: "Reparación de puerta — Carmen Núñez",
+      lineItems: M48_LINES,
+    },
+    userText: M48_TEXT,
+    lang: "es",
+    reask: () => Promise.resolve(undefined),
+  });
+  assertEquals(out.kind, "save");
+  if (out.kind !== "save") return;
+  assertEquals(out.payload.lineItems, [{
+    description:
+      "Reparación de puerta de cocina (incluye cambio de llave del fregadero)",
+    amountCents: 35_000,
+  }]);
+  assertEquals(out.payload.summary, "Reparación de puerta — Carmen Núñez");
+});
+
+Deno.test("REQ-666 m48 settleCreateQuote: an uneven split of a single typed '$350 total' is folded too — into the largest line (English)", async () => {
+  const out = await settleCreateQuote({
+    payload: {
+      summary: "Door repair",
+      lineItems: [
+        { description: "Install faucet", amountCents: 10_000 },
+        { description: "Repair kitchen door", amountCents: 25_000 },
+      ],
+    },
+    userText: "Fix the kitchen door and swap the faucet, $350 total",
+    statedCents: 35_000,
+    lang: "en",
+    reask: () => Promise.resolve(undefined),
+  });
+  assertEquals(out.kind, "save");
+  if (out.kind !== "save") return;
+  assertEquals(out.payload.lineItems, [{
+    description: "Repair kitchen door (incl. install faucet)",
+    amountCents: 35_000,
+  }]);
+});
+
+Deno.test("REQ-666 m48 settleCreateQuote: prices the contractor typed per line, a model estimate with no typed price, and a revision of the draft are kept as the model wrote them", async () => {
+  // per-line prices typed
+  const itemized = await settleCreateQuote({
+    payload: {
+      summary: "Plumbing repair — Delgado",
+      lineItems: [
+        { description: "Leak fix under sink", amountCents: 25_000 },
+        { description: "New shutoff valve", amountCents: 6_500 },
+      ],
+    },
+    userText:
+      "qte for delgado - plumbg leak fix undr sink 250 + new shutoff valve 65",
+    lang: "en",
+    reask: () => Promise.resolve(undefined),
+  });
+  assertEquals(itemized.kind, "keep");
+  // no price typed: the model's own estimate per line
+  const estimated = await settleCreateQuote({
+    payload: { summary: "Door + faucet", lineItems: M48_LINES },
+    userText: "reparar puerta de la cocina y cambiar llave del fregadero",
+    lang: "es",
+    reask: () => Promise.resolve(undefined),
+  });
+  assertEquals(estimated.kind, "keep");
+  // a typed amount the lines do not add up to (one line's price)
+  const oneLine = await settleCreateQuote({
+    payload: {
+      summary: "Door + faucet",
+      lineItems: [
+        { description: "Repair kitchen door", amountCents: 35_000 },
+        { description: "Swap faucet", amountCents: 15_000 },
+      ],
+    },
+    userText: "Fix the kitchen door $350 and swap the faucet",
+    lang: "en",
+    reask: () => Promise.resolve(undefined),
+  });
+  assertEquals(oneLine.kind, "keep");
+  // a revision of the draft on file, "make it $350": spread over its lines
+  const revision = await settleCreateQuote({
+    payload: { summary: "Door + faucet", lineItems: M48_LINES },
+    userText: "make it $350",
+    statedCents: 35_000,
+    draft: {
+      summary: "Door + faucet",
+      lineItems: [
+        { description: "Reparación de puerta de cocina", price: 20_000 },
+        { description: "Cambio de llave del fregadero", price: 20_000 },
+      ],
+    },
+    lang: "es",
+    reask: () => Promise.resolve(undefined),
+  });
+  assertEquals(revision.kind, "keep");
+});

@@ -2357,10 +2357,20 @@ export class HandleChatMessage {
         });
         if (settled.kind === "ask") llmResponse = { text: settled.text };
         if (settled.kind === "save") {
-          llmResponse = {
-            text: "",
-            action: { type: "create_quote", payload: settled.payload },
+          const action = {
+            type: "create_quote" as const,
+            payload: settled.payload,
           };
+          // REQ-666 (m48): the settled lines replace the model's create_quote
+          // only — the other calls it made beside it (REQ-585's job details,
+          // "Ella habla español") still run with the draft.
+          const first = llmResponse.actions?.findIndex((a) =>
+            a.type === "create_quote"
+          ) ?? -1;
+          const actions = first >= 0
+            ? llmResponse.actions!.map((a, i) => i === first ? action : a)
+            : undefined;
+          llmResponse = { text: "", action, ...(actions ? { actions } : {}) };
         }
       }
     }
