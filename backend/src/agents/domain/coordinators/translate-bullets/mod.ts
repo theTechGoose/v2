@@ -61,19 +61,49 @@ export class TranslateBullets {
     const target = input.to === "es"
       ? "neutral Latin-American Spanish"
       : "English";
+    // REQ-410 (demo-loop cycle 2, M24): a translation keeps every clause.
+    // The old "keep each concise (3–8 words)" budget belongs to generation,
+    // not translation — it cut "(faucets supplied by client)" out of the
+    // customer's Spanish agreement.
     const sys =
-      `You translate short construction scope-of-work bullet lines into ${target}. ` +
-      `Preserve meaning and trade terminology; keep each concise (3–8 words), third-person, no trailing period. ` +
+      `You translate construction scope-of-work bullet lines into ${target}. ` +
+      `Translate faithfully, clause by clause: never shorten, never summarize, and never drop parentheticals, ` +
+      `exclusions ("not included", "excluded"), quantities, sizes, or who-supplies-what ("supplied by client/owner"). ` +
+      `Keep trade terminology, third-person, no trailing period. ` +
       `Return JSON ONLY: {"texts":["...","..."]} — the SAME number of lines, in the SAME order. ` +
-      `If a line is already in ${target}, return it unchanged.` +
+      `If a line is already entirely in ${target}, return it unchanged; a line mixing languages is translated in full.` +
       (input.to === "es" ? ` ${ES_TRADE_GLOSSARY}` : "");
 
+    const first = await this.ask(sys, texts, input.userId);
+    if (first === undefined) return { texts, translated: false };
+    const dropped = droppedLines(texts, first);
+    if (dropped.length === 0) return { texts: first, translated: true };
+    // REQ-410: one retry that names the lines that lost a clause; a second
+    // short reply is not trusted — the base text shows with the UX-06 notice.
+    const retrySys = sys +
+      ` Your previous reply dropped content from line(s) ${
+        dropped.map((i) => i + 1).join(", ")
+      } — translate EVERY clause, including the parenthetical / exclusion.`;
+    const second = await this.ask(retrySys, texts, input.userId);
+    if (second === undefined || droppedLines(texts, second).length > 0) {
+      return { texts, translated: false };
+    }
+    return { texts: second, translated: true };
+  }
+
+  /** One model round-trip; `undefined` when the reply is unusable (call
+   *  failed, wrong line count, or an added money amount). */
+  private async ask(
+    sys: string,
+    texts: string[],
+    userId: string,
+  ): Promise<string[] | undefined> {
     let raw: string;
     try {
       const res = await this.llm.respond({
         systemPrompt: sys,
         messages: [{ role: "user", content: JSON.stringify({ texts }) }],
-        userId: input.userId,
+        userId,
         // REQ-264 (M15) / REQ-260 (M24): JSON mode — without it the OpenAI
         // client attaches the chat tools and a tool call silently returns
         // the originals (no text).
@@ -82,7 +112,7 @@ export class TranslateBullets {
       raw = res.text ?? "";
     } catch (err) {
       console.error("[translate-bullets] llm call failed:", err);
-      return { texts, translated: false };
+      return undefined;
     }
 
     const parsed = tryParseJson(raw);
@@ -93,16 +123,43 @@ export class TranslateBullets {
       : [];
     // Length mismatch ⇒ the model dropped/merged lines; fall back to the
     // originals rather than risk misaligned bullets.
-    if (out.length !== texts.length) return { texts, translated: false };
+    if (out.length !== texts.length) return undefined;
     // REQ-261 (M26): a translation that ADDS a money amount the source line
     // did not have is the model pulling a private cost into customer copy.
     const addsMoney = out.some((o, i) =>
       mentionsMoney(o) && !mentionsMoney(texts[i])
     );
-    return addsMoney
-      ? { texts, translated: false }
-      : { texts: out, translated: true };
+    return addsMoney ? undefined : out;
   }
+}
+
+/**
+ * REQ-410 (M24): markers of a contract exclusion / who-supplies-what clause,
+ * in either language. A source line carrying one is load-bearing: its
+ * translation must not come back much shorter or without its parenthetical.
+ */
+const EXCLUSION_MARKER =
+  /\(|supplied by|provided by|furnished by|not included|not incl|\bexcl|by (?:the )?(?:client|owner|customer|homeowner)|(?:client|owner|customer)[- ]supplied|no incluye|no incluido|excluid|suministrad[oa]s? por|proporcionad[oa]s? por|por (?:el|la) (?:client[ea]|dueñ[oa]|propietari[oa])|los pone|las pone/i;
+
+/** The share of the source's characters a translation of a marked line must
+ *  keep. EN↔ES run within ±20% of each other; a dropped clause is far below. */
+export const MIN_KEPT_RATIO = 0.6;
+
+/**
+ * REQ-410 (M24): indexes of lines whose translation lost content — the source
+ * carries an exclusion marker or a parenthetical, and the output is under
+ * {@link MIN_KEPT_RATIO} of its length or lost its parenthetical. Plain lines
+ * are not judged (a short translation of a short phrase is fine).
+ */
+export function droppedLines(src: string[], out: string[]): number[] {
+  const bad: number[] = [];
+  src.forEach((s, i) => {
+    if (!EXCLUSION_MARKER.test(s)) return;
+    const o = out[i] ?? "";
+    const lostParen = s.includes("(") && !o.includes("(");
+    if (lostParen || o.length < s.length * MIN_KEPT_RATIO) bad.push(i);
+  });
+  return bad;
 }
 
 function tryParseJson(s: string): { texts?: unknown } | undefined {
