@@ -58,6 +58,15 @@ function tenDigits(raw: string): string {
     : digits;
 }
 
+/** REQ-593 (cycle 4, m12): true when `raw` is nothing but a US phone
+ *  number — phone punctuation only, ten digits after an optional leading 1
+ *  ("5125550109", "+1 (512) 555-0109"). An email, a @handle or a foreign
+ *  number is false, so callers format only what is surely a US phone. */
+export function isUsPhone(raw: string | null | undefined): boolean {
+  const s = (raw ?? "").trim();
+  return /^[+\d\s().-]+$/.test(s) && tenDigits(s).length === 10;
+}
+
 /**
  * One phone display everywhere: "5125556999" → "+1 (512) 555-6999".
  * Idempotent on already-formatted +1 numbers; non-10-digit inputs pass

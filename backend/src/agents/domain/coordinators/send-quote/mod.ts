@@ -20,6 +20,7 @@ import {
   isChatI18nRef,
   renderChatI18n,
 } from "#quote-flow/chat-i18n.ts"; // REQ-589
+import { formatPhoneDisplay } from "#quote-flow/format-helpers.ts";
 import { versionOf } from "#documents/versions.ts";
 import { getKv } from "@core/data/kv/mod.ts";
 import type { AgentConversation } from "@agents/dto/conversation.ts";
@@ -383,7 +384,7 @@ async function claimRequest(key: Deno.KvKey): Promise<boolean> {
 
 /** REQ-589 (cycle 4, m15): the note as key + vars, so the island renders
  *  it in the reader's language; `content` is this rendered at send time. */
-function buildDivider(o: {
+export function buildDivider(o: {
   channel: SendChannel;
   emailedTo?: string;
   emailFailure?: ChatI18nVar;
@@ -396,6 +397,9 @@ function buildDivider(o: {
   const noRecipient = { key: "sendQuote.divider.noRecipient" };
   const emailOk = !!emailedTo;
   const smsOk = !!textedTo;
+  // REQ-593 (cycle 4, m12): the label shows the number as the app does
+  // everywhere ("+1 (512) 867-5309"), not the E.164 the SMS service used.
+  const textedShown = textedTo ? formatPhoneDisplay(textedTo) : "";
 
   if (channel === "email") {
     if (emailOk) {
@@ -415,7 +419,7 @@ function buildDivider(o: {
 
   if (channel === "sms") {
     if (smsOk) {
-      return { key: "sendQuote.divider.texted", vars: { textedTo: textedTo! } };
+      return { key: "sendQuote.divider.texted", vars: { textedTo: textedShown } };
     }
     // REQ-525 (demo cycle 3, p8-pair2-a): the reason has one home — the
     // send card reads it from this divider's payload — so the label stays
@@ -428,7 +432,7 @@ function buildDivider(o: {
   if (emailOk && smsOk) {
     return {
       key: "sendQuote.divider.emailedAndTexted",
-      vars: { emailedTo: emailedTo!, textedTo: textedTo! },
+      vars: { emailedTo: emailedTo!, textedTo: textedShown },
     };
   }
   if (emailOk) {
@@ -440,7 +444,7 @@ function buildDivider(o: {
   if (smsOk) {
     return {
       key: "sendQuote.divider.textedEmailFailed",
-      vars: { textedTo: textedTo!, reason: emailFailureReason ?? noRecipient },
+      vars: { textedTo: textedShown, reason: emailFailureReason ?? noRecipient },
     };
   }
   return {
