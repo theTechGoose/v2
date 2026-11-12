@@ -1,13 +1,14 @@
 /**
  * Collapsible track group for the quotes pipeline. Track 1 (Out for response)
- * defaults to open; tracks 2 and 3 collapsed. Open state persists per track in
- * localStorage so contractors who always work on drafts get them open on next
+ * defaults to open; tracks 2 and 3 collapsed. A user's toggle persists per track
+ * in localStorage (never the mount state — REQ-567) so contractors who always work on drafts get them open on next
  * visit.
  */
 import type { ComponentChildren } from "preact";
 import { useEffect, useState } from "preact/hooks";
 import { I, ICN } from "../lib/dash-icons.tsx";
 import { tFor } from "../lib/i18n.ts";
+import { initialTrackOpen, toggleTrackOpen } from "../lib/track-open.ts";
 
 interface Props {
   num: string;
@@ -44,31 +45,26 @@ export default function QuoteTrack(
     children,
   }: Props,
 ) {
-  const [open, setOpen] = useState<boolean>(() => {
-    if (forceOpen) return true;
-    if (typeof globalThis.localStorage === "undefined" || !storageKey) {
-      return defaultOpen;
-    }
-    const raw = globalThis.localStorage.getItem(storageKey);
-    if (raw === "1") return true;
-    if (raw === "0") return false;
-    return defaultOpen;
-  });
+  // REQ-567 (cycle 4, m37): only a user toggle is remembered — a mount never
+  // writes, so a visit while the track is empty can't pin it closed.
+  const storage = () =>
+    typeof globalThis.localStorage === "undefined"
+      ? undefined
+      : globalThis.localStorage;
+  const [open, setOpen] = useState<boolean>(() =>
+    initialTrackOpen({ storage: storage(), storageKey, defaultOpen, forceOpen })
+  );
 
   useEffect(() => {
     if (forceOpen) setOpen(true);
   }, [forceOpen]);
 
-  useEffect(() => {
-    if (!storageKey) return;
-    try {
-      globalThis.localStorage?.setItem(storageKey, open ? "1" : "0");
-    } catch { /* ignore */ }
-  }, [open, storageKey]);
-
   return (
     <section class={`qtrack ${open ? "" : "qtrack--collapsed"}`}>
-      <header class="qtrack__head" onClick={() => setOpen((v) => !v)}>
+      <header
+        class="qtrack__head"
+        onClick={() => setOpen(toggleTrackOpen(storage(), storageKey, open))}
+      >
         <span class="qtrack__chev">
           <I d={ICN.chev} size={14} sw={2.5} />
         </span>

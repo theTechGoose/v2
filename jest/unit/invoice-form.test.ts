@@ -113,7 +113,7 @@ describe("REQ-206 missing info (warns, never blocks)", () => {
       amountCents: 0,
     })).toEqual([
       "noBillingName",
-      "noBillingEmail",
+      "noContact", // REQ-567: no email AND no phone
       "noServiceAddress",
       "noLineItems",
       "noAmount",

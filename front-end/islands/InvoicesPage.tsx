@@ -95,6 +95,7 @@ import {
   prefillFromLedger,
   priorBillingFor,
   type PriorInvoice,
+  sendChannel,
 } from "../../shared/documents/invoice-form.ts";
 
 /** REQ-201: the state words a headline uses, in the page language. */
@@ -3553,21 +3554,27 @@ function NewInvoiceModal(
     discountCents: dollarsToCents(discount),
     taxRateBp: percentToBp(taxRate),
   });
-  const missing = missingInfo({
-    billTo,
-    serviceAddress,
-    lineItems: formLines,
-    amountCents: totals.totalCents,
-  });
-
   // Whether the chosen client is reachable — gates the dispatch, never the issue.
   const selectedCustomer = clientSel && clientSel !== NEW_SENTINEL
     ? customers.find((c) => c.id === clientSel)
     : undefined;
-  const canSend = clientSel === NEW_SENTINEL
-    ? !!(newEmail.trim() || newPhone.trim())
-    : !!(selectedCustomer?.email || selectedCustomer?.phoneNumber ||
-      billTo.email.trim() || billTo.phoneNumber.trim());
+  // REQ-567 (cycle 4, m37): the contact the bill is dispatched to — a phone
+  // sends it by text, so a phone-only client is not "missing" an email.
+  const contact = clientSel === NEW_SENTINEL
+    ? { email: newEmail, phoneNumber: newPhone }
+    : {
+      email: billTo.email.trim() || selectedCustomer?.email || "",
+      phoneNumber: billTo.phoneNumber.trim() ||
+        selectedCustomer?.phoneNumber || "",
+    };
+  const channel = sendChannel(contact);
+  const canSend = channel !== "none";
+  const missing = missingInfo({
+    billTo: { ...billTo, ...contact },
+    serviceAddress,
+    lineItems: formLines,
+    amountCents: totals.totalCents,
+  });
 
   const labelStyle =
     "display:flex;flex-direction:column;gap:5px;font-size:13px;font-weight:700;color:var(--fg-muted,#6b7560);min-width:0";
@@ -4333,6 +4340,16 @@ function NewInvoiceModal(
               ))}
             </ul>
           </div>
+        )}
+
+        {/* REQ-567: a phone-only client gets the bill by text */}
+        {channel === "text" && (
+          <p
+            data-cy="new-invoice-by-text"
+            style="margin:0;font-size:12.5px;color:var(--fg-muted,#6b7560)"
+          >
+            {tFor(lang, "invoices.form.sendByText")}
+          </p>
         )}
 
         {error && (
