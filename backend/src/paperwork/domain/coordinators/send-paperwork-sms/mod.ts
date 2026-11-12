@@ -1,5 +1,5 @@
 import { Injectable } from "#danet/core";
-import { publishPendingInvoice, publishPendingQuote } from "@paperwork/domain/business/publish-pending/mod.ts";
+import { publishPendingInvoice, publishPendingQuote, senderAsPublisher } from "@paperwork/domain/business/publish-pending/mod.ts";
 import { isFictionalUsNumber } from "@users/domain/business/normalize-phone/mod.ts";
 import { t } from "@core/i18n/mod.ts";
 import { QuoteStore } from "@paperwork/domain/data/quote-store/mod.ts";
@@ -134,7 +134,7 @@ export class SendPaperworkSms {
 
     if (input.kind === "quote") {
       // REQ-201: a send publishes what is pending — the link must show what was sent
-      const quote = await publishPendingQuote(this.quotes, input.resourceId, userId);
+      const quote = await publishPendingQuote(this.quotes, input.resourceId, userId, senderAsPublisher(userId, sender?.name));
       quoteForStamp = quote;
       const customer = await this.tryGetCustomer(userId, quote.customerId);
       customerIdForLog = customer?.id;
@@ -146,7 +146,7 @@ export class SendPaperworkSms {
       });
       body = renderQuoteBody(quote, customer, sender, senderBiz, shortUrl);
     } else {
-      const invoice = await publishPendingInvoice(this.invoices, input.resourceId, userId);
+      const invoice = await publishPendingInvoice(this.invoices, input.resourceId, userId, senderAsPublisher(userId, sender?.name));
       const customer = await this.tryGetCustomer(userId, invoice.customerId);
       customerIdForLog = customer?.id;
       if (!recipient) recipient = customer?.phoneNumber ?? customerOnDocument(invoice, customer)?.phoneNumber;

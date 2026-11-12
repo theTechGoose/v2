@@ -9,7 +9,7 @@
  * dictionary: the two languages' labels live here so the backend renderers
  * and the pages never drift.
  */
-import type { DocState, DocVersionRecord } from "./versions.ts";
+import type { DocState, DocVersionRecord, VersionChanges } from "./versions.ts";
 import type { QuoteLedger } from "./ledger.ts";
 
 export type Lang = "en" | "es";
@@ -169,6 +169,59 @@ export function versionHistoryLine(
   if (when) line += ` · ${w.publishedBy} ${when}`;
   if (who) line += ` ${w.by} ${who}`;
   return line;
+}
+
+const CHANGE_WORDS: Record<
+  Lang,
+  {
+    total: string;
+    added: [string, string];
+    removed: [string, string];
+    changed: [string, string];
+  }
+> = {
+  en: {
+    total: "Total",
+    added: ["line added", "lines added"],
+    removed: ["line removed", "lines removed"],
+    changed: ["line changed", "lines changed"],
+  },
+  es: {
+    total: "Total",
+    added: ["línea agregada", "líneas agregadas"],
+    removed: ["línea eliminada", "líneas eliminadas"],
+    changed: ["línea cambiada", "líneas cambiadas"],
+  },
+};
+
+function usd(cents: number): string {
+  return `$${
+    (cents / 100).toLocaleString("en-US", {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    })
+  }`;
+}
+
+/** REQ-248: "Total $14,700.00 → $15,200.00 · 1 line added · 1 line changed"; "" when nothing changed. */
+export function versionChangeLine(
+  c: VersionChanges,
+  lang: Lang = "en",
+): string {
+  const w = CHANGE_WORDS[lang === "es" ? "es" : "en"];
+  const parts: string[] = [];
+  if (
+    typeof c.totalFromCents === "number" && typeof c.totalToCents === "number"
+  ) {
+    parts.push(`${w.total} ${usd(c.totalFromCents)} → ${usd(c.totalToCents)}`);
+  }
+  const count = (n: number, [one, many]: [string, string]) => {
+    if (n > 0) parts.push(`${n} ${n === 1 ? one : many}`);
+  };
+  count(c.linesAdded, w.added);
+  count(c.linesRemoved, w.removed);
+  count(c.linesChanged, w.changed);
+  return parts.join(" · ");
 }
 
 // ---------- related documents on a public page ----------

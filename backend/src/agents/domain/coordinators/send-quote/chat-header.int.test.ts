@@ -79,7 +79,8 @@ function fresh() {
     conversations,
     quotes,
     customers,
-    lock: new LockQuote(conversations, messages, quotes, bus, emailer, users),
+    // REQ-234: LockQuote no longer emits or emails (reconciled on demo-fixes)
+    lock: new LockQuote(conversations, messages, quotes, users),
     toTerms: new TransitionToTerms(conversations, messages),
     answer: new HandleWizardAnswer(
       conversations,

@@ -8,6 +8,7 @@ import { EventBus } from "@core/business/events/mod.ts";
 import { TranslateQuote } from "@agents/domain/coordinators/translate-quote/mod.ts";
 import { t } from "@core/i18n/mod.ts";
 import type { SmsFailureCode } from "#quote-flow/sms-failure.ts";
+import { versionOf } from "#documents/versions.ts";
 import type { AgentConversation } from "@agents/dto/conversation.ts";
 import type { AgentMessage } from "@agents/dto/message.ts";
 import {
@@ -203,7 +204,13 @@ export class SendQuote {
       });
     }
 
-    const dividerContent = buildDivider({
+    // REQ-248: a send publishes a pending edit as the next version — say so,
+    // so a revision never goes out as just another "emailed to …". `fresh`
+    // is the quote as the dispatch left it (re-read above).
+    const publishedVersion = versionOf(fresh) > versionOf(quote)
+      ? versionOf(fresh)
+      : undefined;
+    const delivery = buildDivider({
       channel,
       emailedTo,
       emailFailureReason,
@@ -211,6 +218,13 @@ export class SendQuote {
       smsFailureReason,
       lang: input.language ?? "en",
     });
+    const dividerContent = publishedVersion
+      ? `${
+        t(input.language ?? "en", "sendQuote.divider.revisionPublished", {
+          version: String(publishedVersion),
+        })
+      } · ${delivery}`
+      : delivery;
     const note = await this.messages.append({
       conversationId: conv.id,
       role: "system",
@@ -221,6 +235,7 @@ export class SendQuote {
         label: dividerContent,
         quoteId: quote.id,
         channel,
+        ...(publishedVersion ? { publishedVersion } : {}),
         ...(emailedTo ? { emailedTo } : {}),
         ...(emailFailureReason ? { emailFailureReason } : {}),
         ...(textedTo ? { textedTo } : {}),

@@ -643,3 +643,59 @@ Deno.test("REQ-264 (M15) a failing translator never blocks the send", async () =
   assertEquals(ctx.sentEmails.length, 1);
   await resetKv();
 });
+
+// REQ-248 (demo issue quote-invoice-money-m9): the first send is version 1's
+// publication — it names who published it; a re-Send that publishes a
+// pending edit says so in the divider, and the new version names its sender.
+Deno.test("REQ-248 send-quote: the first send stamps version 1's publishedAt + publishedBy (the owner)", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const ctx = await makeReadyConversation();
+  await ctx.flow.run({
+    userId: "u-1",
+    conversationId: ctx.conv.id,
+    quoteId: ctx.quote.id,
+  });
+  const q = await ctx.quotes.getOwned(ctx.quote.id, "u-1");
+  assert(q.publishedAt, "publishedAt stamped at the first issue");
+  assertEquals(q.publishedAt, q.sentAt);
+  assertEquals(q.publishedBy, { userId: "u-1" });
+});
+
+Deno.test("REQ-248 send-quote: a re-Send that publishes a pending edit names Version 2 in the divider and files version 1 with its publisher", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const ctx = await makeReadyConversation();
+  const first = await ctx.flow.run({
+    userId: "u-1",
+    conversationId: ctx.conv.id,
+    quoteId: ctx.quote.id,
+  });
+  assert(
+    !/Version/.test(first.newMessages[0].content),
+    `the first send is not a revision: ${first.newMessages[0].content}`,
+  );
+  // the contractor edits the total after sending → a pending revision
+  await ctx.quotes.setPending(ctx.quote.id, "u-1", { estimatedTotal: 15_000 });
+  const again = await ctx.flow.run({
+    userId: "u-1",
+    conversationId: ctx.conv.id,
+    quoteId: ctx.quote.id,
+  });
+  const divider = again.newMessages[0];
+  assert(
+    /Version 2/.test(divider.content),
+    `the divider names the published revision: ${divider.content}`,
+  );
+  assertEquals(
+    (divider.payload as { publishedVersion?: number }).publishedVersion,
+    2,
+  );
+  const q = await ctx.quotes.getOwned(ctx.quote.id, "u-1");
+  assertEquals(q.version, 2);
+  assertEquals(q.publishedBy, { userId: "u-1", name: "Test Contractor" });
+  const filed = await ctx.quotes.listVersions(ctx.quote.id, "u-1");
+  assertEquals(filed.length, 1);
+  assertEquals(filed[0].publishedBy, { userId: "u-1" });
+  assertEquals(filed[0].publishedAt, filed[0].content.sentAt);
+});
