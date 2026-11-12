@@ -565,9 +565,11 @@ export class PaperworkPublicController {
           q.userId,
           isQuoteIssued(q) ? q.customerSnapshot : undefined,
         ),
-        // REQ-205: the invoices billed against this agreement, by number
+        // REQ-205: the invoices billed against this agreement, by number.
+        // REQ-312 (demo m29): only the ISSUED ones — a draft or scheduled
+        // invoice the contractor has not sent stays on their own ledger.
         this.invoices.listByUser(q.userId).then((all) =>
-          all.filter((i) => i.quoteId === q.id)
+          all.filter((i) => i.quoteId === q.id && isInvoiceIssued(i))
         ).catch(() => []),
         this.changeOrders.listByQuote(q.userId, q.id).catch(() => []),
       ]);
@@ -844,10 +846,13 @@ export class PaperworkPublicController {
               : Promise.resolve(undefined),
             // Sibling invoices for the same quote — used to render the
             // "Invoice X of Y" framing and the "What you've paid so far"
-            // strip on the public page.
+            // strip on the public page. REQ-312 (demo m29): issued ones only;
+            // an unsent draft is never shown to the customer.
             i.quoteId
               ? this.invoices.listByUser(i.userId).then((all) =>
-                all.filter((row) => row.quoteId === i.quoteId)
+                all.filter((row) =>
+                  row.quoteId === i.quoteId && isInvoiceIssued(row)
+                )
               ).catch(() => [])
               : Promise.resolve([]),
             // REQ-205: this invoice's change orders, by number
