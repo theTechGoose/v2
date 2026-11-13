@@ -8,6 +8,9 @@ export const PROFILE_UPDATED = "pm:profile-updated";
 
 export interface ProfileUpdatedDetail {
   name?: string;
+  /** REQ-737 (cycle 5, p12) — a business rename saved in Settings, so the
+   *  sidebar's brand/footer follows it without a reload. */
+  businessName?: string;
 }
 
 /** Announce the user's saved profile fields (only the ones that changed). */

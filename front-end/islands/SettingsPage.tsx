@@ -451,6 +451,12 @@ function EditCard(
         } as typeof snapshot.identity,
       });
       setSaved(true);
+      // REQ-737 (cycle 5, p12) — the sidebar shows the new business name at once
+      if ("businessName" in patch) {
+        announceProfile({
+          businessName: id?.businessName ?? String(patch.businessName ?? ""),
+        });
+      }
     } catch (e) {
       // REQ-252: the server refuses a logo that is not an image (422 logo_not_image)
       if (e instanceof ApiError && e.status === 422 && "logoFileId" in patch) {
