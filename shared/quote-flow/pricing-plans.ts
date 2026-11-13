@@ -113,6 +113,29 @@ export const PRICING_PLANS: readonly PricingPlan[] = [
         en: "Spanish and English output",
         es: "Documentos en español y en inglés",
       },
+      // REQ-733 (demo m17 + c1-m42, cycle 5) — what every account has today: there is no plan
+      // gating in backend/src, so a Free account adds workers, signs, sends, tracks payments and
+      // makes change orders. These lines used to sit on Monster's card (REQ-607 even added a
+      // Monster line saying "Free included"); they are Free's, after REQ-109's three dictated
+      // lines, and Monster inherits them through "Everything in Monster Free". If Raphael gates
+      // any of them to paid plans (REQ-607's flagged decision), its line moves back to that plan.
+      {
+        id: "workers-field-schedule",
+        en: "Workers & field schedule",
+        es: "Trabajadores y agenda de campo",
+      },
+      { id: "e-signatures", en: "E-signatures", es: "Firmas electrónicas" },
+      {
+        id: "sms-email-sending",
+        en: "SMS & email sending",
+        es: "Envío por SMS y correo",
+      },
+      {
+        id: "payment-tracking",
+        en: "Payment tracking + nudges",
+        es: "Seguimiento de pagos y recordatorios",
+      },
+      { id: "change-orders", en: "Change orders", es: "Órdenes de cambio" },
     ],
   },
   {
@@ -136,29 +159,6 @@ export const PRICING_PLANS: readonly PricingPlan[] = [
         en: "Unlimited quotes, agreements & invoices",
         es: "Cotizaciones, acuerdos y facturas ilimitados",
       },
-      // REQ-515 (demo m53) — Monster names workers & the field schedule (Assist and Assist+ inherit
-      // it through "Everything in"). Third on purpose: the onboarding/settings cards show only a
-      // plan's first three lines. REQ-607 (demo m27, cycle 4) — field is NOT plan-gated: Free adds
-      // workers and uses the schedule too, so the line says so instead of reading as a Monster-only
-      // upgrade. It lives here, not on Free, because Free's lines are REQ-109's dictated three.
-      // Pending Raphael's call on gating field to paid plans; if he gates it, drop "Free included".
-      {
-        id: "workers-field-schedule",
-        en: "Workers & field schedule — on every plan, Free included",
-        es: "Trabajadores y agenda de campo — en todos los planes, Free incluido",
-      },
-      { id: "e-signatures", en: "E-signatures", es: "Firmas electrónicas" },
-      {
-        id: "sms-email-sending",
-        en: "SMS & email sending",
-        es: "Envío por SMS y correo",
-      },
-      {
-        id: "payment-tracking",
-        en: "Payment tracking + nudges",
-        es: "Seguimiento de pagos y recordatorios",
-      },
-      { id: "change-orders", en: "Change orders", es: "Órdenes de cambio" },
     ],
   },
   {
