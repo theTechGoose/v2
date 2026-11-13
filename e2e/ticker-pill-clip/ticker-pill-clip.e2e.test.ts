@@ -68,7 +68,7 @@ async function signIn(
 const EVENT_ES = "Carol Henderson aceptó tu cotización de Baño principal";
 
 for (const route of ["/dashboard", "/assistant"]) {
-  Deno.test(`REQ-542 m31/m8: on ${route} the pill's sentence shows with animations paused, and the Spanish time is not clipped at 1280px or at the pill's 220px floor`, (t) =>
+  Deno.test(`REQ-542 m31/m8: on ${route} the pill's sentence shows with animations paused, and the Spanish time is not clipped at 1500px or at the pill's floor (REQ-726: shown from 1500px, 240px floor)`, (t) =>
     story(t, async ({ page, expect, http, baseUrl }) => {
       const { auth } = await signIn(http, page, baseUrl, "es");
       await answerQuestions(http, auth, { name: "Ticker Clip" });
@@ -97,7 +97,8 @@ for (const route of ["/dashboard", "/assistant"]) {
           () => document.head.appendChild(s),
         );
       });
-      await page.setViewportSize({ width: 1280, height: 800 });
+      // REQ-726 (cycle 5, m6): the pill shows from 1500px only
+      await page.setViewportSize({ width: 1500, height: 800 });
       await page.goto(`${route}?lang=es`);
       const time = page.locator(".topbar__ticker-time").first();
       await time.waitFor({ state: "attached", timeout: 25_000 });
@@ -146,14 +147,14 @@ for (const route of ["/dashboard", "/assistant"]) {
           `${where}: the time is not cut (${m.timeScroll}px in ${m.timeClient}px)`,
         );
       };
-      await check("at 1280px");
+      await check("at 1500px");
       // A crowded bar (a long greeting, the demo pill) squeezes the pill to
-      // its 220px floor, where the demo saw "ahora mism": measure it there.
+      // its floor (240px since REQ-726), where the demo saw "ahora mism".
       await page.addStyleTag({
-        content: ".topbar__ticker{max-width:220px!important}",
+        content: ".topbar__ticker{max-width:240px!important}",
       });
       await page.waitForTimeout(300);
-      await check("at the pill's 220px floor");
+      await check("at the pill's 240px floor (REQ-726)");
     }));
 }
 

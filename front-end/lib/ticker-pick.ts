@@ -37,6 +37,29 @@ export function newestNotification<T extends Stamped>(items: T[]): T | null {
   return best;
 }
 
+/**
+ * REQ-726 (demo-loop cycle 5, m6) — how long the pill shows an event. It used
+ * to show the newest event forever, so "Pago registrado … hace 4m" sat in the
+ * bar on every page like a stuck toast, and caught clicks meant for the page.
+ * The pill is now a transient notice: the newest event shows while it is
+ * younger than this, then the pill goes away (the Activity panel keeps the
+ * history). DashTopbar re-evaluates it on its 3.8 s age tick.
+ */
+export const TICKER_LIFETIME_MS = 90_000;
+
+/** The newest event while it is younger than `TICKER_LIFETIME_MS`, else null.
+ *  An older event never stands in for an expired newest one; a timestamp a
+ *  little ahead of the browser's clock (skew) counts as fresh. */
+export function freshTickerItem<T extends Stamped>(
+  items: T[],
+  nowMs = Date.now(),
+): T | null {
+  const newest = newestNotification(items);
+  if (!newest) return null;
+  const age = nowMs - new Date(newest.createdAt).getTime();
+  return age < TICKER_LIFETIME_MS ? newest : null;
+}
+
 /** The event's words without markup, for the pill's hover title. */
 export function tickerPlainText(html: string): string {
   return html

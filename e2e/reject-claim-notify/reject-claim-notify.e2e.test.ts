@@ -105,6 +105,8 @@ Deno.test("REQ-488 m56/m57: 'Didn't get it' asks first, the claim chip gives way
       if (r.url().includes("/reject-claim")) rejects.push(r.url());
     });
 
+    // REQ-726 (cycle 5, m6): the pill only shows from 1500px wide
+    await page.setViewportSize({ width: 1600, height: 900 });
     await page.goto("/invoices");
     const ticker = page.locator(".topbar__ticker .topbar__ticker-item").first();
     await ticker.waitFor({ timeout: 15_000 });

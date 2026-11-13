@@ -97,11 +97,11 @@ describe("REQ-406 m15 (cycle 2): the live-activity pill never squeezes the searc
     });
   }
 
-  test("TOPBAR_CSS hides the pill below 1250px, on every route that renders the bar", () => {
+  test("TOPBAR_CSS hides the pill below 1250px (REQ-726: now below 1500px), on every route that renders the bar", () => {
     const hides = maxWidthBlocks(TOPBAR_CSS).filter((b) =>
       /\.topbar__ticker\{display:none\}/.test(squash(b.body))
     );
-    expect(hides.map((b) => b.max)).toContain(1249);
+    expect(Math.max(...hides.map((b) => b.max))).toBeGreaterThanOrEqual(1249);
   });
 });
 

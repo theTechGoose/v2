@@ -4,6 +4,7 @@ import {
   COACHMARK_COARSE_QUERY,
   coachmarkCopyKeys,
 } from "../lib/coachmark-copy.ts";
+import { ACTIVITY_HASH } from "../lib/dash-anchor.ts";
 
 const STORAGE_KEY = "pm:assistant-coachmark-shown";
 const PINK = "#FF6B6B";
@@ -66,6 +67,10 @@ export default function AssistantCoachmark(
       alreadyShown = globalThis.localStorage.getItem(STORAGE_KEY) === "1";
     } catch { /* SSR-safe */ }
     if (alreadyShown) return;
+    // REQ-726 (demo cycle 5, m57): arriving via the topbar pill's
+    // /dashboard#activity means "show me the activity" — no veil over it this
+    // time (not persisted, so the next plain visit still teaches the assistant).
+    if (globalThis.location?.hash === ACTIVITY_HASH) return;
     let alive = true;
     let tries = 0;
     const find = () => {

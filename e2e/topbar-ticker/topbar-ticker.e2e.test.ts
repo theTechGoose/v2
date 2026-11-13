@@ -84,7 +84,8 @@ Deno.test("REQ-273: /assistant's live-activity pill shows the event's text and '
         }]),
       }));
 
-    await page.setViewportSize({ width: 1280, height: 800 });
+    // REQ-726 (cycle 5, m6): the pill shows from 1500px only
+    await page.setViewportSize({ width: 1500, height: 800 });
     await page.goto("/assistant");
     // The pill appears once the island's poll has the event (≤ 10 s).
     await page.locator(".topbar__ticker-time").first().waitFor({
@@ -156,7 +157,7 @@ Deno.test("REQ-319: the live-activity pill shows the newest event only, never go
         ]),
       }));
 
-    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.setViewportSize({ width: 1600, height: 900 });
     // REQ-406 (demo m15, cycle 2): at 1280 px the search box keeps its
     // placeholder's room and the pill gives way (ellipsis + hover title), so
     // the whole-sentence check is made at 1440 px.
@@ -224,7 +225,7 @@ Deno.test("REQ-496: after the topbar EN click the live-activity pill reads Engli
         }]),
       }));
 
-    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.setViewportSize({ width: 1600, height: 900 });
     await page.goto("/assistant");
     const item = page.locator(".topbar__ticker .topbar__ticker-item").first();
     await item.waitFor({ state: "visible", timeout: 25_000 });

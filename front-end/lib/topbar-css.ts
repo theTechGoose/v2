@@ -26,6 +26,11 @@
  * 1250px the live-activity pill is hidden: its 220px floor (REQ-273) and the
  * search box's placeholder cannot both fit beside the greeting there, and the
  * pill was squeezing the search box to "Search a number, customer,".
+ *
+ * REQ-726 (demo-loop cycle 5, m6): that breakpoint is now 1500px. At the 1280
+ * and 1440 widths the testers used, the greeting, the search box, the pill and
+ * EN/ES still shared one row: the placeholder read "Search a number, customer,
+ * address or date." cut short, the sentence was clamped and the time wrapped.
  */
 export const TOPBAR_CSS = `
 .topbar__lang{display:flex;gap:2px;background:var(--mint-100);border:1px solid var(--border);border-radius:999px;padding:3px;flex-shrink:0;margin-left:10px}
@@ -33,7 +38,7 @@ export const TOPBAR_CSS = `
 .topbar__lang-btn:hover{color:var(--brand-teal)}
 .topbar__lang-btn--on{background:#fff;color:var(--brand-teal);box-shadow:0 1px 3px rgba(20,72,82,.12)}
 .topbar{position:relative;z-index:40}
-@media (max-width:1249px){.topbar__ticker{display:none}}
+@media (max-width:1499px){.topbar__ticker{display:none}}
 @media (max-width:640px){.topbar__search{display:none}.topbar__ticker{display:none}}
 @media (max-width:640px){.topbar{position:sticky;top:var(--banner-h,0px);padding:0 12px;gap:8px}.topbar__greet{flex:1 1 auto;flex-shrink:1;min-width:0;overflow:hidden}.topbar__greet-line,.topbar__greet-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.topbar__greet-name{font-size:14px}.topbar__lang{margin-left:auto}.topbar__lang-btn{padding:4px 8px}}
 `;

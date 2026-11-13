@@ -82,7 +82,9 @@ describe("REQ-542 (demo cycle 4, m31 / m8): the ticker's sentence is never hidde
       for (const body of found) {
         expect(decl(body, "flex-shrink")).not.toBe("0");
         expect(decl(body, "flex")).not.toMatch(/^(none|\S+\s+0(\s|$))/);
-        expect(decl(body, "white-space")).not.toBe("nowrap");
+        // REQ-726 (cycle 5, m6) SUPERSEDES the wrap: the pill now shows only
+        // from 1500px, where it has room, and a wrapped "hace / 1m" read as
+        // broken — the time stays on one line (jest/unit/topbar-ticker-expiry).
       }
     });
   }

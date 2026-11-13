@@ -25,8 +25,8 @@ import {
 } from "../lib/notifications-feed.ts";
 import { subscribeChanges } from "../lib/change-feed.ts"; // REQ-563
 import {
+  freshTickerItem,
   MUTATION_EVENT,
-  newestNotification,
   tickerPlainText,
   tickerTitleHtml,
 } from "../lib/ticker-pick.ts";
@@ -167,8 +167,10 @@ export default function DashTopbar(
     return () => clearInterval(id);
   }, []);
 
-  const tickerItem = newestNotification(items);
-  // Recomputed on every age tick (3.8 s), so the shown event's age counts up.
+  // REQ-726 (demo cycle 5, m6): only a fresh event (< ~90 s) shows — the pill
+  // is a transient notice, not a permanent banner. Recomputed on every age
+  // tick (3.8 s), so the shown event's age counts up and then the pill goes.
+  const tickerItem = freshTickerItem(items);
   const age = tickerItem ? tickerAge(tickerItem.createdAt) : null;
   const ticker = tickerItem
     ? {
