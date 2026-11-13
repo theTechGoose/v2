@@ -10,6 +10,7 @@ import {
   isCleanChangeClause,
   isNewQuoteRequest,
   parseChangeOrderRequest,
+  parseNamedQuoteChange,
   parseTargetTotalChange,
   pickChangeOrderTarget,
   reconcileChangeOrderDelta,
@@ -902,4 +903,73 @@ Deno.test("REQ-753 M10 pickChangeOrderTarget: a quote whose card names someone e
     }),
     { kind: "none" },
   );
+});
+
+// REQ-769 (demo-loop cycle 5v4, M10 re-test): the verifier, from Tom
+// Henderson's Q-002 thread, typed "Change Dana Whitfield's quote: add post
+// caps for $300" and the model answered "Please provide the quote number…"
+// with no tool call. The ask is read in code.
+Deno.test("REQ-769 M10 parseNamedQuoteChange: the verifier's sentences → Dana Whitfield, the item, the amount", () => {
+  assertEquals(
+    parseNamedQuoteChange(
+      "Change Dana Whitfield's quote: add post caps for $300",
+    ),
+    {
+      customerName: "Dana Whitfield",
+      description: "Post caps",
+      deltaAmountCents: 30_000,
+    },
+  );
+  assertEquals(
+    parseNamedQuoteChange(
+      "Change Dana Whitfield's quote: add a shower niche for $250",
+    ),
+    {
+      customerName: "Dana Whitfield",
+      description: "Shower niche",
+      deltaAmountCents: 25_000,
+    },
+  );
+  assertEquals(
+    parseNamedQuoteChange("Add post caps for $300 to Dana Whitfield's quote"),
+    {
+      customerName: "Dana Whitfield",
+      description: "Post caps",
+      deltaAmountCents: 30_000,
+    },
+  );
+  assertEquals(
+    parseNamedQuoteChange(
+      "update dana’s estimate - add gutter guards $1,250.50",
+    ),
+    {
+      customerName: "dana",
+      description: "Gutter guards",
+      deltaAmountCents: 125_050,
+    },
+  );
+  assertEquals(
+    parseNamedQuoteChange(
+      "On Tom Henderson's job, credit $100 for the missed visit",
+    ),
+    {
+      customerName: "Tom Henderson",
+      description: "Credit for the missed visit",
+      deltaAmountCents: -10_000,
+    },
+  );
+});
+
+Deno.test("REQ-769 M10 parseNamedQuoteChange: not a named add — left to the model", () => {
+  for (
+    const s of [
+      "Change Dana Whitfield's quote: cabinets $7,000", // a reprice, no add verb
+      "Make a new quote for Dana Whitfield: add post caps $300",
+      "Add post caps for $300", // nobody named
+      "Add post caps to the customer's quote for $300", // no name
+      "Change Dana Whitfield's quote: add post caps", // no amount
+      "Dana Whitfield's quote looks good, send it",
+      "Change Dana Whitfield's quote: add whatever she wants and send it to her for $300",
+    ]
+  ) assertEquals(parseNamedQuoteChange(s), undefined, s);
 });

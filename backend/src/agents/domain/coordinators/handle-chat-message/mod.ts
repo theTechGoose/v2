@@ -109,6 +109,7 @@ import {
   isNewQuoteRequest,
   parseChangeOrderEdit, // REQ-462
   parseChangeOrderRequest,
+  parseNamedQuoteChange,
   parseTargetTotalChange,
   pickChangeOrderTarget,
   typedAmountsCents,
@@ -2019,6 +2020,27 @@ export class HandleChatMessage {
             description: changeOrderAsk.description,
             deltaAmountCents: changeOrderAsk.deltaAmountCents,
             ...(changeOrderAsk.setsLinePrice ? { setsLinePrice: true } : {}),
+          },
+        },
+      };
+    }
+    // ---- REQ-769 (demo-loop cycle 5v4, M10 re-test): "Change Dana
+    // Whitfield's quote: add post caps for $300" from Tom Henderson's Q-002
+    // thread got the model's "Please provide the quote number…" with no tool
+    // call. A named customer's quote + the item + its amount is the same
+    // change, read in code; ApplyChatChangeOrder finds her quote by name.
+    const namedQuoteAsk = !llmResponse && typeof input.content === "string"
+      ? parseNamedQuoteChange(input.content)
+      : undefined;
+    if (namedQuoteAsk) {
+      llmResponse = {
+        text: "",
+        action: {
+          type: "change_order",
+          payload: {
+            customerName: namedQuoteAsk.customerName,
+            description: namedQuoteAsk.description,
+            deltaAmountCents: namedQuoteAsk.deltaAmountCents,
           },
         },
       };
