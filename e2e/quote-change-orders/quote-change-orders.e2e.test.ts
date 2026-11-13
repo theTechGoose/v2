@@ -7,6 +7,10 @@
  *    pending, approved by the customer at its own link);
  *  - the pending row has Edit (saved as Version 2, back to pending) and
  *    Withdraw (asks first, then it is gone).
+ *
+ * REQ-684 (demo-loop cycle 5, m39): after Create and after Save the panel
+ * says what the alert delivered to the customer ("Sent CO-001 to Karen Mills
+ * by email (…)"), as the chat does.
  */
 import { story, type StoryTools } from "#shots";
 
@@ -201,6 +205,16 @@ Deno.test("REQ-462 M26: a signed quote's panel makes a change order next to 'Sig
       (await row.innerText()).includes(`on ${invoice.number}`),
       "on the open invoice",
     );
+    // REQ-684 (cycle 5, m39): the panel says the alert reached Karen — the
+    // chat's "Sent CO-001 to … by email (…)", not a bare "created"
+    const sent = page.locator("[data-cy='quote-co-delivery']");
+    await sent.waitFor({ timeout: 15_000 });
+    expect(
+      (await sent.innerText()).includes(
+        "Sent CO-001 to Karen Mills by email (karen@blackhole.postmarkapp.com)",
+      ),
+      `the panel says CO-001 was emailed to Karen: ${await sent.innerText()}`,
+    );
     const listed = await call(
       http,
       auth,
@@ -229,6 +243,13 @@ Deno.test("REQ-462 M26: a signed quote's panel makes a change order next to 'Sig
     await page.locator("[data-cy='ledger-co-edit-save']").click();
     await page.locator("[data-cy='ledger-co-row']", { hasText: "Version 2" })
       .waitFor({ timeout: 15_000 });
+    // REQ-684: the re-sent alert says what reached Karen too
+    const resent = page.locator("[data-cy='ledger-co-delivery']");
+    await resent.waitFor({ timeout: 15_000 });
+    expect(
+      (await resent.innerText()).includes("Sent CO-001 to Karen Mills by email"),
+      `the saved note says the edit was emailed: ${await resent.innerText()}`,
+    );
     const edited = page.locator("[data-cy='ledger-co-row']", {
       hasText: "CO-001",
     });

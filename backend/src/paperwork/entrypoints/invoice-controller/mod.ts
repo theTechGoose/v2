@@ -25,6 +25,10 @@ import {
   parseCreateChangeOrder,
 } from "@paperwork/dto/change-order.ts";
 import { SendChangeOrderAlert } from "@paperwork/domain/coordinators/send-change-order-alert/mod.ts";
+import {
+  type ChangeOrderDelivery,
+  changeOrderDeliveryOf,
+} from "#documents/change-order-sent-line.ts"; // REQ-684
 import { deriveUrgency } from "@paperwork/domain/business/invoice-urgency/mod.ts";
 import { isOpenReceivable } from "@paperwork/domain/business/open-receivable/mod.ts";
 import { ConfirmPayment } from "@paperwork/domain/coordinators/confirm-payment/mod.ts";
@@ -219,13 +223,19 @@ export class InvoiceController {
       // this snapshot so revisiting the link after approval stays correct.
       originalAmountCents: inv.amount ?? 0,
     }, { requestId });
-    // Trigger approval: alert the contractor (email + SMS) with the shareable
-    // /co link to send the customer. Fire-and-forget — delivery problems must
-    // never fail the create.
-    this.changeOrderAlert.run(co.id).catch((err) =>
-      console.error(`[invoices/${id}/change-orders] alert failed:`, err)
-    );
-    return ctx.json(co);
+    // Trigger approval: the alert emails + texts the CUSTOMER the /co link
+    // (and the contractor a heads-up). REQ-684 (cycle 5, m39): wait for it and
+    // answer with what reached the customer, so the panel says "Sent CO-001
+    // to Maria by email (…)" like the chat (REQ-456). A failed alert never
+    // fails the create — it comes back as `delivery.error`.
+    return ctx.json({
+      ...co,
+      delivery: await alertCustomer(
+        this.changeOrderAlert,
+        co.id,
+        `invoices/${id}/change-orders`,
+      ),
+    });
   }
 
   /**
@@ -261,10 +271,15 @@ export class InvoiceController {
       deltaAmountCents: dto.deltaAmountCents,
       originalAmountCents: invAmount,
     });
-    this.changeOrderAlert.run(co.id).catch((err) =>
-      console.error(`[invoices/${id}/change-orders/${coId}] alert failed:`, err)
-    );
-    return ctx.json(co);
+    // REQ-684 (cycle 5, m39): the re-sent alert's delivery, as on create.
+    return ctx.json({
+      ...co,
+      delivery: await alertCustomer(
+        this.changeOrderAlert,
+        co.id,
+        `invoices/${id}/change-orders/${coId}`,
+      ),
+    });
   }
 
   /** Delete a change order. If it was already approved, its delta was applied
@@ -725,4 +740,23 @@ async function revertApprovedDelta(
  *  unissued draft / scheduled tracks — an omitted status is a draft). */
 function isIssuedAtBirth(status: string | undefined): boolean {
   return !!status && status !== "draft" && status !== "scheduled";
+}
+
+/** REQ-684 (cycle 5, m39): run the change-order alert and return what
+ *  reached the customer; a thrown alert is reported, never raised. (Module
+ *  scope: Danet routes every method on a controller class.) */
+async function alertCustomer(
+  alert: SendChangeOrderAlert,
+  changeOrderId: string,
+  where: string,
+): Promise<ChangeOrderDelivery> {
+  try {
+    return changeOrderDeliveryOf(await alert.run(changeOrderId));
+  } catch (err) {
+    console.error(`[${where}] alert failed:`, err);
+    return changeOrderDeliveryOf(
+      undefined,
+      err instanceof Error ? err.message : String(err),
+    );
+  }
 }

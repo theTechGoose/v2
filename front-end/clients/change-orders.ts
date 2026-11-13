@@ -9,6 +9,7 @@
  *  - DELETE /invoices/:id/change-orders/:coId   → withdrawn (an approved one 409s)
  */
 import { api, type ApiOptions } from "../lib/api.ts";
+import type { ChangeOrderDelivery } from "../../shared/documents/change-order-sent-line.ts";
 
 export interface ChangeOrderBody {
   description: string;
@@ -22,6 +23,9 @@ export interface ChangeOrderRecord extends ChangeOrderBody {
   number?: string;
   version?: number;
   status: "pending" | "approved" | "declined";
+  /** REQ-684 (cycle 5, m39): on create/edit — what the alert delivered to
+   *  the customer, channel by channel. */
+  delivery?: ChangeOrderDelivery;
 }
 
 export const changeOrdersClient = {
