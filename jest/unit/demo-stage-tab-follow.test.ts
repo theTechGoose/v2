@@ -295,11 +295,13 @@ describe("REQ-436 the customer's side names its browser tab and its focus on eve
     jest.setSystemTime(9_000);
     const v = viewer(true);
     v.link.claim();
+    // REQ-640 — a claim the customer's input backs says so (i: 1)
     expect(v.ws.of("claim").pop()).toEqual({
       t: "claim",
       at: 9_000,
       tab: "tab-A",
       f: 1,
+      i: 1,
     });
     v.link.close();
   });

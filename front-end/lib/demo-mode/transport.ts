@@ -52,6 +52,13 @@
  * page is still loading (early-link.ts), when an answer can sit behind the page's own work — a
  * round trip that long skews the clock by half of it, and the stage read every frame as late; the
  * quickest round trip still wins.
+ * REQ-640 (demo-loop cycle 5, M29 + m24) — a claim's time is when the customer last did something
+ * on that page, never when the code ran: only the customer's input (`claim()` / "input": a click, a
+ * key, the tab brought to the front) stamps "now" and says so (`i: 1`, which wins a tie); a "load"
+ * or "focus" claim carries the page's load start (`loadedAt`, performance.timeOrigin on the
+ * browser's shared clock) or its last input claim — so a background tab that merely booted (or
+ * emulates focus) later never outranks the page the customer moved to. A stage that joins gets
+ * each tab's last claim with its `peer` (the hub keeps them) and ranks the roster at once.
  */
 import {
   type ClientMessage,
@@ -96,6 +103,9 @@ export interface DemoLinkOptions {
   tab?: string;
   /** REQ-436 — the customer's side: does this page have focus (said on every claim) */
   hasFocus?: () => boolean;
+  /** REQ-640 — the customer's side: when this page began loading (ms, the browser's shared clock;
+   *  performance.timeOrigin) — what a load or focus claim says. Default: when the link was made */
+  loadedAt?: number;
   onPeer(m: PeerMessage, from: PeerFrom): void;
   onStatus(s: LinkStatus): void;
   /** the other side arrived (or was there on welcome); REQ-232 — on the customer's side also: a
@@ -121,8 +131,10 @@ export interface DemoLink {
   /** `lossy` — a pointer move: dropped rather than queued when the channel is behind */
   send(m: PeerMessage, lossy?: boolean): void;
   isDirect(): boolean;
-  /** REQ-232 — the customer's side: this tab is the one the customer is using now */
-  claim(): void;
+  /** REQ-232 — the customer's side: this tab is the one the customer is using now. REQ-640 —
+   *  `how`: "input" (default — the customer did something here: stamped now), "load" or "focus"
+   *  (stamped with the page's load start or its last input claim, never now) */
+  claim(how?: ClaimHow): void;
   /** REQ-391 — this page is going, and why (at pagehide): the server says it when the socket goes */
   leaving(why: LeaveWhy): void;
   /** REQ-391 — the deploy's clock as this browser knows it (its own until the deploy answered) */
@@ -131,6 +143,9 @@ export interface DemoLink {
   end(): void;
   close(): void;
 }
+
+/** REQ-640 — what a claim is backed by: the customer's input, the page's load, a focus event */
+export type ClaimHow = "input" | "load" | "focus";
 
 const ICE: RTCConfiguration = {
   iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
@@ -164,6 +179,8 @@ interface Tab {
   key?: string;
   /** REQ-436 — its last claim said its page has focus */
   f?: boolean;
+  /** REQ-640 — its last claim was backed by the customer's input */
+  i?: boolean;
 }
 
 /** REQ-436 — a browser tab whose followed page went navigating: the stage holds on to it */
@@ -171,6 +188,7 @@ interface Held {
   key: string;
   at: number;
   f?: boolean;
+  i?: boolean;
   timer: ReturnType<typeof setTimeout>;
 }
 
@@ -192,6 +210,10 @@ export function connectDemo(o: DemoLinkOptions): DemoLink {
   const stages = new Map<string, string>();
   /** REQ-232 — the customer's side: when this tab last claimed the stage (0: never) */
   let claimedAt = 0;
+  /** REQ-640 — the customer's side: that claim was backed by the customer's input */
+  let claimedByInput = false;
+  /** REQ-640 — the customer's side: when this page began loading */
+  const loadedAt = o.loadedAt ?? Date.now();
   /** REQ-232 — the other side's last socket went a moment ago: still "live" until the grace ends */
   let lingering = false;
   let grace: ReturnType<typeof setTimeout> | undefined;
@@ -372,10 +394,12 @@ export function connectDemo(o: DemoLinkOptions): DemoLink {
   const follow = () => {
     let best: string | null = null;
     let top: Tab | null = null;
-    // REQ-436 — a tie on the claim's time goes to the page that has focus, then the newest
+    // REQ-436 — a tie on the claim's time goes to the page that has focus, then the newest;
+    // REQ-640 — before either, to the claim the customer's input backs
     const beats = (t: Tab, u: Tab) =>
       t.at > u.at ||
-      (t.at === u.at && (!!t.f !== !!u.f ? !!t.f : t.n > u.n));
+      (t.at === u.at &&
+        (!!t.i !== !!u.i ? !!t.i : !!t.f !== !!u.f ? !!t.f : t.n > u.n));
     for (const [cid, t] of tabs) {
       if (!top || beats(t, top)) {
         best = cid;
@@ -411,22 +435,37 @@ export function connectDemo(o: DemoLinkOptions): DemoLink {
   };
   /** REQ-436 — a page of browser tab `key` is here: it takes over what the tab's earlier page had
    *  (its claim; the stage, when the tab was held) */
-  const inherit = (t: Tab, key: string, at: number, f?: boolean) => {
+  const inherit = (
+    t: Tab,
+    key: string,
+    at: number,
+    f?: boolean,
+    i?: boolean,
+  ) => {
     if (at >= t.at) {
       t.at = at;
       t.f = f;
+      t.i = i;
     }
     t.key = key;
   };
   /** REQ-232 — a presenter: a customer's tab came, went or claimed (REQ-436 — `key`: its browser
-   *  tab, `f`: its page has focus) */
-  const tabSeen = (cid: string, at = 0, key?: string, f?: boolean) => {
+   *  tab, `f`: its page has focus; REQ-640 — `i`: the customer's input backs the claim). A tab on
+   *  a joining stage's roster comes with its last claim (m24): it is ranked by it at once */
+  const tabSeen = (
+    cid: string,
+    at = 0,
+    key?: string,
+    f?: boolean,
+    i?: boolean,
+  ) => {
     if (gone.has(cid)) return;
     let t = tabs.get(cid);
     if (!t) tabs.set(cid, t = { at: 0, n: ++arrivals });
     if (at >= t.at && (at > 0 || key)) {
       t.at = at;
       t.f = f;
+      t.i = i;
     }
     if (key) {
       // REQ-645 (m36) — the socket the stage follows says its browser tab only now
@@ -436,7 +475,7 @@ export function connectDemo(o: DemoLinkOptions): DemoLink {
         // the followed browser tab's next page: the stage goes back to it at once
         const h = held;
         release();
-        inherit(t, key, h.at, h.f);
+        inherit(t, key, h.at, h.f, h.i);
       }
       if (late) o.onPeerTab?.(cid, key);
     }
@@ -459,7 +498,7 @@ export function connectDemo(o: DemoLinkOptions): DemoLink {
     if (cid === followed && t?.key) {
       // REQ-436 — a page of the same browser tab is already here: it is the stage's now
       const next = [...tabs.values()].find((u) => u.key === t.key);
-      if (next) inherit(next, t.key, t.at, t.f);
+      if (next) inherit(next, t.key, t.at, t.f, t.i);
       else if (why === "navigating") {
         // its next page is coming: keep following this browser tab, "between", for the grace —
         // the page that went takes its connection and its pointer along
@@ -470,6 +509,7 @@ export function connectDemo(o: DemoLinkOptions): DemoLink {
           key: t.key,
           at: t.at,
           f: t.f,
+          i: t.i,
           timer: setTimeout(() => {
             held = null;
             follow();
@@ -502,10 +542,12 @@ export function connectDemo(o: DemoLinkOptions): DemoLink {
     bestRtt = rtt;
     skew = s + rtt / 2 - now;
   };
-  /** REQ-436 — a claim's browser-tab key and focus (the customer's side) */
+  /** REQ-436 — a claim's browser-tab key and focus (the customer's side); REQ-640 — and whether
+   *  the customer's input backs it */
   const claimExtras = () => ({
     ...(o.tab ? { tab: o.tab } : {}),
     ...(o.hasFocus?.() ? { f: 1 as const } : {}),
+    ...(claimedByInput ? { i: 1 as const } : {}),
   });
   /** REQ-232 — the customer's side: say again that this tab is the one in use; REQ-436 — a page
    *  with a browser-tab key says which tab it is even when it never claimed (`at` 0) */
@@ -604,12 +646,16 @@ export function connectDemo(o: DemoLinkOptions): DemoLink {
         case "peer":
           if (m.pid !== undefined) stageSeen(m.online, m.pid, m.cid);
           else if (o.role === "presenter") {
-            if (m.online) tabSeen(m.cid ?? NO_CID);
-            else tabLeft(m.cid ?? NO_CID, m.why, m.at);
+            // REQ-640 — a tab on the roster comes with its last claim (the hub kept it)
+            if (m.online) {
+              tabSeen(m.cid ?? NO_CID, m.at ?? 0, m.tab, m.f === 1, m.i === 1);
+            } else tabLeft(m.cid ?? NO_CID, m.why, m.at);
           }
           break;
         case "claim":
-          if (o.role === "presenter") tabSeen(m.cid, m.at, m.tab, m.f === 1);
+          if (o.role === "presenter") {
+            tabSeen(m.cid, m.at, m.tab, m.f === 1, m.i === 1);
+          }
           break;
         case "sync":
           if (o.role === "viewer") o.onPeerOnline();
@@ -699,9 +745,17 @@ export function connectDemo(o: DemoLinkOptions): DemoLink {
       wsSend({ t: "relay", data: m });
     },
     isDirect: () => Boolean(direct()),
-    claim() {
+    claim(how = "input") {
       if (o.role !== "viewer") return;
-      claimedAt = Date.now();
+      if (how === "input") {
+        claimedAt = Date.now();
+        claimedByInput = true;
+      } else if (loadedAt > claimedAt) {
+        // REQ-640 (M29) — a load or focus claim: when this page began loading, or its last input
+        // claim when that is newer (re-said as it was) — never the moment this code runs
+        claimedAt = loadedAt;
+        claimedByInput = false;
+      }
       wsSend({ t: "claim", at: claimedAt, ...claimExtras() });
     },
     leaving(why) {
