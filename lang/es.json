@@ -792,6 +792,7 @@
   "chatCoordinator.revision.updatedNoChange": "Actualicé la cotización.",
   "chatCoordinator.quoteLocked": "Cotización confirmada",
   "chatCoordinator.priceMissing": "No puedo usar eso como precio. ¿Cuánto debería costar {item}? Dame un número, como $500.",
+  "chatCoordinator.quoteLimit": "Ya hiciste tus {limit} cotizaciones de este mes en Monster Free, así que no empecé una nueva. Monster tiene cotizaciones ilimitadas: mejora tu plan en Configuración → Plan, o tus {limit} cotizaciones nuevas vuelven a empezar el día 1.",
   "chatCoordinator.emailSkipped": "Omití el correo \"{value}\" — no es una dirección válida. Mándame el correcto, como nombre@ejemplo.com.",
   "chatCoordinator.priceCheck.jump": "Eso subiría el total de {from} a {to} — más del triple — con precios que no me diste: {lines}. No cambié la cotización. ¿Cuánto deben costar, o cuál debe ser el total?",
   "chatCoordinator.priceCheck.drop": "Eso bajaría el total de {from} a {to} — menos de un tercio — con precios que no me diste: {lines}. No cambié la cotización. ¿Cuánto deben costar, o cuál debe ser el total?",

@@ -77,8 +77,8 @@ export interface PricingPlan {
   upgrade?: boolean;
   blurb?: string;
   /**
-   * Hard caps. Absent = unlimited. Display-only for now: enforcing the
-   * "5 quotes a month" cap in the app is its own Sept. 8 action item.
+   * Hard caps. Absent = unlimited. REQ-766: enforced — the backend's
+   * QuoteAllowance refuses a quote past `quotesPerMonth` in a calendar month.
    */
   limits?: { quotesPerMonth?: number };
   /** Everything this tier promises, in display order. */

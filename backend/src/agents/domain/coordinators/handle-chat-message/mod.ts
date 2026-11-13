@@ -94,6 +94,7 @@ import {
   turnChannel,
 } from "@agents/domain/business/chat-stream/mod.ts";
 import { QuoteStore } from "@paperwork/domain/data/quote-store/mod.ts";
+import { QuoteAllowance } from "@paperwork/domain/coordinators/quote-allowance/mod.ts";
 import { TranslateQuote } from "@agents/domain/coordinators/translate-quote/mod.ts";
 import { FileStore } from "@files/domain/data/file-store/mod.ts";
 import { UserStore } from "@users/domain/data/user-store/mod.ts";
@@ -438,6 +439,9 @@ export class HandleChatMessage {
     /** REQ-585 (demo-loop cycle 4, M4 + M30): sets the agreement terms the
      *  contractor gives in the chat (update_terms) through the wizard. */
     private wizard?: HandleWizardAnswer,
+    /** REQ-766 (demo-loop cycle 5v2, m17): Monster Free's five quotes a
+     *  month — asked before create_quote drafts a new quote. */
+    private allowance: QuoteAllowance = new QuoteAllowance(),
   ) {}
 
   /** REQ-585 (demo-loop cycle 4, M4): the terms-phase start date / time to
@@ -3182,6 +3186,22 @@ export class HandleChatMessage {
       });
       suppressTextBubble = false;
     }
+    // REQ-766 (demo-loop cycle 5v2, m17): a NEW draft on an account at its
+    // plan's monthly cap (Monster Free: "Up to five quotes and contracts a
+    // month") is not made — no quote, no card, no binding; the reply says the
+    // month's quotes are used and what lifts the cap. Revising the bound
+    // draft is not a new quote and goes on as usual.
+    const quoteLimit = llmResponse.action?.type === "create_quote" &&
+        !priceProblem && !existingDraft
+      ? await this.allowance.check(input.userId)
+      : undefined;
+    const overQuoteLimit = quoteLimit?.ok === false ? quoteLimit : undefined;
+    if (overQuoteLimit) {
+      replyText = t(replyLang, "chatCoordinator.quoteLimit", {
+        limit: overQuoteLimit.limit,
+      });
+      suppressTextBubble = false;
+    }
     // REQ-653 (demo-loop cycle 5, M7): "email notanemail" — the composer
     // can't use it; the reply says it was skipped, never passes it over.
     const badEmail = llmResponse.action?.type === "create_quote"
@@ -3295,7 +3315,9 @@ export class HandleChatMessage {
 
       // ---- create_quote: persist real Quote → emit action_card with real id ----
       // (REQ-302: a priceless draft was refused above — no persist, no card.)
-      if (action.type === "create_quote" && !priceProblem) {
+      if (
+        action.type === "create_quote" && !priceProblem && !overQuoteLimit
+      ) {
         // Audit1 #3 — line item amounts persist as INTEGER CENTS, matching
         // the LLM's `amountCents` payload. The previous schema divided by
         // 100 here to store dollars; we no longer do that conversion.

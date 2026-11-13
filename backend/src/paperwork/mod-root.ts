@@ -50,6 +50,7 @@ import { QuoteTranslatorPort } from "@paperwork/domain/coordinators/quote-transl
 import { InquiryController } from "@paperwork/entrypoints/inquiry-controller/mod.ts"; // REQ-701
 import { QuoteInquiryStore } from "@paperwork/domain/data/inquiry-store/mod.ts"; // REQ-701
 import { ReplyToInquiry } from "@paperwork/domain/coordinators/reply-to-inquiry/mod.ts"; // REQ-701
+import { QuoteAllowance } from "@paperwork/domain/coordinators/quote-allowance/mod.ts"; // REQ-766
 
 @Module({
   imports: [UsersModule, CrmModule, CommunicationModule, FilesModule],
@@ -103,6 +104,7 @@ import { ReplyToInquiry } from "@paperwork/domain/coordinators/reply-to-inquiry/
     QuoteTranslatorPort, // REQ-591
     QuoteInquiryStore, // REQ-701
     ReplyToInquiry, // REQ-701
+    QuoteAllowance, // REQ-766
   ],
 })
 export class PaperworkModule {}

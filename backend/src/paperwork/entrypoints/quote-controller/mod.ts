@@ -19,6 +19,7 @@ import { SessionStore } from "@users/domain/data/session-store/mod.ts";
 import { requireUser } from "@users/domain/coordinators/require-user/mod.ts";
 import { requestIdOf } from "@core/business/request-id/mod.ts";
 import { PreviewQuoteSend } from "@paperwork/domain/coordinators/preview-quote-send/mod.ts";
+import { QuoteAllowance } from "@paperwork/domain/coordinators/quote-allowance/mod.ts";
 import { parseSendPreviewQuery } from "#quote-flow/send-preview.ts";
 import {
   QUOTE_CONTENT_FIELDS,
@@ -34,6 +35,7 @@ export class QuoteController {
     private users: UserStore,
     private sessions: SessionStore,
     private sendPreview: PreviewQuoteSend,
+    private allowance: QuoteAllowance,
   ) {}
 
   @Post()
@@ -41,6 +43,13 @@ export class QuoteController {
     const user = await requireUser(ctx, this.sessions, this.users);
     const requestId = requestIdOf(ctx, body); // REQ-200
     const dto = parseCreateQuote(body);
+    // REQ-766 (cycle 5v2, m17): Monster Free's "Up to five quotes and
+    // contracts a month" — the sixth this month is refused, nothing stored.
+    // (The onboarding sample, REQ-241, neither counts nor is capped.)
+    if (dto.isSample !== true) {
+      const allowed = await this.allowance.check(user.id);
+      if (!allowed.ok) return ctx.json(allowed, 402);
+    }
     // NW-10 (REQ-003): a quote is born a draft. "sent"/"viewed" describe a
     // dispatch that has not happened at creation time, so the API refuses to
     // record them here — the send coordinators stamp status + sentAt.
