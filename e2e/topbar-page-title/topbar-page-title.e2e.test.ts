@@ -81,7 +81,8 @@ Deno.test("REQ-619 (demo p4-p3d): on a phone every app page's topbar names the p
 
     const pages: Array<[string, string]> = [
       ["/invoices", "Invoices"],
-      ["/quotes", "Quotes"],
+      // REQ-746 (cycle 5, c1-p15-18): the quotes page holds the agreements too
+      ["/quotes", "Quotes & agreements"],
       ["/customers", "Customers"],
       ["/payments", "Payments"],
       ["/settings", "Settings"],
