@@ -4,7 +4,7 @@
  * assembles the hero, KPIs, jobs row, quotes row, activity feed, and
  * outstanding list.
  */
-import { useEffect, useState } from "preact/hooks";
+import { useEffect, useRef, useState } from "preact/hooks";
 import {
   type Customer,
   dashboardClient,
@@ -31,7 +31,7 @@ import { dueDateLine } from "../../shared/quote-flow/pipeline-stats.ts";
 import { docNumberOf } from "../../shared/documents/numbering.ts";
 import { versionOf } from "../../shared/documents/versions.ts";
 import { readCached, refreshDash } from "../lib/dash-cache.ts";
-import { scrollToHashTarget } from "../lib/dash-anchor.ts";
+import { holdHashTarget } from "../lib/dash-anchor.ts";
 import { pickKpis } from "../lib/dashboard-kpis.ts";
 import { jobRowTitle, quoteRowTitle } from "../lib/dashboard-titles.ts";
 import {
@@ -467,10 +467,21 @@ export default function DashboardPage(_props: { lang?: Lang } = {}) {
   // fragment scroll found nothing and the page stayed at the top. Scroll to the
   // panel once it mounts (hydration on a warm start, the fetch on a cold one)
   // and once more when the lists land and the content above it settles.
+  // REQ-749 (cycle 5v1, m57 re-opened): one scroll per render was not enough —
+  // on the first load after login the feed fills the Activity panel after the
+  // lists land, so the scroll clamped at the then-bottom of the page and the
+  // panel ended below the fold. Hold the panel while the layout settles (it
+  // re-scrolls on every size change until the user scrolls or ~6 s pass).
+  const releaseHold = useRef<(() => void) | null>(null);
   useEffect(() => {
     if (s.loading || typeof document === "undefined") return;
-    scrollToHashTarget(document, globalThis.location?.hash ?? "");
+    if (releaseHold.current) return;
+    releaseHold.current = holdHashTarget(
+      document,
+      globalThis.location?.hash ?? "",
+    );
   }, [s.loading, s.listsLoaded]);
+  useEffect(() => () => releaseHold.current?.(), []);
 
   // PDF p8: "My Assistant needs to be on the dashboard at the top because on
   // mobile you have to hit the hamburger to actually see that." This block is
