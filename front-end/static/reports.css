@@ -1,7 +1,7 @@
 /* /reports — REQ-795. Same vocabulary as /invoices and /quotes: the .qph hero,
    white rounded tiles, the brand pink pill. One step per card, read top down. */
 .rp {
-  max-width: 880px;
+  width: 100%;
 }
 .rp__step {
   background: #fff;
