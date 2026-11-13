@@ -20,3 +20,11 @@ export const SB_DRAWER_CSS = `.sb__close { display: none; }
   .sb__close:hover { background: rgba(20, 72, 82, 0.08); }
   .sb__close:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }
 }`;
+
+/** REQ-156 / REQ-738 — folder rows: the chevron sits at the row's right edge (hidden when the rail
+ *  is collapsed) and Back is a quieter row above the folder's name. These ride with the island, not
+ *  dashboard.css, so /assistant (assistant-page.css) right-aligns them too (demo cycle 5, p13). */
+export const SB_FOLDER_CSS =
+  `.nav-item__chev { margin-left: auto; display: grid; place-items: center; opacity: 0.6; }
+.nav-item--back { color: rgba(255, 255, 255, 0.55); font-size: 13px; }
+.sb--collapsed .nav-item__chev { display: none; }`;

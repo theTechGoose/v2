@@ -14,7 +14,7 @@ import {
   isActing,
 } from "../clients/admins.ts";
 import { isFolder, viewAt } from "../lib/nav-folders.ts";
-import { restingPath, SB_DRAWER_CSS } from "../lib/sb-drawer.ts";
+import { restingPath, SB_DRAWER_CSS, SB_FOLDER_CSS } from "../lib/sb-drawer.ts";
 import { NAV, superAdminTabAt } from "../lib/nav-tree.ts";
 import {
   PROFILE_UPDATED,
@@ -236,6 +236,7 @@ export default function DashSidebar(
         />
       )}
       <style>{SB_DRAWER_CSS}</style>
+      <style>{SB_FOLDER_CSS}</style>
       <aside
         class={`sb ${collapsed ? "sb--collapsed" : ""} ${
           mobileOpen ? "sb--open" : ""
