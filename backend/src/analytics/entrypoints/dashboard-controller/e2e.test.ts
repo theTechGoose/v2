@@ -9,6 +9,8 @@ import { CustomerStore } from "@crm/domain/data/customer-store/mod.ts";
 import { QuoteStore } from "@paperwork/domain/data/quote-store/mod.ts";
 import { InvoiceStore } from "@paperwork/domain/data/invoice-store/mod.ts";
 import { resetKv } from "@core/data/kv/mod.ts";
+import { AgentConversationStore } from "@agents/domain/data/agent-conversation-store/mod.ts";
+import { TERMS_WIZARD_V1 } from "@agents/domain/business/terms-wizard-spec/mod.ts";
 
 @Module({ imports: [AnalyticsModule] })
 class TestApp {}
@@ -176,6 +178,66 @@ Deno.test("REQ-397 analytics e2e: GET /analytics/dashboard + GET /jobs show a se
     }).then((r) => r.json());
     assertEquals(jobs.length, 1);
     assertEquals(jobs[0].nextDueDate, due);
+  } finally {
+    await server.stop();
+    await resetKv();
+  }
+});
+
+// REQ-698 (demo-loop cycle 5, m14): over HTTP, through the real module wiring
+// (AnalyticsModule reaches the assistant threads): a draft mid-wizard is not
+// "ready to send", and a deposit-only job is no paid job for the average.
+Deno.test("REQ-698 (cycle 5, m14) analytics e2e: GET /analytics/dashboard counts only finished-wizard drafts as readyToSend and only completed jobs as paid", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const port = 20_000 + Math.floor(Math.random() * 20_000);
+  const server = await bootstrapServer(TestApp, { port, swagger: false });
+  await server.listen();
+  try {
+    const sid = await login(port, "+15125550698");
+    const userId = (await new SessionStore().get(sid))!.userId;
+    const quotes = new QuoteStore();
+    const conversations = new AgentConversationStore();
+    for (const step of [2, TERMS_WIZARD_V1.steps.length]) {
+      const q = await quotes.create(userId, {
+        summary: "Paint the deck",
+        lineItems: [],
+        estimatedTotal: 1_450_00,
+      });
+      const conv = await conversations.create({
+        userId,
+        quoteId: q.id,
+        currentPhase: "terms",
+      });
+      await conversations.putWizardState(conv.id, {
+        specId: TERMS_WIZARD_V1.id,
+        activeStepIdx: step,
+        answers: [],
+      });
+    }
+    const invoices = new InvoiceStore();
+    await invoices.create(userId, {
+      quoteId: "q-deck",
+      amount: 725_00,
+      dueDate: "2026-12-01",
+      status: "paid",
+      paidAt: new Date().toISOString(),
+    } as never);
+    await invoices.create(userId, {
+      quoteId: "q-deck",
+      amount: 725_00,
+      dueDate: "2026-12-31",
+      status: "scheduled",
+    } as never);
+
+    const stats = await fetch(`http://localhost:${port}/analytics/dashboard`, {
+      headers: { "x-session-id": sid },
+    }).then((r) => r.json());
+    assertEquals(stats.quotes.draft, 2);
+    assertEquals(stats.quotes.readyToSend, 1);
+    assertEquals(stats.revenue.ytdCents, 725_00);
+    assertEquals(stats.revenue.paidJobsYtd, 0);
+    assertEquals(stats.revenue.paidJobsYtdCents, 0);
   } finally {
     await server.stop();
     await resetKv();

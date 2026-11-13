@@ -71,3 +71,34 @@ export function countPaidJobs(
     invoices.filter((i) => i.status === "paid").map((i) => i.quoteId || i.id),
   ).size;
 }
+
+/**
+ * REQ-698 (demo-loop cycle 5, m14) — the "Avg. paid job" numbers: the jobs
+ * COMPLETED (every non-void invoice paid, `isJobComplete`) whose last payment
+ * landed in `year`, and what they were paid in total (cents). A job is its
+ * quote's invoices, a standalone invoice its own. A $1,450 job with only its
+ * $725 deposit paid is not a paid job yet — it read "AVG. PAID JOB $725".
+ */
+export function completedJobsInYear(
+  invoices: Pick<Invoice, "id" | "quoteId" | "status" | "paidAt" | "amount">[],
+  year: number,
+): { count: number; cents: number } {
+  const byJob = new Map<string, typeof invoices>();
+  for (const i of invoices) {
+    const key = i.quoteId || i.id;
+    const list = byJob.get(key);
+    if (list) list.push(i);
+    else byJob.set(key, [i]);
+  }
+  let count = 0;
+  let cents = 0;
+  for (const related of byJob.values()) {
+    if (!isJobComplete(related)) continue;
+    const paid = related.filter((i) => i.status === "paid");
+    const last = paid.map((i) => i.paidAt ?? "").sort().at(-1);
+    if (!last || new Date(last).getUTCFullYear() !== year) continue;
+    count++;
+    cents += paid.reduce((sum, i) => sum + (i.amount ?? 0), 0);
+  }
+  return { count, cents };
+}

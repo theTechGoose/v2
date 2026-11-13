@@ -632,6 +632,7 @@ export default function DashboardPage(_props: { lang?: Lang } = {}) {
           lang={lang}
           hasDecidedHistory={(stats?.quotes.accepted ?? 0) > 0}
           draftCount={stats?.quotes.draft ?? 0}
+          readyCount={stats?.quotes.readyToSend}
           undeliveredCount={stats?.quotes.undelivered ?? 0}
           pending={!s.listsLoaded}
         />

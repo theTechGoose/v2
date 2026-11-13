@@ -255,3 +255,29 @@ Deno.test("REQ-564: quote/invoice 'revised' maps to '<number> Version <n> publis
     "INV-003 Version 3 published to your client",
   );
 });
+
+// REQ-698 (demo-loop cycle 5, m14): pair 5's CO-002 never showed in "What we
+// handled today" — no change-order SEND event existed, only the customer's
+// approve/decline. A sent change order is the owner's work too.
+Deno.test("REQ-698 (cycle 5, m14): invoice 'change_order_sent' maps to 'Change order <n> sent to <customer> (<delta>)' in both languages", () => {
+  const sent = ev("change_order_sent", {
+    number: "CO-002",
+    delta: "+$400.00",
+    customerName: "Linda",
+  });
+  assertEquals(
+    notificationL10n(sent)?.titleKey,
+    "notify.invoice.changeOrderSentAmount",
+  );
+  assertEquals(feedTitle(sent, "en"), "Change order CO-002 (+$400.00) sent to Linda");
+  assertEquals(
+    feedTitle(sent, "es"),
+    "Orden de cambio CO-002 (+$400.00) enviada a Linda",
+  );
+  const bare = ev("change_order_sent", { number: "CO-002" });
+  assertEquals(
+    notificationL10n(bare)?.titleKey,
+    "notify.invoice.changeOrderSent",
+  );
+  assertEquals(feedTitle(bare, "en"), "Change order CO-002 sent to your client");
+});

@@ -64,3 +64,22 @@ Deno.test("REQ-562 (cycle 4, m21) pickKpis: avg paid job divides by distinct pai
   s.revenue.paidJobsYtd = 1;
   assertEquals(pickKpis(s).avgJob, 2_850);
 });
+
+// REQ-698 (demo-loop cycle 5, m14): pair 1 saw "AVG. PAID JOB $725" for a
+// $1,450 job with only its deposit paid — the average divided ALL revenue by
+// jobs with ANY paid installment. It averages completed jobs only now.
+Deno.test("REQ-698 pickKpis: a deposit-only job is no paid job — avg paid job = completed jobs' revenue / completed jobs", () => {
+  const s = stats(
+    { current: 0, aging1_14d: 0, overdue15_30d: 0, overdue30plus: 0 },
+    0,
+  );
+  s.revenue.ytdCents = 725_00;
+  s.revenue.paidJobsYtd = 0;
+  s.revenue.paidJobsYtdCents = 0;
+  assertEquals(pickKpis(s).avgJob, 0);
+
+  s.revenue.ytdCents = 2_725_00; // + a completed $2,000 job
+  s.revenue.paidJobsYtd = 1;
+  s.revenue.paidJobsYtdCents = 2_000_00;
+  assertEquals(pickKpis(s).avgJob, 2_000);
+});

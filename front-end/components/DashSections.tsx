@@ -356,6 +356,7 @@ export function QuotesAwaiting(
     lang = "en",
     hasDecidedHistory = false,
     draftCount = 0,
+    readyCount,
     undeliveredCount = 0,
     pending = false,
   }: {
@@ -369,6 +370,8 @@ export function QuotesAwaiting(
     /** REQ-404 (m13): real unsent drafts — the count above stays sent-only
      *  (REQ-320), but the empty line names the drafts ready to send. */
     draftCount?: number;
+    /** REQ-698 (m14): of the drafts, those whose wizard finished. */
+    readyCount?: number;
     /** UX-02: quotes WERE sent and got answered — the empty state must not
      *  claim "no quotes were ever sent" over a user's first accepted win. */
     hasDecidedHistory?: boolean;
@@ -404,6 +407,7 @@ export function QuotesAwaiting(
           {(() => {
             const e = dashQuotesEmpty({
               draftCount,
+              readyCount,
               hasDecidedHistory,
               undeliveredCount,
             });

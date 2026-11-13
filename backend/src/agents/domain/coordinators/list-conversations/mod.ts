@@ -69,33 +69,38 @@ export class ListConversations {
         ...r,
         ...(customerName ? { customerName } : {}),
         ...(jobName ? { jobName } : {}),
-        threadStatus: threadStatus({ quote, ...await this.flowOf(r) }),
+        threadStatus: threadStatus({
+          quote,
+          ...await threadFlowOf(this.conversations, r),
+        }),
       };
     }));
   }
+}
 
-  /** Where the terms wizard stands, and whether the end-of-wizard
-   *  job-details pick is still owed — only a thread in the terms phase has
-   *  either. */
-  private async flowOf(
-    conv: AgentConversation,
-  ): Promise<{ wizard?: WizardStage; detailsPending?: boolean }> {
-    if (conv.currentPhase !== "terms") return {};
-    const [state, draft] = await Promise.all([
-      this.conversations.getWizardState(conv.id),
-      this.conversations.getDraft(conv.id),
-    ]);
-    let wizard: WizardStage | undefined;
-    if (state) {
-      try {
-        wizard = computeProgress(getWizardSpec(state.specId), state).isComplete
-          ? "done"
-          : "asking";
-      } catch { /* an unknown spec — leave the wizard unknown */ }
-    }
-    return {
-      ...(wizard ? { wizard } : {}),
-      detailsPending: draftOwesDetails(draft),
-    };
+/** Where the terms wizard stands, and whether the end-of-wizard job-details
+ *  pick is still owed — only a thread in the terms phase has either. Shared
+ *  by the thread list and, REQ-698 (demo-loop cycle 5, m14), the dashboard's
+ *  "ready to send" count, so both read the same thread status. */
+export async function threadFlowOf(
+  conversations: AgentConversationStore,
+  conv: AgentConversation,
+): Promise<{ wizard?: WizardStage; detailsPending?: boolean }> {
+  if (conv.currentPhase !== "terms") return {};
+  const [state, draft] = await Promise.all([
+    conversations.getWizardState(conv.id),
+    conversations.getDraft(conv.id),
+  ]);
+  let wizard: WizardStage | undefined;
+  if (state) {
+    try {
+      wizard = computeProgress(getWizardSpec(state.specId), state).isComplete
+        ? "done"
+        : "asking";
+    } catch { /* an unknown spec — leave the wizard unknown */ }
   }
+  return {
+    ...(wizard ? { wizard } : {}),
+    detailsPending: draftOwesDetails(draft),
+  };
 }

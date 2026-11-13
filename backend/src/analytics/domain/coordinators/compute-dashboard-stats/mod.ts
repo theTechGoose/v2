@@ -13,7 +13,11 @@ import type { Invoice } from "@paperwork/dto/invoice.ts";
 import type { Payment } from "@paperwork/dto/payment.ts";
 import { bucketPendingInvoices } from "@paperwork/domain/business/invoice-aging-buckets/mod.ts";
 import { isOpenReceivable } from "@paperwork/domain/business/open-receivable/mod.ts";
-import { countPaidJobs } from "@analytics/domain/business/signed-jobs/mod.ts";
+import { completedJobsInYear } from "@analytics/domain/business/signed-jobs/mod.ts";
+import { AgentConversationStore } from "@agents/domain/data/agent-conversation-store/mod.ts";
+import { threadFlowOf } from "@agents/domain/coordinators/list-conversations/mod.ts";
+import { threadStatus } from "#quote-flow/chat-header.ts";
+import type { Quote } from "@paperwork/dto/quote.ts";
 import {
   bucketBy12Months,
   lastMonthRevenue,
@@ -43,6 +47,7 @@ export class ComputeDashboardStats {
     private quotes: QuoteStore,
     private invoices: InvoiceStore,
     private payments: PaymentStore,
+    private conversations: AgentConversationStore,
   ) {}
 
   async run(userId: string, now: Date = new Date()): Promise<DashboardStats> {
@@ -70,6 +75,10 @@ export class ComputeDashboardStats {
       undelivered: realQuotes.filter((q) =>
         q.status === "draft" && isUndelivered(q)
       ).length,
+      readyToSend: await this.countReadyToSend(
+        userId,
+        realQuotes.filter((q) => q.status === "draft"),
+      ),
     };
 
     const todayIso = now.toISOString().slice(0, 10);
@@ -105,6 +114,8 @@ export class ComputeDashboardStats {
         amountCents: i.amount ?? 0,
       }));
 
+    const paidJobs = completedJobsInYear(invoices, now.getUTCFullYear());
+
     return {
       customers: customers.length,
       quotes: quoteCounts,
@@ -114,18 +125,42 @@ export class ComputeDashboardStats {
       awaitingResponse: quoteCounts.sent,
       revenue: {
         ytdCents: ytdRevenue(revenueRows, now),
-        paidJobsYtd: countPaidJobs(
-          invoices.filter((i) =>
-            i.status === "paid" && i.paidAt &&
-            new Date(i.paidAt).getUTCFullYear() === now.getUTCFullYear()
-          ),
-        ),
+        // REQ-698 (demo-loop cycle 5, m14): completed jobs only — a paid
+        // deposit on a $1,450 job read "AVG. PAID JOB $725".
+        paidJobsYtd: paidJobs.count,
+        paidJobsYtdCents: paidJobs.cents,
         lastMonthCents: lastMonthRevenue(revenueRows, now),
         monthOverMonthPct: monthOverMonthPct(revenueRows, now),
         sparkline12mo: bucketBy12Months(revenueRows, now),
       },
       payments: computePaymentStats(payments, invoices, now),
     };
+  }
+
+  /**
+   * REQ-698 (demo-loop cycle 5, m14): of the drafts, those the thread status
+   * calls "Ready to send" — the terms wizard finished and no job-details pick
+   * owed (the SAME rule as the chat header and the thread list). Pair 10's
+   * dashboard said "1 draft is ready to send" while the draft was mid-wizard.
+   */
+  private async countReadyToSend(
+    userId: string,
+    drafts: Quote[],
+  ): Promise<number> {
+    if (drafts.length === 0) return 0;
+    const convs = await this.conversations.listByUser(userId, { limit: 500 })
+      .catch(() => []);
+    // listByUser is newest-first: the first thread naming a quote is its own
+    const convByQuote = new Map<string, (typeof convs)[number]>();
+    for (const c of convs) {
+      if (c.quoteId && !convByQuote.has(c.quoteId)) convByQuote.set(c.quoteId, c);
+    }
+    const statuses = await Promise.all(drafts.map(async (quote) => {
+      const conv = convByQuote.get(quote.id);
+      const flow = conv ? await threadFlowOf(this.conversations, conv) : {};
+      return threadStatus({ quote, ...flow });
+    }));
+    return statuses.filter((s) => s === "readyToSend").length;
   }
 }
 
