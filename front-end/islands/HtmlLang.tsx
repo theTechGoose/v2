@@ -13,6 +13,7 @@ import { followTitle } from "../lib/doc-title.ts";
  * REQ-367 (demo-loop cycle 1, m10): the tab title follows too — on every
  * switch it becomes the language's title the page's DocTitle carries
  * (lib/doc-title.ts). A title that is not live (a landing's own) is left alone.
+ * REQ-709: and on mount, to the language the shell resolved for this page.
  */
 export default function HtmlLang({ initial }: { initial?: Lang }) {
   useEffect(() => {
@@ -21,7 +22,13 @@ export default function HtmlLang({ initial }: { initial?: Lang }) {
         document.documentElement.lang = lang;
       }
     };
-    if (initial) apply(initial);
+    if (initial) {
+      apply(initial);
+      // REQ-709 (demo-loop c5, m4): the tab title too, on mount — a server
+      // <title> in the other language (the route's language and the islands'
+      // disagreeing) heals now, not only on a later switch.
+      followTitle(document, initial);
+    }
     // Only follow the signal AFTER mount. langSignal carries a module-load
     // DEFAULT ("es") on pages that never seeded it — the public customer
     // documents and the branded 404 — so subscribing to its current value

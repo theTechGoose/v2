@@ -1,5 +1,7 @@
 import { asset, Head } from "fresh/runtime";
 import { define } from "../../utils.ts";
+import { resolveSsrLang } from "../../lib/ssr-lang.ts";
+import type { Lang } from "../../lib/lang.ts";
 import DocTitle from "../../components/DocTitle.tsx";
 import SiteFooter from "../../components/SiteFooter.tsx";
 import { getSessionId } from "../../lib/auth.ts";
@@ -57,7 +59,9 @@ export default define.page(async function AssistantHome(ctx) {
   const profile = await profileClient.get({ sessionId }).catch(() =>
     null as ProfileSnapshot | null
   );
-  const lang = profile?.user?.language === "es" ? "es" : "en";
+  // REQ-709 (demo-loop c5, m4): the islands' language (?lang= > account >
+  // pm_lang), so the tab title and footer match the page they sit on.
+  const lang: Lang = resolveSsrLang(ctx) ?? "es";
 
   const greetingName = greetingFirstName(user?.name);
 

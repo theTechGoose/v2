@@ -1,5 +1,6 @@
 import { asset, Head } from "fresh/runtime";
 import { define } from "../../utils.ts";
+import { resolveSsrLang } from "../../lib/ssr-lang.ts";
 import DocTitle from "../../components/DocTitle.tsx";
 import SiteFooter from "../../components/SiteFooter.tsx";
 import { type Lang, tFor } from "../../lib/i18n.ts";
@@ -36,7 +37,9 @@ const MONTH_KEYS = [
 
 export default define.page(function SettingsRoute(ctx) {
   const user = ctx.state.user;
-  const lang: Lang = user?.language === "es" ? "es" : "en";
+  // REQ-709 (demo-loop c5, m4): the islands' language (?lang= > account >
+  // pm_lang), so the tab title and footer match the page they sit on.
+  const lang: Lang = resolveSsrLang(ctx) ?? "es";
   const greetingName = greetingFirstName(user?.name);
   const now = new Date();
   const greetingDate = `${tFor(lang, WEEKDAY_KEYS[now.getDay()])} · ${
