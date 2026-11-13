@@ -83,10 +83,13 @@ const STATE_ANCHOR: Record<string, { lat: number; lng: number }> = {
   WY: { lat: 41.140, lng: -104.820 },
 };
 
-/** the state an address names after a comma ("…, Austin, TX 78701" → "TX"), else null —
- *  a bare street's suffix ("2 Elm Ct") is not a state */
+/** the state an address names after a comma ("…, Austin, TX 78701" → "TX"), or
+ *  a line that IS a state, optionally with its ZIP ("FL", "FL 33101" — REQ-747:
+ *  onboarding saves only the state); else null — a bare street's suffix
+ *  ("2 Elm Ct") is not a state */
 function stateOf(key: string): string | null {
-  const m = key.match(/,[^,]*\b([a-z]{2})(?:\s+\d{5}(?:-?\d{4})?)?$/);
+  const m = key.match(/,[^,]*\b([a-z]{2})(?:\s+\d{5}(?:-?\d{4})?)?$/) ??
+    key.match(/^([a-z]{2})(?:\s+\d{5}(?:-?\d{4})?)?$/);
   const code = m?.[1].toUpperCase();
   return code && STATE_ANCHOR[code] ? code : null;
 }

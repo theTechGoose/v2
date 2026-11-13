@@ -2007,3 +2007,31 @@ Deno.test("REQ-401 (demo M30/m45, cycle 2) send to a customer with no email or p
     ]);
   });
 });
+
+Deno.test("REQ-747 GET /field/regions/center — demo-loop cycle 5 c4-m50: a business whose address is only its state (FL, as onboarding saves it) starts on Florida at a state-level zoom, not on Myrtle Beach", async () => {
+  await withServer(async (call) => {
+    const H = await login(call, "+15125551881");
+    const put = await call("PUT", "/profile/address", {
+      street: "",
+      city: "",
+      state: "FL",
+      postal: "",
+    }, H);
+    assertEquals(put.status, 200, JSON.stringify(put.body));
+    const at = await call("GET", "/field/regions/center", undefined, H);
+    assertEquals(at.status, 200, JSON.stringify(at.body));
+    assertEquals(at.body.source, "business");
+    assert(
+      at.body.lat > 24.4 && at.body.lat < 31.1 && at.body.lng > -87.7 &&
+        at.body.lng < -79.9,
+      `in Florida, not Myrtle Beach: ${JSON.stringify(at.body)}`,
+    );
+    assert(
+      at.body.zoom >= 5 && at.body.zoom <= 7,
+      `state-level zoom: ${JSON.stringify(at.body)}`,
+    );
+    // cached on the second read, same view
+    const again = await call("GET", "/field/regions/center", undefined, H);
+    assertEquals(again.body, at.body);
+  });
+});
