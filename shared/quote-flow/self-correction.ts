@@ -27,10 +27,49 @@ const CUE = new RegExp(
 );
 
 /** Where a clause starts or ends: a comma, a semicolon, a sentence end, a
+ *  colon (REQ-763: "Quote for Mark Henderson: install LVP no wait …"), a
  *  dash or a line break. */
-const DELIM = /[,;.!?\n]|\s[—–-]\s/u;
+const DELIM = /[,;.!?\n]|:\s|\s[—–-]\s/u;
 
 const words = (s: string) => s.trim().split(/\s+/).filter(Boolean);
+
+/** REQ-763 (demo-loop cycle 5v2, M7): the clause's action word — never what
+ *  a correction takes back ("install LVP no wait porcelain" is "install
+ *  porcelain", not "porcelain"). */
+const ACTION_WORD =
+  /^(?:install|reinstall|replace|put|lay|add|paint|build|remove|fix|repair|swap|redo|do|use|need|want|supply|refinish|instal(?:ar|a|amos)|poner|pon|cambiar|cambia|colocar|coloca|pintar|pinta|quitar|reparar|hacer|usar|agregar|necesito|quiero)$/iu;
+
+/** A size that rides along with the correction ("12x24", "30x60") — it
+ *  describes the new word, it replaces nothing. */
+const DIMENSION = /^\d+(?:[.,]\d+)?["']?\s*[x×]\s*\d+/iu;
+
+/** A typed quantity and its unit ("200 sqft", "3"): kept unless the
+ *  correction is itself a quantity ("3 windows make that 4 windows"). */
+const HAS_DIGIT = /\d/u;
+
+/**
+ * How many of the clause's last words the correction takes back: one per
+ * word of the correction (sizes not counted), never the clause's action word
+ * or anything before it, nor a typed quantity unless the correction starts
+ * with one.
+ */
+function takenBack(before: string[], after: string[]): number {
+  const counted = after.filter((w) => !DIMENSION.test(w)).length || 1;
+  let guarded = 0;
+  const numericFix = HAS_DIGIT.test(after[0] ?? "");
+  before.forEach((w, i) => {
+    const bare = w.replace(/[^\p{L}\p{N}]/gu, "");
+    if (ACTION_WORD.test(bare) && i < before.length - 1) guarded = i + 1;
+    if (!numericFix && HAS_DIGIT.test(w) && i < before.length - 1) {
+      guarded = i + 1;
+      // the unit right after the number ("200 sqft") stays with it
+      if (i + 1 < before.length - 1 && !HAS_DIGIT.test(before[i + 1])) {
+        guarded = i + 2;
+      }
+    }
+  });
+  return Math.min(counted, before.length - guarded);
+}
 
 /**
  * The text with each self-correction applied: the cue goes, and so do the
@@ -62,7 +101,7 @@ export function dropSelfCorrections(text: string): string {
         .trim();
       continue;
     }
-    const keep = before.slice(0, Math.max(0, before.length - after.length));
+    const keep = before.slice(0, before.length - takenBack(before, after));
     const lead = head.slice(0, clauseStart);
     const kept = keep.join(" ");
     out = (lead + (lead && !/\s$/.test(lead) ? " " : "") +

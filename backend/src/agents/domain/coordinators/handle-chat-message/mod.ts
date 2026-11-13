@@ -219,6 +219,7 @@ import {
   askedTerms,
   deadlineCheck,
   deadlineLine,
+  deadlineNotedLine,
   mentionedTerms,
   readDeadline,
   termsChangeLine,
@@ -227,6 +228,7 @@ import {
 } from "@agents/domain/business/terms-edit/mod.ts";
 // REQ-653 (demo-loop cycle 5, M7): "same address", a malformed e-mail.
 import {
+  dropSelfCorrections,
   malformedEmailIn,
   mentionsSameAddress,
   sameAddressFor,
@@ -2349,7 +2351,15 @@ export class HandleChatMessage {
           if (m.kind === "continue_cta") {
             return { role, content: `[Continue-to-terms CTA shown]` };
           }
-          const turn: LLMTurn = { role, content: m.content };
+          // REQ-763 (demo-loop cycle 5v2, M7): the model reads what the
+          // contractor meant — "install LVP no wait porcelain tile 12x24" is
+          // porcelain tile. The transcript keeps the words as typed.
+          const turn: LLMTurn = {
+            role,
+            content: role === "user" && typeof m.content === "string"
+              ? dropSelfCorrections(m.content) || m.content
+              : m.content,
+          };
           if (m.kind === "image" && role === "user") {
             const fileId = (m.payload as { fileId?: unknown } | undefined)
               ?.fileId;
@@ -2596,7 +2606,7 @@ export class HandleChatMessage {
         ? boundQuote
         : undefined;
       const statedCents = tools.includes("create_quote") && !changeOrderAsk
-        ? statedTotalCents(asked, {
+        ? statedTotalCents(dropSelfCorrections(asked) || asked, {
           currentTotalCents: draftOnFile
             ? draftTotalCents(draftOnFile)
             : undefined,
@@ -2627,9 +2637,11 @@ export class HandleChatMessage {
       // fewer of them.
       const draft = llmResponse.action;
       if (draft?.type === "create_quote" && !conv.quoteId && !changeOrderAsk) {
+        // REQ-763 (cycle 5v2, M7): the yardstick is what the contractor
+        // meant — a corrected-away "LVP" is never a missing line to re-ask.
         const typedText = history
           .filter((m) => m.role === "user" && typeof m.content === "string")
-          .map((m) => m.content as string)
+          .map((m) => dropSelfCorrections(m.content as string))
           .join("\n");
         const work = typedWorkItems(
           typedText,
@@ -2693,7 +2705,7 @@ export class HandleChatMessage {
       if (llmResponse.action?.type === "create_quote" && !changeOrderAsk) {
         const settled = await settleCreateQuote({
           payload: llmResponse.action.payload,
-          userText: asked,
+          userText: dropSelfCorrections(asked) || asked, // REQ-763
           statedCents,
           draft: draftOnFile,
           lang: replyLang,
@@ -3231,6 +3243,22 @@ export class HandleChatMessage {
       replyText = [
         replyText.trim(),
         t(replyLang, "chatCoordinator.emailSkipped", { value: badEmail }),
+      ].filter(Boolean).join(" ");
+      suppressTextBubble = false;
+    }
+
+    // REQ-763 (demo-loop cycle 5v2, M7): a draft typed with its deadline
+    // ("client wants it done before thanksgiving") says the deadline back —
+    // the verifier's Q-001 dropped it without a word. The terms steps check
+    // the start + time to complete against it (REQ-653).
+    const draftDeadline =
+      llmResponse.action?.type === "create_quote" && !priceProblem
+        ? readDeadline(userText)
+        : null;
+    if (draftDeadline) {
+      replyText = [
+        replyText.trim(),
+        deadlineNotedLine(replyLang, draftDeadline),
       ].filter(Boolean).join(" ");
       suppressTextBubble = false;
     }
