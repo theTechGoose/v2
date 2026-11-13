@@ -212,11 +212,13 @@ import {
 } from "../../shared/demo-mode/ended.ts";
 import {
   bandGhostBox,
+  bandPaint,
   ghostWords,
   PILL_FONT,
   pillFaceAwaiting,
   pillFaceOffline,
   pillGhost,
+  PILL_UNDER_DIALOG_OPACITY,
   STAGE_PILL_BOTTOM,
   stageInsetBottom,
 } from "../../shared/demo-mode/pill.ts";
@@ -1218,6 +1220,7 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
         tucked: m.tucked,
         band: m.band,
         bandBg: m.bandBg,
+        dim: m.dim,
         title: m.title,
         end: m.end,
       });
@@ -1790,8 +1793,12 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
                   style={`position:fixed;left:${b.left}px;top:${b.top}px;width:${b.width}px;height:${b.height}px;z-index:${
                     Z - 1
                   };background:${
-                    pillFace.bandBg ?? "#fff"
-                  };pointer-events:none`}
+                    // REQ-765 (cycle 5v2, p18-3d) — under the customer's dialog, in its dim (the
+                    // ghost sits over the replayed page, so it is never left bright)
+                    bandPaint(
+                      pillFace.bandBg ?? "#fff",
+                      pillFace.dim ?? null,
+                    )};pointer-events:none`}
                 />
               );
             })()}
@@ -1806,9 +1813,12 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
                 <div
                   data-cy="demo-pill-ghost"
                   data-tucked=""
+                  data-dim={pillFace.dim ? "" : undefined}
                   aria-hidden="true"
                   title={t("demoMode.pillGhost", { name })}
-                  style={`position:fixed;left:${g.left}px;top:${g.top}px;width:${g.width}px;height:${g.height}px;z-index:${Z};box-sizing:border-box;border-radius:0 ${r}px ${r}px 0;background:rgba(31,61,27,.78);color:#fff;pointer-events:none;display:flex;align-items:center;gap:${
+                  style={`position:fixed;left:${g.left}px;top:${g.top}px;width:${g.width}px;height:${g.height}px;z-index:${Z};box-sizing:border-box;border-radius:0 ${r}px ${r}px 0;background:rgba(31,61,27,.78);color:#fff;pointer-events:none;opacity:${
+                    pillFace.dim ? PILL_UNDER_DIALOG_OPACITY : 1
+                  };display:flex;align-items:center;gap:${
                     Math.max(2, 6 * fit.s)
                   }px;padding:0 ${Math.max(2, 8 * fit.s)}px 0 ${
                     Math.max(2, 10 * fit.s)
@@ -1851,11 +1861,14 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
                 <div
                   data-cy="demo-pill-ghost"
                   data-clipped={cut ? "" : undefined}
+                  data-dim={pillFace.dim ? "" : undefined}
                   aria-hidden="true"
                   title={t("demoMode.pillGhost", { name })}
                   style={`position:fixed;left:${g.left}px;top:${g.top}px;width:${g.width}px;height:${g.height}px;z-index:${Z};box-sizing:border-box;border:1.5px dashed rgba(31,61,27,.55);border-radius:${
                     Math.max(4, 14 * fit.s)
-                  }px;background:rgba(31,61,27,.78);color:#fff;pointer-events:none;display:flex;align-items:center;gap:${
+                  }px;background:rgba(31,61,27,.78);color:#fff;pointer-events:none;opacity:${
+                    pillFace.dim ? PILL_UNDER_DIALOG_OPACITY : 1
+                  };display:flex;align-items:center;gap:${
                     Math.max(2, 6 * fit.s)
                   }px;padding:0 ${
                     Math.max(2, 8 * fit.s)

@@ -193,6 +193,7 @@ import {
   bandRoom,
   CONTROL_SELECTOR,
   countsAsPage,
+  dialogDim,
   isPublicDocPath,
   PAGE_MEDIA_SELECTOR,
   PILL_BAND_GAP,
@@ -202,6 +203,7 @@ import {
   PILL_MOVE_MS,
   PILL_PEEK_MS,
   PILL_TAB,
+  PILL_UNDER_DIALOG_OPACITY,
   pillHome,
   pillOverflows,
   pillStore,
@@ -462,7 +464,9 @@ export default function DemoModeOverlay(
   /** REQ-545 — the band is painted only while the pill sits home on it (never over the page) */
   const [bandOn, setBandOn] = useState(false);
   /** REQ-545 — the band as last placed, for the stage (px; 0: not painted) and its colour */
-  const bandRef = useRef({ h: 0, bg: "#fff", tucked: false });
+  const bandRef = useRef<
+    { h: number; bg: string; tucked: boolean; dim?: string }
+  >({ h: 0, bg: "#fff", tucked: false });
   const placeRef = useRef<() => void>(() => {});
   /** REQ-545 — only the customer's live pill yields to the page; the ended notice (a message to
    *  read and dismiss), Opening… and the presenter's way back stay home (a dialog still docks) */
@@ -479,6 +483,8 @@ export default function DemoModeOverlay(
   /** REQ-643 (cycle 5, p18-3d) — the dim of a dialog's backdrop that stops at the band (a phone's
    *  transformed .app holds it): the band takes it, so the strip is dimmed with the page */
   const [bandDim, setBandDim] = useState<string | null>(null);
+  /** REQ-765 (cycle 5v2, p18-3d) — a dialog's dim is up: the pill is softened under it */
+  const [underDim, setUnderDim] = useState(false);
   /** REQ-295 — the pill's box as last told to the stage */
   const sentPillRef = useRef<Rect | null>(null);
   const sendPillRef = useRef<() => void>(() => {});
@@ -1380,6 +1386,7 @@ export default function DemoModeOverlay(
           tucked: bandRef.current.tucked,
           band: bandRef.current.h,
           bandBg: bandRef.current.bg,
+          dim: bandRef.current.dim,
           title: f.title,
           end: f.end,
         }
@@ -1481,7 +1488,15 @@ export default function DemoModeOverlay(
       }
       // REQ-643 (p18-3d) — under a dialog the reserved band is painted, in the backdrop's dim when
       // the backdrop stops at the band (a phone's .app holds it), never left bright or empty
-      const over = dialog && kept > 0 ? dialogBackdropUp(kept) : null;
+      const backdrop = dialog ? dialogBackdropUp(kept) : null;
+      const over = kept > 0 ? backdrop : null;
+      // REQ-765 (cycle 5v2, p18-3d) — the dialog's dim rides to the stage, which draws the band
+      // and the pill itself over the replayed page (the mirror skips the overlay); the pill here
+      // is softened under it, still clickable
+      const dim = backdrop
+        ? dialogDim(getComputedStyle(backdrop).backgroundColor)
+        : null;
+      setUnderDim(dim !== null);
       setBandDim(
         over
           ? backdropDim(
@@ -1500,6 +1515,7 @@ export default function DemoModeOverlay(
         h: painted ? kept : 0,
         bg,
         tucked: shownTab,
+        dim: dim ?? undefined,
       };
       // tucked: a hover or tap shows the whole pill out of its tab — flush with the left edge,
       // so the pointer that opened it is on it (leaving it folds it again)
@@ -1607,7 +1623,9 @@ export default function DemoModeOverlay(
     2 * PILL_MARGIN
   }px);box-sizing:border-box;padding:7px 12px;border-radius:14px;background:#1f3d1b;color:#fff;font-family:${PILL_FONT};font-size:13px;box-shadow:0 4px 18px rgba(0,0,0,.35);${
     // REQ-545 — shown whole from its tab, it takes the pointer, so leaving it folds it again
-    tucked ? "pointer-events:auto" : "pointer-events:none"}`;
+    tucked ? "pointer-events:auto" : "pointer-events:none"};${
+    // REQ-765 (cycle 5v2, p18-3d) — under a dialog's dim: softened, never hidden, still clickable
+    underDim ? `opacity:${PILL_UNDER_DIALOG_OPACITY}` : "opacity:1"}`;
   // REQ-545 (demo-loop cycle 4, m2) — the pill folded on the window's left edge, its foot on the
   // home's foot: only its buttons take a click. REQ-637 (cycle 5, m5) — a labelled mini-pill
   // ("● Demo" and an × that is End), never a bare 16 px sliver
@@ -1618,7 +1636,9 @@ export default function DemoModeOverlay(
       PILL_TAB.h / 2
     }px ${
       PILL_TAB.h / 2
-    }px 0;background:#1f3d1b;color:#fff;font-family:${PILL_FONT};font-size:12.5px;font-weight:700;white-space:nowrap;overflow:hidden;box-shadow:0 2px 10px rgba(0,0,0,.3);pointer-events:none`;
+    }px 0;background:#1f3d1b;color:#fff;font-family:${PILL_FONT};font-size:12.5px;font-weight:700;white-space:nowrap;overflow:hidden;box-shadow:0 2px 10px rgba(0,0,0,.3);pointer-events:none;opacity:${
+      underDim ? PILL_UNDER_DIALOG_OPACITY : 1
+    }`;
   // REQ-440 (demo-loop cycle 3, m2) — the band reserved for the pill (REQ-379), made real on a page
   // whose document scrolls: window-wide, the band's height (0 with no room), opaque in the page's
   // own background. z-index 1: over the page's flow, under its own fixed layers (a dialog's

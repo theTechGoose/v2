@@ -170,6 +170,9 @@ export interface PillFace {
   band?: number;
   /** REQ-545 — the band's colour (the page's own background) */
   bandBg?: string;
+  /** REQ-765 (cycle 5v2, p18-3d) — the open dialog's dim (its backdrop colour): the stage paints
+   *  the band ghost in it and softens the pill ghost, as the customer's screen shows them */
+  dim?: string;
   /** REQ-540 (cycle 4, m9) — the pill's "Demo mode" title in the customer's words (unset: the
    *  pill hides it — the compact phone pill — or an older page) */
   title?: string;
@@ -199,6 +202,7 @@ function parsePillFace(o: Record<string, unknown>): PillFace {
   if (typeof o.bandBg === "string" && BAND_BG.test(o.bandBg)) {
     f.bandBg = o.bandBg;
   }
+  if (typeof o.dim === "string" && BAND_BG.test(o.dim)) f.dim = o.dim;
   if (typeof o.title === "string") f.title = o.title.slice(0, PILL_LABEL_MAX);
   if (typeof o.end === "string") f.end = o.end.slice(0, PILL_LABEL_MAX);
   return f;
