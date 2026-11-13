@@ -8,6 +8,7 @@ import { strokeWidth } from "../lib/signature-ink.ts";
 import {
   isValidSignerName,
   normalizeSignerName,
+  onFileSpellingSuggestion,
 } from "../../shared/quote-flow/signer-name.ts";
 
 interface Props {
@@ -26,6 +27,9 @@ interface Props {
    *  customer — the accept POST carries `?as=customer&confirm=1`, without
    *  which the backend answers 409 owner_cannot_sign. */
   override?: boolean;
+  /** REQ-692 (demo c5 p18-6a): the customer's name on file — a typed name
+   *  that differs only by accents or case gets this spelling suggested. */
+  onFileName?: string;
 }
 
 interface Stroke {
@@ -60,7 +64,14 @@ const LINE = "#e3e8e6";
  *     viewport changes mid-flow).
  */
 export default function PublicSignQuote(
-  { quoteId, version, lang = "en", onSigned, override = false }: Props,
+  {
+    quoteId,
+    version,
+    lang = "en",
+    onSigned,
+    override = false,
+    onFileName,
+  }: Props,
 ) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const strokesRef = useRef<Stroke[]>([]);
@@ -70,6 +81,7 @@ export default function PublicSignQuote(
   // REQ-470 (demo m61): the typed name must pass the shared signer rule
   const nameOk = isValidSignerName(name);
   const nameTyped = name.trim().length > 0;
+  const suggestedName = onFileSpellingSuggestion(name, onFileName);
   // REQ-289: the typed-name label must name its input (else a screen reader
   // reads the placeholder, "Juan Pérez", as the field's name)
   const nameId = `sign-name-${quoteId}`;
@@ -579,6 +591,23 @@ export default function PublicSignQuote(
           style={`margin-top:6px;font-size:12px;font-weight:600;color:#b3261e`}
         >
           {tFor(lang, "publicSign.nameInvalid")}
+        </div>
+      )}
+      {suggestedName && (
+        <div
+          data-cy="sign-name-suggest"
+          role="status"
+          style={`margin-top:6px;font-size:12px;color:${INK}`}
+        >
+          {tFor(lang, "publicSign.nameSuggest", { name: suggestedName })}{" "}
+          <button
+            type="button"
+            data-cy="sign-name-suggest-use"
+            onClick={() => setName(suggestedName)}
+            style={`background:none;border:0;padding:0;font:inherit;font-weight:700;color:${TEAL};text-decoration:underline;cursor:pointer`}
+          >
+            {tFor(lang, "publicSign.nameSuggestUse")}
+          </button>
         </div>
       )}
       <div style={`margin-top:8px;font-size:12px;color:${MUTED}`}>
