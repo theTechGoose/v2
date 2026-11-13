@@ -503,3 +503,61 @@ Deno.test("REQ-583 M2 billingReply: a drafted invoice is shown with Send now; a 
   assertEquals(out.invoice?.id, "inv-1");
   assertEquals(out.invoice?.offerSend, undefined);
 });
+
+// ---------------------------------------------------------------------------
+// REQ-656 (demo-loop cycle 5, M9) — "Trabajo terminado, factura a María
+// López" on a signed pay-on-completion job: Send now is the answer.
+// ---------------------------------------------------------------------------
+
+const MARIA = {
+  id: "q-9",
+  status: "accepted",
+  acceptedAt: "2026-11-12T05:35:18Z",
+  customerSnapshot: { name: "María López" },
+};
+const COMPLETION = {
+  id: "inv-9",
+  number: "INV-001",
+  quoteId: "q-9",
+  status: "scheduled",
+  amount: 18_000,
+  scheduledFor: "2026-11-19",
+  dueDate: "2026-12-19",
+  installmentIndex: 1,
+  installmentTotal: 1,
+  createdAt: "2026-11-12T05:35:19Z",
+};
+
+Deno.test("REQ-656 M9 billingReply: job done on a signed job whose invoice is scheduled — leads with Send now, never 'nothing billed yet'", () => {
+  const es = billingReply("es", MARIA, [COMPLETION], { jobDone: true });
+  assertEquals(
+    es.text.includes("todavía no se ha facturado nada"),
+    false,
+    es.text,
+  );
+  assertStringIncludes(es.text, "INV-001");
+  assertStringIncludes(es.text, "$180");
+  assertStringIncludes(es.text, "María López");
+  assertStringIncludes(es.text, "Enviar ahora");
+  assertEquals(es.invoice?.id, "inv-9");
+  assertEquals(es.invoice?.offerSend, true);
+  assertEquals(es.offerInvoiceCta, false);
+
+  const en = billingReply("en", MARIA, [COMPLETION], { jobDone: true });
+  assertEquals(/nothing is billed yet/i.test(en.text), false, en.text);
+  assertStringIncludes(en.text, "Send now");
+  assertStringIncludes(en.text, "Nov 19");
+});
+
+Deno.test("REQ-656 M9 billingReply: job done with the deposit out and the balance scheduled — the balance, with Send now, is the answer", () => {
+  const r = billingReply("en", SIGNED, [DEPOSIT, BALANCE], { jobDone: true });
+  assertStringIncludes(r.text, "INV-002");
+  assertStringIncludes(r.text, "Send now");
+  assertEquals(r.invoice?.id, "inv-2");
+  assertEquals(r.invoice?.offerSend, true);
+});
+
+Deno.test("REQ-656 M9 billingReply: without the job-done cue the answer is unchanged (REQ-388)", () => {
+  const r = billingReply("en", MARIA, [COMPLETION]);
+  assertStringIncludes(r.text, "nothing is billed yet");
+});
