@@ -697,20 +697,7 @@ body {
 .sb--collapsed .nav-item__count {
   display: none;
 }
-/* REQ-156 — folders: a folder row carries a chevron; Back is a quieter row above the folder's name */
-.nav-item__chev {
-  margin-left: auto;
-  display: grid;
-  place-items: center;
-  opacity: 0.6;
-}
-.nav-item--back {
-  color: rgba(255, 255, 255, 0.55);
-  font-size: 13px;
-}
-.sb--collapsed .nav-item__chev {
-  display: none;
-}
+/* REQ-156 folder rows (.nav-item__chev, .nav-item--back) ride with the island: lib/sb-drawer.ts SB_FOLDER_CSS (REQ-738) */
 
 .sb__bottom {
   margin-top: auto;
