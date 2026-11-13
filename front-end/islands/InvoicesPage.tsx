@@ -79,6 +79,11 @@ import {
   scheduledHeroSubKey,
 } from "../lib/headline-counts.ts";
 import { followChanges, isDocChange } from "../lib/change-feed.ts";
+// REQ-754 (demo-loop cycle 5v1, M5): every fetch on this page announces a
+// successful invoice write to the owner's other tabs (an open /customers
+// re-reads its owed total when an invoice is marked paid or deleted here).
+// Reads pass straight through.
+import { announcingFetch as fetch } from "../lib/owner-writes.ts";
 import { invoiceClientName } from "../lib/invoice-client.ts"; // REQ-696
 import { isChangeOrderMutable } from "../../shared/quote-flow/adjustment-guards.ts";
 import {

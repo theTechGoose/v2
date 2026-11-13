@@ -74,16 +74,25 @@ function closeQuietly(ch: ChannelLike | null) {
   } catch { /* already closed */ }
 }
 
+/** REQ-754 (demo-loop cycle 5v1, M5): this tab (this document's JS realm).
+ *  The owner's own writes are announced marked with it, so the tab that
+ *  wrote does not re-read what it already has; the other tabs do. */
+const THIS_TAB = Math.random().toString(36).slice(2) + Date.now().toString(36);
+
 /** Tell the owner's other tabs in this browser. Best-effort: where there is
  *  no channel (SSR, an old browser, a blocked context) it does nothing. A
- *  message already posted is delivered after this side closes. */
-export function announceChange(change: EntityChange): void {
+ *  message already posted is delivered after this side closes. `fromThisTab`
+ *  (an owner write, REQ-754) keeps this tab's own listeners from hearing it. */
+export function announceChange(
+  change: EntityChange,
+  opts: { fromThisTab?: boolean } = {},
+): void {
   const c = asChange(change);
   if (!c) return;
   let ch: ChannelLike | null = null;
   try {
     ch = openChannel(CHANGE_CHANNEL);
-    ch?.postMessage(c);
+    ch?.postMessage(opts.fromThisTab ? { ...c, tab: THIS_TAB } : c);
   } catch { /* no channel here */ }
   closeQuietly(ch);
 }
@@ -101,6 +110,8 @@ export function listenChanges(
   }
   if (!ch) return () => {};
   ch.onmessage = (e) => {
+    // REQ-754: this tab's own write — it already has the answer
+    if ((e?.data as { tab?: unknown } | null)?.tab === THIS_TAB) return;
     const c = asChange(e?.data);
     if (c) fn(c);
   };
