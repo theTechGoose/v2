@@ -781,6 +781,7 @@
   "chatCoordinator.priceMissing": "No puedo usar eso como precio. ¿Cuánto debería costar {item}? Dame un número, como $500.",
   "chatCoordinator.emailSkipped": "Omití el correo \"{value}\" — no es una dirección válida. Mándame el correcto, como nombre@ejemplo.com.",
   "chatCoordinator.priceCheck.jump": "Eso subiría el total de {from} a {to} — más del triple — con precios que no me diste: {lines}. No cambié la cotización. ¿Cuánto deben costar, o cuál debe ser el total?",
+  "chatCoordinator.priceCheck.drop": "Eso bajaría el total de {from} a {to} — menos de un tercio — con precios que no me diste: {lines}. No cambié la cotización. ¿Cuánto deben costar, o cuál debe ser el total?",
   "chatCoordinator.priceCheck.more": "y {n} más",
   "chatCoordinator.priceCheck.includes": "{line} (incluye {included})",
   "chatCoordinator.step.repriced": "Recalculé el precio con tu nota — {tiers}.",

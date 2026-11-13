@@ -21,9 +21,9 @@ import {
 import { findLine } from "@agents/domain/business/quote-line-revision/mod.ts";
 import {
   askAmountExamples,
+  changeOrderAmountsCents,
   pickChangeOrderTarget,
   reconcileChangeOrderDelta,
-  typedAmountsCents,
 } from "@agents/domain/business/change-order-intent/mod.ts";
 import type { Quote } from "@paperwork/dto/quote.ts";
 
@@ -297,7 +297,7 @@ export class ApplyChatChangeOrder {
             // amounts — never the fixed "$1,250" / "$19,750".
             ...askAmountExamples({
               currentTotalCents: currentTotal,
-              typed: typedAmountsCents(input.userText),
+              typed: changeOrderAmountsCents(input.userText),
             }),
           }),
           outcome: { kind: "needs_amount", ...named },
