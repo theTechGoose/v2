@@ -165,3 +165,34 @@ Deno.test("REQ-339: an accepted quote with no divider in the thread falls back t
     T_CTA,
   );
 });
+
+/**
+ * REQ-668 (demo-loop cycle 5, issue m66 "A sent message's timestamp changed
+ * from 7:21 to 7:23"): the sent card showed 7:21 when sent, then 7:23 once
+ * the customer signed — sentCtaTimestamp took the LAST divider with
+ * phase >= 3, and AcceptQuote appends a phase-4 acceptance divider. The send
+ * time is only ever a send divider's (phase 3); the signing time is not.
+ */
+Deno.test("REQ-668: the customer's phase-4 acceptance divider does not restamp the sent card", () => {
+  const c = stamped(cta("c1", "q1"), T_CTA);
+  const T_SIGNED = T_SENT + 120_000;
+  const t = sentCtaTimestamp(
+    [
+      c,
+      stamped(divider("d3", 3, "q1"), T_SENT),
+      stamped(text("t2"), T_SENT + 1000),
+      stamped(divider("d4", 4, "q1"), T_SIGNED),
+    ],
+    c,
+    { id: "q1", status: "accepted", acceptedAt: "2026-11-12T05:35:57Z" },
+  );
+  assertEquals(t, T_SENT);
+});
+
+Deno.test("REQ-668: an acceptance divider alone (no send divider) is not a send time", () => {
+  const c = stamped(cta("c1", "q1"), T_CTA);
+  assertEquals(
+    sentCtaTimestamp([c, stamped(divider("d4", 4, "q1"), T_SENT)], c),
+    T_CTA,
+  );
+});
