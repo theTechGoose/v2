@@ -994,3 +994,36 @@ Deno.test("REQ-656 M9: a job-done ask in a new chat naming a customer with a sig
     assertEquals((await fx.invoices.getOwned(inv.id, U)).status, "scheduled");
   });
 });
+
+// ---------------------------------------------------------------------------
+// REQ-752 (demo-loop cycle 5v1, M9 re-test) — the verifier's sentence
+// ---------------------------------------------------------------------------
+
+Deno.test("REQ-752 M9: 'Trabajo terminado con Juan Pérez, hazle la factura de $800' in a new chat opens the invoice flow with Juan Pérez and $800", async () => {
+  await withKv(async () => {
+    const fx = fresh();
+    await seedOnboarded("es");
+    const conv = await fx.conversations.create({ userId: U });
+    const chat = scriptLlm(fx, () => ({ text: "¿Para quién es la factura?" }));
+    const said = "Trabajo terminado con Juan Pérez, hazle la factura de $800";
+
+    const res = await fx.flow.run({
+      userId: U,
+      conversationId: conv.id,
+      content: said,
+    });
+
+    const text = textOf(res.newMessages);
+    assertEquals(chat.length, 0, `the chat model answered: ${text}`);
+    const reply = res.newMessages.find((m) =>
+      m.role === "assistant" && m.kind === "text"
+    );
+    assertEquals(
+      (reply?.payload as Record<string, unknown> | undefined)?.invoiceFlow,
+      { details: said, amountCents: 80_000, customerName: "Juan Pérez" },
+    );
+    assertStringIncludes(text, "Juan Pérez");
+    assertStringIncludes(text, "$800");
+    assert(!/elige el cliente/i.test(text), text);
+  });
+});

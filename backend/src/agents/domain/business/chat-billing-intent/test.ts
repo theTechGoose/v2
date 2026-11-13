@@ -500,3 +500,34 @@ Deno.test("REQ-656 M9 parseJobDoneInvoiceAsk: not done yet, a question, or no bi
     assertEquals(parseJobDoneInvoiceAsk(s), undefined, s);
   }
 });
+
+// ---------------------------------------------------------------------------
+// REQ-752 (demo-loop cycle 5v1, M9 re-test) — the customer is read after
+// "con" / "with" / "at" / "del", and from a possessive ("Juan Pérez's")
+// ---------------------------------------------------------------------------
+
+Deno.test("REQ-752 M9 parseJobDoneInvoiceAsk: the verifier's 'Trabajo terminado con Juan Pérez, hazle la factura de $800' names Juan Pérez", () => {
+  assertEquals(
+    parseJobDoneInvoiceAsk(
+      "Trabajo terminado con Juan Pérez, hazle la factura de $800",
+    ),
+    { amountCents: 80_000, customerName: "Juan Pérez" },
+  );
+});
+
+Deno.test("REQ-752 M9 parseJobDoneInvoiceAsk: with / at / del / possessive name the customer, en and es", () => {
+  const cases: [string, string][] = [
+    ["Job done with Mike Ross, invoice him $300", "Mike Ross"],
+    ["Finished the job at Juan Pérez's, bill him $800", "Juan Pérez"],
+    ["Finished Tom Baker's deck, invoice him $1,200", "Tom Baker"],
+    ["Terminamos el trabajo de la Sra. Ana Gómez, factúrale $500", "Ana Gómez"],
+    ["Ya acabé con Carmen Ruiz, cóbrale $450", "Carmen Ruiz"],
+    [
+      "Trabajo terminado con María López. Hazle la factura de $800",
+      "María López",
+    ],
+  ];
+  for (const [s, name] of cases) {
+    assertEquals(parseJobDoneInvoiceAsk(s)?.customerName, name, s);
+  }
+});

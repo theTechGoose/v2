@@ -136,3 +136,48 @@ Deno.test("REQ-656 M9: pair 8 — 'Trabajo terminado, necesito facturar: Jorge R
       `the reply names who and how much (got: ${reply?.content})`,
     );
   }));
+
+/** REQ-752 (demo-loop cycle 5v1, M9 re-test): the verifier typed
+ *  "Trabajo terminado con Juan Pérez, hazle la factura de $800" and got
+ *  "Empecé la factura por $800: elige el cliente…" with the Nombre field
+ *  empty — "con Juan Pérez" was never read as who to bill. */
+const SAID_CON = "Trabajo terminado con Juan Pérez, hazle la factura de $800";
+
+Deno.test("REQ-752 M9: 'Trabajo terminado con Juan Pérez, hazle la factura de $800' opens the invoice flow at $800 for Juan Pérez", (t) =>
+  story(t, async ({ page, expect, http, baseUrl }) => {
+    const auth = await signIn(http, page, baseUrl);
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await page.goto("/assistant");
+    await say(page, SAID_CON);
+
+    const money = page.locator(".chat__price-capture input.mi__input");
+    await money.waitFor({ state: "visible", timeout: 30_000 });
+    expect.eq(
+      (await money.inputValue()).trim(),
+      "800",
+      "the invoice flow's pad opens at the typed $800",
+    );
+    const convoId = new URL(page.url()).pathname.split("/").pop() ?? "";
+    const detail = await (await http(`/api/agents/conversations/${convoId}`, {
+      headers: auth,
+    })).json() as {
+      messages?: { role: string; content: string; payload?: unknown }[];
+    };
+    const reply = (detail.messages ?? []).find((m) =>
+      m.role === "assistant" &&
+      (m.payload as { invoiceFlow?: unknown } | undefined)?.invoiceFlow
+    );
+    const offer = (reply?.payload as
+      | { invoiceFlow?: { customerName?: string } }
+      | undefined)?.invoiceFlow;
+    expect.eq(
+      offer?.customerName,
+      "Juan Pérez",
+      "the invoice flow is prefilled with who to bill",
+    );
+    expect(
+      !!reply && reply.content.includes("Juan Pérez") &&
+        !/elige el cliente/i.test(reply.content),
+      `the reply names Juan Pérez, not 'elige el cliente' (got: ${reply?.content})`,
+    );
+  }));
