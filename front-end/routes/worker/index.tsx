@@ -11,6 +11,11 @@
  * /field/tasks when neither says.
  * REQ-494 (demo M43) — an EN/ES pick made on the switch is remembered in its
  * own pm_worker_lang cookie; re-opening /worker without ?lang= keeps it.
+ * REQ-714 (demo cycle 5, m58) — a signed-in worker (pm_worker cookie) is read
+ * on the server (GET /field/worker/me, as the island does) and the page
+ * renders in the worker's language unless ?lang= or the pick chose one, so it
+ * no longer paints English and flips to Spanish. `pageLang` (the browser's
+ * own) is what Salir returns to (REQ-416).
  */
 import { asset, Head } from "fresh/runtime";
 import { define } from "../../utils.ts";
@@ -23,15 +28,18 @@ import {
   workerOfficeHref,
   workerRouteLang,
 } from "../../lib/field.ts";
+import { loadWorkerLang } from "../../lib/worker-ssr.ts";
 import WorkerScreen from "../../islands/WorkerScreen.tsx";
 
 export default define.page(async function WorkerRoute(ctx) {
   const url = new URL(ctx.req.url);
   const cookies = ctx.req.headers.get("cookie");
-  const { lang, chosen, picked } = workerRouteLang({
+  const workerLang = await loadWorkerLang(ctx.req);
+  const { lang, pageLang, chosen, picked } = workerRouteLang({
     query: url.searchParams.get("lang"),
     picked: workerLangPickFromCookie(cookies),
     stored: langFromCookie(cookies),
+    worker: workerLang,
   });
   ctx.state.lang = lang;
   const date = url.searchParams.get("date") ?? undefined;
@@ -56,6 +64,7 @@ export default define.page(async function WorkerRoute(ctx) {
       </Head>
       <WorkerScreen
         initialLang={lang}
+        pageLang={pageLang}
         langChosen={chosen}
         langPicked={picked}
         initialDate={date}

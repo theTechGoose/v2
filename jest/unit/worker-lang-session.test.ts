@@ -32,8 +32,11 @@ describe("REQ-416 the worker's language lasts the session, Salir restores the pa
     expect(body).toMatch(
       /setLang\(pageLangRef\.current, \{ persist: false \}\)/,
     );
-    // the page language starts as initialLang, and the switch updates it
-    expect(src).toMatch(/const pageLangRef = useRef<Lang>\(initialLang\)/);
+    // the page language starts as the page's own (REQ-714: pageLang when SSR
+    // opened in the worker's language, else initialLang); the switch updates it
+    expect(src).toMatch(
+      /const pageLangRef = useRef<Lang>\(pageLang \?\? initialLang\)/,
+    );
     expect(src).toMatch(/pageLangRef\.current = c;/);
   });
 });

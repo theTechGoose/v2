@@ -33,7 +33,7 @@ Deno.test("REQ-494 the /worker pick has its own cookie, read from a Cookie heade
 
 Deno.test("REQ-494 M43: re-entering /worker (no ?lang=) after picking EN keeps EN as chosen", () => {
   const r = workerRouteLang({ query: null, picked: "en", stored: "en" });
-  assertEquals(r, { lang: "en", chosen: false, picked: true });
+  assertEquals(r, { lang: "en", pageLang: "en", chosen: false, picked: true });
   // so the signed-in Spanish worker's language does not override it
   assertEquals(
     workerScreenLang({ language: "es" }, r.chosen || r.picked),
@@ -44,16 +44,19 @@ Deno.test("REQ-494 M43: re-entering /worker (no ?lang=) after picking EN keeps E
 Deno.test("REQ-494 workerRouteLang — ?lang= > the /worker pick > pm_lang > es", () => {
   assertEquals(workerRouteLang({ query: "es", picked: "en", stored: "en" }), {
     lang: "es",
+    pageLang: "es",
     chosen: true,
     picked: true,
   });
   assertEquals(workerRouteLang({ query: null, picked: null, stored: "en" }), {
     lang: "en",
+    pageLang: "en",
     chosen: false,
     picked: false,
   });
   assertEquals(workerRouteLang({ query: "fr", picked: null, stored: null }), {
     lang: "es",
+    pageLang: "es",
     chosen: false,
     picked: false,
   });

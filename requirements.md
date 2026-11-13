@@ -4358,3 +4358,18 @@ Tests:
 - unit: `demo-loop/demo20b_test.ts` "REQ-621: the rules file names every category, in order, each with an action" (the rules file is executed by agents, so it gets a content test).
 - int: `demo-loop/demo20b_test.ts` "REQ-621: both testers are told to read the rules and tag every issue" runs the real harness with a fake fleet-claude.
 - e2e: the next demo cycle; its reports carry category tags.
+
+## REQ-714 — a signed-in worker's /worker page renders in the worker's language on the server — no English first paint (demo-loop cycle 5, m58) (2026-11-12)
+
+The user: "fix every issue the demo found, loop until there are none." Demo-loop cycle 5 (run r37f88707), issue **m58** — "worker view flashes English first" (BUG_POLISH, RCA CONFIRMED + skeptic UPHELD at 2444608a): `routes/worker/index.tsx` picked the SSR language from `?lang=`, the pm_worker_lang pick or the browser's pm_lang only, never the worker's session, so a Spanish worker on an English browser saw English until the island's `workerClient.me()` returned and REQ-285 flipped it to Spanish.
+
+- With a `pm_worker` cookie, the route reads the worker on the server (GET /field/worker/me, as the island does; in-process on Deno Deploy, BACKEND_URL in dev) via `front-end/lib/worker-ssr.ts` `loadWorkerLang`, and renders in the worker's language unless `?lang=` (REQ-285) or the /worker pick (REQ-494) chose one. No cookie → no backend call; signed out or a failing backend → the old order.
+- `workerRouteLang` also returns `pageLang` (the page's own, without the worker); the island gets it so Salir still returns to it and the worker's language is never written into the browser's pm_lang (REQ-416).
+- The Spanish default for new workers (REQ-155, REQ-520) is unchanged; whether an English-only account should default new workers to English is left to the owner.
+
+**Tests:**
+- unit: `front-end/lib/worker-ssr-lang.test.ts` (REQ-714 workerRouteLang with a worker, readWorkerCookie, loadWorkerLang, the route + island wiring); updated `front-end/lib/worker-lang-pick.test.ts`, `jest/unit/worker-lang-session.test.ts` (REQ-416 source check follows `pageLang ?? initialLang`).
+- integration: `backend/src/field/entrypoints/worker-ssr-lang.int.test.ts` — `loadWorkerLang` against the real FieldWorkerController (Spanish worker on an English browser → es; English worker → en; no cookie / signed out → null).
+- e2e: `e2e/worker-language/worker-language.e2e.test.ts` "REQ-714 m58: a signed-in Spanish worker on an English browser gets a Spanish page from the server" — server HTML has `<html lang="es">` and the Spanish title; pm_lang stays en. Written, not run here (the browser lane is out of scope for this fix pass).
+
+**Evidence (2026-11-12, branch fix/c5-worker-lang-ssr off demo-fixes 2444608a):** RED on the original field.ts / WorkerScreen.tsx / route — `cd front-end && deno test -A --no-check lib/worker-ssr-lang.test.ts` → "FAILED | 3 passed | 2 failed": workerRouteLang gave `lang: "en"` (expected `"es"`, `pageLang: "en"`) for a Spanish worker on an English browser; "the route asks the backend" failed. GREEN — `deno test -A lib/worker-ssr-lang.test.ts lib/worker-lang-pick.test.ts lib/ssr-lang.test.ts` → "ok | 16 passed | 0 failed"; `cd backend && deno test -A --unstable-kv src/field/entrypoints/` → "ok | 36 passed | 0 failed" (incl. the REQ-714 int test); `cd jest && npx jest --selectProjects unit` → "Test Suites: 392 passed · Tests: 1 skipped, 3849 passed"; deno lint, deno check and deno fmt --check clean on every touched file.
