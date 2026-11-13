@@ -45,7 +45,11 @@ import {
   fmtTaxRate,
 } from "@paperwork/domain/business/doc-render/mod.ts";
 import { appUrl } from "@users/domain/business/app-url/mod.ts";
-import { fmtVisitDate, groupVisits } from "#quote-flow/visit-groups.ts";
+import {
+  fmtVisitDate,
+  groupVisits,
+  visitPeriodOf,
+} from "#quote-flow/visit-groups.ts";
 import type { Invoice } from "@paperwork/dto/invoice.ts";
 
 /** US Letter, in points. */
@@ -411,7 +415,7 @@ function drawInvoice(
     y -= 2;
   };
 
-  const visits = groupVisits(inv.lineItems);
+  const visits = groupVisits(inv.lineItems, visitPeriodOf(inv));
   if (visits) {
     header();
     for (const g of visits) {

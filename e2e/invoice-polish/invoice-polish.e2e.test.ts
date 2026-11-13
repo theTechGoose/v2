@@ -223,3 +223,108 @@ Deno.test("REQ-173: a batch invoice's public page shows each address as a headin
     await expect.see("$65.00");
     await expect.notSee(`Oct 2 — Lawn — ${addr}`);
   }));
+
+/** an island may still be hydrating when its button appears: click until the page shows the effect */
+async function clickUntil(
+  page: StoryTools["page"],
+  selector: string,
+  done: () => Promise<boolean>,
+): Promise<void> {
+  for (let attempt = 0; attempt < 10; attempt++) {
+    if (await done()) return;
+    try {
+      await page.locator(selector).first().click({ timeout: 2_000 });
+    } catch { /* not clickable yet */ }
+    for (let i = 0; i < 5; i++) {
+      if (await done()) return;
+      await page.waitForTimeout(200);
+    }
+  }
+  throw new Error(`${selector}: the click never took`);
+}
+
+// REQ-791 — A2Z's draft was edited and its lines lost date / service / address; the page showed
+// "Oct 2 — Lawn — 845 Frederick Rd…" nine times in bullets and again in a table. It now groups
+// them by address, then date, the amount at the end, in the numbered Job details section — and a
+// save from the /invoices editor keeps each visit's date / service / address.
+Deno.test("REQ-791: a batch draft's visits read as address → date → amount in the Job details section, after an edit too", (t) =>
+  story(t, async ({ page, expect, http, baseUrl }) => {
+    const { auth } = await signIn(http, page, baseUrl);
+    const a1 = "845 Frederick Rd, Rockingham, VA 22801-1314";
+    const a2 = "9 Pine Ave, Harrisonburg, VA 22801";
+    const flat = (d: string, a: string, price = 6500) => ({
+      description: `${d} — Lawn — ${a}`,
+      quantity: 1,
+      unit: "visit",
+      price,
+    });
+    // two lines as A2Z's were (text only), one still structured
+    const lines = [
+      flat("Oct 9", a1),
+      flat("Oct 2", a1),
+      { ...flat("Oct 4", a2, 8000), date: "2026-10-04", service: "Lawn", address: a2 },
+    ];
+    const { inv } = await mkInvoice(http, auth, {
+      jobName: "Maintenance 2026-10-01 → 2026-10-31",
+      serviceDateFrom: "2026-10-01",
+      serviceDateTo: "2026-10-31",
+      description: lines.map((l) => l.description).join("\n"),
+      lineItems: lines,
+      amount: 21000,
+    });
+    const check = async (when: string, amounts: string[], subtotals: string[]) => {
+      await page.goto(`/i/${inv.id}`);
+      const section = page.locator("[data-cy='invoice-visits']");
+      await section.waitFor({ timeout: 15_000 });
+      expect(
+        (await section.innerText()).toUpperCase().includes("JOB DETAILS"),
+        `${when}: the visits are the numbered Job details section`,
+      );
+      expect.eq(
+        (await page.locator("[data-cy='invoice-visit-address']").allInnerTexts()).join(" | "),
+        [a1, a2].join(" | "),
+        `${when}: one heading per address, first seen first`,
+      );
+      expect.eq(
+        (await page.locator("[data-cy='invoice-visit-subtotal']").allInnerTexts()).join(" | "),
+        subtotals.join(" | "),
+        `${when}: each address carries its subtotal`,
+      );
+      expect.eq(
+        (await page.locator("[data-cy='invoice-visit-date']").allInnerTexts()).join(" | "),
+        ["Oct 2", "Oct 9", "Oct 4"].join(" | "),
+        `${when}: by date under each address`,
+      );
+      expect.eq(
+        (await page.locator("[data-cy='invoice-visit-amount']").allInnerTexts()).join(" | "),
+        amounts.join(" | "),
+        `${when}: the amount at the end of each row`,
+      );
+      await expect.notSee(`Oct 2 — Lawn — ${a1}`);
+    };
+    await check("before the edit", ["$65.00", "$65.00", "$80.00"], ["$130.00", "$80.00"]);
+
+    // the office edits the draft on /invoices: Oct 9's price
+    await page.goto(`/invoices?open=${inv.id}`);
+    await page.locator("[data-cy='invoice-edit']").first().waitFor({ timeout: 15_000 });
+    await clickUntil(
+      page,
+      "[data-cy='invoice-edit']",
+      async () => await page.locator("[data-cy='invoice-edit-form']").isVisible(),
+    );
+    await page.locator("[data-cy='invoice-edit-line-price-0']").fill("70");
+    await page.locator("[data-cy='invoice-edit-save']").click();
+    let saved: { lineItems?: Array<{ price?: number; date?: string; address?: string }> } = {};
+    for (let i = 0; i < 50; i++) {
+      saved = await (await http(`/api/invoices/${inv.id}`, { headers: auth })).json();
+      if (saved.lineItems?.[0]?.price === 7000) break;
+      await page.waitForTimeout(200);
+    }
+    expect.eq(saved.lineItems?.[0]?.price, 7000, "the edit saved");
+    expect.eq(
+      `${saved.lineItems?.[2]?.date} ${saved.lineItems?.[2]?.address}`,
+      `2026-10-04 ${a2}`,
+      "the untouched structured visit kept its date and address",
+    );
+    await check("after the edit", ["$65.00", "$70.00", "$80.00"], ["$135.00", "$80.00"]);
+  }));

@@ -18,7 +18,7 @@ import {
   lineTextByLang,
   normalizeDescription,
 } from "#documents/invoice-lang.ts";
-import { groupVisits } from "#quote-flow/visit-groups.ts";
+import { groupVisits, visitPeriodOf } from "#quote-flow/visit-groups.ts";
 
 /**
  * REQ-497 (demo-loop cycle 3, m23) — TranslateInvoice fills a STANDALONE
@@ -64,7 +64,7 @@ export class TranslateInvoice {
     const lines = descriptionLines(inv.description);
     // REQ-710 (cycle 5, M4): each line item's text, by position — not a
     // batch invoice's visits, which render grouped by address (REQ-173).
-    const own = groupVisits(inv.lineItems) ? [] : inv.lineItems ?? [];
+    const own = groupVisits(inv.lineItems, visitPeriodOf(inv)) ? [] : inv.lineItems ?? [];
     const items = own.map((li) => li?.description?.trim() ?? "");
     if (!name && lines.length === 0 && !items.some(Boolean)) return inv;
 

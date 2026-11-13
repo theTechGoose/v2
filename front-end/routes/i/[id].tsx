@@ -535,45 +535,6 @@ function InvoiceDoc(
             job-details section below only renders for quote-linked invoices, so
             carry the contractor's note here when it's absent. */
           }
-          {/* REQ-173: a batch invoice — the address is the heading, the visits sit under it */}
-          {invoice.visits?.length
-            ? (
-              <section data-cy="invoice-visits" style="margin-top:18px">
-                {invoice.visits.map((g) => (
-                  <div style="margin-top:14px">
-                    <h2
-                      data-cy="invoice-visit-address"
-                      style={`margin:0;font-size:15px;font-weight:800;color:${TEAL};letter-spacing:-0.01em`}
-                    >
-                      {g.address}
-                    </h2>
-                    <div style={`margin-top:6px;border-top:1px solid ${LINE}`}>
-                      {g.visits.map((v) => (
-                        <div
-                          data-cy="invoice-visit"
-                          style={`display:flex;align-items:baseline;gap:12px;padding:8px 0;border-bottom:1px solid ${LINE};font-size:14px`}
-                        >
-                          <span
-                            style={`flex:0 0 64px;color:${MUTED};font-variant-numeric:tabular-nums`}
-                          >
-                            {fmtVisitDate(v.date, lang)}
-                          </span>
-                          <span style={`flex:1;color:${INK};font-weight:600`}>
-                            {v.service}
-                          </span>
-                          <span
-                            style={`color:${INK};font-variant-numeric:tabular-nums`}
-                          >
-                            {fmtMoneyExact(v.price)}
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                ))}
-              </section>
-            )
-            : null}
           {!rich && !invoice.visits?.length &&
               (invoice.jobDetails?.descriptionByLang?.[lang] ??
                 invoice.jobDetails?.description)
@@ -946,6 +907,67 @@ function InvoiceDoc(
             14 legal clauses + the signature block. A standalone invoice shows
             its own line items here (REQ-487). */
           }
+          {
+            /* REQ-173/791: a batch invoice — its numbered Job details section:
+            each address a heading (with its subtotal when there are several),
+            under it one row per visit by date, the amount at the end. */
+          }
+          {invoice.visits?.length
+            ? (
+              <section data-cy="invoice-visits" style="margin-top:36px">
+                <SectionHeader
+                  n={num()}
+                  title={tFor(lang, "quoteDoc.jobDetails")}
+                />
+                {invoice.visits.map((g, gi) => (
+                  <div style={gi ? "margin-top:22px" : ""}>
+                    <div
+                      style={`display:flex;align-items:baseline;justify-content:space-between;gap:12px;padding-bottom:8px;border-bottom:1px solid ${LINE}`}
+                    >
+                      <h2
+                        data-cy="invoice-visit-address"
+                        style={`margin:0;font-size:16px;font-weight:800;color:${TEAL};letter-spacing:-0.01em;line-height:1.35`}
+                      >
+                        {g.address}
+                      </h2>
+                      {invoice.visits!.length > 1
+                        ? (
+                          <span
+                            data-cy="invoice-visit-subtotal"
+                            style={`color:${TEAL};font-weight:800;font-size:15px;font-variant-numeric:tabular-nums;white-space:nowrap`}
+                          >
+                            {fmtMoneyExact(g.subtotal)}
+                          </span>
+                        )
+                        : null}
+                    </div>
+                    {g.visits.map((v) => (
+                      <div
+                        data-cy="invoice-visit"
+                        style={`display:flex;align-items:baseline;gap:14px;padding:12px 0;border-bottom:1px solid ${LINE};font-size:15px`}
+                      >
+                        <span
+                          data-cy="invoice-visit-date"
+                          style={`flex:0 0 64px;color:${MUTED};font-variant-numeric:tabular-nums`}
+                        >
+                          {fmtVisitDate(v.date, lang)}
+                        </span>
+                        <span style={`flex:1;color:${INK};font-weight:600`}>
+                          {v.service}
+                        </span>
+                        <span
+                          data-cy="invoice-visit-amount"
+                          style={`color:${INK};font-weight:800;font-variant-numeric:tabular-nums;white-space:nowrap`}
+                        >
+                          {fmtMoneyExact(v.price)}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                ))}
+              </section>
+            )
+            : null}
           {rich
             ? (
               <>

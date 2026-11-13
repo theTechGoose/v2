@@ -38,6 +38,10 @@ import {
   invoiceSendReview,
 } from "../lib/invoice-send-sheet.ts";
 import type { SendPreviewDates } from "../../shared/quote-flow/send-preview.ts";
+import {
+  keepVisitFields,
+  type VisitLine,
+} from "../../shared/quote-flow/visit-groups.ts"; // REQ-791
 import { I, ICN } from "../lib/dash-icons.tsx";
 import {
   CardGridSkeleton,
@@ -2277,12 +2281,17 @@ function InvoiceDetail(
       if (editDesc.trim()) body.description = editDesc.trim();
       if (Number.isFinite(cents) && cents > 0) body.amount = cents;
       if (editItems.length > 0) {
-        body.lineItems = editItems.map((li) => ({
-          description: li.description,
-          quantity: li.quantity,
-          ...(li.unit ? { unit: li.unit } : {}),
-          price: Math.round(Number(li.price) * 100) || 0,
-        }));
+        // REQ-791: a batch visit whose text is unchanged keeps its date /
+        // service / address, so the bill still groups by address, then date
+        body.lineItems = keepVisitFields(
+          (draft as { lineItems?: VisitLine[] }).lineItems,
+          editItems.map((li) => ({
+            description: li.description,
+            quantity: li.quantity,
+            ...(li.unit ? { unit: li.unit } : {}),
+            price: Math.round(Number(li.price) * 100) || 0,
+          })),
+        );
       }
       const r = await fetch(`/api/invoices/${inv.id}`, {
         method: "PUT",

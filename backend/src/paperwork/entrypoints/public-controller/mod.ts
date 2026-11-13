@@ -29,7 +29,7 @@ import type { Quote } from "@paperwork/dto/quote.ts";
 import type { Invoice, PaymentMethod } from "@paperwork/dto/invoice.ts";
 import { isAccepted } from "#quote-flow/quote-status.ts";
 import { hasSignOverride } from "#quote-flow/public-doc-state.ts";
-import { groupVisits } from "#quote-flow/visit-groups.ts";
+import { groupVisits, visitPeriodOf } from "#quote-flow/visit-groups.ts";
 import { invoiceLineItemsByLang } from "#documents/invoice-lang.ts"; // REQ-710
 import { sniffLogoImage } from "#quote-flow/logo-image.ts";
 import { logoVersion } from "#quote-flow/public-logo-url.ts";
@@ -1217,7 +1217,7 @@ export class PaperworkPublicController {
       // still describes the line — /i?lang=en kept "Retiro de refrigerador y
       // lavadora" under an English title.
       const ownItems = !jobDetails && i.lineItems?.length &&
-          !groupVisits(i.lineItems)
+          !groupVisits(i.lineItems, visitPeriodOf(i))
         ? invoiceLineItemsByLang(i, i.lineItems).map((li) => ({
           description: li.description,
           ...(li.descriptionByLang
@@ -1278,7 +1278,7 @@ export class PaperworkPublicController {
         acceptedMethods = acceptedMethods.filter((m) => m.method !== "card");
       }
       // REQ-173: a batch invoice's visits, grouped under their address
-      const visits = groupVisits(i.lineItems);
+      const visits = groupVisits(i.lineItems, visitPeriodOf(i));
       const docLang = invoiceDocLang(
         i,
         quote && quote.userId === i.userId ? quote : undefined,
