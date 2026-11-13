@@ -113,10 +113,10 @@ import {
   type ClipStyle,
   cueKey,
   drifted,
-  OFF_MARK_Z,
+  placeView,
   placedReport,
   placedReporter,
-  placeView,
+  OFF_MARK_Z,
   pointInBox,
   visibleBox,
 } from "../../shared/demo-mode/presenter-anchor.ts";
@@ -139,8 +139,8 @@ import { type ActivePoll, activePoll } from "../lib/demo-mode/active-poll.ts";
 import { handCursor, sessionStore } from "../lib/demo-mode/cursor-handoff.ts";
 import { demoEligible, viewerTab } from "../../shared/demo-mode/tab.ts";
 import {
-  type ClaimHow,
   connectDemo,
+  type ClaimHow,
   type DemoLink,
   type LinkStatus,
   type PeerFrom,
@@ -185,15 +185,15 @@ import {
   whoEnded,
 } from "../../shared/demo-mode/ended.ts";
 import {
-  backdropCovers,
-  backdropDim,
   bandBackground,
+  clearPillRoom,
+  backdropCovers,
+  coversView,
+  backdropDim,
   bandPaint,
   bandRoom,
-  clearPillRoom,
   CONTROL_SELECTOR,
   countsAsPage,
-  coversView,
   dialogDim,
   isPublicDocPath,
   PAGE_MEDIA_SELECTOR,
@@ -210,10 +210,10 @@ import {
   pillStore,
   pillWraps,
   placePill,
+  seeThrough,
   recallPillOpen,
   rememberPillOpen,
   samplePoints,
-  seeThrough,
   setPillRoom,
 } from "../../shared/demo-mode/pill.ts";
 import { pillCopy } from "../../shared/demo-mode/pill-copy.ts";
@@ -1656,9 +1656,9 @@ export default function DemoModeOverlay(
   const bandStyle = `position:fixed;left:0;right:0;bottom:0;height:${
     // REQ-545 (cycle 4, m2) — painted only under the pill at home: with the pill tucked, what
     // scrolled into the strip shows (the opaque band hid tiles, fields and buttons mid-scroll)
-    bandOn ? "var(--demo-pill-h, 0px)" : "0px"};z-index:1;background:${
-    bandPaint(bandBg, bandDim)
-  };pointer-events:none`;
+    bandOn
+      ? "var(--demo-pill-h, 0px)"
+      : "0px"};z-index:1;background:${bandPaint(bandBg, bandDim)};pointer-events:none`;
   const band = <div data-cy="demo-band" aria-hidden="true" style={bandStyle} />;
   /** one line: a long name is cut, not wrapped (the live pill's rule, REQ-228) */
   const cut = "overflow:hidden;text-overflow:ellipsis;min-width:0";

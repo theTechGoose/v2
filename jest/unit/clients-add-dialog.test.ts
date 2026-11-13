@@ -27,8 +27,9 @@ describe("REQ-300 a dirty New customer draft survives a backdrop click", () => {
     // REQ-300 AMENDMENT — reconciled with develop on demo-fixes: the New
     // customer dialog is develop's shared CustomerFormDialog (REQ-625)
     const form = read("front-end/components/CustomerForm.tsx");
-    // the backdrop's onClick is guarded by the draft, not only by the save in flight
-    expect(form).toMatch(/onClick=\{\(\) => !busy && !dirty && onClose\(\)\}/);
+    // the backdrop's close is guarded by the draft, not only by the save in flight
+    // (REQ-354 AMENDMENT on demo-fixes: it is the shared <Backdrop>'s onClose now)
+    expect(form).toMatch(/<Backdrop[\s\S]{0,200}onClose=\{\(\) => !busy && !dirty && onClose\(\)\}/);
     expect(form).toMatch(/data-cy="customer-form-backdrop"/);
   });
 });

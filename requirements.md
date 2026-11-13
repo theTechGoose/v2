@@ -5898,7 +5898,7 @@ This replaces demo-fixes' in-place "Text client" POST. A link's `stopPropagation
 
 ## REQ-586 AMENDMENT — reconciled with develop on demo-fixes
 Develop's REQ-626 "View as customer" links (`invoice-view-as-customer`, `invoice-detail-view-as-customer`) use `invoiceLinkPath(inv.id, inv.lang)`, so they open in the invoice's document language.
-**Tests:** `front-end/lib/customer-link-lang.test.tsx`.
+**Tests:** `front-end/lib/customer-link-lang.test.tsx`, jest `card-actions` (REQ-626 "View as customer").
 
 ## REQ-573 AMENDMENT — reconciled with develop on demo-fixes
 Develop's REQ-628 means no customer document carries a "Powered by DocuMonster" credit. /q, /i and /co all pass `<SiteFooter document credited />`, and no document body carries the credit.
