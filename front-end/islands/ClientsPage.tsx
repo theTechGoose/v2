@@ -191,6 +191,14 @@ export default function ClientsPage(
     await refreshClients();
   }
 
+  /** REQ-802: a deleted customer leaves the board at once; its sheet closes;
+   *  "<name> deleted". */
+  async function onCustomerDeleted(c: CustomerCard) {
+    if (sheetId && c.id === sheetId) openSheet(null);
+    setFlash(tFor(lang, "clientsPage.deleted", { name: c.name }));
+    await refreshClients();
+  }
+
   useEffect(() => {
     let alive = true;
     clientsClient.top(5).catch(() => ({ results: [] } as TopClientsResponse))
@@ -289,6 +297,7 @@ export default function ClientsPage(
         onCustomerSaved={refreshClients}
         onOpenCard={(id) => openSheet(id)}
         onEdit={(c) => setEditing(c)}
+        onDeleted={onCustomerDeleted}
       >
         <TopClients
           rows={top.results}

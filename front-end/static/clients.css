@@ -66,10 +66,10 @@
   inset: 0;
   background-image:
     radial-gradient(
-      circle at 18% 22%,
-      rgba(255, 255, 255, 0.18) 0,
-      transparent 35%
-    ),
+    circle at 18% 22%,
+    rgba(255, 255, 255, 0.18) 0,
+    transparent 35%
+  ),
     radial-gradient(circle at 82% 78%, rgba(0, 0, 0, 0.10) 0, transparent 40%);
 }
 .ccard2__since {
@@ -144,7 +144,8 @@
   animation: pulse-dot 2.4s infinite;
 }
 @keyframes pulse-dot {
-  0%, 100% {
+  0%,
+  100% {
     opacity: 1;
   }
   50% {
@@ -508,6 +509,42 @@
 .ccard2__panel-act:hover {
   transform: translateY(-1px);
 }
+/* REQ-802: Delete customer — a quiet danger action, never a filled primary;
+   Keep is the ghost */
+.ccard2__panel-act--danger {
+  background: transparent;
+  color: var(--danger, #c0392b);
+  border: 1.5px solid var(--danger, #c0392b);
+  box-shadow: none;
+}
+.ccard2__panel-act--danger:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+.ccard2__panel-act--ghost {
+  background: transparent;
+  color: var(--ink-2, #5b6b73);
+  border: 1.5px solid var(--line, #d8e0e3);
+  box-shadow: none;
+}
+.ccard2__panel-ask {
+  display: grid;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: var(--radius-md);
+  background: rgba(192, 57, 43, 0.06);
+  font-size: 12.5px;
+  line-height: 1.35;
+}
+.ccard2__panel-ask-btns {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+.ccard2__panel-ask-err {
+  color: var(--danger, #c0392b);
+  font-size: 12px;
+}
 
 /* ============== HERO + RIBBON + TOOLBAR + LAYOUT + RAIL ============== */
 .ph2 {
@@ -538,7 +575,8 @@
   animation: ph2-pulse 2.4s infinite;
 }
 @keyframes ph2-pulse {
-  0%, 100% {
+  0%,
+  100% {
     box-shadow: 0 0 0 0 rgba(255, 107, 107, 0.55);
   }
   50% {
@@ -926,7 +964,31 @@
 }
 
 /* REQ-135 — the pager under the cards: one page at a time from the API */
-.cpager{display:flex;align-items:center;justify-content:center;gap:14px;padding:18px 0 6px}
-.cpager__btn{padding:9px 14px;border:1px solid var(--border,#d8dcd5);border-radius:10px;background:#fff;color:var(--fg,#144852);font:inherit;font-size:13.5px;font-weight:700;cursor:pointer}
-.cpager__btn:disabled{opacity:.4;cursor:default}
-.cpager__where{font-size:13px;font-weight:700;color:var(--fg-muted,#6b7560);letter-spacing:.02em}
+.cpager {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  padding: 18px 0 6px;
+}
+.cpager__btn {
+  padding: 9px 14px;
+  border: 1px solid var(--border,#d8dcd5);
+  border-radius: 10px;
+  background: #fff;
+  color: var(--fg,#144852);
+  font: inherit;
+  font-size: 13.5px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.cpager__btn:disabled {
+  opacity: .4;
+  cursor: default;
+}
+.cpager__where {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--fg-muted,#6b7560);
+  letter-spacing: .02em;
+}

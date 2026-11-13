@@ -173,6 +173,9 @@ export const clientsClient = {
   /** REQ-625 — PUT /customers/:id (the edit form sends every field) */
   update: (id: string, patch: Record<string, unknown>, opts: ApiOptions = {}) =>
     api.put<CustomerCard>(`/customers/${encodeURIComponent(id)}`, patch, opts),
+  /** REQ-802 — the card's Delete customer: REQ-039's soft delete (`deletedAt`), the row is kept */
+  delete: (id: string, opts: ApiOptions = {}) =>
+    api.delete<{ ok: true }>(`/customers/${id}`, opts),
   /** REQ-625 — the full customer form; REQ-283 the one-off task form's typed
    *  address; REQ-715 the customer's language (left out when not set) */
   create: (

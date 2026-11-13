@@ -9,7 +9,7 @@
  * the chips report upward and the island asks the API for the page.
  */
 import type { ComponentChildren, JSX } from "preact";
-import { useEffect, useState } from "preact/hooks";
+import { useEffect, useRef, useState } from "preact/hooks";
 import { I, ICN } from "../lib/dash-icons.tsx";
 import { tFor } from "../lib/i18n.ts";
 import {
@@ -125,6 +125,8 @@ interface CardProps {
   disambig?: string;
   /** REQ-600: a contact row was saved — the page reloads the cards */
   onSaved: () => void;
+  /** REQ-802: the customer was deleted — the page drops it, closes its sheet and flashes */
+  onDeleted: (c: CustomerCard) => void;
 }
 
 interface EditRowProps {
@@ -410,9 +412,39 @@ function ClientCard(
     lang,
     disambig,
     onSaved,
+    onDeleted,
   }: CardProps,
 ) {
   const mood = moodFor(c, lang);
+  // REQ-802: Delete customer asks inline (no native dialog) before it deletes
+  const [askDelete, setAskDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteErr, setDeleteErr] = useState<string | null>(null);
+  const askRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!isOpen) {
+      setAskDelete(false);
+      setDeleteErr(null);
+    }
+  }, [isOpen]);
+  // the panel scrolls as a whole (REQ-419): the question comes into view
+  useEffect(() => {
+    if (askDelete) {
+      askRef.current?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    }
+  }, [askDelete]);
+  async function onDeleteYes() {
+    if (deleting) return;
+    setDeleting(true);
+    setDeleteErr(null);
+    try {
+      await clientsClient.delete(c.id);
+      onDeleted(c);
+    } catch (err) {
+      setDeleting(false);
+      setDeleteErr((err as Error).message);
+    }
+  }
   const initials = initialsOf(c.name);
   // NW-36 (REQ-013): the app never collects a customer segment, so no
   // "Unsorted" placeholder — the label renders only when a real one exists.
@@ -807,6 +839,65 @@ function ClientCard(
             <I d={ICN.eye} size={12} sw={2.4} />{" "}
             {tFor(lang, "clientsBoard.panel.openCard")}
           </button>
+          {/* REQ-802: Delete customer — the question inline, Delete / Keep */}
+          {askDelete
+            ? (
+              <div
+                class="ccard2__panel-ask"
+                data-cy="ccard2-delete-ask"
+                ref={askRef}
+              >
+                <div>
+                  {tFor(lang, "clientsBoard.panel.deleteAsk", { name: c.name })}
+                </div>
+                <div class="ccard2__panel-ask-btns">
+                  <button
+                    class="ccard2__panel-act ccard2__panel-act--danger"
+                    type="button"
+                    data-cy="ccard2-delete-yes"
+                    disabled={deleting}
+                    onClick={onDeleteYes}
+                  >
+                    <I d={ICN.trash} size={12} sw={2.4} />{" "}
+                    {tFor(lang, "clientsBoard.panel.deleteYes")}
+                  </button>
+                  <button
+                    class="ccard2__panel-act ccard2__panel-act--ghost"
+                    type="button"
+                    data-cy="ccard2-delete-keep"
+                    disabled={deleting}
+                    onClick={() => {
+                      setAskDelete(false);
+                      setDeleteErr(null);
+                    }}
+                  >
+                    {tFor(lang, "clientsBoard.panel.deleteKeep")}
+                  </button>
+                </div>
+                {deleteErr && (
+                  <div
+                    class="ccard2__panel-ask-err"
+                    data-cy="ccard2-delete-error"
+                    role="alert"
+                  >
+                    {tFor(lang, "clientsBoard.panel.deleteError", {
+                      message: deleteErr,
+                    })}
+                  </div>
+                )}
+              </div>
+            )
+            : (
+              <button
+                class="ccard2__panel-act ccard2__panel-act--danger"
+                type="button"
+                data-cy="ccard2-delete"
+                onClick={() => setAskDelete(true)}
+              >
+                <I d={ICN.trash} size={12} sw={2.4} />{" "}
+                {tFor(lang, "clientsBoard.panel.delete")}
+              </button>
+            )}
         </div>
       </div>
     </div>
@@ -837,6 +928,8 @@ interface BoardProps {
   onOpenCard?: (id: string) => void;
   /** REQ-625 — open the edit form */
   onEdit?: (c: CustomerCard) => void;
+  /** REQ-802 — a card's customer was deleted */
+  onDeleted?: (c: CustomerCard) => void;
 }
 
 export default function ClientsBoard(
@@ -856,6 +949,7 @@ export default function ClientsBoard(
     onCustomerSaved,
     onOpenCard = () => {},
     onEdit = () => {},
+    onDeleted = () => {},
   }: BoardProps,
 ) {
   // REQ-600 (cycle 4, M5): /customers?open=<id> opens that customer's card —
@@ -974,6 +1068,10 @@ export default function ClientsBoard(
                 lang={lang}
                 disambig={disambigs.get(c.id)}
                 onSaved={() => onCustomerSaved?.()}
+                onDeleted={(x) => {
+                  setOpenId(null);
+                  onDeleted(x);
+                }}
               />
             ))}
             {rows.length === 0 && (
