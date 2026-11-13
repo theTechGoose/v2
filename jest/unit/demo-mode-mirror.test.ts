@@ -404,13 +404,14 @@ describe("REQ-242 the pointer's name tag stays inside its box and rests when idl
     }
   });
   // REQ-633 (demo m35, cycle 5): the rest is a shrink to the initials, fully opaque
-  test("the tag rests after TAG_IDLE_MS, readable; the arrow never dims (REQ-374, REQ-633)", () => {
+  // REQ-761 (demo c4-S12b, cycle 5v2): at rest the arrow turns see-through (never below .7)
+  test("the tag rests after TAG_IDLE_MS, readable; the resting arrow is see-through, not faint (REQ-374, REQ-633, REQ-761)", () => {
     expect(TAG_IDLE_MS).toBe(1_500);
-    expect(pointerLook(true)).toEqual({
-      arrow: 1,
+    expect(pointerLook(true)).toMatchObject({
       tag: TAG_REST_OPACITY,
       compact: true,
     });
+    expect(pointerLook(true).arrow).toBeGreaterThanOrEqual(0.7);
   });
 });
 

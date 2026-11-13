@@ -123,8 +123,14 @@ describe("REQ-633 (demo m2 + m35 + c4-S12b, cycle 5) the pointer's name tag stay
   test("m35: a resting tag stays fully opaque (no scrim shows through) and shrinks to the initials", () => {
     const m = motion as typeof motion & Record<string, any>;
     expect(m.TAG_REST_OPACITY).toBe(1);
-    expect(m.pointerLook(true)).toEqual({ arrow: 1, tag: 1, compact: true });
-    expect(m.pointerLook(false)).toEqual({ arrow: 1, tag: 1, compact: false });
+    // REQ-761 (c4-S12b, cycle 5v2): the resting ARROW is see-through; the tag is not
+    expect(m.pointerLook(true)).toMatchObject({ tag: 1, compact: true });
+    expect(m.pointerLook(false)).toEqual({
+      arrow: 1,
+      fill: 1,
+      tag: 1,
+      compact: false,
+    });
     expect(m.tagLabel("Alex", true)).toBe("A");
     expect(m.tagLabel("Ana Torres", true)).toBe("AT");
     expect(m.tagLabel("Ana Torres", false)).toBe("Ana Torres");
