@@ -1,4 +1,5 @@
 import { Body, Context, Controller, Get, Param, Post } from "#danet/core";
+import { invoiceTerms } from "#quote-flow/invoice-terms.ts";
 import type { ExecutionContext } from "#danet/core";
 import { IsNumber, IsOptional, IsString, validateSync } from "#class-validator";
 import { plainToInstance } from "#class-transformer";
@@ -1209,7 +1210,12 @@ export class PaperworkPublicController {
             // payment split / warranty) — feeds the invoice's TermGrid and
             // the payment-schedule milestones. This is NOT the numbered
             // legal clauses, which stay on the signed agreement only.
-            terms: quote.terms ?? [],
+            // REQ-659 (cycle 5, m53): minus a relative start ("Next
+            // week") the bill has outlived — counted from the quote's send.
+            terms: invoiceTerms(quote.terms, {
+              quotedAt: quote.sentAt ?? quote.createdAt,
+              issuedAt: i.issuedDate ?? i.sentAt ?? i.createdAt,
+            }),
             // "View the signed agreement" link target — only once actually
             // accepted (the user's "link to the signed quote if one exists").
             ...(isAccepted(quote)

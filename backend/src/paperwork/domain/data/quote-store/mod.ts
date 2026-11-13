@@ -5,6 +5,7 @@ import {
 } from "#quote-flow/quote-price-guard.ts";
 import { summarizeJobName } from "#quote-flow/job-name.ts";
 import { messageLang } from "#quote-flow/message-language.ts";
+import { withoutMoneySentences } from "#quote-flow/private-cost.ts";
 import { getKv, indexedIds, readMany } from "@core/data/kv/mod.ts";
 import { ForbiddenError, NotFoundError } from "@core/data/repository/mod.ts";
 import { DocNumbering } from "@core/data/doc-numbering/mod.ts";
@@ -73,6 +74,7 @@ export class QuoteStore {
     const now = new Date().toISOString();
     const quote: Quote = {
       ...input,
+      ...withoutPrivatePricing(input),
       id,
       userId,
       createdAt: now,
@@ -151,9 +153,9 @@ export class QuoteStore {
     patch: Record<string, unknown>,
   ): Promise<Quote> {
     const existing = await this.getOwned(id, userId);
-    const defined = Object.fromEntries(
+    const defined = withoutPrivatePricing(Object.fromEntries(
       Object.entries(patch).filter(([_, v]) => v !== undefined),
-    );
+    ));
     const { pendingRevision: prior, ...live } = existing;
     const pending = effectivePendingRevision(
       live as unknown as Record<string, unknown>,
@@ -227,9 +229,9 @@ export class QuoteStore {
         throw new NotFoundError(PREFIX, id);
       }
       if (!predicate(entry.value)) return null;
-      const definedPatch = Object.fromEntries(
+      const definedPatch = withoutPrivatePricing(Object.fromEntries(
         Object.entries(patch).filter(([_, v]) => v !== undefined),
-      );
+      ));
       const updated: Quote = {
         ...entry.value,
         ...firstIssueStamp(entry.value, definedPatch), // REQ-248
@@ -289,9 +291,9 @@ export class QuoteStore {
     patch: UpdateQuoteDto & QuoteDeliveryFields,
   ): Promise<Quote> {
     const existing = await this.getOwned(id, userId);
-    const definedPatch = Object.fromEntries(
+    const definedPatch = withoutPrivatePricing(Object.fromEntries(
       Object.entries(patch).filter(([_, v]) => v !== undefined),
-    ) as Partial<Quote>;
+    )) as Partial<Quote>;
     // REQ-460 (demo-loop cycle 3, B1): a signed quote's agreement is final.
     assertNotSigned(existing, definedPatch);
     // REQ-302: only the money fields the patch carries are judged — a lock
@@ -348,6 +350,32 @@ export class QuoteStore {
     const kv = await getKv();
     await kv.set([PREFIX, id], { ...existing, deletedAt: now, updatedAt: now });
   }
+}
+
+/**
+ * REQ-659 (demo-loop cycle 5, m53 / M14) — the one gate every write of a
+ * quote's job details passes (chat create/update tools, the polish step, the
+ * quick quote, "use what I wrote", PUT /quotes): the sentences and lines that
+ * name a money amount or the contractor's private pricing (a markup, a rate,
+ * a sub's or a material's cost) are dropped from `description` and from every
+ * `descriptionByLang` copy. The price lives in the line items (REQ-261).
+ * Returns a copy; fields the record does not carry stay absent.
+ */
+function withoutPrivatePricing<T extends object>(rec: T): T {
+  const out = { ...rec } as Record<string, unknown>;
+  if (typeof out.description === "string") {
+    out.description = withoutMoneySentences(out.description);
+  }
+  const byLang = out.descriptionByLang;
+  if (byLang && typeof byLang === "object") {
+    out.descriptionByLang = Object.fromEntries(
+      Object.entries(byLang as Record<string, unknown>).map(([k, v]) => [
+        k,
+        typeof v === "string" ? withoutMoneySentences(v) : v,
+      ]),
+    );
+  }
+  return out as unknown as T;
 }
 
 /** REQ-460: the agreement fields a signed quote never changes again. */

@@ -153,6 +153,7 @@ import {
   scopeDescriptionFromRaw, // REQ-585
 } from "../../shared/quote-flow/scope-from-raw.ts";
 import { ownWordsOption } from "../../shared/quote-flow/own-words-option.ts";
+import { redactMoney } from "../../shared/quote-flow/private-cost.ts"; // REQ-659
 import {
   carryPickedOptionId,
   currentDetailsOption,
@@ -6039,7 +6040,10 @@ export default function AsstChat({
                                           rawEchoOpen ? " is-open" : ""
                                         }`}
                                       >
-                                        {pendingJobDetailsRaw}
+                                        {/* REQ-659 (cycle 5, c1-M22): the
+                                            echo never re-shows a private
+                                            cost — amounts are masked. */}
+                                        {redactMoney(pendingJobDetailsRaw)}
                                       </span>
                                     )
                                     : null}

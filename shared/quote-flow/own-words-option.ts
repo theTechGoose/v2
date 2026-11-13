@@ -8,6 +8,7 @@
  * contractor explicitly chose their own words. Pure.
  */
 import { scopeBulletsFromRaw, type ScopeLang } from "./scope-from-raw.ts";
+import { mentionsMoney } from "./private-cost.ts";
 
 export interface OwnWordsOption {
   jobName: string;
@@ -19,10 +20,15 @@ export function ownWordsOption(
   raw: string,
   lang: ScopeLang,
 ): OwnWordsOption | null {
-  const typed = raw.split("\n").map((l) => l.trim()).filter(Boolean);
-  if (typed.length === 0) return null;
-  const scoped = scopeBulletsFromRaw(raw, lang);
-  const bullets = scoped.degraded ? typed : scoped.bullets;
+  const scoped = scopeBulletsFromRaw(raw ?? "", lang);
+  // REQ-659 (cycle 5, c1-M22): the as-typed fallback never carries a
+  // private cost either — a priced line is dropped, not kept as scope.
+  const bullets = scoped.degraded
+    ? (raw ?? "").split("\n").map((l) => l.trim()).filter((l) =>
+      l && !mentionsMoney(l)
+    )
+    : scoped.bullets;
+  if (bullets.length === 0) return null;
   const summary = bullets[0];
   // Job Names are ≤3 words platform-wide (roadmap p.10).
   const jobName = summary.split(/\s+/).slice(0, 3).join(" ");
