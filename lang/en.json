@@ -581,6 +581,7 @@
   "asstChat.warranty.warnFail": "I couldn't read that as a warranty term — set it manually.",
   "asstChat.wiz.prevChoice": "Your previous choice",
   "asstChat.wiz.fromYourMessage": "From your message",
+  "asstChat.wiz.suggestedTag": "Suggested",
   "asstChat.wiz.fromMessage": "From your message",
   "asstChat.wiz.usePrefill": "Use this",
   "asstChat.wiz.weekdayMismatch": "that's a {weekday}",

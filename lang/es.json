@@ -581,6 +581,7 @@
   "asstChat.warranty.warnFail": "No pude interpretar eso como un plazo de garantía — configúralo manualmente.",
   "asstChat.wiz.prevChoice": "Tu elección anterior",
   "asstChat.wiz.fromYourMessage": "De tu mensaje",
+  "asstChat.wiz.suggestedTag": "Sugerido",
   "asstChat.wiz.fromMessage": "De tu mensaje",
   "asstChat.wiz.usePrefill": "Usar esto",
   "asstChat.wiz.weekdayMismatch": "cae en {weekday}",
