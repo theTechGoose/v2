@@ -34,3 +34,20 @@ export function parseNetDays(
   }
   return { ok: true, value: n };
 }
+
+/** REQ-788 — the overhead cost per visit in Settings: whole cents, 0 or more; null / "" clears it */
+export function parseOverheadCents(
+  v: unknown,
+): { ok: true; value: number | undefined } | { ok: false; reason: string } {
+  if (v === undefined || v === null || v === "") {
+    return { ok: true, value: undefined };
+  }
+  const n = typeof v === "string" ? Number(v) : v;
+  if (typeof n !== "number" || !Number.isInteger(n) || n < 0) {
+    return {
+      ok: false,
+      reason: "fieldOverheadCents must be a whole number of cents, 0 or more",
+    };
+  }
+  return { ok: true, value: n };
+}

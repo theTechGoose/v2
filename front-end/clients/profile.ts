@@ -24,6 +24,8 @@ export interface BusinessIdentity {
   websiteUrl?: string;
   /** REQ-174: the default days a customer has to pay an invoice */
   invoiceNetDays?: number;
+  /** REQ-788: the overhead cost per recurring visit, in cents */
+  fieldOverheadCents?: number;
   /** Language the contractor's customers receive outbound comms in
    *  (quotes/SMS/email/docs). Distinct from the contractor's UI language.
    *  Defaults to "en" when unset. Stays the DEFAULT (first enabled). */

@@ -1,5 +1,5 @@
 import { assertEquals } from "#std/assert";
-import { netDaysFor, parseNetDays } from "./mod.ts";
+import { netDaysFor, parseNetDays, parseOverheadCents } from "./mod.ts";
 
 // REQ-174 — "subscriptions needs a field to define how long they have to pay the invoice from the
 // date sent. it should default to a field on the customer settings that is a number"
@@ -22,4 +22,17 @@ Deno.test("REQ-174 parseNetDays — a whole number of days from 0 to 365; null c
   assertEquals(parseNetDays(366).ok, false);
   assertEquals(parseNetDays(1.5).ok, false);
   assertEquals(parseNetDays("soon").ok, false);
+});
+
+// REQ-788 — the overhead cost in Settings: a whole number of cents, 0 or more; null clears it
+Deno.test("REQ-788 parseOverheadCents — whole cents ≥ 0; null/empty clears; anything else is refused", () => {
+  assertEquals(parseOverheadCents(2500), { ok: true, value: 2500 });
+  assertEquals(parseOverheadCents("2500"), { ok: true, value: 2500 });
+  assertEquals(parseOverheadCents(0), { ok: true, value: 0 });
+  assertEquals(parseOverheadCents(null), { ok: true, value: undefined });
+  assertEquals(parseOverheadCents(""), { ok: true, value: undefined });
+  assertEquals(parseOverheadCents(undefined).ok, true);
+  assertEquals(parseOverheadCents(-1).ok, false);
+  assertEquals(parseOverheadCents(10.5).ok, false);
+  assertEquals(parseOverheadCents("lots").ok, false);
 });
