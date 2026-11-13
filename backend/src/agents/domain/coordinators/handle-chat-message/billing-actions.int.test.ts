@@ -605,6 +605,63 @@ Deno.test("REQ-583 M2: pair 3's own data — Maria has only the 555 test number:
   });
 });
 
+/** REQ-770 (demo-loop cycle 5v5, issue m12 re-test; follows REQ-681 /
+ *  REQ-764): the verifier's chat send to Maria (email on file, cell
+ *  (512) 555-0188) answered "The text didn't go: that's a reserved test
+ *  number…" — ChatBilling still tried the text the send dialog had already
+ *  ruled out. A number that can't take texts is not texted at all, and the
+ *  reply says "not texted: <reason>", in en and es. */
+for (const lang of ["en", "es"] as const) {
+  Deno.test(`REQ-770 m12 (cycle 5v5): 'send it to her now please' to Maria (email + (512) 555-0188) emails INV-001 and says 'not texted: <reason>' — never 'The text didn't go' (${lang})`, async () => {
+    await withKv(async () => {
+      const fx = fresh();
+      await seedOnboarded(lang);
+      const { conv, invoices: [inv] } = await mariaJob(fx, {
+        name: "Maria Lopez",
+        email: "maria@example.com",
+        phoneNumber: "(512) 555-0188",
+      });
+      const chat = scriptLlm(fx);
+      await fx.flow.run({
+        userId: U,
+        conversationId: conv.id,
+        content: "Invoice Maria for the deep clean",
+      });
+      const res = await fx.flow.run({
+        userId: U,
+        conversationId: conv.id,
+        content: lang === "es"
+          ? "Mándala ahora por favor"
+          : "send it to her now please",
+      });
+      const said = textOf(res.newMessages);
+      const dict = JSON.parse(
+        Deno.readTextFileSync(
+          new URL(`../../../../../../lang/${lang}.json`, import.meta.url),
+        ),
+      );
+      assertEquals((await fx.invoices.getOwned(inv.id, U)).status, "sent");
+      assertEquals(fx.emails.map((e) => e.to), ["maria@example.com"]);
+      const textFailed = dict["chatCoordinator.sendInvoice.partial"]
+        .replace("{channel}", dict["chatCoordinator.sendInvoice.channel.text"])
+        .split("{reason}")[0];
+      assert(
+        !said.includes(textFailed),
+        `the text was reported as a failure: ${said}`,
+      );
+      assertStringIncludes(
+        said,
+        dict["chatCoordinator.sendInvoice.notTexted"]?.replace(
+          "{reason}",
+          dict["sms.fictionalNumber"],
+        ) ?? "(missing chatCoordinator.sendInvoice.notTexted)",
+      );
+      assertEquals(chat.length, 0, `the chat model answered: ${said}`);
+      assertEquals(fx.texts.length, 0);
+    });
+  });
+}
+
 Deno.test("REQ-583 M2: pair 9 — '…mándale la factura' then 'Mándala ahora por favor, ya terminé hoy' texts INV-001 to Juan, answered in Spanish", async () => {
   await withKv(async () => {
     const fx = fresh();
