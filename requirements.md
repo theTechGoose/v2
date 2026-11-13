@@ -5117,3 +5117,18 @@ Raphael: "fix every issue the demo found, loop until there are none." Demo-loop 
 **Requirement:** every visible phone in the quote and invoice emails (and so their preview) is a US phone shown as `formatPhoneDisplay` ("+1 (512) 555-0100"); the `tel:` link keeps the stored E.164 so tap-to-call still dials; a non-US phone is shown as stored.
 **Tests:** unit `backend/src/paperwork/domain/coordinators/send-paperwork-email/phone-display.test.ts` ("REQ-719 …" ×4: quote, invoice and basic-invoice HTML show "+1 (512) 555-0100" and no "+15125550100" in visible text, `href="tel:+15125550100"` kept; a +44 number passes through) · integration n/a — a pure render change; the send coordinator's int tests (`int.test.ts`) run unchanged and green on the same renderers · e2e n/a — the email body is rendered server-side and the unit test pins the exact HTML the preview and Postmark receive.
 **Evidence (2026-11-12, branch fix/c5-email-phone-format off demo-fixes 2444608a):** RED first — `cd backend && deno test -A --unstable-kv src/paperwork/domain/coordinators/send-paperwork-email/phone-display.test.ts` → "FAILED | 1 passed | 3 failed" (`AssertionError: raw E.164 phone shown in the email text` ×3). GREEN — the same file → "ok | 4 passed | 0 failed"; `deno test -A --unstable-kv src/paperwork/domain/coordinators/send-paperwork-email/ src/paperwork/domain/coordinators/preview-quote-send/` → all green; `deno lint` + `deno check` clean on the module. `mod.ts` was already not fmt-clean on demo-fixes and was left unformatted.
+
+## REQ-684 AMENDMENT — reconciled on demo-fixes
+**Source:** demo-loop cycle 5 integration merge (fix/c5-manual-co-delivery × fix/c5-cant-text-reason), 2026-11-12
+**Requirement:** REQ-681 never texts a number that can't take texts (the reserved 555 range) and reports it as `smsSkippedReason`. REQ-684's /invoices change-order `delivery` carries that field through (`changeOrderDeliveryOf`), and the shared line (`changeOrderSentLineWith`) words it "not texted: <reason>". REQ-684's integration test now reads the 555 reason from `smsSkippedReason` (no `smsFailureReason`).
+**Tests:** unit `backend/src/agents/domain/business/change-order-delivery/test.ts` (REQ-681) · integration `backend/src/paperwork/entrypoints/invoice-controller/change-order-delivery.int.test.ts` (REQ-684 m39) · e2e `n/a — covered by the REQ-681 / REQ-684 stories`
+
+## REQ-585 AMENDMENT — reconciled on demo-fixes
+**Source:** demo-loop cycle 5 integration merge (fix/c5-chat-render-jumps), 2026-11-12
+**Requirement:** REQ-662 re-stores the wizard's next question after a chat turn's reply, so the reply is no longer the turn's last message. REQ-585's M4 start-date test reads the reply as the turn's first assistant message and checks the duration question comes last.
+**Tests:** unit `n/a — behaviour of the chat route` · integration `backend/src/agents/entrypoints/chat-controller/edit-replies.e2e.test.ts` ("REQ-585 M4 e2e: on the start-date card …") · e2e `n/a — same`
+
+## REQ-495 AMENDMENT — reconciled on demo-fixes
+**Source:** demo-loop cycle 5 integration merge (fix/c5-invoice-timing-copy), 2026-11-12
+**Requirement:** REQ-697 words a scheduled invoice's sub-line as a reminder ("Te recordamos enviarla el 19 nov"); REQ-495's check that the Spanish date is day-first now expects that copy.
+**Tests:** unit `front-end/lib/es-date-format.test.ts` ("REQ-495 m17 (a) …") · integration `n/a — pure copy` · e2e `n/a — pure copy`

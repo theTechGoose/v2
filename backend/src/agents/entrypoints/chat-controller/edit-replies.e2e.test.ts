@@ -176,8 +176,12 @@ Deno.test("REQ-585 M4 e2e: on the start-date card, 'we start monday nov 23 … i
     );
     assertEquals(seen.length, 1, "one chat-model turn");
     assert(seen[0].tools?.includes("update_terms"));
-    const reply = res.newMessages[res.newMessages.length - 1];
+    // REQ-585 AMENDMENT (reconciled on demo-fixes with REQ-662): the turn's reply sits ABOVE the
+    // wizard's next question, which is re-stored after it — the last message is that question
+    const said = res.newMessages.filter((m) => m.role === "assistant");
+    const reply = said[0];
     assertEquals(reply.role, "assistant");
+    assertStringIncludes(said[said.length - 1].content, "How long will the job take?");
     assertStringIncludes(reply.content, "Set the start date to Nov 23");
     assertStringIncludes(
       reply.content,

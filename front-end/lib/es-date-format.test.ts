@@ -20,7 +20,9 @@ Deno.test("REQ-495 m17 (a): a Spanish invoice card date is day-first — '19 dic
   assertEquals(cardDate("2027-01-05", NOW, "es"), "5 ene 2027");
   assertEquals(
     scheduledSubline("2026-11-19", NOW, "es"),
-    "Programada para enviar 19 nov",
+    // REQ-697 AMENDMENT (cycle 5, m22): a scheduled invoice reads as a reminder; the date is
+    // still day-first
+    "Te recordamos enviarla el 19 nov",
   );
 });
 

@@ -113,8 +113,11 @@ Deno.test({
       assertEquals(created.body.status, "pending");
       assertEquals(created.body.delivery?.emailedTo, "maria@example.com");
       assertEquals(created.body.delivery?.textedTo, undefined);
-      // REQ-588: the text's failure is a worded sentence, never the raw key
-      const smsWhy = created.body.delivery?.smsFailureReason ?? "";
+      // REQ-588: the text's failure is a worded sentence, never the raw key.
+      // REQ-684 AMENDMENT (reconciled on demo-fixes with REQ-681): a 555 number is never texted —
+      // the alert reports it as skipped (smsSkippedReason), not as a failed text
+      assertEquals(created.body.delivery?.smsFailureReason, undefined);
+      const smsWhy = created.body.delivery?.smsSkippedReason ?? "";
       assert(smsWhy.includes("555"), `the text's failure is named: ${smsWhy}`);
       assert(!smsWhy.startsWith("sms."), "never the raw sms.* key");
 
