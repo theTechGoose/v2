@@ -247,7 +247,7 @@ export default define.page(async function Landing(ctx) {
   return (
     <>
       <Head>
-        <title>{tFor(lang, "landing.head.title")}</title>
+        <title>{t("head.title")}</title>
         <meta
           name="description"
           content={tFor(lang, "landing.head.metaDescription")}
@@ -261,7 +261,7 @@ export default define.page(async function Landing(ctx) {
         <link rel="canonical" href={absoluteUrl("/")} />
         {socialMetaTags({
           path: "/",
-          title: tFor(lang, "landing.head.title"),
+          title: t("head.title"),
           description: tFor(lang, "landing.head.metaDescription"),
           lang,
         }).map((m) =>

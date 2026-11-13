@@ -23,12 +23,19 @@ import { PUBLIC_PLANS } from "../../shared/quote-flow/pricing-plans.ts";
 
 export type LandingLang = "en" | "es";
 
+/** The hero headline's whole sentence (REQ-349 `hero.h1Sr`). The tab title is
+ *  built from it, so the two can never say it two ways (REQ-742, demo p18-6e:
+ *  "Nosotros el papeleo" over a hero reading "Nosotros manejamos el papeleo"). */
+const HERO_SENTENCE: Record<LandingLang, string> = {
+  en: "You do the work. We handle the paperwork.",
+  es: "Tú haces el trabajo. Nosotros manejamos el papeleo.",
+};
+
 export const LANDING_DICT: Record<LandingLang, Record<string, string>> = {
   en: {
     // <head> copy, so the client-side language toggle can retitle the page
     // instead of leaving an English <title> over Spanish copy.
-    "head.title":
-      "DocuMonster — You do the work. We handle the paperwork.",
+    "head.title": `DocuMonster — ${HERO_SENTENCE.en}`,
     "head.metaDescription":
       "Quotes, contracts, and invoices done right — built for contractors. No app to install. Just chat with us.",
     "nav.features": "What We Do",
@@ -49,7 +56,7 @@ export const LANDING_DICT: Record<LandingLang, Record<string, string>> = {
     "hero.h1b": "We handle the",
     // REQ-349: the <h1>'s accessible name — the whole headline, read once,
     // instead of whichever rotor words happen to be visible.
-    "hero.h1Sr": "You do the work. We handle the paperwork.",
+    "hero.h1Sr": HERO_SENTENCE.en,
     "hero.lead":
       "Talk to us in English or Spanish. Everything goes out to your clients in their language, ready to sign. No apps to learn — just chat.",
     "hero.cta1": "Get Started →",
@@ -204,8 +211,7 @@ export const LANDING_DICT: Record<LandingLang, Record<string, string>> = {
     "footer.copy": "© 2026 DocuMonster. All rights reserved.",
   },
   es: {
-    "head.title":
-      "DocuMonster — Tú haces el trabajo. Nosotros el papeleo.",
+    "head.title": `DocuMonster — ${HERO_SENTENCE.es}`,
     "head.metaDescription":
       "Cotizaciones, contratos y facturas bien hechos — creados para contratistas. Sin apps que instalar. Solo chatea con nosotros.",
     "nav.features": "Qué hacemos",
@@ -222,7 +228,7 @@ export const LANDING_DICT: Record<LandingLang, Record<string, string>> = {
     "hero.kicker": "Hecho para contratistas que trabajan con las manos",
     "hero.h1a": "Tú haces el trabajo.",
     "hero.h1b": "Nosotros manejamos",
-    "hero.h1Sr": "Tú haces el trabajo. Nosotros manejamos el papeleo.",
+    "hero.h1Sr": HERO_SENTENCE.es,
     "hero.lead":
       "Nos escribes en español. Todo sale a tus clientes en inglés perfecto. Sin apps que aprender. Solo chatea con nosotros.",
     "hero.cta1": "Empezar →",
