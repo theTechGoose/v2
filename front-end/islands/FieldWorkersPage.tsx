@@ -35,8 +35,11 @@ interface AddForm {
   /** digits only, at most 4 */
   pin: string;
   foreman: boolean;
-  /** REQ-155 — the language the worker is texted in; Spanish by default */
-  language: "en" | "es";
+  /**
+   * REQ-155 — the language the worker is texted in and sees /worker in. REQ-774: null until
+   * picked, which means the app's language (an English account → English), never a hard Spanish.
+   */
+  language: "en" | "es" | null;
 }
 
 const BLANK: AddForm = {
@@ -44,7 +47,7 @@ const BLANK: AddForm = {
   phone: "",
   pin: "",
   foreman: false,
-  language: "es",
+  language: null,
 };
 
 /** REQ-421 (demo m42) — the server's refusal code, worded in the page's language (never its English) */
@@ -138,6 +141,9 @@ export default function FieldWorkersPage(
   const phoneErr = boxErr("phone");
   const pinErr = boxErr("pin");
 
+  /** REQ-774 — the language the picker shows and the add sends: the picked one, else the app's */
+  const pickedLang: "en" | "es" = form.language ?? langSignal.value;
+
   async function submit(e: Event) {
     e.preventDefault();
     if (adding) return;
@@ -155,7 +161,7 @@ export default function FieldWorkersPage(
         phoneNumber: form.phone,
         pin: form.pin,
         role: form.foreman ? "foreman" : "worker",
-        language: form.language,
+        language: pickedLang,
       });
       setAdded({
         name: made.name,
@@ -338,7 +344,7 @@ export default function FieldWorkersPage(
               name="language"
               data-cy="wk-language"
               title={t("field.wk.langHint")}
-              value={form.language}
+              value={pickedLang}
               onChange={(e) =>
                 setForm({
                   ...form,

@@ -102,12 +102,14 @@ Deno.test("REQ-143: worker → subscription on an existing customer → staffed 
 
     // 1. a worker, on /field/workers
     await page.goto("/field/workers");
-    // REQ-155 — the language picker reads Spanish by default
+    // REQ-774 (demo dv1-d5) — on an English account the picker reads English by default;
+    // Luis is set to Spanish on purpose
     expect.eq(
       await page.locator("[data-cy='wk-language']").inputValue(),
-      "es",
-      "the picker is Spanish by default",
+      "en",
+      "the picker defaults to the account's English, not Spanish",
     );
+    await page.locator("[data-cy='wk-language']").selectOption("es");
     await page.locator("[data-cy='wk-name']").fill("Luis Herrera");
     await page.locator("[data-cy='wk-phone']").fill(cell);
     await page.locator("[data-cy='wk-pin']").fill("1234");
