@@ -16,6 +16,10 @@ import {
 } from "@agents/domain/business/quote-line-revision/mod.ts";
 import { describeQuoteRevision } from "@agents/domain/business/quote-revision-reply/mod.ts";
 import type { Quote } from "@paperwork/dto/quote.ts";
+import {
+  type ChangeOrderOffer,
+  signedOfferAmount,
+} from "#quote-flow/chat-change-order-offer.ts";
 
 export interface ReviseQuoteInput {
   userId: string;
@@ -46,8 +50,14 @@ export type ReviseQuoteOutcome =
     nextVersion: number;
   }
   | { kind: "draft_updated"; quoteId: string; quoteNumber?: string }
-  /** signed — nothing changes (REQ-202) */
-  | { kind: "locked"; quoteId: string; quoteNumber?: string }
+  /** signed — nothing changes (REQ-202). REQ-664 (cycle 5, m43): when the
+   *  edit moves the price, the difference is offered as a change order. */
+  | {
+    kind: "locked";
+    quoteId: string;
+    quoteNumber?: string;
+    changeOrderOffer?: ChangeOrderOffer;
+  }
   /** a named line is not on the quote — nothing written. REQ-585:
    *  `inJobDetails` — every one is a job-details bullet, not a priced line. */
   | {
@@ -87,6 +97,63 @@ function money(cents: number): string {
       maximumFractionDigits: 2,
     })
   }`;
+}
+
+/**
+ * REQ-664 (demo-loop cycle 5, m43): the change order a signed quote's line
+ * edit amounts to — each repriced line's new total minus its old one, each
+ * removed line credited. Undefined when a named line is not on the quote or
+ * nothing moves the price (a reword only).
+ */
+function lockedChangeOrderOffer(
+  lang: Lang,
+  quote: Quote,
+  input: Pick<ReviseQuoteInput, "lines" | "remove">,
+): ChangeOrderOffer | undefined {
+  const base = quote.lineItems ?? [];
+  const rev = reviseLineItems(base, input.lines, input.remove);
+  if (rev.unmatched.length > 0) return undefined;
+  const delta = rev.estimatedTotal - totalOf(base);
+  if (delta === 0) return undefined;
+  const lineTotal = (l: LineItem) => (l.price ?? 0) * (l.quantity ?? 1);
+  const parts: string[] = [];
+  const names: string[] = [];
+  const seen = new Set<number>();
+  for (const c of input.lines) {
+    const i = findLine(base, c.match);
+    if (i < 0 || seen.has(i)) continue;
+    const from = lineTotal(base[i]);
+    if (
+      typeof c.amountCents !== "number" || Math.trunc(c.amountCents) === from
+    ) {
+      continue;
+    }
+    seen.add(i);
+    names.push(base[i].description);
+    parts.push(t(lang, "chatCoordinator.reviseQuote.coLine", {
+      line: base[i].description,
+      from: money(from),
+      to: money(Math.trunc(c.amountCents)),
+    }));
+  }
+  for (const r of input.remove) {
+    const i = findLine(base, r);
+    if (i < 0 || seen.has(i)) continue;
+    seen.add(i);
+    names.push(base[i].description);
+    parts.push(t(lang, "chatCoordinator.reviseQuote.coRemoved", {
+      line: base[i].description,
+      amount: money(-lineTotal(base[i])),
+    }));
+  }
+  if (parts.length === 0) return undefined;
+  return {
+    quoteId: quote.id,
+    ...(quote.number ? { quoteNumber: quote.number } : {}),
+    deltaCents: delta,
+    description: parts.join("; "),
+    label: names.join(", "),
+  };
 }
 
 /**
@@ -178,9 +245,26 @@ export class ReviseQuote {
     const ref = { quoteId: quote.id, quoteNumber: quote.number };
 
     if (isQuoteLocked(quote)) {
+      // REQ-664 (demo-loop cycle 5, m43): the lines stay, but the edit's
+      // difference is offered as a one-tap change order — pair 5 was told
+      // to "make a change order instead" and had to re-type the whole ask.
+      const offer = lockedChangeOrderOffer(lang, quote, input);
+      const locked = t(lang, "chatCoordinator.reviseQuote.locked", vars);
       return {
-        text: t(lang, "chatCoordinator.reviseQuote.locked", vars),
-        outcome: { kind: "locked", ...ref },
+        text: offer
+          ? `${locked} ${
+            t(lang, "chatCoordinator.reviseQuote.lockedOffer", {
+              ...vars,
+              amount: signedOfferAmount(offer.deltaCents),
+              what: offer.label,
+            })
+          }`
+          : locked,
+        outcome: {
+          kind: "locked",
+          ...ref,
+          ...(offer ? { changeOrderOffer: offer } : {}),
+        },
       };
     }
 
