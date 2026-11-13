@@ -319,6 +319,21 @@ export function backdropDim(
   return c;
 }
 
+/**
+ * REQ-765 (demo-loop cycle 5v2, p18-3d) — the dim of the dialog that is up, for the stage: the
+ * mirror skips the overlay, so the stage draws the band and the pill over the replayed page and
+ * paints them in this dim itself (REQ-643 dimmed only the customer's own band). Only a
+ * see-through colour is a dim; an opaque full-screen sheet, or none, is not.
+ */
+export function dialogDim(color: string): string | null {
+  const c = color.trim();
+  return seeThrough(c) ? c : null;
+}
+
+/** REQ-765 — the pill (and the stage's ghost of it) under a dialog's dim: softened, still there
+ *  and clickable (REQ-379 keeps it above every app dialog so End stays reachable) */
+export const PILL_UNDER_DIALOG_OPACITY = 0.6;
+
 /** REQ-643 — the band's background: the page's own colour, under the dialog's dim when one is up */
 export function bandPaint(bg: string, dim: string | null): string {
   return dim ? `linear-gradient(${dim}, ${dim}), ${bg}` : bg;
