@@ -92,3 +92,40 @@ Deno.test("REQ-703 batchTitle — a round plus a one-off → 'Services · …'; 
   assertEquals(batchTitle(same.lines, "en").jobName, "Maintenance · Oct 12");
   for (const lang of ["en", "es"] as const) assertEquals(/\d{4}-\d{2}-\d{2}/.test(batchTitle(g.lines, lang).jobName), false);
 });
+
+// REQ-788 — "a toggle button … that adds an overhead cost. that overhead cost is defined in settings."
+const withOverhead: Subscription[] = [
+  { ...subscriptions[0], overhead: true },
+  subscriptions[1],
+];
+Deno.test("REQ-788 linesFor — a subscription with the toggle on bills one Overhead line per visit, at the Settings amount, on top of its services", () => {
+  const out = linesFor({
+    ...base,
+    subscriptions: withOverhead,
+    overhead: { cents: 2500, label: "Overhead" },
+    tasks: [task("t1", {}), task("t2", { taskTypeId: "tt2", priceCents: 4000 }), task("t3", { date: "2026-10-19" }), task("t4", { subscriptionId: "s2", customerId: "c2" })],
+  });
+  const ana = out.find((g) => g.customerId === "c1")!;
+  // two visits (Oct 12 with two services, Oct 19 with one) → two overhead lines
+  const oh = ana.lines.filter((l) => l.overhead);
+  assertEquals(oh.map((l) => [l.date, l.description, l.priceCents, l.address]), [["2026-10-12", "Overhead", 2500, "123 Oak St"], ["2026-10-19", "Overhead", 2500, "123 Oak St"]]);
+  assertEquals(ana.amount, 6500 + 4000 + 6500 + 2500 * 2);
+  // the overhead line follows the visit's services and names no task
+  assertEquals(ana.lines.map((l) => l.taskId), ["t2", "t1", "", "t3", ""]); // services by name (Hedge, Lawn), then the overhead
+  // the other customer's subscription has the toggle off — services only
+  const bob = out.find((g) => g.customerId === "c2")!;
+  assertEquals([bob.lines.length, bob.amount], [1, 6500]);
+});
+
+Deno.test("REQ-788 linesFor — no overhead line when the toggle is off, when the amount is 0, or when Settings has none", () => {
+  const tasks = [task("t1", {})];
+  assertEquals(linesFor({ ...base, tasks, overhead: { cents: 2500, label: "Overhead" } })[0].lines.length, 1);
+  assertEquals(linesFor({ ...base, subscriptions: withOverhead, tasks, overhead: { cents: 0, label: "Overhead" } })[0].lines.length, 1);
+  assertEquals(linesFor({ ...base, subscriptions: withOverhead, tasks })[0].lines.length, 1);
+});
+
+Deno.test("REQ-788 lineItem — the overhead line is a priced line on the visit's date and address, in the invoice's language", () => {
+  const [g] = linesFor({ ...base, subscriptions: withOverhead, tasks: [task("t1", {})], overhead: { cents: 2500, label: "Gastos generales" } });
+  const item = lineItem(g.lines[1], "es");
+  assertEquals([item.description, item.price, item.date, item.service, item.address], ["12 oct — Gastos generales — 123 Oak St", 2500, "2026-10-12", "Gastos generales", "123 Oak St"]);
+});

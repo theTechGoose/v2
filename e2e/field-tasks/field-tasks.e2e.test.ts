@@ -1207,3 +1207,126 @@ Deno.test("REQ-787: Annual shows a Month dropdown and that month's calendar; day
       "Edit keeps day 5",
     );
   }));
+
+// REQ-788 — "a toggle button in the upper right that adds an overhead cost. that overhead cost is
+// defined in settings. the toggle button is in the same style as the weekday selection button."
+Deno.test("REQ-788: the overhead cost set in Settings; the form's upper-right chip (a weekday chip) toggles it on; the card lists it; the pulled draft bills services + overhead", (t) =>
+  story(t, async ({ page, expect, http, baseUrl }) => {
+    const { auth, put, customer, worker, sub } = await officeDay({
+      page,
+      http,
+      baseUrl,
+    });
+    // the amount, on Settings
+    await page.goto("/settings");
+    const amount = page.locator("[data-cy='settings-overhead']");
+    await amount.waitFor({ timeout: 15_000 });
+    await amount.fill("25");
+    await amount.blur();
+    await page.waitForTimeout(800);
+    const ident = await (await http("/api/profile/identity", { headers: auth }))
+      .json();
+    expect.eq(
+      ident.fieldOverheadCents,
+      2500,
+      "Settings saved $25.00 as 2500 cents",
+    );
+    // the chip, in the form's upper right, styled as a weekday chip, off by default
+    await page.goto("/field/subscriptions");
+    await page.locator("[data-cy='subs-card']").first().waitFor({
+      timeout: 20_000,
+    });
+    await page.locator("[data-cy='subs-edit']").first().click();
+    const chip = page.locator("[data-cy='subs-overhead']");
+    await chip.waitFor({ timeout: 15_000 });
+    expect.eq(
+      await chip.getAttribute("class"),
+      "day day--wide",
+      "off on a subscription that never had it",
+    );
+    const dayChip = page.locator("[data-cy='subs-day']").first();
+    const style = (l: typeof chip) =>
+      l.evaluate((el) => {
+        const s = getComputedStyle(el);
+        return [s.borderRadius, s.height, s.fontWeight].join("|");
+      });
+    expect.eq(
+      await style(chip),
+      await style(dayChip),
+      "the chip shares the weekday chip's shape",
+    );
+    const head = page.locator("[data-cy='subs-form'] .modal__head");
+    const [titleBox, chipBox] = await Promise.all([
+      head.locator("h2").boundingBox(),
+      chip.boundingBox(),
+    ]);
+    expect(
+      !!titleBox && !!chipBox && chipBox.x > titleBox.x + titleBox.width &&
+        chipBox.y < titleBox.y + titleBox.height,
+      "the chip is to the right of the title, on its row",
+    );
+    await expect.see("Overhead · $25.00");
+    await chip.click();
+    expect.eq(
+      await chip.getAttribute("class"),
+      "day day--wide on",
+      "toggled on",
+    );
+    await page.locator("[data-cy='subs-submit']").click();
+    await page.locator("[data-cy='subs-form']").waitFor({
+      state: "detached",
+      timeout: 15_000,
+    });
+    const card = page.locator("[data-cy='subs-card']").first();
+    await card.locator("[data-cy='subs-card-overhead']").waitFor({
+      timeout: 15_000,
+    });
+    await expect.see("$25.00");
+    const saved =
+      await (await http(`/api/field/subscriptions`, { headers: auth })).json();
+    expect.eq(
+      saved.find((s: { id: string }) => s.id === sub.id)?.overhead,
+      true,
+      "the subscription remembers the toggle",
+    );
+    // the day, completed by the office, pulled: services + overhead
+    const today = todayIso();
+    const gen = await http("/api/field/tasks/generate", {
+      method: "POST",
+      headers: auth,
+      body: JSON.stringify({ date: today }),
+    });
+    await gen.body?.cancel();
+    const tasks =
+      await (await http(`/api/field/tasks?date=${today}`, { headers: auth }))
+        .json();
+    expect.eq(
+      tasks.length,
+      1,
+      `one task for the visit (${tasks.length}) — the overhead is no task (worker ${worker.id})`,
+    );
+    for (const tk of tasks) {
+      await put(`/api/field/tasks/${tk.id}`, { status: "complete" });
+    }
+    const pulled = await (await http("/api/field/batches/pull", {
+      method: "POST",
+      headers: auth,
+      body: JSON.stringify({ from: today, to: today }),
+    })).json();
+    const inv = pulled.invoices.find((i: { customerId: string }) =>
+      i.customerId === customer.id
+    );
+    expect.eq(
+      inv?.amount,
+      6500 + 2500,
+      "the draft totals the service plus the overhead",
+    );
+    expect.eq(
+      inv?.lineItems?.map((l: { service: string; price: number }) =>
+        `${l.service}=${l.price}`
+      ).join(","),
+      "Lawn cut=6500,Overhead=2500",
+      "one service line, one Overhead line",
+    );
+    expect.eq(inv?.zeroLines, 0, "the overhead is not a $0 line");
+  }));
