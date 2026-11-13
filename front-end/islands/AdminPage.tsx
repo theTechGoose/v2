@@ -29,6 +29,7 @@ import { type FeatureKey, FEATURES } from "../../shared/features.ts";
 import {
   adminEmptyText,
   type AdminLock,
+  canToggleSuper,
   displayName,
   impersonateLabel,
   lockFor,
@@ -483,8 +484,16 @@ export default function AdminPage({ selfId }: { selfId?: string }) {
                     <td style="padding:10px;text-align:right;white-space:nowrap">
                       <button
                         type="button"
-                        style={u.superAdmin ? btnDanger : btnSecondary}
-                        disabled={frozen}
+                        data-cy="adm-toggle-super"
+                        data-user={u.id}
+                        style={(u.superAdmin ? btnDanger : btnSecondary) +
+                          (canToggleSuper(u, selfId)
+                            ? ""
+                            : ";opacity:.5;cursor:not-allowed")}
+                        disabled={frozen || !canToggleSuper(u, selfId)}
+                        title={canToggleSuper(u, selfId)
+                          ? undefined
+                          : t("adminPage.revoke.selfTitle")}
                         onClick={() => toggleSuper(u)}
                       >
                         {busyId === u.id

@@ -4145,6 +4145,7 @@
   "adminPage.no": "no",
   "adminPage.grant": "Grant",
   "adminPage.revoke": "Revoke",
+  "adminPage.revoke.selfTitle": "You can't revoke your own admin — ask another admin.",
   "adminPage.demo": "Demo",
   "adminPage.demo.title": "Demo mode: guide this user with a live pointer on their screen",
   "adminPage.opening": "Opening…",
