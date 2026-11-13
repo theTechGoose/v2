@@ -93,6 +93,7 @@ import {
   previewTermRows,
 } from "../../shared/quote-flow/wizard-terms.ts"; // REQ-347
 import { quoteUpdatedBy } from "../lib/chat-quote-refresh.ts";
+import { draftCardView } from "../lib/chat-draft-card.ts"; // REQ-660
 import { mergeLockedCard, mergeTurnMessages } from "../lib/turn-messages.ts"; // REQ-585, REQ-662
 import { restoredPickerAction } from "../lib/picker-restore.ts"; // REQ-662
 import { attachBottomPin } from "../lib/chat-bottom-pin.ts";
@@ -9786,12 +9787,12 @@ export default function AsstChat({
                 // its sibling tools without the user having to type.
                 if (m.kind === "action_card") {
                   const payload = (m.payload ?? {}) as ActionCardPayload;
-                  const lineItems = payload.lineItems ?? [];
-                  const totalCents = payload.totalCents ??
-                    lineItems.reduce(
-                      (sum, li) => sum + (li.amountCents ?? 0),
-                      0,
-                    );
+                  // REQ-660 (demo-loop cycle 5, M24): a draft card shows the
+                  // quote as it is NOW (a revise_quote correction appends no
+                  // card), and any later card for the quote supersedes it —
+                  // Lock it in only on the newest card, under the live total.
+                  const { lineItems, totalCents, superseded: isSuperseded } =
+                    draftCardView(messages, m, ruleQuote, lang);
                   // Roadmap p.5: progress the badge Draft → Sent → Viewed →
                   // Approved via the shared label map (backend flips the
                   // underlying status as the customer opens/signs).
@@ -9804,25 +9805,6 @@ export default function AsstChat({
                       payload.actionType !== "invoice"
                     ? tFor(lang, threadStatusKey(threadHeader.status))
                     : statusChipLabel(payload.status, lang);
-                  // Detect a later action_card for the same quote that has
-                  // already advanced past draft. The earlier DRAFT card stays
-                  // visible in chat history (audit #18) but its action buttons
-                  // would otherwise re-fire against an already-sent quote.
-                  const idx = messages.indexOf(m);
-                  const supersededBy =
-                    payload.quoteId && payload.status === "draft"
-                      ? messages
-                        .slice(idx + 1)
-                        .find(
-                          (later) =>
-                            later.kind === "action_card" &&
-                            (later.payload as ActionCardPayload | undefined)
-                                ?.quoteId === payload.quoteId &&
-                            (later.payload as ActionCardPayload | undefined)
-                                ?.status !== "draft",
-                        )
-                      : undefined;
-                  const isSuperseded = !!supersededBy;
                   // REQ-465 (demo cycle 3, m37): "Q-001 · Quote locked" from
                   // the first card — the card's own number, else the fetched
                   // quote's when it is this card's quote.
