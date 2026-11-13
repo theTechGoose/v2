@@ -667,6 +667,7 @@
   "chatCoordinator.jobDetails.changed": "Actualicé los detalles del trabajo{langs}: {changes}.",
   "chatCoordinator.jobDetails.reworded": "Actualicé los detalles del trabajo{langs}.",
   "chatCoordinator.jobDetails.same": "Los detalles del trabajo ya dicen eso: no cambió nada.",
+  "chatCoordinator.jobDetails.alreadyIn": "Los detalles del trabajo en {lang} ya están en el acuerdo: cambia la vista previa a {toggle} para verlos.",
   "chatCoordinator.jobDetails.added": "agregué {items}",
   "chatCoordinator.jobDetails.removed": "quité {items}",
   "chatCoordinator.jobDetails.lang.en": "inglés",

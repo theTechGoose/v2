@@ -168,6 +168,9 @@ export class ApplyChatChangeOrder {
         status: q.status,
         createdAt: q.createdAt,
         number: q.number,
+        // REQ-654 (cycle 5, M10): the name the quote itself carries
+        customerName: nameOf(q) || undefined,
+        summary: q.summary,
       })),
       customers: customers.map((c) => ({ id: c.id, name: c.name })),
       customerName: input.customerName,

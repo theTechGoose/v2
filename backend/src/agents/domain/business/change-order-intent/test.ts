@@ -7,8 +7,8 @@ import { assertEquals } from "#std/assert";
 import {
   askAmountExamples,
   isChangeOrderRequest,
-  isNewQuoteRequest,
   isCleanChangeClause,
+  isNewQuoteRequest,
   parseChangeOrderRequest,
   parseTargetTotalChange,
   pickChangeOrderTarget,
@@ -713,4 +713,103 @@ Deno.test("REQ-455 M24 isCleanChangeClause: short item clauses pass; long, multi
       "one two three four five six seven eight nine",
     ]
   ) assertEquals(isCleanChangeClause(bad), false, bad);
+});
+
+// ---------------------------------------------------------------------------
+// REQ-654 (demo-loop cycle 5, M10, pair 5): on the chat's own Q-001 draft
+// card "Kitchen remodel — Dana Whitfield", Edit → "Change the quote: cabinets
+// $7,000" got "I couldn't find a quote for Dana Whitfield, so I changed
+// nothing." The model named the customer; the draft had no customerId yet
+// (before the Who step), so the name matched no quote and the bound quote
+// was never considered. The bound quote is the fallback before "none".
+// ---------------------------------------------------------------------------
+
+Deno.test("REQ-654 M10 pickChangeOrderTarget: the bound draft with no customer yet, and no such customer on file → the bound draft, never none", () => {
+  assertEquals(
+    pickChangeOrderTarget({
+      quotes: [{ ...q("q-dana", undefined, "draft", 5) }],
+      customers,
+      boundQuoteId: "q-dana",
+      customerName: "Dana Whitfield",
+    }),
+    { kind: "quote", quoteId: "q-dana" },
+  );
+});
+
+Deno.test("REQ-654 M10 pickChangeOrderTarget: Dana is on file but the bound draft is not linked to her yet → the bound draft", () => {
+  assertEquals(
+    pickChangeOrderTarget({
+      quotes: [
+        q("q-dana", undefined, "draft", 5),
+        q("q1", "c-maria", "sent", 1),
+      ],
+      customers: [...customers, { id: "c-dana", name: "Dana Whitfield" }],
+      boundQuoteId: "q-dana",
+      customerName: "Dana Whitfield",
+    }),
+    { kind: "quote", quoteId: "q-dana" },
+  );
+});
+
+Deno.test("REQ-654 M10 pickChangeOrderTarget: the bound quote's own customer name (snapshot, or its card title) wins over an older quote of hers", () => {
+  const dana = { id: "c-dana", name: "Dana Whitfield" };
+  // the bound draft carries her name on its card, not her id; she has an
+  // older signed job on file — the quote on screen is the one meant
+  assertEquals(
+    pickChangeOrderTarget({
+      quotes: [
+        q("q-old", "c-dana", "accepted", 1),
+        {
+          ...q("q-dana", undefined, "draft", 5),
+          summary: "Kitchen remodel — Dana Whitfield",
+        },
+      ],
+      customers: [...customers, dana],
+      boundQuoteId: "q-dana",
+      customerName: "Dana",
+    }),
+    { kind: "quote", quoteId: "q-dana" },
+  );
+  // a snapshot name counts the same way
+  assertEquals(
+    pickChangeOrderTarget({
+      quotes: [
+        q("q-old", "c-dana", "accepted", 1),
+        {
+          ...q("q-dana", undefined, "sent", 5),
+          customerName: "Dana Whitfield",
+        },
+      ],
+      customers: [...customers, dana],
+      boundQuoteId: "q-dana",
+      customerName: "Dana Whitfield",
+    }),
+    { kind: "quote", quoteId: "q-dana" },
+  );
+});
+
+Deno.test("REQ-654 M10 pickChangeOrderTarget: a bound quote that belongs to someone else is never the fallback for another name", () => {
+  // bound to Bob's job, the user names somebody with nothing on file → none
+  assertEquals(
+    pickChangeOrderTarget({
+      quotes: [q("q9", "c-bob", "sent", 2)],
+      customers,
+      boundQuoteId: "q9",
+      customerName: "Zed",
+    }),
+    { kind: "none" },
+  );
+  // a bound draft whose card names Bob is not Maria's
+  assertEquals(
+    pickChangeOrderTarget({
+      quotes: [{
+        ...q("q9", undefined, "draft", 2),
+        summary: "Deck — Bob Reyes",
+      }],
+      customers,
+      boundQuoteId: "q9",
+      customerName: "Maria Lopez",
+    }),
+    { kind: "none" },
+  );
 });

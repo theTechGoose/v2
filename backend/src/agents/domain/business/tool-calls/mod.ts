@@ -187,6 +187,9 @@ export interface JobDetailsChange {
   /** The languages whose text changed — named in the line; omitted (the
    *  price step's details on screen) → no languages named. */
   langs?: readonly string[];
+  /** REQ-654 (cycle 5, M10): the OTHER languages the update carried that
+   *  the quote already has, word for word — the reply says where they are. */
+  already?: readonly string[];
 }
 
 /**
@@ -243,6 +246,18 @@ export function jobDetailsChangeLine(
     lineKey(change.before) !== lineKey(change.after)
   ) {
     return t(lang, "chatCoordinator.jobDetails.reworded", { langs });
+  }
+  // REQ-654 (demo-loop cycle 5, M10, pair 7): "put the job details in
+  // spanish on the agreement too" when they already are — say where to see
+  // them, never a bare "already say that".
+  const other = (change.already ?? []).find((l) =>
+    l !== lang && (l === "en" || l === "es")
+  );
+  if (other) {
+    return t(lang, "chatCoordinator.jobDetails.alreadyIn", {
+      lang: t(lang, `chatCoordinator.jobDetails.lang.${other}`),
+      toggle: t(lang, `asstChat.previewLang.${other}`),
+    });
   }
   return t(lang, "chatCoordinator.jobDetails.same");
 }
@@ -328,10 +343,17 @@ export function jobDetailsChangeOf(
       .map(([l]) => l),
   );
   const before = detailsIn(current, lang);
+  // REQ-654: languages sent unchanged that the quote really has its own
+  // copy of (never the base text standing in for a missing translation)
+  const already = (["en", "es"] as const).filter((l) =>
+    l !== lang && !!byLang[l]?.trim() && !changed.has(l) &&
+    !!current.descriptionByLang?.[l]?.trim()
+  );
   return {
     before,
     after: byLang[lang]?.trim() || before,
     langs: (["en", "es"] as const).filter((l) => changed.has(l)),
+    ...(already.length ? { already } : {}),
   };
 }
 
