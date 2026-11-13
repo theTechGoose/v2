@@ -577,8 +577,8 @@ Deno.test("REQ-157: Cadence offers weekly and monthly only; Monthly shows 31 cli
     const cadence = page.locator("[data-cy='subs-cadence']");
     expect.eq(
       (await cadence.locator("option").allTextContents()).join("|"),
-      "Weekly|Monthly",
-      "two cadences on a new subscription",
+      "Weekly|Monthly|Annual",
+      "weekly, monthly and (REQ-787) annual on a new subscription",
     );
     await page.locator("[data-cy='subs-days']").waitFor();
     await cadence.selectOption("monthly");
@@ -1098,4 +1098,112 @@ Deno.test("REQ-611 (demo p4-p8a, cycle 4): the /field/tasks day stepper's button
       { timeout: 15_000 },
     );
     expect(await page.locator("[data-cy='tk-date']").inputValue() > before, "Next day moves the day forward");
+  }));
+
+Deno.test("REQ-787: Annual shows a Month dropdown and that month's calendar; days are picked on it, February has its own length, the card reads Annual · March 5, and Edit opens it again on March 5", (t) =>
+  story(t, async ({ page, expect, http, baseUrl }) => {
+    const { auth } = await signIn(http, page, baseUrl);
+    const r = await http("/api/customers", {
+      method: "POST",
+      headers: auth,
+      body: JSON.stringify({
+        name: "Ana Torres",
+        address: "4601 Dick Pond Rd, Myrtle Beach, SC",
+        email: "ana.torres@blackhole.postmarkapp.com",
+      }),
+    });
+    await r.body?.cancel();
+    await page.goto("/field/subscriptions");
+    await page.locator("[data-cy='subs-new']").click();
+    await pickCustomer(page, "Ana Torres");
+    const start = await page.locator("[data-cy='subs-start']").inputValue();
+    const [sy, sm, sd] = start.split("-").map(Number);
+    await page.locator("[data-cy='subs-cadence']").selectOption("annual");
+    expect.eq(
+      await page.locator("[data-cy='subs-days']").count(),
+      0,
+      "the weekday chips are gone",
+    );
+    const month = page.locator("[data-cy='subs-month']");
+    expect.eq(
+      await month.locator("option").count(),
+      12,
+      "a dropdown of the twelve months",
+    );
+    expect.eq(
+      await month.inputValue(),
+      String(sm),
+      "it starts on the first visit's month",
+    );
+    expect.eq(
+      (await page.locator("[data-cy='subs-dom-day'].on").allTextContents())
+        .join("|"),
+      String(sd),
+      "the first visit's day is on up front",
+    );
+    // the year shown is the first one on or after the first visit
+    const yearFor = (m: number) => (m >= sm ? sy : sy + 1);
+    const view = page.locator("[data-cy='subs-month-view']");
+    await month.selectOption("2");
+    const febDays = new Date(Date.UTC(yearFor(2), 2, 0)).getUTCDate();
+    expect.eq(
+      await view.locator("[data-cy='subs-dom-day']").count(),
+      febDays,
+      "February shows its own number of days",
+    );
+    await month.selectOption("3");
+    const y = yearFor(3);
+    await expect.see(`March ${y}`);
+    expect.eq(
+      await view.locator("[data-cy='subs-dow']").count(),
+      7,
+      "a week header",
+    );
+    expect.eq(
+      await view.locator("[data-cy='subs-dom-day']").count(),
+      31,
+      "March has 31 days",
+    );
+    expect.eq(
+      await view.locator("[data-cy='subs-dom-day'][data-dom='1']")
+        .getAttribute("data-weekday"),
+      String(new Date(Date.UTC(y, 2, 1)).getUTCDay()),
+      "day 1 sits under its real weekday",
+    );
+    for (const on of await view.locator("[data-cy='subs-dom-day'].on").all()) {
+      await on.click();
+    }
+    await view.locator("[data-cy='subs-dom-day'][data-dom='5']").click();
+    expect.eq(
+      (await view.locator("[data-cy='subs-dom-day'].on").allTextContents())
+        .join("|"),
+      "5",
+      "March 5 is the pick",
+    );
+    await page.locator("[data-cy='subs-type-q']").fill("Gutter clean");
+    await page.locator("[data-cy='subs-price']").fill("180");
+    await page.locator("[data-cy='subs-add-item']").click();
+    await page.locator("[data-cy='subs-submit']").click();
+    await page.locator("[data-cy='subs-card']").first().waitFor({
+      timeout: 20_000,
+    });
+    await expect.see("Annual · March 5");
+    await page.locator("[data-cy='subs-edit']").first().click();
+    expect.eq(
+      await page.locator("[data-cy='subs-cadence']").inputValue(),
+      "annual",
+      "Edit keeps Annual",
+    );
+    expect.eq(
+      await page.locator("[data-cy='subs-month']").inputValue(),
+      "3",
+      "Edit keeps March",
+    );
+    expect.eq(
+      (await page.locator(
+        "[data-cy='subs-month-view'] [data-cy='subs-dom-day'].on",
+      ).allTextContents()).join("|"),
+      "5",
+      "Edit keeps day 5",
+    );
   }));

@@ -331,7 +331,7 @@
      bottom of the box, edge to edge over the box's own padding, on an opaque ground */
   position: sticky;
   bottom: -24px; /* the box's bottom padding: sticky stops at the content edge, so reach
-                    past it and cover the strip scrolled fields would show through */
+  past it and cover the strip scrolled fields would show through */
   z-index: 1;
   background: #fff;
   margin: 6px -26px -24px;
@@ -828,6 +828,27 @@
   flex-wrap: wrap;
   max-width: calc(7 * 36px + 6 * 6px);
 }
+/* REQ-787 — the annual month view: title, week header, blanks before day 1 */
+.month-view__title {
+  display: block;
+  font-weight: 800;
+  margin-top: 4px;
+}
+.days.month-view__dow {
+  margin-bottom: 0;
+}
+.days .dow {
+  display: inline-grid;
+  place-items: center;
+  width: 36px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--fg-muted);
+}
+.days .day.day--blank {
+  visibility: hidden;
+  cursor: default;
+}
 .days .day input {
   position: absolute;
   opacity: 0;
@@ -841,5 +862,9 @@
 }
 
 /* REQ-283 — a form field whose check failed */
-.field input[aria-invalid="true"] { border-color: #dc2626; }
-.field select[aria-invalid="true"] { border-color: #dc2626; }
+.field input[aria-invalid="true"] {
+  border-color: #dc2626;
+}
+.field select[aria-invalid="true"] {
+  border-color: #dc2626;
+}

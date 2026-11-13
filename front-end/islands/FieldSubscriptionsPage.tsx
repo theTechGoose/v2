@@ -32,8 +32,8 @@ import { formatLongDate } from "../../shared/quote-flow/format-helpers.ts";
 import type { FieldSubscriptionsSeed } from "../lib/field-ssr.ts";
 import SearchSelect from "./SearchSelect.tsx";
 
-/** the cadence <select>'s values: an interval in weeks, or monthly */
-type CadenceChoice = "1" | "2" | "3" | "4" | "monthly";
+/** the cadence <select>'s values: an interval in weeks, monthly, or (REQ-787) annual */
+type CadenceChoice = "1" | "2" | "3" | "4" | "monthly" | "annual";
 
 interface Customer {
   id: string;
@@ -62,8 +62,10 @@ interface Form {
   cadence: CadenceChoice;
   startDate: string;
   days: number[];
-  /** REQ-157 — monthly: the picked days of the month */
+  /** REQ-157 — monthly: the picked days of the month (REQ-787: annual's days in its month) */
   daysOfMonth: number[];
+  /** REQ-787 — annual: the month, 1–12 */
+  month: number;
   items: Item[];
   /** the combobox query */
   q: string;
@@ -97,6 +99,36 @@ function monthDayOf(iso: string): number {
 }
 const MONTH_DAYS = Array.from({ length: 31 }, (_, i) => i + 1);
 
+/** REQ-787 — the month of a date (1–12), today's when it is not one */
+function monthOf(iso: string): number {
+  const m = Number(iso.slice(5, 7));
+  return Number.isInteger(m) && m >= 1 && m <= 12
+    ? m
+    : new Date().getMonth() + 1;
+}
+/** REQ-787 — the year an annual visit in `month` first falls: the first visit's year, or the next one when that month is already behind it */
+function annualYear(startIso: string, month: number): number {
+  const y = Number(startIso.slice(0, 4));
+  const year = Number.isInteger(y) && y > 1900 ? y : new Date().getFullYear();
+  return month >= monthOf(startIso) ? year : year + 1;
+}
+/** days in a month (1–12) of a year */
+const daysIn = (year: number, month: number) =>
+  new Date(Date.UTC(year, month, 0)).getUTCDate();
+/** weekday (0 = Sunday) of a date in a year/month */
+const weekdayAt = (year: number, month: number, day: number) =>
+  new Date(Date.UTC(year, month - 1, day)).getUTCDay();
+const monthName = (lang: "en" | "es", month: number, year?: number) => {
+  const name = new Intl.DateTimeFormat(lang === "es" ? "es-US" : "en-US", {
+    month: "long",
+    timeZone: "UTC",
+  }).format(new Date(Date.UTC(2000, month - 1, 1)));
+  const cap = name.charAt(0).toUpperCase() + name.slice(1);
+  if (year === undefined) return cap;
+  return lang === "es" ? `${cap} de ${year}` : `${cap} ${year}`;
+};
+const MONTHS = Array.from({ length: 12 }, (_, i) => i + 1);
+
 function weekdayOf(iso: string): number {
   const d = new Date(`${iso}T00:00:00`);
   return Number.isNaN(d.getTime()) ? new Date().getDay() : d.getDay();
@@ -112,6 +144,7 @@ function blankForm(defaultNetDays = 30): Form {
     startDate,
     days: [weekdayOf(startDate)],
     daysOfMonth: [monthDayOf(startDate)],
+    month: monthOf(startDate),
     items: [],
     q: "",
     searchOn: false,
@@ -127,21 +160,25 @@ function blankForm(defaultNetDays = 30): Form {
 
 function formFor(s: SubscriptionView, defaultNetDays = 30): Form {
   const startDate = (s.startDate ?? s.createdAt).slice(0, 10);
-  const cadence: CadenceChoice = s.cadence === "monthly" ? "monthly" : (String(
-    s.intervalWeeks ?? (s.cadence === "biweekly" ? 2 : 1),
-  ) as CadenceChoice);
+  const cadence: CadenceChoice =
+    s.cadence === "monthly" || s.cadence === "annual" ? s.cadence : (String(
+      s.intervalWeeks ?? (s.cadence === "biweekly" ? 2 : 1),
+    ) as CadenceChoice);
   return {
     ...blankForm(defaultNetDays),
     editId: s.id,
     netDays: String(s.netDays ?? defaultNetDays),
     customerId: s.customerId,
     address: s.address,
-    cadence: ["1", "2", "3", "4", "monthly"].includes(cadence) ? cadence : "1",
+    cadence: ["1", "2", "3", "4", "monthly", "annual"].includes(cadence)
+      ? cadence
+      : "1",
     startDate,
     days: s.days?.length ? s.days : [weekdayOf(startDate)],
     daysOfMonth: s.daysOfMonth?.length
       ? s.daysOfMonth
       : [monthDayOf(startDate)],
+    month: s.month ?? monthOf(startDate),
     items: s.items.map((i) => ({
       id: i.taskTypeId,
       name: i.taskTypeName,
@@ -394,6 +431,16 @@ export default function FieldSubscriptionsPage(
     });
   }
 
+  /** REQ-787 — the annual month; picks past its last day are dropped */
+  function onMonth(month: number) {
+    setForm((f) => {
+      if (!f) return f;
+      const last = daysIn(annualYear(f.startDate, month), month);
+      const kept = f.daysOfMonth.filter((d) => d <= last);
+      return { ...f, month, daysOfMonth: kept.length ? kept : [last] };
+    });
+  }
+
   function onStartDate(v: string) {
     setForm((
       f,
@@ -432,8 +479,9 @@ export default function FieldSubscriptionsPage(
       setForm({ ...f, err: t("field.subs.noItems") });
       return;
     }
+    const annual = f.cadence === "annual"; // REQ-787
     const monthly = f.cadence === "monthly";
-    if (monthly ? !f.daysOfMonth.length : !f.days.length) {
+    if (monthly || annual ? !f.daysOfMonth.length : !f.days.length) {
       setForm({ ...f, err: t("field.subs.daysHint") });
       return;
     }
@@ -454,8 +502,20 @@ export default function FieldSubscriptionsPage(
     const n = Number(f.cadence);
     const schedule: Pick<
       SubscriptionInput,
-      "cadence" | "intervalWeeks" | "days" | "daysOfMonth" | "startDate"
-    > = monthly
+      | "cadence"
+      | "intervalWeeks"
+      | "days"
+      | "daysOfMonth"
+      | "month"
+      | "startDate"
+    > = annual
+      ? {
+        cadence: "annual",
+        startDate: f.startDate,
+        month: f.month,
+        daysOfMonth: f.daysOfMonth,
+      }
+      : monthly
       ? {
         cadence: "monthly",
         startDate: f.startDate,
@@ -821,6 +881,7 @@ export default function FieldSubscriptionsPage(
                     <option value="4">{t("field.subs.every4")}</option>
                   )}
                   <option value="monthly">{t("field.subs.monthly")}</option>
+                  <option value="annual">{t("field.subs.annual")}</option>
                 </select>
               </label>
               <label class="field">
@@ -870,7 +931,7 @@ export default function FieldSubscriptionsPage(
               </label>
             </div>
 
-            {form.cadence !== "monthly" && (
+            {form.cadence !== "monthly" && form.cadence !== "annual" && (
               <div class="field" data-cy="subs-days">
                 {t("field.subs.days")}
                 <div class="days">
@@ -927,6 +988,79 @@ export default function FieldSubscriptionsPage(
                 <span class="hint">{t("field.subs.domHint")}</span>
               </div>
             )}
+
+            {form.cadence === "annual" && (() => {
+              // REQ-787 — pick the month, then the day(s) on that month's calendar
+              const year = annualYear(form.startDate, form.month);
+              const n = daysIn(year, form.month);
+              const lead = DAY_ORDER.indexOf(weekdayAt(year, form.month, 1));
+              return (
+                <>
+                  <div class="row">
+                    <label class="field">
+                      {t("field.subs.month")}
+                      <select
+                        name="month"
+                        data-cy="subs-month"
+                        value={String(form.month)}
+                        onChange={(e) =>
+                          onMonth(
+                            Number(
+                              (e.currentTarget as HTMLSelectElement).value,
+                            ),
+                          )}
+                      >
+                        {MONTHS.map((m) => (
+                          <option value={String(m)} key={m}>
+                            {monthName(lang, m)}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  </div>
+                  <div class="field" data-cy="subs-month-view">
+                    <span class="month-view__title" data-cy="subs-month-title">
+                      {monthName(lang, form.month, year)}
+                    </span>
+                    <div class="days dom month-view__dow" aria-hidden="true">
+                      {DAY_ORDER.map((d) => (
+                        <span class="dow" key={d} data-cy="subs-dow">
+                          {DAY_LETTERS[lang][d]}
+                        </span>
+                      ))}
+                    </div>
+                    <div class="days dom">
+                      {Array.from(
+                        { length: lead },
+                        (_, i) => <span class="day day--blank" key={`b${i}`} />,
+                      )}
+                      {MONTH_DAYS.slice(0, n).map((d) => {
+                        const on = form.daysOfMonth.includes(d);
+                        return (
+                          <label
+                            class={`day${on ? " on" : ""}`}
+                            key={d}
+                            data-cy="subs-dom-day"
+                            data-dom={d}
+                            data-weekday={weekdayAt(year, form.month, d)}
+                          >
+                            <input
+                              type="checkbox"
+                              name="daysOfMonth"
+                              value={d}
+                              checked={on}
+                              onChange={() => toggleMonthDay(d)}
+                            />
+                            {d}
+                          </label>
+                        );
+                      })}
+                    </div>
+                    <span class="hint">{t("field.subs.annualHint")}</span>
+                  </div>
+                </>
+              );
+            })()}
 
             <div class="field">
               {t("field.subs.taskTypes")}

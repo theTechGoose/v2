@@ -636,7 +636,7 @@ async function parseItems(
   return out;
 }
 
-/** REQ-139: cadence / days / intervalWeeks, validated; REQ-157: daysOfMonth (1–31) */
+/** REQ-139: cadence / days / intervalWeeks, validated; REQ-157: daysOfMonth (1–31); REQ-787: month (1–12) for annual */
 export function parseSchedule(
   b: Body_,
   cur: {
@@ -644,16 +644,28 @@ export function parseSchedule(
     days?: number[];
     intervalWeeks?: number;
     daysOfMonth?: number[];
+    month?: number;
   },
-): Pick<Subscription, "cadence" | "days" | "intervalWeeks" | "daysOfMonth"> {
+): Pick<
+  Subscription,
+  "cadence" | "days" | "intervalWeeks" | "daysOfMonth" | "month"
+> {
   let cadence =
     (b.cadence !== undefined ? str(b.cadence) : cur.cadence) as Cadence;
   if (!CADENCES.includes(cadence)) {
-    throw new FieldError("cadence must be weekly, biweekly or monthly");
+    throw new FieldError("cadence must be weekly, biweekly, monthly or annual");
   }
   let days = cur.days,
     intervalWeeks = cur.intervalWeeks,
-    daysOfMonth = cur.daysOfMonth;
+    daysOfMonth = cur.daysOfMonth,
+    month = cur.month;
+  if (b.month !== undefined) { // REQ-787
+    if (
+      typeof b.month !== "number" || !Number.isInteger(b.month) ||
+      b.month < 1 || b.month > 12
+    ) throw new FieldError("month must be 1–12");
+    month = b.month;
+  }
   if (b.daysOfMonth !== undefined) {
     if (
       !Array.isArray(b.daysOfMonth) ||
@@ -676,13 +688,16 @@ export function parseSchedule(
       throw new FieldError("intervalWeeks must be 1–8");
     }
     intervalWeeks = n;
-    if (cadence !== "monthly") cadence = n === 2 ? "biweekly" : "weekly"; // the label follows the interval
+    if (cadence !== "monthly" && cadence !== "annual") {
+      cadence = n === 2 ? "biweekly" : "weekly"; // the label follows the interval
+    }
   }
   if (
     b.cadence !== undefined && b.intervalWeeks === undefined &&
-    cadence !== "monthly"
+    cadence !== "monthly" && cadence !== "annual"
   ) intervalWeeks = cadence === "biweekly" ? 2 : 1;
-  return { cadence, days, intervalWeeks, daysOfMonth };
+  if (cadence !== "annual") month = undefined; // REQ-787: only a yearly visit has a month
+  return { cadence, days, intervalWeeks, daysOfMonth, month };
 }
 
 @Controller("field/regions")

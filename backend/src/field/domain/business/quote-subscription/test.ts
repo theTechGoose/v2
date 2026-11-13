@@ -187,3 +187,10 @@ Deno.test("REQ-699 subscriptionBilling: a hand-made subscription, or a schedule 
   );
   assertEquals(subscriptionBilling(sub({ items: [] })), undefined);
 });
+
+Deno.test("REQ-787 subscriptionBilling: an annual visit is never read as a weekly charge (no recurring term can say it, so its schedule text speaks)", () => {
+  assertEquals(
+    subscriptionBilling(sub({ cadence: "annual", month: 3, daysOfMonth: [5] })),
+    undefined,
+  );
+});
