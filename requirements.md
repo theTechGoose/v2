@@ -6048,3 +6048,33 @@ Demo issue d3 (cycle dv1): "'Finish + send' on an invoice has a review step befo
 - e2e `e2e/invoice-send-sheet/invoice-send-sheet.e2e.test.ts` ("REQ-776 dv1-d3 …": Finish + send shows $725.00, both line items, the recipient, the due date and a picked channel; Cancel sends nothing and keeps the draft; in Spanish "Terminar + enviar" shows Monto / Para / Vence; Send sends it and it moves to Sent).
 - Red (before the fix): jest 4 failed in the new file (`invoiceSendReview` not a function, island has no `review=`, no review keys); `deno test lib/invoice-send-review.test.tsx` → `0 passed | 3 failed` ("the review renders inside the send sheet"); e2e with the island wiring removed → `TimeoutError: waiting for [data-cy='send-dialog'] [data-cy='send-review']`.
 - Green: jest `--runTestsByPath invoice-send-review, invoice-send-sheet, c5-invoice-dispatch-contact` → `43 passed`; `deno test lib/invoice-send-review.test.tsx lib/invoice-send-sheet.test.tsx lib/send-lang-preview.test.tsx` → `ok | 9 passed`; `shots run e2e/invoice-send-sheet … --filter REQ-776` (Twilio/Postmark unset) → `ok | 1 passed`; `deno lint` + `deno check` on the touched front-end files clean.
+
+## REQ-779 — the assistant keeps every job detail the contractor typed: "on Shoal Creek" is the job address, and an incomplete email ("tom@reyes") is kept and flagged, never dropped (demo-loop cycle dv1, issue m7)
+**Source:** Raphael, the demo loop: "fix every issue the demo found, loop until there are none." On this issue, Raphael's decision: "fix all of these." Demo-loop cycle dv1, issue m7 "Assistant keeps every job detail the contractor typed (address, email)". Verify round 6: help-me-price with "Bathroom floor for the Hendersons on Shoal Creek: porcelain 12x24, recessed niche, before Thanksgiving, email tom@reyes" opened the customer step with the address empty, and "tom@reyes" left Email empty with no warning. The RCA handed over was empty (`[{}]`), so the cause below was traced in the worktree at 0b909555.
+**Cause:** (1) `extractServiceAddress` (`shared/quote-flow/quick-quote-prefill.ts`) reads a number-less "on <Street>" only when a street-type word follows (St / Dr / …, REQ-331/435). "on Shoal Creek:" has none, so the help-me-price quote (`AsstChat.startQuoteFromRaw`) and the chat's `create_quote` (`handle-chat-message`) were both stored with no `serviceAddress`, and the step's address box (`initialServiceAddress={quote?.serviceAddress}`) stayed blank. (2) `extractEmail` (`quote-facts.ts`) needs a full address with a TLD. "tom@reyes" read as no email, and unlike the phone (REQ-575 `unusablePhone`), nothing named it.
+**Requirement:**
+- As a last resort, the job address is one to three Capitalized words right after a lower-case "on" / "en", closed by `:` `,` `;` `.` or the end of the text: "on Shoal Creek:" becomes "Shoal Creek", and "en Shoal Creek" works the same way. A day, a month, a holiday or a payment app is never an address ("on Monday", "on Thanksgiving.", "en Navidad", "on Zelle"). The earlier forms still win.
+- If the quote has no address, the customer step's address box falls back to the address read from the typed text.
+- An "@" word that is not a full email ("tom@reyes", "carl@", "ana@gmail") is the new fact `unusableEmail`. The Email box is pre-filled with it. While the box still holds that value, or is empty, the form shows `asstChat.customerStep.emailIncomplete`: en "The email in your message (tom@reyes) looks incomplete — type the full address, like name@example.com.", es "El correo de tu mensaje (tom@reyes) parece incompleto — escribe la dirección completa, como nombre@ejemplo.com.". Next stays disabled until the email is fixed or cleared.
+- The earlier parts of the sentence are unchanged: the porcelain correction, the niche (REQ-575/653) and the deadline term (REQ-771).
+**Tests:**
+- unit: `jest/unit/dv1-m7-address-email.test.ts` ("REQ-779 …" ×28). Covers the demo sentence → "Shoal Creek" and the other "on/en <Street>" forms; days, holidays and apps are refused; the earlier forms still win; `extractUnusableEmail` and `unusableEmail` for incomplete emails, and none for full ones; AsstChat wiring; the en and es key.
+- integration: `backend/src/agents/domain/coordinators/handle-chat-message/int.test.ts` ("REQ-779 dv1 m7 …"). The verifier's sentence through the chat's `create_quote` stores `serviceAddress` "Shoal Creek".
+- e2e: `e2e/dv1-m7-address-email/dv1-m7-address-email.e2e.test.ts` ("REQ-779 dv1 m7: …"). In a browser on the seeded customer step:
+  - the address box reads "Shoal Creek" and the Email box reads "tom@reyes";
+  - the "looks incomplete" note names it, and Next is disabled;
+  - typing "tom@reyes.com" hides the note and enables Next.
+**Evidence (2026-11-13, branch fix/cdv1-m7 off demo-fixes 0b909555):**
+- RED, all on the original source:
+  - jest `--testPathPattern dv1-m7-address-email` gave "Tests: 17 failed, 11 passed, 28 total"; every positive case failed.
+  - `deno test … int.test.ts --filter REQ-779` gave "FAILED | 0 passed | 1 failed" (`- undefined + "Shoal Creek"`).
+  - `shots run e2e/dv1-m7-address-email/…` gave "✗ … expectation failed: the job address typed 'on Shoal Creek' is in the address box — expected "Shoal Creek", got """.
+- GREEN:
+  - jest file "Tests: 28 passed".
+  - int "ok | 1 passed".
+  - `shots run` "✓ REQ-779 … · 47.6s" (1 pass · 0 fail). The screenshot shows Hendersons, tom@reyes with the note, Shoal Creek, and Next disabled.
+- Neighbours:
+  - `npx jest --selectProjects unit` gave "Test Suites: 498 passed · Tests: 1 skipped, 5086 passed".
+  - `deno test -A --unstable-kv --parallel` over handle-chat-message/ and business/openai-tools/ gave "ok | 306 passed | 0 failed".
+  - `deno lint` is clean on the touched files, and `deno check islands/AsstChat.tsx` is clean.
+  - `deno fmt --check` is clean on the new files and on the two shared files. AsstChat.tsx (known-unformattable) and int.test.ts (already unformatted at HEAD) were not run through fmt.

@@ -194,6 +194,7 @@ import {
 import {
   acceptedJobChipLabel,
   extractQuickQuotePrefill,
+  extractServiceAddress, // REQ-779
   negativePriceCents,
   type PriceLine,
   quickQuoteNames,
@@ -9681,10 +9682,18 @@ export default function AsstChat({
                                     initialPhone={quoteFacts.customerPhone ??
                                       undefined}
                                     initialEmail={quoteFacts.customerEmail ??
+                                      quoteFacts.unusableEmail ??
                                       undefined}
                                     prefillFacts={stepFacts}
                                     initialServiceAddress={quote
-                                      ?.serviceAddress}
+                                      ?.serviceAddress ||
+                                      extractServiceAddress(
+                                        quoteFactsSource(
+                                          quote?.description,
+                                          messages,
+                                        ),
+                                      ) ||
+                                      undefined /* REQ-779 */}
                                     sending={sending}
                                     lang={lang}
                                     onSubmit={(optionId, body) =>
@@ -11383,6 +11392,10 @@ function CustomerStepPanel(props: {
   if (view === "form") {
     const trimmedName = createName.trim();
     const trimmedEmail = createEmail.trim();
+    // REQ-779: the incomplete email from the message is still what the box
+    // holds (or the box is empty) — the form names it and asks for the rest.
+    const emailIncomplete = !!prefillFacts?.unusableEmail &&
+      (!trimmedEmail || trimmedEmail === prefillFacts.unusableEmail);
     const trimmedPhone = createPhone.trim();
     // REQ-278 / REQ-390 (demo m18, m19): one rule, one message PER FIELD —
     // a bad phone AND a bad email are both named, each under its own input;
@@ -11548,6 +11561,25 @@ function CustomerStepPanel(props: {
               </div>
             )
             : null}
+          {
+            /* REQ-779 (demo-loop cycle dv1, m7): "email tom@reyes" was
+              dropped without a word — the typed email is kept in the box and,
+              while it is still that incomplete value (or the box is empty),
+              the form says so and asks for the full address. */
+          }
+          {emailIncomplete
+            ? (
+              <div
+                class="cust-pick__err"
+                data-cy="cust-email-incomplete"
+                role="alert"
+              >
+                {tFor(lang, "asstChat.customerStep.emailIncomplete", {
+                  email: prefillFacts?.unusableEmail ?? "",
+                })}
+              </div>
+            )
+            : null}
           {feedback.phone
             ? (
               <div
@@ -11559,7 +11591,7 @@ function CustomerStepPanel(props: {
               </div>
             )
             : null}
-          {feedback.email
+          {feedback.email && !emailIncomplete
             ? (
               <div
                 id="cust-email-err"

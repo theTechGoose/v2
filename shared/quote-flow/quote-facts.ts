@@ -72,6 +72,10 @@ export interface QuoteFacts {
    *  phone can be ("phone 555", "tel 555-0123") — as typed, so the customer
    *  form can say so; absent when the text has a usable phone or none. */
   unusablePhone?: string;
+  /** REQ-779 (demo-loop cycle dv1, m7): an email typed with no full domain
+   *  ("tom@reyes", "carl@") — as typed, so the customer form can keep it and
+   *  say it looks incomplete; absent when the text has a full email or none. */
+  unusableEmail?: string;
   /** The typed START date (see StartDateFact). */
   startDate: StartDateFact | null;
   paymentTerms: PrefillPaymentTerms | null;
@@ -101,6 +105,25 @@ export function extractEmail(raw: string): string | null {
 export function extractPhone(raw: string): string | null {
   const m = raw.match(PHONE_RE);
   return m ? m[0].trim() : null;
+}
+
+/** REQ-779: a word with an "@" in it — local part, "@", whatever follows. */
+const AT_WORD = /(?<![^\s(<\[{"'])([A-Za-z0-9._%+-]+@[^\s@<>()\[\]{}"',;:]*)/g;
+
+/**
+ * REQ-779 (demo-loop cycle dv1, m7): "email tom@reyes" was dropped without a
+ * word. An "@" word that is not a full address ("tom@reyes", "carl@",
+ * "ana@gmail") comes back as typed (a sentence's closing period dropped);
+ * null when the text carries a full email, or no "@" word at all.
+ */
+export function extractUnusableEmail(raw: string): string | null {
+  const text = raw ?? "";
+  if (extractEmail(text)) return null;
+  for (const m of text.matchAll(AT_WORD)) {
+    const value = m[1].replace(/[.!?]+$/, "");
+    if (value.length > 1) return value;
+  }
+  return null;
 }
 
 /** REQ-575 (M3): a word that says the number after it is a phone. */
@@ -662,11 +685,13 @@ export function extractDuration(raw: string): ExtractedDuration | null {
 export function extractQuoteFacts(raw: string, today: Date): QuoteFacts {
   const text = raw ?? "";
   const unusablePhone = extractUnusablePhone(text);
+  const unusableEmail = extractUnusableEmail(text); // REQ-779
   return {
     customerName: extractCustomerName(text),
     customerPhone: extractPhone(text),
     customerEmail: extractEmail(text),
     ...(unusablePhone ? { unusablePhone } : {}),
+    ...(unusableEmail ? { unusableEmail } : {}),
     startDate: extractStartDate(text, today),
     paymentTerms: extractPaymentTerms(text),
     duration: extractDuration(text),
