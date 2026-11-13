@@ -11,7 +11,20 @@
  * any call. A real key always goes to api.stripe.com.
  */
 import { Injectable } from "#danet/core";
-import { onRealDeploy } from "@core/business/real-deploy/mod.ts";
+import {
+  type EnvReader,
+  onRealDeploy,
+} from "@core/business/real-deploy/mod.ts";
+
+/**
+ * REQ-804 — where the in-process fake may answer: everywhere off the real deploy, and ON the
+ * real deploy only while `STRIPE_DEMO_FAKE` is exactly "1" (the sales demo: a business connects
+ * `pk_test_fake_<name>` / `sk_test_fake_<name>` and the customer sees the card page; the fake
+ * moves no money and talks to no one). Any other value keeps REQ-212's refusal.
+ */
+export function fakeStripeAllowed(env: EnvReader = Deno.env): boolean {
+  return !onRealDeploy(env) || env.get("STRIPE_DEMO_FAKE")?.trim() === "1";
+}
 import { stripeKeyInfo } from "#payments/stripe-keys.ts";
 import { brandOf, luhnValid, numberLengthFor } from "#payments/card-entry.ts";
 
@@ -290,13 +303,13 @@ function toIntent(j: Record<string, unknown>): StripeIntent {
 
 @Injectable()
 export class StripeGateway {
-  /** a fake key, off the real deploy: the in-process fake answers */
+  /** a fake key, where the fake is allowed (REQ-804): the in-process fake answers */
   isFake(key: string): boolean {
-    return stripeKeyInfo(key).fake && !onRealDeploy();
+    return stripeKeyInfo(key).fake && fakeStripeAllowed();
   }
 
   private guard(key: string) {
-    if (stripeKeyInfo(key).fake && onRealDeploy()) {
+    if (stripeKeyInfo(key).fake && !fakeStripeAllowed()) {
       throw new StripeError(
         400,
         "fake_key_refused",

@@ -2,12 +2,16 @@
  * REQ-212 — the in-process fake Stripe's one browser-facing call, off the real deploy only:
  * `POST /dev/stripe/v1/payment_methods` tokenizes a card for a FAKE publishable key in Stripe's
  * own shape, so the public card page (REQ-213) runs the same code against the fake as against
- * Stripe. On the real deploy the route does not exist (404). A real key is never served here.
+ * Stripe. On the real deploy the route does not exist (404) unless STRIPE_DEMO_FAKE=1 (REQ-804,
+ * the sales demo). A real key is never served here.
  */
 import { Context, Controller, Post } from "#danet/core";
 import type { ExecutionContext } from "#danet/core";
-import { onRealDeploy } from "@core/business/real-deploy/mod.ts";
-import { StripeError, StripeGateway } from "@core/data/stripe-gateway/mod.ts";
+import {
+  fakeStripeAllowed,
+  StripeError,
+  StripeGateway,
+} from "@core/data/stripe-gateway/mod.ts";
 
 @Controller("dev/stripe/v1")
 export class DevStripeController {
@@ -15,7 +19,7 @@ export class DevStripeController {
 
   @Post("payment_methods")
   async paymentMethods(@Context() ctx: ExecutionContext) {
-    if (onRealDeploy()) return ctx.json({ error: "not_found" }, 404);
+    if (!fakeStripeAllowed()) return ctx.json({ error: "not_found" }, 404);
     const auth = ctx.req.header("authorization") ?? "";
     const key = auth.replace(/^Bearer\s+/i, "").trim();
     const form = new URLSearchParams(await ctx.req.text());
