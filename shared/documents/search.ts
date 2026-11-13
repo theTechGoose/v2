@@ -28,6 +28,7 @@ import {
   textsMatchAllWords,
 } from "../quote-flow/customer-search.ts";
 import { docNumberOf, matchesDocNumber } from "./numbering.ts";
+import { formatShortDate } from "../quote-flow/format-helpers.ts";
 import {
   invoiceBalance,
   invoiceState,
@@ -70,8 +71,17 @@ export interface SearchHit {
   url: string;
   /** the record's own title: job name, summary, description — the customer's name for a customer */
   label: string;
-  /** a second line: the address, the email, the service dates… */
+  /** a second line: the address, the email, the assignee… — free text, never a date (REQ-713) */
   sub?: string;
+  /**
+   * REQ-713 (demo-loop cycle 5, m27): dates travel as typed "YYYY-MM-DD"
+   * fields, not baked into `sub`, so the client spells them in the page
+   * language (searchHitLine) instead of printing raw ISO in the Spanish UI.
+   */
+  dueDate?: string;
+  serviceFrom?: string;
+  serviceTo?: string;
+  scheduledFor?: string;
   customerId?: string;
   customerName?: string;
   customerNumber?: string;
@@ -567,9 +577,6 @@ export function searchRecords(
         hasId(i.id, q),
       );
       if (rank === null) continue;
-      const service = [i.serviceDateFrom, i.serviceDateTo].filter(Boolean).join(
-        " → ",
-      );
       rows.push({
         type: "invoice",
         id: i.id,
@@ -579,8 +586,10 @@ export function searchRecords(
         url: urlFor("invoice", i.id),
         label: i.jobName ?? firstLine(i.description) ?? quote?.jobName ??
           quote?.summary ?? cust.name ?? docNumberOf(i),
-        sub: i.serviceAddress ?? (service || undefined) ??
-          (i.dueDate ? i.dueDate.slice(0, 10) : undefined),
+        sub: i.serviceAddress,
+        dueDate: dayOf(i.dueDate),
+        serviceFrom: dayOf(i.serviceDateFrom),
+        serviceTo: dayOf(i.serviceDateTo),
         customerId: cust.id,
         customerName: cust.name,
         customerNumber: cust.number,
@@ -664,7 +673,8 @@ export function searchRecords(
         rank,
         url: urlFor("workOrder", wo.id),
         label: wo.description,
-        sub: wo.serviceAddress ?? wo.scheduledFor ?? wo.assignee,
+        sub: wo.serviceAddress ?? (wo.scheduledFor ? undefined : wo.assignee),
+        scheduledFor: dayOf(wo.scheduledFor),
         customerId: cust.id,
         customerName: cust.name,
         customerNumber: cust.number,
@@ -711,6 +721,44 @@ function typeOrder(type: SearchType): number {
 }
 
 /** The best `limit` rows of one type, ranked, ties in number order (the lists are pre-sorted by seq). */
+/** REQ-713: a stored date (bare day or full ISO) as its "YYYY-MM-DD" day */
+function dayOf(v: string | undefined): string | undefined {
+  return v ? v.slice(0, 10) : undefined;
+}
+
+/**
+ * REQ-713 (demo-loop cycle 5, m27): a hit's typed dates in the page language
+ * — "20 nov → 22 nov" for a service window, else the due or scheduled day.
+ */
+export function searchHitDates(
+  h: SearchHit,
+  lang: "en" | "es",
+): string | undefined {
+  const service = [h.serviceFrom, h.serviceTo]
+    .filter((d): d is string => !!d)
+    .map((d) => formatShortDate(d, lang))
+    .join(" → ");
+  if (service) return service;
+  const day = h.dueDate ?? h.scheduledFor;
+  return day ? formatShortDate(day, lang) : undefined;
+}
+
+/**
+ * REQ-713: the row's second line in the topbar search — the record's own
+ * label when the title is the customer, then the address / email / assignee
+ * (`sub`), falling back to the localized date when there is no `sub`.
+ */
+export function searchHitLine(
+  h: SearchHit,
+  lang: "en" | "es",
+): string | undefined {
+  const second = h.sub ?? searchHitDates(h, lang);
+  if (h.type === "customer") return second;
+  const title = h.customerName ?? h.label;
+  return [h.label !== title ? h.label : undefined, second]
+    .filter(Boolean).join(" · ") || undefined;
+}
+
 function take(rows: SearchHit[], limit: number): SearchHit[] {
   return rows
     .map((h, i) => ({ h, i }))

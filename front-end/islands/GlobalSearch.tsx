@@ -13,7 +13,11 @@
 import { useEffect, useRef, useState } from "preact/hooks";
 import { dashboardClient, type SearchHit } from "../clients/dashboard.ts";
 import { langSignal, tFor, tnFor } from "../lib/i18n.ts";
-import { bestHit, groupHits } from "../../shared/documents/search.ts";
+import {
+  bestHit,
+  groupHits,
+  searchHitLine,
+} from "../../shared/documents/search.ts";
 
 const DEBOUNCE_MS = 250;
 const PER_TYPE = 8;
@@ -243,10 +247,8 @@ export default function GlobalSearch() {
               {g.hits.map((h) => {
                 const idx = hits.indexOf(h);
                 const title = h.customerName ?? h.label;
-                const line = h.type === "customer"
-                  ? h.sub
-                  : [h.label !== title ? h.label : undefined, h.sub]
-                    .filter(Boolean).join(" · ");
+                // REQ-713: dates are typed on the hit and spelled in `lang`
+                const line = searchHitLine(h, lang);
                 return (
                   <div
                     key={`${h.type}-${h.id}`}

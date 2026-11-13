@@ -28,6 +28,7 @@ import {
   todayIso,
 } from "../lib/field.ts";
 import { langSignal, t } from "../lib/i18n.ts";
+import { formatLongDate } from "../../shared/quote-flow/format-helpers.ts";
 import SearchSelect from "./SearchSelect.tsx";
 
 /** the cadence <select>'s values: an interval in weeks, or monthly */
@@ -803,6 +804,17 @@ export default function FieldSubscriptionsPage() {
                   onChange={(e) =>
                     onStartDate((e.currentTarget as HTMLInputElement).value)}
                 />
+                {
+                  /* REQ-713 (cycle 5, m27): the native date input draws the
+                    BROWSER locale (11/12/2026 in an en-US browser), so the
+                    picked day is also spelled out in the page language —
+                    the REQ-587 companion from the payment form. */
+                }
+                {form.startDate && (
+                  <span class="hint" data-cy="subs-start-text">
+                    {formatLongDate(form.startDate, lang)}
+                  </span>
+                )}
               </label>
             </div>
 
