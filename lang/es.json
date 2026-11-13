@@ -3978,6 +3978,7 @@
   "adminPage.no": "no",
   "adminPage.grant": "Dar admin",
   "adminPage.revoke": "Quitar admin",
+  "adminPage.revoke.selfTitle": "No puedes quitarte tu propio acceso de administrador — pídeselo a otro administrador.",
   "adminPage.demo": "Demo",
   "adminPage.demo.title": "Modo demo: guía a este usuario con un puntero en vivo en su pantalla",
   "adminPage.opening": "Abriendo…",

@@ -78,6 +78,16 @@ export function displayName(
   return isPlaceholderName(name) ? noNameYet : name!.trim();
 }
 
+/** REQ-731 (demo cycle 5, m30) — the signed-in admin's own row can't revoke their own admin
+ *  (it locked them out of /admin); every other row grants and revokes. The server refuses it
+ *  too (409 cannot_revoke_self). */
+export function canToggleSuper(
+  user: Pick<AdminUserView, "id" | "superAdmin">,
+  selfId: string | undefined,
+): boolean {
+  return !(user.superAdmin && selfId !== undefined && user.id === selfId);
+}
+
 /** REQ-426 (demo cycle 2, p13-e) — one stable impersonate option label:
  *  person first, business when present, phone last. */
 export function impersonateLabel(

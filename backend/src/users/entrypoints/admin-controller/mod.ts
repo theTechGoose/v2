@@ -173,13 +173,23 @@ export class AdminController {
     return projectAdminUser(user, identity?.businessName);
   }
 
-  /** POST /admin/users/:id/revoke — revoke super-admin from a user. */
+  /**
+   * POST /admin/users/:id/revoke — revoke super-admin from a user.
+   * REQ-731 (demo cycle 5, m30): never the caller's own — one click on their own row locked
+   * the operator out of /admin (409 cannot_revoke_self). requireSuperAdmin resolves the
+   * session's own user (an impersonation session is the target, not a super admin, so it
+   * never gets here), and that caller stays a super admin — so a revoke can never leave
+   * zero super admins.
+   */
   @Post("users/:id/revoke")
   async revoke(
     @Context() ctx: ExecutionContext,
     @Param("id") id: string,
   ): Promise<AdminUserView> {
-    await requireSuperAdmin(ctx, this.sessions, this.users);
+    const caller = await requireSuperAdmin(ctx, this.sessions, this.users);
+    if (caller.id === id) {
+      throw Object.assign(new Error("cannot_revoke_self"), { status: 409 });
+    }
     const user = await this.users.setSuperAdmin(id, false);
     const identity = await this.identities.get(user.id);
     return projectAdminUser(user, identity?.businessName);
