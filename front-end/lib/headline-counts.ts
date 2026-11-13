@@ -104,6 +104,14 @@ export function invoicesHeroMode(input: {
   return "outstanding";
 }
 
+/** REQ-729 (demo-loop cycle 5, m16): the hero headlines that are good news —
+ *  "All clear — nothing outstanding", "No invoices yet — send your first
+ *  one". Their emphasis reads in brand green, not the coral alarm colour the
+ *  money-owed headlines use. */
+export function invoicesHeroGood(mode: InvoicesHeroMode): boolean {
+  return mode === "clear" || mode === "empty";
+}
+
 /** What is still owed on one bill, INTEGER CENTS: the amount less what has
  *  been received (REQ-202 paidCents), never below zero. */
 export function invoiceBalanceCents(

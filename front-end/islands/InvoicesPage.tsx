@@ -53,6 +53,7 @@ import {
 import {
   draftingKpiSub,
   invoiceKpiTotals,
+  invoicesHeroGood,
   invoicesHeroMode,
   paidKpiInvoiceCents,
   reloadInvoiceData,
@@ -989,7 +990,12 @@ function InvoicesHero(
         <div class="qph__eyebrow">
           <span class="qph__eyebrow-dot" /> {tFor(lang, "invoicesPage.eyebrow")}
         </div>
-        <h1 class="qph__title" data-cy="forecast-hero">
+        <h1
+          class={invoicesHeroGood(mode)
+            ? "qph__title qph__title--good"
+            : "qph__title"}
+          data-cy="forecast-hero"
+        >
           {trulyEmpty
             ? (
               <>
