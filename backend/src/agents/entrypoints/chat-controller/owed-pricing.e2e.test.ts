@@ -22,6 +22,7 @@ import { BusinessIdentityStore } from "@profile/domain/data/business-identity-st
 import { BusinessAddressStore } from "@profile/domain/data/business-address-store/mod.ts";
 import { QuoteStore } from "@paperwork/domain/data/quote-store/mod.ts";
 import { InvoiceStore } from "@paperwork/domain/data/invoice-store/mod.ts";
+import { ChangeOrderStore } from "@paperwork/domain/data/change-order-store/mod.ts";
 import { resetKv } from "@core/data/kv/mod.ts";
 
 @Module({ imports: [AgentsModule] })
@@ -163,7 +164,7 @@ Deno.test("REQ-388 M19 e2e: pair 2 — Ana signs a pay-on-completion quote on th
     // REQ-474 (cycle 3, M17): a scheduled bill is not owed yet
     assertStringIncludes(
       text,
-      "Ana López todavía no te debe nada — $400 aún no se ha facturado",
+      "Ana López todavía no te debe nada — INV-001 por $400 está programada", // REQ-673: one sentence
     );
     assertStringIncludes(text, inv.number!);
     assertStringIncludes(text, "programada");
@@ -289,5 +290,68 @@ Deno.test("REQ-388 M23 e2e: pair 7's two-part pricing question drafts no quote; 
     assertEquals(quotes[0].estimatedTotal, offer.amountCents);
     assertEquals(quotes[0].lineItems[0].description, "Panel swap 200a");
     assertEquals(drafted.conversation.quoteId, quotes[0].id);
+  });
+});
+
+Deno.test("REQ-673 e2e: demo-loop cycle 5 p18-3e — Maria signs a $280 pay-on-completion quote, a +$40 CO-001 is pending; 'What does Maria owe me?' says the $280 once, in one sentence, and mentions the CO", async () => {
+  await withServer(async () => {
+    const me = await signIn("en", "+15125557673");
+    const call = api(me.sid);
+    const maria = await call<{ id: string }>("POST", "/customers", {
+      name: "Maria Lopez",
+      phoneNumber: "+15125550102",
+    });
+    const quote = await call<{ id: string }>("POST", "/quotes", {
+      customerId: maria.id,
+      summary: "Deep clean",
+      jobName: "Deep clean",
+      lineItems: [{
+        description: "Deep clean, 3 bed 2 bath",
+        quantity: 1,
+        unit: "ea",
+        price: 28_000,
+      }],
+      estimatedTotal: 28_000,
+      estimatedCompletionDate: "2099-12-10",
+      terms: [{
+        stepId: "payment_terms",
+        label: "Payment terms",
+        value: "Payment upon completion",
+      }],
+      status: "sent",
+    });
+    await call("PUT", `/quotes/${quote.id}`, { status: "sent" });
+    const accepted = await api()<{ ok: boolean }>(
+      "POST",
+      `/quotes/${quote.id}/accept`,
+      { signature: "Maria Lopez", name: "Maria Lopez" },
+    );
+    assertEquals(accepted.ok, true);
+    const [inv] = (await new InvoiceStore().listByUser(me.userId))
+      .filter((i) => i.quoteId === quote.id);
+    assertEquals(inv.status, "scheduled");
+    const co = await new ChangeOrderStore().create(me.userId, inv.id, {
+      description: "Inside the fridge",
+      deltaAmountCents: 4_000,
+      quoteId: quote.id,
+      customerId: maria.id,
+      originalAmountCents: 28_000,
+    });
+
+    const res = await call<ChatRes>("POST", "/agents/chat", {
+      content: "What does Maria owe me?",
+    });
+    const text = texts(res.newMessages);
+    assert(!text.startsWith("(stub)"), `the chat model answered: ${text}`);
+    assertEquals(text.split("$280").length - 1, 1, `$280 repeated: ${text}`);
+    assertStringIncludes(
+      text,
+      `Maria Lopez doesn't owe you anything yet — ${inv.number} for $280 goes out `,
+    );
+    assert(!/hasn't gone out yet/.test(text), text);
+    assertStringIncludes(
+      text,
+      `Plus ${co.number} (+$40) is waiting for Maria Lopez's approval.`,
+    );
   });
 });

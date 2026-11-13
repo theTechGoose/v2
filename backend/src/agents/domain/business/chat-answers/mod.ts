@@ -165,6 +165,41 @@ export interface BillingInvoice {
   deliveredVia?: string[];
 }
 
+/** REQ-673 (demo-loop cycle 5, p18-3e): a change order on the job — a
+ *  pending one is mentioned ("Plus CO-001 (+$40) is waiting for Maria's
+ *  approval"); an approved one is already in its invoice's amount. */
+export interface BillingChangeOrder {
+  id: string;
+  number?: string;
+  status?: string;
+  deltaAmountCents?: number;
+  invoiceId?: string;
+  quoteId?: string;
+  customerId?: string;
+}
+
+/** "+$40" / "-$40" — a change order's signed delta. */
+function signedMoney(cents: number): string {
+  return `${cents < 0 ? "-" : "+"}${money(Math.abs(cents))}`;
+}
+
+/** REQ-673: one sentence per change order still waiting for the customer. */
+function pendingChangeOrders(
+  lang: Lang,
+  name: string,
+  changeOrders: BillingChangeOrder[] = [],
+): string[] {
+  return changeOrders
+    .filter((c) => c.status === "pending")
+    .map((c) =>
+      t(lang, "chatCoordinator.owed.pendingChangeOrder", {
+        name,
+        number: docNumberOf(c),
+        delta: signedMoney(c.deltaAmountCents ?? 0),
+      })
+    );
+}
+
 export interface BillingReply {
   text: string;
   /** The invoice to show as a card — the first one still open (none once
@@ -200,6 +235,8 @@ export function billingReply(
   lang: Lang,
   quote: BillingQuote,
   invoices: BillingInvoice[],
+  /** REQ-673: the quote's change orders — a pending one is mentioned. */
+  changeOrders: BillingChangeOrder[] = [],
   /** REQ-656 (demo-loop cycle 5, M9): the contractor said the job is done
    *  ("Trabajo terminado, factura a María López…"). */
   opts: { jobDone?: boolean } = {},
@@ -254,10 +291,15 @@ export function billingReply(
     const scheduled = live.filter((i) => i.status === "scheduled")
       .sort(byInstallment)[0];
     if (scheduled) {
+      // REQ-673 (cycle 5, p18-3e): one sentence — "nothing is billed yet"
+      // and "the $280 invoice hasn't gone out yet" said the same thing twice.
       return {
-        text: `${say("nothingBilledYet")} ${
-          scheduledSentence(lang, scheduled)
-        }`,
+        text: [
+          say("nothingBilledScheduled", {
+            scheduled: scheduledClause(lang, scheduled),
+          }),
+          ...pendingChangeOrders(lang, name, changeOrders),
+        ].join(" "),
         // REQ-583 (demo-loop cycle 4, M2): and the scheduled invoice itself,
         // with Send now — pair 3 / 9 had nothing to press.
         invoice: invoiceCard(lang, scheduled),
@@ -324,6 +366,7 @@ export function billingReply(
   // card's buttons) — or, once all that is billed is paid, the next scheduled
   // one with Send now. None when nothing more is to come.
   const card = open ?? next;
+  parts.push(...pendingChangeOrders(lang, name, changeOrders)); // REQ-673
   return {
     text: parts.join(" "),
     ...(card ? { invoice: invoiceCard(lang, card) } : {}),
@@ -382,6 +425,20 @@ function scheduledSentence(lang: Lang, i: BillingInvoice): string {
   return t(lang, `chatCoordinator.owed.${key}`, { number, amount, date, due });
 }
 
+/** REQ-673: "INV-001 for $280 goes out Nov 12, due Dec 12" — the scheduled
+ *  invoice as a clause of the one sentence that says nothing is billed. */
+function scheduledClause(lang: Lang, i: BillingInvoice): string {
+  const number = docNumberOf(i);
+  const amount = money(i.amount ?? 0);
+  const when = i.scheduledFor ?? i.dueDate;
+  const date = when ? formatShortDate(when, lang) : "";
+  const due = i.dueDate && i.dueDate !== when
+    ? formatShortDate(i.dueDate, lang)
+    : "";
+  const key = !date ? "goesOutNoDate" : due ? "goesOutDue" : "goesOut";
+  return t(lang, `chatCoordinator.owed.${key}`, { number, amount, date, due });
+}
+
 export interface OwedQuote extends BillingQuote {
   number?: string;
   estimatedTotal?: number;
@@ -403,6 +460,9 @@ export interface OwedReplyInput {
   invoices: OwedInvoice[];
   /** "YYYY-MM-DD" — an invoice due before it is overdue. */
   today?: string;
+  /** REQ-673: their change orders — a pending one is mentioned, never
+   *  counted as owed or to be billed (the customer has not approved it). */
+  changeOrders?: BillingChangeOrder[];
 }
 
 export interface OwedReply {
@@ -463,7 +523,19 @@ export function owedReply(lang: Lang, input: OwedReplyInput): OwedReply {
     unbilled.reduce((s, u) => s + u.cents, 0);
 
   const parts: string[] = [];
-  if (owedCents > 0 && upcomingCents > 0) {
+  // REQ-673 (cycle 5, p18-3e): all that is coming is one scheduled invoice —
+  // one sentence, "Maria doesn't owe you anything yet — INV-001 for $280 goes
+  // out Nov 12", not "$280 isn't billed yet. The $280 invoice hasn't gone out
+  // yet — …".
+  const onlyScheduled = owedCents === 0 && drafts.length === 0 &&
+      unbilled.length === 0 && scheduled.length === 1
+    ? scheduled[0]
+    : undefined;
+  if (onlyScheduled) {
+    parts.push(say("notYetScheduled", {
+      scheduled: scheduledClause(lang, onlyScheduled),
+    }));
+  } else if (owedCents > 0 && upcomingCents > 0) {
     parts.push(say("owesNow", {
       now: money(owedCents),
       later: money(upcomingCents),
@@ -499,7 +571,9 @@ export function owedReply(lang: Lang, input: OwedReplyInput): OwedReply {
       }),
     );
   }
-  for (const i of scheduled) parts.push(scheduledSentence(lang, i));
+  if (!onlyScheduled) {
+    for (const i of scheduled) parts.push(scheduledSentence(lang, i));
+  }
   for (const u of unbilled) {
     parts.push(say("unbilled", {
       amount: money(u.cents),
@@ -517,5 +591,6 @@ export function owedReply(lang: Lang, input: OwedReplyInput): OwedReply {
       parts.push(say(unsent ? "unsent" : "waiting", vars));
     }
   }
+  parts.push(...pendingChangeOrders(lang, name, input.changeOrders));
   return { text: parts.join(" "), owedCents, upcomingCents };
 }

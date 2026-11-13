@@ -4,6 +4,7 @@ import { AgentConversationStore } from "@agents/domain/data/agent-conversation-s
 import { AgentMessageStore } from "@agents/domain/data/agent-message-store/mod.ts";
 import { QuoteStore } from "@paperwork/domain/data/quote-store/mod.ts";
 import { InvoiceStore } from "@paperwork/domain/data/invoice-store/mod.ts";
+import { ChangeOrderStore } from "@paperwork/domain/data/change-order-store/mod.ts";
 import {
   type BillingReply,
   billingReply,
@@ -81,6 +82,8 @@ export class AnswerBilling {
     private messages: AgentMessageStore,
     private quotes: QuoteStore = new QuoteStore(),
     private invoices: InvoiceStore = new InvoiceStore(),
+    /** REQ-673: a pending change order is mentioned in the answer. */
+    private changeOrders: ChangeOrderStore = new ChangeOrderStore(),
   ) {}
 
   /** Undefined when the conversation has no readable quote to talk about —
@@ -101,7 +104,11 @@ export class AnswerBilling {
     const invoices = (await this.invoices.listByUser(input.userId)
       .catch(() => []))
       .filter((i) => i.quoteId === quote.id);
-    const reply = billingReply(input.lang, quote, invoices, {
+    const invoiceIds = new Set(invoices.map((i) => i.id));
+    const changeOrders = (await this.changeOrders.listByUser(input.userId)
+      .catch(() => []))
+      .filter((c) => c.quoteId === quote.id || invoiceIds.has(c.invoiceId));
+    const reply = billingReply(input.lang, quote, invoices, changeOrders, {
       jobDone: input.jobDone === true,
     });
 

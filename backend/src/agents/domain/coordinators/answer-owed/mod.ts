@@ -5,6 +5,7 @@ import { AgentMessageStore } from "@agents/domain/data/agent-message-store/mod.t
 import { QuoteStore } from "@paperwork/domain/data/quote-store/mod.ts";
 import { InvoiceStore } from "@paperwork/domain/data/invoice-store/mod.ts";
 import { CustomerStore } from "@crm/domain/data/customer-store/mod.ts";
+import { ChangeOrderStore } from "@paperwork/domain/data/change-order-store/mod.ts";
 import { namesCustomer } from "@agents/domain/business/change-order-intent/mod.ts";
 import { owedReply } from "@agents/domain/business/chat-answers/mod.ts";
 import { derivePreview } from "@agents/domain/business/conversation-title/mod.ts";
@@ -50,6 +51,8 @@ export class AnswerOwed {
     private quotes: QuoteStore = new QuoteStore(),
     private invoices: InvoiceStore = new InvoiceStore(),
     private customers: CustomerStore = new CustomerStore(),
+    /** REQ-673: a pending change order is mentioned in the answer. */
+    private changeOrders: ChangeOrderStore = new ChangeOrderStore(),
   ) {}
 
   async run(input: {
@@ -64,10 +67,11 @@ export class AnswerOwed {
   }): Promise<AnswerOwedResult> {
     const { userId, lang } = input;
     const conv = input.conversation;
-    const [customers, allQuotes, invoices] = await Promise.all([
+    const [customers, allQuotes, invoices, changeOrders] = await Promise.all([
       this.customers.listByUser(userId).catch(() => []),
       this.quotes.listByUser(userId).catch(() => [] as Quote[]),
       this.invoices.listByUser(userId).catch(() => []),
+      this.changeOrders.listByUser(userId).catch(() => []),
     ]);
     const quotes = allQuotes.filter((q) => !q.isSample);
     const bound = conv.quoteId
@@ -129,10 +133,17 @@ export class AnswerOwed {
         ("customerId" in w && i.customerId === w.customerId) ||
         (!!i.quoteId && ids.has(i.quoteId))
       );
+      const invoiceIds = new Set(theirInvoices.map((i) => i.id));
       text = owedReply(lang, {
         name: w.name,
         quotes: theirQuotes,
         invoices: theirInvoices,
+        // REQ-673 (demo-loop cycle 5, p18-3e): theirs — on their invoices,
+        // their quotes, or made out to them
+        changeOrders: changeOrders.filter((c) =>
+          invoiceIds.has(c.invoiceId) || (!!c.quoteId && ids.has(c.quoteId)) ||
+          ("customerId" in w && c.customerId === w.customerId)
+        ),
         today: input.today ?? new Date().toISOString().slice(0, 10),
       }).text;
     }

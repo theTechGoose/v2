@@ -239,7 +239,7 @@ Deno.test("REQ-388 M19: pair 2 — '¿Cuánto me debe Ana López?' in a new chat
   // REQ-474 (cycle 3, M17): a scheduled bill is not owed yet — the Clientes rule
   assertStringIncludes(
     text,
-    "Ana López todavía no te debe nada — $400 aún no se ha facturado",
+    "Ana López todavía no te debe nada — INV-001 por $400 está programada", // REQ-673: one sentence
   );
   assertStringIncludes(text, invoice.number!);
   assertStringIncludes(text, "programada");
@@ -284,7 +284,7 @@ Deno.test("REQ-388 M19: pair 2's follow-up 'No entiendo. ¿Cuánto dinero me deb
   const text = assistantText(res.newMessages);
   assertStringIncludes(
     text,
-    "Ana López todavía no te debe nada — $400 aún no se ha facturado",
+    "Ana López todavía no te debe nada — INV-001 por $400 está programada", // REQ-673: one sentence
   ); // REQ-474
   assertStringIncludes(text, "26 nov"); // when it goes out
   assertStringIncludes(text, "11 dic"); // when it is due
@@ -312,7 +312,7 @@ Deno.test("REQ-388 M19: on Ana's own quote thread '¿Cuánto me debe?' needs no 
   });
   assertStringIncludes(
     assistantText(mine.newMessages),
-    "Ana López todavía no te debe nada — $400 aún no se ha facturado", // REQ-474
+    "Ana López todavía no te debe nada — INV-001 por $400 está programada", // REQ-474, REQ-673: one sentence
   );
 
   const blank = await fx.conversations.create({ userId: "u-1" });
@@ -681,5 +681,72 @@ Deno.test("REQ-474 M17: the demo's books — Ana Pérez's INV-001 $180 scheduled
   ).run("u-1");
   const card = cards.find((c) => c.id === ana.id)!;
   assertEquals(card.balanceCents, 18_000, "the Clientes card: $180 owed");
+  await resetKv();
+});
+
+// ---------------------------------------------------------------------------
+// REQ-673 (demo-loop cycle 5, p18-3e)
+// ---------------------------------------------------------------------------
+
+Deno.test("REQ-673: 'What does Maria owe me?' — her $280 scheduled INV-001 in ONE sentence, plus the pending CO-001 +$40 waiting for approval", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const fx = fresh();
+  await seedOnboarded("u-1", "en");
+  const maria = await fx.customers.create("u-1", {
+    name: "Maria Lopez",
+    phoneNumber: "+15125550102",
+  });
+  const quote = await fx.quotes.create("u-1", {
+    customerId: maria.id,
+    summary: "Deep clean",
+    jobName: "Deep clean",
+    lineItems: [{
+      description: "Deep clean, 3 bed 2 bath",
+      quantity: 1,
+      unit: "ea",
+      price: 28_000,
+    }],
+    estimatedTotal: 28_000,
+    status: "draft",
+  });
+  await fx.quotes.update(quote.id, "u-1", {
+    status: "accepted",
+    sentAt: "2026-11-12T19:04:00Z",
+    acceptedAt: "2026-11-12T19:05:37Z",
+    acceptedName: "Maria Lopez",
+  });
+  const invoice = await fx.invoices.create("u-1", {
+    quoteId: quote.id,
+    customerId: maria.id,
+    amount: 28_000,
+    status: "scheduled",
+    scheduledFor: "2026-11-12",
+    dueDate: "2026-12-12",
+    installmentIndex: 1,
+    installmentTotal: 1,
+  });
+  const co = await new ChangeOrderStore().create("u-1", invoice.id, {
+    description: "Inside the fridge",
+    deltaAmountCents: 4_000,
+    quoteId: quote.id,
+    customerId: maria.id,
+    originalAmountCents: 28_000,
+  });
+  const calls = scriptLlm(fx);
+  const conv = await fx.conversations.create({ userId: "u-1" });
+
+  const res = await fx.flow.run({
+    userId: "u-1",
+    conversationId: conv.id,
+    content: "What does Maria owe me?",
+  });
+
+  assertEquals(calls.chat.length, 0, "the chat model answered");
+  const text = assistantText(res.newMessages);
+  assertEquals(
+    text,
+    `Maria Lopez doesn't owe you anything yet — ${invoice.number} for $280 goes out Nov 12, due Dec 12. Plus ${co.number} (+$40) is waiting for Maria Lopez's approval.`,
+  );
   await resetKv();
 });
