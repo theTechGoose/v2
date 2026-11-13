@@ -104,6 +104,7 @@ import { lockStatusFor, QUOTE_LOCKED } from "#quote-flow/quote-lock.ts";
 import {
   changeOrderNumbersIn, // REQ-462
   type ChangeOrderTarget,
+  correctionForChange, // REQ-755
   isNewQuoteRequest,
   parseChangeOrderEdit, // REQ-462
   parseChangeOrderRequest,
@@ -145,7 +146,10 @@ import {
   type ReviseQuoteInput,
   type ReviseQuoteResult,
 } from "@agents/domain/coordinators/revise-quote/mod.ts";
-import { changeOrderAsReprice } from "@agents/domain/business/quote-line-revision/mod.ts";
+import {
+  changeOrderAsReprice,
+  findLine, // REQ-755
+} from "@agents/domain/business/quote-line-revision/mod.ts";
 // REQ-445 (demo-loop cycle 3, B2 + M20): the stated total and the price
 // checks a chat-drafted quote gets before it is saved.
 import {
@@ -1101,6 +1105,9 @@ export class HandleChatMessage {
         jobDetails,
         jobDetailsUpdated: detailsUpdated,
       });
+    // REQ-755: lines a revise repriced this turn, so a change order the
+    // model sent for the same correction is not applied twice.
+    const repricedThisTurn: { match: string; amountCents: number }[] = [];
     for (const edit of edits) {
       if (edit.type === "update_terms") {
         // REQ-663 (demo-loop cycle 5, m40 + p18-7c): the model re-sends the
@@ -1179,10 +1186,27 @@ export class HandleChatMessage {
       }
       if (edit.type === "change_order") {
         const p = edit.payload;
+        // REQ-755 (cycle 5v1, M15): "door trim … is not 200, it's 275" — a
+        // change order about the line the words correct is that line's new
+        // price; the verifier's model sent revise_quote $275 AND +$75.
+        const corr = p.targetTotalCents === undefined
+          ? correctionForChange(p, userText)
+          : undefined;
+        if (
+          corr &&
+          repricedThisTurn.some((r) =>
+            r.amountCents === corr.amountCents &&
+            (findLine([{ description: r.match }], corr.item) >= 0 ||
+              findLine([{ description: corr.item }], r.match) >= 0)
+          )
+        ) continue; // the revise above already set it
         // REQ-315: a change order that is a reprice changes that line —
         // unless the quote is signed (its lines never change, REQ-202).
         const reprice = p.targetTotalCents === undefined
-          ? changeOrderAsReprice(p, userText)
+          ? changeOrderAsReprice(p, userText) ??
+            (corr
+              ? { match: corr.item, amountCents: corr.amountCents }
+              : undefined)
           : undefined;
         if (reprice) {
           const revised = await revise({ ...p, lines: [reprice], remove: [] });
@@ -1202,7 +1226,10 @@ export class HandleChatMessage {
           customerName: p.customerName,
           quoteNumber: p.quoteNumber,
           description: p.description,
-          deltaAmountCents: p.deltaAmountCents,
+          // REQ-755: a correction on a signed job carries the difference
+          // (ApplyChatChangeOrder settles it against the line).
+          deltaAmountCents: corr ? corr.amountCents : p.deltaAmountCents,
+          ...(corr ? { setsLinePrice: true } : {}),
           targetTotalCents: p.targetTotalCents, // REQ-377: settled in code
           userText,
         });
@@ -1212,6 +1239,16 @@ export class HandleChatMessage {
         continue;
       }
       const revised = await revise(edit.payload);
+      if (revised.outcome.kind !== "locked") {
+        for (const l of edit.payload.lines) {
+          if (typeof l.amountCents === "number") {
+            repricedThisTurn.push({
+              match: l.match,
+              amountCents: l.amountCents,
+            });
+          }
+        }
+      }
       // REQ-585: a bullet the job details already reworded says nothing.
       if (!revised.text) continue;
       parts.push(revised.text);
@@ -3020,8 +3057,19 @@ export class HandleChatMessage {
       // reprice changes the line instead; on a signed quote (whose lines
       // never change, REQ-202) it stays the change order the model asked for.
       // REQ-377: a new total is never a line reprice.
+      // REQ-755 (cycle 5v1, M15): a change order about the line the words
+      // correct ("door trim … is not 200, it's 275") is its new price.
+      // A change order built in code from the correction (REQ-661) already
+      // carries it — and its own "why a revision" reply.
+      const corr = llmResponse.action.payload.targetTotalCents === undefined &&
+          !llmResponse.action.payload.setsLinePrice
+        ? correctionForChange(llmResponse.action.payload, userText)
+        : undefined;
       const reprice = llmResponse.action.payload.targetTotalCents === undefined
-        ? changeOrderAsReprice(llmResponse.action.payload, userText)
+        ? changeOrderAsReprice(llmResponse.action.payload, userText) ??
+          (corr
+            ? { match: corr.item, amountCents: corr.amountCents }
+            : undefined)
         : undefined;
       if (reprice) {
         const revised = await this.reviseQuote.run({
@@ -3045,11 +3093,14 @@ export class HandleChatMessage {
         customerName: llmResponse.action.payload.customerName,
         quoteNumber: llmResponse.action.payload.quoteNumber,
         description: llmResponse.action.payload.description,
-        deltaAmountCents: llmResponse.action.payload.deltaAmountCents,
+        // REQ-755: a correction carries the line's right price.
+        deltaAmountCents: corr
+          ? corr.amountCents
+          : llmResponse.action.payload.deltaAmountCents,
         // REQ-377 (B1): the money is settled against the quote in code.
         targetTotalCents: llmResponse.action.payload.targetTotalCents,
         // REQ-661 (M15): a correction reprices the line it names.
-        setsLinePrice: llmResponse.action.payload.setsLinePrice,
+        setsLinePrice: corr ? true : llmResponse.action.payload.setsLinePrice,
         userText,
       });
       // REQ-392 (M7): a line added to the bound draft (or its pending

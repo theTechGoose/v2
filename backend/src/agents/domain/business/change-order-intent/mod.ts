@@ -11,6 +11,7 @@
  */
 
 import {
+  findLine,
   type LineReprice,
   parseLineReprice,
 } from "@agents/domain/business/quote-line-revision/mod.ts";
@@ -162,8 +163,10 @@ export interface LineCorrection {
   previousCents: number;
 }
 
+// REQ-755 (cycle 5v1, M15): the right price may be typed bare ("is 275 not
+// 200") — a size or a count after either number rules it out (UNIT_AFTER_RE).
 const CORR_MONEY = String
-  .raw`\$\s?(?<whole>\d{1,3}(?:,\d{3})+|\d+)(?:\.(?<frac>\d{1,2}))?`;
+  .raw`\$?\s?(?<whole>\d{1,3}(?:,\d{3})+|\d+)(?:\.(?<frac>\d{1,2}))?`;
 const CORR_OLD = String
   .raw`\$?\s?(?<oldWhole>\d{1,3}(?:,\d{3})+|\d+)(?:\.(?<oldFrac>\d{1,2}))?`;
 /** "<item> is $1,200 not 150", "<item> should be $1,200, not $150",
@@ -171,8 +174,20 @@ const CORR_OLD = String
 const LINE_CORRECTION_RE = new RegExp(
   String
     .raw`^\s*(?:(?:no|oops|sorry|actually|wait|correction|perd[oó]n|en\s+realidad)[,!]?\s+)*(?<line>[^$\n.:;!?]+?)\s+(?:is|should\s+be|was\s+supposed\s+to\s+be|=|es|debe\s+ser|deber[ií]a\s+ser|cuesta)\s+(?:actually\s+|really\s+|en\s+realidad\s+)?${CORR_MONEY}\s*,?\s+(?:not|no|instead\s+of|rather\s+than|en\s+vez\s+de|en\s+lugar\s+de|y\s+no)\s+${CORR_OLD}(?!\d)`,
-  "iu",
+  "iud",
 );
+/** REQ-755 (demo-loop cycle 5v1, M15): the wrong price FIRST — the
+ *  verifier's "door trim for the gomezes is not 200, it's 275"; also "isn't
+ *  $200, it's $275", "is not 200 it should be 275", es "no es 200, es 275". */
+const LINE_CORRECTION_OLD_FIRST_RE = new RegExp(
+  String
+    .raw`^\s*(?:(?:no|oops|sorry|actually|wait|correction|perd[oó]n|en\s+realidad)[,!]?\s+)*(?<line>[^$\n.:;!?]+?)\s+(?:is\s+not|isn['’]t|was\s+not|wasn['’]t|should\s*n['’]t\s+be|no\s+es|no\s+era|no\s+cuesta)\s+${CORR_OLD}\s*,?\s*(?:(?:but|sino|pero)\s+)?(?:it['’]s|it\s+is|it\s+should\s+be|should\s+be|it['’]s\s+supposed\s+to\s+be|es|era|cuesta|debe\s+ser|deber[ií]a\s+ser)?\s+(?:actually\s+|really\s+|en\s+realidad\s+)?${CORR_MONEY}(?!\d)`,
+  "iud",
+);
+/** REQ-755: a size, a count or a percentage after a number — "2 not 3
+ *  coats", "200 sqft" — makes the sentence about that, never a price. */
+const UNIT_AFTER_RE =
+  /^\s*(?:%|percent|sq\.?\s*ft|sqft|sf|square|ft|feet|foot|linear|lf|in(?:ch(?:es)?)?|yards?|yds?|coats?|hours?|hrs?|days?|weeks?|months?|gallons?|gal|units?|pieces?|pcs|boxes|rolls|sheets|doors|windows|outlets|m2|metros?|pies|pulgadas|horas|d[ií]as|semanas|capas|piezas)(?!\p{L})/iu;
 /** "heated floor for the hendersons" → the job's customer, at the end. */
 const LINE_FOR_WHO_RE =
   /\s+(?:for|para)\s+(?:(?:the|los|las|la|el)\s+)?(?<who>[\p{L}][\p{L}'’.-]*(?:\s+[\p{L}][\p{L}'’.-]*){0,2})$/u;
@@ -194,9 +209,16 @@ function wholeFracCents(whole: string, frac?: string): number {
 export function parseLineCorrection(
   text: string,
 ): LineCorrection | undefined {
-  const m = (text ?? "").match(LINE_CORRECTION_RE);
+  const s = text ?? "";
+  const m = s.match(LINE_CORRECTION_RE) ??
+    s.match(LINE_CORRECTION_OLD_FIRST_RE); // REQ-755
   const g = m?.groups;
-  if (!g?.line || !g.whole || !g.oldWhole) return undefined;
+  if (!m || !g?.line || !g.whole || !g.oldWhole) return undefined;
+  // REQ-755: "the paint is 2 not 3 coats" counts coats, not dollars.
+  if (
+    unitFollows(s, m, "whole", "frac") ||
+    unitFollows(s, m, "oldWhole", "oldFrac")
+  ) return undefined;
   let line = g.line.trim();
   let customerName: string | undefined;
   const who = line.match(LINE_FOR_WHO_RE);
@@ -215,6 +237,36 @@ export function parseLineCorrection(
     amountCents: wholeFracCents(g.whole, g.frac),
     previousCents: wholeFracCents(g.oldWhole, g.oldFrac),
   };
+}
+
+/** REQ-755: does a unit word ("coats", "sqft") follow the amount whose
+ *  last group is `group`? The regexes carry the `d` flag for these indices. */
+function unitFollows(
+  s: string,
+  m: RegExpMatchArray,
+  ...groups: string[]
+): boolean {
+  const spans = groups.map((g) => m.indices?.groups?.[g]).filter((x) => !!x);
+  const end = spans.at(-1)?.[1];
+  return end !== undefined && UNIT_AFTER_RE.test(s.slice(end));
+}
+
+/**
+ * REQ-755 (demo-loop cycle 5v1, M15): the model answered "door trim for the
+ * gomezes is not 200, it's 275" with change_order "Door trim" +$75 (beside,
+ * or instead of, the reprice). When the user's words correct a line's price
+ * and the change order is about that line, it is that correction — the
+ * line's RIGHT price — never an added line. Undefined otherwise.
+ */
+export function correctionForChange(
+  change: { description: string },
+  userText: string,
+): LineCorrection | undefined {
+  const c = parseLineCorrection(userText);
+  if (!c || !change.description?.trim()) return undefined;
+  const same = findLine([{ description: change.description }], c.item) >= 0 ||
+    findLine([{ description: c.item }], change.description) >= 0;
+  return same ? c : undefined;
 }
 
 /**
