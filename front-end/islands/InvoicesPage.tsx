@@ -72,6 +72,7 @@ import {
   draftingKpiSub,
   invoiceKpiTotals,
   invoicesHeroEyebrowKey,
+  invoicesHeroGood,
   invoicesHeroMode,
   paidKpiInvoiceCents,
   reloadInvoiceData,
@@ -1105,7 +1106,12 @@ function InvoicesHero(
           {/* REQ-697 (m13): only a week-scoped headline names a week */}
           {tFor(lang, invoicesHeroEyebrowKey(mode))}
         </div>
-        <h1 class="qph__title" data-cy="forecast-hero">
+        <h1
+          class={invoicesHeroGood(mode)
+            ? "qph__title qph__title--good"
+            : "qph__title"}
+          data-cy="forecast-hero"
+        >
           {trulyEmpty
             ? (
               <>

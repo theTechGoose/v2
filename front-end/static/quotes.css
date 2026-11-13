@@ -46,6 +46,11 @@
   color: var(--brand-pink);
   font-style: normal;
 }
+/* REQ-729 (demo-loop cycle 5, m16): good-news headlines ("All clear —
+   nothing outstanding") keep their emphasis out of the alarm colour. */
+.qph__title--good em {
+  color: var(--brand-green);
+}
 .qph__sub {
   font-family: var(--font-body);
   font-size: 14.5px;

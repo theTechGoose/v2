@@ -23,6 +23,10 @@ import {
   fmtVisitDate,
   type VisitGroup,
 } from "../../../shared/quote-flow/visit-groups.ts";
+import {
+  type InvoicePillTone,
+  invoiceStatusPill,
+} from "../../lib/invoice-status-pill.ts";
 import PublicInvoiceClaim from "../../islands/PublicInvoiceClaim.tsx";
 import PublicInvoiceRefresh from "../../islands/PublicInvoiceRefresh.tsx";
 import OwnerClaimReview from "../../islands/OwnerClaimReview.tsx";
@@ -135,6 +139,8 @@ interface InvoicePublic {
   status?: string;
   amount?: number;
   dueDate?: string;
+  /** REQ-729: a scheduled installment's send date (owner preview pill). */
+  scheduledFor?: string;
   issuedDate?: string;
   paidAt?: string;
   installmentIndex?: number;
@@ -463,6 +469,9 @@ function InvoiceDoc(
               paid={paid}
               claimed={claimed}
               pastDue={pastDue}
+              status={invoice.status}
+              internal={invoice.internal === true}
+              scheduledFor={invoice.scheduledFor}
               es={es}
             />
           </div>
@@ -1193,49 +1202,35 @@ function InvoiceDoc(
   );
 }
 
+/** REQ-729 (cycle 5, m16): the tone of each pill — a draft or scheduled bill
+ *  in the business's preview is neutral, never the pink "Due". */
+const PILL_COLORS: Record<InvoicePillTone, { bg: string; color: string }> = {
+  good: { bg: "rgba(81,152,67,0.15)", color: GREEN },
+  pending: { bg: "rgba(255,170,40,0.15)", color: "#a06800" },
+  neutral: { bg: "rgba(107,122,126,0.14)", color: MUTED },
+  teal: { bg: "rgba(20,72,82,0.10)", color: TEAL },
+  alert: { bg: "rgba(168,59,59,0.10)", color: "#a83b3b" },
+  due: { bg: "rgba(255,107,107,0.10)", color: PINK_DARK },
+};
+
 function StatusPill(
-  { paid, claimed, pastDue, es }: {
+  { paid, claimed, pastDue, status, internal, scheduledFor, es }: {
     paid: boolean;
     claimed: boolean;
     pastDue: boolean;
+    status?: string;
+    internal: boolean;
+    scheduledFor?: string;
     es: boolean;
   },
 ) {
   const lang = es ? "es" : "en";
-  if (paid) {
-    return (
-      <Pill
-        bg={`rgba(81,152,67,0.15)`}
-        color={GREEN}
-        label={tFor(lang, "status.paid")}
-      />
-    );
-  }
-  if (claimed) {
-    return (
-      <Pill
-        bg={`rgba(255,170,40,0.15)`}
-        color="#a06800"
-        label={tFor(lang, "publicInvoice.status.awaitingConfirmation")}
-      />
-    );
-  }
-  if (pastDue) {
-    return (
-      <Pill
-        bg={`rgba(168,59,59,0.10)`}
-        color="#a83b3b"
-        label={tFor(lang, "publicInvoice.status.pastDue")}
-      />
-    );
-  }
-  return (
-    <Pill
-      bg={`rgba(255,107,107,0.10)`}
-      color={PINK_DARK}
-      label={tFor(lang, "publicInvoice.status.due")}
-    />
+  const pill = invoiceStatusPill(
+    { paid, claimed, pastDue, status, internal, scheduledFor },
+    lang,
   );
+  const { bg, color } = PILL_COLORS[pill.tone];
+  return <Pill bg={bg} color={color} label={tFor(lang, pill.key, pill.vars)} />;
 }
 
 function Pill(
