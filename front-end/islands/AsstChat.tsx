@@ -94,7 +94,11 @@ import {
 import { quoteUpdatedBy } from "../lib/chat-quote-refresh.ts";
 import { mergeTurnMessages } from "../lib/turn-messages.ts"; // REQ-585
 import { attachBottomPin } from "../lib/chat-bottom-pin.ts";
-import { chatChangeOrderLink, chatQuoteLink } from "../lib/chat-quote-link.ts";
+import {
+  chatChangeOrderLink,
+  chatQuoteLink,
+  liveChangeOrderSendId,
+} from "../lib/chat-quote-link.ts";
 import {
   liveDraftOffer,
   offerAmount,
@@ -7016,6 +7020,9 @@ export default function AsstChat({
               // the reply's invoice flow, on the newest message, while no
               // job is bound (it opened on arrival; this reopens it).
               const invoiceFlowOffer = liveInvoiceFlowOffer(visible, quoteId);
+              // REQ-652 (cycle 5, M8): a chat change order is made unsent;
+              // the newest reply offers Send (its words send it).
+              const coSendId = liveChangeOrderSendId(visible);
               // REQ-452 (demo cycle 3, p8-pair7-b): a sent / "Couldn't send"
               // CTA is drawn at its send divider, not where the wizard left
               // it — below anything typed on the review step before the send.
@@ -10068,14 +10075,37 @@ export default function AsstChat({
                         const number = co.number ?? "CO";
                         const pill =
                           "display:inline-flex;align-items:center;gap:6px;margin-top:6px;margin-right:6px;padding:7px 12px;border-radius:999px;font-size:12.5px;font-weight:800;text-decoration:none;cursor:pointer";
+                        const solid =
+                          `${pill};border:0;background:#144852;color:#fff`;
+                        const outlined =
+                          `${pill};border:1px solid #144852;background:#fff;color:#144852`;
+                        // REQ-652 (M8): unsent → Send is the one primary;
+                        // Preview and Copy link are outlined secondaries.
+                        const offerSend = coSendId === m.id;
+                        const sendLabel = tFor(
+                          lang,
+                          "asstChat.changeOrderLink.send",
+                          { number },
+                        );
                         return (
                           <div data-cy="msg-co-link">
+                            {offerSend && (
+                              <button
+                                type="button"
+                                data-cy="msg-co-send"
+                                disabled={sending}
+                                onClick={() => void sendText(sendLabel)}
+                                style={solid}
+                              >
+                                {sendLabel}
+                              </button>
+                            )}
                             <a
                               data-cy="msg-co-open"
                               href={co.path}
                               target="_blank"
                               rel="noopener"
-                              style={`${pill};border:0;background:#144852;color:#fff`}
+                              style={offerSend ? outlined : solid}
                             >
                               {tFor(lang, "asstChat.changeOrderLink.open", {
                                 number,
@@ -10084,7 +10114,7 @@ export default function AsstChat({
                             <button
                               type="button"
                               data-cy="msg-co-copy"
-                              style={`${pill};border:1px solid #144852;background:#fff;color:#144852`}
+                              style={outlined}
                               onClick={async () => {
                                 try {
                                   await navigator.clipboard.writeText(

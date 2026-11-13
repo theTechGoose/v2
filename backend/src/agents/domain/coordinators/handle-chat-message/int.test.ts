@@ -839,15 +839,13 @@ Deno.test("REQ-238 M27: Maria's signed quote with an invoice gets a pending chan
   assertEquals(cos[0].originalAmountCents, 35_000);
   // the invoice only moves when Maria approves at /co/:id
   assertEquals((await f.invoices.getOwned(inv.id, "u-1")).amount, 35_000);
-  assertEquals(
-    f.alerted,
-    [cos[0].id],
-    "the contractor is sent the approval link",
-  );
+  // REQ-652 (cycle 5, M8): "change order for Maria" makes it — nothing is
+  // emailed or texted to Maria until the contractor says send.
+  assertEquals(f.alerted, [], "a plain 'make' never sends it");
   const reply = result.newMessages[result.newMessages.length - 1];
-  assert(reply.content.includes("approv"), reply.content);
+  assert(reply.content.includes("not been sent"), reply.content);
   assertEquals(
-    (reply.payload as { changeOrder?: Record<string, string> })?.changeOrder,
+    (reply.payload as { changeOrder?: Record<string, unknown> })?.changeOrder,
     {
       kind: "change_order",
       quoteId: quote.id,
@@ -858,6 +856,7 @@ Deno.test("REQ-238 M27: Maria's signed quote with an invoice gets a pending chan
       // REQ-456 (M25): and the change order's own number and approval link
       changeOrderNumber: cos[0].number ?? "",
       approvalPath: `/co/${cos[0].id}`,
+      sent: false,
     },
   );
   await resetKv();
@@ -909,6 +908,8 @@ Deno.test("REQ-456 M25: a chat change order waits for the alert and says what re
     emailedTo: "maria@example.com",
     smsFailureReason: "invalid number",
   });
+  assertEquals(outcome?.sent, true);
+  assertEquals(f.alerted, [cos[0].id], "'Send it to her' sends it");
   await resetKv();
 });
 
@@ -933,7 +934,8 @@ Deno.test("REQ-456 M25: when the alert throws, the reply says the change order w
   const result = await f.flow.run({
     userId: "u-1",
     conversationId: conv.id,
-    content: DEMO,
+    // REQ-652: only an explicit send runs the alert
+    content: `${DEMO}. Send it to her.`,
   });
   const reply = result.newMessages[result.newMessages.length - 1];
   assert(reply.content.includes("not sent"), reply.content);
@@ -941,6 +943,96 @@ Deno.test("REQ-456 M25: when the alert throws, the reply says the change order w
   assert(reply.content.includes("approval link"), reply.content);
   await resetKv();
 });
+
+Deno.test("REQ-652 M8 (cycle 5): 'Make a change order …' makes it and sends nothing — the reply says it has not been sent and the outcome is unsent", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const f = fresh();
+  const { maria, quote } = await seedMaria(f, "accepted");
+  const inv = await f.invoices.create("u-1", {
+    quoteId: quote.id,
+    customerId: maria.id,
+    amount: 35_000,
+    status: "sent",
+  } as never);
+  f.llm.setScript([NEW_QUOTE_MISTAKE]);
+  const conv = await f.conversations.create({ userId: "u-1" });
+  const result = await f.flow.run({
+    userId: "u-1",
+    conversationId: conv.id,
+    content: "Make a change order for Maria: add fridge cleaning $40",
+  });
+  const cos = await f.changeOrders.listByInvoice("u-1", inv.id);
+  assertEquals(cos.length, 1);
+  assertEquals(cos[0].status, "pending");
+  assertEquals(f.alerted, [], "Maria is not emailed or texted");
+  const reply = result.newMessages[result.newMessages.length - 1];
+  assert(!/\bSent\b/.test(reply.content), reply.content);
+  assert(reply.content.includes(cos[0].number ?? "CO-"), reply.content);
+  assert(reply.content.includes("not been sent"), reply.content);
+  const outcome = (reply.payload as { changeOrder?: Record<string, unknown> })
+    ?.changeOrder;
+  assertEquals(outcome?.kind, "change_order");
+  assertEquals(outcome?.sent, false);
+  assertEquals(outcome?.delivery, undefined);
+  await resetKv();
+});
+
+for (
+  const [label, followUp] of [
+    ["the Send button's words 'Send CO-001'", "Send CO-001"],
+    ["a typed 'ok send it to her'", "ok send it to her"],
+  ] as const
+) {
+  Deno.test(`REQ-652 M8 (cycle 5): after an unsent chat change order, ${label} sends it and says what reached the customer`, async () => {
+    Deno.env.set("KV_PATH", ":memory:");
+    await resetKv();
+    const f = fresh();
+    const { maria, quote } = await seedMaria(f, "accepted");
+    const inv = await f.invoices.create("u-1", {
+      quoteId: quote.id,
+      customerId: maria.id,
+      amount: 35_000,
+      status: "sent",
+    } as never);
+    f.llm.setScript([NEW_QUOTE_MISTAKE]);
+    const conv = await f.conversations.create({ userId: "u-1" });
+    await f.flow.run({ userId: "u-1", conversationId: conv.id, content: DEMO });
+    const [co] = await f.changeOrders.listByInvoice("u-1", inv.id);
+    assertEquals(f.alerted, []);
+    f.alertResult.value = {
+      ok: true,
+      customer: {
+        number: co.number,
+        approvalPath: `/co/${co.id}?lang=en`,
+        emailedTo: "maria@example.com",
+      },
+    };
+    const result = await f.flow.run({
+      userId: "u-1",
+      conversationId: conv.id,
+      content: followUp.replace("CO-001", co.number ?? "CO-001"),
+    });
+    assertEquals(f.alerted, [co.id], "the change order is sent");
+    assertEquals(
+      (await f.changeOrders.listByInvoice("u-1", inv.id)).length,
+      1,
+      "no second change order",
+    );
+    const reply = result.newMessages[result.newMessages.length - 1];
+    assert(
+      reply.content.includes(
+        `Sent ${co.number} to Maria Lopez by email (maria@example.com).`,
+      ),
+      reply.content,
+    );
+    const outcome = (reply.payload as { changeOrder?: Record<string, unknown> })
+      ?.changeOrder;
+    assertEquals(outcome?.sent, true);
+    assertEquals(outcome?.changeOrderId, co.id);
+    await resetKv();
+  });
+}
 
 Deno.test("REQ-238 M27: when the model fires create_quote on a change-order request the parser can't complete, it is turned into the change order", async () => {
   Deno.env.set("KV_PATH", ":memory:");
