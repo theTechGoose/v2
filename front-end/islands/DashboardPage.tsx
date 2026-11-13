@@ -20,16 +20,14 @@ import {
   type ActivityEntry,
   type JobRow,
   Kpis,
-  Outstanding,
-  type OutstandingRow,
   type QuoteRow,
   QuotesAwaiting,
 } from "../components/DashSections.tsx";
 import { I, ICN, type IconName } from "../lib/dash-icons.tsx";
+import { MoneyBar } from "../components/MoneyBar.tsx"; // REQ-798
+import { buildMoneyBar } from "../../shared/receivables/money-bar.ts";
 import { fmtMoney } from "../lib/format.ts";
 import { dueDateLine } from "../../shared/quote-flow/pipeline-stats.ts";
-import { docNumberOf } from "../../shared/documents/numbering.ts";
-import { versionOf } from "../../shared/documents/versions.ts";
 import { readCached, refreshDash } from "../lib/dash-cache.ts";
 import { holdHashTarget } from "../lib/dash-anchor.ts";
 import { pickKpis } from "../lib/dashboard-kpis.ts";
@@ -176,60 +174,6 @@ function quoteToRow(q: QuoteCard, now: Date, lang: Lang): QuoteRow {
   };
 }
 
-function invoiceToRow(
-  inv: Invoice,
-  customerNames: Map<string, string>,
-  now: Date,
-  _idx: number,
-  lang: Lang,
-): OutstandingRow {
-  const due = new Date(inv.dueDate + "T00:00:00");
-  const today = new Date(now);
-  today.setHours(0, 0, 0, 0);
-  const days = Math.round((due.getTime() - today.getTime()) / 86_400_000);
-  // REQ-198/201: the invoice's own number ("INV-001"; "#ID" for rows older
-  // than numbering) and its version when it has been revised.
-  const num = versionOf(inv) > 1
-    ? `${docNumberOf(inv)} · ${tFor(lang, "invoices.versionWord")} ${
-      versionOf(inv)
-    }`
-    : docNumberOf(inv);
-  let meta: string;
-  let metaColor: string;
-  let metaWeight = 600;
-  if (days < 0) {
-    const overdueDays = -days;
-    meta = tFor(
-      lang,
-      `invoices.dash.overdue.${overdueDays === 1 ? "one" : "other"}`,
-      { n: overdueDays, num },
-    );
-    metaColor = "var(--pink-700)";
-    metaWeight = 700;
-  } else if (days <= 5) {
-    meta = tFor(
-      lang,
-      `invoices.dash.dueIn.${days === 1 ? "one" : "other"}`,
-      { n: days, num },
-    );
-    metaColor = "var(--coffee-500)";
-  } else {
-    meta = tFor(lang, "invoices.dash.dueOn", {
-      date: `${shortMonth(lang, due.getMonth())} ${due.getDate()}`,
-      num,
-    });
-    metaColor = "var(--green-600)";
-  }
-  const name = (inv.customerId && customerNames.get(inv.customerId)) || "—";
-  return {
-    client: name,
-    meta,
-    metaColor,
-    metaWeight,
-    amount: fmtMoney(inv.amount ?? 0),
-  };
-}
-
 const NOTIF_ICON: Record<
   Notification["type"],
   { icon: IconName; bg: string; fg: string }
@@ -320,10 +264,10 @@ interface State {
   stats: DashboardStats | undefined;
   jobs: Job[];
   quoteCards: QuoteCard[];
-  /** REQ-473: the open receivables (`?status=open`), not legacy "pending". */
-  openInvoices: Invoice[];
-  /** REQ-473: scheduled installments — the "Upcoming" line. */
-  scheduledInvoices: Invoice[];
+  /** REQ-798: every invoice — the money bar splits them itself (overdue /
+   *  open by the REQ-397 rule, paid in the last 30 days, billed against a
+   *  job); the scheduled ones feed REQ-473's "Upcoming" line. */
+  invoices: Invoice[];
   customers: Customer[];
   /** REQ-566 (m11): the lists have landed. A warm start paints the cached
    *  stats before them — no list panel claims "none" until this is true. */
@@ -336,8 +280,7 @@ const INITIAL: State = {
   stats: undefined,
   jobs: [],
   quoteCards: [],
-  openInvoices: [],
-  scheduledInvoices: [],
+  invoices: [],
   customers: [],
   listsLoaded: false,
 };
@@ -348,6 +291,12 @@ function DashboardSkeleton() {
   return (
     <>
       <ShimmerStyle />
+      <div class="moneybar">
+        <SkelBlock h={36} w="30%" />
+        <SkelBlock h={44} mt={6} />
+        <SkelBlock h={14} mt={4} />
+        <SkelBlock h={36} mt={10} />
+      </div>
       <section class="kpis">
         {[0, 1, 2, 3].map((i) => (
           <div class="kpi" key={i}>
@@ -371,18 +320,10 @@ function DashboardSkeleton() {
           <SkelBlock h={48} mt={12} />
         </div>
       </div>
-      <div class="grid">
-        <div class="panel">
-          <SkelBlock h={20} w="40%" />
-          <SkelBlock h={40} mt={18} />
-          <SkelBlock h={40} mt={12} />
-        </div>
-        <div class="money">
-          <SkelBlock h={28} w="50%" />
-          <SkelBlock h={10} mt={14} />
-          <SkelBlock h={36} mt={18} />
-          <SkelBlock h={36} mt={12} />
-        </div>
+      <div class="panel">
+        <SkelBlock h={20} w="40%" />
+        <SkelBlock h={40} mt={18} />
+        <SkelBlock h={40} mt={12} />
       </div>
     </>
   );
@@ -428,13 +369,13 @@ export default function DashboardPage(_props: { lang?: Lang } = {}) {
         undefined as DashboardStats | undefined
       ),
       dashboardClient.jobs().catch(() => [] as Job[]),
-      quotesClient.list("sent").catch(() => [] as QuoteCard[]),
-      // REQ-473 (demo-loop cycle 3, M8): the money owed right now (the
-      // shared open-receivable rule) — "pending" is a legacy status accept
-      // never writes, so the list was always empty — plus the scheduled
-      // installments still to bill.
-      dashboardClient.invoices("open").catch(() => [] as Invoice[]),
-      dashboardClient.invoices("scheduled").catch(() => [] as Invoice[]),
+      // REQ-798: every quote (the won ones size "unbilled") and every
+      // invoice (overdue / open by the REQ-397 rule, recently paid, billed
+      // against a job, REQ-473's scheduled installments) — the panels and
+      // the money bar filter below. The server's ?status= filters were exact
+      // status matches, so filtering here is the same list.
+      quotesClient.list().catch(() => [] as QuoteCard[]),
+      dashboardClient.invoices().catch(() => [] as Invoice[]),
       dashboardClient.customers().catch(() => [] as Customer[]),
     ]).then(
       (
@@ -442,8 +383,7 @@ export default function DashboardPage(_props: { lang?: Lang } = {}) {
           stats,
           jobs,
           quoteCards,
-          openInvoices,
-          scheduledInvoices,
+          invoices,
           customers,
         ],
       ) => {
@@ -454,8 +394,7 @@ export default function DashboardPage(_props: { lang?: Lang } = {}) {
           stats,
           jobs,
           quoteCards,
-          openInvoices,
-          scheduledInvoices,
+          invoices,
           customers,
           listsLoaded: true,
         });
@@ -557,14 +496,7 @@ export default function DashboardPage(_props: { lang?: Lang } = {}) {
     );
   }
 
-  const {
-    stats,
-    jobs,
-    quoteCards,
-    openInvoices,
-    scheduledInvoices,
-    customers,
-  } = s;
+  const { stats, jobs, quoteCards, invoices, customers } = s;
   const now = new Date();
 
   // REQ-728 (cycle 5, m15): a warm start paints the cached stats before the
@@ -581,7 +513,7 @@ export default function DashboardPage(_props: { lang?: Lang } = {}) {
 
   const seenQuoteIds = new Set<string>();
   const safeQuoteCards = Array.isArray(quoteCards) ? quoteCards : [];
-  const safeOpenInvoices = Array.isArray(openInvoices) ? openInvoices : [];
+  const safeInvoices = Array.isArray(invoices) ? invoices : [];
   const quoteRows: QuoteRow[] = safeQuoteCards
     .slice()
     .sort((a, b) => (b.sentAt ?? "").localeCompare(a.sentAt ?? ""))
@@ -589,6 +521,8 @@ export default function DashboardPage(_props: { lang?: Lang } = {}) {
       // P-15: the onboarding sample is not a quote awaiting response — it
       // never renders (or sums) in this panel.
       if (q.isSample === true) return false;
+      // REQ-798: the list is every quote now; this panel is the sent ones
+      if (q.status !== "sent") return false;
       if (!q.id || seenQuoteIds.has(q.id)) return false;
       seenQuoteIds.add(q.id);
       return true;
@@ -596,16 +530,17 @@ export default function DashboardPage(_props: { lang?: Lang } = {}) {
     .slice(0, 4)
     .map((q) => quoteToRow(q, now, lang));
 
-  const outstandingRows: OutstandingRow[] = safeOpenInvoices
-    .slice()
-    .sort((a, b) => (a.dueDate ?? "").localeCompare(b.dueDate ?? ""))
-    .slice(0, 5)
-    .map((inv, i) => invoiceToRow(inv, customerNames, now, i, lang));
+  // REQ-798: the money bar — five buckets from every quote, job and invoice
+  const moneyBar = buildMoneyBar({
+    quotes: safeQuoteCards,
+    jobs: safeJobs,
+    invoices: safeInvoices,
+    customerNames,
+    now,
+  });
 
   // REQ-473: a scheduled installment is money coming, not "No invoices yet".
-  const upcomingBill = nextUpcomingBill(
-    Array.isArray(scheduledInvoices) ? scheduledInvoices : [],
-  );
+  const upcomingBill = nextUpcomingBill(safeInvoices);
   const upcomingLine = upcomingBill
     ? tFor(lang, "outstanding.upcoming", {
       amt: Math.round(upcomingBill.amountCents / 100).toLocaleString("en-US"),
@@ -646,6 +581,14 @@ export default function DashboardPage(_props: { lang?: Lang } = {}) {
       {assistantCta}
       {(listsPending || !notifLoaded) && <ShimmerStyle />}
       <SetupChecklist />
+      <MoneyBar
+        data={moneyBar}
+        lang={lang}
+        now={now}
+        upcoming={upcomingLine}
+        emptyKey={outstandingEmpty}
+        pending={listsPending}
+      />
       <Kpis
         activeJobs={kpis.activeJobs}
         outstanding={kpis.outstanding}
@@ -675,20 +618,7 @@ export default function DashboardPage(_props: { lang?: Lang } = {}) {
           pending={!s.listsLoaded}
         />
       </div>
-      <div class="grid">
-        <Activity items={activityRows} lang={lang} pending={!notifLoaded} />
-        <Outstanding
-          owed={kpis.owed}
-          current={kpis.current}
-          mid={kpis.mid}
-          overdue={kpis.overdue}
-          items={outstandingRows}
-          upcoming={upcomingLine}
-          emptyKey={outstandingEmpty}
-          lang={lang}
-          pending={listsPending}
-        />
-      </div>
+      <Activity items={activityRows} lang={lang} pending={!notifLoaded} />
     </>
   );
 }

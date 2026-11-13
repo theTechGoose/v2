@@ -11,7 +11,6 @@
 import type {
   ActivityEntry,
   JobRow,
-  OutstandingRow,
   QuoteRow,
 } from "../components/DashSections.tsx";
 import { type Lang, tFor } from "./i18n.ts";
@@ -103,30 +102,6 @@ export const SEED_QUOTES = (lang: Lang = "en"): QuoteRow[] => [
     sent: tFor(lang, "dashSeed.quotes.sent4DaysAgo"),
     hot: false,
     cold: true,
-  },
-];
-
-export const SEED_OUTSTANDING = (lang: Lang = "en"): OutstandingRow[] => [
-  {
-    client: tFor(lang, "dashSeed.client.hilltopDiner"),
-    meta: tFor(lang, "dashSeed.outstanding.daysOverdue", { inv: "#INV-204" }),
-    metaColor: "var(--pink-700)",
-    metaWeight: 700,
-    amount: "$1,160",
-  },
-  {
-    client: tFor(lang, "dashSeed.client.sarahChen"),
-    meta: tFor(lang, "dashSeed.outstanding.dueIn3Days", { inv: "#INV-208" }),
-    metaColor: "var(--coffee-500)",
-    metaWeight: 600,
-    amount: "$1,920",
-  },
-  {
-    client: tFor(lang, "dashSeed.client.mapleGroveApts"),
-    meta: tFor(lang, "dashSeed.outstanding.dueApr30", { inv: "#INV-210" }),
-    metaColor: "var(--green-600)",
-    metaWeight: 600,
-    amount: "$3,340",
   },
 ];
 
