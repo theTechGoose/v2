@@ -2107,6 +2107,9 @@ export class HandleChatMessage {
         conversation: conv,
         lang: replyLang,
         jobDone: !!jobDoneAsk,
+        ...(jobDoneAsk?.amountCents
+          ? { amountCents: jobDoneAsk.amountCents }
+          : {}),
       });
     // ---- REQ-701 (demo-loop cycle 5, M21): "…y Linda preguntó… ¿dónde le
     // contesto?" — a question about a client's question is answered from the
@@ -2300,16 +2303,21 @@ export class HandleChatMessage {
     ) {
       const jobId = await this.namedCustomersJob(input.userId, input.content);
       if (jobId) {
-        const bound = await this.conversations.update(conv.id, jobId);
+        // REQ-768: AnswerBilling binds the job with its answer — except the
+        // invoice flow's (a finished job on a never-signed quote).
         const billed = await new AnswerBilling(
           this.conversations,
           this.messages,
         )
           .run({
             userId: input.userId,
-            conversation: bound,
+            conversation: conv,
             lang: replyLang,
             jobDone: !!jobDoneAsk,
+            job: jobId,
+            ...(jobDoneAsk?.amountCents
+              ? { amountCents: jobDoneAsk.amountCents }
+              : {}),
           });
         if (billed) return await finishEarly(billed);
       }

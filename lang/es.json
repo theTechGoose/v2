@@ -715,6 +715,8 @@
   "chatCoordinator.billing.next": "La siguiente, {number} por {amount}, está programada — te recordamos enviarla el {date}.",
   "chatCoordinator.billing.noInvoiceYet": "{name} firmó — todavía no se ha enviado ninguna factura. Toca abajo para enviarla.",
   "chatCoordinator.billing.notSigned": "{name} aún no ha firmado — la primera factura se envía automáticamente en cuanto firme.",
+  "chatCoordinator.billing.jobDoneUnsigned": "Trabajo terminado — vamos a cobrarlo. La cotización no se firmó, así que empecé la factura para {name}, {amount}: revisa los detalles y envíala.",
+  "chatCoordinator.billing.jobDoneUnsignedNoAmount": "Trabajo terminado — vamos a cobrarlo. La cotización no se firmó, así que empecé la factura para {name}: pon el monto, revisa los detalles y envíala.",
   "chatCoordinator.billing.notSent": "Esta cotización aún no se ha enviado. Envíala primero — la primera factura sale automáticamente cuando el cliente firme.",
   "chatCoordinator.billing.declined": "Esta cotización fue rechazada, así que no hay nada que facturar.",
   "chatCoordinator.billing.cardTitle": "Factura {number} · vence el {due}",

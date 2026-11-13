@@ -181,3 +181,72 @@ Deno.test("REQ-752 M9: 'Trabajo terminado con Juan Pérez, hazle la factura de $
       `the reply names Juan Pérez, not 'elige el cliente' (got: ${reply?.content})`,
     );
   }));
+
+/** REQ-768 (demo-loop cycle 5v3, M9 re-test): the verifier typed "Ya
+ *  terminé el trabajo de Mike Johnson, mándale la factura" for a customer
+ *  whose quote was never sent and got "Esta cotización aún no se ha enviado.
+ *  Envíala primero…" — no invoice flow. Now the flow opens at the quote's
+ *  $1,250, for Mike Johnson. */
+const SAID_MIKE = "Ya terminé el trabajo de Mike Johnson, mándale la factura";
+
+Deno.test("REQ-768 M9: 'Ya terminé el trabajo de Mike Johnson, mándale la factura' (his quote never sent) opens the invoice flow at $1,250, never 'Envíala primero'", (t) =>
+  story(t, async ({ page, expect, http, baseUrl }) => {
+    const auth = await signIn(http, page, baseUrl);
+    const mike = await (await http("/api/customers", {
+      method: "POST",
+      headers: auth,
+      body: JSON.stringify({
+        name: "Mike Johnson",
+        email: "mike@blackhole.postmarkapp.com",
+      }),
+    })).json() as { id: string };
+    const made = await http("/api/quotes", {
+      method: "POST",
+      headers: auth,
+      body: JSON.stringify({
+        customerId: mike.id,
+        summary: "Reparación de deck",
+        jobName: "Reparación de deck",
+        lineItems: [{
+          description: "Reparación de deck",
+          quantity: 1,
+          unit: "ea",
+          price: 125_000,
+        }],
+        estimatedTotal: 125_000,
+        status: "draft",
+      }),
+    });
+    await made.body?.cancel();
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await page.goto("/assistant");
+    await say(page, SAID_MIKE);
+
+    const money = page.locator(".chat__price-capture input.mi__input");
+    await money.waitFor({ state: "visible", timeout: 30_000 });
+    await money.hover();
+    expect.eq(
+      (await money.inputValue()).trim().replace(/,/g, ""),
+      "1250",
+      "the invoice flow's pad opens at the quote's $1,250",
+    );
+    const convoId = new URL(page.url()).pathname.split("/").pop() ?? "";
+    const detail = await (await http(`/api/agents/conversations/${convoId}`, {
+      headers: auth,
+    })).json() as {
+      messages?: { role: string; content: string; payload?: unknown }[];
+    };
+    const said = (detail.messages ?? []).filter((m) => m.role === "assistant")
+      .map((m) => m.content).join(" ");
+    expect(
+      !/Env[ií]ala primero/i.test(said),
+      `no "Envíala primero" (got: ${said})`,
+    );
+    const offer = (detail.messages ?? []).map((m) =>
+      (m.payload as
+        | { invoiceFlow?: { customerName?: string; amountCents?: number } }
+        | undefined)?.invoiceFlow
+    ).find((o) => !!o);
+    expect.eq(offer?.customerName, "Mike Johnson", "who to bill");
+    expect.eq(offer?.amountCents, 125_000, "the quote's amount");
+  }));

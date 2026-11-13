@@ -745,13 +745,25 @@ Deno.test("REQ-583 M2: pair 6 — 'Make the invoice for $450' in a new chat is n
     const said = textOf(res.newMessages);
     assert(!/couldn't find a line/i.test(said), said);
     assertStringIncludes(said, "Carmen Ruiz");
-    assertStringIncludes(said, "hasn't signed");
+    // REQ-768 AMENDMENT (demo-loop cycle 5v3, M9): the job is done, so a
+    // never-signed quote is billed directly — the invoice flow, prefilled —
+    // not "hasn't signed yet"; the thread stays unbound for the flow.
+    assert(!/hasn.t signed/i.test(said), said);
+    assertEquals(
+      (res.newMessages.find((m) => m.role === "assistant" && m.kind === "text")
+        ?.payload as Record<string, unknown> | undefined)?.invoiceFlow,
+      {
+        details: "Reparación de grifo",
+        amountCents: 45_000,
+        customerName: "Carmen Ruiz",
+      },
+    );
     const after = await fx.quotes.getOwned(quote.id, U);
     assertEquals(after.estimatedTotal, 45_000);
     assertEquals(after.lineItems.length, 2);
     assertEquals(after.pendingRevision, undefined);
     assertEquals((await fx.changeOrders.listByQuote(U, quote.id)).length, 0);
-    assertEquals(res.conversation.quoteId, quote.id);
+    assertEquals(res.conversation.quoteId, undefined);
   });
 });
 
@@ -1025,5 +1037,154 @@ Deno.test("REQ-752 M9: 'Trabajo terminado con Juan Pérez, hazle la factura de $
     assertStringIncludes(text, "Juan Pérez");
     assertStringIncludes(text, "$800");
     assert(!/elige el cliente/i.test(text), text);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// REQ-768 (demo-loop cycle 5v3, M9 re-test) — the verifier's two sentences
+// on merged demo-fixes: a customer whose quote is unsent / sent-unsigned.
+// ---------------------------------------------------------------------------
+
+/** A customer with a quote that was never signed — `sent` stamps it out. */
+async function unsignedJob(
+  fx: Fx,
+  opts: {
+    customer: { name: string; email?: string };
+    job: string;
+    totalCents: number;
+    sent: boolean;
+  },
+) {
+  const customer = await fx.customers.create(U, opts.customer);
+  const quote = await fx.quotes.create(U, {
+    customerId: customer.id,
+    summary: opts.job,
+    jobName: opts.job,
+    lineItems: [{
+      description: opts.job,
+      quantity: 1,
+      unit: "ea",
+      price: opts.totalCents,
+    }],
+    estimatedTotal: opts.totalCents,
+    status: "draft",
+  });
+  if (opts.sent) {
+    await fx.quotes.update(quote.id, U, {
+      status: "sent",
+      lockedAt: "2026-11-12T15:00:00Z",
+      sentAt: "2026-11-12T15:02:00Z",
+    });
+  }
+  return { customer, quote };
+}
+
+const flowOf = (msgs: AgentMessage[]) =>
+  (msgs.find((m) => m.role === "assistant" && m.kind === "text")
+    ?.payload as Record<string, unknown> | undefined)?.invoiceFlow as
+      | Record<string, unknown>
+      | undefined;
+
+Deno.test("REQ-768 M9: 'Ya terminé el trabajo de Mike Johnson, mándale la factura' (Mike's quote never sent) opens the invoice flow with Mike and the quote's amount — never 'Envíala primero'", async () => {
+  await withKv(async () => {
+    const fx = fresh();
+    await seedOnboarded("es");
+    await unsignedJob(fx, {
+      customer: { name: "Mike Johnson", email: "mike@example.com" },
+      job: "Reparación de deck",
+      totalCents: 125_000,
+      sent: false,
+    });
+    const conv = await fx.conversations.create({ userId: U });
+    const chat = scriptLlm(fx, () => ({ text: "¿Para quién es la factura?" }));
+
+    const res = await fx.flow.run({
+      userId: U,
+      conversationId: conv.id,
+      content: "Ya terminé el trabajo de Mike Johnson, mándale la factura",
+    });
+
+    const text = textOf(res.newMessages);
+    assertEquals(chat.length, 0, `the chat model answered: ${text}`);
+    assert(!/Env[ií]ala primero/i.test(text), text);
+    assert(!/no se ha enviado/i.test(text), text);
+    assertStringIncludes(text, "Mike Johnson");
+    assertStringIncludes(text, "$1,250");
+    assertEquals(flowOf(res.newMessages), {
+      details: "Reparación de deck",
+      amountCents: 125_000,
+      customerName: "Mike Johnson",
+      customerEmail: "mike@example.com",
+    });
+    // the flow binds its own job: the thread stays free, so the reply keeps
+    // its "Start the invoice" button (liveInvoiceFlowOffer)
+    assertEquals(res.conversation.quoteId, undefined);
+    assertEquals(await fx.invoices.listByUser(U), []);
+    assertEquals(fx.emails.length, 0);
+  });
+});
+
+Deno.test("REQ-768 M9: 'Finished the job for Maria Lopez, need to invoice her' (a lead: sent, unsigned quote) opens the invoice flow — never 'hasn't signed yet'", async () => {
+  await withKv(async () => {
+    const fx = fresh();
+    await seedOnboarded();
+    await unsignedJob(fx, {
+      customer: { name: "Maria Lopez", email: "maria@example.com" },
+      job: "3-bedroom 2-bath Cleaning",
+      totalCents: 32_000,
+      sent: true,
+    });
+    const conv = await fx.conversations.create({ userId: U });
+    const chat = scriptLlm(fx, () => ({ text: "Who is the invoice for?" }));
+
+    const res = await fx.flow.run({
+      userId: U,
+      conversationId: conv.id,
+      content: "Finished the job for Maria Lopez, need to invoice her",
+    });
+
+    const text = textOf(res.newMessages);
+    assertEquals(chat.length, 0, `the chat model answered: ${text}`);
+    assert(!/hasn.t signed/i.test(text), text);
+    assert(!/goes out automatically/i.test(text), text);
+    assertStringIncludes(text, "Maria Lopez");
+    assertStringIncludes(text, "$320");
+    assertEquals(flowOf(res.newMessages), {
+      details: "3-bedroom 2-bath Cleaning",
+      amountCents: 32_000,
+      customerName: "Maria Lopez",
+      customerEmail: "maria@example.com",
+    });
+    assertEquals(res.conversation.quoteId, undefined);
+    assertEquals(await fx.invoices.listByUser(U), []);
+  });
+});
+
+Deno.test("REQ-768 M9: in a thread bound to the unsigned quote, 'job's done, invoice her' answers with the same invoice flow", async () => {
+  await withKv(async () => {
+    const fx = fresh();
+    await seedOnboarded();
+    const { quote, customer } = await unsignedJob(fx, {
+      customer: { name: "Maria Lopez", email: "maria@example.com" },
+      job: "3-bedroom 2-bath Cleaning",
+      totalCents: 32_000,
+      sent: true,
+    });
+    const conv = await fx.conversations.create({
+      userId: U,
+      quoteId: quote.id,
+      customerId: customer.id,
+    });
+    const chat = scriptLlm(fx, () => ({ text: "Who is the invoice for?" }));
+    const res = await fx.flow.run({
+      userId: U,
+      conversationId: conv.id,
+      content: "The job is done, please invoice Maria",
+    });
+    const text = textOf(res.newMessages);
+    assertEquals(chat.length, 0, `the chat model answered: ${text}`);
+    assert(!/hasn.t signed/i.test(text), text);
+    assertEquals(flowOf(res.newMessages)?.amountCents, 32_000);
+    assertEquals(flowOf(res.newMessages)?.customerName, "Maria Lopez");
   });
 });

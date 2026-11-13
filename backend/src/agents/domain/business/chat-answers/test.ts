@@ -757,3 +757,71 @@ Deno.test("REQ-701 M21 inquiryReply: nothing waiting — says so and where quest
   const en = inquiryReply("en", []);
   assertStringIncludes(en.text, "No client question is waiting for an answer");
 });
+
+// ---------------------------------------------------------------------------
+// REQ-768 (demo-loop cycle 5v3, M9 re-test of REQ-656/752): the verifier on
+// merged demo-fixes typed "Ya terminé el trabajo de Mike Johnson, mándale la
+// factura" (Mike's quote never sent) and got "Esta cotización aún no se ha
+// enviado. Envíala primero…"; "Finished the job for Maria Lopez, need to
+// invoice her" (sent, unsigned) got "The customer hasn't signed yet…". The
+// job is done: the answer is the invoice flow, prefilled from the quote.
+// ---------------------------------------------------------------------------
+
+const MIKE_DRAFT = {
+  id: "q-mike",
+  status: "draft",
+  jobName: "Deck repair",
+  description: "Replace 12 rotten deck boards and re-stain the deck",
+  estimatedTotal: 125_000,
+  customerSnapshot: { name: "Mike Johnson", email: "mike@example.com" },
+};
+const MARIA_SENT = {
+  id: "q-maria-sent",
+  status: "sent",
+  sentAt: "2026-11-12T15:02:00Z",
+  jobName: "Deep clean",
+  estimatedTotal: 32_000,
+  customerSnapshot: { name: "Maria Lopez" },
+};
+
+Deno.test("REQ-768 M9 billingReply: job done on an UNSENT quote opens the invoice flow with the customer and the quote's amount — never 'send it first'", () => {
+  const es = billingReply("es", MIKE_DRAFT, [], [], { jobDone: true });
+  assert(!/Env[ií]ala primero/i.test(es.text), es.text);
+  assertStringIncludes(es.text, "Mike Johnson");
+  assertStringIncludes(es.text, "$1,250");
+  assertEquals(es.invoiceFlow, {
+    details: "Replace 12 rotten deck boards and re-stain the deck",
+    amountCents: 125_000,
+    customerName: "Mike Johnson",
+    customerEmail: "mike@example.com",
+  });
+  assertEquals(es.invoice, undefined);
+  assertEquals(es.offerInvoiceCta, false);
+});
+
+Deno.test("REQ-768 M9 billingReply: job done on a SENT, unsigned quote opens the invoice flow — never 'hasn't signed yet'", () => {
+  const en = billingReply("en", MARIA_SENT, [], [], { jobDone: true });
+  assert(!/hasn.t signed/i.test(en.text), en.text);
+  assert(!/goes out automatically/i.test(en.text), en.text);
+  assertStringIncludes(en.text, "Maria Lopez");
+  assertStringIncludes(en.text, "$320");
+  assertEquals(en.invoiceFlow, {
+    details: "Deep clean",
+    amountCents: 32_000,
+    customerName: "Maria Lopez",
+  });
+});
+
+Deno.test("REQ-768 M9 billingReply: an amount typed with the job-done ask wins over the quote's total", () => {
+  const r = billingReply("en", MARIA_SENT, [], [], {
+    jobDone: true,
+    amountCents: 35_000,
+  });
+  assertEquals(r.invoiceFlow?.amountCents, 35_000);
+  assertStringIncludes(r.text, "$350");
+});
+
+Deno.test("REQ-768 M9 billingReply: without the job-done cue an unsigned quote still answers REQ-368's notSent / notSigned", () => {
+  assertEquals(billingReply("en", MIKE_DRAFT, []).invoiceFlow, undefined);
+  assertEquals(billingReply("en", MARIA_SENT, []).invoiceFlow, undefined);
+});
