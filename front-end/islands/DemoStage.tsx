@@ -171,13 +171,14 @@ import {
   anchorPoint,
   type Dir,
   followTabs,
+  ghostWait,
   type Held,
   keepHeld,
   keptFor,
   lookAgain,
   type NodePrint,
-  placeView,
   ownAt,
+  placeView,
   pointerAbsent,
   printable,
   reanchored,
@@ -215,10 +216,10 @@ import {
   bandPaint,
   ghostWords,
   PILL_FONT,
+  PILL_UNDER_DIALOG_OPACITY,
   pillFaceAwaiting,
   pillFaceOffline,
   pillGhost,
-  PILL_UNDER_DIALOG_OPACITY,
   STAGE_PILL_BOTTOM,
   stageInsetBottom,
 } from "../../shared/demo-mode/pill.ts";
@@ -457,6 +458,15 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
   /** REQ-642 (cycle 5, m10) — the followed tab's last report of where it placed HIS arrow: the
    *  ghost is drawn from it (never from this stage's own replay, which can put it elsewhere) */
   const reportRef = useRef<PlacedMessage | null>(null);
+  /** REQ-789 — when he last pointed (performance.now()), and the one report waiting for his
+   *  rest: a report that comes back while he still moves is never drawn — it flashed the ghost
+   *  on and off beside his cursor, elsewhere on the frame, on every move */
+  const holdAtRef = useRef(0);
+  const ghostWaitRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const clearGhostWait = () => {
+    if (ghostWaitRef.current) clearTimeout(ghostWaitRef.current);
+    ghostWaitRef.current = null;
+  };
   /** REQ-642 (setup-14d) — moves his own marker (OwnPointer's own state: no stage re-render) */
   const ownSetRef = useRef<((at: Pt | null) => void) | null>(null);
   const bindOwn = useCallback((set: (at: Pt | null) => void) => {
@@ -529,6 +539,8 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
     provisionalRef.current = provisional;
     printRef.current = print; // REQ-645 — what it names, found again by it
     deadAtRef.current = null;
+    holdAtRef.current = performance.now(); // REQ-789 — the ghost waits for his rest
+    clearGhostWait();
     setGhost(null);
     setAbsent(false); // REQ-538 — made where he points now: drawn there
     ownSetRef.current?.(ownAt(heldNow())); // REQ-642 — his own marker, where he points
@@ -543,6 +555,7 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
     provisionalRef.current = false;
     printRef.current = null;
     deadAtRef.current = null;
+    clearGhostWait(); // REQ-789
     setGhost(null);
     setAbsent(true);
     ownSetRef.current?.(null);
@@ -667,6 +680,25 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
    *  REQ-642 (cycle 5, m10) — where their overlay REPORTED it, for the anchor he holds now */
   const showGhost = () => {
     const g = reportedGhost(heldNow(), reportRef.current, fitBox());
+    if (!g) {
+      // a report of nowhere, a stale one, none: no ghost, and nothing to wait for
+      clearGhostWait();
+      setGhost(null);
+      return;
+    }
+    // REQ-789 — drawn only once he has rested: a report back while he still moves waits (one
+    // timer; his next anchor drops it), and is looked at again then — if it is still the report
+    // for the anchor he holds
+    const wait = ghostWait(holdAtRef.current, performance.now());
+    if (wait > 0) {
+      if (!ghostWaitRef.current) {
+        ghostWaitRef.current = setTimeout(() => {
+          ghostWaitRef.current = null;
+          showGhostRef.current();
+        }, wait);
+      }
+      return;
+    }
     setGhost((was) =>
       was && g && was.outside === g.outside &&
         was.dir?.dx === g.dir?.dx && was.dir?.dy === g.dir?.dy &&
@@ -675,6 +707,8 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
         : g
     );
   };
+  const showGhostRef = useRef(showGhost);
+  showGhostRef.current = showGhost;
   /** REQ-437 — the box of the element an anchor names, on this screen (the replay has it) */
   const rectOnStage = (a: Anchor): Rect | null => {
     if (!a.n?.l || a.n.l !== loadRef.current) return null;
@@ -1492,6 +1526,7 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
     }, 500);
     return () => {
       clearInterval(stall);
+      clearGhostWait();
       throttle.cancel();
       rest.cancel();
       link.close();
@@ -2054,7 +2089,8 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
               </div>
             )}
             {/* REQ-538 (demo cycle 4 M1) — his arrow is not on their screen: said, until it is */}
-            {mirrored && !look.elsewhere && absent && !off && tabNote === null && (
+            {mirrored && !look.elsewhere && absent && !off &&
+              tabNote === null && (
               <div
                 data-cy="demo-pointer-absent"
                 role="status"
