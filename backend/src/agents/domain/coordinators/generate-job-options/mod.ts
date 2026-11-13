@@ -42,7 +42,6 @@ import {
   nearTwinBullets,
   partitionByCoverage,
   stripCustomerDetails,
-  widerBullets,
 } from "#quote-flow/option-bullets.ts";
 import { mentionsMoney } from "#quote-flow/private-cost.ts";
 import { dropSelfCorrections } from "#quote-flow/self-correction.ts";
@@ -699,24 +698,27 @@ function titleCaseWord(w: string): string {
 
 /**
  * REQ-028 (P-24): the picker promises three versions. A usable but short
- * model answer (1–2 options) is padded with honest variants of the first
- * option — "· Short version" and "· Wider scope" (+ jobsite cleanup) —
- * exactly the way the heuristic fallback builds its three. REQ-400 (M21):
+ * model answer (1–2 options) is padded with an honest variant of the first
+ * option — "· Short version" — exactly the way the heuristic fallback builds
+ * its versions. REQ-722 (cycle 5, p18-3b): the old "· Wider scope" variant
+ * appended a fixed "Jobsite cleanup" line — scope the contractor never
+ * stated (a house clean got it); padding now only regroups, and when no
+ * distinct regrouping exists the picker shows fewer cards. REQ-400 (M21):
  * the short version holds EVERY item in fewer lines (groupedBullets); it used
  * to drop the last line, i.e. be part of the job.
  * REQ-330 (p15-7): a variant whose bullets equal an option already on the
  * list is skipped — a one-bullet job gets one or two cards, never two alike.
  * REQ-584 (cycle 4, p4-p1d): a variant that is a NEAR-twin of an option on
- * the list (nearTwinBullets — the short version is the same words regrouped,
- * the wider one often only "+ Jobsite cleanup") is skipped too, and a
- * one-item job is not padded at all: its variants can only differ by a word.
+ * the list (nearTwinBullets — the short version is the same words
+ * regrouped) is skipped too, and a one-item job is not padded at all: its
+ * variants can only differ by a word.
  */
 function padToThree(options: JobOption[], langs: Lang[]): JobOption[] {
   if (options.length >= 3) return options;
   const primary = langs[0];
   const base = options[0];
   if (!base || base.bullets.length <= 1) return options;
-  const variants: Array<"short" | "wider"> = ["short", "wider"];
+  const variants: Array<"short"> = ["short"];
   const out = [...options];
   const seen = new Set(out.map((o) => o.jobName.toLowerCase()));
   for (const variant of variants) {
@@ -724,9 +726,7 @@ function padToThree(options: JobOption[], langs: Lang[]): JobOption[] {
     const byLang: Record<string, JobOptionLang> = {};
     for (const l of langs) {
       const src = base.byLang[l] ?? base.byLang[primary];
-      const bullets = variant === "short"
-        ? groupedBullets(src.bullets)
-        : widerBullets(src.bullets, t(l, "generateJobOptions.jobsiteCleanup"));
+      const bullets = groupedBullets(src.bullets);
       byLang[l] = {
         jobName: versionTitle(src.jobName, variant, l),
         summary: src.summary,
@@ -770,24 +770,18 @@ function fallbackOptions(
     .filter((line): line is string => !!line);
   const scopeBase = lines.length > 0 ? lines : null;
 
-  const perLang = (lang: Lang, variant: 0 | 1 | 2): JobOptionLang => {
+  const perLang = (lang: Lang, variant: 0 | 1): JobOptionLang => {
     const base = scopeBase ?? [t(lang, "generateJobOptions.newJob")];
     const summary = clampSummary(base[0]);
     const jobName = deriveJobName(summary, lang);
-    const bullets = variant === 0
-      ? base
-      : variant === 1
-      ? groupedBullets(base)
-      : widerBullets(base, t(lang, "generateJobOptions.jobsiteCleanup"));
-    // P-24: the three fallback variants get honest, localized qualifiers
-    // ("· Versión breve" / "· Alcance ampliado") instead of "(2)" / "(3)",
-    // which read as duplicates rather than versions.
+    // REQ-722 (cycle 5, p18-3b): no "· Wider scope" + "Jobsite cleanup"
+    // version — it invented scope. The full and the grouped version only.
+    const bullets = variant === 0 ? base : groupedBullets(base);
+    // P-24: the fallback variants get honest, localized qualifiers
+    // ("· Versión breve") instead of "(2)", which read as a duplicate rather
+    // than a version.
     return {
-      jobName: versionTitle(
-        jobName,
-        variant === 0 ? "full" : variant === 1 ? "short" : "wider",
-        lang,
-      ),
+      jobName: versionTitle(jobName, variant === 0 ? "full" : "short", lang),
       summary,
       bullets,
     };
@@ -799,7 +793,7 @@ function fallbackOptions(
   // cards with the same scope. REQ-584: exact only — this degraded path's
   // titled versions are the same scope by design.
   return renumber(dedupeOptionsByBullets(
-    ([0, 1, 2] as const).map((variant) => {
+    ([0, 1] as const).map((variant) => {
       const byLang: Record<string, JobOptionLang> = {};
       for (const l of langs) byLang[l] = perLang(l, variant);
       return { id: `opt${variant + 1}`, ...byLang[primary], byLang };

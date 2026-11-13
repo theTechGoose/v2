@@ -179,7 +179,6 @@ import {
   groupedBullets,
   seedPickerOptions,
   stripCustomerDetails,
-  widerBullets,
 } from "../../shared/quote-flow/option-bullets.ts";
 import { editJobDetailsSeed } from "../../shared/quote-flow/edit-job-details.ts";
 import {
@@ -546,7 +545,7 @@ function localFallbackOptions(
   const base = lines.length > 0 ? lines : [tFor(lang, "asstChat.newJob")];
   const summary = base[0].split(/\s+/).slice(0, 8).join(" ");
   const jobName = summary.split(/\s+/).slice(0, 3).join(" ");
-  // P-24: the three versions must be distinguishable at a glance. They used
+  // P-24: the versions must be distinguishable at a glance. They used
   // to share one jobName verbatim (and the server's old scheme numbered the
   // collisions "(2)" / "(3)"), so the picker looked like the same job three
   // times. Each variant now carries the qualifier that describes what it IS.
@@ -559,12 +558,8 @@ function localFallbackOptions(
       // REQ-400 (M21): every item, in fewer lines — never the first three.
       bullets: groupedBullets(base),
     },
-    {
-      id: "opt3",
-      jobName: versionTitle(jobName, "wider", lang),
-      summary,
-      bullets: widerBullets(base, tFor(lang, "asstChat.jobsiteCleanup")),
-    },
+    // REQ-722 (cycle 5, p18-3b): no third "· Wider scope" card padded with
+    // "Jobsite cleanup" — scope the contractor never stated.
   ];
   // REQ-330 (p15-7): a short job makes the "short" version equal to the
   // full one — equal bullet sets collapse, never two cards alike.
