@@ -3291,6 +3291,7 @@
   "wizardAnswer.cta.readyToSend": "Listo para enviar",
   "wizardAnswer.cta.readyToSendSummary": "Todos los términos respondidos. Revisa y envía a tu cliente.",
   "wizardAnswer.pick.customFallback": "Personalizado",
+  "wizardAnswer.pick.priceLabel": "Precio",
   "wizardAnswer.pick.transcript": "{label}: {value}",
   "wizardAnswer.pick.transcriptAddress": "{label}: {value} — {address}",
   "wizardAnswer.signedLocked": "{number} ya está firmada, así que sus condiciones no pueden cambiar. Para cambiarlas, haz una orden de cambio o envía una nueva versión.",

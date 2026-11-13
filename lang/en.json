@@ -3292,6 +3292,7 @@
   "wizardAnswer.cta.readyToSend": "Ready to send",
   "wizardAnswer.cta.readyToSendSummary": "All terms answered. Review and send to your client.",
   "wizardAnswer.pick.customFallback": "Custom",
+  "wizardAnswer.pick.priceLabel": "Price",
   "wizardAnswer.pick.transcript": "{label}: {value}",
   "wizardAnswer.pick.transcriptAddress": "{label}: {value} — {address}",
   "wizardAnswer.signedLocked": "{number} is already signed, so its terms can't change. To change them, make a change order or send a new version.",
