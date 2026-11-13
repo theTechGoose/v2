@@ -72,7 +72,7 @@ Deno.test("REQ-156: the root shows Field (REQ-361, was Recurring) and none of th
     );
     expect(seen.includes("Customers"), "Customers on the root");
     for (
-      const l of ["Subscriptions", "Assignments", "Tasks", "Batches"]
+      const l of ["Repeat visits", "Assignments", "Tasks", "Batches"] // REQ-743: was Subscriptions
     ) expect(!seen.includes(l), `${l} is inside the folder, not on the root`);
     expect(
       await nav.locator("[data-cy='nav-back']").count() === 0,
@@ -83,7 +83,7 @@ Deno.test("REQ-156: the root shows Field (REQ-361, was Recurring) and none of th
     await nav.locator("[data-cy='nav-back']").waitFor({ timeout: 10_000 });
     seen = await labels();
     for (
-      const l of ["Subscriptions", "Assignments", "Tasks", "Batches"]
+      const l of ["Repeat visits", "Assignments", "Tasks", "Batches"] // REQ-743: was Subscriptions
     ) expect(seen.includes(l), `${l} inside the folder (${seen.join(", ")})`);
     // REQ-604 (demo m18): Workers is listed in Field too (it stays in Roles, REQ-178)
     expect(

@@ -38,6 +38,7 @@ import {
   ShimmerStyle,
 } from "../components/Skeletons.tsx";
 import { langSignal, tFor } from "../lib/i18n.ts";
+import type { TradeKind } from "../../shared/quote-flow/trade-fit.ts"; // REQ-743
 
 interface State {
   loading: boolean;
@@ -67,7 +68,13 @@ function inputStyle(bad: boolean): string {
   };border-radius:10px;font:inherit;font-size:15px;font-weight:400;color:var(--fg)`;
 }
 
-export default function ClientsPage({ lang: _lang }: { lang?: "en" | "es" }) {
+export default function ClientsPage(
+  { lang: _lang, tradeKind = "project" }: {
+    lang?: "en" | "es";
+    /** REQ-743 — the business's trade kind, read off its name by the route */
+    tradeKind?: TradeKind;
+  },
+) {
   const lang = langSignal.value;
   const [s, setS] = useState<State>(INITIAL);
   // REQ-145 — the account's subscriptions, once, grouped by customer for the cards
@@ -321,6 +328,7 @@ export default function ClientsPage({ lang: _lang }: { lang?: "en" | "es" }) {
         onPage={setPage}
         lang={lang}
         subsByCustomer={subsByCustomer}
+        tradeKind={tradeKind}
         onCustomerSaved={refreshClients}
       >
         <TopClients

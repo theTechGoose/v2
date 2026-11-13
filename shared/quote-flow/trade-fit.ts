@@ -70,6 +70,19 @@ export function tradeKindFor(businessName?: string | null): TradeKind {
   return "project";
 }
 
+/**
+ * REQ-743 (demo-loop cycle 5, p18-6c): the customer card's "Repeat visits"
+ * panel shows when the customer has any, or when the business is a service
+ * trade (cleaning, lawn care …) that books them; a handyman's customer with
+ * none gets no empty panel.
+ */
+export function repeatVisitsPanelShown(
+  subscriptionCount: number,
+  tradeKind: TradeKind,
+): boolean {
+  return subscriptionCount > 0 || tradeKind === "service";
+}
+
 export const COMPOSER_TRADES = [
   "plumbing",
   "electrical",
