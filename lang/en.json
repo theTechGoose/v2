@@ -2796,6 +2796,8 @@
   "quotesSide.rateSub": "last 90 days",
   "quotesSide.rateTitle": "Win rate",
   "quotesSide.topEmpty": "No open quotes yet. When you send one, your most valuable quotes will show up here.",
+  "quotesSide.topEmptyDrafts.one": "No sent quotes yet — send your draft to see it here.",
+  "quotesSide.topEmptyDrafts.other": "No sent quotes yet — send your drafts to see them here.",
   "quotesSide.topSub": "biggest open quotes",
   "quotesSide.topTitle": "Top of the pipeline",
   "quotesTip.default": "Quotes opened 3+ times within 24 hours close 78% of the time when followed up the same day.",

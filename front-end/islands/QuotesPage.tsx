@@ -2262,7 +2262,11 @@ export default function QuotesPage(
         </div>
 
         <aside class="qside">
-          <QSideBig open={out} lang={lang} />
+          <QSideBig
+            open={out}
+            draftCount={drafts.length}
+            lang={lang}
+          />
           <QSideRate won={won} lost={lost} lang={lang} />
           <QSideTip text={insight?.text} lang={lang} />
         </aside>

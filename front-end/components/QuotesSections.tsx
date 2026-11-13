@@ -8,7 +8,11 @@ import { fmtMoney } from "../lib/format.ts";
 import { type Lang, tFor } from "../lib/i18n.ts";
 import { type Quote } from "../lib/quotes-seed.ts";
 import DeleteQuoteButton from "../islands/DeleteQuoteButton.tsx";
-import { heroCoWaiting, quotesHeroMode } from "../lib/headline-counts.ts";
+import {
+  heroCoWaiting,
+  quotesHeroMode,
+  quotesSideTopEmpty,
+} from "../lib/headline-counts.ts";
 
 /** Explicit-language plural picker for SSR components (mirrors tn() but
  *  honors the resolved `lang` prop instead of the reactive langSignal). */
@@ -365,10 +369,15 @@ export function DecidedRow(
 
 interface QSideBigProps {
   open: Quote[];
+  /** REQ-740: real unsent drafts — the empty line points at them. */
+  draftCount?: number;
   lang?: Lang;
 }
 
-export function QSideBig({ open, lang = "en" }: QSideBigProps) {
+export function QSideBig(
+  { open, draftCount = 0, lang = "en" }: QSideBigProps,
+) {
+  const empty = quotesSideTopEmpty(draftCount);
   const top4 = [...open].sort((a, b) => b.value - a.value).slice(0, 4);
   const max = top4[0]?.value ?? 1;
   return (
@@ -389,7 +398,7 @@ export function QSideBig({ open, lang = "en" }: QSideBigProps) {
             class="qbig__empty"
             style="font-size:13px;color:var(--fg-muted);line-height:1.5;padding:6px 0"
           >
-            {tFor(lang, "quotesSide.topEmpty")}
+            {tFor(lang, empty.key, { n: empty.n })}
           </div>
         )}
         {top4.map((q, i) => (
