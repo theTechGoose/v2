@@ -365,7 +365,9 @@ export default function FieldSubscriptionsPage(
       if (form.options.length) pick(Math.max(form.active, 0));
       else priceRef.current?.focus();
     } else if (e.key === "Escape") {
-      e.stopPropagation();
+      // REQ-732: only an Escape that shuts the open search stops here; otherwise it
+      // reaches the dialog's Backdrop and closes Nueva suscripción
+      if (form.searchOn || form.options.length) e.stopPropagation();
       searchSeq.current++;
       patch({ searchOn: false, options: [], active: -1 });
     }
