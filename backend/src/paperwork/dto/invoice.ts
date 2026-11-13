@@ -66,7 +66,7 @@ export class PaymentIntentDto {
 /** One row in the past-due reminder cadence history. Recorded after each
  *  step fires so the cron knows not to re-send. */
 export class ReminderHistoryEntryDto {
-  /** Cadence step in days past due: 3, 7, 14, or 30. */
+  /** Cadence step in days from the due date: -3, 0, 3, 7, 14, or 30 (REQ-704). */
   @IsNumber()
   day!: number;
   @IsString()

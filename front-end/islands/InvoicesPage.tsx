@@ -80,10 +80,12 @@ import { invoiceJobNamePlaceholderKey } from "../../shared/quote-flow/trade-fit.
 import { isExceedsAgreement } from "../../shared/documents/ledger.ts";
 import { invoiceLinkPath } from "../lib/customer-link.ts"; // REQ-586
 import {
+  describeReminderCadence,
   invoiceReminderState,
+  manualReminderDay,
   type ReminderSettings,
   reminderSettingsOf,
-} from "../../shared/quote-flow/reminder-settings.ts"; // REQ-623
+} from "../../shared/quote-flow/reminder-settings.ts"; // REQ-623, REQ-704
 import {
   type DocState,
   isInvoiceLocked,
@@ -1762,9 +1764,16 @@ function InvoiceDetail(
         >
           <span style="flex:1;min-width:0;font-size:12.5px;color:var(--fg-muted,#6b7560)">
             {reminderState === "on"
-              ? tFor(lang, "invoicesPage.detail.reminders.on", {
-                days: reminders.days.join(", "),
-              })
+              // REQ-704 (cycle 5, m60): the customer's steps, then day 30
+              // split out — it alerts the owner only, as Settings says
+              ? describeReminderCadence(
+                reminders.days,
+                inv.client && inv.client !== "—" ? inv.client : tFor(
+                  lang,
+                  "invoicesPage.detail.reminders.customerFallback",
+                ),
+                (k, v) => tFor(lang, k, v),
+              )
               : reminderState === "off"
               ? (
                 <a href="/settings#reminders" style="color:inherit">
@@ -2395,6 +2404,34 @@ function InvoiceCard(
   // REQ-250 (demo m12): a nudge on a CLAIMED invoice — the customer said they
   // paid — asks first, inline, naming the claim.
   const [nudgeAsk, setNudgeAsk] = useState(false);
+  // REQ-704 (cycle 5, m60): the reminder a nudge would send, shown on the
+  // back face before "Send a nudge" — rendered by the backend, sent to nobody.
+  const nudgeDay = manualReminderDay(
+    inv.dueDate,
+    now.toISOString().slice(0, 10),
+  );
+  const [nudgePreview, setNudgePreview] = useState<
+    { escalated?: boolean; smsBody?: string; reason?: string } | null
+  >(null);
+  const nudgeable = hasNudgeButton(inv.stage) || inv.stage === "overdue";
+  useEffect(() => {
+    if (!flipped || !nudgeable || nudgePreview) return;
+    let alive = true;
+    fetch("/api/cron/reminder-preview", {
+      method: "POST",
+      credentials: "include",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ invoiceId: inv.id, day: nudgeDay }),
+    })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((b) => {
+        if (alive && b) setNudgePreview(b);
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, [flipped, nudgeable, inv.id, nudgeDay]);
   // REQ-488 (demo m56): "Didn't get it" asks first, inline.
   const [rejectAsk, setRejectAsk] = useState(false);
   // REQ-022 (NW-31c): inline "Change date" editor on an Upcoming card.
@@ -2701,13 +2738,13 @@ function InvoiceCard(
     e.stopPropagation();
     onPaymentReceived(inv.id);
   }
-  /** REQ-021 (NW-31a): a nudge is the reminder CADENCE (day 3 / 7 / 14 / 30
-   *  by how overdue the invoice is), never the full invoice re-texted. */
+  /** REQ-021 (NW-31a): a nudge is the reminder CADENCE (REQ-704: -3 before
+   *  the due date, 0 on it, then day 3 / 7 / 14 / 30 by how overdue the
+   *  invoice is), never the full invoice re-texted. */
   async function doSendNudge(e: Event) {
     e.stopPropagation();
     if (busy) return;
-    const d = inv.daysOverdue;
-    const day = d <= 3 ? 3 : d <= 7 ? 7 : d <= 14 ? 14 : 30;
+    const day = nudgeDay;
     setBusy(true);
     setSendFail(null);
     setSendNote(null);
@@ -3405,6 +3442,39 @@ function InvoiceCard(
             >
               {tFor(lang, "invoicesPage.back.changeDateSave")}
             </button>
+          </div>
+        )}
+        {nudgeable && nudgePreview && (
+          <div
+            data-cy="invoice-nudge-preview"
+            data-day={String(nudgeDay)}
+            style="padding:0 14px 10px;font-size:12.5px;color:var(--fg-muted,#6b7560)"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {nudgePreview.escalated
+              ? tFor(lang, "invoicesPage.nudge.previewAlertOnly")
+              : nudgePreview.reason === "no_recipient"
+              ? tFor(lang, "invoicesPage.nudge.noRecipient")
+              : (
+                <>
+                  <strong style="display:block;color:var(--fg)">
+                    {tFor(lang, "invoicesPage.nudge.previewTitle", {
+                      name: inv.client && inv.client !== "—"
+                        ? inv.client
+                        : tFor(
+                          lang,
+                          "invoicesPage.detail.reminders.customerFallback",
+                        ),
+                    })}
+                  </strong>
+                  <span
+                    data-cy="invoice-nudge-preview-text"
+                    style="display:block;margin-top:2px;white-space:pre-wrap"
+                  >
+                    {nudgePreview.smsBody}
+                  </span>
+                </>
+              )}
           </div>
         )}
         {inv.stage === "claimed" && nudgeAsk && (
