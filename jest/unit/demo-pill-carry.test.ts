@@ -115,7 +115,10 @@ describe("REQ-535 (demo-loop cycle 4, m13) — the customer's pill survives a pa
       expect(src).toMatch(/setDemo\(\s*carried\.demo\s*\)/);
     });
     test("the status label and the stage's face go through showsConnected with the grace", () => {
-      expect(src).toMatch(/showsConnected\(\s*status\s*,\s*carrying\s*\)/);
+      // REQ-647 (cycle 5, m29): and what /active last said of the demo
+      expect(src).toMatch(
+        /showsConnected\(\s*status\s*,\s*carrying\s*,\s*activeOk\s*\)/,
+      );
       expect(src).toMatch(/PILL_CARRY_GRACE_MS/);
     });
     test("the page keeps its demo and link state as it goes, and forgets it when the demo is gone", () => {

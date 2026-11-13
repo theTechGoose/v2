@@ -59,10 +59,10 @@ function harness() {
 }
 
 describe("REQ-298 a demo that follows an end is announced as a new one", () => {
-  test("the window is 30 s and the line stays a few seconds", () => {
+  test("the window is 30 s and the line stays long enough to read (REQ-647 REVISION: ~10 s, was 4 s)", () => {
     expect(RESTART_WINDOW_MS).toBe(30_000);
-    expect(RESTART_SAY_MS).toBeGreaterThanOrEqual(3_000);
-    expect(RESTART_SAY_MS).toBeLessThanOrEqual(6_000);
+    expect(RESTART_SAY_MS).toBeGreaterThanOrEqual(9_000);
+    expect(RESTART_SAY_MS).toBeLessThanOrEqual(12_000);
   });
 
   test("isRestart: a notice up, or an end within the window; never otherwise", () => {
