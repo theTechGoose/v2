@@ -44,6 +44,20 @@ Deno.test("REQ-258 create_quote line-item description carries the contractor-per
   }
 });
 
+// REQ-657 (demo-loop cycle 5, M13): the line-item hint carried the copyable
+// phrase 'paint supplied by contractor', and gpt-4o-mini wrote it on a job
+// whose message never said who supplies paint. The hint now says to mention
+// the supplier only when the contractor said so, with no phrase to copy.
+Deno.test("REQ-657 M13 create_quote line-item description: supplier only when stated, no copyable supplier phrase (en + es)", () => {
+  for (const lang of ["en", "es"] as const) {
+    const d = t(lang, "prompts.tools.createQuote.lineItemDescription");
+    assert(!/supplied by/i.test(d), `${lang} carries a copyable supplier phrase: ${d}`);
+    assert(!/I supply/i.test(d), `${lang} carries the paint example: ${d}`);
+    assert(/ONLY if the contractor said so/.test(d), `${lang}: ${d}`);
+    assert(/never flip/i.test(d), `${lang} keeps the REQ-258 rule: ${d}`);
+  }
+});
+
 // REQ-261 (demo M26): both chat prompts tell the model a contractor's stated
 // costs are private and never go into job details or customer text.
 Deno.test("REQ-261 M26 quote and terms prompts carry the PRIVATE COSTS rule", () => {

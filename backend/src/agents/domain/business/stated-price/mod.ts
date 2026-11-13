@@ -406,13 +406,68 @@ export function scaleLinesToTotal<T extends PricedLine>(
   return out;
 }
 
+/** Words that say nothing about the work on their own. */
+const LINK_WORDS = new Set([
+  "a",
+  "an",
+  "and",
+  "the",
+  "of",
+  "for",
+  "to",
+  "in",
+  "on",
+  "with",
+  "el",
+  "la",
+  "los",
+  "las",
+  "un",
+  "una",
+  "de",
+  "del",
+  "y",
+  "con",
+  "en",
+  "para",
+]);
+
+/** A description's content words, singular ("coats" → "coat"). */
+function contentWords(s: string): string[] {
+  return lineKey(s)
+    .split(" ")
+    .filter((w) => w.length > 0 && !LINK_WORDS.has(w))
+    .map((w) =>
+      w.length > 3 && w.endsWith("s") && !w.endsWith("ss") ? w.slice(0, -1) : w
+    );
+}
+
+/**
+ * REQ-657 (demo-loop cycle 5, M13) — what a $0 line adds to the host's
+ * description, or "" when it adds nothing. A parenthetical whose words the
+ * host already carries goes ("Walls and ceiling painting (270 sqft, 2 coats,
+ * …)" beside "Living room painting (270 sqft, 2 coats, …)" → "Walls and
+ * ceiling painting"); a line whose remaining words are all in the host is a
+ * restatement of it ("Painting of the living room" → "").
+ */
+function foldedName(zero: string, host: string): string {
+  const hostWords = new Set(contentWords(host));
+  const inHost = (s: string) => contentWords(s).every((w) => hostWords.has(w));
+  const rest = zero
+    .replace(/\s*\(([^()]*)\)/g, (m, inner: string) => inHost(inner) ? "" : m)
+    .replace(/\s+/g, " ")
+    .trim();
+  return inHost(rest) ? "" : rest;
+}
+
 /**
  * REQ-578 (demo-loop cycle 4, m34) — the lines with no price folded into the
  * largest priced line's description: "Remove old vanity $0 / Install 36in
  * vanity $2,250 / Install faucet $0" → "Install 36in vanity (incl. remove old
  * vanity, install faucet) $2,250". Same total, same work named, no line the
  * client reads as free. Lines that are all priced, or none priced, come back
- * unchanged (a priceless quote is REQ-302's to refuse).
+ * unchanged (a priceless quote is REQ-302's to refuse). REQ-657: a $0 line
+ * names only what the host does not already say (`foldedName`).
  */
 export function foldZeroLines<T extends PricedLine>(
   lines: readonly T[],
@@ -425,7 +480,9 @@ export function foldZeroLines<T extends PricedLine>(
   }
   const host = priced.reduce((a, b) => b.amountCents > a.amountCents ? b : a);
   const included = zero
-    .map((l) => jobNameInSentence(l.description))
+    .map((l) => foldedName(l.description, host.description))
+    .filter((d) => d.length > 0)
+    .map((d) => jobNameInSentence(d))
     .filter((d) => d.length > 0)
     .join(", ");
   return lines

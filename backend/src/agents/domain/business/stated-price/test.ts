@@ -824,3 +824,93 @@ Deno.test("REQ-666 m48 settleCreateQuote: prices the contractor typed per line, 
   });
   assertEquals(revision.kind, "keep");
 });
+
+// REQ-657 (demo-loop cycle 5, M13) — a folded $0 line does not repeat the host.
+// Pair 1 typed "Quote for Linda Johnson, paint living room 15x18, walls and
+// ceiling, 2 coats, $1,450 total" (fleet-0 stdout l.226); gpt-4o-mini sent a
+// priced line and a $0 near-copy of it, and REQ-578's fold wrote the detail
+// twice: "Living room painting (270 sqft, 2 coats, paint supplied by
+// contractor) (incl. walls and ceiling painting (270 sqft, 2 coats, paint
+// supplied by contractor))".
+const M13_TEXT =
+  "Quote for Linda Johnson, paint living room 15x18, walls and ceiling, 2 coats, $1,450 total";
+const M13_LINES: PricedLine[] = [
+  {
+    description:
+      "Living room painting (270 sqft, 2 coats, paint supplied by contractor)",
+    amountCents: 145_000,
+  },
+  {
+    description:
+      "Walls and ceiling painting (270 sqft, 2 coats, paint supplied by contractor)",
+    amountCents: 0,
+  },
+];
+
+Deno.test("REQ-657 M13 foldZeroLines: the demo's $0 line folds without repeating the detail the host already carries", () => {
+  assertEquals(statedTotalCents(M13_TEXT), 145_000);
+  assertEquals(foldZeroLines(M13_LINES, "en"), [{
+    description:
+      "Living room painting (270 sqft, 2 coats, paint supplied by contractor) (incl. walls and ceiling painting)",
+    amountCents: 145_000,
+  }]);
+});
+
+Deno.test("REQ-657 M13 foldZeroLines: a $0 line that only restates the host is dropped, not folded", () => {
+  assertEquals(
+    foldZeroLines([
+      {
+        description: "Living room painting (270 sqft, 2 coats)",
+        amountCents: 145_000,
+      },
+      { description: "Painting of the living room (2 coats)", amountCents: 0 },
+      { description: "Patch nail holes", amountCents: 0 },
+    ], "en"),
+    [{
+      description:
+        "Living room painting (270 sqft, 2 coats) (incl. patch nail holes)",
+      amountCents: 145_000,
+    }],
+  );
+  assertEquals(
+    foldZeroLines([
+      { description: "Pintura de sala (2 manos)", amountCents: 145_000 },
+      { description: "Pintura de la sala", amountCents: 0 },
+    ], "es"),
+    [{ description: "Pintura de sala (2 manos)", amountCents: 145_000 }],
+  );
+});
+
+Deno.test("REQ-657 M13 foldZeroLines: a parenthetical with detail the host lacks is kept", () => {
+  assertEquals(
+    foldZeroLines([
+      { description: "Living room painting (2 coats)", amountCents: 145_000 },
+      { description: "Ceiling painting (flat white)", amountCents: 0 },
+    ], "en"),
+    [{
+      description:
+        "Living room painting (2 coats) (incl. ceiling painting (flat white))",
+      amountCents: 145_000,
+    }],
+  );
+});
+
+Deno.test("REQ-657 M13 settleCreateQuote: the demo's $1,450-total draft is saved as one line with no repeated detail", async () => {
+  const out = await settleCreateQuote({
+    payload: {
+      summary: "Living room painting — Linda Johnson",
+      lineItems: M13_LINES,
+    },
+    userText: M13_TEXT,
+    statedCents: statedTotalCents(M13_TEXT),
+    lang: "en",
+    reask: () => Promise.resolve(undefined),
+  });
+  assertEquals(out.kind, "save");
+  if (out.kind !== "save") return;
+  assertEquals(out.payload.lineItems, [{
+    description:
+      "Living room painting (270 sqft, 2 coats, paint supplied by contractor) (incl. walls and ceiling painting)",
+    amountCents: 145_000,
+  }]);
+});
