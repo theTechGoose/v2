@@ -116,3 +116,51 @@ export function finishDraftDates(
       : {}),
   };
 }
+
+/** REQ-776 (demo-loop cycle dv1, d3): what the Finish + send review shows —
+ *  the amount, each line (qty × unit price), and the due date the send
+ *  will stamp (else the invoice's own). Cents; yyyy-mm-dd. */
+export interface InvoiceSendReview {
+  totalCents: number;
+  lines: { description: string; quantity: number; amountCents: number }[];
+  dueDate?: string;
+}
+
+/**
+ * REQ-776 — Raphael: "Finish and send should have a review step." The send
+ * sheet reviews what is about to go out before its Send.
+ */
+export function invoiceSendReview(
+  inv: { amount?: number; dueDate?: string; lineItems?: unknown },
+  dates: { dueDate?: string },
+): InvoiceSendReview {
+  const raw = Array.isArray(inv.lineItems) ? inv.lineItems : [];
+  const lines = raw.flatMap((li) => {
+    if (!li || typeof li !== "object") return [];
+    const row = li as Record<string, unknown>;
+    const description = typeof row.description === "string"
+      ? row.description.trim()
+      : "";
+    if (!description) return [];
+    const quantity = typeof row.quantity === "number" &&
+        Number.isFinite(row.quantity)
+      ? row.quantity
+      : 1;
+    const price = typeof row.price === "number" && Number.isFinite(row.price)
+      ? row.price
+      : 0;
+    return [{
+      description,
+      quantity,
+      amountCents: Math.round(quantity * price),
+    }];
+  });
+  const dueDate = dates.dueDate ?? inv.dueDate;
+  return {
+    totalCents: typeof inv.amount === "number" && Number.isFinite(inv.amount)
+      ? inv.amount
+      : 0,
+    lines,
+    ...(dueDate ? { dueDate } : {}),
+  };
+}
