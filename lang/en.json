@@ -717,6 +717,8 @@
   "chatCoordinator.billing.notSigned": "{name} hasn't signed yet — the first invoice goes out automatically the moment they sign.",
   "chatCoordinator.billing.jobDoneUnsigned": "Job's done — let's bill it. The quote was never signed, so I've started an invoice for {name}, {amount}: check the details and send it.",
   "chatCoordinator.billing.jobDoneUnsignedNoAmount": "Job's done — let's bill it. The quote was never signed, so I've started an invoice for {name}: add the amount, check the details and send it.",
+  "chatCoordinator.billing.jobDoneUnsignedNoName": "Job's done — let's bill it. The quote was never signed, so I've started an invoice for {amount}: pick who it's for, check the details and send it.",
+  "chatCoordinator.billing.jobDoneUnsignedNoNameNoAmount": "Job's done — let's bill it. The quote was never signed, so I've started an invoice: pick who it's for, add the amount, check the details and send it.",
   "chatCoordinator.billing.notSent": "This quote hasn't been sent yet. Send it first — the first invoice goes out automatically once the customer signs.",
   "chatCoordinator.billing.declined": "This quote was declined, so there's nothing to bill.",
   "chatCoordinator.billing.cardTitle": "Invoice {number} · due {due}",

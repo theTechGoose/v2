@@ -23,6 +23,7 @@ import { isAccepted } from "#quote-flow/quote-status.ts";
 import { formatShortDate } from "#quote-flow/format-helpers.ts";
 import { docNumberOf } from "#documents/numbering.ts";
 import type { InvoiceFlowOffer } from "#quote-flow/chat-invoice-flow-offer.ts";
+import { customerNameFromSummary } from "#quote-flow/customer-dedupe.ts"; // REQ-772
 import {
   isOpenReceivable,
   receivableBalanceCents,
@@ -250,8 +251,12 @@ function jobDoneInvoiceOffer(
   const cents = typedCents && typedCents > 0
     ? typedCents
     : quote.estimatedTotal ?? 0;
+  // REQ-772 (demo-loop cycle 5v5, M9): a quote the chat drafted for someone
+  // not yet saved carries her only in the summary's "— Maria Lopez" tail
+  // (REQ-576) — the offer still knows who to bill.
   const who = quote.customerSnapshot?.name?.trim() ||
-    quote.acceptedName?.trim();
+    quote.acceptedName?.trim() ||
+    customerNameFromSummary(quote.summary) || undefined;
   const email = quote.customerSnapshot?.email?.trim();
   return {
     details,
@@ -302,13 +307,16 @@ export function billingReply(
     // with the quote's job, amount and customer.
     if (opts.jobDone) {
       const offer = jobDoneInvoiceOffer(quote, name, opts.amountCents);
+      // REQ-772: named by the offer's customer; nobody named → the nameless
+      // line, never "an invoice for The customer".
+      const key = `jobDoneUnsigned${offer.customerName ? "" : "NoName"}${
+        offer.amountCents ? "" : "NoAmount"
+      }`;
       return {
-        text: say(
-          offer.amountCents ? "jobDoneUnsigned" : "jobDoneUnsignedNoAmount",
-          {
-            amount: offer.amountCents ? money(offer.amountCents) : "",
-          },
-        ),
+        text: say(key, {
+          ...(offer.customerName ? { name: offer.customerName } : {}),
+          amount: offer.amountCents ? money(offer.amountCents) : "",
+        }),
         invoiceFlow: offer,
         offerInvoiceCta: false,
       };

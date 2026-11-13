@@ -85,3 +85,39 @@ export function arrivedInvoiceFlowOffer(
   }
   return undefined;
 }
+
+/**
+ * REQ-772 (demo-loop cycle 5v5, M9 re-test of REQ-768) — where the price
+ * step's Continue takes the details + price it holds.
+ *
+ * The verifier typed "Job done for Maria, need to invoice her" in the thread
+ * of her draft Q-001: the offer opened the flow at $800, and Continue took
+ * the branch meant for "Back to the price step of a quote that already
+ * exists" — it edited Q-001, never started the invoice wizard and closed
+ * the panel. The bound quote was not the flow's own: it was bound when the
+ * flow started (`flowStartedOnQuoteId`).
+ *
+ *   "edit"            the flow's OWN quote exists (Back to the price step):
+ *                     update it, re-enter its wizard.
+ *   "newThread"       the thread is bound to the quote the flow started on:
+ *                     the new document gets its own quote and thread; the
+ *                     bound quote is never touched.
+ *   "bindDraft"       a thread with no quote yet: the new quote binds to it.
+ *   "newConversation" no thread yet: one is made for the new quote.
+ */
+export type InvoiceFlowContinueTarget =
+  | "edit"
+  | "newThread"
+  | "bindDraft"
+  | "newConversation";
+
+export function invoiceFlowContinueTarget(s: {
+  quoteId?: string | null;
+  convoId?: string | null;
+  flowStartedOnQuoteId?: string | null;
+}): InvoiceFlowContinueTarget {
+  if (s.quoteId && s.convoId) {
+    return s.quoteId === s.flowStartedOnQuoteId ? "newThread" : "edit";
+  }
+  return s.convoId ? "bindDraft" : "newConversation";
+}

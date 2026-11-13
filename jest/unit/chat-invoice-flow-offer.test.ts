@@ -97,3 +97,52 @@ describe("REQ-656 M9 the chat wires it", () => {
     }
   });
 });
+
+// REQ-772 (demo-loop cycle 5v5, M9 re-test of REQ-768): the verifier typed
+// "Job done for Maria, need to invoice her" in the thread of her draft
+// Q-001; the flow opened at $800, but Continue took startQuoteFromRaw's
+// "Back to the price step of a quote that already exists" branch — it
+// edited Q-001, skipped the invoice wizard and closed the panel: no
+// customer step, no invoice. The bound quote is not the flow's own.
+describe("REQ-772 M9 invoiceFlowContinueTarget", () => {
+  test("REQ-772 the job-done offer in a thread bound to another quote gets its own thread — never an edit of that quote", () => {
+    const { invoiceFlowContinueTarget } = mod();
+    expect(
+      invoiceFlowContinueTarget({
+        quoteId: "q-001",
+        convoId: "c-1",
+        flowStartedOnQuoteId: "q-001",
+      }),
+    ).toBe("newThread");
+  });
+  test("REQ-772 Back to the price step of the flow's OWN quote still edits it", () => {
+    const { invoiceFlowContinueTarget } = mod();
+    expect(
+      invoiceFlowContinueTarget({
+        quoteId: "q-002",
+        convoId: "c-2",
+        flowStartedOnQuoteId: "q-001",
+      }),
+    ).toBe("edit");
+    expect(
+      invoiceFlowContinueTarget({
+        quoteId: "q-002",
+        convoId: "c-2",
+        flowStartedOnQuoteId: null,
+      }),
+    ).toBe("edit");
+  });
+  test("REQ-772 a draft thread binds the new quote; no thread makes one", () => {
+    const { invoiceFlowContinueTarget } = mod();
+    expect(
+      invoiceFlowContinueTarget({ convoId: "c-3", flowStartedOnQuoteId: null }),
+    ).toBe("bindDraft");
+    expect(invoiceFlowContinueTarget({})).toBe("newConversation");
+  });
+  test("REQ-772 AsstChat's Continue asks it, and the invoice flow remembers the quote it started on", () => {
+    const src = read("front-end/islands/AsstChat.tsx");
+    expect(src).toMatch(/invoiceFlowContinueTarget\(/);
+    expect(src).toMatch(/flowStartedOnQuoteRef\.current = quoteId/);
+    expect(src).toMatch(/if \(target === "edit" && quoteId && convoId\) \{/);
+  });
+});
