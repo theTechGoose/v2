@@ -243,10 +243,11 @@ describe("REQ-630 wiring", () => {
 
   test("the invoice page puts the card first, the claim island (buttons + I sent it) after", () => {
     const page = read("front-end/routes/i/[id].tsx");
-    expect(page.indexOf("<PublicCardPay")).toBeLessThan(
+    // REQ-782: the card is a "Pay by card" link to a separate portal
+    expect(page.indexOf("<PayByCard")).toBeLessThan(
       page.indexOf("<PublicInvoiceClaim"),
     );
-    expect(page).toMatch(/hasCard=\{!!card\}/);
+    expect(page).toMatch(/hasCard=\{!!cardWay\}/);
   });
 
   test("settings carries the payment-links card", () => {
