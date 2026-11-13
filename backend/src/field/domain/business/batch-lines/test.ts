@@ -102,7 +102,7 @@ Deno.test("REQ-788 linesFor — a subscription with the toggle on bills one Over
   const out = linesFor({
     ...base,
     subscriptions: withOverhead,
-    overhead: { cents: 2500, label: "Overhead" },
+    overhead: { label: "Overhead", setting: { mode: "flat", cents: 2500 } },
     tasks: [task("t1", {}), task("t2", { taskTypeId: "tt2", priceCents: 4000 }), task("t3", { date: "2026-10-19" }), task("t4", { subscriptionId: "s2", customerId: "c2" })],
   });
   const ana = out.find((g) => g.customerId === "c1")!;
@@ -119,13 +119,30 @@ Deno.test("REQ-788 linesFor — a subscription with the toggle on bills one Over
 
 Deno.test("REQ-788 linesFor — no overhead line when the toggle is off, when the amount is 0, or when Settings has none", () => {
   const tasks = [task("t1", {})];
-  assertEquals(linesFor({ ...base, tasks, overhead: { cents: 2500, label: "Overhead" } })[0].lines.length, 1);
-  assertEquals(linesFor({ ...base, subscriptions: withOverhead, tasks, overhead: { cents: 0, label: "Overhead" } })[0].lines.length, 1);
+  assertEquals(linesFor({ ...base, tasks, overhead: { label: "Overhead", setting: { mode: "flat", cents: 2500 } } })[0].lines.length, 1);
+  assertEquals(linesFor({ ...base, subscriptions: withOverhead, tasks, overhead: { label: "Overhead", setting: { mode: "flat", cents: 0 } } })[0].lines.length, 1);
   assertEquals(linesFor({ ...base, subscriptions: withOverhead, tasks })[0].lines.length, 1);
 });
 
 Deno.test("REQ-788 lineItem — the overhead line is a priced line on the visit's date and address, in the invoice's language", () => {
-  const [g] = linesFor({ ...base, subscriptions: withOverhead, tasks: [task("t1", {})], overhead: { cents: 2500, label: "Gastos generales" } });
+  const [g] = linesFor({ ...base, subscriptions: withOverhead, tasks: [task("t1", {})], overhead: { label: "Gastos generales", setting: { mode: "flat", cents: 2500 } } });
   const item = lineItem(g.lines[1], "es");
   assertEquals([item.description, item.price, item.date, item.service, item.address], ["12 oct — Gastos generales — 123 Oak St", 2500, "2026-10-12", "Gastos generales", "123 Oak St"]);
+});
+
+// REQ-788 AMENDMENT — "we want it in percentage, or in dollars"
+Deno.test("REQ-788 AMENDMENT linesFor — a percent overhead bills that share of each visit's services, rounded to the cent; 0% bills none", () => {
+  const pct = (p: number) => ({ label: "Overhead", setting: { mode: "percent" as const, pct: p } });
+  const out = linesFor({
+    ...base,
+    subscriptions: withOverhead,
+    overhead: pct(10),
+    tasks: [task("t1", {}), task("t2", { taskTypeId: "tt2", priceCents: 4000 }), task("t3", { date: "2026-10-19", priceCents: 6505 })],
+  });
+  const [g] = out;
+  assertEquals(g.lines.filter((l) => l.overhead).map((l) => [l.date, l.priceCents]), [["2026-10-12", 1050], ["2026-10-19", 651]]); // 650.5 → 651
+  assertEquals(g.amount, 6500 + 4000 + 6505 + 1050 + 651);
+  assertEquals(linesFor({ ...base, subscriptions: withOverhead, overhead: pct(0), tasks: [task("t1", {})] })[0].lines.length, 1);
+  // the flat setting still bills the amount
+  assertEquals(linesFor({ ...base, subscriptions: withOverhead, overhead: { label: "Overhead", setting: { mode: "flat", cents: 2500 } }, tasks: [task("t1", {})] })[0].lines[1].priceCents, 2500);
 });

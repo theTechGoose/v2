@@ -2221,3 +2221,31 @@ Deno.test("REQ-788 the overhead cost in Settings bills one more line per visit o
     assertEquals(after.filter((t: { invoiceId?: string }) => t.invoiceId === draft(randall.id).id).length, 2);
   });
 });
+
+// REQ-788 AMENDMENT — "we want it in percentage, or in dollars"
+Deno.test("REQ-788 AMENDMENT the identity in percent mode bills that share of the visit's services; over 100% is refused", async () => {
+  await withServer(async (call) => {
+    const H = await login(call);
+    assert((await call("PUT", "/profile/identity", { fieldOverheadPct: 101 }, H)).status >= 400);
+    const ident = await call("PUT", "/profile/identity", { businessName: "A2Z Landscape LLC", fieldOverheadMode: "percent", fieldOverheadPct: 10, fieldOverheadCents: 2500 }, H);
+    assertEquals(ident.status, 200, JSON.stringify(ident.body));
+    assertEquals([ident.body.fieldOverheadMode, ident.body.fieldOverheadPct], ["percent", 10]);
+    const c = (await call("POST", "/customers", { name: "Randall Belknap", email: "randall.belknap@blackhole.postmarkapp.com" }, H)).body;
+    const today = fieldToday();
+    const s = await call("POST", "/field/subscriptions", {
+      customerId: c.id, address: "725 Frederick Rd, Rockingham, VA", startDate: today,
+      items: [{ taskTypeName: "Lawn", priceCents: 6500 }, { taskTypeName: "Hedge", priceCents: 4005 }], overhead: true,
+    }, H);
+    assertEquals(s.status, 201, JSON.stringify(s.body));
+    const w = (await call("POST", "/field/workers", { name: "Mario", phoneNumber: "8435550997", pin: "2468" }, H)).body;
+    for (const r of (await call("GET", "/field/regions", undefined, H)).body) await call("PUT", `/field/regions/${r.id}/worker`, { workerId: w.id }, H);
+    await call("POST", "/field/tasks/generate", { date: today }, H);
+    for (const t of (await call("GET", `/field/tasks?date=${today}`, undefined, H)).body) await call("PUT", `/field/tasks/${t.id}`, { status: "complete" }, H);
+    const pulled = await call("POST", "/field/batches/pull", { from: today, to: today }, H);
+    assertEquals(pulled.status, 201, JSON.stringify(pulled.body));
+    const inv = pulled.body.invoices[0];
+    // 10% of 10505 = 1050.5 → 1051
+    assertEquals(inv.lineItems.map((l: { service: string; price: number }) => `${l.service}=${l.price}`), ["Hedge=4005", "Lawn=6500", "Overhead=1051"]);
+    assertEquals(inv.amount, 6500 + 4005 + 1051);
+  });
+});

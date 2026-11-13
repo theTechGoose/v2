@@ -17,6 +17,7 @@ import { batchTitle, lineItem, lineText, linesFor, summarize } from "@field/doma
 import { fieldToday, shiftDate } from "@field/domain/business/schedule/mod.ts";
 import { type Batch, FieldError } from "@field/dto/field.ts";
 import { newId } from "@field/domain/coordinators/field-zones/mod.ts";
+import { overheadSetting } from "../../../../../../shared/field/overhead.ts";
 
 export interface BatchView extends Batch {
   invoices: (Invoice & { customerName: string; zeroLines: number })[];
@@ -63,7 +64,7 @@ export class FieldBatches {
     const identity = await this.identity.get(userId).catch(() => null);
     const accountNetDays = identity?.invoiceNetDays;
     // REQ-788: the overhead cost per visit, as Settings has it today
-    const overhead = { cents: identity?.fieldOverheadCents ?? 0, label: lang === "es" ? "Gastos generales" : "Overhead" };
+    const overhead = { setting: overheadSetting(identity), label: lang === "es" ? "Gastos generales" : "Overhead" };
     const subById = new Map(subscriptions.map((s) => [s.id, s]));
     const taskById = new Map(tasks.map((t) => [t.id, t]));
     const summary = summarize({ from, to, tasks, liveInvoiceIds: live });

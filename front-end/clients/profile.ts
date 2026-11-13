@@ -26,6 +26,9 @@ export interface BusinessIdentity {
   invoiceNetDays?: number;
   /** REQ-788: the overhead cost per recurring visit, in cents */
   fieldOverheadCents?: number;
+  /** REQ-788 AMENDMENT: flat cents per visit, or a percent of the visit's services */
+  fieldOverheadMode?: "flat" | "percent";
+  fieldOverheadPct?: number;
   /** Language the contractor's customers receive outbound comms in
    *  (quotes/SMS/email/docs). Distinct from the contractor's UI language.
    *  Defaults to "en" when unset. Stays the DEFAULT (first enabled). */

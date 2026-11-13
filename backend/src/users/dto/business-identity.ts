@@ -3,6 +3,7 @@ import {
   IsArray,
   IsBoolean,
   IsIn,
+  IsNumber,
   IsInt,
   IsOptional,
   IsString,
@@ -186,6 +187,9 @@ export interface BusinessIdentity {
   invoiceNetDays?: number;
   /** REQ-788: the overhead cost per recurring visit, in cents — billed on every visit of a subscription with the toggle on */
   fieldOverheadCents?: number;
+  /** REQ-788 AMENDMENT: "flat" bills fieldOverheadCents per visit; "percent" bills fieldOverheadPct of the visit's services. Unset = flat. */
+  fieldOverheadMode?: "flat" | "percent";
+  fieldOverheadPct?: number;
   /** REQ-172: the business's IANA time zone — the 9 am schedule texts follow it (default America/New_York) */
   timezone?: string;
   /** REQ-623: automatic payment reminders — see ReminderSettingsDto */
@@ -238,6 +242,15 @@ export class UpdateBusinessIdentityDto {
   @IsInt()
   @Min(0)
   fieldOverheadCents?: number;
+  /** REQ-788 AMENDMENT */
+  @IsOptional()
+  @IsIn(["flat", "percent"])
+  fieldOverheadMode?: "flat" | "percent";
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  @Max(100)
+  fieldOverheadPct?: number;
   /** REQ-172: an IANA zone (validated by the route) */
   @IsOptional()
   @IsString()

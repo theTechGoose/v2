@@ -5,6 +5,7 @@
  * turns each group into an invoice through InvoiceStore.
  */
 import type { FieldTask, Subscription, TaskType } from "@field/dto/field.ts";
+import { overheadCentsFor, type OverheadSetting } from "../../../../../../shared/field/overhead.ts";
 import { lastDayOf } from "@field/domain/business/job-span/mod.ts";
 
 export interface BatchLine {
@@ -35,8 +36,8 @@ export interface LinesInput {
   taskTypes: TaskType[];
   /** the ids of the account's invoices that still exist and are not void */
   liveInvoiceIds: Set<string>;
-  /** REQ-788: the account's overhead cost per visit (Settings) and the line's label in the invoice's language */
-  overhead?: { cents: number; label: string };
+  /** REQ-788: the account's overhead per visit (Settings — flat cents, or a percent of the visit's services) and the line's label in the invoice's language */
+  overhead?: { label: string; setting: OverheadSetting };
 }
 
 /** REQ-785: a job of several days is in a range that reaches any of its days (it bills once: its line stamps it) */
@@ -63,21 +64,27 @@ export function linesFor(input: LinesInput): CustomerLines[] {
     if (!byCustomer.has(t.customerId)) byCustomer.set(t.customerId, []);
     byCustomer.get(t.customerId)!.push(line);
   }
-  // REQ-788: one overhead line per visit (subscription × date) whose subscription has the toggle on
-  if (input.overhead && input.overhead.cents > 0) {
-    const seen = new Set<string>();
+  // REQ-788: one overhead line per visit (subscription × date) whose subscription has the toggle on —
+  // the flat amount, or (AMENDMENT) the percent of that visit's service lines
+  if (input.overhead) {
+    const visits = new Map<string, { t: FieldTask; s: Subscription; services: number }>();
     for (const t of eligible) {
       const s = subs.get(t.subscriptionId);
       if (!s?.overhead) continue;
       const key = `${t.subscriptionId}|${t.date}`;
-      if (seen.has(key)) continue;
-      seen.add(key);
+      const v = visits.get(key);
+      if (v) v.services += t.priceCents;
+      else visits.set(key, { t, s, services: t.priceCents });
+    }
+    for (const { t, s, services } of visits.values()) {
+      const priceCents = overheadCentsFor(input.overhead.setting, services);
+      if (priceCents <= 0) continue;
       byCustomer.get(t.customerId)!.push({
         taskId: "",
         date: t.date,
         description: input.overhead.label,
         address: t.address ?? s.address,
-        priceCents: input.overhead.cents,
+        priceCents,
         overhead: true,
       });
     }
