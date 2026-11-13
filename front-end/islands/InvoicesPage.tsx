@@ -5556,8 +5556,9 @@ function NewInvoiceModal(
         )}
 
         {/* REQ-801: the same search-and-pick as the repeat-visit form (REQ-136) */}
-        <label style={labelStyle}>
-          {tFor(lang, "invoicesPage.new.client")}
+        {/* REQ-809: a <div>, not a <label> — a label would re-focus the box on a row click and reopen the list */}
+        <div style={labelStyle}>
+          <span>{tFor(lang, "invoicesPage.new.client")}</span>
           <div data-cy="new-invoice-client" data-value={clientSel}>
             <SearchSelect
               name="customerId"
@@ -5572,7 +5573,7 @@ function NewInvoiceModal(
               }}
             />
           </div>
-        </label>
+        </div>
 
         {/* REQ-474 (M17): what this client already has — bill that instead */}
         {(prior.invoices.length > 0 || priorQuotes.length > 0) && (

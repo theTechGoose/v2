@@ -49,6 +49,10 @@ export default function MobileViewport() {
     // re-run the reveal; cleared on blur / after the settle window.
     let activeCorrect: (() => void) | null = null;
     let focusUntil = 0;
+    // REQ-809: the reveal exists to clear the on-screen keyboard. With no keyboard
+    // (a desktop, or the moment before it opens) the native focus scroll is right and
+    // ours dragged a tall modal to its submit button, so each pass checks first.
+    const keyboardOpen = () => globalThis.innerHeight - vv.height > 2;
     const apply = () => {
       // How much the keyboard overlaps the layout viewport.
       const overlap = globalThis.innerHeight - vv.height;
@@ -123,79 +127,84 @@ export default function MobileViewport() {
       }
       globalThis.clearTimeout(focusTimer);
       try {
-          // Reveal the field — and, if a submit/primary button trails it in the
-          // same form (the contract "sign" button, the wizard "Next"), keep the
-          // BUTTON clear of the keyboard too. Centering alone clamps at the page
-          // bottom (the button is the last element) and iOS's layout viewport
-          // doesn't fully exclude the keyboard, so scrollIntoView can't lift it.
-          // Compute the exact overshoot past the visible band (visualViewport)
-          // and scroll precisely that much.
-          const group = t.closest("form, [data-kbd-group]");
-          let target: Element = t;
-          if (group) {
-            // The primary action (sign / "I sent it" / Next) is the last button
-            // that FOLLOWS the field in the group. Revealing it keeps the field
-            // (just above it) visible too. Method-picker buttons precede the
-            // field, so they're correctly ignored.
-            const after = Array.from(group.querySelectorAll("button")).filter(
-              (b) =>
-                (t.compareDocumentPosition(b) &
-                  Node.DOCUMENT_POSITION_FOLLOWING) !== 0,
-            );
-            if (after.length) target = after[after.length - 1];
-          }
-          const sc = scrollableAncestor(target as HTMLElement);
-          // Lift the target clear of the keyboard. Runs repeatedly while the
-          // keyboard settles (see the resize-driven re-run in `apply()`), so each
-          // pass just measures the current layout and nudges toward the goal.
-          const correct = () => {
-            const r = target.getBoundingClientRect();
-            if (sc) {
-              // Nested scroll container (the chat thread): coords are relative
-              // to the container, so the overshoot nudge applies as-is.
-              const overshoot = r.bottom - (vv.height - 16);
-              if (overshoot > 1) sc.scrollBy({ top: overshoot, behavior: "auto" });
-              else if (r.top < 8) sc.scrollBy({ top: r.top - 8, behavior: "auto" });
-              return;
+        // Reveal the field — and, if a submit/primary button trails it in the
+        // same form (the contract "sign" button, the wizard "Next"), keep the
+        // BUTTON clear of the keyboard too. Centering alone clamps at the page
+        // bottom (the button is the last element) and iOS's layout viewport
+        // doesn't fully exclude the keyboard, so scrollIntoView can't lift it.
+        // Compute the exact overshoot past the visible band (visualViewport)
+        // and scroll precisely that much.
+        const group = t.closest("form, [data-kbd-group]");
+        let target: Element = t;
+        if (group) {
+          // The primary action (sign / "I sent it" / Next) is the last button
+          // that FOLLOWS the field in the group. Revealing it keeps the field
+          // (just above it) visible too. Method-picker buttons precede the
+          // field, so they're correctly ignored.
+          const after = Array.from(group.querySelectorAll("button")).filter(
+            (b) =>
+              (t.compareDocumentPosition(b) &
+                Node.DOCUMENT_POSITION_FOLLOWING) !== 0,
+          );
+          if (after.length) target = after[after.length - 1];
+        }
+        const sc = scrollableAncestor(target as HTMLElement);
+        // Lift the target clear of the keyboard. Runs repeatedly while the
+        // keyboard settles (see the resize-driven re-run in `apply()`), so each
+        // pass just measures the current layout and nudges toward the goal.
+        const correct = () => {
+          // REQ-809: nothing to clear until the keyboard overlaps the viewport
+          if (!keyboardOpen()) return;
+          const r = target.getBoundingClientRect();
+          if (sc) {
+            // Nested scroll container (the chat thread): coords are relative
+            // to the container, so the overshoot nudge applies as-is.
+            const overshoot = r.bottom - (vv.height - 16);
+            if (overshoot > 1) {
+              sc.scrollBy({ top: overshoot, behavior: "auto" });
+            } else if (r.top < 8) {
+              sc.scrollBy({ top: r.top - 8, behavior: "auto" });
             }
-            // Body-scroll page (public quote/contract/invoice). getBoundingClient-
-            // Rect is relative to the LAYOUT viewport (top = 0), but the band the
-            // user can actually see is [vv.offsetTop, vv.offsetTop + vv.height] —
-            // iOS offsets (and sometimes shrinks) the visual viewport when the
-            // keyboard opens. Convert into band coordinates by subtracting
-            // vv.offsetTop; the old code omitted this and so mis-measured every
-            // keyboard-open by exactly vv.offsetTop, leaving the field clipped
-            // off the top and the submit button stranded.
-            const topBand = vv.offsetTop;
-            const fieldTop = t.getBoundingClientRect().top - topBand;
-            const btnBot = r.bottom - topBand;
-            let delta = 0;
-            // 1) Lift the trailing submit if it sits below the visible band
-            //    (behind the keyboard).
-            if (btnBot > vv.height - 24) delta = btnBot - (vv.height - 24);
-            // 2) But never at the cost of clipping the focused field off the top —
-            //    if that scroll (or the current position) pushes the field above
-            //    the band, pull back so the field stays in view. This also lowers
-            //    content when iOS has over-scrolled the field above the fold.
-            if (fieldTop - delta < 8) delta = fieldTop - 8;
-            if (Math.abs(delta) > 1) {
-              globalThis.scrollBy({ top: delta, behavior: "auto" });
-            }
-          };
-          // Register so `apply()` re-runs the reveal on every viewport change
-          // until the keyboard has settled, and add fixed fallbacks in case the
-          // resize event doesn't fire (desktop, or engines that don't shrink the
-          // visual viewport).
-          activeCorrect = correct;
-          // Long enough to catch the keyboard settling in stages — the predictive-
-          // text bar appears a beat after the keyboard, shrinking the viewport a
-          // second time; a short window would close before that lands.
-          focusUntil = Date.now() + 2600;
-          for (const ms of [60, 250, 500, 800, 1200, 1800, 2400]) {
-            globalThis.setTimeout(() => {
-              if (activeCorrect === correct) correct();
-            }, ms);
+            return;
           }
+          // Body-scroll page (public quote/contract/invoice). getBoundingClient-
+          // Rect is relative to the LAYOUT viewport (top = 0), but the band the
+          // user can actually see is [vv.offsetTop, vv.offsetTop + vv.height] —
+          // iOS offsets (and sometimes shrinks) the visual viewport when the
+          // keyboard opens. Convert into band coordinates by subtracting
+          // vv.offsetTop; the old code omitted this and so mis-measured every
+          // keyboard-open by exactly vv.offsetTop, leaving the field clipped
+          // off the top and the submit button stranded.
+          const topBand = vv.offsetTop;
+          const fieldTop = t.getBoundingClientRect().top - topBand;
+          const btnBot = r.bottom - topBand;
+          let delta = 0;
+          // 1) Lift the trailing submit if it sits below the visible band
+          //    (behind the keyboard).
+          if (btnBot > vv.height - 24) delta = btnBot - (vv.height - 24);
+          // 2) But never at the cost of clipping the focused field off the top —
+          //    if that scroll (or the current position) pushes the field above
+          //    the band, pull back so the field stays in view. This also lowers
+          //    content when iOS has over-scrolled the field above the fold.
+          if (fieldTop - delta < 8) delta = fieldTop - 8;
+          if (Math.abs(delta) > 1) {
+            globalThis.scrollBy({ top: delta, behavior: "auto" });
+          }
+        };
+        // Register so `apply()` re-runs the reveal on every viewport change
+        // until the keyboard has settled, and add fixed fallbacks in case the
+        // resize event doesn't fire (desktop, or engines that don't shrink the
+        // visual viewport).
+        activeCorrect = correct;
+        // Long enough to catch the keyboard settling in stages — the predictive-
+        // text bar appears a beat after the keyboard, shrinking the viewport a
+        // second time; a short window would close before that lands.
+        focusUntil = Date.now() + 2600;
+        for (const ms of [60, 250, 500, 800, 1200, 1800, 2400]) {
+          globalThis.setTimeout(() => {
+            if (activeCorrect === correct) correct();
+          }, ms);
+        }
       } catch {
         /* older engines: best-effort, native behavior still applies */
       }
