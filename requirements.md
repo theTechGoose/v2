@@ -5465,3 +5465,12 @@ REQ-727 (the /invoices send sheet) supersedes "New invoice dispatches only the c
 
 ## REQ-731 AMENDMENT — reconciled on demo-fixes
 The /admin row toggle's hook is `data-cy="adm-toggle-admin"` (was `adm-toggle-super`), so REQ-191's "no string on /admin says super" holds. **Tests:** `jest/unit/role-labels.test.ts` (REQ-191) · e2e `e2e/admin-self-revoke/admin-self-revoke.e2e.test.ts` (selector updated).
+
+## REQ-712 AMENDMENT — reconciled on demo-fixes
+REQ-712 moved the signed thread row's preview into the dictionary as `acceptQuote.signed.preview` = "✓ {label}" (en + es), and REQ-366's "no app lang string carries a Dingbat glyph" refused it. The later requirement wins: that one key is allowed — it is the same plain-text "✓ …" thread preview the backend has stored since REQ-563, now worded in the live language, not a UI icon. **Tests:** `front-end/lib/ui-glyph-icons.test.tsx` (REQ-366, allowlist), `jest/unit/stale-lang-strings.test.ts` (REQ-712).
+
+## REQ-709 AMENDMENT — reconciled on demo-fixes
+REQ-746 named /quotes "Quotes & agreements"; the server-rendered `<title>` escapes the ampersand, so REQ-709's title check reads the painted text with HTML entities decoded. **Tests:** `front-end/lib/route-doc-title-lang.int.test.tsx`.
+
+## REQ-720 AMENDMENT — reconciled on demo-fixes
+REQ-591's Spanish preview check expected the Title Case hero "Reparación de Grifo"; REQ-720 makes the Spanish email hero sentence case, so it now expects "Reparación de grifo y puertas interiores". **Tests:** `backend/src/paperwork/domain/coordinators/preview-quote-send/int.test.ts`.

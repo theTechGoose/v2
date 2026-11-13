@@ -129,9 +129,17 @@ async function hit(r: typeof ROUTES[number], query: string): Promise<string> {
 function titleOf(body: string): { text: string; en: string; es: string } {
   const m = body.match(/<title([^>]*)>([^<]*)<\/title>/);
   assert(m, "no <title> rendered");
+  // the painted text, HTML entities decoded ("Quotes & agreements", REQ-746)
+  const decode = (v: string) =>
+    v.replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&lt;/g, "<")
+      .replace(/&gt;/g, ">").replace(/&amp;/g, "&");
   const attr = (name: string) =>
-    m[1].match(new RegExp(`${name}="([^"]*)"`))?.[1] ?? "";
-  return { text: m[2], en: attr("data-title-en"), es: attr("data-title-es") };
+    decode(m[1].match(new RegExp(`${name}="([^"]*)"`))?.[1] ?? "");
+  return {
+    text: decode(m[2]),
+    en: attr("data-title-en"),
+    es: attr("data-title-es"),
+  };
 }
 
 /** the footer's rendered markup (island props carry both languages) */

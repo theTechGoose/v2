@@ -46,7 +46,11 @@ const ALLOW_FILES = new Set([
   "islands/Landing2Docs.tsx",
   "lib/landing-dict.ts",
 ]);
-const ALLOW_LANG_KEY = /^(landing\.|landing3\.)/;
+/** REQ-712 AMENDMENT (reconciled on demo-fixes): the signed thread row's
+ *  stored preview "✓ {label}" — the same plain-text preview the backend has
+ *  stored since REQ-563, now worded from its key so it follows the live
+ *  language. It is thread-list text, not a UI icon. */
+const ALLOW_LANG_KEY = /^(landing\.|landing3\.|acceptQuote\.signed\.preview$)/;
 
 /**
  * Blank comment lines (`//`, `/*`, ` *`, `{/*`) and trailing `// …` comments.

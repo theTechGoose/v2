@@ -273,13 +273,17 @@ Deno.test("REQ-591 (cycle 4, M32) preview-quote-send: an English preview of a Sp
   assertStringIncludes(p2.email!.html, "Faucet And Interior Door Repair");
   assert(!SPANISH_HERO.test(p2.email!.html), "no Spanish hero");
 
-  // The Spanish preview still leads with the typed Spanish summary.
+  // The Spanish preview still leads with the typed Spanish summary — in
+  // sentence case (REQ-720: a Spanish email hero is never Title Case).
   const es = await ctx.flow.run("u-1", {
     quoteId: quote.id,
     channel: "email",
     lang: "es",
   });
-  assertStringIncludes(es.email!.html, "Reparación de Grifo");
+  assertStringIncludes(
+    es.email!.html,
+    "Reparación de grifo y puertas interiores",
+  );
   await resetKv();
 });
 
