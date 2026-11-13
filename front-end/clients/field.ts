@@ -245,6 +245,10 @@ export interface BatchInvoice {
     quantity: number;
     unit?: string;
     price: number;
+    service?: string;
+    /** REQ-810: the field task the line bills (lines pulled since REQ-810) */
+    taskId?: string;
+    overhead?: boolean;
   }[];
   /** lines priced $0 — the office prices them before sending */
   zeroLines: number;
@@ -389,6 +393,23 @@ export const fieldClient = {
     api.get<BatchView>(`/field/batches/${id}`, opts),
   pull: (from: string, to: string, opts?: ApiOptions) =>
     api.post<PullResult>("/field/batches/pull", { from, to }, opts),
+  /** REQ-810: take a draft out of the batch (deleted; its tasks un-invoiced) — answers the batch */
+  removeInvoice: (id: string, invoiceId: string, opts?: ApiOptions) =>
+    api.delete<BatchView>(`/field/batches/${id}/invoices/${invoiceId}`, opts),
+  /** REQ-810: take one line off a draft; `key` is the row as the page shows it (a stale page is 409) */
+  removeLine: (
+    id: string,
+    invoiceId: string,
+    index: number,
+    key: string,
+    opts?: ApiOptions,
+  ) =>
+    api.delete<BatchView>(
+      `/field/batches/${id}/invoices/${invoiceId}/lines/${index}?key=${
+        encodeURIComponent(key)
+      }`,
+      opts,
+    ),
   send: (
     id: string,
     invoiceIds: string[],

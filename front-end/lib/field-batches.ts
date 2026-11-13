@@ -95,3 +95,13 @@ export function defaultBatchChecks(
  * note is edited again first), counted from AFTER the save's reload.
  */
 export const NOTE_SAVED_MS = 6000;
+
+/** REQ-810 — the guard a line's × sends: its task, else its text (the server 409s a row that no longer matches) */
+export function lineKey(l: { taskId?: string; description: string }): string {
+  return l.taskId || l.description;
+}
+
+/** REQ-810 — the batch list after one batch changed in place: the same order, that batch replaced */
+export function replaceBatch<B extends { id: string }>(all: B[], next: B): B[] {
+  return all.map((b) => (b.id === next.id ? next : b));
+}
