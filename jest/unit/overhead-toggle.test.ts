@@ -20,7 +20,7 @@ describe("REQ-788 overhead toggle", () => {
     expect(src).toMatch(
       /class=\{`day day--wide\$\{form\.overhead \? " on" : ""\}`\}/,
     );
-    expect(src).toMatch(/fieldOverheadCents/);
+    expect(src).toMatch(/overheadSetting\(/);
     // off on a new subscription, remembered on an edit, sent on save
     expect(src).toMatch(/overhead: false/);
     expect(src).toMatch(/overhead: s\.overhead === true/);
@@ -35,6 +35,27 @@ describe("REQ-788 overhead toggle", () => {
     const src = read("front-end/islands/SettingsPage.tsx");
     expect(src).toMatch(/data-cy="settings-overhead"/);
     expect(src).toMatch(/saveIdentity\(\{ fieldOverheadCents/);
+  });
+  test("AMENDMENT: Settings has the $ | % switch and saves the percent; the chip and card read the shared text", () => {
+    const src = read("front-end/islands/SettingsPage.tsx");
+    expect(src).toMatch(/data-cy=\{`settings-overhead-mode-\$\{m\}`\}/);
+    expect(src).toMatch(/\["flat", "percent"\] as const/);
+    expect(src).toMatch(/saveIdentity\(\{ fieldOverheadMode/);
+    expect(src).toMatch(/saveIdentity\(\{ fieldOverheadPct/);
+    const subs = read("front-end/islands/FieldSubscriptionsPage.tsx");
+    expect(subs).toMatch(/overheadText\(/);
+    expect(subs).toMatch(/overheadCentsFor\(/);
+    expect(read("front-end/clients/profile.ts")).toMatch(
+      /fieldOverheadMode\?: "flat" \| "percent"/,
+    );
+    expect(read("front-end/clients/profile.ts")).toMatch(
+      /fieldOverheadPct\?: number/,
+    );
+    for (const d of [en, es]) {
+      for (const k of ["settings.overheadFlat", "settings.overheadPercent"]) {
+        expect(d[k]).toBeTruthy();
+      }
+    }
   });
   test("the clients carry the fields", () => {
     expect(read("front-end/clients/profile.ts")).toMatch(

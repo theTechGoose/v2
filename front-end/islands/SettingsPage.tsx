@@ -201,6 +201,8 @@ function tr(es: boolean) {
     netDaysHint: tFor(lang, "settings.netDaysHint"),
     overhead: tFor(lang, "settings.overhead"),
     overheadHint: tFor(lang, "settings.overheadHint"),
+    overheadFlat: tFor(lang, "settings.overheadFlat"),
+    overheadPercent: tFor(lang, "settings.overheadPercent"),
     // Address
     street: tFor(lang, "settings.street"),
     city: tFor(lang, "settings.city"),
@@ -423,10 +425,14 @@ function EditCard(
   const [netDays, setNetDays] = useState(
     String(accountNetDays(snapshot.identity?.invoiceNetDays)),
   );
-  // REQ-788: the overhead cost per recurring visit, shown in dollars, stored in cents
-  const [overhead, setOverhead] = useState(
-    ((snapshot.identity?.fieldOverheadCents ?? 0) / 100).toFixed(2),
-  );
+  // REQ-788: the overhead per recurring visit — dollars (stored in cents) or (AMENDMENT) a percent of the visit
+  const overheadMode: "flat" | "percent" =
+    snapshot.identity?.fieldOverheadMode === "percent" ? "percent" : "flat";
+  const overheadShown = (mode: "flat" | "percent") =>
+    mode === "percent"
+      ? String(snapshot.identity?.fieldOverheadPct ?? 0)
+      : ((snapshot.identity?.fieldOverheadCents ?? 0) / 100).toFixed(2);
+  const [overhead, setOverhead] = useState(overheadShown(overheadMode));
   const [busy, setBusy] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
   // REQ-501 (demo M35): a bad email / an emptied business name is shown under its field and NOT
@@ -698,33 +704,80 @@ function EditCard(
         {/* REQ-788: the overhead cost per visit — what the subscription's Overhead toggle adds */}
         <label style="display:block;grid-column:1 / -1">
           <span style={labelStyle}>{t.overhead}</span>
-          <input
-            type="number"
-            min="0"
-            step="0.01"
-            inputMode="decimal"
-            class="settings-edit__input"
-            style={inputStyle}
-            data-cy="settings-overhead"
-            value={overhead}
-            disabled={busy === "identity"}
-            onInput={(e) => setOverhead((e.target as HTMLInputElement).value)}
-            onBlur={() => {
-              const current = snapshot.identity?.fieldOverheadCents ?? 0;
-              const cents = Math.round(Number(overhead) * 100);
-              if (
-                overhead.trim() === "" || !Number.isFinite(cents) || cents < 0
-              ) {
-                setOverhead((current / 100).toFixed(2));
-                return;
-              }
-              setOverhead((cents / 100).toFixed(2));
-              if (cents !== current) {
-                saveIdentity({ fieldOverheadCents: cents });
-              }
-            }}
-            aria-label={t.overhead}
-          />
+          <div style="display:flex;gap:8px;align-items:center">
+            <div
+              role="radiogroup"
+              aria-label={t.overhead}
+              style="display:inline-flex;border:1px solid var(--border,#d9ded6);border-radius:10px;overflow:hidden;flex:none"
+            >
+              {(["flat", "percent"] as const).map((m) => (
+                <button
+                  key={m}
+                  type="button"
+                  role="radio"
+                  aria-checked={overheadMode === m}
+                  data-cy={`settings-overhead-mode-${m}`}
+                  disabled={busy === "identity"}
+                  title={m === "flat" ? t.overheadFlat : t.overheadPercent}
+                  style={`padding:8px 14px;border:0;font-weight:800;cursor:pointer;background:${
+                    overheadMode === m ? "var(--brand-teal,#0f766e)" : "#fff"
+                  };color:${
+                    overheadMode === m ? "#fff" : "var(--fg-muted,#6b7560)"
+                  }`}
+                  onClick={() => {
+                    if (overheadMode === m) return;
+                    setOverhead(overheadShown(m));
+                    saveIdentity({ fieldOverheadMode: m });
+                  }}
+                >
+                  {m === "flat" ? "$" : "%"}
+                </button>
+              ))}
+            </div>
+            <input
+              type="number"
+              min="0"
+              max={overheadMode === "percent" ? "100" : undefined}
+              step="0.01"
+              inputMode="decimal"
+              class="settings-edit__input"
+              style={inputStyle}
+              data-cy="settings-overhead"
+              value={overhead}
+              disabled={busy === "identity"}
+              onInput={(e) => setOverhead((e.target as HTMLInputElement).value)}
+              onBlur={() => {
+                if (overheadMode === "percent") {
+                  const current = snapshot.identity?.fieldOverheadPct ?? 0;
+                  const pct = Math.round(Number(overhead) * 100) / 100;
+                  if (
+                    overhead.trim() === "" || !Number.isFinite(pct) ||
+                    pct < 0 || pct > 100
+                  ) {
+                    setOverhead(String(current));
+                    return;
+                  }
+                  setOverhead(String(pct));
+                  if (pct !== current) saveIdentity({ fieldOverheadPct: pct });
+                  return;
+                }
+                const current = snapshot.identity?.fieldOverheadCents ?? 0;
+                const cents = Math.round(Number(overhead) * 100);
+                if (
+                  overhead.trim() === "" || !Number.isFinite(cents) ||
+                  cents < 0
+                ) {
+                  setOverhead((current / 100).toFixed(2));
+                  return;
+                }
+                setOverhead((cents / 100).toFixed(2));
+                if (cents !== current) {
+                  saveIdentity({ fieldOverheadCents: cents });
+                }
+              }}
+              aria-label={t.overhead}
+            />
+          </div>
           <span style="display:block;margin-top:4px;font-size:12px;color:var(--fg-muted,#6b7560)">
             {t.overheadHint}
           </span>

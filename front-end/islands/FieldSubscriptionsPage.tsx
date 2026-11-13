@@ -24,9 +24,16 @@ import { I, ICN } from "../lib/dash-icons.tsx";
 import {
   customerOptions,
   fmtMoneyExact,
+  perVisitCents,
   prefillAddress,
   todayIso,
 } from "../lib/field.ts";
+import {
+  overheadCentsFor,
+  type OverheadSetting,
+  overheadSetting,
+  overheadText,
+} from "../../shared/field/overhead.ts";
 import { langSignal, t } from "../lib/i18n.ts";
 import { formatLongDate } from "../../shared/quote-flow/format-helpers.ts";
 import type { FieldSubscriptionsSeed } from "../lib/field-ssr.ts";
@@ -239,8 +246,11 @@ export default function FieldSubscriptionsPage(
   const [form, setForm] = useState<Form | null>(null);
   // REQ-174: the account's default days to pay, from Settings
   const [defaultNetDays, setDefaultNetDays] = useState(30);
-  // REQ-788: the account's overhead cost per visit, from Settings
-  const [overheadCents, setOverheadCents] = useState(0);
+  // REQ-788: the account's overhead per visit, from Settings — flat cents or a percent of the services
+  const [overhead, setOverhead] = useState<OverheadSetting>({
+    mode: "flat",
+    cents: 0,
+  });
   /** the card whose Delete is waiting for its Confirm */
   const [confirmId, setConfirmId] = useState<string | null>(null);
   /** the card with a request in flight, and the message its last one failed with */
@@ -284,8 +294,7 @@ export default function FieldSubscriptionsPage(
     profileClient.get().then((snap) => {
       const n = snap.identity?.invoiceNetDays;
       if (alive && typeof n === "number") setDefaultNetDays(n);
-      const oh = snap.identity?.fieldOverheadCents;
-      if (alive && typeof oh === "number") setOverheadCents(oh);
+      if (alive) setOverhead(overheadSetting(snap.identity));
     }).catch(() => {
       // 30 stays the default
     });
@@ -689,7 +698,14 @@ export default function FieldSubscriptionsPage(
                     {s.overhead && (
                       <div data-cy="subs-card-overhead">
                         <span>{t("field.subs.overheadLabel")}</span>
-                        <b>{fmtMoneyExact(overheadCents)}</b>
+                        <b>
+                          {fmtMoneyExact(
+                            overheadCentsFor(overhead, perVisitCents(s)),
+                          )}
+                          {overhead.mode === "percent"
+                            ? ` · ${overheadText(overhead)}`
+                            : ""}
+                        </b>
                       </div>
                     )}
                   </div>
@@ -814,7 +830,9 @@ export default function FieldSubscriptionsPage(
                 <label
                   class={`day day--wide${form.overhead ? " on" : ""}`}
                   data-cy="subs-overhead"
-                  title={overheadCents > 0 ? "" : t("field.subs.overheadHint")}
+                  title={overheadCentsFor(overhead, 100) > 0
+                    ? ""
+                    : t("field.subs.overheadHint")}
                 >
                   <input
                     type="checkbox"
@@ -822,9 +840,7 @@ export default function FieldSubscriptionsPage(
                     checked={form.overhead}
                     onChange={() => patch({ overhead: !form.overhead })}
                   />
-                  {t("field.subs.overhead", {
-                    amount: fmtMoneyExact(overheadCents),
-                  })}
+                  {t("field.subs.overhead", { amount: overheadText(overhead) })}
                 </label>
               </div>
             </div>

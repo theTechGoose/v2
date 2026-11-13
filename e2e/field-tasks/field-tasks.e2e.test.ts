@@ -1358,4 +1358,24 @@ Deno.test("REQ-788: the overhead cost set in Settings; the form's upper-right ch
       "one service line, one Overhead line",
     );
     expect.eq(inv?.zeroLines, 0, "the overhead is not a $0 line");
+    // REQ-788 AMENDMENT — "we want it in percentage, or in dollars": the % switch in Settings
+    await page.goto("/settings");
+    await page.locator("[data-cy='settings-overhead-mode-percent']").click();
+    const pctBox = page.locator("[data-cy='settings-overhead']");
+    await pctBox.waitFor({ timeout: 15_000 });
+    await pctBox.fill("10");
+    await pctBox.blur();
+    await page.waitForTimeout(800);
+    const ident2 = await (await http("/api/profile/identity", { headers: auth })).json();
+    expect.eq(
+      [ident2.fieldOverheadMode, ident2.fieldOverheadPct].join("|"),
+      "percent|10",
+      "Settings saved the percent mode and 10%",
+    );
+    await page.goto("/field/subscriptions");
+    await page.locator("[data-cy='subs-card-overhead']").first().waitFor({ timeout: 20_000 });
+    await expect.see("$6.50 · 10%");
+    await page.locator("[data-cy='subs-edit']").first().click();
+    await page.locator("[data-cy='subs-overhead']").waitFor({ timeout: 15_000 });
+    await expect.see("Overhead · 10%");
   }));
