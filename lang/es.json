@@ -5170,5 +5170,15 @@
   "reportsPage.eyebrow": "Informes",
   "reportsPage.titlePre": "Llévate tus números",
   "reportsPage.titleEm": "contigo",
-  "reportsPage.readyLbl": "Listo para descargar"
+  "reportsPage.readyLbl": "Listo para descargar",
+  "ops.approve.title": "Aprobar una vista",
+  "ops.approve.ask": "Claude pide ver {account}.",
+  "ops.approve.readOnly": "Solo lectura, por {minutes} minutos. No se puede cambiar nada.",
+  "ops.approve.reason": "Motivo: {reason}",
+  "ops.approve.approve": "Aprobar",
+  "ops.approve.deny": "Rechazar",
+  "ops.approve.approved": "Aprobado. La vista se cierra sola en {minutes} minutos.",
+  "ops.approve.denied": "Rechazado. No se abrió nada.",
+  "ops.approve.expired": "Esta solicitud venció. No se abrió nada.",
+  "ops.approve.notFound": "Este enlace no es válido."
 }

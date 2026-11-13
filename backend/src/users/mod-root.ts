@@ -64,6 +64,9 @@ import { ConnectStripe } from "@users/domain/coordinators/connect-stripe/mod.ts"
 import { StripeSettingsController } from "@users/entrypoints/stripe-settings-controller/mod.ts"; // REQ-212
 import { DevStripeController } from "@users/entrypoints/dev-stripe-controller/mod.ts"; // REQ-212
 import { DevAccountAdminsController } from "@users/entrypoints/dev-account-admins-controller/mod.ts"; // REQ-632
+import { OpsAccessController } from "@users/entrypoints/ops-access-controller/mod.ts"; // REQ-806
+import { OpsAccess } from "@users/domain/coordinators/ops-access/mod.ts"; // REQ-806
+import { OpsRequestStore } from "@users/domain/data/ops-request-store/mod.ts"; // REQ-806
 import { StripeGateway } from "@core/data/stripe-gateway/mod.ts"; // REQ-212
 import { SquareSettingsStore } from "@users/domain/data/square-settings-store/mod.ts"; // REQ-803
 import { ConnectSquare } from "@users/domain/coordinators/connect-square/mod.ts"; // REQ-803
@@ -108,6 +111,7 @@ import { SquareGateway } from "@core/data/square-gateway/mod.ts"; // REQ-803
     SquareSettingsController, // REQ-803
     DevSquareController, // REQ-803 — fakes only
     DevAccountAdminsController, // REQ-632 — fakes only
+    OpsAccessController, // REQ-806
   ],
   injectables: [
     // identity
@@ -130,6 +134,8 @@ import { SquareGateway } from "@core/data/square-gateway/mod.ts"; // REQ-803
     RateLimiter,
     AccountAdminStore, // REQ-146
     AccountAdmins, // REQ-146
+    OpsAccess, // REQ-806
+    OpsRequestStore, // REQ-806
     // profile
     BusinessIdentityStore,
     BusinessAddressStore,

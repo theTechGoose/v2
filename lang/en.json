@@ -5170,5 +5170,15 @@
   "reportsPage.eyebrow": "Reports",
   "reportsPage.titlePre": "Take your numbers",
   "reportsPage.titleEm": "with you",
-  "reportsPage.readyLbl": "Ready to download"
+  "reportsPage.readyLbl": "Ready to download",
+  "ops.approve.title": "Approve a view",
+  "ops.approve.ask": "Claude asks to view {account}.",
+  "ops.approve.readOnly": "Read-only, for {minutes} minutes. Nothing can be changed.",
+  "ops.approve.reason": "Reason: {reason}",
+  "ops.approve.approve": "Approve",
+  "ops.approve.deny": "Deny",
+  "ops.approve.approved": "Approved. The view closes by itself in {minutes} minutes.",
+  "ops.approve.denied": "Denied. Nothing was opened.",
+  "ops.approve.expired": "This request expired. Nothing was opened.",
+  "ops.approve.notFound": "This link isn't valid."
 }

@@ -4,6 +4,7 @@ import { type Session, SessionStore } from "@users/domain/data/session-store/mod
 import { UserStore } from "@users/domain/data/user-store/mod.ts";
 import type { User } from "@users/dto/user.ts";
 import { AccountAdminStore } from "@users/domain/data/account-admin-store/mod.ts";
+import { sessionRefusal } from "@users/domain/business/ops-access/mod.ts"; // REQ-806
 
 export class UnauthorizedError extends Error {
   /** HTTP status. Danet's exception layer serializes `error.status || 500`,
@@ -24,6 +25,16 @@ export class ActingAsAdminError extends Error {
   constructor() {
     super("acting_as_admin");
     this.name = "ActingAsAdminError";
+  }
+}
+
+/** REQ-806: an ops view (read-only) asked to write. 403, `read_only_session`. */
+export class ReadOnlySessionError extends Error {
+  readonly status: number = 403;
+  readonly error = "read_only_session";
+  constructor() {
+    super("read_only_session");
+    this.name = "ReadOnlySessionError";
   }
 }
 
@@ -92,6 +103,10 @@ export async function requireSession(
   if (!sessionId) throw new UnauthorizedError();
   const session = await sessions.get(sessionId);
   if (!session) throw new UnauthorizedError();
+  // REQ-806: an ops view dies at its expiry and never writes
+  const refused = sessionRefusal(session, ctx.req.method);
+  if (refused === "expired") throw new UnauthorizedError();
+  if (refused === "read_only") throw new ReadOnlySessionError();
   let user: User;
   try {
     user = await users.get(session.userId);
