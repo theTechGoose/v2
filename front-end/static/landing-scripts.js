@@ -43,6 +43,16 @@
     return [label, qty, l.rate || "", l.amount || ""];
   }
 
+  /** The labour line's name, from the one landing dictionary's hero-card row
+   *  (doc.q.l3, "Labor (3 days)") minus its "(3 days)": this card prints the
+   *  count in its own quantity column. One name for the labour line on the
+   *  whole page (REQ-742, demo p18-6e: it used to read "Plomería e
+   *  instalación" here and "Mano de obra (3 días)" on the hero card). */
+  function laborLabel(lang) {
+    const l3 = (I18N[lang] || {})["doc.q.l3"] || "";
+    return l3.replace(/\s*\([^)]*\)\s*$/, "");
+  }
+
   const DOC_CONTENT = {
     en: {
       quote: {
@@ -53,7 +63,7 @@
           mqLine("demo", "Demolition & haul-off"),
           mqLine("cabinets", "Cabinets — solid maple"),
           mqLine("counters", "Quartz countertops (sq ft)"),
-          mqLine("labor", "Plumbing & install labor", "days"),
+          mqLine("labor", laborLabel("en"), "days"),
         ],
         totals: [["Subtotal", MQ.subtotal], ["Tax (estimate)", MQ.tax], [
           "Estimate",
@@ -137,7 +147,7 @@
           mqLine("demo", "Demolición y limpieza"),
           mqLine("cabinets", "Gabinetes — maple sólido"),
           mqLine("counters", "Cubiertas de cuarzo (pie²)"),
-          mqLine("labor", "Plomería e instalación", "días"),
+          mqLine("labor", laborLabel("es"), "días"),
         ],
         totals: [["Subtotal", MQ.subtotal], ["Impuesto (est.)", MQ.tax], [
           "Estimado",
