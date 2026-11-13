@@ -164,6 +164,111 @@ export function quoteTotalCents(
   );
 }
 
+/**
+ * REQ-679 (demo-loop cycle 5, M18 + M19): the agreed total — the quote's
+ * own total plus its APPROVED change orders (pending and declined ones are
+ * not agreed). Approving an order revises only its invoice; every surface
+ * that names the agreement (the ledger, /i, the invoice PDF and email, the
+ * /quotes panel header, the dashboard's job rows) reads this one rule.
+ */
+export function approvedChangeOrdersCents(
+  changeOrders: readonly { status?: string; deltaAmountCents: number }[],
+): number {
+  return changeOrders
+    .filter((c) => c.status === "approved")
+    .reduce((s, c) => s + Math.round(c.deltaAmountCents), 0);
+}
+
+export function agreedTotalCents(
+  quote: Pick<LedgerQuote, "estimatedTotal" | "lineItems">,
+  changeOrders: readonly { status?: string; deltaAmountCents: number }[],
+): number {
+  return Math.max(
+    0,
+    quoteTotalCents(quote) + approvedChangeOrdersCents(changeOrders),
+  );
+}
+
+/** REQ-679: one installment of the agreement, as the schedule reads it. */
+export interface ScheduleInstallment {
+  id?: string;
+  amount?: number;
+  status?: string;
+  installmentIndex?: number;
+  installmentTotal?: number;
+}
+
+/**
+ * REQ-679 (M18): the payment schedule's amounts from the REAL installments.
+ * `split` is the agreed total split by the payment terms (one amount per
+ * milestone). An installment of the same plan (installmentTotal ===
+ * split.length, 1-based installmentIndex, not void) puts its own amount in
+ * its slot — an approved change order lands on the invoice it revised, not
+ * evenly across the plan. The slots no installment covers yet share what is
+ * left of the agreement, in proportion to the split. With nothing known (or
+ * a single-payment plan) the split is returned as given.
+ */
+export function installmentSchedule(
+  split: readonly number[],
+  agreedCents: number,
+  installments: readonly ScheduleInstallment[],
+): number[] {
+  const n = split.length;
+  if (n < 2) return split.slice();
+  const known = new Map<number, number>();
+  for (const i of installments) {
+    if (FREED.has(i.status ?? "")) continue;
+    if (i.installmentTotal !== n || typeof i.amount !== "number") continue;
+    const idx = i.installmentIndex ?? 0;
+    if (idx < 1 || idx > n) continue;
+    known.set(idx, Math.round(i.amount));
+  }
+  if (known.size === 0) return split.slice();
+  const out = split.map((s, k) => known.get(k + 1) ?? s);
+  const open = split.map((_, k) => k).filter((k) => !known.has(k + 1));
+  if (open.length === 0) return out;
+  const knownSum = [...known.values()].reduce((s, a) => s + a, 0);
+  const left = Math.max(0, Math.round(agreedCents) - knownSum);
+  const weight = open.reduce((s, k) => s + Math.max(0, split[k]), 0);
+  let given = 0;
+  open.forEach((k, j) => {
+    const share = j === open.length - 1
+      ? left - given
+      : weight > 0
+      ? Math.round((left * Math.max(0, split[k])) / weight)
+      : 0;
+    out[k] = share;
+    given += share;
+  });
+  return out;
+}
+
+/**
+ * REQ-679 (M19): the /quotes panel header's money — the ledger's agreement
+ * total (and the approved change orders in it, for the "incl. +$X in change
+ * orders" line), else the card's own approved change orders over the quote.
+ */
+export function panelAgreedTotal(
+  quote: Pick<LedgerQuote, "estimatedTotal" | "lineItems"> & {
+    approvedChangeOrdersCents?: number;
+  },
+  ledger?:
+    | Pick<QuoteLedger, "agreementTotalCents" | "approvedChangeOrdersCents">
+    | null,
+): { totalCents: number; changeOrdersCents: number } {
+  if (ledger) {
+    return {
+      totalCents: ledger.agreementTotalCents,
+      changeOrdersCents: ledger.approvedChangeOrdersCents,
+    };
+  }
+  const co = quote.approvedChangeOrdersCents ?? 0;
+  return {
+    totalCents: Math.max(0, quoteTotalCents(quote) + co),
+    changeOrdersCents: co,
+  };
+}
+
 export function quoteLedger(
   quote: LedgerQuote,
   invoices: readonly LedgerInvoice[],
@@ -245,11 +350,8 @@ export function quoteLedger(
       url: `/wo/${wo.id}`,
     }));
   const quoteTotal = quoteTotalCents(quote);
-  const approved = coRows.filter((c) => c.status === "approved").reduce(
-    (s, c) => s + c.deltaAmountCents,
-    0,
-  );
-  const agreement = Math.max(0, quoteTotal + approved);
+  const approved = approvedChangeOrdersCents(coRows);
+  const agreement = agreedTotalCents(quote, coRows); // REQ-679
   const live = rows.filter((r) => !FREED.has(r.status));
   const invoiced = live.reduce((s, r) => s + r.amountCents, 0);
   // REQ-481 (demo M28): a scheduled installment or a draft is committed

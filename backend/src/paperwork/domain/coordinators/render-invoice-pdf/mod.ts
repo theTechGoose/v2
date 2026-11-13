@@ -26,6 +26,9 @@ import {
   revisedNote,
 } from "@paperwork/domain/business/doc-render/mod.ts";
 import { fmtVisitDate, groupVisits } from "#quote-flow/visit-groups.ts";
+import { ChangeOrderStore } from "@paperwork/domain/data/change-order-store/mod.ts";
+import { agreedTotalCents, installmentSchedule } from "#documents/ledger.ts"; // REQ-679
+import { isInvoiceIssued } from "#documents/versions.ts";
 
 const APP_URL = (() => {
   const explicit = Deno.env.get("APP_URL")?.trim() || undefined;
@@ -63,6 +66,8 @@ export class RenderInvoicePdf {
     private customers: CustomerStore,
     private users: UserStore,
     private identity: BusinessIdentityStore,
+    /** REQ-679: the agreement's approved change orders (optional for direct test construction) */
+    private changeOrders: ChangeOrderStore = new ChangeOrderStore(),
   ) {}
 
   async run(invoiceId: string): Promise<Uint8Array> {
@@ -468,11 +473,18 @@ export class RenderInvoicePdf {
       if (rows.length || invoice.paymentInstructions?.trim()) y -= 10;
     }
 
-    const agreementTotal = quote?.estimatedTotal ??
-      (quote?.lineItems ?? []).reduce(
-        (s, li) => s + (li.price ?? 0) * (li.quantity ?? 1),
-        0,
-      );
+    // REQ-679 (cycle 5, M18): the agreement is the quote plus its approved
+    // change orders, and the schedule is the real installments — the same
+    // figures /i shows.
+    const [quoteCos, installments] = quote
+      ? await Promise.all([
+        this.changeOrders.listByQuote(invoice.userId, quote.id).catch(() => []),
+        this.invoices.listByUser(invoice.userId).then((all) =>
+          all.filter((row) => row.quoteId === quote.id && isInvoiceIssued(row))
+        ).catch(() => []),
+      ])
+      : [[], []];
+    const agreementTotal = quote ? agreedTotalCents(quote, quoteCos) : 0;
 
     // Section: Job details (line items) + agreement-value total card.
     if (quote?.lineItems?.length) {
@@ -575,7 +587,13 @@ export class RenderInvoicePdf {
     }
 
     // Section: Payment schedule (derived from the agreement's payment terms).
-    const milestones = computeMilestones(agreementTotal, quote?.terms, lang);
+    const split = computeMilestones(agreementTotal, quote?.terms, lang);
+    const scheduled = installmentSchedule(
+      split.map((m) => m.amount),
+      agreementTotal,
+      [...installments.filter((row) => row.id !== invoice.id), invoice],
+    );
+    const milestones = split.map((m, k) => ({ ...m, amount: scheduled[k] }));
     if (milestones.length > 0) {
       addPageIfNeeded(110);
       y = drawSectionHeader(

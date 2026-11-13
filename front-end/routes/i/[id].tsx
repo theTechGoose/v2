@@ -32,6 +32,7 @@ import {
   stateLabel,
 } from "../../../shared/documents/linked-view.ts";
 import { receivedNoteBody } from "../../../shared/documents/received-note.ts";
+import { installmentSchedule } from "../../../shared/documents/ledger.ts"; // REQ-679
 import { receiptSentViaOf } from "../../../shared/documents/delivery-truth.ts";
 import { claimRejectedNote } from "../../../shared/documents/claim-rejected-note.ts";
 import {
@@ -376,9 +377,21 @@ function InvoiceDoc(
   );
   const agreementTotal = invoice.agreementTotal ??
     (items.length ? sumLineTotals(items) : undefined);
-  const milestones = agreementTotal
+  // REQ-679 (cycle 5, M18): the schedule is the agreement's REAL
+  // installments — an approved change order lands on the invoice it revised
+  // (8,150 deposit · 9,750 balance), never a re-split of the total.
+  const split = agreementTotal
     ? computeMilestones(agreementTotal, invoice.terms, lang)
     : [];
+  const scheduled = installmentSchedule(
+    split.map((m) => m.amount),
+    agreementTotal ?? 0,
+    [
+      ...(invoice.siblings ?? []).filter((s) => s.id !== invoice.id),
+      invoice,
+    ],
+  );
+  const milestones = split.map((m, k) => ({ ...m, amount: scheduled[k] }));
   // PDF p6: the invoice mirrors the quote's info (job name, details, line
   // items, total) but NEVER the numbered Terms grid nor any signature block —
   // those live on the signed agreement, which is linked BELOW the document

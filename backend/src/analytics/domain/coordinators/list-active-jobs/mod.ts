@@ -8,6 +8,9 @@ import { CustomerStore } from "@crm/domain/data/customer-store/mod.ts";
 import { QuoteStore } from "@paperwork/domain/data/quote-store/mod.ts";
 import { InvoiceStore } from "@paperwork/domain/data/invoice-store/mod.ts";
 import type { Customer } from "@crm/dto/customer.ts";
+import { ChangeOrderStore } from "@paperwork/domain/data/change-order-store/mod.ts";
+import type { ChangeOrder } from "@paperwork/dto/change-order.ts";
+import { agreedTotalCents } from "#documents/ledger.ts"; // REQ-679
 import type { Invoice } from "@paperwork/dto/invoice.ts";
 import {
   isOpenReceivable,
@@ -75,14 +78,24 @@ export class ListActiveJobs {
     private customers: CustomerStore,
     private quotes: QuoteStore,
     private invoices: InvoiceStore,
+    /** REQ-679: approved change orders are part of the job's total */
+    private changeOrders: ChangeOrderStore = new ChangeOrderStore(),
   ) {}
 
   async run(userId: string, now: Date = new Date()): Promise<Job[]> {
-    const [customers, quotes, invoices] = await Promise.all([
+    const [customers, quotes, invoices, cos] = await Promise.all([
       this.customers.listByUser(userId),
       this.quotes.listByUser(userId),
       this.invoices.listByUser(userId),
+      this.changeOrders.listByUser(userId).catch(() => [] as ChangeOrder[]),
     ]);
+    const cosByQuote = new Map<string, ChangeOrder[]>();
+    for (const co of cos) {
+      if (!co.quoteId) continue;
+      const arr = cosByQuote.get(co.quoteId) ?? [];
+      arr.push(co);
+      cosByQuote.set(co.quoteId, arr);
+    }
 
     const customerById = new Map<string, Customer>(
       customers.map((c) => [c.id, c]),
@@ -111,7 +124,12 @@ export class ListActiveJobs {
 
       const relatedInvoices = invoicesByQuote.get(q.id) ?? [];
       // Audit1 #3 — estimatedTotal and invoice.amount are INTEGER CENTS.
-      const totalCents = q.estimatedTotal ?? 0;
+      // REQ-679 (cycle 5, M19): the job's total is the agreement — the quote
+      // plus its approved change orders (the ledger's agreementTotalCents).
+      const totalCents = agreedTotalCents(
+        { estimatedTotal: q.estimatedTotal ?? 0 },
+        cosByQuote.get(q.id) ?? [],
+      );
       const paidCents = relatedInvoices
         .filter((i) => i.status === "paid")
         .reduce((sum, i) => sum + (i.amount ?? 0), 0);
