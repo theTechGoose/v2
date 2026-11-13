@@ -315,6 +315,24 @@ Deno.test("REQ-663 askedTerms: every way a term is asked for is read (loose — 
   }
 });
 
+Deno.test("REQ-748 askedTerms: a payment split like '50/50' is not a day — 'Make the payment terms 50/50' asks about the payment terms only (cycle 5v1 verifier, p18-7c)", () => {
+  for (
+    const s of [
+      "Make the payment terms 50/50",
+      "make the payment 50/50",
+      "50/50 please",
+      "do 30/70 on the payment",
+      "40/60",
+      "que sea 50/50 el pago",
+    ]
+  ) assert(!askedTerms(s).includes("start_date"), s);
+  assertEquals(askedTerms("Make the payment terms 50/50"), ["payment_terms"]);
+  // a real day still counts
+  for (const s of ["start 11/23", "can we do 12/1", "empezamos el 23/11"]) {
+    assert(askedTerms(s).includes("start_date"), s);
+  }
+});
+
 Deno.test("REQ-663 termsChangeLine: 'already' agrees with a plural term — never 'The payment terms is'", () => {
   const pay = step("payment_terms");
   assertEquals(

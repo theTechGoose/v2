@@ -510,7 +510,14 @@ const ASK_START = new RegExp(
       .raw`\b(?:(?:next|this|coming)\s+(?:week|month|${WEEKDAY_RE})|tomorrow|today|asap|right away|immediately|whenever|proxim\w*|que viene|manana|hoy|de inmediato|cuanto antes|${WEEKDAY_RE}|${MONTH_RE})\b`,
     String
       .raw`\b(?:date|dates|fecha\w*|schedul\w*|reschedul\w*|push\w*|delay\w*|postpon\w*|pospon\w*|retras\w*|thanksgiving|christmas|navidad|holidays?)\b`,
-    String.raw`\b\d{1,2}(?:st|nd|rd|th)\b|\b\d{1,2}\/\d{1,2}\b`,
+    String.raw`\b\d{1,2}(?:st|nd|rd|th)\b`,
+    // REQ-748 (cycle 5v1, p18-7c): a day written m/d or d/m — a month (1-12)
+    // on one side, a day (1-31) on the other. A payment split ("50/50",
+    // "30/70") or the half of "2 1/2 weeks" is not a day: "Make the payment
+    // terms 50/50" used to read as a start date and echo "The start date is
+    // already Next week.".
+    String
+      .raw`(?<!\d\s)\b(?:(?:0?[1-9]|1[0-2])\/(?:0?[1-9]|[12]\d|3[01])|(?:0?[1-9]|[12]\d|3[01])\/(?:0?[1-9]|1[0-2]))\b`,
   ].join("|"),
 );
 const ASK_WRAPS = new RegExp(

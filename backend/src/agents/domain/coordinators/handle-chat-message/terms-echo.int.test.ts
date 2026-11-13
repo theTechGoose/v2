@@ -340,3 +340,24 @@ Deno.test("REQ-663: a term the message does name still changes (the gate drops o
   );
   await resetKv();
 });
+
+Deno.test("REQ-748 p18-7c (cycle 5v1 verifier): 'Make the payment terms 50/50' with all three terms re-sent as they are → only 'The payment terms are already 50/50.', no start date line", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const ctx = fresh();
+  const { convId } = await boundDraft(ctx, {
+    summary: "Master Bath & Kitchen",
+    lines: [["Master bath and kitchen", 1_875_000]],
+  }, { terms: true, answered: ANSWERED });
+  answer(ctx.llm, { text: "", action: ECHO, actions: [ECHO] });
+  const res = await ctx.flow.run({
+    userId: "u-1",
+    conversationId: convId,
+    content: "Make the payment terms 50/50",
+  });
+  const reply = textReplies(res.newMessages).map((m) => m.content).join(" | ");
+  assertStringIncludes(reply, "The payment terms are already 50/50.");
+  assert(!reply.includes("start date"), reply);
+  assert(!reply.includes("time to complete"), reply);
+  await resetKv();
+});
