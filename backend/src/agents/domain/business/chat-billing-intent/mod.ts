@@ -627,18 +627,44 @@ const PAYMENT_REPORTED_RE = new RegExp(
 const EMAIL_RE = /[\w.+-]+@[\w-]+(?:\.[\w-]+)+/u;
 /** A person's name: 2–3 capitalised words. */
 const PERSON = String.raw`\p{Lu}[\p{L}'’-]+(?:\s+\p{Lu}[\p{L}'’-]+){1,2}`;
+/** "Sr." / "Sra." / "Mr." / "don" before a name — not part of it. */
+const HONORIFIC = String
+  .raw`(?:(?:Sr|Sra|Srta|Mr|Mrs|Ms|Dr)\.?\s+|(?:se[nñ]or|se[nñ]ora|don|do[nñ]a)\s+)?`;
 const NAME_AFTER_RES: readonly RegExp[] = [
   // "facturar: Jorge Ruiz", "invoice Mike Ross", "factura a María López",
-  // "bill Tom Baker", "for Carmen Ruiz", "de Juan Pérez", "para Ana Gómez"
+  // "bill Tom Baker", "for Carmen Ruiz", "de Juan Pérez", "para Ana Gómez",
+  // REQ-752 (cycle 5v1): "con Juan Pérez", "with Mike Ross", "at Juan
+  // Pérez's", "del señor Ruiz" — the verifier's "Trabajo terminado con Juan
+  // Pérez, hazle la factura de $800" left the Nombre field empty.
   new RegExp(
     String
-      .raw`${L}(?:invoice|bill|fact[uú]r\p{L}*|c[oó]br\p{L}*|for|para|de|a|to)\s*:?\s+(?:(?:a|to|for)\s+)?(${PERSON})`,
+      .raw`${L}(?:invoice|bill|fact[uú]r\p{L}*|c[oó]br\p{L}*|for|para|de|del|de\s+la|a|to|con|with|at|from|of)\s*:?\s+(?:(?:a|to|for)\s+)?${HONORIFIC}(${PERSON})`,
     "u",
   ),
+  // "Finished Tom Baker's deck" — a possessive, no word before it
+  new RegExp(String.raw`(${PERSON})['’]s${R}`, "u"),
 ];
 /** Never a name: words that only look like one ("Que pague hoy"). */
 const NOT_A_NAME_RE =
   /^(?:Que|The|This|That|Job|Trabajo|Q-\d+|INV-\d+)(?:\s|$)/u;
+
+/** Words that open a sentence capitalised but are never a name's first
+ *  word: "Finished Tom Baker's deck" names Tom Baker (REQ-752). */
+const LEAD_NOT_NAME_RE =
+  /^(?:Just|Finally|Already|Ya|Que|The|This|That|Job|Trabajo)$/u;
+
+/** The name in a match: no possessive "'s", no capitalised verb or filler
+ *  word in front ("Finished", "Terminé"), at least two words left. */
+function nameOnly(raw: string): string | undefined {
+  const words = raw.trim().replace(/['’]s$/u, "").split(/\s+/u);
+  while (
+    words.length > 2 &&
+    (LEAD_NOT_NAME_RE.test(words[0]) ||
+      DONE_RES.some((re) => re.test(words[0])))
+  ) words.shift();
+  const name = words.join(" ");
+  return name || undefined;
+}
 
 /**
  * Read "the job is finished — bill it" (REQ-656): the work is done (and not
@@ -669,7 +695,8 @@ export function parseJobDoneInvoiceAsk(
   if (!name) {
     for (const re of NAME_AFTER_RES) {
       for (const m of s.matchAll(new RegExp(re.source, re.flags + "g"))) {
-        const candidate = m[1]?.trim();
+        // "Juan Pérez's" → "Juan Pérez"
+        const candidate = m[1] ? nameOnly(m[1]) : undefined;
         if (candidate && !NOT_A_NAME_RE.test(candidate)) {
           name = candidate;
           break;
