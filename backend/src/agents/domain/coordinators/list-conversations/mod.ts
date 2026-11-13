@@ -6,6 +6,7 @@ import { CustomerStore } from "@crm/domain/data/customer-store/mod.ts";
 import { QuoteStore } from "@paperwork/domain/data/quote-store/mod.ts";
 import { InvoiceStore } from "@paperwork/domain/data/invoice-store/mod.ts";
 import type { AgentConversation } from "@agents/dto/conversation.ts";
+import type { Quote } from "@paperwork/dto/quote.ts";
 import {
   draftOwesDetails,
   type ThreadStatus,
@@ -125,4 +126,32 @@ export async function threadFlowOf(
     ...(wizard ? { wizard } : {}),
     detailsPending: draftOwesDetails(draft),
   };
+}
+
+/**
+ * REQ-698 / REQ-760 (demo-loop cycle 5 + 5v2, m14): of these drafts, the ids
+ * whose thread status is "readyToSend" — the terms wizard finished and no
+ * job-details pick owed (the SAME rule as the chat header and the thread
+ * list). One rule for the dashboard's `quotes.readyToSend` count and the
+ * /quotes cards' `readyToSend` flag, so the two pages never disagree.
+ */
+export async function readyToSendQuoteIds(
+  conversations: AgentConversationStore,
+  userId: string,
+  drafts: ReadonlyArray<Quote>,
+): Promise<Set<string>> {
+  if (drafts.length === 0) return new Set();
+  const convs = await conversations.listByUser(userId, { limit: 500 })
+    .catch(() => [] as AgentConversation[]);
+  // listByUser is newest-first: the first thread naming a quote is its own
+  const convByQuote = new Map<string, AgentConversation>();
+  for (const c of convs) {
+    if (c.quoteId && !convByQuote.has(c.quoteId)) convByQuote.set(c.quoteId, c);
+  }
+  const ready = await Promise.all(drafts.map(async (quote) => {
+    const conv = convByQuote.get(quote.id);
+    const flow = conv ? await threadFlowOf(conversations, conv) : {};
+    return threadStatus({ quote, ...flow }) === "readyToSend";
+  }));
+  return new Set(drafts.filter((_, i) => ready[i]).map((q) => q.id));
 }

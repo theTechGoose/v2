@@ -54,6 +54,9 @@ interface HeroProps {
   undeliveredCount?: number;
   /** REQ-481: the value of those undelivered quotes (part of draftTotal). */
   undeliveredTotal?: number;
+  /** REQ-760 (cycle 5v2, m14): of the drafts, those the server marks ready
+   *  to send (terms wizard done). Absent: every draft counts as ready. */
+  readyCount?: number;
   /** REQ-481 (m10): change orders waiting on the customer. */
   pendingChangeOrders?: ReadonlyArray<{ number: string; client: string }>;
   lang?: Lang;
@@ -71,6 +74,7 @@ export function QuotesHero(
     decidedCount = 0,
     undeliveredCount = 0,
     undeliveredTotal = 0,
+    readyCount,
     pendingChangeOrders = [],
     lang = "en",
   }: HeroProps,
@@ -96,6 +100,10 @@ export function QuotesHero(
   // REQ-481 (m10): a send that reached nobody is "Not delivered", not a draft.
   const readyDrafts = Math.max(0, draftCount - undeliveredCount);
   const onlyUndelivered = undeliveredCount > 0 && readyDrafts === 0;
+  // REQ-760 (cycle 5v2, m14): "ready to send" only for drafts whose thread
+  // finished its terms (the verifier's Q-002 was only drafted); the rest are
+  // "in progress".
+  const readyToSend = Math.min(readyCount ?? readyDrafts, readyDrafts);
   // REQ-404: drafts beside an out pipeline get their own line.
   const draftingNote = readyDrafts > 0
     ? (
@@ -161,7 +169,13 @@ export function QuotesHero(
             <>
               <h1 class="qph__title" data-cy="quotes-hero-drafts-only">
                 <em>
-                  {tnFor(lang, "quotesHero.draftsOnlyTitle", readyDrafts)}
+                  {readyToSend > 0
+                    ? tnFor(lang, "quotesHero.draftsOnlyTitle", readyToSend)
+                    : tnFor(
+                      lang,
+                      "quotesHero.draftsInProgressTitle",
+                      readyDrafts,
+                    )}
                 </em>
               </h1>
               <p class="qph__sub">

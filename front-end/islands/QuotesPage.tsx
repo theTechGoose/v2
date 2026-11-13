@@ -168,6 +168,10 @@ function mapCard(c: BackendQuoteCard, lang: "en" | "es"): Quote {
     ...(c.pendingChangeOrders?.length
       ? { pendingChangeOrders: c.pendingChangeOrders }
       : {}),
+    // REQ-760 (cycle 5v2, m14): the hero says "ready to send" only for these.
+    ...(typeof c.readyToSend === "boolean"
+      ? { readyToSend: c.readyToSend }
+      : {}),
   };
 }
 
@@ -2345,6 +2349,8 @@ export default function QuotesPage(
         decidedCount={heroNums.decidedCount}
         undeliveredCount={heroNums.undeliveredCount}
         undeliveredTotal={heroNums.undeliveredTotal}
+        // REQ-760 (cycle 5v2, m14): drafts the server says are ready to send.
+        readyCount={heroNums.readyCount}
         pendingChangeOrders={real.flatMap((q) =>
           (q.pendingChangeOrders ?? []).map((number) => ({
             number,

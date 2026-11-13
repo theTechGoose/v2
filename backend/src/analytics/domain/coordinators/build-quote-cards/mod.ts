@@ -9,6 +9,8 @@ import { QuoteStore } from "@paperwork/domain/data/quote-store/mod.ts";
 import { ViewStore } from "@paperwork/domain/data/view-store/mod.ts";
 import { ChangeOrderStore } from "@paperwork/domain/data/change-order-store/mod.ts";
 import type { ChangeOrder } from "@paperwork/dto/change-order.ts";
+import { AgentConversationStore } from "@agents/domain/data/agent-conversation-store/mod.ts";
+import { readyToSendQuoteIds } from "@agents/domain/coordinators/list-conversations/mod.ts";
 import type { Quote, QuoteCard, QuoteStage } from "@paperwork/dto/quote.ts";
 import type { View } from "@paperwork/dto/view.ts";
 
@@ -31,6 +33,8 @@ export class BuildQuoteCards {
     private views: ViewStore,
     private customers: CustomerStore,
     private changeOrders: ChangeOrderStore = new ChangeOrderStore(),
+    private conversations: AgentConversationStore =
+      new AgentConversationStore(),
   ) {}
 
   async run(userId: string, now: Date = new Date()): Promise<QuoteCard[]> {
@@ -50,10 +54,19 @@ export class BuildQuoteCards {
       cosByQuote.set(co.quoteId, list);
     }
 
-    return quotes.map((q) => ({
+    const cards = quotes.map((q) => ({
       ...buildOne(q, views, customerNames, now),
       ...changeOrderFold(cosByQuote.get(q.id) ?? []),
     }));
+    // REQ-760 (demo-loop cycle 5v2, m14): each draft card says whether its
+    // thread is ready to send — the verifier's /quotes read "1 draft ready
+    // to send" over a quote the assistant had only drafted. Same rule as the
+    // dashboard's quotes.readyToSend.
+    const drafts = cards.filter((c) => c.stage === "draft");
+    const ready = await readyToSendQuoteIds(this.conversations, userId, drafts);
+    return cards.map((c) =>
+      c.stage === "draft" ? { ...c, readyToSend: ready.has(c.id) } : c
+    );
   }
 }
 
