@@ -148,10 +148,13 @@ describe("REQ-636 (demo-loop cycle 5, m8) — the islands are wired", () => {
     const pill = between(s, 'case "pill":', "break;");
     expect(pill).toMatch(/pills\.offer\(/);
     expect(s).toMatch(
-      /onFrame: \(f, load, sent\) =>[\s\S]{0,200}pills\.frame\(sent\)/,
+      // REQ-636 AMENDMENT (reconciled on demo-fixes with REQ-639): `seq` comes before `sent`
+      /onFrame: \(f, load, seq, sent\) =>[\s\S]{0,260}pills\.frame\(sent\)/,
     );
     expect(s).toMatch(/pills\.due\(\)/);
-    const on = between(s, "onPeerOnline: (cid) => {", "onPeer: (m");
+    // REQ-636 AMENDMENT (reconciled on demo-fixes with REQ-645 m36): onPeerOnline also hears the
+    // browser tab's key
+    const on = between(s, "onPeerOnline: (cid", "onPeer: (m");
     expect(on).toMatch(/pills\.reset\(\)/);
     expect(on).toMatch(/send\(\{ k: "askPill" \}\)/);
   });

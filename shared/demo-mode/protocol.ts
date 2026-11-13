@@ -57,6 +57,9 @@ export interface NodeAnchor {
   x: number;
   y: number;
   l?: string;
+  /** REQ-639 — the frame number (in load `l`) that carries the screen the anchor was made on:
+   *  the stage draws the customer's pointer only once its replay has applied that frame */
+  f?: number;
 }
 
 /** REQ-188 — where the pointer is: the fraction of the sender's layout viewport; REQ-242 — and
@@ -333,6 +336,8 @@ function parseNodeAnchor(x: unknown): NodeAnchor | null {
   if (!posInt(o.id) || !num(o.x) || !num(o.y)) return null;
   const n: NodeAnchor = { id: o.id, x: clamp01(o.x), y: clamp01(o.y) };
   if (typeof o.l === "string" && LOAD_ID.test(o.l)) n.l = o.l;
+  // REQ-639 — a frame number that is not one is dropped, never the anchor
+  if (natural(o.f) && o.f <= 2 ** 31) n.f = o.f;
   return n;
 }
 

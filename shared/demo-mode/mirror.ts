@@ -385,6 +385,11 @@ export class FrameSequencer {
       (this.#since !== null && this.#now() - this.#since >= this.#gapMs);
   }
 
+  /** REQ-639 — the number of the next frame this load expects (the last one handed on, plus 1) */
+  next(): number {
+    return this.#next;
+  }
+
   /** REQ-309 — frames waiting for an earlier one */
   heldCount(): number {
     let n = 0;
@@ -431,6 +436,8 @@ export interface MirrorSender {
   /** this page load's id: on every chunk, and on every pointer anchored to this page's nodes */
   load: string;
   push(f: MirrorFrame): Promise<void>;
+  /** REQ-639 — how many frames were pushed so far (the next one gets this number) */
+  pushed(): number;
   /** every frame pushed so far is out */
   idle(): Promise<void>;
 }
@@ -472,6 +479,7 @@ export function createMirrorSender(o: {
       }).catch(() => {});
       return chain;
     },
+    pushed: () => seq,
     idle: () => chain,
   };
 }
@@ -530,9 +538,9 @@ function samples(cap: number) {
  *  page-load id is not "older"). REQ-391 — `clock`: the deploy's time as this browser knows it
  *  (the link's `now()`); `lag()` says how late the frames came */
 export function createMirrorReceiver(o: {
-  /** REQ-636 — `sent`: when the customer pushed the frame (its `t`), so the stage can show the
-   *  pill face that went out with it */
-  onFrame(f: MirrorFrame, load: string, sent?: number): void;
+  /** REQ-639 — `seq`: the frame's number in its page load. REQ-636 — `sent`: when the customer
+   *  pushed the frame (its `t`), so the stage can show the pill face that went out with it */
+  onFrame(f: MirrorFrame, load: string, seq: number, sent?: number): void;
   /** REQ-292 tripwire — a snapshot the sequencer rejected: the stage logs it and resyncs */
   onDropped?(f: MirrorFrame, load: string, seq: number): void;
   gapMs?: number;
@@ -589,7 +597,11 @@ export function createMirrorReceiver(o: {
           }
           return;
         }
-        for (const g of order.push(whole.l, whole.s, f)) {
+        const out = order.push(whole.l, whole.s, f);
+        // REQ-639 — the frames handed on are consecutive and end just before the next expected
+        let seq = order.next() - out.length;
+        for (const g of out) {
+          const s = seq++;
           n.frames++;
           if (g.t === "snap") n.snaps++;
           else if (g.ops.length === 0) n.beats++;
@@ -600,7 +612,7 @@ export function createMirrorReceiver(o: {
             lagAll.add(lagLast);
           }
           try {
-            o.onFrame(g, whole.l, t);
+            o.onFrame(g, whole.l, s, t);
           } catch {
             // the replay's own trouble; the next snapshot mends it
           }

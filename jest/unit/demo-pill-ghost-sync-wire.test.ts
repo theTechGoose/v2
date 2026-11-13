@@ -46,7 +46,8 @@ test("REQ-636 — a pill face is applied when the replay reaches the frame it wa
   const replayed: string[] = [];
   const pills = createPillSync<typeof pill>({ now: () => 0 });
   const rx = createMirrorReceiver({
-    onFrame: (f, _load, sent) => {
+    // REQ-636 AMENDMENT (with REQ-639): the frame's `seq` comes before `sent`
+    onFrame: (f, _load, _seq, sent) => {
       replayed.push(f.t === "snap" ? "snap" : "ops");
       const p = pills.frame(sent);
       if (p) shown.push(`tucked after ${replayed.length} frames`);

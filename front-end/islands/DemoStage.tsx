@@ -187,6 +187,7 @@ import {
   SEEK_RETRY_MS,
   seekPrint,
 } from "../../shared/demo-mode/presenter-anchor.ts";
+import { anchorAhead } from "../../shared/demo-mode/customer-pointer.ts";
 import PointerGhost from "../components/demo-mode/PointerGhost.tsx";
 import OwnPointer from "../components/demo-mode/OwnPointer.tsx";
 import DemoPointer, { WAVE_MS } from "../components/demo-mode/DemoPointer.tsx";
@@ -371,9 +372,12 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
   const frameDocRef = useRef<Document | null>(null);
   const replayerRef = useRef<Replayer | null>(null);
   /** frames that came before the frame's document was ready */
-  const queueRef = useRef<[MirrorFrame, string][]>([]);
+  const queueRef = useRef<[MirrorFrame, string, number | null][]>([]);
   /** the customer's page load the replay shows (a pointer's element id belongs to one) */
   const loadRef = useRef<string | null>(null);
+  /** REQ-639 (cycle 5, c3-M6) — the number (in that load) of the last frame the replay applied:
+   *  the customer's pointer waits for the frame its anchor was made on */
+  const shownSeqRef = useRef<number | null>(null);
   const lastAskRef = useRef(0);
   /** REQ-309 — a frame did not fit (or a snapshot failed): ask for a snapshot until one lands */
   const dirtyRef = useRef(false);
@@ -825,6 +829,15 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
   const showCustomer = () => {
     const a = customerRef.current;
     if (!a) return;
+    // REQ-639 (cycle 5, c3-M6) — the replay is older than the frame the anchor was made on: the
+    // spot there is another chip (a row re-laid out, a scroll not in yet). Held where it was; the
+    // applied frame's layout pass places it (replace)
+    if (
+      anchorAhead(a, {
+        load: loadRef.current,
+        seq: shownSeqRef.current,
+      })
+    ) return;
     const p = placeOnStage(a);
     glide.glideTo(p.at, p.outside, p.outside ? null : rectOnStage(a));
   };
@@ -966,17 +979,18 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
   };
 
   /** REQ-242 — a frame of the customer's screen, into the replay */
-  const take = (f: MirrorFrame, load: string) => {
+  const take = (f: MirrorFrame, load: string, seq: number | null = null) => {
     const rep = replayerRef.current;
     if (!rep) {
       // the frame's shell is still loading: keep the latest snapshot and what came after it
       queueRef.current = f.t === "snap"
-        ? [[f, load]]
-        : [...queueRef.current, [f, load]];
+        ? [[f, load, seq]]
+        : [...queueRef.current, [f, load, seq]];
       return;
     }
     ownRef.current.lastAt = Date.now();
-    if (!rep.apply(f)) {
+    const ok = rep.apply(f);
+    if (!ok) {
       // REQ-309 — what did not fit was skipped, not fatal: the stage is dirty until a snapshot
       // lands (the stall poll keeps asking); a snapshot that failed shows nothing of itself
       dirtyRef.current = true;
@@ -987,6 +1001,10 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
     const newLoad = load !== loadRef.current;
     if (newLoad) lastTRef.current = 0; // another page: another clock
     loadRef.current = load;
+    // REQ-639 — the frame now in the replay (one that did not fit is not: the pointer waits for
+    // the snapshot that mends it); another page's numbers start over
+    if (ok) shownSeqRef.current = seq;
+    else if (newLoad) shownSeqRef.current = null;
     const size = rep.size();
     const path = rep.path() ?? "";
     if (size) {
@@ -1054,7 +1072,7 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
     });
     const q = queueRef.current;
     queueRef.current = [];
-    for (const [f, l] of q) take(f, l);
+    for (const [f, l, s] of q) take(f, l, s);
     if (again) askResync();
   };
   // the shell may have loaded before the load handler was attached
@@ -1186,8 +1204,8 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
       });
     };
     const rx = createMirrorReceiver({
-      onFrame: (f, load, sent) => {
-        take(f, load);
+      onFrame: (f, load, seq, sent) => {
+        take(f, load, seq); // REQ-639 — the frame's number: the customer's pointer waits for it
         // REQ-636 — the replay reached this frame: the pill face sent with it shows now
         const p = pills.frame(sent);
         if (p) showPill(p);
@@ -1303,6 +1321,7 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
           followedCid = cid;
           rx.reset();
           loadRef.current = null;
+          shownSeqRef.current = null;
         }
         resendPointer();
         // REQ-295 — their new page tells where its pill is. REQ-540 (cycle 4, m9) — until it
@@ -1362,12 +1381,8 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
             break;
           case "click": {
             customerRef.current = m.a;
-            const p = placeOnStage(m.a);
-            glide.glideTo(
-              p.at,
-              p.outside,
-              p.outside ? null : rectOnStage(m.a),
-            );
+            showCustomer(); // REQ-639 — held, like a move, until its frame is in
+
             const id = ++waveId.current;
             setWaves((w) => [...w, newStageWave(id, m.a, waveFrame())]);
             setTimeout(
@@ -1462,6 +1477,7 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
       commandRef.current = null;
       rx.reset();
       loadRef.current = null;
+      shownSeqRef.current = null;
       customerRef.current = null;
       peersRef.current.clear();
       placedRef.current.clear();

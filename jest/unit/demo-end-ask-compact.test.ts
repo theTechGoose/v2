@@ -50,7 +50,7 @@ describe("REQ-548 (cycle 4, p4-p3e) End's question gets its own row on the compa
     expect(o).toMatch(
       // REQ-544 also hands EndDemo the overlay's demo-chrome t; REQ-649 the viewer's question;
       // REQ-637 (cycle 5, m5) AMENDMENT — and whether it opens already asking (the folded mini-pill's ×)
-      /<EndDemo\s+onEnd=\{end\}\s+ownRow=\{compact\}\s+onAsking=\{setAsking\}(?:\s+t=\{t\})?(?:\s+askKey="demoMode\.endAskViewer"\s+askVars=\{\{\s*name:\s*names\s*\}\})?(?:\s+\/\/[^\n]*)?(?:\s+askAtOnce=\{askEnd\})?\s*\/>/,
+      /<EndDemo\s+onEnd=\{end\}\s+ownRow=\{compact\}\s+onAsking=\{setAsking\}(?:\s+t=\{t\})?(?:\s+\/\/[^\n]*)?(?:\s+askAtOnce=\{askEnd\})?(?:\s+askKey="demoMode\.endAskViewer"\s+askVars=\{\{\s*name:\s*names\s*\}\})?\s*\/>/,
     );
   });
 });
