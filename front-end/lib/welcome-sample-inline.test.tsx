@@ -71,3 +71,63 @@ Deno.test("REQ-433 the wizard's sample step embeds no page — it renders Sample
     "the open-full-size link stays",
   );
 });
+
+// REQ-736 (demo-loop cycle 5, issue p10): the onboarding sample is fetched by
+// the signed-in owner, so its projection carries internal:true (REQ-306) — and
+// QuoteDoc drew the owner's preview: the "you are viewing as the customer"
+// banner, the "your own quote" box and two "Sign in person" buttons, all inert
+// in the scaled copy (pointer-events:none). The step promises "exactly what
+// lands in your customer's inbox": the sample renders as the customer sees it,
+// with a read-only signature block and no button, pad or input at all.
+Deno.test("REQ-736 (demo p10, cycle 5) SampleQuoteDoc shows the customer's view — no owner preview banner, no internal box, no Sign in person", () => {
+  for (const lang of ["en", "es"] as const) {
+    const html = renderToString(
+      <SampleQuoteDoc quote={sample()} lang={lang} />,
+    );
+    assert(
+      !html.includes('data-cy="quote-preview-banner"'),
+      `${lang}: no owner preview banner`,
+    );
+    assert(
+      !html.includes('data-cy="quote-internal-preview"'),
+      `${lang}: no "your own quote" box`,
+    );
+    assert(
+      !html.includes("quote-sign-in-person") &&
+        !html.includes("quote-preview-sign-in-person"),
+      `${lang}: no Sign in person`,
+    );
+    const owner = JSON.parse(
+      Deno.readTextFileSync(
+        new URL(`../../lang/${lang}.json`, import.meta.url),
+      ),
+    ) as Record<string, string>;
+    for (
+      const k of [
+        "public.doc.internalPreview",
+        "public.doc.internalPreviewSignInPerson",
+        "public.doc.previewBanner.signInPerson",
+      ]
+    ) {
+      assert(!html.includes(owner[k]), `${lang}: owner copy "${owner[k]}"`);
+    }
+  }
+});
+
+Deno.test("REQ-736 (demo p10, cycle 5) SampleQuoteDoc's signature block is read-only — no clickable-looking button, pad or input in the inert copy", () => {
+  const html = renderToString(<SampleQuoteDoc quote={sample()} lang="en" />);
+  assert(!/<button\b/i.test(html), "no <button> in the sample");
+  assert(!/<canvas\b/i.test(html), "no signature pad");
+  assert(!/<input\b/i.test(html), "no name input");
+  assert(
+    html.includes('data-cy="quote-sign-readonly"'),
+    "the customer's signature block is drawn read-only",
+  );
+  const en = JSON.parse(
+    Deno.readTextFileSync(new URL("../../lang/en.json", import.meta.url)),
+  ) as Record<string, string>;
+  assert(
+    html.includes(en["quoteDoc.signReadonly"] ?? "\u0000"),
+    "names where the customer signs",
+  );
+});

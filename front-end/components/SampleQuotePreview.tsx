@@ -16,14 +16,18 @@ import { type Lang, tFor } from "../lib/i18n.ts";
 
 /** The document, scaled into the wizard card. Read-only: the scaled copy
  *  takes no pointer input (the wheel still scrolls the frame); the person
- *  opens the full page from the step's "Open full size" link. */
+ *  opens the full page from the step's "Open full size" link.
+ *  REQ-736 (demo-loop c5 p10): drawn as the CUSTOMER sees it — the owner
+ *  fetched it (internal:true), but the step promises "exactly what lands in
+ *  your customer's inbox", so no owner banner, no "Sign in person", and a
+ *  static signature block instead of the live pad. */
 export function SampleQuoteDoc(
   { quote, lang }: { quote: QuotePublic; lang: Lang },
 ) {
   return (
     <div class="welcome__sample-doc-wrap" data-cy="welcome-sample-doc">
       <div class="welcome__sample-doc">
-        <QuoteDoc quote={quote} lang={lang} />
+        <QuoteDoc quote={quote} lang={lang} customerView />
       </div>
     </div>
   );
