@@ -188,6 +188,40 @@ describe("REQ-595 P-46 one term for job length (cycle 4, p4-p2a)", () => {
   });
 });
 
+describe("REQ-745 P-46 one wording for the powered-by credit (cycle 5, p18-9b)", () => {
+  // Every "Powered by DocuMonster" line a customer or contractor sees: the
+  // quote document, the invoice document, the site footer, the receipt PDF
+  // and the older public-doc keys.
+  const POWERED_BY_KEYS = [
+    "quoteDoc.poweredBy",
+    "public.doc.poweredByInvoice",
+    "siteFooter.poweredBy",
+    "receiptPdf.poweredBy",
+    "publicInvoice.poweredBy",
+    "publicQuote.poweredBy",
+  ];
+  const OPENER = { en: /^powered by /i, es: /^con la tecnología de /i };
+
+  it.each(["en", "es"] as const)(
+    "REQ-745 P-46 %s opens every powered-by line with the same words",
+    (lang) => {
+      const dict = lang === "en" ? en : es;
+      for (const k of POWERED_BY_KEYS) {
+        expect(typeof dict[k]).toBe("string");
+        // Red at 2444608a (es): quoteDoc.poweredBy "Hecho con DocuMonster · Acuerdo".
+        // The key rides along so a failure names the drifting key.
+        expect(OPENER[lang].test(dict[k]) ? k : `${k}: ${dict[k]}`).toBe(k);
+      }
+    },
+  );
+
+  it("REQ-745 p18-9b the es quote document credit matches the invoice's", () => {
+    expect(es["quoteDoc.poweredBy"]).toBe(
+      "Con la tecnología de DocuMonster · Acuerdo",
+    );
+  });
+});
+
 describe("REQ-595 natural Spanish copy (cycle 4, p4-p2e)", () => {
   it("REQ-595 the lock prompts say the quote is confirmed, not 'fijada'", () => {
     for (const k of ["lockQuote.cta.lockedPrompt", "lockQuote.cta.lockedPromptKnown"]) {
