@@ -165,6 +165,7 @@ import {
 } from "#quote-flow/step-composer.ts";
 import {
   appliedStepTurnIds, // REQ-585
+  asksForBreakdown,
   isFallbackPricing,
   jobOptionsStepReply,
   priceStepContext,
@@ -675,6 +676,7 @@ export class HandleChatMessage {
     userMsg: AgentMessage,
     job: string,
     reply: { content: string; payload: Record<string, unknown> },
+    opts: { failed?: boolean } = {},
   ): Promise<HandleChatResult> {
     const msg = await this.messages.append({
       conversationId: conv.id,
@@ -684,8 +686,10 @@ export class HandleChatMessage {
       payload: reply.payload,
     });
     const first = history.length === 1 && history[0].id === userMsg.id;
+    // REQ-658 (demo-loop cycle 5, M17): a failed answer is never the
+    // thread's summary — the previous preview stays.
     const updated = await this.conversations.update(conv.id, {
-      preview: derivePreview(msg.content),
+      ...(opts.failed ? {} : { preview: derivePreview(msg.content) }),
       ...(first
         ? { title: deriveTitleFromFirstUserMessage(job || userMsg.content) }
         : {}),
@@ -839,31 +843,44 @@ export class HandleChatMessage {
       : "";
     // REQ-670 (demo-loop cycle 5, p7): the answer streams as it is written.
     const live = input.onEvent ? turnChannel(input.onEvent) : undefined;
-    const res = await this.llm.respond({
-      ...(live
-        ? { stream: live.prose((raw) => toPlainChatText(raw).trim()) }
-        : {}),
-      systemPrompt: `${t("en", "prompts.chatStep.price")}${langRule}`,
-      messages: turns,
-      userId: input.userId,
-      businessContext: priceStepContext({
-        job,
-        scope: shown,
-        lang,
-        options: step.options,
-        basis: step.basis,
-        statedCents: stated,
-      }),
-      tools: ["update_job_details"],
-    }).catch((err) => {
-      console.error("[handle-chat] price-step answer failed:", err);
-      return undefined;
+    const businessContext = priceStepContext({
+      job,
+      scope: shown,
+      lang,
+      options: step.options,
+      basis: step.basis,
+      statedCents: stated,
+      breakdown: asksForBreakdown(said),
     });
+    const ask = (nudge: string) =>
+      this.llm.respond({
+        ...(live
+          ? { stream: live.prose((raw) => toPlainChatText(raw).trim()) }
+          : {}),
+        systemPrompt: `${t("en", "prompts.chatStep.price")}${langRule}${nudge}`,
+        messages: turns,
+        userId: input.userId,
+        businessContext,
+        tools: ["update_job_details"],
+      }).catch((err) => {
+        console.error("[handle-chat] price-step answer failed:", err);
+        return undefined;
+      });
+    let res = await ask("");
+    // REQ-658 (demo-loop cycle 5, M17): an empty answer (no text, no tool
+    // call) is asked again once, told it must answer, before any fallback.
+    if (
+      res && !toPlainChatText(res.text ?? "").trim() &&
+      toolCallsOf(res).length === 0
+    ) {
+      console.warn("[handle-chat] price-step answer was empty — asking again");
+      res = await ask(`\n\n${t("en", "prompts.chatStep.mustAnswer")}`);
+    }
     if (!res) {
       return await this.finishStep(conv, history, userMsg, job, {
         content: t(lang, "chatCoordinator.step.askFailed"),
         payload: { step: "price", ...filled },
-      });
+      }, { failed: true });
     }
 
     const answer = toPlainChatText(res.text ?? "").trim();
@@ -929,8 +946,9 @@ export class HandleChatMessage {
         ),
       );
     }
-    if (parts.length === 0) {
-      parts.push(t(lang, "chatCoordinator.step.askFailed"));
+    const empty = parts.length === 0;
+    if (empty) {
+      parts.push(t(lang, "chatCoordinator.step.askEmpty"));
     }
     return await this.finishStep(conv, history, userMsg, job, {
       content: parts.join(" "),
@@ -940,7 +958,7 @@ export class HandleChatMessage {
         ...(repriced ? { priceSuggestions: repriced } : {}),
         ...filled,
       },
-    });
+    }, { failed: empty });
   }
 
   /**

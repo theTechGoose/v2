@@ -310,6 +310,18 @@ const MISSING =
 const QUESTION_OPENER =
   /^\s*(?:(?:and|so|but|also|ok(?:ay)?|hey|y|pero|oye|entonces)[\s,]+)?(?:is|are|isn['’]?t|aren['’]?t|does|doesn['’]?t|did|didn['’]?t|(?:can|could|would|will)\s+(?:you|we|i|it|this|that|they)|what['’]?s|whats|what|how|why|which|who|where|when|qué|cu[aá]nt[oa]s?|cu[aá]l(?:es)?|cómo|por\s*qué|dónde|cuándo|hay)(?![\p{L}\d])/iu;
 
+/** REQ-658 (demo-loop cycle 5, m51): asks how a price breaks down — "break
+ *  down labor vs materials", "how did you get 17,500", "explain the premium
+ *  tier", "desglosa mano de obra y materiales". */
+const BREAKDOWN =
+  /(?<![\p{L}\d])(?:break\s*-?\s*(?:it\s+|that\s+|this\s+|them\s+)?down|breakdown|explain|how\s+(?:did|do|would)\s+you\s+(?:get|come\s+up\s+with|arrive|figure|calculate)|how['’]?d\s+you\s+(?:get|come\s+up\s+with|arrive|figure|calculate)|desglos\p{L}*|expl[ií]ca\p{L}*|c[oó]mo\s+(?:llegaste|calculaste|sacaste))(?![\p{L}\d])|(?<![\p{L}\d])(?:labou?r|mano\s+de\s+obra)\s*(?:vs\.?|versus|and|&|\+|\/|y|contra|o)\s*(?:the\s+|los\s+)?(?:materials?|materiales)(?![\p{L}\d])/iu;
+
+/** The message asks how the price breaks down (labor vs materials, how a
+ *  tier was reached) — answered by the chat model, never re-priced. */
+export function asksForBreakdown(text: string): boolean {
+  return BREAKDOWN.test((text ?? "").normalize("NFC"));
+}
+
 export interface PriceStepIntent {
   /** "ask": the chat model answers (and may change the job details on
    *  screen); "reprice": the pricing engine re-prices with the correction. */
@@ -353,7 +365,8 @@ export function priceStepIntent(text: string): PriceStepIntent {
       statedCents: statedPriceCents(s.slice(0, change)),
     };
   }
-  const asks = /[?¿]/.test(s) || QUESTION_OPENER.test(s);
+  const asks = /[?¿]/.test(s) || QUESTION_OPENER.test(s) ||
+    asksForBreakdown(s);
   return {
     route: asks ? "ask" : "reprice",
     scopeChange: false,
@@ -378,6 +391,8 @@ export interface PriceStepContextInput {
   basis?: string;
   /** The price the message named for the job (now in the price box). */
   statedCents?: number | null;
+  /** REQ-658: the message asks how the price breaks down. */
+  breakdown?: boolean;
 }
 
 /** The business context the chat model answers a Pick-a-price question
@@ -421,6 +436,13 @@ export function priceStepContext(input: PriceStepContextInput): string {
       `Their message names ${
         stepMoney(input.statedCents)
       } for the whole job — that amount is now in the price box.`,
+    );
+  }
+  // REQ-658 (demo-loop cycle 5, m51): "break down labor vs materials" — the
+  // model explains the split with the contractor's own numbers.
+  if (input.breakdown) {
+    out.push(
+      'They asked how the price breaks down. Answer with a split of the price they asked about (else each price on screen) into labor and materials, from the job details on screen. When their message gives an hourly rate (like "85/hr") or a markup on materials (like "cost+15%"), use it: labor = estimated hours × their hourly rate; materials = estimated material cost plus their markup. Say the hours and costs are estimates. Explaining the split is allowed — the prices on screen do not change.',
     );
   }
   return out.join("\n\n");

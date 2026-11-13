@@ -129,3 +129,26 @@ Deno.test("REQ-392 M7 e2e: the same words with no step (or a step the server doe
     assertEquals(junk.newMessages[0].payload?.step, undefined);
   });
 });
+
+Deno.test("REQ-658 M17+m51 e2e: the demo's breakdown ask on Pick a price is answered (not re-priced) and its stated $18,000 goes in the box", async () => {
+  await withServer(async () => {
+    const sid = await signIn("+15125557658");
+    const res = await chat(sid, {
+      content:
+        "how did you get 17,500? 85/hr + cost+15%, break down labor vs materials... make it around 18k",
+      kind: "text",
+      step: {
+        id: "price",
+        job: "Kitchen remodel, quartz top, new cabinets",
+        scope: "Demo kitchen\nInstall cabinets\nInstall quartz top",
+        tiers: true,
+      },
+    });
+    const reply = res.newMessages[1];
+    assertEquals(reply.payload?.step, "price");
+    assert(!reply.content.includes("couldn't re-price"), reply.content);
+    assert(!reply.content.includes("Re-priced"), reply.content);
+    assertEquals(reply.payload?.statedPriceCents, 1_800_000);
+    assertEquals(reply.payload?.priceSuggestions, undefined);
+  });
+});
