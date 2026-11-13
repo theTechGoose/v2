@@ -365,6 +365,136 @@ export function parseChangeOrderRequest(
 }
 
 // ---------------------------------------------------------------------------
+// REQ-769 (demo-loop cycle 5v4, M10 re-test): "Change Dana Whitfield's quote:
+// add post caps for $300", said in another customer's thread.
+// ---------------------------------------------------------------------------
+//
+// The verifier typed that (and "…: add a shower niche for $250") in Tom
+// Henderson's Q-002 thread. No "change order" was said, so nothing was read
+// in code, and the model answered "Please provide the quote number for Dana
+// Whitfield's quote…" with no tool call — though her only quote, Q-001, was
+// on file. A named customer's quote plus an added (or credited) item with
+// its amount is now read here, like a change order; anything less certain is
+// still the model's.
+
+/** "<who>'s quote" — up to three words before the possessive; the leading
+ *  verb or preposition ("Change", "to", "On") is dropped afterwards. */
+const NAMED_QUOTE_RE =
+  /(?<who>[\p{L}][\p{L}.-]*(?:\s+[\p{L}][\p{L}.-]*){0,2})['’]s?\s+(?:Q-\d+\s+)?(?:quote|estimate|bid|job)(?:\s+\(?Q-\d+\)?)?(?!\p{L})/iu;
+/** Words in front of the name that are not part of it. */
+const NAMED_QUOTE_LEAD = new Set([
+  "change",
+  "edit",
+  "update",
+  "modify",
+  "revise",
+  "fix",
+  "please",
+  "and",
+  "to",
+  "on",
+  "onto",
+  "in",
+  "into",
+  "for",
+  "the",
+]);
+/** Names that name nobody ("the customer's quote", "her quote"). */
+const NAMED_QUOTE_NOBODY = new Set([
+  "customer",
+  "customers",
+  "client",
+  "clients",
+  "my",
+  "our",
+  "your",
+  "his",
+  "her",
+  "their",
+  "its",
+  "it",
+  "this",
+  "that",
+  "same",
+  "new",
+  "other",
+  "another",
+  "last",
+  "next",
+]);
+
+export interface NamedQuoteChange {
+  customerName: string;
+  description: string;
+  /** Signed INTEGER CENTS: + adds to the job, − is a credit. */
+  deltaAmountCents: number;
+}
+
+/** "add post caps for $300" → "Post caps", +30000; undefined unless the
+ *  clause opens with an add / credit verb and carries exactly one amount. */
+function namedChangeClause(
+  clause: string,
+): Omit<NamedQuoteChange, "customerName"> | undefined {
+  const c = clause.replace(/^[\s:,;—–-]+|[\s.!]+$/g, "")
+    .replace(/^please\s+/i, "");
+  const adds = ADD_VERBS.test(c);
+  const credits = CREDIT_VERBS.test(c);
+  if (!adds && !credits) return undefined;
+  const all = c.match(new RegExp(MONEY_RE.source, "gi")) ?? [];
+  if (all.length !== 1) return undefined;
+  const money = c.match(MONEY_RE)!;
+  const cents = Number(money[2].replace(/,/g, "")) * 100 +
+    (money[3] ? Number(money[3].padEnd(2, "0")) : 0);
+  if (!(cents > 0)) return undefined;
+  let desc = (c.slice(0, money.index) + " " +
+    c.slice((money.index ?? 0) + money[0].length))
+    .replace(/\s{2,}/g, " ").trim()
+    .replace(/\s+(?:for|at|of|by)$/i, "").trim();
+  if (adds) desc = desc.replace(ADD_VERBS, "").trim();
+  desc = desc.replace(ARTICLE_RE, "").trim();
+  if (!desc || !/\p{L}/u.test(desc) || !isCleanChangeClause(desc)) {
+    return undefined;
+  }
+  const negative = credits || Boolean(money[1]);
+  return {
+    description: capitalize(desc),
+    deltaAmountCents: negative ? -cents : cents,
+  };
+}
+
+/**
+ * REQ-769: "Change Dana Whitfield's quote: add post caps for $300", "Add
+ * post caps for $300 to Dana Whitfield's quote", "On Tom Henderson's job,
+ * credit $100 for the missed visit" — who, what and how much. Undefined
+ * when any is missing, nobody is named, or a NEW quote is asked for.
+ */
+export function parseNamedQuoteChange(
+  text: string,
+): NamedQuoteChange | undefined {
+  const s = (text ?? "").trim();
+  if (!s || isNewQuoteRequest(s)) return undefined;
+  const m = s.match(NAMED_QUOTE_RE);
+  if (!m?.groups?.who) return undefined;
+  const words = m.groups.who.split(/\s+/);
+  while (words.length && NAMED_QUOTE_LEAD.has(words[0].toLowerCase())) {
+    words.shift();
+  }
+  if (
+    words.length === 0 ||
+    words.some((w) => NAMED_QUOTE_NOBODY.has(w.toLowerCase()))
+  ) return undefined;
+  const customerName = words.join(" ");
+  const before = s.slice(0, m.index);
+  const after = s.slice((m.index ?? 0) + m[0].length);
+  // the change follows the quote ("…'s quote: add …") or comes before it
+  // ("Add … to Dana's quote") — never both
+  const change = after.trim()
+    ? (before.trim() ? undefined : namedChangeClause(after))
+    : namedChangeClause(before);
+  return change ? { customerName, ...change } : undefined;
+}
+
+// ---------------------------------------------------------------------------
 // Which quote does the change order belong to?
 // ---------------------------------------------------------------------------
 
