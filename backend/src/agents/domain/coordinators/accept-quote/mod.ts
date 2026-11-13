@@ -161,7 +161,15 @@ export class AcceptQuote {
             ...(invoice
               ? { invoiceId: invoice.id, invoiceStatus: invoice.status }
               : {}),
-            ...(scheduled ? { scheduledInvoiceId: scheduled.id } : {}),
+            // REQ-758 (cycle 5v2, m20): the scheduled bill's status too, so
+            // the header's divider fallback reads "Signed · Invoice
+            // scheduled" like the list.
+            ...(scheduled
+              ? {
+                scheduledInvoiceId: scheduled.id,
+                invoiceStatus: scheduled.status,
+              }
+              : {}),
           },
         }),
       );
@@ -170,8 +178,15 @@ export class AcceptQuote {
         quoteStatus: "accepted",
         preview: renderChatI18n(previewI18n, lang, tr),
         previewI18n,
-        ...(invoice
-          ? { invoiceId: invoice.id, invoiceStatus: invoice.status }
+        // REQ-758 (demo-loop cycle 5v2, m20): bind the bill the signature
+        // made — sent OR scheduled. Binding only a sent one left a scheduled
+        // completion invoice off the thread, so the list (ListConversations)
+        // and the header (LoadConversation), which read conv.invoiceId's
+        // row, both said "Quote accepted" while /invoices said "Scheduled";
+        // and "send the invoice" in the chat then sends THIS bill instead of
+        // drafting a second one.
+        ...(billed
+          ? { invoiceId: billed.id, invoiceStatus: billed.status }
           : {}),
       });
     }
