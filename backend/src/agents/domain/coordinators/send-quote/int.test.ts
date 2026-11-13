@@ -1129,3 +1129,101 @@ Deno.test("REQ-682 (m28) send-quote: the email's start-day step mentions a text 
   assert(/We(?:&#39;|')ll text you/.test(texted), "a texted send says so");
   await resetKv();
 });
+
+// REQ-764 (demo-loop cycle 5v2, issue m12 — re-test of REQ-681): the
+// verifier's exact case. Maria's cell is (512) 555-0144, a reserved test
+// number the send dialog already says can't take texts; the contractor still
+// picks "Text + Email". The quote dispatcher must not try to text it: no SMS
+// dispatch at all, and the divider reads "emailed to … — not texted: <reason>",
+// never "text failed (…)". In en and es.
+async function sendBothToReservedNumber(lang?: "es") {
+  const userId = lang ? "u-764es" : "u-764";
+  const ctx = fresh();
+  await seedContractor(userId, lang);
+  let smsSends = 0;
+  ctx.sms.send = (() => {
+    smsSends++;
+    return Promise.resolve({ ok: true, to: "+15125550144" });
+  }) as typeof ctx.sms.send;
+  const customer = await ctx.customers.create(userId, {
+    name: "Maria Lopez",
+    email: "maria@example.com",
+    phoneNumber: "(512) 555-0144",
+  });
+  const quote = await ctx.quotes.create(userId, {
+    summary: "Bathroom remodel",
+    lineItems: [],
+    estimatedTotal: 8_400,
+    status: "draft",
+    customerId: customer.id,
+  });
+  const conv = await ctx.conversations.create({
+    userId,
+    quoteId: quote.id,
+    customerId: customer.id,
+  });
+  // The paperwork SMS dispatcher itself is never asked to text it.
+  const smser = (ctx.flow as unknown as { smser: SendPaperworkSms }).smser;
+  const realRun = smser.run.bind(smser);
+  smser.run = ((...a: Parameters<typeof realRun>) => {
+    smsSends++;
+    return realRun(...a);
+  }) as typeof smser.run;
+  const r = await ctx.flow.run({
+    userId,
+    conversationId: conv.id,
+    quoteId: quote.id,
+    channel: "both",
+  });
+  return { ctx, r, smsSends: () => smsSends, label: r.newMessages[0].content };
+}
+
+Deno.test("REQ-764 m12 (cycle 5v2) send-quote: 'Text + Email' to a 555-01XX cell emails, never dispatches the text, and says 'not texted: <reason>'", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const { t } = await import("@core/i18n/mod.ts");
+  const { r, smsSends, label, ctx } = await sendBothToReservedNumber();
+  assertEquals(ctx.sentEmails.length, 1, "the email still goes out");
+  assertEquals(smsSends(), 0, "no text is attempted to a reserved number");
+  assert(!/text failed/i.test(label), `never 'text failed': ${label}`);
+  assertEquals(
+    label,
+    "Quote + Agreement emailed to maria@example.com — not texted: " +
+      t("en", "sms.fictionalNumber"),
+  );
+  const p = (r.newMessages[0].payload ?? {}) as Record<string, unknown>;
+  assertEquals(p.smsSkipped, true);
+  assertEquals(p.textedTo, undefined);
+  // The REQ-226 recovery form ("check the number") still has its code.
+  assertEquals(p.smsFailureCode, "fictional");
+  await resetKv();
+});
+
+Deno.test("REQ-764 m12 (cycle 5v2) send-quote: the Spanish divider says 'no se envió por texto: <motivo>', and re-renders in English", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const { t } = await import("@core/i18n/mod.ts");
+  const { r, smsSends, label } = await sendBothToReservedNumber("es");
+  assertEquals(smsSends(), 0);
+  assertEquals(
+    label,
+    t("es", "sendQuote.divider.emailedNotTexted", {
+      emailedTo: "maria@example.com",
+      reason: t("es", "sms.fictionalNumber"),
+    }),
+  );
+  assert(label.includes(t("es", "sms.fictionalNumber")), label);
+  const { localizeChatMessage } = await import("#quote-flow/chat-i18n.ts");
+  const en = localizeChatMessage(
+    r.newMessages[0],
+    "en",
+    (l: "en" | "es", k: string, v?: Record<string, string | number>) =>
+      t(l, k, v),
+  );
+  assertEquals(
+    en.content,
+    "Quote + Agreement emailed to maria@example.com — not texted: " +
+      t("en", "sms.fictionalNumber"),
+  );
+  await resetKv();
+});

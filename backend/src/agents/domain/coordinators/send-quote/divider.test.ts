@@ -55,3 +55,32 @@ Deno.test("REQ-593 m12 divider: text only and text-with-email-failed format the 
     "Quote + Agreement texted to +1 (512) 867-5309 — email failed (bounced)",
   );
 });
+
+// REQ-764 (demo-loop cycle 5v2, m12): a text skipped because the number can't
+// take texts reads "not texted: <reason>", never "text failed (…)".
+Deno.test("REQ-764 m12 divider: email + skipped text says 'not texted: <reason>' in en and es", () => {
+  for (const lang of ["en", "es"] as const) {
+    const label = renderChatI18n(
+      buildRef({
+        channel: "both",
+        emailedTo: "maria@example.com",
+        smsFailure: { key: "sms.fictionalNumber" },
+        smsSkipped: true,
+      }),
+      lang,
+      (l, k, v) => t(l, k, v),
+    );
+    assertEquals(
+      label,
+      t(lang, "sendQuote.divider.emailedNotTexted", {
+        emailedTo: "maria@example.com",
+        reason: t(lang, "sms.fictionalNumber"),
+      }),
+    );
+    assertEquals(
+      label.includes(t(lang, "sms.fictionalNumber")),
+      true,
+      `the reason is in the line: ${label}`,
+    );
+  }
+});

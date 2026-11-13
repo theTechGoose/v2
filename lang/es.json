@@ -3085,6 +3085,7 @@
   "sendQuote.divider.emailed": "Cotización + Acuerdo enviada por correo a {emailedTo}",
   "sendQuote.divider.emailedAndTexted": "Cotización + Acuerdo enviada por correo a {emailedTo} y por mensaje de texto a {textedTo}",
   "sendQuote.divider.emailedTextFailed": "Cotización + Acuerdo enviada por correo a {emailedTo} — falló el mensaje de texto ({reason})",
+  "sendQuote.divider.emailedNotTexted": "Cotización + Acuerdo enviada por correo a {emailedTo} — no se envió por texto: {reason}",
   "sendQuote.divider.noEmail": "Cotización + Acuerdo redactada — no hay correo registrado para este cliente. Agrega uno para enviarla.",
   "sendQuote.divider.noPhone": "Cotización + Acuerdo redactada — no hay teléfono registrado para este cliente. Agrega uno para enviarla.",
   "sendQuote.divider.noRecipient": "sin destinatario",

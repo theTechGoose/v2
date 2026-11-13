@@ -23,6 +23,7 @@ import {
 } from "#quote-flow/comms-language.ts";
 import { withSendLang } from "#quote-flow/share-link.ts";
 import type { SmsFailureCode } from "#quote-flow/sms-failure.ts";
+import { phoneCantReceiveTexts } from "#quote-flow/sms-number.ts"; // REQ-764
 import {
   customerOnDocument,
   docRefWithVersion,
@@ -229,6 +230,34 @@ export class SendPaperworkSms {
     }
 
     return result;
+  }
+
+  /**
+   * REQ-764 (demo-loop cycle 5v2, m12): whether the number this document's
+   * text would go to is one that can't take texts (the shared REQ-569
+   * predicate the send dialog uses) — resolved exactly as `run` resolves it
+   * (an explicit `to`, else the live customer number, else the document's).
+   * A caller sending on another channel too skips the text on `true` instead
+   * of attempting it and reporting a failure. Read-only: publishes nothing.
+   */
+  async recipientCantText(
+    userId: string,
+    input: Pick<SendPaperworkSmsInput, "kind" | "resourceId" | "to">,
+  ): Promise<boolean> {
+    let recipient = input.to;
+    if (!recipient) {
+      try {
+        const doc = input.kind === "quote"
+          ? await this.quotes.getOwned(input.resourceId, userId)
+          : await this.invoices.getOwned(input.resourceId, userId);
+        const customer = await this.tryGetCustomer(userId, doc.customerId);
+        recipient = customer?.phoneNumber ??
+          customerOnDocument(doc, customer)?.phoneNumber;
+      } catch {
+        return false;
+      }
+    }
+    return phoneCantReceiveTexts(recipient);
   }
 
   private async tryGetCustomer(
