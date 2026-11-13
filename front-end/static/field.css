@@ -157,6 +157,18 @@
   color: var(--fg);
   background: #fff;
 }
+/* REQ-735 (demo c5 p6) — the read-only "share link + PIN" text box (workers,
+   editors): drawn like the form fields, not the UA's monospace inset box */
+.share-text {
+  box-sizing: border-box;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  font: inherit;
+  font-size: 14px;
+  color: var(--fg);
+  background: #fff;
+}
 /* REQ-155 — a select is drawn shorter than an input of the same padding; match the inputs beside it */
 .field select {
   min-height: 47px;

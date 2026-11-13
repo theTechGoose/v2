@@ -290,7 +290,11 @@ export default function FieldBatchesPage() {
               <>
                 {" "}
                 {/* REQ-600 (cycle 4, M5): straight to that customer's card */}
-                <a href={customerFixHref(f.customerId)} data-cy="lt-send-fix">
+                <a
+                  class="link"
+                  href={customerFixHref(f.customerId)}
+                  data-cy="lt-send-fix"
+                >
                   {f.fix}
                 </a>
               </>

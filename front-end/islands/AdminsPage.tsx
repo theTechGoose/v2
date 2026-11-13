@@ -229,6 +229,7 @@ export default function AdminsPage() {
                 <p style="margin:0 0 8px">
                   {t("admins.shareLink")}:{" "}
                   <a
+                    class="link"
                     href={sent.share.url}
                     target="_blank"
                     rel="noopener"
@@ -241,6 +242,7 @@ export default function AdminsPage() {
                 <textarea
                   readOnly
                   rows={3}
+                  class="share-text"
                   data-cy="adm-share-text"
                   style="width:100%;resize:vertical"
                   value={sent.share.text}
