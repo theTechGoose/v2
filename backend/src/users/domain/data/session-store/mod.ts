@@ -18,6 +18,10 @@ export interface Session {
    *  the admin's OWN user id. `userId` is then the owner's. requireUser
    *  re-checks the admin record on every request, so a removal cuts it. */
   actorId?: string;
+  /** REQ-806: an approved ops view — reads only; requireSession refuses every write */
+  readOnly?: boolean;
+  /** REQ-806: the session is dead after this (an ops view: 30 minutes) */
+  expiresAt?: string;
 }
 
 const TTL_MS = 30 * 24 * 60 * 60 * 1_000; // 30 days
@@ -67,6 +71,29 @@ export class SessionStore {
       returnSessionId: input.returnSessionId,
     };
     await kv.set(["session", id], session, { expireIn: TTL_MS });
+    return session;
+  }
+
+  /**
+   * REQ-806: an approved ops view of `targetUserId` — read-only, gone after `ttlMs`, and carrying
+   * the approving super admin as `impersonatorId` so the act is auditable. No return session: it
+   * is nobody's sign-in.
+   */
+  async createOpsView(
+    input: { targetUserId: string; impersonatorId: string; ttlMs: number },
+  ): Promise<Session> {
+    const kv = await getKv();
+    const id = crypto.randomUUID();
+    const now = Date.now();
+    const session: Session = {
+      id,
+      userId: input.targetUserId,
+      createdAt: new Date(now).toISOString(),
+      impersonatorId: input.impersonatorId,
+      readOnly: true,
+      expiresAt: new Date(now + input.ttlMs).toISOString(),
+    };
+    await kv.set(["session", id], session, { expireIn: input.ttlMs });
     return session;
   }
 
