@@ -1640,6 +1640,7 @@
   "invoicesPage.back.rejectTitle": "Reabrir esta factura — nunca recibiste este pago",
   "invoicesPage.back.rejectYes": "Marcar no recibido",
   "invoicesPage.back.textClient": "Enviar SMS al cliente",
+  "invoicesPage.back.addPhone": "Agregar teléfono",
   "invoicesPage.cta.claimed": "Listo, lo recibí",
   "invoicesPage.cta.drafting": "Terminar + enviar",
   "invoicesPage.cta.out": "Ver factura",

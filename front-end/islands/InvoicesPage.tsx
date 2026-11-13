@@ -88,6 +88,8 @@ import { invoiceJobNamePlaceholderKey } from "../../shared/quote-flow/trade-fit.
 import { isExceedsAgreement } from "../../shared/documents/ledger.ts";
 import { isExtraWorkLink } from "../../shared/documents/change-order-actions.ts"; // REQ-655
 import { invoiceLinkPath } from "../lib/customer-link.ts"; // REQ-586
+import { canTextClient, invoiceTextPhone } from "../lib/invoice-text-client.ts"; // REQ-691
+import { customerFixHref } from "../lib/customer-card-edit.ts"; // REQ-691
 import {
   describeReminderCadence,
   invoiceReminderState,
@@ -283,6 +285,8 @@ interface EnrichedInvoice extends Invoice {
   daysOverdue: number;
   daysIn: number;
   stage: "scheduled" | "overdue" | "out" | "claimed" | "drafting" | "paid";
+  /** REQ-691: the phone "Text client" would go to, or null */
+  textPhone: string | null;
 }
 
 /** Detect a draft invoice broadly. The backend's status field is an open
@@ -305,6 +309,7 @@ function enrich(
   inv: Invoice,
   customers: Map<string, string>,
   now: Date,
+  byId?: Map<string, Customer>,
 ): EnrichedInvoice {
   // REQ-696 (cycle 5, M22): no customer on file → the typed bill-to name
   const client = invoiceClientName(inv, customers);
@@ -351,6 +356,10 @@ function enrich(
     daysOverdue,
     daysIn,
     stage,
+    textPhone: invoiceTextPhone(
+      inv,
+      inv.customerId ? byId?.get(inv.customerId) : undefined,
+    ),
   };
 }
 
@@ -618,6 +627,15 @@ export default function InvoicesPage(_props: { lang?: Lang }) {
     [s.customers],
   );
 
+  // REQ-691: the card's "Text client" reads the customer's phone
+  const customersById = useMemo(
+    () =>
+      new Map(
+        (Array.isArray(s.customers) ? s.customers : []).map((c) => [c.id, c]),
+      ),
+    [s.customers],
+  );
+
   if (s.loading) {
     return (
       <>
@@ -637,7 +655,7 @@ export default function InvoicesPage(_props: { lang?: Lang }) {
 
   const now = new Date();
   const enriched = (Array.isArray(s.invoices) ? s.invoices : []).map((i) =>
-    enrich(i, customerNames, now)
+    enrich(i, customerNames, now, customersById)
   );
 
   const overdue = enriched.filter((i) => i.stage === "overdue").sort((a, b) =>
@@ -3703,10 +3721,22 @@ function InvoiceCard(
                   : tFor(lang, "invoicesPage.back.mute")}
               </button>
             )
-            : (
+            : canTextClient(inv.textPhone)
+            // REQ-691 (demo p15, cycle 5): only a phone that can take a text
+            // gets "Text client"; otherwise the fix — add one on their card.
+            ? (
               <button type="button" onClick={doSendText} disabled={busy}>
                 {tFor(lang, "invoicesPage.back.textClient")}
               </button>
+            )
+            : (
+              <a
+                href={customerFixHref(inv.customerId)}
+                data-cy="invoice-add-phone"
+                onClick={(e) => e.stopPropagation()}
+              >
+                {tFor(lang, "invoicesPage.back.addPhone")}
+              </a>
             )}
         </div>
       </div>
