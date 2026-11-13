@@ -31,7 +31,7 @@ async function verify(http: StoryTools["http"], phone: string) {
   return { cookie, auth: { ...JSON_HEADERS, cookie } };
 }
 
-Deno.test("REQ-176: the root is Dashboard, Customers, Billing, Field (REQ-361, was Recurring), Admin; Billing opens to Quotes, Invoices, Payments, Work orders and Invoices loads inside it; Admin opens to Workers and Admins; Field to the four; Back returns to the root; /field/tasks loads inside Field", (t) =>
+Deno.test("REQ-176: the root is Dashboard, Customers, Quotes (REQ-773), Billing, Field (REQ-361, was Recurring), Admin; Billing opens to Invoices, Payments, Work orders and Invoices loads inside it; Admin opens to Workers and Admins; Field to the four; Back returns to the root; /field/tasks loads inside Field", (t) =>
   story(t, async ({ page, expect, http, baseUrl }) => {
     const user = await verify(http, `+1512${digits()}`);
     await (await http("/api/me", {
@@ -66,17 +66,17 @@ Deno.test("REQ-176: the root is Dashboard, Customers, Billing, Field (REQ-361, w
     let seen = await labels();
     expect.eq(
       seen.join(" | "),
-      "Dashboard | Customers | Outbox | Billing | Field | Roles",
-      "the root is the six rows (REQ-784 added Outbox)",
+      "Dashboard | Customers | Quotes & agreements | Outbox | Billing | Field | Roles", // REQ-773: Quotes on the root
+      "the root is the seven rows (REQ-773 Quotes, REQ-784 Outbox)",
     );
-    // 2. Billing: Back, Quotes, Invoices, Payments, Work orders; Invoices loads inside it
+    // 2. Billing: Back, Invoices, Payments, Work orders; Invoices loads inside it
     await nav.locator("[data-cy='nav-folder-billing']").click();
     await nav.locator("[data-cy='nav-back']").waitFor({ timeout: 10_000 });
     seen = await labels();
     expect.eq(
       seen.join(" | "),
-      "Back | Quotes | Invoices | Payments | Work orders",
-      "inside Billing (REQ-210 added Work orders)",
+      "Back | Invoices | Payments | Work orders",
+      "inside Billing (REQ-210 added Work orders; REQ-773 moved Quotes to the root)",
     );
     await nav.locator("a[href='/invoices']").click();
     await page.waitForURL(/\/invoices/, { timeout: 20_000 });

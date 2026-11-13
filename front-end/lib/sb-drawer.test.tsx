@@ -23,7 +23,8 @@ const lang = (l: string) =>
   ) as Record<string, string>;
 
 Deno.test("REQ-358 the resting folder: the active page's folder, the root otherwise (the super-admin tab too, REQ-604)", () => {
-  assertEquals(restingPath("quotes"), ["billing"]);
+  assertEquals(restingPath("invoices"), ["billing"]);
+  assertEquals(restingPath("quotes"), []); // REQ-773: Quotes sits on the root
   assertEquals(restingPath("tasks"), ["field"]); // REQ-361: the folder is "field" now
   assertEquals(restingPath("admin"), []); // REQ-604: the super-admin tab sits on the root
   assertEquals(restingPath("home"), []);
