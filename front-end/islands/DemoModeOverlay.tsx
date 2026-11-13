@@ -113,10 +113,10 @@ import {
   type ClipStyle,
   cueKey,
   drifted,
-  OFF_MARK_Z,
+  placeView,
   placedReport,
   placedReporter,
-  placeView,
+  OFF_MARK_Z,
   pointInBox,
   visibleBox,
 } from "../../shared/demo-mode/presenter-anchor.ts";
@@ -139,8 +139,8 @@ import { type ActivePoll, activePoll } from "../lib/demo-mode/active-poll.ts";
 import { handCursor, sessionStore } from "../lib/demo-mode/cursor-handoff.ts";
 import { demoEligible, viewerTab } from "../../shared/demo-mode/tab.ts";
 import {
-  type ClaimHow,
   connectDemo,
+  type ClaimHow,
   type DemoLink,
   type LinkStatus,
   type PeerFrom,
@@ -186,9 +186,9 @@ import {
 } from "../../shared/demo-mode/ended.ts";
 import {
   backdropCovers,
+  coversView,
   CONTROL_SELECTOR,
   countsAsPage,
-  coversView,
   dialogDim,
   isPublicDocPath,
   PAGE_MEDIA_SELECTOR,
@@ -205,10 +205,10 @@ import {
   pillStore,
   pillWraps,
   placePill,
+  seeThrough,
   recallPillOpen,
   rememberPillOpen,
   samplePoints,
-  seeThrough,
   tabBox,
 } from "../../shared/demo-mode/pill.ts";
 import { pillCopy } from "../../shared/demo-mode/pill-copy.ts";
@@ -401,7 +401,7 @@ export default function DemoModeOverlay(
   } = {},
 ) {
   /** M5 — in a nested frame (an app page embedded in a page), or on the stage: never part of the demo;
-   *  REQ-217 / REQ-793 — every page of the app is eligible (the worker view too); the visible tab speaks */
+   *  REQ-217 — the worker portal never takes part */
   const inert = typeof globalThis.location !== "undefined" &&
     (globalThis.top !== globalThis.self ||
       globalThis.location.pathname === STAGE_PATH ||

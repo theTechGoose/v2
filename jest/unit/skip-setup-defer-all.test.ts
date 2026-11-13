@@ -61,12 +61,30 @@ describe("REQ-504 (demo M37, cycle 3) — Skip setup for now defers the open que
     expect(canSkipSetup(NAMED)).toBe(true);
   });
 
-  test("REQ-504 the wizard's escape posts deferAll and lands on /dashboard, shown only when canSkipSetup", () => {
+  test("REQ-504 + REQ-797 the wizard's escape posts deferAll and lands on /assistant (like finishing setup), shown only when canSkipSetup", () => {
     const body = wizard.slice(wizard.indexOf("async function skipSetup()"));
     const fn = body.slice(0, body.indexOf("\n  }\n"));
     expect(fn).toMatch(/skipped:\s*true,\s*deferAll:\s*true/);
-    expect(fn).toMatch(/location\.href\s*=\s*"\/dashboard"/);
-    expect(fn).not.toMatch(/"\/assistant"/);
+    expect(fn).toMatch(/location\.href\s*=\s*"\/assistant"/);
+    expect(fn).not.toMatch(/"\/dashboard"/);
     expect(wizard).toMatch(/canSkipSetup\(snap\)\s*&&/);
+  });
+});
+
+describe("REQ-797 — after setup, people go to the assistant", () => {
+  const progress = fs.readFileSync(
+    path.join(ROOT, "front-end/islands/OnboardingProgress.tsx"),
+    "utf8",
+  );
+  test("REQ-797 the assistant's setup bar's 'skip setup' lands on /assistant, never /dashboard", () => {
+    const body = progress.slice(progress.indexOf("function skipSetup()"));
+    const fn = body.slice(0, body.indexOf("\n  }\n"));
+    expect(fn).toMatch(/location\.(assign\(|href\s*=\s*)"\/assistant"/);
+    expect(fn).not.toMatch(/"\/dashboard"/);
+  });
+  test("REQ-797 finishing setup still lands on /assistant", () => {
+    const body = wizard.slice(wizard.indexOf("async function finish()"));
+    const fn = body.slice(0, body.indexOf("\n  }\n"));
+    expect(fn).toMatch(/location\.href\s*=\s*"\/assistant"/);
   });
 });

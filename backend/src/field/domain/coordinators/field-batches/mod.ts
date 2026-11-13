@@ -60,21 +60,17 @@ export class FieldBatches {
     ]);
     const live = liveIds(invoices);
     // REQ-174: days to pay — the subscription's, else the account's default, else 30
-    const identity = await this.identity.get(userId).catch(() => null);
-    const accountNetDays = identity?.invoiceNetDays;
-    // REQ-788: the overhead cost per visit, as Settings has it today
-    const overhead = { cents: identity?.fieldOverheadCents ?? 0, label: lang === "es" ? "Gastos generales" : "Overhead" };
+    const accountNetDays = (await this.identity.get(userId).catch(() => null))?.invoiceNetDays;
     const subById = new Map(subscriptions.map((s) => [s.id, s]));
     const taskById = new Map(tasks.map((t) => [t.id, t]));
     const summary = summarize({ from, to, tasks, liveInvoiceIds: live });
-    const groups = linesFor({ from, to, tasks, subscriptions, taskTypes, liveInvoiceIds: live, overhead });
+    const groups = linesFor({ from, to, tasks, subscriptions, taskTypes, liveInvoiceIds: live });
     const today = fieldToday();
     const batch: Batch = { id: newId(), userId, from, to, invoiceIds: [], createdAt: new Date().toISOString() };
     const made: Invoice[] = [];
     for (const g of groups) {
       const descriptions = g.lines.map((l) => lineText(l, lang));
-      const taskLines = g.lines.filter((l) => !l.overhead); // REQ-788: the overhead line names no task
-      const netDays = netDaysFor(taskLines.map((l) => subById.get(taskById.get(l.taskId)?.subscriptionId ?? "")?.netDays), accountNetDays);
+      const netDays = netDaysFor(g.lines.map((l) => subById.get(taskById.get(l.taskId)?.subscriptionId ?? "")?.netDays), accountNetDays);
       const inv = await this.invoices.create(userId, {
         customerId: g.customerId,
         status: "draft",
@@ -88,7 +84,7 @@ export class FieldBatches {
       made.push(inv);
       batch.invoiceIds.push(inv.id);
       const byId = new Map(tasks.map((t) => [t.id, t]));
-      await this.tasks.putMany(taskLines.map((l) => ({ ...byId.get(l.taskId)!, invoiceId: inv.id })));
+      await this.tasks.putMany(g.lines.map((l) => ({ ...byId.get(l.taskId)!, invoiceId: inv.id })));
     }
     if (made.length) await this.batches.put(batch);
     return { ...await this.view(batch, made), summary };

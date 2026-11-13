@@ -70,8 +70,6 @@ export interface SubscriptionView {
   month?: number;
   /** REQ-174: days to pay, from the day the invoice is sent; unset = the account's default */
   netDays?: number;
-  /** REQ-788: every visit bills the account's overhead cost (Settings) */
-  overhead?: boolean;
   active: boolean;
   regionId?: string;
   region: Region | null;
@@ -111,8 +109,6 @@ export interface SubscriptionInput {
   startDate?: string;
   /** REQ-174: days to pay; null clears it (back to the account's default) */
   netDays?: number | null;
-  /** REQ-788: the overhead toggle */
-  overhead?: boolean;
 }
 
 export type SubscriptionPatch =

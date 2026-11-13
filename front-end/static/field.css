@@ -323,16 +323,6 @@
   font-weight: 800;
   color: var(--fg);
 }
-/* REQ-788: the title row — the title left, the Overhead chip in the upper right */
-.modal__head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-}
-.modal__head .days {
-  margin: 0;
-}
 .modal__foot {
   display: flex;
   gap: 10px;
@@ -877,11 +867,4 @@
 }
 .field select[aria-invalid="true"] {
   border-color: #dc2626;
-}
-/* REQ-788: a weekday chip sized by its text ("Overhead · $25.00") */
-.days .day.day--wide {
-  width: auto;
-  padding: 0 12px;
-  font-size: 13px;
-  white-space: nowrap;
 }

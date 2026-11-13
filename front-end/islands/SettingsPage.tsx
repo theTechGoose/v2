@@ -199,8 +199,6 @@ function tr(es: boolean) {
     website: tFor(lang, "settings.website"),
     netDays: tFor(lang, "settings.netDays"),
     netDaysHint: tFor(lang, "settings.netDaysHint"),
-    overhead: tFor(lang, "settings.overhead"),
-    overheadHint: tFor(lang, "settings.overheadHint"),
     // Address
     street: tFor(lang, "settings.street"),
     city: tFor(lang, "settings.city"),
@@ -422,10 +420,6 @@ function EditCard(
   // REQ-174: the default days a customer has to pay an invoice
   const [netDays, setNetDays] = useState(
     String(accountNetDays(snapshot.identity?.invoiceNetDays)),
-  );
-  // REQ-788: the overhead cost per recurring visit, shown in dollars, stored in cents
-  const [overhead, setOverhead] = useState(
-    ((snapshot.identity?.fieldOverheadCents ?? 0) / 100).toFixed(2),
   );
   const [busy, setBusy] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
@@ -693,40 +687,6 @@ function EditCard(
           />
           <span style="display:block;margin-top:4px;font-size:12px;color:var(--fg-muted,#6b7560)">
             {t.netDaysHint}
-          </span>
-        </label>
-        {/* REQ-788: the overhead cost per visit — what the subscription's Overhead toggle adds */}
-        <label style="display:block;grid-column:1 / -1">
-          <span style={labelStyle}>{t.overhead}</span>
-          <input
-            type="number"
-            min="0"
-            step="0.01"
-            inputMode="decimal"
-            class="settings-edit__input"
-            style={inputStyle}
-            data-cy="settings-overhead"
-            value={overhead}
-            disabled={busy === "identity"}
-            onInput={(e) => setOverhead((e.target as HTMLInputElement).value)}
-            onBlur={() => {
-              const current = snapshot.identity?.fieldOverheadCents ?? 0;
-              const cents = Math.round(Number(overhead) * 100);
-              if (
-                overhead.trim() === "" || !Number.isFinite(cents) || cents < 0
-              ) {
-                setOverhead((current / 100).toFixed(2));
-                return;
-              }
-              setOverhead((cents / 100).toFixed(2));
-              if (cents !== current) {
-                saveIdentity({ fieldOverheadCents: cents });
-              }
-            }}
-            aria-label={t.overhead}
-          />
-          <span style="display:block;margin-top:4px;font-size:12px;color:var(--fg-muted,#6b7560)">
-            {t.overheadHint}
           </span>
         </label>
         <div

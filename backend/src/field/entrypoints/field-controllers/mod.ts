@@ -472,7 +472,6 @@ export class FieldSubscriptionsController {
       ...sched,
       startDate: isValidDate(b.startDate) ? b.startDate : fieldToday(),
       ...(netDays.value !== undefined ? { netDays: netDays.value } : {}),
-      ...(b.overhead === true ? { overhead: true } : {}), // REQ-788
       active: true,
       createdAt: now,
       updatedAt: now,
@@ -524,7 +523,6 @@ export class FieldSubscriptionsController {
       if (nd.value === undefined) delete s.netDays;
       else s.netDays = nd.value;
     }
-    if (typeof b.overhead === "boolean") s.overhead = b.overhead; // REQ-788
     const address = str(b.address);
     if (address && address !== s.address) {
       if (address.length > CAP.text) throw new FieldError("address too long");
