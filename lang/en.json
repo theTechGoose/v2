@@ -1840,6 +1840,7 @@
   "invoicesPage.month.sep": "Sep",
   "invoicesPage.new.amount": "Amount (USD)",
   "invoicesPage.new.client": "Client",
+  "invoicesPage.new.clientSearch": "Search a client…",
   "invoicesPage.new.clientNone": "No client (add later)",
   "invoicesPage.new.create": "Create invoice",
   "invoicesPage.new.createSend": "Create & send",

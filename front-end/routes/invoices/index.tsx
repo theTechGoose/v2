@@ -55,6 +55,11 @@ export default define.page(function InvoicesRoute(ctx) {
           href={asset("/dashboard.css")}
         />
         <link key="css-quotes" rel="stylesheet" href={asset("/quotes.css")} />
+        <link
+          key="css-search-select"
+          rel="stylesheet"
+          href={asset("/search-select.css")}
+        />
       </Head>
       <div class="app">
         <DashSidebar active="invoices" />

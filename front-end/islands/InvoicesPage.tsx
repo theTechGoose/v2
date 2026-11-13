@@ -47,6 +47,7 @@ import {
 import { fmtMoney, fmtMoneyExact } from "../lib/format.ts";
 import { type Lang, langSignal, tFor, tnFor } from "../lib/i18n.ts";
 import QuoteTrack from "./QuoteTrack.tsx";
+import SearchSelect from "./SearchSelect.tsx"; // REQ-801
 import {
   cardDate,
   contactFixRequest,
@@ -5104,6 +5105,19 @@ function NewInvoiceModal(
   }, [accountNetDays, quoteTerms]);
 
   /** Pick a customer: bill-to and the service address follow (editable after). */
+  // REQ-801: the search rows — "+ New client" first, then every client (number · name, address)
+  const clientChoices = useMemo(
+    () => [
+      { id: NEW_SENTINEL, label: tFor(lang, "invoicesPage.new.newClient") },
+      ...customers.map((c) => {
+        const hint = c.address?.trim();
+        const label = c.number ? `${c.number} · ${c.name}` : c.name;
+        return hint ? { id: c.id, label, hint } : { id: c.id, label };
+      }),
+    ],
+    [customers, lang],
+  );
+
   function pickCustomer(id: string) {
     setClientSel(id);
     if (id && id !== NEW_SENTINEL) {
@@ -5532,28 +5546,23 @@ function NewInvoiceModal(
           </p>
         )}
 
+        {/* REQ-801: the same search-and-pick as the repeat-visit form (REQ-136) */}
         <label style={labelStyle}>
           {tFor(lang, "invoicesPage.new.client")}
-          <select
-            data-cy="new-invoice-client"
-            value={clientSel}
-            disabled={busy}
-            onInput={(e) => pickCustomer((e.target as HTMLSelectElement).value)}
-            style={inputStyle}
-          >
-            <option value="">
-              {tFor(lang, "invoicesPage.new.clientNone")}
-            </option>
-            {customers.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.number ? `${c.number} · ` : ""}
-                {c.name}
-              </option>
-            ))}
-            <option value={NEW_SENTINEL}>
-              {tFor(lang, "invoicesPage.new.newClient")}
-            </option>
-          </select>
+          <div data-cy="new-invoice-client" data-value={clientSel}>
+            <SearchSelect
+              name="customerId"
+              options={clientChoices}
+              value={clientSel}
+              placeholder={tFor(lang, "invoicesPage.new.clientSearch")}
+              disabled={busy}
+              onSelect={(o) => pickCustomer(o.id)}
+              onQuery={(q) => {
+                // the box was cleared or retyped: no client until the next pick
+                if (clientSel && q.trim() === "") pickCustomer("");
+              }}
+            />
+          </div>
         </label>
 
         {/* REQ-474 (M17): what this client already has — bill that instead */}

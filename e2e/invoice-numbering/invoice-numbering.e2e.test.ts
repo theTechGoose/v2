@@ -106,8 +106,21 @@ Deno.test("REQ-206: the standalone invoice form — customer prefills bill-to, t
       async () =>
         await page.locator("[data-cy='new-invoice-modal']").isVisible(),
     );
-    await page.locator("[data-cy='new-invoice-client']").selectOption(
+    // REQ-801: the client field is the search-and-pick — type the name, click the match
+    const clientBox = page.locator(
+      "[data-cy='new-invoice-client'] [data-cy='search-select-input']",
+    );
+    await clientBox.waitFor({ timeout: 15_000 });
+    await clientBox.fill("Ann");
+    await page.locator(
+      "[data-cy='new-invoice-client'] [data-cy='search-select-option']",
+    ).filter({ hasText: "Ann Lee" }).first().click();
+    expect.eq(
+      await page.locator(
+        "[data-cy='new-invoice-client'] input[name='customerId']",
+      ).inputValue(),
       customer.id,
+      "the picked client's id is the field's value",
     );
     // the customer prefills the bill-to and the service address
     await page.waitForFunction(() =>
@@ -312,8 +325,9 @@ Deno.test("REQ-206: /invoices?new=1&quoteId=<id> prefills the form from the quot
       ledgerText.includes("Q-001"),
       `the quote's number is named (${ledgerText})`,
     );
+    // REQ-409: a quote not yet accepted reads "Quoted", an accepted one "Agreed"
     expect(
-      ledgerText.includes("Agreed $1,000.00"),
+      /(Agreed|Quoted) \$1,000\.00/.test(ledgerText),
       `agreed total (${ledgerText})`,
     );
     expect(
@@ -330,7 +344,9 @@ Deno.test("REQ-206: /invoices?new=1&quoteId=<id> prefills the form from the quot
       "the amount is prefilled with what remains",
     );
     expect.eq(
-      await page.locator("[data-cy='new-invoice-client']").inputValue(),
+      await page.locator(
+        "[data-cy='new-invoice-client'] input[name='customerId']",
+      ).inputValue(),
       customer.id,
       "the quote's customer is picked",
     );
