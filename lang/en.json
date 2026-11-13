@@ -813,6 +813,7 @@
   "chatCoordinator.terms.notApplied": "I didn't change {terms} — ask me again and I'll set it.",
   "chatCoordinator.terms.notApplied.or": "or",
   "chatCoordinator.terms.same": "{term} is already {value}.",
+  "chatCoordinator.terms.samePlural": "{term} are already {value}.",
   "chatCoordinator.terms.sent": "The quote is already with the customer, so I left {term} at {value}.",
   "chatCoordinator.terms.signed": "The agreement is signed, so I can't change {term}.",
   "chatHeader.more": "More",

@@ -12,6 +12,7 @@
 import { assert, assertEquals, assertStringIncludes } from "#std/assert";
 import { TERMS_WIZARD_V1 } from "@agents/domain/business/terms-wizard-spec/mod.ts";
 import {
+  askedTerms,
   durationPick,
   mentionedTerms,
   paymentPick,
@@ -261,4 +262,89 @@ Deno.test("REQ-585 termsNotAppliedLine: a mentioned start date / time to complet
   const es = termsNotAppliedLine("es", ["start_date"]);
   assertStringIncludes(es, "No cambié la fecha de inicio");
   assert(!es.includes("start"), es);
+});
+
+// ---------------------------------------------------------------------------
+// REQ-663 (demo-loop cycle 5, m40 + p18-7c): the model re-sent the job's
+// current terms through update_terms on "add $400 change order" — a signed
+// agreement answered three "can't change …" lines nobody asked for
+// (fleet-0 stdout:254), and an echo said "The payment terms is already
+// 50/50." (fleet-6 stdout:331).
+// ---------------------------------------------------------------------------
+
+Deno.test("REQ-663 askedTerms: a change-order message names no term — the demo's two messages and pair 7's", () => {
+  for (
+    const s of [
+      "Linda also wants the hallway painted, add $400 change order",
+      "add a plumbing permit line $450",
+      "change the cabinet line to just say white shaker cabinets",
+      "agrega 1,500 por la calefacción del piso",
+      "Kitchen gut, cabinets $9.5k",
+      "take out the floor stays line and add this to the half bath",
+      "send the next version to the customer",
+    ]
+  ) assertEquals(askedTerms(s), [], s);
+  assertEquals(
+    askedTerms(
+      "also add change order for the Hendersons: heated floor in bath, 64 sqft, about 1200 extra. oh and its NOT done before thanksgiving…fix that",
+    ),
+    ["start_date", "wraps"],
+  );
+});
+
+Deno.test("REQ-663 askedTerms: every way a term is asked for is read (loose — it gates the model's picks, so a miss would drop a real edit)", () => {
+  const cases: [string, string[]][] = [
+    ["we start monday nov 23", ["start_date"]],
+    ["make it next week", ["start_date"]],
+    ["empezamos la próxima semana", ["start_date"]],
+    ["push the start back to the 15th", ["start_date"]],
+    ["asap please", ["start_date"]],
+    ["its 2 and a half weeks not 2", ["wraps"]],
+    ["make it 3 weeks", ["wraps"]],
+    ["how long will it take", ["wraps"]],
+    ["son 3 semanas", ["wraps"]],
+    ["I want a 50% deposit upfront", ["payment_terms"]],
+    ["make the payment 50/50", ["payment_terms"]],
+    ["half up front", ["payment_terms"]],
+    ["net 30", ["payment_terms"]],
+    ["que pague la mitad por adelantado", ["payment_terms"]],
+    ["el pago todo al final", ["payment_terms"]],
+  ];
+  for (const [s, ids] of cases) {
+    for (const id of ids) assert(askedTerms(s).includes(id as never), s);
+  }
+});
+
+Deno.test("REQ-663 termsChangeLine: 'already' agrees with a plural term — never 'The payment terms is'", () => {
+  const pay = step("payment_terms");
+  assertEquals(
+    termsChangeLine("en", {
+      kind: "same",
+      step: pay,
+      to: { optionId: "50_50" },
+    }),
+    "The payment terms are already 50/50.",
+  );
+  const es = termsChangeLine("es", {
+    kind: "same",
+    step: pay,
+    to: { optionId: "50_50" },
+  });
+  assertStringIncludes(es, "Las condiciones de pago ya son ");
+  assertEquals(
+    termsChangeLine("en", {
+      kind: "same",
+      step: step("wraps"),
+      to: { optionId: "custom", customValue: "3 weeks" },
+    }),
+    "The time to complete is already 3 weeks.",
+  );
+  assertStringIncludes(
+    termsChangeLine("es", {
+      kind: "same",
+      step: step("start_date"),
+      to: { optionId: "next_week" },
+    }),
+    "La fecha de inicio ya es ",
+  );
 });

@@ -813,6 +813,7 @@
   "chatCoordinator.terms.notApplied": "No cambié {terms} — pídemelo otra vez y lo cambio.",
   "chatCoordinator.terms.notApplied.or": "ni",
   "chatCoordinator.terms.same": "{term} ya es {value}.",
+  "chatCoordinator.terms.samePlural": "{term} ya son {value}.",
   "chatCoordinator.terms.sent": "La cotización ya la tiene el cliente, así que dejé {term} en {value}.",
   "chatCoordinator.terms.signed": "El acuerdo ya está firmado, así que no puedo cambiar {term}.",
   "chatHeader.more": "Más",
