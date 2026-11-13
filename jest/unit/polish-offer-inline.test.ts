@@ -208,3 +208,53 @@ describe("REQ-675 p18-7b: polishOffer — a deletion-only result is not a polish
     ).not.toBeNull();
   });
 });
+
+/**
+ * REQ-751 (demo-loop cycle 5v1, p18-7b re-test): REQ-675's deletion check
+ * ran only on a single-line result. The verifier, on the merged build, still
+ * got "¿Pulir esta línea?" for "…subway tile with dark grout" and for
+ * "Patch two holes in the drywall with joint compound and repaint the area" —
+ * the model had SPLIT a bullet with no "+"/"plus" into several lines (shown
+ * one per line, read as "Patch two holes in drywall Apply joint compound
+ * Repaint the area"). Only an explicit top-level joiner may split a line.
+ */
+describe("REQ-751 p18-7b: polishOffer — a '+'-less line split into several is not offered", () => {
+  it("REQ-751 the backsplash line split in two (dropping 'with') gets no offer", () => {
+    expect(
+      polishOffer(
+        "Install kitchen backsplash, 30 sq ft white subway tile with dark grout",
+        ["Install kitchen backsplash", "30 sq ft white subway tile dark grout"],
+      ),
+    ).toBeNull();
+  });
+
+  it("REQ-751 the drywall line split in three gets no offer", () => {
+    expect(
+      polishOffer(
+        "Patch two holes in the drywall with joint compound and repaint the area",
+        ["Patch two holes in drywall", "Apply joint compound", "Repaint the area"],
+      ),
+    ).toBeNull();
+  });
+
+  it("REQ-751 an 'A + B' / 'A plus B' split is still offered", () => {
+    expect(
+      polishOffer("4 recesed lights + City of Austin permit", [
+        "Install 4 recessed lights",
+        "City of Austin permit",
+      ]),
+    ).not.toBeNull();
+    expect(
+      polishOffer("new vanity plus faucet", ["Install new vanity", "Install faucet"]),
+    ).not.toBeNull();
+  });
+
+  it("REQ-751 a joiner inside parentheses does not license a split", () => {
+    expect(
+      polishOffer("Drain line to island (trench + patch)", [
+        "Drain line to island",
+        "Trench and patch",
+      ]),
+    ).toBeNull();
+  });
+});
