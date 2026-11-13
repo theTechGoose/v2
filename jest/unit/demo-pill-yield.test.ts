@@ -43,8 +43,9 @@ describe("REQ-545 (demo-loop cycle 4, m2) — mid-scroll content under the home:
     expect(p.box).toEqual(tabBox(home));
     expect(p.box.left).toBe(0);
     expect(p.box.width).toBeLessThanOrEqual(PILL_TAB.w);
+    // REQ-637 (cycle 5, m5) AMENDMENT — a labelled mini-pill, still a small part of the pill
     expect(p.box.width * p.box.height).toBeLessThan(
-      (home.width * home.height) / 20,
+      (home.width * home.height) / 4,
     );
     // its foot on the home's foot: it never rises into the page
     expect(p.box.top + p.box.height).toBe(home.top + home.height);
@@ -151,17 +152,19 @@ describe("REQ-545 — public /q, /i, /co pages in the owner's browser: the pill 
     }
   });
 
-  test("minimal: the tab even with the home clear", () => {
+  // REQ-637 (demo-loop cycle 5, m5) SUPERSEDED — "minimal: the tab even with the home clear":
+  // the 16 px tab hid End on the owner's own document; now the whole pill sits on its strip there
+  test("minimal (REQ-637): the whole pill home on its strip, even with content under it", () => {
     const home = homeBox();
     const p = placePill({
       home,
       view,
       dialog: false,
       minimal: true,
-      blocked: () => 0,
+      blocked: () => 2,
     });
-    expect(p.tucked).toBe(true);
-    expect(p.band).toBe(false);
+    expect(p.tucked).toBe(false);
+    expect(p.band).toBe(true);
   });
 });
 

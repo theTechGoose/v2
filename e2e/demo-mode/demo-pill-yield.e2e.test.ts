@@ -9,8 +9,11 @@
  * 390×844 phone. Scrolled to the middle, rows pass the window's foot: the pill tucks into a small
  * tab on the left edge, the band is not painted, and no point of the bottom strip right of the tab
  * has the demo's chrome over a piece of the page. The stage draws the tab (its ghost is tucked).
- * A hover on the tab shows the whole pill with End; leaving it tucks it again. On the contractor's
- * public quote page (/q) at 1280×720 the pill is a tab from the start and at mid-scroll, no band.
+ * A hover on the tab shows the whole pill with End; leaving it tucks it again.
+ *
+ * REQ-637 (demo-loop cycle 5, m5) AMENDMENT — the tab is a labelled mini-pill (PILL_TAB, 96×32:
+ * "● Demo" and an × that is End), and on the public /q the whole pill sits on its strip instead
+ * of folding: that part of this story moved to demo-pill-folded-label.e2e.test.ts.
  */
 import { story, type StoryTools } from "#shots";
 import { answerQuestions } from "../_shared/onboarding-answers.ts";
@@ -266,7 +269,8 @@ Deno.test("REQ-545 (demo-loop cycle 4, m2): the customer's demo pill yields — 
       await page.waitForURL((u) => u.pathname === "/demo/stage", {
         timeout: 20_000,
       });
-      const TAB_W = 16;
+      // REQ-637 — the folded pill is a 96 px mini-pill (PILL_TAB)
+      const TAB_W = 96;
       const connected = () =>
         until("the customer's pill says Connected", async () => {
           const p = await userPage.evaluate(probe, TAB_W);
@@ -310,7 +314,7 @@ Deno.test("REQ-545 (demo-loop cycle 4, m2): the customer's demo pill yields — 
       expect.eq(m.bandH, 0, "mid-scroll the band is not painted over the rows");
       expect(
         m.tab !== null && m.tab.left === 0 && m.tab.width <= TAB_W &&
-          m.tab.height <= 40 && m.tab.bottom <= m.vh,
+          m.tab.height <= 32 && m.tab.bottom <= m.vh,
         `the tab is small, on the left edge — ${JSON.stringify(m.tab)}`,
       );
 
@@ -354,30 +358,6 @@ Deno.test("REQ-545 (demo-loop cycle 4, m2): the customer's demo pill yields — 
         const p = await userPage.evaluate(probe, TAB_W);
         return p && !p.pillShown && p.tabShown ? null : JSON.stringify(p);
       }, 5_000);
-
-      // 4. the public quote page in the owner's browser: the pill stays a tab, no band
-      await userPage.setViewportSize({ width: 1280, height: 720 });
-      await userPage.goto(`${baseUrl}/q/${quote.id}`);
-      await connected();
-      await userPage.getByText("Quick Summary", { exact: true }).waitFor({
-        timeout: 15_000,
-      });
-      for (const frac of [0, 0.5]) {
-        await userPage.evaluate(scrollTo, frac);
-        let q: Awaited<ReturnType<typeof probe>> = null;
-        await until(
-          `/q at ${frac}: the pill is a tab, nothing under the chrome`,
-          async () => {
-            q = await userPage.evaluate(probe, TAB_W);
-            return q && q.tabShown && !q.pillShown && q.bandH === 0 &&
-                q.covered.length === 0
-              ? null
-              : JSON.stringify(q);
-          },
-          8_000,
-        );
-        await userPage.screenshot({ path: `${folder}/q-${frac}.png` });
-      }
     } finally {
       await userCtx.close();
     }

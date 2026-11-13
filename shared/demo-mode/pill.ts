@@ -160,10 +160,25 @@ export function dockPill(o: {
   top?: number;
   blocked: (r: Rect) => number;
   margin?: number;
+  /** REQ-637 (demo-loop cycle 5, m5) — the dialog's own box (its panel, not the backdrop) */
+  dialog?: Rect;
 }): Rect | null {
   if (o.blocked(o.home) === 0) return o.home;
   const margin = o.margin ?? PILL_MARGIN;
   const top = (o.top ?? 0) + margin;
+  // REQ-637 — first just above the dialog's own box, at its left: the pill stays beside what the
+  // customer is reading, never on it (and never under the banner or off the window's top)
+  if (o.dialog) {
+    const aboveTop = o.dialog.top - PILL_BAND_GAP - o.home.height;
+    if (aboveTop >= top) {
+      const above = clampRect(
+        { ...o.home, top: aboveTop, left: o.dialog.left },
+        o.view,
+        margin,
+      );
+      if (above.top === aboveTop && o.blocked(above) === 0) return above;
+    }
+  }
   const left = clampRect({ ...o.home, top }, o.view, margin);
   if (o.blocked(left) === 0) return left;
   const right = clampRect(
@@ -174,21 +189,24 @@ export function dockPill(o: {
   return o.blocked(right) === 0 ? right : null;
 }
 
-/** REQ-545 (demo-loop cycle 4, m2) — the tucked pill: a small tab on the window's left edge */
-export const PILL_TAB = { w: 16, h: 40 } as const;
+/** REQ-545 (demo-loop cycle 4, m2) — the tucked pill: a small tab on the window's left edge.
+ *  REQ-637 (demo-loop cycle 5, m5) — a labelled mini-pill, not a 16 px sliver: "● Demo" and an ×
+ *  that is End (one tap asks "End for everyone?") */
+export const PILL_TAB = { w: 96, h: 32 } as const;
 /** REQ-545 — a tab tapped open shows the whole pill this long (a hover: until it leaves) */
 export const PILL_PEEK_MS = 6000;
 
 /**
- * REQ-545 — the public pages a customer is sent (/q quote, /i invoice, /co change order): in
- * the owner's browser during a demo the pill stays a tab there (minimal), never a band over the
- * document they are reading.
+ * REQ-545 — the public pages a customer is sent (/q quote, /i invoice, /co change order).
+ * REQ-637 (cycle 5, m5) — in the owner's browser during a demo the whole pill sits on its bottom
+ * strip there (minimal): it never folds over the content (only a dialog with nowhere free folds it).
  */
 export function isPublicDocPath(path: string): boolean {
   return /^\/(q|i|co)\/[^/]/.test(path);
 }
 
-/** REQ-545 — the tab's box: flush with the window's left edge, its foot on the home's foot */
+/** REQ-545 — the tab's box: flush with the window's left edge, its foot on the home's foot
+ *  (REQ-637: the mini-pill's size) */
 export function tabBox(home: Rect): Rect {
   return {
     left: 0,
@@ -206,13 +224,17 @@ export function tabBox(home: Rect): Rect {
  * its home it tucks into a small edge tab (`tabBox`) and the band is not painted — the page shows;
  * with the home clear (a shell that subtracts the band, the document's end) it sits home on the
  * painted band. A dialog docks it (`dockPill`: home, top-left, top-right) or, all covered, tucks
- * it. On a public document page (`minimal`) it is always the tab.
+ * it. REQ-637 (demo-loop cycle 5, m5) — a dialog docks it above the dialog's own box first
+ * (`dialogBox`); on a public document page (`minimal`) it stays whole on its strip (the band),
+ * folding only under a dialog with no place free.
  */
 export function placePill(o: {
   home: Rect;
   view: Size;
   top?: number;
   dialog: boolean;
+  /** REQ-637 — the dialog's own box, when one is up */
+  dialogBox?: Rect;
   minimal?: boolean;
   /** false: a pill that never tucks (the ended notice, a message to read and dismiss) — a
    *  dialog still docks it, and with no place free it stays home */
@@ -221,13 +243,13 @@ export function placePill(o: {
 }): { box: Rect; tucked: boolean; band: boolean } {
   const yields = o.yields ?? true;
   const tucked = { box: tabBox(o.home), tucked: true, band: false };
-  if (yields && o.minimal) return tucked;
   if (o.dialog) {
-    const box = dockPill(o);
+    const box = dockPill({ ...o, dialog: o.dialogBox });
     if (box) return { box, tucked: false, band: box === o.home };
     return yields ? tucked : { box: o.home, tucked: false, band: true };
   }
-  if (!yields) return { box: o.home, tucked: false, band: true };
+  // REQ-637 — a public document page: whole, on its strip, whatever scrolls under it
+  if (!yields || o.minimal) return { box: o.home, tucked: false, band: true };
   return o.blocked(o.home) === 0
     ? { box: o.home, tucked: false, band: true }
     : tucked;

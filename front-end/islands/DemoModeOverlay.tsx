@@ -245,6 +245,26 @@ function dialogBackdropUp(): boolean {
 }
 
 /**
+ * REQ-637 (demo-loop cycle 5, m5) — the open dialog's own box (its panel: the innermost dialog
+ * element under the view's centre that does not cover the whole view — a wrapper that does is the
+ * backdrop), so the pill can dock just above it. None found: undefined.
+ */
+function dialogPanel(): Rect | undefined {
+  const view = { w: globalThis.innerWidth, h: globalThis.innerHeight };
+  for (const el of document.elementsFromPoint(view.w / 2, view.h / 2)) {
+    if (el.closest("[data-demo-overlay]")) continue;
+    const d = el.closest(
+      'dialog,[role="dialog"],[role="alertdialog"],[aria-modal="true"]',
+    );
+    if (!d) continue;
+    const r = d.getBoundingClientRect();
+    const box = { left: r.left, top: r.top, width: r.width, height: r.height };
+    if (box.width > 0 && box.height > 0 && !coversView(box, view)) return box;
+  }
+  return undefined;
+}
+
+/**
  * REQ-440 (demo-loop cycle 3, m2) — the backgrounds under the pill's band, innermost first (the
  * page's element at the band's left foot, up to <html>): the band is painted in the first opaque
  * one, so a document that scrolls ends at the band's edge instead of running under the pill.
@@ -384,12 +404,12 @@ export default function DemoModeOverlay() {
   const atRef = useRef<{ left: number; top: number; tab: boolean } | null>(
     null,
   );
-  /** REQ-545 (demo-loop cycle 4, m2) — the pill yielded to the page: only its edge tab shows (a
-   *  public /q /i /co page: from the first render) */
-  const [tucked, setTucked] = useState(() =>
-    typeof globalThis.location !== "undefined" &&
-    isPublicDocPath(globalThis.location.pathname)
-  );
+  /** REQ-545 (demo-loop cycle 4, m2) — the pill yielded to the page: only its edge tab shows.
+   *  REQ-637 (cycle 5, m5) — never from the first render on a public /q /i /co page: the whole
+   *  pill sits on its strip there */
+  const [tucked, setTucked] = useState(false);
+  /** REQ-637 — the mini-pill's × (End) was tapped: the whole pill comes out with End asking */
+  const [askEnd, setAskEnd] = useState(false);
   /** REQ-545 — the tab hovered or tapped: the whole pill shows, at home, until it is left */
   const [peek, setPeek] = useState(false);
   const peekRef = useRef(false);
@@ -426,6 +446,10 @@ export default function DemoModeOverlay() {
   const [open, setOpen] = useState(false);
   /** REQ-548 — End is asking (the compact pill gives the question its own row) */
   const [asking, setAsking] = useState(false);
+  // REQ-637 (cycle 5, m5) — End asked out of the mini-pill's ×: spent (a later peek is a plain one)
+  useEffect(() => {
+    if (asking) setAskEnd(false);
+  }, [asking]);
   const impersonatingRef = useRef<boolean | null>(null);
   const placingRef = useRef(false);
   /** REQ-232 — this staff page is on its way to the stage (the pill says Opening…) */
@@ -1283,11 +1307,14 @@ export default function DemoModeOverlay() {
       // goes unpainted; a dialog docks it home, top-left, top-right, else tucks it (REQ-379 left
       // it home over the dialog); a public /q /i /co page keeps it a tab
       const can = typeof document.elementsFromPoint === "function";
+      const dialog = can && dialogBackdropUp();
       const p = placePill({
         home: home.box,
         view,
         top: bannerH(),
-        dialog: can && dialogBackdropUp(),
+        dialog,
+        // REQ-637 (cycle 5, m5) — docked just above the dialog's own box first
+        dialogBox: dialog ? dialogPanel() : undefined,
         minimal: yieldsRef.current &&
           isPublicDocPath(globalThis.location.pathname),
         blocked: can ? pageUnder : () => 0,
@@ -1407,12 +1434,17 @@ export default function DemoModeOverlay() {
   }px);box-sizing:border-box;padding:7px 12px;border-radius:14px;background:#1f3d1b;color:#fff;font-family:${PILL_FONT};font-size:13px;box-shadow:0 4px 18px rgba(0,0,0,.35);${
     // REQ-545 — shown whole from its tab, it takes the pointer, so leaving it folds it again
     tucked ? "pointer-events:auto" : "pointer-events:none"}`;
-  // REQ-545 (demo-loop cycle 4, m2) — the pill folded to a small tab on the window's left edge,
-  // its foot on the home's foot: only the tab (a button) takes a click
+  // REQ-545 (demo-loop cycle 4, m2) — the pill folded on the window's left edge, its foot on the
+  // home's foot: only its buttons take a click. REQ-637 (cycle 5, m5) — a labelled mini-pill
+  // ("● Demo" and an × that is End), never a bare 16 px sliver
   const tabStyle =
     `position:fixed;left:0;bottom:calc(100% - var(--vvt, 0px) - var(--vvh, 100%) + ${PILL_BAND_GAP}px);z-index:${
       Z + 3
-    };display:flex;width:${PILL_TAB.w}px;height:${PILL_TAB.h}px;box-sizing:border-box;padding:0;border-radius:0 10px 10px 0;background:#1f3d1b;box-shadow:0 2px 10px rgba(0,0,0,.3);pointer-events:none`;
+    };display:flex;align-items:stretch;width:${PILL_TAB.w}px;height:${PILL_TAB.h}px;box-sizing:border-box;padding:0;border-radius:0 ${
+      PILL_TAB.h / 2
+    }px ${
+      PILL_TAB.h / 2
+    }px 0;background:#1f3d1b;color:#fff;font-family:${PILL_FONT};font-size:12.5px;font-weight:700;white-space:nowrap;overflow:hidden;box-shadow:0 2px 10px rgba(0,0,0,.3);pointer-events:none`;
   // REQ-440 (demo-loop cycle 3, m2) — the band reserved for the pill (REQ-379), made real on a page
   // whose document scrolls: window-wide, the band's height (0 with no room), opaque in the page's
   // own background. z-index 1: over the page's flow, under its own fixed layers (a dialog's
@@ -1637,27 +1669,44 @@ export default function DemoModeOverlay() {
             (pillWraps({ compact, open, asking }) ? ";flex-wrap:wrap" : "")}
       >
         {folded && (
-          // REQ-545 — the tucked pill: its status dot on a tab; hover or tap shows it whole
-          <button
-            type="button"
-            data-cy="demo-pill-tab"
-            aria-label={`${statusLabel} · ${t("demoMode.showPill")}`}
-            title={`${statusLabel} · ${t("demoMode.showPill")}`}
-            aria-expanded="false"
-            onMouseEnter={openPeek}
-            onFocus={openPeek}
-            onClick={openPeek}
-            style={`flex:1;display:flex;align-items:center;justify-content:center;margin:0;padding:0;border:0;background:transparent;cursor:pointer;${HIT}`}
-          >
-            <span
-              aria-hidden="true"
-              style={`width:8px;height:8px;border-radius:50%;background:${
-                status === "direct" || status === "relay"
-                  ? "#7ee081"
-                  : "#f2c14e"
-              }`}
-            />
-          </button>
+          // REQ-545 — the tucked pill: hover or tap shows it whole. REQ-637 (cycle 5, m5) — it says
+          // what it is ("● Demo") and keeps End: its × brings the whole pill out with End asking
+          <>
+            <button
+              type="button"
+              data-cy="demo-pill-tab"
+              aria-label={`${statusLabel} · ${t("demoMode.showPill")}`}
+              title={`${statusLabel} · ${t("demoMode.showPill")}`}
+              aria-expanded="false"
+              onMouseEnter={openPeek}
+              onFocus={openPeek}
+              onClick={openPeek}
+              style={`flex:1;min-width:0;display:flex;align-items:center;gap:6px;margin:0;padding:0 4px 0 10px;border:0;background:transparent;color:inherit;font:inherit;cursor:pointer;${HIT}`}
+            >
+              <span
+                aria-hidden="true"
+                style={`flex:none;width:8px;height:8px;border-radius:50%;background:${
+                  status === "direct" || status === "relay"
+                    ? "#7ee081"
+                    : "#f2c14e"
+                }`}
+              />
+              <span style={cut}>{t("demoMode.tabLabel")}</span>
+            </button>
+            <button
+              type="button"
+              data-cy="demo-pill-tab-end"
+              aria-label={t("demoMode.end")}
+              title={t("demoMode.end")}
+              onClick={() => {
+                setAskEnd(true);
+                openPeek();
+              }}
+              style={`flex:none;width:28px;display:flex;align-items:center;justify-content:center;margin:0;padding:0;border:0;border-left:1px solid rgba(255,255,255,.25);background:transparent;color:#fff;font:inherit;font-size:16px;line-height:1;cursor:pointer;${HIT}`}
+            >
+              <span aria-hidden="true">×</span>
+            </button>
+          </>
         )}
         {!folded && (
           <>
@@ -1733,7 +1782,14 @@ export default function DemoModeOverlay() {
                 </span>
               )}
             {/* REQ-235 — End asks first */}
-            <EndDemo onEnd={end} ownRow={compact} onAsking={setAsking} t={t} />
+            <EndDemo
+              onEnd={end}
+              ownRow={compact}
+              onAsking={setAsking}
+              t={t}
+              // REQ-637 (cycle 5, m5) — out of the mini-pill by its ×: End is already asking
+              askAtOnce={askEnd}
+            />
           </>
         )}
       </div>
