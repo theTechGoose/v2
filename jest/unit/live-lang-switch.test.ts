@@ -287,10 +287,10 @@ describe("REQ-367 the customer card's words are made in the client, in the live 
       jobsSub: "active",
     } as unknown as CustomerCard;
     expect(display.storyLineFor(active, "es", NOW)).toBe(
-      "1 trabajo activo · activo.",
+      "1 trabajo activo.", // REQ-741: no "· activo" tautology
     );
     expect(display.storyLineFor(active, "en", NOW)).toBe(
-      "1 active job · active.",
+      "1 active job.", // REQ-741
     );
     const overdue = {
       ...active,

@@ -292,6 +292,18 @@ export function storyLineFor(
     });
   }
   if (c.status === "active") {
+    // REQ-741 — the backend sets jobsSub "active" exactly when activeJobs > 0,
+    // so "1 active job · active." repeats itself; only a sub that adds news
+    // (overdue, scheduled) is appended.
+    if (c.jobsSub === "active") {
+      return tFor(
+        lang,
+        c.activeJobs === 1
+          ? "clientsDisplay.story.activePlain.one"
+          : "clientsDisplay.story.activePlain.other",
+        { n: c.activeJobs },
+      );
+    }
     return tFor(
       lang,
       c.activeJobs === 1
