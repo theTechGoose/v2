@@ -123,8 +123,9 @@ import {
 } from "../../shared/quote-flow/starter-chips.ts";
 import {
   activeWizardStepIdx,
+  isDeadEndSnapshot,
   resolveAssistantBack,
-  WIZARD_DONE,
+  sendCtaView,
   wizardCursor,
 } from "../../shared/quote-flow/assistant-back.ts";
 import {
@@ -1403,6 +1404,12 @@ export default function AsstChat({
    * actually look the document over before clicking "Send to client".
    */
   const [previewCtaId, setPreviewCtaId] = useState<string | null>(seed?.previewCtaId ?? null);
+  // REQ-676 (cycle 5, c1-M9): the send CTA whose review the contractor
+  // closed with the X. The terms stay answered; the CTA renders as a
+  // "Ready to send" banner whose Review button reopens the review.
+  const [reviewClosedCtaId, setReviewClosedCtaId] = useState<string | null>(
+    null,
+  );
   // REQ-024: after a reload the open CTA still says which wizard produced
   // it — keep the preview in invoice mode for the invoice wizard.
   useEffect(() => {
@@ -1609,6 +1616,8 @@ export default function AsstChat({
     invoiceReview: typeof invoiceReview;
     invoiceResult: typeof invoiceResult;
     previewCtaId: string | null;
+    /** REQ-676: the review closed with its X (shows the reopen banner). */
+    reviewClosedCtaId?: string | null;
     /** Server wizard cursor at push time (see wizardCursor). */
     wizardStepIdx: number | null;
   }
@@ -1660,6 +1669,7 @@ export default function AsstChat({
       invoiceReview,
       invoiceResult,
       previewCtaId,
+      reviewClosedCtaId,
       wizardStepIdx: wizardCursor(messages),
     });
     persistStack();
@@ -1687,6 +1697,7 @@ export default function AsstChat({
     setInvoiceReview(snap.invoiceReview);
     setInvoiceResult(snap.invoiceResult);
     setPreviewCtaId(snap.previewCtaId);
+    setReviewClosedCtaId(snap.reviewClosedCtaId ?? null);
     if (snap.awaitingJobDetails && typedDetails) {
       setDraft(typedDetails);
       requestAnimationFrame(() => {
@@ -1707,9 +1718,16 @@ export default function AsstChat({
       !snap.priceCaptureOpen && !snap.awaitingJobDetails &&
       !snap.invoiceReview && !snap.invoiceResult;
     // With the wizard complete, "no preview and no panel" renders nothing
-    // (the send CTA is suppressed once closed) — that is not a state, it is
-    // the dead end. Treat it as the last term step: rewind one question.
-    if (snap.wizardStepIdx === WIZARD_DONE && noPanel) {
+    // (the send CTA is suppressed until the review is closed by its X —
+    // REQ-676) — that is not a state, it is the dead end. Treat it as the
+    // last term step: rewind one question.
+    if (
+      isDeadEndSnapshot({
+        wizardStepIdx: snap.wizardStepIdx,
+        noPanel,
+        reviewClosedCtaId: snap.reviewClosedCtaId,
+      })
+    ) {
       void goBackWizard();
       return;
     }
@@ -4116,6 +4134,9 @@ export default function AsstChat({
         void openJobPicker();
         return;
       }
+      // REQ-676: reopening a review the X closed is a forward move.
+      if (reviewClosedCtaId === message.id) pushHistory();
+      setReviewClosedCtaId(null);
       setPreviewCtaId(message.id);
       return;
     }
@@ -4842,6 +4863,7 @@ export default function AsstChat({
     // here (the server deletes its send CTA) so the re-asked term question
     // is what the user lands on — never an empty thread.
     setPreviewCtaId(null);
+    setReviewClosedCtaId(null);
     try {
       const res = await assistantClient.rewindWizard(convoId, {}, toStepIdx);
       // Highlight the user's previous pick on the re-asked step so Back
@@ -7539,11 +7561,17 @@ export default function AsstChat({
                                   lang,
                                   "asstChat.preview.closePreview",
                                 )}
-                                // Same as the header back: leaving the
-                                // preview re-asks the last term step. Just
-                                // hiding the card stranded the chat with no
-                                // step and no way to re-open the review.
-                                onClick={() => goBackWizard()}
+                                // REQ-676 (cycle 5, c1-M9): a pure close.
+                                // The answered terms stay (it used to
+                                // rewind and re-ask the warranty); the send
+                                // CTA shows a "Ready to send" banner whose
+                                // Review reopens this card, and header Back
+                                // (a pushed snapshot) reopens it too.
+                                onClick={() => {
+                                  pushHistory();
+                                  setReviewClosedCtaId(m.id);
+                                  setPreviewCtaId(null);
+                                }}
                                 disabled={sending}
                               >
                                 <I d={ICN.x} size={14} sw={2.4} />
@@ -9037,11 +9065,20 @@ export default function AsstChat({
                       </div>
                     );
                   }
-                  // The "Ready to send" banner is intentionally suppressed —
-                  // the editable quote-review opens automatically on wizard
-                  // completion via the autoOpenedCtasRef effect. The reviewed
-                  // success state ("Sent") still renders below.
-                  if (payload.toPhase === "send" && !reviewed && !previewing) {
+                  // The "Ready to send" banner is suppressed while it would be
+                  // redundant — the editable quote-review opens automatically
+                  // on wizard completion via the autoOpenedCtasRef effect.
+                  // REQ-676: once the contractor closes the review with its
+                  // X, the banner shows so Review can reopen it. The
+                  // reviewed success state ("Sent") still renders below.
+                  if (
+                    payload.toPhase === "send" &&
+                    sendCtaView({
+                        reviewed,
+                        previewing,
+                        closedByUser: reviewClosedCtaId === m.id,
+                      }) === "hidden"
+                  ) {
                     return null;
                   }
                   // Per audit #19: surface the upcoming phase label as an eyebrow
