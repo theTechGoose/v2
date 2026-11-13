@@ -118,10 +118,12 @@ import {
 } from "../../shared/demo-mode/protocol.ts";
 import {
   createMirrorReceiver,
+  createPageClock,
   MIRROR_GAP_MS,
   type MirrorFrame,
   type MirrorLag,
   type MirrorStats,
+  type PageLag,
 } from "../../shared/demo-mode/mirror.ts";
 import {
   ARROW_BOX,
@@ -252,7 +254,7 @@ interface OwnStats {
 }
 /** REQ-309 — the mirror's counters on the pill (dev only): one short line, the legend in its title */
 const MIRROR_STATS_LEGEND =
-  "mirror (dev): f frames · hb heartbeats · x frames that did not fit · st stalls · rs resyncs asked · old dropped as older · bad undecodable · held waiting for an earlier frame · cv canvas bitmaps arrived/applied/repainted after a resize (REQ-380) · the last frame's age · lag median/worst seconds from the customer's push to the frame handed on · net the same to its last chunk in (encoder + wire) · p2p or ws: how the frames travel (WebRTC, or the server's socket)";
+  "mirror (dev): f frames · hb heartbeats · x frames that did not fit · st stalls · rs resyncs asked · old dropped as older · bad undecodable · held waiting for an earlier frame · cv canvas bitmaps arrived/applied/repainted after a resize (REQ-380) · the last frame's age · lag median/worst seconds from the customer's push to the frame handed on · net the same to its last chunk in (encoder + wire) · page last/worst seconds from their page going to their next page on show here (REQ-648) · p2p or ws: how the frames travel (WebRTC, or the server's socket)";
 /** REQ-391 — seconds, one decimal; "–" for nothing measured */
 const secs = (ms: number | null) => ms === null ? "–" : (ms / 1000).toFixed(1);
 function mirrorStatsText(
@@ -261,16 +263,20 @@ function mirrorStatsText(
   lag: MirrorLag,
   direct: boolean,
   cv?: { seen: number; cv: number; repaints: number },
+  page?: PageLag,
 ): string {
   const age = own.lastAt
     ? `${((Date.now() - own.lastAt) / 1000).toFixed(1)}s`
     : "–";
   const c = cv ?? { seen: 0, cv: 0, repaints: 0 };
+  // REQ-648 (cycle 5, M3) — a frame's lag starts at its push: the page figure is the time from
+  // their page going to their next page on show here (the boot of their next page included)
+  const pg = page ?? { last: null, p50: null, max: null };
   return `mirror f${s.frames} hb${s.beats} x${own.failed} st${s.stalls} rs${own.resyncs} old${s.older} bad${s.undecodable} held${s.held} cv${c.seen}/${c.cv}/${c.repaints} ${age} lag ${
     secs(lag.p50)
-  }/${secs(lag.max)}s net ${secs(lag.netP50)}/${secs(lag.netMax)}s ${
-    direct ? "p2p" : "ws"
-  }`;
+  }/${secs(lag.max)}s net ${secs(lag.netP50)}/${secs(lag.netMax)}s page ${
+    secs(pg.last)
+  }/${secs(pg.max)}s ${direct ? "p2p" : "ws"}`;
 }
 
 export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
@@ -298,11 +304,22 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
   /** REQ-297 — the screen in the frame is from before the customer's app dropped */
   const [stale, setStale] = useState(false);
   /** REQ-391 — another tab (or page) of the customer's is followed and its snapshot is not in
-   *  the frame yet: the frame still shows what came before */
+   *  the frame yet: the frame still shows what came before. REQ-648 — "in" is ON SHOW: a
+   *  snapshot held for its stylesheets (REQ-547) is not (the replay's onShown ends the wait) */
   const [awaiting, setAwaiting] = useState(false);
   /** REQ-391 — how late the frames come (whole seconds, 0: in time) and whether a resync is out;
-   *  read off the receiver on the stall tick, set only when it changes */
-  const [lagView, setLagView] = useState({ behind: 0, resyncing: false });
+   *  read off the receiver on the stall tick, set only when it changes. REQ-648 — and how long
+   *  their next page has been coming (`page`, behindSeconds of the page clock's wait) */
+  const [lagView, setLagView] = useState({
+    behind: 0,
+    resyncing: false,
+    page: 0,
+  });
+  /** REQ-648 (cycle 5, M3 + c4-m28) — the page clock: their page going → the next on show */
+  const pageClockRef = useRef<ReturnType<typeof createPageClock> | null>(null);
+  /** REQ-648 — the pill says "Loading their next page…": the frame holds the page they left, and
+   *  no pointer of his is sent against it */
+  const loadingNextRef = useRef(false);
   /** REQ-370 (demo m23) — the replay's stylesheets are in (or STYLE_WAIT_MS passed since the first
    *  snapshot): until then the frame stays hidden under "Connecting to {name}…", never unstyled */
   const [styled, setStyled] = useState(false);
@@ -638,7 +655,10 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
       gap: () =>
         linkRef.current?.isDirect() ? MOVE_GAP_DIRECT_MS : MOVE_GAP_RELAY_MS,
       // REQ-645 — through wire (anchorOf and wire read refs only: the first render's do)
-      send: ({ x, y }) =>
+      send: ({ x, y }) => {
+        // REQ-648 (cycle 5, c4-m28) — never aimed at the page they left while the next one
+        // loads: the customer's new page drew it on whatever sat at that spot
+        if (loadingNextRef.current) return;
         linkRef.current?.send(
           wire({
             k: "move",
@@ -646,7 +666,8 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
             t: performance.now(),
           }),
           true,
-        ),
+        );
+      },
     }), []);
 
   /** REQ-242 — what this presenter points at, once more: the customer's page that just joined (or
@@ -727,6 +748,8 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
   const restAgain = () => {
     const p = lastMoveRef.current;
     if (!p || !fitted()) return;
+    // REQ-648 — nor his still mouse looked up on the page they left
+    if (loadingNextRef.current) return;
     const was = sentRef.current;
     const a = anchorOf(p);
     if (sameAnchor(was, a)) return;
@@ -964,7 +987,7 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
         }, ms);
       });
       setStale(false); // REQ-297 — their screen is current again
-      setAwaiting(false); // REQ-391 — and it is the followed tab's
+      // REQ-391 — and it is the followed tab's: REQ-648 — once it is ON SHOW (pageShown)
       // REQ-370 — the first snapshot starts the wait for its stylesheets (at most STYLE_WAIT_MS)
       if (firstSnapAtRef.current === null) {
         firstSnapAtRef.current = Date.now();
@@ -976,6 +999,15 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
       checkStyled();
     }
   };
+
+  /** REQ-648 — the replay put a snapshot's page on show (at once, or when its hold for its
+   *  stylesheets ended): the page clock stops, and the frame is the followed tab's screen */
+  const pageShown = () => {
+    pageClockRef.current?.shown();
+    setAwaiting(false);
+  };
+  const pageShownRef = useRef(pageShown);
+  pageShownRef.current = pageShown;
 
   /** the frame's shell has loaded: the replay writes into it (a reloaded frame starts over) */
   const onFrameLoad = () => {
@@ -989,6 +1021,8 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
     replayerRef.current = createReplayer(doc, {
       // REQ-305 — the frame's layout moved: its pointers with it
       onLayout: () => replaceRef.current(),
+      // REQ-648 — a snapshot's page on show
+      onShown: () => pageShownRef.current(),
     });
     const q = queueRef.current;
     queueRef.current = [];
@@ -1119,6 +1153,12 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
     });
     /** REQ-391 — what the pill said last of the lag (its hysteresis) */
     let behind = 0;
+    // REQ-648 (cycle 5, M3 + c4-m28) — each page change of the followed tab, timed on the deploy's
+    // clock: from their page saying it was going to the next page on show here
+    const pages = createPageClock({
+      clock: () => linkRef.current?.now() ?? Date.now(),
+    });
+    pageClockRef.current = pages;
     ownRef.current = { failed: 0, resyncs: 0, lastAt: 0 };
     dirtyRef.current = false;
     // REQ-292 — the customer's tab the stage follows: a switch starts the mirror's ordering over
@@ -1130,6 +1170,8 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
       sessionId: demo.id,
       role: "presenter",
       pid: demo.pid ?? undefined,
+      // REQ-648 — the followed tab's page went: the page clock runs from when it said so
+      onPageGone: (at) => pages.left(at),
       onPresence: (pid, online) => {
         lastTOf.delete(pid); // their stage came or went: its clock starts over
         if (!online) {
@@ -1330,10 +1372,12 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
       const resyncing = dirtyRef.current || rx.stalled();
       const lag = rx.lag();
       behind = behindSeconds(lag.last, behind);
+      // REQ-648 — how long their next page has been coming: "Loading their next page… N s behind"
+      const page = behindSeconds(pages.waiting(), 0);
       setLagView((v) =>
-        v.behind === behind && v.resyncing === resyncing
+        v.behind === behind && v.resyncing === resyncing && v.page === page
           ? v
-          : { behind, resyncing }
+          : { behind, resyncing, page }
       );
       if (dev) {
         setStatsText(
@@ -1343,6 +1387,7 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
             lag,
             link.isDirect(),
             replayerRef.current?.stats(),
+            pages.stats(),
           ),
         );
       }
@@ -1365,7 +1410,8 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
       setMirrored(null);
       setStale(false);
       setAwaiting(false);
-      setLagView({ behind: 0, resyncing: false });
+      setLagView({ behind: 0, resyncing: false, page: 0 });
+      pageClockRef.current = null;
       // REQ-370 — the next demo's first frame waits for its own stylesheets
       if (styleTimerRef.current) clearTimeout(styleTimerRef.current);
       styleTimerRef.current = null;
@@ -1481,7 +1527,10 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
     globalThis.location.href = "/admin";
   }
 
+  // REQ-648 — a click on the page they left (the next one loading) is never sent: it landed on
+  // whatever their new page had at that spot
   const sendClick = (x: number, y: number) => {
+    if (loadingNextRef.current) return;
     const a = anchorOf({ x, y });
     // REQ-645 — never a click wave at a fraction the replay could not name a node for
     linkRef.current?.send(
@@ -1492,12 +1541,10 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
   };
 
   const name = demo?.targetName ?? "";
-  // REQ-297 — the frame's look: greyed, dimmed and under the waiting overlay while the screen in it
-  // is the one from before the customer's app dropped; REQ-370 — hidden until the replay is styled
-  const look = stageFrameLook({ status, mirrored: !!mirrored, stale, styled });
   // REQ-232 (demo-lifecycle-p1, m1, m3) — plain words, never the transport
   // REQ-309 (demo m26) — "Live" is the frame's truth: the followed tab's screen is in it
   // REQ-391 (M4) — …and in time: their page gone or not in yet, a resync out, frames late
+  // REQ-648 (cycle 5, M3) — and how long their next page has been coming, once it is worth saying
   const live = stageStatus({
     ended,
     status,
@@ -1505,6 +1552,20 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
     awaiting,
     resyncing: lagView.resyncing,
     behind: lagView.behind,
+    pageBehind: lagView.page,
+  });
+  // REQ-648 (c4-m28) — the frame holds the page they left while their next one loads: dimmed, and
+  // his pointer is not sent against it (the move throttle, the look-up of his still mouse, a click)
+  const loadingNext = live.key === "loadingNext";
+  loadingNextRef.current = loadingNext;
+  // REQ-297 — the frame's look: greyed, dimmed and under the waiting overlay while the screen in it
+  // is the one from before the customer's app dropped; REQ-370 — hidden until the replay is styled
+  const look = stageFrameLook({
+    status,
+    mirrored: !!mirrored,
+    stale,
+    styled,
+    loadingNext,
   });
   const statusLabel = live.key === "ended"
     ? t("demoMode.ended")
@@ -1513,7 +1574,9 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
     : live.key === "waiting"
     ? t("demoMode.waitingFor", { name })
     : live.key === "loadingNext"
-    ? t("demoMode.loadingNext")
+    ? (live.n
+      ? t("demoMode.loadingNextBehind", { n: live.n })
+      : t("demoMode.loadingNext"))
     : live.key === "catchingUp"
     ? t("demoMode.catchingUp")
     : live.key === "behind"

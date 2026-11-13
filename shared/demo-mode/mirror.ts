@@ -632,3 +632,63 @@ export function createMirrorReceiver(o: {
     }),
   };
 }
+
+/** REQ-648 — a page on show this long after the last page went is no page change (the app was
+ *  closed and opened again): not measured, and no longer waited for */
+export const PAGE_CLOCK_MAX_MS = 60_000;
+
+/** REQ-648 (demo-loop cycle 5, M3 + c4-m28) — how far the stage trailed each page change of the
+ *  followed tab, in ms (null: none measured yet) */
+export interface PageLag {
+  /** the last page change: from their page saying it was going to the next page ON SHOW */
+  last: number | null;
+  /** over the latest MIRROR_LAG_WINDOW page changes: the median and the worst */
+  p50: number | null;
+  max: number | null;
+}
+
+/** REQ-648 — the stage's page clock. A frame's lag starts at its push, so the seconds a new page
+ *  takes to boot its link and send its first snapshot read 0.0 s (M3): the stage was behind her
+ *  page change all that time and the figure never said so. This clock starts when the followed
+ *  tab's page said it was going (`left(at)` — the server's stamp of its `leaving`, on the deploy's
+ *  clock) and stops when the next page is ON SHOW in the frame (`shown()` — the replay's word, a
+ *  held page counting from when it goes in). `waiting()` counts while it runs (the pill's
+ *  "Loading their next page… N s behind"); `stats()` keeps the last, the median and the worst
+ *  for the dev chip's `page` figure. A second departure before the next page is shown keeps the
+ *  first (the stage was behind since then); a page shown with none pending (the first snapshot, a
+ *  resync) measures nothing; `cancel()` drops a running wait. */
+export function createPageClock(o: { clock: () => number }): {
+  left(at: number): void;
+  shown(): void;
+  cancel(): void;
+  waiting(): number | null;
+  stats(): PageLag;
+} {
+  const gaps = samples(MIRROR_LAG_WINDOW);
+  let last: number | null = null;
+  let since: number | null = null;
+  /** ms since the page went — never negative (the two clocks agree only within a round trip) */
+  const elapsed = (from: number) => Math.max(0, Math.round(o.clock() - from));
+  return {
+    left(at) {
+      if (since === null || elapsed(since) > PAGE_CLOCK_MAX_MS) since = at;
+    },
+    shown() {
+      if (since === null) return;
+      const gap = elapsed(since);
+      since = null;
+      if (gap > PAGE_CLOCK_MAX_MS) return;
+      last = gap;
+      gaps.add(gap);
+    },
+    cancel() {
+      since = null;
+    },
+    waiting() {
+      if (since === null) return null;
+      const gap = elapsed(since);
+      return gap > PAGE_CLOCK_MAX_MS ? null : gap;
+    },
+    stats: () => ({ last, p50: gaps.p50(), max: gaps.max() }),
+  };
+}

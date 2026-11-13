@@ -4143,6 +4143,7 @@
   "demoMode.pointerLeft": "{name} señala a la izquierda — desplázate ←",
   "demoMode.tabSwitched": "Ahora ves la otra pestaña de {name} ({path}) — mueve el puntero para señalar ahí",
   "demoMode.loadingNext": "Cargando su siguiente página…",
+  "demoMode.loadingNextBehind": "Cargando su siguiente página… {n} s de retraso",
   "demoMode.catchingUp": "Poniéndose al día…",
   "demoMode.behind": "{n} s de retraso",
   "nav.workOrders": "Órdenes de trabajo",

@@ -918,6 +918,70 @@ Deno.test("REQ-391 a tab that said why it goes is announced gone with that reaso
   }
 });
 
+// REQ-648 — demo-loop cycle 5, M3 + c4-m28: the stage's lag figure started at each frame's push,
+// so the seconds a customer's next page took to boot read 0.0 s. The controller stamps WHEN a
+// tab's page said it was going (`leftAt`, the deploy's clock) and the hub puts it on the tab's
+// departure (`at`) — here and, through the mailbox, in every other hub — so the stage times the
+// page change from that moment to the next page on show. A tab that said nothing has no stamp.
+Deno.test("REQ-648 a tab's departure carries when its page said it was going (`at`, the deploy's clock), in this hub and across hubs; a silent tab's has none", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const a = DemoHub.isolated("a");
+  const b = DemoHub.isolated("b");
+  const stage = socketPeer("presenter", "hans");
+  const near = socketPeer("viewer");
+  const far = socketPeer("viewer");
+  const mute = socketPeer("viewer");
+  try {
+    await a.join("s648", stage);
+    const n = await a.join("s648", near);
+    const f = await b.join("s648", far);
+    const m = await a.join("s648", mute);
+    const gone = () =>
+      stage.inbox.filter((x) => x.t === "peer" && !x.online && !x.pid);
+    Object.assign(near as Peer, {
+      leaving: "navigating",
+      leftAt: 1_700_000_000_123,
+    });
+    n.leave();
+    Object.assign(far as Peer, {
+      leaving: "navigating",
+      leftAt: 1_700_000_000_456,
+    });
+    f.leave();
+    m.leave();
+    await until("the stage hears all three go", () => gone().length === 3);
+    const byCid = new Map(gone().map((x) => [x.t === "peer" ? x.cid : "", x]));
+    assertEquals(byCid.get(n.cid), {
+      t: "peer",
+      online: false,
+      cid: n.cid,
+      why: "navigating",
+      at: 1_700_000_000_123,
+    });
+    assertEquals(byCid.get(f.cid), {
+      t: "peer",
+      online: false,
+      cid: f.cid,
+      why: "navigating",
+      at: 1_700_000_000_456,
+    }, "across hubs too");
+    assertEquals(byCid.get(m.cid), { t: "peer", online: false, cid: m.cid });
+    // the stage's own parse keeps it
+    assertEquals(parseServerMessage(JSON.stringify(byCid.get(f.cid))), {
+      t: "peer",
+      online: false,
+      cid: f.cid,
+      why: "navigating",
+      at: 1_700_000_000_456,
+    });
+  } finally {
+    await a.close();
+    await b.close();
+    await resetKv();
+  }
+});
+
 // REQ-372 (demo-loop cycle 2, m1) — the customer's pill reaches the stage with what it SAYS: the
 // raw relay goes through the socket's parse, across two isolates, and the stage's parse — the
 // compact/open state, the status, the text and the overflow flag all survive.

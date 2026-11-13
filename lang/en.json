@@ -4144,6 +4144,7 @@
   "demoMode.pointerLeft": "{name} is pointing to the left — scroll ←",
   "demoMode.tabSwitched": "Now showing {name}'s other tab ({path}) — move to point there",
   "demoMode.loadingNext": "Loading their next page…",
+  "demoMode.loadingNextBehind": "Loading their next page… {n} s behind",
   "demoMode.catchingUp": "Catching up…",
   "demoMode.behind": "Behind {n} s",
   "nav.workOrders": "Work orders",

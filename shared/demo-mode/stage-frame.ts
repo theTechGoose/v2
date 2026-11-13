@@ -20,6 +20,11 @@
  * So the frame is shown only once the replay is styled (`Replayer.styled()`, REQ-305) — or once
  * STYLE_WAIT_MS has passed since the first snapshot, so a sheet that never answers cannot hold the
  * stage dark. Until then the "Connecting to {name}…" overlay stays up.
+ *
+ * REQ-648 (demo-loop cycle 5, M3 + c4-m28) — while the pill says "Loading their next page…" the
+ * frame still shows the page they LEFT: it is dimmed (LOADING_FILTER, `loading`) so nobody takes
+ * it for their screen — and the stage sends no pointer against it — and the pill says how long
+ * the wait has run ("… N s behind", `pageBehind`), timed from their page going.
  */
 
 /** the transport's link status — mirrored here so this module stays free of the front-end.
@@ -37,6 +42,10 @@ export type StageLinkStatus =
 
 /** the stale screen's look: no colour, well under full brightness */
 export const WAITING_FILTER = "grayscale(1) brightness(.6)";
+
+/** REQ-648 — the look of the page they left while their next one loads: dimmed, not the
+ *  waiting look (their app is there, its next page is on the way) */
+export const LOADING_FILTER = "grayscale(.5) brightness(.8)";
 
 /** REQ-370 — the longest the stage waits for the replay's stylesheets before it shows the frame */
 export const STYLE_WAIT_MS = 1500;
@@ -61,10 +70,13 @@ export interface StageFrameLook {
   /** REQ-541 (cycle 4, M22) — another window of this account has the demo: the frame is greyed
    *  under "This demo moved to another window · Use this window" (set only then) */
   elsewhere?: boolean;
+  /** REQ-648 — the frame holds the page they left while their next one loads: dimmed
+   *  (LOADING_FILTER), and the stage sends no pointer against it (set only then) */
+  loading?: boolean;
 }
 
 export function stageFrameLook(
-  { status, mirrored, stale, styled }: {
+  { status, mirrored, stale, styled, loadingNext = false }: {
     status: StageLinkStatus;
     /** a snapshot has been in the frame */
     mirrored: boolean;
@@ -72,6 +84,8 @@ export function stageFrameLook(
     stale: boolean;
     /** REQ-370 — the replay's stylesheets are in (or STYLE_WAIT_MS passed): see frameReady */
     styled: boolean;
+    /** REQ-648 — the pill says "Loading their next page…" (stageStatus `loadingNext`) */
+    loadingNext?: boolean;
   },
 ): StageFrameLook {
   if (status === "replaced") {
@@ -90,6 +104,15 @@ export function stageFrameLook(
   const waiting = status === "waiting" ||
     (stale &&
       (status === "direct" || status === "relay" || status === "between"));
+  if (loadingNext && !waiting) {
+    // REQ-648 — the page they left, while the next one loads: dimmed, never taken for theirs
+    return {
+      visibility: "visible",
+      filter: LOADING_FILTER,
+      waiting: false,
+      loading: true,
+    };
+  }
   return {
     visibility: "visible",
     filter: waiting ? WAITING_FILTER : "none",
@@ -149,18 +172,26 @@ export function stageStatus(o: {
   resyncing: boolean;
   /** behindSeconds of the frames coming in */
   behind: number;
+  /** REQ-648 — behindSeconds of the wait for their next page (their page going → the next on
+   *  show): "Loading their next page… N s behind" */
+  pageBehind?: number;
 }): { key: StageStatusKey; n?: number } {
   if (o.ended || o.status === "ended") return { key: "ended" };
   if (o.status === "replaced") return { key: "elsewhere" };
   if (o.status === "waiting") return { key: "waiting" };
+  // REQ-648 — how long their next page has been coming, once it is worth saying
+  const loadingNext = (): { key: StageStatusKey; n?: number } =>
+    o.pageBehind
+      ? { key: "loadingNext", n: o.pageBehind }
+      : { key: "loadingNext" };
   if (o.status === "between") {
-    return { key: o.mirrored ? "loadingNext" : "connecting" };
+    return o.mirrored ? loadingNext() : { key: "connecting" };
   }
   if (o.status !== "direct" && o.status !== "relay") {
     return { key: "connecting" };
   }
   if (!o.mirrored) return { key: "connecting" };
-  if (o.awaiting) return { key: "loadingNext" };
+  if (o.awaiting) return loadingNext();
   if (o.resyncing) return { key: "catchingUp" };
   if (o.behind > 0) return { key: "behind", n: o.behind };
   return { key: "live" };

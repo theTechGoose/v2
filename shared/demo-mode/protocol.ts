@@ -207,7 +207,8 @@ export type ClientMessage =
  *  REQ-296 — `reason: "expired"`: the demo reached SESSION_TTL_MS; nobody ended it (`by` names no
  *  side then, and there is no `pid`). REQ-391 — a socket gone (`online: false`) carries the `why`
  *  its page said as it went, when it said one; `time` answers a browser's ask with the deploy's
- *  clock (`s`) and the browser's own (`c`) */
+ *  clock (`s`) and the browser's own (`c`). REQ-648 (cycle 5, M3) — and `at`: when its page said
+ *  it was going, on the deploy's clock (the stage times the page change from it) */
 export type ServerMessage =
   | {
     t: "welcome";
@@ -217,7 +218,14 @@ export type ServerMessage =
     pid?: string;
     cid?: string;
   }
-  | { t: "peer"; online: boolean; pid?: string; cid?: string; why?: LeaveWhy }
+  | {
+    t: "peer";
+    online: boolean;
+    pid?: string;
+    cid?: string;
+    why?: LeaveWhy;
+    at?: number;
+  }
   | { t: "time"; c: number; s: number }
   | { t: "signal"; from: Role; pid?: string; cid?: string; data: unknown }
   | { t: "relay"; from: Role; pid?: string; cid?: string; data: PeerMessage }
@@ -454,6 +462,8 @@ export function parseServerMessage(raw: string): ServerMessage | null {
           ...cidOf(o),
           // REQ-391 — why a socket went: on a departure only
           ...(!o.online && isLeaveWhy(o.why) ? { why: o.why } : {}),
+          // REQ-648 — when its page said so, on the deploy's clock: on a departure only
+          ...(!o.online && num(o.at) && o.at > 0 ? { at: o.at } : {}),
         }
         : null;
     case "time":

@@ -12,6 +12,7 @@ import CrazyEgg from "../components/CrazyEgg.tsx";
 import { readSessionCookie } from "../lib/api.ts";
 import { type Lang, tFor } from "../lib/i18n.ts";
 import { bootLangScript, resolveSsrLang } from "../lib/ssr-lang.ts";
+import { DEMO_EARLY_SRC } from "../lib/demo-mode/early-src.ts";
 import { pmLangFromAcceptLanguage } from "../../shared/quote-flow/public-lang.ts";
 
 // Browser-side `lib/api.ts` reads window.__PUBLIC_BACKEND_URL to decide
@@ -172,6 +173,14 @@ export default define.page(function App(ctx) {
               dangerouslySetInnerHTML={{ __html: bootScript }}
             />
           )
+          : null}
+        {
+          /* REQ-648 (demo-loop cycle 5, M3 + c4-m28): a page of a customer
+            in a demo opens its link at once — a module script of its own,
+            never waiting for the islands' code (the overlay takes it over). */
+        }
+        {hasSession && DEMO_EARLY_SRC
+          ? <script type="module" async src={DEMO_EARLY_SRC} />
           : null}
       </head>
       <body>

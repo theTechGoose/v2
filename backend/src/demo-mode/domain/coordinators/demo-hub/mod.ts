@@ -23,6 +23,9 @@ export interface Peer {
   /** REQ-391 — what a customer tab's page said as it went (the controller keeps it from the
    *  socket's `leaving`): its departure carries it, so a stage knows whether a next page comes */
   leaving?: LeaveWhy;
+  /** REQ-648 (demo-loop cycle 5, M3) — when it said so, on the deploy's clock (the controller
+   *  stamps it): its departure carries it, so a stage times the page change from it */
+  leftAt?: number;
 }
 
 /** REQ-214 — who a message is from: the viewer, or a presenter by pid; REQ-232 — and which socket */
@@ -175,7 +178,8 @@ export class DemoHub {
 
   /** REQ-214 — a presenter's presence goes to everyone else (never to their own account's other
    *  sockets), named; a customer tab's to the presenters. REQ-232 — each says which socket.
-   *  REQ-391 — a customer tab's departure says why it went, when its page said so */
+   *  REQ-391 — a customer tab's departure says why it went, when its page said so; REQ-648 — and
+   *  when it said so (`at`, the deploy's clock) */
   private presence(
     peer: Peer,
     online: boolean,
@@ -191,9 +195,10 @@ export class DemoHub {
       };
     }
     const why = !online && peer.leaving ? { why: peer.leaving } : {};
+    const at = !online && peer.leftAt ? { at: peer.leftAt } : {};
     return {
       to: otherRole(peer.role),
-      msg: { t: "peer", online, ...cid, ...why },
+      msg: { t: "peer", online, ...cid, ...why, ...at },
       reply,
     };
   }
