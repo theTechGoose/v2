@@ -97,7 +97,7 @@ describe("REQ-394 (p9) agreementTitle — 'Acuerdo de corte de césped…'", () 
         job: "Corte de césped semanal",
         lang: "es",
       }),
-    ).toBe("Acuerdo de corte de césped semanal de Ana López");
+    ).toBe("Acuerdo de corte de césped semanal para Ana López");
   });
 
   test("REQ-394 es: a Title Case job is sentence-cased in the title", () => {
@@ -107,7 +107,7 @@ describe("REQ-394 (p9) agreementTitle — 'Acuerdo de corte de césped…'", () 
         job: "Corte De Césped",
         lang: "es",
       }),
-    ).toBe("Acuerdo de corte de césped de Ana López");
+    ).toBe("Acuerdo de corte de césped para Ana López");
   });
 
   test("REQ-394 es: an acronym keeps its case", () => {
@@ -117,7 +117,7 @@ describe("REQ-394 (p9) agreementTitle — 'Acuerdo de corte de césped…'", () 
         job: "HVAC mantenimiento",
         lang: "es",
       }),
-    ).toBe("Acuerdo de HVAC mantenimiento de Ana");
+    ).toBe("Acuerdo de HVAC mantenimiento para Ana");
   });
 
   test("REQ-394 en keeps the Title Case label (unchanged REQ-036 shape)", () => {

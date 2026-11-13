@@ -100,10 +100,10 @@ describe("REQ-579 (m7) the agreement title says the customer once", () => {
     ).toBe("Carol Henderson's Kitchen Gut Agreement");
   });
 
-  test("REQ-579 es: 'Acuerdo de kitchen gut de Carol Henderson', never 'henderson kitchen gut'", () => {
+  test("REQ-579 es: 'Acuerdo de kitchen gut para Carol Henderson', never 'henderson kitchen gut'", () => {
     expect(
       at().agreementTitle({ customer: "Carol Henderson", job: "Henderson Kitchen Gut", lang: "es" }),
-    ).toBe("Acuerdo de kitchen gut de Carol Henderson");
+    ).toBe("Acuerdo de kitchen gut para Carol Henderson");
   });
 
   test("REQ-579 a possessive or a trailing 'for <surname>' goes too", () => {
@@ -112,7 +112,7 @@ describe("REQ-579 (m7) the agreement title says the customer once", () => {
     ).toBe("Carol Henderson's Deck Repair Agreement");
     expect(
       at().agreementTitle({ customer: "Ana López", job: "Patio para López", lang: "es" }),
-    ).toBe("Acuerdo de patio de Ana López");
+    ).toBe("Acuerdo de patio para Ana López");
   });
 
   test("REQ-579 a job that is only the customer's name reads as no job", () => {
@@ -124,7 +124,7 @@ describe("REQ-579 (m7) the agreement title says the customer once", () => {
   test("REQ-579 es keeps proper tokens: an abbreviation and the name after it stay capitalised", () => {
     expect(
       at().agreementTitle({ customer: "Ana", job: "Césped St. Augustine Nuevo", lang: "es" }),
-    ).toBe("Acuerdo de césped St. Augustine nuevo de Ana");
+    ).toBe("Acuerdo de césped St. Augustine nuevo para Ana");
   });
 
   test("REQ-579 a business or household customer never strips the job's own words", () => {
@@ -142,7 +142,7 @@ describe("REQ-579 (m7) the agreement title says the customer once", () => {
     ).toBe("Godzilla's Concrete Patio Agreement");
     expect(
       at().agreementTitle({ customer: "Ana López", job: "Corte De Césped", lang: "es" }),
-    ).toBe("Acuerdo de corte de césped de Ana López");
+    ).toBe("Acuerdo de corte de césped para Ana López");
   });
 });
 

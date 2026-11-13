@@ -4,9 +4,11 @@
  * agreement after the customer and the job, in both languages.
  *
  *   en: "<Customer>'s <Job> Agreement"     · no job: "<Customer>'s Agreement"
- *   es: "Acuerdo de <job> de <Customer>"   · no job: "Acuerdo de <Customer>"
+ *   es: "Acuerdo de <job> para <Customer>" · no job: "Acuerdo con <Customer>"
  *       REQ-394 (cycle 2, p9): the job sits mid-sentence after "Acuerdo de",
- *       so it is lowered — "Acuerdo de corte de césped semanal de Ana López".
+ *       so it is lowered — "Acuerdo de corte de césped semanal para Ana López".
+ *       REQ-721 (cycle 5, p18-2d): "para"/"con", not a second "de" — "Acuerdo
+ *       de corte de césped de María López" read as if María does the mowing.
  *   no customer: the job — or the caller's fallback when the job is unknown.
  *
  * A placeholder job name ("New job" / "Nuevo trabajo" — the fallbacks the
@@ -59,8 +61,8 @@ export function agreementTitle(args: {
   const own = job && withoutCustomer(job, customerNameWords(customer));
   if (lang === "es") {
     return own
-      ? `Acuerdo de ${jobNameInSentence(own, { keep: names })} de ${customer}`
-      : `Acuerdo de ${customer}`;
+      ? `Acuerdo de ${jobNameInSentence(own, { keep: names })} para ${customer}`
+      : `Acuerdo con ${customer}`;
   }
   return own ? `${customer}'s ${own} Agreement` : `${customer}'s Agreement`;
 }

@@ -250,16 +250,16 @@ describe("REQ-036 NW-57 agreementTitle", () => {
 
   // REQ-394 (cycle 2, p9): the job sits mid-sentence after "Acuerdo de", so
   // it is lowered there ("Acuerdo de Corte de césped…" read as a typo).
-  it("REQ-036 ES: Acuerdo de <job> de <Customer>", () => {
+  it("REQ-036 ES: Acuerdo de <job> para <Customer> (REQ-721)", () => {
     expect(agreementTitle({ customer: "Godzilla", job: "Concrete Patio", lang: "es" }))
-      .toBe("Acuerdo de concrete patio de Godzilla");
+      .toBe("Acuerdo de concrete patio para Godzilla");
   });
 
   it("REQ-036 a placeholder job ('New job' / 'Nuevo trabajo') never leaks into the title", () => {
     expect(agreementTitle({ customer: "Godzilla", job: "New job", lang: "en" }))
       .toBe("Godzilla's Agreement");
     expect(agreementTitle({ customer: "Godzilla", job: "Nuevo trabajo", lang: "es" }))
-      .toBe("Acuerdo de Godzilla");
+      .toBe("Acuerdo con Godzilla");
   });
 
   it("REQ-036 without a customer the title is the job (or the fallback)", () => {
