@@ -1218,6 +1218,185 @@
   opacity: 0.8;
 }
 
+/* REQ-701 (demo-loop cycle 5, M21): the open panel's "Questions from the
+   client" (components/QuoteInquiries.tsx) — each question a client sent from
+   the public page, how they asked to be reached, Text back / Email back /
+   Call (one solid primary: the channel they asked on) and the reply box. */
+.qinq {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px dashed rgba(26, 83, 92, 0.16);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  scroll-margin-top: 72px;
+}
+.qinq__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.qinq__title {
+  font-family: var(--font-heading);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--brand-teal);
+  margin: 0;
+}
+.qinq__count {
+  font-family: var(--font-heading);
+  font-size: 11px;
+  font-weight: 800;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: rgba(168, 67, 31, 0.12);
+  color: #a8431f;
+}
+.qinq__item {
+  border: 1px solid rgba(26, 83, 92, 0.12);
+  border-radius: 12px;
+  padding: 12px 14px;
+  background: #fff;
+}
+.qinq__item--answered {
+  background: rgba(63, 122, 51, 0.04);
+}
+.qinq__meta {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-family: var(--font-body);
+  font-size: 12.5px;
+  color: var(--fg-muted);
+}
+.qinq__who {
+  color: var(--fg, #1c2c30);
+  font-weight: 700;
+}
+.qinq__q {
+  margin: 8px 0 0;
+  padding: 10px 12px;
+  border-left: 3px solid var(--brand-green, #519843);
+  border-radius: 8px;
+  background: #f4f8f2;
+  font-family: var(--font-body);
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--fg, #1c2c30);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.qinq__contact {
+  margin-top: 8px;
+  font-family: var(--font-body);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--fg, #1c2c30);
+  overflow-wrap: anywhere;
+}
+.qinq__answered {
+  margin-top: 8px;
+  font-family: var(--font-body);
+  font-size: 12.5px;
+  font-weight: 600;
+  color: #3f7a33;
+}
+.qinq__answer {
+  margin: 4px 0 0;
+  font-weight: 400;
+  color: var(--fg-muted);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.qinq__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+.qinq__btn--primary {
+  background: var(--brand-teal);
+  border-color: var(--brand-teal);
+  color: #fff;
+}
+.qinq__btn--primary:hover {
+  background: var(--brand-teal);
+  border-color: var(--brand-teal);
+  color: #fff;
+  filter: brightness(1.08);
+}
+.qinq__btn--primary:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+.qinq__none {
+  margin: 8px 0 0;
+  font-family: var(--font-body);
+  font-size: 12.5px;
+  color: var(--fg-muted);
+}
+.qinq__reply {
+  margin-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.qinq__to {
+  font-family: var(--font-body);
+  font-size: 12px;
+  color: var(--fg-muted);
+}
+.qinq__input {
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid rgba(26, 83, 92, 0.2);
+  border-radius: 10px;
+  padding: 9px 11px;
+  font-family: var(--font-body);
+  font-size: 14px;
+  line-height: 1.45;
+  color: var(--fg, #1c2c30);
+  background: #fff;
+  resize: vertical;
+}
+.qinq__input:focus {
+  outline: 2px solid rgba(26, 83, 92, 0.35);
+  outline-offset: 1px;
+}
+.qinq__reply-actions {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 8px;
+}
+.qinq__ghost {
+  appearance: none;
+  background: none;
+  border: 0;
+  padding: 9px 10px;
+  font-family: var(--font-heading);
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--fg-muted);
+  cursor: pointer;
+}
+.qinq__ghost:hover {
+  color: var(--fg, #1c2c30);
+}
+.qinq__result {
+  margin: 8px 0 0;
+  font-family: var(--font-body);
+  font-size: 12.5px;
+  font-weight: 700;
+  color: #3f7a33;
+}
+.qinq__result--failed {
+  color: #b23030;
+}
+
 /* REQ-482 (demo M39): the New invoice sheet's line-item row. Desktop keeps
    one row (description · qty · unit · price · ×); under 560px the description
    takes its own row and qty/unit/price/× wrap beneath it, so ~300px of fixed

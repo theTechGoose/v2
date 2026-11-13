@@ -107,6 +107,37 @@ export interface Insight {
     | "static_fallback";
 }
 
+/** REQ-701 (demo-loop cycle 5, M21): a question a client sent from the
+ *  public quote page (GET /quotes/:id/inquiries). */
+export interface QuoteInquiry {
+  id: string;
+  quoteId: string;
+  customerId?: string;
+  question: string;
+  /** how the client asked to be reached back — free text */
+  contactBack?: string;
+  name?: string;
+  lang?: "en" | "es";
+  createdAt: string;
+  answeredAt?: string;
+  answer?: {
+    channel: "text" | "email";
+    to: string;
+    message: string;
+    at: string;
+  };
+}
+
+/** REQ-701: POST /quotes/:id/inquiries/:inquiryId/reply's answer. */
+export interface InquiryReplyResponse {
+  ok: boolean;
+  channel: "text" | "email";
+  to: string;
+  failureCode?: string;
+  reason?: string;
+  inquiry?: QuoteInquiry;
+}
+
 export const quotesClient = {
   list: (status?: string, opts: ApiOptions = {}) =>
     api.get<QuoteCard[]>("/quotes", { ...opts, query: { status } }),
@@ -139,6 +170,21 @@ export const quotesClient = {
     lang: "en" | "es",
     opts: ApiOptions = {},
   ) => api.get<QuoteSendPreview>(sendPreviewPath(id, channel, lang), opts),
+  /** REQ-701: the questions clients sent on this quote, newest first. */
+  inquiries: (id: string, opts: ApiOptions = {}) =>
+    api.get<QuoteInquiry[]>(`/quotes/${id}/inquiries`, opts),
+  /** REQ-701: answer one by text or email — where the client asked to be reached. */
+  replyToInquiry: (
+    id: string,
+    inquiryId: string,
+    body: { channel: "text" | "email"; message: string },
+    opts: ApiOptions = {},
+  ) =>
+    api.post<InquiryReplyResponse>(
+      `/quotes/${id}/inquiries/${inquiryId}/reply`,
+      body,
+      opts,
+    ),
   /** REQ-201: publish the pending revision (version+1); `notify` re-sends the same link. */
   publish: (
     id: string,

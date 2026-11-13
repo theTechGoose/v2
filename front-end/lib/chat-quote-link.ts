@@ -14,6 +14,9 @@ export interface ChatQuoteLink {
   quoteNumber?: string;
   /** A pending revision is waiting — the link says to publish it. */
   publish: boolean;
+  /** REQ-701 (cycle 5, M21): the answer to "¿dónde le contesto?" — the link
+   *  opens the quote's "Questions from the client" (#questions). */
+  questions?: true;
 }
 
 /** Outcomes that name one quote. Asks and misses (`ambiguous`, `none`,
@@ -48,6 +51,21 @@ const LINKABLE_BY_KEY: Record<string, Set<string>> = {
 export function chatQuoteLink(payload: unknown): ChatQuoteLink | undefined {
   if (!payload || typeof payload !== "object") return undefined;
   const p = payload as Record<string, unknown>;
+  // REQ-701: AnswerInquiries names the quote whose question is waiting.
+  const inquiry = p.inquiry as Record<string, unknown> | undefined;
+  if (
+    inquiry && typeof inquiry === "object" && inquiry.kind === "open" &&
+    typeof inquiry.quoteId === "string" && inquiry.quoteId
+  ) {
+    return {
+      quoteId: inquiry.quoteId,
+      ...(typeof inquiry.quoteNumber === "string" && inquiry.quoteNumber
+        ? { quoteNumber: inquiry.quoteNumber }
+        : {}),
+      publish: false,
+      questions: true,
+    };
+  }
   for (const [key, linkable] of Object.entries(LINKABLE_BY_KEY)) {
     const outcome = p[key];
     if (!outcome || typeof outcome !== "object") continue;

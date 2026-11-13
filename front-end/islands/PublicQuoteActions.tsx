@@ -349,6 +349,9 @@ function AskForm(
           question: question.trim(),
           ...(contactBack.trim() ? { contactBack: contactBack.trim() } : {}),
           ...(name.trim() ? { name: name.trim() } : {}),
+          // REQ-701 (cycle 5, M21): the contractor's answer reaches them in
+          // the language they asked in.
+          lang,
         }),
       });
       if (!r.ok) {

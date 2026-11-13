@@ -43,6 +43,7 @@ import {
   refreshNotifications,
   subscribeNotifications,
 } from "../lib/notifications-feed.ts";
+import { notificationHref } from "../lib/quote-inquiries.ts"; // REQ-701
 import { ShimmerStyle, SkelBlock } from "../components/Skeletons.tsx";
 import SetupChecklist from "./SetupChecklist.tsx";
 import { type Lang, langSignal, tFor } from "../lib/i18n.ts";
@@ -281,11 +282,8 @@ function notifToActivity(
   const skin = NOTIF_ICON[n.type] ?? NOTIF_ICON.generic;
   // UX-20: feed rows link to the thing they report — an accepted quote
   // opens that quote's panel, an invoice event lands on /invoices.
-  const href = n.entityType === "quote" && n.entityId
-    ? `/quotes?open=${encodeURIComponent(n.entityId)}`
-    : n.entityType === "invoice"
-    ? "/invoices"
-    : undefined;
+  // REQ-701 (cycle 5, M21): a client's question opens the quote's questions.
+  const href = notificationHref(n);
   return {
     icon: skin.icon,
     bg: skin.bg,

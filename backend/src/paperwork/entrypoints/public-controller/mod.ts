@@ -17,6 +17,7 @@ import { signedConfirmChannel } from "@paperwork/domain/business/customer-sms/mo
 import { SendAcceptedAlert } from "@paperwork/domain/coordinators/send-accepted-alert/mod.ts";
 import { QuoteSignedPort } from "@paperwork/domain/coordinators/quote-signed-port/mod.ts"; // REQ-563
 import { SendInquiryAlert } from "@paperwork/domain/coordinators/send-inquiry-alert/mod.ts";
+import { QuoteInquiryStore } from "@paperwork/domain/data/inquiry-store/mod.ts"; // REQ-701
 import { RenderInvoicePdf } from "@paperwork/domain/coordinators/render-invoice-pdf/mod.ts";
 import { RenderQuotePdf } from "@paperwork/domain/coordinators/render-quote-pdf/mod.ts";
 import { ViewStore } from "@paperwork/domain/data/view-store/mod.ts";
@@ -142,6 +143,10 @@ class InquireQuoteDto {
   contactBack?: string; // phone or email — how the contractor should follow up
   @IsOptional() @IsString()
   name?: string;
+  /** REQ-701: the language of the page the client asked from ("en" | "es") —
+   *  the contractor's answer reaches them in it. */
+  @IsOptional() @IsString()
+  lang?: string;
 }
 
 function parseAccept(input: unknown): AcceptQuoteDto {
@@ -209,6 +214,8 @@ export class PaperworkPublicController {
     private sessions: SessionStore,
     // REQ-563: optional so a hand-built controller (tests) needs no chat
     private signedChat?: QuoteSignedPort,
+    /** REQ-701: the questions clients send (defaulted for a hand-built controller) */
+    private inquiries: QuoteInquiryStore = new QuoteInquiryStore(),
   ) {}
 
   /**
@@ -951,8 +958,10 @@ export class PaperworkPublicController {
   /** Customer asks a question on a quote (audit P5.1).
    *
    *  This is a one-shot inbound message — the customer doesn't have a chat
-   *  thread of their own, so it lands as a notification on the contractor's
-   *  bell + activity feed. No quote-status change. */
+   *  thread of their own. It lands as a notification on the contractor's
+   *  bell + activity feed, and (REQ-701) is KEPT on its quote: the panel the
+   *  notice opens lists it under "Questions from the client" and answers it.
+   *  No quote-status change. */
   @Post("quotes/:id/inquiry")
   async inquireQuote(
     @Context() ctx: ExecutionContext,
@@ -961,6 +970,25 @@ export class PaperworkPublicController {
   ) {
     const dto = parseInquire(body);
     const existing = await this.quotes.get(id);
+    // REQ-701 (demo-loop cycle 5, M21): the question is stored on its quote,
+    // owned by the contractor — pair 9's notice opened a panel that had no
+    // question and no reply box. Best-effort: a failed write never stops the
+    // notification and the alert below.
+    const stored = await this.inquiries.create({
+      quoteId: existing.id,
+      userId: existing.userId,
+      ...(existing.customerId ? { customerId: existing.customerId } : {}),
+      question: dto.question,
+      ...(dto.contactBack ? { contactBack: dto.contactBack } : {}),
+      ...(dto.name ? { name: dto.name } : {}),
+      ...(dto.lang ? { lang: dto.lang } : {}),
+    }).catch((err) => {
+      console.error(
+        `[quotes/${existing.id}/inquiry] storing the question failed:`,
+        err,
+      );
+      return null;
+    });
     const customerName = await lookupCustomerName(
       this.customers,
       existing.customerId,
@@ -980,6 +1008,7 @@ export class PaperworkPublicController {
         ...(dto.contactBack ? { contactBack: dto.contactBack } : {}),
         ...(dto.name ? { askName: dto.name } : {}),
         quoteId: existing.id,
+        ...(stored ? { inquiryId: stored.id } : {}),
       },
     });
     // REQ-031 (NW-26): the contractor gets the full question + contactBack

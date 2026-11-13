@@ -23,8 +23,10 @@ import { isInQuotePhase } from "@agents/domain/business/derive-phase/mod.ts";
 import {
   asksHowPriced,
   chatToolsFor,
+  isInquiryAsk, // REQ-701
   isInvoiceRequest,
   isOpenDraft,
+  isReplyAdviceAsk, // REQ-701
   jobTitle,
   mayAdvanceQuote,
   owedNameFromHistory,
@@ -44,6 +46,10 @@ import {
 import { liveDraftOffer } from "#quote-flow/chat-draft-offer.ts";
 import { AnswerBilling } from "@agents/domain/coordinators/answer-billing/mod.ts";
 import { AnswerOwed } from "@agents/domain/coordinators/answer-owed/mod.ts";
+import {
+  AnswerInquiries,
+  type AnswerInquiriesResult,
+} from "@agents/domain/coordinators/answer-inquiries/mod.ts"; // REQ-701
 import { SuggestPrices } from "@agents/domain/coordinators/suggest-prices/mod.ts";
 import { TransitionToTerms } from "@agents/domain/coordinators/transition-to-terms/mod.ts";
 import {
@@ -1792,16 +1798,48 @@ export class HandleChatMessage {
         conversation: conv,
         lang: replyLang,
       });
+    // ---- REQ-701 (demo-loop cycle 5, M21): "…y Linda preguntó… ¿dónde le
+    // contesto?" — a question about a client's question is answered from the
+    // stored questions (AnswerInquiries), also when the same message asks
+    // something else: pair 9 got only the INV-001 half.
+    // A bare how-to-reply ask ("how should I respond to him? he says the
+    // price is too high") names no question: it is answered from one only
+    // when the person it names, or this thread's quote, has one waiting —
+    // else the model answers it, and no "nothing waiting" line rides along.
+    // Read once: the early answers below and the ask on its own share it.
+    const inquiryText = typeof input.content === "string" &&
+        isInquiryAsk(input.content)
+      ? input.content
+      : undefined;
+    let inquiryAnswer: Promise<AnswerInquiriesResult | undefined> | undefined;
+    const answerInquiries = (conversation: AgentConversation) =>
+      inquiryAnswer ??= inquiryText
+        ? new AnswerInquiries(this.conversations, this.messages).run({
+          userId: input.userId,
+          conversation,
+          lang: replyLang,
+          text: inquiryText,
+          onlyRelevant: isReplyAdviceAsk(inquiryText),
+        })
+        : Promise.resolve(undefined);
     const finishEarly = async (
       r: { conversation: AgentConversation; newMessages: AgentMessage[] },
     ): Promise<HandleChatResult> => {
+      const asked = await answerInquiries(r.conversation);
       const first = history.length === 1 && history[0].id === userMsg.id;
       const conversation = first
         ? await this.conversations.update(conv.id, {
           title: deriveTitleFromFirstUserMessage(input.content),
         })
-        : r.conversation;
-      return { conversation, newMessages: [userMsg, ...r.newMessages] };
+        : asked?.conversation ?? r.conversation;
+      return {
+        conversation,
+        newMessages: [
+          userMsg,
+          ...r.newMessages,
+          ...(asked?.newMessages ?? []),
+        ],
+      };
     };
     // ---- REQ-438 (demo-loop cycle 3, M7): "Borra la factura repetida
     // INV-001" — the chat has no invoice tool, so the model made it a change
@@ -1928,6 +1966,19 @@ export class HandleChatMessage {
         )
           .run({ userId: input.userId, conversation: bound, lang: replyLang });
         if (billed) return await finishEarly(billed);
+      }
+    }
+    // ---- REQ-701 (demo-loop cycle 5, M21): "¿dónde le contesto a Linda?" on
+    // its own — answered from the stored questions, never by the chat model
+    // (finishEarly hands the answer back). A bare how-to-reply ask with no
+    // such question waiting falls through to the model.
+    if (inquiryText && !llmResponse && !changeOrderAsk) {
+      const asked = await answerInquiries(conv);
+      if (asked) {
+        return await finishEarly({
+          conversation: asked.conversation,
+          newMessages: [],
+        });
       }
     }
     // ---- REQ-388 (M23): "Draft a quote at $1,500" — the pricing answer's

@@ -77,7 +77,11 @@ export class SendInquiryAlert {
     const jobName = (quote.jobNameByLang?.[lang] ?? quote.jobName)?.trim() ||
       quote.summary?.trim() || "";
     const contactBack = input.contactBack?.trim() || undefined;
-    const url = `${APP_URL}/quotes?open=${encodeURIComponent(quote.id)}`;
+    // REQ-701 (demo-loop cycle 5, M21): straight to the quote's questions —
+    // the panel lists this one there, with Text back / Email back / Call.
+    const url = `${APP_URL}/quotes?open=${
+      encodeURIComponent(quote.id)
+    }#questions`;
     const subject = jobName
       ? t(lang, "inquiryAlert.email.subject", { name, job: jobName })
       : t(lang, "inquiryAlert.email.subjectNoJob", { name });
