@@ -165,8 +165,9 @@ export default function OnboardingProgress(
     // Mark "skip" so the gate doesn't bounce them back on next visit
     // (best-effort — the FE doesn't currently persist a skip flag, so the
     // user will see onboarding again on next ?onboard=1 visit. Acceptable
-    // for now; the dashboard checklist will catch them).
-    globalThis.location.assign("/dashboard");
+    // for now; the dashboard checklist will catch them). REQ-797: leaving setup
+    // lands on the assistant.
+    globalThis.location.assign("/assistant");
   }
 
   const pct = (step / TOTAL_STEPS) * 100;

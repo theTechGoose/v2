@@ -1601,15 +1601,16 @@ export default function WelcomeWizard(
     if (leaving) return;
     setLeaving(true);
     // REQ-504 (demo M37): record the leave and defer every open question on the
-    // server, then the dashboard — its setup checklist asks for the rest. The
-    // wizard still returns at the first open question on the next code (REQ-091).
+    // server; the dashboard's setup checklist asks for the rest. REQ-797: the
+    // person lands on the assistant, like finishing setup. The wizard still
+    // returns at the first open question on the next code (REQ-091).
     await fetch("/api/me/onboarded", {
       method: "POST",
       headers: { "content-type": "application/json" },
       credentials: "include",
       body: JSON.stringify({ skipped: true, deferAll: true }),
     }).then((r) => r.body?.cancel()).catch(() => {});
-    globalThis.location.href = "/dashboard";
+    globalThis.location.href = "/assistant";
   }
 
   // REQ-348 (demo m34): the EN/ES switch, in the wizard itself — /welcome mounts no app topbar,

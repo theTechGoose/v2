@@ -86,13 +86,14 @@ Deno.test("REQ-091: onboarding happens until every question is answered — a ne
     // Skip stays: it puts the business name off and moves on
     await page.locator("[data-cy='welcome-skip']").click();
     await expect.see("best email");
-    // REQ-504 (demo M37, cycle 3): "Skip setup for now" defers every open question and lands on the
-    // dashboard — which used to send the person straight back to the wizard, its sidebar link looping
+    // REQ-504 (demo M37, cycle 3): "Skip setup for now" defers every open question.
+    // REQ-797 (Raphael, 2026-11-13: "after setup people go to assistant"): it lands on the
+    // assistant, the same place finishing setup does — not the dashboard
     await clickAway(page, "button.welcome__escape");
-    await page.waitForURL((u: URL) => u.pathname === "/dashboard", { timeout: 60_000 });
+    await page.waitForURL((u: URL) => u.pathname.startsWith("/assistant"), { timeout: 60_000 });
     await page.waitForLoadState("networkidle");
-    await frame(page); // the dashboard, where the escape lands
-    expect.eq(new URL(page.url()).pathname, "/dashboard", `skip setup opens the dashboard (${page.url()})`);
+    await frame(page); // the assistant, where the escape lands
+    expect.eq(new URL(page.url()).pathname.startsWith("/assistant"), true, `REQ-797: skip setup opens the assistant (${page.url()})`);
     // and coming back to it (the sidebar's Dashboard link) stays there; the setup checklist asks for the rest
     await page.goto("/dashboard");
     await page.waitForLoadState("networkidle");
