@@ -380,3 +380,47 @@ Deno.test("REQ-207 GET /search never crosses accounts: B searching A's number, n
     await resetKv();
   }
 });
+
+/**
+ * REQ-713 — demo-loop cycle 5, issue m27: the Spanish topbar search read
+ * "INV-002 … Programada 2026-11-29". Over HTTP, an invoice row now carries
+ * its due/service days as typed fields for the client to spell in the page
+ * language, and its free-text `sub` holds no ISO date.
+ */
+Deno.test("REQ-713 m27 GET /search: an invoice row's dates are typed fields, never ISO text in sub", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const server = await bootstrapServer(TestApp, { port: PORT, swagger: false });
+  await server.listen();
+  try {
+    const sid = await login(PORT);
+    const ann = await post(PORT, "/customers", sid, { name: "Ann Lee" });
+    await post(PORT, "/invoices", sid, {
+      customerId: ann.id,
+      amount: 10000,
+      status: "sent",
+      dueDate: "2026-11-29",
+    });
+    await post(PORT, "/invoices", sid, {
+      customerId: ann.id,
+      amount: 20000,
+      status: "sent",
+      dueDate: "2026-12-06",
+      serviceDateFrom: "2026-11-20",
+      serviceDateTo: "2026-11-22",
+    });
+    const rows = (await search(PORT, sid, "inv")) as Array<
+      Record<string, unknown>
+    >;
+    const byNumber = (n: string) => rows.find((r) => r.number === n)!;
+    assertEquals(byNumber("INV-001").dueDate, "2026-11-29");
+    assertEquals(byNumber("INV-002").serviceFrom, "2026-11-20");
+    assertEquals(byNumber("INV-002").serviceTo, "2026-11-22");
+    for (const r of rows) {
+      assertEquals(/\d{4}-\d{2}-\d{2}/.test(String(r.sub ?? "")), false);
+    }
+  } finally {
+    await server.stop();
+    await resetKv();
+  }
+});

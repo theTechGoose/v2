@@ -185,3 +185,57 @@ Deno.test("REQ-519 (demo cycle 3, M33) global-search integration: accent-blind a
 
   await resetKv();
 });
+
+/**
+ * REQ-713 — Raphael: "fix every issue the demo found, loop until there are
+ * none." Demo-loop cycle 5, issue m27: the Spanish topbar search showed
+ * "INV-002 … Programada 2026-11-29" — the due date baked into `sub` as raw
+ * ISO. A hit now carries its dates as typed fields for the client to spell
+ * in the page language; `sub` holds no ISO date.
+ */
+Deno.test("REQ-713 m27 global-search integration: invoice and work-order dates are typed fields, never ISO text in sub", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const { customers, invoices, flow } = fresh();
+  const workOrders = new WorkOrderStore();
+  const searchFlow = new GlobalSearch(
+    customers,
+    new QuoteStore(),
+    invoices,
+    new ChangeOrderStore(),
+    workOrders,
+  );
+  const ann = await customers.create("u-1", { name: "Ann Lee" });
+  const due = await invoices.create("u-1", {
+    customerId: ann.id,
+    jobName: "Lawn care",
+    dueDate: "2026-11-29T00:00:00.000Z",
+    status: "pending",
+  });
+  const svc = await invoices.create("u-1", {
+    customerId: ann.id,
+    jobName: "Lawn care",
+    dueDate: "2026-12-06",
+    serviceDateFrom: "2026-11-20",
+    serviceDateTo: "2026-11-22",
+    status: "pending",
+  });
+  await workOrders.create("u-1", {
+    customerId: ann.id,
+    description: "Lawn care visit",
+    scheduledFor: "2026-11-21",
+  });
+
+  const hits = await searchFlow.run("u-1", { q: "lawn" });
+  const iso = /\d{4}-\d{2}-\d{2}/;
+  for (const h of hits) assertEquals(iso.test(h.sub ?? ""), false, h.number);
+  const byId = (id: string) => hits.find((h) => h.id === id)!;
+  assertEquals(byId(due.id).dueDate, "2026-11-29");
+  assertEquals(byId(svc.id).serviceFrom, "2026-11-20");
+  assertEquals(byId(svc.id).serviceTo, "2026-11-22");
+  assertEquals(
+    hits.find((h) => h.type === "workOrder")?.scheduledFor,
+    "2026-11-21",
+  );
+  await resetKv();
+});
