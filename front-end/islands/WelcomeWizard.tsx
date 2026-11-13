@@ -48,7 +48,7 @@ import {
 } from "../../shared/quote-flow/pricing-plans.ts";
 import { PlanCards } from "../components/PlanCards.tsx";
 import { SampleQuotePreview } from "../components/SampleQuotePreview.tsx";
-import { wizardPlanNote } from "../lib/plan-pick-note.ts";
+import { wizardBillingHow, wizardPlanNote } from "../lib/plan-pick-note.ts";
 import {
   handoffPage,
   pickErrorOf,
@@ -1375,6 +1375,18 @@ function PlanStep({ ctx }: { ctx: StepCtx }) {
               note={(p) =>
                 wizardPlanNote(t, plan, p.id, new Date().toISOString(), lang)}
             />
+            {/* REQ-725 — the card says one plain line; the dated first-pick schedule (REQ-129) is here, asked for */}
+            <details class="welcome__plan-how" data-cy="plan-billing-how">
+              <summary>{t("welcome.plan.billingHow.title")}</summary>
+              <p>
+                {wizardBillingHow(
+                  t,
+                  "monster",
+                  new Date().toISOString(),
+                  lang,
+                )}
+              </p>
+            </details>
             <p class="welcome__plan-custom">
               {t("welcome.plan.custom", { phone: SUPPORT_PHONE_DISPLAY })}
             </p>
@@ -1384,11 +1396,13 @@ function PlanStep({ ctx }: { ctx: StepCtx }) {
           </div>
         )}
       {err ? <p class="welcome__error" role="alert">{err}</p> : null}
+      {/* REQ-725 — a card IS the pick: no dead Continue under the cards until a plan is settled */}
       <StepFooter
         ctx={ctx}
         valid={settled}
         busy={false}
         onContinue={ctx.advance}
+        hideContinue={cards && !settled}
       />
     </StepBody>
   );

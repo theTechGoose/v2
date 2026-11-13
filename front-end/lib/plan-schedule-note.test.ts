@@ -13,10 +13,14 @@
  * The rule now: a first-pick note states each charge with its date — what today pays and the
  * days it covers, the 1st's prorated amount and the days it covers, then the monthly price —
  * all from `anchoredSchedule`, the one rule the backend tells the CRM.
+ *
+ * REQ-725 (c5 m3) amends where the wizard says it: the card now carries one plain line, and the
+ * dated schedule lives in the "How billing works" disclosure (`wizardBillingHow`,
+ * `welcome.plan.billingHow.body`); Settings' `billing.note.first` is unchanged.
  */
 import { assert, assertEquals, assertStringIncludes } from "@std/assert";
 import { tFor } from "./i18n.ts";
-import { firstPickNote, wizardPlanNote } from "./plan-pick-note.ts";
+import { firstPickNote, wizardBillingHow } from "./plan-pick-note.ts";
 import en from "../../lang/en.json" with { type: "json" };
 import es from "../../lang/es.json" with { type: "json" };
 import {
@@ -27,14 +31,14 @@ import {
 const NOW = "2026-11-12T12:00:00.000Z";
 const monster = planById("monster").priceCents; // $99
 
-Deno.test("REQ-615: the wizard's paid note states today's charge with the days it covers, the 1st's prorated bill with its amount and days, then the monthly price (demo-loop c4 m4)", () => {
+Deno.test("REQ-615/REQ-725: the wizard's 'How billing works' states today's charge with the days it covers, the 1st's prorated bill with its amount and days, then the monthly price (demo-loop c4 m4)", () => {
   // anchoredSchedule: paid through Dec 12; Dec 1 bills Dec 12–31 = 20/31 of $99 = $63.87
   assertEquals(anchoredSchedule(NOW, monster).firstAmountCents, 6387);
   const t = (k: string, v?: Record<string, string | number>) =>
     tFor("en", k, v);
   assertEquals(
-    wizardPlanNote(t, null, "monster", NOW, "en"),
-    "$99 today (covers Nov 12–Dec 11) · Dec 1: $63.87 for Dec 12–Dec 31 · then $99/month on the 1st — you'll pay on a secure payment page next",
+    wizardBillingHow(t, "monster", NOW, "en"),
+    "Example with Monster ($99/month), picked today: $99 today covers Nov 12–Dec 11. To line your bill up with the 1st, on Dec 1 we bill $63.87 for Dec 12–Dec 31. After that, $99 on the 1st of each month. Other plans work the same way at their price.",
   );
 });
 
@@ -42,8 +46,8 @@ Deno.test("REQ-615: the same schedule in Spanish (demo-loop c4 m4)", () => {
   const t = (k: string, v?: Record<string, string | number>) =>
     tFor("es", k, v);
   assertEquals(
-    wizardPlanNote(t, null, "monster", NOW, "es"),
-    "$99 hoy (cubre 12 nov–11 dic) · 1 dic: $63.87 por 12 dic–31 dic · luego $99/mes cada día 1 — pagarás en una página de pago segura a continuación",
+    wizardBillingHow(t, "monster", NOW, "es"),
+    "Ejemplo con Monster ($99/mes), elegido hoy: $99 hoy cubre 12 nov–11 dic. Para alinear tu cobro con el día 1, el 1 dic cobramos $63.87 por 12 dic–31 dic. Después, $99 el día 1 de cada mes. Los demás planes funcionan igual con su precio.",
   );
 });
 
@@ -51,8 +55,8 @@ Deno.test("REQ-615: a pick on the 1st — today covers the month, the next 1st i
   const t = (k: string, v?: Record<string, string | number>) =>
     tFor("en", k, v);
   assertEquals(
-    wizardPlanNote(t, null, "monster", "2026-11-01T09:00:00.000Z", "en"),
-    "$99 today (covers Nov 1–Nov 30) · Dec 1: $99 for Dec 1–Dec 31 · then $99/month on the 1st — you'll pay on a secure payment page next",
+    wizardBillingHow(t, "monster", "2026-11-01T09:00:00.000Z", "en"),
+    "Example with Monster ($99/month), picked today: $99 today covers Nov 1–Nov 30. To line your bill up with the 1st, on Dec 1 we bill $99 for Dec 1–Dec 31. After that, $99 on the 1st of each month. Other plans work the same way at their price.",
   );
 });
 
@@ -72,7 +76,7 @@ Deno.test("REQ-615: Settings' first-pick note says the same dated schedule (demo
 
 Deno.test("REQ-615: no plan note says 'prorated on the 1st' without the amount and date (demo-loop c4 m4)", () => {
   for (const d of [en, es] as Record<string, string>[]) {
-    for (const k of ["welcome.plan.note.paid", "billing.note.first"]) {
+    for (const k of ["welcome.plan.billingHow.body", "billing.note.first"]) {
       const s = d[k];
       assert(!/prorated on the 1st|prorrateado el día 1/.test(s), `${k}: ${s}`);
       for (
@@ -87,7 +91,7 @@ Deno.test("REQ-615: no plan note says 'prorated on the 1st' without the amount a
           "{monthly}",
         ]
       ) {
-        if (k === "billing.note.first" && v === "{due}") continue;
+        if (v === "{due}") continue; // the schedule starts at the full {monthly}
         assertStringIncludes(s, v, `${k} names ${v}`);
       }
     }
