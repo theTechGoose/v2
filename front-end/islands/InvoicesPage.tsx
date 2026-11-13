@@ -2341,6 +2341,16 @@ async function discountErrorCopy(r: Response, lang: Lang): Promise<string> {
     : tFor(lang, "invoicesPage.adjust.errDiscountApply");
 }
 
+/** REQ-712 (cycle 5, m7): a card's send failure / note, kept as something
+ *  that words itself in a language — worded at render, never frozen in the
+ *  language that was live when the action ran. */
+interface Worded {
+  word: (lang: Lang) => string;
+}
+function worded(word: (lang: Lang) => string): Worded {
+  return { word };
+}
+
 /** REQ-174: today + n days, as yyyy-mm-dd (UTC) */
 function plusDays(n: number): string {
   const d = new Date(new Date().toISOString().slice(0, 10) + "T00:00:00Z");
@@ -2367,10 +2377,12 @@ function InvoiceCard(
   const [busy, setBusy] = useState(false);
   // P-09: honest send state — set when a dispatch delivered on NO channel,
   // rendered on the card instead of the old silent reload-as-success.
-  const [sendFail, setSendFail] = useState<string | null>(null);
+  // REQ-712 (cycle 5, m7): fail / note word themselves at render, in the
+  // live language — a switch after the action re-words them.
+  const [sendFail, setSendFail] = useState<Worded | null>(null);
   // REQ-021: inline confirmation after a nudge (no reload — nothing on the
   // card changes except that the reminder went out).
-  const [sendNote, setSendNote] = useState<string | null>(null);
+  const [sendNote, setSendNote] = useState<Worded | null>(null);
   // REQ-250 (demo m12): a nudge on a CLAIMED invoice — the customer said they
   // paid — asks first, inline, naming the claim.
   const [nudgeAsk, setNudgeAsk] = useState(false);
@@ -2391,7 +2403,9 @@ function InvoiceCard(
         body: JSON.stringify({ scheduledFor: dateEdit }),
       });
       if (r.ok) globalThis.location.reload();
-      else setSendFail(tFor(lang, "invoicesPage.back.changeDateFailed"));
+      else {setSendFail(worded((l) =>
+          tFor(l, "invoicesPage.back.changeDateFailed")
+        ));}
     } finally {
       setBusy(false);
     }
@@ -2412,7 +2426,7 @@ function InvoiceCard(
       await r.body?.cancel();
       // REQ-554: the card leaves the list by a re-read, not a page load
       if (r.ok) await onRefresh();
-      else setSendFail(tFor(lang, "invoicesPage.detail.errDelete"));
+      else setSendFail(worded((l) => tFor(l, "invoicesPage.detail.errDelete")));
     } finally {
       setBusy(false);
     }
@@ -2566,7 +2580,7 @@ function InvoiceCard(
       // P-09: interpret the BODY — a 200 {ok:false} is a failure, not a send.
       const result = await interpretSettledSend(settled[0]);
       if (result.outcome.delivered) globalThis.location.reload();
-      else setSendFail(textFailureCopy(lang, result));
+      else setSendFail(worded((l) => textFailureCopy(l, result)));
     } finally {
       setBusy(false);
     }
@@ -2607,7 +2621,9 @@ function InvoiceCard(
         await put(Object.fromEntries(
           Object.entries(was).filter(([, v]) => v !== undefined),
         ));
-        setSendFail(dispatchFailureCopy(lang, d, { number: inv.invoiceRef }));
+        setSendFail(
+          worded((l) => dispatchFailureCopy(l, d, { number: inv.invoiceRef })),
+        );
       }
     } finally {
       setBusy(false);
@@ -2659,12 +2675,12 @@ function InvoiceCard(
         });
       } else if (d.delivered) onFlash(partialParts(lang, d));
       else {
-        setSendFail(
-          dispatchFailureCopy(lang, d, {
+        setSendFail(worded((l) =>
+          dispatchFailureCopy(l, d, {
             number: inv.invoiceRef,
             keptDraft: true,
-          }),
-        );
+          })
+        ));
       }
     } finally {
       setBusy(false);
@@ -2707,10 +2723,12 @@ function InvoiceCard(
       // email or phone on file, every channel failed, muted, or this rung
       // already fired — never "Already nudged" for a nudge that went nowhere.
       const note = nudgeNote(body);
-      if (note.tone === "fail") setSendFail(tFor(lang, note.key));
-      else setSendNote(tFor(lang, note.key));
+      // REQ-712 (cycle 5, m7): kept as the key, worded at render in the
+      // live language — never "Recordatorio enviado" after a switch to EN.
+      if (note.tone === "fail") setSendFail(worded((l) => tFor(l, note.key)));
+      else setSendNote(worded((l) => tFor(l, note.key)));
     } catch {
-      setSendFail(tFor(lang, "invoicesPage.nudge.failed"));
+      setSendFail(worded((l) => tFor(l, "invoicesPage.nudge.failed")));
     } finally {
       setBusy(false);
     }
@@ -2958,8 +2976,8 @@ function InvoiceCard(
         }
         {!flipped && (
           <CardSendNotes
-            fail={sendFail}
-            note={sendNote}
+            fail={sendFail?.word(lang) ?? null}
+            note={sendNote?.word(lang) ?? null}
           />
         )}
       </div>
@@ -3016,8 +3034,8 @@ function InvoiceCard(
           {readText && <p class="qcard__read">{readText}</p>}
           {flipped && (
             <CardSendNotes
-              fail={sendFail}
-              note={sendNote}
+              fail={sendFail?.word(lang) ?? null}
+              note={sendNote?.word(lang) ?? null}
             />
           )}
           {/* REQ-167: every card can delete its invoice — asks first */}

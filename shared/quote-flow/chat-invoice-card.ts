@@ -92,8 +92,10 @@ export function invoiceCardSendOffer(
 
 /**
  * REQ-583: the i18n key for an invoice card's status chip — the invoice
- * states (Scheduled, Draft, Paid, Payment claimed, Void); sent and viewed
- * read as the quote card's do.
+ * states (Scheduled, Draft, Paid, Payment claimed, Void).
+ * REQ-712 (cycle 5, m7): sent / pending and viewed / opened read the
+ * INVOICE's words too ("Enviada" / "Vista" on a factura), never the quote's
+ * masculine "Enviado" / "Visto".
  */
 export function invoiceCardChipKey(status: string | undefined | null): string {
   const s = (status ?? "").toLowerCase();
@@ -104,9 +106,14 @@ export function invoiceCardChipKey(status: string | undefined | null): string {
     case "claimed":
     case "void":
       return `invoices.state.${s}`;
+    case "":
+    case "sent":
     case "pending":
-      return "status.sent";
+      return "invoices.state.sent";
+    case "viewed":
+    case "opened":
+      return "invoices.state.viewed";
     default:
-      return cardChipKey(s || "sent");
+      return cardChipKey(s);
   }
 }

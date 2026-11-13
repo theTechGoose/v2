@@ -1,5 +1,10 @@
 import { Injectable } from "#danet/core";
 import { t } from "@core/i18n/mod.ts";
+import {
+  type ChatI18nRef,
+  type ChatI18nVar,
+  renderChatI18n,
+} from "#quote-flow/chat-i18n.ts";
 import { AgentConversationStore } from "@agents/domain/data/agent-conversation-store/mod.ts";
 import { AgentMessageStore } from "@agents/domain/data/agent-message-store/mod.ts";
 import { QuoteStore } from "@paperwork/domain/data/quote-store/mod.ts";
@@ -81,9 +86,12 @@ export class AcceptQuote {
     const invoice = e.invoiceId && this.invoices
       ? await this.invoices.getOwned(e.invoiceId, e.userId).catch(() => null)
       : null;
-    const vars = {
-      name: quote.acceptedName?.trim() || t(lang, "acceptQuote.signed.someone"),
-      quote: quote.number?.trim() || t(lang, "acceptQuote.signed.theQuote"),
+    // REQ-712 (cycle 5, m7): the divider and the preview store their key
+    // and vars (REQ-589's ChatI18nRef) so the island words them in the live
+    // language; the text worded now is only the fallback.
+    const vars: Record<string, ChatI18nVar> = {
+      name: quote.acceptedName?.trim() || { key: "acceptQuote.signed.someone" },
+      quote: quote.number?.trim() || { key: "acceptQuote.signed.theQuote" },
       invoice: invoice?.number ?? "",
       amount: fmtUSD(invoice?.amount),
     };
@@ -92,7 +100,17 @@ export class AcceptQuote {
       : (invoice.installmentTotal ?? 1) > 1
       ? "acceptQuote.signed.deposit"
       : "acceptQuote.signed.invoice";
-    const label = t(lang, key, vars);
+    const i18n: ChatI18nRef = { key, vars };
+    const tr = (
+      l: "en" | "es",
+      k: string,
+      v?: Record<string, string | number>,
+    ) => t(l, k, v);
+    const label = renderChatI18n(i18n, lang, tr);
+    const previewI18n: ChatI18nRef = {
+      key: "acceptQuote.signed.preview",
+      vars: { label: i18n },
+    };
     const out: AgentMessage[] = [];
     for (const conv of convs) {
       const prior = await this.messages.listByConversation(conv.id);
@@ -111,6 +129,7 @@ export class AcceptQuote {
           payload: {
             phase: 4,
             label,
+            i18n,
             quoteId: quote.id,
             signed: true,
             ...(invoice
@@ -122,7 +141,8 @@ export class AcceptQuote {
       await this.conversations.update(conv.id, {
         hasUnreadEvent: true,
         quoteStatus: "accepted",
-        preview: `✓ ${label}`,
+        preview: renderChatI18n(previewI18n, lang, tr),
+        previewI18n,
         ...(invoice
           ? { invoiceId: invoice.id, invoiceStatus: invoice.status }
           : {}),

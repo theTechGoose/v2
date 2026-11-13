@@ -42,9 +42,9 @@ interface Props {
 
 interface SbState {
   counts: Partial<Record<CountKey, number>>;
-  identity: { display: string; biz?: string; initials: string } | null;
-  /** Contractor UI language (roadmap p.13). */
-  lang: "en" | "es";
+  /** REQ-712 (cycle 5, m7): the profile the identity is worded from — at
+   *  render, in the page's language, never the profile's saved one. */
+  profile: CachedDash["profile"];
   /** Super-admin flag — gates the Admin tab. Server-enforced; this only
    *  controls visibility. */
   superAdmin: boolean;
@@ -52,8 +52,7 @@ interface SbState {
 
 const INITIAL_STATE: SbState = {
   counts: {},
-  identity: null,
-  lang: "en",
+  profile: null,
   superAdmin: false,
 };
 
@@ -63,11 +62,8 @@ function projectSidebar(snap: CachedDash | null): SbState {
   const { stats, profile } = snap;
   // REQ-518: actionable counts only — never the customers total
   const counts = stats ? pickSidebarCounts(stats) : {};
-  const lang = profile?.user.language === "es" ? "es" : "en";
   const superAdmin = profile?.user.superAdmin === true;
-  // REQ-423 — the sign-in placeholder is no name: the business stands in, else "Account"
-  const identity = sidebarIdentity(profile, (k, v) => tFor(lang, k, v));
-  return { counts, identity, lang, superAdmin };
+  return { counts, profile, superAdmin };
 }
 
 export default function DashSidebar(
@@ -219,6 +215,9 @@ export default function DashSidebar(
   // Reactive UI language: seeded from the profile cache, flipped instantly
   // when Settings changes it. Reading langSignal here re-renders the rail.
   const lang = langSignal.value;
+  // REQ-423 — the sign-in placeholder is no name: the business stands in, else "Account".
+  // REQ-712 (cycle 5, m7): worded in the page's language, not the profile's.
+  const identity = sidebarIdentity(s.profile, (k, v) => tFor(lang, k, v));
   // REQ-517 — an icon-only row still names itself: a hover tooltip always, and an
   // aria-label while collapsed (the label span is gone or display:none then).
   const named = (label: string) => ({
@@ -420,31 +419,31 @@ export default function DashSidebar(
           )}
 
           <div class="sb__bottom">
-            {s.identity && (
+            {identity && (
               <a
                 href="/settings"
                 class="sb__footer"
                 style="display:flex;align-items:center;gap:10px;padding:10px 8px;margin:0 0 6px;border-radius:10px;text-decoration:none;color:inherit;background:rgba(255,255,255,0.04);"
-                title={s.identity.biz
-                  ? `${s.identity.display} · ${s.identity.biz}`
-                  : s.identity.display}
+                title={identity.biz
+                  ? `${identity.display} · ${identity.biz}`
+                  : identity.display}
               >
                 <span
                   aria-hidden="true"
                   style="flex:0 0 auto;width:32px;height:32px;border-radius:50%;background:var(--brand-green,#519843);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:12px;letter-spacing:0.04em"
                 >
-                  {s.identity.initials}
+                  {identity.initials}
                 </span>
                 <span
                   class="sb__footer-text"
                   style="min-width:0;flex:1;display:flex;flex-direction:column;line-height:1.2;overflow:hidden"
                 >
                   <span style="font-size:13px;font-weight:700;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">
-                    {s.identity.display}
+                    {identity.display}
                   </span>
-                  {s.identity.biz && (
+                  {identity.biz && (
                     <span style="font-size:11px;color:rgba(255,255,255,0.6);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">
-                      {s.identity.biz}
+                      {identity.biz}
                     </span>
                   )}
                 </span>
