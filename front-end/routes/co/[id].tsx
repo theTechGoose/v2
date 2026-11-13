@@ -15,6 +15,7 @@ import { docHeadline } from "../../../shared/documents/linked-view.ts";
 import {
   changeOrderChangeLine,
   type ChangeOrderChanges,
+  changeOrderIntro,
 } from "../../../shared/quote-flow/change-order-view.ts";
 
 interface ChangeOrderPublic {
@@ -89,6 +90,8 @@ export default define.page(async function PublicChangeOrder(ctx) {
   const changedLine = co?.changesFromPrevious
     ? changeOrderChangeLine(co.changesFromPrevious, lang)
     : "";
+  // REQ-689 (demo p5): pending asks; approved/declined say what happened.
+  const intro = co ? changeOrderIntro(co, lang, money) : undefined;
 
   return (
     <>
@@ -215,8 +218,15 @@ export default define.page(async function PublicChangeOrder(ctx) {
                       </div>
                     )
                     : null}
-                  <p style={`margin:10px 0 0;color:${MUTED};font-size:14px`}>
-                    {tFor(lang, "changeOrderPublic.intro")}
+                  {
+                    /* REQ-689 (demo p5): the intro follows the status — a
+                      decided order never asks to be approved. */
+                  }
+                  <p
+                    data-cy="co-intro"
+                    style={`margin:10px 0 0;color:${MUTED};font-size:14px`}
+                  >
+                    {intro && tFor(lang, intro.key, intro.vars)}
                   </p>
 
                   <section
