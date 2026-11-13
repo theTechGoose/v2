@@ -59,3 +59,13 @@ for (const [name, fn] of [["quote PDF", quotePdf], ["invoice PDF", invoicePdf]] 
     assertEquals(fn("Deposit 30% + balance", "en"), "Deposit 30% + balance");
   });
 }
+
+// REQ-665 (demo-loop cycle 5, m47): the custom payment picker stores a worded
+// split in English ("50% upfront, 50% on completion"); a Spanish PDF words it.
+for (const [name, fn] of [["quote PDF", quotePdf], ["invoice PDF", invoicePdf]] as const) {
+  Deno.test(`REQ-665 ${name}: a worded split localizes to Spanish`, () => {
+    assertEquals(fn("50% upfront, 50% on completion", "es"), "50% por adelantado, 50% al terminar");
+    assertEquals(fn("30% / 40% / 30%", "es"), "30% / 40% / 30%");
+    assertEquals(fn("50% upfront, 50% on completion", "en"), "50% upfront, 50% on completion");
+  });
+}

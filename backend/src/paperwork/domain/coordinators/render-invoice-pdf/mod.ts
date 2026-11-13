@@ -6,7 +6,7 @@ import { localizeDepositTerm } from "#quote-flow/deposit-term.ts"; // REQ-678
 import type { Quote, QuoteTerm } from "@paperwork/dto/quote.ts";
 import { InvoiceStore } from "@paperwork/domain/data/invoice-store/mod.ts";
 import { isAccepted } from "#quote-flow/quote-status.ts";
-import { isTbdTermValue } from "#quote-flow/terms-i18n.ts";
+import { isDueNowTermValue, isTbdTermValue } from "#quote-flow/terms-i18n.ts";
 import { invoiceTerms } from "#quote-flow/invoice-terms.ts";
 import { formatTermDate, termDateIso } from "#quote-flow/format-helpers.ts";
 import { QuoteStore } from "@paperwork/domain/data/quote-store/mod.ts";
@@ -976,7 +976,12 @@ export function localizeTermValue(value: string, lang: "en" | "es"): string {
     .replace(/\bweeks\b/gi, "semanas").replace(/\bweek\b/gi, "semana")
     // REQ-343: service-trade durations ("2 hours", "4 hours").
     .replace(/\bhours\b/gi, "horas").replace(/\bhour\b/gi, "hora")
-    .replace(/\bdays\b/gi, "días").replace(/\bday\b/gi, "día");
+    .replace(/\bdays\b/gi, "días").replace(/\bday\b/gi, "día")
+    // REQ-665 (m47): the custom picker's worded two-payment split.
+    .replace(
+      /^(\d+(?:\.\d+)?)% upfront, (\d+(?:\.\d+)?)% on completion$/i,
+      "$1% por adelantado, $2% al terminar",
+    );
 }
 
 function computeMilestones(
@@ -1003,7 +1008,7 @@ function computeMilestones(
     full: { label: L.final, when: L.onCompletion },
   };
   const term = termValue(terms, "payment_terms");
-  const dueNow = /\bdue now\b/i.test(term ?? "");
+  const dueNow = isDueNowTermValue(term);
   return computePaymentSplit(term, total).map((p) => ({
     ...roleLabel[p.role],
     ...(dueNow && p.role === "full" ? { when: L.onSigning } : {}),

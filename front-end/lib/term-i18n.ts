@@ -78,5 +78,10 @@ export function localizeTermValue(value: string, lang: Lang): string {
     .replace(/\bweeks\b/gi, "semanas").replace(/\bweek\b/gi, "semana")
     // REQ-343: service-trade durations ("2 hours", "4 hours").
     .replace(/\bhours\b/gi, "horas").replace(/\bhour\b/gi, "hora")
-    .replace(/\bdays\b/gi, "días").replace(/\bday\b/gi, "día");
+    .replace(/\bdays\b/gi, "días").replace(/\bday\b/gi, "día")
+    // REQ-665 (m47): the custom picker's worded two-payment split.
+    .replace(
+      /^(\d+(?:\.\d+)?)% upfront, (\d+(?:\.\d+)?)% on completion$/i,
+      "$1% por adelantado, $2% al terminar",
+    );
 }
