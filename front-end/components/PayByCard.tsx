@@ -7,6 +7,8 @@
  * Without either, the customer sees no card button (never a dead end) and the business's own
  * preview says how to set it up.
  *
+ * REQ-808 — the owner's "set up card payments" hint lands on Settings' card payments section.
+ *
  * REQ-803 — the business's own Square: the same button in the same place, an island that asks
  * the server for a Square checkout for the balance and goes there ("Secure checkout by Square").
  */
@@ -39,7 +41,7 @@ export default function PayByCard(
       >
         {tFor(lang, "payByCard.setup")}{" "}
         <a
-          href="/settings#payments"
+          href="/settings#card-payments"
           data-cy="pay-by-card-setup-link"
           style={`color:${TEAL};font-weight:700;text-decoration:underline`}
         >

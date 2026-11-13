@@ -77,7 +77,19 @@ function announceCardProvider() {
 import {
   checkCardPayUrl,
   checkPayLinks,
-} from "../../shared/payments/pay-links.ts"; // REQ-630, REQ-782
+  hasCardPayLink,
+  projectPayMethods,
+} from "../../shared/payments/pay-links.ts"; // REQ-630, REQ-782, REQ-808
+import {
+  CARD_SECTION_ANCHOR,
+  CARD_TAB_ANCHOR,
+  CARD_TABS,
+  type CardTab,
+  cardTabAfterKey,
+  cardTabOfHash,
+  customButtonNote,
+  openingCardTab,
+} from "../lib/card-pay-tabs.ts"; // REQ-808
 import { ApiError } from "../lib/api.ts";
 import { fmtPhone } from "../lib/format.ts";
 import { TransferAccount } from "../components/TransferAccount.tsx"; // REQ-220
@@ -367,6 +379,8 @@ function EditPanel(
     savedLabel = tFor("en", "settings.saved"),
     dataCy,
     id,
+    embedded,
+    subtitle,
   }: {
     title: string;
     children: ComponentChildren;
@@ -378,8 +392,51 @@ function EditPanel(
     dataCy?: string;
     /** REQ-513: the section's anchor, the target of a setup-checklist deep link */
     id?: string;
+    /** REQ-808: drawn inside a tab of another section — no panel box, no own title */
+    embedded?: boolean;
+    /** REQ-808: embedded, but still headed by its title (a sub-heading in the tab) */
+    subtitle?: boolean;
   },
 ) {
+  if (embedded) {
+    return (
+      <div data-cy={dataCy} id={id}>
+        {subtitle
+          ? (
+            <h4 style="margin:0 0 8px;font-size:14px;font-weight:800;color:var(--fg)">
+              {title}
+            </h4>
+          )
+          : null}
+        {busy || saved
+          ? (
+            <div style="display:flex;justify-content:flex-end;margin:-4px 0 6px">
+              {busy
+                ? (
+                  <span style="font-size:11.5px;color:var(--fg-muted)">
+                    {saving}
+                  </span>
+                )
+                : (
+                  <span style="font-size:11.5px;color:var(--brand-green,#519843);display:inline-flex;align-items:center;gap:4px">
+                    {savedLabel}
+                    <Icon name="check" size={12} stroke-width={3} />
+                  </span>
+                )}
+            </div>
+          )
+          : null}
+        {children}
+        {err
+          ? (
+            <div style="margin-top:10px;color:#a83b3b;font-size:12.5px">
+              {err}
+            </div>
+          )
+          : null}
+      </div>
+    );
+  }
   return (
     <div class="panel" style="padding:18px 20px" data-cy={dataCy} id={id}>
       <div
@@ -1518,8 +1575,12 @@ function PaymentsEditCard(
       const st = cur[r.id];
       const entry: Record<string, unknown> = { enabled: st.enabled };
       if (r.handleField) entry[r.handleField] = st.value.trim();
-      // REQ-782 — the card pay link ("Pay by card" on the invoice opens it)
-      if (r.id === "card") entry.url = (st.url ?? "").trim();
+      // REQ-782 — the card pay link: REQ-808 edits it in Card payments → Custom button, so
+      // this card keeps whatever is stored (never a stale copy of its own)
+      if (r.id === "card") {
+        const storedUrl = (apm as { card?: { url?: string } }).card?.url;
+        if (storedUrl !== undefined) entry.url = storedUrl;
+      }
       apmPatch[r.id] = entry;
     }
     return apmPatch;
@@ -1529,7 +1590,6 @@ function PaymentsEditCard(
    *  for a SILENT instant-save (incomplete rows wait for the explicit Save,
    *  which surfaces the validation copy). */
   function autosaveReady(cur: Record<string, PayState>): boolean {
-    if (!checkCardPayUrl(cur.card?.url ?? "").ok) return false; // REQ-782
     return PAYMENT_METHOD_CATALOG.every((r) => {
       const st = cur[r.id];
       if (!st.enabled || r.handleField === null || r.optional) return true;
@@ -1579,11 +1639,6 @@ function PaymentsEditCard(
         setErr(t.handleMismatch(label));
         return;
       }
-    }
-    // REQ-782 — the card pay link is https only
-    if (rows.card?.enabled && !checkCardPayUrl(rows.card.url ?? "").ok) {
-      setErr(tFor(lang, "settings.pay.cardUrlErr"));
-      return;
     }
     setBusy(true);
     setErr(null);
@@ -1699,40 +1754,22 @@ function PaymentsEditCard(
                 </div>
               )}
               {
-                /* REQ-782 — "Card payments should be a link to a separate portal": the
-                business's own card payment page; "Pay by card" on the invoice opens it */
+                /* REQ-808 — the card payment link (REQ-782) moved to Card payments → Custom
+                button; the card row says where it went */
               }
               {st.enabled && r.id === "card" && (
-                <label style="display:block;margin-top:10px">
-                  <span style={labelStyle}>
-                    {tFor(lang, "settings.pay.cardUrl")}
-                  </span>
-                  <input
-                    type="url"
-                    inputMode="url"
-                    data-cy="pay-card-url"
-                    style={`${inputStyle}${
-                      checkCardPayUrl(st.url ?? "").ok
-                        ? ""
-                        : ";border-color:#a83b3b"
-                    }`}
-                    value={st.url ?? ""}
-                    placeholder={tFor(lang, "settings.pay.cardUrlPh")}
-                    onInput={(e) =>
-                      patchRow(r.id, {
-                        url: (e.target as HTMLInputElement).value,
-                      })}
-                    onBlur={() => autosave(rowsRef.current)}
-                  />
-                  <span
-                    data-cy="pay-card-url-hint"
-                    style="display:block;margin-top:6px;font-size:12px;line-height:1.5;color:var(--fg-muted, #6b7560)"
+                <p
+                  data-cy="pay-card-url-moved"
+                  style="margin:10px 0 0;font-size:12.5px;line-height:1.5;color:var(--fg-muted, #6b7560)"
+                >
+                  {tFor(lang, "settings.cardTabs.linkMoved")}{" "}
+                  <a
+                    href={`#${CARD_TAB_ANCHOR.link}`}
+                    style="color:var(--brand-teal,#144852);font-weight:700"
                   >
-                    {checkCardPayUrl(st.url ?? "").ok
-                      ? tFor(lang, "settings.pay.cardUrlHint")
-                      : tFor(lang, "settings.pay.cardUrlErr")}
-                  </span>
-                </label>
+                    {tFor(lang, "settings.cardTabs.linkMovedCta")}
+                  </a>
+                </p>
               )}
             </div>
           );
@@ -1752,9 +1789,11 @@ function PaymentsEditCard(
  *  invoice page and a row in the invoice email. Saves the whole acceptedPaymentMethods object with
  *  the new list, so the methods above are untouched. */
 function PayLinksCard(
-  { snapshot, onSaved }: {
+  { snapshot, onSaved, embedded }: {
     snapshot: ProfileSnapshot;
     onSaved: (partial: Partial<ProfileSnapshot>) => void;
+    /** REQ-808: drawn in the Custom button tab of the card payments section */
+    embedded?: boolean;
   },
 ) {
   const lang: Lang = langSignal.value === "es" ? "es" : "en";
@@ -1827,6 +1866,8 @@ function PayLinksCard(
       saving={tFor(lang, "settings.payLinks.saving")}
       savedLabel={tFor(lang, "settings.saved")}
       dataCy="pay-links-card"
+      embedded={embedded}
+      subtitle={embedded}
     >
       <p style="margin:0 0 14px;font-size:13px;color:var(--fg-muted, #6b7560)">
         {tFor(lang, "settings.payLinks.intro")}
@@ -1922,9 +1963,23 @@ function PayLinksCard(
  *  connection back (account, mode, the masked secret — never the secret), previews the merchant
  *  the customer sees on the card page (the business name and its logo), and says in one line
  *  that the money goes straight to the business's Stripe, never through DocuMonster. */
-function CardPaymentsCard({ snapshot }: { snapshot: ProfileSnapshot }) {
+function CardPaymentsCard(
+  { snapshot, embedded, onStatus, squareOn }: {
+    snapshot: ProfileSnapshot;
+    /** REQ-808: drawn in the Stripe tab of the card payments section */
+    embedded?: boolean;
+    /** REQ-808: tells the tabs whether Stripe is connected */
+    onStatus?: (connected: boolean) => void;
+    /** REQ-808: Square is connected — one provider at a time, say so instead of the form */
+    squareOn?: boolean;
+  },
+) {
   const lang: Lang = langSignal.value === "es" ? "es" : "en";
-  const [status, setStatus] = useState<StripeStatus | null>(null);
+  const [status, setStatusRaw] = useState<StripeStatus | null>(null);
+  const setStatus = (st: StripeStatus | null) => {
+    setStatusRaw(st);
+    onStatus?.(st?.connected === true); // REQ-808 (an unreadable status counts as off)
+  };
   const [pk, setPk] = useState("");
   const [sk, setSk] = useState("");
   const [busy, setBusy] = useState(false);
@@ -2024,6 +2079,7 @@ function CardPaymentsCard({ snapshot }: { snapshot: ProfileSnapshot }) {
       saving={tFor(lang, "settings.stripe.connecting")}
       savedLabel={tFor(lang, "settings.saved")}
       dataCy="stripe-card"
+      embedded={embedded}
     >
       <p style="margin:0 0 10px;font-size:13px;color:var(--fg-muted, #6b7560)">
         {tFor(lang, "settings.stripe.intro")}
@@ -2090,6 +2146,15 @@ function CardPaymentsCard({ snapshot }: { snapshot: ProfileSnapshot }) {
               </button>
             </div>
           </div>
+        )
+        : squareOn
+        ? (
+          <p
+            data-cy="stripe-square-on"
+            style="margin:0;font-size:13px;color:var(--fg);background:rgba(20,72,82,.05);border-radius:10px;padding:12px 14px"
+          >
+            {tFor(lang, "settings.stripe.squareOn")}
+          </p>
         )
         : (
           <div style="display:grid;gap:10px">
@@ -2183,9 +2248,21 @@ function CardPaymentsCard({ snapshot }: { snapshot: ProfileSnapshot }) {
  *  masked token — never the token), the same merchant preview as Stripe's, and the one line that
  *  the money goes straight to the business's Square. One card provider at a time: while Stripe
  *  is connected the form is put away with a note. */
-function SquarePaymentsCard({ snapshot }: { snapshot: ProfileSnapshot }) {
+function SquarePaymentsCard(
+  { snapshot, embedded, onStatus }: {
+    snapshot: ProfileSnapshot;
+    /** REQ-808: drawn in the Square tab of the card payments section */
+    embedded?: boolean;
+    /** REQ-808: tells the tabs whether Square is connected */
+    onStatus?: (connected: boolean) => void;
+  },
+) {
   const lang: Lang = langSignal.value === "es" ? "es" : "en";
-  const [status, setStatus] = useState<SquareStatus | null>(null);
+  const [status, setStatusRaw] = useState<SquareStatus | null>(null);
+  const setStatus = (st: SquareStatus | null) => {
+    setStatusRaw(st);
+    onStatus?.(st?.connected === true); // REQ-808 (an unreadable status counts as off)
+  };
   const [token, setToken] = useState("");
   const [location, setLocation] = useState("");
   const [busy, setBusy] = useState(false);
@@ -2287,6 +2364,7 @@ function SquarePaymentsCard({ snapshot }: { snapshot: ProfileSnapshot }) {
       saving={tFor(lang, "settings.square.connecting")}
       savedLabel={tFor(lang, "settings.saved")}
       dataCy="square-card"
+      embedded={embedded}
     >
       <p style="margin:0 0 10px;font-size:13px;color:var(--fg-muted, #6b7560)">
         {tFor(lang, "settings.square.intro")}
@@ -2446,6 +2524,336 @@ function SquarePaymentsCard({ snapshot }: { snapshot: ProfileSnapshot }) {
         </div>
       </div>
     </EditPanel>
+  );
+}
+
+/** CardLinkPanel (REQ-808) — the "Custom button" tab: the business's own card payment page
+ *  (REQ-782's card payment link, moved here from the Payments card's Credit card row). Saving a
+ *  link turns Credit card on (the link rides on it, as it always did); Remove clears the link.
+ *  https only (REQ-782). Saves on blur when valid, and with its Save button. While a gateway is
+ *  connected, says the customer pays through it and the button waits (cardPayWay's order). */
+function CardLinkPanel(
+  { snapshot, onSaved, gateway }: {
+    snapshot: ProfileSnapshot;
+    onSaved: (partial: Partial<ProfileSnapshot>) => void;
+    gateway: { square: boolean; stripe: boolean };
+  },
+) {
+  const lang: Lang = langSignal.value === "es" ? "es" : "en";
+  const apm = (snapshot.identity?.acceptedPaymentMethods ?? {}) as Record<
+    string,
+    Record<string, unknown> | undefined
+  >;
+  const stored = typeof apm.card?.url === "string" ? apm.card.url : "";
+  const [url, setUrl] = useState(stored);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const [saved, setSaved] = useState(false);
+  const ok = checkCardPayUrl(url).ok;
+  const note = customButtonNote(gateway);
+
+  async function persist(next: string) {
+    const checked = checkCardPayUrl(next);
+    if (!checked.ok) {
+      setErr(tFor(lang, "settings.pay.cardUrlErr"));
+      return;
+    }
+    setBusy(true);
+    setErr(null);
+    setSaved(false);
+    try {
+      const card = { ...(apm.card ?? {}) } as Record<string, unknown>;
+      card.url = checked.url ?? "";
+      if (checked.url) card.enabled = true;
+      const id = await profileClient.updateIdentity({
+        acceptedPaymentMethods: {
+          ...(snapshot.identity?.acceptedPaymentMethods ?? {}),
+          card,
+        } as never,
+      });
+      onSaved({
+        identity: {
+          ...(snapshot.identity ?? {} as never),
+          ...id,
+        } as typeof snapshot.identity,
+      });
+      setUrl(checked.url ?? "");
+      setSaved(true);
+    } catch (e) {
+      setErr(
+        e instanceof Error ? e.message : tFor(lang, "settings.pay.cardUrlErr"),
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <EditPanel
+      title={tFor(lang, "settings.pay.cardUrl")}
+      busy={busy}
+      err={err}
+      saved={saved}
+      saving={tFor(lang, "settings.saving")}
+      savedLabel={tFor(lang, "settings.saved")}
+      dataCy="card-link-panel"
+      embedded
+      subtitle
+    >
+      <p style="margin:0 0 12px;font-size:13px;color:var(--fg-muted, #6b7560)">
+        {tFor(lang, "settings.cardTabs.linkIntro")}
+      </p>
+      {note
+        ? (
+          <p
+            data-cy="pay-card-link-note"
+            style="margin:0 0 12px;font-size:13px;color:var(--fg);background:rgba(20,72,82,.05);border-radius:10px;padding:12px 14px"
+          >
+            {tFor(
+              lang,
+              note === "behindSquare"
+                ? "settings.cardTabs.linkBehindSquare"
+                : "settings.cardTabs.linkBehindStripe",
+            )}
+          </p>
+        )
+        : null}
+      <label style="display:block">
+        <span style={labelStyle}>{tFor(lang, "settings.pay.cardUrl")}</span>
+        <input
+          type="url"
+          inputMode="url"
+          data-cy="pay-card-url"
+          style={`${inputStyle}${ok ? "" : ";border-color:#a83b3b"}`}
+          value={url}
+          placeholder={tFor(lang, "settings.pay.cardUrlPh")}
+          onInput={(e) => {
+            setSaved(false);
+            setUrl((e.target as HTMLInputElement).value);
+          }}
+          onBlur={() => {
+            if (ok && url.trim() && url.trim() !== stored) persist(url);
+          }}
+        />
+        <span
+          data-cy="pay-card-url-hint"
+          style="display:block;margin-top:6px;font-size:12px;line-height:1.5;color:var(--fg-muted, #6b7560)"
+        >
+          {ok
+            ? tFor(lang, "settings.pay.cardUrlHint")
+            : tFor(lang, "settings.pay.cardUrlErr")}
+        </span>
+      </label>
+      <div style="margin-top:14px;display:flex;gap:10px;flex-wrap:wrap">
+        <button
+          type="button"
+          style={btnPrimary}
+          disabled={busy || !url.trim() || !ok}
+          data-cy="pay-card-url-save"
+          onClick={() => persist(url)}
+        >
+          {tFor(lang, "settings.cardTabs.linkSave")}
+        </button>
+        {stored
+          ? (
+            <button
+              type="button"
+              style={btnSecondary}
+              disabled={busy}
+              data-cy="pay-card-url-remove"
+              onClick={() => persist("")}
+            >
+              {tFor(lang, "settings.cardTabs.linkRemove")}
+            </button>
+          )
+          : null}
+      </div>
+    </EditPanel>
+  );
+}
+
+/** CardPaymentsTabs (REQ-808) — Raphael: "make 3 tabs, one for square, one for stripe and one
+ *  for custom button." One section, three WAI-ARIA tabs (tablist / tab / tabpanel, aria-selected,
+ *  roving tabindex, arrows + Home / End). Each panel is that provider's existing setup — the
+ *  Square card (REQ-803), the Stripe card (REQ-212), the card payment link (REQ-782) — all
+ *  mounted, the inactive ones hidden. The Custom button tab also holds the "Other payment links"
+ *  card (REQ-630), moved from its own place under the Stripe card. The tab that opens is the one the customer pays through
+ *  (Stripe, else Square, else the custom button; Square when none) once both gateways have
+ *  answered; a deep link (`#card-square|stripe|link`) opens its tab. Each tab is marked
+ *  "Connected" / "On" when that one is set up. */
+function CardPaymentsTabs(
+  { snapshot, onSaved }: {
+    snapshot: ProfileSnapshot;
+    onSaved: (partial: Partial<ProfileSnapshot>) => void;
+  },
+) {
+  const lang: Lang = langSignal.value === "es" ? "es" : "en";
+  const [squareOn, setSquareOn] = useState<boolean | undefined>(undefined);
+  const [stripeOn, setStripeOn] = useState<boolean | undefined>(undefined);
+  const [picked, setPicked] = useState<CardTab | null>(() =>
+    typeof location === "undefined" ? null : cardTabOfHash(location.hash)
+  );
+  const tabRefs = useRef<Record<string, HTMLButtonElement | null>>({});
+  // the Custom button tab is set up when it has a card payment link or any payment link
+  const projected = projectPayMethods(
+    snapshot.identity?.acceptedPaymentMethods,
+  );
+  const linkOn = hasCardPayLink(projected) ||
+    projected.some((m) => m.method === "link");
+  const ready = squareOn !== undefined && stripeOn !== undefined;
+  const active: CardTab = picked ??
+    openingCardTab({
+      square: !!squareOn,
+      stripe: !!stripeOn,
+      link: linkOn,
+    });
+
+  // the opening tab is decided once, when both gateways have answered — connecting or
+  // disconnecting afterwards never moves the person off the tab they are on
+  useEffect(() => {
+    if (ready && picked === null) setPicked(active);
+  }, [ready]);
+
+  // a same-page link to a tab (the Payments card's "Custom button" pointer) selects it
+  useEffect(() => {
+    const onHash = () => {
+      const t = cardTabOfHash(location.hash);
+      if (!t) return;
+      setPicked(t);
+      tabRefs.current[t]?.scrollIntoView({ block: "center" });
+      tabRefs.current[t]?.focus({ preventScroll: true });
+    };
+    globalThis.addEventListener?.("hashchange", onHash);
+    return () => globalThis.removeEventListener?.("hashchange", onHash);
+  }, []);
+
+  function choose(t: CardTab, focus = false) {
+    setPicked(t);
+    if (focus) tabRefs.current[t]?.focus();
+  }
+
+  const on: Record<CardTab, boolean> = {
+    square: !!squareOn,
+    stripe: !!stripeOn,
+    link: linkOn,
+  };
+
+  return (
+    <div
+      class="panel"
+      style="padding:18px 20px"
+      data-cy="card-payments"
+      id={CARD_SECTION_ANCHOR}
+    >
+      <div class="panel__head" style="margin-bottom:6px">
+        <h3 class="panel__title">{tFor(lang, "settings.cardTabs.title")}</h3>
+      </div>
+      <p style="margin:0 0 12px;font-size:13px;color:var(--fg-muted, #6b7560)">
+        {tFor(lang, "settings.cardTabs.intro")}
+      </p>
+      <div
+        role="tablist"
+        aria-label={tFor(lang, "settings.cardTabs.title")}
+        aria-busy={!ready}
+        style="display:flex;gap:4px;border-bottom:1px solid var(--border,#d8dcd5);margin-bottom:14px;overflow-x:auto"
+      >
+        {CARD_TABS.map((t) => {
+          const sel = t === active;
+          return (
+            <button
+              key={t}
+              type="button"
+              role="tab"
+              id={CARD_TAB_ANCHOR[t]}
+              data-cy={`card-tab-${t}`}
+              aria-selected={sel}
+              aria-controls={`${CARD_TAB_ANCHOR[t]}-panel`}
+              tabIndex={sel ? 0 : -1}
+              ref={(el) => {
+                tabRefs.current[t] = el;
+              }}
+              onClick={() => choose(t)}
+              onKeyDown={(e) => {
+                const next = cardTabAfterKey(t, e.key);
+                if (!next) return;
+                e.preventDefault();
+                choose(next, true);
+              }}
+              style={`display:inline-flex;align-items:center;gap:6px;white-space:nowrap;background:none;border:0;border-bottom:3px solid ${
+                sel ? "var(--brand-teal,#144852)" : "transparent"
+              };margin-bottom:-1px;padding:9px 12px;font:inherit;font-size:14px;font-weight:${
+                sel ? 800 : 600
+              };color:${
+                sel ? "var(--brand-teal,#144852)" : "var(--fg-muted,#6b7560)"
+              };cursor:pointer`}
+            >
+              {tFor(lang, `settings.cardTabs.${t}`)}
+              {on[t]
+                ? (
+                  <span
+                    data-cy="card-tab-mark"
+                    style="display:inline-flex;align-items:center;gap:3px;font-size:10.5px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:#2f6b27;background:rgba(81,152,67,.12);border-radius:999px;padding:2px 7px"
+                  >
+                    <Icon name="check" size={10} stroke-width={3} />
+                    {tFor(
+                      lang,
+                      t === "link"
+                        ? "settings.cardTabs.on"
+                        : "settings.cardTabs.connected",
+                    )}
+                  </span>
+                )
+                : null}
+            </button>
+          );
+        })}
+      </div>
+      {CARD_TABS.map((t) => (
+        <div
+          key={t}
+          role="tabpanel"
+          id={`${CARD_TAB_ANCHOR[t]}-panel`}
+          aria-labelledby={CARD_TAB_ANCHOR[t]}
+          tabIndex={0}
+          hidden={!ready || t !== active}
+        >
+          {t === "square"
+            ? (
+              <SquarePaymentsCard
+                snapshot={snapshot}
+                embedded
+                onStatus={setSquareOn}
+              />
+            )
+            : t === "stripe"
+            ? (
+              <CardPaymentsCard
+                snapshot={snapshot}
+                embedded
+                onStatus={setStripeOn}
+                squareOn={!!squareOn}
+              />
+            )
+            : (
+              <>
+                <CardLinkPanel
+                  snapshot={snapshot}
+                  onSaved={onSaved}
+                  gateway={{ square: !!squareOn, stripe: !!stripeOn }}
+                />
+                {/* REQ-808 — the "Other payment links" card (REQ-630), moved into this tab */}
+                <div style="margin-top:18px;padding-top:16px;border-top:1px solid var(--border,#d8dcd5)">
+                  <PayLinksCard
+                    snapshot={snapshot}
+                    onSaved={onSaved}
+                    embedded
+                  />
+                </div>
+              </>
+            )}
+        </div>
+      ))}
+    </div>
   );
 }
 
@@ -3475,10 +3883,8 @@ export default function SettingsPage() {
           <NumberingCard refreshKey={numberingKey} />
 
           <PaymentsEditCard snapshot={p} onSaved={onSaved} />
-          <CardPaymentsCard snapshot={p} />
-          {/* REQ-803 — or the business's own Square */}
-          <SquarePaymentsCard snapshot={p} />
-          <PayLinksCard snapshot={p} onSaved={onSaved} />
+          {/* REQ-808 — Square | Stripe | Custom button, one section */}
+          <CardPaymentsTabs snapshot={p} onSaved={onSaved} />
 
           {/* REQ-623 (demo cycle 4, M26): automatic payment reminders */}
           <RemindersEditCard snapshot={p} onSaved={onSaved} />

@@ -214,7 +214,7 @@ describe("REQ-803 the wiring", () => {
   test("Settings has a Card payments (Square) card next to Stripe's: token, optional location, status with the masked token, disconnect, the merchant line", () => {
     const s = read("front-end/islands/SettingsPage.tsx");
     expect(s).toMatch(/function SquarePaymentsCard\(/);
-    expect(s).toMatch(/<SquarePaymentsCard /);
+    expect(s).toMatch(/<SquarePaymentsCard\b/);
     // the card itself is an EditPanel (its `dataCy` prop)
     expect(s).toContain(`dataCy="square-card"`);
     for (

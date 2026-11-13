@@ -111,8 +111,13 @@ describe("REQ-212 the settings card", () => {
   const page = read("front-end/islands/SettingsPage.tsx");
   test("the card is on the page, under the manual methods", () => {
     expect(page).toMatch(/function CardPaymentsCard\(/);
+    // REQ-808 amendment: under the manual methods comes the card payments section, whose
+    // Stripe tab holds this card
     expect(page).toMatch(
-      /<PaymentsEditCard snapshot=\{p\} onSaved=\{onSaved\} \/>\s*<CardPaymentsCard snapshot=\{p\} \/>/,
+      /<PaymentsEditCard snapshot=\{p\} onSaved=\{onSaved\} \/>\s*\{[^}]*\}\s*<CardPaymentsTabs /,
+    );
+    expect(page).toMatch(
+      /<CardPaymentsCard\s+snapshot=\{snapshot\}\s+embedded/,
     );
   });
   test("it connects with both keys, shows the account, the mode and the masked secret, and disconnects", () => {

@@ -253,7 +253,8 @@ describe("REQ-630 wiring", () => {
   test("settings carries the payment-links card", () => {
     const settings = read("front-end/islands/SettingsPage.tsx");
     expect(settings).toMatch(/function PayLinksCard/);
-    expect(settings).toMatch(/<PayLinksCard /);
+    // REQ-808 amendment: mounted inside the Custom button tab
+    expect(settings).toMatch(/<PayLinksCard\b[^>]*embedded/);
     expect(settings).toMatch(/checkPayLinks\(/);
     expect(settings).toMatch(/dataCy="pay-links-card"/);
   });

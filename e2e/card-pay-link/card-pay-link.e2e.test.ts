@@ -106,8 +106,8 @@ Deno.test("REQ-782: Settings takes the card payment link; /i/:id shows 'Pay by c
       await page.locator("[data-cy='pay-by-card-setup-link']").getAttribute(
         "href",
       ),
-      "/settings#payments",
-      "the hint links to Settings → Payments",
+      "/settings#card-payments",
+      "the hint links to Settings → Card payments (REQ-808)",
     );
     // … and the customer sees no card button (no dead end)
     const cookies = await page.context().cookies();
@@ -126,12 +126,9 @@ Deno.test("REQ-782: Settings takes the card payment link; /i/:id shows 'Pay by c
     );
     await page.context().addCookies(cookies);
 
-    // 2. Settings → Payments: Card on, the link — http:// is refused, https is saved
-    await page.goto("/settings");
-    const cardRow = page.locator("[data-pay-method='card']");
-    await cardRow.waitFor({ timeout: 15_000 });
-    await cardRow.scrollIntoViewIfNeeded();
-    await cardRow.locator("input[type='checkbox']").check();
+    // 2. Settings → Card payments → Custom button (REQ-808: the link moved to its own tab;
+    // the hint's deep link lands on the section) — http:// is refused, https is saved
+    await page.goto("/settings#card-link");
     const urlInput = page.locator("[data-cy='pay-card-url']");
     await urlInput.waitFor({ timeout: 15_000 });
     await expect.see("Customers tap “Pay by card” on your invoice");
@@ -147,7 +144,7 @@ Deno.test("REQ-782: Settings takes the card payment link; /i/:id shows 'Pay by c
       if (stored !== PORTAL) await page.waitForTimeout(250);
     }
     expect.eq(stored, PORTAL, "the card link is saved");
-    // it survives a reload
+    // it survives a reload (the custom tab, now set, is the one that opens)
     await page.goto("/settings");
     await page.locator("[data-cy='pay-card-url']").waitFor({ timeout: 15_000 });
     expect.eq(
