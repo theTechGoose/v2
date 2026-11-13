@@ -11,6 +11,10 @@
  *   2. m2 / c4-S12b — the presenter rests on a button of the customer's quote page: his tag hides
  *      no text and no other control of the page under it (hit-tested at its sample points
  *      against the laid-out text boxes).
+ *
+ * REQ-761 (demo c4-S12b re-opened, cycle 5v2): a RESTING arrow is see-through (svg opacity
+ * ≥ .7, body ≤ .5 of its colour) so the label under it reads — story 1's arrow pixel is now his
+ * colour blended over the scrim, story 2 checks the resting arrow is not solid.
  */
 import { story, type StoryTools } from "#shots";
 import { answerQuestions } from "../_shared/onboarding-answers.ts";
@@ -429,14 +433,45 @@ Deno.test("REQ-633 (demo m35, cycle 5): over the dashboard's coach mark the pres
       );
       expect(seen.compact, `the resting tag is compact: ${saw}`);
       expect.eq(seen.tagText, "A", "the resting tag shows Alex's initial");
-      // pixels: the arrow's fill (inside its body, 6.5 × 13 px from the tip) is Alex's colour
+      // pixels: the arrow's fill (inside its body, 6.5 × 13 px from the tip). REQ-761 (demo
+      // c4-S12b, cycle 5v2): a RESTING arrow is see-through — its body is Alex's colour blended
+      // at (svg opacity × fill-opacity) over what is under it (the scrim, sampled with the arrow
+      // hidden), never the scrim alone and never a solid block hiding the page
       const colour = rgbOf(seen.fill);
       const arrowPx = await pixel(userPage, tip.x + 6.5, tip.y + 13);
+      const alpha = await userPage.evaluate(() => {
+        const svg = Array.from(
+          document.querySelectorAll("[data-cy='demo-pointer']"),
+        ).find((e) => e.getAttribute("data-presenter") === "Alex")
+          ?.querySelector("svg") as SVGElement;
+        const body = svg.querySelectorAll("path")[1];
+        const a = Number(getComputedStyle(svg).opacity) *
+          Number(body.getAttribute("fill-opacity") ?? 1);
+        svg.style.visibility = "hidden";
+        return a;
+      });
+      const underPx = await pixel(userPage, tip.x + 6.5, tip.y + 13);
+      await userPage.evaluate(() => {
+        const svg = Array.from(
+          document.querySelectorAll("[data-cy='demo-pointer']"),
+        ).find((e) => e.getAttribute("data-presenter") === "Alex")
+          ?.querySelector("svg") as SVGElement;
+        svg.style.visibility = "";
+      });
       expect(
-        near(arrowPx, colour),
+        alpha < 1 && alpha > 0.2,
+        `the resting arrow's body is see-through (alpha ${alpha})`,
+      );
+      const blend = {
+        r: colour.r * alpha + underPx.r * (1 - alpha),
+        g: colour.g * alpha + underPx.g * (1 - alpha),
+        b: colour.b * alpha + underPx.b * (1 - alpha),
+      };
+      expect(
+        near(arrowPx, blend),
         `the arrow's fill pixel ${JSON.stringify(arrowPx)} is Alex's colour ${
           JSON.stringify(colour)
-        } (not darkened by the scrim)`,
+        } at ${alpha} over the scrim ${JSON.stringify(underPx)}`,
       );
       const bg = rgbOf(seen.tagBg);
       const tagPx = await pixel(
@@ -567,6 +602,17 @@ Deno.test("REQ-633 (demo m2 + c4-S12b, cycle 5): the presenter rests on a button
                       }
                     }
                   }
+                }
+              }
+              // REQ-761 (demo c4-S12b, cycle 5v2): at rest the arrow on the button's label is
+              // see-through — not the solid opacity-1 arrow that hid 'TBD''s letters
+              if (phase === "resting") {
+                const svg = el?.querySelector("svg");
+                const body = svg?.querySelectorAll("path")[1];
+                const o = svg ? Number(getComputedStyle(svg).opacity) : 1;
+                const f = Number(body?.getAttribute("fill-opacity") ?? 1);
+                if (!(o < 1 && o >= 0.7 && o * f <= 0.5)) {
+                  return `a solid resting arrow (opacity ${o}, fill ${f})`;
                 }
               }
               return null;

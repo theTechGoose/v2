@@ -243,6 +243,49 @@ export function placeTag(
   el.setAttribute("data-tag-side", at.side);
 }
 
+/** REQ-374 + REQ-761 — the arrow: a white halo under a colour-filled body with a dark outline,
+ *  drawn at `look.arrow` with its body at `look.fill` (see `pointerLook`); a see-through
+ *  (resting) arrow drops its shadow, so the text under it is not hazed */
+export function PointerArrow(
+  { look, color, faded }: {
+    look: { arrow: number; fill?: number };
+    color: string;
+    faded?: boolean;
+  },
+) {
+  return (
+    <svg
+      width="24"
+      height="30"
+      viewBox="0 0 22 28"
+      aria-hidden="true"
+      style={`position:absolute;left:0;top:0;overflow:visible;opacity:${
+        faded ? DRIFT_OPACITY : look.arrow
+      };filter:${
+        // a see-through body would show its own drop shadow as a grey haze over the letters
+        (look.fill ?? 1) < 1
+          ? "none"
+          : "drop-shadow(0 1px 2px rgba(0,0,0,.45))"};transition:opacity .3s`}
+    >
+      <path
+        d={ARROW_PATH}
+        fill="none"
+        stroke="#fff"
+        stroke-width="4"
+        stroke-linejoin="round"
+      />
+      <path
+        d={ARROW_PATH}
+        fill={color}
+        fill-opacity={look.fill ?? 1}
+        stroke="#1a1a1a"
+        stroke-width="1.3"
+        stroke-linejoin="round"
+      />
+    </svg>
+  );
+}
+
 export default function DemoPointer(
   {
     pointer,
@@ -527,30 +570,7 @@ export default function DemoPointer(
                     style={`position:absolute;left:-8px;top:-8px;width:36px;height:36px;border-radius:50%;border:2px dashed ${color};opacity:.7`}
                   />
                 )}
-                <svg
-                  width="24"
-                  height="30"
-                  viewBox="0 0 22 28"
-                  aria-hidden="true"
-                  style={`position:absolute;left:0;top:0;overflow:visible;opacity:${
-                    faded ? DRIFT_OPACITY : look.arrow
-                  };filter:drop-shadow(0 1px 2px rgba(0,0,0,.45))`}
-                >
-                  <path
-                    d={ARROW_PATH}
-                    fill="none"
-                    stroke="#fff"
-                    stroke-width="4"
-                    stroke-linejoin="round"
-                  />
-                  <path
-                    d={ARROW_PATH}
-                    fill={color}
-                    stroke="#1a1a1a"
-                    stroke-width="1.3"
-                    stroke-linejoin="round"
-                  />
-                </svg>
+                <PointerArrow look={look} color={color} faded={faded} />
                 <span
                   ref={tagRef}
                   data-cy="demo-pointer-tag"
