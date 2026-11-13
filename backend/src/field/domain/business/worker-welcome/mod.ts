@@ -21,6 +21,17 @@ export function workerLang(
   return owner.language === "es" ? "es" : "en";
 }
 
+/**
+ * REQ-774 (supersedes REQ-155's "Spanish by default") — a NEW worker's language: the one picked
+ * for them, else the owner's (an English account's worker is English), else English.
+ */
+export function newWorkerLang(
+  picked: Lang | undefined,
+  owner: { language?: string },
+): Lang {
+  return picked ?? (owner.language === "es" ? "es" : "en");
+}
+
 /** REQ-285 — the /worker address a worker is sent: it carries their language, so the screen opens in it */
 export function workerSignInUrl(base: string, lang: Lang): string {
   return `${base}/worker?lang=${lang}`;

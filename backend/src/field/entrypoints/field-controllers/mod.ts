@@ -30,6 +30,7 @@ import { appUrl } from "@users/domain/business/app-url/mod.ts";
 import { secretAllows } from "@users/domain/business/shared-secret/mod.ts";
 import type { User } from "@users/dto/user.ts";
 import {
+  newWorkerLang,
   parseLang,
   workerLang,
   workerSignInUrl,
@@ -268,7 +269,7 @@ export class FieldWorkersController {
       updatedAt: now,
     };
     if (b.role === "foreman") w.role = "foreman";
-    w.language = language ?? "es"; // REQ-155 — Spanish by default
+    w.language = newWorkerLang(language, user); // REQ-774 — the picked one, else the owner's
     await this.workers.put(w);
     // REQ-151 — the welcome text: who added them, the /worker address, the PIN; its failure is logged, never thrown
     const welcome = await welcomeWorker(deps(this), user, w);

@@ -1,6 +1,11 @@
 /** REQ-151 — the welcome text a new worker gets: who added them, where to sign in, their PIN; in the owner's language. */
 import { assert, assertEquals } from "#std/assert";
-import { workerLang, workerSignInUrl, workerWelcome } from "./mod.ts";
+import {
+  newWorkerLang,
+  workerLang,
+  workerSignInUrl,
+  workerWelcome,
+} from "./mod.ts";
 
 Deno.test("REQ-151 workerWelcome — English: the owner, the /worker address and the PIN, on one text", () => {
   const body = workerWelcome("en", {
@@ -52,4 +57,12 @@ Deno.test("REQ-285 workerSignInUrl — the /worker address carries the worker's 
     pin: "4321",
   });
   assert(body.length <= 160, `one SMS segment: ${body.length}`);
+});
+
+Deno.test("REQ-774 newWorkerLang — a new worker gets the language picked for them, else the owner's (never Spanish by default)", () => {
+  assertEquals(newWorkerLang("es", { language: "en" }), "es");
+  assertEquals(newWorkerLang("en", { language: "es" }), "en");
+  assertEquals(newWorkerLang(undefined, { language: "en" }), "en");
+  assertEquals(newWorkerLang(undefined, { language: "es" }), "es");
+  assertEquals(newWorkerLang(undefined, {}), "en");
 });

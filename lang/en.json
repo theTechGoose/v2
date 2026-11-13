@@ -4081,7 +4081,7 @@
   "field.wk.langEs": "Spanish",
   "field.wk.langEn": "English",
   "field.wk.langHint": "The welcome text and anything we send the worker go out in this language.",
-  "field.wk.langNote": "Workers get their texts in Spanish unless you switch the language here.",
+  "field.wk.langNote": "Each worker gets their texts and their sign-in screen in the language picked here.",
   "field.wk.texted": "We texted {name} the sign-in link and their PIN.",
   "field.wk.notTexted": "We couldn't text {name} — share the link and PIN yourself.",
   "field.wk.shareLink": "Sign-in link",

@@ -4080,7 +4080,7 @@
   "field.wk.langEs": "Español",
   "field.wk.langEn": "Inglés",
   "field.wk.langHint": "El texto de bienvenida y todo lo que le mandemos al trabajador va en este idioma.",
-  "field.wk.langNote": "Los trabajadores reciben sus mensajes en español, salvo que cambies el idioma aquí.",
+  "field.wk.langNote": "Cada trabajador recibe sus mensajes y ve su pantalla de entrada en el idioma que elijas aquí.",
   "field.wk.texted": "Le mandamos a {name} el enlace para entrar y su PIN por texto.",
   "field.wk.notTexted": "No pudimos mandarle el texto a {name} — compártele el enlace y el PIN.",
   "field.wk.shareLink": "Enlace para entrar",

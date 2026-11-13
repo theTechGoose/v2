@@ -166,7 +166,7 @@ Deno.test("REQ-138 workers — created without the PIN in the answer; a wrong PI
       id: made.body.id,
       name: "Pedro",
       role: "foreman",
-      language: "es", // REQ-285 — the screen's language (REQ-155: Spanish by default)
+      language: "en", // REQ-285 — the screen's language; REQ-774: none picked → the English owner's
     });
     const W = { cookie: ok.headers.get("set-cookie")!.split(";")[0] };
     assertEquals(
