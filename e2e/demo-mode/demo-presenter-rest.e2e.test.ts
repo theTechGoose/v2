@@ -393,6 +393,39 @@ Deno.test("REQ-393 (demo M8) + REQ-451 (demo M14): the cursor handed over from /
       await page.screenshot({
         path: `${Deno.env.get("SHOTS_DIR") ?? "."}/req-393-off-frame.png`,
       }).catch(() => {});
+      // REQ-635 (demo m37, cycle 5) — the marker says whose it is (his initial on a dot) and
+      // fades out after OFF_MARK_SHOW_MS: not a bare '<' left on every page of the phone
+      const offMark = () =>
+        phone.evaluate(() => {
+          const el = Array.from(
+            document.querySelectorAll("[data-cy='demo-pointer']"),
+          ).find((e) => e.getAttribute("data-presenter") === "Hans");
+          const m = el?.querySelector("[data-cy='demo-pointer-off-mark']");
+          if (!m) return null;
+          return {
+            initial: m.querySelector("[data-cy='demo-pointer-off-initial']")
+              ?.textContent ?? null,
+            opacity: Number(getComputedStyle(m).opacity),
+          };
+        });
+      const named = await offMark();
+      expect(
+        named?.initial === "H",
+        `REQ-635: the off marker carries Hans's initial (${
+          JSON.stringify(named)
+        })`,
+      );
+      await until(
+        "REQ-635: the off marker fades out a few seconds after it showed",
+        async () => {
+          const m = await offMark();
+          if (!m || m.opacity > 0.01) {
+            throw new Error(`marker ${JSON.stringify(m)}`);
+          }
+          return true;
+        },
+        4_000,
+      );
 
       // 3. back on the frame: on the screen, the hint gone
       const fb3 = await steadyFrame(page);

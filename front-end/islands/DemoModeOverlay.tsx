@@ -116,6 +116,7 @@ import {
   placeView,
   placedReport,
   placedReporter,
+  OFF_MARK_Z,
   pointInBox,
   visibleBox,
 } from "../../shared/demo-mode/presenter-anchor.ts";
@@ -1750,6 +1751,7 @@ export default function DemoModeOverlay(
           name={p.name}
           color={p.color}
           z={Z + 1}
+          offZ={OFF_MARK_Z}
           cmd={cmds[p.userId] ?? null}
           bounds={viewportBox()}
         />
