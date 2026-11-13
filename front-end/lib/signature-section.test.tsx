@@ -70,16 +70,20 @@ Deno.test("REQ-692 (p18-6a): signed → 'Firmas', no 'Firma aquí' (es)", () => 
   assert(!/Al firmar abajo/i.test(all), all);
 });
 
+// REQ-750 (cycle 5v1) amends this case: an accent-only variant now reads in
+// the on-file spelling, so the typed-name rule is pinned with a name that
+// really differs from the one on file.
 Deno.test("REQ-692 (p18-6a): the signed card's label is the signer's typed name, possessive, and one spelling on the card", () => {
-  const { text } = section(signed(), "en");
+  const typed = signed({ acceptedName: "Carmen Ruiz" });
+  const { text } = section(typed, "en");
   const card = text("[data-cy='quote-customer-signature']");
-  assert(card.includes("Carmen Nunez's signature"), card);
+  assert(card.includes("Carmen Ruiz's signature"), card);
   assert(!card.includes("Núñez"), `one spelling on the card: ${card}`);
-  assert(card.includes("By: Carmen Nunez"), card);
-  const es = section(signed(), "es").text(
+  assert(card.includes("By: Carmen Ruiz"), card);
+  const es = section(typed, "es").text(
     "[data-cy='quote-customer-signature']",
   );
-  assert(es.includes("Firma de Carmen Nunez"), es);
+  assert(es.includes("Firma de Carmen Ruiz"), es);
 });
 
 Deno.test("REQ-692 (p18-6a): unsigned keeps 'Sign here' and the agreement line", () => {
@@ -111,4 +115,36 @@ Deno.test("REQ-692 (c3-p8-pair5-e): a quote that cannot be signed yet (never sen
     sec.querySelector("[data-cy='quote-contractor-sent-note']"),
     null,
   );
+});
+
+// REQ-750 (demo-loop cycle 5v1, p18-6a re-verified NOT FIXED): the verifier's
+// exact situation — signed as "Carmen Nunez" on Carmen Núñez's agreement (a
+// quote stored before the accept canonicalized the spelling). The signed copy
+// must read the agreement's spelling everywhere: label, thank-you, "By:".
+Deno.test("REQ-750 (p18-6a, cycle 5v1): an accent-only variant shows the on-file spelling on the signed copy (es + en)", () => {
+  const es = section(signed(), "es");
+  const card = es.text("[data-cy='quote-customer-signature']");
+  assert(card.includes("Firma de Carmen Núñez"), card);
+  assert(card.includes("Carmen Núñez"), card);
+  const html = renderToString(<QuoteDoc quote={signed()} lang="es" />);
+  assert(
+    !html.includes("Nunez"),
+    `no unaccented spelling anywhere: ${html.match(/.{60}Nunez.{20}/)?.[0]}`,
+  );
+  assert(
+    html.includes("Gracias, Carmen Núñez"),
+    "the thank-you uses the on-file spelling",
+  );
+  const en = section(signed(), "en").text(
+    "[data-cy='quote-customer-signature']",
+  );
+  assert(en.includes("Carmen Núñez's signature"), en);
+});
+
+Deno.test("REQ-750 (p18-6a, cycle 5v1): a genuinely different typed name is still shown as typed", () => {
+  const card = section(signed({ acceptedName: "Luis Núñez" }), "en").text(
+    "[data-cy='quote-customer-signature']",
+  );
+  assert(card.includes("Luis Núñez's signature"), card);
+  assert(card.includes("By: Luis Núñez"), card);
 });

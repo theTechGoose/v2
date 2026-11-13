@@ -51,3 +51,18 @@ export function onFileSpellingSuggestion(
   if (!want || !got || got === want) return undefined;
   return foldName(got) === foldName(want) ? want : undefined;
 }
+
+/**
+ * REQ-750 (demo-loop cycle 5v1, p18-6a — re-verified after REQ-692): the
+ * suggestion alone let "Carmen Nunez" be stored for an agreement made out to
+ * "Carmen Núñez", and the signed copy read "FIRMA DE CARMEN NUNEZ". The name
+ * a signature records: the on-file spelling when the typed name differs from
+ * it only by accents, case or spacing; otherwise the typed name, normalized.
+ * A genuinely different name still signs as typed (owner's call).
+ */
+export function signerNameOnFile(
+  typed: string,
+  onFile: string | undefined,
+): string {
+  return onFileSpellingSuggestion(typed, onFile) ?? normalizeSignerName(typed);
+}
