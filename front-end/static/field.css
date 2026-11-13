@@ -284,6 +284,9 @@
   justify-content: center;
   z-index: 1000;
   padding: 20px;
+  /* REQ-734 (cycle 5, m69; as REQ-618): the dim covers the whole window, the box keeps
+     clear of the demo pill's band (0 with no demo) */
+  padding-bottom: calc(20px + var(--demo-pill-h, 0px));
 }
 .modal {
   background: #fff;
@@ -295,7 +298,7 @@
   display: flex;
   flex-direction: column;
   gap: 14px;
-  max-height: calc(100vh - 40px);
+  max-height: calc(100vh - 40px - var(--demo-pill-h, 0px));
   overflow: auto;
 }
 .modal h2 {
@@ -308,7 +311,17 @@
   display: flex;
   gap: 10px;
   justify-content: flex-end;
-  margin-top: 6px;
+  /* REQ-734 (cycle 5, m69): a tall form scrolls under the buttons — they stay pinned to the
+     bottom of the box, edge to edge over the box's own padding, on an opaque ground */
+  position: sticky;
+  bottom: -24px; /* the box's bottom padding: sticky stops at the content edge, so reach
+                    past it and cover the strip scrolled fields would show through */
+  z-index: 1;
+  background: #fff;
+  margin: 6px -26px -24px;
+  padding: 12px 26px 24px;
+  border-radius: 0 0 16px 16px;
+  box-shadow: 0 -10px 14px -12px rgba(20,72,82,.28);
 }
 .btn--cancel {
   padding: 10px 16px;
