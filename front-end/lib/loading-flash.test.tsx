@@ -14,6 +14,11 @@ import { renderToString } from "preact-render-to-string";
 import DashboardPage from "../islands/DashboardPage.tsx";
 import AdminPage from "../islands/AdminPage.tsx";
 import { _resetForTest } from "./dash-cache.ts";
+import {
+  _resetNotificationsForTest,
+  notificationsLoaded,
+  refreshNotifications,
+} from "./notifications-feed.ts";
 import { langSignal, tFor } from "./i18n.ts";
 import type { DashboardStats } from "../clients/dashboard.ts";
 
@@ -117,4 +122,63 @@ Deno.test("REQ-728 (m15): /admin does not say 'No users found.' before the first
     body.includes(tFor("en", "adminPage.loading")),
     "the first paint says it is loading users",
   );
+});
+
+// REQ-757 (demo-loop cycle 5v2, m15 re-test): the verifier sampled a fresh
+// /dashboard load on an account WITH activity every ~15 ms and saw the
+// Activity panel read "Nothing yet — your activity will land here." for
+// ~150 ms before the notifications feed resolved. The panel reads the shared
+// notifications feed, which is empty until its first refresh lands — so the
+// first paint must be a skeleton, not the empty line.
+Deno.test("REQ-757 (m15, 5v2): Activity does not say 'Nothing yet' before the notifications feed first loads", () => {
+  _resetNotificationsForTest(() => new Promise<never>(() => {}));
+  try {
+    const html = withWarmCache(() => renderToString(<DashboardPage />));
+    const doc = new DOMParser().parseFromString(html, "text/html")!;
+    const panel = doc.querySelector("#activity");
+    assert(panel, "Activity panel rendered on the warm start");
+    const body = (panel.textContent ?? "").replace(/\s+/g, " ");
+    assert(
+      !body.includes(tFor("en", "activity.emptySub")),
+      "Activity claimed 'Nothing yet' before the notifications feed loaded",
+    );
+    assert(
+      panel.querySelector('[aria-busy="true"]'),
+      "Activity shows a busy skeleton while the feed loads",
+    );
+  } finally {
+    _resetNotificationsForTest();
+  }
+});
+
+Deno.test("REQ-757 (m15, 5v2): once the feed has loaded empty, Activity says 'Nothing yet'", async () => {
+  _resetNotificationsForTest(() => Promise.resolve([]));
+  try {
+    await refreshNotifications();
+    assert(notificationsLoaded(), "the feed reports it has loaded");
+    const html = withWarmCache(() => renderToString(<DashboardPage />));
+    const doc = new DOMParser().parseFromString(html, "text/html")!;
+    const panel = doc.querySelector("#activity")!;
+    assert(
+      (panel.textContent ?? "").includes(tFor("en", "activity.emptySub")),
+      "a truly empty, loaded feed still shows the empty line",
+    );
+    assert(!panel.querySelector('[aria-busy="true"]'));
+  } finally {
+    _resetNotificationsForTest();
+  }
+});
+
+Deno.test("REQ-757 (m15, 5v2): a failed first feed load ends the skeleton too", async () => {
+  _resetNotificationsForTest(() => Promise.reject(new Error("offline")));
+  try {
+    assert(!notificationsLoaded());
+    await refreshNotifications().catch(() => {});
+    assert(
+      notificationsLoaded(),
+      "a settled (failed) load is no longer pending",
+    );
+  } finally {
+    _resetNotificationsForTest();
+  }
 });

@@ -40,6 +40,7 @@ import {
   outstandingEmptyKey,
 } from "../lib/dashboard-receivables.ts";
 import {
+  notificationsLoaded,
   readNotifications,
   refreshNotifications,
   subscribeNotifications,
@@ -405,10 +406,16 @@ export default function DashboardPage(_props: { lang?: Lang } = {}) {
   const [notifications, setNotifications] = useState<Notification[]>(
     readNotifications,
   );
+  // REQ-757 (demo cycle 5v2, m15): the feed is empty until its first refresh
+  // settles; until then the panel is a skeleton, not "Nothing yet".
+  const [notifLoaded, setNotifLoaded] = useState(notificationsLoaded);
   useEffect(() => {
-    const unsub = subscribeNotifications(setNotifications);
+    const unsub = subscribeNotifications((items) => {
+      setNotifications(items);
+      setNotifLoaded(true);
+    });
     // single-flight: shares the topbar's request if one is in flight
-    refreshNotifications().catch(() => {});
+    refreshNotifications().catch(() => {}).finally(() => setNotifLoaded(true));
     return unsub;
   }, []);
 
@@ -637,7 +644,7 @@ export default function DashboardPage(_props: { lang?: Lang } = {}) {
   return (
     <>
       {assistantCta}
-      {listsPending && <ShimmerStyle />}
+      {(listsPending || !notifLoaded) && <ShimmerStyle />}
       <SetupChecklist />
       <Kpis
         activeJobs={kpis.activeJobs}
@@ -669,7 +676,7 @@ export default function DashboardPage(_props: { lang?: Lang } = {}) {
         />
       </div>
       <div class="grid">
-        <Activity items={activityRows} lang={lang} />
+        <Activity items={activityRows} lang={lang} pending={!notifLoaded} />
         <Outstanding
           owed={kpis.owed}
           current={kpis.current}

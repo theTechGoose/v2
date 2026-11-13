@@ -11,6 +11,8 @@
  *   - `refreshNotifications()`    single-flight fetch; concurrent callers share one request;
  *                                 a failure keeps the last list and rejects the caller
  *   - `subscribeNotifications(fn)` fires on every resolved refresh
+ *   - `notificationsLoaded()`     REQ-757: true once a refresh has settled (ok or failed), so a
+ *                                 reader can tell "not fetched yet" from "fetched, empty"
  */
 import { dashboardClient, type Notification } from "../clients/dashboard.ts";
 
@@ -22,6 +24,7 @@ const DEFAULT_FETCHER: Fetcher = () => dashboardClient.notifications(10);
 let fetcher: Fetcher = DEFAULT_FETCHER;
 let items: Notification[] = [];
 let inflight: Promise<Notification[]> | null = null;
+let loaded = false;
 const listeners = new Set<Listener>();
 
 export function readNotifications(): Notification[] {
@@ -32,12 +35,18 @@ export function refreshNotifications(): Promise<Notification[]> {
   if (inflight) return inflight;
   inflight = fetcher().then((next) => {
     items = Array.isArray(next) ? next : [];
+    loaded = true;
     for (const l of [...listeners]) l(items);
     return items;
   }).finally(() => {
+    loaded = true;
     inflight = null;
   });
   return inflight;
+}
+
+export function notificationsLoaded(): boolean {
+  return loaded;
 }
 
 export function subscribeNotifications(fn: Listener): () => void {
@@ -56,6 +65,7 @@ export function _resetNotificationsForTest(
   inflight = null;
   if (!opts.keep) {
     items = [];
+    loaded = false;
     listeners.clear();
   }
 }
