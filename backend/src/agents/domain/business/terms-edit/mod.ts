@@ -26,6 +26,7 @@
 import type { WizardStep } from "@agents/dto/wizard.ts";
 import { type Lang, t } from "@core/i18n/mod.ts";
 import { formatTermDate } from "#quote-flow/format-helpers.ts";
+import type { DeadlineHoliday } from "#quote-flow/deadline-term.ts"; // REQ-771
 import { completionFromTerms } from "#quote-flow/completion-schedule.ts";
 import {
   TERMS_WIZARD_SERVICE_V1,
@@ -692,6 +693,9 @@ export function termsNotAppliedLine(
 export interface Deadline {
   iso: string;
   before: boolean;
+  /** REQ-771: the holiday the words named ("thanksgiving") — the quote's
+   *  Deadline row says it ("Before Thanksgiving (Nov 26, 2026)"). */
+  holiday?: DeadlineHoliday;
 }
 
 const DL_FINISH = String
@@ -719,36 +723,56 @@ function nextYearly(today: Date, at: (year: number) => Date): string {
   return isoOf(d);
 }
 
-const HOLIDAYS: [RegExp, (y: number) => Date][] = [
-  [/\b(?:thanksgiving|(?:dia de )?accion de gracias)\b/, thanksgiving],
-  [/\b(?:christmas eve|nochebuena)\b/, (y) => new Date(y, 11, 24)],
-  [/\b(?:christmas|xmas|navidad)\b/, (y) => new Date(y, 11, 25)],
+const HOLIDAYS: [RegExp, (y: number) => Date, DeadlineHoliday][] = [
+  [
+    /\b(?:thanksgiving|(?:dia de )?accion de gracias)\b/,
+    thanksgiving,
+    "thanksgiving",
+  ],
+  [
+    /\b(?:christmas eve|nochebuena)\b/,
+    (y) => new Date(y, 11, 24),
+    "christmasEve",
+  ],
+  [/\b(?:christmas|xmas|navidad)\b/, (y) => new Date(y, 11, 25), "christmas"],
   [
     /\b(?:new year'?s? eve|fin de ano)\b/,
     (y) => new Date(y, 11, 31),
+    "newYearsEve",
   ],
-  [/\b(?:new year'?s?(?: day)?|ano nuevo)\b/, (y) => new Date(y + 1, 0, 1)],
-  [/\b(?:(?:the )?end of (?:the )?year)\b/, (y) => new Date(y, 11, 31)],
+  [
+    /\b(?:new year'?s?(?: day)?|ano nuevo)\b/,
+    (y) => new Date(y + 1, 0, 1),
+    "newYear",
+  ],
+  [
+    /\b(?:(?:the )?end of (?:the )?year)\b/,
+    (y) => new Date(y, 11, 31),
+    "endOfYear",
+  ],
 ];
 
 /** The day a deadline's words name: a holiday, a date, the end of the month,
  *  a weekday. Null when they name none ("by hand"). */
-function deadlineDay(words: string, today: Date): string | null {
+function deadlineDay(
+  words: string,
+  today: Date,
+): { iso: string; holiday?: DeadlineHoliday } | null {
   const s = words.trim();
-  for (const [re, at] of HOLIDAYS) {
-    if (re.test(s)) return nextYearly(today, at);
+  for (const [re, at, holiday] of HOLIDAYS) {
+    if (re.test(s)) return { iso: nextYearly(today, at), holiday };
   }
   if (/\b(?:end of (?:the )?month|fin de(?:l)? mes)\b/.test(s)) {
     const t0 = dayOf(today);
-    return isoOf(new Date(t0.getFullYear(), t0.getMonth() + 1, 0));
+    return { iso: isoOf(new Date(t0.getFullYear(), t0.getMonth() + 1, 0)) };
   }
   const date = explicitDate(s, today);
-  if (date) return date;
+  if (date) return { iso: date };
   const w = s.match(new RegExp(String.raw`\b(${WEEKDAY_RE})\b`));
   if (w) {
     const start = dayOf(today);
     const ahead = ((WEEKDAYS[w[1]] - start.getDay()) + 7) % 7 || 7;
-    return isoOf(plusDays(start, ahead));
+    return { iso: isoOf(plusDays(start, ahead)) };
   }
   return null;
 }
@@ -774,13 +798,13 @@ export function readDeadline(
     // the day comes first after the "before" word — at most four words
     const words = (m[2] ?? m[3] ?? "").split(/\s+|,/).filter(Boolean)
       .slice(0, 4).join(" ");
-    const iso = deadlineDay(words, today);
-    if (iso) return { iso, before: BEFORE_PREP.test(prep) };
+    const day = deadlineDay(words, today);
+    if (day) return { ...day, before: BEFORE_PREP.test(prep) };
   }
   if (!bare) return null;
   const prep = s.match(new RegExp(String.raw`^${DL_PREP}\s+`));
-  const iso = deadlineDay(prep ? s.slice(prep[0].length) : s, today);
-  return iso ? { iso, before: !!prep && BEFORE_PREP.test(prep[1]) } : null;
+  const day = deadlineDay(prep ? s.slice(prep[0].length) : s, today);
+  return day ? { ...day, before: !!prep && BEFORE_PREP.test(prep[1]) } : null;
 }
 
 /** A term on the quote, as it is stored. */

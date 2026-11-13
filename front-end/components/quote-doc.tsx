@@ -238,6 +238,7 @@ function cstr(lang: Lang, terms?: Term[]) {
       wraps: tFor(lang, "quoteDoc.termLabel.wraps"),
       payment_terms: tFor(lang, "quoteDoc.termLabel.paymentTerms"),
       warranty: tFor(lang, "quoteDoc.termLabel.warranty"),
+      deadline: tFor(lang, "quoteDoc.termLabel.deadline"), // REQ-771
       cancellation: tFor(lang, "quoteDoc.termLabel.cancellation"),
     } as Record<string, string>,
     // REQ-463 (demo m31): clause 7 states the warranty from the terms —

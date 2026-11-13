@@ -23,6 +23,7 @@ import { accountNetDays } from "#quote-flow/completion-schedule.ts"; // REQ-411
 import { isQuoteIssued, isQuoteLocked } from "#documents/versions.ts"; // REQ-460, REQ-585
 import { docNumberOf } from "#documents/numbering.ts"; // REQ-460
 import { formatTermDate } from "#quote-flow/format-helpers.ts"; // REQ-495
+import { withDeadlineTerm } from "#quote-flow/deadline-term.ts"; // REQ-771
 import {
   deadlineCheck,
   deadlineLine,
@@ -417,14 +418,7 @@ export class HandleWizardAnswer {
   ): Promise<string> {
     if (!conv.quoteId) return "";
     const today = new Date();
-    const history = await this.messages.listByConversation(conv.id)
-      .catch(() => [] as AgentMessage[]);
-    let deadline: ReturnType<typeof readDeadline> = null;
-    for (const m of [...history].reverse()) {
-      if (m.role !== "user" || typeof m.content !== "string") continue;
-      deadline = readDeadline(m.content, today);
-      if (deadline) break;
-    }
+    const deadline = await this.typedDeadline(conv.id, today);
     if (!deadline) return "";
     const quote = await this.quotes.getOwned(conv.quoteId, userId)
       .catch(() => undefined);
@@ -790,6 +784,22 @@ export class HandleWizardAnswer {
     return next;
   }
 
+  /** REQ-653 / REQ-771: the latest deadline the contractor typed in this
+   *  conversation (the details-first note is its first user message). */
+  private async typedDeadline(
+    conversationId: string,
+    today: Date = new Date(),
+  ): Promise<ReturnType<typeof readDeadline>> {
+    const history = await this.messages.listByConversation(conversationId)
+      .catch(() => [] as AgentMessage[]);
+    for (const m of [...history].reverse()) {
+      if (m.role !== "user" || typeof m.content !== "string") continue;
+      const deadline = readDeadline(m.content, today);
+      if (deadline) return deadline;
+    }
+    return null;
+  }
+
   /**
    * Persist the wizard's answers so far onto the conversation's quote — run
    * on EVERY answer (REQ-240), not only on completion. Returns whether the
@@ -807,7 +817,14 @@ export class HandleWizardAnswer {
     // with payload.wizardStepId — the chat transcript is the canonical
     // record. We snapshot it onto the quote so the public /q page can
     // render the agreed terms without re-loading the conversation.
-    const terms = await this.captureTerms(conv.id, spec);
+    // REQ-771 (demo-loop cycle 5v5, M7): a deadline the contractor typed
+    // ("Has to be done before Thanksgiving.") is a term on the quote — the
+    // preview, the customer's agreement and the PDF all show it. An invoice
+    // (the job is done) carries none.
+    const terms = withDeadlineTerm(
+      await this.captureTerms(conv.id, spec),
+      conv.docKind === "invoice" ? null : await this.typedDeadline(conv.id),
+    );
     // REQ-024 (NW-18): the invoice wizard's completion date lands on the
     // agreement as estimatedCompletionDate — the invoice's due date derives
     // from it (Due Now → the same day; net terms → +N days).

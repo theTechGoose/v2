@@ -3,6 +3,7 @@ import { PDFDocument, rgb, StandardFonts } from "#pdf-lib";
 import { t } from "@core/i18n/mod.ts";
 import { computePaymentSplit, type MilestoneRole } from "#payment-split";
 import { localizeDepositTerm } from "#quote-flow/deposit-term.ts"; // REQ-678
+import { localizeDeadlineTerm } from "#quote-flow/deadline-term.ts"; // REQ-771
 import type { Quote, QuoteTerm } from "@paperwork/dto/quote.ts";
 import { InvoiceStore } from "@paperwork/domain/data/invoice-store/mod.ts";
 import { isAccepted } from "#quote-flow/quote-status.ts";
@@ -955,6 +956,10 @@ export function localizeTermValue(value: string, lang: "en" | "es"): string {
   // REQ-699 (demo-loop cycle 5, M20): a recurring term in the reader's language.
   const recurring = localizeRecurringTerm(value, lang);
   if (recurring) return recurring;
+  // REQ-771 (cycle 5v5, M7): the typed deadline — "Before Thanksgiving
+  // (Nov 26, 2026)" / "Antes de Acción de Gracias (26 nov 2026)".
+  const deadline = localizeDeadlineTerm(value, lang, t);
+  if (deadline) return deadline;
   // REQ-495 (m17): a picked start date (ISO, or a legacy MM/DD/YYYY) prints
   // in the reader's language — "1 dic 2026" / "Dec 1, 2026".
   if (termDateIso(value)) return formatTermDate(value, lang);
