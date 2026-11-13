@@ -8,9 +8,9 @@ import { getKv } from "@core/data/kv/mod.ts";
 import { BusinessAddressStore } from "@profile/domain/data/business-address-store/mod.ts";
 import { FieldGeocoder } from "@field/domain/data/geocoder/mod.ts";
 import {
-  BUSINESS_ZOOM,
   businessAddressLine,
   type MapView,
+  mapZoomFor,
   US_VIEW,
 } from "@field/domain/business/map-center/mod.ts";
 
@@ -33,15 +33,18 @@ export class FieldMapCenter {
   ) {}
 
   async center(userId: string): Promise<MapCenter> {
-    const line = businessAddressLine(await this.address.get(userId));
+    const address = await this.address.get(userId);
+    const line = businessAddressLine(address);
     if (!line) return { ...US_VIEW, source: "none" };
+    // REQ-747 — a state alone is shown as the state, not at street zoom
+    const zoom = mapZoomFor(address);
     const kv = await getKv();
     const hit = (await kv.get<Cached>([PREFIX, userId])).value;
     if (hit && hit.line === line) {
       return {
         lat: hit.lat,
         lng: hit.lng,
-        zoom: BUSINESS_ZOOM,
+        zoom,
         source: "business",
       };
     }
@@ -51,7 +54,7 @@ export class FieldMapCenter {
         [PREFIX, userId],
         { userId, line, lat, lng } satisfies Cached,
       );
-      return { lat, lng, zoom: BUSINESS_ZOOM, source: "business" };
+      return { lat, lng, zoom, source: "business" };
     } catch (e) {
       // no geocoder (503) or no match: the map still opens, on the country
       console.error(

@@ -1,6 +1,12 @@
 /** REQ-288 (demo customers-payments-fieldops-m5) — the assignments map starts on the business, never on the dev seed's town. */
 import { assert, assertEquals } from "#std/assert";
-import { BUSINESS_ZOOM, businessAddressLine, US_VIEW } from "./mod.ts";
+import {
+  BUSINESS_ZOOM,
+  businessAddressLine,
+  mapZoomFor,
+  STATE_ZOOM,
+  US_VIEW,
+} from "./mod.ts";
 import { FakeGeocoder } from "@field/domain/data/geocoder/mod.ts";
 
 Deno.test("REQ-288 businessAddressLine — the profile address as one geocodable line", () => {
@@ -68,4 +74,43 @@ Deno.test("REQ-288 FakeGeocoder — the seeded Myrtle Beach addresses and statel
     await g.geocode("9 Elm St, Denver, CO"),
     await g.geocode("9 Elm St, Denver, CO"),
   );
+});
+
+// REQ-747 (demo-loop cycle 5, c4-m50) — onboarding saves only the state ("FL"); the map
+// must start on that state, zoomed to the state, not on Myrtle Beach at street zoom.
+Deno.test("REQ-747 mapZoomFor — a state alone gets a state-level zoom; anything naming a town keeps the town zoom", () => {
+  assert(STATE_ZOOM >= 5 && STATE_ZOOM <= 7, `state-level: ${STATE_ZOOM}`);
+  assertEquals(mapZoomFor({ state: "FL" }), STATE_ZOOM);
+  assertEquals(
+    mapZoomFor({ street: " ", city: "", state: "fl", postal: "" }),
+    STATE_ZOOM,
+  );
+  assertEquals(mapZoomFor({ city: "Miami", state: "FL" }), BUSINESS_ZOOM);
+  assertEquals(mapZoomFor({ state: "FL", postal: "33101" }), BUSINESS_ZOOM);
+  assertEquals(
+    mapZoomFor({ street: "1 Main St", state: "FL" }),
+    BUSINESS_ZOOM,
+  );
+});
+
+Deno.test("REQ-747 FakeGeocoder — a bare state line ('FL', 'FL 33101') lands in that state, not in Myrtle Beach", async () => {
+  const g = new FakeGeocoder();
+  const inFlorida = (p: { lat: number; lng: number }) =>
+    p.lat > 24.4 && p.lat < 31.1 && p.lng > -87.7 && p.lng < -79.9;
+  const fl = await g.geocode(businessAddressLine({ state: "FL" })!);
+  assert(inFlorida(fl), `FL: ${JSON.stringify(fl)}`);
+  const lower = await g.geocode("fl");
+  assert(inFlorida(lower), `fl: ${JSON.stringify(lower)}`);
+  const zip = await g.geocode(
+    businessAddressLine({ state: "FL", postal: "33101" })!,
+  );
+  assert(inFlorida(zip), `FL 33101: ${JSON.stringify(zip)}`);
+  const tx = await g.geocode("TX");
+  assert(
+    Math.abs(tx.lat - 30.27) < 0.25 && Math.abs(tx.lng + 97.74) < 0.25,
+    `TX: ${JSON.stringify(tx)}`,
+  );
+  // a street that starts with two letters is still not a state
+  const bare = await g.geocode("Fl Ave");
+  assert(bare.lat > 33.5 && bare.lat < 33.8, JSON.stringify(bare));
 });
