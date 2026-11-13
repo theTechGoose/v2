@@ -189,7 +189,17 @@ export class ChatBilling {
     const email = input.channel === "text"
       ? undefined
       : await this.deliver("email", userId, inv.id);
-    const text = input.channel === "email"
+    // REQ-770 (demo-loop cycle 5v5, m12): on an email + text send, a number
+    // that can't take texts (the reserved 555 block — the send dialog already
+    // says so, REQ-569/681) is not texted at all once the email went: the
+    // reply says "not texted: <reason>", never "The text didn't go". A
+    // text-only send, or one whose email failed too, still reports it.
+    const skipText = !input.channel && !!email?.ok &&
+      await this.texter.recipientCantText(userId, {
+        kind: "invoice",
+        resourceId: inv.id,
+      }).catch(() => false);
+    const text = input.channel === "email" || skipText
       ? undefined
       : await this.deliver("text", userId, inv.id);
     const fresh = await this.invoices.getOwned(inv.id, userId)
@@ -232,6 +242,11 @@ export class ChatBilling {
         parts.push(t(lang, "chatCoordinator.sendInvoice.partial", {
           channel: t(lang, `chatCoordinator.sendInvoice.channel.${channel}`),
           reason: (d.result.rawReason ?? "unknown").replace(/[.\s]+$/, ""),
+        }));
+      }
+      if (skipText) {
+        parts.push(t(lang, "chatCoordinator.sendInvoice.notTexted", {
+          reason: t(lang, "sms.fictionalNumber"),
         }));
       }
       said = parts.join(" ");

@@ -12,6 +12,8 @@ import {
   changeOrderSentLine,
 } from "@agents/domain/business/change-order-delivery/mod.ts";
 import { CustomerStore } from "@crm/domain/data/customer-store/mod.ts";
+import { customerOnDocument } from "@paperwork/domain/business/doc-render/mod.ts";
+import { phoneCantReceiveTexts } from "#quote-flow/sms-number.ts";
 import {
   isInvoiceLocked,
   isQuoteIssued,
@@ -372,11 +374,21 @@ export class ApplyChatChangeOrder {
       // link / Preview, and "Send CO-001" (the button's words) sends it.
       if (!input.userText || !asksToSendChangeOrder(input.userText)) {
         const number = co.number ?? co.id;
+        // REQ-770 (demo-loop cycle 5v5, m12): Send skips texting a number
+        // that can't take texts (REQ-681) — so the offer never promises a
+        // text to it; it says email, and why there will be no text.
+        const cantText = await this.customerCantText(userId, co);
         return {
-          text: t(lang, "chatCoordinator.changeOrder.createdNotSent", {
-            ...vars,
-            number,
-          }),
+          text: cantText
+            ? t(lang, "chatCoordinator.changeOrder.createdNotSentEmailOnly", {
+              ...vars,
+              number,
+              reason: t(lang, "sms.fictionalNumber"),
+            })
+            : t(lang, "chatCoordinator.changeOrder.createdNotSent", {
+              ...vars,
+              number,
+            }),
           outcome: {
             kind: "change_order",
             ...onInvoice,
@@ -549,6 +561,24 @@ export class ApplyChatChangeOrder {
         ...sent.outcome,
       },
     };
+  }
+
+  /** REQ-770 (cycle 5v5, m12): whether the phone SendChangeOrderAlert would
+   *  text for this change order — resolved as it resolves it (the live
+   *  customer's number, else the one on the document) — can't take texts
+   *  (the shared REQ-569 predicate). */
+  private async customerCantText(
+    userId: string,
+    co: Parameters<typeof customerOnDocument>[0] & { customerId?: string },
+  ): Promise<boolean> {
+    const live = co.customerId
+      ? await this.customers.getOwned(co.customerId, userId)
+        .catch(() => undefined)
+      : undefined;
+    return phoneCantReceiveTexts(
+      live?.phoneNumber?.trim() ||
+        customerOnDocument(co, live)?.phoneNumber?.trim(),
+    );
   }
 
   /** REQ-456: run the alert (it emails and texts the CUSTOMER the /co link)
