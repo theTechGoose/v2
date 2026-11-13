@@ -228,3 +228,19 @@ export function withSummaryCustomerName<
   const name = customerNameFromSummary(summary);
   return name ? { ...facts, customerName: name } : facts;
 }
+
+/**
+ * REQ-777 (demo-loop cycle dv1, M9) — the customer step's facts take the name
+ * the flow already carries (the job-done invoice offer's customer, or the
+ * "para <Name>" read from the typed sentence) when nothing else names one.
+ * With it the step offers that saved customer in one tap
+ * (`knownCustomerForStep`) or opens its create form already filled — "Who is
+ * this for?" never starts blank for a customer the chat just named.
+ */
+export function withOfferedCustomerName<
+  F extends { customerName?: string | null },
+>(facts: F, name: string | null | undefined): F {
+  if (facts.customerName) return facts;
+  const offered = name?.trim();
+  return offered ? { ...facts, customerName: offered } : facts;
+}

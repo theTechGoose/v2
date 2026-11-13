@@ -155,6 +155,12 @@ export interface BillingQuote {
   description?: string | null;
 }
 
+/** REQ-777: the customer record a quote is bound to (`customerId`). */
+export interface BoundCustomer {
+  name?: string | null;
+  email?: string | null;
+}
+
 export interface BillingInvoice {
   id: string;
   number?: string;
@@ -245,6 +251,8 @@ function jobDoneInvoiceOffer(
   quote: BillingQuote,
   name: string,
   typedCents?: number,
+  /** REQ-777: the customer the quote is bound to, read by its id. */
+  bound?: BoundCustomer | null,
 ): InvoiceFlowOffer {
   const details = [quote.description, quote.summary, quote.jobName]
     .map((s) => s?.trim() ?? "").find((s) => !!s) || name;
@@ -254,10 +262,17 @@ function jobDoneInvoiceOffer(
   // REQ-772 (demo-loop cycle 5v5, M9): a quote the chat drafted for someone
   // not yet saved carries her only in the summary's "— Maria Lopez" tail
   // (REQ-576) — the offer still knows who to bill.
-  const who = quote.customerSnapshot?.name?.trim() ||
+  // REQ-777 (demo-loop cycle dv1, M9): a customer picked in the quote's own
+  // setup questions is bound by id only (HandleWizardAnswer writes
+  // `customerId`, no snapshot) — that customer, read live, names the bill
+  // first; it is also who the quote points at after a swap.
+  const boundName = bound?.name?.trim();
+  const who = boundName || quote.customerSnapshot?.name?.trim() ||
     quote.acceptedName?.trim() ||
     customerNameFromSummary(quote.summary) || undefined;
-  const email = quote.customerSnapshot?.email?.trim();
+  const email = boundName
+    ? bound?.email?.trim()
+    : quote.customerSnapshot?.email?.trim();
   return {
     details,
     ...(Number.isFinite(cents) && cents > 0
@@ -283,10 +298,15 @@ export function billingReply(
     /** REQ-768: an amount typed with the job-done ask ("…invoice for $450")
      *  — what an unsigned job's invoice flow is prefilled with. */
     amountCents?: number;
+    /** REQ-777 (demo-loop cycle dv1, M9): the customer the quote (or the
+     *  thread) is bound to, read by id — the wizard's customer step binds
+     *  one without a snapshot. */
+    customer?: BoundCustomer | null;
   } = {},
 ): BillingReply {
   const live = invoices.filter((i) => (i.status ?? "") !== "void");
   const name = quote.customerSnapshot?.name?.trim() ||
+    opts.customer?.name?.trim() ||
     quote.acceptedName?.trim() ||
     live.map((i) => i.customerSnapshot?.name?.trim() || i.billTo?.name?.trim())
       .find((n) => !!n) ||
@@ -306,7 +326,12 @@ export function billingReply(
     // is coming first: bill it directly, through the invoice flow, prefilled
     // with the quote's job, amount and customer.
     if (opts.jobDone) {
-      const offer = jobDoneInvoiceOffer(quote, name, opts.amountCents);
+      const offer = jobDoneInvoiceOffer(
+        quote,
+        name,
+        opts.amountCents,
+        opts.customer,
+      );
       // REQ-772: named by the offer's customer; nobody named → the nameless
       // line, never "an invoice for The customer".
       const key = `jobDoneUnsigned${offer.customerName ? "" : "NoName"}${

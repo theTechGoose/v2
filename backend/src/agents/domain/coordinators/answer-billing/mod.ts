@@ -5,6 +5,7 @@ import { AgentMessageStore } from "@agents/domain/data/agent-message-store/mod.t
 import { QuoteStore } from "@paperwork/domain/data/quote-store/mod.ts";
 import { InvoiceStore } from "@paperwork/domain/data/invoice-store/mod.ts";
 import { ChangeOrderStore } from "@paperwork/domain/data/change-order-store/mod.ts";
+import { CustomerStore } from "@crm/domain/data/customer-store/mod.ts";
 import {
   type BillingReply,
   billingReply,
@@ -84,6 +85,8 @@ export class AnswerBilling {
     private invoices: InvoiceStore = new InvoiceStore(),
     /** REQ-673: a pending change order is mentioned in the answer. */
     private changeOrders: ChangeOrderStore = new ChangeOrderStore(),
+    /** REQ-777: the customer the quote is bound to, read by its id. */
+    private customers: CustomerStore = new CustomerStore(),
   ) {}
 
   /** Undefined when the conversation has no readable quote to talk about —
@@ -116,8 +119,18 @@ export class AnswerBilling {
     const changeOrders = (await this.changeOrders.listByUser(input.userId)
       .catch(() => []))
       .filter((c) => c.quoteId === quote.id || invoiceIds.has(c.invoiceId));
+    // REQ-777 (demo-loop cycle dv1, M9): the wizard's customer step binds
+    // the customer to the quote by id only — no snapshot — so read who it
+    // is; "Job done, invoice her" then names her instead of losing her.
+    const customerId = quote.customerId ?? conv.customerId ??
+      input.job?.customerId;
+    const bound = customerId
+      ? await this.customers.getOwned(customerId, input.userId)
+        .catch(() => undefined)
+      : undefined;
     const reply = billingReply(input.lang, quote, invoices, changeOrders, {
       jobDone: input.jobDone === true,
+      ...(bound ? { customer: { name: bound.name, email: bound.email } } : {}),
       ...(input.amountCents ? { amountCents: input.amountCents } : {}),
     });
 

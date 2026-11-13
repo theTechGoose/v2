@@ -337,3 +337,157 @@ Deno.test("REQ-772 M9: in draft Q-001's thread (no saved customer), 'Job done fo
     expect.eq(after.summary, "Fence painting — Maria Lopez", "Q-001 untouched");
     expect.eq(after.estimatedTotal, 80_000, "Q-001's total untouched");
   }));
+
+/** REQ-777: open the step's "Tell the assistant…" box (once the island is
+ *  live), type and send — never twice. */
+async function sayOnStep(page: StoryTools["page"], text: string) {
+  const open = page.locator("[data-cy=step-composer-open]");
+  const input = page.locator("[data-cy=step-composer-input]");
+  const mine = page.locator(".msg.msg--user", { hasText: text });
+  const pad = page.locator(".chat__price-capture");
+  await open.first().waitFor({ state: "visible", timeout: 20_000 });
+  for (let attempt = 0; attempt < 20; attempt++) {
+    if (await mine.count() > 0 || await pad.count() > 0) return;
+    if (await input.count() === 0) {
+      await open.first().click();
+      await page.waitForTimeout(250);
+      continue;
+    }
+    await input.fill(text);
+    await input.press("Enter");
+    for (let i = 0; i < 8; i++) {
+      if (await mine.count() > 0 || await pad.count() > 0) return;
+      await page.waitForTimeout(250);
+    }
+  }
+  throw new Error(`"${text}" was never sent`);
+}
+
+/** REQ-777 (demo-loop cycle dv1, M9 verify round 6): draft Q-001 "Bathroom
+ *  Tile Installation", drafted with nobody named, then Ana Diaz set in the
+ *  quote's own setup questions (the wizard's customer step — it binds her by
+ *  id, no snapshot, no "— Ana Diaz" tail). "Job done, need to invoice her"
+ *  in Q-001's thread lost her. Now the reply names Ana Diaz, the pad opens
+ *  at Q-001's $1,450, and Continue's "Who is this for?" carries Ana Diaz —
+ *  in English and in Spanish. */
+for (
+  const run of [
+    {
+      lang: "en",
+      said: "Job done, need to invoice her",
+      whoFor: "Who is this for?",
+    },
+    {
+      lang: "es",
+      said: "Trabajo terminado, necesito facturarle",
+      whoFor: "¿Para quién es esto?",
+    },
+  ] as const
+) {
+  Deno.test(`REQ-777 M9 (dv1): Ana Diaz set through Q-001's wizard; '${run.said}' (${run.lang}) in its thread → $1,450 → Continue → '${run.whoFor}' with Ana Diaz`, (t) =>
+    story(t, async ({ page, expect, http, baseUrl }) => {
+      const auth = await signIn(http, page, baseUrl);
+      const me = await http("/api/me", {
+        method: "PUT",
+        headers: auth,
+        body: JSON.stringify({ language: run.lang }),
+      });
+      await me.body?.cancel();
+      await page.context().addCookies([{
+        name: "pm_lang",
+        value: run.lang,
+        domain: new URL(baseUrl).hostname,
+        path: "/",
+      }]);
+      const q1 = await (await http("/api/quotes", {
+        method: "POST",
+        headers: auth,
+        body: JSON.stringify({
+          summary: "Bathroom Tile Installation",
+          jobName: "Bathroom Tile Installation",
+          lineItems: [{
+            description: "Bathroom tile installation",
+            quantity: 1,
+            unit: "ea",
+            price: 145_000,
+          }],
+          estimatedTotal: 145_000,
+          status: "draft",
+        }),
+      })).json() as { id: string };
+      const thread = await (await http("/api/agents/conversations", {
+        method: "POST",
+        headers: auth,
+        body: JSON.stringify({ quoteId: q1.id }),
+      })).json() as { id: string };
+      // The quote's setup questions: into terms, then the customer step.
+      const terms = await http(
+        `/api/agents/conversations/${thread.id}/transition-to-terms`,
+        { method: "POST", headers: auth },
+      );
+      await terms.body?.cancel();
+      const picked = await http("/api/agents/wizard/answer", {
+        method: "POST",
+        headers: auth,
+        body: JSON.stringify({
+          conversationId: thread.id,
+          stepId: "customer",
+          optionId: "create_new",
+          customValue: "Ana Diaz",
+          customer: {
+            create: { name: "Ana Diaz", email: "ana.diaz@example.com" },
+          },
+        }),
+      });
+      expect(picked.ok, `the wizard's customer step took Ana Diaz`);
+      await picked.body?.cancel();
+
+      await page.setViewportSize({ width: 1280, height: 900 });
+      await page.goto(`/assistant/${thread.id}`);
+      // Mid-wizard the thread shows "Tell the assistant…" (REQ-392), the
+      // box the verifier typed in.
+      await sayOnStep(page, run.said);
+
+      const money = page.locator(".chat__price-capture input.mi__input");
+      await money.waitFor({ state: "visible", timeout: 30_000 });
+      expect.eq(
+        (await money.inputValue()).trim().replace(/,/g, ""),
+        "1450",
+        "the invoice flow's pad opens at Q-001's $1,450",
+      );
+      const said = await (await http(
+        `/api/agents/conversations/${thread.id}`,
+        { headers: auth },
+      )).json() as { messages?: { role: string; content: string }[] };
+      const reply = (said.messages ?? []).filter((m) => m.role === "assistant")
+        .map((m) => m.content).join(" ");
+      expect(
+        reply.includes("Ana Diaz") && !/The customer|El cliente/.test(reply),
+        `the reply names Ana Diaz (got: ${reply})`,
+      );
+
+      await page.locator(".chat__price-capture .chat__price-continue").click();
+      const who = page.getByText(run.whoFor).first();
+      await who.waitFor({ state: "visible", timeout: 30_000 });
+      // Ana Diaz is a saved customer now: the step offers her in one tap
+      // ("Use Ana Diaz", REQ-331) — or, at worst, a form filled with her.
+      // The step reads the customer list first ("Loading customers…").
+      const useKnown = page.locator('[data-cy="customer-use-known"]');
+      let filled = false;
+      let known = "";
+      for (let i = 0; i < 80 && !filled && !known.includes("Ana Diaz"); i++) {
+        await page.waitForTimeout(250);
+        filled = await page.locator("input").evaluateAll((els) =>
+          els.some((e) => (e as HTMLInputElement).value === "Ana Diaz")
+        );
+        known = await useKnown.count() > 0
+          ? (await useKnown.first().innerText())
+          : "";
+      }
+      expect(
+        known.includes("Ana Diaz") || filled,
+        `the customer step carries Ana Diaz (offered: "${known}")`,
+      );
+      await who.hover();
+    }));
+}
