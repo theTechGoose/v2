@@ -4,6 +4,7 @@ import {
   type LLMClient,
 } from "@agents/domain/business/llm/base/mod.ts";
 import { t } from "@core/i18n/mod.ts";
+import { onlyDeletesWords } from "#quote-flow/polish-offer.ts";
 
 export interface ProfessionalizeBulletInput {
   userId: string;
@@ -88,6 +89,15 @@ export class ProfessionalizeBullet {
         candidates.every((l, i) => isFaithfulTo(l, items[i]))
       : candidates.length > 0 && candidates.every((l) => isFaithfulTo(l, text));
     if (!faithful) return fallback();
+    // REQ-675 (cycle 5, p18-7b): a single line that only deletes words of the
+    // bullet ("…tile with dark grout" → "…tile dark grout") is not a polish.
+    // Hand the bullet back as written, so the client offers nothing.
+    if (
+      items.length === 1 && candidates.length === 1 &&
+      onlyDeletesWords(text, candidates[0])
+    ) {
+      return { text, lines: [text] };
+    }
     return { text: candidates[0], lines: candidates };
   }
 }

@@ -166,3 +166,45 @@ describe("REQ-384 m16: the offer is inline under the bullet, not a covering moda
     expect(es["asstChat.proPopup.msg"]).toBe("¿Pulir esta línea?");
   });
 });
+
+/**
+ * REQ-675 (demo-loop cycle 5, p18-7b): "'Polish this line?' makes the text
+ * worse". The tester typed "Install kitchen backsplash, 30 sq ft white subway
+ * tile with dark grout" and was offered "Install kitchen backsplash 30 sq ft
+ * white subway tile dark grout" — the same words with "with" (and the comma)
+ * deleted. A result whose words are all already in the line only deletes
+ * words: it is never a polish, so it is never offered.
+ */
+describe("REQ-675 p18-7b: polishOffer — a deletion-only result is not a polish", () => {
+  it("REQ-675 dropping 'with' from a clean line gets no offer", () => {
+    expect(
+      polishOffer(
+        "Install kitchen backsplash, 30 sq ft white subway tile with dark grout",
+        ["Install kitchen backsplash 30 sq ft white subway tile dark grout"],
+      ),
+    ).toBeNull();
+  });
+
+  it("REQ-675 dropping articles / prepositions only gets no offer", () => {
+    expect(polishOffer("Paint the fence in the back yard", ["Paint fence back yard"]))
+      .toBeNull();
+  });
+
+  it("REQ-675 a rewrite that adds or changes words is still offered", () => {
+    expect(polishOffer("instal backsplash w/ grout", ["Install backsplash with grout"]))
+      .toEqual({
+        before: "instal backsplash w/ grout",
+        after: ["Install backsplash with grout"],
+      });
+    expect(polishOffer("fix the gate", ["Repair of the gate"])).not.toBeNull();
+  });
+
+  it("REQ-675 an 'A + B' split keeping the words is still offered", () => {
+    expect(
+      polishOffer("4 recessed lights + City of Austin permit", [
+        "4 recessed lights",
+        "City of Austin permit",
+      ]),
+    ).not.toBeNull();
+  });
+});

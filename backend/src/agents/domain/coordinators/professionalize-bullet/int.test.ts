@@ -115,9 +115,11 @@ Deno.test("REQ-332 professionalize: a single-item bullet is still one line, lega
   llm.setHandler(() => ({
     text: JSON.stringify({ text: "Repaint kitchen ceiling" }),
   }));
+  // REQ-675: the rough line carries a typo, so the reply is a real rewrite —
+  // a reply that only drops "the" is no longer a polish.
   const res = await flow.run({
     userId: "u-1",
-    text: "repaint the kitchen ceiling",
+    text: "repaint the kitchen celing",
   });
   assertEquals(res.lines, ["Repaint kitchen ceiling"]);
   assertEquals(res.text, "Repaint kitchen ceiling");
@@ -155,4 +157,55 @@ Deno.test("REQ-443 m46 professionalize: '(trench + patch)' stays one line throug
   // The stub / offline fallback keeps the parenthetical whole.
   const off = await fresh().flow.run({ userId: "u-1", text });
   assertEquals(off.lines, [text]);
+});
+
+/**
+ * REQ-675 (demo-loop cycle 5, p18-7b): "'Polish this line?' makes the text
+ * worse" — "…white subway tile with dark grout" came back as "…white subway
+ * tile dark grout". A reply that only deletes words of the line is not a
+ * polish: the coordinator hands back the line as written (so no offer is
+ * made), and the prompt tells the model to keep meaningful prepositions and
+ * articles and never compress an already-clear line.
+ */
+Deno.test("REQ-675 p18-7b professionalize: a deletion-only reply returns the line unchanged", async () => {
+  const { llm, flow } = fresh();
+  const text =
+    "Install kitchen backsplash, 30 sq ft white subway tile with dark grout";
+  llm.setHandler(() => ({
+    text: JSON.stringify({
+      lines: [
+        "Install kitchen backsplash 30 sq ft white subway tile dark grout",
+      ],
+    }),
+  }));
+  const res = await flow.run({ userId: "u-1", text });
+  assertEquals(res.lines, [text]);
+  assertEquals(res.text, text);
+});
+
+Deno.test("REQ-675 p18-7b professionalize: a reply that changes words is still returned", async () => {
+  const { llm, flow } = fresh();
+  llm.setHandler(() => ({
+    text: JSON.stringify({ lines: ["Install backsplash with grout"] }),
+  }));
+  const res = await flow.run({
+    userId: "u-1",
+    text: "instal backsplash w/ grout",
+  });
+  assertEquals(res.lines, ["Install backsplash with grout"]);
+});
+
+Deno.test("REQ-675 p18-7b professionalize: the prompt keeps meaningful prepositions and never compresses a clear line", async () => {
+  const { llm, flow } = fresh();
+  let prompt = "";
+  llm.setHandler((req) => {
+    prompt = req.systemPrompt;
+    return { text: JSON.stringify({ lines: ["Repair of the gate"] }) };
+  });
+  await flow.run({ userId: "u-1", text: "fix the gate" });
+  assert(
+    /prepositions and articles/i.test(prompt),
+    "keeps prepositions/articles",
+  );
+  assert(/never compress/i.test(prompt), "never compresses a clear line");
 });

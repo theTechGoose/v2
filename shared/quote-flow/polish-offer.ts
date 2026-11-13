@@ -9,6 +9,11 @@
  * "(trench" / "Patch)". A single line that differs from the original only in
  * case or punctuation is not a rewrite, and a split that leaves any line with
  * an unbalanced bracket is a broken split — neither is offered.
+ *
+ * REQ-675 (demo-loop cycle 5, p18-7b): "…subway tile with dark grout" was
+ * offered as "…subway tile dark grout". A single line whose words are all
+ * already in the original only DELETES words — it can only make a clear line
+ * more telegraphic, so it is not offered either.
  */
 
 export interface PolishOffer {
@@ -33,6 +38,23 @@ function words(s: string): string {
   return s.toLowerCase().split(/[^\p{L}\p{N}]+/u).filter(Boolean).join(" ");
 }
 
+/** REQ-675: true when `after` only deletes words from `before` — every word
+ *  of `after` (case and punctuation aside) is already in `before`, counted
+ *  with multiplicity, and at least one is gone. Not a polish. */
+export function onlyDeletesWords(before: string, after: string): boolean {
+  const pool = new Map<string, number>();
+  const src = words(before).split(" ").filter(Boolean);
+  for (const w of src) pool.set(w, (pool.get(w) ?? 0) + 1);
+  const out = words(after).split(" ").filter(Boolean);
+  if (out.length >= src.length) return false;
+  for (const w of out) {
+    const n = pool.get(w) ?? 0;
+    if (n === 0) return false;
+    pool.set(w, n - 1);
+  }
+  return true;
+}
+
 /** True when every (, [ and { in `s` is closed in order. */
 function balanced(s: string): boolean {
   const close: Record<string, string> = { ")": "(", "]": "[", "}": "{" };
@@ -53,6 +75,7 @@ export function polishOffer(
   const after = lines.map((l) => l.trim()).filter((l) => l.length > 0);
   if (after.length === 0) return null;
   if (after.length === 1 && words(before) === words(after[0])) return null;
+  if (after.length === 1 && onlyDeletesWords(before, after[0])) return null;
   if (after.length > 1 && !after.every(balanced)) return null;
   return { before, after };
 }
