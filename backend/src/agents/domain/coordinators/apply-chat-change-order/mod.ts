@@ -67,6 +67,17 @@ export type ChatChangeOrderOutcome =
   | { kind: "pending_revision"; quoteId: string; quoteNumber?: string }
   | { kind: "draft_updated"; quoteId: string; quoteNumber?: string }
   | { kind: "needs_invoice"; quoteId: string; quoteNumber?: string }
+  /** REQ-655 (cycle 5, M12): every invoice on the job is paid — the extra
+   *  work is billed on a new draft invoice linked to the job. */
+  | {
+    kind: "new_invoice";
+    quoteId: string;
+    quoteNumber?: string;
+    invoiceId: string;
+    invoiceNumber?: string;
+  }
+  /** REQ-655: a credit on a fully paid job — nothing to take it off. */
+  | { kind: "all_paid"; quoteId: string; quoteNumber?: string }
   | { kind: "ambiguous"; quoteIds: string[] }
   /** REQ-377: a new total named no work — asks what the difference is for */
   | { kind: "needs_description"; quoteId: string; quoteNumber?: string }
@@ -110,6 +121,9 @@ function totalOf(items: LineItem[]): number {
  *   - its quote is a draft    → the line is added to the draft;
  *   - its quote is issued but unsigned → a pending revision (REQ-201) the
  *     contractor publishes with "Publish revision";
+ *   - its quote is signed and every invoice on it is paid → (REQ-655) the
+ *     extra work is billed on a NEW draft invoice linked to the job (a
+ *     credit has nothing to come off, so it is only explained);
  *   - its quote is signed with no invoice → nothing is written; the reply
  *     says to invoice it first (a signed quote is locked, REQ-202).
  *
@@ -272,8 +286,10 @@ export class ApplyChatChangeOrder {
     };
 
     // 1) An open invoice for this job → a change order on it.
-    const invoice = (await this.invoices.listByUser(userId))
-      .filter((i) => i.quoteId === quote.id && !isInvoiceLocked(i))
+    const jobInvoices = (await this.invoices.listByUser(userId))
+      .filter((i) => i.quoteId === quote.id);
+    const invoice = jobInvoices
+      .filter((i) => !isInvoiceLocked(i))
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
     if (invoice) {
       const co = await this.changeOrders.create(userId, invoice.id, {
@@ -326,7 +342,55 @@ export class ApplyChatChangeOrder {
       };
     }
 
-    // 2) Signed and not invoiced: locked (REQ-202), and a change order needs an invoice.
+    // 2) REQ-655 (demo-loop cycle 5, M12): signed, invoiced, every invoice
+    // paid — a change order has no open invoice to go on, so the extra work
+    // is billed on a NEW invoice linked to the job (a draft the contractor
+    // checks and sends). A credit has nothing to come off: it is explained.
+    if (isQuoteLocked(quote) && jobInvoices.length > 0) {
+      const paid = jobInvoices
+        .map((i) => i.number)
+        .filter((n): n is string => typeof n === "string" && n.length > 0)
+        .join(", ");
+      const paidVars = { ...vars, paid: paid || labelOf(quote) };
+      if (delta <= 0) {
+        return {
+          text: t(lang, "chatCoordinator.changeOrder.allPaid", paidVars),
+          outcome: { kind: "all_paid", ...named },
+        };
+      }
+      const customerId = quote.customerId;
+      const billTo = !customerId ? quote.customerSnapshot : undefined;
+      const today = new Date().toISOString().slice(0, 10);
+      const created = await this.invoices.create(userId, {
+        quoteId: quote.id,
+        ...(customerId ? { customerId } : {}),
+        ...(billTo ? { billTo } : {}),
+        ...(quote.jobName || quote.summary
+          ? { jobName: quote.jobName || quote.summary }
+          : {}),
+        description,
+        lineItems: [{ description, quantity: 1, unit: "ea", price: delta }],
+        amount: delta,
+        issuedDate: today,
+        dueDate: new Date(Date.now() + 30 * 86_400_000).toISOString()
+          .slice(0, 10),
+        status: "draft",
+      });
+      return {
+        text: t(lang, "chatCoordinator.changeOrder.newInvoice", {
+          ...paidVars,
+          invoice: created.number ?? "",
+        }),
+        outcome: {
+          kind: "new_invoice",
+          ...named,
+          invoiceId: created.id,
+          invoiceNumber: created.number,
+        },
+      };
+    }
+
+    // 3) Signed and not invoiced: locked (REQ-202), and a change order needs an invoice.
     if (isQuoteLocked(quote)) {
       return {
         text: t(lang, "chatCoordinator.changeOrder.needsInvoice", vars),
@@ -345,7 +409,7 @@ export class ApplyChatChangeOrder {
       price: delta,
     };
 
-    // 3) Issued, unsigned → the next revision (REQ-201), published by the contractor.
+    // 4) Issued, unsigned → the next revision (REQ-201), published by the contractor.
     if (isQuoteIssued(quote)) {
       const lineItems = [...baseLines, line];
       await this.quotes.setPending(quote.id, userId, {
@@ -362,7 +426,7 @@ export class ApplyChatChangeOrder {
       };
     }
 
-    // 4) A draft → the line lands on it.
+    // 5) A draft → the line lands on it.
     const lineItems = [...(quote.lineItems ?? []), line];
     await this.quotes.update(quote.id, userId, {
       lineItems,

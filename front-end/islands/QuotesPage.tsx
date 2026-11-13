@@ -70,8 +70,9 @@ import {
   changeOrderBody,
   changeOrderRowActions,
   changeOrderShareLinks,
+  newChangeOrderButton,
   newChangeOrderTarget,
-} from "../../shared/documents/change-order-actions.ts"; // REQ-462, REQ-565
+} from "../../shared/documents/change-order-actions.ts"; // REQ-462, REQ-565, REQ-655
 import { panelAgreedTotal } from "../../shared/documents/ledger.ts"; // REQ-679
 import {
   canReviseQuote,
@@ -200,6 +201,9 @@ function SignedChangeOrder(
   const [err, setErr] = useState<string | null>(null);
   const [created, setCreated] = useState<string | null>(null);
   const target = newChangeOrderTarget(ledger);
+  // REQ-655 (cycle 5, p18-9c): decided before it renders — on a fully paid
+  // job the button is "Bill extra work", straight to a linked new invoice.
+  const button = newChangeOrderButton(target, q.id);
   // the "created" note stands while that order still waits as it was made —
   // an edit or a withdrawal below says its own thing
   const createdWaits = created !== null &&
@@ -246,56 +250,51 @@ function SignedChangeOrder(
         >
           {tFor(lang, "quotes.ledger.lockedNote")}
         </p>
-        {!open && (
-          <button
-            type="button"
-            class="qopen__btn"
-            data-cy="quote-new-change-order"
-            style="padding:5px 10px"
-            onClick={() => {
-              setErr(null);
-              setCreated(null);
-              setOpen(true);
-            }}
-          >
-            {tFor(lang, "quotes.ledger.newChangeOrder")}
-          </button>
-        )}
+        {button.href
+          ? (
+            <a
+              class="qopen__btn"
+              data-cy="quote-bill-extra-work"
+              style="padding:5px 10px"
+              href={button.href}
+            >
+              {tFor(lang, button.labelKey)}
+            </a>
+          )
+          : !open && (
+            <button
+              type="button"
+              class="qopen__btn"
+              data-cy="quote-new-change-order"
+              style="padding:5px 10px"
+              onClick={() => {
+                setErr(null);
+                setCreated(null);
+                setOpen(true);
+              }}
+            >
+              {tFor(lang, "quotes.ledger.newChangeOrder")}
+            </button>
+          )}
       </div>
-      {open && target.kind !== "invoice" && (
-        <div
-          data-cy={target.kind === "invoice_first"
-            ? "quote-co-invoice-first"
-            : "quote-co-new-invoice"}
-          style={boxStyle}
-        >
+      {open && target.kind === "invoice_first" && (
+        <div data-cy="quote-co-invoice-first" style={boxStyle}>
           <p style="margin:0 0 8px;font-size:12.5px">
-            {tFor(
-              lang,
-              target.kind === "invoice_first"
-                ? "quotes.ledger.coInvoiceFirst"
-                : "quotes.ledger.coNewInvoice",
-            )}
+            {tFor(lang, "quotes.ledger.coInvoiceFirst")}
           </p>
           <div class="qopen__actions">
             <a
               class="qopen__btn"
-              href={target.kind === "invoice_first"
-                ? `/invoices?new=1&quoteId=${encodeURIComponent(q.id)}`
-                : "/invoices?new=1"}
+              href={`/invoices?new=1&quoteId=${encodeURIComponent(q.id)}`}
             >
-              {tFor(
-                lang,
-                target.kind === "invoice_first"
-                  ? "quotes.ledger.createNextInvoice"
-                  : "quotes.ledger.coNewInvoiceCta",
-              )}
+              {tFor(lang, "quotes.ledger.createNextInvoice")}
             </a>
             <button
               type="button"
               class="qopen__btn"
               style={ghost}
-              onClick={() => setOpen(false)}
+              onClick={() =>
+                setOpen(false)}
             >
               {tFor(lang, "common.cancel")}
             </button>

@@ -78,6 +78,7 @@ import {
 import { docNumberOf } from "../../shared/documents/numbering.ts";
 import { invoiceJobNamePlaceholderKey } from "../../shared/quote-flow/trade-fit.ts"; // REQ-450
 import { isExceedsAgreement } from "../../shared/documents/ledger.ts";
+import { isExtraWorkLink } from "../../shared/documents/change-order-actions.ts"; // REQ-655
 import { invoiceLinkPath } from "../lib/customer-link.ts"; // REQ-586
 import {
   describeReminderCadence,
@@ -507,6 +508,12 @@ export default function InvoicesPage(_props: { lang?: Lang }) {
       ? new URLSearchParams(globalThis.location.search).get("quoteId")
       : null
   );
+  // REQ-655 (cycle 5, p18-9c): ...&extra=1 — "Bill extra work" on a quote
+  // whose invoices are all paid; the new invoice bills past the agreement.
+  const [newExtraWork] = useState(() =>
+    typeof globalThis.location !== "undefined" &&
+    isExtraWorkLink(globalThis.location.search)
+  );
   // Deep link: /invoices?open=<id> opens that invoice's detail view
   // automatically (PDF p6 editing + p18 adjustments land here).
   const [openId, setOpenId] = useState<string | null>(() =>
@@ -752,6 +759,7 @@ export default function InvoicesPage(_props: { lang?: Lang }) {
           invoices={Array.isArray(s.invoices) ? s.invoices : []}
           lang={lang}
           quoteId={newQuoteId}
+          extraWork={newExtraWork}
           onClose={() => setNewOpen(false)}
         />
       )}
@@ -3734,12 +3742,14 @@ function toFormLines(lines: TypedLine[]): FormLine[] {
  * unseen.
  */
 function NewInvoiceModal(
-  { customers, invoices, lang, quoteId, onClose }: {
+  { customers, invoices, lang, quoteId, extraWork, onClose }: {
     customers: Customer[];
     /** the page's invoices — what the picked client already has (REQ-474) */
     invoices: Invoice[];
     lang: Lang;
     quoteId?: string | null;
+    /** REQ-655: extra work on a paid-off job (?extra=1) */
+    extraWork?: boolean;
     onClose: () => void;
   },
 ) {
@@ -3848,7 +3858,9 @@ function NewInvoiceModal(
       if (Array.isArray(q?.terms)) setQuoteTerms(q.terms);
       if (p.customerId) pickCustomer(p.customerId);
       if (p.jobName) setJobName(p.jobName);
-      setAmount(centsToDollars(p.amountCents));
+      // REQ-655: nothing is left on a paid-off agreement — the extra work's
+      // amount is typed, not prefilled as $0.00
+      if (!extraWork) setAmount(centsToDollars(p.amountCents));
     }).catch(() => {
       if (alive) setLedgerErr(true);
     });
@@ -3913,6 +3925,7 @@ function NewInvoiceModal(
       const back = new URL(globalThis.location.href);
       back.searchParams.delete("new");
       back.searchParams.delete("quoteId");
+      back.searchParams.delete("extra"); // REQ-655
       globalThis.location.assign(back.toString());
     } catch {
       setError(
@@ -4075,6 +4088,8 @@ function NewInvoiceModal(
           customerId,
           // REQ-474: the linked quote (REQ-233 caps what it may bill)
           quoteId: linkedQuoteId ?? undefined,
+          // REQ-655: billed past the agreement on purpose (override)
+          extraWork: !!extraWork && linkedQuoteId === quoteId,
           jobName,
           description,
           lineItems: formLines,
@@ -4159,6 +4174,7 @@ function NewInvoiceModal(
       const back = new URL(globalThis.location.href);
       back.searchParams.delete("new");
       back.searchParams.delete("quoteId");
+      back.searchParams.delete("extra"); // REQ-655
       globalThis.location.assign(back.toString());
     } catch (err) {
       setError(
@@ -4203,7 +4219,11 @@ function NewInvoiceModal(
           {tFor(lang, "invoicesPage.new.title")}
         </h2>
         <p style="margin:0;font-size:13px;color:var(--fg-muted,#6b7560)">
-          {tFor(lang, copy.introKey, { number: ledger?.quoteNumber ?? "" })}
+          {tFor(
+            lang,
+            extraWork ? "invoicesPage.new.introExtraWork" : copy.introKey,
+            { number: ledger?.quoteNumber ?? "" },
+          )}
         </p>
 
         {/* REQ-205 / REQ-409: the quote this bill draws on */}
