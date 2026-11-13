@@ -128,3 +128,29 @@ Deno.test("REQ-413 p5 / m49: the landing's aria-labels and hero lead follow the 
       `en: the hero lead is written for an English reader (got "${lead.trim()}")`,
     );
   }));
+
+Deno.test("REQ-775 dv1 d2: / makes the same language promise in Spanish and, after the toggle, in English", (t) =>
+  story(t, async ({ page, expect }) => {
+    await page.setViewportSize(DESKTOP);
+    await page.goto("/?lang=es");
+    const leadEl = page.locator('[data-i18n="hero.lead"]').first();
+    await leadEl.waitFor({ state: "attached" });
+    const es = ((await leadEl.textContent()) ?? "").trim();
+    expect(
+      es.includes("en su idioma") && !es.includes("inglés perfecto"),
+      `es: clients get their own language (got "${es}")`,
+    );
+    await page.locator('.lang-toggle button[data-lang="en"]').click();
+    await page.waitForFunction(
+      () =>
+        document.querySelector('[data-i18n="hero.lead"]')?.textContent
+          ?.includes("in their language") === true,
+      undefined,
+      { timeout: 10_000 },
+    ).catch(() => {});
+    const en = ((await leadEl.textContent()) ?? "").trim();
+    expect(
+      en.includes("in their language"),
+      `en: the same promise (got "${en}")`,
+    );
+  }));

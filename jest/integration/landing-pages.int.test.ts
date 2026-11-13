@@ -134,7 +134,8 @@ describe("P-19 / SSR is already Spanish when pm_lang=es (no wrong-language first
   it("P-19 hero copy is server-rendered in Spanish, not EN-with-a-Spanish-title", () => {
     // Red today: the <title> is Spanish but the body says
     // "You communicate with us in Spanish…" (hero.lead EN).
-    expect(html).toContain("Nos escribes en español");
+    // REQ-775 (dv1 d2): the Spanish lead now makes the English lead's promise.
+    expect(html).toContain("Háblanos en español o en inglés");
     expect(html).not.toContain("You communicate with us in Spanish");
   });
 
@@ -165,6 +166,19 @@ describe("REQ-413 (demo-loop cycle 2, p5 / m49) the landing SSR speaks one langu
     expect(html).not.toContain("You communicate with us in Spanish");
     expect(html).toContain("Talk to us in English or Spanish.");
     expect(html).toMatch(/class="lang-toggle"[^>]*aria-label="Language"/);
+  });
+});
+
+describe("REQ-775 (demo-loop dv1, d2) / makes the same language promise in English and Spanish", () => {
+  it("REQ-775 es: the SSR hero lead promises clients get their own language, not 'inglés perfecto'", async () => {
+    const html = await pageHtml("/", "es");
+    expect(html).toContain("en su idioma, listo para firmar");
+    expect(html).not.toContain("inglés perfecto");
+  });
+  it("REQ-775 en: the SSR hero lead promises the same thing", async () => {
+    const html = await pageHtml("/", "en");
+    expect(html).toContain("in their language, ready to sign");
+    expect(html).not.toContain("perfect English");
   });
 });
 

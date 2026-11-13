@@ -229,8 +229,10 @@ export const LANDING_DICT: Record<LandingLang, Record<string, string>> = {
     "hero.h1a": "Tú haces el trabajo.",
     "hero.h1b": "Nosotros manejamos",
     "hero.h1Sr": HERO_SENTENCE.es,
+    // REQ-775 (dv1 d2): the same promise as the English lead — either
+    // language in, each client gets their own — not "inglés perfecto".
     "hero.lead":
-      "Nos escribes en español. Todo sale a tus clientes en inglés perfecto. Sin apps que aprender. Solo chatea con nosotros.",
+      "Háblanos en español o en inglés. Todo les llega a tus clientes en su idioma, listo para firmar. Sin apps que aprender — solo chatea.",
     "hero.cta1": "Empezar →",
     "hero.cta2": "Ver cómo funciona",
     "hero.trustStrong": "+{n} contratistas",

@@ -462,7 +462,8 @@ describe("REQ-413 (m49) the English landing lead is written for an English reade
       "Talk to us in English or Spanish. Everything goes out to your clients in their language, ready to sign. No apps to learn — just chat.";
     expect(LANDING_DICT.en["hero.lead"]).toBe(lead);
     expect(en["landing.hero.lead"]).toBe(lead);
-    // The Spanish pitch is unchanged.
+    // REQ-775 (dv1 d2): the Spanish lead now makes the same promise; the
+    // dictionary and the lang/*.json mirror still agree.
     expect(LANDING_DICT.es["hero.lead"]).toBe(es["landing.hero.lead"]);
   });
 });
