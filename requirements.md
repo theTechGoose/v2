@@ -4358,3 +4358,16 @@ Tests:
 - unit: `demo-loop/demo20b_test.ts` "REQ-621: the rules file names every category, in order, each with an action" (the rules file is executed by agents, so it gets a content test).
 - int: `demo-loop/demo20b_test.ts` "REQ-621: both testers are told to read the rules and tag every issue" runs the real harness with a fake fleet-claude.
 - e2e: the next demo cycle; its reports carry category tags.
+
+## REQ-717 — Change-order decision amounts are grouped like every other amount (demo-loop cycle 5, p11)
+
+> "fix every issue the demo found, loop until there are none"
+
+Demo-loop cycle 5 (run r37f88707), issue **p11** (BUG_POLISH, RCA CONFIRMED + skeptic UPHELD): when a customer approved or declined a change order on the public /co link, the owner's toast and activity feed read "(+$1600.00)". There was no thousands comma, unlike every other amount in the app. Root cause: `fmtDelta` in `backend/src/paperwork/entrypoints/public-controller/mod.ts` built the string by hand with `toFixed(2)` and put it pre-formatted on the bus event. NotifyOnEvent then passed it through untouched in both EN and ES.
+
+Fix: the public controller now emits only the raw signed `deltaAmountCents` (`fmtDelta` is deleted). NotifyOnEvent stores `deltaCents` in `titleParams`, and the shared renderer (`shared/quote-flow/notification-title.ts`) formats it when the title is rendered, with the same grouped money formatter used for every other amount: "+$1,600", "−$1,250.50". A legacy row that already holds a pre-formatted `delta` string still renders as before.
+
+Tests:
+- unit: `backend/src/communication/domain/coordinators/notify-on-event/test.ts` — "REQ-717 p11 (cycle 5): a change-order decision's deltaAmountCents renders grouped, signed, in en + es", "… the stored change-order row carries raw cents, never a pre-formatted string", "… a change-order row stored with the old pre-formatted delta still renders".
+- int: `backend/src/paperwork/entrypoints/public-controller/change-order-delta-format.int.test.ts` — "REQ-717 p11: the owner's feed shows a change-order decision's amount with a thousands comma (+$1,600 approved, −$1,250.50 declined)". This drives the real HTTP flow: public approve/decline → bus → NotifyOnEvent → GET /notifications.
+- e2e: n/a — the int test already exercises the full server path over HTTP. The text is rendered by the shared renderer that the int test covers, and the next demo cycle re-checks it in the browser.

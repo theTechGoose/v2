@@ -255,3 +255,40 @@ Deno.test("REQ-564: quote/invoice 'revised' maps to '<number> Version <n> publis
     "INV-003 Version 3 published to your client",
   );
 });
+
+Deno.test("REQ-717 p11 (cycle 5): a change-order decision's deltaAmountCents renders grouped, signed, in en + es", () => {
+  const up = ev("change_order_approved", {
+    customerName: "Ana",
+    deltaAmountCents: 160_000,
+  });
+  assertEquals(feedTitle(up, "en"), "Ana approved your change order (+$1,600)");
+  assertEquals(feedTitle(up, "es"), "Ana aprobó tu orden de cambio (+$1,600)");
+  const down = ev("change_order_declined", {
+    customerName: "Ana",
+    deltaAmountCents: -125_050,
+  });
+  assertEquals(
+    feedTitle(down, "en"),
+    "Ana declined your change order (−$1,250.50)",
+  );
+});
+
+Deno.test("REQ-717 p11 (cycle 5): the stored change-order row carries raw cents, never a pre-formatted string", () => {
+  const l = notificationL10n(
+    ev("change_order_approved", { deltaAmountCents: 160_000 }),
+  )!;
+  assertEquals(l.titleKey, "notify.invoice.changeOrderApprovedAmount");
+  assertEquals(l.titleParams?.deltaCents, 160_000);
+  assertEquals(l.titleParams?.delta, undefined);
+});
+
+Deno.test("REQ-717 p11 (cycle 5): a change-order row stored with the old pre-formatted delta still renders", () => {
+  assertEquals(
+    storedTitle(
+      "notify.invoice.changeOrderApprovedAmount",
+      { name: "Ana", delta: "+$250.00" },
+      "en",
+    ),
+    "Ana approved your change order (+$250.00)",
+  );
+});
