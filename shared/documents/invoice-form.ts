@@ -17,6 +17,11 @@ import {
   isUsPhone,
 } from "../quote-flow/format-helpers.ts";
 import {
+  type CustomerFormErrors,
+  customerFormErrors,
+  isValidCustomerEmail,
+} from "../quote-flow/customer-contact.ts";
+import {
   type DocState,
   invoiceBalance,
   invoiceState,
@@ -422,6 +427,35 @@ export function invoiceIssueBlock(opts: {
     return "errRecipient";
   }
   return null;
+}
+
+/**
+ * REQ-708 (demo-loop cycle 5, c1-setup-m15) — the New invoice form's own
+ * per-field rule, so the form can be novalidate (the browser's bubble, which
+ * the demo stage cannot show, never pre-empts it): with "+ New client"
+ * picked, the new client's name / phone / email follow REQ-352's
+ * customerFormErrors; the bill-to email follows the same email rule. Blank
+ * contacts are fine. An empty object means the form may go ahead.
+ */
+export interface NewInvoiceFieldErrors extends CustomerFormErrors {
+  billEmail?: "customer.invalidEmail";
+}
+
+export function newInvoiceFieldErrors(form: {
+  newClient: boolean;
+  name?: string | null;
+  phoneNumber?: string | null;
+  email?: string | null;
+  billEmail?: string | null;
+}): NewInvoiceFieldErrors {
+  const out: NewInvoiceFieldErrors = form.newClient
+    ? customerFormErrors(form)
+    : {};
+  const billEmail = (form.billEmail ?? "").trim();
+  if (billEmail && !isValidCustomerEmail(billEmail)) {
+    out.billEmail = "customer.invalidEmail";
+  }
+  return out;
 }
 
 /** REQ-550: an invoice total over INVOICE_CONFIRM_CENTS needs the contractor

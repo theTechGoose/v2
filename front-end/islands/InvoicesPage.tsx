@@ -110,6 +110,8 @@ import {
   needsAmountConfirm,
   NET_DAYS_OPTIONS,
   newInvoiceCopy,
+  type NewInvoiceFieldErrors,
+  newInvoiceFieldErrors,
   newInvoiceStatus,
   paymentSummary,
   percentToBp,
@@ -3694,6 +3696,8 @@ function NewInvoiceModal(
   const [scheduledFor, setScheduledFor] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /** REQ-708 (cycle 5, c1-setup-m15): one in-app message per field */
+  const [fieldErrs, setFieldErrs] = useState<NewInvoiceFieldErrors>({});
   /** REQ-550: the large total the contractor was asked to confirm. */
   const [confirmCents, setConfirmCents] = useState<number | null>(null);
   // REQ-205: the quote's ledger, when the form opened from a quote
@@ -3915,18 +3919,69 @@ function NewInvoiceModal(
   const sectionTitle =
     "margin:6px 0 0;font-size:11px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--fg-muted,#6b7560)";
 
+  type CheckedField = keyof NewInvoiceFieldErrors;
+  /** REQ-708: the rule over the form's values, `over` replacing one being typed */
+  function fieldErrorsFor(over: Partial<Record<CheckedField, string>> = {}) {
+    return newInvoiceFieldErrors({
+      newClient: clientSel === NEW_SENTINEL,
+      name: over.name ?? newName,
+      phoneNumber: over.phone ?? newPhone,
+      email: over.email ?? newEmail,
+      billEmail: over.billEmail ?? billTo.email,
+    });
+  }
+  /** REQ-708: re-check ONE field (on blur, or while it already shows a message) */
+  function checkField(field: CheckedField, value?: string) {
+    const key =
+      fieldErrorsFor(value === undefined ? {} : { [field]: value })[field];
+    setFieldErrs((prev) => {
+      const next = { ...prev };
+      if (key) (next as Record<string, string>)[field] = key;
+      else delete next[field];
+      return next;
+    });
+  }
+  /** REQ-708: the props that flag a field and point at its message */
+  const flag = (field: CheckedField) => ({
+    "aria-invalid": fieldErrs[field] ? ("true" as const) : undefined,
+    "aria-describedby": fieldErrs[field]
+      ? `new-invoice-${field}-err`
+      : undefined,
+  });
+  const fieldError = (field: CheckedField) => {
+    const key = fieldErrs[field];
+    return key
+      ? (
+        <span
+          id={`new-invoice-${field}-err`}
+          role="alert"
+          data-cy={`new-invoice-${field}-err`}
+          style="color:#a83b3b;font-size:12.5px;font-weight:600"
+        >
+          {tFor(lang, key)}
+        </span>
+      )
+      : null;
+  };
+  const badBorder = ";border-color:#a83b3b";
+
   async function submit(issue: boolean) {
     if (busy) return;
+    // REQ-708 (cycle 5, c1-setup-m15) / REQ-352: the customer rule, run here
+    // per field — the form is novalidate, so the browser's bubble (which the
+    // demo stage cannot show) never pre-empts these messages.
+    const errs = fieldErrorsFor();
+    setFieldErrs(errs);
+    if (Object.keys(errs).length > 0) {
+      setError(null);
+      return;
+    }
     if (totals.totalCents <= 0) {
       setError(tFor(lang, "invoicesPage.new.errAmount"));
       return;
     }
     if (!dueDate) {
       setError(tFor(lang, "invoicesPage.new.errDueDate"));
-      return;
-    }
-    if (clientSel === NEW_SENTINEL && !newName.trim()) {
-      setError(tFor(lang, "invoicesPage.new.errClientName"));
       return;
     }
     // REQ-550 (demo cycle 4, B1): Issue needs someone to bill, and nothing
@@ -4104,6 +4159,7 @@ function NewInvoiceModal(
     >
       <form
         data-cy="new-invoice-modal"
+        noValidate
         onClick={(e) => e.stopPropagation()}
         onSubmit={onFormSubmit}
         style="background:#fff;border-radius:16px;padding:24px 26px;max-width:640px;width:100%;box-shadow:0 24px 64px rgba(20,72,82,0.22);display:flex;flex-direction:column;gap:14px;margin:auto"
@@ -4254,36 +4310,56 @@ function NewInvoiceModal(
               {tFor(lang, "settings.name")}
               <input
                 type="text"
+                data-cy="new-invoice-new-name"
                 autoFocus
                 required
                 value={newName}
                 disabled={busy}
-                onInput={(e) =>
-                  setNewName((e.target as HTMLInputElement).value)}
-                style={inputStyle}
+                {...flag("name")}
+                onInput={(e) => {
+                  const v = (e.target as HTMLInputElement).value;
+                  setNewName(v);
+                  if (fieldErrs.name) checkField("name", v);
+                }}
+                style={inputStyle + (fieldErrs.name ? badBorder : "")}
               />
+              {fieldError("name")}
             </label>
             <label style={labelStyle}>
               {tFor(lang, "settings.phone")}
               <input
                 type="tel"
+                data-cy="new-invoice-new-phone"
                 value={formatPhoneInput(newPhone)} /* NW-34 (REQ-012) */
                 disabled={busy}
-                onInput={(e) =>
-                  setNewPhone((e.target as HTMLInputElement).value)}
-                style={inputStyle}
+                {...flag("phone")}
+                onInput={(e) => {
+                  const v = (e.target as HTMLInputElement).value;
+                  setNewPhone(v);
+                  if (fieldErrs.phone) checkField("phone", v);
+                }}
+                onBlur={() => checkField("phone")}
+                style={inputStyle + (fieldErrs.phone ? badBorder : "")}
               />
+              {fieldError("phone")}
             </label>
             <label style={labelStyle}>
               {tFor(lang, "settings.email")}
               <input
                 type="email"
+                data-cy="new-invoice-new-email"
                 value={newEmail}
                 disabled={busy}
-                onInput={(e) =>
-                  setNewEmail((e.target as HTMLInputElement).value)}
-                style={inputStyle}
+                {...flag("email")}
+                onInput={(e) => {
+                  const v = (e.target as HTMLInputElement).value;
+                  setNewEmail(v);
+                  if (fieldErrs.email) checkField("email", v);
+                }}
+                onBlur={() => checkField("email")}
+                style={inputStyle + (fieldErrs.email ? badBorder : "")}
               />
+              {fieldError("email")}
             </label>
           </div>
         )}
@@ -4349,10 +4425,16 @@ function NewInvoiceModal(
               data-cy="new-invoice-bill-email"
               value={billTo.email}
               disabled={busy}
-              onInput={(e) =>
-                setBill({ email: (e.target as HTMLInputElement).value })}
-              style={smallInput}
+              {...flag("billEmail")}
+              onInput={(e) => {
+                const v = (e.target as HTMLInputElement).value;
+                setBill({ email: v });
+                if (fieldErrs.billEmail) checkField("billEmail", v);
+              }}
+              onBlur={() => checkField("billEmail")}
+              style={smallInput + (fieldErrs.billEmail ? badBorder : "")}
             />
+            {fieldError("billEmail")}
           </label>
           <label style={labelStyle}>
             {tFor(lang, "invoices.form.billPhone")}
