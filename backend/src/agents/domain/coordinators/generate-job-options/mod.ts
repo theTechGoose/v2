@@ -16,6 +16,7 @@ import {
   summarizeJobName,
 } from "#quote-flow/job-name.ts";
 import { clampSummary } from "#quote-flow/summary-clamp.ts";
+import { namesOptionRole } from "./role-words.ts";
 import { scopeBulletsFromRaw } from "#quote-flow/scope-from-raw.ts";
 import {
   bulletFor,
@@ -176,7 +177,7 @@ export class GenerateJobOptions {
       ).join(", ")
     } }`;
     const multiLangLine =
-      `\n\nOUTPUT STRUCTURE OVERRIDE: return JSON { "options": [ ${optionShape}, ${optionShape}, ${optionShape} ] } — an ARRAY of exactly 3 option objects; each option object has exactly these language keys: ${langList}. "bullets" has as many lines as the option needs: EVERY option covers the WHOLE job (every scope item, in every option) and the three play distinct roles in this order — 1 CONCISE (fewest lines, related items grouped), 2 STANDARD (one line per item), 3 DETAILED (one line per item with every specific the contractor stated: quantities, sizes, materials) — never split the job's items across them. No bullet names the customer, their contact or the job's duration. Within an option, the bullets in each language MUST be 1:1 translations of the same scope (same count and order). jobName/summary/bullets follow all the rules above, in each language.` +
+      `\n\nOUTPUT STRUCTURE OVERRIDE: return JSON { "options": [ ${optionShape}, ${optionShape}, ${optionShape} ] } — an ARRAY of exactly 3 option objects; each option object has exactly these language keys: ${langList}. "bullets" has as many lines as the option needs: EVERY option covers the WHOLE job (every scope item, in every option) and the three play distinct roles in this order — 1 CONCISE (fewest lines, related items grouped), 2 STANDARD (one line per item), 3 DETAILED (one line per item with every specific the contractor stated: quantities, sizes, materials) — never split the job's items across them. No bullet names the customer, their contact or the job's duration. Within an option, the bullets in each language MUST be 1:1 translations of the same scope (same count and order). jobName/summary/bullets follow all the rules above, in each language. jobName and summary never name the option's role: they describe the job itself ("Kitchen Remodel"), never "Concise", "Standard", "Detailed" or "Scope of work" (es: "conciso", "estándar", "detallado", "alcance de trabajo").` +
       // REQ-448 (demo-loop cycle 3, m47): the Spanish picker copy read
       // "gabinetes de shaker" and "sq ft" — it had no glossary.
       (langs.includes("es") ? ` ${ES_TRADE_GLOSSARY}` : "");
@@ -477,6 +478,12 @@ function realText(v: unknown): string | undefined {
   return s && !PLACEHOLDER.test(s) ? s : undefined;
 }
 
+/** realText, minus any text that names the option's role (REQ-667). */
+function jobDescription(v: unknown): string | undefined {
+  const s = realText(v);
+  return s && !namesOptionRole(s) ? s : undefined;
+}
+
 function normalizeOneLang(
   o: unknown,
   lang: Lang,
@@ -499,11 +506,16 @@ function normalizeOneLang(
     // job (recessed lights, permit, vanity). The prompt groups past twelve.
     : [];
   if (bullets.length === 0) return null;
-  const summaryText = realText(obj?.summary);
+  // REQ-667 (cycle 5, m49): a summary or jobName that names the option's
+  // role ("Concise scope of work") is not a description of the job — the
+  // summary falls back to the jobName, the jobName to the summary.
+  const jobNameText = jobDescription(obj?.jobName);
+  const summaryText = jobDescription(obj?.summary);
   const summary = summaryText
     ? clampSummary(summaryText)
+    : realText(obj?.summary) && jobNameText
+    ? clampSummary(jobNameText)
     : clampSummary(bullets[0]);
-  const jobNameText = realText(obj?.jobName);
   const jobName = jobNameText
     ? clampJobName(jobNameText, lang)
     : deriveJobName(summary, lang);

@@ -1100,3 +1100,96 @@ Deno.test("REQ-659 M14 a model bullet carrying a markup or a labor rate is dropp
     "Lechada y sellado",
   ]);
 });
+
+// ── REQ-667 (demo-loop cycle 5, m49) ───────────────────────────────────────
+// fleet-6: the customer's agreement carried the line "Alcance de trabajo
+// conciso $18,750.00" and the /quotes drawer "Concise scope of work" — the
+// concise option's summary named its internal role, and the picked summary
+// became the quote's line description.
+
+Deno.test("REQ-667 (m49) the prompt forbids the option roles in jobName and summary", async () => {
+  const { llm, coord } = fresh();
+  let user = "";
+  llm.setHandler((req) => {
+    user = String(req.messages[0].content);
+    throw new Error("only reading the prompt");
+  });
+  await coord.run({ userId: "u1", raw: PRIYA_RAW, langs: ["en", "es"] });
+  assert(
+    /jobName and summary never (?:name|contain)[^.]*role/i.test(user),
+    "the prompt does not forbid role words in jobName/summary",
+  );
+});
+
+Deno.test("REQ-667 (m49) a summary or jobName that names the option's role is replaced, in every language", async () => {
+  const { llm, coord } = fresh();
+  llm.setHandler(() => ({
+    text: JSON.stringify({
+      options: [
+        {
+          en: {
+            jobName: "Kitchen Remodel",
+            summary: "Concise scope of work",
+            bullets: ["Kitchen demolition and haul away", "New cabinets and quartz countertops"],
+          },
+          es: {
+            jobName: "Remodelación de cocina",
+            summary: "Alcance de trabajo conciso",
+            bullets: ["Demolición de cocina y retiro", "Gabinetes nuevos y encimeras de cuarzo"],
+          },
+        },
+        {
+          en: {
+            jobName: "Standard Scope",
+            summary: "Standard scope of work",
+            bullets: ["Kitchen demolition", "Haul away debris", "Install new cabinets", "Quartz countertops"],
+          },
+          es: {
+            jobName: "Alcance estándar",
+            summary: "Alcance de trabajo estándar",
+            bullets: ["Demolición de cocina", "Retiro de escombros", "Instalar gabinetes nuevos", "Encimeras de cuarzo"],
+          },
+        },
+        {
+          en: {
+            jobName: "Complete Kitchen Renovation",
+            summary: "Detailed scope of work",
+            bullets: [
+              "Full kitchen demolition to the studs",
+              "Haul away all demolition debris",
+              "Install 22 lf of new cabinets",
+              "48 sqft quartz countertops",
+            ],
+          },
+          es: {
+            jobName: "Renovación completa de cocina",
+            summary: "Alcance de trabajo detallado",
+            bullets: [
+              "Demolición completa de la cocina",
+              "Retiro de todos los escombros",
+              "Instalar 22 lf de gabinetes nuevos",
+              "48 sqft de encimeras de cuarzo",
+            ],
+          },
+        },
+      ],
+    }),
+  }));
+  const res = await coord.run({
+    userId: "u1",
+    raw: "Kitchen demo, haul away, 22 lf cabinets, 48 sqft quartz",
+    langs: ["en", "es"],
+  });
+  assertEquals(res.degraded, false);
+  assertEquals(res.options.length, 3);
+  const role = /concis|standard|est[aá]ndar|detailed|detallad|scope of work|alcance de trabajo/i;
+  for (const o of res.options) {
+    for (const text of [o.jobName, o.summary, ...Object.values(o.byLang).flatMap((l) => [l.jobName, l.summary])]) {
+      assert(!role.test(text), `role word reaches the client: ${text}`);
+    }
+  }
+  // The summary falls back to the option's own jobName.
+  assertEquals(res.options[0].summary, "Kitchen Remodel");
+  assertEquals(res.options[0].byLang.es.summary, "Remodelación de cocina");
+  assertEquals(res.options[2].byLang.es.summary, "Renovación completa de cocina");
+});
