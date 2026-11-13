@@ -19,6 +19,8 @@
  * own stored-term localizer (English base → reader's language).
  */
 
+import { terminationClauseBody } from "../quote-flow/cancellation-term.ts";
+
 export type Translate = (
   key: string,
   vars?: Record<string, string | number>,
@@ -90,6 +92,18 @@ export function agreementClauses<L extends string>(input: {
   const w = warrantyClauseKind(terms);
   return AGREEMENT_CLAUSE_KEYS.map((k) => {
     const title = t(`${prefix}.${k}.title`);
+    // REQ-783 (dv1 d4): clause 10 states the cancellation notice the owner
+    // saw (and could change) in the quote review — 7 days by default.
+    if (k === "termination") {
+      return [
+        title,
+        terminationClauseBody(terms, {
+          prefix,
+          t,
+          localize: (v) => localize(v, lang as L),
+        }),
+      ];
+    }
     if (k !== "warranty") return [title, t(`${prefix}.${k}.body`)];
     if (w.kind === "period") {
       return [

@@ -96,6 +96,7 @@ import {
   mergeFreshTerms,
   previewTermRows,
 } from "../../shared/quote-flow/wizard-terms.ts"; // REQ-347
+import { withCancellationRow } from "../../shared/quote-flow/cancellation-term.ts"; // REQ-783
 import { quoteUpdatedBy } from "../lib/chat-quote-refresh.ts";
 import { draftCardView } from "../lib/chat-draft-card.ts"; // REQ-660
 import { mergeLockedCard, mergeTurnMessages } from "../lib/turn-messages.ts"; // REQ-585, REQ-662
@@ -442,6 +443,14 @@ const TERM_OPTIONS_FALLBACK: Record<
     { labelKey: "asstChat.warranty.preset.sixMonths" },
     { labelKey: "asstChat.warranty.preset.twelveMonths" },
     { labelKey: "asstChat.warranty.preset.twentyFourMonths" },
+  ],
+  // REQ-783 (dv1 d4): the agreement's cancellation notice — 7 days by
+  // default; the owner changes or removes it ("No notice period") here.
+  cancellation: [
+    { labelKey: "asstChat.terms.cancellation.sevenDays" },
+    { labelKey: "asstChat.terms.cancellation.fourteenDays" },
+    { labelKey: "asstChat.terms.cancellation.thirtyDays" },
+    { labelKey: "asstChat.terms.cancellation.none" },
   ],
   termination: [
     { labelKey: "asstChat.terms.termination.sevenDays" },
@@ -849,6 +858,7 @@ const TERM_LABEL_KEYS: Record<string, string> = {
   payment_terms: "asstChat.preview.termLabel.payment",
   warranty: "asstChat.preview.termLabel.warranty",
   deadline: "asstChat.preview.termLabel.deadline", // REQ-771
+  cancellation: "asstChat.preview.termLabel.cancellation", // REQ-783
 };
 
 export default function AsstChat({
@@ -7727,6 +7737,18 @@ export default function AsstChat({
                       t: tFor,
                       localize: localizeTermValue,
                     });
+                    // REQ-783 (dv1 d4): every term the customer's agreement
+                    // carries is listed — the cancellation notice too (7
+                    // days by default), editable like any other row. An
+                    // invoice carries none.
+                    const termRows = reviewDocType === "invoice"
+                      ? termAnswers
+                      : withCancellationRow(termAnswers, {
+                        quoteTerms: quote?.terms,
+                        lang: previewLang,
+                        t: tFor,
+                        localize: localizeTermValue,
+                      });
                     // REQ-302 (demo B1): the TOTAL is the sum of the lines
                     // this card renders — `quote.estimatedTotal` is loaded
                     // once per quoteId and went stale after a chat reprice
@@ -8429,14 +8451,14 @@ export default function AsstChat({
                             the start/duration/payment/warranty grid; only the
                             14 legal clauses + signature are dropped (and the
                             compact preview never rendered those anyway). */}
-                          {termAnswers.length > 0
+                          {termRows.length > 0
                             ? (
                               <section class="quote-review__section">
                                 <div class="quote-review__section-label">
                                   {tFor(previewLang, "asstChat.preview.terms")}
                                 </div>
                                 <dl class="quote-review__terms">
-                                  {termAnswers.map((t, i) => {
+                                  {termRows.map((t, i) => {
                                     // docId from the parent scope defaults to "" via `?? ""`,
                                     // so use || not ?? to fall back to quote.id when empty.
                                     const cid = docId || quote?.id;
