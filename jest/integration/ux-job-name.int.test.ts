@@ -173,9 +173,10 @@ describe("UX-05/UX-26(c)/UX-29/UX-41: Spanish job-name derivation over HTTP", ()
     expect(opts.length).toBeGreaterThanOrEqual(3);
     // Probed today: "Cambiar 12 Tablas" / "Cambiar 12 Tablas · Versión breve".
     expect(opts[0].byLang.es.jobName).toBe("Cambiar 12 tablas");
-    expect(opts[1].byLang.es.jobName.startsWith("Cambiar 12 tablas · ")).toBe(
-      true,
-    );
+    // REQ-759 AMENDMENT (cycle 5v2, m49): every version keeps the job's own
+    // title — the old "· Versión breve" qualifier reached the customer's
+    // page; the cards are told apart by their style label.
+    expect(opts[1].byLang.es.jobName).toBe("Cambiar 12 tablas");
   });
 
   it("UX-05: the version-option cards keep ES stopwords lowercase mid-title", async () => {
