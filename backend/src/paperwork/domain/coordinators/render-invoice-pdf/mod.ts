@@ -18,7 +18,10 @@ import { BusinessIdentityStore } from "@profile/domain/data/business-identity-st
 import { SITE_ORIGIN } from "#quote-flow/site-meta.ts";
 import { winAnsiSafeDeep } from "@paperwork/domain/business/pdf-text/mod.ts";
 import { localizePaymentInstructions } from "#documents/invoice-form.ts"; // REQ-710
-import { invoiceTextByLang } from "#documents/invoice-lang.ts"; // REQ-710
+import {
+  invoiceLineItemsByLang,
+  invoiceTextByLang,
+} from "#documents/invoice-lang.ts"; // REQ-710
 import { lineItemDescription } from "#quote-flow/quote-translations.ts"; // REQ-710
 import {
   customerLines,
@@ -30,7 +33,11 @@ import {
   renderWord,
   revisedNote,
 } from "@paperwork/domain/business/doc-render/mod.ts";
-import { fmtVisitDate, groupVisits } from "#quote-flow/visit-groups.ts";
+import {
+  fmtVisitDate,
+  groupVisits,
+  visitPeriodOf,
+} from "#quote-flow/visit-groups.ts";
 import { ChangeOrderStore } from "@paperwork/domain/data/change-order-store/mod.ts";
 import { agreedTotalCents, installmentSchedule } from "#documents/ledger.ts"; // REQ-679
 import { isInvoiceIssued } from "#documents/versions.ts";
@@ -138,7 +145,7 @@ export class RenderInvoicePdf {
     const addPageIfNeeded = (need: number) => {
       if (y - need < M) {
         page = pdf.addPage([W, H]);
-        y = H;
+        y = H - M; // REQ-792: a continued page keeps its top margin
       }
     };
 
@@ -212,66 +219,19 @@ export class RenderInvoicePdf {
     page.drawText(heroTitle, { x: M, y, size: 24, font: bold, color: TEAL });
     y -= 24;
 
-    // REQ-173: a batch invoice — the address is a heading, the visits sit under it
-    const visits = groupVisits(invoice.lineItems);
-    if (visits) {
-      for (const g of visits) {
-        addPageIfNeeded(40);
-        page.drawText(g.address, {
-          x: M,
-          y,
-          size: 10.5,
-          font: bold,
-          color: TEAL,
-        });
-        y -= 8;
-        page.drawLine({
-          start: { x: M, y },
-          end: { x: W - M, y },
-          thickness: 0.5,
-          color: LINE,
-        });
-        y -= 13;
-        for (const v of g.visits) {
-          addPageIfNeeded(24);
-          page.drawText(fmtVisitDate(v.date, lang), {
-            x: M,
-            y,
-            size: 9.5,
-            font: reg,
-            color: MUTED,
-          });
-          page.drawText(v.service, {
-            x: M + 56,
-            y,
-            size: 10,
-            font: reg,
-            color: INK,
-          });
-          const amt = fmtUSD(v.price);
-          page.drawText(amt, {
-            x: W - M - bold.widthOfTextAtSize(amt, 10),
-            y,
-            size: 10,
-            font: bold,
-            color: INK,
-          });
-          y -= 8;
-          page.drawLine({
-            start: { x: M, y },
-            end: { x: W - M, y },
-            thickness: 0.4,
-            color: LINE,
-          });
-          y -= 13;
-        }
-        y -= 6;
-      }
-      y -= 6;
-    }
+    // REQ-173/791: a batch invoice's visits — drawn in the Job details
+    // section below, grouped by address, then date, the amount at the end
+    const visits = groupVisits(invoice.lineItems, visitPeriodOf(invoice));
+    // REQ-792: a standalone invoice's own lines — the site's Job details table
+    const ownLines = !visits && !quote?.lineItems?.length
+      ? invoiceLineItemsByLang(invoice, invoice.lineItems)
+      : [];
 
-    // Standalone description (no quote line items) — render as a paragraph.
-    if (!visits && !quote?.lineItems?.length && invoice.description) {
+    // A standalone invoice with only a description — a paragraph, as on /i.
+    if (
+      !visits && !quote?.lineItems?.length && !ownLines.length &&
+      invoice.description
+    ) {
       y = drawWrappedText(
         page,
         own.descriptionByLang?.[lang] ?? invoice.description,
@@ -515,6 +475,138 @@ export class RenderInvoicePdf {
       ])
       : [[], []];
     const agreementTotal = quote ? agreedTotalCents(quote, quoteCos) : 0;
+
+    // REQ-791/792 — the site's "01 Job details" section on a bill with no
+    // agreement: a batch's visits under their address (date · service ·
+    // amount, the address's subtotal when there are several), else the
+    // invoice's own description and DESCRIPTION / AMOUNT table.
+    if (!quote?.lineItems?.length && (visits || ownLines.length)) {
+      addPageIfNeeded(60);
+      y = drawSectionHeader(
+        page,
+        y,
+        M,
+        sn(),
+        t(lang, "renderQuotePdf.section.jobDetails"),
+        bold,
+        PINK,
+        TEAL,
+      );
+      const rowRule = () => {
+        page.drawLine({
+          start: { x: M, y },
+          end: { x: W - M, y },
+          thickness: 0.4,
+          color: LINE,
+        });
+      };
+      const right = (s: string, size: number, color = INK) =>
+        page.drawText(s, {
+          x: W - M - bold.widthOfTextAtSize(s, size),
+          y,
+          size,
+          font: bold,
+          color,
+        });
+      if (visits) {
+        for (const g of visits) {
+          addPageIfNeeded(48);
+          y -= 4;
+          for (const l of wrap(g.address, bold, 11, W - 2 * M - 90)) {
+            page.drawText(l, { x: M, y, size: 11, font: bold, color: TEAL });
+            y -= 14;
+          }
+          if (visits.length > 1) {
+            y += 14;
+            right(fmtUSD(g.subtotal), 11);
+            y -= 14;
+          }
+          y += 6;
+          rowRule();
+          y -= 16;
+          for (const v of g.visits) {
+            addPageIfNeeded(26);
+            page.drawText(fmtVisitDate(v.date, lang), {
+              x: M,
+              y,
+              size: 10,
+              font: reg,
+              color: MUTED,
+            });
+            page.drawText(v.service, {
+              x: M + 64,
+              y,
+              size: 10.5,
+              font: bold,
+              color: INK,
+            });
+            right(fmtUSD(v.price), 10.5);
+            y -= 9;
+            rowRule();
+            y -= 15;
+          }
+          y -= 8;
+        }
+      } else {
+        const lines = (own.descriptionByLang?.[lang] ?? invoice.description ??
+          "").split(/\n+/).map((l) => l.replace(/^[-•*]\s*/, "").trim())
+          .filter(Boolean);
+        for (const l of lines) {
+          addPageIfNeeded(18);
+          page.drawCircle({ x: M + 4, y: y + 3.5, size: 2.5, color: GREEN });
+          y = drawWrappedText(
+            page,
+            l,
+            M + 16,
+            y,
+            W - 2 * M - 16,
+            reg,
+            10.5,
+            INK,
+            15,
+          );
+        }
+        if (lines.length) y -= 6;
+        const showQty = ownLines.some((li) => (li.quantity ?? 1) > 1);
+        page.drawText(t(lang, "renderQuotePdf.table.description"), {
+          x: M,
+          y,
+          size: 8,
+          font: bold,
+          color: MUTED,
+        });
+        const amountHdr = t(lang, "renderQuotePdf.table.amount");
+        right(amountHdr, 8, MUTED);
+        y -= 6;
+        rowRule();
+        y -= 16;
+        for (const li of ownLines) {
+          const q = li.quantity ?? 1;
+          const text = li.descriptionByLang?.[lang] ?? li.description ?? "";
+          const wrapped = wrap(text || "—", bold, 10.5, W - 2 * M - 150);
+          addPageIfNeeded(wrapped.length * 14 + 12);
+          right(fmtUSD((li.price ?? 0) * q), 10.5);
+          if (showQty) {
+            const qty = `${q} ${li.unit ?? ""}`.trim();
+            page.drawText(qty, {
+              x: W - M - 90 - reg.widthOfTextAtSize(qty, 9),
+              y,
+              size: 9,
+              font: reg,
+              color: MUTED,
+            });
+          }
+          for (const w of wrapped) {
+            page.drawText(w, { x: M, y, size: 10.5, font: bold, color: INK });
+            y -= 14;
+          }
+          y += 5;
+          rowRule();
+          y -= 16;
+        }
+      }
+      y -= 6;
+    }
 
     // Section: Job details (line items) + agreement-value total card.
     if (quote?.lineItems?.length) {
@@ -863,25 +955,35 @@ function drawSectionHeader(
   n: string,
   title: string,
   bold: PDFFont,
-  pink: RGB,
+  _pink: RGB,
   teal: RGB,
 ): number {
-  page.drawCircle({ x: m + 11, y: y - 11, size: 11, color: pink });
+  // REQ-792: the site's SectionHeader — a teal numbered badge, the title in
+  // spaced capitals, a hairline across the page under it
+  page.drawCircle({ x: m + 10, y: y - 10, size: 10, color: teal });
+  const nw = bold.widthOfTextAtSize(n, 8);
   page.drawText(n, {
-    x: m + 7,
-    y: y - 14,
-    size: 9,
+    x: m + 10 - nw / 2,
+    y: y - 13,
+    size: 8,
     font: bold,
     color: rgb(1, 1, 1),
   });
-  page.drawText(title, {
+  page.drawText(title.toUpperCase(), {
     x: m + 30,
     y: y - 14,
-    size: 14,
+    size: 10.5,
     font: bold,
     color: teal,
   });
-  return y - 26;
+  const w = page.getWidth();
+  page.drawLine({
+    start: { x: m, y: y - 30 },
+    end: { x: w - m, y: y - 30 },
+    thickness: 0.6,
+    color: rgb(0.88, 0.9, 0.9),
+  });
+  return y - 50;
 }
 
 function drawWrappedText(

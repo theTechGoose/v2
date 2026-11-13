@@ -12,7 +12,11 @@ import { UserStore } from "@users/domain/data/user-store/mod.ts";
 import { BusinessIdentityStore } from "@profile/domain/data/business-identity-store/mod.ts";
 import type { BusinessIdentity } from "@users/dto/business-identity.ts";
 import { type EmailLogo, emailLogo, emailLogoHtml } from "@paperwork/domain/business/email-logo/mod.ts";
-import { fmtVisitDate, groupVisits } from "#quote-flow/visit-groups.ts";
+import {
+  fmtVisitDate,
+  groupVisits,
+  visitPeriodOf,
+} from "#quote-flow/visit-groups.ts";
 import { ReplyTokenStore } from "@paperwork/domain/data/reply-token-store/mod.ts";
 import { inboundDomain, replyAddress } from "@paperwork/domain/business/inbound-reply/mod.ts";
 import {
@@ -1796,7 +1800,7 @@ export function renderInvoiceBasicHtml(
   const jobName = (own.jobNameByLang?.[lang] ?? i.jobName)?.trim();
   // REQ-173: a batch invoice shows the address as a heading with the visits under it,
   // instead of the flat "date — service — address" description
-  const visits = groupVisits(i.lineItems);
+  const visits = groupVisits(i.lineItems, visitPeriodOf(i));
   const description = visits
     ? undefined
     : (own.descriptionByLang?.[lang] ?? i.description)?.trim();
