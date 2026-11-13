@@ -39,11 +39,13 @@ import {
   detailTitle,
   hasNudgeButton,
   hasSecondaryPaymentReceived,
+  invoiceWhoLine,
   partialSendParts,
   paymentReceivedTarget,
   revealPayForm,
   scheduledSubline,
   sendNowDates,
+  type StageActionKind,
 } from "../lib/invoice-card.ts";
 import { refreshDash } from "../lib/dash-cache.ts";
 import { Icon } from "../components/ui/Icon.tsx";
@@ -90,7 +92,7 @@ import { isExceedsAgreement } from "../../shared/documents/ledger.ts";
 import { isExtraWorkLink } from "../../shared/documents/change-order-actions.ts"; // REQ-655
 import { invoiceLinkPath } from "../lib/customer-link.ts"; // REQ-586
 import { canTextClient, invoiceTextPhone } from "../lib/invoice-text-client.ts"; // REQ-691
-import { customerFixHref } from "../lib/customer-card-edit.ts"; // REQ-691
+import { InvoiceStageActions } from "../components/InvoiceStageActions.tsx"; // REQ-702
 import {
   describeReminderCadence,
   invoiceReminderState,
@@ -762,6 +764,7 @@ export default function InvoicesPage(_props: { lang?: Lang }) {
           onChanged={refreshInvoices}
           onPaymentRecorded={(cents) =>
             setPayFlash(paymentRecordedText(lang, cents))}
+          onFlash={setCardFlash}
         />
       )}
       <InvoicesHero
@@ -1457,15 +1460,28 @@ function lineItemsOf(inv: Invoice): EditableLine[] {
  * come AFTER the forms.
  */
 function InvoiceDetail(
-  { inv, lang, onClose, onChanged, onPaymentRecorded }: {
+  { inv, lang, onClose, onChanged, onPaymentRecorded, onFlash }: {
     inv: EnrichedInvoice;
     lang: Lang;
     onClose: () => void;
     onChanged: () => void | Promise<void>;
     /** REQ-322: the recorded amount (INTEGER CENTS) for the page's flash. */
     onPaymentRecorded: (cents: number) => void;
+    /** REQ-702 (cycle 5, m21): the page note a send / reminder leaves. */
+    onFlash: (f: CardFlash | null) => void;
   },
 ) {
+  // REQ-702 (demo-loop cycle 5, m21): the card's dispatch actions — Send
+  // now, Finish + send, Send reminder — in the panel too, the same way.
+  const dispatch = useInvoiceDispatch(inv, lang, {
+    onFlash,
+    onRefresh: onChanged,
+  });
+  function runStageAction(kind: StageActionKind, e: Event) {
+    if (kind === "sendNow") return dispatch.doSendNow(e);
+    if (kind === "finishSend") return dispatch.doFinishDraft(e);
+    return dispatch.doSendNudge(e);
+  }
   type Mode = "none" | "edit" | "discount" | "co" | "pay";
   // REQ-018: /invoices?open=<id>&pay=1 lands straight on "Payment received".
   const [mode, setMode] = useState<Mode>(() =>
@@ -1883,6 +1899,29 @@ function InvoiceDetail(
           {publishNote}
         </p>
       )}
+
+      <div
+        data-cy="invoice-detail-dispatch"
+        style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:14px"
+      >
+        {
+          /* REQ-702 (cycle 5, m21): the stage action + the customer's link —
+            the same component as the card's back */
+        }
+        <InvoiceStageActions
+          stage={inv.stage}
+          invoiceId={inv.id}
+          invoiceLang={inv.lang}
+          lang={lang}
+          busy={dispatch.busy || busy}
+          cyPrefix="invoice-detail"
+          showStageCta
+          onStageAction={runStageAction}
+          primaryStyle={primaryBtn}
+          secondaryStyle={secondaryBtn}
+        />
+      </div>
+      <CardSendNotes fail={dispatch.sendFail} note={dispatch.sendNote} />
 
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:14px">
         {/* REQ-202: a paid invoice is locked — edit / discount / change order / delete are off */}
@@ -2439,6 +2478,247 @@ function plusDays(n: number): string {
   return d.toISOString().slice(0, 10);
 }
 
+/**
+ * REQ-702 (demo-loop cycle 5, m21): the invoice's dispatch actions — Send
+ * now, Finish + send, Send a nudge — and their honest outcome state, shared
+ * by the list card (its stage CTA) and the detail panel (InvoiceStageActions)
+ * so the panel can send what the card can, the same way.
+ */
+function useInvoiceDispatch(
+  inv: EnrichedInvoice,
+  lang: Lang,
+  { onFlash, onRefresh, now }: {
+    onFlash: (f: CardFlash | null) => void;
+    onRefresh: () => void | Promise<void>;
+    /** REQ-704 — "today" for the reminder a nudge sends (the card's clock) */
+    now?: Date;
+  },
+) {
+  // REQ-704 (cycle 5, m60): the rung a manual nudge sends (-3 before the due
+  // date, 0 on it, then 3 / 7 / 14 / 30 by how overdue it is)
+  const nudgeDay = manualReminderDay(
+    inv.dueDate,
+    (now ?? new Date()).toISOString().slice(0, 10),
+  );
+  const [busy, setBusy] = useState(false);
+  // P-09: honest send state — set when a dispatch delivered on NO channel,
+  // rendered on the card instead of the old silent reload-as-success.
+  const [sendFail, setSendFail] = useState<string | null>(null);
+  // REQ-021: inline confirmation after a nudge (no reload — nothing on the
+  // card changes except that the reminder went out).
+  const [sendNote, setSendNote] = useState<string | null>(null);
+  // REQ-695 (demo cycle 5, m55): the send found no email AND no phone on
+  // file — the card offers "Add email or phone" inline, then sends again.
+  const [needContact, setNeedContact] = useState(false);
+  const [contactErr, setContactErr] = useState<string | null>(null);
+  const [contactBusy, setContactBusy] = useState(false);
+  async function doSendNow(e?: Event) {
+    e?.stopPropagation();
+    if (busy) return;
+    setBusy(true);
+    setSendFail(null);
+    setNeedContact(false);
+    onFlash(null);
+    try {
+      // REQ-554 (demo cycle 4, m52): sent now, it is issued now — issued
+      // today, due today + its days to pay (like Finish + send), BEFORE the
+      // dispatch so the message the client gets carries the same due date.
+      const was = { issuedDate: inv.issuedDate, dueDate: inv.dueDate };
+      const dates = sendNowDates(inv, new Date().toISOString().slice(0, 10));
+      const put = (body: Record<string, unknown>) =>
+        fetch(`/api/invoices/${inv.id}`, {
+          method: "PUT",
+          credentials: "include",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(body),
+        }).then((r) => r.body?.cancel()).catch(() => {});
+      await put(dates);
+      // Fire both channels and interpret honestly (P-09): a failure is
+      // surfaced on the card and nothing pretends it was sent.
+      const d = await dispatchInvoice(inv.id);
+      // REQ-030 (NW-25): a half-delivered send says which channel went and
+      // which did not — REQ-554: what went in green, what failed in red.
+      if (d.delivered && !d.partial) {
+        onFlash({
+          cy: "invoice-sent",
+          text: tFor(lang, "invoicesPage.flash.sent"),
+        });
+      } else if (d.delivered) onFlash(partialParts(lang, d));
+      else {
+        // still scheduled: it keeps the dates of its schedule
+        await put(Object.fromEntries(
+          Object.entries(was).filter(([, v]) => v !== undefined),
+        ));
+        setSendFail(dispatchFailureCopy(lang, d, { number: inv.invoiceRef }));
+        setNeedContact(d.noRecipient);
+      }
+    } finally {
+      setBusy(false);
+      // REQ-554 (demo cycle 4, M9): the server stamps the invoice "sent" on
+      // ANY delivered channel — re-read after every outcome (full, partial,
+      // failed), so the card moves track in place; never a page load.
+      await onRefresh();
+    }
+  }
+  // "Finish + send" on a draft: a fully deterministic dashboard action — no
+  // assistant round-trip. Stamp issuedDate / dueDate if missing, then
+  // dispatch to the customer over both channels. REQ-480 (demo cycle 3, M18):
+  // the status is NOT flipped up front — the send endpoints stamp the
+  // invoice "sent" once a channel delivers, so an invoice nobody received
+  // stays a draft instead of reading "Sent".
+  async function doFinishDraft(e?: Event) {
+    e?.stopPropagation();
+    if (busy) return;
+    setBusy(true);
+    setSendFail(null);
+    setNeedContact(false);
+    try {
+      const dates = {
+        ...(inv.issuedDate
+          ? {}
+          : { issuedDate: new Date().toISOString().slice(0, 10) }),
+        // REQ-174: due = today + the invoice's days to pay, when it has them
+        ...(typeof inv.netDays === "number"
+          ? { dueDate: plusDays(inv.netDays) }
+          : {}),
+      };
+      if (Object.keys(dates).length > 0) {
+        await fetch(`/api/invoices/${inv.id}`, {
+          method: "PUT",
+          credentials: "include",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(dates),
+        });
+      }
+      // Deliver over both channels; a delivery failure is SURFACED (P-09) —
+      // the contractor must never walk away believing an undeliverable
+      // invoice reached anyone.
+      const d = await dispatchInvoice(inv.id);
+      // REQ-030 (NW-25): a half-delivered send says which channel went and
+      // which did not — REQ-554: in green / red, on the page.
+      if (d.delivered && !d.partial) {
+        onFlash({
+          cy: "invoice-sent",
+          text: tFor(lang, "invoicesPage.flash.sent"),
+        });
+      } else if (d.delivered) onFlash(partialParts(lang, d));
+      else {
+        setSendFail(
+          dispatchFailureCopy(lang, d, {
+            number: inv.invoiceRef,
+            keptDraft: true,
+          }),
+        );
+        setNeedContact(d.noRecipient);
+      }
+    } finally {
+      setBusy(false);
+      // REQ-554 (M9): re-read after every outcome — a draft a channel
+      // reached is stamped "sent" server-side and moves track in place.
+      await onRefresh();
+    }
+  }
+  /** REQ-695 (demo cycle 5, m55): save the typed email / phone where the
+   *  send endpoints read it (the customer, else the invoice's bill-to), then
+   *  run the same send again — in place, no page load. */
+  async function saveContact(raw: string) {
+    if (contactBusy || busy) return;
+    const req = contactFixRequest(raw, {
+      invoiceId: inv.id,
+      customerId: inv.customerId,
+      billTo: inv.billTo as Record<string, unknown> | undefined,
+    });
+    if ("error" in req) {
+      setContactErr(tFor(lang, req.error));
+      return;
+    }
+    setContactErr(null);
+    setContactBusy(true);
+    try {
+      const r = await fetch(req.url, {
+        method: "PUT",
+        credentials: "include",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(req.body),
+      });
+      let msg: unknown = null;
+      try {
+        msg = (await r.json() as { message?: unknown })?.message;
+      } catch { /* empty body */ }
+      if (!r.ok) {
+        const key = apiFieldErrorKey(msg);
+        setContactErr(
+          tFor(lang, key ?? "invoicesPage.send.addContactInvalid"),
+        );
+        return;
+      }
+    } catch {
+      setContactErr(tFor(lang, "invoicesPage.send.addContactInvalid"));
+      return;
+    } finally {
+      setContactBusy(false);
+    }
+    await (inv.stage === "scheduled" ? doSendNow() : doFinishDraft());
+  }
+  const contactFix: ContactFix | null = needContact
+    ? {
+      lang,
+      href: inv.customerId ? customerFixHref(inv.customerId) : null,
+      busy: contactBusy || busy,
+      error: contactErr,
+      onSave: saveContact,
+    }
+    : null;
+  /** REQ-021 (NW-31a): a nudge is the reminder CADENCE (REQ-704: -3 before
+   *  the due date, 0 on it, then day 3 / 7 / 14 / 30 by how overdue the
+   *  invoice is), never the full invoice re-texted. */
+  async function doSendNudge(e: Event) {
+    e.stopPropagation();
+    if (busy) return;
+    const day = nudgeDay;
+    setBusy(true);
+    setSendFail(null);
+    setSendNote(null);
+    try {
+      const res = await fetch("/api/cron/invoice-reminder", {
+        method: "POST",
+        credentials: "include",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ invoiceId: inv.id, day }),
+      });
+      const body = res.ok
+        ? (await res.json().catch(() => ({}))) as {
+          channels?: string[];
+          reason?: string;
+        }
+        : null;
+      // REQ-556 (cycle 4, M7): a 200 that reached nobody says why — no
+      // email or phone on file, every channel failed, muted, or this rung
+      // already fired — never "Already nudged" for a nudge that went nowhere.
+      const note = nudgeNote(body);
+      if (note.tone === "fail") setSendFail(tFor(lang, note.key));
+      else setSendNote(tFor(lang, note.key));
+    } catch {
+      setSendFail(tFor(lang, "invoicesPage.nudge.failed"));
+    } finally {
+      setBusy(false);
+    }
+  }
+  return {
+    busy,
+    setBusy,
+    sendFail,
+    setSendFail,
+    sendNote,
+    setSendNote,
+    doSendNow,
+    doFinishDraft,
+    doSendNudge,
+    needContact,
+    contactFix,
+  };
+}
+
 function InvoiceCard(
   { inv, idx, now, lang, onPaymentReceived, onRefresh, onFlash }: {
     inv: EnrichedInvoice;
@@ -2455,18 +2735,20 @@ function InvoiceCard(
   },
 ) {
   const [flipped, setFlipped] = useState(false);
-  const [busy, setBusy] = useState(false);
-  // P-09: honest send state — set when a dispatch delivered on NO channel,
-  // rendered on the card instead of the old silent reload-as-success.
-  const [sendFail, setSendFail] = useState<string | null>(null);
-  // REQ-021: inline confirmation after a nudge (no reload — nothing on the
-  // card changes except that the reminder went out).
-  const [sendNote, setSendNote] = useState<string | null>(null);
-  // REQ-695 (demo cycle 5, m55): the send found no email AND no phone on
-  // file — the card offers "Add email or phone" inline, then sends again.
-  const [needContact, setNeedContact] = useState(false);
-  const [contactErr, setContactErr] = useState<string | null>(null);
-  const [contactBusy, setContactBusy] = useState(false);
+  // REQ-702 (cycle 5, m21): send now / finish + send / nudge — one dispatch
+  // path shared with the detail panel. REQ-695 (cycle 5, m55): its inline
+  // "Add email or phone" (contactFix) rides the same path.
+  const {
+    busy,
+    setBusy,
+    sendFail,
+    setSendFail,
+    sendNote,
+    doSendNow,
+    doFinishDraft,
+    doSendNudge,
+    contactFix,
+  } = useInvoiceDispatch(inv, lang, { onFlash, onRefresh, now });
   // REQ-250 (demo m12): a nudge on a CLAIMED invoice — the customer said they
   // paid — asks first, inline, naming the claim.
   const [nudgeAsk, setNudgeAsk] = useState(false);
@@ -2695,204 +2977,12 @@ function InvoiceCard(
       setBusy(false);
     }
   }
-  async function doSendNow(e?: Event) {
-    e?.stopPropagation();
-    if (busy) return;
-    setBusy(true);
-    setSendFail(null);
-    setNeedContact(false);
-    onFlash(null);
-    try {
-      // REQ-554 (demo cycle 4, m52): sent now, it is issued now — issued
-      // today, due today + its days to pay (like Finish + send), BEFORE the
-      // dispatch so the message the client gets carries the same due date.
-      const was = { issuedDate: inv.issuedDate, dueDate: inv.dueDate };
-      const dates = sendNowDates(inv, new Date().toISOString().slice(0, 10));
-      const put = (body: Record<string, unknown>) =>
-        fetch(`/api/invoices/${inv.id}`, {
-          method: "PUT",
-          credentials: "include",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify(body),
-        }).then((r) => r.body?.cancel()).catch(() => {});
-      await put(dates);
-      // Fire both channels and interpret honestly (P-09): a failure is
-      // surfaced on the card and nothing pretends it was sent.
-      const d = await dispatchInvoice(inv.id);
-      // REQ-030 (NW-25): a half-delivered send says which channel went and
-      // which did not — REQ-554: what went in green, what failed in red.
-      if (d.delivered && !d.partial) {
-        onFlash({
-          cy: "invoice-sent",
-          text: tFor(lang, "invoicesPage.flash.sent"),
-        });
-      } else if (d.delivered) onFlash(partialParts(lang, d));
-      else {
-        // still scheduled: it keeps the dates of its schedule
-        await put(Object.fromEntries(
-          Object.entries(was).filter(([, v]) => v !== undefined),
-        ));
-        setSendFail(dispatchFailureCopy(lang, d, { number: inv.invoiceRef }));
-        setNeedContact(d.noRecipient);
-      }
-    } finally {
-      setBusy(false);
-      // REQ-554 (demo cycle 4, M9): the server stamps the invoice "sent" on
-      // ANY delivered channel — re-read after every outcome (full, partial,
-      // failed), so the card moves track in place; never a page load.
-      await onRefresh();
-    }
-  }
-  // "Finish + send" on a draft: a fully deterministic dashboard action — no
-  // assistant round-trip. Stamp issuedDate / dueDate if missing, then
-  // dispatch to the customer over both channels. REQ-480 (demo cycle 3, M18):
-  // the status is NOT flipped up front — the send endpoints stamp the
-  // invoice "sent" once a channel delivers, so an invoice nobody received
-  // stays a draft instead of reading "Sent".
-  async function doFinishDraft(e?: Event) {
-    e?.stopPropagation();
-    if (busy) return;
-    setBusy(true);
-    setSendFail(null);
-    setNeedContact(false);
-    try {
-      const dates = {
-        ...(inv.issuedDate
-          ? {}
-          : { issuedDate: new Date().toISOString().slice(0, 10) }),
-        // REQ-174: due = today + the invoice's days to pay, when it has them
-        ...(typeof inv.netDays === "number"
-          ? { dueDate: plusDays(inv.netDays) }
-          : {}),
-      };
-      if (Object.keys(dates).length > 0) {
-        await fetch(`/api/invoices/${inv.id}`, {
-          method: "PUT",
-          credentials: "include",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify(dates),
-        });
-      }
-      // Deliver over both channels; a delivery failure is SURFACED (P-09) —
-      // the contractor must never walk away believing an undeliverable
-      // invoice reached anyone.
-      const d = await dispatchInvoice(inv.id);
-      // REQ-030 (NW-25): a half-delivered send says which channel went and
-      // which did not — REQ-554: in green / red, on the page.
-      if (d.delivered && !d.partial) {
-        onFlash({
-          cy: "invoice-sent",
-          text: tFor(lang, "invoicesPage.flash.sent"),
-        });
-      } else if (d.delivered) onFlash(partialParts(lang, d));
-      else {
-        setSendFail(
-          dispatchFailureCopy(lang, d, {
-            number: inv.invoiceRef,
-            keptDraft: true,
-          }),
-        );
-        setNeedContact(d.noRecipient);
-      }
-    } finally {
-      setBusy(false);
-      // REQ-554 (M9): re-read after every outcome — a draft a channel
-      // reached is stamped "sent" server-side and moves track in place.
-      await onRefresh();
-    }
-  }
-  /** REQ-695 (demo cycle 5, m55): save the typed email / phone where the
-   *  send endpoints read it (the customer, else the invoice's bill-to), then
-   *  run the same send again — in place, no page load. */
-  async function saveContact(raw: string) {
-    if (contactBusy || busy) return;
-    const req = contactFixRequest(raw, {
-      invoiceId: inv.id,
-      customerId: inv.customerId,
-      billTo: inv.billTo as Record<string, unknown> | undefined,
-    });
-    if ("error" in req) {
-      setContactErr(tFor(lang, req.error));
-      return;
-    }
-    setContactErr(null);
-    setContactBusy(true);
-    try {
-      const r = await fetch(req.url, {
-        method: "PUT",
-        credentials: "include",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(req.body),
-      });
-      let msg: unknown = null;
-      try {
-        msg = (await r.json() as { message?: unknown })?.message;
-      } catch { /* empty body */ }
-      if (!r.ok) {
-        const key = apiFieldErrorKey(msg);
-        setContactErr(
-          tFor(lang, key ?? "invoicesPage.send.addContactInvalid"),
-        );
-        return;
-      }
-    } catch {
-      setContactErr(tFor(lang, "invoicesPage.send.addContactInvalid"));
-      return;
-    } finally {
-      setContactBusy(false);
-    }
-    await (inv.stage === "scheduled" ? doSendNow() : doFinishDraft());
-  }
-  const contactFix: ContactFix | null = needContact
-    ? {
-      lang,
-      href: inv.customerId ? customerFixHref(inv.customerId) : null,
-      busy: contactBusy || busy,
-      error: contactErr,
-      onSave: saveContact,
-    }
-    : null;
   /** REQ-018 (NW-27): open this invoice's detail panel in "Payment received"
    *  mode. REQ-489 (cycle 3, p8-pair1-d): in place on /invoices — never a
    *  full page load. */
   function doPaymentReceived(e: Event) {
     e.stopPropagation();
     onPaymentReceived(inv.id);
-  }
-  /** REQ-021 (NW-31a): a nudge is the reminder CADENCE (REQ-704: -3 before
-   *  the due date, 0 on it, then day 3 / 7 / 14 / 30 by how overdue the
-   *  invoice is), never the full invoice re-texted. */
-  async function doSendNudge(e: Event) {
-    e.stopPropagation();
-    if (busy) return;
-    const day = nudgeDay;
-    setBusy(true);
-    setSendFail(null);
-    setSendNote(null);
-    try {
-      const res = await fetch("/api/cron/invoice-reminder", {
-        method: "POST",
-        credentials: "include",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ invoiceId: inv.id, day }),
-      });
-      const body = res.ok
-        ? (await res.json().catch(() => ({}))) as {
-          channels?: string[];
-          reason?: string;
-        }
-        : null;
-      // REQ-556 (cycle 4, M7): a 200 that reached nobody says why — no
-      // email or phone on file, every channel failed, muted, or this rung
-      // already fired — never "Already nudged" for a nudge that went nowhere.
-      const note = nudgeNote(body);
-      if (note.tone === "fail") setSendFail(tFor(lang, note.key));
-      else setSendNote(tFor(lang, note.key));
-    } catch {
-      setSendFail(tFor(lang, "invoicesPage.nudge.failed"));
-    } finally {
-      setBusy(false);
-    }
   }
   function ctaAction(e: Event) {
     if (inv.stage === "claimed") return doConfirmReceived(e);
@@ -3191,6 +3281,14 @@ function InvoiceCard(
             {fmtMoney(inv.amount)}
             <small>· {moodLabel}</small>
           </p>
+          {/* REQ-702 (cycle 5, m21): who and which, under the amount */}
+          <div
+            class="qcard__back-who"
+            data-cy="invoice-card-back-who"
+            style="margin-top:2px;font-size:12.5px;color:var(--fg-muted,#6b7560);overflow:hidden;text-overflow:ellipsis;white-space:nowrap"
+          >
+            {invoiceWhoLine(inv)}
+          </div>
         </div>
         <div class="qcard__back-body">
           {readText && <p class="qcard__read">{readText}</p>}
@@ -3654,9 +3752,19 @@ function InvoiceCard(
           >
             {busy ? "…" : cta}
           </button>
-          <button type="button" onClick={doOpenInvoice}>
-            {tFor(lang, "invoicesPage.back.open")}
-          </button>
+          {
+            /* REQ-702 (cycle 5, m21): View as customer + Copy link — the
+              same component the detail panel uses */
+          }
+          <InvoiceStageActions
+            stage={inv.stage}
+            invoiceId={inv.id}
+            invoiceLang={inv.lang}
+            lang={lang}
+            busy={busy}
+            cyPrefix="invoice-card"
+            showStageCta={false}
+          />
           {hasNudgeButton(inv.stage) && (
             <button
               type="button"

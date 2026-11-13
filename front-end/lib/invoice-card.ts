@@ -244,3 +244,38 @@ export function detailTitle(
     ? { title: job, sub: `${inv.client} · ${inv.invoiceRef}` }
     : { title: inv.client, sub: inv.invoiceRef };
 }
+
+/** REQ-702 (demo-loop cycle 5, m21): what the stage action does. */
+export type StageActionKind = "sendNow" | "finishSend" | "remind";
+
+/**
+ * REQ-702 (m21): the detail panel's stage action — the same dispatch the
+ * card's CTA runs. A scheduled invoice can be sent now, a draft finished and
+ * sent, and anything out or overdue reminded. Claimed and paid have none
+ * (Payment received / the receipt already cover them).
+ */
+export function detailStageAction(
+  stage: CardStage,
+): { kind: StageActionKind; labelKey: string } | null {
+  if (stage === "scheduled") {
+    return { kind: "sendNow", labelKey: "invoicesPage.cta.scheduled" };
+  }
+  if (stage === "drafting") {
+    return { kind: "finishSend", labelKey: "invoicesPage.cta.drafting" };
+  }
+  if (stage === "out" || stage === "overdue") {
+    return { kind: "remind", labelKey: "invoicesPage.detail.sendReminder" };
+  }
+  return null;
+}
+
+/** REQ-702 (m21): "Marisol Ortega · INV-001" — who and which, for the card
+ *  back (the panel already shows the same line). Blank parts are skipped. */
+export function invoiceWhoLine(
+  inv: { client?: string; invoiceRef?: string },
+): string {
+  return [inv.client, inv.invoiceRef]
+    .map((s) => (s ?? "").trim())
+    .filter(Boolean)
+    .join(" · ");
+}
