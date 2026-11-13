@@ -42,6 +42,7 @@ import { ChangeOrderStore } from "@paperwork/domain/data/change-order-store/mod.
 import { agreedTotalCents, installmentSchedule } from "#documents/ledger.ts"; // REQ-679
 import { isInvoiceIssued } from "#documents/versions.ts";
 import { LoadBusinessLogo } from "@paperwork/domain/coordinators/load-business-logo/mod.ts";
+import { payOptionLines } from "@paperwork/domain/business/pay-options/mod.ts"; // REQ-805
 import {
   drawBrandMark,
   embedLogo,
@@ -461,6 +462,61 @@ export class RenderInvoicePdf {
         y -= 4;
       }
       if (rows.length || invoice.paymentInstructions?.trim()) y -= 10;
+    }
+
+    // REQ-805 — how to pay, as the site offers it: every way the business
+    // switched on (its own payment links, "Xpress Pay", by name and URL),
+    // then the invoice's own pay page. Not on a paid or cancelled bill.
+    {
+      const ways = invoice.status === "void" || paid
+        ? []
+        : payOptionLines(ident?.acceptedPaymentMethods, lang);
+      if (ways.length) {
+        addPageIfNeeded(40 + ways.length * 16);
+        page.drawText(t(lang, "printPdf.howToPay").toUpperCase(), {
+          x: M,
+          y,
+          size: 9,
+          font: bold,
+          color: MUTED,
+        });
+        y -= 8;
+        page.drawLine({
+          start: { x: M, y },
+          end: { x: W - M, y },
+          thickness: 0.5,
+          color: LINE,
+        });
+        y -= 15;
+        const valueX = M + 120;
+        for (const w of ways) {
+          const lines = wrap(w.value, reg, 9.5, W - M - valueX);
+          addPageIfNeeded(lines.length * 13 + 4);
+          page.drawText(w.label, {
+            x: M,
+            y,
+            size: 9.5,
+            font: bold,
+            color: INK,
+          });
+          for (const l of lines) {
+            page.drawText(l, {
+              x: valueX,
+              y,
+              size: 9.5,
+              font: reg,
+              color: INK,
+            });
+            y -= 13;
+          }
+          y -= 3;
+        }
+        page.drawText(
+          t(lang, "printPdf.payOnline", { url: `${APP_URL}/i/${invoice.id}` }),
+          { x: M, y, size: 9, font: reg, color: MUTED },
+        );
+        y -= 24;
+      }
     }
 
     // REQ-679 (cycle 5, M18): the agreement is the quote plus its approved

@@ -274,3 +274,64 @@ Deno.test("REQ-630: Venmo + Cash App + a custom 'Extra Pay' link — /i/:id show
       await (await http(`/api/invoices/${inv.id}`, { headers: auth })).json();
     expect.eq(office.status, "paid", "the invoice is paid");
   }));
+
+// REQ-805 — "he added Xpress pay and its not showing on his invoices": A2Z's owner, viewing his own
+// invoice ("viewing as the customer"), saw a chip reading "link" and no Xpress Pay button. The
+// preview now names the link and shows the same pay buttons the customer gets.
+Deno.test("REQ-805: the owner's preview of his invoice names his 'Xpress Pay' link and shows its pay button, as his customer sees it", (t) =>
+  story(t, async ({ page, expect, http, baseUrl }) => {
+    const { auth } = await signIn(http, page, baseUrl);
+    const url = "https://www.xpress-pay.com/a2z-landscape";
+    const put = await http("/api/profile/identity", {
+      method: "PUT",
+      headers: auth,
+      body: JSON.stringify({
+        acceptedPaymentMethods: {
+          check: { enabled: true },
+          zelle: { enabled: true, handle: "pay@a2z.test" },
+          links: [{ id: "xp1", name: "Xpress Pay", url, enabled: true }],
+        },
+      }),
+    });
+    expect.eq(put.status, 200, "the link is saved");
+    await put.body?.cancel();
+    const customer = await (await http("/api/customers", {
+      method: "POST",
+      headers: auth,
+      body: JSON.stringify({ name: "Robert Thall", email: "rt@blackhole.postmarkapp.com" }),
+    })).json();
+    const inv = await (await http("/api/invoices", {
+      method: "POST",
+      headers: auth,
+      body: JSON.stringify({
+        customerId: customer.id,
+        status: "sent",
+        jobName: "Lawn care",
+        amount: 6500,
+        issuedDate: "2026-11-01",
+        dueDate: "2026-11-30",
+      }),
+    })).json();
+
+    // the owner, signed in, opens his own invoice
+    await page.goto(`/i/${inv.id}`);
+    const preview = page.locator("[data-cy='invoice-preview-methods']");
+    await preview.waitFor({ timeout: 15_000 });
+    const chips = (await preview.locator("button").allInnerTexts()).map((s) => s.trim());
+    expect(chips.includes("Xpress Pay"), `a chip names the link (${chips.join(", ")})`);
+    expect(!chips.includes("link"), `no chip reads a bare "link" (${chips.join(", ")})`);
+    const btn = page.locator("[data-cy='pay-link-xp1']");
+    await btn.waitFor({ timeout: 15_000 });
+    expect.eq(await btn.getAttribute("href"), url, "the Xpress Pay button opens his link");
+    expect(
+      (await btn.innerText()).includes("Xpress Pay"),
+      `the button says Xpress Pay (${await btn.innerText()})`,
+    );
+
+    // and his customer (signed out) gets the same button
+    await page.context().clearCookies();
+    await page.goto(`/i/${inv.id}`);
+    const cbtn = page.locator("[data-cy='pay-link-xp1']");
+    await cbtn.waitFor({ timeout: 15_000 });
+    expect.eq(await cbtn.getAttribute("href"), url, "the customer's button opens the same link");
+  }));
