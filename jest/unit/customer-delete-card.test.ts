@@ -57,6 +57,27 @@ describe("REQ-802 — Delete customer on the card", () => {
     expect(page).toMatch(/refreshClients\(\)/);
   });
 
+  it("REQ-802 AMENDMENT the client sheet (Open card) has the same action, question and buttons, wired to the page", () => {
+    const sheet = read("front-end/components/ClientSheet.tsx");
+    for (
+      const cy of [
+        "client-sheet-delete",
+        "client-sheet-delete-ask",
+        "client-sheet-delete-yes",
+        "client-sheet-delete-keep",
+        "client-sheet-delete-error",
+      ]
+    ) {
+      expect(sheet).toContain(`data-cy="${cy}"`);
+    }
+    expect(sheet).toMatch(/clientsClient\.delete\(c\.id\)/);
+    expect(sheet).toMatch(/onDeleted\?: \(c: CustomerCard\) => void/);
+    // the sheet's one solid primary stays Edit; Delete is outlined
+    expect(sheet).toMatch(/BTN_DANGER =\s*"[^"]*background:transparent/);
+    const page = read("front-end/islands/ClientsPage.tsx");
+    expect(page).toMatch(/<ClientSheet[\s\S]*?onDeleted=\{onCustomerDeleted\}/);
+  });
+
   it("REQ-802 the danger style exists in clients.css", () => {
     const css = read("front-end/static/clients.css");
     expect(css).toMatch(/\.ccard2__panel-act--danger\s*\{/);

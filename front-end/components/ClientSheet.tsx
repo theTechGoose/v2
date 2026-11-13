@@ -5,7 +5,8 @@
  * holds, readable at a glance, with the two things to do with it: Edit
  * (REQ-625 — the shared form, prefilled; the one solid primary) and Message.
  */
-import type { CustomerCard } from "../clients/clients.ts";
+import { useState } from "preact/hooks";
+import { clientsClient, type CustomerCard } from "../clients/clients.ts";
 import Backdrop from "./Backdrop.tsx"; // REQ-354
 import { I, ICN } from "../lib/dash-icons.tsx";
 import { type Lang, tFor } from "../lib/i18n.ts";
@@ -24,6 +25,8 @@ interface Props {
   failed?: boolean;
   onClose: () => void;
   onEdit: (c: CustomerCard) => void;
+  /** REQ-802 — Delete customer: the page drops the card, closes the sheet and flashes */
+  onDeleted?: (c: CustomerCard) => void;
 }
 
 const ROW =
@@ -36,6 +39,8 @@ const ICON =
   "flex:none;width:30px;height:30px;border-radius:9px;background:rgba(81,152,67,0.12);color:var(--brand-green,#519843);display:flex;align-items:center;justify-content:center";
 const BTN_PRIMARY =
   "padding:10px 18px;border:0;border-radius:10px;background:var(--brand-green,#519843);color:#fff;font:inherit;font-weight:800;cursor:pointer;display:inline-flex;align-items:center;gap:6px;text-decoration:none";
+const BTN_DANGER =
+  "padding:9px 16px;border:1.5px solid var(--danger,#c0392b);border-radius:10px;background:transparent;color:var(--danger,#c0392b);font:inherit;font-weight:700;cursor:pointer;display:inline-flex;align-items:center;gap:6px;margin-right:auto";
 const BTN_OUTLINE =
   "padding:9px 16px;border:1.5px solid var(--border,#d8dcd5);border-radius:10px;background:#fff;color:var(--fg,#144852);font:inherit;font-weight:700;cursor:pointer;display:inline-flex;align-items:center;gap:6px;text-decoration:none";
 
@@ -46,9 +51,25 @@ function mapsHref(address: string): string {
 }
 
 export default function ClientSheet(
-  { lang, customer: c, failed, onClose, onEdit }: Props,
+  { lang, customer: c, failed, onClose, onEdit, onDeleted }: Props,
 ) {
   const msg = c ? messageHref(c) : null;
+  // REQ-802: Delete customer asks inline (no native dialog) before it deletes
+  const [askDelete, setAskDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteErr, setDeleteErr] = useState<string | null>(null);
+  async function onDeleteYes() {
+    if (!c || deleting) return;
+    setDeleting(true);
+    setDeleteErr(null);
+    try {
+      await clientsClient.delete(c.id);
+      onDeleted?.(c);
+    } catch (err) {
+      setDeleting(false);
+      setDeleteErr((err as Error).message);
+    }
+  }
   const address = c?.address?.trim() ?? "";
   return (
     // REQ-354 AMENDMENT (reconciled with develop on demo-fixes): develop's
@@ -182,8 +203,63 @@ export default function ClientSheet(
           </div>
         )}
 
-        {c && (
+        {c && askDelete && (
+          /* REQ-802: the question in place of the actions — Delete / Keep */
+          <div
+            data-cy="client-sheet-delete-ask"
+            style="margin-top:16px;padding:12px 14px;border-radius:12px;background:rgba(192,57,43,0.06);display:grid;gap:10px;font-size:14px;color:var(--fg,#144852)"
+          >
+            <div>
+              {tFor(lang, "clientsBoard.panel.deleteAsk", { name: c.name })}
+            </div>
+            <div style="display:flex;gap:10px;justify-content:flex-end">
+              <button
+                type="button"
+                data-cy="client-sheet-delete-keep"
+                disabled={deleting}
+                onClick={() => {
+                  setAskDelete(false);
+                  setDeleteErr(null);
+                }}
+                style={BTN_OUTLINE}
+              >
+                {tFor(lang, "clientsBoard.panel.deleteKeep")}
+              </button>
+              <button
+                type="button"
+                data-cy="client-sheet-delete-yes"
+                disabled={deleting}
+                onClick={onDeleteYes}
+                style={`${BTN_DANGER};margin-right:0`}
+              >
+                <I d={ICN.trash} size={13} sw={2.4} />
+                {tFor(lang, "clientsBoard.panel.deleteYes")}
+              </button>
+            </div>
+            {deleteErr && (
+              <div
+                data-cy="client-sheet-delete-error"
+                role="alert"
+                style="color:var(--danger,#c0392b);font-size:13px"
+              >
+                {tFor(lang, "clientsBoard.panel.deleteError", {
+                  message: deleteErr,
+                })}
+              </div>
+            )}
+          </div>
+        )}
+        {c && !askDelete && (
           <div style="display:flex;gap:10px;flex-wrap:wrap;justify-content:flex-end;margin-top:16px">
+            <button
+              type="button"
+              data-cy="client-sheet-delete"
+              onClick={() => setAskDelete(true)}
+              style={BTN_DANGER}
+            >
+              <I d={ICN.trash} size={13} sw={2.4} />
+              {tFor(lang, "clientsBoard.panel.delete")}
+            </button>
             {msg
               ? (
                 <a

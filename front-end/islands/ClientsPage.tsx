@@ -317,6 +317,7 @@ export default function ClientsPage(
           failed={sheet.failed}
           onClose={() => openSheet(null)}
           onEdit={(c) => setEditing(c)}
+          onDeleted={onCustomerDeleted}
         />
       )}
       {addOpen && (
