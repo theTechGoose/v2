@@ -56,12 +56,12 @@ describe("REQ-733 (demo m17 + c1-m42, cycle 5) — the plan lists say what Free 
   it("REQ-733 REQ-109's three dictated lines still lead Free's list, word for word, in en and es", () => {
     expect(planFeatures("free", "en").slice(0, 3)).toEqual([
       "Unlimited invoices",
-      "Up to five quotes and contracts a month",
+      "Up to five quotes a month", // REQ-778 (dv1 d8) amends REQ-109: "The free plan limit is five quotes."
       "Spanish and English output",
     ]);
     expect(planFeatures("free", "es").slice(0, 3)).toEqual([
       "Facturas ilimitadas",
-      "Hasta cinco cotizaciones y contratos al mes",
+      "Hasta cinco cotizaciones al mes",
       "Documentos en español y en inglés",
     ]);
   });

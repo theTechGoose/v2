@@ -10,11 +10,15 @@
  */
 import type { Insight, QuoteCard, WinRate } from "../clients/quotes.ts";
 import { ssrBackendGetAuthed } from "./backend-fetch.ts";
+import { type QuoteLimit, quoteLimitOf } from "./quote-limit.ts";
 
 export interface QuotesSeed {
   cards: QuoteCard[];
   winRate: WinRate | null;
   insight: Insight | null;
+  /** REQ-778 (cycle dv1, d8): the month's quotes are used up (GET
+   *  /quotes/allowance refused); null/absent under the cap. */
+  quoteLimit?: QuoteLimit | null;
 }
 
 type AuthedGet = <T>(
@@ -29,10 +33,11 @@ export async function loadQuotesSeed(
   if (!sessionId) return null;
   const read = <T>(path: string) =>
     get<T>(path, sessionId).catch(() => ({ ok: false, status: 0 }) as const);
-  const [list, winRate, insight] = await Promise.all([
+  const [list, winRate, insight, allowance] = await Promise.all([
     read<QuoteCard[]>("/quotes"),
     read<WinRate>("/analytics/quotes/win-rate?days=90"),
     read<Insight>("/analytics/quotes/insight"),
+    read<unknown>("/quotes/allowance"), // REQ-778
   ]);
   if (!list.ok || !("data" in list) || !Array.isArray(list.data)) return null;
   return {
@@ -42,6 +47,9 @@ export async function loadQuotesSeed(
       : null,
     insight: insight.ok && "data" in insight && insight.data
       ? insight.data
+      : null,
+    quoteLimit: allowance.ok && "data" in allowance
+      ? quoteLimitOf(allowance.data)
       : null,
   };
 }

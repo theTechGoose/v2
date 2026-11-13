@@ -91,3 +91,54 @@ Deno.test("REQ-766 m17 e2e: a Monster Free account's sixth POST /quotes this mon
     await resetKv();
   }
 });
+
+// REQ-778 (demo-loop cycle dv1, issue d8): Raphael — "The free plan limit is five quotes." /quotes
+// says so before New quote is tapped: GET /quotes/allowance is the same QuoteAllowance answer.
+Deno.test("REQ-778 dv1 d8 e2e: GET /quotes/allowance is ok under the cap and quote_limit at five on Monster Free", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const server = await bootstrapServer(TestApp, { port: PORT, swagger: false });
+  await server.listen();
+  try {
+    const { sessionId: sid } = await login("+15125550778");
+    const auth = { "content-type": "application/json", "x-session-id": sid };
+    const allowance = async () => {
+      const res = await fetch(`${base}/quotes/allowance`, { headers: auth });
+      assertEquals(res.status, 200);
+      return await res.json();
+    };
+    await (await fetch(`${base}/me/plan`, {
+      method: "POST",
+      headers: auth,
+      body: JSON.stringify({ planId: "free" }),
+    })).body?.cancel();
+    assertEquals(await allowance(), { ok: true });
+    for (let n = 1; n <= 5; n++) {
+      await (await fetch(`${base}/quotes`, {
+        method: "POST",
+        headers: auth,
+        body: JSON.stringify({
+          summary: `Lawn ${n}`,
+          lineItems: [{
+            description: "Mow",
+            quantity: 1,
+            unit: "ea",
+            price: 8_000,
+          }],
+        }),
+      })).body?.cancel();
+    }
+    assertEquals(await allowance(), {
+      ok: false,
+      reason: "quote_limit",
+      limit: 5,
+      used: 5,
+    });
+    const anon = await fetch(`${base}/quotes/allowance`);
+    assertEquals(anon.status, 401);
+    await anon.body?.cancel();
+  } finally {
+    await server.stop();
+    await resetKv();
+  }
+});
