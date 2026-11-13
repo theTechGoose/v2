@@ -218,7 +218,8 @@ export interface SearchOptions {
 export function urlFor(type: SearchType, id: string): string {
   switch (type) {
     case "customer":
-      return "/customers";
+      // REQ-799: the customer's sheet (REQ-626), not the bare roster
+      return `/customers?open=${encodeURIComponent(id)}`;
     case "quote":
       return `/quotes?open=${id}`;
     case "invoice":

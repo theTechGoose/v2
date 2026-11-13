@@ -146,7 +146,7 @@ async function seed(
 async function readDashboard(page: StoryTools["page"]) {
   await page.setViewportSize({ width: 1280, height: 900 });
   await page.goto("/dashboard");
-  const money = page.locator(".money");
+  const money = page.locator(".moneybar");
   await money.waitFor({ timeout: 20_000 });
   let text = "";
   for (let i = 0; i < 75; i++) {
@@ -176,7 +176,7 @@ Deno.test("REQ-473 (demo M8, fleet-0): a paid invoice + a scheduled $925 install
       `the money panel shows the upcoming installment (${money})`,
     );
     expect(!/No invoices yet/i.test(money), `no 'No invoices yet' (${money})`);
-    expect(!money.includes("-0"), `no '$-0' (${money})`);
+    expect(!money.includes("$-0"), `no '$-0' (${money})`); // REQ-798: the rows carry "INV-001" now, so the literal "$-0" is what is forbidden
     expect(job.includes("$925 paid"), `the job row reads '$925 paid' (${job})`);
     expect(!job.includes("No due date"), `the job row has a due date (${job})`);
   }));

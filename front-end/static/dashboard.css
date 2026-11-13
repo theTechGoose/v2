@@ -2035,64 +2035,250 @@ body {
   background: transparent;
 }
 
-/* ------ Money owed (right bottom) ------ */
-.money {
+/* ------ Money bar (REQ-798): the star of the dashboard — five buckets, one bar ------ */
+.moneybar {
+  --mb-estimates: #5aa9d6; /* sky — quotes out */
+  --mb-unbilled: #8b6cc9; /* violet — agreed, not yet billed */
+  --mb-overdue: var(--pink-700); /* red — needs a nudge */
+  --mb-open: var(--coffee-400); /* coffee — billed, on time */
+  --mb-paid: var(--brand-green); /* green — in the bank */
   background: linear-gradient(135deg, var(--coffee-50) 0%, #fff 100%);
   border: 1px solid var(--border);
   border-radius: 20px;
-  padding: 18px 20px;
+  padding: 18px 20px 14px;
   display: flex;
   flex-direction: column;
   gap: 14px;
 }
-.money__head {
+.moneybar__head {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
   gap: 10px;
 }
-.money__label {
+.moneybar__label {
   font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.05em;
   text-transform: uppercase;
   color: var(--fg-muted);
 }
-.money__amt {
+.moneybar__amt {
   font-family: var(--font-heading);
   font-weight: 800;
-  font-size: 32px;
+  font-size: 36px;
   color: var(--brand-teal);
   letter-spacing: -0.02em;
   line-height: 1;
+  margin-top: 4px;
 }
-.money__bar {
-  height: 8px;
-  background: rgba(100, 69, 54, 0.10);
-  border-radius: 999px;
-  overflow: hidden;
-  display: flex;
+.moneybar__nudge {
+  padding: 8px 14px;
+  font-size: 12px;
+  text-decoration: none;
 }
-.money__bar-seg {
-  height: 100%;
-}
-.money__legend {
-  display: flex;
-  justify-content: space-between;
-  gap: 8px;
-  flex-wrap: wrap;
-  font-size: 11px;
-  color: var(--fg-muted);
-}
-.money__legend-item {
-  display: flex;
-  align-items: center;
+
+/* the five stat columns — each a button that picks its bucket */
+.moneybar__cols {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
   gap: 6px;
 }
-.money__legend-dot {
-  width: 8px;
-  height: 8px;
+.moneybar__col {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  border-radius: 12px;
+  padding: 8px 10px 6px;
+  text-align: left;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+  position: relative;
+  transition: background 0.15s ease;
+}
+.moneybar__col::before {
+  content: "";
+  position: absolute;
+  left: 10px;
+  top: 0;
+  width: 18px;
+  height: 3px;
   border-radius: 999px;
+  background: var(--mb-c);
+}
+.moneybar__col:hover {
+  background: rgba(100, 69, 54, 0.06);
+}
+.moneybar__col--on {
+  background: rgba(100, 69, 54, 0.08);
+}
+.moneybar__col-amt {
+  font-family: var(--font-heading);
+  font-weight: 800;
+  font-size: 20px;
+  color: var(--brand-teal);
+  letter-spacing: -0.02em;
+  line-height: 1.2;
+}
+.moneybar__col-cap {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--fg-muted);
+  line-height: 1.25;
+}
+.moneybar__col--on .moneybar__col-cap {
+  color: var(--brand-teal);
+}
+
+/* the bar — one segment per bucket, widths are shares of the five amounts */
+.moneybar__track {
+  display: flex;
+  height: 16px;
+  gap: 3px;
+  padding: 3px 0;
+}
+.moneybar__seg {
+  appearance: none;
+  border: 0;
+  padding: 0;
+  margin: 0;
+  flex: 0 1 auto;
+  min-width: 10px;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--mb-c);
+  cursor: pointer;
+  opacity: 0.9;
+  transition:
+    transform 0.18s ease,
+    opacity 0.18s ease,
+    box-shadow 0.18s ease,
+    flex-basis 0.4s ease;
+}
+.moneybar__seg--zero {
+  flex-basis: 0 !important;
+  min-width: 10px;
+  opacity: 0.35;
+}
+.moneybar__seg:hover {
+  opacity: 1;
+}
+.moneybar__seg--on {
+  opacity: 1;
+  transform: scaleY(1.45);
+  box-shadow: 0 0 0 2px #fff, 0 0 0 3.5px var(--mb-c);
+}
+.moneybar[data-selected]:not([data-selected=""]) .moneybar__seg:not(.moneybar__seg--on) {
+  opacity: 0.4;
+}
+
+/* the picked bucket's documents, one by one */
+.moneybar__list {
+  border-top: 1px dashed rgba(100, 69, 54, 0.15);
+  padding-top: 10px;
+  display: flex;
+  flex-direction: column;
+}
+.moneybar__list-head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 2px 0 6px;
+  font-size: 12px;
+}
+.moneybar__list-title {
+  font-family: var(--font-heading);
+  font-weight: 800;
+  color: var(--brand-teal);
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+.moneybar__dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 999px;
+  display: inline-block;
+}
+.moneybar__hint {
+  color: var(--fg-muted);
+  font-size: 11px;
+}
+.moneybar__all {
+  margin-left: auto;
+  font-weight: 700;
+  color: var(--brand-pink);
+  text-decoration: none;
+  white-space: nowrap;
+}
+.moneybar__row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 9px 8px;
+  margin: 0 -8px;
+  border-radius: 12px;
+  text-decoration: none;
+  color: var(--brand-teal);
+  transition: background 0.12s ease;
+}
+.moneybar__row:hover {
+  background: rgba(100, 69, 54, 0.06);
+}
+.moneybar__row-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.moneybar__row-client {
+  font-family: var(--font-heading);
+  font-weight: 800;
+  font-size: 13px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.moneybar__row-job {
+  font-weight: 600;
+  color: var(--fg-muted);
+  margin-left: 4px;
+}
+.moneybar__row-meta {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--fg-muted);
+}
+.moneybar__row-meta--danger {
+  color: var(--pink-700);
+  font-weight: 700;
+}
+.moneybar__row-meta--warn {
+  color: var(--coffee-500);
+}
+.moneybar__row-meta--ok {
+  color: var(--green-600);
+}
+.moneybar__row-amt {
+  font-family: var(--font-heading);
+  font-weight: 800;
+  font-size: 14px;
+  white-space: nowrap;
+}
+.moneybar__empty {
+  font-size: 13px;
+  color: var(--fg-muted);
+  padding: 4px 0 6px;
+}
+.moneybar__upcoming {
+  font-size: 13px;
+  color: var(--fg-muted);
+  margin-top: -6px;
 }
 
 /* ------ Activity / chat preview row ------ */
@@ -2663,6 +2849,18 @@ a.activity-item--link:hover {
   .grid {
     grid-template-columns: 1fr;
     gap: 14px;
+  }
+  .moneybar__cols {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .moneybar__col-amt {
+    font-size: 18px;
+  }
+  .moneybar__amt {
+    font-size: 30px;
+  }
+  .moneybar__hint {
+    display: none;
   }
   /* 4 KPI cards squeeze to slivers on phones — labels ("OUTSTANDING") and subs
      ("$34.9k in flight") get clipped. Two-up gives each card ~2x the width so the

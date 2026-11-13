@@ -50,7 +50,22 @@ async function clickUntil(
   throw new Error(`${selector}: the click never took`);
 }
 
-Deno.test("REQ-135: thirty customers — the page shows twenty-five, says Page 1 of 2, next shows five, a search shows one, the crumb counts thirty", (t) =>
+const GS_INPUT = "[data-cy='global-search-input']";
+const gsRow = (name: string) =>
+  `[data-cy='global-search-results'][data-state='ready'] [data-cy='global-search-row'][data-type='customer']:has-text("${name}")`;
+/** REQ-799: the topbar search is the only search — type, wait for the customer row, open it, and the sheet names the customer */
+async function openViaTopbar(page: StoryTools["page"], q: string, name: string) {
+  await page.locator(GS_INPUT).waitFor({ timeout: 15_000 });
+  await page.locator(GS_INPUT).fill(q);
+  await page.locator(gsRow(name)).first().waitFor({ timeout: 15_000 });
+  await clickUntil(page, gsRow(name), () =>
+    Promise.resolve(new URL(page.url()).pathname === "/customers" && !!new URL(page.url()).searchParams.get("open")));
+  await page.locator("[data-cy='client-sheet-name']").waitFor({ timeout: 15_000 });
+  const shown = await page.locator("[data-cy='client-sheet-name']").innerText();
+  if (!shown.includes(name)) throw new Error(`the sheet names "${shown}", not "${name}"`);
+}
+
+Deno.test("REQ-135 + REQ-799: thirty customers — the page shows twenty-five, says Page 1 of 2, next shows five, the page has no search box and the topbar search opens one, the crumb counts thirty", (t) =>
   story(t, async ({ page, expect, http, baseUrl }) => {
     const { auth } = await signIn(http, page, baseUrl);
     for (let i = 1; i <= 30; i++) {
@@ -71,13 +86,9 @@ Deno.test("REQ-135: thirty customers — the page shows twenty-five, says Page 1
     await expect.see("Page 2 of 2");
     await expect.see("Client 30");
     expect((await cards.count()) === 5, `five cards on page two (${await cards.count()})`);
-    await page.locator("[data-cy='clients-search']").fill("client 07");
-    await expect.see("Client 07");
-    for (let i = 0; i < 50 && (await cards.count()) !== 1; i++) await page.waitForTimeout(100);
-    expect((await cards.count()) === 1, `one card for the search (${await cards.count()})`);
-    // REQ-419 (demo-loop cycle 2, p13-k): one page of results has no pager — no "Page 1 of 1"
-    await expect.notSee("Page 1 of 1");
-    expect((await page.locator("[data-cy='clients-pager']").count()) === 0, "no pager for one page");
+    // REQ-799: no search box on the page; the topbar search finds and opens the customer
+    expect((await page.locator("[data-cy='clients-search']").count()) === 0, "the page has no search box");
+    await openViaTopbar(page, "client 07", "Client 07");
     await expect.see("30 on the books");
   }));
 
@@ -150,11 +161,11 @@ Deno.test("REQ-279 (demo M32): the customers search is accent-blind — 'maria' 
     await page.goto("/customers");
     await expect.see("2 on the books");
     const cards = page.locator(".ccard2");
+    // REQ-799: through the topbar search (the page has none of its own)
+    expect((await cards.count()) === 2, `both cards on the board (${await cards.count()})`);
     for (const q of ["maria", "pena"]) {
-      await page.locator("[data-cy='clients-search']").fill(q);
-      for (let i = 0; i < 25 && (await cards.count()) !== 1; i++) await page.waitForTimeout(200);
-      expect((await cards.count()) === 1, `one card for "${q}" (${await cards.count()})`);
-      await expect.see("María José Peña");
+      await openViaTopbar(page, q, "María José Peña");
+      await page.goto("/customers");
     }
   }));
 
@@ -168,10 +179,9 @@ Deno.test("REQ-519 (demo cycle 3, M33): the customers search matches word by wor
     await page.goto("/customers");
     await expect.see("2 on the books");
     const cards = page.locator(".ccard2");
-    await page.locator("[data-cy='clients-search']").fill("maria pena");
-    for (let i = 0; i < 25 && (await cards.count()) !== 1; i++) await page.waitForTimeout(200);
-    expect((await cards.count()) === 1, `one card for "maria pena" (${await cards.count()})`);
-    await expect.see("María José Peña");
+    // REQ-799: through the topbar search (the page has none of its own)
+    expect((await cards.count()) === 2, `both cards on the board (${await cards.count()})`);
+    await openViaTopbar(page, "maria pena", "María José Peña");
   }));
 
 Deno.test("REQ-419 (demo-loop cycle 2: m40, S7c, p13-k): one customer — no pager; the closed back is hidden from AT; the open back shows every row unclipped", (t) =>

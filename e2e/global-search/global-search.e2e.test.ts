@@ -96,7 +96,7 @@ async function searchFor(
   return await page.locator(`${panel} ${selector}`).innerText();
 }
 
-Deno.test("REQ-207: '742 ever' and 'inv-1' bring up invoice INV-001 for Zelda Ortiz, Enter opens it, 'C-001' brings up the customer and a click opens the roster", (t) =>
+Deno.test("REQ-207 + REQ-799: '742 ever' and 'inv-1' bring up invoice INV-001 for Zelda Ortiz, Enter opens the invoice itself, 'C-001' brings up the customer and a click opens her sheet, a quote row opens the quote panel", (t) =>
   story(t, async ({ page, expect, http, baseUrl }) => {
     const { auth } = await signIn(http, page, baseUrl);
     // a new account's /dashboard lands on the /welcome wizard until every question is answered (REQ-091)
@@ -158,6 +158,16 @@ Deno.test("REQ-207: '742 ever' and 'inv-1' bring up invoice INV-001 for Zelda Or
       page.url().includes(`/invoices?open=${inv.id}`),
       `Enter opened the invoice (${page.url()})`,
     );
+    // REQ-799: the item itself — the invoice detail is open, not just the list
+    await page.locator("[data-cy='invoice-detail']").waitFor({
+      timeout: 15_000,
+    });
+    expect(
+      (await page.locator("[data-cy='invoice-detail']").innerText()).includes(
+        "Roof repair",
+      ),
+      "the invoice detail shows the job",
+    );
 
     // the customer number brings up the customer row; a click goes to the roster
     await page.goto("/dashboard");
@@ -179,11 +189,51 @@ Deno.test("REQ-207: '742 ever' and 'inv-1' bring up invoice INV-001 for Zelda Or
       row("customer", "C-001"),
       () => Promise.resolve(new URL(page.url()).pathname === "/customers"),
     );
+    // REQ-799: the customer herself — her sheet, not the bare roster
     expect.eq(
-      new URL(page.url()).pathname,
-      "/customers",
-      "the row click opened the customers page",
+      new URL(page.url()).searchParams.get("open"),
+      customer.id,
+      `the row click opened the customer (${page.url()})`,
     );
+    await page.locator("[data-cy='client-sheet']").waitFor({ timeout: 15_000 });
+    expect(
+      (await page.locator("[data-cy='client-sheet-name']").innerText())
+        .includes("Zelda Ortiz"),
+      "the client sheet names her",
+    );
+
+    // REQ-799: a quote row opens the quote's panel
+    const quote = await (await http("/api/quotes", {
+      method: "POST",
+      headers: auth,
+      body: JSON.stringify({
+        customerId: customer.id,
+        summary: "Gutter cleaning",
+        lineItems: [
+          {
+            description: "Gutter cleaning",
+            quantity: 1,
+            unit: "ea",
+            price: 30000,
+          },
+        ],
+      }),
+    })).json();
+    await page.goto("/dashboard");
+    await searchFor(page, "gutter", row("quote", quote.number));
+    await clickUntil(
+      page,
+      row("quote", quote.number),
+      () => Promise.resolve(new URL(page.url()).pathname === "/quotes"),
+    );
+    expect.eq(
+      new URL(page.url()).searchParams.get("open"),
+      quote.id,
+      `the quote row opened the quote (${page.url()})`,
+    );
+    await page.locator("[data-cy='quote-panel-close']").waitFor({
+      timeout: 15_000,
+    });
   }));
 
 Deno.test("REQ-519 (demo cycle 3, M33): the header search is accent-blind and word-by-word — 'maria' and 'maria pena' bring up María José Peña", (t) =>
@@ -206,4 +256,65 @@ Deno.test("REQ-519 (demo cycle 3, M33): the header search is accent-blind and wo
         `"${q}" brings up María José Peña (${text})`,
       );
     }
+  }));
+
+Deno.test("REQ-799 phone: at 390px the topbar search is the Customers page's search — visible, it finds Zelda and opens her sheet", (t) =>
+  story(t, async ({ page, expect, http, baseUrl }) => {
+    const { auth } = await signIn(http, page, baseUrl);
+    await answerQuestions(http, auth, { name: "Search Story" });
+    const customer = await (await http("/api/customers", {
+      method: "POST",
+      headers: auth,
+      body: JSON.stringify({
+        name: "Zelda Ortiz",
+        address: "742 Evergreen Terrace",
+      }),
+    })).json();
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto("/customers");
+    // no search box of the page's own; the topbar's is visible on the phone
+    expect.eq(
+      await page.locator("[data-cy='clients-search']").count(),
+      0,
+      "the page has no search box",
+    );
+    await page.locator(INPUT).waitFor({ timeout: 15_000 });
+    const box = await page.locator(INPUT).boundingBox();
+    expect(
+      !!box && box.width > 200 && box.x >= 0 && box.x + box.width <= 390,
+      `the topbar search is visible and fits the phone (${
+        JSON.stringify(box)
+      })`,
+    );
+    const lang = page.locator(".topbar__lang");
+    const langBox = await lang.boundingBox();
+    expect(
+      !!box && !!langBox && langBox.y + langBox.height <= box.y + 1,
+      `EN/ES sits above the search, never on it (${
+        JSON.stringify(langBox)
+      } vs ${JSON.stringify(box)})`,
+    );
+    await searchFor(page, "zelda", row("customer", customer.number));
+    const rowBox = await page.locator(row("customer", customer.number))
+      .boundingBox();
+    expect(
+      !!rowBox && rowBox.x >= 0 && rowBox.x + rowBox.width <= 390,
+      `the result row fits the phone (${JSON.stringify(rowBox)})`,
+    );
+    await clickUntil(
+      page,
+      row("customer", customer.number),
+      () =>
+        Promise.resolve(
+          new URL(page.url()).searchParams.get("open") === customer.id,
+        ),
+    );
+    await page.locator("[data-cy='client-sheet-name']").waitFor({
+      timeout: 15_000,
+    });
+    expect(
+      (await page.locator("[data-cy='client-sheet-name']").innerText())
+        .includes("Zelda Ortiz"),
+      "the sheet names her",
+    );
   }));

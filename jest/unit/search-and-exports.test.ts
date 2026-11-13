@@ -222,7 +222,7 @@ describe("REQ-207 searchRecords — what matches, how it ranks, what a row carri
       changeOrders: 1,
       workOrders: 1,
     });
-    expect(hits[0].url).toBe("/customers");
+    expect(hits[0].url).toBe("/customers?open=c1"); // REQ-799
     const co = searchRecords(data, "CO-1");
     expect(co[0].type).toBe("changeOrder");
     expect(co.find((h: { type: string }) => h.type === "customer"))
@@ -322,7 +322,8 @@ describe("REQ-207 searchRecords — what matches, how it ranks, what a row carri
       "changeOrder",
       "workOrder",
     ]);
-    expect(urlFor("customer", "c1")).toBe("/customers");
+    // REQ-799: a customer opens its sheet, not the roster
+    expect(urlFor("customer", "c1")).toBe("/customers?open=c1");
     expect(urlFor("quote", "q1")).toBe("/quotes?open=q1");
     expect(urlFor("invoice", "i1")).toBe("/invoices?open=i1");
     expect(urlFor("changeOrder", "co1")).toBe("/co/co1");
@@ -578,5 +579,39 @@ describe("REQ-208 customer export — the columns and one row", () => {
       "C-002,Ann Lee,Lee Roofing LLC,,,,2026-10-01,Q-002,INV-020 INV-5000,8.00",
     );
     expect(lines[3]).toBe("C-003,Nobody,,,,,2026-01-01,,,0.00");
+  });
+});
+
+describe("REQ-799 one search bar — the topbar's; a result opens the item itself", () => {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const fs = require("fs");
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const path = require("path");
+  const ROOT = path.resolve(__dirname, "../..");
+  const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), "utf8");
+
+  it("REQ-799 a customer hit links to its sheet, URL-encoded; every hit of searchRecords carries an item url", () => {
+    const { urlFor, searchRecords } = search();
+    expect(urlFor("customer", "c1")).toBe("/customers?open=c1");
+    expect(urlFor("customer", "a b")).toBe("/customers?open=a%20b");
+    const hits = searchRecords(data, "zelda");
+    const customer = hits.find((h: { type: string }) => h.type === "customer");
+    expect(customer.url).toBe("/customers?open=c1");
+    for (const h of hits) expect(h.url).not.toBe("/customers");
+  });
+
+  it("REQ-799 the Customers page has no search box of its own; the topbar's GlobalSearch opens hit.url", () => {
+    const board = read("front-end/islands/ClientsBoard.tsx");
+    expect(board).not.toMatch(/clients-search/);
+    expect(board).not.toMatch(/clientsBoard\.searchPlaceholder/);
+    expect(board).not.toMatch(/\bonQuery\b/);
+    const page = read("front-end/islands/ClientsPage.tsx");
+    expect(page).not.toMatch(/onQuery=\{/);
+    const gs = read("front-end/islands/GlobalSearch.tsx");
+    expect(gs).toMatch(/globalThis\.location\.assign\(hit\.url\)/);
+    for (const lang of ["en", "es"]) {
+      const dict = JSON.parse(read(`lang/${lang}.json`));
+      expect(dict["clientsBoard.searchPlaceholder"]).toBeUndefined();
+    }
   });
 });
