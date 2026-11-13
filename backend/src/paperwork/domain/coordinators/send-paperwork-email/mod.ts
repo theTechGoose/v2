@@ -82,6 +82,11 @@ export interface SendPaperworkEmailResult extends SendEmailResult {
   /** P-06: set when the send was refused because the account has neither a
    *  real name nor a business name to introduce itself with. */
   needsName?: boolean;
+  /** REQ-695 (cycle 5, M23): "missing" when there is no address to send
+   *  to — the code the page translates ("no email on file"), so the
+   *  developer `reason` never reaches the contractor. Mirrors the SMS
+   *  dispatch's `failureCode` (REQ-226). */
+  failureCode?: "missing";
 }
 
 /** P-06 refusal reason — machine-readable needs-name signal (must keep
@@ -258,6 +263,7 @@ export class SendPaperworkEmail {
         reason: "no recipient: pass `to` or attach a customer with an email",
         to: "",
         subject,
+        failureCode: "missing",
       };
     }
 

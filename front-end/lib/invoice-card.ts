@@ -4,6 +4,7 @@
  * sit beside the stage CTA.
  */
 import { type Lang, tFor } from "./i18n.ts";
+import { cardFieldPatch } from "./customer-card-edit.ts";
 
 export type CardStage =
   | "scheduled"
@@ -186,4 +187,45 @@ export function revealPayForm(root: ParentNode): boolean {
     preventScroll: true,
   });
   return true;
+}
+
+/**
+ * REQ-695 (demo-loop cycle 5, m55): the card's inline "Add email or phone"
+ * after a send found no contact on file. One field: an "@" makes it an
+ * email, anything else a phone — checked with the customer card's own rule
+ * (`cardFieldPatch`, REQ-600). It is saved where the send endpoints read
+ * it: the linked customer (PUT /api/customers/:id), else the invoice's own
+ * bill-to (PUT /api/invoices/:id, keeping the rest of the bill-to).
+ * `channel` is the one the saved contact can be sent on.
+ */
+export function contactFixRequest(
+  raw: string,
+  target: {
+    invoiceId: string;
+    customerId?: string | null;
+    billTo?: Record<string, unknown> | null;
+  },
+):
+  | { url: string; body: Record<string, unknown>; channel: "email" | "text" }
+  | { error: string } {
+  const value = (raw ?? "").trim();
+  if (!value) return { error: "invoicesPage.send.addContactInvalid" };
+  const channel = value.includes("@") ? "email" : "text";
+  const checked = cardFieldPatch(
+    channel === "email" ? "email" : "phone",
+    value,
+  );
+  if ("error" in checked) return { error: checked.error };
+  if (target.customerId) {
+    return {
+      url: `/api/customers/${encodeURIComponent(target.customerId)}`,
+      body: checked.patch,
+      channel,
+    };
+  }
+  return {
+    url: `/api/invoices/${encodeURIComponent(target.invoiceId)}`,
+    body: { billTo: { ...(target.billTo ?? {}), ...checked.patch } },
+    channel,
+  };
 }

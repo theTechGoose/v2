@@ -177,6 +177,21 @@ Deno.test("send-paperwork-email integration: returns ok=false when no recipient 
   await resetKv();
 });
 
+Deno.test("REQ-695 (cycle 5, M23) send-paperwork-email: no recipient answers failureCode 'missing' — the page translates the code, never the developer reason", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const { flow, invoices, sent } = fresh();
+  await seedContractor("u-1");
+  const inv = await invoices.create("u-1", { dueDate: "2099-01-01", amount: 100, status: "draft" });
+
+  const result = await flow.run("u-1", { kind: "invoice", resourceId: inv.id });
+  assertEquals(result.ok, false);
+  assertEquals(result.failureCode, "missing");
+  assertEquals(sent.length, 0);
+
+  await resetKv();
+});
+
 Deno.test("send-paperwork-email integration: quote dispatch is the review-and-sign email carrying the agreement value", async () => {
   Deno.env.set("KV_PATH", ":memory:");
   await resetKv();

@@ -34,6 +34,7 @@ import { type Lang, langSignal, tFor, tnFor } from "../lib/i18n.ts";
 import QuoteTrack from "./QuoteTrack.tsx";
 import {
   cardDate,
+  contactFixRequest,
   hasNudgeButton,
   hasSecondaryPaymentReceived,
   partialSendParts,
@@ -69,12 +70,18 @@ import {
 import PaymentReceivedForm from "../components/PaymentReceivedForm.tsx";
 import { paymentRecordedText } from "../lib/payment-received.ts";
 import {
+  channelFailReason,
   type DispatchChannel,
   interpretSendResult,
   invoiceNotDeliveredCopy,
+  invoicePartialCopy,
   type SendOutcome,
-  summarizeDispatch,
+  summarizeInvoiceDispatch,
 } from "../../shared/quote-flow/send-result.ts";
+import {
+  apiFieldErrorKey,
+  customerFixHref,
+} from "../lib/customer-card-edit.ts"; // REQ-695
 import { docNumberOf } from "../../shared/documents/numbering.ts";
 import { invoiceJobNamePlaceholderKey } from "../../shared/quote-flow/trade-fit.ts"; // REQ-450
 import { isExceedsAgreement } from "../../shared/documents/ledger.ts";
@@ -121,6 +128,7 @@ import {
   prefillFromLedger,
   priorBillingFor,
   type PriorInvoice,
+  type SendChannel,
   sendChannel,
 } from "../../shared/documents/invoice-form.ts";
 
@@ -2244,6 +2252,10 @@ function InvoiceDetail(
 interface ChannelSendResult {
   outcome: SendOutcome;
   rawReason?: string;
+  /** REQ-695: the endpoint's code — "missing" = no address on file. */
+  failureCode?: string;
+  /** REQ-695: not fired — the client has no address for this channel. */
+  skipped?: boolean;
 }
 
 /** Everything a caller needs to report a dispatch honestly (P-09):
@@ -2253,6 +2265,8 @@ interface DispatchResult {
   /** REQ-030 (NW-25): one channel went, the other did not. */
   partial: boolean;
   failedChannels: DispatchChannel[];
+  /** REQ-695 (m55): neither channel had an address on file. */
+  noRecipient: boolean;
   email: ChannelSendResult;
   text: ChannelSendResult;
 }
@@ -2273,9 +2287,14 @@ async function interpretSettledSend(
       typeof (body as { reason?: unknown }).reason === "string"
     ? (body as { reason: string }).reason
     : undefined;
+  const code = body && typeof body === "object" &&
+      typeof (body as { failureCode?: unknown }).failureCode === "string"
+    ? (body as { failureCode: string }).failureCode
+    : undefined;
   return {
     outcome: interpretSendResult({ httpOk: r.value.ok, body }),
     ...(reason ? { rawReason: reason } : {}),
+    ...(code ? { failureCode: code } : {}),
   };
 }
 
@@ -2283,38 +2302,41 @@ async function interpretSettledSend(
  *  BODIES, never just Response.ok (P-09: the endpoints report logical failure
  *  as HTTP 200 + {ok:false, reason}). Single source for the card "Send now"/
  *  "Finish + send" actions and the New Invoice "Create & send" so the channel
- *  set + request shape can't drift across the three call sites. */
-async function dispatchInvoice(id: string): Promise<DispatchResult> {
-  const settled = await Promise.allSettled([
-    fetch(`/api/invoices/${id}/email`, {
-      method: "POST",
-      credentials: "include",
-    }),
-    fetch(`/api/invoices/${id}/text`, {
-      method: "POST",
-      credentials: "include",
-    }),
-  ]);
-  const [email, text] = await Promise.all(settled.map(interpretSettledSend));
+ *  set + request shape can't drift across the three call sites.
+ *  REQ-695 (demo cycle 5, M23): `channels` — what the known contact can
+ *  use; a channel the client has no address for is not fired (a phone-less
+ *  bill is "sent by email", never "the text didn't go"). Unknown → both,
+ *  and the backend's "missing" answer is read the same way. */
+async function dispatchInvoice(
+  id: string,
+  channels: SendChannel = "both",
+): Promise<DispatchResult> {
+  const send = async (ch: DispatchChannel): Promise<ChannelSendResult> => {
+    if (channels !== "both" && channels !== "none" && channels !== ch) {
+      return { outcome: { delivered: false }, skipped: true };
+    }
+    const [settled] = await Promise.allSettled([
+      fetch(`/api/invoices/${id}/${ch}`, {
+        method: "POST",
+        credentials: "include",
+      }),
+    ]);
+    return interpretSettledSend(settled);
+  };
+  const [email, text] = await Promise.all([send("email"), send("text")]);
   return {
-    ...summarizeDispatch({ email: email.outcome, text: text.outcome }),
+    ...summarizeInvoiceDispatch({ email, text }),
     email,
     text,
   };
 }
 
 /** REQ-030 (NW-25): honest copy for a HALF-delivered send — which channel
- *  went, which did not, and why (the backend's translated reason). */
+ *  went, which did not, and why. REQ-695 (cycle 5, M23): a missing
+ *  recipient reads "no phone/email on file", never the endpoint's raw
+ *  developer reason. */
 function partialDispatchCopy(lang: Lang, d: DispatchResult): string {
-  const textFailed = d.failedChannels.includes("text");
-  const failed = textFailed ? d.text : d.email;
-  return tFor(
-    lang,
-    textFailed
-      ? "invoicesPage.send.partialTextFailed"
-      : "invoicesPage.send.partialEmailFailed",
-    { reason: failed.rawReason ?? failed.outcome.reason ?? "unknown" },
-  );
+  return invoicePartialCopy((key, params) => tFor(lang, key, params), d);
 }
 
 /** REQ-554 (m52): the half-delivered send as its two facts — the channel
@@ -2323,14 +2345,17 @@ function partialParts(
   lang: Lang,
   d: DispatchResult,
 ): { cy: "send-partial"; went: string; failed: string } {
-  const textFailed = d.failedChannels.includes("text");
-  const failed = textFailed ? d.text : d.email;
+  const channel = d.failedChannels.includes("text") ? "text" : "email";
   return {
     cy: "send-partial",
     ...partialSendParts(
       lang,
-      textFailed ? "text" : "email",
-      failed.rawReason ?? failed.outcome.reason ?? "unknown",
+      channel,
+      channelFailReason(
+        (key, params) => tFor(lang, key, params),
+        channel,
+        channel === "text" ? d.text : d.email,
+      ),
     ),
   };
 }
@@ -2409,6 +2434,11 @@ function InvoiceCard(
   // REQ-021: inline confirmation after a nudge (no reload — nothing on the
   // card changes except that the reminder went out).
   const [sendNote, setSendNote] = useState<string | null>(null);
+  // REQ-695 (demo cycle 5, m55): the send found no email AND no phone on
+  // file — the card offers "Add email or phone" inline, then sends again.
+  const [needContact, setNeedContact] = useState(false);
+  const [contactErr, setContactErr] = useState<string | null>(null);
+  const [contactBusy, setContactBusy] = useState(false);
   // REQ-250 (demo m12): a nudge on a CLAIMED invoice — the customer said they
   // paid — asks first, inline, naming the claim.
   const [nudgeAsk, setNudgeAsk] = useState(false);
@@ -2637,11 +2667,12 @@ function InvoiceCard(
       setBusy(false);
     }
   }
-  async function doSendNow(e: Event) {
-    e.stopPropagation();
+  async function doSendNow(e?: Event) {
+    e?.stopPropagation();
     if (busy) return;
     setBusy(true);
     setSendFail(null);
+    setNeedContact(false);
     onFlash(null);
     try {
       // REQ-554 (demo cycle 4, m52): sent now, it is issued now — issued
@@ -2674,6 +2705,7 @@ function InvoiceCard(
           Object.entries(was).filter(([, v]) => v !== undefined),
         ));
         setSendFail(dispatchFailureCopy(lang, d, { number: inv.invoiceRef }));
+        setNeedContact(d.noRecipient);
       }
     } finally {
       setBusy(false);
@@ -2689,11 +2721,12 @@ function InvoiceCard(
   // the status is NOT flipped up front — the send endpoints stamp the
   // invoice "sent" once a channel delivers, so an invoice nobody received
   // stays a draft instead of reading "Sent".
-  async function doFinishDraft(e: Event) {
-    e.stopPropagation();
+  async function doFinishDraft(e?: Event) {
+    e?.stopPropagation();
     if (busy) return;
     setBusy(true);
     setSendFail(null);
+    setNeedContact(false);
     try {
       const dates = {
         ...(inv.issuedDate
@@ -2731,6 +2764,7 @@ function InvoiceCard(
             keptDraft: true,
           }),
         );
+        setNeedContact(d.noRecipient);
       }
     } finally {
       setBusy(false);
@@ -2739,6 +2773,57 @@ function InvoiceCard(
       await onRefresh();
     }
   }
+  /** REQ-695 (demo cycle 5, m55): save the typed email / phone where the
+   *  send endpoints read it (the customer, else the invoice's bill-to), then
+   *  run the same send again — in place, no page load. */
+  async function saveContact(raw: string) {
+    if (contactBusy || busy) return;
+    const req = contactFixRequest(raw, {
+      invoiceId: inv.id,
+      customerId: inv.customerId,
+      billTo: inv.billTo as Record<string, unknown> | undefined,
+    });
+    if ("error" in req) {
+      setContactErr(tFor(lang, req.error));
+      return;
+    }
+    setContactErr(null);
+    setContactBusy(true);
+    try {
+      const r = await fetch(req.url, {
+        method: "PUT",
+        credentials: "include",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(req.body),
+      });
+      let msg: unknown = null;
+      try {
+        msg = (await r.json() as { message?: unknown })?.message;
+      } catch { /* empty body */ }
+      if (!r.ok) {
+        const key = apiFieldErrorKey(msg);
+        setContactErr(
+          tFor(lang, key ?? "invoicesPage.send.addContactInvalid"),
+        );
+        return;
+      }
+    } catch {
+      setContactErr(tFor(lang, "invoicesPage.send.addContactInvalid"));
+      return;
+    } finally {
+      setContactBusy(false);
+    }
+    await (inv.stage === "scheduled" ? doSendNow() : doFinishDraft());
+  }
+  const contactFix: ContactFix | null = needContact
+    ? {
+      lang,
+      href: inv.customerId ? customerFixHref(inv.customerId) : null,
+      busy: contactBusy || busy,
+      error: contactErr,
+      onSave: saveContact,
+    }
+    : null;
   /** REQ-018 (NW-27): open this invoice's detail panel in "Payment received"
    *  mode. REQ-489 (cycle 3, p8-pair1-d): in place on /invoices — never a
    *  full page load. */
@@ -3026,6 +3111,7 @@ function InvoiceCard(
           <CardSendNotes
             fail={sendFail}
             note={sendNote}
+            contactFix={contactFix}
           />
         )}
       </div>
@@ -3084,6 +3170,7 @@ function InvoiceCard(
             <CardSendNotes
               fail={sendFail}
               note={sendNote}
+              contactFix={contactFix}
             />
           )}
           {/* REQ-167: every card can delete its invoice — asks first */}
@@ -3664,13 +3751,25 @@ function InvoiceCard(
 
 /** P-09 / REQ-030 / REQ-555: a card's honest send notes — failure, partial,
  *  or a plain note. Rendered inside the face that is showing. */
+/** REQ-695 (demo cycle 5, m55): the inline "Add email or phone" a send
+ *  with no contact on file offers — the REQ-401 noRecipient fix, on the card. */
+interface ContactFix {
+  lang: Lang;
+  /** the client's own card (`/customers?open=<id>`); null with no customer */
+  href: string | null;
+  busy: boolean;
+  error: string | null;
+  onSave: (raw: string) => void;
+}
+
 function CardSendNotes(
-  { fail, partial, note }: {
+  { fail, partial, note, contactFix }: {
     fail: string | null;
     /** REQ-554 moved the half-delivered note to the page (cardFlash); kept
      *  optional for any caller that still has one. */
     partial?: string | null;
     note: string | null;
+    contactFix?: ContactFix | null;
   },
 ) {
   return (
@@ -3680,6 +3779,7 @@ function CardSendNotes(
           {fail}
         </p>
       )}
+      {contactFix && <AddContactForm fix={contactFix} />}
       {partial && (
         <p class="qcard__sendfail" role="alert" data-cy="send-partial">
           {partial}
@@ -3696,6 +3796,64 @@ function CardSendNotes(
         </p>
       )}
     </>
+  );
+}
+
+/** REQ-695 (m55): one field — an email or a phone — saved, then sent again. */
+function AddContactForm({ fix }: { fix: ContactFix }) {
+  const [value, setValue] = useState("");
+  const t = (k: string) => tFor(fix.lang, k);
+  return (
+    <form
+      data-cy="invoice-add-contact"
+      style="display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-top:6px"
+      onClick={(e) => e.stopPropagation()}
+      onSubmit={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        fix.onSave(value);
+      }}
+    >
+      <input
+        type="text"
+        inputMode="email"
+        autoComplete="off"
+        data-cy="invoice-add-contact-input"
+        aria-label={t("invoicesPage.send.addContactLabel")}
+        placeholder={t("invoicesPage.send.addContactLabel")}
+        value={value}
+        onInput={(e) => setValue((e.target as HTMLInputElement).value)}
+        disabled={fix.busy}
+        style="flex:1 1 160px;min-width:0;border:1px solid var(--border,#d8dcd5);border-radius:7px;padding:5px 8px;font:inherit;font-size:12.5px"
+      />
+      <button
+        type="submit"
+        data-cy="invoice-add-contact-save"
+        disabled={fix.busy}
+        style="appearance:none;border:0;border-radius:7px;padding:6px 10px;font:inherit;font-size:12.5px;font-weight:700;background:var(--brand-green,#519843);color:#fff;cursor:pointer"
+      >
+        {fix.busy ? "…" : t("invoicesPage.send.addContactSave")}
+      </button>
+      {fix.href && (
+        <a
+          href={fix.href}
+          data-cy="invoice-add-contact-open"
+          style="font-size:12.5px;font-weight:700"
+        >
+          {t("invoicesPage.send.addContactOpen")}
+        </a>
+      )}
+      {fix.error && (
+        <p
+          class="qcard__sendfail"
+          role="alert"
+          data-cy="invoice-add-contact-error"
+          style="flex-basis:100%;margin:0"
+        >
+          {fix.error}
+        </p>
+      )}
+    </form>
   );
 }
 
@@ -4129,7 +4287,8 @@ function NewInvoiceModal(
       // backend handles "no email/phone on file" gracefully; unreachable is
       // one of the "missing info" prompts, never a block.
       if (issue && canSend && invoice?.id) {
-        const d = await dispatchInvoice(invoice.id);
+        // REQ-695 (M23): only the channels this client can be reached on
+        const d = await dispatchInvoice(invoice.id, channel);
         // REQ-030 (NW-25): never drop a channel failure on the way to the
         // reload — the page shows it after navigating.
         if (!d.delivered || d.partial) {
