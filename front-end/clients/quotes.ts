@@ -155,6 +155,10 @@ export const quotesClient = {
     }),
   insight: (opts: ApiOptions = {}) =>
     api.get<Insight>("/analytics/quotes/insight", opts),
+  /** REQ-778 (cycle dv1, d8): may another quote be made this month?
+   *  `{ ok:true }` or `{ ok:false, reason:"quote_limit", limit, used }`. */
+  allowance: (opts: ApiOptions = {}) =>
+    api.get<unknown>("/quotes/allowance", opts),
   delete: (id: string, opts: ApiOptions = {}) =>
     api.delete<{ ok: true }>(`/quotes/${id}`, opts),
   /** REQ-205: what was agreed, invoiced, paid, owed and still to invoice. */

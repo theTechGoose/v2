@@ -95,7 +95,9 @@ export const PRICING_PLANS: readonly PricingPlan[] = [
     // "Monster Free is 'Unlimited invoices'" (Hans, Sep 2): that is the pitch, so it leads.
     // REQ-109 (Raphael, 2026-10-21): the three lines, each its own, and free forever — the
     // introduction, the plan comparison and the signup messaging all read these.
-    blurb: "Unlimited invoices. Up to five quotes and contracts a month. Spanish and English output. Free forever.",
+    // REQ-778 (dv1, d8): Raphael — "The free plan limit is five quotes." A quote IS the agreement
+    // since the quote+contract merge, so "and contracts" is dropped: up to five quotes a month.
+    blurb: "Unlimited invoices. Up to five quotes a month. Spanish and English output. Free forever.",
     limits: { quotesPerMonth: 5 },
     features: [
       {
@@ -105,8 +107,8 @@ export const PRICING_PLANS: readonly PricingPlan[] = [
       },
       {
         id: "five-quotes",
-        en: "Up to five quotes and contracts a month",
-        es: "Hasta cinco cotizaciones y contratos al mes",
+        en: "Up to five quotes a month",
+        es: "Hasta cinco cotizaciones al mes",
       },
       {
         id: "spanish-in-english-out",

@@ -2027,13 +2027,13 @@ Deno.test("REQ-105: the demo's day strip scrolls under the finger — the boxes 
  * contracts a month · Spanish and English output. Make sure the introduction, plan comparison, and
  * signup messaging are consistent. Monster Free is free forever."
  */
-Deno.test("REQ-109: Monster Free's card lists its three inclusions, each on its own line — Unlimited invoices, Up to five quotes and contracts a month, Spanish and English output — and says it is free forever, in both languages", (t) =>
+Deno.test("REQ-109: Monster Free's card lists its three inclusions, each on its own line — Unlimited invoices, Up to five quotes a month, Spanish and English output — and says it is free forever, in both languages", (t) =>
   story(t, async ({ page, expect }) => {
     await page.setViewportSize(DESKTOP);
     for (
       const [lang, lines, forever] of [
-        ["en", ["Unlimited invoices", "Up to five quotes and contracts a month", "Spanish and English output"], "use Monster Free forever"],
-        ["es", ["Facturas ilimitadas", "Hasta cinco cotizaciones y contratos al mes", "Documentos en español y en inglés"], "usa Monster Free para siempre"],
+        ["en", ["Unlimited invoices", "Up to five quotes a month", "Spanish and English output"], "use Monster Free forever"],
+        ["es", ["Facturas ilimitadas", "Hasta cinco cotizaciones al mes", "Documentos en español y en inglés"], "usa Monster Free para siempre"],
       ] as const
     ) {
       await page.goto(`/landing2?lang=${lang}`);

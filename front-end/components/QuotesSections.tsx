@@ -7,6 +7,10 @@ import { I, ICN } from "../lib/dash-icons.tsx";
 import { fmtMoney } from "../lib/format.ts";
 import { type Lang, tFor } from "../lib/i18n.ts";
 import { type Quote } from "../lib/quotes-seed.ts";
+import {
+  QUOTE_LIMIT_UPGRADE_HREF,
+  quoteLimitMessage,
+} from "../lib/quote-limit.ts";
 import DeleteQuoteButton from "../islands/DeleteQuoteButton.tsx";
 import {
   heroCoWaiting,
@@ -59,6 +63,9 @@ interface HeroProps {
   readyCount?: number;
   /** REQ-481 (m10): change orders waiting on the customer. */
   pendingChangeOrders?: ReadonlyArray<{ number: string; client: string }>;
+  /** REQ-778 (cycle dv1, d8): the month's quotes are used up (Monster Free:
+   *  five) — the hero says so and where to upgrade. Absent: under the cap. */
+  quoteLimit?: { limit: number } | null;
   lang?: Lang;
 }
 
@@ -76,6 +83,7 @@ export function QuotesHero(
     undeliveredTotal = 0,
     readyCount,
     pendingChangeOrders = [],
+    quoteLimit,
     lang = "en",
   }: HeroProps,
 ) {
@@ -128,6 +136,19 @@ export function QuotesHero(
     ? (
       <p class="qph__sub" data-cy="quotes-hero-co-waiting">
         <strong>{tFor(lang, coWaiting.key, coWaiting.vars)}</strong>
+      </p>
+    )
+    : null;
+  // REQ-778 (cycle dv1, d8): "The free plan limit is five quotes." At the
+  // cap, /quotes says it before New quote is tapped (the API refuses the
+  // sixth either way, REQ-766).
+  const limitNote = quoteLimit
+    ? (
+      <p class="qph__sub qph__limit" data-cy="quote-limit-note" role="status">
+        <strong>{quoteLimitMessage(lang, quoteLimit.limit)}</strong>{" "}
+        <a href={QUOTE_LIMIT_UPGRADE_HREF} data-cy="quote-limit-upgrade">
+          {tFor(lang, "quoteLimit.upgrade")}
+        </a>
       </p>
     )
     : null;
@@ -247,6 +268,7 @@ export function QuotesHero(
               {coLine}
             </>
           )}
+        {limitNote}
       </div>
       {
         /* REQ-307 (demo M11): a real link — this is a plain SSR component, so

@@ -64,6 +64,18 @@ export class QuoteController {
     });
   }
 
+  /**
+   * REQ-778 (demo-loop cycle dv1, issue d8): may this account make another
+   * quote this month? The same QuoteAllowance answer POST /quotes gives, so
+   * /quotes can say "your five quotes are used" before New quote is tapped.
+   * (Declared before `:id` so "allowance" is never read as a quote id.)
+   */
+  @Get("allowance")
+  async allowanceOf(@Context() ctx: ExecutionContext) {
+    const user = await requireUser(ctx, this.sessions, this.users);
+    return await this.allowance.check(user.id);
+  }
+
   @Get(":id")
   async get(@Context() ctx: ExecutionContext, @Param("id") id: string) {
     const user = await requireUser(ctx, this.sessions, this.users);

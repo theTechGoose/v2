@@ -22,6 +22,7 @@ import {
   type MilestoneRole,
 } from "../lib/payment-split.ts";
 import { api, ApiError } from "../lib/api.ts";
+import { quoteLimitFromError, quoteLimitMessage } from "../lib/quote-limit.ts";
 import {
   assistantClient,
   type CustomerLite,
@@ -3654,7 +3655,17 @@ export default function AsstChat({
       setSending(false);
     } catch (err) {
       draftFrozenRef.current = false;
-      setError(err instanceof Error ? err.message : "couldn't start");
+      // REQ-778 (cycle dv1, d8): Monster Free's sixth quote this month is
+      // refused (402 quote_limit, REQ-766) — say the limit and how to lift
+      // it, never "POST /quotes failed: 402".
+      const overLimit = quoteLimitFromError(err);
+      setError(
+        overLimit
+          ? quoteLimitMessage(lang, overLimit.limit)
+          : err instanceof Error
+          ? err.message
+          : "couldn't start",
+      );
       setSubmittedJobDetails(null);
       setSending(false);
     }

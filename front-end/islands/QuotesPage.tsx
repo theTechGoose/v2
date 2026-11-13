@@ -52,6 +52,7 @@ import {
   OUT_STAGES,
   type Quote,
 } from "../lib/quotes-seed.ts";
+import { type QuoteLimit, quoteLimitOf } from "../lib/quote-limit.ts";
 import {
   CardGridSkeleton,
   PageHeaderSkeleton,
@@ -181,6 +182,8 @@ interface State {
   quotes: Quote[];
   winRate: WinRate | null;
   insight: Insight | null;
+  /** REQ-778 (cycle dv1, d8): the month's quotes are used up. */
+  quoteLimit?: QuoteLimit | null;
 }
 
 interface OpenQuoteState {
@@ -2045,6 +2048,7 @@ export default function QuotesPage(
         quotes: props.seed.cards.map((c) => mapCard(c, lang)),
         winRate: props.seed.winRate,
         insight: props.seed.insight,
+        quoteLimit: props.seed.quoteLimit ?? null,
       }
       : INITIAL
   );
@@ -2194,7 +2198,8 @@ export default function QuotesPage(
       quotesClient.list().catch(() => [] as BackendQuoteCard[]),
       quotesClient.winRate(90).catch(() => null as WinRate | null),
       quotesClient.insight().catch(() => null as Insight | null),
-    ]).then(([cards, winRate, insight]) => {
+      quotesClient.allowance().catch(() => null), // REQ-778
+    ]).then(([cards, winRate, insight, allowance]) => {
       if (!alive) return;
       const safeCards = Array.isArray(cards) ? cards : [];
       setS({
@@ -2203,6 +2208,7 @@ export default function QuotesPage(
         quotes: safeCards.map((c) => mapCard(c, lang)),
         winRate,
         insight,
+        quoteLimit: quoteLimitOf(allowance),
       });
     }).catch((err: Error) => {
       if (!alive) return;
@@ -2351,6 +2357,8 @@ export default function QuotesPage(
         undeliveredTotal={heroNums.undeliveredTotal}
         // REQ-760 (cycle 5v2, m14): drafts the server says are ready to send.
         readyCount={heroNums.readyCount}
+        // REQ-778 (cycle dv1, d8): Monster Free's five quotes are used up.
+        quoteLimit={s.quoteLimit}
         pendingChangeOrders={real.flatMap((q) =>
           (q.pendingChangeOrders ?? []).map((number) => ({
             number,
