@@ -122,7 +122,6 @@ import {
 import { messageLang } from "@agents/domain/business/message-language/mod.ts";
 import { InvoiceStore } from "@paperwork/domain/data/invoice-store/mod.ts";
 import { isInvoiceLocked, isQuoteLocked } from "#documents/versions.ts";
-import { findLine } from "@agents/domain/business/quote-line-revision/mod.ts";
 import {
   parseLineRepriceAsk,
   pickRepriceLine,

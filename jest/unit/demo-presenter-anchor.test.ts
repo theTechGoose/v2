@@ -459,10 +459,12 @@ describe("REQ-451 PeerPointer and DemoPointer: an off pointer is a small translu
       /:\s*off && mark && badge\s*\?\s*\(\s*(?:\/\/[^\n]*\s*)*<span\s+key=\{markKey\}\s+data-cy="demo-pointer-off-mark"/,
     );
     const mark = pointer.indexOf('data-cy="demo-pointer-off-mark"');
+    // REQ-451 AMENDMENT (reconciled on demo-fixes with REQ-761): the arrow svg moved into the
+    // exported `PointerArrow` (declared above the component), so the arrow's branch is its use.
     for (
       const later of [
         "{outside && (",
-        "d={ARROW_PATH}",
+        "<PointerArrow ",
         'data-cy="demo-pointer-tag"',
       ]
     ) {
