@@ -109,6 +109,7 @@ import {
 import {
   arrivedInvoiceFlowOffer,
   type InvoiceFlowOffer,
+  invoiceFlowContinueTarget,
   liveInvoiceFlowOffer,
 } from "../../shared/quote-flow/chat-invoice-flow-offer.ts"; // REQ-656
 import { quoteHasPrice } from "../../shared/quote-flow/quote-price-guard.ts";
@@ -1280,6 +1281,10 @@ export default function AsstChat({
    *  so the quote is created with the confirmed title/summary/bullets (and
    *  the end-of-flow picker is skipped). */
   const confirmedOptionRef = useRef<JobOptionDraft | null>(seed?.confirmedOption ?? null);
+  /** REQ-772 (demo-loop cycle 5v5, M9): the quote the thread was bound to
+   *  when the invoice flow started — never the flow's own, so Continue
+   *  gives the invoice its own thread instead of editing that quote. */
+  const flowStartedOnQuoteRef = useRef<string | null>(null);
   /** Doc type for the finished-flow review (roadmap: "swap between quote and
    *  invoice"). "invoice" sends a standalone invoice — no signature, no
    *  terms — instead of the Quote + Agreement. */
@@ -3472,7 +3477,17 @@ export default function AsstChat({
 
       let convId: string;
       let boundQuoteId: string | undefined;
-      if (quoteId && convoId) {
+      // REQ-772 (demo-loop cycle 5v5, M9): "Job done for Maria, need to
+      // invoice her" in her draft Q-001's thread opened this flow; Continue
+      // then took the edit branch below — Q-001 rewritten, no invoice
+      // wizard, the panel closed. Only the flow's OWN quote is edited.
+      const target = invoiceFlowContinueTarget({
+        quoteId,
+        convoId,
+        flowStartedOnQuoteId: flowStartedOnQuoteRef.current,
+      });
+      flowStartedOnQuoteRef.current = null;
+      if (target === "edit" && quoteId && convoId) {
         // Back brought the user to the price (or details) step of a quote
         // that already exists: this is an EDIT of that quote, not a second
         // one. The server stays where it is (terms, first question); the
@@ -3491,7 +3506,9 @@ export default function AsstChat({
         // submitted (its id is already in the URL) instead of orphaning it
         // behind a second one. Falls back to creating one when the early
         // mint failed.
-        const conv = convoId
+        // REQ-772: "newThread" — the thread belongs to the quote the flow
+        // started on; the new document starts its own.
+        const conv = target === "bindDraft" && convoId
           ? await api.post<{ id?: string }>(
             `/agents/conversations/${convoId}/draft`,
             { quoteId: quote.id },
@@ -3569,6 +3586,8 @@ export default function AsstChat({
       }
       setMessages(detail.messages);
       if (detail.customer) setCustomer(detail.customer);
+      // REQ-772: a new thread carries none of the old thread's customer.
+      else if (target === "newThread") setCustomer(undefined);
       const detailQuoteId =
         (detail.conversation as { quoteId?: string } | undefined)?.quoteId ??
           detail.quote?.id ?? boundQuoteId;
@@ -4962,6 +4981,8 @@ export default function AsstChat({
     pushHistory();
     setFlowChip("invoiceDone");
     setInvoiceFlow(true);
+    // REQ-772: a bound quote here is not this flow's — see startQuoteFromRaw.
+    flowStartedOnQuoteRef.current = quoteId ?? null;
     setSuggestPricing(false);
     setPriceSuggestions(null);
     setPendingJobDetailsRaw(null);

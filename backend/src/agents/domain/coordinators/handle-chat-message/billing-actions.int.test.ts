@@ -1188,3 +1188,59 @@ Deno.test("REQ-768 M9: in a thread bound to the unsigned quote, 'job's done, inv
     assertEquals(flowOf(res.newMessages)?.customerName, "Maria Lopez");
   });
 });
+
+// ---------------------------------------------------------------------------
+// REQ-772 (demo-loop cycle 5v5, M9 re-test of REQ-768) — the verifier's
+// draft Q-001 "Fence painting — Maria Lopez", $800, drafted by the chat with
+// no saved customer (REQ-576: the model names her in the summary's tail).
+// In Q-001's own thread "Job done for Maria, need to invoice her" and
+// "Trabajo terminado, necesito facturar." both answered "started an invoice
+// for The customer / para El cliente, $800" — the name was lost.
+// ---------------------------------------------------------------------------
+
+for (
+  const said of [
+    "Job done for Maria, need to invoice her",
+    "Trabajo terminado, necesito facturar.",
+  ]
+) {
+  Deno.test(`REQ-772 M9: '${said}' in the thread of draft Q-001 'Fence painting — Maria Lopez' (no saved customer) offers the invoice flow for Maria Lopez, $800 — never 'The customer' / 'El cliente'`, async () => {
+    await withKv(async () => {
+      const fx = fresh();
+      await seedOnboarded();
+      const quote = await fx.quotes.create(U, {
+        summary: "Fence painting — Maria Lopez",
+        jobName: "Fence painting",
+        lineItems: [{
+          description: "Fence painting",
+          quantity: 1,
+          unit: "ea",
+          price: 80_000,
+        }],
+        estimatedTotal: 80_000,
+        status: "draft",
+      });
+      const conv = await fx.conversations.create({
+        userId: U,
+        quoteId: quote.id,
+      });
+      const chat = scriptLlm(fx, () => ({ text: "Who is the invoice for?" }));
+
+      const res = await fx.flow.run({
+        userId: U,
+        conversationId: conv.id,
+        content: said,
+      });
+
+      const text = textOf(res.newMessages);
+      assertEquals(chat.length, 0, `the chat model answered: ${text}`);
+      assert(!/The customer|El cliente/i.test(text), text);
+      assertStringIncludes(text, "Maria Lopez");
+      assertStringIncludes(text, "$800");
+      const offer = flowOf(res.newMessages);
+      assertEquals(offer?.customerName, "Maria Lopez");
+      assertEquals(offer?.amountCents, 80_000);
+      assertEquals(await fx.invoices.listByUser(U), []);
+    });
+  });
+}

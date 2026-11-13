@@ -550,7 +550,9 @@ Deno.test("REQ-656 M9 billingReply: job done on a signed job whose invoice is sc
 });
 
 Deno.test("REQ-656 M9 billingReply: job done with the deposit out and the balance scheduled — the balance, with Send now, is the answer", () => {
-  const r = billingReply("en", SIGNED, [DEPOSIT, BALANCE], [], { jobDone: true });
+  const r = billingReply("en", SIGNED, [DEPOSIT, BALANCE], [], {
+    jobDone: true,
+  });
   assertStringIncludes(r.text, "INV-002");
   assertStringIncludes(r.text, "Send now");
   assertEquals(r.invoice?.id, "inv-2");
@@ -824,4 +826,64 @@ Deno.test("REQ-768 M9 billingReply: an amount typed with the job-done ask wins o
 Deno.test("REQ-768 M9 billingReply: without the job-done cue an unsigned quote still answers REQ-368's notSent / notSigned", () => {
   assertEquals(billingReply("en", MIKE_DRAFT, []).invoiceFlow, undefined);
   assertEquals(billingReply("en", MARIA_SENT, []).invoiceFlow, undefined);
+});
+
+// ---------------------------------------------------------------------------
+// REQ-772 (demo-loop cycle 5v5, M9 re-test of REQ-768): the verifier's draft
+// Q-001 "Fence painting — Maria Lopez", $800, was drafted by the chat with
+// no saved customer (the model names her in the summary's "— <Name>" tail,
+// REQ-576). "Job done for Maria, need to invoice her" answered "started an
+// invoice for The customer, $800" and the offer carried nobody to bill.
+// ---------------------------------------------------------------------------
+
+const MARIA_FENCE_DRAFT = {
+  id: "q-fence",
+  status: "draft",
+  summary: "Fence painting — Maria Lopez",
+  jobName: "Fence painting",
+  estimatedTotal: 80_000,
+};
+
+Deno.test("REQ-772 M9 billingReply: job done on a draft with no saved customer names her from the summary's '— Maria Lopez' tail, never 'The customer' / 'El cliente'", () => {
+  const en = billingReply("en", MARIA_FENCE_DRAFT, [], [], { jobDone: true });
+  assert(!/The customer/i.test(en.text), en.text);
+  assertStringIncludes(en.text, "Maria Lopez");
+  assertStringIncludes(en.text, "$800");
+  assertEquals(en.invoiceFlow?.customerName, "Maria Lopez");
+  assertEquals(en.invoiceFlow?.amountCents, 80_000);
+  const es = billingReply("es", MARIA_FENCE_DRAFT, [], [], { jobDone: true });
+  assert(!/El cliente/i.test(es.text), es.text);
+  assertStringIncludes(es.text, "Maria Lopez");
+  assertEquals(es.invoiceFlow?.customerName, "Maria Lopez");
+});
+
+Deno.test("REQ-772 M9 billingReply: job done on a draft nobody is named on says so without a fake 'The customer'", () => {
+  const r = billingReply(
+    "en",
+    {
+      id: "q-anon",
+      status: "draft",
+      summary: "Fence painting",
+      estimatedTotal: 80_000,
+    },
+    [],
+    [],
+    { jobDone: true },
+  );
+  assert(!/The customer/i.test(r.text), r.text);
+  assertStringIncludes(r.text, "$800");
+  assertEquals(r.invoiceFlow?.customerName, undefined);
+  const es = billingReply(
+    "es",
+    {
+      id: "q-anon",
+      status: "draft",
+      summary: "Pintar la cerca",
+      estimatedTotal: 80_000,
+    },
+    [],
+    [],
+    { jobDone: true },
+  );
+  assert(!/El cliente/i.test(es.text), es.text);
 });

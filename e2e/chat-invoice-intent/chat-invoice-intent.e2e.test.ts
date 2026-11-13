@@ -250,3 +250,90 @@ Deno.test("REQ-768 M9: 'Ya terminé el trabajo de Mike Johnson, mándale la fact
     expect.eq(offer?.customerName, "Mike Johnson", "who to bill");
     expect.eq(offer?.amountCents, 125_000, "the quote's amount");
   }));
+
+/** REQ-772 (demo-loop cycle 5v5, M9 re-test of REQ-768): the verifier's
+ *  draft Q-001 "Fence painting — Maria Lopez", $800, drafted by the chat
+ *  with no saved customer. In Q-001's own thread "Job done for Maria, need
+ *  to invoice her" answered "started an invoice for The customer, $800" and
+ *  opened the price step at $800 — but Continue closed the panel and left
+ *  the plain composer: no customer step, no invoice. Now the reply names
+ *  Maria Lopez and Continue lands on the invoice wizard's "Who is this
+ *  for?" in its own thread, Q-001 untouched. */
+const SAID_MARIA = "Job done for Maria, need to invoice her";
+
+Deno.test("REQ-772 M9: in draft Q-001's thread (no saved customer), 'Job done for Maria, need to invoice her' → $800 → Continue reaches the invoice's 'Who is this for?' — never the plain composer", (t) =>
+  story(t, async ({ page, expect, http, baseUrl }) => {
+    const auth = await signIn(http, page, baseUrl);
+    const me = await http("/api/me", {
+      method: "PUT",
+      headers: auth,
+      body: JSON.stringify({ language: "en" }),
+    });
+    await me.body?.cancel();
+    await page.context().addCookies([{
+      name: "pm_lang",
+      value: "en",
+      domain: new URL(baseUrl).hostname,
+      path: "/",
+    }]);
+    const q1 = await (await http("/api/quotes", {
+      method: "POST",
+      headers: auth,
+      body: JSON.stringify({
+        summary: "Fence painting — Maria Lopez",
+        jobName: "Fence painting",
+        lineItems: [{
+          description: "Fence painting",
+          quantity: 1,
+          unit: "ea",
+          price: 80_000,
+        }],
+        estimatedTotal: 80_000,
+        status: "draft",
+      }),
+    })).json() as { id: string };
+    const thread = await (await http("/api/agents/conversations", {
+      method: "POST",
+      headers: auth,
+      body: JSON.stringify({ quoteId: q1.id }),
+    })).json() as { id: string };
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await page.goto(`/assistant/${thread.id}`);
+    await say(page, SAID_MARIA);
+
+    const money = page.locator(".chat__price-capture input.mi__input");
+    await money.waitFor({ state: "visible", timeout: 30_000 });
+    expect.eq(
+      (await money.inputValue()).trim(),
+      "800",
+      "the invoice flow's pad opens at Q-001's $800",
+    );
+    const said = await (await http(`/api/agents/conversations/${thread.id}`, {
+      headers: auth,
+    })).json() as { messages?: { role: string; content: string }[] };
+    const reply = (said.messages ?? []).filter((m) => m.role === "assistant")
+      .map((m) => m.content).join(" ");
+    expect(
+      reply.includes("Maria Lopez") && !/The customer/.test(reply),
+      `the reply names Maria Lopez, not "The customer" (got: ${reply})`,
+    );
+
+    await page.locator(".chat__price-capture .chat__price-continue").click();
+    const who = page.getByText("Who is this for?").first();
+    await who.waitFor({ state: "visible", timeout: 30_000 });
+    await who.hover();
+
+    const now = new URL(page.url()).pathname.split("/").pop() ?? "";
+    expect(now !== thread.id, "the invoice runs in its own thread");
+    const conv = await (await http(`/api/agents/conversations/${now}`, {
+      headers: auth,
+    })).json() as {
+      conversation?: { docKind?: string; quoteId?: string };
+    };
+    expect.eq(conv.conversation?.docKind, "invoice", "the invoice wizard");
+    const after = await (await http(`/api/quotes/${q1.id}`, {
+      headers: auth,
+    })).json() as { summary?: string; estimatedTotal?: number };
+    expect.eq(after.summary, "Fence painting — Maria Lopez", "Q-001 untouched");
+    expect.eq(after.estimatedTotal, 80_000, "Q-001's total untouched");
+  }));
