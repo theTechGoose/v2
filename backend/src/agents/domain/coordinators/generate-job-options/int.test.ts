@@ -89,15 +89,15 @@ Deno.test("REQ-026 NW-05 (b) a valid model reply passes through, degraded false"
   const res = await coord.run({ userId: "u1", raw: RAW, langs: ["en"] });
   assertEquals(seenFormat, "json");
   assertEquals(res.degraded, false);
-  // Two usable options pass through; the third is an honest variant of the
-  // first (REQ-028 amendment — the picker promises three versions).
-  assertEquals(res.options.length, 3);
+  // Two usable options pass through. REQ-722 AMENDMENT (cycle 5, p18-3b):
+  // the only padding is the first option regrouped, a near-twin of a
+  // two-line job (REQ-584) — so no invented "· Wider scope" third card.
+  assertEquals(res.options.length, 2);
   assertEquals(res.options[0].bullets, [
     "Remove the old toilet",
     "Install a new toilet",
   ]);
   assertEquals(res.options[1].jobName, "Toilet Swap");
-  assert(res.options[2].jobName.startsWith("Toilet Replacement · "), res.options[2].jobName);
 });
 
 Deno.test("REQ-028 NW-05 a reply that echoes the prompt's placeholders is not usable → honest fallback", async () => {
@@ -141,6 +141,8 @@ Deno.test("REQ-026 NW-05 nothing scope-like ('ok') → the localized 'New job' b
 // answer is padded to three distinct variants of the first option.
 // REQ-584 AMENDMENT: the "· Short version" pad is the same words regrouped
 // — a near-twin — so a three-line job is padded with the wider version only.
+// REQ-722 AMENDMENT (cycle 5, p18-3b): the wider version appended an invented
+// "Jobsite cleanup" line and is gone — this job keeps its one honest card.
 Deno.test("REQ-028 NW-05 a usable one-option reply is padded with distinct versions only (REQ-584: no near-twins)", async () => {
   const { llm, coord } = fresh();
   llm.setHandler(() => ({
@@ -161,13 +163,10 @@ Deno.test("REQ-028 NW-05 a usable one-option reply is padded with distinct versi
   }));
   const res = await coord.run({ userId: "u1", raw: "Reparar la cerca", langs: ["es", "en"] });
   assertEquals(res.degraded, false);
-  assertEquals(res.options.length, 2);
-  const names = res.options.map((o) => o.jobName);
-  assertEquals(new Set(names).size, 2, `distinct titles: ${names}`);
+  assertEquals(res.options.length, 1);
   assertEquals(res.options[0].bullets, ["Reemplazar tres postes", "Ajustar la estructura", "Pintar la madera"]);
-  assertEquals(res.options[1].bullets.length, 4);
-  assertEquals(res.options[1].byLang.en.bullets[3], "Jobsite cleanup");
-  assertEquals(res.options.map((o) => o.id), ["opt1", "opt2"]);
+  assertEquals(res.options[0].byLang.en.bullets, ["Replace three posts", "Adjust the structure", "Paint the wood"]);
+  assertEquals(res.options.map((o) => o.id), ["opt1"]);
 });
 
 // REQ-266 (demo issue ai-assistant-p7-options): a 900-character gut job
@@ -254,13 +253,18 @@ Deno.test("REQ-266 ai-assistant-p7-options the prompt asks for every scope item 
   assert(/gutted/i.test(systemPrompt), "prompt does not name the 'gutted' example");
 });
 
-Deno.test("REQ-266 ai-assistant-p7-options the fallback 'wider scope' version never has fewer items than the full one", async () => {
+// REQ-722 AMENDMENT (cycle 5, p18-3b): the fallback's "wider scope" version
+// (every item + "Jobsite cleanup") is gone; its short version still holds
+// every item, and no version holds anything else.
+Deno.test("REQ-266 ai-assistant-p7-options the fallback's short version never has fewer items than the full one", async () => {
   const { llm, coord } = fresh();
   llm.setHandler(() => {
     throw new Error("boom");
   });
   const res = await coord.run({ userId: "u1", raw: GUT_JOB_ITEMS.join("\n"), langs: ["en"] });
-  assertEquals(res.options[2].bullets, [...GUT_JOB_ITEMS, "Jobsite cleanup"]);
+  assertEquals(res.options.length, 2);
+  const short = res.options[1].bullets.join("; ").toLowerCase();
+  for (const item of GUT_JOB_ITEMS) assert(short.includes(item.toLowerCase()), item);
 });
 
 // REQ-261 (demo M26): a contractor's private cost ("Ray the plumber is
@@ -971,13 +975,91 @@ Deno.test("REQ-584 (cycle 4, p4-p1d) padding never adds a version that is a near
   assertEquals(res.options[0].bullets, lines);
 });
 
-Deno.test("REQ-584 (cycle 4, p4-p1d) the degraded fallback keeps its three titled versions (exact-twin dedupe only)", async () => {
+// REQ-722 AMENDMENT (cycle 5, p18-3b): two titled versions — the third,
+// "· Wider scope" + "Jobsite cleanup", invented scope and is gone.
+Deno.test("REQ-584 (cycle 4, p4-p1d) the degraded fallback keeps its titled versions (exact-twin dedupe only)", async () => {
   const { llm, coord } = fresh();
   llm.setHandler(() => {
     throw new Error("boom");
   });
   const res = await coord.run({ userId: "u1", raw: GUT_JOB_ITEMS.join("\n"), langs: ["en"] });
   assertEquals(res.degraded, true);
-  assertEquals(res.options.length, 3);
+  assertEquals(res.options.length, 2);
   assertEquals(res.options[0].bullets, GUT_JOB_ITEMS);
+});
+
+// ── REQ-722 (demo-loop cycle 5, p18-3b) ─────────────────────────────────────
+// "'Jobsite cleanup' for a house clean": padToThree (and the heuristic
+// fallback) built a "· Wider scope" version by appending a fixed,
+// trade-agnostic "Jobsite cleanup" line — scope the contractor never stated,
+// which the prompt itself forbids, and construction wording for a cleaner.
+// Padding now only regroups what the contractor said; short of distinct
+// regroupings, the picker shows fewer cards.
+
+// Short lines, as in the demo: "+ Jobsite cleanup" is then far from a
+// near-twin (REQ-584) and used to survive as a third card.
+const CLEAN_EN = ["Deep clean kitchen", "Clean bathrooms", "Mop floors"];
+const CLEAN_ES = ["Limpieza profunda de cocina", "Limpiar baños", "Trapear pisos"];
+
+function words(lines: string[]): Set<string> {
+  return new Set(
+    lines.join(" ").toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? [],
+  );
+}
+
+function assertNoInventedScope(
+  options: Array<{ byLang: Record<string, { bullets: string[] }> }>,
+  typed: Record<string, string[]>,
+) {
+  for (const [lang, lines] of Object.entries(typed)) {
+    const allowed = words(lines);
+    for (const o of options) {
+      const bullets = o.byLang[lang].bullets;
+      for (const b of bullets) {
+        assert(
+          b.toLowerCase() !== "jobsite cleanup" &&
+            b.toLowerCase() !== "limpieza del sitio de trabajo",
+          `${lang}: padded version adds "${b}"`,
+        );
+      }
+      for (const w of words(bullets)) {
+        assert(allowed.has(w), `${lang}: "${w}" is scope the contractor never stated: ${JSON.stringify(bullets)}`);
+      }
+    }
+  }
+}
+
+Deno.test("REQ-722 (cycle 5, p18-3b) a house clean padded from one model option never gets 'Jobsite cleanup', in en or es", async () => {
+  const { llm, coord } = fresh();
+  llm.setHandler(() => ({
+    text: JSON.stringify({
+      options: [{
+        en: { jobName: "House Deep Clean", summary: "Deep clean the whole house", bullets: CLEAN_EN },
+        es: { jobName: "Limpieza Profunda", summary: "Limpieza profunda de la casa", bullets: CLEAN_ES },
+      }],
+    }),
+  }));
+  const res = await coord.run({
+    userId: "u1",
+    raw: "Deep clean for the Garcia house: kitchen, bathrooms, floors",
+    langs: ["en", "es"],
+  });
+  assertEquals(res.degraded, false);
+  assert(res.options.length >= 1 && res.options.length <= 3);
+  assertEquals(res.options[0].byLang.en.bullets, CLEAN_EN);
+  assertNoInventedScope(res.options, { en: CLEAN_EN, es: CLEAN_ES });
+});
+
+Deno.test("REQ-722 (cycle 5, p18-3b) the heuristic fallback for a house clean never adds 'Jobsite cleanup', in en or es", async () => {
+  const { llm, coord } = fresh();
+  llm.setHandler(() => {
+    throw new Error("boom");
+  });
+  const res = await coord.run({ userId: "u1", raw: CLEAN_EN.join("\n"), langs: ["en", "es"] });
+  assertEquals(res.degraded, true);
+  assertEquals(res.options[0].bullets, CLEAN_EN);
+  assertNoInventedScope(res.options, {
+    en: res.options[0].byLang.en.bullets,
+    es: res.options[0].byLang.es.bullets,
+  });
 });

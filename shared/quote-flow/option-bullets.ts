@@ -15,13 +15,10 @@ import { extractCustomerName } from "./quick-quote-prefill.ts";
 import { extractEmail, extractPhone } from "./quote-facts.ts";
 import type { VersionStyle } from "./version-titles.ts";
 
-/** The "· Wider scope" version: EVERY bullet plus jobsite cleanup (once) —
- *  never fewer items than the full version. */
-export function widerBullets(bullets: string[], cleanup: string): string[] {
-  const key = cleanup.toLowerCase();
-  const has = bullets.some((b) => b.toLowerCase() === key);
-  return has ? bullets.slice() : [...bullets, cleanup];
-}
+// REQ-722 (demo-loop cycle 5, p18-3b): there is no "· Wider scope" padding
+// helper any more. It appended a fixed "Jobsite cleanup" line — scope the
+// contractor never stated, and construction wording for a house clean. Every
+// padded version only regroups the contractor's own lines (groupedBullets).
 
 /** One bullet's identity: case, inner spacing and trailing punctuation are
  *  not scope differences. */
@@ -89,9 +86,9 @@ export function nearTwinBullets(a: string[], b: string[]): boolean {
  *  near-twins collapse to the first one — the picker never shows "Shingle
  *  Replacement" and "Roof Shingle Installation" with the identical list, nor
  *  three cards that differ by a word. Order is kept. `exact` keeps the
- *  REQ-330 equal-bullets rule only: the degraded heuristic fallback's three
- *  versions are built (and titled "· Short version" / "· Wider scope") to
- *  show the same scope three ways. */
+ *  REQ-330 equal-bullets rule only: the degraded heuristic fallback's
+ *  versions are built (and titled "· Short version") to show the same scope
+ *  two ways. */
 export function dedupeOptionsByBullets<T extends { bullets: string[] }>(
   options: readonly T[],
   opts: { exact?: boolean } = {},
