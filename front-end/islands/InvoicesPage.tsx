@@ -150,7 +150,6 @@ import {
   prefillFromLedger,
   priorBillingFor,
   type PriorInvoice,
-  type SendChannel,
   sendChannel,
 } from "../../shared/documents/invoice-form.ts";
 
@@ -2958,9 +2957,9 @@ function InvoiceCard(
       });
       if (r.ok) globalThis.location.reload();
       else {
-        setSendFail(worded((l) =>
-          tFor(l, "invoicesPage.back.changeDateFailed")
-        ));
+        setSendFail(
+          worded((l) => tFor(l, "invoicesPage.back.changeDateFailed")),
+        );
       }
     } finally {
       setBusy(false);

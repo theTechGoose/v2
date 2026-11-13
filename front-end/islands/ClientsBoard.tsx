@@ -45,8 +45,8 @@ import {
 } from "../lib/customer-card-edit.ts";
 import { ApiError } from "../lib/api.ts";
 import CustomerLanguageSelect, {
-  customerLanguageValue,
   type CustomerLanguageValue,
+  customerLanguageValue,
 } from "../components/CustomerLanguageSelect.tsx"; // REQ-715
 import {
   formatPhoneDisplay,
