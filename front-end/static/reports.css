@@ -1,0 +1,233 @@
+/* /reports — REQ-795. Same vocabulary as /invoices and /quotes: the .qph hero,
+   white rounded tiles, the brand pink pill. One step per card, read top down. */
+.rp {
+  max-width: 880px;
+}
+.rp__step {
+  background: #fff;
+  border-radius: var(--radius-xl);
+  border: 1px solid rgba(26, 83, 92, 0.07);
+  box-shadow: 0 1px 0 rgba(26, 83, 92, 0.04), 0 8px 22px -14px rgba(26, 83, 92,
+    0.18);
+  padding: 20px 22px 22px;
+  margin-bottom: 16px;
+}
+.rp__head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+.rp__num {
+  font-family: var(--font-heading);
+  font-weight: 800;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  color: var(--brand-pink);
+}
+.rp__title {
+  font-family: var(--font-heading);
+  font-weight: 800;
+  font-size: 16px;
+  color: var(--brand-teal);
+  letter-spacing: -0.01em;
+  margin: 0;
+}
+.rp__tiles {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+.rp__tile {
+  position: relative;
+  display: block;
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+  background: var(--brand-mint, #f7fff7);
+  border: 1.5px solid rgba(26, 83, 92, 0.1);
+  border-radius: var(--radius-lg);
+  padding: 14px 40px 14px 16px;
+  transition: transform 180ms var(--ease-out), border-color 180ms, box-shadow
+    180ms;
+}
+.rp__tile:hover {
+  transform: translateY(-1px);
+  border-color: rgba(26, 83, 92, 0.28);
+}
+.rp__tile input {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+.rp__tile--on {
+  background: #fff;
+  border-color: var(--brand-green);
+  box-shadow: 0 0 0 3px rgba(81, 152, 67, 0.16);
+}
+.rp__tile:focus-within {
+  outline: 2px solid var(--brand-green);
+  outline-offset: 2px;
+}
+.rp__tile-name {
+  display: block;
+  font-family: var(--font-heading);
+  font-weight: 800;
+  font-size: 14px;
+  color: var(--brand-teal);
+  margin-bottom: 3px;
+}
+.rp__tile-hint {
+  display: block;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--fg-muted);
+}
+.rp__tick {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: var(--brand-green);
+  color: #fff;
+  opacity: 0;
+  transform: scale(0.6);
+  transition: opacity 180ms, transform 240ms var(--ease-bounce);
+}
+.rp__tile--on .rp__tick {
+  opacity: 1;
+  transform: scale(1);
+}
+.rp__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.rp__chip {
+  font-family: var(--font-heading);
+  font-weight: 800;
+  font-size: 12.5px;
+  padding: 9px 16px;
+  border-radius: var(--radius-pill);
+  cursor: pointer;
+  background: #fff;
+  color: var(--brand-teal);
+  border: 1.5px solid rgba(26, 83, 92, 0.18);
+  transition: transform 180ms var(--ease-out), background 180ms, color 180ms;
+}
+.rp__chip:hover {
+  transform: translateY(-1px);
+  border-color: var(--brand-teal);
+}
+.rp__chip--on {
+  background: var(--brand-teal);
+  border-color: var(--brand-teal);
+  color: #fff;
+}
+.rp__custom {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  align-items: flex-end;
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px dashed rgba(26, 83, 92, 0.14);
+}
+.rp__field {
+  display: grid;
+  gap: 5px;
+  font-family: var(--font-heading);
+  font-weight: 800;
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--fg-muted);
+}
+.rp__field input {
+  font: inherit;
+  font-family: var(--font-body);
+  font-weight: 600;
+  font-size: 14px;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--brand-teal);
+  padding: 10px 12px;
+  border: 1.5px solid rgba(26, 83, 92, 0.18);
+  border-radius: var(--radius-md);
+  background: #fff;
+  min-width: 170px;
+}
+.rp__field input:focus {
+  outline: none;
+  border-color: var(--brand-green);
+  box-shadow: 0 0 0 3px rgba(81, 152, 67, 0.16);
+}
+.rp__range {
+  margin: 12px 0 0;
+  font-size: 13px;
+  color: var(--fg-muted);
+}
+.rp__err {
+  margin: 10px 0 0;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--brand-pink);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.rp__go {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  background: linear-gradient(135deg, #fff1ed 0%, #ffe4da 100%);
+  border: 1px solid rgba(255, 107, 107, 0.2);
+  border-radius: var(--radius-xl);
+  padding: 18px 22px;
+}
+.rp__go-copy {
+  min-width: 0;
+}
+.rp__go-lbl {
+  font-family: var(--font-heading);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--fg-muted);
+  margin-bottom: 3px;
+}
+.rp__go-what {
+  font-family: var(--font-heading);
+  font-weight: 800;
+  font-size: 16px;
+  color: var(--brand-teal);
+  letter-spacing: -0.01em;
+}
+.rp__go-when {
+  font-size: 12.5px;
+  color: var(--fg-muted);
+  margin-top: 2px;
+}
+.rp__cta--off {
+  opacity: 0.45;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+@media (max-width: 760px) {
+  .rp__tiles {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (max-width: 480px) {
+  .rp__tiles {
+    grid-template-columns: 1fr;
+  }
+}

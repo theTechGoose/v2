@@ -144,7 +144,10 @@ Deno.test("REQ-794 + REQ-795: /invoices has two export links; Reports is a root 
       `header + the January invoice (${lines.join(" / ")})`,
     );
     expect(lines[1].startsWith("INV-001,"), lines[1]);
-    await page.screenshot({ path: `${folder}/reports-paid-custom.png` });
+    await page.screenshot({
+      path: `${folder}/reports-paid-custom.png`,
+      fullPage: true,
+    });
 
     // 4. To before From: the error shows and the download is disabled
     await page.locator("[data-cy='report-to']").fill("2025-12-31");
@@ -155,7 +158,10 @@ Deno.test("REQ-794 + REQ-795: /invoices has two export links; Reports is a root 
       await page.locator("a[data-cy='report-download']").count() === 0,
       "no live download link while the range is invalid",
     );
-    await page.screenshot({ path: `${folder}/reports-bad-range.png` });
+    await page.screenshot({
+      path: `${folder}/reports-bad-range.png`,
+      fullPage: true,
+    });
 
     // 5. a preset puts the link back; All time has no from/to
     await page.locator("[data-cy='report-preset-all']").click();

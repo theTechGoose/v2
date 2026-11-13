@@ -5111,5 +5111,9 @@
   "reportsPage.rangeFrom": "From {from} onward.",
   "reportsPage.rangeTo": "Up to {to}.",
   "reportsPage.errRange": "The From date is after the To date.",
-  "reportsPage.download": "Download CSV"
+  "reportsPage.download": "Download CSV",
+  "reportsPage.eyebrow": "Reports",
+  "reportsPage.titlePre": "Take your numbers",
+  "reportsPage.titleEm": "with you",
+  "reportsPage.readyLbl": "Ready to download"
 }

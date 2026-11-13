@@ -5111,5 +5111,9 @@
   "reportsPage.rangeFrom": "Desde el {from} en adelante.",
   "reportsPage.rangeTo": "Hasta el {to}.",
   "reportsPage.errRange": "La fecha Desde es posterior a la fecha Hasta.",
-  "reportsPage.download": "Descargar CSV"
+  "reportsPage.download": "Descargar CSV",
+  "reportsPage.eyebrow": "Informes",
+  "reportsPage.titlePre": "Llévate tus números",
+  "reportsPage.titleEm": "contigo",
+  "reportsPage.readyLbl": "Listo para descargar"
 }
