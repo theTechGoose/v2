@@ -24,6 +24,11 @@ import { AgentConversationStore } from "@agents/domain/data/agent-conversation-s
 import { OtpStore } from "@users/domain/data/otp-store/mod.ts";
 import { resetKv } from "@core/data/kv/mod.ts";
 import { shortDate } from "#documents/linked-view.ts";
+import { t } from "@core/i18n/mod.ts";
+import {
+  localizeChatMessage,
+  localizedPreview,
+} from "#quote-flow/chat-i18n.ts";
 
 @Module({ imports: [AgentsModule] })
 class TestApp {}
@@ -137,6 +142,8 @@ async function signedThread(
     invoiceStatus?: string;
     invoiceId?: string;
     hasUnreadEvent?: boolean;
+    preview?: string;
+    previewI18n?: unknown;
   }[];
   return {
     quote: fresh,
@@ -259,3 +266,36 @@ for (const lang of ["en", "es"] as const) {
     });
   });
 }
+
+const tr = (
+  lang: "en" | "es",
+  key: string,
+  vars?: Record<string, string | number>,
+) => t(lang, key, vars);
+
+Deno.test("REQ-712 m7: a Spanish owner's signed divider and thread preview re-render in English from their keys", async () => {
+  await withApp(async () => {
+    const { quote, first, messages, row } = await signedThread(
+      "es",
+      "+15125557712",
+      "50/50",
+    );
+    assert(first);
+    const d = messages.find((m) =>
+      m.kind === "phase_divider" && m.payload?.signed === true
+    );
+    assert(d, JSON.stringify(messages));
+    // stored in the language of the moment — the fallback
+    assertMatch(d.content, /^Linda Perez firmó /);
+    const en = localizeChatMessage(d, "en", tr);
+    assertEquals(
+      en.content,
+      `Linda Perez signed ${quote.number} · deposit ${first.number} $1,425.00 sent`,
+    );
+    assertEquals(en.payload?.label, en.content);
+    assertEquals(localizeChatMessage(d, "es", tr).content, d.content);
+    assert(row, "the thread row is listed");
+    assertEquals(row.preview, `✓ ${d.content}`);
+    assertEquals(localizedPreview(row, "en", tr), `✓ ${en.content}`);
+  });
+});

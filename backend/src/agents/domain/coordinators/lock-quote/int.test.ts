@@ -18,6 +18,8 @@ import { MessageStore as CommMessageStore } from "@communication/domain/data/mes
 import type { SendEmailInput } from "@communication/domain/data/email-service/mod.ts";
 import { TranslateQuote } from "@agents/domain/coordinators/translate-quote/mod.ts";
 import { TranslateBullets } from "@agents/domain/coordinators/translate-bullets/mod.ts";
+import { t } from "@core/i18n/mod.ts";
+import { localizedPreview } from "#quote-flow/chat-i18n.ts";
 import { StubLLMClient } from "@agents/domain/business/llm/implementations/stub/mod.ts";
 
 function fresh(translator?: TranslateQuote) {
@@ -450,6 +452,47 @@ Deno.test("lock-quote integration: REQ-465 (demo cycle 3, m37) the locked action
     assertEquals(
       (card.payload as { number?: string } | undefined)?.number,
       quote.number,
+    );
+  });
+});
+
+Deno.test("lock-quote integration: REQ-712 (cycle 5, m7) a Spanish lock's thread preview re-renders in English from its key", async () => {
+  await withKv(async () => {
+    const s = fresh();
+    const users = new UserStore();
+    const user = await users.create({ phoneNumber: "+15125557713" });
+    await users.update(user.id, { language: "es" });
+    const conv = await s.conversations.create({
+      userId: user.id,
+      currentPhase: "quote",
+    });
+    const quote = await s.quotes.create(user.id, {
+      summary: "Reparación de techo",
+      lineItems: [{ description: "x", quantity: 1, unit: "ea", price: 100 }],
+      estimatedTotal: 100,
+    });
+    const r = await s.flow.run({
+      userId: user.id,
+      conversationId: conv.id,
+      quoteId: quote.id,
+    });
+    const tr = (
+      lang: "en" | "es",
+      key: string,
+      vars?: Record<string, string | number>,
+    ) => t(lang, key, vars);
+    assertEquals(
+      r.conversation.preview,
+      "Cotización confirmada: Reparación de techo",
+    );
+    assertEquals(
+      localizedPreview(r.conversation, "en", tr),
+      "Quote locked: Reparación de techo",
+    );
+    const stored = await s.conversations.get(conv.id);
+    assertEquals(
+      localizedPreview(stored, "en", tr),
+      "Quote locked: Reparación de techo",
     );
   });
 });

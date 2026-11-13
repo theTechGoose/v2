@@ -72,12 +72,12 @@ describe("REQ-583 M2: the invoice card's Send now", () => {
     ).toEqual({ invoiceId: "inv-1", number: "INV-001" });
   });
 
-  test("REQ-583: the card's chip reads Scheduled / Paid / Draft from the invoice states; sent and viewed are unchanged", () => {
+  test("REQ-583: the card's chip reads Scheduled / Paid / Draft from the invoice states; REQ-712: sent and viewed too", () => {
     expect(invoiceCardChipKey("scheduled")).toBe("invoices.state.scheduled");
     expect(invoiceCardChipKey("paid")).toBe("invoices.state.paid");
     expect(invoiceCardChipKey("draft")).toBe("invoices.state.draft");
-    expect(invoiceCardChipKey("sent")).toBe("status.sent");
-    expect(invoiceCardChipKey("viewed")).toBe("status.viewed");
+    expect(invoiceCardChipKey("sent")).toBe("invoices.state.sent");
+    expect(invoiceCardChipKey("viewed")).toBe("invoices.state.viewed");
     const en = JSON.parse(read("lang/en.json"));
     const es = JSON.parse(read("lang/es.json"));
     for (const s of ["scheduled", "paid", "draft", "sent", "viewed"]) {

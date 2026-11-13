@@ -7,6 +7,7 @@ import { TranslateQuote } from "@agents/domain/coordinators/translate-quote/mod.
 import { UserStore } from "@users/domain/data/user-store/mod.ts";
 import { CustomerStore } from "@crm/domain/data/customer-store/mod.ts";
 import { t } from "@core/i18n/mod.ts";
+import type { ChatI18nRef } from "#quote-flow/chat-i18n.ts";
 import {
   QuotePriceError,
   storedQuotePriceProblem,
@@ -165,18 +166,19 @@ export class LockQuote {
       },
     });
 
+    // REQ-712 (cycle 5, m7): the preview stores its key so the thread list
+    // words it in the live language; the text is the fallback.
+    const previewI18n: ChatI18nRef = {
+      key: status === QUOTE_LOCKED
+        ? "lockQuote.preview.locked"
+        : "lockQuote.preview.sent",
+      vars: { summary: fresh.summary ?? fresh.id },
+    };
     const updated = await this.conversations.update(conv.id, {
       quoteId: fresh.id,
       quoteStatus: status,
-      preview: t(
-        lang,
-        status === QUOTE_LOCKED
-          ? "lockQuote.preview.locked"
-          : "lockQuote.preview.sent",
-        {
-          summary: fresh.summary ?? fresh.id,
-        },
-      ),
+      preview: t(lang, previewI18n.key, { summary: fresh.summary ?? fresh.id }),
+      previewI18n,
     });
 
     return { conversation: updated, newMessages: [card, cta] };
