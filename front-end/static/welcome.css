@@ -514,6 +514,10 @@
 /* the cards themselves: /plan-cards.css (REQ-055, shared with /settings) */
 .welcome__plan-step { display: grid; gap: 10px; }
 .welcome__plan-custom, .welcome__plan-note { font-size: 13px; opacity: 0.8; margin: 0; }
+/* REQ-725 — "How billing works": the dated first-pick schedule, closed until asked */
+.welcome__plan-how { font-size: 13px; margin: 0; }
+.welcome__plan-how summary { cursor: pointer; opacity: 0.8; text-decoration: underline; }
+.welcome__plan-how p { margin: 6px 0 0; opacity: 0.8; line-height: 1.45; }
 .welcome__plan-pending { display: grid; gap: 12px; padding: 14px; border: 1.5px solid var(--border-strong); border-radius: 12px; background: var(--bg-alt); }
 .welcome__plan-pending-lede { margin: 0; font-size: 14px; line-height: 1.45; }
 .welcome__plan-actions { display: flex; flex-wrap: wrap; gap: 10px; }

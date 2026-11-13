@@ -72,7 +72,12 @@ Deno.test("REQ-356: every paid card on the wizard's plan step says, before it is
     const note = notes.get(p.id);
     assert(note, `the ${p.name} card carries a note (plan-note-${p.id})`);
     assertStringIncludes(note, `${dollars(p.priceCents)} today`, p.name);
-    assertStringIncludes(note, `${dollars(p.priceCents)}/month`, p.name);
+    // REQ-725 (c5 m3) — the monthly price in the one plain line
+    assertStringIncludes(
+      note,
+      `then ${dollars(p.priceCents)} on the 1st of each month`,
+      p.name,
+    );
     assertStringIncludes(note, "secure payment page", p.name);
   }
 });
@@ -89,7 +94,11 @@ Deno.test("REQ-356: the notes speak Spanish on a Spanish wizard (demo-loop c1 m8
     const note = notes.get(p.id);
     assert(note, `the ${p.name} card carries a Spanish note`);
     assertStringIncludes(note, `${dollars(p.priceCents)} hoy`, p.name);
-    assertStringIncludes(note, `${dollars(p.priceCents)}/mes`, p.name);
+    assertStringIncludes(
+      note,
+      `luego ${dollars(p.priceCents)} el día 1 de cada mes`,
+      p.name,
+    );
     assertStringIncludes(note, "página de pago segura", p.name);
   }
   assertStringIncludes(notes.get("free") ?? "", "nada que pagar");

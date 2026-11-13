@@ -11,9 +11,15 @@
  * next 1st a prorated bill for the days of that month past the paid-through date. "Prorated on
  * the 1st" without an amount or a date read as describing today's charge, so the note states each
  * charge with its date and the days it covers.
+ *
+ * REQ-725 (demo-loop cycle 5, m3) — spelled out on every card, that dated schedule read as a
+ * double charge. A wizard card now says one plain line ("$99 today, then $99 on the 1st of each
+ * month"); the dated schedule moves under the cards into a "How billing works" disclosure
+ * (`wizardBillingHow`), worked for one plan from the same `anchoredSchedule`.
  */
 import {
   anchoredSchedule,
+  planById,
   type SwitchCurrent,
   switchQuote,
 } from "../../shared/quote-flow/plan-switch.ts";
@@ -30,14 +36,36 @@ export function wizardPlanNote(
   current: SwitchCurrent | null | undefined,
   targetId: string,
   now: string,
-  lang: Lang = "en",
+  _lang: Lang = "en", // REQ-725: the one-line note carries no dates
 ): string | null {
   const q = switchQuote(current, targetId, now);
   if (q.kind === "free") return t("welcome.plan.note.free");
   if (q.kind === "same") return null;
-  return firstPickNote(t, "welcome.plan.note.paid", q.monthlyCents, now, lang, {
+  return t("welcome.plan.note.paid", {
     due: dollars(q.dueCents),
+    monthly: dollars(q.monthlyCents),
   });
+}
+
+/** REQ-725 — the body of the wizard's "How billing works": a first pick of `planId` at `now`,
+ *  each charge with its date, from the one anchored schedule */
+export function wizardBillingHow(
+  t: Translate,
+  planId: string,
+  now: string,
+  lang: Lang = "en",
+): string {
+  const p = planById(planId);
+  return firstPickNote(
+    t,
+    "welcome.plan.billingHow.body",
+    p.priceCents,
+    now,
+    lang,
+    {
+      plan: p.name,
+    },
+  );
 }
 
 const DAY_MS = 24 * 60 * 60 * 1000;
