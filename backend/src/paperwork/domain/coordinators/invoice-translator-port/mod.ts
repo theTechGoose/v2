@@ -3,7 +3,9 @@ import { Injectable } from "#danet/core";
 export interface TranslateInvoiceRequest {
   userId: string;
   invoiceId: string;
-  /** The language the contractor typed the invoice in (their app language). */
+  /** The contractor's app language — a hint. REQ-710 (cycle 5, M4): the
+   *  language the invoice's text reads in wins; this decides only when the
+   *  text can't tell. */
   baseLang?: "en" | "es";
 }
 

@@ -13,6 +13,7 @@ import {
 import { projectLineItems } from "../../../shared/quote-flow/public-doc-state.ts";
 import { publicLogoUrl } from "../../../shared/quote-flow/public-logo-url.ts";
 import { localizeLineItems } from "../../../shared/quote-flow/quote-translations.ts";
+import { localizePaymentInstructions } from "../../../shared/documents/invoice-form.ts";
 import {
   claimedNoteKey,
   type ReceiptChannel,
@@ -684,7 +685,15 @@ function InvoiceDoc(
                       <div
                         style={`margin-top:3px;color:${INK};white-space:pre-wrap`}
                       >
-                        {invoice.paymentInstructions}
+                        {
+                          /* REQ-710 (cycle 5, M4): the methods' labels in
+                           the page's language — "· Efectivo" on the English
+                           invoice, beside a "Cash" button (pair 9) */
+                        }
+                        {localizePaymentInstructions(
+                          invoice.paymentInstructions,
+                          lang,
+                        )}
                       </div>
                     </div>
                   )

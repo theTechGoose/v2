@@ -148,6 +148,9 @@ const isOptions = (r: LLMRequest) =>
   r.responseFormat === "json" &&
   r.systemPrompt === t("en", "prompts.generateJobOptions");
 const userText = (r: LLMRequest) => r.messages.map((m) => m.content).join("\n");
+/** REQ-710 (cycle 5, M4): TranslateBullets' call. */
+const isTranslation = (r: LLMRequest) =>
+  /You translate construction scope-of-work/.test(r.systemPrompt ?? "");
 
 const TIERS_JSON = JSON.stringify({
   options: [
@@ -376,7 +379,20 @@ Deno.test("REQ-392 M7 job-details step: the versions are rewritten from the job,
 
   const call = seen.filter(isOptions);
   assertEquals(call.length, 1);
-  assertEquals(seen.length, 1, "no chat-model turn");
+  // REQ-710 AMENDMENT (cycle 5, M4): the writer answered in English only, so
+  // the Spanish copies (the English, filled in) are sent to be translated
+  // into Spanish — a translation, not a chat-model turn.
+  const translations = seen.filter(isTranslation);
+  assert(
+    translations.length >= 1 &&
+      translations.every((r) => /Spanish/.test(r.systemPrompt ?? "")),
+    "the Spanish the writer left out is translated into Spanish",
+  );
+  assertEquals(
+    seen.length - call.length - translations.length,
+    0,
+    "no chat-model turn",
+  );
   const asked = userText(call[0]);
   assertStringIncludes(asked, TYPED);
   assertStringIncludes(asked, "Build a curbless shower");

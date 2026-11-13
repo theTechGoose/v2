@@ -16,6 +16,9 @@ import { UserStore } from "@users/domain/data/user-store/mod.ts";
 import { BusinessIdentityStore } from "@profile/domain/data/business-identity-store/mod.ts";
 import { SITE_ORIGIN } from "#quote-flow/site-meta.ts";
 import { winAnsiSafeDeep } from "@paperwork/domain/business/pdf-text/mod.ts";
+import { localizePaymentInstructions } from "#documents/invoice-form.ts"; // REQ-710
+import { invoiceTextByLang } from "#documents/invoice-lang.ts"; // REQ-710
+import { lineItemDescription } from "#quote-flow/quote-translations.ts"; // REQ-710
 import {
   customerLines,
   customerOnDocument,
@@ -177,8 +180,12 @@ export class RenderInvoicePdf {
 
     // Hero title
     y -= 36;
+    // REQ-710 (cycle 5, M4): a standalone invoice's title and concepts in
+    // the PDF's language while their copies still describe the typed text.
+    const own = invoiceTextByLang(invoice);
     const heroTitle = (quote?.summaryByLang?.[lang] ?? quote?.summary ??
-      invoice.jobName ?? t(lang, "renderQuotePdf.heroFallback"))
+      own.jobNameByLang?.[lang] ?? invoice.jobName ??
+      t(lang, "renderQuotePdf.heroFallback"))
       .replace(/^\s*quote\s*:\s*/i, "")
       .replace(/\b\w/g, (c) => c.toUpperCase());
     page.drawText(heroTitle, { x: M, y, size: 24, font: bold, color: TEAL });
@@ -246,7 +253,7 @@ export class RenderInvoicePdf {
     if (!visits && !quote?.lineItems?.length && invoice.description) {
       y = drawWrappedText(
         page,
-        invoice.description,
+        own.descriptionByLang?.[lang] ?? invoice.description,
         M,
         y,
         W - 2 * M,
@@ -460,7 +467,8 @@ export class RenderInvoicePdf {
         y -= 13;
         y = drawWrappedText(
           page,
-          invoice.paymentInstructions.trim(),
+          // REQ-710 (cycle 5, M4): the methods' labels in the PDF's language.
+          localizePaymentInstructions(invoice.paymentInstructions, lang).trim(),
           M,
           y,
           W - 2 * M,
@@ -527,7 +535,8 @@ export class RenderInvoicePdf {
       for (const li of quote.lineItems) {
         addPageIfNeeded(28);
         const lineTotal = (li.price ?? 0) * (li.quantity ?? 1);
-        page.drawText(li.description, {
+        // REQ-710 (cycle 5, M4): the line in the PDF's language.
+        page.drawText(lineItemDescription(li, lang, quote.lang), {
           x: M,
           y,
           size: 11,

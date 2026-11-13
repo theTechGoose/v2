@@ -85,9 +85,11 @@ export class CreateQuoteDto {
   description?: string;
 
   /** REQ-333 (M24): the language the base text (`description`, every line
-   *  item's `description`) was written in — the contractor's app language
-   *  when the quote was translated. That language is never sent to the
-   *  model: its cache is the typed text verbatim. */
+   *  item's `description`) was written in. REQ-710 (cycle 5, M4): read off
+   *  that text — stamped when the quote is created, re-based by
+   *  TranslateQuote when the text says otherwise — and the contractor's app
+   *  language only when the text can't tell. That language is never sent to
+   *  the model: its cache is the typed text verbatim. */
   @IsOptional()
   @IsString()
   lang?: string;

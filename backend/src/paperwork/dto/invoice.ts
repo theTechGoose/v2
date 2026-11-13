@@ -98,6 +98,10 @@ export class CreateInvoiceDto {
     date?: string;
     service?: string;
     address?: string;
+    /** REQ-710 (cycle 5, M4): a STANDALONE invoice's line per language,
+     *  written by TranslateInvoice — the `lang` slot is the typed text (the
+     *  cache key, shared/documents/invoice-lang.ts). */
+    descriptionByLang?: Record<string, string>;
   }>;
 
   /** ≤3-word job title for STANDALONE invoices (roadmap p.10) — quote-
@@ -200,6 +204,8 @@ export class UpdateInvoiceDto {
     date?: string;
     service?: string;
     address?: string;
+    /** REQ-710: see CreateInvoiceDto — set by TranslateInvoice. */
+    descriptionByLang?: Record<string, string>;
   }>;
   @IsOptional() @IsString()
   jobName?: string;

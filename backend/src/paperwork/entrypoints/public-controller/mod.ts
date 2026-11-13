@@ -29,6 +29,7 @@ import type { Invoice, PaymentMethod } from "@paperwork/dto/invoice.ts";
 import { isAccepted } from "#quote-flow/quote-status.ts";
 import { hasSignOverride } from "#quote-flow/public-doc-state.ts";
 import { groupVisits } from "#quote-flow/visit-groups.ts";
+import { invoiceLineItemsByLang } from "#documents/invoice-lang.ts"; // REQ-710
 import { sniffLogoImage } from "#quote-flow/logo-image.ts";
 import { logoVersion } from "#quote-flow/public-logo-url.ts";
 import {
@@ -1151,10 +1152,16 @@ export class PaperworkPublicController {
       // while it still matches what was typed — /i reads map[lang] ?? jobName.
       // REQ-487 (demo m58): its OWN line items fill the itemized table too —
       // except a batch invoice, whose visits render grouped by address.
+      // REQ-710 (cycle 5, M4): each with its per-language text while it
+      // still describes the line — /i?lang=en kept "Retiro de refrigerador y
+      // lavadora" under an English title.
       const ownItems = !jobDetails && i.lineItems?.length &&
           !groupVisits(i.lineItems)
-        ? i.lineItems.map((li) => ({
+        ? invoiceLineItemsByLang(i, i.lineItems).map((li) => ({
           description: li.description,
+          ...(li.descriptionByLang
+            ? { descriptionByLang: li.descriptionByLang }
+            : {}),
           quantity: li.quantity,
           unit: li.unit,
           price: li.price,

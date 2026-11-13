@@ -243,6 +243,45 @@ export function paymentInstructionsFromMethods(
   return parts.join(" · ");
 }
 
+/**
+ * REQ-710 (demo-loop cycle 5, M4, pair 9) — payment instructions in the
+ * document's language. The invoice form fills the field from the accepted
+ * methods in the OWNER's language and the invoice stores that line as plain
+ * text, so the English invoice read "Zelle: +1 (512) 555-0108 · Efectivo"
+ * beside a "Cash" button. At render time every part — split on " · " and
+ * on new lines (Settings' own text lists one method per line) — that is one
+ * of the methods' own labels (alone, or as "<label>: <detail>") takes the
+ * label in `lang`; the details and anything else the contractor wrote stay
+ * as typed.
+ */
+export function localizePaymentInstructions(
+  text: string | null | undefined,
+  lang: string,
+): string {
+  const s = text ?? "";
+  if (!s.trim()) return "";
+  const to = METHOD_LABELS[lang === "es" ? "es" : "en"];
+  const keys = Object.keys(to);
+  const labelKey = (label: string) => {
+    const l = label.trim().toLowerCase();
+    return keys.find((k) =>
+      METHOD_LABELS.en[k].toLowerCase() === l ||
+      METHOD_LABELS.es[k].toLowerCase() === l
+    );
+  };
+  const localize = (part: string) => {
+    const whole = labelKey(part);
+    if (whole) return part.replace(part.trim(), to[whole]);
+    const colon = part.indexOf(":");
+    if (colon <= 0) return part;
+    const key = labelKey(part.slice(0, colon));
+    return key ? `${to[key]}${part.slice(colon)}` : part;
+  };
+  return s.split("\n").map((line) =>
+    line.split(" · ").map(localize).join(" · ")
+  ).join("\n");
+}
+
 /** REQ-483 (M40): what "Payment instructions" starts with — Settings' own
  *  text first, else what was last typed on this device, else the accepted
  *  methods (so onboarding's Zelle is never a blank field). */
