@@ -2349,7 +2349,7 @@ Deno.test("REQ-315 m49: a quote number that matches no quote writes nothing and 
   await resetKv();
 });
 
-Deno.test("REQ-315: on a SIGNED quote with an invoice, the model's price-change change_order is still the change order for the difference (REQ-238) — the reprice guard never refuses it", async () => {
+Deno.test("REQ-315 (REQ-767 amendment): on a SIGNED quote with an invoice, a line's new price is still the change order for the difference (REQ-238) — offered in code (+$150, never the model's own sum) and made on the yes", async () => {
   Deno.env.set("KV_PATH", ":memory:");
   await resetKv();
   const f = fresh();
@@ -2372,10 +2372,23 @@ Deno.test("REQ-315: on a SIGNED quote with an invoice, the model's price-change 
     },
   }]);
   const conv = await f.conversations.create({ userId: "u-1" });
-  const result = await f.flow.run({
+  const offered = await f.flow.run({
     userId: "u-1",
     conversationId: conv.id,
     content: "Change plumbing fixtures to $1,300 on Q-001",
+  });
+  // REQ-767 (cycle 5v2, m43): the signed quote's reprice is read in code and
+  // answered with the one-tap offer for exactly the difference.
+  assertEquals(
+    (offered.newMessages.at(-1)!.payload as {
+      quoteRevision?: { changeOrderOffer?: { deltaCents: number } };
+    }).quoteRevision?.changeOrderOffer?.deltaCents,
+    15_000,
+  );
+  const result = await f.flow.run({
+    userId: "u-1",
+    conversationId: conv.id,
+    content: "yes",
   });
   await onlyQuoteIs(f, quote.id);
   const stored = await f.quotes.getOwned(quote.id, "u-1");

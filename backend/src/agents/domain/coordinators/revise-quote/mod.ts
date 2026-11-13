@@ -16,6 +16,7 @@ import {
 } from "@agents/domain/business/quote-line-revision/mod.ts";
 import { describeQuoteRevision } from "@agents/domain/business/quote-revision-reply/mod.ts";
 import type { Quote } from "@paperwork/dto/quote.ts";
+import { pickRepriceLine } from "@agents/domain/business/locked-line-reprice/mod.ts";
 import {
   type ChangeOrderOffer,
   signedOfferAmount,
@@ -104,6 +105,12 @@ function money(cents: number): string {
  * edit amounts to — each repriced line's new total minus its old one, each
  * removed line credited. Undefined when a named line is not on the quote or
  * nothing moves the price (a reword only).
+ *
+ * REQ-767 (cycle 5v2, m43 re-test): a name is found as `findLine` finds it,
+ * else by `pickRepriceLine` — through the line's translations, and on a
+ * one-line quote "the line" / "sink repair" is that line. The verifier's
+ * "sink repair" on Carmen's Spanish-only "Reparar fuga debajo del fregadero"
+ * missed, so the reply was the bare refusal again.
  */
 function lockedChangeOrderOffer(
   lang: Lang,
@@ -111,42 +118,49 @@ function lockedChangeOrderOffer(
   input: Pick<ReviseQuoteInput, "lines" | "remove">,
 ): ChangeOrderOffer | undefined {
   const base = quote.lineItems ?? [];
-  const rev = reviseLineItems(base, input.lines, input.remove);
-  if (rev.unmatched.length > 0) return undefined;
-  const delta = rev.estimatedTotal - totalOf(base);
-  if (delta === 0) return undefined;
+  const lineOf = (name: string) => {
+    const i = findLine(base, name);
+    return i >= 0 ? i : pickRepriceLine(base, name);
+  };
   const lineTotal = (l: LineItem) => (l.price ?? 0) * (l.quantity ?? 1);
   const parts: string[] = [];
   const names: string[] = [];
   const seen = new Set<number>();
+  let delta = 0;
   for (const c of input.lines) {
-    const i = findLine(base, c.match);
-    if (i < 0 || seen.has(i)) continue;
+    const i = lineOf(c.match);
+    if (i < 0) return undefined;
+    if (seen.has(i)) continue;
     const from = lineTotal(base[i]);
     if (
-      typeof c.amountCents !== "number" || Math.trunc(c.amountCents) === from
+      typeof c.amountCents !== "number" || !Number.isFinite(c.amountCents) ||
+      Math.trunc(c.amountCents) === from
     ) {
       continue;
     }
+    const to = Math.trunc(c.amountCents);
     seen.add(i);
+    delta += to - from;
     names.push(base[i].description);
     parts.push(t(lang, "chatCoordinator.reviseQuote.coLine", {
       line: base[i].description,
       from: money(from),
-      to: money(Math.trunc(c.amountCents)),
+      to: money(to),
     }));
   }
   for (const r of input.remove) {
-    const i = findLine(base, r);
-    if (i < 0 || seen.has(i)) continue;
+    const i = lineOf(r);
+    if (i < 0) return undefined;
+    if (seen.has(i)) continue;
     seen.add(i);
+    delta -= lineTotal(base[i]);
     names.push(base[i].description);
     parts.push(t(lang, "chatCoordinator.reviseQuote.coRemoved", {
       line: base[i].description,
       amount: money(-lineTotal(base[i])),
     }));
   }
-  if (parts.length === 0) return undefined;
+  if (parts.length === 0 || delta === 0) return undefined;
   return {
     quoteId: quote.id,
     ...(quote.number ? { quoteNumber: quote.number } : {}),
