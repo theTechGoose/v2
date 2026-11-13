@@ -811,3 +811,38 @@ Deno.test("REQ-720 send-paperwork-email: a Spanish quote email's hero is sentenc
   assertStringIncludes(sent[1].htmlBody, "Backyard Junk Removal");
   await resetKv();
 });
+
+// REQ-756 (demo-loop cycle 5v2, p18-2a): the REQ-720 sentence case covers the
+// JOB only — the verifier saw the summary's "— Ana Pérez" tail lowercased to
+// "— ana pérez". The customer's name keeps its capitals.
+Deno.test("REQ-756 send-paperwork-email: a Spanish quote email's hero never lowercases the customer's name", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const { flow, customers, quotes, sent } = fresh();
+  await seedContractor("u-1");
+  const customer = await customers.create("u-1", {
+    name: "Ana Pérez",
+    email: "ana@acme.test",
+  });
+  const quote = await quotes.create("u-1", {
+    customerId: customer.id,
+    summary: "Corte de Césped y Poda de Setos — Ana Pérez",
+    lineItems: [{ description: "Corte", quantity: 1, unit: "ea", price: 120 }],
+    estimatedTotal: 120,
+  });
+  const es = await flow.run("u-1", {
+    kind: "quote",
+    resourceId: quote.id,
+    language: "es",
+  });
+  assertEquals(es.ok, true);
+  assertStringIncludes(
+    sent[0].htmlBody,
+    "Corte de césped y poda de setos — Ana Pérez",
+  );
+  assert(
+    !sent[0].htmlBody.includes("ana pérez"),
+    "the customer's name is never lowercased in the Spanish hero",
+  );
+  await resetKv();
+});
