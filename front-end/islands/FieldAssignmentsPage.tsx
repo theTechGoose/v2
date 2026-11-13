@@ -23,6 +23,7 @@ import { assignmentsMapView, US_MAP_VIEW } from "../lib/field.ts";
 import { ApiError } from "../lib/api.ts";
 import { I, ICN } from "../lib/dash-icons.tsx";
 import { langSignal, t } from "../lib/i18n.ts";
+import type { FieldAssignmentsSeed } from "../lib/field-ssr.ts";
 
 // ---- Leaflet, typed just as far as this page uses it ----
 type LatLng = [number, number];
@@ -124,11 +125,14 @@ interface Drag {
   from: string;
 }
 
-export default function FieldAssignmentsPage() {
+/** REQ-730 (demo c2-p13-p) — `seed`: the zones + crew read by the route on the SSR side; the first HTML carries them, not "Loading…" */
+export default function FieldAssignmentsPage(
+  { seed }: { seed?: FieldAssignmentsSeed | null } = {},
+) {
   const _lang = langSignal.value;
-  const [regions, setRegions] = useState<RegionView[]>([]);
-  const [workers, setWorkers] = useState<FieldWorker[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [regions, setRegions] = useState<RegionView[]>(seed?.regions ?? []);
+  const [workers, setWorkers] = useState<FieldWorker[]>(seed?.workers ?? []);
+  const [loading, setLoading] = useState(!seed);
   const [error, setError] = useState<string | null>(null);
   const [flash, setFlash] = useState("");
   const [filter, setFilter] = useState("");
@@ -162,7 +166,7 @@ export default function FieldAssignmentsPage() {
   }
 
   useEffect(() => {
-    load();
+    if (!seed) load(); // REQ-730 — seeded on the server: no client fetch on mount
     fieldClient.mapCenter().then(setCenter).catch(
       () => {/* the US view stands */},
     );

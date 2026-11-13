@@ -4,6 +4,9 @@
  */
 import { asset, Head } from "fresh/runtime";
 import { define } from "../../utils.ts";
+import { getSessionId } from "../../lib/auth.ts";
+import { loadFieldTasksSeed } from "../../lib/field-ssr.ts";
+import { todayIso } from "../../lib/field.ts";
 import DocTitle from "../../components/DocTitle.tsx";
 import SiteFooter from "../../components/SiteFooter.tsx";
 import { type Lang, tFor } from "../../lib/i18n.ts";
@@ -12,8 +15,11 @@ import DashTopbar from "../../islands/DashTopbar.tsx";
 import FieldTasksPage from "../../islands/FieldTasksPage.tsx";
 import { greetingFirstName } from "../../../shared/quote-flow/outbound-identity.ts";
 
-export default define.page(function FieldFieldTasksPageRoute(ctx) {
+export default define.page(async function FieldFieldTasksPageRoute(ctx) {
   const user = ctx.state.user;
+  // REQ-730 (demo-loop c5, c2-p13-p): read the lists here so the first HTML
+  // carries the rows, not a "Loading…" line; null → the island fetches on hydration.
+  const seed = await loadFieldTasksSeed(getSessionId(ctx.req), todayIso());
   const lang: Lang = user?.language === "es" ? "es" : "en";
   const greetingName = greetingFirstName(user?.name);
 
@@ -41,7 +47,7 @@ export default define.page(function FieldFieldTasksPageRoute(ctx) {
             greetingName={greetingName}
           />
           <div class="content">
-            <FieldTasksPage />
+            <FieldTasksPage seed={seed} />
             <SiteFooter lang={lang} compact />
           </div>
         </main>

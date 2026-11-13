@@ -28,6 +28,7 @@ import {
   todayIso,
 } from "../lib/field.ts";
 import { langSignal, t } from "../lib/i18n.ts";
+import type { FieldSubscriptionsSeed } from "../lib/field-ssr.ts";
 import SearchSelect from "./SearchSelect.tsx";
 
 /** the cadence <select>'s values: an interval in weeks, or monthly */
@@ -181,9 +182,14 @@ async function loadAllCustomers(): Promise<Customer[]> {
   return out.sort((a, b) => a.name.localeCompare(b.name));
 }
 
-export default function FieldSubscriptionsPage() {
+/** REQ-730 (demo c2-p13-p) — `seed`: the cards read by the route on the SSR side; the first HTML carries them, not "Loading…" */
+export default function FieldSubscriptionsPage(
+  { seed }: { seed?: FieldSubscriptionsSeed | null } = {},
+) {
   const lang = langSignal.value;
-  const [subs, setSubs] = useState<SubscriptionView[] | null>(null);
+  const [subs, setSubs] = useState<SubscriptionView[] | null>(
+    seed?.subs ?? null,
+  );
   const [loadErr, setLoadErr] = useState<string | null>(null);
   const [customers, setCustomers] = useState<Customer[]>([]);
   /** REQ-152 — the customer last picked in the open form (its address may sit in the box) */
@@ -215,14 +221,17 @@ export default function FieldSubscriptionsPage() {
 
   useEffect(() => {
     let alive = true;
-    fieldClient.subscriptions().then((list) => {
-      if (!alive) return;
-      setSubs(list);
-    }).catch((err: unknown) => {
-      if (!alive) return;
-      setLoadErr(errMsg(err));
-      setSubs([]);
-    });
+    // REQ-730 — seeded on the server: the list is already here
+    if (!seed) {
+      fieldClient.subscriptions().then((list) => {
+        if (!alive) return;
+        setSubs(list);
+      }).catch((err: unknown) => {
+        if (!alive) return;
+        setLoadErr(errMsg(err));
+        setSubs([]);
+      });
+    }
     loadAllCustomers().then((list) => {
       if (alive) setCustomers(list);
     }).catch(() => {

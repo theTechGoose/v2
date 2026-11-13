@@ -28,6 +28,7 @@ import {
   type SendFailureLine,
 } from "../lib/field-batches.ts";
 import { langSignal, t, tn, type Vars } from "../lib/i18n.ts";
+import type { FieldBatchesSeed } from "../lib/field-ssr.ts";
 
 /** "{n} invoice(s)" → "1 invoice" / "3 invoices" (the lang files carry the "(s)") */
 function tp(key: string, vars: Vars): string {
@@ -81,12 +82,23 @@ const batchTotal = (b: BatchView) =>
     0,
   );
 
-export default function FieldBatchesPage() {
+/** the past batches as listed: only those with invoices, newest first */
+const pastBatches = (all: BatchView[]) =>
+  all.filter((b) => b.invoices.length > 0)
+    .sort((a, b) => b.from.localeCompare(a.from));
+
+/** REQ-730 (demo c2-p13-p) — `seed`: the batches read by the route on the SSR side; the first HTML carries them, not "Loading…" */
+export default function FieldBatchesPage(
+  { seed }: { seed?: FieldBatchesSeed | null } = {},
+) {
   const lang = langSignal.value;
+  const seeded = seed ? pastBatches(seed.batches) : null;
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
-  const [batches, setBatches] = useState<BatchView[]>([]);
-  const [current, setCurrent] = useState<BatchView | null>(null);
+  const [batches, setBatches] = useState<BatchView[]>(seeded ?? []);
+  const [current, setCurrent] = useState<BatchView | null>(
+    seeded?.[0] ?? null,
+  );
   const [summary, setSummary] = useState<PullSummary | null>(null);
   const [flash, setFlash] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -94,9 +106,11 @@ export default function FieldBatchesPage() {
   const [failures, setFailures] = useState<SendFailureLine[]>([]);
   /** a send refused with 409 because of a $0 line — offer "Send anyway" */
   const [zeroBlocked, setZeroBlocked] = useState(false);
-  const [checked, setChecked] = useState<Set<string>>(new Set());
+  const [checked, setChecked] = useState<Set<string>>(() =>
+    defaultBatchChecks(seeded?.[0] ?? null, new Set())
+  );
   const [busy, setBusy] = useState<"pull" | "send" | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(!seed);
 
   // Default range: the last two weeks. Resolved in an effect — the browser's
   // day, not the server's.
@@ -107,9 +121,7 @@ export default function FieldBatchesPage() {
   }, []);
 
   async function load(keepId?: string): Promise<BatchView[]> {
-    const rows = (await fieldClient.batches())
-      .filter((b) => b.invoices.length > 0)
-      .sort((a, b) => b.from.localeCompare(a.from));
+    const rows = pastBatches(await fieldClient.batches());
     setBatches(rows);
     if (keepId) {
       const found = rows.find((b) => b.id === keepId);
@@ -119,6 +131,7 @@ export default function FieldBatchesPage() {
   }
 
   useEffect(() => {
+    if (seed) return; // REQ-730 — seeded on the server: no client fetch on mount
     load()
       .then((rows) => {
         const first = rows[0] ?? null;

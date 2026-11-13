@@ -4358,3 +4358,21 @@ Tests:
 - unit: `demo-loop/demo20b_test.ts` "REQ-621: the rules file names every category, in order, each with an action" (the rules file is executed by agents, so it gets a content test).
 - int: `demo-loop/demo20b_test.ts` "REQ-621: both testers are told to read the rules and tag every issue" runs the real harness with a fake fleet-claude.
 - e2e: the next demo cycle; its reports carry category tags.
+
+## REQ-730 — the /field/* list pages paint their rows in the first HTML, not a "Loading…" line waiting for hydration (demo-loop cycle 5, issue c2-p13-p)
+
+Raphael: "fix every issue the demo found, loop until there are none" — and, for this run, "we want to fix what we have identified as bug, polish or breaking."
+
+Demo issue **c2-p13-p** (cycle 2 backlog, judged BUG_POLISH in cycle 5, RCA at 2444608a): "Brief 'Loading…' lines flash". Every `/field/*` route server-rendered its island with no data (`routes/field/workers.tsx` → `<FieldWorkersPage />`), and the island fetched its lists in a mount `useEffect` (`islands/FieldWorkersPage.tsx:98`), so the first HTML and the hydrated page showed a `field.common.loading` text line (`:457`) before the rows replaced it. The same held for assignments, subscriptions, batches and tasks.
+
+Requirement: the field routes (`workers`, `assignments`, `subscriptions`, `batches`, `tasks`) read their first lists on the SSR side with the caller's session (`front-end/lib/field-ssr.ts`, the REQ-471 pattern) and pass them to the island as `seed`. A seeded island renders its rows on its first render and makes no mount fetch. A list that can't be read gives `null`, and the island fetches on hydration as before. `/field/tasks` seeds the server's day and the island uses it only when the browser's day is the same one.
+
+**Tests:**
+- unit `front-end/lib/field-ssr.test.tsx` ("REQ-730 (c2-p13-p) …"): each loader reads its paths with the session and returns null for no session or an unreadable/thrown main list; failed side reads fall back. Each seeded island (Workers, Assignments, Subscriptions, Batches, Tasks) renders its row (`wk-row`, `asg-region`, `subs-card`, `lt-past`, `tk-task`) with no "Loading…"/"Cargando…" line on its first render, and the unseeded Workers page still shows it. Every route calls its loader and passes `seed={seed}`. `jest/unit/c4-batch-checks-note-flash.test.ts` (REQ-608) now anchors on the mount effect's `load()` call, because the effect returns early when seeded.
+- integration: n/a. No backend or wire change; the endpoints are the ones the islands already read, and the e2e below proves the SSR join against the real backend.
+- e2e `e2e/field-ssr-first-paint/field-ssr-first-paint.e2e.test.ts`: (1) a signed-in owner with a worker gets a raw server answer for `/field/workers` that carries `data-cy="wk-row"` and the worker's name, with no browser and no JS, and none of the five `/field/*` pages contains "Loading…" or "Cargando…". (2) After a pull, the raw `/field/batches` HTML lists the batch and carries its draft's `lt-check` already ticked.
+
+**Evidence (2026-11-12, Mac host, branch fix/c5-field-ssr-lists off demo-fixes 2444608a):**
+- RED first. `deno test -A --no-check lib/field-ssr.test.tsx` with the loaders stubbed gave "FAILED | 0 passed | 10 failed" ("not implemented"; "AssertionError: a worker row is in the first HTML" / "a zone…" / "a card…" / "a past batch…" / "a task…"; "workers: the route calls loadFieldWorkersSeed("). With the loaders done and the islands at HEAD, the five render tests still failed on those same row assertions. `shots run e2e/field-ssr-first-paint` gave "✗ REQ-730 … expectation failed: the first HTML of /field/workers carries the worker row".
+- GREEN. `deno test -A lib/field-ssr.test.tsx lib/field-map.test.ts lib/field.test.ts lib/quotes-ssr.test.tsx` gave "ok | 29 passed | 0 failed". `shots run e2e/field-ssr-first-paint` gave ✓ for both REQ-730 stories.
+- Neighbours. jest unit project: "Test Suites: 392 passed · Tests: 1 skipped, 3849 passed". `deno lint`, `deno check` and `deno fmt --check` are clean on every touched file. Browser stories, run in small batches because the host load average was 100–180: ✓ REQ-421 (field-worker-errors), ✓ REQ-365 (field-oneoff-zone), ✓ REQ-608 "pulled batch's drafts still ticked after a reload" (run alone), and ✓ REQ-143/144/145/152/157/159/163 (field-tasks).
