@@ -560,6 +560,43 @@ export function extractServiceAddress(raw: string): string | null {
     /\b(?:zip(?:\s*code)?|c[oó]digo\s+postal|c\.p\.?|cp)\s*[:#]?\s*(\d{5}(?:-\d{4})?)\b/iu
       .exec(raw);
   if (zip) return zip[1];
+  return namedStreetAfterOn(raw);
+}
+
+/** REQ-779: Capitalized words after "on" / "en" that are a day, a month, a
+ *  holiday or a payment app — "on Monday", "en Navidad", "on Zelle" — never
+ *  a street. Lower-case, accent-free. */
+const NOT_A_STREET = new Set(
+  (
+    "monday tuesday wednesday thursday friday saturday sunday lunes " +
+    "martes miercoles jueves viernes sabado domingo january february " +
+    "march april may june july august september october november " +
+    "december jan feb mar apr jun jul aug sep sept oct nov dec enero " +
+    "febrero marzo abril mayo junio julio agosto septiembre octubre " +
+    "noviembre diciembre thanksgiving christmas xmas easter halloween " +
+    "new memorial labor independence navidad pascua accion dia ano " +
+    "zelle venmo paypal cash cashapp apple google stripe time site " +
+    "schedule budget call hold"
+  ).split(" "),
+);
+
+/**
+ * REQ-779 (demo-loop cycle dv1, m7): the last resort — a street named with
+ * no street-type word, "for the Hendersons on Shoal Creek: porcelain …" /
+ * "para los Henderson en Shoal Creek". One to three Capitalized words right
+ * after a lower-case "on" / "en", closed by a colon, a comma, a semicolon, a
+ * period or the end of the text; a day, a month, a holiday or a payment app
+ * is never one ("on Monday", "on Thanksgiving.", "en Navidad", "on Zelle").
+ */
+function namedStreetAfterOn(raw: string): string | null {
+  const re =
+    /(?<![\p{L}])(?:on|en)\s+([\p{Lu}][\p{L}'’-]*(?:\s+[\p{Lu}][\p{L}'’-]*){0,2})\s*(?=[:,;.]|$)/gu;
+  for (const m of raw.matchAll(re)) {
+    const first = m[1].split(/\s+/)[0].normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "").toLowerCase();
+    if (NOT_A_STREET.has(first)) continue;
+    return m[1];
+  }
   return null;
 }
 

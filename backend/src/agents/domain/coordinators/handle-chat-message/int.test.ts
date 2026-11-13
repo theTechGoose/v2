@@ -3245,6 +3245,38 @@ Deno.test("REQ-435 M4 handle-chat-message integration: the draft action_card car
   await resetKv();
 });
 
+// ---------------------------------------------------------------------------
+// REQ-779 (demo-loop cycle dv1, m7): "for the Hendersons on Shoal Creek" — a
+// street named with no street-type word is still the job address.
+// ---------------------------------------------------------------------------
+
+Deno.test("REQ-779 dv1 m7 handle-chat-message integration: 'for the Hendersons on Shoal Creek' stores the job address 'Shoal Creek' (the verifier's sentence)", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const { conversations, llm, quotes, flow } = fresh();
+  await seedOnboarded("u-1");
+  llm.setScript([{
+    text: "Here's your quote.",
+    action: {
+      type: "create_quote",
+      payload: {
+        summary: "Quote: Bathroom floor — the Hendersons",
+        lineItems: [{ description: "Bathroom floor", amountCents: 450_000 }],
+      },
+    },
+  }]);
+  const conv = await conversations.create({ userId: "u-1" });
+  const result = await flow.run({
+    userId: "u-1",
+    conversationId: conv.id,
+    content:
+      "Bathroom floor for the Hendersons on Shoal Creek: porcelain 12x24, recessed niche, before Thanksgiving, email tom@reyes",
+  });
+  const stored = await quotes.getOwned(result.conversation.quoteId!, "u-1");
+  assertEquals(stored.serviceAddress, "Shoal Creek");
+  await resetKv();
+});
+
 Deno.test("handle-chat-message integration: REQ-465 (demo cycle 3, m37) the chat 'lock_quote' card and the 'create_quote' draft card carry the quote's number", async () => {
   Deno.env.set("KV_PATH", ":memory:");
   await resetKv();

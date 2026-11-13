@@ -241,6 +241,7 @@
   "asstChat.customerStep.change": "Change",
   "asstChat.customerStep.createAnyway": "Create anyway",
   "asstChat.customerStep.createNamed": "Create \"{name}\"",
+  "asstChat.customerStep.emailIncomplete": "The email in your message ({email}) looks incomplete — type the full address, like name@example.com.",
   "asstChat.customerStep.emailPlaceholder": "Email (optional)",
   "asstChat.customerStep.serviceAddressPlaceholder": "Job address (optional)",
   "asstChat.customerStep.existingTrigger": "Choose an existing customer",
