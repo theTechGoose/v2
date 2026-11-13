@@ -865,3 +865,21 @@ export function deadlineLine(
     vars,
   );
 }
+
+/**
+ * REQ-763 (demo-loop cycle 5v2, M7): the line a new draft's reply carries
+ * when the message names a deadline ("client wants it done before
+ * thanksgiving") — the deadline is shown, never dropped; the start and time
+ * to complete are checked against it when they are set (REQ-653).
+ */
+export function deadlineNotedLine(lang: Lang, deadline: Deadline): string {
+  return t(lang, "chatCoordinator.terms.deadline.noted", {
+    deadline: t(
+      lang,
+      deadline.before
+        ? "chatCoordinator.terms.deadline.before"
+        : "chatCoordinator.terms.deadline.by",
+      { date: formatTermDate(deadline.iso, lang) },
+    ),
+  });
+}

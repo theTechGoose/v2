@@ -816,6 +816,7 @@
   "chatCoordinator.terms.deadline.by": "by {date}",
   "chatCoordinator.terms.deadline.fits": "With start \"{start}\" and time to complete \"{duration}\", the job ends around {end} — in time for the deadline ({deadline}).",
   "chatCoordinator.terms.deadline.late": "Heads up: with start \"{start}\" and time to complete \"{duration}\", the job ends around {end} — that misses the deadline ({deadline}). Tell me an earlier start date or a shorter time to complete and I'll change it.",
+  "chatCoordinator.terms.deadline.noted": "Deadline noted: the job has to be done {deadline}. When you set the start date and time to complete, I'll check they make it.",
   "chatCoordinator.terms.deadline.today": "Today",
   "chatCoordinator.terms.later": "{value} is pre-selected for {term} — confirm it when the wizard gets there.",
   "chatCoordinator.terms.laterCustom": "{term} comes later in the wizard — enter {value} when it asks.",

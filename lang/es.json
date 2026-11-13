@@ -816,6 +816,7 @@
   "chatCoordinator.terms.deadline.by": "a más tardar el {date}",
   "chatCoordinator.terms.deadline.fits": "Con inicio \"{start}\" y duración \"{duration}\", el trabajo termina alrededor del {end} — a tiempo para la fecha límite ({deadline}).",
   "chatCoordinator.terms.deadline.late": "Ojo: con inicio \"{start}\" y duración \"{duration}\", el trabajo termina alrededor del {end} — no llega a la fecha límite ({deadline}). Dime una fecha de inicio más temprana o una duración más corta y lo cambio.",
+  "chatCoordinator.terms.deadline.noted": "Fecha límite anotada: el trabajo debe estar listo {deadline}. Cuando pongas la fecha de inicio y la duración, reviso que lleguen a tiempo.",
   "chatCoordinator.terms.deadline.today": "Hoy",
   "chatCoordinator.terms.later": "Dejé {value} preseleccionado para {term} — confírmalo cuando lleguemos a ese paso.",
   "chatCoordinator.terms.laterCustom": "{term} viene más adelante — pon {value} cuando te lo pregunte.",
