@@ -12,6 +12,8 @@ export interface BatchLine {
   description: string;
   address: string;
   priceCents: number;
+  /** REQ-703: a one-off (REQ-164) — no subscription behind it; decides the invoice's title */
+  oneOff?: true;
 }
 
 export interface CustomerLines {
@@ -46,6 +48,7 @@ export function linesFor(input: LinesInput): CustomerLines[] {
       description: types.get(t.taskTypeId) ?? "—",
       address: t.address ?? subs.get(t.subscriptionId)?.address ?? "",
       priceCents: t.priceCents,
+      ...(t.oneOff || !t.subscriptionId ? { oneOff: true as const } : {}),
       // note: deliberately not copied
     };
     if (!byCustomer.has(t.customerId)) byCustomer.set(t.customerId, []);
@@ -71,12 +74,31 @@ export function summarize(input: { from: string; to: string; tasks: FieldTask[];
   };
 }
 
+/** "Oct 12" / "12 oct" — a YYYY-MM-DD as the invoice shows it */
+function shortDate(iso: string, lang: "en" | "es"): string {
+  const d = new Date(iso + "T00:00:00Z");
+  const month = d.toLocaleDateString(lang === "es" ? "es-ES" : "en-US", { month: "short", timeZone: "UTC" }).replace(".", "");
+  return lang === "es" ? `${d.getUTCDate()} ${month}` : `${month.charAt(0).toUpperCase() + month.slice(1)} ${d.getUTCDate()}`;
+}
+
 /** "Oct 12 — Lawn cut — 123 Oak St" / "12 oct — Lawn cut — 123 Oak St" — the invoice line item's description */
 export function lineText(l: BatchLine, lang: "en" | "es" = "en"): string {
-  const d = new Date(l.date + "T00:00:00Z");
-  const month = d.toLocaleDateString(lang === "es" ? "es-ES" : "en-US", { month: "short", timeZone: "UTC" }).replace(".", "");
-  const date = lang === "es" ? `${d.getUTCDate()} ${month}` : `${month.charAt(0).toUpperCase() + month.slice(1)} ${d.getUTCDate()}`;
-  return `${date} — ${l.description} — ${l.address}`;
+  return `${shortDate(l.date, lang)} — ${l.description} — ${l.address}`;
+}
+
+/** REQ-703 (demo m54): the draft's title and service period, from its own lines — one task → its service
+ *  ("Fix 3 sagging fence posts"); subscription visits only → "Maintenance · Oct 29 – Nov 12"; mixed → "Services · …" */
+export function batchTitle(lines: BatchLine[], lang: "en" | "es" = "en"): { jobName: string; serviceDateFrom: string; serviceDateTo: string } {
+  const dates = lines.map((l) => l.date).sort();
+  const serviceDateFrom = dates[0] ?? "", serviceDateTo = dates[dates.length - 1] ?? "";
+  const period = serviceDateFrom === serviceDateTo
+    ? shortDate(serviceDateFrom, lang)
+    : `${shortDate(serviceDateFrom, lang)} – ${shortDate(serviceDateTo, lang)}`;
+  const kind = lines.every((l) => !l.oneOff)
+    ? (lang === "es" ? "Mantenimiento" : "Maintenance")
+    : (lang === "es" ? "Servicios" : "Services");
+  const single = lines.length === 1 && lines[0].description !== "—" ? lines[0].description : "";
+  return { jobName: single || (dates.length ? `${kind} · ${period}` : kind), serviceDateFrom, serviceDateTo };
 }
 
 /** REQ-173: the invoice line item — the flat description for compatibility, plus date / service / address

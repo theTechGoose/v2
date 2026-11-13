@@ -1257,6 +1257,37 @@ Deno.test("REQ-164 the office posts a one-off task; it lists on the day, survive
   });
 });
 
+// REQ-703 (demo-loop cycle 5, m54) — "Fix 3 sagging fence posts · ONE-OFF" was invoiced as
+// "Maintenance 2026-10-29→2026-11-12". The draft's title comes from its lines; the period is on serviceDateFrom/To.
+Deno.test("REQ-703 a pulled one-off is titled by its service; a round is 'Maintenance · <localized date>', never raw ISO", async () => {
+  await withServer(async (call) => {
+    const { H, today, customer, w, day } = await todaysRound(call, "+15125551703");
+    const tomorrow = shiftDate(today, 1);
+    // today's round, done → one draft for maintenance
+    for (const t of day) await call("PUT", `/field/tasks/${t.id}`, { status: "complete" }, H);
+    const round = await call("POST", "/field/batches/pull", { from: today, to: today }, H);
+    assertEquals(round.status, 201);
+    const r = round.body.invoices[0];
+    assert(r.jobName.startsWith("Maintenance · "), r.jobName);
+    assert(!/\d{4}-\d{2}-\d{2}/.test(r.jobName), r.jobName);
+    assertEquals([r.serviceDateFrom, r.serviceDateTo], [today, today]);
+    // tomorrow's one-off repair, done → titled by what was done
+    const fence = await call("POST", "/field/tasks", {
+      customerId: customer.id,
+      date: tomorrow,
+      taskTypeName: "Fix 3 sagging fence posts",
+      priceCents: 45000,
+      workerId: w.id,
+    }, H);
+    await call("PUT", `/field/tasks/${fence.body.id}`, { status: "complete" }, H);
+    const one = await call("POST", "/field/batches/pull", { from: today, to: tomorrow }, H);
+    assertEquals(one.status, 201);
+    assertEquals(one.body.invoices.length, 1);
+    const o = one.body.invoices[0];
+    assertEquals([o.jobName, o.serviceDateFrom, o.serviceDateTo], ["Fix 3 sagging fence posts", tomorrow, tomorrow]);
+  });
+});
+
 // REQ-165 — "when in tasks i need to be able to add services to a task as a one off."
 Deno.test("REQ-165 the office adds a service to a visit; a duplicate is 409", async () => {
   await withServer(async (call) => {
