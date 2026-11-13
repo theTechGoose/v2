@@ -98,16 +98,6 @@ export default function ClientsPage({ lang: _lang }: { lang?: "en" | "es" }) {
     return () => clearTimeout(t);
   }, [flash]);
   const [addName, setAddName] = useState("");
-  // REQ-289: the New customer modal is a dialog — Escape closes it, as the
-  // backdrop click does (not while the save is in flight)
-  useEffect(() => {
-    if (!addOpen) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && !adding) setAddOpen(false);
-    };
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [addOpen, adding]);
   const [addBusiness, setAddBusiness] = useState("");
   const [addPhone, setAddPhone] = useState("");
   const [addEmail, setAddEmail] = useState("");
@@ -340,6 +330,9 @@ export default function ClientsPage({ lang: _lang }: { lang?: "en" | "es" }) {
           // REQ-300 (demo M20): a click beside the form closes it only while nothing is typed;
           // a dirty draft stays up (Cancel / Escape still close it, and the draft is kept).
           // REQ-354: the Backdrop's guard ignores the opener's double-click.
+          // REQ-289 / REQ-732: Escape closes it through the Backdrop (not while the save is in
+          // flight) — even with a draft typed, which the island keeps.
+          onEscape={() => !adding && setAddOpen(false)}
           onClose={() =>
             !adding && !customerDraftDirty({
               name: addName,

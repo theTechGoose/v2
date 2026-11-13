@@ -140,5 +140,9 @@ Deno.test("REQ-289: the /customers New customer modal is a labelled modal dialog
     modal.includes(`id="${labelledBy}"`),
     `the heading carries id="${labelledBy}"`,
   );
-  assert(/["']Escape["']/.test(s), "an Escape key handler closes it");
+  // REQ-732: Escape is the shared <Backdrop>'s now — its onEscape closes the modal
+  assert(
+    /onEscape=\{\(\) => !adding && setAddOpen\(false\)\}/.test(modal),
+    "an Escape key handler closes it",
+  );
 });

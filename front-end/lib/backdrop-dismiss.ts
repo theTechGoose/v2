@@ -86,3 +86,66 @@ export function fenceClicks(el: HTMLElement | null): void {
     el.addEventListener(type, stop);
   }
 }
+
+/**
+ * REQ-732 (demo-loop cycle 5, issue m26): every dialog on `<Backdrop>` closes
+ * on Escape — before, Escape was per-dialog and opt-in, so New invoice and
+ * Nueva suscripción ignored it. Open dialogs form a stack: one document
+ * `keydown` listener (bubble phase, so a field's own handler runs first)
+ * closes only the TOPMOST one. An Escape a nested list already handled
+ * (`defaultPrevented`, or stopped before the document), one that ends an IME
+ * composition, and any other key close nothing. A handled Escape is marked
+ * `preventDefault()` so other document listeners can tell.
+ */
+export interface EscapeKeyEvent {
+  key: string;
+  defaultPrevented: boolean;
+  isComposing?: boolean;
+  preventDefault(): void;
+}
+
+interface KeyTarget {
+  addEventListener(type: "keydown", f: (e: EscapeKeyEvent) => void): void;
+  removeEventListener(type: "keydown", f: (e: EscapeKeyEvent) => void): void;
+}
+
+export interface EscapeLayers {
+  /** a dialog opened: its close runs on Escape while it is on top; call the result when it closes */
+  push(close: () => void): () => void;
+}
+
+export function createEscapeLayers(target: KeyTarget): EscapeLayers {
+  const stack: { close: () => void }[] = [];
+  const onKey = (e: EscapeKeyEvent) => {
+    if (e.key !== "Escape" || e.defaultPrevented || e.isComposing) return;
+    const top = stack[stack.length - 1];
+    if (!top) return;
+    e.preventDefault();
+    top.close();
+  };
+  return {
+    push(close) {
+      const layer = { close };
+      if (stack.length === 0) target.addEventListener("keydown", onKey);
+      stack.push(layer);
+      return () => {
+        const i = stack.indexOf(layer);
+        if (i < 0) return;
+        stack.splice(i, 1);
+        if (stack.length === 0) target.removeEventListener("keydown", onKey);
+      };
+    },
+  };
+}
+
+let docLayers: { doc: unknown; layers: EscapeLayers } | null = null;
+
+/** the page's one Escape stack, on the current `document` */
+export function documentEscapeLayers(): EscapeLayers | null {
+  const doc = (globalThis as { document?: KeyTarget }).document;
+  if (!doc) return null;
+  if (docLayers?.doc !== doc) {
+    docLayers = { doc, layers: createEscapeLayers(doc) };
+  }
+  return docLayers.layers;
+}

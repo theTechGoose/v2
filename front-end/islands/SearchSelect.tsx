@@ -137,6 +137,8 @@ export default function SearchSelect<T extends SearchOption = SearchOption>(
         create(offer);
       }
     } else if (e.key === "Escape") {
+      // REQ-732: an Escape that shuts the open list is not also the dialog's Escape
+      if (open) e.stopPropagation();
       setOpen(false);
       setActive(-1);
     }
