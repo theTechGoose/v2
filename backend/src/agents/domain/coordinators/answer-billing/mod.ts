@@ -95,10 +95,18 @@ export class AnswerBilling {
     /** REQ-656 (demo-loop cycle 5, M9): "the job is done" was said — a
      *  scheduled invoice is answered with Send now. */
     jobDone?: boolean;
+    /** REQ-768: the job the message named, in a thread with none bound —
+     *  bound with the answer, unless the answer is the invoice flow (a
+     *  finished job whose quote was never signed: the flow makes its own
+     *  invoice and the thread keeps its "Start the invoice" button). */
+    job?: { quoteId: string; customerId?: string };
+    /** REQ-768: the amount typed with a job-done ask. */
+    amountCents?: number;
   }): Promise<AnswerBillingResult | undefined> {
     const conv = input.conversation;
-    if (!conv.quoteId) return undefined;
-    const quote = await this.quotes.getOwned(conv.quoteId, input.userId)
+    const quoteId = conv.quoteId ?? input.job?.quoteId;
+    if (!quoteId) return undefined;
+    const quote = await this.quotes.getOwned(quoteId, input.userId)
       .catch(() => undefined);
     if (!quote) return undefined;
     const invoices = (await this.invoices.listByUser(input.userId)
@@ -110,6 +118,7 @@ export class AnswerBilling {
       .filter((c) => c.quoteId === quote.id || invoiceIds.has(c.invoiceId));
     const reply = billingReply(input.lang, quote, invoices, changeOrders, {
       jobDone: input.jobDone === true,
+      ...(input.amountCents ? { amountCents: input.amountCents } : {}),
     });
 
     const newMessages: AgentMessage[] = [
@@ -118,10 +127,19 @@ export class AnswerBilling {
         role: "assistant",
         kind: "text",
         content: reply.text,
+        ...(reply.invoiceFlow
+          ? { payload: { invoiceFlow: reply.invoiceFlow } }
+          : {}),
       }),
     ];
     const patch: Partial<AgentConversation> = {
       preview: derivePreview(reply.invoice?.title ?? reply.text),
+      ...(!conv.quoteId && input.job && !reply.invoiceFlow
+        ? {
+          quoteId: input.job.quoteId,
+          ...(input.job.customerId ? { customerId: input.job.customerId } : {}),
+        }
+        : {}),
     };
     if (reply.invoice) {
       const inv = reply.invoice;

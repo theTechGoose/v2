@@ -22,6 +22,7 @@ import { type Lang, t } from "@core/i18n/mod.ts";
 import { isAccepted } from "#quote-flow/quote-status.ts";
 import { formatShortDate } from "#quote-flow/format-helpers.ts";
 import { docNumberOf } from "#documents/numbering.ts";
+import type { InvoiceFlowOffer } from "#quote-flow/chat-invoice-flow-offer.ts";
 import {
   isOpenReceivable,
   receivableBalanceCents,
@@ -145,7 +146,12 @@ export interface BillingQuote {
   sentAt?: string | null;
   acceptedAt?: string | null;
   acceptedName?: string | null;
-  customerSnapshot?: { name?: string } | null;
+  customerSnapshot?: { name?: string; email?: string } | null;
+  /** REQ-768: what a job-done invoice on an unsigned quote starts from. */
+  estimatedTotal?: number | null;
+  jobName?: string | null;
+  summary?: string | null;
+  description?: string | null;
 }
 
 export interface BillingInvoice {
@@ -220,6 +226,9 @@ export interface BillingReply {
   };
   /** Signed, but nothing billed yet: offer the "Continue to invoice" CTA. */
   offerInvoiceCta: boolean;
+  /** REQ-768 (demo-loop cycle 5v3, M9): the job is done but its quote was
+   *  never signed — the chat opens the invoice flow from this offer. */
+  invoiceFlow?: InvoiceFlowOffer;
 }
 
 const CLOSED = new Set(["lost", "declined", "void"]);
@@ -227,6 +236,31 @@ const CLOSED = new Set(["lost", "declined", "void"]);
 function byInstallment(a: BillingInvoice, b: BillingInvoice): number {
   return (a.installmentIndex ?? 1) - (b.installmentIndex ?? 1) ||
     (a.createdAt ?? "").localeCompare(b.createdAt ?? "");
+}
+
+/** REQ-768: the invoice-flow offer for a finished job whose quote was never
+ *  signed — the quote's own job words, total and customer. */
+function jobDoneInvoiceOffer(
+  quote: BillingQuote,
+  name: string,
+  typedCents?: number,
+): InvoiceFlowOffer {
+  const details = [quote.description, quote.summary, quote.jobName]
+    .map((s) => s?.trim() ?? "").find((s) => !!s) || name;
+  const cents = typedCents && typedCents > 0
+    ? typedCents
+    : quote.estimatedTotal ?? 0;
+  const who = quote.customerSnapshot?.name?.trim() ||
+    quote.acceptedName?.trim();
+  const email = quote.customerSnapshot?.email?.trim();
+  return {
+    details,
+    ...(Number.isFinite(cents) && cents > 0
+      ? { amountCents: Math.round(cents) }
+      : {}),
+    ...(who ? { customerName: who } : {}),
+    ...(email ? { customerEmail: email } : {}),
+  };
 }
 
 /** Where the bill for `quote` stands, from its own invoices (void ones
@@ -239,7 +273,12 @@ export function billingReply(
   changeOrders: BillingChangeOrder[] = [],
   /** REQ-656 (demo-loop cycle 5, M9): the contractor said the job is done
    *  ("Trabajo terminado, factura a María López…"). */
-  opts: { jobDone?: boolean } = {},
+  opts: {
+    jobDone?: boolean;
+    /** REQ-768: an amount typed with the job-done ask ("…invoice for $450")
+     *  — what an unsigned job's invoice flow is prefilled with. */
+    amountCents?: number;
+  } = {},
 ): BillingReply {
   const live = invoices.filter((i) => (i.status ?? "") !== "void");
   const name = quote.customerSnapshot?.name?.trim() ||
@@ -255,6 +294,25 @@ export function billingReply(
     return { text: say("declined"), offerInvoiceCta: false };
   }
   if (!isAccepted(quote)) {
+    // REQ-768 (demo-loop cycle 5v3, M9 re-test): "Ya terminé el trabajo de
+    // Mike Johnson, mándale la factura" on an unsent quote got "Envíala
+    // primero…", and "Finished the job for Maria Lopez, need to invoice her"
+    // on a sent one got "hasn't signed yet". The work is done — no signature
+    // is coming first: bill it directly, through the invoice flow, prefilled
+    // with the quote's job, amount and customer.
+    if (opts.jobDone) {
+      const offer = jobDoneInvoiceOffer(quote, name, opts.amountCents);
+      return {
+        text: say(
+          offer.amountCents ? "jobDoneUnsigned" : "jobDoneUnsignedNoAmount",
+          {
+            amount: offer.amountCents ? money(offer.amountCents) : "",
+          },
+        ),
+        invoiceFlow: offer,
+        offerInvoiceCta: false,
+      };
+    }
     const notSent = status === "draft" && !quote.sentAt;
     return {
       text: say(notSent ? "notSent" : "notSigned"),
