@@ -160,3 +160,23 @@ Deno.test("REQ-594 m40 the glossary never maps a bare / kitchen sink to lavabo",
     "kitchen sink must not map to lavabo",
   );
 });
+
+/**
+ * REQ-669 (demo-loop cycle 5, m52): the first Spanish preview read "Guttar
+ * baño principal 8x10" — the glossary had no entry for "gut", so the model
+ * coined a non-word — and "double vanity" lost its "doble".
+ */
+Deno.test("REQ-669 m52 the glossary maps gut/gutted to a real Spanish verb and keeps double vanity's doble", async () => {
+  const { ES_TRADE_GLOSSARY } = await import("./mod.ts");
+  assert(
+    /gut[^;]*→[^;]*desmantelar/.test(ES_TRADE_GLOSSARY),
+    "gut / gutted must map to desmantelar",
+  );
+  assertStringIncludes(ES_TRADE_GLOSSARY, "Guttar");
+  assert(
+    /double vanity → mueble de baño doble/.test(ES_TRADE_GLOSSARY),
+    "double vanity must map to mueble de baño doble",
+  );
+  // Quantity words are carried, not dropped.
+  assertStringIncludes(ES_TRADE_GLOSSARY, "double → doble");
+});

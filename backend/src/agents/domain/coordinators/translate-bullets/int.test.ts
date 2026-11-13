@@ -273,3 +273,87 @@ Deno.test("REQ-594 m40 translate-bullets: the English target is also told to tra
     "en target must not carry the es glossary",
   );
 });
+
+/**
+ * REQ-669 (demo-loop cycle 5, m52): the demo's first Spanish preview carried
+ * "Guttar" (not Spanish) and dropped "doble" from "double vanity". A reply
+ * like that is re-asked once, naming the bad word and the lost quantity.
+ */
+Deno.test("REQ-669 m52 translate-bullets: a coined non-word / lost doble is re-asked once and the fixed reply is used", async () => {
+  const llm = new StubLLMClient();
+  const seen: LLMRequest[] = [];
+  llm.setHandler((req) => {
+    seen.push(req);
+    return {
+      text: JSON.stringify({
+        texts: seen.length === 1
+          ? [
+            "Guttar baño principal 8x10",
+            "Agregar mueble de baño con encimera de cuarzo",
+          ]
+          : [
+            "Desmantelar baño principal 8x10",
+            "Agregar mueble de baño doble con encimera de cuarzo",
+          ],
+      }),
+    };
+  });
+  const res = await new TranslateBullets(llm).run({
+    userId: "u-1",
+    texts: ["Gut master bath 8x10", "Add double vanity w/ quartz top"],
+    to: "es",
+    from: "en",
+  });
+  assertEquals(seen.length, 2, "one re-ask");
+  const retry = seen[1].systemPrompt ?? "";
+  assert(retry.includes('"Guttar"'), "the re-ask names the coined word");
+  assert(retry.includes('"double"'), "the re-ask names the lost quantity");
+  assertEquals(res, {
+    texts: [
+      "Desmantelar baño principal 8x10",
+      "Agregar mueble de baño doble con encimera de cuarzo",
+    ],
+    translated: true,
+  });
+});
+
+Deno.test("REQ-669 m52 translate-bullets: a clean first reply is not re-asked", async () => {
+  const llm = new StubLLMClient();
+  let calls = 0;
+  llm.setHandler(() => {
+    calls++;
+    return {
+      text: JSON.stringify({
+        texts: [
+          "Desmantelar baño principal 8x10",
+          "Agregar mueble de baño doble",
+        ],
+      }),
+    };
+  });
+  await new TranslateBullets(llm).run({
+    userId: "u-1",
+    texts: ["Gut master bath 8x10", "Add double vanity"],
+    to: "es",
+    from: "en",
+  });
+  assertEquals(calls, 1);
+});
+
+Deno.test("REQ-669 m52 translate-bullets: a re-ask that still coins a word keeps the better-than-nothing translation", async () => {
+  const llm = new StubLLMClient();
+  let calls = 0;
+  llm.setHandler(() => {
+    calls++;
+    return { text: JSON.stringify({ texts: ["Guttar baño principal 8x10"] }) };
+  });
+  const res = await new TranslateBullets(llm).run({
+    userId: "u-1",
+    texts: ["Gut master bath 8x10"],
+    to: "es",
+    from: "en",
+  });
+  assertEquals(calls, 2);
+  // Not cached as a good translation, so the next preview asks again.
+  assertEquals(res.translated, false);
+});
