@@ -669,15 +669,23 @@ export interface ActivityEntry {
 }
 
 export function Activity(
-  { items, lang = "en" }: { items: ActivityEntry[]; lang?: Lang },
+  { items, lang = "en", pending = false }: {
+    items: ActivityEntry[];
+    lang?: Lang;
+    /** REQ-757: the notifications feed has not loaded yet — skeleton, not "Nothing yet" */
+    pending?: boolean;
+  },
 ) {
   const empty = items.length === 0;
+  const busy = empty && pending;
   return (
     <div class="panel" id="activity">
       <div class="panel__head">
         <h3 class="panel__title">{tFor(lang, "activity.title")}</h3>
         <span style="font-size:11px;color:var(--fg-muted);margin-left:4px">
-          {empty
+          {busy
+            ? null
+            : empty
             ? tFor(lang, "activity.emptySub")
             : tFor(lang, "activity.busySub")}
         </span>
@@ -687,6 +695,12 @@ export function Activity(
             activity-log page ships. */
         }
       </div>
+      {busy && (
+        <div aria-busy="true">
+          <SkelBlock h={44} mt={14} />
+          <SkelBlock h={44} mt={10} />
+        </div>
+      )}
       {items.map((a, i) => {
         const body = (
           <>
