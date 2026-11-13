@@ -67,6 +67,44 @@ Deno.test("REQ-602 (M35): an owner with no workers — the sidebar's Worker view
     expect.eq(href, "/field/workers", "no workers → the workers page");
   }));
 
+Deno.test("REQ-739 (cycle 5, p18-3f): no workers — the row says 'Add a worker' and its href never shows /worker", (t) =>
+  story(t, async ({ page, expect, http, baseUrl }) => {
+    await signInOwner(http, page, baseUrl);
+    const seen: string[] = [];
+    await page.exposeFunction("__pmHref", (h: string | null) => {
+      seen.push(h ?? "(none)");
+    });
+    await page.addInitScript(() => {
+      const report = () => {
+        const a = document.querySelector("[data-cy='nav-worker-view']");
+        if (a) {
+          (globalThis as unknown as { __pmHref: (h: string | null) => void })
+            .__pmHref(a.getAttribute("href"));
+        }
+      };
+      new MutationObserver(report).observe(document, {
+        subtree: true,
+        childList: true,
+        attributes: true,
+        attributeFilter: ["href"],
+      });
+    });
+    await page.goto("/field/tasks?lang=en");
+    const link = page.locator("[data-cy='nav-worker-view']").first();
+    await link.waitFor({ state: "visible", timeout: 15_000 });
+    expect.eq(
+      await link.getAttribute("href"),
+      "/field/workers",
+      "workers page",
+    );
+    expect.eq(await link.getAttribute("title"), "Add a worker", "label");
+    expect.eq(
+      seen.includes("/worker"),
+      false,
+      `the href never pointed at /worker (saw ${seen.join(", ")})`,
+    );
+  }));
+
 Deno.test("REQ-602 (M35): an owner on /worker is told whose screen it is and can go add workers", (t) =>
   story(t, async ({ page, expect, http, baseUrl }) => {
     await signInOwner(http, page, baseUrl);

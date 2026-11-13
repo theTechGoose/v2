@@ -28,7 +28,10 @@ import {
   pickSidebarCounts,
 } from "../lib/sidebar-counts.ts";
 import { fieldClient } from "../clients/field.ts";
-import { workerViewHref } from "../lib/worker-view-link.ts";
+import {
+  type WorkerCountState,
+  workerViewLink,
+} from "../lib/worker-view-link.ts";
 
 // REQ-176 — the tree itself is data in lib/nav-tree.ts; this island renders one level of it.
 
@@ -110,15 +113,18 @@ export default function DashSidebar(
     };
   }, []);
 
-  // REQ-602 (M35) — how many workers the account has; null until known
-  const [workerCount, setWorkerCount] = useState<number | null>(null);
+  // REQ-602 (M35) — how many workers the account has. REQ-739 (p18-3f):
+  // "loading" until the fetch settles, so the row's href is set only once
+  const [workerCount, setWorkerCount] = useState<WorkerCountState>("loading");
+  const workerLink = workerViewLink(workerCount);
   useEffect(() => {
     let alive = true;
     fieldClient.workers().then((ws) => {
       if (alive) setWorkerCount(ws.length);
-    }).catch(
-      () => {/* no session or no access — keep the plain /worker link */},
-    );
+    }).catch(() => {
+      // no session or no access — the plain /worker link
+      if (alive) setWorkerCount("unknown");
+    });
     return () => {
       alive = false;
     };
@@ -514,21 +520,28 @@ export default function DashSidebar(
               /* REQ-143: the worker screen is always one click away — it is a
               separate login (cell + PIN), so this is a plain link.
               REQ-602 (M35): with no workers nobody can sign in there, so it
-              goes to /field/workers, where workers are added. */
+              goes to /field/workers, where workers are added.
+              REQ-739 (p18-3f): it is labelled "Add a worker" there, and until
+              the count is known it is a hidden placeholder with no href (it
+              keeps its slot), so the href never flips. */
             }
             <a
-              href={workerViewHref(workerCount)}
+              href={workerLink.href ?? undefined}
               class="nav-item"
-              style="color:rgba(255,255,255,0.7)"
+              style={workerLink.pending
+                ? "color:rgba(255,255,255,0.7);visibility:hidden"
+                : "color:rgba(255,255,255,0.7)"}
               data-cy="nav-worker-view"
-              {...named(tFor(lang, "nav.workerView"))}
+              aria-hidden={workerLink.pending ? "true" : undefined}
+              tabIndex={workerLink.pending ? -1 : undefined}
+              {...named(tFor(lang, workerLink.labelKey))}
             >
               <span class="nav-item__icon">
                 <I d={ICN.hardhat} size={18} />
               </span>
               {!collapsed && (
                 <span class="nav-item__label">
-                  {tFor(lang, "nav.workerView")}
+                  {tFor(lang, workerLink.labelKey)}
                 </span>
               )}
             </a>

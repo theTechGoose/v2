@@ -41,7 +41,9 @@ describe("REQ-602 (cycle 4, M35) the owner's Worker view is not a dead end", () 
         /<a\s+href=\{[^}]*\}[\s\S]*?data-cy="nav-worker-view"[\s\S]*?<\/a>/,
       )?.[0];
     expect(link).toBeDefined();
-    expect(link).toMatch(/href=\{workerViewHref\(workerCount\)\}/);
+    // REQ-739 (cycle 5, p18-3f) — the href comes from workerViewLink(workerCount)
+    expect(sb).toMatch(/workerViewLink\(workerCount\)/);
+    expect(link).toMatch(/href=\{workerLink\.href \?\? undefined\}/);
     expect(link).not.toMatch(/href="\/worker"/);
     expect(sb).toMatch(/fieldClient\.workers\(\)/);
   });
