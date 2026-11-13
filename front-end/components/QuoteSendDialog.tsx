@@ -11,15 +11,24 @@
  * the chat's SendQuote, on the quote's own thread.
  *
  * Rendered by the QuotesPage island (hooks are fine here).
+ *
+ * REQ-727 (demo-loop cycle 5, c4-M16): the dialog itself is `SendDialog`,
+ * shared with the /invoices send sheet (InvoiceSendDialog.tsx) — the title,
+ * the preview and what Send does are the caller's.
  */
-import { useRef, useState } from "preact/hooks";
+import { useEffect, useRef, useState } from "preact/hooks";
 import Backdrop from "./Backdrop.tsx";
 import SendLangPreview from "./SendLangPreview.tsx";
 import { I, ICN } from "../lib/dash-icons.tsx";
 import { type Lang, tFor } from "../lib/i18n.ts";
 import { assistantClient } from "../clients/assistant.ts";
 import { clientsClient } from "../clients/clients.ts";
+import { quotesClient } from "../clients/quotes.ts";
 import { formatPhoneInput } from "../../shared/quote-flow/format-helpers.ts";
+import type {
+  QuoteSendPreview,
+  SendPreviewChannel,
+} from "../../shared/quote-flow/send-preview.ts";
 import {
   addFieldLabelKey,
   channelNeedsKey,
@@ -28,19 +37,16 @@ import {
   recommendedChannel,
   runExclusive,
   type SendChannel,
+  type SendDialogCustomer,
   sendDialogErrorKey,
+  type SendDialogPick,
 } from "../lib/send-dialog.ts";
 import {
   type PanelSendResult,
   sendFromQuotePanel,
 } from "../lib/quote-panel-send.ts";
 
-export interface SendDialogCustomer {
-  id?: string;
-  name?: string | null;
-  email?: string | null;
-  phoneNumber?: string | null;
-}
+export type { SendDialogCustomer, SendDialogPick };
 
 const CHANNELS = [
   ["both", "asstChat.preview.menuBoth", ICN.send],
@@ -48,14 +54,47 @@ const CHANNELS = [
   ["email", "asstChat.preview.menuEmail", ICN.mail],
 ] as const;
 
-export default function QuoteSendDialog(
-  { lang, quoteId, customer, initialChannel, onClose, onSent }: {
+/**
+ * The send dialog: the channel (Recommended / "needs an email"), a missing
+ * contact asked for inline and saved on the customer, "Sends in" + "What
+ * they'll get", Cancel / Send — one Send in flight. REQ-727: the title, the
+ * preview and what Send does are the caller's (`onSend`; a throw shows
+ * `errorKey`).
+ */
+export function SendDialog(
+  {
+    lang,
+    title,
+    customer,
+    initialChannel,
+    initialSendLang,
+    loadDefaultLang,
+    loadPreview,
+    previewKey,
+    errorKey,
+    onCancel,
+    onSend,
+  }: {
     lang: Lang;
-    quoteId: string;
+    title: string;
     customer: SendDialogCustomer | null;
     initialChannel: SendChannel;
-    onClose: () => void;
-    onSent: (r: PanelSendResult) => void;
+    /** "Sends in" starts here; else on the app language */
+    initialSendLang?: "en" | "es";
+    /** the document's own language, asked for when `initialSendLang` is not
+     *  known; a language picked before it answers wins */
+    loadDefaultLang?: () => Promise<"en" | "es" | undefined>;
+    /** "What they'll get" */
+    loadPreview: (
+      channel: SendPreviewChannel,
+      lang: "en" | "es",
+    ) => Promise<QuoteSendPreview>;
+    /** changes when what is previewed changes */
+    previewKey: string;
+    /** the copy shown when the Send throws */
+    errorKey: string;
+    onCancel: () => void;
+    onSend: (pick: SendDialogPick) => Promise<void>;
   },
 ) {
   const [channel, setChannel] = useState<SendChannel>(initialChannel);
@@ -64,9 +103,26 @@ export default function QuoteSendDialog(
   const [err, setErr] = useState<string | undefined>();
   const [sending, setSending] = useState(false);
   const [sendLang, setSendLang] = useState<"en" | "es">(
-    lang === "es" ? "es" : "en",
+    initialSendLang ?? (lang === "es" ? "es" : "en"),
   );
   const inFlight = useRef(false);
+  // REQ-727: the language Send goes out in, set with the pill — a ref, so a
+  // Send that waited for the document's own language reads it at once.
+  const langRef = useRef(sendLang);
+  const langPicked = useRef(false);
+  const defaultLang = useRef<Promise<void> | null>(null);
+  function chooseLang(l: "en" | "es") {
+    langRef.current = l;
+    setSendLang(l);
+  }
+  useEffect(() => {
+    if (initialSendLang || !loadDefaultLang) return;
+    defaultLang.current = loadDefaultLang()
+      .then((l) => {
+        if (l && !langPicked.current) chooseLang(l);
+      })
+      .catch(() => {/* the app language stays */});
+  }, []);
   const onFile = {
     email: customer?.email ?? undefined,
     phoneNumber: customer?.phoneNumber ?? undefined,
@@ -97,21 +153,18 @@ export default function QuoteSendDialog(
             return;
           }
         }
-        const result = await sendFromQuotePanel({
-          quoteId,
-          customerId: customer?.id,
+        // never in a language nobody chose: wait for the document's own
+        if (defaultLang.current) await defaultLang.current;
+        await onSend({
           channel,
-          language: sendLang,
-          requestId: newSendRequestId(),
-        }, {
-          list: () => assistantClient.conversations(200),
-          start: (body) => assistantClient.startConversation(body),
-          send: (convId, qId, ch, l, rid) =>
-            assistantClient.sendQuoteFlow(convId, qId, ch, l, rid),
+          language: langRef.current,
+          typed: {
+            email: needsEmail ? typed.email : "",
+            phone: needsPhone ? typed.phone : "",
+          },
         });
-        onSent(result);
       } catch {
-        setErr(tFor(lang, "quotesPage.open.sendError"));
+        setErr(tFor(lang, errorKey));
       } finally {
         setSending(false);
       }
@@ -119,7 +172,7 @@ export default function QuoteSendDialog(
   }
 
   return (
-    <Backdrop class="send-dialog__backdrop" onClose={onClose}>
+    <Backdrop class="send-dialog__backdrop" onClose={onCancel}>
       <div
         class="send-dialog"
         role="dialog"
@@ -129,9 +182,7 @@ export default function QuoteSendDialog(
         onClick={(e) => e.stopPropagation()}
       >
         <h4 id="qopen-send-title" class="send-dialog__title">
-          {customer?.name
-            ? tFor(lang, "asstChat.send.howTitle", { name: customer.name })
-            : tFor(lang, "asstChat.send.howTitleNoName")}
+          {title}
         </h4>
         <div class="send-dialog__options" role="radiogroup">
           {CHANNELS.map(([ch, key, icon]) => {
@@ -172,12 +223,16 @@ export default function QuoteSendDialog(
           })}
         </div>
         <SendLangPreview
-          quoteId={quoteId}
+          load={loadPreview}
+          loadKey={previewKey}
           channel={channel}
           sendLang={sendLang}
           langs={lang === "es" ? ["es", "en"] : ["en", "es"]}
           uiLang={lang}
-          onPickLang={setSendLang}
+          onPickLang={(l) => {
+            langPicked.current = true;
+            chooseLang(l);
+          }}
         />
         {channel !== "sms" && !onFile.email
           ? (
@@ -218,7 +273,7 @@ export default function QuoteSendDialog(
             type="button"
             class="send-dialog__cancel"
             data-cy="send-cancel"
-            onClick={onClose}
+            onClick={onCancel}
           >
             {tFor(lang, "asstChat.send.cancel")}
           </button>
@@ -236,5 +291,51 @@ export default function QuoteSendDialog(
         </div>
       </div>
     </Backdrop>
+  );
+}
+
+/**
+ * REQ-570: the /quotes open panel's send dialog — SendDialog for a quote,
+ * whose Send goes through sendFromQuotePanel → assistantClient.sendQuoteFlow
+ * (the chat's SendQuote, on the quote's own thread).
+ */
+export default function QuoteSendDialog(
+  { lang, quoteId, customer, initialChannel, onClose, onSent }: {
+    lang: Lang;
+    quoteId: string;
+    customer: SendDialogCustomer | null;
+    initialChannel: SendChannel;
+    onClose: () => void;
+    onSent: (r: PanelSendResult) => void;
+  },
+) {
+  return (
+    <SendDialog
+      lang={lang}
+      title={customer?.name
+        ? tFor(lang, "asstChat.send.howTitle", { name: customer.name })
+        : tFor(lang, "asstChat.send.howTitleNoName")}
+      customer={customer}
+      initialChannel={initialChannel}
+      loadPreview={(ch, l) => quotesClient.sendPreview(quoteId, ch, l)}
+      previewKey={quoteId}
+      errorKey="quotesPage.open.sendError"
+      onCancel={onClose}
+      onSend={async ({ channel, language }) => {
+        const result = await sendFromQuotePanel({
+          quoteId,
+          customerId: customer?.id,
+          channel,
+          language,
+          requestId: newSendRequestId(),
+        }, {
+          list: () => assistantClient.conversations(200),
+          start: (body) => assistantClient.startConversation(body),
+          send: (convId, qId, ch, l, rid) =>
+            assistantClient.sendQuoteFlow(convId, qId, ch, l, rid),
+        });
+        onSent(result);
+      }}
+    />
   );
 }

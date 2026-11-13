@@ -57,14 +57,16 @@ export interface DispatchSummary {
   failedChannels: DispatchChannel[];
 }
 
-/** REQ-030 (NW-25): the per-channel verdict of a two-channel dispatch. */
+/** REQ-030 (NW-25): the per-channel verdict of a two-channel dispatch.
+ *  REQ-727 (cycle 5, c4-M16): a channel the send sheet did not pick is
+ *  absent — never tried, so neither a failure nor half of a partial. */
 export function summarizeDispatch(
-  input: { email: SendOutcome; text: SendOutcome },
+  input: { email?: SendOutcome; text?: SendOutcome },
 ): DispatchSummary {
   const failedChannels: DispatchChannel[] = [];
-  if (!input.email.delivered) failedChannels.push("email");
-  if (!input.text.delivered) failedChannels.push("text");
-  const delivered = failedChannels.length < 2;
+  if (input.email && !input.email.delivered) failedChannels.push("email");
+  if (input.text && !input.text.delivered) failedChannels.push("text");
+  const delivered = !!(input.email?.delivered || input.text?.delivered);
   return {
     delivered,
     partial: delivered && failedChannels.length > 0,
@@ -104,26 +106,41 @@ export function invoiceNotDeliveredCopy(
   t: Translate,
   input: {
     number?: string;
-    email: ChannelResult;
-    text: ChannelResult;
+    /** REQ-727: absent = not tried (the send sheet picked the other channel) */
+    email?: ChannelResult;
+    text?: ChannelResult;
     keptDraft?: boolean;
   },
 ): string {
   const reasonOf = (r: ChannelResult) =>
     r.rawReason ?? r.outcome.reason ?? "unknown";
-  const emailPart = missingRecipient(input.email)
-    ? t("invoicesPage.send.noEmailOnFile")
-    : t("invoicesPage.send.emailFailedReason", {
-      reason: reasonOf(input.email),
+  const emailPart = (r: ChannelResult) =>
+    missingRecipient(r)
+      ? t("invoicesPage.send.noEmailOnFile")
+      : t("invoicesPage.send.emailFailedReason", { reason: reasonOf(r) });
+  const textPart = (r: ChannelResult) =>
+    missingRecipient(r)
+      ? t("invoicesPage.send.noPhoneOnFile")
+      : t("invoicesPage.send.textFailedReason", { reason: reasonOf(r) });
+  const number = input.number?.trim() ||
+    t("invoicesPage.send.invoiceFallback");
+  // REQ-727 (cycle 5, c4-M16): a one-channel send names that channel only.
+  const one = input.email && !input.text
+    ? emailPart(input.email)
+    : input.text && !input.email
+    ? textPart(input.text)
+    : undefined;
+  const copy = one !== undefined
+    ? t("invoicesPage.send.notDeliveredOne", { number, part: one })
+    : t("invoicesPage.send.notDelivered", {
+      number,
+      emailPart: emailPart(
+        input.email ?? { outcome: { delivered: false, reason: "noEmail" } },
+      ),
+      textPart: textPart(
+        input.text ?? { outcome: { delivered: false, reason: "noPhone" } },
+      ),
     });
-  const textPart = missingRecipient(input.text)
-    ? t("invoicesPage.send.noPhoneOnFile")
-    : t("invoicesPage.send.textFailedReason", { reason: reasonOf(input.text) });
-  const copy = t("invoicesPage.send.notDelivered", {
-    number: input.number?.trim() || t("invoicesPage.send.invoiceFallback"),
-    emailPart,
-    textPart,
-  });
   return input.keptDraft
     ? `${copy}. ${t("invoicesPage.send.keptDraft")}`
     : copy;

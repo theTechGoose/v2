@@ -234,3 +234,23 @@ export function sendOpenLabelKey(channel: SendChannel): string {
   if (channel === "sms") return "asstChat.preview.sendOpenSms";
   return "asstChat.preview.sendOpenBoth";
 }
+
+/** The customer a send dialog is about: who it names and what is on file. */
+export interface SendDialogCustomer {
+  id?: string;
+  name?: string | null;
+  email?: string | null;
+  phoneNumber?: string | null;
+}
+
+/**
+ * REQ-727 (demo-loop cycle 5, c4-M16): what a send dialog's Send hands its
+ * caller — the channel, the "Sends in" language, and the contact typed for
+ * a channel the customer lacked ("" when none; already saved on the
+ * customer when the dialog has one to save it to).
+ */
+export interface SendDialogPick {
+  channel: SendChannel;
+  language: "en" | "es";
+  typed: { email: string; phone: string };
+}

@@ -57,6 +57,8 @@ import { appUrl } from "@users/domain/business/app-url/mod.ts";
 import { invoiceCapDecision } from "#documents/ledger.ts"; // REQ-233
 import { hasCreatedFor } from "@core/data/numbered-store/mod.ts";
 import { InvoiceTranslatorPort } from "@paperwork/domain/coordinators/invoice-translator-port/mod.ts"; // REQ-497
+import { PreviewInvoiceSend } from "@paperwork/domain/coordinators/preview-invoice-send/mod.ts"; // REQ-727
+import { parseInvoiceSendPreviewQuery } from "#quote-flow/send-preview.ts"; // REQ-727
 import { EventBus } from "@core/business/events/mod.ts";
 import {
   invoiceIssuedEvent,
@@ -128,6 +130,7 @@ export class InvoiceController {
     private users: UserStore,
     private sessions: SessionStore,
     private bus: EventBus,
+    private sendPreview: PreviewInvoiceSend,
     private translator?: InvoiceTranslatorPort,
   ) {}
 
@@ -493,6 +496,29 @@ export class InvoiceController {
   async get(@Context() ctx: ExecutionContext, @Param("id") id: string) {
     const user = await requireUser(ctx, this.sessions, this.users);
     return project(await this.store.getOwned(id, user.id), new Date());
+  }
+
+  /**
+   * REQ-727 (demo-loop cycle 5, c4-M16): GET
+   * /invoices/:id/send-preview?channel&lang&issuedDate&dueDate — the email
+   * subject + body and the text the client gets if the invoice is sent now
+   * (the send sheet's "What they'll get"), in the picked language, else the
+   * invoice's own; with the dates the send will stamp. Sends nothing.
+   */
+  @Get(":id/send-preview")
+  async preview(
+    @Context() ctx: ExecutionContext,
+    @Param("id") id: string,
+    @Query("channel") channel?: string,
+    @Query("lang") lang?: string,
+    @Query("issuedDate") issuedDate?: string,
+    @Query("dueDate") dueDate?: string,
+  ) {
+    const user = await requireUser(ctx, this.sessions, this.users);
+    return await this.sendPreview.run(user.id, {
+      invoiceId: id,
+      ...parseInvoiceSendPreviewQuery({ channel, lang, issuedDate, dueDate }),
+    });
   }
 
   /**

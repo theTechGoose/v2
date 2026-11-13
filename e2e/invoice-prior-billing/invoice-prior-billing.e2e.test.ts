@@ -103,6 +103,15 @@ async function anaSigned(
       status: "sent",
     }),
   })).json();
+  // POST /quotes keeps a new quote a draft; REQ-460 signs only a sent one
+  // (REQ-727: without this the accept was a 409 not_issued, so the story
+  // never reached "Send INV-001 now").
+  const sent = await http(`/api/quotes/${quote.id}`, {
+    method: "PUT",
+    headers: auth,
+    body: JSON.stringify({ status: "sent" }),
+  });
+  await sent.body?.cancel();
   const accept = await http(`/api/quotes/${quote.id}/accept`, {
     method: "POST",
     headers: JSON_HEADERS,
@@ -196,7 +205,11 @@ Deno.test("REQ-474 M17: picking a client with a scheduled INV-001 in New invoice
     expect(said.includes("Link to Q-"), `offers to link (${said})`);
 
     const sendNow = "[data-cy='new-invoice-prior-send']";
-    await clickUntil(page, sendNow, async () => {
+    // REQ-727 (cycle 5, c4-M16): "Send INV-001 now" opens the send sheet —
+    // nothing goes until its Send.
+    const sheet = page.locator("[data-cy='send-dialog']");
+    await clickUntil(page, sendNow, () => sheet.isVisible());
+    await clickUntil(page, "[data-cy='send-keep']", async () => {
       const now = await anasInvoices(http, auth, customerId, quoteId);
       return now.some((i) => i.id === inv001.id && i.status === "sent");
     });

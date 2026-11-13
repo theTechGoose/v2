@@ -23,6 +23,16 @@ import {
 } from "../clients/dashboard.ts";
 import { clientsClient } from "../clients/clients.ts";
 import type { QuoteCard } from "../clients/quotes.ts";
+// REQ-727 (demo-loop cycle 5, c4-M16): every send goes through the send sheet
+import InvoiceSendDialog from "../components/InvoiceSendDialog.tsx";
+import type { SendDialogCustomer, SendDialogPick } from "../lib/send-dialog.ts";
+import {
+  dispatchChannels,
+  finishDraftDates,
+  invoiceDispatchBody,
+  invoiceSendContact,
+} from "../lib/invoice-send-sheet.ts";
+import type { SendPreviewDates } from "../../shared/quote-flow/send-preview.ts";
 import { I, ICN } from "../lib/dash-icons.tsx";
 import {
   CardGridSkeleton,
@@ -426,6 +436,17 @@ type CardFlash =
   | { cy: string; text: string }
   | { cy: "send-partial"; went: string; failed: string };
 
+/** REQ-727 (demo-loop cycle 5, c4-M16): a card's "Send now" / "Finish +
+ *  send" asks for the send sheet. The PAGE renders it, outside the cards: a
+ *  hovered card is transformed, which would trap a fixed overlay inside it. */
+interface InvoiceSendSheet {
+  inv: EnrichedInvoice;
+  /** the dates the send stamps first — what the preview shows */
+  dates: SendPreviewDates;
+  /** the card's own send, run with the sheet's pick */
+  send: (pick: SendDialogPick) => Promise<void>;
+}
+
 /** REQ-554 (m52): a half-delivered send — what went in green, only what
  *  failed in red, on a neutral amber note (not the failure red). */
 function PartialSendNote(
@@ -467,6 +488,8 @@ export default function InvoicesPage(_props: { lang?: Lang }) {
   /** REQ-554: the note a card's action left (sent / confirmed / reopened /
    *  half-delivered) — it outlives the card moving track. */
   const [cardFlash, setCardFlash] = useState<CardFlash | null>(null);
+  /** REQ-727: the send sheet a card's "Send now" / "Finish + send" opened. */
+  const [sendSheet, setSendSheet] = useState<InvoiceSendSheet | null>(null);
   const [sendFlash] = useState<
     {
       text: string;
@@ -546,6 +569,11 @@ export default function InvoicesPage(_props: { lang?: Lang }) {
     const invoices = fresh.invoices;
     if (invoices) setS((prev) => ({ ...prev, invoices }));
     if (fresh.forecast) setForecast(fresh.forecast);
+    // REQ-727: a contact typed in the send sheet is saved on the customer —
+    // re-read the customers, so the next sheet finds it on file.
+    dashboardClient.customers().then((customers) => {
+      if (Array.isArray(customers)) setS((prev) => ({ ...prev, customers }));
+    }).catch(() => {/* the list keeps what it had */});
     // REQ-554 (demo cycle 4, m23): the sidebar's Invoices badge reads the
     // dash cache — a paid / sent / deleted invoice re-counts it too.
     refreshDash().catch(() => {/* the badge keeps its last count */});
@@ -786,6 +814,7 @@ export default function InvoicesPage(_props: { lang?: Lang }) {
                       onPaymentReceived={openForPayment}
                       onRefresh={refreshInvoices}
                       onFlash={setCardFlash}
+                      onSendSheet={setSendSheet}
                     />
                   ))}
                 </div>
@@ -814,6 +843,7 @@ export default function InvoicesPage(_props: { lang?: Lang }) {
                       onPaymentReceived={openForPayment}
                       onRefresh={refreshInvoices}
                       onFlash={setCardFlash}
+                      onSendSheet={setSendSheet}
                     />
                   ))}
                 </div>
@@ -842,6 +872,7 @@ export default function InvoicesPage(_props: { lang?: Lang }) {
                       onPaymentReceived={openForPayment}
                       onRefresh={refreshInvoices}
                       onFlash={setCardFlash}
+                      onSendSheet={setSendSheet}
                     />
                   ))}
                 </div>
@@ -872,6 +903,7 @@ export default function InvoicesPage(_props: { lang?: Lang }) {
                       onPaymentReceived={openForPayment}
                       onRefresh={refreshInvoices}
                       onFlash={setCardFlash}
+                      onSendSheet={setSendSheet}
                     />
                   ))}
                 </div>
@@ -900,6 +932,7 @@ export default function InvoicesPage(_props: { lang?: Lang }) {
                       onPaymentReceived={openForPayment}
                       onRefresh={refreshInvoices}
                       onFlash={setCardFlash}
+                      onSendSheet={setSendSheet}
                     />
                   ))}
                 </div>
@@ -928,6 +961,7 @@ export default function InvoicesPage(_props: { lang?: Lang }) {
                       onPaymentReceived={openForPayment}
                       onRefresh={refreshInvoices}
                       onFlash={setCardFlash}
+                      onSendSheet={setSendSheet}
                     />
                   ))}
                 </div>
@@ -935,6 +969,33 @@ export default function InvoicesPage(_props: { lang?: Lang }) {
           </QuoteTrack>
         </div>
       </div>
+      {
+        /* REQ-727 (demo-loop cycle 5, c4-M16): a card's send sheet — here,
+          outside the cards (a hovered card is transformed, and would trap a
+          fixed overlay). Nothing is sent until its Send. */
+      }
+      {sendSheet && (
+        <InvoiceSendDialog
+          lang={lang}
+          invoice={{
+            id: sendSheet.inv.id,
+            number: sendSheet.inv.invoiceRef,
+            lang: sendSheet.inv.lang,
+          }}
+          customer={invoiceSendContact(
+            sendSheet.inv,
+            (Array.isArray(s.customers) ? s.customers : []).find((c) =>
+              c.id === sendSheet.inv.customerId
+            ),
+          )}
+          dates={sendSheet.dates}
+          onCancel={() => setSendSheet(null)}
+          onSend={async (pick) => {
+            await sendSheet.send(pick);
+            setSendSheet(null);
+          }}
+        />
+      )}
     </>
   );
 }
@@ -2215,9 +2276,14 @@ interface DispatchResult {
   /** REQ-030 (NW-25): one channel went, the other did not. */
   partial: boolean;
   failedChannels: DispatchChannel[];
+  /** REQ-727: the channels the send sheet picked — the only ones posted */
+  tried: DispatchChannel[];
   email: ChannelSendResult;
   text: ChannelSendResult;
 }
+
+/** REQ-727: the result held for a channel the sheet did not pick. */
+const NOT_TRIED: ChannelSendResult = { outcome: { delivered: false } };
 
 /** Interpret one settled send Response through the shared honest-result
  *  contract — an HTTP 200 + {ok:false} body is a FAILURE. */
@@ -2241,27 +2307,41 @@ async function interpretSettledSend(
   };
 }
 
-/** Dispatch an invoice to the customer over both channels and interpret the
- *  BODIES, never just Response.ok (P-09: the endpoints report logical failure
- *  as HTTP 200 + {ok:false, reason}). Single source for the card "Send now"/
- *  "Finish + send" actions and the New Invoice "Create & send" so the channel
- *  set + request shape can't drift across the three call sites. */
-async function dispatchInvoice(id: string): Promise<DispatchResult> {
-  const settled = await Promise.allSettled([
-    fetch(`/api/invoices/${id}/email`, {
-      method: "POST",
-      credentials: "include",
-    }),
-    fetch(`/api/invoices/${id}/text`, {
-      method: "POST",
-      credentials: "include",
-    }),
-  ]);
-  const [email, text] = await Promise.all(settled.map(interpretSettledSend));
+/** Dispatch an invoice to the customer and interpret the BODIES, never just
+ *  Response.ok (P-09: the endpoints report logical failure as HTTP 200 +
+ *  {ok:false, reason}). Single source for the card "Send now"/"Finish +
+ *  send" actions and the New Invoice "Issue invoice" so the request shape
+ *  can't drift across the call sites. REQ-727 (demo-loop cycle 5, c4-M16):
+ *  it sends the send sheet's pick — only the picked channel(s), each POST
+ *  carrying the picked language (and, with no customer record, the typed
+ *  address). */
+async function dispatchInvoice(
+  id: string,
+  pick: SendDialogPick & { hasCustomer: boolean },
+): Promise<DispatchResult> {
+  const tried = dispatchChannels(pick.channel);
+  const settled = await Promise.allSettled(
+    tried.map((ch) =>
+      fetch(`/api/invoices/${id}/${ch}`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(invoiceDispatchBody(ch, pick, pick.hasCustomer)),
+      })
+    ),
+  );
+  const results = await Promise.all(settled.map(interpretSettledSend));
+  const of = (ch: DispatchChannel) => {
+    const i = tried.indexOf(ch);
+    return i < 0 ? undefined : results[i];
+  };
+  const email = of("email");
+  const text = of("text");
   return {
-    ...summarizeDispatch({ email: email.outcome, text: text.outcome }),
-    email,
-    text,
+    ...summarizeDispatch({ email: email?.outcome, text: text?.outcome }),
+    tried,
+    email: email ?? NOT_TRIED,
+    text: text ?? NOT_TRIED,
   };
 }
 
@@ -2310,8 +2390,9 @@ function dispatchFailureCopy(
 ): string {
   return invoiceNotDeliveredCopy((key, params) => tFor(lang, key, params), {
     number: opts.number,
-    email: d.email,
-    text: d.text,
+    // REQ-727: only the channels the send sheet picked are named
+    email: d.tried.includes("email") ? d.email : undefined,
+    text: d.tried.includes("text") ? d.text : undefined,
     keptDraft: opts.keptDraft,
   });
 }
@@ -2341,19 +2422,14 @@ async function discountErrorCopy(r: Response, lang: Lang): Promise<string> {
     : tFor(lang, "invoicesPage.adjust.errDiscountApply");
 }
 
-/** REQ-174: today + n days, as yyyy-mm-dd (UTC) */
-function plusDays(n: number): string {
-  const d = new Date(new Date().toISOString().slice(0, 10) + "T00:00:00Z");
-  d.setUTCDate(d.getUTCDate() + n);
-  return d.toISOString().slice(0, 10);
-}
-
 function InvoiceCard(
-  { inv, idx, now, lang, onPaymentReceived, onRefresh, onFlash }: {
+  { inv, idx, now, lang, onPaymentReceived, onRefresh, onFlash, onSendSheet }: {
     inv: EnrichedInvoice;
     idx: number;
     now: Date;
     lang: Lang;
+    /** REQ-727: "Send now" / "Finish + send" open the page's send sheet */
+    onSendSheet: (sheet: InvoiceSendSheet) => void;
     /** REQ-489: opens this invoice in pay mode in place (no page load). */
     onPaymentReceived: (id: string) => void;
     /** REQ-554 (demo cycle 4, M9/m43): the page's re-read (list, forecast,
@@ -2571,8 +2647,7 @@ function InvoiceCard(
       setBusy(false);
     }
   }
-  async function doSendNow(e: Event) {
-    e.stopPropagation();
+  async function doSendNow(pick: SendDialogPick) {
     if (busy) return;
     setBusy(true);
     setSendFail(null);
@@ -2591,9 +2666,13 @@ function InvoiceCard(
           body: JSON.stringify(body),
         }).then((r) => r.body?.cancel()).catch(() => {});
       await put(dates);
-      // Fire both channels and interpret honestly (P-09): a failure is
-      // surfaced on the card and nothing pretends it was sent.
-      const d = await dispatchInvoice(inv.id);
+      // REQ-727: the sheet's pick — its channel(s), in its language — and
+      // interpreted honestly (P-09): a failure is surfaced on the card and
+      // nothing pretends it was sent.
+      const d = await dispatchInvoice(inv.id, {
+        ...pick,
+        hasCustomer: !!inv.customerId,
+      });
       // REQ-030 (NW-25): a half-delivered send says which channel went and
       // which did not — REQ-554: what went in green, what failed in red.
       if (d.delivered && !d.partial) {
@@ -2619,25 +2698,21 @@ function InvoiceCard(
   }
   // "Finish + send" on a draft: a fully deterministic dashboard action — no
   // assistant round-trip. Stamp issuedDate / dueDate if missing, then
-  // dispatch to the customer over both channels. REQ-480 (demo cycle 3, M18):
-  // the status is NOT flipped up front — the send endpoints stamp the
-  // invoice "sent" once a channel delivers, so an invoice nobody received
-  // stays a draft instead of reading "Sent".
-  async function doFinishDraft(e: Event) {
-    e.stopPropagation();
+  // dispatch to the customer — REQ-727: on the send sheet's pick. REQ-480
+  // (demo cycle 3, M18): the status is NOT flipped up front — the send
+  // endpoints stamp the invoice "sent" once a channel delivers, so an
+  // invoice nobody received stays a draft instead of reading "Sent".
+  async function doFinishDraft(pick: SendDialogPick) {
     if (busy) return;
     setBusy(true);
     setSendFail(null);
     try {
-      const dates = {
-        ...(inv.issuedDate
-          ? {}
-          : { issuedDate: new Date().toISOString().slice(0, 10) }),
-        // REQ-174: due = today + the invoice's days to pay, when it has them
-        ...(typeof inv.netDays === "number"
-          ? { dueDate: plusDays(inv.netDays) }
-          : {}),
-      };
+      // REQ-174: due = today + the invoice's days to pay, when it has them
+      // (REQ-727: the same rule — and dates — the sheet previewed)
+      const dates = finishDraftDates(
+        inv,
+        new Date().toISOString().slice(0, 10),
+      );
       if (Object.keys(dates).length > 0) {
         await fetch(`/api/invoices/${inv.id}`, {
           method: "PUT",
@@ -2646,10 +2721,13 @@ function InvoiceCard(
           body: JSON.stringify(dates),
         });
       }
-      // Deliver over both channels; a delivery failure is SURFACED (P-09) —
-      // the contractor must never walk away believing an undeliverable
-      // invoice reached anyone.
-      const d = await dispatchInvoice(inv.id);
+      // Deliver on the picked channel(s); a delivery failure is SURFACED
+      // (P-09) — the contractor must never walk away believing an
+      // undeliverable invoice reached anyone.
+      const d = await dispatchInvoice(inv.id, {
+        ...pick,
+        hasCustomer: !!inv.customerId,
+      });
       // REQ-030 (NW-25): a half-delivered send says which channel went and
       // which did not — REQ-554: in green / red, on the page.
       if (d.delivered && !d.partial) {
@@ -2715,12 +2793,31 @@ function InvoiceCard(
       setBusy(false);
     }
   }
+  /** REQ-727 (demo-loop cycle 5, c4-M16): "Send now" / "Finish + send" send
+   *  nothing themselves — they open the send sheet (the channel, the
+   *  language, what they'll get, with the dates the send stamps first); only
+   *  its Send runs doSendNow / doFinishDraft, with the pick. */
+  function openSendSheet(e: Event) {
+    e.stopPropagation();
+    if (busy) return;
+    setSendFail(null);
+    const today = new Date().toISOString().slice(0, 10);
+    const scheduled = inv.stage === "scheduled";
+    onSendSheet({
+      inv,
+      dates: scheduled
+        ? sendNowDates(inv, today)
+        : finishDraftDates(inv, today),
+      send: (pick) => scheduled ? doSendNow(pick) : doFinishDraft(pick),
+    });
+  }
   function ctaAction(e: Event) {
     if (inv.stage === "claimed") return doConfirmReceived(e);
     if (inv.stage === "out") return doPaymentReceived(e);
     if (inv.stage === "overdue") return doSendNudge(e);
-    if (inv.stage === "scheduled") return doSendNow(e);
-    if (inv.stage === "drafting") return doFinishDraft(e);
+    if (inv.stage === "scheduled" || inv.stage === "drafting") {
+      return openSendSheet(e);
+    }
     return doOpenInvoice(e);
   }
   async function doToggleMute(e: Event) {
@@ -3708,6 +3805,18 @@ function NewInvoiceModal(
   const [allQuotes, setAllQuotes] = useState<QuoteCard[] | null>(null);
   /** REQ-450: the job-name example fits the business's trade. */
   const [businessName, setBusinessName] = useState<string | undefined>();
+  /** REQ-727 (demo-loop cycle 5, c4-M16): the send sheet over the form — for
+   *  the invoice "Issue invoice" just created, or the earlier bill "Send
+   *  INV-001 now" offers. Nothing is sent until its Send. */
+  const [sheet, setSheet] = useState<
+    {
+      invoice: { id: string; number?: string; lang?: string };
+      customer: SendDialogCustomer;
+      dates?: SendPreviewDates;
+      send: (pick: SendDialogPick) => Promise<void>;
+      cancel: () => void;
+    } | null
+  >(null);
 
   // Payment instructions: Settings' contract defaults first, else the last
   // ones typed here, else (REQ-483, M40) the accepted payment methods saved
@@ -3787,8 +3896,9 @@ function NewInvoiceModal(
   const priorQuotes = linkedQuoteId ? [] : prior.quotes;
 
   /** REQ-474: "Send INV-001 now" — the scheduled / drafted bill goes out
-   *  instead of a second one: issue it (status sent) and dispatch it. */
-  async function sendPrior(inv: PriorInvoice) {
+   *  instead of a second one: issue it (status sent) and dispatch it.
+   *  REQ-727: from the send sheet, with its pick. */
+  async function sendPrior(inv: PriorInvoice, pick: SendDialogPick) {
     if (busy) return;
     setBusy(true);
     setError(null);
@@ -3804,7 +3914,10 @@ function NewInvoiceModal(
       });
       await r.body?.cancel();
       if (!r.ok) throw new Error(String(r.status));
-      const d = await dispatchInvoice(inv.id);
+      const d = await dispatchInvoice(inv.id, {
+        ...pick,
+        hasCustomer: !!pickedId,
+      });
       if (!d.delivered || d.partial) {
         try {
           globalThis.sessionStorage?.setItem(
@@ -3829,6 +3942,23 @@ function NewInvoiceModal(
       );
       setBusy(false);
     }
+  }
+
+  /** REQ-727 (demo-loop cycle 5, c4-M16): "Send INV-001 now" opens the send
+   *  sheet on that bill; its Send runs sendPrior, which issues it today. */
+  function openPriorSheet(inv: PriorInvoice) {
+    if (busy) return;
+    const full = invoices.find((i) => i.id === inv.id);
+    setSheet({
+      invoice: { id: inv.id, number: inv.number, lang: full?.lang },
+      customer: invoiceSendContact(full ?? {}, selectedCustomer),
+      dates: { issuedDate: new Date().toISOString().slice(0, 10) },
+      send: async (pick) => {
+        await sendPrior(inv, pick);
+        setSheet(null);
+      },
+      cancel: () => setSheet(null),
+    });
   }
 
   // REQ-483 (m18): apply the default terms as the profile and the quote
@@ -4019,30 +4149,30 @@ function NewInvoiceModal(
       const invoice = await dashboardClient.createInvoice(
         body as { dueDate: string } & Record<string, unknown>,
       );
-      // Issue + reachable: dispatch the pay link over both channels. The
-      // backend handles "no email/phone on file" gracefully; unreachable is
-      // one of the "missing info" prompts, never a block.
+      // Issue + reachable — REQ-727 (demo-loop cycle 5, c4-M16): the invoice
+      // exists now (a draft, REQ-480) and the send sheet opens on it; nothing
+      // is sent until its Send, and Cancel keeps the draft. The form stays
+      // busy behind it and reloads once the sheet is done. Unreachable is one
+      // of the "missing info" prompts, never a block.
       if (issue && canSend && invoice?.id) {
-        const d = await dispatchInvoice(invoice.id);
-        // REQ-030 (NW-25): never drop a channel failure on the way to the
-        // reload — the page shows it after navigating.
-        if (!d.delivered || d.partial) {
-          try {
-            globalThis.sessionStorage?.setItem(
-              SEND_FLASH_KEY,
-              JSON.stringify({
-                text: d.delivered
-                  ? partialDispatchCopy(lang, d)
-                  : dispatchFailureCopy(lang, d, {
-                    number: invoice.number,
-                    keptDraft: true,
-                  }),
-                partial: d.delivered,
-                ...(d.delivered ? { parts: partialParts(lang, d) } : {}),
-              }),
-            );
-          } catch { /* storage unavailable — the reload still happens */ }
-        }
+        await new Promise<void>((done) =>
+          setSheet({
+            invoice: {
+              id: invoice.id,
+              number: invoice.number,
+              lang: invoice.lang,
+            },
+            customer: invoiceSendContact(
+              { customerId, billTo: bt },
+              clientSel === NEW_SENTINEL ? undefined : selectedCustomer,
+            ),
+            send: (pick) => sendIssued(invoice, pick, !!customerId).then(done),
+            cancel: () => {
+              keepIssuedDraft(invoice);
+              done();
+            },
+          })
+        );
       } else if (issue && invoice?.id) {
         // REQ-550: nobody to send it to — say it was NOT sent, and hand over
         // the link to share by hand.
@@ -4079,6 +4209,50 @@ function NewInvoiceModal(
       );
       setBusy(false);
     }
+  }
+  /** REQ-727: the send sheet's Send for the invoice "Issue invoice" created —
+   *  dispatched on the pick. REQ-030 (NW-25): a failed or half-delivered
+   *  send is carried across the reload, never dropped. */
+  async function sendIssued(
+    invoice: { id: string; number?: string },
+    pick: SendDialogPick,
+    hasCustomer: boolean,
+  ) {
+    const d = await dispatchInvoice(invoice.id, { ...pick, hasCustomer });
+    if (!d.delivered || d.partial) {
+      try {
+        globalThis.sessionStorage?.setItem(
+          SEND_FLASH_KEY,
+          JSON.stringify({
+            text: d.delivered
+              ? partialDispatchCopy(lang, d)
+              : dispatchFailureCopy(lang, d, {
+                number: invoice.number,
+                keptDraft: true,
+              }),
+            partial: d.delivered,
+            ...(d.delivered ? { parts: partialParts(lang, d) } : {}),
+          }),
+        );
+      } catch { /* storage unavailable — the reload still happens */ }
+    }
+  }
+  /** REQ-727: Cancel on the sheet — the invoice "Issue invoice" created stays
+   *  a draft (in Drafting), and the page says it was not sent. */
+  function keepIssuedDraft(invoice: { number?: string }) {
+    try {
+      globalThis.sessionStorage?.setItem(
+        SEND_FLASH_KEY,
+        JSON.stringify({
+          text: tFor(lang, "invoicesPage.send.sheetKeptDraft", {
+            number: invoice.number ??
+              tFor(lang, "invoicesPage.send.invoiceFallback"),
+          }),
+          partial: false,
+          notSent: true,
+        }),
+      );
+    } catch { /* storage unavailable — the reload still happens */ }
   }
   function onFormSubmit(e: Event) {
     e.preventDefault();
@@ -4201,7 +4375,7 @@ function NewInvoiceModal(
                       type="button"
                       data-cy="new-invoice-prior-send"
                       disabled={busy}
-                      onClick={() => sendPrior(inv)}
+                      onClick={() => openPriorSheet(inv)}
                       style="padding:7px 12px;border-radius:999px;border:0;background:var(--brand-teal,#144852);color:#fff;font:inherit;font-size:12.5px;font-weight:800;cursor:pointer"
                     >
                       {tFor(lang, "invoicesPage.new.prior.sendNow", {
@@ -4781,6 +4955,20 @@ function NewInvoiceModal(
           </p>
         )}
       </form>
+      {
+        /* REQ-727: the send sheet — outside the <form>, so Enter in its
+          fields never submits a second invoice */
+      }
+      {sheet && (
+        <InvoiceSendDialog
+          lang={lang}
+          invoice={sheet.invoice}
+          customer={sheet.customer}
+          dates={sheet.dates}
+          onCancel={sheet.cancel}
+          onSend={sheet.send}
+        />
+      )}
     </Backdrop>
   );
 }

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "preact/hooks";
+import { useEffect, useRef, useState } from "preact/hooks";
 import { type Lang, tFor } from "../lib/i18n.ts";
 import { quotesClient } from "../clients/quotes.ts";
 import {
@@ -17,8 +17,16 @@ const LANG_LABEL_KEYS: Record<string, string> = {
 type SendLang = "en" | "es";
 
 interface Props {
-  /** The quote being sent; without one the preview can't load. */
+  /** The quote being sent; without one (or `load`) the preview can't load. */
   quoteId?: string;
+  /** REQ-727: another document's preview (the invoice send sheet's GET
+   *  /invoices/:id/send-preview) in place of the quote's. */
+  load?: (
+    channel: SendPreviewChannel,
+    lang: SendLang,
+  ) => Promise<QuoteSendPreview>;
+  /** REQ-727: changes when what `load` previews changes (it is re-read). */
+  loadKey?: string;
   channel: SendPreviewChannel;
   /** The language the Send goes out in (the review card's previewLang). */
   sendLang: SendLang;
@@ -37,19 +45,29 @@ interface Props {
  * opened, and again when the channel or language changes while open.
  */
 export default function SendLangPreview(
-  { quoteId, channel, sendLang, langs, uiLang, onPickLang }: Props,
+  { quoteId, load, loadKey, channel, sendLang, langs, uiLang, onPickLang }:
+    Props,
 ) {
   const [open, setOpen] = useState(false);
   const [preview, setPreview] = useState<QuoteSendPreview | undefined>();
   const [failed, setFailed] = useState(false);
   const choices = langs.filter((l) => l in LANG_LABEL_KEYS);
+  // the latest loader, read when the preview opens (an inline arrow is a new
+  // function every render — it can't be an effect dependency)
+  const loadRef = useRef(load);
+  loadRef.current = load;
 
   useEffect(() => {
-    if (!open || !quoteId) return;
+    const fetchPreview = loadRef.current ??
+      (quoteId
+        ? (ch: SendPreviewChannel, l: SendLang) =>
+          quotesClient.sendPreview(quoteId, ch, l)
+        : undefined);
+    if (!open || !fetchPreview) return;
     let live = true;
     setPreview(undefined);
     setFailed(false);
-    quotesClient.sendPreview(quoteId, channel, sendLang)
+    fetchPreview(channel, sendLang)
       .then((p) => {
         if (live) setPreview(p);
       })
@@ -59,7 +77,7 @@ export default function SendLangPreview(
     return () => {
       live = false;
     };
-  }, [open, quoteId, channel, sendLang]);
+  }, [open, quoteId, loadKey, channel, sendLang]);
 
   return (
     <div class="send-dialog__preview-wrap">

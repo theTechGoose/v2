@@ -16,6 +16,12 @@ import { api, type ApiOptions } from "../lib/api.ts";
 import type { QuoteCard } from "./quotes.ts";
 import type { SearchHit } from "../../shared/documents/search.ts";
 import type { AcceptedMethods } from "../../shared/documents/invoice-form.ts";
+import {
+  invoiceSendPreviewPath,
+  type QuoteSendPreview,
+  type SendPreviewChannel,
+  type SendPreviewDates,
+} from "../../shared/quote-flow/send-preview.ts"; // REQ-727
 
 export type { SearchHit };
 
@@ -363,6 +369,20 @@ export const dashboardClient = {
   /** REQ-201: publish the pending revision (version + 1); notify re-sends the same link. */
   publishInvoice: (id: string, notify: boolean, opts: ApiOptions = {}) =>
     api.post<PublishedInvoice>(`/invoices/${id}/publish`, { notify }, opts),
+  /** REQ-727 (demo c4-M16): the email + text the client gets if the invoice
+   *  is sent now — in `lang`, else its own language (`lang` in the answer
+   *  says which), with the dates the send will stamp. Sends nothing. */
+  invoiceSendPreview: (
+    id: string,
+    channel: SendPreviewChannel,
+    lang?: "en" | "es",
+    dates: SendPreviewDates = {},
+    opts: ApiOptions = {},
+  ) =>
+    api.get<QuoteSendPreview>(
+      invoiceSendPreviewPath(id, channel, lang, dates),
+      opts,
+    ),
   /** REQ-205: what the quote agreed, invoiced, got paid, and still has to invoice. */
   quoteLedger: (quoteId: string, opts: ApiOptions = {}) =>
     api.get<QuoteLedger>(`/quotes/${quoteId}/ledger`, opts),
