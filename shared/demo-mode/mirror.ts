@@ -530,7 +530,9 @@ function samples(cap: number) {
  *  page-load id is not "older"). REQ-391 — `clock`: the deploy's time as this browser knows it
  *  (the link's `now()`); `lag()` says how late the frames came */
 export function createMirrorReceiver(o: {
-  onFrame(f: MirrorFrame, load: string): void;
+  /** REQ-636 — `sent`: when the customer pushed the frame (its `t`), so the stage can show the
+   *  pill face that went out with it */
+  onFrame(f: MirrorFrame, load: string, sent?: number): void;
   /** REQ-292 tripwire — a snapshot the sequencer rejected: the stage logs it and resyncs */
   onDropped?(f: MirrorFrame, load: string, seq: number): void;
   gapMs?: number;
@@ -598,7 +600,7 @@ export function createMirrorReceiver(o: {
             lagAll.add(lagLast);
           }
           try {
-            o.onFrame(g, whole.l);
+            o.onFrame(g, whole.l, t);
           } catch {
             // the replay's own trouble; the next snapshot mends it
           }

@@ -216,6 +216,7 @@ import {
   STAGE_PILL_BOTTOM,
   stageInsetBottom,
 } from "../../shared/demo-mode/pill.ts";
+import { createPillSync } from "../../shared/demo-mode/pill-sync.ts";
 import {
   afterActiveCheck,
   behindSeconds,
@@ -248,6 +249,9 @@ const sameDemo = (a: Demo | null, b: Demo) =>
   JSON.stringify(a.presenters) === JSON.stringify(b.presenters);
 
 const Z = 2147483000;
+/** REQ-636 — a `pill` message from the customer */
+type PillMsg = Extract<PeerMessage, { k: "pill" }>;
+
 /** room around the frame; the bottom band is the pill's measured height (REQ-228); REQ-642 —
  *  the top leaves a chrome row for the off / absent badge, above the frame, never over it */
 const INSET = { top: STAGE_TOP_INSET, right: 16, left: 16 };
@@ -1161,8 +1165,33 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
       setCmds((c) => ({ ...c, [pid]: { seq: ++seq.current, ...cmd } }));
     };
     commandRef.current = command;
+    /** REQ-636 (cycle 5, m8) — the customer's pill faces, each held until its frame is replayed */
+    const pills = createPillSync<PillMsg>();
+    const showPill = (m: PillMsg) => {
+      setPillBox(m.r);
+      setPillFace({
+        compact: m.compact,
+        open: m.open,
+        status: m.status,
+        text: m.text,
+        clipped: m.clipped,
+        label: m.label,
+        guide: m.guide,
+        // REQ-545 (cycle 4, m2) — tucked to its tab, and the band the customer sees
+        tucked: m.tucked,
+        band: m.band,
+        bandBg: m.bandBg,
+        title: m.title,
+        end: m.end,
+      });
+    };
     const rx = createMirrorReceiver({
-      onFrame: take,
+      onFrame: (f, load, sent) => {
+        take(f, load);
+        // REQ-636 — the replay reached this frame: the pill face sent with it shows now
+        const p = pills.frame(sent);
+        if (p) showPill(p);
+      },
       // REQ-292 tripwire — a snapshot refused by the sequencer is never silent: say so, resync
       onDropped: (f, load, seq) => {
         console.warn("[demo-stage] snapshot dropped — resyncing", {
@@ -1279,6 +1308,11 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
         // connecting and cannot say so: its face rides the link that is opening) — never a blank
         // and then a "Connected" the customer's pill never showed
         setPillFace((f) => pillFaceAwaiting(f));
+        // REQ-636 (cycle 5, m8) — the old tab's held faces go; the new tab's wait for its own
+        // frames, and it is asked for its pill (one it sent before this stage followed it was
+        // dropped by the link)
+        pills.reset();
+        linkRef.current?.send({ k: "askPill" });
       },
       onPeerTab: (cid, tab) => {
         // REQ-645 (cycle 5 m36) — the followed socket says which browser tab it is only now: another
@@ -1351,24 +1385,12 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
             reportRef.current = m;
             showGhost();
             break;
-          case "pill":
-            setPillBox(m.r);
-            setPillFace({
-              compact: m.compact,
-              open: m.open,
-              status: m.status,
-              text: m.text,
-              clipped: m.clipped,
-              label: m.label,
-              guide: m.guide,
-              // REQ-545 (cycle 4, m2) — tucked to its tab, and the band the customer sees
-              tucked: m.tucked,
-              band: m.band,
-              bandBg: m.bandBg,
-              title: m.title,
-              end: m.end,
-            });
+          case "pill": {
+            // REQ-636 (cycle 5, m8) — shown with the frame it went out with (held till then)
+            const p = pills.offer(m, m.t);
+            if (p) showPill(p);
             break;
+          }
         }
       },
       onEnded: (by, reason, pid) => {
@@ -1401,6 +1423,9 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
     // mirror over — asked again every MIRROR_GAP_MS until a snapshot lands
     const stall = setInterval(() => {
       if (rx.stalled() || dirtyRef.current) askResync();
+      // REQ-636 — a pill whose frame never came is shown anyway
+      const due = pills.due();
+      if (due) showPill(due);
       // REQ-391 (M4) — a snapshot asked for and not in: "Catching up…"; how late the frames come
       // in: "Behind N s" when it is over LAG_BEHIND_MS
       const resyncing = dirtyRef.current || rx.stalled();

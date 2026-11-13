@@ -1097,6 +1097,14 @@ export default function DemoModeOverlay(
             recorder.snapshot();
             resendPointer();
             reporter.cancel(); // REQ-642 — and where his arrow is, on its next placing
+            // REQ-636 (cycle 5, m8) — and the pill, with the snapshot it belongs to
+            sentPillRef.current = null;
+            sendPillRef.current();
+            break;
+          case "askPill":
+            // REQ-636 — a stage that just followed this tab: the pill it may have dropped
+            sentPillRef.current = null;
+            sendPillRef.current();
             break;
         }
       },
@@ -1352,7 +1360,14 @@ export default function DemoModeOverlay(
       if (!was && !r) return;
       sentPillRef.current = r;
       sentFaceRef.current = faceKey;
-      linkRef.current?.send({ k: "pill", r, ...face });
+      // REQ-636 (cycle 5, m8) — stamped with the frame clock: the stage shows this face when its
+      // replay reaches the frame that went out with it, not seconds before
+      linkRef.current?.send({
+        k: "pill",
+        r,
+        ...face,
+        t: linkRef.current?.now(),
+      });
     };
     sendPillRef.current = sendPill;
     const place = () => {
