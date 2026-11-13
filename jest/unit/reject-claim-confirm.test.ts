@@ -38,6 +38,18 @@ function buttonTag(dataCy: string): string {
   );
 }
 
+// REQ-707 (cycle 5, m61): the ask renders through <ConfirmRow cy=…>; its
+// onYes / onNo props are the Yes / No buttons' click handlers.
+function confirmProp(cy: string, prop: "onYes" | "onNo"): string {
+  const at = src.indexOf(`cy="${cy}"`);
+  expect(at).toBeGreaterThan(-1);
+  const block = src.slice(at, src.indexOf("/>", at));
+  const p = block.indexOf(`${prop}=`);
+  expect(p).toBeGreaterThan(-1);
+  const next = block.slice(p + 1).search(/\n\s+\w+=/);
+  return block.slice(p, next < 0 ? undefined : p + 1 + next);
+}
+
 describe("REQ-488 m56: 'Didn't get it' asks first", () => {
   test("the claimed card's reject button does not POST on its first click", () => {
     const tag = buttonTag("invoice-reject-claim");
@@ -46,9 +58,9 @@ describe("REQ-488 m56: 'Didn't get it' asks first", () => {
   });
 
   test("the inline ask names the claim; only 'Mark not received' rejects", () => {
-    expect(src).toMatch(/data-cy="invoice-reject-ask"/);
-    const yes = buttonTag("invoice-reject-ask-yes");
-    const no = buttonTag("invoice-reject-ask-no");
+    expect(src).toMatch(/<ConfirmRow\s+cy="invoice-reject-ask"/);
+    const yes = confirmProp("invoice-reject-ask", "onYes");
+    const no = confirmProp("invoice-reject-ask", "onNo");
     expect(yes).toMatch(/doRejectClaim/);
     expect(no).not.toMatch(/doRejectClaim/);
     expect(no).toMatch(/setRejectAsk\(false\)/);

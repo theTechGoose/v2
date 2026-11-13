@@ -26,6 +26,18 @@ function claimedNudgeBlock(): string {
   return src.slice(start, end);
 }
 
+// REQ-707 (cycle 5, m61): the ask renders through <ConfirmRow cy=…>; its
+// onYes / onNo props are the Yes / No buttons' click handlers.
+function confirmProp(cy: string, prop: "onYes" | "onNo"): string {
+  const at = src.indexOf(`cy="${cy}"`);
+  expect(at).toBeGreaterThan(-1);
+  const block = src.slice(at, src.indexOf("/>", at));
+  const p = block.indexOf(`${prop}=`);
+  expect(p).toBeGreaterThan(-1);
+  const next = block.slice(p + 1).search(/\n\s+\w+=/);
+  return block.slice(p, next < 0 ? undefined : p + 1 + next);
+}
+
 describe("REQ-250 m12: a nudge on a claimed invoice asks first", () => {
   test("the claimed card's nudge button does not send on its first click", () => {
     const block = claimedNudgeBlock();
@@ -34,20 +46,10 @@ describe("REQ-250 m12: a nudge on a claimed invoice asks first", () => {
   });
 
   test("the inline ask names the claim and only its 'Send anyway' sends", () => {
-    expect(src).toMatch(/data-cy="invoice-nudge-ask"/);
-    const yes = src.indexOf('data-cy="invoice-nudge-ask-yes"');
-    const no = src.indexOf('data-cy="invoice-nudge-ask-no"');
-    expect(yes).toBeGreaterThan(-1);
-    expect(no).toBeGreaterThan(-1);
+    expect(src).toMatch(/<ConfirmRow\s+cy="invoice-nudge-ask"/);
     // the yes button's own onClick sends; the no button only closes the ask
-    const yesTag = src.slice(
-      src.lastIndexOf("<button", yes),
-      src.indexOf("</button>", yes),
-    );
-    const noTag = src.slice(
-      src.lastIndexOf("<button", no),
-      src.indexOf("</button>", no),
-    );
+    const yesTag = confirmProp("invoice-nudge-ask", "onYes");
+    const noTag = confirmProp("invoice-nudge-ask", "onNo");
     expect(yesTag).toMatch(/doSendNudge/);
     expect(noTag).not.toMatch(/doSendNudge/);
     expect(noTag).toMatch(/setNudgeAsk\(false\)/);

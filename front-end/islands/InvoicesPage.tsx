@@ -15,6 +15,7 @@
  *     04 Paid this month             (defaultOpen=false)
  */
 import Backdrop from "../components/Backdrop.tsx";
+import ConfirmRow from "../components/ConfirmRow.tsx"; // REQ-707
 import { useEffect, useMemo, useState } from "preact/hooks";
 import {
   type Customer,
@@ -3027,28 +3028,18 @@ function InvoiceCard(
           >
             {confirmDelete
               ? (
-                <>
-                  <span style="font-size:12.5px;color:var(--fg)">
-                    {tFor(lang, "invoicesPage.detail.deleteAsk")}
-                  </span>
-                  <button
-                    type="button"
-                    data-cy="invoice-card-delete-confirm"
-                    onClick={doDeleteInvoice}
-                    disabled={busy}
-                    style="appearance:none;background:#fff;border:1px solid var(--brand-pink,#ff6b6b);border-radius:7px;padding:4px 10px;font:inherit;font-size:12.5px;font-weight:700;color:var(--brand-pink-dark,#d94f4f);cursor:pointer"
-                  >
-                    {tFor(lang, "invoicesPage.detail.deleteYes")}
-                  </button>
-                  <button
-                    type="button"
-                    data-cy="invoice-card-delete-cancel"
-                    onClick={() => setConfirmDelete(false)}
-                    style="appearance:none;background:none;border:none;color:var(--brand-teal);font:inherit;font-size:12.5px;font-weight:700;cursor:pointer;padding:2px 0"
-                  >
-                    {tFor(lang, "invoicesPage.detail.deleteNo")}
-                  </button>
-                </>
+                <ConfirmRow
+                  cy="invoice-card-delete-ask"
+                  yesCy="invoice-card-delete-confirm"
+                  noCy="invoice-card-delete-cancel"
+                  ask={tFor(lang, "invoicesPage.detail.deleteAsk")}
+                  yesLabel={tFor(lang, "invoicesPage.detail.deleteYes")}
+                  noLabel={tFor(lang, "invoicesPage.detail.deleteNo")}
+                  onYes={doDeleteInvoice}
+                  onNo={() => setConfirmDelete(false)}
+                  busy={busy}
+                  tone="danger"
+                />
               )
               /* REQ-202/485 (m22): a paid invoice is locked — no Delete */
               : !isInvoiceLocked(inv) && (
@@ -3387,81 +3378,53 @@ function InvoiceCard(
           </div>
         )}
         {inv.stage === "claimed" && nudgeAsk && (
-          <div
-            data-cy="invoice-nudge-ask"
-            role="alert"
-            style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:0 0 10px;font-size:13px"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <span style="flex:1 1 100%">
-              {tFor(lang, "invoicesPage.back.nudgeClaimedAsk", {
-                name: inv.paymentIntent?.claimedBy?.trim() || inv.client,
-                method: methodLabel(inv.paymentIntent?.method, lang),
-                ref: inv.paymentIntent?.reference
-                  ? tFor(lang, "invoicesPage.subline.ref", {
-                    ref: inv.paymentIntent.reference,
-                  })
-                  : "",
-              })}
-            </span>
-            <button
-              type="button"
-              data-cy="invoice-nudge-ask-yes"
-              onClick={(e) => {
-                setNudgeAsk(false);
-                return doSendNudge(e);
-              }}
-              disabled={busy}
-            >
-              {tFor(lang, "invoicesPage.back.nudgeClaimedYes")}
-            </button>
-            <button
-              type="button"
-              data-cy="invoice-nudge-ask-no"
-              onClick={(e) => {
-                e.stopPropagation();
-                setNudgeAsk(false);
-              }}
-            >
-              {tFor(lang, "invoicesPage.back.nudgeClaimedNo")}
-            </button>
-          </div>
+          <ConfirmRow
+            cy="invoice-nudge-ask"
+            inset
+            tone="primary"
+            ask={tFor(lang, "invoicesPage.back.nudgeClaimedAsk", {
+              name: inv.paymentIntent?.claimedBy?.trim() || inv.client,
+              method: methodLabel(inv.paymentIntent?.method, lang),
+              ref: inv.paymentIntent?.reference
+                ? tFor(lang, "invoicesPage.subline.ref", {
+                  ref: inv.paymentIntent.reference,
+                })
+                : "",
+            })}
+            yesLabel={tFor(lang, "invoicesPage.back.nudgeClaimedYes")}
+            noLabel={tFor(lang, "invoicesPage.back.nudgeClaimedNo")}
+            onYes={(e) => {
+              setNudgeAsk(false);
+              return doSendNudge(e);
+            }}
+            onNo={(e) => {
+              e.stopPropagation();
+              setNudgeAsk(false);
+            }}
+            busy={busy}
+          />
         )}
         {inv.stage === "claimed" && rejectAsk && (
-          <div
-            data-cy="invoice-reject-ask"
-            role="alert"
-            style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:0 0 10px;font-size:13px"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <span style="flex:1 1 100%">
-              {tFor(lang, "invoicesPage.back.rejectAsk", {
-                name: inv.paymentIntent?.claimedBy?.trim() || inv.client,
-                method: methodLabel(inv.paymentIntent?.method, lang),
-              })}
-            </span>
-            <button
-              type="button"
-              data-cy="invoice-reject-ask-yes"
-              onClick={(e) => {
-                setRejectAsk(false);
-                return doRejectClaim(e);
-              }}
-              disabled={busy}
-            >
-              {tFor(lang, "invoicesPage.back.rejectYes")}
-            </button>
-            <button
-              type="button"
-              data-cy="invoice-reject-ask-no"
-              onClick={(e) => {
-                e.stopPropagation();
-                setRejectAsk(false);
-              }}
-            >
-              {tFor(lang, "invoicesPage.back.rejectNo")}
-            </button>
-          </div>
+          <ConfirmRow
+            cy="invoice-reject-ask"
+            inset
+            tone="danger"
+            ask={tFor(lang, "invoicesPage.back.rejectAsk", {
+              name: inv.paymentIntent?.claimedBy?.trim() || inv.client,
+              method: methodLabel(inv.paymentIntent?.method, lang),
+            })}
+            yesLabel={tFor(lang, "invoicesPage.back.rejectYes")}
+            noLabel={tFor(lang, "invoicesPage.back.rejectNo")}
+            onYes={(e) => {
+              setRejectAsk(false);
+              return doRejectClaim(e);
+            }}
+            onNo={(e) => {
+              e.stopPropagation();
+              setRejectAsk(false);
+            }}
+            busy={busy}
+          />
         )}
         <div class="qcard__back-foot">
           {
