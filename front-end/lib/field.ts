@@ -281,18 +281,23 @@ export function rememberWorkerLangPick(lang: Lang | null): void {
 /**
  * REQ-494 — the /worker route's language: ?lang= > the /worker pick > pm_lang
  * > Spanish. `chosen` = the address chose it; `picked` = the switch did, earlier.
+ * REQ-714 (cycle 5, m58) — a signed-in worker's own language (read on the
+ * server) renders the page unless ?lang= or the pick chose, so SSR matches
+ * what REQ-285 applies on the client and nothing flips. `pageLang` stays the
+ * page's own (no worker) — the language Salir returns to (REQ-416).
  */
 export function workerRouteLang(src: {
   query: string | null;
   picked: Lang | null;
   stored: Lang | null;
-}): { lang: Lang; chosen: boolean; picked: boolean } {
+  worker?: Lang | null;
+}): { lang: Lang; pageLang: Lang; chosen: boolean; picked: boolean } {
   const q = src.query === "en" || src.query === "es" ? src.query : null;
-  return {
-    lang: q ?? src.picked ?? src.stored ?? "es",
-    chosen: q !== null,
-    picked: src.picked !== null,
-  };
+  const pageLang = q ?? src.picked ?? src.stored ?? "es";
+  const chosen = q !== null;
+  const picked = src.picked !== null;
+  const worker = chosen || picked ? null : src.worker ?? null;
+  return { lang: worker ?? pageLang, pageLang, chosen, picked };
 }
 
 /** REQ-288 — the continental US: the map's view when nothing better is known (never the dev seed's town) */

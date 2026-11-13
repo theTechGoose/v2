@@ -193,6 +193,7 @@ interface Toast {
 export default function WorkerScreen(
   {
     initialLang,
+    pageLang,
     initialDate,
     office,
     officeHref = WORKER_OFFICE_FALLBACK,
@@ -200,6 +201,8 @@ export default function WorkerScreen(
     langPicked = false,
   }: {
     initialLang: Lang;
+    /** REQ-714 (m58) — the page's own language when initialLang is the signed-in worker's (SSR); Salir returns to it */
+    pageLang?: Lang;
     initialDate?: string;
     /** REQ-282 — an owner session rode in: show the way back to the office */
     office?: boolean;
@@ -252,14 +255,17 @@ export default function WorkerScreen(
   /** REQ-285 — the person chose the language (the switch, or ?lang=): keep it over the worker's */
   const langChosenRef = useRef(langChosen || !!langPicked);
   /** REQ-416 — the page's own language (opened in, or picked on the switch); Salir returns to it */
-  const pageLangRef = useRef<Lang>(initialLang);
+  const pageLangRef = useRef<Lang>(pageLang ?? initialLang);
   // REQ-508 (demo cycle 3, m20) — when the last load started; the 5 s tick skips a fresh one
   const lastLoadRef = useRef(0);
 
   useEffect(() => {
-    pageLangRef.current = initialLang;
-    setLang(initialLang);
-  }, [initialLang]);
+    const page = pageLang ?? initialLang;
+    pageLangRef.current = page;
+    // REQ-714 (m58) — opened in the worker's language (SSR): shown, never
+    // written into the browser's pm_lang (REQ-416)
+    setLang(initialLang, { persist: initialLang === page });
+  }, [initialLang, pageLang]);
 
   // Browser-side facts: the real day, the remembered cell.
   useEffect(() => {

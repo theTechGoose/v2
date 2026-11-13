@@ -261,3 +261,96 @@ Deno.test("REQ-494: EN picked on /worker survives re-opening /worker without ?la
       "<html lang> is en",
     );
   }));
+
+/**
+ * REQ-714 — demo-loop cycle 5, issue m58 ("worker view flashes English
+ * first"): a Spanish worker already signed in (pm_worker) re-opens /worker on
+ * an English browser (pm_lang=en). The server-rendered page is already Spanish
+ * — <html lang="es">, the Spanish title — so nothing paints English and flips;
+ * the browser's pm_lang stays en (REQ-416).
+ */
+Deno.test("REQ-714 m58: a signed-in Spanish worker on an English browser gets a Spanish page from the server — no English first paint", (t) =>
+  story(t, async ({ page, expect, http, baseUrl }) => {
+    const r = await http("/api/auth/verify", {
+      method: "POST",
+      headers: JSON_HEADERS,
+      body: JSON.stringify({ phoneNumber: `+1512${digits()}`, code: "000000" }),
+    });
+    let body = await r.json();
+    let cookie = (r.headers.get("set-cookie") ?? "").split(";")[0];
+    if (body.recoverable === true) {
+      const f = await http("/api/auth/start-fresh", {
+        method: "POST",
+        headers: JSON_HEADERS,
+        body: JSON.stringify({ token: body.recoveryToken }),
+      });
+      body = await f.json();
+      cookie = (f.headers.get("set-cookie") ?? "").split(";")[0];
+    }
+    expect(!!cookie, "the owner has a session");
+    const auth = { ...JSON_HEADERS, cookie };
+    const me = await http("/api/me", {
+      method: "PUT",
+      headers: auth,
+      body: JSON.stringify({ language: "en", name: "SSR Lang Story" }),
+    });
+    await me.body?.cancel();
+
+    const cell = `843${digits()}`;
+    const w = await http("/api/field/workers", {
+      method: "POST",
+      headers: auth,
+      body: JSON.stringify({
+        name: "Luis",
+        phoneNumber: cell,
+        pin: "1234",
+        language: "es",
+      }),
+    });
+    expect(
+      w.status === 201 || w.status === 200,
+      `worker created (${w.status})`,
+    );
+    await w.body?.cancel();
+
+    // the worker signs in (as the island does) — the pm_worker session
+    const li = await http("/api/field/worker/login", {
+      method: "POST",
+      headers: JSON_HEADERS,
+      body: JSON.stringify({ phoneNumber: cell, pin: "1234" }),
+    });
+    await li.body?.cancel();
+    const token = (li.headers.get("set-cookie") ?? "").split(";")[0]
+      .split("=").slice(1).join("=");
+    expect(!!token, `the worker has a session (${li.status})`);
+
+    const hosts = new Set([
+      new URL(baseUrl).hostname,
+      "localhost",
+      "127.0.0.1",
+    ]);
+    await page.context().addCookies(
+      [...hosts].flatMap((domain) => [
+        { name: "pm_lang", value: "en", domain, path: "/" },
+        { name: "pm_worker", value: token, domain, path: "/" },
+      ]),
+    );
+
+    const res = await page.goto("/worker");
+    const html = (await res?.text()) ?? "";
+    expect(
+      /<html[^>]*\blang="es"/.test(html),
+      `the server-rendered <html lang> is es (${
+        html.match(/<html[^>]*>/)?.[0]
+      })`,
+    );
+    expect(
+      html.includes("Mis tareas · DocuMonster"),
+      "the server-rendered title is Spanish",
+    );
+    await page.getByText("Hola, Luis").waitFor({ timeout: 15_000 });
+    const stored = (await page.context().cookies()).find((c) =>
+      c.name === "pm_lang"
+    )?.value;
+    expect(stored === "en", `pm_lang is still en (got ${stored})`);
+  }));
