@@ -273,7 +273,7 @@ interface OwnStats {
 }
 /** REQ-309 — the mirror's counters on the pill (dev only): one short line, the legend in its title */
 const MIRROR_STATS_LEGEND =
-  "mirror (dev): f frames · hb heartbeats · x frames that did not fit · st stalls · rs resyncs asked · old dropped as older · bad undecodable · held waiting for an earlier frame · cv canvas bitmaps arrived/applied/repainted after a resize (REQ-380) · the last frame's age · lag median/worst seconds from the customer's push to the frame handed on · net the same to its last chunk in (encoder + wire) · page last/worst seconds from their page going to their next page on show here (REQ-648) · p2p or ws: how the frames travel (WebRTC, or the server's socket)";
+  "mirror (dev): f frames · hb heartbeats · x frames that did not fit · st stalls · rs resyncs asked · old dropped as older · bad undecodable · held waiting for an earlier frame · cv canvas bitmaps arrived/applied/painted/repainted: painted once drawn on the stage's canvas (REQ-644), repainted after a resize or a style change (REQ-380) · the last frame's age · lag median/worst seconds from the customer's push to the frame handed on · net the same to its last chunk in (encoder + wire) · page last/worst seconds from their page going to their next page on show here (REQ-648) · p2p or ws: how the frames travel (WebRTC, or the server's socket)";
 /** REQ-391 — seconds, one decimal; "–" for nothing measured */
 const secs = (ms: number | null) => ms === null ? "–" : (ms / 1000).toFixed(1);
 function mirrorStatsText(
@@ -281,17 +281,17 @@ function mirrorStatsText(
   own: OwnStats,
   lag: MirrorLag,
   direct: boolean,
-  cv?: { seen: number; cv: number; repaints: number },
+  cv?: { seen: number; cv: number; painted: number; repaints: number },
   page?: PageLag,
 ): string {
   const age = own.lastAt
     ? `${((Date.now() - own.lastAt) / 1000).toFixed(1)}s`
     : "–";
-  const c = cv ?? { seen: 0, cv: 0, repaints: 0 };
+  const c = cv ?? { seen: 0, cv: 0, painted: 0, repaints: 0 };
   // REQ-648 (cycle 5, M3) — a frame's lag starts at its push: the page figure is the time from
   // their page going to their next page on show here (the boot of their next page included)
   const pg = page ?? { last: null, p50: null, max: null };
-  return `mirror f${s.frames} hb${s.beats} x${own.failed} st${s.stalls} rs${own.resyncs} old${s.older} bad${s.undecodable} held${s.held} cv${c.seen}/${c.cv}/${c.repaints} ${age} lag ${
+  return `mirror f${s.frames} hb${s.beats} x${own.failed} st${s.stalls} rs${own.resyncs} old${s.older} bad${s.undecodable} held${s.held} cv${c.seen}/${c.cv}/${c.painted}/${c.repaints} ${age} lag ${
     secs(lag.p50)
   }/${secs(lag.max)}s net ${secs(lag.netP50)}/${secs(lag.netMax)}s page ${
     secs(pg.last)

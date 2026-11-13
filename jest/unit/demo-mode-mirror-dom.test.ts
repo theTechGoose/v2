@@ -949,7 +949,8 @@ describe("REQ-380 (demo-loop cycle 2, M10) — a drawn signature reaches the sta
     ).toBe(true);
     expect(c.painted).toBe(INK2);
     // the dev stats count the bitmaps applied and the repaints
-    expect(rep.stats()).toEqual({ seen: 2, cv: 2, repaints: 4 });
+    // (painted: REQ-644 — this test's painter never draws, so none is counted)
+    expect(rep.stats()).toEqual({ seen: 2, cv: 2, painted: 0, repaints: 4 });
   });
 
   test("the recorder re-sends a canvas's bitmap with any width/height change on it, even when the bitmap reads the same", () => {

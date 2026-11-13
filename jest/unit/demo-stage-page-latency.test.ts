@@ -316,9 +316,17 @@ describe("REQ-648 the departure of a tab's page carries when it said it was goin
         ),
       ).toEqual({ t: "peer", online: false, cid: "t1", why: "navigating" });
     }
+    // REQ-648 AMENDMENT (reconciled on demo-fixes with REQ-640): an arrival's `at` is never the
+    // departure stamp — it is REQ-640's kept claim (the tab's last claim, sent with the roster),
+    // so a customer arrival keeps it; a presenter's arrival (pid) still carries none
     expect(
       parseServerMessage('{"t":"peer","online":true,"cid":"t1","at":12345}'),
-    ).toEqual({ t: "peer", online: true, cid: "t1" });
+    ).toEqual({ t: "peer", online: true, cid: "t1", at: 12345 });
+    expect(
+      parseServerMessage(
+        '{"t":"peer","online":true,"pid":"p1","cid":"t1","at":12345}',
+      ),
+    ).toEqual({ t: "peer", online: true, pid: "p1", cid: "t1" });
   });
 });
 
