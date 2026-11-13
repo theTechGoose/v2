@@ -37,7 +37,12 @@ import {
   revisedNote,
   versionLabel,
 } from "@paperwork/domain/business/doc-render/mod.ts";
-import { websiteLabel } from "#quote-flow/format-helpers.ts";
+import { formatPhoneDisplay, isUsPhone, websiteLabel } from "#quote-flow/format-helpers.ts";
+
+/** REQ-719: a US phone reads "+1 (512) 555-0100" in the email; anything else is shown as stored. */
+function displayPhone(raw: string): string {
+  return isUsPhone(raw) ? formatPhoneDisplay(raw) : raw;
+}
 import {
   isPlaceholderName,
   outboundSenderName,
@@ -556,7 +561,7 @@ function shell(opts: {
     : "";
   const senderPhoneLine = sender?.phoneNumber
     ? `<div style="color:${COLOR_MUTED};font-size:13px;margin-top:2px">${
-      escapeHtml(sender.phoneNumber)
+      escapeHtml(displayPhone(sender.phoneNumber))
     }</div>`
     : "";
   const senderSiteLine = website?.trim()
@@ -1048,7 +1053,7 @@ export function renderQuoteHtml(
       ? `<div style="margin-top:1px;color:${COLOR_INK};font-size:13px"><a href="tel:${
         escapeAttr(sender.phoneNumber)
       }" style="color:${COLOR_INK};text-decoration:none">${
-        escapeHtml(sender.phoneNumber)
+        escapeHtml(displayPhone(sender.phoneNumber))
       }</a></div>`
       : ""
   }
@@ -1488,7 +1493,7 @@ export function renderInvoiceHtml(
       ? `<div style="margin-top:1px;color:${COLOR_INK};font-size:13px"><a href="tel:${
         escapeAttr(sender.phoneNumber)
       }" style="color:${COLOR_INK};text-decoration:none">${
-        escapeHtml(sender.phoneNumber)
+        escapeHtml(displayPhone(sender.phoneNumber))
       }</a></div>`
       : ""
   }
