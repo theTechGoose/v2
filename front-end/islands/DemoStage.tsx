@@ -75,7 +75,7 @@
  * {name}'s app…" — the last only when none of the customer's tabs is left, after a few seconds'
  * grace (a page change in their app is a new socket). The stage follows the tab the customer used
  * last (the link picks it). A newer window of the same staff account takes the demo over: this one
- * says "Open in another window" and offers "Use this window" (a reload takes it back).
+ * says "In another window" (REQ-646) and offers "Use this window" (a reload takes it back).
  * REQ-235 — End asks first (EndDemo); the end goes to /admin saying who ended it ("You ended the
  * demo", "{customer} ended the demo", "{colleague} ended the demo"), where the overlay keeps it.
  *
@@ -1257,6 +1257,8 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
         if (s === "replaced") {
           // REQ-232 — another window of this account has the demo now: nothing moves here
           customerRef.current = null;
+          // REQ-646 (cycle 5, m63) — and nothing of his is pointed from here any more
+          drop();
           peersRef.current.clear();
           placedRef.current.clear();
           glide.hide();
@@ -1630,6 +1632,9 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
     styled,
     loadingNext,
   });
+  // REQ-646 (cycle 5, m63) — no copy of the customer's pill while another window has the demo:
+  // this one no longer hears it, so it would only say a stale "Connecting…"
+  const pillShown = look.elsewhere ? null : pillBox;
   const statusLabel = live.key === "ended"
     ? t("demoMode.ended")
     : live.key === "elsewhere"
@@ -1755,10 +1760,10 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
                 />
               );
             })()}
-            {mirrored && pillBox && pillFace.tucked === true && (() => {
+            {mirrored && pillShown && pillFace.tucked === true && (() => {
               // REQ-545 — the pill tucked to its edge tab on their screen: a tab here too.
               // REQ-637 (demo-loop cycle 5, m5) — the labelled mini-pill: "● Demo" and its ×
-              const ghost = pillGhost(pillBox, fit);
+              const ghost = pillGhost(pillShown, fit);
               if (!ghost) return null;
               const g = ghost.box;
               const r = Math.max(3, g.height / 2);
@@ -1795,13 +1800,13 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
                 </div>
               );
             })()}
-            {mirrored && pillBox && pillFace.tucked !== true && (() => {
+            {mirrored && pillShown && pillFace.tucked !== true && (() => {
               // REQ-372 (cycle 2, m1 + m8) — cut to the frame, and a read-only replica of what
               // the pill says, and a marker when the pill runs off their screen or past the frame.
               // REQ-430 (cycle 3, m4) — its status in the CUSTOMER's words (their pill's label),
               // its line unless compact and closed, then the guide's short name, as on the phone
               // REQ-540 (cycle 4, m9) — the whole pill: its "Demo mode" title and End (a disabled chip)
-              const ghost = pillGhost(pillBox, fit);
+              const ghost = pillGhost(pillShown, fit);
               if (!ghost) return null;
               const g = ghost.box;
               const cut = ghost.clipped || pillFace.clipped === true;
@@ -1934,9 +1939,10 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
             {
               /* REQ-451 (demo M1) — his arrow where their screen has it, while apart from his cursor;
                 REQ-642 (cycle 5, m10) — where their screen REPORTED it, tagged "You", the tag
-                outside his element and off its neighbours */
+                outside his element and off its neighbours; REQ-646 (cycle 5, m63) — none of his
+                pointer while another window has the demo */
             }
-            {mirrored && ghost && (
+            {mirrored && !look.elsewhere && ghost && (
               <PointerGhost
                 at={ghost.at}
                 outside={ghost.outside}
@@ -1951,7 +1957,7 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
               />
             )}
             {/* REQ-642 (setup-14d) — his own pointer, always, where he pointed: his colour, "You" */}
-            {mirrored && (
+            {mirrored && !look.elsewhere && (
               <OwnPointer
                 color={myColor}
                 z={Z + 1}
@@ -1964,7 +1970,7 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
               /* REQ-393 (demo M8) — his mouse is beside the frame: said, on its outline; REQ-642 —
                 in the chrome row above the frame, never over the replica */
             }
-            {mirrored && off && (
+            {mirrored && !look.elsewhere && off && (
               <div
                 data-cy="demo-pointer-off"
                 role="status"
@@ -1982,7 +1988,7 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
               </div>
             )}
             {/* REQ-645 (demo cycle 5 m36) — another of their tabs is shown now: said, until he moves */}
-            {mirrored && tabNote !== null && !off && (
+            {mirrored && !look.elsewhere && tabNote !== null && !off && (
               <div
                 data-cy="demo-tab-switched"
                 role="status"
@@ -2000,7 +2006,7 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
               </div>
             )}
             {/* REQ-538 (demo cycle 4 M1) — his arrow is not on their screen: said, until it is */}
-            {mirrored && absent && !off && tabNote === null && (
+            {mirrored && !look.elsewhere && absent && !off && tabNote === null && (
               <div
                 data-cy="demo-pointer-absent"
                 role="status"
@@ -2060,7 +2066,10 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
           <PresenterChips presenters={demo.presenters} me={demo.pid} t={t} />
           <span
             data-cy="demo-status"
-            style="padding:2px 8px;border-radius:999px;background:rgba(255,255,255,.18);font-size:11.5px;font-weight:700"
+            style={live.key === "elsewhere"
+              // REQ-646 (cycle 5, m63) — a plain note, not a chip that reads like a button
+              ? "opacity:.8;font-size:12px;font-style:italic"
+              : "padding:2px 8px;border-radius:999px;background:rgba(255,255,255,.18);font-size:11.5px;font-weight:700"}
           >
             {statusLabel}
           </span>

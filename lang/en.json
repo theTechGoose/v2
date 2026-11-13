@@ -4179,7 +4179,7 @@
   "settings.reminders.offNote": "Reminders are off — no invoice gets an automatic reminder. You can still send one by hand.",
   "demoMode.waitingFor": "Waiting for {name}'s app…",
   "demoMode.waitingKeep": "Their last screen stays here until their app is back.",
-  "demoMode.elsewhere": "Open in another window",
+  "demoMode.elsewhere": "In another window",
   "demoMode.useHere": "Use this window",
   "demoMode.movedElsewhere": "This demo moved to another window.",
   "demoMode.rejoin": "Back to the demo",

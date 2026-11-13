@@ -131,6 +131,14 @@ Deno.test("REQ-541 (cycle 4, M22): a replaced stage window is greyed under the m
         hasText: /^\s*Live\s*$/,
       }).waitFor({ timeout: 20_000 });
 
+      // REQ-646 (cycle 5, m63) — Hans points at their screen from window 1 before the takeover
+      const box1 = await page.locator("[data-cy='demo-stage-layer']")
+        .boundingBox();
+      if (box1) {
+        await page.mouse.move(box1.x + box1.width / 2, box1.y + 120);
+        await page.mouse.move(box1.x + box1.width / 2 + 40, box1.y + 160);
+      }
+
       // window 2: Hans signs in again elsewhere and takes the demo over
       const again = await verify(http, adminPhone);
       const win2 = await win2Ctx.newPage();
@@ -166,6 +174,30 @@ Deno.test("REQ-541 (cycle 4, M22): a replaced stage window is greyed under the m
         /grayscale/.test(filter),
         `M22: the first window's frame is greyed ("${filter}")`,
       );
+
+      // REQ-646 (cycle 5, m63) — and nothing in window 1 contradicts that banner: plain
+      // "In another window" status, no pointer of his drawn, no "Connecting…" customer pill
+      await until(
+        "window 1's status reads In another window",
+        async () =>
+          /^\s*In another window\s*$/.test(
+            await page.locator("[data-cy='demo-status']").innerText(),
+          ),
+      );
+      for (
+        const cy of [
+          "demo-pointer-ghost",
+          "demo-pointer-off",
+          "demo-pointer-absent",
+          "demo-pill-ghost",
+        ]
+      ) {
+        expect.eq(
+          await page.locator(`[data-cy='${cy}']`).count(),
+          0,
+          `m63: window 1 draws no ${cy} once another window has the demo`,
+        );
+      }
 
       // the demo is ended from window 2
       const navs: string[] = [];
