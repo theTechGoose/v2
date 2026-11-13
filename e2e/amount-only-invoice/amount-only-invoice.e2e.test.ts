@@ -136,6 +136,10 @@ Deno.test("REQ-486 m32: What's it for + $320, no line rows → no 'No line items
     );
 
     await page.locator("[data-cy='new-invoice-submit']").click();
+    // REQ-727 (cycle 5, c4-M16): the send sheet opens on the new invoice —
+    // nothing is sent until its Send.
+    await page.locator("[data-cy='send-dialog']").waitFor({ timeout: 15_000 });
+    await page.locator("[data-cy='send-keep']").click();
     await page.locator("[data-cy='invoice-card-headline']").first().waitFor({
       timeout: 15_000,
     });

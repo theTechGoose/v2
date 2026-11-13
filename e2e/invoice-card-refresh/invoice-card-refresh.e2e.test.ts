@@ -177,6 +177,11 @@ Deno.test("REQ-554 (demo M9 + m52, cycle 4): 'Send now' with the text failing re
     await cta.waitFor({ timeout: 15_000 });
     await markPage(page);
     await cta.click();
+    // REQ-727 (cycle 5, c4-M16): "Send now" opens the send sheet — nothing
+    // goes until its Send. Text + Email, so the 555 text really fails.
+    await page.locator("[data-cy='send-dialog']").waitFor({ timeout: 15_000 });
+    await page.locator("[data-cy='send-option-both']").click();
+    await page.locator("[data-cy='send-keep']").click();
 
     const moved = await card(page, job).locator("[data-cy='invoice-cta-out']")
       .waitFor({ timeout: 15_000 }).then(() => true, () => false);

@@ -158,6 +158,10 @@ Deno.test("REQ-206: the standalone invoice form — customer prefills bill-to, t
       "net 15 sets the due date from the issue date",
     );
     await page.locator("[data-cy='new-invoice-submit']").click();
+    // REQ-727 (cycle 5, c4-M16): the send sheet opens on the new invoice —
+    // nothing is sent until its Send.
+    await page.locator("[data-cy='send-dialog']").waitFor({ timeout: 15_000 });
+    await page.locator("[data-cy='send-keep']").click();
     // the page reloads onto the list
     await page.locator("[data-cy='invoice-card-headline']").first().waitFor({
       timeout: 15_000,

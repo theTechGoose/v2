@@ -1348,9 +1348,12 @@ export function renderInvoiceHtml(
   const heroTitle = titleCaseJobName(heroRaw, lang);
   const description = quote?.descriptionByLang?.[lang] ?? quote?.description;
 
-  const ctaUrl = `${APP_URL}/i/${i.id}`;
+  // REQ-727 (cycle 5, c4-M16): like the quote email (REQ-342) and the
+  // invoice text, the links carry the language the email went out in — the
+  // send sheet's "Sends in" — so the page opens in that language.
+  const ctaUrl = withSendLang(`${APP_URL}/i/${i.id}`, lang);
   const signedUrl = quote && (quote.status === "accepted" || quote.acceptedAt)
-    ? `${APP_URL}/q/${quote.id}`
+    ? withSendLang(`${APP_URL}/q/${quote.id}`, lang)
     : undefined;
   const pdfUrl = `${APP_URL}/api/invoices/${i.id}/pdf`;
 
@@ -1787,7 +1790,7 @@ export function renderInvoiceBasicHtml(
     intro: t(lang, "paperworkEmail.invoice.intro", { business: bizLabel(senderBiz, sender, lang) }),
     body,
     ctaLabel: t(lang, "paperworkEmail.invoice.cta"),
-    ctaUrl: `${APP_URL}/i/${i.id}`,
+    ctaUrl: withSendLang(`${APP_URL}/i/${i.id}`, lang), // REQ-727
     sender,
     lang,
     logo: emailLogo({ appUrl: APP_URL, kind: "invoice", id: i.id, biz: senderBiz }),

@@ -10,6 +10,11 @@
  * as sent: it stays a draft until a channel delivers it (the send endpoints
  * stamp "sent" on delivery).
  *
+ * REQ-727 (demo-loop cycle 5, c4-M16): "Issue invoice" creates the invoice,
+ * then the send sheet opens on it; the story picks Text (the only contact on
+ * file), so the sentence names that one channel: "INV-00N not delivered —
+ * the text failed: <reason>".
+ *
  * Page: /invoices?new=1 (front-end/islands/InvoicesPage.tsx NewInvoiceModal
  * → POST /api/invoices, then POST /api/invoices/:id/{email,text}).
  */
@@ -78,12 +83,16 @@ Deno.test("REQ-480 M18: 'Issue invoice' for a client with no email and a fiction
     );
     await page.locator("[data-cy='new-invoice-amount']").fill("1200");
     await page.locator("[data-cy='new-invoice-submit']").click();
+    // REQ-727: the send sheet — Text, then its Send.
+    await page.locator("[data-cy='send-dialog']").waitFor({ timeout: 20_000 });
+    await page.locator("[data-cy='send-option-sms']").click();
+    await page.locator("[data-cy='send-keep']").click();
 
     const notice = page.locator("[data-cy='invoice-send-failure']");
     await notice.waitFor({ timeout: 20_000 });
     const text = await notice.innerText();
     expect(
-      /INV-\d+ not delivered — no email on file; the text failed: /.test(text),
+      /INV-\d+ not delivered — the text failed: /.test(text),
       `the invoice's own not-delivered sentence (${text})`,
     );
     expect(/555/.test(text), `the text's reason is kept (${text})`);

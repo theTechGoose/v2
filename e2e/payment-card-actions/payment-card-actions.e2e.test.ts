@@ -188,8 +188,15 @@ Deno.test("REQ-555 M24: a /payments card's View receipt, Receipt, Match invoice 
 Deno.test("REQ-555 M24: an /invoices card's front face has its own Open link, and a send failure renders inside the card body (never over the back face)", (t) =>
   story(t, async ({ page, expect, http, baseUrl }) => {
     const { auth } = await signIn(http, page, baseUrl);
-    // no email and no phone: every send fails honestly
-    const inv = await makeInvoice(http, auth, { name: "Tomas Vega" }, "draft");
+    // REQ-727 (cycle 5, c4-M16): the send sheet asks for a missing contact
+    // before it sends — so a fictional 555 phone: the text it sends fails
+    // honestly (it never reaches Twilio).
+    const inv = await makeInvoice(
+      http,
+      auth,
+      { name: "Tomas Vega", phoneNumber: "+15125550147" },
+      "draft",
+    );
 
     await page.goto("/invoices");
     const card = page.locator("article.qcard--inv").filter({
@@ -198,14 +205,25 @@ Deno.test("REQ-555 M24: an /invoices card's front face has its own Open link, an
     await card.waitFor({ timeout: 15_000 });
 
     const open = card.locator("[data-cy='invoice-card-open']");
-    expect.eq(await open.getAttribute("href"), `/i/${inv.id}`, "front Open");
+    // REQ-586 links carry the invoice's language (?lang=en): the page it
+    // opens is what counts (REQ-727: this stale exact match stopped the story
+    // before its send).
+    expect.eq(
+      (await open.getAttribute("href"))?.split("?")[0],
+      `/i/${inv.id}`,
+      "front Open",
+    );
 
     const fail = card.locator("[data-cy='invoice-send-failure']");
+    // REQ-727: "Finish + send" opens the send sheet — Text, then its Send.
     await clickUntil(
       page,
       "[data-cy='invoice-cta-drafting']",
-      async () => (await fail.count()) > 0,
+      () => page.locator("[data-cy='send-dialog']").isVisible(),
     );
+    await page.locator("[data-cy='send-option-sms']").click();
+    await page.locator("[data-cy='send-keep']").click();
+    await fail.waitFor({ timeout: 15_000 });
     expect(
       await fail.evaluate((el) => el.closest(".qcard__body") !== null),
       "the send failure is inside .qcard__body",

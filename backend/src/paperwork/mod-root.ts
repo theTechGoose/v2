@@ -24,6 +24,7 @@ import { SummarizePaperworkViews } from "@paperwork/domain/coordinators/summariz
 import { SendPaperworkEmail } from "@paperwork/domain/coordinators/send-paperwork-email/mod.ts";
 import { SendPaperworkSms } from "@paperwork/domain/coordinators/send-paperwork-sms/mod.ts";
 import { PreviewQuoteSend } from "@paperwork/domain/coordinators/preview-quote-send/mod.ts"; // REQ-461
+import { PreviewInvoiceSend } from "@paperwork/domain/coordinators/preview-invoice-send/mod.ts"; // REQ-727
 import { ComputeInvoiceBalance } from "@paperwork/domain/coordinators/compute-invoice-balance/mod.ts";
 import { MarkInvoicePaid } from "@paperwork/domain/coordinators/mark-invoice-paid/mod.ts";
 import { RenderQuotePdf } from "@paperwork/domain/coordinators/render-quote-pdf/mod.ts";
@@ -79,6 +80,7 @@ import { ReplyToInquiry } from "@paperwork/domain/coordinators/reply-to-inquiry/
     SendPaperworkEmail,
     SendPaperworkSms,
     PreviewQuoteSend, // REQ-461
+    PreviewInvoiceSend, // REQ-727
     MarkInvoicePaid,
     ComputeInvoiceBalance,
     RenderQuotePdf,
