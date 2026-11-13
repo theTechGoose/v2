@@ -63,7 +63,7 @@ const text = (page: StoryTools["page"], sel: string) =>
     sel,
   );
 
-Deno.test("REQ-269: a Spanish staff member's /admin is Spanish end to end; EN flips the body AND the footer; the impersonation bar speaks the app language", (t) =>
+Deno.test("REQ-269/REQ-723: a Spanish staff member's /admin is Spanish end to end; EN flips the body AND the footer; the impersonation bar keeps the staff's language over an English customer", (t) =>
   story(t, async ({ page, expect, http, baseUrl }) => {
     const { auth, phone } = await signIn(http, page, baseUrl);
     await answerQuestions(http, auth, {
@@ -77,7 +77,8 @@ Deno.test("REQ-269: a Spanish staff member's /admin is Spanish end to end; EN fl
       body: JSON.stringify({ phoneNumber: phone, token }),
     });
     expect.eq(boot.status, 200, `bootstrap super admin (${await boot.text()})`);
-    // the account to impersonate: Spanish
+    // REQ-723 (cycle 5, p18-7d) — the account to impersonate is ENGLISH, the staff Spanish: the
+    // page under the bar follows the customer, the bar keeps the staff's own language
     const other = `+1512${digits()}`;
     const o = await http("/api/auth/verify", {
       method: "POST",
@@ -88,7 +89,7 @@ Deno.test("REQ-269: a Spanish staff member's /admin is Spanish end to end; EN fl
     await (await http("/api/me", {
       method: "PUT",
       headers: { ...JSON_HEADERS, cookie: oCookie },
-      body: JSON.stringify({ language: "es", name: "Beto Cliente" }),
+      body: JSON.stringify({ language: "en", name: "Beto Cliente" }),
     })).body?.cancel();
     const otherId =
       ((await (await http(`/api/admin/users?q=${other.slice(2)}`, {
@@ -144,7 +145,8 @@ Deno.test("REQ-269: a Spanish staff member's /admin is Spanish end to end; EN fl
       "Search button in English",
     );
 
-    // back to ES, then impersonate the Spanish account: the bar is Spanish
+    // back to ES (saved on the staff's profile), then impersonate the English account: the bar
+    // stays Spanish (REQ-723 — staff chrome speaks the impersonator's language)
     await page.locator("[data-cy='topbar-lang-es']").click();
     await page.waitForFunction(
       () =>
@@ -164,7 +166,10 @@ Deno.test("REQ-269: a Spanish staff member's /admin is Spanish end to end; EN fl
     const banner = page.locator("[data-cy='imp-banner']");
     await banner.waitFor({ timeout: 15_000 });
     const bar = (await banner.textContent()) ?? "";
-    expect(bar.includes("Suplantando"), `Spanish bar (${bar})`);
+    expect(
+      bar.includes("Suplantando"),
+      `REQ-723: the staff's Spanish bar over an English customer (${bar})`,
+    );
     expect(bar.includes("Beto Cliente"), `names the account (${bar})`);
     expect(bar.includes("Volver a tu cuenta"), `Spanish return (${bar})`);
     expect(!/Impersonating|Return to your account/.test(bar), bar);

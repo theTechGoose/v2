@@ -33,6 +33,8 @@ const COPY = [
   "front-end/islands/AdminPage.tsx",
   "front-end/components/ImpersonationBannerView.tsx",
 ];
+/** REQ-723 — staff chrome that keeps the impersonator's language, never the global t */
+const STAFF_CHROME = ["front-end/components/ImpersonationBannerView.tsx"];
 /** the same word in both languages, on purpose ("Admin" is the role's name in both, REQ-191) */
 const SAME_IN_BOTH = new Set([
   "adminPage.title",
@@ -91,11 +93,22 @@ describe("REQ-269 the staff side follows the app language (demo i18n-formatting-
     },
   );
 
-  it.each(COPY)(
+  it.each(COPY.filter((f) => !STAFF_CHROME.includes(f)))(
     "REQ-269 %s renders its copy with t() from lib/i18n.ts",
     (file) => {
       const src = read(file);
       expect(src).toMatch(/import \{[^}]*\bt\b[^}]*\} from "\.\.\/lib\/i18n\.ts"/);
+      expect(keysUsed(src).length).toBeGreaterThan(0);
+    },
+  );
+
+  it.each(STAFF_CHROME)(
+    "REQ-723 (cycle 5, p18-7d) %s renders its copy with the staff's t (staffBarT), never the global t",
+    (file) => {
+      const src = read(file);
+      expect(src).not.toMatch(/import \{[^}]*\bt\b[^}]*\} from "\.\.\/lib\/i18n\.ts"/);
+      expect(src).toMatch(/import \{ staffBarT \} from "\.\.\/lib\/staff-bar-t\.ts"/);
+      expect(src).toMatch(/const t = staffBarT\(who\)/);
       expect(keysUsed(src).length).toBeGreaterThan(0);
     },
   );

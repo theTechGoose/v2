@@ -68,7 +68,7 @@ const who = {
   // deno-lint-ignore no-explicit-any
 } as any;
 
-Deno.test("REQ-269: the impersonation bar speaks the app language", () => {
+Deno.test("REQ-269 (REQ-723 fallback): with no language on the staff's profile, the impersonation bar speaks the app language", () => {
   const es = withLang(
     "es",
     () =>
@@ -99,6 +99,79 @@ Deno.test("REQ-269: the impersonation bar speaks the app language", () => {
   );
   assert(en.includes("Impersonating"), en);
   assert(en.includes("Return to your account"), en);
+});
+
+/**
+ * REQ-723 (demo-loop cycle 5, issue p18-7d) — the bar is staff chrome: it keeps
+ * the IMPERSONATOR's own language (whoami's `impersonator.language`, REQ-341),
+ * not the impersonated customer's, which is what langSignal holds while acting.
+ */
+Deno.test("REQ-723 (p18-7d): an English staff member impersonating a Spanish customer reads an English bar", () => {
+  const staffEn = {
+    ...who,
+    user: { ...who.user, name: "Priya Nair", language: "es" },
+    impersonator: { id: "a1", name: "Alex", language: "en" },
+  };
+  for (const busy of [false, true]) {
+    const html = withLang(
+      "es",
+      () =>
+        renderToString(
+          <ImpersonationBannerView
+            who={staffEn}
+            busy={busy}
+            onStop={() => {}}
+          />,
+        ),
+    );
+    assert(
+      !/Suplantando|Volver a tu cuenta|Volviendo|\(como /.test(html),
+      html,
+    );
+    assert(html.includes("Impersonating"), html);
+    assert(html.includes("Priya Nair"), html);
+    assert(html.includes("(as Alex)"), html);
+    assert(
+      html.includes(busy ? "Returning…" : "Return to your account"),
+      html,
+    );
+  }
+  // the leave-the-demo question (REQ-232/298) is staff chrome too
+  const ask = withLang(
+    "es",
+    () =>
+      renderToString(
+        <ImpersonationBannerView
+          who={staffEn}
+          busy={false}
+          onStop={() => {}}
+          leaving={{ id: "d1", name: "Priya Nair", presenters: 1 }}
+        />,
+      ),
+  );
+  assert(!/Cancelar|Salir|Suplantando/.test(ask), ask);
+  assert(ask.includes("Cancel"), ask);
+});
+
+Deno.test("REQ-723 (p18-7d): a Spanish staff member impersonating an English customer reads a Spanish bar", () => {
+  const staffEs = {
+    ...who,
+    user: { ...who.user, language: "en" },
+    impersonator: { id: "a1", name: "Rafa", language: "es" },
+  };
+  const html = withLang(
+    "en",
+    () =>
+      renderToString(
+        <ImpersonationBannerView
+          who={staffEs}
+          busy={false}
+          onStop={() => {}}
+        />,
+      ),
+  );
+  assert(!/Impersonating|Return to your account/.test(html), html);
+  assert(html.includes("Suplantando") && html.includes("Volver a tu cuenta"));
 });
 
 Deno.test("REQ-269: the live footer renders the SSR language until hydrated, then follows langSignal", () => {

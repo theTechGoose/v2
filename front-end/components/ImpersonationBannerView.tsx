@@ -1,13 +1,17 @@
 import type { Ref } from "preact";
 import type { WhoAmI } from "../clients/admin.ts";
 import { fmtPhone } from "../lib/format.ts";
-import { t } from "../lib/i18n.ts";
+import { staffBarT } from "../lib/staff-bar-t.ts";
 import { returnAskText } from "../../shared/demo-mode/restart.ts";
 
 /**
  * REQ-269 (demo i18n-formatting-m2) — the bar itself, in the app language: its copy comes
  * from the dictionaries (`impersonation.*`) through t(), so it follows langSignal like the
  * page under it instead of staying English on a Spanish screen.
+ *
+ * REQ-723 (demo-loop cycle 5, p18-7d) — but in the STAFF member's language, not the impersonated
+ * customer's: the bar is staff chrome (like REQ-544's demo pill), so its t is `staffBarT(who)`
+ * (whoami's `impersonator.language`, the live app language only when the staff has none).
  */
 export function ImpersonationBannerView(
   { who, busy, onStop, el, leaving, onLeave, onCancelLeave }: {
@@ -24,6 +28,7 @@ export function ImpersonationBannerView(
 ) {
   const btn =
     "padding:5px 12px;border-radius:8px;border:0;background:#fff;color:#7a2e2e;cursor:pointer;font:inherit;font-weight:700";
+  const t = staffBarT(who);
   const acting = who.user;
   const actingLabel = acting
     ? (acting.name || acting.businessName || fmtPhone(acting.phoneNumber))
