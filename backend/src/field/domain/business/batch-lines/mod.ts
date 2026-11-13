@@ -17,6 +17,8 @@ export interface BatchLine {
   priceCents: number;
   /** REQ-703: a one-off (REQ-164) — no subscription behind it; decides the invoice's title */
   oneOff?: true;
+  /** REQ-788: the visit's overhead — no task behind it */
+  overhead?: true;
 }
 
 export interface CustomerLines {
@@ -33,6 +35,8 @@ export interface LinesInput {
   taskTypes: TaskType[];
   /** the ids of the account's invoices that still exist and are not void */
   liveInvoiceIds: Set<string>;
+  /** REQ-788: the account's overhead cost per visit (Settings) and the line's label in the invoice's language */
+  overhead?: { cents: number; label: string };
 }
 
 /** REQ-785: a job of several days is in a range that reaches any of its days (it bills once: its line stamps it) */
@@ -59,7 +63,27 @@ export function linesFor(input: LinesInput): CustomerLines[] {
     if (!byCustomer.has(t.customerId)) byCustomer.set(t.customerId, []);
     byCustomer.get(t.customerId)!.push(line);
   }
-  const ordered = (lines: BatchLine[]) => lines.sort((a, b) => a.date.localeCompare(b.date) || a.description.localeCompare(b.description) || a.taskId.localeCompare(b.taskId));
+  // REQ-788: one overhead line per visit (subscription × date) whose subscription has the toggle on
+  if (input.overhead && input.overhead.cents > 0) {
+    const seen = new Set<string>();
+    for (const t of eligible) {
+      const s = subs.get(t.subscriptionId);
+      if (!s?.overhead) continue;
+      const key = `${t.subscriptionId}|${t.date}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      byCustomer.get(t.customerId)!.push({
+        taskId: "",
+        date: t.date,
+        description: input.overhead.label,
+        address: t.address ?? s.address,
+        priceCents: input.overhead.cents,
+        overhead: true,
+      });
+    }
+  }
+  const rank = (l: BatchLine) => (l.overhead ? 1 : 0);
+  const ordered = (lines: BatchLine[]) => lines.sort((a, b) => a.date.localeCompare(b.date) || rank(a) - rank(b) || a.description.localeCompare(b.description) || a.taskId.localeCompare(b.taskId));
   return [...byCustomer.entries()].map(([customerId, lines]) => ({ customerId, lines: ordered(lines), amount: total(lines) }));
 }
 

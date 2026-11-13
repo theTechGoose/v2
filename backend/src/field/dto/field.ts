@@ -70,6 +70,8 @@ export interface Subscription {
   /** REQ-699: the signed quote whose recurring payment term made it (QuoteStore), and that quote's number */
   quoteId?: string;
   quoteNumber?: string;
+  /** REQ-788: every visit bills the account's overhead cost (Settings) on top of its services */
+  overhead?: boolean;
   active: boolean;
   /** set by the grouping (REQ-140) — or by the owner's drag */
   regionId?: string;
