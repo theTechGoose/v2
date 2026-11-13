@@ -4186,6 +4186,7 @@
   "demoMode.leave": "Leave the demo",
   "demoMode.opening": "Opening…",
   "demoMode.endAsk": "End for everyone?",
+  "demoMode.endAskViewer": "End the demo with {name}?",
   "demoMode.endYes": "Yes, end it",
   "demoMode.endNo": "Keep going",
   "demoMode.endedBy": "{name} ended the demo",
