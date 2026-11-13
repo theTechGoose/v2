@@ -495,8 +495,15 @@ export function pickChangeOrderTarget(input: {
   if (bound && boundNames(bound, input.customerName)) {
     return { kind: "quote", quoteId: bound.id };
   }
-  const theirs = live.filter((q) => q.customerId && matched.has(q.customerId))
-    .sort(newestFirst);
+  // REQ-753 (demo-loop cycle 5v1, M10): a quote is theirs when it is linked
+  // to the named customer OR names them itself (snapshot, or the card title
+  // "Fence install — Dana Whitfield" of a chat draft before the Who step) —
+  // from John's Q-001 thread, "Change Dana Whitfield's quote: …" got "I
+  // couldn't find a quote for Dana Whitfield" with her Q-002 on file.
+  const theirs = live.filter((q) =>
+    (q.customerId && matched.has(q.customerId)) ||
+    boundNames(q, input.customerName!)
+  ).sort(newestFirst);
   if (theirs.length === 0) {
     // REQ-654: nothing of the named customer's is on file, and the quote on
     // screen belongs to nobody yet — it is the one meant, never "none".
@@ -507,7 +514,17 @@ export function pickChangeOrderTarget(input: {
 
   const open = theirs.filter((q) => (q.status ?? "draft") !== "draft");
   const pool = open.length > 0 ? open : theirs;
-  const owners = new Set(pool.map((q) => q.customerId));
+  // REQ-753: an unlinked quote naming a matched customer is that
+  // customer's — one Dana, linked or not, is one owner
+  const ownerOf = (q: TargetQuote): string => {
+    if (q.customerId) return q.customerId;
+    const who = norm(boundWho(q) ?? "");
+    const rec = input.customers.find((c) =>
+      matched.has(c.id) && norm(c.name) === who
+    );
+    return rec?.id ?? `name:${who}`;
+  };
+  const owners = new Set(pool.map(ownerOf));
   if (owners.size > 1 || open.length > 1) {
     return { kind: "ambiguous", quoteIds: pool.map((q) => q.id) };
   }
