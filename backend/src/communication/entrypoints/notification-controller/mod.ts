@@ -5,7 +5,7 @@ import { localizeNotification, NotifyOnEvent } from "@communication/domain/coord
 import type { Lang } from "@core/i18n/mod.ts";
 import { UserStore } from "@users/domain/data/user-store/mod.ts";
 import { SessionStore } from "@users/domain/data/session-store/mod.ts";
-import { requireUser } from "@users/domain/coordinators/require-user/mod.ts";
+import { requireSession, requireUser, uiLangOf } from "@users/domain/coordinators/require-user/mod.ts";
 
 @Controller("notifications")
 export class NotificationController {
@@ -31,10 +31,11 @@ export class NotificationController {
     @Query("limit") limit?: string,
     @Query("unreadOnly") unreadOnly?: string,
   ) {
-    const user = await requireUser(ctx, this.sessions, this.users);
+    const signedIn = await requireSession(ctx, this.sessions, this.users);
+    const user = signedIn.user;
     const cap = limit ? Math.min(200, Math.max(1, Number(limit) | 0)) : 50;
     const onlyUnread = unreadOnly === "true";
-    const lang = (user.language ?? "en") as Lang;
+    const lang: Lang = uiLangOf(signedIn); // REQ-631: the person reading — an editor reads hers
     // P-59: render each event notification fresh in the VIEWER's language so
     // the feed follows the current user, not the frozen materialization lang.
     const items = await this.store.listByUser(user.id, { limit: cap, unreadOnly: onlyUnread });

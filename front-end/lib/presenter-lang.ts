@@ -10,6 +10,7 @@
 import type { Lang } from "./i18n.ts";
 import { getSessionId } from "./auth.ts";
 import { ssrBackendGetAuthed } from "./backend-fetch.ts";
+import { personLanguage } from "../../shared/person-name/mod.ts"; // REQ-631
 
 export interface PresenterIdentity {
   id?: string;
@@ -34,7 +35,8 @@ export function presenterLang(
   const presenter = who?.impersonating
     ? asLang(who.impersonator?.language)
     : undefined;
-  return presenter ?? asLang(user?.language) ?? "en";
+  // REQ-631: the signed-in person (an editor while acting), not the account
+  return presenter ?? asLang(personLanguage(user)) ?? "en";
 }
 
 /** The request's presenter language: whoami with the request's session, then `presenterLang`. */

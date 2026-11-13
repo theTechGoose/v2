@@ -3,6 +3,7 @@ import { useEffect, useState } from "preact/hooks";
 import { I, ICN } from "../lib/dash-icons.tsx";
 import {
   type CachedDash,
+  clearDashCache,
   readCached,
   refreshDash,
   subscribeDash,
@@ -32,6 +33,7 @@ import {
   type WorkerCountState,
   workerViewLink,
 } from "../lib/worker-view-link.ts";
+import { ActorNamePrompt } from "../components/ActorNamePrompt.tsx"; // REQ-624
 
 // REQ-176 — the tree itself is data in lib/nav-tree.ts; this island renders one level of it.
 
@@ -52,12 +54,15 @@ interface SbState {
   /** Super-admin flag — gates the Admin tab. Server-enforced; this only
    *  controls visibility. */
   superAdmin: boolean;
+  /** REQ-624 — the editor signed in while acting for another's account (null on one's own) */
+  actor: { id: string; needsName: boolean } | null;
 }
 
 const INITIAL_STATE: SbState = {
   counts: {},
   profile: null,
   superAdmin: false,
+  actor: null,
 };
 
 /** Project the shared dash-cache snapshot onto the sidebar's slice. */
@@ -67,7 +72,11 @@ function projectSidebar(snap: CachedDash | null): SbState {
   // REQ-518: actionable counts only — never the customers total
   const counts = stats ? pickSidebarCounts(stats) : {};
   const superAdmin = profile?.user.superAdmin === true;
-  return { counts, profile, superAdmin };
+  // REQ-624: the editor signed in while acting for another's account
+  const actor = profile?.actor
+    ? { id: profile.actor.id, needsName: profile.actor.needsName === true }
+    : null;
+  return { counts, profile, superAdmin, actor };
 }
 
 export default function DashSidebar(
@@ -138,9 +147,7 @@ export default function DashSidebar(
     } catch {
       return;
     }
-    try {
-      globalThis.sessionStorage?.removeItem("pm:dash-cache:v1");
-    } catch { /* private mode */ }
+    clearDashCache();
     globalThis.location.href = "/dashboard";
   }
 
@@ -217,6 +224,7 @@ export default function DashSidebar(
     // P-67: tell polling islands (DashTopbar) to stand down BEFORE the
     // session dies, so no in-flight poll lands mid-transition.
     globalThis.dispatchEvent(new Event("pm:logout"));
+    clearDashCache(); // REQ-624: the next person in this tab never sees this one's name
     try {
       await fetch("/api/auth/logout", {
         method: "POST",
@@ -243,6 +251,20 @@ export default function DashSidebar(
 
   return (
     <>
+      {s.actor && (
+        <ActorNamePrompt
+          actorId={s.actor.id}
+          needsName={s.actor.needsName}
+          lang={lang}
+          onSaved={(name) => {
+            // the topbar's SSR greeting learns it too (DashTopbar listens)
+            globalThis.dispatchEvent(
+              new CustomEvent("pm:person-named", { detail: name }),
+            );
+            refreshDash();
+          }}
+        />
+      )}
       {mobileOpen && (
         <Backdrop
           class="sb-backdrop"
@@ -440,6 +462,7 @@ export default function DashSidebar(
               <a
                 href="/settings"
                 class="sb__footer"
+                data-cy="sb-user"
                 style="display:flex;align-items:center;gap:10px;padding:10px 8px;margin:0 0 6px;border-radius:10px;text-decoration:none;color:inherit;background:rgba(255,255,255,0.04);"
                 title={identity.biz
                   ? `${identity.display} · ${identity.biz}`
@@ -447,6 +470,7 @@ export default function DashSidebar(
               >
                 <span
                   aria-hidden="true"
+                  data-cy="sb-user-initials"
                   style="flex:0 0 auto;width:32px;height:32px;border-radius:50%;background:var(--brand-green,#519843);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:12px;letter-spacing:0.04em"
                 >
                   {identity.initials}
@@ -455,11 +479,17 @@ export default function DashSidebar(
                   class="sb__footer-text"
                   style="min-width:0;flex:1;display:flex;flex-direction:column;line-height:1.2;overflow:hidden"
                 >
-                  <span style="font-size:13px;font-weight:700;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">
+                  <span
+                    data-cy="sb-user-name"
+                    style="font-size:13px;font-weight:700;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis"
+                  >
                     {identity.display}
                   </span>
                   {identity.biz && (
-                    <span style="font-size:11px;color:rgba(255,255,255,0.6);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">
+                    <span
+                      data-cy="sb-user-biz"
+                      style="font-size:11px;color:rgba(255,255,255,0.6);white-space:nowrap;overflow:hidden;text-overflow:ellipsis"
+                    >
                       {identity.biz}
                     </span>
                   )}

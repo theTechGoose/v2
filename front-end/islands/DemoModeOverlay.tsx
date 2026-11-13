@@ -137,6 +137,7 @@ import {
 } from "../../shared/demo-mode/motion.ts";
 import { type ActivePoll, activePoll } from "../lib/demo-mode/active-poll.ts";
 import { handCursor, sessionStore } from "../lib/demo-mode/cursor-handoff.ts";
+import { demoEligible, viewerTab } from "../../shared/demo-mode/tab.ts";
 import {
   connectDemo,
   type ClaimHow,
@@ -406,10 +407,14 @@ export default function DemoModeOverlay(
     endedNotice?: EndedNotice | null;
   } = {},
 ) {
-  /** M5 — in a nested frame (an app page embedded in a page), or on the stage: never part of the demo */
+  /** M5 — in a nested frame (an app page embedded in a page), or on the stage: never part of the demo;
+   *  REQ-217 — the worker portal never takes part */
   const inert = typeof globalThis.location !== "undefined" &&
     (globalThis.top !== globalThis.self ||
-      globalThis.location.pathname === STAGE_PATH);
+      globalThis.location.pathname === STAGE_PATH ||
+      !demoEligible(globalThis.location.pathname));
+  /** REQ-217 — only the tab the customer is looking at asks, joins and reports */
+  const [visible, setVisible] = useState(true);
   const [demo, setDemo] = useState<Demo | null>(null);
   /** REQ-179 — Demo was just clicked on /admin: the pill says Opening… until the server answers */
   const [opening, setOpening] = useState<{ targetName: string } | null>(null);
@@ -863,12 +868,13 @@ export default function DemoModeOverlay(
       rest: ACTIVE_REASK_MS,
       connected: () => peerOnlineRef.current,
       ask: async () => {
-        // signed out, or the backend is away: it throws, nothing to draw, ask again later. A
-        // hidden tab never holds a connection (HTTP/1.1 allows six per host): it asks plainly
-        const wait = document.visibilityState === "visible"
-          ? ACTIVE_WAIT_MS
-          : 0;
-        const a = await demoModeClient.active({ path: here(), wait });
+        // REQ-217 — a hidden tab asks nothing and says nothing; it picks up again when looked at
+        if (!viewerTab(document.visibilityState)) return;
+        // signed out, or the backend is away: it throws, nothing to draw, ask again later
+        const a = await demoModeClient.active({
+          path: here(),
+          wait: ACTIVE_WAIT_MS,
+        });
         if (!alive) return;
         if (a.session && a.role) {
           const found: Demo = { role: a.role, ...a.session };
@@ -886,9 +892,9 @@ export default function DemoModeOverlay(
     pollRef.current = check;
     // REQ-299: shown again — a catch-up, unless the last ask is under 2 s old
     const onVisible = () => {
-      if (document.visibilityState === "visible" && !peerOnlineRef.current) {
-        poller.catchUp();
-      }
+      const now = viewerTab(document.visibilityState);
+      setVisible(now);
+      if (now && !peerOnlineRef.current) poller.catchUp();
     };
     // REQ-179 — Demo clicked here: say so at once and get whoami going; the answer then comes
     // straight in the started event (no second ask) and the presenter is placed from it
@@ -913,6 +919,7 @@ export default function DemoModeOverlay(
       setDemo((cur) => cur?.id === found.id ? cur : found);
       void placePresenter(found);
     };
+    setVisible(viewerTab(document.visibilityState));
     void check();
     document.addEventListener("visibilitychange", onVisible);
     globalThis.addEventListener(DEMO_OPENING_EVENT, onOpening);
@@ -934,9 +941,10 @@ export default function DemoModeOverlay(
     if (!peerOnline) pollerRef.current?.idle();
   }, [peerOnline, demo?.id]);
 
-  // 2. the link — the customer's side (the presenter's lives on the stage)
+  // 2. the link — the customer's side (the presenter's lives on the stage); REQ-217 — only
+  //    while this is the tab the customer is looking at: hidden, it drops the link
   useEffect(() => {
-    if (!demo || demo.role !== "viewer") return;
+    if (!demo || demo.role !== "viewer" || !visible) return; // REQ-217
     /** REQ-180 — the last move clock seen, per presenter */
     const lastT = new Map<string, number>();
     let wasOnline = false;
@@ -1265,7 +1273,7 @@ export default function DemoModeOverlay(
       setPeerOnline(false);
       setStatus("connecting");
     };
-  }, [demo?.id]);
+  }, [demo?.id, visible]);
 
   // 3. this side's pointer, document-wide (REQ-188: as a fraction of this viewport)
   useEffect(() => {

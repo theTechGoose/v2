@@ -20,12 +20,16 @@
  */
 import { AsyncLocalStorage } from "node:async_hooks";
 import { type Lang, langFromCookie, langSignal } from "./lang.ts";
+import { personLanguage } from "../../shared/person-name/mod.ts"; // REQ-631
 
 /** What a request offers to decide its language (a Fresh ctx fits). */
 export interface SsrLangSource {
   url: URL;
   req: Request;
-  state: { lang?: Lang; user?: { language?: string } };
+  state: {
+    lang?: Lang;
+    user?: { language?: string; actor?: { language?: string } | null };
+  };
 }
 
 const asLang = (v: unknown): Lang | null => v === "en" || v === "es" ? v : null;
@@ -40,12 +44,14 @@ const asLang = (v: unknown): Lang | null => v === "en" || v === "es" ? v : null;
  *     moment the dashboard cache loads the profile (lib/dash-cache.ts), and
  *     what must win over a pm_lang cookie another window on this origin left
  *     (the staff's own pages, around a demo's replica frame),
+ *     — REQ-631: while acting, the person signed in (the actor's own
+ *     language), never the account's,
  *  4. the pm_lang cookie — the visitor's persisted choice.
  */
 export function resolveSsrLang(src: SsrLangSource): Lang | null {
   return asLang(src.state?.lang) ??
     asLang(src.url.searchParams.get("lang")) ??
-    asLang(src.state?.user?.language) ??
+    asLang(personLanguage(src.state?.user)) ??
     langFromCookie(src.req.headers.get("cookie"));
 }
 

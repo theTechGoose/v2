@@ -1,4 +1,5 @@
 import { asset, Head } from "fresh/runtime";
+import { greetingFirstName } from "../../../shared/person-name/mod.ts"; // REQ-624
 import { define } from "../../utils.ts";
 import DocTitle from "../../components/DocTitle.tsx";
 import { type Lang, tFor } from "../../lib/i18n.ts";
@@ -8,10 +9,7 @@ import DashTopbar from "../../islands/DashTopbar.tsx";
 import AdminPage from "../../islands/AdminPage.tsx";
 import SiteFooter from "../../components/SiteFooter.tsx";
 import StaffNamePrompt from "../../islands/StaffNamePrompt.tsx";
-import {
-  greetingFirstName,
-  isPlaceholderName,
-} from "../../../shared/quote-flow/outbound-identity.ts";
+import { isPlaceholderName } from "../../../shared/quote-flow/outbound-identity.ts";
 
 const WEEKDAY_KEYS = [
   "date.weekday.sunday",
@@ -43,7 +41,7 @@ export default define.page(function AdminRoute(ctx) {
   // (?lang= > the account's language > pm_lang), not user.language alone — an
   // es staff account on /admin?lang=en got a Spanish footer under English.
   const lang: Lang = resolveSsrLang(ctx) ?? "es";
-  const greetingName = greetingFirstName(user?.name);
+  const greetingName = greetingFirstName(user);
   // REQ-355 — staff never meet the customer wizard's name question (REQ-227): ask here
   const askName = user?.superAdmin === true && isPlaceholderName(user?.name);
   const now = new Date();

@@ -1,4 +1,5 @@
 import { asset, Head } from "fresh/runtime";
+import { greetingFirstName } from "../../../shared/person-name/mod.ts"; // REQ-624
 import { define } from "../../utils.ts";
 import { resolveSsrLang } from "../../lib/ssr-lang.ts";
 import DocTitle from "../../components/DocTitle.tsx";
@@ -9,7 +10,6 @@ import DashTopbar from "../../islands/DashTopbar.tsx";
 import SettingsPage from "../../islands/SettingsPage.tsx";
 import { MetaPixelEvent } from "../../components/MetaPixel.tsx";
 import { subscribeEventFrom } from "../../../shared/meta-pixel/pixel.ts";
-import { greetingFirstName } from "../../../shared/quote-flow/outbound-identity.ts";
 
 const WEEKDAY_KEYS = [
   "date.weekday.sunday",
@@ -40,7 +40,7 @@ export default define.page(function SettingsRoute(ctx) {
   // REQ-709 (demo-loop c5, m4): the islands' language (?lang= > account >
   // pm_lang), so the tab title and footer match the page they sit on.
   const lang: Lang = resolveSsrLang(ctx) ?? "es";
-  const greetingName = greetingFirstName(user?.name);
+  const greetingName = greetingFirstName(user);
   const now = new Date();
   const greetingDate = `${tFor(lang, WEEKDAY_KEYS[now.getDay()])} · ${
     tFor(lang, MONTH_KEYS[now.getMonth()])

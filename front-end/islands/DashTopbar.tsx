@@ -102,8 +102,17 @@ export default function DashTopbar(
       const name = (e as CustomEvent<ProfileUpdatedDetail>).detail?.name;
       if (name !== undefined) setSavedName(name);
     };
+    // REQ-624: an editor who just named herself (ActorNamePrompt) is greeted by it without a reload
+    const onNamed = (e: Event) => {
+      const n = String((e as CustomEvent).detail ?? "").trim();
+      if (n) setSavedName(n);
+    };
     globalThis.addEventListener(PROFILE_UPDATED, onProfile);
-    return () => globalThis.removeEventListener(PROFILE_UPDATED, onProfile);
+    globalThis.addEventListener("pm:person-named", onNamed);
+    return () => {
+      globalThis.removeEventListener(PROFILE_UPDATED, onProfile);
+      globalThis.removeEventListener("pm:person-named", onNamed);
+    };
   }, []);
 
   useEffect(() => {
@@ -205,7 +214,7 @@ export default function DashTopbar(
       </button>
       <div class="topbar__greet">
         <div class="topbar__greet-line">{greetingDate}</div>
-        <div class="topbar__greet-name">
+        <div class="topbar__greet-name" data-cy="topbar-greeting">
           {
             // REQ-355 — a saved name re-greets; REQ-423 — no name (or the
             // placeholder) greets namelessly in the LIVE language

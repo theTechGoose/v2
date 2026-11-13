@@ -388,6 +388,12 @@ export const assistantClient = {
           businessName?: string;
           /** REQ-331: "create anyway" past the already-exists hint. */
           allowDuplicate?: boolean;
+          /** REQ-625: the shared customer form's address parts + notes */
+          street?: string;
+          city?: string;
+          state?: string;
+          zip?: string;
+          notes?: string;
         };
       };
       followUpValues?: Record<string, string | number>;

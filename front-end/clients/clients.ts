@@ -8,6 +8,7 @@
  */
 import { api, type ApiOptions } from "../lib/api.ts";
 import type { BalanceSubParts } from "../../shared/quote-flow/balance-sub.ts";
+import type { CustomerPayload } from "../../shared/customer-form/mod.ts";
 
 export type ClientStatus =
   | "active"
@@ -66,6 +67,11 @@ export interface CustomerCard {
   email?: string;
   phoneNumber?: string;
   address?: string;
+  /** REQ-625: the address in parts; `address` is composed from them */
+  street?: string;
+  city?: string;
+  state?: string;
+  zip?: string;
   notes?: string;
   businessName?: string;
   /** REQ-715 (demo-loop cycle 5, m31): the language the customer reads —
@@ -161,24 +167,16 @@ export const clientsClient = {
       ...opts,
       query: { limit },
     }),
-  /** One customer of the signed-in account (GET /customers/:id). */
+  /** REQ-626 — one customer (the client sheet opens by id, any page) */
   get: (id: string, opts: ApiOptions = {}) =>
-    api.get<
-      Pick<CustomerCard, "id" | "name" | "email" | "phoneNumber" | "address">
-    >(`/customers/${id}`, opts),
+    api.get<CustomerCard>(`/customers/${encodeURIComponent(id)}`, opts),
+  /** REQ-625 — PUT /customers/:id (the edit form sends every field) */
   update: (id: string, patch: Record<string, unknown>, opts: ApiOptions = {}) =>
-    api.put<CustomerCard>(`/customers/${id}`, patch, opts),
+    api.put<CustomerCard>(`/customers/${encodeURIComponent(id)}`, patch, opts),
+  /** REQ-625 — the full customer form; REQ-283 the one-off task form's typed
+   *  address; REQ-715 the customer's language (left out when not set) */
   create: (
-    patch: {
-      name: string;
-      phoneNumber?: string;
-      email?: string;
-      businessName?: string;
-      /** REQ-283 — the one-off task form's typed address */
-      address?: string;
-      /** REQ-715 — the customer's language; left out when not set */
-      language?: "en" | "es";
-    },
+    patch: CustomerPayload & { address?: string; language?: "en" | "es" },
     opts: ApiOptions = {},
   ) => api.post<CustomerCard>("/customers", patch, opts),
 };

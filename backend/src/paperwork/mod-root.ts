@@ -30,11 +30,14 @@ import { MarkInvoicePaid } from "@paperwork/domain/coordinators/mark-invoice-pai
 import { RenderQuotePdf } from "@paperwork/domain/coordinators/render-quote-pdf/mod.ts";
 import { RenderReceiptPdf } from "@paperwork/domain/coordinators/render-receipt-pdf/mod.ts";
 import { RenderInvoicePdf } from "@paperwork/domain/coordinators/render-invoice-pdf/mod.ts";
+import { RenderInvoicePrintPdf } from "@paperwork/domain/coordinators/render-invoice-print-pdf/mod.ts"; // REQ-629
+import { LoadBusinessLogo } from "@paperwork/domain/coordinators/load-business-logo/mod.ts";
 import { SendSignedConfirmation } from "@paperwork/domain/coordinators/send-signed-confirmation/mod.ts";
 import { SendAcceptedAlert } from "@paperwork/domain/coordinators/send-accepted-alert/mod.ts";
 import { SendInquiryAlert } from "@paperwork/domain/coordinators/send-inquiry-alert/mod.ts";
 import { SendChangeOrderAlert } from "@paperwork/domain/coordinators/send-change-order-alert/mod.ts";
 import { ConfirmPayment } from "@paperwork/domain/coordinators/confirm-payment/mod.ts";
+import { RecordCardPayment } from "@paperwork/domain/coordinators/record-card-payment/mod.ts"; // REQ-213
 import { SendPaymentReminder } from "@paperwork/domain/coordinators/send-payment-reminder/mod.ts";
 import { ScheduleInvoiceNudges } from "@paperwork/domain/coordinators/schedule-invoice-nudges/mod.ts";
 import { ComputeInvoiceForecast } from "@paperwork/domain/coordinators/compute-invoice-forecast/mod.ts";
@@ -87,11 +90,14 @@ import { QuoteAllowance } from "@paperwork/domain/coordinators/quote-allowance/m
     RenderQuotePdf,
     RenderReceiptPdf,
     RenderInvoicePdf,
+    LoadBusinessLogo, // REQ-628
+    RenderInvoicePrintPdf, // REQ-629
     SendSignedConfirmation,
     SendAcceptedAlert,
     SendInquiryAlert,
     SendChangeOrderAlert,
     ConfirmPayment,
+    RecordCardPayment, // REQ-213
     SendPaymentReminder,
     ScheduleInvoiceNudges,
     ComputeInvoiceForecast,

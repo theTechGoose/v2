@@ -69,6 +69,12 @@ export interface WizardAnswerInput {
       /** REQ-331 (demo m44): the contractor saw "<name> already exists" and
        *  chose "create anyway" — skip the same-owner dedupe. */
       allowDuplicate?: boolean;
+      /** REQ-625: the shared customer form's address parts + notes */
+      street?: string;
+      city?: string;
+      state?: string;
+      zip?: string;
+      notes?: string;
     };
   };
 }
@@ -713,6 +719,14 @@ export class HandleWizardAnswer {
         ...(input.serviceAddress?.trim()
           ? { address: input.serviceAddress.trim() }
           : {}),
+        // REQ-625: the full customer form — address parts (the store
+        // composes `address`) and notes; non-strings are ignored.
+        ...Object.fromEntries(
+          (["street", "city", "state", "zip", "notes"] as const)
+            .map((k) => [k, create?.[k]])
+            .filter(([, v]) => typeof v === "string" && v.trim())
+            .map(([k, v]) => [k, (v as string).trim()]),
+        ),
       });
       return {
         customerId: created.id,

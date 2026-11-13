@@ -90,6 +90,12 @@ export class WizardAnswerDto {
       businessName?: string;
       /** REQ-331: skip the same-owner dedupe ("create anyway"). */
       allowDuplicate?: boolean;
+      /** REQ-625: address parts + notes from the shared customer form */
+      street?: string;
+      city?: string;
+      state?: string;
+      zip?: string;
+      notes?: string;
     };
   };
 }

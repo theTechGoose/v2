@@ -65,6 +65,8 @@ export const NAV: NavNode<IconName>[] = [
     icon: "cog",
     items: [
       WORKERS,
+      // REQ-192 — the timeclock: the week's hours, punch fixes
+      { id: "timesheet", icon: "clock", href: "/field/timesheet" },
       // REQ-146: the numbers the owner lets into the account
       { id: "admins", icon: "shield", href: "/admins" },
     ],

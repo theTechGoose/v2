@@ -12,7 +12,8 @@ export type CardStage =
   | "out"
   | "claimed"
   | "drafting"
-  | "paid";
+  | "paid"
+  | "void"; // REQ-627: a voided invoice stays listed, as Cancelled
 
 const SHORT_MONTH = [
   "Jan",

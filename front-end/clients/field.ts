@@ -378,13 +378,16 @@ export const workerClient = {
   login: (phoneNumber: string, pin: string) =>
     api.post<WorkerMe>("/field/worker/login", { phoneNumber, pin }),
   logout: () => api.post<{ ok: true }>("/field/worker/logout", {}),
-  me: () => api.get<WorkerMe | null>("/field/worker/me"),
+  me: (opts: ApiOptions = {}) =>
+    api.get<WorkerMe | null>("/field/worker/me", opts),
   /** `all` — a foreman asking for every crew (theirs first) */
-  tasks: (date?: string, all = false) =>
+  tasks: (date?: string, all = false, opts: ApiOptions = {}) =>
     api.get<WorkerTaskView[]>("/field/worker/tasks", {
+      ...opts,
       query: { date, all: all ? "1" : undefined },
     }),
-  taskTypes: () => api.get<TaskType[]>("/field/worker/task-types"),
+  taskTypes: (opts: ApiOptions = {}) =>
+    api.get<TaskType[]>("/field/worker/task-types", opts),
   addService: (
     subscriptionId: string,
     b: { taskTypeId?: string; taskTypeName?: string; date?: string },

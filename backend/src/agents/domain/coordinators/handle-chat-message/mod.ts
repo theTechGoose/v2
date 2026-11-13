@@ -243,6 +243,7 @@ import {
   mentionsSameAddress,
   sameAddressFor,
 } from "#quote-flow/self-correction.ts";
+import { hasAnyPayWay } from "#payments/pay-links.ts";
 
 /** Confirmation phrases that mean "lock the active draft quote." When the
  *  user types one of these AND the conversation already carries a draft
@@ -383,6 +384,9 @@ export interface HandleChatInput {
    *  drafting, saving). The result is the same whole turn either way; without
    *  it the model is never asked to stream. */
   onEvent?: (event: ChatTurnEvent) => void;
+  /** REQ-631 — the signed-in person's UI language (an editor's own while acting); the server-authored
+   *  replies follow it. Absent → the account's user.language, as before. */
+  uiLang?: "en" | "es";
 }
 
 export interface HandleChatResult {
@@ -1391,7 +1395,7 @@ export class HandleChatMessage {
     // REQ-392: a step turn is mid-flow — never answered with a profile ask.
     if (inputIsText && !step) {
       const me = await this.users.get(input.userId).catch(() => null);
-      const lang = me?.language === "es" ? "es" : "en";
+      const lang = input.uiLang ?? (me?.language === "es" ? "es" : "en"); // REQ-631
       const ident = await this.identity.get(input.userId).catch(() => null);
       const addr = await this.addresses.get(input.userId).catch(() => null);
       const needsName = !me?.name || me.name.trim().length === 0;
@@ -1400,10 +1404,7 @@ export class HandleChatMessage {
       const needsState = !addr?.state || addr.state.trim().length === 0;
       const needsAddress = !addr?.postal || addr.postal.trim().length === 0;
       const needsEmail = !me?.email || me.email.trim().length === 0;
-      const acceptedAny = Object.values(ident?.acceptedPaymentMethods ?? {})
-        .some(
-          (m) => m && (m as { enabled?: boolean }).enabled === true,
-        );
+      const acceptedAny = hasAnyPayWay(ident?.acceptedPaymentMethods); // REQ-630 AMENDMENT
       const needsPayout = !acceptedAny;
       // Pick the assistant's next ask once name/biz/state/address are
       // done. Email + payment are the two nice-to-haves that come last;
@@ -1829,6 +1830,8 @@ export class HandleChatMessage {
       (typeof input.content === "string"
         ? messageLang(input.content)
         : undefined) ??
+        // REQ-631: else the signed-in person's own language (an editor's while acting)
+        input.uiLang ??
         (contractor?.language === "es" ? "es" : "en");
 
     // ---- REQ-392 (demo-loop cycle 2, M7): typed on Pick a price / Job

@@ -20,7 +20,7 @@ export class AdminsController {
     return await this.admins.list(user);
   }
 
-  /** `{ phoneNumber, name? }` → 201 the record + `texted` (REQ-523: whether the invite text went out) */
+  /** `{ phoneNumber, name }` → 201 the record + `texted` (REQ-523: whether the invite text went out). REQ-632: the name is required — missing, blank or the sign-up placeholder is 400 `name_required` */
   @Post()
   async invite(@Context() ctx: ExecutionContext, @Body() body: unknown) {
     const owner = await requireOwner(ctx, this.sessions, this.users);

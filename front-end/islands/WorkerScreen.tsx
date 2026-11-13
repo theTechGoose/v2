@@ -24,6 +24,7 @@ import { I, ICN } from "../lib/dash-icons.tsx";
 import {
   fmtDay,
   rememberWorkerLangPick,
+  shiftIso,
   todayIso,
   WORKER_OFFICE_FALLBACK,
   workerDayHref,
@@ -39,20 +40,21 @@ import {
   WORKER_REFRESH_MS,
 } from "../lib/worker-refresh.ts";
 import { type Lang, langSignal, setLang, t } from "../lib/i18n.ts";
+import WorkerClock from "../components/timeclock/WorkerClock.tsx";
 
 const CELL_KEY = "pm:worker-cell";
 const REFRESH_MS = WORKER_REFRESH_MS;
 
 const css = `
-  /* the worker's phone screen — one column, big tap targets, nothing else */
+  /* REQ-196 — the worker's phone screen: one column, the day in one glance, big tap targets */
   body { display: block; }
-  .wrap { max-width: 520px; margin: 0 auto; padding: 18px 16px 90px; min-height: 100dvh; display: flex; flex-direction: column; gap: 14px; }
+  .wrap { max-width: 520px; margin: 0 auto; padding: 14px 16px 90px; min-height: 100dvh; display: flex; flex-direction: column; gap: 14px; }
   .top { display: flex; align-items: center; gap: 10px; }
   .top .brand { display: flex; align-items: center; gap: 8px; font-family: var(--font-heading); font-weight: 800; color: var(--brand-teal); flex: 1; }
   .top img { width: 34px; height: 34px; border-radius: 10px; }
-  .greet { font-family: var(--font-heading); font-weight: 800; font-size: 26px; color: var(--brand-teal); line-height: 1.1; }
+  .greet { font-family: var(--font-heading); font-weight: 800; font-size: 24px; color: var(--brand-teal); line-height: 1.1; }
   .greet small { display: block; font-family: var(--font-body); font-weight: 500; font-size: 14px; color: var(--fg-muted); margin-top: 4px; }
-  .login { background: #fff; border: 1px solid var(--border); border-radius: var(--radius-xl); padding: 22px; display: flex; flex-direction: column; gap: 14px; margin-top: 30px; }
+  .login { background: #fff; border: 1px solid var(--border); border-radius: var(--radius-xl); padding: 22px; display: flex; flex-direction: column; gap: 14px; margin-top: 30px; box-shadow: 0 12px 32px -20px rgba(26,83,92,.35); }
   .login input, .login select { font-size: 18px; padding: 14px; }
   /* REQ-602 (M35): an owner on the sign-in card is told whose screen it is */
   .owner-note { background: var(--mint-100); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; font-size: 15px; color: var(--fg); margin-top: 18px; }
@@ -63,8 +65,6 @@ const css = `
   .pinwrap .eye { position: absolute; right: 4px; top: 50%; transform: translateY(-50%); width: 44px; height: 44px; border: 0; background: transparent; color: var(--fg-muted); border-radius: 10px; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; }
   .pinwrap .eye[aria-pressed="true"] { color: var(--brand-teal); }
   .pinwrap .eye:focus-visible { outline: 2px solid var(--brand-green); outline-offset: 1px; }
-  .progress { height: 8px; background: var(--mint-300); border-radius: 999px; overflow: hidden; }
-  .progress i { display: block; height: 100%; background: var(--brand-green); transition: width .3s; }
   .lang { margin-left: auto; display: flex; gap: 2px; background: var(--mint-100); border: 1px solid var(--border); border-radius: 999px; padding: 3px; }
   .lang button { border: 0; background: transparent; font-weight: 800; font-size: 13px; color: var(--fg-muted); padding: 10px 14px; border-radius: 999px; min-height: 44px; cursor: pointer; }
   .lang button.on { background: #fff; color: var(--brand-teal); box-shadow: 0 1px 3px rgba(20,72,82,.12); }
@@ -81,25 +81,75 @@ const css = `
     .top .brand { flex: 1 0 auto; }
     .top__actions { flex-basis: 100%; justify-content: flex-end; }
   }
+
+  /* the two tabs: a thumb slides under the chosen one */
+  .tabs { position: relative; display: flex; gap: 4px; background: var(--mint-200); border: 1px solid var(--border); border-radius: 14px; padding: 4px; }
+  .tabs__thumb { position: absolute; top: 4px; bottom: 4px; left: 4px; width: calc(50% - 6px); background: #fff; border-radius: 11px; box-shadow: 0 1px 3px rgba(20,72,82,.14); transition: transform var(--pm-dur-base) var(--pm-ease-emph); }
+  .tabs[data-tab="clock"] .tabs__thumb { transform: translateX(calc(100% + 4px)); }
+  .tabs button { position: relative; z-index: 1; flex: 1; border: 0; background: transparent; font: inherit; font-weight: 800; font-size: 15px; color: var(--fg-muted); padding: 10px 12px; min-height: 46px; border-radius: 11px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 8px; }
+  .tabs button.on { color: var(--brand-teal); }
+  .tabs__n { font-size: 12px; background: var(--mint-200); color: var(--brand-teal); border-radius: 999px; padding: 1px 8px; transition: background-color var(--pm-dur-base); }
+  .tabs button.on .tabs__n { background: var(--green-100); }
+  .tabs__dot { width: 9px; height: 9px; border-radius: 50%; background: #c9ccc4; transition: background-color var(--pm-dur-base), box-shadow var(--pm-dur-base); }
+  .tabs__dot--in { background: var(--brand-green); box-shadow: 0 0 0 3px var(--green-100); animation: pulse 2s var(--pm-ease-out) infinite; }
+  @keyframes pulse { 0%, 100% { box-shadow: 0 0 0 3px var(--green-100); } 50% { box-shadow: 0 0 0 6px rgba(81,152,67,.18); } }
+  .pane-tasks { display: flex; flex-direction: column; gap: 14px; }
+  .pane-tasks[hidden] { display: none; }
+
+  /* the three days, a thumb under the viewed one */
+  .days { position: relative; display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; }
+  .days__thumb { position: absolute; top: 0; bottom: 0; left: 0; width: calc((100% - 12px) / 3); border-radius: 12px; background: var(--brand-teal); transition: transform var(--pm-dur-base) var(--pm-ease-emph), opacity var(--pm-dur-fast); }
+  .days[data-sel="prev"] .days__thumb { transform: translateX(0); }
+  .days[data-sel="today"] .days__thumb { transform: translateX(calc(100% + 6px)); }
+  .days[data-sel="next"] .days__thumb { transform: translateX(calc(200% + 12px)); }
+  .days[data-sel=""] .days__thumb { opacity: 0; }
+  .days button { position: relative; z-index: 1; border: 1px solid var(--border); background: #fff; border-radius: 12px; padding: 8px 4px; min-height: 54px; font: inherit; color: var(--fg-muted); cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 2px; }
+  .days button b { font-size: 14px; font-weight: 800; color: var(--fg); transition: color var(--pm-dur-base); }
+  .days button small { font-size: 11px; transition: color var(--pm-dur-base); }
+  .days button.on { border-color: transparent; background: transparent; }
+  .days button.on b, .days button.on small { color: #fff; }
+  .day { font-size: 13px; color: var(--fg-muted); display: flex; gap: 10px; align-items: center; }
+  .day a { color: var(--brand-teal); font-weight: 700; }
+
+  /* the day in one glance: a ring and a sentence */
+  .summary { display: flex; align-items: center; gap: 14px; background: #fff; border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 12px 14px; }
+  .ring { position: relative; width: 58px; height: 58px; flex: none; display: grid; place-items: center; }
+  .ring svg { position: absolute; inset: 0; width: 100%; height: 100%; transform: rotate(-90deg); }
+  .ring circle { fill: none; stroke-width: 3.4; }
+  .ring__track { stroke: var(--mint-300); }
+  .ring__bar { stroke: var(--brand-green); stroke-linecap: round; stroke-dasharray: var(--p, 0) 100; transition: stroke-dasharray var(--pm-dur-slow) var(--pm-ease-emph); }
+  .ring b { font-family: var(--font-heading); font-size: 13px; font-weight: 800; color: var(--brand-teal); }
+  .summary--done .ring__bar { stroke: var(--brand-green); }
+  .summary--done { background: var(--green-50); border-color: var(--green-100); }
+  .summary__text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+  .summary__text b { font-family: var(--font-heading); font-size: 16px; font-weight: 800; color: var(--brand-teal); }
+  .summary__text small { font-size: 13px; color: var(--fg-muted); }
+
   /* one card per visit, its services as check-offs, Note + Services on each */
+  .tasks { display: flex; flex-direction: column; gap: 12px; }
   .crew { font-family: var(--font-heading); font-weight: 800; font-size: 15px; color: var(--brand-teal); display: flex; align-items: center; gap: 8px; margin-top: 6px; }
   .crew .count { font-size: 12px; background: var(--mint-100); border-radius: 999px; padding: 2px 8px; color: var(--fg-muted); font-weight: 700; }
-  .visit { background: #fff; border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; }
-  .visit--done { background: var(--green-50); border-color: var(--green-100); }
+  .visit { background: #fff; border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; box-shadow: 0 8px 24px -18px rgba(26,83,92,.35); transition: background-color var(--pm-dur-slow) var(--pm-ease-out), border-color var(--pm-dur-slow) var(--pm-ease-out), box-shadow var(--pm-dur-slow) var(--pm-ease-out); }
+  .visit--done { background: var(--green-50); border-color: var(--green-100); box-shadow: none; }
+  .visit__head { display: flex; align-items: flex-start; gap: 10px; }
+  .visit__head > div { flex: 1; min-width: 0; }
   .visit__client { font-family: var(--font-heading); font-weight: 800; font-size: 17px; color: var(--brand-teal); }
+  .visit__state { flex: none; font-size: 11px; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; border-radius: 999px; padding: 4px 9px; background: var(--mint-200); color: var(--brand-teal); transition: background-color var(--pm-dur-base), color var(--pm-dur-base); }
+  .visit--done .visit__state { background: var(--brand-green); color: #fff; }
   .svc { display: flex; align-items: center; gap: 12px; padding: 4px 0; }
-  .svc__check { width: 46px; height: 46px; border-radius: 12px; border: 2px solid var(--green-200); background: #fff; display: grid; place-items: center; color: var(--brand-green); cursor: pointer; font-size: 0; flex: none; }
-  .svc__check svg { opacity: .18; }
+  .svc__check { width: 46px; height: 46px; border-radius: 12px; border: 2px solid var(--green-200); background: #fff; display: grid; place-items: center; color: var(--brand-green); cursor: pointer; font-size: 0; flex: none; transition: background-color var(--pm-dur-base) var(--pm-ease-out), border-color var(--pm-dur-base) var(--pm-ease-out), transform var(--pm-dur-fast) var(--pm-ease-out); }
+  .svc__check svg { opacity: .18; transition: opacity var(--pm-dur-base); }
   .svc--done .svc__check { background: var(--brand-green); color: #fff; border-color: var(--brand-green); }
-  .svc--done .svc__check svg { opacity: 1; }
+  .svc--done .svc__check svg { opacity: 1; animation: pop var(--pm-dur-slow) var(--ease-bounce) both; }
+  @keyframes pop { 0% { transform: scale(.4); } 60% { transform: scale(1.18); } 100% { transform: scale(1); } }
   .svc__check[disabled] { opacity: .5; cursor: default; }
   .svc--locked .svc__check { border-style: dashed; cursor: default; }
-  .svc__name { font-weight: 700; font-size: 15px; color: var(--brand-teal); flex: 1; overflow-wrap: anywhere; }
+  .svc__name { font-weight: 700; font-size: 15px; color: var(--brand-teal); flex: 1; overflow-wrap: anywhere; transition: color var(--pm-dur-base); }
   .svc--done .svc__name { color: var(--fg-muted); }
   .svc__extra { font-size: 11px; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; color: var(--brand-teal); background: var(--mint-100); border-radius: 999px; padding: 2px 7px; }
   .svc__lock { font-size: 11px; color: var(--fg-muted); }
   .visit__btns { display: flex; gap: 8px; }
-  .visit__btns button { flex: 1; padding: 10px; border: 1px solid var(--border); border-radius: 10px; background: #fff; font: inherit; font-weight: 700; color: var(--brand-teal); display: flex; align-items: center; justify-content: center; gap: 6px; min-height: 44px; cursor: pointer; }
+  .visit__btns button { flex: 1; padding: 8px 4px; border: 1px solid var(--border); border-radius: 10px; background: #fff; font: inherit; font-size: 12px; font-weight: 700; color: var(--brand-teal); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; min-height: 54px; cursor: pointer; white-space: nowrap; }
   .visit__btns button.on { background: var(--mint-100); border-color: var(--brand-teal); }
   .visit__note-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--brand-teal); flex: none; }
   .note { display: flex; gap: 6px; align-items: flex-start; }
@@ -114,10 +164,16 @@ const css = `
   .add { display: flex; gap: 6px; margin-top: 4px; }
   .add select { flex: 1; padding: 10px; border: 1px solid var(--border); border-radius: 9px; font: inherit; font-size: 15px; background: #fff; min-width: 0; }
   .saved { color: var(--green-700); font-size: 13px; }
-  .toast { position: fixed; left: 50%; bottom: 84px; transform: translateX(-50%); background: #c0392b; color: #fff; padding: 12px 18px; border-radius: 12px; font-weight: 700; font-size: 14px; box-shadow: 0 10px 24px -8px rgba(0,0,0,.4); z-index: 100; max-width: 90vw; }
-  .toast--ok { background: var(--brand-green); }
-  .day { font-size: 13px; color: var(--fg-muted); display: flex; gap: 10px; align-items: center; }
-  .day a { color: var(--brand-teal); font-weight: 700; }
+
+  /* nothing on this day */
+  .empty { background: #fff; border: 1px dashed var(--border-strong); border-radius: var(--radius-lg); padding: 28px 18px; display: flex; flex-direction: column; align-items: center; gap: 8px; text-align: center; color: var(--fg-muted); }
+  .empty svg { color: var(--green-300); }
+  .empty p { margin: 0; font-weight: 600; }
+
+  .wrap > .toast { position: fixed; left: 50%; bottom: 84px; transform: translateX(-50%); background: #c0392b; color: #fff; padding: 12px 18px; border-radius: 12px; font-weight: 700; font-size: 14px; box-shadow: 0 10px 24px -8px rgba(0,0,0,.4); z-index: 100; max-width: 90vw; animation: toast-in var(--pm-dur-slow) var(--pm-ease-ios) both; }
+  .wrap > .toast--ok { background: var(--brand-green); }
+  @keyframes toast-in { from { opacity: 0; transform: translate(-50%, 14px); } }
+  /* REQ-528 (demo m51) — the viewed day written out, a native picker over it for any day */
   .day .pick { position: relative; cursor: pointer; }
   .day .pick b { color: var(--fg); text-decoration: underline dotted; }
   .day .pick input { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; border: 0; padding: 0; }
@@ -147,7 +203,16 @@ function visitsOf(rows: WorkerTaskView[]): Visit[] {
     }
     v.services.push(x);
   }
-  return [...m.values()];
+  // REQ-196 — a stable order: the server lists tasks in storage order, which moved a card the
+  // moment one of its services was checked; here visits still in progress come first, A→Z, and
+  // finished visits sink to the bottom in the same order
+  const finished = (v: Visit) => {
+    const act = live(v);
+    return act.length > 0 && act.every((s) => s.status === "complete") ? 1 : 0;
+  };
+  return [...m.values()].sort((a, b) =>
+    finished(a) - finished(b) || a.customerName.localeCompare(b.customerName)
+  );
 }
 
 const isLive = (s: WorkerTaskView) =>
@@ -191,6 +256,15 @@ interface Toast {
   ok: boolean;
 }
 
+/** REQ-197 — what the server already loaded, so the first paint is the final screen */
+export interface WorkerSsr {
+  me: WorkerMe | null;
+  tasks: WorkerTaskView[];
+  types: TaskType[];
+  /** the day those tasks are for (the field's time zone) */
+  date: string;
+}
+
 export default function WorkerScreen(
   {
     initialLang,
@@ -200,6 +274,7 @@ export default function WorkerScreen(
     officeHref = WORKER_OFFICE_FALLBACK,
     langChosen = false,
     langPicked = false,
+    ssr,
   }: {
     initialLang: Lang;
     /** REQ-714 (m58) — the page's own language when initialLang is the signed-in worker's (SSR); Salir returns to it */
@@ -213,16 +288,25 @@ export default function WorkerScreen(
     langChosen?: boolean;
     /** REQ-494 (M43) — the EN/ES switch picked it on an earlier visit (pm_worker_lang) */
     langPicked?: boolean;
+    /** REQ-197 — the server-rendered worker and day (the first paint is the final screen) */
+    ssr?: WorkerSsr;
   },
 ) {
   const lang = langSignal.value;
   // `undefined` = not asked yet; `null` = asked, nobody is signed in
-  const [me, setMe] = useState<WorkerMe | null | undefined>(undefined);
-  const [tasks, setTasks] = useState<WorkerTaskView[]>([]);
-  const [types, setTypes] = useState<TaskType[]>([]);
-  const [date, setDate] = useState(initialDate ?? "");
-  const [today, setToday] = useState(initialDate ?? "");
+  const [me, setMe] = useState<WorkerMe | null | undefined>(
+    ssr ? ssr.me : undefined,
+  );
+  const [tasks, setTasks] = useState<WorkerTaskView[]>(ssr?.tasks ?? []);
+  const [types, setTypes] = useState<TaskType[]>(ssr?.types ?? []);
+  const [date, setDate] = useState(initialDate ?? ssr?.date ?? "");
+  const [today, setToday] = useState(ssr?.date ?? initialDate ?? "");
+  /** the server's data is on screen already: the first load effect must not fetch it again */
+  const primed = useRef(Boolean(ssr && ssr.me));
   const [cell, setCell] = useState("");
+  /** REQ-193 — Tasks | Time clock, one at a time; the clock stays mounted (its state dots the tab) */
+  const [tab, setTab] = useState<"tasks" | "clock">("tasks");
+  const [clockState, setClockState] = useState<"in" | "out" | null>(null);
   const [pin, setPin] = useState("");
   /** REQ-150 — the eye: the PIN shows while pressed, hidden when the page opens */
   const [showPin, setShowPin] = useState(false);
@@ -276,7 +360,27 @@ export default function WorkerScreen(
     try {
       setCell(localStorage.getItem(CELL_KEY) ?? "");
     } catch { /* storage disabled */ }
+    if (new URLSearchParams(location.search).get("tab") === "clock") {
+      setTab("clock");
+    }
   }, [initialDate]);
+
+  /** REQ-194 — yesterday | today | tomorrow, switched in place (the loader follows `date`) */
+  function pickDay(iso: string) {
+    setDate(iso);
+    const u = new URL(location.href);
+    if (iso === today) u.searchParams.delete("date");
+    else u.searchParams.set("date", iso);
+    history.replaceState(null, "", u);
+  }
+
+  function pickTab(next: "tasks" | "clock") {
+    setTab(next);
+    const u = new URL(location.href);
+    if (next === "clock") u.searchParams.set("tab", "clock");
+    else u.searchParams.delete("tab");
+    history.replaceState(null, "", u);
+  }
 
   function showToast(msg: string, ok = false) {
     setToast({ msg, ok });
@@ -335,7 +439,9 @@ export default function WorkerScreen(
   // catch-up after the tab was hidden.
   useEffect(() => {
     if (!date) return;
-    load();
+    // REQ-197: the server's data is on screen already — the first run skips the fetch
+    if (primed.current) primed.current = false;
+    else load();
     return startWorkerRefresh({
       full: load,
       tasks: loadTasks,
@@ -484,8 +590,9 @@ export default function WorkerScreen(
     ? officeHref
     : undefined;
   const nav = date && today ? workerDayNav(date, today, navFrom) : null;
-  /** REQ-528 (demo m51) — the date picker jumps to any day */
-  const pickDay = (iso: string) => {
+  /** REQ-528 (demo m51) — the date picker jumps to any day (the REQ-194 strip
+   *  switches yesterday / today / tomorrow in place; the picker opens any other) */
+  const jumpToDay = (iso: string) => {
     const href = workerDayHref(iso, navFrom);
     if (href && iso !== date) location.assign(href);
   };
@@ -516,22 +623,27 @@ export default function WorkerScreen(
         data-id={v.id}
         key={v.id}
       >
-        <div>
-          <div class="visit__client">{v.customerName}</div>
-          {v.address && (
-            <a
-              class="task__addr"
-              href={`https://maps.google.com/?q=${
-                encodeURIComponent(v.address)
-              }`}
-              target="_blank"
-              rel="noopener"
-              style="display:inline-flex;align-items:center;gap:4px"
-            >
-              <I d={ICN.pin} size={12} />
-              {v.address}
-            </a>
-          )}
+        <div class="visit__head">
+          <div>
+            <div class="visit__client">{v.customerName}</div>
+            {v.address && (
+              <a
+                class="task__addr"
+                href={`https://maps.google.com/?q=${
+                  encodeURIComponent(v.address)
+                }`}
+                target="_blank"
+                rel="noopener"
+                style="display:inline-flex;align-items:center;gap:4px"
+              >
+                <I d={ICN.pin} size={12} />
+                {v.address}
+              </a>
+            )}
+          </div>
+          <span class="visit__state" data-cy="w-visit-state">
+            {all ? t("worker.visitDone") : `${done}/${act_.length}`}
+          </span>
         </div>
         <div>
           {act_.map((s) => (
@@ -808,8 +920,16 @@ export default function WorkerScreen(
           </span>
         </div>
         {rows.length
-          ? <div class="tasks">{visitsOf(rows).map(renderVisit)}</div>
-          : <div class="panel hint">{t("worker.noneCrew")}</div>}
+          ? (
+            <div class="tasks" data-stagger key={`${key}:${date}`}>
+              {visitsOf(rows).map(renderVisit)}
+            </div>
+          )
+          : (
+            <div class="empty">
+              <p>{t("worker.noneCrew")}</p>
+            </div>
+          )}
       </div>
     );
   }
@@ -839,13 +959,22 @@ export default function WorkerScreen(
       );
     } else {
       body = mine.length
-        ? <div class="tasks">{visitsOf(mine).map(renderVisit)}</div>
-        : <div class="panel hint">{t("worker.none")}</div>;
+        ? (
+          <div class="tasks" data-stagger key={date}>
+            {visitsOf(mine).map(renderVisit)}
+          </div>
+        )
+        : (
+          <div class="empty" data-cy="w-empty">
+            <I d={ICN.sparkle} size={28} />
+            <p>{t("worker.none")}</p>
+          </div>
+        );
     }
   }
 
   return (
-    <div class="wrap">
+    <div class="wrap" data-stagger>
       <style>{css}</style>
       <div class="top">
         <div class="brand">
@@ -1001,67 +1130,172 @@ export default function WorkerScreen(
                 <span class="chip chip--amber">{t("worker.foreman")}</span>
               </>
             )}
-            <small>
-              {dayLine()} · {t(workerTodayKey(liveTasks.length), {
-                done,
-                n: liveTasks.length,
-              })}
-            </small>
+            <small>{dayLine()}</small>
           </div>
-          {nav && (
-            <div class="day">
-              <a href={nav.prev.href} data-cy="w-day-prev">
-                ← {t(nav.prev.key)}
-              </a>
-              {/* REQ-528 (demo m51) — the day written out, and a native picker for any day */}
-              <label class="pick" data-cy="w-day-label">
-                {t("worker.viewing")} <b>{fmtDay(date, lang)}</b>
-                <input
-                  type="date"
-                  data-cy="w-day-pick"
-                  aria-label={t("worker.pickDay")}
-                  value={date}
-                  onChange={(e) => pickDay(e.currentTarget.value)}
-                  onClick={(e) => {
-                    try {
-                      e.currentTarget.showPicker?.();
-                    } catch {
-                      /* not allowed here — the native control still works */
-                    }
-                  }}
-                />
-              </label>
-              {nav.today && (
-                <a href={nav.today} data-cy="w-day-today">
-                  {t("worker.todayLink")}
-                </a>
+          {/* REQ-193 — the two tabs: the day's tasks, the time clock */}
+          <div class="tabs" role="tablist" data-cy="w-tabs" data-tab={tab}>
+            <span class="tabs__thumb" aria-hidden="true"></span>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={tab === "tasks"}
+              class={tab === "tasks" ? "on" : ""}
+              data-cy="w-tab-tasks"
+              onClick={() => pickTab("tasks")}
+            >
+              {t("worker.tabTasks")}
+              {liveTasks.length > 0 && (
+                <span class="tabs__n">{done}/{liveTasks.length}</span>
               )}
-              <a href={nav.next.href} data-cy="w-day-next">
-                {t(nav.next.key)} →
-              </a>
-            </div>
-          )}
-          {preview && (
-            <div class="hint" data-cy="w-preview">
-              🔒 {t("worker.preview")}
-            </div>
-          )}
-          <div
-            class="progress"
-            data-cy="w-progress"
-            role="progressbar"
-            aria-valuemin={0}
-            aria-valuemax={liveTasks.length}
-            aria-valuenow={done}
-          >
-            <i style={`width:${pct}%`}></i>
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={tab === "clock"}
+              class={tab === "clock" ? "on" : ""}
+              data-cy="w-tab-clock"
+              onClick={() => pickTab("clock")}
+            >
+              {clockState && (
+                <span
+                  class={`tabs__dot${
+                    clockState === "in" ? " tabs__dot--in" : ""
+                  }`}
+                  data-cy="w-tab-clock-dot"
+                  data-state={clockState}
+                  aria-hidden="true"
+                >
+                </span>
+              )}
+              {t("worker.tabClock")}
+            </button>
           </div>
-          {liveTasks.length > 0 && done === liveTasks.length && (
-            <div class="chip chip--green" style="align-self:flex-start">
-              {t("worker.allDone")}
+          {/* REQ-192 — the clock: one button, this week's shifts; mounted always, shown on its tab */}
+          <div hidden={tab !== "clock"} data-cy="w-pane-clock" data-pane>
+            <WorkerClock hoursOpen onState={setClockState} />
+          </div>
+          <div
+            hidden={tab !== "tasks"}
+            data-cy="w-pane-tasks"
+            class="pane-tasks"
+            data-pane
+          >
+            {/* REQ-194 — the three days a worker lives in, one tap each */}
+            {today && (
+              <div
+                class="days"
+                role="tablist"
+                data-cy="w-days"
+                data-sel={date === today
+                  ? "today"
+                  : date === shiftIso(today, -1)
+                  ? "prev"
+                  : date === shiftIso(today, 1)
+                  ? "next"
+                  : ""}
+              >
+                <span class="days__thumb" aria-hidden="true"></span>
+                {([-1, 0, 1] as const).map((off) => {
+                  const iso = shiftIso(today, off);
+                  const id = off === -1 ? "prev" : off === 0 ? "today" : "next";
+                  const key = off === -1
+                    ? "worker.yesterday"
+                    : off === 0
+                    ? "worker.todayLink"
+                    : "worker.tomorrow";
+                  return (
+                    <button
+                      type="button"
+                      role="tab"
+                      aria-selected={date === iso}
+                      class={date === iso ? "on" : ""}
+                      data-cy={`w-day-${id}`}
+                      data-date={iso}
+                      onClick={() => pickDay(iso)}
+                    >
+                      <b>{t(key)}</b>
+                      <small>{fmtDay(iso, lang)}</small>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+            {/* REQ-528 (demo m51) — the day written out, and a native picker for any day */}
+            {nav && (
+              <div class="day">
+                <label class="pick" data-cy="w-day-label">
+                  {t("worker.viewing")} <b>{fmtDay(date, lang)}</b>
+                  <input
+                    type="date"
+                    data-cy="w-day-pick"
+                    aria-label={t("worker.pickDay")}
+                    value={date}
+                    onChange={(e) => jumpToDay(e.currentTarget.value)}
+                    onClick={(e) => {
+                      try {
+                        e.currentTarget.showPicker?.();
+                      } catch {
+                        /* not allowed here — the native control still works */
+                      }
+                    }}
+                  />
+                </label>
+              </div>
+            )}
+            {/* REQ-362 — a day after today is a read-only preview */}
+            {preview && (
+              <div class="hint" data-cy="w-preview">
+                🔒 {t("worker.preview")}
+              </div>
+            )}
+            {/* REQ-196 — the day in one glance */}
+            <div
+              class={`summary${
+                liveTasks.length > 0 && done === liveTasks.length
+                  ? " summary--done"
+                  : ""
+              }`}
+              data-cy="w-summary"
+            >
+              <div
+                class="ring"
+                data-cy="w-progress"
+                role="progressbar"
+                aria-valuemin={0}
+                aria-valuemax={liveTasks.length}
+                aria-valuenow={done}
+                style={`--p:${pct}`}
+              >
+                <svg viewBox="0 0 36 36" aria-hidden="true">
+                  <circle class="ring__track" cx="18" cy="18" r="15.5" />
+                  <circle
+                    class="ring__bar"
+                    cx="18"
+                    cy="18"
+                    r="15.5"
+                    pathLength={100}
+                  />
+                </svg>
+                <b>{Math.round(pct)}%</b>
+              </div>
+              <div class="summary__text">
+                <b data-cy="w-count">
+                  {t(workerTodayKey(liveTasks.length), {
+                    done,
+                    n: liveTasks.length,
+                  })}
+                </b>
+                <small>
+                  {liveTasks.length === 0
+                    ? t("worker.freeDay")
+                    : done === liveTasks.length
+                    ? t("worker.allDone")
+                    : t("worker.left", { n: liveTasks.length - done })}
+                </small>
+              </div>
             </div>
-          )}
-          {body}
+            {body}
+          </div>
         </>
       )}
 

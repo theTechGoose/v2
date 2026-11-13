@@ -63,9 +63,17 @@ import {
   isLogoImageType,
   LOGO_IMAGE_ACCEPT,
 } from "../../shared/quote-flow/logo-image.ts"; // REQ-252
+import { stripeClient, type StripeStatus } from "../clients/stripe.ts"; // REQ-212
+import { checkKeyPair, maskSecret } from "../../shared/payments/stripe-keys.ts"; // REQ-212
+import { checkPayLinks } from "../../shared/payments/pay-links.ts"; // REQ-630
 import { ApiError } from "../lib/api.ts";
 import { fmtPhone } from "../lib/format.ts";
 import { TransferAccount } from "../components/TransferAccount.tsx"; // REQ-220
+import {
+  editableName,
+  personName,
+} from "../../shared/person-name/mod.ts"; // REQ-624
+import { refreshDash } from "../lib/dash-cache.ts";
 import { type Lang, langSignal, setLang, tFor } from "../lib/i18n.ts";
 import { normalizeWebsiteUrl } from "../../shared/quote-flow/format-helpers.ts";
 import {
@@ -392,8 +400,16 @@ function EditCard(
     onSaved: (partial: Partial<ProfileSnapshot>) => void;
   },
 ) {
-  const [name, setName] = useState(snapshot.user.name ?? "");
-  const [email, setEmail] = useState(snapshot.user.email ?? "");
+  // REQ-624: while an editor acts for the owner's account, "your name" and "your email" are HERS
+  // (PUT /me writes her record then, never the owner's)
+  const savedName = editableName(snapshot.user, snapshot.actor);
+  const savedEmail = snapshot.actor
+    ? (snapshot.actor.email ?? "")
+    : (snapshot.user.email ?? "");
+  const [name, setName] = useState(
+    editableName(snapshot.user, snapshot.actor),
+  );
+  const [email, setEmail] = useState(savedEmail);
   const [biz, setBiz] = useState(snapshot.identity?.businessName ?? "");
   // REQ-038 (NW-06b): the business website — surfaces on every From block.
   const [site, setSite] = useState(snapshot.identity?.websiteUrl ?? "");
@@ -426,12 +442,18 @@ function EditCard(
     setErr(null);
     setSaved(false);
     try {
-      const u = await profileClient.updateUser(patch);
-      onSaved({ user: { ...snapshot.user, ...u } as typeof snapshot.user });
+      const { actor, ...u } = await profileClient.updateUser(patch);
+      onSaved({
+        user: { ...snapshot.user, ...u } as typeof snapshot.user,
+        ...(actor ? { actor } : {}), // REQ-624: her record, as saved
+      });
       setSaved(true);
+      refreshDash(); // the sidebar's user block names the person as saved
       // REQ-355 — the topbar greets the new name at once, not after a reload
       if ("name" in patch) {
-        announceProfile({ name: u?.name ?? String(patch.name ?? "") });
+        announceProfile({
+          name: (actor ? actor.name : u?.name) ?? String(patch.name ?? ""),
+        });
       }
     } catch (e) {
       setErr(e instanceof Error ? e.message : t.saveFailed);
@@ -519,8 +541,9 @@ function EditCard(
               setSaved(false);
               setName((e.target as HTMLInputElement).value);
             }}
+            data-cy="settings-name"
             onBlur={() =>
-              name.trim() !== (snapshot.user.name ?? "") &&
+              name.trim() !== savedName &&
               saveUser({ name: name.trim() })}
             aria-label={t.ariaEditName}
           />
@@ -545,7 +568,7 @@ function EditCard(
               const key = accountEmailError(email);
               setEmailErr(key);
               if (key) return;
-              if (email.trim() !== (snapshot.user.email ?? "")) {
+              if (email.trim() !== savedEmail) {
                 saveUser({ email: email.trim() });
               }
             }}
@@ -1570,6 +1593,420 @@ function PaymentsEditCard(
   );
 }
 
+/** PayLinksCard (REQ-630) — "Other payment links": any other way the business gets paid online
+ *  (Extra Pay, Square, a bank portal), by name + https URL. Each becomes an outlined button on the
+ *  invoice page and a row in the invoice email. Saves the whole acceptedPaymentMethods object with
+ *  the new list, so the methods above are untouched. */
+function PayLinksCard(
+  { snapshot, onSaved }: {
+    snapshot: ProfileSnapshot;
+    onSaved: (partial: Partial<ProfileSnapshot>) => void;
+  },
+) {
+  const lang: Lang = langSignal.value === "es" ? "es" : "en";
+  const links = snapshot.identity?.acceptedPaymentMethods?.links ?? [];
+  const [name, setName] = useState("");
+  const [url, setUrl] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const [saved, setSaved] = useState(false);
+
+  async function persist(next: Array<Record<string, unknown>>) {
+    const checked = checkPayLinks(next);
+    if (!checked.ok) {
+      setErr(tFor(lang, `settings.payLinks.err.${checked.reason}`));
+      return false;
+    }
+    setBusy(true);
+    setErr(null);
+    setSaved(false);
+    try {
+      const id = await profileClient.updateIdentity({
+        acceptedPaymentMethods: {
+          ...(snapshot.identity?.acceptedPaymentMethods ?? {}),
+          links: checked.links,
+        },
+      });
+      onSaved({
+        identity: {
+          ...(snapshot.identity ?? {} as never),
+          ...id,
+        } as typeof snapshot.identity,
+      });
+      setSaved(true);
+      return true;
+    } catch (e) {
+      const code = e instanceof ApiError && e.body && typeof e.body === "object"
+        ? String((e.body as { error?: string }).error ?? "")
+        : "";
+      setErr(
+        code.startsWith("pay_link_")
+          ? tFor(
+            lang,
+            `settings.payLinks.err.${code.slice("pay_link_".length)}`,
+          )
+          : tFor(lang, "settings.payLinks.err.failed"),
+      );
+      return false;
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function add() {
+    const ok = await persist([
+      ...links,
+      { name: name.trim(), url: url.trim() },
+    ]);
+    if (ok) {
+      setName("");
+      setUrl("");
+    }
+  }
+
+  return (
+    <EditPanel
+      title={tFor(lang, "settings.payLinks")}
+      busy={busy}
+      err={err}
+      saved={saved}
+      saving={tFor(lang, "settings.payLinks.saving")}
+      savedLabel={tFor(lang, "settings.saved")}
+      dataCy="pay-links-card"
+    >
+      <p style="margin:0 0 14px;font-size:13px;color:var(--fg-muted, #6b7560)">
+        {tFor(lang, "settings.payLinks.intro")}
+      </p>
+      {links.length
+        ? (
+          <ul style="list-style:none;margin:0 0 14px;padding:0;display:grid;gap:8px">
+            {links.map((l) => (
+              <li
+                key={l.id}
+                data-cy={`pay-link-row-${l.id}`}
+                style="display:flex;align-items:center;gap:10px;border:1px solid var(--brand-green,#519843);border-radius:10px;padding:10px 12px;background:#fff"
+              >
+                <span style="flex:1;min-width:0;display:grid">
+                  <span style="font-weight:700;font-size:14px;color:var(--fg);overflow-wrap:anywhere">
+                    {l.name}
+                  </span>
+                  <span style="font-size:12px;color:var(--fg-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
+                    {l.url}
+                  </span>
+                </span>
+                <a
+                  href={l.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style="flex:none;font-size:13px;font-weight:600;color:var(--fg-muted);text-decoration:none;padding:8px 6px"
+                >
+                  {tFor(lang, "settings.payLinks.test")}
+                </a>
+                <button
+                  type="button"
+                  style={`${btnSecondary};flex:none`}
+                  disabled={busy}
+                  data-cy={`pay-link-remove-${l.id}`}
+                  onClick={() => persist(links.filter((x) => x.id !== l.id))}
+                >
+                  {tFor(lang, "settings.payLinks.remove")}
+                </button>
+              </li>
+            ))}
+          </ul>
+        )
+        : (
+          <p style="margin:0 0 14px;font-size:13px;color:var(--fg-muted)">
+            {tFor(lang, "settings.payLinks.empty")}
+          </p>
+        )}
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px">
+        <label style="display:block">
+          <span style={labelStyle}>{tFor(lang, "settings.payLinks.name")}</span>
+          <input
+            type="text"
+            style={inputStyle}
+            value={name}
+            maxLength={40}
+            placeholder={tFor(lang, "settings.payLinks.namePh")}
+            data-cy="pay-link-name"
+            onInput={(e) => setName((e.target as HTMLInputElement).value)}
+          />
+        </label>
+        <label style="display:block">
+          <span style={labelStyle}>{tFor(lang, "settings.payLinks.url")}</span>
+          <input
+            type="url"
+            inputMode="url"
+            style={inputStyle}
+            value={url}
+            placeholder={tFor(lang, "settings.payLinks.urlPh")}
+            autocomplete="off"
+            spellcheck={false}
+            data-cy="pay-link-url"
+            onInput={(e) => setUrl((e.target as HTMLInputElement).value)}
+          />
+        </label>
+      </div>
+      <div style="margin-top:12px">
+        <button
+          type="button"
+          style={btnPrimary}
+          disabled={busy || !name.trim() || !url.trim()}
+          data-cy="pay-link-add"
+          onClick={add}
+        >
+          {tFor(lang, "settings.payLinks.add")}
+        </button>
+      </div>
+    </EditPanel>
+  );
+}
+
+/** CardPaymentsCard (REQ-212) — the business's own Stripe. Paste the publishable and secret
+ *  keys; the backend checks them against Stripe and seals the secret. The card shows the
+ *  connection back (account, mode, the masked secret — never the secret), previews the merchant
+ *  the customer sees on the card page (the business name and its logo), and says in one line
+ *  that the money goes straight to the business's Stripe, never through DocuMonster. */
+function CardPaymentsCard({ snapshot }: { snapshot: ProfileSnapshot }) {
+  const lang: Lang = langSignal.value === "es" ? "es" : "en";
+  const [status, setStatus] = useState<StripeStatus | null>(null);
+  const [pk, setPk] = useState("");
+  const [sk, setSk] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const [saved, setSaved] = useState(false);
+
+  useEffect(() => {
+    let alive = true;
+    stripeClient.status()
+      .then((s) => alive && setStatus(s))
+      .catch(() => alive && setStatus(null));
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  function errorFor(e: unknown): string {
+    const body = e instanceof ApiError && e.body && typeof e.body === "object"
+      ? e.body as { error?: string; message?: string }
+      : undefined;
+    const code = body?.error ?? "";
+    const known = [
+      "publishable_invalid",
+      "secret_invalid",
+      "mode_mismatch",
+      "fake_mismatch",
+      "fake_key_refused",
+      "stripe_rejected",
+      "secrets_key_missing",
+    ];
+    if (known.includes(code)) {
+      return tFor(lang, `settings.stripe.err.${code}`, {
+        message: body?.message ?? "",
+      });
+    }
+    return tFor(lang, "settings.stripe.err.failed");
+  }
+
+  async function connect() {
+    const pair = checkKeyPair(pk, sk);
+    if (!pair.ok) {
+      setErr(tFor(lang, `settings.stripe.err.${pair.reason}`));
+      return;
+    }
+    setBusy(true);
+    setErr(null);
+    setSaved(false);
+    try {
+      const s = await stripeClient.connect(pk.trim(), sk.trim());
+      setStatus(s);
+      setPk("");
+      setSk("");
+      setSaved(true);
+    } catch (e) {
+      setErr(errorFor(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function disconnect() {
+    setBusy(true);
+    setErr(null);
+    setSaved(false);
+    try {
+      setStatus(await stripeClient.disconnect());
+      setSaved(true);
+    } catch (e) {
+      setErr(errorFor(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const merchantName = status?.merchant.name ||
+    snapshot.identity?.businessName ||
+    snapshot.identity?.legalName || snapshot.user?.name || "";
+  const logoFileId = status?.merchant.logoFileId ??
+    snapshot.identity?.logoFileId;
+  const logoUrl = logoFileId ? `/api/files/${logoFileId}` : null;
+  const connected = status?.connected === true ? status : null;
+
+  return (
+    <EditPanel
+      title={tFor(lang, "settings.stripe")}
+      busy={busy}
+      err={err}
+      saved={saved}
+      saving={tFor(lang, "settings.stripe.connecting")}
+      savedLabel={tFor(lang, "settings.saved")}
+      dataCy="stripe-card"
+    >
+      <p style="margin:0 0 10px;font-size:13px;color:var(--fg-muted, #6b7560)">
+        {tFor(lang, "settings.stripe.intro")}
+      </p>
+      <p style="margin:0 0 14px;font-size:13px;font-weight:700;color:var(--brand-green,#519843)">
+        {tFor(lang, "settings.stripe.direct")}
+      </p>
+
+      {connected
+        ? (
+          <div
+            data-cy="stripe-status"
+            data-mode={connected.mode}
+            style="border:1px solid var(--brand-green,#519843);border-radius:10px;padding:12px 14px;background:#fff;display:grid;gap:6px"
+          >
+            <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+              <span style="font-weight:800;font-size:14px;color:var(--brand-green,#519843)">
+                ✓ {tFor(lang, "settings.stripe.connected")}
+              </span>
+              <span style="font-weight:700;font-size:14px;color:var(--fg)">
+                {connected.accountName}
+              </span>
+              <span
+                style={`font-size:11px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;padding:3px 8px;border-radius:999px;background:${
+                  connected.mode === "live"
+                    ? "rgba(81,152,67,.12)"
+                    : "rgba(255,170,40,.16)"
+                };color:${connected.mode === "live" ? "#2f6b27" : "#a06800"}`}
+              >
+                {tFor(
+                  lang,
+                  connected.mode === "live"
+                    ? "settings.stripe.liveMode"
+                    : "settings.stripe.testMode",
+                )}
+              </span>
+            </div>
+            <div style="font-size:12.5px;color:var(--fg-muted);font-family:ui-monospace,Menlo,monospace">
+              {connected.publishableKey} ·{" "}
+              {maskSecret(connected.secretMasked) || connected.secretMasked}
+            </div>
+            {connected.mode === "test"
+              ? (
+                <div style="font-size:12px;color:#a06800">
+                  {tFor(lang, "settings.stripe.testNote")}
+                </div>
+              )
+              : null}
+            <div>
+              <button
+                type="button"
+                style={btnSecondary}
+                disabled={busy}
+                onClick={disconnect}
+                data-cy="stripe-disconnect"
+              >
+                {tFor(lang, "settings.stripe.disconnect")}
+              </button>
+            </div>
+          </div>
+        )
+        : (
+          <div style="display:grid;gap:10px">
+            <label style="display:block">
+              <span style={labelStyle}>{tFor(lang, "settings.stripe.pk")}</span>
+              <input
+                type="text"
+                style={inputStyle}
+                value={pk}
+                placeholder={tFor(lang, "settings.stripe.pkPh")}
+                autocomplete="off"
+                spellcheck={false}
+                data-cy="stripe-pk"
+                onInput={(e) => setPk((e.target as HTMLInputElement).value)}
+              />
+            </label>
+            <label style="display:block">
+              <span style={labelStyle}>{tFor(lang, "settings.stripe.sk")}</span>
+              <input
+                data-cy="stripe-sk"
+                type="password"
+                style={inputStyle}
+                value={sk}
+                placeholder={tFor(lang, "settings.stripe.skPh")}
+                autocomplete="off"
+                onInput={(e) => setSk((e.target as HTMLInputElement).value)}
+              />
+            </label>
+            <div>
+              <button
+                type="button"
+                style={btnPrimary}
+                disabled={busy || !pk.trim() || !sk.trim()}
+                onClick={connect}
+                data-cy="stripe-connect"
+              >
+                {busy
+                  ? tFor(lang, "settings.stripe.connecting")
+                  : tFor(lang, "settings.stripe.connect")}
+              </button>
+            </div>
+          </div>
+        )}
+
+      <div
+        data-cy="stripe-merchant"
+        style="margin-top:14px;border:1px dashed var(--border,#d8dcd5);border-radius:10px;padding:12px 14px;display:flex;align-items:center;gap:12px"
+      >
+        {logoUrl
+          ? (
+            <img
+              src={logoUrl}
+              alt=""
+              data-cy="stripe-merchant-logo"
+              style="width:44px;height:44px;object-fit:contain;border-radius:10px;background:#f4f6f5;padding:4px"
+            />
+          )
+          : (
+            <span
+              aria-hidden="true"
+              style="width:44px;height:44px;border-radius:10px;background:#144852;color:#fff;display:grid;place-items:center;font-size:18px"
+            >
+              ▣
+            </span>
+          )}
+        <div>
+          <div style="font-size:11px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:var(--fg-muted)">
+            {tFor(lang, "settings.stripe.merchant")}
+          </div>
+          <div style="font-weight:700;font-size:15px;color:var(--fg)">
+            {merchantName || "—"}
+          </div>
+          {!logoUrl
+            ? (
+              <div style="font-size:12px;color:var(--fg-muted)">
+                {tFor(lang, "settings.stripe.noLogo")}
+              </div>
+            )
+            : null}
+        </div>
+      </div>
+    </EditPanel>
+  );
+}
+
 /** NumberingCard — REQ-198/199: the account number and, per document kind,
  *  the next number and an editable starting number. Saves only the changed
  *  kinds (PUT /profile/numbering); a kind that already issued a number is
@@ -2541,16 +2978,17 @@ export default function SettingsPage() {
               title={t.account}
               empty={t.nothingSet}
               rows={[
-                [t.name, p.user.name],
+                [t.name, personName(p.user, p.actor)], // REQ-624: the person signed in
                 [
                   t.phone,
                   // REQ-220: the phone is the sign-in, so it is not a field — it moves by
                   // "Transfer account" (owner only; an admin acting never sees the button)
-                  p.user.phoneNumber
+                  // REQ-624: an editor acting for the account sees her own number here
+                  (p.actor?.phoneNumber ?? p.user.phoneNumber)
                     ? (
                       <span style="display:inline-flex;align-items:center;gap:10px;flex-wrap:wrap">
                         <span data-cy="settings-phone">
-                          {fmtPhone(p.user.phoneNumber)}
+                          {fmtPhone(p.actor?.phoneNumber ?? p.user.phoneNumber)}
                         </span>
                         {!acting && <TransferAccount lang={lang} />}
                       </span>
@@ -2595,6 +3033,8 @@ export default function SettingsPage() {
           <NumberingCard refreshKey={numberingKey} />
 
           <PaymentsEditCard snapshot={p} onSaved={onSaved} />
+          <CardPaymentsCard snapshot={p} />
+          <PayLinksCard snapshot={p} onSaved={onSaved} />
 
           {/* REQ-623 (demo cycle 4, M26): automatic payment reminders */}
           <RemindersEditCard snapshot={p} onSaved={onSaved} />

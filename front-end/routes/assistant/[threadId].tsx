@@ -1,4 +1,9 @@
 import { asset, Head } from "fresh/runtime";
+import {
+  editableName,
+  greetingFirstName,
+  personName,
+} from "../../../shared/person-name/mod.ts"; // REQ-624
 import { define } from "../../utils.ts";
 import { resolveSsrLang } from "../../lib/ssr-lang.ts";
 import type { Lang } from "../../lib/lang.ts";
@@ -23,7 +28,6 @@ import {
 import { profileClient, type ProfileSnapshot } from "../../clients/profile.ts";
 import OnboardingProgress from "../../islands/OnboardingProgress.tsx";
 import { tFor } from "../../lib/i18n.ts";
-import { greetingFirstName } from "../../../shared/quote-flow/outbound-identity.ts";
 
 export default define.page(async function AssistantThread(ctx) {
   const threadId = ctx.params.threadId;
@@ -61,14 +65,14 @@ export default define.page(async function AssistantThread(ctx) {
   // REQ-709 (demo-loop c5, m4): the islands' language (?lang= > account >
   // pm_lang), so the tab title and footer match the page they sit on.
   const lang: Lang = resolveSsrLang(ctx) ?? "es";
-  const greetingName = greetingFirstName(user?.name);
+  const greetingName = greetingFirstName(user);
 
   const businessName = profile?.identity?.businessName ??
     profile?.identity?.displayName;
   const userInitials = profile?.initials && profile.initials !== "?"
     ? profile.initials
     : deriveUserInitials({
-      name: user?.name,
+      name: personName(user), // REQ-624: the chat's "me" is the person signed in
       businessName,
       phoneNumber: user?.phoneNumber,
     });
@@ -112,7 +116,7 @@ export default define.page(async function AssistantThread(ctx) {
     postalCode?: string;
   } | undefined;
   const profileFilled = {
-    name: !!profile?.user?.name?.trim(),
+    name: !!editableName(profile?.user, profile?.actor).trim(), // REQ-624: the person signed in
     biz: !!(profile?.identity?.businessName?.trim() ??
       profile?.identity?.legalName?.trim()),
     state: !!addr?.state?.trim(),

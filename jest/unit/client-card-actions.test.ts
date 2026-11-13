@@ -111,7 +111,12 @@ describe("REQ-277 (M31) ClientsBoard — no inert card buttons", () => {
     expect(src).toMatch(/data-cy="ccard2-message"/);
   });
 
-  it("REQ-277 the panel no longer offers an 'Open card' that goes nowhere", () => {
-    expect(src).not.toMatch(/clientsBoard\.panel\.openCard/);
+  // REQ-277 AMENDMENT — reconciled with develop on demo-fixes: develop's
+  // REQ-626 made the panel's "Open card" go somewhere (the client's sheet),
+  // so it is back — never as a dead button.
+  it("REQ-277 the panel's 'Open card' goes somewhere (REQ-626: the client's sheet)", () => {
+    expect(src).toMatch(
+      /data-cy="ccard2-open"\s+onClick=\{\(\) => onOpenCard\(c\.id\)\}[\s\S]{0,120}clientsBoard\.panel\.openCard/,
+    );
   });
 });

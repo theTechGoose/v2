@@ -41,28 +41,35 @@ export interface BusinessIdentity {
   /** Per-method enable flags + handles (Venmo @, Zelle email, etc.).
    *  Shape mirrors backend AcceptedPaymentMethods but kept permissive so
    *  consumers only need the .enabled flag for gating logic. */
-  acceptedPaymentMethods?: Partial<
-    Record<
-      | "check"
-      | "venmo"
-      | "zelle"
-      | "cashapp"
-      | "paypal"
-      | "cash"
-      | "ach"
-      | "card"
-      | "other",
-      {
-        enabled?: boolean;
-        handle?: string;
-        cashtag?: string;
-        mailTo?: string;
-        routingNumber?: string;
-        accountNumberMasked?: string;
-        instructions?: string;
-      }
+  acceptedPaymentMethods?:
+    & Partial<
+      Record<
+        | "check"
+        | "venmo"
+        | "zelle"
+        | "cashapp"
+        | "paypal"
+        | "cash"
+        | "ach"
+        | "card"
+        | "other",
+        {
+          enabled?: boolean;
+          handle?: string;
+          cashtag?: string;
+          mailTo?: string;
+          routingNumber?: string;
+          accountNumberMasked?: string;
+          instructions?: string;
+        }
+      >
     >
-  >;
+    & {
+      /** REQ-630: the business's other payment links (name + https url), in display order */
+      links?: Array<
+        { id: string; name: string; url: string; enabled?: boolean }
+      >;
+    };
   createdAt: string;
   updatedAt: string;
 }
@@ -107,6 +114,20 @@ export interface ContractDefaults {
   updatedAt: string;
 }
 
+/** REQ-624 — the person signed in while acting for someone else's account (an invited editor) */
+export interface ActorView {
+  id: string;
+  /** never the owner's: her own name, else the invite's for this account, else her phone */
+  name: string;
+  /** she has no name anywhere — the app asks her once (ActorNamePrompt) */
+  needsName: boolean;
+  /** her own number */
+  phoneNumber: string;
+  email?: string;
+  /** REQ-631 — HER UI language (PUT /me { language } while acting writes her record, never the owner's) */
+  language?: "en" | "es";
+}
+
 export interface ProfileUser {
   id: string;
   phoneNumber: string;
@@ -123,6 +144,8 @@ export interface ProfileUser {
   onboardingSkipped?: boolean;
   /** REQ-227: question → ISO time its wizard step's Skip was pressed */
   onboardingDeferred?: Partial<Record<string, string>>;
+  /** REQ-624 — present while acting: the person signed in (PUT /me answers with it too) */
+  actor?: ActorView;
   createdAt: number;
   updatedAt: number;
 }
@@ -174,6 +197,8 @@ export interface ProfileSnapshot {
   /** REQ-054 — null until a pick (read as free) */
   plan?: UserPlan | null;
   initials: string;
+  /** REQ-624 — present while acting: the person signed in; `initials` are then hers */
+  actor?: ActorView;
   /** REQ-198 — the account's own number ("DM-0001") */
   accountNumber?: string;
   /** Phone-area-code guess for the business state — present only when we

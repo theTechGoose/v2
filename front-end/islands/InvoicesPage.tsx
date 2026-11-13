@@ -92,6 +92,14 @@ import {
 } from "../../shared/quote-flow/format-helpers.ts";
 import PaymentReceivedForm from "../components/PaymentReceivedForm.tsx";
 import { paymentRecordedText } from "../lib/payment-received.ts";
+import { CustomerFields } from "../components/CustomerForm.tsx"; // REQ-625
+import {
+  customerCreatePayload,
+  type CustomerFormValues,
+  emptyCustomerForm,
+  validateCustomerForm,
+} from "../../shared/customer-form/mod.ts";
+import { composeAddress } from "../../shared/customer-address/mod.ts";
 import {
   channelFailReason,
   type DispatchChannel,
@@ -124,6 +132,14 @@ import {
   isInvoiceLocked,
   workingCopy,
 } from "../../shared/documents/versions.ts";
+import { MAX_BULK_IDS, removalFor } from "../../shared/documents/removal.ts"; // REQ-627
+import {
+  bulkPlan,
+  type BulkResult,
+  bulkSkipNote,
+  downloadInvoicesPdf,
+  summarizeBulk,
+} from "../lib/invoice-bulk.ts"; // REQ-627/629
 import {
   type BillTo,
   billToFromCustomer,
@@ -305,7 +321,14 @@ interface EnrichedInvoice extends Invoice {
   invoiceRef: string;
   daysOverdue: number;
   daysIn: number;
-  stage: "scheduled" | "overdue" | "out" | "claimed" | "drafting" | "paid";
+  stage:
+    | "scheduled"
+    | "overdue"
+    | "out"
+    | "claimed"
+    | "drafting"
+    | "paid"
+    | "void";
   /** REQ-691: the phone "Text client" would go to, or null */
   textPhone: string | null;
 }
@@ -357,7 +380,10 @@ function enrich(
       ),
     )
     : 0;
-  const stage: EnrichedInvoice["stage"] = isPaid
+  // REQ-627: a voided invoice stays in the list, as Cancelled
+  const stage: EnrichedInvoice["stage"] = rawStatus === "void"
+    ? "void"
+    : isPaid
     ? "paid"
     : isClaimed
     ? "claimed"
@@ -436,6 +462,14 @@ const STAGE_MOOD: Record<
     shadow: "rgba(81,152,67,0.30)",
     statusFg: "#1F3F18",
     labelKey: "status.paid",
+  },
+  // REQ-627
+  void: {
+    from: "#E6E6E3",
+    to: "#9A9C97",
+    shadow: "rgba(110,112,108,0.22)",
+    statusFg: "#2E302C",
+    labelKey: "invoices.state.void",
   },
 };
 
@@ -599,6 +633,28 @@ export default function InvoicesPage(_props: { lang?: Lang }) {
     if (payNonce > 0) revealPayForm(document);
   }, [payNonce]);
 
+  /** REQ-626: a card's "Open" — the editable detail panel, in-app; the
+   *  panel renders above the hero, so bring it into view. */
+  function openInvoice(id: string) {
+    setOpenId(id);
+    try {
+      const url = new URL(globalThis.location.href);
+      url.searchParams.set("open", id);
+      url.searchParams.delete("pay");
+      history.replaceState(null, "", url.toString());
+      globalThis.scrollTo({ top: 0, behavior: "smooth" });
+    } catch { /* history unavailable — the panel still opens */ }
+  }
+  // REQ-627/629: multi-select — bulk Delete / Void, and one PDF to print
+  const [selecting, setSelecting] = useState(false);
+  const [selected, setSelected] = useState<Set<string>>(() => new Set());
+  const [bulkStep, setBulkStep] = useState<null | "delete" | "void">(null);
+  const [bulkReason, setBulkReason] = useState("");
+  const [bulkBusy, setBulkBusy] = useState(false);
+  const [bulkMsg, setBulkMsg] = useState<
+    { text: string; error?: boolean } | null
+  >(null);
+
   // Re-pull the invoice list after a mutation (discount / edit / change
   // order / payment received) so every displayed total is the live
   // `amount` — no full reload. REQ-243: the hero reads the forecast too, so
@@ -742,6 +798,173 @@ export default function InvoicesPage(_props: { lang?: Lang }) {
   );
 
   const openInv = openId ? enriched.find((i) => i.id === openId) : undefined;
+  // REQ-627: voided invoices stay — newest cancellation first
+  const cancelled = enriched.filter((i) => i.stage === "void").sort((a, b) =>
+    (b.voidedAt ?? b.updatedAt ?? "").localeCompare(
+      a.voidedAt ?? a.updatedAt ?? "",
+    )
+  );
+  // REQ-629: "in view" = every invoice the tracks below list, in their order
+  const inView = [
+    ...overdue,
+    ...claimed,
+    ...out,
+    ...scheduled,
+    ...drafting,
+    ...paidThisMonth,
+    ...cancelled,
+  ];
+  const picked = inView.filter((i) => selected.has(i.id));
+  const skipLabel = (reason: string) =>
+    tFor(lang, `invoicesPage.bulk.skip.${reason}`);
+  const toggle = (id: string) =>
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  const endSelecting = () => {
+    setSelecting(false);
+    setSelected(new Set());
+    setBulkStep(null);
+    setBulkReason("");
+  };
+  async function doBulkPrint() {
+    if (bulkBusy || picked.length === 0) return;
+    setBulkBusy(true);
+    setBulkMsg(null);
+    const r = await downloadInvoicesPdf(picked.map((i) => i.id));
+    setBulkBusy(false);
+    setBulkMsg(
+      r.ok
+        ? {
+          text: tFor(lang, "invoicesPage.bulk.printed", { n: picked.length }),
+        }
+        : { text: tFor(lang, "invoicesPage.bulk.printFailed"), error: true },
+    );
+  }
+  async function doBulkRemove(action: "delete" | "void") {
+    const plan = bulkPlan(picked, action);
+    if (bulkBusy || plan.apply.length === 0) return;
+    setBulkBusy(true);
+    setBulkMsg(null);
+    try {
+      const r = await fetch("/api/invoices/bulk-remove", {
+        method: "POST",
+        credentials: "include",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          action,
+          ids: picked.map((i) => i.id),
+          ...(action === "void" && bulkReason.trim()
+            ? { reason: bulkReason.trim() }
+            : {}),
+        }),
+      });
+      if (!r.ok) {
+        await r.body?.cancel();
+        setBulkMsg({
+          text: tFor(lang, "invoicesPage.bulk.failed"),
+          error: true,
+        });
+        return;
+      }
+      const body = await r.json() as { results: BulkResult[] };
+      const sum = summarizeBulk(body.results);
+      const skipped = bulkSkipNote(sum.skipped, skipLabel);
+      setBulkMsg({
+        text: `${
+          tFor(
+            lang,
+            action === "delete"
+              ? "invoicesPage.bulk.deletedN"
+              : "invoicesPage.bulk.voidedN",
+            { n: sum.done },
+          )
+        }${
+          skipped
+            ? ` · ${
+              tFor(lang, "invoicesPage.bulk.skippedN", { list: skipped })
+            }`
+            : ""
+        }`,
+      });
+      setSelected(new Set());
+      setBulkStep(null);
+      setBulkReason("");
+      await refreshInvoices();
+    } finally {
+      setBulkBusy(false);
+    }
+  }
+  /** a card, with its checkbox while selecting */
+  const cardFor = (inv: EnrichedInvoice, i: number) =>
+    selecting
+      ? (
+        <div
+          key={inv.id}
+          style={`position:relative;border-radius:18px;${
+            selected.has(inv.id)
+              ? "outline:3px solid var(--brand-teal,#144852);outline-offset:2px"
+              : ""
+          }`}
+        >
+          <label
+            style="position:absolute;z-index:5;top:10px;right:10px;display:inline-flex;align-items:center;justify-content:center;width:34px;height:34px;border-radius:999px;background:#fff;box-shadow:0 1px 4px rgba(0,0,0,.18);cursor:pointer"
+            aria-label={tFor(lang, "invoicesPage.bulk.selectOne", {
+              ref: inv.invoiceRef,
+            })}
+          >
+            <input
+              type="checkbox"
+              data-cy="invoice-select"
+              data-id={inv.id}
+              checked={selected.has(inv.id)}
+              onChange={() => toggle(inv.id)}
+              style="width:18px;height:18px;margin:0;cursor:pointer;accent-color:var(--brand-teal,#144852)"
+            />
+          </label>
+          <InvoiceCard
+            inv={inv}
+            idx={i}
+            now={now}
+            lang={lang}
+            onOpen={openInvoice}
+            onPaymentReceived={openForPayment}
+            onRefresh={refreshInvoices}
+            onFlash={setCardFlash}
+            onSendSheet={setSendSheet}
+          />
+        </div>
+      )
+      : (
+        <InvoiceCard
+          key={inv.id}
+          inv={inv}
+          idx={i}
+          now={now}
+          lang={lang}
+          onOpen={openInvoice}
+          onPaymentReceived={openForPayment}
+          onRefresh={refreshInvoices}
+          onFlash={setCardFlash}
+          onSendSheet={setSendSheet}
+        />
+      );
+  const planDelete = bulkPlan(picked, "delete");
+  const planVoid = bulkPlan(picked, "void");
+  const bulkBtn =
+    "appearance:none;cursor:pointer;border-radius:9px;padding:9px 14px;font:inherit;font-size:13.5px;font-weight:700;white-space:nowrap";
+  const bulkPrimary =
+    `${bulkBtn};border:0;background:var(--brand-green,#519843);color:#fff;font-weight:800`;
+  const bulkOutline =
+    `${bulkBtn};background:#fff;border:1px solid var(--border,#d8dcd5);color:var(--brand-teal,#144852)`;
+  const bulkDanger =
+    `${bulkBtn};background:#fff;border:1px solid var(--brand-pink,#ff6b6b);color:var(--brand-pink-dark,#d94f4f)`;
+  const bulkGhost =
+    `${bulkBtn};background:none;border:0;color:var(--fg-muted,#6b7560)`;
+  const bulkOff = ";opacity:.45;cursor:not-allowed";
 
   return (
     <>
@@ -845,6 +1068,209 @@ export default function InvoicesPage(_props: { lang?: Lang }) {
         lang={lang}
       />
 
+      {/* REQ-627/629: select invoices to print, delete or void together */}
+      {!selecting && (
+        <div style="display:flex;justify-content:flex-end;margin:4px 0 10px">
+          <button
+            type="button"
+            data-cy="invoices-select-toggle"
+            onClick={() => setSelecting(true)}
+            style={bulkOutline}
+          >
+            {tFor(lang, "invoicesPage.bulk.select")}
+          </button>
+        </div>
+      )}
+      {selecting && (
+        <div
+          data-cy="invoices-bulk-bar"
+          role="region"
+          aria-label={tFor(lang, "invoicesPage.bulk.barLabel")}
+          style="position:sticky;top:12px;z-index:40;margin:4px 0 14px;padding:12px 14px;border-radius:14px;background:#fff;border:1px solid var(--border,#d8dcd5);box-shadow:0 8px 28px rgba(20,72,82,.18);display:flex;flex-direction:column;gap:10px"
+        >
+          <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+            <strong
+              data-cy="invoices-bulk-count"
+              style="font-size:14px;color:var(--brand-teal,#144852);white-space:nowrap"
+            >
+              {tFor(lang, "invoicesPage.bulk.selectedN", { n: picked.length })}
+            </strong>
+            <button
+              type="button"
+              data-cy="invoices-bulk-select-all"
+              onClick={() => setSelected(new Set(inView.map((i) => i.id)))}
+              style={bulkGhost}
+            >
+              {tFor(lang, "invoicesPage.bulk.selectAll", { n: inView.length })}
+            </button>
+            {picked.length > 0 && (
+              <button
+                type="button"
+                data-cy="invoices-bulk-clear"
+                onClick={() => setSelected(new Set())}
+                style={bulkGhost}
+              >
+                {tFor(lang, "invoicesPage.bulk.clear")}
+              </button>
+            )}
+          </div>
+          {bulkStep === null && (
+            <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+              <button
+                type="button"
+                data-cy="invoices-bulk-print"
+                disabled={bulkBusy || picked.length === 0 ||
+                  picked.length > MAX_BULK_IDS}
+                onClick={doBulkPrint}
+                style={bulkPrimary +
+                  (picked.length === 0 || picked.length > MAX_BULK_IDS
+                    ? bulkOff
+                    : "")}
+              >
+                {bulkBusy ? "…" : tFor(lang, "invoicesPage.bulk.print")}
+              </button>
+              <button
+                type="button"
+                data-cy="invoices-bulk-delete"
+                disabled={picked.length === 0}
+                onClick={() => {
+                  setBulkMsg(null);
+                  setBulkStep("delete");
+                }}
+                style={bulkOutline + (picked.length === 0 ? bulkOff : "")}
+              >
+                {tFor(lang, "invoicesPage.bulk.delete")}
+              </button>
+              <button
+                type="button"
+                data-cy="invoices-bulk-void"
+                disabled={picked.length === 0}
+                onClick={() => {
+                  setBulkMsg(null);
+                  setBulkStep("void");
+                }}
+                style={bulkOutline + (picked.length === 0 ? bulkOff : "")}
+              >
+                {tFor(lang, "invoicesPage.bulk.void")}
+              </button>
+              <button
+                type="button"
+                data-cy="invoices-bulk-cancel"
+                onClick={endSelecting}
+                style={bulkGhost}
+              >
+                {tFor(lang, "invoicesPage.bulk.cancel")}
+              </button>
+            </div>
+          )}
+          {bulkStep !== null && (() => {
+            const plan = bulkStep === "delete" ? planDelete : planVoid;
+            const skipped = bulkSkipNote(
+              plan.skip.reduce<Record<string, number>>((m, k) => {
+                m[k.reason] = (m[k.reason] ?? 0) + 1;
+                return m;
+              }, {}),
+              skipLabel,
+            );
+            return (
+              <div
+                data-cy="invoices-bulk-confirm"
+                style="display:flex;flex-direction:column;gap:8px"
+              >
+                <p style="margin:0;font-size:13px;line-height:1.45;color:var(--fg,#144852)">
+                  {plan.apply.length === 0
+                    ? tFor(lang, `invoicesPage.bulk.none.${bulkStep}`)
+                    : tFor(
+                      lang,
+                      bulkStep === "delete"
+                        ? "invoicesPage.bulk.askDelete"
+                        : "invoicesPage.bulk.askVoid",
+                      { n: plan.apply.length },
+                    )}
+                  {skipped && (
+                    <>
+                      {" "}
+                      <span data-cy="invoices-bulk-skips">
+                        {tFor(lang, "invoicesPage.bulk.willSkip", {
+                          list: skipped,
+                        })}
+                      </span>
+                    </>
+                  )}
+                </p>
+                {bulkStep === "void" && plan.apply.length > 0 && (
+                  <input
+                    type="text"
+                    data-cy="invoices-bulk-reason"
+                    value={bulkReason}
+                    maxLength={500}
+                    placeholder={tFor(
+                      lang,
+                      "invoicesPage.remove.reasonPlaceholder",
+                    )}
+                    onInput={(e) =>
+                      setBulkReason((e.target as HTMLInputElement).value)}
+                    style="width:100%;box-sizing:border-box;padding:8px 10px;border:1px solid var(--border,#d8dcd5);border-radius:8px;font:inherit;font-size:13.5px"
+                  />
+                )}
+                <div style="display:flex;gap:8px;flex-wrap:wrap">
+                  {plan.apply.length > 0 && (
+                    <button
+                      type="button"
+                      data-cy="invoices-bulk-confirm-go"
+                      disabled={bulkBusy}
+                      onClick={() => doBulkRemove(bulkStep)}
+                      style={bulkDanger}
+                    >
+                      {bulkBusy ? "…" : tFor(
+                        lang,
+                        bulkStep === "delete"
+                          ? "invoicesPage.bulk.deleteN"
+                          : "invoicesPage.bulk.voidN",
+                        { n: plan.apply.length },
+                      )}
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    data-cy="invoices-bulk-back"
+                    onClick={() => setBulkStep(null)}
+                    style={bulkGhost}
+                  >
+                    {tFor(lang, "invoicesPage.bulk.back")}
+                  </button>
+                </div>
+              </div>
+            );
+          })()}
+          {bulkMsg && (
+            <p
+              role="status"
+              data-cy="invoices-bulk-result"
+              style={`margin:0;font-size:13px;font-weight:700;color:${
+                bulkMsg.error
+                  ? "var(--brand-pink-dark,#d94f4f)"
+                  : "var(--brand-teal,#144852)"
+              }`}
+            >
+              {bulkMsg.text}
+            </p>
+          )}
+        </div>
+      )}
+      {bulkMsg && !selecting && (
+        <p
+          role="status"
+          data-cy="invoices-bulk-result"
+          style={`margin:0 0 10px;font-size:13px;font-weight:700;color:${
+            bulkMsg.error
+              ? "var(--brand-pink-dark,#d94f4f)"
+              : "var(--brand-teal,#144852)"
+          }`}
+        >
+          {bulkMsg.text}
+        </p>
+      )}
       <div class="qlay">
         <div>
           <QuoteTrack
@@ -856,22 +1282,14 @@ export default function InvoicesPage(_props: { lang?: Lang }) {
             storageKey="invoices:track:01"
           >
             {overdue.length === 0
-              ? <EmptyTrack hint={tFor(lang, "invoicesPage.empty.overdue")} />
+              ? (
+                <EmptyTrack
+                  hint={tFor(lang, "invoicesPage.empty.overdue")}
+                />
+              )
               : (
                 <div class="qcards">
-                  {overdue.map((inv, i) => (
-                    <InvoiceCard
-                      key={inv.id}
-                      inv={inv}
-                      idx={i}
-                      now={now}
-                      lang={lang}
-                      onPaymentReceived={openForPayment}
-                      onRefresh={refreshInvoices}
-                      onFlash={setCardFlash}
-                      onSendSheet={setSendSheet}
-                    />
-                  ))}
+                  {overdue.map(cardFor)}
                 </div>
               )}
           </QuoteTrack>
@@ -885,22 +1303,14 @@ export default function InvoicesPage(_props: { lang?: Lang }) {
             storageKey="invoices:track:awaiting"
           >
             {claimed.length === 0
-              ? <EmptyTrack hint={tFor(lang, "invoicesPage.empty.awaiting")} />
+              ? (
+                <EmptyTrack
+                  hint={tFor(lang, "invoicesPage.empty.awaiting")}
+                />
+              )
               : (
                 <div class="qcards" data-cy="awaiting-confirmation-track">
-                  {claimed.map((inv, i) => (
-                    <InvoiceCard
-                      key={inv.id}
-                      inv={inv}
-                      idx={i}
-                      now={now}
-                      lang={lang}
-                      onPaymentReceived={openForPayment}
-                      onRefresh={refreshInvoices}
-                      onFlash={setCardFlash}
-                      onSendSheet={setSendSheet}
-                    />
-                  ))}
+                  {claimed.map(cardFor)}
                 </div>
               )}
           </QuoteTrack>
@@ -917,19 +1327,7 @@ export default function InvoicesPage(_props: { lang?: Lang }) {
               ? <EmptyTrack hint={tFor(lang, "invoicesPage.empty.out")} />
               : (
                 <div class="qcards">
-                  {out.map((inv, i) => (
-                    <InvoiceCard
-                      key={inv.id}
-                      inv={inv}
-                      idx={i}
-                      now={now}
-                      lang={lang}
-                      onPaymentReceived={openForPayment}
-                      onRefresh={refreshInvoices}
-                      onFlash={setCardFlash}
-                      onSendSheet={setSendSheet}
-                    />
-                  ))}
+                  {out.map(cardFor)}
                 </div>
               )}
           </QuoteTrack>
@@ -945,22 +1343,14 @@ export default function InvoicesPage(_props: { lang?: Lang }) {
             storageKey="invoices:track:upcoming"
           >
             {scheduled.length === 0
-              ? <EmptyTrack hint={tFor(lang, "invoicesPage.empty.scheduled")} />
+              ? (
+                <EmptyTrack
+                  hint={tFor(lang, "invoicesPage.empty.scheduled")}
+                />
+              )
               : (
                 <div class="qcards" data-cy="upcoming-track">
-                  {scheduled.map((inv, i) => (
-                    <InvoiceCard
-                      key={inv.id}
-                      inv={inv}
-                      idx={i}
-                      now={now}
-                      lang={lang}
-                      onPaymentReceived={openForPayment}
-                      onRefresh={refreshInvoices}
-                      onFlash={setCardFlash}
-                      onSendSheet={setSendSheet}
-                    />
-                  ))}
+                  {scheduled.map(cardFor)}
                 </div>
               )}
           </QuoteTrack>
@@ -974,22 +1364,14 @@ export default function InvoicesPage(_props: { lang?: Lang }) {
             storageKey="invoices:track:03"
           >
             {drafting.length === 0
-              ? <EmptyTrack hint={tFor(lang, "invoicesPage.empty.drafting")} />
+              ? (
+                <EmptyTrack
+                  hint={tFor(lang, "invoicesPage.empty.drafting")}
+                />
+              )
               : (
                 <div class="qcards">
-                  {drafting.map((inv, i) => (
-                    <InvoiceCard
-                      key={inv.id}
-                      inv={inv}
-                      idx={i}
-                      now={now}
-                      lang={lang}
-                      onPaymentReceived={openForPayment}
-                      onRefresh={refreshInvoices}
-                      onFlash={setCardFlash}
-                      onSendSheet={setSendSheet}
-                    />
-                  ))}
+                  {drafting.map(cardFor)}
                 </div>
               )}
           </QuoteTrack>
@@ -1006,19 +1388,29 @@ export default function InvoicesPage(_props: { lang?: Lang }) {
               ? <EmptyTrack hint={tFor(lang, "invoicesPage.empty.paid")} />
               : (
                 <div class="qcards">
-                  {paidThisMonth.map((inv, i) => (
-                    <InvoiceCard
-                      key={inv.id}
-                      inv={inv}
-                      idx={i}
-                      now={now}
-                      lang={lang}
-                      onPaymentReceived={openForPayment}
-                      onRefresh={refreshInvoices}
-                      onFlash={setCardFlash}
-                      onSendSheet={setSendSheet}
-                    />
-                  ))}
+                  {paidThisMonth.map(cardFor)}
+                </div>
+              )}
+          </QuoteTrack>
+
+          {/* REQ-627: voided invoices stay on record, as Cancelled */}
+          <QuoteTrack
+            num="07"
+            title={tFor(lang, "invoicesPage.track.cancelledTitle")}
+            count={cancelled.length}
+            unit={tFor(lang, "invoicesPage.unit.invoice")}
+            defaultOpen={false}
+            storageKey="invoices:track:cancelled"
+          >
+            {cancelled.length === 0
+              ? (
+                <EmptyTrack
+                  hint={tFor(lang, "invoicesPage.empty.cancelled")}
+                />
+              )
+              : (
+                <div class="qcards" data-cy="invoices-cancelled-track">
+                  {cancelled.map(cardFor)}
                 </div>
               )}
           </QuoteTrack>
@@ -1533,6 +1925,136 @@ function lineItemsOf(inv: Invoice): EditableLine[] {
  * first visible input), and the "$"-bearing rows (list, discount, total)
  * come AFTER the forms.
  */
+/* ---------------- REQ-627: void ---------------- */
+
+/** "Cancelled Nov 12 by Alexander — Wrong address" */
+function voidedLine(inv: Invoice, lang: Lang): string {
+  const base = tFor(lang, "invoicesPage.remove.voidedOn", {
+    date: inv.voidedAt ? formatShortDate(inv.voidedAt.slice(0, 10), lang) : "—",
+  });
+  const who = inv.voidedBy?.name
+    ? ` ${
+      tFor(lang, "invoicesPage.remove.voidedBy", { name: inv.voidedBy.name })
+    }`
+    : "";
+  return `${base}${who}${inv.voidReason ? ` — ${inv.voidReason}` : ""}`;
+}
+
+/**
+ * The void step for a sent invoice (or one with payments): why it is a void
+ * and not a delete, an optional reason, and the payments note. One danger
+ * action, one outlined ("Void & duplicate"), a ghost "Keep it".
+ */
+function VoidPanel(
+  { inv, lang, onCancel, onDone }: {
+    inv: Invoice;
+    lang: Lang;
+    onCancel: () => void;
+    onDone: (draftId?: string) => void | Promise<void>;
+  },
+) {
+  const [reason, setReason] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const hasPayments = removalFor(inv, 0).hasPayments;
+  async function go(duplicate: boolean) {
+    if (busy) return;
+    setBusy(true);
+    setErr(null);
+    try {
+      const r = await fetch(
+        duplicate
+          ? `/api/invoices/${inv.id}/void-duplicate`
+          : `/api/invoices/${inv.id}/void`,
+        {
+          method: "POST",
+          credentials: "include",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(reason.trim() ? { reason: reason.trim() } : {}),
+        },
+      );
+      const body = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        setErr(tFor(lang, `invoicesPage.remove.err.${body.reason ?? "other"}`));
+        return;
+      }
+      await onDone(duplicate ? body.draft?.id : undefined);
+    } finally {
+      setBusy(false);
+    }
+  }
+  const btn =
+    "appearance:none;cursor:pointer;border-radius:9px;padding:8px 13px;font:inherit;font-size:13px;font-weight:700;white-space:nowrap";
+  return (
+    <div
+      data-cy="invoice-void-panel"
+      onClick={(e) => e.stopPropagation()}
+      style="margin-top:8px;padding:12px;border:1px solid var(--border,#d8dcd5);border-radius:10px;background:#fff;display:flex;flex-direction:column;gap:8px;text-align:left;width:100%;box-sizing:border-box"
+    >
+      <p style="margin:0;font-size:13px;line-height:1.45;color:var(--fg,#144852)">
+        {tFor(lang, "invoicesPage.remove.voidExplain")}
+      </p>
+      {hasPayments && (
+        <p
+          data-cy="invoice-void-payments-note"
+          style="margin:0;font-size:12.5px;line-height:1.45;color:#5A3D08;background:#FFF4DB;border-radius:8px;padding:6px 9px"
+        >
+          {tFor(lang, "invoicesPage.remove.paymentsNote")}
+        </p>
+      )}
+      <label style="display:flex;flex-direction:column;gap:4px;font-size:12px;font-weight:700;color:var(--fg-muted,#6b7560)">
+        {tFor(lang, "invoicesPage.remove.reasonLabel")}
+        <input
+          type="text"
+          data-cy="invoice-void-reason"
+          value={reason}
+          maxLength={500}
+          placeholder={tFor(lang, "invoicesPage.remove.reasonPlaceholder")}
+          onInput={(e) => setReason((e.target as HTMLInputElement).value)}
+          style="width:100%;box-sizing:border-box;padding:8px 10px;border:1px solid var(--border,#d8dcd5);border-radius:8px;font:inherit;font-size:13.5px;font-weight:400"
+        />
+      </label>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+        <button
+          type="button"
+          data-cy="invoice-void-confirm"
+          disabled={busy}
+          onClick={() => go(false)}
+          style={`${btn};background:#fff;border:1px solid var(--brand-pink,#ff6b6b);color:var(--brand-pink-dark,#d94f4f)`}
+        >
+          {tFor(lang, "invoicesPage.remove.voidYes")}
+        </button>
+        <button
+          type="button"
+          data-cy="invoice-void-duplicate"
+          disabled={busy}
+          onClick={() => go(true)}
+          title={tFor(lang, "invoicesPage.remove.duplicateHint")}
+          style={`${btn};background:#fff;border:1px solid var(--border,#d8dcd5);color:var(--brand-teal,#144852)`}
+        >
+          {tFor(lang, "invoicesPage.remove.voidDuplicate")}
+        </button>
+        <button
+          type="button"
+          data-cy="invoice-void-cancel"
+          onClick={onCancel}
+          style={`${btn};background:none;border:0;color:var(--fg-muted,#6b7560)`}
+        >
+          {tFor(lang, "invoicesPage.detail.deleteNo")}
+        </button>
+      </div>
+      {err && (
+        <p
+          role="alert"
+          style="margin:0;font-size:12.5px;font-weight:700;color:var(--brand-pink-dark,#d94f4f)"
+        >
+          {err}
+        </p>
+      )}
+    </div>
+  );
+}
+
 function InvoiceDetail(
   { inv, lang, onClose, onChanged, onPaymentRecorded, onFlash }: {
     inv: EnrichedInvoice;
@@ -1615,6 +2137,19 @@ function InvoiceDetail(
       reminders,
     )
     : "none";
+  // REQ-627: what removing THIS invoice means — delete, void, or neither
+  const removal = removalFor(inv, 0);
+  const [voidOpen, setVoidOpen] = useState(false);
+  // REQ-629: the print-ready PDF of this one invoice
+  const [pdfBusy, setPdfBusy] = useState(false);
+  async function doDownloadPdf() {
+    if (pdfBusy) return;
+    setPdfBusy(true);
+    setErr(null);
+    const r = await downloadInvoicesPdf([inv.id]);
+    if (!r.ok) setErr(tFor(lang, "invoicesPage.bulk.printFailed"));
+    setPdfBusy(false);
+  }
 
   async function doDelete() {
     if (busy) return;
@@ -1641,6 +2176,8 @@ function InvoiceDetail(
   // live record with the pending edits folded in), never the stale published one.
   const draft = workingCopy(inv) as EnrichedInvoice;
   const locked = isInvoiceLocked(inv);
+  // REQ-627: a voided invoice is cancelled — nothing on it changes either
+  const voided = inv.status === "void";
   const [editJobName, setEditJobName] = useState(
     strField(draft, "jobName") ?? "",
   );
@@ -1874,7 +2411,8 @@ function InvoiceDetail(
               data-cy="invoice-locked"
               style="margin-top:4px;font-size:12px;color:var(--fg-muted,#6b7560)"
             >
-              🔒 {tFor(lang, "invoices.lockedPaid")}
+              🔒 {tFor(lang, "invoices.lockedPaid")} ·{" "}
+              {tFor(lang, "invoicesPage.remove.lockedExplain")}
             </div>
           )}
         </div>
@@ -2028,9 +2566,9 @@ function InvoiceDetail(
           type="button"
           data-cy="invoice-edit"
           onClick={() => switchMode("edit")}
-          disabled={locked}
+          disabled={locked || voided}
           title={locked ? tFor(lang, "invoices.lockedPaid") : undefined}
-          style={locked ? lockedBtn : secondaryBtn}
+          style={locked || voided ? lockedBtn : secondaryBtn}
         >
           {tFor(lang, "invoicesPage.detail.editBtn")}
         </button>
@@ -2038,9 +2576,9 @@ function InvoiceDetail(
           type="button"
           data-cy="invoice-discount-btn"
           onClick={() => switchMode("discount")}
-          disabled={locked}
+          disabled={locked || voided}
           title={locked ? tFor(lang, "invoices.lockedPaid") : undefined}
-          style={locked ? lockedBtn : secondaryBtn}
+          style={locked || voided ? lockedBtn : secondaryBtn}
         >
           {tFor(lang, "invoicesPage.detail.discountBtn")}
         </button>
@@ -2048,14 +2586,37 @@ function InvoiceDetail(
           type="button"
           data-cy="invoice-change-order-btn"
           onClick={() => switchMode("co")}
-          disabled={locked}
+          disabled={locked || voided}
           title={locked ? tFor(lang, "invoices.lockedPaid") : undefined}
-          style={locked ? lockedBtn : secondaryBtn}
+          style={locked || voided ? lockedBtn : secondaryBtn}
         >
           {tFor(lang, "invoicesPage.detail.changeOrderBtn")}
         </button>
+        {/* REQ-629: download the print-ready PDF */}
+        <button
+          type="button"
+          data-cy="invoice-download-pdf"
+          onClick={doDownloadPdf}
+          disabled={pdfBusy}
+          style={secondaryBtn}
+        >
+          {pdfBusy ? "…" : tFor(lang, "invoicesPage.detail.downloadPdf")}
+        </button>
+        {/* REQ-627: a sent invoice (or one with payments) is voided, not deleted */}
+        {removal.action === "void" && !voidOpen && (
+          <button
+            type="button"
+            data-cy="invoice-void"
+            onClick={() => setVoidOpen(true)}
+            style={dangerBtn}
+          >
+            {tFor(lang, "invoicesPage.remove.voidBtn")}
+          </button>
+        )}
         {/* REQ-167: delete, with an inline two-step confirm */}
-        {confirmDelete
+        {removal.action === "void" || removal.action === "none"
+          ? null
+          : confirmDelete
           ? (
             <span
               data-cy="invoice-delete-ask"
@@ -2108,7 +2669,60 @@ function InvoiceDetail(
             {tFor(lang, "invoicesPage.detail.paymentReceivedBtn")}
           </button>
         )}
+        {/* REQ-626: what the customer sees stays one click away */}
+        <a
+          data-cy="invoice-detail-view-as-customer"
+          href={`/i/${inv.id}`}
+          target="_blank"
+          rel="noopener"
+          style={`${secondaryBtn};text-decoration:none;display:inline-flex;align-items:center`}
+        >
+          {tFor(lang, "invoicesPage.back.viewAsCustomer")}
+        </a>
       </div>
+
+      {voidOpen && (
+        <VoidPanel
+          inv={inv}
+          lang={lang}
+          onCancel={() => setVoidOpen(false)}
+          onDone={async (draftId) => {
+            setVoidOpen(false);
+            if (draftId) {
+              // REQ-627: straight to the corrected copy, ready to edit
+              globalThis.location.assign(`/invoices?open=${draftId}`);
+              return;
+            }
+            await onChanged();
+          }}
+        />
+      )}
+      {removal.action === "none" && (
+        <p
+          data-cy="invoice-voided-note"
+          style="margin:10px 0 0;font-size:13px;line-height:1.45;color:var(--fg-muted,#6b7560)"
+        >
+          {voidedLine(inv, lang)}
+          {removal.hasPayments && (
+            <>
+              <br />
+              {tFor(lang, "invoicesPage.remove.paymentsNote")}
+            </>
+          )}
+          {inv.replacedBy && (
+            <>
+              {" "}
+              <a
+                href={`/invoices?open=${inv.replacedBy}`}
+                data-cy="invoice-replaced-by"
+                style="font-weight:700;color:var(--brand-teal,#144852)"
+              >
+                {tFor(lang, "invoicesPage.remove.openCopy")}
+              </a>
+            </>
+          )}
+        </p>
+      )}
 
       {mode === "pay" && (
         <div style={formBox} data-cy="invoice-pay-form">
@@ -2883,11 +3497,23 @@ function useInvoiceDispatch(
 }
 
 function InvoiceCard(
-  { inv, idx, now, lang, onPaymentReceived, onRefresh, onFlash, onSendSheet }: {
+  {
+    inv,
+    idx,
+    now,
+    lang,
+    onOpen,
+    onPaymentReceived,
+    onRefresh,
+    onFlash,
+    onSendSheet,
+  }: {
     inv: EnrichedInvoice;
     idx: number;
     now: Date;
     lang: Lang;
+    /** REQ-626: open this invoice's EDITABLE detail panel, in-app */
+    onOpen: (id: string) => void;
     /** REQ-727: "Send now" / "Finish + send" open the page's send sheet */
     onSendSheet: (sheet: InvoiceSendSheet) => void;
     /** REQ-489: opens this invoice in pay mode in place (no page load). */
@@ -2975,6 +3601,9 @@ function InvoiceCard(
   const [discountDollars, setDiscountDollars] = useState("");
   // REQ-167: delete from the card, asked inline first
   const [confirmDelete, setConfirmDelete] = useState(false);
+  // REQ-627: a sent card is voided (with a step), a draft deleted, paid neither
+  const removal = removalFor(inv, 0);
+  const [voidOpen, setVoidOpen] = useState(false);
   async function doDeleteInvoice() {
     if (busy) return;
     setBusy(true);
@@ -3023,6 +3652,8 @@ function InvoiceCard(
     ? tFor(lang, "invoicesPage.cta.outReceived")
     : inv.stage === "drafting"
     ? tFor(lang, "invoicesPage.cta.drafting")
+    : inv.stage === "void"
+    ? tFor(lang, "invoicesPage.cta.void")
     : tFor(lang, "invoicesPage.cta.paid");
   const subline = inv.stage === "claimed"
     ? `${
@@ -3062,6 +3693,10 @@ function InvoiceCard(
     : inv.stage === "drafting"
     ? tFor(lang, "invoicesPage.subline.drafting", {
       date: fmtDate(inv.issuedDate ?? inv.createdAt, now, lang),
+    })
+    : inv.stage === "void"
+    ? tFor(lang, "invoicesPage.subline.void", {
+      date: fmtDate(inv.voidedAt ?? inv.updatedAt, now, lang),
     })
     : tFor(lang, "invoicesPage.subline.paid", {
       date: fmtDate(inv.paidAt, now, lang),
@@ -3116,14 +3751,10 @@ function InvoiceCard(
   }
   function doOpenInvoice(e: Event) {
     e.stopPropagation();
-    // Public invoice page is the canonical detail surface today — opens
-    // in a new tab so the dashboard stays put.
-    // REQ-586 (cycle 4, M11): in the invoice's own language.
-    globalThis.open(
-      invoiceLinkPath(inv.id, inv.lang),
-      "_blank",
-      "noopener,noreferrer",
-    );
+    // REQ-626: "Open" is the editable detail panel (Edit / Discount / Change
+    // order / Delete / Payment received) — the customer's page is its own
+    // "View as customer" link.
+    onOpen(inv.id);
   }
   async function doSendText(e: Event) {
     e.stopPropagation();
@@ -3335,6 +3966,8 @@ function InvoiceCard(
       name: inv.paymentIntent?.claimedBy?.trim() || inv.client,
       method: methodLabel(inv.paymentIntent?.method, lang),
     })
+    : inv.stage === "void"
+    ? voidedLine(inv, lang)
     : null;
   return (
     <article
@@ -3473,7 +4106,40 @@ function InvoiceCard(
             style="margin-top:6px;display:flex;align-items:center;gap:8px;flex-wrap:wrap"
             onClick={(e) => e.stopPropagation()}
           >
-            {confirmDelete
+            {/* REQ-627: sent → Void (a step that explains it); void → who/when/why */}
+            {removal.action === "void" && !voidOpen && (
+              <button
+                type="button"
+                data-cy="invoice-card-void"
+                onClick={() => setVoidOpen(true)}
+                style="appearance:none;background:none;border:none;color:var(--brand-pink-dark,#d94f4f);font:inherit;font-size:12.5px;font-weight:700;padding:2px 0;cursor:pointer"
+              >
+                {tFor(lang, "invoicesPage.remove.voidBtn")}
+              </button>
+            )}
+            {removal.action === "void" && voidOpen && (
+              <VoidPanel
+                inv={inv}
+                lang={lang}
+                onCancel={() => setVoidOpen(false)}
+                onDone={(draftId) => {
+                  if (draftId) {
+                    globalThis.location.assign(`/invoices?open=${draftId}`);
+                  } else globalThis.location.reload();
+                }}
+              />
+            )}
+            {removal.action === "none" && (
+              <span
+                data-cy="invoice-card-voided"
+                style="font-size:12px;line-height:1.4;color:var(--fg-muted,#6b7560)"
+              >
+                {voidedLine(inv, lang)}
+              </span>
+            )}
+            {removal.action === "void" || removal.action === "none"
+              ? null
+              : confirmDelete
               ? (
                 <ConfirmRow
                   cy="invoice-card-delete-ask"
@@ -3921,9 +4587,25 @@ function InvoiceCard(
           >
             {busy ? "…" : cta}
           </button>
+          <button
+            type="button"
+            data-cy="invoice-back-open"
+            onClick={doOpenInvoice}
+          >
+            {tFor(lang, "invoicesPage.back.open")}
+          </button>
+          <a
+            data-cy="invoice-view-as-customer"
+            href={`/i/${inv.id}`}
+            target="_blank"
+            rel="noopener"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {tFor(lang, "invoicesPage.back.viewAsCustomer")}
+          </a>
           {
-            /* REQ-702 (cycle 5, m21): View as customer + Copy link — the
-              same component the detail panel uses */
+            /* REQ-702 (cycle 5, m21): Copy link — the same component the
+              detail panel uses (REQ-626: View as customer is the link above) */
           }
           <InvoiceStageActions
             stage={inv.stage}
@@ -4193,9 +4875,13 @@ function NewInvoiceModal(
   const today = new Date().toISOString().slice(0, 10);
   const [requestId] = useState(() => crypto.randomUUID());
   const [clientSel, setClientSel] = useState("");
-  const [newName, setNewName] = useState("");
-  const [newPhone, setNewPhone] = useState("");
-  const [newEmail, setNewEmail] = useState("");
+  // REQ-625: "New client" is the shared customer form (every field)
+  const [newClient, setNewClient] = useState<CustomerFormValues>(
+    emptyCustomerForm,
+  );
+  const newName = newClient.name;
+  const newPhone = newClient.phone;
+  const newEmail = newClient.email;
   // REQ-715 (demo-loop cycle 5, m31): the language the new client reads
   const [newLanguage, setNewLanguage] = useState<CustomerLanguageValue>("");
   const [jobName, setJobName] = useState("");
@@ -4472,9 +5158,25 @@ function NewInvoiceModal(
     };
   const channel = sendChannel(contact);
   const canSend = channel !== "none";
+  // REQ-625: a new client's details stand in for any bill-to field (and the
+  // service address) left blank — the invoice is billed to who was just typed.
+  const newAddress = composeAddress(newClient);
+  const effBillTo = clientSel === NEW_SENTINEL
+    ? {
+      name: billTo.name.trim() || newClient.name.trim(),
+      businessName: billTo.businessName.trim() ||
+        newClient.businessName.trim(),
+      email: billTo.email.trim() || newClient.email.trim(),
+      phoneNumber: billTo.phoneNumber.trim() || newClient.phone.trim(),
+      address: billTo.address.trim() || newAddress,
+    }
+    : billTo;
+  const effService = clientSel === NEW_SENTINEL
+    ? serviceAddress.trim() || newAddress
+    : serviceAddress;
   const missing = missingInfo({
-    billTo: { ...billTo, ...contact },
-    serviceAddress,
+    billTo: clientSel === NEW_SENTINEL ? effBillTo : { ...billTo, ...contact },
+    serviceAddress: effService,
     lineItems: formLines,
     amountCents: totals.totalCents,
   });
@@ -4579,25 +5281,31 @@ function NewInvoiceModal(
       setConfirmCents(totals.totalCents);
       return;
     }
+    if (clientSel === NEW_SENTINEL) {
+      const bad = validateCustomerForm(newClient);
+      if (bad.phone || bad.email) {
+        setError(
+          tFor(
+            lang,
+            bad.phone
+              ? "customerForm.err.phoneInvalid"
+              : "customerForm.err.emailInvalid",
+          ),
+        );
+        return;
+      }
+    }
     setBusy(true);
     setError(null);
     try {
       let customerId: string | undefined;
       let bt = billTo;
       if (clientSel === NEW_SENTINEL) {
-        const created = await clientsClient.create({
-          name: newName.trim(),
-          ...(newPhone.trim() ? { phoneNumber: newPhone.trim() } : {}),
-          ...(newEmail.trim() ? { email: newEmail.trim() } : {}),
-          ...(newLanguage ? { language: newLanguage } : {}),
-        });
+        const created = await clientsClient.create(
+          customerCreatePayload(newClient, newLanguage), // REQ-715
+        );
         customerId = created.id;
-        bt = {
-          ...billTo,
-          name: billTo.name.trim() || newName.trim(),
-          email: billTo.email.trim() || newEmail.trim(),
-          phoneNumber: billTo.phoneNumber.trim() || newPhone.trim(),
-        };
+        bt = effBillTo;
       } else if (clientSel) {
         customerId = clientSel;
       }
@@ -4626,7 +5334,7 @@ function NewInvoiceModal(
           netDays,
           issuedDate,
           dueDate,
-          serviceAddress,
+          serviceAddress: effService,
           serviceDateFrom: serviceFrom || undefined,
           serviceDateTo: serviceTo || undefined,
           paymentInstructions,
@@ -4932,61 +5640,18 @@ function NewInvoiceModal(
 
         {clientSel === NEW_SENTINEL && (
           <div style="display:flex;flex-direction:column;gap:12px;background:rgba(0,0,0,0.03);border-radius:10px;padding:12px 14px">
-            <label style={labelStyle}>
-              {tFor(lang, "settings.name")}
-              <input
-                type="text"
-                data-cy="new-invoice-new-name"
-                autoFocus
-                required
-                value={newName}
-                disabled={busy}
-                {...flag("name")}
-                onInput={(e) => {
-                  const v = (e.target as HTMLInputElement).value;
-                  setNewName(v);
-                  if (fieldErrs.name) checkField("name", v);
-                }}
-                style={inputStyle + (fieldErrs.name ? badBorder : "")}
-              />
-              {fieldError("name")}
-            </label>
-            <label style={labelStyle}>
-              {tFor(lang, "settings.phone")}
-              <input
-                type="tel"
-                data-cy="new-invoice-new-phone"
-                value={formatPhoneInput(newPhone)} /* NW-34 (REQ-012) */
-                disabled={busy}
-                {...flag("phone")}
-                onInput={(e) => {
-                  const v = (e.target as HTMLInputElement).value;
-                  setNewPhone(v);
-                  if (fieldErrs.phone) checkField("phone", v);
-                }}
-                onBlur={() => checkField("phone")}
-                style={inputStyle + (fieldErrs.phone ? badBorder : "")}
-              />
-              {fieldError("phone")}
-            </label>
-            <label style={labelStyle}>
-              {tFor(lang, "settings.email")}
-              <input
-                type="email"
-                data-cy="new-invoice-new-email"
-                value={newEmail}
-                disabled={busy}
-                {...flag("email")}
-                onInput={(e) => {
-                  const v = (e.target as HTMLInputElement).value;
-                  setNewEmail(v);
-                  if (fieldErrs.email) checkField("email", v);
-                }}
-                onBlur={() => checkField("email")}
-                style={inputStyle + (fieldErrs.email ? badBorder : "")}
-              />
-              {fieldError("email")}
-            </label>
+            {/* REQ-625: the ONE customer form — name, company, phone, email, address, notes */}
+            <CustomerFields
+              values={newClient}
+              onChange={(p) => setNewClient((v) => ({ ...v, ...p }))}
+              lang={lang}
+              disabled={busy}
+              errors={(() => {
+                const { name: _n, ...rest } = validateCustomerForm(newClient);
+                return rest;
+              })()}
+              autoFocus
+            />
             {/* REQ-715: the invoice — and every later send — goes out in it */}
             <label style={labelStyle}>
               {tFor(lang, "customer.language.label")}
@@ -5224,10 +5889,11 @@ function NewInvoiceModal(
             type="button"
             data-cy="new-invoice-line-add"
             disabled={busy}
-            onClick={() => setLines((ls) => [
-              ...ls,
-              { description: "", quantity: "1", unit: "", price: "" },
-            ])}
+            onClick={() =>
+              setLines((ls) => [
+                ...ls,
+                { description: "", quantity: "1", unit: "", price: "" },
+              ])}
             style="appearance:none;cursor:pointer;background:none;border:1px dashed var(--border,#d8dcd5);border-radius:8px;padding:7px 12px;font:inherit;font-size:13px;font-weight:700;color:var(--brand-teal,#144852)"
           >
             {tFor(lang, "invoices.form.addLine")}

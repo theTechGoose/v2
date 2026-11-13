@@ -10,10 +10,13 @@ import { parseUpdateUser } from "@users/dto/user.ts";
 import {
   readSessionId,
   requireOwner,
+  requireSession,
   requireUser,
   UnauthorizedError,
 } from "@users/domain/coordinators/require-user/mod.ts";
 import { AccountAdmins } from "@users/domain/coordinators/account-admins/mod.ts"; // REQ-146
+import { splitActingPatch } from "@users/domain/business/account-admins/mod.ts"; // REQ-624
+import type { User } from "@users/dto/user.ts";
 import { buildSessionCookie, clearSessionCookie } from "@users/domain/business/session-cookie/mod.ts";
 import { TransferAccount, TransferError } from "@users/domain/coordinators/transfer-account/mod.ts"; // REQ-220
 import { ChoosePlan } from "@users/domain/coordinators/choose-plan/mod.ts";
@@ -196,18 +199,35 @@ export class MeController {
     return { ms };
   }
 
+  /**
+   * GET /me — the account (the owner's user while acting) and, REQ-624, when the session acts for
+   * someone else's account, `actor`: the person signed in — `{ id, name, needsName, email? }`, her
+   * name never the owner's. Every "Hi {name}" reads `actor.name` over `name`.
+   */
   @Get()
   async me(@Context() ctx: ExecutionContext) {
-    return await requireUser(ctx, this.sessions, this.users);
+    const { user, actor } = await requireSession(ctx, this.sessions, this.users);
+    return await withActor(this.accountAdmins, user, actor);
   }
 
+  /**
+   * PUT /me — name, email, language. While acting, all three are the PERSON's own and are written
+   * to HER record (REQ-624 name/email, REQ-631 language); the owner's record is never touched.
+   * Replies with the /me view (`actor.language` is hers).
+   */
   @Put()
   async update(@Context() ctx: ExecutionContext, @Body() body: unknown) {
-    const user = await requireUser(ctx, this.sessions, this.users);
+    const { user, actor } = await requireSession(ctx, this.sessions, this.users);
     const patch = parseUpdateUser(body);
-    const updated = await this.users.update(user.id, patch);
-    await this.leads.enqueueSync(user.id); // REQ-058/099 — the name and email reach the CRM customer, after this reply
-    return updated;
+    if (!actor) {
+      const updated = await this.users.update(user.id, patch);
+      await this.leads.enqueueSync(user.id); // REQ-058/099 — the name and email reach the CRM customer, after this reply
+      return updated;
+    }
+    const split = splitActingPatch(patch);
+    const me = Object.keys(split.actor).length ? await this.users.update(actor.id, split.actor) : actor;
+    const account = Object.keys(split.account).length ? await this.users.update(user.id, split.account) : user;
+    return await withActor(this.accountAdmins, account, me);
   }
 
   /**
@@ -349,6 +369,13 @@ export class MeController {
     const res = await this.wipeCoord.run(user.id);
     return { ...res, phone, userId: user.id };
   }
+}
+
+/** REQ-624 — the account as /me answers it, with the acting person when there is one (a plain
+ *  function: an undecorated method on a Danet controller breaks its router) */
+async function withActor(admins: AccountAdmins, user: User, actor: User | null) {
+  if (!actor) return user;
+  return { ...user, actor: await admins.actorView(actor, user.id, user) };
 }
 
 /** REQ-220 — a refused transfer as `{ ok:false, error }` under its status; anything else is rethrown */

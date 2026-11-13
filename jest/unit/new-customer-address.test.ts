@@ -60,10 +60,13 @@ describe("REQ-599 m30: the New customer modal takes an address", () => {
   });
 
   test("the island renders the autocomplete address field and sends it", () => {
-    const island = read("front-end/islands/ClientsPage.tsx");
-    expect(island).toMatch(/<AddressAutocomplete[\s\S]*?data-cy="add-client-address"/);
-    expect(island).toMatch(/clientsClient\.create\(\s*newCustomerPayload\(/);
-    expect(island).toMatch(/customerDraftDirty\(\{[\s\S]*?address: addAddress/);
+    // REQ-599 AMENDMENT — reconciled with develop on demo-fixes: the New
+    // customer form is develop's CustomerFormDialog (REQ-625); its street
+    // line is the autocomplete, a picked address fills the parts
+    const form = read("front-end/components/CustomerForm.tsx");
+    expect(form).toMatch(/<AddressAutocomplete[\s\S]*?data-cy="cf-street"/);
+    expect(form).toMatch(/clientsClient\.create\(\s*customerCreatePayload\(/);
+    expect(form).toMatch(/onInput=\{\(v\) => onChange\(addressParts\(v\)\)\}/);
     const field = read("front-end/components/AddressAutocomplete.tsx");
     expect(field).toMatch(/suggestAddresses\(/);
     expect(field).toMatch(/role="combobox"/);

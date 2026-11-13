@@ -236,7 +236,9 @@ describe("REQ-715 wiring — every place a customer is made or edited, and every
   const src = (rel: string) => () =>
     fs.existsSync(path.join(ROOT, rel)) ? read(rel) : "";
   const select = src("front-end/components/CustomerLanguageSelect.tsx");
-  const page = src("front-end/islands/ClientsPage.tsx");
+  // REQ-715 AMENDMENT — reconciled with develop on demo-fixes: the New
+  // customer form is develop's shared CustomerFormDialog (REQ-625)
+  const page = src("front-end/components/CustomerForm.tsx");
   const board = src("front-end/islands/ClientsBoard.tsx");
   const invoices = src("front-end/islands/InvoicesPage.tsx");
   const sendDialog = src("front-end/components/QuoteSendDialog.tsx");
@@ -251,8 +253,8 @@ describe("REQ-715 wiring — every place a customer is made or edited, and every
 
   it("REQ-715 the New customer form sends the picked language", () => {
     expect(page()).toMatch(/<CustomerLanguageSelect/);
-    expect(page()).toMatch(/data-cy="add-client-language"/);
-    expect(page()).toMatch(/language:\s*addLanguage/);
+    expect(page()).toMatch(/data-cy="cf-language"/);
+    expect(page()).toMatch(/customerCreatePayload\(values, language\)/);
   });
 
   it("REQ-715 the card shows the language and saves a change through PUT /customers/:id", () => {
@@ -263,7 +265,8 @@ describe("REQ-715 wiring — every place a customer is made or edited, and every
 
   it("REQ-715 the New invoice modal's new client carries the language", () => {
     expect(invoices()).toMatch(/<CustomerLanguageSelect/);
-    expect(invoices()).toMatch(/language:\s*newLanguage/);
+    // REQ-715 AMENDMENT (reconciled with develop's REQ-625 shared form)
+    expect(invoices()).toMatch(/customerCreatePayload\(newClient, newLanguage\)/);
   });
 
   it("REQ-715 both send dialogs start 'Sends in' on the customer's language", () => {

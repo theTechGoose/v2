@@ -2,8 +2,13 @@ import { asset, Head } from "fresh/runtime";
 import { define } from "../../utils.ts";
 import DocTitle from "../../components/DocTitle.tsx";
 import SiteFooter from "../../components/SiteFooter.tsx";
-import { ssrBackendGetAuthed } from "../../lib/backend-fetch.ts";
+import { ssrBackendGet, ssrBackendGetAuthed } from "../../lib/backend-fetch.ts";
 import { getSessionId } from "../../lib/auth.ts";
+import BizBrand from "../../components/BizBrand.tsx";
+import {
+  publicBusinessLabel,
+  publicDocTitle,
+} from "../../../shared/documents/public-brand.ts";
 import { fmtMoneyExact, fmtPhone, telHref } from "../../lib/format.ts";
 import { type Lang, tFor } from "../../lib/i18n.ts";
 import {
@@ -31,6 +36,9 @@ import PublicInvoiceClaim from "../../islands/PublicInvoiceClaim.tsx";
 import PublicInvoiceRefresh from "../../islands/PublicInvoiceRefresh.tsx";
 import OwnerClaimReview from "../../islands/OwnerClaimReview.tsx";
 import PublicLangToggle from "../../islands/PublicLangToggle.tsx";
+import PublicCardPay, {
+  type CardConfig,
+} from "../../islands/PublicCardPay.tsx"; // REQ-213
 import {
   invoiceHeadline,
   shortDate,
@@ -143,6 +151,8 @@ interface InvoicePublic {
   scheduledFor?: string;
   issuedDate?: string;
   paidAt?: string;
+  /** REQ-627: set when the business voided this invoice */
+  voidedAt?: string;
   installmentIndex?: number;
   installmentTotal?: number;
   paymentIntent?: {
@@ -197,7 +207,16 @@ interface InvoicePublic {
     installmentIndex?: number;
     installmentTotal?: number;
   }>;
-  acceptedMethods?: Array<{ method: string; handle?: string }>;
+  /** REQ-630: `method: "link"` rows carry the business's own payment link (id, name, https url) */
+  acceptedMethods?: Array<
+    {
+      method: string;
+      handle?: string;
+      id?: string;
+      name?: string;
+      url?: string;
+    }
+  >;
   /** REQ-523 (demo m16): where the payment receipt can arrive — "email",
    *  "text" (a number that can take one) or "none". */
   receiptChannel?: string;
@@ -215,6 +234,13 @@ export default define.page(async function PublicInvoice(ctx) {
     getSessionId(ctx.req),
   );
   const invoice = r.ok ? r.data : undefined;
+  // REQ-213 — whether the business takes cards (REQ-212) and what the card page needs
+  const cardRes = invoice
+    ? await ssrBackendGet<CardConfig>(`/invoices/${id}/card`)
+    : undefined;
+  const card = cardRes?.ok && cardRes.data?.available
+    ? cardRes.data
+    : undefined;
   // Chrome language — REQ-272: the link's ?lang= (the EN | ES toggle below)
   // first, then the visitor's own saved choice (pm_lang cookie), over the
   // document's generation language (P-12). The claim + change-order islands
@@ -236,9 +262,14 @@ export default define.page(async function PublicInvoice(ctx) {
   return (
     <>
       <Head>
+        {/* REQ-628: the tab names the business, never DocuMonster */}
         <DocTitle
           lang={lang}
-          title={(l) => tFor(l, "publicInvoice.docTitle")}
+          title={(l) =>
+            publicDocTitle(
+              tFor(l, "publicInvoice.docTitle"),
+              publicBusinessLabel(invoice?.contractor),
+            )}
         />
         <link key="css-landing" rel="stylesheet" href={asset("/landing.css")} />
         <link
@@ -246,6 +277,15 @@ export default define.page(async function PublicInvoice(ctx) {
           rel="stylesheet"
           href={asset("/public-lang.css")}
         />
+        {card
+          ? (
+            <link
+              key="css-paycard"
+              rel="stylesheet"
+              href={asset("/paycard.css")}
+            />
+          )
+          : null}
       </Head>
       <div
         style={`min-height:100dvh;background:${BG};font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:${INK};display:flex;flex-direction:column;scroll-padding-bottom:var(--kb-inset, 0px)`}
@@ -266,7 +306,14 @@ export default define.page(async function PublicInvoice(ctx) {
                 lang={lang}
               />
             )
-            : <InvoiceDoc invoice={invoice} lang={lang} search={url.search} />}
+            : (
+              <InvoiceDoc
+                invoice={invoice}
+                lang={lang}
+                search={url.search}
+                card={card}
+              />
+            )}
         </div>
         <SiteFooter lang={lang} document credited />
       </div>
@@ -277,11 +324,6 @@ export default define.page(async function PublicInvoice(ctx) {
 function ErrorCard({ message, lang }: { message: string; lang: Lang }) {
   return (
     <>
-      <div
-        style={`font-size:11px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:${GREEN};text-align:center;margin-bottom:18px`}
-      >
-        {tFor(lang, "brand.name")}
-      </div>
       <div
         style={`background:#fff;border-radius:18px;padding:32px;box-shadow:0 8px 32px rgba(20,72,82,0.08);text-align:center`}
       >
@@ -300,21 +342,26 @@ function siteLabel(url: string): string {
 }
 
 function InvoiceDoc(
-  { invoice, lang, search }: {
+  { invoice, lang, search, card }: {
     invoice: InvoicePublic;
     lang: Lang;
     /** REQ-479: the page's query, for the claim's in-person override. */
     search: string;
+    /** REQ-213: the business takes cards on its own Stripe */
+    card?: CardConfig;
   },
 ) {
-  const paid = invoice.status === "paid" || !!invoice.paidAt;
-  const claimed = invoice.status === "claimed" && !!invoice.paymentIntent;
-  const pastDue = !paid && !claimed && isPastDue(invoice.dueDate);
+  // REQ-627: a voided invoice says so and cannot be paid
+  const voided = invoice.status === "void";
+  const paid = !voided && (invoice.status === "paid" || !!invoice.paidAt);
+  const claimed = !voided && invoice.status === "claimed" &&
+    !!invoice.paymentIntent;
+  const pastDue = !voided && !paid && !claimed && isPastDue(invoice.dueDate);
   const es = lang === "es";
   const contractorFirst = invoice.contractor?.name?.split(/\s+/)[0];
-  const businessLabel = invoice.contractor?.businessName?.trim() ||
-    invoice.contractor?.name?.trim() ||
-    tFor(lang, "brand.name");
+  // REQ-628: the business, else the contractor — never DocuMonster
+  const businessLabel = publicBusinessLabel(invoice.contractor) ??
+    tFor(lang, "publicInvoice.contractorFallback.capital");
   const jobName =
     (invoice.jobDetails?.jobNameByLang?.[lang] ?? invoice.jobDetails?.jobName)
       ?.trim() ||
@@ -421,24 +468,17 @@ function InvoiceDoc(
           {/* Eyebrow */}
           <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px">
             <div>
-              {invoice.contractor?.hasLogo
-                ? (
-                  <img
-                    src={publicLogoUrl(
-                      "invoice",
-                      invoice.id,
-                      invoice.contractor.logoVersion,
-                    )}
-                    alt=""
-                    style="max-height:44px;max-width:150px;object-fit:contain;display:block;margin-bottom:8px;border-radius:8px"
-                  />
-                )
-                : null}
-              <div
-                style={`font-size:11px;font-weight:800;letter-spacing:.18em;text-transform:uppercase;color:${PINK_DARK}`}
-              >
-                {businessLabel}
-              </div>
+              {/* REQ-628: their logo, or their name as a wordmark */}
+              <BizBrand
+                logoSrc={invoice.contractor?.hasLogo
+                  ? publicLogoUrl(
+                    "invoice",
+                    invoice.id,
+                    invoice.contractor.logoVersion,
+                  )
+                  : undefined}
+                name={businessLabel}
+              />
               {/* REQ-201: number · version · state (· date) */}
               <div
                 data-cy="invoice-headline"
@@ -472,6 +512,7 @@ function InvoiceDoc(
               status={invoice.status}
               internal={invoice.internal === true}
               scheduledFor={invoice.scheduledFor}
+              voided={voided}
               es={es}
             />
           </div>
@@ -587,11 +628,13 @@ function InvoiceDoc(
               <div
                 style={`font-size:11px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:${GREEN}`}
               >
-                {paid
+                {voided
+                  ? tFor(lang, "publicInvoice.cancelled.label")
+                  : paid
                   ? tFor(lang, "status.paid")
                   : tFor(lang, "public.doc.balanceDue")}
               </div>
-              {invoice.dueDate
+              {invoice.dueDate && !voided
                 ? (
                   <div style={`margin-top:4px;color:${MUTED};font-size:12px`}>
                     {paid
@@ -637,7 +680,9 @@ function InvoiceDoc(
               data-cy="invoice-balance-due"
               style={`font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;font-weight:900;font-size:38px;letter-spacing:-0.03em;color:${TEAL};line-height:1;font-variant-numeric:tabular-nums`}
             >
-              {fmtMoneyExact(paid ? amountCents : balanceCents)}
+              {voided
+                ? fmtMoneyExact(0)
+                : fmtMoneyExact(paid ? amountCents : balanceCents)}
             </div>
           </div>
 
@@ -793,8 +838,32 @@ function InvoiceDoc(
             )
             : null}
 
-          {/* Already-claimed strip OR active pay UI */}
-          {paid
+          {/* Already-claimed strip OR active pay UI — REQ-627: none on a void bill */}
+          {voided
+            ? (
+              <div
+                data-cy="invoice-cancelled-note"
+                role="status"
+                style={`margin-top:18px;padding:16px 18px;border-radius:14px;background:#f1f1ef;border:1px solid #d9d9d5;color:${INK};font-size:14px;line-height:1.5`}
+              >
+                <strong>
+                  {tFor(lang, "publicInvoice.cancelled.note", {
+                    business: businessLabel,
+                    date: invoice.voidedAt
+                      ? fmtDate(invoice.voidedAt.slice(0, 10), lang)
+                      : "",
+                  })}
+                </strong>
+                {paidCents > 0 && (
+                  <div style={`margin-top:6px;color:${MUTED};font-size:13px`}>
+                    {tFor(lang, "publicInvoice.cancelled.paymentsNote", {
+                      business: businessLabel,
+                    })}
+                  </div>
+                )}
+              </div>
+            )
+            : paid
             ? (
               <ReceivedNote
                 paidAt={invoice.paidAt}
@@ -841,18 +910,32 @@ function InvoiceDoc(
                   claim with "Didn't get it" — say so, and where to check. */
                 }
                 <ClaimRejectedNote invoice={invoice} lang={lang} />
-                <PublicInvoiceClaim
-                  invoiceId={invoice.id}
-                  acceptedMethods={invoice.acceptedMethods ?? []}
-                  customerName={invoice.customer?.name}
-                  receiptChannel={receiptChannelOf(invoice)}
-                  balanceCents={balanceCents}
-                  version={invoice.version}
-                  lang={es ? "es" : "en"}
-                  internal={invoice.internal === true}
-                  status={invoice.status}
-                  search={search}
-                />
+                {/* REQ-213 — the card first, on the business's own Stripe; the manual methods below */}
+                {card
+                  ? (
+                    <PublicCardPay
+                      invoiceId={invoice.id}
+                      config={card}
+                      lang={es ? "es" : "en"}
+                    />
+                  )
+                  : null}
+                <div data-claim-wrap>
+                  <PublicInvoiceClaim
+                    invoiceId={invoice.id}
+                    acceptedMethods={invoice.acceptedMethods ?? []}
+                    customerName={invoice.customer?.name}
+                    receiptChannel={receiptChannelOf(invoice)}
+                    balanceCents={balanceCents}
+                    version={invoice.version}
+                    lang={es ? "es" : "en"}
+                    internal={invoice.internal === true}
+                    status={invoice.status}
+                    search={search}
+                    hasCard={!!card}
+                    docNumber={invoice.number}
+                  />
+                </div>
               </>
             )}
 
@@ -1127,17 +1210,6 @@ function InvoiceDoc(
               : null}
           </footer>
         </div>
-        <div
-          style={`display:flex;align-items:center;justify-content:center;gap:8px;padding:16px;font-size:11px;color:#a8b2b3;letter-spacing:.04em`}
-        >
-          <img
-            src="/logo.png"
-            alt=""
-            height="16"
-            style="height:16px;width:auto;opacity:0.7;display:block"
-          />
-          {tFor(lang, "public.doc.poweredByInvoice", { number: docNumber })}
-        </div>
       </article>
 
       {
@@ -1214,19 +1286,20 @@ const PILL_COLORS: Record<InvoicePillTone, { bg: string; color: string }> = {
 };
 
 function StatusPill(
-  { paid, claimed, pastDue, status, internal, scheduledFor, es }: {
+  { paid, claimed, pastDue, status, internal, scheduledFor, voided, es }: {
     paid: boolean;
     claimed: boolean;
     pastDue: boolean;
     status?: string;
     internal: boolean;
     scheduledFor?: string;
+    voided?: boolean;
     es: boolean;
   },
 ) {
   const lang = es ? "es" : "en";
   const pill = invoiceStatusPill(
-    { paid, claimed, pastDue, status, internal, scheduledFor },
+    { paid, claimed, pastDue, status, internal, scheduledFor, voided },
     lang,
   );
   const { bg, color } = PILL_COLORS[pill.tone];

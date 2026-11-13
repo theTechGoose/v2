@@ -89,8 +89,12 @@ describe("REQ-310 (m13) /quotes card: the front CTA opens the quote panel", () =
       card.indexOf("</button>", at),
     );
     expect(btn).toContain('data-cy="qcard-cta"');
-    expect(btn).toMatch(/onOpen\(q\.id\)/);
-    expect(btn).toMatch(/setFlipped\(true\)/);
+    // REQ-310 AMENDMENT — reconciled with develop on demo-fixes (REQ-626):
+    // the CTA runs onCta, whose "open" action is the quote panel (onOpen(q.id))
+    expect(btn).toMatch(/onClick=\{onCta\}/);
+    const onCta = card.slice(card.indexOf("async function onCta("));
+    expect(onCta.slice(0, onCta.indexOf("\n  }\n"))).toMatch(/openPanel\(\)/);
+    expect(card).toMatch(/function openPanel\(\) \{\s*if \(onOpen\) onOpen\(q\.id\)/);
     expect(btn).not.toMatch(/onClick=\{\(e\) => e\.stopPropagation\(\)\}/);
   });
 });

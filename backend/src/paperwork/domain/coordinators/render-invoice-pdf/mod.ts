@@ -34,6 +34,11 @@ import { fmtVisitDate, groupVisits } from "#quote-flow/visit-groups.ts";
 import { ChangeOrderStore } from "@paperwork/domain/data/change-order-store/mod.ts";
 import { agreedTotalCents, installmentSchedule } from "#documents/ledger.ts"; // REQ-679
 import { isInvoiceIssued } from "#documents/versions.ts";
+import { LoadBusinessLogo } from "@paperwork/domain/coordinators/load-business-logo/mod.ts";
+import {
+  drawBrandMark,
+  embedLogo,
+} from "@paperwork/domain/business/pdf-logo/mod.ts";
 
 const APP_URL = (() => {
   const explicit = Deno.env.get("APP_URL")?.trim() || undefined;
@@ -73,6 +78,7 @@ export class RenderInvoicePdf {
     private identity: BusinessIdentityStore,
     /** REQ-679: the agreement's approved change orders (optional for direct test construction) */
     private changeOrders: ChangeOrderStore = new ChangeOrderStore(),
+    private logos: LoadBusinessLogo = new LoadBusinessLogo(),
   ) {}
 
   async run(invoiceId: string): Promise<Uint8Array> {
@@ -81,8 +87,8 @@ export class RenderInvoicePdf {
     // customer / contractor / ident depend only on the invoice, so fan them
     // out concurrently with the quote fetch instead of awaiting serially
     // (this is an uncached, customer-facing "Download PDF" endpoint).
-    const [quote, customer, contractor, ident] = winAnsiSafeDeep(
-      await Promise.all([
+    const [[quote, customer, contractor, ident], logo] = await Promise.all([
+      Promise.all([
         invoice.quoteId
           ? this.quotes.get(invoice.quoteId).catch(() =>
             undefined as Quote | undefined
@@ -95,8 +101,10 @@ export class RenderInvoicePdf {
           : Promise.resolve(undefined),
         this.users.get(invoice.userId).catch(() => undefined),
         this.identity.get(invoice.userId).catch(() => null),
-      ]),
-    );
+      ]).then((r) => winAnsiSafeDeep(r)),
+      // REQ-628: the business's own logo heads the bill
+      this.logos.run(invoice.userId),
+    ]);
     const businessName = ident?.businessName ?? ident?.legalName;
     const es = ident?.commsLanguage === "es";
     const lang: "en" | "es" = es ? "es" : "en";
@@ -141,11 +149,23 @@ export class RenderInvoicePdf {
     page.drawRectangle({ x: 0, y: H - 8, width: W, height: 8, color: PINK });
     y = H - 8;
 
-    // business eyebrow
-    const biz = (businessName ?? contractor?.name ??
-      t(lang, "renderQuotePdf.businessFallback")).toUpperCase();
-    y -= 32;
-    drawCenteredText(page, biz, W, y, bold, 9, PINK_DARK, 0.18);
+    // REQ-628: the business's logo (fit in a fixed box) or its name as a
+    // wordmark — never the house brand.
+    const logoImage = await embedLogo(pdf, logo);
+    const biz = businessName ?? contractor?.name ??
+      t(lang, "renderQuotePdf.businessFallback");
+    y -= 18;
+    y -= drawBrandMark(page, {
+      image: logoImage,
+      name: biz,
+      x: M,
+      top: y,
+      boxW: W - 2 * M,
+      boxH: 56,
+      font: bold,
+      color: TEAL,
+      align: "center",
+    });
 
     // doc tag pill (left) + status (right)
     y -= 32;

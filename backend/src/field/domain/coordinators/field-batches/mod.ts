@@ -22,7 +22,20 @@ export interface BatchView extends Batch {
   invoices: (Invoice & { customerName: string; zeroLines: number })[];
 }
 
-const liveIds = (invoices: Invoice[]) => new Set(invoices.filter((i) => i.status !== "void").map((i) => i.id));
+/** The invoices that still bill their tasks: every non-void one, and (REQ-627)
+ *  a void one whose "Void & duplicate" copy — followed to the end — still lives. */
+const liveIds = (invoices: Invoice[]) => {
+  const byId = new Map(invoices.map((i) => [i.id, i]));
+  const live = new Set<string>();
+  for (const inv of invoices) {
+    let cur: Invoice | undefined = inv;
+    for (let hops = 0; cur && cur.status === "void" && hops < 20; hops++) {
+      cur = cur.replacedBy ? byId.get(cur.replacedBy) : undefined;
+    }
+    if (cur && cur.status !== "void") live.add(inv.id);
+  }
+  return live;
+};
 
 @Injectable()
 export class FieldBatches {

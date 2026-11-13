@@ -3,6 +3,7 @@
  * data comes from /api/field/* (clients/field.ts). The sidebar's active tab is "subscriptions".
  */
 import { asset, Head } from "fresh/runtime";
+import { greetingFirstName } from "../../../shared/person-name/mod.ts"; // REQ-624
 import { define } from "../../utils.ts";
 import { resolveSsrLang } from "../../lib/ssr-lang.ts";
 import { getSessionId } from "../../lib/auth.ts";
@@ -13,7 +14,6 @@ import { type Lang, tFor } from "../../lib/i18n.ts";
 import DashSidebar from "../../islands/DashSidebar.tsx";
 import DashTopbar from "../../islands/DashTopbar.tsx";
 import FieldSubscriptionsPage from "../../islands/FieldSubscriptionsPage.tsx";
-import { greetingFirstName } from "../../../shared/quote-flow/outbound-identity.ts";
 
 export default define.page(
   async function FieldFieldSubscriptionsPageRoute(ctx) {
@@ -24,7 +24,7 @@ export default define.page(
     // REQ-709 (demo-loop c5, m4): the islands' language (?lang= > account >
     // pm_lang), so the tab title and footer match the page they sit on.
     const lang: Lang = resolveSsrLang(ctx) ?? "es";
-    const greetingName = greetingFirstName(user?.name);
+    const greetingName = greetingFirstName(user);
 
     return (
       <>

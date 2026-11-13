@@ -12,7 +12,7 @@ import { FileStore } from "@files/domain/data/file-store/mod.ts";
 import { ProcessVoiceMemo } from "@files/domain/coordinators/process-voice-memo/mod.ts";
 import { UserStore } from "@users/domain/data/user-store/mod.ts";
 import { SessionStore } from "@users/domain/data/session-store/mod.ts";
-import { requireUser } from "@users/domain/coordinators/require-user/mod.ts";
+import { requireSession, uiLangOf } from "@users/domain/coordinators/require-user/mod.ts";
 
 /**
  * POST /agents/chat
@@ -81,7 +81,8 @@ async function readTurn(
     sessions: SessionStore;
   },
 ): Promise<HandleChatInput> {
-  const user = await requireUser(ctx, deps.sessions, deps.users);
+  const signedIn = await requireSession(ctx, deps.sessions, deps.users);
+  const user = signedIn.user;
   const dto = parseChatInput(body);
 
   let conversationId = dto.conversationId;
@@ -128,6 +129,7 @@ async function readTurn(
     kind: dto.kind,
     ...(payload ? { payload } : {}),
     ...(step ? { step } : {}),
+    uiLang: uiLangOf(signedIn), // REQ-631: the assistant answers the person in HER language
   };
 }
 

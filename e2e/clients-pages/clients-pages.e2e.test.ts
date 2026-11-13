@@ -113,32 +113,24 @@ Deno.test("REQ-277 (M31): the card's nudge and the panel's Message text the cust
     const nell = page.locator(".ccard2", { hasText: "Nocontact Nell" });
 
     // every action on a card is a link or a button with somewhere to go
+    // REQ-277 AMENDMENT (reconciled with develop's REQ-626): the nudge is a
+    // button running the card's CTA — a pre-filled text, or the client's sheet
     const nudge = pat.locator("[data-cy='ccard2-nudge']");
     await nudge.waitFor();
-    const nudgeLabel = (await nudge.innerText()).trim();
-    const nudgeHref = await nudge.getAttribute("href");
-    if (nudgeLabel.startsWith("Open card")) {
-      expect(nudgeHref === null, `"Open card" opens the card, not a link (${nudgeHref})`);
-      await clickUntil(page, ".ccard2:has-text('Phone Pat') [data-cy='ccard2-nudge']", async () =>
-        (await pat.getAttribute("class"))?.includes("ccard2--open") ?? false);
-    } else {
-      expect(nudgeHref === "sms:+15125553150", `"${nudgeLabel}" texts Pat (${nudgeHref})`);
-      await clickUntil(page, ".ccard2:has-text('Phone Pat') .ccard2__name", async () =>
-        (await pat.getAttribute("class"))?.includes("ccard2--open") ?? false);
-    }
-    // the open panel's Message texts Pat; there is no dead "Open card" in it
+    expect((await nudge.getAttribute("href")) === null, "the nudge is a button");
+    await clickUntil(page, ".ccard2:has-text('Phone Pat') .ccard2__name", async () =>
+      (await pat.getAttribute("class"))?.includes("ccard2--open") ?? false);
+    // the open panel's Message texts Pat; its Open card opens the client's sheet
     const msg = pat.locator("[data-cy='ccard2-message']");
     await msg.waitFor();
     expect((await msg.getAttribute("href")) === "sms:+15125553150", `Message texts Pat (${await msg.getAttribute("href")})`);
-    expect((await pat.locator(".ccard2__panel-actions", { hasText: "Open card" }).count()) === 0, "no 'Open card' in the panel");
+    await pat.locator("[data-cy='ccard2-open']").waitFor();
 
-    // Nell has no phone or email: her nudge opens her card and her panel offers no Message
+    // Nell has no phone or email: her panel's Message has nowhere to send (it opens the edit form)
     await page.keyboard.press("Escape");
-    const nellNudge = nell.locator("[data-cy='ccard2-nudge']");
-    expect((await nellNudge.getAttribute("href")) === null, "Nell's nudge has nowhere to send a text");
-    await clickUntil(page, ".ccard2:has-text('Nocontact Nell') [data-cy='ccard2-nudge']", async () =>
+    await clickUntil(page, ".ccard2:has-text('Nocontact Nell') .ccard2__name", async () =>
       (await nell.getAttribute("class"))?.includes("ccard2--open") ?? false);
-    expect((await nell.locator("[data-cy='ccard2-message']").count()) === 0, "no Message for a customer with no contact");
+    expect((await nell.locator("[data-cy='ccard2-message']").getAttribute("href")) === null, "no text link for a customer with no contact");
 
     // nothing inert left on the card: every card button has a handler (clicked → something changed is the
     // nudge above; here the static check that no ccard2 button is a bare mock button)
@@ -269,7 +261,8 @@ Deno.test("REQ-600 (cycle 4, M5): /customers?open=<id> opens a name+address cust
     const card = page.locator(".ccard2", { hasText: "Taskmade Tom" });
     for (let i = 0; i < 50 && !((await card.getAttribute("class"))?.includes("ccard2--open")); i++) await page.waitForTimeout(100);
     expect((await card.getAttribute("class"))?.includes("ccard2--open") ?? false, "the deep link opened Tom's card");
-    expect((await card.locator("[data-cy='ccard2-message']").count()) === 0, "no Message yet: Tom has no contact");
+    // REQ-626: with no contact, Message is the edit form's way in — no sms: link yet
+    expect((await card.locator("a[data-cy='ccard2-message']").count()) === 0, "no Message link yet: Tom has no contact");
 
     // Add phone: a short number is refused under the row, a full one is saved
     await clickUntil(page, ".ccard2:has-text('Taskmade Tom') [data-cy='ccard2-edit-phone']", async () =>
@@ -280,7 +273,7 @@ Deno.test("REQ-600 (cycle 4, M5): /customers?open=<id> opens a name+address cust
     await card.locator("[data-cy='ccard2-input-phone']").fill("(512) 555-3150");
     await card.locator("[data-cy='ccard2-save-phone']").click();
     await expect.see("+1 (512) 555-3150");
-    await card.locator("[data-cy='ccard2-message']").waitFor();
+    await card.locator("a[data-cy='ccard2-message']").waitFor();
 
     // Add email
     await card.locator("[data-cy='ccard2-edit-email']").click();

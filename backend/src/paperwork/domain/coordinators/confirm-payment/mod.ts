@@ -1,4 +1,5 @@
 import { Injectable } from "#danet/core";
+import { LoadBusinessLogo } from "@paperwork/domain/coordinators/load-business-logo/mod.ts";
 import { InvoiceStore } from "@paperwork/domain/data/invoice-store/mod.ts";
 import { PaymentStore } from "@paperwork/domain/data/payment-store/mod.ts";
 import { CustomerStore } from "@crm/domain/data/customer-store/mod.ts";
@@ -10,6 +11,8 @@ import {
   customerSmsTarget,
   dispatchCustomerSms,
 } from "@paperwork/domain/business/customer-sms/mod.ts";
+import { businessFrom } from "@communication/domain/business/sender/mod.ts";
+import { emailLogo, emailLogoHtml } from "@paperwork/domain/business/email-logo/mod.ts";
 import { ShortLinkStore } from "@paperwork/domain/data/shortlink-store/mod.ts";
 import { RenderReceiptPdf } from "@paperwork/domain/coordinators/render-receipt-pdf/mod.ts";
 import { MarkInvoicePaid } from "@paperwork/domain/coordinators/mark-invoice-paid/mod.ts";
@@ -64,6 +67,7 @@ export class ConfirmPayment {
     private bus: EventBus,
     private markPaid: MarkInvoicePaid,
     private balance: ComputeInvoiceBalance,
+    private logos: LoadBusinessLogo = new LoadBusinessLogo(),
   ) {}
 
   async run(
@@ -135,6 +139,8 @@ export class ConfirmPayment {
         ...(intent.reference ? { reference: intent.reference } : {}),
         confirmedAt: paidAt,
         lang,
+        // REQ-628: the business's logo heads the receipt
+        logo: await this.logos.run(userId),
       });
 
       if (customer?.email) {
@@ -148,11 +154,21 @@ export class ConfirmPayment {
           intent,
           amount: intent.amount,
           lang,
+          // REQ-628: headed by the business's own logo, or its name as a wordmark
+          logoHtml: emailLogoHtml(emailLogo({
+            appUrl: Deno.env.get("APP_URL") ?? SITE_ORIGIN,
+            kind: "invoice",
+            id: updated.id,
+            biz,
+            ...(businessName ? { fallbackName: businessName } : {}),
+          })),
         });
         const mailed = await this.email.send({
           to: customer.email,
           subject,
           htmlBody,
+          // REQ-628: under the business's name, never DocuMonster
+          from: businessFrom({ alias: biz?.emailAlias, name: businessName }),
           ...(contractor?.email ? { cc: [contractor.email] } : {}),
           attachments: [{
             name: t(lang, "confirmPayment.email.attachmentName", {
@@ -346,10 +362,12 @@ export function renderReceiptHtml(opts: {
   intent: { method: PaymentMethod; reference?: string };
   amount: number;
   lang: Lang;
+  /** REQ-628: the business's logo (or wordmark) heading the receipt */
+  logoHtml?: string;
 }): string {
   const { lang } = opts;
   const businessLabel = opts.businessName ?? opts.contractor?.name ??
-    t(lang, "brand.name");
+    t(lang, "paperworkEmail.senderFallback");
   const shown = customerOnDocument(opts.invoice, opts.customer);
   const customerFirst = (shown?.name ?? shown?.businessName)?.trim().split(/\s+/)[0];
   const headline = customerFirst
@@ -365,9 +383,12 @@ export function renderReceiptHtml(opts: {
   return `<!doctype html>
 <html><body style="margin:0;padding:32px 16px;background:#f7f6f1;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#1c2c30">
   <div style="max-width:560px;margin:0 auto;background:#fff;border-radius:18px;padding:28px 32px;box-shadow:0 8px 32px rgba(20,72,82,0.08)">
-    <div style="font-size:11px;font-weight:800;letter-spacing:.18em;text-transform:uppercase;color:#d94e4e">${
-    escapeHtml(businessLabel)
-  }</div>
+    ${
+    opts.logoHtml ??
+      `<div style="font-size:11px;font-weight:800;letter-spacing:.18em;text-transform:uppercase;color:#d94e4e">${
+        escapeHtml(businessLabel)
+      }</div>`
+  }
     <div data-doc-ref style="margin-top:10px;font-size:12px;font-weight:800;color:#6b7a7e">${
     escapeHtml(docTitle("invoice", opts.invoice, lang))
   }</div>

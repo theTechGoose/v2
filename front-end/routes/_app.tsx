@@ -1,3 +1,4 @@
+import { asset } from "fresh/runtime";
 import { define } from "../utils.ts";
 import MobileViewport from "../islands/MobileViewport.tsx";
 import ImpersonationBanner from "../islands/ImpersonationBanner.tsx";
@@ -84,6 +85,23 @@ location.reload();
 window.addEventListener("unhandledrejection",function(e){var m=e.reason&&(e.reason.message||String(e.reason))||"";if(/Importing a module script failed|dynamically imported module/i.test(m))recover()});
 }catch(_e){}})();`;
 
+// REQ-195 — page transitions: every same-origin navigation cross-fades and slides through the
+// View Transitions API (static/motion.css opts in with @view-transition). This classic,
+// parser-blocking script (the spec requires it in <head>, not a module) tags the transition with
+// a type — "back" for a history traversal backwards, "same" for a reload or a ?query change on
+// the same path, nothing for a forward move — so the CSS can slide the right way.
+const MOTION_SCRIPT = `(function(){try{
+window.__pmMotion=1;
+addEventListener("pagereveal",function(e){
+var vt=e.viewTransition;if(!vt)return;
+var act=navigation&&navigation.activation;if(!act)return;
+var from=act.from&&new URL(act.from.url),to=new URL(act.entry.url);
+if(from&&from.pathname===to.pathname)vt.types.add("same");
+else if(act.navigationType==="traverse"&&act.from&&act.from.index>act.entry.index)vt.types.add("back");
+else vt.types.add("forward");
+});
+}catch(_e){}})();`;
+
 export default define.page(function App(ctx) {
   const { Component } = ctx;
   // P-67: only mount the impersonation banner when the request actually
@@ -147,6 +165,13 @@ export default define.page(function App(ctx) {
         <link rel="icon" type="image/png" href="/favicon.png" />
         <link rel="apple-touch-icon" href="/logo.png" />
         <title>{tFor(lang, "brand.name")}</title>
+        {/* REQ-195 — the motion system: page transitions, entrances, press feedback */}
+        <link rel="stylesheet" href={asset("/motion.css")} />
+        <script
+          // Server-built page-transition tagging (no user input).
+          // deno-lint-ignore react-no-danger
+          dangerouslySetInnerHTML={{ __html: MOTION_SCRIPT }}
+        />
         {
           /* REQ-124: the Google tag (gtag.js, G-RN3H6L5263) on every page —
             Google's loader on the real deploy, the app's own fake on the gate

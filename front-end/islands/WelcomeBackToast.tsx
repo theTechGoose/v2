@@ -2,6 +2,10 @@ import { useEffect, useState } from "preact/hooks";
 import { langSignal, STRINGS } from "../lib/lang.ts";
 import { t } from "../lib/i18n.ts";
 import { welcomeBackMessage } from "../lib/greeting-identity.ts";
+import {
+  greetingFirstName,
+  type PersonLike,
+} from "../../shared/person-name/mod.ts";
 
 const PINK = "#FF6B6B";
 const TEAL = "#144852";
@@ -28,11 +32,11 @@ export default function WelcomeBackToast() {
       try {
         const r = await fetch("/api/me", { credentials: "include" });
         if (!r.ok) return;
-        const me = await r.json() as { name?: string };
+        const me = await r.json() as PersonLike;
         if (!cancelled) {
-          // REQ-506: the raw name — welcomeBackMessage drops the seeded
-          // placeholder ("Nuevo usuario"), never greeting "…, Nuevo."
-          setName(me.name ?? "");
+          // REQ-624: the person signed in — an editor's own name, never the owner's.
+          // REQ-506: welcomeBackMessage drops the seeded placeholder, never "…, Nuevo."
+          setName(greetingFirstName(me) ?? "");
           setShow(true);
         }
       } catch { /* network blip — render the generic version */ }

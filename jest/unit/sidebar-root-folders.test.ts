@@ -32,10 +32,10 @@ describe("REQ-176 the sidebar's root folders", () => {
     ]);
   });
 
-  test("Billing holds Quotes, Invoices, Payments, Work orders; Field the four (REQ-361); Admin holds Workers and Admins (REQ-178)", () => {
+  test("Billing holds Quotes, Invoices, Payments, Work orders; Field the four (REQ-361); Admin holds Workers, Timesheet and Admins (REQ-178, REQ-192)", () => {
     // REQ-210: Work orders joined Billing next to the documents they belong to
     expect(ids(["billing"])).toEqual(["quotes", "invoices", "payments", "workOrders"]);
-    expect(ids(["manage"])).toEqual(["workers", "admins"]); // REQ-178 — Workers is Admin's
+    expect(ids(["manage"])).toEqual(["workers", "timesheet", "admins"]); // REQ-178 — Workers is Admin's; REQ-192 — Timesheet beside it
     // REQ-604 (demo m18): Workers is listed in Field too — the same node as in Roles
     expect(ids(["field"])).toEqual([
       "subscriptions",

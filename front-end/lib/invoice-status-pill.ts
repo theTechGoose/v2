@@ -13,6 +13,7 @@
 import { type Lang, shortDate } from "../../shared/documents/linked-view.ts";
 
 export type InvoicePillKind =
+  | "void"
   | "paid"
   | "claimed"
   | "draft"
@@ -47,9 +48,14 @@ export function invoiceStatusPill(
     internal?: boolean;
     /** a scheduled installment's send date (YYYY-MM-DD) */
     scheduledFor?: string;
+    /** REQ-627: the business voided it — it says so and cannot be paid */
+    voided?: boolean;
   },
   lang: Lang,
 ): InvoicePill {
+  if (input.voided) {
+    return { kind: "void", tone: "neutral", key: "publicInvoice.cancelled.pill" };
+  }
   if (input.paid) return { kind: "paid", tone: "good", key: "status.paid" };
   if (input.claimed) {
     return {

@@ -49,8 +49,7 @@ import { type PaymentClaim, pendingClaims } from "../lib/payment-claims.ts";
 import { cashFlowWeeks } from "../lib/cash-flow-weeks.ts";
 import { creditedPayments } from "../lib/headline-counts.ts";
 import { refreshDash } from "../lib/dash-cache.ts";
-import { paymentCardCtaHref, paymentCardLinks } from "../lib/payment-card.ts";
-import { interpretSendResult } from "../../shared/quote-flow/send-result.ts";
+import { paymentCardCtaHref } from "../lib/payment-card.ts";
 import {
   recordOptionLabel,
   type RecordOptionInvoice,
@@ -169,6 +168,8 @@ type PaymentStatus = "landed" | "transit" | "attention";
 
 interface EnrichedPayment extends Payment {
   client: string;
+  /** REQ-626: the invoice's customer — "Text client" opens their sheet */
+  customerId?: string;
   initials: string;
   invoiceRef: string;
   daysAgo: number;
@@ -271,6 +272,7 @@ function enrich(
   return {
     ...p,
     client,
+    ...(customerId ? { customerId } : {}),
     initials: initialsOf(client),
     // REQ-198: the invoice's own number ("INV-001"); "#ID" when the invoice
     // predates numbering or is no longer on the books.
@@ -806,54 +808,23 @@ function PaymentCard(
   { lang, p, idx }: { lang: Lang; p: EnrichedPayment; idx: number },
 ) {
   const [flipped, setFlipped] = useState(false);
-  // REQ-555 (M24): "Text client" texts the invoice link (the receipt once
-  // paid) and says what happened — never a silent no-op.
-  const [texting, setTexting] = useState(false);
-  const [textResult, setTextResult] = useState<
-    { ok: boolean; msg: string } | null
-  >(null);
   const mood = STATUS_MOOD[p.status];
   const moodLabel = tFor(lang, `paymentsPage.mood.${p.status}.label`);
   const moodCta = tFor(lang, `paymentsPage.mood.${p.status}.cta`);
-  const links = paymentCardLinks(p.invoiceId);
-  async function doTextClient(e: Event) {
+  // REQ-626: every card button goes somewhere real
+  const invoiceHref = `/invoices?open=${encodeURIComponent(p.invoiceId)}`;
+  const receiptHref = `/i/${encodeURIComponent(p.invoiceId)}`;
+  const clientHref = p.customerId
+    ? `/clients?open=${encodeURIComponent(p.customerId)}`
+    : invoiceHref;
+  // REQ-626 AMENDMENT — reconciled with develop on demo-fixes: the front CTA
+  // is a real link (REQ-555: "View receipt" opens the receipt page in a new
+  // tab); "View timeline" (in transit) flips to the trail on the card's back.
+  function onCta(e: Event) {
     e.stopPropagation();
-    if (texting) return;
-    setTexting(true);
-    setTextResult(null);
-    try {
-      const r = await fetch(`/api/invoices/${p.invoiceId}/text`, {
-        method: "POST",
-        credentials: "include",
-      });
-      let body: unknown = null;
-      try {
-        body = await r.json();
-      } catch { /* empty / non-JSON body — interpret on r.ok alone */ }
-      const outcome = interpretSendResult({ httpOk: r.ok, body });
-      const raw = body && typeof body === "object" &&
-          typeof (body as { reason?: unknown }).reason === "string"
-        ? (body as { reason: string }).reason
-        : undefined;
-      setTextResult(
-        outcome.delivered
-          ? { ok: true, msg: tFor(lang, "paymentsPage.card.textSent") }
-          : outcome.reason === "noPhone"
-          ? { ok: false, msg: tFor(lang, "invoicesPage.new.needContact") }
-          : {
-            ok: false,
-            msg: tFor(lang, "paymentsPage.card.textFailed", {
-              reason: raw ?? outcome.reason ?? "unknown",
-            }),
-          },
-      );
-    } catch {
-      setTextResult({
-        ok: false,
-        msg: tFor(lang, "paymentsPage.card.textFailed", { reason: "http" }),
-      });
-    } finally {
-      setTexting(false);
+    if (p.status === "transit") {
+      e.preventDefault();
+      setFlipped(true);
     }
   }
   return (
@@ -889,12 +860,13 @@ function PaymentCard(
             the invoice detail (in transit). */}
         <a
           class="qcard__cta"
-          data-cy="payment-card-cta"
+          data-cy="pay-card-cta"
           href={paymentCardCtaHref(p.status, p.invoiceId)}
           {...(p.status === "landed"
             ? { target: "_blank", rel: "noopener noreferrer" }
             : {})}
           style="text-decoration:none"
+          onClick={onCta}
         >
           {moodCta}{" "}
           <span style="display:inline-block;transition:transform 240ms">→</span>
@@ -936,41 +908,37 @@ function PaymentCard(
         </div>
         <div class="qcard__back-body">
           <p class="qcard__read">{p.note}</p>
-          {textResult && (
-            <p
-              class="qcard__sendfail"
-              role={textResult.ok ? "status" : "alert"}
-              data-cy="payment-card-text-result"
-              style={textResult.ok
-                ? "padding:8px 0 0;color:var(--brand-green,#519843)"
-                : "padding:8px 0 0"}
-            >
-              {textResult.msg}
-            </p>
-          )}
         </div>
-        {/* REQ-555 (M24): every action has a destination — the receipt is
-            the paid invoice's page, the invoice opens its own detail. */}
+        {/* REQ-555 (M24) / REQ-626: every action has a destination — the
+            receipt is the paid invoice's page, the invoice opens its own
+            detail, the client's sheet carries Message. */}
         <div class="qcard__back-foot" style="grid-template-columns:repeat(3,1fr)">
+          {/* REQ-626: the customer's copy of the invoice is the receipt */}
           <a
-            data-cy="payment-card-receipt"
-            href={links.receipt}
+            data-cy="pay-card-receipt"
+            href={receiptHref}
             target="_blank"
             rel="noopener noreferrer"
+            onClick={(e) => e.stopPropagation()}
           >
             {tFor(lang, "paymentsPage.card.receipt")}
           </a>
-          <a data-cy="payment-card-invoice" href={links.invoice}>
+          {/* the invoice this payment is matched to, in its editable panel */}
+          <a
+            data-cy="pay-card-match"
+            href={invoiceHref}
+            onClick={(e) => e.stopPropagation()}
+          >
             {tFor(lang, "paymentsPage.card.matchInvoice")}
           </a>
-          <button
-            type="button"
-            data-cy="payment-card-text"
-            onClick={doTextClient}
-            disabled={texting}
+          {/* the client's sheet: Message (a text) and their details */}
+          <a
+            data-cy="pay-card-text"
+            href={clientHref}
+            onClick={(e) => e.stopPropagation()}
           >
-            {texting ? "…" : tFor(lang, "paymentsPage.card.textClient")}
-          </button>
+            {tFor(lang, "paymentsPage.card.textClient")}
+          </a>
         </div>
       </div>
     </article>

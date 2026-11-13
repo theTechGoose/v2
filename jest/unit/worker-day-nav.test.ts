@@ -70,13 +70,15 @@ describe("REQ-362 workerDayNav — the /worker day navigator looks back AND ahea
 });
 
 describe("REQ-362 WorkerScreen renders the navigator and locks a future day", () => {
-  test("the island draws the day links from workerDayNav (prev, today, next)", () => {
+  // REQ-362 AMENDMENT — reconciled with develop on demo-fixes: the prev/today/next
+  // links are develop's REQ-194 strip (w-day-prev / w-day-today / w-day-next,
+  // switched in place); workerDayNav still decides the preview lock.
+  test("the island reads the day from workerDayNav and draws prev, today, next (REQ-194 strip)", () => {
     expect(island).toMatch(/workerDayNav\(/);
-    expect(island).toMatch(/data-cy="w-day-prev"/);
-    expect(island).toMatch(/data-cy="w-day-next"/);
-    expect(island).toMatch(/data-cy="w-day-today"/);
-    // no hard-coded one-way link left behind
-    expect(island).not.toMatch(/shiftIso\(today, -1\)/);
+    expect(island).toMatch(/data-cy=\{`w-day-\$\{id\}`\}/);
+    expect(island).toMatch(/off === -1 \? "prev" : off === 0 \? "today" : "next"/);
+    // no one-way "← Yesterday" link outside the strip
+    expect(island).not.toMatch(/<a href=\{`\/worker\?date=\$\{shiftIso\(today, -1\)\}`\}>/);
   });
 
   test("a preview day shows the hint and locks the check buttons", () => {

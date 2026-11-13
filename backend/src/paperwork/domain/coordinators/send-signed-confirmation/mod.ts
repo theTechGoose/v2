@@ -1,5 +1,6 @@
 import { isDueNowTermValue } from "#quote-flow/terms-i18n.ts";
 import { Injectable } from "#danet/core";
+import { LoadBusinessLogo } from "@paperwork/domain/coordinators/load-business-logo/mod.ts";
 import { QuoteStore } from "@paperwork/domain/data/quote-store/mod.ts";
 import { InvoiceStore } from "@paperwork/domain/data/invoice-store/mod.ts";
 import { CustomerStore } from "@crm/domain/data/customer-store/mod.ts";
@@ -7,6 +8,8 @@ import { UserStore } from "@users/domain/data/user-store/mod.ts";
 import { BusinessIdentityStore } from "@profile/domain/data/business-identity-store/mod.ts";
 import { EmailService } from "@communication/domain/data/email-service/mod.ts";
 import { SmsService } from "@users/domain/data/sms/mod.ts";
+import { businessFrom } from "@communication/domain/business/sender/mod.ts";
+import { type EmailLogo, emailLogo, emailLogoHtml } from "@paperwork/domain/business/email-logo/mod.ts";
 import { RenderQuotePdf } from "@paperwork/domain/coordinators/render-quote-pdf/mod.ts";
 import { LogPaperworkMessage } from "@communication/domain/coordinators/log-paperwork-message/mod.ts";
 import {
@@ -106,6 +109,7 @@ export class SendSignedConfirmation {
     // REQ-699: optional so a hand-built coordinator (its own tests) runs
     // without Field; the app injects it and Field registers on it.
     private subscriptions?: QuoteSubscriptionPort,
+    private logos: LoadBusinessLogo = new LoadBusinessLogo(),
   ) {}
 
   async run(
@@ -336,6 +340,8 @@ export class SendSignedConfirmation {
           commsLanguage: lang,
           // REQ-697 (m22): the payment term states the days to pay
           invoiceNetDays: accountNetDays(ident?.invoiceNetDays),
+          // REQ-628: the business's logo heads the signed agreement
+          logo: await this.logos.run(quote.userId),
         });
       } catch (err) {
         console.error("[send-signed-confirmation] PDF render failed:", err);
@@ -356,12 +362,22 @@ export class SendSignedConfirmation {
         // REQ-699: the customer is told what each period bills
         ...(subscriptionId && recurring ? { recurring } : {}),
         lang,
+        // REQ-628: headed by the business's own logo, or its name as a wordmark
+        logo: emailLogo({
+          appUrl: APP_URL,
+          kind: "quote",
+          id: quote.id,
+          biz: ident,
+          ...(businessName ? { fallbackName: businessName } : {}),
+        }),
       });
       const fileName = agreementFileName(quote);
       sent = await this.email.send({
         to: recipient,
         subject,
         htmlBody: html,
+        // REQ-628: under the business's name, never DocuMonster
+        from: businessFrom({ alias: ident?.emailAlias, name: businessName }),
         ...(pdfBytes
           ? {
             attachments: [{
@@ -651,6 +667,8 @@ interface SignedHtmlOpts {
   /** REQ-699: the recurring charge a subscription now bills */
   recurring?: RecurringTerm;
   lang: Lang;
+  /** REQ-628: the business's logo, or its name as a wordmark */
+  logo?: EmailLogo;
 }
 
 function renderSignedConfirmationHtml(opts: SignedHtmlOpts): string {
@@ -728,7 +746,14 @@ function renderSignedConfirmationHtml(opts: SignedHtmlOpts): string {
     <tr><td align="center" style="padding:40px 16px;">
       <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="640" style="max-width:640px;background:#ffffff;border-radius:24px;overflow:hidden;box-shadow:0 12px 40px rgba(20,72,82,0.10);">
         <tr><td style="height:6px;background:linear-gradient(90deg,${COLOR_GREEN} 0%,#71a85f 100%);font-size:0;line-height:0">&nbsp;</td></tr>
-
+${
+    opts.logo && emailLogoHtml(opts.logo)
+      ? `        <tr><td align="center" style="padding:28px 36px 0">${
+        emailLogoHtml(opts.logo)
+      }</td></tr>
+`
+      : ""
+  }
         <tr><td style="padding:32px 36px 0">
           <span style="display:inline-block;background:rgba(81,152,67,0.12);color:${COLOR_GREEN};font-size:11px;font-weight:800;letter-spacing:.16em;text-transform:uppercase;padding:6px 12px;border-radius:999px">✓ ${
     t(lang, "signedConfirm.email.pill", { docNumber: escapeHtml(docNumber) })

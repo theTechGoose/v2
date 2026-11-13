@@ -5,11 +5,13 @@ import { asDelivered, isUnissuedInvoice, publishPendingInvoice, publishPendingQu
 import { type Lang, t } from "@core/i18n/mod.ts";
 import { QuoteStore } from "@paperwork/domain/data/quote-store/mod.ts";
 import { InvoiceStore } from "@paperwork/domain/data/invoice-store/mod.ts";
+import { StripeSettingsStore } from "@users/domain/data/stripe-settings-store/mod.ts"; // REQ-630
+import { payWaysEmailHtml } from "@paperwork/domain/business/pay-ways/mod.ts"; // REQ-630
 import { CustomerStore } from "@crm/domain/data/customer-store/mod.ts";
 import { UserStore } from "@users/domain/data/user-store/mod.ts";
 import { BusinessIdentityStore } from "@profile/domain/data/business-identity-store/mod.ts";
 import type { BusinessIdentity } from "@users/dto/business-identity.ts";
-import { type EmailLogo, emailLogo } from "@paperwork/domain/business/email-logo/mod.ts";
+import { type EmailLogo, emailLogo, emailLogoHtml } from "@paperwork/domain/business/email-logo/mod.ts";
 import { fmtVisitDate, groupVisits } from "#quote-flow/visit-groups.ts";
 import { ReplyTokenStore } from "@paperwork/domain/data/reply-token-store/mod.ts";
 import { inboundDomain, replyAddress } from "@paperwork/domain/business/inbound-reply/mod.ts";
@@ -18,7 +20,7 @@ import {
   type SendEmailResult,
 } from "@communication/domain/data/email-service/mod.ts";
 import { LogPaperworkMessage } from "@communication/domain/coordinators/log-paperwork-message/mod.ts";
-import { aliasFrom } from "@communication/domain/business/sender/mod.ts";
+import { businessFrom } from "@communication/domain/business/sender/mod.ts";
 import { senderInitials as senderInitialsOf } from "#identity/initials.ts";
 import {
   fmtPaperworkDate,
@@ -146,6 +148,8 @@ export class SendPaperworkEmail {
     private bus?: EventBus,
     /** REQ-679: the agreement's approved change orders (optional for direct test construction) */
     private changeOrders: ChangeOrderStore = new ChangeOrderStore(),
+    /** REQ-630 — whether the business takes cards on its own Stripe (the email's "Pay by card") */
+    private stripeSettings?: StripeSettingsStore,
   ) {}
 
   /**
@@ -274,6 +278,14 @@ export class SendPaperworkEmail {
           () => [],
         )
         : [];
+      // REQ-630 — the ways to pay, the same the invoice page offers (none on a paid email)
+      const payWays = paid ? "" : payWaysEmailHtml(senderBiz?.acceptedPaymentMethods, {
+        card: await this.stripeSettings?.get(userId).then((s) => !!s).catch(() => false) ?? false,
+        lang,
+        payUrl: `${APP_URL}/i/${invoice.id}`,
+        amountCents: Math.max(0, (invoice.amount ?? 0) - (invoice.paidCents ?? 0)),
+        note: docRef(invoice),
+      });
       htmlBody = renderInvoiceHtml(
         invoice,
         customer,
@@ -282,6 +294,7 @@ export class SendPaperworkEmail {
         invQuote,
         paid,
         invQuoteCos,
+        payWays,
       );
     }
 
@@ -317,7 +330,18 @@ export class SendPaperworkEmail {
     // Roadmap p.7 + scope answer: From is a per-business alias at the send
     // domain (e.g. acme@documonster.com, REQ-123) when the business identity
     // has one set, noreply@ there when it has none.
-    const from = input.from ?? aliasFrom(rawBiz?.emailAlias);
+    // REQ-628: under the business's name — the customer's inbox reads
+    // "A2Z Landscape LLC", never DocuMonster.
+    const fromBiz = bizFor(docCustomer);
+    const from = input.from ??
+      businessFrom({
+        alias: rawBiz?.emailAlias,
+        name: bizLabel(
+          fromBiz,
+          safeSender,
+          fromBiz.commsLanguage === "es" ? "es" : "en",
+        ),
+      });
 
     // REQ-175: the customer's reply comes back through the inbound webhook, into their thread
     const replyTo = customerIdForLog
@@ -476,7 +500,7 @@ function customerGreeting(c: RenderedCustomer | undefined, lang: Lang): string {
 function fromWho(senderBiz: BusinessIdentity | undefined, sender: User | undefined, lang: Lang): string {
   const trimmed = sender?.name?.trim();
   return senderBiz?.businessName?.trim() || senderBiz?.legalName?.trim() ||
-    (isPlaceholderName(trimmed) ? undefined : trimmed) || t(lang, "brand.name");
+    (isPlaceholderName(trimmed) ? undefined : trimmed) || t(lang, "paperworkEmail.senderFallback");
 }
 
 /** REQ-201: the "Revised … — replaces previous version" banner an email carries on a revision. */
@@ -593,7 +617,7 @@ function shell(opts: {
   ctaUrl: string;
   sender: User | undefined;
   lang: Lang;
-  /** REQ-160: the business's own logo when it has one, the house logo otherwise */
+  /** REQ-160 / REQ-628: the business's own logo, else its name as a wordmark */
   logo: EmailLogo;
   /** REQ-168: the business website, linked in the From block */
   website?: string;
@@ -651,7 +675,7 @@ function shell(opts: {
     <tr><td class="pw-outer" align="center" style="padding:32px 16px;">
       <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" class="pw-card" style="width:100%;max-width:600px;background:${COLOR_CARD};border-radius:18px;overflow:hidden;box-shadow:0 8px 32px rgba(20,72,82,0.08);">
         <tr><td align="center" style="padding:24px 32px 0;">
-          <img src="${escapeAttr(logo.src)}" alt="${escapeAttr(logo.alt)}" width="160" style="display:block;border:0;outline:none;text-decoration:none;height:auto;max-width:160px;">
+          ${emailLogoHtml(logo)}
         </td></tr>
         <tr><td style="padding:24px 32px 0;">
           <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%">
@@ -745,7 +769,8 @@ export function renderQuoteSubject(
   const businessName =
     [senderBiz?.businessName, senderBiz?.legalName, sender?.name]
       .map((n) => (isPlaceholderName(n) ? undefined : n?.trim()))
-      .find((n): n is string => Boolean(n)) ?? t(lang, "brand.name");
+      .find((n): n is string => Boolean(n)) ??
+    t(lang, "paperworkEmail.senderFallback");
   const jobName = (q.jobNameByLang?.[lang] ?? q.jobName)?.trim() ||
     (q.summaryByLang?.[lang] ?? q.summary)?.replace(/^\s*quote\s*:\s*/i, "")
       .trim() ||
@@ -1040,6 +1065,17 @@ export function renderQuoteHtml(
         <!-- pink ribbon header -->
         <tr><td style="height:6px;background:linear-gradient(90deg,${COLOR_PINK} 0%,${COLOR_PINK_DARK} 100%);font-size:0;line-height:0">&nbsp;</td></tr>
 
+        <!-- REQ-628: the business's own logo (or its name as a wordmark) -->
+        <tr><td align="center" style="padding:28px 36px 0;">${
+    emailLogoHtml(emailLogo({
+      appUrl: APP_URL,
+      kind: "quote",
+      id: q.id,
+      biz: senderBiz,
+      fallbackName: senderName(sender, lang),
+    }))
+  }</td></tr>
+
         <!-- doc tag + drafted date -->
         <tr><td style="padding:32px 36px 0;">
           <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%">
@@ -1295,6 +1331,8 @@ export function renderInvoiceHtml(
   paid = false,
   /** REQ-679: the quote's change orders — the approved ones join the agreement */
   changeOrders: readonly { status?: string; deltaAmountCents: number }[] = [],
+  /** REQ-630 — the pre-rendered "Ways to pay" block (payWaysEmailHtml) */
+  payWays = "",
 ): string {
   const es = senderBiz?.commsLanguage === "es";
   const lang: Lang = es ? "es" : "en";
@@ -1311,7 +1349,7 @@ export function renderInvoiceHtml(
     : undefined;
   // Standalone invoice → lightweight amount-only email (unchanged behavior).
   if (items.length === 0 && agreementTotal == null) {
-    return renderInvoiceBasicHtml(i, customer, sender, senderBiz, lang, paid);
+    return renderInvoiceBasicHtml(i, customer, sender, senderBiz, lang, paid, payWays);
   }
   const amountLabel = invoiceAmountLabel(i, lang, paid);
 
@@ -1487,6 +1525,17 @@ export function renderInvoiceHtml(
         <!-- pink ribbon header -->
         <tr><td style="height:6px;background:linear-gradient(90deg,${COLOR_PINK} 0%,${COLOR_PINK_DARK} 100%);font-size:0;line-height:0">&nbsp;</td></tr>
 
+        <!-- REQ-628: the business's own logo (or its name as a wordmark) -->
+        <tr><td align="center" style="padding:28px 36px 0;">${
+    emailLogoHtml(emailLogo({
+      appUrl: APP_URL,
+      kind: "invoice",
+      id: i.id,
+      biz: senderBiz,
+      fallbackName: senderName(sender, lang),
+    }))
+  }</td></tr>
+
         <!-- doc tag + issued date -->
         <tr><td style="padding:32px 36px 0;">
           <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%">
@@ -1584,6 +1633,7 @@ export function renderInvoiceHtml(
       ? `<tr><td style="padding:18px 36px 0">${facts}</td></tr>`
       : ""
   }
+        ${payWays ? `<tr><td style="padding:0 36px">${payWays}</td></tr>` : ""}
 
         <!-- big CTA -->
         <tr><td style="padding:28px 36px 0;text-align:center">
@@ -1683,6 +1733,7 @@ export function renderInvoiceBasicHtml(
   senderBiz: BusinessIdentity | undefined,
   lang: Lang,
   paid = false,
+  payWays = "",
 ): string {
   const amountLabel = invoiceAmountLabel(i, lang, paid);
   // REQ-204 / REQ-201: "INV-5000 · Version 2", never an id slice; the
@@ -1780,7 +1831,7 @@ export function renderInvoiceBasicHtml(
         </td>
       </tr>
     </table>
-    ${invoiceFactsHtml(i, undefined, lang) ? `<div style="margin-top:16px">${invoiceFactsHtml(i, undefined, lang)}</div>` : ""}`;
+    ${invoiceFactsHtml(i, undefined, lang) ? `<div style="margin-top:16px">${invoiceFactsHtml(i, undefined, lang)}</div>` : ""}${payWays}`;
 
   return shell({
     preheader: t(lang, "paperworkEmail.invoice.preheader", {
@@ -1798,7 +1849,7 @@ export function renderInvoiceBasicHtml(
     ctaUrl: withSendLang(`${APP_URL}/i/${i.id}`, lang), // REQ-727
     sender,
     lang,
-    logo: emailLogo({ appUrl: APP_URL, kind: "invoice", id: i.id, biz: senderBiz }),
+    logo: emailLogo({ appUrl: APP_URL, kind: "invoice", id: i.id, biz: senderBiz, fallbackName: senderName(sender, lang) }),
     website: senderBiz?.websiteUrl,
   });
 }

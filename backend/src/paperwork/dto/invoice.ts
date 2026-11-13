@@ -189,6 +189,15 @@ export class CreateInvoiceDto {
   /** When the invoice was first put in front of the customer. */
   @IsOptional() @IsString()
   sentAt?: string;
+  /** REQ-627: the voided invoice this draft corrects ("Void & duplicate"). Server-set. */
+  @IsOptional() @IsString()
+  replaces?: string;
+}
+
+/** REQ-627: who voided an invoice. */
+export interface VoidedBy {
+  userId?: string;
+  name?: string;
 }
 
 export class UpdateInvoiceDto {
@@ -301,6 +310,16 @@ export class UpdateInvoiceDto {
    *  SendSignedConfirmation; never from a request. */
   @IsOptional() @IsArray() @IsString({ each: true })
   deliveredVia?: string[];
+  // ---- REQ-627: set by POST /invoices/:id/void only; never from a PUT ----
+  @IsOptional() @IsString()
+  voidedAt?: string;
+  @IsOptional() @IsObject()
+  voidedBy?: VoidedBy;
+  @IsOptional() @IsString()
+  voidReason?: string;
+  /** the corrected draft made by "Void & duplicate" */
+  @IsOptional() @IsString()
+  replacedBy?: string;
 }
 
 export interface Invoice extends CreateInvoiceDto, NumberedFields {
@@ -313,6 +332,12 @@ export interface Invoice extends CreateInvoiceDto, NumberedFields {
    *  until the customer claims again (which clears both). */
   claimRejectedAt?: string;
   claimRejectedMethod?: string;
+  /** REQ-627: when, by whom and why it was voided (status "void"). */
+  voidedAt?: string;
+  voidedBy?: VoidedBy;
+  voidReason?: string;
+  /** REQ-627: the corrected draft that replaced this voided invoice. */
+  replacedBy?: string;
   id: string;
   /** Owner. Populated server-side from the auth context — never accept from request body. */
   userId: string;

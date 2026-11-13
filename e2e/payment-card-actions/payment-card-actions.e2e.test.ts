@@ -134,7 +134,7 @@ Deno.test("REQ-555 M24: a /payments card's View receipt, Receipt, Match invoice 
     await card.waitFor({ timeout: 15_000 });
 
     // Front: "View receipt →" opens the paid invoice's page in a new tab.
-    const cta = card.locator("[data-cy='payment-card-cta']");
+    const cta = card.locator("[data-cy='pay-card-cta']");
     expect.eq(await cta.getAttribute("href"), `/i/${inv.id}`, "CTA → receipt");
     const [receiptTab] = await Promise.all([
       page.context().waitForEvent("page", { timeout: 10_000 }),
@@ -156,32 +156,31 @@ Deno.test("REQ-555 M24: a /payments card's View receipt, Receipt, Match invoice 
           false,
     );
     expect.eq(
-      await card.locator("[data-cy='payment-card-receipt']").getAttribute(
+      await card.locator("[data-cy='pay-card-receipt']").getAttribute(
         "href",
       ),
       `/i/${inv.id}`,
       "Receipt → the paid invoice's page",
     );
     expect.eq(
-      await card.locator("[data-cy='payment-card-invoice']").getAttribute(
+      await card.locator("[data-cy='pay-card-match']").getAttribute(
         "href",
       ),
       `/invoices?open=${inv.id}`,
       "Match invoice → the invoice's detail",
     );
 
-    // Text client texts the invoice link — and says what happened.
-    const result = card.locator("[data-cy='payment-card-text-result']");
-    await clickUntil(
-      page,
-      "[data-cy='payment-card'] [data-cy='payment-card-text']",
-      async () => (await result.count()) > 0,
+    // REQ-555 AMENDMENT — reconciled with develop on demo-fixes (REQ-626):
+    // Text client opens the client's sheet, where Message texts them.
+    const textHref = await card.locator("[data-cy='pay-card-text']")
+      .getAttribute("href");
+    expect(
+      !!textHref && textHref.startsWith("/clients?open="),
+      `Text client opens the client's sheet (${textHref})`,
     );
-    const said = (await result.innerText()).trim();
-    expect(said.length > 0, `Text client reports its outcome (${said})`);
 
     // Match invoice lands on that invoice's detail.
-    await card.locator("[data-cy='payment-card-invoice']").click();
+    await card.locator("[data-cy='pay-card-match']").click();
     await page.waitForURL(`**/invoices?open=${inv.id}`, { timeout: 15_000 });
   }));
 

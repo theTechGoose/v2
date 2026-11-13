@@ -52,6 +52,11 @@ import {
   formatPhoneDisplay,
   telHref,
 } from "../../shared/quote-flow/format-helpers.ts";
+import {
+  clientCtaAction,
+  clientCtaMessageKind,
+  messageHref,
+} from "../../shared/card-actions/mod.ts";
 
 // Chip set matches the canonical reference (DocuMonster Clients.html)
 // — six entries with the exact labels from the design source. URL
@@ -111,6 +116,10 @@ interface CardProps {
   isOpen: boolean;
   onOpen: () => void;
   onClose: () => void;
+  /** REQ-626 — the client's sheet (Open card, the "Open card" CTA) */
+  onOpenCard: (id: string) => void;
+  /** REQ-625 — the edit form (an address or a contact still to add) */
+  onEdit: (c: CustomerCard) => void;
   lang: "en" | "es";
   /** REQ-390 (M18): set when another visible card shares this name — "C-002" / "···0177" */
   disambig?: string;
@@ -396,6 +405,8 @@ function ClientCard(
     isOpen,
     onOpen,
     onClose,
+    onOpenCard,
+    onEdit,
     lang,
     disambig,
     onSaved,
@@ -411,7 +422,27 @@ function ClientCard(
   const balance = balanceDisplay(c, lang);
   const address = addressFor(c, lang);
   const nudge = nudgeActionFor(c);
-  const messageHref = messageHrefFor(c);
+  const msgHref = messageHrefFor(c);
+
+  /** REQ-626: the CTA does what it says — a pre-filled message to the
+   *  client, or (its "Open card" label) the client's sheet. REQ-277: with
+   *  nowhere to send (nudgeActionFor says "open") it opens the sheet. */
+  function onCta(e: Event) {
+    e.stopPropagation();
+    const kind = clientCtaMessageKind(c);
+    if (clientCtaAction(c) === "open" || !kind || nudge.kind === "open") {
+      return onOpenCard(c.id);
+    }
+    const href = messageHref(
+      c,
+      tFor(lang, `clientsBoard.msg.${kind}`, {
+        name: c.name.trim().split(/\s+/)[0] ?? c.name,
+        amount: balance.text,
+      }),
+    );
+    if (href) globalThis.location.href = href;
+    else onOpenCard(c.id);
+  }
 
   function onCardClick(e: Event) {
     const target = e.target as HTMLElement;
@@ -492,27 +523,19 @@ function ClientCard(
       </div>
       <div class="ccard2__foot">
         {
-          /* REQ-277 (M31): the nudge does what it says — a message verb texts
-            the customer; "Open card" (or nowhere to send) opens the panel */
+          /* REQ-626: the nudge does what it says (onCta) — a pre-filled text
+            (else mail) to the customer; "Open card" (or nowhere to send)
+            opens the client's sheet. REQ-277 AMENDMENT — reconciled with
+            develop on demo-fixes. */
         }
-        {nudge.kind === "message"
-          ? (
-            <a class="ccard2__nudge" data-cy="ccard2-nudge" href={nudge.href}>
-              {cta} <span class="ccard2__nudge-arrow">→</span>
-            </a>
-          )
-          : (
-            <button
-              class="ccard2__nudge"
-              data-cy="ccard2-nudge"
-              type="button"
-              onClick={() => {
-                if (!isOpen) onOpen();
-              }}
-            >
-              {cta} <span class="ccard2__nudge-arrow">→</span>
-            </button>
-          )}
+        <button
+          class="ccard2__nudge"
+          type="button"
+          onClick={onCta}
+          data-cy="ccard2-nudge"
+        >
+          {cta} <span class="ccard2__nudge-arrow">→</span>
+        </button>
         <div class="ccard2__bal-wrap">
           <div class="ccard2__bal-lbl">
             {tFor(lang, "clientsBoard.balance")}
@@ -746,22 +769,45 @@ function ClientCard(
           ))}
         </div>
         {
-          /* REQ-277 (M31): Message texts (else mails) the customer and is not
-            offered with nowhere to send; the mock's "Open card" went nowhere —
-            this panel IS the open card — so it is gone */
+          /* REQ-277 (M31): Message texts (else mails) the customer; REQ-626:
+            with no contact on file it opens the edit form so one can be
+            added, and Open card opens the client's sheet. */
         }
-        {messageHref && (
-          <div class="ccard2__panel-actions">
-            <a
-              class="ccard2__panel-act"
-              data-cy="ccard2-message"
-              href={messageHref}
-            >
-              <I d={ICN.msg} size={12} sw={2.4} />{" "}
-              {tFor(lang, "clientsBoard.panel.message")}
-            </a>
-          </div>
-        )}
+        <div class="ccard2__panel-actions">
+          {msgHref
+            ? (
+              <a
+                class="ccard2__panel-act"
+                data-cy="ccard2-message"
+                href={msgHref}
+                style="text-decoration:none"
+              >
+                <I d={ICN.msg} size={12} sw={2.4} />{" "}
+                {tFor(lang, "clientsBoard.panel.message")}
+              </a>
+            )
+            : (
+              <button
+                class="ccard2__panel-act"
+                type="button"
+                data-cy="ccard2-message"
+                title={tFor(lang, "clientSheet.noContact")}
+                onClick={() => onEdit(c)}
+              >
+                <I d={ICN.msg} size={12} sw={2.4} />{" "}
+                {tFor(lang, "clientsBoard.panel.message")}
+              </button>
+            )}
+          <button
+            class="ccard2__panel-act ccard2__panel-act--pink"
+            type="button"
+            data-cy="ccard2-open"
+            onClick={() => onOpenCard(c.id)}
+          >
+            <I d={ICN.eye} size={12} sw={2.4} />{" "}
+            {tFor(lang, "clientsBoard.panel.openCard")}
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -789,6 +835,10 @@ interface BoardProps {
   tradeKind?: TradeKind;
   /** REQ-600: a card saved a contact field — reload the page's cards */
   onCustomerSaved?: () => void;
+  /** REQ-626 — open the client's sheet */
+  onOpenCard?: (id: string) => void;
+  /** REQ-625 — open the edit form */
+  onEdit?: (c: CustomerCard) => void;
 }
 
 export default function ClientsBoard(
@@ -808,6 +858,8 @@ export default function ClientsBoard(
     subsByCustomer,
     tradeKind = "project",
     onCustomerSaved,
+    onOpenCard = () => {},
+    onEdit = () => {},
   }: BoardProps,
 ) {
   // REQ-600 (cycle 4, M5): /customers?open=<id> opens that customer's card —
@@ -824,6 +876,8 @@ export default function ClientsBoard(
     document.querySelector(`[data-customer-id="${CSS.escape(linkedId!)}"]`)
       ?.scrollIntoView({ block: "center" });
   }, [linkedOnPage]);
+  // REQ-626: the sort button sorts — the API's A–Z, or warmest first (this page)
+  const [sortBy, setSortBy] = useState<"name" | "warmth">("name");
 
   useEffect(() => {
     if (!openId) return;
@@ -846,7 +900,9 @@ export default function ClientsBoard(
   }, [openId]);
 
   // REQ-135 — the rows ARE the page: the API searched, filtered and cut them
-  const rows = cards;
+  const rows = sortBy === "warmth"
+    ? [...cards].sort((a, b) => (b.temp ?? 0) - (a.temp ?? 0))
+    : cards;
   // REQ-390 (M18): same-name cards on this page carry a short tag
   const disambigs = cardDisambiguators(rows);
 
@@ -884,8 +940,16 @@ export default function ClientsBoard(
             );
           })}
         </div>
-        <button class="ctoolbar2__sort" type="button">
-          {tFor(lang, "clientsBoard.sort.warmth")}{" "}
+        <button
+          class="ctoolbar2__sort"
+          type="button"
+          data-cy="clients-sort"
+          aria-label={tFor(lang, "clientsBoard.sort.toggle")}
+          onClick={() => setSortBy((s) => (s === "name" ? "warmth" : "name"))}
+        >
+          {sortBy === "name"
+            ? tFor(lang, "clientsBoard.sort.name")
+            : tFor(lang, "clientsBoard.sort.warmth")}{" "}
           <I d={<path d="m6 9 6 6 6-6" />} size={12} sw={2.5} />
         </button>
         {/* REQ-208: the customers export carries numbers, contacts, documents and balances */}
@@ -912,6 +976,14 @@ export default function ClientsBoard(
                 isOpen={openId === c.id}
                 onOpen={() => setOpenId(c.id)}
                 onClose={() => setOpenId(null)}
+                onOpenCard={(id) => {
+                  setOpenId(null);
+                  onOpenCard(id);
+                }}
+                onEdit={(x) => {
+                  setOpenId(null);
+                  onEdit(x);
+                }}
                 lang={lang}
                 disambig={disambigs.get(c.id)}
                 onSaved={() => onCustomerSaved?.()}

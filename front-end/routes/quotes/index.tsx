@@ -1,4 +1,5 @@
 import { asset, Head } from "fresh/runtime";
+import { greetingFirstName } from "../../../shared/person-name/mod.ts"; // REQ-624
 import { define } from "../../utils.ts";
 import { resolveSsrLang } from "../../lib/ssr-lang.ts";
 import type { Lang } from "../../lib/lang.ts";
@@ -10,7 +11,6 @@ import { loadQuotesSeed } from "../../lib/quotes-ssr.ts";
 import DashSidebar from "../../islands/DashSidebar.tsx";
 import DashTopbar from "../../islands/DashTopbar.tsx";
 import QuotesPage from "../../islands/QuotesPage.tsx";
-import { greetingFirstName } from "../../../shared/quote-flow/outbound-identity.ts";
 
 export default define.page(async function QuotesRoute(ctx) {
   const user = ctx.state.user;
@@ -22,7 +22,7 @@ export default define.page(async function QuotesRoute(ctx) {
   const lang: Lang = resolveSsrLang(ctx) ?? "es";
   // The greeting date is computed reactively inside DashTopbar now; here we
   // only supply the name, with a localized "there" fallback.
-  const greetingName = greetingFirstName(user?.name);
+  const greetingName = greetingFirstName(user);
 
   return (
     <>

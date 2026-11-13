@@ -117,19 +117,18 @@ Deno.test("REQ-362 (demo M35) + REQ-528 (demo m51): /worker offers Next day →;
     await page.locator("[data-cy='w-login']").click();
     await page.getByText("Hey, Miguel").waitFor({ timeout: 15_000 });
 
-    // today: both directions — REQ-528: the same labels as on any other day
+    // today: both directions — REQ-362 AMENDMENT (reconciled with develop):
+    // develop's REQ-194 strip, Yesterday | Today | Tomorrow, on every day
     const prev = page.locator("[data-cy='w-day-prev']");
     const next = page.locator("[data-cy='w-day-next']");
     await next.waitFor({ timeout: 15_000 });
-    expect.eq(
-      (await prev.textContent())?.trim(),
-      "← Previous day",
-      "the back link",
+    expect(
+      ((await prev.textContent()) ?? "").includes("Yesterday"),
+      "the back button",
     );
-    expect.eq(
-      (await next.textContent())?.trim(),
-      "Next day →",
-      "the forward link",
+    expect(
+      ((await next.textContent()) ?? "").includes("Tomorrow"),
+      "the forward button",
     );
 
     // tomorrow: the visit, read-only
@@ -158,21 +157,18 @@ Deno.test("REQ-362 (demo M35) + REQ-528 (demo m51): /worker offers Next day →;
       "no note/services/defer actions on a preview",
     );
 
-    // the navigator from tomorrow
-    expect.eq(
-      (await page.locator("[data-cy='w-day-prev']").textContent())?.trim(),
-      "← Previous day",
-      "back one day",
-    );
-    expect.eq(
-      (await page.locator("[data-cy='w-day-today']").textContent())?.trim(),
-      "Today",
+    // the strip from tomorrow: still Yesterday | Today | Tomorrow, tomorrow selected
+    expect(
+      ((await page.locator("[data-cy='w-day-today']").textContent()) ?? "")
+        .includes("Today"),
       "back to today",
     );
     expect.eq(
-      (await page.locator("[data-cy='w-day-next']").textContent())?.trim(),
-      "Next day →",
-      "forward one day",
+      await page.locator("[data-cy='w-day-next']").getAttribute(
+        "aria-selected",
+      ),
+      "true",
+      "tomorrow is the selected day",
     );
 
     // REQ-528 — the viewed day is written out, not the ISO string

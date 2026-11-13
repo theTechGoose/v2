@@ -1,4 +1,5 @@
 import { asset, Head } from "fresh/runtime";
+import { personLanguage } from "../../../shared/person-name/mod.ts"; // REQ-631
 import { define } from "../../utils.ts";
 import DocTitle from "../../components/DocTitle.tsx";
 import { getSessionId, loadUser } from "../../lib/auth.ts";
@@ -32,9 +33,8 @@ export default define.page(async function PlanPay(ctx) {
   const plan = read?.ok ? read.data ?? null : null;
   const next = read?.ok ? handoffNext(plan, back) : null;
   if (next) return redirect(next);
-  const lang: Lang = user.language === "en" || user.language === "es"
-    ? user.language
-    : langFromCookie(ctx.req.headers.get("cookie")) ?? pickLangFromAcceptLanguage(ctx.req.headers.get("accept-language"));
+  const lang: Lang = personLanguage(user) ??
+    langFromCookie(ctx.req.headers.get("cookie")) ?? pickLangFromAcceptLanguage(ctx.req.headers.get("accept-language"));
   const pricing = plan ? PRICING_PLANS.find((p) => p.id === plan.planId) : undefined;
   const planLabel = pricing ? `${pricing.name} · ${dollars(pricing.priceCents)}` : "";
   return (

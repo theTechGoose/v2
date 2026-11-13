@@ -6,6 +6,8 @@ import { dispatchCustomerSms } from "@paperwork/domain/business/customer-sms/mod
 import { t } from "@core/i18n/mod.ts";
 import { QuoteStore } from "@paperwork/domain/data/quote-store/mod.ts";
 import { InvoiceStore } from "@paperwork/domain/data/invoice-store/mod.ts";
+import { StripeSettingsStore } from "@users/domain/data/stripe-settings-store/mod.ts"; // REQ-630
+import { payWaysSmsLine } from "@paperwork/domain/business/pay-ways/mod.ts"; // REQ-630
 import { CustomerStore } from "@crm/domain/data/customer-store/mod.ts";
 import { UserStore } from "@users/domain/data/user-store/mod.ts";
 import { BusinessIdentityStore } from "@profile/domain/data/business-identity-store/mod.ts";
@@ -90,6 +92,8 @@ export class SendPaperworkSms {
     private commsLog: LogPaperworkMessage,
     /** REQ-566: announces an invoice this delivery issued (optional for direct test construction) */
     private bus?: EventBus,
+    /** REQ-630 — whether the business takes cards on its own Stripe (the text names "card") */
+    private stripeSettings?: StripeSettingsStore,
   ) {}
 
   async run(
@@ -158,7 +162,7 @@ export class SendPaperworkSms {
       const invoice = invoiceToIssue ? asDelivered(stored) : stored;
       const customer = await this.tryGetCustomer(userId, invoice.customerId);
       docCustomer = customer;
-      const { lang } = resolve(customer);
+      const { lang, senderBiz } = resolve(customer);
       customerIdForLog = customer?.id;
       customerNameForEvent = customer?.name || undefined;
       if (!recipient) recipient = customer?.phoneNumber ?? customerOnDocument(invoice, customer)?.phoneNumber;
@@ -166,7 +170,19 @@ export class SendPaperworkSms {
         kind: "invoice",
         id: invoice.id,
       }, lang);
-      body = renderInvoiceBody(invoice, customer, sender, shortUrl, lang);
+      // REQ-630 — name the online ways to pay the link offers
+      const payLine = payWaysSmsLine(senderBiz?.acceptedPaymentMethods, {
+        card: await this.stripeSettings?.get(userId).then((s) => !!s).catch(() => false) ?? false,
+        lang,
+      });
+      body = renderInvoiceBody(
+        invoice,
+        customer,
+        sender,
+        shortUrl,
+        lang,
+        payLine ?? undefined,
+      );
     }
 
     // UX-28: an explicit pick is adopted as the stored default when none
@@ -452,6 +468,8 @@ export function renderInvoiceBody(
   sender: User | undefined,
   url: string,
   lang: "en" | "es" = "en",
+  /** REQ-630 — "Pay online by card, Venmo or Extra Pay — all at the link." */
+  payLine?: string,
 ): string {
   // P-49: the shared builder guarantees a capitalized sentence start for
   // unnamed customers ("Tu factura…" / "Your invoice…"), greeting otherwise.
@@ -464,5 +482,6 @@ export function renderInvoiceBody(
     amount: fmtUSD(i.amount),
     url,
     lang,
-  }) + "\n\n" + docTitle("invoice", i, lang) + "\n\n" + t(lang, "paperworkSms.body.invoiceClosing");
+  }) + "\n\n" + docTitle("invoice", i, lang) + (payLine ? `\n\n${payLine}` : "") + "\n\n" +
+    t(lang, "paperworkSms.body.invoiceClosing");
 }

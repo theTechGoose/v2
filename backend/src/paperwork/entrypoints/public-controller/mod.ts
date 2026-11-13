@@ -21,6 +21,7 @@ import { SendInquiryAlert } from "@paperwork/domain/coordinators/send-inquiry-al
 import { QuoteInquiryStore } from "@paperwork/domain/data/inquiry-store/mod.ts"; // REQ-701
 import { RenderInvoicePdf } from "@paperwork/domain/coordinators/render-invoice-pdf/mod.ts";
 import { RenderQuotePdf } from "@paperwork/domain/coordinators/render-quote-pdf/mod.ts";
+import { LoadBusinessLogo } from "@paperwork/domain/coordinators/load-business-logo/mod.ts";
 import { ViewStore } from "@paperwork/domain/data/view-store/mod.ts";
 import { ShortLinkStore } from "@paperwork/domain/data/shortlink-store/mod.ts";
 import { FileStore } from "@files/domain/data/file-store/mod.ts";
@@ -39,6 +40,19 @@ import {
 } from "#quote-flow/signer-name.ts";
 import { AcceptedPaymentMethods } from "@profile/dto/business-identity.ts";
 import { PaymentStore } from "@paperwork/domain/data/payment-store/mod.ts";
+import { ConnectStripe } from "@users/domain/coordinators/connect-stripe/mod.ts"; // REQ-212
+import {
+  STRIPE_API,
+  StripeError,
+  StripeGateway,
+  type StripeIntent,
+} from "@core/data/stripe-gateway/mod.ts"; // REQ-213
+import { RecordCardPayment } from "@paperwork/domain/coordinators/record-card-payment/mod.ts"; // REQ-213
+import { FAKE_STRIPE_API } from "#payments/stripe-keys.ts"; // REQ-213
+import {
+  projectPayMethods,
+  type PublicPayMethod,
+} from "#payments/pay-links.ts"; // REQ-630
 import type { ChangeOrder } from "@paperwork/dto/change-order.ts";
 import { docNumberOf } from "#documents/numbering.ts";
 import { agreedTotalCents } from "#documents/ledger.ts"; // REQ-679
@@ -219,12 +233,16 @@ export class PaperworkPublicController {
     private acceptedAlert: SendAcceptedAlert,
     private inquiryAlert: SendInquiryAlert,
     private views: ViewStore,
+    private stripe: ConnectStripe, // REQ-212
+    private gateway: StripeGateway, // REQ-213
+    private cardPayment: RecordCardPayment, // REQ-213
     private shortlinks: ShortLinkStore,
     private files: FileStore,
     private invoicePdf: RenderInvoicePdf,
     private quotePdf: RenderQuotePdf,
     private payments: PaymentStore,
     private sessions: SessionStore,
+    private logos: LoadBusinessLogo, // REQ-628
     // REQ-563: optional so a hand-built controller (tests) needs no chat
     private signedChat?: QuoteSignedPort,
     /** REQ-701: the questions clients send (defaulted for a hand-built controller) */
@@ -335,9 +353,10 @@ export class PaperworkPublicController {
     try {
       const quote = await this.quotes.get(id);
       const userId = quote.userId;
-      const [contractor, ident] = await Promise.all([
+      const [contractor, ident, logo] = await Promise.all([
         this.users.get(userId).catch(() => undefined),
         this.identity.get(userId).catch(() => null),
+        this.logos.run(userId), // REQ-628
       ]);
       const customer = quote.customerId
         ? await this.customers.getOwned(quote.customerId, userId)
@@ -356,6 +375,7 @@ export class PaperworkPublicController {
         ...(ident?.commsLanguage ? { commsLanguage: ident.commsLanguage } : {}),
         // REQ-697 (m22): the payment term states the days to pay
         invoiceNetDays: accountNetDays(ident?.invoiceNetDays),
+        ...(logo ? { logo } : {}),
       });
       return new Response(bytes as BodyInit, {
         status: 200,
@@ -1252,7 +1272,11 @@ export class PaperworkPublicController {
       // Method config drives the public page's "How would you like to
       // pay?" buttons. We surface only methods the contractor has
       // explicitly enabled (handles non-empty).
-      const acceptedMethods = projectAcceptedMethods(contractor);
+      let acceptedMethods = projectAcceptedMethods(contractor);
+      // REQ-213 — while Stripe is on, the card is the widget, not a manual chip
+      if (await this.stripe.isConnected(i.userId).catch(() => false)) {
+        acceptedMethods = acceptedMethods.filter((m) => m.method !== "card");
+      }
       // REQ-173: a batch invoice's visits, grouped under their address
       const visits = groupVisits(i.lineItems);
       const docLang = invoiceDocLang(
@@ -1454,6 +1478,266 @@ export class PaperworkPublicController {
       return notFoundResponse(ctx, e);
     }
   }
+
+  // ------------------------------------------------------------ REQ-213: pay by card
+
+  /**
+   * GET /invoices/:id/card — whether the business takes cards (REQ-212), and what the page
+   * needs to take one: the business's PUBLISHABLE key, where the browser tokenizes (Stripe, or
+   * the in-process fake for a fake key), the merchant's name and logo, and the balance.
+   */
+  @Get("invoices/:id/card")
+  async cardConfig(@Context() ctx: ExecutionContext, @Param("id") id: string) {
+    try {
+      const i = await this.invoices.get(id);
+      const conn = await this.stripe.secretFor(i.userId).catch(() => null);
+      if (!conn || i.status === "paid" || i.status === "void") {
+        return ctx.json({ available: false });
+      }
+      const balance = await currentBalance(this.payments, i);
+      if (balance.balanceCents <= 0) return ctx.json({ available: false });
+      const merchant = await this.stripe.merchant(i.userId);
+      return ctx.json({
+        available: true,
+        provider: "stripe", // REQ-216 — the gateway the widget is configured with
+        publishableKey: conn.publishableKey,
+        mode: conn.mode,
+        fake: conn.fake,
+        apiBase: conn.fake ? FAKE_STRIPE_API : STRIPE_API,
+        merchantName: merchant.name,
+        logoUrl: merchant.hasLogo ? `/api/public-logo/invoice/${i.id}` : null,
+        amountCents: balance.balanceCents,
+        currency: "usd",
+        version: versionOf(i),
+      });
+    } catch (e) {
+      return notFoundResponse(ctx, e);
+    }
+  }
+
+  /**
+   * POST /invoices/:id/card — charge the balance on the business's own Stripe: a PaymentIntent
+   * created and confirmed with the business's secret key for the PaymentMethod the browser made
+   * with its publishable key. The balance and version the page showed must still hold (REQ-203's
+   * rule). Succeeded → recorded like the contractor's confirmation; requires_action → the client
+   * secret for Stripe.js's challenge; declined → 402 with Stripe's words.
+   */
+  @Post("invoices/:id/card")
+  async chargeCard(
+    @Context() ctx: ExecutionContext,
+    @Param("id") id: string,
+    @Body() body: unknown,
+  ) {
+    let dto: ChargeCardDto;
+    try {
+      dto = parseChargeCard(body);
+    } catch {
+      return ctx.json({ ok: false, reason: "invalid_body" }, 400);
+    }
+    try {
+      const invoice = await this.invoices.get(id);
+      if (invoice.status === "paid") {
+        return ctx.json({ ok: false, reason: "already_paid" }, 409);
+      }
+      if (invoice.status === "void") {
+        return ctx.json({ ok: false, reason: "void" }, 409);
+      }
+      const balance = await currentBalance(this.payments, invoice);
+      if (balance.balanceCents <= 0) {
+        return ctx.json(
+          { ok: false, reason: "already_paid", balanceCents: 0 },
+          409,
+        );
+      }
+      const staleVersion = dto.version !== undefined &&
+        dto.version !== versionOf(invoice);
+      const staleAmount = dto.amountCents !== undefined &&
+        Math.round(dto.amountCents) !== balance.balanceCents;
+      if (staleVersion || staleAmount) {
+        return ctx.json(
+          {
+            ok: false,
+            reason: "stale_balance",
+            balanceCents: balance.balanceCents,
+            version: versionOf(invoice),
+          },
+          409,
+        );
+      }
+      const conn = await this.stripe.secretFor(invoice.userId).catch(() =>
+        null
+      );
+      if (!conn) {
+        return ctx.json({ ok: false, reason: "card_unavailable" }, 404);
+      }
+      const merchant = await this.stripe.merchant(invoice.userId);
+      let pi;
+      try {
+        pi = await this.gateway.createPaymentIntent(conn.secretKey, {
+          amountCents: balance.balanceCents,
+          currency: "usd",
+          paymentMethodId: dto.paymentMethodId,
+          description: `${docNumberOf(invoice)}${
+            merchant.name ? ` · ${merchant.name}` : ""
+          }`,
+          metadata: {
+            invoiceId: invoice.id,
+            userId: invoice.userId,
+            app: "documonster",
+          },
+          ...(dto.payerEmail?.trim()
+            ? { receiptEmail: dto.payerEmail.trim() }
+            : {}),
+          idempotencyKey: `${invoice.id}:${
+            versionOf(invoice)
+          }:${dto.paymentMethodId}`,
+        });
+      } catch (e) {
+        if (e instanceof StripeError) {
+          if (e.status === 402) {
+            return ctx.json({
+              ok: false,
+              reason: "declined",
+              message: e.message,
+            }, 402);
+          }
+          return ctx.json({
+            ok: false,
+            reason: "stripe_error",
+            message: e.message,
+          }, 502);
+        }
+        throw e;
+      }
+      return ctx.json(
+        await settleIntent(
+          this.cardPayment,
+          invoice.id,
+          invoice.userId,
+          pi,
+          dto.payerName,
+        ),
+      );
+    } catch (e) {
+      return notFoundResponse(ctx, e);
+    }
+  }
+
+  /**
+   * POST /invoices/:id/card/complete — after Stripe.js's 3-D Secure challenge: the intent is
+   * RE-READ on the business's key (never trusted from the browser) and, succeeded, recorded.
+   */
+  @Post("invoices/:id/card/complete")
+  async completeCard(
+    @Context() ctx: ExecutionContext,
+    @Param("id") id: string,
+    @Body() body: unknown,
+  ) {
+    const b = (body && typeof body === "object" ? body : {}) as Record<
+      string,
+      unknown
+    >;
+    const intentId = typeof b.paymentIntentId === "string"
+      ? b.paymentIntentId.trim()
+      : "";
+    if (!intentId) return ctx.json({ ok: false, reason: "invalid_body" }, 400);
+    try {
+      const invoice = await this.invoices.get(id);
+      const conn = await this.stripe.secretFor(invoice.userId).catch(() =>
+        null
+      );
+      if (!conn) {
+        return ctx.json({ ok: false, reason: "card_unavailable" }, 404);
+      }
+      let pi;
+      try {
+        pi = await this.gateway.retrievePaymentIntent(conn.secretKey, intentId);
+      } catch (e) {
+        if (e instanceof StripeError) {
+          return ctx.json({
+            ok: false,
+            reason: "stripe_error",
+            message: e.message,
+          }, 502);
+        }
+        throw e;
+      }
+      if (pi.metadata?.invoiceId !== invoice.id) {
+        return ctx.json({ ok: false, reason: "intent_mismatch" }, 409);
+      }
+      return ctx.json(
+        await settleIntent(this.cardPayment, invoice.id, invoice.userId, pi),
+      );
+    } catch (e) {
+      return notFoundResponse(ctx, e);
+    }
+  }
+}
+
+/** REQ-213 — what a Stripe intent means for the invoice: succeeded is recorded (RecordCardPayment),
+ *  requires_action hands the client secret to Stripe.js, anything else is reported as is. */
+async function settleIntent(
+  cardPayment: RecordCardPayment,
+  invoiceId: string,
+  userId: string,
+  pi: StripeIntent,
+  payerName?: string,
+) {
+  if (pi.status === "succeeded") {
+    const rec = await cardPayment.run(userId, invoiceId, {
+      id: pi.id,
+      amount: pi.amount,
+      ...(payerName ? { payerName } : {}),
+    });
+    return {
+      ok: true,
+      status: "succeeded",
+      paymentIntentId: pi.id,
+      balanceCents: rec.balanceCents,
+    };
+  }
+  if (pi.status === "requires_action") {
+    return {
+      ok: false,
+      status: "requires_action",
+      paymentIntentId: pi.id,
+      clientSecret: pi.clientSecret ?? "",
+    };
+  }
+  return { ok: false, status: pi.status, paymentIntentId: pi.id };
+}
+
+/** REQ-202/203 — the invoice balance now, from the ledger when the invoice carries no total. */
+async function currentBalance(payments: PaymentStore, invoice: Invoice) {
+  const paidCents = typeof invoice.paidCents === "number"
+    ? invoice.paidCents
+    : (await payments.listByInvoice(invoice.id, invoice.userId).catch(() => []))
+      .reduce((s, p) => s + (p.amount ?? 0), 0);
+  return invoiceBalance(invoice.amount, paidCents);
+}
+
+/** REQ-213 — the public card charge's body. */
+class ChargeCardDto {
+  @IsString()
+  paymentMethodId!: string;
+  /** the balance the customer saw — must still be the balance (REQ-203) */
+  @IsOptional() @IsNumber()
+  amountCents?: number;
+  @IsOptional() @IsNumber()
+  version?: number;
+  @IsOptional() @IsString()
+  payerName?: string;
+  @IsOptional() @IsString()
+  payerEmail?: string;
+}
+
+function parseChargeCard(input: unknown): ChargeCardDto {
+  const dto = plainToInstance(ChargeCardDto, input);
+  const errors = validateSync(dto);
+  if (errors.length || !dto.paymentMethodId.trim()) {
+    throw new Error(`invalid card body: ${JSON.stringify(errors)}`);
+  }
+  return dto;
 }
 
 /** Validation DTO for the public claim endpoint. */
@@ -1505,28 +1789,10 @@ function parseClaim(input: unknown): ClaimPaymentDto {
  *  authenticated request flow (out of v1 scope). */
 function projectAcceptedMethods(
   contractor: { acceptedPaymentMethods?: AcceptedPaymentMethods } | undefined,
-): Array<{ method: string; handle?: string }> {
-  const m = contractor?.acceptedPaymentMethods;
-  if (!m) return [];
-  const out: Array<{ method: string; handle?: string }> = [];
-  if (m.check?.enabled) out.push({ method: "check", handle: m.check.mailTo });
-  if (m.venmo?.enabled) out.push({ method: "venmo", handle: m.venmo.handle });
-  if (m.zelle?.enabled) out.push({ method: "zelle", handle: m.zelle.handle });
-  if (m.cashapp?.enabled) {
-    out.push({ method: "cashapp", handle: m.cashapp.cashtag });
-  }
-  if (m.paypal?.enabled) {
-    out.push({ method: "paypal", handle: m.paypal.handle });
-  }
-  if (m.cash?.enabled) out.push({ method: "cash" });
-  if (m.ach?.enabled) out.push({ method: "ach", handle: m.ach.instructions });
-  if (m.card?.enabled) {
-    out.push({ method: "card", handle: m.card.instructions });
-  }
-  if (m.other?.enabled) {
-    out.push({ method: "other", handle: m.other.instructions });
-  }
-  return out;
+): PublicPayMethod[] {
+  // REQ-630 — the shared projection: the old { method, handle } rows unchanged, then one
+  // { method: "link", id, name, url } row per enabled https payment link
+  return projectPayMethods(contractor?.acceptedPaymentMethods);
 }
 
 interface PublicContractor {
@@ -1766,6 +2032,8 @@ function redactInvoice(i: Invoice) {
     paidAt: i.paidAt,
     // REQ-556 (demo-loop cycle 4, M7): where the paid receipt actually went
     receiptSentVia: i.receiptSentVia,
+    // REQ-627: when it was cancelled (who and why stay with the business)
+    ...(i.status === "void" && i.voidedAt ? { voidedAt: i.voidedAt } : {}),
     createdAt: i.createdAt,
     installmentIndex: i.installmentIndex,
     installmentTotal: i.installmentTotal,

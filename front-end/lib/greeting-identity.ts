@@ -52,6 +52,8 @@ export function topbarGreeting(t: Translate, input: GreetingInput): string {
 /** The profile fields the sidebar identity reads (a ProfileSnapshot fits). */
 export interface IdentitySource {
   user: { name?: string | null };
+  /** REQ-624 — while acting: the person signed in (her name is shown, never the owner's) */
+  actor?: { name?: string | null; needsName?: boolean } | null;
   identity?:
     | { businessName?: string | null; displayName?: string | null }
     | null;
@@ -86,12 +88,24 @@ export function sidebarIdentity(
   t: Translate,
 ): SidebarIdentity | null {
   if (!profile) return null;
-  const raw = profile.user?.name?.trim();
+  // REQ-624: while acting, the editor's own name — none while she has none yet
+  const actor = profile.actor;
+  const raw = (actor
+    ? (actor.needsName ? undefined : actor.name)
+    : profile.user?.name)?.trim();
   const userName = raw && !isPlaceholderName(raw) ? raw : undefined;
   const bizName = businessOf(profile);
+  if (actor?.needsName) {
+    // an editor with no name yet: her phone stands in for the name, never for the letters
+    const phone = actor.name?.trim();
+    return phone
+      ? { display: phone, ...(bizName ? { biz: bizName } : {}), initials: "•" }
+      : { display: bizName ?? t("common.account"), initials: "•" };
+  }
   if (userName) {
-    // the server's initials are computed from this same real name
-    const server = profile.initials?.trim();
+    // the server's initials are computed from this same real name (the
+    // account's — so not while acting)
+    const server = actor ? undefined : profile.initials?.trim();
     return {
       display: userName,
       ...(bizName ? { biz: bizName } : {}),

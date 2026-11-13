@@ -17,6 +17,38 @@ import {
 } from "../lib/quotes-seed.ts";
 import DeleteQuoteButton from "./DeleteQuoteButton.tsx";
 import { customerLinkPath, customerLinkUrl } from "../lib/customer-link.ts";
+import { assistantClient } from "../clients/assistant.ts";
+import {
+  draftConversationFor,
+  quoteCta,
+} from "../../shared/card-actions/mod.ts";
+import {
+  interpretSendResult,
+  summarizeDispatch,
+} from "../../shared/quote-flow/send-result.ts";
+
+/** REQ-626: send the quote again over both channels and read the BODIES
+ *  (P-09: a 200 {ok:false} is a failure, not a send). */
+async function resendQuote(id: string) {
+  const one = async (channel: "email" | "text") => {
+    try {
+      const r = await fetch(`/api/quotes/${id}/${channel}`, {
+        method: "POST",
+        credentials: "include",
+      });
+      const body = await r.json().catch(() => null);
+      return interpretSendResult({ httpOk: r.ok, body });
+    } catch {
+      return { delivered: false, reason: "http" as const };
+    }
+  };
+  const [email, text] = await Promise.all([one("email"), one("text")]);
+  return {
+    ...summarizeDispatch({ email, text }),
+    // nothing to send to — the client has neither an email nor a phone
+    noContact: email.reason === "noEmail" && text.reason === "noPhone",
+  };
+}
 
 /** Real engagement entry from GET /quotes/:id/opens. */
 interface RealOpen {
@@ -51,7 +83,7 @@ interface Props {
    *  detail back so the opened quote's actions are immediately visible. */
   flipOnMount?: boolean;
   /** REQ-239 (M28): open the quote panel (/quotes?open=<id>) — the same
-   *  entry point the decided rows have. */
+   *  entry point the decided rows have. REQ-626: QuotesPage's openQuote. */
   onOpen?: (id: string) => void;
 }
 
@@ -105,27 +137,98 @@ export default function QuoteCard(
       setTimeout(() => setCopied(false), 1500);
     } catch { /* clipboard unavailable — leave the label as-is */ }
   }
+  // REQ-626: Resend / the nudge CTAs report what happened, on the card
+  const [sending, setSending] = useState(false);
+  const [sendNote, setSendNote] = useState<
+    { ok: boolean; text: string } | null
+  >(null);
+
+  function openPanel() {
+    if (onOpen) onOpen(q.id);
+    else globalThis.location.assign(`/quotes?open=${encodeURIComponent(q.id)}`);
+  }
+
+  async function onResend(e: Event) {
+    e.stopPropagation();
+    if (sending) return;
+    setSending(true);
+    setSendNote(null);
+    try {
+      const d = await resendQuote(q.id);
+      setSendNote(
+        d.delivered
+          ? {
+            ok: true,
+            text: tFor(
+              lang,
+              d.partial
+                ? d.failedChannels.includes("text")
+                  ? "quoteCard.resent.emailOnly"
+                  : "quoteCard.resent.textOnly"
+                : "quoteCard.resent.ok",
+            ),
+          }
+          : {
+            ok: false,
+            text: tFor(
+              lang,
+              d.noContact
+                ? "quoteCard.resent.noContact"
+                : "quoteCard.resent.failed",
+            ),
+          },
+      );
+    } finally {
+      setSending(false);
+    }
+  }
+
+  /** REQ-626: a draft resumes in its assistant conversation (the panel if
+   *  none is left); a nudge re-sends; anything else opens the panel. */
+  async function onCta(e: Event) {
+    e.stopPropagation();
+    const { action } = quoteCta(q.stage, q.opens);
+    if (action === "resend") return onResend(e);
+    if (action === "resume") {
+      setSending(true);
+      const convos = await assistantClient.conversations(200).catch(() => []);
+      const cid = draftConversationFor(
+        q.id,
+        Array.isArray(convos) ? convos : [],
+      );
+      setSending(false);
+      if (cid) {
+        globalThis.location.assign(`/assistant/${encodeURIComponent(cid)}`);
+        return;
+      }
+    }
+    openPanel();
+  }
+
+  const noteEl = sendNote && (
+    <p
+      class="qcard__sendfail"
+      role={sendNote.ok ? "status" : "alert"}
+      data-cy="qcard-send-note"
+      style={`margin:0 0 8px;${
+        sendNote.ok ? "color:var(--brand-green,#519843)" : ""
+      }`}
+    >
+      {sendNote.text}
+    </p>
+  );
+
   const mood = moodForQuote(q);
   const story = QSTORIES[q.id] ?? tFor(lang, "quoteCard.storyFallback");
+  // REQ-626: the label says what the click does (shared/card-actions).
   // REQ-614 (cycle 4, m16): the onboarding sample is an unnumbered draft with
-  // no customer — it is looked at, never finished and sent.
+  // no customer — it is looked at, never finished and sent. REQ-555-era
+  // "undelivered": the panel opens to fix the contact.
   const cta = q.isSample
     ? tFor(lang, "quoteCard.cta.viewSample")
-    : q.stage === "draft"
-    ? tFor(lang, "quoteCard.cta.finishSend")
     : q.stage === "undelivered"
     ? tFor(lang, "quoteCard.cta.fixContact")
-    : q.stage === "opened" && q.opens >= 3
-    ? tFor(lang, "quoteCard.cta.sendOffer")
-    : q.stage === "opened"
-    ? tFor(lang, "quoteCard.cta.friendlyNudge")
-    : q.stage === "cooling"
-    ? tFor(lang, "quoteCard.cta.trimResend")
-    : q.stage === "stale"
-    ? tFor(lang, "quoteCard.cta.winItBack")
-    : q.stage === "sent"
-    ? tFor(lang, "quoteCard.cta.setReminder")
-    : tFor(lang, "quoteCard.cta.openQuote");
+    : tFor(lang, quoteCta(q.stage, q.opens).key);
   const showOpens = q.stage !== "draft" && q.stage !== "undelivered" &&
     q.opens > 0;
   const opens = realOpens ?? [];
@@ -186,9 +289,9 @@ export default function QuoteCard(
       </div>
       <div class="qcard__foot">
         {
-          /* REQ-310 (demo m13): the front CTA is a real action — it opens
-            the quote panel (the same as the back's Open), so the customer's
-            link is reachable without flipping. No panel wired → flip. */
+          /* REQ-626: the front CTA does what it says (resend, resume the
+            draft, open the panel — onCta); REQ-310 AMENDMENT (reconciled with
+            develop on demo-fixes): "open" is the quote panel via onOpen. */
         }
         {!q.isSample
           ? (
@@ -196,11 +299,8 @@ export default function QuoteCard(
               class="qcard__cta"
               type="button"
               data-cy="qcard-cta"
-              onClick={(e) => {
-                e.stopPropagation();
-                if (onOpen) onOpen(q.id);
-                else setFlipped(true);
-              }}
+              onClick={onCta}
+              disabled={sending}
             >
               {cta}{" "}
               <span style="display:inline-block;transition:transform 240ms">
@@ -241,6 +341,9 @@ export default function QuoteCard(
         </div>
       </div>
 
+      {/* REQ-626: what a Resend / nudge did — on whichever face is showing */}
+      {sendNote && !flipped && noteEl}
+
       <div class="qcard__back" aria-hidden={!flipped}>
         <div class="qcard__back-head">
           <button
@@ -278,6 +381,7 @@ export default function QuoteCard(
           </p>
         </div>
         <div class="qcard__back-body">
+          {sendNote && flipped && noteEl}
           {opens.length > 0
             ? (
               <div class="qcard__timeline">
@@ -306,26 +410,34 @@ export default function QuoteCard(
           </p>
         </div>
         <div class="qcard__back-foot">
-          {onOpen && (
+          <button
+            type="button"
+            class="qcard__back-btn--primary qcard__back-open"
+            data-cy="qcard-open"
+            onClick={(e) => {
+              e.stopPropagation();
+              if (onOpen) onOpen(q.id);
+              else openPanel();
+            }}
+          >
+            {tFor(lang, "quoteCard.back.open")}
+          </button>
+          {
+            /* REQ-626: Resend is real (both channels, the bodies read).
+              REQ-360 (demo-loop cycle 1, m11): never for the never-sent
+              sample, which has no customer to share a link with either;
+              "View as customer" stays. */
+          }
+          {!q.isSample && (
             <button
               type="button"
-              class="qcard__back-btn--primary qcard__back-open"
-              data-cy="qcard-open"
-              onClick={(e) => {
-                e.stopPropagation();
-                onOpen(q.id);
-              }}
+              data-cy="qcard-resend"
+              onClick={onResend}
+              disabled={sending}
             >
-              {tFor(lang, "quoteCard.back.open")}
+              {sending ? "…" : tFor(lang, "quoteCard.back.resend")}
             </button>
           )}
-          {
-            /* REQ-360 (demo-loop cycle 1, m11): no "Resend" here — it was a
-              dead button (its handler only stopped the click) and offered a
-              resend of the never-sent sample. Sending lives in the
-              assistant. The sample has no customer to share a link with, so
-              it offers no "Copy link" either; "View as customer" stays. */
-          }
           {!q.isSample && (
             <button type="button" onClick={copyPublicLink}>
               {copied

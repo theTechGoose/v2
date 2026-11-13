@@ -8,6 +8,8 @@ import {
   PROFILE_UPDATED,
   type ProfileUpdatedDetail,
 } from "../lib/profile-events.ts";
+import { editableName } from "../../shared/person-name/mod.ts"; // REQ-624
+import { hasAnyPayWay } from "../../shared/payments/pay-links.ts"; // REQ-630 AMENDMENT
 
 /**
  * SetupChecklist — post-onboarding "finish setting up" card on the
@@ -58,11 +60,7 @@ export default function SetupChecklist() {
   // above is only for the checklist item-completeness data, not the language.
   const lang = langSignal.value;
   const id = snap.identity ?? null;
-  const acceptedAny = id?.acceptedPaymentMethods
-    ? Object.values(id.acceptedPaymentMethods).some(
-      (m) => m && (m as { enabled?: boolean }).enabled === true,
-    )
-    : false;
+  const acceptedAny = hasAnyPayWay(id?.acceptedPaymentMethods); // REQ-630 AMENDMENT
 
   const items: Item[] = [
     {
@@ -70,7 +68,7 @@ export default function SetupChecklist() {
       // UX-27: the seeded placeholder ("Nuevo usuario") is not a real name —
       // the one field this user most needs to supply must not read as done.
       label: tFor(lang, "setupChecklist.item.name"),
-      done: !isPlaceholderName(snap.user.name),
+      done: !isPlaceholderName(editableName(snap.user, snap.actor)), // REQ-624: the person signed in
       href: setupItemHref("name"),
     },
     {

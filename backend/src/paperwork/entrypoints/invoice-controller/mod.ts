@@ -69,6 +69,15 @@ import {
   isIssuingTransition,
 } from "@paperwork/domain/business/owner-activity/mod.ts"; // REQ-566
 import { billToCustomerPlan } from "@paperwork/domain/business/bill-to-customer/mod.ts"; // REQ-696
+import { PaymentStore } from "@paperwork/domain/data/payment-store/mod.ts";
+import {
+  duplicateDraftOf,
+  MAX_BULK_IDS,
+  removalFor,
+} from "#documents/removal.ts"; // REQ-627
+import type { VoidedBy } from "@paperwork/dto/invoice.ts";
+import { ForbiddenError, NotFoundError } from "@core/data/repository/mod.ts";
+import { RenderInvoicePrintPdf } from "@paperwork/domain/coordinators/render-invoice-print-pdf/mod.ts"; // REQ-629
 
 /** number order for an export (INV-001 before INV-002; unnumbered rows by age) */
 const bySeq = (
@@ -141,8 +150,147 @@ export class InvoiceController {
     private sessions: SessionStore,
     private bus: EventBus,
     private sendPreview: PreviewInvoiceSend,
+    private payments: PaymentStore, // REQ-627
+    private printPdf: RenderInvoicePrintPdf, // REQ-629
     private translator?: InvoiceTranslatorPort,
   ) {}
+
+  /**
+   * REQ-629: POST /invoices/pdf-batch { ids } — ONE print-ready PDF, each
+   * invoice on its own page(s), in the order given. The owner's invoices
+   * only (any other id → 404, nothing rendered); 1..500 ids.
+   */
+  @Post("pdf-batch")
+  async pdfBatch(@Context() ctx: ExecutionContext, @Body() body: unknown) {
+    const user = await requireUser(ctx, this.sessions, this.users);
+    const ids = parseIds(body);
+    if (typeof ids === "string") {
+      return ctx.json({ ok: false, reason: ids }, 400);
+    }
+    let bytes: Uint8Array;
+    try {
+      bytes = await this.printPdf.run(user.id, ids);
+    } catch (e) {
+      if (e instanceof NotFoundError || e instanceof ForbiddenError) {
+        return ctx.json({ ok: false, reason: "not_found" }, 404);
+      }
+      throw e;
+    }
+    const day = new Date().toISOString().slice(0, 10);
+    return new Response(bytes as BodyInit, {
+      headers: {
+        "content-type": "application/pdf",
+        "content-length": String(bytes.length),
+        "content-disposition": `attachment; filename="invoices-${day}.pdf"`,
+        "cache-control": "no-store",
+      },
+    });
+  }
+
+  /**
+   * REQ-627: POST /invoices/bulk-remove { ids, action: "delete" | "void", reason? }
+   * — applies the per-invoice rules to each and reports what it skipped and why
+   * (`must_void`, `must_delete`, `locked_paid`, `already_void`, `not_found`).
+   */
+  @Post("bulk-remove")
+  async bulkRemove(@Context() ctx: ExecutionContext, @Body() body: unknown) {
+    const user = await requireUser(ctx, this.sessions, this.users);
+    const ids = parseIds(body);
+    if (typeof ids === "string") {
+      return ctx.json({ ok: false, reason: ids }, 400);
+    }
+    const b = (body ?? {}) as { action?: string; reason?: unknown };
+    if (b.action !== "delete" && b.action !== "void") {
+      return ctx.json({ ok: false, reason: "invalid", field: "action" }, 400);
+    }
+    const by = await publisherOf(ctx, this.sessions, this.users, user);
+    const reason = cleanReason(b.reason);
+    const results: Array<{ id: string; outcome: string; reason?: string }> = [];
+    for (const id of ids) {
+      results.push({
+        id,
+        ...await removeOne(this.store, this.payments, id, user.id, b.action, {
+          by,
+          reason,
+        }),
+      });
+    }
+    const done = results.filter((r) => r.outcome !== "skipped").length;
+    return ctx.json({
+      ok: true,
+      results,
+      done,
+      skipped: results.length - done,
+    });
+  }
+
+  /**
+   * REQ-627: void — the invoice stays (Cancelled, with who / when / why), the
+   * customer's link says so and cannot be paid, payments stay attached.
+   * Never-sent drafts are deleted instead (409 `must_delete`); paid is locked.
+   */
+  @Post(":id/void")
+  async voidInvoice(
+    @Context() ctx: ExecutionContext,
+    @Param("id") id: string,
+  ) {
+    const user = await requireUser(ctx, this.sessions, this.users);
+    // REQ-627 AMENDMENT: auth first, and the reason is optional — a bare POST is no 500
+    const body = await optionalJsonBody(ctx);
+    const by = await publisherOf(ctx, this.sessions, this.users, user);
+    const r = await removeOne(this.store, this.payments, id, user.id, "void", {
+      by,
+      reason: cleanReason((body as { reason?: unknown } | null)?.reason),
+    });
+    if (r.outcome === "skipped") {
+      return ctx.json(
+        { ok: false, reason: r.reason },
+        r.reason === "not_found" ? 404 : 409,
+      );
+    }
+    return ctx.json(
+      project(await this.store.getOwned(id, user.id), new Date()),
+    );
+  }
+
+  /**
+   * REQ-627: "Void & duplicate" — fix a mistake on a sent invoice: it is voided
+   * and a fresh DRAFT copy (a new number) carries its content to correct.
+   */
+  @Post(":id/void-duplicate")
+  async voidAndDuplicate(
+    @Context() ctx: ExecutionContext,
+    @Param("id") id: string,
+  ) {
+    const user = await requireUser(ctx, this.sessions, this.users);
+    // REQ-627 AMENDMENT: auth first, and the reason is optional — a bare POST is no 500
+    const body = await optionalJsonBody(ctx);
+    const by = await publisherOf(ctx, this.sessions, this.users, user);
+    const inv = await this.store.getOwned(id, user.id);
+    const r = await removeOne(this.store, this.payments, id, user.id, "void", {
+      by,
+      reason: cleanReason((body as { reason?: unknown } | null)?.reason),
+    });
+    if (r.outcome === "skipped") {
+      return ctx.json({ ok: false, reason: r.reason }, 409);
+    }
+    const draft = await this.store.create(
+      user.id,
+      parseCreateInvoice(
+        duplicateDraftOf(
+          inv as unknown as Record<string, unknown> & { id: string },
+        ),
+      ),
+    );
+    const voided = await this.store.update(id, user.id, {
+      replacedBy: draft.id,
+    });
+    const now = new Date();
+    return ctx.json({
+      voided: project(voided, now),
+      draft: project(draft, now),
+    });
+  }
 
   /** Apply a discount to an invoice in place (roadmap p.12). Reduces the
    *  net `amount` and records the cumulative `discountCents` for display. */
@@ -342,6 +490,7 @@ export class InvoiceController {
     } catch {
       return ctx.json({ error: "invalid_invoice" }, 422);
     }
+    delete dto.replaces; // REQ-627: server-set by void-duplicate only
 
     // Derive-from-quote (roadmap p.6): the invoice carries all the quote's
     // information — job name, description, customer, line items, amount —
@@ -578,7 +727,15 @@ export class InvoiceController {
     // REQ-488: reject-claim / the next claim own these
     delete patch.claimRejectedAt;
     delete patch.claimRejectedMethod;
+    // REQ-627: voiding has its own route and rules
+    delete patch.voidedAt;
+    delete patch.voidedBy;
+    delete patch.voidReason;
+    delete patch.replacedBy;
     const existing = await this.store.getOwned(id, user.id);
+    if (patch.status === "void" && existing.status !== "void") {
+      return ctx.json({ ok: false, reason: "use_void" }, 409);
+    }
     const decision = invoiceEditDecision(
       existing,
       patch as unknown as Record<string, unknown>,
@@ -626,15 +783,16 @@ export class InvoiceController {
     );
   }
 
+  /** REQ-627: only a never-sent invoice with no payments is deleted; a sent
+   *  one is voided instead (409 `must_void`); paid stays (409 `locked_paid`). */
   @Delete(":id")
   async delete(@Context() ctx: ExecutionContext, @Param("id") id: string) {
     const user = await requireUser(ctx, this.sessions, this.users);
-    const inv = await this.store.getOwned(id, user.id);
-    // REQ-202: a paid invoice is part of the record — it stays.
-    if (isInvoiceLocked(inv)) {
-      return ctx.json({ ok: false, reason: "locked_paid" }, 409);
+    await this.store.getOwned(id, user.id);
+    const r = await removeOne(this.store, this.payments, id, user.id, "delete");
+    if (r.outcome === "skipped") {
+      return ctx.json({ ok: false, reason: r.reason }, 409);
     }
-    await this.store.delete(id, user.id);
     return { ok: true };
   }
 
@@ -791,5 +949,72 @@ async function alertCustomer(
       undefined,
       err instanceof Error ? err.message : String(err),
     );
+  }
+}
+
+/** REQ-627/629: `{ ids }` → the ids, or the 400 reason. */
+function parseIds(body: unknown): string[] | "no_ids" | "too_many" | "invalid" {
+  const ids = (body as { ids?: unknown } | null)?.ids;
+  if (!Array.isArray(ids) || ids.some((i) => typeof i !== "string" || !i)) {
+    return Array.isArray(ids) ? "invalid" : "no_ids";
+  }
+  if (ids.length === 0) return "no_ids";
+  if (ids.length > MAX_BULK_IDS) return "too_many";
+  return [...new Set(ids as string[])];
+}
+
+function cleanReason(r: unknown): string | undefined {
+  return typeof r === "string" && r.trim() ? r.trim().slice(0, 500) : undefined;
+}
+
+/** REQ-627: apply the removal rules to one invoice. Never throws for a
+ *  missing / foreign id — that is a skip with `not_found`. */
+async function removeOne(
+  store: InvoiceStore,
+  payments: PaymentStore,
+  id: string,
+  userId: string,
+  action: "delete" | "void",
+  opts: { by?: VoidedBy; reason?: string } = {},
+): Promise<{ outcome: "deleted" | "voided" | "skipped"; reason?: string }> {
+  let inv: Invoice;
+  try {
+    inv = await store.getOwned(id, userId);
+  } catch (e) {
+    if (e instanceof NotFoundError || e instanceof ForbiddenError) {
+      return { outcome: "skipped", reason: "not_found" };
+    }
+    throw e;
+  }
+  const paid = await payments.listByInvoice(id, userId).catch(() => []);
+  const d = removalFor(inv, paid.length);
+  if (d.action === "locked" || d.action === "none") {
+    return { outcome: "skipped", reason: d.reason };
+  }
+  if (action === "delete") {
+    if (d.action !== "delete") {
+      return { outcome: "skipped", reason: "must_void" };
+    }
+    await store.delete(id, userId);
+    return { outcome: "deleted" };
+  }
+  if (d.action !== "void") return { outcome: "skipped", reason: "must_delete" };
+  await store.update(id, userId, {
+    status: "void",
+    voidedAt: new Date().toISOString(),
+    ...(opts.by ? { voidedBy: opts.by } : {}),
+    ...(opts.reason ? { voidReason: opts.reason } : {}),
+  });
+  return { outcome: "voided" };
+}
+
+/** REQ-627 AMENDMENT: the JSON body when one was sent, {} when none (a bare POST is a 500 through @Body) */
+async function optionalJsonBody(ctx: ExecutionContext): Promise<unknown> {
+  const raw = await ctx.req.text().catch(() => "");
+  if (!raw.trim()) return {};
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return {};
   }
 }

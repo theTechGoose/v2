@@ -1,4 +1,5 @@
 import { asset, Head } from "fresh/runtime";
+import { personLanguage } from "../../shared/person-name/mod.ts"; // REQ-631
 import { define } from "../utils.ts";
 import DocTitle from "../components/DocTitle.tsx";
 import SiteFooter from "../components/SiteFooter.tsx";
@@ -63,10 +64,8 @@ export default define.page(async function Welcome(ctx) {
   // staff member impersonating them (the demo stage's frame).
   const registered = await registrationForRequest(ctx.req);
 
-  const lang: Lang = (snapshot?.user?.language === "es" ||
-      snapshot?.user?.language === "en")
-    ? snapshot.user.language
-    : (langFromCookie(ctx.req.headers.get("cookie")) ??
+  const lang: Lang = personLanguage(snapshot?.user, snapshot?.actor) ??
+    (langFromCookie(ctx.req.headers.get("cookie")) ??
       pickLangFromAcceptLanguage(ctx.req.headers.get("accept-language")));
 
   return (

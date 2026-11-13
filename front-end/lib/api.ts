@@ -53,6 +53,9 @@ export class ApiError extends Error {
 export interface ApiOptions {
   /** Session id (server-side). On the client, the cookie is sent automatically. */
   sessionId?: string;
+  /** REQ-197 — server-side only: the browser's Cookie header, forwarded as-is (the worker's
+   *  pm_worker session has no header form, so an SSR route hands the backend the cookie) */
+  cookie?: string;
   /** Override base URL. Defaults to BACKEND_URL on server, "/api" on client. */
   baseUrl?: string;
   /** Query params object — values are stringified, undefineds dropped. */
@@ -106,6 +109,7 @@ async function request<T>(
   };
   if (body !== undefined) headers["content-type"] = "application/json";
   if (opts.sessionId) headers["x-session-id"] = opts.sessionId;
+  if (opts.cookie && isServer()) headers["cookie"] = opts.cookie;
 
   const res = await fetch(buildUrl(path, opts), {
     method,

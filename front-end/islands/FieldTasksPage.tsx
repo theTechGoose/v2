@@ -595,7 +595,10 @@ export default function FieldTasksPage(
             {locked && (
               <a
                 class="chip chip--amber"
-                href="/invoices"
+                /* REQ-626: the chip opens THE invoice, not the list */
+                href={x.invoiceId
+                  ? `/invoices?open=${encodeURIComponent(x.invoiceId)}`
+                  : "/invoices"}
                 style="text-decoration:none"
               >
                 {t("field.tk.invoiced")}

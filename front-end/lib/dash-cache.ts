@@ -21,6 +21,7 @@
  */
 
 import { dashboardClient, type DashboardStats } from "../clients/dashboard.ts";
+import { personLanguage } from "../../shared/person-name/mod.ts"; // REQ-631
 import { profileClient, type ProfileSnapshot } from "../clients/profile.ts";
 import { langChoiceMark, langSignal, setLang } from "./i18n.ts";
 
@@ -49,6 +50,15 @@ const DEFAULT_FETCHERS: Fetchers = {
 };
 let fetchers: Fetchers = DEFAULT_FETCHERS;
 
+/** REQ-624 — forget the last session's snapshot (sign-out, a switch of account): the next person
+ *  in this tab must never see the previous one's name in the sidebar, not even for a frame */
+export function clearDashCache(): void {
+  cached = null;
+  try {
+    globalThis.sessionStorage?.removeItem(STORAGE_KEY);
+  } catch { /* SSR / private mode */ }
+}
+
 export function readCached(): CachedDash | null {
   if (cached) return cached;
   try {
@@ -71,6 +81,15 @@ function persist(snap: CachedDash) {
 /** Copy of `snap` whose profile says `lang` (the snapshot is never mutated). */
 function withLanguage(snap: CachedDash, lang: "en" | "es"): CachedDash {
   const user = snap.profile?.user;
+  const actor = snap.profile?.actor;
+  // REQ-631: while acting the language is the editor's own — patch hers
+  if (actor) {
+    if (actor.language === lang) return snap;
+    return {
+      ...snap,
+      profile: { ...snap.profile!, actor: { ...actor, language: lang } },
+    };
+  }
   if (!user || user.language === lang) return snap;
   return {
     ...snap,
@@ -97,8 +116,9 @@ function writeCached(
   snap: CachedDash,
   choiceMarkAtStart: number,
 ): CachedDash {
-  const plang = snap.profile?.user?.language;
-  if (plang === "en" || plang === "es") {
+  // REQ-631: the PERSON's language — an editor's own while she acts in the owner's account
+  const plang = personLanguage(snap.profile?.user, snap.profile?.actor);
+  if (plang) {
     if (urlLangChoice()) {
       // REQ-592 (m5): a page opened with ?lang= keeps that language — the
       // profile's `user.language` (an es staff account on /admin?lang=en)

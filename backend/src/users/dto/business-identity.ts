@@ -93,6 +93,24 @@ export class OtherMethod {
   instructions?: string;
 }
 
+/** REQ-630 — an "other payment link" the business adds by name + URL (any platform: "Extra
+ *  Pay", Square, a bank portal). Shown as a button on the invoice. The URL is https only —
+ *  checked on save (`checkPayLinks`, shared/payments/pay-links.ts) and again on projection. */
+export class PayLinkMethod {
+  /** stable id, minted on save when absent */
+  @IsOptional() @IsString()
+  id?: string;
+  /** the button label, ≤ 40 chars */
+  @IsString()
+  name!: string;
+  /** https only */
+  @IsString()
+  url!: string;
+  /** unset = on */
+  @IsOptional() @IsBoolean()
+  enabled?: boolean;
+}
+
 export class AcceptedPaymentMethods {
   @IsOptional() @ValidateNested() @Type(() => CheckMethod)
   check?: CheckMethod;
@@ -112,6 +130,12 @@ export class AcceptedPaymentMethods {
   card?: CardMethod;
   @IsOptional() @ValidateNested() @Type(() => OtherMethod)
   other?: OtherMethod;
+  /** REQ-630 — the business's other payment links, in display order. */
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => PayLinkMethod)
+  links?: PayLinkMethod[];
 }
 
 /** REQ-623 (demo cycle 4, M26): the business's automatic payment reminders —

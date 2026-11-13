@@ -17,6 +17,8 @@
  * agreement-only bits: the 14 numbered legal clauses and the signature block.
  */
 import { useEffect, useRef, useState } from "preact/hooks";
+import BizBrand from "./BizBrand.tsx";
+import { publicBusinessLabel } from "../../shared/documents/public-brand.ts";
 import PublicSignQuote from "../islands/PublicSignQuote.tsx";
 import PublicQuoteActions from "../islands/PublicQuoteActions.tsx";
 import { buildSignatureBlock } from "../../shared/quote-flow/signature-block.ts";
@@ -231,7 +233,6 @@ function cstr(lang: Lang, terms?: Term[]) {
     emailWord: tFor(lang, "quoteDoc.emailWord"),
     emailWordStart: tFor(lang, "quoteDoc.emailWordStart"),
     lookForward: tFor(lang, "quoteDoc.lookForward"),
-    poweredBy: tFor(lang, "quoteDoc.poweredBy"),
     termLabels: {
       customer: tFor(lang, "quoteDoc.termLabel.customer"),
       start_date: tFor(lang, "quoteDoc.termLabel.startDate"),
@@ -263,11 +264,6 @@ export function ErrorCard(
 ) {
   return (
     <>
-      <div
-        style={`font-size:11px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:${GREEN};text-align:center;margin-bottom:18px`}
-      >
-        {tFor(lang, "brand.name")}
-      </div>
       <div style="background:#fff;border-radius:18px;padding:32px;box-shadow:0 8px 32px rgba(20,72,82,0.08);text-align:center">
         <div style={`font-weight:800;color:${TEAL};font-size:18px`}>
           {tFor(lang, "quoteDoc.cantOpen")}
@@ -352,8 +348,9 @@ export function QuoteDoc(
     quote.acceptedName?.trim() || undefined;
   const contractor = quote.contractor;
   const t = cstr(lang, quote.terms);
-  const businessLabel = contractor?.businessName?.trim() ||
-    contractor?.name?.trim() || tFor(lang, "brand.name");
+  // REQ-628: the business, else the contractor — never DocuMonster
+  const businessLabel = publicBusinessLabel(contractor) ??
+    tFor(lang, "publicQuote.contractorFallback");
   const contractorName = contractor?.name?.trim();
   const contractorFirst = contractorName?.split(/\s+/)[0];
   // REQ-502 (demo c3 p8-pair10-b): the sidebar's rule — name + business —
@@ -640,20 +637,14 @@ export function QuoteDoc(
       ))}
       {/* Sticky brand strip */}
       <div class="ctr__no-print" style={`text-align:center;margin-bottom:18px`}>
-        {contractor?.hasLogo
-          ? (
-            <img
-              src={publicLogoUrl("quote", quote.id, contractor.logoVersion)}
-              alt=""
-              style="max-height:48px;max-width:160px;object-fit:contain;display:block;margin:0 auto 8px;border-radius:8px"
-            />
-          )
-          : null}
-        <div
-          style={`font-size:11px;font-weight:800;letter-spacing:.18em;text-transform:uppercase;color:${TEAL}`}
-        >
-          {businessLabel}
-        </div>
+        {/* REQ-628: their logo, or their name as a wordmark */}
+        <BizBrand
+          logoSrc={contractor?.hasLogo
+            ? publicLogoUrl("quote", quote.id, contractor.logoVersion)
+            : undefined}
+          name={businessLabel}
+          align="center"
+        />
         {contractor?.addressLine
           ? (
             <div style={`margin-top:4px;font-size:12px;color:${MUTED}`}>
@@ -1430,17 +1421,6 @@ export function QuoteDoc(
           </div>
         </section>
       )}
-      <div
-        style={`display:flex;align-items:center;justify-content:center;gap:8px;margin-top:18px;font-size:11px;color:#a8b2b3;letter-spacing:.04em`}
-      >
-        <img
-          src="/logo.png"
-          alt=""
-          height="16"
-          style="height:16px;width:auto;opacity:0.7;display:block"
-        />
-        {t.poweredBy} {docNumber}
-      </div>
     </>
   );
 }

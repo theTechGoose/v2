@@ -6,26 +6,16 @@
  * what it was handed. The hero's totals and the loop strip are the roster's,
  * computed by the backend — nothing here derives from a list.
  */
-import Backdrop from "../components/Backdrop.tsx";
-import AddressAutocomplete from "../components/AddressAutocomplete.tsx";
-import CustomerLanguageSelect, {
-  type CustomerLanguageValue,
-} from "../components/CustomerLanguageSelect.tsx"; // REQ-715
-import { useEffect, useState } from "preact/hooks";
-import { formatPhoneInput } from "../../shared/quote-flow/format-helpers.ts";
-import {
-  customerDraftDirty,
-  type CustomerFormErrors,
-  customerFormErrors,
-  newCustomerPayload,
-} from "../../shared/quote-flow/customer-contact.ts"; // REQ-278, REQ-300, REQ-352, REQ-599
-import { ApiError } from "../lib/api.ts";
 import {
   clientsClient,
   type ClientsFilter,
   type ClientsPageResponse,
+  type CustomerCard,
   type TopClientsResponse,
 } from "../clients/clients.ts";
+import { useEffect, useState } from "preact/hooks";
+import CustomerFormDialog from "../components/CustomerForm.tsx"; // REQ-625
+import ClientSheet from "../components/ClientSheet.tsx"; // REQ-626
 import {
   ClientsHero,
   LoopBar,
@@ -63,15 +53,6 @@ const SEARCH_DEBOUNCE_MS = 250;
 /** REQ-352 — how long the "<name> added" confirmation stays up */
 const FLASH_MS = 4000;
 
-type AddField = keyof CustomerFormErrors;
-
-/** REQ-352 — a modal input, red-bordered while its field carries a message */
-function inputStyle(bad: boolean): string {
-  return `padding:11px 13px;border:1px solid ${
-    bad ? "#a83b3b" : "var(--border,#d8dcd5)"
-  };border-radius:10px;font:inherit;font-size:15px;font-weight:400;color:var(--fg)`;
-}
-
 export default function ClientsPage(
   { lang: _lang, tradeKind = "project" }: {
     lang?: "en" | "es";
@@ -97,10 +78,6 @@ export default function ClientsPage(
     };
   }, []);
   const [addOpen, setAddOpen] = useState(false);
-  const [adding, setAdding] = useState(false);
-  const [addErr, setAddErr] = useState<string | null>(null);
-  // REQ-352 (demo M38): one message per field, under that field
-  const [fieldErrs, setFieldErrs] = useState<CustomerFormErrors>({});
   // REQ-352 (demo p15-5): "<name> added" after a successful Add
   const [flash, setFlash] = useState("");
   useEffect(() => {
@@ -108,14 +85,49 @@ export default function ClientsPage(
     const t = setTimeout(() => setFlash(""), FLASH_MS);
     return () => clearTimeout(t);
   }, [flash]);
-  const [addName, setAddName] = useState("");
-  const [addBusiness, setAddBusiness] = useState("");
-  const [addPhone, setAddPhone] = useState("");
-  const [addEmail, setAddEmail] = useState("");
-  // REQ-599 (demo-loop cycle 4, m30): the customer's address, optional
-  const [addAddress, setAddAddress] = useState("");
-  // REQ-715 (demo-loop cycle 5, m31): the language the customer reads
-  const [addLanguage, setAddLanguage] = useState<CustomerLanguageValue>("");
+  // REQ-625: the customer being edited (the shared form, prefilled)
+  const [editing, setEditing] = useState<CustomerCard | null>(null);
+  // REQ-626: the client sheet — "Open card", or /clients?open=<customerId>
+  const [sheetId, setSheetId] = useState<string | null>(() =>
+    typeof globalThis.location === "undefined"
+      ? null
+      : new URLSearchParams(globalThis.location.search).get("open")
+  );
+  const [sheet, setSheet] = useState<
+    { customer: CustomerCard | null; failed: boolean }
+  >({ customer: null, failed: false });
+  useEffect(() => {
+    if (!sheetId) return;
+    let alive = true;
+    // the board's card seeds the sheet (no "Loading…" flash); the read refreshes it
+    setSheet((prev) =>
+      prev.customer?.id === sheetId ? prev : { customer: null, failed: false }
+    );
+    clientsClient.get(sheetId).then((customer) => {
+      if (alive) setSheet({ customer, failed: false });
+    }).catch(() => {
+      if (alive) setSheet({ customer: null, failed: true });
+    });
+    return () => {
+      alive = false;
+    };
+  }, [sheetId]);
+  function openSheet(id: string | null) {
+    const seed = id ? s.data?.items.find((c) => c.id === id) : undefined;
+    if (seed) setSheet({ customer: seed, failed: false });
+    setSheetId(id);
+    if (typeof globalThis.location === "undefined") return;
+    try {
+      const url = new URL(globalThis.location.href);
+      if (id) url.searchParams.set("open", id);
+      else url.searchParams.delete("open");
+      globalThis.history.replaceState(
+        globalThis.history.state,
+        "",
+        url.toString(),
+      );
+    } catch { /* history unavailable — the sheet still opens */ }
+  }
   // REQ-135 — what the API is asked for: the page, the search, the chip (seeded from ?segment=)
   const [page, setPage] = useState(1);
   const [query, setQuery] = useState("");
@@ -163,76 +175,19 @@ export default function ClientsPage(
     return () => globalThis.removeEventListener("popstate", onPop);
   }, []);
 
-  /** REQ-352: the rule over the modal's values, `over` replacing one being typed */
-  function errorsFor(over: Partial<Record<AddField, string>> = {}) {
-    return customerFormErrors({
-      name: over.name ?? addName,
-      phoneNumber: over.phone ?? addPhone,
-      email: over.email ?? addEmail,
-    });
-  }
-  /** REQ-352: re-check ONE field (on blur, or while it already shows a message) */
-  function checkField(field: AddField, value?: string) {
-    const key = errorsFor(value === undefined ? {} : { [field]: value })[field];
-    setFieldErrs((prev) => {
-      const next = { ...prev };
-      if (key) (next as Record<string, string>)[field] = key;
-      else delete next[field];
-      return next;
-    });
-  }
-
-  async function submitAddClient(e: Event) {
-    e.preventDefault();
-    if (adding) return;
-    // REQ-278 (demo M16) / REQ-352 (demo M38): the backend's own rule, run
-    // here per field — the form is novalidate, so the browser's bubble (which
-    // the demo stage cannot show) never pre-empts these messages.
-    const errs = errorsFor();
-    setFieldErrs(errs);
-    if (Object.keys(errs).length > 0) return;
-    setAdding(true);
-    setAddErr(null);
-    const name = addName.trim();
-    try {
-      await clientsClient.create(newCustomerPayload({
-        name,
-        businessName: addBusiness,
-        phoneNumber: addPhone,
-        email: addEmail,
-        address: addAddress,
-        language: addLanguage,
-      }));
-      setAddName("");
-      setAddBusiness("");
-      setAddPhone("");
-      setAddEmail("");
-      setAddAddress("");
-      setAddLanguage("");
-      setFieldErrs({});
-      setAddOpen(false);
-      setFlash(tFor(lang, "clientsPage.added", { name }));
-      await refreshClients();
-    } catch (err) {
-      // REQ-278: the backend names a refused contact by dictionary key —
-      // REQ-352: shown under the field it names.
-      const key = err instanceof ApiError
-        ? (err.body as { message?: unknown } | null)?.message
-        : undefined;
-      if (key === "customer.invalidPhone") {
-        setFieldErrs((prev) => ({ ...prev, phone: key }));
-      } else if (key === "customer.invalidEmail") {
-        setFieldErrs((prev) => ({ ...prev, email: key }));
-      } else {
-        setAddErr(
-          err instanceof Error
-            ? err.message
-            : tFor(lang, "clientsPage.addError"),
-        );
-      }
-    } finally {
-      setAdding(false);
+  /** REQ-625: a saved customer (new or edited) shows at once — the board and
+   *  the open sheet are re-read. REQ-352 (demo p15-5): a new one says
+   *  "<name> added". */
+  async function onCustomerSaved(saved: CustomerCard, created = false) {
+    setAddOpen(false);
+    setEditing(null);
+    if (created) {
+      setFlash(tFor(lang, "clientsPage.added", { name: saved.name }));
     }
+    if (sheetId && saved.id === sheetId) {
+      setSheet({ customer: saved, failed: false });
+    }
+    await refreshClients();
   }
 
   useEffect(() => {
@@ -315,11 +270,7 @@ export default function ClientsPage(
         owedTotal={summary.owedCents / 100}
         quietCount={summary.quietCount}
         lang={lang}
-        onAdd={() => {
-          setAddErr(null);
-          setFieldErrs({});
-          setAddOpen(true);
-        }}
+        onAdd={() => setAddOpen(true)}
       />
       <LoopBar picks={data.loop} lang={lang} />
       <ClientsBoard
@@ -337,6 +288,8 @@ export default function ClientsPage(
         subsByCustomer={subsByCustomer}
         tradeKind={tradeKind}
         onCustomerSaved={refreshClients}
+        onOpenCard={(id) => openSheet(id)}
+        onEdit={(c) => setEditing(c)}
       >
         <TopClients
           rows={top.results}
@@ -349,179 +302,32 @@ export default function ClientsPage(
         }
       </ClientsBoard>
 
+      {sheetId && (
+        <ClientSheet
+          lang={lang}
+          customer={sheet.customer}
+          failed={sheet.failed}
+          onClose={() => openSheet(null)}
+          onEdit={(c) => setEditing(c)}
+        />
+      )}
       {addOpen && (
-        <Backdrop
-          data-cy="add-client-backdrop"
-          // REQ-300 (demo M20): a click beside the form closes it only while nothing is typed;
-          // a dirty draft stays up (Cancel / Escape still close it, and the draft is kept).
-          // REQ-354: the Backdrop's guard ignores the opener's double-click.
-          // REQ-289 / REQ-732: Escape closes it through the Backdrop (not while the save is in
-          // flight) — even with a draft typed, which the island keeps.
-          onEscape={() => !adding && setAddOpen(false)}
-          onClose={() =>
-            !adding && !customerDraftDirty({
-              name: addName,
-              businessName: addBusiness,
-              phoneNumber: addPhone,
-              email: addEmail,
-              address: addAddress,
-              language: addLanguage,
-            }) && setAddOpen(false)}
-          style="position:fixed;inset:0;background:rgba(20,40,45,0.45);display:flex;align-items:center;justify-content:center;z-index:1000;padding:20px"
-        >
-          <form
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="add-client-title"
-            onClick={(e) => e.stopPropagation()}
-            onSubmit={submitAddClient}
-            noValidate
-            style="background:#fff;border-radius:16px;padding:24px 26px;max-width:440px;width:100%;box-shadow:0 24px 64px rgba(20,72,82,0.22);display:flex;flex-direction:column;gap:14px"
-          >
-            <h2
-              id="add-client-title"
-              style="margin:0;font-size:20px;font-weight:800;color:var(--fg,#144852)"
-            >
-              {tFor(lang, "clientsHero.addClient")}
-            </h2>
-            <label style="display:flex;flex-direction:column;gap:5px;font-size:13px;font-weight:700;color:var(--fg-muted,#6b7560)">
-              {tFor(lang, "settings.name")}
-              <input
-                type="text"
-                autoFocus
-                required
-                value={addName}
-                aria-invalid={fieldErrs.name ? "true" : undefined}
-                aria-describedby={fieldErrs.name
-                  ? "add-client-name-err"
-                  : undefined}
-                onInput={(e) => {
-                  const v = (e.target as HTMLInputElement).value;
-                  setAddName(v);
-                  if (fieldErrs.name) checkField("name", v);
-                }}
-                style={inputStyle(Boolean(fieldErrs.name))}
-              />
-            </label>
-            <FieldError
-              id="add-client-name-err"
-              msg={fieldErrs.name && tFor(lang, fieldErrs.name)}
-            />
-            <label style="display:flex;flex-direction:column;gap:5px;font-size:13px;font-weight:700;color:var(--fg-muted,#6b7560)">
-              {tFor(lang, "clientsPage.businessName")}
-              <input
-                type="text"
-                value={addBusiness}
-                onInput={(e) =>
-                  setAddBusiness((e.target as HTMLInputElement).value)}
-                style="padding:11px 13px;border:1px solid var(--border,#d8dcd5);border-radius:10px;font:inherit;font-size:15px;font-weight:400;color:var(--fg)"
-              />
-            </label>
-            <label style="display:flex;flex-direction:column;gap:5px;font-size:13px;font-weight:700;color:var(--fg-muted,#6b7560)">
-              {tFor(lang, "settings.phone")}
-              <input
-                type="tel"
-                value={formatPhoneInput(
-                  addPhone,
-                )} /* NW-34 (REQ-012): (555) 123-4567 as you type */
-                aria-invalid={fieldErrs.phone ? "true" : undefined}
-                aria-describedby={fieldErrs.phone
-                  ? "add-client-phone-err"
-                  : undefined}
-                onInput={(e) => {
-                  const v = (e.target as HTMLInputElement).value;
-                  setAddPhone(v);
-                  if (fieldErrs.phone) checkField("phone", v);
-                }}
-                onBlur={() => checkField("phone")}
-                style={inputStyle(Boolean(fieldErrs.phone))}
-              />
-            </label>
-            <FieldError
-              id="add-client-phone-err"
-              msg={fieldErrs.phone && tFor(lang, fieldErrs.phone)}
-            />
-            <label style="display:flex;flex-direction:column;gap:5px;font-size:13px;font-weight:700;color:var(--fg-muted,#6b7560)">
-              {tFor(lang, "settings.email")}
-              <input
-                type="email"
-                value={addEmail}
-                aria-invalid={fieldErrs.email ? "true" : undefined}
-                aria-describedby={fieldErrs.email
-                  ? "add-client-email-err"
-                  : undefined}
-                onInput={(e) => {
-                  const v = (e.target as HTMLInputElement).value;
-                  setAddEmail(v);
-                  if (fieldErrs.email) checkField("email", v);
-                }}
-                onBlur={() => checkField("email")}
-                style={inputStyle(Boolean(fieldErrs.email))}
-              />
-            </label>
-            <FieldError
-              id="add-client-email-err"
-              msg={fieldErrs.email && tFor(lang, fieldErrs.email)}
-            />
-            {/* REQ-599 (demo-loop cycle 4, m30): optional, with the street autocomplete */}
-            <div style="display:flex;flex-direction:column;gap:5px;font-size:13px;font-weight:700;color:var(--fg-muted,#6b7560)">
-              <span>{tFor(lang, "clientsPage.address")}</span>
-              <AddressAutocomplete
-                id="add-client-address"
-                data-cy="add-client-address"
-                label={tFor(lang, "clientsPage.address")}
-                useTypedLabel={tFor(lang, "welcome.address.useTyped")}
-                lang={lang}
-                value={addAddress}
-                onInput={setAddAddress}
-                inputStyle={inputStyle(false) +
-                  ";width:100%;box-sizing:border-box"}
-              />
-            </div>
-            {
-              /* REQ-715 (demo-loop cycle 5, m31): "¿cómo le digo que Carmen
-                habla español?" — every send to them starts in it */
-            }
-            <label style="display:flex;flex-direction:column;gap:5px;font-size:13px;font-weight:700;color:var(--fg-muted,#6b7560)">
-              {tFor(lang, "customer.language.label")}
-              <CustomerLanguageSelect
-                lang={lang}
-                data-cy="add-client-language"
-                value={addLanguage}
-                onChange={setAddLanguage}
-                style={inputStyle(false) + ";background:#fff"}
-              />
-              <span style="font-size:12px;font-weight:400;line-height:1.4">
-                {tFor(lang, "customer.language.hint")}
-              </span>
-            </label>
-            {addErr && (
-              <p
-                role="alert"
-                style="margin:0;color:#a83b3b;font-size:13.5px;font-weight:600"
-              >
-                {addErr}
-              </p>
-            )}
-            <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:6px">
-              <button
-                type="button"
-                disabled={adding}
-                onClick={() => setAddOpen(false)}
-                style="padding:10px 16px;border:0;background:transparent;color:var(--fg-muted,#6b7560);font:inherit;font-weight:700;cursor:pointer;border-radius:10px"
-              >
-                {tFor(lang, "common.cancel")}
-              </button>
-              <button
-                type="submit"
-                disabled={adding}
-                style="padding:10px 20px;border:0;border-radius:10px;background:var(--brand-green,#519843);color:#fff;font:inherit;font-weight:800;cursor:pointer;opacity:1"
-              >
-                {adding ? "…" : tFor(lang, "common.add")}
-              </button>
-            </div>
-          </form>
-        </Backdrop>
+        <CustomerFormDialog
+          mode="create"
+          lang={lang}
+          onSaved={(c) => onCustomerSaved(c, true)}
+          onClose={() => setAddOpen(false)}
+        />
+      )}
+      {editing && (
+        <CustomerFormDialog
+          key={editing.id}
+          mode="edit"
+          lang={lang}
+          customer={editing}
+          onSaved={onCustomerSaved}
+          onClose={() => setEditing(null)}
+        />
       )}
       {flash && (
         <div
@@ -535,19 +341,5 @@ export default function ClientsPage(
         </div>
       )}
     </>
-  );
-}
-
-/** REQ-352 — a field's in-app message, right under that field */
-function FieldError({ id, msg }: { id: string; msg?: string | false }) {
-  if (!msg) return null;
-  return (
-    <p
-      id={id}
-      role="alert"
-      style="margin:-8px 0 0;color:#a83b3b;font-size:13px;font-weight:600"
-    >
-      {msg}
-    </p>
   );
 }

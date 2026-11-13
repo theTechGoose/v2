@@ -224,6 +224,15 @@ export interface Invoice {
   serviceDateTo?: string;
   paymentInstructions?: string;
   billTo?: InvoiceBillTo;
+  /** REQ-206: when it was first put in front of the customer. */
+  sentAt?: string;
+  /** REQ-627: when, by whom and why it was voided. */
+  voidedAt?: string;
+  voidedBy?: { userId?: string; name?: string };
+  voidReason?: string;
+  /** REQ-627: the corrected draft made by "Void & duplicate" / the voided bill a draft corrects. */
+  replacedBy?: string;
+  replaces?: string;
   [k: string]: unknown;
 }
 

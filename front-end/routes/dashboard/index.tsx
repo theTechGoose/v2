@@ -1,11 +1,12 @@
 import { asset, Head } from "fresh/runtime";
+import { greetingFirstName } from "../../../shared/person-name/mod.ts"; // REQ-624
 import { define } from "../../utils.ts";
+import { isPlaceholderName } from "../../../shared/quote-flow/outbound-identity.ts";
 import { resolveSsrLang } from "../../lib/ssr-lang.ts";
 import type { Lang } from "../../lib/lang.ts";
 import DocTitle from "../../components/DocTitle.tsx";
 import SiteFooter from "../../components/SiteFooter.tsx";
 import { tFor } from "../../lib/i18n.ts";
-import { isPlaceholderName } from "../../../shared/quote-flow/outbound-identity.ts";
 import DashSidebar from "../../islands/DashSidebar.tsx";
 import DashTopbar from "../../islands/DashTopbar.tsx";
 import DashboardPage from "../../islands/DashboardPage.tsx";
@@ -44,9 +45,8 @@ export default define.page(function Dashboard(ctx) {
   const lang: Lang = resolveSsrLang(ctx) ?? "es";
   // UX-27: the seeded placeholder ("Nuevo usuario"/"New user") is not a real
   // name — never greet the user as "Nuevo"; greet namelessly instead.
-  const realName = isPlaceholderName(user?.name)
-    ? undefined
-    : user?.name?.trim();
+  // REQ-624: the signed-in person (the editor while acting); never the placeholder
+  const realName = greetingFirstName(user);
   // REQ-423 — no server-translated fallback baked in as a name ("Hola, hola")
   const greetingName = realName?.split(/\s+/)[0];
   // Passed as a dict KEY so the topbar re-localizes it live when the

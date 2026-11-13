@@ -1,6 +1,6 @@
 /**
  * REQ-146 — /admins. The numbers the owner lets into the account: an invite
- * form (phone, optional name) and the list with Remove. An admin acting for
+ * form (phone and, REQ-632, the editor's name — required) and the list with Remove. An admin acting for
  * the account sees the list only — inviting and removing are the owner's.
  */
 import { useEffect, useState } from "preact/hooks";
@@ -19,6 +19,7 @@ import {
   type InviteShare,
   inviteShare,
 } from "../lib/invite-share.ts";
+import { inviteName } from "../../shared/person-name/mod.ts"; // REQ-632 — the rule the API applies
 
 interface InviteForm {
   /** digits only, at most 10 */
@@ -63,6 +64,8 @@ export default function AdminsPage() {
   const [form, setForm] = useState<InviteForm>(BLANK);
   const [inviting, setInviting] = useState(false);
   const [inviteErr, setInviteErr] = useState<string | null>(null);
+  /** REQ-632: the name field was left (blurred) — from then on an empty one says so */
+  const [nameTouched, setNameTouched] = useState(false);
   // REQ-523 (demo m16): the invited number, and whether the text went out
   // REQ-601 (cycle 4, M12): when it did not, the sign-in link + the invite text to share
   const [sent, setSent] = useState<
@@ -97,7 +100,9 @@ export default function AdminsPage() {
   }, []);
 
   const phoneOk = form.phone.length === 10;
-  const canInvite = phoneOk && !inviting;
+  const nameOk = inviteName(form.name) !== null;
+  const canInvite = phoneOk && nameOk && !inviting;
+  const showNameErr = nameTouched && !nameOk;
 
   async function submit(e: Event) {
     e.preventDefault();
@@ -110,9 +115,10 @@ export default function AdminsPage() {
       const { texted, signInUrl, shareText, ...made } = await adminsClient
         .invite({
           phoneNumber: form.phone,
-          name: form.name.trim() || undefined,
+          name: inviteName(form.name)!,
         });
       setForm(BLANK);
+      setNameTouched(false);
       setSent({
         phone: fmtCell(made.phoneNumber),
         texted: texted === true,
@@ -182,19 +188,61 @@ export default function AdminsPage() {
                 />
               </label>
               <label class="field">
-                {t("admins.nameOptional")}
+                <span>
+                  {t("admins.nameLabel")}{" "}
+                  <span
+                    class="hint"
+                    data-cy="adm-name-required"
+                    style="text-transform:none;letter-spacing:0"
+                  >
+                    · {t("admins.nameRequired")}
+                  </span>
+                </span>
                 <input
                   name="name"
                   data-cy="adm-name"
+                  required
                   autocomplete="off"
                   maxlength={120}
+                  placeholder={t("admins.namePlaceholder")}
+                  aria-invalid={showNameErr ? "true" : undefined}
+                  aria-describedby={showNameErr
+                    ? "adm-name-error"
+                    : "adm-name-hint"}
                   value={form.name}
                   onInput={(e) =>
                     setForm({
                       ...form,
                       name: (e.currentTarget as HTMLInputElement).value,
                     })}
+                  onBlur={() => setNameTouched(true)}
                 />
+                {
+                  /* REQ-632: the name is what the editor is greeted by (REQ-624) — required here and by
+                    the API; a legacy invite without one still gets the first-sign-in prompt */
+                }
+                {showNameErr
+                  ? (
+                    <span
+                      class="alert"
+                      id="adm-name-error"
+                      data-cy="adm-name-error"
+                      role="alert"
+                      style="display:block;margin:6px 0 0"
+                    >
+                      {t("admins.err.name_required")}
+                    </span>
+                  )
+                  : (
+                    <span
+                      class="hint"
+                      id="adm-name-hint"
+                      data-cy="adm-name-hint"
+                      style="display:block;margin:6px 0 0"
+                    >
+                      {t("admins.nameHint")}
+                    </span>
+                  )}
               </label>
             </div>
             <div
