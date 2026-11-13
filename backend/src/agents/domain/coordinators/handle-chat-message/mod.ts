@@ -120,7 +120,12 @@ import {
 } from "@agents/domain/business/invoice-removal-intent/mod.ts";
 import { messageLang } from "@agents/domain/business/message-language/mod.ts";
 import { InvoiceStore } from "@paperwork/domain/data/invoice-store/mod.ts";
-import { isInvoiceLocked } from "#documents/versions.ts";
+import { isInvoiceLocked, isQuoteLocked } from "#documents/versions.ts";
+import { findLine } from "@agents/domain/business/quote-line-revision/mod.ts";
+import {
+  parseLineRepriceAsk,
+  pickRepriceLine,
+} from "@agents/domain/business/locked-line-reprice/mod.ts";
 import { ApplyChatChangeOrder } from "@agents/domain/coordinators/apply-chat-change-order/mod.ts";
 import {
   liveUnsentChangeOrder,
@@ -2033,6 +2038,49 @@ export class HandleChatMessage {
           },
         },
       };
+    }
+    // ---- REQ-767 (demo-loop cycle 5v2, m43 re-test): a line's new price on
+    // a SIGNED quote ("On Q-001, lower the line to $300", "the sink repair
+    // line should be $400 instead of $350") is read in code and run as the
+    // revise, whose locked reply offers the change order (REQ-664). The
+    // verifier's model answered the first in text ("…a $100 discount?", no
+    // button) and named the second's line in English on a Spanish quote.
+    // Only for the named or bound quote, only when it is signed and the
+    // line it means is clear; anything else is still the model's.
+    const lockedAsk = !llmResponse && typeof input.content === "string"
+      ? parseLineRepriceAsk(input.content)
+      : undefined;
+    if (lockedAsk) {
+      const all = lockedAsk.quoteNumber
+        ? await this.quotes.listByUser(input.userId).catch(() => [])
+        : [];
+      const q = lockedAsk.quoteNumber
+        ? all.find((x) => x.number?.toUpperCase() === lockedAsk.quoteNumber)
+        : conv.quoteId
+        ? await this.quotes.getOwned(conv.quoteId, input.userId)
+          .catch(() => undefined)
+        : undefined;
+      const lines = q?.lineItems ?? [];
+      const exact = findLine(lines, lockedAsk.phrase);
+      const i = exact >= 0 ? exact : pickRepriceLine(lines, lockedAsk.phrase);
+      if (
+        q && isQuoteLocked(q) && i >= 0 && (q.number || q.id === conv.quoteId)
+      ) {
+        llmResponse = {
+          text: "",
+          action: {
+            type: "revise_quote",
+            payload: {
+              ...(q.number ? { quoteNumber: q.number } : {}),
+              lines: [{
+                match: lines[i].description,
+                amountCents: lockedAsk.amountCents,
+              }],
+              remove: [],
+            },
+          },
+        };
+      }
     }
 
     // ---- REQ-368 (demo-loop cycle 1, M30 + M32): a pricing question and a

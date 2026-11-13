@@ -155,7 +155,7 @@ Deno.test("REQ-664 m43: a price edit on a signed quote offers 'Make change order
     }
     await open.waitFor({ timeout: 20_000 });
     expect(
-      /^Open CO-\d+ as customer$/.test((await open.innerText()).trim()),
+      /^View CO-\d+ as customer$/.test((await open.innerText()).trim()),
       "the reply names the new change order",
     );
     const ledger = await call(
@@ -166,8 +166,8 @@ Deno.test("REQ-664 m43: a price edit on a signed quote offers 'Make change order
     );
     const cos = (ledger.changeOrders ?? []) as { deltaAmountCents: number }[];
     expect.eq(
-      cos.map((c) => c.deltaAmountCents),
-      [-100000],
+      JSON.stringify(cos.map((c) => c.deltaAmountCents)),
+      JSON.stringify([-100000]),
       "exactly one change order, −$1,000",
     );
     const after = await call(http, auth, "GET", `/api/quotes/${quote.id}`);
