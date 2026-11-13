@@ -12,6 +12,10 @@ import {
 import PublicChangeOrderActions from "../../islands/PublicChangeOrderActions.tsx";
 import PublicLangToggle from "../../islands/PublicLangToggle.tsx";
 import { docHeadline } from "../../../shared/documents/linked-view.ts";
+import {
+  changeOrderChangeLine,
+  type ChangeOrderChanges,
+} from "../../../shared/quote-flow/change-order-view.ts";
 
 interface ChangeOrderPublic {
   id: string;
@@ -23,6 +27,8 @@ interface ChangeOrderPublic {
   approvedName?: string;
   description: string;
   deltaAmountCents: number;
+  /** REQ-685 (demo m42): Version 2+ — what moved against the version before */
+  changesFromPrevious?: ChangeOrderChanges;
   status: "pending" | "approved" | "declined";
   /** this INVOICE's total before / after the order */
   currentAmount?: number;
@@ -79,6 +85,10 @@ export default define.page(async function PublicChangeOrder(ctx) {
   // <html lang> says what this page actually paints (REQ-122 contract).
   ctx.state.lang = lang;
   const hasJob = co?.jobCurrentAmount != null && co?.jobNewAmount != null;
+  // REQ-685 (demo m42): "What changed in Version 2: Amount +$1,600.00 → …"
+  const changedLine = co?.changesFromPrevious
+    ? changeOrderChangeLine(co.changesFromPrevious, lang)
+    : "";
 
   return (
     <>
@@ -157,6 +167,19 @@ export default define.page(async function PublicChangeOrder(ctx) {
                       lang,
                     )}
                   </div>
+                  {changedLine
+                    ? (
+                      <div
+                        data-cy="co-changes"
+                        style={`margin-top:4px;font-size:12px;font-weight:700;color:${TEAL}`}
+                      >
+                        {tFor(lang, "public.doc.whatChanged", {
+                          n: String(co.version ?? 1),
+                          changes: changedLine,
+                        })}
+                      </div>
+                    )
+                    : null}
                   {(co.invoice || co.quote)
                     ? (
                       <div

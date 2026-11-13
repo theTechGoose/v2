@@ -53,7 +53,10 @@ import type { CustomerSnapshot } from "@core/data/numbered-store/mod.ts";
 import { SessionStore } from "@users/domain/data/session-store/mod.ts";
 import { readSessionId } from "@users/domain/coordinators/require-user/mod.ts";
 import { isInternalViewer } from "@paperwork/domain/business/internal-viewer/mod.ts";
-import { changeOrderJobTotals } from "#quote-flow/change-order-view.ts";
+import {
+  changeOrderChanges,
+  changeOrderJobTotals,
+} from "#quote-flow/change-order-view.ts";
 import { invoiceTextByLang } from "#documents/invoice-lang.ts"; // REQ-497
 import { invoiceDocLang } from "#quote-flow/share-link.ts"; // REQ-586
 import { accountNetDays } from "#quote-flow/completion-schedule.ts"; // REQ-697
@@ -453,6 +456,16 @@ export class PaperworkPublicController {
           }
         }
       } catch { /* invoice may be gone; still show the order */ }
+      // REQ-685 (demo-loop cycle 5, m42): an edited order (Version 2+) says
+      // what changed against the filed version before it, like /q (REQ-304).
+      const filed = versionOf(co) > 1
+        ? await this.changeOrders.listVersions(co.id, co.userId)
+          .catch(() => [])
+        : [];
+      const previous = filed.find((v) => v.version === versionOf(co) - 1);
+      const changesFromPrevious = previous
+        ? changeOrderChanges(previous.content, co)
+        : undefined;
       const originalAmount = co.originalAmountCents ??
         (invoiceAmount != null
           ? (co.status === "approved"
@@ -468,6 +481,7 @@ export class PaperworkPublicController {
         ...(co.approvedName ? { approvedName: co.approvedName } : {}),
         description: co.description,
         deltaAmountCents: co.deltaAmountCents,
+        ...(changesFromPrevious ? { changesFromPrevious } : {}),
         status: co.status,
         currentAmount: originalAmount,
         newAmount: originalAmount != null
