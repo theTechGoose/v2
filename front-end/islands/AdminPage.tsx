@@ -488,7 +488,7 @@ export default function AdminPage({ selfId }: { selfId?: string }) {
                     <td style="padding:10px;text-align:right;white-space:nowrap">
                       <button
                         type="button"
-                        data-cy="adm-toggle-super"
+                        data-cy="adm-toggle-admin"
                         data-user={u.id}
                         style={(u.superAdmin ? btnDanger : btnSecondary) +
                           (canToggleSuper(u, selfId)

@@ -158,7 +158,14 @@ describe("REQ-695 the island is wired to it", () => {
   });
 
   it("REQ-695 New invoice dispatches only the channels its contact can use", () => {
-    expect(src).toMatch(/dispatchInvoice\(invoice\.id,\s*channel\)/);
+    // REQ-695 AMENDMENT (reconciled with REQ-727 on demo-fixes): Issue opens
+    // the send sheet on the invoice's contact, and the sheet starts on the
+    // channel(s) that contact can be reached on; only the pick is dispatched.
+    expect(src).toMatch(/customer:\s*invoiceSendContact\(\s*\{\s*customerId,\s*billTo:\s*bt\s*\}/);
+    expect(src).toMatch(/dispatchInvoice\(invoice\.id,\s*\{\s*\.\.\.pick,\s*hasCustomer\s*\}\)/);
+    expect(read("front-end/components/InvoiceSendDialog.tsx")).toMatch(
+      /initialChannel=\{defaultSendChannel\(onFile\)\}/,
+    );
   });
 
   it("REQ-695 m55 the card's send notes carry the inline 'add email or phone' capture", () => {

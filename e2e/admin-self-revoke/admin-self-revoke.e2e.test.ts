@@ -85,7 +85,7 @@ Deno.test("REQ-731 m30: /admin disables Revoke on your own row; the API refuses 
     await page.goto("/admin");
     await page.locator("[data-cy='adm-q']").fill("Hans");
     await page.locator("[data-cy='adm-search']").click();
-    const own = page.locator(`[data-cy='adm-toggle-super'][data-user='${me}']`);
+    const own = page.locator(`[data-cy='adm-toggle-admin'][data-user='${me}']`);
     await own.waitFor({ timeout: 15_000 });
     expect.eq(await own.isDisabled(), true, "own Revoke is disabled");
     expect.eq(
