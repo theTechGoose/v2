@@ -9,6 +9,7 @@ import {
   type ThreadChipKind,
 } from "../../shared/quote-flow/chat-header.ts";
 import { startPoll } from "../lib/poll.ts";
+import { clearDockRoom, setDockRoom } from "../lib/threads-dock-room.ts"; // REQ-724
 import {
   applyThreadTurn,
   latestThreadStatus,
@@ -91,6 +92,31 @@ export default function AsstThreads(
       globalThis.removeEventListener("resize", sync);
     };
   }, []);
+
+  // REQ-724 (cycle 5, M27): the dock is fixed over the drawer's column, so
+  // the drawer must leave room for it or its foot (Settings, Worker view,
+  // Log out) sits under the conversations. Publish the dock's measured
+  // height on .sb while docked; the stylesheet pads the drawer by it.
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+    const sb = document.querySelector<HTMLElement>(".sb");
+    const dock = asideRef.current;
+    if (!sb || !dock) return;
+    if (!mobileOpen) {
+      clearDockRoom(sb);
+      return;
+    }
+    const measure = () => setDockRoom(sb, dock.getBoundingClientRect().height);
+    measure();
+    const ro = typeof ResizeObserver === "function"
+      ? new ResizeObserver(measure)
+      : null;
+    ro?.observe(dock);
+    return () => {
+      ro?.disconnect();
+      clearDockRoom(sb);
+    };
+  }, [mobileOpen]);
 
   useEffect(() => {
     const parent = asideRef.current?.parentElement;

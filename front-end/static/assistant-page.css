@@ -9328,6 +9328,21 @@ body {
   .sb.sb--open {
     transform: translateX(0);
   }
+  /* REQ-724 (cycle 5, M27): the Conversations dock (AsstThreads) sits in the
+     bottom of this column while the drawer is open. The drawer reserves the
+     dock's measured height (--threads-dock-h, set by the island) so its own
+     foot — Settings, Worker view, Log out — ends above the dock instead of
+     under it; on a short phone the drawer's inside scrolls. */
+  .sb.sb--threads-docked {
+    padding-bottom: var(--threads-dock-h, 0px);
+  }
+  .sb.sb--threads-docked .sb__inner {
+    overflow-y: auto;
+    min-height: 0;
+  }
+  .sb.sb--threads-docked .sb__nav {
+    min-height: 88px; /* the nav scrolls first; it never collapses to nothing */
+  }
   .sb-backdrop {
     position: fixed;
     inset: 0;
