@@ -21,6 +21,7 @@ function moneyField() {
   const el = { value: "", selectionStart: 0 as number | null };
   let display = "";
   let cents: number | null = null;
+  let rejected: string | null = null;
   return {
     el,
     get display() {
@@ -28,6 +29,9 @@ function moneyField() {
     },
     get cents() {
       return cents;
+    },
+    get rejected() {
+      return rejected;
     },
     /** one keystroke at the caret, as a browser does it */
     type(ch: string) {
@@ -38,6 +42,7 @@ function moneyField() {
       if (r.formatted !== display) el.value = r.formatted; // Preact re-renders only on a change
       display = r.formatted;
       cents = r.cents;
+      rejected = r.rejected;
       el.selectionStart = r.caret;
     },
     typeAll(s: string) {
@@ -54,6 +59,10 @@ describe("REQ-280 (demo M33): MoneyInput keeps the field's text equal to the amo
     expect(f.display).toBe("50");
     expect(f.cents).toBe(5000);
     expect(f.el.selectionStart).toBe(2);
+    // REQ-680 (demo M25/m62, cycle 5): still stripped, no longer silent
+    expect(f.rejected).toBe("letters");
+    f.type("7");
+    expect(f.rejected).toBeNull();
   });
 
   test("REQ-280: after every keystroke the field holds exactly what the odometer shows", () => {
@@ -81,7 +90,13 @@ describe("REQ-280 (demo M33): MoneyInput keeps the field's text equal to the amo
   test("REQ-280: typeMoney writes the formatted value into the field itself", () => {
     const el = { value: "50cba", selectionStart: 2 };
     const r = typeMoney(el);
-    expect(r).toEqual({ formatted: "50", cents: 5000, caret: 2 });
+    // REQ-680 (demo m62, cycle 5): and it says it dropped letters, for MoneyInput's note
+    expect(r).toEqual({
+      formatted: "50",
+      cents: 5000,
+      caret: 2,
+      rejected: "letters",
+    });
     expect(el.value).toBe("50");
   });
 

@@ -6,6 +6,10 @@
  * render, so the raw keystroke stayed in the DOM — and the caret, put back after the digits,
  * sat in front of it, so "-50abc" left the field holding "50cba" while $50.00 was shown.
  * `typeMoney` writes the formatted value back into the field itself, every keystroke.
+ *
+ * REQ-680 (demo-loop cycle 5, M25 + m62): the stripping stays, but it is no longer silent —
+ * "-1850" left "1,850" and "abc" left an empty field with no word. `typeMoney` says what it
+ * dropped (`rejected`), and MoneyInput names it under the field until the next valid keystroke.
  */
 
 /** The parts of an <input> the typing logic reads and writes. */
@@ -21,6 +25,19 @@ export interface MoneyTyping {
   cents: number | null;
   /** where the caret belongs in `formatted` */
   caret: number;
+  /** REQ-680: what the keystroke typed that the field dropped — a minus sign, letters — or null */
+  rejected: MoneyRejected;
+}
+
+/** REQ-680: why a keystroke was dropped. */
+export type MoneyRejected = "minus" | "letters" | null;
+
+/** REQ-680: a minus (ASCII or U+2212) wins; then anything that is not a digit, the dot, the
+ *  formatter's own commas, a typed "$" or a space. */
+export function rejectedIn(raw: string): MoneyRejected {
+  if (/[-\u2212]/.test(raw)) return "minus";
+  if (/[^\d.,$\s]/.test(raw)) return "letters";
+  return null;
 }
 
 /** One input event: format what the field holds, write it back, and say where the caret goes. */
@@ -37,6 +54,7 @@ export function typeMoney(el: MoneyField): MoneyTyping {
     formatted,
     cents: parseToCents(formatted),
     caret: caretAfterTokens(formatted, tokensBeforeCaret),
+    rejected: rejectedIn(raw),
   };
 }
 

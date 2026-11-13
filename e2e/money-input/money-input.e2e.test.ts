@@ -6,9 +6,10 @@
  */
 import { story } from "#shots";
 
-Deno.test("REQ-280: typing '-50abc' into the amount leaves the field holding '50' and reports 5000 cents; a digit after junk still lands in place", (t) =>
+Deno.test("REQ-280 + REQ-680: typing '-50abc' into the amount leaves the field holding '50' and reports 5000 cents; a digit after junk still lands in place", (t) =>
   story(t, async ({ page, expect }) => {
-    await page.goto("/dev/money-input");
+    // REQ-680: the note is worded per language ("es" is the app's default); read the English one
+    await page.goto("/dev/money-input?lang=en");
     const input = page.locator("input.mi__input");
     const cents = page.locator("[data-cy='money-input-cents']");
     await input.waitFor({ timeout: 15000 });
@@ -32,6 +33,18 @@ Deno.test("REQ-280: typing '-50abc' into the amount leaves the field holding '50
       2,
       "the caret sits after the digits",
     );
+    // REQ-680 (demo m62, cycle 5): the dropped letters are named under the field
+    const note = page.locator("[data-cy='money-input-note']");
+    expect.eq(
+      (await note.innerText()).trim(),
+      "Numbers only",
+      "REQ-680: letters get a note",
+    );
+    expect.eq(
+      await note.getAttribute("aria-live"),
+      "polite",
+      "REQ-680: the note is announced",
+    );
 
     await input.pressSequentially("x7", { delay: 40 });
     await expect.see("Cents: 50700");
@@ -40,6 +53,29 @@ Deno.test("REQ-280: typing '-50abc' into the amount leaves the field holding '50
       "507",
       "a digit typed after a dropped letter lands at the caret",
     );
+    expect.eq(
+      (await note.innerText()).trim(),
+      "",
+      "REQ-680: the next valid keystroke clears the note",
+    );
+
+    // REQ-680 (demo M25, cycle 5): a minus is dropped and said so
+    await input.pressSequentially("-", { delay: 40 });
+    await expect.see("Cents: 50700");
+    expect.eq(
+      (await note.innerText()).trim(),
+      "Amounts are positive — for a credit use a discount or change order",
+      "REQ-680: a minus gets a note",
+    );
+    await input.pressSequentially("1", { delay: 40 });
+    await expect.see("Cents: 507100");
+    expect.eq(
+      (await note.innerText()).trim(),
+      "",
+      "REQ-680: cleared by the next digit",
+    );
+    await input.press("Backspace");
+    await expect.see("Cents: 50700");
 
     // REQ-293 (demo-loop cycle 1, p11): the rolling digits are decoration — every
     // odometer is aria-hidden, so AT reads the labelled input, not "0123456789"

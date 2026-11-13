@@ -23,6 +23,7 @@ import {
   chipPresetsFor,
   formatTyping,
   magnitudeFill,
+  type MoneyRejected,
   typeMoney,
 } from "../lib/money-input.ts";
 
@@ -60,6 +61,9 @@ export default function MoneyInput(
   const [cents, setCents] = useState<number | null>(
     initialCents > 0 ? initialCents : null,
   );
+  // REQ-680 (demo-loop cycle 5, M25 + m62): what the last keystroke typed that the field dropped
+  // (a minus, letters) — named under the field until the next valid keystroke.
+  const [rejected, setRejected] = useState<MoneyRejected>(null);
   const [focused, setFocused] = useState(false);
   const [ready, setReady] = useState(false);
   const [stageWidth, setStageWidth] = useState(380);
@@ -113,6 +117,7 @@ export default function MoneyInput(
   }, [cents]);
 
   function setValue(c: number | null) {
+    setRejected(null);
     if (c === null || c === 0) {
       setDisplay("");
       setCents(null);
@@ -127,8 +132,10 @@ export default function MoneyInput(
     const el = e.currentTarget as HTMLInputElement;
     // typeMoney writes the formatted text into the field itself (REQ-280, demo M33): a keystroke
     // that leaves the amount unchanged (a letter, a minus) gets no render to clear it.
-    const { formatted, cents: typed, caret } = typeMoney(el);
+    // REQ-680: …and says what it dropped, so a minus or a letter is never stripped in silence.
+    const { formatted, cents: typed, caret, rejected: dropped } = typeMoney(el);
     el.setSelectionRange(caret, caret);
+    setRejected(dropped);
     setDisplay(formatted);
     setCents(typed);
 
@@ -291,6 +298,20 @@ export default function MoneyInput(
             : isTouchOnly
             ? tFor(lang, "moneyInput.hintTouch")
             : tFor(lang, "moneyInput.hintKeyboard")}
+        </div>
+
+        {/* REQ-680: always mounted so screen readers hear the note when it fills in */}
+        <div
+          class={`mi__note ${rejected ? "is-shown" : ""}`}
+          data-cy="money-input-note"
+          role="status"
+          aria-live="polite"
+        >
+          {rejected === "minus"
+            ? tFor(lang, "moneyInput.rejectedMinus")
+            : rejected === "letters"
+            ? tFor(lang, "moneyInput.rejectedLetters")
+            : ""}
         </div>
 
         <div
@@ -641,6 +662,17 @@ const STYLES = `
   font-weight: 600;
 }
 .mi__words::first-letter { text-transform: capitalize; }
+
+/* REQ-680: what the field dropped */
+.mi__note {
+  position: relative;
+  z-index: 1;
+  font-size: 12.5px;
+  font-weight: 600;
+  line-height: 1.4;
+  color: #B23B3B;
+}
+.mi__note.is-shown { margin-top: 6px; }
 
 /* quick chips */
 .mi__chips {
