@@ -266,6 +266,7 @@ import {
   duplicateNotice,
   findExistingCustomer,
   knownCustomerForStep,
+  withOfferedCustomerName, // REQ-777
   withSummaryCustomerName,
 } from "../../shared/quote-flow/customer-dedupe.ts"; // REQ-331, REQ-390, REQ-576
 import {
@@ -994,10 +995,6 @@ export default function AsstChat({
    *  typed name, the quote summary's "— Bob Smith" fills it, so the step
    *  offers that saved customer or opens its create form already filled
    *  instead of a blank "Who is this for?". */
-  const stepFacts: QuoteFacts = useMemo(
-    () => withSummaryCustomerName(quoteFacts, quote?.summary),
-    [quoteFacts, quote?.summary],
-  );
   const [draft, setDraft] = useState("");
   // REQ-464 (demo-loop cycle 3, m33): the prompt Edit seeded the composer
   // with, so Lock it in / Re-open / send can drop it when nothing was typed
@@ -1014,6 +1011,17 @@ export default function AsstChat({
   const [prefillCustomerName, setPrefillCustomerName] = useState<
     string | null
   >(null);
+  // REQ-777 (demo-loop cycle dv1, M9): the customer the flow already carries
+  // (the job-done offer's, e.g. Ana Diaz picked in the quote's own wizard)
+  // is in the step's facts too — "Who is this for?" offers her, never blank.
+  const stepFacts: QuoteFacts = useMemo(
+    () =>
+      withOfferedCustomerName(
+        withSummaryCustomerName(quoteFacts, quote?.summary),
+        prefillCustomerName,
+      ),
+    [quoteFacts, quote?.summary, prefillCustomerName],
+  );
   /** REQ-263 (demo ai-assistant-m2): the job address regex-extracted from the
    *  typed sentence ("…, 412 Oak St Austin, $350") — written on the quote
    *  when it is created, so the customer step and the agreement show it. */

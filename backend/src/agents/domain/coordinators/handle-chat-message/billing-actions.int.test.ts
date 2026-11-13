@@ -1301,3 +1301,105 @@ for (
     });
   });
 }
+
+// ---------------------------------------------------------------------------
+// REQ-777 (demo-loop cycle dv1, M9 verify round 6) — draft Q-001 "Bathroom
+// Tile Installation", drafted by the chat with nobody named, then Ana Diaz
+// picked in the quote's own setup questions (the wizard's customer step).
+// The wizard binds her by id only (`customerId`) — the quote carries no
+// customerSnapshot and no "— Ana Diaz" tail — and "Job done, need to invoice
+// her" in Q-001's thread opened the flow with the customer lost.
+// ---------------------------------------------------------------------------
+
+for (
+  const [lang, said, onStep] of [
+    ["en", "Job done, need to invoice her", false],
+    ["es", "Trabajo terminado, necesito facturarle", false],
+    ["en", "The job is finished, please bill her", false],
+    // typed in the wizard's own "Tell the assistant…" box (REQ-392): the
+    // thread is mid-wizard, on "When does the job start?"
+    ["en", "Job done, need to invoice her", true],
+    ["es", "Trabajo terminado, necesito facturarle", true],
+  ] as const
+) {
+  Deno.test(
+    `REQ-777 M9 (dv1): '${said}' (${lang}${
+      onStep ? ", in the wizard step's box" : ""
+    }) in draft Q-001's thread, Ana Diaz set through the wizard's customer step, offers the invoice flow for Ana Diaz at the quote's $1,450`,
+    async () => {
+      await withKv(async () => {
+        const fx = fresh();
+        await seedOnboarded(lang);
+        const quote = await fx.quotes.create(U, {
+          summary: "Bathroom Tile Installation",
+          jobName: "Bathroom Tile Installation",
+          lineItems: [{
+            description: "Bathroom tile installation",
+            quantity: 1,
+            unit: "ea",
+            price: 145_000,
+          }],
+          estimatedTotal: 145_000,
+          status: "draft",
+        });
+        const conv = await fx.conversations.create({
+          userId: U,
+          quoteId: quote.id,
+        });
+        // The quote's setup questions, as the chat runs them: into terms, then
+        // the customer step creates and binds Ana Diaz.
+        const { TransitionToTerms } = await import(
+          "@agents/domain/coordinators/transition-to-terms/mod.ts"
+        );
+        const { HandleWizardAnswer } = await import(
+          "@agents/domain/coordinators/handle-wizard-answer/mod.ts"
+        );
+        await new TransitionToTerms(fx.conversations, fx.messages).run({
+          userId: U,
+          conversationId: conv.id,
+        });
+        await new HandleWizardAnswer(
+          fx.conversations,
+          fx.messages,
+          fx.quotes,
+          fx.customers,
+          new UserStore(),
+          new EventBus(),
+        ).run({
+          userId: U,
+          conversationId: conv.id,
+          stepId: "customer",
+          optionId: "create_new",
+          customValue: "Ana Diaz",
+          customer: {
+            create: { name: "Ana Diaz", email: "ana.diaz@example.com" },
+          },
+        });
+        const bound = await fx.quotes.getOwned(quote.id, U);
+        assert(bound.customerId, "the wizard bound the customer to the quote");
+        assertEquals(bound.customerSnapshot, undefined);
+
+        const chat = scriptLlm(fx, () => ({ text: "Who is the invoice for?" }));
+        const res = await fx.flow.run({
+          userId: U,
+          conversationId: conv.id,
+          content: said,
+          ...(onStep
+            ? { step: { id: "wizard" as const, wizardStepId: "start_date" } }
+            : {}),
+        });
+
+        const text = textOf(res.newMessages);
+        assertEquals(chat.length, 0, `the chat model answered: ${text}`);
+        assert(!/The customer|El cliente/i.test(text), text);
+        assertStringIncludes(text, "Ana Diaz");
+        assertStringIncludes(text, "$1,450");
+        const offer = flowOf(res.newMessages);
+        assertEquals(offer?.customerName, "Ana Diaz");
+        assertEquals(offer?.customerEmail, "ana.diaz@example.com");
+        assertEquals(offer?.amountCents, 145_000);
+        assertEquals(await fx.invoices.listByUser(U), []);
+      });
+    },
+  );
+}

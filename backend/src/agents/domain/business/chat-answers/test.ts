@@ -887,3 +887,49 @@ Deno.test("REQ-772 M9 billingReply: job done on a draft nobody is named on says 
   );
   assert(!/El cliente/i.test(es.text), es.text);
 });
+
+// ---------------------------------------------------------------------------
+// REQ-777 (demo-loop cycle dv1, M9 verify round 6): draft Q-001 "Bathroom
+// Tile Installation" got Ana Diaz through the wizard's customer step, which
+// binds her by id only — no snapshot, no "— Ana Diaz" tail. The customer the
+// quote is bound to (read by its id) names the offer.
+// ---------------------------------------------------------------------------
+
+const ANA_TILE_DRAFT = {
+  id: "q-tile",
+  status: "draft",
+  summary: "Bathroom Tile Installation",
+  jobName: "Bathroom Tile Installation",
+  estimatedTotal: 145_000,
+};
+
+Deno.test("REQ-777 M9 billingReply: job done on a draft whose customer was set in the wizard (bound by id, no snapshot) names her and her email, en + es", () => {
+  const customer = { name: "Ana Diaz", email: "ana.diaz@example.com" };
+  for (const lang of ["en", "es"] as const) {
+    const r = billingReply(lang, ANA_TILE_DRAFT, [], [], {
+      jobDone: true,
+      customer,
+    });
+    assert(!/The customer|El cliente/i.test(r.text), r.text);
+    assertStringIncludes(r.text, "Ana Diaz");
+    assertStringIncludes(r.text, "$1,450");
+    assertEquals(r.invoiceFlow, {
+      details: "Bathroom Tile Installation",
+      amountCents: 145_000,
+      customerName: "Ana Diaz",
+      customerEmail: "ana.diaz@example.com",
+    });
+  }
+});
+
+Deno.test("REQ-777 M9 billingReply: the customer the quote is bound to now wins over a stale snapshot (swapped after drafting)", () => {
+  const r = billingReply(
+    "en",
+    { ...ANA_TILE_DRAFT, customerSnapshot: { name: "Old Name" } },
+    [],
+    [],
+    { jobDone: true, customer: { name: "Ana Diaz" } },
+  );
+  assertEquals(r.invoiceFlow?.customerName, "Ana Diaz");
+  assertStringIncludes(r.text, "Ana Diaz");
+});
