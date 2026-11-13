@@ -1178,6 +1178,7 @@
   "quoteDoc.serviceAgreement": "Acuerdo de Servicio",
   "quoteDoc.signHere": "Firma aquí",
   "quoteDoc.signTypeBelow": "Firma y escribe tu nombre abajo ↓",
+  "quoteDoc.signReadonly": "Tu cliente firma aquí — con el dedo o el mouse",
   "quoteDoc.signatureOf": "Firma de {name}",
   "quoteDoc.signed": "Firmado {date}",
   "quoteDoc.signedBanner.thanks": "Gracias, {name} — firmado el {date}.",

@@ -273,7 +273,7 @@ export function ErrorCard(
 }
 
 export function QuoteDoc(
-  { quote, lang, onSigned, search, onSignInPerson }: {
+  { quote, lang, onSigned, search, onSignInPerson, customerView }: {
     quote: QuotePublic;
     /** REQ-048: the viewer's language — English first, or their own pick /
      *  toggle (PublicQuoteView owns it). The contractor's outgoing-comms
@@ -288,10 +288,17 @@ export function QuoteDoc(
     /** REQ-405 (demo m14): "Sign in person" — the view lays the override onto
      *  the current URL in place and re-renders the pad (no navigation). */
     onSignInPerson?: () => void;
+    /** REQ-736 (demo-loop c5 p10): draw the document exactly as the customer
+     *  sees it, read-only — the onboarding sample, fetched by the owner (so
+     *  `internal: true`), shown in an inert scaled copy. No owner preview
+     *  banner or box, no "Sign in person", and no live pad: the signature
+     *  card is a static block with nothing that looks clickable. */
+    customerView?: boolean;
   },
 ) {
   // REQ-306 (demo B3): the business's own preview — banner instead of pad.
-  const preview = internalPreview(quote, search);
+  // REQ-736: never in the customer's view.
+  const preview = !customerView && internalPreview(quote, search);
   // Shared view derivation (P-11/P-13/P-40/P-63) — accepted state, the
   // stored signature image, the post-signed footer variant, and the PDF
   // download URL all come from the same pure module the tests pin.
@@ -995,6 +1002,18 @@ export function QuoteDoc(
                             </button>
                           </div>
                         )
+                        : customerView
+                        ? (
+                          // REQ-736 (demo c5 p10): the empty signature box the
+                          // customer signs in — drawn, not live.
+                          <div
+                            data-cy="quote-sign-readonly"
+                            aria-hidden="true"
+                            style={`margin-top:12px;border:1.5px dashed ${LINE};border-radius:12px;min-height:84px;display:flex;align-items:flex-end;padding:10px 14px;color:${MUTED};font-size:12px;font-style:italic`}
+                          >
+                            {tFor(lang, "quoteDoc.signReadonly")}
+                          </div>
+                        )
                         : (
                           <PublicSignQuote
                             quoteId={quote.id}
@@ -1117,9 +1136,10 @@ export function QuoteDoc(
                 /* Still-open quote: decline / ask-a-question secondary
                   actions (audit P5.1). Accepting happens through the pad
                   above — one ceremony — so this panel carries only the
-                  other two verbs. */
+                  other two verbs. REQ-736: not in the read-only customer
+                  view — its copy is inert, so live buttons would be a lie. */
               }
-              {view.pendingSignature && (
+              {view.pendingSignature && !customerView && (
                 <div class="ctr__no-print">
                   <PublicQuoteActions
                     quoteId={quote.id}

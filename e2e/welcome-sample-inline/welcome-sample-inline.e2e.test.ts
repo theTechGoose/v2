@@ -9,7 +9,8 @@
  * In a browser: a roofer's account with only the insurance open answers it and
  * reaches step 10; the sample's job name is on the wizard page itself (not in
  * a frame), the page holds no iframe, and the open-full-size link still points
- * at /q/<id>.
+ * at /q/<id>. REQ-736 (demo p10, cycle 5): the sample holds no owner preview
+ * banner, no "your own quote" box and no button — a read-only signature block.
  *
  * Pages: /login → /verify → /welcome (front-end/islands/WelcomeWizard.tsx,
  * front-end/components/SampleQuotePreview.tsx).
@@ -80,7 +81,7 @@ async function typeIn(
   throw new Error(`the wizard never took "${value}" at ${selector}`);
 }
 
-Deno.test("REQ-433 (demo M13, cycle 3): step 10 shows the sample quote inline — its job name is on the wizard page, no iframe, the open-full-size link stays", (t) =>
+Deno.test("REQ-433 (demo M13, cycle 3) + REQ-736 (demo p10, cycle 5): step 10 shows the sample quote inline as the customer sees it — its job name is on the wizard page, no iframe, no owner controls, the open-full-size link stays", (t) =>
   story(t, async ({ page, expect, http, baseUrl }) => {
     await page.setViewportSize(DESKTOP);
     const host = new URL(baseUrl).hostname;
@@ -119,6 +120,27 @@ Deno.test("REQ-433 (demo M13, cycle 3): step 10 shows the sample quote inline �
       0,
       "the page holds no iframe",
     );
+
+    // REQ-736 (demo p10, cycle 5): the owner sees the CUSTOMER's view — no
+    // owner preview banner, no "your own quote" box, no inert "Sign in
+    // person" button; the signature block is read-only.
+    const doc = page.locator("[data-cy='welcome-sample-doc']");
+    expect.eq(
+      await doc.locator(
+        "[data-cy='quote-preview-banner'], [data-cy='quote-internal-preview']",
+      ).count(),
+      0,
+      "no owner preview controls in the sample",
+    );
+    expect.eq(
+      await doc.locator("button, canvas, input").count(),
+      0,
+      "no button, pad or input in the inert sample",
+    );
+    await doc.locator("[data-cy='quote-sign-readonly']").waitFor({
+      state: "attached",
+      timeout: 5_000,
+    });
 
     const href = await page.locator("a.welcome__sample-link").getAttribute(
       "href",

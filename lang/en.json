@@ -1178,6 +1178,7 @@
   "quoteDoc.serviceAgreement": "Service Agreement",
   "quoteDoc.signHere": "Sign here",
   "quoteDoc.signTypeBelow": "Sign & type name below ↓",
+  "quoteDoc.signReadonly": "Your customer signs here — with a finger or a mouse",
   "quoteDoc.signatureOf": "{name} Signature",
   "quoteDoc.signed": "Signed {date}",
   "quoteDoc.signedBanner.thanks": "Thanks, {name} — signed on {date}.",
