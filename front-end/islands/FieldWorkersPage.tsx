@@ -13,6 +13,7 @@ import FieldHead from "../components/FieldHead.tsx";
 import { initialsOf } from "../lib/clients-display.ts";
 import { I, ICN } from "../lib/dash-icons.tsx";
 import { fmtCell, PHONE_PLACEHOLDER } from "../lib/field.ts";
+import { timesheetHref } from "../lib/timesheet-filter.ts";
 import {
   type AddFormField,
   addFormProblems,
@@ -593,7 +594,14 @@ export default function FieldWorkersPage(
                       )
                       : (
                         <>
-                          <span />
+                          {/* REQ-786 (demo dv1) — this worker's hours, on the timesheet */}
+                          <a
+                            class="btn btn--ghost btn--sm"
+                            data-cy="wk-hours"
+                            href={timesheetHref(w.id)}
+                          >
+                            <I d={ICN.clock} size={12} /> {t("field.wk.hours")}
+                          </a>
                           <button
                             type="button"
                             class="btn btn--danger btn--sm"
