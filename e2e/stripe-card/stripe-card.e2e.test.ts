@@ -4,6 +4,7 @@
  * 4242… pays and the page reads PAID without a reload, the office's invoice is paid with a card
  * payment whose reference is the Stripe intent; 4000 0000 0000 0002 declines and keeps the form;
  * disconnecting takes the card off the next invoice.
+ * REQ-808 amendment: the Stripe setup lives on the Stripe tab of Settings' card payments section.
  */
 import { story, type StoryTools } from "#shots";
 
@@ -95,8 +96,20 @@ Deno.test("REQ-212: settings connects the business's own Stripe — the account,
   story(t, async ({ page, expect, http, baseUrl }) => {
     const { auth } = await signIn(http, page, baseUrl);
 
-    // 1. settings: the card is there, not connected
+    // 1. settings: the card is there, not connected — REQ-808: on the Stripe tab of the
+    // card payments section (Square opens first while nothing is set up)
     await page.goto("/settings");
+    await page.locator("[data-cy='card-tab-stripe']").waitFor({
+      timeout: 15_000,
+    });
+    for (
+      let i = 0;
+      i < 40 && !(await page.locator("[data-cy='stripe-pk']").isVisible());
+      i++
+    ) {
+      await page.locator("[data-cy='card-tab-stripe']").click();
+      await page.waitForTimeout(250);
+    }
     await page.locator("[data-cy='stripe-card']").waitFor({ timeout: 15_000 });
     await page.locator("[data-cy='stripe-pk']").fill("pk_test_fake_acme");
     await page.locator("[data-cy='stripe-sk']").fill("sk_test_fake_acme");

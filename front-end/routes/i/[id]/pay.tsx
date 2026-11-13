@@ -22,6 +22,8 @@ import PublicCardPay, {
   type CardConfig,
 } from "../../../islands/PublicCardPay.tsx";
 import { BG, INK, MUTED, TEAL } from "../../../components/doc-parts.tsx";
+import SquareCheckout from "../../../islands/SquareCheckout.tsx"; // REQ-803
+import type { SquareConfig } from "../../../../shared/payments/square.ts"; // REQ-803
 
 interface InvoiceHead {
   id: string;
@@ -36,12 +38,17 @@ interface InvoiceHead {
 
 export default define.page(async function CardPortal(ctx) {
   const id = ctx.params.id;
-  const [inv, cardRes] = await Promise.all([
+  const [inv, cardRes, squareRes] = await Promise.all([
     ssrBackendGet<InvoiceHead>(`/invoices/${id}/public`),
     ssrBackendGet<CardConfig>(`/invoices/${id}/card`),
+    ssrBackendGet<SquareConfig>(`/invoices/${id}/square`), // REQ-803
   ]);
   const invoice = inv.ok ? inv.data : undefined;
   const card = cardRes.ok && cardRes.data?.available ? cardRes.data : undefined;
+  // REQ-803 — the business's own Square: this page offers its checkout (the no-script way)
+  const square = !card && squareRes.ok && squareRes.data?.available
+    ? squareRes.data
+    : undefined;
   const url = new URL(ctx.req.url);
   const lang: Lang = resolvePublicLang({
     query: url.searchParams.get("lang"),
@@ -51,6 +58,7 @@ export default define.page(async function CardPortal(ctx) {
   });
   ctx.state.lang = lang;
   const business = card?.merchantName?.trim() ||
+    square?.merchantName?.trim() ||
     publicBusinessLabel(invoice?.contractor) ||
     tFor(lang, "publicInvoice.contractorFallback.capital");
   const back = `/i/${encodeURIComponent(id)}${lang === "es" ? "?lang=es" : ""}`;
@@ -83,7 +91,7 @@ export default define.page(async function CardPortal(ctx) {
             >
               {tFor(lang, "payByCard.portal.heading")}
             </h1>
-            {card
+            {card || square
               ? (
                 <span
                   data-status-pill
@@ -118,6 +126,29 @@ export default define.page(async function CardPortal(ctx) {
                   </strong>
                 </div>
                 <PublicCardPay invoiceId={id} config={card} lang={lang} />
+              </>
+            )
+            : square
+            ? (
+              <>
+                <div
+                  data-cy="card-portal-amount"
+                  style={`margin-top:14px;font-size:13px;color:${MUTED}`}
+                >
+                  {tFor(lang, "payByCard.portal.amount")}{" "}
+                  <strong style={`color:${INK};font-size:20px`}>
+                    {fmtMoneyExact(square.amountCents ?? 0)}
+                  </strong>
+                </div>
+                <div style="margin-top:18px">
+                  <SquareCheckout
+                    invoiceId={id}
+                    lang={lang}
+                    amountCents={square.amountCents}
+                    version={square.version}
+                    business={business}
+                  />
+                </div>
               </>
             )
             : (

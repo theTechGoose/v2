@@ -16,6 +16,7 @@ import { StripeError, StripeGateway } from "@core/data/stripe-gateway/mod.ts";
 import { StripeSettingsStore } from "@users/domain/data/stripe-settings-store/mod.ts";
 import { BusinessIdentityStore } from "@profile/domain/data/business-identity-store/mod.ts";
 import { UserStore } from "@users/domain/data/user-store/mod.ts";
+import { SquareSettingsStore } from "@users/domain/data/square-settings-store/mod.ts"; // REQ-803
 
 export interface StripeMerchant {
   name: string;
@@ -57,6 +58,8 @@ export class ConnectStripe {
     private gateway: StripeGateway,
     private identity: BusinessIdentityStore,
     private users: UserStore,
+    /** REQ-803 — one card provider at a time: Stripe is refused while Square is connected */
+    private squareStore: SquareSettingsStore = new SquareSettingsStore(),
   ) {}
 
   async merchant(userId: string): Promise<StripeMerchant> {
@@ -113,6 +116,14 @@ export class ConnectStripe {
         422,
         pair.reason,
         `stripe keys: ${pair.reason}`,
+      );
+    }
+    // REQ-803 — one card provider at a time
+    if (await this.squareStore.get(userId).catch(() => null)) {
+      throw new StripeConnectError(
+        409,
+        "square_connected",
+        "Square is connected — disconnect it to take cards through Stripe",
       );
     }
     let key: CryptoKey;

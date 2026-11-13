@@ -65,6 +65,11 @@ import { StripeSettingsController } from "@users/entrypoints/stripe-settings-con
 import { DevStripeController } from "@users/entrypoints/dev-stripe-controller/mod.ts"; // REQ-212
 import { DevAccountAdminsController } from "@users/entrypoints/dev-account-admins-controller/mod.ts"; // REQ-632
 import { StripeGateway } from "@core/data/stripe-gateway/mod.ts"; // REQ-212
+import { SquareSettingsStore } from "@users/domain/data/square-settings-store/mod.ts"; // REQ-803
+import { ConnectSquare } from "@users/domain/coordinators/connect-square/mod.ts"; // REQ-803
+import { SquareSettingsController } from "@users/entrypoints/square-settings-controller/mod.ts"; // REQ-803
+import { DevSquareController } from "@users/entrypoints/dev-square-controller/mod.ts"; // REQ-803
+import { SquareGateway } from "@core/data/square-gateway/mod.ts"; // REQ-803
 
 /**
  * UsersModule — owns the full user identity surface:
@@ -100,6 +105,8 @@ import { StripeGateway } from "@core/data/stripe-gateway/mod.ts"; // REQ-212
     NumberingController, // REQ-199
     StripeSettingsController, // REQ-212
     DevStripeController, // REQ-212
+    SquareSettingsController, // REQ-803
+    DevSquareController, // REQ-803 — fakes only
     DevAccountAdminsController, // REQ-632 — fakes only
   ],
   injectables: [
@@ -146,6 +153,9 @@ import { StripeGateway } from "@core/data/stripe-gateway/mod.ts"; // REQ-212
     StripeSettingsStore, // REQ-212
     ConnectStripe, // REQ-212
     StripeGateway, // REQ-212
+    SquareSettingsStore, // REQ-803
+    ConnectSquare, // REQ-803
+    SquareGateway, // REQ-803
     TransferAccount, // REQ-220
     FileStore, // REQ-252
   ],

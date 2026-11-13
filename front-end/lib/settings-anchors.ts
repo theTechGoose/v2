@@ -19,9 +19,23 @@ export const SETTINGS_ANCHORS = {
 } as const;
 
 export type SetupItemKey = keyof typeof SETTINGS_ANCHORS;
-export type SettingsAnchor = (typeof SETTINGS_ANCHORS)[SetupItemKey];
 
-const KNOWN = new Set<string>(Object.values(SETTINGS_ANCHORS));
+/** REQ-808 — the card payments section and its three tabs (`/settings#card-stripe` opens Stripe) */
+export const CARD_ANCHORS = [
+  "card-payments",
+  "card-square",
+  "card-stripe",
+  "card-link",
+] as const;
+
+export type SettingsAnchor =
+  | (typeof SETTINGS_ANCHORS)[SetupItemKey]
+  | (typeof CARD_ANCHORS)[number];
+
+const KNOWN = new Set<string>([
+  ...Object.values(SETTINGS_ANCHORS),
+  ...CARD_ANCHORS,
+]);
 
 /** the link a checklist item opens */
 export function setupItemHref(key: SetupItemKey): string {

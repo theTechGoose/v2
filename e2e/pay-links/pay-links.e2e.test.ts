@@ -70,7 +70,8 @@ Deno.test("REQ-630: Venmo + Cash App + a custom 'Extra Pay' link — /i/:id show
     const { auth } = await signIn(http, page, baseUrl);
 
     // 1. Settings: add "Extra Pay" — an http:// link is refused, https is saved
-    await page.goto("/settings");
+    // (REQ-808: the payment links card lives on the Custom button tab of Online payments)
+    await page.goto("/settings#card-link");
     const card = page.locator("[data-cy='pay-links-card']");
     await card.waitFor({ timeout: 15_000 });
     await card.scrollIntoViewIfNeeded();
@@ -100,7 +101,7 @@ Deno.test("REQ-630: Venmo + Cash App + a custom 'Extra Pay' link — /i/:id show
       "@a2z-landscape",
       "Venmo untouched by the links card",
     );
-    // the link survives a reload
+    // the link survives a reload (the Custom button tab, now set up, opens first)
     await page.goto("/settings");
     await page.locator(`[data-cy='pay-link-row-${links[0].id}']`).waitFor({
       timeout: 15_000,

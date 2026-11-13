@@ -4,6 +4,7 @@
  * reference) and ConfirmPayment mints the Payment row, settles the balance (the PAID stamp,
  * REQ-202), clears the claim and sends the receipt. Idempotent on the intent id: the same
  * charge recorded twice (the charge reply and the 3-D Secure completion, a retry) is one row.
+ * REQ-803: a paid Square checkout takes the same path, its Square payment id the reference.
  */
 import { Injectable } from "#danet/core";
 import { InvoiceStore } from "@paperwork/domain/data/invoice-store/mod.ts";
@@ -12,7 +13,7 @@ import { ConfirmPayment } from "@paperwork/domain/coordinators/confirm-payment/m
 import { invoiceBalance } from "#documents/versions.ts";
 
 export interface CardCharge {
-  /** the Stripe PaymentIntent id — the payment's reference */
+  /** the Stripe PaymentIntent id (REQ-803: or the Square payment id) — the payment's reference */
   id: string;
   /** INTEGER CENTS */
   amount: number;

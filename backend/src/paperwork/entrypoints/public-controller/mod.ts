@@ -49,6 +49,12 @@ import {
 } from "@core/data/stripe-gateway/mod.ts"; // REQ-213
 import { RecordCardPayment } from "@paperwork/domain/coordinators/record-card-payment/mod.ts"; // REQ-213
 import { FAKE_STRIPE_API } from "#payments/stripe-keys.ts"; // REQ-213
+import { ConnectSquare } from "@users/domain/coordinators/connect-square/mod.ts"; // REQ-803
+import { SquareError, SquareGateway } from "@core/data/square-gateway/mod.ts"; // REQ-803
+import { SquareCheckoutStore } from "@paperwork/domain/data/square-checkout-store/mod.ts"; // REQ-803
+import { SettleSquareCheckouts } from "@paperwork/domain/coordinators/settle-square-checkouts/mod.ts"; // REQ-803
+import { squareCheckoutName, squareReturnUrl } from "#payments/square.ts"; // REQ-803
+import { squareReturnOrigin } from "./square-return.ts"; // REQ-803
 import {
   projectPayMethods,
   type PublicPayMethod,
@@ -236,6 +242,10 @@ export class PaperworkPublicController {
     private stripe: ConnectStripe, // REQ-212
     private gateway: StripeGateway, // REQ-213
     private cardPayment: RecordCardPayment, // REQ-213
+    private square: ConnectSquare, // REQ-803
+    private squareGateway: SquareGateway, // REQ-803
+    private squareCheckouts: SquareCheckoutStore, // REQ-803
+    private settleSquare: SettleSquareCheckouts, // REQ-803
     private shortlinks: ShortLinkStore,
     private files: FileStore,
     private invoicePdf: RenderInvoicePdf,
@@ -1125,7 +1135,13 @@ export class PaperworkPublicController {
     @Param("id") id: string,
   ) {
     try {
-      const i = await this.invoices.get(id);
+      let i = await this.invoices.get(id);
+      // REQ-803 — a Square checkout the customer started is read back on the business's token:
+      // always on the way back from Square (?square=return), else at most every few seconds
+      const recorded = await this.settleSquare.run(i, {
+        force: new URL(ctx.req.url).searchParams.get("square") === "return",
+      }).catch(() => 0);
+      if (recorded) i = await this.invoices.get(id);
       const [contractor, customer, quote, siblings, cos, payments] =
         await Promise
           .all([
@@ -1274,7 +1290,11 @@ export class PaperworkPublicController {
       // explicitly enabled (handles non-empty).
       let acceptedMethods = projectAcceptedMethods(contractor);
       // REQ-213 — while Stripe is on, the card is the widget, not a manual chip
-      if (await this.stripe.isConnected(i.userId).catch(() => false)) {
+      // REQ-803 — and while the business's own Square is on, the card is Square's checkout
+      if (
+        await this.stripe.isConnected(i.userId).catch(() => false) ||
+        await this.square.isConnected(i.userId).catch(() => false)
+      ) {
         acceptedMethods = acceptedMethods.filter((m) => m.method !== "card");
       }
       // REQ-173: a batch invoice's visits, grouped under their address
@@ -1672,6 +1692,174 @@ export class PaperworkPublicController {
       return notFoundResponse(ctx, e);
     }
   }
+
+  // ------------------------------------------------------------ REQ-803: pay by card on Square
+
+  /**
+   * GET /invoices/:id/square — whether the business takes cards on its OWN Square (REQ-803),
+   * and what the "Pay by card" button needs: the merchant's name, the balance and the version
+   * the checkout will be asked for. Never the token.
+   */
+  @Get("invoices/:id/square")
+  async squareConfig(
+    @Context() ctx: ExecutionContext,
+    @Param("id") id: string,
+  ) {
+    try {
+      const i = await this.invoices.get(id);
+      if (i.status === "paid" || i.status === "void") {
+        return ctx.json({ available: false });
+      }
+      const conn = await this.square.tokenFor(i.userId).catch(() => null);
+      if (!conn) return ctx.json({ available: false });
+      const balance = await currentBalance(this.payments, i);
+      if (balance.balanceCents <= 0) return ctx.json({ available: false });
+      const merchant = await this.square.merchant(i.userId);
+      return ctx.json({
+        available: true,
+        provider: "square",
+        environment: conn.environment,
+        fake: conn.fake,
+        merchantName: merchant.name || conn.sellerName,
+        amountCents: balance.balanceCents,
+        currency: "usd",
+        version: versionOf(i),
+      });
+    } catch (e) {
+      return notFoundResponse(ctx, e);
+    }
+  }
+
+  /**
+   * POST /invoices/:id/square/checkout — a Square payment link (Square's hosted checkout) for
+   * the invoice's CURRENT balance, made on the business's own token and location, that sends
+   * the customer back to /i/:id?square=return. The balance and version the page showed must
+   * still hold (REQ-203's rule): else 409 with the current ones, before Square is asked. The
+   * same balance at the same version reuses the link already made. Answers the URL to go to.
+   */
+  @Post("invoices/:id/square/checkout")
+  async squareCheckout(
+    @Context() ctx: ExecutionContext,
+    @Param("id") id: string,
+    @Body() body: unknown,
+  ) {
+    let dto: SquareCheckoutDto;
+    try {
+      dto = parseSquareCheckout(body);
+    } catch {
+      return ctx.json({ ok: false, reason: "invalid_body" }, 400);
+    }
+    try {
+      const invoice = await this.invoices.get(id);
+      if (invoice.status === "paid") {
+        return ctx.json({ ok: false, reason: "already_paid" }, 409);
+      }
+      if (invoice.status === "void") {
+        return ctx.json({ ok: false, reason: "void" }, 409);
+      }
+      const conn = await this.square.tokenFor(invoice.userId).catch(() => null);
+      if (!conn) {
+        return ctx.json({ ok: false, reason: "card_unavailable" }, 404);
+      }
+      const balance = await currentBalance(this.payments, invoice);
+      if (balance.balanceCents <= 0) {
+        return ctx.json(
+          { ok: false, reason: "already_paid", balanceCents: 0 },
+          409,
+        );
+      }
+      const version = versionOf(invoice);
+      const staleVersion = dto.version !== undefined &&
+        dto.version !== version;
+      const staleAmount = Math.round(dto.amountCents) !== balance.balanceCents;
+      if (staleVersion || staleAmount) {
+        return ctx.json(
+          {
+            ok: false,
+            reason: "stale_balance",
+            balanceCents: balance.balanceCents,
+            version,
+          },
+          409,
+        );
+      }
+      const redirectUrl = squareReturnUrl(
+        squareReturnOrigin(ctx.req.header("origin")),
+        invoice.id,
+      );
+      const reuse = (await this.squareCheckouts.listByInvoice(invoice.id))
+        .find((c) =>
+          c.status === "pending" && c.userId === invoice.userId &&
+          c.version === version && c.amountCents === balance.balanceCents &&
+          c.redirectUrl === redirectUrl
+        );
+      if (reuse) return ctx.json({ ok: true, url: reuse.url });
+      const merchant = await this.square.merchant(invoice.userId);
+      const number = docNumberOf(invoice);
+      let link;
+      try {
+        link = await this.squareGateway.createPaymentLink(
+          conn.token,
+          conn.environment,
+          {
+            idempotencyKey: `${invoice.id}:${version}:${balance.balanceCents}:${
+              crypto.randomUUID().slice(0, 8)
+            }`,
+            name: squareCheckoutName(
+              number,
+              merchant.name || conn.sellerName,
+            ),
+            amountCents: balance.balanceCents,
+            currency: "USD",
+            locationId: conn.locationId,
+            redirectUrl,
+            ...(number ? { note: number } : {}),
+          },
+        );
+      } catch (e) {
+        if (e instanceof SquareError) {
+          return ctx.json({
+            ok: false,
+            reason: "square_error",
+            message: e.message,
+          }, 502);
+        }
+        throw e;
+      }
+      await this.squareCheckouts.put({
+        userId: invoice.userId,
+        invoiceId: invoice.id,
+        version,
+        amountCents: balance.balanceCents,
+        paymentLinkId: link.id,
+        orderId: link.orderId,
+        url: link.url,
+        redirectUrl,
+        status: "pending",
+        createdAt: new Date().toISOString(),
+      });
+      return ctx.json({ ok: true, url: link.url });
+    } catch (e) {
+      return notFoundResponse(ctx, e);
+    }
+  }
+}
+
+/** REQ-803 — the public Square checkout's body: the balance and version the page showed. */
+class SquareCheckoutDto {
+  @IsNumber()
+  amountCents!: number;
+  @IsOptional() @IsNumber()
+  version?: number;
+}
+
+function parseSquareCheckout(input: unknown): SquareCheckoutDto {
+  const dto = plainToInstance(SquareCheckoutDto, input ?? {});
+  const errors = validateSync(dto);
+  if (errors.length) {
+    throw new Error(`invalid square checkout body: ${JSON.stringify(errors)}`);
+  }
+  return dto;
 }
 
 /** REQ-213 — what a Stripe intent means for the invoice: succeeded is recorded (RecordCardPayment),

@@ -399,26 +399,28 @@ export function hasCardPayLink(methods: PublicPayMethod[]): boolean {
 }
 
 /** Where "Pay by card" goes: the business's own Stripe → our card portal page `/i/:id/pay`
- *  (the widget charges the balance on their key); else their card pay link; else nowhere —
- *  no button, never a dead end. */
+ *  (the widget charges the balance on their key); else their own Square (REQ-803) → Square's
+ *  hosted checkout for the balance (the button asks the server for it; `href` is the portal
+ *  page, the no-script way); else their card pay link; else nowhere — no button, never a dead
+ *  end. One card provider at a time (REQ-803): Stripe first if both were ever on. */
 export type CardPayWay =
   | { kind: "portal"; href: string }
+  | { kind: "square"; href: string }
   | { kind: "link"; href: string; host: string };
 
 export function cardPayWay(opts: {
   invoiceId: string;
   stripe: boolean;
+  /** REQ-803 — the business's own Square is connected */
+  square?: boolean;
   methods: PublicPayMethod[];
   lang?: string;
 }): CardPayWay | null {
-  if (opts.stripe) {
-    return {
-      kind: "portal",
-      href: `/i/${encodeURIComponent(opts.invoiceId)}/pay${
-        opts.lang === "es" ? "?lang=es" : ""
-      }`,
-    };
-  }
+  const portal = `/i/${encodeURIComponent(opts.invoiceId)}/pay${
+    opts.lang === "es" ? "?lang=es" : ""
+  }`;
+  if (opts.stripe) return { kind: "portal", href: portal };
+  if (opts.square) return { kind: "square", href: portal };
   const card = opts.methods.find((m) => m.method === "card");
   const href = safeHttpsUrl(card?.url);
   if (!href) return null;

@@ -37,6 +37,7 @@ import PublicInvoiceRefresh from "../../islands/PublicInvoiceRefresh.tsx";
 import OwnerClaimReview from "../../islands/OwnerClaimReview.tsx";
 import PublicLangToggle from "../../islands/PublicLangToggle.tsx";
 import type { CardConfig } from "../../islands/PublicCardPay.tsx"; // REQ-213
+import type { SquareConfig } from "../../../shared/payments/square.ts"; // REQ-803
 import PayByCard from "../../components/PayByCard.tsx"; // REQ-782
 import { cardPayWay } from "../../../shared/payments/pay-links.ts"; // REQ-782
 import {
@@ -227,19 +228,29 @@ interface InvoicePublic {
 
 export default define.page(async function PublicInvoice(ctx) {
   const id = ctx.params.id;
+  // REQ-803 — back from the business's Square checkout: the read checks the order first
+  const squareReturn =
+    new URL(ctx.req.url).searchParams.get("square") === "return";
   // REQ-479 (demo M30): the read carries the viewer's session, so the
   // backend can tell the business's own preview from the customer.
   const r = await ssrBackendGetAuthed<InvoicePublic>(
-    `/invoices/${id}/public`,
+    `/invoices/${id}/public${squareReturn ? "?square=return" : ""}`,
     getSessionId(ctx.req),
   );
   const invoice = r.ok ? r.data : undefined;
-  // REQ-213 — whether the business takes cards (REQ-212) and what the card page needs
-  const cardRes = invoice
-    ? await ssrBackendGet<CardConfig>(`/invoices/${id}/card`)
-    : undefined;
+  // REQ-213 — whether the business takes cards (REQ-212) and what the card page needs;
+  // REQ-803 — or takes them on its own Square
+  const [cardRes, squareRes] = invoice
+    ? await Promise.all([
+      ssrBackendGet<CardConfig>(`/invoices/${id}/card`),
+      ssrBackendGet<SquareConfig>(`/invoices/${id}/square`),
+    ])
+    : [undefined, undefined];
   const card = cardRes?.ok && cardRes.data?.available
     ? cardRes.data
+    : undefined;
+  const square = squareRes?.ok && squareRes.data?.available
+    ? squareRes.data
     : undefined;
   // Chrome language — REQ-272: the link's ?lang= (the EN | ES toggle below)
   // first, then the visitor's own saved choice (pm_lang cookie), over the
@@ -303,6 +314,8 @@ export default define.page(async function PublicInvoice(ctx) {
                 lang={lang}
                 search={url.search}
                 card={card}
+                square={square}
+                squareReturn={squareReturn}
               />
             )}
         </div>
@@ -333,13 +346,17 @@ function siteLabel(url: string): string {
 }
 
 function InvoiceDoc(
-  { invoice, lang, search, card }: {
+  { invoice, lang, search, card, square, squareReturn }: {
     invoice: InvoicePublic;
     lang: Lang;
     /** REQ-479: the page's query, for the claim's in-person override. */
     search: string;
     /** REQ-213: the business takes cards on its own Stripe */
     card?: CardConfig;
+    /** REQ-803: the business takes cards on its own Square */
+    square?: SquareConfig;
+    /** REQ-803: the customer just came back from Square's checkout */
+    squareReturn?: boolean;
   },
 ) {
   // REQ-627: a voided invoice says so and cannot be paid
@@ -404,6 +421,7 @@ function InvoiceDoc(
   const cardWay = cardPayWay({
     invoiceId: invoice.id,
     stripe: !!card,
+    square: !!square, // REQ-803
     methods: invoice.acceptedMethods ?? [],
     lang,
   });
@@ -875,6 +893,20 @@ function InvoiceDoc(
                   card first (the business's Stripe → /i/:id/pay, else its card pay link); the
                   app buttons and the manual methods below */
                 }
+                {
+                  /* REQ-803 — back from Square without paying: say so; the button stays */
+                  squareReturn && cardWay?.kind === "square"
+                    ? (
+                      <p
+                        data-cy="square-not-completed"
+                        role="status"
+                        style={`margin:24px 0 0;background:rgba(20,72,82,0.05);border-radius:12px;padding:12px 16px;color:${INK};font-size:14px`}
+                      >
+                        {tFor(lang, "payByCard.square.notCompleted")}
+                      </p>
+                    )
+                    : null
+                }
                 <PayByCard
                   way={cardWay}
                   lang={lang}
@@ -882,6 +914,8 @@ function InvoiceDoc(
                   business={businessLabel}
                   number={invoice.number}
                   internal={invoice.internal === true}
+                  invoiceId={invoice.id}
+                  version={square?.version ?? invoice.version}
                 />
                 <div data-claim-wrap>
                   <PublicInvoiceClaim

@@ -343,15 +343,6 @@ Deno.test("REQ-206: /invoices?new=1&quoteId=<id> prefills the form from the quot
       "600.00",
       "the amount is prefilled with what remains",
     );
-    // the pick lands once the customers list has arrived (its own fetch)
-    await page.waitForFunction(
-      (id) =>
-        (document.querySelector(
-          "[data-cy='new-invoice-client'] input[name='customerId']",
-        ) as HTMLInputElement | null)?.value === id,
-      customer.id,
-      { timeout: 15_000 },
-    );
     expect.eq(
       await page.locator(
         "[data-cy='new-invoice-client'] input[name='customerId']",
