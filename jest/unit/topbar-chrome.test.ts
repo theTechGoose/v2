@@ -46,10 +46,14 @@ describe("REQ-223 the topbar island carries its own chrome CSS", () => {
     expect(css).toMatch(/\.topbar__lang-btn--on\{[^}]*background:#fff/);
   });
 
-  test("TOPBAR_CSS hides the search box and the ticker on phones (≤640px), so EN/ES never sits on the search (m6)", () => {
+  test("REQ-799 (amends REQ-223): on phones (≤640px) the search box is the bar's own full-width second row — never hidden, never beside EN/ES (m6) — the / hint and the ticker are hidden", () => {
     const css = squash(TOPBAR_CSS);
     const phone = css.match(/@media\(max-width:640px\)\{(.*)\}/)?.[1] ?? "";
-    expect(phone).toMatch(/\.topbar__search\{[^}]*display:none/);
+    expect(phone).not.toMatch(/\.topbar__search\{[^}]*display:none/);
+    expect(phone).toMatch(/\.topbar\{[^}]*flex-wrap:wrap/);
+    expect(phone).toMatch(/\.topbar__search\{[^}]*flex:1 ?1 ?100%/);
+    expect(phone).toMatch(/\.topbar__search\{[^}]*order:10/);
+    expect(phone).toMatch(/\.topbar__kbd\{[^}]*display:none/);
     expect(phone).toMatch(/\.topbar__ticker\{[^}]*display:none/);
   });
 

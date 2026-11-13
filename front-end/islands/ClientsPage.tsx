@@ -116,6 +116,9 @@ export default function ClientsPage(
     const seed = id ? s.data?.items.find((c) => c.id === id) : undefined;
     if (seed) setSheet({ customer: seed, failed: false });
     setSheetId(id);
+    // REQ-799: the page has no search box; the REQ-600 by-name filter that found a linked card
+    // is cleared when its sheet closes, so the roster comes back
+    if (!id && query) setQuery("");
     if (typeof globalThis.location === "undefined") return;
     try {
       const url = new URL(globalThis.location.href);
@@ -128,7 +131,8 @@ export default function ClientsPage(
       );
     } catch { /* history unavailable — the sheet still opens */ }
   }
-  // REQ-135 — what the API is asked for: the page, the search, the chip (seeded from ?segment=)
+  // REQ-135 — what the API is asked for: the page, the chip (seeded from ?segment=) and — REQ-799:
+  // with no search box on the page — only REQ-600's by-name search for a linked card
   const [page, setPage] = useState(1);
   const [query, setQuery] = useState("");
   const [q, setQ] = useState("");
@@ -145,9 +149,6 @@ export default function ClientsPage(
     if (data) setS((prev) => ({ ...prev, data }));
   }
 
-  function onQuery(next: string) {
-    setQuery(next);
-  }
   useEffect(() => {
     const t = setTimeout(() => {
       setQ(query);
@@ -277,8 +278,6 @@ export default function ClientsPage(
         cards={data.items}
         counts={data.counts}
         rosterEmpty={summary.totalClients === 0}
-        query={query}
-        onQuery={onQuery}
         filter={filter}
         onFilter={onFilter}
         page={data.page}

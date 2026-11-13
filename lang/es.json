@@ -877,7 +877,6 @@
   "clientsBoard.panel.addAddress": "Agregar dirección",
   "clientsBoard.panel.saveError": "No se pudo guardar. Inténtalo de nuevo.",
   "clientsBoard.prev": "Anterior",
-  "clientsBoard.searchPlaceholder": "Busca por nombre, dirección, teléfono o último trabajo…",
   "clientsBoard.sort.warmth": "Interés",
   "clientsDisplay.address.none": "Sin dirección registrada",
   "clientsDisplay.address.onFile": "Dirección en archivo",

@@ -239,3 +239,14 @@ Deno.test("REQ-713 m27 global-search integration: invoice and work-order dates a
   );
   await resetKv();
 });
+
+Deno.test("REQ-799 global-search integration: a customer hit's url opens the customer's sheet, not the roster", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const { customers, flow } = fresh();
+  const c = await customers.create("u-1", { name: "Zelda Ortiz" });
+  const hits = await flow.run("u-1", { q: "zelda" });
+  const hit = hits.find((h) => h.type === "customer");
+  assertEquals(hit?.url, `/customers?open=${encodeURIComponent(c.id)}`);
+  await resetKv();
+});

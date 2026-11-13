@@ -722,6 +722,7 @@
    the filter chips get a full row of their own and wrap, so no chip is ever
    clipped or scrolled out of sight, at any width or in any language. */
 .ctoolbar2 {
+  /* REQ-799: no search cell — the chips take the row, the sort sits at its end */
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto auto;
   gap: 8px;
@@ -732,30 +733,9 @@
   padding: 8px;
   margin-bottom: 14px;
 }
-.ctoolbar2__search {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 9px 12px;
-  background: var(--bg-sunken);
-  border-radius: var(--radius-md);
-  color: var(--fg-muted);
-}
-.ctoolbar2__search input {
-  flex: 1;
-  border: none;
-  background: transparent;
-  outline: none;
-  font-family: var(--font-body);
-  font-size: 14px;
-  color: var(--brand-teal);
-}
-.ctoolbar2__search input::placeholder {
-  color: var(--fg-subtle);
-}
 .ctoolbar2__filters {
-  grid-column: 1 / -1;
-  grid-row: 2;
+  /* REQ-799: the chips lead the only row, the sort buttons close it */
+  grid-column: 1;
   justify-self: start;
   max-width: 100%;
   min-width: 0;

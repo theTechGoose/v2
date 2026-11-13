@@ -146,8 +146,7 @@ Deno.test("REQ-625: Clients → New customer takes name, company, phone, email, 
     expect.eq(saved.phoneNumber, "+52 55 1234 5678", "the phone as typed");
     expect.eq(saved.notes, "Gate code 4411", "the notes");
 
-    // on the board: the card, its panel shows the address
-    await page.locator("[data-cy='clients-search']").fill(name);
+    // on the board (REQ-799: the page has no search box; the card is on page one): its panel shows the address
     const card = page.locator(".ccard2", { hasText: name });
     await card.waitFor({ timeout: 15_000 });
     await clickUntil(

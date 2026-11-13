@@ -43,6 +43,7 @@ const CSS = `
 .gsearch__related a{margin-left:6px;color:var(--brand-teal);text-decoration:underline;white-space:nowrap}
 .gsearch__note{padding:10px;font-size:13px;color:var(--fg-muted)}
 @media (max-width:720px){.topbar__search{max-width:none}.gsearch__panel{position:fixed;left:8px;right:8px;top:64px}}
+@media (max-width:640px){.gsearch__panel{position:absolute;left:0;right:0;top:calc(100% + 6px)}}
 `;
 
 function money(cents: number, lang: "en" | "es"): string {

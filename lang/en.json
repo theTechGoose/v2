@@ -877,7 +877,6 @@
   "clientsBoard.panel.addAddress": "Add address",
   "clientsBoard.panel.saveError": "Couldn't save that. Try again.",
   "clientsBoard.prev": "Previous",
-  "clientsBoard.searchPlaceholder": "Search by name, address, phone, or last job…",
   "clientsBoard.sort.warmth": "Warmth",
   "clientsDisplay.address.none": "No address on file",
   "clientsDisplay.address.onFile": "Address on file",

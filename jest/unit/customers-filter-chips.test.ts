@@ -52,9 +52,12 @@ describe("REQ-357 /customers filter chips never overflow (demo cycle 1, p5)", ()
     expect(decl(CSS, ".ctoolbar2__filters")).not.toMatch(/overflow-x:\s*auto/);
   });
 
-  test("the chip row takes a full row of the toolbar, so the search box never squeezes it", () => {
+  test("REQ-799 (amends REQ-357): the toolbar has no search box; the chip row leads the toolbar's row and wraps, so nothing squeezes it", () => {
     const d = decl(CSS, ".ctoolbar2__filters");
-    expect(d).toMatch(/grid-column:\s*1\s*\/\s*-1/);
+    expect(d).toMatch(/grid-column:\s*1\s*;/);
+    expect(d).toMatch(/flex-wrap:\s*wrap/);
+    expect(d).toMatch(/min-width:\s*0/);
+    expect(CSS).not.toMatch(/\.ctoolbar2__search/);
   });
 
   test("every chip label is short (≤ 12 characters) in en and es", () => {

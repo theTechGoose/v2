@@ -820,8 +820,6 @@ interface BoardProps {
   counts: Record<FilterId, number>;
   /** no customers on the books at all (the empty-roster copy, not "no matches") */
   rosterEmpty: boolean;
-  query: string;
-  onQuery: (q: string) => void;
   filter: FilterId;
   onFilter: (f: FilterId) => void;
   page: number;
@@ -846,8 +844,6 @@ export default function ClientsBoard(
     cards,
     counts,
     rosterEmpty,
-    query,
-    onQuery,
     filter,
     onFilter,
     page,
@@ -908,17 +904,8 @@ export default function ClientsBoard(
 
   return (
     <>
+      {/* REQ-799: no search box here — the topbar search is the one search */}
       <div class="ctoolbar2">
-        <div class="ctoolbar2__search">
-          <I d={ICN.search} size={14} />
-          <input
-            data-cy="clients-search"
-            placeholder={tFor(lang, "clientsBoard.searchPlaceholder")}
-            value={query}
-            onInput={(e) =>
-              onQuery((e.currentTarget as HTMLInputElement).value)}
-          />
-        </div>
         <div class="ctoolbar2__filters">
           {FILTER_DEFS.map((f) => {
             const active = filter === f.id;
