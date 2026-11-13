@@ -222,3 +222,44 @@ Deno.test("REQ-212 /dev/stripe — the fake tokenizes for a fake publishable key
     assertEquals((await bad.json()).error.code, "incorrect_number");
   });
 });
+
+Deno.test("REQ-804 /dev/stripe — on the real deploy the route is 404 unless STRIPE_DEMO_FAKE=1, then the fake tokenizes", async () => {
+  const before = {
+    DENO_DEPLOY: Deno.env.get("DENO_DEPLOY"),
+    STRIPE_DEMO_FAKE: Deno.env.get("STRIPE_DEMO_FAKE"),
+  };
+  const form = new URLSearchParams({
+    type: "card",
+    "card[number]": "4242424242424242",
+    "card[exp_month]": "12",
+    "card[exp_year]": "2034",
+    "card[cvc]": "123",
+  }).toString();
+  const post = (port: number) =>
+    fetch(`http://localhost:${port}/dev/stripe/v1/payment_methods`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/x-www-form-urlencoded",
+        authorization: "Bearer pk_test_fake_acme",
+      },
+      body: form,
+    });
+  try {
+    await withServer(async (port) => {
+      Deno.env.set("DENO_DEPLOY", "1");
+      Deno.env.delete("STRIPE_DEMO_FAKE");
+      const off = await post(port);
+      await off.body?.cancel();
+      assertEquals(off.status, 404);
+      Deno.env.set("STRIPE_DEMO_FAKE", "1");
+      const on = await post(port);
+      const pm = await on.json();
+      assertEquals(on.status, 200);
+      assertEquals([pm.object, pm.card.last4], ["payment_method", "4242"]);
+    });
+  } finally {
+    for (const [k, v] of Object.entries(before)) {
+      v === undefined ? Deno.env.delete(k) : Deno.env.set(k, v);
+    }
+  }
+});

@@ -3,7 +3,12 @@
  * intent (succeeds, declines, needs 3-D Secure), idempotency, and the real-deploy refusal.
  */
 import { assertEquals, assertRejects, assertStringIncludes } from "#std/assert";
-import { fakeStripeWorld, StripeError, StripeGateway } from "./mod.ts";
+import {
+  fakeStripeAllowed,
+  fakeStripeWorld,
+  StripeError,
+  StripeGateway,
+} from "./mod.ts";
 
 function withEnv(
   vars: Record<string, string | undefined>,
@@ -197,3 +202,29 @@ Deno.test("REQ-213 stripe-gateway fake — 4000 0025 0000 3155 needs 3-D Secure:
       "succeeded",
     );
   }));
+
+Deno.test("REQ-804 stripe-gateway — STRIPE_DEMO_FAKE=1 lets a fake key run on the real deploy (the demo card: no money moves)", () =>
+  withEnv({ DENO_DEPLOY: "1", STRIPE_DEMO_FAKE: "1" }, async () => {
+    fakeStripeWorld().reset();
+    const gw = new StripeGateway();
+    assertEquals(fakeStripeAllowed(), true);
+    assertEquals(gw.isFake("sk_test_fake_acme"), true);
+    assertEquals((await gw.account("sk_test_fake_acme")).id, "acct_fake_acme");
+    // a real key is untouched by the flag
+    assertEquals(gw.isFake("sk_test_51real"), false);
+  }));
+
+Deno.test('REQ-804 stripe-gateway — the flag is exactly "1": blank, "0" or unset keep the real-deploy refusal', async () => {
+  for (const v of [undefined, "", "0", "true"]) {
+    await withEnv({ DENO_DEPLOY: "1", STRIPE_DEMO_FAKE: v }, async () => {
+      const gw = new StripeGateway();
+      assertEquals(fakeStripeAllowed(), false, `flag=${JSON.stringify(v)}`);
+      assertEquals(gw.isFake("sk_test_fake_acme"), false);
+      const e = await assertRejects(
+        () => gw.account("sk_test_fake_acme"),
+        StripeError,
+      );
+      assertEquals(e.code, "fake_key_refused");
+    });
+  }
+});
