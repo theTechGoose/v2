@@ -92,7 +92,8 @@ import {
   previewTermRows,
 } from "../../shared/quote-flow/wizard-terms.ts"; // REQ-347
 import { quoteUpdatedBy } from "../lib/chat-quote-refresh.ts";
-import { mergeTurnMessages } from "../lib/turn-messages.ts"; // REQ-585
+import { mergeLockedCard, mergeTurnMessages } from "../lib/turn-messages.ts"; // REQ-585, REQ-662
+import { restoredPickerAction } from "../lib/picker-restore.ts"; // REQ-662
 import { attachBottomPin } from "../lib/chat-bottom-pin.ts";
 import {
   chatChangeOrderLink,
@@ -1073,7 +1074,11 @@ export default function AsstChat({
     priceSuggestions,
     prefillPriceCents,
   );
-  const [optionsLoading, setOptionsLoading] = useState(false);
+  // REQ-662 (cycle 5, m19): a restored picker that refetches its options on
+  // load (restoredPickerAction) renders the wait state from the first paint.
+  const [optionsLoading, setOptionsLoading] = useState(
+    () => !!seed && restoredPickerAction(seed).startsWith("refetch"),
+  );
   /** REQ-027 (NW-11): the model could not draft the options — the cards
    *  are heuristic scope bullets and the picker says so. */
   const [optionsDegraded, setOptionsDegraded] = useState(seed?.optionsDegraded ?? false);
@@ -1980,12 +1985,13 @@ export default function AsstChat({
   useEffect(() => {
     if (!seed) return;
     const raw = seed.jobDetailsRaw ?? seed.submittedJobDetails ?? "";
-    if (
-      seed.jobOptionsOpen && seed.pickerMode === "confirm" && !seed.jobOptions &&
-      raw.trim()
-    ) {
-      void openJobPickerForConfirm(raw);
-    }
+    // REQ-662 (cycle 5, m19 — pair 10): a picker restored without its
+    // options asks for them again (polish mode too) — never an idle
+    // "Writing up your options…" — or closes with nothing to write from.
+    const picker = restoredPickerAction(seed);
+    if (picker === "refetch_confirm") void openJobPickerForConfirm(raw);
+    if (picker === "refetch_polish") void openJobPicker();
+    if (picker === "close") setJobOptionsOpen(false);
     if (
       seed.priceCaptureOpen && seed.suggestPricing && !seed.priceSuggestions &&
       raw.trim()
@@ -4545,14 +4551,10 @@ export default function AsstChat({
     setSending(true);
     try {
       const res = await assistantClient.lockQuote(convoId, payload.quoteId);
-      // Drop the just-clicked draft card and any stale chat-driven
-      // "Drafting a quote." text bubble that followed it; append the
-      // server's authoritative locked card + continue_cta.
-      setMessages((m) => {
-        const idx = m.findIndex((x) => x.id === message.id);
-        const filtered = idx >= 0 ? m.slice(0, idx) : m;
-        return [...filtered, ...res.newMessages];
-      });
+      // Append the server's authoritative locked card + continue_cta.
+      // REQ-662 (cycle 5, m19 — pair 5): drop the clicked card only — the
+      // chat edits and replies after it stay (the server keeps them).
+      setMessages((m) => mergeLockedCard(m, message.id, res.newMessages));
       // REQ-464 (m33): the card Edit targeted is locked now — a composer
       // still holding only "Change the quote: " is cleared.
       setDraft((d) => dropBareEditSeed(d, editSeed));
@@ -5651,7 +5653,12 @@ export default function AsstChat({
                           : tFor(lang, "asstChat.jobOpts.sub")}
                       </p>
                     </div>
-                    {optionsLoading || !jobOptions
+                    {
+                      /* REQ-662 (cycle 5, m19): the loader only while a
+                        request runs; a restored picker without options
+                        refetches them on load (restoredPickerAction). */
+                    }
+                    {optionsLoading
                       ? (
                         <div class="chat__jobopts-loading">
                           <span class="chat__details-dots" aria-hidden="true">
@@ -5676,7 +5683,7 @@ export default function AsstChat({
                             )
                             : null}
                           <div class="chat__jobopts-list">
-                            {jobOptions.map((opt, i) => {
+                            {(jobOptions ?? []).map((opt, i) => {
                               const selected = selectedOptionId === opt.id;
                               return (
                                 <div

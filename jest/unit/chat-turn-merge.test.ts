@@ -52,7 +52,7 @@ describe("REQ-585 M30 mergeTurnMessages: a turn's messages land in the thread", 
   test("the chat island merges a turn's newMessages by id", () => {
     const island = read("front-end/islands/AsstChat.tsx");
     expect(island).toMatch(
-      /import \{ mergeTurnMessages \} from "\.\.\/lib\/turn-messages\.ts"/,
+      /import \{[^}]*\bmergeTurnMessages\b[^}]*\} from "\.\.\/lib\/turn-messages\.ts"/, // REQ-662 adds mergeLockedCard
     );
     const turn = island.slice(island.indexOf("async function submitTurn("));
     const body = turn.slice(0, turn.indexOf("async function sendText("));

@@ -23,7 +23,8 @@ const island = () =>
 function pickerHead(src: string): string {
   const start = src.indexOf('<div class="chat__jobopts">');
   expect(start).toBeGreaterThan(-1);
-  const sw = src.indexOf("{optionsLoading || !jobOptions", start);
+  // REQ-662 (cycle 5, m19): the switch is on optionsLoading alone now.
+  const sw = src.indexOf("{optionsLoading\n", start);
   expect(sw).toBeGreaterThan(start);
   return src.slice(start, sw);
 }

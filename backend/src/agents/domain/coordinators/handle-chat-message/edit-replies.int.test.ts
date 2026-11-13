@@ -433,10 +433,11 @@ Deno.test("REQ-585 M4 pair 7: on the start-date card 'we start monday nov 23 …
     ],
     ["start_date", "custom", iso],
   );
+  // REQ-662 (cycle 5, m19): the reply sits before the next question.
   const kinds = res.newMessages.map((m) => m.kind);
   assertEquals(
     kinds,
-    ["text", "text", "wizard", "text"],
+    ["text", "text", "text", "wizard"],
     JSON.stringify(kinds),
   );
   assertEquals(
@@ -444,7 +445,7 @@ Deno.test("REQ-585 M4 pair 7: on the start-date card 'we start monday nov 23 …
     `Start: ${formatTermDate(iso, "en")}`,
   );
   assertEquals(
-    (res.newMessages[2].payload as { stepId?: string }).stepId,
+    (res.newMessages[3].payload as { stepId?: string }).stepId,
     "wraps",
   );
   const stored = await ctx.quotes.getOwned(quote.id, "u-1");
@@ -457,7 +458,7 @@ Deno.test("REQ-585 M4 pair 7: on the start-date card 'we start monday nov 23 …
     "50_50",
   );
 
-  const reply = res.newMessages[3].content;
+  const reply = res.newMessages[2].content;
   assertStringIncludes(
     reply,
     `Set the start date to ${formatTermDate(iso, "en")}.`,
@@ -471,7 +472,7 @@ Deno.test("REQ-585 M4 pair 7: on the start-date card 'we start monday nov 23 …
   assert(!reply.includes("couldn't find a line"), reply);
   assert(!reply.includes("already say that"), reply);
   assertEquals(
-    (res.newMessages[3].payload as { quoteUpdated?: string }).quoteUpdated,
+    (res.newMessages[2].payload as { quoteUpdated?: string }).quoteUpdated,
     quote.id,
   );
   await resetKv();
@@ -761,5 +762,56 @@ Deno.test("REQ-585 M4: several changes in one turn keep the model's answer after
     (await ctx.quotes.getOwned(quoteId, "u-1")).estimatedTotal,
     2_045_000,
   );
+  await resetKv();
+});
+
+// ---------------------------------------------------------------------------
+// REQ-662 (demo-loop cycle 5, m19 b) — pair 7: "The job details already say
+// that…" first showed BELOW the "When do you want to get paid?" card, then
+// jumped ABOVE "Payment: 50/50" once she answered it (fleet-6 stdout:185-186).
+// The turn's reply now sits before the next question — live and on reload.
+// ---------------------------------------------------------------------------
+
+Deno.test("REQ-662 m19 pair 7: a turn that answers the active step puts its reply before the next question card — in newMessages and in the stored transcript", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const ctx = fresh();
+  const { convId } = await boundDraft(ctx, {
+    summary: "Henderson Kitchen Gut",
+    description: HENDERSON,
+    lines: [["Detailed kitchen gut and remodel", 3_800_000]],
+  }, { terms: true });
+  const terms: LLMAction = {
+    type: "update_terms",
+    payload: { startDate: "monday nov 23" },
+  };
+  answer(ctx.llm, { text: "Set.", action: terms, actions: [terms] });
+  const res = await ctx.flow.run({
+    userId: "u-1",
+    conversationId: convId,
+    content: "we start monday nov 23",
+    step: { id: "wizard", wizardStepId: "start_date" },
+  });
+
+  const shape = (m: { role: string; kind: string; payload?: unknown }) =>
+    m.kind === "wizard"
+      ? `wizard:${(m.payload as { stepId?: string }).stepId}`
+      : `${m.role}:${m.kind}`;
+  // her message, the pick it made, the reply — and the next question last.
+  assertEquals(res.newMessages.map(shape), [
+    "user:text",
+    "user:text",
+    "assistant:text",
+    "wizard:wraps",
+  ]);
+  const stored = await ctx.messages.listByConversation(convId);
+  const ids = res.newMessages.map((m) => m.id);
+  assertEquals(
+    stored.slice(-4).map((m) => m.id),
+    ids,
+    "a reload shows the turn in the order it was shown live",
+  );
+  const times = res.newMessages.map((m) => m.createdAt);
+  assertEquals([...times].sort(), times, "createdAt follows the shown order");
   await resetKv();
 });

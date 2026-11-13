@@ -1053,6 +1053,11 @@ export class HandleChatMessage {
     // go out before the reply, as they sit in the transcript; terms that
     // could not be set are named.
     const wizardMessages: AgentMessage[] = [];
+    // REQ-662 (cycle 5, m19 — pair 7): the step's next question (or the
+    // send CTA) follows the reply — it is what waits on the contractor. Shown
+    // above the reply, it was then answered away and the reply jumped above
+    // the new pick line.
+    const wizardPrompts: AgentMessage[] = [];
     const termsSet: string[] = [];
     const termsNotSet: string[] = [];
     // REQ-585 (M4): a revise naming a job-details bullet is said to be one —
@@ -1111,7 +1116,9 @@ export class HandleChatMessage {
             continue;
           }
           if (done.kind === "answered") {
-            wizardMessages.push(...done.result.newMessages);
+            for (const m of done.result.newMessages) {
+              (m.role === "user" ? wizardMessages : wizardPrompts).push(m);
+            }
           }
           if (done.kind === "changed") wizardMessages.push(done.pick);
           if (
@@ -1252,6 +1259,20 @@ export class HandleChatMessage {
       content: parts.filter(Boolean).join(" "),
       payload,
     });
+    // REQ-662: re-stored after the reply, so a reload shows the same order.
+    await this.messages.deleteByIds(conv.id, wizardPrompts.map((m) => m.id));
+    const prompts: AgentMessage[] = [];
+    for (const m of wizardPrompts) {
+      prompts.push(
+        await this.messages.append({
+          conversationId: conv.id,
+          role: m.role,
+          kind: m.kind,
+          content: m.content,
+          payload: m.payload,
+        }),
+      );
+    }
     const first = history.length === 1 && history[0].id === userMsg.id;
     const updated = await this.conversations.update(conv.id, {
       preview: derivePreview(reply.content),
@@ -1261,7 +1282,7 @@ export class HandleChatMessage {
     });
     return {
       conversation: updated,
-      newMessages: [userMsg, ...wizardMessages, reply],
+      newMessages: [userMsg, ...wizardMessages, reply, ...prompts],
     };
   }
 
