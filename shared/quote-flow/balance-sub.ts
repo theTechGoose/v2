@@ -9,9 +9,11 @@
  * client words it with `balanceSubLabel`; the card's `balanceSub` string is
  * the same words in English, the language-neutral base.
  *
- * Dependency-free: imported by the backend (#quote-flow/), the front-end and
- * the Jest unit suite. Translation is injected.
+ * Dependency-free (but for the shared date formatter): imported by the
+ * backend (#quote-flow/), the front-end and the Jest unit suite. Translation
+ * is injected.
  */
+import { formatShortDate } from "./format-helpers.ts";
 
 export type BalanceSubKind =
   | "overdue"
@@ -20,6 +22,7 @@ export type BalanceSubKind =
   | "owes"
   | "onFile"
   | "quoteOut"
+  | "toBill"
   | "settled";
 
 export interface BalanceSubParts {
@@ -28,8 +31,11 @@ export interface BalanceSubParts {
   ref?: string;
   /** Days until due — dueIn. */
   days?: number;
-  /** Credit on file / the open quote's total, in cents — onFile / quoteOut. */
+  /** Credit on file / the open quote's total / what is still to bill, in
+   *  cents — onFile / quoteOut / toBill. */
   amountCents?: number;
+  /** REQ-696: the soonest scheduled installment's send day (YYYY-MM-DD) — toBill. */
+  date?: string;
 }
 
 /** `tFor(lang, key, vars)` (front-end) / `t(lang, key, vars)` (backend). */
@@ -65,6 +71,13 @@ export function balanceSubLabel(
     case "onFile":
     case "quoteOut":
       return t(lang, key, { amount: balanceDollars(parts.amountCents ?? 0) });
+    // REQ-696 (demo-loop cycle 5, M5): "$350 to bill · Nov 20"
+    case "toBill": {
+      const amount = balanceDollars(parts.amountCents ?? 0);
+      return parts.date
+        ? t(lang, key, { amount, date: formatShortDate(parts.date, lang) })
+        : t(lang, `${key}.undated`, { amount });
+    }
     default:
       return t(lang, key);
   }

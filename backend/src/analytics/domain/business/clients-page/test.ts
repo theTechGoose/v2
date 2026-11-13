@@ -117,3 +117,10 @@ Deno.test("REQ-320 (demo m15, cycle 1) clients-page — a signed job in flight c
   assertEquals(active.total, active.counts.active, "count and list agree");
   assertEquals(clientsPage(cards, { status: "owes" }).items.map((c) => c.name), ["Ana Pérez"]);
 });
+
+Deno.test("REQ-696 (cycle 5, M5) clients-page — the owed total counts open receivables no card carries (an invoice billed to a typed name, written before REQ-696)", () => {
+  const cards = [card({ balanceCents: 100_00 })];
+  assertEquals(summarize(cards).owedCents, 100_00);
+  assertEquals(summarize(cards, 200_00).owedCents, 300_00);
+  assertEquals(clientsPage(cards, {}, 200_00).summary.owedCents, 300_00);
+});

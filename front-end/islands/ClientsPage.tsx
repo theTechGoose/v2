@@ -38,6 +38,7 @@ import {
   ShimmerStyle,
 } from "../components/Skeletons.tsx";
 import { langSignal, tFor } from "../lib/i18n.ts";
+import { followChanges, isDocChange } from "../lib/change-feed.ts";
 
 interface State {
   loading: boolean;
@@ -255,6 +256,15 @@ export default function ClientsPage({ lang: _lang }: { lang?: "en" | "es" }) {
       alive = false;
     };
   }, [page, q, filter]);
+
+  // REQ-696 (demo-loop cycle 5, M5): a signature, payment or new invoice
+  // re-reads the page shown (REQ-493's change feed) — the roster read
+  // "0 trabajos firmados" after a signature toast until a reload.
+  useEffect(() => followChanges(isDocChange, refreshClients), [
+    page,
+    q,
+    filter,
+  ]);
 
   // REQ-600 (cycle 4, M5): a linked card (?open=<id>) that is not on the first
   // page is searched for by name, once, so the board can open it

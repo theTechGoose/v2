@@ -16,6 +16,7 @@ import type { Invoice } from "@paperwork/dto/invoice.ts";
 import type { ChangeOrder } from "@paperwork/dto/change-order.ts";
 import {
   isOpenReceivable,
+  isUpcomingReceivable,
   receivableBalanceCents,
 } from "@paperwork/domain/business/open-receivable/mod.ts";
 import type { View } from "@paperwork/dto/view.ts";
@@ -262,6 +263,23 @@ export function unassignedPaidRevenue(
   return { invoiceCount, revenue12moCents };
 }
 
+/** REQ-696 (demo-loop cycle 5, M5): what is owed on invoices no customer
+ *  card carries — no customer (an invoice billed to a typed name before
+ *  REQ-696 attached one), or one that is gone — on the shared REQ-397
+ *  open-receivable rule, at what is still owed. The roster's owed total adds
+ *  it, so "$0 que te deben" never stands over money that is owed. */
+export function unassignedOwedCents(
+  invoices: ReadonlyArray<Invoice>,
+  customerIds: ReadonlySet<string>,
+): number {
+  let cents = 0;
+  for (const i of invoices) {
+    if (i.customerId && customerIds.has(i.customerId)) continue;
+    if (isOpenReceivable(i)) cents += receivableBalanceCents(i);
+  }
+  return cents;
+}
+
 export function documentsFor(
   quotes: Quote[],
   invoices: Invoice[],
@@ -362,7 +380,7 @@ export function deriveStatus(args: {
  * story template printed verbatim ("$600 pendiente · owes."). REQ-367: it is
  * data — the reader words it (shared balanceSubLabel) in its own language.
  */
-function buildBalanceSub(
+export function buildBalanceSub(
   balanceCents: number,
   invoices: Invoice[],
   quotes: Quote[],
@@ -387,6 +405,19 @@ function buildBalanceSub(
     return { kind: "owes" };
   }
   if (balanceCents < 0) return { kind: "onFile", amountCents: -balanceCents };
+  // REQ-696 (demo-loop cycle 5, M5): nothing owed yet, but a signed job's
+  // scheduled installment is still to bill — "$350 to bill · Nov 20", never
+  // "settled" (the stage said "Queda por facturar $350" over "Saldado").
+  const upcoming = invoices.filter(isUpcomingReceivable);
+  if (upcoming.length > 0) {
+    const dates = upcoming.map((i) => i.scheduledFor || i.dueDate)
+      .filter((d): d is string => !!d).sort();
+    return {
+      kind: "toBill",
+      amountCents: upcoming.reduce((s, i) => s + receivableBalanceCents(i), 0),
+      ...(dates[0] ? { date: dates[0].slice(0, 10) } : {}),
+    };
+  }
   const openQuote = quotes.find((q) => q.status === "sent");
   if (openQuote) {
     // estimatedTotal is INTEGER CENTS now (audit1 #3).

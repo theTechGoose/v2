@@ -2,6 +2,7 @@ import { assertEquals } from "#std/assert";
 import {
   ComputeInvoiceForecast,
   forecastEntryFor,
+  forecastLabelBase,
   settlementOffsetDays,
 } from "./mod.ts";
 import type { Invoice } from "@paperwork/dto/invoice.ts";
@@ -243,4 +244,74 @@ Deno.test("REQ-484 m12: on a Sunday, this week is just today and Monday starts n
   ]).run("u-1", now);
   assertEquals(r.thisWeek.map((e) => e.invoiceId), ["today"]);
   assertEquals(r.nextWeekCents, 110_00);
+});
+
+// REQ-696 (demo-loop cycle 5, M22): an invoice billed to a typed BILL TO name
+// with no customer read "jue: Invoice $200" on the Spanish /invoices hero —
+// the label fell back to an English literal and never read the bill-to.
+Deno.test("REQ-696 M22 forecastLabelBase — the customer's name first", () => {
+  assertEquals(
+    forecastLabelBase(
+      "Hansen",
+      inv({ billTo: { name: "Jorge Ruiz" } }),
+      "Deck",
+    ),
+    "Hansen",
+  );
+});
+
+Deno.test("REQ-696 M22 forecastLabelBase — no customer: the bill-to name, then its business name", () => {
+  assertEquals(
+    forecastLabelBase(
+      undefined,
+      inv({ billTo: { name: " Jorge Ruiz " } }),
+      "Deck",
+    ),
+    "Jorge Ruiz",
+  );
+  assertEquals(
+    forecastLabelBase(
+      undefined,
+      inv({ billTo: { businessName: "Ruiz LLC" } }),
+      undefined,
+    ),
+    "Ruiz LLC",
+  );
+});
+
+Deno.test("REQ-696 M22 forecastLabelBase — no one named: the job, its own or by language", () => {
+  assertEquals(
+    forecastLabelBase(undefined, inv({ quoteId: undefined }), "Deck"),
+    "Deck",
+  );
+  assertEquals(
+    forecastLabelBase(
+      undefined,
+      inv({ quoteId: undefined, jobName: "Fence" }),
+      undefined,
+    ),
+    "Fence",
+  );
+  assertEquals(
+    forecastLabelBase(
+      undefined,
+      {
+        ...inv({ quoteId: undefined }),
+        jobNameByLang: { es: "Cerca" },
+      } as Invoice,
+      undefined,
+    ),
+    "Cerca",
+  );
+});
+
+Deno.test("REQ-696 M22 forecastLabelBase — nothing else: the invoice's own number, never the English 'Invoice'", () => {
+  assertEquals(
+    forecastLabelBase(
+      undefined,
+      inv({ quoteId: undefined, number: "INV-002" }),
+      undefined,
+    ),
+    "INV-002",
+  );
 });

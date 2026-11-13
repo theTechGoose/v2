@@ -95,11 +95,13 @@ export function countByStatus(cards: readonly CustomerCard[]): ClientsCounts {
   return counts;
 }
 
-export function summarize(cards: readonly CustomerCard[]): ClientsSummary {
+/** REQ-696 (cycle 5, M5): `unassignedOwedCents` — open receivables no card carries — is owed too */
+export function summarize(cards: readonly CustomerCard[], unassignedOwedCents = 0): ClientsSummary {
   return {
     totalClients: cards.length,
     activeJobs: cards.filter(hasJobInFlight).length,
-    owedCents: cards.reduce((sum, c) => sum + (c.balanceCents > 0 ? c.balanceCents : 0), 0),
+    owedCents: cards.reduce((sum, c) => sum + (c.balanceCents > 0 ? c.balanceCents : 0), 0) +
+      Math.max(0, unassignedOwedCents),
     quietCount: cards.filter((c) => c.status === "cold").length,
   };
 }
@@ -120,14 +122,18 @@ export function isClientsFilter(s: unknown): s is ClientsFilter {
   return typeof s === "string" && (CLIENTS_FILTERS as readonly string[]).includes(s);
 }
 
-export function clientsPage(cards: readonly CustomerCard[], query: ClientsPageQuery = {}): ClientsPageResponse {
+export function clientsPage(
+  cards: readonly CustomerCard[],
+  query: ClientsPageQuery = {},
+  unassignedOwedCents = 0,
+): ClientsPageResponse {
   const status: ClientsFilter = isClientsFilter(query.status) ? query.status : "all";
   const matched = cards.filter((c) => matchesQuery(c, query.q));
   const cut = matched.filter((c) => inFilter(c, status));
   return {
     ...pageOf(sortByName(cut), query.page, query.pageSize),
     counts: countByStatus(matched),
-    summary: summarize(cards),
+    summary: summarize(cards, unassignedOwedCents),
     loop: loopPicks(cards),
   };
 }
