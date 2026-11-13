@@ -57,6 +57,7 @@ export default define.page(function ReportsRoute(ctx) {
           href={asset("/dashboard.css")}
         />
         <link key="css-quotes" rel="stylesheet" href={asset("/quotes.css")} />
+        <link key="css-reports" rel="stylesheet" href={asset("/reports.css")} />
       </Head>
       <div class="app">
         <DashSidebar active="reports" />

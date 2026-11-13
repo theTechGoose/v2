@@ -9,6 +9,7 @@
  */
 import { useEffect, useMemo, useState } from "preact/hooks";
 import { type Lang, langSignal, tFor } from "../lib/i18n.ts";
+import { I, ICN } from "../lib/dash-icons.tsx";
 import {
   type DateRange,
   isValidRange,
@@ -23,17 +24,6 @@ import {
 interface Props {
   initialLang?: Lang;
 }
-
-const CARD =
-  "background:#fff;border:1px solid var(--border,#d8dcd5);border-radius:20px;padding:18px 20px;margin-bottom:16px";
-const LEGEND =
-  "display:block;font-family:var(--font-heading);font-weight:800;font-size:13px;letter-spacing:.04em;text-transform:uppercase;color:var(--brand-teal,#144852);margin:0 0 12px";
-const OPTION =
-  "display:flex;gap:12px;align-items:flex-start;padding:10px 12px;border-radius:12px;border:1px solid transparent;cursor:pointer";
-const OPTION_ON =
-  "background:var(--brand-green-soft,#e8f3e4);border-color:var(--brand-green,#519843)";
-const INPUT =
-  "font:inherit;padding:9px 12px;border:1px solid var(--border,#d8dcd5);border-radius:10px;background:#fff;color:inherit";
 
 export default function ReportsPage({ initialLang }: Props) {
   const [, force] = useState(0);
@@ -71,27 +61,32 @@ export default function ReportsPage({ initialLang }: Props) {
     : tFor(lang, "reportsPage.rangeTo", { to: range.to ?? "" });
 
   return (
-    <section data-cy="reports-page" style="max-width:760px">
-      <header class="qph" style="display:block">
-        <h1 class="qph__title" style="margin:0 0 6px">
-          {tFor(lang, "reportsPage.title")}
-        </h1>
-        <p class="qph__sub" style="margin:0">
-          {tFor(lang, "reportsPage.intro")}
-        </p>
+    <section data-cy="reports-page" class="rp">
+      <header class="qph">
+        <div class="qph__copy">
+          <div class="qph__eyebrow">
+            <span class="qph__eyebrow-dot" />{" "}
+            {tFor(lang, "reportsPage.eyebrow")}
+          </div>
+          <h1 class="qph__title">
+            {tFor(lang, "reportsPage.titlePre")}{" "}
+            <em>{tFor(lang, "reportsPage.titleEm")}</em>.
+          </h1>
+          <p class="qph__sub">{tFor(lang, "reportsPage.intro")}</p>
+        </div>
       </header>
 
-      <section style={CARD}>
-        <h2 style={LEGEND}>{tFor(lang, "reportsPage.sliceLabel")}</h2>
-        <div
-          role="radiogroup"
-          style="display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:6px"
-        >
+      <section class="rp__step">
+        <div class="rp__head">
+          <span class="rp__num">01</span>
+          <h2 class="rp__title">{tFor(lang, "reportsPage.sliceLabel")}</h2>
+        </div>
+        <div role="radiogroup" class="rp__tiles">
           {REPORT_SLICES.map((s) => (
             <label
               key={s.id}
               data-cy={`report-slice-${s.id}`}
-              style={OPTION + (slice === s.id ? ";" + OPTION_ON : "")}
+              class={"rp__tile" + (slice === s.id ? " rp__tile--on" : "")}
             >
               <input
                 type="radio"
@@ -99,24 +94,27 @@ export default function ReportsPage({ initialLang }: Props) {
                 value={s.id}
                 checked={slice === s.id}
                 onChange={() => setSlice(s.id)}
-                style="margin-top:4px"
               />
-              <span>
-                <strong style="display:block;font-size:14px">
-                  {tFor(lang, `reportsPage.slice.${s.id}`)}
-                </strong>
-                <span style="font-size:12.5px;color:var(--fg-muted,#6b7560)">
-                  {tFor(lang, `reportsPage.sliceHint.${s.id}`)}
-                </span>
+              <span class="rp__tile-name">
+                {tFor(lang, `reportsPage.slice.${s.id}`)}
+              </span>
+              <span class="rp__tile-hint">
+                {tFor(lang, `reportsPage.sliceHint.${s.id}`)}
+              </span>
+              <span class="rp__tick" aria-hidden="true">
+                <I d={ICN.check} size={13} sw={3} />
               </span>
             </label>
           ))}
         </div>
       </section>
 
-      <section style={CARD}>
-        <h2 style={LEGEND}>{tFor(lang, "reportsPage.datesLabel")}</h2>
-        <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px">
+      <section class="rp__step">
+        <div class="rp__head">
+          <span class="rp__num">02</span>
+          <h2 class="rp__title">{tFor(lang, "reportsPage.datesLabel")}</h2>
+        </div>
+        <div class="rp__chips">
           {REPORT_PRESETS.map((p) => (
             <button
               key={p}
@@ -124,18 +122,15 @@ export default function ReportsPage({ initialLang }: Props) {
               data-cy={`report-preset-${p}`}
               aria-pressed={preset === p}
               onClick={() => setPreset(p)}
-              style={"font:inherit;font-weight:700;font-size:13px;padding:8px 14px;border-radius:999px;cursor:pointer;" +
-                (preset === p
-                  ? "background:var(--brand-teal,#144852);color:#fff;border:1px solid var(--brand-teal,#144852)"
-                  : "background:#fff;color:var(--brand-teal,#144852);border:1px solid var(--border,#d8dcd5)")}
+              class={"rp__chip" + (preset === p ? " rp__chip--on" : "")}
             >
               {tFor(lang, `reportsPage.preset.${p}`)}
             </button>
           ))}
         </div>
         {preset === "custom" && (
-          <div style="display:flex;flex-wrap:wrap;gap:14px;align-items:flex-end">
-            <label style="display:grid;gap:4px;font-size:13px;font-weight:700">
+          <div class="rp__custom">
+            <label class="rp__field">
               {tFor(lang, "reportsPage.from")}
               <input
                 type="date"
@@ -147,10 +142,9 @@ export default function ReportsPage({ initialLang }: Props) {
                     from: (e.currentTarget as HTMLInputElement).value ||
                       undefined,
                   }))}
-                style={INPUT}
               />
             </label>
-            <label style="display:grid;gap:4px;font-size:13px;font-weight:700">
+            <label class="rp__field">
               {tFor(lang, "reportsPage.to")}
               <input
                 type="date"
@@ -162,48 +156,45 @@ export default function ReportsPage({ initialLang }: Props) {
                     to: (e.currentTarget as HTMLInputElement).value ||
                       undefined,
                   }))}
-                style={INPUT}
               />
             </label>
           </div>
         )}
-        <p
-          data-cy="report-range-text"
-          style="margin:12px 0 0;font-size:13px;color:var(--fg-muted,#6b7560)"
-        >
-          {valid ? rangeText : ""}
-        </p>
-        {!valid && (
-          <p
-            role="alert"
-            data-cy="report-range-error"
-            style="margin:8px 0 0;font-size:13px;font-weight:700;color:var(--brand-pink,#ff6b6b)"
-          >
-            {tFor(lang, "reportsPage.errRange")}
-          </p>
-        )}
+        {valid
+          ? <p class="rp__range" data-cy="report-range-text">{rangeText}</p>
+          : (
+            <p role="alert" class="rp__err" data-cy="report-range-error">
+              <I d={ICN.alert} size={14} sw={2.5} />{" "}
+              {tFor(lang, "reportsPage.errRange")}
+            </p>
+          )}
       </section>
 
-      <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap">
+      <div class="rp__go">
+        <div class="rp__go-copy">
+          <div class="rp__go-lbl">{tFor(lang, "reportsPage.readyLbl")}</div>
+          <div class="rp__go-what">
+            {tFor(lang, `reportsPage.slice.${slice}`)}
+          </div>
+          <div class="rp__go-when">
+            {valid ? rangeText : tFor(lang, "reportsPage.errRange")}
+          </div>
+        </div>
         {valid
           ? (
-            <a
-              class="qph__cta"
-              data-cy="report-download"
-              href={href}
-              download
-            >
-              ⬇ {tFor(lang, "reportsPage.download")}
+            <a class="qph__cta" data-cy="report-download" href={href} download>
+              <I d={ICN.doc} size={14} sw={2.5} />{" "}
+              {tFor(lang, "reportsPage.download")}
             </a>
           )
           : (
             <span
-              class="qph__cta"
+              class="qph__cta rp__cta--off"
               data-cy="report-download"
               aria-disabled="true"
-              style="opacity:.45;cursor:not-allowed;box-shadow:none"
             >
-              ⬇ {tFor(lang, "reportsPage.download")}
+              <I d={ICN.doc} size={14} sw={2.5} />{" "}
+              {tFor(lang, "reportsPage.download")}
             </span>
           )}
       </div>
