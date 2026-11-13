@@ -5,7 +5,10 @@
  * below. Invoices themselves are the existing feature (REQ-137) — a card only
  * links to that invoice (REQ-162); since REQ-790 the link opens the
  * customer-facing page /i/<id> in a new tab — what the customer would see —
- * never the invoices list. Nothing is edited here.
+ * never the invoices list. Nothing else is edited here: REQ-810 lets a DRAFT
+ * leave the batch ("Remove from batch", confirmed inline in its card) and a
+ * draft's line leave its invoice (the line's ×) — each frees its tasks, and the
+ * page updates in place from the batch the server answers.
  *
  * Ported from a2z/web/lotes.html (minus the demo driver and the inline line
  * editor, which belongs to the invoices page).
@@ -26,7 +29,9 @@ import {
   batchCounts,
   defaultBatchChecks,
   describeSend,
+  lineKey,
   pluralParens,
+  replaceBatch,
   type SendFailureLine,
 } from "../lib/field-batches.ts";
 import { langSignal, t, tn, type Vars } from "../lib/i18n.ts";
@@ -112,6 +117,14 @@ export default function FieldBatchesPage(
     defaultBatchChecks(seeded?.[0] ?? null, new Set())
   );
   const [busy, setBusy] = useState<"pull" | "send" | null>(null);
+  // REQ-810: the card whose removal is running ("<invoiceId>" or "<invoiceId>:<line>"), its inline ask, its error
+  const [removing, setRemoving] = useState<string | null>(null);
+  const [asking, setAsking] = useState<string | null>(null);
+  const [cardError, setCardError] = useState<
+    { id: string; text: string } | null
+  >(
+    null,
+  );
   const [loading, setLoading] = useState(!seed);
 
   // Default range: the last two weeks. Resolved in an effect — the browser's
@@ -210,6 +223,81 @@ export default function FieldBatchesPage(
     }
   }
 
+  /** REQ-810: the batch as the server now has it — the open batch, the list (a batch left empty drops off it), the ticks */
+  function applyBatch(b: BatchView) {
+    setCurrent(b);
+    setBatches((all) => pastBatches(replaceBatch(all, b)));
+    setChecked((prev) =>
+      new Set([...prev].filter((id) => b.invoiceIds.includes(id)))
+    );
+    setZeroBlocked(false);
+  }
+
+  /** REQ-810: a refused removal — said in the card; a stale row shows the invoice as it is now */
+  function removalFailed(invoiceId: string, e: unknown) {
+    const body = e instanceof ApiError
+      ? e.body as
+        | { code?: string; detail?: { invoice?: BatchInvoice } }
+        | null
+      : null;
+    const fresh = body?.detail?.invoice;
+    if (fresh && current) {
+      applyBatch({
+        ...current,
+        invoices: current.invoices.map((i) => i.id === fresh.id ? fresh : i),
+      });
+    }
+    const text = body?.code === "stale_line"
+      ? t("field.lt.stale")
+      : body?.code === "not_draft"
+      ? t("field.lt.notDraft")
+      : errorMessage(e);
+    setCardError({ id: invoiceId, text });
+  }
+
+  async function removeInvoice(inv: BatchInvoice) {
+    if (!current || removing) return;
+    setRemoving(inv.id);
+    setCardError(null);
+    setError(null);
+    try {
+      const b = await fieldClient.removeInvoice(current.id, inv.id);
+      setAsking(null);
+      applyBatch(b);
+      setFlash(t("field.lt.removed"));
+    } catch (e) {
+      removalFailed(inv.id, e);
+    } finally {
+      setRemoving(null);
+    }
+  }
+
+  async function removeLine(inv: BatchInvoice, index: number) {
+    const line = inv.lineItems?.[index];
+    if (!current || removing || !line) return;
+    setRemoving(`${inv.id}:${index}`);
+    setCardError(null);
+    setError(null);
+    try {
+      const b = await fieldClient.removeLine(
+        current.id,
+        inv.id,
+        index,
+        lineKey(line),
+      );
+      applyBatch(b);
+      setFlash(
+        b.invoiceIds.includes(inv.id)
+          ? t("field.lt.lineRemoved")
+          : t("field.lt.removed"),
+      );
+    } catch (e) {
+      removalFailed(inv.id, e);
+    } finally {
+      setRemoving(null);
+    }
+  }
+
   function openBatch(b: BatchView) {
     setCurrent(b);
     setSummary(null);
@@ -217,6 +305,8 @@ export default function FieldBatchesPage(
     setError(null);
     setFailures([]);
     setZeroBlocked(false);
+    setAsking(null);
+    setCardError(null);
     setChecked(defaultBatchChecks(b, new Set())); // REQ-608 — its drafts, ticked
   }
 
@@ -323,7 +413,7 @@ export default function FieldBatchesPage(
           <h3 class="panel__title">
             {t("field.lt.batch")} {fmtD(current.from, lang)} →{" "}
             {fmtD(current.to, lang)}{" "}
-            <span class="count">
+            <span class="count" data-cy="lt-count">
               {tp("field.lt.invoices", { n: current.invoices.length })}
             </span>
             <span style="flex:1"></span>
@@ -370,14 +460,30 @@ export default function FieldBatchesPage(
           </h3>
           <div class="hint" style="margin-bottom:10px">
             {t("field.lt.noteHint")} ·{" "}
-            <b>{t("field.lt.total")}: {fmtMoneyExact(batchTotal(current))}</b>
+            <b data-cy="lt-batch-total">
+              {t("field.lt.total")}: {fmtMoneyExact(batchTotal(current))}
+            </b>
           </div>
+          {current.invoices.length === 0 && (
+            <div class="hint" data-cy="lt-empty">
+              {t("field.lt.emptyBatch")}
+            </div>
+          )}
           {current.invoices.map((inv) => (
             <InvoiceCard
               key={inv.id}
               inv={inv}
               checked={checked.has(inv.id)}
               onToggle={(on) => toggle(inv.id, on)}
+              removing={removing}
+              asking={asking === inv.id}
+              error={cardError?.id === inv.id ? cardError.text : null}
+              onAsk={(on) => {
+                setAsking(on ? inv.id : null);
+                setCardError(null);
+              }}
+              onRemove={() => removeInvoice(inv)}
+              onRemoveLine={(i) => removeLine(inv, i)}
             />
           ))}
         </div>
@@ -417,14 +523,32 @@ export default function FieldBatchesPage(
 }
 
 function InvoiceCard(
-  { inv, checked, onToggle }: {
+  {
+    inv,
+    checked,
+    onToggle,
+    removing,
+    asking,
+    error,
+    onAsk,
+    onRemove,
+    onRemoveLine,
+  }: {
     inv: BatchInvoice;
     checked: boolean;
     onToggle: (on: boolean) => void;
+    /** REQ-810: the removal running on the page ("<invoiceId>" or "<invoiceId>:<line>"), if any */
+    removing: string | null;
+    asking: boolean;
+    error: string | null;
+    onAsk: (on: boolean) => void;
+    onRemove: () => void;
+    onRemoveLine: (index: number) => void;
   },
 ) {
   const draft = inv.status === "draft";
   const lines = inv.lineItems ?? [];
+
   return (
     <div
       class={`inv${draft ? "" : " inv--sent"}`}
@@ -447,12 +571,34 @@ function InvoiceCard(
             {t("field.lt.zero", { n: inv.zeroLines })}
           </span>
         )}
-        <span class="inv__total">{fmtMoneyExact(inv.amount)}</span>
+        <span class="inv__total" data-cy="lt-inv-total">
+          {fmtMoneyExact(inv.amount)}
+        </span>
       </div>
       <div class="inv__line">
         {lines.map((l, i) => (
-          <div key={i}>
-            {l.description} — {fmtMoneyExact(l.price)}
+          <div
+            key={`${i}:${l.taskId ?? l.description}`}
+            class="inv__row"
+            data-cy="lt-line"
+          >
+            <span>{l.description} — {fmtMoneyExact(l.price)}</span>
+            {draft && (
+              <button
+                type="button"
+                class="inv__x"
+                data-cy="lt-line-remove"
+                aria-label={t("field.lt.removeLine")}
+                title={t("field.lt.removeLine")}
+                aria-busy={removing === `${inv.id}:${i}`}
+                disabled={removing !== null}
+                onClick={() => onRemoveLine(i)}
+              >
+                {removing === `${inv.id}:${i}`
+                  ? <span class="inv__spin" aria-hidden="true">…</span>
+                  : <I d={ICN.x} size={12} />}
+              </button>
+            )}
           </div>
         ))}
         <a
@@ -466,6 +612,51 @@ function InvoiceCard(
           {t("field.lt.openInvoice")}
         </a>
       </div>
+      {draft && (
+        <div class="inv__actions">
+          {asking
+            ? (
+              <span class="inv__ask" data-cy="lt-remove-ask">
+                <span>{t("field.lt.removeAsk")}</span>
+                <button
+                  type="button"
+                  class="btn btn--danger btn--sm"
+                  data-cy="lt-remove-confirm"
+                  aria-busy={removing === inv.id}
+                  disabled={removing !== null}
+                  onClick={onRemove}
+                >
+                  {removing === inv.id
+                    ? t("field.common.loading")
+                    : t("field.lt.removeYes")}
+                </button>
+                <button
+                  type="button"
+                  class="btn btn--ghost btn--sm"
+                  data-cy="lt-remove-cancel"
+                  disabled={removing === inv.id}
+                  onClick={() => onAsk(false)}
+                >
+                  {t("field.common.cancel")}
+                </button>
+              </span>
+            )
+            : (
+              <button
+                type="button"
+                class="btn btn--ghost btn--sm inv__remove"
+                data-cy="lt-remove"
+                disabled={removing !== null}
+                onClick={() => onAsk(true)}
+              >
+                <I d={ICN.trash} size={12} /> {t("field.lt.removeFromBatch")}
+              </button>
+            )}
+        </div>
+      )}
+      {error && (
+        <p class="alert" data-cy="lt-card-error" role="alert">{error}</p>
+      )}
     </div>
   );
 }

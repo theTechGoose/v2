@@ -1379,3 +1379,75 @@ Deno.test("REQ-788: the overhead cost set in Settings; the form's upper-right ch
     await page.locator("[data-cy='subs-overhead']").waitFor({ timeout: 15_000 });
     await expect.see("Overhead · 10%");
   }));
+
+// REQ-810 — "i need a way to remove invoices from a batch and a way to remove a row from batch.
+// i think a button inline would work in each case."
+Deno.test("REQ-810: a batch of two customers — × a line and the totals drop in place; Remove from batch → confirm → the card is gone and the counts update; a sent invoice shows no remove buttons", (t) =>
+  story(t, async ({ page, expect, http, baseUrl }) => {
+    const { auth } = await signIn(http, page, baseUrl);
+    const call = async (method: string, path: string, body?: unknown) => {
+      const r = await http(path, { method, headers: auth, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
+      return r.json();
+    };
+    const today = todayIso();
+    const worker = await call("POST", "/api/field/workers", { name: "Luis Herrera", phoneNumber: `843${digits()}`, pin: "1234" });
+    for (const [name, address, items] of [
+      ["Ana Torres", "4601 Dick Pond Rd, Myrtle Beach, SC", [{ taskTypeName: "Lawn cut", priceCents: 6500 }, { taskTypeName: "Hedge trim", priceCents: 4000 }]],
+      ["Bob Reyes", "845 Frederick Rd, Rockingham, VA", [{ taskTypeName: "Lawn cut", priceCents: 6500 }]],
+    ] as const) {
+      const c = await call("POST", "/api/customers", { name, address, email: `${name.replace(/\W+/g, ".").toLowerCase()}@blackhole.postmarkapp.com` });
+      const sub = await call("POST", "/api/field/subscriptions", { customerId: c.id, address, startDate: today, items });
+      await call("PUT", `/api/field/regions/${sub.region.id}/worker`, { workerId: worker.id });
+    }
+    const tasks = await call("GET", `/api/field/tasks?date=${today}`);
+    expect.eq(tasks.length, 3, "three tasks today");
+    for (const tk of tasks) await call("PUT", `/api/field/tasks/${tk.id}`, { status: "complete" });
+
+    await page.goto("/field/batches");
+    await page.locator("[data-cy='lt-from']").fill(today);
+    await page.locator("[data-cy='lt-to']").fill(today);
+    await page.locator("[data-cy='lt-pull']").click();
+    await page.locator("[data-cy='lt-invoice']").nth(1).waitFor({ timeout: 20_000 });
+    const card = (name: string) => page.locator("[data-cy='lt-invoice']").filter({ hasText: name });
+    const total = page.locator("[data-cy='lt-batch-total']");
+    expect.eq((await total.innerText()).includes("$170.00"), true, `batch total $170.00 (${await total.innerText()})`);
+    await page.evaluate(() => ((window as unknown as { __noReload: number }).__noReload = 1));
+
+    // × the Hedge line on Ana's card: the line leaves, her total and the batch total drop, no reload
+    const ana = card("Ana Torres");
+    expect.eq(await ana.locator("[data-cy='lt-line']").count(), 2, "Ana has two lines");
+    const hedge = ana.locator("[data-cy='lt-line']").filter({ hasText: "Hedge trim" });
+    const x = hedge.getByRole("button", { name: "Remove this line" });
+    await x.click();
+    await ana.locator("[data-cy='lt-line']").filter({ hasText: "Hedge trim" }).waitFor({ state: "detached", timeout: 20_000 });
+    expect.eq(await ana.locator("[data-cy='lt-line']").count(), 1, "one line left");
+    await ana.locator("[data-cy='lt-inv-total']").getByText("$65.00").waitFor({ timeout: 15_000 });
+    await total.getByText("$130.00").waitFor({ timeout: 15_000 });
+    expect.eq(await page.evaluate(() => (window as unknown as { __noReload?: number }).__noReload), 1, "the page updated in place");
+
+    // Remove from batch on Bob's card: an inline confirm, then the card is gone and the counts update
+    const bob = card("Bob Reyes");
+    await bob.locator("[data-cy='lt-remove']").click();
+    await bob.locator("[data-cy='lt-remove-ask']").waitFor({ timeout: 10_000 });
+    await bob.locator("[data-cy='lt-remove-confirm']").click();
+    await card("Bob Reyes").waitFor({ state: "detached", timeout: 20_000 });
+    expect.eq(await page.locator("[data-cy='lt-invoice']").count(), 1, "one card left");
+    await page.locator("[data-cy='lt-count']").getByText("1 invoice").waitFor({ timeout: 15_000 });
+    await total.getByText("$65.00").waitFor({ timeout: 15_000 });
+    await page.locator("[data-cy='lt-past']").first().getByText("1 draft · 0 sent · 0 paid").waitFor({ timeout: 15_000 });
+    expect.eq(await page.evaluate(() => (window as unknown as { __noReload?: number }).__noReload), 1, "still no reload");
+
+    // the freed work is billable again: Bob's task is un-invoiced
+    const after = await call("GET", `/api/field/tasks?date=${today}`);
+    expect.eq(after.filter((tk: { invoiceId?: string }) => !tk.invoiceId).length, 2, "Hedge trim and Bob's Lawn cut are un-invoiced");
+
+    // a sent invoice is a real invoice: no remove buttons on its card
+    const invId = await ana.getAttribute("data-id");
+    await call("PUT", `/api/invoices/${invId}`, { status: "sent" });
+    await page.reload();
+    const sent = card("Ana Torres");
+    await sent.waitFor({ timeout: 20_000 });
+    await sent.getByText("Sent").first().waitFor({ timeout: 15_000 });
+    expect.eq(await sent.locator("[data-cy='lt-remove']").count(), 0, "no Remove from batch on a sent invoice");
+    expect.eq(await sent.getByRole("button", { name: "Remove this line" }).count(), 0, "no × on a sent invoice's lines");
+  }));

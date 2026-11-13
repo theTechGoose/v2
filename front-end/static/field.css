@@ -731,6 +731,52 @@
   font-size: 13px;
   color: var(--fg-muted);
 }
+/* REQ-810: a draft's line leaves on its ×; the draft leaves the batch from its quiet footer button */
+.inv__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 2px 0;
+}
+.inv__x {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--fg-muted);
+  cursor: pointer;
+}
+.inv__x:hover,
+.inv__x:focus-visible {
+  border-color: #a83b3b;
+  color: #a83b3b;
+}
+.inv__x:disabled {
+  opacity: .5;
+  cursor: not-allowed;
+}
+.inv__actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 10px;
+}
+.inv__remove {
+  border-color: #a83b3b;
+  color: #a83b3b;
+}
+.inv__ask {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  flex-wrap: wrap;
+  font-size: 13px;
+}
 
 @media (max-width: 1000px) {
   .alay {

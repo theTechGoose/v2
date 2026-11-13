@@ -2249,3 +2249,141 @@ Deno.test("REQ-788 AMENDMENT the identity in percent mode bills that share of th
     assertEquals(inv.amount, 6500 + 4005 + 1051);
   });
 });
+
+// REQ-810 — "i need a way to remove invoices from a batch and a way to remove a row from batch.
+// i think a button inline would work in each case."
+/** two customers, today: Ana (Lawn 6500 + Hedge 4000, overhead 2500 on) and Bob (Lawn 6500 + Edge 2500), all done and pulled */
+async function pulledTwo(call: Call) {
+  const H = await login(call);
+  await call("PUT", "/profile/identity", { businessName: "A2Z Landscape LLC", fieldOverheadCents: 2500 }, H);
+  const mk = async (name: string) =>
+    (await call("POST", "/customers", { name, email: `${name.replace(/\W+/g, ".").toLowerCase()}@blackhole.postmarkapp.com` }, H)).body;
+  const ana = await mk("Ana Torres");
+  const bob = await mk("Bob Reyes");
+  const today = fieldToday();
+  for (const [c, items, overhead] of [
+    [ana, [{ taskTypeName: "Lawn", priceCents: 6500 }, { taskTypeName: "Hedge", priceCents: 4000 }], true],
+    [bob, [{ taskTypeName: "Lawn", priceCents: 6500 }, { taskTypeName: "Edge", priceCents: 2500 }], false],
+  ] as const) {
+    const s = await call("POST", "/field/subscriptions", {
+      customerId: c.id,
+      address: c === ana ? "725 Frederick Rd, Rockingham, VA" : "845 Frederick Rd, Rockingham, VA",
+      startDate: today,
+      items,
+      ...(overhead ? { overhead: true } : {}),
+    }, H);
+    assertEquals(s.status, 201, JSON.stringify(s.body));
+  }
+  const w = (await call("POST", "/field/workers", { name: "Mario", phoneNumber: "8435550996", pin: "2468" }, H)).body;
+  for (const r of (await call("GET", "/field/regions", undefined, H)).body) await call("PUT", `/field/regions/${r.id}/worker`, { workerId: w.id }, H);
+  await call("POST", "/field/tasks/generate", { date: today }, H);
+  for (const t of (await call("GET", `/field/tasks?date=${today}`, undefined, H)).body) {
+    assertEquals((await call("PUT", `/field/tasks/${t.id}`, { status: "complete" }, H)).status, 200);
+  }
+  const pulled = await call("POST", "/field/batches/pull", { from: today, to: today }, H);
+  assertEquals([pulled.status, pulled.body.invoices.length], [201, 2], JSON.stringify(pulled.body));
+  const inv = (c: { id: string }) => pulled.body.invoices.find((i: { customerId: string }) => i.customerId === c.id);
+  const tasks = async () => (await call("GET", `/field/tasks?date=${today}`, undefined, H)).body as { id: string; customerId: string; invoiceId?: string; taskTypeName?: string; priceCents: number }[];
+  return { H, ana, bob, today, batch: pulled.body, anaInv: inv(ana), bobInv: inv(bob), tasks };
+}
+const lineKey = (l: { taskId?: string; description: string }) => encodeURIComponent(l.taskId ?? l.description);
+
+Deno.test("REQ-810 remove an invoice from a batch — the draft is deleted, leaves the batch, its tasks are un-invoiced and a re-pull bills them; a sent one is 409; another account's batch is 404", async () => {
+  await withServer(async (call) => {
+    const { H, bob, today, batch, anaInv, bobInv, tasks } = await pulledTwo(call);
+    assertEquals((await tasks()).filter((t) => t.invoiceId === bobInv.id).length, 2);
+    const r = await call("DELETE", `/field/batches/${batch.id}/invoices/${bobInv.id}`, undefined, H);
+    assertEquals(r.status, 200, JSON.stringify(r.body));
+    assertEquals([r.body.id, r.body.invoiceIds, r.body.invoices.map((i: { id: string }) => i.id)], [batch.id, [anaInv.id], [anaInv.id]]);
+    assertEquals((await call("GET", `/invoices/${bobInv.id}`, undefined, H)).status, 404, "the draft is deleted");
+    const bobTasks = (await tasks()).filter((t) => t.customerId === bob.id);
+    assertEquals(bobTasks.map((t) => t.invoiceId), [undefined, undefined], "its tasks are un-invoiced");
+    // the batch reads the same on a fresh GET and in the list
+    assertEquals((await call("GET", `/field/batches/${batch.id}`, undefined, H)).body.invoiceIds, [anaInv.id]);
+    // a second remove of the same invoice: it is no longer in the batch
+    assertEquals((await call("DELETE", `/field/batches/${batch.id}/invoices/${bobInv.id}`, undefined, H)).status, 404);
+    // a later pull of the range bills Bob again
+    const again = await call("POST", "/field/batches/pull", { from: today, to: today }, H);
+    assertEquals([again.body.invoices.length, again.body.invoices[0].customerId, again.body.invoices[0].amount], [1, bob.id, 9000]);
+    // a sent invoice is a real invoice: refused
+    assertEquals((await call("PUT", `/invoices/${anaInv.id}`, { status: "sent" }, H)).status, 200);
+    const sent = await call("DELETE", `/field/batches/${batch.id}/invoices/${anaInv.id}`, undefined, H);
+    assertEquals(sent.status, 409, JSON.stringify(sent.body));
+    assertEquals((await call("GET", `/invoices/${anaInv.id}`, undefined, H)).body.status, "sent");
+    // another account: 404, nothing changes
+    const other = await login(call, "+15125551499", "Other Owner");
+    assertEquals((await call("DELETE", `/field/batches/${again.body.id}/invoices/${again.body.invoices[0].id}`, undefined, other)).status, 404);
+    assertEquals((await call("DELETE", `/field/batches/${again.body.id}/invoices/${again.body.invoices[0].id}/lines/0?key=x`, undefined, other)).status, 404);
+    assertEquals((await call("GET", `/invoices/${again.body.invoices[0].id}`, undefined, H)).status, 200);
+  });
+});
+
+Deno.test("REQ-810 remove a line — exactly its task is freed and the amount drops; the overhead line just leaves; a stale guard is 409 with the current invoice; the last task line removes the invoice; a sent invoice is 409", async () => {
+  await withServer(async (call) => {
+    const { H, ana, batch, anaInv, bobInv, tasks } = await pulledTwo(call);
+    const svc = (i: { lineItems: { service: string; price: number }[] }) => i.lineItems.map((l) => `${l.service}=${l.price}`);
+    assertEquals(svc(anaInv), ["Hedge=4000", "Lawn=6500", "Overhead=2500"]);
+    assertEquals(anaInv.lineItems.map((l: { taskId?: string; overhead?: boolean }) => [!!l.taskId, l.overhead]), [[true, undefined], [true, undefined], [false, true]]);
+    const hedge = anaInv.lineItems[0];
+    const base = `/field/batches/${batch.id}/invoices/${anaInv.id}/lines`;
+    // a stale page: the guard does not match the row → 409 with the invoice as it is
+    const stale = await call("DELETE", `${base}/0?key=${lineKey(anaInv.lineItems[1])}`, undefined, H);
+    assertEquals(stale.status, 409, JSON.stringify(stale.body));
+    assertEquals(svc(stale.body.detail.invoice), ["Hedge=4000", "Lawn=6500", "Overhead=2500"]);
+    assertEquals((await call("DELETE", `${base}/7?key=x`, undefined, H)).status, 409, "no such row");
+    assertEquals((await call("DELETE", `${base}/0`, undefined, H)).status, 409, "no guard");
+    // remove Hedge: its task alone is freed
+    const r = await call("DELETE", `${base}/0?key=${lineKey(hedge)}`, undefined, H);
+    assertEquals(r.status, 200, JSON.stringify(r.body));
+    const a1 = r.body.invoices.find((i: { id: string }) => i.id === anaInv.id);
+    // the title is re-derived from what is left, as a pull of those lines would title it (REQ-703)
+    assertEquals([svc(a1), a1.amount, a1.description.split("\n").length, a1.jobName.startsWith("Maintenance · ")], [["Lawn=6500", "Overhead=2500"], 9000, 2, true]);
+    const after = (await tasks()).filter((t) => t.customerId === ana.id);
+    assertEquals(after.find((t) => t.id === hedge.taskId)!.invoiceId, undefined, "Hedge is freed");
+    assertEquals(after.filter((t) => t.invoiceId === anaInv.id).length, 1, "Lawn stays billed");
+    // the stored invoice agrees
+    assertEquals((await call("GET", `/invoices/${anaInv.id}`, undefined, H)).body.amount, 9000);
+    // the overhead line just leaves
+    const oh = await call("DELETE", `${base}/1?key=${lineKey(a1.lineItems[1])}`, undefined, H);
+    assertEquals(oh.status, 200, JSON.stringify(oh.body));
+    const a2 = oh.body.invoices.find((i: { id: string }) => i.id === anaInv.id);
+    assertEquals([svc(a2), a2.amount, a2.jobName], [["Lawn=6500"], 6500, "Lawn"]);
+    assertEquals((await tasks()).filter((t) => t.invoiceId === anaInv.id).length, 1);
+    // the last task line: the invoice leaves the batch and its task is freed
+    const last = await call("DELETE", `${base}/0?key=${lineKey(a2.lineItems[0])}`, undefined, H);
+    assertEquals(last.status, 200, JSON.stringify(last.body));
+    assertEquals(last.body.invoiceIds, [bobInv.id]);
+    assertEquals((await call("GET", `/invoices/${anaInv.id}`, undefined, H)).status, 404);
+    assertEquals((await tasks()).filter((t) => t.customerId === ana.id).map((t) => t.invoiceId), [undefined, undefined]);
+    // a sent invoice: no line leaves
+    assertEquals((await call("PUT", `/invoices/${bobInv.id}`, { status: "sent" }, H)).status, 200);
+    const sent = await call("DELETE", `/field/batches/${batch.id}/invoices/${bobInv.id}/lines/0?key=${lineKey(bobInv.lineItems[0])}`, undefined, H);
+    assertEquals(sent.status, 409, JSON.stringify(sent.body));
+    assertEquals((await call("GET", `/invoices/${bobInv.id}`, undefined, H)).body.lineItems.length, 2);
+  });
+});
+
+Deno.test("REQ-810 remove a line of an invoice pulled before lines named their task — matched by date + service + address, the right task is freed; an ambiguous one frees nothing", async () => {
+  await withServer(async (call) => {
+    const { H, bob, batch, bobInv, tasks } = await pulledTwo(call);
+    // as an older pull wrote it: no taskId on the lines
+    const old = bobInv.lineItems.map(({ taskId: _t, ...rest }: { taskId?: string }) => rest);
+    assertEquals((await call("PUT", `/invoices/${bobInv.id}`, { lineItems: old }, H)).status, 200);
+    const edge = old[0];
+    assertEquals(edge.service, "Edge");
+    const r = await call("DELETE", `/field/batches/${batch.id}/invoices/${bobInv.id}/lines/0?key=${lineKey(edge)}`, undefined, H);
+    assertEquals(r.status, 200, JSON.stringify(r.body));
+    const b1 = r.body.invoices.find((i: { id: string }) => i.id === bobInv.id);
+    assertEquals([b1.lineItems.length, b1.amount], [1, 6500]);
+    const mine = (await tasks()).filter((t) => t.customerId === bob.id);
+    assertEquals(mine.filter((t) => t.invoiceId === bobInv.id).length, 1, "exactly one task freed");
+    assertEquals(mine.find((t) => !t.invoiceId)!.priceCents, 2500, "the Edge task is the one freed");
+    // a line no task matches (renamed on the invoice) still leaves — nothing is freed; it was the last task line → the invoice goes
+    assertEquals((await call("PUT", `/invoices/${bobInv.id}`, { lineItems: [{ ...b1.lineItems[0], service: "Lawn (renamed)" }] }, H)).status, 200);
+    const gone = await call("DELETE", `/field/batches/${batch.id}/invoices/${bobInv.id}/lines/0?key=${lineKey(b1.lineItems[0])}`, undefined, H);
+    assertEquals(gone.status, 200, JSON.stringify(gone.body));
+    assertEquals(gone.body.invoiceIds.includes(bobInv.id), false);
+    // the invoice is deleted, so its remaining task is pullable again either way (and un-stamped)
+    assertEquals((await tasks()).filter((t) => t.customerId === bob.id).map((t) => t.invoiceId), [undefined, undefined]);
+  });
+});

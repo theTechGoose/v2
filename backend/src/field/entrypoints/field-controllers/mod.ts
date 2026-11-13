@@ -1194,6 +1194,37 @@ export class FieldBatchesController {
     return ctx.json(r, r.invoices.length ? 201 : 200);
   }
 
+  /** REQ-810: take a draft invoice out of the batch — deleted, its tasks un-invoiced; answers the batch */
+  @Delete(":id/invoices/:invoiceId")
+  async removeInvoice(
+    @Context() ctx: ExecutionContext,
+    @Param("id") id: string,
+    @Param("invoiceId") invoiceId: string,
+  ) {
+    const user = await requireUser(ctx, this.sessions, this.users);
+    return await this.batches.removeInvoice(user.id, id, invoiceId);
+  }
+
+  /** REQ-810: take one line off a draft of the batch; `key` (the line's taskId, else its description) guards a stale page */
+  @Delete(":id/invoices/:invoiceId/lines/:index")
+  async removeLine(
+    @Context() ctx: ExecutionContext,
+    @Param("id") id: string,
+    @Param("invoiceId") invoiceId: string,
+    @Param("index") index: string,
+    @Query("key") key?: string,
+  ) {
+    const user = await requireUser(ctx, this.sessions, this.users);
+    return await this.batches.removeLine(
+      user.id,
+      id,
+      invoiceId,
+      /^\d+$/.test(index) ? Number(index) : -1,
+      key ?? "",
+      user.language === "es" ? "es" : "en",
+    );
+  }
+
   /** REQ-142: send the checked drafts; each customer gets theirs */
   @Post(":id/send")
   async send(
