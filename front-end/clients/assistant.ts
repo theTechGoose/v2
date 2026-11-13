@@ -6,6 +6,11 @@
  * returns an empty list (or 404).
  */
 import { api, ApiError, type ApiOptions } from "../lib/api.ts";
+import { type ChatStreamEvent, readChatStream } from "../lib/chat-stream.ts"; // REQ-670
+import { MUTATION_EVENT } from "../lib/ticker-pick.ts";
+import type { AssistantDraft } from "../../shared/quote-flow/assistant-draft.ts";
+import type { ThreadStatus } from "../../shared/quote-flow/chat-header.ts";
+import type { ChatStepHint } from "../../shared/quote-flow/step-composer.ts"; // REQ-392
 
 /** Minimal mirror of the backend Quote DTO — the frontend only needs the
  *  fields read from `getQuote`. Defined here (not in dashboard.ts) because
@@ -67,6 +72,8 @@ export interface JobOption {
    *  every selected send language), generated up front so the picked option's
    *  description can be stored — and shown to the customer — in each language. */
   byLang?: Record<string, JobOptionLang>;
+  /** REQ-446 (m13): the version's role — concise / standard / detailed. */
+  style?: "concise" | "standard" | "detailed";
 }
 
 /** Mirrors backend AgentPhase. */
@@ -86,8 +93,12 @@ export interface Conversation {
   preview?: string;
   /** Set by accept-quote; cleared by load-conversation on next read. */
   hasUnreadEvent?: boolean;
-  /** Denormalized quote.status — sent / accepted. */
+  /** Denormalized quote.status — sent / accepted. Stale once the customer
+   *  acts on the public page; the list chip reads `threadStatus`. */
   quoteStatus?: string;
+  /** REQ-369: the thread's one status, as the chat header names it — the
+   *  server applies `threadStatus` to the quote row on every list read. */
+  threadStatus?: ThreadStatus;
   /** Denormalized invoice.status — sent / paid. */
   invoiceStatus?: string;
   /** ISO-8601 strings (backend returns `new Date().toISOString()`). */
@@ -121,6 +132,9 @@ export interface CustomerLite {
   name: string;
   email?: string;
   phoneNumber?: string;
+  /** REQ-715 (demo-loop cycle 5, c4-M34): the language the customer reads —
+   *  the review card's "Preview in" / "Sends in" starts on it. */
+  language?: "en" | "es";
   [k: string]: unknown;
 }
 
@@ -130,6 +144,11 @@ export interface ConversationDetail {
   customer?: CustomerLite;
   /** Bound quote (the agreement) — populated once a quote is locked. */
   quote?: Quote;
+  /** REQ-230 (demo M14): the assistant's in-flight flow, server-side. */
+  draft?: AssistantDraft;
+  /** REQ-700 (cycle 5, m20): the bound invoice's LIVE status (the invoice
+   *  row's); null when no bill is bound. The list's rows carry the same. */
+  invoiceStatus?: string | null;
   [k: string]: unknown;
 }
 
@@ -140,6 +159,11 @@ export interface ChatInput {
   content?: string;
   kind?: "text" | "voice" | "image";
   payload?: Record<string, unknown>;
+  /** REQ-392 (demo-loop cycle 2, M7): the guided step a text was typed on —
+   *  the compact "Tell the assistant…" box. The server re-prices on Pick a
+   *  price, rewrites the versions on Job details, and answers a wizard
+   *  question / the Ready-to-send review with the step in mind. */
+  step?: ChatStepHint;
 }
 
 export interface ChatResult {
@@ -199,6 +223,20 @@ export const assistantClient = {
       opts,
     ),
 
+  /** REQ-334 (demo-loop cycle 1, M25): the locked card's "Re-open" — the
+   *  inverse of lockQuote. The server leaves the terms wizard, drops the
+   *  locked card + CTA and clears lockedAt; the draft card is back. */
+  reopenQuote: (conversationId: string, quoteId: string, opts: ApiOptions = {}) =>
+    api.post<{
+      conversation: Conversation;
+      removedMessageIds: string[];
+      newMessages: Message[];
+    }>(
+      `/agents/conversations/${conversationId}/reopen-quote`,
+      { quoteId },
+      opts,
+    ),
+
   /** Dev-only: simulate the customer signing the quote — the single
    *  customer-facing acceptance event in the chain. Flips quote→
    *  accepted, emits the chat phase_divider + "Continue to invoice"
@@ -217,17 +255,24 @@ export const assistantClient = {
 
   /** Fire the wizard's "Ready to send" CTA: flips quote→sent and
    *  dispatches via the requested channel (email, sms, or both).
-   *  Idempotent on state, but dispatch fires every time the user clicks. */
+   *  Idempotent on state; dispatch fires once per `requestId` (REQ-399 —
+   *  one id per Send click; a repeat within 10 s delivers nothing). */
   sendQuoteFlow: (
     conversationId: string,
     quoteId: string,
     channel: "email" | "sms" | "both" = "email",
     language?: "en" | "es",
+    requestId?: string,
     opts: ApiOptions = {},
   ) =>
     api.post<{ conversation: Conversation; newMessages: Message[] }>(
       `/agents/conversations/${conversationId}/send-quote`,
-      { quoteId, channel, ...(language ? { language } : {}) },
+      {
+        quoteId,
+        channel,
+        ...(language ? { language } : {}),
+        ...(requestId ? { requestId } : {}),
+      },
       opts,
     ),
 
@@ -244,6 +289,44 @@ export const assistantClient = {
 
   chat: (input: ChatInput, opts: ApiOptions = {}) =>
     api.post<ChatResult>("/agents/chat", input, opts),
+
+  /** REQ-670 (demo-loop cycle 5, p7 — "Assistant replies never stream"): the
+   *  same turn as `chat`, streamed — `onEvent` gets the reply as it is written
+   *  (else what the turn is doing) and the promise resolves with the whole
+   *  turn. A server without the stream route (404/405) is asked the JSON way
+   *  instead; any other refusal is the turn's error, never a second send. */
+  chatStream: async (
+    input: ChatInput,
+    onEvent: (event: ChatStreamEvent) => void,
+    opts: ApiOptions = {},
+  ): Promise<ChatResult> => {
+    let res: Response;
+    try {
+      res = await api.postStream("/agents/chat/stream", input, opts);
+    } catch (err) {
+      if (
+        err instanceof ApiError && (err.status === 404 || err.status === 405)
+      ) {
+        return await api.post<ChatResult>("/agents/chat", input, opts);
+      }
+      throw err;
+    }
+    const streamed = (res.headers.get("content-type") ?? "").includes(
+      "text/event-stream",
+    );
+    const turn = streamed && res.body
+      ? await readChatStream<ChatResult>(res.body, onEvent)
+      : await res.json() as ChatResult;
+    // REQ-319: the turn went through — the live islands re-fetch now.
+    if (typeof globalThis.window !== "undefined") {
+      globalThis.dispatchEvent(
+        new CustomEvent(MUTATION_EVENT, {
+          detail: { method: "POST", path: "/agents/chat/stream" },
+        }),
+      );
+    }
+    return turn;
+  },
 
   /** Read-only quote preview. Reuses /quotes/:id. */
   quote: (id: string, opts: ApiOptions = {}) =>
@@ -293,6 +376,8 @@ export const assistantClient = {
       stepId: string;
       optionId: string;
       customValue?: string;
+      /** REQ-263: the customer step's job address → quote.serviceAddress. */
+      serviceAddress?: string;
       customer?: {
         id?: string;
         create?: {
@@ -301,6 +386,8 @@ export const assistantClient = {
           phoneNumber?: string;
           isBusiness?: boolean;
           businessName?: string;
+          /** REQ-331: "create anyway" past the already-exists hint. */
+          allowDuplicate?: boolean;
           /** REQ-625: the shared customer form's address parts + notes */
           street?: string;
           city?: string;
@@ -381,25 +468,45 @@ export const assistantClient = {
     ),
 
   /** Three suggested price tiers for the "I know the job, help me price it"
-   *  flow (roadmap p.10). The 4th "custom" option is the manual entry. */
-  suggestPrices: (raw: string, opts: ApiOptions = {}) =>
+   *  flow (roadmap p.10). The 4th "custom" option is the manual entry.
+   *  REQ-260 (M24): `raw` is the contractor's ORIGINAL message; `scope` the
+   *  bullets they confirmed — priced together, never the bullets alone. */
+  suggestPrices: (raw: string, scope?: string, opts: ApiOptions = {}) =>
     api.post<
       {
         options: Array<
-          { tier: "competitive" | "market" | "premium"; label: string; priceCents: number; rationale: string }
+          {
+            tier: "competitive" | "market" | "premium";
+            label: string;
+            priceCents: number;
+            rationale: string;
+          }
         >;
-        /** REQ-017 (NW-12): what the numbers include. */
-        basis?: "labor_and_materials";
+        /** REQ-017 (NW-12): what the numbers include. REQ-332 (m30): derived
+         *  from the job — "labor_materials_as_noted" when the customer
+         *  supplies an item. */
+        basis?: "labor_and_materials" | "labor_materials_as_noted";
       }
-    >("/agents/job-details/prices", { raw }, opts),
+    >(
+      "/agents/job-details/prices",
+      { raw, ...(scope && scope.trim() ? { scope } : {}) },
+      opts,
+    ),
 
   /** Single-line cleanup: rewrites one rough bullet into a tidy scope
    *  line. Called when the user edits/adds a bullet and opts in to the
-   *  "professionalize that?" prompt on the Job Details screen. */
-  professionalizeBullet: (text: string, opts: ApiOptions = {}) =>
-    api.post<{ text: string }>(
+   *  "professionalize that?" prompt on the Job Details screen. REQ-332
+   *  (m30): `context` is the job the bullet belongs to (original message +
+   *  sibling bullets) so the rewrite never re-scopes a job-wide item; an
+   *  "A + B" bullet comes back as two `lines`. */
+  professionalizeBullet: (
+    text: string,
+    context?: { raw?: string; siblings?: string[] },
+    opts: ApiOptions = {},
+  ) =>
+    api.post<{ text: string; lines?: string[] }>(
       "/agents/job-details/professionalize",
-      { text },
+      { text, ...(context ? { context } : {}) },
       opts,
     ),
 
@@ -412,4 +519,25 @@ export const assistantClient = {
       { texts, to },
       opts,
     ),
+
+  /** REQ-264 (M15): have the server fill a quote's missing translations
+   *  (job-details description + line items) for `langs`; returns the quote. */
+  translateQuote: (
+    quoteId: string,
+    langs: ("en" | "es")[],
+    opts: ApiOptions = {},
+  ) =>
+    api.post<{
+      description?: string;
+      descriptionByLang?: Record<string, string>;
+      /** REQ-710 (cycle 5, M4): the base language, possibly re-based. */
+      lang?: string;
+      lineItems?: {
+        description: string;
+        descriptionByLang?: Record<string, string>;
+        quantity?: number;
+        unit?: string;
+        price?: number;
+      }[];
+    }>("/agents/job-details/translate-quote", { quoteId, langs }, opts),
 };

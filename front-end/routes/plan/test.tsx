@@ -1,6 +1,7 @@
 import { asset, Head } from "fresh/runtime";
 import { personLanguage } from "../../../shared/person-name/mod.ts"; // REQ-631
 import { define } from "../../utils.ts";
+import DocTitle from "../../components/DocTitle.tsx";
 import { loadUser } from "../../lib/auth.ts";
 import SiteFooter from "../../components/SiteFooter.tsx";
 import { type Lang, langFromCookie, pickLangFromAcceptLanguage } from "../../lib/lang.ts";
@@ -34,7 +35,10 @@ export default define.page(async function PlanTest(ctx) {
   return (
     <>
       <Head>
-        <title>{tFor(lang, "planTest.title")} · {tFor(lang, "brand.name")}</title>
+        <DocTitle
+          lang={lang}
+          title={(l) => `${tFor(l, "planTest.title")} · ${tFor(l, "brand.name")}`}
+        />
         <meta name="robots" content="noindex" />
         <link key="css-verify" rel="stylesheet" href={asset("/verify.css")} />
         <link key="css-plan-cards" rel="stylesheet" href={asset("/plan-cards.css")} />

@@ -20,7 +20,7 @@ describe("REQ-197 the worker's screen is server-rendered in its final state", ()
     expect(route).toMatch(/workerClient\.taskTypes\(\{ cookie \}\)/);
     expect(route).toMatch(/catch \{\s*return undefined;/);
     expect(route).toMatch(
-      /<WorkerScreen initialLang=\{lang\} initialDate=\{date\} ssr=\{ssr\} \/>/,
+      /<WorkerScreen\s+initialLang=\{lang\}[\s\S]{0,300}initialDate=\{date\}[\s\S]{0,200}ssr=\{ssr\}\s*\/>/,
     );
   });
   test("the API helper forwards a cookie on the server only; the worker reads accept options", () => {

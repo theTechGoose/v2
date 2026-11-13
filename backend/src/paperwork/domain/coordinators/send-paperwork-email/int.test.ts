@@ -14,6 +14,7 @@ import { ConversationStore as CommConversationStore } from "@communication/domai
 import { MessageStore as CommMessageStore } from "@communication/domain/data/message-store/mod.ts";
 import { getKv, resetKv } from "@core/data/kv/mod.ts";
 import { ReplyTokenStore } from "@paperwork/domain/data/reply-token-store/mod.ts";
+import { type DomainEvent, EventBus } from "@core/business/events/mod.ts";
 
 interface SetupResult {
   flow: SendPaperworkEmail;
@@ -25,7 +26,7 @@ interface SetupResult {
   sent: SendEmailInput[];
 }
 
-function fresh(): SetupResult {
+function fresh(bus?: EventBus): SetupResult {
   const customers = new CustomerStore();
   const quotes = new QuoteStore();
   const invoices = new InvoiceStore();
@@ -51,6 +52,7 @@ function fresh(): SetupResult {
       new CommConversationStore(),
       new CommMessageStore(),
     ),
+    bus,
   );
   return { flow, customers, quotes, invoices, identities, email, sent };
 }
@@ -123,7 +125,8 @@ Deno.test("send-paperwork-email integration: dispatches a quote to the linked cu
   assertEquals(sent.length, 1);
   // QuoteStore now auto-derives a ≤3-word jobName from the summary
   // (roadmap p.8), and the subject renders the jobName.
-  assertStringIncludes(sent[0].subject, "Roof Tear Off");
+  // REQ-337: an intra-word hyphen keeps its compound whole ("Tear-off")
+  assertStringIncludes(sent[0].subject, "Roof Tear-off");
   assertStringIncludes(sent[0].htmlBody, "Demo");
   // The quote IS the agreement: the one email carries the review-and-accept
   // CTA pointing at the public /q page.
@@ -171,6 +174,21 @@ Deno.test("send-paperwork-email integration: returns ok=false when no recipient 
   const result = await flow.run("u-1", { kind: "quote", resourceId: quote.id });
   assertEquals(result.ok, false);
   assertStringIncludes(result.reason ?? "", "no recipient");
+  assertEquals(sent.length, 0);
+
+  await resetKv();
+});
+
+Deno.test("REQ-695 (cycle 5, M23) send-paperwork-email: no recipient answers failureCode 'missing' — the page translates the code, never the developer reason", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const { flow, invoices, sent } = fresh();
+  await seedContractor("u-1");
+  const inv = await invoices.create("u-1", { dueDate: "2099-01-01", amount: 100, status: "draft" });
+
+  const result = await flow.run("u-1", { kind: "invoice", resourceId: inv.id });
+  assertEquals(result.ok, false);
+  assertEquals(result.failureCode, "missing");
   assertEquals(sent.length, 0);
 
   await resetKv();
@@ -568,5 +586,266 @@ Deno.test("REQ-204 send-paperwork-email: a sent invoice's email says 'Invoice IN
   assert(!sent[0].htmlBody.includes(`#${invoice.id.slice(0, 8).toUpperCase()}`), "no id slice in the body");
   assertStringIncludes(sent[0].htmlBody, "Randall");
   assert(!sent[0].htmlBody.includes("Someone"), "the renamed live record does not rewrite an issued bill");
+  await resetKv();
+});
+
+// REQ-342 (demo-loop cycle 1, M13): the CTA link carries the send language,
+// so a cookie-less customer opens the quote in the language it was sent in.
+Deno.test("REQ-342 send-paperwork-email: a Spanish send's CTA is /q/<id>?lang=es; a send with no pick carries the resolved default, ?lang=en", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const { flow, customers, quotes, sent } = fresh();
+  await seedContractor("u-1");
+  const customer = await customers.create("u-1", {
+    name: "Juan",
+    email: "juan@acme.test",
+  });
+  const quote = await quotes.create("u-1", {
+    customerId: customer.id,
+    summary: "Pintar el baño",
+    lineItems: [{ description: "Pintura", quantity: 1, unit: "ea", price: 500 }],
+    estimatedTotal: 500,
+  });
+
+  const es = await flow.run("u-1", {
+    kind: "quote",
+    resourceId: quote.id,
+    language: "es",
+  });
+  assertEquals(es.ok, true);
+  assertStringIncludes(sent[0].htmlBody, `/q/${quote.id}?lang=es`);
+  assert(
+    !sent[0].htmlBody.includes(`/q/${quote.id}"`),
+    "no bare /q link remains in the Spanish email",
+  );
+
+  await resetKv();
+  const bare = fresh();
+  await seedContractor("u-2");
+  const c2 = await bare.customers.create("u-2", {
+    name: "Ann",
+    email: "ann@acme.test",
+  });
+  const q2 = await bare.quotes.create("u-2", {
+    customerId: c2.id,
+    summary: "Roof",
+    lineItems: [{ description: "Demo", quantity: 1, unit: "ea", price: 500 }],
+    estimatedTotal: 500,
+  });
+  const r2 = await bare.flow.run("u-2", { kind: "quote", resourceId: q2.id });
+  assertEquals(r2.ok, true);
+  // UX-28: the coordinator always resolves ONE send language (pick → stored
+  // default → en); the link names what the email went out in.
+  assertStringIncludes(bare.sent[0].htmlBody, `/q/${q2.id}?lang=en`);
+  assert(
+    !bare.sent[0].htmlBody.includes("?lang=es"),
+    "an English send never points the customer at the Spanish document",
+  );
+  await resetKv();
+});
+
+// REQ-480 (demo-loop cycle 3, M18): "Issue invoice" no longer stamps "sent"
+// before anything was delivered. An unissued (draft / scheduled) invoice
+// becomes "sent" only when a channel actually delivers it — the email it goes
+// out in already reads "Sent" — and stays unissued when nothing went.
+Deno.test("REQ-480 M18 send-paperwork-email: a draft invoice that is emailed becomes sent (sentAt stamped) and its email reads Sent, never Draft", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const { flow, customers, invoices, sent } = fresh();
+  await seedContractor("u-1");
+  const customer = await customers.create("u-1", { name: "Ana", email: "ana@acme.test" });
+  const invoice = await invoices.create("u-1", {
+    customerId: customer.id,
+    dueDate: "2099-01-01",
+    amount: 120_000,
+    status: "draft",
+  });
+
+  const r = await flow.run("u-1", { kind: "invoice", resourceId: invoice.id });
+  assertEquals(r.ok, true, r.reason);
+  assert(!/>\s*Draft\s*</.test(sent[0].htmlBody), "the email never reads Draft");
+  assertStringIncludes(sent[0].htmlBody, "Sent");
+  const after = await invoices.getOwned(invoice.id, "u-1");
+  assertEquals(after.status, "sent");
+  assert(after.sentAt, "sentAt stamped on delivery");
+  await resetKv();
+});
+
+Deno.test("REQ-480 M18 send-paperwork-email: a scheduled invoice sent now becomes sent once the email delivers", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const { flow, customers, invoices } = fresh();
+  await seedContractor("u-1");
+  const customer = await customers.create("u-1", { name: "Ana", email: "ana@acme.test" });
+  const invoice = await invoices.create("u-1", {
+    customerId: customer.id,
+    dueDate: "2099-01-01",
+    amount: 120_000,
+    status: "scheduled",
+    scheduledFor: "2099-01-01",
+  });
+  const r = await flow.run("u-1", { kind: "invoice", resourceId: invoice.id });
+  assertEquals(r.ok, true, r.reason);
+  assertEquals((await invoices.getOwned(invoice.id, "u-1")).status, "sent");
+  await resetKv();
+});
+
+Deno.test("REQ-480 M18 send-paperwork-email: a draft invoice with no email on file stays a draft — nothing delivered, nothing stamped", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const { flow, customers, invoices, sent } = fresh();
+  await seedContractor("u-1");
+  const customer = await customers.create("u-1", { name: "Ana" });
+  const invoice = await invoices.create("u-1", {
+    customerId: customer.id,
+    dueDate: "2099-01-01",
+    amount: 120_000,
+    status: "draft",
+  });
+  const r = await flow.run("u-1", { kind: "invoice", resourceId: invoice.id });
+  assertEquals(r.ok, false);
+  assertEquals(sent.length, 0);
+  const after = await invoices.getOwned(invoice.id, "u-1");
+  assertEquals(after.status, "draft");
+  assertEquals(after.sentAt, undefined);
+  await resetKv();
+});
+
+Deno.test("REQ-480 M18 send-paperwork-email: re-emailing an already viewed invoice never moves its status back to sent", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const { flow, customers, invoices } = fresh();
+  await seedContractor("u-1");
+  const customer = await customers.create("u-1", { name: "Ana", email: "ana@acme.test" });
+  const invoice = await invoices.create("u-1", {
+    customerId: customer.id,
+    dueDate: "2099-01-01",
+    amount: 120_000,
+    status: "viewed",
+  });
+  const r = await flow.run("u-1", { kind: "invoice", resourceId: invoice.id });
+  assertEquals(r.ok, true, r.reason);
+  assertEquals((await invoices.getOwned(invoice.id, "u-1")).status, "viewed");
+  await resetKv();
+});
+
+// REQ-566 (demo-loop cycle 4, m11): the email that issues a draft invoice is
+// the owner's activity — one `invoice:issued` event for the dashboard feed,
+// and none for a send that reached nobody or an invoice already issued.
+Deno.test("REQ-566 (cycle 4, m11) send-paperwork-email: the delivery that issues a draft invoice announces it once; a failed one does not", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const bus = new EventBus();
+  const seen: DomainEvent[] = [];
+  bus.subscribe((e) => {
+    seen.push(e);
+  });
+  const { flow, customers, invoices } = fresh(bus);
+  await seedContractor("u-1");
+  const ana = await customers.create("u-1", { name: "Ana", email: "ana@acme.test" });
+  const invoice = await invoices.create("u-1", {
+    customerId: ana.id,
+    dueDate: "2099-01-01",
+    amount: 120_000,
+    status: "draft",
+  });
+  assertEquals((await flow.run("u-1", { kind: "invoice", resourceId: invoice.id })).ok, true);
+  assertEquals(seen.map((e) => [e.entityType, e.action, e.entityId, e.data]), [
+    ["invoice", "issued", invoice.id, { amountCents: 120_000, customerName: "Ana" }],
+  ]);
+  // re-sent: already issued, no second row
+  await flow.run("u-1", { kind: "invoice", resourceId: invoice.id });
+  assertEquals(seen.length, 1);
+  // nobody to email: stays a draft, nothing announced
+  const noEmail = await customers.create("u-1", { name: "Bo" });
+  const other = await invoices.create("u-1", {
+    customerId: noEmail.id,
+    dueDate: "2099-01-01",
+    amount: 5_000,
+    status: "draft",
+  });
+  assertEquals((await flow.run("u-1", { kind: "invoice", resourceId: other.id })).ok, false);
+  assertEquals(seen.length, 1);
+  await resetKv();
+});
+
+// REQ-720 (demo-loop cycle 5, p18-2a): a Spanish quote email's hero title is
+// sentence case ("Corte de césped y poda de setos"), never English Title Case
+// ("Corte de Césped y Poda de Setos"); an English send keeps Title Case.
+Deno.test("REQ-720 send-paperwork-email: a Spanish quote email's hero is sentence case, an English one stays Title Case", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const { flow, customers, quotes, sent } = fresh();
+  await seedContractor("u-1");
+  const customer = await customers.create("u-1", {
+    name: "María López",
+    email: "maria@acme.test",
+  });
+  const quote = await quotes.create("u-1", {
+    customerId: customer.id,
+    summary: "Corte de césped y poda de setos",
+    lineItems: [{ description: "Corte", quantity: 1, unit: "ea", price: 120 }],
+    estimatedTotal: 120,
+  });
+  const es = await flow.run("u-1", {
+    kind: "quote",
+    resourceId: quote.id,
+    language: "es",
+  });
+  assertEquals(es.ok, true);
+  assertStringIncludes(sent[0].htmlBody, "Corte de césped y poda de setos");
+  assert(
+    !sent[0].htmlBody.includes("Corte de Césped y Poda de Setos"),
+    "the Spanish hero is never English Title Case",
+  );
+
+  const q2 = await quotes.create("u-1", {
+    customerId: customer.id,
+    summary: "backyard junk removal",
+    lineItems: [{ description: "Mow", quantity: 1, unit: "ea", price: 120 }],
+    estimatedTotal: 120,
+  });
+  const en = await flow.run("u-1", {
+    kind: "quote",
+    resourceId: q2.id,
+    language: "en",
+  });
+  assertEquals(en.ok, true);
+  assertStringIncludes(sent[1].htmlBody, "Backyard Junk Removal");
+  await resetKv();
+});
+
+// REQ-756 (demo-loop cycle 5v2, p18-2a): the REQ-720 sentence case covers the
+// JOB only — the verifier saw the summary's "— Ana Pérez" tail lowercased to
+// "— ana pérez". The customer's name keeps its capitals.
+Deno.test("REQ-756 send-paperwork-email: a Spanish quote email's hero never lowercases the customer's name", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const { flow, customers, quotes, sent } = fresh();
+  await seedContractor("u-1");
+  const customer = await customers.create("u-1", {
+    name: "Ana Pérez",
+    email: "ana@acme.test",
+  });
+  const quote = await quotes.create("u-1", {
+    customerId: customer.id,
+    summary: "Corte de Césped y Poda de Setos — Ana Pérez",
+    lineItems: [{ description: "Corte", quantity: 1, unit: "ea", price: 120 }],
+    estimatedTotal: 120,
+  });
+  const es = await flow.run("u-1", {
+    kind: "quote",
+    resourceId: quote.id,
+    language: "es",
+  });
+  assertEquals(es.ok, true);
+  assertStringIncludes(
+    sent[0].htmlBody,
+    "Corte de césped y poda de setos — Ana Pérez",
+  );
+  assert(
+    !sent[0].htmlBody.includes("ana pérez"),
+    "the customer's name is never lowercased in the Spanish hero",
+  );
   await resetKv();
 });

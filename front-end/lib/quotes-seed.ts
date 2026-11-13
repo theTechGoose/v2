@@ -8,6 +8,8 @@ import { tFor } from "./i18n.ts";
 
 export type Stage =
   | "draft"
+  /** REQ-236: a send was tried and reached nobody. */
+  | "undelivered"
   | "sent"
   | "opened"
   | "cooling"
@@ -35,7 +37,34 @@ export interface Quote {
   /** Onboarding sample quote (P-15): rendered as a badged card but
    *  excluded from every money/pipeline aggregate. */
   isSample?: boolean;
+  /** REQ-236: the channel of the latest send attempt — a texted quote never
+   *  gets "check your email / spam" copy. */
+  channel?: "email" | "sms" | "both";
+  /** REQ-586 (cycle 4, M11): the language the quote last went out in — its
+   *  customer link carries it as `?lang=`. */
+  sendLang?: "en" | "es";
+  /** REQ-313 (demo m48): the quote's own REQ-198 number ("Q-001") and its
+   *  published version — what the card shows instead of a positional 01/02.
+   *  Absent on the onboarding sample (REQ-256: it takes no Q- number). */
+  number?: string;
+  version?: number;
+  /** REQ-481 (m10): change orders on this quote still waiting on the customer. */
+  pendingChangeOrders?: string[];
+  /** REQ-760 (cycle 5v2, m14): the server's word on a draft — ready to send
+   *  (terms wizard done) or still in progress. Absent = ready (older server). */
+  readyToSend?: boolean;
 }
+
+/** REQ-236: the /quotes tracks. "Out for response" holds only quotes that
+ *  actually reached the customer; an undelivered one sits with the drafts
+ *  (still on the contractor's desk). */
+export const OUT_STAGES: readonly Stage[] = [
+  "sent",
+  "opened",
+  "cooling",
+  "stale",
+];
+export const DRAFT_TRACK_STAGES: readonly Stage[] = ["draft", "undelivered"];
 
 export const QPIPELINE: Quote[] = [
   // Drafting
@@ -260,6 +289,7 @@ export const QSTORIES: Record<string, string> = {
 
 export const stageLabel: Record<Stage, string> = {
   draft: tFor("en", "quotesSeed.stage.draft"),
+  undelivered: tFor("en", "quotesSeed.stage.undelivered"),
   sent: tFor("en", "quotesSeed.stage.sent"),
   opened: tFor("en", "quotesSeed.stage.opened"),
   cooling: tFor("en", "quotesSeed.stage.cooling"),
@@ -287,6 +317,13 @@ const moods: Record<string, MoodPalette> = {
     to: "#5C4034",
     shadow: "rgba(92,64,52,0.32)",
     statusFg: "#5C4034",
+  },
+  // REQ-236: amber warning — not the pink "Just sent".
+  undelivered: {
+    from: "#F5C76B",
+    to: "#C98A12",
+    shadow: "rgba(201,138,18,0.35)",
+    statusFg: "#8A5A00",
   },
   sent: {
     from: "#FFB3B3",
@@ -386,9 +423,17 @@ export const readingFor = (
       tail: tFor(lang, "quotesSeed.reading.draft.tail"),
     };
   }
+  if (q.stage === "undelivered") {
+    return { text: tFor(lang, "quotesSeed.reading.undelivered.text") };
+  }
   if (opens.length === 0) {
     return {
-      text: tFor(lang, "quotesSeed.reading.noOpens.text"),
+      text: tFor(
+        lang,
+        q.channel === "sms"
+          ? "quotesSeed.reading.noOpensText.text"
+          : "quotesSeed.reading.noOpens.text",
+      ),
     };
   }
   const devices = new Set(opens.map((o) => o.device));

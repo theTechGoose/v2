@@ -9,7 +9,19 @@
  * ledger → form prefill, and the headline a card shows next to its number.
  * No I/O, no DOM, no dates read from the clock — the caller passes "today".
  */
+import { isDueNowTermValue } from "../quote-flow/terms-i18n.ts";
 import { docNumberOf } from "./numbering.ts";
+import { MAX_CENTS } from "../quote-flow/assistant-draft.ts";
+import {
+  formatPhoneDisplay,
+  formatPhoneInput,
+  isUsPhone,
+} from "../quote-flow/format-helpers.ts";
+import {
+  type CustomerFormErrors,
+  customerFormErrors,
+  isValidCustomerEmail,
+} from "../quote-flow/customer-contact.ts";
 import {
   type DocState,
   invoiceBalance,
@@ -116,6 +128,178 @@ export function dueDateFrom(issuedDate: string, netDays: number): string {
   return d.toISOString().slice(0, 10);
 }
 
+/** REQ-483 (demo-loop cycle 3, m18): the picker's preset day counts. Any
+ *  other count opens as custom terms with its due date filled in. */
+export function isPresetNetDays(n: number): boolean {
+  return (NET_DAYS_OPTIONS as readonly number[]).includes(n);
+}
+
+/** REQ-483 (m18): the days a New invoice starts with. Drawn from a quote,
+ *  its payment terms decide — "Due now" → 0, "Net N" → N, "upon completion"
+ *  → the account's days (REQ-411: the bill goes out when the job is done and
+ *  the customer then has those days). Otherwise — no quote, a split, custom
+ *  text — Settings' "Days to pay an invoice" (`invoiceNetDays`), else 30.
+ *  Terms are stored as the EN option label (handle-wizard-answer). */
+export function defaultInvoiceNetDays(
+  invoiceNetDays: number | null | undefined,
+  quoteTerms:
+    | ReadonlyArray<{ stepId?: string; value?: string }>
+    | null
+    | undefined,
+): number {
+  const account = typeof invoiceNetDays === "number" &&
+      Number.isInteger(invoiceNetDays) && invoiceNetDays >= 0
+    ? invoiceNetDays
+    : 30;
+  const value = quoteTerms?.find((t) => t?.stepId === "payment_terms")?.value;
+  if (!value) return account;
+  if (isDueNowTermValue(value)) return 0;
+  const net = /\bnet\s*-?\s*(\d{1,3})\b/i.exec(value);
+  if (net) return Number(net[1]);
+  return account;
+}
+
+/* ---------------- payment instructions (REQ-483, M40) ---------------- */
+
+type PayMethod = {
+  enabled?: boolean;
+  handle?: string;
+  cashtag?: string;
+  mailTo?: string;
+  instructions?: string;
+};
+export type AcceptedMethods = Partial<Record<string, PayMethod | undefined>>;
+
+const METHOD_LABELS: Record<"en" | "es", Record<string, string>> = {
+  en: {
+    check: "Check",
+    venmo: "Venmo",
+    zelle: "Zelle",
+    cashapp: "Cash App",
+    paypal: "PayPal",
+    cash: "Cash",
+    ach: "Bank transfer",
+    card: "Card",
+  },
+  es: {
+    check: "Cheque",
+    venmo: "Venmo",
+    zelle: "Zelle",
+    cashapp: "Cash App",
+    paypal: "PayPal",
+    cash: "Efectivo",
+    ach: "Transferencia bancaria",
+    card: "Tarjeta",
+  },
+};
+
+/** The order the public invoice page lists them (projectAcceptedMethods). */
+const METHOD_ORDER = [
+  "check",
+  "venmo",
+  "zelle",
+  "cashapp",
+  "paypal",
+  "cash",
+  "ach",
+  "card",
+  "other",
+] as const;
+
+/** The methods saved at onboarding / in Settings as one line of payment
+ *  instructions: "Zelle: 5125550102 · Cash". Enabled methods only, each with
+ *  the handle the customer needs (never ACH's routing/account numbers —
+ *  only its own instructions); "other" is its free text alone. */
+export function paymentInstructionsFromMethods(
+  methods: AcceptedMethods | null | undefined,
+  lang: string,
+): string {
+  if (!methods) return "";
+  const labels = METHOD_LABELS[lang === "es" ? "es" : "en"];
+  const parts: string[] = [];
+  for (const key of METHOD_ORDER) {
+    const m = methods[key];
+    if (!m?.enabled) continue;
+    const detail = (key === "check"
+      ? m.mailTo
+      : key === "cashapp"
+      ? m.cashtag
+      : key === "ach" || key === "card" || key === "other"
+      ? m.instructions
+      : m.handle)?.trim();
+    // REQ-593 (cycle 4, m12): a phone handle reads like a phone —
+    // "Zelle: +1 (512) 555-0109", not the digits as typed at onboarding.
+    const shown = detail && isUsPhone(detail)
+      ? formatPhoneDisplay(detail)
+      : detail;
+    if (key === "other") {
+      if (detail) {
+        parts.push(detail);
+      }
+      continue;
+    }
+    parts.push(shown ? `${labels[key]}: ${shown}` : labels[key]);
+  }
+  return parts.join(" · ");
+}
+
+/**
+ * REQ-710 (demo-loop cycle 5, M4, pair 9) — payment instructions in the
+ * document's language. The invoice form fills the field from the accepted
+ * methods in the OWNER's language and the invoice stores that line as plain
+ * text, so the English invoice read "Zelle: +1 (512) 555-0108 · Efectivo"
+ * beside a "Cash" button. At render time every part — split on " · " and
+ * on new lines (Settings' own text lists one method per line) — that is one
+ * of the methods' own labels (alone, or as "<label>: <detail>") takes the
+ * label in `lang`; the details and anything else the contractor wrote stay
+ * as typed.
+ */
+export function localizePaymentInstructions(
+  text: string | null | undefined,
+  lang: string,
+): string {
+  const s = text ?? "";
+  if (!s.trim()) return "";
+  const to = METHOD_LABELS[lang === "es" ? "es" : "en"];
+  const keys = Object.keys(to);
+  const labelKey = (label: string) => {
+    const l = label.trim().toLowerCase();
+    return keys.find((k) =>
+      METHOD_LABELS.en[k].toLowerCase() === l ||
+      METHOD_LABELS.es[k].toLowerCase() === l
+    );
+  };
+  const localize = (part: string) => {
+    const whole = labelKey(part);
+    if (whole) return part.replace(part.trim(), to[whole]);
+    const colon = part.indexOf(":");
+    if (colon <= 0) return part;
+    const key = labelKey(part.slice(0, colon));
+    return key ? `${to[key]}${part.slice(colon)}` : part;
+  };
+  return s.split("\n").map((line) =>
+    line.split(" · ").map(localize).join(" · ")
+  ).join("\n");
+}
+
+/** REQ-483 (M40): what "Payment instructions" starts with — Settings' own
+ *  text first, else what was last typed on this device, else the accepted
+ *  methods (so onboarding's Zelle is never a blank field). */
+export function defaultPaymentInstructions(input: {
+  settings?: string | null;
+  remembered?: string | null;
+  methods?: AcceptedMethods | null;
+  lang: string;
+}): string {
+  if (typeof input.settings === "string" && input.settings.trim()) {
+    return input.settings;
+  }
+  if (typeof input.remembered === "string" && input.remembered.trim()) {
+    return input.remembered;
+  }
+  return paymentInstructionsFromMethods(input.methods, input.lang);
+}
+
 /* ---------------- bill-to ---------------- */
 
 export interface BillTo {
@@ -151,7 +335,11 @@ export function billToFromCustomer(
     name: c?.name ?? "",
     businessName: c?.businessName ?? "",
     email: c?.email ?? "",
-    phoneNumber: c?.phoneNumber ?? "",
+    // REQ-593 (cycle 4, m12): the stored digits fill the field in the same
+    // mask the input applies as you type; anything else is kept as is.
+    phoneNumber: isUsPhone(c?.phoneNumber)
+      ? formatPhoneInput(c!.phoneNumber!)
+      : c?.phoneNumber ?? "",
     address: c?.address ?? "",
   };
 }
@@ -160,25 +348,48 @@ export function billToFromCustomer(
 
 export type MissingInfo =
   | "noBillingName"
-  | "noBillingEmail"
+  | "noContact"
   | "noServiceAddress"
   | "noLineItems"
   | "noAmount";
 
+/** How an issued bill reaches the client (REQ-567): by email, by text, both,
+ *  or not at all (copy the link). */
+export type SendChannel = "email" | "text" | "both" | "none";
+
+export function sendChannel(
+  c: { email?: string; phoneNumber?: string },
+): SendChannel {
+  const email = !!c.email?.trim();
+  const phone = !!c.phoneNumber?.trim();
+  if (email && phone) return "both";
+  if (email) return "email";
+  if (phone) return "text";
+  return "none";
+}
+
 /** What the bill still lacks — a prompt before sending, never a block. */
 export function missingInfo(form: {
-  billTo: Pick<BillTo, "name" | "email" | "address">;
+  billTo: Pick<BillTo, "name" | "email" | "address"> & {
+    phoneNumber?: string;
+  };
   serviceAddress: string;
   lineItems: FormLine[];
   amountCents: number;
 }): MissingInfo[] {
   const out: MissingInfo[] = [];
   if (!form.billTo.name.trim()) out.push("noBillingName");
-  if (!form.billTo.email.trim()) out.push("noBillingEmail");
+  // REQ-567 (cycle 4, m37): a phone is a way to send it (by text) — only a
+  // client with neither email nor phone is unreachable.
+  if (sendChannel(form.billTo) === "none") out.push("noContact");
   if (!form.serviceAddress.trim() && !form.billTo.address.trim()) {
     out.push("noServiceAddress");
   }
-  if (form.lineItems.length === 0) out.push("noLineItems");
+  // REQ-486 (m32): an amount with no lines is the supported quick bill (the
+  // typed total) — only an empty bill lacks line items.
+  if (form.lineItems.length === 0 && form.amountCents <= 0) {
+    out.push("noLineItems");
+  }
   if (form.amountCents <= 0) out.push("noAmount");
   return out;
 }
@@ -205,11 +416,109 @@ export interface InvoiceFormValues {
   serviceDateTo?: string;
   paymentInstructions: string;
   billTo: BillTo;
+  /** REQ-655: extra work on a job whose invoices are all paid (?extra=1) */
+  extraWork?: boolean;
 }
 
 function nonEmpty(s: string | undefined): string | undefined {
   const v = (s ?? "").trim();
   return v ? v : undefined;
+}
+
+/**
+ * REQ-480 (demo-loop cycle 3, M18): the status a New invoice is created with.
+ * "Issue" with a dispatch to follow creates it UNISSUED (draft): the send
+ * endpoints stamp it "sent" only once a channel actually delivers, so an
+ * invoice nobody received is never listed as Sent. REQ-550 (demo-loop cycle
+ * 4, B1) amends the no-contact case: with nothing to dispatch, nothing was
+ * sent either — it is a draft too, and the page says "not sent — share the
+ * link" (`invoiceNotSentCopy`). Saving keeps the draft / scheduled tracks.
+ */
+export function newInvoiceStatus(
+  opts: { issue: boolean; dispatch: boolean; scheduledFor?: string },
+): "draft" | "sent" | "scheduled" {
+  if (opts.issue) return "draft";
+  return opts.scheduledFor ? "scheduled" : "draft";
+}
+
+/** REQ-550: the most an invoice may bill, INTEGER CENTS — the $1bn cap the
+ *  assistant draft already uses (and POST /invoices enforces). */
+export const INVOICE_MAX_CENTS = MAX_CENTS;
+/** REQ-550: above this total ($250,000) "Issue" asks for a second press. */
+export const INVOICE_CONFIRM_CENTS = 250_000_00;
+
+/**
+ * REQ-550 (demo-loop cycle 4, B1): why the New invoice form must not go
+ * ahead, as an `invoicesPage.new.*` key — or null. A total past the cap is
+ * refused on any path; "Issue" also needs someone to bill: an existing
+ * client, a new client's name, or a typed bill-to name. A draft needs no
+ * recipient. (The missing-info list stays a prompt — REQ-206.)
+ */
+export function invoiceIssueBlock(opts: {
+  issue: boolean;
+  totalCents: number;
+  customerId?: string;
+  newClientName?: string;
+  billToName?: string;
+}): "errRecipient" | "errAmountMax" | null {
+  if (opts.totalCents > INVOICE_MAX_CENTS) return "errAmountMax";
+  if (
+    opts.issue && !nonEmpty(opts.customerId) &&
+    !nonEmpty(opts.newClientName) && !nonEmpty(opts.billToName)
+  ) {
+    return "errRecipient";
+  }
+  return null;
+}
+
+/**
+ * REQ-708 (demo-loop cycle 5, c1-setup-m15) — the New invoice form's own
+ * per-field rule, so the form can be novalidate (the browser's bubble, which
+ * the demo stage cannot show, never pre-empts it): with "+ New client"
+ * picked, the new client's name / phone / email follow REQ-352's
+ * customerFormErrors; the bill-to email follows the same email rule. Blank
+ * contacts are fine. An empty object means the form may go ahead.
+ */
+export interface NewInvoiceFieldErrors extends CustomerFormErrors {
+  billEmail?: "customer.invalidEmail";
+}
+
+export function newInvoiceFieldErrors(form: {
+  newClient: boolean;
+  name?: string | null;
+  phoneNumber?: string | null;
+  email?: string | null;
+  billEmail?: string | null;
+}): NewInvoiceFieldErrors {
+  const out: NewInvoiceFieldErrors = form.newClient
+    ? customerFormErrors(form)
+    : {};
+  const billEmail = (form.billEmail ?? "").trim();
+  if (billEmail && !isValidCustomerEmail(billEmail)) {
+    out.billEmail = "customer.invalidEmail";
+  }
+  return out;
+}
+
+/** REQ-550: an invoice total over INVOICE_CONFIRM_CENTS needs the contractor
+ *  to confirm that exact total (`confirmedCents`) before it is issued. */
+export function needsAmountConfirm(
+  totalCents: number,
+  confirmedCents?: number | null,
+): boolean {
+  return totalCents > INVOICE_CONFIRM_CENTS && confirmedCents !== totalCents;
+}
+
+/** REQ-550: the notice after "Issue" when there was nobody to send it to —
+ *  "INV-003 saved — not sent: …; share its link: <link>". */
+export function invoiceNotSentCopy(
+  t: (key: string, params?: Record<string, string>) => string,
+  opts: { number?: string; link: string },
+): string {
+  return t("invoicesPage.send.notSentShareLink", {
+    number: nonEmpty(opts.number) ?? t("invoicesPage.send.invoiceFallback"),
+    link: opts.link,
+  });
 }
 
 /** The POST /invoices body for the form: cents, basis points, trimmed strings, nothing empty. */
@@ -234,6 +543,9 @@ export function buildInvoiceBody(
   };
   if (form.customerId) body.customerId = form.customerId;
   if (form.quoteId) body.quoteId = form.quoteId;
+  // REQ-655: extra work past a paid-off agreement is billed on purpose — the
+  // REQ-233 cap's acknowledgement (`override`), or the cap refuses it.
+  if (form.quoteId && form.extraWork) body.override = true;
   const jobName = nonEmpty(form.jobName);
   if (jobName) body.jobName = jobName;
   const description = nonEmpty(form.description);
@@ -245,6 +557,22 @@ export function buildInvoiceBody(
       ...(l.unit ? { unit: l.unit } : {}),
       price: l.price,
     }));
+  } else {
+    // REQ-486 (m32): the quick one-amount bill — "What's it for" (else the
+    // description) + the typed amount become one itemized line, so the
+    // invoice and the /i page say what was billed. A quote-drawn invoice is
+    // left alone: the backend derives the quote's own lines for it.
+    const label = jobName ?? description;
+    const amountCents = Math.max(0, Math.round(form.amountCents ?? 0));
+    // REQ-655 (cycle 5, p18-9c): extra work on a paid-off job bills only
+    // its own line — never the quote's.
+    if ((!form.quoteId || form.extraWork) && label && amountCents > 0) {
+      body.lineItems = [{
+        description: label,
+        quantity: 1,
+        price: amountCents,
+      }];
+    }
   }
   body.subtotalCents = totals.subtotalCents;
   if (totals.discountCents > 0) {
@@ -274,7 +602,8 @@ export function buildInvoiceBody(
 /* ---------------- prefill from the quote's ledger (REQ-205) ---------------- */
 
 export interface LedgerView {
-  quote: { id: string; number: string };
+  /** `accepted`: the customer signed (REQ-249); absent reads as not accepted */
+  quote: { id: string; number: string; accepted?: boolean };
   agreementTotalCents: number;
   invoicedCents: number;
   remainingToInvoiceCents: number;
@@ -283,6 +612,8 @@ export interface LedgerView {
 export interface LedgerPrefill {
   quoteId: string;
   quoteNumber: string;
+  /** the customer accepted (signed) the quote — only then is it "agreed" */
+  quoteAccepted: boolean;
   customerId?: string;
   jobName?: string;
   amountCents: number;
@@ -303,6 +634,7 @@ export function prefillFromLedger(
   return {
     quoteId: ledger.quote.id,
     quoteNumber: ledger.quote.number,
+    quoteAccepted: ledger.quote.accepted === true,
     ...(quote?.customerId ? { customerId: quote.customerId } : {}),
     ...(jobName ? { jobName } : {}),
     amountCents: remaining,
@@ -310,6 +642,163 @@ export function prefillFromLedger(
     invoicedCents: Math.max(0, Math.round(ledger.invoicedCents)),
     remainingCents: remaining,
   };
+}
+
+/** The New invoice modal's copy (REQ-409, demo-loop cycle 2 m39). With no
+ *  quote it is the direct bill ("no quote needed"); drawn from a quote it
+ *  names the quote, and its total reads "Agreed" only once the customer
+ *  accepted it — until then "Quoted", with a not-accepted warning — the
+ *  same rule as the ledger panel's agreed/quoted row (REQ-249). */
+export interface NewInvoiceCopy {
+  introKey: "invoicesPage.new.intro" | "invoicesPage.new.introFromQuote";
+  ledgerKey:
+    | "invoices.form.originalQuote"
+    | "invoices.form.originalQuoteQuoted"
+    | null;
+  notAcceptedKey: "invoices.form.quoteNotAccepted" | null;
+}
+
+export function newInvoiceCopy(
+  ledger: Pick<LedgerPrefill, "quoteAccepted"> | null | undefined,
+): NewInvoiceCopy {
+  if (!ledger) {
+    return {
+      introKey: "invoicesPage.new.intro",
+      ledgerKey: null,
+      notAcceptedKey: null,
+    };
+  }
+  return {
+    introKey: "invoicesPage.new.introFromQuote",
+    ledgerKey: ledger.quoteAccepted
+      ? "invoices.form.originalQuote"
+      : "invoices.form.originalQuoteQuoted",
+    notAcceptedKey: ledger.quoteAccepted
+      ? null
+      : "invoices.form.quoteNotAccepted",
+  };
+}
+
+/* ---------- what the picked client already has (REQ-474) ---------- */
+
+/** One of the client's invoices still in flight: scheduled, drafted, or out
+ *  for payment (sent / viewed / claimed / pending) and unpaid. */
+export interface PriorInvoice {
+  id: string;
+  number: string;
+  kind: "scheduled" | "draft" | "open";
+  /** what is still owed on it (amount − paid), cents */
+  amountCents: number;
+  quoteId?: string;
+  quoteNumber?: string;
+}
+
+/** A signed quote of the client's — the invoice can be linked to it, which
+ *  sends the quoteId and puts the REQ-233 agreement cap on it. */
+export interface LinkableQuote {
+  id: string;
+  number: string;
+  /** the agreement less every live invoice on it, ≥ 0 */
+  remainingCents: number;
+}
+
+export interface PriorBilling {
+  invoices: PriorInvoice[];
+  quotes: LinkableQuote[];
+}
+
+interface PriorInvoiceIn {
+  id: string;
+  number?: string;
+  customerId?: string;
+  quoteId?: string;
+  status?: string;
+  amount?: number;
+  paidCents?: number | null;
+  paidAt?: string | null;
+}
+
+interface PriorQuoteIn {
+  id: string;
+  number?: string;
+  customerId?: string;
+  status?: string;
+  acceptedAt?: string | null;
+  estimatedTotal?: number;
+  isSample?: boolean;
+}
+
+const OPEN_STATUSES = new Set(["sent", "viewed", "claimed", "pending"]);
+const CLOSED_QUOTE = new Set(["lost", "void", "canceled", "cancelled"]);
+
+/**
+ * REQ-474 (demo-loop cycle 3, M17): the New invoice modal's "this client
+ * already has…" — before a direct bill is made beside a scheduled one. The
+ * client's unpaid scheduled / draft / open invoices (on their customerId, or
+ * on one of their quotes), and their signed quotes with what is left to bill.
+ * Nothing for no client or a client being created in the form.
+ */
+export function priorBillingFor(
+  customerId: string | null | undefined,
+  invoices: readonly PriorInvoiceIn[],
+  quotes: readonly PriorQuoteIn[],
+): PriorBilling {
+  if (!customerId || customerId === "__new__") {
+    return { invoices: [], quotes: [] };
+  }
+  const theirQuotes = quotes.filter((q) =>
+    q.customerId === customerId && !q.isSample
+  );
+  const quoteIds = new Set(theirQuotes.map((q) => q.id));
+  const numberOf = new Map(theirQuotes.map((q) => [q.id, docNumberOf(q)]));
+  const live = invoices.filter((i) =>
+    (i.status ?? "") !== "void" &&
+    (i.customerId === customerId || (!!i.quoteId && quoteIds.has(i.quoteId)))
+  );
+
+  const prior: PriorInvoice[] = [];
+  for (const i of live) {
+    const status = i.status ?? "";
+    const kind = status === "scheduled"
+      ? "scheduled"
+      : status === "draft"
+      ? "draft"
+      : OPEN_STATUSES.has(status)
+      ? "open"
+      : null;
+    const owed = Math.max(0, (i.amount ?? 0) - (i.paidCents ?? 0));
+    if (!kind || i.paidAt || owed <= 0) continue;
+    const quoteNumber = i.quoteId ? numberOf.get(i.quoteId) : undefined;
+    prior.push({
+      id: i.id,
+      number: docNumberOf(i),
+      kind,
+      amountCents: owed,
+      ...(i.quoteId ? { quoteId: i.quoteId } : {}),
+      ...(quoteNumber ? { quoteNumber } : {}),
+    });
+  }
+
+  // a signed quote is offered while it has money left to bill or a bill of
+  // it is still in flight — a long-paid job is not news
+  const signed: LinkableQuote[] = theirQuotes
+    .filter((q) =>
+      (q.status === "accepted" || !!q.acceptedAt) &&
+      !CLOSED_QUOTE.has(q.status ?? "")
+    )
+    .map((q) => {
+      const invoiced = live.filter((i) => i.quoteId === q.id)
+        .reduce((s, i) => s + (i.amount ?? 0), 0);
+      return {
+        id: q.id,
+        number: docNumberOf(q),
+        remainingCents: Math.max(0, (q.estimatedTotal ?? 0) - invoiced),
+      };
+    })
+    .filter((q) =>
+      q.remainingCents > 0 || prior.some((i) => i.quoteId === q.id)
+    );
+  return { invoices: prior, quotes: signed };
 }
 
 /* ---------------- headline (REQ-201) ---------------- */
@@ -332,7 +821,7 @@ export function invoiceHeadline(
     version,
     state,
     revised: version > 1 && state !== "paid" && state !== "void" &&
-      state !== "draft",
+      state !== "draft" && state !== "scheduled",
   };
 }
 

@@ -1,6 +1,11 @@
 /** REQ-151 — the welcome text a new worker gets: who added them, where to sign in, their PIN; in the owner's language. */
 import { assert, assertEquals } from "#std/assert";
-import { workerLang, workerWelcome } from "./mod.ts";
+import {
+  newWorkerLang,
+  workerLang,
+  workerSignInUrl,
+  workerWelcome,
+} from "./mod.ts";
 
 Deno.test("REQ-151 workerWelcome — English: the owner, the /worker address and the PIN, on one text", () => {
   const body = workerWelcome("en", {
@@ -34,4 +39,30 @@ Deno.test("REQ-155 workerLang — the worker's language, else the owner's, else 
   assertEquals(workerLang({}, { language: "es" }), "es");
   assertEquals(workerLang({}, {}), "en");
   assertEquals(workerLang({ language: undefined }, { language: "en" }), "en");
+});
+
+Deno.test("REQ-285 workerSignInUrl — the /worker address carries the worker's language, so the screen opens in it", () => {
+  assertEquals(
+    workerSignInUrl("https://documonster.com", "es"),
+    "https://documonster.com/worker?lang=es",
+  );
+  assertEquals(
+    workerSignInUrl("http://localhost:5280", "en"),
+    "http://localhost:5280/worker?lang=en",
+  );
+  // still one SMS segment with the longer address
+  const body = workerWelcome("es", {
+    owner: "Raphael (Monster RG)",
+    url: workerSignInUrl("https://documonster.com", "es"),
+    pin: "4321",
+  });
+  assert(body.length <= 160, `one SMS segment: ${body.length}`);
+});
+
+Deno.test("REQ-774 newWorkerLang — a new worker gets the language picked for them, else the owner's (never Spanish by default)", () => {
+  assertEquals(newWorkerLang("es", { language: "en" }), "es");
+  assertEquals(newWorkerLang("en", { language: "es" }), "en");
+  assertEquals(newWorkerLang(undefined, { language: "en" }), "en");
+  assertEquals(newWorkerLang(undefined, { language: "es" }), "es");
+  assertEquals(newWorkerLang(undefined, {}), "en");
 });

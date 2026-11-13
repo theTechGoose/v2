@@ -6,6 +6,7 @@
  * (REQ-625 — the shared form, prefilled; the one solid primary) and Message.
  */
 import type { CustomerCard } from "../clients/clients.ts";
+import Backdrop from "./Backdrop.tsx"; // REQ-354
 import { I, ICN } from "../lib/dash-icons.tsx";
 import { type Lang, tFor } from "../lib/i18n.ts";
 import { messageHref } from "../../shared/card-actions/mod.ts";
@@ -50,8 +51,10 @@ export default function ClientSheet(
   const msg = c ? messageHref(c) : null;
   const address = c?.address?.trim() ?? "";
   return (
-    <div
-      onClick={onClose}
+    // REQ-354 AMENDMENT (reconciled with develop on demo-fixes): develop's
+    // client sheet closes through the shared <Backdrop> (guarded click + Escape)
+    <Backdrop
+      onClose={onClose}
       style="position:fixed;inset:0;background:rgba(20,40,45,0.45);display:flex;align-items:flex-start;justify-content:center;z-index:1050;padding:20px 12px;overflow-y:auto"
     >
       <section
@@ -70,9 +73,10 @@ export default function ClientSheet(
               data-cy="client-sheet-name"
               style="margin:0;font-size:20px;font-weight:800;color:var(--fg,#144852);overflow-wrap:anywhere"
             >
-              {c?.name ?? (failed
-                ? tFor(lang, "clientSheet.notFound")
-                : tFor(lang, "clientSheet.loading"))}
+              {c?.name ??
+                (failed
+                  ? tFor(lang, "clientSheet.notFound")
+                  : tFor(lang, "clientSheet.loading"))}
             </h2>
             {c?.businessName && (
               <div style="font-size:14px;color:var(--fg-muted,#6b7560);overflow-wrap:anywhere">
@@ -216,6 +220,6 @@ export default function ClientSheet(
           </div>
         )}
       </section>
-    </div>
+    </Backdrop>
   );
 }

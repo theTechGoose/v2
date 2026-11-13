@@ -23,7 +23,7 @@
 import { dashboardClient, type DashboardStats } from "../clients/dashboard.ts";
 import { personLanguage } from "../../shared/person-name/mod.ts"; // REQ-631
 import { profileClient, type ProfileSnapshot } from "../clients/profile.ts";
-import { setLang } from "./i18n.ts";
+import { langChoiceMark, langSignal, setLang } from "./i18n.ts";
 
 export interface CachedDash {
   stats: DashboardStats | null;
@@ -72,37 +72,102 @@ export function readCached(): CachedDash | null {
   }
 }
 
-function writeCached(snap: CachedDash) {
-  cached = snap;
-  // Seed the app's UI language from the server's source of truth so every
-  // island reading langSignal renders in the contractor's chosen language.
-  // REQ-631: the PERSON's language — an editor's own while she acts in the owner's account
-  const plang = personLanguage(snap.profile?.user, snap.profile?.actor);
-  if (plang) setLang(plang);
+function persist(snap: CachedDash) {
   try {
     globalThis.sessionStorage?.setItem(STORAGE_KEY, JSON.stringify(snap));
   } catch { /* SSR / private mode */ }
+}
+
+/** Copy of `snap` whose profile says `lang` (the snapshot is never mutated). */
+function withLanguage(snap: CachedDash, lang: "en" | "es"): CachedDash {
+  const user = snap.profile?.user;
+  const actor = snap.profile?.actor;
+  // REQ-631: while acting the language is the editor's own — patch hers
+  if (actor) {
+    if (actor.language === lang) return snap;
+    return {
+      ...snap,
+      profile: { ...snap.profile!, actor: { ...actor, language: lang } },
+    };
+  }
+  if (!user || personLanguage(user) === lang) return snap;
+  return {
+    ...snap,
+    profile: { ...snap.profile!, user: { ...user, language: lang } },
+  };
+}
+
+/** REQ-592 (demo-loop cycle 4, m5): the page's explicit `?lang=`, or null.
+ *  lib/lang.ts seeds the UI from it at load and the topbar toggle writes it
+ *  back (writeLangToUrl), so it is the user's choice for this page. */
+function urlLangChoice(): "en" | "es" | null {
+  try {
+    const search = (globalThis as { location?: { search?: string } })
+      .location?.search;
+    const v = search ? new URLSearchParams(search).get("lang") : null;
+    return v === "en" || v === "es" ? v : null;
+  } catch {
+    return null;
+  }
+}
+
+/** `choiceMarkAtStart` is `langChoiceMark()` when the read was issued. */
+function writeCached(
+  snap: CachedDash,
+  choiceMarkAtStart: number,
+): CachedDash {
+  // REQ-631: the PERSON's language — an editor's own while she acts in the owner's account
+  const plang = personLanguage(snap.profile?.user, snap.profile?.actor);
+  if (plang) {
+    if (urlLangChoice()) {
+      // REQ-592 (m5): a page opened with ?lang= keeps that language — the
+      // profile's `user.language` (an es staff account on /admin?lang=en)
+      // must not flip it on the mount read or a later PROFILE_UPDATED one.
+    } else if (langChoiceMark() === choiceMarkAtStart) {
+      // Seed the app's UI language from the server's source of truth so every
+      // island reading langSignal renders in the contractor's chosen language.
+      setLang(plang, { fromServer: true });
+    } else {
+      // REQ-422 (m48): the user picked a language while this read was in
+      // flight — its `user.language` predates that pick (the PUT is still on
+      // its way). Keep the local choice, and keep the cache saying it too.
+      snap = withLanguage(snap, langSignal.value);
+    }
+  }
+  cached = snap;
+  persist(snap);
   for (const fn of listeners) {
     try {
       fn(snap);
     } catch { /* listener errors must not poison other listeners */ }
   }
+  return snap;
 }
 
 export function refreshDash(): Promise<CachedDash> {
   if (inflight) return inflight;
   inflight = (async () => {
+    const choiceMark = langChoiceMark();
     const [profile, stats] = await Promise.all([
       fetchers.profile(),
       fetchers.stats(),
     ]);
-    const next: CachedDash = { stats, profile };
-    writeCached(next);
-    return next;
+    return writeCached({ stats, profile }, choiceMark);
   })().finally(() => {
     inflight = null;
   });
   return inflight;
+}
+
+/** REQ-422 (m48): optimistic write for a local language toggle — the cached
+ *  profile (and its sessionStorage copy) says the new language at once, before
+ *  the best-effort `PUT /me` lands, so nothing reading the cache sees the old
+ *  one. Listeners are not fired: the language signal already changed. */
+export function patchCachedLanguage(lang: "en" | "es"): void {
+  const snap = readCached();
+  if (!snap) return;
+  cached = withLanguage(snap, lang);
+  persist(cached);
 }
 
 export function subscribeDash(fn: Listener): () => void {

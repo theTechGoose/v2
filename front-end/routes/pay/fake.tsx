@@ -1,10 +1,12 @@
 import { asset, Head } from "fresh/runtime";
 import { define } from "../../utils.ts";
+import DocTitle from "../../components/DocTitle.tsx";
 import SiteFooter from "../../components/SiteFooter.tsx";
 import { type Lang, langFromCookie, pickLangFromAcceptLanguage } from "../../lib/lang.ts";
 import { tFor } from "../../lib/i18n.ts";
 import { merchantOf } from "../../lib/plan-return.ts";
 import FakePayPage from "../../islands/FakePayPage.tsx";
+import { Icon } from "../../components/ui/Icon.tsx";
 
 /**
  * /pay/fake (REQ-057) — the stand-in for the CRM's pay page while the app runs on fakes: the
@@ -33,9 +35,10 @@ export default define.page(function PayFake(ctx) {
   return (
     <>
       <Head>
-        <title>
-          {tFor(lang, "payFake.title")} · {tFor(lang, "brand.name")}
-        </title>
+        <DocTitle
+          lang={lang}
+          title={(l) => `${tFor(l, "payFake.title")} · ${tFor(l, "brand.name")}`}
+        />
         <meta name="robots" content="noindex" />
         <link key="css-verify" rel="stylesheet" href={asset("/verify.css")} />
       </Head>
@@ -62,7 +65,7 @@ export default define.page(function PayFake(ctx) {
                   title={tFor(lang, "payFake.account")}
                   style="margin-top:20px;padding-top:12px;border-top:1px solid var(--line, #e5e7eb);font-size:13px;letter-spacing:.04em;text-transform:uppercase;color:var(--fg-muted)"
                 >
-                  <span aria-hidden="true">✓</span> {account}
+                  <Icon name="check" size={14} stroke-width={3} style="vertical-align:-2px" /> {account}
                 </footer>
               </>
             )

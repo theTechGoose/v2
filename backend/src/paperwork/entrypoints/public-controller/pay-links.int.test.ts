@@ -268,6 +268,8 @@ Deno.test("REQ-630 the invoice email and text name the ways to pay — the amoun
       new BusinessIdentityStore(),
       email,
       log(),
+      undefined, // REQ-566 (demo-fixes): the event bus
+      undefined, // REQ-679 (demo-fixes): the change-order store (defaulted)
       new StripeSettingsStore(),
     );
     const texter = new SendPaperworkSms(
@@ -279,6 +281,7 @@ Deno.test("REQ-630 the invoice email and text name the ways to pay — the amoun
       sms,
       new ShortLinkStore(),
       log(),
+      undefined, // REQ-566 (demo-fixes): the event bus
       new StripeSettingsStore(),
     );
 

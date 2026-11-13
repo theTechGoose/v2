@@ -1,13 +1,7 @@
-/** REQ-172 — the business's IANA time zone: validated by Intl, New York when unset. Pure. */
-export const DEFAULT_TIMEZONE = "America/New_York";
-
-/** an IANA zone Intl knows, else undefined */
-export function validTimezone(tz: unknown): string | undefined {
-  if (typeof tz !== "string" || !tz.trim()) return undefined;
-  try {
-    new Intl.DateTimeFormat("en-US", { timeZone: tz.trim() });
-    return tz.trim();
-  } catch {
-    return undefined;
-  }
-}
+/** REQ-172 / REQ-255 — the business's IANA time zone: picked → the address's state → New York. Pure; lives in shared/ so Settings shows the same zone. */
+export {
+  businessTimezone,
+  DEFAULT_TIMEZONE,
+  timezoneForState,
+  validTimezone,
+} from "#quote-flow/business-timezone.ts";

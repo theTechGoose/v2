@@ -175,8 +175,8 @@ for (const withLogo of [true, false]) {
         new RenderReceiptPdf(),
         commsLog,
         new EventBus(),
-        new MarkInvoicePaid(emailer),
-        new ComputeInvoiceBalance(invoices, payments, new MarkInvoicePaid(emailer)),
+        new MarkInvoicePaid(emailer, invoices),
+        new ComputeInvoiceBalance(invoices, payments, new MarkInvoicePaid(emailer, invoices)),
       );
       const before = toCustomer().length;
       assertEquals((await confirm.run(USER, inv.id)).ok, true);

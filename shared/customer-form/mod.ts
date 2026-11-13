@@ -150,16 +150,23 @@ export interface CustomerPayload {
   state?: string;
   zip?: string;
   notes?: string;
+  /** REQ-715: the customer's language; left out when not set */
+  language?: "en" | "es";
 }
 
-/** POST /customers: every filled field, trimmed; empty ones left out. */
-export function customerCreatePayload(v: CustomerFormValues): CustomerPayload {
+/** POST /customers: every filled field, trimmed; empty ones left out.
+ *  REQ-715: a picked language ("en" | "es") rides along; "Not set" is left out. */
+export function customerCreatePayload(
+  v: CustomerFormValues,
+  language?: string,
+): CustomerPayload {
   const out: Record<string, string> = {};
   for (const f of CUSTOMER_FORM_FIELDS) {
     const val = v[f].trim();
     if (val) out[API_KEY[f]] = val;
   }
   out.name = v.name.trim();
+  if (language === "en" || language === "es") out.language = language;
   return out as unknown as CustomerPayload;
 }
 

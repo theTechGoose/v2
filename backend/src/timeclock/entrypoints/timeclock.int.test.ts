@@ -12,7 +12,7 @@ import { resetKv } from "@core/data/kv/mod.ts";
 
 @Module({ imports: [TimeclockModule] })
 class TestApp {}
-const PORT = 9193;
+const PORT = 9198; // 9193 is worker-ssr-lang.int.test.ts (demo-fixes) — the lanes run in parallel
 const J = { "content-type": "application/json" };
 type Res = { status: number; body: any; headers: Headers };
 type Call = (

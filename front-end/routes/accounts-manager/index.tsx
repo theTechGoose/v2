@@ -1,9 +1,9 @@
 import { asset, Head } from "fresh/runtime";
-import {
-  greetingFirstName,
-  personLanguage,
-} from "../../../shared/person-name/mod.ts"; // REQ-624
+import { greetingFirstName } from "../../../shared/person-name/mod.ts"; // REQ-624
 import { define } from "../../utils.ts";
+import { resolveSsrLang } from "../../lib/ssr-lang.ts";
+import type { Lang } from "../../lib/lang.ts";
+import DocTitle from "../../components/DocTitle.tsx";
 import SiteFooter from "../../components/SiteFooter.tsx";
 import { tFor } from "../../lib/i18n.ts";
 import DashSidebar from "../../islands/DashSidebar.tsx";
@@ -19,14 +19,18 @@ import DashTopbar from "../../islands/DashTopbar.tsx";
  */
 export default define.page(function AccountsManager(ctx) {
   const user = ctx.state.user;
-  const lang = personLanguage(user) === "es" ? "es" : "en";
-  const greetingName = greetingFirstName(user) ||
-    tFor(lang, "common.thereFallback");
+  // REQ-709 (demo-loop c5, m4): the islands' language (?lang= > account >
+  // pm_lang), so the tab title and footer match the page they sit on.
+  const lang: Lang = resolveSsrLang(ctx) ?? "es";
+  const greetingName = greetingFirstName(user);
 
   return (
     <>
       <Head>
-        <title>Accounts Manager</title>
+        <DocTitle
+          lang={lang}
+          title={(l) => tFor(l, "accountsManager.docTitle")}
+        />
         <link rel="stylesheet" href={asset("/dashboard.css")} />
       </Head>
 
@@ -36,7 +40,7 @@ export default define.page(function AccountsManager(ctx) {
           <DashTopbar greetingName={greetingName} />
           <div class="content">
             {/* Blank slate — build the accounts-manager view here. */}
-            <SiteFooter lang={lang} />
+            <SiteFooter lang={lang} compact />
           </div>
         </main>
       </div>

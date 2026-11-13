@@ -5,6 +5,7 @@
  * order" modal. Data: clients/work-orders.ts; the pickers read the customer,
  * quote and invoice lists the other pages already use.
  */
+import Backdrop from "../components/Backdrop.tsx";
 import { useEffect, useState } from "preact/hooks";
 import {
   type WorkOrder,
@@ -140,6 +141,12 @@ export default function WorkOrdersPage() {
           + {t("workOrders.new")}
         </button>
       </FieldHead>
+
+      {/* REQ-609 (demo c4 m48): a finished task never becomes a work order — say so */}
+      <p class="hint" data-cy="wo-vs-tasks" style="margin:0 0 12px">
+        {t("workOrders.vsTasks")}{" "}
+        <a class="link" href="/field/tasks">{t("workOrders.openTasks")}</a>
+      </p>
 
       {loadErr && <p class="alert" data-cy="wo-load-error">{loadErr}</p>}
 
@@ -361,7 +368,7 @@ function NewWorkOrderModal(
   }
 
   return (
-    <div class="modal-bg" onClick={() => !busy && onClose()}>
+    <Backdrop class="modal-bg" onClose={() => !busy && onClose()}>
       <form
         class="modal"
         data-cy="wo-new-modal"
@@ -502,6 +509,6 @@ function NewWorkOrderModal(
           </button>
         </div>
       </form>
-    </div>
+    </Backdrop>
   );
 }

@@ -1,7 +1,7 @@
 /**
  * REQ-176 — the sidebar's root: Dashboard, Customers, the Billing folder (Quotes, Invoices,
- * Payments) and the Admin folder (the Recurring folder, Admins); the tree is data in
- * front-end/lib/nav-tree.ts and the sidebar renders it.
+ * Payments), the Field folder (REQ-361, was Recurring) and the Admin folder (Workers, Admins);
+ * the tree is data in front-end/lib/nav-tree.ts and the sidebar renders it.
  */
 import * as fs from "fs";
 import * as path from "path";
@@ -17,43 +17,62 @@ const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), "utf8");
 const ids = (p: string[]) => viewAt(NAV, p).items.map((n) => n.id);
 
 describe("REQ-176 the sidebar's root folders", () => {
-  test("the root is Dashboard, Customers, Billing, Recurring, Admin — nothing else (REQ-176 amendment: Recurring is not nested)", () => {
+  test("REQ-773 (demo dv1-d1, Raphael: 'I don't understand what quotes inside the billing folder is ... Change that.') Quotes is a root row linking /quotes, not inside any folder", () => {
+    const root = viewAt(NAV, []).items;
+    const quotes = root.find((n) => n.id === "quotes");
+    expect(quotes).toBeDefined();
+    expect(isFolder(quotes!)).toBe(false);
+    expect(quotes!.href).toBe("/quotes");
+    expect(quotes!.countKey).toBe("quotes"); // the waiting-reply pill rides along
+    const nested = root.filter(isFolder).flatMap((f) =>
+      viewAt(NAV, [f.id]).items.map((n) => n.id)
+    );
+    expect(nested).not.toContain("quotes");
+  });
+
+  test("the root is Dashboard, Customers, Quotes, Outbox, Billing, Field, Admin — nothing else (REQ-176 amendment: the field folder is not nested; REQ-361: Field, was Recurring; REQ-773: Quotes; REQ-784: the Outbox row)", () => {
+    // REQ-773 (demo dv1-d1): Quotes is on the root, one click from anywhere
     expect(ids([])).toEqual([
       "home",
       "customers",
+      "quotes",
+      "outbox", // REQ-784 (demo-loop dv1, d12): every email and text sent to customers
       "billing",
-      "recurring",
+      "field",
       "manage",
     ]);
     expect(viewAt(NAV, []).items.filter(isFolder).map((n) => n.id)).toEqual([
       "billing",
-      "recurring",
+      "field",
       "manage",
     ]);
   });
 
-  test("Billing holds Quotes, Invoices, Payments, Work orders; Recurring the four; Admin holds Workers, Timesheet and Admins (REQ-178)", () => {
+  test("Billing holds Invoices, Payments, Work orders (REQ-773: Quotes left for the root); Field the four (REQ-361); Admin holds Workers, Timesheet and Admins (REQ-178, REQ-192)", () => {
     // REQ-210: Work orders joined Billing next to the documents they belong to
-    expect(ids(["billing"])).toEqual(["quotes", "invoices", "payments", "workOrders"]);
+    expect(ids(["billing"])).toEqual(["invoices", "payments", "workOrders"]); // REQ-773
+    expect(folderPathTo(NAV, "quotes")).toEqual([]); // REQ-773
     expect(ids(["manage"])).toEqual(["workers", "timesheet", "admins"]); // REQ-178 — Workers is Admin's; REQ-192 — Timesheet beside it
-    expect(ids(["recurring"])).toEqual([
+    // REQ-604 (demo m18): Workers is listed in Field too — the same node as in Roles
+    expect(ids(["field"])).toEqual([
       "subscriptions",
       "assignments",
       "tasks",
       "batches",
+      "workers",
     ]);
-    expect(folderPathTo(NAV, "workers")).toEqual(["manage"]);
-    expect(folderPathTo(NAV, "tasks")).toEqual(["recurring"]);
+    expect(folderPathTo(NAV, "workers")).toEqual(["field"]);
+    expect(folderPathTo(NAV, "tasks")).toEqual(["field"]);
     expect(folderPathTo(NAV, "invoices")).toEqual(["billing"]);
     expect(folderPathTo(NAV, "admins")).toEqual(["manage"]);
     expect(folderPathTo(NAV, "customers")).toEqual([]);
   });
 
-  test("the sidebar renders the tree module and keeps the super-admin tab inside the Roles folder — labelled Admin (REQ-191)", () => {
+  test("the sidebar renders the tree module and shows the super-admin tab on the root and inside Roles (REQ-604) — labelled Admin (REQ-191)", () => {
     const src = read("front-end/islands/DashSidebar.tsx");
-    expect(src).toMatch(/import \{ NAV \} from "\.\.\/lib\/nav-tree\.ts"/);
+    expect(src).toMatch(/import \{ NAV, superAdminTabAt \} from "\.\.\/lib\/nav-tree\.ts"/);
     expect(src).not.toMatch(/const NAV\b/);
-    expect(src).toMatch(/view\.folder\?\.id === "manage"/);
+    expect(src).toMatch(/superAdminTabAt\(s\.superAdmin, view\.folder\?\.id \?\? null\)/);
     expect(src).toMatch(/<span class="nav-item__label">Admin<\/span>/); // REQ-191
     expect(src).not.toContain("Super admin");
   });

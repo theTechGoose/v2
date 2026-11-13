@@ -869,22 +869,23 @@ describe("REQ-105 the demo's day strip scrolls under the finger — every day in
  */
 describe("REQ-109 Monster Free's inclusions are the three lines, free forever", () => {
   test("the shared plan lists exactly the three lines, each its own feature, in both languages, and its blurb says free forever", () => {
-    expect(planFeatures("free", "en")).toEqual([
+    // REQ-733 (cycle 5): the three lead the list, word for word; what every plan has follows them
+    expect(planFeatures("free", "en").slice(0, 3)).toEqual([
       "Unlimited invoices",
-      "Up to five quotes and contracts a month",
+      "Up to five quotes a month", // REQ-778 (dv1 d8) amends REQ-109: "The free plan limit is five quotes."
       "Spanish and English output",
     ]);
-    expect(planFeatures("free", "es")).toEqual([
+    expect(planFeatures("free", "es").slice(0, 3)).toEqual([
       "Facturas ilimitadas",
-      "Hasta cinco cotizaciones y contratos al mes",
+      "Hasta cinco cotizaciones al mes",
       "Documentos en español y en inglés",
     ]);
-    expect(planById("free").blurb).toBe("Unlimited invoices. Up to five quotes and contracts a month. Spanish and English output. Free forever.");
+    expect(planById("free").blurb).toBe("Unlimited invoices. Up to five quotes a month. Spanish and English output. Free forever.");
   });
 
   test("the introduction, the plan cards and the signup messaging agree: the landing dictionary's free blurb is the plan's, /landing2's free card says forever and renders the plan's own lines", () => {
     expect(LANDING_DICT.en["price.t1.blurb"]).toBe(planById("free").blurb);
-    expect(LANDING_DICT.es["price.t1.blurb"]).toBe("Facturas ilimitadas. Hasta cinco cotizaciones y contratos al mes. Documentos en español y en inglés. Gratis para siempre.");
+    expect(LANDING_DICT.es["price.t1.blurb"]).toBe("Facturas ilimitadas. Hasta cinco cotizaciones al mes. Documentos en español y en inglés. Gratis para siempre.");
     expect(en["landing2.plan.free.sub"]).toMatch(/Monster Free forever/);
     expect(es["landing2.plan.free.sub"]).toMatch(/Monster Free para siempre/);
     expect(read(PAGE)).toMatch(/\{p\.features\.map\(\(f\) => \(/);

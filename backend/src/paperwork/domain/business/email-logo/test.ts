@@ -1,5 +1,6 @@
 import { assert, assertEquals } from "#std/assert";
 import { emailLogo, emailLogoHtml } from "./mod.ts";
+import { logoVersion } from "#quote-flow/public-logo-url.ts";
 
 // REQ-160 — "these have the house logo on it not the client logo"
 // REQ-628 — A2Z Landscape feedback, 2026-11-12: "They NEED THEIR LOGO NOT OURS" — no logo on
@@ -15,7 +16,7 @@ Deno.test("REQ-160 REQ-628 emailLogo: a business with a logo on file brands the 
     }),
     {
       kind: "image",
-      src: "https://documonster.com/api/public-logo/invoice/inv-1",
+      src: `https://documonster.com/api/public-logo/invoice/inv-1?v=${logoVersion("f-9")}`,
       alt: "A2Z Landscape LLC",
     },
   );
@@ -28,7 +29,7 @@ Deno.test("REQ-160 REQ-628 emailLogo: a business with a logo on file brands the 
     }),
     {
       kind: "image",
-      src: "https://documonster.com/api/public-logo/quote/q-1",
+      src: `https://documonster.com/api/public-logo/quote/q-1?v=${logoVersion("f-9")}`,
       alt: "A2Z Landscape LLC",
     },
   );
@@ -49,6 +50,17 @@ Deno.test("REQ-160 REQ-628 emailLogo: a business with a logo on file brands the 
     emailLogo({ appUrl: app, kind: "invoice", id: "inv-1", biz: undefined }),
     { kind: "wordmark", text: "" },
   );
+});
+
+// REQ-613 (demo-loop cycle 4, M31) — a replaced logo must not hide behind the old URL's cache
+Deno.test("REQ-613 emailLogo: the logo URL carries the logo's version, so a replaced logo gets a new URL", () => {
+  const app = "https://documonster.com";
+  const srcOf = (l: ReturnType<typeof emailLogo>) => l.kind === "image" ? l.src : "";
+  const orange = srcOf(emailLogo({ appUrl: app, kind: "quote", id: "q-1", biz: { logoFileId: "f-orange" } }));
+  const blue = srcOf(emailLogo({ appUrl: app, kind: "quote", id: "q-1", biz: { logoFileId: "f-blue" } }));
+  assertEquals(orange, `${app}/api/public-logo/quote/q-1?v=${logoVersion("f-orange")}`);
+  assertEquals(blue === orange, false, "a new logo is a new URL");
+  assertEquals(orange.includes("f-orange"), false, "the file id never leaks");
 });
 
 Deno.test("REQ-628 emailLogoHtml: the logo scales into a fixed box keeping its aspect ratio; the wordmark is the escaped name; nothing names DocuMonster", () => {

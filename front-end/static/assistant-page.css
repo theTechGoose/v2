@@ -377,8 +377,8 @@ body {
      island) and shrinks for the soft keyboard; falls back to 100dvh without JS. */
   height: 100vh;
   /* REQ-181: minus the impersonation banner's room (--banner-h), so nothing
-     hides under it. */
-  height: calc(var(--app-vh, 100dvh) - var(--banner-h, 0px));
+     hides under it. REQ-379: and minus the demo pill's band (--demo-pill-h). */
+  height: calc(var(--app-vh, 100dvh) - var(--banner-h, 0px) - var(--demo-pill-h, 0px));
   display: flex;
   min-height: 0;
   overflow: hidden;
@@ -389,7 +389,9 @@ body {
   background: var(--brand-teal);
   color: #fff;
   flex-shrink: 0;
-  width: 216px;
+  /* REQ-716 (demo c5 p2): 216px wrapped the Spanish "Vista del trabajador"
+     and "Órdenes de trabajo" onto two lines. */
+  width: 228px;
   transition: width 280ms cubic-bezier(0.34, 1.56, 0.64, 1);
   display: flex;
   flex-direction: column;
@@ -480,6 +482,7 @@ body {
 }
 
 .sb__textus {
+  text-decoration: none; /* REQ-359: links read like the folder buttons */
   background: var(--brand-pink);
   color: #fff;
   border: none;
@@ -564,6 +567,7 @@ body {
 }
 
 .nav-item {
+  text-decoration: none; /* REQ-359: links read like the folder buttons */
   display: flex;
   align-items: center;
   gap: 12px;
@@ -713,9 +717,20 @@ body {
 
 /* Live activity ticker — rotates through recent events */
 .topbar__ticker {
-  flex-shrink: 1;
-  min-width: 0;
-  max-width: 280px;
+  /* REQ-406 (demo m15, cycle 2): the pill gives way first — a far larger
+     shrink factor than the search box's, down to its 220px floor — so it
+     never squeezes the search below its placeholder. Below 1500px (REQ-726) it is
+     hidden (TOPBAR_CSS, front-end/lib/topbar-css.ts). */
+  flex: 0 100 auto;
+  /* REQ-273: never narrower than dot + 120px of text + time — an
+     overflow:hidden flex item's auto minimum is 0, which let the text
+     collapse until only "● hace 1m" was left. REQ-319: an explicit floor
+     (not min-content) so the pill sizes to its sentence up to the cap and
+     shows an ellipsis past it, instead of a fixed 120px track. */
+  /* REQ-726 (demo cycle 5, m6): 240px — the time no longer wraps, so the
+     floor holds dot + 120px track + a one-line "ahora mismo" + padding. */
+  min-width: 240px;
+  max-width: 280px; /* REQ-319: wider from 1024px, below */
   height: 36px;
   display: inline-flex;
   align-items: center;
@@ -734,6 +749,13 @@ body {
   background: #fff;
   border-color: rgba(81, 152, 67, 0.35);
   transform: translateY(-1px);
+}
+/* REQ-319 (demo m12): from a desktop width the pill gets room for the whole
+   sentence — "Quote sent to your c…" was the 280px cap's ellipsis. */
+@media (min-width: 1024px) {
+  .topbar__ticker {
+    max-width: 480px;
+  }
 }
 .topbar__ticker-dot {
   flex-shrink: 0;
@@ -756,33 +778,49 @@ body {
   }
 }
 .topbar__ticker-track {
-  flex: 1;
-  min-width: 0;
+  /* REQ-319: sized by the sentence (the item is in flow), shrinking to the
+     floor below when the pill hits its cap. REQ-542: it gives way before
+     the time does (shrink 100 vs 1), so the time wraps only once the track
+     is at its floor. */
+  flex: 0 100 auto;
+  min-width: 120px; /* REQ-273: the event text always gets room */
   position: relative;
-  height: 18px;
+  /* REQ-476 (demo cycle 3, p8-pair9-a / p8-pair10-c): up to two lines.
+     Near the pill's 220px floor (1280px, REQ-406) one line held ~120px —
+     "Quote sent to your c…", "Cotización enviada a t…" — and the search box
+     has no width to spare, so the sentence wraps inside the 36px pill. */
+  max-height: 28px;
   overflow: hidden;
 }
 .topbar__ticker-item {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  align-items: center;
+  position: relative;
+  max-width: 100%;
+  line-height: 14px;
   font-size: 12.5px;
   color: var(--brand-teal);
   font-weight: 500;
   letter-spacing: -0.005em;
-  white-space: nowrap;
-  text-overflow: ellipsis;
+  /* REQ-476: one line when it fits, two when the pill is narrow, an
+     ellipsis only past the second; the pill's title has the whole sentence. */
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  /* REQ-542 (demo cycle 4, m8): break between words — "anywhere" split the
+     sentence mid-word ("aceptó tu cotizaci…"); break-word still splits a
+     single word too long for the track (an email address). */
+  overflow-wrap: break-word;
   overflow: hidden;
   animation: tickerSlideIn 360ms var(--ease-bounce) both;
 }
+/* REQ-542 (demo cycle 4, m31): the entrance moves the sentence, never fades
+   it — from opacity 0 a paused, throttled or restarted animation left the
+   pill reading only "● just now". */
 @keyframes tickerSlideIn {
   from {
-    opacity: 0;
     transform: translateY(8px);
   }
   to {
-    opacity: 1;
     transform: translateY(0);
   }
 }
@@ -793,10 +831,21 @@ body {
   margin-right: 4px;
 }
 .topbar__ticker-time {
-  flex-shrink: 0;
+  /* REQ-542 (demo cycle 4, m8): at the pill's 220px floor the 120px track
+     left ~44px, and a one-line, unshrinkable time was clipped at the pill's
+     edge ("ahora mism"). It stays on one line while the track gives way
+     (the track's shrink is 100); once the track is at its floor the time
+     takes the rest of the squeeze and wraps onto the pill's second line
+     ("ahora / mismo"). */
+  flex: 0 1 auto;
+  /* REQ-726 (demo cycle 5, m6): one line, in the body font — the pill only
+     shows from 1500px (TOPBAR_CSS), where it has room, and the wrapped
+     monospace "hace / 1m" read as broken. */
+  white-space: nowrap;
+  line-height: 14px;
   font-size: 10.5px;
   color: var(--fg-subtle);
-  font-family: var(--font-mono, ui-monospace, monospace);
+  font-family: var(--font-body);
   letter-spacing: 0;
 }
 
@@ -836,7 +885,10 @@ body {
   white-space: nowrap;
 }
 .topbar__search {
-  flex: 1;
+  /* REQ-406 (demo m15, cycle 2): asks for its placeholder's room ("Search a
+     number, customer, address or date…" + icon + kbd), not just what the
+     ticker leaves over. */
+  flex: 1 1 380px;
   min-width: 0;
   max-width: 560px;
   display: flex;
@@ -2572,8 +2624,8 @@ body {
      island) and shrinks for the soft keyboard; falls back to 100dvh without JS. */
   height: 100vh;
   /* REQ-181: minus the impersonation banner's room (--banner-h), so nothing
-     hides under it. */
-  height: calc(var(--app-vh, 100dvh) - var(--banner-h, 0px));
+     hides under it. REQ-379: and minus the demo pill's band (--demo-pill-h). */
+  height: calc(var(--app-vh, 100dvh) - var(--banner-h, 0px) - var(--demo-pill-h, 0px));
   display: flex;
   min-height: 0;
   overflow: hidden;
@@ -2584,7 +2636,9 @@ body {
   background: var(--brand-teal);
   color: #fff;
   flex-shrink: 0;
-  width: 216px;
+  /* REQ-716 (demo c5 p2): 216px wrapped the Spanish "Vista del trabajador"
+     and "Órdenes de trabajo" onto two lines. */
+  width: 228px;
   transition: width 280ms cubic-bezier(0.34, 1.56, 0.64, 1);
   display: flex;
   flex-direction: column;
@@ -2675,6 +2729,7 @@ body {
 }
 
 .sb__textus {
+  text-decoration: none; /* REQ-359: links read like the folder buttons */
   background: var(--brand-pink);
   color: #fff;
   border: none;
@@ -2759,6 +2814,7 @@ body {
 }
 
 .nav-item {
+  text-decoration: none; /* REQ-359: links read like the folder buttons */
   display: flex;
   align-items: center;
   gap: 12px;
@@ -2908,9 +2964,20 @@ body {
 
 /* Live activity ticker — rotates through recent events */
 .topbar__ticker {
-  flex-shrink: 1;
-  min-width: 0;
-  max-width: 280px;
+  /* REQ-406 (demo m15, cycle 2): the pill gives way first — a far larger
+     shrink factor than the search box's, down to its 220px floor — so it
+     never squeezes the search below its placeholder. Below 1500px (REQ-726) it is
+     hidden (TOPBAR_CSS, front-end/lib/topbar-css.ts). */
+  flex: 0 100 auto;
+  /* REQ-273: never narrower than dot + 120px of text + time — an
+     overflow:hidden flex item's auto minimum is 0, which let the text
+     collapse until only "● hace 1m" was left. REQ-319: an explicit floor
+     (not min-content) so the pill sizes to its sentence up to the cap and
+     shows an ellipsis past it, instead of a fixed 120px track. */
+  /* REQ-726 (demo cycle 5, m6): 240px — the time no longer wraps, so the
+     floor holds dot + 120px track + a one-line "ahora mismo" + padding. */
+  min-width: 240px;
+  max-width: 280px; /* REQ-319: wider from 1024px, below */
   height: 36px;
   display: inline-flex;
   align-items: center;
@@ -2929,6 +2996,13 @@ body {
   background: #fff;
   border-color: rgba(81, 152, 67, 0.35);
   transform: translateY(-1px);
+}
+/* REQ-319 (demo m12): from a desktop width the pill gets room for the whole
+   sentence — "Quote sent to your c…" was the 280px cap's ellipsis. */
+@media (min-width: 1024px) {
+  .topbar__ticker {
+    max-width: 480px;
+  }
 }
 .topbar__ticker-dot {
   flex-shrink: 0;
@@ -2951,33 +3025,49 @@ body {
   }
 }
 .topbar__ticker-track {
-  flex: 1;
-  min-width: 0;
+  /* REQ-319: sized by the sentence (the item is in flow), shrinking to the
+     floor below when the pill hits its cap. REQ-542: it gives way before
+     the time does (shrink 100 vs 1), so the time wraps only once the track
+     is at its floor. */
+  flex: 0 100 auto;
+  min-width: 120px; /* REQ-273: the event text always gets room */
   position: relative;
-  height: 18px;
+  /* REQ-476 (demo cycle 3, p8-pair9-a / p8-pair10-c): up to two lines.
+     Near the pill's 220px floor (1280px, REQ-406) one line held ~120px —
+     "Quote sent to your c…", "Cotización enviada a t…" — and the search box
+     has no width to spare, so the sentence wraps inside the 36px pill. */
+  max-height: 28px;
   overflow: hidden;
 }
 .topbar__ticker-item {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  align-items: center;
+  position: relative;
+  max-width: 100%;
+  line-height: 14px;
   font-size: 12.5px;
   color: var(--brand-teal);
   font-weight: 500;
   letter-spacing: -0.005em;
-  white-space: nowrap;
-  text-overflow: ellipsis;
+  /* REQ-476: one line when it fits, two when the pill is narrow, an
+     ellipsis only past the second; the pill's title has the whole sentence. */
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  /* REQ-542 (demo cycle 4, m8): break between words — "anywhere" split the
+     sentence mid-word ("aceptó tu cotizaci…"); break-word still splits a
+     single word too long for the track (an email address). */
+  overflow-wrap: break-word;
   overflow: hidden;
   animation: tickerSlideIn 360ms var(--ease-bounce) both;
 }
+/* REQ-542 (demo cycle 4, m31): the entrance moves the sentence, never fades
+   it — from opacity 0 a paused, throttled or restarted animation left the
+   pill reading only "● just now". */
 @keyframes tickerSlideIn {
   from {
-    opacity: 0;
     transform: translateY(8px);
   }
   to {
-    opacity: 1;
     transform: translateY(0);
   }
 }
@@ -2988,11 +3078,29 @@ body {
   margin-right: 4px;
 }
 .topbar__ticker-time {
-  flex-shrink: 0;
+  /* REQ-542 (demo cycle 4, m8): at the pill's 220px floor the 120px track
+     left ~44px, and a one-line, unshrinkable time was clipped at the pill's
+     edge ("ahora mism"). It stays on one line while the track gives way
+     (the track's shrink is 100); once the track is at its floor the time
+     takes the rest of the squeeze and wraps onto the pill's second line
+     ("ahora / mismo"). */
+  flex: 0 1 auto;
+  /* REQ-726 (demo cycle 5, m6): one line, in the body font — the pill only
+     shows from 1500px (TOPBAR_CSS), where it has room, and the wrapped
+     monospace "hace / 1m" read as broken. */
+  white-space: nowrap;
+  line-height: 14px;
   font-size: 10.5px;
   color: var(--fg-subtle);
-  font-family: var(--font-mono, ui-monospace, monospace);
+  font-family: var(--font-body);
   letter-spacing: 0;
+}
+/* REQ-273: phones hide the ticker, as dashboard.css does — there is no room
+   for its text beside the menu, the greeting and the language switch. */
+@media (max-width: 640px) {
+  .topbar__ticker {
+    display: none;
+  }
 }
 
 /* ------ Main column ------ */
@@ -3002,6 +3110,14 @@ body {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+}
+/* REQ-353 (M40): on a phone <main> clips, it never scrolls — anything a few
+   px too wide is cut and cannot shift the whole app sideways (it had a hidden
+   17px range that a composer focus() scrolled into). */
+@media (max-width: 640px) {
+  .main {
+    overflow: clip;
+  }
 }
 .topbar {
   height: 60px;
@@ -3031,7 +3147,10 @@ body {
   white-space: nowrap;
 }
 .topbar__search {
-  flex: 1;
+  /* REQ-406 (demo m15, cycle 2): asks for its placeholder's room ("Search a
+     number, customer, address or date…" + icon + kbd), not just what the
+     ticker leaves over. */
+  flex: 1 1 380px;
   min-width: 0;
   max-width: 560px;
   display: flex;
@@ -4465,21 +4584,6 @@ body {
 .threads__new:hover {
   transform: translateY(-1px);
 }
-.threads__new-kbd {
-  margin-left: auto;
-  background: rgba(255, 255, 255, 0.2);
-  padding: 2px 8px;
-  border-radius: 6px;
-  font-family: var(--font-mono);
-  font-size: 10px;
-  font-weight: 700;
-}
-/* UX-14: a desktop keyboard hint has no business inside a phone drawer. */
-@media (max-width: 768px) {
-  .threads__new-kbd {
-    display: none;
-  }
-}
 .threads__list {
   flex: 1;
   overflow-y: auto;
@@ -4572,6 +4676,12 @@ body {
 .thread__chip--paid {
   background: var(--green-50);
   color: var(--green-600);
+}
+/* REQ-453: a quote moving along normally (locked, terms wizard, picking
+   details, ready to send) — neutral teal, not the pink alert tone. */
+.thread__chip--progress {
+  background: var(--teal-50);
+  color: var(--teal-600);
 }
 .thread__chip--needs {
   background: var(--pink-50);
@@ -4671,6 +4781,16 @@ body {
   background: var(--brand-green);
   box-shadow: 0 0 0 0 rgba(81, 152, 67, 0.5);
   animation: tickerPulse 1.6s ease-in-out infinite;
+}
+/* REQ-327: a failed delivery is not painted green — the "live" pulse is
+   for a quote that is out there; a dead one sits still and red. */
+.chat__head-sub--bad {
+  color: var(--danger);
+}
+.chat__head-dot--bad {
+  background: var(--danger);
+  box-shadow: none;
+  animation: none;
 }
 .chat__head-tools {
   display: flex;
@@ -4815,6 +4935,17 @@ body {
 }
 .typing-dot:nth-child(3) {
   animation-delay: 0.30s;
+}
+/* REQ-670 (demo-loop cycle 5, p7): the typing bubble says in words what the
+   turn is doing — "Assistant is thinking…", "Pricing the job…". */
+.typing-label {
+  margin-left: 4px;
+  font-size: 13px;
+  color: var(--fg-muted);
+}
+/* REQ-670: the reply as it streams keeps its line breaks */
+.msg__bubble--streaming {
+  white-space: pre-wrap;
 }
 @keyframes typing-bounce {
   0%, 60%, 100% {
@@ -5257,6 +5388,16 @@ body {
   cursor: not-allowed;
   box-shadow: none;
 }
+/* REQ-603 (demo M23): a field's error, under the recovery box's fields. */
+.recovery-card__error {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: #c0392b;
+}
+.recovery-card__input[aria-invalid="true"] {
+  border-color: #d94e4e;
+}
 
 /* ============================================================
    Continue-to-terms inline CTA
@@ -5473,10 +5614,12 @@ body {
    button keeps a sticky :hover that, with the green border, looked identical
    to the .wiz-opt--selected state — so two options appeared selected. */
 @media (hover: hover) {
+  /* REQ-343 (p6): hover is teal, not the selected/suggested green — a
+     resting pointer must never read as a pre-selected option. */
   .wiz-opt:hover {
-    border-color: var(--brand-green);
+    border-color: var(--brand-teal);
     transform: translateY(-1px);
-    box-shadow: 0 4px 10px rgba(72, 158, 95, 0.12);
+    box-shadow: 0 4px 10px rgba(26, 83, 92, 0.12);
   }
 }
 .wiz-opt__sub {
@@ -5484,14 +5627,16 @@ body {
   font-weight: 600;
   color: var(--fg-muted);
 }
+/* REQ-672 (cycle 5, p9): the custom chip ("Pick a date", "Custom") is told
+   apart by its dashed border only. Its old coffee-50 fill and muted text
+   made it read as a state on a row of plain white chips. */
 .wiz-opt--custom {
   border-style: dashed;
-  color: var(--fg-muted);
-  background: var(--coffee-50);
 }
-.wiz-opt--custom:hover {
-  border-style: solid;
-  color: var(--brand-teal);
+@media (hover: hover) {
+  .wiz-opt--custom:hover {
+    border-style: solid;
+  }
 }
 
 /* Roadmap p.8: after a wizard rewind, the user's previous pick on the
@@ -5500,6 +5645,47 @@ body {
   border-color: var(--brand-green);
   background: var(--green-50, #eef6ea);
   box-shadow: inset 0 0 0 1px var(--brand-green);
+}
+/* REQ-258 (demo M22): the option the chat already named ("half deposit" →
+   50/50) is flagged; the contractor still taps to confirm.
+   REQ-672 (cycle 5, p9): a suggestion is NOT a selection — a dashed green
+   border on the plain white chip plus a "Suggested" tag, never the
+   filled look that .wiz-opt--selected / --prev use. */
+.wiz-opt--suggested,
+.wiz-opt--prefill {
+  border-color: var(--brand-green);
+  border-style: dashed;
+}
+.wiz-opt__tag {
+  align-self: flex-start;
+  margin-top: 3px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  border: 1px solid var(--brand-green);
+  color: var(--brand-green);
+  background: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+/* REQ-265: the step's answer the job sentence already gave — one tap. */
+.wiz-prefill {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--brand-green);
+  border-radius: 10px;
+  background: var(--green-50, #eef6ea);
+}
+.wiz-prefill__label {
+  font-size: 13px;
+  color: var(--fg);
 }
 
 /* Customer step — clickable list + create form */
@@ -5734,6 +5920,19 @@ body {
   font-size: 13px;
   cursor: pointer;
 }
+/* REQ-458 (demo M38): the empty number box reads as the thing to fill in —
+   a visible label over each field and a focus ring on the number. */
+.dur__label {
+  font-family: var(--font-body);
+  font-weight: 700;
+  font-size: 11px;
+  color: var(--fg-muted);
+}
+.dur__num:focus,
+.dur__num:focus-visible {
+  border-color: var(--brand-green);
+  box-shadow: 0 0 0 3px rgba(81, 152, 67, 0.3);
+}
 .dur__presets {
   display: flex;
   flex-wrap: wrap;
@@ -5785,6 +5984,12 @@ body {
   font-weight: 700;
   font-size: 14px;
   color: var(--brand-green);
+}
+/* REQ-677 (c4-m45): the number's reason, right above "Lock it in" —
+   larger than the stock .cust-pick__err so a greyed button is never silent. */
+.dur__err {
+  font-size: 13px;
+  border-left: 3px solid var(--brand-pink);
 }
 /* Bossie ask-phase chat header */
 .dur__bossie {
@@ -6058,6 +6263,21 @@ body {
 .cust-create__row {
   display: flex;
   gap: 8px;
+}
+/* REQ-532 (demo p8-pair5-b): a person's business name hides behind a quiet
+   "+ Add a business name" text link. */
+.cust-create__add {
+  align-self: flex-start;
+  padding: 2px 0;
+  border: 0;
+  background: none;
+  color: var(--brand-pink);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.cust-create__add:hover {
+  text-decoration: underline;
 }
 .cust-create__row .cust-pick__search {
   flex: 1;
@@ -6367,10 +6587,39 @@ body {
   cursor: default;
   transform: none;
 }
-.quote-review__hero-field--empty:not(:focus)::before {
-  content: attr(data-placeholder);
+/* REQ-634 (demo-loop cycle 5, m34): the customer's email/phone are real
+   <input>s inside a label that carries the pencil. The hint is the native
+   placeholder, so it shows exactly while the field is empty — focused or
+   not, here and on the demo stage's never-focused mirror — and the empty
+   field keeps a usable width instead of collapsing to a 25px box. */
+.quote-review__hero-field {
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+}
+.quote-review__hero-field:focus-within {
+  background: rgba(255, 107, 107, 0.10);
+  box-shadow: inset 0 -1.5px 0 rgba(255, 107, 107, 0.65);
+}
+.quote-review__hero-field:focus-within::after {
+  opacity: 0;
+}
+.quote-review__hero-input {
+  font: inherit;
+  color: inherit;
+  background: transparent;
+  border: 0;
+  outline: none;
+  padding: 0;
+  margin: 0;
+  min-width: 12ch;
+  max-width: 100%;
+  field-sizing: content;
+}
+.quote-review__hero-input::placeholder {
   color: var(--fg-subtle);
   font-style: italic;
+  opacity: 1;
 }
 .quote-review__swap-panel {
   display: flex;
@@ -6470,34 +6719,52 @@ body {
   background: rgba(255, 107, 107, 0.10);
   box-shadow: inset 0 -1.5px 0 rgba(255, 107, 107, 0.65);
 }
-/* Pencil affordance — appended after every editable surface so users
-   see at a glance that the field is tappable. Pink to match the rest
-   of the edit hover/focus story. SVG uses url-encoded `#` for color. */
-.quote-review__editable::after,
-.quote-review__term-edit::after {
+/* Pencil affordance — appended after every contentEditable surface so users
+   see at a glance that the field is tappable. SVG uses url-encoded `#` for
+   color. REQ-617 (demo p4-p3a): legible at rest — the darker #d94e4e stroke,
+   13px, opacity 0.85 (touch has no hover; the old 11px #FF6B6B at 0.40 was
+   near-invisible). TERMS values draw their pencil as an <Icon> instead
+   (components/TermEditValue.tsx, .quote-review__term-pencil below). */
+.quote-review__editable::after {
   content: "";
   display: inline-block;
-  width: 11px;
-  height: 11px;
+  width: 13px;
+  height: 13px;
   margin-left: 6px;
   vertical-align: -1px;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23FF6B6B' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5z'/%3E%3C/svg%3E");
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23d94e4e' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5z'/%3E%3C/svg%3E");
   background-repeat: no-repeat;
   background-position: center;
-  background-size: 11px 11px;
-  opacity: 0.40;
+  background-size: 13px 13px;
+  opacity: 0.85;
   transition: opacity 140ms, transform 140ms;
   pointer-events: none;
 }
-.quote-review__editable:hover::after,
-.quote-review__term-edit:hover::after {
-  opacity: 0.95;
+.quote-review__editable:hover::after {
+  opacity: 1;
   transform: rotate(-6deg);
 }
 .quote-review__editable:focus::after {
   opacity: 0;
 }
-.quote-review__term-edit:disabled::after {
+/* REQ-617: a TERMS value's last word + its pencil never break apart. */
+.quote-review__term-tail {
+  white-space: nowrap;
+}
+.quote-review__term-pencil {
+  display: inline-block;
+  margin-left: 6px;
+  vertical-align: -2px;
+  color: #d94e4e;
+  opacity: 0.85;
+  transition: opacity 140ms, transform 140ms;
+  pointer-events: none;
+}
+.quote-review__term-edit:hover .quote-review__term-pencil {
+  opacity: 1;
+  transform: rotate(-6deg);
+}
+.quote-review__term-edit:disabled .quote-review__term-pencil {
   display: none;
 }
 .quote-review__line-amt {
@@ -6570,6 +6837,33 @@ body {
 .quote-review__term-edit:disabled:hover {
   background: transparent;
   box-shadow: none;
+}
+/* REQ-468 (demo p5): the Job Details section-label edit button. Its pencil
+   is the <Icon> it holds — it must NOT reuse .quote-review__term-edit, whose
+   ::after paints a second pencil (the "double pencil" the demo saw). */
+.quote-review__section-edit {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  vertical-align: middle;
+  background: transparent;
+  border: none;
+  padding: 2px 4px;
+  margin: -2px 0 -2px 4px;
+  color: #ff6b6b;
+  opacity: 0.6;
+  cursor: pointer;
+  border-radius: 4px;
+  transition: opacity 140ms, background 120ms;
+}
+.quote-review__section-edit:hover {
+  opacity: 1;
+  background: rgba(255, 107, 107, 0.08);
+}
+.quote-review__section-edit:disabled {
+  opacity: 0.3;
+  cursor: default;
+  background: transparent;
 }
 .wiz-opt--selected {
   border-color: var(--brand-green) !important;
@@ -7543,6 +7837,142 @@ body {
   color: var(--brand-teal);
 }
 
+/* REQ-392 (demo-loop cycle 2, M7): the compact "Tell the assistant…" box on
+   the guided flow's tap steps — a quiet secondary control under the step's
+   own primary action (REQ-041 NW-53b: never a second big text box). */
+.composer--step {
+  padding: 8px 18px calc(10px + env(safe-area-inset-bottom, 0px));
+}
+.composer__step-open {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  appearance: none;
+  border: 1px solid var(--border);
+  background: #fff;
+  color: var(--brand-teal);
+  border-radius: 999px;
+  padding: 7px 14px;
+  font-family: var(--font-body);
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: border-color 140ms, background 140ms;
+}
+.composer__step-open:hover,
+.composer__step-open:focus-visible {
+  border-color: var(--brand-teal);
+  background: var(--coffee-50);
+}
+/* REQ-392: Pick a price and the Job details picker are bounded to the panel
+   (REQ-338: the picker fits at 1280×720), so their closed box is the button
+   on the left of their own Continue row — the row is Continue's height, the
+   bar under the panel appears only once it is tapped. One solid primary
+   (Continue), one outlined secondary. */
+.chat__step-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px 10px;
+  flex: 0 0 auto;
+}
+.chat__step-actions > .chat__price-continue {
+  align-self: auto;
+  margin-left: auto;
+}
+.composer__step-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--coffee-50);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 4px 6px 4px 12px;
+  transition: border-color 160ms;
+}
+.composer__step-row:focus-within {
+  border-color: var(--brand-green);
+  background: #fff;
+}
+.composer__step-input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  outline: none;
+  background: transparent;
+  font-family: var(--font-body);
+  /* >= 16px, like .composer__input: iOS Safari zooms a smaller field. */
+  font-size: 16px;
+  color: var(--brand-teal);
+  padding: 7px 0;
+}
+.composer__step-input::placeholder {
+  color: var(--fg-subtle);
+}
+.composer__step-row .composer__send:disabled {
+  opacity: 0.45;
+  box-shadow: none;
+  cursor: default;
+}
+.composer__step-close {
+  width: 30px;
+  height: 30px;
+  border: none;
+  background: transparent;
+  color: var(--fg-muted);
+  border-radius: 8px;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+}
+.composer__step-close:hover {
+  background: rgba(20, 72, 82, 0.06);
+  color: var(--brand-teal);
+}
+.composer__step-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-bottom: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--coffee-50);
+  color: var(--brand-teal);
+  font-size: 13px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+}
+.composer__step-note img {
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+}
+/* REQ-442 (demo-loop cycle 3, M22 + m49): the step's own transcript — the
+   contractor's line over the assistant's answer; the strip scrolls rather
+   than pushing the picker out of the window (REQ-338). */
+.composer__step-log {
+  max-height: 168px;
+  overflow-y: auto;
+}
+.composer__step-said {
+  margin: 0 0 4px auto;
+  max-width: 85%;
+  width: fit-content;
+  padding: 6px 10px;
+  border-radius: 12px;
+  background: var(--brand-teal);
+  color: #fff;
+  font-size: 13px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+}
+.composer__step-note .spinner {
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
 /* ----- Document preview column ----- */
 .docpane {
   background: #fff;
@@ -8166,6 +8596,14 @@ body {
   color: var(--fg, #1a2415);
   white-space: pre-wrap;
 }
+/* REQ-387 (demo M25): the know-my-price path's raw words get tidied up by
+   the Job Details picker before the review. */
+.chat__price-details-recap-note {
+  margin-top: 4px;
+  font-size: 12px;
+  font-style: italic;
+  color: var(--fg-muted, #6b7560);
+}
 
 /* 4th pricing option — custom price. Clicking focuses the MoneyInput. */
 .chat__price-custom-cta {
@@ -8405,6 +8843,31 @@ body {
   line-height: 1.5;
   color: var(--fg, #1a2415);
   white-space: pre-wrap;
+  /* REQ-338 (demo m31): the echo of the typed message is clamped to three
+     lines — an ~800-char message used to grow the strip until it pushed the
+     option list out of the 720px window. "Show more" opens it. */
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+.chat__confirm-details-text.is-open {
+  display: block;
+  -webkit-line-clamp: unset;
+  max-height: 8em;
+  overflow-y: auto;
+}
+.chat__confirm-details-more {
+  align-self: flex-start;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--brand-teal, #1a535c);
+  text-decoration: underline;
+  cursor: pointer;
+}
+.chat__confirm-details-more:hover {
+  color: var(--brand-green, #519843);
 }
 
 /* Step-level Back inside wizard cards ([data-cy=wizard-back]) — same look
@@ -8445,11 +8908,23 @@ body {
   flex-direction: column;
   gap: 8px;
   position: relative;
+  /* REQ-383 (demo M26, cycle 2): the picker takes its natural height and the
+     chat panel scrolls. REQ-338 bounded it to the panel (max-height: 100%)
+     and let the option list give, which at 1280×720 squeezed the cards into
+     a 77 px window holding 471 px of content. The strip and Continue sit
+     after the list in flow, never over a card; the empty-state box's base
+     min-height: 100% lets the picker grow past the panel, and AsstChat
+     scrolls the panel to the picker's head and first card on open. */
   animation: chat-price-in 320ms cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+.chat__jobopts > .chat__confirm-details,
+.chat__jobopts > .chat__price-continue {
+  flex: 0 0 auto;
 }
 .chat__jobopts-head {
   display: flex;
   flex-direction: column;
+  flex: 0 0 auto;
   gap: 1px;
   text-align: left;
   position: relative;
@@ -8495,8 +8970,10 @@ body {
   display: flex;
   flex-direction: column;
   gap: 7px;
-  max-height: calc(100dvh - 235px);
-  overflow-y: auto;
+  /* REQ-383 (demo M26): every card at its full height — no inner scroll
+     box, no shrinking (REQ-338's flex: 1 1 auto + 72 px floor left a
+     two-bullet window). The chat panel is the one scroller. */
+  flex: 0 0 auto;
   margin: 0 -4px;
   padding: 2px 4px;
 }
@@ -8515,9 +8992,15 @@ body {
     background 0.12s ease,
     box-shadow 0.12s ease;
 }
-.chat__jobopt:hover,
-.chat__jobopt-custom:hover {
-  border-color: var(--brand-green, #519843);
+/* REQ-672 (cycle 5, c4-p4-p5a): the brand-green border + mint fill mean
+   "selected" only. Hover is neutral and limited to real hover devices, so a
+   resting pointer or a sticky touch hover never looks like a pick. */
+@media (hover: hover) {
+  .chat__jobopt:hover,
+  .chat__jobopt-custom:hover {
+    border-color: var(--fg-muted, #8a8f88);
+    box-shadow: 0 2px 8px -4px rgba(26, 83, 92, 0.25);
+  }
 }
 .chat__jobopt.is-selected,
 .chat__jobopt-custom.is-selected {
@@ -8588,7 +9071,7 @@ body {
   color: var(--fg, #1a2415);
   padding: 1px 4px;
   border-radius: 6px;
-  cursor: text;
+  cursor: pointer;
   transition: background 0.12s ease;
 }
 .chat__jobopt-text:hover:not(:disabled) {
@@ -8598,6 +9081,24 @@ body {
   text-decoration: line-through;
   color: #9aa792;
   cursor: default;
+}
+/* REQ-335 (M31): the bullet's own pencil — editing lives here, so a tap on
+   the text only selects the card. Always visible (no hover on a phone). */
+.chat__jobopt-pencil {
+  flex: 0 0 auto;
+  appearance: none;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  padding: 0 2px;
+  line-height: 1;
+  font-size: 11px;
+  color: var(--fg-muted, #9aa792);
+  border-radius: 6px;
+}
+.chat__jobopt-pencil:hover {
+  color: var(--fg, #1a2415);
+  background: rgba(26, 83, 92, 0.06);
 }
 .chat__jobopt-edit {
   flex: 1 1 auto;
@@ -8632,6 +9133,19 @@ body {
 }
 .chat__jobopt-name-btn:hover {
   background: rgba(26, 83, 92, 0.06);
+}
+/* REQ-446 (demo-loop cycle 3, m13): which version a card is — concise /
+   standard / detailed — so three versions never read as one job thrice. */
+.chat__jobopt-style {
+  flex: none;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+  padding: 3px 7px;
+  border-radius: 999px;
+  color: var(--fg-muted, #5c6b55);
+  background: rgba(26, 83, 92, 0.08);
+  white-space: nowrap;
 }
 .chat__jobopt-name-pencil {
   font-size: 11px;
@@ -8752,69 +9266,75 @@ body {
   cursor: not-allowed;
 }
 
-/* "Want me to professionalize that?" popup — fired after a bullet edit
-   or a custom-bullet add. */
-.chat__pro-pop {
-  position: fixed;
-  inset: 0;
-  z-index: 60;
+/* REQ-384 (m16): the "Polish this line?" offer — an inline row right under
+   the bullet it rewrites (never a modal over it), with a before → after. */
+.chat__pro-row {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  justify-content: center;
-  background: rgba(20, 36, 21, 0.32);
+  gap: 6px 10px;
+  margin: 2px 0 6px 22px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: #f1f8ec;
+  border: 1px solid #d6ecc8;
+  font-size: 13px;
   animation: chat-price-in 140ms ease;
 }
-.chat__pro-pop-card {
-  background: #fff;
-  border-radius: 16px;
-  padding: 20px 22px;
-  width: min(320px, calc(100vw - 48px));
-  box-shadow: 0 18px 48px -12px rgba(20, 36, 21, 0.4);
-  text-align: center;
-}
-.chat__pro-pop-msg {
-  margin: 0 0 16px;
-  font-size: 15px;
-  font-weight: 600;
+.chat__pro-row-msg {
+  font-weight: 700;
   color: var(--fg, #1a2415);
 }
-.chat__pro-pop-actions {
+.chat__pro-row-diff {
+  flex: 1 1 220px;
+  min-width: 0;
   display: flex;
-  gap: 10px;
-  justify-content: center;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 6px;
 }
-.chat__pro-pop-no,
-.chat__pro-pop-yes {
+.chat__pro-row-before {
+  color: var(--fg-muted, #6b7560);
+}
+.chat__pro-row-arrow {
+  color: var(--fg-muted, #6b7560);
+}
+.chat__pro-row-after {
+  color: var(--fg, #1a2415);
+  font-weight: 600;
+  white-space: pre-line;
+}
+.chat__pro-row-actions {
+  display: flex;
+  gap: 6px;
+  margin-left: auto;
+}
+.chat__pro-row-no,
+.chat__pro-row-yes {
   appearance: none;
   font: inherit;
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 700;
-  padding: 9px 22px;
+  padding: 5px 14px;
   border-radius: 999px;
   cursor: pointer;
-  transition: background 0.14s ease, opacity 0.14s ease;
+  transition: background 0.14s ease;
 }
-.chat__pro-pop-no {
+.chat__pro-row-no {
   border: 1.5px solid var(--line, #d8e0d4);
   background: #fff;
   color: var(--fg-muted, #6b7560);
 }
-.chat__pro-pop-no:hover:not(:disabled) {
+.chat__pro-row-no:hover {
   background: #f3f6f1;
 }
-.chat__pro-pop-yes {
+.chat__pro-row-yes {
   border: 0;
   background: var(--brand-green, #519843);
   color: #fff;
-  box-shadow: 0 6px 18px -6px rgba(81, 152, 67, 0.55);
 }
-.chat__pro-pop-yes:hover:not(:disabled) {
+.chat__pro-row-yes:hover {
   background: #437b37;
-}
-.chat__pro-pop-no:disabled,
-.chat__pro-pop-yes:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
 }
 
 .chat__empty-debug {
@@ -8858,6 +9378,7 @@ body {
   }
 }
 .sb__textus {
+  text-decoration: none; /* REQ-359: links read like the folder buttons */
   animation: pm-assistant-shake 5.2s ease-in-out infinite;
 }
 .sb__textus:hover, .sb__textus:focus-visible {
@@ -8865,12 +9386,13 @@ body {
 }
 @media (prefers-reduced-motion: reduce) {
   .sb__textus {
+  text-decoration: none; /* REQ-359: links read like the folder buttons */
     animation: none;
   }
 }
 
 /* ------ Mobile (≤640px): collapse the rail to a slide-in overlay ------
-   Without this the 216px sidebar stays in flow and `.app { overflow:hidden }`
+   Without this the 228px sidebar stays in flow and `.app { overflow:hidden }`
    clips the chat off-screen (the assistant was unusable on phones). The
    DashSidebar island already toggles `.sb--open` + renders `.sb-backdrop`
    on narrow screens; this just hides the rail by default so the chat gets
@@ -8880,7 +9402,7 @@ body {
     position: fixed;
     top: 0;
     left: 0;
-    bottom: 0;
+    bottom: var(--demo-pill-h, 0px); /* REQ-379: ends above the demo pill */
     z-index: 60;
     width: 260px;
     transform: translateX(-100%);
@@ -8889,6 +9411,21 @@ body {
   }
   .sb.sb--open {
     transform: translateX(0);
+  }
+  /* REQ-724 (cycle 5, M27): the Conversations dock (AsstThreads) sits in the
+     bottom of this column while the drawer is open. The drawer reserves the
+     dock's measured height (--threads-dock-h, set by the island) so its own
+     foot — Settings, Worker view, Log out — ends above the dock instead of
+     under it; on a short phone the drawer's inside scrolls. */
+  .sb.sb--threads-docked {
+    padding-bottom: var(--threads-dock-h, 0px);
+  }
+  .sb.sb--threads-docked .sb__inner {
+    overflow-y: auto;
+    min-height: 0;
+  }
+  .sb.sb--threads-docked .sb__nav {
+    min-height: 88px; /* the nav scrolls first; it never collapses to nothing */
   }
   .sb-backdrop {
     position: fixed;
@@ -8908,12 +9445,13 @@ body {
     top: var(--banner-h, 0px); /* REQ-181: under the impersonation banner */
     left: 0;
     right: 0;
-    height: calc(var(--vvh, 100dvh) - var(--banner-h, 0px));
+    /* REQ-379: minus the demo pill's band, which hugs the visible bottom too */
+    height: calc(var(--vvh, 100dvh) - var(--banner-h, 0px) - var(--demo-pill-h, 0px));
     transform: translateY(var(--vvt, 0px));
     overflow: hidden;
   }
   .asst {
-    height: calc(var(--vvh, 100dvh) - var(--banner-h, 0px) - 60px);
+    height: calc(var(--vvh, 100dvh) - var(--banner-h, 0px) - 60px - var(--demo-pill-h, 0px));
     min-height: 0;
   }
 }
@@ -9082,4 +9620,277 @@ body {
   font-size: 13px;
   font-weight: 700;
   color: var(--fg, #1c2c30);
+}
+
+/* REQ-461 (demo m8): "Sends in" + the collapsed "What they'll get". */
+.send-dialog {
+  max-height: calc(100vh - 32px);
+  overflow-y: auto;
+}
+.send-dialog__preview-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.send-dialog__lang {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--fg, #1c2c30);
+}
+.send-dialog__lang-label {
+  margin-right: 2px;
+}
+.send-dialog__preview {
+  border: 1.5px solid rgba(20, 72, 82, 0.15);
+  border-radius: 10px;
+  padding: 8px 12px;
+  font-size: 13px;
+}
+.send-dialog__preview > summary {
+  cursor: pointer;
+  font-weight: 800;
+  color: var(--brand-teal, #144852);
+}
+.send-dialog__preview-note {
+  margin: 8px 0 2px;
+  color: var(--muted, #6b7a7e);
+}
+.send-dialog__preview-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 10px;
+}
+.send-dialog__preview-part h5 {
+  margin: 0 0 6px;
+  font-size: 12px;
+  font-weight: 800;
+  color: var(--muted, #6b7a7e);
+  overflow-wrap: anywhere;
+}
+.send-dialog__preview-subject {
+  margin: 0 0 8px;
+  overflow-wrap: anywhere;
+}
+.send-dialog__preview-frame {
+  display: block;
+  width: 100%;
+  height: 320px;
+  border: 1px solid rgba(20, 72, 82, 0.12);
+  border-radius: 8px;
+  background: #fff;
+}
+.send-dialog__preview-sms {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: var(--green-50, #eef6ea);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* REQ-310 (demo m13): the customer's link after a send — a persistent row
+   under the send divider and on the sent action_card, outside the menu. */
+.customer-link {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 10px;
+  margin: 4px 0 12px;
+  padding: 8px 12px;
+  border: 1px solid rgba(20, 72, 82, 0.14);
+  border-radius: 10px;
+  background: rgba(20, 72, 82, 0.03);
+  font-size: 12.5px;
+  color: var(--brand-teal, #144852);
+}
+.customer-link__label {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+.customer-link__path {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  color: #4f6166;
+  user-select: all;
+}
+.customer-link__btn {
+  appearance: none;
+  border: 1px solid rgba(20, 72, 82, 0.28);
+  background: #fff;
+  color: var(--brand-teal, #144852);
+  border-radius: 8px;
+  padding: 5px 10px;
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 700;
+  cursor: pointer;
+  text-decoration: none;
+  line-height: 1.2;
+}
+.customer-link__btn:hover {
+  background: rgba(20, 72, 82, 0.06);
+}
+.customer-link__btn--open {
+  border-color: transparent;
+  background: var(--brand-teal, #144852);
+  color: #fff;
+}
+.customer-link__btn--open:hover {
+  background: #0f3a42;
+}
+
+/* REQ-310 (demo m32): the copy-link confirmation lives OUTSIDE the menu. */
+.link-toast {
+  position: fixed;
+  left: 50%;
+  bottom: 96px;
+  transform: translateX(-50%);
+  z-index: 1200;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  max-width: min(92vw, 520px);
+  padding: 10px 12px 10px 14px;
+  border-radius: 12px;
+  background: var(--brand-teal, #144852);
+  color: #fff;
+  font-size: 13.5px;
+  font-weight: 600;
+  box-shadow: 0 14px 34px rgba(20, 72, 82, 0.28);
+  animation: link-toast-in 160ms ease-out;
+}
+.link-toast--failed {
+  background: #b23b3b;
+}
+.link-toast__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.18);
+  flex: 0 0 auto;
+  margin-top: 1px;
+}
+.link-toast__body {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.link-toast__url {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  font-weight: 500;
+  word-break: break-all;
+  user-select: all;
+  background: rgba(255, 255, 255, 0.14);
+  padding: 4px 6px;
+  border-radius: 6px;
+}
+.link-toast__close {
+  appearance: none;
+  border: none;
+  background: transparent;
+  color: inherit;
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 2px;
+  opacity: 0.8;
+}
+.link-toast__close:hover {
+  opacity: 1;
+}
+/* REQ-572 (demo cycle 4, p4-p7c): "Link copied — mark as sent?" */
+.link-toast__mark {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.link-toast__mark-btn {
+  appearance: none;
+  border: none;
+  border-radius: 8px;
+  background: #fff;
+  color: var(--brand-teal, #144852);
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 700;
+  padding: 5px 10px;
+  cursor: pointer;
+}
+.link-toast__mark-btn:disabled {
+  opacity: 0.6;
+  cursor: progress;
+}
+.link-toast__mark-err {
+  font-size: 12px;
+  font-weight: 500;
+}
+@keyframes link-toast-in {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+}
+/* REQ-390 (demo m19): the missing-contact reason before any contact field is
+   touched — a neutral hint (REQ-029: visible from the start), not an error */
+.cust-pick__hint {
+  padding: 8px 12px;
+  border-radius: 9px;
+  background: var(--coffee-50);
+  color: var(--fg-muted);
+  font-size: 11.5px;
+  font-weight: 600;
+}
+
+/* REQ-716 (demo c5 p2): the channel label keeps its one line and its width;
+   "Texto + Correo" was squeezed onto three lines by the nowrap note below. */
+.send-dialog__option-label {
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+/* REQ-402 (demo m5): the contact a send channel still lacks, on the option.
+   REQ-716: it wraps (right-aligned) in the room the label leaves. */
+.send-dialog__needs {
+  margin-left: auto;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.3;
+  color: var(--fg-muted, #6b7b80);
+  white-space: normal;
+  min-width: 0;
+  text-align: right;
+}
+.send-dialog__needs + .quote-review__send-menu-tag {
+  margin-left: 6px;
+}
+.send-dialog__option .quote-review__send-menu-tag {
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+/* REQ-570 (demo m41): "Preview as customer" is a link in the Send ▾ menu. */
+a.quote-review__send-menu-item {
+  text-decoration: none;
 }

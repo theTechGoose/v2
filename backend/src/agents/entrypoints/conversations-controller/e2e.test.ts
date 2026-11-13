@@ -215,3 +215,197 @@ Deno.test("agents conversations e2e: GET without session is rejected", async () 
     assertEquals(ok, false);
   });
 });
+
+// ── REQ-230 (demo issue M14) ────────────────────────────────────────────
+// The assistant's pre-Continue flow (job options, the pick, the price, the
+// view) is saved ON the conversation, so a GET from any window rebuilds it.
+// Before: POST /draft took only {note, quoteId}; GET returned one user
+// message while the contractor sat on the options or the price.
+
+const PRE_CONTINUE_DRAFT = {
+  flowChip: "helpPrice",
+  suggestPricing: true,
+  invoiceFlow: false,
+  awaitingJobDetails: false,
+  jobDetailsRaw: "Patio slab 10x12 for the Nguyen family",
+  submittedJobDetails: "Patio slab 10x12 for the Nguyen family",
+  jobOptionsOpen: false,
+  pickerMode: "polish",
+  jobOptions: [{
+    id: "opt-1",
+    jobName: "Patio Slab",
+    summary: "Pour a 10x12 concrete patio slab",
+    bullets: [{ id: "b1", text: "Excavate and grade", deleted: false }],
+  }],
+  optionsDegraded: false,
+  selectedOptionId: "opt-1",
+  confirmedOption: {
+    id: "opt-1",
+    jobName: "Patio Slab",
+    summary: "Pour a 10x12 concrete patio slab",
+    bullets: [{ id: "b1", text: "Excavate and grade", deleted: false }],
+  },
+  priceCaptureOpen: true,
+  priceCents: 370000,
+  priceSuggestions: null,
+  priceBasis: null,
+  previewCtaId: null,
+  polishRaw: null,
+  // REQ-400 (demo-loop cycle 2, M21): the message as typed rides the draft
+  originalRaw: "Patio slab 10x12 for the Nguyen family",
+};
+
+async function newConv(port: number, sid: string): Promise<{ id: string }> {
+  return await fetch(`http://localhost:${port}/agents/conversations`, {
+    method: "POST", headers: { "content-type": "application/json", "x-session-id": sid }, body: "{}",
+  }).then((r) => r.json());
+}
+
+function postDraft(port: number, sid: string, id: string, body: unknown) {
+  return fetch(`http://localhost:${port}/agents/conversations/${id}/draft`, {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-session-id": sid },
+    body: JSON.stringify(body),
+  });
+}
+
+Deno.test("REQ-230 (M14): POST /:id/draft {draft} is saved on the conversation; GET /:id from another window returns it", async () => {
+  await withServer(async (port) => {
+    const sid = await login(port);
+    const conv = await newConv(port, sid);
+    await drain(await postDraft(port, sid, conv.id, {
+      note: PRE_CONTINUE_DRAFT.jobDetailsRaw,
+      draft: PRE_CONTINUE_DRAFT,
+    }));
+    // A second sign-in of the same account = another window (the demo
+    // stage impersonates the customer): it has no sessionStorage, only GET.
+    const sid2 = await login(port);
+    const detail = await fetch(`http://localhost:${port}/agents/conversations/${conv.id}`, {
+      headers: { "x-session-id": sid2 },
+    }).then((r) => r.json());
+    assertEquals(detail.messages.length, 1, "the note is still the one user message");
+    assertEquals(detail.draft, PRE_CONTINUE_DRAFT);
+  });
+});
+
+Deno.test("REQ-230 (M14): a later draft replaces the earlier; draft:null clears it; garbage is ignored", async () => {
+  await withServer(async (port) => {
+    const sid = await login(port);
+    const conv = await newConv(port, sid);
+    await drain(await postDraft(port, sid, conv.id, { draft: { ...PRE_CONTINUE_DRAFT, priceCaptureOpen: false, jobOptionsOpen: true } }));
+    await drain(await postDraft(port, sid, conv.id, { draft: PRE_CONTINUE_DRAFT }));
+    const get = () =>
+      fetch(`http://localhost:${port}/agents/conversations/${conv.id}`, {
+        headers: { "x-session-id": sid },
+      }).then((r) => r.json());
+    assertEquals((await get()).draft.priceCaptureOpen, true);
+    await drain(await postDraft(port, sid, conv.id, { draft: "not a draft" }));
+    assertEquals((await get()).draft.priceCents, 370000, "garbage does not wipe the draft");
+    await drain(await postDraft(port, sid, conv.id, { draft: null }));
+    assertEquals((await get()).draft, undefined);
+  });
+});
+
+Deno.test("REQ-230 (M14): binding the quote keeps the draft (the pick and the price survive Continue)", async () => {
+  await withServer(async (port) => {
+    const sid = await login(port);
+    const conv = await newConv(port, sid);
+    await drain(await postDraft(port, sid, conv.id, { draft: PRE_CONTINUE_DRAFT }));
+    await drain(await postDraft(port, sid, conv.id, { quoteId: "q-123" }));
+    const detail = await fetch(`http://localhost:${port}/agents/conversations/${conv.id}`, {
+      headers: { "x-session-id": sid },
+    }).then((r) => r.json());
+    assertEquals(detail.conversation.quoteId, "q-123");
+    assertEquals(detail.draft.confirmedOption.id, "opt-1");
+    assertEquals(detail.draft.priceCents, 370000);
+  });
+});
+
+Deno.test("REQ-230 (M14): another account cannot write or read the draft; DELETE removes it", async () => {
+  await withServer(async (port) => {
+    const sidA = await login(port, "+15125551234");
+    const sidB = await login(port, "+15125559999");
+    const conv = await newConv(port, sidA);
+    const res = await postDraft(port, sidB, conv.id, { draft: PRE_CONTINUE_DRAFT });
+    const ok = res.ok;
+    await drain(res);
+    assertEquals(ok, false, "a stranger's draft write is refused");
+    const own = await fetch(`http://localhost:${port}/agents/conversations/${conv.id}`, {
+      headers: { "x-session-id": sidA },
+    }).then((r) => r.json());
+    assertEquals(own.draft, undefined);
+
+    await drain(await postDraft(port, sidA, conv.id, { draft: PRE_CONTINUE_DRAFT }));
+    await fetch(`http://localhost:${port}/agents/conversations/${conv.id}`, {
+      method: "DELETE", headers: { "x-session-id": sidA },
+    }).then(drain);
+    const { AgentConversationStore } = await import("@agents/domain/data/agent-conversation-store/mod.ts");
+    assertEquals(await new AgentConversationStore().getDraft(conv.id), null);
+  });
+});
+
+Deno.test("agents conversations e2e: REQ-234 (demo M3) POST /:id/lock-quote locks the quote but does NOT send it", async () => {
+  await withServer(async (port) => {
+    const sid = await login(port);
+    const h = { "content-type": "application/json", "x-session-id": sid };
+    const customer = await fetch(`http://localhost:${port}/customers`, {
+      method: "POST", headers: h,
+      body: JSON.stringify({ name: "Acme", email: "ops@acme.test" }),
+    }).then((r) => r.json());
+    const quote = await fetch(`http://localhost:${port}/quotes`, {
+      method: "POST", headers: h,
+      body: JSON.stringify({
+        summary: "Roof",
+        customerId: customer.id,
+        lineItems: [{ description: "x", quantity: 1, unit: "ea", price: 10000 }],
+        estimatedTotal: 10000,
+      }),
+    }).then((r) => r.json());
+    const conv = await fetch(`http://localhost:${port}/agents/conversations`, {
+      method: "POST", headers: h, body: "{}",
+    }).then((r) => r.json());
+
+    const res = await fetch(`http://localhost:${port}/agents/conversations/${conv.id}/lock-quote`, {
+      method: "POST", headers: h, body: JSON.stringify({ quoteId: quote.id }),
+    });
+    assertEquals(res.status, 200);
+    const result = await res.json();
+    assertEquals(result.conversation.quoteStatus, "locked");
+    assertEquals(result.newMessages[0].kind, "action_card");
+    assertEquals(result.newMessages[0].payload.status, "locked");
+
+    const after = await fetch(`http://localhost:${port}/quotes/${quote.id}`, {
+      headers: { "x-session-id": sid },
+    }).then((r) => r.json());
+    assertEquals(after.status, "draft");
+    assertEquals(after.sentAt, undefined);
+    assertEquals(typeof after.lockedAt, "string");
+  });
+});
+
+Deno.test("agents conversations e2e: REQ-465 (demo cycle 3, m37) POST /:id/lock-quote returns a locked card carrying the quote's Q- number", async () => {
+  await withServer(async (port) => {
+    const sid = await login(port, "+15125554650");
+    const h = { "content-type": "application/json", "x-session-id": sid };
+    const quote = await fetch(`http://localhost:${port}/quotes`, {
+      method: "POST", headers: h,
+      body: JSON.stringify({
+        summary: "Fence",
+        lineItems: [{ description: "x", quantity: 1, unit: "ea", price: 25000 }],
+        estimatedTotal: 25000,
+      }),
+    }).then((r) => r.json());
+    assertEquals(typeof quote.number, "string");
+    const conv = await fetch(`http://localhost:${port}/agents/conversations`, {
+      method: "POST", headers: h, body: "{}",
+    }).then((r) => r.json());
+
+    const res = await fetch(`http://localhost:${port}/agents/conversations/${conv.id}/lock-quote`, {
+      method: "POST", headers: h, body: JSON.stringify({ quoteId: quote.id }),
+    });
+    assertEquals(res.status, 200);
+    const result = await res.json();
+    assertEquals(result.newMessages[0].kind, "action_card");
+    assertEquals(result.newMessages[0].payload.number, quote.number);
+  });
+});

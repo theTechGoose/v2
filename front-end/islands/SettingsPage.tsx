@@ -8,6 +8,7 @@
  * card owns its own save state and bubbles the saved value up via onSaved
  * so neighbouring cards stay in sync without a full refetch.
  */
+import Backdrop from "../components/Backdrop.tsx";
 import { useEffect, useRef, useState } from "preact/hooks";
 import type { ComponentChildren } from "preact";
 import { adminsClient, isActing } from "../clients/admins.ts";
@@ -16,6 +17,12 @@ import {
   profileClient,
   type ProfileSnapshot,
 } from "../clients/profile.ts";
+import { announceProfile } from "../lib/profile-events.ts";
+import {
+  revealSettingsAnchor,
+  SETTINGS_ANCHORS,
+  settingsAnchorOf,
+} from "../lib/settings-anchors.ts"; // REQ-513
 import { DOC_KINDS, type DocKind } from "../../shared/documents/numbering.ts";
 import {
   formOf,
@@ -32,7 +39,17 @@ import {
   UPGRADE_PLANS,
 } from "../../shared/quote-flow/pricing-plans.ts";
 import { switchQuote } from "../../shared/quote-flow/plan-switch.ts";
+import { accountNetDays } from "../../shared/quote-flow/completion-schedule.ts"; // REQ-411
+import {
+  PAYMENT_METHOD_CATALOG,
+  type PaymentMethodDef,
+} from "../../shared/identity/payment-methods.ts"; // REQ-620
+import {
+  insurerError,
+  policyNumberError,
+} from "../../shared/quote-flow/business-fields.ts"; // REQ-503
 import { dollars, PlanCards } from "../components/PlanCards.tsx";
+import { firstPickNote } from "../lib/plan-pick-note.ts";
 import {
   handoffOf,
   handoffPage,
@@ -42,20 +59,50 @@ import {
   settingsTabOf,
 } from "../lib/plan-return.ts";
 import { filesClient } from "../clients/files.ts";
+import {
+  isLogoImageType,
+  LOGO_IMAGE_ACCEPT,
+} from "../../shared/quote-flow/logo-image.ts"; // REQ-252
 import { stripeClient, type StripeStatus } from "../clients/stripe.ts"; // REQ-212
 import { checkKeyPair, maskSecret } from "../../shared/payments/stripe-keys.ts"; // REQ-212
-import { checkPayLinks } from "../../shared/payments/pay-links.ts"; // REQ-630
+import {
+  checkCardPayUrl,
+  checkPayLinks,
+} from "../../shared/payments/pay-links.ts"; // REQ-630, REQ-782
 import { ApiError } from "../lib/api.ts";
 import { fmtPhone } from "../lib/format.ts";
 import { TransferAccount } from "../components/TransferAccount.tsx"; // REQ-220
 import {
+  accountLanguage,
   editableName,
-  personLanguage,
   personName,
 } from "../../shared/person-name/mod.ts"; // REQ-624
 import { refreshDash } from "../lib/dash-cache.ts";
 import { type Lang, langSignal, setLang, tFor } from "../lib/i18n.ts";
 import { normalizeWebsiteUrl } from "../../shared/quote-flow/format-helpers.ts";
+import {
+  accountEmailError,
+  businessNameError,
+} from "../../shared/quote-flow/settings-fields.ts"; // REQ-501
+import {
+  businessTimezone,
+  PICKER_TIMEZONES,
+  timezoneLabelKey,
+} from "../../shared/quote-flow/business-timezone.ts";
+import {
+  isLastSendLanguage,
+  sendLanguagesOf,
+  toggleSendLanguage,
+} from "../../shared/quote-flow/comms-language.ts";
+import {
+  isLastReminderDay,
+  REMINDER_DAY_CHOICES,
+  reminderDayLabel,
+  type ReminderSettings,
+  reminderSettingsOf,
+  toggleReminderDay,
+} from "../../shared/quote-flow/reminder-settings.ts"; // REQ-623
+import { Icon } from "../components/ui/Icon.tsx";
 import {
   CardGridSkeleton,
   PageHeaderSkeleton,
@@ -117,8 +164,8 @@ function uploadErrorMessage(
 }
 
 /** Roadmap p.13: neutral Latin-American Spanish for the Settings UI, keyed
- *  off the contractor's `user.language`. One dictionary so the whole screen
- *  flips together (no mixed-language state). */
+ *  off `langSignal` (REQ-254 — never the fetched `user.language`). One
+ *  dictionary so the whole screen flips together (no mixed-language state). */
 function tr(es: boolean) {
   const lang: Lang = es ? "es" : "en";
   return {
@@ -127,6 +174,7 @@ function tr(es: boolean) {
     saved: tFor(lang, "settings.saved"),
     saveFailed: tFor(lang, "settings.saveFailed"),
     logoUploadFailed: tFor(lang, "settings.logoUploadFailed"),
+    logoNotImage: tFor(lang, "settings.logoNotImage"),
     uploadFailed: tFor(lang, "settings.uploadFailed"),
     uploadTooLarge: tFor(lang, "settings.uploadTooLarge"),
     nothingSet: tFor(lang, "settings.nothingSet"),
@@ -136,7 +184,6 @@ function tr(es: boolean) {
     mailingAddress: tFor(lang, "settings.mailingAddress"),
     insurance: tFor(lang, "settings.insurance"),
     tax: tFor(lang, "settings.tax"),
-    contractDefaults: tFor(lang, "settings.contractDefaults"),
     payments: tFor(lang, "settings.payments"),
     editDetails: tFor(lang, "settings.editDetails"),
     // Account / identity rows + fields
@@ -153,7 +200,6 @@ function tr(es: boolean) {
     netDays: tFor(lang, "settings.netDays"),
     netDaysHint: tFor(lang, "settings.netDaysHint"),
     // Address
-    saveAddress: tFor(lang, "settings.saveAddress"),
     street: tFor(lang, "settings.street"),
     city: tFor(lang, "settings.city"),
     state: tFor(lang, "settings.state"),
@@ -171,6 +217,8 @@ function tr(es: boolean) {
     // Outgoing-comms languages (what the contractor can SEND quotes in).
     commsLang: tFor(lang, "settings.commsLang"),
     commsLangHint: tFor(lang, "settings.commsLangHint"),
+    // REQ-500: the wizard's own keep-one line
+    commsLangKeepOne: tFor(lang, "welcome.commsLangKeepOne"),
     timezone: tFor(lang, "field.settings.timezone"),
     timezoneHint: tFor(lang, "field.settings.timezoneHint"),
     // Insurance
@@ -191,10 +239,6 @@ function tr(es: boolean) {
     uploaded: tFor(lang, "settings.uploaded"),
     w9Hint: tFor(lang, "settings.w9Hint"),
     // Contract defaults
-    paymentTerms: tFor(lang, "settings.paymentTerms"),
-    deposit: tFor(lang, "settings.deposit"),
-    warranty: tFor(lang, "settings.warranty"),
-    days: tFor(lang, "settings.days"),
     // Payments
     paymentsIntro: tFor(lang, "settings.paymentsIntro"),
     yourHandle: tFor(lang, "settings.yourHandle"),
@@ -309,6 +353,7 @@ function EditPanel(
     saving = tFor("en", "settings.saving"),
     savedLabel = tFor("en", "settings.saved"),
     dataCy,
+    id,
   }: {
     title: string;
     children: ComponentChildren;
@@ -318,10 +363,12 @@ function EditPanel(
     saving?: string;
     savedLabel?: string;
     dataCy?: string;
+    /** REQ-513: the section's anchor, the target of a setup-checklist deep link */
+    id?: string;
   },
 ) {
   return (
-    <div class="panel" style="padding:18px 20px" data-cy={dataCy}>
+    <div class="panel" style="padding:18px 20px" data-cy={dataCy} id={id}>
       <div
         class="panel__head"
         style="margin-bottom:12px;display:flex;align-items:center;justify-content:space-between;gap:10px"
@@ -331,8 +378,9 @@ function EditPanel(
           ? <span style="font-size:11.5px;color:var(--fg-muted)">{saving}</span>
           : saved
           ? (
-            <span style="font-size:11.5px;color:var(--brand-green,#519843)">
+            <span style="font-size:11.5px;color:var(--brand-green,#519843);display:inline-flex;align-items:center;gap:4px">
               {savedLabel}
+              <Icon name="check" size={12} stroke-width={3} />
             </span>
           )
           : null}
@@ -371,23 +419,46 @@ function EditCard(
   const [site, setSite] = useState(snapshot.identity?.websiteUrl ?? "");
   // REQ-174: the default days a customer has to pay an invoice
   const [netDays, setNetDays] = useState(
-    String(snapshot.identity?.invoiceNetDays ?? 30),
+    String(accountNetDays(snapshot.identity?.invoiceNetDays)),
   );
   const [busy, setBusy] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  // REQ-501 (demo M35): a bad email / an emptied business name is shown under its field and NOT
+  // saved — the stored value stays (the keys come from shared/quote-flow/settings-fields.ts)
+  const [emailErr, setEmailErr] = useState<string | null>(null);
+  const [bizErr, setBizErr] = useState<string | null>(null);
+  // REQ-511 (demo m41): the logo's own error, drawn in the logo row — not at
+  // the bottom of the card, under the languages and off-screen
+  const [logoErr, setLogoErr] = useState<string | null>(null);
+  // REQ-511 (demo p8-pair6-d): "Saved ✓" after a save, cleared on the next edit
+  const [saved, setSaved] = useState(false);
   const logoInputRef = useRef<HTMLInputElement | null>(null);
   const t = tr(langSignal.value === "es");
+  const fieldLang: Lang = langSignal.value === "es" ? "es" : "en";
+  /** REQ-172/255 — the zone picked, else the address's state's, else New York */
+  const zone = businessTimezone({
+    timezone: snapshot.identity?.timezone,
+    state: snapshot.address?.state,
+  });
 
   async function saveUser(patch: Record<string, unknown>) {
     setBusy("user");
     setErr(null);
+    setSaved(false);
     try {
       const { actor, ...u } = await profileClient.updateUser(patch);
       onSaved({
         user: { ...snapshot.user, ...u } as typeof snapshot.user,
         ...(actor ? { actor } : {}), // REQ-624: her record, as saved
       });
+      setSaved(true);
       refreshDash(); // the sidebar's user block names the person as saved
+      // REQ-355 — the topbar greets the new name at once, not after a reload
+      if ("name" in patch) {
+        announceProfile({
+          name: (actor ? actor.name : u?.name) ?? String(patch.name ?? ""),
+        });
+      }
     } catch (e) {
       setErr(e instanceof Error ? e.message : t.saveFailed);
     } finally {
@@ -397,6 +468,7 @@ function EditCard(
   async function saveIdentity(patch: Record<string, unknown>) {
     setBusy("identity");
     setErr(null);
+    setSaved(false);
     try {
       const id = await profileClient.updateIdentity(patch);
       onSaved({
@@ -405,8 +477,18 @@ function EditCard(
           ...id,
         } as typeof snapshot.identity,
       });
+      setSaved(true);
+      // REQ-737 (cycle 5, p12) — the sidebar shows the new business name at once
+      if ("businessName" in patch) {
+        announceProfile({
+          businessName: id?.businessName ?? String(patch.businessName ?? ""),
+        });
+      }
     } catch (e) {
-      setErr(e instanceof Error ? e.message : t.saveFailed);
+      // REQ-252: the server refuses a logo that is not an image (422 logo_not_image)
+      if (e instanceof ApiError && e.status === 422 && "logoFileId" in patch) {
+        setLogoErr(t.logoNotImage);
+      } else setErr(e instanceof Error ? e.message : t.saveFailed);
     } finally {
       setBusy(null);
     }
@@ -414,13 +496,22 @@ function EditCard(
   async function onLogoPick(e: Event) {
     const file = (e.target as HTMLInputElement).files?.[0];
     if (!file) return;
+    setSaved(false);
+    // REQ-252 (M30): only an image is a logo — refused here, before any upload
+    if (!isLogoImageType(file.type)) {
+      (e.target as HTMLInputElement).value = "";
+      setLogoErr(t.logoNotImage);
+      return;
+    }
     setBusy("logo");
-    setErr(null);
+    setLogoErr(null);
     try {
       const rec = await filesClient.uploadBlob(file, file.name);
       await saveIdentity({ logoFileId: rec.id });
     } catch (ex) {
-      setErr(uploadErrorMessage(ex, t.uploadTooLarge, t.logoUploadFailed));
+      setLogoErr(
+        uploadErrorMessage(ex, t.uploadTooLarge, t.logoUploadFailed),
+      );
     } finally {
       setBusy(null);
     }
@@ -431,19 +522,29 @@ function EditCard(
       title={t.editDetails}
       busy={!!busy}
       err={err}
+      saved={saved}
       saving={t.saving}
       savedLabel={t.saved}
+      dataCy="settings-edit-details"
     >
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px">
-        <label style="display:block">
+        {
+          /* REQ-512 (demo cycle 3, p8-pair1-f): name and email span the row like the
+            fields below — in one minmax(180px) track a 24-char email clipped. */
+        }
+        <label style="display:block;grid-column:1 / -1">
           <span style={labelStyle}>{t.name}</span>
           <input
             type="text"
             class="settings-edit__input"
             style={inputStyle}
+            id={SETTINGS_ANCHORS.name}
             value={name}
             disabled={busy === "user"}
-            onInput={(e) => setName((e.target as HTMLInputElement).value)}
+            onInput={(e) => {
+              setSaved(false);
+              setName((e.target as HTMLInputElement).value);
+            }}
             data-cy="settings-name"
             onBlur={() =>
               name.trim() !== savedName &&
@@ -451,20 +552,43 @@ function EditCard(
             aria-label={t.ariaEditName}
           />
         </label>
-        <label style="display:block">
+        <label style="display:block;grid-column:1 / -1">
           <span style={labelStyle}>{t.email}</span>
           <input
             type="email"
             class="settings-edit__input"
             style={inputStyle}
+            data-cy="settings-email"
+            id={SETTINGS_ANCHORS.email}
             value={email}
             disabled={busy === "user"}
-            onInput={(e) => setEmail((e.target as HTMLInputElement).value)}
-            onBlur={() =>
-              email.trim() !== savedEmail &&
-              saveUser({ email: email.trim() })}
+            aria-invalid={emailErr ? "true" : undefined}
+            onInput={(e) => {
+              setSaved(false);
+              setEmail((e.target as HTMLInputElement).value);
+              setEmailErr(null);
+            }}
+            onBlur={() => {
+              const key = accountEmailError(email);
+              setEmailErr(key);
+              if (key) return;
+              if (email.trim() !== savedEmail) {
+                saveUser({ email: email.trim() });
+              }
+            }}
             aria-label={t.ariaEditEmail}
           />
+          {emailErr
+            ? (
+              <span
+                role="alert"
+                data-cy="settings-email-error"
+                style="display:block;margin-top:4px;font-size:12px;color:#a83b3b"
+              >
+                {tFor(fieldLang, emailErr)}
+              </span>
+            )
+            : null}
         </label>
         <label style="display:block;grid-column:1 / -1">
           <span style={labelStyle}>{t.businessName}</span>
@@ -472,14 +596,40 @@ function EditCard(
             type="text"
             class="settings-edit__input"
             style={inputStyle}
+            data-cy="settings-biz"
+            id={SETTINGS_ANCHORS.biz}
             value={biz}
             disabled={busy === "identity"}
-            onInput={(e) => setBiz((e.target as HTMLInputElement).value)}
-            onBlur={() =>
-              biz.trim() !== (snapshot.identity?.businessName ?? "") &&
-              saveIdentity({ businessName: biz.trim() })}
+            aria-invalid={bizErr ? "true" : undefined}
+            onInput={(e) => {
+              setSaved(false);
+              setBiz((e.target as HTMLInputElement).value);
+              setBizErr(null);
+            }}
+            onBlur={() => {
+              const key = businessNameError(
+                biz,
+                snapshot.identity?.businessName,
+              );
+              setBizErr(key);
+              if (key) return;
+              if (biz.trim() !== (snapshot.identity?.businessName ?? "")) {
+                saveIdentity({ businessName: biz.trim() });
+              }
+            }}
             aria-label={t.ariaEditBusinessName}
           />
+          {bizErr
+            ? (
+              <span
+                role="alert"
+                data-cy="settings-biz-error"
+                style="display:block;margin-top:4px;font-size:12px;color:#a83b3b"
+              >
+                {tFor(fieldLang, bizErr)}
+              </span>
+            )
+            : null}
         </label>
         <label style="display:block;grid-column:1 / -1">
           <span style={labelStyle}>{t.website}</span>
@@ -491,7 +641,10 @@ function EditCard(
             value={site}
             placeholder="https://"
             disabled={busy === "identity"}
-            onInput={(e) => setSite((e.target as HTMLInputElement).value)}
+            onInput={(e) => {
+              setSaved(false);
+              setSite((e.target as HTMLInputElement).value);
+            }}
             onBlur={() => {
               const next = normalizeWebsiteUrl(site);
               if (next !== site) setSite(next);
@@ -514,14 +667,19 @@ function EditCard(
             data-cy="settings-net-days"
             value={netDays}
             disabled={busy === "identity"}
-            onInput={(e) => setNetDays((e.target as HTMLInputElement).value)}
+            onInput={(e) => {
+              setSaved(false);
+              setNetDays((e.target as HTMLInputElement).value);
+            }}
             onBlur={() => {
               const n = Number(netDays);
               if (!Number.isInteger(n) || n < 0 || n > 365) {
-                setNetDays(String(snapshot.identity?.invoiceNetDays ?? 30));
+                setNetDays(
+                  String(accountNetDays(snapshot.identity?.invoiceNetDays)),
+                );
                 return;
               }
-              if (n !== (snapshot.identity?.invoiceNetDays ?? 30)) {
+              if (n !== accountNetDays(snapshot.identity?.invoiceNetDays)) {
                 saveIdentity({ invoiceNetDays: n });
               }
             }}
@@ -531,7 +689,10 @@ function EditCard(
             {t.netDaysHint}
           </span>
         </label>
-        <div style="grid-column:1 / -1;display:flex;align-items:center;gap:12px">
+        <div
+          id={SETTINGS_ANCHORS.logo}
+          style="grid-column:1 / -1;display:flex;flex-wrap:wrap;align-items:center;gap:12px"
+        >
           <button
             type="button"
             class="btn btn-secondary"
@@ -547,23 +708,45 @@ function EditCard(
           <input
             ref={logoInputRef}
             type="file"
-            accept="image/*"
+            accept={LOGO_IMAGE_ACCEPT}
+            data-cy="settings-logo-file"
             aria-label={t.ariaLogoFile}
             style="display:none"
             onChange={onLogoPick}
           />
           {snapshot.identity?.logoFileId
             ? (
-              <span style="font-size:12px;color:var(--fg-muted)">
-                {t.logoSet} · {snapshot.identity.logoFileId.slice(0, 8)}…
+              <span style="display:inline-flex;align-items:center;gap:8px;font-size:12px;color:var(--fg-muted)">
+                {/* REQ-252: the logo itself, so a broken one is seen here first */}
+                <img
+                  data-cy="settings-logo-preview"
+                  src={`/api/files/${snapshot.identity.logoFileId}`}
+                  alt={t.logoSet}
+                  style="max-height:32px;max-width:96px;object-fit:contain;border-radius:4px"
+                />
+                {t.logoSet}
               </span>
             )
-            : (
-              <span style="font-size:12px;color:var(--fg-muted)">
-                {t.logoHint}
-              </span>
-            )}
+            : null}
+          {/* REQ-511 (demo m41): the types + size limit, on Upload and on Replace */}
+          <span
+            data-cy="settings-logo-hint"
+            style="font-size:12px;color:var(--fg-muted)"
+          >
+            {t.logoHint}
+          </span>
         </div>
+        {logoErr
+          ? (
+            <div
+              data-cy="settings-logo-error"
+              role="alert"
+              style="grid-column:1 / -1;margin-top:-6px;color:#a83b3b;font-size:12.5px"
+            >
+              {logoErr}
+            </div>
+          )
+          : null}
         <label style="display:block;grid-column:1 / -1">
           <span style={labelStyle}>{t.appLang}</span>
           <select
@@ -591,12 +774,13 @@ function EditCard(
               label: t.spanish,
             }]
               .map((lng) => {
-                // Selected set: the explicit list, else fall back to the legacy
-                // single commsLanguage (so existing accounts show their language
-                // pre-checked), else English.
-                const selected = snapshot.identity?.commsLanguages?.length
-                  ? snapshot.identity.commsLanguages
-                  : [snapshot.identity?.commsLanguage ?? "en"];
+                // REQ-348: the one rule — the explicit list, else the legacy
+                // single commsLanguage, else the default from the account's
+                // own language (a Spanish signup sends in English and Spanish).
+                const selected: string[] = sendLanguagesOf(
+                  snapshot.identity,
+                  accountLanguage(snapshot.user),
+                );
                 const on = selected.includes(lng.code);
                 return (
                   <label
@@ -609,16 +793,24 @@ function EditCard(
                   >
                     <input
                       type="checkbox"
+                      data-cy={`settings-comms-${lng.code}`}
                       checked={on}
-                      disabled={busy === "identity"}
+                      // REQ-500 (M34): the last ticked language is locked on,
+                      // as in the wizard — it can never be unticked.
+                      disabled={busy === "identity" ||
+                        isLastSendLanguage(selected, lng.code)}
                       onChange={(e) => {
-                        const want = (e.target as HTMLInputElement).checked;
-                        const set = new Set(selected);
-                        if (want) set.add(lng.code);
-                        else set.delete(lng.code);
-                        // Always keep at least one language enabled.
-                        if (set.size === 0) return;
-                        const list = ["en", "es"].filter((c) => set.has(c));
+                        const input = e.target as HTMLInputElement;
+                        const list = toggleSendLanguage(
+                          selected,
+                          lng.code,
+                          input.checked,
+                        );
+                        // never leave the DOM box out of step with the state
+                        if (!list) {
+                          input.checked = on;
+                          return;
+                        }
                         saveIdentity({
                           commsLanguages: list,
                           commsLanguage: list[0],
@@ -635,19 +827,37 @@ function EditCard(
           <span style="display:block;margin-top:4px;font-size:12px;color:var(--fg-muted)">
             {t.commsLangHint}
           </span>
+          {sendLanguagesOf(snapshot.identity, accountLanguage(snapshot.user))
+              .length === 1
+            ? (
+              <span
+                data-cy="settings-comms-keep-one"
+                style="display:block;margin-top:4px;font-size:12px;color:var(--fg-muted)"
+              >
+                {t.commsLangKeepOne}
+              </span>
+            )
+            : null}
         </div>
-        {/* REQ-172 — the business's time zone: the 9 am schedule texts follow it */}
+        {/* REQ-172/255 — the business's time zone (picked, else the address's state's): the 9 am schedule texts follow it */}
         <label style="display:block;grid-column:1 / -1">
           <span style={labelStyle}>{t.timezone}</span>
           <select
             data-cy="settings-timezone"
-            value={snapshot.identity?.timezone ?? "America/New_York"}
+            style={inputStyle}
+            value={zone}
             disabled={busy === "identity"}
             onChange={(e) => saveIdentity({
               timezone: (e.target as HTMLSelectElement).value,
             })}
           >
-            {TIMEZONES.map((z) => <option key={z} value={z}>{z}</option>)}
+            {(PICKER_TIMEZONES.includes(zone)
+              ? PICKER_TIMEZONES
+              : [zone, ...PICKER_TIMEZONES]).map((z) => (
+                <option key={z} value={z}>
+                  {timezoneLabel(langSignal.value === "es" ? "es" : "en", z)}
+                </option>
+              ))}
           </select>
           <span style="display:block;margin-top:4px;font-size:12px;color:var(--fg-muted)">
             {t.timezoneHint}
@@ -658,23 +868,19 @@ function EditCard(
   );
 }
 
-/** REQ-172 — the zones a US business picks from (the current value is kept even when it is not one of these) */
-const TIMEZONES = [
-  "America/New_York",
-  "America/Chicago",
-  "America/Denver",
-  "America/Phoenix",
-  "America/Los_Angeles",
-  "America/Anchorage",
-  "Pacific/Honolulu",
-  "America/Puerto_Rico",
-];
+/** REQ-346 — a zone's label in the UI language ("Eastern (New York)"); a
+ *  zone with no label (one kept from an older pick) shows its IANA id */
+function timezoneLabel(lang: Lang, id: string): string {
+  const key = timezoneLabelKey(id);
+  const label = tFor(lang, key);
+  return label === key ? id : label;
+}
 
 /** AddressEditCard — editable mailing address (roadmap p.8). P-42: honors
  *  the page's "changes save as you go" promise — every edit autosaves
- *  (debounced on input, flushed on blur and on page-hide via keepalive), so
- *  persistence never depends on the explicit Save button (kept as a
- *  reassurance affordance). Contract: [data-cy=settings-mailing-address];
+ *  (debounced on input, flushed on blur and on page-hide via keepalive).
+ *  REQ-516: no explicit Save button — the panel's "Saving…" / "Saved ✓"
+ *  status is the only feedback. Contract: [data-cy=settings-mailing-address];
  *  input order is part of it: street first, city second, then
  *  state/zip/country. */
 function AddressEditCard(
@@ -749,26 +955,10 @@ function AddressEditCard(
     };
   }, []);
 
-  async function save() {
-    pendingRef.current = null;
-    clearTimeout(timerRef.current);
-    setBusy(true);
-    setErr(null);
-    setSaved(false);
-    try {
-      const next = await profileClient.updateAddress(payload());
-      onSaved({ address: next });
-      setSaved(true);
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : t.saveFailed);
-    } finally {
-      setBusy(false);
-    }
-  }
-
   return (
     <EditPanel
       title={t.mailingAddress}
+      id={SETTINGS_ANCHORS.address}
       busy={busy}
       err={err}
       saved={saved}
@@ -851,16 +1041,6 @@ function AddressEditCard(
           />
         </label>
       </div>
-      <div style="margin-top:16px">
-        <button
-          type="button"
-          style={btnPrimary}
-          disabled={busy}
-          onClick={save}
-        >
-          {busy ? t.saving : t.saveAddress}
-        </button>
-      </div>
     </EditPanel>
   );
 }
@@ -923,6 +1103,7 @@ function InsuranceEditCard(
   return (
     <EditPanel
       title={t.insurance}
+      id={SETTINGS_ANCHORS.insurance}
       busy={!!busy}
       err={err}
       saved={saved}
@@ -938,9 +1119,13 @@ function InsuranceEditCard(
             value={provider}
             disabled={!!busy}
             onInput={(e) => setProvider((e.target as HTMLInputElement).value)}
-            onBlur={() =>
-              provider.trim() !== (ins?.provider ?? "") &&
-              save({ provider: provider.trim() })}
+            onBlur={() => {
+              if (provider.trim() === (ins?.provider ?? "")) return;
+              // REQ-503 (demo m62): "!!!" is not an insurer
+              const bad = insurerError(provider);
+              if (bad) return setErr(tFor(langSignal.value, bad));
+              save({ provider: provider.trim() });
+            }}
           />
         </label>
         <label style="display:block">
@@ -951,9 +1136,13 @@ function InsuranceEditCard(
             value={policy}
             disabled={!!busy}
             onInput={(e) => setPolicy((e.target as HTMLInputElement).value)}
-            onBlur={() =>
-              policy.trim() !== (ins?.policyNumber ?? "") &&
-              save({ policyNumber: policy.trim() })}
+            onBlur={() => {
+              if (policy.trim() === (ins?.policyNumber ?? "")) return;
+              // REQ-503 (demo m62): letters, digits and dashes, up to 40
+              const bad = policyNumberError(policy);
+              if (bad) return setErr(tFor(langSignal.value, bad));
+              save({ policyNumber: policy.trim() });
+            }}
           />
         </label>
         <label style="display:block">
@@ -1146,81 +1335,17 @@ function TaxEditCard(
   );
 }
 
-interface PayRow {
-  key:
-    | "venmo"
-    | "cashapp"
-    | "zelle"
-    | "paypal"
-    | "check"
-    | "cash"
-    | "ach"
-    | "card";
-  label: string;
-  /** Backend field that stores the handle. null → no handle (cash). */
-  field: "handle" | "cashtag" | "mailTo" | "instructions" | null;
-  placeholder: string;
-  /** Money-routing handles (Venmo/Zelle/etc.) are required when the method is
-   *  enabled and get a retype-to-confirm guard — a typo sends funds to the
-   *  wrong place. A check's mailing address is optional (the contractor's
-   *  address already prints on the invoice) and needs no confirm field. */
-  optional?: boolean;
-}
-
-// `label` and `placeholder` hold i18n KEYS (resolved per-language at render).
-const PAY_ROWS: PayRow[] = [
-  {
-    key: "venmo",
-    label: "paymentMethod.venmo",
-    field: "handle",
-    placeholder: "settings.pay.venmoPh",
-  },
-  {
-    key: "cashapp",
-    label: "paymentMethod.cashApp",
-    field: "cashtag",
-    placeholder: "settings.pay.cashappPh",
-  },
-  {
-    key: "zelle",
-    label: "paymentMethod.zelle",
-    field: "handle",
-    placeholder: "settings.pay.zellePh",
-  },
-  {
-    key: "paypal",
-    label: "paymentMethod.paypal",
-    field: "handle",
-    placeholder: "settings.pay.paypalPh",
-  },
-  {
-    key: "check",
-    label: "paymentMethod.check",
-    field: "mailTo",
-    placeholder: "settings.pay.checkPh",
-    optional: true,
-  },
-  {
-    key: "ach",
-    label: "paymentMethod.ach",
-    field: "instructions",
-    placeholder: "settings.pay.achPh",
-    optional: true,
-  },
-  {
-    key: "card",
-    label: "paymentMethod.card",
-    field: "instructions",
-    placeholder: "settings.pay.cardPh",
-    optional: true,
-  },
-  { key: "cash", label: "paymentMethod.cash", field: null, placeholder: "" },
-];
+// REQ-620 (cycle 4, p4-p6b): the rows are the shared payment-method catalogue
+// (shared/identity/payment-methods.ts) — the same list, order and labels the
+// onboarding wizard's payment step renders. labelKey / placeholderKey are i18n
+// KEYS (resolved per-language at render).
 
 interface PayState {
   enabled: boolean;
   value: string;
   confirm: string;
+  /** REQ-782 — the card row's card pay link ("" when none) */
+  url?: string;
 }
 
 /** PaymentsEditCard — enable/disable each method + enter the handle with a
@@ -1234,7 +1359,7 @@ function PaymentsEditCard(
 ) {
   const apm = snapshot.identity?.acceptedPaymentMethods ?? {};
   const init: Record<string, PayState> = {};
-  for (const r of PAY_ROWS) {
+  for (const r of PAYMENT_METHOD_CATALOG) {
     const cur = (apm as Record<
       string,
       {
@@ -1243,10 +1368,12 @@ function PaymentsEditCard(
         cashtag?: string;
         mailTo?: string;
         instructions?: string;
+        url?: string;
       }
-    >)[r.key];
-    const val = r.field ? (cur?.[r.field] ?? "") : "";
-    init[r.key] = { enabled: !!cur?.enabled, value: val, confirm: val };
+    >)[r.id];
+    const val = r.handleField ? (cur?.[r.handleField] ?? "") : "";
+    init[r.id] = { enabled: !!cur?.enabled, value: val, confirm: val };
+    if (r.id === "card") init[r.id].url = cur?.url ?? "";
   }
   const [rows, setRows] = useState<Record<string, PayState>>(init);
   const [busy, setBusy] = useState(false);
@@ -1271,9 +1398,9 @@ function PaymentsEditCard(
     if (saveNow) autosave(merged);
   }
 
-  const mismatch = (r: PayRow) => {
-    const st = rows[r.key];
-    return st.enabled && r.field !== null && st.value.trim() !== "" &&
+  const mismatch = (r: PaymentMethodDef) => {
+    const st = rows[r.id];
+    return st.enabled && r.handleField !== null && st.value.trim() !== "" &&
       st.confirm.trim() !== "" && st.value.trim() !== st.confirm.trim();
   };
 
@@ -1285,11 +1412,13 @@ function PaymentsEditCard(
     const apmPatch: Record<string, Record<string, unknown>> = {
       ...(apm as Record<string, Record<string, unknown>>),
     };
-    for (const r of PAY_ROWS) {
-      const st = cur[r.key];
+    for (const r of PAYMENT_METHOD_CATALOG) {
+      const st = cur[r.id];
       const entry: Record<string, unknown> = { enabled: st.enabled };
-      if (r.field) entry[r.field] = st.value.trim();
-      apmPatch[r.key] = entry;
+      if (r.handleField) entry[r.handleField] = st.value.trim();
+      // REQ-782 — the card pay link ("Pay by card" on the invoice opens it)
+      if (r.id === "card") entry.url = (st.url ?? "").trim();
+      apmPatch[r.id] = entry;
     }
     return apmPatch;
   }
@@ -1298,9 +1427,10 @@ function PaymentsEditCard(
    *  for a SILENT instant-save (incomplete rows wait for the explicit Save,
    *  which surfaces the validation copy). */
   function autosaveReady(cur: Record<string, PayState>): boolean {
-    return PAY_ROWS.every((r) => {
-      const st = cur[r.key];
-      if (!st.enabled || r.field === null || r.optional) return true;
+    if (!checkCardPayUrl(cur.card?.url ?? "").ok) return false; // REQ-782
+    return PAYMENT_METHOD_CATALOG.every((r) => {
+      const st = cur[r.id];
+      if (!st.enabled || r.handleField === null || r.optional) return true;
       return st.value.trim() !== "" && st.value.trim() === st.confirm.trim();
     });
   }
@@ -1333,12 +1463,12 @@ function PaymentsEditCard(
 
   async function save() {
     // Validate every enabled handle-bearing method has a matching confirm.
-    for (const r of PAY_ROWS) {
-      const st = rows[r.key];
-      if (!st.enabled || r.field === null) continue;
+    for (const r of PAYMENT_METHOD_CATALOG) {
+      const st = rows[r.id];
+      if (!st.enabled || r.handleField === null) continue;
       // Optional fields (check's mailing address) may be left blank.
       if (r.optional) continue;
-      const label = tFor(lang, r.label);
+      const label = tFor(lang, r.labelKey);
       if (st.value.trim() === "") {
         setErr(t.enterHandle(label));
         return;
@@ -1347,6 +1477,11 @@ function PaymentsEditCard(
         setErr(t.handleMismatch(label));
         return;
       }
+    }
+    // REQ-782 — the card pay link is https only
+    if (rows.card?.enabled && !checkCardPayUrl(rows.card.url ?? "").ok) {
+      setErr(tFor(lang, "settings.pay.cardUrlErr"));
+      return;
     }
     setBusy(true);
     setErr(null);
@@ -1372,6 +1507,7 @@ function PaymentsEditCard(
   return (
     <EditPanel
       title={t.payments}
+      id={SETTINGS_ANCHORS.payment}
       busy={busy}
       err={err}
       saved={saved}
@@ -1382,14 +1518,17 @@ function PaymentsEditCard(
         {t.paymentsIntro}
       </p>
       <div style="display:flex;flex-direction:column;gap:12px">
-        {PAY_ROWS.map((r) => {
-          const st = rows[r.key];
+        {PAYMENT_METHOD_CATALOG.map((r) => {
+          const st = rows[r.id];
           const bad = mismatch(r);
-          const label = tFor(lang, r.label);
-          const placeholder = r.placeholder ? tFor(lang, r.placeholder) : "";
+          const label = tFor(lang, r.labelKey);
+          const placeholder = r.placeholderKey
+            ? tFor(lang, r.placeholderKey)
+            : "";
           return (
             <div
-              key={r.key}
+              key={r.id}
+              data-pay-method={r.id}
               style={`border:1px solid ${
                 st.enabled
                   ? "var(--brand-green,#519843)"
@@ -1402,7 +1541,7 @@ function PaymentsEditCard(
                   checked={st.enabled}
                   onChange={(e) =>
                     // P-42: a toggle IS the edit — persist it instantly.
-                    patchRow(r.key, {
+                    patchRow(r.id, {
                       enabled: (e.target as HTMLInputElement).checked,
                     }, true)}
                 />
@@ -1410,11 +1549,11 @@ function PaymentsEditCard(
                   {label}
                 </span>
               </label>
-              {st.enabled && r.field !== null && (
+              {st.enabled && r.handleField !== null && (
                 <div style="margin-top:10px;display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px">
                   <label style="display:block">
                     <span style={labelStyle}>
-                      {r.field === "instructions"
+                      {r.handleField === "instructions"
                         ? t.instructionsOptional
                         : r.optional
                         ? t.mailingOptional
@@ -1426,7 +1565,7 @@ function PaymentsEditCard(
                       value={st.value}
                       placeholder={placeholder}
                       onInput={(e) =>
-                        patchRow(r.key, {
+                        patchRow(r.id, {
                           value: (e.target as HTMLInputElement).value,
                         })}
                       onBlur={() => autosave(rowsRef.current)}
@@ -1443,7 +1582,7 @@ function PaymentsEditCard(
                         value={st.confirm}
                         placeholder={placeholder}
                         onInput={(e) =>
-                          patchRow(r.key, {
+                          patchRow(r.id, {
                             confirm: (e.target as HTMLInputElement).value,
                           })}
                         onBlur={() => autosave(rowsRef.current)}
@@ -1456,6 +1595,42 @@ function PaymentsEditCard(
                     </div>
                   )}
                 </div>
+              )}
+              {
+                /* REQ-782 — "Card payments should be a link to a separate portal": the
+                business's own card payment page; "Pay by card" on the invoice opens it */
+              }
+              {st.enabled && r.id === "card" && (
+                <label style="display:block;margin-top:10px">
+                  <span style={labelStyle}>
+                    {tFor(lang, "settings.pay.cardUrl")}
+                  </span>
+                  <input
+                    type="url"
+                    inputMode="url"
+                    data-cy="pay-card-url"
+                    style={`${inputStyle}${
+                      checkCardPayUrl(st.url ?? "").ok
+                        ? ""
+                        : ";border-color:#a83b3b"
+                    }`}
+                    value={st.url ?? ""}
+                    placeholder={tFor(lang, "settings.pay.cardUrlPh")}
+                    onInput={(e) =>
+                      patchRow(r.id, {
+                        url: (e.target as HTMLInputElement).value,
+                      })}
+                    onBlur={() => autosave(rowsRef.current)}
+                  />
+                  <span
+                    data-cy="pay-card-url-hint"
+                    style="display:block;margin-top:6px;font-size:12px;line-height:1.5;color:var(--fg-muted, #6b7560)"
+                  >
+                    {checkCardPayUrl(st.url ?? "").ok
+                      ? tFor(lang, "settings.pay.cardUrlHint")
+                      : tFor(lang, "settings.pay.cardUrlErr")}
+                  </span>
+                </label>
               )}
             </div>
           );
@@ -1756,7 +1931,13 @@ function CardPaymentsCard({ snapshot }: { snapshot: ProfileSnapshot }) {
           >
             <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
               <span style="font-weight:800;font-size:14px;color:var(--brand-green,#519843)">
-                ✓ {tFor(lang, "settings.stripe.connected")}
+                <Icon
+                  name="check"
+                  size={14}
+                  stroke-width={3}
+                  style="vertical-align:-2px"
+                />{" "}
+                {tFor(lang, "settings.stripe.connected")}
               </span>
               <span style="font-weight:700;font-size:14px;color:var(--fg)">
                 {connected.accountName}
@@ -1861,7 +2042,7 @@ function CardPaymentsCard({ snapshot }: { snapshot: ProfileSnapshot }) {
               aria-hidden="true"
               style="width:44px;height:44px;border-radius:10px;background:#144852;color:#fff;display:grid;place-items:center;font-size:18px"
             >
-              ▣
+              <Icon name="receipt" size={20} />
             </span>
           )}
         <div>
@@ -1879,124 +2060,6 @@ function CardPaymentsCard({ snapshot }: { snapshot: ProfileSnapshot }) {
             )
             : null}
         </div>
-      </div>
-    </EditPanel>
-  );
-}
-
-/** ContractDefaultsEditCard — the "Valores del contrato" card, made live
- *  (P-42): three editable fields wired to GET/PUT /profile/contract-defaults
- *  ({ paymentTermsDays, depositPct, warrantyDays }), instant-saved on
- *  change/blur like everything else on this page. */
-function ContractDefaultsEditCard(
-  { snapshot, onSaved }: {
-    snapshot: ProfileSnapshot;
-    onSaved: (partial: Partial<ProfileSnapshot>) => void;
-  },
-) {
-  const cd = snapshot.contractDefaults;
-  const [terms, setTerms] = useState(
-    cd?.paymentTermsDays != null ? String(cd.paymentTermsDays) : "",
-  );
-  const [deposit, setDeposit] = useState(
-    cd?.depositPct != null ? String(cd.depositPct) : "",
-  );
-  const [warranty, setWarranty] = useState(
-    cd?.warrantyDays != null ? String(cd.warrantyDays) : "",
-  );
-  const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
-  const [saved, setSaved] = useState(false);
-  const t = tr(langSignal.value === "es");
-
-  function autosave(
-    patch: Partial<Record<"terms" | "deposit" | "warranty", string>> = {},
-  ) {
-    const num = (raw: string) => {
-      const n = Math.round(Number(raw));
-      return raw.trim() !== "" && Number.isFinite(n) && n >= 0 ? n : undefined;
-    };
-    const body = {
-      ...(num(patch.terms ?? terms) != null
-        ? { paymentTermsDays: num(patch.terms ?? terms) }
-        : {}),
-      ...(num(patch.deposit ?? deposit) != null
-        ? { depositPct: num(patch.deposit ?? deposit) }
-        : {}),
-      ...(num(patch.warranty ?? warranty) != null
-        ? { warrantyDays: num(patch.warranty ?? warranty) }
-        : {}),
-    };
-    if (Object.keys(body).length === 0) return;
-    setBusy(true);
-    setErr(null);
-    putKeepalive("/profile/contract-defaults", body)
-      .then(async (r) => {
-        if (!r.ok) throw new Error(t.saveFailed);
-        const next = await r.json().catch(() => null);
-        if (next) onSaved({ contractDefaults: next });
-        setSaved(true);
-      })
-      .catch((e) => setErr(e instanceof Error ? e.message : t.saveFailed))
-      .finally(() => setBusy(false));
-  }
-
-  const fields: Array<{
-    key: "terms" | "deposit" | "warranty";
-    label: string;
-    suffix: string;
-    value: string;
-    set: (v: string) => void;
-  }> = [
-    {
-      key: "terms",
-      label: t.paymentTerms,
-      suffix: t.days,
-      value: terms,
-      set: setTerms,
-    },
-    {
-      key: "deposit",
-      label: t.deposit,
-      suffix: "%",
-      value: deposit,
-      set: setDeposit,
-    },
-    {
-      key: "warranty",
-      label: t.warranty,
-      suffix: t.days,
-      value: warranty,
-      set: setWarranty,
-    },
-  ];
-
-  return (
-    <EditPanel
-      title={t.contractDefaults}
-      busy={busy}
-      err={err}
-      saved={saved}
-      saving={t.saving}
-      savedLabel={t.saved}
-      dataCy="settings-contract-defaults"
-    >
-      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px">
-        {fields.map((f) => (
-          <label key={f.key} style="display:block">
-            <span style={labelStyle}>{f.label} ({f.suffix})</span>
-            <input
-              type="number"
-              min="0"
-              step="1"
-              style={inputStyle}
-              value={f.value}
-              onInput={(e) => f.set((e.target as HTMLInputElement).value)}
-              onBlur={(e) =>
-                autosave({ [f.key]: (e.target as HTMLInputElement).value })}
-            />
-          </label>
-        ))}
       </div>
     </EditPanel>
   );
@@ -2238,9 +2301,7 @@ const PILL_KEY = {
 } as const;
 
 function BillingTab({ snapshot }: { snapshot: ProfileSnapshot }) {
-  const lang: Lang = personLanguage(snapshot.user, snapshot.actor) === "es"
-    ? "es"
-    : "en"; // REQ-631
+  const lang: Lang = langSignal.value === "es" ? "es" : "en"; // REQ-254
   const plan = snapshot.plan ?? null;
   // REQ-064 — the hidden test tier has a name and a price too, though it is never a card
   const planById = (id: string) => PRICING_PLANS.find((p) => p.id === id);
@@ -2344,7 +2405,14 @@ function BillingTab({ snapshot }: { snapshot: ProfileSnapshot }) {
       });
     }
     if (q.kind === "first") {
-      return tFor(lang, "billing.note.first", { monthly });
+      // REQ-615 — each charge with its date, from the one anchored schedule
+      return firstPickNote(
+        (k, v) => tFor(lang, k, v),
+        "billing.note.first",
+        q.monthlyCents,
+        new Date().toISOString(),
+        lang,
+      );
     }
     if (q.kind === "free") {
       if (currentId === "free") return null;
@@ -2594,10 +2662,10 @@ function DangerZoneCard(
       </div>
       {resetOpen
         ? (
-          <div
+          <Backdrop
             data-cy="settings-reset-modal"
             style="position:fixed;inset:0;z-index:60;background:rgba(20,72,82,0.35);display:flex;align-items:center;justify-content:center;padding:20px"
-            onClick={() => !resetBusy && setResetOpen(false)}
+            onClose={() => !resetBusy && setResetOpen(false)}
           >
             <div
               role="dialog"
@@ -2664,7 +2732,7 @@ function DangerZoneCard(
                 </button>
               </div>
             </div>
-          </div>
+          </Backdrop>
         )
         : null}
       <p style="margin:0 0 14px;font-size:13px;color:var(--fg-muted,#6b7560)">
@@ -2707,6 +2775,134 @@ function DangerZoneCard(
   );
 }
 
+/**
+ * REQ-623 (demo cycle 4, M26) — the business's automatic payment reminders:
+ * an on/off switch for every invoice and the cadence days (3 / 7 / 14 / 30)
+ * as chips. Saves `identity.reminders` at once; the overdue sweep
+ * (SendPaymentReminder.runAll) reads the same setting. At least one day stays
+ * picked — turning reminders off is the switch, not an empty cadence.
+ */
+function RemindersEditCard(
+  { snapshot, onSaved }: {
+    snapshot: ProfileSnapshot;
+    onSaved: (partial: Partial<ProfileSnapshot>) => void;
+  },
+) {
+  const lang: Lang = langSignal.value === "es" ? "es" : "en";
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const [saved, setSaved] = useState(false);
+  const settings: ReminderSettings = reminderSettingsOf(snapshot.identity);
+
+  async function save(next: ReminderSettings) {
+    setBusy(true);
+    setErr(null);
+    setSaved(false);
+    try {
+      const id = await profileClient.updateIdentity({ reminders: next });
+      onSaved({
+        identity: {
+          ...(snapshot.identity ?? {} as never),
+          ...id,
+        } as typeof snapshot.identity,
+      });
+      setSaved(true);
+    } catch (e) {
+      setErr(
+        e instanceof Error ? e.message : tFor(lang, "settings.saveFailed"),
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <EditPanel
+      title={tFor(lang, "settings.reminders.title")}
+      busy={busy}
+      err={err}
+      saved={saved}
+      saving={tFor(lang, "settings.saving")}
+      savedLabel={tFor(lang, "settings.saved")}
+      dataCy="settings-reminders"
+      id="reminders"
+    >
+      <label style="display:flex;align-items:center;gap:10px;cursor:pointer">
+        <input
+          type="checkbox"
+          role="switch"
+          data-cy="settings-reminders-enabled"
+          checked={settings.enabled}
+          disabled={busy}
+          onChange={(e) =>
+            save({
+              ...settings,
+              enabled: (e.target as HTMLInputElement).checked,
+            })}
+        />
+        <span style="font-weight:700;font-size:13.5px;color:var(--fg)">
+          {tFor(lang, "settings.reminders.enabled")}
+        </span>
+      </label>
+      <span style="display:block;margin-top:4px;font-size:12px;color:var(--fg-muted,#6b7560)">
+        {tFor(lang, "settings.reminders.hint")}
+      </span>
+      {settings.enabled
+        ? (
+          <div style="margin-top:12px">
+            <span style={labelStyle}>
+              {tFor(lang, "settings.reminders.days")}
+            </span>
+            <div style="display:flex;flex-wrap:wrap;gap:8px">
+              {REMINDER_DAY_CHOICES.map((d) => {
+                const on = settings.days.includes(d);
+                return (
+                  <button
+                    key={d}
+                    type="button"
+                    data-cy={`settings-reminders-day-${d}`}
+                    aria-pressed={on}
+                    disabled={busy || isLastReminderDay(settings.days, d)}
+                    onClick={() => {
+                      const days = toggleReminderDay(settings.days, d, !on);
+                      if (days) save({ ...settings, days });
+                    }}
+                    style={`padding:6px 12px;border-radius:999px;font:inherit;font-size:13px;font-weight:700;cursor:pointer;border:1px solid ${
+                      on
+                        ? "var(--brand-green,#519843);background:var(--brand-green,#519843);color:#fff"
+                        : "var(--border,#d8dcd5);background:#fff;color:var(--fg)"
+                    }`}
+                  >
+                    {/* REQ-704: "3 days before due", "Due date", "Day 30 · alerts you" */}
+                    {reminderDayLabel(d, (k, v) => tFor(lang, k, v))}
+                  </button>
+                );
+              })}
+            </div>
+            {settings.days.length === 1
+              ? (
+                <span
+                  data-cy="settings-reminders-keep-one"
+                  style="display:block;margin-top:6px;font-size:12px;color:var(--fg-muted,#6b7560)"
+                >
+                  {tFor(lang, "settings.reminders.keepOne")}
+                </span>
+              )
+              : null}
+          </div>
+        )
+        : (
+          <p
+            data-cy="settings-reminders-off"
+            style="margin:10px 0 0;font-size:12.5px;color:var(--fg-muted,#6b7560)"
+          >
+            {tFor(lang, "settings.reminders.offNote")}
+          </p>
+        )}
+    </EditPanel>
+  );
+}
+
 export default function SettingsPage() {
   const [s, setS] = useState<State>(INITIAL);
   // REQ-146: an admin acting for the account never sees the danger zone (the
@@ -2725,8 +2921,13 @@ export default function SettingsPage() {
   }, []);
   // REQ-127 — two tabs: Account (everything below) and Billing (the plan). The address opens the
   // one asked for (?tab=billing; a pick's reason or a receipt's marker open Billing too)
+  // REQ-513: a checklist deep link (#logo, #insurance…) names an Account-tab section
   const [tab, setTab] = useState<SettingsTab>(() =>
-    typeof location === "undefined" ? "account" : settingsTabOf(location.search)
+    typeof location === "undefined"
+      ? "account"
+      : settingsAnchorOf(location.hash)
+      ? "account"
+      : settingsTabOf(location.search)
   );
   const pickTab = (next: SettingsTab) => {
     setTab(next);
@@ -2751,6 +2952,17 @@ export default function SettingsPage() {
     };
   }, []);
 
+  // REQ-513: reveal the section the checklist link named, once the cards are drawn — the
+  // browser's own hash jump ran against the loading skeleton
+  const revealed = useRef(false);
+  useEffect(() => {
+    if (revealed.current || s.loading || !s.profile || tab !== "account") {
+      return;
+    }
+    revealed.current = true;
+    revealSettingsAnchor(location.hash);
+  }, [s.loading, s.profile, tab]);
+
   if (s.loading) {
     return (
       <>
@@ -2763,16 +2975,18 @@ export default function SettingsPage() {
   if (s.error || !s.profile) {
     return (
       <div class="dashpage-error">
-        {tFor("en", "settings.loadError", {
-          error: s.error ?? tFor("en", "settings.unknownError"),
+        {tFor(langSignal.value, "settings.loadError", {
+          error: s.error ?? tFor(langSignal.value, "settings.unknownError"),
         })}
       </div>
     );
   }
 
   const p = s.profile;
-  // REQ-631: the person's language — an editor's own while acting, never the owner's
-  const lang: Lang = personLanguage(p.user, p.actor) === "es" ? "es" : "en";
+  // REQ-254: the UI language is langSignal — the one switch the topbar EN/ES toggle and the
+  // app-language select both flip — never this island's fetched copy of the profile, which a
+  // toggle does not update (the top of the page stayed in the old language until a reload)
+  const lang: Lang = langSignal.value === "es" ? "es" : "en";
   const t = tr(lang === "es");
   const onSaved = (next: Partial<ProfileSnapshot>) =>
     setS((cur) =>
@@ -2784,8 +2998,9 @@ export default function SettingsPage() {
       <section class="hero" style="grid-template-columns:1fr">
         <div class="hero__copy">
           <h1 class="hero__title">
-            {p.identity?.businessName ?? p.identity?.displayName ??
-              p.user.name ?? tFor(lang, "settings.yourBusiness")}
+            {/* REQ-501 (demo M35): `||` — an empty business name falls through to the next */}
+            {p.identity?.businessName || p.identity?.displayName ||
+              p.user.name || tFor(lang, "settings.yourBusiness")}
           </h1>
           <p class="hero__sub">{t.heroSub}</p>
         </div>
@@ -2850,7 +3065,7 @@ export default function SettingsPage() {
               rows={[
                 [
                   t.businessName,
-                  p.identity?.businessName ?? p.identity?.displayName,
+                  p.identity?.businessName || p.identity?.displayName,
                 ],
                 [t.legalName, p.identity?.legalName],
                 [t.license, p.identity?.businessLicense],
@@ -2865,14 +3080,12 @@ export default function SettingsPage() {
             <InsuranceEditCard snapshot={p} onSaved={onSaved} />
           </div>
 
-          <div class="grid">
-            <TaxEditCard snapshot={p} onSaved={onSaved} />
-            {
-              /* P-42: live editor wired to GET/PUT /profile/contract-defaults —
-            the card is no longer a dead read-only panel. */
-            }
-            <ContractDefaultsEditCard snapshot={p} onSaved={onSaved} />
-          </div>
+          {
+            /* REQ-622 (demo cycle 4, p4-p6c): no Contract defaults card — its
+            payment terms / deposit / warranty days were read by nothing; the
+            payment terms are "Days to pay an invoice" in Edit details. */
+          }
+          <TaxEditCard snapshot={p} onSaved={onSaved} />
 
           {/* REQ-198/199: the account number and the starting numbers */}
           <NumberingCard refreshKey={numberingKey} />
@@ -2880,6 +3093,9 @@ export default function SettingsPage() {
           <PaymentsEditCard snapshot={p} onSaved={onSaved} />
           <CardPaymentsCard snapshot={p} />
           <PayLinksCard snapshot={p} onSaved={onSaved} />
+
+          {/* REQ-623 (demo cycle 4, M26): automatic payment reminders */}
+          <RemindersEditCard snapshot={p} onSaved={onSaved} />
 
           {!acting && (
             <DangerZoneCard

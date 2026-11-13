@@ -18,22 +18,62 @@ import {
   docRefWithVersion,
   docTitle,
 } from "@paperwork/domain/business/doc-render/mod.ts";
+import {
+  daysFromDue,
+  DEFAULT_REMINDER_DAYS,
+  REMINDER_DAY_CHOICES,
+  type ReminderDay,
+  reminderSettingsOf,
+} from "#quote-flow/reminder-settings.ts";
+import { resolveCommsLanguage } from "#quote-flow/comms-language.ts"; // REQ-715
+import { withSendLang } from "#quote-flow/share-link.ts"; // REQ-715
+import { LogPaperworkMessage } from "@communication/domain/coordinators/log-paperwork-message/mod.ts"; // REQ-784
+import { customerLabel } from "@communication/domain/business/outbox-entry/mod.ts"; // REQ-784
+import { ConversationStore } from "@communication/domain/data/conversation-store/mod.ts"; // REQ-784
+import { MessageStore } from "@communication/domain/data/message-store/mod.ts"; // REQ-784
 
-/** The cadence steps fired by the overdue-reminder cron. */
-export const CADENCE_DAYS = [3, 7, 14, 30] as const;
-export type CadenceDay = typeof CADENCE_DAYS[number];
+/** Every cadence step, in order (days relative to the due date): -3 = three
+ *  days before, 0 = the due date (REQ-704, demo cycle 5 m60), 3 / 7 / 14 past
+ *  due, 30 = the owner-only escalation. A business picks which run
+ *  (REQ-623: BusinessIdentity.reminders.days); unset → 3 / 7 / 14 / 30. */
+export const CADENCE_DAYS = REMINDER_DAY_CHOICES;
+export type CadenceDay = ReminderDay;
+
+/** REQ-704: what a nudge would send, rendered without sending it. */
+export interface ReminderPreview {
+  invoiceId: string;
+  day: CadenceDay;
+  /** Day 30: nothing reaches the customer, the owner is alerted. */
+  escalated: boolean;
+  email?: string;
+  phone?: string;
+  emailSubject?: string;
+  smsBody?: string;
+  /** Why a send would reach nobody (same reasons as ReminderResult). */
+  reason?: ReminderSkipReason;
+}
 
 export interface ReminderResult {
   /** Invoice id we acted on. */
   invoiceId: string;
-  /** Day step we fired (3/7/14/30). */
+  /** Day step we fired (-3/0/3/7/14/30). */
   day: CadenceDay;
   /** Channels we successfully dispatched on. */
   channels: string[];
   /** True when the Day-30 escalation was used (notifies contractor only,
    *  does NOT dispatch to the customer). */
   escalated: boolean;
+  /** REQ-556 (demo-loop cycle 4, M7): why nothing reached the customer, when
+   *  nothing did — the reminders are muted, this rung already fired, there is
+   *  no email or phone to send to, or every channel tried failed. */
+  reason?: ReminderSkipReason;
 }
+
+export type ReminderSkipReason =
+  | "muted"
+  | "already_fired"
+  | "no_recipient"
+  | "not_delivered";
 
 /**
  * SendPaymentReminder — the overdue-cadence engine.
@@ -47,13 +87,21 @@ export interface ReminderResult {
  *     step. Used by tests and manual "send nudge" buttons.
  *
  * Roadmap §E:
+ *   - Day -3 / 0 (REQ-704, opt-in): text + email before / on the due date.
  *   - Day 3 / 7 / 14: text + email to customer.
  *   - Day 30: emit `invoice:escalated` for the contractor's bell only;
  *     no customer-facing dispatch (contractor decides whether to escalate
  *     manually).
  *   - Per-invoice mute: `remindersMuted=true` short-circuits the entire
  *     cadence for that invoice.
- *   - Eligibility: status in (sent|viewed|claimed) AND dueDate past.
+ *   - Business setting (REQ-623, demo cycle 4 M26): `BusinessIdentity.reminders`
+ *     = { enabled, days } — off stops the sweep for every invoice; `days`
+ *     picks which steps run. Unset → on, 3/7/14/30.
+ *   - Eligibility: status in (sent|viewed) AND the step's day reached
+ *     (dueDate − 3, the due date, or N days past it). A `claimed`
+ *     invoice (the customer reported paying) is PAUSED — never dunned while
+ *     the claim is pending; reject-claim flips it back to `sent`, which
+ *     resumes the cadence where it left off (REQ-250, demo m12).
  */
 @Injectable()
 export class SendPaymentReminder {
@@ -66,13 +114,23 @@ export class SendPaymentReminder {
     private sms: SmsService,
     private shortlinks: ShortLinkStore,
     private bus: EventBus,
+    /** REQ-784 — the business's outbox (defaulted for direct construction) */
+    private commsLog: LogPaperworkMessage = new LogPaperworkMessage(
+      new ConversationStore(),
+      new MessageStore(),
+    ),
   ) {}
 
   async runAll(userId: string, now: Date = new Date()): Promise<ReminderResult[]> {
     const out: ReminderResult[] = [];
+    // REQ-623: the business's on/off switch and cadence days
+    const settings = reminderSettingsOf(
+      await this.identity.get(userId).catch(() => null),
+    );
+    if (!settings.enabled) return out;
     const all = await this.invoices.listByUser(userId);
     for (const inv of all) {
-      const day = pickNextDay(inv, now);
+      const day = pickNextDay(inv, now, settings.days);
       if (day == null) continue;
       try {
         out.push(await this.runForInvoice(userId, inv.id, day, now));
@@ -91,10 +149,16 @@ export class SendPaymentReminder {
   ): Promise<ReminderResult> {
     const invoice = await this.invoices.getOwned(invoiceId, userId);
     if (invoice.remindersMuted) {
-      return { invoiceId, day, channels: [], escalated: false };
+      return { invoiceId, day, channels: [], escalated: false, reason: "muted" };
     }
     if (alreadyFiredOn(invoice, day)) {
-      return { invoiceId, day, channels: [], escalated: false };
+      return {
+        invoiceId,
+        day,
+        channels: [],
+        escalated: false,
+        reason: "already_fired",
+      };
     }
 
     // Day-30 escalation: bell-only, no customer dispatch.
@@ -114,7 +178,151 @@ export class SendPaymentReminder {
       return { invoiceId, day, channels: [], escalated: true };
     }
 
-    // Days 3 / 7 / 14: dispatch to customer.
+    // Days -3 / 0 / 3 / 7 / 14: dispatch to customer.
+    const {
+      copy,
+      toEmail,
+      toPhone,
+      senderEmail,
+      url,
+      fromAlias,
+      businessName,
+      lang,
+      customerName,
+    } = await this.compose(userId, invoice, day);
+    // REQ-784 (demo-loop dv1, d12): each reminder is a customer message —
+    // the outbox lists it, sent or not and why, with what was sent.
+    const toOutbox = (
+      channel: "email" | "text",
+      ok: boolean,
+      what: {
+        to: string;
+        subject?: string;
+        body?: string;
+        reasonCode?: string;
+        reason?: string;
+      },
+    ) =>
+      this.commsLog.outbox({
+        userId,
+        channel,
+        kind: "reminder",
+        language: lang,
+        ok,
+        customerId: invoice.customerId,
+        customerName,
+        docId: invoice.id,
+        docRef: docRef(invoice),
+        ...what,
+      });
+
+    // REQ-556 (demo-loop cycle 4, M7): a channel counts only when the
+    // provider took the message; nothing delivered says why, and does not
+    // burn the rung (add a contact and the next nudge goes out).
+    const channels: string[] = [];
+    if (!toEmail && !toPhone) {
+      return {
+        invoiceId,
+        day,
+        channels,
+        escalated: false,
+        reason: "no_recipient",
+      };
+    }
+    if (toEmail) {
+      try {
+        const res = await this.email.send({
+          to: toEmail,
+          subject: copy.emailSubject,
+          htmlBody: copy.emailHtml(url),
+          // REQ-628: under the business's name, never DocuMonster
+          from: businessFrom({ alias: fromAlias, name: businessName }),
+          ...(senderEmail ? { cc: [senderEmail] } : {}),
+        });
+        if (res.ok) channels.push("email");
+        else console.warn(`[send-payment-reminder] email not sent: ${res.reason}`);
+        await toOutbox("email", res.ok, {
+          to: toEmail,
+          subject: copy.emailSubject,
+          body: copy.emailHtml(url),
+          ...(res.ok ? {} : { reason: res.reason }),
+        });
+      } catch (err) {
+        console.error("[send-payment-reminder] email failed:", err);
+        await toOutbox("email", false, {
+          to: toEmail,
+          subject: copy.emailSubject,
+          reason: (err as Error)?.message ?? String(err),
+        });
+      }
+    }
+    if (toPhone) {
+      try {
+        const res = await this.sms.send({ to: toPhone, body: copy.smsBody(url) });
+        if (res.ok) channels.push("sms");
+        else console.warn(`[send-payment-reminder] sms not sent: ${res.detail ?? res.reason}`);
+        await toOutbox("text", res.ok, {
+          to: toPhone,
+          body: copy.smsBody(url),
+          ...(res.ok ? {} : { reasonCode: res.failureCode, reason: res.reason }),
+        });
+      } catch (err) {
+        console.error("[send-payment-reminder] sms failed:", err);
+        await toOutbox("text", false, {
+          to: toPhone,
+          reason: (err as Error)?.message ?? String(err),
+        });
+      }
+    }
+    if (channels.length === 0) {
+      return {
+        invoiceId,
+        day,
+        channels,
+        escalated: false,
+        reason: "not_delivered",
+      };
+    }
+
+    await this.appendHistory(userId, invoice, day, channels);
+    return { invoiceId, day, channels, escalated: false };
+  }
+
+  /** REQ-704 (demo cycle 5, m60): the reminder `runForInvoice` would send for
+   *  `day`, rendered — same copy, same recipients, same link — and sent to
+   *  nobody. Day 30 says it only alerts the owner. */
+  async preview(
+    userId: string,
+    invoiceId: string,
+    day: CadenceDay,
+    _now: Date = new Date(),
+  ): Promise<ReminderPreview> {
+    const invoice = await this.invoices.getOwned(invoiceId, userId);
+    const reason: ReminderSkipReason | undefined = invoice.remindersMuted
+      ? "muted"
+      : alreadyFiredOn(invoice, day)
+      ? "already_fired"
+      : undefined;
+    if (day === 30) {
+      return { invoiceId, day, escalated: true, ...(reason ? { reason } : {}) };
+    }
+    const { copy, toEmail, toPhone, url } = await this.compose(userId, invoice, day);
+    const noOne = !toEmail && !toPhone;
+    const why = reason ?? (noOne ? "no_recipient" : undefined);
+    return {
+      invoiceId,
+      day,
+      escalated: false,
+      ...(toEmail ? { email: toEmail } : {}),
+      ...(toPhone ? { phone: toPhone } : {}),
+      emailSubject: copy.emailSubject,
+      smsBody: copy.smsBody(url),
+      ...(why ? { reason: why } : {}),
+    };
+  }
+
+  /** The customer-facing copy, recipients and invoice link for one step. */
+  private async compose(userId: string, invoice: Invoice, day: CadenceDay) {
     const [customer, sender, biz] = await Promise.all([
       invoice.customerId
         ? this.customers.getOwned(invoice.customerId, userId).catch(() => undefined)
@@ -122,7 +330,13 @@ export class SendPaymentReminder {
       this.users.get(userId).catch(() => undefined),
       this.identity.get(userId).catch(() => null),
     ]);
-    const lang: "en" | "es" = biz?.commsLanguage === "es" ? "es" : "en";
+    // REQ-715 (demo-loop cycle 5, m31): the reminder speaks the customer's
+    // own language, else the business's send default, else en.
+    const lang = resolveCommsLanguage({
+      customerLanguage: customer?.language,
+      identityCommsLanguage: biz?.commsLanguage,
+    });
+    // REQ-628: never DocuMonster — the business, else the sender, else a neutral word
     const businessName = biz?.businessName?.trim() || biz?.legalName?.trim() || sender?.name?.trim() || t(lang, "paymentReminder.senderFallback");
     // REQ-204: the reminder greets the customer as snapshotted on the bill
     const shown = customerOnDocument(invoice, customer);
@@ -137,38 +351,25 @@ export class SendPaymentReminder {
     let url = "";
     try {
       const link = await this.shortlinks.findOrCreate(userId, "invoice", invoice.id);
-      url = `${appUrl}/s/${link.code}`;
+      // REQ-715 (REQ-342 parity): the link opens the invoice in the
+      // reminder's language
+      url = withSendLang(`${appUrl}/s/${link.code}`, lang);
     } catch { /* fall through */ }
 
-    const channels: string[] = [];
-    const toEmail = customer?.email || shown?.email;
-    const toPhone = customer?.phoneNumber || shown?.phoneNumber;
-    if (toEmail) {
-      try {
-        await this.email.send({
-          to: toEmail,
-          subject: copy.emailSubject,
-          htmlBody: copy.emailHtml(url),
-          // REQ-628: under the business's name, never DocuMonster
-          from: businessFrom({ alias: biz?.emailAlias, name: businessName }),
-          ...(sender?.email ? { cc: [sender.email] } : {}),
-        });
-        channels.push("email");
-      } catch (err) {
-        console.error("[send-payment-reminder] email failed:", err);
-      }
-    }
-    if (toPhone) {
-      try {
-        await this.sms.send({ to: toPhone, body: copy.smsBody(url) });
-        channels.push("sms");
-      } catch (err) {
-        console.error("[send-payment-reminder] sms failed:", err);
-      }
-    }
-
-    await this.appendHistory(userId, invoice, day, channels);
-    return { invoiceId, day, channels, escalated: false };
+    const toEmail = customer?.email || shown?.email || undefined;
+    const toPhone = customer?.phoneNumber || shown?.phoneNumber || undefined;
+    return {
+      copy,
+      toEmail,
+      toPhone,
+      senderEmail: sender?.email,
+      url,
+      businessName,
+      fromAlias: biz?.emailAlias,
+      // REQ-784: what the outbox entry says
+      lang,
+      customerName: customerLabel(shown),
+    };
   }
 
   private async appendHistory(userId: string, invoice: Invoice, day: CadenceDay, channels: string[]): Promise<void> {
@@ -178,7 +379,8 @@ export class SendPaymentReminder {
 }
 
 /** Pick the next eligible day to fire for `invoice`. Returns undefined
- *  if nothing's due (muted, paid, void, scheduled, draft, or within the
+ *  if nothing's due (muted, paid, void, scheduled, draft, claimed — the
+ *  customer said they paid, REQ-250 — or within the
  *  past-due window of the next step but hasn't crossed it yet).
  *
  *  Cadence semantics:
@@ -188,24 +390,45 @@ export class SendPaymentReminder {
  *      copy).
  *    - Never regress: once Day N has fired, no step < N will fire.
  */
-export function pickNextDay(invoice: Invoice, now: Date): CadenceDay | undefined {
+/** REQ-250 (demo m12): `claimed` is deliberately absent — a pending payment
+ *  claim pauses the cadence. */
+const REMINDER_ELIGIBLE: readonly string[] = ["sent", "viewed"];
+
+export function pickNextDay(
+  invoice: Invoice,
+  now: Date,
+  /** REQ-623: the business's cadence (BusinessIdentity.reminders.days) */
+  days: readonly CadenceDay[] = DEFAULT_REMINDER_DAYS,
+): CadenceDay | undefined {
   if (invoice.remindersMuted) return undefined;
-  if (!["sent", "viewed", "claimed"].includes(invoice.status ?? "")) return undefined;
-  const od = daysOverdue(invoice, now);
-  if (od < CADENCE_DAYS[0]) return undefined;
+  if (!REMINDER_ELIGIBLE.includes(invoice.status ?? "")) return undefined;
+  if (!invoice.dueDate) return undefined;
+  const cadence = CADENCE_DAYS.filter((d) => days.includes(d));
+  if (cadence.length === 0) return undefined;
+  if (!stepReached(invoice, now, cadence[0])) return undefined;
   const firedDays = new Set((invoice.reminderHistory ?? []).map((h) => h.day));
   let largestFired: number | undefined;
   for (const d of CADENCE_DAYS) {
     if (firedDays.has(d)) largestFired = d;
   }
-  for (let i = CADENCE_DAYS.length - 1; i >= 0; i--) {
-    const d = CADENCE_DAYS[i];
-    if (od < d) continue;
+  for (let i = cadence.length - 1; i >= 0; i--) {
+    const d = cadence[i];
+    if (!stepReached(invoice, now, d)) continue;
     if (firedDays.has(d)) continue;
     if (largestFired != null && d < largestFired) continue;
     return d;
   }
   return undefined;
+}
+
+/** Has the clock reached step `day`? Post-due steps count whole days past the
+ *  end of the due date (unchanged since REQ-021); the before-due / due-date
+ *  steps (REQ-704) count calendar days from it — -3 is three days before,
+ *  0 is the due date itself. */
+function stepReached(invoice: Invoice, now: Date, day: CadenceDay): boolean {
+  if (day > 0) return daysOverdue(invoice, now) >= day;
+  const d = daysFromDue(invoice.dueDate, now.toISOString().slice(0, 10));
+  return d != null && d >= day;
 }
 
 export function daysOverdue(invoice: Invoice, now: Date): number {
@@ -239,7 +462,11 @@ export function composeReminderCopy(opts: {
   const hi = customerFirst ? t(lang, "paymentReminder.greeting", { name: customerFirst }) : "";
   const sender = senderFirst ?? t(lang, "paymentReminder.senderFallback");
   const amount = `$${((invoice.amount ?? 0) / 100).toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
-  const tone = day === 3
+  const tone = day < 0
+    ? t(lang, "paymentReminder.tone.beforeDue", { businessName })
+    : day === 0
+    ? t(lang, "paymentReminder.tone.dueToday", { businessName })
+    : day === 3
     ? t(lang, "paymentReminder.tone.day3", { businessName })
     : day === 7
     ? t(lang, "paymentReminder.tone.day7", { businessName })
@@ -248,7 +475,11 @@ export function composeReminderCopy(opts: {
   // REQ-204 / REQ-201: every reminder names the bill — "INV-5000 · Version 2"
   const ref = docRef(invoice);
   const refVersion = docRefWithVersion(invoice, lang);
-  const subjectBase = day === 3
+  const subjectBase = day < 0
+    ? t(lang, "paymentReminder.subject.beforeDue", { businessName })
+    : day === 0
+    ? t(lang, "paymentReminder.subject.dueToday", { businessName })
+    : day === 3
     ? t(lang, "paymentReminder.subject.day3", { businessName })
     : day === 7
     ? t(lang, "paymentReminder.subject.day7", { businessName })

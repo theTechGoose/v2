@@ -1,7 +1,8 @@
 /**
  * Language signal — single source of truth for EN/ES.
  *
- * Server: read from Accept-Language / cookie / query.
+ * Server: per request, from the page / ?lang= / the signed-in user / the
+ * pm_lang cookie (lib/ssr-lang.ts, REQ-231).
  * Client: subscribed to by islands; toggled from Settings (and the landing
  * page's server-rendered switch), persisted to localStorage.
  */
@@ -24,11 +25,29 @@ function asLang(v: string | null | undefined): Lang | null {
  *  same value so server-render and island-hydration agree — no flash. */
 const LANG_COOKIE = "pm_lang";
 
+/** The demo stage's old replica frame (the same name REQ-229's guard keeps in
+ *  shared/meta-pixel/pixel.ts; REQ-242 replaced the replica with a script-less
+ *  mirror, so this only guards a browser still holding a replica window —
+ *  kept literal so every page that imports the language signal doesn't pull
+ *  in the demo protocol). */
+function inReplicaFrame(): boolean {
+  try {
+    const w = globalThis as unknown as { name?: unknown; parent?: unknown };
+    return w.name === "pm-demo-replica" && w.parent !== globalThis;
+  } catch {
+    return false;
+  }
+}
+
 /** Persist the chosen language to BOTH localStorage (client reads) and a
  *  cookie (SSR reads). The single write path for every place that changes
  *  the language. SSR-guarded — a no-op on the server. */
 export function persistLang(lang: Lang): void {
   if (typeof document === "undefined") return;
+  // REQ-270: the demo stage's replica frame runs the CUSTOMER's app on the
+  // staff's origin — its writes would land in the staff's own storage/cookie
+  // and flip the stage's language on the next load. The frame never persists.
+  if (inReplicaFrame()) return;
   try {
     globalThis.localStorage?.setItem("pm:lang", lang);
   } catch { /* private mode / disabled storage */ }
@@ -69,9 +88,78 @@ export function writeLangToUrl(lang: Lang): void {
   }
 }
 
-// Client-only seed: resolve the initial language exactly once at module load.
-// Priority: ?lang= (URL) > localStorage["pm:lang"] > the "es" default.
-// Guarded because this module is imported in SSR.
+/**
+ * REQ-231 — the browser's starting language. `server` is the language the
+ * server rendered the islands in (`window.__PM_LANG`, set by the app shell from
+ * lib/ssr-lang.ts) — taking it first is what makes hydration match the server
+ * markup, so an English user never sees the Spanish default flash, nor a
+ * Spanish attribute (the composer's placeholder) the hydration left behind.
+ * Without one: ?lang= > localStorage["pm:lang"] > the "es" default.
+ * `persist` is only ever a real choice (?lang= or the stored one); the server's
+ * language and the default are never written (see below).
+ */
+export function pickClientLang(
+  src: { server: unknown; query: unknown; stored: unknown },
+): { lang: Lang; persist: Lang | null } {
+  const chosen = asLang(src.query as string) ?? asLang(src.stored as string);
+  return {
+    lang: asLang(src.server as string) ?? chosen ?? "es",
+    persist: chosen,
+  };
+}
+
+/**
+ * REQ-494 (demo-loop cycle 3, M43) — the browser's own stored language
+ * (pm:lang, else the pm_lang cookie), or null. Client-only.
+ */
+export function storedLang(): Lang | null {
+  if (typeof document === "undefined") return null;
+  try {
+    const ls = asLang(globalThis.localStorage?.getItem("pm:lang"));
+    if (ls) return ls;
+  } catch { /* storage disabled */ }
+  try {
+    return langFromCookie(document.cookie);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * REQ-494 — the language the demo chrome (DemoModeOverlay's pill) speaks. On
+ * /worker the page shows a signed-in worker's language for the session only
+ * (REQ-285/416) — that is the worker's, not the viewer's — so the chrome keeps
+ * the viewer's stored choice there. Everywhere else it follows the page.
+ */
+export function demoChromeLang(
+  src: { path: string; live: Lang; stored: Lang | null },
+): Lang {
+  const onWorker = src.path === "/worker" || src.path.startsWith("/worker/");
+  return onWorker ? src.stored ?? src.live : src.live;
+}
+
+/**
+ * REQ-345 — the event a plain (non-island) script dispatches to change the
+ * language: `document.dispatchEvent(new CustomEvent("pm:lang", { detail }))`.
+ * The landing page's EN/ES toggle lives in static/landing-scripts.js, outside
+ * the island bundle, so it cannot import langSignal; without this bridge the
+ * PhoneChat island kept the old language until a reload (demo m3).
+ */
+export const LANG_EVENT = "pm:lang";
+
+/** Turn `pm:lang` events on `target` into langSignal. Persisting is the
+ *  dispatcher's job (it already wrote the choice). Returns the unsubscribe. */
+export function listenForLangEvents(target: EventTarget): () => void {
+  const onLang = (e: Event) => {
+    const lang = asLang((e as CustomEvent<unknown>).detail as string);
+    if (lang) langSignal.value = lang;
+  };
+  target.addEventListener(LANG_EVENT, onLang);
+  return () => target.removeEventListener(LANG_EVENT, onLang);
+}
+
+// Client-only seed: resolve the initial language exactly once at module load
+// (pickClientLang). Guarded because this module is imported in SSR.
 //
 // CRITICAL — only an actual CHOICE is persisted. This block used to call
 // persistLang(resolved) unconditionally, so merely loading ANY page (including
@@ -82,18 +170,26 @@ export function writeLangToUrl(lang: Lang): void {
 // same URL. The default is a fallback, not a preference: it is never written.
 if (typeof document !== "undefined" && globalThis.location) {
   try {
-    const fromQuery = asLang(
-      new URLSearchParams(globalThis.location.search).get("lang"),
-    );
-    const fromStorage = asLang(globalThis.localStorage?.getItem("pm:lang"));
-    const chosen = fromQuery ?? fromStorage;
-    langSignal.value = chosen ?? "es";
+    const { lang, persist } = pickClientLang({
+      server: (globalThis as { __PM_LANG?: unknown }).__PM_LANG,
+      query: new URLSearchParams(globalThis.location.search).get("lang"),
+      stored: globalThis.localStorage?.getItem("pm:lang"),
+    });
+    langSignal.value = lang;
     // Mirror ONLY a real choice into localStorage + cookie, so SSR routes
     // (verify/login) render the same language the islands hydrate to.
-    if (chosen) persistLang(chosen);
+    if (persist) persistLang(persist);
   } catch {
     /* keep the default */
   }
+}
+
+// REQ-345: hear the language toggles that live outside the island bundle.
+if (
+  typeof document !== "undefined" &&
+  typeof document.addEventListener === "function"
+) {
+  listenForLangEvents(document);
 }
 
 interface Card {

@@ -1,5 +1,10 @@
 import { assertEquals } from "#std/assert";
-import { forecastEntryFor, settlementOffsetDays } from "./mod.ts";
+import {
+  ComputeInvoiceForecast,
+  forecastEntryFor,
+  forecastLabelBase,
+  settlementOffsetDays,
+} from "./mod.ts";
 import type { Invoice } from "@paperwork/dto/invoice.ts";
 
 function inv(overrides: Partial<Invoice>): Invoice {
@@ -113,5 +118,200 @@ Deno.test("forecastEntryFor: sent without dueDate is excluded (no land date to f
   assertEquals(
     forecastEntryFor(inv({ status: "sent", dueDate: undefined }), "X"),
     undefined,
+  );
+});
+
+// REQ-243 (demo quote-invoice-money-m3 d/e): the /invoices hero read "All
+// clear — nothing outstanding" over a waiting claim, and kept showing money
+// "expected this week" after it was paid. The forward window compared the
+// land DAY at noon UTC against the current instant, so a same-day claim made
+// in the afternoon fell out of "this week", and a payment recorded in the
+// morning was counted as money still to come.
+function forecastWith(invoices: Invoice[]) {
+  const stores = {
+    invoices: { listByUser: () => Promise.resolve(invoices) },
+    customers: { getOwned: () => Promise.reject(new Error("none")) },
+    quotes: { getOwned: () => Promise.reject(new Error("none")) },
+  };
+  return new ComputeInvoiceForecast(
+    stores.invoices as unknown as ConstructorParameters<
+      typeof ComputeInvoiceForecast
+    >[0],
+    stores.customers as unknown as ConstructorParameters<
+      typeof ComputeInvoiceForecast
+    >[1],
+    stores.quotes as unknown as ConstructorParameters<
+      typeof ComputeInvoiceForecast
+    >[2],
+  );
+}
+
+Deno.test("REQ-243: a same-day Zelle claim made this afternoon is money expected this week", async () => {
+  const now = new Date("2026-05-10T18:00:00Z");
+  const r = await forecastWith([
+    inv({
+      id: "claimed-1",
+      status: "claimed",
+      paymentIntent: {
+        method: "zelle",
+        amount: 100_00,
+        claimedAt: "2026-05-10T15:00:00Z",
+      },
+    }),
+  ]).run("u-1", now);
+  assertEquals(r.thisWeek.map((e) => e.invoiceId), ["claimed-1"]);
+  assertEquals(r.thisWeekCents, 100_00);
+});
+
+Deno.test("REQ-243: an invoice paid this morning is not money still expected this week", async () => {
+  const now = new Date("2026-05-10T09:00:00Z");
+  const r = await forecastWith([
+    inv({ id: "paid-1", status: "paid", paidAt: "2026-05-10T08:30:00Z" }),
+  ]).run("u-1", now);
+  assertEquals(r.thisWeek, []);
+  assertEquals(r.thisWeekCents, 0);
+  assertEquals(r.nextWeekCents, 0);
+});
+
+Deno.test("REQ-243: a sent invoice due later today is still expected this week", async () => {
+  const now = new Date("2026-05-10T20:00:00Z");
+  const r = await forecastWith([
+    inv({ id: "due-today", status: "sent", dueDate: "2026-05-10" }),
+  ]).run("u-1", now);
+  assertEquals(r.thisWeek.map((e) => e.invoiceId), ["due-today"]);
+  assertEquals(r.atRiskCents, 0);
+});
+
+// REQ-484 (demo-loop cycle 3, m12): "this week" is the calendar week —
+// today through Sunday — and "next week" is the Monday–Sunday after it.
+// The rolling, inclusive today..today+7 window called a Nov 19 due date
+// "expected this week" on Thursday Nov 12.
+Deno.test("REQ-484 m12: on Thu Nov 12 an invoice due Thu Nov 19 (today+7) is next week, not this week", async () => {
+  const now = new Date("2026-11-12T15:00:00Z"); // a Thursday
+  const r = await forecastWith([
+    inv({
+      id: "due-19",
+      status: "sent",
+      dueDate: "2026-11-19",
+      amount: 500_00,
+    }),
+  ]).run("u-1", now);
+  assertEquals(r.thisWeek, []);
+  assertEquals(r.thisWeekCents, 0);
+  assertEquals(r.nextWeekCents, 500_00);
+});
+
+Deno.test("REQ-484 m12: this week runs through Sunday; next week is the following Monday–Sunday", async () => {
+  const now = new Date("2026-11-12T15:00:00Z"); // Thursday
+  const r = await forecastWith([
+    inv({ id: "sun", status: "sent", dueDate: "2026-11-15", amount: 1_00 }),
+    inv({ id: "mon", status: "sent", dueDate: "2026-11-16", amount: 10_00 }),
+    inv({
+      id: "next-sun",
+      status: "sent",
+      dueDate: "2026-11-22",
+      amount: 100_00,
+    }),
+    inv({
+      id: "later",
+      status: "sent",
+      dueDate: "2026-11-23",
+      amount: 1000_00,
+    }),
+  ]).run("u-1", now);
+  assertEquals(r.thisWeek.map((e) => e.invoiceId), ["sun"]);
+  assertEquals(r.thisWeekCents, 1_00);
+  assertEquals(r.nextWeekCents, 110_00);
+});
+
+Deno.test("REQ-484 m12: on a Sunday, this week is just today and Monday starts next week", async () => {
+  const now = new Date("2026-11-15T10:00:00Z"); // Sunday
+  const r = await forecastWith([
+    inv({ id: "today", status: "sent", dueDate: "2026-11-15", amount: 1_00 }),
+    inv({ id: "mon", status: "sent", dueDate: "2026-11-16", amount: 10_00 }),
+    inv({
+      id: "next-sun",
+      status: "sent",
+      dueDate: "2026-11-22",
+      amount: 100_00,
+    }),
+    inv({
+      id: "later",
+      status: "sent",
+      dueDate: "2026-11-23",
+      amount: 1000_00,
+    }),
+  ]).run("u-1", now);
+  assertEquals(r.thisWeek.map((e) => e.invoiceId), ["today"]);
+  assertEquals(r.nextWeekCents, 110_00);
+});
+
+// REQ-696 (demo-loop cycle 5, M22): an invoice billed to a typed BILL TO name
+// with no customer read "jue: Invoice $200" on the Spanish /invoices hero —
+// the label fell back to an English literal and never read the bill-to.
+Deno.test("REQ-696 M22 forecastLabelBase — the customer's name first", () => {
+  assertEquals(
+    forecastLabelBase(
+      "Hansen",
+      inv({ billTo: { name: "Jorge Ruiz" } }),
+      "Deck",
+    ),
+    "Hansen",
+  );
+});
+
+Deno.test("REQ-696 M22 forecastLabelBase — no customer: the bill-to name, then its business name", () => {
+  assertEquals(
+    forecastLabelBase(
+      undefined,
+      inv({ billTo: { name: " Jorge Ruiz " } }),
+      "Deck",
+    ),
+    "Jorge Ruiz",
+  );
+  assertEquals(
+    forecastLabelBase(
+      undefined,
+      inv({ billTo: { businessName: "Ruiz LLC" } }),
+      undefined,
+    ),
+    "Ruiz LLC",
+  );
+});
+
+Deno.test("REQ-696 M22 forecastLabelBase — no one named: the job, its own or by language", () => {
+  assertEquals(
+    forecastLabelBase(undefined, inv({ quoteId: undefined }), "Deck"),
+    "Deck",
+  );
+  assertEquals(
+    forecastLabelBase(
+      undefined,
+      inv({ quoteId: undefined, jobName: "Fence" }),
+      undefined,
+    ),
+    "Fence",
+  );
+  assertEquals(
+    forecastLabelBase(
+      undefined,
+      {
+        ...inv({ quoteId: undefined }),
+        jobNameByLang: { es: "Cerca" },
+      } as Invoice,
+      undefined,
+    ),
+    "Cerca",
+  );
+});
+
+Deno.test("REQ-696 M22 forecastLabelBase — nothing else: the invoice's own number, never the English 'Invoice'", () => {
+  assertEquals(
+    forecastLabelBase(
+      undefined,
+      inv({ quoteId: undefined, number: "INV-002" }),
+      undefined,
+    ),
+    "INV-002",
   );
 });

@@ -1,3 +1,4 @@
+import { isDueNowTermValue } from "#quote-flow/terms-i18n.ts";
 import { Injectable } from "#danet/core";
 import { LoadBusinessLogo } from "@paperwork/domain/coordinators/load-business-logo/mod.ts";
 import { QuoteStore } from "@paperwork/domain/data/quote-store/mod.ts";
@@ -11,6 +12,11 @@ import { businessFrom } from "@communication/domain/business/sender/mod.ts";
 import { type EmailLogo, emailLogo, emailLogoHtml } from "@paperwork/domain/business/email-logo/mod.ts";
 import { RenderQuotePdf } from "@paperwork/domain/coordinators/render-quote-pdf/mod.ts";
 import { LogPaperworkMessage } from "@communication/domain/coordinators/log-paperwork-message/mod.ts";
+import { customerLabel } from "@communication/domain/business/outbox-entry/mod.ts"; // REQ-784
+import {
+  customerSmsTarget,
+  dispatchCustomerSms,
+} from "@paperwork/domain/business/customer-sms/mod.ts";
 import { buildSignedConfirmSms, smsJobName } from "#quote-flow/sms-i18n.ts";
 import { reconcileMilestones } from "#quote-flow/milestone-reconcile.ts";
 import type { Quote, QuoteTerm } from "@paperwork/dto/quote.ts";
@@ -24,7 +30,20 @@ import {
 } from "@paperwork/domain/business/doc-render/mod.ts";
 import type { User } from "@users/dto/user.ts";
 import type { Customer } from "@crm/dto/customer.ts";
+import type { CustomerSnapshot } from "@core/data/numbered-store/mod.ts";
 import { SITE_ORIGIN } from "#quote-flow/site-meta.ts";
+import { resolveCommsLanguage } from "#quote-flow/comms-language.ts"; // REQ-715
+import {
+  accountNetDays,
+  completionFromTerms,
+  startDayFromTerms,
+} from "#quote-flow/completion-schedule.ts"; // REQ-411
+import {
+  recurringFromTerms,
+  type RecurringTerm,
+  recurringTermText,
+} from "#quote-flow/recurring-billing.ts"; // REQ-699
+import { QuoteSubscriptionPort } from "@paperwork/domain/coordinators/quote-subscription-port/mod.ts"; // REQ-699
 
 const COLOR_TEAL = "#144852";
 const COLOR_GREEN = "#519843";
@@ -61,7 +80,10 @@ const APP_URL = (() => {
  *   2. Auto-creates the milestone invoices from the quote's payment terms
  *      (the deposit, if 30/30/40 or 50/50; otherwise the full net-15
  *      invoice, etc.). Accept always bills: a quote with no payment terms
- *      yields ONE full-amount invoice due now.
+ *      yields ONE full-amount invoice on net-7 (REQ-240). A RECURRING term
+ *      (REQ-699 — "Monthly · $180/mo") bills no milestone: Field's
+ *      subscription, made through QuoteSubscriptionPort, bills each period;
+ *      only when none can be made is the period billed once, as before.
  *   3. Dispatches a confirmation email to the customer with the PDF
  *      attached and a payment-link button to the new invoice.
  *   4. Sends a completion SMS to the customer (roadmap p.2) — best-effort,
@@ -85,13 +107,25 @@ export class SendSignedConfirmation {
     private email: EmailService,
     private sms: SmsService,
     private commsLog: LogPaperworkMessage,
+    // REQ-699: optional so a hand-built coordinator (its own tests) runs
+    // without Field; the app injects it and Field registers on it.
+    private subscriptions?: QuoteSubscriptionPort,
     private logos: LoadBusinessLogo = new LoadBusinessLogo(),
   ) {}
 
   async run(
     quoteId: string,
   ): Promise<
-    { ok: boolean; reason?: string; messageId?: string; invoiceId?: string }
+    {
+      ok: boolean;
+      reason?: string;
+      messageId?: string;
+      invoiceId?: string;
+      /** REQ-697: the after-completion bill the signature scheduled */
+      scheduledInvoiceId?: string;
+      /** REQ-699: the Field subscription that bills a recurring quote */
+      subscriptionId?: string;
+    }
   > {
     let quote: Quote;
     try {
@@ -129,14 +163,30 @@ export class SendSignedConfirmation {
       ident?.legalName?.trim() || contractor?.name?.trim();
 
     // Roadmap p.13: customer-facing comms resolve to the contractor's
-    // outgoing-comms language (default en), not their UI language.
-    const lang: Lang = ident?.commsLanguage === "es" ? "es" : "en";
+    // outgoing-comms language (default en), not their UI language —
+    // REQ-715 (demo-loop cycle 5, m31): the customer's own language first.
+    const lang: Lang = resolveCommsLanguage({
+      customerLanguage: customer?.language,
+      identityCommsLanguage: ident?.commsLanguage,
+    });
+
+    // ---- 0. REQ-699 (demo-loop cycle 5, M20): a recurring payment term is
+    // billed each period by the Field subscription the signature makes —
+    // never as a one-off milestone. With no subscription (Field not booted,
+    // no customer to bill) the period is billed once below, as before.
+    const recurring = recurringFromTerms(quote.terms);
+    const subscriptionId = recurring
+      ? (await this.subscriptions?.run({ userId, quoteId: quote.id }))
+        ?.subscriptionId
+      : undefined;
 
     // ---- 1. Create the full milestone set (first invoice sent now,
     // remaining ones scheduled for equal-spaced dates over the quote's
     // completion window).
     const total = quote.estimatedTotal ?? 0;
-    const plannedMilestones = computeMilestoneAmounts(total, quote.terms);
+    const plannedMilestones = subscriptionId
+      ? []
+      : computeMilestoneAmounts(total, quote.terms);
     // UX-36: bill only the unbilled remainder. A late accept on a deal that
     // was already invoiced (or fully paid) must never re-bill the customer —
     // every non-void invoice on the deal counts as committed.
@@ -156,6 +206,12 @@ export class SendSignedConfirmation {
       );
     }
     let invoiceId: string | undefined;
+    // REQ-697 (demo-loop cycle 5, m22): the after-completion bill the
+    // signature scheduled (nothing is sent) — the owner's signing line names it.
+    let scheduledInvoiceId: string | undefined;
+    // REQ-316: a scheduled-only billing (payment after completion) is still a
+    // successful accept even when there is nothing to pay yet.
+    let billed = false;
     if (milestoneAmounts.length > 0) {
       const today = new Date();
       const todayIso = today.toISOString().slice(0, 10);
@@ -164,16 +220,41 @@ export class SendSignedConfirmation {
         quote.startDate,
         quote.estimatedCompletionDate,
         today,
+        quote.terms,
       );
       const installmentTotal = milestoneAmounts.length;
       // "Due Now" payment terms (roadmap p.6): the single invoice is due the
-      // day of signing, not the usual net-7 grace window. A quote with NO
-      // payment terms bills the same way — one full invoice, due now.
+      // day of signing, not the usual net-7 grace window. REQ-240 (demo M29):
+      // a quote with NO payment terms still bills one full invoice, but nobody
+      // agreed to "due now" — it gets the standard net-7, or the agreed
+      // completion date when that is later.
       const paymentTermsValue = quote.terms?.find((t) =>
         t.stepId === "payment_terms"
       )?.value;
-      const dueNow = !paymentTermsValue ||
-        /\bdue now\b/i.test(paymentTermsValue);
+      const dueNow = !!paymentTermsValue &&
+        isDueNowTermValue(paymentTermsValue);
+      // REQ-316 (demo-loop cycle 1, M12): "Payment upon completion" / "Net N"
+      // bill AFTER the job. The single milestone is SCHEDULED for the
+      // completion date (never `sent` at signing — so the signed /q shows no
+      // "Pay now" and the customer owes nothing yet) and due N days after it;
+      // the nudge sweep surfaces it to the contractor when the job wraps.
+      const afterCompletion = plannedMilestones.length === 1
+        ? completionTerms(paymentTermsValue, ident?.invoiceNetDays)
+        : undefined;
+      const completionSlot = afterCompletion
+        ? completionScheduledFor(quote, today)
+        : undefined;
+      const netDue = addDaysIso(today, 7);
+      const firstDue = dueNow
+        ? todayIso
+        : !paymentTermsValue && quote.estimatedCompletionDate &&
+            /^\d{4}-\d{2}-\d{2}$/.test(quote.estimatedCompletionDate) &&
+            quote.estimatedCompletionDate > netDue
+        ? quote.estimatedCompletionDate
+        : netDue;
+      // REQ-240 (demo M29): a quote signed with no customer on file still
+      // bills a named person — the snapshot, else the name they signed with.
+      const billTo = quote.customerId ? undefined : billToFromSigner(quote);
       for (let i = 0; i < milestoneAmounts.length; i++) {
         const amount = milestoneAmounts[i];
         const isFirst = i === 0;
@@ -181,21 +262,28 @@ export class SendSignedConfirmation {
           // First milestone fires immediately (matches prior behavior);
           // the rest are scheduled placeholders the contractor nudge cron
           // will surface on their scheduledFor date.
-          const dueDate = isFirst
-            ? (dueNow ? todayIso : addDaysIso(today, 7))
+          const dueDate = afterCompletion && completionSlot
+            ? addDaysIso(parseIsoDate(completionSlot), afterCompletion.netDays)
+            : isFirst
+            ? firstDue
             : addDaysIso(parseIsoDate(scheduledDates[i]), 7);
           const invoice = await this.invoices.create(userId, {
             quoteId: quote.id,
             ...(quote.customerId ? { customerId: quote.customerId } : {}),
+            ...(billTo ? { billTo } : {}),
             amount,
             dueDate,
             installmentIndex: i + 1,
             installmentTotal,
-            ...(isFirst
+            ...(afterCompletion && completionSlot
+              ? { status: "scheduled", scheduledFor: completionSlot }
+              : isFirst
               ? { issuedDate: todayIso, status: "sent" }
               : { status: "scheduled", scheduledFor: scheduledDates[i] }),
           });
-          if (isFirst) invoiceId = invoice.id;
+          billed = true;
+          if (isFirst && !afterCompletion) invoiceId = invoice.id;
+          if (isFirst && afterCompletion) scheduledInvoiceId = invoice.id;
         } catch (err) {
           console.error(
             `[send-signed-confirmation] milestone ${
@@ -235,6 +323,9 @@ export class SendSignedConfirmation {
       ok: false,
       reason: "no_customer_email",
     };
+    // REQ-556 (demo-loop cycle 4, M7): the channels this confirmation — and
+    // so the invoice it bills — actually reached the customer on.
+    const deliveredVia: string[] = [];
     if (recipient) {
       console.log(
         `[send-signed-confirmation] dispatching to ${recipient} for quote ${quote.id}`,
@@ -246,9 +337,10 @@ export class SendSignedConfirmation {
           customer,
           contractor,
           ...(businessName ? { businessName } : {}),
-          ...(ident?.commsLanguage
-            ? { commsLanguage: ident.commsLanguage }
-            : {}),
+          // REQ-715: the countersigned copy is in the email's language
+          commsLanguage: lang,
+          // REQ-697 (m22): the payment term states the days to pay
+          invoiceNetDays: accountNetDays(ident?.invoiceNetDays),
           // REQ-628: the business's logo heads the signed agreement
           logo: await this.logos.run(quote.userId),
         });
@@ -268,6 +360,8 @@ export class SendSignedConfirmation {
         businessName,
         invoiceId,
         invoiceAmount: milestoneAmounts[0] ?? 0,
+        // REQ-699: the customer is told what each period bills
+        ...(subscriptionId && recurring ? { recurring } : {}),
         lang,
         // REQ-628: headed by the business's own logo, or its name as a wordmark
         logo: emailLogo({
@@ -295,6 +389,24 @@ export class SendSignedConfirmation {
           }
           : {}),
       });
+      if (sent.ok) deliveredVia.push("email");
+      // REQ-784 (demo-loop dv1, d12): the signed copy is a customer message —
+      // the outbox lists it, sent or not, with the email as sent.
+      await this.commsLog.outbox({
+        userId,
+        channel: "email",
+        kind: "signedCopy",
+        language: lang,
+        ok: sent.ok,
+        ...(sent.ok ? {} : { reason: sent.reason }),
+        customerId: customer?.id ?? quote.customerId,
+        customerName: customerLabel(shown),
+        to: recipient,
+        docId: quote.id,
+        docRef: docRef(quote),
+        subject,
+        body: html,
+      });
       console.log(
         sent.ok
           ? `[send-signed-confirmation] sent to ${recipient} messageId=${
@@ -315,8 +427,27 @@ export class SendSignedConfirmation {
     //      the run-level `acceptedNotifiedAt` guard already prevents
     //      double-sends on replay.
     try {
-      const toSms = normalizeE164(customer?.phoneNumber ?? "");
-      if (toSms) {
+      // REQ-403 (m11): only a number that can take a text is texted — a
+      // missing, invalid or fictional one is skipped, so no "Texted to"
+      // receipt is ever logged for it.
+      const target = customerSmsTarget(customer?.phoneNumber);
+      if (!target.ok && target.failureCode !== "missing") {
+        // REQ-784: a phone on file that can't take the text — "not texted" and why
+        await this.commsLog.outbox({
+          userId,
+          channel: "text",
+          kind: "signedCopy",
+          language: lang,
+          ok: false,
+          reasonCode: target.failureCode,
+          customerId: customer?.id ?? quote.customerId,
+          customerName: customerLabel(shown),
+          to: "e164" in target ? target.e164 : customer?.phoneNumber ?? "",
+          docId: quote.id,
+          docRef: docRef(quote),
+        });
+      }
+      if (target.ok) {
         // P-30: the shared builder handles the unnamed-customer greeting
         // natively ("Hola, …" / "Hi there, …") — never prefill a fallback
         // name here, or ES renders the doubled "Hola hola, …".
@@ -330,16 +461,39 @@ export class SendSignedConfirmation {
           businessName,
           lang,
         });
-        const res = await this.sms.send({ to: toSms, body });
-        // Comms trail (roadmap p.8): record the dispatch like every other
+        // REQ-403: the same guarded dispatch as every other customer text.
+        const res = await dispatchCustomerSms(this.sms, {
+          to: target.e164,
+          body,
+          uiLang: lang === "es" ? "es" : "en",
+        });
+        // REQ-784: the completion text, in the outbox, sent or not and why
+        await this.commsLog.outbox({
+          userId,
+          channel: "text",
+          kind: "signedCopy",
+          language: lang,
+          ok: res.ok,
+          ...(res.ok
+            ? {}
+            : { reasonCode: res.failureCode, reason: res.reason }),
+          customerId: customer?.id ?? quote.customerId,
+          customerName: customerLabel(shown),
+          to: res.to,
+          docId: quote.id,
+          docRef: docRef(quote),
+          body,
+        });
+        // Comms trail (roadmap p.8): record a REAL delivery like every other
         // outbound text so it's queryable per document.
         if (res.ok) {
+          deliveredVia.push("text");
           await this.commsLog.run({
             userId,
             customerId: customer?.id,
             channel: "text",
             content: body,
-            toAddress: toSms,
+            toAddress: res.to,
             paperworkId: quote.id,
             paperworkType: "quote",
           });
@@ -349,11 +503,30 @@ export class SendSignedConfirmation {
       console.error("[send-signed-confirmation] completion SMS failed:", err);
     }
 
+    // ---- 4. REQ-556 (demo-loop cycle 4, M7): record on the milestone signing
+    // billed how it reached the customer — [] when nothing could be delivered
+    // (no email, a test number, both refused). It stays issued: the signer is
+    // handed it on /q (REQ-251's Pay now), so it is not hidden as a draft
+    // (REQ-312); the assistant and /invoices read this record instead of
+    // saying it "went out automatically".
+    if (invoiceId) {
+      try {
+        await this.invoices.update(invoiceId, userId, { deliveredVia });
+      } catch (err) {
+        console.error(
+          "[send-signed-confirmation] could not record the delivery:",
+          err,
+        );
+      }
+    }
+
     return {
-      ok: sent.ok || !!invoiceId,
+      ok: sent.ok || !!invoiceId || billed || !!subscriptionId,
       ...(sent.reason ? { reason: sent.reason } : {}),
       ...(sent.messageId ? { messageId: sent.messageId } : {}),
       ...(invoiceId ? { invoiceId } : {}),
+      ...(scheduledInvoiceId ? { scheduledInvoiceId } : {}),
+      ...(subscriptionId ? { subscriptionId } : {}),
     };
   }
 }
@@ -365,18 +538,6 @@ export function agreementFileName(
   quote: { id: string; number?: string },
 ): string {
   return `Agreement-${docRef(quote).replace(/^#/, "")}.pdf`;
-}
-
-/** Normalize a raw phone to E.164 (US-default). Mirrors the helper in
- *  send-paperwork-sms; returns undefined when it can't be made valid. */
-function normalizeE164(raw: string): string | undefined {
-  const trimmed = raw.trim();
-  if (!trimmed) return undefined;
-  if (/^\+[1-9]\d{6,14}$/.test(trimmed)) return trimmed;
-  const digits = trimmed.replace(/\D/g, "");
-  if (digits.length === 10) return `+1${digits}`;
-  if (digits.length === 11 && digits.startsWith("1")) return `+${digits}`;
-  return undefined;
 }
 
 /** Resolve the contractor's chosen payment terms into one amount per
@@ -401,23 +562,31 @@ export function computeMilestoneAmounts(
  *  scheduledFor — we return its slot as today's date anyway for the
  *  array shape, but callers should ignore it.
  *
- *  Window math:
- *    - If the quote has both startDate and estimatedCompletionDate, span
- *      that interval.
- *    - Otherwise fall back to a 14-day default window from today.
- *    - Each subsequent milestone gets (i / N) of the window.
+ *  Window math (REQ-475, demo-loop cycle 3, m63 — the same job window
+ *  completionScheduledFor uses):
+ *    - start: the quote's ISO startDate, else the start TERM ("Next week",
+ *      a picked "11/20/2026"), else today — never before today.
+ *    - end: the quote's ISO estimatedCompletionDate, else start + the
+ *      duration TERM ("1 day", "4 weeks"), else start + 14 days.
+ *    - Each subsequent milestone gets (i / N) of the window, so the last
+ *      one lands on the job's end (a 1-day job starting Nov 20 bills its
+ *      balance Nov 21, not signing + 14).
  */
 export function computeScheduledDates(
   count: number,
   startDate: string | undefined,
   estimatedCompletionDate: string | undefined,
   today: Date,
+  terms?: Quote["terms"],
 ): string[] {
   if (count <= 0) return [];
-  const start = startDate ? parseIsoDate(startDate) : today;
-  const end = estimatedCompletionDate
+  const input = { terms, startDate, today };
+  const start = parseIsoDate(startDayFromTerms(input));
+  const end = estimatedCompletionDate && ISO_DAY.test(estimatedCompletionDate)
     ? parseIsoDate(estimatedCompletionDate)
-    : addDays(today, 14);
+    : parseIsoDate(
+      completionFromTerms(input) ?? addDaysIso(start, 14),
+    );
   const windowMs = Math.max(end.getTime() - start.getTime(), 24 * 3600 * 1000);
   const out: string[] = [];
   for (let i = 0; i < count; i++) {
@@ -430,6 +599,65 @@ export function computeScheduledDates(
     out.push(d.toISOString().slice(0, 10));
   }
   return out;
+}
+
+/** REQ-316 (demo M12): payment terms that bill AFTER the job, not at signing.
+ *  Reads the stored EN base only (terms are persisted as the EN option label —
+ *  handle-wizard-answer's captureTerms — and localized by every reader):
+ *  "Payment upon completion" is the wizard's net_15 option; "Net N" (net 30,
+ *  net-7) → N. Everything else (Due now, the splits, custom text) is not a
+ *  completion term.
+ *
+ *  REQ-411 (demo-loop cycle 2, m35): "upon completion" gives the customer the
+ *  account's days to pay — Settings' "Days to pay an invoice"
+ *  (`invoiceNetDays`), else the 30 that field shows — never a hard-coded 15
+ *  the Settings page contradicts. */
+export function completionTerms(
+  value: string | undefined,
+  invoiceNetDays?: number | null,
+): { netDays: number } | undefined {
+  if (!value) return undefined;
+  // REQ-665 (m47): the Spanish picker stores 0/100 as "Pago al finalizar".
+  if (
+    /\b(?:upon|on|at) completion\b|\bal (?:finalizar|terminar)\b/i.test(value)
+  ) {
+    return { netDays: accountNetDays(invoiceNetDays) };
+  }
+  const net = /\bnet\s*-?\s*(\d{1,3})\b/i.exec(value);
+  if (net) return { netDays: Number(net[1]) };
+  return undefined;
+}
+
+const ISO_DAY = /^\d{4}-\d{2}-\d{2}$/;
+
+/** REQ-316: the day a pay-after-completion invoice is scheduled to go out —
+ *  the quote's estimated completion date when it is a date.
+ *
+ *  REQ-411 (demo-loop cycle 2, m34): otherwise the job's end from its TERMS —
+ *  the start ("Next week", a picked date; the quote's ISO startDate first;
+ *  never before today) plus the duration ("4 weeks") — so a job signed Nov 12
+ *  that starts next week and runs 4 weeks bills Dec 17, not Nov 26. Only with
+ *  no duration does it fall back to 14 days after that start. */
+export function completionScheduledFor(
+  quote: Partial<
+    Pick<Quote, "startDate" | "estimatedCompletionDate" | "terms">
+  >,
+  today: Date,
+): string {
+  const completion = quote.estimatedCompletionDate;
+  if (completion && ISO_DAY.test(completion)) return completion;
+  const input = { terms: quote.terms, startDate: quote.startDate, today };
+  return completionFromTerms(input) ??
+    addDaysIso(parseIsoDate(startDayFromTerms(input)), 14);
+}
+
+/** REQ-240: who an invoice bills when its quote has no customer on file —
+ *  the quote's customer snapshot, else the name typed at signing. */
+function billToFromSigner(quote: Quote): CustomerSnapshot | undefined {
+  const snap = quote.customerSnapshot;
+  if (snap && (snap.name?.trim() || snap.businessName?.trim())) return snap;
+  const name = quote.acceptedName?.trim();
+  return name ? { name } : undefined;
 }
 
 function parseIsoDate(iso: string): Date {
@@ -487,6 +715,8 @@ interface SignedHtmlOpts {
   businessName: string | undefined;
   invoiceId: string | undefined;
   invoiceAmount: number;
+  /** REQ-699: the recurring charge a subscription now bills */
+  recurring?: RecurringTerm;
   lang: Lang;
   /** REQ-628: the business's logo, or its name as a wordmark */
   logo?: EmailLogo;
@@ -500,6 +730,7 @@ function renderSignedConfirmationHtml(opts: SignedHtmlOpts): string {
     businessName,
     invoiceId,
     invoiceAmount,
+    recurring,
     lang,
   } = opts;
   const customerFirst = (customer?.name ?? customer?.businessName)?.trim()
@@ -537,6 +768,10 @@ function renderSignedConfirmationHtml(opts: SignedHtmlOpts): string {
     invoiceClause: invoiceUrl
       ? t(lang, "signedConfirm.email.bodyInvoiceClause", {
         amount: fmtUSD(invoiceAmount),
+      })
+      : recurring // REQ-699: "— you'll be billed Monthly · $180/mo"
+      ? t(lang, "signedConfirm.email.bodyRecurringClause", {
+        billing: escapeHtml(recurringTermText(recurring, lang)),
       })
       : "",
     who: contractorFirst

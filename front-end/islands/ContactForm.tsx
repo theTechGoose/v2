@@ -1,6 +1,11 @@
 import { useState } from "preact/hooks";
 import { landingClient } from "../clients/landing.ts";
 import { ApiError } from "../lib/api.ts";
+import { Icon } from "../components/ui/Icon.tsx";
+import {
+  type ContactFormErrors,
+  contactFormErrors,
+} from "../lib/contact-form.ts";
 
 /**
  * ContactForm — the public inquiry form used by /contact. Posts
@@ -37,6 +42,11 @@ export interface ContactFormLabels {
   success: string;
   errorRate: string;
   errorGeneric: string;
+  /** REQ-708 — the per-field messages (the form is novalidate) */
+  errName: string;
+  errEmail: string;
+  errSubject: string;
+  errMessage: string;
 }
 
 export interface ContactFormLinks {
@@ -56,10 +66,57 @@ export default function ContactForm(
   const [submitting, setSubmitting] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [done, setDone] = useState(false);
+  /** REQ-708 (cycle 5, c1-setup-m15): one in-app message per field */
+  const [fieldErrs, setFieldErrs] = useState<ContactFormErrors>({});
+  type Field = keyof ContactFormErrors;
+  const values = { name, email, subject, message };
+  /** re-check ONE field (on blur, or while it already shows a message) */
+  function checkField(field: Field, value?: string) {
+    const key = contactFormErrors({
+      ...values,
+      ...(value === undefined ? {} : { [field]: value }),
+    })[field];
+    setFieldErrs((prev) => {
+      const next = { ...prev };
+      if (key) (next as Record<string, string>)[field] = key;
+      else delete next[field];
+      return next;
+    });
+  }
+  const msgFor: Record<Field, string> = {
+    name: labels.errName,
+    email: labels.errEmail,
+    subject: labels.errSubject,
+    message: labels.errMessage,
+  };
+  /** the props that flag a field and point at its message */
+  const flag = (field: Field) => ({
+    "aria-invalid": fieldErrs[field] ? ("true" as const) : undefined,
+    "aria-describedby": fieldErrs[field] ? `contact-${field}-err` : undefined,
+  });
+  const fieldError = (field: Field) =>
+    fieldErrs[field]
+      ? (
+        <p
+          id={`contact-${field}-err`}
+          role="alert"
+          style="margin:6px 0 0;color:#a83b3b;font-size:13px;font-weight:600"
+        >
+          {msgFor[field]}
+        </p>
+      )
+      : null;
 
   async function onSubmit(e: Event) {
     e.preventDefault();
+    if (submitting) return;
     setErr(null);
+    // REQ-708: the backend's rule, run here per field — the form is
+    // novalidate, so the browser's bubble (which the demo stage cannot show)
+    // never pre-empts these messages.
+    const errs = contactFormErrors(values);
+    setFieldErrs(errs);
+    if (Object.keys(errs).length > 0) return;
     setSubmitting(true);
     try {
       const res = await landingClient.submitContact({
@@ -100,7 +157,9 @@ export default function ContactForm(
         role="status"
         style="background:var(--mint-100,#eaf5e6);border:1px solid var(--brand-green,#519843);border-radius:14px;padding:24px;text-align:center;color:var(--fg)"
       >
-        <div style="font-size:32px;line-height:1">✓</div>
+        <div style="line-height:1;color:var(--brand-green,#519843)">
+          <Icon name="check" size={32} stroke-width={2.5} />
+        </div>
         <p style="margin:10px 0 0;font-size:17px;font-weight:700">
           {labels.success}
         </p>
@@ -110,6 +169,7 @@ export default function ContactForm(
 
   return (
     <form
+      noValidate
       onSubmit={onSubmit}
       style="display:flex;flex-direction:column;gap:14px;text-align:left"
     >
@@ -118,25 +178,42 @@ export default function ContactForm(
         <input
           type="text"
           autoComplete="name"
+          data-cy="contact-name"
           value={name}
-          onInput={(e) => setName((e.target as HTMLInputElement).value)}
+          onInput={(e) => {
+            const v = (e.target as HTMLInputElement).value;
+            setName(v);
+            if (fieldErrs.name) checkField("name", v);
+          }}
           placeholder={labels.namePh}
           required
           maxLength={120}
+          {...flag("name")}
           style={fieldStyle}
         />
+        {fieldError("name")}
       </label>
       <label style="display:block">
         <span style={labelStyle}>{labels.email}</span>
         <input
           type="email"
           autoComplete="email"
+          data-cy="contact-email"
           value={email}
-          onInput={(e) => setEmail((e.target as HTMLInputElement).value)}
+          onInput={(e) => {
+            const v = (e.target as HTMLInputElement).value;
+            setEmail(v);
+            if (fieldErrs.email) checkField("email", v);
+          }}
+          onBlur={() => {
+            if (email.trim()) checkField("email");
+          }}
           placeholder={labels.emailPh}
           required
+          {...flag("email")}
           style={fieldStyle}
         />
+        {fieldError("email")}
       </label>
       <label style="display:block">
         <span style={labelStyle}>{labels.phone}</span>
@@ -157,24 +234,37 @@ export default function ContactForm(
           type="text"
           data-cy="contact-subject"
           value={subject}
-          onInput={(e) => setSubject((e.target as HTMLInputElement).value)}
+          onInput={(e) => {
+            const v = (e.target as HTMLInputElement).value;
+            setSubject(v);
+            if (fieldErrs.subject) checkField("subject", v);
+          }}
           placeholder={labels.subjectPh}
           required
           maxLength={200}
+          {...flag("subject")}
           style={fieldStyle}
         />
+        {fieldError("subject")}
       </label>
       <label style="display:block">
         <span style={labelStyle}>{labels.message}</span>
         <textarea
+          data-cy="contact-message"
           value={message}
-          onInput={(e) => setMessage((e.target as HTMLTextAreaElement).value)}
+          onInput={(e) => {
+            const v = (e.target as HTMLTextAreaElement).value;
+            setMessage(v);
+            if (fieldErrs.message) checkField("message", v);
+          }}
           placeholder={labels.messagePh}
           required
           maxLength={5000}
           rows={5}
+          {...flag("message")}
           style={`${fieldStyle};resize:vertical;min-height:120px`}
         />
+        {fieldError("message")}
       </label>
       <label
         data-cy="contact-sms-consent-label"

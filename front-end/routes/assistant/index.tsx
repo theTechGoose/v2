@@ -1,10 +1,12 @@
 import { asset, Head } from "fresh/runtime";
 import {
   greetingFirstName,
-  personLanguage,
   personName,
 } from "../../../shared/person-name/mod.ts"; // REQ-624
 import { define } from "../../utils.ts";
+import { resolveSsrLang } from "../../lib/ssr-lang.ts";
+import type { Lang } from "../../lib/lang.ts";
+import DocTitle from "../../components/DocTitle.tsx";
 import SiteFooter from "../../components/SiteFooter.tsx";
 import { getSessionId } from "../../lib/auth.ts";
 import { ssrBackendGetAuthed } from "../../lib/backend-fetch.ts";
@@ -60,12 +62,11 @@ export default define.page(async function AssistantHome(ctx) {
   const profile = await profileClient.get({ sessionId }).catch(() =>
     null as ProfileSnapshot | null
   );
-  const lang = personLanguage(profile?.user, profile?.actor) === "es"
-    ? "es"
-    : "en";
+  // REQ-709 (demo-loop c5, m4): the islands' language (?lang= > account >
+  // pm_lang), so the tab title and footer match the page they sit on.
+  const lang: Lang = resolveSsrLang(ctx) ?? "es";
 
-  const greetingName = greetingFirstName(user) ||
-    tFor(lang, "common.thereFallback");
+  const greetingName = greetingFirstName(user);
 
   const businessName = profile?.identity?.businessName ??
     profile?.identity?.displayName;
@@ -80,7 +81,10 @@ export default define.page(async function AssistantHome(ctx) {
   return (
     <>
       <Head>
-        <title>{tFor(lang, "assistantPage.docTitle")}</title>
+        <DocTitle
+          lang={lang}
+          title={(l) => tFor(l, "assistantPage.docTitle")}
+        />
         <link rel="stylesheet" href={asset("/assistant-page.css")} />
       </Head>
 
@@ -98,7 +102,7 @@ export default define.page(async function AssistantHome(ctx) {
             <div class="asst__chat-wrap">
               <section class="chat">
                 <ChatHeaderLive
-                  initialClient={tFor(lang, "assistantPage.newConversation")}
+                  initialClient={tFor(lang, "asstChat.header.newConversation")}
                   initialStatus={tFor(lang, "assistantPage.assistantHelp")}
                 />
                 <AsstChat
@@ -118,11 +122,12 @@ export default define.page(async function AssistantHome(ctx) {
                     (profile?.identity?.commsLanguage
                       ? [profile.identity.commsLanguage]
                       : ["en"])}
+                  invoiceNetDays={profile?.identity?.invoiceNetDays}
                 />
               </section>
             </div>
           </div>
-          <SiteFooter lang={lang} />
+          <SiteFooter lang={lang} compact />
         </main>
       </div>
     </>

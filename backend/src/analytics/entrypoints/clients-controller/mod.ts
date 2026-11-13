@@ -1,6 +1,11 @@
 import { Context, Controller, Get, Query } from "#danet/core";
 import type { ExecutionContext } from "#danet/core";
-import { BuildCustomerCards } from "@analytics/domain/coordinators/build-customer-cards/mod.ts";
+import {
+  BuildCustomerCards,
+  unassignedOwedCents,
+  unassignedPaidRevenue,
+} from "@analytics/domain/coordinators/build-customer-cards/mod.ts";
+import { InvoiceStore } from "@paperwork/domain/data/invoice-store/mod.ts";
 import { CLIENT_SEGMENTS, type ClientSegment } from "@crm/dto/customer.ts";
 import type {
   ClientSegmentRow,
@@ -10,8 +15,7 @@ import type {
 } from "@analytics/dto/clients-stats.ts";
 import { UserStore } from "@users/domain/data/user-store/mod.ts";
 import { SessionStore } from "@users/domain/data/session-store/mod.ts";
-import { requireSession, requireUser, uiLangOf } from "@users/domain/coordinators/require-user/mod.ts";
-import type { Lang } from "@core/i18n/mod.ts";
+import { requireUser } from "@users/domain/coordinators/require-user/mod.ts";
 import { clientsPage, type ClientsPageResponse } from "@analytics/domain/business/clients-page/mod.ts"; // REQ-135
 
 const SEGMENT_LABELS: Record<ClientSegment | "unsorted", string> = {
@@ -42,6 +46,7 @@ export class ClientsController {
     private flow:     BuildCustomerCards,
     private users:    UserStore,
     private sessions: SessionStore,
+    private invoices: InvoiceStore,
   ) {}
 
   /** REQ-135 — one page of the roster: `?page=&pageSize=&q=&status=`, with the chip counts and the roster's totals */
@@ -53,10 +58,15 @@ export class ClientsController {
     @Query("q") q?: string,
     @Query("status") status?: string,
   ): Promise<ClientsPageResponse> {
-    const signedIn = await requireSession(ctx, this.sessions, this.users);
-    const user = signedIn.user;
-    const cards = await this.flow.run(user.id, new Date(), uiLangOf(signedIn) as Lang); // REQ-631: the reader's language
-    return clientsPage(cards, { page: Number(page), pageSize: Number(pageSize), q, status });
+    const user = await requireUser(ctx, this.sessions, this.users);
+    // REQ-367: the cards are data — the client words them in the live language
+    const [cards, invoices] = await Promise.all([
+      this.flow.run(user.id, new Date()),
+      this.invoices.listByUser(user.id),
+    ]);
+    // REQ-696 (cycle 5, M5): what is owed on invoices no card carries counts too
+    const unassigned = unassignedOwedCents(invoices, new Set(cards.map((c) => c.id)));
+    return clientsPage(cards, { page: Number(page), pageSize: Number(pageSize), q, status }, unassigned);
   }
 
   @Get("analytics/clients/top")
@@ -65,7 +75,10 @@ export class ClientsController {
     @Query("limit") limit?: string,
   ): Promise<TopClientsResponse> {
     const user  = await requireUser(ctx, this.sessions, this.users);
-    const cards = await this.flow.run(user.id);
+    const [cards, invoices] = await Promise.all([
+      this.flow.run(user.id),
+      this.invoices.listByUser(user.id),
+    ]);
     const lim   = Math.max(1, Math.min(50, Number(limit ?? "5") || 5));
 
     const ranked = cards
@@ -82,7 +95,10 @@ export class ClientsController {
       barPct:           leader > 0 ? Math.round((c.revenue12moCents / leader) * 100) : 0,
     }));
 
-    return { results };
+    // REQ-551 (demo B2): paid invoices with no customer are not ranked —
+    // say so, so the board never reads "no paid invoices" over them.
+    const unassigned = unassignedPaidRevenue(invoices, new Set(cards.map((c) => c.id)));
+    return unassigned.invoiceCount > 0 ? { results, unassigned } : { results };
   }
 
   @Get("analytics/clients/segments")

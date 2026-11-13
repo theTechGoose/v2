@@ -9,13 +9,16 @@
  *     not open, `end` ends the demo; the server answers `welcome`, `peer`, `ended` and forwards
  *     `signal`/`relay` stamped with who they are from.
  *   - PeerMessage rides the WebRTC data channel (or the relay): a pointer `move`, a `click`
- *     (a wave on the other screen, never an action), `leave`, and the customer's `view`.
+ *     (a wave on the other screen, never an action), `leave`, the customer's screen as `dom`
+ *     chunks, and a stage's `resync`.
  *
- * REQ-187 — the customer's screen is the truth: the customer's app reports its VIEW (viewport
- * size, page, scrolled elements, sidebar flags, map centre/zoom) and the staff's stage renders
- * the app in a frame of exactly that viewport, scaled to fit. REQ-188 — a pointer is then only
- * the fraction of the viewport (`vx`, `vy`): on two identical layouts the same fraction is the
- * same pixel.
+ * REQ-242 — the customer's screen is the truth, mirrored: the customer's app records its document
+ * (a snapshot, then the changes — shared/demo-mode/mirror.ts) and sends the frames as `dom`
+ * chunks of at most MIRROR_CHUNK_CHARS; a stage that misses one asks for a fresh snapshot
+ * (`resync`). The stage replays them into a frame that runs no script, at the customer's
+ * viewport, scaled to fit. A pointer is the fraction of the sender's viewport (REQ-188) and, when
+ * there is one, the mirrored node under it (`n`: its mirror id and the point's fraction of its
+ * box) — the receiver puts it on that node when it has it.
  */
 export type Role = "presenter" | "viewer";
 
@@ -47,52 +50,197 @@ export function nextColor(taken: readonly string[]): string {
   return PRESENTER_COLORS[taken.length % PRESENTER_COLORS.length];
 }
 
-/** REQ-188 — where the pointer is: the fraction of the sender's layout viewport */
+/** REQ-242 — the mirrored node a pointer is over: its mirror id, the point's fraction of its box,
+ *  and the customer's page load the id belongs to (ids start over on every page) */
+export interface NodeAnchor {
+  id: number;
+  x: number;
+  y: number;
+  l?: string;
+  /** REQ-639 — the frame number (in load `l`) that carries the screen the anchor was made on:
+   *  the stage draws the customer's pointer only once its replay has applied that frame */
+  f?: number;
+}
+
+/** REQ-188 — where the pointer is: the fraction of the sender's layout viewport; REQ-242 — and
+ *  the mirrored node under it, when there is one */
 export interface Anchor {
   vx: number;
   vy: number;
+  n?: NodeAnchor;
+  /** REQ-393 — the sender's pointer is OFF the shared screen (a presenter's mouse beside the
+   *  phone frame on his stage): `vx`/`vy` say where it meets the screen's edge, and the receiver
+   *  draws it there, marked outside. Never with a node. */
+  o?: 1;
 }
 
-/** REQ-187 — a scrolled element (`sel` null = the window) and its scroll offsets */
-export interface ScrollPos {
-  sel: string | null;
-  x: number;
-  y: number;
+/** REQ-242 — one piece of a mirror frame: `l` the page load it belongs to, `s` the frame's
+ *  number in that load, `i` of `n` pieces, `z` the frame is gzip + base64, `d` the text.
+ *  REQ-391 — `t`: when the customer's app pushed the frame, on the deploy's clock (ms) — the
+ *  stage measures how late each frame is in */
+export interface DomChunk {
+  l: string;
+  s: number;
+  i: number;
+  n: number;
+  z?: 1;
+  d: string;
+  t?: number;
 }
 
-/** REQ-187 — the customer's view; the wire carries patches of it */
-export interface View {
-  /** the layout viewport, CSS px */
-  w: number;
-  h: number;
-  /** pathname + search */
-  path: string;
-  /** the sidebar: collapsed to a rail; the mobile drawer open; the open folder's path (REQ-156),
-   *  ids outermost first, [] at the top level (AMENDMENT 2026-11-05) */
-  sb: boolean;
-  drawer: boolean;
-  folder: string[];
-  scroll: ScrollPos[];
-  /** the map on /field/assignments: centre [lat, lng] and zoom */
-  map: { c: [number, number]; z: number } | null;
-}
-export type ViewPatch = Partial<View>;
+/** REQ-391 — why a customer's page went, said by the page itself as it goes (`pagehide`): it is
+ *  navigating to another page of the app (a link, `location.href`, a reload or a history step —
+ *  a new socket follows), or no next page of the app is known to be coming (`closing`: a closed
+ *  tab, the address bar pointed elsewhere, the browser's own reload button) */
+export type LeaveWhy = "navigating" | "closing";
+
+/** REQ-436 — a browser tab's key on the wire: what front-end/lib/demo-mode/tab-key.ts makes */
+export const TAB_KEY = /^[A-Za-z0-9_-]{1,64}$/;
+/** REQ-436 — a claim's browser-tab key and focus, each checked; junk is dropped, never the claim.
+ *  REQ-640 (cycle 5, M29) — and `i: 1` when the claim is backed by the customer's input (a click,
+ *  a key, the tab brought to the front), which wins a tie over a load or focus claim */
+const claimExtras = (
+  o: Record<string, unknown>,
+): { tab?: string; f?: 1; i?: 1 } => ({
+  ...(typeof o.tab === "string" && TAB_KEY.test(o.tab) ? { tab: o.tab } : {}),
+  ...(o.f === 1 ? { f: 1 as const } : {}),
+  ...(o.i === 1 ? { i: 1 as const } : {}),
+});
+
+const isLeaveWhy = (x: unknown): x is LeaveWhy =>
+  x === "navigating" || x === "closing";
 
 export type PeerMessage =
   | { k: "move"; a: Anchor; t?: number } // t: the sender's clock (REQ-180)
   | { k: "click"; a: Anchor }
   | { k: "leave" }
-  | { k: "view"; v: ViewPatch };
+  | ({ k: "dom" } & DomChunk)
+  | { k: "resync" }
+  // REQ-645 (demo-loop cycle 5, M1 + M2) — a presenter's pointer is being found again (his anchor's
+  // page went, or the stage's replay cannot name the element under his mouse yet): their screen
+  // says "{name} is pointing…" near this fraction — never an arrow at it
+  | { k: "pending"; a: Anchor; t?: number } // t: the sender's clock, as a move's (REQ-180)
+  // REQ-295 — the customer's demo pill box in their viewport (null: no pill), for the stage's ghost;
+  // REQ-372 — and what the pill says, so the ghost is a replica, not an empty box
+  | ({ k: "pill"; r: Rect | null; t?: number } & PillFace)
+  // REQ-636 (cycle 5, m8) — a stage that just followed a tab asks it for its pill (one sent
+  // before the stage followed it was dropped); `t` above: the pill's frame clock (link.now())
+  | { k: "askPill" }
+  // REQ-642 (demo-loop cycle 5, m10) — the customer's overlay says where it PLACED presenter
+  // `pid`'s arrow: for anchor `a`, its tip as a fraction of their viewport (`p`; null — not on
+  // their screen), `o` on the edge, outside. The stage draws his ghost from this, never a guess.
+  | PlacedMessage;
 
-/** REQ-214 — `to`: the viewer's signal may address ONE presenter (by pid); a presenter's relay
- *  may go to the other presenters only (their pointer rides to the customer directly) */
+/** REQ-642 — the customer's report of where a presenter's arrow is on their screen */
+export interface PlacedMessage {
+  k: "placed";
+  pid: string;
+  a: Anchor;
+  p: { vx: number; vy: number } | null;
+  o?: 1;
+  /** REQ-645 + REQ-642 (reconciled on demo-fixes) — its element is out of view that way on their
+   *  screen: they see a chevron there, so the ghost is that chevron too */
+  d?: { dx: -1 | 0 | 1; dy: -1 | 0 | 1 };
+}
+
+/** REQ-372 — the pill's state in words the stage translates itself (the presenter's language) */
+export type PillStatus = "live" | "connecting" | "ended";
+const PILL_STATUSES: readonly PillStatus[] = ["live", "connecting", "ended"];
+/** REQ-372 — the longest pill text that rides to the stage */
+export const PILL_TEXT_MAX = 160;
+/** REQ-430 — the longest status label / guide name that rides to the stage */
+export const PILL_LABEL_MAX = 60;
+
+/** REQ-372 (demo-loop cycle 2, m1) — what the customer's pill shows: compact (status only) or
+ *  full, opened on a tap, its status, its line (the customer's words) and whether it runs off
+ *  their screen. Every field optional: an older page sends the box alone. */
+export interface PillFace {
+  compact?: boolean;
+  open?: boolean;
+  status?: PillStatus;
+  text?: string;
+  clipped?: boolean;
+  /** REQ-430 (cycle 3, m4) — the status as the customer's pill words it (their language) */
+  label?: string;
+  /** REQ-430 — the guide's short name, drawn on the compact pill while its details are hidden */
+  guide?: string;
+  /** REQ-545 (cycle 4, m2) — the pill yielded to the page: only its small edge tab shows */
+  tucked?: boolean;
+  /** REQ-545 — the band painted at the foot of the customer's screen (px, theirs; 0: none) */
+  band?: number;
+  /** REQ-545 — the band's colour (the page's own background) */
+  bandBg?: string;
+  /** REQ-765 (cycle 5v2, p18-3d) — the open dialog's dim (its backdrop colour): the stage paints
+   *  the band ghost in it and softens the pill ghost, as the customer's screen shows them */
+  dim?: string;
+  /** REQ-540 (cycle 4, m9) — the pill's "Demo mode" title in the customer's words (unset: the
+   *  pill hides it — the compact phone pill — or an older page) */
+  title?: string;
+  /** REQ-540 — the pill's End label in the customer's words (the stage draws it as a disabled chip) */
+  end?: string;
+}
+
+/** REQ-545 — a colour the stage may paint: hex, rgb() or rgba() only */
+const BAND_BG = /^(#[0-9a-f]{3,8}|rgba?\([0-9.,\s/%]+\))$/i;
+
+/** REQ-372 — the face fields of a pill message, each checked; junk is dropped, not fatal */
+function parsePillFace(o: Record<string, unknown>): PillFace {
+  const f: PillFace = {};
+  if (typeof o.compact === "boolean") f.compact = o.compact;
+  if (typeof o.open === "boolean") f.open = o.open;
+  if (PILL_STATUSES.includes(o.status as PillStatus)) {
+    f.status = o.status as PillStatus;
+  }
+  if (typeof o.text === "string") f.text = o.text.slice(0, PILL_TEXT_MAX);
+  if (typeof o.clipped === "boolean") f.clipped = o.clipped;
+  if (typeof o.label === "string") f.label = o.label.slice(0, PILL_LABEL_MAX);
+  if (typeof o.guide === "string") f.guide = o.guide.slice(0, PILL_LABEL_MAX);
+  if (typeof o.tucked === "boolean") f.tucked = o.tucked;
+  if (typeof o.band === "number" && Number.isFinite(o.band) && o.band >= 0) {
+    f.band = Math.min(o.band, 4000);
+  }
+  if (typeof o.bandBg === "string" && BAND_BG.test(o.bandBg)) {
+    f.bandBg = o.bandBg;
+  }
+  if (typeof o.dim === "string" && BAND_BG.test(o.dim)) f.dim = o.dim;
+  if (typeof o.title === "string") f.title = o.title.slice(0, PILL_LABEL_MAX);
+  if (typeof o.end === "string") f.end = o.end.slice(0, PILL_LABEL_MAX);
+  return f;
+}
+
+/** REQ-214 — a presenter's relay may go to the other presenters only (their pointer rides to the
+ *  customer directly). REQ-232 — a signal's `to` addresses ONE socket (its `cid`): a stage's offer
+ *  the one customer tab it follows, the tab's answer the one stage it is for; a customer tab
+ *  `claim`s the stage (it is the tab the customer is using, since `at` on its own clock); a stage
+ *  asks one tab to `sync` (send its whole view) */
 export type ClientMessage =
   | { t: "signal"; data: unknown; to?: string }
-  | { t: "relay"; data: PeerMessage; to?: "presenters" }
-  | { t: "end" };
+  // REQ-393 — `tab`: a presenter's relay for ONE customer tab (its cid) — the tab the stage
+  // follows, or the one it just left (a `leave`); the customer's other tabs never get it
+  | { t: "relay"; data: PeerMessage; to?: "presenters"; tab?: string }
+  // REQ-436 — `tab`: the BROWSER tab's key (every page of one tab carries the same); `f: 1`: the
+  // page has focus. A page sends one on every welcome (`at` 0 when it never claimed) so a stage
+  // knows a new page as the same browser tab
+  // REQ-640 — `i: 1`: the claim is backed by the customer's input (not a load or focus claim)
+  | { t: "claim"; at: number; tab?: string; f?: 1; i?: 1 }
+  | { t: "sync"; to: string }
+  | { t: "end" }
+  // REQ-391 — this socket's page is going, and why (the server says so when it is gone)
+  | { t: "leaving"; why: LeaveWhy }
+  // REQ-391 — what time is it on the deploy? (`c`: this browser's clock, answered back)
+  | { t: "time"; c: number };
 
 /** REQ-214 — `pid`: which presenter a message is from (never on the viewer's), which presenter
- *  came or went (a `peer` without one is the viewer), and a presenter's own id on their welcome */
+ *  came or went (a `peer` without one is a customer tab), and a presenter's own id on their
+ *  welcome. REQ-232 — `cid`: which SOCKET — this one's own on its welcome, the one that came or
+ *  went on a `peer`, the sender on a signal, relay or claim; `sync`: a stage wants this tab's whole
+ *  view; `replaced`: the same staff account opened the demo in a newer window, this one is done.
+ *  REQ-235 — and which presenter ended the demo (an `ended` by the viewer never has one).
+ *  REQ-296 — `reason: "expired"`: the demo reached SESSION_TTL_MS; nobody ended it (`by` names no
+ *  side then, and there is no `pid`). REQ-391 — a socket gone (`online: false`) carries the `why`
+ *  its page said as it went, when it said one; `time` answers a browser's ask with the deploy's
+ *  clock (`s`) and the browser's own (`c`). REQ-648 (cycle 5, M3) — and `at`: when its page said
+ *  it was going, on the deploy's clock (the stage times the page change from it) */
 export type ServerMessage =
   | {
     t: "welcome";
@@ -100,35 +248,64 @@ export type ServerMessage =
     sessionId: string;
     peerOnline: boolean;
     pid?: string;
+    cid?: string;
   }
-  | { t: "peer"; online: boolean; pid?: string }
-  | { t: "signal"; from: Role; pid?: string; data: unknown }
-  | { t: "relay"; from: Role; pid?: string; data: PeerMessage }
-  | { t: "ended"; by: Role; reason?: "declined" };
+  // REQ-640 (cycle 5, m24) — a customer tab's arrival on a stage's roster carries the tab's last
+  // claim (`at`, `tab`, `f`, `i`) when it made one, so a joining stage ranks it at once
+  | {
+    t: "peer";
+    online: boolean;
+    pid?: string;
+    cid?: string;
+    why?: LeaveWhy;
+    at?: number;
+    tab?: string;
+    f?: 1;
+    i?: 1;
+  }
+  | { t: "time"; c: number; s: number }
+  | { t: "signal"; from: Role; pid?: string; cid?: string; data: unknown }
+  | { t: "relay"; from: Role; pid?: string; cid?: string; data: PeerMessage }
+  | { t: "claim"; cid: string; at: number; tab?: string; f?: 1; i?: 1 }
+  | { t: "sync" }
+  | { t: "replaced" }
+  | { t: "ended"; by: Role; reason?: EndReason; pid?: string };
+
+/** REQ-296 — why a demo ended short of an End: declined (Not now), or expired (its two hours) */
+export type EndReason = "declined" | "expired";
 
 /** how often a browser with no demo asks `active` again — the customer sees the invitation within this */
 export const ACTIVE_POLL_MS = 5_000;
-/** a demo nobody ended expires on its own */
+/** REQ-378 (demo-loop cycle 2, m22) — how long the server may hold an ask that finds no demo
+ *  (`GET /demo-mode/active?wait=`): it answers the moment a demo is opened for the caller, so the
+ *  customer's app hears of it at once instead of on its next ask */
+export const ACTIVE_WAIT_MS = 10_000;
+/** REQ-378 — after an answered ask, the next one goes out this soon: the app is nearly always
+ *  listening (a failed ask still waits ACTIVE_POLL_MS) */
+export const ACTIVE_REASK_MS = 1_000;
+/** REQ-232 — the other side's last socket went: the link stays "live" this long before it says it
+ *  is waiting. A page change in the customer's app is a new page and a new socket (the old one
+ *  closes, the new one joins once the page has loaded), and it must never flash "waiting".
+ *  REQ-391 — on a stage this is the grace of a tab that said it is NAVIGATING (its next page is
+ *  coming); one that said it is closing gets none, one that said nothing SILENT_GRACE_MS. */
+export const PRESENCE_GRACE_MS = 5_000;
+/** REQ-391 — a customer tab's socket went without a word (a crash, a lost network — whose first
+ *  reconnect comes after 1 s — or a page from before REQ-391): the stage waits this long for a
+ *  next page before it says it is waiting */
+export const SILENT_GRACE_MS = 2_000;
+/** a demo nobody ended expires on its own — and says so (REQ-296: `ended … expired` to everyone) */
 export const SESSION_TTL_MS = 2 * 60 * 60 * 1000;
 /** how long the customer's last reported page is kept — the presenter lands there at once (AMENDMENT — same screen) */
 export const WHERE_TTL_MS = 20_000;
 /** the browser's socket path — under /api on every host, forwarded unchanged (see compose-router.ts) */
 export const SOCKET_PATH = "/api/demo-mode/ws";
-/** REQ-187 — the staff's page: the stage with the replica frame */
+/** REQ-187 — the staff's page: the stage with the customer's screen in a frame */
 export const STAGE_PATH = "/demo/stage";
-/** REQ-187 — the frame before the customer's app has reported: a phone */
-export const DEFAULT_VIEW: View = {
-  w: 390,
-  h: 844,
-  path: "/dashboard",
-  sb: false,
-  drawer: false,
-  folder: [],
-  scroll: [],
-  map: null,
-};
-/** REQ-187 — how often the customer's view patches go out at most */
-export const VIEW_GAP_MS = 50;
+/** REQ-242 — a mirror chunk's text at most: well inside a data-channel message and a KV value
+ *  (64 KiB; a two-byte string is 32 000 bytes) */
+export const MIRROR_CHUNK_CHARS = 16_000;
+/** REQ-242 — the pieces one frame may take at most (32 M characters) */
+export const MIRROR_MAX_CHUNKS = 2_048;
 
 export function isRole(x: unknown): x is Role {
   return x === "presenter" || x === "viewer";
@@ -149,76 +326,80 @@ export function isSafePath(p: unknown): p is string {
     !/[\r\n]/.test(p);
 }
 
+/** REQ-242 — a page load's id: what the customer's recorder stamps on every chunk */
+const LOAD_ID = /^[A-Za-z0-9_-]{1,64}$/;
+
+const posInt = (x: unknown): x is number =>
+  typeof x === "number" && Number.isSafeInteger(x) && x > 0;
+const natural = (x: unknown): x is number =>
+  typeof x === "number" && Number.isSafeInteger(x) && x >= 0;
+
+function parseNodeAnchor(x: unknown): NodeAnchor | null {
+  if (!x || typeof x !== "object") return null;
+  const o = x as Record<string, unknown>;
+  if (!posInt(o.id) || !num(o.x) || !num(o.y)) return null;
+  const n: NodeAnchor = { id: o.id, x: clamp01(o.x), y: clamp01(o.y) };
+  if (typeof o.l === "string" && LOAD_ID.test(o.l)) n.l = o.l;
+  // REQ-639 — a frame number that is not one is dropped, never the anchor
+  if (natural(o.f) && o.f <= 2 ** 31) n.f = o.f;
+  return n;
+}
+
 function parseAnchor(x: unknown): Anchor | null {
   if (!x || typeof x !== "object") return null;
   const o = x as Record<string, unknown>;
   if (!num(o.vx) || !num(o.vy)) return null;
-  return { vx: clamp01(o.vx), vy: clamp01(o.vy) };
+  // REQ-393 — off the shared screen: the edge's fraction, and no element of it
+  if (o.o === 1) return { vx: clamp01(o.vx), vy: clamp01(o.vy), o: 1 };
+  const n = parseNodeAnchor(o.n);
+  return n
+    ? { vx: clamp01(o.vx), vy: clamp01(o.vy), n }
+    : { vx: clamp01(o.vx), vy: clamp01(o.vy) };
 }
 
-/** a coordinate pair: two finite numbers within ±90 / ±180 */
-const geo = (v: unknown): v is [number, number] =>
-  Array.isArray(v) && v.length === 2 && num(v[0]) && num(v[1]) &&
-  Math.abs(v[0]) <= 90 && Math.abs(v[1]) <= 180;
+/** REQ-242 — a mirror chunk, each field checked; null when anything is off */
+function parseDomChunk(o: Record<string, unknown>): DomChunk | null {
+  if (typeof o.l !== "string" || !LOAD_ID.test(o.l)) return null;
+  if (!natural(o.s) || o.s > 2 ** 31) return null;
+  if (!posInt(o.n) || o.n > MIRROR_MAX_CHUNKS) return null;
+  if (!natural(o.i) || o.i >= o.n) return null;
+  if (o.z !== undefined && o.z !== 1) return null;
+  if (
+    typeof o.d !== "string" || o.d.length === 0 ||
+    o.d.length > MIRROR_CHUNK_CHARS
+  ) return null;
+  const c: DomChunk = { l: o.l, s: o.s, i: o.i, n: o.n, d: o.d };
+  if (o.z === 1) c.z = 1;
+  // REQ-391 — a send time that is not one is dropped, never the chunk
+  if (natural(o.t)) c.t = o.t;
+  return c;
+}
 
-const MAX_SCROLLS = 32;
-const MAX_SIDE = 20_000;
-
-function parseScroll(x: unknown): ScrollPos | null {
-  if (!x || typeof x !== "object") return null;
-  const o = x as Record<string, unknown>;
-  const sel = o.sel === null
-    ? null
-    : typeof o.sel === "string" && o.sel.length > 0 && o.sel.length <= 512
-    ? o.sel
-    : undefined;
-  if (sel === undefined || !num(o.x) || !num(o.y) || o.x < 0 || o.y < 0) {
+/** REQ-642 — a presenter's id on the wire, as the stages say it */
+const PID_MAX = 128;
+/** REQ-642 — a placed report, each field checked; null when anything is off */
+function parsePlaced(o: Record<string, unknown>): PlacedMessage | null {
+  if (typeof o.pid !== "string" || !o.pid || o.pid.length > PID_MAX) {
     return null;
   }
-  return { sel, x: o.x, y: o.y };
-}
-
-/** REQ-187 — a view patch: each field kept only when it is well-formed; null when nothing is */
-export function parseView(x: unknown): ViewPatch | null {
-  if (!x || typeof x !== "object") return null;
-  const o = x as Record<string, unknown>;
-  const v: ViewPatch = {};
-  if (num(o.w) && o.w > 0 && o.w <= MAX_SIDE) v.w = o.w;
-  if (num(o.h) && o.h > 0 && o.h <= MAX_SIDE) v.h = o.h;
-  if (isSafePath(o.path)) v.path = o.path;
-  if (typeof o.sb === "boolean") v.sb = o.sb;
-  if (typeof o.drawer === "boolean") v.drawer = o.drawer;
-  if (Array.isArray(o.folder) && o.folder.length <= 8) {
-    const ids = o.folder.filter((id): id is string =>
-      typeof id === "string" && id.length > 0 && id.length <= 64
-    );
-    if (ids.length === o.folder.length) v.folder = ids;
+  const a = parseAnchor(o.a);
+  if (!a) return null;
+  let p: PlacedMessage["p"] = null;
+  if (o.p !== null) {
+    const q = o.p as Record<string, unknown> | undefined;
+    if (!q || typeof q !== "object" || !num(q.vx) || !num(q.vy)) return null;
+    p = { vx: clamp01(q.vx), vy: clamp01(q.vy) };
   }
-  if (Array.isArray(o.scroll)) {
-    const scroll = o.scroll.slice(0, MAX_SCROLLS).map(parseScroll).filter((
-      s,
-    ): s is ScrollPos => s !== null);
-    if (scroll.length > 0 || o.scroll.length === 0) v.scroll = scroll;
+  const m: PlacedMessage = o.o === 1 && p
+    ? { k: "placed", pid: o.pid, a, p, o: 1 }
+    : { k: "placed", pid: o.pid, a, p };
+  // REQ-645 + REQ-642 — the way to an element out of view, when said (each a -1 / 0 / 1)
+  const d = o.d as Record<string, unknown> | undefined;
+  const unit = (v: unknown): v is -1 | 0 | 1 => v === -1 || v === 0 || v === 1;
+  if (p && d && typeof d === "object" && unit(d.dx) && unit(d.dy)) {
+    m.d = { dx: d.dx, dy: d.dy };
   }
-  if (o.map === null) v.map = null;
-  else if (o.map && typeof o.map === "object") {
-    const m = o.map as Record<string, unknown>;
-    if (geo(m.c) && num(m.z) && m.z >= 0 && m.z <= 24) {
-      v.map = { c: [m.c[0], m.c[1]], z: m.z };
-    }
-  }
-  return Object.keys(v).length > 0 ? v : null;
-}
-
-/** REQ-187 — a patch over a view: scalar fields replace, scroll entries replace by element */
-export function mergeView(prev: View, patch: ViewPatch): View {
-  const next: View = { ...prev, ...patch, scroll: prev.scroll };
-  if (patch.scroll) {
-    const bySel = new Map(prev.scroll.map((s) => [s.sel, s] as const));
-    for (const s of patch.scroll) bySel.set(s.sel, s);
-    next.scroll = Array.from(bySel.values());
-  }
-  return next;
+  return m;
 }
 
 export function parsePeerMessage(x: unknown): PeerMessage | null {
@@ -238,10 +419,44 @@ export function parsePeerMessage(x: unknown): PeerMessage | null {
     }
     case "leave":
       return { k: "leave" };
-    case "view": {
-      const v = parseView(o.v);
-      return v ? { k: "view", v } : null;
+    case "pending": {
+      // REQ-645 — a fraction of the screen only: it names no element, and is never off it
+      const a = parseAnchor(o.a);
+      if (!a) return null;
+      return typeof o.t === "number" && Number.isFinite(o.t)
+        ? { k: "pending", a: { vx: a.vx, vy: a.vy }, t: o.t }
+        : { k: "pending", a: { vx: a.vx, vy: a.vy } };
     }
+    case "dom": {
+      const c = parseDomChunk(o);
+      return c
+        ? {
+          k: "dom",
+          l: c.l,
+          s: c.s,
+          i: c.i,
+          n: c.n,
+          ...(c.z ? { z: 1 as const } : {}),
+          d: c.d,
+          ...(c.t !== undefined ? { t: c.t } : {}),
+        }
+        : null;
+    }
+    case "resync":
+      return { k: "resync" };
+    case "pill": {
+      // REQ-636 — the frame clock the pill was sent at
+      const t = typeof o.t === "number" && Number.isFinite(o.t)
+        ? { t: o.t }
+        : {};
+      if (o.r === null) return { k: "pill", r: null, ...t };
+      const r = parseRect(o.r);
+      return r ? { k: "pill", r, ...parsePillFace(o), ...t } : null;
+    }
+    case "placed":
+      return parsePlaced(o);
+    case "askPill":
+      return { k: "askPill" };
     default:
       return null;
   }
@@ -268,12 +483,23 @@ export function parseClientMessage(raw: string): ClientMessage | null {
     case "relay": {
       const data = parsePeerMessage(o.data);
       if (!data) return null;
-      return o.to === "presenters"
-        ? { t: "relay", data, to: "presenters" }
+      if (o.to === "presenters") return { t: "relay", data, to: "presenters" };
+      // REQ-393 — for one customer tab
+      return typeof o.tab === "string" && o.tab
+        ? { t: "relay", data, tab: o.tab }
         : { t: "relay", data };
     }
+    // REQ-232 — a claim with no usable time is still a claim (the oldest one)
+    case "claim":
+      return { t: "claim", at: num(o.at) ? o.at : 0, ...claimExtras(o) };
+    case "sync":
+      return typeof o.to === "string" && o.to ? { t: "sync", to: o.to } : null;
     case "end":
       return { t: "end" };
+    case "leaving":
+      return isLeaveWhy(o.why) ? { t: "leaving", why: o.why } : null;
+    case "time":
+      return num(o.c) ? { t: "time", c: o.c } : null;
     default:
       return null;
   }
@@ -281,6 +507,9 @@ export function parseClientMessage(raw: string): ClientMessage | null {
 
 const pidOf = (o: Record<string, unknown>): { pid?: string } =>
   typeof o.pid === "string" && o.pid ? { pid: o.pid } : {};
+/** REQ-232 — the socket a message names */
+const cidOf = (o: Record<string, unknown>): { cid?: string } =>
+  typeof o.cid === "string" && o.cid ? { cid: o.cid } : {};
 
 export function parseServerMessage(raw: string): ServerMessage | null {
   const o = parseJson(raw);
@@ -295,27 +524,57 @@ export function parseServerMessage(raw: string): ServerMessage | null {
           sessionId: o.sessionId,
           peerOnline: o.peerOnline,
           ...pidOf(o),
+          ...cidOf(o),
         }
         : null;
     case "peer":
       return typeof o.online === "boolean"
-        ? { t: "peer", online: o.online, ...pidOf(o) }
+        ? {
+          t: "peer",
+          online: o.online,
+          ...pidOf(o),
+          ...cidOf(o),
+          // REQ-391 — why a socket went: on a departure only
+          ...(!o.online && isLeaveWhy(o.why) ? { why: o.why } : {}),
+          // REQ-648 — when its page said so, on the deploy's clock: on a departure only
+          ...(!o.online && num(o.at) && o.at > 0 ? { at: o.at } : {}),
+          // REQ-640 — a customer tab's kept claim: on an arrival only
+          ...(o.online && !o.pid && num(o.at)
+            ? { at: o.at, ...claimExtras(o) }
+            : {}),
+        }
         : null;
+    case "time":
+      return num(o.c) && num(o.s) ? { t: "time", c: o.c, s: o.s } : null;
     case "signal":
       return isRole(o.from) && o.data !== undefined
-        ? { t: "signal", from: o.from, ...pidOf(o), data: o.data }
+        ? { t: "signal", from: o.from, ...pidOf(o), ...cidOf(o), data: o.data }
         : null;
     case "relay": {
       const data = parsePeerMessage(o.data);
       return isRole(o.from) && data
-        ? { t: "relay", from: o.from, ...pidOf(o), data }
+        ? { t: "relay", from: o.from, ...pidOf(o), ...cidOf(o), data }
         : null;
     }
+    case "claim":
+      return typeof o.cid === "string" && o.cid && num(o.at)
+        ? { t: "claim", cid: o.cid, at: o.at, ...claimExtras(o) }
+        : null;
+    case "sync":
+      return { t: "sync" };
+    case "replaced":
+      return { t: "replaced" };
     case "ended":
       if (!isRole(o.by)) return null;
-      return o.reason === "declined"
-        ? { t: "ended", by: o.by, reason: "declined" }
-        : { t: "ended", by: o.by };
+      return {
+        t: "ended",
+        by: o.by,
+        ...(o.reason === "declined" || o.reason === "expired"
+          ? { reason: o.reason as EndReason }
+          : {}),
+        // REQ-235 — the presenter who ended it; the viewer's end names nobody
+        ...(o.by === "presenter" ? pidOf(o) : {}),
+      };
     default:
       return null;
   }
@@ -326,6 +585,16 @@ export interface Rect {
   top: number;
   width: number;
   height: number;
+}
+
+/** REQ-295 — a Rect off the wire, or nothing */
+export function parseRect(x: unknown): Rect | null {
+  if (!x || typeof x !== "object") return null;
+  const o = x as Record<string, unknown>;
+  const n = (v: unknown): v is number =>
+    typeof v === "number" && Number.isFinite(v);
+  if (!n(o.left) || !n(o.top) || !n(o.width) || !n(o.height)) return null;
+  return { left: o.left, top: o.top, width: o.width, height: o.height };
 }
 
 /** REQ-188 — the point a fraction names inside a box */
@@ -339,6 +608,21 @@ export function pointToFrac(p: { x: number; y: number }, box: Rect): Anchor {
     vx: box.width > 0 ? clamp01((p.x - box.left) / box.width) : 0,
     vy: box.height > 0 ? clamp01((p.y - box.top) / box.height) : 0,
   };
+}
+
+/** REQ-305 — two anchors name the same place: the same node of the same page load at (nearly) the
+ *  same point of its box, or — neither naming a node — (nearly) the same fraction of the viewport.
+ *  A resting pointer placed again is sent only when this says no. */
+export function sameAnchor(a: Anchor | null, b: Anchor | null): boolean {
+  if (!a || !b) return a === b;
+  // REQ-393 — off the screen is never the same place as on it
+  if (!a.o !== !b.o) return false;
+  const near = (p: number, q: number) => Math.abs(p - q) < 0.002;
+  if (a.n || b.n) {
+    return !!a.n && !!b.n && a.n.id === b.n.id && a.n.l === b.n.l &&
+      near(a.n.x, b.n.x) && near(a.n.y, b.n.y);
+  }
+  return near(a.vx, b.vx) && near(a.vy, b.vy);
 }
 
 export interface Inset {
@@ -369,140 +653,4 @@ export function fitScale(
     left: inset.left + (roomW - width) / 2,
     top: inset.top + (roomH - height) / 2,
   };
-}
-
-/** the stage follows a reported page when it is a different same-origin path */
-export function shouldFollow(current: string, reported: string): boolean {
-  return isSafePath(reported) && reported !== current;
-}
-
-/** the slice of a DOM element the selector builder reads — so it runs on a fake in jest */
-export interface ElLike {
-  tagName: string;
-  id: string;
-  getAttribute(name: string): string | null;
-  parentElement: ElLike | null;
-  children: ArrayLike<ElLike>;
-}
-
-const IDENT = /^[A-Za-z_][\w-]*$/;
-
-/** a selector for `el`: its id, its data-cy, or a positional path up to the nearest of those (or the body) */
-/** a path segment: the tag, the element's first stable class (a modifier like `sb--collapsed` is
- *  never the first token, so a collapsed sidebar is still the sidebar), and its ordinal among the
- *  siblings with the SAME tag and first class. Siblings marked `data-demo-overlay` or
- *  `data-demo-skip` (the impersonation banner, which only the staff side has) never count — so
- *  the same page gives the same path on both screens. */
-export interface PathSeg {
-  tag: string;
-  cls: string | null;
-  n: number;
-}
-
-const skipped = (e: ElLike) =>
-  e.getAttribute("data-demo-overlay") !== null ||
-  e.getAttribute("data-demo-skip") !== null;
-
-export function firstClass(e: ElLike): string | null {
-  const tokens = (e.getAttribute("class") ?? "").trim().split(/\s+/);
-  const first = tokens.find((t) => t && IDENT.test(t));
-  return first ?? null;
-}
-
-function sameKind(a: ElLike, tag: string, cls: string | null): boolean {
-  return a.tagName.toLowerCase() === tag && firstClass(a) === cls;
-}
-
-export function segmentFor(el: ElLike): PathSeg {
-  const tag = el.tagName.toLowerCase();
-  const cls = firstClass(el);
-  let n = 1;
-  const sibs = el.parentElement?.children;
-  if (sibs) {
-    for (let i = 0; i < sibs.length; i++) {
-      const sib = sibs[i];
-      if (sib === el) break;
-      if (!skipped(sib) && sameKind(sib, tag, cls)) n++;
-    }
-  }
-  return { tag, cls, n };
-}
-
-const segText = (s: PathSeg) =>
-  `${s.tag}${s.cls ? `.${s.cls}` : ""}:nth-of-type(${s.n})`;
-
-/** the element's path: from its nearest ancestor with an id or a data-cy (or body), segments down
- *  to it — `body > div.app-shell:nth-of-type(1) > main:nth-of-type(1) > button.asst__send:nth-of-type(1)`.
- *  It reads as CSS, but the ordinal is OUR count (same tag AND first class, skip-marked siblings
- *  left out): resolve it with `parseSelector` + `walkSelector`, querySelector only as a last resort. */
-export function selectorFor(el: ElLike, maxDepth = 12): string {
-  const parts: string[] = [];
-  let cur: ElLike | null = el;
-  let depth = 0;
-  while (cur && depth < maxDepth) {
-    const tag = cur.tagName.toLowerCase();
-    if (tag === "body" || tag === "html") {
-      parts.unshift(tag);
-      break;
-    }
-    if (cur.id) {
-      parts.unshift(
-        IDENT.test(cur.id)
-          ? `#${cur.id}`
-          : `[id="${cur.id.replace(/"/g, '\\"')}"]`,
-      );
-      break;
-    }
-    const cy = cur.getAttribute("data-cy");
-    if (cy) {
-      parts.unshift(`[data-cy="${cy.replace(/"/g, '\\"')}"]`);
-      break;
-    }
-    parts.unshift(segText(segmentFor(cur)));
-    cur = cur.parentElement;
-    depth++;
-  }
-  return parts.join(" > ");
-}
-
-const SEG = /^([a-z][a-z0-9-]*)(?:\.([A-Za-z_][\w-]*))?:nth-of-type\((\d+)\)$/;
-const ROOT =
-  /^(body|html|#[A-Za-z_][\w-]*|\[id="[^"]*"\]|\[data-cy="[^"]*"\])$/;
-
-/** a selector `selectorFor` made → its root and segments; null for anything else */
-export function parseSelector(
-  sel: string,
-): { root: string; segs: PathSeg[] } | null {
-  const parts = sel.split(" > ");
-  const root = parts.shift() ?? "";
-  if (!ROOT.test(root)) return null;
-  const segs: PathSeg[] = [];
-  for (const p of parts) {
-    const m = SEG.exec(p);
-    if (!m) return null;
-    segs.push({ tag: m[1], cls: m[2] ?? null, n: Number(m[3]) });
-  }
-  return { root, segs };
-}
-
-/** from `root`, follow the segments with the same counting `segmentFor` used; null when the
- *  path leads nowhere (never a wrong element) */
-export function walkSelector(root: ElLike, segs: PathSeg[]): ElLike | null {
-  let cur: ElLike = root;
-  for (const s of segs) {
-    let n = 0;
-    let found: ElLike | null = null;
-    const kids = cur.children;
-    for (let i = 0; i < kids.length; i++) {
-      const k = kids[i];
-      if (skipped(k) || !sameKind(k, s.tag, s.cls)) continue;
-      if (++n === s.n) {
-        found = k;
-        break;
-      }
-    }
-    if (!found) return null;
-    cur = found;
-  }
-  return cur;
 }

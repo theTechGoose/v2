@@ -51,14 +51,15 @@ describe("REQ-213 the island", () => {
 });
 
 describe("REQ-213 the route", () => {
-  const route = read("front-end/routes/i/[id].tsx");
-  test("the page asks for the card config on the server and mounts the island above the manual methods", () => {
+  // REQ-782: the widget lives on the card portal (/i/:id/pay); /i/:id links to it
+  const route = read("front-end/routes/i/[id]/pay.tsx");
+  test("the portal page asks for the card config on the server and mounts the island", () => {
     expect(route).toMatch(
       /ssrBackendGet<CardConfig>\(`\/invoices\/\$\{id\}\/card`\)/,
     );
     expect(route).toMatch(/<PublicCardPay/);
-    expect(route).toMatch(/data-claim-wrap/);
     expect(route).toMatch(/paycard\.css/);
+    expect(read("front-end/routes/i/[id].tsx")).toMatch(/data-claim-wrap/);
   });
   test("the widget's art ships with the app", () => {
     for (

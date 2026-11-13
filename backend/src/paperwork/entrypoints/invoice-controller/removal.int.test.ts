@@ -70,8 +70,15 @@ async function withServer(fn: () => Promise<void>) {
   }
 }
 
+// REQ-550 (demo-fixes): an invoice issued at birth bills someone — a typed
+// bill-to name stands in where the test names no customer.
 const mk = (sid: string, body: Record<string, unknown>) =>
-  call("POST", "/invoices", { amount: 10000, jobName: "Mow", ...body }, sid)
+  call("POST", "/invoices", {
+    amount: 10000,
+    jobName: "Mow",
+    ...(body.customerId ? {} : { billTo: { name: "Rosa Diaz" } }),
+    ...body,
+  }, sid)
     .then((r) => r.body);
 
 Deno.test("REQ-627 the server enforces the removal rules: draft → delete; sent → 409 must_void then void (kept, who/when/why); paid → 409 locked_paid both ways", async () => {

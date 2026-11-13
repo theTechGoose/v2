@@ -17,16 +17,22 @@ import {
 } from "../clients/field.ts";
 import FieldHead from "../components/FieldHead.tsx";
 import { ApiError } from "../lib/api.ts";
+import { customerFixHref } from "../lib/customer-card-edit.ts";
 import { I, ICN } from "../lib/dash-icons.tsx";
 import { fmtMoneyExact, shiftIso, todayIso } from "../lib/field.ts";
-import { langSignal, t, type Vars } from "../lib/i18n.ts";
+import {
+  batchCounts,
+  defaultBatchChecks,
+  describeSend,
+  pluralParens,
+  type SendFailureLine,
+} from "../lib/field-batches.ts";
+import { langSignal, t, tn, type Vars } from "../lib/i18n.ts";
+import type { FieldBatchesSeed } from "../lib/field-ssr.ts";
 
 /** "{n} invoice(s)" → "1 invoice" / "3 invoices" (the lang files carry the "(s)") */
 function tp(key: string, vars: Vars): string {
-  return t(key, vars).replace(
-    /\((s|es)\)/g,
-    (_m, x: string) => (vars.n === 1 ? "" : x),
-  );
+  return pluralParens(t(key, vars), Number(vars.n));
 }
 
 const KNOWN_STATUS = new Set([
@@ -76,20 +82,35 @@ const batchTotal = (b: BatchView) =>
     0,
   );
 
-export default function FieldBatchesPage() {
+/** the past batches as listed: only those with invoices, newest first */
+const pastBatches = (all: BatchView[]) =>
+  all.filter((b) => b.invoices.length > 0)
+    .sort((a, b) => b.from.localeCompare(a.from));
+
+/** REQ-730 (demo c2-p13-p) — `seed`: the batches read by the route on the SSR side; the first HTML carries them, not "Loading…" */
+export default function FieldBatchesPage(
+  { seed }: { seed?: FieldBatchesSeed | null } = {},
+) {
   const lang = langSignal.value;
+  const seeded = seed ? pastBatches(seed.batches) : null;
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
-  const [batches, setBatches] = useState<BatchView[]>([]);
-  const [current, setCurrent] = useState<BatchView | null>(null);
+  const [batches, setBatches] = useState<BatchView[]>(seeded ?? []);
+  const [current, setCurrent] = useState<BatchView | null>(
+    seeded?.[0] ?? null,
+  );
   const [summary, setSummary] = useState<PullSummary | null>(null);
   const [flash, setFlash] = useState("");
   const [error, setError] = useState<string | null>(null);
+  // REQ-401: a send's failures, each with its fix (demo M30)
+  const [failures, setFailures] = useState<SendFailureLine[]>([]);
   /** a send refused with 409 because of a $0 line — offer "Send anyway" */
   const [zeroBlocked, setZeroBlocked] = useState(false);
-  const [checked, setChecked] = useState<Set<string>>(new Set());
+  const [checked, setChecked] = useState<Set<string>>(() =>
+    defaultBatchChecks(seeded?.[0] ?? null, new Set())
+  );
   const [busy, setBusy] = useState<"pull" | "send" | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(!seed);
 
   // Default range: the last two weeks. Resolved in an effect — the browser's
   // day, not the server's.
@@ -100,9 +121,7 @@ export default function FieldBatchesPage() {
   }, []);
 
   async function load(keepId?: string): Promise<BatchView[]> {
-    const rows = (await fieldClient.batches())
-      .filter((b) => b.invoices.length > 0)
-      .sort((a, b) => b.from.localeCompare(a.from));
+    const rows = pastBatches(await fieldClient.batches());
     setBatches(rows);
     if (keepId) {
       const found = rows.find((b) => b.id === keepId);
@@ -112,8 +131,14 @@ export default function FieldBatchesPage() {
   }
 
   useEffect(() => {
+    if (seed) return; // REQ-730 — seeded on the server: no client fetch on mount
     load()
-      .then((rows) => setCurrent((c) => c ?? rows[0] ?? null))
+      .then((rows) => {
+        const first = rows[0] ?? null;
+        setCurrent((c) => c ?? first);
+        // REQ-608 (demo m47): a reload ticks the drafts, as the pull did
+        setChecked((c) => defaultBatchChecks(first, c));
+      })
       .catch((e) => setError(errorMessage(e)))
       .finally(() => setLoading(false));
   }, []);
@@ -122,6 +147,7 @@ export default function FieldBatchesPage() {
     if (busy || !from || !to) return;
     setBusy("pull");
     setError(null);
+    setFailures([]);
     setZeroBlocked(false);
     try {
       const r = await fieldClient.pull(from, to);
@@ -159,18 +185,14 @@ export default function FieldBatchesPage() {
     if (busy || !current || checked.size === 0) return;
     setBusy("send");
     setError(null);
+    setFailures([]);
     try {
       const r = await fieldClient.send(current.id, [...checked], allowZero);
       setZeroBlocked(false);
-      setFlash(tp("field.lt.sent", { n: r.sent }));
-      if (r.failed.length) {
-        setError(
-          r.failed.map((f) => {
-            const inv = current.invoices.find((i) => i.id === f.invoiceId);
-            return `${inv?.customerName ?? f.invoiceId}: ${f.reason}`;
-          }).join(" · "),
-        );
-      }
+      // REQ-401 (demo M30): "each client got theirs" only when something went out
+      const told = describeSend(r, current.invoices, t);
+      setFlash(told.flash);
+      setFailures(told.failures);
       setChecked(new Set());
       setCurrent(r.batch);
       await load(r.batch.id);
@@ -191,8 +213,9 @@ export default function FieldBatchesPage() {
     setSummary(null);
     setFlash("");
     setError(null);
+    setFailures([]);
     setZeroBlocked(false);
-    setChecked(new Set());
+    setChecked(defaultBatchChecks(b, new Set())); // REQ-608 — its drafts, ticked
   }
 
   function toggle(id: string, on: boolean) {
@@ -273,6 +296,24 @@ export default function FieldBatchesPage() {
           </div>
         )}
         {error && <p class="alert">{error}</p>}
+        {failures.map((f, i) => (
+          <p class="alert" data-cy="lt-send-failure" key={i}>
+            {f.text}
+            {f.fix && (
+              <>
+                {" "}
+                {/* REQ-600 (cycle 4, M5): straight to that customer's card */}
+                <a
+                  class="link"
+                  href={customerFixHref(f.customerId)}
+                  data-cy="lt-send-fix"
+                >
+                  {f.fix}
+                </a>
+              </>
+            )}
+          </p>
+        ))}
       </div>
 
       {current && (
@@ -359,14 +400,7 @@ export default function FieldBatchesPage() {
                   >
                     <td>{fmtD(b.from, lang)} → {fmtD(b.to, lang)}</td>
                     <td>
-                      {t("field.lt.counts", {
-                        d: b.invoices.filter((i) => i.status === "draft")
-                          .length,
-                        s: b.invoices.filter((i) => i.status === "sent")
-                          .length,
-                        p: b.invoices.filter((i) => i.status === "paid")
-                          .length,
-                      })}
+                      {batchCounts(b.invoices, tn)}
                     </td>
                     <td class="money">{fmtMoneyExact(batchTotal(b))}</td>
                   </tr>

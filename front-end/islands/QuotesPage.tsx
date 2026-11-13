@@ -3,25 +3,40 @@
  * shell; this island fetches the pipeline + win-rate + insight from the
  * backend on mount.
  */
-import { useEffect, useState } from "preact/hooks";
+import { useEffect, useRef, useState } from "preact/hooks";
 import {
   type Insight,
   type QuoteCard as BackendQuoteCard,
+  type QuoteInquiry,
   type QuoteLedger,
   quotesClient,
   type QuoteVersion,
   type WinRate,
 } from "../clients/quotes.ts";
 import { api, ApiError } from "../lib/api.ts";
+import { startListRefresh } from "../lib/list-refresh.ts";
+import type { QuotesSeed } from "../lib/quotes-ssr.ts";
+import { openQuoteMoved } from "../lib/live-doc-refresh.ts";
+import { followChanges, isDocChange } from "../lib/change-feed.ts";
 import { I, ICN } from "../lib/dash-icons.tsx";
 import { fmtMoney, fmtMoneyExact } from "../lib/format.ts";
+import { formatPhoneDisplay } from "../../shared/quote-flow/format-helpers.ts";
 import {
   docHeadline,
   ledgerSummary,
   shortDate,
+  versionChangeLine,
   versionHistoryLine,
 } from "../../shared/documents/linked-view.ts";
-import { invoiceState, quoteState } from "../../shared/documents/versions.ts";
+import {
+  invoiceState,
+  pendingDraftLines,
+  pendingOtherContentChanged,
+  pendingRevisionChanges,
+  quoteBadgeStatus,
+  quoteState,
+  versionChanges,
+} from "../../shared/documents/versions.ts";
 import {
   DecidedRow,
   QSideBig,
@@ -32,13 +47,62 @@ import {
 } from "../components/QuotesSections.tsx";
 import QuoteTrack from "./QuoteTrack.tsx";
 import QuoteCard from "./QuoteCard.tsx";
-import type { Quote } from "../lib/quotes-seed.ts";
+import {
+  DRAFT_TRACK_STAGES,
+  OUT_STAGES,
+  type Quote,
+} from "../lib/quotes-seed.ts";
+import { type QuoteLimit, quoteLimitOf } from "../lib/quote-limit.ts";
 import {
   CardGridSkeleton,
   PageHeaderSkeleton,
   ShimmerStyle,
 } from "../components/Skeletons.tsx";
 import { langSignal, tFor } from "../lib/i18n.ts";
+import { quoteJobTitle } from "../../shared/quote-flow/job-name.ts";
+import { quoteSendLang } from "../../shared/quote-flow/share-link.ts"; // REQ-586
+import { customerLinkPath, customerLinkUrl } from "../lib/customer-link.ts"; // REQ-570 + REQ-586
+import { changeOrdersClient } from "../clients/change-orders.ts"; // REQ-462
+import {
+  type ChangeOrderDelivery,
+  changeOrderSentLineWith,
+} from "../../shared/documents/change-order-sent-line.ts"; // REQ-684
+import QuoteSendDialog, {
+  type SendDialogCustomer,
+} from "../components/QuoteSendDialog.tsx"; // REQ-570
+import {
+  finishDraftPath,
+  panelSendAction,
+  type PanelSendResult,
+} from "../lib/quote-panel-send.ts"; // REQ-570 + REQ-686
+import { assistantClient } from "../clients/assistant.ts"; // REQ-686
+import type { SendChannel } from "../lib/send-dialog.ts"; // REQ-570
+import {
+  changeOrderBody,
+  changeOrderRowActions,
+  changeOrderSavedNote,
+  changeOrderShareLinks,
+  newChangeOrderButton,
+  newChangeOrderTarget,
+} from "../../shared/documents/change-order-actions.ts"; // REQ-462, REQ-565, REQ-655, REQ-683
+import { panelAgreedTotal } from "../../shared/documents/ledger.ts"; // REQ-679
+import {
+  canReviseQuote,
+  editableJobDetails,
+  editableLines,
+  type EditableQuoteLine,
+  editorTotalCents,
+  jobDetailsPatch,
+  linesPatch,
+  nextVersionOf,
+  type PublishedMark,
+  publishedNoteVisible,
+} from "../lib/quote-line-edit.ts";
+import {
+  quoteCardValue,
+  quotesHeroNumbers,
+  sampleTrackCounts,
+} from "../lib/headline-counts.ts";
 import {
   buildViewedReceipt,
   classifyReceipts,
@@ -46,6 +110,8 @@ import {
   type TrailMessage,
   type ViewedReceipt,
 } from "../../shared/quote-flow/receipts.ts";
+import QuoteInquiries from "../components/QuoteInquiries.tsx"; // REQ-701
+import { QUESTIONS_ANCHOR } from "../lib/quote-inquiries.ts"; // REQ-701
 
 // Inner sort order for the "Out for response" track — most engaged
 // (opened) at top, then sent, cooling, stale. Mirrors the reference's
@@ -76,22 +142,37 @@ function mapCard(c: BackendQuoteCard, lang: "en" | "es"): Quote {
   const client = c.customerName ?? fallbackClient;
   return {
     id: c.id,
+    // REQ-313 (m48): the card shows the quote's own number, not its position.
+    number: c.number,
+    version: c.version,
     // Prefer the ≤3-word Job Name (roadmap p.10) so cards read the same as
     // the quote, agreement, and invoice headings; summary is the fallback.
-    title: c.jobName?.trim() || c.summary ||
-      tFor(lang, "quotesPage.untitledQuote"),
+    // REQ-394 (cycle 2, p9): in the app's language — jobNameByLang[lang].
+    title: quoteJobTitle(c, lang) ?? tFor(lang, "quotesPage.untitledQuote"),
     client,
     customerId: c.customerId,
     initials: initialsFromName(c.customerName ?? fallbackClient),
     stage: c.stage,
-    value: c.estimatedTotal ?? 0,
+    // REQ-481 (demo M28): the agreement — quote plus approved change orders.
+    value: quoteCardValue(c),
     daysIn: c.daysIn,
     opens: c.opens,
     sentDays: c.sentDays,
     decidedDays: c.decidedDays ?? undefined,
+    ...(c.lastDelivery?.channel ? { channel: c.lastDelivery.channel } : {}),
+    // REQ-586 (cycle 4, M11): the card's customer link opens in the language
+    // the quote went out in.
+    ...(quoteSendLang(c) ? { sendLang: quoteSendLang(c) } : {}),
     band: ["#FFB3B3", "#FF6B6B"],
     shadow: "rgba(255,107,107,0.35)",
     ...(c.isSample === true ? { isSample: true } : {}),
+    ...(c.pendingChangeOrders?.length
+      ? { pendingChangeOrders: c.pendingChangeOrders }
+      : {}),
+    // REQ-760 (cycle 5v2, m14): the hero says "ready to send" only for these.
+    ...(typeof c.readyToSend === "boolean"
+      ? { readyToSend: c.readyToSend }
+      : {}),
   };
 }
 
@@ -101,25 +182,8 @@ interface State {
   quotes: Quote[];
   winRate: WinRate | null;
   insight: Insight | null;
-}
-
-/** Lifecycle badge on the open-quote surface (roadmap p.10): the RAW quote
- *  `status` walks draft → sent → viewed → accepted on the backend;
- *  "lost" renders as declined. */
-type BadgeStatus = "draft" | "sent" | "viewed" | "accepted" | "declined";
-
-function badgeStatusFor(q: BackendQuoteCard): BadgeStatus {
-  const raw = typeof q.status === "string" ? q.status.toLowerCase() : "";
-  // Never regress after signature: accepted (or a recorded acceptedAt)
-  // wins over any later "viewed" bookkeeping.
-  if (raw === "accepted" || q.acceptedAt) {
-    return "accepted";
-  }
-  if (raw === "lost") return "declined";
-  if (raw === "viewed") return "viewed";
-  if (raw === "sent") return "sent";
-  if (q.sentAt) return "sent";
-  return "draft";
+  /** REQ-778 (cycle dv1, d8): the month's quotes are used up. */
+  quoteLimit?: QuoteLimit | null;
 }
 
 interface OpenQuoteState {
@@ -133,6 +197,592 @@ interface OpenQuoteState {
   ledger: QuoteLedger | null;
   /** REQ-201: the quote's own version history (current last). */
   versions: QuoteVersion[];
+  /** REQ-570 (m41): who the panel's Send goes to — contact on file. */
+  customer?: SendDialogCustomer | null;
+  /** REQ-701 (cycle 5, M21): the questions clients sent on this quote. */
+  inquiries: QuoteInquiry[];
+}
+
+/** REQ-684 (demo-loop cycle 5, m39): a hand-made change order says what its
+ *  alert delivered to the customer — the chat's REQ-456 line ("Sent CO-001 to
+ *  Maria by email (…) — text failed (…)"), or that nothing was sent and the
+ *  link is theirs to share. */
+function coDeliveryLine(
+  lang: "en" | "es",
+  number: string,
+  name: string | null | undefined,
+  delivery: ChangeOrderDelivery,
+): string {
+  return changeOrderSentLineWith((key, vars) => tFor(lang, key, vars), {
+    number,
+    name: name?.trim() || tFor(lang, "quotesPage.edit.theCustomer"),
+    ...delivery,
+  });
+}
+
+/** REQ-462 (demo-loop cycle 3, M26) — "Signed — later changes go on a change
+ *  order" now makes one. The button opens a form that puts the order on the
+ *  quote's open invoice (POST /invoices/:id/change-orders — the customer
+ *  approves it at its own link); with no open invoice it says what comes
+ *  first instead (the chat's REQ-238 rule; a paid invoice is locked, REQ-202). */
+function SignedChangeOrder(
+  { lang, q, ledger, onChanged }: {
+    lang: "en" | "es";
+    q: BackendQuoteCard;
+    ledger: QuoteLedger;
+    onChanged: () => void;
+  },
+) {
+  const [open, setOpen] = useState(false);
+  const [desc, setDesc] = useState("");
+  const [dollars, setDollars] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const [created, setCreated] = useState<string | null>(null);
+  const [createdDelivery, setCreatedDelivery] = useState<
+    ChangeOrderDelivery | null
+  >(null);
+  const target = newChangeOrderTarget(ledger);
+  // REQ-655 (cycle 5, p18-9c): decided before it renders — on a fully paid
+  // job the button is "Bill extra work", straight to a linked new invoice.
+  const button = newChangeOrderButton(target, q.id);
+  // the "created" note stands while that order still waits as it was made —
+  // an edit or a withdrawal below says its own thing
+  const createdWaits = created !== null &&
+    ledger.changeOrders.some((c) =>
+      c.number === created && c.version === 1 && c.status === "pending"
+    );
+  const mutedStyle = "color:var(--fg-muted,#6b7560)";
+  const boxStyle =
+    "margin-top:10px;padding:12px;border:1px solid rgba(26,83,92,0.16);border-radius:12px;background:rgba(26,83,92,0.03)";
+  const field =
+    "padding:7px 9px;border:1px solid rgba(26,83,92,0.22);border-radius:8px;font:inherit;font-size:13px;min-width:0;box-sizing:border-box;background:#fff";
+  const ghost =
+    "background:transparent;border-color:transparent;color:var(--fg-muted,#6b7560)";
+
+  async function create() {
+    if (busy || target.kind !== "invoice") return;
+    const parsed = changeOrderBody({ description: desc, dollars });
+    if (!parsed.ok) {
+      setErr(tFor(lang, "quotes.ledger.coFieldsError"));
+      return;
+    }
+    setBusy(true);
+    setErr(null);
+    try {
+      const co = await changeOrdersClient.create(target.invoiceId, parsed.body);
+      setOpen(false);
+      setDesc("");
+      setDollars("");
+      setCreated(co.number ?? "");
+      setCreatedDelivery(co.delivery ?? null);
+      onChanged();
+    } catch {
+      setErr(tFor(lang, "quotes.ledger.coError"));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <>
+      <div style="margin:8px 0 0;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+        <p
+          data-cy="quote-lock-note"
+          style={`margin:0;font-size:12.5px;${mutedStyle}`}
+        >
+          {tFor(lang, "quotes.ledger.lockedNote")}
+        </p>
+        {button.href
+          ? (
+            <a
+              class="qopen__btn"
+              data-cy="quote-bill-extra-work"
+              style="padding:5px 10px"
+              href={button.href}
+            >
+              {tFor(lang, button.labelKey)}
+            </a>
+          )
+          : !open && (
+            <button
+              type="button"
+              class="qopen__btn"
+              data-cy="quote-new-change-order"
+              style="padding:5px 10px"
+              onClick={() => {
+                setErr(null);
+                setCreated(null);
+                setOpen(true);
+              }}
+            >
+              {tFor(lang, "quotes.ledger.newChangeOrder")}
+            </button>
+          )}
+      </div>
+      {open && target.kind === "invoice_first" && (
+        <div data-cy="quote-co-invoice-first" style={boxStyle}>
+          <p style="margin:0 0 8px;font-size:12.5px">
+            {tFor(lang, "quotes.ledger.coInvoiceFirst")}
+          </p>
+          <div class="qopen__actions">
+            <a
+              class="qopen__btn"
+              href={`/invoices?new=1&quoteId=${encodeURIComponent(q.id)}`}
+            >
+              {tFor(lang, "quotes.ledger.createNextInvoice")}
+            </a>
+            <button
+              type="button"
+              class="qopen__btn"
+              style={ghost}
+              onClick={() =>
+                setOpen(false)}
+            >
+              {tFor(lang, "common.cancel")}
+            </button>
+          </div>
+        </div>
+      )}
+      {open && target.kind === "invoice" && (
+        <div data-cy="quote-co-form" style={boxStyle}>
+          <p style={`margin:0 0 8px;font-size:12.5px;${mutedStyle}`}>
+            {tFor(lang, "quotes.ledger.coGoesOn", {
+              number: target.invoiceNumber,
+            })}
+          </p>
+          <div style="display:flex;flex-wrap:wrap;gap:6px">
+            <input
+              type="text"
+              data-cy="quote-co-desc"
+              aria-label={tFor(lang, "quotes.ledger.coDescription")}
+              placeholder={tFor(lang, "quotes.ledger.coDescription")}
+              value={desc}
+              disabled={busy}
+              onInput={(e) =>
+                setDesc((e.target as HTMLInputElement).value)}
+              style={`${field};flex:1 1 240px`}
+            />
+            <input
+              type="number"
+              step="0.01"
+              data-cy="quote-co-amount"
+              aria-label={tFor(lang, "quotes.ledger.coAmount")}
+              placeholder={tFor(lang, "quotes.ledger.coAmount")}
+              value={dollars}
+              disabled={busy}
+              onInput={(e) =>
+                setDollars((e.target as HTMLInputElement).value)}
+              style={`${field};flex:1 1 140px;max-width:200px`}
+            />
+          </div>
+          <div class="qopen__actions" style="margin-top:8px">
+            <button
+              type="button"
+              class="qopen__btn qopen__btn--primary"
+              data-cy="quote-co-create"
+              disabled={busy}
+              onClick={create}
+            >
+              {busy
+                ? tFor(lang, "quotes.ledger.coCreating")
+                : tFor(lang, "quotes.ledger.coCreate")}
+            </button>
+            <button
+              type="button"
+              class="qopen__btn"
+              data-cy="quote-co-cancel"
+              style={ghost}
+              disabled={busy}
+              onClick={() => setOpen(false)}
+            >
+              {tFor(lang, "common.cancel")}
+            </button>
+          </div>
+          {err && (
+            <p
+              role="alert"
+              style="margin:8px 0 0;font-size:12.5px;color:#a83b3b;font-weight:600"
+            >
+              {err}
+            </p>
+          )}
+        </div>
+      )}
+      {createdWaits && !open && (
+        <p
+          data-cy="quote-co-created"
+          role="status"
+          style="margin:8px 0 0;font-size:12.5px;color:var(--brand-green,#519843);font-weight:700"
+        >
+          {createdDelivery
+            ? (
+              <span data-cy="quote-co-delivery">
+                {coDeliveryLine(
+                  lang,
+                  created ?? "",
+                  q.customerName,
+                  createdDelivery,
+                )}
+              </span>
+            )
+            : tFor(lang, "quotes.ledger.coCreated", { number: created ?? "" })}
+        </p>
+      )}
+    </>
+  );
+}
+
+type LedgerCoRow = QuoteLedger["changeOrders"][number];
+
+/** REQ-565: who a change order goes to — the quote's customer as filed on it. */
+interface CoRecipient {
+  name: string | null;
+  phone?: string;
+  email?: string;
+}
+
+/** REQ-462 (M26) — one change order in the ledger: number, version, state,
+ *  invoice, wording and amount; while the customer has not approved it, Edit
+ *  (PUT — its next version, back to pending, the alert sent again) and
+ *  Withdraw (asks first, then DELETE). The number still opens /co/:id. */
+function LedgerChangeOrderRow(
+  { lang, co, customer, onChanged, onWithdrawn }: {
+    lang: "en" | "es";
+    co: LedgerCoRow;
+    customer: CoRecipient;
+    onChanged: () => void;
+    onWithdrawn: (number: string) => void;
+  },
+) {
+  const [editing, setEditing] = useState(false);
+  // REQ-565 (demo m33): the order reaches the customer from its row — its
+  // link copied, texted or emailed, or opened as she sees it.
+  const [copied, setCopied] = useState(false);
+  const who = customer.name ?? tFor(lang, "quotesPage.edit.theCustomer");
+  const origin = typeof globalThis.location === "undefined"
+    ? ""
+    : globalThis.location.origin;
+  const coUrl = `${origin}${co.url}`;
+  const share = changeOrderShareLinks({
+    origin,
+    path: co.url,
+    phone: customer.phone,
+    email: customer.email,
+    subject: tFor(lang, "quotes.ledger.coSendSubject", { number: co.number }),
+    text: tFor(lang, "quotes.ledger.coSendBody", {
+      name: customer.name ?? "",
+      number: co.number,
+      url: coUrl,
+    }).replace(/\s+,/, ","),
+  });
+  async function copyCoLink() {
+    try {
+      await navigator.clipboard.writeText(share.url);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch { /* clipboard unavailable — leave the label as-is */ }
+  }
+  const [desc, setDesc] = useState("");
+  const [dollars, setDollars] = useState("");
+  const [confirming, setConfirming] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const [savedVersion, setSavedVersion] = useState<number | null>(null);
+  const [savedDelivery, setSavedDelivery] = useState<
+    ChangeOrderDelivery | null
+  >(null);
+  // REQ-683 (m41): the note follows the live order — gone once it is
+  // approved, declined or past the saved version, with no reload
+  const savedNote = changeOrderSavedNote(co, savedVersion);
+  const actions = changeOrderRowActions(co);
+  const rowStyle =
+    "display:flex;justify-content:space-between;gap:10px;align-items:baseline;padding:6px 0;border-bottom:1px solid rgba(26,83,92,0.08);font-size:13px";
+  const mutedStyle = "color:var(--fg-muted,#6b7560)";
+  const linkStyle =
+    "color:var(--brand-teal,#144852);text-decoration:none;font-weight:700";
+  const small = "padding:3px 9px;font-size:11.5px;border-radius:8px";
+  const field =
+    "padding:7px 9px;border:1px solid rgba(26,83,92,0.22);border-radius:8px;font:inherit;font-size:13px;min-width:0;box-sizing:border-box;background:#fff";
+
+  function startEdit() {
+    setDesc(co.description ?? "");
+    // credits are negative — the signed dollars, as the invoices page does
+    setDollars(String(co.deltaAmountCents / 100));
+    setErr(null);
+    setSavedVersion(null);
+    setConfirming(false);
+    setEditing(true);
+  }
+
+  async function save() {
+    if (busy || !co.invoiceId) return;
+    const parsed = changeOrderBody({ description: desc, dollars });
+    if (!parsed.ok) {
+      setErr(tFor(lang, "quotes.ledger.coFieldsError"));
+      return;
+    }
+    setBusy(true);
+    setErr(null);
+    try {
+      const updated = await changeOrdersClient.update(
+        co.invoiceId,
+        co.id,
+        parsed.body,
+      );
+      setEditing(false);
+      setSavedVersion(updated.version ?? co.version + 1);
+      setSavedDelivery(updated.delivery ?? null);
+      onChanged();
+    } catch {
+      setErr(tFor(lang, "quotes.ledger.coError"));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function withdraw() {
+    if (busy || !co.invoiceId) return;
+    setBusy(true);
+    setErr(null);
+    try {
+      await changeOrdersClient.withdraw(co.invoiceId, co.id);
+      setConfirming(false);
+      onWithdrawn(co.number);
+      onChanged();
+    } catch {
+      setErr(tFor(lang, "quotes.ledger.coError"));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div data-cy="ledger-co-row" style={rowStyle}>
+      <span style="display:flex;flex-direction:column;gap:4px;min-width:0;flex:1">
+        <span style="display:flex;gap:8px;flex-wrap:wrap;align-items:baseline">
+          <a href={co.url} target="_blank" rel="noopener" style={linkStyle}>
+            {co.number}
+          </a>
+          <span style={mutedStyle}>
+            {tFor(lang, "quotes.ledger.versionN", { n: co.version })}
+          </span>
+          <span style={mutedStyle}>
+            {tFor(lang, `public.doc.state.${co.status}`)}
+          </span>
+          {co.invoiceNumber && (
+            <span style={mutedStyle}>
+              {tFor(lang, "quotes.ledger.onInvoice", {
+                number: co.invoiceNumber,
+              })}
+            </span>
+          )}
+        </span>
+        {co.description && !editing && (
+          <span
+            data-cy="ledger-co-description"
+            style={`${mutedStyle};font-size:12.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap`}
+          >
+            {co.description}
+          </span>
+        )}
+        {editing && (
+          <span style="display:flex;flex-direction:column;gap:6px;margin-top:2px">
+            <span style="display:flex;flex-wrap:wrap;gap:6px">
+              <input
+                type="text"
+                data-cy="ledger-co-edit-desc"
+                aria-label={tFor(lang, "quotes.ledger.coDescription")}
+                placeholder={tFor(lang, "quotes.ledger.coDescription")}
+                value={desc}
+                disabled={busy}
+                onInput={(e) => setDesc((e.target as HTMLInputElement).value)}
+                style={`${field};flex:1 1 220px`}
+              />
+              <input
+                type="number"
+                step="0.01"
+                data-cy="ledger-co-edit-amount"
+                aria-label={tFor(lang, "quotes.ledger.coAmount")}
+                placeholder={tFor(lang, "quotes.ledger.coAmount")}
+                value={dollars}
+                disabled={busy}
+                onInput={(e) =>
+                  setDollars((e.target as HTMLInputElement).value)}
+                style={`${field};flex:1 1 120px;max-width:180px`}
+              />
+            </span>
+            <span class="qopen__actions">
+              <button
+                type="button"
+                class="qopen__btn qopen__btn--primary"
+                data-cy="ledger-co-edit-save"
+                style={small}
+                disabled={busy}
+                onClick={save}
+              >
+                {busy
+                  ? tFor(lang, "quotes.ledger.coSaving")
+                  : tFor(lang, "quotes.ledger.coSave")}
+              </button>
+              <button
+                type="button"
+                class="qopen__btn"
+                data-cy="ledger-co-edit-cancel"
+                style={`${small};background:transparent;border-color:transparent;color:var(--fg-muted,#6b7560)`}
+                disabled={busy}
+                onClick={() => setEditing(false)}
+              >
+                {tFor(lang, "common.cancel")}
+              </button>
+            </span>
+          </span>
+        )}
+        {confirming && (
+          <span style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;font-size:12.5px">
+            <span style="color:#a83b3b;font-weight:700">
+              {tFor(lang, "quotes.ledger.coWithdrawAsk", {
+                number: co.number,
+              })}
+            </span>
+            <button
+              type="button"
+              class="qopen__btn"
+              data-cy="ledger-co-withdraw-confirm"
+              style={`${small};border-color:#a83b3b;color:#a83b3b`}
+              disabled={busy}
+              onClick={withdraw}
+            >
+              {tFor(lang, "quotes.ledger.coWithdrawConfirm")}
+            </button>
+            <button
+              type="button"
+              class="qopen__btn"
+              data-cy="ledger-co-withdraw-keep"
+              style={`${small};background:transparent;border-color:transparent;color:var(--fg-muted,#6b7560)`}
+              disabled={busy}
+              onClick={() => setConfirming(false)}
+            >
+              {tFor(lang, "quotes.ledger.coKeep")}
+            </button>
+          </span>
+        )}
+        {!editing && !confirming && (
+          <span
+            data-cy="ledger-co-share"
+            style="display:flex;gap:4px;flex-wrap:wrap;align-items:center;margin-top:2px"
+          >
+            <button
+              type="button"
+              class="qopen__btn"
+              data-cy="ledger-co-copy"
+              style={small}
+              onClick={copyCoLink}
+            >
+              {copied
+                ? tFor(lang, "quotes.ledger.coLinkCopied")
+                : tFor(lang, "quotes.ledger.coCopyLink")}
+            </button>
+            <a
+              class="qopen__btn"
+              data-cy="ledger-co-text"
+              style={small}
+              href={share.sms}
+            >
+              {tFor(lang, "quotes.ledger.coText")}
+            </a>
+            <a
+              class="qopen__btn"
+              data-cy="ledger-co-email"
+              style={small}
+              href={share.email}
+            >
+              {tFor(lang, "quotes.ledger.coEmail")}
+            </a>
+            <a
+              class="qopen__btn"
+              data-cy="ledger-co-view"
+              style={`${small};background:transparent;border-color:transparent`}
+              href={co.url}
+              target="_blank"
+              rel="noopener"
+            >
+              {tFor(lang, "quotes.ledger.coViewAsCustomer")}
+            </a>
+          </span>
+        )}
+        <span
+          data-cy="ledger-co-banner-note"
+          style={`${mutedStyle};font-size:12px`}
+        >
+          {tFor(lang, "quotes.ledger.coBannerNote", { name: who })}
+        </span>
+        {savedNote !== null && !editing && (
+          <span
+            data-cy="ledger-co-saved"
+            role="status"
+            style="font-size:12px;color:var(--brand-green,#519843);font-weight:700"
+          >
+            {tFor(lang, "quotes.ledger.coSaved", {
+              number: co.number,
+              n: savedNote,
+            })}
+            {savedDelivery && (
+              <span data-cy="ledger-co-delivery" style="display:block">
+                {coDeliveryLine(lang, co.number, customer.name, savedDelivery)}
+              </span>
+            )}
+          </span>
+        )}
+        {err && (
+          <span
+            role="alert"
+            style="font-size:12px;color:#a83b3b;font-weight:600"
+          >
+            {err}
+          </span>
+        )}
+      </span>
+      <span style="display:flex;flex-direction:column;align-items:flex-end;gap:4px">
+        <strong style="font-variant-numeric:tabular-nums;white-space:nowrap">
+          {co.deltaAmountCents >= 0 ? "+" : "−"}
+          {fmtMoneyExact(Math.abs(co.deltaAmountCents))}
+        </strong>
+        {!editing && !confirming && (actions.edit || actions.withdraw) && (
+          <span style="display:flex;gap:4px">
+            {actions.edit && (
+              <button
+                type="button"
+                class="qopen__btn"
+                data-cy="ledger-co-edit"
+                style={small}
+                disabled={busy}
+                onClick={startEdit}
+              >
+                {tFor(lang, "quotes.ledger.coEdit")}
+              </button>
+            )}
+            {actions.withdraw && (
+              <button
+                type="button"
+                class="qopen__btn"
+                data-cy="ledger-co-withdraw"
+                style={`${small};background:transparent;border-color:transparent;color:#a83b3b`}
+                disabled={busy}
+                onClick={() => {
+                  setErr(null);
+                  setSavedVersion(null);
+                  setConfirming(true);
+                }}
+              >
+                {tFor(lang, "quotes.ledger.coWithdraw")}
+              </button>
+            )}
+          </span>
+        )}
+      </span>
+    </div>
+  );
 }
 
 /** REQ-205 — the "Documents" ledger under the open quote: the headline
@@ -150,8 +800,40 @@ function QuoteLedgerSection(
 ) {
   const [publishing, setPublishing] = useState(false);
   const [publishErr, setPublishErr] = useState<string | null>(null);
-  const [published, setPublished] = useState(false);
+  // REQ-565 (demo m33): what the "Revision published" note is true of — it
+  // drops once the quote is signed, a later version lands or a change order
+  // is made (it used to stay until the panel remounted).
+  const [published, setPublished] = useState<PublishedMark | null>(null);
+  // REQ-304 (demo M28): publishing is a two-step — the button opens a
+  // preview that says what Version N changes, and only its Publish posts.
+  const [confirming, setConfirming] = useState(false);
+  // REQ-395 (demo M12): an unwanted draft revision can be thrown away.
+  const [discarding, setDiscarding] = useState(false);
+  // REQ-693 (cycle 5, p18-7a): Discard draft asks first, like the CO withdraw.
+  const [askDiscard, setAskDiscard] = useState(false);
+  // REQ-462 (M26): the change order just withdrawn from this panel
+  const [withdrawnCo, setWithdrawnCo] = useState<string | null>(null);
+  // REQ-466 (demo m38): the draft revision can be read before Publish.
+  const [showDraft, setShowDraft] = useState(false);
   const summary = ledgerSummary(ledger);
+  // REQ-565: the change orders go to the quote's customer as filed on it
+  const snapshot = (q as { customerSnapshot?: Record<string, unknown> })
+    .customerSnapshot;
+  const coRecipient: CoRecipient = {
+    name: q.customerName ?? null,
+    ...(typeof snapshot?.phoneNumber === "string"
+      ? { phone: snapshot.phoneNumber }
+      : {}),
+    ...(typeof snapshot?.email === "string" ? { email: snapshot.email } : {}),
+  };
+  // REQ-481 (demo M28): why the next invoice is off — "The rest is on
+  // INV-002, scheduled Nov 26", not "already invoiced" over an unsent bill.
+  const fullyInvoicedText = tFor(lang, summary.fullyInvoicedKey, {
+    number: summary.scheduled?.number ?? "",
+    date: summary.scheduled?.scheduledFor
+      ? shortDate(summary.scheduled.scheduledFor, lang)
+      : "",
+  });
   const state = quoteState(q);
   const headline = docHeadline(
     {
@@ -164,21 +846,68 @@ function QuoteLedgerSection(
   );
   const pending = q.pendingRevision &&
     Object.keys(q.pendingRevision).length > 0;
+  const previewChanges = pendingRevisionChanges(
+    q as Record<string, unknown> & {
+      pendingRevision?: Record<string, unknown>;
+    },
+  );
+  const previewLine = previewChanges
+    ? versionChangeLine(previewChanges, lang)
+    : "";
+  // REQ-395 (demo M12): "Wording or terms updated" only when such a field
+  // really differs; a revision equal to the live version has nothing to publish.
+  const otherChanged = pendingOtherContentChanged(
+    q as Record<string, unknown> & {
+      pendingRevision?: Record<string, unknown>;
+    },
+  );
+  const nothingToPublish = !previewLine && !otherChanged;
+  const pendingLine = previewLine ||
+    (otherChanged
+      ? tFor(lang, "quotes.ledger.publishOtherChanges")
+      : tFor(lang, "quotes.ledger.nothingToPublish"));
+  const draft = pendingDraftLines(
+    q as Record<string, unknown> & {
+      pendingRevision?: Record<string, unknown>;
+    },
+  );
   const locked = ledger.quote.accepted;
   const rowStyle =
     "display:flex;justify-content:space-between;gap:10px;align-items:baseline;padding:6px 0;border-bottom:1px solid rgba(26,83,92,0.08);font-size:13px";
   const numStyle = "font-weight:800;color:var(--brand-teal,#144852)";
   const mutedStyle = "color:var(--fg-muted,#6b7560)";
-  const linkStyle =
-    "color:var(--brand-teal,#144852);text-decoration:none;font-weight:700";
+
+  async function discard() {
+    if (discarding || publishing) return;
+    setDiscarding(true);
+    setPublishErr(null);
+    try {
+      await quotesClient.discardRevision(q.id);
+      setConfirming(false);
+      setAskDiscard(false);
+      onPublished();
+    } catch {
+      setPublishErr(tFor(lang, "quotes.ledger.discardError"));
+    } finally {
+      setDiscarding(false);
+    }
+  }
 
   async function publish() {
     if (publishing) return;
     setPublishing(true);
     setPublishErr(null);
     try {
-      await quotesClient.publish(q.id, { notify: true, language: lang });
-      setPublished(true);
+      const res = await quotesClient.publish(q.id, {
+        notify: true,
+        language: lang,
+      });
+      setPublished({
+        version: res?.version ?? ledger.quote.version + 1,
+        status: res?.status ?? q.status ?? "",
+        changeOrders: ledger.changeOrders.length,
+      });
+      setConfirming(false);
       onPublished();
     } catch (err) {
       const reason = err instanceof ApiError
@@ -215,22 +944,136 @@ function QuoteLedgerSection(
           </div>
         </div>
         {pending && !locked && (
-          <span
-            data-cy="quote-pending-badge"
-            style="display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:999px;background:#fff6e5;color:#8a5a10;font-size:11px;font-weight:800;letter-spacing:.04em;text-transform:uppercase"
-          >
-            {tFor(lang, "quotes.ledger.unpublished")}
+          <span style="display:inline-flex;align-items:center;gap:8px;flex-wrap:wrap">
+            <span
+              data-cy="quote-pending-badge"
+              style="display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:999px;background:#fff6e5;color:#8a5a10;font-size:11px;font-weight:800;letter-spacing:.04em;text-transform:uppercase"
+            >
+              {tFor(lang, "quotes.ledger.unpublished")}
+            </span>
+            {/* REQ-395 (demo M12): a quiet ghost — the customer keeps the published version */}
+            {!askDiscard && (
+              <button
+                type="button"
+                class="qopen__btn"
+                data-cy="quote-discard-draft"
+                disabled={discarding || publishing}
+                onClick={() => {
+                  setPublishErr(null);
+                  setConfirming(false);
+                  setAskDiscard(true);
+                }}
+                style="background:transparent;border-color:transparent;color:var(--fg-muted,#6b7560);padding:4px 8px;font-size:12px"
+              >
+                {tFor(lang, "quotes.ledger.discardDraft")}
+              </button>
+            )}
+            {/* REQ-693 (cycle 5, p18-7a): "Discard Version 2? Your edits are lost. [Discard] [Keep]" */}
+            {askDiscard && (
+              <span style="display:inline-flex;gap:8px;flex-wrap:wrap;align-items:center;font-size:12.5px">
+                <span
+                  data-cy="quote-discard-ask"
+                  style="color:#a83b3b;font-weight:700"
+                >
+                  {tFor(lang, "quotes.ledger.discardAsk", {
+                    n: ledger.quote.version + 1,
+                  })}
+                </span>
+                <button
+                  type="button"
+                  class="qopen__btn"
+                  data-cy="quote-discard-confirm"
+                  style="padding:4px 10px;font-size:12px;border-color:#a83b3b;color:#a83b3b"
+                  disabled={discarding || publishing}
+                  onClick={discard}
+                >
+                  {discarding
+                    ? tFor(lang, "quotes.ledger.discarding")
+                    : tFor(lang, "quotes.ledger.discardConfirm")}
+                </button>
+                <button
+                  type="button"
+                  class="qopen__btn"
+                  data-cy="quote-discard-keep"
+                  style="padding:4px 10px;font-size:12px;background:transparent;border-color:transparent;color:var(--fg-muted,#6b7560)"
+                  disabled={discarding}
+                  onClick={() => setAskDiscard(false)}
+                >
+                  {tFor(lang, "quotes.ledger.discardKeep")}
+                </button>
+              </span>
+            )}
           </span>
         )}
       </div>
 
+      {/* REQ-466 (demo m38): what Version N changes, and the draft's lines, before Publish */}
+      {pending && !locked && !confirming && (
+        <div style="margin-top:8px">
+          <div
+            data-cy="quote-pending-changes"
+            style="font-size:13px;font-weight:700;color:#8a5a10"
+          >
+            {pendingLine}
+          </div>
+          {draft && draft.lines.length > 0 && (
+            <button
+              type="button"
+              class="qopen__btn"
+              data-cy="quote-view-draft"
+              aria-expanded={showDraft}
+              onClick={() => setShowDraft(!showDraft)}
+              style="margin-top:4px;background:transparent;border-color:transparent;color:var(--brand-teal,#144852);padding:2px 0;font-size:12px"
+            >
+              {showDraft
+                ? tFor(lang, "quotes.ledger.hideDraft")
+                : tFor(lang, "quotes.ledger.viewDraft", {
+                  n: ledger.quote.version + 1,
+                })}
+            </button>
+          )}
+          {draft && showDraft && (
+            <ul
+              data-cy="quote-draft-lines"
+              style="list-style:none;margin:6px 0 0;padding:8px 12px;border-radius:10px;background:#fffaf0;border:1px dashed rgba(138,90,16,0.3)"
+            >
+              {draft.lines.map((l, i) => (
+                <li key={i} data-cy="quote-draft-line" style={rowStyle}>
+                  <span>
+                    {l.description}
+                    {l.quantity !== 1 && (
+                      <span style={` ${mutedStyle}`}>
+                        {` · ${l.quantity}${l.unit ? ` ${l.unit}` : ""}`}
+                      </span>
+                    )}
+                  </span>
+                  <span style={numStyle}>{fmtMoneyExact(l.totalCents)}</span>
+                </li>
+              ))}
+              {typeof draft.totalCents === "number" && (
+                <li
+                  data-cy="quote-draft-total"
+                  style={`${rowStyle};border-bottom:none;font-weight:800`}
+                >
+                  <span>{tFor(lang, "quotes.ledger.draftTotal")}</span>
+                  <span style={numStyle}>
+                    {fmtMoneyExact(draft.totalCents)}
+                  </span>
+                </li>
+              )}
+            </ul>
+          )}
+        </div>
+      )}
+
+      {/* REQ-462 (M26): the lock note, with the change order it points to */}
       {locked && (
-        <p
-          data-cy="quote-lock-note"
-          style={`margin:8px 0 0;font-size:12.5px;${mutedStyle}`}
-        >
-          {tFor(lang, "quotes.ledger.lockedNote")}
-        </p>
+        <SignedChangeOrder
+          lang={lang}
+          q={q}
+          ledger={ledger}
+          onChanged={onPublished}
+        />
       )}
 
       {/* Totals */}
@@ -252,6 +1095,13 @@ function QuoteLedgerSection(
             <strong style="display:block;font-size:16px;color:var(--brand-teal,#144852);font-variant-numeric:tabular-nums">
               {fmtMoneyExact(r.cents)}
             </strong>
+            {r.key === "scheduled" && summary.scheduled?.scheduledFor && (
+              <span style="display:block;font-size:11.5px">
+                {tFor(lang, "quotes.ledger.sends", {
+                  date: shortDate(summary.scheduled.scheduledFor, lang),
+                })}
+              </span>
+            )}
           </div>
         ))}
         {summary.overpaid && (
@@ -298,6 +1148,13 @@ function QuoteLedgerSection(
                     }`,
                   )}
                 </span>
+                {inv.scheduledFor && inv.status === "scheduled" && (
+                  <span style={mutedStyle}>
+                    {tFor(lang, "quotes.ledger.sends", {
+                      date: shortDate(inv.scheduledFor, lang),
+                    })}
+                  </span>
+                )}
                 {inv.dueDate && (
                   <span style={mutedStyle}>
                     {tFor(lang, "quotes.ledger.due", {
@@ -319,40 +1176,31 @@ function QuoteLedgerSection(
           ))}
       </div>
 
-      {/* Change orders */}
-      {ledger.changeOrders.length > 0 && (
+      {/* Change orders — REQ-462 (M26): each row can be edited or withdrawn */}
+      {(ledger.changeOrders.length > 0 || withdrawnCo) && (
         <div style="margin-top:14px">
           <div class="qopen__eyebrow">
             {tFor(lang, "quotes.ledger.changeOrders")}
           </div>
           {ledger.changeOrders.map((co) => (
-            <div key={co.id} data-cy="ledger-co-row" style={rowStyle}>
-              <span style="display:flex;gap:8px;flex-wrap:wrap;align-items:baseline">
-                <a
-                  href={co.url}
-                  target="_blank"
-                  rel="noopener"
-                  style={linkStyle}
-                >
-                  {co.number}
-                </a>
-                <span style={mutedStyle}>
-                  {tFor(lang, `public.doc.state.${co.status}`)}
-                </span>
-                {co.invoiceNumber && (
-                  <span style={mutedStyle}>
-                    {tFor(lang, "quotes.ledger.onInvoice", {
-                      number: co.invoiceNumber,
-                    })}
-                  </span>
-                )}
-              </span>
-              <strong style="font-variant-numeric:tabular-nums;white-space:nowrap">
-                {co.deltaAmountCents >= 0 ? "+" : "−"}
-                {fmtMoneyExact(Math.abs(co.deltaAmountCents))}
-              </strong>
-            </div>
+            <LedgerChangeOrderRow
+              key={co.id}
+              lang={lang}
+              co={co}
+              customer={coRecipient}
+              onChanged={onPublished}
+              onWithdrawn={setWithdrawnCo}
+            />
           ))}
+          {withdrawnCo && (
+            <p
+              data-cy="ledger-co-withdrawn"
+              role="status"
+              style="margin:6px 0 0;font-size:12.5px;color:var(--brand-green,#519843);font-weight:700"
+            >
+              {tFor(lang, "quotes.ledger.coWithdrawn", { number: withdrawnCo })}
+            </p>
+          )}
         </div>
       )}
 
@@ -404,18 +1252,83 @@ function QuoteLedgerSection(
             })}
           </summary>
           <ul style="margin:6px 0 0;padding-left:18px;font-size:12.5px;line-height:1.7">
-            {versions.map((v) => (
-              <li key={v.version}>
-                {versionHistoryLine(v, lang)}
-                {v.current && (
-                  <span style={` ${mutedStyle}`}>
-                    {` · ${tFor(lang, "quotes.ledger.current")}`}
-                  </span>
-                )}
-              </li>
-            ))}
+            {versions.map((v, i) => {
+              // REQ-248: what this version changed against the one before
+              const changed = i > 0
+                ? versionChangeLine(
+                  versionChanges(versions[i - 1].content, v.content),
+                  lang,
+                )
+                : "";
+              return (
+                <li key={v.version}>
+                  {versionHistoryLine(v, lang)}
+                  {v.current && (
+                    <span style={` ${mutedStyle}`}>
+                      {` · ${tFor(lang, "quotes.ledger.current")}`}
+                    </span>
+                  )}
+                  {changed && (
+                    <div
+                      data-cy="quote-version-changes"
+                      style={`font-size:12px;${mutedStyle}`}
+                    >
+                      {changed}
+                    </div>
+                  )}
+                </li>
+              );
+            })}
           </ul>
         </details>
+      )}
+
+      {/* REQ-304: the publish preview — what Version N changes, Publish / Cancel */}
+      {pending && !locked && confirming && (
+        <div
+          data-cy="quote-publish-preview"
+          style="margin-top:14px;padding:12px 14px;border:1px solid rgba(26,83,92,0.18);border-radius:10px;background:rgba(26,83,92,0.04)"
+        >
+          <div style={`font-size:13.5px;font-weight:800;${numStyle}`}>
+            {tFor(lang, "quotes.ledger.publishPreviewTitle", {
+              n: ledger.quote.version + 1,
+            })}
+          </div>
+          <div
+            data-cy="quote-publish-changes"
+            style="margin-top:4px;font-size:13px;font-weight:700"
+          >
+            {previewLine ||
+              (otherChanged
+                ? tFor(lang, "quotes.ledger.publishOtherChanges")
+                : tFor(lang, "quotes.ledger.nothingToPublish"))}
+          </div>
+          <div style={`margin-top:2px;font-size:12px;${mutedStyle}`}>
+            {tFor(lang, "quotes.ledger.publishPreviewNote")}
+          </div>
+          <div class="qopen__actions" style="margin-top:10px">
+            <button
+              type="button"
+              class="qopen__btn qopen__btn--primary"
+              data-cy="quote-publish-confirm"
+              disabled={publishing || nothingToPublish}
+              onClick={publish}
+            >
+              {publishing
+                ? tFor(lang, "quotes.ledger.publishing")
+                : tFor(lang, "quotes.ledger.publishConfirm")}
+            </button>
+            <button
+              type="button"
+              class="qopen__btn"
+              data-cy="quote-publish-cancel"
+              disabled={publishing}
+              onClick={() => setConfirming(false)}
+            >
+              {tFor(lang, "quotes.ledger.publishCancel")}
+            </button>
+          </div>
+        </div>
       )}
 
       {/* Actions: one solid primary, the rest outlined */}
@@ -423,14 +1336,18 @@ function QuoteLedgerSection(
         class="qopen__actions"
         style="margin-top:14px;align-items:center"
       >
-        {pending && !locked
+        {pending && !locked && !confirming
           ? (
             <button
               type="button"
               class="qopen__btn qopen__btn--primary"
               data-cy="quote-publish"
               disabled={publishing}
-              onClick={publish}
+              onClick={() => {
+                setPublishErr(null);
+                setAskDiscard(false);
+                setConfirming(true);
+              }}
             >
               {publishing
                 ? tFor(lang, "quotes.ledger.publishing")
@@ -438,7 +1355,8 @@ function QuoteLedgerSection(
             </button>
           )
           : null}
-        {summary.canCreateNextInvoice
+        {/* REQ-686 (cycle 5, m44): nothing to invoice on an unsent draft */}
+        {!summary.issued ? null : summary.canCreateNextInvoice
           ? (
             <a
               class={`qopen__btn${
@@ -456,18 +1374,25 @@ function QuoteLedgerSection(
               aria-disabled="true"
               class="qopen__btn"
               style="opacity:.55;cursor:not-allowed"
-              title={tFor(lang, "quotes.ledger.fullyInvoiced")}
+              title={fullyInvoicedText}
             >
               {tFor(lang, "quotes.ledger.createNextInvoice")}
             </span>
           )}
-        {!summary.canCreateNextInvoice && (
-          <span style={`font-size:12px;${mutedStyle}`}>
-            {tFor(lang, "quotes.ledger.fullyInvoiced")}
+        {summary.issued && !summary.canCreateNextInvoice && (
+          <span
+            data-cy="quote-fully-invoiced"
+            style={`font-size:12px;${mutedStyle}`}
+          >
+            {fullyInvoicedText}
           </span>
         )}
       </div>
-      {published && (
+      {publishedNoteVisible(published, {
+        version: ledger.quote.version,
+        status: q.status ?? "",
+        changeOrders: ledger.changeOrders.length,
+      }) && (
         <p
           data-cy="quote-published-note"
           style="margin:8px 0 0;font-size:12.5px;color:var(--brand-green,#519843);font-weight:700"
@@ -487,6 +1412,211 @@ function QuoteLedgerSection(
   );
 }
 
+/** REQ-315 (demo-loop cycle 1, B2) — "Edit → Version N+1" on an issued,
+ *  unsigned quote: description / qty / price per line, add or remove lines,
+ *  a live new total. Save PUTs the lines + total; the controller files them
+ *  as the pending revision (REQ-201), and the panel's "Publish revision"
+ *  takes over. The customer keeps seeing the published version meanwhile. */
+function QuoteLineEditor(
+  { lang, q, onCancel, onSaved }: {
+    lang: "en" | "es";
+    q: BackendQuoteCard;
+    onCancel: () => void;
+    onSaved: (version: number) => void;
+  },
+) {
+  const [lines, setLines] = useState<EditableQuoteLine[]>(() =>
+    editableLines(q)
+  );
+  // REQ-561 (demo M28): the job-detail bullets the customer reads.
+  const [initialDetails] = useState(() => editableJobDetails(q));
+  const [details, setDetails] = useState(initialDetails);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const n = nextVersionOf(q);
+  const total = editorTotalCents(lines);
+  const field =
+    "padding:7px 9px;border:1px solid rgba(26,83,92,0.22);border-radius:8px;font:inherit;font-size:13px;min-width:0;width:100%;box-sizing:border-box;background:#fff";
+  const grid =
+    "display:grid;grid-template-columns:minmax(0,1fr) 64px 110px auto;gap:6px;align-items:center";
+  const mutedStyle = "color:var(--fg-muted,#6b7560)";
+
+  function patch(
+    i: number,
+    key: "description" | "quantity" | "price",
+    value: string,
+  ) {
+    setLines((ls) => ls.map((l, j) => (j === i ? { ...l, [key]: value } : l)));
+  }
+
+  async function save() {
+    if (busy) return;
+    const body = linesPatch(lines);
+    if (!body.ok) {
+      setErr(tFor(lang, "quotesPage.edit.invalid"));
+      return;
+    }
+    setBusy(true);
+    setErr(null);
+    try {
+      await quotesClient.update(q.id, {
+        lineItems: body.lineItems,
+        estimatedTotal: body.estimatedTotal,
+        ...jobDetailsPatch(initialDetails, details),
+      });
+      onSaved(n);
+    } catch {
+      setErr(tFor(lang, "quotesPage.edit.error"));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div
+      class="qopen__edit"
+      data-cy="quote-edit-form"
+      style="margin-top:12px;padding:12px;border:1px solid rgba(26,83,92,0.16);border-radius:12px;background:rgba(26,83,92,0.03)"
+    >
+      <p style={`margin:0 0 8px;font-size:12.5px;${mutedStyle}`}>
+        {tFor(lang, "quotesPage.edit.heading", { n })}
+      </p>
+      <label style="display:block;margin:0 0 10px">
+        <span
+          style={`display:block;font-size:11px;font-weight:700;${mutedStyle}`}
+        >
+          {tFor(lang, "quotesPage.edit.jobDetails")}
+        </span>
+        <textarea
+          data-cy="quote-edit-job-details"
+          rows={Math.min(8, Math.max(3, details.split("\n").length + 1))}
+          value={details}
+          disabled={busy}
+          onInput={(e) => setDetails((e.target as HTMLTextAreaElement).value)}
+          style={`${field};margin-top:4px;resize:vertical;line-height:1.45`}
+        />
+        <span
+          style={`display:block;margin-top:2px;font-size:11px;${mutedStyle}`}
+        >
+          {tFor(lang, "quotesPage.edit.jobDetailsHint")}
+        </span>
+      </label>
+      <div style={`${grid};font-size:11px;font-weight:700;${mutedStyle}`}>
+        <span>{tFor(lang, "quotesPage.edit.description")}</span>
+        <span>{tFor(lang, "quotesPage.edit.qty")}</span>
+        <span>{tFor(lang, "quotesPage.edit.price")}</span>
+        <span />
+      </div>
+      {lines.map((l, i) => (
+        <div key={i} style={`${grid};margin-top:6px`}>
+          <input
+            type="text"
+            data-cy={`quote-edit-line-desc-${i}`}
+            aria-label={`${tFor(lang, "quotesPage.edit.description")} ${i + 1}`}
+            placeholder={tFor(lang, "quotesPage.edit.descriptionPlaceholder")}
+            value={l.description}
+            disabled={busy}
+            onInput={(e) =>
+              patch(i, "description", (e.target as HTMLInputElement).value)}
+            style={field}
+          />
+          <input
+            type="number"
+            min="1"
+            step="1"
+            data-cy={`quote-edit-line-qty-${i}`}
+            aria-label={`${tFor(lang, "quotesPage.edit.qty")} ${i + 1}`}
+            placeholder={tFor(lang, "quotesPage.edit.qty")}
+            value={l.quantity}
+            disabled={busy}
+            onInput={(e) =>
+              patch(i, "quantity", (e.target as HTMLInputElement).value)}
+            style={field}
+          />
+          <input
+            type="number"
+            step="0.01"
+            inputMode="decimal"
+            data-cy={`quote-edit-line-price-${i}`}
+            aria-label={`${tFor(lang, "quotesPage.edit.price")} ${i + 1}`}
+            placeholder={tFor(lang, "quotesPage.edit.pricePlaceholder")}
+            value={l.price}
+            disabled={busy}
+            onInput={(e) =>
+              patch(i, "price", (e.target as HTMLInputElement).value)}
+            style={field}
+          />
+          <button
+            type="button"
+            class="qopen__btn"
+            data-cy={`quote-edit-line-remove-${i}`}
+            disabled={busy || lines.length === 1}
+            onClick={() => setLines((ls) => ls.filter((_, j) => j !== i))}
+          >
+            {tFor(lang, "quotesPage.edit.removeLine")}
+          </button>
+        </div>
+      ))}
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-top:10px;flex-wrap:wrap">
+        <button
+          type="button"
+          class="qopen__btn"
+          data-cy="quote-edit-add-line"
+          disabled={busy}
+          onClick={() =>
+            setLines((ls) => [
+              ...ls,
+              { description: "", quantity: "1", unit: "ea", price: "" },
+            ])}
+        >
+          {tFor(lang, "quotesPage.edit.addLine")}
+        </button>
+        <strong
+          data-cy="quote-edit-total"
+          style="font-variant-numeric:tabular-nums;color:var(--brand-teal,#144852)"
+        >
+          {tFor(lang, "quotesPage.edit.total", {
+            amount: fmtMoneyExact(total),
+          })}
+        </strong>
+      </div>
+      {/* One solid primary (save), the cancel a quiet ghost. */}
+      <div class="qopen__actions" style="margin-top:10px;align-items:center">
+        <button
+          type="button"
+          class="qopen__btn qopen__btn--primary"
+          data-cy="quote-edit-save"
+          disabled={busy}
+          onClick={save}
+          style="background:var(--brand-teal,#144852);border-color:var(--brand-teal,#144852);color:#fff"
+        >
+          {busy
+            ? tFor(lang, "quotesPage.edit.saving")
+            : tFor(lang, "quotesPage.edit.save", { n })}
+        </button>
+        <button
+          type="button"
+          class="qopen__btn"
+          data-cy="quote-edit-cancel"
+          disabled={busy}
+          onClick={onCancel}
+          style="background:transparent;border-color:transparent;color:var(--fg-muted,#6b7560)"
+        >
+          {tFor(lang, "common.cancel")}
+        </button>
+      </div>
+      {err && (
+        <p
+          role="alert"
+          style="margin:8px 0 0;font-size:12.5px;color:#a83b3b;font-weight:600"
+        >
+          {err}
+        </p>
+      )}
+    </div>
+  );
+}
+
 /** Detail surface for /quotes?open=<id> — job name, lifecycle status badge,
  *  full-quote actions, and the "emailed to … / texted to …" receipt strip
  *  built from the per-document comms trail (roadmap p.8). */
@@ -501,6 +1631,27 @@ function OpenQuotePanel(
   },
 ) {
   const [copied, setCopied] = useState(false);
+  // REQ-315 (B2): "Edit → Version N+1" on an issued, unsigned quote — the
+  // editor and its "saved" note reset whenever another quote is opened.
+  const [editing, setEditing] = useState(false);
+  const [savedVersion, setSavedVersion] = useState<number | null>(null);
+  // REQ-570 (demo m41): Send ▾ — its menu, the dialog's channel, the outcome.
+  const [sendMenuOpen, setSendMenuOpen] = useState(false);
+  const [sendChannel, setSendChannel] = useState<SendChannel | null>(null);
+  const [sendResult, setSendResult] = useState<PanelSendResult | null>(null);
+  // REQ-686 (cycle 5, m44): "Finish & send" on a draft — opening its thread.
+  const [finishing, setFinishing] = useState(false);
+  const [finishErr, setFinishErr] = useState(false);
+  const openedId = state.quote?.id;
+  useEffect(() => {
+    setFinishing(false);
+    setFinishErr(false);
+    setEditing(false);
+    setSavedVersion(null);
+    setSendMenuOpen(false);
+    setSendChannel(null);
+    setSendResult(null);
+  }, [openedId]);
 
   if (state.loading) {
     return (
@@ -518,16 +1669,24 @@ function OpenQuotePanel(
     );
   }
 
-  const badge = badgeStatusFor(q);
+  const badge = quoteBadgeStatus(q);
   const quoteId = q.id;
-  const title = q.jobName?.trim() || q.summary ||
+  const agreed = panelAgreedTotal(q, state.ledger); // REQ-679
+  // REQ-394 (cycle 2, p9): the title and summary in the app's language.
+  const title = quoteJobTitle(q, lang) ??
     tFor(lang, "quotesPage.untitledQuote");
+  const summaryText = q.summaryByLang?.[lang]?.trim() || q.summary;
+  // REQ-315: while a revision waits, "Publish revision" is the one primary.
+  const hasPending = Boolean(
+    q.pendingRevision && Object.keys(q.pendingRevision).length > 0,
+  );
 
   async function copyLink() {
     try {
       // Always the FULL public quote URL (/q/:id) — never a summary variant.
+      // REQ-586 (cycle 4, M11): in the language the quote went out in.
       await navigator.clipboard.writeText(
-        `${globalThis.location.origin}/q/${quoteId}`,
+        customerLinkUrl(globalThis.location.origin, quoteId, quoteSendLang(q)),
       );
       setCopied(true);
       setTimeout(() => setCopied(false), 1500);
@@ -559,8 +1718,13 @@ function OpenQuotePanel(
           <I d={ICN.x} size={16} sw={2.5} />
         </button>
       </div>
-      {q.summary && q.jobName?.trim() && (
-        <p class="qopen__summary">{q.summary}</p>
+      {summaryText && q.jobName?.trim() && (
+        <p class="qopen__summary">{summaryText}</p>
+      )}
+      {q.isSample && (
+        <p class="qopen__summary" data-cy="quote-sample-note">
+          {tFor(lang, "quotesPage.open.sampleNote")}
+        </p>
       )}
       {q.customerName && (
         <p class="qopen__client" style="font-size:13px;color:var(--fg-muted)">
@@ -568,21 +1732,150 @@ function OpenQuotePanel(
         </p>
       )}
       <div class="qopen__meta">
-        <div class="qopen__amount">{fmtMoney(q.estimatedTotal ?? 0)}</div>
+        {
+          /* REQ-679 (cycle 5, M19): the agreed total — the quote plus its
+            approved change orders, the ledger's Agreed row — with REQ-565's
+            "incl. +$X in change orders" line */
+        }
+        <div class="qopen__amount">
+          {fmtMoney(agreed.totalCents)}
+          {agreed.changeOrdersCents !== 0 && (
+            <div class="qopen__amount-incl" data-cy="quote-panel-incl-co">
+              {tFor(lang, "quotesPage.open.inclChangeOrders", {
+                amount: `${agreed.changeOrdersCents < 0 ? "−" : "+"}${
+                  fmtMoneyExact(Math.abs(agreed.changeOrdersCents))
+                }`,
+              })}
+            </div>
+          )}
+        </div>
         <div class="qopen__actions">
-          <button type="button" class="qopen__btn" onClick={copyLink}>
-            {copied
-              ? tFor(lang, "quotesPage.open.linkCopied")
-              : tFor(lang, "quotesPage.open.copyLink")}
-          </button>
+          {
+            /* REQ-570 (demo m41): send it from here — the chat's send dialog
+              and SendQuote — or preview it as the customer will see it.
+              REQ-614 (cycle 4, m16): the onboarding sample has no customer —
+              nothing here shares or sends it (REQ-360 did the card's back). */
+          }
+          {
+            /* REQ-686 (cycle 5, m44): a draft is finished and sent in its own
+              thread (terms wizard / Ready-to-send) — one primary that goes
+              there. m45: while a revision waits there is no header Send —
+              the ledger's "Publish revision and notify customer" is it. */
+          }
+          {panelSendAction(q) === "finish" && (
+            <button
+              type="button"
+              class="qopen__btn qopen__btn--primary"
+              data-cy="quote-panel-finish"
+              disabled={finishing}
+              onClick={async () => {
+                if (finishing) return;
+                setFinishing(true);
+                setFinishErr(false);
+                try {
+                  globalThis.location.assign(
+                    await finishDraftPath(q.id, q.customerId, {
+                      list: () => assistantClient.conversations(200),
+                      start: (body) => assistantClient.startConversation(body),
+                    }),
+                  );
+                } catch {
+                  setFinishErr(true);
+                  setFinishing(false);
+                }
+              }}
+            >
+              <I d={ICN.send} size={13} sw={2.4} />
+              {tFor(lang, "quotesPage.open.finishSend")}
+            </button>
+          )}
+          {panelSendAction(q) === "send" && (
+            <div class="qopen-send">
+              <button
+                type="button"
+                class="qopen__btn"
+                data-cy="quote-panel-send"
+                aria-haspopup="menu"
+                aria-expanded={sendMenuOpen ? "true" : "false"}
+                aria-label={tFor(lang, "quotesPage.open.chooseSend")}
+                onClick={() => setSendMenuOpen((o) => !o)}
+              >
+                <I d={ICN.send} size={13} sw={2.4} />
+                {tFor(lang, "quotesPage.open.send")}
+                <I d={ICN.chev} size={11} sw={2.4} />
+              </button>
+              {sendMenuOpen && (
+                <div
+                  class="qopen-send__menu"
+                  role="menu"
+                  data-cy="quote-panel-send-menu"
+                >
+                  {([
+                    ["both", "asstChat.preview.menuBoth", ICN.send],
+                    ["sms", "asstChat.preview.menuSms", ICN.phone],
+                    ["email", "asstChat.preview.menuEmail", ICN.mail],
+                  ] as const).map(([ch, key, icon]) => (
+                    <button
+                      key={ch}
+                      type="button"
+                      role="menuitem"
+                      class="qopen-send__item"
+                      data-cy={`quote-panel-send-${ch}`}
+                      onClick={() => {
+                        setSendMenuOpen(false);
+                        setSendResult(null);
+                        setSendChannel(ch);
+                      }}
+                    >
+                      <I d={icon} size={13} sw={2.4} />
+                      <span>{tFor(lang, key)}</span>
+                    </button>
+                  ))}
+                  <a
+                    role="menuitem"
+                    class="qopen-send__item"
+                    data-cy="quote-panel-send-preview"
+                    href={customerLinkPath(q.id, quoteSendLang(q))}
+                    target="_blank"
+                    rel="noopener"
+                    onClick={() => setSendMenuOpen(false)}
+                  >
+                    <I d={ICN.eye} size={13} sw={2.4} />
+                    <span>{tFor(lang, "asstChat.preview.menuPreview")}</span>
+                  </a>
+                </div>
+              )}
+            </div>
+          )}
+          {!q.isSample && (
+            <button type="button" class="qopen__btn" onClick={copyLink}>
+              {copied
+                ? tFor(lang, "quotesPage.open.linkCopied")
+                : tFor(lang, "quotesPage.open.copyLink")}
+            </button>
+          )}
           <a
             class="qopen__btn"
-            href={`/q/${q.id}`}
+            href={customerLinkPath(q.id, quoteSendLang(q))}
             target="_blank"
             rel="noopener"
           >
             {tFor(lang, "quotesPage.open.viewAsClient")}
           </a>
+          {/* REQ-315 (B2): a sent, unsigned quote can be repriced here. */}
+          {canReviseQuote(q) && !editing && (
+            <button
+              type="button"
+              class={`qopen__btn${hasPending ? "" : " qopen__btn--primary"}`}
+              data-cy="quote-edit"
+              onClick={() => {
+                setSavedVersion(null);
+                setEditing(true);
+              }}
+            >
+              {tFor(lang, "quotesPage.open.edit", { n: nextVersionOf(q) })}
+            </button>
+          )}
           {
             /* UX-02: the won quote's obvious next step — never a dead end.
               REQ-205: once the ledger is loaded its own CTA takes over. */
@@ -601,6 +1894,86 @@ function OpenQuotePanel(
           )}
         </div>
       </div>
+      {finishErr && (
+        <p
+          class="qopen-send__result qopen-send__result--failed"
+          data-cy="quote-panel-finish-error"
+          role="alert"
+        >
+          {tFor(lang, "quotesPage.open.finishSendError")}
+        </p>
+      )}
+      {sendChannel && (
+        <QuoteSendDialog
+          lang={lang}
+          quoteId={q.id}
+          customer={state.customer ??
+            (q.customerName
+              ? { id: q.customerId, name: q.customerName }
+              : null)}
+          initialChannel={sendChannel}
+          onClose={() => setSendChannel(null)}
+          onSent={(r) => {
+            setSendChannel(null);
+            setSendResult(r);
+            onRefresh();
+          }}
+        />
+      )}
+      {sendResult && (
+        <p
+          class={`qopen-send__result${
+            sendResult.delivered ? "" : " qopen-send__result--failed"
+          }`}
+          data-cy="quote-panel-send-result"
+          role="status"
+        >
+          {sendResult.delivered
+            ? tFor(lang, "quotesPage.open.sentTo", {
+              to: [sendResult.outcome?.emailedTo, sendResult.outcome?.textedTo]
+                .filter(Boolean).join(" · "),
+            })
+            : tFor(lang, "quotesPage.open.sendFailed", {
+              reason: sendResult.outcome?.emailFailureReason ||
+                sendResult.outcome?.smsFailureReason || "",
+            })}
+        </p>
+      )}
+      {editing && (
+        <QuoteLineEditor
+          lang={lang}
+          q={q}
+          onCancel={() => setEditing(false)}
+          onSaved={(n) => {
+            setEditing(false);
+            setSavedVersion(n);
+            onRefresh();
+          }}
+        />
+      )}
+      {/* REQ-395 (demo m27): only while that unpublished version still waits */}
+      {savedVersion !== null && hasPending && !editing && (
+        <p
+          data-cy="quote-edit-saved"
+          style="margin:10px 0 0;font-size:12.5px;color:var(--brand-green,#519843);font-weight:700"
+        >
+          {tFor(lang, "quotesPage.edit.saved", {
+            n: savedVersion,
+            name: q.customerName ?? tFor(lang, "quotesPage.edit.theCustomer"),
+          })}
+        </p>
+      )}
+      {
+        /* REQ-701 (cycle 5, M21): what the client asked, and the answer —
+          where the notice "… asked a question" leads (#questions). */
+      }
+      <QuoteInquiries
+        lang={lang}
+        quoteId={q.id}
+        inquiries={state.inquiries}
+        customer={state.customer}
+        customerName={q.customerName}
+      />
       {(badge === "accepted" || state.receipts.length > 0 || state.viewed) && (
         <div class="qopen__receipts">
           {badge === "accepted" && (
@@ -620,7 +1993,8 @@ function OpenQuotePanel(
                 r.channel === "email"
                   ? "quotesPage.open.receipt.emailedTo"
                   : "quotesPage.open.receipt.textedTo",
-                { to: r.to },
+                // REQ-593 (cycle 4, m12): a number reads like one
+                { to: r.channel === "email" ? r.to : formatPhoneDisplay(r.to) },
               )}
             </div>
           ))}
@@ -632,7 +2006,12 @@ function OpenQuotePanel(
           q={q}
           ledger={state.ledger}
           versions={state.versions}
-          onPublished={onRefresh}
+          onPublished={() => {
+            // REQ-395 (demo m27): the "Saved as unpublished Version N" line
+            // is stale once that version is published (or discarded).
+            setSavedVersion(null);
+            onRefresh();
+          }}
         />
       )}
     </section>
@@ -647,12 +2026,32 @@ const INITIAL: State = {
   insight: null,
 };
 
-export default function QuotesPage(_props: { lang?: "en" | "es" }) {
+export default function QuotesPage(
+  props: { lang?: "en" | "es"; seed?: QuotesSeed | null },
+) {
   // Self-source the live UI language: reading langSignal.value during render
   // makes this island re-render when SettingsPage flips the language. The
   // optional `lang` prop is an ignored SSR seed.
   const lang = langSignal.value;
-  const [s, setS] = useState<State>(INITIAL);
+  // REQ-321: the periodic re-read words its cards in the language live now
+  const langRef = useRef(lang);
+  langRef.current = lang;
+  // REQ-471 (demo-loop c3, p8-pair2-d): the route reads the pipeline on the
+  // server and hands it in, so the first paint (SSR and hydration alike)
+  // shows the cards instead of a skeleton waiting on a client fetch. No seed
+  // (the server read failed) → the skeleton + fetch, as before.
+  const [s, setS] = useState<State>(() =>
+    props.seed
+      ? {
+        loading: false,
+        error: null,
+        quotes: props.seed.cards.map((c) => mapCard(c, lang)),
+        winRate: props.seed.winRate,
+        insight: props.seed.insight,
+        quoteLimit: props.seed.quoteLimit ?? null,
+      }
+      : INITIAL
+  );
 
   // /quotes?open=<id> deep link — seeded from the URL; UX-08: also settable
   // from the list (tapping a decided row opens the same panel).
@@ -667,9 +2066,16 @@ export default function QuotesPage(_props: { lang?: "en" | "es" }) {
     viewed: null,
     ledger: null,
     versions: [],
+    inquiries: [],
   });
   // REQ-201: bumped after a publish so the panel re-reads quote + ledger.
+  // REQ-396: also bumped by the 30 s list re-read when the open quote's card
+  // moved under the panel (the client signed / declined / viewed it).
   const [openTick, setOpenTick] = useState(0);
+  const openIdRef = useRef(openId);
+  openIdRef.current = openId;
+  const openQRef = useRef(openQ);
+  openQRef.current = openQ;
 
   function openQuote(id: string) {
     setOpenQ({
@@ -679,11 +2085,14 @@ export default function QuotesPage(_props: { lang?: "en" | "es" }) {
       viewed: null,
       ledger: null,
       versions: [],
+      inquiries: [],
     });
     setOpenId(id);
     try {
       const url = new URL(globalThis.location.href);
       url.searchParams.set("open", id);
+      // REQ-701: another quote opens at its top, not at its questions
+      url.hash = "";
       globalThis.history.replaceState(null, "", url.toString());
     } catch { /* history unavailable — the panel still opens */ }
   }
@@ -705,20 +2114,35 @@ export default function QuotesPage(_props: { lang?: "en" | "es" }) {
         .catch(() => ({ opens: [] as { at: string }[] })),
       // UX-08: GET /quotes/:id is the raw row (customerId only) — join the
       // customer so the panel can say WHO the deal is with.
-      api.get<{ id: string; name?: string }[]>("/customers")
-        .catch(() => [] as { id: string; name?: string }[]),
+      api.get<SendDialogCustomer[]>("/customers")
+        .catch(() => [] as SendDialogCustomer[]),
       // REQ-205 / REQ-201: the documents ledger and the version history.
       quotesClient.ledger(openId).catch(() => null as QuoteLedger | null),
       quotesClient.versions(openId).catch(() => [] as QuoteVersion[]),
+      // REQ-701 (cycle 5, M21): the questions the client sent on it.
+      quotesClient.inquiries(openId).catch(() => [] as QuoteInquiry[]),
     ]).then((
-      [quoteRaw, messages, me, opensRes, customersList, ledger, versions],
+      [
+        quoteRaw,
+        messages,
+        me,
+        opensRes,
+        customersList,
+        ledger,
+        versions,
+        inquiries,
+      ],
     ) => {
       if (!alive) return;
       let quote = quoteRaw as BackendQuoteCard | null;
-      if (quote && !quote.customerName && quote.customerId) {
-        const found = (Array.isArray(customersList) ? customersList : [])
-          .find((c) => c.id === quote!.customerId);
-        if (found?.name) quote = { ...quote, customerName: found.name };
+      // REQ-570 (m41): the customer row also carries the contact on file
+      // the panel's send dialog tags channels by.
+      const customer = quote?.customerId
+        ? (Array.isArray(customersList) ? customersList : [])
+          .find((c) => c.id === quote!.customerId) ?? null
+        : null;
+      if (quote && !quote.customerName && customer?.name) {
+        quote = { ...quote, customerName: customer.name };
       }
       const receipts = classifyReceipts(
         Array.isArray(messages) ? messages : [],
@@ -741,6 +2165,8 @@ export default function QuotesPage(_props: { lang?: "en" | "es" }) {
           ? ledger
           : null,
         versions: Array.isArray(versions) ? versions : [],
+        customer,
+        inquiries: Array.isArray(inquiries) ? inquiries : [],
       });
     });
     return () => {
@@ -751,21 +2177,29 @@ export default function QuotesPage(_props: { lang?: "en" | "es" }) {
   // UX-08: once the opened panel has data, make sure it is actually on
   // screen — at 390px it renders below the hero + 4 stacked KPI cells and a
   // deep link used to land the user on a viewport that never showed it.
+  // REQ-701 (cycle 5, M21): a #questions link (the feed row, the alert, the
+  // chat) lands on the client's questions, not the panel's top.
   useEffect(() => {
     if (!openId || openQ.loading || !openQ.quote) return;
-    document.querySelector("[data-cy=quote-open-panel]")?.scrollIntoView({
-      block: "start",
-      behavior: "auto",
-    });
+    const questions = globalThis.location?.hash === `#${QUESTIONS_ANCHOR}`
+      ? document.getElementById(QUESTIONS_ANCHOR)
+      : null;
+    (questions ?? document.querySelector("[data-cy=quote-open-panel]"))
+      ?.scrollIntoView({ block: "start", behavior: "auto" });
   }, [openId, openQ.loading, openQ.quote?.id]);
 
-  useEffect(() => {
+  // REQ-304 (demo M27): the cards / hero / KPI loader is a function, not a
+  // mount-only effect — the panel calls it again after a publish (or any
+  // money-changing mutation) so the pipeline's totals follow without a
+  // reload. Returns a cancel so a stale answer never lands.
+  function loadPipeline(): () => void {
     let alive = true;
     Promise.all([
       quotesClient.list().catch(() => [] as BackendQuoteCard[]),
       quotesClient.winRate(90).catch(() => null as WinRate | null),
       quotesClient.insight().catch(() => null as Insight | null),
-    ]).then(([cards, winRate, insight]) => {
+      quotesClient.allowance().catch(() => null), // REQ-778
+    ]).then(([cards, winRate, insight, allowance]) => {
       if (!alive) return;
       const safeCards = Array.isArray(cards) ? cards : [];
       setS({
@@ -774,6 +2208,7 @@ export default function QuotesPage(_props: { lang?: "en" | "es" }) {
         quotes: safeCards.map((c) => mapCard(c, lang)),
         winRate,
         insight,
+        quoteLimit: quoteLimitOf(allowance),
       });
     }).catch((err: Error) => {
       if (!alive) return;
@@ -782,7 +2217,62 @@ export default function QuotesPage(_props: { lang?: "en" | "es" }) {
     return () => {
       alive = false;
     };
-  }, [lang]);
+  }
+
+  useEffect(() => loadPipeline(), [lang]);
+
+  // REQ-321 (demo M14): the list above is read once at mount, so a quote
+  // the customer signed in another tab stayed "Out for response" until a
+  // manual reload. Re-read it every 30 s through REQ-221's scheduler (hidden
+  // tabs wait, one catch-up when shown) and on the window's focus. A failed
+  // re-read keeps the last list; the first paint stays loadPipeline's.
+  // Reconciled with REQ-304 on demo-fixes: one scheduler per mount (not an
+  // effect keyed on [lang]) — a language switch re-runs loadPipeline, and
+  // this re-read words the cards in the language live at that moment.
+  useEffect(() => {
+    let alive = true;
+    const refresh = async () => {
+      const [cards, winRate] = await Promise.all([
+        quotesClient.list(),
+        quotesClient.winRate(90).catch(() => null as WinRate | null),
+      ]);
+      if (!alive || !Array.isArray(cards)) return;
+      // REQ-396 (demo-loop c2 M13): the open panel reads its quote once per
+      // [openId, openTick]; when the list says the open quote changed (the
+      // client signed it while the panel said "Sent · Out for response"),
+      // re-get it so the badge, the version and the actions follow.
+      const openNow = openIdRef.current;
+      const shown = openQRef.current;
+      if (
+        openNow && !shown.loading &&
+        openQuoteMoved(shown.quote, cards.find((c) => c.id === openNow))
+      ) setOpenTick((t) => t + 1);
+      setS((prev) =>
+        prev.loading || prev.error ? prev : {
+          ...prev,
+          quotes: cards.map((c) => mapCard(c, langRef.current)),
+          winRate: winRate ?? prev.winRate,
+        }
+      );
+    };
+    const stop = startListRefresh(refresh, 30_000);
+    // REQ-493 (demo-loop c3 m7): the client signed in another tab and this
+    // one sat on "Sent" / "Edit → Version 3" until the 30 s re-read — a tab
+    // that is only switched to fires no focus. The change feed re-reads now
+    // (the open panel follows its card, above); a moved invoice also re-reads
+    // an open panel, whose ledger lists the invoices.
+    const unfollow = followChanges(isDocChange, refresh);
+    const unfollowLedger = followChanges(
+      (c) => c.entityType === "invoice" && !!openIdRef.current,
+      () => setOpenTick((t) => t + 1),
+    );
+    return () => {
+      alive = false;
+      stop();
+      unfollow();
+      unfollowLedger();
+    };
+  }, []);
 
   if (s.loading) {
     return (
@@ -810,21 +2300,22 @@ export default function QuotesPage(_props: { lang?: "en" | "es" }) {
   const real = quotes.filter(isReal);
 
   // Card lists for the tracks (samples included — the card renders):
-  const outCards = quotes.filter((q) =>
-    ["sent", "opened", "cooling", "stale"].includes(q.stage)
-  );
-  const draftCards = quotes.filter((q) => q.stage === "draft");
+  // REQ-236: an undelivered quote is never "out for response".
+  const outCards = quotes.filter((q) => OUT_STAGES.includes(q.stage));
+  const draftCards = quotes.filter((q) => DRAFT_TRACK_STAGES.includes(q.stage));
   const decidedCards = quotes.filter((q) => ["won", "lost"].includes(q.stage));
 
-  // Aggregates (real quotes only):
-  const open = real.filter((q) =>
-    ["draft", "sent", "opened", "cooling", "stale"].includes(q.stage)
-  );
-  const openTotal = open.reduce((acc, q) => acc + q.value, 0);
-  const stale = real.filter((q) => q.stage === "stale");
+  // Aggregates (real quotes only). REQ-404 (demo cycle 2, m13): the hero's
+  // money and client count are what actually went out — unsent drafts are
+  // reported apart, never as "work sitting with clients".
+  const heroNums = quotesHeroNumbers(real);
   const out = outCards.filter(isReal);
+  const outCounts = sampleTrackCounts(outCards);
   const outVal = out.reduce((acc, q) => acc + q.value, 0);
   const drafts = draftCards.filter(isReal);
+  // REQ-360 (m11): the sample is a draft — the Drafting header says it is
+  // there instead of "0 quotes" over its card.
+  const draftCounts = sampleTrackCounts(draftCards);
   const decided = decidedCards.filter(isReal);
 
   // Inner sort: opened > sent > cooling > stale within "Out for response".
@@ -849,16 +2340,31 @@ export default function QuotesPage(_props: { lang?: "en" | "es" }) {
         // P-37: "empty" means zero REAL quotes TOTAL (open or resolved) —
         // the giant empty-state hero never shouts above a real card.
         totalCount={real.length}
-        openCount={open.length}
-        openTotal={openTotal}
-        staleCount={stale.length}
-        // Only count quotes with a real customer link. Two unlinked quotes
-        // shouldn't collapse into a single phantom "—" client (#31).
-        clientCount={new Set(
-          open.map((q) => q.customerId).filter((id): id is string =>
-            Boolean(id)
-          ),
-        ).size}
+        openCount={heroNums.outCount}
+        openTotal={heroNums.outTotal}
+        staleCount={heroNums.staleCount}
+        // REQ-243: count clients from the same field the card shows (the
+        // linked customer, else the card's name). Placeholder "—" names count
+        // for nobody, so unlinked quotes never become a phantom client (#31).
+        // REQ-404: over the OUT quotes only (quotesHeroNumbers).
+        clientCount={heroNums.outClients}
+        draftCount={heroNums.draftCount}
+        draftTotal={heroNums.draftTotal}
+        // REQ-481 (m10): signed/lost history, failed sends, and change
+        // orders waiting on a client all change what the headline says.
+        decidedCount={heroNums.decidedCount}
+        undeliveredCount={heroNums.undeliveredCount}
+        undeliveredTotal={heroNums.undeliveredTotal}
+        // REQ-760 (cycle 5v2, m14): drafts the server says are ready to send.
+        readyCount={heroNums.readyCount}
+        // REQ-778 (cycle dv1, d8): Monster Free's five quotes are used up.
+        quoteLimit={s.quoteLimit}
+        pendingChangeOrders={real.flatMap((q) =>
+          (q.pendingChangeOrders ?? []).map((number) => ({
+            number,
+            client: q.client,
+          }))
+        )}
       />
       <QuotesKpis
         lang={lang}
@@ -874,12 +2380,16 @@ export default function QuotesPage(_props: { lang?: "en" | "es" }) {
         <OpenQuotePanel
           lang={lang}
           state={openQ}
-          onRefresh={() => setOpenTick((n) => n + 1)}
+          onRefresh={() => {
+            setOpenTick((n) => n + 1);
+            loadPipeline();
+          }}
           onClose={() => {
             setOpenId(null);
             try {
               const url = new URL(globalThis.location.href);
               url.searchParams.delete("open");
+              url.hash = "";
               globalThis.history.replaceState(null, "", url.toString());
             } catch { /* history unavailable — the panel still closes */ }
           }}
@@ -893,7 +2403,10 @@ export default function QuotesPage(_props: { lang?: "en" | "es" }) {
             title={tFor(lang, "quotesPage.track.outForResponse")}
             // UX-17: header count agrees with the KPI — real quotes only
             // (the badged sample card stays visible but counts nowhere).
+            // REQ-243: the header says the sample is there ("1 quote +
+            // sample") so the count never reads short of the cards.
             count={out.length}
+            sampleCount={outCounts.sample}
             defaultOpen
             forceOpen={openId != null && outCards.some((q) => q.id === openId)}
             storageKey="quotes:track:01"
@@ -917,6 +2430,7 @@ export default function QuotesPage(_props: { lang?: "en" | "es" }) {
             num="02"
             title={tFor(lang, "quotesPage.track.drafting")}
             count={drafts.length}
+            sampleCount={draftCounts.sample}
             /* A draft the user is mid-writing must not hide behind a
                collapsed track (same rule as the invoice tracks, P-31). */
             defaultOpen={draftCards.length > 0}
@@ -960,7 +2474,11 @@ export default function QuotesPage(_props: { lang?: "en" | "es" }) {
         </div>
 
         <aside class="qside">
-          <QSideBig open={out} lang={lang} />
+          <QSideBig
+            open={out}
+            draftCount={drafts.length}
+            lang={lang}
+          />
           <QSideRate won={won} lost={lost} lang={lang} />
           <QSideTip text={insight?.text} lang={lang} />
         </aside>

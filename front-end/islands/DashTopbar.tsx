@@ -3,126 +3,160 @@ import { I } from "../lib/dash-icons.tsx";
 import { dashboardClient, type Notification } from "../clients/dashboard.ts";
 import { langSignal, setLang, tFor } from "../lib/i18n.ts";
 import { profileClient } from "../clients/profile.ts";
-import { capitalizeDateLine } from "../../shared/quote-flow/format-helpers.ts";
+import { patchCachedLanguage } from "../lib/dash-cache.ts";
+import { formatGreetingDate } from "../../shared/quote-flow/locale-format.ts";
+import { tickerAge } from "../lib/ticker-age.ts";
 import GlobalSearch from "./GlobalSearch.tsx";
+import { TOPBAR_CSS } from "../lib/topbar-css.ts";
+import { startPoll } from "../lib/poll.ts";
+import {
+  coalescedRefresh,
+  type MutationDetail,
+} from "../lib/mutation-refresh.ts";
+import {
+  PROFILE_UPDATED,
+  type ProfileUpdatedDetail,
+} from "../lib/profile-events.ts";
+import { topbarGreeting } from "../lib/greeting-identity.ts";
+import {
+  readNotifications,
+  refreshNotifications,
+  subscribeNotifications,
+} from "../lib/notifications-feed.ts";
+import { subscribeChanges } from "../lib/change-feed.ts"; // REQ-563
+import {
+  freshTickerItem,
+  MUTATION_EVENT,
+  tickerPlainText,
+  tickerTitleHtml,
+} from "../lib/ticker-pick.ts";
 
 interface Props {
   /** @deprecated Ignored — the date is now computed reactively in-component
    *  so it re-localizes live on a language change instead of arriving frozen. */
   greetingDate?: string;
-  greetingName: string;
+  /** REQ-423 — the real first name; undefined greets namelessly
+   *  (`dashTopbar.greetingNoName`, in the live language). */
+  greetingName?: string;
   /** @deprecated SSR-frozen string — it can't re-localize when the topbar
    *  language toggle flips. Pass `greetingOverrideKey` instead. */
   greetingOverride?: string;
   /** Dict key that replaces the default "Hey, {name} 👋" line. Resolved
    *  reactively against the live language so the toggle re-localizes it. */
   greetingOverrideKey?: string;
+  /** REQ-619 (cycle 4, p4-p3d) — the page's nav label key; the heading names
+   *  the page (live language) instead of "Hey, {name}". Omit on /dashboard. */
+  pageTitleKey?: string;
   initialUnread?: number;
   initialNotifications?: Notification[];
   lang?: "en" | "es";
+  /** REQ-507 (demo m25) — false drops the account search (GlobalSearch): /admin's own
+   *  users search is the page's only search, not a second box with another scope */
+  search?: boolean;
 }
 
 // No fallback ticker — when the user has zero real notifications we hide
 // the ticker entirely. Showing seeded "Cobblestone Cafe paid $1,000" to a
 // brand-new account read as fake activity and misled first-run users.
-function fmtAgo(iso: string): string {
-  const t = new Date(iso).getTime();
-  if (!Number.isFinite(t)) return "";
-  const m = Math.max(1, Math.floor((Date.now() - t) / 60_000));
-  if (m < 60) return `${m}m`;
-  const h = Math.floor(m / 60);
-  if (h < 24) return `${h}h`;
-  return `${Math.floor(h / 24)}d`;
-}
-
-// Full weekday / month name keys (same set the dashboard route uses). The
-// greeting date is built here so it re-localizes live when langSignal flips,
-// rather than arriving as a frozen pre-formatted string from the route.
-const WEEKDAY_KEYS = [
-  "dashboardPage.weekday.sunday",
-  "dashboardPage.weekday.monday",
-  "dashboardPage.weekday.tuesday",
-  "dashboardPage.weekday.wednesday",
-  "dashboardPage.weekday.thursday",
-  "dashboardPage.weekday.friday",
-  "dashboardPage.weekday.saturday",
-];
-const MONTH_KEYS = [
-  "dashboardPage.month.january",
-  "dashboardPage.month.february",
-  "dashboardPage.month.march",
-  "dashboardPage.month.april",
-  "dashboardPage.month.may",
-  "dashboardPage.month.june",
-  "dashboardPage.month.july",
-  "dashboardPage.month.august",
-  "dashboardPage.month.september",
-  "dashboardPage.month.october",
-  "dashboardPage.month.november",
-  "dashboardPage.month.december",
-];
+// The pill's age ("just now" / "4m ago") comes from tickerAge (REQ-273).
+// REQ-319 (demo m12): the pill shows the NEWEST event only — it used to
+// rotate through the last ten by position every 3.8 s, so a fresh "accepted
+// · just now" was followed by "Quote sent … 3m ago" and read as going
+// backwards. The interval below only re-renders so the age counts up.
 
 export default function DashTopbar(
   {
     greetingName,
     greetingOverride,
     greetingOverrideKey,
+    pageTitleKey,
     initialUnread = 0,
     initialNotifications = [],
+    search,
   }: Props,
 ) {
   // Reactive app language (seeded from user.language, flipped live by Settings).
   const lang = langSignal.value;
   const now = new Date();
-  // ES weekday/month names are lowercase in the dict ("viernes · agosto"), but
-  // this is the first line of the greeting — sentence-initial capital (P-65).
-  const greetingDate = capitalizeDateLine(
-    `${tFor(lang, WEEKDAY_KEYS[now.getDay()])} · ${
-      tFor(lang, MONTH_KEYS[now.getMonth()])
-    } ${now.getDate()}`,
-    lang,
-  );
+  // Built here so it re-localizes live when langSignal flips. REQ-276: in
+  // the language's own order — es "Miércoles · 11 de noviembre", capitalised
+  // as the line opens the greeting (P-65); en "Wednesday · November 11".
+  const greetingDate = formatGreetingDate(now, lang);
   const [, setUnread] = useState(initialUnread);
-  const [items, setItems] = useState<Notification[]>(initialNotifications);
-  const [tickerIdx, setTickerIdx] = useState(0);
+  // REQ-299: the list is the shared feed's (DashboardPage reads the same one)
+  const [items, setItems] = useState<Notification[]>(() => {
+    const live = readNotifications();
+    return live.length > 0 ? live : initialNotifications;
+  });
+  const [, setAgeTick] = useState(0);
   // The data-cy hook appears only after hydration so a test can never click
   // the hamburger before the pm:sb-toggle listener (DashSidebar) is live —
   // pre-hydration clicks were the "hamburger does not work" bug (PDF p8).
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
-  // REQ-624: an editor who just named herself (ActorNamePrompt) is greeted by it without a reload
-  const [namedAs, setNamedAs] = useState<string | null>(null);
+  // REQ-355 — the name saved on this page (Settings, the staff name prompt);
+  // undefined until one is. The SSR greeting would otherwise stay stale.
+  const [savedName, setSavedName] = useState<string | undefined>(undefined);
   useEffect(() => {
-    const onNamed = (e: Event) => {
-      const n = String((e as CustomEvent).detail ?? "").trim().split(/\s+/)[0];
-      if (n) setNamedAs(n);
+    const onProfile = (e: Event) => {
+      const name = (e as CustomEvent<ProfileUpdatedDetail>).detail?.name;
+      if (name !== undefined) setSavedName(name);
     };
+    // REQ-624: an editor who just named herself (ActorNamePrompt) is greeted by it without a reload
+    const onNamed = (e: Event) => {
+      const n = String((e as CustomEvent).detail ?? "").trim();
+      if (n) setSavedName(n);
+    };
+    globalThis.addEventListener(PROFILE_UPDATED, onProfile);
     globalThis.addEventListener("pm:person-named", onNamed);
-    return () => globalThis.removeEventListener("pm:person-named", onNamed);
+    return () => {
+      globalThis.removeEventListener(PROFILE_UPDATED, onProfile);
+      globalThis.removeEventListener("pm:person-named", onNamed);
+    };
   }, []);
-  const nameOverride =
-    namedAs && greetingOverrideKey === "dashTopbar.greetingNoName"
-      ? undefined
-      : greetingOverrideKey;
 
   useEffect(() => {
     let stopped = false;
-    const idA = setInterval(async () => {
-      try {
+    // REQ-221: the shared scheduler skips hidden
+    // tabs (one catch-up when shown again); a failed fetch keeps the last list.
+    const stopA = startPoll(
+      async () => {
         const { count } = await dashboardClient.unreadCount();
         if (!stopped) setUnread(count);
-      } catch { /* ignore */ }
-    }, 30_000);
-    const idB = setInterval(async () => {
-      try {
-        const next = await dashboardClient.notifications(10);
-        if (!stopped) setItems(next);
-      } catch { /* ignore */ }
-    }, 10_000);
+      },
+      30_000,
+      { idleMaxMs: 120_000 },
+    );
+    // REQ-299: the poll refreshes the shared feed; the ticker follows it.
+    // REQ-424 (cycle 2, p2): both polls back off while nobody uses the page.
+    const stopB = startPoll(refreshNotifications, 10_000, {
+      idleMaxMs: 60_000,
+    });
+    const unsub = subscribeNotifications((next) => {
+      if (!stopped) setItems(next);
+    });
+    // REQ-563 (demo-loop cycle 4, m3): the topbar follows the change feed, so
+    // a signature announced from another tab of this browser (the /q tab)
+    // refreshes the feed — and the ticker — at once on every page it is on,
+    // not after the 60 s idle poll. The batch itself is the pages' business.
+    const unchanges = subscribeChanges(() => {});
+    // REQ-319: a mutation that went through lib/api (quote sent, invoice
+    // claimed…) refreshes the feed at once instead of waiting for the poll.
+    // REQ-424 (cycle 2, p2): at most once per 5 s, and never for a chat post.
+    const mutated = coalescedRefresh(() => {
+      refreshNotifications().catch(() => {/* the poll retries */});
+    });
+    const onMutated = (e: Event) =>
+      mutated.onMutation((e as CustomEvent<MutationDetail>).detail);
+    globalThis.addEventListener(MUTATION_EVENT, onMutated);
     const teardown = () => {
       stopped = true;
-      clearInterval(idA);
-      clearInterval(idB);
+      stopA();
+      stopB();
+      unsub();
+      unchanges();
+      mutated.stop();
+      globalThis.removeEventListener(MUTATION_EVENT, onMutated);
     };
     // P-67: stop both polls the moment logout starts ("pm:logout", fired by
     // DashSidebar before it kills the session) or the page starts navigating
@@ -138,22 +172,36 @@ export default function DashTopbar(
   }, []);
 
   useEffect(() => {
-    const id = setInterval(() => setTickerIdx((n) => n + 1), 3_800);
+    const id = setInterval(() => setAgeTick((n) => n + 1), 3_800);
     return () => clearInterval(id);
   }, []);
 
-  const liveItems = items.length > 0 ? items : null;
-  const ticker = liveItems
+  // REQ-726 (demo cycle 5, m6): only a fresh event (< ~90 s) shows — the pill
+  // is a transient notice, not a permanent banner. Recomputed on every age
+  // tick (3.8 s), so the shown event's age counts up and then the pill goes.
+  const tickerItem = freshTickerItem(items);
+  const age = tickerItem ? tickerAge(tickerItem.createdAt) : null;
+  const ticker = tickerItem
     ? {
-      html: liveItems[tickerIdx % liveItems.length].title,
-      time: fmtAgo(liveItems[tickerIdx % liveItems.length].createdAt),
+      // REQ-496 (demo m36, cycle 3): rendered from the feed's titleKey in the
+      // LIVE language, so the EN/ES switch re-localizes it at once.
+      html: tickerTitleHtml(tickerItem, (k, v) => tFor(lang, k, v), lang),
+      time: !age
+        ? ""
+        : age.key === "dashTopbar.justNow"
+        ? tFor(lang, age.key)
+        : tFor(lang, age.key, { time: age.time }),
     }
     : null;
 
   return (
     // REQ-207: the bar is its own stacking context (backdrop-filter); lifted
     // above the content so the search panel is not painted under the cards.
-    <header class="topbar" style="position:relative;z-index:40">
+    // REQ-406 (demo m47): that position:relative + z-index lives in
+    // TOPBAR_CSS, not inline — an inline position beat the phone's sticky.
+    <header class="topbar">
+      {/* REQ-223: the toggle's and the phone bar's rules ride with the island, so /assistant (no dashboard.css) gets them too */}
+      <style>{TOPBAR_CSS}</style>
       <button
         class="topbar__menu"
         type="button"
@@ -167,10 +215,17 @@ export default function DashTopbar(
       <div class="topbar__greet">
         <div class="topbar__greet-line">{greetingDate}</div>
         <div class="topbar__greet-name" data-cy="topbar-greeting">
-          {(nameOverride ? tFor(lang, nameOverride) : greetingOverride) ??
-            tFor(lang, "dashTopbar.greeting", {
-              name: namedAs ?? greetingName,
-            })}
+          {
+            // REQ-355 — a saved name re-greets; REQ-423 — no name (or the
+            // placeholder) greets namelessly in the LIVE language
+            topbarGreeting((k, v) => tFor(lang, k, v), {
+              greetingName,
+              savedName,
+              greetingOverrideKey,
+              greetingOverride,
+              pageTitleKey,
+            })
+          }
         </div>
       </div>
       {
@@ -179,7 +234,7 @@ export default function DashTopbar(
           The notifications drawer is still not built; its affordance stays
           hidden rather than advertise a dead control (audit #7). */
       }
-      <GlobalSearch />
+      {search !== false && <GlobalSearch />}
       {ticker
         ? (
           // Anchored to /dashboard#activity so the pill is no longer inert:
@@ -192,21 +247,26 @@ export default function DashTopbar(
             aria-label={tFor(lang, "dashTopbar.liveActivity")}
             // UX-21: sighted users hovering "● hace 4m" get the same
             // explanation the aria-label already gives screen readers.
-            title={tFor(lang, "dashTopbar.liveActivity")}
+            // REQ-476: plus the whole sentence, wherever on the pill the
+            // pointer rests — the text may be clamped at two lines.
+            title={`${tFor(lang, "dashTopbar.liveActivity")}: ${
+              tickerPlainText(ticker.html)
+            }`}
           >
             <span class="topbar__ticker-dot" />
             <span class="topbar__ticker-track" aria-live="polite">
               <span
                 class="topbar__ticker-item"
-                key={tickerIdx}
+                // keyed by the event so the slide-in plays once per new event
+                key={tickerItem!.id}
+                // REQ-319: the full sentence on hover, even where it is clipped
+                title={tickerPlainText(ticker.html)}
                 // Trusted server-derived activity markup (no user input).
                 // deno-lint-ignore react-no-danger
                 dangerouslySetInnerHTML={{ __html: ticker.html }}
               />
             </span>
-            <span class="topbar__ticker-time">
-              {tFor(lang, "dashTopbar.timeAgo", { time: ticker.time })}
-            </span>
+            <span class="topbar__ticker-time">{ticker.time}</span>
           </a>
         )
         : null}
@@ -234,6 +294,7 @@ export default function DashTopbar(
             onClick={() => {
               if (langSignal.value === code) return;
               setLang(code);
+              patchCachedLanguage(code); // REQ-422: the cache agrees at once
               profileClient.updateUser({ language: code }).catch(() => {
                 /* profile save is best-effort — the UI already flipped */
               });

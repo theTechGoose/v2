@@ -10,6 +10,12 @@
 import { api, type ApiOptions } from "../lib/api.ts";
 import type { QuoteLedger } from "../../shared/documents/ledger.ts";
 import type { DocVersionRecord } from "../../shared/documents/versions.ts";
+import type { QuoteDelivery } from "../../shared/quote-flow/delivery.ts";
+import {
+  type QuoteSendPreview,
+  type SendPreviewChannel,
+  sendPreviewPath,
+} from "../../shared/quote-flow/send-preview.ts";
 
 export type { QuoteLedger };
 
@@ -18,6 +24,8 @@ export type QuoteVersion = DocVersionRecord & { current?: boolean };
 
 export type QuoteStage =
   | "draft"
+  /** REQ-236: the last send reached nobody. */
+  | "undelivered"
   | "sent"
   | "opened"
   | "cooling"
@@ -40,6 +48,8 @@ export interface QuoteCard {
   /** Per-language job title + summary, populated from the picked job option. */
   jobNameByLang?: Record<string, string>;
   summaryByLang?: Record<string, string>;
+  /** REQ-263: where the job is (the "412 Oak St Austin" the contractor typed). */
+  serviceAddress?: string;
   lineItems?: {
     description: string;
     quantity?: number;
@@ -57,9 +67,15 @@ export interface QuoteCard {
   /** Onboarding sample quote (P-15): rendered as a badged card, excluded
    *  from every pipeline/money aggregate. */
   isSample?: boolean;
+  /** REQ-760 (cycle 5v2, m14): on a draft — its thread is ready to send
+   *  (terms wizard done). Absent from an older server. */
+  readyToSend?: boolean;
   sentAt?: string;
   acceptedAt?: string;
   lostAt?: string;
+  /** REQ-236: the latest send attempt's outcome + first delivery time. */
+  lastDelivery?: QuoteDelivery;
+  deliveredAt?: string;
   createdAt: string;
   updatedAt: string;
   // Derived
@@ -69,6 +85,11 @@ export interface QuoteCard {
   lastOpenAt: string | null;
   sentDays: number | null;
   decidedDays: number | null;
+  /** REQ-481: approved change orders, summed (cents) — the card's value is
+   *  the quote plus these (the ledger's agreement total). */
+  approvedChangeOrdersCents?: number;
+  /** REQ-481: numbers of the change orders still waiting on the customer. */
+  pendingChangeOrders?: string[];
   [k: string]: unknown;
 }
 
@@ -89,6 +110,37 @@ export interface Insight {
     | "static_fallback";
 }
 
+/** REQ-701 (demo-loop cycle 5, M21): a question a client sent from the
+ *  public quote page (GET /quotes/:id/inquiries). */
+export interface QuoteInquiry {
+  id: string;
+  quoteId: string;
+  customerId?: string;
+  question: string;
+  /** how the client asked to be reached back — free text */
+  contactBack?: string;
+  name?: string;
+  lang?: "en" | "es";
+  createdAt: string;
+  answeredAt?: string;
+  answer?: {
+    channel: "text" | "email";
+    to: string;
+    message: string;
+    at: string;
+  };
+}
+
+/** REQ-701: POST /quotes/:id/inquiries/:inquiryId/reply's answer. */
+export interface InquiryReplyResponse {
+  ok: boolean;
+  channel: "text" | "email";
+  to: string;
+  failureCode?: string;
+  reason?: string;
+  inquiry?: QuoteInquiry;
+}
+
 export const quotesClient = {
   list: (status?: string, opts: ApiOptions = {}) =>
     api.get<QuoteCard[]>("/quotes", { ...opts, query: { status } }),
@@ -103,6 +155,10 @@ export const quotesClient = {
     }),
   insight: (opts: ApiOptions = {}) =>
     api.get<Insight>("/analytics/quotes/insight", opts),
+  /** REQ-778 (cycle dv1, d8): may another quote be made this month?
+   *  `{ ok:true }` or `{ ok:false, reason:"quote_limit", limit, used }`. */
+  allowance: (opts: ApiOptions = {}) =>
+    api.get<unknown>("/quotes/allowance", opts),
   delete: (id: string, opts: ApiOptions = {}) =>
     api.delete<{ ok: true }>(`/quotes/${id}`, opts),
   /** REQ-205: what was agreed, invoiced, paid, owed and still to invoice. */
@@ -111,6 +167,31 @@ export const quotesClient = {
   /** REQ-201: every filed version plus the current one. */
   versions: (id: string, opts: ApiOptions = {}) =>
     api.get<QuoteVersion[]>(`/quotes/${id}/versions`, opts),
+  /** REQ-395 (demo M12): drop the pending revision; the customer keeps the published version. */
+  discardRevision: (id: string, opts: ApiOptions = {}) =>
+    api.post<QuoteCard>(`/quotes/${id}/discard-revision`, {}, opts),
+  /** REQ-461 (demo m8): the email + text the client gets if sent now — sends nothing. */
+  sendPreview: (
+    id: string,
+    channel: SendPreviewChannel,
+    lang: "en" | "es",
+    opts: ApiOptions = {},
+  ) => api.get<QuoteSendPreview>(sendPreviewPath(id, channel, lang), opts),
+  /** REQ-701: the questions clients sent on this quote, newest first. */
+  inquiries: (id: string, opts: ApiOptions = {}) =>
+    api.get<QuoteInquiry[]>(`/quotes/${id}/inquiries`, opts),
+  /** REQ-701: answer one by text or email — where the client asked to be reached. */
+  replyToInquiry: (
+    id: string,
+    inquiryId: string,
+    body: { channel: "text" | "email"; message: string },
+    opts: ApiOptions = {},
+  ) =>
+    api.post<InquiryReplyResponse>(
+      `/quotes/${id}/inquiries/${inquiryId}/reply`,
+      body,
+      opts,
+    ),
   /** REQ-201: publish the pending revision (version+1); `notify` re-sends the same link. */
   publish: (
     id: string,

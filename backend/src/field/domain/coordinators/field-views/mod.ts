@@ -1,8 +1,10 @@
 /** The names the pages show next to ids — customers (CustomerStore), types, workers, zones. */
 import { Injectable } from "#danet/core";
 import { CustomerStore } from "@crm/domain/data/customer-store/mod.ts";
+import { InvoiceStore } from "@paperwork/domain/data/invoice-store/mod.ts";
 import { FieldWorkerStore, RegionStore, SubscriptionStore, TaskTypeStore } from "@field/domain/data/field-stores/mod.ts";
 import { scheduleText } from "@field/domain/business/schedule/mod.ts";
+import { subscriptionBilling } from "@field/domain/business/quote-subscription/mod.ts"; // REQ-699
 import { workerView } from "@field/domain/business/tasks/mod.ts";
 import type { FieldTask, FieldWorker, Region, Subscription } from "@field/dto/field.ts";
 
@@ -11,9 +13,14 @@ export interface Names {
   type: (id: string) => string;
   worker: (id: string) => string;
   region: (id: string | undefined) => Region | null;
+  /** REQ-401: the status of a task's invoice — only the worker views load it */
+  invoiceStatus?: (id: string | undefined) => string | undefined;
 }
 
 export const safeWorker = ({ pin: _p, ...w }: FieldWorker) => w;
+
+/** REQ-785: the names of a job's other workers, in crewIds' order */
+const crewNames = (t: FieldTask, n: Names) => (t.crewIds?.length ? { crewNames: t.crewIds.map((id) => n.worker(id)) } : {});
 
 @Injectable()
 export class FieldViews {
@@ -23,7 +30,15 @@ export class FieldViews {
     private workers: FieldWorkerStore,
     private regions: RegionStore,
     private subs: SubscriptionStore,
+    private invoices: InvoiceStore,
   ) {}
+
+  /** REQ-401: names + each invoice's status, so a worker's lock reads "draft" until it is sent */
+  async workerNames(userId: string): Promise<Names> {
+    const [n, invoices] = await Promise.all([this.names(userId), this.invoices.listByUser(userId)]);
+    const status = new Map(invoices.map((i) => [i.id, i.status as string]));
+    return { ...n, invoiceStatus: (id) => (id ? status.get(id) : undefined) };
+  }
 
   async names(userId: string): Promise<Names> {
     const [customers, types, workers, regions] = await Promise.all([
@@ -45,21 +60,23 @@ export class FieldViews {
   }
 
   subscription(s: Subscription, n: Names) {
+    const billing = subscriptionBilling(s); // REQ-699: a quote's "Monthly · $180/mo"
     return {
       ...s,
       customerName: n.customer(s.customerId),
       region: n.region(s.regionId),
       schedule: { es: scheduleText(s, "es"), en: scheduleText(s, "en") },
+      ...(billing ? { billing } : {}),
       items: s.items.map((i) => ({ ...i, taskTypeName: n.type(i.taskTypeId) })),
     };
   }
 
   task(t: FieldTask, n: Names) {
-    return { ...t, customerName: n.customer(t.customerId), taskTypeName: n.type(t.taskTypeId), workerName: n.worker(t.workerId), regionName: n.region(t.regionId)?.name ?? "—" };
+    return { ...t, customerName: n.customer(t.customerId), taskTypeName: n.type(t.taskTypeId), workerName: n.worker(t.workerId), regionName: n.region(t.regionId)?.name ?? "", ...crewNames(t, n) }; // REQ-365: no zone (a one-off) is "", not "—"
   }
 
   workerTask(t: FieldTask, n: Names) {
-    return { ...workerView(t), customerName: n.customer(t.customerId), taskTypeName: n.type(t.taskTypeId), workerName: n.worker(t.workerId) };
+    return { ...workerView(t, n.invoiceStatus?.(t.invoiceId)), customerName: n.customer(t.customerId), taskTypeName: n.type(t.taskTypeId), workerName: n.worker(t.workerId), ...crewNames(t, n) };
   }
 
   async regionsWithMembers(userId: string) {

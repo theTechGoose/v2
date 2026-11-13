@@ -1,5 +1,6 @@
 import { asset, Head } from "fresh/runtime";
 import { define } from "../utils.ts";
+import DocTitle from "../components/DocTitle.tsx";
 import SiteFooter from "../components/SiteFooter.tsx";
 import type { Lang } from "../lib/lang.ts";
 import { tFor } from "../lib/i18n.ts";
@@ -53,14 +54,21 @@ export default define.page<typeof handler>(function Contact(ctx) {
     success: tFor(lang, "contactPage.success"),
     errorRate: tFor(lang, "contactPage.errorRate"),
     errorGeneric: tFor(lang, "contactPage.errorGeneric"),
+    // REQ-708 (cycle 5, c1-setup-m15): the form's own per-field messages
+    errName: tFor(lang, "contactPage.errName"),
+    errEmail: tFor(lang, "contactPage.errEmail"),
+    errSubject: tFor(lang, "contactPage.errSubject"),
+    errMessage: tFor(lang, "contactPage.errMessage"),
   };
 
   return (
     <>
       <Head>
-        <title>
-          {tFor(lang, "contactPage.title")} · {tFor(lang, "brand.name")}
-        </title>
+        <DocTitle
+          lang={lang}
+          title={(l) =>
+            `${tFor(l, "contactPage.title")} · ${tFor(l, "brand.name")}`}
+        />
         {
           /* REQ-218: /contact, /contact?lang=en and /contact?lang=es are one
             page; the sitemap lists the bare URL, and so does this. */

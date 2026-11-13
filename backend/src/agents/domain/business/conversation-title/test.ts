@@ -38,3 +38,14 @@ Deno.test("derivePreview: empty input → empty string", () => {
 Deno.test("derivePreview: collapses whitespace", () => {
   assertEquals(derivePreview("hello\n\nworld"), "hello world");
 });
+
+// REQ-447 (demo-loop cycle 3, m14): once a quote names the job, the thread is
+// titled by the quote's jobName — one name for the header, the list and the
+// documents.
+Deno.test("REQ-447 m14 titleFromJobName: the job name is the title, trimmed, single-line and capped", async () => {
+  const { titleFromJobName } = await import("./mod.ts");
+  assertEquals(titleFromJobName("  Faucet  Replacement "), "Faucet Replacement");
+  assertEquals(titleFromJobName(undefined), undefined);
+  assertEquals(titleFromJobName("   "), undefined);
+  assertEquals(titleFromJobName("x".repeat(80))!.length, 60);
+});

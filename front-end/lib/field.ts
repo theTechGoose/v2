@@ -40,6 +40,112 @@ export function shiftIso(iso: string, days: number): string {
   return todayIso(d);
 }
 
+/** one link of the /worker day navigator: where it goes and its label's i18n key */
+export type DayLink = { href: string; key: string };
+
+/**
+ * REQ-528 (demo m51) — the /worker address for one day; the office's way back (?from=, REQ-417)
+ * rides along. `null` for a blank or malformed day (a cleared date picker goes nowhere).
+ */
+export function workerDayHref(iso: string, from?: string): string | null {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(iso)) return null;
+  if (Number.isNaN(new Date(`${iso}T00:00:00`).getTime())) return null;
+  return `/worker?date=${iso}${
+    from ? `&from=${encodeURIComponent(from)}` : ""
+  }`;
+}
+
+/**
+ * REQ-362 (demo M35) — the /worker day navigator: "← Previous day · Next day →", plus "Today"
+ * to jump back from any other day. REQ-528 (demo m51): the labels never change with the day —
+ * no "Yesterday"/"Tomorrow" that rename after one tap. A day after today is a read-only preview
+ * (REQ-141: no acting on the future).
+ */
+export function workerDayNav(date: string, today: string, from?: string): {
+  prev: DayLink;
+  today: string | null;
+  next: DayLink;
+  preview: boolean;
+} {
+  const onToday = date === today;
+  // REQ-417 — a day change keeps the office's way back (?from=)
+  const keep = from ? `from=${encodeURIComponent(from)}` : "";
+  return {
+    prev: {
+      href: workerDayHref(shiftIso(date, -1), from) ?? "/worker",
+      key: "worker.prevDay",
+    },
+    today: onToday ? null : `/worker${keep && `?${keep}`}`,
+    next: {
+      href: workerDayHref(shiftIso(date, 1), from) ?? "/worker",
+      key: "worker.nextDay",
+    },
+    preview: date > today,
+  };
+}
+
+/** REQ-417 — where "Back to office" goes when nothing says where the owner came from */
+export const WORKER_OFFICE_FALLBACK = "/field/tasks";
+
+/** the office app's own top-level sections — the only places "Back to office" may lead */
+const OFFICE_SECTIONS = new Set([
+  "dashboard",
+  "field",
+  "customers",
+  "clients",
+  "quotes",
+  "invoices",
+  "payments",
+  "messages",
+  "assistant",
+  "settings",
+  "contracts",
+  "work-orders",
+  "plan",
+  "accounts-manager",
+  "admin",
+  "admins",
+]);
+
+/** a same-origin path into one of the office sections, or null */
+function officePath(raw: string | null | undefined): string | null {
+  if (!raw) return null;
+  // a plain absolute path: no scheme, no "//host", no backslash, no control chars
+  if (!/^\/[A-Za-z0-9\-._~/]*(\?[A-Za-z0-9\-._~/%=&+]*)?$/.test(raw)) {
+    return null;
+  }
+  if (raw.startsWith("//")) return null;
+  const section = raw.slice(1).split(/[/?]/)[0];
+  return OFFICE_SECTIONS.has(section) ? raw : null;
+}
+
+/**
+ * REQ-417 (demo m44, cycle 2) — /worker's "Back to office" link goes back to
+ * the office page the owner opened the worker view from: the `?from=` param
+ * (the office's "Open the worker view" links set it), else a same-origin
+ * Referer, each allow-listed to the office's own sections; else /field/tasks.
+ */
+export function workerOfficeHref(
+  from: string | null | undefined,
+  referer: string | null | undefined,
+  origin: string,
+): string {
+  const fromParam = officePath(from);
+  if (fromParam) return fromParam;
+  if (referer) {
+    try {
+      const u = new URL(referer);
+      if (u.origin === origin) {
+        const p = officePath(`${u.pathname}${u.search}`);
+        if (p) return p;
+      }
+    } catch {
+      // not a URL — ignore it
+    }
+  }
+  return WORKER_OFFICE_FALLBACK;
+}
+
 /** "Mon, Oct 12" / "lun, 12 oct" */
 export function fmtDay(iso: string, lang: Lang): string {
   const d = new Date(`${iso}T00:00:00`);
@@ -50,6 +156,26 @@ export function fmtDay(iso: string, lang: Lang): string {
   });
 }
 
+/**
+ * REQ-526 (demo m50, cycle 3) — what Save on "Add task" does once the task is made: a task on
+ * the day being viewed stays put with "Task added"; one on another day moves the list there
+ * (`goTo`) and the flash names that day, so the new task is never out of sight.
+ */
+export function addedNotice(
+  madeDate: string,
+  viewedDate: string,
+  lang: Lang,
+): { goTo: string | null; key: string; vars: Record<string, string> } {
+  if (madeDate === viewedDate) {
+    return { goTo: null, key: "field.tk.added", vars: {} };
+  }
+  return {
+    goTo: madeDate,
+    key: "field.tk.addedFor",
+    vars: { day: fmtDay(madeDate, lang) },
+  };
+}
+
 /** Split "Each client's <em>recurring</em> maintenance." into text and the emphasised run. */
 export function splitEm(
   s: string,
@@ -58,7 +184,13 @@ export function splitEm(
   return m ? { before: m[1], em: m[2], after: m[3] } : null;
 }
 
-/** last 10 digits as (843) 555-0201; anything else as typed */
+/**
+ * REQ-363 — the one sample phone number for a phone box: the neutral 555 area
+ * code, so no business is shown somebody else's town (it was a Myrtle Beach SC number).
+ */
+export const PHONE_PLACEHOLDER = "(555) 123-4567";
+
+/** last 10 digits as (555) 123-4567; anything else as typed */
 export function fmtCell(digits: string): string {
   const d = digits.replace(/\D/g, "").slice(-10);
   return d.length === 10
@@ -114,4 +246,150 @@ export function subscriptionsByCustomer<
 /** REQ-145 — what one visit of a subscription bills: its items' sum */
 export function perVisitCents(s: { items: { priceCents: number }[] }): number {
   return s.items.reduce((sum, i) => sum + i.priceCents, 0);
+}
+
+/**
+ * REQ-285 — the language the /worker screen switches to once a worker is
+ * signed in: the worker's own (the backend answers it, REQ-155's rule), unless
+ * the person already chose one (the EN/ES switch, or ?lang= in the address).
+ * null = leave the screen as it is.
+ */
+export function workerScreenLang(
+  who: { language?: string } | null,
+  chosen: boolean,
+): Lang | null {
+  if (chosen || !who) return null;
+  return who.language === "en" || who.language === "es" ? who.language : null;
+}
+
+/**
+ * REQ-494 (demo-loop cycle 3, M43) — an EN/ES pick made on the /worker switch
+ * is remembered under its own cookie, apart from pm_lang (which a plain
+ * default or another page also writes), so re-opening /worker without ?lang=
+ * still knows the person chose and REQ-285's worker language does not undo it.
+ * A browser-session cookie; Salir forgets it so the next worker's language
+ * applies.
+ */
+export const WORKER_LANG_COOKIE = "pm_worker_lang";
+
+/** REQ-494 — the /worker pick from a request Cookie header (SSR), or null. */
+export function workerLangPickFromCookie(
+  cookieHeader: string | null | undefined,
+): Lang | null {
+  if (!cookieHeader) return null;
+  // "," too: HTTP/2 cookies are re-joined with ", " (see langFromCookie)
+  const m = cookieHeader.match(/(?:^|[;,]\s*)pm_worker_lang=(en|es)(?:[;,]|$)/);
+  return m ? (m[1] as Lang) : null;
+}
+
+/** REQ-494 — remember (or with null, forget) the /worker pick. Client-only. */
+export function rememberWorkerLangPick(lang: Lang | null): void {
+  if (typeof document === "undefined") return;
+  try {
+    document.cookie = lang
+      ? `${WORKER_LANG_COOKIE}=${lang};path=/;samesite=lax`
+      : `${WORKER_LANG_COOKIE}=;path=/;max-age=0;samesite=lax`;
+  } catch { /* noop */ }
+}
+
+/**
+ * REQ-494 — the /worker route's language: ?lang= > the /worker pick > pm_lang
+ * > Spanish. `chosen` = the address chose it; `picked` = the switch did, earlier.
+ * REQ-714 (cycle 5, m58) — a signed-in worker's own language (read on the
+ * server) renders the page unless ?lang= or the pick chose, so SSR matches
+ * what REQ-285 applies on the client and nothing flips. `pageLang` stays the
+ * page's own (no worker) — the language Salir returns to (REQ-416).
+ */
+export function workerRouteLang(src: {
+  query: string | null;
+  picked: Lang | null;
+  stored: Lang | null;
+  worker?: Lang | null;
+}): { lang: Lang; pageLang: Lang; chosen: boolean; picked: boolean } {
+  const q = src.query === "en" || src.query === "es" ? src.query : null;
+  const pageLang = q ?? src.picked ?? src.stored ?? "es";
+  const chosen = q !== null;
+  const picked = src.picked !== null;
+  const worker = chosen || picked ? null : src.worker ?? null;
+  return { lang: worker ?? pageLang, pageLang, chosen, picked };
+}
+
+/** REQ-288 — the continental US: the map's view when nothing better is known (never the dev seed's town) */
+export const US_MAP_VIEW = { lat: 39.5, lng: -98.35, zoom: 4 } as const;
+
+export type MapViewPlan =
+  | { fit: [number, number][] }
+  | { center: [number, number]; zoom: number };
+
+/** REQ-288 — the assignments map: fit the subscriptions; with none, the business's
+ *  own place (GET /field/regions/center); with neither, the whole US */
+export function assignmentsMapView(
+  pts: [number, number][],
+  center: { lat: number; lng: number; zoom: number } | null,
+): MapViewPlan {
+  if (pts.length) return { fit: pts };
+  const at = center ?? US_MAP_VIEW;
+  return { center: [at.lat, at.lng], zoom: at.zoom };
+}
+
+/** "120" / "120.50" → cents, or null when it is not a price */
+export function centsOf(raw: string): number | null {
+  const n = Number(raw);
+  if (raw.trim() === "" || !Number.isFinite(n) || n < 0) return null;
+  return Math.round(n * 100);
+}
+
+/** REQ-283 — the first thing the one-off "Add task" form is missing, by field, with its message key; null when it can be sent */
+export function addTaskProblem(
+  f: { customerId: string; typeName: string; price: string },
+):
+  | { field: "customer"; key: "field.tk.needCustomer" }
+  | { field: "type"; key: "field.tk.needType" }
+  | { field: "price"; key: "field.tk.badPrice" }
+  | null {
+  if (!f.customerId) return { field: "customer", key: "field.tk.needCustomer" };
+  if (!f.typeName.trim()) return { field: "type", key: "field.tk.needType" };
+  if (centsOf(f.price) === null) {
+    return { field: "price", key: "field.tk.badPrice" };
+  }
+  return null;
+}
+
+/** REQ-415 (demo p11, cycle 2) — the Service examples on /field/tasks are the account's OWN task
+ *  types (a fence builder sees "Fence install, Gate repair…", not lawn care): the first `max`
+ *  distinct non-blank names, or "" when the account has none yet. */
+export function serviceExamples(types: { name: string }[], max = 3): string {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const x of types) {
+    const name = x.name.trim();
+    const k = name.toLowerCase();
+    if (!name || seen.has(k)) continue;
+    seen.add(k);
+    out.push(name);
+    if (out.length >= max) break;
+  }
+  return out.join(", ");
+}
+
+/** REQ-415 — which dictionary line the Service placeholder ("ph") or the missing-service error
+ *  ("need") reads: the account's examples when it has task types, else the neutral
+ *  "e.g. Weekly service, Repair visit…" line. */
+export function serviceHint(
+  types: { name: string }[],
+  which: "ph" | "need",
+): { key: string; vars?: { examples: string } } {
+  const examples = serviceExamples(types);
+  const base = which === "ph" ? "field.tk.typePh" : "field.tk.needType";
+  return examples ? { key: `${base}From`, vars: { examples } } : { key: base };
+}
+
+/** REQ-283 — a server refusal of the one-off task that names a field of the form: "workerId required"
+ *  is a customer with no staffed zone (a new one), so the office has to pick the worker */
+export function addTaskServerProblem(
+  error: string | undefined,
+): { field: "worker"; key: "field.tk.needWorker" } | null {
+  return error === "workerId required"
+    ? { field: "worker", key: "field.tk.needWorker" }
+    : null;
 }

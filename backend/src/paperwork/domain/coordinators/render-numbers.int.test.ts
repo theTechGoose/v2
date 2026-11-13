@@ -794,3 +794,26 @@ Deno.test("REQ-204 accepted alert: the contractor's email and text name the quot
     assertStringIncludes(texts[0].body, "Q-001");
   });
 });
+
+// REQ-263 (demo ai-assistant-m2): the job address is on the quote PDF the
+// customer receives, labelled, in the document's language.
+Deno.test("REQ-263 quote PDF: shows the job's service address, labelled, in English and Spanish", async () => {
+  for (
+    const [lang, label] of [["en", "Service address"], [
+      "es",
+      "Dirección del servicio",
+    ]] as const
+  ) {
+    const bytes = await new RenderQuotePdf().run({
+      quote: quoteFixture({ serviceAddress: "412 Oak St Austin" }),
+      customer: liveCustomer,
+      contractor: sender,
+      businessName: BIZ,
+      commsLanguage: lang,
+    });
+    const text = await drawnText(bytes);
+    assertStringIncludes(text, "412 Oak St Austin");
+    // WinAnsi: the label is drawn latin1-encoded
+    assertStringIncludes(text, label);
+  }
+});

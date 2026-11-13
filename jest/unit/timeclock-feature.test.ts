@@ -87,7 +87,9 @@ describe("REQ-192 the timeclock feature", () => {
     );
     expect(route).toMatch(/<DashSidebar active="timesheet" \/>/);
     expect(route).toMatch(/<TimesheetPage \/>/);
-    expect(route).toMatch(/tFor\(lang, "ts\.docTitle"\)/);
+    // REQ-192 AMENDMENT (reconciled with demo-fixes' REQ-367): the tab title
+    // is a DocTitle carrying both languages, so it follows the EN/ES switch
+    expect(route).toMatch(/<DocTitle lang=\{lang\} title=\{\(l\) => tFor\(l, "ts\.docTitle"\)\} \/>/);
   });
 
   test("the worker's screen shows the clock card once signed in; the card calls the worker endpoints", () => {

@@ -6,17 +6,47 @@ import {
   computeProgress,
 } from "@agents/domain/business/wizard-progress/mod.ts";
 import {
-  localizeOptions,
   getWizardSpec,
+  localizeOptions,
 } from "@agents/domain/business/terms-wizard-spec/mod.ts";
 import { QuoteStore } from "@paperwork/domain/data/quote-store/mod.ts";
 import { CustomerStore } from "@crm/domain/data/customer-store/mod.ts";
 import { UserStore } from "@users/domain/data/user-store/mod.ts";
 import { EventBus } from "@core/business/events/mod.ts";
 import { t } from "@core/i18n/mod.ts";
+import { suggestedOptionId } from "@agents/domain/business/terms-prefill/mod.ts";
+import { customerContactError } from "#quote-flow/customer-contact.ts"; // REQ-278
+import { findExistingCustomer } from "#quote-flow/customer-dedupe.ts"; // REQ-331
+import { termFromPick } from "#quote-flow/wizard-terms.ts"; // REQ-347
+import { normalizeDepositTerm } from "#quote-flow/deposit-term.ts"; // REQ-678
+import { accountNetDays } from "#quote-flow/completion-schedule.ts"; // REQ-411
+import { isQuoteIssued, isQuoteLocked } from "#documents/versions.ts"; // REQ-460, REQ-585
+import { docNumberOf } from "#documents/numbering.ts"; // REQ-460
+import { formatTermDate } from "#quote-flow/format-helpers.ts"; // REQ-495
+import { withDeadlineTerm } from "#quote-flow/deadline-term.ts"; // REQ-771
+import {
+  deadlineCheck,
+  deadlineLine,
+  pickForStep,
+  readDeadline,
+  type TermValue,
+  termValueText,
+} from "@agents/domain/business/terms-edit/mod.ts"; // REQ-585, REQ-653
+import {
+  type ChatI18nRef,
+  type ChatI18nVar,
+  renderChatI18n,
+} from "#quote-flow/chat-i18n.ts"; // REQ-589
+import { BusinessIdentityStore } from "@profile/domain/data/business-identity-store/mod.ts";
 import type { AgentConversation } from "@agents/dto/conversation.ts";
 import type { AgentMessage } from "@agents/dto/message.ts";
-import type { WizardAnswer, WizardSpec, WizardState } from "@agents/dto/wizard.ts";
+import type { Customer } from "@crm/dto/customer.ts";
+import type { Quote } from "@paperwork/dto/quote.ts";
+import type {
+  WizardAnswer,
+  WizardSpec,
+  WizardState,
+} from "@agents/dto/wizard.ts";
 
 export interface WizardAnswerInput {
   userId: string;
@@ -24,6 +54,9 @@ export interface WizardAnswerInput {
   stepId: string;
   optionId: string;
   customValue?: string;
+  /** REQ-263 (demo ai-assistant-m2): the job address typed (or pre-filled)
+   *  in the customer step — lands on the quote as `serviceAddress`. */
+  serviceAddress?: string;
   /** Customer-step payload (only meaningful when stepId === "customer"). */
   customer?: {
     id?: string;
@@ -33,6 +66,9 @@ export interface WizardAnswerInput {
       phoneNumber?: string;
       isBusiness?: boolean;
       businessName?: string;
+      /** REQ-331 (demo m44): the contractor saw "<name> already exists" and
+       *  chose "create anyway" — skip the same-owner dedupe. */
+      allowDuplicate?: boolean;
       /** REQ-625: the shared customer form's address parts + notes */
       street?: string;
       city?: string;
@@ -54,6 +90,50 @@ export interface WizardAnswerResult {
    */
   newMessages: AgentMessage[];
 }
+
+/** REQ-585 (demo-loop cycle 4, M4 + M30): a term given in the chat. */
+export interface WizardChangeInput {
+  userId: string;
+  conversationId: string;
+  stepId: string;
+  optionId: string;
+  customValue?: string;
+}
+
+/**
+ * What `change` did with a term given in the chat (REQ-585):
+ *   answered — the active step, answered as a tap would (the pick, then the
+ *              next question);
+ *   changed  — an answered step, changed IN PLACE: its pick (same id), the
+ *              state's answer and the quote's terms;
+ *   same     — the step already has that value; nothing written;
+ *   later    — a step the wizard hasn't reached: a preset is pre-selected for
+ *              it (`prefilled`), a custom value can't be;
+ *   sent     — the quote is with the customer: an answered term stays as sent;
+ *   signed   — the customer signed: nothing changes (REQ-202 / REQ-460);
+ *   missing  — no such step or option in this conversation's wizard.
+ */
+export type WizardChangeOutcome =
+  | { kind: "answered"; to: TermValue; result: WizardAnswerResult }
+  | {
+    kind: "changed";
+    from: TermValue;
+    to: TermValue;
+    pick: AgentMessage;
+    wizardState: WizardState;
+  }
+  | { kind: "same"; to: TermValue }
+  | { kind: "later"; to: TermValue; prefilled: boolean }
+  | { kind: "sent"; from: TermValue; to: TermValue }
+  | { kind: "signed"; to: TermValue }
+  | { kind: "missing"; to: TermValue };
+
+const termValueOf = (
+  v: { optionId: string; customValue?: string },
+): TermValue => ({
+  optionId: v.optionId,
+  ...(v.customValue ? { customValue: v.customValue } : {}),
+});
 
 /**
  * HandleWizardAnswer — the phase-2 turn handler.
@@ -77,6 +157,9 @@ export class HandleWizardAnswer {
     private customers: CustomerStore,
     private users: UserStore,
     private bus: EventBus,
+    /** REQ-411 (m35): the account's days to pay fill the payment step's
+     *  "within {n} days" sub-line. Optional — without it, the default. */
+    private identity?: BusinessIdentityStore,
   ) {}
 
   async run(input: WizardAnswerInput): Promise<WizardAnswerResult> {
@@ -96,6 +179,13 @@ export class HandleWizardAnswer {
     if (!current) {
       throw new Error("wizard state missing — call transition-to-terms first");
     }
+
+    // REQ-460 (demo-loop cycle 3, B1): the bound quote first, before any
+    // write. Once the customer signed it the agreement is final (REQ-202) —
+    // in the demo "Deposit + balance" landed on a signed agreement and the
+    // wizard went on to the warranty.
+    const signed = await this.signedQuote(conv);
+    if (signed) return await this.closeForSigned(conv, current, signed, lang);
 
     // Pre-validate the step ordering BEFORE any side effect. applyAnswer
     // performs the same check, but it runs after handleCustomerStep — and
@@ -126,11 +216,29 @@ export class HandleWizardAnswer {
     let customerCustomValue = input.customValue;
     let boundCustomerId = conv.customerId;
     let boundCustomerName: string | undefined;
+    /** REQ-386 (demo m17): the job address the customer step settled on. */
+    let stepAddress: string | undefined;
     if (input.stepId === "customer") {
       const handled = await this.handleCustomerStep(conv.id, input, lang);
       boundCustomerId = handled.customerId ?? boundCustomerId;
       boundCustomerName = handled.customerName;
       customerCustomValue = handled.customValue ?? customerCustomValue;
+      // REQ-715 (demo-loop cycle 5, c4-M34): a language the user stated
+      // before the customer was known ("Ella habla español") lands on the
+      // customer this step bound.
+      if (conv.customerLanguage && handled.customerId) {
+        await this.customers.update(handled.customerId, input.userId, {
+          language: conv.customerLanguage,
+        }).catch((err) =>
+          console.warn("[handle-wizard-answer] customer language:", err)
+        );
+      }
+      stepAddress = await this.applyServiceAddress(
+        conv,
+        input.userId,
+        input.serviceAddress,
+        handled.customerAddress,
+      );
     }
 
     const next = applyAnswer(spec, current, {
@@ -145,21 +253,55 @@ export class HandleWizardAnswer {
     // For the customer step, prefer the resolved customer's name so the
     // chat transcript reads "Customer: Jane Doe" rather than "Customer:
     // Create a new customer".
-    const pickValue = input.stepId === "customer" && boundCustomerName
-      ? boundCustomerName
-      : optionDef.isCustom
-      ? (customerCustomValue ?? t(lang, "wizardAnswer.pick.customFallback"))
-      : t(lang, optionDef.label);
+    // REQ-495 (m17): a picked date (stored ISO) reads in the reader's
+    // language — "1 dic 2026" / "Dec 1, 2026"; other values pass through.
+    // REQ-585: a duration the chat set ("2.5 weeks") reads "2.5 semanas".
+    // REQ-589 (cycle 4, M15): the line is stored as key + vars too, so it
+    // re-renders after an EN/ES switch (the rendered text stays `content`).
+    const customVar = (v: string): ChatI18nVar =>
+      input.stepId === "customer" || formatTermDate(v, "es") !== v
+        ? { date: v }
+        : { byLang: { en: termValueText(v, "en"), es: termValueText(v, "es") } };
+    // REQ-678 (c3-m60): "Deposit + balance" names the amount picked —
+    // "Payment: Deposit 30% + balance" / "Pago: Depósito 30% + saldo".
+    const pickedDeposit = optionDef.amountPicker
+      ? normalizeDepositTerm(input.customValue)
+      : null;
+    const pickValue: ChatI18nVar =
+      input.stepId === "customer" && boundCustomerName
+        ? boundCustomerName
+        : pickedDeposit
+        ? customVar(pickedDeposit)
+        : optionDef.isCustom
+        ? (customerCustomValue !== undefined
+          ? customVar(customerCustomValue)
+          : { key: "wizardAnswer.pick.customFallback" })
+        : { key: optionDef.label };
 
+    // REQ-386 (demo m17): the customer line also carries the job address, so
+    // the thread still shows it after a reload ("Customer: Dave Roof — 88 Oak
+    // Hollow Dr, Austin TX 78745").
+    const pickRef: ChatI18nRef = stepAddress
+      ? {
+        key: "wizardAnswer.pick.transcriptAddress",
+        vars: {
+          label: { key: stepDef.label },
+          value: pickValue,
+          address: stepAddress,
+        },
+      }
+      : {
+        key: "wizardAnswer.pick.transcript",
+        vars: { label: { key: stepDef.label }, value: pickValue },
+      };
+    const pickLine = renderChatI18n(pickRef, lang, t);
     const userPick = await this.messages.append({
       conversationId: input.conversationId,
       role: "user",
       kind: "text",
-      content: t(lang, "wizardAnswer.pick.transcript", {
-        label: t(lang, stepDef.label),
-        value: pickValue,
-      }),
+      content: pickLine,
       payload: {
+        i18n: pickRef,
         wizardStepId: input.stepId,
         optionId: input.optionId,
         customValue: input.customValue,
@@ -170,10 +312,8 @@ export class HandleWizardAnswer {
     const progress = computeProgress(spec, next);
 
     const convPatch: Partial<AgentConversation> = {
-      preview: t(lang, "wizardAnswer.pick.transcript", {
-        label: t(lang, stepDef.label),
-        value: pickValue,
-      }),
+      preview: pickLine,
+      previewI18n: pickRef,
     };
     if (
       input.stepId === "customer" && boundCustomerId &&
@@ -182,13 +322,49 @@ export class HandleWizardAnswer {
       convPatch.customerId = boundCustomerId;
     }
 
+    // REQ-240 (demo M29): every answer lands on the quote as it is given —
+    // the customer at the customer step, each term at its step. Waiting for
+    // completion left a quote the contractor walked away from mid-wizard
+    // with no customer and no terms ("PARA —", "INICIO Por agendar"), and
+    // the invoice its signature created billed nobody ("FACTURAR A —").
+    // Best-effort: if conv.quoteId is missing or the quote can't be loaded,
+    // the turn still answers (and the CTA still shows on completion — the
+    // user can pick a quote manually before sending).
+    const persisted = await this.persistAnswers(
+      conv,
+      boundCustomerId,
+      spec,
+      next,
+    );
+
+    // REQ-653 (demo-loop cycle 5, m50): once the start and the time to
+    // complete are on the quote, a deadline typed in the chat ("client wants
+    // done before thanksgiving") is checked against them — a schedule that
+    // misses it is said before the next question, never left to contradict
+    // the agreement.
+    if (
+      persisted &&
+      (input.stepId === "start_date" || input.stepId === "wraps" ||
+        input.stepId === "time_to_complete")
+    ) {
+      const warning = await this.deadlineWarning(conv, input.userId, lang);
+      if (warning) {
+        newMessages.push(
+          await this.messages.append({
+            conversationId: input.conversationId,
+            role: "assistant",
+            kind: "text",
+            content: warning,
+          }),
+        );
+      }
+    }
+
     if (progress.isComplete) {
-      // Persist the collected wizard answers onto the conversation's active
-      // quote — the quote IS the agreement, so the terms live on it.
-      // Best-effort: if conv.quoteId is missing or the quote can't be
-      // loaded, we still surface the CTA — the user can pick a quote
-      // manually before sending.
-      const quoteId = await this.finalizeTerms(conv, boundCustomerId, spec, next);
+      // The quote IS the agreement: the full terms set is on it now.
+      const quoteId = persisted
+        ? await this.announceTermsDrafted(conv)
+        : undefined;
 
       const cta = await this.messages.append({
         conversationId: input.conversationId,
@@ -206,17 +382,27 @@ export class HandleWizardAnswer {
       newMessages.push(cta);
     } else {
       const step = progress.activeStep!;
+      const n = accountNetDays(
+        (await this.identity?.get(input.userId).catch(() => null))
+          ?.invoiceNetDays,
+      );
       const wizardMsg = await this.messages.append({
         conversationId: input.conversationId,
         role: "assistant",
         kind: "wizard",
         content: t(lang, step.question),
         payload: {
+          i18n: { key: step.question }, // REQ-589
           specId: spec.id,
           stepIdx: next.activeStepIdx,
           stepId: step.id,
-          options: localizeOptions(step.options, lang),
+          // REQ-491 (m60): "Deposit + balance" names its $ split.
+          options: localizeOptions(step.options, lang, {
+            n,
+            totalCents: await this.quoteTotalCents(conv),
+          }),
           hint: step.hint,
+          suggestedOptionId: suggestedOptionId(conv.termsPrefill, step),
         },
       });
       newMessages.push(wizardMsg);
@@ -227,6 +413,207 @@ export class HandleWizardAnswer {
       convPatch,
     );
     return { conversation: updatedConv, wizardState: next, newMessages };
+  }
+
+  /** REQ-653 (m50): the latest deadline the contractor typed in this
+   *  conversation, when the quote's start + time to complete miss it. */
+  private async deadlineWarning(
+    conv: AgentConversation,
+    userId: string,
+    lang: "en" | "es",
+  ): Promise<string> {
+    if (!conv.quoteId) return "";
+    const today = new Date();
+    const deadline = await this.typedDeadline(conv.id, today);
+    if (!deadline) return "";
+    const quote = await this.quotes.getOwned(conv.quoteId, userId)
+      .catch(() => undefined);
+    if (!quote?.terms?.length) return "";
+    const check = deadlineCheck(deadline, {
+      terms: quote.terms,
+      startDate: quote.startDate,
+      today,
+    });
+    return check?.late ? deadlineLine(lang, deadline, check, quote.terms) : "";
+  }
+
+  /**
+   * REQ-585 (demo-loop cycle 4, M4 + M30) — a term the contractor gives in
+   * the chat ("we start monday nov 23", "empezamos la próxima semana, no el
+   * próximo mes"). Pair 7's answered "Next month" could not be changed and
+   * stayed on the agreement. The ACTIVE step is answered exactly as a tap
+   * would (run); an answered step is changed in place — its transcript pick
+   * keeps its id and place, so back / rewind still pops the right one — and
+   * the quote's terms follow (persistAnswers); a later step's preset is
+   * pre-selected for when the wizard gets there. A signed quote is refused
+   * and a sent one's answered terms are left as sent.
+   */
+  async change(input: WizardChangeInput): Promise<WizardChangeOutcome> {
+    const conv = await this.conversations.get(input.conversationId);
+    if (conv.userId !== input.userId) throw new Error("forbidden");
+    const asked = termValueOf(input);
+    const state = await this.conversations.getWizardState(conv.id);
+    if (!state || conv.currentPhase !== "terms") {
+      return { kind: "missing", to: asked };
+    }
+    const spec = getWizardSpec(state.specId);
+    const stepIdx = spec.steps.findIndex((s) => s.id === input.stepId);
+    const step = spec.steps[stepIdx];
+    const pick = step && step.id !== "customer"
+      ? pickForStep(input, step)
+      : null;
+    if (!step || !pick) return { kind: "missing", to: asked };
+    const to = termValueOf(pick);
+
+    if (await this.signedQuote(conv)) return { kind: "signed", to };
+
+    if (stepIdx === state.activeStepIdx) {
+      const result = await this.run({
+        userId: input.userId,
+        conversationId: conv.id,
+        stepId: pick.stepId,
+        optionId: pick.optionId,
+        ...(pick.customValue ? { customValue: pick.customValue } : {}),
+      });
+      return { kind: "answered", to, result };
+    }
+
+    if (stepIdx > state.activeStepIdx) {
+      const option = step.options.find((o) => o.id === pick.optionId);
+      if (!option || option.isCustom) {
+        return { kind: "later", to, prefilled: false };
+      }
+      await this.conversations.update(conv.id, {
+        termsPrefill: { ...(conv.termsPrefill ?? {}), [step.id]: option.id },
+      });
+      return { kind: "later", to, prefilled: true };
+    }
+
+    const answered = state.answers.find((a) => a.stepId === step.id);
+    if (!answered) return { kind: "missing", to };
+    const from = termValueOf(answered);
+    if (
+      from.optionId === to.optionId &&
+      (from.customValue ?? "") === (to.customValue ?? "")
+    ) {
+      return { kind: "same", to };
+    }
+    const quote = conv.quoteId
+      ? await this.quotes.getOwned(conv.quoteId, conv.userId).catch(() => null)
+      : null;
+    if (quote && isQuoteIssued(quote)) return { kind: "sent", from, to };
+
+    const next: WizardState = {
+      ...state,
+      answers: state.answers.map((a) =>
+        a.stepId === step.id
+          ? {
+            stepId: step.id,
+            optionId: to.optionId,
+            ...(to.customValue ? { customValue: to.customValue } : {}),
+            answeredAt: new Date().toISOString(),
+          }
+          : a
+      ),
+    };
+    await this.conversations.putWizardState(conv.id, next);
+
+    const me = await this.users.get(input.userId).catch(() => null);
+    const lang = me?.language === "es" ? "es" : "en";
+    const option = step.options.find((o) => o.id === to.optionId)!;
+    const content = t(lang, "wizardAnswer.pick.transcript", {
+      label: t(lang, step.label),
+      // REQ-678: a picked deposit amount reads like a custom value.
+      value: option.isCustom ||
+          (option.amountPicker && normalizeDepositTerm(to.customValue))
+        ? termValueText(to.customValue ?? "", lang)
+        : t(lang, option.label),
+    });
+    const payload = {
+      wizardStepId: step.id,
+      optionId: to.optionId,
+      ...(to.customValue ? { customValue: to.customValue } : {}),
+    };
+    // Every pick of the step (one, unless an old transcript repeated it) —
+    // captureTerms reads the first.
+    const picks = (await this.messages.listByConversation(conv.id)).filter((
+      m,
+    ) =>
+      m.role === "user" && m.kind === "text" &&
+      (m.payload as { wizardStepId?: string } | undefined)?.wizardStepId ===
+        step.id
+    );
+    let changed: AgentMessage | undefined;
+    for (const m of picks) {
+      changed = await this.messages.replace(conv.id, m.id, {
+        content,
+        payload: { ...(m.payload ?? {}), ...payload },
+      }) ?? changed;
+    }
+    changed ??= await this.messages.append({
+      conversationId: conv.id,
+      role: "user",
+      kind: "text",
+      content,
+      payload,
+    });
+    await this.persistAnswers(conv, conv.customerId, spec, next);
+    return { kind: "changed", from, to, pick: changed, wizardState: next };
+  }
+
+  /** REQ-460: the conversation's quote, when its customer already signed it. */
+  private async signedQuote(
+    conv: AgentConversation,
+  ): Promise<Quote | undefined> {
+    if (!conv.quoteId) return undefined;
+    const quote = await this.quotes.getOwned(conv.quoteId, conv.userId)
+      .catch(() => null);
+    return quote && isQuoteLocked(quote) ? quote : undefined;
+  }
+
+  /**
+   * REQ-460 (demo-loop cycle 3, B1): an answer for a quote the customer has
+   * signed. Nothing is recorded — no pick, no answer, nothing on the quote.
+   * The wizard closes: no step stays active and its open question leaves the
+   * thread, so a reload does not ask it again. The assistant says the
+   * agreement is final and that a change goes through a change order or a
+   * new version.
+   */
+  private async closeForSigned(
+    conv: AgentConversation,
+    state: WizardState,
+    quote: Quote,
+    lang: "en" | "es",
+  ): Promise<WizardAnswerResult> {
+    const spec = getWizardSpec(state.specId);
+    const closed: WizardState = { ...state, activeStepIdx: spec.steps.length };
+    await this.conversations.putWizardState(conv.id, closed);
+    const msgs = await this.messages.listByConversation(conv.id);
+    const answered = new Set(
+      msgs.map((m) =>
+        (m.payload as { wizardStepId?: string } | undefined)?.wizardStepId
+      ),
+    );
+    const open = msgs.filter((m) => {
+      if (m.kind !== "wizard") return false;
+      const stepId = (m.payload as { stepId?: string } | undefined)?.stepId;
+      return !!stepId && spec.steps.some((s) => s.id === stepId) &&
+        !answered.has(stepId);
+    }).map((m) => m.id);
+    await this.messages.deleteByIds(conv.id, open);
+    const content = t(lang, "wizardAnswer.signedLocked", {
+      number: docNumberOf(quote),
+    });
+    const reply = await this.messages.append({
+      conversationId: conv.id,
+      role: "assistant",
+      kind: "text",
+      content,
+    });
+    const conversation = await this.conversations.update(conv.id, {
+      preview: content,
+    });
+    return { conversation, wizardState: closed, newMessages: [reply] };
   }
 
   /**
@@ -241,11 +628,17 @@ export class HandleWizardAnswer {
    * isCustom create_new option.
    */
   private async handleCustomerStep(
-    _conversationId: string,
+    conversationId: string,
     input: WizardAnswerInput,
     lang: "en" | "es",
   ): Promise<
-    { customerId?: string; customerName?: string; customValue?: string }
+    {
+      customerId?: string;
+      customerName?: string;
+      customValue?: string;
+      /** REQ-263: the resolved customer's own address, if any. */
+      customerAddress?: string;
+    }
   > {
     if (input.optionId === "create_new") {
       // Prefer the structured customer.create payload; fall back to a
@@ -263,6 +656,11 @@ export class HandleWizardAnswer {
       // email/phone and the agreement was delivered back to the contractor.
       const email = create?.email?.trim();
       const phone = create?.phoneNumber?.trim();
+      // REQ-278 (demo M16): this path never went through the customer DTO,
+      // so "123" / "555-12" / "davis@@gmail" were saved as the contact.
+      // Same rule as parseCreateCustomer, in the contractor's language.
+      const contactErr = customerContactError({ email, phoneNumber: phone });
+      if (contactErr) throw new Error(t(lang, contactErr));
       if (email || phone) {
         const creator = await this.users.get(input.userId).catch(() => null);
         const normEmail = (e?: string) => (e ?? "").trim().toLowerCase();
@@ -283,6 +681,28 @@ export class HandleWizardAnswer {
           throw new Error(t(lang, "termsWizard.customer.ownContact"));
         }
       }
+      // REQ-331 (demo m44): "+ New customer" let the demo create a second
+      // "x" while C-001 "x" already existed. The same owner's customers are
+      // looked up by phone, email and accent-folded name first; a match is
+      // bound instead of duplicated — unless the contractor saw the
+      // "already exists" hint and chose "create anyway".
+      if (!create?.allowDuplicate) {
+        const mine: Customer[] = await this.customers.listByUser(input.userId)
+          .catch(() => []);
+        const existing = findExistingCustomer(mine, {
+          name,
+          email,
+          phoneNumber: phone,
+        });
+        if (existing) {
+          return {
+            customerId: existing.id,
+            customerName: existing.name,
+            customValue: existing.name,
+            customerAddress: existing.address,
+          };
+        }
+      }
       const created = await this.customers.create(input.userId, {
         name,
         ...(create?.email ? { email: create.email.trim() } : {}),
@@ -294,6 +714,10 @@ export class HandleWizardAnswer {
           : {}),
         ...(create?.businessName?.trim()
           ? { businessName: create.businessName.trim() }
+          : {}),
+        // REQ-263: a new customer's address is the job address typed with it
+        ...(input.serviceAddress?.trim()
+          ? { address: input.serviceAddress.trim() }
           : {}),
         // REQ-625: the full customer form — address parts (the store
         // composes `address`) and notes; non-strings are ignored.
@@ -316,29 +740,105 @@ export class HandleWizardAnswer {
         throw new Error("pick_existing requires customer.id");
       }
       const existing = await this.customers.getOwned(id, input.userId);
-      return { customerId: existing.id, customerName: existing.name };
+      return {
+        customerId: existing.id,
+        customerName: existing.name,
+        customerAddress: existing.address,
+      };
     }
-    // use_active — no work needed; coordinator falls back to conv.customerId.
+    // use_active — the customer already bound to the conversation. REQ-531
+    // (demo-loop cycle 3, p8-pair6-a): return its name too, so the transcript
+    // reads "Cliente: Maria Lopez", not the option label "Cliente: Usar el
+    // cliente del chat". A bound customer that doesn't load keeps the label.
+    if (input.optionId === "use_active" && conversationId) {
+      const conv = await this.conversations.get(conversationId);
+      if (conv.customerId) {
+        const bound = await this.customers.getOwned(
+          conv.customerId,
+          input.userId,
+        )
+          .catch(() => null);
+        if (bound) {
+          return {
+            customerId: bound.id,
+            customerName: bound.name?.trim() || undefined,
+            customerAddress: bound.address,
+          };
+        }
+      }
+    }
     return {};
   }
 
   /**
-   * Persist the wizard's answers onto the quote when the wizard completes.
-   * Returns the quote id, or `undefined` if no quote was bound. Idempotent:
-   * re-running with the same picks writes the same terms.
+   * REQ-263 (demo ai-assistant-m2): the quote's job address after the
+   * customer step. An address typed in the step wins (the contractor saw it,
+   * pre-filled or not, and confirmed it); otherwise an empty job address is
+   * filled from the customer's own address. An address already on the quote
+   * is never replaced by the customer's. REQ-386: returns the job address
+   * the step settled on (the quote's, or — with no quote yet — the typed /
+   * customer's one), for the transcript line.
    */
-  private async finalizeTerms(
+  private async applyServiceAddress(
+    conv: AgentConversation,
+    userId: string,
+    typed: string | undefined,
+    customerAddress: string | undefined,
+  ): Promise<string | undefined> {
+    const fallback = typed?.trim() || customerAddress?.trim() || undefined;
+    if (!conv.quoteId) return fallback;
+    const quote = await this.quotes.getOwned(conv.quoteId, userId)
+      .catch(() => null);
+    if (!quote) return fallback;
+    const current = quote.serviceAddress?.trim() || undefined;
+    const next = typed?.trim() ||
+      (current ? undefined : customerAddress?.trim());
+    if (!next || next === quote.serviceAddress) return current;
+    await this.quotes.update(quote.id, userId, { serviceAddress: next });
+    return next;
+  }
+
+  /** REQ-653 / REQ-771: the latest deadline the contractor typed in this
+   *  conversation (the details-first note is its first user message). */
+  private async typedDeadline(
+    conversationId: string,
+    today: Date = new Date(),
+  ): Promise<ReturnType<typeof readDeadline>> {
+    const history = await this.messages.listByConversation(conversationId)
+      .catch(() => [] as AgentMessage[]);
+    for (const m of [...history].reverse()) {
+      if (m.role !== "user" || typeof m.content !== "string") continue;
+      const deadline = readDeadline(m.content, today);
+      if (deadline) return deadline;
+    }
+    return null;
+  }
+
+  /**
+   * Persist the wizard's answers so far onto the conversation's quote — run
+   * on EVERY answer (REQ-240), not only on completion. Returns whether the
+   * quote was written. Idempotent: re-running with the same picks writes the
+   * same terms.
+   */
+  private async persistAnswers(
     conv: AgentConversation,
     boundCustomerId: string | undefined,
     spec: WizardSpec,
     state: WizardState,
-  ): Promise<string | undefined> {
+  ): Promise<boolean> {
     // Walk the conversation messages and project the user's wizard picks
     // into a labeled terms array. Each pick lives on a `text` user message
     // with payload.wizardStepId — the chat transcript is the canonical
     // record. We snapshot it onto the quote so the public /q page can
     // render the agreed terms without re-loading the conversation.
-    const terms = await this.captureTerms(conv.id, spec);
+    // REQ-771 (demo-loop cycle 5v5, M7): a deadline the contractor typed
+    // ("Has to be done before Thanksgiving.") is a term on the quote — the
+    // preview, the customer's agreement and the PDF all show it. An invoice
+    // (the job is done) carries none.
+    const terms = withDeadlineTerm(
+      await this.captureTerms(conv.id, spec),
+      conv.docKind === "invoice" ? null : await this.typedDeadline(conv.id),
+    );
     // REQ-024 (NW-18): the invoice wizard's completion date lands on the
     // agreement as estimatedCompletionDate — the invoice's due date derives
     // from it (Due Now → the same day; net terms → +N days).
@@ -346,25 +846,48 @@ export class HandleWizardAnswer {
 
     if (!conv.quoteId) {
       console.error(
-        `[wizard:finalize] conversation ${conv.id} has no quoteId — skipping terms persist`,
+        `[wizard:persist] conversation ${conv.id} has no quoteId — skipping terms persist`,
       );
-      return undefined;
+      return false;
     }
     try {
       const customerId = boundCustomerId ?? conv.customerId;
       const quote = await this.quotes.getOwned(conv.quoteId, conv.userId);
-      await this.quotes.update(conv.quoteId, conv.userId, {
+      const patch = {
         ...(terms.length ? { terms } : {}),
         ...(customerId && !quote.customerId ? { customerId } : {}),
         ...(completed ? { estimatedCompletionDate: completed } : {}),
-      });
+      };
+      if (Object.keys(patch).length) {
+        await this.quotes.update(conv.quoteId, conv.userId, patch);
+      }
     } catch (err) {
       console.error(
-        `[wizard:finalize] failed to persist terms onto quote ${conv.quoteId}:`,
+        `[wizard:persist] failed to persist terms onto quote ${conv.quoteId}:`,
         err,
       );
-      return undefined;
+      return false;
     }
+    return true;
+  }
+
+  /** REQ-491 (demo m60): the total the payment split bills (the quote's
+   *  estimatedTotal, as send-signed-confirmation invoices it), or undefined
+   *  when there is no readable quote yet. */
+  private async quoteTotalCents(
+    conv: AgentConversation,
+  ): Promise<number | undefined> {
+    if (!conv.quoteId) return undefined;
+    const quote = await this.quotes.getOwned(conv.quoteId, conv.userId)
+      .catch(() => undefined);
+    return quote?.estimatedTotal;
+  }
+
+  /** The wizard completed: tell the bus the quote's terms are drafted. */
+  private async announceTermsDrafted(
+    conv: AgentConversation,
+  ): Promise<string | undefined> {
+    if (!conv.quoteId) return undefined;
     await this.bus.emit({
       userId: conv.userId,
       entityType: "quote",
@@ -397,15 +920,13 @@ export class HandleWizardAnswer {
       // from the step/option ids on the payload, NOT the transcript text (which
       // is now rendered in the contractor's UI language and would poison the
       // base — localizeTermValue assumes EN input).
-      const stepDef = spec.steps.find((s) => s.id === stepId);
-      if (!stepDef) continue;
-      const optionDef = stepDef.options.find((o) => o.id === p?.optionId);
-      const label = t("en", stepDef.label);
-      const value = (!optionDef || optionDef.isCustom)
-        ? (p?.customValue ?? "").trim()
-        : t("en", optionDef.label);
-      if (!value) continue;
-      picks.push({ stepId, label, value });
+      // REQ-347: the same rule the in-app preview uses (shared termFromPick).
+      const term = termFromPick(
+        { stepId, optionId: p?.optionId, customValue: p?.customValue },
+        t,
+        spec.steps,
+      );
+      if (term) picks.push(term);
     }
     return picks;
   }
@@ -415,7 +936,9 @@ export class HandleWizardAnswer {
  *  today / yesterday / last_week relative to now; a custom pick must be an
  *  ISO date, anything else falls back to today. Undefined when the wizard
  *  had no completion step (the quote wizard). */
-function completionDateFromAnswers(answers: WizardAnswer[]): string | undefined {
+function completionDateFromAnswers(
+  answers: WizardAnswer[],
+): string | undefined {
   const a = answers.find((x) => x.stepId === "completion_date");
   if (!a) return undefined;
   const iso = (offsetDays: number) =>

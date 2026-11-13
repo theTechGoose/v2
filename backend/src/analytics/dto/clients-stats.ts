@@ -1,4 +1,4 @@
-import { IsArray, IsIn, IsNumber, IsString, validateSync, ValidateNested } from "#class-validator";
+import { IsArray, IsIn, IsNumber, IsOptional, IsString, validateSync, ValidateNested } from "#class-validator";
 import { plainToInstance, Type } from "#class-transformer";
 import { CLIENT_SEGMENTS, type ClientSegment } from "@crm/dto/customer.ts";
 
@@ -13,9 +13,18 @@ export class TopClientDto {
   @IsNumber() barPct!: number;
 }
 
+/** REQ-551: paid revenue (last 12 months) on invoices no customer carries. */
+export class UnassignedRevenueDto {
+  @IsNumber() invoiceCount!: number;
+  @IsNumber() revenue12moCents!: number;
+}
+
 export class TopClientsResponseDto {
   @IsArray() @ValidateNested({ each: true }) @Type(() => TopClientDto)
   results!: TopClientDto[];
+  /** REQ-551: present when paid invoices with no customer are left unranked. */
+  @IsOptional() @ValidateNested() @Type(() => UnassignedRevenueDto)
+  unassigned?: UnassignedRevenueDto;
 }
 
 export class ClientSegmentRowDto {

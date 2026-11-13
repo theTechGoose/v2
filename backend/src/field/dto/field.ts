@@ -58,6 +58,11 @@ export interface Subscription {
   daysOfMonth?: number[];
   /** REQ-174: days the customer has to pay, from the day the invoice is sent; unset = the account's default */
   netDays?: number;
+  /** REQ-699: the last service day — nothing is due after it; unset = until it is paused or deleted */
+  endDate?: string;
+  /** REQ-699: the signed quote whose recurring payment term made it (QuoteStore), and that quote's number */
+  quoteId?: string;
+  quoteNumber?: string;
   active: boolean;
   /** set by the grouping (REQ-140) — or by the owner's drag */
   regionId?: string;
@@ -89,7 +94,12 @@ export interface FieldTask {
   customerId: string;
   regionId: string;
   workerId: string;
+  /** the day — a multi-day job's FIRST day */
   date: string;
+  /** REQ-785: a multi-day job's last day (after `date`): this ONE record shows on every day between and is done once */
+  endDate?: string;
+  /** REQ-785: the other workers on the job, besides `workerId` — they see it and may check it off */
+  crewIds?: string[];
   /** address snapshot, so a deleted subscription's history keeps it */
   address?: string;
   /** price snapshot at generation time */
@@ -124,12 +134,17 @@ export interface Batch {
   createdAt: string;
 }
 
-/** An error with the HTTP status Danet should answer with (`error.status || 500`). */
+/**
+ * An error with the HTTP status Danet should answer with (`error.status || 500`).
+ * REQ-421 — `code`: a stable machine code the page maps to its own words (en/es);
+ * `message` stays the developer's English for logs and API callers.
+ */
 export class FieldError extends Error {
   constructor(
     message: string,
     readonly status = 400,
     readonly detail?: Record<string, unknown>,
+    readonly code?: string,
   ) {
     super(message);
     this.name = "FieldError";

@@ -17,6 +17,7 @@ import {
 import FieldHead from "../components/FieldHead.tsx";
 import { ApiError } from "../lib/api.ts";
 import { type Lang, langSignal, t } from "../lib/i18n.ts";
+import { onlyWorker, workerFromSearch } from "../lib/timesheet-filter.ts";
 
 type AddType = PunchType | "shift";
 
@@ -89,6 +90,16 @@ export default function TimesheetPage() {
     reason: "",
   });
   const win = localWeek(new Date(), weeks);
+  // REQ-786 (demo dv1) — ?worker=<id> (a worker row's Hours link) narrows the week to them
+  const [only, setOnly] = useState<string | null>(null);
+  useEffect(() => {
+    setOnly(workerFromSearch(location.search));
+  }, []);
+  const shown = onlyWorker(report, punches, only);
+  function showAll() {
+    setOnly(null);
+    history.replaceState(null, "", location.pathname);
+  }
 
   async function load() {
     try {
@@ -100,7 +111,12 @@ export default function TimesheetPage() {
       setReport(r);
       setPunches(p);
       setWorkers(w);
-      setAdd((a) => a.workerId || !w.length ? a : { ...a, workerId: w[0].id });
+      const pick = workerFromSearch(location.search);
+      setAdd((a) =>
+        a.workerId || !w.length
+          ? a
+          : { ...a, workerId: w.find((x) => x.id === pick)?.id ?? w[0].id }
+      );
       setErr("");
     } catch (e) {
       setErr(friendly(e));
@@ -203,11 +219,24 @@ export default function TimesheetPage() {
         </div>
       )}
 
+      {only && (
+        <div style="margin-bottom:12px">
+          <button
+            type="button"
+            class="btn btn--ghost btn--sm"
+            data-cy="ts-all-workers"
+            onClick={showAll}
+          >
+            ← {t("ts.allWorkers")}
+          </button>
+        </div>
+      )}
+
       {report && report.workers.length === 0 && (
         <div class="panel" data-cy="ts-empty">{t("ts.empty")}</div>
       )}
 
-      {report?.workers.map((row) => (
+      {shown.report?.workers.map((row) => (
         <div
           class="panel"
           key={row.worker.id}
@@ -374,9 +403,9 @@ export default function TimesheetPage() {
 
       <div class="panel" data-cy="ts-log-panel">
         <h3 class="panel__title">
-          {t("ts.log")} <span class="count">{punches.length}</span>
+          {t("ts.log")} <span class="count">{shown.punches.length}</span>
         </h3>
-        {punches.length === 0
+        {shown.punches.length === 0
           ? (
             <div style="color:var(--fg-muted);font-size:13px">
               {t("ts.noPunches")}
@@ -394,7 +423,7 @@ export default function TimesheetPage() {
                 </tr>
               </thead>
               <tbody>
-                {punches.map((p) => (
+                {shown.punches.map((p) => (
                   <tr
                     key={p.id}
                     data-cy="ts-punch"

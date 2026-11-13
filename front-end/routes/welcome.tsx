@@ -1,6 +1,7 @@
 import { asset, Head } from "fresh/runtime";
 import { personLanguage } from "../../shared/person-name/mod.ts"; // REQ-631
 import { define } from "../utils.ts";
+import DocTitle from "../components/DocTitle.tsx";
 import SiteFooter from "../components/SiteFooter.tsx";
 import { loadUser } from "../lib/auth.ts";
 import {
@@ -10,13 +11,14 @@ import {
 } from "../lib/lang.ts";
 import { tFor } from "../lib/i18n.ts";
 import { loadProfileSnapshot } from "../lib/onboarding-gate.ts";
-import { onboardingAnswered } from "../../shared/quote-flow/onboarding-questions.ts";
+import {
+  isStaff,
+  onboardingAnswered,
+} from "../../shared/quote-flow/onboarding-questions.ts";
 import WelcomeWizard from "../islands/WelcomeWizard.tsx";
 import { MetaPixelEvent } from "../components/MetaPixel.tsx";
-import {
-  registrationEvent,
-  subscribeEventFrom,
-} from "../../shared/meta-pixel/pixel.ts";
+import { subscribeEventFrom } from "../../shared/meta-pixel/pixel.ts";
+import { registrationForRequest } from "../lib/pixel-registration.ts";
 
 /**
  * /welcome — the onboarding wizard.
@@ -31,7 +33,9 @@ import {
  *                               never one already answered (REQ-121)
  *
  * Skip puts a question off for now; the skip stamp (`onboardedAt`) is a
- * record, never a gate — the wizard asks again next time.
+ * record, never a gate — the wizard asks again next time. REQ-227: a step's
+ * Skip stamps the question deferred, which opens the dashboard (not this
+ * page's rule); staff (super admins) are never sent through this wizard.
  */
 export default define.page(async function Welcome(ctx) {
   const user = await loadUser(ctx.req);
@@ -46,8 +50,9 @@ export default define.page(async function Welcome(ctx) {
   const snapshot = await loadProfileSnapshot(ctx.req);
 
   // REQ-091: nothing left to ask → the dashboard. (A profile that cannot load
-  // shows the load error below, never a loop.)
-  if (snapshot && onboardingAnswered(snapshot)) {
+  // shows the load error below, never a loop.) REQ-227: staff never meet the
+  // customer wizard (nor its CompleteRegistration pixel).
+  if (snapshot && (onboardingAnswered(snapshot) || isStaff(snapshot))) {
     return new Response(null, {
       status: 302,
       headers: { Location: "/dashboard" },
@@ -55,6 +60,9 @@ export default define.page(async function Welcome(ctx) {
   }
 
   const subscribed = subscribeEventFrom(ctx.url.searchParams.get("px"));
+  // REQ-229: the person on their own account — not a staff login, not a
+  // staff member impersonating them (the demo stage's frame).
+  const registered = await registrationForRequest(ctx.req);
 
   const lang: Lang = personLanguage(snapshot?.user, snapshot?.actor) ??
     (langFromCookie(ctx.req.headers.get("cookie")) ??
@@ -63,9 +71,11 @@ export default define.page(async function Welcome(ctx) {
   return (
     <>
       <Head>
-        <title>
-          {tFor(lang, "welcome.docTitle")} · {tFor(lang, "brand.name")}
-        </title>
+        <DocTitle
+          lang={lang}
+          title={(l) =>
+            `${tFor(l, "welcome.docTitle")} · ${tFor(l, "brand.name")}`}
+        />
         <link key="css-welcome" rel="stylesheet" href={asset("/welcome.css")} />
         <link
           key="css-plan-cards"
@@ -74,10 +84,12 @@ export default define.page(async function Welcome(ctx) {
         />
         {
           /* REQ-080: a new account on the wizard is a CompleteRegistration
-            for the ads (once per account on this browser); the receipt's way
-            back (/plan/return ?px=sub:…) is a Subscribe with the plan's price. */
+            for the ads (once per account on this browser) — REQ-229: only
+            the account's own session, never staff or an impersonation; the
+            receipt's way back (/plan/return ?px=sub:…) is a Subscribe with
+            the plan's price. */
         }
-        <MetaPixelEvent event={registrationEvent(user.id)} />
+        {registered ? <MetaPixelEvent event={registered} /> : null}
         {subscribed ? <MetaPixelEvent event={subscribed} /> : null}
       </Head>
       <div class="welcome-shell">

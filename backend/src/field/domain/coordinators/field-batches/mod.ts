@@ -13,7 +13,7 @@ import { SendPaperworkEmail } from "@paperwork/domain/coordinators/send-paperwor
 import { SendPaperworkSms } from "@paperwork/domain/coordinators/send-paperwork-sms/mod.ts";
 import type { Invoice } from "@paperwork/dto/invoice.ts";
 import { BatchStore, FieldTaskStore, SubscriptionStore, TaskTypeStore } from "@field/domain/data/field-stores/mod.ts";
-import { lineItem, lineText, linesFor, summarize } from "@field/domain/business/batch-lines/mod.ts";
+import { batchTitle, lineItem, lineText, linesFor, summarize } from "@field/domain/business/batch-lines/mod.ts";
 import { fieldToday, shiftDate } from "@field/domain/business/schedule/mod.ts";
 import { type Batch, FieldError } from "@field/dto/field.ts";
 import { newId } from "@field/domain/coordinators/field-zones/mod.ts";
@@ -74,7 +74,7 @@ export class FieldBatches {
       const inv = await this.invoices.create(userId, {
         customerId: g.customerId,
         status: "draft",
-        jobName: lang === "es" ? `Mantenimiento ${from} → ${to}` : `Maintenance ${from} → ${to}`,
+        ...batchTitle(g.lines, lang), // REQ-703: jobName from the lines + serviceDateFrom/To
         description: descriptions.join("\n"),
         lineItems: g.lines.map((l) => lineItem(l, lang)), // REQ-173: structured — date / service / address
         amount: g.amount,
@@ -118,9 +118,11 @@ export class FieldBatches {
     if (zero.length && !allowZero) throw new FieldError("some drafts have $0 lines — price them, or send with allowZero", 409, { invoiceIds: zero.map((i) => i.id) });
     const today = fieldToday();
     const sent: string[] = [];
-    const failed: { invoiceId: string; reason: string }[] = [];
+    // REQ-401 (demo M30): `code` is what the page translates; `reason` stays for logs and older clients
+    const failed: { invoiceId: string; reason: string; code?: "noRecipient"; customerId?: string }[] = [];
     for (const inv of chosen) {
       const customer = inv.customerId ? await this.customers.get(inv.customerId).catch(() => null) : null;
+      const noRecipient = !customer?.email && !customer?.phoneNumber;
       let ok = false, reason = "no recipient: the customer has no email or phone";
       try {
         if (customer?.email) {
@@ -139,7 +141,7 @@ export class FieldBatches {
         // REQ-174: due = the day it is sent + its days to pay
         await this.invoices.update(inv.id, userId, { status: "sent", issuedDate: inv.issuedDate ?? today, ...(typeof inv.netDays === "number" ? { dueDate: shiftDate(today, inv.netDays) } : {}) });
         sent.push(inv.id);
-      } else failed.push({ invoiceId: inv.id, reason });
+      } else failed.push({ invoiceId: inv.id, reason, ...(noRecipient ? { code: "noRecipient" as const } : {}), ...(inv.customerId ? { customerId: inv.customerId } : {}) });
     }
     return { sent: sent.length, sentIds: sent, failed, batch: await this.get(userId, batchId) };
   }

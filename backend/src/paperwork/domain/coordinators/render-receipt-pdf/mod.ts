@@ -28,6 +28,9 @@ export interface RenderReceiptPdfInput {
   reference?: string;
   /** When the contractor confirmed receipt (ISO string). */
   confirmedAt: string;
+  /** REQ-715: the receipt's language — the email it rides with resolves it
+   *  (the customer's own language first); else the contractor's. */
+  lang?: Lang;
   /** REQ-628: the business's logo — heads the receipt; absent → name wordmark. */
   logo?: LogoBytes;
 }
@@ -60,7 +63,7 @@ export class RenderReceiptPdf {
       reference,
       confirmedAt,
     } = input;
-    const lang: Lang = contractor?.language ?? "en";
+    const lang: Lang = input.lang ?? contractor?.language ?? "en";
     // REQ-204: the receipt shows the customer the bill was issued to
     const customer = customerOnDocument(invoice, input.customer);
     const pdf = await PDFDocument.create();

@@ -11,7 +11,7 @@ import { CrmModule } from "@crm/mod-root.ts";
 import { AnalyticsModule } from "@analytics/mod-root.ts";
 import { UsersModule } from "@users/mod-root.ts";
 import { OtpStore } from "@users/domain/data/otp-store/mod.ts";
-import { resetKv } from "@core/data/kv/mod.ts";
+import { getKv, resetKv } from "@core/data/kv/mod.ts";
 
 @Module({ imports: [UsersModule, CrmModule, PaperworkModule, AnalyticsModule] })
 class TestApp {}
@@ -343,13 +343,15 @@ Deno.test("REQ-202/203: an invoice has one balance — a stale claim is refused,
       assertEquals(r.status, 409);
       assertEquals((await r.json()).reason, "locked_paid");
     }
-    // an extra payment on a paid invoice is an overpayment, flagged
+    // an extra payment on a paid invoice is an overpayment, flagged — the
+    // contractor confirms it (REQ-551: `override: true`, else a 409)
     await drain(
       await post("/payments", auth(sid), {
         invoiceId: inv.id,
         amount: 500,
         method: "cash",
         receivedAt: new Date().toISOString(),
+        override: true,
       }),
     );
     const over = await get(`/invoices/${inv.id}`, auth(sid));
@@ -421,6 +423,26 @@ Deno.test("REQ-201/202: a discount or an approved change order publishes a new v
   });
 });
 
+Deno.test("REQ-249: GET /quotes/:id/ledger — quote.accepted is false while the quote is only sent, true once it is signed (the panel's 'Quoted' vs 'Agreed')", async () => {
+  await withServer(async () => {
+    const sid = await login();
+    const c = await mkCustomer(sid);
+    const q = await mkQuote(sid, c.id);
+    await drain(await put(`/quotes/${q.id}`, auth(sid), { status: "sent" }));
+    const before = await get(`/quotes/${q.id}/ledger`, auth(sid));
+    assertEquals(before.quote.accepted, false, "a sent quote is not agreed");
+    const accept = await post(`/quotes/${q.id}/accept`, json, {
+      name: "Ann",
+      version: 1,
+    });
+    assertEquals(accept.status, 200);
+    await drain(accept);
+    const after = await get(`/quotes/${q.id}/ledger`, auth(sid));
+    assertEquals(after.quote.accepted, true, "a signed quote is agreed");
+    assertEquals(after.agreementTotalCents, before.agreementTotalCents);
+  });
+});
+
 Deno.test("REQ-205: GET /quotes/:id/ledger — invoices with numbers and statuses, approved change orders in the agreed total, remaining-to-invoice apart from invoiced-unpaid", async () => {
   await withServer(async () => {
     const sid = await login();
@@ -456,7 +478,13 @@ Deno.test("REQ-205: GET /quotes/:id/ledger — invoices with numbers and statuse
     );
     assertEquals(ledger1.invoicedCents, 100000);
     assertEquals(ledger1.remainingToInvoiceCents, 0);
-    assertEquals(ledger1.invoicedUnpaidCents, 100000);
+    // REQ-481 (demo M28): the second milestone is scheduled, not billed —
+    // only INV-001 is "invoiced but unpaid"; INV-002 is the Scheduled row.
+    assertEquals(ledger1.invoices[1].status, "scheduled");
+    assertEquals(ledger1.billedCents, 50000);
+    assertEquals(ledger1.scheduledCents, 50000);
+    assertEquals(ledger1.invoicedUnpaidCents, 50000);
+    assertEquals(ledger1.nextScheduled.number, "INV-002");
     // a change order on the first invoice, approved → agreed total grows, remaining to invoice grows
     const first = ledger1.invoices[0];
     const co = await post(`/invoices/${first.id}/change-orders`, auth(sid), {
@@ -485,7 +513,9 @@ Deno.test("REQ-205: GET /quotes/:id/ledger — invoices with numbers and statuse
       "the approved change order is on INV-001",
     );
     assertEquals(ledger2.paidCents, 70000);
-    assertEquals(ledger2.invoicedUnpaidCents, 50000);
+    // REQ-481: INV-001 is paid and INV-002 is still scheduled — nothing billed is unpaid.
+    assertEquals(ledger2.invoicedUnpaidCents, 0);
+    assertEquals(ledger2.scheduledCents, 50000);
     assertEquals(ledger2.remainingToInvoiceCents, 0);
     assertEquals(ledger2.changeOrders[0].number, "CO-001");
     assertEquals(ledger2.changeOrders[0].invoiceNumber, "INV-001");
@@ -496,17 +526,22 @@ Deno.test("REQ-205: GET /quotes/:id/ledger — invoices with numbers and statuse
     assertEquals(pub.quote?.number, "Q-001");
     assertEquals(pub.quote?.url, `/q/${q.id}`);
     assertEquals(pub.quote?.accepted, true);
+    // REQ-312 (demo m29, reconciled on demo-fixes): the customer's pages list
+    // ISSUED invoices only — INV-002 is the scheduled second milestone, still
+    // on the contractor's ledger above, not yet on the customer's page.
+    assertEquals(
+      ledger2.invoices.map((i: { number: string }) => i.number),
+      ["INV-001", "INV-002"],
+    );
     assertEquals(pub.siblings.map((s: { number: string }) => s.number), [
       "INV-001",
-      "INV-002",
     ]);
     // the public quote lists its invoices with balances
     const pubQ = await get(`/quotes/${q.id}/public`);
     assertEquals(pubQ.invoices.map((i: { number: string }) => i.number), [
       "INV-001",
-      "INV-002",
     ]);
-    assertEquals(pubQ.invoices[1].balanceCents, 50000);
+    assertEquals(pubQ.invoices[0].balanceCents, 0);
     assertNotEquals(pubQ.invoices[0].url, undefined);
   });
 });
@@ -531,5 +566,80 @@ Deno.test("REQ-204: editing the customer after a quote was sent does not change 
     const draft = await mkQuote(sid, c.id);
     const pubDraft = await get(`/quotes/${draft.id}/public`);
     assertEquals(pubDraft.customer.name, "Ann Lee-Smith");
+  });
+});
+
+Deno.test("REQ-248: version 1 names who published it and when — issued by PUT, revised by a send, and a pre-stamp row read back with its owner", async () => {
+  await withServer(async () => {
+    const sid = await login();
+    const me = await get(`/me`, auth(sid));
+    const c = await mkCustomer(sid);
+    const q = await mkQuote(sid, c.id);
+    // issued through PUT /quotes/:id (the quotes panel's path)
+    const issued = await put(`/quotes/${q.id}`, auth(sid), {
+      status: "sent",
+    }).then((r) => r.json());
+    assertEquals(issued.publishedAt, issued.sentAt);
+    assertEquals(issued.publishedBy?.userId, me.id);
+    let versions = await get(`/quotes/${q.id}/versions`, auth(sid));
+    assertEquals(versions.length, 1);
+    assertEquals(versions[0].publishedBy, {
+      userId: me.id,
+      name: "Rafa Castro",
+    });
+    assertEquals(versions[0].publishedAt, issued.sentAt);
+    // a pending edit, published by a send: both versions name the publisher
+    await drain(
+      await put(`/quotes/${q.id}`, auth(sid), { estimatedTotal: 120000 }),
+    );
+    const sent = await post(`/quotes/${q.id}/email`, auth(sid), {
+      to: "ops@acme.test",
+    }).then((r) => r.json());
+    assertEquals(sent.ok, true);
+    versions = await get(`/quotes/${q.id}/versions`, auth(sid));
+    assertEquals(versions.map((v: { version: number }) => v.version), [1, 2]);
+    for (const v of versions) {
+      assertEquals(v.publishedBy, { userId: me.id, name: "Rafa Castro" });
+    }
+    assertEquals(versions[0].publishedAt, issued.sentAt);
+    assertNotEquals(versions[0].publishedBy, {});
+    // a row issued before the stamp existed (no publishedAt / publishedBy)
+    const old = await mkQuote(sid, c.id);
+    await drain(
+      await put(`/quotes/${old.id}`, auth(sid), { status: "sent" }),
+    );
+    const kv = await getKv();
+    const row = (await kv.get<Record<string, unknown>>(["quote", old.id]))
+      .value!;
+    delete row.publishedAt;
+    delete row.publishedBy;
+    await kv.set(["quote", old.id], row);
+    const legacy = await get(`/quotes/${old.id}/versions`, auth(sid));
+    assertEquals(legacy[0].publishedBy, { userId: me.id, name: "Rafa Castro" });
+    assertEquals(legacy[0].publishedAt, row.sentAt);
+  });
+});
+
+Deno.test("REQ-686 (cycle 5, m45): a never-sent draft's version history carries no publishedAt — it was not published", async () => {
+  await withServer(async () => {
+    const sid = await login();
+    const c = await mkCustomer(sid);
+    const q = await mkQuote(sid, c.id);
+    // an edit stamps updatedAt — the old fallback read that as "published"
+    await drain(
+      await put(`/quotes/${q.id}`, auth(sid), { estimatedTotal: 120000 }),
+    );
+    const draft = await get(`/quotes/${q.id}`, auth(sid));
+    assertEquals(draft.status ?? "draft", "draft");
+    const versions = await get(`/quotes/${q.id}/versions`, auth(sid));
+    assertEquals(versions.length, 1);
+    assertEquals(versions[0].current, true);
+    assertEquals(versions[0].publishedAt, undefined);
+    // once sent, the same version reads published at the send
+    const sent = await put(`/quotes/${q.id}`, auth(sid), {
+      status: "sent",
+    }).then((r) => r.json());
+    const after = await get(`/quotes/${q.id}/versions`, auth(sid));
+    assertEquals(after[after.length - 1].publishedAt, sent.sentAt);
   });
 });

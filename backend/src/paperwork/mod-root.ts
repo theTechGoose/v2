@@ -23,6 +23,8 @@ import { ShortLinkStore } from "@paperwork/domain/data/shortlink-store/mod.ts";
 import { SummarizePaperworkViews } from "@paperwork/domain/coordinators/summarize-paperwork-views/mod.ts";
 import { SendPaperworkEmail } from "@paperwork/domain/coordinators/send-paperwork-email/mod.ts";
 import { SendPaperworkSms } from "@paperwork/domain/coordinators/send-paperwork-sms/mod.ts";
+import { PreviewQuoteSend } from "@paperwork/domain/coordinators/preview-quote-send/mod.ts"; // REQ-461
+import { PreviewInvoiceSend } from "@paperwork/domain/coordinators/preview-invoice-send/mod.ts"; // REQ-727
 import { ComputeInvoiceBalance } from "@paperwork/domain/coordinators/compute-invoice-balance/mod.ts";
 import { MarkInvoicePaid } from "@paperwork/domain/coordinators/mark-invoice-paid/mod.ts";
 import { RenderQuotePdf } from "@paperwork/domain/coordinators/render-quote-pdf/mod.ts";
@@ -44,6 +46,14 @@ import { DocNumbering } from "@core/data/doc-numbering/mod.ts"; // REQ-198
 import { RevisionsController } from "@paperwork/entrypoints/revisions-controller/mod.ts"; // REQ-201/205
 import { WorkOrderController } from "@paperwork/entrypoints/work-order-controller/mod.ts"; // REQ-210
 import { WorkOrderStore } from "@paperwork/domain/data/work-order-store/mod.ts"; // REQ-210
+import { InvoiceTranslatorPort } from "@paperwork/domain/coordinators/invoice-translator-port/mod.ts"; // REQ-497
+import { QuoteSignedPort } from "@paperwork/domain/coordinators/quote-signed-port/mod.ts"; // REQ-563
+import { QuoteSubscriptionPort } from "@paperwork/domain/coordinators/quote-subscription-port/mod.ts"; // REQ-699
+import { QuoteTranslatorPort } from "@paperwork/domain/coordinators/quote-translator-port/mod.ts"; // REQ-591
+import { InquiryController } from "@paperwork/entrypoints/inquiry-controller/mod.ts"; // REQ-701
+import { QuoteInquiryStore } from "@paperwork/domain/data/inquiry-store/mod.ts"; // REQ-701
+import { ReplyToInquiry } from "@paperwork/domain/coordinators/reply-to-inquiry/mod.ts"; // REQ-701
+import { QuoteAllowance } from "@paperwork/domain/coordinators/quote-allowance/mod.ts"; // REQ-766
 
 @Module({
   imports: [UsersModule, CrmModule, CommunicationModule, FilesModule],
@@ -59,6 +69,7 @@ import { WorkOrderStore } from "@paperwork/domain/data/work-order-store/mod.ts";
     InboundController,
     RevisionsController, // REQ-201/205
     WorkOrderController, // REQ-210
+    InquiryController, // REQ-701
   ],
   injectables: [
     QuoteStore,
@@ -72,6 +83,8 @@ import { WorkOrderStore } from "@paperwork/domain/data/work-order-store/mod.ts";
     SummarizePaperworkViews,
     SendPaperworkEmail,
     SendPaperworkSms,
+    PreviewQuoteSend, // REQ-461
+    PreviewInvoiceSend, // REQ-727
     MarkInvoicePaid,
     ComputeInvoiceBalance,
     RenderQuotePdf,
@@ -91,6 +104,13 @@ import { WorkOrderStore } from "@paperwork/domain/data/work-order-store/mod.ts";
     RecordPaymentFromUtterance,
     DocNumbering, // REQ-198
     WorkOrderStore, // REQ-210
+    InvoiceTranslatorPort, // REQ-497
+    QuoteSignedPort, // REQ-563
+    QuoteSubscriptionPort, // REQ-699
+    QuoteTranslatorPort, // REQ-591
+    QuoteInquiryStore, // REQ-701
+    ReplyToInquiry, // REQ-701
+    QuoteAllowance, // REQ-766
   ],
 })
 export class PaperworkModule {}

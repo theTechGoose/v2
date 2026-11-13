@@ -30,10 +30,14 @@ export interface BusinessIdentity {
   commsLanguage?: string;
   /** The set of languages the contractor can SEND paperwork in — drives the
    *  Settings checkboxes and the "Send in" buttons on the quote-review card.
-   *  Unset → derive from `commsLanguage` (or ["en"]). */
+   *  Unset → `sendLanguagesOf` (shared/quote-flow/comms-language.ts, REQ-348):
+   *  the legacy `commsLanguage`, else the default from user.language. */
   commsLanguages?: string[];
   /** REQ-172: the business's IANA time zone (the 9 am schedule texts follow it) */
   timezone?: string;
+  /** REQ-623: automatic payment reminders — unset → on, day 3/7/14/30
+   *  (shared/quote-flow/reminder-settings.ts) */
+  reminders?: { enabled: boolean; days: number[] };
   /** Per-method enable flags + handles (Venmo @, Zelle email, etc.).
    *  Shape mirrors backend AcceptedPaymentMethods but kept permissive so
    *  consumers only need the .enabled flag for gating logic. */
@@ -95,11 +99,17 @@ export interface BusinessInsurance {
   updatedAt: string;
 }
 
+/** Mirrors backend users/dto/contract-defaults.ts. REQ-622: no paymentTermsDays / depositPct /
+ *  warrantyDays — the payment terms are identity.invoiceNetDays ("Days to pay an invoice"). */
 export interface ContractDefaults {
   userId: string;
-  paymentTermsDays?: number;
-  depositPct?: number;
-  warrantyDays?: number;
+  defaultTerms?: string;
+  paymentInstructions?: string;
+  paymentTermsTemplateId?: string;
+  warrantyMonths?: number;
+  terminationNoticeDays?: number;
+  disputeResolution?: "mediation" | "arbitration" | "court";
+  governingState?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -132,6 +142,8 @@ export interface ProfileUser {
   onboardedAt?: string;
   /** Whether that first time was a skip vs. a real finish. */
   onboardingSkipped?: boolean;
+  /** REQ-227: question → ISO time its wizard step's Skip was pressed */
+  onboardingDeferred?: Partial<Record<string, string>>;
   /** REQ-624 — present while acting: the person signed in (PUT /me answers with it too) */
   actor?: ActorView;
   createdAt: number;

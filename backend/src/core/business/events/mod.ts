@@ -4,7 +4,7 @@ import { Injectable } from "#danet/core";
  * Domain event the EventBus carries.
  *
  *   userId       — the contractor whose data changed (notifications scope to this)
- *   entityType   — 'quote' | 'invoice' | 'customer' | 'payment'
+ *   entityType   — 'quote' | 'invoice' | 'customer' | 'payment' | 'task' …
  *   entityId     — the record's id (so subscribers can hyperlink)
  *   action       — verb, e.g. 'sent', 'accepted', 'signed', 'paid', 'overdue', 'replied'
  *   data         — optional structured payload for richer notifications (amounts, names…)
@@ -18,7 +18,9 @@ export interface DomainEvent {
     | "customer"
     | "payment"
     | "conversation"
-    | "message";
+    | "message"
+    // REQ-566 (demo-loop cycle 4, m11): a field task finished
+    | "task";
   entityId: string;
   action: string;
   data?: Record<string, unknown>;

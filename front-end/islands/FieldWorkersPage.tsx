@@ -10,10 +10,24 @@ import {
   type RegionView,
 } from "../clients/field.ts";
 import FieldHead from "../components/FieldHead.tsx";
-import { ApiError } from "../lib/api.ts";
+import { initialsOf } from "../lib/clients-display.ts";
 import { I, ICN } from "../lib/dash-icons.tsx";
-import { fmtCell } from "../lib/field.ts";
+import { fmtCell, PHONE_PLACEHOLDER } from "../lib/field.ts";
+import { timesheetHref } from "../lib/timesheet-filter.ts";
+import {
+  type AddFormField,
+  addFormProblems,
+  type WorkerErr,
+  workerError,
+  zoneName,
+} from "../lib/field-worker-errors.ts";
 import { langSignal, t } from "../lib/i18n.ts";
+import {
+  copyShareText,
+  type InviteShare,
+  inviteShare,
+} from "../lib/invite-share.ts";
+import type { FieldWorkersSeed } from "../lib/field-ssr.ts";
 
 interface AddForm {
   name: string;
@@ -22,8 +36,11 @@ interface AddForm {
   /** digits only, at most 4 */
   pin: string;
   foreman: boolean;
-  /** REQ-155 — the language the worker is texted in; Spanish by default */
-  language: "en" | "es";
+  /**
+   * REQ-155 — the language the worker is texted in and sees /worker in. REQ-774: null until
+   * picked, which means the app's language (an English account → English), never a hard Spanish.
+   */
+  language: "en" | "es" | null;
 }
 
 const BLANK: AddForm = {
@@ -31,43 +48,50 @@ const BLANK: AddForm = {
   phone: "",
   pin: "",
   foreman: false,
-  language: "es",
+  language: null,
 };
 
-/** the server's message when it sent one (a 409 names the zones still covered); the house fallback otherwise */
-function errMsg(err: unknown): string {
-  if (err instanceof ApiError) {
-    const b = err.body as { error?: unknown; message?: unknown } | null;
-    if (b && typeof b === "object") {
-      if (typeof b.error === "string") return b.error;
-      if (typeof b.message === "string") return b.message;
-    }
-  }
-  if (err instanceof Error && err.message) return err.message;
-  return t("field.common.error");
+/** REQ-421 (demo m42) — the server's refusal code, worded in the page's language (never its English) */
+function errMsg(err: WorkerErr): string {
+  return t(err.key, err.vars);
 }
 
-/** "Zona 3" reads "Zone 3" in English (the server names zones in Spanish) */
-function zoneName(name: string, lang: "en" | "es"): string {
-  return lang === "en" ? name.replace(/^Zona /, "Zone ") : name;
-}
-
-export default function FieldWorkersPage() {
+/** REQ-730 (demo c2-p13-p) — `seed`: the lists read by the route on the SSR side; the first HTML then carries the rows, not "Loading…" */
+export default function FieldWorkersPage(
+  { seed }: { seed?: FieldWorkersSeed | null } = {},
+) {
   const lang = langSignal.value;
-  const [workers, setWorkers] = useState<FieldWorker[] | null>(null);
-  const [regions, setRegions] = useState<RegionView[]>([]);
-  const [loadErr, setLoadErr] = useState<string | null>(null);
+  const [workers, setWorkers] = useState<FieldWorker[] | null>(
+    seed?.workers ?? null,
+  );
+  const [regions, setRegions] = useState<RegionView[]>(seed?.regions ?? []);
+  const [loadErr, setLoadErr] = useState<WorkerErr | null>(null);
   const [form, setForm] = useState<AddForm>(BLANK);
   const [adding, setAdding] = useState(false);
-  const [addErr, setAddErr] = useState<string | null>(null);
-  /** REQ-151 — the last add: whether the worker was texted the link and the PIN */
-  const [added, setAdded] = useState<{ name: string; texted: boolean } | null>(
-    null,
-  );
+  /** REQ-520 — boxes the owner has left (blurred), and whether Add was pressed: only then a box's problem shows */
+  const [touched, setTouched] = useState<Set<AddFormField>>(new Set());
+  const [tried, setTried] = useState(false);
+  /** REQ-421 — a refusal with the box it belongs under (worded at render, so a language flip re-words it) */
+  const [addErr, setAddErr] = useState<WorkerErr | null>(null);
+  /**
+   * REQ-151 — the last add: whether the worker was texted the link and the PIN.
+   * REQ-601 (cycle 4, M12) — when not, the link + the welcome text to share, and the PIN just typed
+   * (kept here, since the form is reset after the add).
+   */
+  const [added, setAdded] = useState<
+    {
+      name: string;
+      texted: boolean;
+      pin: string;
+      share: InviteShare | null;
+    } | null
+  >(null);
+  /** REQ-601 — the Copy link + PIN outcome: null until pressed */
+  const [copied, setCopied] = useState<boolean | null>(null);
   /** the row whose Remove is waiting for its Confirm */
   const [confirmId, setConfirmId] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
-  const [rowErr, setRowErr] = useState<{ id: string; msg: string } | null>(
+  const [rowErr, setRowErr] = useState<{ id: string; err: WorkerErr } | null>(
     null,
   );
 
@@ -82,6 +106,8 @@ export default function FieldWorkersPage() {
   }
 
   useEffect(() => {
+    // REQ-730 — seeded on the server: no client fetch on mount
+    if (seed) return;
     let alive = true;
     Promise.all([
       fieldClient.workers(),
@@ -94,7 +120,7 @@ export default function FieldWorkersPage() {
       })
       .catch((err: unknown) => {
         if (!alive) return;
-        setLoadErr(errMsg(err));
+        setLoadErr(workerError(err, langSignal.value));
         setWorkers([]);
       });
     return () => {
@@ -102,29 +128,54 @@ export default function FieldWorkersPage() {
     };
   }, []);
 
-  const phoneOk = form.phone.length === 10;
-  const pinOk = /^\d{4}$/.test(form.pin);
-  const canAdd = form.name.trim().length > 0 && phoneOk && pinOk && !adding;
+  /** REQ-520 (demo m19) — Add stays enabled; a bad box says why, under itself, once touched or on Add */
+  const problems = addFormProblems(form);
+  const touch = (f: AddFormField) =>
+    setTouched((s) => s.has(f) ? s : new Set(s).add(f));
+  /** the box's message key: the server's refusal first, else its own problem once shown */
+  function boxErr(f: AddFormField): string | null {
+    if (addErr?.field === f) return errMsg(addErr);
+    const k = problems[f];
+    return k && (tried || touched.has(f)) ? t(k) : null;
+  }
+  const nameErr = boxErr("name");
+  const phoneErr = boxErr("phone");
+  const pinErr = boxErr("pin");
+
+  /** REQ-774 — the language the picker shows and the add sends: the picked one, else the app's */
+  const pickedLang: "en" | "es" = form.language ?? langSignal.value;
 
   async function submit(e: Event) {
     e.preventDefault();
-    if (!canAdd) return;
+    if (adding) return;
+    if (Object.keys(problems).length > 0) {
+      setTried(true);
+      return;
+    }
     setAdding(true);
     setAddErr(null);
     setAdded(null);
+    setCopied(null);
     try {
       const made = await fieldClient.createWorker({
         name: form.name.trim(),
         phoneNumber: form.phone,
         pin: form.pin,
         role: form.foreman ? "foreman" : "worker",
-        language: form.language,
+        language: pickedLang,
       });
-      setAdded({ name: made.name, texted: made.texted === true });
+      setAdded({
+        name: made.name,
+        texted: made.texted === true,
+        pin: form.pin,
+        share: inviteShare(made),
+      });
       setForm(BLANK);
+      setTouched(new Set());
+      setTried(false);
       await reload();
     } catch (err) {
-      setAddErr(errMsg(err));
+      setAddErr(workerError(err, langSignal.value));
     } finally {
       setAdding(false);
     }
@@ -143,7 +194,7 @@ export default function FieldWorkersPage() {
         )
       );
     } catch (err) {
-      setRowErr({ id: w.id, msg: errMsg(err) });
+      setRowErr({ id: w.id, err: workerError(err, langSignal.value) });
     } finally {
       setBusyId(null);
     }
@@ -158,7 +209,7 @@ export default function FieldWorkersPage() {
       setWorkers((list) => (list ?? []).filter((x) => x.id !== w.id));
     } catch (err) {
       // a 409 — the worker still covers zones; the server says which
-      setRowErr({ id: w.id, msg: errMsg(err) });
+      setRowErr({ id: w.id, err: workerError(err, langSignal.value) });
     } finally {
       setBusyId(null);
     }
@@ -173,14 +224,19 @@ export default function FieldWorkersPage() {
         title={t("field.wk.title")}
         sub={t("field.wk.sub")}
       >
-        <a class="btn btn--ghost" href="/worker" data-cy="wk-open">
+        <a
+          class="btn btn--ghost"
+          href="/worker?from=%2Ffield%2Fworkers"
+          data-cy="wk-open"
+        >
           <I d={ICN.hardhat} size={14} /> {t("field.wk.open")}
         </a>
       </FieldHead>
 
-      {loadErr && <p class="alert">{loadErr}</p>}
+      {loadErr && <p class="alert">{errMsg(loadErr)}</p>}
 
-      <form class="panel" onSubmit={submit} data-cy="wk-form">
+      {/* REQ-708 (cycle 5, c1-setup-m15): novalidate — REQ-520's in-app messages, not the browser's bubble */}
+      <form class="panel" noValidate onSubmit={submit} data-cy="wk-form">
         <h2 class="panel__title">
           <I d={ICN.plus} size={14} sw={2.5} /> {t("field.wk.new")}
         </h2>
@@ -192,6 +248,8 @@ export default function FieldWorkersPage() {
               data-cy="wk-name"
               required
               autocomplete="off"
+              aria-invalid={nameErr ? "true" : undefined}
+              onBlur={() => touch("name")}
               value={form.name}
               onInput={(e) =>
                 setForm({
@@ -199,6 +257,11 @@ export default function FieldWorkersPage() {
                   name: (e.currentTarget as HTMLInputElement).value,
                 })}
             />
+            {nameErr && (
+              <span class="field-error" role="alert" data-cy="wk-name-error">
+                {nameErr}
+              </span>
+            )}
           </label>
           <label class="field">
             {t("settings.phone")}
@@ -209,19 +272,35 @@ export default function FieldWorkersPage() {
               required
               inputMode="numeric"
               autocomplete="off"
-              placeholder="8435550201"
+              placeholder={PHONE_PLACEHOLDER}
               maxlength={10}
               pattern="\d{10}"
+              aria-invalid={phoneErr ? "true" : undefined}
+              aria-describedby={phoneErr ? "wk-phone-error" : undefined}
+              onBlur={() => touch("phone")}
               value={form.phone}
-              onInput={(e) =>
+              onInput={(e) => {
                 setForm({
                   ...form,
                   phone: (e.currentTarget as HTMLInputElement).value.replace(
                     /\D/g,
                     "",
                   ).slice(0, 10),
-                })}
+                });
+                // a new number clears the refusal of the old one
+                if (addErr?.field === "phone") setAddErr(null);
+              }}
             />
+            {phoneErr && (
+              <span
+                id="wk-phone-error"
+                class="field-error"
+                role="alert"
+                data-cy="wk-phone-error"
+              >
+                {phoneErr}
+              </span>
+            )}
           </label>
           <label class="field" style="flex:0 0 140px;min-width:120px">
             {t("field.wk.pin")}
@@ -234,16 +313,31 @@ export default function FieldWorkersPage() {
               autocomplete="new-password"
               maxlength={4}
               pattern="\d{4}"
+              aria-invalid={pinErr ? "true" : undefined}
+              aria-describedby={pinErr ? "wk-pin-error" : undefined}
+              onBlur={() => touch("pin")}
               value={form.pin}
-              onInput={(e) =>
+              onInput={(e) => {
                 setForm({
                   ...form,
                   pin: (e.currentTarget as HTMLInputElement).value.replace(
                     /\D/g,
                     "",
                   ).slice(0, 4),
-                })}
+                });
+                if (addErr?.field === "pin") setAddErr(null);
+              }}
             />
+            {pinErr && (
+              <span
+                id="wk-pin-error"
+                class="field-error"
+                role="alert"
+                data-cy="wk-pin-error"
+              >
+                {pinErr}
+              </span>
+            )}
           </label>
           <label class="field" style="flex:0 0 150px;min-width:130px">
             {t("field.wk.language")}
@@ -251,7 +345,7 @@ export default function FieldWorkersPage() {
               name="language"
               data-cy="wk-language"
               title={t("field.wk.langHint")}
-              value={form.language}
+              value={pickedLang}
               onChange={(e) =>
                 setForm({
                   ...form,
@@ -266,6 +360,9 @@ export default function FieldWorkersPage() {
             </select>
           </label>
         </div>
+        <p class="hint" style="margin:6px 0 0" data-cy="wk-lang-note">
+          {t("field.wk.langNote")}
+        </p>
         <div
           class="row"
           style="margin-top:10px;align-items:center;justify-content:space-between"
@@ -292,13 +389,15 @@ export default function FieldWorkersPage() {
             type="submit"
             class="btn btn--pink"
             data-cy="wk-add"
-            disabled={!canAdd}
+            disabled={adding}
           >
             <I d={ICN.plus} size={14} sw={2.5} />{" "}
             {adding ? t("field.common.loading") : t("common.add")}
           </button>
         </div>
-        {addErr && <p class="alert" data-cy="wk-error">{addErr}</p>}
+        {addErr && addErr.field === null && (
+          <p class="alert" data-cy="wk-error">{errMsg(addErr)}</p>
+        )}
         {added && (
           <p
             class={added.texted ? "hint" : "alert"}
@@ -309,6 +408,64 @@ export default function FieldWorkersPage() {
               name: added.name,
             })}
           </p>
+        )}
+        {added && !added.texted && added.share && (
+          <div class="panel" data-cy="wk-share" style="margin:8px 0 0">
+            <p style="margin:0 0 4px">
+              {t("field.wk.shareLink")}:{" "}
+              <a
+                class="link"
+                href={added.share.url}
+                target="_blank"
+                rel="noopener"
+                data-cy="wk-share-url"
+                style="word-break:break-all"
+              >
+                {added.share.url}
+              </a>
+            </p>
+            <p style="margin:0 0 8px" data-cy="wk-share-pin">
+              PIN: <strong>{added.pin}</strong>
+            </p>
+            <textarea
+              readOnly
+              rows={3}
+              class="share-text"
+              data-cy="wk-share-text"
+              style="width:100%;resize:vertical"
+              value={added.share.text}
+              onFocus={(e) =>
+                (e.currentTarget as HTMLTextAreaElement).select()}
+            />
+            <div
+              class="row"
+              style="margin-top:6px;align-items:center;gap:8px"
+            >
+              <button
+                type="button"
+                class="btn btn--ghost"
+                data-cy="wk-share-copy"
+                data-copied={copied === true ? "true" : undefined}
+                onClick={async () => {
+                  const share = added.share;
+                  if (share) {
+                    setCopied(await copyShareText(share.text));
+                  }
+                }}
+              >
+                {t("field.wk.copyShare")}
+              </button>
+              {copied !== null && (
+                <span class="hint" role="status" data-cy="wk-share-copied">
+                  {t(
+                    copied
+                      ? "field.wk.shareCopied"
+                      : "field.wk.shareCopyFailed",
+                  )}
+                </span>
+              )}
+            </div>
+          </div>
         )}
       </form>
 
@@ -332,7 +489,7 @@ export default function FieldWorkersPage() {
                         aria-hidden="true"
                         style="display:inline-grid;place-items:center;width:32px;height:32px;border-radius:50%;background:var(--brand-green);color:#fff;font-size:12px;flex-shrink:0"
                       >
-                        {w.name.slice(0, 2).toUpperCase()}
+                        {initialsOf(w.name)}
                       </span>
                       <span data-cy="wk-row-name">{w.name}</span>
                       {w.role === "foreman" && (
@@ -395,14 +552,22 @@ export default function FieldWorkersPage() {
                             </span>
                           ))
                           : (
-                            <span class="hint">{t("field.wk.coversNone")}</span>
+                            // REQ-361 (demo M36): Assignments is in the Field folder, Workers in
+                            // Roles — the hint is the way across
+                            <a
+                              class="hint"
+                              href="/field/assignments"
+                              data-cy="wk-covers-none"
+                            >
+                              {t("field.wk.coversNone")}
+                            </a>
                           )}
                       </span>
                     </div>
                   </div>
                   {rowErr?.id === w.id && (
                     <p class="alert" style="margin:0" data-cy="wk-row-error">
-                      {rowErr.msg}
+                      {errMsg(rowErr.err)}
                     </p>
                   )}
                   <div class="sub__foot">
@@ -425,7 +590,8 @@ export default function FieldWorkersPage() {
                               class="btn btn--ghost btn--sm"
                               data-cy="wk-delete-cancel"
                               disabled={busy}
-                              onClick={() => setConfirmId(null)}
+                              onClick={() =>
+                                setConfirmId(null)}
                             >
                               {t("field.common.cancel")}
                             </button>
@@ -434,7 +600,14 @@ export default function FieldWorkersPage() {
                       )
                       : (
                         <>
-                          <span />
+                          {/* REQ-786 (demo dv1) — this worker's hours, on the timesheet */}
+                          <a
+                            class="btn btn--ghost btn--sm"
+                            data-cy="wk-hours"
+                            href={timesheetHref(w.id)}
+                          >
+                            <I d={ICN.clock} size={12} /> {t("field.wk.hours")}
+                          </a>
                           <button
                             type="button"
                             class="btn btn--danger btn--sm"

@@ -2,10 +2,16 @@ import { Injectable } from "#danet/core";
 import { AgentConversationStore } from "@agents/domain/data/agent-conversation-store/mod.ts";
 import { AgentMessageStore } from "@agents/domain/data/agent-message-store/mod.ts";
 import { QuoteStore } from "@paperwork/domain/data/quote-store/mod.ts";
-import { SendPaperworkEmail } from "@paperwork/domain/coordinators/send-paperwork-email/mod.ts";
-import { EventBus } from "@core/business/events/mod.ts";
+import { lockStatusFor, QUOTE_LOCKED } from "#quote-flow/quote-lock.ts";
+import { TranslateQuote } from "@agents/domain/coordinators/translate-quote/mod.ts";
 import { UserStore } from "@users/domain/data/user-store/mod.ts";
+import { CustomerStore } from "@crm/domain/data/customer-store/mod.ts";
 import { t } from "@core/i18n/mod.ts";
+import type { ChatI18nRef } from "#quote-flow/chat-i18n.ts";
+import {
+  QuotePriceError,
+  storedQuotePriceProblem,
+} from "#quote-flow/quote-price-guard.ts";
 import type { AgentConversation } from "@agents/dto/conversation.ts";
 import type { AgentMessage } from "@agents/dto/message.ts";
 
@@ -19,7 +25,7 @@ export interface LockQuoteInput {
 
 export interface LockQuoteResult {
   conversation: AgentConversation;
-  /** action_card (status=sent) + continue_cta(toPhase=terms) — the
+  /** action_card (status=locked) + continue_cta(toPhase=terms) — the
    *  user's prompt to advance to phase 2 (terms wizard). */
   newMessages: AgentMessage[];
 }
@@ -34,10 +40,12 @@ export interface LockQuoteResult {
  *
  * This is the phase-1 → phase-2 handoff in the chat:
  *   1. Verify ownership of conversation + quote.
- *   2. If quote already 'sent', short-circuit (idempotent).
- *   3. Flip quote.status = 'sent', emit `quote sent`, dispatch the
- *      customer email (best-effort — failure doesn't abort).
- *   4. Append the locked action_card (status=sent) + a continue_cta
+ *   2. Stamp quote.lockedAt (first lock only). REQ-234 (demo M3): locking
+ *      is NOT sending — status stays "draft", no sentAt, no `quote sent`
+ *      event, no customer email. Those belong to Send (SendQuote), after
+ *      the terms and the customer are on the quote.
+ *   3. (re-locking an already-sent quote leaves it as it is.)
+ *   4. Append the locked action_card (status=locked) + a continue_cta
  *      to the terms wizard, so the chat advances forward instead of
  *      dead-ending after the click.
  *   5. Set conv.quoteId so the wizard / send-quote know what to
@@ -54,9 +62,11 @@ export class LockQuote {
     private conversations: AgentConversationStore,
     private messages: AgentMessageStore,
     private quotes: QuoteStore,
-    private bus: EventBus,
-    private emailer: SendPaperworkEmail,
     private users: UserStore,
+    /** REQ-264 (M15): fills every document language before dispatch. */
+    private translator?: TranslateQuote,
+    /** REQ-331: names the bound customer on the terms CTA. */
+    private customers?: CustomerStore,
   ) {}
 
   async run(input: LockQuoteInput): Promise<LockQuoteResult> {
@@ -69,34 +79,37 @@ export class LockQuote {
 
     const quote = await this.quotes.getOwned(input.quoteId, input.userId);
 
-    const wasAlreadySent = quote.status === "sent";
-    if (!wasAlreadySent) {
-      // Stamp sentAt here too — the /quotes stage derivation reads sentAt
-      // (not status), and the email-side stamping in SendPaperworkEmail is
-      // skipped when there's no recipient on file. Without this, locking
-      // a quote with no customer email leaves stage="draft" forever even
-      // though status="sent" — which broke the pipeline view (audit #2).
-      await this.quotes.update(quote.id, input.userId, {
-        status: "sent",
-        sentAt: new Date().toISOString(),
-      });
-      await this.bus.emit({
-        userId: input.userId,
-        entityType: "quote",
-        entityId: quote.id,
-        action: "sent",
-      });
-      try {
-        await this.emailer.run(input.userId, {
-          kind: "quote",
-          resourceId: quote.id,
-        });
-      } catch (err) {
-        console.error(
-          `[lock-quote] email dispatch failed for quote ${quote.id}:`,
-          err,
+    if (lockStatusFor(quote) === QUOTE_LOCKED && !quote.lockedAt) {
+      // REQ-302 (demo B1): a draft with no price — a negative line or a
+      // total at or below zero — is never locked. The chat island disables
+      // the button for it; this is the server's own refusal. (A quote that
+      // is already locked or sent is a no-op re-lock, not judged here.)
+      const priceProblem = storedQuotePriceProblem(quote);
+      if (priceProblem) {
+        throw new QuotePriceError(
+          priceProblem,
+          t(lang, "chatCoordinator.priceMissing", {
+            item: quote.lineItems?.[0]?.description?.trim() ||
+              quote.summary || "this job",
+          }),
         );
       }
+      await this.quotes.update(quote.id, input.userId, {
+        lockedAt: new Date().toISOString(),
+      });
+      // REQ-264 (M15): the customer reads the document in either language
+      // (/q?lang=…, the email's) — translate at lock so the review card and
+      // the later send carry both; never blocks. REQ-234: lock never sends.
+      // REQ-710 (cycle 5, M4): no base language from here — the app language
+      // is not the language the quote was typed in (pair 6: English app,
+      // Spanish quote); TranslateQuote reads it off the text.
+      await this.translator?.run({
+        userId: input.userId,
+        quoteId: quote.id,
+      })
+        .catch((err) =>
+          console.error(`[lock-quote] translate failed for ${quote.id}:`, err)
+        );
     }
 
     // Re-read so the action_card mirrors what's actually persisted.
@@ -109,6 +122,7 @@ export class LockQuote {
       amountCents: Math.round((li.price ?? 0) * (li.quantity ?? 1)),
     }));
     const totalCents = fresh.estimatedTotal ?? 0;
+    const status = lockStatusFor(fresh);
 
     const card = await this.messages.append({
       conversationId: conv.id,
@@ -117,32 +131,54 @@ export class LockQuote {
       content: fresh.summary ?? t(lang, "lockQuote.card.lockedFallback"),
       payload: {
         actionType: "quote",
-        status: "sent",
+        status,
         quoteId: fresh.id,
+        // REQ-465 (demo cycle 3, m37): the card names the quote's Q- number.
+        ...(fresh.number ? { number: fresh.number } : {}),
         ...(fresh.customerId ? { customerId: fresh.customerId } : {}),
         ...(fresh.description ? { description: fresh.description } : {}),
+        // REQ-435 (demo-loop cycle 3, M4): the card shows the job address.
+        ...(fresh.serviceAddress
+          ? { serviceAddress: fresh.serviceAddress }
+          : {}),
         lineItems,
         totalCents,
       },
     });
 
+    // REQ-331 (demo m7/m44): with a customer already bound, the CTA names
+    // them — never "Is this for a business or a person?" again.
+    const boundId = conv.customerId ?? fresh.customerId;
+    const known = boundId && this.customers
+      ? await this.customers.getOwned(boundId, input.userId).catch(() => null)
+      : null;
     const cta = await this.messages.append({
       conversationId: conv.id,
       role: "assistant",
       kind: "continue_cta",
-      content: t(lang, "lockQuote.cta.lockedPrompt"),
+      content: known
+        ? t(lang, "lockQuote.cta.lockedPromptKnown", { name: known.name })
+        : t(lang, "lockQuote.cta.lockedPrompt"),
       payload: {
         toPhase: "terms",
         quoteId: fresh.id,
+        ...(known ? { customerName: known.name } : {}),
       },
     });
 
+    // REQ-712 (cycle 5, m7): the preview stores its key so the thread list
+    // words it in the live language; the text is the fallback.
+    const previewI18n: ChatI18nRef = {
+      key: status === QUOTE_LOCKED
+        ? "lockQuote.preview.locked"
+        : "lockQuote.preview.sent",
+      vars: { summary: fresh.summary ?? fresh.id },
+    };
     const updated = await this.conversations.update(conv.id, {
       quoteId: fresh.id,
-      quoteStatus: "sent",
-      preview: t(lang, "lockQuote.preview.sent", {
-        summary: fresh.summary ?? fresh.id,
-      }),
+      quoteStatus: status,
+      preview: t(lang, previewI18n.key, { summary: fresh.summary ?? fresh.id }),
+      previewI18n,
     });
 
     return { conversation: updated, newMessages: [card, cta] };

@@ -4,11 +4,10 @@
  * Contractor-only; the sidebar stays on "workOrders".
  */
 import { asset, Head } from "fresh/runtime";
-import {
-  greetingFirstName,
-  personLanguage,
-} from "../../../shared/person-name/mod.ts"; // REQ-624
+import { greetingFirstName } from "../../../shared/person-name/mod.ts"; // REQ-624
 import { define } from "../../utils.ts";
+import { resolveSsrLang } from "../../lib/ssr-lang.ts";
+import DocTitle from "../../components/DocTitle.tsx";
 import SiteFooter from "../../components/SiteFooter.tsx";
 import { type Lang, tFor } from "../../lib/i18n.ts";
 import DashSidebar from "../../islands/DashSidebar.tsx";
@@ -17,14 +16,15 @@ import WorkOrderPage from "../../islands/WorkOrderPage.tsx";
 
 export default define.page(function WorkOrderRoute(ctx) {
   const user = ctx.state.user;
-  const lang: Lang = personLanguage(user) === "es" ? "es" : "en";
-  const greetingName = greetingFirstName(user) ||
-    tFor(lang, "common.thereFallback");
+  // REQ-709 (demo-loop c5, m4): the islands' language (?lang= > account >
+  // pm_lang), so the tab title and footer match the page they sit on.
+  const lang: Lang = resolveSsrLang(ctx) ?? "es";
+  const greetingName = greetingFirstName(user);
 
   return (
     <>
       <Head>
-        <title>{tFor(lang, "workOrders.docTitle")}</title>
+        <DocTitle lang={lang} title={(l) => tFor(l, "workOrders.docTitle")} />
         <link
           key="css-dashboard"
           rel="stylesheet"
@@ -35,7 +35,10 @@ export default define.page(function WorkOrderRoute(ctx) {
       <div class="app">
         <DashSidebar active="workOrders" />
         <main class="main">
-          <DashTopbar greetingName={greetingName} />
+          <DashTopbar
+            pageTitleKey="nav.workOrders"
+            greetingName={greetingName}
+          />
           <div class="content">
             <WorkOrderPage id={ctx.params.id} />
             <SiteFooter lang={lang} />

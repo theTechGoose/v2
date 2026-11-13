@@ -5,7 +5,12 @@
  * note for the office, a services panel (remove / put back / defer one / add),
  * and "Defer visit". A foreman sees their own visits first, then one section
  * per crew. `?date=` replays a past day; the list refreshes every 5 s while the
- * tab is visible and nothing is being typed.
+ * tab is visible and nothing is being typed, backing off to 60 s while idle; a
+ * refresh reads only the tasks (REQ-605).
+ *
+ * REQ-785 (demo-loop dv1-d11) — a job of several days is on each of its days,
+ * for its worker and its crew, as its own visit ("Day 2 of 3 · Nov 16 – Nov 18",
+ * "With Pedro"); one check-off marks the whole job done; it is never deferred.
  *
  * Ported from a2z/web/trabajador.html (its <style> block lives here; the demo
  * driver was not ported). Strings: worker.* in lang/*.json via t().
@@ -18,13 +23,38 @@ import {
   type WorkerTaskView,
 } from "../clients/field.ts";
 import { ApiError } from "../lib/api.ts";
+import { formatPhoneInput } from "../../shared/quote-flow/format-helpers.ts";
 import { I, ICN } from "../lib/dash-icons.tsx";
-import { fmtDay, shiftIso, todayIso } from "../lib/field.ts";
+import {
+  fmtDay,
+  rememberWorkerLangPick,
+  shiftIso,
+  todayIso,
+  WORKER_OFFICE_FALLBACK,
+  workerDayHref,
+  workerDayNav,
+  workerScreenLang,
+} from "../lib/field.ts";
+import { lockLabelKey, NOTE_SAVED_MS } from "../lib/field-batches.ts";
+import {
+  jobDayOf,
+  jobRange,
+  onJob,
+  visitKey,
+  workMates,
+} from "../lib/field-job.ts";
+import { WORKERS_PAGE_HREF } from "../lib/worker-view-link.ts";
+import { workerTodayKey } from "../lib/worker-today.ts";
+import { refreshTickDue } from "../lib/refresh-tick.ts";
+import {
+  startWorkerRefresh,
+  WORKER_REFRESH_MS,
+} from "../lib/worker-refresh.ts";
 import { type Lang, langSignal, setLang, t } from "../lib/i18n.ts";
 import WorkerClock from "../components/timeclock/WorkerClock.tsx";
 
 const CELL_KEY = "pm:worker-cell";
-const REFRESH_MS = 5000;
+const REFRESH_MS = WORKER_REFRESH_MS;
 
 const css = `
   /* REQ-196 — the worker's phone screen: one column, the day in one glance, big tap targets */
@@ -37,6 +67,9 @@ const css = `
   .greet small { display: block; font-family: var(--font-body); font-weight: 500; font-size: 14px; color: var(--fg-muted); margin-top: 4px; }
   .login { background: #fff; border: 1px solid var(--border); border-radius: var(--radius-xl); padding: 22px; display: flex; flex-direction: column; gap: 14px; margin-top: 30px; box-shadow: 0 12px 32px -20px rgba(26,83,92,.35); }
   .login input, .login select { font-size: 18px; padding: 14px; }
+  /* REQ-602 (M35): an owner on the sign-in card is told whose screen it is */
+  .owner-note { background: var(--mint-100); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; font-size: 15px; color: var(--fg); margin-top: 18px; }
+  .owner-note + .login { margin-top: 0; }
   .pin { letter-spacing: .4em; text-align: center; font-family: var(--font-mono); }
   .pinwrap { position: relative; display: flex; }
   .pinwrap input { flex: 1; min-width: 0; padding-right: 52px; }
@@ -46,6 +79,19 @@ const css = `
   .lang { margin-left: auto; display: flex; gap: 2px; background: var(--mint-100); border: 1px solid var(--border); border-radius: 999px; padding: 3px; }
   .lang button { border: 0; background: transparent; font-weight: 800; font-size: 13px; color: var(--fg-muted); padding: 10px 14px; border-radius: 999px; min-height: 44px; cursor: pointer; }
   .lang button.on { background: #fff; color: var(--brand-teal); box-shadow: 0 1px 3px rgba(20,72,82,.12); }
+  /* REQ-353 (m23): on a phone the header wraps — the title and the EN/ES pill
+     on the first row, "Volver a la oficina" and "Salir" on the next — instead
+     of squeezing "Mis tareas" under the pill with Salir at the edge */
+  /* REQ-612 (cycle 4, p4-p8c): Back to office and Sign out are ONE flex item,
+     so on a phone they drop to the next row together (not "Sign out" alone)
+     and a label never breaks over two lines */
+  .top__actions { display: flex; align-items: center; gap: 10px; }
+  .top__actions .btn { white-space: nowrap; }
+  @media (max-width: 480px) {
+    .top { flex-wrap: wrap; row-gap: 8px; }
+    .top .brand { flex: 1 0 auto; }
+    .top__actions { flex-basis: 100%; justify-content: flex-end; }
+  }
 
   /* the two tabs: a thumb slides under the chosen one */
   .tabs { position: relative; display: flex; gap: 4px; background: var(--mint-200); border: 1px solid var(--border); border-radius: 14px; padding: 4px; }
@@ -116,8 +162,9 @@ const css = `
   .visit__btns { display: flex; gap: 8px; }
   .visit__btns button { flex: 1; padding: 8px 4px; border: 1px solid var(--border); border-radius: 10px; background: #fff; font: inherit; font-size: 12px; font-weight: 700; color: var(--brand-teal); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; min-height: 54px; cursor: pointer; white-space: nowrap; }
   .visit__btns button.on { background: var(--mint-100); border-color: var(--brand-teal); }
-  .note { display: flex; gap: 6px; }
-  .note input { flex: 1; padding: 10px 11px; border: 1px solid var(--border); border-radius: 9px; font: inherit; font-size: 15px; min-width: 0; }
+  .visit__note-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--brand-teal); flex: none; }
+  .note { display: flex; gap: 6px; align-items: flex-start; }
+  .note textarea { flex: 1; padding: 10px 11px; border: 1px solid var(--border); border-radius: 9px; font: inherit; font-size: 15px; line-height: 1.35; min-width: 0; box-sizing: border-box; resize: none; overflow: hidden; }
   .note button, .add button { padding: 10px 14px; border: 0; border-radius: 9px; background: var(--brand-teal); color: #fff; font: inherit; font-weight: 700; min-height: 44px; cursor: pointer; }
   .services { border-top: 1px dashed var(--border); padding-top: 10px; display: flex; flex-direction: column; gap: 6px; }
   .services .row { display: flex; align-items: center; gap: 8px; font-size: 14px; color: var(--brand-teal); font-weight: 600; }
@@ -137,10 +184,15 @@ const css = `
   .wrap > .toast { position: fixed; left: 50%; bottom: 84px; transform: translateX(-50%); background: #c0392b; color: #fff; padding: 12px 18px; border-radius: 12px; font-weight: 700; font-size: 14px; box-shadow: 0 10px 24px -8px rgba(0,0,0,.4); z-index: 100; max-width: 90vw; animation: toast-in var(--pm-dur-slow) var(--pm-ease-ios) both; }
   .wrap > .toast--ok { background: var(--brand-green); }
   @keyframes toast-in { from { opacity: 0; transform: translate(-50%, 14px); } }
+  /* REQ-528 (demo m51) — the viewed day written out, a native picker over it for any day */
+  .day .pick { position: relative; cursor: pointer; }
+  .day .pick b { color: var(--fg); text-decoration: underline dotted; }
+  .day .pick input { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; border: 0; padding: 0; }
   .wrap button[disabled] { opacity: .6; }
 `;
 
-/** a visit = one subscription on one day; its services are the tasks */
+/** a visit = one subscription on one day; its services are the tasks. REQ-785: a one-off's
+ *  visit is its customer's tasks with the same first and last day — a job of several days is its own */
 interface Visit {
   id: string;
   customerName: string;
@@ -151,15 +203,16 @@ interface Visit {
 function visitsOf(rows: WorkerTaskView[]): Visit[] {
   const m = new Map<string, Visit>();
   for (const x of rows) {
-    let v = m.get(x.subscriptionId);
+    const key = visitKey(x);
+    let v = m.get(key);
     if (!v) {
       v = {
-        id: x.subscriptionId,
+        id: key,
         customerName: x.customerName,
         address: x.address ?? "",
         services: [],
       };
-      m.set(x.subscriptionId, v);
+      m.set(key, v);
     }
     v.services.push(x);
   }
@@ -204,6 +257,13 @@ interface Deferring {
   note: string;
 }
 
+/** REQ-417 (p13-q) — the note textarea grows to fit its text (rows=2 is the floor) */
+function growNote(el: HTMLTextAreaElement | null) {
+  if (!el) return;
+  el.style.height = "auto";
+  el.style.height = `${el.scrollHeight + 2}px`;
+}
+
 interface Toast {
   msg: string;
   ok: boolean;
@@ -219,9 +279,29 @@ export interface WorkerSsr {
 }
 
 export default function WorkerScreen(
-  { initialLang, initialDate, ssr }: {
+  {
+    initialLang,
+    pageLang,
+    initialDate,
+    office,
+    officeHref = WORKER_OFFICE_FALLBACK,
+    langChosen = false,
+    langPicked = false,
+    ssr,
+  }: {
     initialLang: Lang;
+    /** REQ-714 (m58) — the page's own language when initialLang is the signed-in worker's (SSR); Salir returns to it */
+    pageLang?: Lang;
     initialDate?: string;
+    /** REQ-282 — an owner session rode in: show the way back to the office */
+    office?: boolean;
+    /** REQ-417 (m44) — the office page the owner came from (route-resolved, allow-listed) */
+    officeHref?: string;
+    /** REQ-285 — the address chose the language (?lang=); the worker's own does not override it */
+    langChosen?: boolean;
+    /** REQ-494 (M43) — the EN/ES switch picked it on an earlier visit (pm_worker_lang) */
+    langPicked?: boolean;
+    /** REQ-197 — the server-rendered worker and day (the first paint is the final screen) */
     ssr?: WorkerSsr;
   },
 ) {
@@ -256,6 +336,10 @@ export default function WorkerScreen(
   const toastTimer = useRef<ReturnType<typeof setTimeout> | undefined>(
     undefined,
   );
+  /** REQ-608 — one "Note saved" timer per visit; a newer save restarts it */
+  const flashTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>(
+    {},
+  );
   const busyRef = useRef(busy);
   busyRef.current = busy;
   const draftsRef = useRef(drafts);
@@ -266,10 +350,20 @@ export default function WorkerScreen(
   meRef.current = me;
   const dateRef = useRef(date);
   dateRef.current = date;
+  /** REQ-285 — the person chose the language (the switch, or ?lang=): keep it over the worker's */
+  const langChosenRef = useRef(langChosen || !!langPicked);
+  /** REQ-416 — the page's own language (opened in, or picked on the switch); Salir returns to it */
+  const pageLangRef = useRef<Lang>(pageLang ?? initialLang);
+  // REQ-508 (demo cycle 3, m20) — when the last load started; the 5 s tick skips a fresh one
+  const lastLoadRef = useRef(0);
 
   useEffect(() => {
-    setLang(initialLang);
-  }, [initialLang]);
+    const page = pageLang ?? initialLang;
+    pageLangRef.current = page;
+    // REQ-714 (m58) — opened in the worker's language (SSR): shown, never
+    // written into the browser's pm_lang (REQ-416)
+    setLang(initialLang, { persist: initialLang === page });
+  }, [initialLang, pageLang]);
 
   // Browser-side facts: the real day, the remembered cell.
   useEffect(() => {
@@ -310,12 +404,18 @@ export default function WorkerScreen(
   async function load() {
     const d = dateRef.current;
     if (!d) return;
+    lastLoadRef.current = Date.now();
     try {
       // no worker session: the backend answers 200 with an empty body (Danet
       // serialises `null` as nothing), which the api helper hands back as ""
       const raw = await workerClient.me();
       const who = raw && typeof raw === "object" ? raw : null;
       setMe(who);
+      // REQ-285 — signed in: the screen takes the worker's language;
+      // REQ-416 — for this session only, never over the browser's own pm_lang
+      const wl = workerScreenLang(who, langChosenRef.current);
+      if (wl) setLang(wl, { persist: false });
+      meRef.current = who;
       if (who) {
         const [rows, tt] = await Promise.all([
           workerClient.tasks(d, who.role === "foreman"),
@@ -332,30 +432,57 @@ export default function WorkerScreen(
     }
   }
 
-  // First load once the day is known; then a 5 s refresh while visible and idle.
+  /** REQ-605 — the poll's read: the day's tasks only (me and task types rarely change) */
+  async function loadTasks() {
+    const d = dateRef.current;
+    const who = meRef.current;
+    if (!d || !who) return;
+    lastLoadRef.current = Date.now();
+    try {
+      setTasks(await workerClient.tasks(d, who.role === "foreman"));
+    } catch (e) {
+      // the session ended elsewhere: a full read puts the sign-in form back
+      if (e instanceof ApiError && e.status === 401) return load();
+      showToast(t("worker.fail", { msg: friendly(e) }));
+    }
+  }
+
+  // First (full) load once the day is known; then REQ-605: a tasks-only refresh every 5 s
+  // while visible and in use, backing off to 60 s while idle, and a full read on the
+  // catch-up after the tab was hidden.
   useEffect(() => {
     if (!date) return;
+    // REQ-197: the server's data is on screen already — the first run skips the fetch
     if (primed.current) primed.current = false;
     else load();
-    const id = setInterval(() => {
-      if (
-        meRef.current && document.visibilityState === "visible" &&
-        busyRef.current.size === 0 &&
-        Object.keys(draftsRef.current).length === 0 && !deferringRef.current
-      ) load();
-    }, REFRESH_MS);
-    return () => clearInterval(id);
+    return startWorkerRefresh({
+      full: load,
+      tasks: loadTasks,
+      due: () =>
+        !!meRef.current && busyRef.current.size === 0 &&
+        Object.keys(draftsRef.current).length === 0 && !deferringRef.current &&
+        refreshTickDue(lastLoadRef.current, Date.now(), REFRESH_MS), // REQ-508: not right after an act()'s reload
+    });
   }, [date]);
 
-  /** one in-flight request per control; failures become a toast, never silence */
-  async function act(key: string, fn: () => Promise<unknown>) {
-    if (busyRef.current.has(key)) return;
+  /**
+   * one in-flight request per control; failures become a toast, never silence.
+   * Resolves true once the action AND its reload are done (REQ-608).
+   */
+  async function act(
+    key: string,
+    fn: () => Promise<unknown>,
+    after: () => Promise<unknown> = loadTasks, // REQ-605: an action changes tasks only
+  ): Promise<boolean> {
+    if (busyRef.current.has(key)) return false;
     setBusy((b) => new Set(b).add(key));
     try {
       await fn();
-      await load();
+      await after();
+      return true;
     } catch (e) {
       showToast(t("worker.fail", { msg: friendly(e) }));
+      return false;
     } finally {
       setBusy((b) => {
         const n = new Set(b);
@@ -395,40 +522,55 @@ export default function WorkerScreen(
   function logout() {
     act("logout", async () => {
       await workerClient.logout();
+      langChosenRef.current = langChosen; // the next worker's language applies
+      rememberWorkerLangPick(null); // REQ-494 — and on the next visit too
+      // REQ-416 — the sign-in form is back in the page's own language
+      setLang(pageLangRef.current, { persist: false });
       setMe(null);
       setTasks([]);
       setOpen({});
       setDrafts({});
       setDeferring(null);
-    });
+    }, load);
   }
 
   function toggleOpen(vid: string, which: "note" | "services") {
     setOpen((o) => ({ ...o, [vid]: o[vid] === which ? null : which }));
   }
 
-  function saveNote(v: Visit) {
+  /** REQ-608 — drop a visit's "Note saved" line (its timer ran out, or the note was edited) */
+  function clearFlash(vid: string) {
+    clearTimeout(flashTimers.current[vid]);
+    delete flashTimers.current[vid];
+    setFlash((f) => {
+      if (!(vid in f)) return f;
+      const n = { ...f };
+      delete n[vid];
+      return n;
+    });
+  }
+
+  async function saveNote(v: Visit) {
     const first = live(v)[0] ?? v.services[0];
     if (!first) return;
     const note = drafts[v.id] ?? noteOf(v);
-    act(`note:${v.id}`, async () => {
+    const ok = await act(`note:${v.id}`, async () => {
       await workerClient.note(first.id, note);
       setDrafts((d) => {
         const n = { ...d };
         delete n[v.id];
         return n;
       });
-      setFlash((f) => ({ ...f, [v.id]: t("worker.saved") }));
-      setTimeout(
-        () =>
-          setFlash((f) => {
-            const n = { ...f };
-            delete n[v.id];
-            return n;
-          }),
-        1500,
-      );
     });
+    if (!ok) return;
+    // REQ-608 (demo m47): shown once the reload is done, and held until the note is
+    // edited again or NOTE_SAVED_MS passes — 1.5 s from before the reload was unseen
+    clearTimeout(flashTimers.current[v.id]);
+    setFlash((f) => ({ ...f, [v.id]: t("worker.saved") }));
+    flashTimers.current[v.id] = setTimeout(
+      () => clearFlash(v.id),
+      NOTE_SAVED_MS,
+    );
   }
 
   function deferGo(v: Visit) {
@@ -455,6 +597,20 @@ export default function WorkerScreen(
   const noteOf = (v: Visit) =>
     v.services.map((s) => s.note).find(Boolean) ?? "";
 
+  /** REQ-362 — the day navigator; a day after today is a read-only preview */
+  // REQ-417 — a day change keeps the owner's way back to the office page they came from
+  const navFrom = office && officeHref !== WORKER_OFFICE_FALLBACK
+    ? officeHref
+    : undefined;
+  const nav = date && today ? workerDayNav(date, today, navFrom) : null;
+  /** REQ-528 (demo m51) — the date picker jumps to any day (the REQ-194 strip
+   *  switches yesterday / today / tomorrow in place; the picker opens any other) */
+  const jumpToDay = (iso: string) => {
+    const href = workerDayHref(iso, navFrom);
+    if (href && iso !== date) location.assign(href);
+  };
+  const preview = !!nav?.preview;
+
   const dayLine = () => {
     if (!date) return "";
     const s = fmtDay(date, lang);
@@ -466,13 +622,19 @@ export default function WorkerScreen(
     const done = act_.filter((s) => s.status === "complete").length;
     const all = act_.length > 0 && done === act_.length;
     const note = noteOf(v);
-    const locked = v.services.some((s) => s.locked);
+    const locked = preview || v.services.some((s) => s.locked);
     const onVisit = new Set(
       v.services.filter((s) => s.status !== "skipped").map((s) => s.taskTypeId),
     );
     const addable = types.filter((tt) => !onVisit.has(tt.id));
     const deferHere = deferring?.visit === v.id ? deferring : null;
     const panel = open[v.id] ?? null;
+    // REQ-785 — a job of several days: which of its days this is, and who else is on it
+    const first = v.services[0];
+    const span = first ? jobDayOf(first, date) : null;
+    const mates = first && me ? workMates(first, me.id) : [];
+    /** a subscription's visit takes services from the worker; a one-off's does not (no subscription to add to) */
+    const subscribed = v.services.some((s) => !!s.subscriptionId);
     return (
       <div
         class={`visit${all ? " visit--done" : ""}`}
@@ -497,6 +659,26 @@ export default function WorkerScreen(
                 {v.address}
               </a>
             )}
+            {span && first && (
+              <div
+                class="hint"
+                data-cy="w-job-span"
+                data-n={span.n}
+                data-of={span.of}
+                style="display:flex;align-items:center;gap:4px;margin-top:4px"
+              >
+                <I d={ICN.cal} size={12} /> {t("worker.jobDay", {
+                  n: span.n,
+                  total: span.of,
+                  range: jobRange(first, lang),
+                })}
+              </div>
+            )}
+            {mates.length > 0 && (
+              <div class="hint" data-cy="w-crew">
+                {t("worker.crewWith", { names: mates.join(", ") })}
+              </div>
+            )}
           </div>
           <span class="visit__state" data-cy="w-visit-state">
             {all ? t("worker.visitDone") : `${done}/${act_.length}`}
@@ -507,7 +689,7 @@ export default function WorkerScreen(
             <div
               key={s.id}
               class={`svc${s.status === "complete" ? " svc--done" : ""}${
-                s.locked ? " svc--locked" : ""
+                s.locked || preview ? " svc--locked" : ""
               }`}
               data-id={s.id}
             >
@@ -517,7 +699,7 @@ export default function WorkerScreen(
                 data-cy="w-check"
                 aria-label={t("worker.done")}
                 aria-pressed={s.status === "complete"}
-                disabled={s.locked || busy.has(s.id)}
+                disabled={s.locked || preview || busy.has(s.id)}
                 onClick={() =>
                   act(
                     s.id,
@@ -554,7 +736,9 @@ export default function WorkerScreen(
                 {s.locked && (
                   <>
                     {" "}
-                    <span class="svc__lock">🔒 {t("worker.invoiced")}</span>
+                    <span class="svc__lock">
+                      🔒 {t(lockLabelKey(s.lockState))}
+                    </span>
                   </>
                 )}
               </div>
@@ -577,7 +761,15 @@ export default function WorkerScreen(
             >
               <I d={ICN.msg} size={14} />
               {t("worker.note")}
-              {note ? " ·" : ""}
+              {note && (
+                <span
+                  class="visit__note-dot"
+                  data-cy="w-note-dot"
+                  role="img"
+                  aria-label={t("worker.hasNote")}
+                  title={t("worker.hasNote")}
+                />
+              )}
             </button>
             <button
               type="button"
@@ -588,7 +780,7 @@ export default function WorkerScreen(
               <I d={ICN.plus} size={14} sw={2.5} />
               {t("worker.services")}
             </button>
-            {act_.some((s) => s.status === "assigned") && (
+            {act_.some((s) => s.status === "assigned") && !span && (
               <button
                 type="button"
                 data-cy="w-defer-visit"
@@ -642,15 +834,22 @@ export default function WorkerScreen(
                 saveNote(v);
               }}
             >
-              <input
+              {
+                /* REQ-417 (p13-q): a textarea, so the placeholder wraps at 390 px
+                 instead of being cut; it grows with the text */
+              }
+              <textarea
                 data-cy="w-note"
+                rows={2}
                 placeholder={t("worker.notePh")}
                 value={drafts[v.id] ?? note}
-                onInput={(e) =>
-                  setDrafts((d) => ({
-                    ...d,
-                    [v.id]: (e.target as HTMLInputElement).value,
-                  }))}
+                ref={growNote}
+                onInput={(e) => {
+                  const el = e.target as HTMLTextAreaElement;
+                  growNote(el);
+                  setDrafts((d) => ({ ...d, [v.id]: el.value }));
+                  clearFlash(v.id); // REQ-608 — an edit is no longer "saved"
+                }}
               />
               <button
                 type="submit"
@@ -660,7 +859,11 @@ export default function WorkerScreen(
                 {t("worker.save")}
               </button>
             </form>
-            {flash[v.id] && <div class="saved">{flash[v.id]}</div>}
+            {flash[v.id] && (
+              <div class="saved" data-cy="w-note-saved" role="status">
+                {flash[v.id]}
+              </div>
+            )}
           </>
         )}
         {!locked && panel === "services" && (
@@ -699,7 +902,7 @@ export default function WorkerScreen(
                       >
                         × {t("worker.remove")}
                       </button>
-                      {s.status === "assigned" && (
+                      {s.status === "assigned" && !jobDayOf(s, date) && (
                         <button
                           type="button"
                           data-cy="w-defer"
@@ -713,30 +916,32 @@ export default function WorkerScreen(
                   )}
               </div>
             ))}
-            <div class="add">
-              <select
-                data-cy="w-add-type"
-                value={pick[v.id] ?? ""}
-                onChange={(e) =>
-                  setPick((p) => ({
-                    ...p,
-                    [v.id]: (e.target as HTMLSelectElement).value,
-                  }))}
-              >
-                <option value="">{t("worker.pick")}</option>
-                {addable.map((tt) => (
-                  <option key={tt.id} value={tt.id}>{tt.name}</option>
-                ))}
-              </select>
-              <button
-                type="button"
-                data-cy="w-add"
-                disabled={busy.has(`add:${v.id}`) || !pick[v.id]}
-                onClick={() => addService(v)}
-              >
-                {t("worker.add")}
-              </button>
-            </div>
+            {subscribed && (
+              <div class="add">
+                <select
+                  data-cy="w-add-type"
+                  value={pick[v.id] ?? ""}
+                  onChange={(e) =>
+                    setPick((p) => ({
+                      ...p,
+                      [v.id]: (e.target as HTMLSelectElement).value,
+                    }))}
+                >
+                  <option value="">{t("worker.pick")}</option>
+                  {addable.map((tt) => (
+                    <option key={tt.id} value={tt.id}>{tt.name}</option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  data-cy="w-add"
+                  disabled={busy.has(`add:${v.id}`) || !pick[v.id]}
+                  onClick={() => addService(v)}
+                >
+                  {t("worker.add")}
+                </button>
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -776,8 +981,9 @@ export default function WorkerScreen(
 
   let body = null;
   if (me) {
-    const mine = tasks.filter((x) => x.workerId === me.id);
-    const others = tasks.filter((x) => x.workerId !== me.id);
+    // REQ-785 — a job the worker is on the crew of is theirs too
+    const mine = tasks.filter((x) => onJob(me.id, x));
+    const others = tasks.filter((x) => !onJob(me.id, x));
     if (me.role === "foreman") {
       const byWorker = new Map<string, WorkerTaskView[]>();
       for (const x of others) {
@@ -824,23 +1030,43 @@ export default function WorkerScreen(
               key={c}
               class={lang === c ? "on" : ""}
               aria-pressed={lang === c}
-              onClick={() => setLang(c)}
+              onClick={() => {
+                pageLangRef.current = c;
+                langChosenRef.current = true;
+                setLang(c);
+                rememberWorkerLangPick(c); // REQ-494 — survives re-entry
+                if (meRef.current) load(); // REQ-605: a language pick re-reads me + task types
+              }}
             >
               {c.toUpperCase()}
             </button>
           ))}
         </div>
-        {me && (
-          <button
-            type="button"
-            class="btn btn--ghost btn--sm"
-            data-cy="w-logout"
-            style="min-height:44px"
-            disabled={busy.has("logout")}
-            onClick={logout}
-          >
-            {t("worker.logout")}
-          </button>
+        {(office || me) && (
+          <div class="top__actions">
+            {office && (
+              <a
+                href={officeHref}
+                class="btn btn--ghost btn--sm"
+                data-cy="w-office"
+                style="min-height:44px"
+              >
+                {t("worker.backToOffice")}
+              </a>
+            )}
+            {me && (
+              <button
+                type="button"
+                class="btn btn--ghost btn--sm"
+                data-cy="w-logout"
+                style="min-height:44px"
+                disabled={busy.has("logout")}
+                onClick={logout}
+              >
+                {t("worker.logout")}
+              </button>
+            )}
+          </div>
         )}
       </div>
 
@@ -857,6 +1083,24 @@ export default function WorkerScreen(
             {t("worker.title")}
             <small>{dayLine()}</small>
           </div>
+          {
+            /* REQ-602 (M35): the owner (office session, no worker signed in)
+            has no cell + PIN here — say whose screen this is and where
+            workers are added. */
+          }
+          {office && (
+            <div class="owner-note" data-cy="w-owner-note">
+              <span>{t("worker.ownerNote")}</span>
+              <a
+                href={WORKERS_PAGE_HREF}
+                class="btn btn--ghost btn--sm"
+                data-cy="w-owner-workers"
+                style="min-height:44px;align-self:flex-start"
+              >
+                {t("worker.ownerManage")}
+              </a>
+            </div>
+          )}
           <form class="login" onSubmit={login}>
             <label class="field">
               {t("worker.cell")}
@@ -867,7 +1111,7 @@ export default function WorkerScreen(
                 inputMode="tel"
                 autoComplete="tel"
                 placeholder={t("worker.cellPh")}
-                value={cell}
+                value={formatPhoneInput(cell)} /* REQ-593 */
                 required
                 onInput={(e) => setCell((e.target as HTMLInputElement).value)}
               />
@@ -1018,16 +1262,34 @@ export default function WorkerScreen(
                 })}
               </div>
             )}
-            {today && Math.abs(
-                  (new Date(`${date}T00:00:00`).getTime() -
-                    new Date(`${today}T00:00:00`).getTime()) / 86_400_000,
-                ) > 1 &&
-              (
-                <div class="day">
-                  <span>{t("worker.viewing")} {date}</span> ·{" "}
-                  <a href="/worker">{t("worker.todayLink")} →</a>
-                </div>
-              )}
+            {/* REQ-528 (demo m51) — the day written out, and a native picker for any day */}
+            {nav && (
+              <div class="day">
+                <label class="pick" data-cy="w-day-label">
+                  {t("worker.viewing")} <b>{fmtDay(date, lang)}</b>
+                  <input
+                    type="date"
+                    data-cy="w-day-pick"
+                    aria-label={t("worker.pickDay")}
+                    value={date}
+                    onChange={(e) => jumpToDay(e.currentTarget.value)}
+                    onClick={(e) => {
+                      try {
+                        e.currentTarget.showPicker?.();
+                      } catch {
+                        /* not allowed here — the native control still works */
+                      }
+                    }}
+                  />
+                </label>
+              </div>
+            )}
+            {/* REQ-362 — a day after today is a read-only preview */}
+            {preview && (
+              <div class="hint" data-cy="w-preview">
+                🔒 {t("worker.preview")}
+              </div>
+            )}
             {/* REQ-196 — the day in one glance */}
             <div
               class={`summary${
@@ -1060,7 +1322,10 @@ export default function WorkerScreen(
               </div>
               <div class="summary__text">
                 <b data-cy="w-count">
-                  {t("worker.today", { done, n: liveTasks.length })}
+                  {t(workerTodayKey(liveTasks.length), {
+                    done,
+                    n: liveTasks.length,
+                  })}
                 </b>
                 <small>
                   {liveTasks.length === 0

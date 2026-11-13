@@ -145,7 +145,9 @@ describe("REQ-626 no dead card buttons", () => {
     expect(open).toMatch(/onOpen\(inv\.id\)/);
     expect(open).not.toMatch(/\/i\/\$\{inv\.id\}/);
     expect(inv).toMatch(
-      /data-cy="invoice-view-as-customer"[\s\S]{0,200}href=\{`\/i\/\$\{inv\.id\}`\}/,
+      // REQ-586 AMENDMENT (reconciled with develop on demo-fixes): the customer's
+      // view opens in the invoice's document language
+      /data-cy="invoice-view-as-customer"[\s\S]{0,200}href=\{invoiceLinkPath\(inv\.id, inv\.lang\)\}/,
     );
     expect(inv).toMatch(/data-cy="invoice-back-open"/);
   });

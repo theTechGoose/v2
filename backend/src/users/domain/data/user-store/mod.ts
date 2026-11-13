@@ -125,6 +125,8 @@ export class UserStore {
   /**
    * Search users by phone number (partial, digits-only match). Backs the
    * admin user-lookup table. An empty query lists users (capped at `limit`).
+   * REQ-507 (demo m25): a non-empty query with no digits ("abc!!") matches no
+   * phone — it used to strip to "" and list everyone.
    *
    * Scans the ["user", *] prefix — the reverse index ["user_by_phone", *] is
    * a different first segment, so it's never included. Single-tenant/dev KV
@@ -133,6 +135,7 @@ export class UserStore {
   async searchByPhone(query: string, limit = 25): Promise<User[]> {
     const kv = await getKv();
     const needle = query.replace(/\D/g, "");
+    if (needle === "" && query.trim() !== "") return [];
     const out: User[] = [];
     for await (const entry of kv.list<User>({ prefix: ["user"] })) {
       const user = entry.value;
@@ -229,6 +232,25 @@ export class UserStore {
     const kv = await getKv();
     await kv.set(["user", id], updated);
     return updated;
+  }
+
+  /**
+   * REQ-227: stamp one onboarding question deferred (the wizard step's Skip) with now-ISO; the
+   * others are kept. REQ-504: or several at once ("Skip setup for now"). Kept off `update` so a PUT /me body can never carry a deferral.
+   */
+  async deferOnboarding(id: string, question: string | readonly string[]): Promise<User> {
+    const existing = await this.get(id);
+    const now = new Date().toISOString();
+    // REQ-504: "Skip setup for now" defers every open question in one write
+    const stamps = Object.fromEntries((typeof question === "string" ? [question] : question).map((q) => [q, now]));
+    const updated: User = {
+      ...existing,
+      onboardingDeferred: { ...(existing.onboardingDeferred ?? {}), ...stamps },
+      updatedAt: now,
+    };
+    const kv = await getKv();
+    await kv.set(["user", id], updated);
+    return withHardcodedSuperAdmin(updated);
   }
 
   /** REQ-039 (NW-52): closing an account flags it — the record AND the

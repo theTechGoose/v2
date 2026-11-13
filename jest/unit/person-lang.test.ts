@@ -62,9 +62,15 @@ describe("REQ-631 every UI-language read goes through the helper", () => {
     "routes/plan/pay.tsx",
     "routes/plan/test.tsx",
   ];
+  // REQ-631 AMENDMENT — reconciled with develop on demo-fixes: demo-fixes'
+  // REQ-709 routes resolve their language through ONE resolver,
+  // resolveSsrLang (?lang= > the person > pm_lang), which reads personLanguage.
+  test("the routes' one resolver, resolveSsrLang, reads the person's language", () => {
+    expect(code("front-end/lib/ssr-lang.ts")).toMatch(/personLanguage\(src\.state\?\.user\)/);
+  });
   test.each(routes)("%s renders in the person's language (personLanguage), not the account's user.language", (rel) => {
     const src = code(`front-end/${rel}`);
-    expect(src).toMatch(/personLanguage\(/);
+    expect(src).toMatch(/personLanguage\(|resolveSsrLang\(|presenterLangForRequest\(/);
     expect(src).not.toMatch(/\buser\??\.language\b/);
   });
 
@@ -90,9 +96,14 @@ describe("REQ-631 every UI-language read goes through the helper", () => {
   });
 
   test("the sidebar and Settings read the person's language; Settings' language row shows hers", () => {
-    expect(read("front-end/islands/DashSidebar.tsx")).toMatch(/personLanguage\(profile\?\.user, profile\?\.actor\)/);
+    // REQ-631 AMENDMENT — reconciled with develop on demo-fixes: the sidebar
+    // (REQ-712) and Settings (REQ-254) render in langSignal, the one live
+    // switch, which the dashboard cache seeds from personLanguage (above);
+    // the sidebar names the person (her name) through sidebarIdentity's actor.
+    expect(read("front-end/islands/DashSidebar.tsx")).toMatch(/langSignal\.value/);
+    expect(read("front-end/lib/greeting-identity.ts")).toMatch(/personName\(/);
     const s = read("front-end/islands/SettingsPage.tsx");
-    expect(s).toMatch(/personLanguage\(p\.user, p\.actor\)/);
+    expect(s).toMatch(/const lang: Lang = langSignal\.value === "es" \? "es" : "en";/);
     expect(s).toMatch(/\[t\.language, lang === "es" \? t\.spanish : t\.english\]/);
   });
 
@@ -110,7 +121,8 @@ describe("REQ-631 the app's own words to the person follow HER language (backend
   test.each([
     "communication/entrypoints/notification-controller/mod.ts",
     "analytics/entrypoints/quotes-controller/mod.ts",
-    "analytics/entrypoints/clients-controller/mod.ts",
+    // REQ-631 AMENDMENT: clients-controller left out — demo-fixes' REQ-367
+    // made its cards language-free data, worded by the client in its language
     "agents/entrypoints/conversations-controller/mod.ts",
     "agents/entrypoints/chat-controller/mod.ts",
   ])("%s reads uiLangOf(the session)", (rel) => {
@@ -119,7 +131,9 @@ describe("REQ-631 the app's own words to the person follow HER language (backend
   test("the assistant's server-authored replies take the person's language over the account record", () => {
     const h = be("agents/domain/coordinators/handle-chat-message/mod.ts");
     expect(h).toMatch(/uiLang\?: "en" \| "es"/);
-    expect(h).toMatch(/const replyLang = input\.uiLang \?\?/);
+    // REQ-631 AMENDMENT — reconciled with develop on demo-fixes: the language
+    // the message was typed in (REQ-438) first, then the person's, then the account's
+    expect(h).toMatch(/messageLang\(input\.content\)[\s\S]{0,200}input\.uiLang \?\?/);
     expect(be("agents/entrypoints/chat-controller/mod.ts")).toMatch(/uiLang: uiLangOf\(signedIn\)/);
   });
   test("PUT /me while acting writes the language to her record, nothing to the account", () => {

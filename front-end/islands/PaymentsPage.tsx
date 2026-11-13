@@ -11,13 +11,18 @@
  *     aside.qside → PSideFlow, PSideTopPayors, PSideMix, PSideTip
  *
  * Status taxonomy:
- *   - landed:    payment has been recorded (current data model only carries this)
- *   - transit:   reserved for future when a "pending settlement" status exists
- *   - attention: reserved for future declined/returned tracking
+ *   - landed:    payment has been recorded and is past its settling window
+ *   - transit:   recorded ACH/check still inside its settling window
+ *   - attention: a customer's "I paid by X" claim waiting for the contractor
+ *                to confirm or reject it (REQ-281, demo M34). A claim is not
+ *                a Payment row — it lives on the invoice (status "claimed" +
+ *                paymentIntent) — so it is derived from the invoice list by
+ *                lib/payment-claims.ts.
  *
  * Tracks for transit/attention render conditionally — when there's no data
  * for them the page reads cleanly without empty sections.
  */
+import Backdrop from "../components/Backdrop.tsx";
 import { useEffect, useMemo, useState } from "preact/hooks";
 import {
   type Payment,
@@ -38,12 +43,26 @@ import {
 import { fmtMoney } from "../lib/format.ts";
 import { type Lang, langSignal, tFor } from "../lib/i18n.ts";
 import PaymentReceivedForm from "../components/PaymentReceivedForm.tsx";
+import PaymentsKpis from "../components/PaymentsKpis.tsx";
 import { docNumberOf } from "../../shared/documents/numbering.ts";
+import { type PaymentClaim, pendingClaims } from "../lib/payment-claims.ts";
+import { cashFlowWeeks } from "../lib/cash-flow-weeks.ts";
+import { creditedPayments } from "../lib/headline-counts.ts";
+import { refreshDash } from "../lib/dash-cache.ts";
+import { paymentCardCtaHref } from "../lib/payment-card.ts";
+import {
+  recordOptionLabel,
+  type RecordOptionInvoice,
+} from "../lib/payment-record-option.ts";
 
 /** Plural helper bound to an explicit language (the reactive `tn` reads the
  *  global lang signal; the logged-in app threads `lang` explicitly). */
-const tnFor = (lang: Lang, key: string, n: number, vars?: Record<string, string | number>): string =>
-  tFor(lang, `${key}.${n === 1 ? "one" : "other"}`, { n, ...vars });
+const tnFor = (
+  lang: Lang,
+  key: string,
+  n: number,
+  vars?: Record<string, string | number>,
+): string => tFor(lang, `${key}.${n === 1 ? "one" : "other"}`, { n, ...vars });
 import QuoteTrack from "./QuoteTrack.tsx";
 
 interface State {
@@ -336,17 +355,33 @@ export default function PaymentsPage({ lang: _lang }: { lang?: Lang } = {}) {
   const monthCutoff = new Date(now.getFullYear(), now.getMonth(), 1);
   // Partition by derived status. Landed = settled this month. Transit =
   // still inside the method's settlement window (ACH < 2d, check < 5d).
-  // Attention is reserved for declined/returned signals once the schema
-  // carries them; right now the section conditionally hides itself.
+  // Attention = customer claims awaiting confirm/reject (REQ-281): they are
+  // on the invoices, not the payments, until the contractor confirms.
   const landed = enriched.filter((p) =>
     p.status === "landed" && new Date(p.receivedAt) >= monthCutoff
   );
   const transit = enriched.filter((p) => p.status === "transit");
-  const attention = enriched.filter((p) => p.status === "attention");
+  const attention = pendingClaims(s.invoices, customerNames, now);
   const recentLanded = landed.filter((p) => p.daysAgo <= 1);
   const olderLanded = landed.filter((p) => p.daysAgo > 1);
 
-  const monthTotal = landed.reduce((sum, p) => sum + p.amount, 0);
+  // REQ-551 (demo B2): one "paid" definition with /invoices — a payment
+  // counts what its bill still owed when it arrived; the overpaid rest is
+  // its own line under the hero, never part of the total.
+  const credited = creditedPayments(
+    s.payments,
+    Array.isArray(s.invoices) ? s.invoices : [],
+  );
+  const creditOf = (p: { id: string; amount: number }) =>
+    credited.get(p.id) ?? { creditedCents: p.amount, overCents: 0 };
+  const monthTotal = landed.reduce(
+    (sum, p) => sum + creditOf(p).creditedCents,
+    0,
+  );
+  const monthOverpaid = landed.reduce(
+    (sum, p) => sum + creditOf(p).overCents,
+    0,
+  );
   const transitTotal = transit.reduce((sum, p) => sum + p.amount, 0);
   const attentionTotal = attention.reduce((sum, p) => sum + p.amount, 0);
 
@@ -359,9 +394,11 @@ export default function PaymentsPage({ lang: _lang }: { lang?: Lang } = {}) {
     if (!Number.isFinite(issued) || !Number.isFinite(received)) return [];
     return [Math.max(0, Math.floor((received - issued) / (24 * 3600 * 1000)))];
   });
+  // REQ-562 (demo-loop cycle 4, m21): null = no landed payment yet; a
+  // same-day payment averages 0 days, which is history, not "no history".
   const avgDays = daysToPay.length > 0
     ? Math.round(daysToPay.reduce((s, d) => s + d, 0) / daysToPay.length)
-    : 0;
+    : null;
 
   // Top three landed for the hero stub stack (rotated cards)
   const stubs = recentLanded.slice(0, 3);
@@ -371,6 +408,7 @@ export default function PaymentsPage({ lang: _lang }: { lang?: Lang } = {}) {
       <PaymentsHero
         lang={lang}
         monthTotal={monthTotal}
+        monthOverpaid={monthOverpaid}
         transitTotal={transitTotal}
         attentionCount={attention.length}
         stubs={stubs}
@@ -379,9 +417,14 @@ export default function PaymentsPage({ lang: _lang }: { lang?: Lang } = {}) {
           .map((i) => ({
             id: i.id,
             amountCents: i.amount,
-            label: `${(i as { jobName?: string }).jobName ?? "Invoice"} · ${
-              customerNames.get(i.customerId ?? "") ?? "—"
-            } · ${fmtMoney(i.amount ?? 0)}`,
+            paidCents: i.paidCents, // REQ-551
+            // REQ-587 (cycle 4, M27): number → job name in the app's
+            // language → the localized word; never a hard-coded "Invoice".
+            label: recordOptionLabel(
+              lang,
+              i as Invoice & RecordOptionInvoice,
+              customerNames.get(i.customerId ?? ""),
+            ),
           }))}
         onRecorded={load}
       />
@@ -403,13 +446,19 @@ export default function PaymentsPage({ lang: _lang }: { lang?: Lang } = {}) {
               num="01"
               title={tFor(lang, "paymentsPage.track.attention")}
               count={attention.length}
-              unit={tFor(lang, "paymentsPage.unit.payment")}
+              unit={tFor(lang, "paymentsPage.unit.claim")}
               defaultOpen
               storageKey="payments:track:attention"
             >
               <div class="qcards">
-                {attention.map((p, i) => (
-                  <PaymentCard key={p.id} lang={lang} p={p} idx={i} />
+                {attention.map((c, i) => (
+                  <ClaimCard
+                    key={c.invoiceId}
+                    lang={lang}
+                    c={c}
+                    idx={i}
+                    onSettled={load}
+                  />
                 ))}
               </div>
             </QuoteTrack>
@@ -468,7 +517,7 @@ export default function PaymentsPage({ lang: _lang }: { lang?: Lang } = {}) {
         </div>
 
         <aside class="qside">
-          <PSideFlow lang={lang} landedAmounts={landed.map((p) => p.amount)} />
+          <PSideFlow lang={lang} landed={landed} />
           <PSideTopPayors lang={lang} landed={landed} />
           <PSideMix lang={lang} landed={landed} />
           <PSideTip lang={lang} />
@@ -481,14 +530,27 @@ export default function PaymentsPage({ lang: _lang }: { lang?: Lang } = {}) {
 /* ---------------- Hero ---------------- */
 
 function PaymentsHero(
-  { lang, monthTotal, transitTotal, attentionCount, stubs, recordOptions, onRecorded }: {
+  {
+    lang,
+    monthTotal,
+    monthOverpaid = 0,
+    transitTotal,
+    attentionCount,
+    stubs,
+    recordOptions,
+    onRecorded,
+  }: {
     lang: Lang;
     monthTotal: number;
+    /** REQ-551: received this month beyond what the bills owed. */
+    monthOverpaid?: number;
     transitTotal: number;
     attentionCount: number;
     stubs: EnrichedPayment[];
     /** REQ-019 (NW-33): unpaid invoices the contractor can record against. */
-    recordOptions: Array<{ id: string; label: string; amountCents?: number }>;
+    recordOptions: Array<
+      { id: string; label: string; amountCents?: number; paidCents?: number }
+    >;
     onRecorded: () => Promise<void>;
   },
 ) {
@@ -497,7 +559,10 @@ function PaymentsHero(
   const [recordId, setRecordId] = useState("");
   const recordInvoice = recordOptions.find((o) => o.id === recordId);
   const today = new Date();
-  const exportHref = `/api/invoices/export.csv?year=${today.getFullYear()}&month=${today.getMonth() + 1}`;
+  const exportHref =
+    `/api/invoices/export.csv?year=${today.getFullYear()}&month=${
+      today.getMonth() + 1
+    }`;
   // UX-35: the hero chip month renders in the page language ("PAGOS ·
   // AGOSTO"), never the en-US month inside the Spanish UI.
   const MONTH_KEYS = [
@@ -518,7 +583,8 @@ function PaymentsHero(
     lang,
     `dashboardPage.month.${MONTH_KEYS[new Date().getMonth()]}`,
   );
-  const fresh = monthTotal === 0 && transitTotal === 0 && attentionCount === 0;
+  const fresh = monthTotal === 0 && transitTotal === 0 &&
+    attentionCount === 0 && monthOverpaid === 0;
   return (
     <header class="pph">
       <div class="pph__main">
@@ -554,35 +620,51 @@ function PaymentsHero(
             )}
         </h1>
         <p class="pph__sub">
-          {fresh
-            ? <>{tFor(lang, "paymentsPage.hero.freshSub")}</>
-            : (
-              <>
-                {transitTotal > 0
-                  ? (
-                    <>
-                      {tFor(lang, "paymentsPage.hero.subPlus")}{" "}
-                      <strong>{fmtMoney(transitTotal)}</strong>{" "}
-                      {tFor(lang, "paymentsPage.hero.subOnTheWay")}
-                    </>
-                  )
-                  : <>{tFor(lang, "paymentsPage.hero.everyDollar")}</>}
-                {attentionCount > 0
-                  ? (
-                    <>
-                      {" "}
-                      {tFor(lang, "paymentsPage.hero.subAnd")}{" "}
-                      <strong>{attentionCount}</strong>{" "}
-                      {tFor(lang, "paymentsPage.hero.subUnstick")}
-                    </>
-                  )
-                  : null}
-                {transitTotal > 0
-                  ? <>{tFor(lang, "paymentsPage.hero.subMonsters")}</>
-                  : null}
-              </>
-            )}
+          {fresh ? <>{tFor(lang, "paymentsPage.hero.freshSub")}</> : (
+            <>
+              {transitTotal > 0
+                ? (
+                  <>
+                    {tFor(lang, "paymentsPage.hero.subPlus")}{" "}
+                    <strong>{fmtMoney(transitTotal)}</strong>{" "}
+                    {tFor(lang, "paymentsPage.hero.subOnTheWay")}
+                  </>
+                )
+                : attentionCount > 0
+                // REQ-350: one counted sentence — never "logged. and 1 waiting"
+                ? (
+                  <>
+                    {tnFor(
+                      lang,
+                      "paymentsPage.hero.everyDollarWaiting",
+                      attentionCount,
+                    )}
+                  </>
+                )
+                : <>{tFor(lang, "paymentsPage.hero.everyDollar")}</>}
+              {transitTotal > 0 && attentionCount > 0
+                ? (
+                  <>
+                    {" "}
+                    {tFor(lang, "paymentsPage.hero.subAnd")}{" "}
+                    <strong>{attentionCount}</strong>{" "}
+                    {tFor(lang, "paymentsPage.hero.subUnstick")}
+                  </>
+                )
+                : null}
+              {transitTotal > 0
+                ? <>{tFor(lang, "paymentsPage.hero.subMonsters")}</>
+                : null}
+            </>
+          )}
         </p>
+        {monthOverpaid > 0 && (
+          <p class="pph__sub" data-cy="payments-overpaid">
+            {tFor(lang, "paymentsPage.hero.overpaid", {
+              amount: fmtMoney(monthOverpaid),
+            })}
+          </p>
+        )}
         <div class="pph__cta-row">
           <button
             type="button"
@@ -604,10 +686,10 @@ function PaymentsHero(
           </a>
         </div>
         {recordOpen && (
-          <div
+          <Backdrop
             data-cy="payments-record-modal"
             style="position:fixed;inset:0;z-index:60;background:rgba(20,72,82,0.35);display:flex;align-items:center;justify-content:center;padding:20px"
-            onClick={() => setRecordOpen(false)}
+            onClose={() => setRecordOpen(false)}
           >
             <div
               role="dialog"
@@ -623,10 +705,13 @@ function PaymentsHero(
                 <select
                   data-cy="payments-record-invoice"
                   value={recordId}
-                  onChange={(e) => setRecordId((e.target as HTMLSelectElement).value)}
+                  onChange={(e) =>
+                    setRecordId((e.target as HTMLSelectElement).value)}
                   style="width:100%;box-sizing:border-box;padding:9px 10px;border:1px solid var(--border,#d8dcd5);border-radius:8px;font:inherit;font-size:13.5px;background:#fff"
                 >
-                  <option value="">{tFor(lang, "paymentsPage.record.pick")}</option>
+                  <option value="">
+                    {tFor(lang, "paymentsPage.record.pick")}
+                  </option>
                   {recordOptions.map((o) => (
                     <option key={o.id} value={o.id}>{o.label}</option>
                   ))}
@@ -642,6 +727,7 @@ function PaymentsHero(
                   key={recordInvoice.id}
                   invoiceId={recordInvoice.id}
                   amountCents={recordInvoice.amountCents}
+                  paidCents={recordInvoice.paidCents}
                   lang={lang}
                   onSaved={async () => {
                     await onRecorded();
@@ -652,7 +738,7 @@ function PaymentsHero(
                 />
               )}
             </div>
-          </div>
+          </Backdrop>
         )}
       </div>
       <div class="pph__stack" aria-hidden="true">
@@ -684,71 +770,6 @@ function PaymentsHero(
         ))}
       </div>
     </header>
-  );
-}
-
-/* ---------------- KPIs ---------------- */
-
-function PaymentsKpis(
-  {
-    lang,
-    landedCount,
-    monthTotal,
-    transitCount,
-    transitTotal,
-    attentionCount,
-    attentionTotal,
-    avgDays,
-  }: {
-    lang: Lang;
-    landedCount: number;
-    monthTotal: number;
-    transitCount: number;
-    transitTotal: number;
-    attentionCount: number;
-    attentionTotal: number;
-    avgDays: number;
-  },
-) {
-  return (
-    <div class="qkpi">
-      <div class="qkpi__cell">
-        <div class="qkpi__lbl">{tFor(lang, "paymentsPage.kpi.landedLabel")}</div>
-        <div class="qkpi__val">{fmtMoney(monthTotal)}</div>
-        <div class="qkpi__sub">
-          {tnFor(lang, "paymentsPage.kpi.payments", landedCount)}
-        </div>
-      </div>
-      <div class="qkpi__cell qkpi__cell--accent">
-        <div class="qkpi__lbl">{tFor(lang, "paymentsPage.kpi.transitLabel")}</div>
-        <div class="qkpi__val">{fmtMoney(transitTotal)}</div>
-        <div class="qkpi__sub">
-          {tFor(lang, "paymentsPage.kpi.onTheWay", { n: transitCount })}
-        </div>
-      </div>
-      <div class="qkpi__cell">
-        <div class="qkpi__lbl">
-          {tFor(lang, "paymentsPage.kpi.attentionLabel")}
-        </div>
-        <div class="qkpi__val">{attentionCount}</div>
-        <div class="qkpi__sub">
-          {tFor(lang, "paymentsPage.kpi.heldUp", {
-            amount: fmtMoney(attentionTotal),
-          })}
-        </div>
-      </div>
-      <div class="qkpi__cell">
-        <div class="qkpi__lbl">{tFor(lang, "paymentsPage.kpi.avgLabel")}</div>
-        <div class="qkpi__val">
-          {avgDays > 0 ? tFor(lang, "paymentsPage.value.days", { n: avgDays }) : "—"}
-        </div>
-        <div class="qkpi__sub">
-          {avgDays > 0
-            ? tFor(lang, "paymentsPage.kpi.acrossLanded")
-            : tFor(lang, "paymentsPage.kpi.noHistory")}
-        </div>
-      </div>
-    </div>
   );
 }
 
@@ -796,18 +817,20 @@ function PaymentCard(
   const clientHref = p.customerId
     ? `/clients?open=${encodeURIComponent(p.customerId)}`
     : invoiceHref;
+  // REQ-626 AMENDMENT — reconciled with develop on demo-fixes: the front CTA
+  // is a real link (REQ-555: "View receipt" opens the receipt page in a new
+  // tab); "View timeline" (in transit) flips to the trail on the card's back.
   function onCta(e: Event) {
     e.stopPropagation();
-    // "View timeline": the trail is the card's back
-    if (p.status === "transit") return setFlipped(true);
-    // "View receipt": the paid invoice; "Text client": the client's sheet
-    globalThis.location.assign(
-      p.status === "landed" ? invoiceHref : clientHref,
-    );
+    if (p.status === "transit") {
+      e.preventDefault();
+      setFlipped(true);
+    }
   }
   return (
     <article
       class={`qcard ${flipped ? "qcard--flipped" : ""}`}
+      data-cy="payment-card"
       onClick={(e) => {
         if (flipped) return;
         const t = e.target as HTMLElement;
@@ -833,15 +856,21 @@ function PaymentCard(
         <p class="qcard__story">{p.note}</p>
       </div>
       <div class="qcard__foot">
-        <button
-          type="button"
+        {/* REQ-555 (M24): the CTA goes somewhere — the receipt (landed) or
+            the invoice detail (in transit). */}
+        <a
           class="qcard__cta"
           data-cy="pay-card-cta"
+          href={paymentCardCtaHref(p.status, p.invoiceId)}
+          {...(p.status === "landed"
+            ? { target: "_blank", rel: "noopener noreferrer" }
+            : {})}
+          style="text-decoration:none"
           onClick={onCta}
         >
           {moodCta}{" "}
           <span style="display:inline-block;transition:transform 240ms">→</span>
-        </button>
+        </a>
         <div class="qcard__val-wrap">
           <div class="qcard__val-lbl">
             {p.status === "transit"
@@ -880,13 +909,16 @@ function PaymentCard(
         <div class="qcard__back-body">
           <p class="qcard__read">{p.note}</p>
         </div>
-        <div class="qcard__back-foot">
+        {/* REQ-555 (M24) / REQ-626: every action has a destination — the
+            receipt is the paid invoice's page, the invoice opens its own
+            detail, the client's sheet carries Message. */}
+        <div class="qcard__back-foot" style="grid-template-columns:repeat(3,1fr)">
           {/* REQ-626: the customer's copy of the invoice is the receipt */}
           <a
             data-cy="pay-card-receipt"
             href={receiptHref}
             target="_blank"
-            rel="noopener"
+            rel="noopener noreferrer"
             onClick={(e) => e.stopPropagation()}
           >
             {tFor(lang, "paymentsPage.card.receipt")}
@@ -908,6 +940,114 @@ function PaymentCard(
             {tFor(lang, "paymentsPage.card.textClient")}
           </a>
         </div>
+      </div>
+    </article>
+  );
+}
+
+/* ---------------- Claim card (attention) ---------------- */
+
+/** REQ-281 (demo M34): a customer's "I paid by X" claim, waiting for the
+ *  contractor. Confirm records the Payment (confirm-payment); reject reopens
+ *  the invoice (reject-claim). Either way the page reloads its data. */
+function ClaimCard(
+  { lang, c, idx, onSettled }: {
+    lang: Lang;
+    c: PaymentClaim;
+    idx: number;
+    onSettled: () => Promise<void>;
+  },
+) {
+  const [busy, setBusy] = useState(false);
+  const [failed, setFailed] = useState(false);
+  const mood = STATUS_MOOD.attention;
+  const name = (c.claimedBy?.trim() || c.client).split(/\s+/)[0];
+  const method = methodLabel(lang, c.method);
+  const note = c.reference
+    ? tFor(lang, "paymentsPage.claim.noteRef", {
+      name,
+      method,
+      ref: c.reference,
+    })
+    : tFor(lang, "paymentsPage.claim.note", { name, method });
+
+  async function act(action: "confirm" | "reject") {
+    if (busy) return;
+    setBusy(true);
+    setFailed(false);
+    const url = action === "confirm"
+      ? `/api/invoices/${c.invoiceId}/confirm-payment`
+      : `/api/invoices/${c.invoiceId}/reject-claim`;
+    try {
+      const r = await fetch(url, {
+        method: "POST",
+        credentials: "include",
+      });
+      await r.body?.cancel();
+      if (!r.ok) {
+        setFailed(true);
+        return;
+      }
+      // REQ-554 (demo-loop cycle 4, m23): the sidebar's Invoices badge
+      // reads the dash cache — a settled claim re-counts it.
+      refreshDash().catch(() => {/* the badge keeps its last count */});
+      await onSettled();
+    } catch {
+      setFailed(true);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <article
+      class="qcard"
+      data-cy="payment-claim"
+      style={`--mood-from:${mood.from};--mood-to:${mood.to};--mood-shadow:${mood.shadow};--mood-status:${mood.statusFg}`}
+    >
+      <div class="qcard__mood">
+        <div class="qcard__numeral">{String(idx + 1).padStart(2, "0")}</div>
+        <div class="qcard__status">
+          <span class="qcard__status-dot" />{" "}
+          {tFor(lang, "paymentsPage.claim.label")}
+        </div>
+        <div class="qcard__opens" style="text-transform:uppercase">
+          <I d={METHOD_ICON[c.method]} size={12} sw={2} /> {method}
+        </div>
+      </div>
+      <div class="qcard__av">{c.initials}</div>
+      <div class="qcard__body">
+        <div class="qcard__client-name">{c.client} · {c.invoiceRef}</div>
+        <div class="pcard__amount">{fmtMoney(c.amount)}</div>
+        <p class="qcard__story">
+          {note} · {whenLabel(lang, c.daysAgo)}
+        </p>
+        {failed && (
+          <p class="qcard__story" role="alert" style="color:#B3261E">
+            {tFor(lang, "paymentsPage.claim.failed")}
+          </p>
+        )}
+      </div>
+      <div class="qcard__foot">
+        <button
+          type="button"
+          class="qcard__cta"
+          data-cy="payment-claim-confirm"
+          disabled={busy}
+          onClick={() => act("confirm")}
+        >
+          {tFor(lang, "paymentsPage.claim.confirm")}{" "}
+          <span style="display:inline-block;transition:transform 240ms">→</span>
+        </button>
+        <button
+          type="button"
+          class="pph__ghost"
+          data-cy="payment-claim-reject"
+          disabled={busy}
+          onClick={() => act("reject")}
+        >
+          {tFor(lang, "paymentsPage.claim.reject")}
+        </button>
       </div>
     </article>
   );
@@ -935,14 +1075,11 @@ function LandedRow({ lang, p }: { lang: Lang; p: EnrichedPayment }) {
 /* ---------------- Side rail components ---------------- */
 
 function PSideFlow(
-  { lang, landedAmounts }: { lang: Lang; landedAmounts: number[] },
+  { lang, landed }: { lang: Lang; landed: EnrichedPayment[] },
 ) {
-  // Split landed into 12 weekly buckets. Real history would key off
-  // receivedAt; for now we just slot in the rolling totals.
-  const weeks = new Array(12).fill(0);
-  landedAmounts.forEach((a, i) => {
-    weeks[11 - (i % 12)] += a;
-  });
+  // REQ-325 (demo m38): 12 ISO-week buckets keyed off receivedAt, ending in
+  // the current week; the axis months are derived from today, not fixed.
+  const { weeks, labels } = cashFlowWeeks(landed);
   const hasData = weeks.some((v) => v > 0);
   if (!hasData) {
     return (
@@ -980,8 +1117,8 @@ function PSideFlow(
       <svg width={w} height={h} style="display:block;width:100%;height:auto">
         <defs>
           <linearGradient id="cfArea" x1="0" x2="0" y1="0" y2="1">
-            <stop offset="0%" stopColor="#FF6B6B" stopOpacity="0.32" />
-            <stop offset="100%" stopColor="#FF6B6B" stopOpacity="0" />
+            <stop offset="0%" stop-color="#FF6B6B" stop-opacity="0.32" />
+            <stop offset="100%" stop-color="#FF6B6B" stop-opacity="0" />
           </linearGradient>
         </defs>
         <path d={area} fill="url(#cfArea)" />
@@ -1004,9 +1141,9 @@ function PSideFlow(
         ))}
       </svg>
       <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--fg-muted);margin-top:8px;font-family:var(--font-body)">
-        <span>{tFor(lang, "paymentsPage.flow.feb")}</span>
-        <span>{tFor(lang, "paymentsPage.flow.mar")}</span>
-        <span>{tFor(lang, "paymentsPage.flow.apr")}</span>
+        {labels.map((m, i) => (
+          <span key={i}>{tFor(lang, `dashboardPage.month.${m}`)}</span>
+        ))}
       </div>
     </div>
   );

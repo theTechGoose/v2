@@ -162,7 +162,12 @@ Deno.test("REQ-138 workers — created without the PIN in the answer; a wrong PI
       ok.headers.get("set-cookie")?.startsWith("pm_worker="),
       "the session cookie",
     );
-    assertEquals(ok.body, { id: made.body.id, name: "Pedro", role: "foreman" });
+    assertEquals(ok.body, {
+      id: made.body.id,
+      name: "Pedro",
+      role: "foreman",
+      language: "en", // REQ-285 — the screen's language; REQ-774: none picked → the English owner's
+    });
     const W = { cookie: ok.headers.get("set-cookie")!.split(";")[0] };
     assertEquals(
       (await call("GET", "/field/worker/me", undefined, W)).body.name,
@@ -1048,7 +1053,7 @@ async function todaysRound(call: Call, phone = "+15125551630", texts = true) {
   const customer = (await call("POST", "/customers", {
     name: "Ana Torres",
     address: "4601 Dick Pond Rd, Myrtle Beach, SC",
-    phoneNumber: "+18435550199",
+    phoneNumber: "+18435550299", // REQ-523: a textable number (555-01XX is never texted)
   }, H)).body;
   const w = (await call("POST", "/field/workers", {
     name: "Pedro",
@@ -1112,6 +1117,49 @@ Deno.test("REQ-163 the office deletes a task; an invoiced task is 409; another a
         .status,
       403,
     );
+  });
+});
+
+// REQ-340 (demo-loop cycle 1, M37) — the task's address carries over to a customer who had none
+Deno.test("REQ-340 a one-off task's address becomes the customer's when they had none; a customer with one keeps it", async () => {
+  await withServer(async (call) => {
+    const { H, today, w } = await todaysRound(call, "+15125551633");
+    // the demo's order: the customer was added from the form before the address was typed
+    const dave =
+      (await call("POST", "/customers", { name: "Dave Kowalski" }, H))
+        .body;
+    assertEquals(dave.address ?? undefined, undefined);
+    const made = await call("POST", "/field/tasks", {
+      customerId: dave.id,
+      date: today,
+      taskTypeName: "Gutter clean",
+      priceCents: 15000,
+      workerId: w.id,
+      address: "8807 Spicewood Springs Rd, Austin, TX",
+    }, H);
+    assertEquals(made.status, 201);
+    assertEquals(made.body.address, "8807 Spicewood Springs Rd, Austin, TX");
+    const after =
+      (await call("GET", `/customers/${dave.id}`, undefined, H)).body;
+    assertEquals(
+      after.address,
+      "8807 Spicewood Springs Rd, Austin, TX",
+      "the customer now has the task's address on file",
+    );
+    // a customer with an address keeps it: the task's is that job's service address only
+    const other = await call("POST", "/field/tasks", {
+      customerId: dave.id,
+      date: today,
+      taskTypeName: "Gutter clean",
+      priceCents: 15000,
+      workerId: w.id,
+      address: "1 Rental Unit Ln, Austin, TX",
+    }, H);
+    assertEquals(other.status, 201);
+    assertEquals(other.body.address, "1 Rental Unit Ln, Austin, TX");
+    const kept =
+      (await call("GET", `/customers/${dave.id}`, undefined, H)).body;
+    assertEquals(kept.address, "8807 Spicewood Springs Rd, Austin, TX");
   });
 });
 
@@ -1206,6 +1254,37 @@ Deno.test("REQ-164 the office posts a one-off task; it lists on the day, survive
       ),
       pull.body.invoices[0].lineItems[0].description,
     );
+  });
+});
+
+// REQ-703 (demo-loop cycle 5, m54) — "Fix 3 sagging fence posts · ONE-OFF" was invoiced as
+// "Maintenance 2026-10-29→2026-11-12". The draft's title comes from its lines; the period is on serviceDateFrom/To.
+Deno.test("REQ-703 a pulled one-off is titled by its service; a round is 'Maintenance · <localized date>', never raw ISO", async () => {
+  await withServer(async (call) => {
+    const { H, today, customer, w, day } = await todaysRound(call, "+15125551703");
+    const tomorrow = shiftDate(today, 1);
+    // today's round, done → one draft for maintenance
+    for (const t of day) await call("PUT", `/field/tasks/${t.id}`, { status: "complete" }, H);
+    const round = await call("POST", "/field/batches/pull", { from: today, to: today }, H);
+    assertEquals(round.status, 201);
+    const r = round.body.invoices[0];
+    assert(r.jobName.startsWith("Maintenance · "), r.jobName);
+    assert(!/\d{4}-\d{2}-\d{2}/.test(r.jobName), r.jobName);
+    assertEquals([r.serviceDateFrom, r.serviceDateTo], [today, today]);
+    // tomorrow's one-off repair, done → titled by what was done
+    const fence = await call("POST", "/field/tasks", {
+      customerId: customer.id,
+      date: tomorrow,
+      taskTypeName: "Fix 3 sagging fence posts",
+      priceCents: 45000,
+      workerId: w.id,
+    }, H);
+    await call("PUT", `/field/tasks/${fence.body.id}`, { status: "complete" }, H);
+    const one = await call("POST", "/field/batches/pull", { from: today, to: tomorrow }, H);
+    assertEquals(one.status, 201);
+    assertEquals(one.body.invoices.length, 1);
+    const o = one.body.invoices[0];
+    assertEquals([o.jobName, o.serviceDateFrom, o.serviceDateTo], ["Fix 3 sagging fence posts", tomorrow, tomorrow]);
   });
 });
 
@@ -1383,7 +1462,7 @@ async function withTwilioStub(
     await stub.shutdown();
   }
 }
-const CUSTOMER_PHONE = "+18435550199";
+const CUSTOMER_PHONE = "+18435550299"; // REQ-523: 555-01XX numbers are never texted
 
 // REQ-171 — "send text messages to the workers if they get a new one off task for the day" / "… to customers if a one off service is canceled" / "… if their service is canceled or deffered."
 Deno.test("REQ-171 a one-off for today texts the worker, tomorrow's does not; delete / skip / defer text the customer, once", async () => {
@@ -1555,6 +1634,77 @@ Deno.test("REQ-172 the sweep at 09:05 New York texts the day's customers once; H
   });
 });
 
+// REQ-255 (demo issue onboarding-dashboard-settings-m3a) — an Austin, TX business sat on New York time: the 9 am texts went out at 8 am Central
+/** the UTC instant at which `tz`'s wall clock reads hh:mm on `date` */
+function wallClock(date: string, hhmm: string, tz: string): Date {
+  for (let h = 0; h < 24; h++) {
+    const at = new Date(
+      `${date}T${String(h).padStart(2, "0")}:${hhmm.slice(3)}:00Z`,
+    );
+    const local = new Intl.DateTimeFormat("en-CA", {
+      timeZone: tz,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      hourCycle: "h23",
+    }).format(at).replace(",", "");
+    if (local === `${date} ${hhmm}`) return at;
+  }
+  throw new Error(`${tz} never reads ${hhmm} on ${date}`);
+}
+
+Deno.test("REQ-255 with no zone picked, a TX address puts the 9 am sweep on Central time: 09:30 New York is not due, 09:30 Chicago is", async () => {
+  await withTwilioStub(async (texts) => {
+    await withServer(async (call) => {
+      const { H, today } = await todaysRound(call, "+15125551755");
+      await call("PUT", "/profile/identity", {
+        businessName: "Austin Lawn Co",
+      }, H);
+      const addr = await call("PUT", "/profile/address", {
+        street: "1600 Congress Ave",
+        city: "Austin",
+        state: "TX",
+        postal: "78701",
+        country: "US",
+      }, H);
+      assertEquals(addr.status, 200);
+      const notices = new FieldNotices(
+        new UserStore(),
+        new BusinessIdentityStore(),
+        new CustomerStore(),
+        new FieldWorkerStore(),
+        new TaskTypeStore(),
+        new SubscriptionStore(),
+        new FieldDay(
+          new SubscriptionStore(),
+          new RegionStore(),
+          new FieldTaskStore(),
+        ),
+        new SmsService(),
+      );
+      const toCustomer = () => texts.filter((x) => x.to === CUSTOMER_PHONE);
+      const early = await notices.sweep(
+        wallClock(today, "09:30", "America/New_York"),
+      );
+      assertEquals(
+        [early.texted, toCustomer().length],
+        [0, 0],
+        "08:30 in Austin — not 9 am yet",
+      );
+      const due = await notices.sweep(
+        wallClock(today, "09:30", "America/Chicago"),
+      );
+      assertEquals(
+        [due.texted, toCustomer().length],
+        [1, 1],
+        "09:30 in Austin",
+      );
+    });
+  });
+});
+
 // REQ-170 — the office page and a worker read the same day at the same instant: one round, not two
 Deno.test("REQ-170 two reads of the same day at once make one round; a generated task's id is stable", async () => {
   await withServer(async (call) => {
@@ -1629,6 +1779,291 @@ Deno.test("REQ-177 with the account's fieldTexts flag off nothing is texted and 
       assertEquals([on.status, on.body.texted], [201, true]);
       assertEquals(toWorker().length, 1, "flag on → the worker hears");
     });
+  });
+});
+
+Deno.test("REQ-288 GET /field/regions/center — demo m5: an Austin, TX business with no subscriptions starts on Austin; no address → the whole US; geocoded once per address", async () => {
+  await withServer(async (call) => {
+    const H = await login(call, "+15125551880");
+    const none = await call("GET", "/field/regions/center", undefined, H);
+    assertEquals(none.status, 200, JSON.stringify(none.body));
+    assertEquals(none.body.source, "none");
+    assert(none.body.zoom <= 5, JSON.stringify(none.body));
+    assert(
+      Math.abs(none.body.lat - 33.69) > 1 ||
+        Math.abs(none.body.lng + 78.93) > 1,
+      `not Myrtle Beach: ${JSON.stringify(none.body)}`,
+    );
+
+    const put = await call("PUT", "/profile/address", {
+      street: "1600 Congress Ave",
+      city: "Austin",
+      state: "TX",
+      postal: "78701",
+    }, H);
+    assertEquals(put.status, 200, JSON.stringify(put.body));
+    const geo =
+      (await import("@field/domain/data/geocoder/mod.ts")).FakeGeocoder;
+    const before = geo.prototype.geocode;
+    let calls = 0;
+    geo.prototype.geocode = function (a: string) {
+      calls++;
+      return before.call(this, a);
+    };
+    try {
+      const at = await call("GET", "/field/regions/center", undefined, H);
+      assertEquals(at.status, 200, JSON.stringify(at.body));
+      assertEquals(at.body.source, "business");
+      assert(
+        Math.abs(at.body.lat - 30.27) < 0.25 &&
+          Math.abs(at.body.lng + 97.74) < 0.25,
+        `Austin: ${JSON.stringify(at.body)}`,
+      );
+      assert(at.body.zoom >= 9, JSON.stringify(at.body));
+      await call("GET", "/field/regions/center", undefined, H);
+      assertEquals(calls, 1, "the same address is geocoded once");
+      await call("PUT", "/profile/address", {
+        city: "Denver",
+        state: "CO",
+        street: "",
+        postal: "",
+      }, H);
+      const moved = await call("GET", "/field/regions/center", undefined, H);
+      assertEquals(calls, 2, "a new address is geocoded again");
+      assert(
+        Math.abs(moved.body.lat - 39.74) < 0.25,
+        JSON.stringify(moved.body),
+      );
+    } finally {
+      geo.prototype.geocode = before;
+    }
+    assertEquals(
+      (await call("GET", "/field/regions/center")).status,
+      401,
+      "signed out",
+    );
+  });
+});
+
+// REQ-365 — demo cycle 1, p15-17: "Miguel Torres · —" on /field/tasks
+Deno.test("REQ-365 a one-off task for a customer with no subscription answers regionId and regionName empty, never a dash", async () => {
+  await withServer(async (call) => {
+    const H = await login(call, "+15125551365");
+    const customer =
+      (await call("POST", "/customers", { name: "Nobody Zoned" }, H)).body;
+    const w = (await call("POST", "/field/workers", {
+      name: "Miguel Torres",
+      phoneNumber: "8435550365",
+      pin: "1234",
+    }, H)).body;
+    const today = fieldToday();
+    const made = await call("POST", "/field/tasks", {
+      customerId: customer.id,
+      date: today,
+      taskTypeName: "Mulch",
+      priceCents: 500,
+      workerId: w.id,
+    }, H);
+    assertEquals(made.status, 201);
+    assertEquals([made.body.regionId, made.body.regionName], ["", ""]);
+    const day =
+      (await call("GET", `/field/tasks?date=${today}`, undefined, H)).body;
+    const listed = day.find((t: { id: string }) => t.id === made.body.id);
+    assertEquals([listed.workerName, listed.regionId, listed.regionName], [
+      "Miguel Torres",
+      "",
+      "",
+    ]);
+  });
+});
+
+Deno.test("REQ-421 (demo cycle 2, m42) POST /field/workers answers a stable `code` for every refusal — the page words it; a cell already in use (any account) is worker_phone_taken", async () => {
+  await withServer(async (call) => {
+    const H = await login(call);
+    const add = (b: Record<string, unknown>) =>
+      call("POST", "/field/workers", b, H);
+    const first = await add({
+      name: "Pedro",
+      phoneNumber: "8435550777",
+      pin: "4321",
+    });
+    assertEquals(first.status, 201);
+    const cases: [Record<string, unknown>, number, string][] = [
+      [{ phoneNumber: "8435550776", pin: "1234" }, 400, "name_required"],
+      [
+        { name: "x".repeat(301), phoneNumber: "8435550776", pin: "1234" },
+        400,
+        "name_too_long",
+      ],
+      [
+        { name: "A", phoneNumber: "843555", pin: "1234" },
+        400,
+        "phone_10_digits",
+      ],
+      [
+        { name: "A", phoneNumber: "8435550776", pin: "12" },
+        400,
+        "pin_4_digits",
+      ],
+      [
+        { name: "Dup", phoneNumber: "(843) 555-0777", pin: "0000" },
+        409,
+        "worker_phone_taken",
+      ],
+      [
+        { name: "A", phoneNumber: "8435550776", pin: "1234", language: "fr" },
+        400,
+        "language_invalid",
+      ],
+    ];
+    for (const [b, status, code] of cases) {
+      const r = await add(b);
+      assertEquals(r.status, status, `${code}: ${JSON.stringify(r.body)}`);
+      assertEquals(r.body?.code, code, JSON.stringify(r.body));
+    }
+    // another account's crew holds the cell too (findByPhone is global) — the same code
+    const H2 = await login(call, "+15125551401", "Other Owner");
+    const other = await call("POST", "/field/workers", {
+      name: "Dup",
+      phoneNumber: "8435550777",
+      pin: "0000",
+    }, H2);
+    assertEquals(other.status, 409);
+    assertEquals(other.body?.code, "worker_phone_taken");
+    // the row's own refusals on the same page: a bad language, a worker still covering a zone
+    const badLang = await call("PUT", `/field/workers/${first.body.id}`, {
+      language: "fr",
+    }, H);
+    assertEquals([badLang.status, badLang.body?.code], [
+      400,
+      "language_invalid",
+    ]);
+    const customer =
+      (await call("POST", "/customers", { name: "Zone Owner" }, H)).body;
+    const sub = (await call("POST", "/field/subscriptions", {
+      customerId: customer.id,
+      address: "900 Broadway St, Myrtle Beach, SC",
+      items: [{ taskTypeName: "Cut", priceCents: 100 }],
+    }, H)).body;
+    await call("PUT", `/field/regions/${sub.region.id}/worker`, {
+      workerId: first.body.id,
+    }, H);
+    const covers = await call(
+      "DELETE",
+      `/field/workers/${first.body.id}`,
+      undefined,
+      H,
+    );
+    assertEquals([covers.status, covers.body?.code], [
+      409,
+      "worker_covers_zones",
+    ]);
+    assertEquals(covers.body?.detail?.zones, [sub.region.name]);
+  });
+});
+
+Deno.test("REQ-401 (demo M30/m45, cycle 2) send to a customer with no email or phone fails with code noRecipient and sends nothing; the worker's lock reads 'draft' until the invoice is sent, then 'invoiced'", async () => {
+  await withServer(async (call) => {
+    const { H, W, customer, worker, sub, today } = await setUp(call);
+    const johnson = (await call("POST", "/customers", { name: "Johnson" }, H))
+      .body;
+    assert(johnson?.id, JSON.stringify(johnson));
+    const jSub = (await call("POST", "/field/subscriptions", {
+      customerId: johnson.id,
+      address: "6221 Forestbrook Rd, Myrtle Beach, SC",
+      startDate: today,
+      items: [{ taskTypeName: "Repair 3 fence panels", priceCents: 9000 }],
+    }, H)).body;
+    if (jSub.region.id !== sub.region.id) {
+      await call("PUT", `/field/regions/${jSub.region.id}/worker`, {
+        workerId: worker.id,
+      }, H);
+    }
+    for (
+      const t of (await call(
+        "GET",
+        `/field/worker/tasks?date=${today}`,
+        undefined,
+        W,
+      )).body
+    ) {
+      await call("POST", `/field/worker/tasks/${t.id}/complete`, {}, W);
+    }
+    const pulled = await call("POST", "/field/batches/pull", {
+      from: today,
+      to: today,
+    }, H);
+    assertEquals(pulled.status, 201, JSON.stringify(pulled.body));
+    const inv = (id: string) =>
+      pulled.body.invoices.find((i: { customerId: string }) =>
+        i.customerId === id
+      );
+    const lockStates = async () =>
+      ((await call("GET", `/field/worker/tasks?date=${today}`, undefined, W))
+        .body as { customerId: string; locked: boolean; lockState: string }[])
+        .map((t) =>
+          [
+            t.customerId === johnson.id ? "johnson" : "ana",
+            t.locked,
+            t.lockState,
+          ].join(":")
+        )
+        .sort();
+    assertEquals(await lockStates(), [
+      "ana:true:draft",
+      "ana:true:draft",
+      "johnson:true:draft",
+    ], "pulled onto a DRAFT: locked, but not 'invoiced'");
+    // Johnson alone: nothing goes out, and the failure carries a code the page translates
+    const none = await call("POST", `/field/batches/${pulled.body.id}/send`, {
+      invoiceIds: [inv(johnson.id).id],
+    }, H);
+    assertEquals(none.status, 200, JSON.stringify(none.body));
+    assertEquals(none.body.sent, 0);
+    assertEquals(
+      none.body.failed.map((
+        f: { invoiceId: string; code?: string; customerId?: string },
+      ) => [f.invoiceId, f.code, f.customerId]),
+      [[inv(johnson.id).id, "noRecipient", johnson.id]],
+    );
+    // Ana's goes out: her tasks now read 'invoiced'; Johnson's stay on a draft
+    const sent = await call("POST", `/field/batches/${pulled.body.id}/send`, {
+      invoiceIds: [inv(customer.id).id],
+    }, H);
+    assertEquals([sent.body.sent, sent.body.failed], [1, []]);
+    assertEquals(await lockStates(), [
+      "ana:true:invoiced",
+      "ana:true:invoiced",
+      "johnson:true:draft",
+    ]);
+  });
+});
+
+Deno.test("REQ-747 GET /field/regions/center — demo-loop cycle 5 c4-m50: a business whose address is only its state (FL, as onboarding saves it) starts on Florida at a state-level zoom, not on Myrtle Beach", async () => {
+  await withServer(async (call) => {
+    const H = await login(call, "+15125551881");
+    const put = await call("PUT", "/profile/address", {
+      street: "",
+      city: "",
+      state: "FL",
+      postal: "",
+    }, H);
+    assertEquals(put.status, 200, JSON.stringify(put.body));
+    const at = await call("GET", "/field/regions/center", undefined, H);
+    assertEquals(at.status, 200, JSON.stringify(at.body));
+    assertEquals(at.body.source, "business");
+    assert(
+      at.body.lat > 24.4 && at.body.lat < 31.1 && at.body.lng > -87.7 &&
+        at.body.lng < -79.9,
+      `in Florida, not Myrtle Beach: ${JSON.stringify(at.body)}`,
+    );
+    assert(
+      at.body.zoom >= 5 && at.body.zoom <= 7,
+      `state-level zoom: ${JSON.stringify(at.body)}`,
+    );
+    // cached on the second read, same view
+    const again = await call("GET", "/field/regions/center", undefined, H);
+    assertEquals(again.body, at.body);
   });
 });
 

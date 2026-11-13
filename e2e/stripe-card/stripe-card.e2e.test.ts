@@ -131,13 +131,29 @@ Deno.test("REQ-212: settings connects the business's own Stripe — the account,
     const inv = await mkInvoice(http, auth, 6500);
     await page.context().clearCookies();
     await page.goto(`/i/${inv.id}`);
-    await page.locator("[data-cy='card-pay']").waitFor({ timeout: 15_000 });
-    await expect.see("Acme Roofing");
+    // REQ-782: "Pay by card" is a link to a separate portal — our card page on their Stripe
+    const payByCard = page.locator("[data-cy='pay-by-card']");
+    await payByCard.waitFor({ timeout: 15_000 });
+    expect.eq(
+      await payByCard.getAttribute("href"),
+      `/i/${inv.id}/pay`,
+      "Pay by card opens the card portal",
+    );
+    expect.eq(await payByCard.getAttribute("target"), "_blank", "a new tab");
+    await expect.see("Pay $65.00 by card");
+    expect.eq(
+      await page.locator("[data-cy='card-pay']").count(),
+      0,
+      "no card form on the invoice itself",
+    );
     expect.eq(
       await page.locator("[data-cy='claim-method-card']").count(),
       0,
       "the manual card chip is gone while Stripe is on",
     );
+    await page.goto(`/i/${inv.id}/pay`);
+    await page.locator("[data-cy='card-pay']").waitFor({ timeout: 15_000 });
+    await expect.see("Acme Roofing");
     const front = page.locator(".pc-card");
     expect.eq(
       (await front.getAttribute("class"))?.includes("pc-card--active"),
@@ -248,7 +264,7 @@ Deno.test("REQ-212: settings connects the business's own Stripe — the account,
 
     // 4. a declined card says so and keeps the form
     const inv2 = await mkInvoice(http, auth, 12000);
-    await page.goto(`/i/${inv2.id}`);
+    await page.goto(`/i/${inv2.id}/pay`);
     await page.locator("[data-cy='card-pay']").waitFor({ timeout: 15_000 });
     await page.locator("[data-cy='card-number']").fill("4000000000000002");
     await page.locator("[data-cy='card-holder']").fill("Ana Torres");
@@ -278,9 +294,9 @@ Deno.test("REQ-212: settings connects the business's own Stripe — the account,
     await page.goto(`/i/${inv2.id}`);
     await page.locator("[data-cy='claim-form']").waitFor({ timeout: 15_000 });
     expect.eq(
-      await page.locator("[data-cy='card-pay']").count(),
+      await page.locator("[data-cy='pay-by-card']").count(),
       0,
-      "no card without Stripe",
+      "no card without Stripe (and no card pay link)",
     );
     expect.eq(
       await page.locator("[data-cy='claim-method-card']").count(),

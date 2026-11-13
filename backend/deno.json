@@ -25,6 +25,7 @@
     "#person-name/": "../shared/person-name/",
     "#features": "../shared/features.ts",
     "#legal/": "../shared/legal/",
+    "#identity/": "../shared/identity/",
     "#demo-booking/": "../shared/demo-booking/",
     "#lead-origin/": "../shared/lead-origin/",
     "#demo-mode/": "../shared/demo-mode/",

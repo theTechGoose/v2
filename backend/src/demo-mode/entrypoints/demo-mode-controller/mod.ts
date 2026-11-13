@@ -16,12 +16,42 @@ import { DemoSessionStore } from "@demo-mode/domain/data/demo-session-store/mod.
 import { DemoHub } from "@demo-mode/domain/coordinators/demo-hub/mod.ts";
 import {
   DemoAccess,
+  DemoForbiddenError,
   DemoNotFoundError,
 } from "@demo-mode/domain/coordinators/demo-access/mod.ts";
-import { isSafePath, nextColor } from "#demo-mode/protocol.ts";
+import { ACTIVE_WAIT_MS, isSafePath, nextColor } from "#demo-mode/protocol.ts";
 import { presentersOf } from "@demo-mode/domain/business/demo-role/mod.ts";
+import {
+  presenterNameOf,
+  targetNameOf,
+} from "@demo-mode/domain/business/display-name/mod.ts";
 
-const nameOf = (u: User) => u.name?.trim() || u.phoneNumber;
+/** REQ-227 — a super admin cannot open a demo on their own account */
+class DemoOnSelfError extends Error {
+  readonly status = 400;
+  constructor() {
+    super("a demo cannot be opened on your own account");
+  }
+}
+
+/** REQ-214 / REQ-232 — a presenter off a demo: it goes on for the others (who hear them go, and
+ *  their sockets close everywhere), and ends for everyone when nobody is left on it. A module
+ *  function: Danet routes every controller method. */
+async function leaveDemo(
+  demos: DemoSessionStore,
+  hub: DemoHub,
+  id: string,
+  userId: string,
+): Promise<void> {
+  const rest = await demos.leave(id, userId);
+  if (rest && !rest.endedAt && presentersOf(rest).length === 0) {
+    await demos.end(id);
+    // REQ-235 — the customer hears it was this presenter (the last one to go)
+    await hub.end(id, "presenter", undefined, userId);
+  } else if (rest && !rest.endedAt) {
+    await hub.dropPresenter(id, userId);
+  }
+}
 
 /**
  * REQ-153 — demo mode over HTTP (the socket is DemoModeSocketController, at `api/demo-mode`).
@@ -32,12 +62,16 @@ const nameOf = (u: User) => u.name?.trim() || u.phoneNumber;
  *                                         colour (REQ-214); a demo for another user takes this admin off their current
  *                                         one (it ends when nobody is left on it). `targetPath` (REQ-179): where the
  *                                         customer is, so the staff browser moves on this one answer
- *   GET  /demo-mode/active?path=/x        any session → { role, session: { id, presenterName, targetName, targetUserId,
+ *   GET  /demo-mode/active?path=/x[&wait=ms] any session → { role, session: { id, presenterName, targetName, targetUserId,
  *                                         presenters: [{ userId, name, color }] } | null, targetPath, pid }: `path` is where
  *                                         the caller's own app is (recorded WHERE_TTL_MS, never from an impersonation
  *                                         session); `targetPath` tells the presenter where the customer is; `pid` is which
  *                                         presenter the caller is (REQ-214)
+ *                                         `wait` (REQ-378): no demo yet → held up to ACTIVE_WAIT_MS, answered the moment one opens
  *   POST /demo-mode/sessions/:id/end      a participant, `{ reason?: "declined" }` → { ok: true }; 403 anyone else; 404 unknown
+ *   POST /demo-mode/sessions/:id/leave    a presenter (REQ-232 — "Return to your account" during the demo) → { ok: true }: they
+ *                                         are off it; it goes on for the other presenters and ends when nobody is left; 403 the
+ *                                         customer (who ends a demo, never leaves it) and anyone not presenting it; 404 unknown
  */
 @Controller("demo-mode")
 export class DemoModeController {
@@ -54,6 +88,8 @@ export class DemoModeController {
     const admin = await requireSuperAdmin(ctx, this.sessions, this.users);
     const userId = (body as { userId?: unknown } | null)?.userId;
     if (typeof userId !== "string" || !userId) throw new DemoNotFoundError();
+    // REQ-227 (demo-lifecycle-p2) — a demo on yourself would make you the customer AND the presenter
+    if (userId === admin.id) throw new DemoOnSelfError();
     let target: User;
     try {
       target = await this.users.get(userId);
@@ -72,21 +108,13 @@ export class DemoModeController {
         createdAt: prev.createdAt,
       }, 200);
     }
-    if (prev) {
-      const rest = await this.demos.leave(prev.id, admin.id);
-      if (rest && !rest.endedAt && presentersOf(rest).length === 0) {
-        await this.demos.end(prev.id);
-        await this.hub.end(prev.id, "presenter");
-      } else if (rest && !rest.endedAt) {
-        await this.hub.dropPresenter(prev.id, admin.id);
-      }
-    }
+    if (prev) await leaveDemo(this.demos, this.hub, prev.id, admin.id);
     // REQ-214 — the customer is already being guided: join that demo as another presenter
     const live = await this.demos.activeFor(target.id);
     if (live) {
       const joined = await this.demos.join(live.id, {
         userId: admin.id,
-        name: nameOf(admin),
+        name: presenterNameOf(admin),
         color: nextColor(presentersOf(live).map((p) => p.color)),
       });
       if (joined) {
@@ -100,7 +128,7 @@ export class DemoModeController {
     }
     const demo = await this.demos.create(target.id, {
       userId: admin.id,
-      name: nameOf(admin),
+      name: presenterNameOf(admin),
       color: nextColor([]),
     });
     return ctx.json({
@@ -115,17 +143,40 @@ export class DemoModeController {
   async active(
     @Context() ctx: ExecutionContext,
     @Query("path") path?: string,
+    @Query("wait") wait?: string,
   ) {
     const caller = await this.access.caller(ctx);
     // the caller's own app says where it is — an impersonation session is the presenter's browser, not the customer's
     if (isSafePath(path) && !caller.session.impersonatorId) {
       await this.demos.here(caller.user.id, path);
     }
-    const current = await this.access.current(caller);
+    // REQ-378 (demo-loop cycle 2, m22) — `wait`: no demo yet, hold the answer (up to ACTIVE_WAIT_MS)
+    // and give it the moment one is opened for the caller — the customer's app hears of a new
+    // demo at once, not on its next ask. The watch is live before the check, so nothing is missed.
+    const holdMs = Math.min(Math.max(Number(wait) || 0, 0), ACTIVE_WAIT_MS);
+    let current: Awaited<ReturnType<DemoAccess["current"]>>;
+    if (holdMs > 0) {
+      const watch = await this.access.watchCurrent(caller);
+      try {
+        current = await this.access.current(caller);
+        if (!current) {
+          await watch.next(holdMs, ctx.req.raw.signal);
+          current = await this.access.current(caller);
+        }
+      } finally {
+        watch.stop();
+      }
+    } else {
+      current = await this.access.current(caller);
+    }
     if (!current) {
       return { role: null, session: null, targetPath: null, pid: null };
     }
-    const presenters = presentersOf(current.demo);
+    // REQ-355 — a presenter stored under the sign-in placeholder shows as the brand
+    const presenters = presentersOf(current.demo).map((p) => ({
+      ...p,
+      name: p.name ? presenterNameOf(p) : "",
+    }));
     const [opener, target, targetPath] = await Promise.all([
       presenters[0]?.name
         ? Promise.resolve(null)
@@ -139,8 +190,9 @@ export class DemoModeController {
       role: current.role,
       session: {
         id: current.demo.id,
-        presenterName: presenters[0]?.name || (opener ? nameOf(opener) : ""),
-        targetName: target ? nameOf(target) : "",
+        presenterName: presenters[0]?.name ||
+          (opener ? presenterNameOf(opener) : ""),
+        targetName: target ? targetNameOf(target) : "",
         targetUserId: current.demo.targetUserId,
         // REQ-214 — everyone presenting, each with their colour
         presenters,
@@ -151,12 +203,21 @@ export class DemoModeController {
     };
   }
 
+  @Post("sessions/:id/leave")
+  async leave(@Context() ctx: ExecutionContext, @Param("id") id: string) {
+    const caller = await this.access.caller(ctx);
+    const { demo, role, pid } = await this.access.roleIn(caller, id);
+    if (role !== "presenter" || !pid) throw new DemoForbiddenError();
+    if (!demo.endedAt) await leaveDemo(this.demos, this.hub, id, pid);
+    return { ok: true };
+  }
+
   @Post("sessions/:id/end")
   async end(@Context() ctx: ExecutionContext, @Param("id") id: string) {
     const caller = await this.access.caller(ctx);
     // the body is optional (a plain End sends none) — read it by hand, @Body() 500s on an empty one
     const body: unknown = await ctx.req.json().catch(() => null);
-    const { demo, role } = await this.access.roleIn(caller, id, {
+    const { demo, role, pid } = await this.access.roleIn(caller, id, {
       evenEnded: true,
     });
     // AMENDMENT — "Not now": the viewer's decline rides the ended message so the presenter's pill can say so
@@ -165,7 +226,8 @@ export class DemoModeController {
       : undefined;
     if (!demo.endedAt) {
       await this.demos.end(id);
-      await this.hub.end(id, role, reason);
+      // REQ-235 — and who ended it
+      await this.hub.end(id, role, reason, pid ?? undefined);
     }
     return { ok: true };
   }

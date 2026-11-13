@@ -11,6 +11,12 @@ import { type DomainEvent, EventBus } from "@core/business/events/mod.ts";
 import { TERMS_WIZARD_V1 } from "@agents/domain/business/terms-wizard-spec/mod.ts";
 import type { AgentMessage } from "@agents/dto/message.ts";
 import { resetKv } from "@core/data/kv/mod.ts";
+import { previewTermRows } from "#quote-flow/wizard-terms.ts";
+import {
+  extractQuoteFacts,
+  wizardPrefillFor,
+} from "#quote-flow/quote-facts.ts";
+import { computePaymentSplit } from "#payment-split";
 
 function fresh() {
   const conversations = new AgentConversationStore();
@@ -485,16 +491,29 @@ Deno.test("REQ-024 handle-wizard-answer integration: the invoice wizard walks cu
     lineItems: [],
     estimatedTotal: 90_000,
   });
-  const conv = await ctx.conversations.create({ userId: "u-1", quoteId: quote.id, customerId: "cust-1" });
-  await ctx.transitionFlow.run({ userId: "u-1", conversationId: conv.id, docKind: "invoice" });
+  const conv = await ctx.conversations.create({
+    userId: "u-1",
+    quoteId: quote.id,
+    customerId: "cust-1",
+  });
+  await ctx.transitionFlow.run({
+    userId: "u-1",
+    conversationId: conv.id,
+    docKind: "invoice",
+  });
 
   const answer = (stepId: string, optionId: string) =>
     ctx.flow.run({ userId: "u-1", conversationId: conv.id, stepId, optionId });
 
   await answer("customer", "use_active");
   const afterCustomer = await ctx.messages.listByConversation(conv.id);
-  const nextStep = [...afterCustomer].reverse().find((m) => m.kind === "wizard")!;
-  assertEquals((nextStep.payload as { stepId: string }).stepId, "completion_date");
+  const nextStep = [...afterCustomer].reverse().find((m) =>
+    m.kind === "wizard"
+  )!;
+  assertEquals(
+    (nextStep.payload as { stepId: string }).stepId,
+    "completion_date",
+  );
   assertEquals((nextStep.payload as { specId: string }).specId, "invoice-v1");
 
   await answer("completion_date", "today");
@@ -502,7 +521,11 @@ Deno.test("REQ-024 handle-wizard-answer integration: the invoice wizard walks cu
   const last = await answer("warranty", "none");
 
   const cta = last.newMessages.find((m) => m.kind === "continue_cta")!;
-  const payload = cta.payload as { toPhase: string; quoteId?: string; docKind?: string };
+  const payload = cta.payload as {
+    toPhase: string;
+    quoteId?: string;
+    docKind?: string;
+  };
   assertEquals(payload.toPhase, "send");
   assertEquals(payload.quoteId, quote.id);
   assertEquals(payload.docKind, "invoice");
@@ -511,8 +534,13 @@ Deno.test("REQ-024 handle-wizard-answer integration: the invoice wizard walks cu
   const today = new Date().toISOString().slice(0, 10);
   assertEquals(q.estimatedCompletionDate, today);
   const terms = q.terms ?? [];
-  assert(terms.some((t) => t.stepId === "completion_date"), "completion_date persisted as a term");
-  assert(terms.some((t) => t.stepId === "payment_terms" && t.value === "Due Now"));
+  assert(
+    terms.some((t) => t.stepId === "completion_date"),
+    "completion_date persisted as a term",
+  );
+  assert(
+    terms.some((t) => t.stepId === "payment_terms" && t.value === "Due Now"),
+  );
   assert(!terms.some((t) => t.stepId === "wraps"));
   await resetKv();
 });
@@ -567,6 +595,987 @@ Deno.test("REQ-029 NW-22 own-contact create_new rejects with the English diction
   );
   await resetKv();
 });
+
+// ---------------------------------------------------------------------------
+// REQ-263 (demo ai-assistant-m2): the customer step takes the job address —
+// typed (or pre-filled) there, or the picked customer's own address — and it
+// lands on the quote as serviceAddress.
+// ---------------------------------------------------------------------------
+
+Deno.test("REQ-263 handle-wizard-answer: create_new with a serviceAddress stores it on the quote and on the new customer", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const { flow, conv, quote, quotes, customers } =
+    await setupTermsConversationWithQuote();
+  await flow.run({
+    userId: "u-1",
+    conversationId: conv.id,
+    stepId: "customer",
+    optionId: "create_new",
+    serviceAddress: "  412 Oak St Austin ",
+    customer: { create: { name: "Maria Lopez", phoneNumber: "5125550199" } },
+  });
+  const stored = await quotes.getOwned(quote.id, "u-1");
+  assertEquals(stored.serviceAddress, "412 Oak St Austin");
+  const [created] = await customers.listByUser("u-1");
+  assertEquals(created.name, "Maria Lopez");
+  assertEquals(created.address, "412 Oak St Austin");
+  await resetKv();
+});
+
+Deno.test("REQ-263 handle-wizard-answer: picking an existing customer fills an empty job address from the customer's address", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const { flow, conv, quote, quotes, customers } =
+    await setupTermsConversationWithQuote();
+  const maria = await customers.create("u-1", {
+    name: "Maria Lopez",
+    address: "412 Oak St Austin",
+  });
+  await flow.run({
+    userId: "u-1",
+    conversationId: conv.id,
+    stepId: "customer",
+    optionId: "pick_existing",
+    customer: { id: maria.id },
+  });
+  assertEquals(
+    (await quotes.getOwned(quote.id, "u-1")).serviceAddress,
+    "412 Oak St Austin",
+  );
+  await resetKv();
+});
+
+Deno.test("REQ-263 handle-wizard-answer: an address already on the quote is not overwritten by the picked customer's", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const { flow, conv, quote, quotes, customers } =
+    await setupTermsConversationWithQuote();
+  await quotes.update(quote.id, "u-1", { serviceAddress: "12 Oak St Austin" });
+  const maria = await customers.create("u-1", {
+    name: "Maria Lopez",
+    address: "9 Home Ln Austin",
+  });
+  await flow.run({
+    userId: "u-1",
+    conversationId: conv.id,
+    stepId: "customer",
+    optionId: "pick_existing",
+    customer: { id: maria.id },
+  });
+  assertEquals(
+    (await quotes.getOwned(quote.id, "u-1")).serviceAddress,
+    "12 Oak St Austin",
+  );
+  await resetKv();
+});
+
+// ---- REQ-258 (demo M22): the payment step pre-selects what the chat said ----
+Deno.test("REQ-258 handle-wizard-answer integration: a conversation whose chat said 'half deposit' offers the payment_terms step with 50_50 pre-selected", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const { conversations, transitionFlow, flow } = fresh();
+  const conv = await conversations.create({ userId: "u-1" });
+  await conversations.update(conv.id, {
+    termsPrefill: { payment_terms: "50_50" },
+  });
+  const t0 = await transitionFlow.run({
+    userId: "u-1",
+    conversationId: conv.id,
+  });
+  // The first step (customer) has no suggestion.
+  assertEquals(
+    (t0.newMessages[1].payload as { suggestedOptionId?: string })
+      .suggestedOptionId,
+    undefined,
+  );
+
+  let paymentMsg: AgentMessage | undefined;
+  for (const step of TERMS_WIZARD_V1.steps) {
+    if (step.id === "payment_terms") break;
+    const opt = step.options.find((o) => !o.isCustom)!;
+    const r = await flow.run({
+      userId: "u-1",
+      conversationId: conv.id,
+      stepId: step.id,
+      optionId: opt.id,
+    });
+    const next = r.newMessages[1];
+    const p = next.payload as { stepId: string; suggestedOptionId?: string };
+    if (p.stepId === "payment_terms") paymentMsg = next;
+    else assertEquals(p.suggestedOptionId, undefined);
+  }
+  assert(paymentMsg, "the payment_terms step was emitted");
+  assertEquals(
+    (paymentMsg!.payload as { suggestedOptionId?: string }).suggestedOptionId,
+    "50_50",
+  );
+  // Still a confirmable choice: the contractor taps it (or another option).
+  const r = await flow.run({
+    userId: "u-1",
+    conversationId: conv.id,
+    stepId: "payment_terms",
+    optionId: "50_50",
+  });
+  assertEquals(
+    (r.newMessages[1].payload as { stepId: string; suggestedOptionId?: string })
+      .stepId,
+    "warranty",
+  );
+  assertEquals(
+    (r.newMessages[1].payload as { suggestedOptionId?: string })
+      .suggestedOptionId,
+    undefined,
+  );
+  await resetKv();
+});
+
+Deno.test("REQ-258 handle-wizard-answer integration: no prefill → the payment_terms step carries no suggestion", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const { flow, conv } = await setupTermsConversation();
+  let payload: { stepId: string; suggestedOptionId?: string } | undefined;
+  for (const step of TERMS_WIZARD_V1.steps) {
+    if (step.id === "payment_terms") break;
+    const opt = step.options.find((o) => !o.isCustom)!;
+    const r = await flow.run({
+      userId: "u-1",
+      conversationId: conv.id,
+      stepId: step.id,
+      optionId: opt.id,
+    });
+    payload = r.newMessages[1].payload as typeof payload;
+  }
+  assertEquals(payload?.stepId, "payment_terms");
+  assertEquals(payload?.suggestedOptionId, undefined);
+  await resetKv();
+});
+
+// ---------------------------------------------------------------------------
+// REQ-240 (demo M29): each wizard answer lands on the quote as it is given.
+// The demo contractor answered Persona / Maria / "Next week" and left before
+// the last step; the customer saw "PARA —" and "INICIO Por agendar" on /q and
+// the invoice read "FACTURAR A —", because the customer and terms were only
+// copied onto the quote when the wizard COMPLETED.
+// ---------------------------------------------------------------------------
+
+async function setupTermsConversationWithUnboundQuote(userId = "u-1") {
+  const ctx = fresh();
+  const quote = await ctx.quotes.create(userId, {
+    summary: "Roof",
+    lineItems: [],
+    estimatedTotal: 12_500,
+    status: "sent",
+  });
+  const conv = await ctx.conversations.create({ userId, quoteId: quote.id });
+  await ctx.transitionFlow.run({ userId, conversationId: conv.id });
+  return { ...ctx, conv, quote };
+}
+
+Deno.test("REQ-240 (M29) handle-wizard-answer integration: the customer picked at the customer step is on the quote at once — not only when the wizard completes", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const { flow, conv, quote, quotes } =
+    await setupTermsConversationWithUnboundQuote();
+
+  await flow.run({
+    userId: "u-1",
+    conversationId: conv.id,
+    stepId: "customer",
+    optionId: "create_new",
+    customer: { create: { name: "Maria Lopez" } },
+  });
+
+  const reloaded = await quotes.getOwned(quote.id, "u-1");
+  assert(reloaded.customerId, "the quote carries the picked customer");
+  const conv2 = await fresh().conversations.get(conv.id);
+  assertEquals(reloaded.customerId, conv2.customerId);
+  await resetKv();
+});
+
+Deno.test("REQ-240 (M29) handle-wizard-answer integration: a partial wizard (customer + start date, then the contractor leaves) leaves the start-date term on the quote", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const { flow, conv, quote, quotes, bus } =
+    await setupTermsConversationWithUnboundQuote();
+  const drafted: DomainEvent[] = [];
+  bus.subscribe((e) => {
+    if (e.entityType === "quote" && e.action === "terms_drafted") {
+      drafted.push(e);
+    }
+  });
+
+  await flow.run({
+    userId: "u-1",
+    conversationId: conv.id,
+    stepId: "customer",
+    optionId: "create_new",
+    customer: { create: { name: "Maria Lopez" } },
+  });
+  await flow.run({
+    userId: "u-1",
+    conversationId: conv.id,
+    stepId: "start_date",
+    optionId: "next_week",
+  });
+
+  const reloaded = await quotes.getOwned(quote.id, "u-1");
+  const start = (reloaded.terms ?? []).find((t) => t.stepId === "start_date");
+  assert(start, "the start-date answer is a term on the quote");
+  assertEquals(start.value, t("en", "termsWizard.startDate.nextWeek"));
+  assert(reloaded.customerId, "the customer stays bound");
+  // "terms_drafted" still means the whole set — it fires on completion only.
+  assertEquals(drafted.length, 0);
+  await resetKv();
+});
+
+Deno.test("REQ-240 (M29) handle-wizard-answer integration: a quote already bound to a customer keeps it when the wizard's customer step answers", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const ctx = fresh();
+  const quote = await ctx.quotes.create("u-1", {
+    customerId: "cust-original",
+    summary: "Roof",
+    lineItems: [],
+    estimatedTotal: 12_500,
+  });
+  const conv = await ctx.conversations.create({
+    userId: "u-1",
+    quoteId: quote.id,
+  });
+  await ctx.transitionFlow.run({ userId: "u-1", conversationId: conv.id });
+
+  await ctx.flow.run({
+    userId: "u-1",
+    conversationId: conv.id,
+    stepId: "customer",
+    optionId: "create_new",
+    customer: { create: { name: "Someone Else" } },
+  });
+
+  const reloaded = await ctx.quotes.getOwned(quote.id, "u-1");
+  assertEquals(reloaded.customerId, "cust-original");
+  await resetKv();
+});
+
+// REQ-278 (demo M16): the assistant's "Who is this for?" create_new path
+// never went through the customer DTO, so "123" / "555-12" / "512-555-01" /
+// "davis@@gmail" were saved as the customer's contact. Now refused with the
+// contractor's dictionary copy, and no Customer row is created.
+for (
+  const [label, create, key] of [
+    ["phone 123", { phoneNumber: "123" }, "customer.invalidPhone"],
+    ["phone 555-12", { phoneNumber: "555-12" }, "customer.invalidPhone"],
+    [
+      "phone 512-555-01",
+      { phoneNumber: "512-555-01" },
+      "customer.invalidPhone",
+    ],
+    ["email davis@@gmail", { email: "davis@@gmail" }, "customer.invalidEmail"],
+  ] as const
+) {
+  for (const language of ["en", "es"] as const) {
+    Deno.test(`REQ-278 M16 create_new refuses ${label} (${language}) and saves no customer`, async () => {
+      Deno.env.set("KV_PATH", ":memory:");
+      await resetKv();
+      const { flow, user, conv, customers } = await setupTermsForRealUser({
+        phoneNumber: "+15403331334",
+        language,
+      });
+      await assertRejects(
+        () =>
+          flow.run({
+            userId: user.id,
+            conversationId: conv.id,
+            stepId: "customer",
+            optionId: "create_new",
+            customer: { create: { name: "Davis", ...create } },
+          }),
+        Error,
+        t(language, key),
+      );
+      assertEquals((await customers.listByUser(user.id)).length, 0);
+      await resetKv();
+    });
+  }
+}
+
+// --- REQ-331 (demo-loop cycle 1, m44): create_new never duplicates ----------
+
+Deno.test("REQ-331 m44: create_new whose name matches a same-owner customer binds the existing one — no second row", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const { flow, customers, conversations, conv } =
+    await setupTermsConversation();
+  const existing = await customers.create("u-1", {
+    name: "María López",
+    phoneNumber: "(512) 555-0199",
+  });
+
+  const r = await flow.run({
+    userId: "u-1",
+    conversationId: conv.id,
+    stepId: "customer",
+    optionId: "create_new",
+    customer: { create: { name: "maria lopez", email: "ml@example.com" } },
+  });
+
+  assertEquals(
+    (await customers.listByUser("u-1")).length,
+    1,
+    "no duplicate row",
+  );
+  assertEquals(r.conversation.customerId, existing.id);
+  assertEquals(r.newMessages[0].content, "Customer: María López");
+  const state = await conversations.getWizardState(conv.id);
+  assertEquals(state?.answers[0].customValue, "María López");
+  await resetKv();
+});
+
+Deno.test("REQ-331 m44: create_new with an existing customer's phone / email binds that customer", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const { flow, customers, conv } = await setupTermsConversation();
+  const existing = await customers.create("u-1", {
+    name: "Tom Henderson",
+    email: "tom@example.com",
+    phoneNumber: "+15125550100",
+  });
+
+  const r = await flow.run({
+    userId: "u-1",
+    conversationId: conv.id,
+    stepId: "customer",
+    optionId: "create_new",
+    customer: { create: { name: "Tommy H.", phoneNumber: "512-555-0100" } },
+  });
+  assertEquals(r.conversation.customerId, existing.id);
+  assertEquals((await customers.listByUser("u-1")).length, 1);
+  await resetKv();
+});
+
+Deno.test("REQ-331 m44: create_new with allowDuplicate (the contractor said 'create anyway') makes the second row; another owner's customer is never a match", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const { flow, customers, conv } = await setupTermsConversation();
+  await customers.create("u-1", { name: "x", phoneNumber: "512-555-0333" });
+  await customers.create("u-2", {
+    name: "Ana Ruiz",
+    phoneNumber: "512-555-0444",
+  });
+
+  const r = await flow.run({
+    userId: "u-1",
+    conversationId: conv.id,
+    stepId: "customer",
+    optionId: "create_new",
+    customer: {
+      create: { name: "x", phoneNumber: "512-555-0999", allowDuplicate: true },
+    },
+  });
+  const mine = await customers.listByUser("u-1");
+  assertEquals(mine.length, 2, "create anyway makes a second x");
+  assert(mine.some((c) => c.id === r.conversation.customerId));
+
+  const conv2 = await (await setupTermsConversation("u-1")).conv;
+  const r2 = await flow.run({
+    userId: "u-1",
+    conversationId: conv2.id,
+    stepId: "customer",
+    optionId: "create_new",
+    customer: { create: { name: "Ana Ruiz", phoneNumber: "512-555-0444" } },
+  });
+  const ana = await customers.getOwned(r2.conversation.customerId!, "u-1");
+  assertEquals(
+    ana.name,
+    "Ana Ruiz",
+    "u-2's Ana is not u-1's — a new row for u-1",
+  );
+  await resetKv();
+});
+
+// REQ-347 (demo-loop cycle 1, M16): the send card renders before the island
+// re-reads the quote, so its term rows come from the coordinator's transcript.
+// For a Spanish contractor that transcript is Spanish — the preview helper must
+// still land on exactly the English terms the agreement stores.
+Deno.test("REQ-347 M16 a Spanish contractor's transcript previews as the same English terms the quote stores", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const { flow, user, conv, quotes, conversations } = await setupTermsForRealUser({
+    phoneNumber: "+15403331347",
+    language: "es",
+  });
+  const quote = await quotes.create(user.id, {
+    summary: "Techo",
+    lineItems: [],
+    estimatedTotal: 12_500,
+    status: "sent",
+  });
+  await conversations.update(conv.id, {
+    quoteId: quote.id,
+    customerId: "cust-1",
+  });
+  const picks: Record<string, string> = {
+    customer: "use_active",
+    start_date: "next_week",
+    wraps: "1_day",
+    payment_terms: "due_now",
+    warranty: "12_months",
+  };
+  const transcript: AgentMessage[] = [];
+  for (const step of TERMS_WIZARD_V1.steps) {
+    const res = await flow.run({
+      userId: user.id,
+      conversationId: conv.id,
+      stepId: step.id,
+      optionId: picks[step.id],
+    });
+    transcript.push(...res.newMessages);
+  }
+  // The transcript really is Spanish (the reason the old split leaked it).
+  assert(
+    transcript.some((m) => m.content === "Inicio: La próxima semana"),
+    `Spanish transcript: ${transcript.map((m) => m.content).join(" | ")}`,
+  );
+  const stored = (await quotes.getOwned(quote.id, user.id)).terms ?? [];
+  const byStep = (rows: { stepId: string; value: string }[]) =>
+    Object.fromEntries(rows.map((r) => [r.stepId, r.value]));
+  assertEquals(byStep(stored), {
+    start_date: "Next week",
+    wraps: "1 day",
+    payment_terms: "Due Now",
+    warranty: "1 year",
+  });
+  const rows = previewTermRows({
+    quoteTerms: undefined,
+    messages: transcript,
+    previewLang: "en",
+    t,
+    localize: (v) => v,
+  });
+  assertEquals(byStep(rows), {
+    start_date: "Next week",
+    wraps: "Estimated: 1 day",
+    payment_terms: "Due Now",
+    warranty: "1 year",
+  });
+  await resetKv();
+});
+
+Deno.test("REQ-411 (demo-loop cycle 2, m35) handle-wizard-answer integration: the payment step's 'Payment upon completion' sub-line names the account's Settings days to pay (21), not a hard-coded 15", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const { BusinessIdentityStore } = await import(
+    "@profile/domain/data/business-identity-store/mod.ts"
+  );
+  const identity = new BusinessIdentityStore();
+  await identity.upsert("u-1", { invoiceNetDays: 21 });
+  const ctx = fresh();
+  const flow = new HandleWizardAnswer(
+    ctx.conversations,
+    ctx.messages,
+    ctx.quotes,
+    ctx.customers,
+    ctx.users,
+    ctx.bus,
+    identity,
+  );
+  const conv = await ctx.conversations.create({ userId: "u-1" });
+  await ctx.transitionFlow.run({ userId: "u-1", conversationId: conv.id });
+  let paymentMsg: AgentMessage | undefined;
+  for (const step of TERMS_WIZARD_V1.steps) {
+    if (step.id === "payment_terms") break;
+    const opt = step.options.find((o) => !o.isCustom)!;
+    const r = await flow.run({
+      userId: "u-1",
+      conversationId: conv.id,
+      stepId: step.id,
+      optionId: opt.id,
+    });
+    const next = r.newMessages[1];
+    if ((next.payload as { stepId: string }).stepId === "payment_terms") {
+      paymentMsg = next;
+    }
+  }
+  assert(paymentMsg, "the payment_terms step was emitted");
+  const opts = (paymentMsg!.payload as {
+    options: { id: string; sub?: string }[];
+  }).options;
+  const sub = opts.find((o) => o.id === "net_15")?.sub ?? "";
+  assert(/\b21 days\b/.test(sub), `sub names 21 days: ${sub}`);
+  assert(!/\b15\b/.test(sub), `sub no longer says 15: ${sub}`);
+  await resetKv();
+});
+
+// ---- REQ-386 (demo-loop cycle 2, m17): the customer line keeps the address ----
+Deno.test("REQ-386 m17 handle-wizard-answer: the customer transcript line carries the job address typed in the step", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const { flow, conv } = await setupTermsConversationWithQuote();
+  const r = await flow.run({
+    userId: "u-1",
+    conversationId: conv.id,
+    stepId: "customer",
+    optionId: "create_new",
+    serviceAddress: "88 Oak Hollow Dr, Austin TX 78745",
+    customer: { create: { name: "Dave Roof", phoneNumber: "5125550123" } },
+  });
+  assertEquals(
+    r.newMessages[0].content,
+    "Customer: Dave Roof — 88 Oak Hollow Dr, Austin TX 78745",
+  );
+  assertEquals(
+    r.conversation.preview,
+    "Customer: Dave Roof — 88 Oak Hollow Dr, Austin TX 78745",
+  );
+  await resetKv();
+});
+
+Deno.test("REQ-386 m17 handle-wizard-answer: picking a customer with an address on file shows it on the transcript line", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const { flow, conv, customers } = await setupTermsConversationWithQuote();
+  const maria = await customers.create("u-1", {
+    name: "Maria Lopez",
+    address: "412 Oak St Austin",
+  });
+  const r = await flow.run({
+    userId: "u-1",
+    conversationId: conv.id,
+    stepId: "customer",
+    optionId: "pick_existing",
+    customer: { id: maria.id },
+  });
+  assertEquals(
+    r.newMessages[0].content,
+    "Customer: Maria Lopez — 412 Oak St Austin",
+  );
+  await resetKv();
+});
+
+// ---------------------------------------------------------------------------
+// REQ-387 (demo-loop cycle 2, M25): "Payment: 30% deposit, 40% at cabinets
+// install, 30% at completion" used to pre-select "Deposit + balance" (a 20/80
+// bill). The message's own schedule now pre-fills the Custom option; taking
+// it stores the named schedule on the quote, and the one payment split bills
+// 30 / 40 / 30.
+// ---------------------------------------------------------------------------
+Deno.test("REQ-387 (M25) handle-wizard-answer integration: the typed 30/40/30 schedule, taken from the prefill, lands on the quote and bills 30/40/30", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const { flow, conv, quote, quotes } = await setupTermsConversationWithQuote();
+  const facts = extractQuoteFacts(
+    "Cocina Okafor, $46,500. Payment: 30% deposit, 40% at cabinets install, 30% at completion",
+    new Date(2026, 10, 12),
+  );
+  const prefill = wizardPrefillFor("payment_terms", facts, "en");
+  assert(prefill, "the payment step has a prefill");
+  assertEquals(prefill.optionId, "custom");
+
+  for (const step of TERMS_WIZARD_V1.steps) {
+    if (step.id === "payment_terms") {
+      await flow.run({
+        userId: "u-1",
+        conversationId: conv.id,
+        stepId: step.id,
+        optionId: prefill.optionId,
+        customValue: prefill.customValue,
+      });
+      continue;
+    }
+    const opt = step.options.find((o) => !o.isCustom)!;
+    await flow.run({
+      userId: "u-1",
+      conversationId: conv.id,
+      stepId: step.id,
+      optionId: opt.id,
+    });
+  }
+
+  const q = await quotes.getOwned(quote.id, "u-1");
+  const pay = (q.terms ?? []).find((t) => t.stepId === "payment_terms");
+  assertEquals(
+    pay?.value,
+    "30% deposit / 40% at cabinets install / 30% at completion",
+  );
+  assertEquals(
+    computePaymentSplit(pay?.value, 4_650_000).map((p) => p.amountCents),
+    [1_395_000, 1_860_000, 1_395_000],
+  );
+  await resetKv();
+});
+
+// ---------------------------------------------------------------------------
+// REQ-460 (demo-loop cycle 3, B1): the customer signed while the terms wizard
+// was still asking "When do you want to get paid?"; the contractor then
+// picked "Deposit + balance" and it was written onto the SIGNED agreement
+// (the /q page showed the new payment terms under "Signed and binding") and
+// the wizard went on to the warranty. A signed quote is final: the answer
+// writes nothing, the wizard closes, and the reply says how to change it.
+// ---------------------------------------------------------------------------
+
+/** A terms wizard on a sent quote, answered up to the payment step — then
+ *  the customer signs on the public page (status + acceptedAt, no chat). */
+async function signedMidWizard(language: "en" | "es" = "en") {
+  const ctx = fresh();
+  const user = await ctx.users.create({ phoneNumber: "+15125554601" });
+  await ctx.users.update(user.id, { language });
+  const quote = await ctx.quotes.create(user.id, {
+    summary: "Roof replacement",
+    lineItems: [{
+      description: "Roof replacement",
+      quantity: 1,
+      unit: "job",
+      price: 1_450_000,
+    }],
+    estimatedTotal: 1_450_000,
+    status: "sent",
+  });
+  const conv = await ctx.conversations.create({
+    userId: user.id,
+    quoteId: quote.id,
+    customerId: "cust-1",
+  });
+  await ctx.transitionFlow.run({ userId: user.id, conversationId: conv.id });
+  for (const step of TERMS_WIZARD_V1.steps) {
+    if (step.id === "payment_terms") break;
+    await ctx.flow.run({
+      userId: user.id,
+      conversationId: conv.id,
+      stepId: step.id,
+      optionId: step.options.find((o) => !o.isCustom)!.id,
+    });
+  }
+  await ctx.quotes.update(quote.id, user.id, {
+    status: "accepted",
+    acceptedAt: new Date().toISOString(),
+    acceptedName: "Linda Ortiz",
+  });
+  const signed = await ctx.quotes.getOwned(quote.id, user.id);
+  return { ...ctx, user, quote: signed, conv };
+}
+
+Deno.test("REQ-460 (demo-loop cycle 3, B1) handle-wizard-answer integration: an answer after the customer signed writes nothing onto the signed quote, closes the wizard and says a change needs a change order or a new version", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const { flow, quotes, conversations, messages, bus, user, quote, conv } =
+    await signedMidWizard("en");
+  const seen: DomainEvent[] = [];
+  bus.subscribe((e) => {
+    if (e.entityType === "quote" && e.action === "terms_drafted") seen.push(e);
+  });
+  const stateBefore = await conversations.getWizardState(conv.id);
+  const transcriptBefore = await messages.listByConversation(conv.id);
+
+  const r = await flow.run({
+    userId: user.id,
+    conversationId: conv.id,
+    stepId: "payment_terms",
+    optionId: "deposit_bal",
+  });
+
+  // nothing written onto the signed agreement
+  const after = await quotes.getOwned(quote.id, user.id);
+  assertEquals(after.terms, quote.terms, "the signed terms stand");
+  assertEquals(
+    (after.terms ?? []).some((t) => t.stepId === "payment_terms"),
+    false,
+    "no 'Deposit + balance' on the signed quote",
+  );
+  assertEquals(after.updatedAt, quote.updatedAt, "the quote row is untouched");
+
+  // no pick recorded, one assistant reply naming the quote and the way out
+  assertEquals(r.newMessages.length, 1, "only the assistant's reply");
+  const reply = r.newMessages[0];
+  assertEquals(reply.role, "assistant");
+  assertEquals(reply.kind, "text");
+  assertEquals(
+    reply.content,
+    t("en", "wizardAnswer.signedLocked", { number: quote.number! }),
+  );
+  assert(/change order/i.test(reply.content), reply.content);
+  assert(reply.content.includes(quote.number!), reply.content);
+  const transcript = await messages.listByConversation(conv.id);
+  assertEquals(
+    transcript.some((m) =>
+      (m.payload as { wizardStepId?: string } | undefined)?.wizardStepId ===
+        "payment_terms"
+    ),
+    false,
+    "no 'Payment terms: Deposit + balance' pick in the thread",
+  );
+
+  // the wizard is closed: no step is active and no question is left open
+  const state = await conversations.getWizardState(conv.id);
+  assertEquals(state?.activeStepIdx, TERMS_WIZARD_V1.steps.length);
+  assertEquals(state?.answers, stateBefore?.answers, "no answer recorded");
+  const answered = new Set(
+    transcript.map((m) =>
+      (m.payload as { wizardStepId?: string } | undefined)?.wizardStepId
+    ).filter(Boolean),
+  );
+  const open = transcript.filter((m) =>
+    m.kind === "wizard" &&
+    !answered.has((m.payload as { stepId?: string }).stepId)
+  );
+  assertEquals(open.length, 0, "no unanswered wizard question remains");
+  assert(
+    transcriptBefore.some((m) =>
+      m.kind === "wizard" &&
+      (m.payload as { stepId?: string }).stepId === "payment_terms"
+    ),
+    "the payment question was open before the answer",
+  );
+  assertEquals(seen.length, 0, "no terms_drafted for a signed quote");
+
+  // a second tap on a stale card is refused the same way, still no write
+  const again = await flow.run({
+    userId: user.id,
+    conversationId: conv.id,
+    stepId: "payment_terms",
+    optionId: "deposit_bal",
+  });
+  assertEquals(again.newMessages.map((m) => m.content), [reply.content]);
+  assertEquals((await quotes.getOwned(quote.id, user.id)).terms, quote.terms);
+  await resetKv();
+});
+
+Deno.test("REQ-460 (demo-loop cycle 3, B1) handle-wizard-answer integration: a Spanish contractor reads the refusal in Spanish", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const { flow, user, quote, conv } = await signedMidWizard("es");
+  const r = await flow.run({
+    userId: user.id,
+    conversationId: conv.id,
+    stepId: "payment_terms",
+    optionId: "deposit_bal",
+  });
+  assertEquals(
+    r.newMessages.map((m) => m.content),
+    [t("es", "wizardAnswer.signedLocked", { number: quote.number! })],
+  );
+  assert(
+    t("es", "wizardAnswer.signedLocked", { number: "Q-001" }) !==
+      t("en", "wizardAnswer.signedLocked", { number: "Q-001" }),
+    "the Spanish copy is its own",
+  );
+  await resetKv();
+});
+
+// REQ-495 (demo-loop cycle 3, m17): "Pick a date" posts the day as ISO. The
+// quote's start term keeps ISO (the neutral base every reader localizes),
+// and the contractor's transcript line reads it in their own language —
+// "Fecha de inicio: 1 dic 2026", never "12/01/2026".
+for (
+  const [language, shown] of [["es", "1 dic 2026"], ["en", "Dec 1, 2026"]] as const
+) {
+  Deno.test(`REQ-495 m17 handle-wizard-answer integration (${language}): a picked start date is stored ISO and the transcript reads '${shown}'`, async () => {
+    Deno.env.set("KV_PATH", ":memory:");
+    await resetKv();
+    const ctx = fresh();
+    const user = await ctx.users.create({ phoneNumber: "+15125550123" });
+    await ctx.users.update(user.id, { language });
+    const quote = await ctx.quotes.create(user.id, {
+      summary: "Kitchen",
+      lineItems: [],
+      estimatedTotal: 12_500,
+      status: "draft",
+    });
+    const conv = await ctx.conversations.create({
+      userId: user.id,
+      quoteId: quote.id,
+    });
+    await ctx.transitionFlow.run({ userId: user.id, conversationId: conv.id });
+    await ctx.flow.run({
+      userId: user.id,
+      conversationId: conv.id,
+      stepId: "customer",
+      optionId: "create_new",
+      customer: { create: { name: "Maria Lopez" } },
+    });
+    const r = await ctx.flow.run({
+      userId: user.id,
+      conversationId: conv.id,
+      stepId: "start_date",
+      optionId: "custom",
+      customValue: "2026-12-01",
+    });
+    const line = r.newMessages[0].content ?? "";
+    assert(line.endsWith(`: ${shown}`), line);
+    assert(!line.includes("2026-12-01") && !line.includes("12/01"), line);
+    const reloaded = await ctx.quotes.getOwned(quote.id, user.id);
+    const start = (reloaded.terms ?? []).find((t) =>
+      t.stepId === "start_date"
+    );
+    assertEquals(start?.value, "2026-12-01");
+    await resetKv();
+  });
+}
+
+// REQ-491 — demo-loop cycle 3, issue m60: the payment step names the deposit
+// split with the quote's own dollars, from the same computePaymentSplit the
+// invoices use.
+Deno.test("REQ-491 m60 handle-wizard-answer: the payment step's 'Deposit + balance' sub-line carries 20% and the quote's $ split", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const ctx = fresh();
+  const quote = await ctx.quotes.create("u-1", {
+    summary: "Fence repair",
+    lineItems: [],
+    estimatedTotal: 45_000,
+    status: "draft",
+  });
+  const conv = await ctx.conversations.create({
+    userId: "u-1",
+    quoteId: quote.id,
+    customerId: "cust-1",
+  });
+  await ctx.transitionFlow.run({ userId: "u-1", conversationId: conv.id });
+  let last: AgentMessage | undefined;
+  for (const step of TERMS_WIZARD_V1.steps) {
+    if (step.id === "payment_terms") break;
+    const opt = step.options.find((o) => !o.isCustom)!;
+    const r = await ctx.flow.run({
+      userId: "u-1",
+      conversationId: conv.id,
+      stepId: step.id,
+      optionId: opt.id,
+    });
+    last = r.newMessages.at(-1);
+  }
+  const p = last?.payload as {
+    stepId?: string;
+    options?: { id: string; sub?: string }[];
+  };
+  assertEquals(p.stepId, "payment_terms");
+  const [dep, bal] = computePaymentSplit("Deposit + balance", 45_000);
+  assertEquals([dep.amountCents, bal.amountCents], [9_000, 36_000]);
+  assertEquals(
+    p.options?.find((o) => o.id === "deposit_bal")?.sub,
+    "20% upfront, rest when done · $90 / $360",
+  );
+});
+
+// ---- REQ-531 (demo-loop cycle 3, p8-pair6-a): use_active names the customer ----
+// "Use the chat's customer" is a choice, not a value: the transcript line read
+// "Cliente: Usar el cliente del chat" because the use_active branch never
+// returned the bound customer's name.
+async function setupTermsWithBoundCustomer(
+  language: "en" | "es",
+  customer: { name: string; address?: string },
+) {
+  const ctx = fresh();
+  const user = await ctx.users.create({ phoneNumber: "+15125550188" });
+  await ctx.users.update(user.id, { language });
+  const bound = await ctx.customers.create(user.id, customer);
+  const conv = await ctx.conversations.create({
+    userId: user.id,
+    customerId: bound.id,
+  });
+  await ctx.transitionFlow.run({ userId: user.id, conversationId: conv.id });
+  return { ...ctx, user, conv, bound };
+}
+
+Deno.test("REQ-531 p8-pair6-a handle-wizard-answer: use_active in Spanish reads 'Cliente: <name>', not the option label", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const { flow, user, conv } = await setupTermsWithBoundCustomer("es", {
+    name: "Maria Lopez",
+  });
+  const r = await flow.run({
+    userId: user.id,
+    conversationId: conv.id,
+    stepId: "customer",
+    optionId: "use_active",
+  });
+  assertEquals(r.newMessages[0].content, "Cliente: Maria Lopez");
+  assert(
+    !r.newMessages[0].content.includes(
+      t("es", "termsWizard.customer.useActive"),
+    ),
+  );
+  await resetKv();
+});
+
+Deno.test("REQ-531 p8-pair6-a handle-wizard-answer: use_active with an address on file reads 'Customer: <name> — <address>'", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const { flow, user, conv } = await setupTermsWithBoundCustomer("en", {
+    name: "Dave Roof",
+    address: "88 Oak Hollow Dr, Austin TX 78745",
+  });
+  const r = await flow.run({
+    userId: user.id,
+    conversationId: conv.id,
+    stepId: "customer",
+    optionId: "use_active",
+  });
+  assertEquals(
+    r.newMessages[0].content,
+    "Customer: Dave Roof — 88 Oak Hollow Dr, Austin TX 78745",
+  );
+  await resetKv();
+});
+
+// REQ-678 — demo-loop cycle 5, issue c3-m60: the payment step's "Deposit +
+// balance" asks how much upfront. The picked amount lands on the quote's
+// terms as one English value, the transcript names it in the contractor's
+// language, and computePaymentSplit bills it.
+async function answerUpToPayment(language: "en" | "es") {
+  const ctx = fresh();
+  const user = await ctx.users.create({ phoneNumber: "+15125550178" });
+  await ctx.users.update(user.id, { language });
+  const quote = await ctx.quotes.create(user.id, {
+    summary: "Fence repair",
+    lineItems: [],
+    estimatedTotal: 45_000,
+    status: "draft",
+  });
+  const conv = await ctx.conversations.create({
+    userId: user.id,
+    quoteId: quote.id,
+    customerId: "cust-1",
+  });
+  await ctx.transitionFlow.run({ userId: user.id, conversationId: conv.id });
+  for (const step of TERMS_WIZARD_V1.steps) {
+    if (step.id === "payment_terms") break;
+    await ctx.flow.run({
+      userId: user.id,
+      conversationId: conv.id,
+      stepId: step.id,
+      optionId: step.options.find((o) => !o.isCustom)!.id,
+    });
+  }
+  return { ...ctx, user, quote, conv };
+}
+
+for (const [lang, line] of [
+  ["en", "Payment: Deposit 30% + balance"],
+  ["es", "Pago: Depósito 30% + saldo"],
+] as const) {
+  Deno.test(`REQ-678 c3-m60 handle-wizard-answer (${lang}): 'Deposit 30% + balance' lands on the quote, the transcript names it, the split bills 30%`, async () => {
+    Deno.env.set("KV_PATH", ":memory:");
+    await resetKv();
+    const ctx = await answerUpToPayment(lang);
+    const r = await ctx.flow.run({
+      userId: ctx.user.id,
+      conversationId: ctx.conv.id,
+      stepId: "payment_terms",
+      optionId: "deposit_bal",
+      customValue: "Deposit 30% + balance",
+    });
+    assert(
+      (r.newMessages[0].content ?? "").includes(line),
+      `transcript: ${r.newMessages[0].content}`,
+    );
+    const q = await ctx.quotes.getOwned(ctx.quote.id, ctx.user.id);
+    const pay = q?.terms?.find((x) => x.stepId === "payment_terms");
+    assertEquals(pay?.value, "Deposit 30% + balance");
+    const [dep, bal] = computePaymentSplit(pay!.value, 45_000);
+    assertEquals([dep.amountCents, bal.amountCents], [13_500, 31_500]);
+    await resetKv();
+  });
+}
 
 Deno.test("REQ-625 handle-wizard-answer: the assistant's new customer carries the full form — address parts, composed address, notes", async () => {
   Deno.env.set("KV_PATH", ":memory:");

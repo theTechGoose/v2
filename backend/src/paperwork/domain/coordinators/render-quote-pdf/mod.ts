@@ -3,13 +3,31 @@ import { PDFDocument, rgb, StandardFonts } from "#pdf-lib";
 import { winAnsiSafeDeep } from "@paperwork/domain/business/pdf-text/mod.ts";
 import { t } from "@core/i18n/mod.ts";
 import { computePaymentSplit, type MilestoneRole } from "#payment-split";
+import { localizeDepositTerm } from "#quote-flow/deposit-term.ts"; // REQ-678
+import { localizeDeadlineTerm } from "#quote-flow/deadline-term.ts"; // REQ-771
 import type { Quote, QuoteTerm } from "@paperwork/dto/quote.ts";
 import type { Customer } from "@crm/dto/customer.ts";
 import type { User } from "@users/dto/user.ts";
 import { isAccepted } from "#quote-flow/quote-status.ts";
-import { isTbdTermValue } from "#quote-flow/terms-i18n.ts";
-import { websiteLabel } from "#quote-flow/format-helpers.ts";
+import { isDueNowTermValue, isTbdTermValue } from "#quote-flow/terms-i18n.ts";
+import { isUponCompletionTerm } from "#quote-flow/completion-schedule.ts";
+import {
+  localizeRecurringTerm,
+  parseRecurringTerm,
+  recurringScheduleRow,
+} from "#quote-flow/recurring-billing.ts"; // REQ-699
+import { agreementClauses } from "#documents/warranty-clause.ts";
+import {
+  CANCELLATION_STEP_ID,
+  cancellationValueText,
+} from "#quote-flow/cancellation-term.ts"; // REQ-783
+import {
+  formatTermDate,
+  termDateIso,
+  websiteLabel,
+} from "#quote-flow/format-helpers.ts";
 import { agreementTitle } from "#quote-flow/agreement-title.ts";
+import { lineItemDescription } from "#quote-flow/quote-translations.ts";
 import {
   customerLines,
   customerOnDocument,
@@ -36,6 +54,10 @@ export interface RenderQuotePdfInput {
   /** Outgoing-comms language (roadmap p.13) — the PDF is the customer's
    *  copy, so it renders in their language. Defaults to "en". */
   commsLanguage?: string;
+  /** REQ-697 (demo-loop cycle 5, m22): the business's days to pay an
+   *  invoice — the "Payment upon completion" term states it. Omit to print
+   *  the term bare. */
+  invoiceNetDays?: number;
   /** REQ-628: the business's logo — heads the document; absent → name wordmark. */
   logo?: LogoBytes;
 }
@@ -249,6 +271,30 @@ export class RenderQuotePdf {
         }
         y -= 12;
       }
+      // REQ-263 (demo ai-assistant-m2): where the job is, full width under
+      // the parties — the customer reads the site they agreed to.
+      const site = quote.serviceAddress?.trim();
+      if (site) {
+        y -= 4;
+        page.drawText(`${renderWord(lang, "serviceAddress")}: `, {
+          x: M,
+          y,
+          size: 9,
+          font: bold,
+          color: INK,
+        });
+        page.drawText(site, {
+          x: M + bold.widthOfTextAtSize(
+            `${renderWord(lang, "serviceAddress")}: `,
+            9,
+          ),
+          y,
+          size: 9,
+          font: reg,
+          color: INK,
+        });
+        y -= 12;
+      }
       y -= 14;
     }
 
@@ -292,7 +338,8 @@ export class RenderQuotePdf {
       for (const li of quote.lineItems) {
         addPageIfNeeded(28);
         const lineTotal = (li.price ?? 0) * (li.quantity ?? 1);
-        page.drawText(li.description, {
+        // REQ-264 (M15): the line in the document's language.
+        page.drawText(lineItemDescription(li, lang), {
           x: M,
           y,
           size: 11,
@@ -484,11 +531,17 @@ export class RenderQuotePdf {
         wraps: "renderQuotePdf.termLabel.duration",
         payment_terms: "renderQuotePdf.termLabel.paymentTerms",
         warranty: "renderQuotePdf.termLabel.warranty",
+        deadline: "renderQuotePdf.termLabel.deadline", // REQ-771
       };
       const cells = quote.terms
-        .filter((term) => term.stepId !== "customer")
+        // REQ-783: the cancellation term is the fixed row pushed below.
+        .filter((term) =>
+          term.stepId !== "customer" && term.stepId !== CANCELLATION_STEP_ID
+        )
         .map((term) => {
-          const localized = localizeTermValue(term.value, lang);
+          const localized = term.stepId === "payment_terms"
+            ? paymentTermText(term.value, lang, input.invoiceNetDays)
+            : localizeTermValue(term.value, lang);
           return {
             label: es && termLabelKey[term.stepId]
               ? t(lang, termLabelKey[term.stepId])
@@ -502,10 +555,15 @@ export class RenderQuotePdf {
           };
         });
       // REQ-035 (NW-55): the cancelation notice is a term row on every
-      // agreement, mirroring the web document.
+      // agreement, mirroring the web document. REQ-783 (dv1 d4): it states
+      // the notice the owner saw in the quote review — 7 days by default.
       cells.push({
         label: t(lang, "renderQuotePdf.termLabel.cancellation").toUpperCase(),
-        value: t(lang, "renderQuotePdf.termValue.cancellation"),
+        value: cancellationValueText(quote.terms, {
+          prefix: "renderQuotePdf",
+          t: (key, vars) => t(lang, key, vars),
+          localize: (v) => localizeTermValue(v, lang),
+        }),
       });
       const colCount = 2;
       const gap = 10;
@@ -532,13 +590,31 @@ export class RenderQuotePdf {
             font: bold,
             color: MUTED,
           });
-          page.drawText(cell.value, {
-            x: cx + 10,
-            y: y - 28,
-            size: 10.5,
-            font: bold,
-            color: INK,
-          });
+          // REQ-697: a value too wide for its cell ("Payment upon
+          // completion — due within 30 days of the invoice") breaks at its
+          // dash onto two smaller lines instead of running past the border.
+          const fits = bold.widthOfTextAtSize(cell.value, 10.5) <=
+            cellW - 20;
+          const parts = fits ? [cell.value] : cell.value.split(/\s+—\s+/);
+          if (parts.length === 1) {
+            page.drawText(cell.value, {
+              x: cx + 10,
+              y: y - 28,
+              size: 10.5,
+              font: bold,
+              color: INK,
+            });
+          } else {
+            parts.slice(0, 2).forEach((line, li) => {
+              page.drawText(li === 0 ? `${line} —` : line, {
+                x: cx + 10,
+                y: y - 25 - li * 9,
+                size: 8.5,
+                font: bold,
+                color: INK,
+              });
+            });
+          }
         }
         y -= rowH + 6;
       }
@@ -557,26 +633,15 @@ export class RenderQuotePdf {
       TEAL,
     );
     y -= 12;
-    const clauseKeys = [
-      "governingLaw",
-      "jobDetails",
-      "paymentTerms",
-      "changeOrders",
-      "customerResponsibilities",
-      "delays",
-      "warranty",
-      "limitationOfLiability",
-      "rightToStopWork",
-      "termination",
-      "disputeResolution",
-      "permits",
-      "indemnification",
-      "entireAgreement",
-    ];
-    const clauses = clauseKeys.map((k) => [
-      t(lang, `renderQuotePdf.clause.${k}.title`),
-      t(lang, `renderQuotePdf.clause.${k}.body`),
-    ]);
+    // REQ-463 (demo m31): clause 7 states the warranty from the terms —
+    // the period when one is set, a no-warranty body otherwise.
+    const clauses = agreementClauses({
+      terms: quote.terms,
+      lang,
+      prefix: "renderQuotePdf.clause",
+      t: (key, vars) => t(lang, key, vars),
+      localize: localizeTermValue,
+    });
     for (let i = 0; i < clauses.length; i++) {
       addPageIfNeeded(34);
       const [head, tail] = clauses[i];
@@ -935,8 +1000,22 @@ function termValue(
  *  ("12 months" → "12 meses"); custom free-text and universal ratios
  *  ("50/50") pass through unchanged. */
 export function localizeTermValue(value: string, lang: "en" | "es"): string {
+  // REQ-699 (demo-loop cycle 5, M20): a recurring term in the reader's
+  // language — "Mensual · $180/mes · hasta el 30 jun 2027".
+  const recurring = localizeRecurringTerm(value, lang);
+  if (recurring) return recurring;
+  // REQ-771 (cycle 5v5, M7): the typed deadline — "Before Thanksgiving
+  // (Nov 26, 2026)" / "Antes de Acción de Gracias (26 nov 2026)".
+  const deadline = localizeDeadlineTerm(value, lang, t);
+  if (deadline) return deadline;
+  // REQ-495 (m17): a picked start date (ISO, or a legacy MM/DD/YYYY) prints
+  // in the reader's language — "1 dic 2026" / "Dec 1, 2026".
+  if (termDateIso(value)) return formatTermDate(value, lang);
   if (lang === "en") return value;
   const trimmed = (value ?? "").trim();
+  // REQ-678 (c3-m60): the picked deposit — "Depósito 30% + saldo".
+  const deposit = localizeDepositTerm(trimmed, lang, t);
+  if (deposit) return deposit;
   // Map known wizard preset labels to localized i18n keys.
   const exactKey: Record<string, string> = {
     "Payment upon completion": "renderQuotePdf.termValue.paymentUponCompletion",
@@ -953,6 +1032,8 @@ export function localizeTermValue(value: string, lang: "en" | "es"): string {
     "Due Now": "renderQuotePdf.termValue.dueNow",
     // REQ-046/047: the wizard's TBD pick on start date / duration.
     "TBD": "renderQuotePdf.termValue.tbd",
+    // REQ-343: the service-trade wizard's "Half a day" duration.
+    "Half a day": "renderQuotePdf.termValue.halfDay",
   };
   if (exactKey[trimmed]) return t(lang, exactKey[trimmed]);
   return trimmed
@@ -960,7 +1041,36 @@ export function localizeTermValue(value: string, lang: "en" | "es"): string {
     .replace(/\byears\b/gi, "años").replace(/\byear\b/gi, "año")
     .replace(/\bmonths\b/gi, "meses").replace(/\bmonth\b/gi, "mes")
     .replace(/\bweeks\b/gi, "semanas").replace(/\bweek\b/gi, "semana")
-    .replace(/\bdays\b/gi, "días").replace(/\bday\b/gi, "día");
+    // REQ-343: service-trade durations ("2 hours", "4 hours").
+    .replace(/\bhours\b/gi, "horas").replace(/\bhour\b/gi, "hora")
+    .replace(/\bdays\b/gi, "días").replace(/\bday\b/gi, "día")
+    // REQ-665 (m47): the custom picker's worded two-payment split.
+    .replace(
+      /^(\d+(?:\.\d+)?)% upfront, (\d+(?:\.\d+)?)% on completion$/i,
+      "$1% por adelantado, $2% al terminar",
+    );
+}
+
+/** REQ-697 (demo-loop cycle 5, m22): the agreement's payment term, with the
+ *  days to pay when it bills after the job — "Payment upon completion — due
+ *  within 30 days of the invoice". Mirrors front-end/lib/term-i18n.ts
+ *  `paymentTermValue`. */
+export function paymentTermText(
+  value: string,
+  lang: "en" | "es",
+  netDays: number | undefined,
+): string {
+  if (
+    typeof netDays === "number" && Number.isInteger(netDays) &&
+    netDays >= 0 && isUponCompletionTerm(value)
+  ) {
+    return netDays === 0
+      ? t(lang, "renderQuotePdf.termValue.paymentUponCompletionOnReceipt")
+      : t(lang, "renderQuotePdf.termValue.paymentUponCompletionWithin", {
+        n: netDays,
+      });
+  }
+  return localizeTermValue(value, lang);
 }
 
 function computeMilestones(
@@ -989,9 +1099,13 @@ function computeMilestones(
     full: { label: L.final, when: L.onCompletion },
   };
   const term = termValue(terms, "payment_terms");
+  // REQ-699: a recurring term bills each period — one "Monthly $180.00 ·
+  // Billed every month" box, never "Final … On completion".
+  const recurring = parseRecurringTerm(term);
+  if (recurring) return [recurringScheduleRow(recurring, lang)];
   // "Due Now" terms collapse to a single full payment — but it's owed at
   // signing, not "on completion".
-  const dueNow = /\bdue now\b/i.test(term ?? "");
+  const dueNow = isDueNowTermValue(term);
   return computePaymentSplit(term, total).map((
     p,
   ) => ({

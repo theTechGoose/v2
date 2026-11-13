@@ -1,5 +1,6 @@
 import { assertEquals } from "#std/assert";
-import { parseToolCall } from "./mod.ts";
+import { parseToolCall, TOOL_DEFS } from "./mod.ts";
+import { TERMS_WIZARD_V1 } from "@agents/domain/business/terms-wizard-spec/mod.ts";
 
 function call(name: string, args: unknown) {
   return { function: { name, arguments: typeof args === "string" ? args : JSON.stringify(args) } };
@@ -95,4 +96,395 @@ Deno.test("parseToolCall: empty summary in create_quote returns undefined", () =
     lineItems: [{ description: "x", amountCents: 1 }],
   }));
   assertEquals(out, undefined);
+});
+
+// REQ-238 (demo M27): the assistant can ask for a change order instead of a
+// brand-new quote.
+Deno.test("REQ-238 TOOL_DEFS: the assistant has a change_order tool", () => {
+  const names = TOOL_DEFS.map((d) => d.function.name);
+  assertEquals(names.includes("change_order"), true);
+});
+
+Deno.test("REQ-238 parseToolCall: change_order happy path carries customer, description and signed cents", () => {
+  assertEquals(
+    parseToolCall(call("change_order", { customerName: "Maria", description: "Fridge cleaning", deltaAmountCents: 4000.9 })),
+    { type: "change_order", payload: { customerName: "Maria", description: "Fridge cleaning", deltaAmountCents: 4000 } },
+  );
+  assertEquals(
+    parseToolCall(call("change_order", { description: "Skip the deck stain", deltaAmountCents: -20000 })),
+    { type: "change_order", payload: { description: "Skip the deck stain", deltaAmountCents: -20000 } },
+  );
+});
+
+Deno.test("REQ-238 parseToolCall: change_order without a description or amount returns undefined", () => {
+  assertEquals(parseToolCall(call("change_order", { customerName: "Maria", deltaAmountCents: 4000 })), undefined);
+  assertEquals(parseToolCall(call("change_order", { customerName: "Maria", description: "Fridge" })), undefined);
+});
+
+// REQ-263 (demo ai-assistant-m2): the job address the contractor typed rides
+// on create_quote as `serviceAddress` instead of being thrown away.
+Deno.test("REQ-263 parseToolCall: create_quote carries a trimmed serviceAddress", () => {
+  const out = parseToolCall(call("create_quote", {
+    summary: "Quote: Deep clean — Maria Lopez",
+    serviceAddress: "  412 Oak St Austin ",
+    lineItems: [{ description: "Deep clean", amountCents: 35_000 }],
+  }));
+  assertEquals(out?.type, "create_quote");
+  if (out?.type === "create_quote") {
+    assertEquals(out.payload.serviceAddress, "412 Oak St Austin");
+  }
+});
+
+Deno.test("REQ-263 parseToolCall: a blank or non-string serviceAddress is left off", () => {
+  for (const serviceAddress of ["   ", 42, null]) {
+    const out = parseToolCall(call("create_quote", {
+      summary: "x",
+      serviceAddress,
+      lineItems: [{ description: "ok", amountCents: 100 }],
+    }));
+    assertEquals(out?.type, "create_quote");
+    if (out?.type === "create_quote") {
+      assertEquals(Object.prototype.hasOwnProperty.call(out.payload, "serviceAddress"), false);
+    }
+  }
+});
+
+Deno.test("REQ-263 TOOL_DEFS: create_quote offers an optional serviceAddress string", () => {
+  const def = TOOL_DEFS.find((d) => d.function.name === "create_quote")!;
+  const params = def.function.parameters as unknown as {
+    properties: Record<string, { type: string; description: string }>;
+    required: string[];
+  };
+  assertEquals(params.properties.serviceAddress?.type, "string");
+  assertEquals(params.properties.serviceAddress.description.length > 0, true);
+  assertEquals(params.required.includes("serviceAddress"), false);
+});
+
+// ---- REQ-258 (demo M22): "half deposit" must reach the quote ----------------
+// create_quote had only {summary, lineItems}; a stated deposit / payment split
+// had nowhere to go and was dropped. It now carries an optional paymentTerms —
+// one of the terms wizard's payment_terms option ids — so the wizard can
+// pre-select it.
+
+Deno.test("REQ-258 create_quote schema offers an optional paymentTerms enum of the wizard's preset payment options", () => {
+  const def = TOOL_DEFS.find((d) => d.function.name === "create_quote")!;
+  const params = def.function.parameters as unknown as {
+    properties: Record<string, { enum?: string[]; description?: string }>;
+    required: string[];
+  };
+  const pt = params.properties.paymentTerms;
+  assertEquals(typeof pt, "object");
+  const wizardIds = TERMS_WIZARD_V1.steps
+    .find((s) => s.id === "payment_terms")!
+    .options.filter((o) => !o.isCustom)
+    .map((o) => o.id);
+  assertEquals(pt.enum, wizardIds);
+  assertEquals(params.required.includes("paymentTerms"), false);
+  // The description tells the model "half deposit" is 50_50.
+  assertEquals(/half/i.test(pt.description ?? "") && (pt.description ?? "").includes("50_50"), true);
+});
+
+Deno.test("REQ-258 parseToolCall: create_quote passes a known paymentTerms through", () => {
+  const out = parseToolCall(call("create_quote", {
+    summary: "Interior painting",
+    lineItems: [{ description: "Interior painting, paint supplied by contractor", amountCents: 240_000 }],
+    paymentTerms: "50_50",
+  }));
+  assertEquals(out, {
+    type: "create_quote",
+    payload: {
+      summary: "Interior painting",
+      lineItems: [{ description: "Interior painting, paint supplied by contractor", amountCents: 240_000 }],
+      paymentTerms: "50_50",
+    },
+  });
+});
+
+Deno.test("REQ-258 parseToolCall: create_quote drops an unknown or custom paymentTerms but keeps the quote", () => {
+  for (const bad of ["half", "custom", 50, ""]) {
+    const out = parseToolCall(call("create_quote", {
+      summary: "Interior painting",
+      lineItems: [{ description: "Interior painting", amountCents: 240_000 }],
+      paymentTerms: bad,
+    }));
+    assertEquals(out, {
+      type: "create_quote",
+      payload: {
+        summary: "Interior painting",
+        lineItems: [{ description: "Interior painting", amountCents: 240_000 }],
+      },
+    });
+  }
+});
+
+// REQ-262 (demo M25): after the quote exists the assistant had no way to
+// change its job details ("I can't change the job details at this stage").
+// update_job_details carries the description per language.
+Deno.test("REQ-262 TOOL_DEFS: offers update_job_details with a per-language description", () => {
+  const def = TOOL_DEFS.find((d) => d.function.name === "update_job_details");
+  if (!def) throw new Error("update_job_details tool is missing");
+  const props = (def.function.parameters as { properties: Record<string, unknown> }).properties;
+  assertEquals(Object.keys(props).includes("descriptionByLang"), true);
+});
+
+Deno.test("REQ-262 parseToolCall: update_job_details keeps en/es text, joins bullet arrays, drops other keys", () => {
+  const out = parseToolCall(call("update_job_details", {
+    descriptionByLang: {
+      en: "Repaint kitchen walls\nTwo coats",
+      es: ["Repintar paredes de la cocina", " Dos capas "],
+      fr: "Repeindre",
+    },
+  }));
+  assertEquals(out, {
+    type: "update_job_details",
+    payload: {
+      descriptionByLang: {
+        en: "Repaint kitchen walls\nTwo coats",
+        es: "Repintar paredes de la cocina\nDos capas",
+      },
+    },
+  });
+});
+
+Deno.test("REQ-262 parseToolCall: update_job_details with no usable language returns undefined", () => {
+  assertEquals(parseToolCall(call("update_job_details", { descriptionByLang: {} })), undefined);
+  assertEquals(parseToolCall(call("update_job_details", { descriptionByLang: { en: "  " } })), undefined);
+  assertEquals(parseToolCall(call("update_job_details", {})), undefined);
+});
+
+// ---------------------------------------------------------------------------
+// REQ-315 (demo-loop cycle 1, M26): "change plumbing fixtures to $1,300" went
+// to change_order, which only appends a line — the quote got a NEW line
+// "Adjust plumbing fixtures to $1,300 ($150.00)". revise_quote changes the
+// line that is already there; change_order is narrowed to adding / crediting
+// work and both tools can name the quote (Q-001).
+// ---------------------------------------------------------------------------
+
+Deno.test("REQ-315 M26 TOOL_DEFS: revise_quote takes the lines to change (match + new description / amountCents), lines to remove, and the customer or quote number", () => {
+  const def = TOOL_DEFS.find((d) => d.function.name === "revise_quote");
+  if (!def) throw new Error("revise_quote tool is missing");
+  const params = def.function.parameters as unknown as {
+    properties: Record<string, {
+      type: string;
+      description?: string;
+      items?: { properties?: Record<string, unknown>; required?: string[] };
+    }>;
+    required: string[];
+  };
+  assertEquals(params.properties.lines.type, "array");
+  assertEquals(
+    Object.keys(params.properties.lines.items?.properties ?? {}).sort(),
+    ["amountCents", "description", "match"],
+  );
+  assertEquals(params.properties.lines.items?.required, ["match"]);
+  assertEquals(params.properties.remove.type, "array");
+  assertEquals(params.properties.customerName.type, "string");
+  assertEquals(params.properties.quoteNumber.type, "string");
+  assertEquals(params.required, ["lines"]);
+  // the description tells the model this is the reprice tool, not change_order
+  assertEquals(/change_order/.test(def.function.description), true);
+  assertEquals(/\$1,300/.test(def.function.description), true);
+});
+
+Deno.test("REQ-315 parseToolCall: revise_quote keeps entries that name a line and change something, truncates cents, trims names, normalises the quote number", () => {
+  const out = parseToolCall(call("revise_quote", {
+    customerName: " Dana ",
+    quoteNumber: "q-001",
+    lines: [
+      { match: "plumbing fixtures", amountCents: 130_000.9 },
+      { match: " tile ", description: " Porcelain tile " },
+      { match: "", amountCents: 1 }, // no line named
+      { description: "no match", amountCents: 5 }, // no line named
+      { match: "nothing to change" }, // nothing to change
+      { match: "bad cents", amountCents: "1300" }, // wrong type → nothing to change
+      "junk",
+    ],
+    remove: ["haul away", 42, "", "  "],
+  }));
+  assertEquals(out, {
+    type: "revise_quote",
+    payload: {
+      customerName: "Dana",
+      quoteNumber: "Q-001",
+      lines: [
+        { match: "plumbing fixtures", amountCents: 130_000 },
+        { match: "tile", description: "Porcelain tile" },
+      ],
+      remove: ["haul away"],
+    },
+  });
+});
+
+Deno.test("REQ-315 parseToolCall: revise_quote with nothing to change and nothing to remove returns undefined; a remove-only call is fine", () => {
+  assertEquals(parseToolCall(call("revise_quote", { lines: [] })), undefined);
+  assertEquals(parseToolCall(call("revise_quote", {})), undefined);
+  assertEquals(
+    parseToolCall(
+      call("revise_quote", { lines: [{ match: "x" }], remove: [] }),
+    ),
+    undefined,
+  );
+  assertEquals(parseToolCall(call("revise_quote", { remove: ["haul away"] })), {
+    type: "revise_quote",
+    payload: { lines: [], remove: ["haul away"] },
+  });
+});
+
+Deno.test("REQ-315 parseToolCall: change_order carries an optional quoteNumber (Q-001) next to the customer name", () => {
+  assertEquals(
+    parseToolCall(call("change_order", {
+      customerName: "Dana Whitfield",
+      quoteNumber: "q-001",
+      description: "Heated floor",
+      deltaAmountCents: 120_000,
+    })),
+    {
+      type: "change_order",
+      payload: {
+        customerName: "Dana Whitfield",
+        quoteNumber: "Q-001",
+        description: "Heated floor",
+        deltaAmountCents: 120_000,
+      },
+    },
+  );
+  const def = TOOL_DEFS.find((d) => d.function.name === "change_order")!;
+  const props = (def.function.parameters as {
+    properties: Record<string, { type: string }>;
+  }).properties;
+  assertEquals(props.quoteNumber?.type, "string");
+});
+
+Deno.test("REQ-315 TOOL_DEFS: change_order is for ADDING or CREDITING work and sends a price / wording change to revise_quote", () => {
+  const def = TOOL_DEFS.find((d) => d.function.name === "change_order")!;
+  const d = def.function.description;
+  assertEquals(/revise_quote/.test(d), true, d);
+  assertEquals(/add/i.test(d) && /credit/i.test(d), true, d);
+  assertEquals(/add, remove or credit/.test(d), false, d);
+});
+
+// REQ-337 (demo m6/p15-1): the model may name the job itself.
+Deno.test("REQ-337 parseToolCall: create_quote carries a model-supplied jobName; the schema offers it", () => {
+  const def = TOOL_DEFS.find((d) => d.function.name === "create_quote")!;
+  const props = def.function.parameters.properties as Record<string, unknown>;
+  assertEquals(typeof props.jobName, "object");
+  const out = parseToolCall(call("create_quote", {
+    summary: "Repaint 3 bedrooms and hallway — John Miller",
+    jobName: "  Bedroom & Hallway Repaint ",
+    lineItems: [{ description: "Repaint", amountCents: 240_000 }],
+  }));
+  assertEquals(out?.type, "create_quote");
+  if (out?.type === "create_quote") {
+    assertEquals(out.payload.jobName, "Bedroom & Hallway Repaint");
+  }
+  const none = parseToolCall(call("create_quote", {
+    summary: "x",
+    jobName: "   ",
+    lineItems: [{ description: "y", amountCents: 1 }],
+  }));
+  if (none?.type === "create_quote") assertEquals(none.payload.jobName, undefined);
+});
+
+// REQ-377 (demo-loop cycle 2, B1): the model turned "change Q-001 to $19,750"
+// on an $18,500 quote into deltaAmountCents 12500. A new TOTAL rides in
+// dollars on its own field; the server does the subtraction and the cents.
+Deno.test("REQ-377 B1 TOOL_DEFS: change_order takes the job's new total in dollars; only the description is required", () => {
+  const def = TOOL_DEFS.find((d) => d.function.name === "change_order")!;
+  const params = def.function.parameters as unknown as {
+    properties: Record<string, { type: string }>;
+    required: string[];
+  };
+  assertEquals(params.properties.newTotalDollars?.type, "number");
+  assertEquals(params.required, ["description"]);
+});
+
+Deno.test("REQ-377 B1 parseToolCall: change_order with newTotalDollars carries targetTotalCents (converted in code); a delta-only call is unchanged", () => {
+  assertEquals(
+    parseToolCall(call("change_order", {
+      quoteNumber: "Q-001",
+      description: "Tile backsplash",
+      newTotalDollars: 19750,
+    })),
+    {
+      type: "change_order",
+      payload: {
+        quoteNumber: "Q-001",
+        description: "Tile backsplash",
+        deltaAmountCents: 0,
+        targetTotalCents: 1_975_000,
+      },
+    },
+  );
+  assertEquals(
+    parseToolCall(call("change_order", {
+      description: "Tile backsplash",
+      newTotalDollars: 19750.5,
+      deltaAmountCents: 12500,
+    })),
+    {
+      type: "change_order",
+      payload: {
+        description: "Tile backsplash",
+        deltaAmountCents: 12500,
+        targetTotalCents: 1_975_050,
+      },
+    },
+  );
+  // a non-positive / non-numeric total is ignored → falls back to the delta rule
+  assertEquals(
+    parseToolCall(
+      call("change_order", { description: "Fridge", newTotalDollars: "lots" }),
+    ),
+    undefined,
+  );
+});
+
+// REQ-418 (demo-loop cycle 2, M27): the model put the customer's phone in
+// create_quote's serviceAddress ("512-555-0199") and it seeded the customer
+// step's job-address box. A phone, an email or a letterless value is never an
+// address, so the parser drops it.
+Deno.test("REQ-418 parseToolCall: a phone, email or letterless serviceAddress is left off", () => {
+  for (const serviceAddress of ["512-555-0199", "Maria Lopez, 512-555-0199", "maria@lopez.com", "$250"]) {
+    const out = parseToolCall(call("create_quote", {
+      summary: "Cotización: reparar puerta de baño — Maria Lopez",
+      serviceAddress,
+      lineItems: [{ description: "Reparar puerta de baño", amountCents: 25_000 }],
+    }));
+    assertEquals(out?.type, "create_quote");
+    if (out?.type === "create_quote") {
+      assertEquals(out.payload.serviceAddress, undefined, `kept ${serviceAddress}`);
+    }
+  }
+});
+
+// REQ-715 (demo-loop cycle 5, c4-M34): "Quote para Carmen Ruiz … Ella habla
+// español." had nowhere to go — create_quote now carries the customer's
+// language when the user states it; only en | es survive the parse.
+Deno.test("REQ-715 c4-M34: create_quote offers customerLanguage, en | es only", () => {
+  const def = TOOL_DEFS.find((d) => d.function.name === "create_quote")!;
+  const props = def.function.parameters.properties as Record<
+    string,
+    { enum?: readonly string[]; description?: string }
+  >;
+  assertEquals(props.customerLanguage?.enum, ["en", "es"]);
+  assertEquals(typeof props.customerLanguage?.description, "string");
+
+  const base = {
+    summary: "Quote: Faucet + 2 doors",
+    lineItems: [{ description: "Faucet + 2 doors", amountCents: 45_000 }],
+  };
+  const out = parseToolCall(call("create_quote", { ...base, customerLanguage: "es" }));
+  assertEquals(
+    out?.type === "create_quote" ? out.payload.customerLanguage : "no action",
+    "es",
+  );
+  for (const bad of ["fr", "Spanish", 1, null]) {
+    const o = parseToolCall(call("create_quote", { ...base, customerLanguage: bad }));
+    assertEquals(o?.type, "create_quote");
+    assertEquals(
+      o?.type === "create_quote" && "customerLanguage" in o.payload,
+      false,
+      `customerLanguage ${JSON.stringify(bad)} must be dropped`,
+    );
+  }
 });

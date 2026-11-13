@@ -106,6 +106,23 @@ Deno.test("user-store smoke: markOnboarded is idempotent — second call keeps t
   await resetKv();
 });
 
+// REQ-227 (demo M2): a step's Skip stamps the question deferred; the stamp survives a profile patch.
+Deno.test("REQ-227 user-store smoke: deferOnboarding stamps one question, keeps the others, survives update", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const store = new UserStore();
+  const created = await store.create({ phoneNumber: "+15125551234" });
+  assertEquals(created.onboardingDeferred, undefined);
+  const one = await store.deferOnboarding(created.id, "logo");
+  if (!one.onboardingDeferred?.logo) throw new Error("logo should be deferred");
+  const two = await store.deferOnboarding(created.id, "insurance");
+  assertEquals(Object.keys(two.onboardingDeferred ?? {}).sort(), ["insurance", "logo"]);
+  const afterUpdate = await store.update(created.id, { name: "Diego R." });
+  assertEquals(afterUpdate.onboardingDeferred, two.onboardingDeferred);
+  assertEquals((await store.get(created.id)).onboardingDeferred, two.onboardingDeferred);
+  await resetKv();
+});
+
 // REQ-039 (NW-52, p58): "do not delete data, flag it as 'deleted'. When
 // someone signs up with the same phone number, offer to create a new account
 // or recover the old one." So the phone index must SURVIVE a delete.

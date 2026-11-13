@@ -15,6 +15,13 @@
  * is not a plan; a payment-method map with nothing switched on is not an
  * answer; and the skip stamp (`onboardedAt`) is not an answer to anything —
  * Skip puts a question off, the wizard asks it again next time.
+ *
+ * REQ-227 (the demo's M2, decided by the orchestrator, keeping REQ-091): a
+ * step's Skip saves a per-question "deferred" stamp (`user.onboardingDeferred`).
+ * A deferred question is still OPEN — the next code still lands in the wizard
+ * to ask it again — but the dashboard lets the person through once every open
+ * question is deferred (`dashboardBlockers`); its setup checklist asks for the
+ * rest. Staff (`superAdmin`) are never sent through the customer wizard.
  */
 import { isPlaceholderName } from "./outbound-identity.ts";
 import { hasAnyPayWay } from "../payments/pay-links.ts";
@@ -35,7 +42,14 @@ export type OnboardingQuestion = (typeof ONBOARDING_QUESTIONS)[number];
 
 /** the slice of a profile snapshot the questions read — the backend's and the front-end's both fit */
 export interface OnboardingAnswers {
-  user: { name?: string | null; email?: string | null };
+  user: {
+    name?: string | null;
+    email?: string | null;
+    /** staff — never sent through the customer wizard (REQ-227) */
+    superAdmin?: boolean | null;
+    /** REQ-227: question → ISO time its Skip was pressed */
+    onboardingDeferred?: Partial<Record<string, string>> | null;
+  };
   identity?: {
     businessName?: string | null;
     logoFileId?: string | null;
@@ -84,7 +98,50 @@ export function onboardingAnswered(a: OnboardingAnswers): boolean {
   return unansweredQuestions(a).length === 0;
 }
 
-/** where a verified code lands */
+/** REQ-227 — the questions a step's Skip may defer: all but the name, whose step has no Skip */
+export const DEFERRABLE_QUESTIONS: readonly OnboardingQuestion[] = ONBOARDING_QUESTIONS.filter(
+  (q) => q !== "name",
+);
+
+export function isDeferrable(q: unknown): q is OnboardingQuestion {
+  return typeof q === "string" && (DEFERRABLE_QUESTIONS as readonly string[]).includes(q);
+}
+
+/** REQ-227 — a staff account (super admin): never sent through the customer wizard */
+export function isStaff(a: OnboardingAnswers): boolean {
+  return a.user.superAdmin === true;
+}
+
+/** REQ-227 — whether this question's Skip was pressed (an answer still beats it) */
+export function isDeferred(q: OnboardingQuestion, a: OnboardingAnswers): boolean {
+  return isDeferrable(q) && filled(a.user.onboardingDeferred?.[q]);
+}
+
+/**
+ * REQ-227 — the questions that keep the dashboard shut: the open ones not deferred; none for
+ * staff. Empty → the dashboard opens and its setup checklist asks for what is left.
+ */
+export function dashboardBlockers(a: OnboardingAnswers): OnboardingQuestion[] {
+  if (isStaff(a)) return [];
+  return unansweredQuestions(a).filter((q) => !isDeferred(q, a));
+}
+
+/**
+ * REQ-504 (demo M37, cycle 3) — "Skip setup for now": the questions the escape defers in one go —
+ * every open deferrable one (never the name, never an answered one). Deferred, they stop keeping
+ * the dashboard shut (`dashboardBlockers`), and the setup checklist asks for them; the next code
+ * still brings the wizard back (REQ-091).
+ */
+export function skipSetupDeferrals(a: OnboardingAnswers): OnboardingQuestion[] {
+  return unansweredQuestions(a).filter((q) => isDeferrable(q));
+}
+
+/** REQ-504 — the escape is offered only once the name, which cannot be deferred, is answered */
+export function canSkipSetup(a: OnboardingAnswers): boolean {
+  return isAnswered("name", a);
+}
+
+/** where a verified code lands — a deferral never counts here: the wizard asks again (REQ-091) */
 export function signInLanding(a: OnboardingAnswers): typeof WIZARD_PATH | typeof RETURNING_PATH {
-  return onboardingAnswered(a) ? RETURNING_PATH : WIZARD_PATH;
+  return isStaff(a) || onboardingAnswered(a) ? RETURNING_PATH : WIZARD_PATH;
 }

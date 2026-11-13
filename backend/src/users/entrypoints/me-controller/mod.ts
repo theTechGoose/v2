@@ -28,6 +28,16 @@ import {
 } from "@users/domain/data/payments-link/mod.ts";
 import { parseChoosePlan } from "@users/dto/plan.ts";
 import { externalRefFor } from "@users/domain/business/plan/mod.ts"; // REQ-106 — the fake's clock is per account
+import { isDeferrable, skipSetupDeferrals } from "#quote-flow/onboarding-questions.ts"; // REQ-227, REQ-504
+import { LoadProfile } from "@profile/domain/coordinators/load-profile/mod.ts"; // REQ-504
+
+/** REQ-227 — only a wizard question with a Skip can be deferred: anything else is a 400 */
+class NotDeferrable extends Error {
+  readonly status = 400;
+  constructor(question: unknown) {
+    super(`not a deferrable onboarding question: ${String(question)}`);
+  }
+}
 
 /**
  * /me — endpoints that act on the currently-authenticated User.
@@ -51,6 +61,8 @@ export class MeController {
     private accountAdmins: AccountAdmins,
     /** REQ-220 — "Transfer account": a new number takes the account */
     private transfer: TransferAccount,
+    /** REQ-504 — the open questions "Skip setup for now" defers, read off the profile */
+    private profile: LoadProfile,
   ) {}
 
   /** REQ-146 — the person's own account first, then every account they administer */
@@ -226,11 +238,20 @@ export class MeController {
    * the wizard, the dashboard and a verified code look at the questions
    * still open on the profile, never at this stamp — onboarding happens
    * until every question is answered.
+   *
+   * REQ-504 (demo M37, cycle 3): `{ skipped: true, deferAll: true }` — the wizard's "Skip setup
+   * for now" — also stamps every open deferrable question deferred (REQ-227), so the dashboard
+   * lets the person in and its setup checklist asks for the rest. The name is never deferred.
    */
   @Post("onboarded")
   async onboarded(@Context() ctx: ExecutionContext, @Body() body: unknown) {
     const user = await requireUser(ctx, this.sessions, this.users);
-    const skipped = Boolean((body as { skipped?: unknown } | null)?.skipped);
+    const b = body as { skipped?: unknown; deferAll?: unknown } | null;
+    const skipped = Boolean(b?.skipped);
+    if (skipped && b?.deferAll === true) {
+      const open = skipSetupDeferrals(await this.profile.load(user.id));
+      if (open.length > 0) await this.users.deferOnboarding(user.id, open);
+    }
     const marked = await this.users.markOnboarded(user.id, skipped);
     await this.leads.enqueueSync(user.id); // REQ-058/099 — onboarding done: the CRM customer reads what it entered, after this reply
     await this.leads.enqueueSignupNotice(
@@ -238,6 +259,20 @@ export class MeController {
       skipped ? "skipped setup" : "completed onboarding",
     ); // REQ-112 — the team hears it, with everything collected
     return marked;
+  }
+
+  /**
+   * POST /me/onboarding/deferred { question } — REQ-227: the wizard step's Skip. Stamps the
+   * question deferred, so the dashboard's gate lets the person through once every open question
+   * is; the next code still asks it again (REQ-091). The name cannot be deferred; anything that
+   * is not one of the wizard's questions is a 400.
+   */
+  @Post("onboarding/deferred")
+  async deferOnboarding(@Context() ctx: ExecutionContext, @Body() body: unknown) {
+    const user = await requireUser(ctx, this.sessions, this.users);
+    const question = (body as { question?: unknown } | null)?.question;
+    if (!isDeferrable(question)) throw new NotDeferrable(question);
+    return await this.users.deferOnboarding(user.id, question);
   }
 
   @Delete()

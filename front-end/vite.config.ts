@@ -2,6 +2,7 @@ import { defineConfig } from "vite";
 import { fresh } from "@fresh/plugin-vite";
 import process from "node:process";
 import { RETIRED_HOSTS } from "../shared/site-host/retired.ts";
+import { demoEarly } from "./vite-demo-early.ts";
 
 // Dev ports — match serve.ts's defaults but allow env override so anyone
 // running vite directly (without serve.ts) can still pin them. PORT is
@@ -52,6 +53,8 @@ const devNoStore = () => ({
 export default defineConfig({
   plugins: [
     devNoStore(),
+    // REQ-648 — the customer's early demo script: its URL for _app.tsx, its own browser build
+    demoEarly(),
     fresh({
       islandSpecifiers: ["@/denostories/src/components/Menu.tsx"],
     }),

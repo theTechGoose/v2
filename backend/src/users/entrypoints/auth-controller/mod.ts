@@ -266,6 +266,7 @@ export class AuthController {
       const result = await this.verifyOtp.run({
         phoneNumber: dto.phoneNumber,
         code: dto.code,
+        language: dto.language, // REQ-590 — the language picked on /verify
       });
       // REQ-098 — the CRM customer is an outbox record; the sweep makes it after this reply
       // REQ-103 — so is the sign-up's email to hello@documonster.com
@@ -316,6 +317,7 @@ export class AuthController {
       const result = await this.verifyOtp.run({
         phoneNumber: dto.phoneNumber,
         code: dto.code,
+        language: dto.language, // REQ-590 — the language picked on /verify
       });
       // REQ-098 — the CRM customer is an outbox record; the sweep makes it after this reply
       // REQ-103 — so is the sign-up's email to hello@documonster.com

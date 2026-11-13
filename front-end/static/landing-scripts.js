@@ -13,20 +13,44 @@
   const I18N = globalThis.__PM_LANDING_DICT || { en: {}, es: {} };
 
   /* Offer numbers (P-08), SSR-injected from shared/quote-flow/landing-offers
-     so no counter, price or trial length is ever re-typed in this file. */
+     so no counter or price is ever re-typed in this file. */
   const OFFER = globalThis.__PM_OFFER || {};
 
   /* Fill a dictionary string's offer placeholders: {n} the social-proof
-     counter the element names via data-count, {p} the from-price, {d} the
-     free-trial length. Mirrors the `t()` helper in routes/index.tsx. */
+     counter the element names via data-count, {p} the from-price. Mirrors the `t()` helper in routes/index.tsx. */
   function fillOffer(text, el, lang) {
     if (text.indexOf("{") < 0) return text;
     const out = text
-      .replace(/\{p\}/g, OFFER.priceFrom == null ? "" : OFFER.priceFrom)
-      .replace(/\{d\}/g, OFFER.trialDays == null ? "" : OFFER.trialDays);
+      .replace(/\{p\}/g, OFFER.priceFrom == null ? "" : OFFER.priceFrom);
     const name = el && el.getAttribute("data-count");
     const counts = (OFFER.counts || {})[name] || {};
     return out.replace(/\{n\}/g, counts[lang] || "");
+  }
+
+  /* The sample job's money (REQ-412, demo m41), SSR-injected from
+     shared/quote-flow/landing-mock-quote.ts by routes/index.tsx: every figure
+     below is computed there from the line items, so each mock's rows add up
+     to the total it shows. Never type an amount in this file. */
+  const MQ = globalThis.__PM_MOCK_QUOTE || {};
+  const MQ_LINES = MQ.lines || {};
+  const MQ_COMPACT = MQ.compact || {};
+  const MQ_CONTRACT = MQ.contract || {};
+  const MQ_INVOICE = MQ.invoice || {};
+  /** [label, qty, rate, amount] for one sample-job line. */
+  function mqLine(id, label, unit) {
+    const l = MQ_LINES[id] || {};
+    const qty = l.qty == null ? "" : String(l.qty) + (unit ? " " + unit : "");
+    return [label, qty, l.rate || "", l.amount || ""];
+  }
+
+  /** The labour line's name, from the one landing dictionary's hero-card row
+   *  (doc.q.l3, "Labor (3 days)") minus its "(3 days)": this card prints the
+   *  count in its own quantity column. One name for the labour line on the
+   *  whole page (REQ-742, demo p18-6e: it used to read "Plomería e
+   *  instalación" here and "Mano de obra (3 días)" on the hero card). */
+  function laborLabel(lang) {
+    const l3 = (I18N[lang] || {})["doc.q.l3"] || "";
+    return l3.replace(/\s*\([^)]*\)\s*$/, "");
   }
 
   const DOC_CONTENT = {
@@ -36,14 +60,14 @@
         num: "#PM-2641",
         date: "April 26, 2026",
         lines: [
-          ["Demolition & haul-off", "1", "$ 850", "$ 850"],
-          ["Cabinets — solid maple", "12", "$ 350", "$ 4,200"],
-          ["Quartz countertops (sq ft)", "42", "$ 95", "$ 3,990"],
-          ["Plumbing & install labor", "3 days", "$ 650", "$ 1,950"],
+          mqLine("demo", "Demolition & haul-off"),
+          mqLine("cabinets", "Cabinets — solid maple"),
+          mqLine("counters", "Quartz countertops (sq ft)"),
+          mqLine("labor", laborLabel("en"), "days"),
         ],
-        totals: [["Subtotal", "$ 10,990"], ["Tax (estimate)", "$ 880"], [
+        totals: [["Subtotal", MQ.subtotal], ["Tax (estimate)", MQ.tax], [
           "Estimate",
-          "$ 11,870",
+          MQ.estimate,
         ]],
         infoTitle: "Fair prices, not guesses",
         infoBody:
@@ -63,11 +87,11 @@
           ["Scope: Kitchen remodel — Hernández", "", "", "✓"],
           ["Start date", "", "", "May 2"],
           ["Substantial completion", "", "", "May 14"],
-          ["Deposit (25%)", "", "", "$ 2,500"],
-          ["Progress payment (50%)", "", "", "$ 5,495"],
-          ["Final payment", "", "", "$ 2,995"],
+          ["Deposit", "", "", MQ_CONTRACT.deposit],
+          ["Progress payment (50%)", "", "", MQ_CONTRACT.progress],
+          ["Final payment", "", "", MQ_CONTRACT.final],
         ],
-        totals: [["Total contract value", "$ 10,990"], [
+        totals: [["Total contract value", MQ_CONTRACT.total], [
           "Signed by client",
           "✓ Apr 26",
         ], ["Status", "Active"]],
@@ -86,12 +110,20 @@
         num: "#PM-2641-I",
         date: "May 14, 2026",
         lines: [
-          ["Kitchen remodel — completed", "", "", "$ 10,990"],
-          ["Change order: under-cabinet lighting", "1", "$ 420", "$ 420"],
-          ["Deposit received", "", "", "− $ 2,500"],
-          ["Progress payment received", "", "", "− $ 5,495"],
+          ["Kitchen remodel — completed", "", "", MQ_INVOICE.completed],
+          [
+            "Change order: under-cabinet lighting",
+            "1",
+            MQ_INVOICE.changeOrderRate,
+            MQ_INVOICE.changeOrder,
+          ],
+          ["Deposit received", "", "", MQ_INVOICE.deposit],
+          ["Progress payment received", "", "", MQ_INVOICE.progress],
         ],
-        totals: [["Balance due", "$ 3,415"], ["Due by", "May 18, 2026"], [
+        totals: [["Balance due", MQ_INVOICE.balance], [
+          "Due by",
+          "May 18, 2026",
+        ], [
           "Pay online",
           "tap to pay",
         ]],
@@ -112,14 +144,14 @@
         num: "#PM-2641",
         date: "26 de abril de 2026",
         lines: [
-          ["Demolición y limpieza", "1", "$ 850", "$ 850"],
-          ["Gabinetes — maple sólido", "12", "$ 350", "$ 4,200"],
-          ["Cubiertas de cuarzo (pie²)", "42", "$ 95", "$ 3,990"],
-          ["Plomería e instalación", "3 días", "$ 650", "$ 1,950"],
+          mqLine("demo", "Demolición y limpieza"),
+          mqLine("cabinets", "Gabinetes — maple sólido"),
+          mqLine("counters", "Cubiertas de cuarzo (pie²)"),
+          mqLine("labor", laborLabel("es"), "días"),
         ],
-        totals: [["Subtotal", "$ 10,990"], ["Impuesto (est.)", "$ 880"], [
+        totals: [["Subtotal", MQ.subtotal], ["Impuesto (est.)", MQ.tax], [
           "Estimado",
-          "$ 11,870",
+          MQ.estimate,
         ]],
         infoTitle: "Precios justos, no adivinanzas",
         infoBody:
@@ -139,11 +171,11 @@
           ["Alcance: Remodelación cocina — Hernández", "", "", "✓"],
           ["Fecha de inicio", "", "", "2 de mayo"],
           ["Terminación", "", "", "14 de mayo"],
-          ["Anticipo (25%)", "", "", "$ 2,500"],
-          ["Avance (50%)", "", "", "$ 5,495"],
-          ["Pago final", "", "", "$ 2,995"],
+          ["Anticipo", "", "", MQ_CONTRACT.deposit],
+          ["Avance (50%)", "", "", MQ_CONTRACT.progress],
+          ["Pago final", "", "", MQ_CONTRACT.final],
         ],
-        totals: [["Valor total", "$ 10,990"], [
+        totals: [["Valor total", MQ_CONTRACT.total], [
           "Firmado por cliente",
           "✓ 26 abr",
         ], ["Estado", "Activo"]],
@@ -162,12 +194,17 @@
         num: "#PM-2641-I",
         date: "14 de mayo de 2026",
         lines: [
-          ["Remodelación cocina — completada", "", "", "$ 10,990"],
-          ["Orden de cambio: luces bajo gabinete", "1", "$ 420", "$ 420"],
-          ["Anticipo recibido", "", "", "− $ 2,500"],
-          ["Pago de avance recibido", "", "", "− $ 5,495"],
+          ["Remodelación cocina — completada", "", "", MQ_INVOICE.completed],
+          [
+            "Orden de cambio: luces bajo gabinete",
+            "1",
+            MQ_INVOICE.changeOrderRate,
+            MQ_INVOICE.changeOrder,
+          ],
+          ["Anticipo recibido", "", "", MQ_INVOICE.deposit],
+          ["Pago de avance recibido", "", "", MQ_INVOICE.progress],
         ],
-        totals: [["Saldo por pagar", "$ 3,415"], [
+        totals: [["Saldo por pagar", MQ_INVOICE.balance], [
           "Vence",
           "18 de mayo de 2026",
         ], ["Paga en línea", "toca para pagar"]],
@@ -308,10 +345,12 @@
       };
     return '<div class="quote-card"><div class="qc-head"><span>' + t.hd +
       '</span><span class="pdf">PDF</span></div><div class="row"><span>' +
-      t.l1 + '</span><strong>$ 4,200</strong></div><div class="row"><span>' +
-      t.l2 + '</span><strong>$ 3,990</strong></div><div class="row"><span>' +
-      t.l3 + '</span><strong>$ 2,800</strong></div><div class="total"><span>' +
-      t.total + "</span><span>$ 10,990</span></div></div>";
+      t.l1 + "</span><strong>" + MQ_COMPACT.l1 +
+      '</strong></div><div class="row"><span>' + t.l2 + "</span><strong>" +
+      MQ_COMPACT.l2 + '</strong></div><div class="row"><span>' + t.l3 +
+      "</span><strong>" + MQ_COMPACT.l3 +
+      '</strong></div><div class="total"><span>' + t.total +
+      "</span><span>" + MQ_COMPACT.total + "</span></div></div>";
   }
 
   function toE164(raw) {
@@ -367,20 +406,18 @@
 
   /**
    * Digit grouping for COUNTS (documents sent, contractors) — mirrors
-   * shared/quote-flow/landing-offers.ts#formatSocialProof: "48,217" (en) /
-   * "48.217" (es). Intl is deliberately not used: Spanish CLDR sets
-   * minimumGroupingDigits=2, so toLocaleString("es-ES") leaves 4-digit values
-   * ungrouped and the counter would change shape mid-animation.
-   *
-   * MONEY is never formatted this way. Every amount on this page is US
-   * dollars for a US client, so it stays US-grouped in BOTH languages
-   * ("$10,990"): the es-ES form "$ 10.990" reads as eleven dollars to the
-   * person receiving the quote.
+   * shared/quote-flow/landing-offers.ts#formatSocialProof: "48,217" in BOTH
+   * languages. Every amount on this page is US dollars for a US client, so
+   * money stays US-grouped in both languages (REQ-413: the es-ES "$ 12.345"
+   * reads as twelve dollars), and counts follow the same rule (REQ-499) so a
+   * Spanish page never shows "+1.200" beside a US-grouped amount. Intl is
+   * deliberately not used: Spanish CLDR sets minimumGroupingDigits=2, so
+   * toLocaleString("es-ES") leaves 4-digit values ungrouped and the counter
+   * would change shape mid-animation.
    */
-  function groupCount(n, lang) {
-    const sep = lang === "es" ? "." : ",";
+  function groupCount(n) {
     return String(Math.trunc(Math.abs(n)))
-      .replace(/\B(?=(\d{3})+(?!\d))/g, sep);
+      .replace(/\B(?=(\d{3})+(?!\d))/g, ",");
   }
 
   /** Set by the counter IIFE below; re-paints it on a language switch. */
@@ -419,6 +456,11 @@
       if (el.getAttribute("data-html") === "1") el.innerHTML = v;
       else el.textContent = v;
     });
+    // REQ-413: aria-labels are page copy too ("Language" / "Idioma").
+    document.querySelectorAll("[data-i18n-aria]").forEach(function (el) {
+      const k = el.getAttribute("data-i18n-aria");
+      if (k && dict[k] != null) el.setAttribute("aria-label", dict[k]);
+    });
     document.querySelectorAll(".rotor-track .word").forEach(function (w) {
       w.textContent = w.getAttribute("data-" + lang) || w.textContent;
     });
@@ -449,6 +491,9 @@
       if (b.dataset.lang === lang) b.classList.add("on");
       else b.classList.remove("on");
     });
+    // REQ-345: the islands (PhoneChat's chat-to-quote mock) read langSignal,
+    // which this plain script cannot import — lib/lang.ts listens for this.
+    document.dispatchEvent(new CustomEvent("pm:lang", { detail: lang }));
   }
 
   // Reflect the chosen language into the URL's ?lang= param (no reload) so it
@@ -603,18 +648,31 @@
     // routes/index.tsx as window.__PM_DOCS_SENT (P-08) — never a literal here.
     const target = Number(globalThis.__PM_DOCS_SENT) || 0;
     if (!target) return;
-    let shown = 0;
+    // REQ-412 (demo p12): the server already rendered the final, grouped
+    // number, so a reader, crawler or snapshot before the scroll never sees
+    // "0". `shown` starts there too — a language toggle before the count-up
+    // re-groups the real number.
+    let shown = target;
     // Remembered so a language toggle re-groups the number that is already on
     // screen. It used to be painted once, behind a `fired` flag that was never
     // reset, so switching language left the other locale's grouping in place.
     paintCounter = function () {
-      el.textContent = groupCount(shown, curLang);
+      el.textContent = groupCount(shown);
     };
+    // Reduced motion: no count-up at all; the final number simply stays.
+    const still = globalThis.matchMedia &&
+      globalThis.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (still || typeof IntersectionObserver === "undefined") return;
     let fired = false;
     const io = new IntersectionObserver(function (entries) {
       entries.forEach(function (e) {
+        // Count up from 0 only once the counter is actually seen entering
+        // the viewport.
         if (e.isIntersecting && !fired) {
           fired = true;
+          io.disconnect();
+          shown = 0;
+          paintCounter();
           const start = performance.now();
           const dur = 1800;
           const tick = function (ts) {
@@ -844,7 +902,7 @@
             localStorage.setItem("pm:last-phone", e164);
           } catch { /* ignore */ }
           location.href = "/verify?phone=" + encodeURIComponent(e164) +
-            "&lang=" + curLang + "&px=lead";
+            "&lang=" + curLang + "&px=lead&from=home"; // REQ-351: Edit → /#contact
           return;
         }
         if (!res.ok) throw new Error("send failed " + res.status);
@@ -863,7 +921,7 @@
           localStorage.setItem("pm:last-phone", e164);
         } catch { /* ignore */ }
         location.href = "/verify?phone=" + encodeURIComponent(e164) +
-          "&lang=" + curLang + "&px=lead";
+          "&lang=" + curLang + "&px=lead&from=home"; // REQ-351: Edit → /#contact
       } catch {
         if (cta) {
           cta.disabled = false;

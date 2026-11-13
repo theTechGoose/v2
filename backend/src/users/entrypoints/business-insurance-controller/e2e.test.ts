@@ -161,3 +161,57 @@ Deno.test("business-insurance e2e: per-user isolation — A's data invisible to 
     assertEquals(bData, null);
   });
 });
+
+// REQ-503 (demo-loop cycle 3, demo m62): onboarding saved insurer "!!!" and a
+// 120-character policy number. The DTO now refuses both shapes.
+async function putInsurance(port: number, sid: string, body: unknown) {
+  const res = await fetch(`http://localhost:${port}/profile/insurance`, {
+    method: "PUT",
+    headers: { "content-type": "application/json", "x-session-id": sid },
+    body: JSON.stringify(body),
+  });
+  const ok = res.ok;
+  await drain(res);
+  return ok;
+}
+
+Deno.test("REQ-503 m62 business-insurance e2e: PUT refuses insurer '!!!' and a 120-char policy number, nothing is saved", async () => {
+  await withServer(async (port) => {
+    const sid = await login(port);
+    assertEquals(await putInsurance(port, sid, { provider: "!!!" }), false, "insurer !!!");
+    assertEquals(await putInsurance(port, sid, { provider: "A" }), false, "one-letter insurer");
+    assertEquals(await putInsurance(port, sid, { provider: "x".repeat(81) }), false, "81-char insurer");
+    assertEquals(
+      await putInsurance(port, sid, { provider: "State Farm", policyNumber: "1".repeat(120) }),
+      false,
+      "120-char policy number",
+    );
+    assertEquals(
+      await putInsurance(port, sid, { provider: "State Farm", policyNumber: "POL#1234" }),
+      false,
+      "policy number with #",
+    );
+    const got = await fetch(`http://localhost:${port}/profile/insurance`, {
+      headers: { "x-session-id": sid },
+    }).then((r) => r.json());
+    assertEquals(got, null, "nothing was stored");
+  });
+});
+
+Deno.test("REQ-503 m62 business-insurance e2e: a real insurer and policy number save; a blank one clears", async () => {
+  await withServer(async (port) => {
+    const sid = await login(port);
+    assertEquals(
+      await putInsurance(port, sid, { provider: "AT&T Insurance Co.", policyNumber: "HX-2024-0099" }),
+      true,
+    );
+    assertEquals(await putInsurance(port, sid, { provider: "Mapfre España" }), true);
+    // Settings clears a field by saving it blank
+    assertEquals(await putInsurance(port, sid, { policyNumber: "" }), true);
+    const got = await fetch(`http://localhost:${port}/profile/insurance`, {
+      headers: { "x-session-id": sid },
+    }).then((r) => r.json());
+    assertEquals(got.provider, "Mapfre España");
+    assertEquals(got.policyNumber, "");
+  });
+});

@@ -20,14 +20,18 @@ import {
   invoiceBalance,
   isInvoiceLocked,
   isQuoteLocked,
+  publisherOrOwner,
   versionOf,
 } from "#documents/versions.ts";
 import { quoteLedger } from "#documents/ledger.ts";
+import { EventBus } from "@core/business/events/mod.ts";
+import { CustomerStore } from "@crm/domain/data/customer-store/mod.ts";
 
 /**
  * RevisionsController — REQ-201/202/205: publishing, versions, the ledger.
  *
  *   POST quotes/:id/publish    { notify?: boolean }  → the published quote (version +1)
+ *   POST quotes/:id/discard-revision                  → the quote, its pending revision dropped (REQ-395)
  *   GET  quotes/:id/versions                          → every filed version + the current one
  *   GET  quotes/:id/ledger                            → invoices / change orders / totals
  *   POST invoices/:id/publish  { notify?: boolean }  → the published invoice (version +1)
@@ -49,6 +53,8 @@ export class RevisionsController {
     private sms: SendPaperworkSms,
     private users: UserStore,
     private sessions: SessionStore,
+    private bus: EventBus,
+    private customers: CustomerStore,
   ) {}
 
   @Post("quotes/:id/publish")
@@ -75,10 +81,25 @@ export class RevisionsController {
       quote.pendingRevision,
       by,
     );
+    await emitRevised(this.bus, this.customers, user.id, "quote", published);
     const notified = opts.notify
       ? await notify(this.email, this.sms, user.id, "quote", id, opts.language)
       : undefined;
     return ctx.json({ ...published, ...(notified ? { notified } : {}) });
+  }
+
+  /** REQ-395 (demo M12): throw away an unwanted draft revision; the customer's version is untouched. */
+  @Post("quotes/:id/discard-revision")
+  async discardQuoteRevision(
+    @Context() ctx: ExecutionContext,
+    @Param("id") id: string,
+  ) {
+    const user = await requireUser(ctx, this.sessions, this.users);
+    const quote = await this.quotes.getOwned(id, user.id);
+    if (isQuoteLocked(quote)) {
+      return ctx.json({ ok: false, reason: "locked_signed" }, 409);
+    }
+    return ctx.json(await this.quotes.clearPending(id, user.id));
   }
 
   @Get("quotes/:id/versions")
@@ -89,7 +110,7 @@ export class RevisionsController {
     const user = await requireUser(ctx, this.sessions, this.users);
     const quote = await this.quotes.getOwned(id, user.id);
     const filed = await this.quotes.listVersions(id, user.id);
-    return ctx.json(withCurrent(filed, quote));
+    return ctx.json(await withNames(this.users, withCurrent(filed, quote)));
   }
 
   /** REQ-205: what was agreed, invoiced, paid, still owed, and still to invoice. */
@@ -136,6 +157,7 @@ export class RevisionsController {
       by,
       (next) => flagOverpayment(next),
     );
+    await emitRevised(this.bus, this.customers, user.id, "invoice", published);
     const notified = opts.notify
       ? await notify(
         this.email,
@@ -157,7 +179,7 @@ export class RevisionsController {
     const user = await requireUser(ctx, this.sessions, this.users);
     const invoice = await this.invoices.getOwned(id, user.id);
     const filed = await this.invoices.listVersions(id, user.id);
-    return ctx.json(withCurrent(filed, invoice));
+    return ctx.json(await withNames(this.users, withCurrent(filed, invoice)));
   }
 }
 
@@ -196,29 +218,109 @@ export async function publisherOf(
   return { userId: user.id, ...(user.name ? { name: user.name } : {}) };
 }
 
+/**
+ * REQ-564 (demo-loop cycle 4, m35): a publish is a domain event — the
+ * notifications feed (topbar ticker, Activity) shows "Q-001 Version 2
+ * published to María" instead of still reading "Quote sent".
+ */
+async function emitRevised(
+  bus: EventBus,
+  customers: CustomerStore,
+  userId: string,
+  entityType: "quote" | "invoice",
+  doc: {
+    id: string;
+    number?: string;
+    version?: number;
+    customerId?: string;
+    customerSnapshot?: { name?: string };
+  },
+): Promise<void> {
+  const customerName =
+    (doc.customerId
+      ? await customers.getOwned(doc.customerId, userId).then(
+        (c) => c.name?.trim() || undefined,
+        () => undefined,
+      )
+      : undefined) ?? (doc.customerSnapshot?.name?.trim() || undefined);
+  await bus.emit({
+    userId,
+    entityType,
+    entityId: doc.id,
+    action: "revised",
+    data: {
+      version: versionOf(doc),
+      ...(doc.number ? { number: doc.number } : {}),
+      ...(customerName ? { customerName } : {}),
+    },
+  });
+}
+
 /** The filed versions plus the live record as the current one, oldest first. */
 function withCurrent(
   filed: DocVersionRecord[],
   live: {
     version?: number;
+    userId?: string;
     publishedAt?: string;
     publishedBy?: DocVersionRecord["publishedBy"];
+    sentAt?: string;
     updatedAt?: string;
     createdAt?: string;
+    status?: string;
     pendingRevision?: unknown;
   },
 ) {
   const { pendingRevision: _p, ...content } = live;
+  // REQ-686 (cycle 5, m45): a draft nobody was sent was never published —
+  // no publish date (an edit's updatedAt used to read "published Nov 12").
+  const unissued = !live.publishedAt && !live.sentAt &&
+    (!live.status || live.status === "draft");
   return [
-    ...filed.map((v) => ({ ...v, current: false })),
+    ...filed.map((v) => ({
+      ...v,
+      // REQ-248: a version filed as published by {} was its owner's
+      publishedBy: publisherOrOwner({
+        publishedBy: v.publishedBy,
+        userId: (v.content as { userId?: unknown })?.userId,
+      }),
+      current: false,
+    })),
     {
       version: versionOf(live),
-      publishedAt: live.publishedAt ?? live.updatedAt ?? live.createdAt,
-      publishedBy: live.publishedBy ?? {},
+      // REQ-248: never published by nobody — the owner, when it was sent
+      ...(unissued ? {} : {
+        publishedAt: live.publishedAt ?? live.sentAt ?? live.updatedAt ??
+          live.createdAt,
+      }),
+      publishedBy: publisherOrOwner(live),
       content,
       current: true,
     },
   ];
+}
+
+/**
+ * REQ-248: every publisher named — a version stamped with a user id only
+ * (the first issue, a send, a row from before the stamp) reads back with
+ * that user's name as it is now.
+ */
+async function withNames<
+  T extends { publishedBy: DocVersionRecord["publishedBy"] },
+>(users: UserStore, versions: T[]): Promise<T[]> {
+  const names = new Map<string, string | undefined>();
+  for (const v of versions) {
+    const id = v.publishedBy?.userId;
+    if (id && !v.publishedBy.name && !names.has(id)) {
+      const u = await users.get(id).catch(() => null);
+      names.set(id, u?.name?.trim() || undefined);
+    }
+  }
+  return versions.map((v) => {
+    const id = v.publishedBy?.userId;
+    const name = id && !v.publishedBy.name ? names.get(id) : undefined;
+    return name ? { ...v, publishedBy: { ...v.publishedBy, name } } : v;
+  });
 }
 
 /** REQ-202: an invoice with its confirmed payments summed (the stored paidCents, else the ledger). */

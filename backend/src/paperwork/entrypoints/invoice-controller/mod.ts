@@ -14,6 +14,7 @@ import { InvoiceStore } from "@paperwork/domain/data/invoice-store/mod.ts";
 import { CustomerStore } from "@crm/domain/data/customer-store/mod.ts";
 import { QuoteStore } from "@paperwork/domain/data/quote-store/mod.ts";
 import {
+  type CreateInvoiceDto,
   type Invoice,
   parseCreateInvoice,
   parseUpdateInvoice,
@@ -24,7 +25,12 @@ import {
   parseCreateChangeOrder,
 } from "@paperwork/dto/change-order.ts";
 import { SendChangeOrderAlert } from "@paperwork/domain/coordinators/send-change-order-alert/mod.ts";
+import {
+  type ChangeOrderDelivery,
+  changeOrderDeliveryOf,
+} from "#documents/change-order-sent-line.ts"; // REQ-684
 import { deriveUrgency } from "@paperwork/domain/business/invoice-urgency/mod.ts";
+import { isOpenReceivable } from "@paperwork/domain/business/open-receivable/mod.ts";
 import { ConfirmPayment } from "@paperwork/domain/coordinators/confirm-payment/mod.ts";
 import { ComputeInvoiceForecast } from "@paperwork/domain/coordinators/compute-invoice-forecast/mod.ts";
 import { RecordPaymentFromUtterance } from "@paperwork/domain/coordinators/record-payment-from-utterance/mod.ts";
@@ -52,6 +58,17 @@ import {
   parseExportStatus,
 } from "#documents/exports.ts"; // REQ-208
 import { appUrl } from "@users/domain/business/app-url/mod.ts";
+import { invoiceCapDecision } from "#documents/ledger.ts"; // REQ-233
+import { hasCreatedFor } from "@core/data/numbered-store/mod.ts";
+import { InvoiceTranslatorPort } from "@paperwork/domain/coordinators/invoice-translator-port/mod.ts"; // REQ-497
+import { PreviewInvoiceSend } from "@paperwork/domain/coordinators/preview-invoice-send/mod.ts"; // REQ-727
+import { parseInvoiceSendPreviewQuery } from "#quote-flow/send-preview.ts"; // REQ-727
+import { EventBus } from "@core/business/events/mod.ts";
+import {
+  invoiceIssuedEvent,
+  isIssuingTransition,
+} from "@paperwork/domain/business/owner-activity/mod.ts"; // REQ-566
+import { billToCustomerPlan } from "@paperwork/domain/business/bill-to-customer/mod.ts"; // REQ-696
 import { PaymentStore } from "@paperwork/domain/data/payment-store/mod.ts";
 import {
   duplicateDraftOf,
@@ -74,6 +91,50 @@ function project(invoice: Invoice, now: Date): Invoice {
   return { ...invoice, urgency: deriveUrgency(invoice, now) };
 }
 
+/**
+ * REQ-497 (demo-loop cycle 3, m23): a standalone invoice's typed title and
+ * concepts get their other-language text before the customer is sent the
+ * link, so /i?lang=en on a Spanish-typed invoice reads English. Quote-linked
+ * invoices take theirs from the quote. Returns the re-read invoice. (A module
+ * function, not a controller method: Danet routes every method it finds.)
+ */
+async function translateStandalone(
+  translator: InvoiceTranslatorPort | undefined,
+  store: InvoiceStore,
+  inv: Invoice,
+  user: { id: string; language?: string },
+): Promise<Invoice> {
+  if (!translator || inv.quoteId) return inv;
+  // REQ-710 (cycle 5, M4): its line items are translated too.
+  const hasLines = (inv.lineItems ?? []).some((li) => li.description?.trim());
+  if (!inv.jobName?.trim() && !inv.description?.trim() && !hasLines) {
+    return inv;
+  }
+  await translator.run({
+    userId: user.id,
+    invoiceId: inv.id,
+    // REQ-710: only a hint — the language the invoice was typed in wins.
+    baseLang: user.language === "es" ? "es" : "en",
+  });
+  return await store.getOwned(inv.id, user.id);
+}
+
+/** REQ-566 (cycle 4, m11): tell the bus the owner issued this invoice — the
+ *  dashboard's activity feed. A module function: Danet routes every method
+ *  of a controller class, so no undecorated helper lives on it. */
+async function announceIssued(
+  bus: EventBus,
+  customers: CustomerStore,
+  userId: string,
+  inv: { id: string; amount?: number; customerId?: string },
+): Promise<void> {
+  const customerName = inv.customerId
+    ? await customers.getOwned(inv.customerId, userId)
+      .then((c) => c.name || undefined, () => undefined)
+    : undefined;
+  await bus.emit(invoiceIssuedEvent(userId, inv, customerName));
+}
+
 @Controller("invoices")
 export class InvoiceController {
   constructor(
@@ -87,8 +148,11 @@ export class InvoiceController {
     private changeOrderAlert: SendChangeOrderAlert,
     private users: UserStore,
     private sessions: SessionStore,
-    private payments: PaymentStore,
-    private printPdf: RenderInvoicePrintPdf,
+    private bus: EventBus,
+    private sendPreview: PreviewInvoiceSend,
+    private payments: PaymentStore, // REQ-627
+    private printPdf: RenderInvoicePrintPdf, // REQ-629
+    private translator?: InvoiceTranslatorPort,
   ) {}
 
   /**
@@ -315,13 +379,19 @@ export class InvoiceController {
       // this snapshot so revisiting the link after approval stays correct.
       originalAmountCents: inv.amount ?? 0,
     }, { requestId });
-    // Trigger approval: alert the contractor (email + SMS) with the shareable
-    // /co link to send the customer. Fire-and-forget — delivery problems must
-    // never fail the create.
-    this.changeOrderAlert.run(co.id).catch((err) =>
-      console.error(`[invoices/${id}/change-orders] alert failed:`, err)
-    );
-    return ctx.json(co);
+    // Trigger approval: the alert emails + texts the CUSTOMER the /co link
+    // (and the contractor a heads-up). REQ-684 (cycle 5, m39): wait for it and
+    // answer with what reached the customer, so the panel says "Sent CO-001
+    // to Maria by email (…)" like the chat (REQ-456). A failed alert never
+    // fails the create — it comes back as `delivery.error`.
+    return ctx.json({
+      ...co,
+      delivery: await alertCustomer(
+        this.changeOrderAlert,
+        co.id,
+        `invoices/${id}/change-orders`,
+      ),
+    });
   }
 
   /**
@@ -357,10 +427,15 @@ export class InvoiceController {
       deltaAmountCents: dto.deltaAmountCents,
       originalAmountCents: invAmount,
     });
-    this.changeOrderAlert.run(co.id).catch((err) =>
-      console.error(`[invoices/${id}/change-orders/${coId}] alert failed:`, err)
-    );
-    return ctx.json(co);
+    // REQ-684 (cycle 5, m39): the re-sent alert's delivery, as on create.
+    return ctx.json({
+      ...co,
+      delivery: await alertCustomer(
+        this.changeOrderAlert,
+        co.id,
+        `invoices/${id}/change-orders/${coId}`,
+      ),
+    });
   }
 
   /** Delete a change order. If it was already approved, its delta was applied
@@ -401,7 +476,20 @@ export class InvoiceController {
   async create(@Context() ctx: ExecutionContext, @Body() body: unknown) {
     const user = await requireUser(ctx, this.sessions, this.users);
     const requestId = requestIdOf(ctx, body); // REQ-200
-    const dto = parseCreateInvoice(body);
+    // REQ-233: the over-billing acknowledgement is a request flag, never a field.
+    const override = (body as { override?: unknown } | null)?.override ===
+      true;
+    if (body && typeof body === "object") {
+      delete (body as { override?: unknown }).override;
+    }
+    // REQ-550 (demo-loop cycle 4, B1): a body that fails validation (e.g.
+    // an amount past the $1bn cap) is the caller's error — 422, not a throw.
+    let dto: CreateInvoiceDto;
+    try {
+      dto = parseCreateInvoice(body);
+    } catch {
+      return ctx.json({ error: "invalid_invoice" }, 422);
+    }
     delete dto.replaces; // REQ-627: server-set by void-duplicate only
 
     // Derive-from-quote (roadmap p.6): the invoice carries all the quote's
@@ -418,6 +506,30 @@ export class InvoiceController {
           (s, li) => s + (li.price ?? 0) * (li.quantity ?? 1),
           0,
         ) || undefined);
+      // REQ-233 (demo B2): one billing source per agreement. A new invoice on
+      // a quote bills at most what the ledger still has unbilled (quote total
+      // + approved change orders − every non-void invoice on it), so signing
+      // a 50/50 quote and then "Send as Invoice" can never bill it twice.
+      // Extra work billed on purpose says so with `override: true`; a REQ-200
+      // retry of a create that already landed gets its invoice back.
+      if (
+        !override && !(await hasCreatedFor(user.id, "invoice", requestId))
+      ) {
+        const [siblings, cos] = await Promise.all([
+          this.store.listByUser(user.id).then((all) =>
+            all.filter((i) => i.quoteId === q.id)
+          ),
+          this.changeOrders.listByQuote(user.id, q.id),
+        ]);
+        const cap = invoiceCapDecision(
+          q,
+          siblings,
+          cos,
+          dto.amount ?? 0,
+          dto.taxCents ?? 0,
+        );
+        if (!cap.ok) return ctx.json(cap, 409);
+      }
     }
     // Every invoice gets a due date; +30 days is the trade default.
     if (!dto.dueDate) {
@@ -425,6 +537,30 @@ export class InvoiceController {
         .toISOString().slice(0, 10);
     }
 
+    // REQ-550 (demo-loop cycle 4, B1): an invoice issued at birth bills
+    // someone — a customer (given, or the quote's) or a typed bill-to name.
+    // Nobody to bill is a draft, never "sent".
+    if (
+      isIssuedAtBirth(dto.status) && !dto.customerId?.trim() &&
+      !(typeof dto.billTo?.name === "string" && dto.billTo.name.trim())
+    ) {
+      return ctx.json({ error: "invoice_needs_recipient" }, 422);
+    }
+    // REQ-696 (demo-loop cycle 5, M5/M22): a typed bill-to name with no
+    // customer is that customer — attached when the account has them, else
+    // created — so the customers page, its owed total and the invoice list
+    // all see whom the invoice bills.
+    if (!dto.customerId?.trim()) {
+      const plan = billToCustomerPlan(
+        dto.billTo,
+        await this.customers.listByUser(user.id),
+      );
+      if (plan) {
+        dto.customerId = "attach" in plan
+          ? plan.attach
+          : (await this.customers.create(user.id, plan.create)).id;
+      }
+    }
     // REQ-206: an invoice issued at birth carries its sentAt.
     if (
       dto.status && dto.status !== "draft" && dto.status !== "scheduled" &&
@@ -432,8 +568,16 @@ export class InvoiceController {
     ) {
       dto.sentAt = new Date().toISOString();
     }
+    // REQ-566 (cycle 4, m11): an invoice issued at birth is the owner's
+    // activity — the dashboard feed says so. A REQ-200 retry returns the
+    // invoice it already made and announces nothing twice.
+    const retry = await hasCreatedFor(user.id, "invoice", requestId);
+    const created = await this.store.create(user.id, dto, { requestId });
+    if (!retry && isIssuingTransition(undefined, created.status)) {
+      await announceIssued(this.bus, this.customers, user.id, created);
+    }
     return project(
-      await this.store.create(user.id, dto, { requestId }),
+      await translateStandalone(this.translator, this.store, created, user),
       new Date(),
     );
   }
@@ -444,7 +588,12 @@ export class InvoiceController {
     @Query("status") status?: string,
   ) {
     const user = await requireUser(ctx, this.sessions, this.users);
-    const list = status
+    // REQ-473 (demo-loop cycle 3, M8): `?status=open` is the money owed
+    // right now — the REQ-397 open-receivable rule (sent/viewed/claimed and
+    // the legacy partly-paid "pending", with a balance), not one status.
+    const list = status === "open"
+      ? (await this.store.listByUser(user.id)).filter(isOpenReceivable)
+      : status
       ? await this.store.listByUserAndStatus(user.id, status)
       : await this.store.listByUser(user.id);
     const now = new Date();
@@ -535,6 +684,29 @@ export class InvoiceController {
   }
 
   /**
+   * REQ-727 (demo-loop cycle 5, c4-M16): GET
+   * /invoices/:id/send-preview?channel&lang&issuedDate&dueDate — the email
+   * subject + body and the text the client gets if the invoice is sent now
+   * (the send sheet's "What they'll get"), in the picked language, else the
+   * invoice's own; with the dates the send will stamp. Sends nothing.
+   */
+  @Get(":id/send-preview")
+  async preview(
+    @Context() ctx: ExecutionContext,
+    @Param("id") id: string,
+    @Query("channel") channel?: string,
+    @Query("lang") lang?: string,
+    @Query("issuedDate") issuedDate?: string,
+    @Query("dueDate") dueDate?: string,
+  ) {
+    const user = await requireUser(ctx, this.sessions, this.users);
+    return await this.sendPreview.run(user.id, {
+      invoiceId: id,
+      ...parseInvoiceSendPreviewQuery({ channel, lang, issuedDate, dueDate }),
+    });
+  }
+
+  /**
    * REQ-201/202: a draft or scheduled invoice edits live. Once issued, a
    * content edit waits as a pending revision until POST /invoices/:id/publish
    * (the customer's link keeps showing the published version). A paid
@@ -552,6 +724,9 @@ export class InvoiceController {
     // never from a request: the balance coordinator owns these
     delete patch.paidCents;
     delete patch.overpaidCents;
+    // REQ-488: reject-claim / the next claim own these
+    delete patch.claimRejectedAt;
+    delete patch.claimRejectedMethod;
     // REQ-627: voiding has its own route and rules
     delete patch.voidedAt;
     delete patch.voidedBy;
@@ -588,8 +763,22 @@ export class InvoiceController {
       const pending = await this.store.setPending(id, user.id, content);
       return project({ ...updated, ...pending }, new Date());
     }
+    const updated = await this.store.update(id, user.id, {
+      ...content,
+      ...meta,
+    });
+    // REQ-566 (cycle 4, m11): a draft / scheduled invoice issued by an edit.
+    if (isIssuingTransition(existing.status, updated.status)) {
+      await announceIssued(this.bus, this.customers, user.id, updated);
+    }
+    // REQ-497: a live edit of the title / concepts is translated afresh.
+    // REQ-710 (cycle 5, M4): and of the line items.
+    const retitled = "jobName" in content || "description" in content ||
+      "lineItems" in content;
     return project(
-      await this.store.update(id, user.id, { ...content, ...meta }),
+      retitled
+        ? await translateStandalone(this.translator, this.store, updated, user)
+        : updated,
       new Date(),
     );
   }
@@ -621,7 +810,13 @@ export class InvoiceController {
 
   /** "Didn't get it" — reopens an invoice the customer claimed but the
    *  contractor never actually received. Clears the intent (via store
-   *  patch) and flips status back to `sent`. */
+   *  patch) and flips status back to `sent`.
+   *
+   *  REQ-488 (demo m56/m57): the rejection is recorded on the invoice
+   *  (`claimRejectedAt` + the claimed method) so the customer's /i says the
+   *  payment hasn't arrived, and an invoice `claim_rejected` event puts a
+   *  newer row in the feed and closes the open claim notification — the
+   *  topbar chip no longer reads "… says they paid". */
   @Post(":id/reject-claim")
   async rejectClaim(@Context() ctx: ExecutionContext, @Param("id") id: string) {
     const user = await requireUser(ctx, this.sessions, this.users);
@@ -629,12 +824,34 @@ export class InvoiceController {
     if (inv.status !== "claimed") {
       return ctx.json({ ok: false, reason: "not_claimed" }, 409);
     }
+    const method = inv.paymentIntent?.method;
     // `null` tells the store to explicitly clear the intent. A plain
     // `undefined` is filtered out and would leave the stale claim behind —
     // which confirm-payment would then happily turn into a bogus payment.
     await this.store.update(id, user.id, {
       status: "sent",
       paymentIntent: null,
+      claimRejectedAt: new Date().toISOString(),
+      claimRejectedMethod: method ?? null,
+    });
+    let customerName: string | undefined;
+    if (inv.customerId) {
+      customerName = await this.customers.getOwned(inv.customerId, user.id)
+        .then((c) => c.name || undefined, () => undefined);
+    }
+    customerName ??= inv.paymentIntent?.claimedBy?.trim() || undefined;
+    await this.bus.emit({
+      userId: user.id,
+      entityType: "invoice",
+      entityId: id,
+      action: "claim_rejected",
+      data: {
+        ...(method ? { method } : {}),
+        ...(customerName ? { customerName } : {}),
+        ...(inv.paymentIntent?.amount !== undefined
+          ? { amountCents: inv.paymentIntent.amount }
+          : {}),
+      },
     });
     return ctx.json({ ok: true });
   }
@@ -708,6 +925,31 @@ async function revertApprovedDelta(
   const reverted = Math.max(0, current - co.deltaAmountCents);
   await store.update(co.invoiceId, userId, { amount: reverted });
   return reverted;
+}
+
+/** REQ-550: a create status that issues the invoice (anything but the
+ *  unissued draft / scheduled tracks — an omitted status is a draft). */
+function isIssuedAtBirth(status: string | undefined): boolean {
+  return !!status && status !== "draft" && status !== "scheduled";
+}
+
+/** REQ-684 (cycle 5, m39): run the change-order alert and return what
+ *  reached the customer; a thrown alert is reported, never raised. (Module
+ *  scope: Danet routes every method on a controller class.) */
+async function alertCustomer(
+  alert: SendChangeOrderAlert,
+  changeOrderId: string,
+  where: string,
+): Promise<ChangeOrderDelivery> {
+  try {
+    return changeOrderDeliveryOf(await alert.run(changeOrderId));
+  } catch (err) {
+    console.error(`[${where}] alert failed:`, err);
+    return changeOrderDeliveryOf(
+      undefined,
+      err instanceof Error ? err.message : String(err),
+    );
+  }
 }
 
 /** REQ-627/629: `{ ids }` → the ids, or the 400 reason. */

@@ -1,6 +1,6 @@
 /**
  * REQ-156 — sidebar folders: the pure tree walk (the path to an entry, the view at a path) and
- * the wiring — the five field entries sit in the `recurring` folder, the sidebar renders the
+ * the wiring — the five field entries sit in the `field` folder (REQ-361, was `recurring`), the sidebar renders the
  * Back row, and both dictionaries carry the two strings.
  */
 import * as fs from "fs";
@@ -62,30 +62,34 @@ describe("REQ-156 the tree walk", () => {
 });
 
 describe("REQ-156 the sidebar's folders", () => {
-  test("the four field entries are the recurring folder's (Workers is Admin's since REQ-178); the sidebar renders Back and the folder rows", () => {
+  test("the four field entries are the field folder's (REQ-361, was recurring; REQ-604: Workers is shared with Roles); the sidebar renders Back and the folder rows", () => {
     const src = read("front-end/islands/DashSidebar.tsx");
     // REQ-176 — the tree itself lives in lib/nav-tree.ts; the island renders it
     const tree = read("front-end/lib/nav-tree.ts");
-    expect(tree).toMatch(/id: "recurring",[\s\S]*?items: \[/);
+    expect(tree).toMatch(/id: "field",[\s\S]*?items: \[/);
     const folder = tree.slice(
-      tree.indexOf('id: "recurring"'),
-      tree.indexOf("]", tree.indexOf('id: "recurring"')),
+      tree.indexOf('id: "field"'),
+      tree.indexOf("]", tree.indexOf('id: "field"')),
     );
     for (
       const id of ["subscriptions", "assignments", "tasks", "batches"]
     ) expect(folder).toContain(`id: "${id}"`);
-    expect(folder).not.toContain('id: "workers"'); // REQ-178 — Workers moved to Admin
+    // REQ-604 (demo m18): Workers is listed in Field again — the shared node, also in Roles
+    expect(folder).toContain("WORKERS");
     expect(src).toContain('data-cy="nav-back"');
     expect(src).toContain("data-cy={`nav-folder-${item.id}`}");
     expect(src).toMatch(/tFor\(lang, "nav\.back"\)/);
-    expect(src).toMatch(/folderPathTo\(NAV, active\)/);
+    // REQ-358 — the active entry's folder is lib/sb-drawer.ts's restingPath (start AND every drawer close)
+    expect(src).toMatch(/useState<string\[\]>\(\(\) => restingPath\(active\)\)/);
+    expect(read("front-end/lib/sb-drawer.ts")).toMatch(/folderPathTo\(NAV, active\)/);
   });
 
   test("both dictionaries carry the folder's name and Back", () => {
     const en = JSON.parse(read("lang/en.json")) as Record<string, string>;
     const es = JSON.parse(read("lang/es.json")) as Record<string, string>;
-    expect(en["nav.recurring"]).toBe("Recurring");
-    expect(es["nav.recurring"]).toBe("Recurrente");
+    // REQ-361 (demo M36): the folder is Field / Campo, no longer Recurring / Recurrente
+    expect(en["nav.field"]).toBe("Field");
+    expect(es["nav.field"]).toBe("Campo");
     expect(en["nav.back"]).toBe("Back");
     expect(es["nav.back"]).toBe("Atrás");
   });

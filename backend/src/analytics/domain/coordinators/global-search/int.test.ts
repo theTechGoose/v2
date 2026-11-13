@@ -1,3 +1,4 @@
+import "#reflect-metadata";
 import { assertEquals } from "#std/assert";
 import { GlobalSearch } from "./mod.ts";
 import { CustomerStore } from "@crm/domain/data/customer-store/mod.ts";
@@ -6,6 +7,8 @@ import { InvoiceStore } from "@paperwork/domain/data/invoice-store/mod.ts";
 import { ChangeOrderStore } from "@paperwork/domain/data/change-order-store/mod.ts";
 import { WorkOrderStore } from "@paperwork/domain/data/work-order-store/mod.ts";
 import { resetKv } from "@core/data/kv/mod.ts";
+import { BusinessIdentityStore } from "@profile/domain/data/business-identity-store/mod.ts";
+import { EnsureSampleQuote } from "@agents/domain/coordinators/ensure-sample-quote/mod.ts";
 
 function fresh() {
   const customers = new CustomerStore();
@@ -125,5 +128,114 @@ Deno.test("global-search integration: matches quote summary + invoice quote id",
   // But searching by the invoice's own id finds it:
   const byInvoiceId = await flow.run("u-1", { q: i.id.slice(0, 8) });
   assertEquals(byInvoiceId.find((r) => r.type === "invoice")?.id, i.id);
+  await resetKv();
+});
+
+/**
+ * REQ-360 — Raphael: "fix every issue the demo found, loop until there are
+ * none." Demo-loop cycle 1, issue m11: global search for "roof" listed the
+ * onboarding sample as "Roof Shingle Replacement #9876481D $8,000.00 Draft"
+ * next to the real Q-001. The sample is made the way onboarding makes it
+ * (EnsureSampleQuote, a roofer's business name) on the real stores.
+ */
+Deno.test("REQ-360 m11: global search never returns the onboarding sample quote", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const { customers, quotes, flow } = fresh();
+  const identity = new BusinessIdentityStore();
+  await identity.upsert("u-1", { businessName: "Austin Roofing Co" });
+  const made = await new EnsureSampleQuote(quotes, identity).run({
+    userId: "u-1",
+    language: "en",
+  });
+  const sample = await quotes.get(made.quoteId);
+  const tom = await customers.create("u-1", { name: "Tom Reyes" });
+  const real = await quotes.create("u-1", {
+    summary: "Roof leak repair",
+    jobName: "Roof Leak Repair",
+    customerId: tom.id,
+    lineItems: [],
+    status: "sent",
+  });
+
+  const roof = await flow.run("u-1", { q: "roof" });
+  assertEquals(roof.map((h) => h.id).includes(sample.id), false);
+  assertEquals(roof.some((h) => h.id === real.id), true);
+  assertEquals(roof.some((h) => h.number.startsWith("#")), false);
+  assertEquals(await flow.run("u-1", { q: sample.jobName ?? "" }), []);
+  assertEquals(
+    await flow.run("u-1", { q: sample.id.slice(0, 8).toUpperCase() }),
+    [],
+  );
+  await resetKv();
+});
+
+Deno.test("REQ-519 (demo cycle 3, M33) global-search integration: accent-blind and word-by-word — 'maria' and 'maria pena' find 'María José Peña'", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const { customers, flow } = fresh();
+  await customers.create("u-1", { name: "María José Peña" });
+  await customers.create("u-1", { name: "Bob Smith" });
+
+  for (const q of ["maria", "pena", "maria pena", "MARÍA"]) {
+    const hits = await flow.run("u-1", { q });
+    assertEquals(hits.map((h) => h.label), ["María José Peña"], q);
+  }
+  assertEquals(await flow.run("u-1", { q: "maria smith" }), []);
+
+  await resetKv();
+});
+
+/**
+ * REQ-713 — Raphael: "fix every issue the demo found, loop until there are
+ * none." Demo-loop cycle 5, issue m27: the Spanish topbar search showed
+ * "INV-002 … Programada 2026-11-29" — the due date baked into `sub` as raw
+ * ISO. A hit now carries its dates as typed fields for the client to spell
+ * in the page language; `sub` holds no ISO date.
+ */
+Deno.test("REQ-713 m27 global-search integration: invoice and work-order dates are typed fields, never ISO text in sub", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const { customers, invoices, flow } = fresh();
+  const workOrders = new WorkOrderStore();
+  const searchFlow = new GlobalSearch(
+    customers,
+    new QuoteStore(),
+    invoices,
+    new ChangeOrderStore(),
+    workOrders,
+  );
+  const ann = await customers.create("u-1", { name: "Ann Lee" });
+  const due = await invoices.create("u-1", {
+    customerId: ann.id,
+    jobName: "Lawn care",
+    dueDate: "2026-11-29T00:00:00.000Z",
+    status: "pending",
+  });
+  const svc = await invoices.create("u-1", {
+    customerId: ann.id,
+    jobName: "Lawn care",
+    dueDate: "2026-12-06",
+    serviceDateFrom: "2026-11-20",
+    serviceDateTo: "2026-11-22",
+    status: "pending",
+  });
+  await workOrders.create("u-1", {
+    customerId: ann.id,
+    description: "Lawn care visit",
+    scheduledFor: "2026-11-21",
+  });
+
+  const hits = await searchFlow.run("u-1", { q: "lawn" });
+  const iso = /\d{4}-\d{2}-\d{2}/;
+  for (const h of hits) assertEquals(iso.test(h.sub ?? ""), false, h.number);
+  const byId = (id: string) => hits.find((h) => h.id === id)!;
+  assertEquals(byId(due.id).dueDate, "2026-11-29");
+  assertEquals(byId(svc.id).serviceFrom, "2026-11-20");
+  assertEquals(byId(svc.id).serviceTo, "2026-11-22");
+  assertEquals(
+    hits.find((h) => h.type === "workOrder")?.scheduledFor,
+    "2026-11-21",
+  );
   await resetKv();
 });

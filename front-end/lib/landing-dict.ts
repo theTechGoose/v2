@@ -16,19 +16,26 @@
  *   {n} — a social-proof counter, localized by `formatSocialProof`; the
  *         element names which one via `data-count="<key>"`.
  *   {p} — the from-price in dollars (LANDING_OFFER.priceFromCents).
- *   {d} — the free-trial length in days (LANDING_OFFER.trialDays).
+ * There is no trial placeholder: billing has no trial (REQ-505).
  */
 
 import { PUBLIC_PLANS } from "../../shared/quote-flow/pricing-plans.ts";
 
 export type LandingLang = "en" | "es";
 
+/** The hero headline's whole sentence (REQ-349 `hero.h1Sr`). The tab title is
+ *  built from it, so the two can never say it two ways (REQ-742, demo p18-6e:
+ *  "Nosotros el papeleo" over a hero reading "Nosotros manejamos el papeleo"). */
+const HERO_SENTENCE: Record<LandingLang, string> = {
+  en: "You do the work. We handle the paperwork.",
+  es: "Tú haces el trabajo. Nosotros manejamos el papeleo.",
+};
+
 export const LANDING_DICT: Record<LandingLang, Record<string, string>> = {
   en: {
     // <head> copy, so the client-side language toggle can retitle the page
     // instead of leaving an English <title> over Spanish copy.
-    "head.title":
-      "DocuMonster — You do the work. We handle the paperwork.",
+    "head.title": `DocuMonster — ${HERO_SENTENCE.en}`,
     "head.metaDescription":
       "Quotes, contracts, and invoices done right — built for contractors. No app to install. Just chat with us.",
     "nav.features": "What We Do",
@@ -38,12 +45,20 @@ export const LANDING_DICT: Record<LandingLang, Record<string, string>> = {
     "nav.pricing": "Pricing",
     "nav.cta": "Get Started",
     "nav.login": "Log in",
+    // REQ-510: the legal pages' header, signed in
+    "nav.backToApp": "Back to app",
+    // REQ-413: aria-labels follow the page language (data-i18n-aria).
+    "aria.language": "Language",
+    "aria.signInSteps": "Sign-in steps",
     "hero.kickerPill": "For pros",
     "hero.kicker": "Built for contractors who work with their hands",
     "hero.h1a": "You do the work.",
     "hero.h1b": "We handle the",
+    // REQ-349: the <h1>'s accessible name — the whole headline, read once,
+    // instead of whichever rotor words happen to be visible.
+    "hero.h1Sr": HERO_SENTENCE.en,
     "hero.lead":
-      "You communicate with us in Spanish. Everything goes out to your clients in perfect English. No apps to learn. Just chat with us.",
+      "Talk to us in English or Spanish. Everything goes out to your clients in their language, ready to sign. No apps to learn — just chat.",
     "hero.cta1": "Get Started →",
     "hero.cta2": "See How It Works",
     "hero.trustStrong": "{n}+ contractors",
@@ -52,8 +67,21 @@ export const LANDING_DICT: Record<LandingLang, Record<string, string>> = {
     "hero.chip1": "Quote sent",
     "hero.chip2": "Contract signed",
     "hero.chip3": "Paid in full",
+    // The hero's phone chat mock (routes/index.tsx `hs-phone`, REQ-345).
+    "hero.mock.me1":
+      "Kitchen remodel for the Hernández family. Cabinets, quartz counters, 3 days labor.",
+    "hero.mock.them1": "Got it. Pulling comps now…",
+    "hero.mock.l1": "Cabinets",
+    "hero.mock.l2": "Counters",
+    "hero.mock.l3": "Demo & labor",
+    "hero.mock.total": "Total",
+    "hero.mock.cta": "Send to client →",
+    "hero.mock.me2": "Send it 👍",
+    "hero.mock.input": "Type a message…",
+    "doc.q.client": "R. Hernández · Apr 26",
     "doc.q.tag": "Quote",
     "doc.q.title": "Kitchen remodel",
+    "doc.q.l0": "Demolition",
     "doc.q.l1": "Cabinets",
     "doc.q.l2": "Counters",
     "doc.q.l3": "Labor (3 days)",
@@ -133,10 +161,12 @@ export const LANDING_DICT: Record<LandingLang, Record<string, string>> = {
       "Your whole back office — quotes, agreements, invoices, follow-ups. Free to start; one flat monthly price for the full platform. No setup fees, cancel anytime.",
     "price.plans.cta": "Get started",
     "price.plans.ctaCustom": "Talk to us",
-    "price.plans.trial": "Try Monster free for {d} days. Cancel anytime.",
+    // REQ-505 (demo cycle 3, m5): what billing does — no trial.
+    "price.plans.terms":
+      "Monster Free costs nothing, no card needed. Paid plans bill monthly — cancel anytime.",
     "price.permo": "/month",
     "price.t1.name": "Monster Free",
-    "price.t1.blurb": "Unlimited invoices. Up to five quotes and contracts a month. Spanish and English output. Free forever.", // REQ-109
+    "price.t1.blurb": "Unlimited invoices. Up to five quotes a month. Spanish and English output. Free forever.", // REQ-109
     "price.t2.name": "Monster",
     "price.t2.badge": "Most popular",
     "price.t2.blurb":
@@ -181,8 +211,7 @@ export const LANDING_DICT: Record<LandingLang, Record<string, string>> = {
     "footer.copy": "© 2026 DocuMonster. All rights reserved.",
   },
   es: {
-    "head.title":
-      "DocuMonster — Tú haces el trabajo. Nosotros el papeleo.",
+    "head.title": `DocuMonster — ${HERO_SENTENCE.es}`,
     "head.metaDescription":
       "Cotizaciones, contratos y facturas bien hechos — creados para contratistas. Sin apps que instalar. Solo chatea con nosotros.",
     "nav.features": "Qué hacemos",
@@ -192,12 +221,18 @@ export const LANDING_DICT: Record<LandingLang, Record<string, string>> = {
     "nav.pricing": "Precios",
     "nav.cta": "Empezar",
     "nav.login": "Entrar",
+    "nav.backToApp": "Volver a la app",
+    "aria.language": "Idioma",
+    "aria.signInSteps": "Pasos para entrar",
     "hero.kickerPill": "Para pros",
     "hero.kicker": "Hecho para contratistas que trabajan con las manos",
     "hero.h1a": "Tú haces el trabajo.",
     "hero.h1b": "Nosotros manejamos",
+    "hero.h1Sr": HERO_SENTENCE.es,
+    // REQ-775 (dv1 d2): the same promise as the English lead — either
+    // language in, each client gets their own — not "inglés perfecto".
     "hero.lead":
-      "Nos escribes en español. Todo sale a tus clientes en inglés perfecto. Sin apps que aprender. Solo chatea con nosotros.",
+      "Háblanos en español o en inglés. Todo les llega a tus clientes en su idioma, listo para firmar. Sin apps que aprender — solo chatea.",
     "hero.cta1": "Empezar →",
     "hero.cta2": "Ver cómo funciona",
     "hero.trustStrong": "+{n} contratistas",
@@ -206,8 +241,21 @@ export const LANDING_DICT: Record<LandingLang, Record<string, string>> = {
     "hero.chip1": "Cotización enviada",
     "hero.chip2": "Contrato firmado",
     "hero.chip3": "Pagado completo",
+    // El mock de chat del teléfono del hero (routes/index.tsx `hs-phone`, REQ-345).
+    "hero.mock.me1":
+      "Remodelación de cocina para la familia Hernández. Gabinetes, cubiertas de cuarzo, 3 días de mano de obra.",
+    "hero.mock.them1": "Listo. Buscando precios de referencia…",
+    "hero.mock.l1": "Gabinetes",
+    "hero.mock.l2": "Cubiertas",
+    "hero.mock.l3": "Demolición y mano de obra",
+    "hero.mock.total": "Total",
+    "hero.mock.cta": "Enviar al cliente →",
+    "hero.mock.me2": "Mándala 👍",
+    "hero.mock.input": "Escribe un mensaje…",
+    "doc.q.client": "R. Hernández · 26 abr",
     "doc.q.tag": "Cotización",
     "doc.q.title": "Remodelación cocina",
+    "doc.q.l0": "Demolición",
     "doc.q.l1": "Gabinetes",
     "doc.q.l2": "Cubiertas",
     "doc.q.l3": "Mano de obra (3 días)",
@@ -233,7 +281,7 @@ export const LANDING_DICT: Record<LandingLang, Record<string, string>> = {
     "docs.eyebrow": "Un mensaje. Tres documentos.",
     "docs.h2html": "Cotización, contrato, factura — <em>listo</em>.",
     "docs.lead":
-      "Mandanos un mensaje. Te regresamos un documento real con números reales — no un garabato en una servilleta.",
+      "Mándanos un mensaje. Te regresamos un documento real con números reales — no un garabato en una servilleta.",
     "docs.tab.quote": "Cotización",
     "docs.tab.contract": "Contrato",
     "docs.tab.invoice": "Factura",
@@ -287,12 +335,12 @@ export const LANDING_DICT: Record<LandingLang, Record<string, string>> = {
       "Toda tu oficina — cotizaciones, acuerdos, facturas, seguimientos. Empieza gratis; la plataforma completa por un precio fijo al mes. Sin cuotas iniciales, cancela cuando quieras.",
     "price.plans.cta": "Empezar",
     "price.plans.ctaCustom": "Hablemos",
-    "price.plans.trial":
-      "Prueba Monster gratis por {d} días. Cancela cuando quieras.",
+    "price.plans.terms":
+      "Monster Free no cuesta nada, sin tarjeta. Los planes de pago se cobran cada mes — cancela cuando quieras.",
     "price.permo": "/mes",
     "price.t1.name": "Monster Free",
     "price.t1.blurb":
-      "Facturas ilimitadas. Hasta cinco cotizaciones y contratos al mes. Documentos en español y en inglés. Gratis para siempre.", // REQ-109
+      "Facturas ilimitadas. Hasta cinco cotizaciones al mes. Documentos en español y en inglés. Gratis para siempre.", // REQ-109
     "price.t2.name": "Monster",
     "price.t2.badge": "El más popular",
     "price.t2.blurb":

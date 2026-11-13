@@ -194,9 +194,9 @@ describe("REQ-080 a Meta Pixel on the ad funnel, behind META_PIXEL_ID", () => {
     expect(verify).toMatch(/searchParams\.get\("px"\) === "lead"/);
     expect(verify).toMatch(/<MetaPixelEvent event=\{leadEvent\(phone\)\} \/>/);
     const welcome = read("front-end/routes/welcome.tsx");
-    expect(welcome).toMatch(
-      /<MetaPixelEvent event=\{registrationEvent\(user\.id\)\} \/>/,
-    );
+    // REQ-229: only the account's own session (jest/unit/meta-pixel-registration.test.ts)
+    expect(welcome).toMatch(/registrationForRequest\(ctx\.req\)/);
+    expect(welcome).toMatch(/<MetaPixelEvent event=\{registered\} \/>/);
     expect(welcome).toMatch(
       /subscribeEventFrom\(ctx\.url\.searchParams\.get\("px"\)\)/,
     );

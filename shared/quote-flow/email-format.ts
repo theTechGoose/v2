@@ -16,32 +16,60 @@
  *    send-paperwork-email/mod.ts:513-538.
  */
 
-/** Spanish stopwords that stay lowercase mid-title (never as the first word). */
-const ES_TITLE_STOPWORDS = new Set(["de", "y", "en", "para", "la", "el"]);
+import { jobNameCase, nameKey } from "./job-name.ts";
 
 function localeOf(lang: string): string {
   return lang === "es" ? "es" : "en-US";
 }
 
 /**
- * Unicode-aware title-casing for the email hero. Only the FIRST letter of
- * each word is uppercased (the broken `\b\w` approach fires again after
- * accented characters: "InstalacióN De BañO"). For "es", common stopwords
- * stay lowercase when they are not the first word.
+ * Unicode-aware casing for the email hero. Only the FIRST letter of a word
+ * is ever uppercased (the broken `\b\w` approach fires again after accented
+ * characters: "InstalacióN De BañO").
+ *
+ * REQ-720 (demo-loop cycle 5, p18-2a): Spanish is sentence case — "Corte de
+ * césped y poda de setos", never "Corte de Césped y Poda de Setos" — the
+ * same jobNameCase (REQ-276) every other Spanish job-name surface uses.
+ * English keeps Title Case for the hero's visual weight.
  */
-export function titleCaseJobName(name: string, lang: string): string {
+export function titleCaseJobName(
+  name: string,
+  lang: string,
+  opts?: { keep?: Iterable<string | undefined> },
+): string {
+  if (lang === "es") return spanishHeroCase(name, opts?.keep);
   const locale = localeOf(lang);
   return name
     .trim()
     .split(/\s+/)
-    .map((word, i) => {
-      const lower = word.toLocaleLowerCase(locale);
-      if (lang === "es" && i > 0 && ES_TITLE_STOPWORDS.has(lower)) {
-        return lower;
-      }
-      return word.charAt(0).toLocaleUpperCase(locale) + word.slice(1);
-    })
+    .map((word) => word.charAt(0).toLocaleUpperCase(locale) + word.slice(1))
     .join(" ");
+}
+
+/**
+ * REQ-756 (demo-loop cycle 5v2, p18-2a): REQ-720's sentence case is for the
+ * JOB words only. A quote summary names the customer after a spaced dash
+ * ("Corte de césped y poda de setos — Ana Pérez") — that tail is kept as
+ * written, and a word of a `keep` name (the customer's) keeps its capital
+ * inside the job words too ("… para Ana Pérez"). Never "— ana pérez".
+ */
+function spanishHeroCase(
+  name: string,
+  keep?: Iterable<string | undefined>,
+): string {
+  const words = name.trim().split(/\s+/).filter((w) => w.length > 0);
+  const dash = words.findIndex((w) => /^[—–-]$/.test(w));
+  const head = dash === -1 ? words : words.slice(0, dash);
+  const tail = dash === -1 ? [] : words.slice(dash);
+  const kept = new Set<string>();
+  for (const n of keep ?? []) {
+    for (const w of (n ?? "").split(/\s+/)) {
+      if (nameKey(w)) kept.add(nameKey(w));
+    }
+  }
+  const cased = jobNameCase(head.join(" "), "es").split(" ");
+  const job = head.map((w, i) => kept.has(nameKey(w)) ? w : cased[i]);
+  return [...job, ...tail].join(" ");
 }
 
 /**

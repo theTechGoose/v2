@@ -9,12 +9,17 @@
  * glides onto the frame; the user scrolls, opens the drawer, changes page and pans the map — the
  * frame follows each; End from the presenter clears both and hands the presenter their own
  * account back.
+ *
+ * REQ-242 — the stage's frame is a live mirror of the user's document (no app runs in it): it is
+ * read here through the stage page (`contentDocument`), its page is the frame's `data-path`, and
+ * before the user's app reports the stage says it is connecting instead of showing a page.
  */
 import { story, type StoryTools } from "#shots";
+import { pillUp } from "../_shared/demo-pill.ts";
 
 const JSON_HEADERS = { "content-type": "application/json" };
 const digits = () => String(Math.floor(Math.random() * 9_000_000) + 1_000_000);
-const FRAME = "pm-demo-replica";
+const FRAME = "[data-cy='demo-frame']";
 
 async function verify(http: StoryTools["http"], phone: string) {
   const r = await http("/api/auth/verify", {
@@ -74,6 +79,29 @@ const rectOf = (el: Element) => {
   const r = el.getBoundingClientRect();
   return { x: r.left, y: r.top, width: r.width, height: r.height };
 };
+// deno-lint-ignore no-explicit-any
+type Pg = any;
+/** REQ-242 — run `fn(doc, arg)` against the stage's mirror document, from the stage page */
+const inMirror = <A, R>(
+  page: Pg,
+  fn: (doc: Document, arg: A) => R,
+  arg: A,
+): Promise<R> =>
+  page.evaluate(
+    `(() => { const f = document.querySelector(${
+      JSON.stringify(FRAME)
+    }); const d = f && f.contentDocument; if (!d) throw new Error("no mirror"); return (${fn.toString()})(d, ${
+      JSON.stringify(arg)
+    }); })()`,
+  );
+const mirrorPath = (page: Pg) => page.locator(FRAME).getAttribute("data-path");
+const mirrorCount = (page: Pg, sel: string) =>
+  inMirror(page, (d, s: string) => d.querySelectorAll(s).length, sel);
+const mirrorBox = (page: Pg, sel: string) =>
+  inMirror(page, (d, s: string) => {
+    const r = d.querySelector(s)?.getBoundingClientRect();
+    return r ? { x: r.left, y: r.top, width: r.width, height: r.height } : null;
+  }, sel) as Promise<Box | null>;
 
 Deno.test("REQ-153 + REQ-179 + REQ-180 + REQ-181 + REQ-187 + REQ-188: the admin clicks Demo on /admin — Opening… at once — and lands on the stage at once, waiting; End clears the user's pill; again, the user's app joins on its own and both connect; the frame is the user's exact screen; the presenter's pointer and click wave land on the user's screen; the user's move glides onto the frame; scroll, drawer, page and map follow; End clears both", (t) =>
   story(t, async ({ page, expect, http, baseUrl }) => {
@@ -155,14 +183,15 @@ Deno.test("REQ-153 + REQ-179 + REQ-180 + REQ-181 + REQ-187 + REQ-188: the admin 
         timeout: 20_000,
       });
       await page.locator("[data-cy='demo-pill']").waitFor({ timeout: 15_000 });
-      await expect.see("Waiting for Ana Torres to accept");
-      // REQ-153 AMENDMENT — same screen at once: the frame already shows the customer's page
+      // REQ-232 (demo-lifecycle-p1) — it waits for the customer's APP; nobody is asked to accept
+      await expect.see("Waiting for Ana Torres's app");
+      // REQ-242 — no invented page: the stage says it is connecting until the customer's app
+      // reports, then mirrors the page the customer is really on
       await until(
-        "the frame shows the customer's last reported page",
-        () => {
-          const f = page.frame({ name: FRAME });
-          return !!f && new URL(f.url()).pathname === customerPath;
-        },
+        "the stage is connecting, or already mirrors the customer's page",
+        async () =>
+          (await page.locator("[data-cy='demo-connecting']").count()) === 1 ||
+          (await mirrorPath(page)) === customerPath,
         15_000,
       );
 
@@ -171,7 +200,9 @@ Deno.test("REQ-153 + REQ-179 + REQ-180 + REQ-181 + REQ-187 + REQ-188: the admin 
       await userPage.locator("[data-cy='demo-pill']").waitFor({
         timeout: 15_000,
       });
+      // REQ-235 — End asks first: End, then Yes
       await page.locator("[data-cy='demo-end']").click();
+      await page.locator("[data-cy='demo-end-confirm']").click();
       await userPage.locator("[data-cy='demo-pill']").waitFor({
         state: "hidden",
         timeout: 15_000,
@@ -190,28 +221,45 @@ Deno.test("REQ-153 + REQ-179 + REQ-180 + REQ-181 + REQ-187 + REQ-188: the admin 
         timeout: 20_000,
       });
       await userPage.reload();
-      await userPage.locator("[data-cy='demo-status']").waitFor({
-        timeout: 15_000,
-      });
+      // REQ-545 — the customer's pill whole (it folds to a tab over page content)
+      await pillUp(userPage);
       expect.eq(
         await userPage.locator("[data-cy='demo-accept']").count(),
         0,
         "the customer is never asked to accept",
       );
       expect(
-        (await userPage.locator("[data-cy='demo-pill']").innerText()).includes(
-          "Hans is guiding you",
-        ),
+        (await userPage.locator("[data-cy='demo-pill']").textContent() ?? "")
+          .includes(
+            "Hans is guiding you",
+          ),
         "the customer's pill names the presenter",
       );
       await page.locator("[data-cy='demo-pill']").waitFor({ timeout: 15_000 });
       await expect.see("Guiding Ana Torres");
+      // REQ-232 (demo-lifecycle-p1) — plain words: the staff's pill says Live, the customer's Connected
       await page.locator("[data-cy='demo-status']").filter({
-        hasText: /direct|relay/,
+        hasText: /^\s*Live\s*$/,
       }).waitFor({ timeout: 20_000 });
       await userPage.locator("[data-cy='demo-status']").filter({
-        hasText: /direct|relay/,
+        hasText: /^\s*Connected\s*$/,
       }).waitFor({ timeout: 20_000 });
+      // REQ-373 (demo-loop cycle 2, m2 + p13-h) — one presenter: no chip repeating the
+      // sentence's name; the details button is labelled by the status, never the sentence
+      expect.eq(
+        await userPage.locator(
+          "[data-cy='demo-pill'] [data-cy='demo-presenter']",
+        )
+          .count(),
+        0,
+        "one presenter: no chip next to 'Hans is guiding you'",
+      );
+      const moreLabel = await userPage.locator("[data-cy='demo-more']")
+        .getAttribute("aria-label") ?? "";
+      expect(
+        /^Connected(, (show|hide) details)?$/.test(moreLabel),
+        `the details button says the status only (${moreLabel})`,
+      );
 
       // REQ-181 — the staff page has the impersonation banner; the stage starts below it
       const room = await page.evaluate(() => {
@@ -240,26 +288,24 @@ Deno.test("REQ-153 + REQ-179 + REQ-180 + REQ-181 + REQ-187 + REQ-188: the admin 
           (await frameEl.getAttribute("height")) === "800",
         15_000,
       );
-      const frame = () => {
-        const f = page.frame({ name: FRAME });
-        if (!f) throw new Error("no replica frame on the stage");
-        return f;
-      };
       await until(
         "the frame is on the user's page",
-        () => new URL(frame().url()).pathname === customerPath,
+        async () => (await mirrorPath(page)) === customerPath,
         15_000,
       );
       const link = "[data-legal-link='privacy']";
-      await frame().locator(link).waitFor({ timeout: 15_000 });
-      const inner = await frame().evaluate(() => ({
-        w: innerWidth,
-        h: innerHeight,
-        banner: document.querySelectorAll("[data-demo-skip]").length,
-        pill: document.querySelectorAll("[data-cy='demo-pill']").length,
-        overlay: document.querySelectorAll("[data-demo-overlay]").length,
-        sb: document.querySelector(".sb")?.getBoundingClientRect().width,
-      }));
+      await until(
+        "the mirror has the privacy link",
+        async () => (await mirrorCount(page, link)) === 1,
+      );
+      const inner = await inMirror(page, (d) => ({
+        w: d.defaultView!.innerWidth,
+        h: d.defaultView!.innerHeight,
+        banner: d.querySelectorAll("[data-demo-skip]").length,
+        pill: d.querySelectorAll("[data-cy='demo-pill']").length,
+        overlay: d.querySelectorAll("[data-demo-overlay]").length,
+        sb: d.querySelector(".sb")?.getBoundingClientRect().width,
+      }), null);
       expect.eq(
         inner.w,
         420,
@@ -288,8 +334,9 @@ Deno.test("REQ-153 + REQ-179 + REQ-180 + REQ-181 + REQ-187 + REQ-188: the admin 
       // the user scrolls the privacy link into view; the frame scrolls the same element the same
       // amount, so the link sits at the same place in both. The page's scroller is whatever
       // scrolls the link (an inner panel, or the window).
-      const scrollOf = (el: Element) => {
-        let n: HTMLElement | null = el.parentElement;
+      const scrollOf = (d: Document, sel: string) => {
+        const el = d.querySelector(sel);
+        let n: HTMLElement | null = el ? el.parentElement : null;
         while (n) {
           const oy = getComputedStyle(n).overflowY;
           if (
@@ -298,21 +345,23 @@ Deno.test("REQ-153 + REQ-179 + REQ-180 + REQ-181 + REQ-187 + REQ-188: the admin 
           ) return n.scrollTop;
           n = n.parentElement;
         }
-        return scrollY;
+        return d.scrollingElement ? d.scrollingElement.scrollTop : 0;
       };
       await userPage.locator(link).scrollIntoViewIfNeeded();
       const ub = await userPage.locator(link).evaluate(rectOf) as Box;
       await until(
         "the frame's privacy link sits where the user's does",
         async () => {
-          const fb = await frame().locator(link).evaluate(rectOf) as Box;
-          return Math.abs(fb.x - ub.x) <= 1 && Math.abs(fb.y - ub.y) <= 1 &&
-            Math.abs(fb.width - ub.width) <= 1;
+          const fb = await mirrorBox(page, link);
+          return !!fb && Math.abs(fb.x - ub.x) <= 1 &&
+            Math.abs(fb.y - ub.y) <= 1 && Math.abs(fb.width - ub.width) <= 1;
         },
         10_000,
       );
-      const fscroll = await frame().locator(link).evaluate(scrollOf);
-      const uscroll = await userPage.locator(link).evaluate(scrollOf);
+      const fscroll = await inMirror(page, scrollOf, link);
+      const uscroll = await userPage.evaluate(
+        `(${scrollOf.toString()})(document, ${JSON.stringify(link)})`,
+      ) as number;
       expect(
         Math.abs(fscroll - uscroll) <= 1,
         `REQ-187: the frame's scroller sits like the user's (${fscroll} vs ${uscroll})`,
@@ -341,7 +390,8 @@ Deno.test("REQ-153 + REQ-179 + REQ-180 + REQ-181 + REQ-187 + REQ-188: the admin 
 
       // 4. REQ-188 — the presenter rests over the frame's privacy link: the user's pointer sits on
       //    the user's privacy link; a click there is a wave on the user's screen, never an action
-      const flink = await frame().locator(link).evaluate(rectOf) as Box;
+      const flink = await mirrorBox(page, link);
+      if (!flink) throw new Error("no privacy link in the mirror");
       const target = project({
         x: flink.x + flink.width / 2,
         y: flink.y + flink.height / 2,
@@ -363,13 +413,26 @@ Deno.test("REQ-153 + REQ-179 + REQ-180 + REQ-181 + REQ-187 + REQ-188: the admin 
       await userPage.locator("[data-cy='demo-wave']").waitFor({
         timeout: 10_000,
       });
+      // REQ-431 (demo m28, cycle 3) — a glance two seconds later still sees the click: the ring
+      // repeats and the last click leaves a dot that fades over about 4 s
+      await new Promise((r) => setTimeout(r, 2_000));
+      expect(
+        (await userPage.locator("[data-cy='demo-wave']").count()) >= 1,
+        "REQ-431: the click ring is still there 2 s after the click",
+      );
+      const dotOpacity = await userPage.locator("[data-cy='demo-click-dot']")
+        .evaluate((el) => Number(getComputedStyle(el).opacity));
+      expect(
+        dotOpacity > 0.3,
+        `REQ-431: the last-click dot is still plain 2 s after the click (opacity ${dotOpacity})`,
+      );
       expect.eq(
         new URL(page.url()).pathname,
         "/demo/stage",
         "the presenter's click was a wave, not an action (the stage stayed)",
       );
       expect.eq(
-        new URL(frame().url()).pathname,
+        await mirrorPath(page),
         customerPath,
         "… and the frame did not navigate",
       );
@@ -455,7 +518,7 @@ Deno.test("REQ-153 + REQ-179 + REQ-180 + REQ-181 + REQ-187 + REQ-188: the admin 
       await userPage.goto(`${baseUrl}/customers`);
       await until(
         "the frame follows to /customers",
-        () => new URL(frame().url()).pathname === "/customers",
+        async () => (await mirrorPath(page)) === "/customers",
         20_000,
       );
       expect.eq(
@@ -465,14 +528,17 @@ Deno.test("REQ-153 + REQ-179 + REQ-180 + REQ-181 + REQ-187 + REQ-188: the admin 
       );
       // the drawer (a phone-wide shell page): opened and closed on the user's side, mirrored
       await userPage.locator(".sb").waitFor({ timeout: 15_000 });
-      await frame().locator(".sb").waitFor({ timeout: 15_000 });
+      await until(
+        "the mirror has the sidebar",
+        async () => (await mirrorCount(page, ".sb")) === 1,
+      );
       await userPage.evaluate(() =>
         globalThis.dispatchEvent(new CustomEvent("pm:sb-toggle"))
       );
       await userPage.locator(".sb--open").waitFor({ timeout: 5_000 });
       await until(
         "the frame's drawer opens",
-        async () => (await frame().locator(".sb--open").count()) === 1,
+        async () => (await mirrorCount(page, ".sb--open")) === 1,
       );
       // REQ-187 AMENDMENT — a folder opened in the drawer: the frame's sidebar opens the same one
       await userPage.locator(".sb--open .nav-item:has(.nav-item__chev)").first()
@@ -480,33 +546,35 @@ Deno.test("REQ-153 + REQ-179 + REQ-180 + REQ-181 + REQ-187 + REQ-188: the admin 
       await userPage.locator(".sb .nav-item--back").waitFor({ timeout: 5_000 });
       await until(
         "the frame's sidebar opens the folder (Back row)",
-        async () =>
-          (await frame().locator(".sb .nav-item--back").count()) === 1,
+        async () => (await mirrorCount(page, ".sb .nav-item--back")) === 1,
       );
       await userPage.locator(".sb .nav-item--back").click();
       await until(
         "the frame's sidebar is back at the top level",
-        async () =>
-          (await frame().locator(".sb .nav-item--back").count()) === 0,
+        async () => (await mirrorCount(page, ".sb .nav-item--back")) === 0,
       );
       await userPage.evaluate(() =>
         globalThis.dispatchEvent(new CustomEvent("pm:sb-toggle"))
       );
       await until(
         "the frame's drawer closes",
-        async () => (await frame().locator(".sb--open").count()) === 0,
+        async () => (await mirrorCount(page, ".sb--open")) === 0,
       );
 
       // the map: the user pans; the frame's map shows the same ground at its centre
       await userPage.goto(`${baseUrl}/field/assignments`);
       await until(
         "the frame follows to /field/assignments",
-        () => new URL(frame().url()).pathname === "/field/assignments",
+        async () => (await mirrorPath(page)) === "/field/assignments",
         20_000,
       );
       const tile = "img.leaflet-tile-loaded";
       await userPage.locator(tile).first().waitFor({ timeout: 30_000 });
-      await frame().locator(tile).first().waitFor({ timeout: 30_000 });
+      await until(
+        "the mirror has the map's tiles",
+        async () => (await mirrorCount(page, tile)) > 0,
+        30_000,
+      );
       await new Promise((r) => setTimeout(r, 1000));
       const mapSel = ".leaflet-container";
       await userPage.locator(mapSel).scrollIntoViewIfNeeded();
@@ -523,40 +591,37 @@ Deno.test("REQ-153 + REQ-179 + REQ-180 + REQ-181 + REQ-187 + REQ-188: the admin 
       await userPage.mouse.up();
       await new Promise((r) => setTimeout(r, 800));
       // the ground under a client point: the tile under it (z/x/y from its URL) and the offset inside
-      const groundIn = (
-        target: typeof page | ReturnType<typeof frame>,
-        x: number,
-        y: number,
-      ) =>
-        target.evaluate(([x, y]) => {
-          for (const img of document.querySelectorAll("img.leaflet-tile")) {
-            const b = img.getBoundingClientRect();
-            if (x < b.left || x >= b.right || y < b.top || y >= b.bottom) {
-              continue;
-            }
-            const m = (img as HTMLImageElement).src.match(
-              /\/(\d+)\/(\d+)\/(\d+)\.png/,
-            );
-            if (!m) continue;
-            const [, z, tx, ty] = m.map(Number);
-            return {
-              z,
-              wx: tx * 256 + (x - b.left) * 256 / b.width,
-              wy: ty * 256 + (y - b.top) * 256 / b.height,
-            };
+      const ground = (d: Document, [x, y]: [number, number]) => {
+        for (const img of d.querySelectorAll("img.leaflet-tile")) {
+          const b = img.getBoundingClientRect();
+          if (x < b.left || x >= b.right || y < b.top || y >= b.bottom) {
+            continue;
           }
-          return null;
-        }, [x, y] as [number, number]);
-      const truth = await groundIn(userPage, cx, cy);
+          const m = (img as HTMLImageElement).src.match(
+            /\/(\d+)\/(\d+)\/(\d+)\.png/,
+          );
+          if (!m) continue;
+          const [, z, tx, ty] = m.map(Number);
+          return {
+            z,
+            wx: tx * 256 + (x - b.left) * 256 / b.width,
+            wy: ty * 256 + (y - b.top) * 256 / b.height,
+          };
+        }
+        return null;
+      };
+      const truth = await userPage.evaluate(
+        `(${ground.toString()})(document, [${cx}, ${cy}])`,
+      ) as { z: number; wx: number; wy: number } | null;
       await until(
         "the frame's map shows the user's ground at the centre",
         async () => {
-          const fm = await frame().locator(mapSel).evaluate(rectOf) as Box;
-          const got = await groundIn(
-            frame(),
+          const fm = await mirrorBox(page, mapSel);
+          if (!fm) return false;
+          const got = await inMirror(page, ground, [
             fm.x + fm.width / 2,
             fm.y + fm.height / 2,
-          );
+          ] as [number, number]);
           return !!truth && !!got && got.z === truth.z &&
             Math.hypot(got.wx - truth.wx, got.wy - truth.wy) <= 3;
         },
@@ -566,12 +631,12 @@ Deno.test("REQ-153 + REQ-179 + REQ-180 + REQ-181 + REQ-187 + REQ-188: the admin 
       // a scroll: the page's main scroller (the window, or the first panel that overflows — the
       // same element on both, the DOMs being identical) is scrolled on the user's side; the frame
       // scrolls the same element to the same place
-      const mainScroller = () => {
-        const se = document.scrollingElement;
+      const mainScroller = (d: Document) => {
+        const se = d.scrollingElement;
         if (se && se.scrollHeight > se.clientHeight + 1) {
           return se as HTMLElement;
         }
-        for (const el of Array.from(document.querySelectorAll("*"))) {
+        for (const el of Array.from(d.querySelectorAll("*"))) {
           const oy = getComputedStyle(el).overflowY;
           if (
             (oy === "auto" || oy === "scroll") &&
@@ -581,7 +646,7 @@ Deno.test("REQ-153 + REQ-179 + REQ-180 + REQ-181 + REQ-187 + REQ-188: the admin 
         return null;
       };
       const after = await userPage.evaluate(
-        `(() => { const el = (${mainScroller})(); if (!el) return null; el.scrollTop = 150; return el.scrollTop; })()`,
+        `(() => { const el = (${mainScroller})(document); if (!el) return null; el.scrollTop = 150; return el.scrollTop; })()`,
       ) as number | null;
       expect(
         after !== null && after >= 100,
@@ -591,14 +656,18 @@ Deno.test("REQ-153 + REQ-179 + REQ-180 + REQ-181 + REQ-187 + REQ-188: the admin 
         "the frame's main scroller follows to the same place",
         async () =>
           Math.abs(
-            ((await frame().evaluate(
-              `(${mainScroller})()?.scrollTop ?? -1`,
+            ((await page.evaluate(
+              // the same scroller-finding rule, in the mirror's document
+              `(() => { const f = document.querySelector(${
+                JSON.stringify(FRAME)
+              }); const el = (${mainScroller})(f.contentDocument); return el ? el.scrollTop : -1; })()`,
             )) as number) - (after ?? 150),
           ) <= 1,
       );
 
-      // 7. End from the presenter clears both
+      // 7. End from the presenter clears both (REQ-235: End, then Yes)
       await page.locator("[data-cy='demo-end']").click();
+      await page.locator("[data-cy='demo-end-confirm']").click();
       await page.locator("[data-cy='demo-pill']").waitFor({
         state: "hidden",
         timeout: 15_000,

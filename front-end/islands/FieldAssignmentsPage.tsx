@@ -14,19 +14,16 @@ import { useEffect, useRef, useState } from "preact/hooks";
 import {
   fieldClient,
   type FieldWorker,
+  type MapCenter,
   type RegionView,
   type SubscriptionView,
 } from "../clients/field.ts";
 import FieldHead from "../components/FieldHead.tsx";
+import { assignmentsMapView, US_MAP_VIEW } from "../lib/field.ts";
 import { ApiError } from "../lib/api.ts";
 import { I, ICN } from "../lib/dash-icons.tsx";
 import { langSignal, t } from "../lib/i18n.ts";
-import {
-  isReplicaFrame,
-  onReplicaView,
-  onViewRequest,
-  reportView,
-} from "../lib/demo-mode/replica.ts";
+import type { FieldAssignmentsSeed } from "../lib/field-ssr.ts";
 
 // ---- Leaflet, typed just as far as this page uses it ----
 type LatLng = [number, number];
@@ -40,14 +37,9 @@ interface LLayerGroup extends LLayer {
 }
 interface LMap {
   setView(center: LatLng, zoom: number, opts?: { animate?: boolean }): LMap;
-  getCenter(): { lat: number; lng: number };
-  getZoom(): number;
-  on(event: string, fn: () => void): LMap;
   fitBounds(bounds: LatLng[], opts?: { padding?: [number, number] }): LMap;
   remove(): void;
   invalidateSize(): void;
-  containerPointToLatLng(p: [number, number]): { lat: number; lng: number };
-  latLngToContainerPoint(ll: LatLng): { x: number; y: number };
 }
 interface Leaflet {
   map(el: HTMLElement, opts?: { scrollWheelZoom?: boolean }): LMap;
@@ -133,11 +125,14 @@ interface Drag {
   from: string;
 }
 
-export default function FieldAssignmentsPage() {
+/** REQ-730 (demo c2-p13-p) — `seed`: the zones + crew read by the route on the SSR side; the first HTML carries them, not "Loading…" */
+export default function FieldAssignmentsPage(
+  { seed }: { seed?: FieldAssignmentsSeed | null } = {},
+) {
   const _lang = langSignal.value;
-  const [regions, setRegions] = useState<RegionView[]>([]);
-  const [workers, setWorkers] = useState<FieldWorker[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [regions, setRegions] = useState<RegionView[]>(seed?.regions ?? []);
+  const [workers, setWorkers] = useState<FieldWorker[]>(seed?.workers ?? []);
+  const [loading, setLoading] = useState(!seed);
   const [error, setError] = useState<string | null>(null);
   const [flash, setFlash] = useState("");
   const [filter, setFilter] = useState("");
@@ -145,15 +140,13 @@ export default function FieldAssignmentsPage() {
   const [dragging, setDragging] = useState<Drag | null>(null);
   const [over, setOver] = useState<string | null>(null);
   const [mapFailed, setMapFailed] = useState(false);
+  /** REQ-288 — the business's own place, for a map with no subscriptions on it */
+  const [center, setCenter] = useState<MapCenter | null>(null);
 
   const mapEl = useRef<HTMLDivElement>(null);
   const mapRef = useRef<LMap | null>(null);
   const layerRef = useRef<LLayerGroup | null>(null);
   const leafletRef = useRef<Leaflet | null>(null);
-  /** REQ-187 — demo mode: the customer's map reports its centre/zoom; the replica frame's map takes
-   *  them (and keeps them over its own fit). `mirrorRef` is the subscription, disposed with the map. */
-  const mirrorRef = useRef<(() => void) | null>(null);
-  const lastMapRef = useRef<{ c: [number, number]; z: number } | null>(null);
   const [mapReady, setMapReady] = useState(false);
 
   async function load() {
@@ -173,7 +166,10 @@ export default function FieldAssignmentsPage() {
   }
 
   useEffect(() => {
-    load();
+    if (!seed) load(); // REQ-730 — seeded on the server: no client fetch on mount
+    fieldClient.mapCenter().then(setCenter).catch(
+      () => {/* the US view stands */},
+    );
   }, []);
 
   // Leaflet: create the map once the CDN script is in; the zone list never waits for it.
@@ -186,32 +182,17 @@ export default function FieldAssignmentsPage() {
         return;
       }
       leafletRef.current = L;
-      const map = L.map(mapEl.current, { scrollWheelZoom: false }).setView([
-        33.69,
-        -78.93,
-      ], 11);
+      // REQ-288 — the whole US until the subscriptions or the business's place are known
+      const map = L.map(mapEl.current, { scrollWheelZoom: false }).setView(
+        [US_MAP_VIEW.lat, US_MAP_VIEW.lng],
+        US_MAP_VIEW.zoom,
+      );
       L.tileLayer(OSM_TILES, { attribution: OSM_ATTR, maxZoom: 18 }).addTo(map);
       mapRef.current = map;
-      if (isReplicaFrame()) {
-        mirrorRef.current = onReplicaView((v) => {
-          if (!v.map) return;
-          lastMapRef.current = v.map;
-          map.setView(v.map.c, v.map.z, { animate: false });
-        });
-      } else {
-        const report = () => {
-          const c = map.getCenter();
-          reportView({ map: { c: [c.lat, c.lng], z: map.getZoom() } });
-        };
-        map.on("moveend", report);
-        mirrorRef.current = onViewRequest(report);
-      }
       setMapReady(true);
     });
     return () => {
       cancelled = true;
-      mirrorRef.current?.();
-      mirrorRef.current = null;
       layerRef.current?.remove();
       layerRef.current = null;
       mapRef.current?.remove();
@@ -279,11 +260,10 @@ export default function FieldAssignmentsPage() {
       }
     }
     map.invalidateSize();
-    if (pts.length) map.fitBounds(pts, { padding: [30, 30] });
-    // REQ-187 — in the replica frame the customer's view rules over this fit
-    const mirrored = lastMapRef.current;
-    if (mirrored) map.setView(mirrored.c, mirrored.z, { animate: false });
-  }, [regions, mapReady]);
+    const view = assignmentsMapView(pts, center);
+    if ("fit" in view) map.fitBounds(view.fit, { padding: [30, 30] });
+    else map.setView(view.center, view.zoom, { animate: false });
+  }, [regions, mapReady, center]);
 
   async function run(fn: () => Promise<unknown>) {
     setBusy(true);

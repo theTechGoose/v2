@@ -11,6 +11,7 @@ import { RenderQuotePdf } from "@paperwork/domain/coordinators/render-quote-pdf/
 import { RenderReceiptPdf } from "@paperwork/domain/coordinators/render-receipt-pdf/mod.ts";
 import { InvoiceStore } from "@paperwork/domain/data/invoice-store/mod.ts";
 import { QuoteStore } from "@paperwork/domain/data/quote-store/mod.ts";
+import { ChangeOrderStore } from "@paperwork/domain/data/change-order-store/mod.ts";
 import { CustomerStore } from "@crm/domain/data/customer-store/mod.ts";
 import { UserStore } from "@users/domain/data/user-store/mod.ts";
 import { BusinessIdentityStore } from "@profile/domain/data/business-identity-store/mod.ts";
@@ -83,6 +84,7 @@ async function renderAll(s: Awaited<ReturnType<typeof seed>>) {
     s.customers,
     new UserStore(),
     s.identities,
+    new ChangeOrderStore(), // REQ-679 (demo-fixes): the agreement's change orders
     logos,
   ).run(s.inv.id);
   const logo = await logos.run("u-1");

@@ -3,27 +3,32 @@
  * data comes from /api/field/* (clients/field.ts). The sidebar's active tab is "batches".
  */
 import { asset, Head } from "fresh/runtime";
-import {
-  greetingFirstName,
-  personLanguage,
-} from "../../../shared/person-name/mod.ts"; // REQ-624
+import { greetingFirstName } from "../../../shared/person-name/mod.ts"; // REQ-624
 import { define } from "../../utils.ts";
+import { resolveSsrLang } from "../../lib/ssr-lang.ts";
+import { getSessionId } from "../../lib/auth.ts";
+import { loadFieldBatchesSeed } from "../../lib/field-ssr.ts";
+import DocTitle from "../../components/DocTitle.tsx";
 import SiteFooter from "../../components/SiteFooter.tsx";
 import { type Lang, tFor } from "../../lib/i18n.ts";
 import DashSidebar from "../../islands/DashSidebar.tsx";
 import DashTopbar from "../../islands/DashTopbar.tsx";
 import FieldBatchesPage from "../../islands/FieldBatchesPage.tsx";
 
-export default define.page(function FieldFieldBatchesPageRoute(ctx) {
+export default define.page(async function FieldFieldBatchesPageRoute(ctx) {
   const user = ctx.state.user;
-  const lang: Lang = personLanguage(user) === "es" ? "es" : "en";
-  const greetingName = greetingFirstName(user) ||
-    tFor(lang, "common.thereFallback");
+  // REQ-730 (demo-loop c5, c2-p13-p): read the lists here so the first HTML
+  // carries the rows, not a "Loading…" line; null → the island fetches on hydration.
+  const seed = await loadFieldBatchesSeed(getSessionId(ctx.req));
+  // REQ-709 (demo-loop c5, m4): the islands' language (?lang= > account >
+  // pm_lang), so the tab title and footer match the page they sit on.
+  const lang: Lang = resolveSsrLang(ctx) ?? "es";
+  const greetingName = greetingFirstName(user);
 
   return (
     <>
       <Head>
-        <title>{tFor(lang, "field.lt.docTitle")}</title>
+        <DocTitle lang={lang} title={(l) => tFor(l, "field.lt.docTitle")} />
         <link
           key="css-dashboard"
           rel="stylesheet"
@@ -34,10 +39,13 @@ export default define.page(function FieldFieldBatchesPageRoute(ctx) {
       <div class="app">
         <DashSidebar active="batches" />
         <main class="main">
-          <DashTopbar greetingName={greetingName} />
+          <DashTopbar
+            pageTitleKey="nav.batches"
+            greetingName={greetingName}
+          />
           <div class="content">
-            <FieldBatchesPage />
-            <SiteFooter lang={lang} />
+            <FieldBatchesPage seed={seed} />
+            <SiteFooter lang={lang} compact />
           </div>
         </main>
       </div>

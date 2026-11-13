@@ -18,6 +18,8 @@ import type { Lang } from "../lib/lang.ts";
 export interface VerifyOtpInput {
   phoneNumber: string;
   code: string;
+  /** REQ-590: the language showing on /verify — a new account is born in it */
+  language?: Lang;
 }
 
 export type VerifyOtpError =

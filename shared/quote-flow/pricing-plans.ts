@@ -77,8 +77,8 @@ export interface PricingPlan {
   upgrade?: boolean;
   blurb?: string;
   /**
-   * Hard caps. Absent = unlimited. Display-only for now: enforcing the
-   * "5 quotes a month" cap in the app is its own Sept. 8 action item.
+   * Hard caps. Absent = unlimited. REQ-766: enforced — the backend's
+   * QuoteAllowance refuses a quote past `quotesPerMonth` in a calendar month.
    */
   limits?: { quotesPerMonth?: number };
   /** Everything this tier promises, in display order. */
@@ -95,7 +95,9 @@ export const PRICING_PLANS: readonly PricingPlan[] = [
     // "Monster Free is 'Unlimited invoices'" (Hans, Sep 2): that is the pitch, so it leads.
     // REQ-109 (Raphael, 2026-10-21): the three lines, each its own, and free forever — the
     // introduction, the plan comparison and the signup messaging all read these.
-    blurb: "Unlimited invoices. Up to five quotes and contracts a month. Spanish and English output. Free forever.",
+    // REQ-778 (dv1, d8): Raphael — "The free plan limit is five quotes." A quote IS the agreement
+    // since the quote+contract merge, so "and contracts" is dropped: up to five quotes a month.
+    blurb: "Unlimited invoices. Up to five quotes a month. Spanish and English output. Free forever.",
     limits: { quotesPerMonth: 5 },
     features: [
       {
@@ -105,14 +107,37 @@ export const PRICING_PLANS: readonly PricingPlan[] = [
       },
       {
         id: "five-quotes",
-        en: "Up to five quotes and contracts a month",
-        es: "Hasta cinco cotizaciones y contratos al mes",
+        en: "Up to five quotes a month",
+        es: "Hasta cinco cotizaciones al mes",
       },
       {
         id: "spanish-in-english-out",
         en: "Spanish and English output",
         es: "Documentos en español y en inglés",
       },
+      // REQ-733 (demo m17 + c1-m42, cycle 5) — what every account has today: there is no plan
+      // gating in backend/src, so a Free account adds workers, signs, sends, tracks payments and
+      // makes change orders. These lines used to sit on Monster's card (REQ-607 even added a
+      // Monster line saying "Free included"); they are Free's, after REQ-109's three dictated
+      // lines, and Monster inherits them through "Everything in Monster Free". If Raphael gates
+      // any of them to paid plans (REQ-607's flagged decision), its line moves back to that plan.
+      {
+        id: "workers-field-schedule",
+        en: "Workers & field schedule",
+        es: "Trabajadores y agenda de campo",
+      },
+      { id: "e-signatures", en: "E-signatures", es: "Firmas electrónicas" },
+      {
+        id: "sms-email-sending",
+        en: "SMS & email sending",
+        es: "Envío por SMS y correo",
+      },
+      {
+        id: "payment-tracking",
+        en: "Payment tracking + nudges",
+        es: "Seguimiento de pagos y recordatorios",
+      },
+      { id: "change-orders", en: "Change orders", es: "Órdenes de cambio" },
     ],
   },
   {
@@ -136,18 +161,6 @@ export const PRICING_PLANS: readonly PricingPlan[] = [
         en: "Unlimited quotes, agreements & invoices",
         es: "Cotizaciones, acuerdos y facturas ilimitados",
       },
-      { id: "e-signatures", en: "E-signatures", es: "Firmas electrónicas" },
-      {
-        id: "sms-email-sending",
-        en: "SMS & email sending",
-        es: "Envío por SMS y correo",
-      },
-      {
-        id: "payment-tracking",
-        en: "Payment tracking + nudges",
-        es: "Seguimiento de pagos y recordatorios",
-      },
-      { id: "change-orders", en: "Change orders", es: "Órdenes de cambio" },
     ],
   },
   {

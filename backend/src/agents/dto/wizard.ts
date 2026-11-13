@@ -1,5 +1,6 @@
 import { IsOptional, IsString, validateSync } from "#class-validator";
 import { plainToInstance } from "#class-transformer";
+import type { ChatOptionI18n } from "#quote-flow/chat-i18n.ts"; // REQ-589
 
 /**
  * Wizard data shapes for phase 2.
@@ -18,8 +19,14 @@ export interface WizardOption {
   id: string;
   label: string;
   sub?: string;
+  /** REQ-491: i18n key used instead of `sub` once the quote total is known. */
+  subAmounts?: string;
   /** When true, the user is expected to supply a free-text customValue. */
   isCustom?: boolean;
+  /** REQ-678: opens the deposit amount picker; customValue is the term. */
+  amountPicker?: "deposit";
+  /** REQ-589: on an emitted option, the keys its label/sub came from. */
+  i18n?: ChatOptionI18n;
 }
 
 export interface WizardStep {
@@ -64,6 +71,11 @@ export class WizardAnswerDto {
   @IsString()
   customValue?: string;
 
+  /** REQ-263: the job address from the customer step. */
+  @IsOptional()
+  @IsString()
+  serviceAddress?: string;
+
   /** Customer-step payload. Validation is intentionally loose; the
    *  coordinator does the deeper checks (existence, ownership, required
    *  fields on `create`). */
@@ -76,6 +88,8 @@ export class WizardAnswerDto {
       phoneNumber?: string;
       isBusiness?: boolean;
       businessName?: string;
+      /** REQ-331: skip the same-owner dedupe ("create anyway"). */
+      allowDuplicate?: boolean;
       /** REQ-625: address parts + notes from the shared customer form */
       street?: string;
       city?: string;

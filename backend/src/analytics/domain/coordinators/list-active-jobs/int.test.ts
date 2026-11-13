@@ -4,6 +4,7 @@ import { CustomerStore } from "@crm/domain/data/customer-store/mod.ts";
 import { QuoteStore } from "@paperwork/domain/data/quote-store/mod.ts";
 import { InvoiceStore } from "@paperwork/domain/data/invoice-store/mod.ts";
 import { resetKv } from "@core/data/kv/mod.ts";
+import { ChangeOrderStore } from "@paperwork/domain/data/change-order-store/mod.ts";
 
 const NOW = new Date(Date.UTC(2026, 3, 15)); // Apr 15, 2026
 
@@ -230,5 +231,181 @@ Deno.test("list-active-jobs integration: the onboarding sample is never a job (p
     estimatedTotal: 3_700_00,
   });
   assertEquals(await flow.run("u-1", NOW), []);
+  await resetKv();
+});
+
+// REQ-497 (demo-loop cycle 3, m23): the dashboard's Active jobs row titled a
+// job with the primary `summary` only, so an English quote stayed English in
+// the Spanish app. The job carries the quote's per-language name + summary so
+// the row can render quoteJobTitle(job.quote, lang) — the /quotes rule.
+Deno.test("REQ-497 list-active-jobs: the job's quote carries jobName, jobNameByLang and summaryByLang", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const { customers, quotes, flow } = fresh();
+  const cust = await customers.create("u-1", { name: "Maria Lopez" });
+  await quotes.create("u-1", {
+    summary: "Bathroom remodel — Maria Lopez",
+    jobName: "Bathroom Remodel",
+    jobNameByLang: { en: "Bathroom Remodel", es: "Remodelación de baño" },
+    summaryByLang: {
+      en: "Bathroom remodel — Maria Lopez",
+      es: "Remodelación de baño — Maria Lopez",
+    },
+    lineItems: [],
+    status: "accepted",
+    customerId: cust.id,
+    estimatedTotal: 9_600_00,
+  });
+  const [job] = await flow.run("u-1", NOW);
+  assertEquals(job.quote.jobName, "Bathroom Remodel");
+  assertEquals(job.quote.jobNameByLang, {
+    en: "Bathroom Remodel",
+    es: "Remodelación de baño",
+  });
+  assertEquals(
+    job.quote.summaryByLang?.es,
+    "Remodelación de baño — Maria Lopez",
+  );
+  await resetKv();
+});
+
+// REQ-473 (demo-loop cycle 3, issue M8): a job whose only remaining bill is a
+// SCHEDULED installment ("Payment upon completion") read "Deposit · No due
+// date" — nextDueDate looked only at open receivables, and the row had no
+// payment terms to label itself from.
+Deno.test("REQ-473 list-active-jobs: only a scheduled installment left → nextDueDate is its due date, and the job carries the quote's payment terms", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const { customers, quotes, invoices, flow } = fresh();
+  const cust = await customers.create("u-1", { name: "Rosa Martinez" });
+  const q = await quotes.create("u-1", {
+    summary: "Bathroom door repair",
+    lineItems: [],
+    status: "accepted",
+    customerId: cust.id,
+    estimatedTotal: 925_00,
+    terms: [{
+      stepId: "payment_terms",
+      label: "Payment terms",
+      value: "Payment upon completion",
+    }],
+  });
+  await invoices.create("u-1", {
+    quoteId: q.id,
+    status: "scheduled",
+    amount: 925_00,
+    scheduledFor: "2026-04-26",
+    dueDate: "2026-05-26",
+  });
+  const [job] = await flow.run("u-1", NOW);
+  assertEquals(job.nextDueDate, "2026-05-26");
+  assertEquals(job.paymentTerms, "Payment upon completion");
+  await resetKv();
+});
+
+Deno.test("REQ-473 list-active-jobs: an open receivable still wins over a later scheduled installment; no terms → paymentTerms null", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const { customers, quotes, invoices, flow } = fresh();
+  const cust = await customers.create("u-1", { name: "Acme" });
+  const q = await quotes.create("u-1", {
+    summary: "Fence",
+    lineItems: [],
+    status: "accepted",
+    customerId: cust.id,
+    estimatedTotal: 2_000_00,
+  });
+  await invoices.create("u-1", {
+    quoteId: q.id,
+    status: "scheduled",
+    amount: 1_000_00,
+    scheduledFor: "2026-04-18",
+    dueDate: "2026-04-19",
+  });
+  await invoices.create("u-1", {
+    quoteId: q.id,
+    status: "sent",
+    amount: 1_000_00,
+    dueDate: "2026-04-22",
+  });
+  const [job] = await flow.run("u-1", NOW);
+  assertEquals(job.nextDueDate, "2026-04-22");
+  assertEquals(job.paymentTerms, null);
+  await resetKv();
+});
+
+// REQ-447 (demo-loop cycle 3, m14): the dashboard's active job is named by the
+// quote's jobName — the name the quote, the thread and the notification use —
+// not its separate summary sentence (fleet-6: "Kitchen renovation and debris
+// removal" on the dashboard vs "Kitchen Renovation & Cleanup" everywhere else).
+Deno.test("REQ-447 m14 list-active-jobs integration: the job carries the quote's jobName", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const { customers, quotes, flow } = fresh();
+  const cust = await customers.create("u-1", { name: "Karen Henderson" });
+  await quotes.create("u-1", {
+    summary: "Kitchen renovation and debris removal",
+    jobName: "Kitchen Renovation & Cleanup",
+    lineItems: [],
+    status: "accepted",
+    customerId: cust.id,
+    estimatedTotal: 20_000_00,
+  });
+  const jobs = await flow.run("u-1", NOW);
+  assertEquals(jobs[0].quote.jobName, "Kitchen Renovation & Cleanup");
+  await resetKv();
+});
+
+/**
+ * REQ-679 — demo-loop cycle 5 (run r37f88707), issue M19: after CO-001
+ * (+$1,600) was approved on the $16,300 job, the dashboard row (and its % paid)
+ * still read the bare quote total. The row's total is the agreement — the
+ * quote plus its APPROVED change orders (a pending one is not agreed yet).
+ */
+Deno.test("REQ-679 M19 list-active-jobs: the row's total is quote + approved change orders ($17,900), and pctPaid is against it", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const { customers, quotes, invoices, flow } = fresh();
+  const cust = await customers.create("u-1", { name: "Dana Whitfield" });
+  const q = await quotes.create("u-1", {
+    summary: "Deck rebuild",
+    lineItems: [],
+    status: "accepted",
+    customerId: cust.id,
+    estimatedTotal: 1_630_000,
+  });
+  await invoices.create("u-1", {
+    quoteId: q.id,
+    customerId: cust.id,
+    amount: 815_000,
+    status: "paid",
+    dueDate: "2026-04-01",
+  } as never);
+  const balance = await invoices.create("u-1", {
+    quoteId: q.id,
+    customerId: cust.id,
+    amount: 975_000,
+    status: "sent",
+    dueDate: "2026-05-01",
+  } as never);
+  const cos = new ChangeOrderStore();
+  const approved = await cos.create("u-1", balance.id, {
+    description: "Composite railing",
+    deltaAmountCents: 160_000,
+    quoteId: q.id,
+  });
+  await cos.decide(approved.id, "approved", {});
+  await cos.create("u-1", balance.id, {
+    description: "Still pending",
+    deltaAmountCents: 50_000,
+    quoteId: q.id,
+  });
+  const jobs = await new ListActiveJobs(customers, quotes, invoices, cos).run(
+    "u-1",
+    NOW,
+  );
+  assertEquals(jobs.length, 1);
+  assertEquals(jobs[0].totalCents, 1_790_000);
+  assertEquals(jobs[0].pctPaid, Math.round((815_000 / 1_790_000) * 100));
   await resetKv();
 });

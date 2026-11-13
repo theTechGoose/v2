@@ -12,8 +12,12 @@
  */
 import { useEffect, useRef, useState } from "preact/hooks";
 import { dashboardClient, type SearchHit } from "../clients/dashboard.ts";
-import { langSignal, tFor } from "../lib/i18n.ts";
-import { bestHit, groupHits } from "../../shared/documents/search.ts";
+import { langSignal, tFor, tnFor } from "../lib/i18n.ts";
+import {
+  bestHit,
+  groupHits,
+  searchHitLine,
+} from "../../shared/documents/search.ts";
 
 const DEBOUNCE_MS = 250;
 const PER_TYPE = 8;
@@ -34,6 +38,7 @@ const CSS = `
 .gsearch__amt{font-weight:700;color:var(--fg)}
 .gsearch__status{padding:1px 7px;border-radius:999px;background:rgba(100,69,54,.08);font-size:11px;color:var(--fg-muted)}
 .gsearch__status--paid,.gsearch__status--accepted,.gsearch__status--approved,.gsearch__status--done{background:rgba(81,152,67,.14);color:#2f6b25}
+.gsearch__status--scheduled{background:rgba(20,72,82,.08);color:var(--brand-teal)}
 .gsearch__sub,.gsearch__related{grid-column:1/-1;font-size:12px;color:var(--fg-muted);min-width:0;overflow:hidden;text-overflow:ellipsis}
 .gsearch__related a{margin-left:6px;color:var(--brand-teal);text-decoration:underline;white-space:nowrap}
 .gsearch__note{padding:10px;font-size:13px;color:var(--fg-muted)}
@@ -242,10 +247,8 @@ export default function GlobalSearch() {
               {g.hits.map((h) => {
                 const idx = hits.indexOf(h);
                 const title = h.customerName ?? h.label;
-                const line = h.type === "customer"
-                  ? h.sub
-                  : [h.label !== title ? h.label : undefined, h.sub]
-                    .filter(Boolean).join(" · ");
+                // REQ-713: dates are typed on the hit and spelled in `lang`
+                const line = searchHitLine(h, lang);
                 return (
                   <div
                     key={`${h.type}-${h.id}`}
@@ -295,10 +298,14 @@ export default function GlobalSearch() {
                     {line && <div class="gsearch__sub">{line}</div>}
                     {h.counts && (
                       <div class="gsearch__sub" data-cy="global-search-counts">
-                        {tFor(lang, "search.counts", {
-                          quotes: h.counts.quotes,
-                          invoices: h.counts.invoices,
-                        })}
+                        {/* REQ-350: each count agrees with its noun */}
+                        {tnFor(lang, "search.counts.quotes", h.counts.quotes)}
+                        {" · "}
+                        {tnFor(
+                          lang,
+                          "search.counts.invoices",
+                          h.counts.invoices,
+                        )}
                       </div>
                     )}
                     {h.related.length > 0 && (

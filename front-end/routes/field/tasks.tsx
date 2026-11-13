@@ -3,27 +3,33 @@
  * data comes from /api/field/* (clients/field.ts). The sidebar's active tab is "tasks".
  */
 import { asset, Head } from "fresh/runtime";
-import {
-  greetingFirstName,
-  personLanguage,
-} from "../../../shared/person-name/mod.ts"; // REQ-624
+import { greetingFirstName } from "../../../shared/person-name/mod.ts"; // REQ-624
 import { define } from "../../utils.ts";
+import { resolveSsrLang } from "../../lib/ssr-lang.ts";
+import { getSessionId } from "../../lib/auth.ts";
+import { loadFieldTasksSeed } from "../../lib/field-ssr.ts";
+import { todayIso } from "../../lib/field.ts";
+import DocTitle from "../../components/DocTitle.tsx";
 import SiteFooter from "../../components/SiteFooter.tsx";
 import { type Lang, tFor } from "../../lib/i18n.ts";
 import DashSidebar from "../../islands/DashSidebar.tsx";
 import DashTopbar from "../../islands/DashTopbar.tsx";
 import FieldTasksPage from "../../islands/FieldTasksPage.tsx";
 
-export default define.page(function FieldFieldTasksPageRoute(ctx) {
+export default define.page(async function FieldFieldTasksPageRoute(ctx) {
   const user = ctx.state.user;
-  const lang: Lang = personLanguage(user) === "es" ? "es" : "en";
-  const greetingName = greetingFirstName(user) ||
-    tFor(lang, "common.thereFallback");
+  // REQ-730 (demo-loop c5, c2-p13-p): read the lists here so the first HTML
+  // carries the rows, not a "Loading…" line; null → the island fetches on hydration.
+  const seed = await loadFieldTasksSeed(getSessionId(ctx.req), todayIso());
+  // REQ-709 (demo-loop c5, m4): the islands' language (?lang= > account >
+  // pm_lang), so the tab title and footer match the page they sit on.
+  const lang: Lang = resolveSsrLang(ctx) ?? "es";
+  const greetingName = greetingFirstName(user);
 
   return (
     <>
       <Head>
-        <title>{tFor(lang, "field.tk.docTitle")}</title>
+        <DocTitle lang={lang} title={(l) => tFor(l, "field.tk.docTitle")} />
         <link
           key="css-dashboard"
           rel="stylesheet"
@@ -39,10 +45,13 @@ export default define.page(function FieldFieldTasksPageRoute(ctx) {
       <div class="app">
         <DashSidebar active="tasks" />
         <main class="main">
-          <DashTopbar greetingName={greetingName} />
+          <DashTopbar
+            pageTitleKey="nav.tasks"
+            greetingName={greetingName}
+          />
           <div class="content">
-            <FieldTasksPage />
-            <SiteFooter lang={lang} />
+            <FieldTasksPage seed={seed} />
+            <SiteFooter lang={lang} compact />
           </div>
         </main>
       </div>

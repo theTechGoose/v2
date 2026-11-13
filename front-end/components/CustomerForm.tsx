@@ -16,6 +16,12 @@
  */
 import { useState } from "preact/hooks";
 import { clientsClient, type CustomerCard } from "../clients/clients.ts";
+import AddressAutocomplete from "./AddressAutocomplete.tsx"; // REQ-599
+import Backdrop from "./Backdrop.tsx"; // REQ-354
+import CustomerLanguageSelect, {
+  type CustomerLanguageValue,
+  customerLanguageValue,
+} from "./CustomerLanguageSelect.tsx"; // REQ-715
 import { type Lang, tFor } from "../lib/i18n.ts";
 import {
   customerCreatePayload,
@@ -56,6 +62,17 @@ export function errorText(
   return tFor(lang, "customerForm.err.emailInvalid");
 }
 
+/** REQ-599: a full suggested address ("1600 Congress Ave, Austin, TX 78701")
+ *  splits into the form's parts; anything else is the street line as typed. */
+export function addressParts(v: string): Partial<CustomerFormValues> {
+  const m = /^(.+?),\s*([^,]+?),\s*([A-Za-z]{2})\s+(\d{5}(?:-\d{4})?)$/.exec(
+    v.trim(),
+  );
+  return m
+    ? { street: m[1], city: m[2], state: m[3].toUpperCase(), zip: m[4] }
+    : { street: v };
+}
+
 interface FieldsProps {
   values: CustomerFormValues;
   onChange: (patch: Partial<CustomerFormValues>) => void;
@@ -68,6 +85,9 @@ interface FieldsProps {
   autoFocus?: boolean;
   /** placeholder text per field (the assistant keeps its own wording) */
   placeholders?: Partial<Record<keyof CustomerFormValues, string>>;
+  /** only these fields (the assistant renders its own name / company /
+   *  phone / email with their live checks, and these for the rest) */
+  only?: readonly (keyof CustomerFormValues)[];
 }
 
 /** The fields alone — for forms that own their own submit (new invoice, assistant). */
@@ -81,9 +101,11 @@ export function CustomerFields(
     variant = "default",
     autoFocus,
     placeholders = {},
+    only,
   }: FieldsProps,
 ) {
   const asst = variant === "asst";
+  const shows = (f: keyof CustomerFormValues) => !only || only.includes(f);
   const val = (e: Event) => (e.target as HTMLInputElement).value;
 
   function field(
@@ -151,33 +173,57 @@ export function CustomerFields(
       data-cy="customer-fields"
       style="display:flex;flex-direction:column;gap:12px;min-width:0"
     >
-      {field("name", "cf-name", "customerForm.name", {
+      {shows("name") && field("name", "cf-name", "customerForm.name", {
         autoComplete: "name",
         bad: errorText(lang, errors, "name"),
         focus: autoFocus,
         required: true,
       })}
-      {field("businessName", "cf-business", "customerForm.business", {
-        autoComplete: "organization",
-      })}
-      <div style={PAIR}>
-        {field("phone", "cf-phone", "customerForm.phone", {
-          type: "tel",
-          autoComplete: "tel",
-          bad: errorText(lang, errors, "phone"),
+      {shows("businessName") &&
+        field("businessName", "cf-business", "customerForm.business", {
+          autoComplete: "organization",
         })}
-        {field("email", "cf-email", "customerForm.email", {
-          type: "email",
-          autoComplete: "email",
-          bad: errorText(lang, errors, "email"),
-        })}
-      </div>
-      {!asst && (
+      {(shows("phone") || shows("email")) && (
+        <div style={PAIR}>
+          {shows("phone") && field("phone", "cf-phone", "customerForm.phone", {
+            type: "tel",
+            autoComplete: "tel",
+            bad: errorText(lang, errors, "phone"),
+          })}
+          {shows("email") && field("email", "cf-email", "customerForm.email", {
+            type: "email",
+            autoComplete: "email",
+            bad: errorText(lang, errors, "email"),
+          })}
+        </div>
+      )}
+      {!asst && shows("street") && (
         <div style={SECTION}>{tFor(lang, "customerForm.addressHeading")}</div>
       )}
-      {field("street", "cf-street", "customerForm.street", {
-        autoComplete: "address-line1",
-      })}
+      {!shows("street")
+        ? null
+        : asst
+        ? field("street", "cf-street", "customerForm.street", {
+          autoComplete: "address-line1",
+        })
+        : (
+          /* REQ-599 (demo-loop cycle 4, m30) — the street line suggests real
+            addresses; a picked "1600 Congress Ave, Austin, TX 78701" fills
+            the parts (REQ-625) */
+          <label style={LABEL}>
+            {tFor(lang, "customerForm.street")}
+            <AddressAutocomplete
+              id="cf-street"
+              data-cy="cf-street"
+              label={tFor(lang, "customerForm.street")}
+              useTypedLabel={tFor(lang, "welcome.address.useTyped")}
+              lang={lang}
+              value={values.street}
+              onInput={(v) => onChange(addressParts(v))}
+              inputStyle={`${INPUT};width:100%;box-sizing:border-box`}
+            />
+          </label>
+        )}
       <div style={TRIO}>
         {field("city", "cf-city", "customerForm.city", {
           autoComplete: "address-level2",
@@ -189,7 +235,7 @@ export function CustomerFields(
           autoComplete: "postal-code",
         })}
       </div>
-      {asst
+      {!shows("notes") ? null : asst
         ? (
           <textarea
             data-cy="cf-notes"
@@ -239,11 +285,23 @@ export default function CustomerFormDialog(
   const [values, setValues] = useState<CustomerFormValues>(() =>
     mode === "edit" ? customerFormFrom(customer) : emptyCustomerForm()
   );
+  // REQ-715 (demo-loop cycle 5, m31): the language the customer reads
+  const [language, setLanguage] = useState<CustomerLanguageValue>(() =>
+    mode === "edit"
+      ? customerLanguageValue(
+        (customer as { language?: string } | null | undefined)?.language,
+      )
+      : ""
+  );
   const [tried, setTried] = useState(false);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const errors = validateCustomerForm(values);
   const invalid = Object.keys(errors).length > 0;
+  // REQ-300 (demo cycle 1, M20): a backdrop click never drops typed text —
+  // it closes the dialog only while the draft is clean (Cancel still closes)
+  const [start] = useState(() => JSON.stringify([values, language]));
+  const dirty = JSON.stringify([values, language]) !== start;
 
   async function submit(e: Event) {
     e.preventDefault();
@@ -253,8 +311,11 @@ export default function CustomerFormDialog(
     setErr(null);
     try {
       const saved = mode === "edit" && customer
-        ? await clientsClient.update(customer.id, customerUpdatePayload(values))
-        : await clientsClient.create(customerCreatePayload(values));
+        ? await clientsClient.update(customer.id, {
+          ...customerUpdatePayload(values),
+          ...(language ? { language } : {}),
+        })
+        : await clientsClient.create(customerCreatePayload(values, language));
       await onSaved(saved);
     } catch (x) {
       setErr(
@@ -268,13 +329,19 @@ export default function CustomerFormDialog(
   }
 
   return (
-    <div
-      onClick={() => !busy && onClose()}
+    // REQ-354/732/289 AMENDMENT (reconciled with develop on demo-fixes): the
+    // New/Edit customer modal is develop's dialog now — on the shared <Backdrop>
+    // (a dirty draft survives a stray click, REQ-300; Escape closes unless saving)
+    <Backdrop
+      data-cy="customer-form-backdrop"
+      onClose={() => !busy && !dirty && onClose()}
+      onEscape={() => !busy && onClose()}
       style="position:fixed;inset:0;background:rgba(20,40,45,0.45);display:flex;align-items:flex-start;justify-content:center;z-index:1100;padding:20px 12px;overflow-y:auto"
     >
       <form
         role="dialog"
         aria-modal="true"
+        aria-labelledby="customer-form-title"
         data-cy="customer-form"
         data-mode={mode}
         noValidate
@@ -282,7 +349,10 @@ export default function CustomerFormDialog(
         onSubmit={submit}
         style="background:#fff;border-radius:16px;padding:22px 20px;max-width:520px;width:100%;box-sizing:border-box;box-shadow:0 24px 64px rgba(20,72,82,0.22);display:flex;flex-direction:column;gap:14px;margin:auto 0"
       >
-        <h2 style="margin:0;font-size:20px;font-weight:800;color:var(--fg,#144852)">
+        <h2
+          id="customer-form-title"
+          style="margin:0;font-size:20px;font-weight:800;color:var(--fg,#144852)"
+        >
           {mode === "edit"
             ? tFor(lang, "customerForm.titleEdit")
             : tFor(lang, "customerForm.titleNew")}
@@ -295,6 +365,18 @@ export default function CustomerFormDialog(
           errors={tried ? errors : {}}
           autoFocus
         />
+        {/* REQ-715 (demo-loop cycle 5, m31): what every send to them is written in */}
+        <label style={LABEL}>
+          {tFor(lang, "customer.language.label")}
+          <CustomerLanguageSelect
+            lang={lang}
+            value={language}
+            onChange={setLanguage}
+            disabled={busy}
+            data-cy="cf-language"
+            style={INPUT}
+          />
+        </label>
         {err && (
           <p
             role="alert"
@@ -328,7 +410,7 @@ export default function CustomerFormDialog(
           </button>
         </div>
       </form>
-    </div>
+    </Backdrop>
   );
 }
 

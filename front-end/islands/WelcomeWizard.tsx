@@ -8,22 +8,32 @@
  *
  * REQ-091: onboarding happens until every question is answered. A step is
  * skippable-or-not per its registry entry — Skip puts the question off, and
- * the wizard comes back on the next code and on the dashboard. REQ-121: a
- * visit asks the open questions alone — never one the account has already
- * answered — and counts its steps over those (lib/welcome-steps.ts). The
- * low-key "Skip setup for now" escape records the leave and
- * drops the user in the assistant (the dashboard would send them straight
- * back). Which questions are open is the one rule the backend and the
+ * the wizard comes back on the next code. REQ-227: Skip saves that question's
+ * "deferred" stamp, so the dashboard lets the person in once every open
+ * question is deferred (its setup checklist asks for the rest). REQ-121: a
+ * visit asks the open questions alone — Continue never lands on one the
+ * account has already answered — while REQ-427 keeps every step in the
+ * navigation, so Back reaches an answered question even after a reload, and
+ * the counter is the step's place in the whole onboarding
+ * (lib/welcome-steps.ts). The
+ * low-key "Skip setup for now" escape (offered once the name is answered)
+ * records the leave, defers every open question and lands on the dashboard,
+ * whose setup checklist asks for the rest (REQ-504). Which questions are open is the one rule the backend and the
  * dashboard read too: shared/quote-flow/onboarding-questions.ts.
  *
  * The step engine here is deliberately extensible: each phase of the build
  * adds entries to STEPS without touching the engine.
  */
 import type { ComponentChildren } from "preact";
-import { personLanguage } from "../../shared/person-name/mod.ts"; // REQ-631
+import { accountLanguage, personLanguage } from "../../shared/person-name/mod.ts"; // REQ-631
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import { type Lang, langSignal, persistLang } from "../lib/lang.ts";
-import { t } from "../lib/i18n.ts";
+import { setLang, t } from "../lib/i18n.ts";
+import {
+  type CommsLang,
+  onboardingLanguagesSeen,
+  onboardingSendLanguages,
+} from "../../shared/quote-flow/comms-language.ts";
 import { SUPPORT_PHONE_DISPLAY } from "../../shared/legal/contact.ts";
 import {
   type BusinessAddress,
@@ -31,16 +41,51 @@ import {
   profileClient,
   type ProfileSnapshot,
 } from "../clients/profile.ts";
-import { isAnswered } from "../../shared/quote-flow/onboarding-questions.ts";
+import { canSkipSetup, isAnswered } from "../../shared/quote-flow/onboarding-questions.ts";
 import { isPlaceholderName } from "../../shared/quote-flow/outbound-identity.ts";
-import { ONBOARDING_PLANS, PRICING_PLANS } from "../../shared/quote-flow/pricing-plans.ts";
+import {
+  ONBOARDING_PLANS,
+  PRICING_PLANS,
+} from "../../shared/quote-flow/pricing-plans.ts";
 import { PlanCards } from "../components/PlanCards.tsx";
-import { handoffPage, pickErrorOf, planViewOf, resumesAfterPlan } from "../lib/plan-return.ts";
-import { indexAfterPlan, openSteps } from "../lib/welcome-steps.ts";
+import { SampleQuotePreview } from "../components/SampleQuotePreview.tsx";
+import { wizardBillingHow, wizardPlanNote } from "../lib/plan-pick-note.ts";
+import {
+  handoffPage,
+  pickErrorOf,
+  planViewOf,
+  resumesAfterPlan,
+} from "../lib/plan-return.ts";
+import { nextIndex, openSteps, startIndex, stepCounter } from "../lib/welcome-steps.ts";
 import { filesClient } from "../clients/files.ts";
+import {
+  isLogoImageType,
+  LOGO_IMAGE_ACCEPT,
+} from "../../shared/quote-flow/logo-image.ts"; // REQ-252
 import { stateName, US_STATE_OPTIONS } from "../lib/us-states.ts";
+import {
+  type HandleMethod,
+  insurerError,
+  paymentHandleError,
+  policyNumberError,
+  zipError,
+} from "../../shared/quote-flow/business-fields.ts"; // REQ-352, REQ-503
+import {
+  PAYMENT_METHOD_CATALOG,
+  type PaymentMethodDef,
+} from "../../shared/identity/payment-methods.ts"; // REQ-620
 import { api } from "../lib/api.ts";
 import { type AddressSuggestion, suggestAddresses } from "../lib/mapbox.ts";
+
+/** REQ-227 — a step's Skip: stamp the question deferred (best effort; the wizard moves on either way) */
+async function deferQuestion(question: string): Promise<void> {
+  await fetch("/api/me/onboarding/deferred", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    credentials: "include",
+    body: JSON.stringify({ question }),
+  }).then((r) => r.body?.cancel()).catch(() => {});
+}
 
 /** Mark onboarding finished (not skipped) before leaving the wizard. */
 async function markOnboardedFinish(): Promise<void> {
@@ -72,6 +117,8 @@ interface StepCtx {
   patchSnap: (partial: Partial<ProfileSnapshot>) => void;
   /** Advance to the next step (after a successful save, or a skip). */
   advance: () => void;
+  /** REQ-227 — the footer's Skip: save the question's deferred stamp, then advance */
+  skip: () => void;
   goBack: () => void;
   canGoBack: boolean;
   skippable: boolean;
@@ -82,6 +129,8 @@ interface StepCtx {
   sampleQuoteId: string;
   sampleQuoteFailed: boolean;
   retrySampleQuote: () => void;
+  /** REQ-498 — every language the account was in this visit (opened in, then each EN/ES switch) */
+  languagesSeen: CommsLang[];
 }
 
 /** A step is a real Preact component (rendered as `<Step ctx={ctx} />` with a
@@ -104,10 +153,13 @@ interface StepDef {
 // ---------------------------------------------------------------------------
 
 function StepBody(
-  { question, why, children }: {
+  { question, why, children, noForm }: {
     question: string;
     why?: string;
     children: ComponentChildren;
+    /** REQ-257: a step whose body carries its own <form>s (the plan cards) can't sit in the step's
+     *  form — HTML does not nest forms — so it opts out. It has no text field to press Enter in. */
+    noForm?: boolean;
   },
 ) {
   // On each step mount (every advance remounts the keyed step component) move
@@ -116,7 +168,10 @@ function StepBody(
   // announce it. Steps with no input (the education screens) fall back to
   // focusing the heading so the new screen is still announced.
   const headingRef = useRef<HTMLHeadingElement | null>(null);
-  const fieldRef = useRef<HTMLDivElement | null>(null);
+  const fieldRef = useRef<HTMLElement | null>(null);
+  const setField = (el: HTMLElement | null) => {
+    fieldRef.current = el;
+  };
   useEffect(() => {
     const focusable = fieldRef.current?.querySelector<HTMLElement>(
       'input:not([type="hidden"]):not([disabled]), textarea:not([disabled]), select:not([disabled])',
@@ -130,7 +185,20 @@ function StepBody(
         {question}
       </h1>
       {why ? <p class="welcome__why">{why}</p> : null}
-      <div class="welcome__field" ref={fieldRef}>{children}</div>
+      {noForm ? <div class="welcome__field" ref={setField}>{children}</div> : (
+        // REQ-257 (demo onboarding-dashboard-settings-p3): the step's fields sit in a form whose
+        // default button is the footer's Continue (type="submit"), so Enter in any field does what
+        // Continue does — and nothing while Continue is disabled. Continue's own onClick saves;
+        // the submit itself never navigates.
+        <form
+          class="welcome__field"
+          ref={setField}
+          noValidate
+          onSubmit={(e) => e.preventDefault()}
+        >
+          {children}
+        </form>
+      )}
     </div>
   );
 }
@@ -168,7 +236,7 @@ function StepFooter(
               type="button"
               class="welcome__btn welcome__btn--ghost"
               data-cy="welcome-skip"
-              onClick={ctx.advance}
+              onClick={ctx.skip}
               disabled={busy}
             >
               {t("welcome.skip")}
@@ -177,7 +245,7 @@ function StepFooter(
           : null}
         {!hideContinue && (
           <button
-            type="button"
+            type="submit"
             class="welcome__btn welcome__btn--primary"
             data-cy="welcome-continue"
             onClick={() => onContinue()}
@@ -203,6 +271,8 @@ function NameStep({ ctx }: { ctx: StepCtx }) {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const valid = value.trim().length > 0;
+  // REQ-390 (demo m18): spaces alone disabled Continue without a word
+  const blank = value.length > 0 && !valid;
 
   async function save() {
     if (!valid || busy) return;
@@ -228,6 +298,8 @@ function NameStep({ ctx }: { ctx: StepCtx }) {
         enterKeyHint="go"
         aria-label={t("welcome.name.question")}
         placeholder={t("welcome.name.placeholder")}
+        aria-invalid={blank ? "true" : undefined}
+        aria-describedby={blank ? "welcome-name-blank" : undefined}
         value={value}
         // deno-lint-ignore no-explicit-any
         onInput={(e: any) =>
@@ -240,6 +312,13 @@ function NameStep({ ctx }: { ctx: StepCtx }) {
           }
         }}
       />
+      {blank
+        ? (
+          <p id="welcome-name-blank" class="welcome__error" role="alert">
+            {t("welcome.nameBlank")}
+          </p>
+        )
+        : null}
       {err ? <p class="welcome__error" role="alert">{err}</p> : null}
       <StepFooter ctx={ctx} valid={valid} busy={busy} onContinue={save} />
     </StepBody>
@@ -251,6 +330,26 @@ function BusinessNameStep({ ctx }: { ctx: StepCtx }) {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const valid = value.trim().length > 0;
+  // REQ-390 (demo m18): spaces alone disabled Continue without a word
+  const blank = value.length > 0 && !valid;
+  // REQ-348 (demo m34): the languages the business sends in, shown here so a Spanish signup sees
+  // English AND Spanish picked (the one rule, shared/quote-flow/comms-language.ts). REQ-498 (demo
+  // m42, cycle 3): until the person touches a box the default comes from EVERY language the
+  // account was in this visit — the one it was created/opened in included — not the live switch,
+  // so a Spanish signup who taps EN still keeps Spanish ticked.
+  const [picked, setPicked] = useState<CommsLang[] | null>(null);
+  const sendIn = picked ??
+    onboardingSendLanguages(ctx.snap.identity, ctx.languagesSeen);
+  function toggleSendIn(code: CommsLang, on: boolean) {
+    const set = new Set(sendIn);
+    if (on) set.add(code);
+    else set.delete(code);
+    // always at least one language — REQ-390 (m18): the last box on is also
+    // disabled (below), so the controlled box can never show unticked while
+    // the old language is what gets saved
+    if (set.size === 0) return;
+    setPicked((["en", "es"] as const).filter((c) => set.has(c)));
+  }
 
   async function save() {
     if (!valid || busy) return;
@@ -259,6 +358,10 @@ function BusinessNameStep({ ctx }: { ctx: StepCtx }) {
     try {
       const updated = await profileClient.updateIdentity({
         businessName: value.trim(),
+        commsLanguages: sendIn,
+        // the default send language must be one of the set (Settings' rule); English stays the
+        // unset default so the first send's adopt-the-pick rule still runs
+        ...(sendIn.includes("en") ? {} : { commsLanguage: sendIn[0] }),
       });
       ctx.patchSnap({
         identity: { ...(ctx.snap.identity ?? {}), ...updated },
@@ -283,6 +386,8 @@ function BusinessNameStep({ ctx }: { ctx: StepCtx }) {
         enterKeyHint="go"
         aria-label={t("welcome.businessName.question")}
         placeholder={t("welcome.businessName.placeholder")}
+        aria-invalid={blank ? "true" : undefined}
+        aria-describedby={blank ? "welcome-biz-blank" : undefined}
         value={value}
         // deno-lint-ignore no-explicit-any
         onInput={(e: any) => setValue(e.currentTarget.value)}
@@ -294,6 +399,41 @@ function BusinessNameStep({ ctx }: { ctx: StepCtx }) {
           }
         }}
       />
+      {blank
+        ? (
+          <p id="welcome-biz-blank" class="welcome__error" role="alert">
+            {t("welcome.nameBlank")}
+          </p>
+        )
+        : null}
+      <fieldset class="welcome__send-in">
+        <legend class="welcome__send-in-label">{t("settings.commsLang")}</legend>
+        <div class="welcome__send-in-options">
+          {([["en", "settings.english"], ["es", "settings.spanish"]] as const)
+            .map(([code, key]) => (
+              <label key={code} class="welcome__send-in-option">
+                <input
+                  type="checkbox"
+                  data-cy={`welcome-comms-${code}`}
+                  checked={sendIn.includes(code)}
+                  disabled={busy ||
+                    (sendIn.length === 1 && sendIn[0] === code)}
+                  // deno-lint-ignore no-explicit-any
+                  onChange={(e: any) =>
+                    toggleSendIn(code, e.currentTarget.checked)}
+                />
+                <span>{t(key)}</span>
+              </label>
+            ))}
+        </div>
+        {sendIn.length === 1
+          ? (
+            <p class="welcome__hint" data-cy="welcome-comms-keep-one">
+              {t("welcome.commsLangKeepOne")}
+            </p>
+          )
+          : null}
+      </fieldset>
       {err ? <p class="welcome__error" role="alert">{err}</p> : null}
       <StepFooter ctx={ctx} valid={valid} busy={busy} onContinue={save} />
     </StepBody>
@@ -500,8 +640,16 @@ function AddressStep({ ctx }: { ctx: StepCtx }) {
   const [postal, setPostal] = useState(a.postal ?? "");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
-  const valid = street.trim().length > 0 || city.trim().length > 0 ||
-    postal.trim().length > 0;
+  // REQ-352 (demo M38): a ZIP is 5 digits (or ZIP+4) — "7870" is named
+  // in-app once the field is left (a stored value counts as left).
+  const [zipTouched, setZipTouched] = useState(Boolean(a.postal));
+  const zipErr = zipError(postal);
+  const showZipErr = zipTouched && zipErr !== null;
+  // REQ-390 (demo m18): while the ZIP is still being typed, the same reason
+  // shows as a neutral hint, so a disabled Continue is never unexplained
+  const showZipHint = !zipTouched && zipErr !== null;
+  const valid = (street.trim().length > 0 || city.trim().length > 0 ||
+    postal.trim().length > 0) && zipErr === null;
 
   // Mapbox autocomplete on the street input. The typed text is ALWAYS the
   // first option so a PO box, "misma dirección que arriba", or any address
@@ -670,56 +818,85 @@ function AddressStep({ ctx }: { ctx: StepCtx }) {
           autoComplete="postal-code"
           aria-label={t("welcome.address.zip")}
           placeholder={t("welcome.address.zip")}
+          maxLength={10}
+          aria-invalid={showZipErr ? "true" : undefined}
+          aria-describedby={showZipErr
+            ? "welcome-zip-err"
+            : showZipHint
+            ? "welcome-zip-hint"
+            : undefined}
           value={postal}
           // deno-lint-ignore no-explicit-any
           onInput={(e: any) => setPostal(e.currentTarget.value)}
+          onBlur={() => setZipTouched(true)}
         />
       </div>
+      {showZipErr && zipErr
+        ? (
+          <p id="welcome-zip-err" class="welcome__error" role="alert">
+            {t(zipErr)}
+          </p>
+        )
+        : showZipHint && zipErr
+        ? (
+          <p id="welcome-zip-hint" class="welcome__hint">
+            {t(zipErr)}
+          </p>
+        )
+        : null}
       {err ? <p class="welcome__error" role="alert">{err}</p> : null}
       <StepFooter ctx={ctx} valid={valid} busy={busy} onContinue={save} />
     </StepBody>
   );
 }
 
-const PAYMENT_METHODS: {
-  id: "venmo" | "zelle" | "cashapp" | "check" | "cash" | "ach";
-  handleField?: "handle" | "cashtag";
-}[] = [
-  { id: "venmo", handleField: "handle" },
-  { id: "zelle", handleField: "handle" },
-  { id: "cashapp", handleField: "cashtag" },
-  { id: "check" },
-  { id: "cash" },
-  { id: "ach" },
-];
+/** REQ-620 (cycle 4, p4-p6b): the step offers every method in the shared
+ *  catalogue — the same list, order and labels as Settings' Payments card.
+ *  Only a money-routing handle (Venmo / Cash App / Zelle / PayPal) is asked
+ *  for here; the optional notes (check address, ACH / card) live in Settings. */
+const asksHandle = (m: PaymentMethodDef) =>
+  m.handleField !== null && !m.optional;
 
 function PaymentStep({ ctx }: { ctx: StepCtx }) {
   const cur = ctx.snap.identity?.acceptedPaymentMethods ?? {};
   const [enabled, setEnabled] = useState<Record<string, boolean>>(() => {
     const o: Record<string, boolean> = {};
-    for (const m of PAYMENT_METHODS) o[m.id] = Boolean(cur[m.id]?.enabled);
+    for (const m of PAYMENT_METHOD_CATALOG) {
+      o[m.id] = Boolean(cur[m.id]?.enabled);
+    }
     return o;
   });
   const [handles, setHandles] = useState<Record<string, string>>(() => {
     const o: Record<string, string> = {};
-    for (const m of PAYMENT_METHODS) {
-      const entry = cur[m.id] as
-        | { handle?: string; cashtag?: string }
-        | undefined;
-      o[m.id] =
-        (m.handleField === "cashtag" ? entry?.cashtag : entry?.handle) ??
-          "";
+    for (const m of PAYMENT_METHOD_CATALOG) {
+      const entry = cur[m.id] as Record<string, unknown> | undefined;
+      const v = asksHandle(m) ? entry?.[m.handleField!] : "";
+      o[m.id] = typeof v === "string" ? v : "";
     }
     return o;
   });
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
 
+  // REQ-352 (demo M38): a handle a customer could pay to — Zelle a phone or
+  // email, Venmo also an @username, Cash App a $cashtag. Named in-app once the
+  // field is left (a stored handle counts as left).
+  const [touched, setTouched] = useState<Record<string, boolean>>(() => {
+    const o: Record<string, boolean> = {};
+    for (const m of PAYMENT_METHOD_CATALOG) {
+      o[m.id] = handles[m.id].trim().length > 0;
+    }
+    return o;
+  });
+  const handleErr = (id: string) =>
+    paymentHandleError(id as HandleMethod, handles[id] ?? "");
+
   // Valid when at least one method is on, and every handle-requiring method
-  // that's on has a non-empty handle.
-  const anyOn = PAYMENT_METHODS.some((m) => enabled[m.id]);
-  const handlesOk = PAYMENT_METHODS.every((m) =>
-    !m.handleField || !enabled[m.id] || handles[m.id].trim().length > 0
+  // that's on has a non-empty, well-formed handle.
+  const anyOn = PAYMENT_METHOD_CATALOG.some((m) => enabled[m.id]);
+  const handlesOk = PAYMENT_METHOD_CATALOG.every((m) =>
+    !asksHandle(m) || !enabled[m.id] ||
+    (handles[m.id].trim().length > 0 && handleErr(m.id) === null)
   );
   const valid = anyOn && handlesOk;
 
@@ -728,16 +905,19 @@ function PaymentStep({ ctx }: { ctx: StepCtx }) {
     setBusy(true);
     setErr("");
     try {
-      // Read-modify-write the whole map so methods enabled elsewhere (paypal,
-      // card, ...) survive. Only the six chips here are overwritten.
+      // Read-modify-write the whole map so keys set elsewhere (other, a
+      // check's mailing address from Settings, ...) survive.
       const next: Record<string, unknown> = {
         ...(ctx.snap.identity?.acceptedPaymentMethods ?? {}),
       };
-      for (const m of PAYMENT_METHODS) {
+      for (const m of PAYMENT_METHOD_CATALOG) {
         if (enabled[m.id]) {
-          const entry: Record<string, unknown> = { enabled: true };
-          if (m.handleField && handles[m.id].trim()) {
-            entry[m.handleField] = handles[m.id].trim();
+          const entry: Record<string, unknown> = {
+            ...((next[m.id] as object | undefined) ?? {}),
+            enabled: true,
+          };
+          if (asksHandle(m) && handles[m.id].trim()) {
+            entry[m.handleField!] = handles[m.id].trim();
           }
           next[m.id] = entry;
         } else if (next[m.id]) {
@@ -762,8 +942,8 @@ function PaymentStep({ ctx }: { ctx: StepCtx }) {
       why={t("welcome.payment.why")}
     >
       <div class="welcome__pay">
-        {PAYMENT_METHODS.map((m) => (
-          <div key={m.id} class="welcome__pay-method">
+        {PAYMENT_METHOD_CATALOG.map((m) => (
+          <div key={m.id} class="welcome__pay-method" data-pay-method={m.id}>
             <button
               type="button"
               class={"welcome__chip" +
@@ -772,24 +952,50 @@ function PaymentStep({ ctx }: { ctx: StepCtx }) {
               onClick={() =>
                 setEnabled((prev) => ({ ...prev, [m.id]: !prev[m.id] }))}
             >
-              {t(`welcome.payment.method.${m.id}`)}
+              {t(m.labelKey)}
             </button>
-            {m.handleField && enabled[m.id]
-              ? (
-                <input
-                  class="welcome__input welcome__input--handle"
-                  type="text"
-                  aria-label={t(`welcome.payment.handle.${m.id}`)}
-                  placeholder={t(`welcome.payment.handle.${m.id}`)}
-                  value={handles[m.id]}
-                  // deno-lint-ignore no-explicit-any
-                  onInput={(e: any) =>
-                    setHandles((prev) => ({
-                      ...prev,
-                      [m.id]: e.currentTarget.value,
-                    }))}
-                />
-              )
+            {asksHandle(m) && enabled[m.id]
+              ? (() => {
+                const err = touched[m.id] ? handleErr(m.id) : null;
+                const errId = `welcome-handle-${m.id}-err`;
+                // REQ-390 (demo m18): a handle still being typed gets the same
+                // reason as a neutral hint — Continue is never off unexplained
+                const hint = !touched[m.id] &&
+                    handles[m.id].trim().length > 0
+                  ? handleErr(m.id)
+                  : null;
+                const hintId = `welcome-handle-${m.id}-hint`;
+                return (
+                  <>
+                    <input
+                      class="welcome__input welcome__input--handle"
+                      type="text"
+                      aria-label={t(`welcome.payment.handle.${m.id}`)}
+                      placeholder={t(`welcome.payment.handle.${m.id}`)}
+                      aria-invalid={err ? "true" : undefined}
+                      aria-describedby={err ? errId : hint ? hintId : undefined}
+                      value={handles[m.id]}
+                      // deno-lint-ignore no-explicit-any
+                      onInput={(e: any) =>
+                        setHandles((prev) => ({
+                          ...prev,
+                          [m.id]: e.currentTarget.value,
+                        }))}
+                      onBlur={() =>
+                        setTouched((prev) => ({ ...prev, [m.id]: true }))}
+                    />
+                    {err
+                      ? (
+                        <p id={errId} class="welcome__error" role="alert">
+                          {t(err)}
+                        </p>
+                      )
+                      : hint
+                      ? <p id={hintId} class="welcome__hint">{t(hint)}</p>
+                      : null}
+                  </>
+                );
+              })()
               : null}
           </div>
         ))}
@@ -813,6 +1019,11 @@ function LogoStep({ ctx }: { ctx: StepCtx }) {
 
   async function onFile(file: File | undefined) {
     if (!file || busy) return;
+    // REQ-252 (M30): only an image is a logo — refused here, before any upload
+    if (!isLogoImageType(file.type)) {
+      setErr(t("welcome.logo.notImage"));
+      return;
+    }
     setBusy(true);
     setErr("");
     try {
@@ -836,8 +1047,13 @@ function LogoStep({ ctx }: { ctx: StepCtx }) {
       });
       ctx.patchSnap({ identity: { ...(ctx.snap.identity ?? {}), ...updated } });
       ctx.advance();
-    } catch {
-      setErr(t("welcome.saveError"));
+    } catch (e) {
+      // REQ-252: the server refuses a logo that is not an image (422 logo_not_image)
+      setErr(
+        (e as { status?: number })?.status === 422
+          ? t("welcome.logo.notImage")
+          : t("welcome.saveError"),
+      );
     } finally {
       setBusy(false);
     }
@@ -861,7 +1077,7 @@ function LogoStep({ ctx }: { ctx: StepCtx }) {
         <input
           class="welcome__file-input"
           type="file"
-          accept="image/*"
+          accept={LOGO_IMAGE_ACCEPT}
           // deno-lint-ignore no-explicit-any
           onChange={(e: any) => onFile(e.currentTarget.files?.[0])}
         />
@@ -872,6 +1088,20 @@ function LogoStep({ ctx }: { ctx: StepCtx }) {
   );
 }
 
+/** REQ-503: a field's format message — a hint while typing, an alert once left. */
+function FieldMessage(
+  { id, msgKey, touched }: {
+    id: string;
+    msgKey: string | null;
+    touched: boolean;
+  },
+) {
+  if (!msgKey) return null;
+  return touched
+    ? <p id={id} class="welcome__error" role="alert">{t(msgKey)}</p>
+    : <p id={id} class="welcome__hint">{t(msgKey)}</p>;
+}
+
 function InsuranceStep({ ctx }: { ctx: StepCtx }) {
   const [provider, setProvider] = useState(ctx.snap.insurance?.provider ?? "");
   const [policyNumber, setPolicyNumber] = useState(
@@ -879,7 +1109,19 @@ function InsuranceStep({ ctx }: { ctx: StepCtx }) {
   );
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
-  const valid = provider.trim().length > 0;
+  // REQ-503 (demo m62, cycle 3): insurer "!!!" and a 120-character policy
+  // number were accepted. Both get a format rule; like the ZIP (REQ-390) the
+  // reason shows as a hint while typing and as an error once the field is left.
+  const [providerTouched, setProviderTouched] = useState(
+    Boolean(ctx.snap.insurance?.provider),
+  );
+  const [policyTouched, setPolicyTouched] = useState(
+    Boolean(ctx.snap.insurance?.policyNumber),
+  );
+  const providerErr = insurerError(provider);
+  const policyErr = policyNumberError(policyNumber);
+  const valid = provider.trim().length > 0 && providerErr === null &&
+    policyErr === null;
 
   async function save() {
     if (!valid || busy) return;
@@ -911,18 +1153,34 @@ function InsuranceStep({ ctx }: { ctx: StepCtx }) {
         type="text"
         aria-label={t("welcome.insurance.provider")}
         placeholder={t("welcome.insurance.provider")}
+        aria-invalid={providerTouched && providerErr ? "true" : undefined}
+        aria-describedby={providerErr ? "welcome-insurer-msg" : undefined}
         value={provider}
         // deno-lint-ignore no-explicit-any
         onInput={(e: any) => setProvider(e.currentTarget.value)}
+        onBlur={() => setProviderTouched(true)}
+      />
+      <FieldMessage
+        id="welcome-insurer-msg"
+        msgKey={providerErr}
+        touched={providerTouched}
       />
       <input
         class="welcome__input"
         type="text"
         aria-label={t("welcome.insurance.policy")}
         placeholder={t("welcome.insurance.policy")}
+        aria-invalid={policyTouched && policyErr ? "true" : undefined}
+        aria-describedby={policyErr ? "welcome-policy-msg" : undefined}
         value={policyNumber}
         // deno-lint-ignore no-explicit-any
         onInput={(e: any) => setPolicyNumber(e.currentTarget.value)}
+        onBlur={() => setPolicyTouched(true)}
+      />
+      <FieldMessage
+        id="welcome-policy-msg"
+        msgKey={policyErr}
+        touched={policyTouched}
       />
       {err ? <p class="welcome__error" role="alert">{err}</p> : null}
       <StepFooter ctx={ctx} valid={valid} busy={busy} onContinue={save} />
@@ -938,6 +1196,10 @@ function InsuranceStep({ ctx }: { ctx: StepCtx }) {
 function SampleQuoteStep({ ctx }: { ctx: StepCtx }) {
   const [busy, setBusy] = useState(false);
   const quoteId = ctx.sampleQuoteId;
+  // REQ-256: the sample opens in the wizard's language — the quote stores its
+  // content in both, so the inline preview and the full-size link follow the
+  // EN | ES toggle.
+  const sampleHref = `/q/${quoteId}?lang=${langSignal.value}`;
 
   // Final step: Continue marks onboarding finished and lands the user on the
   // assistant's NEW-chat view (/assistant renders an empty conversation) —
@@ -958,16 +1220,16 @@ function SampleQuoteStep({ ctx }: { ctx: StepCtx }) {
       {quoteId
         ? (
           <>
-            <div class="welcome__sample-frame-wrap">
-              <iframe
-                class="welcome__sample-frame"
-                src={`/q/${quoteId}`}
-                title={t("welcome.sample.question")}
-              />
-            </div>
+            {
+              /* REQ-433 (demo M13, cycle 3): the sample is rendered inline,
+                not embedded as a frame — the demo stage's mirror never
+                carries an embedded page (REQ-242), so a frame was an empty
+                grey box there. */
+            }
+            <SampleQuotePreview quoteId={quoteId} lang={langSignal.value} />
             <a
               class="welcome__sample-link"
-              href={`/q/${quoteId}`}
+              href={sampleHref}
               target="_blank"
               rel="noopener noreferrer"
             >
@@ -1000,7 +1262,6 @@ function SampleQuoteStep({ ctx }: { ctx: StepCtx }) {
   );
 }
 
-
 // REQ-054 — "in onboarding a user can pick their plan": the public monthly plans of the one
 // pricing module (ONBOARDING_PLANS), as cards like the ones /settings shows (PlanCards) — though
 // not the hidden Monster Assist+, which is settings' alone (REQ-119). A card is a form (REQ-059): a
@@ -1020,12 +1281,21 @@ function PlanStep({ ctx }: { ctx: StepCtx }) {
   const lang = langSignal.value;
   const hasEmail = Boolean(ctx.snap.user.email?.trim());
   const plans = ONBOARDING_PLANS; // REQ-119 — the public monthly plans; the hidden Monster Assist+ is settings' alone
-  const nameOf = (id: string) => PRICING_PLANS.find((p) => p.id === id)?.name ?? id; // REQ-064 — the test tier has a name too
+  const nameOf = (id: string) =>
+    PRICING_PLANS.find((p) => p.id === id)?.name ?? id; // REQ-064 — the test tier has a name too
   // a pick the backend refused came back here saying why (/plan/pick)
   const [err, setErr] = useState("");
   useEffect(() => {
     const why = pickErrorOf(location.search);
-    if (why) setErr(t(why === "email-required" ? "welcome.plan.emailFirst" : why === "merchant-unknown" ? "plan.merchantUnknown" : "plan.error"));
+    if (why) {
+      setErr(t(
+        why === "email-required"
+          ? "welcome.plan.emailFirst"
+          : why === "merchant-unknown"
+          ? "plan.merchantUnknown"
+          : "plan.error",
+      ));
+    }
   }, []);
 
   const settled = plan?.status === "active" || plan?.status === "free";
@@ -1059,7 +1329,7 @@ function PlanStep({ ctx }: { ctx: StepCtx }) {
   const why = cards ? t("welcome.plan.why") : t("welcome.plan.yoursWhy");
 
   return (
-    <StepBody question={question} why={why}>
+    <StepBody question={question} why={why} noForm>
       {view === "pay" && plan
         ? (
           <div class="welcome__plan-pending" data-cy="plan-pending">
@@ -1067,7 +1337,11 @@ function PlanStep({ ctx }: { ctx: StepCtx }) {
               <b>{nameOf(plan.planId)}</b> · {t("plan.pending")}
             </p>
             <div class="welcome__plan-actions">
-              <a class="welcome__btn welcome__btn--primary" data-cy="plan-pay-link" href={plan.payUrl}>
+              <a
+                class="welcome__btn welcome__btn--primary"
+                data-cy="plan-pay-link"
+                href={plan.payUrl}
+              >
                 {t("plan.continue")} →
               </a>
             </div>
@@ -1080,7 +1354,11 @@ function PlanStep({ ctx }: { ctx: StepCtx }) {
               <b>{nameOf(plan.planId)}</b> · {t("plan.preparing")}
             </p>
             <div class="welcome__plan-actions">
-              <a class="welcome__btn welcome__btn--primary" data-cy="plan-handoff-link" href={handoffPage("/welcome")}>
+              <a
+                class="welcome__btn welcome__btn--primary"
+                data-cy="plan-handoff-link"
+                href={handoffPage("/welcome")}
+              >
                 {t("plan.preparingOpen")} →
               </a>
             </div>
@@ -1094,13 +1372,39 @@ function PlanStep({ ctx }: { ctx: StepCtx }) {
               featuredId="monster"
               disabled={(p) => p.priceCents > 0 && !hasEmail}
               back="/welcome"
+              // REQ-356 — a card IS the pick: its line says what pressing it does
+              note={(p) =>
+                wizardPlanNote(t, plan, p.id, new Date().toISOString(), lang)}
             />
-            <p class="welcome__plan-custom">{t("welcome.plan.custom", { phone: SUPPORT_PHONE_DISPLAY })}</p>
-            {!hasEmail ? <p class="welcome__plan-note">{t("welcome.plan.emailFirst")}</p> : null}
+            {/* REQ-725 — the card says one plain line; the dated first-pick schedule (REQ-129) is here, asked for */}
+            <details class="welcome__plan-how" data-cy="plan-billing-how">
+              <summary>{t("welcome.plan.billingHow.title")}</summary>
+              <p>
+                {wizardBillingHow(
+                  t,
+                  "monster",
+                  new Date().toISOString(),
+                  lang,
+                )}
+              </p>
+            </details>
+            <p class="welcome__plan-custom">
+              {t("welcome.plan.custom", { phone: SUPPORT_PHONE_DISPLAY })}
+            </p>
+            {!hasEmail
+              ? <p class="welcome__plan-note">{t("welcome.plan.emailFirst")}</p>
+              : null}
           </div>
         )}
       {err ? <p class="welcome__error" role="alert">{err}</p> : null}
-      <StepFooter ctx={ctx} valid={settled} busy={false} onContinue={ctx.advance} />
+      {/* REQ-725 — a card IS the pick: no dead Continue under the cards until a plan is settled */}
+      <StepFooter
+        ctx={ctx}
+        valid={settled}
+        busy={false}
+        onContinue={ctx.advance}
+        hideContinue={cards && !settled}
+      />
     </StepBody>
   );
 }
@@ -1187,23 +1491,38 @@ export default function WelcomeWizard(
 ) {
   const registry = useMemo(() => buildSteps(), []);
   // REQ-121 — the steps this visit asks: the questions with no answer on record when the wizard
-  // opens, and the closing screen; a question answered on an earlier visit is never shown again
-  const steps = useMemo(() => openSteps(registry, snapshot), [registry]);
+  // opens, and the closing screen; going forward, a question answered on an earlier visit is
+  // never shown again
+  const open = useMemo(() => openSteps(registry, snapshot), [registry]);
   const [snap, setSnap] = useState<ProfileSnapshot>(snapshot);
-  // REQ-059 — back from a pick (free stored, or the receipt with the plan active): resume PAST
-  // the plan's slot, at the first open step after it — not at an earlier question the person
-  // skipped on the way to the plan; otherwise the first open step
-  const [index, setIndex] = useState(() =>
-    typeof location !== "undefined" && resumesAfterPlan(location.search)
-      ? indexAfterPlan(registry, steps)
-      : 0
+  // REQ-498 — the languages this visit has seen, starting with the account's own
+  const [languagesSeen, setLanguagesSeen] = useState<CommsLang[]>(() =>
+    onboardingLanguagesSeen(
+      onboardingLanguagesSeen([], accountLanguage(snapshot.user)),
+      initialLang,
+    )
   );
+  // REQ-427 (demo p13-s) — the index is a place in the WHOLE registry, so after a reload Back
+  // still reaches the answered question before the current one. It opens at the first open step;
+  // REQ-059 — back from a pick (free stored, or the receipt with the plan active): PAST the
+  // plan's slot, at the first open step after it — not at an earlier question the person skipped
+  // on the way to the plan
+  const [index, setIndex] = useState(() =>
+    startIndex(
+      registry,
+      open,
+      typeof location !== "undefined" && resumesAfterPlan(location.search),
+    )
+  );
+  // REQ-427 — the furthest step this visit reached: Continue after Back retraces up to it
+  const reached = useRef(index);
+  reached.current = Math.max(reached.current, index);
   const [, force] = useState(0);
 
-  // Pre-generate the sample quote while the user fills the form so the
-  // "see what your customer sees" step renders instantly. Idempotent
-  // server-side (per-user tag), and the public page loads branding live,
-  // so business name / logo entered on later steps still show up.
+  // REQ-256: the sample quote is made when its step comes up — not at
+  // mount — so it is cut from the business the wizard just learned (its trade
+  // is read off the business name). Idempotent server-side (per-user flag),
+  // and the public page loads branding live.
   const [sampleQuoteId, setSampleQuoteId] = useState("");
   const [sampleQuoteFailed, setSampleQuoteFailed] = useState(false);
   const samplePending = useRef(false);
@@ -1221,9 +1540,6 @@ export default function WelcomeWizard(
         samplePending.current = false;
       });
   }
-  useEffect(() => {
-    ensureSampleQuote();
-  }, []);
 
   // Seed the client language, then re-render whenever the language toggles.
   //
@@ -1244,15 +1560,31 @@ export default function WelcomeWizard(
     return () => unsub();
   }, []);
 
-  const total = steps.length;
-  const step = steps[index];
+  // the whole registry is the navigation (REQ-427); the counter counts the whole onboarding, so
+  // the plan pick's reload goes on to "Step 5 of 10", never "Step 1 of 6" (REQ-253)
+  const total = registry.length;
+  const progress = stepCounter(registry, index);
+  const step = registry[index];
+  const [skipping, setSkipping] = useState(false);
   const StepComp = step.Component;
+  useEffect(() => {
+    if (step.id === "sampleQuote") ensureSampleQuote();
+  }, [step.id]);
 
   const ctx: StepCtx = {
     snap,
     suggestedState,
     patchSnap: (partial) => setSnap((prev) => ({ ...prev, ...partial })),
-    advance: () => setIndex((i) => Math.min(i + 1, total - 1)),
+    // REQ-121 / REQ-427: forward stops only on the steps open when the wizard opened
+    advance: () => setIndex((i) => nextIndex(registry, open, i, reached.current)),
+    skip: () => {
+      if (skipping) return;
+      setSkipping(true);
+      deferQuestion(step.id).finally(() => {
+        setSkipping(false);
+        setIndex((i) => nextIndex(registry, open, i, reached.current));
+      });
+    },
     goBack: () => setIndex((i) => Math.max(i - 1, 0)),
     canGoBack: index > 0,
     skippable: step.skippable,
@@ -1261,46 +1593,79 @@ export default function WelcomeWizard(
     sampleQuoteId,
     sampleQuoteFailed,
     retrySampleQuote: ensureSampleQuote,
+    languagesSeen,
   };
 
   const [leaving, setLeaving] = useState(false);
   async function skipSetup() {
     if (leaving) return;
     setLeaving(true);
-    // REQ-091: record the leave, then the assistant — the dashboard would send
-    // an account with an open question straight back here; the wizard returns
-    // at the first open question on the next code.
+    // REQ-504 (demo M37): record the leave and defer every open question on the
+    // server, then the dashboard — its setup checklist asks for the rest. The
+    // wizard still returns at the first open question on the next code (REQ-091).
     await fetch("/api/me/onboarded", {
       method: "POST",
       headers: { "content-type": "application/json" },
       credentials: "include",
-      body: JSON.stringify({ skipped: true }),
-    }).catch(() => {});
-    globalThis.location.href = "/assistant";
+      body: JSON.stringify({ skipped: true, deferAll: true }),
+    }).then((r) => r.body?.cancel()).catch(() => {});
+    globalThis.location.href = "/dashboard";
+  }
+
+  // REQ-348 (demo m34): the EN/ES switch, in the wizard itself — /welcome mounts no app topbar,
+  // so onboarding had no way to change language. The topbar's behaviour: flip the signal at once,
+  // persist locally + the cookie (setLang), save the account's language (best effort).
+  const lang = langSignal.value;
+  function switchLang(code: Lang) {
+    if (langSignal.value === code) return;
+    setLang(code);
+    setSnap((prev) => ({ ...prev, user: { ...prev.user, language: code } }));
+    // REQ-498 — remember it: the send-in default keeps every language seen
+    setLanguagesSeen((prev) => onboardingLanguagesSeen(prev, code));
+    profileClient.updateUser({ language: code }).catch(() => {
+      /* best effort — the UI already flipped */
+    });
   }
 
   return (
     <div class="welcome">
+      <div
+        class="welcome__lang"
+        role="group"
+        aria-label={t("dashTopbar.language")}
+      >
+        {(["en", "es"] as const).map((code) => (
+          <button
+            key={code}
+            type="button"
+            class={`welcome__lang-btn ${
+              lang === code ? "welcome__lang-btn--on" : ""
+            }`}
+            aria-pressed={lang === code ? "true" : "false"}
+            data-cy={`welcome-lang-${code}`}
+            onClick={() => switchLang(code)}
+          >
+            {code.toUpperCase()}
+          </button>
+        ))}
+      </div>
       <div class="welcome__progress-wrap">
         <div
           class="welcome__progressbar"
           role="progressbar"
           aria-valuemin={1}
-          aria-valuemax={total}
-          aria-valuenow={index + 1}
-          aria-valuetext={t("welcome.stepOf", {
-            current: index + 1,
-            total,
-          })}
+          aria-valuemax={progress.total}
+          aria-valuenow={progress.current}
+          aria-valuetext={t("welcome.stepOf", progress)}
           aria-label={t("welcome.progressAria")}
         >
           <div
             class="welcome__progressbar-fill"
-            style={{ width: `${((index + 1) / total) * 100}%` }}
+            style={{ width: `${(progress.current / progress.total) * 100}%` }}
           />
         </div>
         <span class="welcome__step-count">
-          {t("welcome.stepOf", { current: index + 1, total })}
+          {t("welcome.stepOf", progress)}
         </span>
       </div>
 
@@ -1308,14 +1673,19 @@ export default function WelcomeWizard(
         <StepComp key={step.id} ctx={ctx} />
       </div>
 
-      <button
-        type="button"
-        class="welcome__escape"
-        onClick={skipSetup}
-        disabled={leaving}
-      >
-        {t("welcome.skipSetup")}
-      </button>
+      {
+        /* REQ-504: the name cannot be deferred, so the escape waits for it */
+        canSkipSetup(snap) && (
+          <button
+            type="button"
+            class="welcome__escape"
+            onClick={skipSetup}
+            disabled={leaving}
+          >
+            {t("welcome.skipSetup")}
+          </button>
+        )
+      }
     </div>
   );
 }

@@ -7,9 +7,11 @@ import { EmailController } from "@communication/entrypoints/email-controller/mod
 import { ContactPublicController } from "@communication/entrypoints/contact-public-controller/mod.ts";
 import { DemoRequestController } from "@communication/entrypoints/demo-request-controller/mod.ts";
 import { VoiceStreamController } from "@communication/entrypoints/voice-stream-controller/mod.ts";
+import { OutboxController } from "@communication/entrypoints/outbox-controller/mod.ts"; // REQ-784
 import { ConversationStore } from "@communication/domain/data/conversation-store/mod.ts";
 import { MessageStore } from "@communication/domain/data/message-store/mod.ts";
 import { NotificationStore } from "@communication/domain/data/notification-store/mod.ts";
+import { OutboxStore } from "@communication/domain/data/outbox-store/mod.ts"; // REQ-784
 import { NotifyOnEvent } from "@communication/domain/coordinators/notify-on-event/mod.ts";
 import { LogPaperworkMessage } from "@communication/domain/coordinators/log-paperwork-message/mod.ts";
 import { EmailService } from "@communication/domain/data/email-service/mod.ts";
@@ -40,11 +42,13 @@ import { RateLimiter } from "@core/data/rate-limit/mod.ts";
     ContactPublicController,
     DemoRequestController,
     VoiceStreamController,
+    OutboxController,
   ],
   injectables: [
     ConversationStore,
     MessageStore,
     NotificationStore,
+    OutboxStore,
     EventBus,
     NotifyOnEvent,
     LogPaperworkMessage,

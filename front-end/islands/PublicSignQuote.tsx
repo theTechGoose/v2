@@ -1,6 +1,15 @@
 import { useEffect, useRef, useState } from "preact/hooks";
 import { tFor } from "../lib/i18n.ts";
+import { Icon } from "../components/ui/Icon.tsx";
 import { acceptDecision } from "../../shared/documents/linked-view.ts";
+import { SIGN_OVERRIDE_QUERY } from "../../shared/quote-flow/public-doc-state.ts";
+import { announceChange } from "../lib/change-announce.ts";
+import { strokeWidth } from "../lib/signature-ink.ts";
+import {
+  isValidSignerName,
+  onFileSpellingSuggestion,
+  signerNameOnFile,
+} from "../../shared/quote-flow/signer-name.ts";
 
 interface Props {
   quoteId: string;
@@ -9,6 +18,18 @@ interface Props {
   version?: number;
   /** Customer-facing copy language (defaults to en; non-breaking). */
   lang?: "en" | "es";
+  /** REQ-311 (demo-loop c1 m19): a successful accept is handed to the parent
+   *  (PublicQuoteView refetches and swaps the signed document in place) —
+   *  never a page reload, which landed the customer at the top with no
+   *  thank-you and the "Pay now" hand-off out of sight. */
+  onSigned?: (signed: { name: string }) => void;
+  /** REQ-306: the business's own session signing in person with the
+   *  customer — the accept POST carries `?as=customer&confirm=1`, without
+   *  which the backend answers 409 owner_cannot_sign. */
+  override?: boolean;
+  /** REQ-692 (demo c5 p18-6a): the customer's name on file — a typed name
+   *  that differs only by accents or case gets this spelling suggested. */
+  onFileName?: string;
 }
 
 interface Stroke {
@@ -43,18 +64,32 @@ const LINE = "#e3e8e6";
  *     viewport changes mid-flow).
  */
 export default function PublicSignQuote(
-  { quoteId, version, lang = "en" }: Props,
+  {
+    quoteId,
+    version,
+    lang = "en",
+    onSigned,
+    override = false,
+    onFileName,
+  }: Props,
 ) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const strokesRef = useRef<Stroke[]>([]);
   const drawingRef = useRef<Stroke | null>(null);
   const [hasInk, setHasInk] = useState(false);
   const [name, setName] = useState("");
+  // REQ-470 (demo m61): the typed name must pass the shared signer rule
+  const nameOk = isValidSignerName(name);
+  const nameTyped = name.trim().length > 0;
+  const suggestedName = onFileSpellingSuggestion(name, onFileName);
+  // REQ-289: the typed-name label must name its input (else a screen reader
+  // reads the placeholder, "Juan Pérez", as the field's name)
+  const nameId = `sign-name-${quoteId}`;
   const [submitting, setSubmitting] = useState(false);
   // REQ-203: "stale" — the quote was republished under this page; "already"
   // — someone signed it meanwhile. Both reload into the current document.
   const [status, setStatus] = useState<
-    "idle" | "ok" | "error" | "stale" | "already"
+    "idle" | "ok" | "error" | "stale" | "already" | "owner" | "notReady"
   >("idle");
   const [err, setErr] = useState<string | undefined>();
 
@@ -110,9 +145,8 @@ export default function PublicSignQuote(
       const dt = Math.max(1, b.t - a.t);
       const dist = Math.hypot(b.x - a.x, b.y - a.y);
       const speed = dist / dt; // px / ms
-      // Faster = thinner. 0.05px/ms → ~3.2px; 1.5px/ms → ~1.0px.
-      const width = Math.max(0.9, Math.min(3.2, 3.4 - speed * 1.6));
-      ctx.lineWidth = width;
+      // Faster = thinner, never below MIN_STROKE_PX (REQ-534).
+      ctx.lineWidth = strokeWidth(speed);
       ctx.beginPath();
       ctx.moveTo(a.x, a.y);
       ctx.lineTo(b.x, b.y);
@@ -264,22 +298,32 @@ export default function PublicSignQuote(
 
   async function onSign(e: Event) {
     e.preventDefault();
-    const trimmed = name.trim();
-    if (!trimmed) return;
+    // REQ-470 (demo m61): "x" is not a legal name — the shared rule (two
+    // lettered words, or three letters) gates the signature, as the backend
+    // does (400 invalid_name).
+    if (!nameOk) return;
+    // REQ-750 (demo c5v1 p18-6a): an accent/case-only variant of the name on
+    // file signs in the agreement's spelling (the backend does the same).
+    const trimmed = signerNameOnFile(name, onFileName);
     setSubmitting(true);
     setErr(undefined);
     try {
       const dataUrl = exportSignaturePng() || typedNamePng(trimmed);
-      const r = await fetch(`/api/quotes/${quoteId}/accept`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          name: trimmed,
-          signature: dataUrl,
-          // REQ-203: the version the customer is looking at
-          ...(typeof version === "number" ? { version } : {}),
-        }),
-      });
+      const r = await fetch(
+        `/api/quotes/${quoteId}/accept${
+          override ? `?${SIGN_OVERRIDE_QUERY}` : ""
+        }`,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            name: trimmed,
+            signature: dataUrl,
+            // REQ-203: the version the customer is looking at
+            ...(typeof version === "number" ? { version } : {}),
+          }),
+        },
+      );
       const text = await r.text().catch(() => "");
       let body: unknown = text;
       try {
@@ -298,15 +342,30 @@ export default function PublicSignQuote(
         reloadSoon(900);
         return;
       }
+      if (decision.kind === "owner_cannot_sign") {
+        // REQ-306: the business's own session — the backend refused; say
+        // so instead of a raw error (the page normally hides the pad first).
+        setStatus("owner");
+        return;
+      }
+      if (decision.kind === "not_ready") {
+        // REQ-460 (demo-loop cycle 3, M16): not sent yet, or no payment terms
+        // on it — say so, never a raw 409 (the page normally hides the pad).
+        setStatus("notReady");
+        return;
+      }
       if (decision.kind !== "ok") {
         throw new Error(text.slice(0, 200) || `${r.status}`);
       }
       setStatus("ok");
-      // Reload after a brief moment so the SSR-rendered "signed" state
-      // takes over: the customer-signature card on the right fills in
-      // with the typed name + date, matching the contractor card on the
-      // left.
-      reloadSoon(900);
+      // REQ-493 (demo-loop c3 m7): signed in person on the owner's device —
+      // the owner's app tabs in this browser follow at once.
+      announceChange({ entityType: "quote", entityId: quoteId });
+      // REQ-311: no reload. The parent refetches the public projection and
+      // re-renders the signed document in place, so the customer stays
+      // right here: the signature card fills in with the typed name + date,
+      // and "Signed and binding" + "Pay now" appear where the pad was.
+      onSigned?.({ name: trimmed });
     } catch (e) {
       setStatus("error");
       setErr((e as Error).message);
@@ -316,6 +375,30 @@ export default function PublicSignQuote(
   }
 
   // ---- render ---------------------------------------------------------------
+
+  if (status === "owner") {
+    return (
+      <div
+        data-cy="sign-owner-cannot-sign"
+        role="status"
+        style={`margin-top:24px;background:#fff6e5;border:1px solid rgba(255,170,40,0.35);border-radius:18px;padding:20px;text-align:center;color:#8a5a10;font-weight:700;font-size:14px`}
+      >
+        {tFor(lang, "public.doc.ownerCannotSign")}
+      </div>
+    );
+  }
+
+  if (status === "notReady") {
+    return (
+      <div
+        data-cy="sign-not-ready"
+        role="status"
+        style={`margin-top:24px;background:#f3f6f7;border:1px solid rgba(20,72,82,0.14);border-radius:18px;padding:20px;text-align:center;color:#3d5a60;font-weight:700;font-size:14px`}
+      >
+        {tFor(lang, "public.doc.notReadyBody")}
+      </div>
+    );
+  }
 
   if (status === "stale") {
     return (
@@ -455,7 +538,7 @@ export default function PublicSignQuote(
           aria-hidden="true"
           style={`position:absolute;left:24px;bottom:30px;font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;font-weight:900;color:rgba(255,107,107,0.45);font-size:18px;pointer-events:none`}
         >
-          ✕
+          <Icon name="x" size={16} stroke-width={3.2} style="display:block" />
         </div>
         <canvas
           ref={canvasRef}
@@ -483,19 +566,52 @@ export default function PublicSignQuote(
 
       {/* Typed legal name */}
       <label
+        htmlFor={nameId}
         style={`display:block;margin-top:18px;font-size:11px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:${MUTED};margin-bottom:6px`}
       >
         {tFor(lang, "publicSign.nameLabel")}
       </label>
       <input
+        id={nameId}
         type="text"
         value={name}
         onInput={(e) => setName((e.target as HTMLInputElement).value)}
         placeholder={tFor(lang, "publicSign.namePlaceholder")}
         autoComplete="name"
+        aria-invalid={nameTyped && !nameOk ? "true" : undefined}
+        aria-describedby={nameTyped && !nameOk
+          ? `${nameId}-invalid`
+          : undefined}
         style={`width:100%;padding:14px 16px;border:1px solid ${LINE};border-radius:12px;font-size:16px;color:${INK};font-family:inherit;background:#fff;box-sizing:border-box`}
         required
       />
+      {nameTyped && !nameOk && (
+        <div
+          id={`${nameId}-invalid`}
+          data-cy="sign-name-invalid"
+          role="status"
+          style={`margin-top:6px;font-size:12px;font-weight:600;color:#b3261e`}
+        >
+          {tFor(lang, "publicSign.nameInvalid")}
+        </div>
+      )}
+      {suggestedName && (
+        <div
+          data-cy="sign-name-suggest"
+          role="status"
+          style={`margin-top:6px;font-size:12px;color:${INK}`}
+        >
+          {tFor(lang, "publicSign.nameSuggest", { name: suggestedName })}{" "}
+          <button
+            type="button"
+            data-cy="sign-name-suggest-use"
+            onClick={() => setName(suggestedName)}
+            style={`background:none;border:0;padding:0;font:inherit;font-weight:700;color:${TEAL};text-decoration:underline;cursor:pointer`}
+          >
+            {tFor(lang, "publicSign.nameSuggestUse")}
+          </button>
+        </div>
+      )}
       <div style={`margin-top:8px;font-size:12px;color:${MUTED}`}>
         {tFor(lang, "publicSign.disclaimer")}
       </div>
@@ -508,17 +624,17 @@ export default function PublicSignQuote(
 
       <button
         type="submit"
-        disabled={submitting || !name.trim()}
+        disabled={submitting || !nameOk}
         style={`margin-top:18px;width:100%;background:${
-          submitting || !name.trim()
+          submitting || !nameOk
             ? "#a8c8a0"
             : `linear-gradient(135deg,${GREEN} 0%,#71a85f 100%)`
         };color:#fff;border:0;font-weight:800;font-size:16px;padding:18px 28px;border-radius:14px;box-shadow:${
-          submitting || !name.trim()
+          submitting || !nameOk
             ? "none"
             : "0 10px 22px -6px rgba(81,152,67,0.55)"
         };cursor:${
-          submitting || !name.trim() ? "default" : "pointer"
+          submitting || !nameOk ? "default" : "pointer"
         };transition:transform 160ms;display:flex;align-items:center;justify-content:center;gap:10px`}
       >
         {submitting
@@ -544,7 +660,7 @@ export default function PublicSignQuote(
                 <path d="M14 5l5 5" />
               </svg>
               <span>
-                {name.trim()
+                {nameOk
                   ? tFor(lang, "publicSign.submitEnabled")
                   : tFor(lang, "publicSign.submitDisabled")}
               </span>

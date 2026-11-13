@@ -6,7 +6,8 @@
 @import url("/verify.css");
 
 .welcome-shell {
-  min-height: 100dvh;
+  /* REQ-379: the demo pill's band (--demo-pill-h) stays free under the footer */
+  min-height: calc(100dvh - var(--demo-pill-h, 0px));
   width: 100%;
   display: flex;
   flex-direction: column;
@@ -53,6 +54,73 @@
   display: flex;
   flex-direction: column;
   gap: 20px;
+}
+
+/* REQ-348 (demo m34): the wizard's own EN/ES switch — the app topbar's pill */
+.welcome__lang {
+  align-self: flex-end;
+  display: flex;
+  gap: 2px;
+  background: var(--mint-100);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 3px;
+  margin-bottom: -8px;
+}
+.welcome__lang-btn {
+  border: none;
+  background: transparent;
+  font-weight: 800;
+  font-size: 11px;
+  letter-spacing: 0.05em;
+  color: var(--fg-muted);
+  padding: 4px 10px;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: background 160ms, color 160ms;
+}
+.welcome__lang-btn:hover {
+  color: var(--brand-teal);
+}
+.welcome__lang-btn--on {
+  background: #fff;
+  color: var(--brand-teal);
+  box-shadow: 0 1px 3px rgba(20, 72, 82, 0.12);
+}
+
+/* REQ-348: the business step's "Languages you send in" */
+.welcome__send-in {
+  border: none;
+  margin: 16px 0 0;
+  padding: 0;
+}
+.welcome__send-in-label {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--fg-subtle);
+  margin-bottom: 8px;
+  padding: 0;
+}
+.welcome__send-in-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.welcome__send-in-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 12px;
+  background: #fff;
+  font-weight: 700;
+  font-size: 13.5px;
+  color: var(--fg);
+}
+.welcome__send-in-option:has(input:checked) {
+  border-color: var(--brand-green);
 }
 
 .welcome__progress-wrap {
@@ -397,17 +465,22 @@
   text-decoration: underline;
   text-underline-offset: 3px;
 }
-.welcome__sample-frame-wrap {
+/* REQ-433 (demo M13, cycle 3): the sample quote is painted inline — the
+   public document at its own width (792px), zoomed into the card and
+   scrollable; read-only (the wheel still scrolls the wrap). */
+.welcome__sample-doc-wrap {
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-md);
-  overflow: hidden;
-  background: var(--bg-sunken);
+  overflow: auto;
+  max-height: 420px;
+  background: #f7f6f1; /* doc-parts BG */
+  padding: 12px;
 }
-.welcome__sample-frame {
-  display: block;
-  width: 100%;
-  height: 420px;
-  border: 0;
+.welcome__sample-doc {
+  width: 792px;
+  zoom: 0.58;
+  pointer-events: none;
+  user-select: none;
 }
 .welcome__sample-loading {
   padding: 32px 16px;
@@ -417,8 +490,12 @@
   border-radius: var(--radius-md);
 }
 @media (max-width: 480px) {
-  .welcome__sample-frame {
-    height: 340px;
+  .welcome__sample-doc-wrap {
+    max-height: 340px;
+    padding: 8px;
+  }
+  .welcome__sample-doc {
+    zoom: 0.38;
   }
 }
 
@@ -437,7 +514,18 @@
 /* the cards themselves: /plan-cards.css (REQ-055, shared with /settings) */
 .welcome__plan-step { display: grid; gap: 10px; }
 .welcome__plan-custom, .welcome__plan-note { font-size: 13px; opacity: 0.8; margin: 0; }
+/* REQ-725 — "How billing works": the dated first-pick schedule, closed until asked */
+.welcome__plan-how { font-size: 13px; margin: 0; }
+.welcome__plan-how summary { cursor: pointer; opacity: 0.8; text-decoration: underline; }
+.welcome__plan-how p { margin: 6px 0 0; opacity: 0.8; line-height: 1.45; }
 .welcome__plan-pending { display: grid; gap: 12px; padding: 14px; border: 1.5px solid var(--border-strong); border-radius: 12px; background: var(--bg-alt); }
 .welcome__plan-pending-lede { margin: 0; font-size: 14px; line-height: 1.45; }
 .welcome__plan-actions { display: flex; flex-wrap: wrap; gap: 10px; }
 .welcome__plan-actions .welcome__btn { text-decoration: none; }
+
+/* REQ-390 (demo m18): why Continue is off, before the field is left — neutral */
+.welcome__hint {
+  color: var(--fg-muted);
+  font-size: 14px;
+  font-weight: 600;
+}

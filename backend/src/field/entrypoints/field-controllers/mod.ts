@@ -30,8 +30,10 @@ import { appUrl } from "@users/domain/business/app-url/mod.ts";
 import { secretAllows } from "@users/domain/business/shared-secret/mod.ts";
 import type { User } from "@users/dto/user.ts";
 import {
+  newWorkerLang,
   parseLang,
   workerLang,
+  workerSignInUrl,
   workerWelcome,
 } from "@field/domain/business/worker-welcome/mod.ts";
 import { CustomerStore } from "@crm/domain/data/customer-store/mod.ts";
@@ -49,8 +51,10 @@ import {
   newId,
 } from "@field/domain/coordinators/field-zones/mod.ts";
 import { FieldDay } from "@field/domain/coordinators/field-day/mod.ts";
+import { FieldMapCenter } from "@field/domain/coordinators/field-map-center/mod.ts";
 import { FieldBatches } from "@field/domain/coordinators/field-batches/mod.ts";
 import { FieldNotices } from "@field/domain/coordinators/field-notices/mod.ts";
+import { FieldActivity } from "@field/domain/coordinators/field-activity/mod.ts";
 import {
   FieldViews,
   safeWorker,
@@ -66,11 +70,17 @@ import {
   isValidDate,
 } from "@field/domain/business/schedule/mod.ts";
 import {
+  crewList,
+  ledBy,
+  spanFrom,
+} from "@field/domain/business/job-span/mod.ts";
+import {
   type Cadence,
   CADENCES,
   CAP,
   digitsOf,
   FieldError,
+  type FieldTask,
   type FieldWorker,
   str,
   type Subscription,
@@ -91,40 +101,38 @@ interface WelcomeDeps {
   sms: SmsService;
 }
 
-/** REQ-151 — the welcome text to one worker, in the owner's language; false (and a log line) when it could not go out */
+/**
+ * REQ-151 — the welcome text to one worker, in the owner's language; `ok` false (and a log line) when it
+ * could not go out. REQ-601 — also the sign-in address and the exact text, so the owner can share them.
+ */
 async function welcomeWorker(
   d: WelcomeDeps,
   user: User,
   w: FieldWorker,
   override?: "en" | "es",
-): Promise<boolean> {
+): Promise<{ ok: boolean; url: string; body: string }> {
   const lang = override ?? workerLang(w, user); // REQ-155 — the worker's language
   const identity = await d.identities.get(user.id);
   const who = realName(user.name);
   const biz = identity?.businessName?.trim();
   const owner = who && biz ? `${who} (${biz})` : accountLabel(user, biz);
+  const url = workerSignInUrl(appUrl(), lang); // REQ-285 — the screen opens in it
+  const body = workerWelcome(lang, { owner, url, pin: w.pin });
   try {
-    const sent = await d.sms.send({
-      to: normalizePhone(w.phoneNumber),
-      body: workerWelcome(lang, {
-        owner,
-        url: `${appUrl()}/worker`,
-        pin: w.pin,
-      }),
-    });
+    const sent = await d.sms.send({ to: normalizePhone(w.phoneNumber), body });
     if (!sent.ok) {
       console.error(
         `[field/workers] welcome text to ${w.phoneNumber} failed: ${sent.reason}`,
       );
     }
-    return sent.ok;
+    return { ok: sent.ok, url, body };
   } catch (err) {
     console.error(
       `[field/workers] welcome text to ${w.phoneNumber} failed: ${
         (err as Error).message
       }`,
     );
-    return false;
+    return { ok: false, url, body };
   }
 }
 
@@ -208,17 +216,48 @@ export class FieldWorkersController {
     const name = str(b.name),
       pin = String(b.pin ?? "").trim(),
       phone = digitsOf(b.phoneNumber);
-    if (!name) throw new FieldError("name required");
-    if (name.length > CAP.text) throw new FieldError("name too long");
-    if (phone.length < 10) {
-      throw new FieldError("phoneNumber required (10 digits)");
+    // REQ-421 (demo m42) — every refusal carries a stable `code` the page words in en/es
+    if (!name) {
+      throw new FieldError("name required", 400, undefined, "name_required");
     }
-    if (!/^\d{4}$/.test(pin)) throw new FieldError("pin must be 4 digits");
+    if (name.length > CAP.text) {
+      throw new FieldError("name too long", 400, undefined, "name_too_long");
+    }
+    if (phone.length < 10) {
+      throw new FieldError(
+        "phoneNumber required (10 digits)",
+        400,
+        undefined,
+        "phone_10_digits",
+      );
+    }
+    if (!/^\d{4}$/.test(pin)) {
+      throw new FieldError(
+        "pin must be 4 digits",
+        400,
+        undefined,
+        "pin_4_digits",
+      );
+    }
+    // the cell is the worker's login name, unique across every account — so the refusal
+    // says only that the number is in use, never whose crew holds it
     if (await this.workers.findByPhone(phone)) {
-      throw new FieldError("a worker with that cell already exists", 409);
+      throw new FieldError(
+        "that cell is already in use by a worker",
+        409,
+        undefined,
+        "worker_phone_taken",
+      );
     }
     const language = parseLang(b.language);
-    if (language === null) throw new FieldError("language must be en or es");
+    if (language === null) {
+      throw new FieldError(
+        "language must be en or es",
+        400,
+        undefined,
+        "language_invalid",
+      );
+    }
     const now = new Date().toISOString();
     const w: FieldWorker = {
       id: newId(),
@@ -230,11 +269,17 @@ export class FieldWorkersController {
       updatedAt: now,
     };
     if (b.role === "foreman") w.role = "foreman";
-    w.language = language ?? "es"; // REQ-155 — Spanish by default
+    w.language = newWorkerLang(language, user); // REQ-774 — the picked one, else the owner's
     await this.workers.put(w);
     // REQ-151 — the welcome text: who added them, the /worker address, the PIN; its failure is logged, never thrown
-    const texted = await welcomeWorker(deps(this), user, w);
-    return ctx.json({ ...safeWorker(w), texted }, 201);
+    const welcome = await welcomeWorker(deps(this), user, w);
+    // REQ-601 — the link and the very text, so a page whose text failed can hand them to the owner to share
+    return ctx.json({
+      ...safeWorker(w),
+      texted: welcome.ok,
+      signInUrl: welcome.url,
+      shareText: welcome.body,
+    }, 201);
   }
 
   /**
@@ -281,12 +326,12 @@ export class FieldWorkersController {
         language: override ?? workerLang(w, user),
       };
       if (!dryRun) {
-        row.texted = await welcomeWorker(
+        row.texted = (await welcomeWorker(
           deps(this),
           user,
           w,
           override ?? undefined,
-        );
+        )).ok;
       }
       out.push(row);
     }
@@ -314,7 +359,14 @@ export class FieldWorkersController {
     const w = await this.workers.getOwned(id, user.id);
     const b = body(raw);
     const language = parseLang(b.language);
-    if (!language) throw new FieldError("language must be en or es");
+    if (!language) {
+      throw new FieldError(
+        "language must be en or es",
+        400,
+        undefined,
+        "language_invalid",
+      );
+    }
     w.language = language;
     w.updatedAt = new Date().toISOString();
     await this.workers.put(w);
@@ -333,6 +385,7 @@ export class FieldWorkersController {
         "worker still covers zones — reassign them first",
         409,
         { zones },
+        "worker_covers_zones", // REQ-421 — the page words it and names the zones
       );
     }
     await this.workers.delete(w);
@@ -642,6 +695,7 @@ export class FieldRegionsController {
     private views: FieldViews,
     private users: UserStore,
     private sessions: SessionStore,
+    private mapCenter: FieldMapCenter,
   ) {}
 
   @Get()
@@ -650,6 +704,13 @@ export class FieldRegionsController {
     return (await this.views.regionsWithMembers(user.id)).sort((a, b) =>
       a.name.localeCompare(b.name)
     );
+  }
+
+  /** REQ-288: where the map starts with no subscriptions to fit — the business's address, else the whole US */
+  @Get("center")
+  async center(@Context() ctx: ExecutionContext) {
+    const user = await requireUser(ctx, this.sessions, this.users);
+    return await this.mapCenter.center(user.id);
   }
 
   @Post("regroup")
@@ -681,7 +742,7 @@ export class FieldRegionsController {
             t.regionId === r.id && t.status === "assigned" && !t.invoiceId &&
             t.workerId !== workerId
           );
-      await this.tasks.putMany(open.map((t) => ({ ...t, workerId })));
+      await this.tasks.putMany(open.map((t) => ledBy(t, workerId))); // REQ-785: off the crew it now leads
     } else delete r.workerId;
     await this.regions.put(r);
     return r;
@@ -720,6 +781,63 @@ async function ownWorker(
   return w;
 }
 
+/** REQ-785: a job's last day from the body (`endDate` or `days`), or a 400 that names what is wrong */
+function spanOf(
+  date: string,
+  b: { endDate?: unknown; days?: unknown },
+): { endDate?: string } {
+  const r = spanFrom(date, b);
+  if (!r.ok) throw new FieldError(r.error, 400, undefined, r.code);
+  return { endDate: r.endDate };
+}
+
+/** REQ-785: the job's other workers — the account's own, unique, never the lead; a 400 otherwise */
+async function crewOf(
+  workers: FieldWorkerStore,
+  userId: string,
+  raw: unknown,
+  leadId: string,
+): Promise<string[]> {
+  const ids = crewList(raw, leadId);
+  if (!ids) throw new FieldError("crewIds must be a list of worker ids");
+  for (const id of ids) await ownWorker(workers, userId, id);
+  return ids;
+}
+
+/**
+ * REQ-785: a one-off's days from a PUT body — its first (`date`, else the current one) and its last
+ * (`endDate` / `days`, else the current last; null = one day). A subscription's visit keeps its
+ * schedule's day (400); an invoiced task keeps its days (409).
+ */
+function newDays(
+  t: FieldTask,
+  b: Body_,
+): { date: string; endDate?: string } {
+  if (!t.oneOff) {
+    throw new FieldError(
+      "a subscription's visit is on its schedule — only a one-off task's days change",
+      400,
+      undefined,
+      "not_one_off",
+    );
+  }
+  if (t.invoiceId) {
+    throw new FieldError(
+      "task is on an invoice — edit the invoice instead",
+      409,
+    );
+  }
+  const date = "date" in b ? str(b.date) : t.date;
+  if (!date || !isValidDate(date)) {
+    throw new FieldError("date must be YYYY-MM-DD");
+  }
+  const span = spanOf(
+    date,
+    "endDate" in b || "days" in b ? b : { endDate: t.endDate },
+  );
+  return { date, ...(span.endDate ? { endDate: span.endDate } : {}) };
+}
+
 /** a price in integer cents, 0 … $100,000 */
 function priceOf(v: unknown, fallback?: number): number {
   if (v === undefined || v === null || v === "") {
@@ -747,9 +865,13 @@ export class FieldTasksController {
     private regions: RegionStore,
     private customers: CustomerStore,
     private notices: FieldNotices,
+    private activity: FieldActivity,
   ) {}
 
-  /** REQ-164: a one-off task by hand — one customer, one day, no subscription */
+  /**
+   * REQ-164: a one-off task by hand — one customer, no subscription. REQ-785: one day, or a job of
+   * several (`endDate` or `days`) — ONE task on each of its days — with more workers (`crewIds`).
+   */
   @Post()
   async create(@Context() ctx: ExecutionContext, @Body() raw: unknown) {
     const user = await requireUser(ctx, this.sessions, this.users);
@@ -759,6 +881,7 @@ export class FieldTasksController {
     const customer = await this.customers.getOwned(customerId, user.id); // 404 / 403 as the customers resource answers
     const date = str(b.date) ?? fieldToday();
     if (!isValidDate(date)) throw new FieldError("date must be YYYY-MM-DD");
+    const span = spanOf(date, b); // REQ-785
     const taskTypeId = await taskTypeFrom(this.types, user.id, b);
     const priceCents = priceOf(b.priceCents);
     // the worker: named, else the one covering the customer's subscription's zone
@@ -772,6 +895,7 @@ export class FieldTasksController {
     if (workerId) await ownWorker(this.workers, user.id, workerId);
     else workerId = home?.workerId;
     if (!workerId) throw new FieldError("workerId required");
+    const crewIds = await crewOf(this.workers, user.id, b.crewIds, workerId); // REQ-785
     const address = str(b.address) ?? subs[0]?.address ??
       customer.address?.trim() ?? undefined;
     if (address && address.length > CAP.text) {
@@ -781,6 +905,8 @@ export class FieldTasksController {
       userId: user.id,
       customerId: customer.id,
       date,
+      endDate: span.endDate,
+      crewIds,
       taskTypeId,
       priceCents,
       workerId,
@@ -789,6 +915,13 @@ export class FieldTasksController {
       newId,
     });
     await this.tasks.put(t);
+    // REQ-340 (demo M37): a typed address lands on a customer who had none,
+    // whatever order the form was filled in. A customer with an address keeps
+    // it — the task's is that job's service address only.
+    const typed = str(b.address);
+    if (typed && !customer.address?.trim()) {
+      await this.customers.update(customer.id, user.id, { address: typed });
+    }
     const texted = await this.notices.workerNewTask(user.id, t); // REQ-171: today's news reaches the worker
     return ctx.json(
       { ...this.views.task(t, await this.views.names(user.id)), texted },
@@ -904,7 +1037,7 @@ export class FieldTasksController {
     };
   }
 
-  /** REQ-141: the office's note and price */
+  /** REQ-141: the office's note and price · REQ-785: a one-off's days and crew */
   @Put(":id")
   async update(
     @Context() ctx: ExecutionContext,
@@ -912,15 +1045,34 @@ export class FieldTasksController {
     @Body() raw: unknown,
   ) {
     const user = await requireUser(ctx, this.sessions, this.users);
-    const t = await this.tasks.getOwned(id, user.id);
+    let t = await this.tasks.getOwned(id, user.id);
     const b = body(raw);
     if (tooLong(b.adminNote, CAP.note)) {
       throw new FieldError(`note too long (max ${CAP.note})`);
+    }
+    // REQ-785 — a one-off's new days and crew are checked before anything changes
+    const days = "date" in b || "endDate" in b || "days" in b
+      ? newDays(t, b)
+      : null;
+    const crew = "crewIds" in b
+      ? await crewOf(
+        this.workers,
+        user.id,
+        b.crewIds,
+        str(b.workerId) ?? t.workerId,
+      )
+      : null;
+    if (crew && t.invoiceId) {
+      throw new FieldError(
+        "task is on an invoice — edit the invoice instead",
+        409,
+      );
     }
     if ("adminNote" in b) {
       t.adminNote = String(b.adminNote ?? "").trim() || undefined;
     }
     // REQ-159 — the office marks the task done, or re-opens it
+    let completedNow = false;
     if ("status" in b) {
       const st = str(b.status);
       if (st !== "complete" && st !== "assigned") {
@@ -932,6 +1084,7 @@ export class FieldTasksController {
           409,
         );
       }
+      completedNow = st === "complete" && t.status !== "complete"; // REQ-566
       t.status = st;
       if (st === "complete") t.completedAt = new Date().toISOString();
       else delete t.completedAt;
@@ -948,7 +1101,7 @@ export class FieldTasksController {
       }
       await ownWorker(this.workers, user.id, wid);
       if (wid !== t.workerId) {
-        t.workerId = wid;
+        t = ledBy(t, wid); // REQ-785: the new lead is no longer also on the crew
         await this.tasks.put(t);
         await this.notices.workerNewTask(user.id, t); // REQ-171: the new worker hears, when it is today
       }
@@ -966,7 +1119,21 @@ export class FieldTasksController {
       }
       t.priceCents = p;
     }
+    // REQ-785 — a one-off's days (first and last) and the job's other workers
+    const moved = !!days &&
+      (days.date !== t.date || days.endDate !== t.endDate);
+    if (days) {
+      t.date = days.date;
+      if (days.endDate) t.endDate = days.endDate;
+      else delete t.endDate;
+    }
+    if (crew) {
+      if (crew.length) t.crewIds = crew;
+      else delete t.crewIds;
+    }
     await this.tasks.put(t);
+    if (completedNow) await this.activity.taskCompleted(t); // REQ-566
+    if (moved || crew) await this.notices.workerNewTask(user.id, t); // REQ-171: moved onto today, the crew hears
     return this.views.task(t, await this.views.names(user.id));
   }
 }

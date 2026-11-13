@@ -2,6 +2,7 @@ import { App, staticFiles } from "fresh";
 import { define, type State } from "./utils.ts";
 import denostories from "denostories";
 import { retiredHostRedirect } from "../shared/site-host/retired.ts";
+import { ssrLangMiddleware } from "./lib/ssr-lang.ts";
 
 export const app = new App<State>();
 
@@ -18,6 +19,11 @@ app.use((ctx) => {
 });
 
 app.use(staticFiles());
+
+// REQ-231: every request renders its islands in its own language (the page's,
+// ?lang=, the signed-in user's, the pm_lang cookie) — not the module-level
+// Spanish default langSignal holds on the server. See lib/ssr-lang.ts.
+app.use(ssrLangMiddleware);
 
 app.use(denostories({ runHeadlessChecks: false }));
 

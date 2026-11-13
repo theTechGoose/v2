@@ -5,7 +5,9 @@
  */
 import { I, ICN, type IconName } from "../lib/dash-icons.tsx";
 import Ticker from "../islands/Ticker.tsx";
+import { SkelBlock } from "./Skeletons.tsx";
 import { type Lang, tFor } from "../lib/i18n.ts";
+import { dashQuotesEmpty, quotesPendingSub } from "../lib/headline-counts.ts";
 import {
   activeJobsCountLabel,
   formatMoneyCompact,
@@ -118,8 +120,13 @@ interface KpisProps {
   /** Pending-quote pipeline total in INTEGER CENTS (P-36: rendered via
    *  formatMoneyCompact — "$850", never "$0.8k"). */
   pendingTotal: number;
+  /** REQ-566 (m11): drafts whose send reached nobody — "Not delivered (n)" */
+  undeliveredQuotes?: number;
   avgJob: number;
   lang?: Lang;
+  /** REQ-728 (cycle 5, m15): the jobs list has not landed — the Active jobs
+   *  value is a placeholder, never a "0" the warm start cannot know. */
+  activeJobsPending?: boolean;
 }
 
 export function Kpis(props: KpisProps) {
@@ -142,6 +149,7 @@ export function Kpis(props: KpisProps) {
       val: string;
       sub: string;
       delta: { kind: "up" | "warn" | "neutral"; txt: string } | null;
+      pending?: boolean;
     }
   > = [
     {
@@ -152,6 +160,7 @@ export function Kpis(props: KpisProps) {
       val: String(props.activeJobs),
       sub: tFor(lang, "kpis.activeJobs.sub"),
       delta: null,
+      pending: props.activeJobsPending === true,
     },
     {
       icon: "invoice",
@@ -175,13 +184,19 @@ export function Kpis(props: KpisProps) {
       ic_fg: "var(--coffee-600)",
       label: tFor(lang, "kpis.quotesPending.label"),
       val: String(props.pendingQuotes),
-      sub: props.pendingTotal > 0
-        ? tFor(lang, "kpis.quotesPending.inFlight", {
+      sub: (() => {
+        const sub = quotesPendingSub({
+          pendingTotalCents: props.pendingTotal,
+          undeliveredCount: props.undeliveredQuotes ?? 0,
+        });
+        if (!sub) return "—";
+        return tFor(lang, sub.key, {
+          n: sub.n,
           // P-36: full sub-$1k amounts ("$850"), compacting only at ≥ $1k —
           // never the old dollars/1000 "$0.8k" artifact.
           amt: formatMoneyCompact(props.pendingTotal),
-        })
-        : "—",
+        });
+      })(),
       delta: null,
     },
     {
@@ -205,7 +220,13 @@ export function Kpis(props: KpisProps) {
             <I d={ICN[k.icon]} size={18} />
           </div>
           <div class="kpi__label">{k.label}</div>
-          <div class="kpi__val">{k.val}</div>
+          {k.pending
+            ? (
+              <div class="kpi__val" aria-busy="true">
+                <SkelBlock h={28} w="40%" />
+              </div>
+            )
+            : <div class="kpi__val">{k.val}</div>}
           {k.delta
             ? (
               <div class={`kpi__delta kpi__delta--${k.delta.kind}`}>
@@ -243,10 +264,13 @@ export interface JobRow {
 }
 
 export function ActiveJobs(
-  { jobs, total, lang = "en" }: {
+  { jobs, total, lang = "en", pending = false }: {
     jobs: JobRow[];
     total?: number;
     lang?: Lang;
+    /** REQ-728 (cycle 5, m15): the jobs list has not landed — skeleton rows,
+     *  no count, never the "no jobs in flight" line. */
+    pending?: boolean;
   },
 ) {
   // `total` is the full active-job count (matches the KPI); `jobs` is only the
@@ -262,13 +286,15 @@ export function ActiveJobs(
             style="position:static;width:8px;height:8px"
           />
           <h3 class="panel__title">{tFor(lang, "kpis.activeJobs.label")}</h3>
-          <span class="panel__count">
-            {
-              /* P-36: correct Spanish pluralization — "1 activo", never
-                "1 activos". */
-            }
-            {activeJobsCountLabel(count, lang)}
-          </span>
+          {!pending && (
+            <span class="panel__count">
+              {
+                /* P-36: correct Spanish pluralization — "1 activo", never
+                  "1 activos". */
+              }
+              {activeJobsCountLabel(count, lang)}
+            </span>
+          )}
         </div>
         {
           /* P-36: "Ver todo" goes to the page that actually lists the jobs
@@ -278,9 +304,16 @@ export function ActiveJobs(
           {tFor(lang, "dashPanel.seeAll")}
         </a>
       </div>
-      {jobs.length === 0
+      {jobs.length === 0 && pending
         ? (
-          <div style="padding:18px 4px;display:flex;flex-direction:column;gap:10px;align-items:flex-start">
+          <div aria-busy="true">
+            <SkelBlock h={64} mt={18} />
+            <SkelBlock h={64} mt={12} />
+          </div>
+        )
+        : jobs.length === 0
+        ? (
+          <div class="panel__empty panel__empty--stack">
             <p style="font-size:13.5px;color:var(--fg-muted, #6b7560);margin:0;line-height:1.5">
               {tFor(lang, "activeJobs.empty.text")}
             </p>
@@ -342,9 +375,27 @@ export interface QuoteRow {
 }
 
 export function QuotesAwaiting(
-  { quotes, lang = "en", hasDecidedHistory = false }: {
+  {
+    quotes,
+    lang = "en",
+    hasDecidedHistory = false,
+    draftCount = 0,
+    readyCount,
+    undeliveredCount = 0,
+    pending = false,
+  }: {
     quotes: QuoteRow[];
     lang?: Lang;
+    /** REQ-566 (m11): of the drafts, those whose send reached nobody. */
+    undeliveredCount?: number;
+    /** REQ-566 (m11): the list has not landed yet (warm start) — say no
+     *  "none sent" over a tile that already counts one. */
+    pending?: boolean;
+    /** REQ-404 (m13): real unsent drafts — the count above stays sent-only
+     *  (REQ-320), but the empty line names the drafts ready to send. */
+    draftCount?: number;
+    /** REQ-698 (m14): of the drafts, those whose wizard finished. */
+    readyCount?: number;
     /** UX-02: quotes WERE sent and got answered — the empty state must not
      *  claim "no quotes were ever sent" over a user's first accepted win. */
     hasDecidedHistory?: boolean;
@@ -374,14 +425,18 @@ export function QuotesAwaiting(
           {tFor(lang, "dashPanel.seeAll")}
         </a>
       </div>
-      {empty && (
-        <div style="font-size:13px;color:var(--fg-muted);padding:8px 0 14px">
-          {tFor(
-            lang,
-            hasDecidedHistory
-              ? "quotesAwaiting.emptyDecided"
-              : "quotesAwaiting.empty",
-          )}
+      {empty && pending && <div class="panel__empty" aria-busy="true" />}
+      {empty && !pending && (
+        <div class="panel__empty">
+          {(() => {
+            const e = dashQuotesEmpty({
+              draftCount,
+              readyCount,
+              hasDecidedHistory,
+              undeliveredCount,
+            });
+            return tFor(lang, e.key, { n: e.n });
+          })()}
         </div>
       )}
       {quotes.map((q, i) => (
@@ -436,13 +491,32 @@ export interface OutstandingRow {
 }
 
 export function Outstanding(
-  { owed, current, mid, overdue, items, lang = "en" }: {
+  {
+    owed,
+    current,
+    mid,
+    overdue,
+    items,
+    upcoming = null,
+    emptyKey,
+    lang = "en",
+    pending = false,
+  }: {
     owed: number;
     current: number;
     mid: number;
     overdue: number;
     items: OutstandingRow[];
+    /** REQ-473: "Upcoming: $925 bills Nov 26" — the next scheduled
+     *  installment, already localized; null when none. */
+    upcoming?: string | null;
+    /** REQ-473: the $0 empty text (outstandingEmptyKey) — null when the
+     *  upcoming line stands in for it. Omitted → the old items-based pick. */
+    emptyKey?: string | null;
     lang?: Lang;
+    /** REQ-728 (cycle 5, m15): the invoice lists have not landed — a
+     *  skeleton stands where the empty line and the invoice rows go. */
+    pending?: boolean;
   },
 ) {
   const realTotal = current + mid + overdue;
@@ -467,14 +541,36 @@ export function Outstanding(
           </button>
         )}
       </div>
-      {allZero
+      {upcoming && (
+        <div
+          class="money__upcoming"
+          style="font-size:13px;color:var(--fg-muted);padding:2px 0 10px"
+        >
+          {upcoming}
+        </div>
+      )}
+      {allZero && pending
         ? (
-          <div style="font-size:13px;color:var(--fg-muted);padding:6px 0 14px">
-            {items.length === 0
-              ? tFor(lang, "outstanding.empty.noInvoices")
-              : tFor(lang, "outstanding.empty.allPaid")}
+          <div aria-busy="true">
+            <SkelBlock h={14} w="70%" mt={6} />
+            <SkelBlock h={36} mt={14} />
           </div>
         )
+        : allZero
+        ? (() => {
+          const key = emptyKey !== undefined
+            ? emptyKey
+            : items.length === 0
+            ? "outstanding.empty.noInvoices"
+            : "outstanding.empty.allPaid";
+          return key
+            ? (
+              <div style="font-size:13px;color:var(--fg-muted);padding:6px 0 14px">
+                {tFor(lang, key)}
+              </div>
+            )
+            : null;
+        })()
         : (
           <>
             <div class="money__bar">
@@ -573,15 +669,23 @@ export interface ActivityEntry {
 }
 
 export function Activity(
-  { items, lang = "en" }: { items: ActivityEntry[]; lang?: Lang },
+  { items, lang = "en", pending = false }: {
+    items: ActivityEntry[];
+    lang?: Lang;
+    /** REQ-757: the notifications feed has not loaded yet — skeleton, not "Nothing yet" */
+    pending?: boolean;
+  },
 ) {
   const empty = items.length === 0;
+  const busy = empty && pending;
   return (
     <div class="panel" id="activity">
       <div class="panel__head">
         <h3 class="panel__title">{tFor(lang, "activity.title")}</h3>
         <span style="font-size:11px;color:var(--fg-muted);margin-left:4px">
-          {empty
+          {busy
+            ? null
+            : empty
             ? tFor(lang, "activity.emptySub")
             : tFor(lang, "activity.busySub")}
         </span>
@@ -591,6 +695,12 @@ export function Activity(
             activity-log page ships. */
         }
       </div>
+      {busy && (
+        <div aria-busy="true">
+          <SkelBlock h={44} mt={14} />
+          <SkelBlock h={44} mt={10} />
+        </div>
+      )}
       {items.map((a, i) => {
         const body = (
           <>

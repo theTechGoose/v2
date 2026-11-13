@@ -5,12 +5,14 @@
  * different colours; each stage lists both presenters. Lia moves over her frame: Ana's screen
  * shows a pointer tagged "Lia" in Lia's colour; Hans moves: a second pointer tagged "Hans" in a
  * different colour, and Hans's stage shows Lia's pointer. End from Hans clears all three.
+ * REQ-242 — each stage's frame mirrors Ana's document; its page is the frame's `data-path`.
  */
 import { story, type StoryTools } from "#shots";
+import { pillUp } from "../_shared/demo-pill.ts";
 
 const JSON_HEADERS = { "content-type": "application/json" };
 const digits = () => String(Math.floor(Math.random() * 9_000_000) + 1_000_000);
-const FRAME = "pm-demo-replica";
+const FRAME = "[data-cy='demo-frame']";
 
 async function verify(http: StoryTools["http"], phone: string) {
   const r = await http("/api/auth/verify", {
@@ -131,13 +133,13 @@ Deno.test("REQ-214: two staff present to one customer — Lia's Demo on an alrea
       await useCookie(page.context(), baseUrl, hans.cookie);
       await openDemo(page);
       await userPage.reload();
-      await userPage.locator("[data-cy='demo-status']").waitFor({
-        timeout: 15_000,
-      });
+      // REQ-545 — the customer's pill whole (it folds to a tab over page content)
+      await pillUp(userPage);
       expect(
-        (await userPage.locator("[data-cy='demo-pill']").innerText()).includes(
-          "Hans is guiding you",
-        ),
+        (await userPage.locator("[data-cy='demo-pill']").textContent() ?? "")
+          .includes(
+            "Hans is guiding you",
+          ),
         "one presenter: the pill names Hans",
       );
 
@@ -145,11 +147,12 @@ Deno.test("REQ-214: two staff present to one customer — Lia's Demo on an alrea
       const liaPage = await liaCtx.newPage();
       await useCookie(liaCtx, baseUrl, lia.cookie);
       await openDemo(liaPage);
+      // REQ-232 (demo-lifecycle-p1) — both stages say plainly that they are live
       await liaPage.locator("[data-cy='demo-status']").filter({
-        hasText: /direct|relay/,
+        hasText: /^\s*Live\s*$/,
       }).waitFor({ timeout: 20_000 });
       await page.locator("[data-cy='demo-status']").filter({
-        hasText: /direct|relay/,
+        hasText: /^\s*Live\s*$/,
       }).waitFor({ timeout: 20_000 });
 
       // Ana's pill names both, with two colour dots of different colours
@@ -165,7 +168,8 @@ Deno.test("REQ-214: two staff present to one customer — Lia's Demo on an alrea
         async () => (await chipColors(userPage)).length === 2,
       );
       const chips = await chipColors(userPage);
-      const pill = await userPage.locator("[data-cy='demo-pill']").innerText();
+      const pill =
+        await userPage.locator("[data-cy='demo-pill']").textContent() ?? "";
       expect(
         pill.includes("Hans") && pill.includes("Lia"),
         `the pill names both presenters (${pill})`,
@@ -233,21 +237,24 @@ Deno.test("REQ-214: two staff present to one customer — Lia's Demo on an alrea
       const ps = await pointers(userPage);
       expect.eq(ps.length, 2, "two pointers on Ana's screen");
       expect(ps[0].color !== ps[1].color, "in two different colours");
-      // frame sanity: both stages show Ana's page
-      const framePath = (pg: typeof page) => {
-        const f = pg.frame({ name: FRAME });
-        return f ? new URL(f.url()).pathname : null;
-      };
+      // frame sanity: both stages mirror Ana's page (REQ-242)
+      const framePath = (pg: typeof page) =>
+        pg.locator(FRAME).getAttribute("data-path");
       const customerPath = new URL(userPage.url()).pathname;
-      expect.eq(framePath(page), customerPath, "Hans's frame is on Ana's page");
       expect.eq(
-        framePath(liaPage),
+        await framePath(page),
+        customerPath,
+        "Hans's frame is on Ana's page",
+      );
+      expect.eq(
+        await framePath(liaPage),
         customerPath,
         "Lia's frame is on Ana's page",
       );
 
-      // 5. End from Hans clears all three
+      // 5. End from Hans clears all three (REQ-235: End, then Yes)
       await page.locator("[data-cy='demo-end']").click();
+      await page.locator("[data-cy='demo-end-confirm']").click();
       await userPage.locator("[data-cy='demo-pill']").waitFor({
         state: "hidden",
         timeout: 15_000,

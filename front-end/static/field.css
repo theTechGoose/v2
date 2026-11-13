@@ -157,6 +157,18 @@
   color: var(--fg);
   background: #fff;
 }
+/* REQ-735 (demo c5 p6) — the read-only "share link + PIN" text box (workers,
+   editors): drawn like the form fields, not the UA's monospace inset box */
+.share-text {
+  box-sizing: border-box;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  font: inherit;
+  font-size: 14px;
+  color: var(--fg);
+  background: #fff;
+}
 /* REQ-155 — a select is drawn shorter than an input of the same padding; match the inputs beside it */
 .field select {
   min-height: 47px;
@@ -167,6 +179,12 @@
   outline: 0;
   border-color: var(--brand-green);
   box-shadow: var(--shadow-focus);
+}
+/* REQ-421 — a refused box's message, right under it (the red border is REQ-283's aria-invalid rule) */
+.field-error {
+  color: #a83b3b;
+  font-size: 12.5px;
+  font-weight: 600;
 }
 /* REQ-632 — a required field left empty says so on its border too, not only in the line below it */
 .field input[aria-invalid="true"] {
@@ -282,6 +300,9 @@
   justify-content: center;
   z-index: 1000;
   padding: 20px;
+  /* REQ-734 (cycle 5, m69; as REQ-618): the dim covers the whole window, the box keeps
+     clear of the demo pill's band (0 with no demo) */
+  padding-bottom: calc(20px + var(--demo-pill-h, 0px));
 }
 .modal {
   background: #fff;
@@ -293,7 +314,7 @@
   display: flex;
   flex-direction: column;
   gap: 14px;
-  max-height: calc(100vh - 40px);
+  max-height: calc(100vh - 40px - var(--demo-pill-h, 0px));
   overflow: auto;
 }
 .modal h2 {
@@ -306,7 +327,17 @@
   display: flex;
   gap: 10px;
   justify-content: flex-end;
-  margin-top: 6px;
+  /* REQ-734 (cycle 5, m69): a tall form scrolls under the buttons — they stay pinned to the
+     bottom of the box, edge to edge over the box's own padding, on an opaque ground */
+  position: sticky;
+  bottom: -24px; /* the box's bottom padding: sticky stops at the content edge, so reach
+                    past it and cover the strip scrolled fields would show through */
+  z-index: 1;
+  background: #fff;
+  margin: 6px -26px -24px;
+  padding: 12px 26px 24px;
+  border-radius: 0 0 16px 16px;
+  box-shadow: 0 -10px 14px -12px rgba(20,72,82,.28);
 }
 .btn--cancel {
   padding: 10px 16px;
@@ -446,6 +477,12 @@
 .sub__items div {
   display: flex;
   justify-content: space-between;
+  gap: 12px;
+  align-items: baseline;
+}
+/* REQ-529: a long value (the worker card's no-zone link) wraps flush right, never into the label */
+.sub__items div > :last-child:not(:first-child) {
+  text-align: right;
 }
 .sub__foot {
   display: flex;
@@ -802,3 +839,7 @@
   color: #fff;
   border-color: var(--brand-teal);
 }
+
+/* REQ-283 — a form field whose check failed */
+.field input[aria-invalid="true"] { border-color: #dc2626; }
+.field select[aria-invalid="true"] { border-color: #dc2626; }

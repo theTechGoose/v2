@@ -58,6 +58,15 @@ const asLang = (v: unknown): PersonLang | undefined =>
  * What the business sends its customers is NOT this — that is the business identity's
  * commsLanguage (and, for a few owner-addressed copies, the owner's own record).
  */
+/** REQ-631 — the ACCOUNT's own language, for business content only (the
+ *  send-in languages a business starts with, REQ-348) — never the UI's, which
+ *  is `personLanguage`. */
+export function accountLanguage(
+  user: { language?: string } | null | undefined,
+): PersonLang | undefined {
+  return asLang(user?.language);
+}
+
 export function personLanguage(
   user:
     | { language?: string; actor?: { language?: string } | null }

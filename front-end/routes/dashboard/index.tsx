@@ -1,9 +1,10 @@
 import { asset, Head } from "fresh/runtime";
-import {
-  greetingFirstName,
-  personLanguage,
-} from "../../../shared/person-name/mod.ts"; // REQ-624
+import { greetingFirstName } from "../../../shared/person-name/mod.ts"; // REQ-624
 import { define } from "../../utils.ts";
+import { isPlaceholderName } from "../../../shared/quote-flow/outbound-identity.ts";
+import { resolveSsrLang } from "../../lib/ssr-lang.ts";
+import type { Lang } from "../../lib/lang.ts";
+import DocTitle from "../../components/DocTitle.tsx";
 import SiteFooter from "../../components/SiteFooter.tsx";
 import { tFor } from "../../lib/i18n.ts";
 import DashSidebar from "../../islands/DashSidebar.tsx";
@@ -11,6 +12,7 @@ import DashTopbar from "../../islands/DashTopbar.tsx";
 import DashboardPage from "../../islands/DashboardPage.tsx";
 import AssistantCoachmark from "../../islands/AssistantCoachmark.tsx";
 import WelcomeBackToast from "../../islands/WelcomeBackToast.tsx";
+import StaffNamePrompt from "../../islands/StaffNamePrompt.tsx";
 
 const WEEKDAY_KEYS = [
   "dashboardPage.weekday.sunday",
@@ -38,17 +40,22 @@ const MONTH_KEYS = [
 
 export default define.page(function Dashboard(ctx) {
   const user = ctx.state.user;
-  const lang = personLanguage(user) === "es" ? "es" : "en";
+  // REQ-709 (demo-loop c5, m4): the islands' language (?lang= > account >
+  // pm_lang), so the tab title and footer match the page they sit on.
+  const lang: Lang = resolveSsrLang(ctx) ?? "es";
   // UX-27: the seeded placeholder ("Nuevo usuario"/"New user") is not a real
   // name — never greet the user as "Nuevo"; greet namelessly instead.
-  const realName = greetingFirstName(user); // REQ-624: the signed-in person (the editor while acting)
-  const greetingName = (realName || tFor(lang, "common.thereFallback"))
-    .split(" ")[0];
+  // REQ-624: the signed-in person (the editor while acting); never the placeholder
+  const realName = greetingFirstName(user);
+  // REQ-423 — no server-translated fallback baked in as a name ("Hola, hola")
+  const greetingName = realName?.split(/\s+/)[0];
   // Passed as a dict KEY so the topbar re-localizes it live when the
   // language toggle flips (an SSR string would stay frozen).
   const greetingOverrideKey = realName
     ? undefined
     : "dashTopbar.greetingNoName";
+  // REQ-355 — staff skip the customer wizard (REQ-227), its name question too: ask here
+  const askName = user?.superAdmin === true && isPlaceholderName(user?.name);
   const now = new Date();
   const greetingDate = `${tFor(lang, WEEKDAY_KEYS[now.getDay()])} · ${
     tFor(lang, MONTH_KEYS[now.getMonth()])
@@ -57,11 +64,11 @@ export default define.page(function Dashboard(ctx) {
   return (
     <>
       <Head>
-        <title>
-          {tFor(lang, "dashboardPage.docTitle", {
-            brand: tFor(lang, "brand.name"),
-          })}
-        </title>
+        <DocTitle
+          lang={lang}
+          title={(l) =>
+            tFor(l, "dashboardPage.docTitle", { brand: tFor(l, "brand.name") })}
+        />
         <link rel="stylesheet" href={asset("/dashboard.css")} />
       </Head>
 
@@ -79,8 +86,9 @@ export default define.page(function Dashboard(ctx) {
             greetingOverrideKey={greetingOverrideKey}
           />
           <div class="content">
+            {askName && <StaffNamePrompt />}
             <DashboardPage />
-            <SiteFooter lang={lang} />
+            <SiteFooter lang={lang} compact />
           </div>
         </main>
         <DashSidebar active="home" />

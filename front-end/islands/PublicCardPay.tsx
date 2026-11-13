@@ -17,6 +17,7 @@
  */
 import { useEffect, useRef, useState } from "preact/hooks";
 import { type Lang, tFor } from "../lib/i18n.ts";
+import { Icon } from "../components/ui/Icon.tsx"; // REQ-366
 import { fmtMoneyExact } from "../lib/format.ts";
 import {
   brandOf,
@@ -577,7 +578,11 @@ export default function PublicCardPay(
       <div class="cp-merchant" data-cy="card-merchant">
         {config.logoUrl
           ? <img src={config.logoUrl} alt="" data-cy="card-merchant-logo" />
-          : <span class="cp-merchant__mark" aria-hidden="true">▣</span>}
+          : (
+            <span class="cp-merchant__mark" aria-hidden="true">
+              <Icon name="receipt" size={18} />
+            </span>
+          )}
         <div>
           <b>{merchant}</b>
           <small>

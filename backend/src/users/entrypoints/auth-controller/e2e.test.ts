@@ -3,10 +3,11 @@ import { assert, assertEquals } from "#std/assert";
 import { Module } from "#danet/core";
 import { bootstrapServer } from "#mrg-keystone/danet";
 import { UsersModule } from "@users/mod-root.ts";
+import { FilesModule } from "@files/mod-root.ts";
 import { OtpStore } from "@users/domain/data/otp-store/mod.ts";
 import { resetKv } from "@core/data/kv/mod.ts";
 
-@Module({ imports: [UsersModule] })
+@Module({ imports: [UsersModule, FilesModule] })
 class TestApp {}
 
 const PORT = 9050;
@@ -342,7 +343,13 @@ Deno.test("REQ-091 auth e2e: verify-otp carries redirectTo — /welcome while an
       await drain(r);
     };
     await send("PUT", "/me", { name: "Story Person", email: "story@example.com" });
-    await send("PUT", "/profile/identity", { businessName: "Story Roofing LLC", logoFileId: "f-logo", acceptedPaymentMethods: { cash: { enabled: true } } });
+    // REQ-252: the logo is a real image the account uploaded
+    const logo = await fetch(`${base}/files`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ filename: "logo.png", mimeType: "image/png", base64: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==" }),
+    }).then((r) => r.json());
+    await send("PUT", "/profile/identity", { businessName: "Story Roofing LLC", logoFileId: logo.id, acceptedPaymentMethods: { cash: { enabled: true } } });
     await send("PUT", "/profile/address", { state: "TX", street: "1600 Congress Ave" });
     await send("POST", "/me/plan", { planId: "free" });
     const eight = await verify();

@@ -1,6 +1,7 @@
 import { asset, Head } from "fresh/runtime";
 import { personLanguage } from "../../../shared/person-name/mod.ts"; // REQ-631
 import { define } from "../../utils.ts";
+import DocTitle from "../../components/DocTitle.tsx";
 import { getSessionId, loadUser } from "../../lib/auth.ts";
 import { ssrBackendGetAuthed } from "../../lib/backend-fetch.ts";
 import SiteFooter from "../../components/SiteFooter.tsx";
@@ -39,7 +40,10 @@ export default define.page(async function PlanPay(ctx) {
   return (
     <>
       <Head>
-        <title>{tFor(lang, "planHandoff.title")} · {tFor(lang, "brand.name")}</title>
+        <DocTitle
+          lang={lang}
+          title={(l) => `${tFor(l, "planHandoff.title")} · ${tFor(l, "brand.name")}`}
+        />
         <meta name="robots" content="noindex" />
         <link key="css-verify" rel="stylesheet" href={asset("/verify.css")} />
         {/* no script: the page asks again by itself every few seconds (the island does it every second) */}

@@ -5,15 +5,30 @@ import { CustomerStore } from "@crm/domain/data/customer-store/mod.ts";
 import {
   changeOrderRef,
   customerOnDocument,
+  docRef,
 } from "@paperwork/domain/business/doc-render/mod.ts";
 import { UserStore } from "@users/domain/data/user-store/mod.ts";
 import { BusinessIdentityStore } from "@profile/domain/data/business-identity-store/mod.ts";
-import { EmailService } from "@communication/domain/data/email-service/mod.ts";
+import {
+  EmailService,
+  type SendEmailInput,
+} from "@communication/domain/data/email-service/mod.ts";
 import { SmsService } from "@users/domain/data/sms/mod.ts";
+import {
+  customerSmsTarget,
+  dispatchCustomerSms,
+} from "@paperwork/domain/business/customer-sms/mod.ts";
 import { businessFrom } from "@communication/domain/business/sender/mod.ts";
 import { emailLogo, emailLogoHtml } from "@paperwork/domain/business/email-logo/mod.ts";
 import { type Lang, t } from "@core/i18n/mod.ts";
 import { SITE_ORIGIN } from "#quote-flow/site-meta.ts";
+import { EventBus } from "@core/business/events/mod.ts";
+import { phoneCantReceiveTexts } from "#quote-flow/sms-number.ts";
+import { resolveCommsLanguage } from "#quote-flow/comms-language.ts"; // REQ-715
+import { LogPaperworkMessage } from "@communication/domain/coordinators/log-paperwork-message/mod.ts"; // REQ-784
+import { customerLabel } from "@communication/domain/business/outbox-entry/mod.ts"; // REQ-784
+import { ConversationStore } from "@communication/domain/data/conversation-store/mod.ts"; // REQ-784
+import { MessageStore } from "@communication/domain/data/message-store/mod.ts"; // REQ-784
 
 const APP_URL = (() => {
   const explicit = Deno.env.get("APP_URL")?.trim() || undefined;
@@ -36,6 +51,30 @@ function fmtDelta(cents: number): string {
       maximumFractionDigits: 2,
     })
   }`;
+}
+
+/** REQ-456 (demo-loop cycle 3, M25): what reached the CUSTOMER, per channel,
+ *  so the chat can say "Sent CO-001 to Karen by email (…) — text failed (…)".
+ *  A channel with nothing on file has neither its address nor a reason. */
+export interface ChangeOrderCustomerDelivery {
+  /** "CO-001" */
+  number: string;
+  /** "/co/<id>?lang=<commsLanguage>" — the approval page, origin-free. */
+  approvalPath: string;
+  emailedTo?: string;
+  emailFailureReason?: string;
+  textedTo?: string;
+  smsFailureReason?: string;
+  /** REQ-681 (cycle 5, m12): the phone on file can't take texts (the shared
+   *  REQ-569 predicate), so no text was attempted; the worded reason. */
+  smsSkippedReason?: string;
+}
+
+export interface ChangeOrderAlertResult {
+  ok: boolean;
+  reason?: string;
+  /** REQ-456: absent only when there was no contractor to send as. */
+  customer?: ChangeOrderCustomerDelivery;
 }
 
 /**
@@ -61,9 +100,15 @@ export class SendChangeOrderAlert {
     private email: EmailService,
     private sms: SmsService,
     private invoices: InvoiceStore,
+    private bus?: EventBus,
+    /** REQ-784 — the business's outbox (defaulted for direct construction) */
+    private commsLog: LogPaperworkMessage = new LogPaperworkMessage(
+      new ConversationStore(),
+      new MessageStore(),
+    ),
   ) {}
 
-  async run(changeOrderId: string): Promise<{ ok: boolean; reason?: string }> {
+  async run(changeOrderId: string): Promise<ChangeOrderAlertResult> {
     const co = await this.changeOrders.get(changeOrderId);
     const [contractor, liveCustomer, ident, invoice] = await Promise.all([
       this.users.get(co.userId).catch(() => undefined),
@@ -85,25 +130,64 @@ export class SendChangeOrderAlert {
     };
 
     // Contractor copy = their UI language; customer copy = outgoing-comms
-    // language (roadmap p.13), like every other customer-facing document.
+    // language (roadmap p.13), like every other customer-facing document —
+    // REQ-715 (demo-loop cycle 5, m31): the customer's own language first.
     const cxLang: Lang = contractor.language === "es" ? "es" : "en";
-    const coLang: Lang = ident?.commsLanguage === "es" ? "es" : "en";
+    const coLang: Lang = resolveCommsLanguage({
+      customerLanguage: liveCustomer?.language,
+      identityCommsLanguage: ident?.commsLanguage,
+    });
     const businessName = ident?.businessName?.trim() ||
       (ident as { legalName?: string } | null)?.legalName?.trim() ||
       contractor.name?.trim() || t(coLang, "changeOrderPublic.contractorFallback");
     const customerName = customer?.name?.trim() || customer?.businessName?.trim() ||
       t(cxLang, "notify.fallbackClient");
     const delta = fmtDelta(co.deltaAmountCents);
-    const url = `${APP_URL}/co/${co.id}`;
+    // REQ-398 (demo p13-j, REQ-342 parity): the link carries the language
+    // the order was sent in; /co reads ?lang= first and its EN | ES toggle
+    // flips it from there.
+    const approvalPath = `/co/${co.id}?lang=${coLang}`;
+    const url = `${APP_URL}${approvalPath}`;
     const refCo = changeOrderRef(co, invoice, coLang);
     const refCx = changeOrderRef(co, invoice, cxLang);
 
     let sentAny = false;
+    const delivered: ChangeOrderCustomerDelivery = {
+      number: docRef(co),
+      approvalPath,
+    };
+    // REQ-784 (demo-loop dv1, d12): the request to the CUSTOMER lands in the
+    // business's outbox — sent, or not and why — with what was sent. The
+    // contractor's own heads-up below is not a customer message.
+    const toOutbox = (
+      channel: "email" | "text",
+      ok: boolean,
+      what: {
+        to: string;
+        subject?: string;
+        body?: string;
+        reasonCode?: string;
+        reason?: string;
+      },
+    ) =>
+      this.commsLog.outbox({
+        userId: co.userId,
+        channel,
+        kind: "changeOrder",
+        language: coLang,
+        ok,
+        customerId: co.customerId ?? liveCustomer?.id,
+        customerName: customerLabel(customer),
+        docId: co.id,
+        docRef: docRef(co),
+        ...what,
+      });
 
     // ── Customer: the actual approval request ───────────────────────────
     if (contact.email) {
+      let mail: SendEmailInput | undefined;
       try {
-        const res = await this.email.send({
+        mail = {
           to: contact.email,
           subject: `${
             t(coLang, "changeOrderRequest.email.subject", {
@@ -127,28 +211,60 @@ export class SendChangeOrderAlert {
             lang: coLang,
             ref: refCo,
           }),
-        });
+        };
+        const res = await this.email.send(mail);
         console.log(
           `[send-change-order-alert] co ${co.id} customer-email → ${contact.email}: ok=${res.ok}${
             res.reason ? ` (${res.reason})` : ""
           }`,
         );
         sentAny = sentAny || res.ok;
+        if (res.ok) delivered.emailedTo = contact.email;
+        else delivered.emailFailureReason = res.reason ?? "failed";
+        await toOutbox("email", res.ok, {
+          to: contact.email,
+          subject: mail.subject,
+          body: mail.htmlBody,
+          ...(res.ok ? {} : { reason: res.reason }),
+        });
       } catch (err) {
         console.error("[send-change-order-alert] customer email failed:", err);
+        delivered.emailFailureReason = errText(err);
+        await toOutbox("email", false, {
+          to: contact.email,
+          subject: mail?.subject,
+          reason: errText(err),
+        });
       }
     }
-    if (contact.phoneNumber) {
+    if (phoneCantReceiveTexts(contact.phoneNumber)) {
+      // REQ-681 (demo-loop cycle 5, m12): the send dialog already rules out
+      // texting this number (REQ-569) — don't attempt it here either, and say
+      // why it was skipped rather than reporting a failed text.
+      delivered.smsSkippedReason = t(cxLang, "sms.fictionalNumber");
+      const target = customerSmsTarget(contact.phoneNumber);
+      await toOutbox("text", false, {
+        to: "e164" in target ? target.e164 : contact.phoneNumber ?? "",
+        reasonCode: "fictional",
+        reason: delivered.smsSkippedReason,
+      });
+    } else if (contact.phoneNumber) {
       try {
-        const res = await this.sms.send({
+        // REQ-588 (demo-loop cycle 4, M29): the ONE guarded customer-text
+        // dispatch (REQ-403) — a missing/invalid/555 number never reaches the
+        // provider, and the failure reason comes back worded in the
+        // contractor's UI language instead of a raw "sms.fictionalNumber" key.
+        const smsBody = `${refCo}: ${
+          t(coLang, "changeOrderRequest.sms.body", {
+            business: businessName,
+            delta,
+            url,
+          })
+        }`;
+        const res = await dispatchCustomerSms(this.sms, {
           to: contact.phoneNumber,
-          body: `${refCo}: ${
-            t(coLang, "changeOrderRequest.sms.body", {
-              business: businessName,
-              delta,
-              url,
-            })
-          }`,
+          body: smsBody,
+          uiLang: cxLang,
         });
         console.log(
           `[send-change-order-alert] co ${co.id} customer-sms → ${contact.phoneNumber}: ok=${res.ok}${
@@ -156,8 +272,22 @@ export class SendChangeOrderAlert {
           }`,
         );
         sentAny = sentAny || res.ok;
+        if (res.ok) delivered.textedTo = contact.phoneNumber;
+        else delivered.smsFailureReason = res.reason ?? "failed";
+        await toOutbox("text", res.ok, {
+          to: res.to || contact.phoneNumber,
+          body: smsBody,
+          ...(res.ok
+            ? {}
+            : { reasonCode: res.failureCode, reason: res.reason }),
+        });
       } catch (err) {
         console.error("[send-change-order-alert] customer sms failed:", err);
+        delivered.smsFailureReason = errText(err);
+        await toOutbox("text", false, {
+          to: contact.phoneNumber,
+          reason: errText(err),
+        });
       }
     }
 
@@ -214,8 +344,40 @@ export class SendChangeOrderAlert {
       }
     }
 
-    return sentAny ? { ok: true } : { ok: false, reason: "no_contact" };
+    // REQ-698 (demo-loop cycle 5, m14): a change order that reached the
+    // customer is the owner's work — "What we handled today" (built from
+    // notifications) never showed pair 5's CO-002. Every send path (the
+    // assistant, a chat edit, the invoice controller) comes through here.
+    if (delivered.emailedTo || delivered.textedTo) {
+      await this.bus?.emit({
+        userId: co.userId,
+        entityType: "invoice",
+        entityId: co.invoiceId,
+        action: "change_order_sent",
+        data: {
+          number: delivered.number,
+          delta,
+          ...(customer?.name?.trim() || customer?.businessName?.trim()
+            ? {
+              customerName: customer?.name?.trim() ||
+                customer?.businessName?.trim(),
+            }
+            : {}),
+          ...(contractor.language ? { language: contractor.language } : {}),
+        },
+      }).catch((err) =>
+        console.error("[send-change-order-alert] emit failed:", err)
+      );
+    }
+
+    return sentAny
+      ? { ok: true, customer: delivered }
+      : { ok: false, reason: "no_contact", customer: delivered };
   }
+}
+
+function errText(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
 }
 
 /** Customer-facing approval request (commsLanguage). */

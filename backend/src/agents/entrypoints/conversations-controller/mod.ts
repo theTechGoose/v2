@@ -15,6 +15,7 @@ import { StartConversation } from "@agents/domain/coordinators/start-conversatio
 import { LoadConversation } from "@agents/domain/coordinators/load-conversation/mod.ts";
 import { TransitionToTerms } from "@agents/domain/coordinators/transition-to-terms/mod.ts";
 import { LockQuote } from "@agents/domain/coordinators/lock-quote/mod.ts";
+import { ReopenQuote } from "@agents/domain/coordinators/reopen-quote/mod.ts";
 import { AcceptQuote } from "@agents/domain/coordinators/accept-quote/mod.ts";
 import { SendQuote } from "@agents/domain/coordinators/send-quote/mod.ts";
 import { SendInvoice } from "@agents/domain/coordinators/send-invoice/mod.ts";
@@ -23,6 +24,12 @@ import { BindConversationCustomer } from "@agents/domain/coordinators/bind-conve
 import { EnsureSampleQuote } from "@agents/domain/coordinators/ensure-sample-quote/mod.ts";
 import { parseCreateAgentConversation } from "@agents/dto/conversation.ts";
 import { shouldTransitionToTerms } from "@agents/domain/business/derive-phase/mod.ts";
+import { parseAssistantDraft } from "#quote-flow/assistant-draft.ts";
+import {
+  derivePreview,
+  deriveTitleFromFirstUserMessage,
+} from "@agents/domain/business/conversation-title/mod.ts";
+import { ListConversations } from "@agents/domain/coordinators/list-conversations/mod.ts";
 import { UserStore } from "@users/domain/data/user-store/mod.ts";
 import { SessionStore } from "@users/domain/data/session-store/mod.ts";
 import { requireSession, requireUser, uiLangOf } from "@users/domain/coordinators/require-user/mod.ts";
@@ -38,6 +45,7 @@ export class ConversationsController {
     private loadFlow: LoadConversation,
     private transitionFlow: TransitionToTerms,
     private lockFlow: LockQuote,
+    private reopenFlow: ReopenQuote,
     private acceptFlow: AcceptQuote,
     private sendQuoteFlow: SendQuote,
     private sendInvoiceFlow: SendInvoice,
@@ -46,35 +54,16 @@ export class ConversationsController {
     private sampleQuoteFlow: EnsureSampleQuote,
     private users: UserStore,
     private sessions: SessionStore,
-    private customers: CustomerStore,
-    private quotes: QuoteStore,
+    private listFlow: ListConversations,
   ) {}
 
   @Get()
   async list(@Context() ctx: ExecutionContext, @Query("limit") limit?: string) {
     const user = await requireUser(ctx, this.sessions, this.users);
     const cap = limit ? Math.min(200, Math.max(1, Number(limit) | 0)) : 50;
-    const rows = await this.store.listByUser(user.id, { limit: cap });
-    // UX-14: denormalize customerName + jobName so the thread list can title
-    // each conversation by what it is about ("Patio · María Nguyen") instead
-    // of a wall of "Nueva conversación" rows.
-    const [customers, quotes] = await Promise.all([
-      this.customers.listByUser(user.id).catch(() => []),
-      this.quotes.listByUser(user.id).catch(() => []),
-    ]);
-    const customerById = new Map(customers.map((c) => [c.id, c]));
-    const quoteById = new Map(quotes.map((q) => [q.id, q]));
-    return ctx.json(rows.map((r) => {
-      const customerName = r.customerId
-        ? customerById.get(r.customerId)?.name
-        : undefined;
-      const jobName = r.quoteId ? quoteById.get(r.quoteId)?.jobName : undefined;
-      return {
-        ...r,
-        ...(customerName ? { customerName } : {}),
-        ...(jobName ? { jobName } : {}),
-      };
-    }));
+    // UX-14 titles + REQ-369: each row's status is the chat header's rule
+    // over the quote row (see ListConversations).
+    return ctx.json(await this.listFlow.run({ userId: user.id, limit: cap }));
   }
 
   @Post()
@@ -179,6 +168,26 @@ export class ConversationsController {
     );
   }
 
+  /** REQ-334 (demo-loop cycle 1, M25): the locked card's "Re-open" — the
+   *  inverse of lock-quote. Leaves the terms wizard, drops the locked card +
+   *  its CTA, clears lockedAt; the draft card is back. Refused for a sent
+   *  quote (the client routes those to the revision path). */
+  @Post(":id/reopen-quote")
+  async reopenQuote(
+    @Context() ctx: ExecutionContext,
+    @Param("id") id: string,
+    @Body() body: unknown,
+  ) {
+    const user = await requireUser(ctx, this.sessions, this.users);
+    const quoteId = (body as { quoteId?: unknown } | null | undefined)?.quoteId;
+    if (typeof quoteId !== "string" || !quoteId) {
+      throw new Error("quoteId is required");
+    }
+    return ctx.json(
+      await this.reopenFlow.run({ userId: user.id, conversationId: id, quoteId }),
+    );
+  }
+
   @Post(":id/accept-quote")
   async acceptQuote(
     @Context() ctx: ExecutionContext,
@@ -210,6 +219,7 @@ export class ConversationsController {
       quoteId?: unknown;
       channel?: unknown;
       language?: unknown;
+      requestId?: unknown;
     };
     const quoteId = b.quoteId;
     if (typeof quoteId !== "string" || !quoteId) {
@@ -229,6 +239,10 @@ export class ConversationsController {
         quoteId,
         channel,
         language,
+        // REQ-399 (demo M16): one Send's id — a repeat is dropped.
+        requestId: typeof b.requestId === "string" && b.requestId.length <= 100
+          ? b.requestId
+          : undefined,
       }),
     );
   }
@@ -262,7 +276,7 @@ export class ConversationsController {
   }
 
   /**
-   * POST /agents/conversations/:id/draft   { note?, quoteId? }
+   * POST /agents/conversations/:id/draft   { note?, quoteId?, draft? }
    *
    * Records in-flight assistant work on a conversation the MOMENT it starts
    * (P-22: "mid-flow work silently lost"). The details-first flow used to
@@ -274,6 +288,11 @@ export class ConversationsController {
    *             a reload of /assistant/:id shows what they already typed.
    *   quoteId — bind the quote to this (already-minted) conversation instead
    *             of starting a second one.
+   *   draft   — REQ-230 (demo M14): the assistant's in-flight flow (job
+   *             options, the pick, the price, the open panel) — replaces the
+   *             stored one; `null` clears it; anything not a draft object is
+   *             ignored. GET /:id hands it back so ANY window's reload (the
+   *             contractor's own, the demo stage) rebuilds the flow.
    */
   @Post(":id/draft")
   async draft(
@@ -284,19 +303,57 @@ export class ConversationsController {
     const user = await requireUser(ctx, this.sessions, this.users);
     const conv = await this.store.get(id);
     if (conv.userId !== user.id) throw new Error("forbidden");
-    const b = (body ?? {}) as { note?: unknown; quoteId?: unknown };
+    const b = (body ?? {}) as {
+      note?: unknown;
+      quoteId?: unknown;
+      draft?: unknown;
+    };
+    let current = conv;
     if (typeof b.note === "string" && b.note.trim().length > 0) {
+      const note = b.note.trim();
+      const prior = await this.messages.listByConversation(id);
       await this.messages.append({
         conversationId: id,
         role: "user",
         kind: "text",
-        content: b.note.trim(),
+        content: note,
+      });
+      // REQ-580 (demo-loop cycle 4, p4-p7b): the note is the details-first
+      // thread's first message — it names the thread and is its preview, as
+      // a first chat message does, so the list never reads "New
+      // conversation —" while the contractor picks options. A thread that
+      // already has a title (a quote's jobName, REQ-447) or a user message
+      // keeps its title.
+      const first = !conv.title && !prior.some((m) => m.role === "user");
+      current = await this.store.update(id, {
+        preview: derivePreview(note),
+        ...(first
+          ? {
+            title: deriveTitleFromFirstUserMessage(
+              note,
+              user.language === "es" ? "es" : "en",
+            ),
+          }
+          : {}),
       });
     }
-    if (typeof b.quoteId === "string" && b.quoteId.length > 0) {
-      return ctx.json(await this.store.update(id, { quoteId: b.quoteId }));
+    if (b.draft === null) {
+      await this.store.deleteDraft(id);
+    } else if (b.draft !== undefined) {
+      const draft = parseAssistantDraft(b.draft);
+      if (draft) await this.store.putDraft(id, draft);
     }
-    return ctx.json(conv);
+    if (typeof b.quoteId === "string" && b.quoteId.length > 0) {
+      // REQ-447 (cycle 3, m14): the bound quote's jobName titles the thread.
+      return ctx.json(
+        await this.startFlow.bindQuote({
+          userId: user.id,
+          conversationId: id,
+          quoteId: b.quoteId,
+        }),
+      );
+    }
+    return ctx.json(current);
   }
 
   @Post(":id/bind-customer")

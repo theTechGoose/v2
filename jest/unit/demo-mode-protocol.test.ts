@@ -1,22 +1,20 @@
 /**
  * REQ-153 — demo mode's pure protocol, and the wiring the pages need: the wire and peer
- * messages parse and reject junk; a pointer is a viewport fraction (REQ-188); a reported page is
- * followed only when it is a different same-origin path; a selector is
- * built from an id, a data-cy or a positional path; both dictionaries carry the demoMode strings;
- * the overlay is mounted in the shell; the admin row has the Demo button; the Vite proxy
- * forwards the socket unchanged.
+ * messages parse and reject junk; a pointer is a viewport fraction (REQ-188); both dictionaries
+ * carry the demoMode strings; the overlay is mounted in the shell; the admin row has the Demo
+ * button; the Vite proxy forwards the socket unchanged.
+ *
+ * REQ-242 (2026-11-11): the stage mirrors the customer's DOM, so the reported view (`view`), the
+ * followed path (`shouldFollow`) and the element selectors (`selectorFor`, `parseSelector`,
+ * `walkSelector`) are gone; their tests went with them (jest/unit/demo-mode-mirror*.test.ts).
  */
 import * as fs from "fs";
 import * as path from "path";
 import {
-  type ElLike,
   parseClientMessage,
   parsePeerMessage,
-  parseSelector,
   parseServerMessage,
-  selectorFor,
-  shouldFollow,
-  walkSelector,
+  PILL_TEXT_MAX,
 } from "../../shared/demo-mode/protocol";
 
 const ROOT = path.resolve(__dirname, "../..");
@@ -47,7 +45,7 @@ describe("REQ-153 demo mode protocol", () => {
     expect(parseClientMessage('{"t":"signal"}')).toBeNull();
   });
 
-  test("peer messages: move/click carry a clamped viewport fraction (REQ-188), a view's page is a same-origin path (REQ-187), leave is bare", () => {
+  test("peer messages: move/click carry a clamped viewport fraction (REQ-188), leave is bare; the reported view is gone (REQ-242)", () => {
     expect(
       parsePeerMessage({
         k: "click",
@@ -58,19 +56,71 @@ describe("REQ-153 demo mode protocol", () => {
       a: { vx: 0, vy: 0.2 },
     });
     expect(parsePeerMessage({ k: "view", v: { path: "/customers?x=1" } }))
-      .toEqual({
-        k: "view",
-        v: { path: "/customers?x=1" },
-      });
-    expect(
-      parsePeerMessage({ k: "view", v: { path: "https://evil.example/" } }),
-    )
-      .toBeNull();
-    expect(parsePeerMessage({ k: "view", v: { path: "//evil.example/" } }))
       .toBeNull();
     expect(parsePeerMessage({ k: "leave" })).toEqual({ k: "leave" });
     expect(parsePeerMessage({ k: "move" })).toBeNull();
     expect(parsePeerMessage(null)).toBeNull();
+  });
+
+  test("REQ-295: the customer's pill box rides to the stage — a rect or null, junk dropped", () => {
+    const r = { left: 12, top: 790, width: 320, height: 40 };
+    expect(parsePeerMessage({ k: "pill", r })).toEqual({ k: "pill", r });
+    expect(parsePeerMessage({ k: "pill", r: null })).toEqual({
+      k: "pill",
+      r: null,
+    });
+    expect(parsePeerMessage({ k: "pill", r: { left: "x" } })).toBeNull();
+    expect(parsePeerMessage({ k: "pill" })).toBeNull();
+  });
+
+  test("REQ-372 (cycle 2, m1): the pill message carries what the pill says — compact, open, status, text, clipped", () => {
+    const r = { left: 12, top: 790, width: 320, height: 40 };
+    expect(
+      parsePeerMessage({
+        k: "pill",
+        r,
+        compact: true,
+        open: false,
+        status: "live",
+        text: "Hans is guiding you",
+        clipped: true,
+      }),
+    ).toEqual({
+      k: "pill",
+      r,
+      compact: true,
+      open: false,
+      status: "live",
+      text: "Hans is guiding you",
+      clipped: true,
+    });
+    // junk fields are dropped, the box still rides
+    expect(
+      parsePeerMessage({
+        k: "pill",
+        r,
+        compact: "yes",
+        status: "hacked",
+        text: 42,
+        clipped: 1,
+      }),
+    ).toEqual({ k: "pill", r });
+    // a long text is cut
+    const long = parsePeerMessage({ k: "pill", r, text: "x".repeat(5000) });
+    expect(long && long.k === "pill" && long.text!.length).toBeLessThanOrEqual(
+      PILL_TEXT_MAX,
+    );
+    // and it survives the socket's own parse (the server re-parses every relay)
+    const wire = parseClientMessage(
+      JSON.stringify({
+        t: "relay",
+        data: { k: "pill", r, status: "connecting", text: "Hi", open: true },
+      }),
+    );
+    expect(wire).toEqual({
+      t: "relay",
+      data: { k: "pill", r, status: "connecting", text: "Hi", open: true },
+    });
   });
 
   test("server messages parse and carry who they are from", () => {
@@ -108,49 +158,6 @@ describe("REQ-153 demo mode protocol", () => {
       parseServerMessage('{"t":"relay","from":"nobody","data":{"k":"leave"}}'),
     ).toBeNull();
   });
-
-  test("the presenter follows a different same-origin path only", () => {
-    expect(shouldFollow("/dashboard", "/customers")).toBe(true);
-    expect(shouldFollow("/dashboard", "/dashboard")).toBe(false);
-    expect(shouldFollow("/dashboard?x=1", "/dashboard")).toBe(true);
-    expect(shouldFollow("/dashboard", "//evil.example/x")).toBe(false);
-    expect(shouldFollow("/dashboard", "https://evil.example/x")).toBe(false);
-    expect(shouldFollow("/dashboard", "")).toBe(false);
-  });
-
-  test("a selector is the id, the data-cy, or a positional path from the nearest of those", () => {
-    const node = (
-      tagName: string,
-      attrs: Record<string, string>,
-      parent: ElLike | null,
-    ): ElLike & { kids: ElLike[] } => {
-      const n = {
-        tagName,
-        id: attrs.id ?? "",
-        getAttribute: (k: string) => attrs[k] ?? null,
-        parentElement: parent,
-        kids: [] as ElLike[],
-        get children() {
-          return n.kids;
-        },
-      };
-      if (parent) (parent as ElLike & { kids: ElLike[] }).kids.push(n);
-      return n;
-    };
-    const body = node("BODY", {}, null);
-    const app = node("DIV", { id: "app" }, body);
-    const ul = node("UL", {}, app);
-    node("LI", {}, ul);
-    const li2 = node("LI", {}, ul);
-    const save = node("BUTTON", { "data-cy": "save" }, li2);
-    expect(selectorFor(li2)).toBe(
-      "#app > ul:nth-of-type(1) > li:nth-of-type(2)",
-    );
-    expect(selectorFor(save)).toBe('[data-cy="save"]');
-    expect(selectorFor(ul)).toBe("#app > ul:nth-of-type(1)");
-    const loose = node("P", {}, body);
-    expect(selectorFor(loose)).toBe("body > p:nth-of-type(1)");
-  });
 });
 
 describe("REQ-153 demo mode wiring", () => {
@@ -160,9 +167,10 @@ describe("REQ-153 demo mode wiring", () => {
     "title",
     "guiding",
     "presenting",
-    "waiting",
-    "direct",
-    "relay",
+    // REQ-232 (demo-lifecycle-p1): plain words — "waiting", "direct" and "relay" are gone
+    "connecting",
+    "connected",
+    "live",
     "end",
     "ended",
     // the staff side waits for the customer's app to join (AMENDMENT — auto-join, no prompt)
@@ -190,15 +198,22 @@ describe("REQ-153 demo mode wiring", () => {
     expect(shell).toMatch(
       /import DemoModeOverlay from "\.\.\/islands\/DemoModeOverlay\.tsx"/,
     );
-    expect(shell).toMatch(/hasSession \? <DemoModeOverlay \/> : null/);
+    // REQ-647 (cycle 5, c2-p13-r): with /admin's handover notice read on the server
+    expect(shell).toMatch(
+      /hasSession\s*\?\s*\(\s*<DemoModeOverlay\s+endedNotice=\{adminEndedNotice\(url\.pathname, url\.search\)\}\s*\/>\s*\)\s*:\s*null/,
+    );
     const island = read("front-end/islands/DemoModeOverlay.tsx");
-    for (const k of ["end", "waiting"]) {
-      expect(island).toContain(`t("demoMode.${k}")`);
-    }
+    // REQ-232 (demo-lifecycle-p1): the customer's pill says Connected / Connecting…, not "waiting"
+    expect(island).toContain(`t("demoMode.connecting")`);
+    // REQ-235: End is one component both pills draw, and it asks first
+    const endDemo = read("front-end/components/demo-mode/EndDemo.tsx");
+    expect(endDemo).toContain(`t("demoMode.end")`);
+    expect(island).toMatch(/<EndDemo\b/);
     // REQ-153 AMENDMENT (2026-11-05): the presenter's pill lives on the stage now
     const stage = read("front-end/islands/DemoStage.tsx");
     expect(stage).toContain(`t("demoMode.waitingFor", { name`);
     // AMENDMENT — auto-join: the customer is never asked; no prompt, no accept, no decline, nothing remembered
+    // (REQ-295 remembers the pill's PLACE per path through shared/demo-mode/pill.ts `pillStore`, not here)
     for (
       const gone of [
         "demo-accept",
@@ -224,9 +239,10 @@ describe("REQ-153 demo mode wiring", () => {
       expect(en[gone]).toBeUndefined();
       expect(es[gone]).toBeUndefined();
     }
-    for (const cy of ["demo-pill", "demo-status", "demo-end"]) {
+    for (const cy of ["demo-pill", "demo-status"]) {
       expect(island).toContain(`data-cy="${cy}"`);
     }
+    expect(endDemo).toContain(`data-cy="demo-end"`);
     // the pointer and the wave are one component, drawn by both the overlay and the stage
     const pointer = read("front-end/components/demo-mode/DemoPointer.tsx");
     for (const cy of ["demo-pointer", "demo-wave"]) {
@@ -282,13 +298,13 @@ describe("REQ-153 AMENDMENT — same screen at once", () => {
     expect(controller).toMatch(/impersonatorId/);
   });
 
-  test("the overlay reports its page on every poll; the presenter goes to the stage, which shows targetPath before the customer accepts (AMENDMENT 2026-11-05)", () => {
+  test("the overlay reports its page on every poll; the presenter goes to the stage, which shows the customer's own screen only — never targetPath's page (REQ-242 M10, superseding AMENDMENT 2026-11-05)", () => {
     const island = read2("front-end/islands/DemoModeOverlay.tsx");
     expect(island).toMatch(/demoModeClient\.active\(\{\s*path:/);
     expect(island).toMatch(/adminClient\.impersonate\(/);
     expect(island).toMatch(/location\.assign\(STAGE_PATH\)/);
     const stage = read2("front-end/islands/DemoStage.tsx");
-    expect(stage).toMatch(/targetPath/);
+    expect(stage).not.toMatch(/targetPath/);
     // the pending invitation keeps polling, so End from the presenter clears it and the presenter follows the customer's page
     expect(island).toMatch(/peerOnlineRef/);
   });
@@ -299,7 +315,13 @@ describe("REQ-179 instant feedback on Demo", () => {
 
   test("the Demo button reads Opening… at once and the pill is told before the server answers", () => {
     const admin = read3("front-end/islands/AdminPage.tsx");
-    expect(admin).toMatch(/busyId === u\.id \? "Opening…" : "Demo"/);
+    // REQ-269: the labels come from the dictionaries (adminPage.opening / adminPage.demo)
+    expect(admin).toMatch(
+      /busyId === u\.id\s*\?\s*t\("adminPage\.opening"\)\s*:\s*t\("adminPage\.demo"\)/,
+    );
+    const en3 = JSON.parse(read3("lang/en.json")) as Record<string, string>;
+    expect(en3["adminPage.opening"]).toBe("Opening…");
+    expect(en3["adminPage.demo"]).toBe("Demo");
     const demoFn = admin.slice(
       admin.indexOf("async function demo("),
       admin.indexOf("async function impersonate("),
@@ -332,99 +354,16 @@ describe("REQ-179 instant feedback on Demo", () => {
   });
 });
 
-describe("REQ-153 AMENDMENT — the same element on both screens", () => {
-  type Node = ElLike & { kids: Node[] };
-  const node = (
-    tagName: string,
-    attrs: Record<string, string>,
-    parent: Node | null,
-  ): Node => {
-    const n: Node = {
-      tagName,
-      id: attrs.id ?? "",
-      getAttribute: (k: string) => attrs[k] ?? null,
-      parentElement: parent,
-      kids: [],
-      get children() {
-        return n.kids;
-      },
-    };
-    if (parent) parent.kids.push(n);
-    return n;
-  };
-
-  test("a segment carries the element's first class and counts only siblings of the same tag and class; overlay and skip-marked siblings never count", () => {
-    const body = node("BODY", {}, null);
-    node("DIV", { "data-demo-skip": "" }, body); // the impersonation banner — the staff side only
-    node("DIV", { "data-demo-overlay": "" }, body); // the demo overlay itself
-    const app = node("DIV", { class: "app-shell app-shell--wide" }, body);
-    const main = node("MAIN", {}, app);
-    node("DIV", { class: "card" }, main);
-    const composer = node("DIV", { class: "asst__composer" }, main);
-    node("BUTTON", { class: "asst__mic" }, composer);
-    const send = node("BUTTON", { class: "asst__send" }, composer);
-    expect(selectorFor(send)).toBe(
-      "body > div.app-shell:nth-of-type(1) > main:nth-of-type(1) > div.asst__composer:nth-of-type(1) > button.asst__send:nth-of-type(1)",
-    );
-    // the same tree without the banner and the overlay — the customer's side — gives the SAME selector
-    const body2 = node("BODY", {}, null);
-    const app2 = node("DIV", { class: "app-shell" }, body2);
-    const main2 = node("MAIN", {}, app2);
-    node("DIV", { class: "card" }, main2);
-    const composer2 = node("DIV", { class: "asst__composer" }, main2);
-    node("BUTTON", { class: "asst__mic" }, composer2);
-    const send2 = node("BUTTON", { class: "asst__send" }, composer2);
-    expect(selectorFor(send2)).toBe(selectorFor(send));
-    // a modifier class (second token) does not enter the segment — a collapsed sidebar is still the sidebar
-    expect(selectorFor(app)).toBe("body > div.app-shell:nth-of-type(1)");
-  });
-
-  test("parseSelector and walkSelector resolve the path with the same counting on a tree that has the banner", () => {
-    const body = node("BODY", {}, null);
-    node("DIV", { "data-demo-skip": "" }, body);
-    const app = node("DIV", { class: "app-shell" }, body);
-    const footer = node("FOOTER", { class: "site-footer" }, app);
-    const nav = node("NAV", {}, footer);
-    node("A", {}, nav);
-    const privacy = node("A", {}, nav);
-    const sel = selectorFor(privacy);
-    expect(sel).toBe(
-      "body > div.app-shell:nth-of-type(1) > footer.site-footer:nth-of-type(1) > nav:nth-of-type(1) > a:nth-of-type(2)",
-    );
-    const parsed = parseSelector(sel);
-    expect(parsed).toEqual({
-      root: "body",
-      segs: [
-        { tag: "div", cls: "app-shell", n: 1 },
-        { tag: "footer", cls: "site-footer", n: 1 },
-        { tag: "nav", cls: null, n: 1 },
-        { tag: "a", cls: null, n: 2 },
-      ],
-    });
-    expect(walkSelector(body, parsed!.segs)).toBe(privacy);
-    expect(parseSelector("#app > ul:nth-of-type(1)")).toEqual({
-      root: "#app",
-      segs: [{ tag: "ul", cls: null, n: 1 }],
-    });
-    expect(parseSelector('[data-cy="save"]')).toEqual({
-      root: '[data-cy="save"]',
-      segs: [],
-    });
-    expect(parseSelector("div[onclick=x]")).toBeNull();
-    // a path that leads nowhere is null, not a wrong element
-    expect(walkSelector(body, [{ tag: "div", cls: "app-shell", n: 2 }]))
-      .toBeNull();
-  });
-
-  test("the banner is marked so it never counts, and the resolver walks the path before trusting querySelector", () => {
-    const banner = read("front-end/islands/ImpersonationBanner.tsx");
+describe("REQ-153 AMENDMENT — the same element on both screens (REQ-242: by mirror id now)", () => {
+  test("the banner is marked so the mirror never records it, and the pointer's name tag stays inside its box", () => {
+    // REQ-269: the bar's markup lives in its (translated) view component
+    const banner = read("front-end/islands/ImpersonationBanner.tsx") +
+      read("front-end/components/ImpersonationBannerView.tsx");
     expect(banner).toMatch(/data-demo-skip/);
-    // REQ-188: the selector names scrolled elements now; the resolver lives in the replica lib
-    const lib = read("front-end/lib/demo-mode/replica.ts");
-    expect(lib).toMatch(/parseSelector\(/);
-    expect(lib).toMatch(/walkSelector\(/);
-    // the pointer's name tag flips to the left near the right edge, so it is never cut off
+    // REQ-242: the element under a pointer is named by its mirror id (demo-mode-mirror-dom.test.ts)
+    expect(fs.existsSync(path.join(ROOT, "front-end/lib/demo-mode/replica.ts")))
+      .toBe(false);
     const pointer = read("front-end/components/demo-mode/DemoPointer.tsx");
-    expect(pointer).toMatch(/const flip = /);
+    expect(pointer).toMatch(/tagPlacement\(/);
   });
 });

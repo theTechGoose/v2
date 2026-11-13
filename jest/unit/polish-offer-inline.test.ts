@@ -1,0 +1,260 @@
+/**
+ * REQ-384 — Raphael: "fix every issue the demo found, loop until there are
+ * none." Demo-loop cycle 2 (run r561db6d4), issue m16: "'Professionalize'
+ * popup hides the line it rewrites and does little".
+ *
+ * Cause (RCA at deb85b35, analyst CONFIRMED + skeptic UPHELD): after a bullet
+ * edit / add, the picker opened `.chat__pro-pop` — a `position: fixed;
+ * inset: 0` dimmed modal (assistant-page.css, added 66b7aacf) that covered
+ * the very line it offered to rewrite, asked "Want me to professionalize
+ * that?" without quoting the line, and on Yes applied whatever came back —
+ * for an already-clean bullet that was the same text, so Yes "did little".
+ *
+ * Rule now (shared/quote-flow/polish-offer.ts, `polishOffer`): the polish is
+ * fetched first and offered INLINE, in the card's own list right under the
+ * bullet, as a before → after preview; when the result is the same wording
+ * (case, spacing and trailing punctuation aside) nothing is offered.
+ */
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+import { polishOffer, sameWording } from "../../shared/quote-flow/polish-offer";
+
+const root = resolve(__dirname, "../..");
+const read = (p: string) => readFileSync(resolve(root, p), "utf8");
+
+describe("REQ-384 m16: polishOffer — offer only a real rewrite, with a before/after", () => {
+  it("REQ-384 a real rewrite is offered with the line it rewrites and the result", () => {
+    expect(polishOffer("fix the gate", ["Repair of the gate"])).toEqual({
+      before: "fix the gate",
+      after: ["Repair of the gate"],
+    });
+  });
+
+  it("REQ-384 an 'A + B' split is a real change even when the words are kept", () => {
+    expect(
+      polishOffer("4 recessed lights + City of Austin permit", [
+        "4 recessed lights",
+        "City of Austin permit",
+      ]),
+    ).toEqual({
+      before: "4 recessed lights + City of Austin permit",
+      after: ["4 recessed lights", "City of Austin permit"],
+    });
+  });
+
+  it("REQ-384 an already-clean line (same wording back) gets no offer", () => {
+    expect(
+      polishOffer("Frameless glass shower door", [
+        "Frameless glass shower door",
+      ]),
+    ).toBeNull();
+    // case, spacing and a trailing period are not a rewrite
+    expect(
+      polishOffer("frameless  glass shower door", [
+        "Frameless glass shower door.",
+      ]),
+    ).toBeNull();
+  });
+
+  it("REQ-384 an empty / missing result gets no offer", () => {
+    expect(polishOffer("fix the gate", [])).toBeNull();
+    expect(polishOffer("fix the gate", ["  ", ""])).toBeNull();
+  });
+
+  it("REQ-384 the result's lines are trimmed and blank ones dropped", () => {
+    expect(polishOffer("fix gate", ["  Repair of the gate  ", " "]))
+      .toEqual({ before: "fix gate", after: ["Repair of the gate"] });
+  });
+
+  it("REQ-384 sameWording ignores case, spacing and trailing punctuation only", () => {
+    expect(sameWording("Paint fence.", "paint   fence")).toBe(true);
+    expect(sameWording("Paint fence", "Painting of the fence")).toBe(false);
+  });
+});
+
+/**
+ * REQ-443 (demo-loop cycle 3, m46): the offer previewed "(trench" / "Patch)"
+ * for "(trench + patch)" — the same words, re-cased and cut inside a
+ * parenthetical. A single-line result that differs from the line only in case
+ * or punctuation is not a rewrite, and a split that leaves a line with an
+ * unbalanced bracket is a broken split — neither is offered.
+ */
+describe("REQ-443 m46: polishOffer — no offer for a case / punctuation-only change or a broken split", () => {
+  it("REQ-443 the broken '(trench' / 'Patch)' split is not offered", () => {
+    expect(
+      polishOffer("New drain line thru slab to island (trench + patch)", [
+        "New drain line thru slab to island (trench",
+        "Patch)",
+      ]),
+    ).toBeNull();
+  });
+
+  it("REQ-443 a single line that only changes case or punctuation is not offered", () => {
+    expect(
+      polishOffer("new drain line (trench + patch)", [
+        "New drain line (trench + patch)",
+      ]),
+    ).toBeNull();
+    expect(
+      polishOffer("drain line (trench + patch)", ["Drain line: trench, patch"]),
+    ).toBeNull();
+  });
+
+  it("REQ-443 a real rewrite and a well-formed 'A + B' split are still offered", () => {
+    expect(
+      polishOffer("drain line (trench + patch)", [
+        "Install drain line (trench and patch)",
+      ]),
+    ).not.toBeNull();
+    expect(
+      polishOffer("Trench to island (dig + patch) + City permit", [
+        "Trench to island (dig + patch)",
+        "City permit",
+      ]),
+    ).not.toBeNull();
+  });
+});
+
+describe("REQ-384 m16: the offer is inline under the bullet, not a covering modal", () => {
+  const island = read("front-end/islands/AsstChat.tsx");
+  const css = read("front-end/static/assistant-page.css");
+
+  it("REQ-384 the island no longer renders the full-viewport .chat__pro-pop backdrop", () => {
+    expect(island).not.toMatch(/class="chat__pro-pop"/);
+    expect(css).not.toMatch(/\.chat__pro-pop\s*\{/);
+  });
+
+  it("REQ-384 the offer row renders inside the bullet list, right after its bullet", () => {
+    const list = island.indexOf('<ul class="chat__jobopt-bullets">');
+    const row = island.indexOf('data-cy="polish-offer"');
+    const addRow = island.indexOf('<li class="chat__jobopt-add">');
+    expect(list).toBeGreaterThan(0);
+    expect(row).toBeGreaterThan(list);
+    expect(row).toBeLessThan(addRow);
+    // it quotes the line and the rewrite
+    expect(island).toMatch(/data-cy="polish-offer-before"/);
+    expect(island).toMatch(/data-cy="polish-offer-after"/);
+  });
+
+  it("REQ-384 the island decides whether to offer through polishOffer", () => {
+    expect(island).toMatch(
+      /from "@shared\/quote-flow\/polish-offer\.ts"|from "\.\.\/\.\.\/shared\/quote-flow\/polish-offer\.ts"/,
+    );
+    expect(island).toMatch(/polishOffer\(/);
+  });
+
+  it("REQ-384 the offer row is not a fixed overlay", () => {
+    const rule = css.match(/\.chat__pro-row\s*\{[^}]*\}/);
+    expect(rule).not.toBeNull();
+    expect(rule![0]).not.toMatch(/position:\s*fixed/);
+  });
+
+  it("REQ-384 the offer's copy exists in en and es", () => {
+    const en = JSON.parse(read("lang/en.json"));
+    const es = JSON.parse(read("lang/es.json"));
+    for (
+      const k of [
+        "asstChat.proPopup.msg",
+        "asstChat.proPopup.yes",
+        "asstChat.proPopup.no",
+      ]
+    ) {
+      expect(typeof en[k]).toBe("string");
+      expect(typeof es[k]).toBe("string");
+    }
+    expect(en["asstChat.proPopup.msg"]).toBe("Polish this line?");
+    expect(es["asstChat.proPopup.msg"]).toBe("¿Pulir esta línea?");
+  });
+});
+
+/**
+ * REQ-675 (demo-loop cycle 5, p18-7b): "'Polish this line?' makes the text
+ * worse". The tester typed "Install kitchen backsplash, 30 sq ft white subway
+ * tile with dark grout" and was offered "Install kitchen backsplash 30 sq ft
+ * white subway tile dark grout" — the same words with "with" (and the comma)
+ * deleted. A result whose words are all already in the line only deletes
+ * words: it is never a polish, so it is never offered.
+ */
+describe("REQ-675 p18-7b: polishOffer — a deletion-only result is not a polish", () => {
+  it("REQ-675 dropping 'with' from a clean line gets no offer", () => {
+    expect(
+      polishOffer(
+        "Install kitchen backsplash, 30 sq ft white subway tile with dark grout",
+        ["Install kitchen backsplash 30 sq ft white subway tile dark grout"],
+      ),
+    ).toBeNull();
+  });
+
+  it("REQ-675 dropping articles / prepositions only gets no offer", () => {
+    expect(polishOffer("Paint the fence in the back yard", ["Paint fence back yard"]))
+      .toBeNull();
+  });
+
+  it("REQ-675 a rewrite that adds or changes words is still offered", () => {
+    expect(polishOffer("instal backsplash w/ grout", ["Install backsplash with grout"]))
+      .toEqual({
+        before: "instal backsplash w/ grout",
+        after: ["Install backsplash with grout"],
+      });
+    expect(polishOffer("fix the gate", ["Repair of the gate"])).not.toBeNull();
+  });
+
+  it("REQ-675 an 'A + B' split keeping the words is still offered", () => {
+    expect(
+      polishOffer("4 recessed lights + City of Austin permit", [
+        "4 recessed lights",
+        "City of Austin permit",
+      ]),
+    ).not.toBeNull();
+  });
+});
+
+/**
+ * REQ-751 (demo-loop cycle 5v1, p18-7b re-test): REQ-675's deletion check
+ * ran only on a single-line result. The verifier, on the merged build, still
+ * got "¿Pulir esta línea?" for "…subway tile with dark grout" and for
+ * "Patch two holes in the drywall with joint compound and repaint the area" —
+ * the model had SPLIT a bullet with no "+"/"plus" into several lines (shown
+ * one per line, read as "Patch two holes in drywall Apply joint compound
+ * Repaint the area"). Only an explicit top-level joiner may split a line.
+ */
+describe("REQ-751 p18-7b: polishOffer — a '+'-less line split into several is not offered", () => {
+  it("REQ-751 the backsplash line split in two (dropping 'with') gets no offer", () => {
+    expect(
+      polishOffer(
+        "Install kitchen backsplash, 30 sq ft white subway tile with dark grout",
+        ["Install kitchen backsplash", "30 sq ft white subway tile dark grout"],
+      ),
+    ).toBeNull();
+  });
+
+  it("REQ-751 the drywall line split in three gets no offer", () => {
+    expect(
+      polishOffer(
+        "Patch two holes in the drywall with joint compound and repaint the area",
+        ["Patch two holes in drywall", "Apply joint compound", "Repaint the area"],
+      ),
+    ).toBeNull();
+  });
+
+  it("REQ-751 an 'A + B' / 'A plus B' split is still offered", () => {
+    expect(
+      polishOffer("4 recesed lights + City of Austin permit", [
+        "Install 4 recessed lights",
+        "City of Austin permit",
+      ]),
+    ).not.toBeNull();
+    expect(
+      polishOffer("new vanity plus faucet", ["Install new vanity", "Install faucet"]),
+    ).not.toBeNull();
+  });
+
+  it("REQ-751 a joiner inside parentheses does not license a split", () => {
+    expect(
+      polishOffer("Drain line to island (trench + patch)", [
+        "Drain line to island",
+        "Trench and patch",
+      ]),
+    ).toBeNull();
+  });
+});

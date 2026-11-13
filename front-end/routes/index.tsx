@@ -14,6 +14,13 @@ import {
   LANDING_OFFER,
 } from "../../shared/quote-flow/landing-offers.ts";
 import { PUBLIC_PLANS } from "../../shared/quote-flow/pricing-plans.ts";
+import {
+  formatMockUsd,
+  lineTotalCents,
+  MOCK_QUOTE,
+  MOCK_QUOTE_LINES,
+  mockQuoteBoot,
+} from "../../shared/quote-flow/landing-mock-quote.ts";
 import { LANDING_DICT } from "../lib/landing-dict.ts";
 import {
   absoluteUrl,
@@ -50,14 +57,13 @@ const TIER_PRICE: Record<string, string> = Object.fromEntries(
 const PRICE_FROM = String(Math.round(LANDING_OFFER.priceFromCents / 100));
 
 /** Offer numbers the client script needs, SSR-injected so neither the counter
- *  targets nor the price/trial claims are ever re-typed in the static script
+ *  targets nor the from-price are ever re-typed in the static script
  *  (P-08). `__PM_DOCS_SENT` drives the animated documents counter; `__PM_OFFER`
- *  fills the dictionary's {n}/{p}/{d} placeholders on a language switch. */
+ *  fills the dictionary's {n}/{p} placeholders on a language switch. */
 const OFFER_BOOT =
   `window.__PM_DOCS_SENT=${LANDING_OFFER.socialProof.docsSent};` +
   `window.__PM_OFFER=${
     JSON.stringify({
-      trialDays: LANDING_OFFER.trialDays,
       priceFrom: PRICE_FROM,
       counts: {
         contractors: {
@@ -66,7 +72,18 @@ const OFFER_BOOT =
         },
       },
     })
-  };`;
+  };` +
+  // REQ-412: the sample job's figures for the Quote / Contract / Invoice
+  // showcase and the scripted phone card — computed, never re-typed (m41).
+  `window.__PM_MOCK_QUOTE=${JSON.stringify(mockQuoteBoot())};`;
+
+/** Hero document card rows — dictionary key per sample-job line (REQ-412). */
+const HERO_DOC_KEY = {
+  demo: "doc.q.l0",
+  cabinets: "doc.q.l1",
+  counters: "doc.q.l2",
+  labor: "doc.q.l3",
+} as const;
 
 const DEMO_SCRIPT_EN: Bubble[] = [
   {
@@ -154,7 +171,7 @@ const DEMO_SCRIPT_ES: Bubble[] = [
     side: "left",
     kind: "bubble",
     cls: "them",
-    text: "Perfecto. Va la cotización — rango típico $10.800–$12.400.",
+    text: "Perfecto. Va la cotización — rango típico $10,800–$12,400.",
   },
   {
     side: "left",
@@ -221,17 +238,16 @@ export default define.page(async function Landing(ctx) {
   const rotorWord = (en: string, esWord: string) =>
     lang === "es" ? esRotor(esWord) : en;
   /** Dictionary lookup + offer-placeholder fill: {n} social-proof counter,
-   *  {p} from-price, {d} free-trial days — all from LANDING_OFFER. */
+   *  {p} from-price — both from LANDING_OFFER. */
   const t = (key: string, n?: string) =>
     (dict[key] ?? LANDING_DICT.en[key] ?? "")
       .replace(/\{p\}/g, PRICE_FROM)
-      .replace(/\{d\}/g, String(LANDING_OFFER.trialDays))
       .replace(/\{n\}/g, n ?? "");
 
   return (
     <>
       <Head>
-        <title>{tFor(lang, "landing.head.title")}</title>
+        <title>{t("head.title")}</title>
         <meta
           name="description"
           content={tFor(lang, "landing.head.metaDescription")}
@@ -245,7 +261,7 @@ export default define.page(async function Landing(ctx) {
         <link rel="canonical" href={absoluteUrl("/")} />
         {socialMetaTags({
           path: "/",
-          title: tFor(lang, "landing.head.title"),
+          title: t("head.title"),
           description: tFor(lang, "landing.head.metaDescription"),
           lang,
         }).map((m) =>
@@ -255,8 +271,8 @@ export default define.page(async function Landing(ctx) {
         )}
         <link rel="stylesheet" href={asset("/landing.css")} />
         {
-          /* Single-source the offer numbers (P-08): counters, from-price and
-            trial length are SSR-injected from LANDING_OFFER instead of being
+          /* Single-source the offer numbers (P-08): counters and from-price
+            are SSR-injected from LANDING_OFFER instead of being
             magic numbers in the static script. Runs before the deferred ones. */
         }
         <script
@@ -292,7 +308,12 @@ export default define.page(async function Landing(ctx) {
               EN/ES abbreviation below 720px; the aria-label keeps the full
               sentence for assistive tech at every width. */
           }
-          <div class="lang-toggle" role="tablist" aria-label="Language">
+          <div
+            class="lang-toggle"
+            role="tablist"
+            aria-label={t("aria.language")}
+            data-i18n-aria="aria.language"
+          >
             {
               /* NW-01 (REQ-002): Spanish first — it is the default and the
                client asked for "Yo hablo Español | I speak English". */
@@ -349,11 +370,24 @@ export default define.page(async function Landing(ctx) {
               <span data-i18n="hero.kicker">{t("hero.kicker")}</span>
             </div>
 
+            {
+              /* REQ-349 (demo p15-2): the rotor's words are live text and two
+                are visible mid-crossfade, so a screen reader heard "We handle
+                the quotes. contracts.". The <h1>'s accessible name is the ONE
+                visually-hidden sentence (swapped by the toggle like every
+                data-i18n node); the visible lines and the rotor are
+                aria-hidden. */
+            }
             <h1>
-              <span data-i18n="hero.h1a">{t("hero.h1a")}</span>
+              <span class="sr-only" data-i18n="hero.h1Sr">{t("hero.h1Sr")}</span>
+              <span data-i18n="hero.h1a" aria-hidden="true">
+                {t("hero.h1a")}
+              </span>
               <br />
-              <span data-i18n="hero.h1b">{t("hero.h1b")}</span>
-              <span class="rotor">
+              <span data-i18n="hero.h1b" aria-hidden="true">
+                {t("hero.h1b")}
+              </span>
+              <span class="rotor" aria-hidden="true">
                 <span class="rotor-track" id="rotor-track">
                   <span
                     class="word in"
@@ -487,23 +521,27 @@ export default define.page(async function Landing(ctx) {
                 <h4 class="hs-doc__title" data-i18n="doc.q.title">
                   {t("doc.q.title")}
                 </h4>
-                <div class="hs-doc__client">R. Hernández · Apr 26</div>
+                <div class="hs-doc__client" data-i18n="doc.q.client">
+                  {t("doc.q.client")}
+                </div>
                 <div class="hs-doc__rows">
-                  <div class="hs-doc__row">
-                    <span data-i18n="doc.q.l1">{t("doc.q.l1")}</span>
-                    <strong>$4,200.00</strong>
-                  </div>
-                  <div class="hs-doc__row">
-                    <span data-i18n="doc.q.l2">{t("doc.q.l2")}</span>
-                    <strong>$3,990.00</strong>
-                  </div>
-                  <div class="hs-doc__row">
-                    <span data-i18n="doc.q.l3">{t("doc.q.l3")}</span>
-                    <strong>$1,950.00</strong>
-                  </div>
+                  {MOCK_QUOTE_LINES.map((l) => (
+                    <div class="hs-doc__row" key={l.id}>
+                      <span data-i18n={HERO_DOC_KEY[l.id]}>
+                        {t(HERO_DOC_KEY[l.id])}
+                      </span>
+                      <strong>
+                        {formatMockUsd(lineTotalCents(l), { decimals: true })}
+                      </strong>
+                    </div>
+                  ))}
                   <div class="hs-doc__row hs-doc__row--total">
                     <span data-i18n="doc.total">{t("doc.total")}</span>
-                    <strong>$10,990.00</strong>
+                    <strong>
+                      {formatMockUsd(MOCK_QUOTE.subtotalCents, {
+                        decimals: true,
+                      })}
+                    </strong>
                   </div>
                 </div>
                 <div class="hs-doc__sign">
@@ -527,38 +565,69 @@ export default define.page(async function Landing(ctx) {
                     </span>
                   </div>
                   <div class="hs-chat__body">
-                    <div class="hs-bubble hs-bubble--me">
-                      Kitchen remodel for the Hernández family. Cabinets, quartz
-                      counters, 3 days labor.
+                    <div
+                      class="hs-bubble hs-bubble--me"
+                      data-i18n="hero.mock.me1"
+                    >
+                      {t("hero.mock.me1")}
                     </div>
-                    <div class="hs-bubble hs-bubble--them">
-                      Got it. Pulling comps now…
+                    <div
+                      class="hs-bubble hs-bubble--them"
+                      data-i18n="hero.mock.them1"
+                    >
+                      {t("hero.mock.them1")}
                     </div>
                     <div class="hs-bubble hs-bubble--them hs-bubble--rich">
                       <div class="hs-rich__row">
-                        <span>Cabinets</span>
-                        <strong>$4,200</strong>
+                        <span data-i18n="hero.mock.l1">
+                          {t("hero.mock.l1")}
+                        </span>
+                        <strong>
+                          {formatMockUsd(MOCK_QUOTE.compact.cabinetsCents)}
+                        </strong>
                       </div>
                       <div class="hs-rich__row">
-                        <span>Counters</span>
-                        <strong>$3,990</strong>
+                        <span data-i18n="hero.mock.l2">
+                          {t("hero.mock.l2")}
+                        </span>
+                        <strong>
+                          {formatMockUsd(MOCK_QUOTE.compact.countersCents)}
+                        </strong>
                       </div>
                       <div class="hs-rich__row">
-                        <span>Labor</span>
-                        <strong>$1,950</strong>
+                        <span data-i18n="hero.mock.l3">
+                          {t("hero.mock.l3")}
+                        </span>
+                        <strong>
+                          {formatMockUsd(MOCK_QUOTE.compact.demoLaborCents)}
+                        </strong>
                       </div>
                       <div class="hs-rich__total">
-                        <span>Total</span>
-                        <strong>$10,990</strong>
+                        <span data-i18n="hero.mock.total">
+                          {t("hero.mock.total")}
+                        </span>
+                        <strong>
+                          {formatMockUsd(MOCK_QUOTE.subtotalCents)}
+                        </strong>
                       </div>
-                      <div class="hs-rich__cta">Send to client →</div>
+                      <div class="hs-rich__cta" data-i18n="hero.mock.cta">
+                        {t("hero.mock.cta")}
+                      </div>
                     </div>
-                    <div class="hs-bubble hs-bubble--me hs-bubble--short">
-                      Send it 👍
+                    <div
+                      class="hs-bubble hs-bubble--me hs-bubble--short"
+                      data-i18n="hero.mock.me2"
+                    >
+                      {t("hero.mock.me2")}
                     </div>
                   </div>
                   <div class="hs-chat__input">
-                    <span class="hs-chat__input-text">Type a message…</span>
+                    <span
+                      class="hs-chat__input-text"
+                      data-i18n="hero.mock.input"
+                    >
+                      {t("hero.mock.input")}
+                    </span>
                     <span class="hs-chat__input-send">↑</span>
                   </div>
                 </div>
@@ -683,7 +752,9 @@ export default define.page(async function Landing(ctx) {
               <div class="label" data-i18n="docs.counter.label">
                 {t("docs.counter.label")}
               </div>
-              <div class="big" id="doc-counter-num">0</div>
+              <div class="big" id="doc-counter-num">
+                {formatSocialProof(LANDING_OFFER.socialProof.docsSent, lang)}
+              </div>
             </div>
             <div class="types">
               <span data-i18n="docs.counter.t1">{t("docs.counter.t1")}</span>
@@ -889,8 +960,8 @@ export default define.page(async function Landing(ctx) {
               dangerouslySetInnerHTML={{ __html: t("price.plans.h2html") }}
             />
             <p data-i18n="price.plans.lead">{t("price.plans.lead")}</p>
-            {/* The one free-trial claim, same length /landing advertises. */}
-            <p data-i18n="price.plans.trial">{t("price.plans.trial")}</p>
+            {/* What billing does — no trial to promise (REQ-505, m5). */}
+            <p data-i18n="price.plans.terms">{t("price.plans.terms")}</p>
           </div>
 
           {
@@ -1046,7 +1117,11 @@ export default define.page(async function Landing(ctx) {
               <span class="eyebrow-pill" data-i18n="cta.eyebrow">
                 {t("cta.eyebrow")}
               </span>
-              <ol class="pm-steps" aria-label="Sign-in steps">
+              <ol
+                class="pm-steps"
+                aria-label={t("aria.signInSteps")}
+                data-i18n-aria="aria.signInSteps"
+              >
                 <li class="pm-steps__item pm-steps__item--active">
                   <span class="pm-steps__dot">1</span>
                   <span class="pm-steps__label" data-i18n="cta.steps.phone">

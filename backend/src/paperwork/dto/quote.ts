@@ -1,15 +1,24 @@
 import {
   IsArray,
   IsBoolean,
+  IsIn,
   IsNumber,
   IsObject,
   IsOptional,
   IsString,
+  Min,
   ValidateNested,
   validateSync,
 } from "#class-validator";
 import { plainToInstance, Type } from "#class-transformer";
 import type { NumberedFields } from "@core/data/numbered-store/mod.ts";
+import {
+  type QuoteDelivery,
+  SENT_VIA_VALUES,
+  type SentVia,
+} from "#quote-flow/delivery.ts";
+
+export type { QuoteDelivery };
 
 /**
  * One row in the persisted terms-wizard answers. The customer-facing quote
@@ -29,15 +38,27 @@ export class LineItemDto {
   @IsString()
   description!: string;
 
+
   @IsNumber()
   quantity!: number;
 
   @IsString()
   unit!: string;
 
-  /** Per-unit price in INTEGER CENTS. Line total is price * quantity. */
+  /** Per-unit price in INTEGER CENTS. Line total is price * quantity.
+   *  REQ-302 (demo B1): never negative. Zero is an included item (REQ-267);
+   *  the quote's total must still be above zero (see estimatedTotal). */
   @IsNumber()
+  @Min(0)
   price!: number;
+
+  /** REQ-264 (M15) / REQ-256: the line's text per language, keyed by lang
+   *  code — filled server-side by TranslateQuote, or written per language by
+   *  the onboarding sample, so the public page's EN | ES toggle flips it.
+   *  Readers render descriptionByLang[lang] ?? description. */
+  @IsOptional()
+  @IsObject()
+  descriptionByLang?: Record<string, string>;
 }
 
 export class CreateQuoteDto {
@@ -63,6 +84,16 @@ export class CreateQuoteDto {
   @IsString()
   description?: string;
 
+  /** REQ-333 (M24): the language the base text (`description`, every line
+   *  item's `description`) was written in. REQ-710 (cycle 5, M4): read off
+   *  that text — stamped when the quote is created, re-based by
+   *  TranslateQuote when the text says otherwise — and the contractor's app
+   *  language only when the text can't tell. That language is never sent to
+   *  the model: its cache is the typed text verbatim. */
+  @IsOptional()
+  @IsString()
+  lang?: string;
+
   /** Per-language cache of the job-details description, keyed by lang code
    *  (e.g. { en, es }). Populated lazily — a language is translated the first
    *  time the quote is previewed/sent in it. Readers render
@@ -82,15 +113,25 @@ export class CreateQuoteDto {
   @IsObject()
   summaryByLang?: Record<string, string>;
 
+  /** REQ-263 (demo ai-assistant-m2): where the job is — the address the
+   *  contractor typed ("412 Oak St Austin"), taken in the customer step or
+   *  from the picked customer's address. Same name as the invoice's and the
+   *  work order's `serviceAddress`. Rendered on the agreement (/q) and PDF. */
+  @IsOptional()
+  @IsString()
+  serviceAddress?: string;
+
   @IsArray()
   @ValidateNested({ each: true })
   @Type(() => LineItemDto)
   lineItems!: LineItemDto[];
 
   /** Total quote value in INTEGER CENTS. Audit1 #3 unified the money
-   *  schema so dollars-as-floats no longer cross any boundary. */
+   *  schema so dollars-as-floats no longer cross any boundary.
+   *  REQ-302 (demo M29): when given, above zero — "price abc" is not $0. */
   @IsOptional()
   @IsNumber()
+  @Min(1)
   estimatedTotal?: number;
 
   @IsOptional()
@@ -116,6 +157,10 @@ export class CreateQuoteDto {
   @IsOptional() @IsString()
   estimatedCompletionDate?: string;
 
+  /** REQ-234 (demo M3): when the price was locked in the chat. Locking is
+   *  NOT sending — status stays "draft" and sentAt unset until Send. */
+  @IsOptional() @IsString()
+  lockedAt?: string;
   @IsOptional() @IsString()
   sentAt?: string;
   @IsOptional() @IsString()
@@ -150,22 +195,32 @@ export class UpdateQuoteDto {
   jobName?: string;
   @IsOptional() @IsString()
   description?: string;
+  /** REQ-333 (M24): the base text's language. */
+  @IsOptional() @IsString()
+  lang?: string;
   @IsOptional() @IsObject()
   descriptionByLang?: Record<string, string>;
   @IsOptional() @IsObject()
   jobNameByLang?: Record<string, string>;
   @IsOptional() @IsObject()
   summaryByLang?: Record<string, string>;
+  /** REQ-263: the job's service address. */
+  @IsOptional() @IsString()
+  serviceAddress?: string;
   @IsOptional()
   @IsArray()
   @ValidateNested({ each: true })
   @Type(() => LineItemDto)
   lineItems?: LineItemDto[];
-  /** INTEGER CENTS. */
-  @IsOptional() @IsNumber()
+  /** INTEGER CENTS. REQ-302: when given, above zero. */
+  @IsOptional() @IsNumber() @Min(1)
   estimatedTotal?: number;
   @IsOptional() @IsString()
   status?: string;
+  /** REQ-572 (demo-loop cycle 4, p4-p7c): the owner's "Mark as sent" after
+   *  Copy link — {status:"sent", sentVia:"link"}. Only "link" is accepted. */
+  @IsOptional() @IsIn([...SENT_VIA_VALUES])
+  sentVia?: SentVia;
   @IsOptional() @IsArray()
   terms?: QuoteTerm[];
   @IsOptional() @IsString()
@@ -174,6 +229,10 @@ export class UpdateQuoteDto {
   startDate?: string;
   @IsOptional() @IsString()
   estimatedCompletionDate?: string;
+  /** REQ-234 (demo M3): when the price was locked in the chat. Locking is
+   *  NOT sending — status stays "draft" and sentAt unset until Send. */
+  @IsOptional() @IsString()
+  lockedAt?: string;
   @IsOptional() @IsString()
   sentAt?: string;
   @IsOptional() @IsString()
@@ -196,7 +255,19 @@ export class UpdateQuoteDto {
   declinedName?: string;
 }
 
-export interface Quote extends CreateQuoteDto, NumberedFields {
+/** REQ-236 (demo M8): server-written send outcome. Not on the request DTOs
+ *  — only SendQuote writes it, never a client PUT. */
+export interface QuoteDeliveryFields {
+  /** The latest send attempt: where it went, or why it didn't. */
+  lastDelivery?: QuoteDelivery;
+  /** First time any channel actually delivered the quote. */
+  deliveredAt?: string;
+  /** REQ-572: set by the owner's "Mark as sent" after Copy link (PUT). */
+  sentVia?: SentVia;
+}
+
+export interface Quote
+  extends CreateQuoteDto, NumberedFields, QuoteDeliveryFields {
   /** REQ-039 (NW-52): flagged, never erased — lists exclude it. */
   deletedAt?: string;
   id: string;
@@ -208,6 +279,8 @@ export interface Quote extends CreateQuoteDto, NumberedFields {
 
 export type QuoteStage =
   | "draft"
+  /** REQ-236: a send was tried and reached nobody — not out for response. */
+  | "undelivered"
   | "sent"
   | "opened"
   | "cooling"
@@ -227,6 +300,13 @@ export interface QuoteCard extends Quote {
   sentDays: number | null;
   decidedDays: number | null;
   customerName: string | null;
+  /** REQ-481: approved change orders on this quote, summed (cents) */
+  approvedChangeOrdersCents?: number;
+  /** REQ-481: numbers of this quote's change orders waiting on the customer */
+  pendingChangeOrders?: string[];
+  /** REQ-760 (cycle 5v2, m14): on a draft card — its thread status is
+   *  "readyToSend" (terms wizard done, no job-details pick owed). */
+  readyToSend?: boolean;
 }
 
 export interface QuoteOpenEntry {

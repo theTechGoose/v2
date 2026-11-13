@@ -1,9 +1,14 @@
 import { asset, Head } from "fresh/runtime";
 import { define } from "../../utils.ts";
+import DocTitle from "../../components/DocTitle.tsx";
 import SiteFooter from "../../components/SiteFooter.tsx";
 import PublicQuoteView from "../../islands/PublicQuoteView.tsx";
 import { BG, INK } from "../../components/quote-doc.tsx";
-import { resolveContractLang } from "../../../shared/quote-flow/public-lang.ts";
+import {
+  contractLangChosen,
+  resolveContractLang,
+  resolvePublicLang,
+} from "../../../shared/quote-flow/public-lang.ts";
 import { tFor } from "../../lib/i18n.ts";
 
 /**
@@ -23,12 +28,32 @@ export default define.page(function PublicQuote(ctx) {
     query: new URL(ctx.req.url).searchParams.get("lang"),
     cookie: ctx.req.headers.get("cookie"),
   });
+  // REQ-715 (demo-loop cycle 5, m31): no ?lang= and no pm_lang pick → the
+  // island opens the contract in the customer's own language once loaded.
+  const chosen = contractLangChosen({
+    query: new URL(ctx.req.url).searchParams.get("lang"),
+    cookie: ctx.req.headers.get("cookie"),
+  });
+  // REQ-367: the page tells the shell what it paints (as /i does), so the
+  // browser's langSignal starts in the contract's language — a visitor with
+  // no saved choice opens it in English, and the island's ES must be a CHANGE
+  // of the signal for the footer, the tab title and <html lang> to follow
+  // (Fresh renders the page before the app shell reads ctx.state.lang).
+  ctx.state.lang = lang;
+  // REQ-574 (demo-loop c4, p4-p9b): a link that loads no document (unknown
+  // id, revoked, offline) has no doc language — its error card speaks the
+  // visitor's: ?lang=, then pm_lang, then Accept-Language, then English.
+  const errorLang = resolvePublicLang({
+    query: new URL(ctx.req.url).searchParams.get("lang"),
+    cookie: ctx.req.headers.get("cookie"),
+    header: ctx.req.headers.get("accept-language"),
+  });
 
   return (
     <>
       <Head>
         {/* UX-40: localized like /i and /co (tFor docTitle). */}
-        <title>{tFor(lang, "quoteDoc.docTitle")}</title>
+        <DocTitle lang={lang} title={(l) => tFor(l, "quoteDoc.docTitle")} />
         <link key="css-landing" rel="stylesheet" href={asset("/landing.css")} />
         {
           /* P-62: the phone-layout + @media print rules live in a LINKED
@@ -43,9 +68,14 @@ export default define.page(function PublicQuote(ctx) {
         style={`min-height:100dvh;background:${BG};font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:${INK};display:flex;flex-direction:column;scroll-padding-bottom:var(--kb-inset, 0px)`}
       >
         <div style="flex:1;width:100%;max-width:792px;margin:0 auto;padding:32px 16px calc(64px + var(--kb-inset, 0px))">
-          <PublicQuoteView id={id} lang={lang} />
+          <PublicQuoteView
+            id={id}
+            lang={lang}
+            errorLang={errorLang}
+            chosen={chosen}
+          />
         </div>
-        <SiteFooter lang={lang} />
+        <SiteFooter lang={lang} document credited />
       </div>
     </>
   );

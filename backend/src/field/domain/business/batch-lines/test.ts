@@ -1,6 +1,6 @@
 /** REQ-142 — a batch pull: completed, un-invoiced tasks in a range → one draft per customer, one line per task. */
 import { assertEquals, assertStringIncludes } from "#std/assert";
-import { lineItem, lineText, linesFor, summarize } from "./mod.ts";
+import { batchTitle, lineItem, lineText, linesFor, summarize } from "./mod.ts";
 import type { FieldTask, Subscription, TaskType } from "@field/dto/field.ts";
 
 const taskTypes: TaskType[] = [{ id: "tt1", userId: "u", name: "Lawn cut", createdAt: "x" }, { id: "tt2", userId: "u", name: "Hedge trim", createdAt: "x" }];
@@ -66,4 +66,29 @@ Deno.test("REQ-173 lineItem — description + date + service + address, priced f
     address: "725 Frederick Rd, Rockingham, VA",
   });
   assertEquals(lineItem(l, "es").unit, "visita");
+});
+
+// REQ-703 (demo-loop cycle 5, m54): a one-off repair was invoiced as "Maintenance 2026-10-29 → 2026-11-12".
+// The title comes from the group's own lines; the period goes in serviceDateFrom/To, localized in the title.
+Deno.test("REQ-703 batchTitle — one task is titled by its service, never 'Maintenance'", () => {
+  const fence: TaskType = { id: "tt9", userId: "u", name: "Fix 3 sagging fence posts", createdAt: "x" };
+  const [g] = linesFor({ ...base, taskTypes: [...taskTypes, fence], tasks: [task("t1", { subscriptionId: "", oneOff: true, taskTypeId: "tt9", date: "2026-10-29" })] });
+  assertEquals(batchTitle(g.lines, "en"), { jobName: "Fix 3 sagging fence posts", serviceDateFrom: "2026-10-29", serviceDateTo: "2026-10-29" });
+  assertEquals(batchTitle(g.lines, "es").jobName, "Fix 3 sagging fence posts");
+});
+
+Deno.test("REQ-703 batchTitle — subscription visits only → 'Maintenance · Oct 12 – Oct 26' (es localized), period from the lines", () => {
+  const [g] = linesFor({ ...base, tasks: [task("t1", {}), task("t2", { date: "2026-10-26" }), task("t3", { taskTypeId: "tt2", date: "2026-10-19" })] });
+  assertEquals(batchTitle(g.lines, "en"), { jobName: "Maintenance · Oct 12 – Oct 26", serviceDateFrom: "2026-10-12", serviceDateTo: "2026-10-26" });
+  assertEquals(batchTitle(g.lines, "es").jobName, "Mantenimiento · 12 oct – 26 oct");
+});
+
+Deno.test("REQ-703 batchTitle — a round plus a one-off → 'Services · …'; never raw ISO dates", () => {
+  const [g] = linesFor({ ...base, tasks: [task("t1", {}), task("t2", { subscriptionId: "", oneOff: true, taskTypeId: "tt2", date: "2026-10-20" })] });
+  assertEquals(batchTitle(g.lines, "en").jobName, "Services · Oct 12 – Oct 20");
+  assertEquals(batchTitle(g.lines, "es").jobName, "Servicios · 12 oct – 20 oct");
+  // two visits the same day → one date, not "Oct 12 – Oct 12"
+  const [same] = linesFor({ ...base, tasks: [task("t1", {}), task("t3", { taskTypeId: "tt2" })] });
+  assertEquals(batchTitle(same.lines, "en").jobName, "Maintenance · Oct 12");
+  for (const lang of ["en", "es"] as const) assertEquals(/\d{4}-\d{2}-\d{2}/.test(batchTitle(g.lines, lang).jobName), false);
 });

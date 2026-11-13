@@ -4,7 +4,7 @@
  * assembles the hero, KPIs, jobs row, quotes row, activity feed, and
  * outstanding list.
  */
-import { useEffect, useState } from "preact/hooks";
+import { useEffect, useRef, useState } from "preact/hooks";
 import {
   type Customer,
   dashboardClient,
@@ -31,6 +31,21 @@ import { dueDateLine } from "../../shared/quote-flow/pipeline-stats.ts";
 import { docNumberOf } from "../../shared/documents/numbering.ts";
 import { versionOf } from "../../shared/documents/versions.ts";
 import { readCached, refreshDash } from "../lib/dash-cache.ts";
+import { holdHashTarget } from "../lib/dash-anchor.ts";
+import { pickKpis } from "../lib/dashboard-kpis.ts";
+import { jobRowTitle, quoteRowTitle } from "../lib/dashboard-titles.ts";
+import {
+  jobPaidLabel,
+  nextUpcomingBill,
+  outstandingEmptyKey,
+} from "../lib/dashboard-receivables.ts";
+import {
+  notificationsLoaded,
+  readNotifications,
+  refreshNotifications,
+  subscribeNotifications,
+} from "../lib/notifications-feed.ts";
+import { notificationHref } from "../lib/quote-inquiries.ts"; // REQ-701
 import { ShimmerStyle, SkelBlock } from "../components/Skeletons.tsx";
 import SetupChecklist from "./SetupChecklist.tsx";
 import { type Lang, langSignal, tFor } from "../lib/i18n.ts";
@@ -74,6 +89,13 @@ function fmtDueRel(iso: string, now: Date, lang: Lang): string {
   return `${shortMonth(lang, due.getMonth())} ${due.getDate()}`;
 }
 
+/** "Nov 26" for an ISO yyyy-mm-dd (local calendar day, no TZ drift). */
+function fmtDay(iso: string, lang: Lang): string {
+  const d = new Date(`${iso.slice(0, 10)}T00:00:00`);
+  if (!Number.isFinite(d.getTime())) return iso;
+  return `${shortMonth(lang, d.getMonth())} ${d.getDate()}`;
+}
+
 function fmtRel(iso: string, now: Date, lang: Lang): string {
   const t = new Date(iso).getTime();
   if (!Number.isFinite(t)) return "";
@@ -100,12 +122,10 @@ const JOB_ROTATION: { icon: IconName; color: string }[] = [
 function jobToRow(j: Job, idx: number, now: Date, lang: Lang): JobRow {
   const rot = JOB_ROTATION[idx % JOB_ROTATION.length];
   const total = j.totalCents / 100;
-  const paid = j.paidCents / 100;
-  const paidLabel = paid > 0
-    ? tFor(lang, "dashboardPage.job.amountPaid", {
-      amount: `$${Math.round(paid).toLocaleString()}`,
-    })
-    : tFor(lang, "dashboardPage.job.deposit");
+  // REQ-473 (demo-loop cycle 3, M8): "Deposit" only when the agreed terms
+  // open with a deposit — "Payment upon completion" reads "Due on completion".
+  const paidKey = jobPaidLabel(j.paidCents, j.paymentTerms);
+  const paidLabel = tFor(lang, paidKey.key, paidKey.params);
   const statusKind: JobRow["status"]["kind"] = j.status === "overdue"
     ? "warn"
     : j.status === "awaiting_permit"
@@ -115,7 +135,7 @@ function jobToRow(j: Job, idx: number, now: Date, lang: Lang): JobRow {
     : "green";
   return {
     client: j.customer.name,
-    task: j.quote.summary,
+    task: jobRowTitle(j, lang),
     amount: `$${Math.round(total).toLocaleString()}`,
     paid: paidLabel,
     pct: j.pctPaid,
@@ -148,7 +168,7 @@ function quoteToRow(q: QuoteCard, now: Date, lang: Lang): QuoteRow {
     : tFor(lang, "dashboardPage.quote.drafted");
   return {
     client: q.customerName ?? clientFromSummary(q.summary),
-    desc: q.summary ?? "",
+    desc: quoteRowTitle(q, lang),
     amt: fmtMoney(q.estimatedTotal ?? 0),
     sent: sentLabel,
     hot: q.stage === "opened" && q.opens >= 2,
@@ -237,6 +257,17 @@ const NOTIF_ICON: Record<
     bg: "var(--teal-50)",
     fg: "var(--teal-600)",
   },
+  // REQ-566 (demo-loop cycle 4, m11): the owner's own work in the feed.
+  invoice_sent: {
+    icon: "invoice",
+    bg: "var(--pink-50)",
+    fg: "var(--pink-700)",
+  },
+  task_completed: {
+    icon: "hardhat",
+    bg: "var(--green-50)",
+    fg: "var(--green-600)",
+  },
   customer_replied: {
     icon: "msg",
     bg: "var(--coffee-50)",
@@ -253,11 +284,8 @@ function notifToActivity(
   const skin = NOTIF_ICON[n.type] ?? NOTIF_ICON.generic;
   // UX-20: feed rows link to the thing they report — an accepted quote
   // opens that quote's panel, an invoice event lands on /invoices.
-  const href = n.entityType === "quote" && n.entityId
-    ? `/quotes?open=${encodeURIComponent(n.entityId)}`
-    : n.entityType === "invoice"
-    ? "/invoices"
-    : undefined;
+  // REQ-701 (cycle 5, M21): a client's question opens the quote's questions.
+  const href = notificationHref(n);
   return {
     icon: skin.icon,
     bg: skin.bg,
@@ -286,53 +314,20 @@ function escapeHtml(s: string): string {
   );
 }
 
-function pickKpis(stats: DashboardStats | undefined) {
-  const buckets = stats?.invoices.agingBuckets;
-  const current = (buckets?.current ?? 0) / 100;
-  const mid = (buckets?.aging1_14d ?? 0) / 100;
-  const overdue =
-    ((buckets?.overdue15_30d ?? 0) + (buckets?.overdue30plus ?? 0)) / 100;
-  const owed = current + mid + overdue;
-  const sparkline = stats?.revenue.sparkline12mo ?? [];
-  const thisMonthBilled =
-    (sparkline.length > 0 ? sparkline[sparkline.length - 1] : 0) / 100;
-
-  const paidCount = stats?.invoices.paid ?? 0;
-  const ytd = (stats?.revenue.ytdCents ?? 0) / 100;
-  const avgJob = paidCount > 0 ? Math.round(ytd / paidCount) : 0;
-
-  // When there are no pending invoices, clamp Outstanding to exactly $0 — the
-  // aging buckets can carry stray sub-dollar cents that otherwise surface as a
-  // nonsense "$0.09 · 0 invoices".
-  const pending = stats?.invoices.pending ?? 0;
-
-  return {
-    thisMonthBilled,
-    activeJobs: 0,
-    outstanding: pending === 0 ? 0 : owed,
-    outstandingCount: pending,
-    outstandingOverdue: stats?.invoices.overdue ?? 0,
-    pendingQuotes: stats?.quotes.sent ?? 0,
-    // INTEGER CENTS end to end (P-36) — the KPI formats via
-    // formatMoneyCompact, so no /100 dollars conversion here.
-    pendingTotal: stats?.quotedValueCents ?? 0,
-    avgJob,
-    owed,
-    current,
-    mid,
-    overdue,
-  };
-}
-
 interface State {
   loading: boolean;
   error: string | null;
   stats: DashboardStats | undefined;
   jobs: Job[];
   quoteCards: QuoteCard[];
-  pendingInvoices: Invoice[];
+  /** REQ-473: the open receivables (`?status=open`), not legacy "pending". */
+  openInvoices: Invoice[];
+  /** REQ-473: scheduled installments — the "Upcoming" line. */
+  scheduledInvoices: Invoice[];
   customers: Customer[];
-  notifications: Notification[];
+  /** REQ-566 (m11): the lists have landed. A warm start paints the cached
+   *  stats before them — no list panel claims "none" until this is true. */
+  listsLoaded: boolean;
 }
 
 const INITIAL: State = {
@@ -341,9 +336,10 @@ const INITIAL: State = {
   stats: undefined,
   jobs: [],
   quoteCards: [],
-  pendingInvoices: [],
+  openInvoices: [],
+  scheduledInvoices: [],
   customers: [],
-  notifications: [],
+  listsLoaded: false,
 };
 
 function DashboardSkeleton() {
@@ -405,6 +401,24 @@ export default function DashboardPage(_props: { lang?: Lang } = {}) {
     return c?.stats ? { ...INITIAL, loading: false, stats: c.stats } : INITIAL;
   });
 
+  // REQ-299: the Activity panel reads the one notifications feed DashTopbar's
+  // poll refreshes — no fetch of its own, and it follows the ticker live.
+  const [notifications, setNotifications] = useState<Notification[]>(
+    readNotifications,
+  );
+  // REQ-757 (demo cycle 5v2, m15): the feed is empty until its first refresh
+  // settles; until then the panel is a skeleton, not "Nothing yet".
+  const [notifLoaded, setNotifLoaded] = useState(notificationsLoaded);
+  useEffect(() => {
+    const unsub = subscribeNotifications((items) => {
+      setNotifications(items);
+      setNotifLoaded(true);
+    });
+    // single-flight: shares the topbar's request if one is in flight
+    refreshNotifications().catch(() => {}).finally(() => setNotifLoaded(true));
+    return unsub;
+  }, []);
+
   useEffect(() => {
     let alive = true;
     // Keep the shared cache fresh for other islands (sidebar badges, etc).
@@ -415,12 +429,23 @@ export default function DashboardPage(_props: { lang?: Lang } = {}) {
       ),
       dashboardClient.jobs().catch(() => [] as Job[]),
       quotesClient.list("sent").catch(() => [] as QuoteCard[]),
-      dashboardClient.invoices("pending").catch(() => [] as Invoice[]),
+      // REQ-473 (demo-loop cycle 3, M8): the money owed right now (the
+      // shared open-receivable rule) — "pending" is a legacy status accept
+      // never writes, so the list was always empty — plus the scheduled
+      // installments still to bill.
+      dashboardClient.invoices("open").catch(() => [] as Invoice[]),
+      dashboardClient.invoices("scheduled").catch(() => [] as Invoice[]),
       dashboardClient.customers().catch(() => [] as Customer[]),
-      dashboardClient.notifications(10).catch(() => [] as Notification[]),
     ]).then(
       (
-        [stats, jobs, quoteCards, pendingInvoices, customers, notifications],
+        [
+          stats,
+          jobs,
+          quoteCards,
+          openInvoices,
+          scheduledInvoices,
+          customers,
+        ],
       ) => {
         if (!alive) return;
         setS({
@@ -429,9 +454,10 @@ export default function DashboardPage(_props: { lang?: Lang } = {}) {
           stats,
           jobs,
           quoteCards,
-          pendingInvoices,
+          openInvoices,
+          scheduledInvoices,
           customers,
-          notifications,
+          listsLoaded: true,
         });
       },
     ).catch((err: Error) => {
@@ -442,6 +468,27 @@ export default function DashboardPage(_props: { lang?: Lang } = {}) {
       alive = false;
     };
   }, []);
+
+  // REQ-726 (demo cycle 5, m57): the topbar pill links to /dashboard#activity,
+  // but the SSR render is the skeleton (no #activity), so the browser's own
+  // fragment scroll found nothing and the page stayed at the top. Scroll to the
+  // panel once it mounts (hydration on a warm start, the fetch on a cold one)
+  // and once more when the lists land and the content above it settles.
+  // REQ-749 (cycle 5v1, m57 re-opened): one scroll per render was not enough —
+  // on the first load after login the feed fills the Activity panel after the
+  // lists land, so the scroll clamped at the then-bottom of the page and the
+  // panel ended below the fold. Hold the panel while the layout settles (it
+  // re-scrolls on every size change until the user scrolls or ~6 s pass).
+  const releaseHold = useRef<(() => void) | null>(null);
+  useEffect(() => {
+    if (s.loading || typeof document === "undefined") return;
+    if (releaseHold.current) return;
+    releaseHold.current = holdHashTarget(
+      document,
+      globalThis.location?.hash ?? "",
+    );
+  }, [s.loading, s.listsLoaded]);
+  useEffect(() => () => releaseHold.current?.(), []);
 
   // PDF p8: "My Assistant needs to be on the dashboard at the top because on
   // mobile you have to hit the hamburger to actually see that." This block is
@@ -510,10 +557,20 @@ export default function DashboardPage(_props: { lang?: Lang } = {}) {
     );
   }
 
-  const { stats, jobs, quoteCards, pendingInvoices, customers, notifications } =
-    s;
+  const {
+    stats,
+    jobs,
+    quoteCards,
+    openInvoices,
+    scheduledInvoices,
+    customers,
+  } = s;
   const now = new Date();
 
+  // REQ-728 (cycle 5, m15): a warm start paints the cached stats before the
+  // lists land; until then nothing derived from a list (the Active jobs
+  // count, the jobs and invoice panels) may claim "0" or "none".
+  const listsPending = !s.listsLoaded;
   const kpis = { ...pickKpis(stats), activeJobs: jobs.length };
   const customerNames = new Map(customers.map((c) => [c.id, c.name] as const));
 
@@ -524,9 +581,7 @@ export default function DashboardPage(_props: { lang?: Lang } = {}) {
 
   const seenQuoteIds = new Set<string>();
   const safeQuoteCards = Array.isArray(quoteCards) ? quoteCards : [];
-  const safePendingInvoices = Array.isArray(pendingInvoices)
-    ? pendingInvoices
-    : [];
+  const safeOpenInvoices = Array.isArray(openInvoices) ? openInvoices : [];
   const quoteRows: QuoteRow[] = safeQuoteCards
     .slice()
     .sort((a, b) => (b.sentAt ?? "").localeCompare(a.sentAt ?? ""))
@@ -541,11 +596,26 @@ export default function DashboardPage(_props: { lang?: Lang } = {}) {
     .slice(0, 4)
     .map((q) => quoteToRow(q, now, lang));
 
-  const outstandingRows: OutstandingRow[] = safePendingInvoices
+  const outstandingRows: OutstandingRow[] = safeOpenInvoices
     .slice()
     .sort((a, b) => (a.dueDate ?? "").localeCompare(b.dueDate ?? ""))
     .slice(0, 5)
     .map((inv, i) => invoiceToRow(inv, customerNames, now, i, lang));
+
+  // REQ-473: a scheduled installment is money coming, not "No invoices yet".
+  const upcomingBill = nextUpcomingBill(
+    Array.isArray(scheduledInvoices) ? scheduledInvoices : [],
+  );
+  const upcomingLine = upcomingBill
+    ? tFor(lang, "outstanding.upcoming", {
+      amt: Math.round(upcomingBill.amountCents / 100).toLocaleString("en-US"),
+      date: fmtDay(upcomingBill.date, lang),
+    })
+    : null;
+  const outstandingEmpty = outstandingEmptyKey(
+    stats?.invoices.total ?? 0,
+    upcomingBill,
+  );
 
   const grouped: Notification[] = [];
   for (const n of notifications) {
@@ -574,6 +644,7 @@ export default function DashboardPage(_props: { lang?: Lang } = {}) {
   return (
     <>
       {assistantCta}
+      {(listsPending || !notifLoaded) && <ShimmerStyle />}
       <SetupChecklist />
       <Kpis
         activeJobs={kpis.activeJobs}
@@ -582,26 +653,40 @@ export default function DashboardPage(_props: { lang?: Lang } = {}) {
         outstandingOverdue={kpis.outstandingOverdue}
         pendingQuotes={kpis.pendingQuotes}
         pendingTotal={kpis.pendingTotal}
+        undeliveredQuotes={stats?.quotes.undelivered ?? 0}
         avgJob={kpis.avgJob}
         lang={lang}
+        activeJobsPending={listsPending}
       />
       <div class="grid">
-        <ActiveJobs jobs={jobRows} total={kpis.activeJobs} lang={lang} />
+        <ActiveJobs
+          jobs={jobRows}
+          total={kpis.activeJobs}
+          lang={lang}
+          pending={listsPending}
+        />
         <QuotesAwaiting
           quotes={quoteRows}
           lang={lang}
           hasDecidedHistory={(stats?.quotes.accepted ?? 0) > 0}
+          draftCount={stats?.quotes.draft ?? 0}
+          readyCount={stats?.quotes.readyToSend}
+          undeliveredCount={stats?.quotes.undelivered ?? 0}
+          pending={!s.listsLoaded}
         />
       </div>
       <div class="grid">
-        <Activity items={activityRows} lang={lang} />
+        <Activity items={activityRows} lang={lang} pending={!notifLoaded} />
         <Outstanding
           owed={kpis.owed}
           current={kpis.current}
           mid={kpis.mid}
           overdue={kpis.overdue}
           items={outstandingRows}
+          upcoming={upcomingLine}
+          emptyKey={outstandingEmpty}
           lang={lang}
+          pending={listsPending}
         />
       </div>
     </>

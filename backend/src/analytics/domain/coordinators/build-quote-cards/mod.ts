@@ -3,9 +3,14 @@ import {
   classifyQuoteForPipeline,
   isSampleQuote,
 } from "#quote-flow/pipeline-stats.ts";
+import { isUndelivered } from "#quote-flow/delivery.ts";
 import { CustomerStore } from "@crm/domain/data/customer-store/mod.ts";
 import { QuoteStore } from "@paperwork/domain/data/quote-store/mod.ts";
 import { ViewStore } from "@paperwork/domain/data/view-store/mod.ts";
+import { ChangeOrderStore } from "@paperwork/domain/data/change-order-store/mod.ts";
+import type { ChangeOrder } from "@paperwork/dto/change-order.ts";
+import { AgentConversationStore } from "@agents/domain/data/agent-conversation-store/mod.ts";
+import { readyToSendQuoteIds } from "@agents/domain/coordinators/list-conversations/mod.ts";
 import type { Quote, QuoteCard, QuoteStage } from "@paperwork/dto/quote.ts";
 import type { View } from "@paperwork/dto/view.ts";
 
@@ -27,19 +32,60 @@ export class BuildQuoteCards {
     private quotes: QuoteStore,
     private views: ViewStore,
     private customers: CustomerStore,
+    private changeOrders: ChangeOrderStore = new ChangeOrderStore(),
+    private conversations: AgentConversationStore =
+      new AgentConversationStore(),
   ) {}
 
   async run(userId: string, now: Date = new Date()): Promise<QuoteCard[]> {
-    const [quotes, views, customers] = await Promise.all([
+    const [quotes, views, customers, cos] = await Promise.all([
       this.quotes.listByUser(userId),
       this.views.listByType("quote"),
       this.customers.listByUser(userId),
+      this.changeOrders.listByUser(userId),
     ]);
 
     const customerNames = new Map(customers.map((c) => [c.id, c.name]));
+    const cosByQuote = new Map<string, ChangeOrder[]>();
+    for (const co of cos) {
+      if (!co.quoteId) continue;
+      const list = cosByQuote.get(co.quoteId) ?? [];
+      list.push(co);
+      cosByQuote.set(co.quoteId, list);
+    }
 
-    return quotes.map((q) => buildOne(q, views, customerNames, now));
+    const cards = quotes.map((q) => ({
+      ...buildOne(q, views, customerNames, now),
+      ...changeOrderFold(cosByQuote.get(q.id) ?? []),
+    }));
+    // REQ-760 (demo-loop cycle 5v2, m14): each draft card says whether its
+    // thread is ready to send — the verifier's /quotes read "1 draft ready
+    // to send" over a quote the assistant had only drafted. Same rule as the
+    // dashboard's quotes.readyToSend.
+    const drafts = cards.filter((c) => c.stage === "draft");
+    const ready = await readyToSendQuoteIds(this.conversations, userId, drafts);
+    return cards.map((c) =>
+      c.stage === "draft" ? { ...c, readyToSend: ready.has(c.id) } : c
+    );
   }
+}
+
+/** REQ-481 (demo-loop cycle 3, M28 + m10): what the /quotes card needs of
+ *  the quote's change orders — the approved ones summed (the card's value is
+ *  the agreement, as the ledger's agreementTotalCents) and the numbers of the
+ *  ones still waiting on the customer ("CO-001 is waiting on Karen"). */
+function changeOrderFold(
+  cos: ChangeOrder[],
+): { approvedChangeOrdersCents: number; pendingChangeOrders: string[] } {
+  return {
+    approvedChangeOrdersCents: cos
+      .filter((c) => c.status === "approved")
+      .reduce((s, c) => s + Math.round(c.deltaAmountCents), 0),
+    pendingChangeOrders: cos
+      .filter((c) => c.status === "pending")
+      .map((c) => c.number ?? c.id)
+      .sort(),
+  };
 }
 
 /** EnsureSampleQuote's legacy summary tag ("onboarding-sample-v1 · <name>").
@@ -122,9 +168,15 @@ function deriveStage(args: {
     sentAt: quote.sentAt,
     acceptedAt: quote.acceptedAt,
     lostAt: quote.lostAt,
+    lastDelivery: quote.lastDelivery,
+    deliveredAt: quote.deliveredAt,
+    sentVia: quote.sentVia, // REQ-572
   });
   if (cls === "won") return "won";
   if (cls === "lost") return "lost";
+  // REQ-236 (demo M8): a send that reached nobody is never "Just sent" /
+  // "Out for response" — whatever status lock-quote left on it.
+  if (isUndelivered(quote)) return "undelivered";
   if (cls === "draft") return "draft";
 
   // Awaiting → refine by engagement (sent/opened/cooling/stale).
@@ -164,6 +216,11 @@ function computeDaysIn(
   // "Days since entering the current stage."
   let entryMs: number;
   switch (stage) {
+    case "undelivered":
+      entryMs = q.lastDelivery?.at
+        ? new Date(q.lastDelivery.at).getTime()
+        : new Date(q.updatedAt).getTime();
+      break;
     case "draft":
       entryMs = new Date(q.createdAt).getTime();
       break;

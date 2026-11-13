@@ -1,6 +1,8 @@
 import { Injectable } from "#danet/core";
-import { publishPendingInvoice, publishPendingQuote } from "@paperwork/domain/business/publish-pending/mod.ts";
-import { isFictionalUsNumber } from "@users/domain/business/normalize-phone/mod.ts";
+import { EventBus } from "@core/business/events/mod.ts";
+import { invoiceIssuedEvent } from "@paperwork/domain/business/owner-activity/mod.ts"; // REQ-566
+import { asDelivered, isUnissuedInvoice, publishPendingInvoice, publishPendingQuote, senderAsPublisher, stampInvoiceDelivered } from "@paperwork/domain/business/publish-pending/mod.ts";
+import { dispatchCustomerSms } from "@paperwork/domain/business/customer-sms/mod.ts";
 import { t } from "@core/i18n/mod.ts";
 import { QuoteStore } from "@paperwork/domain/data/quote-store/mod.ts";
 import { InvoiceStore } from "@paperwork/domain/data/invoice-store/mod.ts";
@@ -12,18 +14,27 @@ import { BusinessIdentityStore } from "@profile/domain/data/business-identity-st
 import { SmsService } from "@users/domain/data/sms/mod.ts";
 import { ShortLinkStore } from "@paperwork/domain/data/shortlink-store/mod.ts";
 import { LogPaperworkMessage } from "@communication/domain/coordinators/log-paperwork-message/mod.ts";
+import { customerLabel } from "@communication/domain/business/outbox-entry/mod.ts"; // REQ-784
 import { buildInvoiceSms, smsJobName } from "#quote-flow/sms-i18n.ts";
 import {
   outboundSenderFirstName,
   senderIdentityRefusal,
 } from "#quote-flow/outbound-identity.ts";
-import { resolveCommsLanguage } from "#quote-flow/comms-language.ts";
+import {
+  commsLanguageToAdopt,
+  resolveCommsLanguage,
+} from "#quote-flow/comms-language.ts";
+import { withSendLang } from "#quote-flow/share-link.ts";
+import type { SmsFailureCode } from "#quote-flow/sms-failure.ts";
+import { phoneCantReceiveTexts } from "#quote-flow/sms-number.ts"; // REQ-764
 import {
   customerOnDocument,
+  docRef,
   docRefWithVersion,
   docTitle,
   type RenderedCustomer,
 } from "@paperwork/domain/business/doc-render/mod.ts";
+import { customerSmsTarget } from "@paperwork/domain/business/customer-sms/mod.ts"; // REQ-784
 import type { Quote } from "@paperwork/dto/quote.ts";
 import type { Invoice } from "@paperwork/dto/invoice.ts";
 import type { Customer } from "@crm/dto/customer.ts";
@@ -55,6 +66,9 @@ export interface SendPaperworkSmsResult {
   detail?: string;
   /** P-06/UX-26 machine-readable needs-name refusal marker. */
   needsName?: boolean;
+  /** REQ-226: why the text didn't go out, as a code — the UI branches on
+   *  this, never on the translated `reason`. Set on every failure. */
+  failureCode?: SmsFailureCode;
 }
 
 /**
@@ -79,6 +93,8 @@ export class SendPaperworkSms {
     private sms: SmsService,
     private shortlinks: ShortLinkStore,
     private commsLog: LogPaperworkMessage,
+    /** REQ-566: announces an invoice this delivery issued (optional for direct test construction) */
+    private bus?: EventBus,
     /** REQ-630 — whether the business takes cards on its own Stripe (the text names "card") */
     private stripeSettings?: StripeSettingsStore,
   ) {}
@@ -97,111 +113,141 @@ export class SendPaperworkSms {
       userName: sender?.name,
       businessName: rawBiz?.businessName ?? rawBiz?.legalName,
     });
-    if (refusal) return refusal;
+    if (refusal) return { ...refusal, failureCode: "other" };
 
     // UX-28: ONE commsLanguage resolution for every outbound (explicit
-    // per-send pick → stored Settings default → en). An explicit pick is
-    // adopted as the stored default when none exists yet, so every later
-    // dispatch for this contractor resolves to the same answer.
-    const lang = resolveCommsLanguage({
-      override: input.language,
-      identityCommsLanguage: rawBiz?.commsLanguage,
-    });
-    if (
-      (input.language === "en" || input.language === "es") &&
-      rawBiz?.commsLanguage !== "en" && rawBiz?.commsLanguage !== "es"
-    ) {
-      try {
-        await this.identity.upsert(userId, { commsLanguage: input.language });
-      } catch (err) {
-        console.warn("[send-paperwork-sms] commsLanguage adopt failed:", err);
-      }
-    }
-    // Overriding commsLanguage on the resolved identity lets every
-    // downstream body/subject helper honor the resolution without new params.
-    const senderBiz = {
-      ...(rawBiz ?? {}),
-      commsLanguage: lang,
-    } as BusinessIdentity;
+    // per-send pick → REQ-715 the customer's own language → stored Settings
+    // default → en), made once the document's customer is known. Overriding
+    // commsLanguage on the resolved identity lets every downstream
+    // body/subject helper honor the resolution without new params.
+    const resolve = (customer: Customer | undefined) => {
+      const lang = resolveCommsLanguage({
+        override: input.language,
+        customerLanguage: customer?.language,
+        identityCommsLanguage: rawBiz?.commsLanguage,
+      });
+      const senderBiz = {
+        ...(rawBiz ?? {}),
+        commsLanguage: lang,
+      } as BusinessIdentity;
+      return { lang, senderBiz };
+    };
 
     let recipient: string | undefined = input.to;
     let body: string;
     let customerIdForLog: string | undefined;
     let quoteForStamp: Quote | undefined;
+    let invoiceToIssue = false;
+    let customerNameForEvent: string | undefined;
+    /** REQ-715: the document's customer — their language joins the resolution */
+    let docCustomer: Customer | undefined;
+    /** REQ-784: what the outbox entry says about this text */
+    let outboxFacts: {
+      docRef: string;
+      customerName?: string;
+      language: "en" | "es";
+    } = { docRef: "", language: "en" };
 
     if (input.kind === "quote") {
       // REQ-201: a send publishes what is pending — the link must show what was sent
-      const quote = await publishPendingQuote(this.quotes, input.resourceId, userId);
+      const quote = await publishPendingQuote(this.quotes, input.resourceId, userId, senderAsPublisher(userId, sender?.name));
       quoteForStamp = quote;
       const customer = await this.tryGetCustomer(userId, quote.customerId);
+      docCustomer = customer;
+      const { lang, senderBiz } = resolve(customer);
       customerIdForLog = customer?.id;
       // the live number first (a corrected typo should reach them), the snapshot's otherwise
       if (!recipient) recipient = customer?.phoneNumber ?? customerOnDocument(quote, customer)?.phoneNumber;
       const shortUrl = await this.mintShortUrl(userId, {
         kind: "quote",
         id: quote.id,
-      });
+      }, lang);
       body = renderQuoteBody(quote, customer, sender, senderBiz, shortUrl);
+      outboxFacts = {
+        docRef: docRef(quote),
+        customerName: customerLabel(customerOnDocument(quote, customer)),
+        language: lang,
+      };
     } else {
-      const invoice = await publishPendingInvoice(this.invoices, input.resourceId, userId);
+      const stored = await publishPendingInvoice(this.invoices, input.resourceId, userId, senderAsPublisher(userId, sender?.name));
+      // REQ-480: an unissued invoice is issued by this delivery — the stamp
+      // lands only once the text actually went.
+      invoiceToIssue = isUnissuedInvoice(stored);
+      const invoice = invoiceToIssue ? asDelivered(stored) : stored;
       const customer = await this.tryGetCustomer(userId, invoice.customerId);
+      docCustomer = customer;
+      const { lang, senderBiz } = resolve(customer);
       customerIdForLog = customer?.id;
+      customerNameForEvent = customer?.name || undefined;
       if (!recipient) recipient = customer?.phoneNumber ?? customerOnDocument(invoice, customer)?.phoneNumber;
       const shortUrl = await this.mintShortUrl(userId, {
         kind: "invoice",
         id: invoice.id,
-      });
-      const smsLang = senderBiz?.commsLanguage === "es" ? "es" : "en";
+      }, lang);
       // REQ-630 — name the online ways to pay the link offers
       const payLine = payWaysSmsLine(senderBiz?.acceptedPaymentMethods, {
         card: await this.stripeSettings?.get(userId).then((s) => !!s).catch(() => false) ?? false,
-        lang: smsLang,
+        lang,
       });
       body = renderInvoiceBody(
         invoice,
         customer,
         sender,
         shortUrl,
-        smsLang,
+        lang,
         payLine ?? undefined,
       );
-    }
-
-    if (!recipient) {
-      return {
-        ok: false,
-        reason:
-          "no recipient: pass `to` or attach a customer with a phone number",
-        to: "",
+      outboxFacts = {
+        docRef: docRef(invoice),
+        customerName: customerLabel(customerOnDocument(invoice, customer)),
+        language: lang,
       };
     }
 
-    const e164 = normalizeE164(recipient);
-    if (!e164) {
-      return {
-        ok: false,
-        reason: `invalid phone: ${recipient}`,
-        to: recipient,
-      };
+    // UX-28: an explicit pick is adopted as the stored default when none
+    // exists yet, so every later dispatch for this contractor resolves the
+    // same way — REQ-715: never a pick that is just this customer's own
+    // language (that one is theirs, not the account's).
+    const adopt = commsLanguageToAdopt({
+      override: input.language,
+      customerLanguage: docCustomer?.language,
+      identityCommsLanguage: rawBiz?.commsLanguage,
+    });
+    if (adopt) {
+      try {
+        await this.identity.upsert(userId, { commsLanguage: adopt });
+      } catch (err) {
+        console.warn("[send-paperwork-sms] commsLanguage adopt failed:", err);
+      }
     }
+
     // REQ-030 (NW-25): the contractor reads the reason — their UI language.
     const uiLang: "en" | "es" = sender?.language === "es" ? "es" : "en";
-    // A fictional 555 number never reaches Twilio (it would answer 21211);
-    // say so in words instead of a raw provider error.
-    if (isFictionalUsNumber(e164)) {
-      return {
-        ok: false,
-        reason: t(uiLang, "sms.fictionalNumber"),
-        detail: `fictional number: ${e164}`,
-        to: e164,
-      };
-    }
-
-    const sent = await this.sms.send({ to: e164, body });
-    // A recognised Twilio rejection arrives as a lang key — translate it.
-    const result = !sent.ok && sent.reason && /^sms\./.test(sent.reason)
-      ? { ...sent, reason: t(uiLang, sent.reason) }
-      : sent;
+    // REQ-403: the one guarded dispatch (missing / invalid / fictional never
+    // reach the provider) shared with every other customer text.
+    const result: SendPaperworkSmsResult = await dispatchCustomerSms(
+      this.sms,
+      { to: recipient ?? "", body, uiLang },
+    );
+    const e164 = result.to;
+    // REQ-784 (demo-loop dv1, d12): every customer text lands in the
+    // business's outbox — sent, or not and why — with its words as sent.
+    await this.commsLog.outbox({
+      userId,
+      channel: "text",
+      kind: input.kind,
+      language: outboxFacts.language,
+      ok: result.ok,
+      ...(result.ok
+        ? {}
+        : { reasonCode: result.failureCode, reason: result.reason }),
+      customerId: customerIdForLog,
+      customerName: outboxFacts.customerName,
+      to: e164 || recipient,
+      docId: input.resourceId,
+      docRef: outboxFacts.docRef,
+      body,
+    });
 
     // NW-10 (REQ-003): stamp the quote's lifecycle on the first successful
     // text — status→"sent" + sentAt→now, idempotent, mirroring
@@ -212,6 +258,14 @@ export class SendPaperworkSms {
         status: "sent",
         sentAt: new Date().toISOString(),
       });
+    }
+
+    // REQ-480 (demo-loop cycle 3, M18): a draft / scheduled invoice becomes
+    // "sent" only now that the text was delivered.
+    if (result.ok && invoiceToIssue) {
+      const issued = await stampInvoiceDelivered(this.invoices, input.resourceId, userId);
+      // REQ-566 (cycle 4, m11): the owner's activity feed says it went out.
+      if (issued) await this.bus?.emit(invoiceIssuedEvent(userId, issued, customerNameForEvent));
     }
 
     // Comms trail (roadmap p.8): record the dispatch in the customer's
@@ -228,7 +282,82 @@ export class SendPaperworkSms {
       });
     }
 
-    return { ...result, to: e164 };
+    return result;
+  }
+
+  /**
+   * REQ-764 (demo-loop cycle 5v2, m12): whether the number this document's
+   * text would go to is one that can't take texts (the shared REQ-569
+   * predicate the send dialog uses) — resolved exactly as `run` resolves it
+   * (an explicit `to`, else the live customer number, else the document's).
+   * A caller sending on another channel too skips the text on `true` instead
+   * of attempting it and reporting a failure. Read-only: publishes nothing.
+   */
+  async recipientCantText(
+    userId: string,
+    input: Pick<SendPaperworkSmsInput, "kind" | "resourceId" | "to">,
+  ): Promise<boolean> {
+    let recipient = input.to;
+    if (!recipient) {
+      try {
+        const doc = input.kind === "quote"
+          ? await this.quotes.getOwned(input.resourceId, userId)
+          : await this.invoices.getOwned(input.resourceId, userId);
+        const customer = await this.tryGetCustomer(userId, doc.customerId);
+        recipient = customer?.phoneNumber ??
+          customerOnDocument(doc, customer)?.phoneNumber;
+      } catch {
+        return false;
+      }
+    }
+    return phoneCantReceiveTexts(recipient);
+  }
+
+  /**
+   * REQ-784 (demo-loop cycle dv1, d12): a text the caller SKIPPED because
+   * `recipientCantText` said the number can't take one (SendQuote's and the
+   * chat's email + text sends, REQ-764 / REQ-770) never reaches `run` — it
+   * is still a customer message the business meant to send, so the outbox
+   * lists it "not sent" with `reason`. Read-only otherwise: publishes and
+   * sends nothing; never throws.
+   */
+  async noteSkipped(
+    userId: string,
+    input: Pick<SendPaperworkSmsInput, "kind" | "resourceId" | "to" | "language">,
+    reason: string,
+  ): Promise<void> {
+    try {
+      const doc = input.kind === "quote"
+        ? await this.quotes.getOwned(input.resourceId, userId)
+        : await this.invoices.getOwned(input.resourceId, userId);
+      const [customer, biz] = await Promise.all([
+        this.tryGetCustomer(userId, doc.customerId),
+        this.tryGetBusinessIdentity(userId),
+      ]);
+      const shown = customerOnDocument(doc, customer);
+      const raw = input.to ?? customer?.phoneNumber ?? shown?.phoneNumber;
+      const target = customerSmsTarget(raw);
+      await this.commsLog.outbox({
+        userId,
+        channel: "text",
+        kind: input.kind,
+        language: resolveCommsLanguage({
+          override: input.language,
+          customerLanguage: customer?.language,
+          identityCommsLanguage: biz?.commsLanguage,
+        }),
+        ok: false,
+        reasonCode: target.ok ? "other" : target.failureCode,
+        reason,
+        customerId: customer?.id ?? doc.customerId,
+        customerName: customerLabel(shown),
+        to: "e164" in target ? target.e164 : raw ?? "",
+        docId: doc.id,
+        docRef: docRef(doc),
+      });
+    } catch (err) {
+      console.warn("[send-paperwork-sms] outbox note for a skipped text failed:", err);
+    }
   }
 
   private async tryGetCustomer(
@@ -263,25 +392,45 @@ export class SendPaperworkSms {
 
   /** Mint (or reuse) a short code for the resource and return the
    *  customer-facing /s/<code> URL. Falls back to the canonical
-   *  long URL if the codegen path throws for any reason. */
-  private async mintShortUrl(
+   *  long URL if the codegen path throws for any reason.
+   *  REQ-342 (M13): the URL carries the send language as `?lang=` (the
+   *  /s redirect forwards it onto /q or /i), so the customer opens the
+   *  document in the language it was sent in. */
+  private mintShortUrl(
     userId: string,
     r: { kind: "quote" | "invoice"; id: string },
+    lang?: "en" | "es",
   ): Promise<string> {
-    try {
-      const link = await this.shortlinks.findOrCreate(userId, r.kind, r.id);
-      return `${APP_URL}/s/${link.code}`;
-    } catch (err) {
-      // findOrCreate now always yields a code (random, else deterministic), so
-      // this only trips on a catastrophic KV failure where we genuinely can't
-      // persist a code — the long URL is then the only link that still works.
-      console.warn(
-        `[send-paperwork-sms] shortlink mint failed for ${r.kind}:${r.id}; falling back to long URL:`,
-        err,
-      );
-      const path = r.kind === "quote" ? `/q/${r.id}` : `/i/${r.id}`;
-      return `${APP_URL}${path}`;
-    }
+    return paperworkShortUrl(this.shortlinks, userId, r, lang);
+  }
+}
+
+/** Mint (or reuse) a short code for the resource and return the
+ *  customer-facing /s/<code> URL. Falls back to the canonical
+ *  long URL if the codegen path throws for any reason.
+ *  REQ-342 (M13): the URL carries the send language as `?lang=` (the
+ *  /s redirect forwards it onto /q or /i), so the customer opens the
+ *  document in the language it was sent in. REQ-461: shared with the send
+ *  preview, so the text it shows carries the link the send will. */
+export async function paperworkShortUrl(
+  shortlinks: ShortLinkStore,
+  userId: string,
+  r: { kind: "quote" | "invoice"; id: string },
+  lang?: "en" | "es",
+): Promise<string> {
+  try {
+    const link = await shortlinks.findOrCreate(userId, r.kind, r.id);
+    return withSendLang(`${APP_URL}/s/${link.code}`, lang);
+  } catch (err) {
+    // findOrCreate now always yields a code (random, else deterministic), so
+    // this only trips on a catastrophic KV failure where we genuinely can't
+    // persist a code — the long URL is then the only link that still works.
+    console.warn(
+      `[send-paperwork-sms] shortlink mint failed for ${r.kind}:${r.id}; falling back to long URL:`,
+      err,
+    );
+    const path = r.kind === "quote" ? `/q/${r.id}` : `/i/${r.id}`;
+    return withSendLang(`${APP_URL}${path}`, lang);
   }
 }
 
@@ -419,16 +568,4 @@ export function renderInvoiceBody(
     lang,
   }) + "\n\n" + docTitle("invoice", i, lang) + (payLine ? `\n\n${payLine}` : "") + "\n\n" +
     t(lang, "paperworkSms.body.invoiceClosing");
-}
-
-// ---------- phone normalization --------------------------------------------
-
-function normalizeE164(raw: string): string | undefined {
-  const trimmed = raw.trim();
-  if (!trimmed) return undefined;
-  if (/^\+[1-9]\d{6,14}$/.test(trimmed)) return trimmed;
-  const digits = trimmed.replace(/\D/g, "");
-  if (digits.length === 10) return `+1${digits}`;
-  if (digits.length === 11 && digits.startsWith("1")) return `+${digits}`;
-  return undefined;
 }

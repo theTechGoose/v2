@@ -1,15 +1,28 @@
 /**
  * REQ-214 — who is presenting: a chip per presenter with their colour dot and name; the
  * caller's own chip says so. Drawn in the customer's pill and on every stage.
+ *
+ * REQ-544 (demo-loop cycle 4, m49) — "(you)" is in the caller's language: the caller passes its
+ * `t`, never the global one (on /worker that follows the signed-in worker).
  */
-import { t } from "../../lib/i18n.ts";
+import type { DemoT } from "./EndDemo.tsx";
 import type { Presenter } from "../../../shared/demo-mode/protocol.ts";
 
 export default function PresenterChips(
-  { presenters, me }: { presenters: Presenter[]; me?: string | null },
+  { presenters, me, nowrap, t }: {
+    presenters: Presenter[];
+    t: DemoT;
+    me?: string | null;
+    /** REQ-228 — on one line (the customer's pill never grows over the page) */
+    nowrap?: boolean;
+  },
 ) {
   return (
-    <span style="display:inline-flex;gap:6px;flex-wrap:wrap;align-items:center">
+    <span
+      style={`display:inline-flex;gap:6px;flex-wrap:${
+        nowrap ? "nowrap" : "wrap"
+      };align-items:center`}
+    >
       {presenters.map((p) => (
         <span
           key={p.userId}

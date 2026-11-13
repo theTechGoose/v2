@@ -1,10 +1,22 @@
-import { useState } from "preact/hooks";
+import { useEffect, useRef, useState } from "preact/hooks";
 import { type Lang, tFor } from "../lib/i18n.ts";
-import { fmtMoneyExact } from "../lib/format.ts";
+import {
+  claimThanksKey,
+  type ReceiptChannel,
+} from "../../shared/documents/receipt-note.ts";
+import { fmtMoneyExact, fmtPayHandle } from "../lib/format.ts";
+import { startInvoiceRefresh } from "../lib/public-invoice-refresh.ts";
+import { announceChange } from "../lib/change-announce.ts";
 import {
   claimBody,
   claimDecision,
 } from "../../shared/documents/linked-view.ts";
+import {
+  claimPaymentPath,
+  invoiceClaimPreview,
+  recordPaymentHref,
+} from "../../shared/documents/invoice-claim-view.ts";
+import { signOverrideSearch } from "../../shared/quote-flow/public-doc-state.ts";
 import { type PayButton, payButtons } from "../../shared/payments/pay-links.ts"; // REQ-630
 
 interface Method {
@@ -32,6 +44,9 @@ interface Props {
   invoiceId: string;
   acceptedMethods: Method[];
   customerName?: string;
+  /** REQ-523 (demo m16): where the payment receipt can arrive — the thanks
+   *  line promises a text only when the customer's number can take one. */
+  receiptChannel?: ReceiptChannel;
   /** REQ-203: the balance this page shows — the claim is for THIS amount;
    *  a changed balance comes back as 409 stale_balance with the current one. */
   balanceCents?: number;
@@ -39,6 +54,13 @@ interface Props {
   version?: number;
   /** Outgoing-comms language (roadmap p.13). Customer-facing. */
   lang?: "en" | "es";
+  /** REQ-479 (demo M30): the viewer is the business itself (owner, admin,
+   *  staff impersonating) — a preview, never the customer's claim. */
+  internal?: boolean;
+  /** The invoice's status (a paid / void one is never a preview). */
+  status?: string;
+  /** The page's query — carries the in-person override `?as=customer&confirm=1`. */
+  search?: string;
   /** REQ-630: the card (Stripe) is offered above — no "reach out" fallback without methods. */
   hasCard?: boolean;
   /** REQ-630: the invoice number, the note on a Venmo payment. */
@@ -74,9 +96,13 @@ export default function PublicInvoiceClaim(
     invoiceId,
     acceptedMethods,
     customerName,
+    receiptChannel,
     balanceCents,
     version: initialVersion,
     lang = "en",
+    internal = false,
+    status,
+    search = "",
     hasCard = false,
     docNumber,
   }: Props,
@@ -96,6 +122,22 @@ export default function PublicInvoiceClaim(
   const [stale, setStale] = useState(false);
   const [alreadyPaid, setAlreadyPaid] = useState(false);
 
+  // REQ-321 (demo M14): this page is SSR'd once; the badge patches below
+  // only mirror THIS island's own claim. The owner's later confirm-payment
+  // (another session) must reach the open tab too — poll the public invoice
+  // and reload the moment the server leaves the state shown here. `shown`
+  // is read at every tick, so a claim made in this tab moves the baseline
+  // (claimed) instead of triggering a reload of its own.
+  const shownRef = useRef({ status: "sent", version: initialVersion });
+  useEffect(
+    () => startInvoiceRefresh({ invoiceId, shown: () => shownRef.current }),
+    [invoiceId],
+  );
+  shownRef.current = {
+    status: alreadyPaid ? "paid" : done ? "claimed" : "sent",
+    version,
+  };
+
   if (alreadyPaid) {
     return (
       <section
@@ -112,6 +154,75 @@ export default function PublicInvoiceClaim(
         >
           {tFor(lang, "public.doc.alreadyPaid")}
         </p>
+      </section>
+    );
+  }
+
+  // REQ-479 (demo M30): the owner on her own invoice records a payment she
+  // received; she never files "the customer paid" — unless the customer is
+  // handed the device (the in-person override).
+  if (invoiceClaimPreview({ internal, status }, search)) {
+    return (
+      <section
+        data-cy="invoice-internal-preview"
+        role="status"
+        style="margin-top:24px;background:#fff6e5;border:1px solid rgba(255,170,40,0.45);border-radius:14px;padding:16px 18px;color:#8a5a10;font-size:13px;line-height:1.5"
+      >
+        <div style="font-weight:800;font-size:14px">
+          {tFor(lang, "publicInvoiceClaim.internalPreview")}
+        </div>
+        <div style="margin-top:4px">
+          {tFor(lang, "publicInvoiceClaim.internalPreviewBody")}
+        </div>
+        {
+          /* REQ-705 (demo-loop c5 m68): the preview is "viewing as the
+           customer", so it lists the methods the customer's page offers —
+           the same chips, read-only (nothing to claim from here). */
+        }
+        {acceptedMethods.length > 0
+          ? (
+            <div
+              data-cy="invoice-preview-methods"
+              style={`margin-top:12px;background:#fff;border:1px solid ${LINE};border-radius:12px;padding:12px 14px`}
+            >
+              <div
+                style={`font-size:11px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:${MUTED}`}
+              >
+                {tFor(lang, "publicInvoiceClaim.howToPay")}
+              </div>
+              <div style="margin-top:8px;display:flex;flex-wrap:wrap;gap:8px">
+                {acceptedMethods.map((m) => (
+                  <button
+                    type="button"
+                    key={m.method}
+                    disabled
+                    aria-disabled="true"
+                    data-cy={`invoice-preview-method-${m.method}`}
+                    style={`appearance:none;cursor:default;background:#fff;color:${INK};border:1px solid ${LINE};border-radius:999px;padding:9px 16px;font-size:13.5px;font-weight:700;letter-spacing:.01em;opacity:.75`}
+                  >
+                    {methodLabel(m.method, lang)}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )
+          : null}
+        <a
+          href={recordPaymentHref(invoiceId)}
+          data-cy="invoice-record-payment"
+          style={`display:inline-block;margin-top:12px;background:${TEAL};color:#fff;border-radius:999px;padding:10px 18px;font-size:14px;font-weight:700;text-decoration:none`}
+        >
+          {tFor(lang, "publicInvoiceClaim.recordPayment")}
+        </a>
+        <div style="margin-top:10px">
+          <a
+            href={signOverrideSearch(search)}
+            data-cy="invoice-claim-in-person"
+            style="font-weight:700;color:#8a5a10;text-decoration:underline"
+          >
+            {tFor(lang, "publicInvoiceClaim.internalPreviewInPerson")}
+          </a>
+        </div>
       </section>
     );
   }
@@ -143,7 +254,7 @@ export default function PublicInvoiceClaim(
         <p
           style={`margin:8px 0 0;color:${INK};font-size:15px;line-height:1.55`}
         >
-          {tFor(lang, "publicInvoiceClaim.thanksBody")}
+          {tFor(lang, claimThanksKey(receiptChannel))}
         </p>
       </section>
     );
@@ -182,7 +293,7 @@ export default function PublicInvoiceClaim(
     setSubmitting(true);
     setError(undefined);
     try {
-      const res = await fetch(`/api/invoices/${invoiceId}/claim-payment`, {
+      const res = await fetch(claimPaymentPath(invoiceId, search), {
         method: "POST",
         headers: { "content-type": "application/json" },
         credentials: "include",
@@ -233,7 +344,9 @@ export default function PublicInvoiceClaim(
       }
       if (decision.kind === "error") {
         throw new Error(
-          decision.reason === String(res.status)
+          decision.reason === "owner_cannot_claim"
+            ? tFor(lang, "publicInvoiceClaim.ownerCannotClaim")
+            : decision.reason === String(res.status)
             ? tFor(lang, "publicInvoiceClaim.submitError", {
               status: res.status,
             })
@@ -241,6 +354,9 @@ export default function PublicInvoiceClaim(
         );
       }
       setDone(true);
+      // REQ-493 (demo-loop c3 m7): the owner's /invoices in this browser
+      // ("View as customer") follows at once.
+      announceChange({ entityType: "invoice", entityId: invoiceId });
       // UX-35: the SSR chrome OUTSIDE this island must reflect the claim
       // without a manual reload — flip the header badge to the awaiting-
       // confirmation state and retire the "questions before paying?" footer.
@@ -529,7 +645,8 @@ function methodInstructions(m: Method, lang: Lang = "en"): string {
   const sendTo = (svc: string) =>
     m.handle
       ? tFor(lang, "publicInvoiceClaim.instructions.sendToHandle", {
-        handle: m.handle,
+        // REQ-326 (demo m39): a phone typed as the handle reads as a phone
+        handle: fmtPayHandle(m.handle),
         svc,
       })
       : tFor(lang, "publicInvoiceClaim.instructions.sendVia", { svc });

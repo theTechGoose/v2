@@ -18,7 +18,31 @@
  * one Pay button settles the due the way a card on the real pay page would.
  */
 import { story, type StoryTools } from "#shots";
-import { firstOfNextMonth, proratedCents } from "../../shared/quote-flow/plan-switch.ts"; // REQ-129 — the one billing rule
+import { anchoredSchedule, firstOfNextMonth, proratedCents } from "../../shared/quote-flow/plan-switch.ts"; // REQ-129/REQ-615 — the one billing rule
+
+/** REQ-615 (demo-loop c4 m4) — what a $99 first pick's note says today, each charge with its date,
+ *  spelled out here (not read from the dictionary) so the story fails on the old undated copy */
+function firstPickToday(): string {
+  const now = new Date().toISOString();
+  const s = anchoredSchedule(now, 9900);
+  const md = (d: string | number) => new Date(d).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
+  const through = new Date(s.paidThrough);
+  const endOfMonth = Date.UTC(through.getUTCFullYear(), through.getUTCMonth() + 1, 0);
+  const amount = s.firstAmountCents % 100 === 0 ? `$${s.firstAmountCents / 100}` : `$${(s.firstAmountCents / 100).toFixed(2)}`;
+  return `$99 today (covers ${md(now)}–${md(through.getTime() - 86_400_000)}) · ${md(s.firstBillAt)}: ${amount} for ${md(s.paidThrough)}–${md(endOfMonth)} · then $99/month on the 1st`;
+}
+
+/** REQ-725 (demo-loop c5 m3) — the wizard's "How billing works" for a $99 Monster pick today, from the
+ *  same dated schedule, spelled out here so the story fails on the old on-card copy */
+function wizardBillingHowToday(): string {
+  const now = new Date().toISOString();
+  const s = anchoredSchedule(now, 9900);
+  const md = (d: string | number) => new Date(d).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
+  const through = new Date(s.paidThrough);
+  const endOfMonth = Date.UTC(through.getUTCFullYear(), through.getUTCMonth() + 1, 0);
+  const amount = s.firstAmountCents % 100 === 0 ? `$${s.firstAmountCents / 100}` : `$${(s.firstAmountCents / 100).toFixed(2)}`;
+  return `Example with Monster ($99/month), picked today: $99 today covers ${md(now)}–${md(through.getTime() - 86_400_000)}. To line your bill up with the 1st, on ${md(s.firstBillAt)} we bill ${amount} for ${md(s.paidThrough)}–${md(endOfMonth)}. After that, $99 on the 1st of each month. Other plans work the same way at their price.`;
+}
 
 const JSON_HEADERS = { "content-type": "application/json" };
 const digits = () => String(Math.floor(Math.random() * 9_000_000) + 1_000_000);
@@ -163,6 +187,16 @@ Deno.test("REQ-054: in onboarding the person picks a paid plan, pays on the link
     await expect.see("Monster Free");
     await expect.see("$99");
     await expect.see("$199");
+    // REQ-356 (demo-loop c1 m8) — a card IS the pick, so before it is pressed each card says what
+    // pressing it does: the amount today, the monthly price, and the secure payment page next
+    // REQ-615 (demo-loop c4 m4) — and each charge with its date: today's, the 1st's prorated one, then monthly
+    // REQ-725 (demo-loop c5 m3) — the card says one plain line; the dated schedule is behind
+    // "How billing works"; a card IS the pick, so no Continue sits under the cards
+    expect.eq((await page.locator("[data-cy='plan-note-monster']").innerText()).trim(), "$99 today, then $99 on the 1st of each month — you'll pay on a secure payment page next", "the Monster card's one plain line");
+    await expect.see("Free · nothing to pay, no card needed");
+    expect.eq(await page.locator("[data-cy='welcome-continue']").count(), 0, "no dead Continue under the cards");
+    await page.locator("[data-cy='plan-billing-how'] summary").click();
+    await expect.see(wizardBillingHowToday());
     // the paid pick GOES to the pay page — the link builder's link — in this tab (REQ-055/059)
     const payPage = await pickGoesToPayPage(page, "plan-pick-monster");
     expect(payPage.searchParams.get("return")?.includes("/plan/return?due="), `the link carries the way back (${payPage.searchParams.get("return")})`);
@@ -660,7 +694,7 @@ Deno.test("REQ-127: the Billing tab says the plan plainly; upgrading Monster →
     await page.locator("[data-cy='billing']").waitFor({ timeout: 60_000 });
     expect.eq(await text("plan-current"), "Monster Free", "plan-current reads Monster Free");
     expect.eq(await text("plan-pill"), "Free plan", "plan-pill reads Free plan");
-    expect.eq(await text("plan-note-monster"), "$99 today · prorated on the 1st · then $99/month", "REQ-129 — a first pick says the whole shape");
+    expect.eq(await text("plan-note-monster"), firstPickToday(), "REQ-129/REQ-615 — a first pick says the whole shape, each charge with its date");
     expect.eq(await page.locator("[data-cy='plan-note-free']").count(), 0, "no card for the plan the person is on");
 
     // Monster, paid: the tab reads the plan in one look

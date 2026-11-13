@@ -1,14 +1,16 @@
 import { asset, Head } from "fresh/runtime";
-import {
-  greetingFirstName,
-  personLanguage,
-} from "../../../shared/person-name/mod.ts"; // REQ-624
+import { greetingFirstName } from "../../../shared/person-name/mod.ts"; // REQ-624
 import { define } from "../../utils.ts";
+import { resolveSsrLang } from "../../lib/ssr-lang.ts";
+import DocTitle from "../../components/DocTitle.tsx";
 import SiteFooter from "../../components/SiteFooter.tsx";
 import { type Lang, tFor } from "../../lib/i18n.ts";
 import DashSidebar from "../../islands/DashSidebar.tsx";
 import DashTopbar from "../../islands/DashTopbar.tsx";
 import ClientsPage from "../../islands/ClientsPage.tsx";
+import { getSessionId } from "../../lib/auth.ts";
+import { profileClient } from "../../clients/profile.ts";
+import { tradeKindFor } from "../../../shared/quote-flow/trade-fit.ts"; // REQ-743
 
 const WEEKDAY_KEYS = [
   "date.weekday.sunday",
@@ -34,11 +36,19 @@ const MONTH_KEYS = [
   "date.month.december",
 ];
 
-export default define.page(function ClientsRoute(ctx) {
+export default define.page(async function ClientsRoute(ctx) {
   const user = ctx.state.user;
-  const lang: Lang = personLanguage(user) === "es" ? "es" : "en";
-  const greetingName = greetingFirstName(user) ||
-    tFor(lang, "common.thereFallback");
+  // REQ-743 (cycle 5, p18-6c): the trade decides whether an empty
+  // repeat-visits panel shows on a customer card (service trades only)
+  const profile = await profileClient.get({ sessionId: getSessionId(ctx.req) })
+    .catch(() => null);
+  const tradeKind = tradeKindFor(
+    profile?.identity?.businessName ?? profile?.identity?.displayName,
+  );
+  // REQ-709 (demo-loop c5, m4): the islands' language (?lang= > account >
+  // pm_lang), so the tab title and footer match the page they sit on.
+  const lang: Lang = resolveSsrLang(ctx) ?? "es";
+  const greetingName = greetingFirstName(user);
   const now = new Date();
   const greetingDate = `${tFor(lang, WEEKDAY_KEYS[now.getDay()])} · ${
     tFor(lang, MONTH_KEYS[now.getMonth()])
@@ -47,7 +57,7 @@ export default define.page(function ClientsRoute(ctx) {
   return (
     <>
       <Head>
-        <title>{tFor(lang, "clientsRoute.docTitle")}</title>
+        <DocTitle lang={lang} title={(l) => tFor(l, "clientsRoute.docTitle")} />
         <link
           key="css-dashboard"
           rel="stylesheet"
@@ -57,15 +67,16 @@ export default define.page(function ClientsRoute(ctx) {
       </Head>
 
       <div class="app">
-        <DashSidebar active="clients" />
+        <DashSidebar active="customers" />
         <main class="main">
           <DashTopbar
+            pageTitleKey="nav.clients"
             greetingDate={greetingDate}
             greetingName={greetingName}
           />
           <div class="content">
-            <ClientsPage />
-            <SiteFooter lang={lang} />
+            <ClientsPage tradeKind={tradeKind} />
+            <SiteFooter lang={lang} compact />
           </div>
         </main>
       </div>

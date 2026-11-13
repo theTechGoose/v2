@@ -220,7 +220,7 @@ interface LooseMethods {
   paypal?: Toggle & { handle?: string };
   cash?: Toggle;
   ach?: Toggle & { instructions?: string };
-  card?: Toggle & { instructions?: string };
+  card?: Toggle & { instructions?: string; url?: string };
   other?: Toggle & { instructions?: string };
   links?: unknown;
 }
@@ -243,7 +243,14 @@ export function projectPayMethods(apm: unknown): PublicPayMethod[] {
   if (m.cash?.enabled) out.push({ method: "cash" });
   if (m.ach?.enabled) out.push({ method: "ach", handle: m.ach.instructions });
   if (m.card?.enabled) {
-    out.push({ method: "card", handle: m.card.instructions });
+    // REQ-782 — the business's card pay link (its own Stripe / Square / PayPal checkout page);
+    // an owner who pasted the link into the instructions (the old placeholder said so) counts too
+    const url = safeHttpsUrl(m.card.url) ?? safeHttpsUrl(m.card.instructions);
+    out.push({
+      method: "card",
+      handle: m.card.instructions,
+      ...(url ? { url } : {}),
+    });
   }
   if (m.other?.enabled) {
     out.push({ method: "other", handle: m.other.instructions });
@@ -328,7 +335,7 @@ export function payWayNames(
   methods: PublicPayMethod[],
   opts: { card: boolean },
 ): string[] {
-  const out: string[] = opts.card ? ["card"] : [];
+  const out: string[] = opts.card || hasCardPayLink(methods) ? ["card"] : [];
   for (const method of [...APP_ORDER, "zelle"]) {
     const m = methods.find((x) => x.method === method);
     if (m?.handle?.trim()) out.push(BRAND[method]);
@@ -361,4 +368,59 @@ export function hasAnyPayWay(apm: unknown): boolean {
     if (m && typeof m === "object" && (m as { enabled?: unknown }).enabled === true) return true;
   }
   return false;
+}
+
+// ---------------------------------------------------------------- REQ-782: card = a separate portal
+
+/**
+ * REQ-782 (demo-loop dv1, d10) — Raphael: "Card payments should be a link to a separate portal."
+ * The business's card pay link, as typed in Settings: empty clears it; otherwise https only.
+ */
+export type CardPayUrlCheck =
+  | { ok: true; url: string | undefined }
+  | { ok: false; reason: "url_not_https" | "url_invalid" };
+
+export function checkCardPayUrl(raw: unknown): CardPayUrlCheck {
+  if (raw === undefined || raw === null) return { ok: true, url: undefined };
+  if (typeof raw !== "string") return { ok: false, reason: "url_invalid" };
+  const s = raw.trim();
+  if (!s) return { ok: true, url: undefined };
+  const url = safeHttpsUrl(s);
+  if (url) return { ok: true, url };
+  return {
+    ok: false,
+    reason: /^http:\/\/[^/]+\.[^/]+/i.test(s) ? "url_not_https" : "url_invalid",
+  };
+}
+
+/** The projected methods carry a card pay link. */
+export function hasCardPayLink(methods: PublicPayMethod[]): boolean {
+  return methods.some((m) => m.method === "card" && !!safeHttpsUrl(m.url));
+}
+
+/** Where "Pay by card" goes: the business's own Stripe → our card portal page `/i/:id/pay`
+ *  (the widget charges the balance on their key); else their card pay link; else nowhere —
+ *  no button, never a dead end. */
+export type CardPayWay =
+  | { kind: "portal"; href: string }
+  | { kind: "link"; href: string; host: string };
+
+export function cardPayWay(opts: {
+  invoiceId: string;
+  stripe: boolean;
+  methods: PublicPayMethod[];
+  lang?: string;
+}): CardPayWay | null {
+  if (opts.stripe) {
+    return {
+      kind: "portal",
+      href: `/i/${encodeURIComponent(opts.invoiceId)}/pay${
+        opts.lang === "es" ? "?lang=es" : ""
+      }`,
+    };
+  }
+  const card = opts.methods.find((m) => m.method === "card");
+  const href = safeHttpsUrl(card?.url);
+  if (!href) return null;
+  return { kind: "link", href, host: new URL(href).hostname };
 }

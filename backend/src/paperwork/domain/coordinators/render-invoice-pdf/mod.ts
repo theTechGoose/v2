@@ -2,16 +2,24 @@ import { Injectable } from "#danet/core";
 import { PDFDocument, rgb, StandardFonts } from "#pdf-lib";
 import { t } from "@core/i18n/mod.ts";
 import { computePaymentSplit, type MilestoneRole } from "#payment-split";
+import { localizeDepositTerm } from "#quote-flow/deposit-term.ts"; // REQ-678
+import { localizeDeadlineTerm } from "#quote-flow/deadline-term.ts"; // REQ-771
 import type { Quote, QuoteTerm } from "@paperwork/dto/quote.ts";
 import { InvoiceStore } from "@paperwork/domain/data/invoice-store/mod.ts";
 import { isAccepted } from "#quote-flow/quote-status.ts";
-import { isTbdTermValue } from "#quote-flow/terms-i18n.ts";
+import { isDueNowTermValue, isTbdTermValue } from "#quote-flow/terms-i18n.ts";
+import { invoiceTerms } from "#quote-flow/invoice-terms.ts";
+import { formatTermDate, termDateIso } from "#quote-flow/format-helpers.ts";
+import { localizeRecurringTerm } from "#quote-flow/recurring-billing.ts"; // REQ-699
 import { QuoteStore } from "@paperwork/domain/data/quote-store/mod.ts";
 import { CustomerStore } from "@crm/domain/data/customer-store/mod.ts";
 import { UserStore } from "@users/domain/data/user-store/mod.ts";
 import { BusinessIdentityStore } from "@profile/domain/data/business-identity-store/mod.ts";
 import { SITE_ORIGIN } from "#quote-flow/site-meta.ts";
 import { winAnsiSafeDeep } from "@paperwork/domain/business/pdf-text/mod.ts";
+import { localizePaymentInstructions } from "#documents/invoice-form.ts"; // REQ-710
+import { invoiceTextByLang } from "#documents/invoice-lang.ts"; // REQ-710
+import { lineItemDescription } from "#quote-flow/quote-translations.ts"; // REQ-710
 import {
   customerLines,
   customerOnDocument,
@@ -23,6 +31,9 @@ import {
   revisedNote,
 } from "@paperwork/domain/business/doc-render/mod.ts";
 import { fmtVisitDate, groupVisits } from "#quote-flow/visit-groups.ts";
+import { ChangeOrderStore } from "@paperwork/domain/data/change-order-store/mod.ts";
+import { agreedTotalCents, installmentSchedule } from "#documents/ledger.ts"; // REQ-679
+import { isInvoiceIssued } from "#documents/versions.ts";
 import { LoadBusinessLogo } from "@paperwork/domain/coordinators/load-business-logo/mod.ts";
 import {
   drawBrandMark,
@@ -65,6 +76,8 @@ export class RenderInvoicePdf {
     private customers: CustomerStore,
     private users: UserStore,
     private identity: BusinessIdentityStore,
+    /** REQ-679: the agreement's approved change orders (optional for direct test construction) */
+    private changeOrders: ChangeOrderStore = new ChangeOrderStore(),
     private logos: LoadBusinessLogo = new LoadBusinessLogo(),
   ) {}
 
@@ -188,8 +201,12 @@ export class RenderInvoicePdf {
 
     // Hero title
     y -= 36;
+    // REQ-710 (cycle 5, M4): a standalone invoice's title and concepts in
+    // the PDF's language while their copies still describe the typed text.
+    const own = invoiceTextByLang(invoice);
     const heroTitle = (quote?.summaryByLang?.[lang] ?? quote?.summary ??
-      invoice.jobName ?? t(lang, "renderQuotePdf.heroFallback"))
+      own.jobNameByLang?.[lang] ?? invoice.jobName ??
+      t(lang, "renderQuotePdf.heroFallback"))
       .replace(/^\s*quote\s*:\s*/i, "")
       .replace(/\b\w/g, (c) => c.toUpperCase());
     page.drawText(heroTitle, { x: M, y, size: 24, font: bold, color: TEAL });
@@ -257,7 +274,7 @@ export class RenderInvoicePdf {
     if (!visits && !quote?.lineItems?.length && invoice.description) {
       y = drawWrappedText(
         page,
-        invoice.description,
+        own.descriptionByLang?.[lang] ?? invoice.description,
         M,
         y,
         W - 2 * M,
@@ -471,7 +488,8 @@ export class RenderInvoicePdf {
         y -= 13;
         y = drawWrappedText(
           page,
-          invoice.paymentInstructions.trim(),
+          // REQ-710 (cycle 5, M4): the methods' labels in the PDF's language.
+          localizePaymentInstructions(invoice.paymentInstructions, lang).trim(),
           M,
           y,
           W - 2 * M,
@@ -485,11 +503,18 @@ export class RenderInvoicePdf {
       if (rows.length || invoice.paymentInstructions?.trim()) y -= 10;
     }
 
-    const agreementTotal = quote?.estimatedTotal ??
-      (quote?.lineItems ?? []).reduce(
-        (s, li) => s + (li.price ?? 0) * (li.quantity ?? 1),
-        0,
-      );
+    // REQ-679 (cycle 5, M18): the agreement is the quote plus its approved
+    // change orders, and the schedule is the real installments — the same
+    // figures /i shows.
+    const [quoteCos, installments] = quote
+      ? await Promise.all([
+        this.changeOrders.listByQuote(invoice.userId, quote.id).catch(() => []),
+        this.invoices.listByUser(invoice.userId).then((all) =>
+          all.filter((row) => row.quoteId === quote.id && isInvoiceIssued(row))
+        ).catch(() => []),
+      ])
+      : [[], []];
+    const agreementTotal = quote ? agreedTotalCents(quote, quoteCos) : 0;
 
     // Section: Job details (line items) + agreement-value total card.
     if (quote?.lineItems?.length) {
@@ -531,7 +556,8 @@ export class RenderInvoicePdf {
       for (const li of quote.lineItems) {
         addPageIfNeeded(28);
         const lineTotal = (li.price ?? 0) * (li.quantity ?? 1);
-        page.drawText(li.description, {
+        // REQ-710 (cycle 5, M4): the line in the PDF's language.
+        page.drawText(lineItemDescription(li, lang, quote.lang), {
           x: M,
           y,
           size: 11,
@@ -592,7 +618,13 @@ export class RenderInvoicePdf {
     }
 
     // Section: Payment schedule (derived from the agreement's payment terms).
-    const milestones = computeMilestones(agreementTotal, quote?.terms, lang);
+    const split = computeMilestones(agreementTotal, quote?.terms, lang);
+    const scheduled = installmentSchedule(
+      split.map((m) => m.amount),
+      agreementTotal,
+      [...installments.filter((row) => row.id !== invoice.id), invoice],
+    );
+    const milestones = split.map((m, k) => ({ ...m, amount: scheduled[k] }));
     if (milestones.length > 0) {
       addPageIfNeeded(110);
       y = drawSectionHeader(
@@ -698,8 +730,14 @@ export class RenderInvoicePdf {
     }
 
     // Section: Terms (wizard-captured grid; NO legal clauses, NO signature).
-    if (quote?.terms && quote.terms.length > 0) {
-      const visible = quote.terms.filter((term) => term.stepId !== "customer");
+    // REQ-659 (cycle 5, m53): a relative start the bill has outlived is
+    // dropped, as on the public invoice.
+    const billTerms = invoiceTerms(quote?.terms, {
+      quotedAt: quote?.sentAt ?? quote?.createdAt,
+      issuedAt: invoice.issuedDate ?? invoice.sentAt ?? invoice.createdAt,
+    });
+    if (billTerms.length > 0) {
+      const visible = billTerms.filter((term) => term.stepId !== "customer");
       if (visible.length > 0) {
         addPageIfNeeded(120);
         y = drawSectionHeader(
@@ -935,8 +973,21 @@ function termValue(
 }
 
 export function localizeTermValue(value: string, lang: "en" | "es"): string {
+  // REQ-699 (demo-loop cycle 5, M20): a recurring term in the reader's language.
+  const recurring = localizeRecurringTerm(value, lang);
+  if (recurring) return recurring;
+  // REQ-771 (cycle 5v5, M7): the typed deadline — "Before Thanksgiving
+  // (Nov 26, 2026)" / "Antes de Acción de Gracias (26 nov 2026)".
+  const deadline = localizeDeadlineTerm(value, lang, t);
+  if (deadline) return deadline;
+  // REQ-495 (m17): a picked start date (ISO, or a legacy MM/DD/YYYY) prints
+  // in the reader's language — "1 dic 2026" / "Dec 1, 2026".
+  if (termDateIso(value)) return formatTermDate(value, lang);
   if (lang === "en") return value;
   const trimmed = (value ?? "").trim();
+  // REQ-678 (c3-m60): the picked deposit — "Depósito 30% + saldo".
+  const deposit = localizeDepositTerm(trimmed, lang, t);
+  if (deposit) return deposit;
   const exactKey: Record<string, string> = {
     "Payment upon completion": "renderQuotePdf.termValue.paymentUponCompletion",
     "Deposit + balance": "renderQuotePdf.termValue.depositPlusBalance",
@@ -952,6 +1003,8 @@ export function localizeTermValue(value: string, lang: "en" | "es"): string {
     "Due Now": "renderQuotePdf.termValue.dueNow",
     // REQ-046/047: the wizard's TBD pick on start date / duration.
     "TBD": "renderQuotePdf.termValue.tbd",
+    // REQ-343: the service-trade wizard's "Half a day" duration.
+    "Half a day": "renderQuotePdf.termValue.halfDay",
   };
   if (exactKey[trimmed]) return t(lang, exactKey[trimmed]);
   return trimmed
@@ -959,7 +1012,14 @@ export function localizeTermValue(value: string, lang: "en" | "es"): string {
     .replace(/\byears\b/gi, "años").replace(/\byear\b/gi, "año")
     .replace(/\bmonths\b/gi, "meses").replace(/\bmonth\b/gi, "mes")
     .replace(/\bweeks\b/gi, "semanas").replace(/\bweek\b/gi, "semana")
-    .replace(/\bdays\b/gi, "días").replace(/\bday\b/gi, "día");
+    // REQ-343: service-trade durations ("2 hours", "4 hours").
+    .replace(/\bhours\b/gi, "horas").replace(/\bhour\b/gi, "hora")
+    .replace(/\bdays\b/gi, "días").replace(/\bday\b/gi, "día")
+    // REQ-665 (m47): the custom picker's worded two-payment split.
+    .replace(
+      /^(\d+(?:\.\d+)?)% upfront, (\d+(?:\.\d+)?)% on completion$/i,
+      "$1% por adelantado, $2% al terminar",
+    );
 }
 
 function computeMilestones(
@@ -986,7 +1046,7 @@ function computeMilestones(
     full: { label: L.final, when: L.onCompletion },
   };
   const term = termValue(terms, "payment_terms");
-  const dueNow = /\bdue now\b/i.test(term ?? "");
+  const dueNow = isDueNowTermValue(term);
   return computePaymentSplit(term, total).map((p) => ({
     ...roleLabel[p.role],
     ...(dueNow && p.role === "full" ? { when: L.onSigning } : {}),

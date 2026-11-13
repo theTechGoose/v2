@@ -40,26 +40,57 @@ export function t(key: string, vars?: Vars): string {
   return tFor(langSignal.value, key, vars);
 }
 
+/** REQ-422 (m48): bumps on every LOCAL language choice (a toggle, Settings,
+ *  the wizard) — never on a server seed. A profile read compares the value at
+ *  its start with the value when it lands: if the user chose in between, the
+ *  read's `user.language` predates that choice and must not undo it. A counter
+ *  rather than a timestamp, so two events in the same millisecond still order. */
+let langChoiceSeq = 0;
+export function langChoiceMark(): number {
+  return langChoiceSeq;
+}
+
 /**
  * Set the active UI language. This is the single switch for the logged-in app:
  * Settings calls it for an instant change, and the dashboard profile cache calls
- * it to seed from the server's `user.language`. Every island that reads
- * `langSignal` (via `t()` or `langSignal.value`) re-renders in response.
+ * it (with `fromServer`) to seed from the server's `user.language`. Every
+ * island that reads `langSignal` (via `t()` or `langSignal.value`) re-renders in response.
+ *
+ * REQ-416: `{ persist: false }` switches the screen for this session only and
+ * leaves the browser's stored choice (pm:lang + the pm_lang cookie) alone —
+ * the /worker screen showing a signed-in worker's language on someone else's
+ * browser.
  */
-export function setLang(lang: Lang): void {
+export function setLang(
+  lang: Lang,
+  opts: { fromServer?: boolean; persist?: boolean } = {},
+): void {
+  if (!opts.fromServer) langChoiceSeq++;
   if (langSignal.value !== lang) langSignal.value = lang;
   // P-65: <html lang> must follow the app language too. Mirrored HERE (not
   // only via the HtmlLang island's signal subscription) because seeding the
   // profile language may be a no-op on the signal — the module-load default
   // is already "es" — and a subscription that never fires would leave the
   // SSR attribute (resolved without the profile) stale.
-  if (typeof document !== "undefined" && document.documentElement.lang !== lang) {
+  if (
+    typeof document !== "undefined" && document.documentElement.lang !== lang
+  ) {
     document.documentElement.lang = lang;
   }
   // Keep localStorage + the SSR cookie in sync (Settings change, or the
   // dashboard seeding from the server's user.language) so a later SSR route
   // render (verify/login) matches the app language.
-  persistLang(lang);
+  if (opts.persist !== false) persistLang(lang);
+}
+
+/** Plural helper in an explicit language (SSR / known-lang call sites). */
+export function tnFor(
+  lang: Lang,
+  key: string,
+  n: number,
+  vars?: Vars,
+): string {
+  return tFor(lang, `${key}.${n === 1 ? "one" : "other"}`, { n, ...vars });
 }
 
 /** Plural helper: picks `<key>.one` / `<key>.other` by count. */

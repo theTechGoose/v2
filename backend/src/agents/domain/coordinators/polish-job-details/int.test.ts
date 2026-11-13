@@ -63,3 +63,40 @@ Deno.test("REQ-026 NW-05 polish: a valid model reply passes through, degraded fa
     "We will remove the old toilet and install a new one.",
   );
 });
+
+// REQ-261 (demo M26): the polished paragraph is customer-facing — a sentence
+// that names a money amount (a sub's fee, a material cost) is dropped.
+Deno.test("REQ-261 M26 polish drops a sentence that names a private cost", async () => {
+  const llm = new StubLLMClient();
+  llm.setHandler(() => ({
+    text: JSON.stringify({
+      jobName: "Bathroom Rough-In",
+      summary: "Bathroom plumbing rough-in",
+      description:
+        "Rough-in plumbing for the new bathroom. Plumber Ray charges $2,800 for the rough-in. Includes new shutoff valves.",
+    }),
+  }));
+  const coord = new PolishJobDetails(llm);
+  const res = await coord.run({ userId: "u1", raw: "Ray the plumber is $2800 for the rough-in" });
+  assertEquals(res.degraded, false);
+  assertEquals(
+    res.description,
+    "Rough-in plumbing for the new bathroom. Includes new shutoff valves.",
+  );
+});
+
+// REQ-434 (demo-loop cycle 3, M10): the English clamp keeps three words and
+// must not leave the third one a dangling connector ("Kitchen Renovation And").
+Deno.test("REQ-434 M10 polish: a model jobName clamped to three words never ends on a connector", async () => {
+  const llm = new StubLLMClient();
+  llm.setHandler(() => ({
+    text: JSON.stringify({
+      jobName: "Kitchen Renovation and Cleanup",
+      summary: "Kitchen renovation and cleanup",
+      description: "We will renovate the kitchen and clean up afterwards.",
+    }),
+  }));
+  const coord = new PolishJobDetails(llm);
+  const res = await coord.run({ userId: "u1", raw: "renovate the kitchen and clean up" });
+  assertEquals(res.jobName, "Kitchen Renovation");
+});

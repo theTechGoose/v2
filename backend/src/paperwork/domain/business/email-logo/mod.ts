@@ -2,13 +2,15 @@
  * REQ-160 — which logo heads a paperwork email: the sending business's own
  * when it has one on file. The business's logo is reached through the
  * public-logo route (the document's id grants it, as on the public page), so
- * the email never carries a file id.
+ * the email never carries a file id. REQ-613: the URL carries the logo's
+ * version, so a replaced logo is a new URL no mail client can serve stale.
  *
  * REQ-628 — A2Z Landscape, 2026-11-12: "They NEED THEIR LOGO NOT OURS". With
  * no logo on file the email is headed by the business's name as a text
  * wordmark — never the DocuMonster logo. Pure.
  */
 import type { BusinessIdentity } from "@users/dto/business-identity.ts";
+import { logoVersion, publicLogoUrl } from "#quote-flow/public-logo-url.ts";
 
 export type EmailLogo =
   | { kind: "image"; src: string; alt: string }
@@ -29,7 +31,12 @@ export function emailLogo(input: {
   if (input.biz?.logoFileId) {
     return {
       kind: "image",
-      src: `${input.appUrl}/api/public-logo/${input.kind}/${input.id}`,
+      src: publicLogoUrl(
+        input.kind,
+        input.id,
+        logoVersion(input.biz.logoFileId),
+        input.appUrl,
+      ),
       alt: name || "Logo",
     };
   }

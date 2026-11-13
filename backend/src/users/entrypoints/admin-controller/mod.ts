@@ -22,6 +22,7 @@ import {
   UnauthorizedError,
 } from "@users/domain/coordinators/require-user/mod.ts";
 import {
+  adminSearchMatches,
   type AdminUserView,
   projectAdminUser,
 } from "@users/domain/business/admin-user-view/mod.ts";
@@ -32,6 +33,9 @@ import { PlanStore } from "@users/domain/data/plan-store/mod.ts";
 import { CrmLeadCapture } from "@users/domain/coordinators/crm-lead-capture/mod.ts";
 import { chosen, merchantOf, planOf } from "@users/domain/business/plan/mod.ts";
 import type { PlanId } from "@users/dto/plan.ts";
+
+/** REQ-507 — the most rows a non-blank /admin users search returns (as the blank list) */
+const ADMIN_SEARCH_LIMIT = 25;
 
 /**
  * /admin — super-admin-only surface. EVERY mutating/listing endpoint calls
@@ -107,18 +111,34 @@ export class AdminController {
     };
   }
 
-  /** GET /admin/users?q=<phone> — search users by (partial) phone number. */
+  /**
+   * GET /admin/users?q= — search users. A blank q lists users (capped); otherwise
+   * a name, business or email by text, or a (partial) phone by its digits.
+   * REQ-507 (demo m25): "abc!!" listed everyone — a q that matches nobody is [].
+   */
   @Get("users")
   async search(
     @Context() ctx: ExecutionContext,
     @Query("q") q?: string,
   ): Promise<AdminUserView[]> {
     await requireSuperAdmin(ctx, this.sessions, this.users);
-    const matches = await this.users.searchByPhone(q ?? "");
-    return await Promise.all(matches.map(async (u) => {
-      const identity = await this.identities.get(u.id);
-      return projectAdminUser(u, identity?.businessName);
-    }));
+    const query = (q ?? "").trim();
+    if (query === "") {
+      const all = await this.users.searchByPhone("");
+      return await Promise.all(all.map(async (u) => {
+        const identity = await this.identities.get(u.id);
+        return projectAdminUser(u, identity?.businessName);
+      }));
+    }
+    const out: AdminUserView[] = [];
+    for (const u of await this.users.searchByPhone("", 100_000)) {
+      const business = (await this.identities.get(u.id))?.businessName;
+      if (adminSearchMatches(u, business, query)) {
+        out.push(projectAdminUser(u, business));
+        if (out.length >= ADMIN_SEARCH_LIMIT) break;
+      }
+    }
+    return out;
   }
 
   /** POST /admin/users/:id/grant — grant super-admin to a user. */
@@ -153,13 +173,23 @@ export class AdminController {
     return projectAdminUser(user, identity?.businessName);
   }
 
-  /** POST /admin/users/:id/revoke — revoke super-admin from a user. */
+  /**
+   * POST /admin/users/:id/revoke — revoke super-admin from a user.
+   * REQ-731 (demo cycle 5, m30): never the caller's own — one click on their own row locked
+   * the operator out of /admin (409 cannot_revoke_self). requireSuperAdmin resolves the
+   * session's own user (an impersonation session is the target, not a super admin, so it
+   * never gets here), and that caller stays a super admin — so a revoke can never leave
+   * zero super admins.
+   */
   @Post("users/:id/revoke")
   async revoke(
     @Context() ctx: ExecutionContext,
     @Param("id") id: string,
   ): Promise<AdminUserView> {
-    await requireSuperAdmin(ctx, this.sessions, this.users);
+    const caller = await requireSuperAdmin(ctx, this.sessions, this.users);
+    if (caller.id === id) {
+      throw Object.assign(new Error("cannot_revoke_self"), { status: 409 });
+    }
     const user = await this.users.setSuperAdmin(id, false);
     const identity = await this.identities.get(user.id);
     return projectAdminUser(user, identity?.businessName);
@@ -247,7 +277,7 @@ export class AdminController {
 
   /**
    * GET /admin/landing-offers — the single source of truth for the marketing
-   * offer both landing pages render (trial length, from-price, the "unlimited"
+   * offer both landing pages render (from-price, the "unlimited"
    * tier, social-proof counters). Read by the super-admin "configure landing
    * offers" section (P-08). Any authenticated session may read it; the values
    * live in shared/quote-flow/landing-offers.ts so the pages and this endpoint
@@ -257,7 +287,6 @@ export class AdminController {
   async landingOffers(@Context() ctx: ExecutionContext) {
     await requireUser(ctx, this.sessions, this.users);
     return {
-      trialDays: LANDING_OFFER.trialDays,
       priceFromCents: LANDING_OFFER.priceFromCents,
       unlimitedTier: LANDING_OFFER.unlimitedTier,
       socialProof: {

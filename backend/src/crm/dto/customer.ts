@@ -1,3 +1,4 @@
+import type { BalanceSubParts } from "#quote-flow/balance-sub.ts";
 import {
   IsBoolean,
   IsIn,
@@ -7,6 +8,16 @@ import {
 } from "#class-validator";
 import { plainToInstance } from "#class-transformer";
 import type { NumberedFields } from "@core/data/numbered-store/mod.ts";
+import { customerContactError } from "#quote-flow/customer-contact.ts"; // REQ-278
+
+/**
+ * REQ-715 (demo-loop cycle 5, m31 + c2-M29 + c3-m43 + c4-M34): the language
+ * the customer reads. Every customer-facing send resolves to it when no
+ * language is picked for that send (shared/quote-flow/comms-language.ts).
+ * On edit, "" clears it.
+ */
+export type CustomerLanguage = "en" | "es";
+export const CUSTOMER_LANGUAGES: CustomerLanguage[] = ["en", "es"];
 
 export type ClientSegment = "property_mgmt" | "homeowner" | "small_biz" | "hoa";
 export const CLIENT_SEGMENTS: ClientSegment[] = [
@@ -68,6 +79,11 @@ export class CreateCustomerDto {
   @IsOptional()
   @IsString()
   businessName?: string;
+
+  /** REQ-715: the language they read; "" (the form's "Not set") is dropped. */
+  @IsOptional()
+  @IsIn([...CUSTOMER_LANGUAGES, ""])
+  language?: CustomerLanguage;
 }
 
 export class UpdateCustomerDto {
@@ -123,6 +139,11 @@ export class UpdateCustomerDto {
   @IsOptional()
   @IsString()
   businessName?: string;
+
+  /** REQ-715: change the language they read; "" clears it. */
+  @IsOptional()
+  @IsIn([...CUSTOMER_LANGUAGES, ""])
+  language?: CustomerLanguage | "";
 }
 
 export interface Customer
@@ -136,33 +157,102 @@ export interface Customer
   updatedAt: string;
 }
 
-export type CustomerStatus = "active" | "lead" | "owes" | "regular" | "cold";
+/**
+ * REQ-367 (demo-loop cycle 1, m10): the card's jobs line as a kind — the client
+ * words it (`clientsDisplay.jobsSub.<kind>`) in the language live on screen.
+ */
+export type CustomerJobsSub = "overdue" | "active" | "scheduled" | "none";
+/** REQ-271: "new" — nothing on the books yet (no quote, no paid invoice); was mislabelled "regular". */
+export type CustomerStatus = "active" | "lead" | "owes" | "regular" | "cold" | "new";
 export type CustomerLastTone = "hot" | "warm" | "cold";
+
+/** REQ-323 — the lifecycle states `quoteState` / `invoiceState` (shared/documents/versions.ts) name. */
+export type CustomerDocState =
+  | "draft"
+  | "scheduled"
+  | "sent"
+  | "accepted"
+  | "declined"
+  | "revised"
+  | "claimed"
+  | "paid"
+  | "void"
+  | "approved"
+  | "pending";
+
+/**
+ * REQ-323 (demo-loop cycle 1, m20): one of the customer's documents, as the
+ * card back lists it — its number ("Q-001" / "INV-5000"), state, amount and the
+ * page that opens it (`/quotes?open=<id>` for a quote, `/i/<id>` for an invoice,
+ * REQ-565: `/co/<id>` for a change order).
+ */
+export interface CustomerDocument {
+  /** REQ-565 (demo m33): change orders are the customer's documents too */
+  kind: "quote" | "invoice" | "change_order";
+  id: string;
+  number: string;
+  state: CustomerDocState;
+  /** a quote: the agreed total (the quote plus its approved change orders);
+   *  a change order: its signed delta; an invoice: its amount */
+  amountCents: number;
+  /** REQ-565: a quote's approved change orders, summed — only when non-zero */
+  changeOrdersCents?: number;
+  url: string;
+  updatedAt: string;
+}
 
 /**
  * Enriched customer row for the /clients page. Extends `Customer` with derived
  * rollups computed by `BuildCustomerCards`. Never persisted — pure projection.
  */
 export interface CustomerCard extends Customer {
+  /** REQ-367: the last activity's timestamp — the client words "how long ago" in the live language */
   lastWhen: string | null;
-  lastWhenRel: string;
   lastTone: CustomerLastTone;
   balanceCents: number;
+  /** The balance sub-line in English — the neutral base (REQ-204/350). */
   balanceSub: string;
+  /** REQ-350 + REQ-367: the same line as data; the client words it in the
+   *  live language (shared/quote-flow/balance-sub.ts balanceSubLabel). */
+  balanceSubParts?: BalanceSubParts;
   activeJobs: number;
-  jobsSub: string;
+  jobsSub: CustomerJobsSub;
   status: CustomerStatus;
   temp: number;
   daysSinceContact: number;
   revenue12moCents: number;
+  /** REQ-323 — every quote and invoice of the customer, newest first. */
+  documents: CustomerDocument[];
+}
+
+/**
+ * A refused customer body. Danet answers `error.status || 500`, so this is a
+ * 400; REQ-278 (demo M16): a malformed contact's message is the dictionary
+ * key (`customer.invalidPhone` / `customer.invalidEmail`) the client shows.
+ */
+export class CustomerInputError extends Error {
+  readonly status = 400;
+  constructor(message: string) {
+    super(message);
+    this.name = "CustomerInputError";
+  }
+}
+
+/** REQ-278: a contact is checked when the customer is SAVED, not at send. */
+function assertContact(dto: { email?: string; phoneNumber?: string }): void {
+  const key = customerContactError(dto);
+  if (key) throw new CustomerInputError(key);
 }
 
 export function parseCreateCustomer(input: unknown): CreateCustomerDto {
   const dto = plainToInstance(CreateCustomerDto, input);
   const errors = validateSync(dto);
   if (errors.length) {
-    throw new Error(`invalid customer: ${JSON.stringify(errors)}`);
+    throw new CustomerInputError(`invalid customer: ${JSON.stringify(errors)}`);
   }
+  assertContact(dto);
+  // REQ-715: "Not set" is no language at all, never a stored ""
+  if ((dto.language as string | undefined) === "") delete dto.language;
   return dto;
 }
 
@@ -170,7 +260,10 @@ export function parseUpdateCustomer(input: unknown): UpdateCustomerDto {
   const dto = plainToInstance(UpdateCustomerDto, input);
   const errors = validateSync(dto);
   if (errors.length) {
-    throw new Error(`invalid customer patch: ${JSON.stringify(errors)}`);
+    throw new CustomerInputError(
+      `invalid customer patch: ${JSON.stringify(errors)}`,
+    );
   }
+  assertContact(dto);
   return dto;
 }

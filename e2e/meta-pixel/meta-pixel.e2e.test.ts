@@ -412,3 +412,92 @@ Deno.test("REQ-080: Subscribe fires with the plan's price when the receipt bring
     expect.eq(subs.length, 1, "one Subscribe on settings");
     expect.eq(subs[0].params.value, "199", "Monster Assist's price");
   }));
+
+/**
+ * REQ-229 — demo issues test-setup-claims-pixel-staff-registration and demo-lifecycle-m4: a staff
+ * login that lands on /welcome, and a staff member impersonating a new account (the session the
+ * demo stage's frame runs on), are not that account's CompleteRegistration. The pixel itself still
+ * boots on the page (a PageView), so a missing event is the rule, not a missing pixel. Run with
+ * SUPERADMIN_BOOTSTRAP_TOKEN set (shots' serve is stamped DENO_DEPLOY=true, REQ-181's note).
+ */
+Deno.test("REQ-229: no CompleteRegistration on /welcome for a staff login, nor for a staff member impersonating a new account", (t) =>
+  story(t, async ({ page, expect, http, baseUrl }) => {
+    const drain = watchPixel(page);
+    const { auth, phone, userId: staffId } = await signIn(
+      http,
+      page,
+      baseUrl,
+      { name: "Staff Story" },
+    );
+    const token = Deno.env.get("SUPERADMIN_BOOTSTRAP_TOKEN") ?? "";
+    const boot = await http("/api/admin/bootstrap", {
+      method: "POST",
+      headers: auth,
+      body: JSON.stringify({ phoneNumber: phone, token }),
+    });
+    expect.eq(boot.status, 200, `bootstrap super admin (${await boot.text()})`);
+
+    // Case A: the staff member's own onboarding is still open → /welcome
+    await page.goto("/welcome");
+    await page.locator("[data-cy='welcome-continue']").waitFor({
+      timeout: 60_000,
+    });
+    await frame(page);
+    let calls = await drain();
+    expect(
+      named(calls, "PageView").length >= 1,
+      "the pixel boots on /welcome",
+    );
+    expect.eq(
+      named(calls, "CompleteRegistration").length,
+      0,
+      "a staff login is not a registration",
+    );
+    expect.eq(
+      await page.evaluate(
+        (id: string) => localStorage.getItem(`pm:px:reg:${id}`),
+        staffId,
+      ),
+      null,
+      "nothing was spent on the staff account either",
+    );
+
+    // Case B: the staff member impersonates a brand-new account (the demo stage's session)
+    const other = `+1512${digits()}`;
+    await (await http("/api/auth/verify", {
+      method: "POST",
+      headers: JSON_HEADERS,
+      body: JSON.stringify({ phoneNumber: other, code: "000000" }),
+    })).body?.cancel();
+    const otherId =
+      ((await (await http(`/api/admin/users?q=${other.slice(2)}`, {
+        headers: auth,
+      })).json()) as { id: string }[])[0].id;
+    const status = await page.evaluate(
+      async (id: string) =>
+        (await fetch(`/api/admin/impersonate/${id}`, { method: "POST" }))
+          .status,
+      otherId,
+    );
+    expect.eq(status, 200, "impersonation started");
+    await page.goto("/welcome");
+    await page.locator("[data-cy='welcome-continue']").waitFor({
+      timeout: 60_000,
+    });
+    await frame(page);
+    calls = await drain();
+    expect(named(calls, "PageView").length >= 1, "the pixel boots");
+    expect.eq(
+      named(calls, "CompleteRegistration").length,
+      0,
+      "the staff impersonating a new account is not that account's registration",
+    );
+    expect.eq(
+      await page.evaluate(
+        (id: string) => localStorage.getItem(`pm:px:reg:${id}`),
+        otherId,
+      ),
+      null,
+      "and the account's once-per-browser key was not spent on the staff's browser",
+    );
+  }));

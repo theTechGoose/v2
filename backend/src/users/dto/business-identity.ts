@@ -1,6 +1,8 @@
 import {
+  ArrayNotEmpty,
   IsArray,
   IsBoolean,
+  IsIn,
   IsInt,
   IsOptional,
   IsString,
@@ -10,6 +12,10 @@ import {
   validateSync,
 } from "#class-validator";
 import { plainToInstance, Type } from "#class-transformer";
+import {
+  REMINDER_DAY_CHOICES,
+  type ReminderDay,
+} from "#quote-flow/reminder-settings.ts";
 
 /** A single payment-method handle the contractor is willing to receive
  *  funds on. Each method has a free-text handle the public invoice page
@@ -78,6 +84,11 @@ export class CardMethod {
    *  processor; this just tells the customer how to hand over the card. */
   @IsOptional() @IsString()
   instructions?: string;
+  /** REQ-782 — the business's card pay link (its own Stripe Payment Link, Square or PayPal
+   *  checkout page): "Pay by card" on the invoice opens it. https only (`checkCardPayUrl`,
+   *  shared/payments/pay-links.ts); "" clears it. */
+  @IsOptional() @IsString()
+  url?: string;
 }
 export class OtherMethod {
   @IsBoolean()
@@ -132,6 +143,18 @@ export class AcceptedPaymentMethods {
   links?: PayLinkMethod[];
 }
 
+/** REQ-623 (demo cycle 4, M26): the business's automatic payment reminders —
+ *  on/off for every invoice, and which steps run (days from the due date: -3, 0, 3, 7, 14, 30 — REQ-704). Unset → on,
+ *  day 3/7/14/30 (`reminderSettingsOf`, shared/quote-flow/reminder-settings.ts). */
+export class ReminderSettingsDto {
+  @IsBoolean()
+  enabled!: boolean;
+  @IsArray()
+  @ArrayNotEmpty()
+  @IsIn([...REMINDER_DAY_CHOICES], { each: true })
+  days!: ReminderDay[];
+}
+
 export interface BusinessIdentity {
   userId: string;
   businessName?: string;
@@ -163,6 +186,8 @@ export interface BusinessIdentity {
   invoiceNetDays?: number;
   /** REQ-172: the business's IANA time zone — the 9 am schedule texts follow it (default America/New_York) */
   timezone?: string;
+  /** REQ-623: automatic payment reminders — see ReminderSettingsDto */
+  reminders?: { enabled: boolean; days: ReminderDay[] };
   createdAt: string;
   updatedAt: string;
 }
@@ -215,6 +240,17 @@ export class UpdateBusinessIdentityDto {
   @ValidateNested()
   @Type(() => AcceptedPaymentMethods)
   acceptedPaymentMethods?: AcceptedPaymentMethods;
+
+  /** REQ-623 (demo cycle 4, M26) */
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => ReminderSettingsDto)
+  reminders?: ReminderSettingsDto;
+}
+
+/** A PUT body the DTO refuses is the caller's mistake — a 400, not a 500 (REQ-623). */
+class InvalidBusinessIdentity extends Error {
+  readonly status = 400;
 }
 
 export function parseUpdateBusinessIdentity(
@@ -223,7 +259,9 @@ export function parseUpdateBusinessIdentity(
   const dto = plainToInstance(UpdateBusinessIdentityDto, input);
   const errors = validateSync(dto);
   if (errors.length) {
-    throw new Error(`invalid business identity: ${JSON.stringify(errors)}`);
+    throw new InvalidBusinessIdentity(
+      `invalid business identity: ${JSON.stringify(errors)}`,
+    );
   }
   return dto;
 }

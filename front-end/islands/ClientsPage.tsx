@@ -6,7 +6,6 @@
  * what it was handed. The hero's totals and the loop strip are the roster's,
  * computed by the backend — nothing here derives from a list.
  */
-import { useEffect, useState } from "preact/hooks";
 import {
   clientsClient,
   type ClientsFilter,
@@ -14,6 +13,7 @@ import {
   type CustomerCard,
   type TopClientsResponse,
 } from "../clients/clients.ts";
+import { useEffect, useState } from "preact/hooks";
 import CustomerFormDialog from "../components/CustomerForm.tsx"; // REQ-625
 import ClientSheet from "../components/ClientSheet.tsx"; // REQ-626
 import {
@@ -22,6 +22,7 @@ import {
   TopClients,
 } from "../components/ClientsSections.tsx";
 import ClientsBoard, { filterFromSearch } from "./ClientsBoard.tsx";
+import { openIdFromSearch } from "../lib/customer-card-edit.ts";
 import { fieldClient, type SubscriptionView } from "../clients/field.ts";
 import { subscriptionsByCustomer } from "../lib/field.ts";
 import {
@@ -30,6 +31,8 @@ import {
   ShimmerStyle,
 } from "../components/Skeletons.tsx";
 import { langSignal, tFor } from "../lib/i18n.ts";
+import { followChanges, isDocChange } from "../lib/change-feed.ts";
+import type { TradeKind } from "../../shared/quote-flow/trade-fit.ts"; // REQ-743
 
 interface State {
   loading: boolean;
@@ -47,8 +50,16 @@ const INITIAL: State = {
 
 /** REQ-135 — a keystroke waits this long before it asks the API */
 const SEARCH_DEBOUNCE_MS = 250;
+/** REQ-352 — how long the "<name> added" confirmation stays up */
+const FLASH_MS = 4000;
 
-export default function ClientsPage({ lang: _lang }: { lang?: "en" | "es" }) {
+export default function ClientsPage(
+  { lang: _lang, tradeKind = "project" }: {
+    lang?: "en" | "es";
+    /** REQ-743 — the business's trade kind, read off its name by the route */
+    tradeKind?: TradeKind;
+  },
+) {
   const lang = langSignal.value;
   const [s, setS] = useState<State>(INITIAL);
   // REQ-145 — the account's subscriptions, once, grouped by customer for the cards
@@ -67,6 +78,13 @@ export default function ClientsPage({ lang: _lang }: { lang?: "en" | "es" }) {
     };
   }, []);
   const [addOpen, setAddOpen] = useState(false);
+  // REQ-352 (demo p15-5): "<name> added" after a successful Add
+  const [flash, setFlash] = useState("");
+  useEffect(() => {
+    if (!flash) return;
+    const t = setTimeout(() => setFlash(""), FLASH_MS);
+    return () => clearTimeout(t);
+  }, [flash]);
   // REQ-625: the customer being edited (the shared form, prefilled)
   const [editing, setEditing] = useState<CustomerCard | null>(null);
   // REQ-626: the client sheet — "Open card", or /clients?open=<customerId>
@@ -158,10 +176,14 @@ export default function ClientsPage({ lang: _lang }: { lang?: "en" | "es" }) {
   }, []);
 
   /** REQ-625: a saved customer (new or edited) shows at once — the board and
-   *  the open sheet are re-read. */
-  async function onCustomerSaved(saved: CustomerCard) {
+   *  the open sheet are re-read. REQ-352 (demo p15-5): a new one says
+   *  "<name> added". */
+  async function onCustomerSaved(saved: CustomerCard, created = false) {
     setAddOpen(false);
     setEditing(null);
+    if (created) {
+      setFlash(tFor(lang, "clientsPage.added", { name: saved.name }));
+    }
     if (sheetId && saved.id === sheetId) {
       setSheet({ customer: saved, failed: false });
     }
@@ -193,6 +215,32 @@ export default function ClientsPage({ lang: _lang }: { lang?: "en" | "es" }) {
       alive = false;
     };
   }, [page, q, filter]);
+
+  // REQ-696 (demo-loop cycle 5, M5): a signature, payment or new invoice
+  // re-reads the page shown (REQ-493's change feed) — the roster read
+  // "0 trabajos firmados" after a signature toast until a reload.
+  useEffect(() => followChanges(isDocChange, refreshClients), [
+    page,
+    q,
+    filter,
+  ]);
+
+  // REQ-600 (cycle 4, M5): a linked card (?open=<id>) that is not on the first
+  // page is searched for by name, once, so the board can open it
+  const [linkChecked, setLinkChecked] = useState(false);
+  useEffect(() => {
+    if (linkChecked || !s.data || typeof globalThis.location === "undefined") {
+      return;
+    }
+    setLinkChecked(true);
+    const id = openIdFromSearch(globalThis.location.search);
+    if (!id || s.data.items.some((c) => c.id === id)) return;
+    clientsClient.get(id).then((c) => {
+      if (c?.name) setQuery(c.name);
+    }).catch(() => {
+      // a stale or foreign link simply opens nothing
+    });
+  }, [s.data, linkChecked]);
 
   if (s.loading || !s.data) {
     return (
@@ -238,10 +286,16 @@ export default function ClientsPage({ lang: _lang }: { lang?: "en" | "es" }) {
         onPage={setPage}
         lang={lang}
         subsByCustomer={subsByCustomer}
+        tradeKind={tradeKind}
+        onCustomerSaved={refreshClients}
         onOpenCard={(id) => openSheet(id)}
         onEdit={(c) => setEditing(c)}
       >
-        <TopClients rows={top.results} lang={lang} />
+        <TopClients
+          rows={top.results}
+          unassigned={top.unassigned}
+          lang={lang}
+        />
         {
           /* NW-36 (REQ-013): the "Who's on your books" segments chart is gone —
             no part of the app ever collects a customer segment. */
@@ -261,7 +315,7 @@ export default function ClientsPage({ lang: _lang }: { lang?: "en" | "es" }) {
         <CustomerFormDialog
           mode="create"
           lang={lang}
-          onSaved={onCustomerSaved}
+          onSaved={(c) => onCustomerSaved(c, true)}
           onClose={() => setAddOpen(false)}
         />
       )}
@@ -274,6 +328,17 @@ export default function ClientsPage({ lang: _lang }: { lang?: "en" | "es" }) {
           onSaved={onCustomerSaved}
           onClose={() => setEditing(null)}
         />
+      )}
+      {flash && (
+        <div
+          role="status"
+          aria-live="polite"
+          class="clients-flash"
+          // REQ-379 — above the demo pill's band (--demo-pill-h, 0 when no demo)
+          style="position:fixed;left:50%;bottom:calc(28px + var(--demo-pill-h, 0px));transform:translateX(-50%);z-index:1001;background:var(--brand-green,#519843);color:#fff;padding:12px 20px;border-radius:12px;font-weight:700;font-size:14.5px;box-shadow:0 12px 32px rgba(20,72,82,0.22)"
+        >
+          {flash}
+        </div>
       )}
     </>
   );

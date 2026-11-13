@@ -200,3 +200,68 @@ Deno.test("customer e2e: PUT/DELETE by another user are rejected", async () => {
     await drain(del);
   });
 });
+
+// REQ-278 (demo M16): a malformed phone or email is refused when the customer
+// is SAVED (POST and PUT answer 400 naming the dictionary key), not accepted
+// and found out only when the paperwork is sent.
+for (
+  const [field, value, key] of [
+    ["phoneNumber", "123", "customer.invalidPhone"],
+    ["phoneNumber", "555-12", "customer.invalidPhone"],
+    ["phoneNumber", "512-555-01", "customer.invalidPhone"],
+    ["email", "davis@@gmail", "customer.invalidEmail"],
+  ] as const
+) {
+  Deno.test(`REQ-278 M16 customer e2e: POST and PUT refuse ${field} "${value}" with 400 ${key}`, async () => {
+    await withServer(async (port) => {
+      const sid = await login(port);
+      const headers = { "content-type": "application/json", "x-session-id": sid };
+      const post = await fetch(`http://localhost:${port}/customers`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ name: "Davis", [field]: value }),
+      });
+      const postBody = await post.text();
+      assertEquals(post.status, 400);
+      assertEquals(postBody.includes(key), true, postBody);
+      const list = await fetch(`http://localhost:${port}/customers`, { headers }).then((r) => r.json());
+      assertEquals(list.length, 0);
+
+      const ok = await fetch(`http://localhost:${port}/customers`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ name: "Davis", phoneNumber: "(512) 555-0199", email: "davis@gmail.com" }),
+      }).then((r) => r.json());
+      const put = await fetch(`http://localhost:${port}/customers/${ok.id}`, {
+        method: "PUT",
+        headers,
+        body: JSON.stringify({ [field]: value }),
+      });
+      const putBody = await put.text();
+      assertEquals(put.status, 400);
+      assertEquals(putBody.includes(key), true, putBody);
+      const fetched = await fetch(`http://localhost:${port}/customers/${ok.id}`, { headers }).then((r) => r.json());
+      assertEquals(fetched.phoneNumber, "(512) 555-0199");
+      assertEquals(fetched.email, "davis@gmail.com");
+    });
+  });
+}
+
+Deno.test("REQ-599 m30 customer e2e: POST /customers keeps the New customer modal's address", async () => {
+  await withServer(async (port) => {
+    const sid = await login(port);
+    const created = await fetch(`http://localhost:${port}/customers`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-session-id": sid },
+      body: JSON.stringify({
+        name: "Bob",
+        address: "1600 Congress Ave, Austin, TX 78701",
+      }),
+    }).then((r) => r.json());
+    assertEquals(created.address, "1600 Congress Ave, Austin, TX 78701");
+    const fetched = await fetch(`http://localhost:${port}/customers/${created.id}`, {
+      headers: { "x-session-id": sid },
+    }).then((r) => r.json());
+    assertEquals(fetched.address, "1600 Congress Ave, Austin, TX 78701");
+  });
+});

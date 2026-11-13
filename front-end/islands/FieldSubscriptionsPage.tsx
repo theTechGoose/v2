@@ -7,6 +7,7 @@
  * REQ-152 — the customer field is the SearchSelect (REQ-136): type to narrow,
  * pick; the pick fills the address (REQ-144); retyping un-picks.
  */
+import Backdrop from "../components/Backdrop.tsx";
 import { useEffect, useRef, useState } from "preact/hooks";
 import {
   fieldClient,
@@ -27,6 +28,8 @@ import {
   todayIso,
 } from "../lib/field.ts";
 import { langSignal, t } from "../lib/i18n.ts";
+import { formatLongDate } from "../../shared/quote-flow/format-helpers.ts";
+import type { FieldSubscriptionsSeed } from "../lib/field-ssr.ts";
 import SearchSelect from "./SearchSelect.tsx";
 
 /** the cadence <select>'s values: an interval in weeks, or monthly */
@@ -180,9 +183,14 @@ async function loadAllCustomers(): Promise<Customer[]> {
   return out.sort((a, b) => a.name.localeCompare(b.name));
 }
 
-export default function FieldSubscriptionsPage() {
+/** REQ-730 (demo c2-p13-p) — `seed`: the cards read by the route on the SSR side; the first HTML carries them, not "Loading…" */
+export default function FieldSubscriptionsPage(
+  { seed }: { seed?: FieldSubscriptionsSeed | null } = {},
+) {
   const lang = langSignal.value;
-  const [subs, setSubs] = useState<SubscriptionView[] | null>(null);
+  const [subs, setSubs] = useState<SubscriptionView[] | null>(
+    seed?.subs ?? null,
+  );
   const [loadErr, setLoadErr] = useState<string | null>(null);
   const [customers, setCustomers] = useState<Customer[]>([]);
   /** REQ-152 — the customer last picked in the open form (its address may sit in the box) */
@@ -214,14 +222,17 @@ export default function FieldSubscriptionsPage() {
 
   useEffect(() => {
     let alive = true;
-    fieldClient.subscriptions().then((list) => {
-      if (!alive) return;
-      setSubs(list);
-    }).catch((err: unknown) => {
-      if (!alive) return;
-      setLoadErr(errMsg(err));
-      setSubs([]);
-    });
+    // REQ-730 — seeded on the server: the list is already here
+    if (!seed) {
+      fieldClient.subscriptions().then((list) => {
+        if (!alive) return;
+        setSubs(list);
+      }).catch((err: unknown) => {
+        if (!alive) return;
+        setLoadErr(errMsg(err));
+        setSubs([]);
+      });
+    }
     loadAllCustomers().then((list) => {
       if (alive) setCustomers(list);
     }).catch(() => {
@@ -354,7 +365,9 @@ export default function FieldSubscriptionsPage() {
       if (form.options.length) pick(Math.max(form.active, 0));
       else priceRef.current?.focus();
     } else if (e.key === "Escape") {
-      e.stopPropagation();
+      // REQ-732: only an Escape that shuts the open search stops here; otherwise it
+      // reaches the dialog's Backdrop and closes Nueva suscripción
+      if (form.searchOn || form.options.length) e.stopPropagation();
       searchSeq.current++;
       patch({ searchOn: false, options: [], active: -1 });
     }
@@ -603,6 +616,24 @@ export default function FieldSubscriptionsPage() {
                       </div>
                     ))}
                   </div>
+                  {
+                    /* REQ-699 (demo-loop cycle 5, M20): a subscription a
+                      signed quote made says so — "From Q-001 · Monthly ·
+                      $180/mo" — and opens that quote */
+                  }
+                  {s.quoteId && (
+                    <a
+                      class="hint"
+                      data-cy="subs-from-quote"
+                      href={`/quotes?open=${s.quoteId}`}
+                      style="display:block;text-decoration:none"
+                    >
+                      {t("field.subs.fromQuote", {
+                        quote: s.quoteNumber ?? "",
+                      })}
+                      {s.billing ? ` · ${s.billing[lang]}` : ""}
+                    </a>
+                  )}
                   {cardErr?.id === s.id && (
                     <p class="alert" style="margin:0">{cardErr.msg}</p>
                   )}
@@ -692,11 +723,9 @@ export default function FieldSubscriptionsPage() {
         )}
 
       {form && (
-        <div
+        <Backdrop
           class="modal-bg"
-          onClick={(e) => {
-            if (e.target === e.currentTarget) close();
-          }}
+          onClose={() => close()}
         >
           <form class="modal" onSubmit={submit} data-cy="subs-form">
             <h2>
@@ -747,7 +776,7 @@ export default function FieldSubscriptionsPage() {
               </div>
               <span class="hint">
                 {t("field.subs.manageCustomers")}{" "}
-                <a href="/customers">{t("nav.customers")}</a>
+                <a class="link" href="/customers">{t("nav.customers")}</a>
               </span>
             </div>
 
@@ -804,6 +833,17 @@ export default function FieldSubscriptionsPage() {
                   onChange={(e) =>
                     onStartDate((e.currentTarget as HTMLInputElement).value)}
                 />
+                {
+                  /* REQ-713 (cycle 5, m27): the native date input draws the
+                    BROWSER locale (11/12/2026 in an en-US browser), so the
+                    picked day is also spelled out in the page language —
+                    the REQ-587 companion from the payment form. */
+                }
+                {form.startDate && (
+                  <span class="hint" data-cy="subs-start-text">
+                    {formatLongDate(form.startDate, lang)}
+                  </span>
+                )}
               </label>
             </div>
 
@@ -1048,7 +1088,7 @@ export default function FieldSubscriptionsPage() {
               </button>
             </div>
           </form>
-        </div>
+        </Backdrop>
       )}
     </>
   );

@@ -4,10 +4,32 @@ import { AgentMessageStore } from "@agents/domain/data/agent-message-store/mod.t
 import { QuoteStore } from "@paperwork/domain/data/quote-store/mod.ts";
 import { SendPaperworkEmail } from "@paperwork/domain/coordinators/send-paperwork-email/mod.ts";
 import { SendPaperworkSms } from "@paperwork/domain/coordinators/send-paperwork-sms/mod.ts";
+import { UserStore } from "@users/domain/data/user-store/mod.ts";
+import { CustomerStore } from "@crm/domain/data/customer-store/mod.ts";
 import { EventBus } from "@core/business/events/mod.ts";
+import { TranslateQuote } from "@agents/domain/coordinators/translate-quote/mod.ts";
 import { t } from "@core/i18n/mod.ts";
+import {
+  QuotePriceError,
+  storedQuotePriceProblem,
+} from "#quote-flow/quote-price-guard.ts";
+import type { SmsFailureCode } from "#quote-flow/sms-failure.ts";
+import {
+  type ChatI18nRef,
+  type ChatI18nVar,
+  isChatI18nRef,
+  renderChatI18n,
+} from "#quote-flow/chat-i18n.ts"; // REQ-589
+import { formatPhoneDisplay } from "#quote-flow/format-helpers.ts";
+import { versionOf } from "#documents/versions.ts";
+import { getKv } from "@core/data/kv/mod.ts";
 import type { AgentConversation } from "@agents/dto/conversation.ts";
 import type { AgentMessage } from "@agents/dto/message.ts";
+import {
+  deliverySucceeded,
+  isUndelivered,
+  type QuoteDelivery,
+} from "#quote-flow/delivery.ts";
 
 export type SendChannel = "email" | "sms" | "both";
 
@@ -23,7 +45,14 @@ export interface SendQuoteInput {
   /** Which language to send the paperwork in (the "Send in <lang>" button).
    *  Overrides the contractor's stored default for THIS dispatch only. */
   language?: "en" | "es";
+  /** REQ-399 (demo M16): one Send's id, minted by the client per click. A
+   *  repeat of the same id within SEND_DEDUPE_MS (a double-click, a retried
+   *  request) delivers nothing again and answers with no new messages. */
+  requestId?: string;
 }
+
+/** REQ-399: how long a Send's requestId is remembered. */
+export const SEND_DEDUPE_MS = 10_000;
 
 export interface SendQuoteResult {
   conversation: AgentConversation;
@@ -43,9 +72,11 @@ export interface SendQuoteResult {
  *   3. If the quote is already 'sent', short-circuit the *state flip*
  *      (idempotent; re-clicks don't double-emit events). Email/SMS
  *      dispatch is NOT idempotent — the user clicked Send, so we deliver.
- *   4. Flip quote.status = 'sent' + stamp sentAt, emit `quote:sent`.
- *   5. Dispatch via the requested channel(s). Failures don't abort the
- *      status flip — the user can retry from the quote surface.
+ *   4. Dispatch via the requested channel(s).
+ *   5. Store the outcome on the quote (`lastDelivery`). ONLY when a channel
+ *      delivered: stamp deliveredAt/sentAt, flip a draft to 'sent', emit
+ *      `quote:sent` (REQ-236 — a failed send is not a sent quote; the user
+ *      fixes the contact and retries).
  *   6. Append a system message so the chat shows what happened.
  */
 @Injectable()
@@ -57,9 +88,34 @@ export class SendQuote {
     private bus: EventBus,
     private emailer: SendPaperworkEmail,
     private smser: SendPaperworkSms,
+    private users: UserStore,
+    /** REQ-264 (M15): fills every document language before dispatch. */
+    private translator?: TranslateQuote,
+    /** REQ-476: names the customer on the `quote:sent` event. */
+    private customers?: CustomerStore,
   ) {}
 
   async run(input: SendQuoteInput): Promise<SendQuoteResult> {
+    const requestId = input.requestId?.trim();
+    if (!requestId) return this.send(input);
+    // REQ-399 (demo M16): claim the requestId atomically BEFORE dispatch, so
+    // two requests in flight together cannot both deliver. A Send that
+    // throws gives its id back (the user can retry the same click).
+    const key = ["send-quote-request", input.userId, requestId];
+    if (!(await claimRequest(key))) {
+      const conv = await this.conversations.get(input.conversationId);
+      if (conv.userId !== input.userId) throw new Error("forbidden");
+      return { conversation: conv, newMessages: [] };
+    }
+    try {
+      return await this.send(input);
+    } catch (err) {
+      await (await getKv()).delete(key).catch(() => {});
+      throw err;
+    }
+  }
+
+  private async send(input: SendQuoteInput): Promise<SendQuoteResult> {
     const conv = await this.conversations.get(input.conversationId);
     if (conv.userId !== input.userId) throw new Error("forbidden");
     if (conv.quoteId !== input.quoteId) {
@@ -67,12 +123,39 @@ export class SendQuote {
     }
 
     let quote = await this.quotes.getOwned(input.quoteId, input.userId);
+    // REQ-302 (demo B1): a quote with no price is never sent.
+    const priceProblem = storedQuotePriceProblem(quote);
+    if (priceProblem) {
+      const me = await this.users.get(input.userId).catch(() => null);
+      throw new QuotePriceError(
+        priceProblem,
+        t(me?.language === "es" ? "es" : "en", "chatCoordinator.priceMissing", {
+          item: quote.lineItems?.[0]?.description?.trim() || quote.summary ||
+            "this job",
+        }),
+      );
+    }
     // Bind the conversation's customer before dispatch so the recipient
     // (email/phone) resolves from the customer on file.
     if (!quote.customerId && conv.customerId) {
       quote = await this.quotes.update(quote.id, input.userId, {
         customerId: conv.customerId,
       });
+    }
+
+    // REQ-264 (M15): the customer can open the document in either language
+    // (/q?lang=…, the email's language), so fill every missing translation —
+    // description AND line items — on the server before it goes out. Never
+    // blocks the send: on failure the base text still renders.
+    if (this.translator) {
+      try {
+        quote = await this.translator.run({
+          userId: input.userId,
+          quoteId: quote.id,
+        });
+      } catch (err) {
+        console.error(`[send-quote] translate failed for ${quote.id}:`, err);
+      }
     }
 
     const channel: SendChannel = input.channel ?? "email";
@@ -83,28 +166,9 @@ export class SendQuote {
     let emailFailureReason: string | undefined;
     let textedTo: string | undefined;
     let smsFailureReason: string | undefined;
-
-    // Stamp the send state on the FIRST dispatch. sentAt (not status) is the
-    // guard: lock-quote flips status to "sent" without a timestamp, and the
-    // SMS-only path used to skip the stamp entirely — which hid the freshly
-    // won job from /jobs and every dashboard number (UX-02).
-    if (!quote.sentAt) {
-      const statusFlip = !quote.status || quote.status === "draft";
-      await this.quotes.update(quote.id, input.userId, {
-        ...(statusFlip ? { status: "sent" } : {}),
-        sentAt: new Date().toISOString(),
-      });
-      // Emit only on the actual draft→sent transition — lock-quote already
-      // emitted `quote sent` when it flipped the status ahead of us.
-      if (statusFlip) {
-        await this.bus.emit({
-          userId: input.userId,
-          entityType: "quote",
-          entityId: quote.id,
-          action: "sent",
-        });
-      }
-    }
+    // REQ-226: the structured why — the assistant's recovery card branches
+    // on this, never on the translated reason.
+    let smsFailureCode: SmsFailureCode | undefined;
 
     if (wantEmail) {
       try {
@@ -112,6 +176,7 @@ export class SendQuote {
           kind: "quote",
           resourceId: quote.id,
           language: input.language,
+          channel, // REQ-682: the email may promise a text only on a texted send
         });
         if (result.ok) emailedTo = result.to;
         else emailFailureReason = result.reason;
@@ -129,7 +194,37 @@ export class SendQuote {
       }
     }
 
-    if (wantSms) {
+    // REQ-764 (demo-loop cycle 5v2, m12): on "Text + Email", a number that
+    // can't take texts (the reserved 555 block — the send dialog already says
+    // so, REQ-569/681) is not texted at all: the text is skipped, its reason
+    // kept, and the divider says "not texted: <reason>", not "text failed".
+    // The failure code stays "fictional" so the REQ-226 "check the number"
+    // form still offers the fix. A text-only send still reports its refusal.
+    let smsSkipped = false;
+    if (
+      channel === "both" &&
+      await this.smser.recipientCantText(input.userId, {
+        kind: "quote",
+        resourceId: quote.id,
+      }).catch(() => false)
+    ) {
+      smsSkipped = true;
+      smsFailureReason = t(
+        await this.uiLanguage(input.userId),
+        "sms.fictionalNumber",
+      );
+      smsFailureCode = "fictional";
+      console.log(
+        `[send-quote] quote=${quote.id} sms skipped: the number can't receive texts`,
+      );
+      // REQ-784 (demo-loop dv1, d12): the skipped text is in the outbox —
+      // "not sent" and why — next to the email that went.
+      await this.smser.noteSkipped(input.userId, {
+        kind: "quote",
+        resourceId: quote.id,
+        language: input.language,
+      }, smsFailureReason);
+    } else if (wantSms) {
       try {
         const result = await this.smser.run(input.userId, {
           kind: "quote",
@@ -137,7 +232,10 @@ export class SendQuote {
           language: input.language,
         });
         if (result.ok) textedTo = result.to;
-        else smsFailureReason = result.reason;
+        else {
+          smsFailureReason = result.reason;
+          smsFailureCode = result.failureCode ?? "other";
+        }
         console.log(
           `[send-quote] quote=${quote.id} sms ok=${result.ok} to=${
             result.to ?? "<none>"
@@ -145,6 +243,7 @@ export class SendQuote {
         );
       } catch (err) {
         smsFailureReason = (err as Error).message ?? "dispatch threw";
+        smsFailureCode = "other";
         console.error(
           `[send-quote] sms dispatch failed for quote ${quote.id}:`,
           err,
@@ -152,14 +251,103 @@ export class SendQuote {
       }
     }
 
-    const dividerContent = buildDivider({
+    // REQ-236 (demo M8): the quote is "sent" only once a channel actually
+    // delivered it. The outcome of every attempt is stored on the quote so
+    // /quotes, the pipeline counts, the header and the thread list can tell
+    // "sent" from "tried and failed". sentAt (not status) guards the one-time
+    // send state: quotes from before REQ-234 may carry status "sent" (lock-quote
+    // used to flip it; it now only stamps lockedAt) — then this only records
+    // the delivery. A locked quote is still a draft, so this is where it
+    // becomes "sent" (REQ-234).
+    const now = new Date().toISOString();
+    const fresh = await this.quotes.getOwned(quote.id, input.userId);
+    // REQ-586 (demo-loop cycle 4, M11): the language this send went out in,
+    // resolved like the dispatchers do — REQ-715 (cycle 5, m31): for the
+    // customer the published quote is for — recorded on the quote and the
+    // divider so the in-app customer links open in it (?lang=).
+    const sendLang = await this.emailer.sendLanguage(
+      input.userId,
+      input.language,
+      fresh.customerId,
+    ).catch(() => input.language);
+    const lastDelivery: QuoteDelivery = {
+      at: now,
+      channel,
+      ...(sendLang ? { lang: sendLang } : {}),
+      ...(emailedTo ? { emailedTo } : {}),
+      ...(textedTo ? { textedTo } : {}),
+      ...(emailFailureReason ? { emailFailureReason } : {}),
+      ...(smsFailureReason ? { smsFailureReason } : {}),
+    };
+    const delivered = deliverySucceeded(lastDelivery);
+    // The transition is judged on the quote as it stood BEFORE dispatch:
+    // the email/SMS dispatchers stamp status/sentAt themselves on success.
+    const statusFlip = delivered && !quote.sentAt &&
+      (!quote.status || quote.status === "draft");
+    const updatedQuote = await this.quotes.update(quote.id, input.userId, {
+      lastDelivery,
+      ...(delivered && !fresh.deliveredAt ? { deliveredAt: now } : {}),
+      ...(delivered && !fresh.sentAt ? { sentAt: now } : {}),
+      ...(statusFlip && fresh.status !== "sent" ? { status: "sent" } : {}),
+    });
+    // Emit only on the actual draft→sent transition (REQ-234: a locked quote
+    // is still a draft, so lock-quote never emitted it).
+    // REQ-476 (demo cycle 3, p8-pair9-a / p8-pair10-c): the event names the
+    // customer and the job, like quote:accepted does, so the feed (and the
+    // topbar ticker that reads it) says "Quote sent to María García" — not
+    // the "your client" fallback.
+    if (statusFlip) {
+      const customerName = await this.customerName(
+        fresh.customerId ?? quote.customerId,
+        input.userId,
+      );
+      const jobName = fresh.jobName ?? quote.jobName;
+      await this.bus.emit({
+        userId: input.userId,
+        entityType: "quote",
+        entityId: quote.id,
+        action: "sent",
+        data: {
+          ...(customerName ? { customerName } : {}),
+          ...(jobName ? { jobName } : {}),
+        },
+      });
+    }
+
+    // REQ-248: a send publishes a pending edit as the next version — say so,
+    // so a revision never goes out as just another "emailed to …". `fresh`
+    // is the quote as the dispatch left it (re-read above).
+    const publishedVersion = versionOf(fresh) > versionOf(quote)
+      ? versionOf(fresh)
+      : undefined;
+    // REQ-276 (demo i18n-formatting-m8): the note is chat copy the
+    // contractor reads — their UI language, like the SMS reason inside it
+    // (REQ-030) — never the document's send language. REQ-589 (cycle 4,
+    // m15): stored as key + vars too, so it follows a later EN/ES switch.
+    const lang = await this.uiLanguage(input.userId);
+    const emailFailure = reasonRef(emailFailureReason);
+    const smsFailure = reasonRef(smsFailureReason, smsFailureCode);
+    const delivery = buildDivider({
       channel,
       emailedTo,
-      emailFailureReason,
+      emailFailure,
       textedTo,
-      smsFailureReason,
-      lang: input.language ?? "en",
+      smsFailure,
+      smsSkipped,
     });
+    const dividerRef: ChatI18nRef = publishedVersion
+      ? {
+        key: "sendQuote.divider.withRevision",
+        vars: {
+          revision: {
+            key: "sendQuote.divider.revisionPublished",
+            vars: { version: String(publishedVersion) },
+          },
+          delivery,
+        },
+      }
+      : delivery;
+    const dividerContent = renderChatI18n(dividerRef, lang, t);
     const note = await this.messages.append({
       conversationId: conv.id,
       role: "system",
@@ -168,87 +356,173 @@ export class SendQuote {
       payload: {
         phase: 3,
         label: dividerContent,
+        i18n: dividerRef,
         quoteId: quote.id,
         channel,
+        ...(sendLang ? { lang: sendLang } : {}),
+        ...(publishedVersion ? { publishedVersion } : {}),
         ...(emailedTo ? { emailedTo } : {}),
         ...(emailFailureReason ? { emailFailureReason } : {}),
         ...(textedTo ? { textedTo } : {}),
         ...(smsFailureReason ? { smsFailureReason } : {}),
+        ...(smsFailureCode ? { smsFailureCode } : {}),
+        ...(smsSkipped ? { smsSkipped } : {}),
+        ...(isChatI18nRef(emailFailure)
+          ? { emailFailureI18n: emailFailure }
+          : {}),
+        ...(isChatI18nRef(smsFailure) ? { smsFailureI18n: smsFailure } : {}),
       },
     });
 
+    // The thread-list chip: "undelivered" until some send reaches the
+    // customer; a later failed resend of a delivered quote stays "sent".
     const updatedConv = await this.conversations.update(conv.id, {
-      quoteStatus: "sent",
+      quoteStatus: isUndelivered(updatedQuote) ? "undelivered" : "sent",
     });
 
     return { conversation: updatedConv, newMessages: [note] };
   }
+
+  /** REQ-476: the customer's name for the event, or nothing (never throws). */
+  private async customerName(
+    customerId: string | undefined,
+    userId: string,
+  ): Promise<string | undefined> {
+    if (!customerId || !this.customers) return undefined;
+    try {
+      return (await this.customers.getOwned(customerId, userId)).name?.trim() ||
+        undefined;
+    } catch {
+      return undefined;
+    }
+  }
+
+  private async uiLanguage(userId: string): Promise<"en" | "es"> {
+    const me = await this.users.get(userId).catch(() => null);
+    return me?.language === "es" ? "es" : "en";
+  }
 }
 
-function buildDivider(o: {
+/** REQ-399: true when this call owns the requestId (first within the window).
+ *  The stored `at` is checked too — KV's expireIn only bounds deletion. */
+async function claimRequest(key: Deno.KvKey): Promise<boolean> {
+  const kv = await getKv();
+  const now = Date.now();
+  const cur = await kv.get<{ at: number }>(key);
+  if (cur.value && now - cur.value.at < SEND_DEDUPE_MS) return false;
+  const res = await kv.atomic()
+    .check(cur)
+    .set(key, { at: now }, { expireIn: SEND_DEDUPE_MS })
+    .commit();
+  return res.ok;
+}
+
+/** REQ-589 (cycle 4, m15): the note as key + vars, so the island renders
+ *  it in the reader's language; `content` is this rendered at send time. */
+export function buildDivider(o: {
   channel: SendChannel;
   emailedTo?: string;
-  emailFailureReason?: string;
+  emailFailure?: ChatI18nVar;
   textedTo?: string;
-  smsFailureReason?: string;
-  lang: "en" | "es";
-}): string {
-  const {
-    channel,
-    emailedTo,
-    emailFailureReason,
-    textedTo,
-    smsFailureReason,
-    lang,
-  } = o;
+  smsFailure?: ChatI18nVar;
+  /** REQ-764: the text was skipped (the number can't take texts), not tried. */
+  smsSkipped?: boolean;
+}): ChatI18nRef {
+  const { channel, emailedTo, textedTo } = o;
+  const emailFailureReason = o.emailFailure;
+  const smsFailureReason = o.smsFailure;
+  const noRecipient = { key: "sendQuote.divider.noRecipient" };
   const emailOk = !!emailedTo;
   const smsOk = !!textedTo;
+  // REQ-593 (cycle 4, m12): the label shows the number as the app does
+  // everywhere ("+1 (512) 867-5309"), not the E.164 the SMS service used.
+  const textedShown = textedTo ? formatPhoneDisplay(textedTo) : "";
 
   if (channel === "email") {
     if (emailOk) {
-      return t(lang, "sendQuote.divider.emailed", { emailedTo: emailedTo! });
+      return {
+        key: "sendQuote.divider.emailed",
+        vars: { emailedTo: emailedTo! },
+      };
     }
     if (emailFailureReason) {
-      return t(lang, "sendQuote.divider.emailFailed", {
-        reason: emailFailureReason,
-      });
+      return {
+        key: "sendQuote.divider.emailFailed",
+        vars: { reason: emailFailureReason },
+      };
     }
-    return t(lang, "sendQuote.divider.noEmail");
+    return { key: "sendQuote.divider.noEmail" };
   }
 
   if (channel === "sms") {
     if (smsOk) {
-      return t(lang, "sendQuote.divider.texted", { textedTo: textedTo! });
+      return { key: "sendQuote.divider.texted", vars: { textedTo: textedShown } };
     }
-    if (smsFailureReason) {
-      return t(lang, "sendQuote.divider.textFailed", {
-        reason: smsFailureReason,
-      });
-    }
-    return t(lang, "sendQuote.divider.noPhone");
+    // REQ-525 (demo cycle 3, p8-pair2-a): the reason has one home — the
+    // send card reads it from this divider's payload — so the label stays
+    // short instead of restating it a second (and third) time.
+    if (smsFailureReason) return { key: "sendQuote.divider.textNotDelivered" };
+    return { key: "sendQuote.divider.noPhone" };
   }
 
   // both
   if (emailOk && smsOk) {
-    return t(lang, "sendQuote.divider.emailedAndTexted", {
-      emailedTo: emailedTo!,
-      textedTo: textedTo!,
-    });
+    return {
+      key: "sendQuote.divider.emailedAndTexted",
+      vars: { emailedTo: emailedTo!, textedTo: textedShown },
+    };
+  }
+  if (emailOk && o.smsSkipped && smsFailureReason) {
+    return {
+      key: "sendQuote.divider.emailedNotTexted",
+      vars: { emailedTo: emailedTo!, reason: smsFailureReason },
+    };
   }
   if (emailOk) {
-    return t(lang, "sendQuote.divider.emailedTextFailed", {
-      emailedTo: emailedTo!,
-      reason: smsFailureReason ?? t(lang, "sendQuote.divider.noRecipient"),
-    });
+    return {
+      key: "sendQuote.divider.emailedTextFailed",
+      vars: { emailedTo: emailedTo!, reason: smsFailureReason ?? noRecipient },
+    };
   }
   if (smsOk) {
-    return t(lang, "sendQuote.divider.textedEmailFailed", {
-      textedTo: textedTo!,
-      reason: emailFailureReason ?? t(lang, "sendQuote.divider.noRecipient"),
-    });
+    return {
+      key: "sendQuote.divider.textedEmailFailed",
+      vars: { textedTo: textedShown, reason: emailFailureReason ?? noRecipient },
+    };
   }
-  return t(lang, "sendQuote.divider.notDelivered", {
-    emailReason: emailFailureReason ?? t(lang, "sendQuote.divider.noRecipient"),
-    smsReason: smsFailureReason ?? t(lang, "sendQuote.divider.noRecipient"),
-  });
+  return {
+    key: "sendQuote.divider.notDelivered",
+    vars: {
+      emailReason: emailFailureReason ?? noRecipient,
+      smsReason: smsFailureReason ?? noRecipient,
+    },
+  };
 }
+
+/** REQ-276: the dispatchers' "no recipient: pass `to` …" is a developer
+ *  message in English; in the contractor's note it reads as the localized
+ *  "no recipient" (the note's own key), so the line stays one language.
+ *  REQ-589 (cycle 4, m15): a reason with a known key is kept as that key —
+ *  the SMS failure code names it (sms.fictionalNumber, …) — so it re-renders
+ *  in the reader's language; any other reason stays the text it is. */
+function reasonRef(
+  reason: string | undefined,
+  smsCode?: SmsFailureCode,
+): ChatI18nVar | undefined {
+  if (!reason) return undefined;
+  if (/^no recipient\b/.test(reason)) {
+    return { key: "sendQuote.divider.noRecipient" };
+  }
+  const key = smsCode ? SMS_REASON_KEY[smsCode] : undefined;
+  return key ? { key } : reason;
+}
+
+/** The dictionary line a failed text's code stands for (the copy the SMS
+ *  path translates: customer-sms + the Twilio adapter's reason keys). */
+const SMS_REASON_KEY: Partial<Record<SmsFailureCode, string>> = {
+  missing: "sendQuote.divider.noRecipient",
+  fictional: "sms.fictionalNumber",
+  invalid: "sms.invalidNumber",
+  notMobile: "sms.notMobile",
+  optedOut: "sms.optedOut",
+};

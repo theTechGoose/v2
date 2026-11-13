@@ -269,6 +269,7 @@
   text-align: left;
   line-height: 1.3;
   transition: gap var(--dur-fast) var(--ease-out);
+  text-decoration: none; /* REQ-277: a message nudge is a link */
 }
 .ccard2__nudge:hover {
   gap: 9px;
@@ -321,19 +322,36 @@
   transform: translateY(8%);
   opacity: 0;
   pointer-events: none;
-  transition: transform 380ms var(--ease-bounce), opacity 240ms var(--ease-out);
+  /* REQ-419 (demo-loop cycle 2, m40): the back is pinned to the front's
+     height (inset:0), so when its contact, subscriptions and documents groups
+     are taller it scrolls as a whole instead of squeezing each group */
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  /* REQ-419 (S7c): a closed back is not just transparent — it is hidden
+     once its fade-out has finished (visibility flips after 240ms) */
+  visibility: hidden;
+  transition:
+    transform 380ms var(--ease-bounce),
+    opacity 240ms var(--ease-out),
+    visibility 0s linear 240ms;
   box-shadow: inset 0 0 0 1px rgba(26, 83, 92, 0.06);
 }
 .ccard2--open .ccard2__panel {
   transform: translateY(0);
   opacity: 1;
   pointer-events: auto;
+  visibility: visible;
+  transition:
+    transform 380ms var(--ease-bounce),
+    opacity 240ms var(--ease-out),
+    visibility 0s linear 0s;
 }
 .ccard2__panel-head {
   display: flex;
   align-items: center;
   gap: 12px;
   margin-bottom: 14px;
+  flex-shrink: 0;
 }
 .ccard2__panel-av {
   width: 44px;
@@ -402,6 +420,9 @@
   border-radius: var(--radius-md);
   overflow: hidden;
   margin-bottom: 12px;
+  /* REQ-419 (m40): overflow:hidden gave this flex item min-height:0, so it
+     shrank below its rows (ADDRESS cut, DOCUMENTS half hidden) */
+  flex-shrink: 0;
 }
 .ccard2__panel-row {
   display: flex;
@@ -461,7 +482,7 @@
 .ccard2__panel-actions {
   margin-top: auto;
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: 1fr; /* REQ-277: Message is the one action */
   gap: 8px;
 }
 .ccard2__panel-act {
@@ -478,6 +499,7 @@
   font-weight: 700;
   font-size: 12px;
   cursor: pointer;
+  text-decoration: none; /* REQ-277: Message is a link */
   transition: transform var(--dur-fast) var(--ease-out);
 }
 .ccard2__panel-act--pink {
@@ -689,11 +711,19 @@
   gap: 18px;
   align-items: start;
 }
+/* REQ-419 (p13-k): the cards grid and its pager share the main column;
+   the pager sits under the grid, not in a card's cell */
+.clay2__main {
+  min-width: 0;
+}
 
 /* Toolbar */
+/* REQ-357 (demo cycle 1, p5): search, sort and export share the first row;
+   the filter chips get a full row of their own and wrap, so no chip is ever
+   clipped or scrolled out of sight, at any width or in any language. */
 .ctoolbar2 {
   display: grid;
-  grid-template-columns: 1fr auto auto;
+  grid-template-columns: minmax(0, 1fr) auto auto;
   gap: 8px;
   align-items: center;
   background: #fff;
@@ -724,7 +754,13 @@
   color: var(--fg-subtle);
 }
 .ctoolbar2__filters {
+  grid-column: 1 / -1;
+  grid-row: 2;
+  justify-self: start;
+  max-width: 100%;
+  min-width: 0;
   display: flex;
+  flex-wrap: wrap;
   gap: 4px;
   padding: 2px;
   background: var(--bg-sunken);
@@ -899,9 +935,6 @@
   }
   .ctoolbar2 {
     grid-template-columns: 1fr;
-  }
-  .ctoolbar2__filters {
-    overflow-x: auto;
   }
   .ph2__title {
     font-size: 28px;

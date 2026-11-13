@@ -1,7 +1,13 @@
 import { useEffect, useState } from "preact/hooks";
 import { profileClient, type ProfileSnapshot } from "../clients/profile.ts";
 import { langSignal, tFor } from "../lib/i18n.ts";
+import { Icon } from "../components/ui/Icon.tsx";
 import { isPlaceholderName } from "../../shared/quote-flow/outbound-identity.ts";
+import { setupItemHref, type SetupItemKey } from "../lib/settings-anchors.ts";
+import {
+  PROFILE_UPDATED,
+  type ProfileUpdatedDetail,
+} from "../lib/profile-events.ts";
 import { editableName } from "../../shared/person-name/mod.ts"; // REQ-624
 import { hasAnyPayWay } from "../../shared/payments/pay-links.ts"; // REQ-630 AMENDMENT
 
@@ -18,9 +24,10 @@ import { hasAnyPayWay } from "../../shared/payments/pay-links.ts"; // REQ-630 AM
  * profile-shape read on every render.
  */
 interface Item {
-  key: string;
+  key: SetupItemKey;
   label: string;
   done: boolean;
+  /** REQ-513: the Settings section that answers it, never the bare /settings */
   href: string;
 }
 
@@ -33,8 +40,17 @@ export default function SetupChecklist() {
     profileClient.get().then((p) => {
       if (alive) setSnap(p);
     }).catch(() => {});
+    // REQ-423 — a name saved on this page (the staff name prompt, Settings)
+    // ticks the "name" item at once, no reload
+    const onProfile = (e: Event) => {
+      const name = (e as CustomEvent<ProfileUpdatedDetail>).detail?.name;
+      if (name === undefined || !alive) return;
+      setSnap((cur) => cur ? { ...cur, user: { ...cur.user, name } } : cur);
+    };
+    globalThis.addEventListener(PROFILE_UPDATED, onProfile);
     return () => {
       alive = false;
+      globalThis.removeEventListener(PROFILE_UPDATED, onProfile);
     };
   }, []);
 
@@ -53,43 +69,43 @@ export default function SetupChecklist() {
       // the one field this user most needs to supply must not read as done.
       label: tFor(lang, "setupChecklist.item.name"),
       done: !isPlaceholderName(editableName(snap.user, snap.actor)), // REQ-624: the person signed in
-      href: "/settings",
+      href: setupItemHref("name"),
     },
     {
       key: "biz",
       label: tFor(lang, "setupChecklist.item.businessName"),
       done: !!id?.businessName?.trim(),
-      href: "/settings",
+      href: setupItemHref("biz"),
     },
     {
       key: "email",
       label: tFor(lang, "setupChecklist.item.email"),
       done: !!snap.user.email?.trim(),
-      href: "/settings",
+      href: setupItemHref("email"),
     },
     {
       key: "logo",
       label: tFor(lang, "setupChecklist.item.logo"),
       done: !!id?.logoFileId,
-      href: "/settings",
+      href: setupItemHref("logo"),
     },
     {
       key: "address",
       label: tFor(lang, "setupChecklist.item.address"),
       done: !!(snap.address?.postal?.trim() || snap.address?.street?.trim()),
-      href: "/settings",
+      href: setupItemHref("address"),
     },
     {
       key: "payment",
       label: tFor(lang, "setupChecklist.item.payment"),
       done: acceptedAny,
-      href: "/settings",
+      href: setupItemHref("payment"),
     },
     {
       key: "insurance",
       label: tFor(lang, "setupChecklist.item.insurance"),
       done: !!snap.insurance?.provider?.trim(),
-      href: "/settings",
+      href: setupItemHref("insurance"),
     },
   ];
   const remaining = items.filter((i) => !i.done);
@@ -153,7 +169,9 @@ export default function SetupChecklist() {
                 it.done ? "#519843" : "rgba(20,72,82,0.10)"
               };color:#fff;font-size:12px;font-weight:800;flex-shrink:0`}
             >
-              {it.done ? "✓" : ""}
+              {it.done
+                ? <Icon name="check" size={12} stroke-width={3} />
+                : null}
             </span>
             <a
               href={it.href}

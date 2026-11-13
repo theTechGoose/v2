@@ -4,9 +4,14 @@ import {
   type LLMClient,
 } from "@agents/domain/business/llm/base/mod.ts";
 import { t } from "@core/i18n/mod.ts";
-import { summarizeJobName } from "#quote-flow/job-name.ts";
+import {
+  summarizeJobName,
+  trimTrailingConnectors,
+} from "#quote-flow/job-name.ts";
 import { clampSummary } from "#quote-flow/summary-clamp.ts";
 import { scopeBulletsFromRaw } from "#quote-flow/scope-from-raw.ts";
+import { withoutMoneySentences } from "#quote-flow/private-cost.ts";
+import { ES_TRADE_GLOSSARY } from "@agents/domain/business/es-trade-glossary/mod.ts";
 
 export interface PolishJobDetailsInput {
   userId: string;
@@ -69,7 +74,9 @@ export class PolishJobDetails {
         : "";
 
     const langLine = input.commsLanguage === "es"
-      ? "\n\n" + t("en", "prompts.polishJobDetails.spanishInstruction")
+      ? "\n\n" + t("en", "prompts.polishJobDetails.spanishInstruction") +
+        // REQ-448 (demo-loop cycle 3, m47): the shared trade glossary.
+        " " + ES_TRADE_GLOSSARY
       : "";
 
     let text: string;
@@ -92,10 +99,12 @@ export class PolishJobDetails {
     }
 
     const parsed = tryParseJson(text);
-    if (
-      parsed && typeof parsed.summary === "string" &&
-      typeof parsed.description === "string"
-    ) {
+    // REQ-261 (M26): the paragraph is customer-facing — a sentence naming a
+    // money amount (a sub's fee, a material cost) is a private cost; drop it.
+    const description = typeof parsed?.description === "string"
+      ? withoutMoneySentences(parsed.description.trim())
+      : "";
+    if (parsed && typeof parsed.summary === "string" && description) {
       const summary = clampSummary(parsed.summary);
       const jobName =
         typeof parsed.jobName === "string" && parsed.jobName.trim()
@@ -104,7 +113,7 @@ export class PolishJobDetails {
       return {
         summary,
         jobName,
-        description: parsed.description.trim(),
+        description,
         degraded: false,
       };
     }
@@ -143,7 +152,8 @@ function clampJobName(s: string, lang: "en" | "es"): string {
     " ",
   );
   const words = cleaned.split(" ").filter(Boolean).slice(0, 3);
-  return words.map(titleCaseWord).join(" ");
+  // REQ-434 (cycle 3, M10): the 3-word slice never leaves "And" last.
+  return trimTrailingConnectors(words.map(titleCaseWord).join(" "));
 }
 
 function deriveJobName(summary: string, lang: "en" | "es"): string {

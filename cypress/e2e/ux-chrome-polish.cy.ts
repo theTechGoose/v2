@@ -224,6 +224,22 @@ describe("UX-21: desktop chrome — one nav system, labeled controls", () => {
   });
 
   it("UX-21: the '● hace Xm' ticker pill has a visible tooltip (title)", () => {
+    // REQ-726 (demo cycle 5, m6): the pill shows only a FRESH event (< 90 s)
+    // and only from 1500px wide — the seeded event may have aged out by now,
+    // so the feed answers with a fresh one, and the window is widened.
+    cy.intercept("GET", /\/api\/notifications\?/, {
+      statusCode: 200,
+      body: [{
+        id: "n-ux21-fresh",
+        userId: "u",
+        type: "quote_accepted",
+        title: `<strong>${CUSTOMER_NAME}</strong> aceptó tu cotización`,
+        read: false,
+        createdAt: new Date().toISOString(),
+      }],
+    });
+    cy.viewport(1600, 900);
+    cy.visit("/dashboard");
     // The pill renders once the notification poll lands (10s interval).
     cy.get("a.topbar__ticker", { timeout: 20_000 })
       .should("be.visible")

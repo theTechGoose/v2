@@ -46,6 +46,11 @@
   color: var(--brand-pink);
   font-style: normal;
 }
+/* REQ-729 (demo-loop cycle 5, m16): good-news headlines ("All clear —
+   nothing outstanding") keep their emphasis out of the alarm colour. */
+.qph__title--good em {
+  color: var(--brand-green);
+}
 .qph__sub {
   font-family: var(--font-body);
   font-size: 14.5px;
@@ -53,6 +58,16 @@
   line-height: 1.5;
   max-width: 520px;
   text-wrap: pretty;
+}
+/* REQ-408 (demo p13-d): the hero's CTA row. Without a rule the intro
+   paragraph (margin zeroed by the global reset) sat flush on the button on a
+   phone, and the ghost links were spaced by inline margins. */
+.qph__cta-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-top: 14px;
 }
 .qph__sub strong {
   color: var(--brand-teal);
@@ -465,6 +480,10 @@
   color: #fff;
   filter: brightness(1.06);
 }
+/* REQ-239 (M28): the card's Open action takes its own full-width row. */
+.qcard__back-foot .qcard__back-open {
+  grid-column: 1 / -1;
+}
 /* P-09: honest send-failure note on the card front. */
 .qcard__sendfail {
   margin: 0;
@@ -474,6 +493,27 @@
   line-height: 1.45;
   font-weight: 600;
   color: #a83b3b;
+}
+/* REQ-555 (M24): the notes sit inside a face's body, which already pads. */
+.qcard__body .qcard__sendfail,
+.qcard__back-body .qcard__sendfail {
+  padding: 8px 0 0;
+}
+/* REQ-555 (M24): the invoice card front's own Open link. */
+.qcard__open-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 8px;
+  font-family: var(--font-heading);
+  font-weight: 700;
+  font-size: 12px;
+  color: var(--brand-teal);
+  text-decoration: none;
+}
+.qcard__open-link:hover {
+  color: var(--brand-pink);
+  text-decoration: underline;
 }
 
 .qcard__flip-hint {
@@ -537,6 +577,15 @@
   letter-spacing: -0.04em;
   pointer-events: none;
   user-select: none;
+}
+/* REQ-313 (demo m48): the quote's own number (Q-001). REQ-429 (cycle 3,
+   p8-pair3-b): it sits in the body's client line, after the client name —
+   bottom-left of the mood strip it lay under the 86px avatar (top 92). */
+.qcard__number {
+  font-family: var(--font-heading);
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  color: var(--brand-teal);
 }
 .qcard__status {
   position: absolute;
@@ -698,6 +747,8 @@
   cursor: pointer;
   text-align: left;
   line-height: 1.3;
+  /* REQ-614: the sample's CTA is a link (/q/<id>) — no underline. */
+  text-decoration: none;
   transition: gap var(--dur-fast) var(--ease-out);
 }
 .qcard__cta:hover {
@@ -1076,6 +1127,10 @@
   background: rgba(168, 67, 31, 0.12);
   color: #a8431f;
 }
+.qopen__badge--revised {
+  background: rgba(26, 83, 92, 0.16);
+  color: var(--brand-teal);
+}
 .qopen__badge--approved {
   background: rgba(63, 122, 51, 0.12);
   color: #3f7a33;
@@ -1103,6 +1158,13 @@
   font-size: 22px;
   font-weight: 800;
   color: var(--brand-teal);
+}
+/* REQ-679: "incl. +$1,600.00 in change orders" under the agreed total */
+.qopen__amount-incl {
+  font-family: var(--font-body, inherit);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--fg-muted);
 }
 .qopen__actions {
   display: flex;
@@ -1166,4 +1228,529 @@
 .qopen__receipt--signed::before {
   background: #3f7a33;
   opacity: 0.8;
+}
+
+/* REQ-701 (demo-loop cycle 5, M21): the open panel's "Questions from the
+   client" (components/QuoteInquiries.tsx) — each question a client sent from
+   the public page, how they asked to be reached, Text back / Email back /
+   Call (one solid primary: the channel they asked on) and the reply box. */
+.qinq {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px dashed rgba(26, 83, 92, 0.16);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  scroll-margin-top: 72px;
+}
+.qinq__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.qinq__title {
+  font-family: var(--font-heading);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--brand-teal);
+  margin: 0;
+}
+.qinq__count {
+  font-family: var(--font-heading);
+  font-size: 11px;
+  font-weight: 800;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: rgba(168, 67, 31, 0.12);
+  color: #a8431f;
+}
+.qinq__item {
+  border: 1px solid rgba(26, 83, 92, 0.12);
+  border-radius: 12px;
+  padding: 12px 14px;
+  background: #fff;
+}
+.qinq__item--answered {
+  background: rgba(63, 122, 51, 0.04);
+}
+.qinq__meta {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-family: var(--font-body);
+  font-size: 12.5px;
+  color: var(--fg-muted);
+}
+.qinq__who {
+  color: var(--fg, #1c2c30);
+  font-weight: 700;
+}
+.qinq__q {
+  margin: 8px 0 0;
+  padding: 10px 12px;
+  border-left: 3px solid var(--brand-green, #519843);
+  border-radius: 8px;
+  background: #f4f8f2;
+  font-family: var(--font-body);
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--fg, #1c2c30);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.qinq__contact {
+  margin-top: 8px;
+  font-family: var(--font-body);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--fg, #1c2c30);
+  overflow-wrap: anywhere;
+}
+.qinq__answered {
+  margin-top: 8px;
+  font-family: var(--font-body);
+  font-size: 12.5px;
+  font-weight: 600;
+  color: #3f7a33;
+}
+.qinq__answer {
+  margin: 4px 0 0;
+  font-weight: 400;
+  color: var(--fg-muted);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.qinq__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+.qinq__btn--primary {
+  background: var(--brand-teal);
+  border-color: var(--brand-teal);
+  color: #fff;
+}
+.qinq__btn--primary:hover {
+  background: var(--brand-teal);
+  border-color: var(--brand-teal);
+  color: #fff;
+  filter: brightness(1.08);
+}
+.qinq__btn--primary:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+.qinq__none {
+  margin: 8px 0 0;
+  font-family: var(--font-body);
+  font-size: 12.5px;
+  color: var(--fg-muted);
+}
+.qinq__reply {
+  margin-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.qinq__to {
+  font-family: var(--font-body);
+  font-size: 12px;
+  color: var(--fg-muted);
+}
+.qinq__input {
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid rgba(26, 83, 92, 0.2);
+  border-radius: 10px;
+  padding: 9px 11px;
+  font-family: var(--font-body);
+  font-size: 14px;
+  line-height: 1.45;
+  color: var(--fg, #1c2c30);
+  background: #fff;
+  resize: vertical;
+}
+.qinq__input:focus {
+  outline: 2px solid rgba(26, 83, 92, 0.35);
+  outline-offset: 1px;
+}
+.qinq__reply-actions {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 8px;
+}
+.qinq__ghost {
+  appearance: none;
+  background: none;
+  border: 0;
+  padding: 9px 10px;
+  font-family: var(--font-heading);
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--fg-muted);
+  cursor: pointer;
+}
+.qinq__ghost:hover {
+  color: var(--fg, #1c2c30);
+}
+.qinq__result {
+  margin: 8px 0 0;
+  font-family: var(--font-body);
+  font-size: 12.5px;
+  font-weight: 700;
+  color: #3f7a33;
+}
+.qinq__result--failed {
+  color: #b23030;
+}
+
+/* REQ-482 (demo M39): the New invoice sheet's line-item row. Desktop keeps
+   one row (description · qty · unit · price · ×); under 560px the description
+   takes its own row and qty/unit/price/× wrap beneath it, so ~300px of fixed
+   tracks never push the row off a phone. The header row uses the same grid,
+   so its labels stack exactly like the inputs. */
+.ninv-line {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 64px 76px 110px 28px;
+  gap: 6px;
+  align-items: center;
+}
+@media (max-width: 560px) {
+  .ninv-line {
+    grid-template-columns: repeat(3, minmax(0, 1fr)) 28px;
+  }
+  .ninv-line > :first-child {
+    grid-column: 1 / -1;
+  }
+}
+
+/* REQ-570 (demo-loop cycle 4, m41): the open panel's Send ▾ and the send
+   dialog it opens (components/QuoteSendDialog.tsx). The dialog carries the
+   assistant's class names; this page doesn't load assistant-page.css, so
+   its look is restated here. */
+.qopen-send {
+  position: relative;
+  display: inline-flex;
+}
+.qopen-send__menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  min-width: 220px;
+  background: #fff;
+  border: 1px solid rgba(20, 72, 82, 0.12);
+  border-radius: 12px;
+  box-shadow:
+    0 18px 40px -12px rgba(20, 72, 82, 0.25),
+    0 6px 14px -6px rgba(20, 72, 82, 0.12);
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  z-index: 50;
+}
+.qopen-send__item {
+  appearance: none;
+  background: transparent;
+  border: none;
+  padding: 9px 10px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--brand-teal);
+  font-family: var(--font-body);
+  font-size: 13.5px;
+  font-weight: 600;
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
+}
+.qopen-send__item:hover {
+  background: rgba(20, 72, 82, 0.06);
+}
+.qopen-send__result {
+  margin: 10px 0 0;
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--brand-green, #519843);
+}
+.qopen-send__result--failed {
+  color: var(--brand-pink);
+}
+.send-dialog__backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  background: rgba(20, 44, 48, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+.send-dialog {
+  width: min(420px, 100%);
+  max-height: calc(100vh - 32px);
+  overflow-y: auto;
+  background: #fff;
+  border-radius: 16px;
+  padding: 20px 20px 16px;
+  box-shadow: 0 24px 60px -18px rgba(20, 72, 82, 0.45);
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  text-align: left;
+}
+.send-dialog__title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 900;
+  color: var(--brand-teal, #144852);
+}
+.send-dialog__options {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.send-dialog__option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 10px 12px;
+  border: 1.5px solid rgba(20, 72, 82, 0.15);
+  border-radius: 10px;
+  background: #fff;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--fg, #1c2c30);
+  cursor: pointer;
+  text-align: left;
+}
+.send-dialog__option.is-current {
+  border-color: var(--brand-green, #519843);
+  background: var(--green-50, #eef6ea);
+}
+.send-dialog__needs {
+  margin-left: auto;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--fg-muted, #6b7b80);
+  white-space: nowrap;
+}
+.send-dialog__option .quote-review__send-menu-tag {
+  font-size: 10.5px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--brand-green);
+  background: rgba(81, 152, 67, 0.12);
+  padding: 2px 7px;
+  border-radius: 999px;
+}
+.send-dialog__needs + .quote-review__send-menu-tag {
+  margin-left: 6px;
+}
+.send-dialog__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.send-dialog__cancel,
+.send-dialog__keep {
+  padding: 10px 18px;
+  border-radius: 10px;
+  font: inherit;
+  font-weight: 800;
+  font-size: 14px;
+  cursor: pointer;
+}
+.send-dialog__cancel {
+  border: 1.5px solid rgba(20, 72, 82, 0.18);
+  background: #fff;
+  color: var(--fg, #1c2c30);
+}
+.send-dialog__keep {
+  border: 0;
+  background: var(--brand-green, #519843);
+  color: #fff;
+}
+.send-dialog__keep:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+.send-dialog__add {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--fg, #1c2c30);
+}
+.send-dialog .cust-pick__search {
+  width: 100%;
+  background: #fff;
+  border: 1.5px solid var(--border);
+  border-radius: 11px;
+  padding: 10px 12px;
+  font-family: var(--font-body);
+  font-size: 12.5px;
+  color: var(--brand-teal);
+}
+.send-dialog .cust-pick__err {
+  padding: 8px 12px;
+  border-radius: 9px;
+  background: rgba(255, 107, 107, 0.10);
+  color: var(--brand-pink);
+  font-size: 11.5px;
+  font-weight: 600;
+}
+.send-dialog__lang {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--fg, #1c2c30);
+}
+.send-dialog .quote-review__langpill {
+  appearance: none;
+  border: 1px solid rgba(20, 72, 82, 0.18);
+  background: #fff;
+  color: var(--brand-teal);
+  font-weight: 700;
+  font-size: 12.5px;
+  padding: 5px 12px;
+  border-radius: 999px;
+  cursor: pointer;
+}
+.send-dialog .quote-review__langpill.is-active {
+  background: var(--brand-teal);
+  border-color: var(--brand-teal);
+  color: #fff;
+}
+.send-dialog__preview {
+  border: 1.5px solid rgba(20, 72, 82, 0.15);
+  border-radius: 10px;
+  padding: 8px 12px;
+  font-size: 13px;
+}
+.send-dialog__preview > summary {
+  cursor: pointer;
+  font-weight: 800;
+  color: var(--brand-teal, #144852);
+}
+.send-dialog__preview-frame {
+  display: block;
+  width: 100%;
+  height: 320px;
+  border: 1px solid rgba(20, 72, 82, 0.12);
+  border-radius: 8px;
+}
+
+/* REQ-707 (demo-loop cycle 5, m61): the invoice card's inline confirms
+   (Delete, Send a nudge, Didn't get it) — components/ConfirmRow.tsx. One
+   outlined Yes, one ghost No; never the browser's grey buttons. */
+.confirm-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--fg, #1a535c);
+}
+/* At card level (outside .qcard__back-body) the row takes the body's 22px
+   side inset, so its text lines up with the body instead of the card edge. */
+.confirm-row--inset {
+  padding: 0 22px 12px;
+}
+.confirm-row__ask {
+  flex: 1 1 100%;
+  line-height: 1.45;
+}
+.confirm-row__yes {
+  appearance: none;
+  background: #fff;
+  border: 1px solid;
+  border-radius: 7px;
+  padding: 4px 10px;
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.confirm-row__yes--danger {
+  border-color: var(--brand-pink, #ff6b6b);
+  color: var(--brand-pink-dark, #d94f4f);
+}
+.confirm-row__yes--primary {
+  border-color: var(--brand-teal, #1a535c);
+  color: var(--brand-teal, #1a535c);
+}
+.confirm-row__yes:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+.confirm-row__no {
+  appearance: none;
+  background: none;
+  border: none;
+  padding: 2px 0;
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--brand-teal, #1a535c);
+  cursor: pointer;
+}
+/* REQ-776 (demo-loop cycle dv1, d3): the Finish + send review — what is
+   about to go out, above the channel picker */
+.send-review {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--surface-muted, #f4f6f1);
+  font-size: 13px;
+}
+.send-review__row {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+}
+.send-review__row dt {
+  flex: 0 0 76px;
+  font-weight: 700;
+  color: var(--fg-muted, #6b7560);
+}
+.send-review__row dd {
+  margin: 0;
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.send-review__amount {
+  font-weight: 900;
+  color: var(--brand-teal, #144852);
+}
+.send-review__lines {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.send-review__lines li {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
 }

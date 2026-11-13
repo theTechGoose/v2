@@ -16,6 +16,7 @@ import {
   stageLabelFor,
 } from "../lib/quotes-seed.ts";
 import DeleteQuoteButton from "./DeleteQuoteButton.tsx";
+import { customerLinkPath, customerLinkUrl } from "../lib/customer-link.ts";
 import { assistantClient } from "../clients/assistant.ts";
 import {
   draftConversationFor,
@@ -81,7 +82,8 @@ interface Props {
   /** Deep-link (/quotes?open=<id>): mount the card already flipped to its
    *  detail back so the opened quote's actions are immediately visible. */
   flipOnMount?: boolean;
-  /** REQ-626: open this quote's detail panel (QuotesPage's openQuote) */
+  /** REQ-239 (M28): open the quote panel (/quotes?open=<id>) — the same
+   *  entry point the decided rows have. REQ-626: QuotesPage's openQuote. */
   onOpen?: (id: string) => void;
 }
 
@@ -127,8 +129,9 @@ export default function QuoteCard(
   async function copyPublicLink(e: MouseEvent) {
     e.stopPropagation();
     try {
+      // REQ-586 (cycle 4, M11): in the language the quote went out in.
       await navigator.clipboard.writeText(
-        `${globalThis.location.origin}/q/${q.id}`,
+        customerLinkUrl(globalThis.location.origin, q.id, q.sendLang),
       );
       setCopied(true);
       setTimeout(() => setCopied(false), 1500);
@@ -217,9 +220,17 @@ export default function QuoteCard(
 
   const mood = moodForQuote(q);
   const story = QSTORIES[q.id] ?? tFor(lang, "quoteCard.storyFallback");
-  // REQ-626: the label says what the click does (shared/card-actions)
-  const cta = tFor(lang, quoteCta(q.stage, q.opens).key);
-  const showOpens = q.stage !== "draft" && q.opens > 0;
+  // REQ-626: the label says what the click does (shared/card-actions).
+  // REQ-614 (cycle 4, m16): the onboarding sample is an unnumbered draft with
+  // no customer — it is looked at, never finished and sent. REQ-555-era
+  // "undelivered": the panel opens to fix the contact.
+  const cta = q.isSample
+    ? tFor(lang, "quoteCard.cta.viewSample")
+    : q.stage === "undelivered"
+    ? tFor(lang, "quoteCard.cta.fixContact")
+    : tFor(lang, quoteCta(q.stage, q.opens).key);
+  const showOpens = q.stage !== "draft" && q.stage !== "undelivered" &&
+    q.opens > 0;
   const opens = realOpens ?? [];
   const reading = readingFor(q, opens, lang);
 
@@ -260,21 +271,60 @@ export default function QuoteCard(
       </div>
       <div class="qcard__av">{q.initials}</div>
       <div class="qcard__body">
-        <div class="qcard__client-name">{q.client}</div>
+        <div class="qcard__client-name">
+          {q.client}
+          {q.number && (
+            /* REQ-313 (demo m48): the quote's own number — the big numeral
+               is only the card's position. REQ-429 (cycle 3, p8-pair3-b): it
+               rides in the client line ("client · Q-001", as the invoice and
+               payment cards do), not in the mood strip under the avatar. */
+            <>
+              {" · "}
+              <span class="qcard__number">{q.number}</span>
+            </>
+          )}
+        </div>
         <h3 class="qcard__title">{q.title}</h3>
         <p class="qcard__story">{story}</p>
       </div>
       <div class="qcard__foot">
-        <button
-          class="qcard__cta"
-          type="button"
-          data-cy="qcard-cta"
-          onClick={onCta}
-          disabled={sending}
-        >
-          {cta}{" "}
-          <span style="display:inline-block;transition:transform 240ms">→</span>
-        </button>
+        {
+          /* REQ-626: the front CTA does what it says (resend, resume the
+            draft, open the panel — onCta); REQ-310 AMENDMENT (reconciled with
+            develop on demo-fixes): "open" is the quote panel via onOpen. */
+        }
+        {!q.isSample
+          ? (
+            <button
+              class="qcard__cta"
+              type="button"
+              data-cy="qcard-cta"
+              onClick={onCta}
+              disabled={sending}
+            >
+              {cta}{" "}
+              <span style="display:inline-block;transition:transform 240ms">
+                →
+              </span>
+            </button>
+          )
+          : (
+            /* REQ-614 (cycle 4, m16): the sample's CTA shows the quote as a
+              customer would see it — it never opens the send flow. */
+            <a
+              class="qcard__cta"
+              data-cy="qcard-cta"
+              href={customerLinkPath(q.id, q.sendLang)} // REQ-586
+              target="_blank"
+              rel="noopener"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {cta}{" "}
+              <span style="display:inline-block;transition:transform 240ms">
+                →
+              </span>
+            </a>
+          )}
         <div class="qcard__val-wrap">
           <div class="qcard__val-lbl">
             {q.isSample
@@ -308,10 +358,19 @@ export default function QuoteCard(
             <I d={ICN.x} size={14} sw={2.5} />
           </button>
           <div class="qcard__back-eyebrow">
+            {q.number
+              ? `${q.number} · ${
+                tFor(lang, "quotes.ledger.versionN", { n: q.version ?? 1 })
+              } · `
+              : null}
             {tFor(lang, "quoteCard.back.eyebrow")}
           </div>
           <p class="qcard__back-big">
-            {q.opens}
+            {
+              /* REQ-313 (p15-11): a real space before the unit, so the DOM
+                text reads "0 aperturas", not "0aperturas". */
+            }
+            {q.opens}{" "}
             <small>
               {tFor(
                 lang,
@@ -353,36 +412,49 @@ export default function QuoteCard(
         <div class="qcard__back-foot">
           <button
             type="button"
-            data-cy="qcard-resend"
-            onClick={onResend}
-            disabled={sending}
-          >
-            {sending ? "…" : tFor(lang, "quoteCard.back.resend")}
-          </button>
-          <button
-            type="button"
+            class="qcard__back-btn--primary qcard__back-open"
             data-cy="qcard-open"
             onClick={(e) => {
               e.stopPropagation();
-              openPanel();
+              if (onOpen) onOpen(q.id);
+              else openPanel();
             }}
           >
-            {tFor(lang, "quoteCard.cta.openQuote")}
+            {tFor(lang, "quoteCard.back.open")}
           </button>
-          <button type="button" onClick={copyPublicLink}>
-            {copied
-              ? tFor(lang, "quoteCard.back.linkCopied")
-              : tFor(lang, "quoteCard.back.copyLink")}
-          </button>
+          {
+            /* REQ-626: Resend is real (both channels, the bodies read).
+              REQ-360 (demo-loop cycle 1, m11): never for the never-sent
+              sample, which has no customer to share a link with either;
+              "View as customer" stays. */
+          }
+          {!q.isSample && (
+            <button
+              type="button"
+              data-cy="qcard-resend"
+              onClick={onResend}
+              disabled={sending}
+            >
+              {sending ? "…" : tFor(lang, "quoteCard.back.resend")}
+            </button>
+          )}
+          {!q.isSample && (
+            <button type="button" onClick={copyPublicLink}>
+              {copied
+                ? tFor(lang, "quoteCard.back.linkCopied")
+                : tFor(lang, "quoteCard.back.copyLink")}
+            </button>
+          )}
           <a
-            href={`/q/${q.id}`}
+            href={customerLinkPath(q.id, q.sendLang)}
             target="_blank"
             rel="noopener"
             onClick={(e) => e.stopPropagation()}
           >
             {tFor(lang, "quoteCard.back.viewAsClient")}
           </a>
-          <DeleteQuoteButton id={q.id} />
+          {/* REQ-485 (m22): a signed quote is the agreement — no Delete. */}
+          {q.stage !== "won" && <DeleteQuoteButton id={q.id} />}
         </div>
       </div>
     </article>

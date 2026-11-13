@@ -66,6 +66,14 @@ Deno.test("REQ-141 workerView — no price, no invoice id, no office note; locke
   assertEquals(["priceCents" in v, "invoiceId" in v, "adminNote" in v, v.locked, v.workerId], [false, false, false, true, "w1"]);
 });
 
+Deno.test("REQ-401 workerView — the lock is worded by the invoice's state: a draft is 'draft', sent or later is 'invoiced', none is null (demo m45, cycle 2)", () => {
+  const t: FieldTask = { id: "t", userId: "u", subscriptionId: "s", taskTypeId: "1", customerId: "c", regionId: "ra", workerId: "w1", date: "d", priceCents: 6500, status: "complete", invoiceId: "i" };
+  assertEquals([workerView(t, "draft").lockState, workerView(t, "sent").lockState, workerView(t, "paid").lockState, workerView(t).lockState], ["draft", "invoiced", "invoiced", "invoiced"]);
+  const { invoiceId: _i, ...free } = t;
+  assertEquals([workerView(free).locked, workerView(free).lockState], [false, null]);
+  assertEquals("invoiceStatus" in workerView(t, "draft"), false, "the invoice itself stays hidden");
+});
+
 const visit = (): FieldTask[] => [
   { id: "v1", userId: "u", subscriptionId: "s1", taskTypeId: "1", customerId: "c", regionId: "ra", workerId: "w1", date: "2026-10-28", priceCents: 6500, status: "assigned" },
 ];

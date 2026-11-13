@@ -8,6 +8,7 @@
  * module only names them by id.
  */
 import { api, type ApiOptions } from "../lib/api.ts";
+import type { SendFailure } from "../lib/field-batches.ts";
 
 export type Cadence = "weekly" | "biweekly" | "monthly";
 export type TaskStatus = "assigned" | "complete" | "skipped" | "deferred";
@@ -73,6 +74,13 @@ export interface SubscriptionView {
   pinned?: boolean;
   /** "Weekly · Mon, Thu" in both languages */
   schedule: { es: string; en: string };
+  /** REQ-699: the last service day, if the quote's term ends */
+  endDate?: string;
+  /** REQ-699: the signed quote that made it, and its number */
+  quoteId?: string;
+  quoteNumber?: string;
+  /** REQ-699: a quote's subscription as the quote said it — "Monthly · $180/mo" */
+  billing?: { es: string; en: string };
   createdAt: string;
   updatedAt: string;
 }
@@ -109,6 +117,14 @@ export interface RegionView extends Region {
   subscriptions: SubscriptionView[];
 }
 
+/** REQ-288 — GET /field/regions/center: where the map starts with no subscriptions to fit */
+export interface MapCenter {
+  lat: number;
+  lng: number;
+  zoom: number;
+  source: "business" | "none";
+}
+
 /** GET /field/tasks — the office's view: prices, notes, names */
 export interface TaskView {
   id: string;
@@ -122,7 +138,13 @@ export interface TaskView {
   regionName: string;
   workerId: string;
   workerName: string;
+  /** the day — a job of several days' FIRST day */
   date: string;
+  /** REQ-785: a job of several days — its last day; it shows on every day between */
+  endDate?: string;
+  /** REQ-785: the job's other workers, and their names */
+  crewIds?: string[];
+  crewNames?: string[];
   address?: string;
   priceCents: number;
   status: TaskStatus;
@@ -151,6 +173,10 @@ export interface OneOffTaskInput {
   /** omitted: the worker covering the customer's subscription's zone */
   workerId?: string;
   address?: string;
+  /** REQ-785: a job of several days — its last day (omitted: one day) */
+  endDate?: string;
+  /** REQ-785: more workers on the job */
+  crewIds?: string[];
 }
 
 /** GET /field/worker/tasks — no prices, no invoice ids, no office notes */
@@ -165,6 +191,11 @@ export interface WorkerTaskView {
   workerId: string;
   workerName: string;
   date: string;
+  /** REQ-785: a job of several days — its last day */
+  endDate?: string;
+  /** REQ-785: the job's other workers, and their names */
+  crewIds?: string[];
+  crewNames?: string[];
   address?: string;
   status: TaskStatus;
   deferredTo?: string;
@@ -175,6 +206,8 @@ export interface WorkerTaskView {
   completedAt?: string;
   /** on an invoice already — read-only for the worker */
   locked: boolean;
+  /** REQ-401: "draft" while that invoice is an unsent draft, "invoiced" once sent */
+  lockState?: "draft" | "invoiced" | null;
 }
 
 export interface GenerateResult {
@@ -234,7 +267,7 @@ export type PullResult = BatchView & { summary: PullSummary };
 export interface SendResult {
   sent: number;
   sentIds: string[];
-  failed: { invoiceId: string; reason: string }[];
+  failed: SendFailure[];
   batch: BatchView;
 }
 
@@ -242,6 +275,8 @@ export interface WorkerMe {
   id: string;
   name: string;
   role: "worker" | "foreman";
+  /** REQ-285 — the language the worker's screen opens in (theirs, else the owner's) */
+  language?: "en" | "es";
 }
 
 export const fieldClient = {
@@ -258,7 +293,10 @@ export const fieldClient = {
       language?: "en" | "es";
     },
     opts?: ApiOptions,
-  ) => api.post<FieldWorker & { texted: boolean }>("/field/workers", b, opts), // REQ-151 — texted: the welcome text went out
+  ) =>
+    api.post<
+      FieldWorker & { texted: boolean; signInUrl?: string; shareText?: string }
+    >("/field/workers", b, opts), // REQ-151 — texted: the welcome text went out; REQ-601 — signInUrl + shareText: what to share when it didn't
   /** REQ-155 — the worker's language, changed from the row */
   setWorkerLanguage: (id: string, language: "en" | "es", opts?: ApiOptions) =>
     api.put<FieldWorker>(`/field/workers/${id}`, { language }, opts),
@@ -289,6 +327,8 @@ export const fieldClient = {
 
   // ---- zones (REQ-140) ----
   regions: (opts?: ApiOptions) => api.get<RegionView[]>("/field/regions", opts),
+  mapCenter: (opts?: ApiOptions) =>
+    api.get<MapCenter>("/field/regions/center", opts),
   regroup: (opts?: ApiOptions) =>
     api.post<{ regions: number }>("/field/regions/regroup", {}, opts),
   staffRegion: (id: string, workerId: string | null, opts?: ApiOptions) =>
@@ -313,6 +353,12 @@ export const fieldClient = {
       status?: "complete" | "assigned";
       /** REQ-166 — another of the account's workers, this day only */
       workerId?: string;
+      /** REQ-785 — a one-off's first day */
+      date?: string;
+      /** REQ-785 — its last day; null = one day */
+      endDate?: string | null;
+      /** REQ-785 — the job's other workers */
+      crewIds?: string[];
     },
     opts?: ApiOptions,
   ) => api.put<TaskView>(`/field/tasks/${id}`, b, opts),

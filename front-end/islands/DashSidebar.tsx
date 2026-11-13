@@ -1,12 +1,6 @@
+import Backdrop from "../components/Backdrop.tsx";
 import { useEffect, useState } from "preact/hooks";
-import {
-  isReplicaFrame,
-  onReplicaView,
-  onViewRequest,
-  reportView,
-} from "../lib/demo-mode/replica.ts";
 import { I, ICN } from "../lib/dash-icons.tsx";
-import { type DashboardStats } from "../clients/dashboard.ts";
 import {
   type CachedDash,
   clearDashCache,
@@ -20,12 +14,26 @@ import {
   adminsClient,
   isActing,
 } from "../clients/admins.ts";
-import { folderPathTo, isFolder, viewAt } from "../lib/nav-folders.ts";
-import { NAV } from "../lib/nav-tree.ts";
-import { personLanguage, personName } from "../../shared/person-name/mod.ts"; // REQ-624
+import { isFolder, viewAt } from "../lib/nav-folders.ts";
+import { restingPath, SB_DRAWER_CSS, SB_FOLDER_CSS } from "../lib/sb-drawer.ts";
+import { NAV, superAdminTabAt } from "../lib/nav-tree.ts";
+import {
+  PROFILE_UPDATED,
+  type ProfileUpdatedDetail,
+} from "../lib/profile-events.ts";
+import { sidebarIdentity, withSavedProfile } from "../lib/greeting-identity.ts";
+import {
+  type CountKey,
+  countLabelKey,
+  followBadgeChanges,
+  pickSidebarCounts,
+} from "../lib/sidebar-counts.ts";
+import { fieldClient } from "../clients/field.ts";
+import {
+  type WorkerCountState,
+  workerViewLink,
+} from "../lib/worker-view-link.ts";
 import { ActorNamePrompt } from "../components/ActorNamePrompt.tsx"; // REQ-624
-
-type CountKey = "clients" | "quotes" | "invoices";
 
 // REQ-176 — the tree itself is data in lib/nav-tree.ts; this island renders one level of it.
 
@@ -40,9 +48,9 @@ interface Props {
 
 interface SbState {
   counts: Partial<Record<CountKey, number>>;
-  identity: { display: string; biz?: string; initials: string } | null;
-  /** Contractor UI language (roadmap p.13). */
-  lang: "en" | "es";
+  /** REQ-712 (cycle 5, m7): the profile the identity is worded from — at
+   *  render, in the page's language, never the profile's saved one. */
+  profile: CachedDash["profile"];
   /** Super-admin flag — gates the Admin tab. Server-enforced; this only
    *  controls visibility. */
   superAdmin: boolean;
@@ -52,102 +60,51 @@ interface SbState {
 
 const INITIAL_STATE: SbState = {
   counts: {},
-  identity: null,
-  lang: "en",
+  profile: null,
   superAdmin: false,
   actor: null,
 };
-
-function deriveInitials(
-  name: string | undefined,
-  fallback: string | undefined,
-): string {
-  const src = name?.trim() || fallback?.trim();
-  if (!src) return "•";
-  const parts = src.split(/\s+/).filter(Boolean);
-  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
-  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
-}
-
-function pickCounts(stats: DashboardStats): Partial<Record<CountKey, number>> {
-  // "Active" totals only — drafts shouldn't badge as new work since the user
-  // hasn't sent them yet. Quotes uses sent (not total) for the same reason.
-  return {
-    clients: stats.customers,
-    quotes: stats.quotes.sent,
-    invoices: stats.invoices.pending,
-  };
-}
 
 /** Project the shared dash-cache snapshot onto the sidebar's slice. */
 function projectSidebar(snap: CachedDash | null): SbState {
   if (!snap) return INITIAL_STATE;
   const { stats, profile } = snap;
-  // REQ-624: the person signed in — the editor's own name while she acts for the owner's account
-  const userName = profile
-    ? personName(profile.user, profile.actor)
-    : undefined;
-  const bizName =
-    (profile?.identity?.businessName ?? profile?.identity?.displayName)?.trim();
-  const counts = stats ? pickCounts(stats) : {};
-  const lang = personLanguage(profile?.user, profile?.actor) === "es"
-    ? "es"
-    : "en"; // REQ-631
+  // REQ-518: actionable counts only — never the customers total
+  const counts = stats ? pickSidebarCounts(stats) : {};
   const superAdmin = profile?.user.superAdmin === true;
+  // REQ-624: the editor signed in while acting for another's account
   const actor = profile?.actor
     ? { id: profile.actor.id, needsName: profile.actor.needsName === true }
     : null;
-  if (!userName && !bizName) {
-    return { counts, identity: null, lang, superAdmin, actor };
-  }
-  const display = userName || bizName || tFor(lang, "common.account");
-  const biz = userName && bizName ? bizName : undefined;
-  const fallback = profile?.initials?.trim();
-  // an editor with no name yet: her phone stands in for the name, never for the letters
-  const initials = actor?.needsName
-    ? "•"
-    : (fallback && fallback !== "?" ? fallback : null) ??
-      deriveInitials(userName, bizName);
-  return {
-    counts,
-    identity: { display, biz, initials },
-    lang,
-    superAdmin,
-    actor,
-  };
+  return { counts, profile, superAdmin, actor };
 }
 
 export default function DashSidebar(
   { active = "home", showNav = true }: Props,
 ) {
   // REQ-156 — which folder is open: the active entry's, until Back or a folder row is clicked
-  const [path, setPath] = useState<string[]>(() =>
-    active === "admin" ? ["manage"] : folderPathTo(NAV, active)
-  );
+  const [path, setPath] = useState<string[]>(() => restingPath(active));
   const view = viewAt(NAV, path);
 
   const [collapsed, setCollapsed] = useState<boolean>(() => {
     if (typeof globalThis.localStorage === "undefined") return false;
-    // REQ-187 — the replica frame takes the customer's flag, never the staff's storage
-    if (isReplicaFrame()) return false;
     return globalThis.localStorage.getItem("pm:sb-collapsed") === "1";
   });
   const [mobileOpen, setMobileOpen] = useState(false);
-  // REQ-187 — the customer's sidebar reports its flags (on change, and when asked on join); the
-  // replica frame's sidebar takes them from the stage
+  // REQ-358 — every close (✕, backdrop, ☰, Escape) puts the drawer back at the page's folder,
+  // so it never re-opens on the folder browsed last.
   useEffect(() => {
-    if (isReplicaFrame()) {
-      return onReplicaView((v) => {
-        setCollapsed(v.sb);
-        setMobileOpen(v.drawer);
-        setPath(v.folder);
-      });
-    }
-    const report = () =>
-      reportView({ sb: collapsed, drawer: mobileOpen, folder: path });
-    report();
-    return onViewRequest(report);
-  }, [collapsed, mobileOpen, path]);
+    if (!mobileOpen) setPath(restingPath(active));
+  }, [mobileOpen]);
+  // REQ-358 — Escape closes the phone drawer.
+  useEffect(() => {
+    if (!mobileOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setMobileOpen(false);
+    };
+    globalThis.addEventListener("keydown", onKey);
+    return () => globalThis.removeEventListener("keydown", onKey);
+  }, [mobileOpen]);
   // Seed from the shared cache so a navigation between pages renders the
   // last-known counts/identity immediately and the badge doesn't flash
   // empty before the refetch lands.
@@ -160,6 +117,23 @@ export default function DashSidebar(
     adminsClient.accounts().then((v) => {
       if (alive) setAccounts(v);
     }).catch(() => {/* no session yet, or the API is down — no switcher */});
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  // REQ-602 (M35) — how many workers the account has. REQ-739 (p18-3f):
+  // "loading" until the fetch settles, so the row's href is set only once
+  const [workerCount, setWorkerCount] = useState<WorkerCountState>("loading");
+  const workerLink = workerViewLink(workerCount);
+  useEffect(() => {
+    let alive = true;
+    fieldClient.workers().then((ws) => {
+      if (alive) setWorkerCount(ws.length);
+    }).catch(() => {
+      // no session or no access — the plain /worker link
+      if (alive) setWorkerCount("unknown");
+    });
     return () => {
       alive = false;
     };
@@ -205,9 +179,34 @@ export default function DashSidebar(
       if (!alive) return;
       setS(projectSidebar(snap));
     });
+    // REQ-423 — a name saved on this page (Settings, the staff name prompt)
+    // shows at once, then the refetch brings the server's view (initials, checklist).
+    // REQ-737 (cycle 5, p12) — a business rename in Settings does the same.
+    const onProfile = (e: Event) => {
+      const detail = (e as CustomEvent<ProfileUpdatedDetail>).detail ?? {};
+      if (!alive) return;
+      if (detail.name === undefined && detail.businessName === undefined) {
+        return;
+      }
+      const snap = readCached();
+      if (snap?.profile) {
+        setS(projectSidebar({
+          ...snap,
+          profile: withSavedProfile(snap.profile, detail),
+        }));
+      }
+      refreshDash().catch(() => {/* the next page load refetches */});
+    };
+    globalThis.addEventListener(PROFILE_UPDATED, onProfile);
+    // REQ-698 (demo-loop cycle 5, m14): a quote or invoice moved (the
+    // customer signed in another tab, a payment landed) — re-read the counts
+    // so the badge never says "Cotizaciones 1" next to "0 awaiting".
+    const unfollow = followBadgeChanges(() => refreshDash());
     return () => {
       alive = false;
       unsub();
+      unfollow();
+      globalThis.removeEventListener(PROFILE_UPDATED, onProfile);
     };
   }, []);
 
@@ -240,6 +239,15 @@ export default function DashSidebar(
   // Reactive UI language: seeded from the profile cache, flipped instantly
   // when Settings changes it. Reading langSignal here re-renders the rail.
   const lang = langSignal.value;
+  // REQ-423 — the sign-in placeholder is no name: the business stands in, else "Account".
+  // REQ-712 (cycle 5, m7): worded in the page's language, not the profile's.
+  const identity = sidebarIdentity(s.profile, (k, v) => tFor(lang, k, v));
+  // REQ-517 — an icon-only row still names itself: a hover tooltip always, and an
+  // aria-label while collapsed (the label span is gone or display:none then).
+  const named = (label: string) => ({
+    title: label,
+    "aria-label": collapsed ? label : undefined,
+  });
 
   return (
     <>
@@ -247,7 +255,7 @@ export default function DashSidebar(
         <ActorNamePrompt
           actorId={s.actor.id}
           needsName={s.actor.needsName}
-          lang={s.lang}
+          lang={lang}
           onSaved={(name) => {
             // the topbar's SSR greeting learns it too (DashTopbar listens)
             globalThis.dispatchEvent(
@@ -258,12 +266,14 @@ export default function DashSidebar(
         />
       )}
       {mobileOpen && (
-        <div
+        <Backdrop
           class="sb-backdrop"
-          onClick={() => setMobileOpen(false)}
+          onClose={() => setMobileOpen(false)}
           aria-hidden="true"
         />
       )}
+      <style>{SB_DRAWER_CSS}</style>
+      <style>{SB_FOLDER_CSS}</style>
       <aside
         class={`sb ${collapsed ? "sb--collapsed" : ""} ${
           mobileOpen ? "sb--open" : ""
@@ -279,7 +289,7 @@ export default function DashSidebar(
           // deno-lint-ignore react-no-danger
           dangerouslySetInnerHTML={{
             __html:
-              `(function(){try{if(window.name==="pm-demo-replica")return;if(localStorage.getItem("pm:sb-collapsed")==="1"){var s=document.currentScript;var a=s&&s.closest(".sb");if(a){a.classList.add("sb--collapsed");}}}catch(_){}})();`,
+              `(function(){try{if(localStorage.getItem("pm:sb-collapsed")==="1"){var s=document.currentScript;var a=s&&s.closest(".sb");if(a){a.classList.add("sb--collapsed");}}}catch(_){}})();`,
           }}
         />
         <div class="sb__inner">
@@ -301,6 +311,17 @@ export default function DashSidebar(
                 <div class="sb__brand-name">{tFor(lang, "brand.name")}</div>
               </div>
             </a>
+            {/* REQ-358 — the drawer covers the ☰, so it carries its own close (phone widths only) */}
+            <button
+              type="button"
+              class="sb__close"
+              data-cy="sb-close"
+              aria-label={tFor(lang, "nav.closeMenu")}
+              title={tFor(lang, "nav.closeMenu")}
+              onClick={() => setMobileOpen(false)}
+            >
+              <I d={<path d="M6 6l12 12M18 6L6 18" />} size={20} />
+            </button>
           </div>
 
           <a
@@ -326,7 +347,7 @@ export default function DashSidebar(
                   class="nav-item nav-item--back"
                   data-cy="nav-back"
                   onClick={() => setPath(view.parentPath!)}
-                  title={tFor(lang, "nav.back")}
+                  {...named(tFor(lang, "nav.back"))}
                 >
                   <span class="nav-item__icon">
                     <I d={ICN.chevLeft} size={18} />
@@ -352,7 +373,7 @@ export default function DashSidebar(
                       class="nav-item nav-item--folder"
                       data-cy={`nav-folder-${item.id}`}
                       onClick={() => setPath([...path, item.id])}
-                      title={tFor(lang, `nav.${item.id}`)}
+                      {...named(tFor(lang, `nav.${item.id}`))}
                     >
                       <span class="nav-item__icon">
                         <I d={ICN[item.icon]} size={18} />
@@ -373,6 +394,10 @@ export default function DashSidebar(
                 const count = item.countKey
                   ? s.counts[item.countKey as CountKey]
                   : undefined;
+                // REQ-518: the pill says what it counts (hover title + screen readers)
+                const countLabel = item.countKey && count
+                  ? tFor(lang, countLabelKey(item.countKey), { count })
+                  : undefined;
                 return (
                   <a
                     key={item.id}
@@ -380,6 +405,7 @@ export default function DashSidebar(
                     class={`nav-item ${
                       active === item.id ? "nav-item--active" : ""
                     }`}
+                    {...named(tFor(lang, `nav.${item.id}`))}
                   >
                     <span class="nav-item__icon">
                       <I d={ICN[item.icon]} size={18} />
@@ -395,23 +421,32 @@ export default function DashSidebar(
                       </span>
                     )}
                     {!collapsed && count != null && count > 0
-                      ? <span class="nav-item__count">{count}</span>
+                      ? (
+                        <span
+                          class="nav-item__count"
+                          title={countLabel}
+                          aria-label={countLabel}
+                        >
+                          {count}
+                        </span>
+                      )
                       : null}
                   </a>
                 );
               })}
               {
-                /* Super-admin tab — super-admins only, inside the Admin folder
-                (REQ-176). Server enforces the /admin gate too (route middleware
+                /* Super-admin tab — super-admins only, on the root and inside the
+                Roles folder (REQ-176; REQ-604 demo m18: on the root too). Server enforces the /admin gate too (route middleware
                 + every endpoint); this just hides the entry for everyone else.
                 Label is intentionally not i18n'd (internal operator tool). */
               }
-              {s.superAdmin && view.folder?.id === "manage" && (
+              {superAdminTabAt(s.superAdmin, view.folder?.id ?? null) && (
                 <a
                   href="/admin"
                   class={`nav-item ${
                     active === "admin" ? "nav-item--active" : ""
                   }`}
+                  {...named("Admin")}
                 >
                   <span class="nav-item__icon">
                     <I d={ICN.shield} size={18} />
@@ -423,22 +458,22 @@ export default function DashSidebar(
           )}
 
           <div class="sb__bottom">
-            {s.identity && (
+            {identity && (
               <a
                 href="/settings"
                 class="sb__footer"
                 data-cy="sb-user"
                 style="display:flex;align-items:center;gap:10px;padding:10px 8px;margin:0 0 6px;border-radius:10px;text-decoration:none;color:inherit;background:rgba(255,255,255,0.04);"
-                title={s.identity.biz
-                  ? `${s.identity.display} · ${s.identity.biz}`
-                  : s.identity.display}
+                title={identity.biz
+                  ? `${identity.display} · ${identity.biz}`
+                  : identity.display}
               >
                 <span
                   aria-hidden="true"
                   data-cy="sb-user-initials"
                   style="flex:0 0 auto;width:32px;height:32px;border-radius:50%;background:var(--brand-green,#519843);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:12px;letter-spacing:0.04em"
                 >
-                  {s.identity.initials}
+                  {identity.initials}
                 </span>
                 <span
                   class="sb__footer-text"
@@ -448,14 +483,14 @@ export default function DashSidebar(
                     data-cy="sb-user-name"
                     style="font-size:13px;font-weight:700;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis"
                   >
-                    {s.identity.display}
+                    {identity.display}
                   </span>
-                  {s.identity.biz && (
+                  {identity.biz && (
                     <span
                       data-cy="sb-user-biz"
                       style="font-size:11px;color:rgba(255,255,255,0.6);white-space:nowrap;overflow:hidden;text-overflow:ellipsis"
                     >
-                      {s.identity.biz}
+                      {identity.biz}
                     </span>
                   )}
                 </span>
@@ -514,20 +549,30 @@ export default function DashSidebar(
             )}
             {
               /* REQ-143: the worker screen is always one click away — it is a
-              separate login (cell + PIN), so this is a plain link. */
+              separate login (cell + PIN), so this is a plain link.
+              REQ-602 (M35): with no workers nobody can sign in there, so it
+              goes to /field/workers, where workers are added.
+              REQ-739 (p18-3f): it is labelled "Add a worker" there, and until
+              the count is known it is a hidden placeholder with no href (it
+              keeps its slot), so the href never flips. */
             }
             <a
-              href="/worker"
+              href={workerLink.href ?? undefined}
               class="nav-item"
-              style="color:rgba(255,255,255,0.7)"
+              style={workerLink.pending
+                ? "color:rgba(255,255,255,0.7);visibility:hidden"
+                : "color:rgba(255,255,255,0.7)"}
               data-cy="nav-worker-view"
+              aria-hidden={workerLink.pending ? "true" : undefined}
+              tabIndex={workerLink.pending ? -1 : undefined}
+              {...named(tFor(lang, workerLink.labelKey))}
             >
               <span class="nav-item__icon">
                 <I d={ICN.hardhat} size={18} />
               </span>
               {!collapsed && (
                 <span class="nav-item__label">
-                  {tFor(lang, "nav.workerView")}
+                  {tFor(lang, workerLink.labelKey)}
                 </span>
               )}
             </a>
@@ -535,6 +580,7 @@ export default function DashSidebar(
               type="button"
               class="nav-item nav-item--logout"
               onClick={logout}
+              {...named(tFor(lang, "nav.logout"))}
             >
               <span class="nav-item__icon">
                 <I d={ICN.logout} size={18} />

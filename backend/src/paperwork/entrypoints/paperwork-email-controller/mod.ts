@@ -18,11 +18,24 @@ class EmailDispatchDto {
   to?: string;
   @IsOptional() @IsString()
   from?: string;
+  /** REQ-727: the invoice send sheet's "Sends in" (en | es). */
+  @IsOptional() @IsString()
+  language?: string;
 }
 
 class SmsDispatchDto {
   @IsOptional() @IsString()
   to?: string;
+  /** REQ-727: the invoice send sheet's "Sends in" (en | es). */
+  @IsOptional() @IsString()
+  language?: string;
+}
+
+/** REQ-727 (demo-loop cycle 5, c4-M16): the language a dispatch was asked
+ *  to go out in — en or es; anything else is no pick (the coordinators then
+ *  use the Settings default, UX-28). */
+function dispatchLanguage(v: string | undefined): "en" | "es" | undefined {
+  return v === "en" || v === "es" ? v : undefined;
 }
 
 function parseEmailDispatch(input: unknown): EmailDispatchDto {
@@ -99,7 +112,7 @@ async function smsSenderRefusal(
  * the linked customer's email.
  *
  *   POST /quotes/:id/email      { to?, from? }
- *   POST /invoices/:id/email    { to?, from? }
+ *   POST /invoices/:id/email    { to?, from?, language? }   (REQ-727)
  *
  * Note: routes are mounted under their resource prefix so they sit
  * naturally next to the existing CRUD endpoints; the controller is the
@@ -139,6 +152,7 @@ export class PaperworkEmailController {
       resourceId: id,
       to: dto.to,
       from: dto.from,
+      language: dispatchLanguage(dto.language), // REQ-727
     });
   }
 
@@ -170,6 +184,7 @@ export class PaperworkEmailController {
       kind: "invoice",
       resourceId: id,
       to: dto.to,
+      language: dispatchLanguage(dto.language), // REQ-727
     });
   }
 }

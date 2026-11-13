@@ -10,6 +10,8 @@ import { Injectable } from "#danet/core";
 import { getKv } from "@core/data/kv/mod.ts";
 import { UserStore } from "@users/domain/data/user-store/mod.ts";
 import { BusinessIdentityStore } from "@profile/domain/data/business-identity-store/mod.ts";
+import { BusinessAddressStore } from "@profile/domain/data/business-address-store/mod.ts";
+import { businessTimezone } from "@users/domain/business/timezone/mod.ts";
 import { SmsService } from "@users/domain/data/sms/mod.ts";
 import { normalizePhone } from "@users/domain/business/normalize-phone/mod.ts";
 import {
@@ -17,6 +19,7 @@ import {
   realName,
 } from "@users/domain/business/account-admins/mod.ts";
 import { outboundSenderName } from "#quote-flow/outbound-identity.ts";
+import { resolveCommsLanguage } from "#quote-flow/comms-language.ts"; // REQ-715
 import { CustomerStore } from "@crm/domain/data/customer-store/mod.ts";
 import {
   FieldWorkerStore,
@@ -28,14 +31,13 @@ import {
   customerCanceledText,
   customerDeferredText,
   customerTodayText,
-  DEFAULT_TIMEZONE,
   type NoticeLang,
   scheduleDue,
   servicesLine,
-  validTimezone,
   workerNewTaskText,
 } from "@field/domain/business/notices/mod.ts";
 import { todayIn } from "@field/domain/business/schedule/mod.ts";
+import { covers, lastDayOf } from "@field/domain/business/job-span/mod.ts";
 import type { FieldTask } from "@field/dto/field.ts";
 
 const EVERY_MINUTE_MS = 60_000;
@@ -49,12 +51,23 @@ interface Sender {
   owner: string;
   /** the owner's own language (workers) */
   ownerLang: NoticeLang;
-  /** the business's comms language (customers) */
+  /** the business's comms language (a customer with none of their own) */
   commsLang: NoticeLang;
   tz: string;
 }
 
 const log = (line: string) => console.log(`[field/notices] ${line}`);
+
+/** REQ-715 (demo-loop cycle 5, m31): a customer's text speaks their own
+ *  language (Customer.language), else the business's comms language. */
+const customerLang = (
+  s: Sender,
+  customer: { language?: string } | null | undefined,
+): NoticeLang =>
+  resolveCommsLanguage({
+    customerLanguage: customer?.language,
+    identityCommsLanguage: s.commsLang,
+  });
 
 @Injectable()
 export class FieldNotices {
@@ -67,7 +80,17 @@ export class FieldNotices {
     private subs: SubscriptionStore,
     private day: FieldDay,
     private sms: SmsService,
+    private addresses: BusinessAddressStore = new BusinessAddressStore(),
   ) {}
+
+  /** REQ-172/255 — the zone the 9 am texts follow: the one picked, else the address's state's, else New York */
+  private async zone(
+    userId: string,
+    timezone: string | undefined,
+  ): Promise<string> {
+    const address = await this.addresses.get(userId).catch(() => null);
+    return businessTimezone({ timezone, state: address?.state });
+  }
 
   /** who signs the text; null (logged) when the account still carries a placeholder name */
   private async sender(userId: string): Promise<Sender | null> {
@@ -94,7 +117,7 @@ export class FieldNotices {
       owner,
       ownerLang: user.language === "es" ? "es" : "en",
       commsLang: identity?.commsLanguage === "es" ? "es" : "en",
-      tz: validTimezone(identity?.timezone) ?? DEFAULT_TIMEZONE,
+      tz: await this.zone(userId, identity?.timezone),
     };
   }
 
@@ -130,16 +153,32 @@ export class FieldNotices {
     }
   }
 
-  /** REQ-171: a worker hears about a job added to (or moved onto) their list TODAY */
+  /**
+   * REQ-171: a worker hears about a job added to (or moved onto) their list TODAY.
+   * REQ-785: a job of several days is on today's list on any of its days, and every worker on it hears — once each.
+   */
   async workerNewTask(userId: string, task: FieldTask): Promise<boolean> {
     const s = await this.sender(userId);
     if (!s) return false;
-    if (task.date !== todayIn(s.tz)) return false;
+    if (!covers(task, todayIn(s.tz))) return false;
+    let texted = false;
+    for (const workerId of [task.workerId, ...(task.crewIds ?? [])]) {
+      if (await this.workerNewTaskTo(userId, s, task, workerId)) texted = true;
+    }
+    return texted;
+  }
+
+  private async workerNewTaskTo(
+    userId: string,
+    s: Sender,
+    task: FieldTask,
+    workerId: string,
+  ): Promise<boolean> {
     if (
-      !await this.once(["field_notice", "worker-new", task.id, task.workerId])
+      !await this.once(["field_notice", "worker-new", task.id, workerId])
     ) return false;
     const [w, types, customer] = await Promise.all([
-      this.workers.find(task.workerId),
+      this.workers.find(workerId),
       this.types.listByUser(userId),
       this.customers.get(task.customerId).catch(() => null),
     ]);
@@ -157,17 +196,17 @@ export class FieldNotices {
     );
   }
 
-  /** REQ-171: a customer hears that a service on or after today was canceled */
+  /** REQ-171: a customer hears that a service on or after today was canceled (REQ-785: a job still running counts) */
   async customerCanceled(userId: string, task: FieldTask): Promise<boolean> {
     const s = await this.sender(userId);
     if (!s) return false;
-    if (task.date < todayIn(s.tz)) return false;
+    if (lastDayOf(task) < todayIn(s.tz)) return false;
     if (!await this.once(["field_notice", "canceled", task.id])) return false;
     const [types, customer] = await Promise.all([
       this.types.listByUser(userId),
       this.customers.get(task.customerId).catch(() => null),
     ]);
-    const body = customerCanceledText(s.commsLang, {
+    const body = customerCanceledText(customerLang(s, customer), {
       business: s.business,
       service: types.find((x) => x.id === task.taskTypeId)?.name ?? "—",
       date: task.date,
@@ -194,7 +233,7 @@ export class FieldNotices {
       this.types.listByUser(userId),
       this.customers.get(task.customerId).catch(() => null),
     ]);
-    const body = customerDeferredText(s.commsLang, {
+    const body = customerDeferredText(customerLang(s, customer), {
       business: s.business,
       service: types.find((x) => x.id === task.taskTypeId)?.name ?? "—",
       from: task.date,
@@ -234,7 +273,7 @@ export class FieldNotices {
 
   private async sweepAccount(userId: string, now: Date): Promise<number> {
     const identity = await this.identities.get(userId).catch(() => null);
-    const tz = validTimezone(identity?.timezone) ?? DEFAULT_TIMEZONE;
+    const tz = await this.zone(userId, identity?.timezone);
     const kv = await getKv();
     const sentForDate =
       (await kv.get<string>(["field_notice", "schedule-day", userId])).value ??
@@ -264,7 +303,7 @@ export class FieldNotices {
         !await this.once(["field_notice", "today", userId, date, customerId])
       ) continue;
       const customer = await this.customers.get(customerId).catch(() => null);
-      const body = customerTodayText(s.commsLang, {
+      const body = customerTodayText(customerLang(s, customer), {
         business: s.business,
         services: servicesLine(
           tasks.map((t) => types.get(t.taskTypeId) ?? "—"),
