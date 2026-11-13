@@ -59,6 +59,8 @@ function fresh() {
       logged.push(input);
       return Promise.resolve(undefined);
     },
+    // REQ-784: the outbox record every customer message also gets
+    outbox: () => Promise.resolve(undefined),
   } as unknown as LogPaperworkMessage;
   const reply = new ReplyToInquiry(
     inquiries,

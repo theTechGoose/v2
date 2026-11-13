@@ -27,6 +27,10 @@ import {
 } from "#quote-flow/reminder-settings.ts";
 import { resolveCommsLanguage } from "#quote-flow/comms-language.ts"; // REQ-715
 import { withSendLang } from "#quote-flow/share-link.ts"; // REQ-715
+import { LogPaperworkMessage } from "@communication/domain/coordinators/log-paperwork-message/mod.ts"; // REQ-784
+import { customerLabel } from "@communication/domain/business/outbox-entry/mod.ts"; // REQ-784
+import { ConversationStore } from "@communication/domain/data/conversation-store/mod.ts"; // REQ-784
+import { MessageStore } from "@communication/domain/data/message-store/mod.ts"; // REQ-784
 
 /** Every cadence step, in order (days relative to the due date): -3 = three
  *  days before, 0 = the due date (REQ-704, demo cycle 5 m60), 3 / 7 / 14 past
@@ -110,6 +114,11 @@ export class SendPaymentReminder {
     private sms: SmsService,
     private shortlinks: ShortLinkStore,
     private bus: EventBus,
+    /** REQ-784 — the business's outbox (defaulted for direct construction) */
+    private commsLog: LogPaperworkMessage = new LogPaperworkMessage(
+      new ConversationStore(),
+      new MessageStore(),
+    ),
   ) {}
 
   async runAll(userId: string, now: Date = new Date()): Promise<ReminderResult[]> {
@@ -170,8 +179,42 @@ export class SendPaymentReminder {
     }
 
     // Days -3 / 0 / 3 / 7 / 14: dispatch to customer.
-    const { copy, toEmail, toPhone, senderEmail, url, fromAlias, businessName } =
-      await this.compose(userId, invoice, day);
+    const {
+      copy,
+      toEmail,
+      toPhone,
+      senderEmail,
+      url,
+      fromAlias,
+      businessName,
+      lang,
+      customerName,
+    } = await this.compose(userId, invoice, day);
+    // REQ-784 (demo-loop dv1, d12): each reminder is a customer message —
+    // the outbox lists it, sent or not and why, with what was sent.
+    const toOutbox = (
+      channel: "email" | "text",
+      ok: boolean,
+      what: {
+        to: string;
+        subject?: string;
+        body?: string;
+        reasonCode?: string;
+        reason?: string;
+      },
+    ) =>
+      this.commsLog.outbox({
+        userId,
+        channel,
+        kind: "reminder",
+        language: lang,
+        ok,
+        customerId: invoice.customerId,
+        customerName,
+        docId: invoice.id,
+        docRef: docRef(invoice),
+        ...what,
+      });
 
     // REQ-556 (demo-loop cycle 4, M7): a channel counts only when the
     // provider took the message; nothing delivered says why, and does not
@@ -198,8 +241,19 @@ export class SendPaymentReminder {
         });
         if (res.ok) channels.push("email");
         else console.warn(`[send-payment-reminder] email not sent: ${res.reason}`);
+        await toOutbox("email", res.ok, {
+          to: toEmail,
+          subject: copy.emailSubject,
+          body: copy.emailHtml(url),
+          ...(res.ok ? {} : { reason: res.reason }),
+        });
       } catch (err) {
         console.error("[send-payment-reminder] email failed:", err);
+        await toOutbox("email", false, {
+          to: toEmail,
+          subject: copy.emailSubject,
+          reason: (err as Error)?.message ?? String(err),
+        });
       }
     }
     if (toPhone) {
@@ -207,8 +261,17 @@ export class SendPaymentReminder {
         const res = await this.sms.send({ to: toPhone, body: copy.smsBody(url) });
         if (res.ok) channels.push("sms");
         else console.warn(`[send-payment-reminder] sms not sent: ${res.detail ?? res.reason}`);
+        await toOutbox("text", res.ok, {
+          to: toPhone,
+          body: copy.smsBody(url),
+          ...(res.ok ? {} : { reasonCode: res.failureCode, reason: res.reason }),
+        });
       } catch (err) {
         console.error("[send-payment-reminder] sms failed:", err);
+        await toOutbox("text", false, {
+          to: toPhone,
+          reason: (err as Error)?.message ?? String(err),
+        });
       }
     }
     if (channels.length === 0) {
@@ -303,6 +366,9 @@ export class SendPaymentReminder {
       url,
       businessName,
       fromAlias: biz?.emailAlias,
+      // REQ-784: what the outbox entry says
+      lang,
+      customerName: customerLabel(shown),
     };
   }
 

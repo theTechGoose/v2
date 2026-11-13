@@ -12,6 +12,7 @@ import { businessFrom } from "@communication/domain/business/sender/mod.ts";
 import { type EmailLogo, emailLogo, emailLogoHtml } from "@paperwork/domain/business/email-logo/mod.ts";
 import { RenderQuotePdf } from "@paperwork/domain/coordinators/render-quote-pdf/mod.ts";
 import { LogPaperworkMessage } from "@communication/domain/coordinators/log-paperwork-message/mod.ts";
+import { customerLabel } from "@communication/domain/business/outbox-entry/mod.ts"; // REQ-784
 import {
   customerSmsTarget,
   dispatchCustomerSms,
@@ -389,6 +390,23 @@ export class SendSignedConfirmation {
           : {}),
       });
       if (sent.ok) deliveredVia.push("email");
+      // REQ-784 (demo-loop dv1, d12): the signed copy is a customer message —
+      // the outbox lists it, sent or not, with the email as sent.
+      await this.commsLog.outbox({
+        userId,
+        channel: "email",
+        kind: "signedCopy",
+        language: lang,
+        ok: sent.ok,
+        ...(sent.ok ? {} : { reason: sent.reason }),
+        customerId: customer?.id ?? quote.customerId,
+        customerName: customerLabel(shown),
+        to: recipient,
+        docId: quote.id,
+        docRef: docRef(quote),
+        subject,
+        body: html,
+      });
       console.log(
         sent.ok
           ? `[send-signed-confirmation] sent to ${recipient} messageId=${
@@ -413,6 +431,22 @@ export class SendSignedConfirmation {
       // missing, invalid or fictional one is skipped, so no "Texted to"
       // receipt is ever logged for it.
       const target = customerSmsTarget(customer?.phoneNumber);
+      if (!target.ok && target.failureCode !== "missing") {
+        // REQ-784: a phone on file that can't take the text — "not texted" and why
+        await this.commsLog.outbox({
+          userId,
+          channel: "text",
+          kind: "signedCopy",
+          language: lang,
+          ok: false,
+          reasonCode: target.failureCode,
+          customerId: customer?.id ?? quote.customerId,
+          customerName: customerLabel(shown),
+          to: "e164" in target ? target.e164 : customer?.phoneNumber ?? "",
+          docId: quote.id,
+          docRef: docRef(quote),
+        });
+      }
       if (target.ok) {
         // P-30: the shared builder handles the unnamed-customer greeting
         // natively ("Hola, …" / "Hi there, …") — never prefill a fallback
@@ -432,6 +466,23 @@ export class SendSignedConfirmation {
           to: target.e164,
           body,
           uiLang: lang === "es" ? "es" : "en",
+        });
+        // REQ-784: the completion text, in the outbox, sent or not and why
+        await this.commsLog.outbox({
+          userId,
+          channel: "text",
+          kind: "signedCopy",
+          language: lang,
+          ok: res.ok,
+          ...(res.ok
+            ? {}
+            : { reasonCode: res.failureCode, reason: res.reason }),
+          customerId: customer?.id ?? quote.customerId,
+          customerName: customerLabel(shown),
+          to: res.to,
+          docId: quote.id,
+          docRef: docRef(quote),
+          body,
         });
         // Comms trail (roadmap p.8): record a REAL delivery like every other
         // outbound text so it's queryable per document.

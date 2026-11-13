@@ -14,6 +14,7 @@ import { BusinessIdentityStore } from "@profile/domain/data/business-identity-st
 import { SmsService } from "@users/domain/data/sms/mod.ts";
 import { ShortLinkStore } from "@paperwork/domain/data/shortlink-store/mod.ts";
 import { LogPaperworkMessage } from "@communication/domain/coordinators/log-paperwork-message/mod.ts";
+import { customerLabel } from "@communication/domain/business/outbox-entry/mod.ts"; // REQ-784
 import { buildInvoiceSms, smsJobName } from "#quote-flow/sms-i18n.ts";
 import {
   outboundSenderFirstName,
@@ -28,10 +29,12 @@ import type { SmsFailureCode } from "#quote-flow/sms-failure.ts";
 import { phoneCantReceiveTexts } from "#quote-flow/sms-number.ts"; // REQ-764
 import {
   customerOnDocument,
+  docRef,
   docRefWithVersion,
   docTitle,
   type RenderedCustomer,
 } from "@paperwork/domain/business/doc-render/mod.ts";
+import { customerSmsTarget } from "@paperwork/domain/business/customer-sms/mod.ts"; // REQ-784
 import type { Quote } from "@paperwork/dto/quote.ts";
 import type { Invoice } from "@paperwork/dto/invoice.ts";
 import type { Customer } from "@crm/dto/customer.ts";
@@ -138,6 +141,12 @@ export class SendPaperworkSms {
     let customerNameForEvent: string | undefined;
     /** REQ-715: the document's customer — their language joins the resolution */
     let docCustomer: Customer | undefined;
+    /** REQ-784: what the outbox entry says about this text */
+    let outboxFacts: {
+      docRef: string;
+      customerName?: string;
+      language: "en" | "es";
+    } = { docRef: "", language: "en" };
 
     if (input.kind === "quote") {
       // REQ-201: a send publishes what is pending — the link must show what was sent
@@ -154,6 +163,11 @@ export class SendPaperworkSms {
         id: quote.id,
       }, lang);
       body = renderQuoteBody(quote, customer, sender, senderBiz, shortUrl);
+      outboxFacts = {
+        docRef: docRef(quote),
+        customerName: customerLabel(customerOnDocument(quote, customer)),
+        language: lang,
+      };
     } else {
       const stored = await publishPendingInvoice(this.invoices, input.resourceId, userId, senderAsPublisher(userId, sender?.name));
       // REQ-480: an unissued invoice is issued by this delivery — the stamp
@@ -183,6 +197,11 @@ export class SendPaperworkSms {
         lang,
         payLine ?? undefined,
       );
+      outboxFacts = {
+        docRef: docRef(invoice),
+        customerName: customerLabel(customerOnDocument(invoice, customer)),
+        language: lang,
+      };
     }
 
     // UX-28: an explicit pick is adopted as the stored default when none
@@ -211,6 +230,24 @@ export class SendPaperworkSms {
       { to: recipient ?? "", body, uiLang },
     );
     const e164 = result.to;
+    // REQ-784 (demo-loop dv1, d12): every customer text lands in the
+    // business's outbox — sent, or not and why — with its words as sent.
+    await this.commsLog.outbox({
+      userId,
+      channel: "text",
+      kind: input.kind,
+      language: outboxFacts.language,
+      ok: result.ok,
+      ...(result.ok
+        ? {}
+        : { reasonCode: result.failureCode, reason: result.reason }),
+      customerId: customerIdForLog,
+      customerName: outboxFacts.customerName,
+      to: e164 || recipient,
+      docId: input.resourceId,
+      docRef: outboxFacts.docRef,
+      body,
+    });
 
     // NW-10 (REQ-003): stamp the quote's lifecycle on the first successful
     // text — status→"sent" + sentAt→now, idempotent, mirroring
@@ -274,6 +311,53 @@ export class SendPaperworkSms {
       }
     }
     return phoneCantReceiveTexts(recipient);
+  }
+
+  /**
+   * REQ-784 (demo-loop cycle dv1, d12): a text the caller SKIPPED because
+   * `recipientCantText` said the number can't take one (SendQuote's and the
+   * chat's email + text sends, REQ-764 / REQ-770) never reaches `run` — it
+   * is still a customer message the business meant to send, so the outbox
+   * lists it "not sent" with `reason`. Read-only otherwise: publishes and
+   * sends nothing; never throws.
+   */
+  async noteSkipped(
+    userId: string,
+    input: Pick<SendPaperworkSmsInput, "kind" | "resourceId" | "to" | "language">,
+    reason: string,
+  ): Promise<void> {
+    try {
+      const doc = input.kind === "quote"
+        ? await this.quotes.getOwned(input.resourceId, userId)
+        : await this.invoices.getOwned(input.resourceId, userId);
+      const [customer, biz] = await Promise.all([
+        this.tryGetCustomer(userId, doc.customerId),
+        this.tryGetBusinessIdentity(userId),
+      ]);
+      const shown = customerOnDocument(doc, customer);
+      const raw = input.to ?? customer?.phoneNumber ?? shown?.phoneNumber;
+      const target = customerSmsTarget(raw);
+      await this.commsLog.outbox({
+        userId,
+        channel: "text",
+        kind: input.kind,
+        language: resolveCommsLanguage({
+          override: input.language,
+          customerLanguage: customer?.language,
+          identityCommsLanguage: biz?.commsLanguage,
+        }),
+        ok: false,
+        reasonCode: target.ok ? "other" : target.failureCode,
+        reason,
+        customerId: customer?.id ?? doc.customerId,
+        customerName: customerLabel(shown),
+        to: "e164" in target ? target.e164 : raw ?? "",
+        docId: doc.id,
+        docRef: docRef(doc),
+      });
+    } catch (err) {
+      console.warn("[send-paperwork-sms] outbox note for a skipped text failed:", err);
+    }
   }
 
   private async tryGetCustomer(

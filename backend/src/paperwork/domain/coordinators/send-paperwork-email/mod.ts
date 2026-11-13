@@ -20,6 +20,7 @@ import {
   type SendEmailResult,
 } from "@communication/domain/data/email-service/mod.ts";
 import { LogPaperworkMessage } from "@communication/domain/coordinators/log-paperwork-message/mod.ts";
+import { customerLabel } from "@communication/domain/business/outbox-entry/mod.ts"; // REQ-784
 import { businessFrom } from "@communication/domain/business/sender/mod.ts";
 import { senderInitials as senderInitialsOf } from "#identity/initials.ts";
 import {
@@ -226,6 +227,11 @@ export class SendPaperworkEmail {
     let customerNameForEvent: string | undefined;
     /** REQ-715: the document's customer — their language joins the resolution */
     let docCustomer: Customer | undefined;
+    /** REQ-784: what the outbox entry says about this email */
+    let outboxFacts: { docRef: string; customerName?: string; language: Lang } = {
+      docRef: "",
+      language: "en",
+    };
     if (input.kind === "quote") {
       // REQ-201: a send publishes what is pending — the link must show what was sent
       const quote = await publishPendingQuote(this.quotes, input.resourceId, userId, senderAsPublisher(userId, sender?.name));
@@ -242,6 +248,11 @@ export class SendPaperworkEmail {
         textable: quoteSendTexts(input.channel, customer, quote),
       });
       quoteForStamp = quote;
+      outboxFacts = {
+        docRef: docRef(quote),
+        customerName: customerLabel(customerOnDocument(quote, customer)),
+        language: senderBiz.commsLanguage === "es" ? "es" : "en",
+      };
     } else {
       const stored = await publishPendingInvoice(this.invoices, input.resourceId, userId, senderAsPublisher(userId, sender?.name));
       // REQ-480: an unissued invoice is issued by this delivery — the email
@@ -296,7 +307,36 @@ export class SendPaperworkEmail {
         invQuoteCos,
         payWays,
       );
+      outboxFacts = {
+        docRef: docRef(invoice),
+        customerName: customerLabel(customerOnDocument(invoice, customer)),
+        language: lang,
+      };
     }
+
+    // REQ-784 (demo-loop dv1, d12): every customer email lands in the
+    // business's outbox — sent, or not and why — with the HTML as sent.
+    const toOutbox = (
+      ok: boolean,
+      what: { to?: string; body?: string; reasonCode?: string; reason?: string },
+    ) =>
+      this.commsLog.outbox({
+        userId,
+        channel: "email",
+        kind: input.kind === "quote"
+          ? "quote"
+          : input.variant === "paid"
+          ? "invoicePaid"
+          : "invoice",
+        language: outboxFacts.language,
+        ok,
+        customerId: customerIdForLog,
+        customerName: outboxFacts.customerName,
+        docId: input.resourceId,
+        docRef: outboxFacts.docRef,
+        subject,
+        ...what,
+      });
 
     // UX-28: an explicit pick is adopted as the stored default when none
     // exists yet — REQ-715: never a pick that is just this customer's own
@@ -315,6 +355,7 @@ export class SendPaperworkEmail {
     }
 
     if (!recipient) {
+      await toOutbox(false, { reasonCode: "missing", reason: "no email on file" });
       return {
         ok: false,
         reason: "no recipient: pass `to` or attach a customer with an email",
@@ -355,6 +396,11 @@ export class SendPaperworkEmail {
       from,
       cc,
       replyTo,
+    });
+    await toOutbox(result.ok, {
+      to: recipient,
+      body: htmlBody,
+      ...(result.ok ? {} : { reason: result.reason }),
     });
 
     // Stamp the quote's lifecycle: status→"sent" + sentAt→now (idempotent — only if not already set).

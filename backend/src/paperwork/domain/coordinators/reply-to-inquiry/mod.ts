@@ -18,6 +18,11 @@ import { BusinessIdentityStore } from "@profile/domain/data/business-identity-st
 import { EmailService } from "@communication/domain/data/email-service/mod.ts";
 import { SmsService } from "@users/domain/data/sms/mod.ts";
 import { LogPaperworkMessage } from "@communication/domain/coordinators/log-paperwork-message/mod.ts";
+import { customerLabel } from "@communication/domain/business/outbox-entry/mod.ts"; // REQ-784
+import {
+  customerOnDocument,
+  docRef,
+} from "@paperwork/domain/business/doc-render/mod.ts"; // REQ-784
 import { aliasFrom } from "@communication/domain/business/sender/mod.ts";
 import {
   type InquiryReplyChannel,
@@ -148,6 +153,31 @@ export class ReplyToInquiry {
         ? biz.commsLanguage
         : uiLang);
     const targets = inquiryReplyTargets(inquiry, customer);
+    // REQ-784 (demo-loop dv1, d12): the answer is a customer message — the
+    // outbox lists it, sent or not and why, with what was sent.
+    const toOutbox = (
+      ok: boolean,
+      what: {
+        to: string;
+        subject?: string;
+        body?: string;
+        reasonCode?: string;
+        reason?: string;
+      },
+    ) =>
+      this.commsLog.outbox({
+        userId,
+        channel: channel === "text" ? "text" : "email",
+        kind: "reply",
+        language: docLang,
+        ok,
+        customerId: quote.customerId,
+        customerName: customerLabel(customerOnDocument(quote, customer)) ??
+          inquiry.name,
+        docId: quote.id,
+        docRef: docRef(quote),
+        ...what,
+      });
 
     if (channel === "text") {
       if (!targets.text) {
@@ -164,6 +194,13 @@ export class ReplyToInquiry {
           sent.reason ? ` (${sent.reason})` : ""
         }`,
       );
+      await toOutbox(sent.ok, {
+        to: sent.to,
+        body,
+        ...(sent.ok
+          ? {}
+          : { reasonCode: sent.failureCode, reason: sent.reason }),
+      });
       if (!sent.ok) {
         return {
           ok: false,
@@ -225,6 +262,12 @@ export class ReplyToInquiry {
         sent.reason ? ` (${sent.reason})` : ""
       }`,
     );
+    await toOutbox(sent.ok, {
+      to,
+      subject,
+      body: htmlBody,
+      ...(sent.ok ? {} : { reason: sent.reason }),
+    });
     if (!sent.ok) {
       return {
         ok: false,

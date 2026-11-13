@@ -17,10 +17,11 @@ const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), "utf8");
 const ids = (p: string[]) => viewAt(NAV, p).items.map((n) => n.id);
 
 describe("REQ-176 the sidebar's root folders", () => {
-  test("the root is Dashboard, Customers, Billing, Field, Admin — nothing else (REQ-176 amendment: the field folder is not nested; REQ-361: Field, was Recurring)", () => {
+  test("the root is Dashboard, Customers, Outbox, Billing, Field, Admin — nothing else (REQ-176 amendment: the field folder is not nested; REQ-361: Field, was Recurring; REQ-784: the Outbox row)", () => {
     expect(ids([])).toEqual([
       "home",
       "customers",
+      "outbox", // REQ-784 (demo-loop dv1, d12): every email and text sent to customers
       "billing",
       "field",
       "manage",

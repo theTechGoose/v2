@@ -217,6 +217,13 @@ export class SendQuote {
       console.log(
         `[send-quote] quote=${quote.id} sms skipped: the number can't receive texts`,
       );
+      // REQ-784 (demo-loop dv1, d12): the skipped text is in the outbox —
+      // "not sent" and why — next to the email that went.
+      await this.smser.noteSkipped(input.userId, {
+        kind: "quote",
+        resourceId: quote.id,
+        language: input.language,
+      }, smsFailureReason);
     } else if (wantSms) {
       try {
         const result = await this.smser.run(input.userId, {
