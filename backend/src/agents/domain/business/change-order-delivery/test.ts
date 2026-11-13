@@ -256,3 +256,49 @@ Deno.test("REQ-652 M8: the not-sent reply and the Send button's keys exist in en
     { changeOrderNumber: "CO-001" },
   );
 });
+
+/** REQ-681 (demo-loop cycle 5, m12): a phone that can't take texts is not
+ *  texted at all, so the reply says "not texted: <reason>", never
+ *  "text failed" (which read as a failed attempt). */
+Deno.test("REQ-681 m12 changeOrderSentLine: emailed + a skipped text reads 'not texted: <reason>', never 'text failed'", () => {
+  const line = changeOrderSentLine("en", {
+    number: "CO-001",
+    name: "Maria",
+    emailedTo: "maria@example.com",
+    smsSkippedReason: "sms.fictionalNumber",
+  });
+  assertStringIncludes(
+    line,
+    "Sent CO-001 to Maria by email (maria@example.com) — not texted: that's a reserved test number",
+  );
+  assert(!line.includes("text failed"), line);
+  const es = changeOrderSentLine("es", {
+    number: "CO-001",
+    name: "Maria",
+    emailedTo: "maria@example.com",
+    smsSkippedReason: "sms.fictionalNumber",
+  });
+  assertStringIncludes(es, "sin mensaje de texto: ese es un número de prueba");
+  assert(!es.includes("falló el mensaje de texto"), es);
+});
+
+Deno.test("REQ-681 m12 changeOrderSentLine: nothing delivered and the text skipped names the reason, not a failure", () => {
+  const line = changeOrderSentLine("en", {
+    number: "CO-002",
+    name: "Maria",
+    emailFailureReason: "bounced",
+    smsSkippedReason: "sms.fictionalNumber",
+  });
+  assertStringIncludes(line, "email: bounced");
+  assertStringIncludes(line, "text: that's a reserved test number");
+  assert(!line.includes("text failed"), line);
+  // Only a phone that can't take texts on file → still says why, and never
+  // "has no email or phone on file".
+  const only = changeOrderSentLine("en", {
+    number: "CO-003",
+    name: "Maria",
+    smsSkippedReason: "sms.fictionalNumber",
+  });
+  assertStringIncludes(only, "text: that's a reserved test number");
+  assert(!only.includes("no email or phone on file"), only);
+});

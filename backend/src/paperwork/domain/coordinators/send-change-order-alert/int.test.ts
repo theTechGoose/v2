@@ -69,6 +69,7 @@ async function seed(
   const sms = new SmsService();
   const sent: SendEmailInput[] = [];
   const texts: string[] = [];
+  const textedTo: string[] = [];
   email.send = (input: SendEmailInput) => {
     sent.push(input);
     if (opts.emailFails && input.to === "juan@test.dev") {
@@ -79,6 +80,7 @@ async function seed(
   if (!opts.realSms) {
     sms.send = (input: { to: string; body: string }) => {
       texts.push(input.body);
+      textedTo.push(input.to);
       return Promise.resolve(smsResult as never);
     };
   }
@@ -92,7 +94,7 @@ async function seed(
     new InvoiceStore(),
     opts.bus,
   );
-  return { flow, coId: co.id, invoiceId: inv.id, sent, texts };
+  return { flow, coId: co.id, invoiceId: inv.id, sent, texts, textedTo };
 }
 
 for (const lang of ["es", "en"] as const) {
@@ -175,7 +177,8 @@ for (
     });
     try {
       const res = await flow.run(coId);
-      const reason = res.customer?.smsFailureReason ?? "";
+      // REQ-681 (cycle 5, m12): a 555 number is skipped, not "failed".
+      const reason = res.customer?.smsSkippedReason ?? "";
       assert(!res.customer?.textedTo, "a 555 number is never texted");
       assert(!/^sms\./.test(reason), `raw lang key leaked: ${reason}`);
       assertStringIncludes(reason, phrase);
@@ -227,6 +230,35 @@ Deno.test("REQ-698 (cycle 5, m14): a change order that reached nobody announces 
   try {
     await flow.run(coId);
     assertEquals(events.filter((e) => e.action === "change_order_sent"), []);
+  } finally {
+    await resetKv();
+  }
+});
+
+/**
+ * REQ-681 (demo-loop cycle 5, m12): the send dialog already rules out texting
+ * a number that can't take texts (REQ-569); the change-order alert now applies
+ * the same shared predicate up front — no customer text is dispatched, and the
+ * result says why it was skipped instead of reporting a failed text.
+ */
+Deno.test("REQ-681 m12 a CO to a 555 number never dispatches a customer text and reports smsSkippedReason", async () => {
+  const { flow, coId, textedTo } = await seed("en", { ok: true }, {
+    customerPhone: "(512) 555-0123",
+  });
+  try {
+    const res = await flow.run(coId);
+    assertEquals(
+      textedTo.filter((to) => to !== "+15125550000"),
+      [],
+      "no customer text was dispatched (only the contractor's heads-up)",
+    );
+    assertEquals(res.customer?.textedTo, undefined);
+    assertEquals(res.customer?.smsFailureReason, undefined);
+    assertStringIncludes(
+      res.customer?.smsSkippedReason ?? "",
+      "reserved test number",
+    );
+    assertEquals(res.customer?.emailedTo, "juan@test.dev");
   } finally {
     await resetKv();
   }

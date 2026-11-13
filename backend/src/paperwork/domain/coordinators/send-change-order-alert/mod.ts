@@ -15,6 +15,7 @@ import { dispatchCustomerSms } from "@paperwork/domain/business/customer-sms/mod
 import { type Lang, t } from "@core/i18n/mod.ts";
 import { SITE_ORIGIN } from "#quote-flow/site-meta.ts";
 import { EventBus } from "@core/business/events/mod.ts";
+import { phoneCantReceiveTexts } from "#quote-flow/sms-number.ts";
 
 const APP_URL = (() => {
   const explicit = Deno.env.get("APP_URL")?.trim() || undefined;
@@ -51,6 +52,9 @@ export interface ChangeOrderCustomerDelivery {
   emailFailureReason?: string;
   textedTo?: string;
   smsFailureReason?: string;
+  /** REQ-681 (cycle 5, m12): the phone on file can't take texts (the shared
+   *  REQ-569 predicate), so no text was attempted; the worded reason. */
+  smsSkippedReason?: string;
 }
 
 export interface ChangeOrderAlertResult {
@@ -163,7 +167,12 @@ export class SendChangeOrderAlert {
         delivered.emailFailureReason = errText(err);
       }
     }
-    if (contact.phoneNumber) {
+    if (phoneCantReceiveTexts(contact.phoneNumber)) {
+      // REQ-681 (demo-loop cycle 5, m12): the send dialog already rules out
+      // texting this number (REQ-569) — don't attempt it here either, and say
+      // why it was skipped rather than reporting a failed text.
+      delivered.smsSkippedReason = t(cxLang, "sms.fictionalNumber");
+    } else if (contact.phoneNumber) {
       try {
         // REQ-588 (demo-loop cycle 4, M29): the ONE guarded customer-text
         // dispatch (REQ-403) — a missing/invalid/555 number never reaches the

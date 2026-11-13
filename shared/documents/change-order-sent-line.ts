@@ -23,6 +23,9 @@ export interface ChangeOrderDelivery {
   textedTo?: string;
   emailFailureReason?: string;
   smsFailureReason?: string;
+  /** REQ-681 (cycle 5, m12): the phone on file can't take texts, so no text
+   *  was attempted — reported as "not texted: <reason>", never "failed". */
+  smsSkippedReason?: string;
   /** The alert itself failed (threw / no contractor) — nothing is known to have gone out. */
   error?: string;
 }
@@ -49,6 +52,7 @@ export function changeOrderDeliveryOf(
   if (c.textedTo) out.textedTo = c.textedTo;
   if (c.emailFailureReason) out.emailFailureReason = c.emailFailureReason;
   if (c.smsFailureReason) out.smsFailureReason = c.smsFailureReason;
+  if (c.smsSkippedReason) out.smsSkippedReason = c.smsSkippedReason;
   return out;
 }
 
@@ -59,7 +63,9 @@ export function changeOrderSentLineWith(
   const base = { number: o.number, name: o.name };
   const noRecipient = t("sendQuote.divider.noRecipient");
   const emailReason = readable(t, o.emailFailureReason, noRecipient);
-  const smsReason = readable(t, o.smsFailureReason, noRecipient);
+  const skipReason = readable(t, o.smsSkippedReason, noRecipient);
+  const smsReason = readable(t, o.smsFailureReason, noRecipient) ??
+    skipReason;
   const k = "chatCoordinator.changeOrder.sent";
 
   if (o.error) {
@@ -70,6 +76,13 @@ export function changeOrderSentLineWith(
       ...base,
       emailedTo: o.emailedTo,
       textedTo: o.textedTo,
+    });
+  }
+  if (o.emailedTo && skipReason && !o.smsFailureReason) {
+    return t(`${k}.emailedNotTexted`, {
+      ...base,
+      emailedTo: o.emailedTo,
+      reason: skipReason,
     });
   }
   if (o.emailedTo) {
