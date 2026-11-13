@@ -3089,6 +3089,7 @@
   "sendQuote.divider.emailed": "Quote + Agreement emailed to {emailedTo}",
   "sendQuote.divider.emailedAndTexted": "Quote + Agreement emailed to {emailedTo} and texted to {textedTo}",
   "sendQuote.divider.emailedTextFailed": "Quote + Agreement emailed to {emailedTo} — text failed ({reason})",
+  "sendQuote.divider.emailedNotTexted": "Quote + Agreement emailed to {emailedTo} — not texted: {reason}",
   "sendQuote.divider.noEmail": "Quote + Agreement drafted — no email on file for this customer. Add one to deliver.",
   "sendQuote.divider.noPhone": "Quote + Agreement drafted — no phone on file for this customer. Add one to deliver.",
   "sendQuote.divider.noRecipient": "no recipient",

@@ -194,7 +194,30 @@ export class SendQuote {
       }
     }
 
-    if (wantSms) {
+    // REQ-764 (demo-loop cycle 5v2, m12): on "Text + Email", a number that
+    // can't take texts (the reserved 555 block — the send dialog already says
+    // so, REQ-569/681) is not texted at all: the text is skipped, its reason
+    // kept, and the divider says "not texted: <reason>", not "text failed".
+    // The failure code stays "fictional" so the REQ-226 "check the number"
+    // form still offers the fix. A text-only send still reports its refusal.
+    let smsSkipped = false;
+    if (
+      channel === "both" &&
+      await this.smser.recipientCantText(input.userId, {
+        kind: "quote",
+        resourceId: quote.id,
+      }).catch(() => false)
+    ) {
+      smsSkipped = true;
+      smsFailureReason = t(
+        await this.uiLanguage(input.userId),
+        "sms.fictionalNumber",
+      );
+      smsFailureCode = "fictional";
+      console.log(
+        `[send-quote] quote=${quote.id} sms skipped: the number can't receive texts`,
+      );
+    } else if (wantSms) {
       try {
         const result = await this.smser.run(input.userId, {
           kind: "quote",
@@ -303,6 +326,7 @@ export class SendQuote {
       emailFailure,
       textedTo,
       smsFailure,
+      smsSkipped,
     });
     const dividerRef: ChatI18nRef = publishedVersion
       ? {
@@ -335,6 +359,7 @@ export class SendQuote {
         ...(textedTo ? { textedTo } : {}),
         ...(smsFailureReason ? { smsFailureReason } : {}),
         ...(smsFailureCode ? { smsFailureCode } : {}),
+        ...(smsSkipped ? { smsSkipped } : {}),
         ...(isChatI18nRef(emailFailure)
           ? { emailFailureI18n: emailFailure }
           : {}),
@@ -393,6 +418,8 @@ export function buildDivider(o: {
   emailFailure?: ChatI18nVar;
   textedTo?: string;
   smsFailure?: ChatI18nVar;
+  /** REQ-764: the text was skipped (the number can't take texts), not tried. */
+  smsSkipped?: boolean;
 }): ChatI18nRef {
   const { channel, emailedTo, textedTo } = o;
   const emailFailureReason = o.emailFailure;
@@ -436,6 +463,12 @@ export function buildDivider(o: {
     return {
       key: "sendQuote.divider.emailedAndTexted",
       vars: { emailedTo: emailedTo!, textedTo: textedShown },
+    };
+  }
+  if (emailOk && o.smsSkipped && smsFailureReason) {
+    return {
+      key: "sendQuote.divider.emailedNotTexted",
+      vars: { emailedTo: emailedTo!, reason: smsFailureReason },
     };
   }
   if (emailOk) {
