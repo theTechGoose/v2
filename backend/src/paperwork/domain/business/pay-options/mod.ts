@@ -6,6 +6,7 @@
  */
 import { type Lang, t } from "@core/i18n/mod.ts";
 import type { AcceptedPaymentMethods } from "@users/dto/business-identity.ts";
+import { projectPayMethods } from "#payments/pay-links.ts"; // REQ-805
 
 export interface PayOptionLine {
   label: string;
@@ -38,5 +39,12 @@ export function payOptionLines(
   if (m.ach?.enabled) add("ach", m.ach.instructions);
   if (m.card?.enabled) add("card", m.card.instructions);
   if (m.other?.enabled) add("other", m.other.instructions);
+  // REQ-805: the business's own payment links ("Xpress Pay"), by name, with
+  // the link — the same enabled, https-only rows the website offers
+  for (const l of projectPayMethods(m)) {
+    if (l.method === "link" && l.name && l.url) {
+      out.push({ label: l.name, value: l.url });
+    }
+  }
   return out;
 }

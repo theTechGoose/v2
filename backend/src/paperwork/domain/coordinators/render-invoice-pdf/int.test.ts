@@ -205,14 +205,20 @@ async function drawnUpper(bytes: Uint8Array): Promise<string> {
 const hexOf = (s: string) =>
   [...s].map((c) => c.charCodeAt(0).toString(16).padStart(2, "0")).join("").toUpperCase();
 
-async function renderOne(fields: Record<string, unknown>) {
+async function renderOne(
+  fields: Record<string, unknown>,
+  identity: Record<string, unknown> = {},
+) {
   Deno.env.set("KV_PATH", ":memory:");
   await resetKv();
   const invoices = new InvoiceStore();
   const customers = new CustomerStore();
   const identities = new BusinessIdentityStore();
   await seedContractor("u-1");
-  await identities.upsert("u-1", { businessName: "A2Z Landscape LLC" });
+  await identities.upsert("u-1", {
+    businessName: "A2Z Landscape LLC",
+    ...identity,
+  } as never);
   const customer = await customers.create("u-1", { name: "Robert Thall", email: "rt@acme.test" });
   // deno-lint-ignore no-explicit-any
   const inv = await invoices.create("u-1", { customerId: customer.id, status: "draft", ...fields } as any);
@@ -258,4 +264,23 @@ Deno.test("REQ-792 render-invoice-pdf: a standalone invoice draws the site's num
   assert(up.includes(hexOf("Mulch install")) && up.includes(hexOf("$300.00")), "a line and its amount");
   assert(up.includes(hexOf("Hedge trim")) && up.includes(hexOf("$125.00")), "the other line");
   assert(up.includes(hexOf("Front beds")), "the description, in the section");
+});
+
+// REQ-805 — A2Z added Xpress Pay in Settings; the site's invoice offers it, so the printable one
+// does too: a "How to pay" section with every way on, the payment link by its name and its URL.
+Deno.test("REQ-805 render-invoice-pdf: the invoice PDF lists how to pay — the methods on and the business's payment link by name and URL", async () => {
+  const up = await renderOne({
+    jobName: "Lawn care",
+    lineItems: [{ description: "Lawn", quantity: 1, price: 6500 }],
+    amount: 6500,
+  }, {
+    acceptedPaymentMethods: {
+      zelle: { enabled: true, handle: "pay@a2z.test" },
+      links: [{ id: "l1", name: "Xpress Pay", url: "https://www.xpress-pay.com/a2z", enabled: true }],
+    },
+  });
+  assert(up.includes(hexOf("HOW TO PAY")), "the How to pay section");
+  assert(up.includes(hexOf("Xpress Pay")), "the payment link, by its name");
+  assert(up.includes(hexOf("https://www.xpress-pay.com/a2z")), "and its URL");
+  assert(up.includes(hexOf("pay@a2z.test")), "Zelle with its handle");
 });
