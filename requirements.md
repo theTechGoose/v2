@@ -5932,3 +5932,22 @@ Demo-fixes' REQ-550 says a sent invoice needs a recipient. Develop's removal int
 ## REQ-490 / REQ-603 AMENDMENT — reconciled with develop on demo-fixes
 When develop's assistant swap-invoice saves (REQ-627) and an invoice is already billed, it honours demo-fixes' REQ-233 ledger check. Its failure text is the new key `asstChat.error.saveInvoice` (en + es), not a hard-coded English string.
 **Tests:** jest unit lane, the asst-chat suites.
+
+## REQ-780 — the send dialog's email preview is visible on the presenter's stage (demo-loop cycle dv1, d6)
+Raphael: "fix every issue the demo found, loop until there are none." His decision on this one: "The email preview should not be blank on the presenter screen."
+
+Demo issue d6, cycle dv1. Earlier it was cycle 5 m18. The RCA: SendLangPreview renders "What they'll get" as `<iframe sandbox="" srcdoc=EMAIL>`. The REQ-242 mirror recorder dropped every embedded page's srcdoc, and the replay refused it, so the stage showed an empty box.
+
+Now an iframe's srcdoc crosses the mirror. It is cleaned on both ends by `cleanEmbedDoc` (shared/demo-mode/mirror.ts), which removes:
+- scripts, `<noscript>`/`<template>` and comments
+- nested frames, objects and embeds
+- `<base>` and http-equiv metas
+- event handlers, nested srcdoc and integrity/nonce attributes
+- `javascript:`/`vbscript:` URLs and scripting `data:` URLs
+
+It is not sent under `data-demo-mask` or over 512 000 characters. The stage builds it in a frame with `sandbox="allow-same-origin"` and never `allow-scripts`. That sandbox is set before the srcdoc, and no frame can change or remove it. The frame sits inside the stage frame and inherits its sandbox and CSP (`script-src 'none'`), so nothing in the email runs. A frame's `src` still never crosses, and nothing of a frame/object/embed does. This amends REQ-242: its snapshot expectation now shows the sample frame's srcdoc, cleaned and sandboxed.
+
+**Tests:**
+- unit: jest `unit/demo-stage-email-preview.test.ts` (REQ-780: cleaning, snapshot, language-switch op, forged ops) and `unit/demo-mode-mirror-dom.test.ts` (the REQ-242 expectation, amended)
+- integration: n/a — the mirror is browser-to-browser; the backend only relays opaque chunks (`backend/src/demo-mode/entrypoints/demo-mode-controller/int.test.ts` still green)
+- e2e: `e2e/demo-mode/demo-stage-email-preview.e2e.test.ts`. In real Chromium, the real recorder and replayer inside MIRROR_SRCDOC show the Spanish email on the stage within 1 s (styled, at the customer's size), then the English one after the switch, and no script runs.

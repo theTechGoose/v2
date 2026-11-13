@@ -259,7 +259,8 @@ describe("REQ-242 the snapshot", () => {
         `<a href="#">Bad</a>` +
         `<a href="#top">Top</a>` +
         `<img alt="Logo" src="https://app.test/assistant/logo.png" srcset="https://app.test/assistant/logo.png 1x, https://app.test/assistant/logo@2x.png 2x"></img>` +
-        `<iframe class="welcome__sample-frame"></iframe>` +
+        // REQ-780 — a frame's src never crosses; its srcdoc does, cleaned, sandboxed without scripts
+        `<iframe class="welcome__sample-frame" sandbox="allow-same-origin" srcdoc="&lt;p&gt;x&lt;/p&gt;"></iframe>` +
         `<svg:svg viewBox="0 0 10 10"><svg:use href="#ic-home"></svg:use><svg:linearGradient id="g"></svg:linearGradient></svg:svg>` +
         `<textarea class="composer__input" :value="Replace the kitchen sink"></textarea>` +
         `<input name="q" value="default" :value="typed"></input>` +

@@ -93,6 +93,95 @@ export type MirrorFrame =
   | { t: "snap"; w: number; h: number; u: string; root: SEl; ops: Op[] }
   | { t: "ops"; ops: Op[] };
 
+// ---- REQ-780: an embedded document (an iframe's srcdoc) on its way to the stage ----
+
+/** an iframe's srcdoc over this many characters does not cross (the frame is an empty box) */
+export const MAX_EMBED_DOC_CHARS = 512_000;
+
+/** elements that go, with everything in them */
+const EMBED_DROP_PAIRED =
+  /<(script|noscript|template|iframe|object|applet|frameset|noembed|noframes)\b[\s\S]*?<\/\1\s*>/gi;
+/** one of them opened and never closed: everything after it goes */
+const EMBED_DROP_UNCLOSED =
+  /<(script|noscript|template|iframe|object|applet|frameset|noembed|noframes)\b[\s\S]*$/i;
+/** stray tags of them, and the ones that have no content */
+const EMBED_DROP_TAG =
+  /<\/?(script|noscript|template|iframe|frame|frameset|object|embed|applet|base|noembed|noframes)\b(?:"[^"]*"|'[^']*'|[^'">])*>/gi;
+/** an opening tag, quoted values kept whole */
+const EMBED_TAG = /<([a-zA-Z][^\s/>]*)((?:"[^"]*"|'[^']*'|[^'">])*)>/g;
+const EMBED_ATTR = /([^\s"'<>/=]+)(?:\s*=\s*("[^"]*"|'[^']*'|[^\s"'=<>`]+))?/g;
+const EMBED_URL_ATTRS = new Set([
+  "href",
+  "src",
+  "action",
+  "formaction",
+  "xlink:href",
+  "background",
+  "poster",
+  "data",
+  "lowsrc",
+  "dynsrc",
+]);
+
+function embedDecode(v: string): string {
+  return v
+    .replace(
+      /&#x([0-9a-f]+);?/gi,
+      (_m, n: string) => String.fromCodePoint(parseInt(n, 16) % 0x110000),
+    )
+    .replace(
+      /&#(\d+);?/g,
+      (_m, n: string) => String.fromCodePoint(Number(n) % 0x110000),
+    )
+    .replace(/&colon;/gi, ":")
+    .replace(/&tab;|&newline;/gi, "")
+    // deno-lint-ignore no-control-regex -- a URL scheme hides behind control characters
+    .replace(/[\s\u0000-\u001f]+/g, "");
+}
+
+function embedTag(_m: string, name: string, rest: string): string {
+  const lname = name.toLowerCase();
+  if (lname === "meta" && /http-equiv/i.test(rest)) return "";
+  const out: string[] = [];
+  for (const a of rest.matchAll(EMBED_ATTR)) {
+    const n = a[1].toLowerCase();
+    if (n.startsWith("on") || n === "srcdoc" || n === "http-equiv") continue;
+    if (n === "integrity" || n === "nonce") continue;
+    let v = a[2];
+    if (v === undefined) {
+      out.push(a[1]);
+      continue;
+    }
+    if (v.startsWith('"') || v.startsWith("'")) v = v.slice(1, -1);
+    if (
+      EMBED_URL_ATTRS.has(n) &&
+      /^(javascript|vbscript|data:text|data:application)/i.test(embedDecode(v))
+    ) v = "#";
+    out.push(`${a[1]}="${v.replace(/"/g, "&quot;")}"`);
+  }
+  const self = /\/\s*$/.test(rest) ? " /" : "";
+  return `<${name}${out.length ? " " + out.join(" ") : ""}${self}>`;
+}
+
+/**
+ * REQ-780 (demo-loop cycle dv1, d6) — an iframe's srcdoc (the send dialog's email preview), made
+ * fit for the stage: comments, scripts, <noscript>/<template>, nested frames, objects, embeds,
+ * <base> and http-equiv metas go, with every event handler attribute, a nested srcdoc, integrity
+ * and nonce; a `javascript:`/`vbscript:`/scripting `data:` URL becomes `#`. Its text, styles,
+ * images and links stay. This is the second line: the stage builds it in a frame sandboxed
+ * without `allow-scripts`, inside the stage frame whose sandbox and CSP (no scripts, no frames)
+ * it inherits, so nothing of it runs whatever it says. Too big (MAX_EMBED_DOC_CHARS): null.
+ */
+export function cleanEmbedDoc(html: string): string | null {
+  if (html.length > MAX_EMBED_DOC_CHARS) return null;
+  return html
+    .replace(/<!--[\s\S]*?(-->|$)/g, "")
+    .replace(EMBED_DROP_PAIRED, "")
+    .replace(EMBED_DROP_UNCLOSED, "")
+    .replace(EMBED_DROP_TAG, "")
+    .replace(EMBED_TAG, embedTag);
+}
+
 // ---- validation: a frame comes from the other browser; nothing malformed reaches the replay ----
 
 const TAG = /^[A-Za-z][A-Za-z0-9._-]{0,63}$/;

@@ -97,10 +97,11 @@
  * mirrored node: no id, no pointer anchor (`pointer-events: none`), redrawn after every frame and
  * every layout pass, gone once the mark is.
  */
-import type {
-  MirrorFrame,
-  Op,
-  SNode,
+import {
+  cleanEmbedDoc,
+  type MirrorFrame,
+  type Op,
+  type SNode,
 } from "../../../shared/demo-mode/mirror.ts";
 import type { NodeAnchor } from "../../../shared/demo-mode/protocol.ts";
 import {
@@ -219,6 +220,8 @@ const XML_NS = "http://www.w3.org/XML/1998/namespace";
 /** never built as themselves, whatever a frame says (the sender never sends them) */
 const DENY = new Set(["script", "noscript", "base", "template"]);
 const EMBED = new Set(["iframe", "frame", "object", "embed"]);
+/** REQ-780 — an iframe the stage builds a document in: its styles and images, never a script */
+export const EMBED_SANDBOX = "allow-same-origin";
 const URLISH = new Set(["href", "src", "xlink:href", "action", "formaction"]);
 
 const clamp01 = (n: number) => Math.min(1, Math.max(0, n));
@@ -442,7 +445,9 @@ export function createReplayer(
     // nothing changed (the same lists, still in the page): nothing to do
     if (
       want.length === drawnLists.length &&
-      want.every((w, k) => drawnLists[k].key === w.key && doc.contains(drawnLists[k].box))
+      want.every((w, k) =>
+        drawnLists[k].key === w.key && doc.contains(drawnLists[k].box)
+      )
     ) return;
     for (const d of drawnLists) d.box.parentNode?.removeChild(d.box);
     drawnLists = [];
@@ -745,7 +750,18 @@ export function createReplayer(
 
   function setAttr(e: Element, tag: string, k: string, v: string) {
     const lk = k.toLowerCase();
-    if (lk.startsWith("on") || lk === "srcdoc" || lk === "http-equiv") return;
+    if (lk.startsWith("on") || lk === "http-equiv") return;
+    // REQ-780 — an iframe's srcdoc (the email preview) is built, cleaned again, in a frame
+    // sandboxed with allow-same-origin and never allow-scripts (set before the srcdoc, and
+    // never changed by a frame); any other element's srcdoc, and a frame's sandbox, never
+    if (lk === "sandbox" && tag === "iframe") return;
+    if (lk === "srcdoc") {
+      const doc = tag === "iframe" ? cleanEmbedDoc(v) : null;
+      if (doc === null) return;
+      e.setAttribute("sandbox", EMBED_SANDBOX);
+      e.setAttribute("srcdoc", doc);
+      return;
+    }
     if (EMBED.has(tag) && (lk === "src" || lk === "data")) return;
     if (URLISH.has(lk) && /^\s*(javascript|vbscript):/i.test(v)) return;
     try {
@@ -829,8 +845,14 @@ export function createReplayer(
       case "a": {
         const e = el(op.i);
         if (!e) return false;
-        if (op.v === null) e.removeAttribute(op.n);
-        else setAttr(e, e.localName.toLowerCase(), op.n, op.v);
+        if (op.v === null) {
+          // REQ-780 — a stage frame's sandbox stays
+          if (
+            !(/^sandbox$/i.test(op.n) && e.localName.toLowerCase() === "iframe")
+          ) {
+            e.removeAttribute(op.n);
+          }
+        } else setAttr(e, e.localName.toLowerCase(), op.n, op.v);
         if (op.n === OPEN_ATTR && op.v !== null) opened.add(e); // REQ-638
         // REQ-380 — a width or height set (or removed) cleared the canvas: its picture again;
         // REQ-644 — and a style set (or removed) replaced the inline style that shows it
