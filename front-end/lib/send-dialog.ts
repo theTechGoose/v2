@@ -18,6 +18,10 @@ import {
 } from "../../shared/quote-flow/customer-contact.ts";
 import { formatPhoneInput } from "../../shared/quote-flow/format-helpers.ts";
 import { phoneCantReceiveTexts } from "../../shared/quote-flow/sms-number.ts";
+import {
+  asCommsLang,
+  type CommsLang,
+} from "../../shared/quote-flow/comms-language.ts";
 
 export type SendChannel = "both" | "sms" | "email";
 
@@ -233,4 +237,39 @@ export function sendOpenLabelKey(channel: SendChannel): string {
   if (channel === "email") return "asstChat.preview.sendOpenEmail";
   if (channel === "sms") return "asstChat.preview.sendOpenSms";
   return "asstChat.preview.sendOpenBoth";
+}
+
+/**
+ * REQ-715 (demo-loop cycle 5, m31 + c4-M34): the language "Sends in" starts
+ * on — the customer's own language (Customer.language, "Carmen reads
+ * Spanish") when one is on file, else the app language. The contractor can
+ * still pick the other one for this send.
+ */
+export function defaultSendLang(
+  customer: { language?: string | null } | null | undefined,
+  appLang: string,
+): CommsLang {
+  return asCommsLang(customer?.language) ?? (appLang === "es" ? "es" : "en");
+}
+
+/**
+ * REQ-715: the languages "Sends in" offers — the app language first, then the
+ * contractor's send languages (Settings; English when none), then the
+ * customer's own language when it is not among them, so the language the
+ * dialog starts on is always one of its choices. en | es only, no repeats.
+ */
+export function sendLangChoices(
+  appLang: string,
+  sendLanguages: readonly string[] | null | undefined,
+  customerLang?: string | null,
+): CommsLang[] {
+  const out: CommsLang[] = [];
+  const add = (v: string | null | undefined) => {
+    const l = asCommsLang(v);
+    if (l && !out.includes(l)) out.push(l);
+  };
+  add(appLang);
+  for (const l of sendLanguages?.length ? sendLanguages : ["en"]) add(l);
+  add(customerLang);
+  return out;
 }

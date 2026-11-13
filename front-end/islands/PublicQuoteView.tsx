@@ -6,7 +6,7 @@
  * skeleton immediately, then fetches `/quotes/:id/public` through the
  * same-origin /api proxy and swaps in the real document (or an error card).
  */
-import { useEffect, useRef, useState } from "preact/hooks";
+import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
 import {
   ErrorCard,
   QuoteDoc,
@@ -19,6 +19,7 @@ import {
   publicQuoteErrorOf,
 } from "../../shared/quote-flow/public-quote-error.ts";
 import { langSignal, persistLang, writeLangToUrl } from "../lib/lang.ts";
+import { contractLangOnLoad } from "../../shared/quote-flow/public-lang.ts"; // REQ-715
 import { startPublicQuoteRefresh } from "../lib/live-doc-refresh.ts";
 import { enterSignInPerson } from "../lib/sign-in-person.ts";
 
@@ -30,12 +31,17 @@ interface State {
 }
 
 export default function PublicQuoteView(
-  { id, lang: initialLang, errorLang }: {
+  { id, lang: initialLang, errorLang, chosen }: {
     id: string;
     /** REQ-048: the language the contract OPENS in — English unless the
      *  visitor picked otherwise (resolveContractLang in the /q route). The
      *  EN | ES toggle below flips it in place from there. */
     lang: Lang;
+    /** REQ-715 (demo-loop cycle 5, m31): the visitor chose that language —
+     *  ?lang= on the link or their pm_lang pick (contractLangChosen in the
+     *  route). When they did not, the contract opens in the customer's own
+     *  language once the quote is loaded. */
+    chosen?: boolean;
     /** REQ-574 (demo-loop c4, p4-p9b): with no document there is no doc
      *  language, so a load error speaks the visitor's own language — ?lang=,
      *  then pm_lang, then Accept-Language (resolvePublicLang in the route) —
@@ -99,6 +105,27 @@ export default function PublicQuoteView(
     </div>
   );
   const toggle = toggleFor(lang);
+
+  // REQ-715 (demo-loop cycle 5, m31): a visitor who chose no language (no
+  // ?lang=, no pm_lang pick, no tap yet) reads the contract in the language
+  // the contractor recorded for this customer, once the quote is in — before
+  // it paints, so English never flashes. Not remembered as the visitor's own
+  // pick: no cookie, no ?lang= written.
+  const docLang = s.phase === "ok" ? s.quote?.docLang : undefined;
+  useLayoutEffect(() => {
+    if (picked) return;
+    const next = contractLangOnLoad({
+      opened: lang,
+      chosen: chosen === true,
+      docLang,
+    });
+    if (next === lang) return;
+    setLang(next);
+    langSignal.value = next;
+    if (typeof document !== "undefined") {
+      document.title = tFor(next, "quoteDoc.docTitle");
+    }
+  }, [docLang]);
 
   useEffect(() => {
     let alive = true;

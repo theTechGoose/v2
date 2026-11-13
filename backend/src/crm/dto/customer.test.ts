@@ -60,3 +60,38 @@ Deno.test("REQ-278 M16 a non-format DTO error is still a 400", () => {
   const err = statusOf(() => parseCreateCustomer({ name: 42 }));
   assertEquals(err.status, 400);
 });
+
+// REQ-715 (demo-loop cycle 5, m31 + c2-M29 + c3-m43 + c4-M34): a customer
+// carries the language they read — "en" | "es" — set when they are created,
+// changed or cleared ("") on edit; anything else is refused with a 400.
+Deno.test("REQ-715 m31 parseCreateCustomer keeps the customer's language (en | es)", () => {
+  assertEquals(
+    parseCreateCustomer({ name: "Carmen", language: "es" }).language,
+    "es",
+  );
+  assertEquals(
+    parseCreateCustomer({ name: "Bob", language: "en" }).language,
+    "en",
+  );
+  assertEquals(parseCreateCustomer({ name: "Bo" }).language, undefined);
+  // the form's "Not set" is no language at all, never a stored ""
+  assertEquals(
+    "language" in parseCreateCustomer({ name: "Bo", language: "" }),
+    false,
+  );
+});
+
+Deno.test("REQ-715 m31 parseUpdateCustomer sets the language, or clears it with ''", () => {
+  assertEquals(parseUpdateCustomer({ language: "es" }).language, "es");
+  assertEquals(parseUpdateCustomer({ language: "" }).language, "");
+});
+
+Deno.test("REQ-715 m31 a language other than en | es is refused with a 400", () => {
+  for (const language of ["fr", "spanish", 7]) {
+    assertEquals(
+      statusOf(() => parseCreateCustomer({ name: "Ann", language })).status,
+      400,
+    );
+    assertEquals(statusOf(() => parseUpdateCustomer({ language })).status, 400);
+  }
+});

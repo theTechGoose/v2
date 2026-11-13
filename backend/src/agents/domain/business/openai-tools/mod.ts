@@ -75,6 +75,13 @@ export const TOOL_DEFS = [
             enum: [...PAYMENT_TERMS_PRESETS],
             description: t("en", "prompts.tools.createQuote.paymentTerms"),
           },
+          // REQ-715 (demo-loop cycle 5, c4-M34): "Ella habla español." had
+          // nowhere to go — the customer's language, saved on the customer.
+          customerLanguage: {
+            type: "string",
+            enum: ["en", "es"],
+            description: t("en", "prompts.tools.createQuote.customerLanguage"),
+          },
         },
         required: ["summary", "lineItems"],
         additionalProperties: false,
@@ -318,6 +325,11 @@ export function parseToolCall(call: { function: { name: string; arguments: strin
           PAYMENT_TERMS_PRESETS.includes(args.paymentTerms)
         ? args.paymentTerms
         : undefined;
+      // REQ-715: only en | es survive; anything else is no language at all
+      const customerLanguage =
+        args.customerLanguage === "en" || args.customerLanguage === "es"
+          ? args.customerLanguage
+          : undefined;
       return {
         type: "create_quote",
         payload: {
@@ -326,6 +338,7 @@ export function parseToolCall(call: { function: { name: string; arguments: strin
           lineItems,
           ...(serviceAddress ? { serviceAddress } : {}),
           ...(paymentTerms ? { paymentTerms } : {}),
+          ...(customerLanguage ? { customerLanguage } : {}),
         },
       };
     }

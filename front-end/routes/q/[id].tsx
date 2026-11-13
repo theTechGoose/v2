@@ -5,6 +5,7 @@ import SiteFooter from "../../components/SiteFooter.tsx";
 import PublicQuoteView from "../../islands/PublicQuoteView.tsx";
 import { BG, INK } from "../../components/quote-doc.tsx";
 import {
+  contractLangChosen,
   resolveContractLang,
   resolvePublicLang,
 } from "../../../shared/quote-flow/public-lang.ts";
@@ -24,6 +25,12 @@ export default define.page(function PublicQuote(ctx) {
   // link, then their pm_lang cookie — opens the contract in Spanish; the
   // island's EN | ES toggle flips it in place from there.
   const lang = resolveContractLang({
+    query: new URL(ctx.req.url).searchParams.get("lang"),
+    cookie: ctx.req.headers.get("cookie"),
+  });
+  // REQ-715 (demo-loop cycle 5, m31): no ?lang= and no pm_lang pick → the
+  // island opens the contract in the customer's own language once loaded.
+  const chosen = contractLangChosen({
     query: new URL(ctx.req.url).searchParams.get("lang"),
     cookie: ctx.req.headers.get("cookie"),
   });
@@ -61,7 +68,12 @@ export default define.page(function PublicQuote(ctx) {
         style={`min-height:100dvh;background:${BG};font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:${INK};display:flex;flex-direction:column;scroll-padding-bottom:var(--kb-inset, 0px)`}
       >
         <div style="flex:1;width:100%;max-width:792px;margin:0 auto;padding:32px 16px calc(64px + var(--kb-inset, 0px))">
-          <PublicQuoteView id={id} lang={lang} errorLang={errorLang} />
+          <PublicQuoteView
+            id={id}
+            lang={lang}
+            errorLang={errorLang}
+            chosen={chosen}
+          />
         </div>
         <SiteFooter lang={lang} document credited />
       </div>

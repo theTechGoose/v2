@@ -40,6 +40,10 @@ import {
   openIdFromSearch,
 } from "../lib/customer-card-edit.ts";
 import { ApiError } from "../lib/api.ts";
+import CustomerLanguageSelect, {
+  customerLanguageValue,
+  type CustomerLanguageValue,
+} from "../components/CustomerLanguageSelect.tsx"; // REQ-715
 import {
   formatPhoneDisplay,
   telHref,
@@ -309,6 +313,74 @@ function EditRow(
   );
 }
 
+/**
+ * REQ-715 (demo-loop cycle 5, m31): the customer's language, changed in place
+ * — every send to them starts in it. A pick saves at once through
+ * PUT /customers/:id ("Not set" clears it); a refusal puts the old one back
+ * and says so under the row.
+ */
+function LanguageRow(
+  { customerId, value, onSaved, lang }: {
+    customerId: string;
+    value: string | undefined;
+    onSaved: () => void;
+    lang: "en" | "es";
+  },
+) {
+  const [shown, setShown] = useState(customerLanguageValue(value));
+  const [saving, setSaving] = useState(false);
+  const [failed, setFailed] = useState(false);
+  useEffect(() => setShown(customerLanguageValue(value)), [value]);
+
+  async function pick(next: CustomerLanguageValue) {
+    const before = shown;
+    setShown(next);
+    setFailed(false);
+    setSaving(true);
+    try {
+      await clientsClient.update(customerId, { language: next });
+      onSaved();
+    } catch {
+      setShown(before);
+      setFailed(true);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const label = tFor(lang, "customer.language.label");
+  return (
+    <div
+      class="ccard2__panel-row"
+      data-cy="ccard2-row-language"
+      style="cursor:default;flex-wrap:wrap"
+    >
+      <span class="ccard2__panel-row-icon">
+        <I d={ICN.msg} size={13} sw={2.2} />
+      </span>
+      <span class="ccard2__panel-row-text">
+        <div class="ccard2__panel-row-lbl">{label}</div>
+        <CustomerLanguageSelect
+          lang={lang}
+          aria-label={label}
+          value={shown}
+          disabled={saving}
+          onChange={pick}
+          style="margin-top:2px;padding:4px 6px;border:1px solid var(--border,#d8dcd5);border-radius:8px;font:inherit;font-size:13px;background:#fff;color:var(--fg)"
+        />
+      </span>
+      {failed && (
+        <p
+          role="alert"
+          style="flex-basis:100%;margin:2px 0 0;color:#a83b3b;font-size:12px;font-weight:600;white-space:normal"
+        >
+          {tFor(lang, "clientsBoard.panel.saveError")}
+        </p>
+      )}
+    </div>
+  );
+}
+
 function ClientCard(
   { c, subs, idx, isOpen, onOpen, onClose, lang, disambig, onSaved }: CardProps,
 ) {
@@ -505,6 +577,13 @@ function ClientCard(
             display={address}
             inputType="text"
             customerId={c.id}
+            onSaved={onSaved}
+            lang={lang}
+          />
+          {/* REQ-715 (demo-loop cycle 5, m31): the language they read */}
+          <LanguageRow
+            customerId={c.id}
+            value={c.language}
             onSaved={onSaved}
             lang={lang}
           />

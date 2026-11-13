@@ -117,6 +117,9 @@ export class CustomerStore {
       createdAt: existing.createdAt,
       updatedAt: new Date().toISOString(),
     };
+    // REQ-715: "" (or null) clears the customer's language — the field is
+    // gone, never a stored ""
+    if (!updated.language) delete updated.language;
     const kv = await getKv();
     await kv.set([PREFIX, id], updated);
     return updated;

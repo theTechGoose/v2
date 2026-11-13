@@ -159,13 +159,6 @@ export class SendQuote {
     }
 
     const channel: SendChannel = input.channel ?? "email";
-    // REQ-586 (demo-loop cycle 4, M11): the language this send goes out in,
-    // resolved like the dispatchers do — recorded on the quote and the
-    // divider so the in-app customer links open in it (?lang=).
-    const sendLang = await this.emailer.sendLanguage(
-      input.userId,
-      input.language,
-    ).catch(() => input.language);
     const wantEmail = channel === "email" || channel === "both";
     const wantSms = channel === "sms" || channel === "both";
 
@@ -236,6 +229,16 @@ export class SendQuote {
     // the delivery. A locked quote is still a draft, so this is where it
     // becomes "sent" (REQ-234).
     const now = new Date().toISOString();
+    const fresh = await this.quotes.getOwned(quote.id, input.userId);
+    // REQ-586 (demo-loop cycle 4, M11): the language this send went out in,
+    // resolved like the dispatchers do — REQ-715 (cycle 5, m31): for the
+    // customer the published quote is for — recorded on the quote and the
+    // divider so the in-app customer links open in it (?lang=).
+    const sendLang = await this.emailer.sendLanguage(
+      input.userId,
+      input.language,
+      fresh.customerId,
+    ).catch(() => input.language);
     const lastDelivery: QuoteDelivery = {
       at: now,
       channel,
@@ -250,7 +253,6 @@ export class SendQuote {
     // the email/SMS dispatchers stamp status/sentAt themselves on success.
     const statusFlip = delivered && !quote.sentAt &&
       (!quote.status || quote.status === "draft");
-    const fresh = await this.quotes.getOwned(quote.id, input.userId);
     const updatedQuote = await this.quotes.update(quote.id, input.userId, {
       lastDelivery,
       ...(delivered && !fresh.deliveredAt ? { deliveredAt: now } : {}),

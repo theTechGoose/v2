@@ -14,6 +14,7 @@ import { SmsService } from "@users/domain/data/sms/mod.ts";
 import { dispatchCustomerSms } from "@paperwork/domain/business/customer-sms/mod.ts";
 import { type Lang, t } from "@core/i18n/mod.ts";
 import { SITE_ORIGIN } from "#quote-flow/site-meta.ts";
+import { resolveCommsLanguage } from "#quote-flow/comms-language.ts"; // REQ-715
 
 const APP_URL = (() => {
   const explicit = Deno.env.get("APP_URL")?.trim() || undefined;
@@ -106,9 +107,13 @@ export class SendChangeOrderAlert {
     };
 
     // Contractor copy = their UI language; customer copy = outgoing-comms
-    // language (roadmap p.13), like every other customer-facing document.
+    // language (roadmap p.13), like every other customer-facing document —
+    // REQ-715 (demo-loop cycle 5, m31): the customer's own language first.
     const cxLang: Lang = contractor.language === "es" ? "es" : "en";
-    const coLang: Lang = ident?.commsLanguage === "es" ? "es" : "en";
+    const coLang: Lang = resolveCommsLanguage({
+      customerLanguage: liveCustomer?.language,
+      identityCommsLanguage: ident?.commsLanguage,
+    });
     const businessName = ident?.businessName?.trim() ||
       (ident as { legalName?: string } | null)?.legalName?.trim() ||
       contractor.name?.trim() || t(coLang, "brand.name");

@@ -102,6 +102,41 @@ export function resolveContractLang(parts: {
 }
 
 /**
+ * REQ-715 (demo-loop cycle 5, m31): did the /q visitor choose a language — an
+ * explicit ?lang= on the link, or their own pm_lang pick? Only then does the
+ * contract keep the language it opened in (REQ-048); otherwise it opens in
+ * the customer's own language once the quote is loaded (contractLangOnLoad).
+ */
+export function contractLangChosen(parts: {
+  /** The link's ?lang= query value, raw. */
+  query?: string | null;
+  /** The RAW Cookie request header. */
+  cookie?: string | null;
+}): boolean {
+  return parts.query === "en" || parts.query === "es" ||
+    pmLangFromCookie(parts.cookie) !== null;
+}
+
+/**
+ * REQ-715 (m31): the language /q shows once the quote is loaded. A visitor
+ * who chose (`chosen`: ?lang= or pm_lang — or a tap on the page's EN | ES
+ * toggle) keeps the language it opened in; else the language the contractor
+ * recorded for this customer (the public quote's `docLang`); else the one it
+ * opened in — English first (REQ-048).
+ */
+export function contractLangOnLoad(parts: {
+  opened: PublicLang;
+  chosen: boolean;
+  /** The customer's own language (the public quote's `docLang`). */
+  docLang?: string | null;
+}): PublicLang {
+  if (parts.chosen) return parts.opened;
+  return parts.docLang === "en" || parts.docLang === "es"
+    ? parts.docLang
+    : parts.opened;
+}
+
+/**
  * REQ-272: the href of a public page's EN | ES toggle link — the same page
  * (path + every other query param) with ?lang= set to `lang`. Same-origin
  * and relative, so it can never point at another site.

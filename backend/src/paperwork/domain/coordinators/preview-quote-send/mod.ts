@@ -34,7 +34,8 @@ import type { BusinessIdentity } from "@users/dto/business-identity.ts";
 export interface PreviewQuoteSendInput {
   quoteId: string;
   channel: SendPreviewChannel;
-  /** The send dialog's "Sends in" pick; else the Settings default, else en. */
+  /** The send dialog's "Sends in" pick; else (REQ-715) the customer's
+   *  language, else the Settings default, else en. */
   lang?: "en" | "es";
 }
 
@@ -69,8 +70,16 @@ export class PreviewQuoteSend {
       | User
       | undefined;
     const rawBiz = await this.identity.get(userId).catch(() => null);
+    // REQ-715 (demo-loop cycle 5, m31): the send's own resolution — the pick,
+    // else the customer's language, else the Settings default, else en. The
+    // customer is the one the send would publish (a pending edit applied).
+    const customer = await this.tryGetCustomer(
+      userId,
+      asSent(stored, userId, sender?.name).customerId,
+    );
     const lang = resolveCommsLanguage({
       override: input.lang,
+      customerLanguage: customer?.language,
       identityCommsLanguage: rawBiz?.commsLanguage,
     });
     const displayName = outboundSenderName({
@@ -101,7 +110,6 @@ export class PreviewQuoteSend {
     } as BusinessIdentity;
     const safeSender = sender ? { ...sender, name: displayName } : sender;
     const quote = asSent(stored, userId, sender?.name);
-    const customer = await this.tryGetCustomer(userId, quote.customerId);
     const onDoc = customerOnDocument(quote, customer);
     const want = sendPreviewSections(input.channel);
     const out: QuoteSendPreview = { lang };

@@ -18,6 +18,8 @@ import { LogPaperworkMessage } from "@communication/domain/coordinators/log-pape
 import { EventBus } from "@core/business/events/mod.ts";
 import { type Lang, t } from "@core/i18n/mod.ts";
 import { outboundSenderFirstName } from "#quote-flow/outbound-identity.ts";
+import { resolveCommsLanguage } from "#quote-flow/comms-language.ts"; // REQ-715
+import { withSendLang } from "#quote-flow/share-link.ts"; // REQ-715
 import type { PaymentMethod } from "@paperwork/dto/invoice.ts";
 import type { PaymentMethod as PaymentStorageMethod } from "@paperwork/dto/payment.ts";
 import { SITE_ORIGIN } from "#quote-flow/site-meta.ts";
@@ -117,7 +119,13 @@ export class ConfirmPayment {
         undefined;
       const businessName = biz?.businessName?.trim() ||
         biz?.legalName?.trim() || contractor?.name?.trim();
-      const lang: Lang = biz?.commsLanguage === "es" ? "es" : "en";
+      // REQ-715 (demo-loop cycle 5, m31): the receipt — email, text and its
+      // PDF — speaks the customer's own language, else the business's send
+      // default, else en.
+      const lang: Lang = resolveCommsLanguage({
+        customerLanguage: customer?.language,
+        identityCommsLanguage: biz?.commsLanguage,
+      });
       const pdfBytes = await this.receiptPdf.run({
         invoice: updated,
         customer,
@@ -126,6 +134,7 @@ export class ConfirmPayment {
         method: intent.method,
         ...(intent.reference ? { reference: intent.reference } : {}),
         confirmedAt: paidAt,
+        lang,
       });
 
       if (customer?.email) {
@@ -186,7 +195,8 @@ export class ConfirmPayment {
           );
           const appUrl = Deno.env.get("APP_URL") ??
             SITE_ORIGIN;
-          shortUrl = `${appUrl}/s/${link.code}`;
+          // REQ-715 (REQ-342 parity): opens the invoice in the receipt's language
+          shortUrl = withSendLang(`${appUrl}/s/${link.code}`, lang);
         } catch { /* fall through to no-url body */ }
         // REQ-204: greet the customer as snapshotted on the bill
         const shownCustomer = customerOnDocument(updated, customer);

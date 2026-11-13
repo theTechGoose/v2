@@ -40,10 +40,17 @@ export class BindConversationCustomer {
     const conv = await this.conversations.get(input.conversationId);
     if (conv.userId !== input.userId) throw new Error("forbidden");
 
-    const customer = await this.customers.getOwned(
+    let customer = await this.customers.getOwned(
       input.customerId,
       input.userId,
     );
+    // REQ-715 (demo-loop cycle 5, c4-M34): a language the user stated before
+    // the customer was known ("Ella habla español") lands on the one bound.
+    if (conv.customerLanguage && customer.language !== conv.customerLanguage) {
+      customer = await this.customers.update(customer.id, input.userId, {
+        language: conv.customerLanguage,
+      });
+    }
 
     if (conv.quoteId) {
       await this.quotes.update(conv.quoteId, input.userId, {

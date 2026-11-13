@@ -100,6 +100,10 @@ export interface QuotePublic {
   /** REQ-333 (M24): the language the base text was typed in — that language
    *  renders the typed text, never a cached "translation" of it. */
   lang?: string;
+  /** REQ-715 (demo-loop cycle 5, m31): the language the customer reads (on
+   *  file with the contractor) — the page opens in it when the visitor chose
+   *  none (no ?lang=, no pm_lang pick). */
+  docLang?: string;
   /** REQ-198/201: the document's number ("Q-001"), version and headline state. */
   number?: string;
   version?: number;

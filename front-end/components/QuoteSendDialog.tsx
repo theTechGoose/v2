@@ -24,6 +24,7 @@ import {
   addFieldLabelKey,
   channelNeedsKey,
   contactSaveErrorKey,
+  defaultSendLang,
   newSendRequestId,
   recommendedChannel,
   runExclusive,
@@ -40,6 +41,8 @@ export interface SendDialogCustomer {
   name?: string | null;
   email?: string | null;
   phoneNumber?: string | null;
+  /** REQ-715 (demo-loop cycle 5, m31): the language the customer reads */
+  language?: string | null;
 }
 
 const CHANNELS = [
@@ -63,8 +66,10 @@ export default function QuoteSendDialog(
   const [phone, setPhone] = useState("");
   const [err, setErr] = useState<string | undefined>();
   const [sending, setSending] = useState(false);
+  // REQ-715 (demo-loop cycle 5, m31): "Sends in" starts on the customer's
+  // own language, else the app language
   const [sendLang, setSendLang] = useState<"en" | "es">(
-    lang === "es" ? "es" : "en",
+    defaultSendLang(customer, lang),
   );
   const inFlight = useRef(false);
   const onFile = {

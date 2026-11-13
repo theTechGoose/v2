@@ -15,6 +15,9 @@
  *     04 Paid this month             (defaultOpen=false)
  */
 import Backdrop from "../components/Backdrop.tsx";
+import CustomerLanguageSelect, {
+  type CustomerLanguageValue,
+} from "../components/CustomerLanguageSelect.tsx"; // REQ-715
 import { useEffect, useMemo, useState } from "preact/hooks";
 import {
   type Customer,
@@ -3658,6 +3661,8 @@ function NewInvoiceModal(
   const [newName, setNewName] = useState("");
   const [newPhone, setNewPhone] = useState("");
   const [newEmail, setNewEmail] = useState("");
+  // REQ-715 (demo-loop cycle 5, m31): the language the new client reads
+  const [newLanguage, setNewLanguage] = useState<CustomerLanguageValue>("");
   const [jobName, setJobName] = useState("");
   const [description, setDescription] = useState("");
   const [billTo, setBillTo] = useState<BillTo>(EMPTY_BILL_TO);
@@ -3960,6 +3965,7 @@ function NewInvoiceModal(
           name: newName.trim(),
           ...(newPhone.trim() ? { phoneNumber: newPhone.trim() } : {}),
           ...(newEmail.trim() ? { email: newEmail.trim() } : {}),
+          ...(newLanguage ? { language: newLanguage } : {}),
         });
         customerId = created.id;
         bt = {
@@ -4282,6 +4288,18 @@ function NewInvoiceModal(
                 disabled={busy}
                 onInput={(e) =>
                   setNewEmail((e.target as HTMLInputElement).value)}
+                style={inputStyle}
+              />
+            </label>
+            {/* REQ-715: the invoice — and every later send — goes out in it */}
+            <label style={labelStyle}>
+              {tFor(lang, "customer.language.label")}
+              <CustomerLanguageSelect
+                lang={lang}
+                data-cy="new-invoice-client-language"
+                value={newLanguage}
+                disabled={busy}
+                onChange={setNewLanguage}
                 style={inputStyle}
               />
             </label>

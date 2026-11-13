@@ -42,7 +42,10 @@ import {
   isPlaceholderName,
   outboundSenderName,
 } from "#quote-flow/outbound-identity.ts";
-import { resolveCommsLanguage } from "#quote-flow/comms-language.ts";
+import {
+  commsLanguageToAdopt,
+  resolveCommsLanguage,
+} from "#quote-flow/comms-language.ts";
 import { withSendLang } from "#quote-flow/share-link.ts";
 import {
   localizeLineItems,
@@ -118,16 +121,22 @@ export class SendPaperworkEmail {
   /**
    * REQ-586 (demo-loop cycle 4, M11): the language a send goes out in — the
    * same resolution `run` (and the SMS dispatcher) applies: the per-send
-   * pick, else the stored Settings default, else en. SendQuote records it on
-   * the quote so the in-app customer links carry it as `?lang=`.
+   * pick, else (REQ-715) the customer's own language, else the stored
+   * Settings default, else en. SendQuote records it on the quote so the
+   * in-app customer links carry it as `?lang=`.
    */
   async sendLanguage(
     userId: string,
     override?: string | null,
+    customerId?: string,
   ): Promise<"en" | "es"> {
-    const biz = await this.tryGetBusinessIdentity(userId);
+    const [biz, customer] = await Promise.all([
+      this.tryGetBusinessIdentity(userId),
+      this.tryGetCustomer(userId, customerId),
+    ]);
     return resolveCommsLanguage({
       override,
+      customerLanguage: customer?.language,
       identityCommsLanguage: biz?.commsLanguage,
     });
   }
@@ -139,28 +148,18 @@ export class SendPaperworkEmail {
     const sender = await this.tryGetUser(userId);
     const rawBiz = await this.tryGetBusinessIdentity(userId);
     // UX-28: ONE commsLanguage resolution for every outbound (explicit
-    // per-send pick → stored Settings default → en); an explicit pick is
-    // adopted as the stored default when none exists yet. Overriding
+    // per-send pick → REQ-715 the customer's own language → stored Settings
+    // default → en), made once the document's customer is known. Overriding
     // commsLanguage on the resolved identity lets every downstream
     // subject/body helper honor the resolution without new params.
-    const resolvedLang = resolveCommsLanguage({
-      override: input.language,
-      identityCommsLanguage: rawBiz?.commsLanguage,
-    });
-    if (
-      (input.language === "en" || input.language === "es") &&
-      rawBiz?.commsLanguage !== "en" && rawBiz?.commsLanguage !== "es"
-    ) {
-      try {
-        await this.identity.upsert(userId, { commsLanguage: input.language });
-      } catch (err) {
-        console.warn("[send-paperwork-email] commsLanguage adopt failed:", err);
-      }
-    }
-    const senderBiz = {
+    const bizFor = (customer: Customer | undefined): BusinessIdentity => ({
       ...(rawBiz ?? {}),
-      commsLanguage: resolvedLang,
-    } as BusinessIdentity;
+      commsLanguage: resolveCommsLanguage({
+        override: input.language,
+        customerLanguage: customer?.language,
+        identityCommsLanguage: rawBiz?.commsLanguage,
+      }),
+    } as BusinessIdentity);
 
     // P-06 — the seeded placeholder account name ("Nuevo usuario"/"New user")
     // must never reach a customer. Resolve the outbound display name (real
@@ -169,7 +168,7 @@ export class SendPaperworkEmail {
     // <<solution>>: collect the missing info first).
     const displayName = outboundSenderName({
       userName: sender?.name,
-      businessName: senderBiz?.businessName ?? senderBiz?.legalName,
+      businessName: rawBiz?.businessName ?? rawBiz?.legalName,
     });
     if (!displayName) {
       return {
@@ -191,10 +190,14 @@ export class SendPaperworkEmail {
     let invoiceToIssue = false;
     let customerIdForLog: string | undefined;
     let customerNameForEvent: string | undefined;
+    /** REQ-715: the document's customer — their language joins the resolution */
+    let docCustomer: Customer | undefined;
     if (input.kind === "quote") {
       // REQ-201: a send publishes what is pending — the link must show what was sent
       const quote = await publishPendingQuote(this.quotes, input.resourceId, userId, senderAsPublisher(userId, sender?.name));
       const customer = await this.tryGetCustomer(userId, quote.customerId);
+      docCustomer = customer;
+      const senderBiz = bizFor(customer);
       customerIdForLog = customer?.id;
       // the live address first (a corrected typo should reach them), the snapshot's otherwise
       if (!recipient) recipient = customer?.email ?? customerOnDocument(quote, customer)?.email;
@@ -210,6 +213,8 @@ export class SendPaperworkEmail {
       invoiceToIssue = isUnissuedInvoice(stored) && input.variant !== "paid";
       const invoice = invoiceToIssue ? asDelivered(stored) : stored;
       const customer = await this.tryGetCustomer(userId, invoice.customerId);
+      docCustomer = customer;
+      const senderBiz = bizFor(customer);
       customerIdForLog = customer?.id;
       customerNameForEvent = customer?.name || undefined;
       if (!recipient) recipient = customer?.email ?? customerOnDocument(invoice, customer)?.email;
@@ -240,6 +245,22 @@ export class SendPaperworkEmail {
       );
     }
 
+    // UX-28: an explicit pick is adopted as the stored default when none
+    // exists yet — REQ-715: never a pick that is just this customer's own
+    // language (that one is theirs, not the account's).
+    const adopt = commsLanguageToAdopt({
+      override: input.language,
+      customerLanguage: docCustomer?.language,
+      identityCommsLanguage: rawBiz?.commsLanguage,
+    });
+    if (adopt) {
+      try {
+        await this.identity.upsert(userId, { commsLanguage: adopt });
+      } catch (err) {
+        console.warn("[send-paperwork-email] commsLanguage adopt failed:", err);
+      }
+    }
+
     if (!recipient) {
       return {
         ok: false,
@@ -255,7 +276,7 @@ export class SendPaperworkEmail {
     // Roadmap p.7 + scope answer: From is a per-business alias at the send
     // domain (e.g. acme@documonster.com, REQ-123) when the business identity
     // has one set, noreply@ there when it has none.
-    const from = input.from ?? aliasFrom(senderBiz?.emailAlias);
+    const from = input.from ?? aliasFrom(rawBiz?.emailAlias);
 
     // REQ-175: the customer's reply comes back through the inbound webhook, into their thread
     const replyTo = customerIdForLog

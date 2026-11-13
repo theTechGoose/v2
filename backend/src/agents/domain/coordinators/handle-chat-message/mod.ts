@@ -3072,6 +3072,25 @@ export class HandleChatMessage {
           };
         }
 
+        // REQ-715 (demo-loop cycle 5, c4-M34): "Ella habla español." — the
+        // customer's language is saved on the customer the quote is for, so
+        // every send to them starts in it. With no customer known yet it
+        // waits on the conversation; the "Who is this for?" step puts it on
+        // the customer it binds.
+        const spoken = action.payload.customerLanguage;
+        if (spoken) {
+          const forCustomer = quote.customerId ?? customerId;
+          if (forCustomer && this.customers) {
+            await this.customers.update(forCustomer, input.userId, {
+              language: spoken,
+            }).catch((err) =>
+              console.warn("[handle-chat-message] customer language:", err)
+            );
+          } else {
+            convPatch.customerLanguage = spoken;
+          }
+        }
+
         await this.bus.emit({
           userId: input.userId,
           entityType: "quote",

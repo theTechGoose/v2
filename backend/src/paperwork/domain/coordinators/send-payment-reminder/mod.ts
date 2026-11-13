@@ -17,6 +17,8 @@ import {
   docTitle,
 } from "@paperwork/domain/business/doc-render/mod.ts";
 import { reminderSettingsOf } from "#quote-flow/reminder-settings.ts";
+import { resolveCommsLanguage } from "#quote-flow/comms-language.ts"; // REQ-715
+import { withSendLang } from "#quote-flow/share-link.ts"; // REQ-715
 
 /** The cadence steps fired by the overdue-reminder cron when the business
  *  has not picked its own (REQ-623: BusinessIdentity.reminders.days). */
@@ -149,7 +151,12 @@ export class SendPaymentReminder {
       this.users.get(userId).catch(() => undefined),
       this.identity.get(userId).catch(() => null),
     ]);
-    const lang: "en" | "es" = biz?.commsLanguage === "es" ? "es" : "en";
+    // REQ-715 (demo-loop cycle 5, m31): the reminder speaks the customer's
+    // own language, else the business's send default, else en.
+    const lang = resolveCommsLanguage({
+      customerLanguage: customer?.language,
+      identityCommsLanguage: biz?.commsLanguage,
+    });
     const businessName = biz?.businessName?.trim() || biz?.legalName?.trim() || sender?.name?.trim() || t(lang, "brand.name");
     // REQ-204: the reminder greets the customer as snapshotted on the bill
     const shown = customerOnDocument(invoice, customer);
@@ -162,7 +169,9 @@ export class SendPaymentReminder {
     try {
       const link = await this.shortlinks.findOrCreate(userId, "invoice", invoice.id);
       const appUrl = Deno.env.get("APP_URL") ?? SITE_ORIGIN;
-      url = `${appUrl}/s/${link.code}`;
+      // REQ-715 (REQ-342 parity): the link opens the invoice in the
+      // reminder's language
+      url = withSendLang(`${appUrl}/s/${link.code}`, lang);
     } catch { /* fall through */ }
 
     // REQ-556 (demo-loop cycle 4, M7): a channel counts only when the

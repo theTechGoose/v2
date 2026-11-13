@@ -43,6 +43,10 @@ export interface AgentConversation {
    *  option id (e.g. `{ payment_terms: "50_50" }`). The terms wizard shows
    *  that option pre-selected. */
   termsPrefill?: Record<string, string>;
+  /** REQ-715 (demo-loop cycle 5, c4-M34): the customer's language the user
+   *  stated before the customer was known ("Ella habla español") — the
+   *  customer step puts it on the customer it binds. */
+  customerLanguage?: "en" | "es";
   createdAt: string;
   updatedAt: string;
 }

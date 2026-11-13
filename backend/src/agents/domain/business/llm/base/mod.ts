@@ -91,6 +91,10 @@ export type LLMAction =
        *  update_job_details the model made in the same turn — folded into
        *  the create by planToolCalls, never a tool argument of its own. */
       descriptionByLang?: Partial<Record<"en" | "es", string>>;
+      /** REQ-715 (demo-loop cycle 5, c4-M34): the language the CUSTOMER
+       *  reads, when the user said it ("Ella habla español") — saved on the
+       *  customer the quote is for. */
+      customerLanguage?: "en" | "es";
     };
   }
   | { type: "lock_quote"; payload: { quoteId: string } }

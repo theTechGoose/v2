@@ -68,6 +68,9 @@ export interface CustomerCard {
   address?: string;
   notes?: string;
   businessName?: string;
+  /** REQ-715 (demo-loop cycle 5, m31): the language the customer reads —
+   *  every send to them starts in it */
+  language?: "en" | "es";
   segment?: Exclude<ClientSegmentKey, "unsorted">;
   vip?: boolean;
   createdAt: string;
@@ -173,6 +176,8 @@ export const clientsClient = {
       businessName?: string;
       /** REQ-283 — the one-off task form's typed address */
       address?: string;
+      /** REQ-715 — the customer's language; left out when not set */
+      language?: "en" | "es";
     },
     opts: ApiOptions = {},
   ) => api.post<CustomerCard>("/customers", patch, opts),

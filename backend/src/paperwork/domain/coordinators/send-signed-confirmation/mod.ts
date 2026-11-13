@@ -27,6 +27,7 @@ import type { User } from "@users/dto/user.ts";
 import type { Customer } from "@crm/dto/customer.ts";
 import type { CustomerSnapshot } from "@core/data/numbered-store/mod.ts";
 import { SITE_ORIGIN } from "#quote-flow/site-meta.ts";
+import { resolveCommsLanguage } from "#quote-flow/comms-language.ts"; // REQ-715
 import {
   accountNetDays,
   completionFromTerms,
@@ -135,8 +136,12 @@ export class SendSignedConfirmation {
       ident?.legalName?.trim() || contractor?.name?.trim();
 
     // Roadmap p.13: customer-facing comms resolve to the contractor's
-    // outgoing-comms language (default en), not their UI language.
-    const lang: Lang = ident?.commsLanguage === "es" ? "es" : "en";
+    // outgoing-comms language (default en), not their UI language —
+    // REQ-715 (demo-loop cycle 5, m31): the customer's own language first.
+    const lang: Lang = resolveCommsLanguage({
+      customerLanguage: customer?.language,
+      identityCommsLanguage: ident?.commsLanguage,
+    });
 
     // ---- 1. Create the full milestone set (first invoice sent now,
     // remaining ones scheduled for equal-spaced dates over the quote's
@@ -289,9 +294,8 @@ export class SendSignedConfirmation {
           customer,
           contractor,
           ...(businessName ? { businessName } : {}),
-          ...(ident?.commsLanguage
-            ? { commsLanguage: ident.commsLanguage }
-            : {}),
+          // REQ-715: the countersigned copy is in the email's language
+          commsLanguage: lang,
         });
       } catch (err) {
         console.error("[send-signed-confirmation] PDF render failed:", err);

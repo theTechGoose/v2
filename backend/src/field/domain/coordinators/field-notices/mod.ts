@@ -19,6 +19,7 @@ import {
   realName,
 } from "@users/domain/business/account-admins/mod.ts";
 import { outboundSenderName } from "#quote-flow/outbound-identity.ts";
+import { resolveCommsLanguage } from "#quote-flow/comms-language.ts"; // REQ-715
 import { CustomerStore } from "@crm/domain/data/customer-store/mod.ts";
 import {
   FieldWorkerStore,
@@ -49,12 +50,23 @@ interface Sender {
   owner: string;
   /** the owner's own language (workers) */
   ownerLang: NoticeLang;
-  /** the business's comms language (customers) */
+  /** the business's comms language (a customer with none of their own) */
   commsLang: NoticeLang;
   tz: string;
 }
 
 const log = (line: string) => console.log(`[field/notices] ${line}`);
+
+/** REQ-715 (demo-loop cycle 5, m31): a customer's text speaks their own
+ *  language (Customer.language), else the business's comms language. */
+const customerLang = (
+  s: Sender,
+  customer: { language?: string } | null | undefined,
+): NoticeLang =>
+  resolveCommsLanguage({
+    customerLanguage: customer?.language,
+    identityCommsLanguage: s.commsLang,
+  });
 
 @Injectable()
 export class FieldNotices {
@@ -177,7 +189,7 @@ export class FieldNotices {
       this.types.listByUser(userId),
       this.customers.get(task.customerId).catch(() => null),
     ]);
-    const body = customerCanceledText(s.commsLang, {
+    const body = customerCanceledText(customerLang(s, customer), {
       business: s.business,
       service: types.find((x) => x.id === task.taskTypeId)?.name ?? "—",
       date: task.date,
@@ -204,7 +216,7 @@ export class FieldNotices {
       this.types.listByUser(userId),
       this.customers.get(task.customerId).catch(() => null),
     ]);
-    const body = customerDeferredText(s.commsLang, {
+    const body = customerDeferredText(customerLang(s, customer), {
       business: s.business,
       service: types.find((x) => x.id === task.taskTypeId)?.name ?? "—",
       from: task.date,
@@ -274,7 +286,7 @@ export class FieldNotices {
         !await this.once(["field_notice", "today", userId, date, customerId])
       ) continue;
       const customer = await this.customers.get(customerId).catch(() => null);
-      const body = customerTodayText(s.commsLang, {
+      const body = customerTodayText(customerLang(s, customer), {
         business: s.business,
         services: servicesLine(
           tasks.map((t) => types.get(t.taskTypeId) ?? "—"),
