@@ -138,7 +138,13 @@ export interface TaskView {
   regionName: string;
   workerId: string;
   workerName: string;
+  /** the day — a job of several days' FIRST day */
   date: string;
+  /** REQ-785: a job of several days — its last day; it shows on every day between */
+  endDate?: string;
+  /** REQ-785: the job's other workers, and their names */
+  crewIds?: string[];
+  crewNames?: string[];
   address?: string;
   priceCents: number;
   status: TaskStatus;
@@ -167,6 +173,10 @@ export interface OneOffTaskInput {
   /** omitted: the worker covering the customer's subscription's zone */
   workerId?: string;
   address?: string;
+  /** REQ-785: a job of several days — its last day (omitted: one day) */
+  endDate?: string;
+  /** REQ-785: more workers on the job */
+  crewIds?: string[];
 }
 
 /** GET /field/worker/tasks — no prices, no invoice ids, no office notes */
@@ -181,6 +191,11 @@ export interface WorkerTaskView {
   workerId: string;
   workerName: string;
   date: string;
+  /** REQ-785: a job of several days — its last day */
+  endDate?: string;
+  /** REQ-785: the job's other workers, and their names */
+  crewIds?: string[];
+  crewNames?: string[];
   address?: string;
   status: TaskStatus;
   deferredTo?: string;
@@ -338,6 +353,12 @@ export const fieldClient = {
       status?: "complete" | "assigned";
       /** REQ-166 — another of the account's workers, this day only */
       workerId?: string;
+      /** REQ-785 — a one-off's first day */
+      date?: string;
+      /** REQ-785 — its last day; null = one day */
+      endDate?: string | null;
+      /** REQ-785 — the job's other workers */
+      crewIds?: string[];
     },
     opts?: ApiOptions,
   ) => api.put<TaskView>(`/field/tasks/${id}`, b, opts),

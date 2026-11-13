@@ -6,6 +6,7 @@
 import type { FieldTask, FieldWorker, Region, Subscription, TaskType } from "@field/dto/field.ts";
 import { CAP } from "@field/dto/field.ts";
 import { isDue } from "@field/domain/business/schedule/mod.ts";
+import { lastDayOf, onTask } from "@field/domain/business/job-span/mod.ts";
 
 export const fold = (s: string) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/\s+/g, " ").trim();
 
@@ -82,15 +83,19 @@ export function workerView(t: FieldTask, invoiceStatus?: string): WorkerTaskView
   return { ...rest, locked: !!invoiceId, lockState };
 }
 
-/** how far back a worker may act — today and two days before; a foreman two weeks */
-export function inActionWindow(w: FieldWorker, taskDate: string, todayIso: string): boolean {
+/**
+ * how far back a worker may act — today and two days before; a foreman two weeks. REQ-785: a
+ * multi-day job counts back from its LAST day (`lastDay`), and from its first day it is today's.
+ */
+export function inActionWindow(w: FieldWorker, taskDate: string, todayIso: string, lastDay = taskDate): boolean {
   if (taskDate > todayIso) return false;
-  const days = Math.round((Date.parse(todayIso + "T00:00:00Z") - Date.parse(taskDate + "T00:00:00Z")) / 86_400_000);
+  const end = lastDay < todayIso ? lastDay : todayIso;
+  const days = Math.round((Date.parse(todayIso + "T00:00:00Z") - Date.parse(end + "T00:00:00Z")) / 86_400_000);
   return days <= (w.role === "foreman" ? 14 : 2);
 }
 
-/** a worker touches their own tasks; a foreman anyone's */
-export const canAct = (w: FieldWorker, t: FieldTask) => w.role === "foreman" || t.workerId === w.id;
+/** a worker touches their own tasks (REQ-785: a job's crew too); a foreman anyone's */
+export const canAct = (w: FieldWorker, t: FieldTask) => w.role === "foreman" || onTask(w.id, t);
 
 export type AddServiceResult = { ok: true; task: FieldTask; restored: boolean } | { ok: false; reason: "no_visit" | "duplicate" | "invoiced" };
 
@@ -119,21 +124,29 @@ export function addService(input: { subscription: Subscription; taskTypeId: stri
   return { ok: true, task, restored: false };
 }
 
-/** REQ-164 — a one-off task the office makes by hand: no subscription, one day, flagged so nothing automatic touches it */
+/**
+ * REQ-164 — a one-off task the office makes by hand: no subscription, flagged so nothing automatic touches it.
+ * REQ-785 — one day, or a job of several (`endDate`, its last day) with more workers (`crewIds`).
+ */
 export function oneOffTask(input: {
   userId: string; customerId: string; date: string; taskTypeId: string; priceCents: number; workerId: string;
-  regionId?: string; address?: string; newId: () => string;
+  regionId?: string; address?: string; endDate?: string; crewIds?: string[]; newId: () => string;
 }): FieldTask {
   return {
     id: input.newId(), userId: input.userId, subscriptionId: "", oneOff: true, taskTypeId: input.taskTypeId, customerId: input.customerId,
     regionId: input.regionId ?? "", workerId: input.workerId, date: input.date, address: input.address, priceCents: input.priceCents,
     status: "assigned", addedBy: "office",
+    ...(input.endDate && input.endDate > input.date ? { endDate: input.endDate } : {}),
+    ...(input.crewIds?.length ? { crewIds: [...input.crewIds] } : {}),
   };
 }
 
-/** the tasks that make up one visit: the subscription's that day — or, for a one-off, the customer's one-offs that day */
+/**
+ * the tasks that make up one visit: the subscription's that day — or, for a one-off, the customer's one-offs that
+ * day; REQ-785: a job of several days is its own visit (the same first AND last day)
+ */
 export const sameVisit = (t: FieldTask, x: FieldTask) =>
-  x.date === t.date && (t.subscriptionId ? x.subscriptionId === t.subscriptionId : !!x.oneOff && x.customerId === t.customerId);
+  x.date === t.date && (t.subscriptionId ? x.subscriptionId === t.subscriptionId : !!x.oneOff && x.customerId === t.customerId && lastDayOf(x) === lastDayOf(t));
 
 /**
  * REQ-165 — the office adds a service to the visit a task belongs to: a sibling (same customer, day,
@@ -156,6 +169,8 @@ export function officeService(input: { task: FieldTask; visit: FieldTask[]; task
     id: input.newId(), userId: t.userId, subscriptionId: t.subscriptionId, taskTypeId: input.taskTypeId, customerId: t.customerId,
     regionId: t.regionId, workerId: t.workerId, date: t.date, address: t.address, priceCents: input.priceCents ?? item?.priceCents ?? 0,
     status: "assigned", addedBy: "office", ...(t.oneOff ? { oneOff: true as const } : {}),
+    // REQ-785: a service added to a job of several days runs the same days, with the same crew
+    ...(t.endDate ? { endDate: t.endDate } : {}), ...(t.crewIds?.length ? { crewIds: [...t.crewIds] } : {}),
   };
   return { ok: true, task, restored: false };
 }

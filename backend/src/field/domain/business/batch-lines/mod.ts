@@ -5,10 +5,13 @@
  * turns each group into an invoice through InvoiceStore.
  */
 import type { FieldTask, Subscription, TaskType } from "@field/dto/field.ts";
+import { lastDayOf } from "@field/domain/business/job-span/mod.ts";
 
 export interface BatchLine {
   taskId: string;
   date: string;
+  /** REQ-785: a job of several days — its last day; the ONE line names both */
+  endDate?: string;
   description: string;
   address: string;
   priceCents: number;
@@ -32,7 +35,8 @@ export interface LinesInput {
   liveInvoiceIds: Set<string>;
 }
 
-const inRange = (t: FieldTask, from: string, to: string) => t.date >= from && t.date <= to;
+/** REQ-785: a job of several days is in a range that reaches any of its days (it bills once: its line stamps it) */
+const inRange = (t: FieldTask, from: string, to: string) => t.date <= to && lastDayOf(t) >= from;
 const pullable = (t: FieldTask, live: Set<string>) => t.status === "complete" && !(t.invoiceId && live.has(t.invoiceId));
 
 export function linesFor(input: LinesInput): CustomerLines[] {
@@ -48,6 +52,7 @@ export function linesFor(input: LinesInput): CustomerLines[] {
       description: types.get(t.taskTypeId) ?? "—",
       address: t.address ?? subs.get(t.subscriptionId)?.address ?? "",
       priceCents: t.priceCents,
+      ...(lastDayOf(t) !== t.date ? { endDate: lastDayOf(t) } : {}),
       ...(t.oneOff || !t.subscriptionId ? { oneOff: true as const } : {}),
       // note: deliberately not copied
     };
@@ -81,15 +86,17 @@ function shortDate(iso: string, lang: "en" | "es"): string {
   return lang === "es" ? `${d.getUTCDate()} ${month}` : `${month.charAt(0).toUpperCase() + month.slice(1)} ${d.getUTCDate()}`;
 }
 
-/** "Oct 12 — Lawn cut — 123 Oak St" / "12 oct — Lawn cut — 123 Oak St" — the invoice line item's description */
+/** "Oct 12 — Lawn cut — 123 Oak St" / "12 oct — Lawn cut — 123 Oak St" — the invoice line item's description;
+ *  REQ-785: a job of several days names its first and last day, "Nov 16 – Nov 18 — Fence install — …" */
 export function lineText(l: BatchLine, lang: "en" | "es" = "en"): string {
-  return `${shortDate(l.date, lang)} — ${l.description} — ${l.address}`;
+  const when = l.endDate ? `${shortDate(l.date, lang)} – ${shortDate(l.endDate, lang)}` : shortDate(l.date, lang);
+  return `${when} — ${l.description} — ${l.address}`;
 }
 
 /** REQ-703 (demo m54): the draft's title and service period, from its own lines — one task → its service
  *  ("Fix 3 sagging fence posts"); subscription visits only → "Maintenance · Oct 29 – Nov 12"; mixed → "Services · …" */
 export function batchTitle(lines: BatchLine[], lang: "en" | "es" = "en"): { jobName: string; serviceDateFrom: string; serviceDateTo: string } {
-  const dates = lines.map((l) => l.date).sort();
+  const dates = lines.flatMap((l) => (l.endDate ? [l.date, l.endDate] : [l.date])).sort(); // REQ-785: a job's last day too
   const serviceDateFrom = dates[0] ?? "", serviceDateTo = dates[dates.length - 1] ?? "";
   const period = serviceDateFrom === serviceDateTo
     ? shortDate(serviceDateFrom, lang)
@@ -107,7 +114,7 @@ export function lineItem(l: BatchLine, lang: "en" | "es" = "en") {
   return {
     description: lineText(l, lang),
     quantity: 1,
-    unit: lang === "es" ? "visita" : "visit",
+    unit: l.endDate ? (lang === "es" ? "trabajo" : "job") : lang === "es" ? "visita" : "visit", // REQ-785: a job of several days
     price: l.priceCents,
     date: l.date,
     service: l.description,

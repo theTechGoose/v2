@@ -19,6 +19,9 @@ export interface Names {
 
 export const safeWorker = ({ pin: _p, ...w }: FieldWorker) => w;
 
+/** REQ-785: the names of a job's other workers, in crewIds' order */
+const crewNames = (t: FieldTask, n: Names) => (t.crewIds?.length ? { crewNames: t.crewIds.map((id) => n.worker(id)) } : {});
+
 @Injectable()
 export class FieldViews {
   constructor(
@@ -69,11 +72,11 @@ export class FieldViews {
   }
 
   task(t: FieldTask, n: Names) {
-    return { ...t, customerName: n.customer(t.customerId), taskTypeName: n.type(t.taskTypeId), workerName: n.worker(t.workerId), regionName: n.region(t.regionId)?.name ?? "" }; // REQ-365: no zone (a one-off) is "", not "—"
+    return { ...t, customerName: n.customer(t.customerId), taskTypeName: n.type(t.taskTypeId), workerName: n.worker(t.workerId), regionName: n.region(t.regionId)?.name ?? "", ...crewNames(t, n) }; // REQ-365: no zone (a one-off) is "", not "—"
   }
 
   workerTask(t: FieldTask, n: Names) {
-    return { ...workerView(t, n.invoiceStatus?.(t.invoiceId)), customerName: n.customer(t.customerId), taskTypeName: n.type(t.taskTypeId), workerName: n.worker(t.workerId) };
+    return { ...workerView(t, n.invoiceStatus?.(t.invoiceId)), customerName: n.customer(t.customerId), taskTypeName: n.type(t.taskTypeId), workerName: n.worker(t.workerId), ...crewNames(t, n) };
   }
 
   async regionsWithMembers(userId: string) {

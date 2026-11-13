@@ -3,12 +3,14 @@
  * owned by a user (the account). Storage, per entity `<p>`:
  *   [<p>, id]                 → the record (carries userId)
  *   [<p>_by_user, userId, id] → id        (listByUser, read in batches — REQ-134)
- * Tasks also index by day: [field_task_by_day, userId, date, id] → id.
+ * Tasks also index by day: [field_task_by_day, userId, date, id] → id —
+ * REQ-785: one such key for EACH day a multi-day job covers.
  */
 import { Injectable } from "#danet/core";
 import { getKv, indexedIds, readMany } from "@core/data/kv/mod.ts";
 import { ForbiddenError, NotFoundError } from "@core/data/repository/mod.ts";
 import type { Batch, FieldTask, FieldWorker, Region, Subscription, TaskType } from "@field/dto/field.ts";
+import { daysCovered, lastDayOf } from "@field/domain/business/job-span/mod.ts";
 
 interface Owned {
   id: string;
@@ -120,21 +122,59 @@ export class RegionStore extends OwnedStore<Region> {
   }
 }
 
+/** REQ-785: writes per atomic commit — KV refuses a commit of more than 1000 mutations */
+const KV_MUTATIONS = 900;
+
 @Injectable()
 export class FieldTaskStore extends OwnedStore<FieldTask> {
   constructor() {
     super("field_task");
   }
+  /** REQ-785: one day key per day the task covers — a multi-day job lists on each of its days */
   protected override extraKeys(t: FieldTask): Deno.KvKey[] {
-    return [["field_task_by_day", t.userId, t.date, t.id]];
+    return daysCovered(t).map((d) => ["field_task_by_day", t.userId, d, t.id]);
   }
-  /** the account's tasks from one day to another, inclusive — a deleted one (REQ-163) only when asked */
+
+  override async put(rec: FieldTask): Promise<FieldTask> {
+    await this.putMany([rec]);
+    return rec;
+  }
+
+  /** REQ-785: a re-put whose days changed drops the day keys it left; commits stay under KV's mutation cap */
+  override async putMany(recs: FieldTask[]): Promise<void> {
+    if (!recs.length) return;
+    const kv = await getKv();
+    const before = await readMany<FieldTask>(kv, recs.map((r) => [this.prefix, r.id]));
+    let op = kv.atomic(), n = 0;
+    for (const [i, rec] of recs.entries()) {
+      const keys = this.extraKeys(rec);
+      const kept = new Set(keys.map((k) => k[2]));
+      const prev = before[i];
+      const left = prev ? this.extraKeys(prev).filter((k) => !kept.has(k[2])) : [];
+      const writes = 2 + keys.length + left.length;
+      if (n > 0 && n + writes > KV_MUTATIONS) {
+        await op.commit();
+        op = kv.atomic();
+        n = 0;
+      }
+      op.set([this.prefix, rec.id], rec).set([this.index, rec.userId, rec.id], rec.id);
+      for (const k of keys) op.set(k, rec.id);
+      for (const k of left) op.delete(k);
+      n += writes;
+    }
+    await op.commit();
+  }
+
+  /**
+   * the account's tasks from one day to another, inclusive — a deleted one (REQ-163) only when asked.
+   * REQ-785: a job of several days is keyed under each of its days: it comes back ONCE, when one of its days is in the range.
+   */
   async listByRange(userId: string, from: string, to: string, opts: { withDeleted?: boolean } = {}): Promise<FieldTask[]> {
     const kv = await getKv();
-    const ids: string[] = [];
-    for await (const e of kv.list<string>({ start: ["field_task_by_day", userId, from], end: ["field_task_by_day", userId, to + "\u0000"] })) ids.push(e.value);
-    const recs = await readMany<FieldTask>(kv, ids.map((id) => ["field_task", id]));
-    return recs.filter((t): t is FieldTask => !!t && (opts.withDeleted || !t.deleted));
+    const ids = new Set<string>();
+    for await (const e of kv.list<string>({ start: ["field_task_by_day", userId, from], end: ["field_task_by_day", userId, to + "\u0000"] })) ids.add(e.value);
+    const recs = await readMany<FieldTask>(kv, [...ids].map((id) => ["field_task", id]));
+    return recs.filter((t): t is FieldTask => !!t && t.date <= to && lastDayOf(t) >= from && (opts.withDeleted || !t.deleted));
   }
   listByDay(userId: string, date: string, opts: { withDeleted?: boolean } = {}): Promise<FieldTask[]> {
     return this.listByRange(userId, date, date, opts);

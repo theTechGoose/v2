@@ -8,6 +8,10 @@
  * tab is visible and nothing is being typed, backing off to 60 s while idle; a
  * refresh reads only the tasks (REQ-605).
  *
+ * REQ-785 (demo-loop dv1-d11) — a job of several days is on each of its days,
+ * for its worker and its crew, as its own visit ("Day 2 of 3 · Nov 16 – Nov 18",
+ * "With Pedro"); one check-off marks the whole job done; it is never deferred.
+ *
  * Ported from a2z/web/trabajador.html (its <style> block lives here; the demo
  * driver was not ported). Strings: worker.* in lang/*.json via t().
  */
@@ -32,6 +36,13 @@ import {
   workerScreenLang,
 } from "../lib/field.ts";
 import { lockLabelKey, NOTE_SAVED_MS } from "../lib/field-batches.ts";
+import {
+  jobDayOf,
+  jobRange,
+  onJob,
+  visitKey,
+  workMates,
+} from "../lib/field-job.ts";
 import { WORKERS_PAGE_HREF } from "../lib/worker-view-link.ts";
 import { workerTodayKey } from "../lib/worker-today.ts";
 import { refreshTickDue } from "../lib/refresh-tick.ts";
@@ -180,7 +191,8 @@ const css = `
   .wrap button[disabled] { opacity: .6; }
 `;
 
-/** a visit = one subscription on one day; its services are the tasks */
+/** a visit = one subscription on one day; its services are the tasks. REQ-785: a one-off's
+ *  visit is its customer's tasks with the same first and last day — a job of several days is its own */
 interface Visit {
   id: string;
   customerName: string;
@@ -191,15 +203,16 @@ interface Visit {
 function visitsOf(rows: WorkerTaskView[]): Visit[] {
   const m = new Map<string, Visit>();
   for (const x of rows) {
-    let v = m.get(x.subscriptionId);
+    const key = visitKey(x);
+    let v = m.get(key);
     if (!v) {
       v = {
-        id: x.subscriptionId,
+        id: key,
         customerName: x.customerName,
         address: x.address ?? "",
         services: [],
       };
-      m.set(x.subscriptionId, v);
+      m.set(key, v);
     }
     v.services.push(x);
   }
@@ -616,6 +629,12 @@ export default function WorkerScreen(
     const addable = types.filter((tt) => !onVisit.has(tt.id));
     const deferHere = deferring?.visit === v.id ? deferring : null;
     const panel = open[v.id] ?? null;
+    // REQ-785 — a job of several days: which of its days this is, and who else is on it
+    const first = v.services[0];
+    const span = first ? jobDayOf(first, date) : null;
+    const mates = first && me ? workMates(first, me.id) : [];
+    /** a subscription's visit takes services from the worker; a one-off's does not (no subscription to add to) */
+    const subscribed = v.services.some((s) => !!s.subscriptionId);
     return (
       <div
         class={`visit${all ? " visit--done" : ""}`}
@@ -639,6 +658,26 @@ export default function WorkerScreen(
                 <I d={ICN.pin} size={12} />
                 {v.address}
               </a>
+            )}
+            {span && first && (
+              <div
+                class="hint"
+                data-cy="w-job-span"
+                data-n={span.n}
+                data-of={span.of}
+                style="display:flex;align-items:center;gap:4px;margin-top:4px"
+              >
+                <I d={ICN.cal} size={12} /> {t("worker.jobDay", {
+                  n: span.n,
+                  total: span.of,
+                  range: jobRange(first, lang),
+                })}
+              </div>
+            )}
+            {mates.length > 0 && (
+              <div class="hint" data-cy="w-crew">
+                {t("worker.crewWith", { names: mates.join(", ") })}
+              </div>
             )}
           </div>
           <span class="visit__state" data-cy="w-visit-state">
@@ -741,7 +780,7 @@ export default function WorkerScreen(
               <I d={ICN.plus} size={14} sw={2.5} />
               {t("worker.services")}
             </button>
-            {act_.some((s) => s.status === "assigned") && (
+            {act_.some((s) => s.status === "assigned") && !span && (
               <button
                 type="button"
                 data-cy="w-defer-visit"
@@ -863,7 +902,7 @@ export default function WorkerScreen(
                       >
                         × {t("worker.remove")}
                       </button>
-                      {s.status === "assigned" && (
+                      {s.status === "assigned" && !jobDayOf(s, date) && (
                         <button
                           type="button"
                           data-cy="w-defer"
@@ -877,30 +916,32 @@ export default function WorkerScreen(
                   )}
               </div>
             ))}
-            <div class="add">
-              <select
-                data-cy="w-add-type"
-                value={pick[v.id] ?? ""}
-                onChange={(e) =>
-                  setPick((p) => ({
-                    ...p,
-                    [v.id]: (e.target as HTMLSelectElement).value,
-                  }))}
-              >
-                <option value="">{t("worker.pick")}</option>
-                {addable.map((tt) => (
-                  <option key={tt.id} value={tt.id}>{tt.name}</option>
-                ))}
-              </select>
-              <button
-                type="button"
-                data-cy="w-add"
-                disabled={busy.has(`add:${v.id}`) || !pick[v.id]}
-                onClick={() => addService(v)}
-              >
-                {t("worker.add")}
-              </button>
-            </div>
+            {subscribed && (
+              <div class="add">
+                <select
+                  data-cy="w-add-type"
+                  value={pick[v.id] ?? ""}
+                  onChange={(e) =>
+                    setPick((p) => ({
+                      ...p,
+                      [v.id]: (e.target as HTMLSelectElement).value,
+                    }))}
+                >
+                  <option value="">{t("worker.pick")}</option>
+                  {addable.map((tt) => (
+                    <option key={tt.id} value={tt.id}>{tt.name}</option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  data-cy="w-add"
+                  disabled={busy.has(`add:${v.id}`) || !pick[v.id]}
+                  onClick={() => addService(v)}
+                >
+                  {t("worker.add")}
+                </button>
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -940,8 +981,9 @@ export default function WorkerScreen(
 
   let body = null;
   if (me) {
-    const mine = tasks.filter((x) => x.workerId === me.id);
-    const others = tasks.filter((x) => x.workerId !== me.id);
+    // REQ-785 — a job the worker is on the crew of is theirs too
+    const mine = tasks.filter((x) => onJob(me.id, x));
+    const others = tasks.filter((x) => !onJob(me.id, x));
     if (me.role === "foreman") {
       const byWorker = new Map<string, WorkerTaskView[]>();
       for (const x of others) {

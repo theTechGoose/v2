@@ -94,7 +94,12 @@ export interface FieldTask {
   customerId: string;
   regionId: string;
   workerId: string;
+  /** the day — a multi-day job's FIRST day */
   date: string;
+  /** REQ-785: a multi-day job's last day (after `date`): this ONE record shows on every day between and is done once */
+  endDate?: string;
+  /** REQ-785: the other workers on the job, besides `workerId` — they see it and may check it off */
+  crewIds?: string[];
   /** address snapshot, so a deleted subscription's history keeps it */
   address?: string;
   /** price snapshot at generation time */

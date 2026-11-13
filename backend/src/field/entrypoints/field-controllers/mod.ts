@@ -69,11 +69,17 @@ import {
   isValidDate,
 } from "@field/domain/business/schedule/mod.ts";
 import {
+  crewList,
+  ledBy,
+  spanFrom,
+} from "@field/domain/business/job-span/mod.ts";
+import {
   type Cadence,
   CADENCES,
   CAP,
   digitsOf,
   FieldError,
+  type FieldTask,
   type FieldWorker,
   str,
   type Subscription,
@@ -735,7 +741,7 @@ export class FieldRegionsController {
             t.regionId === r.id && t.status === "assigned" && !t.invoiceId &&
             t.workerId !== workerId
           );
-      await this.tasks.putMany(open.map((t) => ({ ...t, workerId })));
+      await this.tasks.putMany(open.map((t) => ledBy(t, workerId))); // REQ-785: off the crew it now leads
     } else delete r.workerId;
     await this.regions.put(r);
     return r;
@@ -774,6 +780,63 @@ async function ownWorker(
   return w;
 }
 
+/** REQ-785: a job's last day from the body (`endDate` or `days`), or a 400 that names what is wrong */
+function spanOf(
+  date: string,
+  b: { endDate?: unknown; days?: unknown },
+): { endDate?: string } {
+  const r = spanFrom(date, b);
+  if (!r.ok) throw new FieldError(r.error, 400, undefined, r.code);
+  return { endDate: r.endDate };
+}
+
+/** REQ-785: the job's other workers — the account's own, unique, never the lead; a 400 otherwise */
+async function crewOf(
+  workers: FieldWorkerStore,
+  userId: string,
+  raw: unknown,
+  leadId: string,
+): Promise<string[]> {
+  const ids = crewList(raw, leadId);
+  if (!ids) throw new FieldError("crewIds must be a list of worker ids");
+  for (const id of ids) await ownWorker(workers, userId, id);
+  return ids;
+}
+
+/**
+ * REQ-785: a one-off's days from a PUT body — its first (`date`, else the current one) and its last
+ * (`endDate` / `days`, else the current last; null = one day). A subscription's visit keeps its
+ * schedule's day (400); an invoiced task keeps its days (409).
+ */
+function newDays(
+  t: FieldTask,
+  b: Body_,
+): { date: string; endDate?: string } {
+  if (!t.oneOff) {
+    throw new FieldError(
+      "a subscription's visit is on its schedule — only a one-off task's days change",
+      400,
+      undefined,
+      "not_one_off",
+    );
+  }
+  if (t.invoiceId) {
+    throw new FieldError(
+      "task is on an invoice — edit the invoice instead",
+      409,
+    );
+  }
+  const date = "date" in b ? str(b.date) : t.date;
+  if (!date || !isValidDate(date)) {
+    throw new FieldError("date must be YYYY-MM-DD");
+  }
+  const span = spanOf(
+    date,
+    "endDate" in b || "days" in b ? b : { endDate: t.endDate },
+  );
+  return { date, ...(span.endDate ? { endDate: span.endDate } : {}) };
+}
+
 /** a price in integer cents, 0 … $100,000 */
 function priceOf(v: unknown, fallback?: number): number {
   if (v === undefined || v === null || v === "") {
@@ -804,7 +867,10 @@ export class FieldTasksController {
     private activity: FieldActivity,
   ) {}
 
-  /** REQ-164: a one-off task by hand — one customer, one day, no subscription */
+  /**
+   * REQ-164: a one-off task by hand — one customer, no subscription. REQ-785: one day, or a job of
+   * several (`endDate` or `days`) — ONE task on each of its days — with more workers (`crewIds`).
+   */
   @Post()
   async create(@Context() ctx: ExecutionContext, @Body() raw: unknown) {
     const user = await requireUser(ctx, this.sessions, this.users);
@@ -814,6 +880,7 @@ export class FieldTasksController {
     const customer = await this.customers.getOwned(customerId, user.id); // 404 / 403 as the customers resource answers
     const date = str(b.date) ?? fieldToday();
     if (!isValidDate(date)) throw new FieldError("date must be YYYY-MM-DD");
+    const span = spanOf(date, b); // REQ-785
     const taskTypeId = await taskTypeFrom(this.types, user.id, b);
     const priceCents = priceOf(b.priceCents);
     // the worker: named, else the one covering the customer's subscription's zone
@@ -827,6 +894,7 @@ export class FieldTasksController {
     if (workerId) await ownWorker(this.workers, user.id, workerId);
     else workerId = home?.workerId;
     if (!workerId) throw new FieldError("workerId required");
+    const crewIds = await crewOf(this.workers, user.id, b.crewIds, workerId); // REQ-785
     const address = str(b.address) ?? subs[0]?.address ??
       customer.address?.trim() ?? undefined;
     if (address && address.length > CAP.text) {
@@ -836,6 +904,8 @@ export class FieldTasksController {
       userId: user.id,
       customerId: customer.id,
       date,
+      endDate: span.endDate,
+      crewIds,
       taskTypeId,
       priceCents,
       workerId,
@@ -966,7 +1036,7 @@ export class FieldTasksController {
     };
   }
 
-  /** REQ-141: the office's note and price */
+  /** REQ-141: the office's note and price · REQ-785: a one-off's days and crew */
   @Put(":id")
   async update(
     @Context() ctx: ExecutionContext,
@@ -974,10 +1044,28 @@ export class FieldTasksController {
     @Body() raw: unknown,
   ) {
     const user = await requireUser(ctx, this.sessions, this.users);
-    const t = await this.tasks.getOwned(id, user.id);
+    let t = await this.tasks.getOwned(id, user.id);
     const b = body(raw);
     if (tooLong(b.adminNote, CAP.note)) {
       throw new FieldError(`note too long (max ${CAP.note})`);
+    }
+    // REQ-785 — a one-off's new days and crew are checked before anything changes
+    const days = "date" in b || "endDate" in b || "days" in b
+      ? newDays(t, b)
+      : null;
+    const crew = "crewIds" in b
+      ? await crewOf(
+        this.workers,
+        user.id,
+        b.crewIds,
+        str(b.workerId) ?? t.workerId,
+      )
+      : null;
+    if (crew && t.invoiceId) {
+      throw new FieldError(
+        "task is on an invoice — edit the invoice instead",
+        409,
+      );
     }
     if ("adminNote" in b) {
       t.adminNote = String(b.adminNote ?? "").trim() || undefined;
@@ -1012,7 +1100,7 @@ export class FieldTasksController {
       }
       await ownWorker(this.workers, user.id, wid);
       if (wid !== t.workerId) {
-        t.workerId = wid;
+        t = ledBy(t, wid); // REQ-785: the new lead is no longer also on the crew
         await this.tasks.put(t);
         await this.notices.workerNewTask(user.id, t); // REQ-171: the new worker hears, when it is today
       }
@@ -1030,8 +1118,21 @@ export class FieldTasksController {
       }
       t.priceCents = p;
     }
+    // REQ-785 — a one-off's days (first and last) and the job's other workers
+    const moved = !!days &&
+      (days.date !== t.date || days.endDate !== t.endDate);
+    if (days) {
+      t.date = days.date;
+      if (days.endDate) t.endDate = days.endDate;
+      else delete t.endDate;
+    }
+    if (crew) {
+      if (crew.length) t.crewIds = crew;
+      else delete t.crewIds;
+    }
     await this.tasks.put(t);
     if (completedNow) await this.activity.taskCompleted(t); // REQ-566
+    if (moved || crew) await this.notices.workerNewTask(user.id, t); // REQ-171: moved onto today, the crew hears
     return this.views.task(t, await this.views.names(user.id));
   }
 }
