@@ -5,8 +5,13 @@
  * "A..  Connected  End for everyone? [Yes, end it] Keep going" once End was clicked: the
  * question squeezed the name. Now the name stays whole while End asks, and the question with
  * both answers fits inside the phone; Keep going puts End back.
+ *
+ * REQ-781 (demo-loop cycle dv1, d7) AMENDMENT — no band is kept under the page, so on a page with
+ * something under every spot the phone's pill is folded to its mini-pill: the story brings it out
+ * whole (`pillUp`, as a person would) before reading it.
  */
 import { story, type StoryTools } from "#shots";
+import { pillUp } from "../_shared/demo-pill.ts";
 
 const JSON_HEADERS = { "content-type": "application/json" };
 const digits = () => String(Math.floor(Math.random() * 9_000_000) + 1_000_000);
@@ -125,6 +130,7 @@ Deno.test("REQ-548 (demo-loop cycle 4, p4-p3e): on a 390 px phone, End's questio
         timeout: 20_000,
       });
       await userPage.reload();
+      await pillUp(userPage, { live: true });
       await userPage.locator("[data-cy='demo-status']").filter({
         hasText: /^\s*Connected\s*$/,
       }).waitFor({ timeout: 20_000 });

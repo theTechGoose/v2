@@ -20,7 +20,6 @@ import {
   backdropCovers,
   backdropDim,
   bandPaint,
-  bandRoom,
   PILL_MARGIN,
   pillHome,
   placePill,
@@ -34,57 +33,21 @@ const view = { w: 390, h: 844 };
 const home = () => pillHome({ view, size: { w: 300, h: 40 } });
 
 describe("REQ-643 (demo-loop cycle 5, m9) — the band's room is reserved only while the pill sits home on it", () => {
-  test("home on the band: the room; folded to its tab: none (no empty strip under the app)", () => {
+  // REQ-781 (demo-loop cycle dv1, d7) SUPERSEDES the room: Raphael — "the gap reserved for the
+  // demo pill ... that's not a decision". No room is ever kept (`bandRoom` is gone); the pill is
+  // never on a band, home, folded, on a public page, under a dialog or as the ended notice
+  test("REQ-643 SUPERSEDED by REQ-781: never a band — home, folded, public page, dialog, ended notice", () => {
     const h = home();
-    const atHome = placePill({
-      home: h.box,
-      view,
-      dialog: false,
-      blocked: () => 0,
-    });
-    expect(bandRoom({ band: atHome.band, dialog: false }, h.room)).toBe(h.room);
-    const tucked = placePill({
-      home: h.box,
-      view,
-      dialog: false,
-      blocked: () => 3,
-    });
-    expect(tucked.tucked).toBe(true);
-    expect(bandRoom({ band: tucked.band, dialog: false }, h.room)).toBe(0);
-    const minimal = placePill({
-      home: h.box,
-      view,
-      dialog: false,
-      minimal: true,
-      blocked: () => 0,
-    });
-    // REQ-643 AMENDMENT (reconciled on demo-fixes with REQ-637): a public document's pill is no
-    // longer folded — REQ-637 keeps it whole, home on its strip — so its band keeps the room
-    expect(minimal.tucked).toBe(false);
-    expect(bandRoom({ band: minimal.band, dialog: false }, h.room)).toBe(h.room);
-  });
-
-  test("a dialog is up: the room stays (REQ-618's sheet clears the pill by it), docked or tucked alike", () => {
-    const h = home();
-    expect(bandRoom({ band: false, dialog: true }, h.room)).toBe(h.room);
-  });
-
-  test("the ended notice floats: no band, no room — even with nothing under the home, even with a dialog", () => {
-    const h = home();
-    const p = placePill({
-      home: h.box,
-      view,
-      dialog: false,
-      yields: false,
-      floats: true,
-      blocked: () => 0,
-    });
-    expect(p).toEqual({ box: h.box, tucked: false, band: false });
-    expect(bandRoom({ band: p.band, dialog: false, floats: true }, h.room))
-      .toBe(0);
-    expect(bandRoom({ band: false, dialog: true, floats: true }, h.room)).toBe(
-      0,
-    );
+    const cases = [
+      { dialog: false, blocked: () => 0 },
+      { dialog: false, blocked: () => 3 },
+      { dialog: false, minimal: true, blocked: () => 0 },
+      { dialog: true, blocked: () => 1 },
+      { dialog: false, yields: false, floats: true, blocked: () => 0 },
+    ];
+    for (const c of cases) {
+      expect(placePill({ home: h.box, view, ...c }).band).toBe(false);
+    }
   });
 
   test("the floating notice moves off content under the home when a corner is clear, never tucks", () => {
@@ -160,24 +123,20 @@ describe("REQ-643 (demo-loop cycle 5, p18-3d) — a backdrop that stops at the b
 describe("REQ-643 — the overlay wires it", () => {
   const o = () => read("front-end/islands/DemoModeOverlay.tsx");
 
-  test("place() no longer reserves the room unconditionally: the room follows bandRoom", () => {
+  test("REQ-643 SUPERSEDED by REQ-781: place() reserves no room at all", () => {
     const src = o();
-    // the only room(home.room) left is the guarded probe (home asked with the room reserved)
-    expect(src.match(/room\(home\.room\)/g)?.length).toBe(1);
-    expect(src).toMatch(
-      /if \(!floats && \(dialog \|\| !minimal\)\) \{\s*room\(home\.room\);/,
-    );
-    expect(src).toMatch(/room\(\s*bandRoom\(/);
+    expect(src).not.toMatch(/room\(home\.room\)/);
+    expect(src).not.toMatch(/bandRoom/);
   });
 
-  test("the ended notice floats (no room); a backdrop ending at the band is a dialog; the band takes the dim", () => {
+  test("the ended notice floats (no room); a backdrop is a dialog (REQ-781: no band to dim)", () => {
     const src = o();
     expect(src).toMatch(/const floats = floatsRef\.current;/);
     expect(src).toMatch(
       /if \(notice && !opening\) \{[\s\S]{0,200}?floatsRef\.current = true;/,
     );
     expect(src).toMatch(/backdropCovers\(/);
-    expect(src).toMatch(/backdropDim\(/);
-    expect(src).toMatch(/background:\$\{bandPaint\(bandBg, bandDim\)\}/);
+    // REQ-781 — no band is painted, so none takes the dim (the pill is softened, REQ-765)
+    expect(src).not.toMatch(/bandPaint\(/);
   });
 });

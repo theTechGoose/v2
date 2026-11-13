@@ -185,13 +185,8 @@ import {
   whoEnded,
 } from "../../shared/demo-mode/ended.ts";
 import {
-  bandBackground,
-  clearPillRoom,
   backdropCovers,
   coversView,
-  backdropDim,
-  bandPaint,
-  bandRoom,
   CONTROL_SELECTOR,
   countsAsPage,
   dialogDim,
@@ -214,7 +209,7 @@ import {
   recallPillOpen,
   rememberPillOpen,
   samplePoints,
-  setPillRoom,
+  tabBox,
 } from "../../shared/demo-mode/pill.ts";
 import { pillCopy } from "../../shared/demo-mode/pill-copy.ts";
 import type { PillFace, Rect } from "../../shared/demo-mode/protocol.ts";
@@ -294,23 +289,6 @@ function dialogPanel(): Rect | undefined {
   return undefined;
 }
 
-/**
- * REQ-440 (demo-loop cycle 3, m2) — the backgrounds under the pill's band, innermost first (the
- * page's element at the band's left foot, up to <html>): the band is painted in the first opaque
- * one, so a document that scrolls ends at the band's edge instead of running under the pill.
- */
-function bandColors(view: { h: number }): string[] {
-  const at = typeof document.elementsFromPoint === "function"
-    ? document.elementsFromPoint(1, view.h - 1)
-      .find((el) => !el.closest("[data-demo-overlay]"))
-    : undefined;
-  const out: string[] = [];
-  for (let n: Element | null = at ?? document.body; n; n = n.parentElement) {
-    out.push(getComputedStyle(n).backgroundColor);
-  }
-  return out;
-}
-
 /** REQ-295 — does this element show text of its own (not just its children's)? */
 function ownText(el: Element): boolean {
   for (const n of el.childNodes) {
@@ -367,6 +345,21 @@ function pageUnder(r: Rect): number {
   ) {
     const el = pageAt(x, y);
     if (el) found.add(el);
+  }
+  return found.size;
+}
+
+/** REQ-781 (demo-loop cycle dv1, d7) — how many controls of the page (links, buttons, fields:
+ *  CONTROL_SELECTOR) are under a box: a floating pill may cover text, never one of these */
+function countControls(r: Rect): number {
+  const found = new Set<Element>();
+  for (
+    const { x, y } of samplePoints(r, Math.max(5, Math.ceil(r.width / 40)), 3)
+  ) {
+    const top = document.elementsFromPoint(x, y)
+      .find((el) => !el.closest("[data-demo-overlay]"));
+    const c = top?.closest(CONTROL_SELECTOR);
+    if (c) found.add(c);
   }
   return found.size;
 }
@@ -466,9 +459,8 @@ export default function DemoModeOverlay(
   const peekTimer = useRef<ReturnType<typeof setTimeout> | undefined>(
     undefined,
   );
-  /** REQ-545 — the band is painted only while the pill sits home on it (never over the page) */
-  const [bandOn, setBandOn] = useState(false);
-  /** REQ-545 — the band as last placed, for the stage (px; 0: not painted) and its colour */
+  /** REQ-545 — what the stage is told of the strip under the pill. REQ-781 (cycle dv1, d7): no
+   *  band is kept any more (h 0); a folded pill and a dialog's dim still ride along */
   const bandRef = useRef<
     { h: number; bg: string; tucked: boolean; dim?: string }
   >({ h: 0, bg: "#fff", tucked: false });
@@ -481,13 +473,9 @@ export default function DemoModeOverlay(
   /** REQ-379 — the phone's compact form from the first render: a full-size first measure is what
    *  grew to a 400 px pill on a 390 px phone (M6) */
   const [compact, setCompact] = useState(narrow);
-  /** REQ-295 — the room reserved under the page right now (0: none) */
-  const roomRef = useRef(0);
-  /** REQ-440 — the colour the band under the pill is painted in (the page's own, opaque) */
-  const [bandBg, setBandBg] = useState("#fff");
-  /** REQ-643 (cycle 5, p18-3d) — the dim of a dialog's backdrop that stops at the band (a phone's
-   *  transformed .app holds it): the band takes it, so the strip is dimmed with the page */
-  const [bandDim, setBandDim] = useState<string | null>(null);
+  /** REQ-781 (cycle dv1, d7) — where the folded mini-pill sits: its offset from the left edge's
+   *  spot (`tabBox`; x > 0: the right edge) */
+  const [tabAt, setTabAt] = useState({ x: 0, y: 0 });
   /** REQ-765 (cycle 5v2, p18-3d) — a dialog's dim is up: the pill is softened under it */
   const [underDim, setUnderDim] = useState(false);
   /** REQ-295 — the pill's box as last told to the stage */
@@ -1341,27 +1329,16 @@ export default function DemoModeOverlay(
   };
 
   // 5. REQ-228 — the pill never covers the page; REQ-235 — the ended notice is a pill too.
-  // REQ-379 — ONE home, bottom-left in a band reserved under the page (REQ-295's room, which the
-  // shells now subtract like --banner-h): no slot hunt, no per-path memory, no compact <-> full
-  // flip. The band follows the pill's own height; a dialog whose content is under the home docks
-  // the pill at the top-left until it goes; the stage is told where the pill is
+  // REQ-379 — ONE home, bottom-left: no per-path memory, no compact <-> full flip; the stage is
+  // told where the pill is. REQ-781 (demo-loop cycle dv1, d7) — Raphael: "the gap reserved for
+  // the demo pill ... that's not a decision": no band is kept under the page any more (REQ-379's
+  // room, REQ-440's painted band, REQ-643's room-while-home are gone). The pill floats over the
+  // page where nothing of it is under it, else folds to its mini-pill where no control is, else
+  // floats whole where no control is (`placePill`)
   const shown = !inert && Boolean(demo || opening || notice);
   useEffect(() => {
     if (!shown) return;
     let settle: ReturnType<typeof setTimeout> | undefined;
-    /** REQ-643 — when place() last moved the document itself (its end-of-document probe) */
-    let selfScroll = 0;
-    const roomOf = () => ({
-      root: document.documentElement.style,
-      body: document.body.style,
-    });
-    const room = (h: number) => {
-      if (h === roomRef.current) return h;
-      roomRef.current = h;
-      const { root, body } = roomOf();
-      setPillRoom(root, body, h);
-      return h;
-    };
     const sendPill = () => {
       const el = pillRef.current;
       const at = atRef.current;
@@ -1448,35 +1425,10 @@ export default function DemoModeOverlay(
       const floats = floatsRef.current;
       const minimal = yieldsRef.current &&
         isPublicDocPath(globalThis.location.pathname);
-      const dialog = can && dialogBackdropUp(roomRef.current) !== null;
-      // REQ-643 (demo-loop cycle 5, m9) — the room is reserved only while the pill sits home on
-      // its band (or a dialog is up). Whether home is free is asked WITH the room reserved, as the
-      // shells lay out around it: a tab whose room was dropped (the app grown into the strip) would
-      // otherwise never find its home free again. Reserved and released in this one task, so no
-      // frame shows the probe
-      // A document scrolled to its end gets the band's room back as REQ-379/545 had it: the end
-      // rises above the band (kept at the end while the room is added), else it is put back
-      const doc = document.scrollingElement;
-      const endOf = (d: Element | null) =>
-        d !== null && d.scrollHeight > d.clientHeight + 1 &&
-        d.scrollTop + d.clientHeight >= d.scrollHeight - 2;
-      const wasTop = doc?.scrollTop ?? 0;
-      const toEnd = roomRef.current === 0 && endOf(doc);
-      if (!floats && (dialog || !minimal)) {
-        room(home.room);
-        if (toEnd && doc) {
-          selfScroll = Date.now();
-          doc.scrollTop = doc.scrollHeight;
-        }
-      }
-      // REQ-440 (cycle 3, m2) — the band is painted in the page's own background, so a document
-      // that scrolls goes under the band's edge, never under the pill
-      const bg = bandBackground(bandColors(view));
-      setBandBg(bg);
-      // REQ-545 (demo-loop cycle 4, m2) — the pill YIELDS: anything of the page under its home
-      // (mid-scroll: what scrolled into the bottom strip) tucks it into its edge tab and the band
-      // goes unpainted; a dialog docks it home, top-left, top-right, else tucks it (REQ-379 left
-      // it home over the dialog); a public /q /i /co page keeps it a tab
+      const dialog = can && dialogBackdropUp() !== null;
+      // REQ-545 (demo-loop cycle 4, m2) — the pill YIELDS to the page; a dialog docks it home,
+      // above the dialog's box, top-left, top-right, else folds it. REQ-781 (cycle dv1, d7) — it
+      // floats: no band, never over a control
       const p = placePill({
         home: home.box,
         view,
@@ -1486,50 +1438,46 @@ export default function DemoModeOverlay(
         dialogBox: dialog ? dialogPanel() : undefined,
         minimal,
         blocked: can ? pageUnder : () => 0,
+        controls: can ? countControls : () => 0,
         yields: yieldsRef.current,
         floats,
       });
-      // REQ-643 — folded to its tab, or the ended notice: no room, so no empty strip cuts the app
-      const kept = room(
-        bandRoom({ band: p.band, dialog, floats }, home.room),
-      );
-      if (toEnd && doc && kept === 0 && doc.scrollTop !== wasTop) {
-        doc.scrollTop = wasTop;
-      }
-      // REQ-643 (p18-3d) — under a dialog the reserved band is painted, in the backdrop's dim when
-      // the backdrop stops at the band (a phone's .app holds it), never left bright or empty
-      const backdrop = dialog ? dialogBackdropUp(kept) : null;
-      const over = kept > 0 ? backdrop : null;
-      // REQ-765 (cycle 5v2, p18-3d) — the dialog's dim rides to the stage, which draws the band
-      // and the pill itself over the replayed page (the mirror skips the overlay); the pill here
-      // is softened under it, still clickable
+      // REQ-765 (cycle 5v2, p18-3d) — the dialog's dim rides to the stage, which draws the pill
+      // itself over the replayed page (the mirror skips the overlay); the pill here is softened
+      // under it, still clickable
+      const backdrop = dialog ? dialogBackdropUp() : null;
       const dim = backdrop
         ? dialogDim(getComputedStyle(backdrop).backgroundColor)
         : null;
       setUnderDim(dim !== null);
-      setBandDim(
-        over
-          ? backdropDim(
-            over.getBoundingClientRect(),
-            view,
-            getComputedStyle(over).backgroundColor,
-          )
-          : null,
-      );
       setTucked(p.tucked);
       if (!p.tucked) setPeek(false);
-      const painted = kept > 0;
-      setBandOn(painted);
       const shownTab = p.tucked && !peekRef.current;
       bandRef.current = {
-        h: painted ? kept : 0,
-        bg,
+        h: 0,
+        bg: "#fff",
         tucked: shownTab,
         dim: dim ?? undefined,
       };
-      // tucked: a hover or tap shows the whole pill out of its tab — flush with the left edge,
+      // REQ-781 — the mini-pill on the left edge or the right one
+      const edge = tabBox(home.box);
+      if (p.tucked) {
+        setTabAt({
+          x: Math.round(p.box.left - edge.left),
+          y: Math.round(p.box.top - edge.top),
+        });
+      }
+      // tucked: a hover or tap shows the whole pill out of its tab — flush with the tab's edge,
       // so the pointer that opened it is on it (leaving it folds it again)
-      const box = p.tucked ? { ...home.box, left: 0 } : p.box;
+      const box = p.tucked
+        ? {
+          ...home.box,
+          top: home.box.top + (p.box.top - edge.top),
+          left: p.box.left > edge.left
+            ? Math.max(0, view.w - home.box.width)
+            : 0,
+        }
+        : p.box;
       setDock({
         x: Math.round(box.left - home.box.left),
         y: Math.round(box.top - home.box.top),
@@ -1540,8 +1488,6 @@ export default function DemoModeOverlay(
       sendPill();
     };
     const later = () => {
-      // REQ-643 — the scroll the end-of-document probe made is not a reason to place again
-      if (Date.now() - selfScroll < 120) return;
       clearTimeout(settle);
       settle = setTimeout(place, 150);
     };
@@ -1570,11 +1516,6 @@ export default function DemoModeOverlay(
       clearTimeout(peekTimer.current);
       placeRef.current = () => {};
       sendPillRef.current = () => {};
-      if (roomRef.current) {
-        roomRef.current = 0;
-        const { root, body } = roomOf();
-        clearPillRoom(root, body);
-      }
       // the pill is gone (or re-mounted): the stage drops its ghost
       if (sentPillRef.current) {
         sentPillRef.current = null;
@@ -1621,7 +1562,7 @@ export default function DemoModeOverlay(
     if (peekRef.current) unpeekIn(300);
   };
 
-  // REQ-379 — ONE home: bottom-left in the band reserved under the page, its bottom on the visible
+  // REQ-379 — ONE home: bottom-left (REQ-781: floating, no band kept for it), its bottom on the visible
   // bottom (above an iOS keyboard, like the shells' --vvh); a dialog over the home docks it (a
   // glide). No measure is written back: it is as wide as its content, capped by the window. Its
   // empty area lets a click through to the page (M28): only its buttons (HIT) take one
@@ -1639,27 +1580,16 @@ export default function DemoModeOverlay(
   // REQ-545 (demo-loop cycle 4, m2) — the pill folded on the window's left edge, its foot on the
   // home's foot: only its buttons take a click. REQ-637 (cycle 5, m5) — a labelled mini-pill
   // ("● Demo" and an × that is End), never a bare 16 px sliver
+  // REQ-781 (cycle dv1, d7) — or on the right edge (`tabAt`), when the left one has a control
+  const tabR = PILL_TAB.h / 2;
   const tabStyle =
-    `position:fixed;left:0;bottom:calc(100% - var(--vvt, 0px) - var(--vvh, 100%) + ${PILL_BAND_GAP}px);z-index:${
+    `position:fixed;left:0;bottom:calc(100% - var(--vvt, 0px) - var(--vvh, 100%) + ${PILL_BAND_GAP}px);transform:translate(${tabAt.x}px, ${tabAt.y}px);z-index:${
       Z + 3
-    };display:flex;align-items:stretch;width:${PILL_TAB.w}px;height:${PILL_TAB.h}px;box-sizing:border-box;padding:0;border-radius:0 ${
-      PILL_TAB.h / 2
-    }px ${
-      PILL_TAB.h / 2
-    }px 0;background:#1f3d1b;color:#fff;font-family:${PILL_FONT};font-size:12.5px;font-weight:700;white-space:nowrap;overflow:hidden;box-shadow:0 2px 10px rgba(0,0,0,.3);pointer-events:none;opacity:${
+    };display:flex;align-items:stretch;width:${PILL_TAB.w}px;height:${PILL_TAB.h}px;box-sizing:border-box;padding:0;border-radius:${
+      tabAt.x > 0 ? `${tabR}px 0 0 ${tabR}px` : `0 ${tabR}px ${tabR}px 0`
+    };background:#1f3d1b;color:#fff;font-family:${PILL_FONT};font-size:12.5px;font-weight:700;white-space:nowrap;overflow:hidden;box-shadow:0 2px 10px rgba(0,0,0,.3);pointer-events:none;opacity:${
       underDim ? PILL_UNDER_DIALOG_OPACITY : 1
     }`;
-  // REQ-440 (demo-loop cycle 3, m2) — the band reserved for the pill (REQ-379), made real on a page
-  // whose document scrolls: window-wide, the band's height (0 with no room), opaque in the page's
-  // own background. z-index 1: over the page's flow, under its own fixed layers (a dialog's
-  // backdrop, a toast); it never takes a click
-  const bandStyle = `position:fixed;left:0;right:0;bottom:0;height:${
-    // REQ-545 (cycle 4, m2) — painted only under the pill at home: with the pill tucked, what
-    // scrolled into the strip shows (the opaque band hid tiles, fields and buttons mid-scroll)
-    bandOn
-      ? "var(--demo-pill-h, 0px)"
-      : "0px"};z-index:1;background:${bandPaint(bandBg, bandDim)};pointer-events:none`;
-  const band = <div data-cy="demo-band" aria-hidden="true" style={bandStyle} />;
   /** one line: a long name is cut, not wrapped (the live pill's rule, REQ-228) */
   const cut = "overflow:hidden;text-overflow:ellipsis;min-width:0";
   // REQ-294 (demo m21) — the words that carry a name wrap to as many lines as it needs: the ended
@@ -1671,7 +1601,7 @@ export default function DemoModeOverlay(
   yieldsRef.current = false;
   floatsRef.current = false;
   if (notice && !opening) {
-    // REQ-643 (demo-loop cycle 5, m9) — a floating message: no band, the app keeps its height
+    // REQ-643 (demo-loop cycle 5, m9) — a floating message: it never folds
     floatsRef.current = true;
     const said = endedText(notice);
     faceRef.current = {
@@ -1684,7 +1614,6 @@ export default function DemoModeOverlay(
     };
     return (
       <div data-demo-overlay ref={fenceClicks}>
-        {band}
         <div
           ref={pillRef}
           data-cy="demo-ended"
@@ -1723,7 +1652,6 @@ export default function DemoModeOverlay(
     // REQ-179 — Demo was just clicked: the pill is up before the server answers
     return (
       <div data-demo-overlay ref={fenceClicks}>
-        {band}
         <div
           ref={pillRef}
           data-cy="demo-pill"
@@ -1750,7 +1678,6 @@ export default function DemoModeOverlay(
   if (demo.role === "presenter") {
     return (
       <div data-demo-overlay ref={fenceClicks}>
-        {band}
         <div
           ref={pillRef}
           data-cy="demo-pill"
@@ -1844,7 +1771,6 @@ export default function DemoModeOverlay(
 
   return (
     <div data-demo-overlay ref={fenceClicks}>
-      {band}
       {presenters.map((p) => (
         <PeerPointer
           key={p.userId}

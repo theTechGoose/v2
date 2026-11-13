@@ -216,10 +216,10 @@ describe("REQ-295 — the pill holds one clear spot over nothing of the page (de
     expect(PILL_MOVE_MS).toBeLessThanOrEqual(400);
   });
 
-  test("the overlay is wired to it: the room, page-aware dialog checks, the glide, the message to the stage", () => {
+  test("the overlay is wired to it: (REQ-781: no room), page-aware dialog checks, the glide, the message to the stage", () => {
     const o = read("front-end/islands/DemoModeOverlay.tsx");
-    expect(o).toMatch(/setPillRoom\(/);
-    expect(o).toMatch(/clearPillRoom\(/);
+    // REQ-781 (demo-loop cycle dv1, d7) — no room is kept under the page any more
+    expect(o).not.toMatch(/setPillRoom\(/);
     // REQ-379: what is under the home while a dialog is up (the dock), by the same rule
     expect(o).toMatch(/countsAsPage\(/);
     // REQ-379: a dock glides

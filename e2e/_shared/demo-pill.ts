@@ -7,6 +7,8 @@
  * `pillUp` brings the WHOLE pill out for a story that reads or clicks it, the way a person would:
  * the page to its end (the band there is free, so the pill sits home), and if it is still folded
  * (a page whose end is not free), a hover on its tab and the pointer kept on the pill.
+ * REQ-781 (demo-loop cycle dv1, d7) — no band is kept any more: at the end the pill floats whole
+ * where nothing of the page is under it, else it is folded and brought out by the hover.
  */
 
 /** the customer's pill is whole on `pg` (and, with `live`, its link is up) */

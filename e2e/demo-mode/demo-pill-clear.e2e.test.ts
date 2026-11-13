@@ -90,13 +90,6 @@ const coveredText = () => {
   return out;
 };
 
-/** the pill's box on the customer's screen */
-const pillBox = () => {
-  const r = document.querySelector("[data-cy='demo-pill']")
-    ?.getBoundingClientRect();
-  return r ? { left: Math.round(r.left), top: Math.round(r.top) } : null;
-};
-
 /** the page's visible controls whose middle has the demo pill on top (evaluated in the page) */
 const coveredControls = () => {
   const sel =
@@ -211,30 +204,15 @@ Deno.test("REQ-228 + REQ-291: the customer's demo pill covers no control of the 
         return c.length ? c.join("; ") : null;
       });
 
-      // 1b. REQ-295 — a full reload of the same page: the pill comes back to the same spot
-      // (read once it has held still — a move glides)
-      const settled = async () => {
-        let last = await userPage.evaluate(pillBox);
-        for (let i = 0; i < 40; i++) {
-          await new Promise((r) => setTimeout(r, 400));
-          const now = await userPage.evaluate(pillBox);
-          if (
-            now && last && now.left === last.left && now.top === last.top
-          ) return now;
-          last = now;
-        }
-        throw new Error(`the pill never held still: ${JSON.stringify(last)}`);
-      };
-      const before = await settled();
+      // 1b. REQ-295 — a full reload of the same page. REQ-781 (demo-loop cycle dv1, d7)
+      // AMENDMENT — the pill floats where nothing (else no control) of the page is under it, so
+      // its spot follows the page, not a fixed home: after a reload it again covers no control
       await userPage.reload();
       await pillUp(userPage);
-      const after = await settled();
-      expect(
-        after.left === before.left && after.top === before.top,
-        `after a reload the pill is back in the same spot — before ${
-          JSON.stringify(before)
-        }, after ${JSON.stringify(after)}`,
-      );
+      await until("after a reload the pill covers no control", async () => {
+        const c = await userPage.evaluate(coveredControls);
+        return c.length ? c.join("; ") : null;
+      });
 
       // 1c. REQ-295 — the stage shows the pill's ghost inside the frame
       await until(
@@ -312,17 +290,18 @@ Deno.test("REQ-228 + REQ-291: the customer's demo pill covers no control of the 
         },
       );
 
-      // 2. phone size: still one line, still covering nothing
+      // 2. phone size: still one line, still covering no control. REQ-781 (demo-loop cycle dv1,
+      // d7) AMENDMENT — no band is kept on the phone either, so where no spot is clear the pill
+      // (or its mini-pill) floats over text, never over a control; checked as placed, with the
+      // pointer off it (a pointer on the mini-pill shows the whole pill out of it)
       await userPage.setViewportSize({ width: 390, height: 844 });
       await pillUp(userPage);
+      await userPage.mouse.move(195, 120);
       await until("phone: the pill covers no control", async () => {
         const c = await userPage.evaluate(coveredControls);
         return c.length ? c.join("; ") : null;
       });
-      await until("phone: the pill covers no text (REQ-295)", async () => {
-        const c = await userPage.evaluate(coveredText);
-        return c.length ? c.join("; ") : null;
-      });
+      await pillUp(userPage);
       const pillH = await userPage.locator("[data-cy='demo-pill']").evaluate(
         (el) => el.getBoundingClientRect().height,
       );

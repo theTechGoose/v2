@@ -9,6 +9,10 @@
  * and on a 390×844 phone. On each: the backdrop covers the whole window, the bottom strip beside
  * the pill is the backdrop (never the page behind), and the sheet scrolled to its end still ends
  * above the band, clear of the pill.
+ *
+ * REQ-781 (demo-loop cycle dv1, d7) AMENDMENT — no band is kept under the page any more: the
+ * sheet's backdrop still covers the whole window, and scrolled to its end no field or button of
+ * the sheet is under the pill (it docks clear of the sheet or folds to its mini-pill).
  */
 import { story } from "#shots";
 import type { StoryTools } from "#shots";
@@ -90,7 +94,27 @@ const probe = () => {
       undimmed.push(`(${Math.round(x)},${y}) ${what}`);
     }
   }
+  // REQ-781 — the sheet's controls under the pill
+  const controls = new Set<string>();
+  for (let i = 0; i <= 10; i++) {
+    for (let j = 0; j <= 2; j++) {
+      const x = p.left + 2 + ((p.width - 4) * i) / 10;
+      const y = p.top + 2 + ((p.height - 4) * j) / 2;
+      const c = document.elementsFromPoint(x, y)
+        .find((n) => !n.closest("[data-demo-overlay]"))?.closest(
+          'a[href],button,input,select,textarea,summary,label,[role="button"],[role="link"],[role="tab"],[role="checkbox"],[role="switch"]',
+        );
+      if (c) {
+        controls.add(
+          `${c.tagName.toLowerCase()} "${
+            (c.textContent ?? "").trim().slice(0, 24)
+          }"`,
+        );
+      }
+    }
+  }
   return {
+    controls: [...controls],
     pill: b(p),
     band: band ? b(band.getBoundingClientRect()) : null,
     backdrop: b(backdrop.getBoundingClientRect()),
@@ -106,10 +130,7 @@ const probe = () => {
 };
 type Probe = NonNullable<ReturnType<typeof probe>>;
 
-const meets = (a: Box, b: Box) =>
-  a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom;
-
-Deno.test("REQ-618 (demo-loop cycle 4, p4-p3b): during a demo the New invoice sheet dims the whole window — no undimmed strip under it at 1280 px or 390 px — and its content, scrolled to the end, still ends above the pill's band", (t) =>
+Deno.test("REQ-618 (demo-loop cycle 4, p4-p3b): during a demo the New invoice sheet dims the whole window — no undimmed strip under it at 1280 px or 390 px — and, scrolled to its end, no control of it is under the pill (REQ-781: no band)", (t) =>
   story(t, async ({ page, expect, http, baseUrl, folder }) => {
     await page.setViewportSize({ width: 1280, height: 800 });
     const userPhone = `+1512${digits()}`;
@@ -160,10 +181,10 @@ Deno.test("REQ-618 (demo-loop cycle 4, p4-p3b): during a demo the New invoice sh
         timeout: 20_000,
       });
 
+      // REQ-781 — the pill may be folded to its mini-pill over the sheet: its link state is on it
       const connected = async () =>
-        await userPage.locator("[data-cy='demo-status']").filter({
-          hasText: /^\s*(Connected|Conectado)\s*$/,
-        }).waitFor({ timeout: 20_000 });
+        await userPage.locator("[data-cy='demo-pill'][data-status='live']")
+          .waitFor({ state: "attached", timeout: 20_000 });
 
       /** the probe once the pill, the band and the sheet have held still */
       const settled = async (): Promise<Probe> => {
@@ -173,7 +194,7 @@ Deno.test("REQ-618 (demo-loop cycle 4, p4-p3b): during a demo the New invoice sh
           const now = await userPage.evaluate(probe);
           const key = (q: typeof now) =>
             q ? JSON.stringify([q.pill, q.band, q.backdrop, q.form]) : "";
-          if (now && last && now.band && key(now) === key(last)) return now;
+          if (now && last && key(now) === key(last)) return now;
           last = now;
         }
         throw new Error(`the sheet never held still: ${JSON.stringify(last)}`);
@@ -216,21 +237,18 @@ Deno.test("REQ-618 (demo-loop cycle 4, p4-p3b): during a demo the New invoice sh
         });
         const end = await settled();
         await userPage.screenshot({ path: `${folder}/sheet-${where}-end.png` });
-        expect(
-          end.band !== null && end.form.bottom <= end.band.top + 1,
-          `${where}: the sheet, scrolled to its end, ends above the band — ${
-            JSON.stringify({
-              form: end.form,
-              band: end.band,
-              scrollable: end.scrollable,
-            })
-          }`,
-        );
-        expect(
-          !meets(end.form, end.pill),
-          `${where}: the sheet, scrolled to its end, does not meet the pill — ${
+        // REQ-781 — no band: no field or button of the sheet is under the pill
+        expect.eq(
+          end.controls.join(" | "),
+          "",
+          `${where}: the sheet, scrolled to its end, has no control under the pill — ${
             JSON.stringify({ form: end.form, pill: end.pill })
           }`,
+        );
+        expect.eq(
+          end.bandH,
+          "",
+          `${where}: no band is kept under the page`,
         );
         expect.eq(
           end.undimmed.join(" | "),

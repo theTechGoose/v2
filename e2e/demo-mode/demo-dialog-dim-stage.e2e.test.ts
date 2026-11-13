@@ -11,6 +11,10 @@
  *   2. On her screen the band under the dialog is dimmed, and her pill is softened (still
  *      clickable).
  *   3. The dialog closes: both back to full brightness.
+ *
+ * REQ-781 (demo-loop cycle dv1, d7) AMENDMENT — no band is kept under the page any more, so there
+ * is no strip to dim: the dialog's backdrop reaches the window's foot on her screen, the stage
+ * draws no band ghost, and the pill (hers and the stage's ghost) is softened under the dim.
  */
 import { story, type StoryTools } from "#shots";
 import { answerQuestions } from "../_shared/onboarding-answers.ts";
@@ -160,13 +164,14 @@ Deno.test("REQ-765 (demo-loop cycle 5v2, p18-3d): with the Send dialog open on a
       await userPage.reload({ timeout: 120_000 });
       await userPage.locator("[data-cy='demo-pill'][data-status='live']")
         .waitFor({ timeout: 90_000 });
-      await until("the stage draws the pill's band", async () => {
+      // REQ-781 — the stage draws the pill's ghost, and no band ghost (no band is kept)
+      await until("the stage draws the pill (and no band)", async () => {
         const s = await page.evaluate(stageProbe);
-        return s.band !== null && s.pill ? null : JSON.stringify(s);
+        return s.band === null && s.pill ? null : JSON.stringify(s);
       }, 60_000);
 
       // the Send dialog as the app renders it: the backdrop inside .quote-review__send-split,
-      // inside the transformed mobile .app (so it stops at the band's top, 780 of 844)
+      // inside the transformed mobile .app (REQ-781: the app reaches the window's foot now)
       await userPage.evaluate(() => {
         const app = document.querySelector(".app") ?? document.body;
         const split = document.createElement("div");
@@ -185,12 +190,12 @@ Deno.test("REQ-765 (demo-loop cycle 5v2, p18-3d): with the Send dialog open on a
         app.appendChild(split);
       });
 
-      // 1. the stage: the band ghost in the dim, the pill ghost softened (the verifier's view)
+      // 1. the stage: no band ghost (REQ-781), the pill ghost softened (the verifier's view)
       await until(
-        "stage: the band ghost is dimmed and the pill ghost softened",
+        "stage: no band ghost and the pill ghost softened",
         async () => {
           const s = await page.evaluate(stageProbe);
-          return (s.band ?? "").includes(DIM) && s.pillOpacity !== null &&
+          return s.band === null && s.pillOpacity !== null &&
               s.pillOpacity < 1
             ? null
             : JSON.stringify(s);
@@ -199,14 +204,14 @@ Deno.test("REQ-765 (demo-loop cycle 5v2, p18-3d): with the Send dialog open on a
       );
       await page.screenshot({ path: `${folder}/stage-dialog.png` });
 
-      // 2. her screen: the backdrop stops above the band, the band takes the dim, the pill softens
+      // 2. her screen: no band (REQ-781) — the backdrop dims down to the window's foot — and the
+      //    pill softens
       await until(
-        "customer: the band under the dialog is dimmed and the pill softened",
+        "customer: the dim reaches the window's foot, no band, the pill softened",
         async () => {
           const c = await userPage.evaluate(customerProbe);
-          return c.backdrop !== null && c.bandH > 0 &&
-              (c.band ?? "").includes(DIM) &&
-              c.pillOpacity !== null && c.pillOpacity < 1
+          return c.backdrop !== null && c.backdrop.bottom >= c.vh - 1 &&
+              c.bandH === 0 && c.pillOpacity !== null && c.pillOpacity < 1
             ? null
             : JSON.stringify(c);
         },
