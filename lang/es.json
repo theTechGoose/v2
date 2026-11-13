@@ -805,7 +805,7 @@
   "clientsBoard.panel.saveError": "No se pudo guardar. Inténtalo de nuevo.",
   "clientsBoard.prev": "Anterior",
   "clientsBoard.searchPlaceholder": "Busca por nombre, dirección, teléfono o último trabajo…",
-  "clientsBoard.sort.warmth": "Cercanía",
+  "clientsBoard.sort.warmth": "Interés",
   "clientsDisplay.address.none": "Sin dirección registrada",
   "clientsDisplay.address.onFile": "Dirección en archivo",
   "clientsDisplay.address.propertyMgmt": "Propiedad de {name} — varias unidades",

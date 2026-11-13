@@ -4358,3 +4358,10 @@ Tests:
 - unit: `demo-loop/demo20b_test.ts` "REQ-621: the rules file names every category, in order, each with an action" (the rules file is executed by agents, so it gets a content test).
 - int: `demo-loop/demo20b_test.ts` "REQ-621: both testers are told to read the rules and tag every issue" runs the real harness with a fake fleet-claude.
 - e2e: the next demo cycle; its reports carry category tags.
+
+## REQ-718 — Spanish labels the customers "Warmth" sort "Interés", not "Cercanía" (demo-loop cycle 5, issue p18-1b)
+**Source:** Raphael, the demo loop: "fix every issue the demo found, loop until there are none". Demo-loop cycle 5 (run r37f88707, demo-report.md), issue `p18-1b` "'Cercanía' used for 'Warmth'" (fleet-0/stdout:181); RCA analyst CONFIRMED, skeptic UPHELD, judge BUG_POLISH at demo-fixes `2444608a`.
+**Cause (RCA):** a dictionary choice. `lang/es.json:808` `clientsBoard.sort.warmth` was "Cercanía" ("nearness") for the /customers sort that orders by lead warmth (interest). It had been there since the first bilingual i18n commit, b6ec538e.
+**Requirement:** es `clientsBoard.sort.warmth` reads "Interés". No Spanish string says "Cercanía". en stays "Warmth".
+**Tests:** unit `jest/unit/clients-sort-warmth-es.test.ts` ("REQ-718 …" ×3) · integration n/a — copy only, no backend or wire change · e2e n/a — `ClientsBoard.tsx` renders the key verbatim through `tFor`; the unit test pins the real dictionary.
+**Evidence (2026-11-12, branch fix/c5-es-warmth-label off demo-fixes 2444608a):** RED: `cd jest && npx jest --selectProjects unit unit/clients-sort-warmth-es.test.ts` gave `Expected: "Interés" / Received: "Cercanía"` and "Tests: 2 failed, 1 skipped, 3850 passed". GREEN: `npx jest --selectProjects unit` gave "Test Suites: 393 passed · Tests: 1 skipped, 3852 passed".
