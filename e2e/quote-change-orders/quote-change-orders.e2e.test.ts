@@ -291,3 +291,95 @@ Deno.test("REQ-462 M26: a signed quote's panel makes a change order next to 'Sig
       "CO-001 is withdrawn",
     );
   }));
+
+Deno.test("REQ-683 m41: once the customer approves an edited change order, its row drops 'saved as Version 2 — back to pending' — no reload", (t) =>
+  story(t, async ({ page, expect, http, baseUrl }) => {
+    const { auth } = await signIn(http, page, baseUrl);
+    const karen = await call(http, auth, "POST", "/api/customers", {
+      name: "Karen Mills",
+      email: "karen@blackhole.postmarkapp.com",
+      address: "18 Oak St, Austin, TX",
+    });
+    const quote = await call(http, auth, "POST", "/api/quotes", {
+      customerId: karen.id,
+      summary: "Bathroom Remodel — Karen Mills",
+      jobName: "Bathroom Remodel",
+      lineItems: [{
+        description: "Bathroom remodel",
+        quantity: 1,
+        unit: "job",
+        price: 705000,
+      }],
+      estimatedTotal: 705000,
+      status: "draft",
+    });
+    await call(http, auth, "PUT", `/api/quotes/${quote.id}`, {
+      status: "sent",
+    });
+    await call(http, JSON_HEADERS, "POST", `/api/quotes/${quote.id}/accept`, {
+      name: "Karen Mills",
+      version: 1,
+    });
+    // signing bills the first invoice — CO-001 goes on it
+    const ledger0 = await call(
+      http,
+      auth,
+      "GET",
+      `/api/quotes/${quote.id}/ledger`,
+    );
+    const invoice = ledger0.invoices[ledger0.invoices.length - 1];
+    if (!invoice) throw new Error("signing billed no invoice");
+    if (invoice.status === "draft") {
+      await call(http, auth, "PUT", `/api/invoices/${invoice.id}`, {
+        status: "sent",
+      });
+    }
+    const co = await call(
+      http,
+      auth,
+      "POST",
+      `/api/invoices/${invoice.id}/change-orders`,
+      {
+        description: "Frameless glass shower door upgrade",
+        deltaAmountCents: 120000,
+      },
+    );
+
+    // 1) Edit on the panel → Version 2, and the note says it waits again
+    await page.goto(`/quotes?open=${quote.id}`);
+    const row = page.locator("[data-cy='ledger-co-row']", {
+      hasText: "CO-001",
+    });
+    await row.waitFor({ timeout: 15_000 });
+    const desc = page.locator("[data-cy='ledger-co-edit-desc']");
+    await clickUntil(
+      page,
+      "[data-cy='ledger-co-edit']",
+      async () => (await desc.count()) > 0,
+    );
+    await page.locator("[data-cy='ledger-co-edit-amount']").fill("1000");
+    await page.locator("[data-cy='ledger-co-edit-save']").click();
+    const saved = page.locator("[data-cy='ledger-co-saved']");
+    await saved.waitFor({ timeout: 15_000 });
+    expect(
+      (await saved.innerText()).includes("back to pending"),
+      "the saved note says it waits for the customer again",
+    );
+
+    // 2) Karen approves Version 2 at her link (no session) — the panel
+    //    follows the change without a reload
+    await call(
+      http,
+      JSON_HEADERS,
+      "POST",
+      `/api/change-orders/${co.id}/approve`,
+      { name: "Karen Mills" },
+    );
+    await page.locator("[data-cy='ledger-co-row']", { hasText: "Approved" })
+      .waitFor({ timeout: 40_000 });
+    expect.eq(
+      await page.locator("[data-cy='ledger-co-saved']").count(),
+      0,
+      "no 'back to pending' line beside Approved",
+    );
+  }));

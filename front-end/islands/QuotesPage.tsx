@@ -78,10 +78,11 @@ import type { SendChannel } from "../lib/send-dialog.ts"; // REQ-570
 import {
   changeOrderBody,
   changeOrderRowActions,
+  changeOrderSavedNote,
   changeOrderShareLinks,
   newChangeOrderButton,
   newChangeOrderTarget,
-} from "../../shared/documents/change-order-actions.ts"; // REQ-462, REQ-565, REQ-655
+} from "../../shared/documents/change-order-actions.ts"; // REQ-462, REQ-565, REQ-655, REQ-683
 import { panelAgreedTotal } from "../../shared/documents/ledger.ts"; // REQ-679
 import {
   canReviseQuote,
@@ -479,6 +480,9 @@ function LedgerChangeOrderRow(
   const [savedDelivery, setSavedDelivery] = useState<
     ChangeOrderDelivery | null
   >(null);
+  // REQ-683 (m41): the note follows the live order — gone once it is
+  // approved, declined or past the saved version, with no reload
+  const savedNote = changeOrderSavedNote(co, savedVersion);
   const actions = changeOrderRowActions(co);
   const rowStyle =
     "display:flex;justify-content:space-between;gap:10px;align-items:baseline;padding:6px 0;border-bottom:1px solid rgba(26,83,92,0.08);font-size:13px";
@@ -701,7 +705,7 @@ function LedgerChangeOrderRow(
         >
           {tFor(lang, "quotes.ledger.coBannerNote", { name: who })}
         </span>
-        {savedVersion !== null && !editing && (
+        {savedNote !== null && !editing && (
           <span
             data-cy="ledger-co-saved"
             role="status"
@@ -709,7 +713,7 @@ function LedgerChangeOrderRow(
           >
             {tFor(lang, "quotes.ledger.coSaved", {
               number: co.number,
-              n: savedVersion,
+              n: savedNote,
             })}
             {savedDelivery && (
               <span data-cy="ledger-co-delivery" style="display:block">

@@ -84,6 +84,23 @@ export function changeOrderRowActions(
   return { edit: ok, withdraw: ok };
 }
 
+/**
+ * REQ-683 (demo-loop cycle 5, m41) — the "{number} saved as Version {n} — back
+ * to pending" note an Edit leaves on its row. It is the row's own memory of
+ * the save, so it stands only while the live order still IS that version,
+ * waiting: once the customer approves or declines it, or it moves on to a
+ * newer version, the ledger has its own word and the note goes (pair 5 saw it
+ * beside "Approved" until a reload). The version to show, or null.
+ */
+export function changeOrderSavedNote(
+  co: { status?: string; version?: number },
+  savedVersion: number | null,
+): number | null {
+  if (savedVersion === null) return null;
+  const pending = (co.status ?? "").toLowerCase() === "pending";
+  return pending && co.version === savedVersion ? savedVersion : null;
+}
+
 /** Dollars as typed ("1,000", "$1,000.50", "-50", "−50") → signed integer
  *  cents; null when it is not an amount other than zero. */
 export function changeOrderCents(dollars: string): number | null {
