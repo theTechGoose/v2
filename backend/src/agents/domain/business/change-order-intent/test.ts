@@ -813,3 +813,93 @@ Deno.test("REQ-654 M10 pickChangeOrderTarget: a bound quote that belongs to some
     { kind: "none" },
   );
 });
+
+// ---------------------------------------------------------------------------
+// REQ-753 (demo-loop cycle 5v1, M10, verifier): in John Miller's Q-001
+// thread, "Change Dana Whitfield's quote: add post caps for $300" got "I
+// couldn't find a quote for Dana Whitfield, so I didn't make a new one." —
+// her Q-002 was right there. REQ-654 read the name a quote carries only for
+// the BOUND quote; every other quote was matched by customerId alone, and a
+// chat draft ("Fence — Dana Whitfield") has none before the Who step.
+// ---------------------------------------------------------------------------
+
+const john = { id: "c-john", name: "John Miller" };
+const johnsQ001 = (): TargetQuote => ({
+  ...q("q-john", "c-john", "draft", 3),
+  number: "Q-001",
+  customerName: "John Miller",
+  summary: "Deck repair — John Miller",
+});
+const danasQ002 = (): TargetQuote => ({
+  ...q("q-dana", undefined, "draft", 5),
+  number: "Q-002",
+  summary: "Fence install — Dana Whitfield",
+});
+
+Deno.test("REQ-753 M10 pickChangeOrderTarget: from John's thread, Dana's unlinked draft Q-002 is found by the name on its card — never none", () => {
+  assertEquals(
+    pickChangeOrderTarget({
+      quotes: [johnsQ001(), danasQ002()],
+      customers: [...customers, john],
+      boundQuoteId: "q-john",
+      customerName: "Dana Whitfield",
+    }),
+    { kind: "quote", quoteId: "q-dana" },
+  );
+});
+
+Deno.test("REQ-753 M10 pickChangeOrderTarget: Dana on file, her Q-002 not linked to her record → still Q-002", () => {
+  assertEquals(
+    pickChangeOrderTarget({
+      quotes: [johnsQ001(), danasQ002()],
+      customers: [...customers, john, { id: "c-dana", name: "Dana Whitfield" }],
+      boundQuoteId: "q-john",
+      customerName: "Dana Whitfield",
+    }),
+    { kind: "quote", quoteId: "q-dana" },
+  );
+  // a snapshot name counts the same as a card title
+  assertEquals(
+    pickChangeOrderTarget({
+      quotes: [johnsQ001(), {
+        ...q("q-dana", undefined, "sent", 5),
+        customerName: "Dana Whitfield",
+      }],
+      customers: [...customers, john],
+      boundQuoteId: "q-john",
+      customerName: "Dana",
+    }),
+    { kind: "quote", quoteId: "q-dana" },
+  );
+});
+
+Deno.test("REQ-753 M10 pickChangeOrderTarget: one linked and one unlinked quote of Dana's are one customer's — her open one wins, not 'ambiguous'", () => {
+  assertEquals(
+    pickChangeOrderTarget({
+      quotes: [
+        johnsQ001(),
+        q("q-dana-sent", "c-dana", "sent", 2),
+        danasQ002(),
+      ],
+      customers: [...customers, john, { id: "c-dana", name: "Dana Whitfield" }],
+      boundQuoteId: "q-john",
+      customerName: "Dana Whitfield",
+    }),
+    { kind: "quote", quoteId: "q-dana-sent" },
+  );
+});
+
+Deno.test("REQ-753 M10 pickChangeOrderTarget: a quote whose card names someone else is never Dana's", () => {
+  assertEquals(
+    pickChangeOrderTarget({
+      quotes: [johnsQ001(), {
+        ...q("q-x", undefined, "draft", 5),
+        summary: "Fence install — Dan Whitman",
+      }],
+      customers: [...customers, john],
+      boundQuoteId: "q-john",
+      customerName: "Dana Whitfield",
+    }),
+    { kind: "none" },
+  );
+});
