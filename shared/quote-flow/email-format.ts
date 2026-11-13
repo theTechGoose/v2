@@ -16,31 +16,29 @@
  *    send-paperwork-email/mod.ts:513-538.
  */
 
-/** Spanish stopwords that stay lowercase mid-title (never as the first word). */
-const ES_TITLE_STOPWORDS = new Set(["de", "y", "en", "para", "la", "el"]);
+import { jobNameCase } from "./job-name.ts";
 
 function localeOf(lang: string): string {
   return lang === "es" ? "es" : "en-US";
 }
 
 /**
- * Unicode-aware title-casing for the email hero. Only the FIRST letter of
- * each word is uppercased (the broken `\b\w` approach fires again after
- * accented characters: "InstalacióN De BañO"). For "es", common stopwords
- * stay lowercase when they are not the first word.
+ * Unicode-aware casing for the email hero. Only the FIRST letter of a word
+ * is ever uppercased (the broken `\b\w` approach fires again after accented
+ * characters: "InstalacióN De BañO").
+ *
+ * REQ-720 (demo-loop cycle 5, p18-2a): Spanish is sentence case — "Corte de
+ * césped y poda de setos", never "Corte de Césped y Poda de Setos" — the
+ * same jobNameCase (REQ-276) every other Spanish job-name surface uses.
+ * English keeps Title Case for the hero's visual weight.
  */
 export function titleCaseJobName(name: string, lang: string): string {
+  if (lang === "es") return jobNameCase(name, "es");
   const locale = localeOf(lang);
   return name
     .trim()
     .split(/\s+/)
-    .map((word, i) => {
-      const lower = word.toLocaleLowerCase(locale);
-      if (lang === "es" && i > 0 && ES_TITLE_STOPWORDS.has(lower)) {
-        return lower;
-      }
-      return word.charAt(0).toLocaleUpperCase(locale) + word.slice(1);
-    })
+    .map((word) => word.charAt(0).toLocaleUpperCase(locale) + word.slice(1))
     .join(" ");
 }
 

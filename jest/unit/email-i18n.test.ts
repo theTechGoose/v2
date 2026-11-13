@@ -80,11 +80,14 @@ import {
 const enDict: Record<string, string> = require("../../lang/en.json");
 const esDict: Record<string, string> = require("../../lang/es.json");
 
-describe("P-07 titleCaseJobName — Unicode-aware hero title-casing", () => {
-  it("P-07 title-cases an accented Spanish job name without mangling accents", () => {
+describe("P-07 titleCaseJobName — Unicode-aware hero casing", () => {
+  // REQ-720 (demo-loop cycle 5, p18-2a) supersedes P-07's Spanish Title Case:
+  // a Spanish hero is sentence case (jobNameCase, REQ-276), English stays
+  // Title Case. Accents still never trigger the old `\b\w` mangling.
+  it("REQ-720 sentence-cases an accented Spanish job name without mangling accents", () => {
     // Today's prod output (observed live): "InstalacióN De BañO Y Cocina"
     expect(titleCaseJobName("instalación de baño y cocina", "es"))
-      .toBe("Instalación de Baño y Cocina");
+      .toBe("Instalación de baño y cocina");
   });
 
   it("P-07 never uppercases the letter AFTER an accented character (the \\b\\w bug)", () => {
@@ -96,11 +99,16 @@ describe("P-07 titleCaseJobName — Unicode-aware hero title-casing", () => {
     expect(/\p{Ll}\p{Lu}/u.test(out)).toBe(false);
   });
 
-  it("P-07 keeps Spanish stopwords (de/y/en/para/la/el) lowercase mid-title", () => {
+  it("REQ-720 a Spanish email hero is sentence case, never English Title Case (cycle 5, p18-2a)", () => {
+    // fleet-1 saw "Corte de Césped y Poda de Setos — María López".
+    expect(titleCaseJobName("Corte de césped y poda de setos", "es"))
+      .toBe("Corte de césped y poda de setos");
+    expect(titleCaseJobName("corte De Césped Y Poda De Setos", "es"))
+      .toBe("Corte de césped y poda de setos");
     expect(
       titleCaseJobName("remodelación de la cocina y el baño en general", "es"),
     )
-      .toBe("Remodelación de la Cocina y el Baño en General");
+      .toBe("Remodelación de la cocina y el baño en general");
   });
 
   it("P-07 keeps plain English job names fully title-cased for en", () => {

@@ -750,3 +750,49 @@ Deno.test("REQ-566 (cycle 4, m11) send-paperwork-email: the delivery that issues
   assertEquals(seen.length, 1);
   await resetKv();
 });
+
+// REQ-720 (demo-loop cycle 5, p18-2a): a Spanish quote email's hero title is
+// sentence case ("Corte de césped y poda de setos"), never English Title Case
+// ("Corte de Césped y Poda de Setos"); an English send keeps Title Case.
+Deno.test("REQ-720 send-paperwork-email: a Spanish quote email's hero is sentence case, an English one stays Title Case", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const { flow, customers, quotes, sent } = fresh();
+  await seedContractor("u-1");
+  const customer = await customers.create("u-1", {
+    name: "María López",
+    email: "maria@acme.test",
+  });
+  const quote = await quotes.create("u-1", {
+    customerId: customer.id,
+    summary: "Corte de césped y poda de setos",
+    lineItems: [{ description: "Corte", quantity: 1, unit: "ea", price: 120 }],
+    estimatedTotal: 120,
+  });
+  const es = await flow.run("u-1", {
+    kind: "quote",
+    resourceId: quote.id,
+    language: "es",
+  });
+  assertEquals(es.ok, true);
+  assertStringIncludes(sent[0].htmlBody, "Corte de césped y poda de setos");
+  assert(
+    !sent[0].htmlBody.includes("Corte de Césped y Poda de Setos"),
+    "the Spanish hero is never English Title Case",
+  );
+
+  const q2 = await quotes.create("u-1", {
+    customerId: customer.id,
+    summary: "backyard junk removal",
+    lineItems: [{ description: "Mow", quantity: 1, unit: "ea", price: 120 }],
+    estimatedTotal: 120,
+  });
+  const en = await flow.run("u-1", {
+    kind: "quote",
+    resourceId: q2.id,
+    language: "en",
+  });
+  assertEquals(en.ok, true);
+  assertStringIncludes(sent[1].htmlBody, "Backyard Junk Removal");
+  await resetKv();
+});
