@@ -25,9 +25,9 @@ describe("REQ-458 M38: an empty custom duration says what to do", () => {
     expect(durationPreviewHint("  ")).toBe("asstChat.duration.previewEmpty");
     expect(durationPreviewHint(null)).toBe("asstChat.duration.previewEmpty");
   });
-  test("REQ-458: a typed number (good or bad) gets no hint — the preview or the REQ-390 message speaks", () => {
+  test("REQ-458: a good typed number gets no hint — the preview speaks (REQ-677: a bad one reads 'Enter 1–99')", () => {
     expect(durationPreviewHint("4")).toBeNull();
-    expect(durationPreviewHint("-3")).toBeNull();
+    expect(durationPreviewHint("-3")).toBe("asstChat.duration.previewInvalid");
   });
   test("REQ-458: en and es carry the hint, the placeholder and the visible labels", () => {
     expect(en["asstChat.duration.previewEmpty"]).toBe("Type a number");
@@ -50,8 +50,8 @@ describe("REQ-458 M38: the picker's number box is findable", () => {
   test("REQ-458: the preview reads the hint when empty, not '—'", () => {
     expect(start).toBeGreaterThan(0);
     expect(picker).toMatch(/durationPreviewHint\(n\)/);
-    // empty → the hint; "—" is left only for a bad number, which REQ-390 names
-    expect(picker).toMatch(/emptyHint\s*\?\s*tFor\(lang, emptyHint\)/);
+    // empty → the hint; REQ-677: a bad number reads "Enter 1–99", never "—"
+    expect(picker).toMatch(/previewHint\s*\?\s*tFor\(lang, previewHint\)/);
   });
   test("REQ-458: the number has a visible <label for>, a placeholder, and the unit is labelled too", () => {
     expect(picker).toMatch(/<label[^>]*for="dur-num"/);

@@ -169,3 +169,89 @@ Deno.test("REQ-458 M38: Custom job length — labelled empty box, 'Type a number
     // The transcript records the pick with the step's label (REQ-047).
     await expect.see("Time to complete: 4 hours", { timeout: 20_000 });
   }));
+
+/**
+ * REQ-677 (demo-loop cycle 5, demo issue c4-m45) — a custom length of 0 days
+ * or 9999 months greyed out Lock it in with "Agreement reads: —" and a reason
+ * the testers never saw. The preview now reads "Enter 1–99" and the reason
+ * sits right above the disabled Lock it in, which points at it.
+ */
+Deno.test("REQ-677 c4-m45: Custom job length 0 / 9999 — 'Enter 1–99' preview, reason next to the disabled Lock it in", (t) =>
+  story(t, async ({ page, expect, http, baseUrl }) => {
+    const auth = await signIn(http, page, baseUrl);
+    const quote = await postJson(http, auth, "/api/quotes", {
+      summary: "Fence repair",
+      lineItems: [{
+        description: "Fence repair",
+        quantity: 1,
+        unit: "ea",
+        price: 30000,
+      }],
+      estimatedTotal: 30000,
+      status: "sent",
+    });
+    const conv = await postJson(http, auth, "/api/agents/conversations", {
+      quoteId: quote.id,
+    });
+    await postJson(
+      http,
+      auth,
+      `/api/agents/conversations/${conv.id}/transition-to-terms`,
+    );
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await page.goto(`/assistant/${conv.id}`);
+    const form = page.locator(".cust-create");
+    await form.waitFor({ state: "visible", timeout: 20_000 });
+    await form.locator("input.cust-pick__search").first().fill("Zero Length");
+    await form.locator("input[type=tel]").fill("5125550178");
+    await page.locator(".cust-create__btn--primary:not([disabled])").click();
+    await page.getByText(/when does the job start/i).first().waitFor({
+      state: "visible",
+      timeout: 20_000,
+    });
+    await page.locator("button.wiz-opt", { hasText: /TBD/ }).first().click();
+    await page.getByText(/how long will the job take/i).first().waitFor({
+      state: "visible",
+      timeout: 20_000,
+    });
+    await page.locator("button.wiz-opt", { hasText: /Custom/ }).last()
+      .click();
+
+    const num = page.locator("input#dur-num");
+    await num.waitFor({ state: "visible", timeout: 10_000 });
+    const lock = page.locator("button", { hasText: /^Lock it in$/ });
+    const err = page.locator("[data-cy='dur-num-err']");
+    for (const [typed, unit] of [["0", "days"], ["9999", "months"]] as const) {
+      await num.fill(typed);
+      await page.locator("#dur-unit").selectOption(unit);
+      await err.waitFor({ state: "visible", timeout: 10_000 });
+      expect.eq(
+        (await page.locator(".dur__preview-val").innerText()).trim(),
+        "Enter 1–99",
+        `${typed} ${unit}: the agreement preview says what to type, not '—'`,
+      );
+      expect.eq(await lock.isDisabled(), true, `${typed} ${unit}: Lock waits`);
+      expect.eq(
+        await lock.getAttribute("aria-describedby"),
+        "dur-num-err",
+        `${typed} ${unit}: Lock it in names its reason`,
+      );
+      const e = await err.boundingBox();
+      const l = await lock.boundingBox();
+      if (!e || !l) throw new Error("reason or Lock it in has no box");
+      expect(
+        e.y + e.height <= l.y && l.y - (e.y + e.height) <= 24,
+        `${typed} ${unit}: the reason sits right above Lock it in (gap ${
+          l.y - (e.y + e.height)
+        }px)`,
+      );
+    }
+    await num.fill("3");
+    await err.waitFor({ state: "detached", timeout: 10_000 });
+    expect.eq(await lock.isDisabled(), false, "a real number unlocks it");
+    expect.eq(
+      await lock.getAttribute("aria-describedby"),
+      null,
+      "no reason once the number is good",
+    );
+  }));

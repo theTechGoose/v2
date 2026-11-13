@@ -5957,6 +5957,12 @@ body {
   font-size: 14px;
   color: var(--brand-green);
 }
+/* REQ-677 (c4-m45): the number's reason, right above "Lock it in" —
+   larger than the stock .cust-pick__err so a greyed button is never silent. */
+.dur__err {
+  font-size: 13px;
+  border-left: 3px solid var(--brand-pink);
+}
 /* Bossie ask-phase chat header */
 .dur__bossie {
   display: flex;
