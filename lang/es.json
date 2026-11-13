@@ -4157,7 +4157,7 @@
   "demoMode.returnAskAlone": "Eres el único presentador: salir termina la demo para {name}.",
   "demoMode.connectingTo": "Conectando con la pantalla de {name}…",
   "demoMode.pointerOff": "Tu puntero está fuera de la pantalla de {name}",
-  "demoMode.pointerGhost": "Tu puntero en la pantalla de {name}",
+  "demoMode.pointerGhost": "Tú",
   "demoMode.pointerAbsent": "Tu puntero no está en la pantalla de {name} — muévelo para mostrarlo",
   "demoMode.pointerPending": "{name} está señalando…",
   "demoMode.pointerBelow": "{name} señala más abajo — desplázate ↓",

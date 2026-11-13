@@ -44,13 +44,27 @@
  * `placeView`, `cueKey`) — never an arrow over the app's chrome; an arrow whose element moved more
  * than DRIFT_FADE_PX since he pointed is faded (`drifted`); `pending` ("pointing…", PENDING_MS) is
  * what a fraction the replay could not name a node for becomes on the wire.
+ *   - REQ-642 (cycle 5, m10 + setup-14d) — the ghost is a REPORT, not a guess: the customer's
+ *     overlay says where it placed each presenter's arrow (`placedReport`, rate-limited per
+ *     presenter by `placedReporter`), and the stage draws the ghost from that (`reportedGhost`) —
+ *     its own replay put it elsewhere (the top edge while their arrow was mid-page). And the
+ *     stage always draws his own small marker where he pointed (`ownAt`), in his colour, "You".
  */
-import { ARROW_BOX, outsideBox, placeIn, type Pt } from "./motion.ts";
+import {
+  ARROW_BOX,
+  type MoveThrottle,
+  moveThrottle,
+  outsideBox,
+  placeIn,
+  type Pt,
+} from "./motion.ts";
 import {
   type Anchor,
   fracToPoint,
   type NodeAnchor,
+  type PlacedMessage,
   type Rect,
+  sameAnchor,
 } from "./protocol.ts";
 
 /** what this presenter points at, as the stage keeps it */
@@ -539,6 +553,121 @@ export function ghostAt<P extends { at: Pt; outside: boolean }>(
     Math.hypot(placed.at.x - h.at.x, placed.at.y - h.at.y) <= GHOST_GAP_PX
   ) return null;
   return placed;
+}
+
+/** REQ-642 — the customer's report on presenter `pid`'s arrow: `placed` is where their overlay
+ *  drew it in `view` (their viewport; null — not on their screen), its tip as a fraction */
+export function placedReport(
+  pid: string,
+  a: Anchor,
+  placed: { at: Pt; outside: boolean; dir?: Dir | null } | null,
+  view: Rect,
+): PlacedMessage {
+  if (!placed) return { k: "placed", pid, a, p: null };
+  const frac = (v: number, lo: number, len: number) =>
+    Math.round(Math.min(1, Math.max(0, (v - lo) / (len || 1))) * 1e4) / 1e4;
+  const p = {
+    vx: frac(placed.at.x, view.left, view.width),
+    vy: frac(placed.at.y, view.top, view.height),
+  };
+  const m: PlacedMessage = placed.outside
+    ? { k: "placed", pid, a, p, o: 1 }
+    : { k: "placed", pid, a, p };
+  // REQ-645 + REQ-642 (reconciled on demo-fixes) — out of view that way: a chevron on their screen
+  if (placed.dir) m.d = { dx: placed.dir.dx, dy: placed.dir.dy };
+  return m;
+}
+
+/** REQ-642 — the customer's reports go out at most this often per presenter (the last always) */
+export const PLACED_GAP_MS = 100;
+
+const samePlaced = (x: PlacedMessage | null, y: PlacedMessage) =>
+  !!x && x.pid === y.pid && !x.o === !y.o && sameAnchor(x.a, y.a) &&
+  x.d?.dx === y.d?.dx && x.d?.dy === y.d?.dy &&
+  (x.p === null || y.p === null
+    ? x.p === y.p
+    : x.p.vx === y.p.vx && x.p.vy === y.p.vy);
+
+/** REQ-642 — the customer's side: each presenter's reports rated leading + trailing (the arrow
+ *  is placed again on every scroll frame), a report the same as the last sent never again */
+export function placedReporter(o: {
+  send(m: PlacedMessage): void;
+  gap?: number;
+  now?: () => number;
+  setTimer?: (fn: () => void, ms: number) => unknown;
+  clearTimer?: (h: unknown) => void;
+}): {
+  report(m: PlacedMessage): void;
+  forget(pid: string): void;
+  cancel(): void;
+} {
+  const per = new Map<
+    string,
+    { t: MoveThrottle<PlacedMessage>; last: PlacedMessage | null }
+  >();
+  return {
+    report(m) {
+      let e = per.get(m.pid);
+      if (!e) {
+        const entry: {
+          t: MoveThrottle<PlacedMessage>;
+          last: PlacedMessage | null;
+        } = {
+          last: null,
+          t: moveThrottle<PlacedMessage>({
+            gap: () => o.gap ?? PLACED_GAP_MS,
+            send: (v) => {
+              entry.last = v;
+              o.send(v);
+            },
+            now: o.now,
+            setTimer: o.setTimer,
+            clearTimer: o.clearTimer,
+          }),
+        };
+        per.set(m.pid, e = entry);
+      }
+      if (samePlaced(e.last, m)) {
+        e.t.cancel(); // a pending other one is stale now: it is back where it was
+        return;
+      }
+      e.t.push(m);
+    },
+    forget(pid) {
+      per.get(pid)?.t.cancel();
+      per.delete(pid);
+    },
+    cancel() {
+      for (const e of per.values()) e.t.cancel();
+      per.clear();
+    },
+  };
+}
+
+/** REQ-642 — where the stage draws the ghost of his arrow: where the customer's screen REPORTED
+ *  it (`r`) for the anchor he holds now, on `frame` (the fitted replica of their viewport), when
+ *  that is apart from where he put it. A report of another anchor (an older one, still on the
+ *  wire), of nowhere, or none: no ghost. */
+export function reportedGhost(
+  h: Held,
+  r: PlacedMessage | null,
+  frame: Rect,
+): { at: Pt; outside: boolean; dir?: Dir | null } | null {
+  if (!h.a || h.a.o === 1 || !r?.p || !sameAnchor(r.a, h.a)) return null;
+  // REQ-645 + REQ-642 — out of view on their screen: the ghost is their chevron, where it is
+  if (r.d) return { at: fracToPoint(r.p, frame), outside: false, dir: r.d };
+  const placed = placeIn(fracToPoint(r.p, frame), frame, ARROW_BOX, r.o === 1);
+  if (
+    !placed.outside && h.at &&
+    Math.hypot(placed.at.x - h.at.x, placed.at.y - h.at.y) <= GHOST_GAP_PX
+  ) return null;
+  return placed;
+}
+
+/** REQ-642 (setup-14d) — where the stage draws his own small marker: where he pointed, whenever
+ *  he holds an anchor (a screenshot, or his screen shared, shows no OS cursor) */
+export function ownAt(h: Held): Pt | null {
+  return h.a && h.at ? { x: h.at.x, y: h.at.y } : null;
 }
 
 /** the off-screen marker: its size (px) and how translucent it is */

@@ -98,7 +98,13 @@
  * chip shows the lag's median/worst, whole path and wire). A tab that said it is closing is
  * "Waiting for {name}'s app…" at once, under a banner across the frame's top edge.
  */
-import { useEffect, useMemo, useRef, useState } from "preact/hooks";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "preact/hooks";
 import { type Lang, langSignal, t } from "../lib/i18n.ts";
 import { demoModeClient } from "../clients/demo-mode.ts";
 import { adminClient } from "../clients/admin.ts";
@@ -110,6 +116,7 @@ import {
   fracToPoint,
   type PeerMessage,
   type PillFace,
+  type PlacedMessage,
   pointToFrac,
   type Presenter,
   PRESENTER_COLORS,
@@ -164,29 +171,36 @@ import {
   anchorPoint,
   type Dir,
   followTabs,
-  ghostAt,
   type Held,
   keepHeld,
   keptFor,
   lookAgain,
   type NodePrint,
   placeView,
+  ownAt,
   pointerAbsent,
   printable,
   reanchored,
+  reportedGhost,
   resendable,
   seedUse,
   SEEK_RETRY_MS,
   seekPrint,
 } from "../../shared/demo-mode/presenter-anchor.ts";
 import PointerGhost from "../components/demo-mode/PointerGhost.tsx";
+import OwnPointer from "../components/demo-mode/OwnPointer.tsx";
 import DemoPointer, { WAVE_MS } from "../components/demo-mode/DemoPointer.tsx";
 import PeerPointer, {
   type PointerCmd,
 } from "../components/demo-mode/PeerPointer.tsx";
 import PresenterChips from "../components/demo-mode/PresenterChips.tsx";
 import EndDemo from "../components/demo-mode/EndDemo.tsx";
-import { stageLeaveShown } from "../../shared/demo-mode/stage-chrome.ts";
+import {
+  STAGE_BADGE_H,
+  STAGE_TOP_INSET,
+  stageBadgeTop,
+  stageLeaveShown,
+} from "../../shared/demo-mode/stage-chrome.ts";
 import {
   endedHref,
   type EndedNotice,
@@ -234,8 +248,9 @@ const sameDemo = (a: Demo | null, b: Demo) =>
   JSON.stringify(a.presenters) === JSON.stringify(b.presenters);
 
 const Z = 2147483000;
-/** room around the frame; the bottom band is the pill's measured height (REQ-228) */
-const INSET = { top: 16, right: 16, left: 16 };
+/** room around the frame; the bottom band is the pill's measured height (REQ-228); REQ-642 —
+ *  the top leaves a chrome row for the off / absent badge, above the frame, never over it */
+const INSET = { top: STAGE_TOP_INSET, right: 16, left: 16 };
 /** before the first snapshot: the frame is there (its shell loads) but nothing is shown */
 const HIDDEN: Screen = { w: 1, h: 1, path: "" };
 /** REQ-242 — when a snapshot's scrolls are applied again (its stylesheets and images loading) */
@@ -414,6 +429,15 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
   const [ghost, setGhost] = useState<
     { at: Pt; outside: boolean; dir?: Dir | null } | null
   >(null);
+  /** REQ-642 (cycle 5, m10) — the followed tab's last report of where it placed HIS arrow: the
+   *  ghost is drawn from it (never from this stage's own replay, which can put it elsewhere) */
+  const reportRef = useRef<PlacedMessage | null>(null);
+  /** REQ-642 (setup-14d) — moves his own marker (OwnPointer's own state: no stage re-render) */
+  const ownSetRef = useRef<((at: Pt | null) => void) | null>(null);
+  const bindOwn = useCallback((set: (at: Pt | null) => void) => {
+    ownSetRef.current = set;
+    set(ownAt(heldNowRef.current()));
+  }, []);
   /** REQ-538 (cycle 4 M1) — his arrow is not on their screen (what he pointed at went: a card
    *  swapped, a new page) until he moves or REQ-645 finds it again by its print; REQ-645 — and
    *  while he holds nothing (the demo's start, another tab followed) */
@@ -482,6 +506,7 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
     deadAtRef.current = null;
     setGhost(null);
     setAbsent(false); // REQ-538 — made where he points now: drawn there
+    ownSetRef.current?.(ownAt(heldNow())); // REQ-642 — his own marker, where he points
     return a;
   };
   /** REQ-451 — nothing pointed at (his mouse left the window, the demo went); REQ-645 — another
@@ -495,6 +520,7 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
     deadAtRef.current = null;
     setGhost(null);
     setAbsent(true);
+    ownSetRef.current?.(null);
   };
   /** REQ-242 — a point of this screen as the customer's: the fraction of the frame and, when the
    *  replay has one there, the mirrored element under it and where in its box */
@@ -610,14 +636,12 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
     provisional: provisionalRef.current,
     print: printRef.current,
   });
-  /** REQ-451 — the ghost of his arrow where their screen has it now, when apart from his cursor */
+  const heldNowRef = useRef(heldNow);
+  heldNowRef.current = heldNow;
+  /** REQ-451 — the ghost of his arrow where their screen has it now, when apart from his cursor;
+   *  REQ-642 (cycle 5, m10) — where their overlay REPORTED it, for the anchor he holds now */
   const showGhost = () => {
-    const a = sentRef.current;
-    const g = ghostAt(
-      heldNow(),
-      loadRef.current,
-      a ? presenterOnStage(a) : null,
-    );
+    const g = reportedGhost(heldNow(), reportRef.current, fitBox());
     setGhost((was) =>
       was && g && was.outside === g.outside &&
         was.dir?.dx === g.dir?.dx && was.dir?.dy === g.dir?.dy &&
@@ -1232,6 +1256,9 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
         lastTRef.current = 0;
         // REQ-391 (M4) — until this tab's snapshot is in, the frame is not its screen: never Live
         setAwaiting(true);
+        // REQ-642 — a report from the page before says nothing of this one's screen
+        reportRef.current = null;
+        showGhost();
         if (cid !== followedCid) {
           // REQ-645 (cycle 5 m36) — ANOTHER of their browser tabs (not the same tab's next page):
           // his anchor is kept for its page load and dropped here (otherTab) — known now when the
@@ -1316,6 +1343,13 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
           case "leave":
             customerRef.current = null;
             glide.hide();
+            break;
+          case "placed":
+            // REQ-642 (cycle 5, m10) — where their screen has HIS arrow (a colleague's report is
+            // for the colleague's stage)
+            if (m.pid !== demoRef.current?.pid) break;
+            reportRef.current = m;
+            showGhost();
             break;
           case "pill":
             setPillBox(m.r);
@@ -1541,6 +1575,10 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
   };
 
   const name = demo?.targetName ?? "";
+  /** REQ-214 — this presenter's colour; REQ-642 — his own marker and ghost wear it (never the
+   *  customer's orange) */
+  const myColor = demo?.presenters.find((p) => p.userId === demo.pid)?.color ??
+    PRESENTER_COLORS[0];
   // REQ-232 (demo-lifecycle-p1, m1, m3) — plain words, never the transport
   // REQ-309 (demo m26) — "Live" is the frame's truth: the followed tab's screen is in it
   // REQ-391 (M4) — …and in time: their page gone or not in yet, a resync out, frames late
@@ -1847,20 +1885,39 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
                 onContextMenu={(e) => e.preventDefault()}
               />
             )}
-            {/* REQ-451 (demo M1) — his arrow where their screen has it, while apart from his cursor */}
+            {
+              /* REQ-451 (demo M1) — his arrow where their screen has it, while apart from his cursor;
+                REQ-642 (cycle 5, m10) — where their screen REPORTED it, tagged "You", the tag
+                outside his element and off its neighbours */
+            }
             {mirrored && ghost && (
               <PointerGhost
                 at={ghost.at}
                 outside={ghost.outside}
                 dir={ghost.dir}
-                color={demo.presenters.find((p) => p.userId === demo.pid)
-                  ?.color ?? PRESENTER_COLORS[0]}
+                color={myColor}
                 z={Z + 1}
-                label={t("demoMode.pointerGhost", { name })}
+                label={t("demoMode.pointerGhost")}
                 bounds={fit}
+                rect={sentRef.current && !ghost.outside
+                  ? rectOnStage(sentRef.current)
+                  : null}
               />
             )}
-            {/* REQ-393 (demo M8) — his mouse is beside the frame: said, on its outline */}
+            {/* REQ-642 (setup-14d) — his own pointer, always, where he pointed: his colour, "You" */}
+            {mirrored && (
+              <OwnPointer
+                color={myColor}
+                z={Z + 1}
+                label={t("demoMode.pointerGhost")}
+                tagged={!ghost}
+                bind={bindOwn}
+              />
+            )}
+            {
+              /* REQ-393 (demo M8) — his mouse is beside the frame: said, on its outline; REQ-642 —
+                in the chrome row above the frame, never over the replica */
+            }
             {mirrored && off && (
               <div
                 data-cy="demo-pointer-off"
@@ -1868,10 +1925,12 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
                 style={`position:absolute;left:${
                   fit.left + fit.width / 2
                 }px;top:${
-                  fit.top - bannerH
-                }px;transform:translate(-50%,-50%);z-index:${
+                  stageBadgeTop(fit.top - bannerH)
+                }px;transform:translateX(-50%);z-index:${
                   Z + 2
-                };pointer-events:none;white-space:nowrap;padding:4px 12px;border-radius:999px;border:1px solid rgba(255,255,255,.85);background:#1f3d1b;color:#fff;font:inherit;font-size:12.5px;font-weight:700;box-shadow:0 2px 10px rgba(0,0,0,.45)`}
+                };pointer-events:none;white-space:nowrap;box-sizing:border-box;height:${STAGE_BADGE_H}px;line-height:${
+                  STAGE_BADGE_H - 2
+                }px;max-width:calc(100vw - 16px);overflow:hidden;text-overflow:ellipsis;padding:0 12px;border-radius:999px;border:1px solid rgba(255,255,255,.85);background:#1f3d1b;color:#fff;font:inherit;font-size:12.5px;font-weight:700;box-shadow:0 2px 10px rgba(0,0,0,.45)`}
               >
                 {t("demoMode.pointerOff", { name })}
               </div>
@@ -1902,10 +1961,12 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
                 style={`position:absolute;left:${
                   fit.left + fit.width / 2
                 }px;top:${
-                  fit.top - bannerH
-                }px;transform:translate(-50%,-50%);z-index:${
+                  stageBadgeTop(fit.top - bannerH)
+                }px;transform:translateX(-50%);z-index:${
                   Z + 2
-                };pointer-events:none;white-space:nowrap;padding:4px 12px;border-radius:999px;border:1px solid rgba(255,255,255,.85);background:#3d2e1b;color:#fff;font:inherit;font-size:12.5px;font-weight:700;box-shadow:0 2px 10px rgba(0,0,0,.45)`}
+                };pointer-events:none;white-space:nowrap;box-sizing:border-box;height:${STAGE_BADGE_H}px;line-height:${
+                  STAGE_BADGE_H - 2
+                }px;max-width:calc(100vw - 16px);overflow:hidden;text-overflow:ellipsis;padding:0 12px;border-radius:999px;border:1px solid rgba(255,255,255,.85);background:#3d2e1b;color:#fff;font:inherit;font-size:12.5px;font-weight:700;box-shadow:0 2px 10px rgba(0,0,0,.45)`}
               >
                 {t("demoMode.pointerAbsent", { name })}
               </div>

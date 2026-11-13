@@ -10,20 +10,34 @@
  * customer sees a chevron at the edge of where the element can be seen (the page's scroller, not
  * the window's edge over its topbar): the ghost is that chevron there too (`data-cue`), no arrow,
  * no ring — the same thing on both screens.
+ * REQ-642 (demo-loop cycle 5, m10) — drawn where the customer's overlay REPORTED the arrow
+ * (`reportedGhost`), tagged "You" (short), and the tag is placed like DemoPointer's: outside the
+ * anchored element (`rect`), next to the arrow, off the other controls under it (`covers`; by
+ * default a hit-test of the page through the stage's mirror, `coversControl`).
  */
-import { type Pt, tagPlacement } from "../../../shared/demo-mode/motion.ts";
+import {
+  type Pt,
+  type Rect,
+  tagPlacement,
+} from "../../../shared/demo-mode/motion.ts";
 import {
   type Dir,
   GHOST_OPACITY,
   OFF_MARK_PX,
 } from "../../../shared/demo-mode/presenter-anchor.ts";
-import { ARROW_H, ARROW_PATH, ARROW_W, type Bounds } from "./DemoPointer.tsx";
+import {
+  ARROW_H,
+  ARROW_PATH,
+  ARROW_W,
+  type Bounds,
+  coversControl,
+} from "./DemoPointer.tsx";
 
 /** the chevron (DemoPointer's off marker), pointing right before it is turned */
 const CHEVRON = "M4.5 2.5 L10 7 L4.5 11.5";
 
 export default function PointerGhost(
-  { at, outside, dir, color, z, label, bounds }: {
+  { at, outside, dir, color, z, label, bounds, rect, covers }: {
     at: Pt;
     outside: boolean;
     /** REQ-645 — its element is out of view that way: a chevron, not the arrow */
@@ -32,15 +46,24 @@ export default function PointerGhost(
     z: number;
     label: string;
     bounds: Bounds;
+    /** REQ-642 — the box of the element his anchor names on the stage (null: none, out of view) */
+    rect?: Rect | null;
+    /** REQ-642 — would a tag at this box cover another control */
+    covers?: (r: Rect) => boolean;
   },
 ) {
-  // the label's size, near enough: 11px bold, padded. REQ-437 placement: below-right past the
-  // arrow's tail (no anchored element here), above only at the frame's bottom
+  const box = outside ? null : rect ?? null;
+  const doc = globalThis.document;
+  const hit = covers ??
+    (doc && box ? (r: Rect) => coversControl(doc, r, at) : undefined);
+  // the label's size, near enough: 11px bold, padded. REQ-437 + REQ-642: outside the anchored
+  // element, next to the arrow, off the other controls; else below-right past the arrow's tail
   const place = tagPlacement(
     at,
     bounds,
     { w: 14 + label.length * 6.5, h: 20 },
-    null,
+    box,
+    hit,
   );
   return (
     <div

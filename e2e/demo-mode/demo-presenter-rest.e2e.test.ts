@@ -368,6 +368,19 @@ Deno.test("REQ-393 (demo M8) + REQ-451 (demo M14): the cursor handed over from /
           (await offHint(page)) === "Your pointer is off Ana Torres's screen",
         10_000,
       );
+      // REQ-642 (demo-loop cycle 5, m10) — the hint sits in the chrome row ABOVE the frame: no
+      // part of it over the mirrored app's header
+      {
+        const hint = await page.locator("[data-cy='demo-pointer-off']")
+          .boundingBox();
+        const f = await frameBox(page);
+        expect(
+          !!hint && hint.y >= 0 && hint.y + hint.height <= f.y + 0.5,
+          `REQ-642: the off hint ${JSON.stringify(hint)} ends above the frame ${
+            JSON.stringify(f)
+          }`,
+        );
+      }
       // still there a moment later (a leave would have taken it away)
       await sleep(1_500);
       const still = await arrowOn(phone);
@@ -405,6 +418,36 @@ Deno.test("REQ-393 (demo M8) + REQ-451 (demo M14): the cursor handed over from /
         10_000,
       );
       expect.eq(await offHint(page), null, "no hint while on the frame");
+      // REQ-642 (setup-14d) — his own pointer is drawn on the stage where he points (a screenshot
+      // shows no OS cursor), in his colour, tagged "You" — never the customer's name; and no ghost
+      // while the phone has his arrow where he put it (the phone's report says so)
+      await until(
+        "REQ-642: the stage draws his own marker under his mouse, tagged You",
+        async () => {
+          const own = await page.evaluate(() => {
+            const el = document.querySelector("[data-cy='demo-pointer-own']");
+            if (!el) return null;
+            const r = el.getBoundingClientRect();
+            const tag = el.querySelector("[data-cy='demo-pointer-own-label']");
+            return {
+              x: r.left,
+              y: r.top,
+              tag: tag ? (tag as HTMLElement).innerText.trim() : null,
+            };
+          });
+          if (
+            !own || Math.abs(own.x - onFrame.x) > 2 ||
+            Math.abs(own.y - onFrame.y) > 2 || own.tag !== "You"
+          ) throw new Error(`own marker ${JSON.stringify(own)}`);
+          return true;
+        },
+        10_000,
+      );
+      expect.eq(
+        await page.locator("[data-cy='demo-pointer-ghost']").count(),
+        0,
+        "REQ-642: no ghost while their screen has his arrow where he put it",
+      );
 
       // 4. REQ-451 — on the frame the hand-off counts: the stage reloads under his still mouse
       //    (a page loaded under a still mouse hears no pointer event) and the phone's arrow, gone

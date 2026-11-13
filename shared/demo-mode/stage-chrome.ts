@@ -18,3 +18,20 @@ export function impersonationBannerOn(pathname: string): boolean {
 export function stageLeaveShown(presenters: number): boolean {
   return presenters > 1;
 }
+
+/**
+ * REQ-642 (demo-loop cycle 5, m10) — the stage's "Your pointer is off / isn't on {name}'s screen"
+ * badges sat on the frame's top edge, centred on it (translate -50% up): their lower half always
+ * covered the mirrored app's header. They sit in a chrome row ABOVE the frame now: the stage's top
+ * inset leaves room for one badge (STAGE_BADGE_H) with a gap above and below it, and the badge's
+ * top is `stageBadgeTop(frameTop)` — never a vertical translate.
+ */
+export const STAGE_BADGE_H = 26;
+export const STAGE_BADGE_GAP = 8;
+/** the stage's inset above the frame (in the stage's own box, under any banner) */
+export const STAGE_TOP_INSET = STAGE_BADGE_H + 2 * STAGE_BADGE_GAP;
+
+/** a badge's top, in the box the frame's top `frameTop` is measured in: ending a gap above it */
+export function stageBadgeTop(frameTop: number): number {
+  return Math.max(0, frameTop - STAGE_BADGE_GAP - STAGE_BADGE_H);
+}

@@ -114,7 +114,23 @@ export type PeerMessage =
   | { k: "pending"; a: Anchor; t?: number } // t: the sender's clock, as a move's (REQ-180)
   // REQ-295 — the customer's demo pill box in their viewport (null: no pill), for the stage's ghost;
   // REQ-372 — and what the pill says, so the ghost is a replica, not an empty box
-  | ({ k: "pill"; r: Rect | null } & PillFace);
+  | ({ k: "pill"; r: Rect | null } & PillFace)
+  // REQ-642 (demo-loop cycle 5, m10) — the customer's overlay says where it PLACED presenter
+  // `pid`'s arrow: for anchor `a`, its tip as a fraction of their viewport (`p`; null — not on
+  // their screen), `o` on the edge, outside. The stage draws his ghost from this, never a guess.
+  | PlacedMessage;
+
+/** REQ-642 — the customer's report of where a presenter's arrow is on their screen */
+export interface PlacedMessage {
+  k: "placed";
+  pid: string;
+  a: Anchor;
+  p: { vx: number; vy: number } | null;
+  o?: 1;
+  /** REQ-645 + REQ-642 (reconciled on demo-fixes) — its element is out of view that way on their
+   *  screen: they see a chevron there, so the ghost is that chevron too */
+  d?: { dx: -1 | 0 | 1; dy: -1 | 0 | 1 };
+}
 
 /** REQ-372 — the pill's state in words the stage translates itself (the presenter's language) */
 export type PillStatus = "live" | "connecting" | "ended";
@@ -336,6 +352,33 @@ function parseDomChunk(o: Record<string, unknown>): DomChunk | null {
   return c;
 }
 
+/** REQ-642 — a presenter's id on the wire, as the stages say it */
+const PID_MAX = 128;
+/** REQ-642 — a placed report, each field checked; null when anything is off */
+function parsePlaced(o: Record<string, unknown>): PlacedMessage | null {
+  if (typeof o.pid !== "string" || !o.pid || o.pid.length > PID_MAX) {
+    return null;
+  }
+  const a = parseAnchor(o.a);
+  if (!a) return null;
+  let p: PlacedMessage["p"] = null;
+  if (o.p !== null) {
+    const q = o.p as Record<string, unknown> | undefined;
+    if (!q || typeof q !== "object" || !num(q.vx) || !num(q.vy)) return null;
+    p = { vx: clamp01(q.vx), vy: clamp01(q.vy) };
+  }
+  const m: PlacedMessage = o.o === 1 && p
+    ? { k: "placed", pid: o.pid, a, p, o: 1 }
+    : { k: "placed", pid: o.pid, a, p };
+  // REQ-645 + REQ-642 — the way to an element out of view, when said (each a -1 / 0 / 1)
+  const d = o.d as Record<string, unknown> | undefined;
+  const unit = (v: unknown): v is -1 | 0 | 1 => v === -1 || v === 0 || v === 1;
+  if (p && d && typeof d === "object" && unit(d.dx) && unit(d.dy)) {
+    m.d = { dx: d.dx, dy: d.dy };
+  }
+  return m;
+}
+
 export function parsePeerMessage(x: unknown): PeerMessage | null {
   if (!x || typeof x !== "object") return null;
   const o = x as Record<string, unknown>;
@@ -383,6 +426,8 @@ export function parsePeerMessage(x: unknown): PeerMessage | null {
       const r = parseRect(o.r);
       return r ? { k: "pill", r, ...parsePillFace(o) } : null;
     }
+    case "placed":
+      return parsePlaced(o);
     default:
       return null;
   }
