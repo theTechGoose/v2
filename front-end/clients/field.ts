@@ -74,6 +74,13 @@ export interface SubscriptionView {
   pinned?: boolean;
   /** "Weekly · Mon, Thu" in both languages */
   schedule: { es: string; en: string };
+  /** REQ-699: the last service day, if the quote's term ends */
+  endDate?: string;
+  /** REQ-699: the signed quote that made it, and its number */
+  quoteId?: string;
+  quoteNumber?: string;
+  /** REQ-699: a quote's subscription as the quote said it — "Monthly · $180/mo" */
+  billing?: { es: string; en: string };
   createdAt: string;
   updatedAt: string;
 }

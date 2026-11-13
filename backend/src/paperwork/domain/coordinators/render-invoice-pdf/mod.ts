@@ -9,6 +9,7 @@ import { isAccepted } from "#quote-flow/quote-status.ts";
 import { isDueNowTermValue, isTbdTermValue } from "#quote-flow/terms-i18n.ts";
 import { invoiceTerms } from "#quote-flow/invoice-terms.ts";
 import { formatTermDate, termDateIso } from "#quote-flow/format-helpers.ts";
+import { localizeRecurringTerm } from "#quote-flow/recurring-billing.ts"; // REQ-699
 import { QuoteStore } from "@paperwork/domain/data/quote-store/mod.ts";
 import { CustomerStore } from "@crm/domain/data/customer-store/mod.ts";
 import { UserStore } from "@users/domain/data/user-store/mod.ts";
@@ -942,6 +943,9 @@ function termValue(
 }
 
 export function localizeTermValue(value: string, lang: "en" | "es"): string {
+  // REQ-699 (demo-loop cycle 5, M20): a recurring term in the reader's language.
+  const recurring = localizeRecurringTerm(value, lang);
+  if (recurring) return recurring;
   // REQ-495 (m17): a picked start date (ISO, or a legacy MM/DD/YYYY) prints
   // in the reader's language — "1 dic 2026" / "Dec 1, 2026".
   if (termDateIso(value)) return formatTermDate(value, lang);

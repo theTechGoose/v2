@@ -33,6 +33,12 @@ import {
   completionFromTerms,
   startDayFromTerms,
 } from "#quote-flow/completion-schedule.ts"; // REQ-411
+import {
+  recurringFromTerms,
+  type RecurringTerm,
+  recurringTermText,
+} from "#quote-flow/recurring-billing.ts"; // REQ-699
+import { QuoteSubscriptionPort } from "@paperwork/domain/coordinators/quote-subscription-port/mod.ts"; // REQ-699
 
 const COLOR_TEAL = "#144852";
 const COLOR_GREEN = "#519843";
@@ -69,7 +75,10 @@ const APP_URL = (() => {
  *   2. Auto-creates the milestone invoices from the quote's payment terms
  *      (the deposit, if 30/30/40 or 50/50; otherwise the full net-15
  *      invoice, etc.). Accept always bills: a quote with no payment terms
- *      yields ONE full-amount invoice on net-7 (REQ-240).
+ *      yields ONE full-amount invoice on net-7 (REQ-240). A RECURRING term
+ *      (REQ-699 — "Monthly · $180/mo") bills no milestone: Field's
+ *      subscription, made through QuoteSubscriptionPort, bills each period;
+ *      only when none can be made is the period billed once, as before.
  *   3. Dispatches a confirmation email to the customer with the PDF
  *      attached and a payment-link button to the new invoice.
  *   4. Sends a completion SMS to the customer (roadmap p.2) — best-effort,
@@ -93,6 +102,9 @@ export class SendSignedConfirmation {
     private email: EmailService,
     private sms: SmsService,
     private commsLog: LogPaperworkMessage,
+    // REQ-699: optional so a hand-built coordinator (its own tests) runs
+    // without Field; the app injects it and Field registers on it.
+    private subscriptions?: QuoteSubscriptionPort,
   ) {}
 
   async run(
@@ -105,6 +117,8 @@ export class SendSignedConfirmation {
       invoiceId?: string;
       /** REQ-697: the after-completion bill the signature scheduled */
       scheduledInvoiceId?: string;
+      /** REQ-699: the Field subscription that bills a recurring quote */
+      subscriptionId?: string;
     }
   > {
     let quote: Quote;
@@ -146,11 +160,23 @@ export class SendSignedConfirmation {
     // outgoing-comms language (default en), not their UI language.
     const lang: Lang = ident?.commsLanguage === "es" ? "es" : "en";
 
+    // ---- 0. REQ-699 (demo-loop cycle 5, M20): a recurring payment term is
+    // billed each period by the Field subscription the signature makes —
+    // never as a one-off milestone. With no subscription (Field not booted,
+    // no customer to bill) the period is billed once below, as before.
+    const recurring = recurringFromTerms(quote.terms);
+    const subscriptionId = recurring
+      ? (await this.subscriptions?.run({ userId, quoteId: quote.id }))
+        ?.subscriptionId
+      : undefined;
+
     // ---- 1. Create the full milestone set (first invoice sent now,
     // remaining ones scheduled for equal-spaced dates over the quote's
     // completion window).
     const total = quote.estimatedTotal ?? 0;
-    const plannedMilestones = computeMilestoneAmounts(total, quote.terms);
+    const plannedMilestones = subscriptionId
+      ? []
+      : computeMilestoneAmounts(total, quote.terms);
     // UX-36: bill only the unbilled remainder. A late accept on a deal that
     // was already invoiced (or fully paid) must never re-bill the customer —
     // every non-void invoice on the deal counts as committed.
@@ -323,6 +349,8 @@ export class SendSignedConfirmation {
         businessName,
         invoiceId,
         invoiceAmount: milestoneAmounts[0] ?? 0,
+        // REQ-699: the customer is told what each period bills
+        ...(subscriptionId && recurring ? { recurring } : {}),
         lang,
       });
       const fileName = agreementFileName(quote);
@@ -422,11 +450,12 @@ export class SendSignedConfirmation {
     }
 
     return {
-      ok: sent.ok || !!invoiceId || billed,
+      ok: sent.ok || !!invoiceId || billed || !!subscriptionId,
       ...(sent.reason ? { reason: sent.reason } : {}),
       ...(sent.messageId ? { messageId: sent.messageId } : {}),
       ...(invoiceId ? { invoiceId } : {}),
       ...(scheduledInvoiceId ? { scheduledInvoiceId } : {}),
+      ...(subscriptionId ? { subscriptionId } : {}),
     };
   }
 }
@@ -615,6 +644,8 @@ interface SignedHtmlOpts {
   businessName: string | undefined;
   invoiceId: string | undefined;
   invoiceAmount: number;
+  /** REQ-699: the recurring charge a subscription now bills */
+  recurring?: RecurringTerm;
   lang: Lang;
 }
 
@@ -626,6 +657,7 @@ function renderSignedConfirmationHtml(opts: SignedHtmlOpts): string {
     businessName,
     invoiceId,
     invoiceAmount,
+    recurring,
     lang,
   } = opts;
   const customerFirst = (customer?.name ?? customer?.businessName)?.trim()
@@ -663,6 +695,10 @@ function renderSignedConfirmationHtml(opts: SignedHtmlOpts): string {
     invoiceClause: invoiceUrl
       ? t(lang, "signedConfirm.email.bodyInvoiceClause", {
         amount: fmtUSD(invoiceAmount),
+      })
+      : recurring // REQ-699: "— you'll be billed Monthly · $180/mo"
+      ? t(lang, "signedConfirm.email.bodyRecurringClause", {
+        billing: escapeHtml(recurringTermText(recurring, lang)),
       })
       : "",
     who: contractorFirst

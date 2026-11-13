@@ -10,6 +10,9 @@ export interface QuoteSignedEvent {
   /** REQ-697 (demo-loop cycle 5, m22): the after-completion invoice the
    *  signature SCHEDULED (not sent) — the owner is reminded to send it */
   scheduledInvoiceId?: string;
+  /** REQ-699: the Field subscription that bills a recurring quote each
+   *  period (SendSignedConfirmation's `subscriptionId`) */
+  subscriptionId?: string;
 }
 
 export type QuoteSignedFn = (e: QuoteSignedEvent) => Promise<unknown>;

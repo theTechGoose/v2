@@ -37,6 +37,7 @@ export const monthDaysOf = (
 export function isDue(s: Subscription, date: string): boolean {
   const start = startOf(s);
   if (!isValidDate(start) || date < start) return false;
+  if (s.endDate && date > s.endDate) return false; // REQ-699: a term that ends
   if (s.cadence === "monthly") {
     const day = Number(date.slice(8));
     const lastOfMonth = new Date(

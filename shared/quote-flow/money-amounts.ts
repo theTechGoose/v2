@@ -30,7 +30,16 @@ export interface MoneyAmount {
    *  "minus $500" — the contractor typed a negative amount. NUM has no sign,
    *  so the amount is still read as 500; this flag says it was negative. */
   negative: boolean;
+  /** REQ-699 (demo-loop cycle 5, M20): the period a recurring job's price is
+   *  stated per — "$180 al mes" / "$180 a month" / "$180/mo" (monthly), "$45 a
+   *  week" (weekly), "$90 every 2 weeks" / "quincenal" (biweekly), "$45 por
+   *  visita" (visit). Absent for a one-off amount. Still an amount of the job:
+   *  it is what each period (or visit) bills. */
+  per?: PricePeriod;
 }
+
+/** REQ-699: what a recurring job's price is stated per. */
+export type PricePeriod = "weekly" | "biweekly" | "monthly" | "visit";
 
 const NUM = String.raw`(\d{1,3}(?:,\d{3})+|\d+)(?:\.(\d{1,2}))?`;
 const CURRENCY = String.raw`(?:d[oó]lares|dollars|usd|bucks|pesos)`;
@@ -90,6 +99,33 @@ const RATE_AFTER =
  *  ("all-in $18,500"); or "minus" / "negative" / "negativo" right before it. */
 const NEGATIVE_BEFORE =
   /(?:(?:^|[^\p{L}\d.,])[-\u2212]\$?|(?:^|[^\p{L}])(?:minus|negative|negativo)\s+\$?\s?)$/iu;
+/** REQ-699 (demo-loop cycle 5, M20): what follows a recurring job's price —
+ *  pair 2's "$180 al mes", "$180 a month", "$180/mo", "$45 a week", "$90
+ *  every 2 weeks", "$90 quincenal", "$45 por visita". Checked in order: every
+ *  2 weeks before every week. */
+const PER_AFTER: [RegExp, PricePeriod][] = [
+  [
+    /^\s*(?:\/\s*2\s*(?:wks?|weeks?|semanas)|(?:every|each|per)\s+(?:2|two|other)\s+weeks?|cada\s+(?:2|dos)\s+semanas|cada\s+(?:15|quince)\s+d[ií]as|bi-?weekly|quincenal(?:es)?|quincenalmente)(?![\p{L}])/iu,
+    "biweekly",
+  ],
+  [
+    /^\s*(?:\/\s*(?:wk|wks|week|semana)|(?:a|an|per|each|every|por|cada|a\s+la|la)\s+(?:week|semana)|weekly|semanal(?:es)?|semanalmente)(?![\p{L}])/iu,
+    "weekly",
+  ],
+  [
+    /^\s*(?:\/\s*(?:mo|mos|mth|month|mes)|(?:a|an|per|each|every|por|cada|al|el)\s+(?:month|mo|mes)|monthly|mensual(?:es)?|mensualmente)(?![\p{L}])/iu,
+    "monthly",
+  ],
+  [
+    /^\s*(?:\/\s*visit[a]?|(?:a|per|each|every|por|cada|la)\s+(?:visit|visita))(?![\p{L}])/iu,
+    "visit",
+  ],
+];
+
+/** REQ-699: the period the words right after an amount state, if any. */
+function perAfter(after: string): PricePeriod | undefined {
+  return PER_AFTER.find(([re]) => re.test(after))?.[1];
+}
 
 function centsOf(whole: string, frac: string | undefined, scale?: string) {
   const n = Number(`${whole.replace(/,/g, "")}${frac ? `.${frac}` : ""}`);
@@ -101,7 +137,8 @@ function centsOf(whole: string, frac: string | undefined, scale?: string) {
  *  "18 thousand", "18 grand", "4500 dollars", "18 mil dólares" and a spoken
  *  Spanish "18 mil" — each once, in order. Never "6 mil vapor barrier" or a
  *  "12k btu" unit. A rate is flagged (REQ-575), and so is a negative amount
- *  (REQ-680). */
+ *  (REQ-680); a recurring price carries the period it is stated per
+ *  (REQ-699). */
 export function moneyAmounts(text: string): MoneyAmount[] {
   const s = text ?? "";
   const found: MoneyAmount[] = [];
@@ -112,14 +149,18 @@ export function moneyAmounts(text: string): MoneyAmount[] {
       if (found.some((f) => start < f.end && end > f.start)) continue;
       const cents = centsOf(m[1], m[2], m[3]);
       if (cents > 0) {
+        const after = s.slice(end);
+        const rate = RATE_AFTER.test(after);
+        const per = rate ? undefined : perAfter(after); // REQ-699
         found.push({
           cents,
           start,
           end,
-          rate: RATE_AFTER.test(s.slice(end)),
+          rate,
           negative: NEGATIVE_BEFORE.test(
             s.slice(Math.max(0, start - 16), start),
           ),
+          ...(per ? { per } : {}),
         });
       }
     }

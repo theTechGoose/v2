@@ -35,6 +35,7 @@ import {
   localizeDepositTerm,
   normalizeDepositTerm,
 } from "#quote-flow/deposit-term.ts"; // REQ-678
+import { localizeRecurringTerm } from "#quote-flow/recurring-billing.ts"; // REQ-699
 import {
   extractPaymentTerms,
   wizardPrefillFor,
@@ -578,6 +579,9 @@ export function termValueText(value: string, lang: Lang): string {
   // REQ-678 (c3-m60): a picked deposit — "Depósito 30% + saldo".
   const deposit = localizeDepositTerm(v, lang, t);
   if (deposit) return deposit;
+  // REQ-699: "Pago: Mensual · $180/mes" — a recurring term in their language.
+  const recurring = localizeRecurringTerm(v, lang);
+  if (recurring) return recurring;
   const dated = formatTermDate(v, lang);
   if (dated !== v || lang !== "es") return dated;
   if (v === "Half a day") return t(lang, "termsWizard.wraps.halfDay");

@@ -605,6 +605,24 @@ export default function FieldSubscriptionsPage() {
                       </div>
                     ))}
                   </div>
+                  {
+                    /* REQ-699 (demo-loop cycle 5, M20): a subscription a
+                      signed quote made says so — "From Q-001 · Monthly ·
+                      $180/mo" — and opens that quote */
+                  }
+                  {s.quoteId && (
+                    <a
+                      class="hint"
+                      data-cy="subs-from-quote"
+                      href={`/quotes?open=${s.quoteId}`}
+                      style="display:block;text-decoration:none"
+                    >
+                      {t("field.subs.fromQuote", {
+                        quote: s.quoteNumber ?? "",
+                      })}
+                      {s.billing ? ` · ${s.billing[lang]}` : ""}
+                    </a>
+                  )}
                   {cardErr?.id === s.id && (
                     <p class="alert" style="margin:0">{cardErr.msg}</p>
                   )}

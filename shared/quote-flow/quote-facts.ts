@@ -14,6 +14,12 @@
  */
 import { extractCustomerName } from "./quick-quote-prefill.ts";
 import { type DurationUnit, termLabel } from "./terms-i18n.ts";
+import { moneyAmounts } from "./money-amounts.ts";
+import {
+  RECURRING_OPTION_ID,
+  type RecurringCadence,
+  recurringTermValue,
+} from "./recurring-billing.ts";
 
 /** REQ-387 (demo M25): a schedule the text states that is not a preset —
  *  "30% deposit, 40% at cabinets install, 30% at completion". `milestones`
@@ -25,12 +31,24 @@ export interface CustomPaymentSchedule {
   milestones: (string | null)[];
 }
 
+/** REQ-699 (demo-loop cycle 5, M20): a price the text states per period —
+ *  pair 2's "$180 al mes" is monthly $180. A per-visit price ("$45 por
+ *  visita") takes its cadence from the frequency the text states ("cada
+ *  semana", "4 visitas al mes"); with none, `cadence` is absent — the payment
+ *  step asks, nothing is invented. */
+export interface RecurringPaymentPrefill {
+  kind: "recurring";
+  cadence?: RecurringCadence;
+  amountCents: number;
+}
+
 export type PrefillPaymentTerms =
   | "50_50"
   | "30_30_40"
   | "deposit_bal"
   | "net_15"
-  | CustomPaymentSchedule;
+  | CustomPaymentSchedule
+  | RecurringPaymentPrefill;
 
 /** The typed START date — `iso` YYYY-MM-DD (the value the wizard's date
  *  picker submits and the term stores, REQ-495), `us` MM/DD/YYYY. */
@@ -522,7 +540,41 @@ export function extractPaymentTerms(raw: string): PrefillPaymentTerms | null {
     return "deposit_bal";
   }
   if (/\bnet\s*-?\s*15\b/.test(s)) return "net_15";
-  return null;
+  // REQ-699 (demo-loop cycle 5, M20): no one-off schedule stated, but the
+  // price is per period — "$180 al mes".
+  return extractRecurringPrice(raw);
+}
+
+/** REQ-699: how often a per-visit job recurs, from the words of the text —
+ *  "every week", "cada dos semanas", "4 visitas al mes" (weekly), "once a
+ *  month". Every 2 weeks is checked before every week. */
+const FREQUENCY: [RegExp, RecurringCadence][] = [
+  [
+    /\b(?:every (?:2|two|other) weeks?|bi-?weekly|cada (?:2|dos) semanas|quincenal\w*|cada (?:15|quince) d[ií]as|(?:2|two|dos) (?:visits?|visitas|times|veces) (?:a|per|al|por) (?:month|mes))\b/iu,
+    "biweekly",
+  ],
+  [
+    /\b(?:every week|each week|weekly|once a week|cada semana|semanal\w*|una vez (?:a la|por) semana|(?:4|5|four|five|cuatro|cinco) (?:visits?|visitas|times|veces) (?:a|per|al|por) (?:month|mes))\b/iu,
+    "weekly",
+  ],
+  [
+    /\b(?:every month|each month|monthly|once a month|cada mes|mensual\w*|una vez al mes|(?:1|one|una) (?:visit|visita|time|vez) (?:a|per|al|por) (?:month|mes))\b/iu,
+    "monthly",
+  ],
+];
+
+/** REQ-699: the first price the text states per period (moneyAmounts' `per`). */
+function extractRecurringPrice(raw: string): RecurringPaymentPrefill | null {
+  const priced = moneyAmounts(raw).find((a) => a.per);
+  if (!priced?.per) return null;
+  const cadence = priced.per === "visit"
+    ? FREQUENCY.find(([re]) => re.test(raw))?.[1]
+    : priced.per;
+  return {
+    kind: "recurring",
+    ...(cadence ? { cadence } : {}),
+    amountCents: priced.cents,
+  };
 }
 
 const DURATION_WORD_NUMS: Record<string, number> = {
@@ -644,6 +696,9 @@ export interface WizardPrefill {
    *  payment form when the contractor opens it instead of taking the
    *  prefill as is. */
   splits?: number[];
+  /** REQ-699: the recurring price the text states — the payment step's ask
+   *  says it back, and the Recurring form opens with it. */
+  recurring?: { cadence?: RecurringCadence; amountCents: number };
 }
 
 /** The wizard step's pre-selection from the facts; null when the text said
@@ -665,6 +720,25 @@ export function wizardPrefillFor(
   if (stepId === "payment_terms" && facts.paymentTerms) {
     const pt = facts.paymentTerms;
     if (typeof pt === "string") return { optionId: pt };
+    // REQ-699 (demo-loop cycle 5, M20): "$180 al mes" is the Recurring
+    // option, its value the stored English base whatever the UI language;
+    // with no cadence stated there is no value — the form asks for it.
+    if (pt.kind === "recurring") {
+      const recurring = {
+        ...(pt.cadence ? { cadence: pt.cadence } : {}),
+        amountCents: pt.amountCents,
+      };
+      return pt.cadence
+        ? {
+          optionId: RECURRING_OPTION_ID,
+          customValue: recurringTermValue({
+            cadence: pt.cadence,
+            amountCents: pt.amountCents,
+          }),
+          recurring,
+        }
+        : { optionId: RECURRING_OPTION_ID, recurring };
+    }
     // REQ-387 (demo M25): the typed schedule pre-fills the Custom option.
     // Named milestones ride in the value ("30% deposit / 40% at cabinets
     // install / 30% at completion") — computePaymentSplit still reads its

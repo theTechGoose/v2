@@ -544,13 +544,20 @@ function ClientCard(
               </span>
               <span class="ccard2__panel-row-text">
                 <div class="ccard2__panel-row-lbl">
-                  {s.schedule[lang]} · {s.active
+                  {/* REQ-699: a signed quote's "Monthly · $180/mo" */}
+                  {s.billing?.[lang] ?? s.schedule[lang]} · {s.active
                     ? tFor(lang, "field.subs.active")
                     : tFor(lang, "field.subs.paused")}
                 </div>
                 <div class="ccard2__panel-row-val">
-                  {s.address} · {fmtMoneyExact(perVisitCents(s))}{" "}
-                  {tFor(lang, "clientsBoard.panel.perVisit")}
+                  {s.billing
+                    ? [s.address, s.quoteNumber].filter(Boolean).join(" · ")
+                    : (
+                      <>
+                        {s.address} · {fmtMoneyExact(perVisitCents(s))}{" "}
+                        {tFor(lang, "clientsBoard.panel.perVisit")}
+                      </>
+                    )}
                 </div>
               </span>
               <span class="ccard2__panel-row-arrow">

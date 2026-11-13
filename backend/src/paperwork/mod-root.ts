@@ -44,6 +44,7 @@ import { WorkOrderController } from "@paperwork/entrypoints/work-order-controlle
 import { WorkOrderStore } from "@paperwork/domain/data/work-order-store/mod.ts"; // REQ-210
 import { InvoiceTranslatorPort } from "@paperwork/domain/coordinators/invoice-translator-port/mod.ts"; // REQ-497
 import { QuoteSignedPort } from "@paperwork/domain/coordinators/quote-signed-port/mod.ts"; // REQ-563
+import { QuoteSubscriptionPort } from "@paperwork/domain/coordinators/quote-subscription-port/mod.ts"; // REQ-699
 import { QuoteTranslatorPort } from "@paperwork/domain/coordinators/quote-translator-port/mod.ts"; // REQ-591
 import { InquiryController } from "@paperwork/entrypoints/inquiry-controller/mod.ts"; // REQ-701
 import { QuoteInquiryStore } from "@paperwork/domain/data/inquiry-store/mod.ts"; // REQ-701
@@ -96,6 +97,7 @@ import { ReplyToInquiry } from "@paperwork/domain/coordinators/reply-to-inquiry/
     WorkOrderStore, // REQ-210
     InvoiceTranslatorPort, // REQ-497
     QuoteSignedPort, // REQ-563
+    QuoteSubscriptionPort, // REQ-699
     QuoteTranslatorPort, // REQ-591
     QuoteInquiryStore, // REQ-701
     ReplyToInquiry, // REQ-701
