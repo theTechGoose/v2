@@ -52,8 +52,10 @@ describe("REQ-520 (demo cycle 3, m19) the new-worker form says why it can't add"
       expect(d["field.wk.langNote"].length).toBeGreaterThan(10);
     }
     expect(en["field.wk.langNote"]).not.toBe(es["field.wk.langNote"]);
-    expect(en["field.wk.langNote"]).toMatch(/Spanish/);
-    expect(es["field.wk.langNote"]).toMatch(/español/);
+    // REQ-774 AMENDMENT (reconciled on demo-fixes): the note no longer says Spanish is the
+    // default — it says the worker gets the language picked here.
+    expect(en["field.wk.langNote"]).toMatch(/language/);
+    expect(es["field.wk.langNote"]).toMatch(/idioma/);
   });
 
   test("the island keeps Add enabled (only busy while adding) and wires the problems", () => {
