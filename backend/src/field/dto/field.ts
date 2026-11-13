@@ -58,6 +58,11 @@ export interface Subscription {
   daysOfMonth?: number[];
   /** REQ-174: days the customer has to pay, from the day the invoice is sent; unset = the account's default */
   netDays?: number;
+  /** REQ-699: the last service day — nothing is due after it; unset = until it is paused or deleted */
+  endDate?: string;
+  /** REQ-699: the signed quote whose recurring payment term made it (QuoteStore), and that quote's number */
+  quoteId?: string;
+  quoteNumber?: string;
   active: boolean;
   /** set by the grouping (REQ-140) — or by the owner's drag */
   regionId?: string;

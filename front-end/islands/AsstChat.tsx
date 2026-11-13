@@ -216,6 +216,12 @@ import {
   weekdayLabel,
   wizardPrefillFor,
 } from "../../shared/quote-flow/quote-facts.ts";
+import RecurringPaymentForm from "../components/RecurringPaymentForm.tsx"; // REQ-699
+import {
+  RECURRING_OPTION_ID,
+  recurringEveryKey,
+  recurringPriceText,
+} from "../../shared/quote-flow/recurring-billing.ts"; // REQ-699
 import {
   duplicateNotice,
   findExistingCustomer,
@@ -1428,6 +1434,14 @@ export default function AsstChat({
   // clean payment string ("Net 30", "30 / 30 / 40") that buildPaymentMilestones
   // can parse. Free-text never lands on the agreement directly.
   const [customPaymentPick, setCustomPaymentPick] = useState<
+    {
+      messageId: string;
+      optionId: string;
+    } | null
+  >(null);
+  // REQ-699 (demo-loop cycle 5, M20): payment_terms "Recurring" — how often,
+  // the amount per period and an optional last day (RecurringPaymentForm).
+  const [recurringPick, setRecurringPick] = useState<
     {
       messageId: string;
       optionId: string;
@@ -9120,6 +9134,39 @@ export default function AsstChat({
                                 );
                               }
                               if (
+                                recurringPick &&
+                                recurringPick.messageId === m.id
+                              ) {
+                                // REQ-699: opened on the price the message
+                                // stated, else the quote's total.
+                                const stated = wizardPrefillFor(
+                                  payload.stepId,
+                                  quoteFacts,
+                                  lang,
+                                )?.recurring;
+                                return (
+                                  <RecurringPaymentForm
+                                    initial={{
+                                      cadence: stated?.cadence,
+                                      amountCents: stated?.amountCents ??
+                                        quote?.estimatedTotal ??
+                                        latestSentQuoteCents(messages),
+                                    }}
+                                    sending={sending}
+                                    lang={lang}
+                                    onSubmit={(value) => {
+                                      setRecurringPick(null);
+                                      postWizardAnswer(m, {
+                                        stepId: payload.stepId!,
+                                        optionId: recurringPick.optionId,
+                                        customValue: value,
+                                      });
+                                    }}
+                                    onCancel={() => setRecurringPick(null)}
+                                  />
+                                );
+                              }
+                              if (
                                 customPaymentPick &&
                                 customPaymentPick.messageId === m.id
                               ) {
@@ -9162,9 +9209,64 @@ export default function AsstChat({
                               const showPrefill = !!(prefill && prefillOpt) &&
                                 !(rewindAnswer &&
                                   rewindAnswer.stepId === payload.stepId);
+                              // REQ-699 (demo-loop cycle 5, M20): a price the
+                              // message stated per period ("$180 al mes") is
+                              // asked about — once, or every month? The
+                              // one-off options stay right below.
+                              const recurringAsk =
+                                prefill?.optionId === RECURRING_OPTION_ID
+                                  ? prefill.recurring
+                                  : undefined;
+                              const every = recurringAsk
+                                ? tFor(lang, recurringEveryKey(recurringAsk.cadence))
+                                : "";
                               return (
                                 <>
-                                {showPrefill && prefill && prefillOpt
+                                {showPrefill && prefill && recurringAsk
+                                  ? (
+                                    <div
+                                      class="wiz-prefill"
+                                      data-testid="wiz-prefill"
+                                    >
+                                      <span
+                                        class="wiz-prefill__label"
+                                        data-testid="wiz-recurring-ask"
+                                      >
+                                        {tFor(lang, "asstChat.recurring.ask", {
+                                          price: recurringPriceText(
+                                            recurringAsk,
+                                            lang,
+                                          ),
+                                          every,
+                                        })}
+                                      </span>
+                                      <button
+                                        type="button"
+                                        class="cust-create__btn cust-create__btn--primary"
+                                        data-testid="wiz-recurring-bill"
+                                        disabled={sending}
+                                        onClick={() =>
+                                          // no cadence stated → the form asks
+                                          prefill.customValue
+                                            ? postWizardAnswer(m, {
+                                              stepId: payload.stepId!,
+                                              optionId: prefill.optionId,
+                                              customValue: prefill.customValue,
+                                            })
+                                            : setRecurringPick({
+                                              messageId: m.id,
+                                              optionId: prefill.optionId,
+                                            })}
+                                      >
+                                        {tFor(lang, "asstChat.recurring.bill", {
+                                          every,
+                                        })}
+                                      </button>
+                                    </div>
+                                  )
+                                  : null}
+                                {showPrefill && prefill && prefillOpt &&
+                                    !recurringAsk
                                   ? (
                                     <div
                                       class="wiz-prefill"
@@ -9285,6 +9387,16 @@ export default function AsstChat({
                                           payload.stepId === "wraps"
                                         ) {
                                           setCustomDurationPick({
+                                            messageId: m.id,
+                                            optionId: opt.id,
+                                          });
+                                          return;
+                                        }
+                                        if (
+                                          opt.id === RECURRING_OPTION_ID &&
+                                          payload.stepId === "payment_terms"
+                                        ) {
+                                          setRecurringPick({
                                             messageId: m.id,
                                             optionId: opt.id,
                                           });

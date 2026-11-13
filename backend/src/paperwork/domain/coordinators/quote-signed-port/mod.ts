@@ -7,6 +7,9 @@ export interface QuoteSignedEvent {
   /** the first invoice the signature billed and sent (SendSignedConfirmation's
    *  `invoiceId`); absent when nothing is due yet (payment after completion) */
   invoiceId?: string;
+  /** REQ-699: the Field subscription that bills a recurring quote each
+   *  period (SendSignedConfirmation's `subscriptionId`) */
+  subscriptionId?: string;
 }
 
 export type QuoteSignedFn = (e: QuoteSignedEvent) => Promise<unknown>;

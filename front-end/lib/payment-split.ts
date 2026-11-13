@@ -18,6 +18,7 @@
  * (aliased as `#payment-split` in backend/deno.json). Display labels and
  * localization stay with each consumer — only the MONEY lives here.
  */
+import { parseRecurringTerm } from "../../shared/quote-flow/recurring-billing.ts";
 
 export type MilestoneRole =
   | "deposit"
@@ -52,6 +53,14 @@ export function computePaymentSplit(
 ): PaymentSplitPart[] {
   const v = (termValue ?? "").trim().toLowerCase();
   if (!v || !Number.isFinite(totalCents) || totalCents <= 0) return [];
+
+  // 0. REQ-699 (demo-loop cycle 5, M20): a recurring term ("Every 2 weeks ·
+  //    $1,098/2 wks") is no split — its "1,098/2" read as 98 / 2. Its periods
+  //    are billed by the Field subscription the signature makes; as a split
+  //    it is the one full amount.
+  if (parseRecurringTerm(termValue)) {
+    return [{ role: "full", pct: 100, amountCents: totalCents }];
+  }
 
   // 1. Explicit percentage split: "30 / 30 / 40", "50/50", "25, 25, 50".
   const numbers = v

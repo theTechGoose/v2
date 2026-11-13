@@ -6,6 +6,10 @@ import { QuoteStore } from "@paperwork/domain/data/quote-store/mod.ts";
 import { UserStore } from "@users/domain/data/user-store/mod.ts";
 import { EventBus } from "@core/business/events/mod.ts";
 import { isAccepted } from "#quote-flow/quote-status.ts";
+import {
+  recurringFromTerms,
+  recurringTermText,
+} from "#quote-flow/recurring-billing.ts"; // REQ-699
 import { InvoiceStore } from "@paperwork/domain/data/invoice-store/mod.ts";
 import {
   type QuoteSignedEvent,
@@ -81,14 +85,21 @@ export class AcceptQuote {
     const invoice = e.invoiceId && this.invoices
       ? await this.invoices.getOwned(e.invoiceId, e.userId).catch(() => null)
       : null;
+    // REQ-699 (demo-loop cycle 5, M20): a recurring quote bills no invoice at
+    // signing — the divider says what Field → Subscriptions bills instead,
+    // only when the signature did make that subscription.
+    const recurring = !invoice && e.subscriptionId
+      ? recurringFromTerms(quote.terms)
+      : null;
     const vars = {
       name: quote.acceptedName?.trim() || t(lang, "acceptQuote.signed.someone"),
       quote: quote.number?.trim() || t(lang, "acceptQuote.signed.theQuote"),
       invoice: invoice?.number ?? "",
       amount: fmtUSD(invoice?.amount),
+      billing: recurring ? recurringTermText(recurring, lang) : "",
     };
     const key = !invoice
-      ? "acceptQuote.signed.plain"
+      ? recurring ? "acceptQuote.signed.recurring" : "acceptQuote.signed.plain"
       : (invoice.installmentTotal ?? 1) > 1
       ? "acceptQuote.signed.deposit"
       : "acceptQuote.signed.invoice";

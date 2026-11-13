@@ -179,3 +179,23 @@ Deno.test("REQ-157 scheduleText — the picked days in words, singular and plura
     "Monthly · day 5",
   );
 });
+
+// REQ-699 (demo-loop cycle 5, M20): a quote's recurring term may end — the
+// subscription it became bills nothing after that day.
+Deno.test("REQ-699 isDue: nothing is due after the subscription's endDate", () => {
+  const ending = sub({
+    cadence: "monthly",
+    startDate: "2026-11-19",
+    endDate: "2027-01-31",
+  });
+  assertEquals([
+    isDue(ending, "2026-12-19"),
+    isDue(ending, "2027-01-19"),
+    isDue(ending, "2027-02-19"),
+  ], [true, true, false]);
+  const weekly = sub({ startDate: "2026-11-16", endDate: "2026-11-23" });
+  assertEquals([
+    isDue(weekly, "2026-11-23"),
+    isDue(weekly, "2026-11-30"),
+  ], [true, false]);
+});

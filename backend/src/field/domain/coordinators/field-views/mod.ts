@@ -4,6 +4,7 @@ import { CustomerStore } from "@crm/domain/data/customer-store/mod.ts";
 import { InvoiceStore } from "@paperwork/domain/data/invoice-store/mod.ts";
 import { FieldWorkerStore, RegionStore, SubscriptionStore, TaskTypeStore } from "@field/domain/data/field-stores/mod.ts";
 import { scheduleText } from "@field/domain/business/schedule/mod.ts";
+import { subscriptionBilling } from "@field/domain/business/quote-subscription/mod.ts"; // REQ-699
 import { workerView } from "@field/domain/business/tasks/mod.ts";
 import type { FieldTask, FieldWorker, Region, Subscription } from "@field/dto/field.ts";
 
@@ -56,11 +57,13 @@ export class FieldViews {
   }
 
   subscription(s: Subscription, n: Names) {
+    const billing = subscriptionBilling(s); // REQ-699: a quote's "Monthly · $180/mo"
     return {
       ...s,
       customerName: n.customer(s.customerId),
       region: n.region(s.regionId),
       schedule: { es: scheduleText(s, "es"), en: scheduleText(s, "en") },
+      ...(billing ? { billing } : {}),
       items: s.items.map((i) => ({ ...i, taskTypeName: n.type(i.taskTypeId) })),
     };
   }

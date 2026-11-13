@@ -8,6 +8,11 @@ import type { Customer } from "@crm/dto/customer.ts";
 import type { User } from "@users/dto/user.ts";
 import { isAccepted } from "#quote-flow/quote-status.ts";
 import { isTbdTermValue } from "#quote-flow/terms-i18n.ts";
+import {
+  localizeRecurringTerm,
+  parseRecurringTerm,
+  recurringScheduleRow,
+} from "#quote-flow/recurring-billing.ts"; // REQ-699
 import { agreementClauses } from "#documents/warranty-clause.ts";
 import {
   formatTermDate,
@@ -936,6 +941,10 @@ function termValue(
  *  ("12 months" → "12 meses"); custom free-text and universal ratios
  *  ("50/50") pass through unchanged. */
 export function localizeTermValue(value: string, lang: "en" | "es"): string {
+  // REQ-699 (demo-loop cycle 5, M20): a recurring term in the reader's
+  // language — "Mensual · $180/mes · hasta el 30 jun 2027".
+  const recurring = localizeRecurringTerm(value, lang);
+  if (recurring) return recurring;
   // REQ-495 (m17): a picked start date (ISO, or a legacy MM/DD/YYYY) prints
   // in the reader's language — "1 dic 2026" / "Dec 1, 2026".
   if (termDateIso(value)) return formatTermDate(value, lang);
@@ -997,6 +1006,10 @@ function computeMilestones(
     full: { label: L.final, when: L.onCompletion },
   };
   const term = termValue(terms, "payment_terms");
+  // REQ-699: a recurring term bills each period — one "Monthly $180.00 ·
+  // Billed every month" box, never "Final … On completion".
+  const recurring = parseRecurringTerm(term);
+  if (recurring) return [recurringScheduleRow(recurring, lang)];
   // "Due Now" terms collapse to a single full payment — but it's owed at
   // signing, not "on completion".
   const dueNow = /\bdue now\b/i.test(term ?? "");

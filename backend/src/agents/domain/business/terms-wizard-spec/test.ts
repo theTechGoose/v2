@@ -84,7 +84,12 @@ Deno.test("REQ-024 NW-13/18 INVOICE_WIZARD_V1: customer → completion_date → 
   const q = (id: string) => TERMS_WIZARD_V1.steps.find((s) => s.id === id)!;
   const i = (id: string) => INVOICE_WIZARD_V1.steps.find((s) => s.id === id)!;
   assertEquals(i("customer").options, q("customer").options);
-  assertEquals(i("payment_terms").options, q("payment_terms").options);
+  // REQ-699: an invoice bills done work once — the quote's payment options
+  // without Recurring (the same option objects otherwise).
+  assertEquals(
+    i("payment_terms").options,
+    q("payment_terms").options.filter((o) => o.id !== "recurring"),
+  );
   assertEquals(i("warranty").options, q("warranty").options);
 });
 

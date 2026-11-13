@@ -16,8 +16,13 @@ import {
   formatTermDate,
   termDateIso,
 } from "../../shared/quote-flow/format-helpers.ts";
+import { localizeRecurringTerm } from "../../shared/quote-flow/recurring-billing.ts";
 
 export function localizeTermValue(value: string, lang: Lang): string {
+  // REQ-699 (demo-loop cycle 5, M20): a recurring term reads in the reader's
+  // language, its last day too — "Mensual · $180/mes · hasta el 30 jun 2027".
+  const recurring = localizeRecurringTerm(value, lang);
+  if (recurring) return recurring;
   // REQ-495 (m17): a picked start date is stored ISO (older quotes carry
   // MM/DD/YYYY) — read it in the reader's language, in both languages.
   if (termDateIso(value)) return formatTermDate(value, lang);

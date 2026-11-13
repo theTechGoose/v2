@@ -23,6 +23,7 @@
 import type { WizardStep } from "@agents/dto/wizard.ts";
 import { type Lang, t } from "@core/i18n/mod.ts";
 import { formatTermDate } from "#quote-flow/format-helpers.ts";
+import { localizeRecurringTerm } from "#quote-flow/recurring-billing.ts"; // REQ-699
 import {
   extractPaymentTerms,
   wizardPrefillFor,
@@ -514,6 +515,9 @@ const ES_UNITS: [RegExp, string][] = [
  *  language ("23 nov 2026"), a duration's units in Spanish ("2.5 semanas"). */
 export function termValueText(value: string, lang: Lang): string {
   const v = (value ?? "").trim();
+  // REQ-699: "Pago: Mensual · $180/mes" — a recurring term in their language.
+  const recurring = localizeRecurringTerm(v, lang);
+  if (recurring) return recurring;
   const dated = formatTermDate(v, lang);
   if (dated !== v || lang !== "es") return dated;
   if (v === "Half a day") return t(lang, "termsWizard.wraps.halfDay");

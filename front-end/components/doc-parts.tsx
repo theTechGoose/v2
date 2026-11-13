@@ -26,6 +26,10 @@ import { localizeTermValue } from "../lib/term-i18n.ts";
 import { formatLongDate } from "../../shared/quote-flow/format-helpers.ts";
 import { websiteLabel } from "../../shared/quote-flow/format-helpers.ts";
 import { isTbdTermValue } from "../../shared/quote-flow/terms-i18n.ts";
+import {
+  parseRecurringTerm,
+  recurringScheduleRow,
+} from "../../shared/quote-flow/recurring-billing.ts"; // REQ-699
 import { isNoWarrantyValue } from "../../shared/documents/warranty-clause.ts";
 
 /* ---------- palette ---------- */
@@ -370,6 +374,11 @@ export function computeMilestones(
     full: { label: L.final, when: L.onCompletion },
   };
   const term = termValue(terms, "payment_terms");
+  // REQ-699 (demo-loop cycle 5, M20): a recurring term bills each period —
+  // one "Monthly $180.00 · Billed every month" row, never "Final … On
+  // completion".
+  const recurring = parseRecurringTerm(term);
+  if (recurring) return [recurringScheduleRow(recurring, lang)];
   const dueNow = /\bdue now\b/i.test(term ?? "");
   return computePaymentSplit(term, total).map((p) => ({
     ...roleLabel[p.role],

@@ -13,6 +13,11 @@
  * island (with .ts) and the Jest unit suite. Translation is injected.
  */
 import { isTbdTermValue } from "./terms-i18n.ts";
+import {
+  parseRecurringTerm,
+  RECURRING_OPTION_ID,
+  recurringTermValue,
+} from "./recurring-billing.ts";
 
 export interface WizardOptionDef {
   id: string;
@@ -136,6 +141,17 @@ export const TERMS_WIZARD_V1: WizardSpecDef = {
           subAmounts: "termsWizard.paymentTerms.depositBalance.subAmounts",
         },
         {
+          // REQ-699 (demo-loop cycle 5, M20): "¿y cobro MENSUAL? No hay
+          // opción de mensual" — weekly / every 2 weeks / monthly, an amount
+          // per period and an optional end (RecurringPaymentForm). Its value
+          // is the recurring term's English base ("Monthly · $180/mo"); the
+          // signature makes the Field subscription that bills each period.
+          id: RECURRING_OPTION_ID,
+          label: "termsWizard.paymentTerms.recurring.label",
+          sub: "termsWizard.paymentTerms.recurring.sub",
+          isCustom: true,
+        },
+        {
           id: "custom",
           label: "termsWizard.paymentTerms.custom.label",
           sub: "termsWizard.paymentTerms.custom.sub",
@@ -168,6 +184,16 @@ function sharedStep(id: string): WizardStepDef {
   const step = TERMS_WIZARD_V1.steps.find((s) => s.id === id);
   if (!step) throw new Error(`terms wizard has no step "${id}"`);
   return step;
+}
+
+/** REQ-699: the payment step without the Recurring option — the same
+ *  option objects otherwise. */
+function oneOffPaymentStep(): WizardStepDef {
+  const step = sharedStep("payment_terms");
+  return {
+    ...step,
+    options: step.options.filter((o) => o.id !== RECURRING_OPTION_ID),
+  };
 }
 
 /**
@@ -228,7 +254,8 @@ export const INVOICE_WIZARD_V1: WizardSpecDef = {
         },
       ],
     },
-    sharedStep("payment_terms"),
+    // REQ-699: an invoice bills work that is done, once — no Recurring.
+    oneOffPaymentStep(),
     sharedStep("warranty"),
   ],
 };
@@ -265,9 +292,15 @@ export function termFromPick(
       candidates[0];
   if (!stepDef) return null;
   const optionDef = stepDef.options.find((o) => o.id === pick.optionId);
-  const value = (!optionDef || optionDef.isCustom)
+  let value = (!optionDef || optionDef.isCustom)
     ? (pick.customValue ?? "").trim()
     : t("en", optionDef.label);
+  // REQ-699: a recurring term is stored as its English base — a value that
+  // reads as no schedule is not a term at all.
+  if (optionDef?.id === RECURRING_OPTION_ID) {
+    const recurring = parseRecurringTerm(value);
+    value = recurring ? recurringTermValue(recurring) : "";
+  }
   if (!value) return null;
   return { stepId: pick.stepId, label: t("en", stepDef.label), value };
 }

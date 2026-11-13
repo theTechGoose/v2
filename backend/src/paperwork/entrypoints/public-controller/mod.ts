@@ -896,6 +896,10 @@ export class PaperworkPublicController {
       userId: existing.userId,
       quoteId: updated.id,
       ...(confirmed?.invoiceId ? { invoiceId: confirmed.invoiceId } : {}),
+      // REQ-699: or the Field subscription that bills it each period
+      ...(confirmed?.subscriptionId
+        ? { subscriptionId: confirmed.subscriptionId }
+        : {}),
     });
     return ctx.json({ ok: true, quoteId: updated.id });
   }
