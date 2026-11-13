@@ -3923,6 +3923,7 @@
   "nav.batches": "Lotes",
   "nav.workers": "Trabajadores",
   "nav.workerView": "Vista del trabajador",
+  "nav.addWorker": "Agregar trabajador",
   "nav.admins": "Editores",
   "nav.actingIn": "En la cuenta de {label}",
   "nav.switchAccount": "Cambiar de cuenta",

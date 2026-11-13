@@ -3924,6 +3924,7 @@
   "nav.batches": "Batches",
   "nav.workers": "Workers",
   "nav.workerView": "Worker view",
+  "nav.addWorker": "Add a worker",
   "nav.admins": "Editors",
   "nav.actingIn": "In {label}'s account",
   "nav.switchAccount": "Switch account",
