@@ -32,6 +32,7 @@ import {
 } from "../lib/field.ts";
 import { lockLabelKey, NOTE_SAVED_MS } from "../lib/field-batches.ts";
 import { WORKERS_PAGE_HREF } from "../lib/worker-view-link.ts";
+import { workerTodayKey } from "../lib/worker-today.ts";
 import { refreshTickDue } from "../lib/refresh-tick.ts";
 import {
   startWorkerRefresh,
@@ -1001,7 +1002,10 @@ export default function WorkerScreen(
               </>
             )}
             <small>
-              {dayLine()} · {t("worker.today", { done, n: liveTasks.length })}
+              {dayLine()} · {t(workerTodayKey(liveTasks.length), {
+                done,
+                n: liveTasks.length,
+              })}
             </small>
           </div>
           {nav && (

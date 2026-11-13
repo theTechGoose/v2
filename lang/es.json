@@ -4042,6 +4042,8 @@
   "worker.locked": "Demasiados intentos — espera un minuto.",
   "worker.hello": "Hola, {name} 👋",
   "worker.today": "{done} de {n} tareas listas",
+  "worker.today.one": "{done} de {n} tarea lista",
+  "worker.today.none": "Sin tareas hoy",
   "worker.none": "No tienes tareas este día.",
   "worker.done": "Listo",
   "worker.notePh": "Nota para la oficina (portón, perro, extra…)",
