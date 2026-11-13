@@ -642,7 +642,12 @@ export default function InvoicesPage(_props: { lang?: Lang }) {
       url.searchParams.set("open", id);
       url.searchParams.delete("pay");
       history.replaceState(null, "", url.toString());
-      globalThis.scrollTo({ top: 0, behavior: "smooth" });
+      // REQ-552 AMENDMENT (reconciled with develop on demo-fixes): the app
+      // shell scrolls inside `.content`, not the window — scroll that.
+      document.querySelector(".content")?.scrollTo({
+        top: 0,
+        behavior: "smooth",
+      });
     } catch { /* history unavailable — the panel still opens */ }
   }
   // REQ-627/629: multi-select — bulk Delete / Void, and one PDF to print
@@ -2672,7 +2677,7 @@ function InvoiceDetail(
         {/* REQ-626: what the customer sees stays one click away */}
         <a
           data-cy="invoice-detail-view-as-customer"
-          href={`/i/${inv.id}`}
+          href={invoiceLinkPath(inv.id, inv.lang)} // REQ-586
           target="_blank"
           rel="noopener"
           style={`${secondaryBtn};text-decoration:none;display:inline-flex;align-items:center`}
@@ -4596,7 +4601,7 @@ function InvoiceCard(
           </button>
           <a
             data-cy="invoice-view-as-customer"
-            href={`/i/${inv.id}`}
+            href={invoiceLinkPath(inv.id, inv.lang)} // REQ-586
             target="_blank"
             rel="noopener"
             onClick={(e) => e.stopPropagation()}
@@ -5889,11 +5894,10 @@ function NewInvoiceModal(
             type="button"
             data-cy="new-invoice-line-add"
             disabled={busy}
-            onClick={() =>
-              setLines((ls) => [
-                ...ls,
-                { description: "", quantity: "1", unit: "", price: "" },
-              ])}
+            onClick={() => setLines((ls) => [
+              ...ls,
+              { description: "", quantity: "1", unit: "", price: "" },
+            ])}
             style="appearance:none;cursor:pointer;background:none;border:1px dashed var(--border,#d8dcd5);border-radius:8px;padding:7px 12px;font:inherit;font-size:13px;font-weight:700;color:var(--brand-teal,#144852)"
           >
             {tFor(lang, "invoices.form.addLine")}

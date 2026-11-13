@@ -90,7 +90,7 @@ function withLanguage(snap: CachedDash, lang: "en" | "es"): CachedDash {
       profile: { ...snap.profile!, actor: { ...actor, language: lang } },
     };
   }
-  if (!user || user.language === lang) return snap;
+  if (!user || personLanguage(user) === lang) return snap;
   return {
     ...snap,
     profile: { ...snap.profile!, user: { ...user, language: lang } },

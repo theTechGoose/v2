@@ -403,7 +403,11 @@ export default define.page(async function PublicChangeOrder(ctx) {
               </article>
             )}
         </div>
-        <SiteFooter lang={lang} document />
+        {
+          /* REQ-573 AMENDMENT (reconciled with develop on demo-fixes): REQ-628 —
+            no DocuMonster credit on a customer document, footer included */
+        }
+        <SiteFooter lang={lang} document credited />
       </div>
     </>
   );

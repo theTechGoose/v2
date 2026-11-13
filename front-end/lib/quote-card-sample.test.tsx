@@ -62,9 +62,26 @@ Deno.test("REQ-360 m11: the sample card's back offers no Resend and no Copy link
   );
 });
 
-Deno.test("REQ-360 m11: no card carries a dead Resend button; a real card keeps Copy link", () => {
+Deno.test("REQ-360 m11: no card carries a dead Resend button; a real card keeps Copy link", async () => {
   const labels = backButtons(base);
-  assertEquals(labels.includes(en["quoteCard.back.resend"]), false);
+  // REQ-360 AMENDMENT — reconciled with develop on demo-fixes: develop's
+  // REQ-626 gives a real card a WORKING Resend (it calls resendQuote), so the
+  // rule is "never a dead one": the button exists only wired to onResend.
+  if (labels.includes(en["quoteCard.back.resend"])) {
+    const src = await Deno.readTextFile(
+      new URL("../islands/QuoteCard.tsx", import.meta.url),
+    );
+    assert(
+      /data-cy="qcard-resend"\s*onClick=\{onResend\}/.test(src),
+      "Resend is wired to onResend",
+    );
+    assert(
+      /async function onResend[\s\S]{0,300}await resendQuote\(q\.id\)/.test(
+        src,
+      ),
+      "onResend really re-sends the quote",
+    );
+  }
   assert(labels.includes(en["quoteCard.back.copyLink"]), labels.join(" | "));
   assert(labels.includes(en["quoteCard.back.open"]), labels.join(" | "));
 });

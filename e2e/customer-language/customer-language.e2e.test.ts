@@ -123,7 +123,7 @@ Deno.test("REQ-715 m31: a customer saved as Spanish-speaking keeps it — the ca
       "button.ph2__cta",
       async () => (await modal.count()) > 0,
     );
-    const language = modal.locator("[data-cy='add-client-language']");
+    const language = modal.locator("[data-cy='cf-language']");
     expect.eq(
       await language.count(),
       1,

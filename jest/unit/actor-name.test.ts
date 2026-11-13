@@ -74,7 +74,11 @@ describe("REQ-624 every person-named surface reads through the helper", () => {
 
   test("the sidebar user block + initials name the person; the business line stays the business", () => {
     const src = read("front-end/islands/DashSidebar.tsx");
-    expect(src).toMatch(/personName\(/);
+    // REQ-624 AMENDMENT — reconciled with develop on demo-fixes: the sidebar
+    // words its identity through demo-fixes' sidebarIdentity (REQ-423/712),
+    // which names the person through personName
+    expect(src).toMatch(/sidebarIdentity\(s\.profile/);
+    expect(read("front-end/lib/greeting-identity.ts")).toMatch(/personName\(/);
     expect(src).not.toMatch(/profile\?\.user\.name/);
     expect(src).toMatch(/<ActorNamePrompt/);
   });

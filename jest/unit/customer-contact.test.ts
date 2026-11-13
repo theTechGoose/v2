@@ -93,15 +93,13 @@ describe("REQ-278 M16: both customer forms use the shared rule", () => {
     expect(src).toMatch(/submitDisabled[^;]*feedback\.canSubmit/s);
   });
   test("REQ-278 the /customers Add modal refuses a bad contact before POST", () => {
-    const src = read("front-end/islands/ClientsPage.tsx");
-    expect(src).toMatch(
-      /from "\.\.\/\.\.\/shared\/quote-flow\/customer-contact\.ts"/,
-    );
-    // REQ-352 amends: the modal asks the same rule per field
-    // (customerFormErrors, through its errorsFor helper) before POST.
-    expect(src).toMatch(/customerFormErrors\(/);
-    const submit = src.slice(src.indexOf("async function submitAddClient"));
-    const check = submit.indexOf("errorsFor(");
+    // REQ-278 AMENDMENT — reconciled with develop on demo-fixes: the Add
+    // modal is develop's shared CustomerFormDialog (REQ-625); it runs its
+    // field rule (validateCustomerForm) and stops before POST on a bad contact.
+    const src = read("front-end/components/CustomerForm.tsx");
+    expect(src).toMatch(/validateCustomerForm\(/);
+    const submit = src.slice(src.indexOf("async function submit("));
+    const check = submit.indexOf("if (invalid || busy) return;");
     const post = submit.indexOf("clientsClient.create(");
     expect(check).toBeGreaterThan(-1);
     expect(check).toBeLessThan(post);

@@ -101,7 +101,7 @@ describe("REQ-631 every UI-language read goes through the helper", () => {
     // switch, which the dashboard cache seeds from personLanguage (above);
     // the sidebar names the person (her name) through sidebarIdentity's actor.
     expect(read("front-end/islands/DashSidebar.tsx")).toMatch(/langSignal\.value/);
-    expect(read("front-end/lib/greeting-identity.ts")).toMatch(/actor\.needsName \? undefined : actor\.name/);
+    expect(read("front-end/lib/greeting-identity.ts")).toMatch(/personName\(/);
     const s = read("front-end/islands/SettingsPage.tsx");
     expect(s).toMatch(/const lang: Lang = langSignal\.value === "es" \? "es" : "en";/);
     expect(s).toMatch(/\[t\.language, lang === "es" \? t\.spanish : t\.english\]/);

@@ -70,6 +70,7 @@ import { ApiError } from "../lib/api.ts";
 import { fmtPhone } from "../lib/format.ts";
 import { TransferAccount } from "../components/TransferAccount.tsx"; // REQ-220
 import {
+  accountLanguage,
   editableName,
   personName,
 } from "../../shared/person-name/mod.ts"; // REQ-624
@@ -775,7 +776,7 @@ function EditCard(
                 // own language (a Spanish signup sends in English and Spanish).
                 const selected: string[] = sendLanguagesOf(
                   snapshot.identity,
-                  snapshot.user.language,
+                  accountLanguage(snapshot.user),
                 );
                 const on = selected.includes(lng.code);
                 return (
@@ -823,7 +824,7 @@ function EditCard(
           <span style="display:block;margin-top:4px;font-size:12px;color:var(--fg-muted)">
             {t.commsLangHint}
           </span>
-          {sendLanguagesOf(snapshot.identity, snapshot.user.language)
+          {sendLanguagesOf(snapshot.identity, accountLanguage(snapshot.user))
               .length === 1
             ? (
               <span
@@ -1879,7 +1880,13 @@ function CardPaymentsCard({ snapshot }: { snapshot: ProfileSnapshot }) {
           >
             <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
               <span style="font-weight:800;font-size:14px;color:var(--brand-green,#519843)">
-                ✓ {tFor(lang, "settings.stripe.connected")}
+                <Icon
+                  name="check"
+                  size={14}
+                  stroke-width={3}
+                  style="vertical-align:-2px"
+                />{" "}
+                {tFor(lang, "settings.stripe.connected")}
               </span>
               <span style="font-weight:700;font-size:14px;color:var(--fg)">
                 {connected.accountName}
@@ -1984,7 +1991,7 @@ function CardPaymentsCard({ snapshot }: { snapshot: ProfileSnapshot }) {
               aria-hidden="true"
               style="width:44px;height:44px;border-radius:10px;background:#144852;color:#fff;display:grid;place-items:center;font-size:18px"
             >
-              ▣
+              <Icon name="receipt" size={20} />
             </span>
           )}
         <div>

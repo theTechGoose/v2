@@ -47,7 +47,10 @@ describe("REQ-355 the sign-in placeholder is never shown as a name", () => {
 
   test("REQ-355 /admin's greeting goes through greetingFirstName", () => {
     expect(read("front-end/routes/admin/index.tsx")).toMatch(
-      /greetingName\s*=\s*greetingFirstName\(user\?\.name\)/,
+      // REQ-355 AMENDMENT (reconciled with develop's REQ-624 on demo-fixes):
+      // shared/person-name's greetingFirstName(user) — the person signed in,
+      // never the placeholder
+      /greetingName\s*=\s*greetingFirstName\(user(\?\.name)?\)/,
     );
   });
 });

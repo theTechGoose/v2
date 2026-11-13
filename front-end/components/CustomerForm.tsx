@@ -17,6 +17,7 @@
 import { useState } from "preact/hooks";
 import { clientsClient, type CustomerCard } from "../clients/clients.ts";
 import AddressAutocomplete from "./AddressAutocomplete.tsx"; // REQ-599
+import Backdrop from "./Backdrop.tsx"; // REQ-354
 import CustomerLanguageSelect, {
   type CustomerLanguageValue,
   customerLanguageValue,
@@ -180,26 +181,28 @@ export function CustomerFields(
       })}
       {shows("businessName") &&
         field("businessName", "cf-business", "customerForm.business", {
-        autoComplete: "organization",
-      })}
+          autoComplete: "organization",
+        })}
       {(shows("phone") || shows("email")) && (
         <div style={PAIR}>
-        {shows("phone") && field("phone", "cf-phone", "customerForm.phone", {
-          type: "tel",
-          autoComplete: "tel",
-          bad: errorText(lang, errors, "phone"),
-        })}
-        {shows("email") && field("email", "cf-email", "customerForm.email", {
-          type: "email",
-          autoComplete: "email",
-          bad: errorText(lang, errors, "email"),
-        })}
-      </div>
+          {shows("phone") && field("phone", "cf-phone", "customerForm.phone", {
+            type: "tel",
+            autoComplete: "tel",
+            bad: errorText(lang, errors, "phone"),
+          })}
+          {shows("email") && field("email", "cf-email", "customerForm.email", {
+            type: "email",
+            autoComplete: "email",
+            bad: errorText(lang, errors, "email"),
+          })}
+        </div>
       )}
       {!asst && shows("street") && (
         <div style={SECTION}>{tFor(lang, "customerForm.addressHeading")}</div>
       )}
-      {!shows("street") ? null : asst
+      {!shows("street")
+        ? null
+        : asst
         ? field("street", "cf-street", "customerForm.street", {
           autoComplete: "address-line1",
         })
@@ -326,14 +329,19 @@ export default function CustomerFormDialog(
   }
 
   return (
-    <div
+    // REQ-354/732/289 AMENDMENT (reconciled with develop on demo-fixes): the
+    // New/Edit customer modal is develop's dialog now — on the shared <Backdrop>
+    // (a dirty draft survives a stray click, REQ-300; Escape closes unless saving)
+    <Backdrop
       data-cy="customer-form-backdrop"
-      onClick={() => !busy && !dirty && onClose()}
+      onClose={() => !busy && !dirty && onClose()}
+      onEscape={() => !busy && onClose()}
       style="position:fixed;inset:0;background:rgba(20,40,45,0.45);display:flex;align-items:flex-start;justify-content:center;z-index:1100;padding:20px 12px;overflow-y:auto"
     >
       <form
         role="dialog"
         aria-modal="true"
+        aria-labelledby="customer-form-title"
         data-cy="customer-form"
         data-mode={mode}
         noValidate
@@ -341,7 +349,10 @@ export default function CustomerFormDialog(
         onSubmit={submit}
         style="background:#fff;border-radius:16px;padding:22px 20px;max-width:520px;width:100%;box-sizing:border-box;box-shadow:0 24px 64px rgba(20,72,82,0.22);display:flex;flex-direction:column;gap:14px;margin:auto 0"
       >
-        <h2 style="margin:0;font-size:20px;font-weight:800;color:var(--fg,#144852)">
+        <h2
+          id="customer-form-title"
+          style="margin:0;font-size:20px;font-weight:800;color:var(--fg,#144852)"
+        >
           {mode === "edit"
             ? tFor(lang, "customerForm.titleEdit")
             : tFor(lang, "customerForm.titleNew")}
@@ -399,7 +410,7 @@ export default function CustomerFormDialog(
           </button>
         </div>
       </form>
-    </div>
+    </Backdrop>
   );
 }
 

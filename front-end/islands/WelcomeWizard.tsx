@@ -25,7 +25,10 @@
  * adds entries to STEPS without touching the engine.
  */
 import type { ComponentChildren } from "preact";
-import { personLanguage } from "../../shared/person-name/mod.ts"; // REQ-631
+import {
+  accountLanguage,
+  personLanguage,
+} from "../../shared/person-name/mod.ts"; // REQ-631
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import { type Lang, langSignal, persistLang } from "../lib/lang.ts";
 import { setLang, t } from "../lib/i18n.ts";
@@ -41,7 +44,10 @@ import {
   profileClient,
   type ProfileSnapshot,
 } from "../clients/profile.ts";
-import { canSkipSetup, isAnswered } from "../../shared/quote-flow/onboarding-questions.ts";
+import {
+  canSkipSetup,
+  isAnswered,
+} from "../../shared/quote-flow/onboarding-questions.ts";
 import { isPlaceholderName } from "../../shared/quote-flow/outbound-identity.ts";
 import {
   ONBOARDING_PLANS,
@@ -56,7 +62,12 @@ import {
   planViewOf,
   resumesAfterPlan,
 } from "../lib/plan-return.ts";
-import { nextIndex, openSteps, startIndex, stepCounter } from "../lib/welcome-steps.ts";
+import {
+  nextIndex,
+  openSteps,
+  startIndex,
+  stepCounter,
+} from "../lib/welcome-steps.ts";
 import { filesClient } from "../clients/files.ts";
 import {
   isLogoImageType,
@@ -407,7 +418,9 @@ function BusinessNameStep({ ctx }: { ctx: StepCtx }) {
         )
         : null}
       <fieldset class="welcome__send-in">
-        <legend class="welcome__send-in-label">{t("settings.commsLang")}</legend>
+        <legend class="welcome__send-in-label">
+          {t("settings.commsLang")}
+        </legend>
         <div class="welcome__send-in-options">
           {([["en", "settings.english"], ["es", "settings.spanish"]] as const)
             .map(([code, key]) => (
@@ -1498,7 +1511,7 @@ export default function WelcomeWizard(
   // REQ-498 — the languages this visit has seen, starting with the account's own
   const [languagesSeen, setLanguagesSeen] = useState<CommsLang[]>(() =>
     onboardingLanguagesSeen(
-      onboardingLanguagesSeen([], snapshot.user.language),
+      onboardingLanguagesSeen([], accountLanguage(snapshot.user)),
       initialLang,
     )
   );
@@ -1553,7 +1566,8 @@ export default function WelcomeWizard(
   // the cookie/localStorage agree and other pages render the same language.
   useEffect(() => {
     const stored = globalThis.localStorage?.getItem("pm:lang") as Lang | null;
-    const resolved = initialLang ?? personLanguage(snapshot.user, snapshot.actor) ?? stored ?? "en"; // REQ-631
+    const resolved = initialLang ??
+      personLanguage(snapshot.user, snapshot.actor) ?? stored ?? "en"; // REQ-631
     langSignal.value = resolved;
     persistLang(resolved);
     const unsub = langSignal.subscribe(() => force((n) => n + 1));
@@ -1576,7 +1590,8 @@ export default function WelcomeWizard(
     suggestedState,
     patchSnap: (partial) => setSnap((prev) => ({ ...prev, ...partial })),
     // REQ-121 / REQ-427: forward stops only on the steps open when the wizard opened
-    advance: () => setIndex((i) => nextIndex(registry, open, i, reached.current)),
+    advance: () =>
+      setIndex((i) => nextIndex(registry, open, i, reached.current)),
     skip: () => {
       if (skipping) return;
       setSkipping(true);

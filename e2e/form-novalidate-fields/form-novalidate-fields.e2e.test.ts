@@ -97,8 +97,8 @@ Deno.test("REQ-708 c1-setup-m15: New invoice → + New client with 'bob@@gmail' 
     await page.goto("/invoices?new=1");
     const modal = page.locator("[data-cy='new-invoice-modal']");
     await modal.waitFor({ timeout: 20_000 });
-    const newName = "[data-cy='new-invoice-new-name']";
-    const newEmail = "[data-cy='new-invoice-new-email']";
+    const newName = "[data-cy='cf-name']";
+    const newEmail = "[data-cy='cf-email']";
     await until(
       page,
       async () => {

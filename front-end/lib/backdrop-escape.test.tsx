@@ -173,10 +173,18 @@ Deno.test("REQ-732 m26: ClientsPage drops its own Escape listener — its Backdr
     !/addEventListener\(\s*["']keydown["']/.test(s),
     "ClientsPage still registers its own keydown listener (Escape would fire twice)",
   );
+  // REQ-732 AMENDMENT — reconciled with develop on demo-fixes: the modal is
+  // develop's CustomerFormDialog (REQ-625); its <Backdrop> owns Escape
   const modal = s.slice(s.indexOf("{addOpen && ("));
   assert(
-    /<Backdrop[\s\S]{0,900}onEscape=\{\(\) => !adding && setAddOpen\(false\)\}/
+    /^\{addOpen && \(\s*<CustomerFormDialog[\s\S]{0,300}onClose=\{\(\) => setAddOpen\(false\)\}/
       .test(modal),
+    "ClientsPage opens the shared CustomerFormDialog",
+  );
+  const form = src("../components/CustomerForm.tsx");
+  assert(
+    /<Backdrop[\s\S]{0,400}onEscape=\{\(\) => !busy && onClose\(\)\}/
+      .test(form),
     "the New customer Backdrop closes on Escape unless the save is in flight",
   );
 });

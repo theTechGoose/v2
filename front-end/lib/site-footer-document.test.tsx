@@ -133,20 +133,25 @@ Deno.test("REQ-573 p4-p3c: an uncredited document footer still credits DocuMonst
   );
 });
 
-Deno.test("REQ-573 p4-p3c: /q and /i (their body credits DocuMonster) pass `credited`; /co (it does not) keeps the footer's credit", () => {
-  assertMatch(
-    read("components/quote-doc.tsx"),
-    /\{t\.poweredBy\} \{docNumber\}/,
-  );
-  assertMatch(read("routes/i/[id].tsx"), /public\.doc\.poweredByInvoice/);
-  for (const r of ["routes/q/[id].tsx", "routes/i/[id].tsx"]) {
-    assertMatch(read(r), /<SiteFooter lang=\{lang\} document credited \/>/, r);
-  }
-  const co = read("routes/co/[id].tsx");
+// REQ-573 AMENDMENT — reconciled with develop on demo-fixes: develop's REQ-628
+// ("their logo, not ours") removed the "Powered by DocuMonster" credit from
+// every customer document — the quote-doc and /i bodies and the footers. So
+// /q, /i AND /co all pass `credited` (the footer drops its credit) and no
+// document body carries one.
+Deno.test("REQ-573 p4-p3c: /q, /i and /co carry no DocuMonster credit — body or footer (REQ-628)", () => {
   assertEquals(
-    /poweredBy|Powered by/.test(co),
+    /\{t\.poweredBy\}/.test(read("components/quote-doc.tsx")),
     false,
-    "/co body has no credit",
   );
-  assertMatch(co, /<SiteFooter lang=\{lang\} document \/>/);
+  for (
+    const r of ["routes/q/[id].tsx", "routes/i/[id].tsx", "routes/co/[id].tsx"]
+  ) {
+    const src = read(r);
+    assertMatch(src, /<SiteFooter lang=\{lang\} document credited \/>/, r);
+    assertEquals(
+      /poweredBy|Powered by/.test(src),
+      false,
+      `${r} body has no credit`,
+    );
+  }
 });

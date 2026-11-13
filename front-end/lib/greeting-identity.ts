@@ -16,6 +16,7 @@ import {
   isPlaceholderName,
 } from "../../shared/quote-flow/outbound-identity.ts";
 import { computeInitials } from "../../shared/identity/initials.ts";
+import { personName } from "../../shared/person-name/mod.ts"; // REQ-624
 
 /** A translator bound to the live language. */
 export type Translate = (key: string, vars?: Record<string, string>) => string;
@@ -90,9 +91,10 @@ export function sidebarIdentity(
   if (!profile) return null;
   // REQ-624: while acting, the editor's own name — none while she has none yet
   const actor = profile.actor;
-  const raw = (actor
-    ? (actor.needsName ? undefined : actor.name)
-    : profile.user?.name)?.trim();
+  const raw = actor?.needsName ? undefined : personName(
+    { name: profile.user?.name ?? undefined },
+    actor ? { name: actor.name ?? "" } : null,
+  );
   const userName = raw && !isPlaceholderName(raw) ? raw : undefined;
   const bizName = businessOf(profile);
   if (actor?.needsName) {

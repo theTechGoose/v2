@@ -40,23 +40,25 @@ Deno.test("REQ-555 M24: /payments has no stopPropagation-only placeholder button
     s.indexOf("/* ---------------- Claim card"),
   );
   assert(card.length > 0, "PaymentCard found");
+  // REQ-555 AMENDMENT — reconciled with develop on demo-fixes: develop's
+  // REQ-626 card makes every back action a real link (receipt → /i, invoice →
+  // its panel, Text client → the client's sheet with Message). A link's
+  // stopPropagation only keeps the card from flipping; what is banned is a
+  // BUTTON whose only handler is stopPropagation.
   assert(
-    !/onClick=\{\(e\) => e\.stopPropagation\(\)\}/.test(card),
+    !/<button[^>]*onClick=\{\(e\) => e\.stopPropagation\(\)\}/.test(card),
     "a button whose only handler is e.stopPropagation() does nothing",
   );
-  for (
-    const cy of [
-      "payment-card-cta",
-      "payment-card-receipt",
-      "payment-card-invoice",
-      "payment-card-text",
-    ]
-  ) {
-    assert(s.includes(`data-cy="${cy}"`), `PaymentCard renders ${cy}`);
+  for (const cy of ["pay-card-receipt", "pay-card-match", "pay-card-text"]) {
+    assert(
+      new RegExp(`<a\\s+data-cy="${cy}"\\s+href=\\{\\w+\\}`).test(card),
+      `PaymentCard's ${cy} is a link with a destination`,
+    );
   }
+  assert(s.includes('data-cy="pay-card-cta"'), "PaymentCard renders its CTA");
   assert(
-    s.includes("/api/invoices/${p.invoiceId}/text"),
-    "Text client texts the client the invoice (receipt) link",
+    /const clientHref = p\.customerId/.test(card),
+    "Text client opens the client's sheet (Message lives there)",
   );
 });
 

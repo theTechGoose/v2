@@ -129,9 +129,17 @@ Deno.test("REQ-289: the assistant's new-customer phone and email inputs carry an
 });
 
 Deno.test("REQ-289: the /customers New customer modal is a labelled modal dialog that Escape closes", () => {
-  const s = src("../islands/ClientsPage.tsx");
-  const modal = s.slice(s.indexOf("{addOpen && ("));
-  assert(modal.length > 0, "the add-client modal");
+  // REQ-289 AMENDMENT — reconciled with develop on demo-fixes: the add-client
+  // modal is develop's CustomerFormDialog (REQ-625), opened from ClientsPage
+  const page = src("../islands/ClientsPage.tsx");
+  assert(
+    /\{addOpen && \(\s*<CustomerFormDialog/.test(page),
+    "the add-client modal",
+  );
+  const s = src("../components/CustomerForm.tsx");
+  const modal = s.slice(
+    s.indexOf("export default function CustomerFormDialog"),
+  );
   assert(/role="dialog"/.test(modal), 'role="dialog"');
   assert(/aria-modal="true"/.test(modal), 'aria-modal="true"');
   const labelledBy = modal.match(/aria-labelledby="([\w-]+)"/)?.[1];
@@ -142,7 +150,7 @@ Deno.test("REQ-289: the /customers New customer modal is a labelled modal dialog
   );
   // REQ-732: Escape is the shared <Backdrop>'s now — its onEscape closes the modal
   assert(
-    /onEscape=\{\(\) => !adding && setAddOpen\(false\)\}/.test(modal),
+    /onEscape=\{\(\) => !busy && onClose\(\)\}/.test(modal),
     "an Escape key handler closes it",
   );
 });

@@ -5847,3 +5847,88 @@ The seeding itself was a one-off against the local dev server (four customers wi
 **Evidence for the recovery (2026-11-12, local, REQ-192…197 + REQ-217 on develop `88c950e`):** ported with a 3-way apply of the snapshot's diff minus the superseded REQ-220 code-step files (`transfer-code-store`, the old transfer client calls, three obsolete dictionary keys incl. `admins.nameOptional`, which REQ-632 replaced); 68 dictionary keys per language added. REQ-631's guard test caught `routes/field/timesheet.tsx` reading the account's language and greeting with the owner's name — moved onto `personLanguage` / `greetingFirstName` like its sibling routes. `deno task test:unit` → "ok | 785 passed | 0 failed" and jest "Test Suites: 118 passed · Tests: 1 skipped, 1115 passed"; `deno task test:int` → "ok | 451 passed | 0 failed"; `shots run e2e/timeclock e2e/worker-ssr e2e/motion e2e/demo-mode-tabs e2e/demo-mode e2e/field-tasks e2e/sidebar-folders` + the A2Z stories → "37 pass · 0 fail" (load average 47).
 
 **Prod (2026-11-12) for the recovered REQ-192…197 + REQ-217:** main `d526d75` (develop `61c8f68`'s tree) pushed 20:17 UTC; `GET https://documonster.com/api/timeclock/worker/status` answered 401 (the route exists, no session) where `/api/timeclock/*` was 404 before the push.
+
+## Merge of develop into demo-fixes (2026-11-13) — REQ id check and amendments
+
+**REQ id collisions:** none. No id among develop's new entries (REQ-192…197, 212, 213, 216, 217, 624…632) appears as a heading on demo-fixes before the merge, so every entry above is kept as written, in order (demo-fixes' first, then develop's).
+
+Where the two branches contradicted each other, develop's feature was kept and the demo-fixes fix was adapted. Each case gets one entry below. Tests are named after the entry they cover.
+
+## REQ-354 AMENDMENT — reconciled with develop on demo-fixes
+Develop's REQ-625 New/Edit customer dialog (`components/CustomerForm.tsx`) and REQ-626 client sheet (`components/ClientSheet.tsx`) closed on a raw backdrop `onClick`. Both now use the shared `<Backdrop>`. The New customer modal's Backdrop rule follows the dialog into CustomerForm.tsx.
+**Tests:** `front-end/lib/backdrop-overlays.test.ts`.
+
+## REQ-732 AMENDMENT — reconciled with develop on demo-fixes
+In the New customer dialog, Escape is the Backdrop's `onEscape={() => !busy && onClose()}`, so it does nothing while a save is in flight. ClientsPage opens the dialog with `onClose={() => setAddOpen(false)}`.
+**Tests:** `front-end/lib/backdrop-escape.test.tsx`.
+
+## REQ-289 AMENDMENT — reconciled with develop on demo-fixes
+The add-client modal is develop's CustomerFormDialog. It has `role="dialog"`, `aria-modal="true"`, and `aria-labelledby="customer-form-title"` pointing at its heading.
+**Tests:** `front-end/lib/form-a11y.test.tsx`.
+
+## REQ-300 / REQ-599 / REQ-715 / REQ-278 AMENDMENT — reconciled with develop on demo-fixes
+New customer on /customers is develop's shared CustomerFormDialog. It keeps the demo-fixes rules:
+- a dirty draft survives a stray backdrop click (REQ-300)
+- the street field uses AddressAutocomplete, `data-cy="cf-street"` (REQ-599)
+- the customer's language is a select, `cf-language`, sent through `customerCreatePayload(values, language)` (REQ-715)
+- one contact is enough (REQ-278)
+
+**Tests:** jest `clients-add-dialog`, `new-customer-address`, `c5-customer-language`, `customer-contact`. The e2e selectors were renamed in `form-novalidate-fields`, `new-customer-address`, `customer-language` and `clients-pages`.
+
+## REQ-277 / REQ-310 AMENDMENT — reconciled with develop on demo-fixes
+On a client card, the nudge and Message follow develop's REQ-626 actions: the nudge is a button that runs `nudgeActionFor`/`messageHref`, and with no contact it opens the edit form. The `ccard2-open` button opens the client sheet.
+**Tests:** jest `client-card-actions`, `customer-link-access`. The e2e is `clients-pages`.
+
+## REQ-360 AMENDMENT — reconciled with develop on demo-fixes
+A real quote card may show develop's REQ-626 Resend button, because it is live: it is wired to `onResend`, which calls `resendQuote(q.id)`. A sample card still shows neither Resend nor Copy link.
+**Tests:** `front-end/lib/quote-card-sample.test.tsx`.
+
+## REQ-552 AMENDMENT — reconciled with develop on demo-fixes
+Develop's REQ-626 `openInvoice` scrolled the window to bring the panel into view. The app scrolls inside `.content`, so it now scrolls that element (`document.querySelector(".content")?.scrollTo`).
+**Tests:** `front-end/lib/invoice-card.test.ts`.
+
+## REQ-555 / REQ-626 AMENDMENT — reconciled with develop on demo-fixes
+Each action on the back of a /payments card is a link from develop's REQ-626:
+- `pay-card-receipt` goes to /i
+- `pay-card-match` goes to the invoice panel
+- `pay-card-text` goes to the client's sheet, where Message lives
+
+This replaces demo-fixes' in-place "Text client" POST. A link's `stopPropagation` only stops the card from flipping. A button whose only handler is stopPropagation is still banned. The CTA is an `<a href={paymentCardCtaHref}>`.
+**Tests:** `front-end/lib/payment-card.test.ts`. The e2e is `payment-card-actions`.
+
+## REQ-586 AMENDMENT — reconciled with develop on demo-fixes
+Develop's REQ-626 "View as customer" links (`invoice-view-as-customer`, `invoice-detail-view-as-customer`) use `invoiceLinkPath(inv.id, inv.lang)`, so they open in the invoice's document language.
+**Tests:** `front-end/lib/customer-link-lang.test.tsx`.
+
+## REQ-573 AMENDMENT — reconciled with develop on demo-fixes
+Develop's REQ-628 means no customer document carries a "Powered by DocuMonster" credit. /q, /i and /co all pass `<SiteFooter document credited />`, and no document body carries the credit.
+**Tests:** `front-end/lib/site-footer-document.test.tsx`, jest `customer-branding`.
+
+## REQ-366 AMENDMENT — reconciled with develop on demo-fixes
+Develop's new UI used glyphs: ▣ in PublicCardPay and in the Settings card-payments card, ✓ for Stripe connected, ▴/▾ for the WorkerClock hours toggle, and ✓ in `quoteCard.resent.ok`. These now render as `<Icon>` (receipt / check / chevron-down), and the ✓ is dropped from the lang string.
+**Tests:** `front-end/lib/ui-glyph-icons.test.tsx`.
+
+## REQ-362 AMENDMENT — reconciled with develop on demo-fixes
+On /worker, develop's REQ-194 three-day strip (yesterday / today / tomorrow) sits alongside the demo-fixes pieces:
+- the REQ-528 date picker, which jumps to any day through `workerDayHref`
+- the REQ-362 "preview" hint
+- `workerTodayKey` in the summary
+
+`worker.yesterday` is kept in both languages.
+**Tests:** jest `worker-day-nav`. The e2e is `worker-tomorrow`.
+
+## REQ-631 / REQ-624 / REQ-355 / REQ-709 AMENDMENT — reconciled with develop on demo-fixes
+The page language uses demo-fixes' `resolveSsrLang` order (`?lang=` > state > user > cookie). The user step is develop's `personLanguage(user)`, so an invited editor sees their own language. Greetings use develop's `greetingFirstName`. Business send-languages use `accountLanguage(user)`, which is the account's language, not the person's. The sidebar identity is aware of the acting person through `personName`. A nameless person shows "•" initials.
+**Tests:** jest `person-lang`, `actor-name`, `staff-name-placeholder`.
+
+## REQ-192 / REQ-197 AMENDMENT — reconciled with develop on demo-fixes
+`/field/timesheet` and `/worker` use demo-fixes' `resolveSsrLang` and DocTitle (REQ-367 tab titles). They keep develop's time clock and the server-rendered first paint. `timeclock.int` moved to port 9198 because `worker-ssr-lang.int` already uses 9193.
+**Tests:** jest `timeclock-feature`, `worker-ssr`. Integration: `backend/src/timeclock/entrypoints/timeclock.int.test.ts`.
+
+## REQ-627 AMENDMENT — reconciled with develop on demo-fixes (REQ-550)
+Demo-fixes' REQ-550 says a sent invoice needs a recipient. Develop's removal int test made sent invoices with no customer, so its fixture now carries `billTo: { name: "Rosa Diaz" }`.
+**Tests:** `backend/src/paperwork/entrypoints/invoice-controller/removal.int.test.ts`.
+
+## REQ-490 / REQ-603 AMENDMENT — reconciled with develop on demo-fixes
+When develop's assistant swap-invoice saves (REQ-627) and an invoice is already billed, it honours demo-fixes' REQ-233 ledger check. Its failure text is the new key `asstChat.error.saveInvoice` (en + es), not a hard-coded English string.
+**Tests:** jest unit lane, the asst-chat suites.

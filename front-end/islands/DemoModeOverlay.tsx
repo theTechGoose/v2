@@ -113,10 +113,10 @@ import {
   type ClipStyle,
   cueKey,
   drifted,
-  placeView,
+  OFF_MARK_Z,
   placedReport,
   placedReporter,
-  OFF_MARK_Z,
+  placeView,
   pointInBox,
   visibleBox,
 } from "../../shared/demo-mode/presenter-anchor.ts";
@@ -139,8 +139,8 @@ import { type ActivePoll, activePoll } from "../lib/demo-mode/active-poll.ts";
 import { handCursor, sessionStore } from "../lib/demo-mode/cursor-handoff.ts";
 import { demoEligible, viewerTab } from "../../shared/demo-mode/tab.ts";
 import {
-  connectDemo,
   type ClaimHow,
+  connectDemo,
   type DemoLink,
   type LinkStatus,
   type PeerFrom,
@@ -185,15 +185,15 @@ import {
   whoEnded,
 } from "../../shared/demo-mode/ended.ts";
 import {
-  bandBackground,
-  clearPillRoom,
   backdropCovers,
-  coversView,
   backdropDim,
+  bandBackground,
   bandPaint,
   bandRoom,
+  clearPillRoom,
   CONTROL_SELECTOR,
   countsAsPage,
+  coversView,
   dialogDim,
   isPublicDocPath,
   PAGE_MEDIA_SELECTOR,
@@ -210,10 +210,10 @@ import {
   pillStore,
   pillWraps,
   placePill,
-  seeThrough,
   recallPillOpen,
   rememberPillOpen,
   samplePoints,
+  seeThrough,
   setPillRoom,
 } from "../../shared/demo-mode/pill.ts";
 import { pillCopy } from "../../shared/demo-mode/pill-copy.ts";
@@ -870,11 +870,13 @@ export default function DemoModeOverlay(
       ask: async () => {
         // REQ-217 — a hidden tab asks nothing and says nothing; it picks up again when looked at
         if (!viewerTab(document.visibilityState)) return;
-        // signed out, or the backend is away: it throws, nothing to draw, ask again later
-        const a = await demoModeClient.active({
-          path: here(),
-          wait: ACTIVE_WAIT_MS,
-        });
+        // signed out, or the backend is away: it throws, nothing to draw, ask again later. A
+        // hidden tab never holds a connection (HTTP/1.1 allows six per host) — REQ-217: it does
+        // not ask at all (above), so a visible one holds the ask
+        const wait = document.visibilityState === "visible"
+          ? ACTIVE_WAIT_MS
+          : 0;
+        const a = await demoModeClient.active({ path: here(), wait });
         if (!alive) return;
         if (a.session && a.role) {
           const found: Demo = { role: a.role, ...a.session };
@@ -1654,9 +1656,9 @@ export default function DemoModeOverlay(
   const bandStyle = `position:fixed;left:0;right:0;bottom:0;height:${
     // REQ-545 (cycle 4, m2) — painted only under the pill at home: with the pill tucked, what
     // scrolled into the strip shows (the opaque band hid tiles, fields and buttons mid-scroll)
-    bandOn
-      ? "var(--demo-pill-h, 0px)"
-      : "0px"};z-index:1;background:${bandPaint(bandBg, bandDim)};pointer-events:none`;
+    bandOn ? "var(--demo-pill-h, 0px)" : "0px"};z-index:1;background:${
+    bandPaint(bandBg, bandDim)
+  };pointer-events:none`;
   const band = <div data-cy="demo-band" aria-hidden="true" style={bandStyle} />;
   /** one line: a long name is cut, not wrapped (the live pill's rule, REQ-228) */
   const cut = "overflow:hidden;text-overflow:ellipsis;min-width:0";

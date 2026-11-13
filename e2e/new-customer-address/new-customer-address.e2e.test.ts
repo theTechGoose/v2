@@ -90,7 +90,7 @@ Deno.test("REQ-599 m30: the New customer modal takes an address (autocomplete, t
     await expect.see("Address (optional)");
 
     await modal.locator("input").nth(0).fill("Bob Builder");
-    const address = modal.locator("[data-cy='add-client-address']");
+    const address = modal.locator("[data-cy='cf-street']");
     expect.eq(
       await address.getAttribute("role"),
       "combobox",
@@ -98,7 +98,7 @@ Deno.test("REQ-599 m30: the New customer modal takes an address (autocomplete, t
     );
     await address.fill("1600 Congress Ave, Austin, TX 78701");
     // the typed text is always the first option, whatever Mapbox knows
-    const typed = modal.locator("[data-cy='add-client-address-typed']");
+    const typed = modal.locator("[data-cy='cf-street-typed']");
     await typed.waitFor({ timeout: 5_000 });
     await typed.click();
     expect.eq(

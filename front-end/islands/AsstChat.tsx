@@ -5321,10 +5321,9 @@ export default function AsstChat({
         id,
         ...(action === "schedule" ? { scheduledFor: schedDate } : {}),
       });
-    } catch (err) {
-      setError(
-        err instanceof Error ? err.message : "couldn't save the invoice",
-      );
+    } catch {
+      // REQ-603: never a raw ApiError message in the chat
+      setError(tFor(lang, "asstChat.error.saveInvoice"));
     } finally {
       setSending(false);
     }
@@ -8862,22 +8861,22 @@ export default function AsstChat({
                                   <div style="padding:12px 14px;background:var(--green-50,#eef6ea);border:1px solid var(--brand-green,#519843);border-radius:12px;font-weight:700;font-size:13.5px;color:var(--brand-teal,#144852)">
                                     {swapInvoiceSaved.scheduledFor
                                       ? tFor(
-                                        previewLang,
+                                        lang, // REQ-490: the app language — a control, not document content
                                         "asstChat.invoiceReview.scheduledFor",
                                         { date: swapInvoiceSaved.scheduledFor },
                                       )
                                       : tFor(
-                                        previewLang,
+                                        lang, // REQ-490: the app language — a control, not document content
                                         "asstChat.invoiceReview.savedDraft",
                                       )}
                                   </div>
                                   <a
-                                    class="quote-review__send-main"
+                                    class="quote-review__send-main quote-review__goto"
                                     style="border-radius:12px;text-decoration:none"
                                     href={`/invoices?open=${swapInvoiceSaved.id}`}
                                   >
                                     {tFor(
-                                      previewLang,
+                                      lang, // REQ-490: the app language — a control, not document content
                                       "asstChat.invoiceFlow.goToInvoices",
                                     )}
                                   </a>
@@ -9344,7 +9343,7 @@ export default function AsstChat({
                                         )}
                                     >
                                       {tFor(
-                                        previewLang,
+                                        lang, // REQ-490: the app language — a control, not document content
                                         "asstChat.invoiceReview.saveDraft",
                                       )}
                                     </button>
@@ -9360,7 +9359,7 @@ export default function AsstChat({
                                       }}
                                     >
                                       {tFor(
-                                        previewLang,
+                                        lang, // REQ-490: the app language — a control, not document content
                                         "asstChat.invoiceReview.schedule",
                                       )}
                                     </button>

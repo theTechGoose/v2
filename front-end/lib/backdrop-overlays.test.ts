@@ -123,11 +123,22 @@ Deno.test("REQ-354 M39: the New customer modal and the Send chooser use <Backdro
   const clients = await Deno.readTextFile(
     new URL("islands/ClientsPage.tsx", root),
   );
+  // REQ-354 AMENDMENT — reconciled with develop on demo-fixes: the New customer
+  // modal is develop's CustomerFormDialog (REQ-625); ClientsPage closes it via
+  // onClose, and the dialog itself sits on <Backdrop> (a dirty draft survives a
+  // stray click, REQ-300; REQ-715: the draft carries the customer's language too)
   assert(
-    // REQ-300 (reconciled on demo-fixes): onClose also keeps a dirty draft up
-    // (REQ-715: the draft carries the customer's language too)
-    /<Backdrop[\s\S]{0,700}setAddOpen\(false\)/.test(clients),
-    "ClientsPage add modal not on <Backdrop>",
+    /\{addOpen && \(\s*<CustomerFormDialog[\s\S]{0,300}onClose=\{\(\) => setAddOpen\(false\)\}/
+      .test(clients),
+    "ClientsPage add modal not the CustomerFormDialog",
+  );
+  const form = await Deno.readTextFile(
+    new URL("components/CustomerForm.tsx", root),
+  );
+  assert(
+    /<Backdrop[\s\S]{0,300}onClose=\{\(\) => !busy && !dirty && onClose\(\)\}/
+      .test(form),
+    "CustomerFormDialog not on <Backdrop> (or a dirty draft closes on a stray click)",
   );
   const chat = await Deno.readTextFile(new URL("islands/AsstChat.tsx", root));
   assert(

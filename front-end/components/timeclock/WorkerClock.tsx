@@ -15,6 +15,7 @@ import {
 } from "../../clients/timeclock.ts";
 import { ApiError } from "../../lib/api.ts";
 import { type Lang, langSignal, t } from "../../lib/i18n.ts";
+import { Icon } from "../ui/Icon.tsx"; // REQ-366
 
 const REFRESH_MS = 30_000;
 
@@ -185,7 +186,11 @@ export default function WorkerClock(
         </span>
         <span class="clock__toggle">
           {hours ? t("clock.hideHours") : t("clock.showHours")}{" "}
-          {hours ? "▴" : "▾"}
+          <Icon
+            name="chevron-down"
+            size={14}
+            style={hours ? "transform:rotate(180deg)" : undefined}
+          />
         </span>
       </button>
       {hours && view && (shifts.length === 0
