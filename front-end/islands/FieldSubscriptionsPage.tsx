@@ -79,6 +79,8 @@ interface Form {
   price: string;
   /** REQ-174: days to pay, as typed (prefilled from Settings) */
   netDays: string;
+  /** REQ-788: every visit bills the overhead cost set in Settings */
+  overhead: boolean;
   err: string | null;
   saving: boolean;
 }
@@ -153,6 +155,7 @@ function blankForm(defaultNetDays = 30): Form {
     picked: null,
     price: "",
     netDays: String(defaultNetDays),
+    overhead: false,
     err: null,
     saving: false,
   };
@@ -168,6 +171,7 @@ function formFor(s: SubscriptionView, defaultNetDays = 30): Form {
     ...blankForm(defaultNetDays),
     editId: s.id,
     netDays: String(s.netDays ?? defaultNetDays),
+    overhead: s.overhead === true,
     customerId: s.customerId,
     address: s.address,
     cadence: ["1", "2", "3", "4", "monthly", "annual"].includes(cadence)
@@ -235,6 +239,8 @@ export default function FieldSubscriptionsPage(
   const [form, setForm] = useState<Form | null>(null);
   // REQ-174: the account's default days to pay, from Settings
   const [defaultNetDays, setDefaultNetDays] = useState(30);
+  // REQ-788: the account's overhead cost per visit, from Settings
+  const [overheadCents, setOverheadCents] = useState(0);
   /** the card whose Delete is waiting for its Confirm */
   const [confirmId, setConfirmId] = useState<string | null>(null);
   /** the card with a request in flight, and the message its last one failed with */
@@ -278,6 +284,8 @@ export default function FieldSubscriptionsPage(
     profileClient.get().then((snap) => {
       const n = snap.identity?.invoiceNetDays;
       if (alive && typeof n === "number") setDefaultNetDays(n);
+      const oh = snap.identity?.fieldOverheadCents;
+      if (alive && typeof oh === "number") setOverheadCents(oh);
     }).catch(() => {
       // 30 stays the default
     });
@@ -535,6 +543,7 @@ export default function FieldSubscriptionsPage(
           ...schedule,
           items,
           netDays,
+          overhead: f.overhead,
         });
       } else {
         await fieldClient.createSubscription({
@@ -543,6 +552,7 @@ export default function FieldSubscriptionsPage(
           ...schedule,
           items,
           netDays,
+          overhead: f.overhead,
         });
       }
       close();
@@ -675,6 +685,13 @@ export default function FieldSubscriptionsPage(
                         <b>{fmtMoneyExact(it.priceCents)}</b>
                       </div>
                     ))}
+                    {/* REQ-788: the overhead, when the toggle is on */}
+                    {s.overhead && (
+                      <div data-cy="subs-card-overhead">
+                        <span>{t("field.subs.overheadLabel")}</span>
+                        <b>{fmtMoneyExact(overheadCents)}</b>
+                      </div>
+                    )}
                   </div>
                   {
                     /* REQ-699 (demo-loop cycle 5, M20): a subscription a
@@ -788,9 +805,29 @@ export default function FieldSubscriptionsPage(
           onClose={() => close()}
         >
           <form class="modal" onSubmit={submit} data-cy="subs-form">
-            <h2>
-              {form.editId ? t("field.subs.editTitle") : t("field.subs.new")}
-            </h2>
+            {/* REQ-788: the title, and the Overhead toggle in the upper right — a weekday chip */}
+            <div class="modal__head">
+              <h2>
+                {form.editId ? t("field.subs.editTitle") : t("field.subs.new")}
+              </h2>
+              <div class="days">
+                <label
+                  class={`day day--wide${form.overhead ? " on" : ""}`}
+                  data-cy="subs-overhead"
+                  title={overheadCents > 0 ? "" : t("field.subs.overheadHint")}
+                >
+                  <input
+                    type="checkbox"
+                    name="overhead"
+                    checked={form.overhead}
+                    onChange={() => patch({ overhead: !form.overhead })}
+                  />
+                  {t("field.subs.overhead", {
+                    amount: fmtMoneyExact(overheadCents),
+                  })}
+                </label>
+              </div>
+            </div>
 
             <div class="field">
               <span>{t("field.subs.client")}</span>

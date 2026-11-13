@@ -2156,3 +2156,68 @@ Deno.test("REQ-787 an annual subscription keeps its month and day(s) with the sc
     assertEquals(weekly.body.month, undefined, "a weekly visit has no month");
   });
 });
+
+// REQ-788 — "a toggle button in the upper right that adds an overhead cost. that overhead cost is
+// defined in settings."
+Deno.test("REQ-788 the overhead cost in Settings bills one more line per visit of a subscription with the toggle on; one with it off bills its services only; the toggle flips on an edit; a bad amount is refused", async () => {
+  await withServer(async (call) => {
+    const H = await login(call);
+    // a negative amount is refused (the identity DTO's validation answers as it does for every field it refuses)
+    const bad = await call("PUT", "/profile/identity", { fieldOverheadCents: -5 }, H);
+    assert(bad.status >= 400, JSON.stringify(bad.body));
+    assertEquals((await call("GET", "/profile/identity", undefined, H)).body?.fieldOverheadCents, undefined);
+    const ident = await call("PUT", "/profile/identity", {
+      businessName: "A2Z Landscape LLC",
+      fieldOverheadCents: 2500,
+    }, H);
+    assertEquals(ident.status, 200, JSON.stringify(ident.body));
+    assertEquals(ident.body.fieldOverheadCents, 2500);
+    const mk = async (name: string) =>
+      (await call("POST", "/customers", {
+        name,
+        email: `${name.replace(/\W+/g, ".").toLowerCase()}@blackhole.postmarkapp.com`,
+      }, H)).body;
+    const randall = await mk("Randall Belknap");
+    const robert = await mk("Robert Thall");
+    const today = fieldToday();
+    const on = await call("POST", "/field/subscriptions", {
+      customerId: randall.id,
+      address: "725 Frederick Rd, Rockingham, VA",
+      startDate: today,
+      items: [{ taskTypeName: "Lawn", priceCents: 6500 }, { taskTypeName: "Hedge", priceCents: 4000 }],
+      overhead: true,
+    }, H);
+    assertEquals(on.status, 201, JSON.stringify(on.body));
+    assertEquals(on.body.overhead, true);
+    const off = await call("POST", "/field/subscriptions", {
+      customerId: robert.id,
+      address: "845 Frederick Rd, Rockingham, VA",
+      startDate: today,
+      items: [{ taskTypeName: "Lawn", priceCents: 6500 }],
+    }, H);
+    assertEquals(off.status, 201);
+    assertEquals(off.body.overhead, undefined);
+    // the edit flips it both ways
+    assertEquals((await call("PUT", `/field/subscriptions/${on.body.id}`, { overhead: false }, H)).body.overhead, false);
+    assertEquals((await call("PUT", `/field/subscriptions/${on.body.id}`, { overhead: true }, H)).body.overhead, true);
+    const w = (await call("POST", "/field/workers", { name: "Mario", phoneNumber: "8435550998", pin: "2468" }, H)).body;
+    const regions = (await call("GET", "/field/regions", undefined, H)).body;
+    for (const r of regions) await call("PUT", `/field/regions/${r.id}/worker`, { workerId: w.id }, H);
+    await call("POST", "/field/tasks/generate", { date: today }, H);
+    const tasks = (await call("GET", `/field/tasks?date=${today}`, undefined, H)).body;
+    assertEquals(tasks.length, 3, "the overhead is no task: " + JSON.stringify(tasks));
+    for (const t of tasks) assertEquals((await call("PUT", `/field/tasks/${t.id}`, { status: "complete" }, H)).status, 200);
+    const pulled = await call("POST", "/field/batches/pull", { from: today, to: today }, H);
+    assertEquals(pulled.status, 201, JSON.stringify(pulled.body));
+    const draft = (customerId: string) => pulled.body.invoices.find((i: { customerId: string }) => i.customerId === customerId);
+    const lines = (customerId: string) => draft(customerId).lineItems.map((l: { service: string; price: number }) => `${l.service}=${l.price}`);
+    assertEquals(draft(randall.id).amount, 6500 + 4000 + 2500);
+    assertEquals(lines(randall.id), ["Hedge=4000", "Lawn=6500", "Overhead=2500"]);
+    assertEquals(draft(randall.id).zeroLines, 0);
+    assertEquals(draft(robert.id).amount, 6500);
+    assertEquals(lines(robert.id), ["Lawn=6500"]);
+    // every task is stamped with its draft; the overhead line stamped nothing extra
+    const after = (await call("GET", `/field/tasks?date=${today}`, undefined, H)).body;
+    assertEquals(after.filter((t: { invoiceId?: string }) => t.invoiceId === draft(randall.id).id).length, 2);
+  });
+});

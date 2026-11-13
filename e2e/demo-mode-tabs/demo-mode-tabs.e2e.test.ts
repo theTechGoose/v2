@@ -1,8 +1,9 @@
 /**
  * REQ-217 — one demo viewer per customer: the tab they are looking at. The customer's browser has
- * /dashboard visible, the worker portal open and /customers hidden; Demo lands the stage on
- * /dashboard (never /worker); the customer switches to /customers and the frame follows; the
- * worker portal never shows a pill.
+ * /dashboard visible, the worker view and /customers hidden; Demo lands the stage on /dashboard;
+ * the customer switches to /customers and the frame follows.
+ * REQ-793 (amends REQ-217) — the customer switches to the worker view: the frame follows to
+ * /worker and that tab shows the pill — the worker view is a page of the app like any other.
  */
 import { story, type StoryTools } from "#shots";
 
@@ -59,9 +60,9 @@ async function until(
   throw new Error(`timed out: ${what}`);
 }
 
-/** the tab's visibility, under the story's control: /customers starts hidden, the rest visible */
+/** the tab's visibility, under the story's control: /customers and /worker start hidden, the rest visible */
 const VISIBILITY_SCRIPT = `(() => {
-  const read = () => globalThis.__vis ?? (location.pathname.startsWith("/customers") ? "hidden" : "visible");
+  const read = () => globalThis.__vis ?? (/^\/(customers|worker)/.test(location.pathname) ? "hidden" : "visible");
   Object.defineProperty(document, "visibilityState", { get: read, configurable: true });
   Object.defineProperty(document, "hidden", { get: () => read() !== "visible", configurable: true });
 })();`;
@@ -72,7 +73,7 @@ const setVisibility = (p: any, v: "visible" | "hidden") =>
     document.dispatchEvent(new Event("visibilitychange"));
   }, v);
 
-Deno.test("REQ-217: the visible tab is the demo's viewer — Demo lands on /dashboard with /worker open, the frame follows a tab switch to /customers, and /worker never shows a pill", (t) =>
+Deno.test("REQ-217 + REQ-793: the visible tab is the demo's viewer — Demo lands on /dashboard with /worker open, the frame follows a tab switch to /customers, and then to the worker view", (t) =>
   story(t, async ({ page, expect, http, baseUrl }) => {
     await page.setViewportSize({ width: 1280, height: 800 });
     const userPhone = `+1512${digits()}`;
@@ -105,7 +106,7 @@ Deno.test("REQ-217: the visible tab is the demo's viewer — Demo lands on /dash
     try {
       await userCtx.addInitScript(VISIBILITY_SCRIPT);
       await useCookie(userCtx, baseUrl, user.cookie);
-      // three tabs on the customer's cookie: the dashboard (looked at), the worker portal, and
+      // three tabs on the customer's cookie: the dashboard (looked at), the worker view and
       // /customers in the background
       const dash = await userCtx.newPage();
       await dash.goto(`${baseUrl}/dashboard`);
@@ -118,7 +119,7 @@ Deno.test("REQ-217: the visible tab is the demo's viewer — Demo lands on /dash
       // let every tab poll at least once
       await new Promise((r) => setTimeout(r, 6_000));
 
-      // 1. Demo: the stage opens on the dashboard — not the worker portal, not the hidden tab
+      // 1. Demo: the stage opens on the dashboard — not the hidden tabs
       await useCookie(page.context(), baseUrl, admin.cookie);
       await page.goto("/admin");
       await page.locator("[data-cy='adm-q']").fill(userPhone.slice(2));
@@ -135,15 +136,15 @@ Deno.test("REQ-217: the visible tab is the demo's viewer — Demo lands on /dash
         return !!f && new URL(f.url()).pathname === dashPath;
       });
 
-      // 2. the dashboard tab joins; the hidden tab and the worker portal do not
+      // 2. the dashboard tab joins; the hidden tabs do not
       await dash.locator("[data-cy='demo-status']").filter({
         hasText: /direct|relay/,
       }).waitFor({ timeout: 20_000 });
       await new Promise((r) => setTimeout(r, 6_000));
       expect.eq(
-        await worker.locator("[data-cy='demo-pill']").count(),
+        await worker.locator("[data-cy='demo-status']").count(),
         0,
-        "the worker portal never shows a pill",
+        "the hidden worker tab has not joined",
       );
       expect.eq(
         await customers.locator("[data-cy='demo-status']").count(),
@@ -166,6 +167,22 @@ Deno.test("REQ-217: the visible tab is the demo's viewer — Demo lands on /dash
         const f = page.frame({ name: FRAME });
         return !!f && new URL(f.url()).pathname === "/customers";
       });
+
+      // 4. REQ-793: the customer switches to the worker view — it joins and the frame follows
+      await setVisibility(customers, "hidden");
+      await setVisibility(worker, "visible");
+      await worker.locator("[data-cy='demo-status']").filter({
+        hasText: /direct|relay/,
+      }).waitFor({ timeout: 20_000 });
+      await until("the frame follows to /worker", () => {
+        const f = page.frame({ name: FRAME });
+        return !!f && new URL(f.url()).pathname === "/worker";
+      });
+      expect.eq(
+        await worker.locator("[data-cy='demo-pill']").count(),
+        1,
+        "the worker view shows the pill",
+      );
 
       await page.locator("[data-cy='demo-end']").click();
       await page.waitForURL(/\/admin/, { timeout: 20_000 });
