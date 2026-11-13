@@ -3877,6 +3877,8 @@
   "worker.locked": "Too many attempts — wait a minute.",
   "worker.hello": "Hey, {name} 👋",
   "worker.today": "{done} of {n} tasks done",
+  "worker.today.one": "{done} of {n} task done",
+  "worker.today.none": "No tasks today",
   "worker.none": "No tasks this day.",
   "worker.done": "Done",
   "worker.notePh": "Note for the office (gate, dog, extra…)",
