@@ -89,6 +89,13 @@
  * comes while one is held (the customer answers a stage's arrival AND its sync: two in a row)
  * keeps the hold going — the sheets already loading and the first hold's deadline — instead of
  * starting it over with fresh preloads; a snapshot whose sheets the frame has goes in at once.
+ *
+ * REQ-638 (demo-loop cycle 5, M11) — a native select's open list is drawn by the customer's
+ * browser outside the DOM; the recorder marks the select `data-mirror-open` while it is open.
+ * The replay draws a static listbox of that select's mirrored options right under it (above it
+ * when there is no room below), the chosen one highlighted — the stage's own element, never a
+ * mirrored node: no id, no pointer anchor (`pointer-events: none`), redrawn after every frame and
+ * every layout pass, gone once the mark is.
  */
 import type {
   MirrorFrame,
@@ -215,6 +222,35 @@ const EMBED = new Set(["iframe", "frame", "object", "embed"]);
 const URLISH = new Set(["href", "src", "xlink:href", "action", "formaction"]);
 
 const clamp01 = (n: number) => Math.min(1, Math.max(0, n));
+
+/** REQ-638 — the recorder's mark of a select whose list is open, and the stage's drawn list */
+export const OPEN_ATTR = "data-mirror-open";
+export const LISTBOX_ATTR = "data-mirror-listbox";
+
+const LIST_CSS = "position:fixed;z-index:2147483647;pointer-events:none;" +
+  "box-sizing:border-box;margin:0;padding:4px 0;display:block;visibility:visible;" +
+  "opacity:1;transform:none;overflow:hidden;background:#fff;color:#1f1f1f;" +
+  "border:1px solid #8f8f8f;border-radius:4px;" +
+  "box-shadow:0 6px 16px rgba(0,0,0,.22);text-align:left;white-space:nowrap;" +
+  "line-height:1.4;";
+const ROW_CSS = "display:block;padding:3px 12px;margin:0;";
+const ROW_ON_CSS = "background:#1a73e8;color:#fff;";
+const ROW_OFF_CSS = "color:#9a9a9a;";
+const GROUP_CSS = "display:block;padding:3px 8px;margin:0;font-weight:bold;";
+/** the most rows the drawn list shows (Chrome's popup shows about 20 before it scrolls) */
+const LIST_ROWS = 20;
+
+const squash = (t: string) => t.replace(/\s+/g, " ").trim();
+
+/** REQ-638 — an option's label as a select shows it, and its value */
+function optLabel(o: Element): string {
+  const l = o.getAttribute("label");
+  return l !== null && l !== "" ? l : squash(o.textContent ?? "");
+}
+function optValue(o: Element): string {
+  const v = o.getAttribute("value");
+  return v !== null ? v : squash(o.textContent ?? "");
+}
 
 /** REQ-305 — a scroll put on at once: `behavior: "instant"` overrides the page's own
  *  `scroll-behavior: smooth` (an assignment to scrollTop would start an animation) */
@@ -367,6 +403,128 @@ export function createReplayer(
    *  whether an op just added a stylesheet the frame has to wait for */
   let pending: Held | null = null;
   let newSheet = false;
+  /** REQ-638 — the selects marked open, and the lists drawn for them (with what they show) */
+  let opened = new Set<Element>();
+  let drawnLists: { box: Element; key: string }[] = [];
+
+  const kidEls = (e: Element) =>
+    Array.from(e.childNodes).filter((c) => c.nodeType === 1) as Element[];
+
+  /** REQ-638 — a list under every open select (above it when there is no room below) */
+  function drawLists() {
+    if (pending) return; // a held snapshot: its lists are drawn once it is in
+    const want: { sel: Element; key: string }[] = [];
+    for (const sel of opened) {
+      if (!sel.hasAttribute(OPEN_ATTR) || !doc.contains(sel)) {
+        opened.delete(sel);
+        continue;
+      }
+      const r = sel.getBoundingClientRect();
+      const rows: string[] = [];
+      for (const k of kidEls(sel)) {
+        const t = k.localName.toLowerCase();
+        if (t === "option") rows.push(`o${optLabel(k)}`);
+        else if (t === "optgroup") {
+          rows.push(`g${k.getAttribute("label") ?? ""}`);
+          for (const o of kidEls(k)) {
+            if (o.localName.toLowerCase() === "option") {
+              rows.push(`o${optLabel(o)}`);
+            }
+          }
+        }
+      }
+      const v = String((sel as HTMLSelectElement).value ?? "");
+      want.push({
+        sel,
+        key: [r.left, r.top, r.width, r.height, v, ...rows].join("\u0001"),
+      });
+    }
+    // nothing changed (the same lists, still in the page): nothing to do
+    if (
+      want.length === drawnLists.length &&
+      want.every((w, k) => drawnLists[k].key === w.key && doc.contains(drawnLists[k].box))
+    ) return;
+    for (const d of drawnLists) d.box.parentNode?.removeChild(d.box);
+    drawnLists = [];
+    const at = doc.documentElement;
+    if (!at) return;
+    for (const { sel, key } of want) {
+      const box = drawList(sel);
+      at.appendChild(box);
+      place(box, sel);
+      drawnLists.push({ box, key });
+    }
+  }
+
+  /** REQ-638 — the static list of `sel`'s options: its chosen one highlighted */
+  function drawList(sel: Element): Element {
+    const box = doc.createElement("div");
+    box.setAttribute(LISTBOX_ATTR, "");
+    box.setAttribute("role", "listbox");
+    box.setAttribute("aria-hidden", "true");
+    let font = "font-size:15px;";
+    try {
+      const cs = doc.defaultView?.getComputedStyle?.(sel);
+      if (cs?.fontSize) {
+        font = `font-family:${cs.fontFamily};font-size:${cs.fontSize};`;
+      }
+    } catch {
+      // no styles here
+    }
+    const v = String((sel as HTMLSelectElement).value ?? "");
+    let chosen = false;
+    const row = (o: Element, indent: boolean) => {
+      if (o.hasAttribute("hidden")) return;
+      const d = doc.createElement("div");
+      d.setAttribute("role", "option");
+      const on = !chosen && optValue(o) === v;
+      if (on) chosen = true;
+      d.setAttribute("aria-selected", on ? "true" : "false");
+      d.setAttribute(
+        "style",
+        ROW_CSS + (indent ? "padding-left:24px;" : "") +
+          (on ? ROW_ON_CSS : o.hasAttribute("disabled") ? ROW_OFF_CSS : ""),
+      );
+      d.appendChild(doc.createTextNode(optLabel(o)));
+      box.appendChild(d);
+    };
+    for (const k of kidEls(sel)) {
+      const t = k.localName.toLowerCase();
+      if (t === "option") row(k, false);
+      else if (t === "optgroup") {
+        const g = doc.createElement("div");
+        g.setAttribute("data-mirror-group", "");
+        g.setAttribute("style", GROUP_CSS);
+        g.appendChild(doc.createTextNode(k.getAttribute("label") ?? ""));
+        box.appendChild(g);
+        for (const o of kidEls(k)) {
+          if (o.localName.toLowerCase() === "option") row(o, true);
+        }
+      }
+    }
+    const r = sel.getBoundingClientRect();
+    box.setAttribute(
+      "style",
+      LIST_CSS + font + `min-width:${Math.max(0, r.width)}px;` +
+        `max-height:calc(${LIST_ROWS} * 1.4em + 10px);`,
+    );
+    return box;
+  }
+
+  /** REQ-638 — the list right under its select, or above it when it would run off the bottom */
+  function place(box: Element, sel: Element) {
+    const r = sel.getBoundingClientRect();
+    const base = box.getAttribute("style") ?? "";
+    let top = r.top + r.height;
+    try {
+      const h = box.getBoundingClientRect().height;
+      const vh = doc.defaultView?.innerHeight ?? 0;
+      if (vh && top + h > vh && r.top - h >= 0) top = r.top - h;
+    } catch {
+      // no layout here
+    }
+    box.setAttribute("style", base + `left:${r.left}px;top:${top}px;`);
+  }
 
   /** REQ-547 — the still rule into the frame (again: a snapshot replaced the page, an op its head) */
   function putStill() {
@@ -527,6 +685,7 @@ export function createReplayer(
       if (disposed || !d) return;
       if (d.settle) settle();
       review(); // REQ-547
+      drawLists(); // REQ-638 — placed again: the layout moved
       opts.onLayout?.();
     });
   };
@@ -617,6 +776,7 @@ export function createReplayer(
       if (awaited(e)) newSheet = true; // REQ-547 — held still until it is in
     }
     if (lt === "img" && fetched(e)) images.add(e); // REQ-451 — settled() waits for it
+    if (s.a && OPEN_ATTR in s.a) opened.add(e); // REQ-638 — its list is drawn
     if (s.c) { for (const c of s.c) e.appendChild(build(c)); }
     reg(s.i, e);
     return e;
@@ -668,6 +828,7 @@ export function createReplayer(
         if (!e) return false;
         if (op.v === null) e.removeAttribute(op.n);
         else setAttr(e, e.localName.toLowerCase(), op.n, op.v);
+        if (op.n === OPEN_ATTR && op.v !== null) opened.add(e); // REQ-638
         // REQ-380 — a width or height set (or removed) cleared the canvas: its picture again;
         // REQ-644 — and a style set (or removed) replaced the inline style that shows it
         const u = bitmaps.get(op.i);
@@ -830,6 +991,7 @@ export function createReplayer(
     if (old) doc.replaceChild(p.root, old);
     else doc.appendChild(p.root);
     shown();
+    drawLists(); // REQ-638
     settleSoon();
   }
 
@@ -910,6 +1072,7 @@ export function createReplayer(
           bitmaps.clear();
           sheets = new Set();
           images = new Set();
+          opened = new Set();
           const root = build(f.root);
           newSheet = false;
           view = { w: f.w, h: f.h };
@@ -947,6 +1110,7 @@ export function createReplayer(
       if (newSheet && !pending) holdStill(true);
       else if (stillOn) putStill();
       newSheet = false;
+      drawLists(); // REQ-638
       // REQ-305 — the layout changes once the browser has laid the frame out, not now
       settleSoon();
       return fit;

@@ -387,9 +387,12 @@ export class FDocument extends FNode {
   removeEventListener(t: string, fn: (e: unknown) => void): void {
     this.#listeners.get(t)?.delete(fn);
   }
-  /** an event at `target`, as a capturing document listener sees it */
-  fire(t: string, target: unknown): void {
-    for (const fn of this.#listeners.get(t) ?? []) fn({ type: t, target });
+  /** an event at `target`, as a capturing document listener sees it (REQ-638: with any extra
+   *  fields a listener reads, a key's `key` and `altKey`) */
+  fire(t: string, target: unknown, extra: Record<string, unknown> = {}): void {
+    for (const fn of this.#listeners.get(t) ?? []) {
+      fn({ ...extra, type: t, target });
+    }
   }
   listening(t: string): number {
     return this.#listeners.get(t)?.size ?? 0;
