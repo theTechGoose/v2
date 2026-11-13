@@ -16,7 +16,7 @@
  *    send-paperwork-email/mod.ts:513-538.
  */
 
-import { jobNameCase } from "./job-name.ts";
+import { jobNameCase, nameKey } from "./job-name.ts";
 
 function localeOf(lang: string): string {
   return lang === "es" ? "es" : "en-US";
@@ -32,14 +32,44 @@ function localeOf(lang: string): string {
  * same jobNameCase (REQ-276) every other Spanish job-name surface uses.
  * English keeps Title Case for the hero's visual weight.
  */
-export function titleCaseJobName(name: string, lang: string): string {
-  if (lang === "es") return jobNameCase(name, "es");
+export function titleCaseJobName(
+  name: string,
+  lang: string,
+  opts?: { keep?: Iterable<string | undefined> },
+): string {
+  if (lang === "es") return spanishHeroCase(name, opts?.keep);
   const locale = localeOf(lang);
   return name
     .trim()
     .split(/\s+/)
     .map((word) => word.charAt(0).toLocaleUpperCase(locale) + word.slice(1))
     .join(" ");
+}
+
+/**
+ * REQ-756 (demo-loop cycle 5v2, p18-2a): REQ-720's sentence case is for the
+ * JOB words only. A quote summary names the customer after a spaced dash
+ * ("Corte de césped y poda de setos — Ana Pérez") — that tail is kept as
+ * written, and a word of a `keep` name (the customer's) keeps its capital
+ * inside the job words too ("… para Ana Pérez"). Never "— ana pérez".
+ */
+function spanishHeroCase(
+  name: string,
+  keep?: Iterable<string | undefined>,
+): string {
+  const words = name.trim().split(/\s+/).filter((w) => w.length > 0);
+  const dash = words.findIndex((w) => /^[—–-]$/.test(w));
+  const head = dash === -1 ? words : words.slice(0, dash);
+  const tail = dash === -1 ? [] : words.slice(dash);
+  const kept = new Set<string>();
+  for (const n of keep ?? []) {
+    for (const w of (n ?? "").split(/\s+/)) {
+      if (nameKey(w)) kept.add(nameKey(w));
+    }
+  }
+  const cased = jobNameCase(head.join(" "), "es").split(" ");
+  const job = head.map((w, i) => kept.has(nameKey(w)) ? w : cased[i]);
+  return [...job, ...tail].join(" ");
 }
 
 /**

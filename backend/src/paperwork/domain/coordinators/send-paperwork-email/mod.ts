@@ -924,7 +924,10 @@ export function renderQuoteHtml(
   // Title case for visual weight in the hero. P-07: Unicode-aware (the old
   // `\b\w` approach re-fired after accents: "InstalacióN De BañO") with es
   // stopwords kept lowercase.
-  const heroTitle = titleCaseJobName(summaryClean, lang);
+  // REQ-756: Spanish sentence case never lowercases the customer's name.
+  const heroTitle = titleCaseJobName(summaryClean, lang, {
+    keep: [customer?.name],
+  });
 
   const preheader = `${
     customerFirst
@@ -1345,7 +1348,9 @@ export function renderInvoiceHtml(
   const heroRaw = jobName || summaryClean ||
     t(lang, "publicInvoice.jobNameFallback");
   // P-07: Unicode-aware title case (accents survive, es stopwords stay low).
-  const heroTitle = titleCaseJobName(heroRaw, lang);
+  const heroTitle = titleCaseJobName(heroRaw, lang, {
+    keep: [customer?.name],
+  });
   const description = quote?.descriptionByLang?.[lang] ?? quote?.description;
 
   // REQ-727 (cycle 5, c4-M16): like the quote email (REQ-342) and the

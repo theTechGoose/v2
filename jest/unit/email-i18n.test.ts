@@ -111,6 +111,27 @@ describe("P-07 titleCaseJobName — Unicode-aware hero casing", () => {
       .toBe("Remodelación de la cocina y el baño en general");
   });
 
+  it("REQ-756 a Spanish hero sentence-cases the job only, never the customer's name after the dash (cycle 5v2, p18-2a)", () => {
+    // The verifier saw "Corte de césped y poda de setos — ana pérez".
+    expect(
+      titleCaseJobName("Corte de césped y poda de setos — Ana Pérez", "es"),
+    )
+      .toBe("Corte de césped y poda de setos — Ana Pérez");
+    expect(
+      titleCaseJobName("Corte de Césped y Poda de Setos — María López", "es"),
+    ).toBe("Corte de césped y poda de setos — María López");
+    expect(titleCaseJobName("Corte de césped – Ana Pérez", "es"))
+      .toBe("Corte de césped – Ana Pérez");
+  });
+
+  it("REQ-756 a Spanish hero keeps the customer's name capitalized inside the job words", () => {
+    expect(
+      titleCaseJobName("Corte de Césped para Ana Pérez", "es", {
+        keep: ["Ana Pérez"],
+      }),
+    ).toBe("Corte de césped para Ana Pérez");
+  });
+
   it("P-07 keeps plain English job names fully title-cased for en", () => {
     expect(titleCaseJobName("backyard junk removal", "en"))
       .toBe("Backyard Junk Removal");
