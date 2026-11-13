@@ -20,7 +20,7 @@ import {
   PROFILE_UPDATED,
   type ProfileUpdatedDetail,
 } from "../lib/profile-events.ts";
-import { sidebarIdentity, withSavedName } from "../lib/greeting-identity.ts";
+import { sidebarIdentity, withSavedProfile } from "../lib/greeting-identity.ts";
 import {
   type CountKey,
   countLabelKey,
@@ -167,15 +167,19 @@ export default function DashSidebar(
       setS(projectSidebar(snap));
     });
     // REQ-423 — a name saved on this page (Settings, the staff name prompt)
-    // shows at once, then the refetch brings the server's view (initials, checklist)
+    // shows at once, then the refetch brings the server's view (initials, checklist).
+    // REQ-737 (cycle 5, p12) — a business rename in Settings does the same.
     const onProfile = (e: Event) => {
-      const name = (e as CustomEvent<ProfileUpdatedDetail>).detail?.name;
-      if (name === undefined || !alive) return;
+      const detail = (e as CustomEvent<ProfileUpdatedDetail>).detail ?? {};
+      if (!alive) return;
+      if (detail.name === undefined && detail.businessName === undefined) {
+        return;
+      }
       const snap = readCached();
       if (snap?.profile) {
         setS(projectSidebar({
           ...snap,
-          profile: withSavedName(snap.profile, name),
+          profile: withSavedProfile(snap.profile, detail),
         }));
       }
       refreshDash().catch(() => {/* the next page load refetches */});

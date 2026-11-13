@@ -121,6 +121,31 @@ export function withSavedName<P extends IdentitySource>(
 }
 
 /**
+ * REQ-737 (demo cycle 5, p12) — the cached profile with every field a
+ * pm:profile-updated announcement carries (the person's name, the business
+ * name), so the sidebar follows a rename in Settings at once. An empty
+ * announcement returns the profile untouched.
+ */
+export function withSavedProfile<P extends IdentitySource>(
+  profile: P,
+  detail: { name?: string; businessName?: string },
+): P {
+  let out = profile;
+  if (detail.businessName !== undefined) {
+    out = {
+      ...out,
+      identity: { ...(out.identity ?? {}), businessName: detail.businessName },
+    };
+    // the server initials may pair the name with the old business — re-derive
+    const raw = out.user?.name?.trim();
+    const userName = raw && !isPlaceholderName(raw) ? raw : undefined;
+    out = { ...out, initials: deriveInitials(userName, businessOf(out)) };
+  }
+  if (detail.name !== undefined) out = withSavedName(out, detail.name);
+  return out;
+}
+
+/**
  * REQ-506 — the welcome-back toast line (demo cycle 3, m26 + s8). `template`
  * is the live-language "welcome.back" string ("Bienvenido de nuevo,
  * {firstName}."); `name` is /api/me's raw name. The seeded placeholder
