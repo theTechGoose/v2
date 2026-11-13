@@ -2802,6 +2802,8 @@
   "quotesHero.draftingNote": "Plus {amount} drafting in {drafts} — not sent yet.",
   "quotesHero.drafts.one": "{n} draft",
   "quotesHero.drafts.other": "{n} drafts",
+  "quotesHero.draftsInProgressTitle.one": "Nothing sent yet — {n} draft in progress.",
+  "quotesHero.draftsInProgressTitle.other": "Nothing sent yet — {n} drafts in progress.",
   "quotesHero.draftsOnlySub": "{amount} drafting. Send one and it moves to Out for response, where opens and replies are tracked for you.",
   "quotesHero.draftsOnlyTitle.one": "Nothing sent yet — {n} draft ready to send.",
   "quotesHero.draftsOnlyTitle.other": "Nothing sent yet — {n} drafts ready to send.",

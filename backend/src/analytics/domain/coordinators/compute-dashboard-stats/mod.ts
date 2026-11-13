@@ -15,8 +15,7 @@ import { bucketPendingInvoices } from "@paperwork/domain/business/invoice-aging-
 import { isOpenReceivable } from "@paperwork/domain/business/open-receivable/mod.ts";
 import { completedJobsInYear } from "@analytics/domain/business/signed-jobs/mod.ts";
 import { AgentConversationStore } from "@agents/domain/data/agent-conversation-store/mod.ts";
-import { threadFlowOf } from "@agents/domain/coordinators/list-conversations/mod.ts";
-import { threadStatus } from "#quote-flow/chat-header.ts";
+import { readyToSendQuoteIds } from "@agents/domain/coordinators/list-conversations/mod.ts";
 import type { Quote } from "@paperwork/dto/quote.ts";
 import {
   bucketBy12Months,
@@ -137,30 +136,14 @@ export class ComputeDashboardStats {
     };
   }
 
-  /**
-   * REQ-698 (demo-loop cycle 5, m14): of the drafts, those the thread status
-   * calls "Ready to send" — the terms wizard finished and no job-details pick
-   * owed (the SAME rule as the chat header and the thread list). Pair 10's
-   * dashboard said "1 draft is ready to send" while the draft was mid-wizard.
-   */
+  /** REQ-698 (demo-loop cycle 5, m14): of the drafts, those the thread
+   *  status calls "Ready to send" — REQ-760: the same `readyToSendQuoteIds`
+   *  the /quotes cards are marked with. */
   private async countReadyToSend(
     userId: string,
     drafts: Quote[],
   ): Promise<number> {
-    if (drafts.length === 0) return 0;
-    const convs = await this.conversations.listByUser(userId, { limit: 500 })
-      .catch(() => []);
-    // listByUser is newest-first: the first thread naming a quote is its own
-    const convByQuote = new Map<string, (typeof convs)[number]>();
-    for (const c of convs) {
-      if (c.quoteId && !convByQuote.has(c.quoteId)) convByQuote.set(c.quoteId, c);
-    }
-    const statuses = await Promise.all(drafts.map(async (quote) => {
-      const conv = convByQuote.get(quote.id);
-      const flow = conv ? await threadFlowOf(this.conversations, conv) : {};
-      return threadStatus({ quote, ...flow });
-    }));
-    return statuses.filter((s) => s === "readyToSend").length;
+    return (await readyToSendQuoteIds(this.conversations, userId, drafts)).size;
   }
 }
 

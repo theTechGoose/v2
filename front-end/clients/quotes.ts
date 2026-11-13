@@ -67,6 +67,9 @@ export interface QuoteCard {
   /** Onboarding sample quote (P-15): rendered as a badged card, excluded
    *  from every pipeline/money aggregate. */
   isSample?: boolean;
+  /** REQ-760 (cycle 5v2, m14): on a draft — its thread is ready to send
+   *  (terms wizard done). Absent from an older server. */
+  readyToSend?: boolean;
   sentAt?: string;
   acceptedAt?: string;
   lostAt?: string;

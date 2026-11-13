@@ -330,6 +330,8 @@ export function quotesHeroNumbers(
       value: number;
       customerId?: string | null;
       client?: string | null;
+      /** REQ-760: the server's readiness flag on a draft card */
+      readyToSend?: boolean;
     }
   >,
 ): {
@@ -343,6 +345,9 @@ export function quotesHeroNumbers(
   decidedCount: number;
   undeliveredCount: number;
   undeliveredTotal: number;
+  /** REQ-760 (cycle 5v2, m14): drafts (not undelivered) the server marks
+   *  ready to send; an absent flag (older server) counts as ready. */
+  readyCount: number;
 } {
   const out = real.filter((q) => OUT_STAGES.includes(q.stage as Stage));
   const drafts = real.filter((q) =>
@@ -371,6 +376,9 @@ export function quotesHeroNumbers(
     decidedCount,
     undeliveredCount: undelivered.length,
     undeliveredTotal: sum(undelivered),
+    readyCount:
+      drafts.filter((q) => q.stage === "draft" && q.readyToSend !== false)
+        .length,
   };
 }
 

@@ -2802,6 +2802,8 @@
   "quotesHero.draftingNote": "Además, {amount} en {drafts}, aún sin enviar.",
   "quotesHero.drafts.one": "{n} borrador",
   "quotesHero.drafts.other": "{n} borradores",
+  "quotesHero.draftsInProgressTitle.one": "Nada enviado todavía — {n} borrador en curso.",
+  "quotesHero.draftsInProgressTitle.other": "Nada enviado todavía — {n} borradores en curso.",
   "quotesHero.draftsOnlySub": "{amount} en borradores. Envía una y pasa a En espera de respuesta, donde se registran las aperturas y las respuestas.",
   "quotesHero.draftsOnlyTitle.one": "Nada enviado todavía — {n} borrador listo para enviar.",
   "quotesHero.draftsOnlyTitle.other": "Nada enviado todavía — {n} borradores listos para enviar.",

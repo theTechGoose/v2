@@ -50,6 +50,9 @@ export interface Quote {
   version?: number;
   /** REQ-481 (m10): change orders on this quote still waiting on the customer. */
   pendingChangeOrders?: string[];
+  /** REQ-760 (cycle 5v2, m14): the server's word on a draft — ready to send
+   *  (terms wizard done) or still in progress. Absent = ready (older server). */
+  readyToSend?: boolean;
 }
 
 /** REQ-236: the /quotes tracks. "Out for response" holds only quotes that
