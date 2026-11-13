@@ -288,6 +288,7 @@ import {
 import { startPoll } from "../lib/poll.ts";
 import { followChanges } from "../lib/change-feed.ts";
 import { boundQuoteMoved } from "../lib/live-doc-refresh.ts";
+import { keepMoneyTogether } from "../lib/money-nowrap.ts";
 import { Icon } from "../components/ui/Icon.tsx";
 import { TermEditValue } from "../components/TermEditValue.tsx";
 
@@ -10037,7 +10038,7 @@ export default function AsstChat({
                         )
                         : null}
                       <div class="msg__bubble" style="white-space:pre-wrap">
-                        {m.content}
+                        {keepMoneyTogether(m.content)}
                       </div>
                       {(() => {
                         // REQ-315 (m49): a reply that changed a quote links to it.

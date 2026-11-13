@@ -149,7 +149,9 @@ export default function QuoteSendDialog(
                 onClick={() => setChannel(ch)}
               >
                 <I d={icon} size={13} sw={2.4} />
-                <span>{tFor(lang, key)}</span>
+                <span class="send-dialog__option-label">
+                  {tFor(lang, key)}
+                </span>
                 {needs
                   ? (
                     <span
