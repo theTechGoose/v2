@@ -178,6 +178,10 @@ Deno.test("REQ-242: the stage mirrors the customer's actual screen — connectin
 
       // 1. the admin opens the demo while the customer's app is not open yet
       await useCookie(page.context(), baseUrl, admin.cookie);
+      // REQ-650 — the stage's counters show only behind the debug flag (no longer by hostname)
+      await page.addInitScript(() =>
+        localStorage.setItem("pm_demo_debug", "1")
+      );
       await page.goto("/admin");
       await page.locator("[data-cy='adm-q']").fill(userPhone.slice(2));
       await page.locator("[data-cy='adm-search']").click();
@@ -295,7 +299,7 @@ Deno.test("REQ-242: the stage mirrors the customer's actual screen — connectin
         "the pill says Live once the frame is in",
         async () => (await page.locator(STATUS).innerText()).trim() === "Live",
       );
-      // REQ-309 — on localhost the pill counts the mirror's frames (how a lost frame gets pinned)
+      // REQ-309 — with the debug flag (REQ-650) the pill counts the mirror's frames (how a lost frame gets pinned)
       await until(
         "the stats chip counts frames",
         async () =>

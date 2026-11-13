@@ -35,3 +35,31 @@ export const STAGE_TOP_INSET = STAGE_BADGE_H + 2 * STAGE_BADGE_GAP;
 export function stageBadgeTop(frameTop: number): number {
   return Math.max(0, frameTop - STAGE_BADGE_GAP - STAGE_BADGE_H);
 }
+
+/**
+ * REQ-650 (demo-loop cycle 5, issue c4-m1) — the stage bar is a product bar. The mirror's counters
+ * (REQ-309) used to show whenever the stage was served from localhost, so every demo run saw
+ * "mirror f477 hb299 …", the bar wrapped and End dropped to a second line. They show only behind
+ * an explicit flag: `?debug=1` in the address, or `localStorage[STAGE_DEBUG_KEY] = "1"` (which
+ * survives the hop from /admin to the stage). `?debug=0` switches a stored flag off for one look.
+ */
+export const STAGE_DEBUG_KEY = "pm_demo_debug";
+export function stageDebugOn(search: string, stored: string | null): boolean {
+  const q = new URLSearchParams(search).get("debug");
+  if (q !== null) return q === "1";
+  return stored === "1";
+}
+
+/**
+ * REQ-650 — the pill height the frame's bottom inset (REQ-228) is taken from. While End asks, the
+ * inset keeps the resting pill's height: the question never moves or resizes the frame (and it
+ * replaces the pill's spans, so the pill itself does not grow). Before anything was measured the
+ * first measure counts.
+ */
+export function stagePillH(
+  prev: number,
+  measured: number,
+  endAsking: boolean,
+): number {
+  return endAsking && prev > 0 ? prev : measured;
+}

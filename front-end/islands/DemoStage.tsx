@@ -89,7 +89,7 @@
  * {name}'s screen…" overlay uses. A frame that does not fit leaves the stage dirty, and it asks
  * for a snapshot every MIRROR_GAP_MS until one lands (a stall asks the same way; the customer's
  * heartbeat makes a lost frame a stall within ~3 s even while they are idle). Following another
- * of the customer's tabs starts the receiver over. In dev the pill shows what the mirror counted.
+ * of the customer's tabs starts the receiver over. Behind ?debug=1 (REQ-650) the pill shows what the mirror counted.
  *
  * REQ-391 (demo-loop cycle 2, M4 + m21) — …and in time (`stageStatus`): "Loading their next
  * page…" while the customer's page is gone and the next may come (the link's `between`) or a newly
@@ -198,9 +198,12 @@ import PresenterChips from "../components/demo-mode/PresenterChips.tsx";
 import EndDemo from "../components/demo-mode/EndDemo.tsx";
 import {
   STAGE_BADGE_H,
+  STAGE_DEBUG_KEY,
   STAGE_TOP_INSET,
   stageBadgeTop,
+  stageDebugOn,
   stageLeaveShown,
+  stagePillH,
 } from "../../shared/demo-mode/stage-chrome.ts";
 import {
   endedHref,
@@ -272,7 +275,7 @@ interface OwnStats {
   /** when the last frame came (0: none yet) */
   lastAt: number;
 }
-/** REQ-309 — the mirror's counters on the pill (dev only): one short line, the legend in its title */
+/** REQ-309 — the mirror's counters on the pill (behind the debug flag, REQ-650): one short line, the legend in its title */
 const MIRROR_STATS_LEGEND =
   "mirror (dev): f frames · hb heartbeats · x frames that did not fit · st stalls · rs resyncs asked · old dropped as older · bad undecodable · held waiting for an earlier frame · cv canvas bitmaps arrived/applied/painted/repainted: painted once drawn on the stage's canvas (REQ-644), repainted after a resize or a style change (REQ-380) · the last frame's age · lag median/worst seconds from the customer's push to the frame handed on · net the same to its last chunk in (encoder + wire) · page last/worst seconds from their page going to their next page on show here (REQ-648) · p2p or ws: how the frames travel (WebRTC, or the server's socket)";
 /** REQ-391 — seconds, one decimal; "–" for nothing measured */
@@ -358,6 +361,11 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
   const [bannerH, setBannerH] = useState(0);
   /** REQ-228 — the pill's real height: the frame keeps out of that band, however it wraps */
   const [pillH, setPillH] = useState(0);
+  /** REQ-650 (cycle 5, c4-m1) — End is asking: its question replaces the pill's spans and the
+   *  frame's inset keeps the resting pill's height (`stagePillH`) */
+  const [endAsking, setEndAsking] = useState(false);
+  const endAskingRef = useRef(false);
+  endAskingRef.current = endAsking;
   const pillRef = useRef<HTMLDivElement | null>(null);
   /** REQ-371 (demo m10) — each wave keeps the anchor it was sent with; REQ-546 (demo m14,
    *  cycle 4) — frozen where it was placed, gone with its node (`placeWavesAgain`) */
@@ -381,13 +389,20 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
   const lastAskRef = useRef(0);
   /** REQ-309 — a frame did not fit (or a snapshot failed): ask for a snapshot until one lands */
   const dirtyRef = useRef(false);
-  /** REQ-309 — what this stage counted; with the receiver's counters on the pill in dev */
+  /** REQ-309 — what this stage counted; with the receiver's counters on the pill (debug flag) */
   const ownRef = useRef<OwnStats>({ failed: 0, resyncs: 0, lastAt: 0 });
   const [statsText, setStatsText] = useState("");
-  const [dev] = useState(() =>
-    typeof location !== "undefined" &&
-    /^(localhost|127\.0\.0\.1)$/.test(location.hostname)
-  );
+  /** REQ-650 (cycle 5, c4-m1) — the counters only behind ?debug=1 / localStorage, never by host */
+  const [dev] = useState(() => {
+    if (typeof location === "undefined") return false;
+    let stored: string | null = null;
+    try {
+      stored = localStorage.getItem(STAGE_DEBUG_KEY);
+    } catch {
+      // storage refused (private mode): the address alone decides
+    }
+    return stageDebugOn(location.search, stored);
+  });
   /** REQ-242 — where this presenter's pointer rests on the stage; REQ-393 — anywhere on it (the
    *  frame, beside it); null once it left the window, or before it was ever seen */
   const lastMoveRef = useRef<Pt | null>(null);
@@ -1117,7 +1132,11 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
   useEffect(() => {
     const el = pillRef.current;
     if (!el) return;
-    const measure = () => setPillH(el.getBoundingClientRect().height);
+    // REQ-650 — while End asks, the inset keeps the resting pill's height
+    const measure = () =>
+      setPillH((h) =>
+        stagePillH(h, el.getBoundingClientRect().height, endAskingRef.current)
+      );
     measure();
     if (typeof ResizeObserver === "undefined") {
       addEventListener("resize", measure);
@@ -2070,71 +2089,85 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
           style={pillStyle}
         >
           <strong>{t("demoMode.title")}</strong>
-          {/* REQ-374 (demo p8) — the customer's pointer colour is named, as the chips name each presenter's */}
-          <span style="display:inline-flex;align-items:center;gap:6px">
-            <span
-              data-cy="demo-customer-dot"
-              aria-hidden="true"
-              style={`width:10px;height:10px;border-radius:50%;background:${CUSTOMER_COLOR};box-shadow:0 0 0 2px rgba(255,255,255,.85)`}
-            />
-            {t("demoMode.presenting", { name })}
-          </span>
-          <PresenterChips presenters={demo.presenters} me={demo.pid} t={t} />
-          <span
-            data-cy="demo-status"
-            style={live.key === "elsewhere"
-              // REQ-646 (cycle 5, m63) — a plain note, not a chip that reads like a button
-              ? "opacity:.8;font-size:12px;font-style:italic"
-              : "padding:2px 8px;border-radius:999px;background:rgba(255,255,255,.18);font-size:11.5px;font-weight:700"}
-          >
-            {statusLabel}
-          </span>
-          {dev && statsText && (
-            <span
-              data-cy="demo-mirror-stats"
-              title={MIRROR_STATS_LEGEND}
-              style="opacity:.7;font-size:11px;font-family:ui-monospace,monospace;cursor:help"
-            >
-              {statsText}
-            </span>
-          )}
-          {status === "replaced" && !ended && (
-            <button
-              type="button"
-              data-cy="demo-use-here"
-              onClick={() => globalThis.location.reload()}
-              style="padding:4px 11px;border-radius:8px;border:1px solid rgba(255,255,255,.75);background:transparent;color:#fff;cursor:pointer;font:inherit;font-size:12px;font-weight:700"
-            >
-              {t("demoMode.useHere")}
-            </button>
-          )}
-          {mirrored && (
-            <span
-              data-cy="demo-screen"
-              title={t("demoMode.pointOnlyHint")}
-              style="opacity:.8;font-size:12px;cursor:help"
-            >
-              {t("demoMode.theirScreen", {
-                name,
-                w: mirrored.w,
-                h: mirrored.h,
-              })}
-            </span>
-          )}
-          {/* REQ-537 (m36) — with other presenters, Leave is the secondary way out (outlined) */}
-          {stageLeaveShown(demo.presenters.length) && !ended && (
-            <button
-              type="button"
-              data-cy="demo-leave"
-              onClick={() => void leave()}
-              disabled={leavingHere}
-              style="padding:4px 11px;border-radius:8px;border:1px solid rgba(255,255,255,.75);background:transparent;color:#fff;cursor:pointer;font:inherit;font-size:12px;font-weight:700"
-            >
-              {t("demoMode.leave")}
-            </button>
+          {/* REQ-650 (cycle 5, c4-m1) — End's question replaces these, adding no width */}
+          {!endAsking && (
+            <>
+              {/* REQ-374 (demo p8) — the customer's pointer colour is named, as the chips name each presenter's */}
+              <span style="display:inline-flex;align-items:center;gap:6px">
+                <span
+                  data-cy="demo-customer-dot"
+                  aria-hidden="true"
+                  style={`width:10px;height:10px;border-radius:50%;background:${CUSTOMER_COLOR};box-shadow:0 0 0 2px rgba(255,255,255,.85)`}
+                />
+                {t("demoMode.presenting", { name })}
+              </span>
+              <PresenterChips
+                presenters={demo.presenters}
+                me={demo.pid}
+                t={t}
+              />
+              <span
+                data-cy="demo-status"
+                style={live.key === "elsewhere"
+                  // REQ-646 (cycle 5, m63) — a plain note, not a chip that reads like a button
+                  ? "opacity:.8;font-size:12px;font-style:italic"
+                  : "padding:2px 8px;border-radius:999px;background:rgba(255,255,255,.18);font-size:11.5px;font-weight:700"}
+              >
+                {statusLabel}
+              </span>
+              {dev && statsText && (
+                <span
+                  data-cy="demo-mirror-stats"
+                  title={MIRROR_STATS_LEGEND}
+                  style="opacity:.7;font-size:11px;font-family:ui-monospace,monospace;cursor:help"
+                >
+                  {statsText}
+                </span>
+              )}
+              {status === "replaced" && !ended && (
+                <button
+                  type="button"
+                  data-cy="demo-use-here"
+                  onClick={() => globalThis.location.reload()}
+                  style="padding:4px 11px;border-radius:8px;border:1px solid rgba(255,255,255,.75);background:transparent;color:#fff;cursor:pointer;font:inherit;font-size:12px;font-weight:700"
+                >
+                  {t("demoMode.useHere")}
+                </button>
+              )}
+              {mirrored && (
+                <span
+                  data-cy="demo-screen"
+                  title={t("demoMode.pointOnlyHint")}
+                  style="opacity:.8;font-size:12px;cursor:help"
+                >
+                  {t("demoMode.theirScreen", {
+                    name,
+                    w: mirrored.w,
+                    h: mirrored.h,
+                  })}
+                </span>
+              )}
+              {/* REQ-537 (m36) — with other presenters, Leave is the secondary way out (outlined) */}
+              {stageLeaveShown(demo.presenters.length) && !ended && (
+                <button
+                  type="button"
+                  data-cy="demo-leave"
+                  onClick={() => void leave()}
+                  disabled={leavingHere}
+                  style="padding:4px 11px;border-radius:8px;border:1px solid rgba(255,255,255,.75);background:transparent;color:#fff;cursor:pointer;font:inherit;font-size:12px;font-weight:700"
+                >
+                  {t("demoMode.leave")}
+                </button>
+              )}
+            </>
           )}
           {/* REQ-235 — End asks first */}
-          <EndDemo onEnd={end} disabled={ended || leavingHere} t={t} />
+          <EndDemo
+            onEnd={end}
+            disabled={ended || leavingHere}
+            onAsking={setEndAsking}
+            t={t}
+          />
         </div>
       )}
     </div>

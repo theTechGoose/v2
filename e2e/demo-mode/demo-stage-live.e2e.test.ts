@@ -4,7 +4,7 @@
  *   M4: the customer changes page IN the app (the app's own navigation, `location.href`, as the
  *       assistant does on a job's first line): the stage pill says "Loading their next page…"
  *       while their next page loads — never "Live" over the old page for the whole grace, never
- *       "Waiting" — and "Live" once the new page is in the frame. On localhost the stats chip
+ *       "Waiting" — and "Live" once the new page is in the frame. With the debug flag (REQ-650) the stats chip
  *       measures how late the frames arrive (lag, and the wire alone).
  *   m21: the customer leaves the app (the demo agent's "closed the tab": the tab to about:blank):
  *       the stage says "Waiting for Ana Torres's app…" within ~2 s, not after the 5 s grace, and
@@ -173,6 +173,10 @@ Deno.test("REQ-391 (demo-loop cycle 2, M4 + m21): an in-app page change says 'Lo
       await useCookie(userCtx, baseUrl, who.user.cookie);
       await tab.goto(`${baseUrl}/dashboard`);
       await useCookie(page.context(), baseUrl, who.admin.cookie);
+      // REQ-650 — the stage's counters show only behind the debug flag (no longer by hostname)
+      await page.addInitScript(() =>
+        localStorage.setItem("pm_demo_debug", "1")
+      );
       await openDemo(page, baseUrl, who.userPhone);
       await tab.reload();
       await pillUp(tab);

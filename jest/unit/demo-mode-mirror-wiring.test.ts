@@ -300,10 +300,10 @@ describe("REQ-309 (demo M19/m14/m26) — a gap is found while the customer is id
     expect(online.slice(0, online.indexOf("},") + 2)).toMatch(/rx\.reset\(\)/);
   });
 
-  test("in dev the pill shows what the mirror counted", () => {
+  test("behind the debug flag the pill shows what the mirror counted (REQ-650: never by hostname)", () => {
     expect(stage).toMatch(/data-cy="demo-mirror-stats"/);
     expect(stage).toMatch(/rx\.stats\(\)/);
-    expect(stage).toMatch(/localhost\|127\\\.0\\\.0\\\.1/);
+    expect(stage).toMatch(/stageDebugOn\(/);
   });
 
   test("REQ-380 (demo M10): the dev pill counts the canvas bitmaps that arrived, were applied and were repainted", () => {
