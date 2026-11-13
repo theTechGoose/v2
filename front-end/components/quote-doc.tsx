@@ -56,6 +56,7 @@ import { localizeTermValue } from "../lib/term-i18n.ts";
 import { withLang } from "../../shared/quote-flow/public-lang.ts";
 import { fmtMoneyExact, fmtPhone, telHref } from "../lib/format.ts";
 import { type Lang, tFor } from "../lib/i18n.ts";
+import { signerNameOnFile } from "../../shared/quote-flow/signer-name.ts";
 import {
   computeMilestones,
   CREAM,
@@ -458,7 +459,12 @@ export function QuoteDoc(
   // REQ-311 (demo-loop c1 m19): the signed document opens with a thank-you
   // and the next step at the top — the customer who lands here later (or
   // scrolls up) sees "signed, now pay" before anything else.
-  const signerName = quote.acceptedName?.trim() || customerName;
+  // REQ-750 (demo-loop cycle 5v1, p18-6a): an accent/case-only variant of
+  // the name on file ("Carmen Nunez" for "Carmen Núñez", stored before the
+  // accept canonicalized it) reads in the agreement's spelling.
+  const signerName = quote.acceptedName?.trim()
+    ? signerNameOnFile(quote.acceptedName, quote.customer?.name)
+    : customerName;
 
   return (
     <>

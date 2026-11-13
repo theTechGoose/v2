@@ -7,8 +7,8 @@ import { announceChange } from "../lib/change-announce.ts";
 import { strokeWidth } from "../lib/signature-ink.ts";
 import {
   isValidSignerName,
-  normalizeSignerName,
   onFileSpellingSuggestion,
+  signerNameOnFile,
 } from "../../shared/quote-flow/signer-name.ts";
 
 interface Props {
@@ -302,7 +302,9 @@ export default function PublicSignQuote(
     // lettered words, or three letters) gates the signature, as the backend
     // does (400 invalid_name).
     if (!nameOk) return;
-    const trimmed = normalizeSignerName(name);
+    // REQ-750 (demo c5v1 p18-6a): an accent/case-only variant of the name on
+    // file signs in the agreement's spelling (the backend does the same).
+    const trimmed = signerNameOnFile(name, onFileName);
     setSubmitting(true);
     setErr(undefined);
     try {

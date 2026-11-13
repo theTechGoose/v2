@@ -35,6 +35,7 @@ import { logoVersion } from "#quote-flow/public-logo-url.ts";
 import {
   isValidSignerName,
   normalizeSignerName,
+  signerNameOnFile,
 } from "#quote-flow/signer-name.ts";
 import { AcceptedPaymentMethods } from "@profile/dto/business-identity.ts";
 import { PaymentStore } from "@paperwork/domain/data/payment-store/mod.ts";
@@ -839,6 +840,18 @@ export class PaperworkPublicController {
     if (existing.status === "lost") {
       return ctx.json({ ok: false, reason: "declined" }, 409);
     }
+    // REQ-750 (demo-loop cycle 5v1, p18-6a): "Carmen Nunez" signing the
+    // agreement made out to "Carmen Núñez" records the agreement's spelling
+    // (accent/case/spacing-only differences); any other name stays as typed.
+    const onFileName = (isQuoteIssued(existing)
+      ? existing.customerSnapshot?.name
+      : undefined) ??
+      await lookupCustomerName(
+        this.customers,
+        existing.customerId,
+        existing.userId,
+      );
+    dto.name = signerNameOnFile(dto.name, onFileName);
     // REQ-460 (demo-loop cycle 3, M16 + M15): nothing is signed before it was
     // offered with its payment terms — a locked quote whose terms wizard is
     // still asking is `not_issued` (the in-person override does not change
@@ -954,7 +967,13 @@ export class PaperworkPublicController {
         ? { subscriptionId: confirmed.subscriptionId }
         : {}),
     });
-    return ctx.json({ ok: true, quoteId: updated.id });
+    return ctx.json({
+      ok: true,
+      quoteId: updated.id,
+      // REQ-750: the name the signature recorded (the on-file spelling when
+      // the typed one differed only by accents or case)
+      acceptedName: dto.name,
+    });
   }
 
   /** Customer declines a quote (audit P5.1).
