@@ -13,6 +13,7 @@
  */
 
 import { MUTATION_EVENT } from "./ticker-pick.ts";
+import { announceWrite } from "./owner-writes.ts";
 
 const SERVER_BACKEND_URL =
   (typeof Deno !== "undefined" ? Deno.env.get("BACKEND_URL") : undefined) ??
@@ -134,6 +135,9 @@ async function request<T>(
     globalThis.dispatchEvent(
       new CustomEvent(MUTATION_EVENT, { detail: { method, path } }),
     );
+    // REQ-754 (cycle 5v1, M5): and the owner's other tabs (an open
+    // /customers re-reads when an invoice is issued here)
+    announceWrite(method, path, parsed);
   }
   return parsed as T;
 }
