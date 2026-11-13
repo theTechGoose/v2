@@ -4,7 +4,7 @@
  * stands for a "send him the invoice" ask. Pure: no I/O, no model.
  */
 import { assert, assertEquals, assertStringIncludes } from "#std/assert";
-import { billingReply, owedReply, pricingReply } from "./mod.ts";
+import { billingReply, inquiryReply, owedReply, pricingReply } from "./mod.ts";
 
 const TIERS = [
   {
@@ -674,4 +674,86 @@ Deno.test("REQ-673 billingReply: signed, only a scheduled invoice — one senten
     out.text,
     "CO-002 (+$40) is waiting for John Miller's approval",
   );
+});
+
+// ---------------------------------------------------------------------------
+// REQ-701 (demo-loop cycle 5, M21) — "¿dónde le contesto?" answered from the
+// stored questions: who asked what, on which quote, how to reach them, and
+// where in the app to answer (the quote's "Questions from the client").
+// ---------------------------------------------------------------------------
+
+const LINDA_Q = {
+  quoteId: "q-linda",
+  quoteNumber: "Q-001",
+  job: "Retiro de muebles",
+  name: "Linda Morales",
+  question:
+    "¿Pueden venir el sábado en la mañana? ¿Se llevan también un colchón?",
+  contactBack: "linda.morales@example.com",
+  at: "2026-11-12T19:02:11.000Z",
+};
+
+Deno.test("REQ-701 M21 inquiryReply (es): pair 9 — Linda's question, the quote, how to reach her and where to answer, with a link to that quote", () => {
+  const r = inquiryReply("es", [LINDA_Q]);
+  assertStringIncludes(
+    r.text,
+    "Linda Morales preguntó en Q-001 (Retiro de muebles)",
+  );
+  assertStringIncludes(r.text, "12 nov");
+  assertStringIncludes(
+    r.text,
+    "“¿Pueden venir el sábado en la mañana? ¿Se llevan también un colchón?”",
+  );
+  assertStringIncludes(r.text, "Contáctalos: linda.morales@example.com");
+  assertStringIncludes(r.text, "Preguntas del cliente");
+  assertStringIncludes(r.text, "Responder por texto");
+  assert(!/factura|INV-/i.test(r.text), r.text);
+  assertEquals(r.link, { quoteId: "q-linda", quoteNumber: "Q-001" });
+});
+
+Deno.test("REQ-701 M21 inquiryReply (en): same answer in English; no contact-back line when the client gave none", () => {
+  const r = inquiryReply("en", [{
+    ...LINDA_Q,
+    job: "Furniture removal",
+    question: "Can you come Saturday morning?",
+    contactBack: undefined,
+  }]);
+  assertStringIncludes(
+    r.text,
+    "Linda Morales asked on Q-001 (Furniture removal)",
+  );
+  assertStringIncludes(r.text, "Nov 12");
+  assertStringIncludes(r.text, "“Can you come Saturday morning?”");
+  assertStringIncludes(r.text, "Questions from the client");
+  assertStringIncludes(r.text, "Text back");
+  assert(!r.text.includes("Contact them back"), r.text);
+});
+
+Deno.test("REQ-701 M21 inquiryReply: several waiting — a count, at most three, the rest counted; the link is the first one's quote", () => {
+  const four = [0, 1, 2, 3].map((i) => ({
+    ...LINDA_Q,
+    quoteId: `q-${i}`,
+    quoteNumber: `Q-00${i + 1}`,
+    name: `Client ${i + 1}`,
+    question: `Question ${i + 1}?`,
+  }));
+  const r = inquiryReply("en", four);
+  assertStringIncludes(r.text, "4 client questions");
+  assertStringIncludes(r.text, "Question 1?");
+  assertStringIncludes(r.text, "Question 3?");
+  assert(!r.text.includes("Question 4?"), r.text);
+  assertStringIncludes(r.text, "1 more");
+  assertEquals(r.link?.quoteId, "q-0");
+});
+
+Deno.test("REQ-701 M21 inquiryReply: nothing waiting — says so and where questions show up; no link", () => {
+  const es = inquiryReply("es", []);
+  assertStringIncludes(
+    es.text,
+    "No hay preguntas de clientes esperando respuesta",
+  );
+  assertStringIncludes(es.text, "Preguntas del cliente");
+  assertEquals(es.link, undefined);
+  const en = inquiryReply("en", []);
+  assertStringIncludes(en.text, "No client question is waiting for an answer");
 });

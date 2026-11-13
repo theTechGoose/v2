@@ -594,3 +594,104 @@ export function owedReply(lang: Lang, input: OwedReplyInput): OwedReply {
   parts.push(...pendingChangeOrders(lang, name, input.changeOrders));
   return { text: parts.join(" "), owedCents, upcomingCents };
 }
+
+// ---------------------------------------------------------------------------
+// REQ-701 (demo-loop cycle 5, M21) — where to answer a client's question
+// ---------------------------------------------------------------------------
+
+/** One stored question, as the answer names it. */
+export interface InquiryForReply {
+  quoteId: string;
+  /** "Q-001" */
+  quoteNumber: string;
+  /** the job's title in the reply's language */
+  job?: string;
+  /** who asked */
+  name: string;
+  question: string;
+  /** how they asked to be reached back, verbatim */
+  contactBack?: string;
+  /** ISO — when they asked */
+  at: string;
+}
+
+export interface InquiryReply {
+  text: string;
+  /** the quote whose questions the reply links to (the first listed) */
+  link?: { quoteId: string; quoteNumber: string };
+}
+
+/** At most this many questions are quoted; the rest are counted. */
+const INQUIRIES_SHOWN = 3;
+
+/**
+ * REQ-701 (M21): "¿dónde le contesto?" — pair 9's assistant answered with the
+ * INV-001 status. Each waiting question (the caller orders them: the person
+ * the message names first) with its quote, its words and how to reach the
+ * client; then where in the app to answer — the quote's "Questions from the
+ * client", named with the panel's own labels. Nothing waiting → says so and
+ * where questions show up.
+ */
+export function inquiryReply(
+  lang: Lang,
+  open: InquiryForReply[],
+): InquiryReply {
+  const labels = {
+    title: t(lang, "quotesPage.inquiries.title"),
+    text: t(lang, "quotesPage.inquiries.textBack"),
+    email: t(lang, "quotesPage.inquiries.emailBack"),
+    call: t(lang, "quotesPage.inquiries.call"),
+  };
+  if (open.length === 0) {
+    return { text: t(lang, "chatCoordinator.inquiries.none", labels) };
+  }
+  const block = (q: InquiryForReply) => {
+    const vars = {
+      name: q.name,
+      number: q.quoteNumber,
+      job: q.job ?? "",
+      date: formatShortDate(q.at, lang),
+    };
+    const lines = [
+      t(
+        lang,
+        q.job?.trim()
+          ? "chatCoordinator.inquiries.one"
+          : "chatCoordinator.inquiries.oneNoJob",
+        vars,
+      ),
+      `“${q.question}”`,
+    ];
+    if (q.contactBack?.trim()) {
+      lines.push(
+        t(lang, "inquiryAlert.contactBack", { contact: q.contactBack.trim() }),
+      );
+    }
+    return lines.join("\n");
+  };
+  const parts: string[] = [];
+  if (open.length > 1) {
+    parts.push(t(lang, "chatCoordinator.inquiries.count", { n: open.length }));
+  }
+  parts.push(...open.slice(0, INQUIRIES_SHOWN).map(block));
+  if (open.length > INQUIRIES_SHOWN) {
+    parts.push(
+      t(lang, "chatCoordinator.inquiries.more", {
+        n: open.length - INQUIRIES_SHOWN,
+      }),
+    );
+  }
+  parts.push(
+    t(
+      lang,
+      open.length > 1
+        ? "chatCoordinator.inquiries.whereEach"
+        : "chatCoordinator.inquiries.where",
+      labels,
+    ),
+  );
+  return {
+    text: parts.join("\n\n"),
+    link: { quoteId: open[0].quoteId, quoteNumber: open[0].quoteNumber },
+  };
+}

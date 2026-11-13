@@ -45,6 +45,9 @@ import { WorkOrderStore } from "@paperwork/domain/data/work-order-store/mod.ts";
 import { InvoiceTranslatorPort } from "@paperwork/domain/coordinators/invoice-translator-port/mod.ts"; // REQ-497
 import { QuoteSignedPort } from "@paperwork/domain/coordinators/quote-signed-port/mod.ts"; // REQ-563
 import { QuoteTranslatorPort } from "@paperwork/domain/coordinators/quote-translator-port/mod.ts"; // REQ-591
+import { InquiryController } from "@paperwork/entrypoints/inquiry-controller/mod.ts"; // REQ-701
+import { QuoteInquiryStore } from "@paperwork/domain/data/inquiry-store/mod.ts"; // REQ-701
+import { ReplyToInquiry } from "@paperwork/domain/coordinators/reply-to-inquiry/mod.ts"; // REQ-701
 
 @Module({
   imports: [UsersModule, CrmModule, CommunicationModule, FilesModule],
@@ -60,6 +63,7 @@ import { QuoteTranslatorPort } from "@paperwork/domain/coordinators/quote-transl
     InboundController,
     RevisionsController, // REQ-201/205
     WorkOrderController, // REQ-210
+    InquiryController, // REQ-701
   ],
   injectables: [
     QuoteStore,
@@ -93,6 +97,8 @@ import { QuoteTranslatorPort } from "@paperwork/domain/coordinators/quote-transl
     InvoiceTranslatorPort, // REQ-497
     QuoteSignedPort, // REQ-563
     QuoteTranslatorPort, // REQ-591
+    QuoteInquiryStore, // REQ-701
+    ReplyToInquiry, // REQ-701
   ],
 })
 export class PaperworkModule {}

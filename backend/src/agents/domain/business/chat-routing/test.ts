@@ -15,7 +15,9 @@ import type { LLMToolName } from "@agents/domain/business/llm/base/mod.ts";
 import {
   asksHowPriced,
   chatToolsFor,
+  isInquiryAsk,
   isInvoiceRequest,
+  isReplyAdviceAsk,
   jobTitle,
   mayAdvanceQuote,
   owedNameFromHistory,
@@ -722,4 +724,111 @@ Deno.test("REQ-579 M14 a clause never ends inside open parentheses — '?' / ';'
     )?.job,
     "a fence (cedar)",
   );
+});
+
+// ---------------------------------------------------------------------------
+// REQ-701 (demo-loop cycle 5, M21) — "¿dónde le contesto?" is about a
+// client's question. Pair 9's "Ya terminamos… mándale la factura ahora… y
+// Linda preguntó… ¿dónde le contesto?" got only the INV-001 answer.
+// ---------------------------------------------------------------------------
+
+Deno.test("REQ-701 M21 isInquiryAsk: pair 9's message and other ways to ask where a client's question is or how to answer it (es)", () => {
+  for (
+    const text of [
+      "Ya terminamos… mándale la factura ahora… y Linda preguntó… ¿dónde le contesto?",
+      "¿dónde le contesto?",
+      "¿Cómo le respondo a Linda?",
+      "¿Dónde veo la pregunta de Linda?",
+      "¿Qué preguntó Linda?",
+      "Linda hizo una pregunta, ¿dónde la veo?",
+      "¿dónde puedo contestarle?",
+      "quiero contestar la pregunta de Linda",
+    ]
+  ) {
+    assertEquals(isInquiryAsk(text), true, text);
+  }
+});
+
+Deno.test("REQ-701 M21 isInquiryAsk: the same asks in English", () => {
+  for (
+    const text of [
+      "where do I answer her?",
+      "How do I reply to Linda's question?",
+      "Linda asked a question, where can I see it?",
+      "what did Linda ask?",
+      "where's the client's question?",
+      "I want to answer the customer's question",
+    ]
+  ) {
+    assertEquals(isInquiryAsk(text), true, text);
+  }
+});
+
+Deno.test("REQ-701 M21 isInquiryAsk: billing, owed, pricing and other where/how asks are not about a client's question", () => {
+  for (
+    const text of [
+      "¿Dónde está la factura?",
+      "¿Cómo le cobro el depósito?",
+      "Pregúntale si quiere el sábado",
+      "¿Cuánto me debe Ana López?",
+      "Agrega una pregunta al contrato",
+      "¿dónde le mando la factura?",
+      "mándale la factura ahora",
+      "Where is the invoice?",
+      "How do I bill her?",
+      "I have a question about pricing",
+      "how do I respond to a bad review?",
+      "send him the deposit invoice",
+      "what should I charge for a fence?",
+      "how much does John Miller owe me?",
+      "",
+    ]
+  ) {
+    assertEquals(isInquiryAsk(text), false, text);
+  }
+});
+
+Deno.test("REQ-701 M21 isInquiryAsk: the job a client asked FOR, and a question the contractor asked, are not a client's question", () => {
+  for (
+    const text of [
+      "what did the customer ask for?",
+      "what did Linda ask for on the fence job?",
+      "I asked a question earlier, where can I see the answer?",
+      "we sent a question to the supplier, where do I see the reply?",
+    ]
+  ) {
+    assertEquals(isInquiryAsk(text), false, text);
+  }
+});
+
+Deno.test("REQ-701 M21 isReplyAdviceAsk: HOW to answer someone, naming no place and no question, is advice as much as an ask about a client's question", () => {
+  for (
+    const text of [
+      "how should I respond to him? he says the price is too high",
+      "How do I reply to her complaint about the mess?",
+      "¿Cómo le respondo? Dice que el precio es muy alto",
+      "¿cómo le contesto que no podemos el sábado?",
+      "Linda paid $500 by Zelle, how should I reply to her?",
+      "¿Cómo le respondo a Linda?",
+    ]
+  ) {
+    assertEquals(isInquiryAsk(text), true, `an inquiry ask: ${text}`);
+    assertEquals(isReplyAdviceAsk(text), true, text);
+  }
+  for (
+    const text of [
+      "Ya terminamos… mándale la factura ahora… y Linda preguntó… ¿dónde le contesto?",
+      "where do I answer her?",
+      "¿dónde le contesto?",
+      "How do I reply to Linda's question?",
+      "what did Linda ask?",
+      "¿Qué preguntó Linda?",
+      "Linda hizo una pregunta, ¿cómo la contesto?",
+      "Linda asked about Saturday, how do I reply to her?",
+      "Where is the invoice?",
+      "",
+    ]
+  ) {
+    assertEquals(isReplyAdviceAsk(text), false, text);
+  }
 });

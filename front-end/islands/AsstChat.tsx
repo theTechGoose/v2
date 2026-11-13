@@ -10152,9 +10152,11 @@ export default function AsstChat({
                         return (
                           <a
                             data-cy="msg-quote-link"
+                            // REQ-701 (cycle 5, M21): an answer to "¿dónde le
+                            // contesto?" opens the quote's questions.
                             href={`/quotes?open=${
                               encodeURIComponent(ql.quoteId)
-                            }`}
+                            }${ql.questions ? "#questions" : ""}`}
                             style={`display:inline-flex;align-items:center;gap:6px;margin-top:6px;margin-right:6px;padding:7px 12px;border-radius:999px;font-size:12.5px;font-weight:800;text-decoration:none;${
                               // REQ-664: the change-order offer is the one
                               // primary; the quote link steps back.
@@ -10165,7 +10167,9 @@ export default function AsstChat({
                           >
                             {tFor(
                               lang,
-                              ql.publish
+                              ql.questions
+                                ? "asstChat.openQuoteQuestions"
+                                : ql.publish
                                 ? "asstChat.openQuotePublish"
                                 : "asstChat.openQuote",
                               { number },

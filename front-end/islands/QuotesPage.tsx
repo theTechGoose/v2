@@ -7,6 +7,7 @@ import { useEffect, useRef, useState } from "preact/hooks";
 import {
   type Insight,
   type QuoteCard as BackendQuoteCard,
+  type QuoteInquiry,
   type QuoteLedger,
   quotesClient,
   type QuoteVersion,
@@ -108,6 +109,8 @@ import {
   type TrailMessage,
   type ViewedReceipt,
 } from "../../shared/quote-flow/receipts.ts";
+import QuoteInquiries from "../components/QuoteInquiries.tsx"; // REQ-701
+import { QUESTIONS_ANCHOR } from "../lib/quote-inquiries.ts"; // REQ-701
 
 // Inner sort order for the "Out for response" track — most engaged
 // (opened) at top, then sent, cooling, stale. Mirrors the reference's
@@ -189,6 +192,8 @@ interface OpenQuoteState {
   versions: QuoteVersion[];
   /** REQ-570 (m41): who the panel's Send goes to — contact on file. */
   customer?: SendDialogCustomer | null;
+  /** REQ-701 (cycle 5, M21): the questions clients sent on this quote. */
+  inquiries: QuoteInquiry[];
 }
 
 /** REQ-684 (demo-loop cycle 5, m39): a hand-made change order says what its
@@ -1951,6 +1956,17 @@ function OpenQuotePanel(
           })}
         </p>
       )}
+      {
+        /* REQ-701 (cycle 5, M21): what the client asked, and the answer —
+          where the notice "… asked a question" leads (#questions). */
+      }
+      <QuoteInquiries
+        lang={lang}
+        quoteId={q.id}
+        inquiries={state.inquiries}
+        customer={state.customer}
+        customerName={q.customerName}
+      />
       {(badge === "accepted" || state.receipts.length > 0 || state.viewed) && (
         <div class="qopen__receipts">
           {badge === "accepted" && (
@@ -2042,6 +2058,7 @@ export default function QuotesPage(
     viewed: null,
     ledger: null,
     versions: [],
+    inquiries: [],
   });
   // REQ-201: bumped after a publish so the panel re-reads quote + ledger.
   // REQ-396: also bumped by the 30 s list re-read when the open quote's card
@@ -2060,11 +2077,14 @@ export default function QuotesPage(
       viewed: null,
       ledger: null,
       versions: [],
+      inquiries: [],
     });
     setOpenId(id);
     try {
       const url = new URL(globalThis.location.href);
       url.searchParams.set("open", id);
+      // REQ-701: another quote opens at its top, not at its questions
+      url.hash = "";
       globalThis.history.replaceState(null, "", url.toString());
     } catch { /* history unavailable — the panel still opens */ }
   }
@@ -2091,8 +2111,19 @@ export default function QuotesPage(
       // REQ-205 / REQ-201: the documents ledger and the version history.
       quotesClient.ledger(openId).catch(() => null as QuoteLedger | null),
       quotesClient.versions(openId).catch(() => [] as QuoteVersion[]),
+      // REQ-701 (cycle 5, M21): the questions the client sent on it.
+      quotesClient.inquiries(openId).catch(() => [] as QuoteInquiry[]),
     ]).then((
-      [quoteRaw, messages, me, opensRes, customersList, ledger, versions],
+      [
+        quoteRaw,
+        messages,
+        me,
+        opensRes,
+        customersList,
+        ledger,
+        versions,
+        inquiries,
+      ],
     ) => {
       if (!alive) return;
       let quote = quoteRaw as BackendQuoteCard | null;
@@ -2127,6 +2158,7 @@ export default function QuotesPage(
           : null,
         versions: Array.isArray(versions) ? versions : [],
         customer,
+        inquiries: Array.isArray(inquiries) ? inquiries : [],
       });
     });
     return () => {
@@ -2137,12 +2169,15 @@ export default function QuotesPage(
   // UX-08: once the opened panel has data, make sure it is actually on
   // screen — at 390px it renders below the hero + 4 stacked KPI cells and a
   // deep link used to land the user on a viewport that never showed it.
+  // REQ-701 (cycle 5, M21): a #questions link (the feed row, the alert, the
+  // chat) lands on the client's questions, not the panel's top.
   useEffect(() => {
     if (!openId || openQ.loading || !openQ.quote) return;
-    document.querySelector("[data-cy=quote-open-panel]")?.scrollIntoView({
-      block: "start",
-      behavior: "auto",
-    });
+    const questions = globalThis.location?.hash === `#${QUESTIONS_ANCHOR}`
+      ? document.getElementById(QUESTIONS_ANCHOR)
+      : null;
+    (questions ?? document.querySelector("[data-cy=quote-open-panel]"))
+      ?.scrollIntoView({ block: "start", behavior: "auto" });
   }, [openId, openQ.loading, openQ.quote?.id]);
 
   // REQ-304 (demo M27): the cards / hero / KPI loader is a function, not a
@@ -2340,6 +2375,7 @@ export default function QuotesPage(
             try {
               const url = new URL(globalThis.location.href);
               url.searchParams.delete("open");
+              url.hash = "";
               globalThis.history.replaceState(null, "", url.toString());
             } catch { /* history unavailable — the panel still closes */ }
           }}

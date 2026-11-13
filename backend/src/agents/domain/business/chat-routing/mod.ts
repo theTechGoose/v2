@@ -513,6 +513,94 @@ export function owedNameFromHistory(texts: string[]): string | undefined {
 }
 
 // ---------------------------------------------------------------------------
+// REQ-701 (demo-loop cycle 5, M21) — a client's question
+// ---------------------------------------------------------------------------
+
+/** Spanish: a reply TO someone ("le"/"les"), the question itself, or what
+ *  they asked. "¿Dónde le mando la factura?" and "¿Cómo le cobro…?" are not
+ *  about a question; "pregunto" (I ask) is not "preguntó" (she asked). */
+const INQUIRY_ES_RES: RegExp[] = [
+  /(?<!\p{L})(?:d[oó]nde|c[oó]mo)\s+(?:le|les)\s+(?:contesto|respondo|contestamos|respondemos)(?!\p{L})/iu,
+  /(?<!\p{L})(?:d[oó]nde|c[oó]mo)\s+(?:puedo|podemos|tengo\s+que|debo)\s+(?:contestar|responder)(?:le|les)(?!\p{L})/iu,
+  /(?<!\p{L})(?:d[oó]nde|c[oó]mo)\s+(?:(?:puedo|podemos|tengo\s+que|debo)\s+)?(?:contestar|responder|ver|leer|encontrar|contesto|respondo|veo|leo|encuentro)\s+(?:a\s+)?(?:la|su|esa|sus|las|esas)\s+preguntas?(?!\p{L})/iu,
+  /(?<!\p{L})qu[eé]\s+(?:me\s+|nos\s+)?pregunt(?:ó|aron)(?!\p{L})/iu,
+  /(?<!\p{L})(?:contestar|responder)(?:le|les)?\s+(?:a\s+)?(?:la|su|esa|sus|las)\s+preguntas?(?!\p{L})/iu,
+];
+/** "Linda preguntó… ¿dónde la veo?" — someone asked, and where/how to see it. */
+const ASKED_ES_RE =
+  /(?<!\p{L})(?:pregunt(?:ó|aron)|(?:hizo|mand[oó]|dej[oó]|tiene)\s+una\s+pregunta)(?!\p{L})/iu;
+const WHERE_ES_RE =
+  /(?<!\p{L})(?:d[oó]nde|c[oó]mo)\s+(?:(?:la|lo|las|los|le|les)\s+)?(?:veo|leo|contesto|respondo|encuentro)(?!\p{L})/iu;
+
+/** English: the person, or a question that is someone else's — never "this
+ *  question" / "my question" (those are the contractor's own). */
+const PERSON_EN = String
+  .raw`(?:her|him|them|the\s+(?:client|customer|homeowner)s?)`;
+const THEIR_QUESTION_EN = String
+  .raw`(?:(?:her|his|their)\s+|(?:the\s+)?(?:client|customer|homeowner)(?:'s|’s|s'|s)?\s+|(?!(?:my|this|that|your|our)\b)\p{L}+(?:'s|’s)\s+)(?:question|questions|message)`;
+const INQUIRY_EN_RES: RegExp[] = [
+  new RegExp(
+    String
+      .raw`\b(?:where|how)\s+(?:do|can|should|would|could|shall)\s+(?:i|we)\s+(?:answer|reply(?:\s+to)?|respond(?:\s+to)?|get\s+back\s+to|text\s+back|write\s+back(?:\s+to)?)\s+(?:${PERSON_EN}|${THEIR_QUESTION_EN})\b`,
+    "iu",
+  ),
+  new RegExp(
+    String
+      .raw`\b(?:where|how)\s+(?:do|can|should|would|could)\s+(?:i|we)\s+(?:see|find|read|view|check)\s+(?:the\s+)?${THEIR_QUESTION_EN}\b`,
+    "iu",
+  ),
+  new RegExp(
+    String
+      .raw`\bwhere(?:'s|’s|\s+is|\s+are)\s+(?:the\s+)?${THEIR_QUESTION_EN}\b`,
+    "iu",
+  ),
+  // "what did Linda ask?" — not "what did she ask FOR" (the job she wants)
+  /\bwhat\s+did\s+(?!(?:i|we|you)\b)(?:the\s+(?:client|customer|homeowner)|\p{L}+(?:\s+\p{L}+)?)\s+ask\b(?!\s+for\b)/iu,
+  new RegExp(
+    String
+      .raw`\b(?:answer|reply\s+to|respond\s+to)\s+(?:the\s+)?${THEIR_QUESTION_EN}\b`,
+    "iu",
+  ),
+];
+/** "Linda asked a question, where can I see it?" — never the contractor's
+ *  own ("I asked a question earlier…", "we sent a question to…"). */
+const ASKED_EN_RE =
+  /(?<!\b(?:i|we)\s+(?:just\s+|already\s+|also\s+)?)\b(?:asked|sent)\s+(?:me\s+|us\s+)?(?:a\s+|some\s+)?(?:question|questions)\b/iu;
+const WHERE_EN_RE =
+  /\b(?:where|how)\s+(?:do|can|should|would|could)\s+(?:i|we)\s+(?:see|find|read|view|answer|reply|respond)\b/iu;
+
+/** REQ-701 (demo-loop cycle 5, M21): the message asks where a client's
+ *  question is, how to answer it, or what they asked — pair 9's "Ya
+ *  terminamos… mándale la factura ahora… y Linda preguntó… ¿dónde le
+ *  contesto?", "where do I answer her?", "what did Linda ask?". Answered
+ *  from the stored questions (AnswerInquiries), never by the chat model —
+ *  except a bare how-to-reply ask with no such question waiting
+ *  (isReplyAdviceAsk). */
+export function isInquiryAsk(text: string): boolean {
+  if (!text?.trim()) return false;
+  if (INQUIRY_ES_RES.some((re) => re.test(text))) return true;
+  if (INQUIRY_EN_RES.some((re) => re.test(text))) return true;
+  return (ASKED_ES_RE.test(text) && WHERE_ES_RE.test(text)) ||
+    (ASKED_EN_RE.test(text) && WHERE_EN_RE.test(text));
+}
+
+/** A place ("where", "dónde") or a question ("question", "ask", "pregunta",
+ *  "preguntó"…) named anywhere in the message. */
+const NAMES_PLACE_OR_QUESTION_RE =
+  /\b(?:where|questions?|asks?|asked)\b|(?<!\p{L})(?:d[oó]nde|pregunt\p{L}*)(?!\p{L})/iu;
+
+/** REQ-701 (M21): an inquiry ask that only asks HOW to answer someone —
+ *  "how should I respond to him? he says the price is too high", "¿cómo le
+ *  contesto que no podemos el sábado?" — naming no place and no question. It
+ *  is advice as much as an ask about a client's question: it is answered from
+ *  a stored question only when the person it names, or the thread's quote,
+ *  has one waiting (AnswerInquiries `onlyRelevant`); otherwise the chat model
+ *  answers it, and no "nothing waiting" line rides along with another answer. */
+export function isReplyAdviceAsk(text: string): boolean {
+  return isInquiryAsk(text) && !NAMES_PLACE_OR_QUESTION_RE.test(text);
+}
+
+// ---------------------------------------------------------------------------
 // M32 — which tools the model may call
 // ---------------------------------------------------------------------------
 
