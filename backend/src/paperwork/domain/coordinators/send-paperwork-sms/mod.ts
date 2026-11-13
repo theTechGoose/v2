@@ -7,6 +7,7 @@ import { t } from "@core/i18n/mod.ts";
 import { QuoteStore } from "@paperwork/domain/data/quote-store/mod.ts";
 import { InvoiceStore } from "@paperwork/domain/data/invoice-store/mod.ts";
 import { StripeSettingsStore } from "@users/domain/data/stripe-settings-store/mod.ts"; // REQ-630
+import { SquareSettingsStore } from "@users/domain/data/square-settings-store/mod.ts"; // REQ-803
 import { payWaysSmsLine } from "@paperwork/domain/business/pay-ways/mod.ts"; // REQ-630
 import { CustomerStore } from "@crm/domain/data/customer-store/mod.ts";
 import { UserStore } from "@users/domain/data/user-store/mod.ts";
@@ -97,7 +98,18 @@ export class SendPaperworkSms {
     private bus?: EventBus,
     /** REQ-630 — whether the business takes cards on its own Stripe (the text names "card") */
     private stripeSettings?: StripeSettingsStore,
+    /** REQ-803 — or on its own Square (the card is a way to pay all the same) */
+    private squareSettings?: SquareSettingsStore,
   ) {}
+
+  /** REQ-630 / REQ-803 — the business takes cards on its own Stripe or its own Square */
+  private async takesCard(userId: string): Promise<boolean> {
+    const [stripe, square] = await Promise.all([
+      this.stripeSettings?.get(userId).catch(() => null),
+      this.squareSettings?.get(userId).catch(() => null),
+    ]);
+    return !!stripe || !!square;
+  }
 
   async run(
     userId: string,
@@ -186,7 +198,7 @@ export class SendPaperworkSms {
       }, lang);
       // REQ-630 — name the online ways to pay the link offers
       const payLine = payWaysSmsLine(senderBiz?.acceptedPaymentMethods, {
-        card: await this.stripeSettings?.get(userId).then((s) => !!s).catch(() => false) ?? false,
+        card: await this.takesCard(userId), // REQ-803: Stripe or Square
         lang,
       });
       body = renderInvoiceBody(

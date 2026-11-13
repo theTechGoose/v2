@@ -2,6 +2,7 @@
  * REQ-212 — /me/stripe: the business's own Stripe connection.
  *   GET    → the status (never the secret)
  *   PUT    { publishableKey, secretKey } → checked, sealed, stored; 422 with the reason otherwise
+ *          (REQ-803: 409 square_connected while the business's Square is connected)
  *   DELETE → forgotten
  */
 import { Body, Context, Controller, Delete, Get, Put } from "#danet/core";
@@ -49,7 +50,7 @@ export class StripeSettingsController {
       if (e instanceof StripeConnectError) {
         return ctx.json(
           { error: e.code, message: e.message },
-          e.status === 503 ? 503 : 422,
+          e.status === 503 ? 503 : e.status === 409 ? 409 : 422, // REQ-803: 409 square_connected
         );
       }
       throw e;

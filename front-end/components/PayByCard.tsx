@@ -6,17 +6,24 @@
  * or their own card pay link (a Stripe Payment Link, Square, PayPal checkout) from Settings.
  * Without either, the customer sees no card button (never a dead end) and the business's own
  * preview says how to set it up.
+ *
+ * REQ-803 — the business's own Square: the same button in the same place, an island that asks
+ * the server for a Square checkout for the balance and goes there ("Secure checkout by Square").
  */
 import { type Lang, tFor } from "../lib/i18n.ts";
 import { fmtMoneyExact } from "../lib/format.ts";
 import type { CardPayWay } from "../../shared/payments/pay-links.ts";
 import { GREEN, INK, MUTED, TEAL } from "./doc-parts.tsx";
+import SquareCheckout from "../islands/SquareCheckout.tsx"; // REQ-803
 
 export default function PayByCard(
-  { way, lang, amountCents, business, number, internal }: {
+  { way, lang, amountCents, business, number, internal, invoiceId, version }: {
     way: CardPayWay | null;
     lang: Lang;
     amountCents?: number;
+    /** REQ-803 — the Square checkout is asked for this invoice at this version */
+    invoiceId?: string;
+    version?: number;
     business: string;
     number?: string;
     /** the business's own preview of its invoice */
@@ -41,10 +48,23 @@ export default function PayByCard(
       </section>
     );
   }
+  if (way.kind === "square" && invoiceId) {
+    return (
+      <section data-cy="pay-by-card-wrap" style="margin-top:24px">
+        <SquareCheckout
+          invoiceId={invoiceId}
+          lang={lang}
+          amountCents={amountCents}
+          version={version}
+          business={business}
+        />
+      </section>
+    );
+  }
   const amount = typeof amountCents === "number" && amountCents > 0
     ? fmtMoneyExact(amountCents)
     : undefined;
-  const note = way.kind === "portal"
+  const note = way.kind !== "link"
     ? tFor(lang, "payByCard.portalNote", { business })
     : amount
     ? tFor(

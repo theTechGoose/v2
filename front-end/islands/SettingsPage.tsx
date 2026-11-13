@@ -65,6 +65,15 @@ import {
 } from "../../shared/quote-flow/logo-image.ts"; // REQ-252
 import { stripeClient, type StripeStatus } from "../clients/stripe.ts"; // REQ-212
 import { checkKeyPair, maskSecret } from "../../shared/payments/stripe-keys.ts"; // REQ-212
+import { squareClient, type SquareStatus } from "../clients/square.ts"; // REQ-803
+import { squareTokenInfo } from "../../shared/payments/square.ts"; // REQ-803
+
+/** REQ-803 — one card provider at a time: the Stripe and Square cards tell each other when
+ *  either connects or disconnects, so the other one re-reads its status. */
+const CARD_PROVIDER_EVENT = "pm:card-provider";
+function announceCardProvider() {
+  globalThis.dispatchEvent?.(new CustomEvent(CARD_PROVIDER_EVENT));
+}
 import {
   checkCardPayUrl,
   checkPayLinks,
@@ -1924,11 +1933,16 @@ function CardPaymentsCard({ snapshot }: { snapshot: ProfileSnapshot }) {
 
   useEffect(() => {
     let alive = true;
-    stripeClient.status()
-      .then((s) => alive && setStatus(s))
-      .catch(() => alive && setStatus(null));
+    const load = () =>
+      stripeClient.status()
+        .then((s) => alive && setStatus(s))
+        .catch(() => alive && setStatus(null));
+    load();
+    // REQ-803 — re-read when the Square card connects or disconnects
+    globalThis.addEventListener?.(CARD_PROVIDER_EVENT, load);
     return () => {
       alive = false;
+      globalThis.removeEventListener?.(CARD_PROVIDER_EVENT, load);
     };
   }, []);
 
@@ -1945,6 +1959,7 @@ function CardPaymentsCard({ snapshot }: { snapshot: ProfileSnapshot }) {
       "fake_key_refused",
       "stripe_rejected",
       "secrets_key_missing",
+      "square_connected", // REQ-803 — one card provider at a time
     ];
     if (known.includes(code)) {
       return tFor(lang, `settings.stripe.err.${code}`, {
@@ -1969,6 +1984,7 @@ function CardPaymentsCard({ snapshot }: { snapshot: ProfileSnapshot }) {
       setPk("");
       setSk("");
       setSaved(true);
+      announceCardProvider(); // REQ-803
     } catch (e) {
       setErr(errorFor(e));
     } finally {
@@ -1983,6 +1999,7 @@ function CardPaymentsCard({ snapshot }: { snapshot: ProfileSnapshot }) {
     try {
       setStatus(await stripeClient.disconnect());
       setSaved(true);
+      announceCardProvider(); // REQ-803
     } catch (e) {
       setErr(errorFor(e));
     } finally {
@@ -2152,6 +2169,280 @@ function CardPaymentsCard({ snapshot }: { snapshot: ProfileSnapshot }) {
               </div>
             )
             : null}
+        </div>
+      </div>
+    </EditPanel>
+  );
+}
+
+/** SquarePaymentsCard (REQ-803) — the business's OWN Square, the way CardPaymentsCard connects
+ *  its own Stripe. Paste the access token (Square Developer → your app → Credentials) and, if
+ *  you take payments at more than one place, the location id (blank = the first active one);
+ *  the backend checks the token with Square (which also tells production from sandbox) and
+ *  seals it. The card shows the connection back (the seller, the location, the environment, the
+ *  masked token — never the token), the same merchant preview as Stripe's, and the one line that
+ *  the money goes straight to the business's Square. One card provider at a time: while Stripe
+ *  is connected the form is put away with a note. */
+function SquarePaymentsCard({ snapshot }: { snapshot: ProfileSnapshot }) {
+  const lang: Lang = langSignal.value === "es" ? "es" : "en";
+  const [status, setStatus] = useState<SquareStatus | null>(null);
+  const [token, setToken] = useState("");
+  const [location, setLocation] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const [saved, setSaved] = useState(false);
+
+  useEffect(() => {
+    let alive = true;
+    const load = () =>
+      squareClient.status()
+        .then((s) => alive && setStatus(s))
+        .catch(() => alive && setStatus(null));
+    load();
+    globalThis.addEventListener?.(CARD_PROVIDER_EVENT, load);
+    return () => {
+      alive = false;
+      globalThis.removeEventListener?.(CARD_PROVIDER_EVENT, load);
+    };
+  }, []);
+
+  function errorFor(e: unknown): string {
+    const body = e instanceof ApiError && e.body && typeof e.body === "object"
+      ? e.body as { error?: string; message?: string }
+      : undefined;
+    const code = body?.error ?? "";
+    const known = [
+      "token_invalid",
+      "app_id_not_token",
+      "square_rejected",
+      "location_not_found",
+      "no_location",
+      "currency_unsupported",
+      "fake_token_refused",
+      "stripe_connected",
+      "secrets_key_missing",
+    ];
+    if (known.includes(code)) {
+      return tFor(lang, `settings.square.err.${code}`, {
+        message: body?.message ?? "",
+      });
+    }
+    return tFor(lang, "settings.square.err.failed");
+  }
+
+  async function connect() {
+    const info = squareTokenInfo(token);
+    if (!info.ok) {
+      setErr(tFor(lang, `settings.square.err.${info.reason}`));
+      return;
+    }
+    setBusy(true);
+    setErr(null);
+    setSaved(false);
+    try {
+      const s = await squareClient.connect(token.trim(), location.trim());
+      setStatus(s);
+      setToken("");
+      setLocation("");
+      setSaved(true);
+      announceCardProvider();
+    } catch (e) {
+      setErr(errorFor(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function disconnect() {
+    setBusy(true);
+    setErr(null);
+    setSaved(false);
+    try {
+      setStatus(await squareClient.disconnect());
+      setSaved(true);
+      announceCardProvider();
+    } catch (e) {
+      setErr(errorFor(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const merchantName = status?.merchant.name ||
+    snapshot.identity?.businessName ||
+    snapshot.identity?.legalName || snapshot.user?.name || "";
+  const logoFileId = status?.merchant.logoFileId ??
+    snapshot.identity?.logoFileId;
+  const logoUrl = logoFileId ? `/api/files/${logoFileId}` : null;
+  const connected = status?.connected === true ? status : null;
+  const stripeOn = status?.connected === false &&
+    status.otherProvider === "stripe";
+
+  return (
+    <EditPanel
+      title={tFor(lang, "settings.square")}
+      busy={busy}
+      err={err}
+      saved={saved}
+      saving={tFor(lang, "settings.square.connecting")}
+      savedLabel={tFor(lang, "settings.saved")}
+      dataCy="square-card"
+    >
+      <p style="margin:0 0 10px;font-size:13px;color:var(--fg-muted, #6b7560)">
+        {tFor(lang, "settings.square.intro")}
+      </p>
+      <p style="margin:0 0 14px;font-size:13px;font-weight:700;color:var(--brand-green,#519843)">
+        {tFor(lang, "settings.square.direct")}
+      </p>
+
+      {connected
+        ? (
+          <div
+            data-cy="square-status"
+            data-environment={connected.environment}
+            style="border:1px solid var(--brand-green,#519843);border-radius:10px;padding:12px 14px;background:#fff;display:grid;gap:6px"
+          >
+            <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+              <span style="font-weight:800;font-size:14px;color:var(--brand-green,#519843)">
+                <Icon
+                  name="check"
+                  size={14}
+                  stroke-width={3}
+                  style="vertical-align:-2px"
+                />{" "}
+                {tFor(lang, "settings.square.connected")}
+              </span>
+              <span style="font-weight:700;font-size:14px;color:var(--fg)">
+                {connected.sellerName}
+              </span>
+              <span
+                style={`font-size:11px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;padding:3px 8px;border-radius:999px;background:${
+                  connected.environment === "production"
+                    ? "rgba(81,152,67,.12)"
+                    : "rgba(255,170,40,.16)"
+                };color:${
+                  connected.environment === "production" ? "#2f6b27" : "#a06800"
+                }`}
+              >
+                {tFor(
+                  lang,
+                  connected.environment === "production"
+                    ? "settings.square.production"
+                    : "settings.square.sandbox",
+                )}
+              </span>
+            </div>
+            <div style="font-size:13px;color:var(--fg)">
+              {connected.locationName}
+            </div>
+            <div style="font-size:12.5px;color:var(--fg-muted);font-family:ui-monospace,Menlo,monospace">
+              {connected.locationId} · {connected.tokenMasked}
+            </div>
+            {connected.environment === "sandbox"
+              ? (
+                <div style="font-size:12px;color:#a06800">
+                  {tFor(lang, "settings.square.sandboxNote")}
+                </div>
+              )
+              : null}
+            <div>
+              <button
+                type="button"
+                style={btnSecondary}
+                disabled={busy}
+                onClick={disconnect}
+                data-cy="square-disconnect"
+              >
+                {tFor(lang, "settings.square.disconnect")}
+              </button>
+            </div>
+          </div>
+        )
+        : stripeOn
+        ? (
+          <p
+            data-cy="square-stripe-on"
+            style="margin:0;font-size:13px;color:var(--fg);background:rgba(20,72,82,.05);border-radius:10px;padding:12px 14px"
+          >
+            {tFor(lang, "settings.square.stripeOn")}
+          </p>
+        )
+        : (
+          <div style="display:grid;gap:10px">
+            <label style="display:block">
+              <span style={labelStyle}>
+                {tFor(lang, "settings.square.token")}
+              </span>
+              <input
+                data-cy="square-token"
+                type="password"
+                style={inputStyle}
+                value={token}
+                placeholder={tFor(lang, "settings.square.tokenPh")}
+                autocomplete="off"
+                spellcheck={false}
+                onInput={(e) => setToken((e.target as HTMLInputElement).value)}
+              />
+            </label>
+            <label style="display:block">
+              <span style={labelStyle}>
+                {tFor(lang, "settings.square.location")}
+              </span>
+              <input
+                data-cy="square-location"
+                type="text"
+                style={inputStyle}
+                value={location}
+                placeholder={tFor(lang, "settings.square.locationPh")}
+                autocomplete="off"
+                spellcheck={false}
+                onInput={(e) =>
+                  setLocation((e.target as HTMLInputElement).value)}
+              />
+            </label>
+            <div>
+              <button
+                type="button"
+                style={btnPrimary}
+                disabled={busy || !token.trim()}
+                onClick={connect}
+                data-cy="square-connect"
+              >
+                {busy
+                  ? tFor(lang, "settings.square.connecting")
+                  : tFor(lang, "settings.square.connect")}
+              </button>
+            </div>
+          </div>
+        )}
+
+      <div
+        data-cy="square-merchant"
+        style="margin-top:14px;border:1px dashed var(--border,#d8dcd5);border-radius:10px;padding:12px 14px;display:flex;align-items:center;gap:12px"
+      >
+        {logoUrl
+          ? (
+            <img
+              src={logoUrl}
+              alt=""
+              style="width:44px;height:44px;object-fit:contain;border-radius:10px;background:#f4f6f5;padding:4px"
+            />
+          )
+          : (
+            <span
+              aria-hidden="true"
+              style="width:44px;height:44px;border-radius:10px;background:#144852;color:#fff;display:grid;place-items:center;font-size:18px"
+            >
+              <Icon name="receipt" size={20} />
+            </span>
+          )}
+        <div>
+          <div style="font-size:11px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:var(--fg-muted)">
+            {tFor(lang, "settings.square.merchant")}
+          </div>
+          <div style="font-weight:700;font-size:15px;color:var(--fg)">
+            {merchantName || "—"}
+          </div>
         </div>
       </div>
     </EditPanel>
@@ -3185,6 +3476,8 @@ export default function SettingsPage() {
 
           <PaymentsEditCard snapshot={p} onSaved={onSaved} />
           <CardPaymentsCard snapshot={p} />
+          {/* REQ-803 — or the business's own Square */}
+          <SquarePaymentsCard snapshot={p} />
           <PayLinksCard snapshot={p} onSaved={onSaved} />
 
           {/* REQ-623 (demo cycle 4, M26): automatic payment reminders */}

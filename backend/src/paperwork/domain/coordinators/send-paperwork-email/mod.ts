@@ -6,6 +6,7 @@ import { type Lang, t } from "@core/i18n/mod.ts";
 import { QuoteStore } from "@paperwork/domain/data/quote-store/mod.ts";
 import { InvoiceStore } from "@paperwork/domain/data/invoice-store/mod.ts";
 import { StripeSettingsStore } from "@users/domain/data/stripe-settings-store/mod.ts"; // REQ-630
+import { SquareSettingsStore } from "@users/domain/data/square-settings-store/mod.ts"; // REQ-803
 import { payWaysEmailHtml } from "@paperwork/domain/business/pay-ways/mod.ts"; // REQ-630
 import { CustomerStore } from "@crm/domain/data/customer-store/mod.ts";
 import { UserStore } from "@users/domain/data/user-store/mod.ts";
@@ -155,7 +156,18 @@ export class SendPaperworkEmail {
     private changeOrders: ChangeOrderStore = new ChangeOrderStore(),
     /** REQ-630 — whether the business takes cards on its own Stripe (the email's "Pay by card") */
     private stripeSettings?: StripeSettingsStore,
+    /** REQ-803 — or on its own Square (the card is a way to pay all the same) */
+    private squareSettings?: SquareSettingsStore,
   ) {}
+
+  /** REQ-630 / REQ-803 — the business takes cards on its own Stripe or its own Square */
+  private async takesCard(userId: string): Promise<boolean> {
+    const [stripe, square] = await Promise.all([
+      this.stripeSettings?.get(userId).catch(() => null),
+      this.squareSettings?.get(userId).catch(() => null),
+    ]);
+    return !!stripe || !!square;
+  }
 
   /**
    * REQ-586 (demo-loop cycle 4, M11): the language a send goes out in — the
@@ -295,7 +307,7 @@ export class SendPaperworkEmail {
         : [];
       // REQ-630 — the ways to pay, the same the invoice page offers (none on a paid email)
       const payWays = paid ? "" : payWaysEmailHtml(senderBiz?.acceptedPaymentMethods, {
-        card: await this.stripeSettings?.get(userId).then((s) => !!s).catch(() => false) ?? false,
+        card: await this.takesCard(userId), // REQ-803: Stripe or Square
         lang,
         payUrl: `${APP_URL}/i/${invoice.id}`,
         amountCents: Math.max(0, (invoice.amount ?? 0) - (invoice.paidCents ?? 0)),

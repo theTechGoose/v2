@@ -81,7 +81,8 @@ describe("REQ-479 wiring — route, island and dictionaries", () => {
   it("REQ-479 /i/:id reads the invoice with the viewer's session and hands `internal` to the claim island", () => {
     const src = read("front-end/routes/i/[id].tsx");
     expect(src).toMatch(
-      /ssrBackendGetAuthed<InvoicePublic>\(\s*`\/invoices\/\$\{id\}\/public`,\s*getSessionId\(ctx\.req\)/,
+      // REQ-803 amendment: the path may carry `?square=return` (back from Square's checkout)
+      /ssrBackendGetAuthed<InvoicePublic>\(\s*`\/invoices\/\$\{id\}\/public(?:\$\{[^}]*\})?`,\s*getSessionId\(ctx\.req\)/,
     );
     expect(src).toMatch(/internal=\{invoice\.internal === true\}/);
   });
