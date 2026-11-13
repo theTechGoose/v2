@@ -114,11 +114,13 @@ describe("REQ-411 (m34): the /invoices hero names a pay-on-completion bill for w
     expect(scheduledHeroSubKey(undefined)).toBe(
       "invoicesPage.sub.scheduledNext",
     );
+    // REQ-697 (cycle 5, m13/m22): the date after the label is a reminder
+    // to send, so the label says so
     expect(en["invoicesPage.sub.billsOnCompletion"]).toBe(
-      "Bills on completion:",
+      "Bills on completion — we'll remind you to send it on",
     );
     expect(es["invoicesPage.sub.billsOnCompletion"]).toBe(
-      "Se factura al terminar:",
+      "Se factura al terminar — te recordamos enviarla el",
     );
     const src = read("front-end/islands/InvoicesPage.tsx");
     expect(src).toMatch(/tFor\(lang, scheduledHeroSubKey\(nextScheduled\)\)/);

@@ -93,6 +93,9 @@ interface Contractor {
   hasLogo?: boolean;
   /** REQ-613 (M31): the logo's version — part of its URL, so a replaced logo is a new URL. */
   logoVersion?: string;
+  /** REQ-697 (demo-loop cycle 5, m22): the business's days to pay an
+   *  invoice — the agreement's "Payment upon completion" row states it. */
+  invoiceNetDays?: number;
 }
 
 export interface QuotePublic {
@@ -779,6 +782,7 @@ export function QuoteDoc(
                   contractorState={contractor?.state}
                   lang={lang}
                   startFallback={t.startTbd}
+                  paymentNetDays={contractor?.invoiceNetDays}
                   labels={{
                     start: t.start,
                     estCompletion: t.estCompletion,

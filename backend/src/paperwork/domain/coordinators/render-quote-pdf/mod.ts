@@ -8,6 +8,7 @@ import type { Customer } from "@crm/dto/customer.ts";
 import type { User } from "@users/dto/user.ts";
 import { isAccepted } from "#quote-flow/quote-status.ts";
 import { isTbdTermValue } from "#quote-flow/terms-i18n.ts";
+import { isUponCompletionTerm } from "#quote-flow/completion-schedule.ts";
 import { agreementClauses } from "#documents/warranty-clause.ts";
 import {
   formatTermDate,
@@ -37,6 +38,10 @@ export interface RenderQuotePdfInput {
   /** Outgoing-comms language (roadmap p.13) — the PDF is the customer's
    *  copy, so it renders in their language. Defaults to "en". */
   commsLanguage?: string;
+  /** REQ-697 (demo-loop cycle 5, m22): the business's days to pay an
+   *  invoice — the "Payment upon completion" term states it. Omit to print
+   *  the term bare. */
+  invoiceNetDays?: number;
 }
 
 /**
@@ -500,7 +505,9 @@ export class RenderQuotePdf {
       const cells = quote.terms
         .filter((term) => term.stepId !== "customer")
         .map((term) => {
-          const localized = localizeTermValue(term.value, lang);
+          const localized = term.stepId === "payment_terms"
+            ? paymentTermText(term.value, lang, input.invoiceNetDays)
+            : localizeTermValue(term.value, lang);
           return {
             label: es && termLabelKey[term.stepId]
               ? t(lang, termLabelKey[term.stepId])
@@ -544,13 +551,31 @@ export class RenderQuotePdf {
             font: bold,
             color: MUTED,
           });
-          page.drawText(cell.value, {
-            x: cx + 10,
-            y: y - 28,
-            size: 10.5,
-            font: bold,
-            color: INK,
-          });
+          // REQ-697: a value too wide for its cell ("Payment upon
+          // completion — due within 30 days of the invoice") breaks at its
+          // dash onto two smaller lines instead of running past the border.
+          const fits = bold.widthOfTextAtSize(cell.value, 10.5) <=
+            cellW - 20;
+          const parts = fits ? [cell.value] : cell.value.split(/\s+—\s+/);
+          if (parts.length === 1) {
+            page.drawText(cell.value, {
+              x: cx + 10,
+              y: y - 28,
+              size: 10.5,
+              font: bold,
+              color: INK,
+            });
+          } else {
+            parts.slice(0, 2).forEach((line, li) => {
+              page.drawText(li === 0 ? `${line} —` : line, {
+                x: cx + 10,
+                y: y - 25 - li * 9,
+                size: 8.5,
+                font: bold,
+                color: INK,
+              });
+            });
+          }
         }
         y -= rowH + 6;
       }
@@ -969,6 +994,28 @@ export function localizeTermValue(value: string, lang: "en" | "es"): string {
     // REQ-343: service-trade durations ("2 hours", "4 hours").
     .replace(/\bhours\b/gi, "horas").replace(/\bhour\b/gi, "hora")
     .replace(/\bdays\b/gi, "días").replace(/\bday\b/gi, "día");
+}
+
+/** REQ-697 (demo-loop cycle 5, m22): the agreement's payment term, with the
+ *  days to pay when it bills after the job — "Payment upon completion — due
+ *  within 30 days of the invoice". Mirrors front-end/lib/term-i18n.ts
+ *  `paymentTermValue`. */
+export function paymentTermText(
+  value: string,
+  lang: "en" | "es",
+  netDays: number | undefined,
+): string {
+  if (
+    typeof netDays === "number" && Number.isInteger(netDays) &&
+    netDays >= 0 && isUponCompletionTerm(value)
+  ) {
+    return netDays === 0
+      ? t(lang, "renderQuotePdf.termValue.paymentUponCompletionOnReceipt")
+      : t(lang, "renderQuotePdf.termValue.paymentUponCompletionWithin", {
+        n: netDays,
+      });
+  }
+  return localizeTermValue(value, lang);
 }
 
 function computeMilestones(

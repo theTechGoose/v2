@@ -65,7 +65,8 @@ export function hasSecondaryPaymentReceived(stage: CardStage): boolean {
   return stage === "overdue";
 }
 
-/** "Scheduled to send Nov 26" — the same short date as the due dates (p13-f). */
+/** "We'll remind you on Nov 26 to send it" (REQ-697 — nothing sends a
+ *  scheduled invoice by itself) — the same short date as the due dates (p13-f). */
 export function scheduledSubline(
   scheduledFor: string | undefined,
   now: Date,
