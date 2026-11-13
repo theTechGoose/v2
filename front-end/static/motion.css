@@ -90,9 +90,12 @@ html:active-view-transition-type(same)::view-transition-new(root) {
     transform: translateY(10px);
   }
 }
+/* REQ-807: `backwards`, never `both` — a finished entrance must leave no transform behind:
+   `.content` is `main.main > *`, and a transformed pane becomes the containing block for every
+   position:fixed overlay inside it (the client sheet opened 5000 px above the view). */
 [data-stagger] > *,
 main.main > * {
-  animation: pm-rise var(--pm-dur-slow) var(--pm-ease-emph) both;
+  animation: pm-rise var(--pm-dur-slow) var(--pm-ease-emph) backwards;
   animation-delay: calc(var(--i, 0) * 40ms);
 }
 [data-stagger] > :nth-child(1),
@@ -130,7 +133,7 @@ main.main > :nth-child(n + 8) {
 
 /* a pane that was display:none and comes back replays its entrance */
 [data-pane]:not([hidden]) {
-  animation: pm-rise var(--pm-dur-base) var(--pm-ease-out) both;
+  animation: pm-rise var(--pm-dur-base) var(--pm-ease-out) backwards; /* REQ-807 */
 }
 
 /* ---- micro-interactions ------------------------------------------------------ */

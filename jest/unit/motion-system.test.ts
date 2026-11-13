@@ -50,4 +50,19 @@ describe("REQ-195 the motion system", () => {
     expect(app).toMatch(/vt\.types\.add\("same"\)/);
     expect(app).toMatch(/__html: MOTION_SCRIPT/);
   });
+
+  // REQ-807 (hotfix, 2026-11-13): a finished entrance must leave NO transform behind — `.content`
+  // is `main.main > *`, and a transformed pane is the containing block for every position:fixed
+  // overlay inside it (the client sheet opened ~5000 px above the viewport). `backwards` holds the
+  // from-state through the delay and applies nothing once the animation ends; `both`/`forwards` do.
+  test("REQ-807: every pm-rise entrance fills backwards, never both or forwards", () => {
+    const rises = [...css.matchAll(/animation:\s*pm-rise[^;]*;/g)].map((m) =>
+      m[0]
+    );
+    expect(rises.length).toBeGreaterThanOrEqual(2);
+    for (const r of rises) {
+      expect(r).toMatch(/\bbackwards\b/);
+      expect(r).not.toMatch(/\b(both|forwards)\b/);
+    }
+  });
 });
