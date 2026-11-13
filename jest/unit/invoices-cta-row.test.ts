@@ -36,7 +36,7 @@ describe("REQ-408 p13-d the /invoices CTA row is spaced from the intro", () => {
       island.indexOf('<div class="qph__cta-row">'),
       island.indexOf("</div>", island.indexOf('<div class="qph__cta-row">')),
     );
-    expect(row).toContain('data-cy="invoice-export"');
+    expect(row).toContain('data-cy="invoice-export-all"'); // REQ-794: all + unpaid, no year link
     expect(row).not.toMatch(/margin-left/);
   });
 });

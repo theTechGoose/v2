@@ -229,7 +229,7 @@ describe("UX-23: empty-state 'Exportar CSV' is not a near-invisible ghost", () =
     // Hero rendered (fix-independent marker: the primary new-invoice CTA).
     cy.get("[data-cy=invoice-new]", { timeout: 10_000 }).should("be.visible");
     cy.get("body").then(($body) => {
-      const $export = $body.find("[data-cy=invoice-export]");
+      const $export = $body.find("[data-cy=invoice-export-all]");
       if ($export.length === 0 || !$export.is(":visible")) {
         // Acceptable fix: the control is simply not offered on an account
         // with nothing to export.

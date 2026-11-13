@@ -53,8 +53,12 @@ import {
   publisherOf,
 } from "@paperwork/entrypoints/revisions-controller/mod.ts";
 import {
+  exportDateOf,
+  exportRangeSuffix,
+  filterByDateRange,
   filterInvoicesForExport,
   invoiceExportCsv,
+  parseExportRange,
   parseExportStatus,
 } from "#documents/exports.ts"; // REQ-208
 import { appUrl } from "@users/domain/business/app-url/mod.ts";
@@ -616,8 +620,19 @@ export class InvoiceController {
     @Query("year") yearQ?: string,
     @Query("month") monthQ?: string,
     @Query("status") statusQ?: string,
+    @Query("from") fromQ?: string,
+    @Query("to") toQ?: string,
   ) {
     const user = await requireUser(ctx, this.sessions, this.users);
+    // REQ-795: an inclusive day range — issued day (else created) for all /
+    // unpaid, the paid day for paid. A malformed day is 400.
+    const range = parseExportRange(fromQ, toQ);
+    if ("field" in range) {
+      return ctx.json(
+        { ok: false, reason: "invalid", field: range.field },
+        400,
+      );
+    }
     const all = await this.store.listByUser(user.id);
     let rows: Invoice[];
     let filename: string;
@@ -626,8 +641,18 @@ export class InvoiceController {
       if (!status) {
         return ctx.json({ ok: false, reason: "invalid", field: "status" }, 400);
       }
-      rows = filterInvoicesForExport(all, status);
-      filename = `invoices-${status}.csv`;
+      const slice = status === "paid"
+        ? "paid"
+        : status === "unpaid"
+        ? "unpaid"
+        : "invoices";
+      rows = filterByDateRange(
+        filterInvoicesForExport(all, status),
+        (i) => exportDateOf(slice, i),
+        range.from,
+        range.to,
+      );
+      filename = `invoices-${status}${exportRangeSuffix(range)}.csv`;
     } else {
       const year = yearQ ? Number(yearQ) : new Date().getUTCFullYear();
       const month = monthQ ? Number(monthQ) : undefined;

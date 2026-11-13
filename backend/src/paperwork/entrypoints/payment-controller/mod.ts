@@ -9,6 +9,13 @@ import { UserStore } from "@users/domain/data/user-store/mod.ts";
 import { SessionStore } from "@users/domain/data/session-store/mod.ts";
 import { requireUser } from "@users/domain/coordinators/require-user/mod.ts";
 import { overpaymentCheck } from "#documents/overpayment.ts"; // REQ-551
+import {
+  exportDateOf,
+  exportRangeSuffix,
+  filterByDateRange,
+  parseExportRange,
+  paymentExportCsv,
+} from "#documents/exports.ts"; // REQ-795
 import { CustomerStore } from "@crm/domain/data/customer-store/mod.ts";
 import { EventBus } from "@core/business/events/mod.ts";
 import { paymentRecordedEvent } from "@paperwork/domain/business/owner-activity/mod.ts"; // REQ-566
@@ -119,6 +126,49 @@ export class PaymentController {
     if (invoiceId) return await this.store.listByInvoice(invoiceId, user.id);
     if (method) return await this.store.listByUserAndMethod(user.id, method as PaymentMethod);
     return await this.store.listByUser(user.id);
+  }
+
+  /**
+   * REQ-795 (Reports): every recorded payment as CSV — received day, invoice,
+   * customer, method, amount, reference — optionally only those received in
+   * `?from`…`?to` (inclusive ISO days). Declared before `:id`.
+   */
+  @Get("export.csv")
+  async exportCsv(
+    @Context() ctx: ExecutionContext,
+    @Query("from") fromQ?: string,
+    @Query("to") toQ?: string,
+  ) {
+    const user = await requireUser(ctx, this.sessions, this.users);
+    const range = parseExportRange(fromQ, toQ);
+    if ("field" in range) {
+      return ctx.json({ ok: false, reason: "invalid", field: range.field }, 400);
+    }
+    const [payments, invoices, customers] = await Promise.all([
+      this.store.listByUser(user.id),
+      this.invoices.listByUser(user.id),
+      this.customers.listByUser(user.id),
+    ]);
+    const invoiceById = new Map(invoices.map((i) => [i.id, i]));
+    const customerById = new Map(customers.map((c) => [c.id, c]));
+    const rows = filterByDateRange(
+      payments,
+      (p) => exportDateOf("payments", p),
+      range.from,
+      range.to,
+    ).sort((a, b) => (a.receivedAt ?? "").localeCompare(b.receivedAt ?? ""));
+    const csv = paymentExportCsv(rows, {
+      invoiceOf: (p) => invoiceById.get(p.invoiceId),
+      customerOf: (id) => customerById.get(id),
+    });
+    return new Response(csv, {
+      headers: {
+        "content-type": "text/csv; charset=utf-8",
+        "content-disposition": `attachment; filename="payments${
+          exportRangeSuffix(range)
+        }.csv"`,
+      },
+    });
   }
 
   @Get(":id")

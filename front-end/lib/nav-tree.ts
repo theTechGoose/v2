@@ -77,6 +77,9 @@ export const NAV: NavNode<IconName>[] = [
       { id: "admins", icon: "shield", href: "/admins" },
     ],
   },
+  // REQ-795 (hotfix, Raphael: "make a data export section at the top level ... call it reports"):
+  // pick a slice of the account's data and a date range, download the CSV.
+  { id: "reports", icon: "trend", href: "/reports" },
 ];
 
 /**
