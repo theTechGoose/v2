@@ -1075,3 +1075,57 @@ Deno.test("REQ-586 (cycle 4, M11) send-quote: a text that reached nobody still r
   assertEquals((r.newMessages[0].payload as { lang?: string }).lang, "es");
   await resetKv();
 });
+
+// REQ-682 (demo-loop cycle 5, m28): the sent quote email promises a text
+// only when this Send texts the customer — pair 1 sent email-only and the
+// email still said "Pick a start day — We'll text to confirm".
+Deno.test("REQ-682 (m28) send-quote: the email's start-day step mentions a text only on a send that texts", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const ctx = fresh();
+  await seedContractor("u-1");
+  const customer = await ctx.customers.create("u-1", {
+    name: "Tom K.",
+    email: "tom@example.com",
+    phoneNumber: "+15125551234",
+  });
+  const mk = async () => {
+    const quote = await ctx.quotes.create("u-1", {
+      summary: "Roof",
+      lineItems: [],
+      estimatedTotal: 12_500,
+      status: "draft",
+      customerId: customer.id,
+    });
+    const conv = await ctx.conversations.create({
+      userId: "u-1",
+      quoteId: quote.id,
+      customerId: customer.id,
+    });
+    return { quote, conv };
+  };
+  const a = await mk();
+  await ctx.flow.run({
+    userId: "u-1",
+    conversationId: a.conv.id,
+    quoteId: a.quote.id,
+    channel: "email",
+  });
+  const emailOnly = ctx.sentEmails.at(-1)?.htmlBody ?? "";
+  assert(/We(?:&#39;|')ll confirm a start day/.test(emailOnly), "no start yet");
+  assert(
+    !/Pick a start day|We(?:&#39;|')ll text/.test(emailOnly),
+    "an email-only send promises no text",
+  );
+
+  const b = await mk();
+  await ctx.flow.run({
+    userId: "u-1",
+    conversationId: b.conv.id,
+    quoteId: b.quote.id,
+    channel: "both",
+  });
+  const texted = ctx.sentEmails.at(-1)?.htmlBody ?? "";
+  assert(/We(?:&#39;|')ll text you/.test(texted), "a texted send says so");
+  await resetKv();
+});

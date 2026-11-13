@@ -183,6 +183,7 @@ export class SendQuote {
           kind: "quote",
           resourceId: quote.id,
           language: input.language,
+          channel, // REQ-682: the email may promise a text only on a texted send
         });
         if (result.ok) emailedTo = result.to;
         else emailFailureReason = result.reason;

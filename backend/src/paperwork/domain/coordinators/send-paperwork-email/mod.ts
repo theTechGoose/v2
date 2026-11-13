@@ -37,7 +37,15 @@ import {
   revisedNote,
   versionLabel,
 } from "@paperwork/domain/business/doc-render/mod.ts";
-import { websiteLabel } from "#quote-flow/format-helpers.ts";
+import {
+  formatTermDate,
+  termDateIso,
+  websiteLabel,
+} from "#quote-flow/format-helpers.ts";
+import { isTbdTermValue } from "#quote-flow/terms-i18n.ts";
+import { warrantyClauseKind } from "#documents/warranty-clause.ts";
+import { localizeTermValue } from "@paperwork/domain/coordinators/render-quote-pdf/mod.ts";
+import { customerSmsTarget } from "@paperwork/domain/business/customer-sms/mod.ts";
 import {
   isPlaceholderName,
   outboundSenderName,
@@ -73,6 +81,10 @@ export interface SendPaperworkEmailInput {
    *  says Paid, the money card reads "PAID <date>" instead of "Amount due".
    *  Invoices only. */
   variant?: "paid";
+  /** REQ-682 (cycle 5, m28): the Send's channel. A quote email may promise
+   *  a text only when this send also texts ("sms"/"both") a textable
+   *  number; unset means email-only. */
+  channel?: "email" | "sms" | "both";
 }
 
 export interface SendPaperworkEmailResult extends SendEmailResult {
@@ -210,7 +222,9 @@ export class SendPaperworkEmail {
       // The customer-facing flow goes: email → /q page → sign. The quote IS
       // the agreement, so this one email carries the review-and-sign CTA.
       subject = renderQuoteSubject(quote, safeSender, senderBiz, customer);
-      htmlBody = renderQuoteHtml(quote, customer, safeSender, senderBiz);
+      htmlBody = renderQuoteHtml(quote, customer, safeSender, senderBiz, {
+        textable: quoteSendTexts(input.channel, customer, quote),
+      });
       quoteForStamp = quote;
     } else {
       const stored = await publishPendingInvoice(this.invoices, input.resourceId, userId, senderAsPublisher(userId, sender?.name));
@@ -666,6 +680,19 @@ function shell(opts: {
 
 // ---------- quote -------------------------------------------------------------
 
+/** REQ-682: does this quote send also text the customer at a number that
+ *  can take a text? (The live phone first, the issued snapshot's otherwise.) */
+export function quoteSendTexts(
+  channel: "email" | "sms" | "both" | undefined,
+  liveCustomer: RenderedCustomer | undefined,
+  quote: Quote,
+): boolean {
+  if (channel !== "sms" && channel !== "both") return false;
+  const phone = liveCustomer?.phoneNumber ??
+    customerOnDocument(quote, liveCustomer)?.phoneNumber;
+  return customerSmsTarget(phone).ok;
+}
+
 const COLOR_PINK = "#FF6B6B";
 const COLOR_PINK_DARK = "#d94e4e";
 
@@ -697,6 +724,84 @@ export function renderQuoteSubject(
   } — ${jobName}`;
 }
 
+/** The start term values that read as a phrase ("Work starts next week"). */
+const START_PRESET = /^(?:right away|next week|next month)$/i;
+
+/**
+ * REQ-682 (demo-loop cycle 5, m28) — the quote email's "What happens next"
+ * steps, built from the quote and the send instead of four fixed strings:
+ *   3. a set start (the ISO `startDate`, else the start term) → "Work starts
+ *      <when>"; none, or TBD → "We'll confirm a start day", promising a text
+ *      only when this send texts a number that can take one (`textable`).
+ *      The customer never "picks a start day" — no such step exists.
+ *   4. "Receipt + warranty in your inbox" only when the quote states a
+ *      warranty; otherwise "Receipt in your inbox".
+ * The send dialog's preview renders through renderQuoteHtml, so it shows the
+ * same steps the send dispatches.
+ */
+export function quoteEmailSteps(
+  q: Pick<Quote, "startDate" | "terms">,
+  lang: Lang,
+  opts: { textable: boolean },
+): [string, string, string][] {
+  const startTerm = q.terms?.find((x) => x.stepId === "start_date")?.value
+    ?.trim();
+  const startIso = (q.startDate && termDateIso(q.startDate)) ||
+    termDateIso(startTerm);
+  let step3: [string, string];
+  if (startIso) {
+    step3 = [
+      t(lang, "paperworkEmail.quote.step3StartsOnTitle", {
+        date: formatTermDate(startIso, lang),
+      }),
+      t(lang, "paperworkEmail.quote.step3StartsSub"),
+    ];
+  } else if (startTerm && !isTbdTermValue(startTerm)) {
+    const localized = localizeTermValue(startTerm, lang === "es" ? "es" : "en");
+    const when = START_PRESET.test(startTerm)
+      ? localized.charAt(0).toLocaleLowerCase(lang) + localized.slice(1)
+      : localized;
+    step3 = [
+      t(lang, "paperworkEmail.quote.step3StartsTitle", { when }),
+      t(lang, "paperworkEmail.quote.step3StartsSub"),
+    ];
+  } else {
+    step3 = [
+      t(lang, "paperworkEmail.quote.step3ConfirmTitle"),
+      t(
+        lang,
+        opts.textable
+          ? "paperworkEmail.quote.step3ConfirmSubText"
+          : "paperworkEmail.quote.step3ConfirmSub",
+      ),
+    ];
+  }
+  const warranty = warrantyClauseKind(q.terms).kind !== "none";
+  return [
+    [
+      "1",
+      t(lang, "paperworkEmail.quote.step1Title"),
+      t(lang, "paperworkEmail.quote.step1Sub"),
+    ],
+    [
+      "2",
+      t(lang, "paperworkEmail.quote.step2Title"),
+      t(lang, "paperworkEmail.quote.step2Sub"),
+    ],
+    ["3", ...step3],
+    [
+      "4",
+      t(lang, "paperworkEmail.quote.step4Title"),
+      t(
+        lang,
+        warranty
+          ? "paperworkEmail.quote.step4Sub"
+          : "paperworkEmail.quote.step4SubNoWarranty",
+      ),
+    ],
+  ];
+}
+
 /**
  * Custom WOW-factor quote email. Bypasses the generic shell() because the
  * quote is the FIRST customer-facing surface — it sets the brand tone.
@@ -720,6 +825,9 @@ export function renderQuoteHtml(
   liveCustomer: RenderedCustomer | undefined,
   sender: User | undefined,
   senderBiz: BusinessIdentity | undefined,
+  /** REQ-682: `textable` — this send also texts the customer at a number
+   *  that can take a text (only then may the steps promise a text). */
+  opts: { textable?: boolean } = {},
 ): string {
   // Roadmap p.13: the email goes to the customer, so it follows the
   // contractor's outgoing-comms language (default en), not their UI language.
@@ -754,28 +862,7 @@ export function renderQuoteHtml(
     whatNext: t(lang, "paperworkEmail.quote.whatNext"),
     questions: t(lang, "paperworkEmail.quote.questions"),
     yourContractor: t(lang, "paperworkEmail.quote.yourContractor"),
-    steps: [
-      [
-        "1",
-        t(lang, "paperworkEmail.quote.step1Title"),
-        t(lang, "paperworkEmail.quote.step1Sub"),
-      ],
-      [
-        "2",
-        t(lang, "paperworkEmail.quote.step2Title"),
-        t(lang, "paperworkEmail.quote.step2Sub"),
-      ],
-      [
-        "3",
-        t(lang, "paperworkEmail.quote.step3Title"),
-        t(lang, "paperworkEmail.quote.step3Sub"),
-      ],
-      [
-        "4",
-        t(lang, "paperworkEmail.quote.step4Title"),
-        t(lang, "paperworkEmail.quote.step4Sub"),
-      ],
-    ],
+    steps: quoteEmailSteps(q, lang, { textable: opts.textable === true }),
   };
   // CTA lands on the /q page — the one Quote + Agreement document the
   // customer reviews, accepts, and signs in a single ceremony.

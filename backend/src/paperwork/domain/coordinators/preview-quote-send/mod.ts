@@ -5,6 +5,7 @@ import { UserStore } from "@users/domain/data/user-store/mod.ts";
 import { BusinessIdentityStore } from "@profile/domain/data/business-identity-store/mod.ts";
 import { ShortLinkStore } from "@paperwork/domain/data/shortlink-store/mod.ts";
 import {
+  quoteSendTexts,
   renderQuoteHtml,
   renderQuoteSubject,
 } from "@paperwork/domain/coordinators/send-paperwork-email/mod.ts";
@@ -111,7 +112,10 @@ export class PreviewQuoteSend {
       out.email = {
         ...(to ? { to } : {}),
         subject: renderQuoteSubject(quote, safeSender, senderBiz, customer),
-        html: renderQuoteHtml(quote, customer, safeSender, senderBiz),
+        // REQ-682: the same steps the send renders for this channel
+        html: renderQuoteHtml(quote, customer, safeSender, senderBiz, {
+          textable: quoteSendTexts(input.channel, customer, quote),
+        }),
       };
     }
     if (want.sms) {
