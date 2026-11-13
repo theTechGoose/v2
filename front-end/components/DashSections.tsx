@@ -5,6 +5,7 @@
  */
 import { I, ICN, type IconName } from "../lib/dash-icons.tsx";
 import Ticker from "../islands/Ticker.tsx";
+import { SkelBlock } from "./Skeletons.tsx";
 import { type Lang, tFor } from "../lib/i18n.ts";
 import { dashQuotesEmpty, quotesPendingSub } from "../lib/headline-counts.ts";
 import {
@@ -123,6 +124,9 @@ interface KpisProps {
   undeliveredQuotes?: number;
   avgJob: number;
   lang?: Lang;
+  /** REQ-728 (cycle 5, m15): the jobs list has not landed — the Active jobs
+   *  value is a placeholder, never a "0" the warm start cannot know. */
+  activeJobsPending?: boolean;
 }
 
 export function Kpis(props: KpisProps) {
@@ -145,6 +149,7 @@ export function Kpis(props: KpisProps) {
       val: string;
       sub: string;
       delta: { kind: "up" | "warn" | "neutral"; txt: string } | null;
+      pending?: boolean;
     }
   > = [
     {
@@ -155,6 +160,7 @@ export function Kpis(props: KpisProps) {
       val: String(props.activeJobs),
       sub: tFor(lang, "kpis.activeJobs.sub"),
       delta: null,
+      pending: props.activeJobsPending === true,
     },
     {
       icon: "invoice",
@@ -214,7 +220,13 @@ export function Kpis(props: KpisProps) {
             <I d={ICN[k.icon]} size={18} />
           </div>
           <div class="kpi__label">{k.label}</div>
-          <div class="kpi__val">{k.val}</div>
+          {k.pending
+            ? (
+              <div class="kpi__val" aria-busy="true">
+                <SkelBlock h={28} w="40%" />
+              </div>
+            )
+            : <div class="kpi__val">{k.val}</div>}
           {k.delta
             ? (
               <div class={`kpi__delta kpi__delta--${k.delta.kind}`}>
@@ -252,10 +264,13 @@ export interface JobRow {
 }
 
 export function ActiveJobs(
-  { jobs, total, lang = "en" }: {
+  { jobs, total, lang = "en", pending = false }: {
     jobs: JobRow[];
     total?: number;
     lang?: Lang;
+    /** REQ-728 (cycle 5, m15): the jobs list has not landed — skeleton rows,
+     *  no count, never the "no jobs in flight" line. */
+    pending?: boolean;
   },
 ) {
   // `total` is the full active-job count (matches the KPI); `jobs` is only the
@@ -271,13 +286,15 @@ export function ActiveJobs(
             style="position:static;width:8px;height:8px"
           />
           <h3 class="panel__title">{tFor(lang, "kpis.activeJobs.label")}</h3>
-          <span class="panel__count">
-            {
-              /* P-36: correct Spanish pluralization — "1 activo", never
-                "1 activos". */
-            }
-            {activeJobsCountLabel(count, lang)}
-          </span>
+          {!pending && (
+            <span class="panel__count">
+              {
+                /* P-36: correct Spanish pluralization — "1 activo", never
+                  "1 activos". */
+              }
+              {activeJobsCountLabel(count, lang)}
+            </span>
+          )}
         </div>
         {
           /* P-36: "Ver todo" goes to the page that actually lists the jobs
@@ -287,7 +304,14 @@ export function ActiveJobs(
           {tFor(lang, "dashPanel.seeAll")}
         </a>
       </div>
-      {jobs.length === 0
+      {jobs.length === 0 && pending
+        ? (
+          <div aria-busy="true">
+            <SkelBlock h={64} mt={18} />
+            <SkelBlock h={64} mt={12} />
+          </div>
+        )
+        : jobs.length === 0
         ? (
           <div class="panel__empty panel__empty--stack">
             <p style="font-size:13.5px;color:var(--fg-muted, #6b7560);margin:0;line-height:1.5">
@@ -472,6 +496,7 @@ export function Outstanding(
     upcoming = null,
     emptyKey,
     lang = "en",
+    pending = false,
   }: {
     owed: number;
     current: number;
@@ -485,6 +510,9 @@ export function Outstanding(
      *  upcoming line stands in for it. Omitted → the old items-based pick. */
     emptyKey?: string | null;
     lang?: Lang;
+    /** REQ-728 (cycle 5, m15): the invoice lists have not landed — a
+     *  skeleton stands where the empty line and the invoice rows go. */
+    pending?: boolean;
   },
 ) {
   const realTotal = current + mid + overdue;
@@ -517,7 +545,14 @@ export function Outstanding(
           {upcoming}
         </div>
       )}
-      {allZero
+      {allZero && pending
+        ? (
+          <div aria-busy="true">
+            <SkelBlock h={14} w="70%" mt={6} />
+            <SkelBlock h={36} mt={14} />
+          </div>
+        )
+        : allZero
         ? (() => {
           const key = emptyKey !== undefined
             ? emptyKey

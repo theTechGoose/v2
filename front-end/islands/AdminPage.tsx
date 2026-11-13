@@ -71,6 +71,9 @@ export default function AdminPage({ selfId }: { selfId?: string }) {
   /** REQ-507 — the query the shown rows came from (the empty state names it) */
   const [shownQ, setShownQ] = useState("");
   const [loading, setLoading] = useState(false);
+  /** REQ-728 (cycle 5, m15) — the first search has resolved; until then the list is
+   *  loading, never "No users found." */
+  const [loaded, setLoaded] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [impersonateId, setImpersonateId] = useState("");
@@ -114,6 +117,7 @@ export default function AdminPage({ selfId }: { selfId?: string }) {
     } finally {
       busyRef.current = false;
       if (!quiet) setLoading(false);
+      setLoaded(true);
     }
   }
 
@@ -533,12 +537,12 @@ export default function AdminPage({ selfId }: { selfId?: string }) {
         </div>
       )}
 
-      {loading && rows.length === 0 && (
+      {(loading || !loaded) && rows.length === 0 && (
         <div style="text-align:center;color:var(--fg-muted,#9aa394);font-size:13.5px;padding:24px">
           {t("adminPage.loading")}
         </div>
       )}
-      {!loading && rows.length === 0 && (
+      {!loading && loaded && rows.length === 0 && (
         <div style="text-align:center;color:var(--fg-muted,#9aa394);font-size:13.5px;padding:24px">
           {adminEmptyText(t, shownQ)}
         </div>
