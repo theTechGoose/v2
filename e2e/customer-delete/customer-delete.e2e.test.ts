@@ -182,3 +182,53 @@ Deno.test("REQ-802: a customer card's panel has Delete customer; Delete removes 
     await k.body?.cancel();
     expect.eq(k.status, 200, "the kept customer still reads");
   }));
+
+Deno.test("REQ-802 AMENDMENT: the client sheet (Open card) has Delete customer too; Delete closes the sheet, removes the card and the customer reads 404", (t) =>
+  story(t, async ({ page, expect, http, baseUrl }) => {
+    const { auth } = await signIn(http, page, baseUrl);
+    const name = `Sheet Customer ${digits()}`;
+    const c = await (await http("/api/customers", {
+      method: "POST",
+      headers: auth,
+      body: JSON.stringify({ name, phoneNumber: `+1512${digits()}` }),
+    })).json();
+    await page.goto(`/customers?open=${c.id}`);
+    const sheet = page.locator("[data-cy='client-sheet']");
+    await sheet.waitFor({ timeout: 20_000 });
+    await sheet.locator("[data-cy='client-sheet-delete']").waitFor({
+      timeout: 10_000,
+    });
+    expect.eq(
+      (await sheet.locator("[data-cy='client-sheet-delete']").innerText())
+        .trim(),
+      "Delete customer",
+      "the sheet's action reads Delete customer",
+    );
+    await clickUntil(
+      page,
+      "[data-cy='client-sheet-delete']",
+      visible(page, "[data-cy='client-sheet-delete-ask']"),
+    );
+    // Keep first: the actions come back, nothing deleted
+    await sheet.locator("[data-cy='client-sheet-delete-keep']").click();
+    await sheet.locator("[data-cy='client-sheet-delete']").waitFor({
+      timeout: 5_000,
+    });
+    // then Delete
+    await clickUntil(
+      page,
+      "[data-cy='client-sheet-delete']",
+      visible(page, "[data-cy='client-sheet-delete-ask']"),
+    );
+    await still(page, "sheet-delete-ask");
+    await sheet.locator("[data-cy='client-sheet-delete-yes']").click();
+    await sheet.waitFor({ state: "detached", timeout: 15_000 });
+    await page.locator(".ccard2", { hasText: name }).waitFor({
+      state: "detached",
+      timeout: 15_000,
+    });
+    await expect.see(`${name} deleted`);
+    const r = await http(`/api/customers/${c.id}`, { headers: auth });
+    await r.body?.cancel();
+    expect.eq(r.status, 404, "the customer reads as not-found afterwards");
+  }));
