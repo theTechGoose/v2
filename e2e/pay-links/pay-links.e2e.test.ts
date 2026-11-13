@@ -146,7 +146,8 @@ Deno.test("REQ-630: Venmo + Cash App + a custom 'Extra Pay' link — /i/:id show
     // 4. the customer's page
     await page.context().clearCookies();
     await page.goto(`/i/${inv.id}`);
-    await page.locator("[data-cy='card-pay']").waitFor({ timeout: 15_000 });
+    // REQ-782: the card is "Pay by card", a link to the separate card portal
+    await page.locator("[data-cy='pay-by-card']").waitFor({ timeout: 15_000 });
     await page.locator("[data-cy='pay-buttons']").waitFor({ timeout: 15_000 });
 
     const venmo = page.locator("[data-cy='pay-venmo']");
@@ -191,7 +192,7 @@ Deno.test("REQ-630: Venmo + Cash App + a custom 'Extra Pay' link — /i/:id show
         e.getAttribute("data-cy")
       );
       return {
-        card: all.indexOf("card-pay"),
+        card: all.indexOf("pay-by-card"),
         buttons: all.indexOf("pay-buttons"),
         claim: all.indexOf("claim-method-venmo"),
       };
@@ -222,7 +223,15 @@ Deno.test("REQ-630: Venmo + Cash App + a custom 'Extra Pay' link — /i/:id show
     expect.eq(clipped.length, 0, `no clipped button (${clipped.join(",")})`);
     // Zelle: the copy button copies and says so
     await page.locator("[data-cy='pay-buttons']").scrollIntoViewIfNeeded();
-    await page.locator("[data-cy='pay-zelle-copy']").click();
+    // REQ-782: the page's first wait is now the server-drawn Pay by card link, not an island —
+    // click until the claim island has hydrated and answers
+    for (let i = 0; i < 20; i++) {
+      await page.locator("[data-cy='pay-zelle-copy']").click();
+      if (
+        await page.getByText("Copied").first().isVisible().catch(() => false)
+      ) break;
+      await page.waitForTimeout(500);
+    }
     await expect.see("Copied");
     // on a phone the buttons still fit
     await page.setViewportSize({ width: 375, height: 812 });
@@ -247,7 +256,14 @@ Deno.test("REQ-630: Venmo + Cash App + a custom 'Extra Pay' link — /i/:id show
     await page.locator("[data-cy='pay-zelle-copy']").click();
     await page.setViewportSize({ width: 1280, height: 720 });
 
-    // 5. the card pays on the fake gateway; the invoice is paid
+    // 5. the card pays on the fake gateway, on the card portal; the invoice is paid
+    expect.eq(
+      await page.locator("[data-cy='pay-by-card']").getAttribute("href"),
+      `/i/${inv.id}/pay`,
+      "Pay by card opens the card portal",
+    );
+    await page.goto(`/i/${inv.id}/pay`);
+    await page.locator("[data-cy='card-pay']").waitFor({ timeout: 15_000 });
     await page.locator("[data-cy='card-number']").fill("4242424242424242");
     await page.locator("[data-cy='card-holder']").fill("Ana Torres");
     await page.locator("[data-cy='card-expiry']").fill("1234");

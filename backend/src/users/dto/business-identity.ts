@@ -84,6 +84,11 @@ export class CardMethod {
    *  processor; this just tells the customer how to hand over the card. */
   @IsOptional() @IsString()
   instructions?: string;
+  /** REQ-782 — the business's card pay link (its own Stripe Payment Link, Square or PayPal
+   *  checkout page): "Pay by card" on the invoice opens it. https only (`checkCardPayUrl`,
+   *  shared/payments/pay-links.ts); "" clears it. */
+  @IsOptional() @IsString()
+  url?: string;
 }
 export class OtherMethod {
   @IsBoolean()

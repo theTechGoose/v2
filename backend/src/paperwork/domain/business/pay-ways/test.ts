@@ -108,3 +108,41 @@ Deno.test("REQ-630 payWaysEmailHtml: nothing online → no block; Spanish headin
     "Formas de pago",
   );
 });
+
+// REQ-782 (demo-loop dv1, d10) — "Card payments should be a link to a separate portal": a card
+// pay link set in Settings makes card a way to pay online, exactly as a connected Stripe does.
+Deno.test("REQ-782 a card pay link names card in the text and puts the Pay by card row (to the invoice page) first in the email", () => {
+  const withLink = {
+    card: { enabled: true, url: "https://buy.stripe.com/test_acme" },
+    venmo: apm.venmo,
+  };
+  assertEquals(
+    payWaysSmsLine(withLink, { card: false, lang: "en" }),
+    "Pay online by card or Venmo — all at the link.",
+  );
+  assertEquals(
+    payWaysSmsLine(withLink, { card: false, lang: "es" }),
+    "Paga en línea con tarjeta o Venmo — todo en el enlace.",
+  );
+  const html = payWaysEmailHtml(withLink, {
+    card: false,
+    lang: "en",
+    amountCents: 6500,
+    payUrl: "https://documonster.com/i/inv-1",
+  });
+  assert(
+    html.indexOf('data-pay-way="card"') >= 0 &&
+      html.indexOf('data-pay-way="card"') <
+        html.indexOf('data-pay-way="venmo"'),
+    html,
+  );
+  assertStringIncludes(html, 'href="https://documonster.com/i/inv-1"');
+  // card on, but only instructions — no online card way
+  assertEquals(
+    payWaysSmsLine({ card: { enabled: true, instructions: "Call me" } }, {
+      card: false,
+      lang: "en",
+    }),
+    null,
+  );
+});
