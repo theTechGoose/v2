@@ -90,12 +90,28 @@ export function moveThrottle<T>(o: {
 
 /** REQ-242 — the pointer's name tag rests after this long without a re-placement */
 export const TAG_IDLE_MS = 1_500;
-/** REQ-374 (demo m9) — a resting tag fades to this, never to 0: the name stays readable */
-export const TAG_REST_OPACITY = 0.6;
+/** REQ-374 (demo m9) — a resting tag never fades out: the name stays readable.
+ *  REQ-633 (demo m35, cycle 5) — and it no longer fades at all: at 0.6 the coach mark's dark
+ *  scrim showed through it and the pointer read as "under the dark layer". It rests fully opaque
+ *  on its solid colour, shrunk to the initials (`tagLabel`) so it covers less of the page */
+export const TAG_REST_OPACITY = 1;
 /** REQ-374 (demo p8) — the arrow is always fully opaque (it read as faint when it dimmed); only
- *  the tag rests */
-export function pointerLook(resting: boolean): { arrow: number; tag: number } {
-  return { arrow: 1, tag: resting ? TAG_REST_OPACITY : 1 };
+ *  the tag rests — REQ-633: by shrinking (`compact`), not by fading */
+export function pointerLook(
+  resting: boolean,
+): { arrow: number; tag: number; compact: boolean } {
+  return {
+    arrow: 1,
+    tag: resting ? TAG_REST_OPACITY : 1,
+    compact: resting,
+  };
+}
+/** REQ-633 (demo m2, cycle 5) — the tag's text: the whole name while the pointer moves, its
+ *  initials (two at most) once it rests */
+export function tagLabel(name: string, compact: boolean): string {
+  if (!compact) return name;
+  return name.trim().split(/\s+/).filter(Boolean).slice(0, 2)
+    .map((w) => w[0].toUpperCase()).join("");
 }
 /** REQ-374 / REQ-437 — the gap between the tag and what it sits beside (the arrow, an element) */
 export const TAG_GAP = 6;
@@ -126,17 +142,19 @@ const reachOf = (p: Pt, r: Rect) =>
     Math.max(r.top - p.y, 0, p.y - (r.top + r.height)),
   );
 
-/** REQ-437 + REQ-543 (demo m6, cycle 4) — the tag's own top-left, in the same px as `tip`, `box`
- *  and `rect`:
+/** REQ-437 + REQ-543 (demo m6, cycle 4) + REQ-633 (demo m2, cycle 5) — the tag's own top-left,
+ *  in the same px as `tip`, `box` and `rect`:
  *   - `rect` (the element the pointer is anchored to): just past one of its edges — above,
- *     below, right or left of it — or under the arrow's tail, whichever covers neither the
- *     element nor the arrow and sits within TAG_REACH of the tip once fitted into the box; of
- *     those, one that `covers` no OTHER control (the caller's hit-test of the page under it)
- *     wins, then the NEAREST to the tip — never the side with the most room, which put the tag
- *     past a card's far edge, over the next control;
- *   - no rect, or no such side (an element bigger than the reach around the tip: a card, a
- *     page): below-right of the tip past the arrow's tail (ARROW_H + TAG_GAP down), above the
- *     tip only at the box's bottom;
+ *     below, right or left of it — which covers neither the element nor the arrow and sits
+ *     within TAG_REACH of the tip once fitted into the box, nearest to the tip first — never the
+ *     side with the most room, which put the tag past a card's far edge, over the next control;
+ *   - then the spots around the ARROW itself (a small virtual rect at the tip): under its tail
+ *     ("tail"), above the tip ("tail-up"), right of its body, left of the tip — the only spots
+ *     when there is no rect, or the rect is bigger than the reach around the tip (a list, a
+ *     card); "tail" only where the box's bottom leaves room for it;
+ *   - `covers` (the caller's hit-test of the page under a candidate: true/false, or a score of
+ *     how much content — text, other controls — it would hide) picks among ALL of those: the
+ *     least covered wins, the order above breaking ties; nothing covered keeps the first;
  *   - always TAG_EDGE inside `box` (the stage's frame, the customer's window), whatever the tip
  *     — `tip` is the DRAWN arrow (a glide in progress included) and `tag` its measured size. */
 export function tagPlacement(
@@ -144,7 +162,7 @@ export function tagPlacement(
   box: Rect,
   tag: { w: number; h: number },
   rect?: Rect | null,
-  covers?: (r: Rect) => boolean,
+  covers?: (r: Rect) => boolean | number,
 ): { x: number; y: number; side: TagSide } {
   const right = box.left + box.width;
   const bottom = box.top + box.height;
@@ -163,37 +181,64 @@ export function tagPlacement(
   };
   const arrowB = tip.y + ARROW_BOX.h;
   const ty = arrowB + TAG_GAP;
-  if (rect && rect.width > 0 && rect.height > 0) {
+  const cand = (x: number, y: number, side: TagSide) => {
+    const at = fit(x, y, side);
+    const r = { left: at.x, top: at.y, width: tag.w, height: tag.h };
+    return { at, r, far: reachOf(tip, r) };
+  };
+  type Cand = ReturnType<typeof cand>;
+  const sized = !!rect && rect.width > 0 && rect.height > 0;
+  let near: Cand[] = [];
+  if (rect && sized) {
     const rr = rect.left + rect.width;
     const rb = rect.top + rect.height;
-    const wanted: [TagSide, number, number][] = [
+    near = [
       // above: its bottom a gap over the element's top (and the tip)
-      ["above", tip.x, Math.min(rect.top, tip.y) - TAG_GAP - tag.h],
+      cand(tip.x, Math.min(rect.top, tip.y) - TAG_GAP - tag.h, "above"),
       // below: past the element and the arrow's tail
-      ["below", tip.x, Math.max(rb, arrowB) + TAG_GAP],
+      cand(tip.x, Math.max(rb, arrowB) + TAG_GAP, "below"),
       // right: past the element and the arrow's body, level with the tip
-      ["right", Math.max(rr, tip.x + ARROW_BOX.w) + TAG_GAP, tip.y],
+      cand(Math.max(rr, tip.x + ARROW_BOX.w) + TAG_GAP, tip.y, "right"),
       // left: its right edge a gap before the element's left (and the tip)
-      ["left", Math.min(rect.left, tip.x) - TAG_GAP - tag.w, tip.y],
+      cand(Math.min(rect.left, tip.x) - TAG_GAP - tag.w, tip.y, "left"),
       // the arrow's tail, when the element is small enough to leave it clear
-      ["tail", tip.x + TAG_GAP, ty],
-    ];
-    const ok = wanted
-      .map(([side, x, y]) => {
-        const at = fit(x, y, side);
-        const r = { left: at.x, top: at.y, width: tag.w, height: tag.h };
-        return { at, r, far: reachOf(tip, r) };
-      })
+      cand(tip.x + TAG_GAP, ty, "tail"),
+    ]
       .filter((c) =>
         c.far <= TAG_REACH && !overlap(c.r, rect) && !overlap(c.r, arrow)
       )
       .sort((a, b) => a.far - b.far);
-    if (ok.length) {
-      return ((covers && ok.find((c) => !covers(c.r))) || ok[0]).at;
-    }
   }
-  if (ty + tag.h <= bottom - TAG_EDGE) return fit(tip.x + TAG_GAP, ty, "tail");
-  return fit(tip.x + TAG_GAP, tip.y - TAG_GAP - tag.h, "tail-up");
+  // the spots around the arrow: for no rect, a rect bigger than the reach, or every side covered
+  const tailFits = ty + tag.h <= bottom - TAG_EDGE;
+  const around = [
+    ...(tailFits ? [cand(tip.x + TAG_GAP, ty, "tail")] : []),
+    cand(tip.x + TAG_GAP, tip.y - TAG_GAP - tag.h, "tail-up"),
+    cand(tip.x + ARROW_BOX.w + TAG_GAP, tip.y, "right"),
+    cand(tip.x - TAG_GAP - tag.w, tip.y, "left"),
+  ].filter((c) =>
+    c.far <= TAG_REACH && !overlap(c.r, arrow) &&
+    // beside a small element the tag stays off it, as its own sides do
+    !(near.length && rect && overlap(c.r, rect))
+  );
+  const all = [...near, ...around];
+  if (!all.length) {
+    return fit(tip.x + TAG_GAP, tip.y - TAG_GAP - tag.h, "tail-up");
+  }
+  if (!covers) return all[0].at;
+  // the least covered wins; the first clean one ends the search (each score is a hit-test)
+  let best = all[0];
+  let bestScore = Infinity;
+  for (const c of all) {
+    const v = covers(c.r);
+    const score = typeof v === "number" ? v : v ? 1 : 0;
+    if (score < bestScore) {
+      best = c;
+      bestScore = score;
+    }
+    if (score <= 0) break;
+  }
+  return best.at;
 }
 
 /** REQ-305 — the arrow DemoPointer draws: 24 × 30 px, its tip at the point */

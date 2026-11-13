@@ -403,9 +403,14 @@ describe("REQ-242 the pointer's name tag stays inside its box and rests when idl
       expect(at.y + tag.h).toBeLessThanOrEqual(box.top + box.height);
     }
   });
-  test("the tag rests after TAG_IDLE_MS, faded but readable; the arrow never dims (REQ-374)", () => {
+  // REQ-633 (demo m35, cycle 5): the rest is a shrink to the initials, fully opaque
+  test("the tag rests after TAG_IDLE_MS, readable; the arrow never dims (REQ-374, REQ-633)", () => {
     expect(TAG_IDLE_MS).toBe(1_500);
-    expect(pointerLook(true)).toEqual({ arrow: 1, tag: TAG_REST_OPACITY });
+    expect(pointerLook(true)).toEqual({
+      arrow: 1,
+      tag: TAG_REST_OPACITY,
+      compact: true,
+    });
   });
 });
 
