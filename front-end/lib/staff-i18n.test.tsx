@@ -45,7 +45,9 @@ Deno.test("REQ-269: /admin's body renders in Spanish when the app language is es
   assert(html.includes(">Usuarios<"), "the Users tab reads Usuarios");
   assert(html.includes(">Cuentas<"), "the Accounts tab reads Cuentas");
   assert(html.includes(">Buscar<"), "the search button reads Buscar");
-  assert(html.includes("No se encontraron usuarios."), html);
+  // REQ-728 (cycle 5, m15): the first paint is the loading line, not the
+  // empty state — it still speaks Spanish.
+  assert(html.includes("Cargando usuarios…"), html);
 });
 
 Deno.test("REQ-269: /admin's body stays English when the app language is en", () => {
@@ -55,7 +57,8 @@ Deno.test("REQ-269: /admin's body stays English when the app language is en", ()
     html,
   );
   assert(html.includes(">Users<") && html.includes(">Accounts<"), html);
-  assert(html.includes("No users found."), html);
+  // REQ-728 (cycle 5, m15): loading line on first paint, never "No users found."
+  assert(html.includes("Loading users…"), html);
 });
 
 const who = {

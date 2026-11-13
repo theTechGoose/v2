@@ -549,6 +549,10 @@ export default function DashboardPage(_props: { lang?: Lang } = {}) {
   } = s;
   const now = new Date();
 
+  // REQ-728 (cycle 5, m15): a warm start paints the cached stats before the
+  // lists land; until then nothing derived from a list (the Active jobs
+  // count, the jobs and invoice panels) may claim "0" or "none".
+  const listsPending = !s.listsLoaded;
   const kpis = { ...pickKpis(stats), activeJobs: jobs.length };
   const customerNames = new Map(customers.map((c) => [c.id, c.name] as const));
 
@@ -622,6 +626,7 @@ export default function DashboardPage(_props: { lang?: Lang } = {}) {
   return (
     <>
       {assistantCta}
+      {listsPending && <ShimmerStyle />}
       <SetupChecklist />
       <Kpis
         activeJobs={kpis.activeJobs}
@@ -633,9 +638,15 @@ export default function DashboardPage(_props: { lang?: Lang } = {}) {
         undeliveredQuotes={stats?.quotes.undelivered ?? 0}
         avgJob={kpis.avgJob}
         lang={lang}
+        activeJobsPending={listsPending}
       />
       <div class="grid">
-        <ActiveJobs jobs={jobRows} total={kpis.activeJobs} lang={lang} />
+        <ActiveJobs
+          jobs={jobRows}
+          total={kpis.activeJobs}
+          lang={lang}
+          pending={listsPending}
+        />
         <QuotesAwaiting
           quotes={quoteRows}
           lang={lang}
@@ -657,6 +668,7 @@ export default function DashboardPage(_props: { lang?: Lang } = {}) {
           upcoming={upcomingLine}
           emptyKey={outstandingEmpty}
           lang={lang}
+          pending={listsPending}
         />
       </div>
     </>
