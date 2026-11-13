@@ -131,7 +131,8 @@ Deno.test("REQ-358: at 390 px the drawer has a 44 px ✕; ✕, backdrop and Esca
     await expectRoot("after Escape");
 
     // 5. on a page inside Billing the drawer rests at Billing, wherever it was browsed to
-    await page.goto("/quotes");
+    // REQ-773: Quotes moved to the root — Invoices is the page inside Billing now
+    await page.goto("/invoices");
     await menu.waitFor({ timeout: 20_000 });
     await sb.locator("[data-cy='nav-back']").waitFor({
       state: "attached",
@@ -139,13 +140,13 @@ Deno.test("REQ-358: at 390 px the drawer has a 44 px ✕; ✕, backdrop and Esca
     });
     await openDrawer();
     await sb.locator("[data-cy='nav-back']").click(); // up to the root
-    await sb.locator("[data-cy='nav-folder-recurring']").click();
+    await sb.locator("[data-cy='nav-folder-field']").click();
     await close.click();
-    await waitOpen(false, "✕ closes the drawer on /quotes");
+    await waitOpen(false, "✕ closes the drawer on /invoices");
     await openDrawer();
     expect(
-      await sb.locator("a[href='/quotes'].nav-item--active").count() === 1,
-      "on /quotes the drawer re-opens inside Billing with Quotes active",
+      await sb.locator("a[href='/invoices'].nav-item--active").count() === 1,
+      "on /invoices the drawer re-opens inside Billing with Invoices active",
     );
-    await page.screenshot({ path: `${folder}/drawer-reopened-quotes-390.png` });
+    await page.screenshot({ path: `${folder}/drawer-reopened-invoices-390.png` });
   }));

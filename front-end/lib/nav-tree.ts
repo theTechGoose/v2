@@ -1,7 +1,8 @@
 /**
- * REQ-176 — the sidebar's tree, as data. The root is four rows: Dashboard, Customers, the
- * Billing folder (Quotes, Invoices, Payments — the quote IS the contract since the Quote+Agreement
- * merge, so there is no Contracts entry; /contracts 302s into /quotes), the REQ-156 Field folder
+ * REQ-176 — the sidebar's tree, as data. The root: Dashboard, Customers, Quotes (REQ-773: a root
+ * row, no longer in Billing — the quote IS the contract since the Quote+Agreement merge, so there
+ * is no Contracts entry; /contracts 302s into /quotes), the Billing folder (Invoices, Payments,
+ * Work orders), the REQ-156 Field folder
  * with the field entries (REQ-361: named "Field", not "Recurring" — it holds one-off tasks too),
  * and the Roles folder (Workers, Admins, and the super-admin tab). REQ-604 (demo m18): Workers is
  * one shared node listed in BOTH Field and Roles, and the super-admin tab also shows on the root. The sidebar (islands/DashSidebar.tsx)
@@ -28,11 +29,13 @@ export const NAV: NavNode<IconName>[] = [
   // (/clients stays live as an alias route). REQ-518: no countKey — a customers total is not
   // work waiting, so it never gets the pink pill.
   { id: "customers", icon: "user", href: "/customers" },
+  // REQ-773 (demo dv1-d1) — Raphael: "I don't understand what quotes inside the billing folder
+  // is ... Change that." Quotes is a root row, one click from anywhere; Billing keeps the rest.
+  { id: "quotes", icon: "quote", href: "/quotes", countKey: "quotes" },
   {
     id: "billing",
     icon: "pay",
     items: [
-      { id: "quotes", icon: "quote", href: "/quotes", countKey: "quotes" },
       {
         id: "invoices",
         icon: "invoice",
