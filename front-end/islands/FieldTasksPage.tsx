@@ -930,7 +930,9 @@ export default function FieldTasksPage(
               {workersLoaded && workers.length === 0 && (
                 <span class="hint" data-cy="tk-add-no-workers">
                   {t("field.tk.noWorkers")}{" "}
-                  <a href="/field/workers">{t("field.tk.addWorkerLink")}</a>
+                  <a class="link" href="/field/workers">
+                    {t("field.tk.addWorkerLink")}
+                  </a>
                 </span>
               )}
             </label>

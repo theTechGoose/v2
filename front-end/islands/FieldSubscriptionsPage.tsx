@@ -776,7 +776,7 @@ export default function FieldSubscriptionsPage(
               </div>
               <span class="hint">
                 {t("field.subs.manageCustomers")}{" "}
-                <a href="/customers">{t("nav.customers")}</a>
+                <a class="link" href="/customers">{t("nav.customers")}</a>
               </span>
             </div>
 

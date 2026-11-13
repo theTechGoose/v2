@@ -1014,6 +1014,17 @@ body {
 .content > * {
   flex-shrink: 0;
 }
+/* REQ-735 (demo c5 p6): a link inside running text (a hint, an alert, the
+   share box). Without it a classless <a> is the browser's blue underline. */
+.link {
+  color: var(--brand-teal);
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.link:hover {
+  color: var(--brand-green);
+}
 .content::-webkit-scrollbar {
   width: 8px;
 }

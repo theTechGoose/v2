@@ -407,6 +407,7 @@ export default function FieldWorkersPage(
             <p style="margin:0 0 4px">
               {t("field.wk.shareLink")}:{" "}
               <a
+                class="link"
                 href={added.share.url}
                 target="_blank"
                 rel="noopener"
@@ -422,6 +423,7 @@ export default function FieldWorkersPage(
             <textarea
               readOnly
               rows={3}
+              class="share-text"
               data-cy="wk-share-text"
               style="width:100%;resize:vertical"
               value={added.share.text}

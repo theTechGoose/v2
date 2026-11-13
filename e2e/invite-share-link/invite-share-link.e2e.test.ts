@@ -82,6 +82,20 @@ Deno.test("REQ-601 (demo M12): a worker who couldn't be texted — the page show
       ),
       "the PIN just typed is on the page",
     );
+    // REQ-735 (demo c5 p6): the link and the copy box are styled, not UA defaults
+    const look = await page.evaluate(() => {
+      const css = (s: string) => getComputedStyle(document.querySelector(s)!);
+      const a = css("[data-cy='wk-share-url']");
+      const ta = css("[data-cy='wk-share-text']");
+      return { aColor: a.color, aWeight: a.fontWeight, taFont: ta.fontFamily };
+    });
+    expect(
+      look.aColor !== "rgb(0, 0, 238)",
+      `share link not UA blue (${look.aColor})`,
+    );
+    expect.eq(look.aColor, "rgb(26, 83, 92)", "share link is brand teal");
+    expect(Number(look.aWeight) >= 600, `share link weight ${look.aWeight}`);
+    expect(/Inter/.test(look.taFont), `share text box font (${look.taFont})`);
     const copy = page.locator("[data-cy='wk-share-copy']");
     expect.eq((await copy.innerText()).trim(), "Copy link + PIN", "the button");
     await copy.click();

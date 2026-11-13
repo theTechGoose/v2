@@ -145,7 +145,7 @@ export default function WorkOrdersPage() {
       {/* REQ-609 (demo c4 m48): a finished task never becomes a work order — say so */}
       <p class="hint" data-cy="wo-vs-tasks" style="margin:0 0 12px">
         {t("workOrders.vsTasks")}{" "}
-        <a href="/field/tasks">{t("workOrders.openTasks")}</a>
+        <a class="link" href="/field/tasks">{t("workOrders.openTasks")}</a>
       </p>
 
       {loadErr && <p class="alert" data-cy="wo-load-error">{loadErr}</p>}
