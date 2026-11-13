@@ -2958,6 +2958,8 @@
   "quotesSide.rateSub": "últimos 90 días",
   "quotesSide.rateTitle": "Tasa de éxito",
   "quotesSide.topEmpty": "Aún no hay cotizaciones abiertas. Cuando envíes una, las más valiosas aparecerán aquí.",
+  "quotesSide.topEmptyDrafts.one": "Aún no hay cotizaciones enviadas — envía tu borrador para verlo aquí.",
+  "quotesSide.topEmptyDrafts.other": "Aún no hay cotizaciones enviadas — envía tus borradores para verlos aquí.",
   "quotesSide.topSub": "cotizaciones abiertas más grandes",
   "quotesSide.topTitle": "Lo más grande en curso",
   "quotesTip.default": "Las cotizaciones que se abren 3 veces o más en 24 horas se cierran el 78% de las veces cuando se les da seguimiento el mismo día.",

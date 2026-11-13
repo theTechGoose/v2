@@ -497,3 +497,19 @@ export function quotesPendingSub(
   }
   return null;
 }
+
+/** REQ-740 (demo-loop cycle 5, p18-5b): the /quotes "Top of the pipeline"
+ *  card lists sent quotes only — drafts are left out on purpose. When it is
+ *  empty but drafts exist, its line says so instead of a bare "No open quotes
+ *  yet" beside a draft the user can see. */
+export function quotesSideTopEmpty(
+  draftCount: number,
+): { key: string; n: number } {
+  if (draftCount > 0) {
+    return {
+      key: `quotesSide.topEmptyDrafts.${draftCount === 1 ? "one" : "other"}`,
+      n: draftCount,
+    };
+  }
+  return { key: "quotesSide.topEmpty", n: 0 };
+}
