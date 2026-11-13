@@ -177,3 +177,64 @@ Deno.test("REQ-726 m57 (demo cycle 5): /dashboard#activity lands on the Activity
       );
     }
   }));
+
+/** The feed answers `n` older payment events, `delayMs` after the request —
+ *  the cold-start order the verifier hit: the dashboard lists land first and
+ *  the Activity panel fills (and the page grows below it) afterwards. */
+async function feedLate(page: StoryTools["page"], n: number, delayMs: number) {
+  await page.unroute("**/api/notifications?*").catch(() => {});
+  await page.route("**/api/notifications?*", async (route) => {
+    await new Promise((r) => setTimeout(r, delayMs));
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify(
+        Array.from({ length: n }, (_, i) => ({
+          id: `n-late-${i}`,
+          userId: "u",
+          type: "payment_recorded",
+          title: `Pago registrado: $${
+            100 + i
+          } de <strong>Cliente ${i}</strong>`,
+          read: false,
+          createdAt: new Date(Date.now() - (10 + i) * 60_000).toISOString(),
+        })),
+      ),
+    });
+  });
+}
+
+Deno.test("REQ-749 m57 (demo cycle 5v1): the first /dashboard#activity load after login at 1280x720 stays on Activity when the feed lands after the lists", (t) =>
+  story(t, async ({ page, expect, http, baseUrl }) => {
+    await signIn(http, page, baseUrl);
+    await page.setViewportSize({ width: 1280, height: 720 });
+    await feedLate(page, 8, 2_500);
+    // First load right after login: cold, no dash cache, feed still pending
+    // when the lists render and the island first scrolls.
+    await page.goto("/dashboard#activity");
+    await page.locator("#activity").waitFor({ timeout: 25_000 });
+    await page.locator("#activity .activity-item").first().waitFor({
+      state: "attached",
+      timeout: 25_000,
+    });
+    await page.waitForTimeout(1_200);
+    const m = await page.evaluate(() => {
+      const el = document.getElementById("activity")!;
+      const box = document.querySelector<HTMLElement>(".content")!;
+      const docTop = el.getBoundingClientRect().top -
+        box.getBoundingClientRect().top + box.scrollTop;
+      const max = box.scrollHeight - box.clientHeight;
+      return {
+        y: box.scrollTop,
+        max,
+        want: Math.min(docTop, max),
+        top: el.getBoundingClientRect().top,
+        vh: globalThis.innerHeight,
+      };
+    });
+    expect(m.want > 0, `the panel starts below the fold (doc top ${m.want})`);
+    expect(
+      Math.abs(m.y - m.want) <= 4 && m.top < m.vh,
+      `the page is on #activity after the feed landed (scrollTop ${m.y} of max ${m.max}, want ${m.want}, panel top ${m.top}, viewport ${m.vh})`,
+    );
+  }));

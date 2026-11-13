@@ -122,7 +122,9 @@ describe("REQ-726 m57 (cycle 5): /dashboard#activity lands on the Activity panel
   test("DashboardPage retries the scroll after mount and once the lists render (the SSR skeleton has no #activity)", () => {
     const src = read("front-end/islands/DashboardPage.tsx");
     expect(src).toMatch(/from "\.\.\/lib\/dash-anchor\.ts"/);
-    expect(src).toMatch(/scrollToHashTarget\(/);
+    // REQ-749 amends: the one-shot scrollToHashTarget became holdHashTarget,
+    // which keeps re-scrolling while the page settles.
+    expect(src).toMatch(/holdHashTarget\(/);
     expect(src).toMatch(/\[s\.loading,\s*s\.listsLoaded\]/);
   });
 
