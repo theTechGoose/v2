@@ -211,8 +211,8 @@ Deno.test("REQ-570 m41: the /quotes panel has Send ▾ (three channels + Preview
     );
     expect.eq(
       (await preview.innerText()).trim(),
-      "Preview as customer",
-      "the item reads 'Preview as customer'",
+      "View as customer",
+      "the item reads 'View as customer' (REQ-690)",
     );
     expect.eq(sends.length, 0, "opening the menu sends nothing");
 
@@ -271,8 +271,8 @@ Deno.test("REQ-570 m41: the assistant's Send ▾ menu has 'Preview as customer' 
     await preview.waitFor({ state: "visible", timeout: 10_000 });
     expect.eq(
       (await preview.innerText()).trim(),
-      "Preview as customer",
-      "the Send ▾ menu has 'Preview as customer'",
+      "View as customer",
+      "the Send ▾ menu has 'View as customer' (REQ-690)",
     );
     expect.eq(
       await preview.getAttribute("href"),

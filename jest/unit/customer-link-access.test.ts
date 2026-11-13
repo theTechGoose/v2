@@ -189,6 +189,6 @@ describe("REQ-310 the chat renders the customer's link after a send, outside the
     expect(en["asstChat.customerLink.copyFailed"]).toMatch(
       /Couldn.t copy — here is the link/,
     );
-    expect(en["asstChat.customerLink.open"]).toBe("Open as customer");
+    expect(en["asstChat.customerLink.open"]).toBe("View as customer"); // REQ-690 (was "Open as customer")
   });
 });

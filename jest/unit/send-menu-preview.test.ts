@@ -190,7 +190,7 @@ describe("REQ-570 m41 copy in en and es", () => {
     expect(en[k].length).toBeGreaterThan(0);
     expect(es[k]).not.toBe(en[k]);
   });
-  it("REQ-570 the menu item reads 'Preview as customer'", () => {
-    expect(en["asstChat.preview.menuPreview"]).toBe("Preview as customer");
+  it("REQ-570 + REQ-690 the menu item reads 'View as customer'", () => {
+    expect(en["asstChat.preview.menuPreview"]).toBe("View as customer");
   });
 });
