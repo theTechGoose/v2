@@ -215,7 +215,8 @@ Deno.test("REQ-419 (demo-loop cycle 2: m40, S7c, p13-k): one customer — no pag
     const groups = await panel.locator(".ccard2__panel-rows").evaluateAll((els) =>
       els.map((el) => ({ cy: el.getAttribute("data-cy") ?? "contact", client: el.clientHeight, scroll: el.scrollHeight }))
     );
-    expect(groups.length === 3, `contact, subscriptions and documents groups (${JSON.stringify(groups)})`);
+    // REQ-743: a project-trade business's customer with no repeat visits has no repeat-visits group
+    expect(groups.length === 2, `contact and documents groups (${JSON.stringify(groups)})`);
     for (const g of groups) {
       expect(g.scroll <= g.client + 1, `the ${g.cy} group shows all its rows: ${JSON.stringify(g)}`);
     }
@@ -298,4 +299,39 @@ Deno.test("REQ-600 (cycle 4, M5): /customers?open=<id> opens a name+address cust
     expect(!!saved.phoneNumber && saved.phoneNumber.replace(/\D/g, "").endsWith("5125553150"), `the phone was saved (${saved.phoneNumber})`);
     expect(saved.email === "tom@blackhole.postmarkapp.com", `the email was saved (${saved.email})`);
     expect(saved.address === "99 Oak Ave", `the address was saved (${saved.address})`);
+  }));
+
+Deno.test("REQ-743 (demo c5 p18-6c, p18-8b): a handyman's customer card has no repeat-visits panel; a cleaner's says Repeat visits; the Field folder and page say Repeat visits, not Subscriptions", (t) =>
+  story(t, async ({ page, expect, http, baseUrl }) => {
+    const { auth } = await signIn(http, page, baseUrl);
+    const setBusiness = async (businessName: string) => {
+      const r = await http("/api/profile/identity", { method: "PUT", headers: auth, body: JSON.stringify({ businessName }) });
+      expect(r.ok, `business name ${businessName} saved (${r.status})`);
+      await r.body?.cancel();
+    };
+    await setBusiness("Joe's Handyman");
+    const r = await http("/api/customers", { method: "POST", headers: auth, body: JSON.stringify({ name: "Hank Nails", phoneNumber: "(512) 555-3152" }) });
+    await r.body?.cancel();
+    const card = page.locator(".ccard2", { hasText: "Hank Nails" });
+    const open = async () => {
+      await page.goto("/customers");
+      await expect.see("Hank Nails");
+      await clickUntil(page, ".ccard2:has-text('Hank Nails') .ccard2__name", async () =>
+        (await card.getAttribute("class"))?.includes("ccard2--open") ?? false);
+      await page.waitForTimeout(500);
+    };
+    await open();
+    expect((await card.locator("[data-cy='ccard2-subs']").count()) === 0, "no repeat-visits panel on a handyman's customer");
+    await expect.notSee("No subscriptions");
+
+    await setBusiness("Sparkle Cleaning");
+    await open();
+    const subs = card.locator("[data-cy='ccard2-subs']");
+    expect((await subs.count()) === 1, "a cleaning business's customer card has the repeat-visits panel");
+    const text = await subs.innerText();
+    expect(/Repeat visits/i.test(text) && !/subscription/i.test(text), `the panel says Repeat visits (${text})`);
+
+    await page.goto("/field/subscriptions");
+    await expect.see("Repeat visits");
+    await expect.notSee("Subscriptions");
   }));

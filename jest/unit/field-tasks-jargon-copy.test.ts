@@ -75,3 +75,86 @@ describe("REQ-609 (demo c4 m48) Tasks copy leads with one-off tasks, no zone/sub
     expect(src).toMatch(/href="\/field\/tasks"/);
   });
 });
+
+/**
+ * REQ-743 (demo cycle 5, issues p18-6c + p18-8b) — the rest of the product said "Subscriptions"
+ * for what Tasks (REQ-609) calls "repeat visits": the Field nav entry, the /field/subscriptions
+ * page and the customer card's panel ("Suscripciones" on a handyman's card). That word is also
+ * the owner's own DocuMonster plan. Every one of them now says "Repeat visits" / "Visitas
+ * repetidas" (the route stays), and the card hides the panel for a customer with none unless the
+ * business is a service trade.
+ */
+import {
+  repeatVisitsPanelShown,
+  tradeKindFor,
+} from "../../shared/quote-flow/trade-fit";
+
+const RENAMED_KEYS = [
+  "nav.subscriptions",
+  "field.subs.docTitle",
+  "field.subs.eyebrow",
+  "field.subs.title",
+  "field.subs.sub",
+  "field.subs.new",
+  "field.subs.editTitle",
+  "field.subs.empty",
+  "field.subs.confirmDelete",
+  "clientsBoard.panel.subs",
+  "clientsBoard.panel.subsNone",
+  "clientsBoard.panel.subsOpen",
+  "clientsBoard.subsCount.one",
+  "clientsBoard.subsCount.other",
+];
+
+describe("REQ-743 (demo c5 p18-6c, p18-8b) one name for repeat visits: nav, page and customer card", () => {
+  test("the nav entry, page and card keys never say subscription (en) / suscripción (es)", () => {
+    for (const k of RENAMED_KEYS) {
+      expect([k, en[k]]).toEqual([k, expect.any(String)]);
+      expect([k, es[k]]).toEqual([k, expect.any(String)]);
+      expect([k, en[k]]).not.toEqual([k, expect.stringMatching(/subscri/i)]);
+      expect([k, es[k]]).not.toEqual([k, expect.stringMatching(/suscrip/i)]);
+    }
+  });
+
+  test("no field.subs.* or clientsBoard.* copy says subscription, in either language", () => {
+    const hits = [
+      ...Object.entries(en).filter(([k, v]) =>
+        /^(field\.subs|clientsBoard)\./.test(k) && /subscri/i.test(v)
+      ),
+      ...Object.entries(es).filter(([k, v]) =>
+        /^(field\.subs|clientsBoard)\./.test(k) && /suscrip/i.test(v)
+      ),
+    ].map(([k, v]) => `${k}: ${v}`);
+    expect(hits).toEqual([]);
+  });
+
+  test("the nav entry and the card panel are named exactly as Tasks names them", () => {
+    expect(en["nav.subscriptions"]).toBe("Repeat visits");
+    expect(es["nav.subscriptions"]).toBe("Visitas repetidas");
+    expect(en["clientsBoard.panel.subs"]).toBe("Repeat visits");
+    expect(es["clientsBoard.panel.subs"]).toBe("Visitas repetidas");
+    expect(en["field.subs.eyebrow"]).toMatch(/^Repeat visits · \{n\}/);
+    expect(es["field.subs.eyebrow"]).toMatch(/^Visitas repetidas · \{n\}/);
+    expect(en["clientsBoard.subsCount.other"]).toBe("{n} repeat visits");
+    expect(es["clientsBoard.subsCount.other"]).toBe("{n} visitas repetidas");
+  });
+
+  test("the card's panel shows only when the customer has repeat visits or the trade is a service trade", () => {
+    expect(tradeKindFor("Joe's Handyman")).toBe("project");
+    expect(tradeKindFor("Sparkle Cleaning")).toBe("service");
+    expect(repeatVisitsPanelShown(0, "project")).toBe(false);
+    expect(repeatVisitsPanelShown(1, "project")).toBe(true);
+    expect(repeatVisitsPanelShown(0, "service")).toBe(true);
+    expect(repeatVisitsPanelShown(2, "service")).toBe(true);
+  });
+
+  test("ClientsBoard gates the panel on that rule, and the route hands the trade down from the business name", () => {
+    const board = read("front-end/islands/ClientsBoard.tsx");
+    expect(board).toMatch(/repeatVisitsPanelShown\(subs\.length, tradeKind\)/);
+    const page = read("front-end/islands/ClientsPage.tsx");
+    expect(page).toMatch(/tradeKind=\{tradeKind\}/);
+    const route = read("front-end/routes/clients/index.tsx");
+    expect(route).toMatch(/tradeKindFor\(/);
+    expect(route).toMatch(/<ClientsPage tradeKind=\{tradeKind\}/);
+  });
+});

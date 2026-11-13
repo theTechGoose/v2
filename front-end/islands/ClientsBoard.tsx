@@ -34,6 +34,10 @@ import {
 import { messageHrefFor, nudgeActionFor } from "../lib/client-actions.ts";
 import { isChromeClick } from "../lib/backdrop-dismiss.ts";
 import {
+  repeatVisitsPanelShown,
+  type TradeKind,
+} from "../../shared/quote-flow/trade-fit.ts"; // REQ-743
+import {
   apiFieldErrorKey,
   type CardField,
   cardFieldPatch,
@@ -101,6 +105,8 @@ interface CardProps {
   c: CustomerCard;
   /** REQ-145 — the customer's subscriptions (the field module's), oldest first */
   subs: SubscriptionView[];
+  /** REQ-743 — the business's trade kind: a service trade always shows the repeat-visits panel */
+  tradeKind: TradeKind;
   idx: number;
   isOpen: boolean;
   onOpen: () => void;
@@ -382,7 +388,18 @@ function LanguageRow(
 }
 
 function ClientCard(
-  { c, subs, idx, isOpen, onOpen, onClose, lang, disambig, onSaved }: CardProps,
+  {
+    c,
+    subs,
+    tradeKind,
+    idx,
+    isOpen,
+    onOpen,
+    onClose,
+    lang,
+    disambig,
+    onSaved,
+  }: CardProps,
 ) {
   const mood = moodFor(c, lang);
   const initials = initialsOf(c.name);
@@ -474,8 +491,10 @@ function ClientCard(
         )}
       </div>
       <div class="ccard2__foot">
-        {/* REQ-277 (M31): the nudge does what it says — a message verb texts
-            the customer; "Open card" (or nowhere to send) opens the panel */}
+        {
+          /* REQ-277 (M31): the nudge does what it says — a message verb texts
+            the customer; "Open card" (or nowhere to send) opens the panel */
+        }
         {nudge.kind === "message"
           ? (
             <a class="ccard2__nudge" data-cy="ccard2-nudge" href={nudge.href}>
@@ -502,8 +521,10 @@ function ClientCard(
         </div>
       </div>
 
-      {/* REQ-419 (demo-loop cycle 2, S7c): the closed back is only faded
-          out, so it leaves the accessibility tree and the tab order too */}
+      {
+        /* REQ-419 (demo-loop cycle 2, S7c): the closed back is only faded
+          out, so it leaves the accessibility tree and the tab order too */
+      }
       <div
         class="ccard2__panel"
         aria-hidden={isOpen ? undefined : "true"}
@@ -519,9 +540,7 @@ function ClientCard(
             )}
             <div class="ccard2__panel-seg">
               {/* REQ-323: the customer's own number, "C-001" */}
-              {c.number && (
-                <span data-cy="ccard2-number">{c.number} · </span>
-              )}
+              {c.number && <span data-cy="ccard2-number">{c.number} ·</span>}
               {seg ? `${seg} · ` : ""}
               {mood.label}
             </div>
@@ -535,9 +554,11 @@ function ClientCard(
             <I d={ICN.x} size={14} sw={2.5} />
           </button>
         </div>
-        {/* REQ-600 (demo-loop cycle 4, M5): every contact row is always
+        {
+          /* REQ-600 (demo-loop cycle 4, M5): every contact row is always
             there and edits in place — a name-only customer (Field → Add
-            task) gets a phone or an email here, so its invoices can go out */}
+            task) gets a phone or an email here, so its invoices can go out */
+        }
         <div class="ccard2__panel-rows">
           <EditRow
             field="phone"
@@ -589,64 +610,69 @@ function ClientCard(
           />
         </div>
         {/* REQ-145: every subscription of this customer, each a link to the field page */}
-        <div
-          class="ccard2__panel-rows"
-          data-cy="ccard2-subs"
-          style="margin-top:8px;max-height:150px;overflow-y:auto"
-        >
-          <div class="ccard2__panel-row" style="pointer-events:none">
-            <span class="ccard2__panel-row-icon">
-              <I d={ICN.repeat} size={13} sw={2.2} />
-            </span>
-            <span class="ccard2__panel-row-text">
-              <div class="ccard2__panel-row-lbl">
-                {tFor(lang, "clientsBoard.panel.subs")}
-                {subs.length ? ` · ${subs.length}` : ""}
-              </div>
-              {subs.length === 0 && (
-                <div class="ccard2__panel-row-val">
-                  {tFor(lang, "clientsBoard.panel.subsNone")}
-                </div>
-              )}
-            </span>
-          </div>
-          {subs.map((s) => (
-            <a
-              class="ccard2__panel-row"
-              href="/field/subscriptions"
-              key={s.id}
-              data-cy="ccard2-sub"
-              title={tFor(lang, "clientsBoard.panel.subsOpen")}
-            >
+        {/* REQ-743 (cycle 5, p18-6c): no empty panel on a project trade's customer */}
+        {repeatVisitsPanelShown(subs.length, tradeKind) && (
+          <div
+            class="ccard2__panel-rows"
+            data-cy="ccard2-subs"
+            style="margin-top:8px;max-height:150px;overflow-y:auto"
+          >
+            <div class="ccard2__panel-row" style="pointer-events:none">
               <span class="ccard2__panel-row-icon">
-                <I d={ICN.pin} size={13} sw={2.2} />
+                <I d={ICN.repeat} size={13} sw={2.2} />
               </span>
               <span class="ccard2__panel-row-text">
                 <div class="ccard2__panel-row-lbl">
-                  {/* REQ-699: a signed quote's "Monthly · $180/mo" */}
-                  {s.billing?.[lang] ?? s.schedule[lang]} · {s.active
-                    ? tFor(lang, "field.subs.active")
-                    : tFor(lang, "field.subs.paused")}
+                  {tFor(lang, "clientsBoard.panel.subs")}
+                  {subs.length ? ` · ${subs.length}` : ""}
                 </div>
-                <div class="ccard2__panel-row-val">
-                  {s.billing
-                    ? [s.address, s.quoteNumber].filter(Boolean).join(" · ")
-                    : (
-                      <>
-                        {s.address} · {fmtMoneyExact(perVisitCents(s))}{" "}
-                        {tFor(lang, "clientsBoard.panel.perVisit")}
-                      </>
-                    )}
-                </div>
+                {subs.length === 0 && (
+                  <div class="ccard2__panel-row-val">
+                    {tFor(lang, "clientsBoard.panel.subsNone")}
+                  </div>
+                )}
               </span>
-              <span class="ccard2__panel-row-arrow">
-                <I d={ICN.arrow} size={12} sw={2.4} />
-              </span>
-            </a>
-          ))}
-        </div>
-        {/* REQ-323 (demo-loop cycle 1, m20): every quote and invoice of this
-            customer, each a link to the page that opens it */}
+            </div>
+            {subs.map((s) => (
+              <a
+                class="ccard2__panel-row"
+                href="/field/subscriptions"
+                key={s.id}
+                data-cy="ccard2-sub"
+                title={tFor(lang, "clientsBoard.panel.subsOpen")}
+              >
+                <span class="ccard2__panel-row-icon">
+                  <I d={ICN.pin} size={13} sw={2.2} />
+                </span>
+                <span class="ccard2__panel-row-text">
+                  <div class="ccard2__panel-row-lbl">
+                    {/* REQ-699: a signed quote's "Monthly · $180/mo" */}
+                    {s.billing?.[lang] ?? s.schedule[lang]} · {s.active
+                      ? tFor(lang, "field.subs.active")
+                      : tFor(lang, "field.subs.paused")}
+                  </div>
+                  <div class="ccard2__panel-row-val">
+                    {s.billing
+                      ? [s.address, s.quoteNumber].filter(Boolean).join(" · ")
+                      : (
+                        <>
+                          {s.address} · {fmtMoneyExact(perVisitCents(s))}{" "}
+                          {tFor(lang, "clientsBoard.panel.perVisit")}
+                        </>
+                      )}
+                  </div>
+                </span>
+                <span class="ccard2__panel-row-arrow">
+                  <I d={ICN.arrow} size={12} sw={2.4} />
+                </span>
+              </a>
+            ))}
+          </div>
+        )}
+        {
+          /* REQ-323 (demo-loop cycle 1, m20): every quote and invoice of this
+            customer, each a link to the page that opens it */
+        }
         <div
           class="ccard2__panel-rows"
           data-cy="ccard2-docs"
@@ -698,8 +724,10 @@ function ClientCard(
                       fmtMoneyExact(Math.abs(d.amountCents))
                     }`
                     : fmtMoneyExact(d.amountCents)}
-                  {/* REQ-565 (demo m33): the quote at its agreed total, and
-                      what its approved change orders added */}
+                  {
+                    /* REQ-565 (demo m33): the quote at its agreed total, and
+                      what its approved change orders added */
+                  }
                   {d.kind === "quote" && d.changeOrdersCents
                     ? ` · ${
                       tFor(lang, "clientsBoard.doc.inclChangeOrders", {
@@ -717,9 +745,11 @@ function ClientCard(
             </a>
           ))}
         </div>
-        {/* REQ-277 (M31): Message texts (else mails) the customer and is not
+        {
+          /* REQ-277 (M31): Message texts (else mails) the customer and is not
             offered with nowhere to send; the mock's "Open card" went nowhere —
-            this panel IS the open card — so it is gone */}
+            this panel IS the open card — so it is gone */
+        }
         {messageHref && (
           <div class="ccard2__panel-actions">
             <a
@@ -755,6 +785,8 @@ interface BoardProps {
   lang?: "en" | "es";
   /** REQ-145 — the account's subscriptions by customer id */
   subsByCustomer?: Map<string, SubscriptionView[]>;
+  /** REQ-743 — the business's trade kind (from its name); "project" when unknown */
+  tradeKind?: TradeKind;
   /** REQ-600: a card saved a contact field — reload the page's cards */
   onCustomerSaved?: () => void;
 }
@@ -774,6 +806,7 @@ export default function ClientsBoard(
     children,
     lang = "en",
     subsByCustomer,
+    tradeKind = "project",
     onCustomerSaved,
   }: BoardProps,
 ) {
@@ -874,6 +907,7 @@ export default function ClientsBoard(
                 key={c.id}
                 c={c}
                 subs={subsByCustomer?.get(c.id) ?? []}
+                tradeKind={tradeKind}
                 idx={i}
                 isOpen={openId === c.id}
                 onOpen={() => setOpenId(c.id)}
@@ -891,9 +925,11 @@ export default function ClientsBoard(
               </div>
             )}
           </div>
-          {/* REQ-135 — the pager: one page at a time from the API.
+          {
+            /* REQ-135 — the pager: one page at a time from the API.
               REQ-419 (cycle 2, p13-k): only when there is a second page, and
-              below the grid, never in the cell beside a card */}
+              below the grid, never in the cell beside a card */
+          }
           {!rosterEmpty && totalPages > 1 && (
             <nav class="cpager" data-cy="clients-pager" aria-label="pages">
               <button

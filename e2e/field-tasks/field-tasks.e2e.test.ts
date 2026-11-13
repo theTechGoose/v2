@@ -434,7 +434,7 @@ Deno.test("REQ-145: Ana has two subscriptions and Bob one — Ana's card says 2 
     await anaCard.locator("[data-cy='ccard2-subs-count']").waitFor({
       timeout: 20_000,
     });
-    await expect.see("2 subscriptions");
+    await expect.see("2 repeat visits"); // REQ-743: was "2 subscriptions"
     await anaCard.click();
     const anaRows = anaCard.locator("[data-cy='ccard2-sub']");
     await anaRows.first().waitFor({ timeout: 10_000 });

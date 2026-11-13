@@ -112,7 +112,7 @@ Deno.test("REQ-176: the root is Dashboard, Customers, Billing, Field (REQ-361, w
     seen = await labels();
     expect.eq(
       seen.join(" | "),
-      "Back | Subscriptions | Assignments | Tasks | Batches | Workers",
+      "Back | Repeat visits | Assignments | Tasks | Batches | Workers", // REQ-743: was Subscriptions
       "inside Field (REQ-361, was Recurring; REQ-604: Workers listed here too)",
     );
     await nav.locator("[data-cy='nav-back']").click();
