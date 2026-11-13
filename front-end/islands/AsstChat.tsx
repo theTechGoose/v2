@@ -149,7 +149,6 @@ import { reviewJobDetails } from "../../shared/quote-flow/review-job-details.ts"
 import {
   versionStyleLabel,
   type VersionStyle,
-  versionTitle,
 } from "../../shared/quote-flow/version-titles.ts"; // REQ-446
 import {
   becameSigned,
@@ -177,6 +176,7 @@ import {
   customerFactsFrom,
   dedupeOptionsByBullets,
   groupedBullets,
+  labelVersionStyles, // REQ-759
   seedPickerOptions,
   stripCustomerDetails,
 } from "../../shared/quote-flow/option-bullets.ts";
@@ -548,12 +548,15 @@ function localFallbackOptions(
   // P-24: the versions must be distinguishable at a glance. They used
   // to share one jobName verbatim (and the server's old scheme numbered the
   // collisions "(2)" / "(3)"), so the picker looked like the same job three
-  // times. Each variant now carries the qualifier that describes what it IS.
+  // times. REQ-759: they are now told apart by their style label (Concise /
+  // Detailed) — a qualifier in the title reached the customer's page.
   const options: JobOption[] = [
     { id: "opt1", jobName, summary, bullets: base },
     {
       id: "opt2",
-      jobName: versionTitle(jobName, "short", lang),
+      // REQ-759 (cycle 5v2, m49): the job's own title — the old short-version
+      // qualifier became the quote's title on the customer's page once picked.
+      jobName,
       summary,
       // REQ-400 (M21): every item, in fewer lines — never the first three.
       bullets: groupedBullets(base),
@@ -564,7 +567,8 @@ function localFallbackOptions(
   // REQ-330 (p15-7): a short job makes the "short" version equal to the
   // full one — equal bullet sets collapse, never two cards alike.
   return {
-    options: dedupeOptionsByBullets(options, { exact: true }),
+    // REQ-759: the cards are told apart by their style label, not the title.
+    options: labelVersionStyles(dedupeOptionsByBullets(options, { exact: true })),
     degraded: lines.length === 0,
   };
 }

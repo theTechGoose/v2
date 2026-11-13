@@ -7,11 +7,7 @@ import {
 import { type Lang, t } from "@core/i18n/mod.ts";
 import { lineLangMismatch } from "#quote-flow/message-language.ts"; // REQ-710
 import { TranslateBullets } from "@agents/domain/coordinators/translate-bullets/mod.ts"; // REQ-710
-import {
-  disambiguateTitle,
-  type VersionStyle,
-  versionTitle,
-} from "#quote-flow/version-titles.ts";
+import type { VersionStyle } from "#quote-flow/version-titles.ts";
 import {
   fitJobNameToBudget,
   JOB_NAME_MAX_WORDS,
@@ -605,7 +601,6 @@ function normalizeOptions(
 ): JobOption[] {
   if (!Array.isArray(raw)) return [];
   const out: JobOption[] = [];
-  const seenNames = new Set<string>();
   for (let i = 0; i < raw.length && out.length < 3; i++) {
     const o = raw[i] as { byLang?: Record<string, unknown> };
     const src = o?.byLang && typeof o.byLang === "object" ? o.byLang : o;
@@ -623,11 +618,12 @@ function normalizeOptions(
         normalizeOneLang((src as Record<string, unknown>)?.[l], l, facts) ??
           primaryLang;
     }
-    // Disambiguate duplicate primary jobNames across the option set.
-    const unique = disambiguate(byLang[primary].jobName, seenNames, primary);
-    if (unique !== byLang[primary].jobName) {
-      byLang[primary] = { ...byLang[primary], jobName: unique };
-    }
+    // REQ-759 (cycle 5v2, m49): equal jobNames stay equal — every version
+    // is the same job, and the jobName is the quote's title on the
+    // customer's page. The old disambiguation titled the second
+    // "Terraza de madera" card "· Versión breve" (on the DETAILED version),
+    // and that internal label reached the client. Cards are told apart by
+    // their `style` label (labelVersionStyles), never by their title.
     // Flat fields = primary language (back-compat for the picker).
     out.push({ id: `opt${out.length + 1}`, ...byLang[primary], byLang });
   }
@@ -638,14 +634,6 @@ function normalizeOptions(
 
 function renumber(options: JobOption[]): JobOption[] {
   return options.map((o, i) => ({ ...o, id: `opt${i + 1}` }));
-}
-
-/** Ensure a jobName is unique within the option set. On collision it takes
- *  a localized version qualifier ("… · Versión breve") — never the old
- *  " (2)" / " (3)" numeric suffix, which read like duplicates of one job
- *  rather than versions of it (P-24). Tracks names case-insensitively. */
-function disambiguate(name: string, seen: Set<string>, lang: Lang): string {
-  return disambiguateTitle(name, seen, lang);
 }
 
 function tryParseJson(s: string): { options?: unknown } | undefined {
@@ -699,7 +687,7 @@ function titleCaseWord(w: string): string {
 /**
  * REQ-028 (P-24): the picker promises three versions. A usable but short
  * model answer (1–2 options) is padded with an honest variant of the first
- * option — "· Short version" — exactly the way the heuristic fallback builds
+ * option, regrouped (titled like the job — REQ-759), the way the heuristic fallback builds
  * its versions. REQ-722 (cycle 5, p18-3b): the old "· Wider scope" variant
  * appended a fixed "Jobsite cleanup" line — scope the contractor never
  * stated (a house clean got it); padding now only regroups, and when no
@@ -720,15 +708,16 @@ function padToThree(options: JobOption[], langs: Lang[]): JobOption[] {
   if (!base || base.bullets.length <= 1) return options;
   const variants: Array<"short"> = ["short"];
   const out = [...options];
-  const seen = new Set(out.map((o) => o.jobName.toLowerCase()));
-  for (const variant of variants) {
+  for (const _variant of variants) {
     if (out.length >= 3) break;
     const byLang: Record<string, JobOptionLang> = {};
     for (const l of langs) {
       const src = base.byLang[l] ?? base.byLang[primary];
       const bullets = groupedBullets(src.bullets);
       byLang[l] = {
-        jobName: versionTitle(src.jobName, variant, l),
+        // REQ-759 (cycle 5v2, m49): the job's own title — never
+        // "· Short version", which became the quote's title once picked.
+        jobName: src.jobName,
         summary: src.summary,
         bullets,
       };
@@ -736,12 +725,6 @@ function padToThree(options: JobOption[], langs: Lang[]): JobOption[] {
     if (out.some((o) => nearTwinBullets(o.bullets, byLang[primary].bullets))) {
       continue;
     }
-    let name = byLang[primary].jobName;
-    if (seen.has(name.toLowerCase())) {
-      name = disambiguateTitle(name, seen, primary);
-      byLang[primary] = { ...byLang[primary], jobName: name };
-    }
-    seen.add(name.toLowerCase());
     out.push({ id: `opt${out.length + 1}`, ...byLang[primary], byLang });
   }
   return out;
@@ -777,11 +760,12 @@ function fallbackOptions(
     // REQ-722 (cycle 5, p18-3b): no "· Wider scope" + "Jobsite cleanup"
     // version — it invented scope. The full and the grouped version only.
     const bullets = variant === 0 ? base : groupedBullets(base);
-    // P-24: the fallback variants get honest, localized qualifiers
-    // ("· Versión breve") instead of "(2)", which read as a duplicate rather
-    // than a version.
+    // REQ-759 (cycle 5v2, m49): both versions keep the job's title — the
+    // old "· Versión breve" qualifier became the quote's title on the
+    // customer's page once picked. The cards are told apart by their
+    // `style` label (labelVersionStyles below), as the model's are.
     return {
-      jobName: versionTitle(jobName, variant === 0 ? "full" : "short", lang),
+      jobName,
       summary,
       bullets,
     };
@@ -792,12 +776,12 @@ function fallbackOptions(
   // full one — equal bullet sets collapse, so the picker never shows two
   // cards with the same scope. REQ-584: exact only — this degraded path's
   // titled versions are the same scope by design.
-  return renumber(dedupeOptionsByBullets(
+  return labelVersionStyles(renumber(dedupeOptionsByBullets(
     ([0, 1] as const).map((variant) => {
       const byLang: Record<string, JobOptionLang> = {};
       for (const l of langs) byLang[l] = perLang(l, variant);
       return { id: `opt${variant + 1}`, ...byLang[primary], byLang };
     }),
     { exact: true },
-  ));
+  )));
 }
