@@ -77,6 +77,11 @@ import {
 import { describeQuoteRevision } from "@agents/domain/business/quote-revision-reply/mod.ts";
 import { BusinessAddressStore } from "@profile/domain/data/business-address-store/mod.ts";
 import { toPlainChatText } from "@agents/domain/business/plain-chat-text/mod.ts";
+// REQ-670 (demo-loop cycle 5, p7): the turn as it happens (the SSE route).
+import {
+  type ChatTurnEvent,
+  turnChannel,
+} from "@agents/domain/business/chat-stream/mod.ts";
 import { QuoteStore } from "@paperwork/domain/data/quote-store/mod.ts";
 import { TranslateQuote } from "@agents/domain/coordinators/translate-quote/mod.ts";
 import { FileStore } from "@files/domain/data/file-store/mod.ts";
@@ -223,6 +228,11 @@ function stripCustomerAsk(text: string): string {
     .trim();
 }
 
+/** REQ-670 (demo-loop cycle 5, p7): the reply's prose as the bubble shows it
+ *  while the model writes it — the stored reply's own shaping (REQ-262 plain
+ *  text, no "who's this for?"), so the stream ends on what is saved. */
+const chatProse = (raw: string) => toPlainChatText(stripCustomerAsk(raw));
+
 /** REQ-262 (demo M25): a signed / closed quote's job details never change
  *  from chat — they are what the customer agreed to (or turned down). */
 const JOB_DETAILS_LOCKED_STATUSES = new Set([
@@ -325,6 +335,12 @@ export interface HandleChatInput {
    *  details rewrites the versions, a wizard question / the Ready-to-send
    *  review reach the model with the step in its context. Never onboarding. */
   step?: ChatStepHint;
+  /** REQ-670 (demo-loop cycle 5, p7 — "Assistant replies never stream"): the
+   *  turn as it happens, for POST /agents/chat/stream — the reply's prose
+   *  while the model writes it, else what the turn is doing (pricing,
+   *  drafting, saving). The result is the same whole turn either way; without
+   *  it the model is never asked to stream. */
+  onEvent?: (event: ChatTurnEvent) => void;
 }
 
 export interface HandleChatResult {
@@ -625,6 +641,8 @@ export class HandleChatMessage {
       | Awaited<ReturnType<SuggestPrices["run"]>>
       | undefined;
     if (tiers) {
+      // REQ-670 (demo-loop cycle 5, p7): what the turn is doing meanwhile.
+      if (input.onEvent) turnChannel(input.onEvent).stage("pricing");
       const addr = await this.addresses.get(input.userId).catch(() => null);
       priced = await new SuggestPrices(this.llm).run({
         userId: input.userId,
@@ -743,7 +761,12 @@ export class HandleChatMessage {
     const langRule = lang === "es"
       ? `\n\n${t("en", "prompts.contractorLanguageEsOverride")}`
       : "";
+    // REQ-670 (demo-loop cycle 5, p7): the answer streams as it is written.
+    const live = input.onEvent ? turnChannel(input.onEvent) : undefined;
     const res = await this.llm.respond({
+      ...(live
+        ? { stream: live.prose((raw) => toPlainChatText(raw).trim()) }
+        : {}),
       systemPrompt: `${t("en", "prompts.chatStep.price")}${langRule}`,
       messages: turns,
       userId: input.userId,
@@ -784,6 +807,7 @@ export class HandleChatMessage {
     if (changed) {
       parts.push(jobDetailsChangeLine(lang, { before: shown, after: next }));
       if (step.tiers === true) {
+        live?.stage("pricing"); // REQ-670
         const addr = await this.addresses.get(input.userId).catch(() => null);
         const priced = await new SuggestPrices(this.llm).run({
           userId: input.userId,
@@ -1651,6 +1675,11 @@ export class HandleChatMessage {
       );
     }
 
+    // REQ-670 (demo-loop cycle 5, p7): the turn as it happens, for the SSE
+    // route — the reply's prose while the model writes it, else what the
+    // turn is doing (pricing, drafting, saving).
+    const live = input.onEvent ? turnChannel(input.onEvent) : undefined;
+
     // ---- N5 fast-path: confirmation → fire lock_quote without the LLM ----
     // The model is unreliable at calling lock_quote on short confirmations
     // ("send it", "looks good", "yep") even with example-rich prompting on
@@ -2078,6 +2107,7 @@ export class HandleChatMessage {
       (pricingAsk || followUp) &&
       (subjects.length > 0 || (pricingAsk && boundSubject))
     ) {
+      live?.stage("pricing"); // REQ-670
       const addr = await this.addresses.get(input.userId).catch(() => null);
       const where = [addr?.city?.trim(), addr?.state?.trim()].filter(Boolean)
         .join(", ");
@@ -2180,6 +2210,7 @@ export class HandleChatMessage {
             where ? ` (${where})` : ""
           }:\n${pricingContext(priced)}${covers}`,
           tools: [],
+          ...(live ? { stream: live.prose(chatProse) } : {}), // REQ-670
         }).catch((err) => {
           console.error("[handle-chat] price explanation failed:", err);
           return undefined;
@@ -2264,7 +2295,11 @@ export class HandleChatMessage {
         ...(businessContext ? { businessContext } : {}),
         tools,
       };
-      llmResponse = await this.llm.respond(request);
+      // REQ-670 (demo-loop cycle 5, p7): the model's first answer streams;
+      // the re-asks below never do (their prose is never shown).
+      llmResponse = await this.llm.respond(
+        live ? { ...request, stream: live.prose(chatProse) } : request,
+      );
 
       // REQ-439 (demo-loop cycle 3, M9): a FIRST draft has a line for every
       // item the contractor typed. Pair 7's master bath named a shower bench
@@ -2364,6 +2399,11 @@ export class HandleChatMessage {
         }
       }
     }
+
+    // REQ-670 (demo-loop cycle 5, p7): a tool turn says what it is doing while
+    // it does it; its reply is written from what changed.
+    const acting = toolCallsOf(llmResponse)[0]?.type;
+    if (acting) live?.stage(acting === "create_quote" ? "drafting" : "saving");
 
     // ---- REQ-444 (demo-loop cycle 3, M21): every tool call the model made.
     // Several changes to the quote all run — the job details first — and

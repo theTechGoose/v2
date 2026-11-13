@@ -27,6 +27,16 @@ export const CHAT_STEP_IDS: readonly ChatStepId[] = [
   "review",
 ];
 
+/** The two steps whose panel covers the thread — Pick a price and the Job
+ *  details picker — show a turn typed on them, and its answer, on the step
+ *  itself (REQ-442); on a wizard question or the review the answer lands in
+ *  the thread. REQ-670: so only the latter stream into the thread's pending
+ *  bubble — on the former nothing streamed would be seen, and the step says
+ *  the turn in its own words ("Rewriting with your change…"). */
+export function stepOwnsAnswer(step: ChatStepId): boolean {
+  return step === "price" || step === "job_details";
+}
+
 /** What a message typed in the compact composer carries to the server. */
 export interface ChatStepHint {
   id: ChatStepId;

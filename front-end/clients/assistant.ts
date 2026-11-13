@@ -6,6 +6,8 @@
  * returns an empty list (or 404).
  */
 import { api, ApiError, type ApiOptions } from "../lib/api.ts";
+import { type ChatStreamEvent, readChatStream } from "../lib/chat-stream.ts"; // REQ-670
+import { MUTATION_EVENT } from "../lib/ticker-pick.ts";
 import type { AssistantDraft } from "../../shared/quote-flow/assistant-draft.ts";
 import type { ThreadStatus } from "../../shared/quote-flow/chat-header.ts";
 import type { ChatStepHint } from "../../shared/quote-flow/step-composer.ts"; // REQ-392
@@ -281,6 +283,44 @@ export const assistantClient = {
 
   chat: (input: ChatInput, opts: ApiOptions = {}) =>
     api.post<ChatResult>("/agents/chat", input, opts),
+
+  /** REQ-670 (demo-loop cycle 5, p7 — "Assistant replies never stream"): the
+   *  same turn as `chat`, streamed — `onEvent` gets the reply as it is written
+   *  (else what the turn is doing) and the promise resolves with the whole
+   *  turn. A server without the stream route (404/405) is asked the JSON way
+   *  instead; any other refusal is the turn's error, never a second send. */
+  chatStream: async (
+    input: ChatInput,
+    onEvent: (event: ChatStreamEvent) => void,
+    opts: ApiOptions = {},
+  ): Promise<ChatResult> => {
+    let res: Response;
+    try {
+      res = await api.postStream("/agents/chat/stream", input, opts);
+    } catch (err) {
+      if (
+        err instanceof ApiError && (err.status === 404 || err.status === 405)
+      ) {
+        return await api.post<ChatResult>("/agents/chat", input, opts);
+      }
+      throw err;
+    }
+    const streamed = (res.headers.get("content-type") ?? "").includes(
+      "text/event-stream",
+    );
+    const turn = streamed && res.body
+      ? await readChatStream<ChatResult>(res.body, onEvent)
+      : await res.json() as ChatResult;
+    // REQ-319: the turn went through — the live islands re-fetch now.
+    if (typeof globalThis.window !== "undefined") {
+      globalThis.dispatchEvent(
+        new CustomEvent(MUTATION_EVENT, {
+          detail: { method: "POST", path: "/agents/chat/stream" },
+        }),
+      );
+    }
+    return turn;
+  },
 
   /** Read-only quote preview. Reuses /quotes/:id. */
   quote: (id: string, opts: ApiOptions = {}) =>

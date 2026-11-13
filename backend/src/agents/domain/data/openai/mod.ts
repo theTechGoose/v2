@@ -5,6 +5,7 @@ import type {
   LLMClient,
   LLMRequest,
   LLMResponse,
+  LLMStreamSink,
   LLMToolName,
 } from "@agents/domain/business/llm/base/mod.ts";
 import {
@@ -75,6 +76,11 @@ export class OpenAILLMClient implements LLMClient {
    * the in-flight request instead of leaving the socket open, and
    * `maxRetries: 1` caps the SDK's internal retry loop so a hung call errors
    * at ~30s rather than ~30 minutes.
+   *
+   * REQ-670 (demo-loop cycle 5, p7): with a `sink` (and not JSON mode) the
+   * completion is streamed — the prose reaches the sink as the model writes
+   * it — and read back into the same whole ChatCompletion, inside the same
+   * bound.
    */
   private complete(
     // deno-lint-ignore no-explicit-any
@@ -82,6 +88,7 @@ export class OpenAILLMClient implements LLMClient {
     model: string = this.model,
     responseFormat?: "json",
     allowed?: readonly LLMToolName[],
+    sink?: LLMStreamSink,
   ): Promise<OpenAI.Chat.Completions.ChatCompletion> {
     const ctl = new AbortController();
     const timer = setTimeout(
@@ -103,13 +110,18 @@ export class OpenAILLMClient implements LLMClient {
         tools: defs as unknown as OpenAI.Chat.Completions.ChatCompletionTool[],
         tool_choice: "auto" as const,
       };
-    const call = this.client.chat.completions.create({
+    const params = {
       model,
       messages,
       ...toolParams,
       // Keep responses tight — we want one focused step per turn.
       temperature: 0.2,
-    }, { signal: ctl.signal, maxRetries: 1 });
+    };
+    const opts = { signal: ctl.signal, maxRetries: 1 };
+    const call = sink && responseFormat !== "json"
+      ? this.client.chat.completions.create({ ...params, stream: true }, opts)
+        .then((chunks) => collectStream(chunks, sink, allowed))
+      : this.client.chat.completions.create(params, opts);
     return withChatTimeout(call).finally(() => clearTimeout(timer));
   }
 
@@ -162,6 +174,7 @@ export class OpenAILLMClient implements LLMClient {
       model,
       req.responseFormat,
       req.tools,
+      req.stream, // REQ-670
     );
     let choice = completion.choices[0];
     const isEmpty = (c: typeof choice) =>
@@ -174,6 +187,7 @@ export class OpenAILLMClient implements LLMClient {
         model,
         req.responseFormat,
         req.tools,
+        req.stream, // REQ-670: nothing went out — the second answer streams
       );
       choice = completion.choices[0];
     }
@@ -212,6 +226,88 @@ export class OpenAILLMClient implements LLMClient {
 
 /** The chat tools by name — a call to anything else is not a tool of ours. */
 const TOOL_NAMES = new Set<string>(TOOL_DEFS.map((d) => d.function.name));
+
+/**
+ * REQ-670 (demo-loop cycle 5, p7 — "Assistant replies never stream"): read a
+ * streamed completion into the same whole ChatCompletion a non-streamed call
+ * returns, handing the prose to `sink` as it arrives. A tool call's pieces are
+ * joined per call (by index) and never passed on: the sink is told once, with
+ * the first offered tool's name, and hears no prose after a tool call starts —
+ * that turn's reply is the coordinator's. A sink that throws never ends the
+ * turn (the client that was listening may simply have gone).
+ */
+async function collectStream(
+  chunks: AsyncIterable<OpenAI.Chat.Completions.ChatCompletionChunk>,
+  sink: LLMStreamSink,
+  allowed?: readonly LLMToolName[],
+): Promise<OpenAI.Chat.Completions.ChatCompletion> {
+  let sinkBroken = false;
+  const tell = (fn: () => void) => {
+    if (sinkBroken) return;
+    try {
+      fn();
+    } catch (err) {
+      sinkBroken = true;
+      console.warn(
+        "[openai-llm] stream listener failed; streaming stops:",
+        err,
+      );
+    }
+  };
+  let content = "";
+  let finish: OpenAI.Chat.Completions.ChatCompletion.Choice["finish_reason"] =
+    "stop";
+  const calls: { id: string; name: string; args: string }[] = [];
+  let toolStarted = false;
+  let toolTold = false;
+  for await (const chunk of chunks) {
+    const choice = chunk.choices?.[0];
+    if (!choice) continue;
+    for (const tc of choice.delta?.tool_calls ?? []) {
+      const call = calls[tc.index] ??= { id: "", name: "", args: "" };
+      if (tc.id) call.id = tc.id;
+      if (tc.function?.name) call.name += tc.function.name;
+      if (tc.function?.arguments) call.args += tc.function.arguments;
+      toolStarted = true;
+      const name = call.name as LLMToolName;
+      if (
+        !toolTold && TOOL_NAMES.has(name) &&
+        (!allowed || allowed.includes(name))
+      ) {
+        toolTold = true;
+        tell(() => sink.tool?.(name));
+      }
+    }
+    const piece = choice.delta?.content;
+    if (piece) {
+      content += piece;
+      if (!toolStarted) tell(() => sink.text(piece));
+    }
+    if (choice.finish_reason) finish = choice.finish_reason;
+  }
+  const toolCalls = calls.filter(Boolean).map((c) => ({
+    id: c.id,
+    type: "function" as const,
+    function: { name: c.name, arguments: c.args },
+  }));
+  return {
+    id: "chatcmpl-streamed",
+    object: "chat.completion",
+    created: Math.floor(Date.now() / 1000),
+    model: "",
+    choices: [{
+      index: 0,
+      finish_reason: finish,
+      logprobs: null,
+      message: {
+        role: "assistant",
+        content,
+        refusal: null,
+        ...(toolCalls.length ? { tool_calls: toolCalls } : {}),
+      },
+    }],
+  };
+}
 
 /** When the model returns a tool call but no surrounding prose, give the
  *  user a short readable filler. For actions that emit their own

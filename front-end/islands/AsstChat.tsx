@@ -2,6 +2,7 @@ import SendLangPreview from "../components/SendLangPreview.tsx";
 import Backdrop from "../components/Backdrop.tsx";
 import { Fragment } from "preact";
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
+import { useSignal } from "@preact/signals"; // REQ-670
 import { I, ICN } from "../lib/dash-icons.tsx";
 import { detailLines, fmtPhone } from "../lib/format.ts";
 import {
@@ -24,6 +25,14 @@ import {
   type Quote as AsstQuote,
 } from "../clients/assistant.ts";
 import { filesClient } from "../clients/files.ts";
+// REQ-670 (demo-loop cycle 5, p7): the reply as it is written.
+import {
+  type ChatStreamEvent,
+  NO_REPLY_YET,
+  pendingReply,
+  type PendingReply,
+} from "../lib/chat-stream.ts";
+import { PendingReplyBubble } from "../components/PendingReplyBubble.tsx";
 import {
   actionCardNumber,
   numberedLabel,
@@ -68,6 +77,7 @@ import {
   composerMode,
   echoWithCorrection, // REQ-442
   type StepLog, // REQ-442
+  stepOwnsAnswer, // REQ-670
   stepScopeOf, // REQ-444
   withStepScope, // REQ-444
 } from "../../shared/quote-flow/step-composer.ts"; // REQ-392
@@ -1447,6 +1457,11 @@ export default function AsstChat({
    *  "Setting up…" over the ORIGINAL message while the correction was being
    *  rewritten. */
   const [stepSending, setStepSending] = useState(false);
+  /** REQ-670 (demo-loop cycle 5, p7): what the pending reply bubble shows —
+   *  the reply so far as the server streams it, else what the turn is doing.
+   *  A signal only the bubble reads: a streamed piece re-renders the bubble,
+   *  not this island. */
+  const liveReply = useSignal<PendingReply>(NO_REPLY_YET);
   // REQ-399 (demo M16): the synchronous "a Send is in flight" lock — state
   // lags a render, so a double-click's second click read `sending` false.
   const sendInFlight = useRef(false);
@@ -2387,6 +2402,9 @@ export default function AsstChat({
    * provided `submit` to talk to the backend, then either replaces the
    * stub with the authoritative messages from the server or rolls back
    * on error. `submit` returns the chat response shape.
+   *
+   * REQ-670 (demo-loop cycle 5, p7): `submit` gets `onEvent` — the turn's
+   * stream — and the pending bubble shows the reply as it is written.
    */
   async function submitTurn(
     optimistic: {
@@ -2394,7 +2412,7 @@ export default function AsstChat({
       kind: "text" | "voice" | "image";
       content: string;
     },
-    submit: () => Promise<{
+    submit: (onEvent: (event: ChatStreamEvent) => void) => Promise<{
       conversation?: { id: string };
       newMessages?: Message[];
       message?: Message;
@@ -2426,7 +2444,12 @@ export default function AsstChat({
       // P-10: bound the turn client-side too — a hung backend/LLM call used
       // to spin forever with no error and no way out. After ~30s the send
       // rejects with a typed TimeoutError and the error strip offers Retry.
-      const res = await withChatTimeout(submit());
+      liveReply.value = NO_REPLY_YET;
+      const res = await withChatTimeout(
+        submit((event) => {
+          liveReply.value = pendingReply(liveReply.peek(), event);
+        }),
+      );
       const newConvoId = res.conversation?.id ?? res.conversationId;
       if (newConvoId && newConvoId !== convoId) {
         setConvoId(newConvoId);
@@ -2561,6 +2584,7 @@ export default function AsstChat({
       setMessages((m) => m.filter((msg) => msg.id !== tmpId));
       onError?.();
     } finally {
+      liveReply.value = NO_REPLY_YET;
       setBusy(false);
     }
   }
@@ -2596,12 +2620,12 @@ export default function AsstChat({
     pushHistory();
     await submitTurn(
       { role: "user", kind: "text", content: trimmed },
-      () =>
-        assistantClient.chat({
+      (onEvent) =>
+        assistantClient.chatStream({
           conversationId: convoId,
           content: trimmed,
           kind: "text",
-        }) as Promise<{
+        }, onEvent) as Promise<{
           conversation?: { id: string };
           newMessages?: Message[];
           message?: Message;
@@ -2642,19 +2666,19 @@ export default function AsstChat({
         kind: "voice",
         content: optimisticContent,
       },
-      async () => {
+      async (onEvent) => {
         const file = await filesClient.uploadBlob(
           blob,
           `voice-${Date.now()}.webm`,
         );
-        return (await assistantClient.chat({
+        return (await assistantClient.chatStream({
           conversationId: convoId,
           kind: "voice",
           payload: {
             fileId: file.id,
             ...(liveTranscript ? { transcript: liveTranscript } : {}),
           },
-        })) as {
+        }, onEvent)) as {
           conversation?: { id: string };
           newMessages?: Message[];
           message?: Message;
@@ -2700,18 +2724,25 @@ export default function AsstChat({
     try {
       await submitTurn(
         { role: "user", kind: "text", content: said },
-        async () => {
-          const res = await assistantClient.chat({
+        async (onEvent) => {
+          const input = {
             conversationId: convoId,
             content: said,
-            kind: "text",
+            kind: "text" as const,
             step: hint,
-          }) as {
-            conversation?: { id: string };
-            newMessages?: Message[];
-            message?: Message;
-            conversationId?: string;
           };
+          // REQ-670: Pick a price and the Job details picker cover the
+          // thread and say the turn on the step — nothing streamed into the
+          // thread would be seen there, so they ask the JSON way; a wizard
+          // question or the review answers in the thread, streamed.
+          const res = await (stepOwnsAnswer(step)
+            ? assistantClient.chat(input)
+            : assistantClient.chatStream(input, onEvent)) as {
+              conversation?: { id: string };
+              newMessages?: Message[];
+              message?: Message;
+              conversationId?: string;
+            };
           answered = res.newMessages ?? [];
           return res;
         },
@@ -9885,20 +9916,10 @@ export default function AsstChat({
             messages.length > 0 &&
             messages[messages.length - 1].role === "user"
           ? (
-            <div
-              class="msg"
-              aria-live="polite"
-              aria-label={tFor(lang, "asstChat.bossieThinking")}
-            >
-              <div class="msg__avatar">
-                <img src="/logo-monster.png" alt="" />
-              </div>
-              <div class="msg__bubble msg__bubble--typing">
-                <span class="typing-dot" />
-                <span class="typing-dot" />
-                <span class="typing-dot" />
-              </div>
-            </div>
+            // REQ-670 (demo-loop cycle 5, p7): the reply as the server
+            // streams it; until then the dots say in words what the turn is
+            // doing ("Assistant is thinking…", "Pricing the job…").
+            <PendingReplyBubble reply={liveReply} lang={lang} />
           )
           : null}
       </div>
