@@ -24,6 +24,7 @@ import {
 import {
   descriptionTranslationsStale,
   headingTranslationsStale,
+  quoteTextLang,
   reconcileLineItemTranslations,
 } from "#quote-flow/quote-translations.ts";
 import type {
@@ -103,6 +104,13 @@ export class QuoteStore {
         quote.jobName = summarizeJobName(source, typed ?? opts?.jobNameLang);
       }
     }
+    // REQ-710 (demo-loop cycle 5, M4): the base language is the language the
+    // quote was TYPED in, stamped now — pair 6 typed Spanish in an English
+    // app and every later reader took the app language as the base, so the
+    // English document kept the Spanish. Text too short to tell stamps
+    // nothing (TranslateQuote then falls back to the account language).
+    const typedLang = quoteTextLang(quote);
+    if (typedLang) quote.lang = typedLang;
     // REQ-204: the customer as they are today travels with the document.
     const customerSnapshot = await snapshotCustomer(quote.customerId, userId);
     if (customerSnapshot) quote.customerSnapshot = customerSnapshot;

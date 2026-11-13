@@ -89,10 +89,15 @@ async function translateStandalone(
   user: { id: string; language?: string },
 ): Promise<Invoice> {
   if (!translator || inv.quoteId) return inv;
-  if (!inv.jobName?.trim() && !inv.description?.trim()) return inv;
+  // REQ-710 (cycle 5, M4): its line items are translated too.
+  const hasLines = (inv.lineItems ?? []).some((li) => li.description?.trim());
+  if (!inv.jobName?.trim() && !inv.description?.trim() && !hasLines) {
+    return inv;
+  }
   await translator.run({
     userId: user.id,
     invoiceId: inv.id,
+    // REQ-710: only a hint — the language the invoice was typed in wins.
     baseLang: user.language === "es" ? "es" : "en",
   });
   return await store.getOwned(inv.id, user.id);
@@ -553,7 +558,9 @@ export class InvoiceController {
       await announceIssued(this.bus, this.customers, user.id, updated);
     }
     // REQ-497: a live edit of the title / concepts is translated afresh.
-    const retitled = "jobName" in content || "description" in content;
+    // REQ-710 (cycle 5, M4): and of the line items.
+    const retitled = "jobName" in content || "description" in content ||
+      "lineItems" in content;
     return project(
       retitled
         ? await translateStandalone(this.translator, this.store, updated, user)

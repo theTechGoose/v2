@@ -57,3 +57,47 @@ export function messageLang(text: string): "es" | "en" | undefined {
   if (en >= 2 && en > es) return "en";
   return undefined;
 }
+
+/** The particles of a Spanish NAME — lower-case words standing between two
+ *  capitalised ones: "José de la Cruz", "María de los Santos", "Casa de la
+ *  Rosa", "Pérez y Gómez". */
+const NAME_PARTICLES =
+  /(?<=(?:^|[^\p{L}])\p{Lu}[\p{L}'’.-]*\s+)(?:(?:de|del|la|las|los|y)\s+)+(?=\p{Lu})/gmu;
+
+/**
+ * REQ-710 (demo-loop cycle 5, M4) — a document's text without the particles
+ * of the names in it: "Deck repair — José de la Cruz" → "Deck repair — José
+ * Cruz". messageLang skips capitalised words but counts "de" and "la", so an
+ * ENGLISH quote for José de la Cruz read as Spanish once its base language
+ * came from its own text.
+ */
+export function withoutNameParticles(text: string): string {
+  return (text ?? "").replace(NAME_PARTICLES, "");
+}
+
+/** Words only Spanish trade copy uses — the units spelled out and the
+ *  Spanish trade glossary's own terms (ES_TRADE_GLOSSARY). An English line
+ *  carrying one leaked Spanish. */
+const ES_ONLY =
+  /(?<![\p{L}])(?:pies?\s+cuadrados?|pies?\s+lineales?|metros?\s+cuadrados?|metros?\s+lineales?|pulgadas?|salpicadero|encimera|tablaroca|montantes|molduras|lechada|zanja|fregadero|lavabo|mueble\s+de\s+baño|plafón\s+del\s+alero)(?![\p{L}])/iu;
+
+/** Units only English copy abbreviates, and "soffit" — never left in
+ *  Spanish text (REQ-448, REQ-594). */
+const EN_ONLY =
+  /(?<![\p{L}])(?:sq\.?\s?ft|sqft|square\s+(?:feet|foot)|linear\s+(?:feet|foot|ft)|lin\.?\s?ft|soffit)(?![\p{L}])|\d\s?(?:sf|lf)(?![\p{L}])/iu;
+
+/**
+ * REQ-710 (demo-loop cycle 5, M4, pair 7) — true when a line written for
+ * `lang` carries the other language: it reads as the other language
+ * (messageLang), or it holds a unit or a trade word only the other language
+ * uses. The rewritten English job details read "Install kitchen backsplash
+ * 30 pies cuadrados subway tile" — the model applied the Spanish glossary to
+ * the English line, and nothing checked a line against its slot.
+ */
+export function lineLangMismatch(text: string, lang: "en" | "es"): boolean {
+  const s = (text ?? "").trim();
+  if (!s) return false;
+  const reads = messageLang(withoutNameParticles(s));
+  if (reads && reads !== lang) return true;
+  return (lang === "en" ? ES_ONLY : EN_ONLY).test(s);
+}

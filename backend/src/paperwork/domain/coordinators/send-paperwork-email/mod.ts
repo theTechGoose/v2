@@ -54,6 +54,8 @@ import type { Invoice } from "@paperwork/dto/invoice.ts";
 import type { Customer } from "@crm/dto/customer.ts";
 import type { User } from "@users/dto/user.ts";
 import { SITE_ORIGIN } from "#quote-flow/site-meta.ts";
+import { localizePaymentInstructions } from "#documents/invoice-form.ts"; // REQ-710
+import { invoiceTextByLang } from "#documents/invoice-lang.ts"; // REQ-710
 
 export type PaperworkKind = "quote" | "invoice";
 
@@ -459,11 +461,15 @@ function invoiceFactsHtml(i: Invoice, quote: Quote | undefined, lang: Lang): str
   const overLine = state.overpaid
     ? `<div data-overpaid style="margin-top:6px;font-size:13px;font-weight:700;color:${COLOR_PINK_DARK}">${escapeHtml(state.overpaid)}</div>`
     : "";
+  // REQ-710 (cycle 5, M4): the methods' labels in the email's language —
+  // the form froze them in the owner's ("Zelle: … · Efectivo").
   const instructions = i.paymentInstructions?.trim()
     ? `<div style="margin-top:12px;font-size:11px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:${COLOR_MUTED}">${
       escapeHtml(renderWord(lang, "paymentInstructions"))
     }</div><p data-payment-instructions style="margin:4px 0 0;font-size:14px;line-height:1.5;color:${COLOR_INK};white-space:pre-wrap">${
-      escapeHtml(i.paymentInstructions.trim())
+      escapeHtml(
+        localizePaymentInstructions(i.paymentInstructions, lang).trim(),
+      )
     }</p>`
     : "";
   if (!rows.length && !stateLine && !overLine && !instructions) return "";
@@ -1541,13 +1547,16 @@ export function renderInvoiceBasicHtml(
   const amount = i.amount;
   // Standalone invoices carry their own job title + note (no quote behind
   // them). Surface them so a quote-less invoice email isn't just a bare figure.
-  const jobName = (i as { jobName?: string }).jobName?.trim();
+  // REQ-710 (cycle 5, M4): in the e-mail's language while their copies
+  // (TranslateInvoice, REQ-497) still describe what was typed.
+  const own = invoiceTextByLang(i);
+  const jobName = (own.jobNameByLang?.[lang] ?? i.jobName)?.trim();
   // REQ-173: a batch invoice shows the address as a heading with the visits under it,
   // instead of the flat "date — service — address" description
   const visits = groupVisits(i.lineItems);
   const description = visits
     ? undefined
-    : (i as { description?: string }).description?.trim();
+    : (own.descriptionByLang?.[lang] ?? i.description)?.trim();
   const visitsBlock = visits
     ? visits.map((g) =>
       `<div data-visit-address style="margin:0 0 6px;font-size:15px;font-weight:800;color:${COLOR_TEAL}">${

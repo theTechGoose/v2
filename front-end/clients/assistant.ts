@@ -478,6 +478,8 @@ export const assistantClient = {
     api.post<{
       description?: string;
       descriptionByLang?: Record<string, string>;
+      /** REQ-710 (cycle 5, M4): the base language, possibly re-based. */
+      lang?: string;
       lineItems?: {
         description: string;
         descriptionByLang?: Record<string, string>;

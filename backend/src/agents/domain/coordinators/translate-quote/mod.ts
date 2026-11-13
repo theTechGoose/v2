@@ -11,6 +11,7 @@ import {
   type MissingTranslation,
   QUOTE_LANGS,
   type QuoteLang,
+  quoteTextLang,
 } from "#quote-flow/quote-translations.ts";
 import { jobNameCase, translatedJobNameCase } from "#quote-flow/job-name.ts";
 
@@ -19,9 +20,11 @@ export interface TranslateQuoteInput {
   quoteId: string;
   /** Languages to fill; defaults to every document language (en, es). */
   langs?: readonly ("en" | "es")[];
-  /** REQ-333 (M24): the language the quote's text was written in. Defaults
-   *  to the quote's stored `lang`, else the contractor's app language, else
-   *  English. That language is never sent to the model. */
+  /** REQ-333 (M24): the language the quote's text was written in — a hint.
+   *  REQ-710 (cycle 5, M4): the language the text itself reads in wins over
+   *  it; it decides only when the text can't tell, ahead of the quote's
+   *  stored `lang`, the contractor's app language and English. That
+   *  language is never sent to the model. */
   baseLang?: QuoteLang;
 }
 
@@ -57,6 +60,13 @@ export interface TranslateQuoteInput {
  * Reparación de puerta Agreement"). They ride the same batch as the lines:
  * the base language verbatim, the other through TranslateBullets, the name
  * cased for its language.
+ *
+ * REQ-710 (demo-loop cycle 5, M4) — the base language is the language the
+ * text was TYPED in (quoteTextLang), not the contractor's app language. Pair
+ * 6's app was in English and they typed the quote in Spanish; lock passed
+ * the app language, so the typed Spanish became the English copy and the
+ * English document, title and e-mail subject stayed Spanish. A quote stored
+ * with a base its text disagrees with is re-based: every copy is rebuilt.
  */
 @Injectable()
 export class TranslateQuote {
@@ -73,20 +83,33 @@ export class TranslateQuote {
   async run(input: TranslateQuoteInput): Promise<Quote> {
     const quote = await this.quotes.getOwned(input.quoteId, input.userId);
     const base = await this.baseLang(quote, input);
+    // REQ-710 (cycle 5, M4): a quote stored with another base — the old lock
+    // stamped the app language — had its copies built from the wrong one:
+    // the typed text sits in the other language's slots, and those slots
+    // look "filled". It is re-based: every per-language copy is dropped and
+    // rebuilt below (the base verbatim, the other through the model).
+    const rebase = (quote.lang === "en" || quote.lang === "es") &&
+      quote.lang !== base;
+    const view = rebase ? withoutTranslations(quote) : quote;
     const langs = input.langs ?? QUOTE_LANGS;
     const missing = batches(
-      missingQuoteTranslations(quote, langs, base),
-      missingHeadingTranslations(quote, langs, base),
+      missingQuoteTranslations(view, langs, base),
+      missingHeadingTranslations(view, langs, base),
     );
     // The base slots still empty (a line added since the last run): `""` as
     // the base so the stored `lang` does not hide them from this check.
-    const baseMissing = langs.includes(base)
+    // REQ-710: a re-base rewrites them whatever languages were asked for —
+    // the typed text costs no model call, and the old copies are gone.
+    const baseMissing = langs.includes(base) || rebase
       ? batches(
-        missingQuoteTranslations(quote, [base], ""),
-        missingHeadingTranslations(quote, [base], ""),
+        missingQuoteTranslations(view, [base], ""),
+        missingHeadingTranslations(view, [base], ""),
       )
       : [];
-    if (missing.length === 0 && baseMissing.length === 0 && quote.lang) {
+    if (
+      missing.length === 0 && baseMissing.length === 0 && quote.lang &&
+      !rebase
+    ) {
       return quote;
     }
 
@@ -123,11 +146,16 @@ export class TranslateQuote {
     // only into the slots this run translated, and only if their base text
     // is unchanged.
     const fresh = await this.quotes.getOwned(input.quoteId, input.userId);
-    let descriptionByLang = fresh.descriptionByLang;
-    let jobNameByLang = fresh.jobNameByLang;
-    let summaryByLang = fresh.summaryByLang;
-    const lineItems = (fresh.lineItems ?? []).map((li) => ({ ...li }));
-    let changed = false;
+    // REQ-710: a re-base starts from empty copies — unless a concurrent run
+    // already re-based this quote.
+    const target = rebase && fresh.lang === quote.lang
+      ? withoutTranslations(fresh)
+      : fresh;
+    let descriptionByLang = target.descriptionByLang;
+    let jobNameByLang = target.jobNameByLang;
+    let summaryByLang = target.summaryByLang;
+    const lineItems = (target.lineItems ?? []).map((li) => ({ ...li }));
+    let changed = target !== fresh;
 
     for (const { m, res, texts } of results) {
       if (!res.translated || res.texts.length !== texts.length) continue;
@@ -185,18 +213,39 @@ export class TranslateQuote {
     });
   }
 
-  /** REQ-333: the language the quote's text was written in — the caller's
-   *  word, else what an earlier run stored, else the contractor's app
-   *  language (chat copy and job details are generated in it), else EN. */
+  /** REQ-333: the language the quote's text was written in. REQ-710
+   *  (cycle 5, M4): what the text itself reads in first — pair 6 typed
+   *  Spanish in an English app, and the app language the lock passed made
+   *  the typed Spanish the "English" copy. When the text can't tell: the
+   *  caller's word, else what an earlier run stored, else the contractor's
+   *  app language (chat copy and job details are generated in it), else EN. */
   private async baseLang(
     quote: Quote,
     input: TranslateQuoteInput,
   ): Promise<QuoteLang> {
+    const typed = quoteTextLang(quote);
+    if (typed) return typed;
     if (input.baseLang) return input.baseLang;
     if (quote.lang === "es" || quote.lang === "en") return quote.lang;
     const me = await this.users?.get(input.userId).catch(() => null);
     return me?.language === "es" ? "es" : "en";
   }
+}
+
+/** REQ-710 (cycle 5, M4): the quote with every per-language copy emptied
+ *  (empty maps, so the write clears the stored ones) — what a re-base
+ *  rebuilds from. */
+function withoutTranslations(q: Quote): Quote {
+  return {
+    ...q,
+    descriptionByLang: {},
+    jobNameByLang: {},
+    summaryByLang: {},
+    lineItems: (q.lineItems ?? []).map((li) => ({
+      ...li,
+      descriptionByLang: {},
+    })),
+  };
 }
 
 /** One language's work: the description lines and line items it lacks

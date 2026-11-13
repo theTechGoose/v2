@@ -25,6 +25,7 @@ import { QuoteTranslatorPort } from "@paperwork/domain/coordinators/quote-transl
 import {
   missingHeadingTranslations,
   missingQuoteTranslations,
+  quoteLangStale,
 } from "#quote-flow/quote-translations.ts";
 import type { Quote } from "@paperwork/dto/quote.ts";
 import type { Customer } from "@crm/dto/customer.ts";
@@ -82,9 +83,14 @@ export class PreviewQuoteSend {
     // REQ-591 (cycle 4, M32): a language with no cached heading or text yet
     // is translated first, as lock and send do — else the English preview of
     // a Spanish quote renders the Spanish summary as its hero.
+    // REQ-710 (cycle 5, M4): so is a quote whose stored base disagrees with
+    // the language its text reads in — its slots in that language hold the
+    // typed text ("Quote Q-001 … — Reparación de puerta" as the English
+    // subject) and only look filled; the translator re-bases it.
     if (
       this.translator &&
-      (missingHeadingTranslations(stored, [lang]).length > 0 ||
+      (quoteLangStale(stored) ||
+        missingHeadingTranslations(stored, [lang]).length > 0 ||
         missingQuoteTranslations(stored, [lang]).length > 0)
     ) {
       await this.translator.run({

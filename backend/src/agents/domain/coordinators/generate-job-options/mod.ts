@@ -5,6 +5,8 @@ import {
   type LLMTurn,
 } from "@agents/domain/business/llm/base/mod.ts";
 import { type Lang, t } from "@core/i18n/mod.ts";
+import { lineLangMismatch } from "#quote-flow/message-language.ts"; // REQ-710
+import { TranslateBullets } from "@agents/domain/coordinators/translate-bullets/mod.ts"; // REQ-710
 import {
   disambiguateTitle,
   type VersionStyle,
@@ -302,12 +304,16 @@ export class GenerateJobOptions {
     // ones, else merge the parts into one version that holds every item.
     // REQ-439 (M9): a typed quantity the model still left out goes back
     // into the line that names its item, in every option and language.
-    const whole =
+    const kept =
       (verdict.complete.length > 0
         ? verdict.complete
         : [mergeParts(options, langs)]).map((o) =>
           keepQuantities(o, yardstick.quantities, langs)
         );
+    // REQ-710 (demo-loop cycle 5, M4, pair 7): every line in its slot's
+    // language — the English version read "Install kitchen backsplash 30
+    // pies cuadrados subway tile" (the Spanish glossary applied to English).
+    const whole = await inSlotLanguage(kept, langs, this.llm, input.userId);
     if (whole.length < 3) {
       // The picker promises three versions (P-24); a short answer is worth
       // a look in the logs even though it is usable.
@@ -323,6 +329,76 @@ export class GenerateJobOptions {
       degraded: false,
     };
   }
+}
+
+/**
+ * REQ-710 (demo-loop cycle 5, M4, pair 7) — every line of every option in
+ * its slot's language. After "add a Spanish version for the homeowner's
+ * mom" the ENGLISH version read "Install kitchen backsplash 30 pies
+ * cuadrados subway tile", and nothing checked a line against its slot. A
+ * job name, summary or bullet written in the other language (lineLangMismatch)
+ * is translated into the slot's language — one TranslateBullets call per
+ * language, the job names marked as titles. A failed call keeps the lines as
+ * they are: a mixed line is better than lost scope.
+ */
+async function inSlotLanguage(
+  options: JobOption[],
+  langs: Lang[],
+  llm: LLMClient,
+  userId: string,
+): Promise<JobOption[]> {
+  const primary = langs[0];
+  // Own copies: a language the model skipped shares the primary's object.
+  const out = options.map((o) => ({
+    ...o,
+    byLang: Object.fromEntries(
+      Object.entries(o.byLang).map(([l, v]) => [
+        l,
+        { ...v, bullets: [...v.bullets] },
+      ]),
+    ) as Record<string, JobOptionLang>,
+  }));
+  const translator = new TranslateBullets(llm);
+  for (const lang of langs) {
+    const hits: Array<
+      { v: JobOptionLang; at: "jobName" | "summary" | number }
+    > = [];
+    for (const o of out) {
+      const v = o.byLang[lang];
+      if (!v) continue;
+      if (lineLangMismatch(v.jobName, lang)) hits.push({ v, at: "jobName" });
+      if (lineLangMismatch(v.summary, lang)) hits.push({ v, at: "summary" });
+      v.bullets.forEach((b, i) => {
+        if (lineLangMismatch(b, lang)) hits.push({ v, at: i });
+      });
+    }
+    if (hits.length === 0) continue;
+    const texts = hits.map(({ v, at }) =>
+      typeof at === "number" ? v.bullets[at] : v[at]
+    );
+    const res = await translator.run({
+      userId,
+      texts,
+      from: lang === "es" ? "en" : "es",
+      to: lang,
+      titleLines: hits.flatMap((h, i) => h.at === "jobName" ? [i] : []),
+    });
+    if (!res.translated || res.texts.length !== texts.length) {
+      console.warn(
+        `[generate-job-options] ${hits.length} line(s) not in ${lang} kept as written:`,
+        JSON.stringify(texts),
+      );
+      continue;
+    }
+    hits.forEach(({ v, at }, i) => {
+      const text = res.texts[i];
+      if (typeof at === "number") v.bullets[at] = text;
+      else if (at === "jobName") v.jobName = clampJobName(text, lang);
+      else v.summary = clampSummary(text);
+    });
+  }
+  // The flat fields are the primary language's (the picker reads them).
+  return out.map((o) => ({ ...o, ...o.byLang[primary], id: o.id }));
 }
 
 /** REQ-400 / REQ-439: what the contractor typed, read three ways. */

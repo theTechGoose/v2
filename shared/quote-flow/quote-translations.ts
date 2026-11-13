@@ -9,6 +9,8 @@
  * email and the preview pick the same text.
  */
 
+import { messageLang, withoutNameParticles } from "./message-language.ts";
+
 export const QUOTE_LANGS = ["en", "es"] as const;
 export type QuoteLang = typeof QUOTE_LANGS[number];
 
@@ -199,12 +201,57 @@ export function headingTranslationsStale(
   };
 }
 
-/** The preview's UX-06 notice: something in this language is untranslated. */
+/**
+ * REQ-710 (demo-loop cycle 5, M4) — the language a quote's own text was
+ * typed in, read from the text itself: the job name, the summary, the job
+ * details and every line item (a standalone invoice has the same fields).
+ * Pair 6's app was in English and they typed the quote in Spanish; the base
+ * language came from the app, so the typed Spanish was stored verbatim as
+ * the "English" copy and the English document, title and e-mail subject
+ * stayed Spanish. Each line's first letter is lowered before counting: a
+ * line-initial capital starts the line, it does not mark a name
+ * ("Reparación de puerta"). undefined when the text can't tell — callers
+ * fall back to the stored language, then the contractor's app language.
+ */
+export function quoteTextLang(
+  q: (TranslatableQuote & TranslatableHeading) | undefined | null,
+): QuoteLang | undefined {
+  if (!q) return undefined;
+  const lines = [
+    q.jobName,
+    q.summary,
+    q.description,
+    ...(q.lineItems ?? []).map((li) => li?.description),
+  ]
+    .flatMap((t) => (t ?? "").split("\n"))
+    // A surname's "de la" belongs to the name — read before the line's
+    // first capital is lowered.
+    .map((l) => withoutNameParticles(l).trim())
+    .filter(Boolean)
+    .map((l) => l[0].toLowerCase() + l.slice(1));
+  return messageLang(lines.join("\n"));
+}
+
+/** REQ-710 (M4): the stored base language disagrees with the language the
+ *  text reads in — its caches were built from the wrong base (the old lock
+ *  stamped the app language and copied the typed Spanish into English). */
+export function quoteLangStale(
+  q: (TranslatableQuote & TranslatableHeading) | undefined | null,
+): boolean {
+  if (!q || (q.lang !== "en" && q.lang !== "es")) return false;
+  const typed = quoteTextLang(q);
+  return !!typed && typed !== q.lang;
+}
+
+/** The preview's UX-06 notice: something in this language is untranslated.
+ *  REQ-710 (M4): a quote whose stored base is stale counts — its slots in
+ *  that language hold the typed text, not a translation. */
 export function previewTranslationMissing(
-  quote: TranslatableQuote | undefined | null,
+  quote: (TranslatableQuote & TranslatableHeading) | undefined | null,
   lang: string,
 ): boolean {
-  return missingQuoteTranslations(quote, [lang]).length > 0;
+  return quoteLangStale(quote) ||
+    missingQuoteTranslations(quote, [lang]).length > 0;
 }
 
 /** A line item's text in `lang`, else its base text. REQ-333 (M24): asked

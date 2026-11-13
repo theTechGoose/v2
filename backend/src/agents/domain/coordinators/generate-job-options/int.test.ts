@@ -498,10 +498,19 @@ const WHOLE_CONCISE = [
   "Double vanity; move the drain on the slab",
   "Exhaust fan, recessed lights and heated floor",
 ];
+// REQ-710 AMENDMENT (cycle 5, M4): the Spanish slot holds Spanish — English
+// lines there are now translated into Spanish (one more model call), which
+// is not what this test counts.
+const WHOLE_CONCISE_ES = [
+  "Retirar la combinación de bañera y ducha; ducha a nivel del suelo con desagüe lineal y nicho",
+  "Azulejo de porcelana 12x24 en paredes y panel de vidrio sin marco",
+  "Mueble de baño doble; mover el desagüe en la losa",
+  "Extractor, luces empotradas y piso radiante",
+];
 const wholeReply = () =>
   JSON.stringify({
     options: [
-      option(WHOLE_CONCISE, WHOLE_CONCISE, "Master Bath Remodel"),
+      option(WHOLE_CONCISE, WHOLE_CONCISE_ES, "Master Bath Remodel"),
       option([...V1, ...V2, ...V3], [...V1_ES, ...V2_ES, ...V3_ES], "Master Bath Gut"),
     ],
   });

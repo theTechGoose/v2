@@ -1363,6 +1363,9 @@ export default function AsstChat({
               ...q,
               descriptionByLang: res.descriptionByLang ?? q.descriptionByLang,
               lineItems: res.lineItems ?? q.lineItems,
+              // REQ-710 (cycle 5, M4): the server may re-base the quote on
+              // the language it was typed in — the preview reads that base.
+              lang: res.lang ?? q.lang,
             }
             : q
         );
