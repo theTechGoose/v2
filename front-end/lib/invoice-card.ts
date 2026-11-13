@@ -229,3 +229,18 @@ export function contactFixRequest(
     channel,
   };
 }
+
+/**
+ * REQ-706 (demo-loop cycle 5, p18-9a): the invoice detail header names the
+ * client once. With a job name the title is the job and the sub-line reads
+ * "client · ref"; without one the client is the title and the sub-line is
+ * just the ref — never "Linda Morales" over "Linda Morales · INV-001".
+ */
+export function detailTitle(
+  inv: { jobName?: string; client: string; invoiceRef: string },
+): { title: string; sub: string } {
+  const job = inv.jobName?.trim();
+  return job
+    ? { title: job, sub: `${inv.client} · ${inv.invoiceRef}` }
+    : { title: inv.client, sub: inv.invoiceRef };
+}

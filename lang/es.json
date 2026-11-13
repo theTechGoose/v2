@@ -1692,7 +1692,7 @@
   "invoicesPage.docTitle": "Facturas · DocuMonster",
   "invoicesPage.empty.awaiting": "No hay pagos reportados esperando tu confirmación.",
   "invoicesPage.empty.drafting": "No hay borradores en progreso. Abre el asistente para comenzar uno.",
-  "invoicesPage.empty.out": "Nada en espera. Envía una cotización para cobrar.",
+  "invoicesPage.empty.out": "Nada en espera. Cuando envíes una factura, aparece aquí.",
   "invoicesPage.empty.overdue": "No hay facturas vencidas. Buen trabajo.",
   "invoicesPage.empty.paid": "Nada pagado todavía este mes — los pagos aparecen aquí una vez confirmados.",
   "invoicesPage.empty.scheduled": "No hay facturas programadas. Los acuerdos en varias cuotas aparecerán aquí.",
