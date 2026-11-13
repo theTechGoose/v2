@@ -1,6 +1,7 @@
 /**
  * REQ-139 — a subscription's schedule: weekdays every N weeks from a start
- * date, or monthly on the start date's day. REQ-141 — the company's day.
+ * date, or monthly on the start date's day. REQ-787 — annual: once a year
+ * in one month on its picked day(s). REQ-141 — the company's day.
  * Pure.
  */
 import type { Subscription } from "@field/dto/field.ts";
@@ -33,12 +34,20 @@ export const monthDaysOf = (
   ? s.daysOfMonth
   : [Number(startOf(s).slice(8))]);
 
+/** REQ-787 — the annual month (1–12): the picked one, else the start date's */
+export const monthOf = (s: Subscription) =>
+  s.month ?? Number(startOf(s).slice(5, 7));
+
 /** is this subscription due on this day? */
 export function isDue(s: Subscription, date: string): boolean {
   const start = startOf(s);
   if (!isValidDate(start) || date < start) return false;
   if (s.endDate && date > s.endDate) return false; // REQ-699: a term that ends
-  if (s.cadence === "monthly") {
+  // REQ-787 — annual: only in its month, then the same day rule as monthly
+  if (s.cadence === "annual" && Number(date.slice(5, 7)) !== monthOf(s)) {
+    return false;
+  }
+  if (s.cadence === "monthly" || s.cadence === "annual") {
     const day = Number(date.slice(8));
     const lastOfMonth = new Date(
       Date.UTC(Number(date.slice(0, 4)), Number(date.slice(5, 7)), 0),
@@ -52,6 +61,37 @@ export function isDue(s: Subscription, date: string): boolean {
   return (weekNum(date) - weekNum(start)) % intervalOf(s) === 0;
 }
 
+const MONTH_NAMES = {
+  es: [
+    "enero",
+    "febrero",
+    "marzo",
+    "abril",
+    "mayo",
+    "junio",
+    "julio",
+    "agosto",
+    "septiembre",
+    "octubre",
+    "noviembre",
+    "diciembre",
+  ],
+  en: [
+    "January",
+    "February",
+    "March",
+    "April",
+    "May",
+    "June",
+    "July",
+    "August",
+    "September",
+    "October",
+    "November",
+    "December",
+  ],
+};
+
 const DAY_ABBR = {
   es: ["dom", "lun", "mar", "mié", "jue", "vie", "sáb"],
   en: ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"],
@@ -62,7 +102,12 @@ export function scheduleText(
   s: Subscription,
   lang: "es" | "en" = "es",
 ): string {
-  const start = startOf(s);
+  if (s.cadence === "annual") { // REQ-787 — "Annual · March 5" / "Anual · 5 de marzo"
+    const list = monthDaysOf(s).join(", "), m = monthOf(s) - 1;
+    return lang === "es"
+      ? `Anual · ${list} de ${MONTH_NAMES.es[m]}`
+      : `Annual · ${MONTH_NAMES.en[m]} ${list}`;
+  }
   if (s.cadence === "monthly") {
     const d = monthDaysOf(s), list = d.join(", ");
     return lang === "es"

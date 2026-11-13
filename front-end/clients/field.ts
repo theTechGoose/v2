@@ -10,7 +10,7 @@
 import { api, type ApiOptions } from "../lib/api.ts";
 import type { SendFailure } from "../lib/field-batches.ts";
 
-export type Cadence = "weekly" | "biweekly" | "monthly";
+export type Cadence = "weekly" | "biweekly" | "monthly" | "annual";
 export type TaskStatus = "assigned" | "complete" | "skipped" | "deferred";
 
 export interface FieldWorker {
@@ -66,6 +66,8 @@ export interface SubscriptionView {
   intervalWeeks?: number;
   /** REQ-157 — monthly: the picked days of the month, 1–31 */
   daysOfMonth?: number[];
+  /** REQ-787 — annual: the month of the yearly visit, 1–12 */
+  month?: number;
   /** REQ-174: days to pay, from the day the invoice is sent; unset = the account's default */
   netDays?: number;
   active: boolean;
@@ -102,6 +104,8 @@ export interface SubscriptionInput {
   days?: number[];
   /** REQ-157 — monthly: days of the month, 1–31 */
   daysOfMonth?: number[];
+  /** REQ-787 — annual: the month, 1–12 */
+  month?: number;
   startDate?: string;
   /** REQ-174: days to pay; null clears it (back to the account's default) */
   netDays?: number | null;

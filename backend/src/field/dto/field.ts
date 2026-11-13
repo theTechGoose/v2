@@ -34,8 +34,13 @@ export interface SubscriptionItem {
   priceCents: number;
 }
 
-export type Cadence = "weekly" | "biweekly" | "monthly";
-export const CADENCES: readonly Cadence[] = ["weekly", "biweekly", "monthly"];
+export type Cadence = "weekly" | "biweekly" | "monthly" | "annual";
+export const CADENCES: readonly Cadence[] = [
+  "weekly",
+  "biweekly",
+  "monthly",
+  "annual", // REQ-787
+];
 
 /** REQ-139: the recurring maintenance agreement on an existing customer. */
 export interface Subscription {
@@ -56,6 +61,8 @@ export interface Subscription {
   intervalWeeks?: number;
   /** REQ-157 — monthly: the days of the month (1–31, unique, sorted); 29–31 fall on a shorter month's last day. Default: the start date's day. */
   daysOfMonth?: number[];
+  /** REQ-787 — annual: the month of the yearly visit (1 = January … 12); its day(s) are daysOfMonth. Default: the start date's month. */
+  month?: number;
   /** REQ-174: days the customer has to pay, from the day the invoice is sent; unset = the account's default */
   netDays?: number;
   /** REQ-699: the last service day — nothing is due after it; unset = until it is paused or deleted */

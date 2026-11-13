@@ -2113,3 +2113,46 @@ Deno.test("REQ-627 void frees the batch's tasks for the next pull; void & duplic
     assertEquals(third.body.invoices[0].amount, inv.amount);
   });
 });
+
+Deno.test("REQ-787 an annual subscription keeps its month and day(s) with the schedule text; month 0 or 13 is 400; a PUT changes the month", async () => {
+  await withServer(async (call) => {
+    const H = await login(call);
+    const customer =
+      (await call("POST", "/customers", { name: "Ana" }, H)).body;
+    const body = (month: unknown) => ({
+      customerId: customer.id,
+      address: "4601 Dick Pond Rd, Myrtle Beach, SC",
+      cadence: "annual",
+      month,
+      startDate: "2026-11-01",
+      daysOfMonth: [5],
+      items: [{ taskTypeName: "Gutter clean", priceCents: 18000 }],
+    });
+    const res = await call("POST", "/field/subscriptions", body(3), H);
+    assertEquals(res.status, 201);
+    assertEquals(res.body.cadence, "annual");
+    assertEquals(res.body.month, 3);
+    assertEquals(res.body.daysOfMonth, [5]);
+    assertEquals(res.body.schedule, {
+      es: "Anual · 5 de marzo",
+      en: "Annual · March 5",
+    });
+    for (const bad of [0, 13, "3", 2.5]) {
+      assertEquals(
+        (await call("POST", "/field/subscriptions", body(bad), H)).status,
+        400,
+        `month ${bad} is refused`,
+      );
+    }
+    const patched = await call("PUT", `/field/subscriptions/${res.body.id}`, {
+      month: 7,
+    }, H);
+    assertEquals(patched.status, 200);
+    assertEquals(patched.body.schedule.en, "Annual · July 5");
+    const weekly = await call("PUT", `/field/subscriptions/${res.body.id}`, {
+      cadence: "weekly",
+    }, H);
+    assertEquals(weekly.body.cadence, "weekly");
+    assertEquals(weekly.body.month, undefined, "a weekly visit has no month");
+  });
+});

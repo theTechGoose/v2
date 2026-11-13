@@ -90,6 +90,7 @@ export function subscriptionPlan(
 /** the cadence a subscription's schedule still is, if a recurring term can say it */
 function cadenceOf(s: Subscription): RecurringCadence | null {
   if (s.cadence === "monthly") return "monthly";
+  if (s.cadence === "annual") return null; // REQ-787: no recurring term is yearly
   const n = intervalOf(s);
   return n === 1 ? "weekly" : n === 2 ? "biweekly" : null;
 }
