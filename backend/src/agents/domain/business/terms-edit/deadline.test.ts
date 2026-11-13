@@ -26,7 +26,8 @@ Deno.test("REQ-653 readDeadline: the demo's words name Thanksgiving 2026 (Nov 26
   ) {
     assertEquals(
       readDeadline(s, TODAY),
-      { iso: "2026-11-26", before: true },
+      // REQ-771 AMENDMENT: the holiday read is named too
+      { iso: "2026-11-26", before: true, holiday: "thanksgiving" },
       s,
     );
   }
@@ -44,6 +45,7 @@ Deno.test("REQ-653 readDeadline: dates and other holidays; 'by' includes the day
   assertEquals(readDeadline("done before christmas", TODAY), {
     iso: "2026-12-25",
     before: true,
+    holiday: "christmas", // REQ-771 AMENDMENT
   });
   // an update_terms finishBy value is a deadline on its own (bare)
   assertEquals(readDeadline("2026-12-01", TODAY, true)?.iso, "2026-12-01");
@@ -51,6 +53,7 @@ Deno.test("REQ-653 readDeadline: dates and other holidays; 'by' includes the day
   assertEquals(readDeadline("before thanksgiving", TODAY, true), {
     iso: "2026-11-26",
     before: true,
+    holiday: "thanksgiving", // REQ-771 AMENDMENT
   });
   // a bare holiday in a chat message is not a deadline
   assertEquals(readDeadline("we're closed on thanksgiving", TODAY), null);

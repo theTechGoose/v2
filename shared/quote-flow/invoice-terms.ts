@@ -43,7 +43,8 @@ export function invoiceTerms<T extends { stepId: string; value: string }>(
   terms: readonly T[] | null | undefined,
   at: { quotedAt?: string; issuedAt?: string },
 ): T[] {
-  const list = [...(terms ?? [])];
+  // REQ-771: the job is done — the quote's deadline row is not billed.
+  const list = (terms ?? []).filter((t) => t.stepId !== "deadline");
   const quoted = dayOf(at.quotedAt);
   const issued = dayOf(at.issuedAt) ?? dayOf(new Date().toISOString());
   if (!quoted || !issued) return list;

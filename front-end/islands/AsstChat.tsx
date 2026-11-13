@@ -838,6 +838,7 @@ const TERM_LABEL_KEYS: Record<string, string> = {
   time_to_complete: "asstChat.preview.termLabel.timeToComplete",
   payment_terms: "asstChat.preview.termLabel.payment",
   warranty: "asstChat.preview.termLabel.warranty",
+  deadline: "asstChat.preview.termLabel.deadline", // REQ-771
 };
 
 export default function AsstChat({

@@ -19,6 +19,7 @@ import {
 import { isUponCompletionTerm } from "../../shared/quote-flow/completion-schedule.ts";
 import { localizeDepositTerm } from "../../shared/quote-flow/deposit-term.ts"; // REQ-678
 import { localizeRecurringTerm } from "../../shared/quote-flow/recurring-billing.ts";
+import { localizeDeadlineTerm } from "../../shared/quote-flow/deadline-term.ts"; // REQ-771
 
 /** REQ-697 (demo-loop cycle 5, m22): the agreement's payment term in the
  *  reader's language, with the days the customer has to pay when it bills
@@ -49,6 +50,10 @@ export function localizeTermValue(value: string, lang: Lang): string {
   // language, its last day too — "Mensual · $180/mes · hasta el 30 jun 2027".
   const recurring = localizeRecurringTerm(value, lang);
   if (recurring) return recurring;
+  // REQ-771 (cycle 5v5, M7): the typed deadline — "Before Thanksgiving
+  // (Nov 26, 2026)" / "Antes de Acción de Gracias (26 nov 2026)".
+  const deadline = localizeDeadlineTerm(value, lang, tFor);
+  if (deadline) return deadline;
   // REQ-495 (m17): a picked start date is stored ISO (older quotes carry
   // MM/DD/YYYY) — read it in the reader's language, in both languages.
   if (termDateIso(value)) return formatTermDate(value, lang);
