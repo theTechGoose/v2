@@ -272,6 +272,9 @@ export const TOOL_DEFS = [
           startDate: { type: "string", description: t("en", "prompts.tools.updateTerms.startDate") },
           duration: { type: "string", description: t("en", "prompts.tools.updateTerms.duration") },
           paymentTerms: { type: "string", description: t("en", "prompts.tools.updateTerms.paymentTerms") },
+          // REQ-653 (cycle 5, m50): "finish before Thanksgiving" — checked
+          // against the start + time to complete, never a scope bullet.
+          finishBy: { type: "string", description: t("en", "prompts.tools.updateTerms.finishBy") },
         },
         additionalProperties: false,
       },
@@ -474,8 +477,13 @@ export function parseToolCall(call: { function: { name: string; arguments: strin
     // REQ-585 (M4 + M30): each term the model gave, trimmed — the server reads
     // the words; nothing given → undefined.
     case "update_terms": {
-      const payload: { startDate?: string; duration?: string; paymentTerms?: string } = {};
-      for (const k of ["startDate", "duration", "paymentTerms"] as const) {
+      const payload: {
+        startDate?: string;
+        duration?: string;
+        paymentTerms?: string;
+        finishBy?: string; // REQ-653
+      } = {};
+      for (const k of ["startDate", "duration", "paymentTerms", "finishBy"] as const) {
         const v = typeof args[k] === "string" ? (args[k] as string).trim() : "";
         if (v) payload[k] = v;
       }

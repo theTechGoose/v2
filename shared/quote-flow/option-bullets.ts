@@ -859,6 +859,66 @@ function dropDurationParts(text: string): string {
     : kept.join(", ");
 }
 
+/** REQ-653 (demo-loop cycle 5, m50): a deadline is schedule, never scope —
+ *  "Finish before Thanksgiving", "Terminar antes de Acción de Gracias",
+ *  "client wants done by Nov 20", "Deadline: Christmas". Matched on the
+ *  lowercased, accent-free text: a finish word, a "before / by" word, then a
+ *  day (a holiday, a date, a weekday, the end of a week / month / year). */
+const DL_MONTH =
+  "jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|june?|july?|aug(?:ust)?|sept?(?:ember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?|enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|setiembre|octubre|noviembre|diciembre|ene|abr|ago|dic";
+const DL_DAY =
+  `(?:thanksgiving|accion de gracias|dia de accion de gracias|christmas(?: eve)?|xmas|navidad|nochebuena|new year'?s?(?: day| eve)?|ano nuevo|fin de ano|easter|pascua|the holidays|las fiestas|(?:the )?end of (?:the )?(?:week|month|year)|fin de(?:l)? (?:mes|ano|semana)|(?:${DL_MONTH})\\.? \\d{1,2}(?:st|nd|rd|th)?|\\d{1,2} de (?:${DL_MONTH})|\\d{1,2}\\/\\d{1,2}(?:\\/\\d{2,4})?|\\d{4}-\\d{2}-\\d{2}|(?:next |this )?(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday)|(?:el )?(?:lunes|martes|miercoles|jueves|viernes|sabado|domingo)(?: que viene)?|next (?:week|month)|la proxima semana|el proximo mes)`;
+const DL_FINISH =
+  "(?:finish(?:ed)?|done|complete(?:d)?|completion|wrap(?:ped)? up|ready|terminad[oa]s?|terminar(?:lo)?|termina(?:mos|do)?|listos?|listas?|acabad[oa]s?|acabar(?:lo)?|entregad[oa]s?|entregar(?:lo)?|completad[oa]s?|completar(?:lo)?)";
+const DL_PREP =
+  "(?:before|by|prior to|no later than|ahead of|in time for|antes de(?:l)?|para(?: el| la)?|a mas tardar(?: el| para)?)";
+const DL_LEAD =
+  "(?:(?:the |el |la )?(?:client|customer|homeowner|owner|cliente|clienta|they|she|he|we|job|work|project|trabajo|proyecto|todo|everything|it|all)\\s+|(?:wants?|needs?|must|should|has to|have to|quiere|necesita|debe|tiene que|be|to be|it|ser|estar|is|es|esta|all|todo)\\s+)*";
+const DEADLINE_CORE =
+  `${DL_FINISH}\\s+(?:it\\s+|lo\\s+)?${DL_PREP}\\s+(?:the |el |la )?${DL_DAY}\\b|(?:deadline|fecha limite|plazo)\\s*(?::|is|es|of|de)?\\s*(?:the |el |la )?${DL_DAY}\\b`;
+/** The whole line is a deadline. */
+const DEADLINE_ONLY = new RegExp(`^${DL_LEAD}(?:${DEADLINE_CORE})[\\s.!]*$`);
+/** A deadline closing a scope line: ", done before Thanksgiving", " — client
+ *  wants done before thanksgiving". */
+const DEADLINE_TAIL = new RegExp(
+  `(?:\\s*[,;]|\\s+[—–-])\\s+${DL_LEAD}(?:${DEADLINE_CORE})[\\s.!]*$`,
+);
+/** "Job located on Shoal Creek", "Trabajo ubicado en …" — the job address,
+ *  which has its own field. */
+const LOCATION_LINE =
+  /^(?:(?:the )?(?:job|work|project|trabajo|proyecto)\s+)?(?:located|location|site|ubicad[oa]|ubicacion|localizad[oa])\s*(?::|on|at|in|en)\b/;
+
+const plainLower = (text: string) =>
+  text.normalize("NFD").replace(/\p{M}+/gu, "").toLowerCase()
+    .replace(/\s+/g, " ").trim();
+
+/** REQ-653: whether a line is only a deadline or the job's location. */
+function isScheduleOrPlace(text: string): boolean {
+  const t = plainLower(text);
+  return DEADLINE_ONLY.test(t) || LOCATION_LINE.test(t);
+}
+
+/** REQ-653: a scope line without the deadline that closes it. Accent folding
+ *  keeps one character per letter (NFC input), so the match index maps back
+ *  onto the original text. */
+function dropDeadlineTail(text: string): string {
+  const nfc = text.normalize("NFC");
+  const folded = nfc.normalize("NFD").replace(/\p{M}+/gu, "").toLowerCase();
+  if (folded.length !== nfc.length) return text;
+  const m = DEADLINE_TAIL.exec(folded);
+  return m ? nfc.slice(0, m.index) : text;
+}
+
+/** REQ-653: comma-separated parts that are only a deadline or a place. */
+function dropDeadlineParts(text: string): string {
+  const parts = text.split(/\s*,\s+/);
+  if (parts.length < 2) return text;
+  const kept = parts.filter((p) => !isScheduleOrPlace(p));
+  return kept.length === parts.length || kept.length === 0
+    ? text
+    : kept.join(", ");
+}
+
 function removeName(text: string, facts: CustomerFacts): string {
   const re = nameRegex(facts.name);
   return re ? text.replace(re, " ") : text;
@@ -881,7 +941,12 @@ export function cleanScopeBullet(
   if (extractEmail(text) || extractPhone(text)) return null;
   if (LABEL_LINE.test(text) || NAME_LABEL_LINE.test(text)) return null;
   if (isDurationOnly(text)) return null;
-  const stripped = tidy(dropDurationParts(removeName(text, facts)));
+  if (isScheduleOrPlace(text)) return null; // REQ-653
+  const stripped = tidy(
+    dropDeadlineParts(
+      dropDurationParts(removeName(dropDeadlineTail(text), facts)),
+    ),
+  );
   return scopeTerms(stripped).length > 0 ? stripped : null;
 }
 
@@ -901,8 +966,12 @@ export function stripCustomerDetails(
     if (!hit) break;
     text = text.replace(hit, " ");
   }
-  if (isDurationOnly(text)) return null;
-  text = tidy(dropDurationParts(tidy(removeName(text, facts))));
+  if (isDurationOnly(text) || isScheduleOrPlace(text)) return null; // REQ-653
+  text = tidy(
+    dropDeadlineParts(
+      dropDurationParts(tidy(removeName(dropDeadlineTail(text), facts))),
+    ),
+  );
   if (scopeTerms(text).length === 0) return null;
   return text;
 }

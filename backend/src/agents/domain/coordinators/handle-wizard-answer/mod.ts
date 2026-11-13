@@ -24,10 +24,13 @@ import { isQuoteIssued, isQuoteLocked } from "#documents/versions.ts"; // REQ-46
 import { docNumberOf } from "#documents/numbering.ts"; // REQ-460
 import { formatTermDate } from "#quote-flow/format-helpers.ts"; // REQ-495
 import {
+  deadlineCheck,
+  deadlineLine,
   pickForStep,
+  readDeadline,
   type TermValue,
   termValueText,
-} from "@agents/domain/business/terms-edit/mod.ts"; // REQ-585
+} from "@agents/domain/business/terms-edit/mod.ts"; // REQ-585, REQ-653
 import {
   type ChatI18nRef,
   type ChatI18nVar,
@@ -317,6 +320,29 @@ export class HandleWizardAnswer {
       next,
     );
 
+    // REQ-653 (demo-loop cycle 5, m50): once the start and the time to
+    // complete are on the quote, a deadline typed in the chat ("client wants
+    // done before thanksgiving") is checked against them — a schedule that
+    // misses it is said before the next question, never left to contradict
+    // the agreement.
+    if (
+      persisted &&
+      (input.stepId === "start_date" || input.stepId === "wraps" ||
+        input.stepId === "time_to_complete")
+    ) {
+      const warning = await this.deadlineWarning(conv, input.userId, lang);
+      if (warning) {
+        newMessages.push(
+          await this.messages.append({
+            conversationId: input.conversationId,
+            role: "assistant",
+            kind: "text",
+            content: warning,
+          }),
+        );
+      }
+    }
+
     if (progress.isComplete) {
       // The quote IS the agreement: the full terms set is on it now.
       const quoteId = persisted
@@ -370,6 +396,35 @@ export class HandleWizardAnswer {
       convPatch,
     );
     return { conversation: updatedConv, wizardState: next, newMessages };
+  }
+
+  /** REQ-653 (m50): the latest deadline the contractor typed in this
+   *  conversation, when the quote's start + time to complete miss it. */
+  private async deadlineWarning(
+    conv: AgentConversation,
+    userId: string,
+    lang: "en" | "es",
+  ): Promise<string> {
+    if (!conv.quoteId) return "";
+    const today = new Date();
+    const history = await this.messages.listByConversation(conv.id)
+      .catch(() => [] as AgentMessage[]);
+    let deadline: ReturnType<typeof readDeadline> = null;
+    for (const m of [...history].reverse()) {
+      if (m.role !== "user" || typeof m.content !== "string") continue;
+      deadline = readDeadline(m.content, today);
+      if (deadline) break;
+    }
+    if (!deadline) return "";
+    const quote = await this.quotes.getOwned(conv.quoteId, userId)
+      .catch(() => undefined);
+    if (!quote?.terms?.length) return "";
+    const check = deadlineCheck(deadline, {
+      terms: quote.terms,
+      startDate: quote.startDate,
+      today,
+    });
+    return check?.late ? deadlineLine(lang, deadline, check, quote.terms) : "";
   }
 
   /**

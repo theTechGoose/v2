@@ -42,6 +42,7 @@ import {
   widerBullets,
 } from "#quote-flow/option-bullets.ts";
 import { mentionsMoney } from "#quote-flow/private-cost.ts";
+import { dropSelfCorrections } from "#quote-flow/self-correction.ts";
 import { ES_TRADE_GLOSSARY } from "@agents/domain/business/es-trade-glossary/mod.ts";
 
 export interface GenerateJobOptionsInput {
@@ -136,8 +137,12 @@ export class GenerateJobOptions {
   constructor(@Inject(LLM_CLIENT) private llm: LLMClient) {}
 
   async run(input: GenerateJobOptionsInput): Promise<GenerateJobOptionsResult> {
-    const raw = input.raw.trim();
-    if (!raw) throw new Error("raw is required");
+    if (!input.raw.trim()) throw new Error("raw is required");
+    // REQ-653 (demo-loop cycle 5, M7): "LVP no wait porcelain tile 12x24" is
+    // porcelain tile — the corrected-away word never reaches the model, the
+    // fallback or the typed yardstick (every option read "Install LVP and
+    // porcelain tile").
+    const raw = dropSelfCorrections(input.raw.trim()) || input.raw.trim();
 
     const langs = normalizeLangs(input.langs);
     const primary = langs[0];
@@ -228,7 +233,9 @@ export class GenerateJobOptions {
     // REQ-439 (M9): and what the contractor TYPED is the yardstick too — a
     // reply whose options leave out a typed item or quantity is asked again
     // with them listed.
-    const typedText = input.typed?.trim() || raw;
+    const typedText = input.typed?.trim()
+      ? dropSelfCorrections(input.typed.trim()) || input.typed.trim()
+      : raw;
     const typedFacts = input.typed ? customerFactsFrom(typedText) : facts;
     const typed = typedScopeItems(typedText, primary, typedFacts);
     const yardstick: Yardstick = {

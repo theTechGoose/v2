@@ -981,3 +981,76 @@ Deno.test("REQ-584 (cycle 4, p4-p1d) the degraded fallback keeps its three title
   assertEquals(res.options.length, 3);
   assertEquals(res.options[0].bullets, GUT_JOB_ITEMS);
 });
+
+// ── REQ-653 (demo-loop cycle 5, M7 + m50) ──────────────────────────────────
+// Pair 7 typed "… LVP no wait porcelain tile 12x24 … — client wants done
+// before thanksgiving": every option read "Install LVP and porcelain tile",
+// and the rewrite added "Finish before Thanksgiving" as a scope bullet
+// (fleet-6 stdout:295/298).
+
+const DEMO_653 =
+  "gut master bath 8x10, tub out walk-in shower w/ niche, double vanity quartz, LVP no wait porcelain tile 12x24, move toilet 2ft, exhaust fan, plus kitchen backsplash 30sqft subway — client wants done before thanksgiving";
+
+Deno.test("REQ-653 M7: the model never sees the corrected-away 'LVP' — the raw text and the typed yardstick keep only the correction", async () => {
+  const { llm, coord } = fresh();
+  const seen: string[] = [];
+  llm.setHandler((req) => {
+    seen.push(req.messages.map((m) => m.content).join("\n"));
+    const bullets = [
+      "Gut master bath 8x10",
+      "Remove tub, install walk-in shower with niche",
+      "Install double vanity with quartz top",
+      "Install porcelain tile 12x24 on floor",
+      "Move toilet 2ft",
+      "Install exhaust fan",
+      "Install kitchen backsplash 30sqft subway tile",
+    ];
+    return {
+      text: JSON.stringify({
+        options: [0, 1, 2].map((i) => ({
+          en: {
+            jobName: ["Bath & Backsplash", "Master Bath & Kitchen", "Bath Gut & Backsplash"][i],
+            summary: "Master bath gut and backsplash",
+            bullets: i === 0 ? bullets.slice(0, 7) : bullets,
+          },
+        })),
+      }),
+    };
+  });
+  const res = await coord.run({ userId: "u1", raw: DEMO_653, langs: ["en"] });
+  assert(seen.length >= 1);
+  for (const sent of seen) {
+    assert(!/LVP/.test(sent), `the model was sent the corrected-away LVP: ${sent.slice(0, 300)}`);
+    assert(!/no wait/i.test(sent), "the correction cue reached the model");
+  }
+  // no re-ask demanding LVP back (the typed yardstick is corrected too)
+  for (const b of allBullets(res.options)) {
+    assert(!/LVP/.test(b), `bullet keeps LVP: ${b}`);
+  }
+});
+
+Deno.test("REQ-653 m50: a model deadline bullet ('Finish before Thanksgiving') never reaches the options", async () => {
+  const { llm, coord } = fresh();
+  llm.setHandler(() => ({
+    text: JSON.stringify({
+      options: [0, 1, 2].map((i) => ({
+        en: {
+          jobName: ["Backsplash", "Kitchen Backsplash", "Subway Backsplash"][i],
+          summary: "Kitchen backsplash",
+          bullets: [
+            "Install kitchen backsplash 30sqft subway tile",
+            "Finish before Thanksgiving",
+          ],
+        },
+      })),
+    }),
+  }));
+  const res = await coord.run({
+    userId: "u1",
+    raw: "kitchen backsplash 30sqft subway — client wants done before thanksgiving",
+    langs: ["en"],
+  });
+  for (const b of allBullets(res.options)) {
+    assert(!/thanksgiving/i.test(b), `deadline bullet kept: ${b}`);
+  }
+});

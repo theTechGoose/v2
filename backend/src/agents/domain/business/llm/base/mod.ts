@@ -198,7 +198,14 @@ export type LLMAction =
    *  today and the bound conversation's wizard, never the model's dates. */
   | {
     type: "update_terms";
-    payload: { startDate?: string; duration?: string; paymentTerms?: string };
+    payload: {
+      startDate?: string;
+      duration?: string;
+      paymentTerms?: string;
+      /** REQ-653 (demo-loop cycle 5, m50): a deadline in the contractor's
+       *  words ("before Thanksgiving") — checked against the terms. */
+      finishBy?: string;
+    };
   };
 
 /** REQ-368: a chat tool's name — one per LLMAction variant. */

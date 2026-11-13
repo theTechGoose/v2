@@ -19,10 +19,17 @@
  *   mentionedTerms     — the start / time to complete a message asks for
  *   termsChangeLine    — "Changed the start date: Next month → Next week."
  *   termsNotAppliedLine — "I didn't change the start date …"
+ *   readDeadline / deadlineCheck / deadlineLine — REQ-653: "finish before
+ *                        Thanksgiving" against the start + time to complete
  */
 import type { WizardStep } from "@agents/dto/wizard.ts";
 import { type Lang, t } from "@core/i18n/mod.ts";
 import { formatTermDate } from "#quote-flow/format-helpers.ts";
+import { completionFromTerms } from "#quote-flow/completion-schedule.ts";
+import {
+  TERMS_WIZARD_SERVICE_V1,
+  TERMS_WIZARD_V1,
+} from "@agents/domain/business/terms-wizard-spec/mod.ts";
 import {
   localizeDepositTerm,
   normalizeDepositTerm,
@@ -601,4 +608,191 @@ export function termsNotAppliedLine(
     ` ${t(lang, "chatCoordinator.terms.notApplied.or")} ` +
     names[names.length - 1];
   return t(lang, "chatCoordinator.terms.notApplied", { terms });
+}
+
+// ---------------------------------------------------------------------------
+// REQ-653 (demo-loop cycle 5, m50) — a deadline is schedule, not scope. Pair 7
+// typed "client wants done before thanksgiving"; it became the bullet "Finish
+// before Thanksgiving" next to start "Right away" + "3 weeks" (ends Dec 3),
+// and "its NOT done before thanksgiving if we start now + 3 wks, fix that"
+// got "I didn't change the start date — ask me again" (fleet-6 stdout:207).
+// ---------------------------------------------------------------------------
+
+/** The day a job must be done: `before` it (the day itself is too late) or
+ *  `by` it (the day itself is fine). */
+export interface Deadline {
+  iso: string;
+  before: boolean;
+}
+
+const DL_FINISH = String
+  .raw`(?:finish(?:ed)?|done|complete(?:d)?|wrap(?:ped)? up|ready|terminad[oa]s?|terminar(?:lo)?|termina(?:mos|do)?|listos?|listas?|acabad[oa]s?|acabar(?:lo)?|entregad[oa]s?|entregar(?:lo)?|completad[oa]s?|completar(?:lo)?)`;
+const DL_PREP = String
+  .raw`(before|by|prior to|no later than|ahead of|in time for|antes de(?:l)?|para(?: el| la)?|a mas tardar(?: el| para)?)`;
+const DEADLINE_ASK = new RegExp(
+  String
+    .raw`\b${DL_FINISH}\s+(?:it\s+|lo\s+)?${DL_PREP}\s+(?:the\s+|el\s+|la\s+)?([^.?!\n]{1,60})|\b(?:deadline|fecha limite|plazo)\s*(?::|is|es|of|de)?\s*(?:the\s+|el\s+|la\s+)?([^.?!\n]{1,60})`,
+);
+const BEFORE_PREP = /^(?:before|prior to|ahead of|in time for|antes de)/;
+
+/** US Thanksgiving: the fourth Thursday of November. */
+function thanksgiving(year: number): Date {
+  const first = new Date(year, 10, 1);
+  const toThu = (4 - first.getDay() + 7) % 7;
+  return new Date(year, 10, 1 + toThu + 21);
+}
+
+/** The next time a yearly day comes round (today counts). */
+function nextYearly(today: Date, at: (year: number) => Date): string {
+  const start = dayOf(today);
+  let d = at(start.getFullYear());
+  if (d < start) d = at(start.getFullYear() + 1);
+  return isoOf(d);
+}
+
+const HOLIDAYS: [RegExp, (y: number) => Date][] = [
+  [/\b(?:thanksgiving|(?:dia de )?accion de gracias)\b/, thanksgiving],
+  [/\b(?:christmas eve|nochebuena)\b/, (y) => new Date(y, 11, 24)],
+  [/\b(?:christmas|xmas|navidad)\b/, (y) => new Date(y, 11, 25)],
+  [
+    /\b(?:new year'?s? eve|fin de ano)\b/,
+    (y) => new Date(y, 11, 31),
+  ],
+  [/\b(?:new year'?s?(?: day)?|ano nuevo)\b/, (y) => new Date(y + 1, 0, 1)],
+  [/\b(?:(?:the )?end of (?:the )?year)\b/, (y) => new Date(y, 11, 31)],
+];
+
+/** The day a deadline's words name: a holiday, a date, the end of the month,
+ *  a weekday. Null when they name none ("by hand"). */
+function deadlineDay(words: string, today: Date): string | null {
+  const s = words.trim();
+  for (const [re, at] of HOLIDAYS) {
+    if (re.test(s)) return nextYearly(today, at);
+  }
+  if (/\b(?:end of (?:the )?month|fin de(?:l)? mes)\b/.test(s)) {
+    const t0 = dayOf(today);
+    return isoOf(new Date(t0.getFullYear(), t0.getMonth() + 1, 0));
+  }
+  const date = explicitDate(s, today);
+  if (date) return date;
+  const w = s.match(new RegExp(String.raw`\b(${WEEKDAY_RE})\b`));
+  if (w) {
+    const start = dayOf(today);
+    const ahead = ((WEEKDAYS[w[1]] - start.getDay()) + 7) % 7 || 7;
+    return isoOf(plusDays(start, ahead));
+  }
+  return null;
+}
+
+/**
+ * The deadline a message names — "done before thanksgiving", "terminar antes
+ * de Acción de Gracias", "finished by Dec 5", "listo para el 20 de
+ * noviembre", "deadline: Christmas" — read against `today` (a day already gone
+ * this year is next year's). `bare`: the text is only the deadline (the
+ * update_terms finishBy value: "Thanksgiving", "2026-12-01"). Null when there
+ * is none.
+ */
+export function readDeadline(
+  text: string,
+  today: Date = new Date(),
+  bare = false,
+): Deadline | null {
+  const s = fold(text).replace(/[’`]/g, "'");
+  if (!s) return null;
+  const m = DEADLINE_ASK.exec(s);
+  if (m) {
+    const prep = m[1] ?? "";
+    // the day comes first after the "before" word — at most four words
+    const words = (m[2] ?? m[3] ?? "").split(/\s+|,/).filter(Boolean)
+      .slice(0, 4).join(" ");
+    const iso = deadlineDay(words, today);
+    if (iso) return { iso, before: BEFORE_PREP.test(prep) };
+  }
+  if (!bare) return null;
+  const prep = s.match(new RegExp(String.raw`^${DL_PREP}\s+`));
+  const iso = deadlineDay(prep ? s.slice(prep[0].length) : s, today);
+  return iso ? { iso, before: !!prep && BEFORE_PREP.test(prep[1]) } : null;
+}
+
+/** A term on the quote, as it is stored. */
+type StoredTerm = { stepId: string; value: string };
+
+/**
+ * When the job ends — start + time to complete, the same reading the billing
+ * schedule uses — and whether that misses the deadline. Null when the terms
+ * hold no time to complete (none, TBD) to check.
+ */
+export function deadlineCheck(
+  deadline: Deadline,
+  input: {
+    terms?: readonly StoredTerm[] | null;
+    startDate?: string;
+    today: Date;
+  },
+): { end: string; late: boolean } | null {
+  const pad2 = (n: number) => String(n).padStart(2, "0");
+  // completionFromTerms counts in UTC days; give it today's calendar day
+  const t0 = dayOf(input.today);
+  const end = completionFromTerms({
+    terms: input.terms ?? [],
+    startDate: input.startDate,
+    today: new Date(
+      `${t0.getFullYear()}-${pad2(t0.getMonth() + 1)}-${
+        pad2(t0.getDate())
+      }T00:00:00Z`,
+    ),
+  });
+  if (!end) return null;
+  const late = deadline.before ? end >= deadline.iso : end > deadline.iso;
+  return { end, late };
+}
+
+/** A stored term in the reader's language: a preset's label ("Right away" →
+ *  "De inmediato"), else the custom value (a date, "3 semanas"). */
+function storedTermText(lang: Lang, stepId: string, value: string): string {
+  for (const spec of [TERMS_WIZARD_V1, TERMS_WIZARD_SERVICE_V1]) {
+    const step = spec.steps.find((s) => s.id === stepId);
+    const option = step?.options.find((o) =>
+      !o.isCustom && presetKey(t("en", o.label)) === presetKey(value)
+    );
+    if (option) return t(lang, option.label);
+  }
+  return termValueText(value, lang);
+}
+
+/**
+ * The reply line: the schedule misses the deadline (and what to change), or
+ * it makes it. "" when the terms hold no start or time to complete.
+ */
+export function deadlineLine(
+  lang: Lang,
+  deadline: Deadline,
+  check: { end: string; late: boolean },
+  terms: readonly StoredTerm[],
+): string {
+  const value = (id: string) => terms.find((x) => x.stepId === id)?.value;
+  const start = value("start_date");
+  const duration = value("wraps") ?? value("time_to_complete");
+  if (!duration) return "";
+  const vars = {
+    start: start
+      ? storedTermText(lang, "start_date", start)
+      : t(lang, "chatCoordinator.terms.deadline.today"),
+    duration: storedTermText(lang, "wraps", duration),
+    end: formatTermDate(check.end, lang),
+    deadline: t(
+      lang,
+      deadline.before
+        ? "chatCoordinator.terms.deadline.before"
+        : "chatCoordinator.terms.deadline.by",
+      { date: formatTermDate(deadline.iso, lang) },
+    ),
+  };
+  return t(
+    lang,
+    check.late
+      ? "chatCoordinator.terms.deadline.late"
+      : "chatCoordinator.terms.deadline.fits",
+    vars,
+  );
 }
