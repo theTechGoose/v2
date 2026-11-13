@@ -6577,10 +6577,39 @@ body {
   cursor: default;
   transform: none;
 }
-.quote-review__hero-field--empty:not(:focus)::before {
-  content: attr(data-placeholder);
+/* REQ-634 (demo-loop cycle 5, m34): the customer's email/phone are real
+   <input>s inside a label that carries the pencil. The hint is the native
+   placeholder, so it shows exactly while the field is empty — focused or
+   not, here and on the demo stage's never-focused mirror — and the empty
+   field keeps a usable width instead of collapsing to a 25px box. */
+.quote-review__hero-field {
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+}
+.quote-review__hero-field:focus-within {
+  background: rgba(255, 107, 107, 0.10);
+  box-shadow: inset 0 -1.5px 0 rgba(255, 107, 107, 0.65);
+}
+.quote-review__hero-field:focus-within::after {
+  opacity: 0;
+}
+.quote-review__hero-input {
+  font: inherit;
+  color: inherit;
+  background: transparent;
+  border: 0;
+  outline: none;
+  padding: 0;
+  margin: 0;
+  min-width: 12ch;
+  max-width: 100%;
+  field-sizing: content;
+}
+.quote-review__hero-input::placeholder {
   color: var(--fg-subtle);
   font-style: italic;
+  opacity: 1;
 }
 .quote-review__swap-panel {
   display: flex;
