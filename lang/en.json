@@ -2765,6 +2765,8 @@
   "quotesPage.open.sentTo": "Sent to {to}",
   "quotesPage.open.sendFailed": "It didn't go through: {reason}",
   "quotesPage.open.sendError": "Couldn't send the quote. Try again.",
+  "quotesPage.open.finishSend": "Finish & send",
+  "quotesPage.open.finishSendError": "Couldn't open the quote's conversation. Try again.",
   "quotesPage.status.declined": "Declined",
   "quotesPage.status.draft": "Draft",
   "quotesPage.status.revised": "Revised",

@@ -2765,6 +2765,8 @@
   "quotesPage.open.sentTo": "Enviada a {to}",
   "quotesPage.open.sendFailed": "No se envió: {reason}",
   "quotesPage.open.sendError": "No se pudo enviar la cotización. Inténtalo de nuevo.",
+  "quotesPage.open.finishSend": "Terminar y enviar",
+  "quotesPage.open.finishSendError": "No se pudo abrir la conversación de la cotización. Inténtalo de nuevo.",
   "quotesPage.status.declined": "Rechazada",
   "quotesPage.status.draft": "Borrador",
   "quotesPage.status.revised": "Revisada",

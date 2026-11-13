@@ -64,7 +64,12 @@ import { changeOrdersClient } from "../clients/change-orders.ts"; // REQ-462
 import QuoteSendDialog, {
   type SendDialogCustomer,
 } from "../components/QuoteSendDialog.tsx"; // REQ-570
-import { panelCanSend, type PanelSendResult } from "../lib/quote-panel-send.ts"; // REQ-570
+import {
+  finishDraftPath,
+  panelSendAction,
+  type PanelSendResult,
+} from "../lib/quote-panel-send.ts"; // REQ-570 + REQ-686
+import { assistantClient } from "../clients/assistant.ts"; // REQ-686
 import type { SendChannel } from "../lib/send-dialog.ts"; // REQ-570
 import {
   changeOrderBody,
@@ -1246,7 +1251,8 @@ function QuoteLedgerSection(
             </button>
           )
           : null}
-        {summary.canCreateNextInvoice
+        {/* REQ-686 (cycle 5, m44): nothing to invoice on an unsent draft */}
+        {!summary.issued ? null : summary.canCreateNextInvoice
           ? (
             <a
               class={`qopen__btn${
@@ -1269,7 +1275,7 @@ function QuoteLedgerSection(
               {tFor(lang, "quotes.ledger.createNextInvoice")}
             </span>
           )}
-        {!summary.canCreateNextInvoice && (
+        {summary.issued && !summary.canCreateNextInvoice && (
           <span
             data-cy="quote-fully-invoiced"
             style={`font-size:12px;${mutedStyle}`}
@@ -1529,8 +1535,13 @@ function OpenQuotePanel(
   const [sendMenuOpen, setSendMenuOpen] = useState(false);
   const [sendChannel, setSendChannel] = useState<SendChannel | null>(null);
   const [sendResult, setSendResult] = useState<PanelSendResult | null>(null);
+  // REQ-686 (cycle 5, m44): "Finish & send" on a draft — opening its thread.
+  const [finishing, setFinishing] = useState(false);
+  const [finishErr, setFinishErr] = useState(false);
   const openedId = state.quote?.id;
   useEffect(() => {
+    setFinishing(false);
+    setFinishErr(false);
     setEditing(false);
     setSavedVersion(null);
     setSendMenuOpen(false);
@@ -1641,7 +1652,40 @@ function OpenQuotePanel(
               REQ-614 (cycle 4, m16): the onboarding sample has no customer —
               nothing here shares or sends it (REQ-360 did the card's back). */
           }
-          {panelCanSend(q) && !q.isSample && (
+          {
+            /* REQ-686 (cycle 5, m44): a draft is finished and sent in its own
+              thread (terms wizard / Ready-to-send) — one primary that goes
+              there. m45: while a revision waits there is no header Send —
+              the ledger's "Publish revision and notify customer" is it. */
+          }
+          {panelSendAction(q) === "finish" && (
+            <button
+              type="button"
+              class="qopen__btn qopen__btn--primary"
+              data-cy="quote-panel-finish"
+              disabled={finishing}
+              onClick={async () => {
+                if (finishing) return;
+                setFinishing(true);
+                setFinishErr(false);
+                try {
+                  globalThis.location.assign(
+                    await finishDraftPath(q.id, q.customerId, {
+                      list: () => assistantClient.conversations(200),
+                      start: (body) => assistantClient.startConversation(body),
+                    }),
+                  );
+                } catch {
+                  setFinishErr(true);
+                  setFinishing(false);
+                }
+              }}
+            >
+              <I d={ICN.send} size={13} sw={2.4} />
+              {tFor(lang, "quotesPage.open.finishSend")}
+            </button>
+          )}
+          {panelSendAction(q) === "send" && (
             <div class="qopen-send">
               <button
                 type="button"
@@ -1746,6 +1790,15 @@ function OpenQuotePanel(
           )}
         </div>
       </div>
+      {finishErr && (
+        <p
+          class="qopen-send__result qopen-send__result--failed"
+          data-cy="quote-panel-finish-error"
+          role="alert"
+        >
+          {tFor(lang, "quotesPage.open.finishSendError")}
+        </p>
+      )}
       {sendChannel && (
         <QuoteSendDialog
           lang={lang}

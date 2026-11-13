@@ -25,17 +25,58 @@ import {
 import type { SendChannel } from "./send-dialog.ts";
 
 /** Statuses whose quote the panel can (re)send. A draft is finished in the
- *  assistant (the terms wizard); a signed or declined deal is closed (UX-02:
+ *  assistant (the terms wizard — REQ-686's "Finish & send" opens it); a signed or declined deal is closed (UX-02:
  *  no live re-send of the same agreement). */
 const SENDABLE = new Set(["sent", "viewed", "revised"]);
 
-export function panelCanSend(q: {
+type PanelQuote = {
   status?: string;
   acceptedAt?: string;
   sentAt?: string;
   version?: number;
-}): boolean {
-  return SENDABLE.has(quoteBadgeStatus(q));
+  pendingRevision?: Record<string, unknown> | null;
+  isSample?: boolean;
+};
+
+/**
+ * REQ-686 (demo-loop cycle 5, m44 + m45): the panel's one send-shaped
+ * action.
+ *  - "finish": a draft — a primary "Finish & send" opens the quote's own
+ *    thread, where the terms wizard / Ready-to-send card finish and send it.
+ *  - "send": a sent/viewed/revised quote — the Send ▾ menu.
+ *  - "none": a signed or lost quote, the onboarding sample, or a quote whose
+ *    pending revision waits — "Publish revision and notify customer" is then
+ *    the one primary (a send would publish that same revision, REQ-248).
+ */
+export function panelSendAction(q: PanelQuote): "send" | "finish" | "none" {
+  if (q.isSample) return "none";
+  const badge = quoteBadgeStatus(q);
+  if (badge === "draft") return "finish";
+  if (!SENDABLE.has(badge)) return "none";
+  const pending = q.pendingRevision &&
+    Object.keys(q.pendingRevision).length > 0;
+  return pending ? "none" : "send";
+}
+
+export function panelCanSend(q: PanelQuote): boolean {
+  return panelSendAction(q) === "send";
+}
+
+/** The assistant thread page for a conversation. */
+export function assistantThreadPath(conversationId: string): string {
+  return `/assistant/${encodeURIComponent(conversationId)}`;
+}
+
+/** REQ-686 (m44): where "Finish & send" goes — the quote's own thread
+ *  (found, or started bound to the quote and its customer). */
+export async function finishDraftPath(
+  quoteId: string,
+  customerId: string | undefined,
+  deps: ThreadDeps,
+): Promise<string> {
+  return assistantThreadPath(
+    await conversationForQuote(quoteId, customerId, deps),
+  );
 }
 
 export interface ThreadDeps {
