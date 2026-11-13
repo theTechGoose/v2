@@ -13,6 +13,7 @@
  * island (with .ts) and the Jest unit suite. Translation is injected.
  */
 import { isTbdTermValue } from "./terms-i18n.ts";
+import { normalizeDepositTerm } from "./deposit-term.ts"; // REQ-678
 
 export interface WizardOptionDef {
   id: string;
@@ -23,6 +24,9 @@ export interface WizardOptionDef {
   subAmounts?: string;
   /** When true, the user is expected to supply a free-text customValue. */
   isCustom?: boolean;
+  /** REQ-678 (c3-m60): picking this option opens an amount picker; the
+   *  pick's customValue ("Deposit 30% + balance") is the stored term. */
+  amountPicker?: "deposit";
 }
 export interface WizardStepDef {
   id: string;
@@ -134,6 +138,9 @@ export const TERMS_WIZARD_V1: WizardSpecDef = {
           // "20% upfront, rest when done · $90 / $360".
           sub: "termsWizard.paymentTerms.depositBalance.sub",
           subAmounts: "termsWizard.paymentTerms.depositBalance.subAmounts",
+          // REQ-678 (demo c3-m60): then "how much upfront?" — 10 / 20 / 30 /
+          // 50 % or a custom $, stored as "Deposit 30% + balance".
+          amountPicker: "deposit",
         },
         {
           id: "custom",
@@ -265,9 +272,13 @@ export function termFromPick(
       candidates[0];
   if (!stepDef) return null;
   const optionDef = stepDef.options.find((o) => o.id === pick.optionId);
+  // REQ-678: an amount-picker option stores the picked amount; anything
+  // that is not a deposit amount falls back to the option's label.
   const value = (!optionDef || optionDef.isCustom)
     ? (pick.customValue ?? "").trim()
-    : t("en", optionDef.label);
+    : (optionDef.amountPicker === "deposit"
+      ? normalizeDepositTerm(pick.customValue)
+      : null) ?? t("en", optionDef.label);
   if (!value) return null;
   return { stepId: pick.stepId, label: t("en", stepDef.label), value };
 }

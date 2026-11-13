@@ -17,6 +17,7 @@ import {
   termDateIso,
 } from "../../shared/quote-flow/format-helpers.ts";
 import { isUponCompletionTerm } from "../../shared/quote-flow/completion-schedule.ts";
+import { localizeDepositTerm } from "../../shared/quote-flow/deposit-term.ts"; // REQ-678
 
 /** REQ-697 (demo-loop cycle 5, m22): the agreement's payment term in the
  *  reader's language, with the days the customer has to pay when it bills
@@ -48,6 +49,9 @@ export function localizeTermValue(value: string, lang: Lang): string {
   if (termDateIso(value)) return formatTermDate(value, lang);
   if (lang !== "es") return value;
   const trimmed = (value ?? "").trim();
+  // REQ-678 (c3-m60): the picked deposit — "Depósito 30% + saldo".
+  const deposit = localizeDepositTerm(trimmed, lang, tFor);
+  if (deposit) return deposit;
   const exact: Record<string, string> = {
     "Payment upon completion": "quoteDoc.termValue.paymentUponCompletion",
     "Deposit + balance": "quoteDoc.termValue.depositBalance",

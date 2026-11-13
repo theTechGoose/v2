@@ -661,3 +661,16 @@ Deno.test("REQ-316 (M12) send-signed-confirmation run: 'Net 30' → scheduled fo
     assertEquals(rows[0].dueDate, plusDaysIso(40));
   });
 });
+
+// REQ-678 (demo-loop cycle 5, c3-m60): the deposit the contractor picked in
+// the wizard is the deposit the invoices bill — a percentage or a $ amount.
+Deno.test("REQ-678 c3-m60 computeMilestoneAmounts: 'Deposit 30% + balance' → 30/70, 'Deposit $500 + balance' → $500 then the rest", () => {
+  assertEquals(
+    computeMilestoneAmounts(1000_00, pterms("Deposit 30% + balance")),
+    [300_00, 700_00],
+  );
+  assertEquals(
+    computeMilestoneAmounts(4500_00, pterms("Deposit $500 + balance")),
+    [500_00, 4000_00],
+  );
+});

@@ -83,6 +83,11 @@ import {
 } from "../../shared/quote-flow/step-composer.ts"; // REQ-392
 import { localizeTermValue } from "../lib/term-i18n.ts";
 import {
+  depositChoices,
+  depositTermValue,
+  isDepositPickerOption,
+} from "../../shared/quote-flow/deposit-term.ts"; // REQ-678
+import {
   mergeFreshTerms,
   previewTermRows,
 } from "../../shared/quote-flow/wizard-terms.ts"; // REQ-347
@@ -321,6 +326,8 @@ interface WizardOption {
   label: string;
   sub?: string;
   isCustom?: boolean;
+  /** REQ-678: "Deposit + balance" opens the deposit amount picker. */
+  amountPicker?: "deposit";
   followUp?: { fields: WizardFollowUpField[] };
 }
 
@@ -335,7 +342,12 @@ interface WizardOption {
  */
 const TERM_OPTIONS_FALLBACK: Record<
   string,
-  { labelKey: string; subKey?: string; subAmountsKey?: string }[]
+  {
+    labelKey: string;
+    subKey?: string;
+    subAmountsKey?: string;
+    amountPicker?: "deposit";
+  }[]
 > = {
   config: [
     {
@@ -382,6 +394,7 @@ const TERM_OPTIONS_FALLBACK: Record<
       subKey: "asstChat.terms.payment.depositBalanceSub",
       // REQ-491 (demo m60): "20% upfront, rest when done · $90 / $360".
       subAmountsKey: "asstChat.terms.payment.depositBalanceSubAmounts",
+      amountPicker: "deposit", // REQ-678: then "how much upfront?"
     },
   ],
   warranty: [
@@ -1409,6 +1422,15 @@ export default function AsstChat({
       optionId: string;
     } | null
   >(null);
+  /** REQ-678 (demo-loop cycle 5, c3-m60): "Deposit + balance" was picked on
+   *  this wizard message — ask how much upfront before answering. */
+  const [depositPick, setDepositPick] = useState<
+    { messageId: string; optionId: string } | null
+  >(null);
+  /** REQ-678: the same picker on the preview's term-edit row. */
+  const [depositEditStepId, setDepositEditStepId] = useState<string | null>(
+    null,
+  );
   // start_date "Pick a date" — when armed, renders an inline date picker
   // in place of the option grid for that wizard message.
   const [customDatePick, setCustomDatePick] = useState<
@@ -8004,6 +8026,9 @@ export default function AsstChat({
                                         TERM_OPTIONS_FALLBACK[t.stepId] ?? []
                                       ).map((o, i) => ({
                                         id: `fallback-${i}`,
+                                        ...(o.amountPicker
+                                          ? { amountPicker: o.amountPicker }
+                                          : {}),
                                         label: tFor(previewLang, o.labelKey),
                                         sub: o.subAmountsKey && depVars.deposit
                                           ? tFor(
@@ -8045,7 +8070,30 @@ export default function AsstChat({
                                         {isEditing
                                           ? (
                                             <dd style="margin-top:4px">
-                                              {customTermDraft &&
+                                              {depositEditStepId === t.stepId
+                                                ? (
+                                                  <DepositAmountPicker
+                                                    totalCents={totalCentsForBreakdown}
+                                                    sending={sending}
+                                                    lang={lang}
+                                                    onPick={(value) => {
+                                                      setDepositEditStepId(
+                                                        null,
+                                                      );
+                                                      pickTermOption(
+                                                        cid,
+                                                        t.stepId,
+                                                        t.label,
+                                                        value,
+                                                      );
+                                                    }}
+                                                    onCancel={() =>
+                                                      setDepositEditStepId(
+                                                        null,
+                                                      )}
+                                                  />
+                                                )
+                                                : customTermDraft &&
                                                   customTermDraft.stepId ===
                                                     t.stepId
                                                 ? (
@@ -8162,12 +8210,21 @@ export default function AsstChat({
                                                               : ""
                                                           }`}
                                                           onClick={() =>
-                                                            pickTermOption(
-                                                              cid,
-                                                              t.stepId,
-                                                              t.label,
-                                                              opt.label,
-                                                            )}
+                                                            // REQ-678: ask the
+                                                            // deposit amount.
+                                                            isDepositPickerOption(
+                                                                t.stepId,
+                                                                opt,
+                                                              )
+                                                              ? setDepositEditStepId(
+                                                                t.stepId,
+                                                              )
+                                                              : pickTermOption(
+                                                                cid,
+                                                                t.stepId,
+                                                                t.label,
+                                                                opt.label,
+                                                              )}
                                                           disabled={sending}
                                                         >
                                                           {opt.label}
@@ -9067,6 +9124,36 @@ export default function AsstChat({
                                     (o) => o.id === followUpPick.optionId,
                                   )
                                   : null;
+                              // REQ-678 (demo-loop cycle 5, c3-m60): "Deposit
+                              // + balance" asks how much upfront — 10/20/30/
+                              // 50 % or a custom $ — and answers with
+                              // "Deposit 30% + balance".
+                              if (
+                                depositPick && depositPick.messageId === m.id
+                              ) {
+                                return (
+                                  <DepositAmountPicker
+                                    totalCents={latestSentQuoteCents(
+                                      messages,
+                                    ) ||
+                                      (typeof quote?.estimatedTotal === "number"
+                                        ? quote.estimatedTotal
+                                        : 0)}
+                                    sending={sending}
+                                    lang={lang}
+                                    onPick={(value) => {
+                                      const optionId = depositPick.optionId;
+                                      setDepositPick(null);
+                                      postWizardAnswer(m, {
+                                        stepId: payload.stepId!,
+                                        optionId,
+                                        customValue: value,
+                                      });
+                                    }}
+                                    onCancel={() => setDepositPick(null)}
+                                  />
+                                );
+                              }
                               if (activeFollowUp && activeFollowUp.followUp) {
                                 return (
                                   <WizardFollowUpForm
@@ -9294,6 +9381,18 @@ export default function AsstChat({
                                         ? tFor(lang, "asstChat.wiz.fromYourMessage")
                                         : undefined}
                                       onClick={() => {
+                                        if (
+                                          isDepositPickerOption(
+                                            payload.stepId,
+                                            opt,
+                                          )
+                                        ) {
+                                          setDepositPick({
+                                            messageId: m.id,
+                                            optionId: opt.id,
+                                          });
+                                          return;
+                                        }
                                         if (opt.followUp) {
                                           setFollowUpPick({
                                             messageId: m.id,
@@ -11049,6 +11148,135 @@ function CustomerStepPanel(props: {
           disabled={sending}
         >
           {tFor(lang, "asstChat.customerStep.newCustomer")}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/* ===========================================================================
+ * DepositAmountPicker — REQ-678 (demo-loop cycle 5, c3-m60).
+ *
+ * "Deposit + balance" used to bill a silent 20%. Picking it now swaps the
+ * option list for "How much upfront?": one chip per DEPOSIT_PCT_CHOICES
+ * (each naming its dollars once the total is known) and a custom $ amount.
+ * onPick gets the stored English term — "Deposit 30% + balance" /
+ * "Deposit $500 + balance" — which computePaymentSplit bills.
+ * =========================================================================== */
+function DepositAmountPicker(props: {
+  totalCents: number;
+  sending: boolean;
+  lang?: Lang;
+  onPick: (value: string) => void;
+  onCancel: () => void;
+}) {
+  const { totalCents, sending, lang = "en", onPick, onCancel } = props;
+  const [customOpen, setCustomOpen] = useState(false);
+  const [custom, setCustom] = useState("");
+  const chips = depositChoices(totalCents);
+  const raw = custom.replace(/[$,\s]/g, "");
+  const customCents = raw === "" ? NaN : Math.round(Number(raw) * 100);
+  const overTotal = totalCents > 0 && Number.isFinite(customCents) &&
+    customCents >= totalCents;
+  const customValid = Number.isFinite(customCents) && customCents > 0 &&
+    !overTotal;
+  const submitCustom = () => {
+    if (customValid) onPick(depositTermValue({ cents: customCents }));
+  };
+  return (
+    <div class="cust-create" data-testid="deposit-pick">
+      <div class="wiz-field__label">
+        {tFor(lang, "asstChat.depositPick.question")}
+      </div>
+      <div class="wiz__opts">
+        {chips.map((c) => (
+          <button
+            key={c.pct}
+            type="button"
+            class="wiz-opt"
+            data-testid={`deposit-pick-${c.pct}`}
+            disabled={sending}
+            onClick={() => onPick(c.value)}
+          >
+            {`${c.pct}%`}
+            {c.deposit && c.balance
+              ? (
+                <span class="wiz-opt__sub">
+                  {tFor(lang, "asstChat.depositPick.chipSub", {
+                    deposit: c.deposit,
+                    balance: c.balance,
+                  })}
+                </span>
+              )
+              : null}
+          </button>
+        ))}
+        <button
+          type="button"
+          class="wiz-opt wiz-opt--custom"
+          data-testid="deposit-pick-custom"
+          disabled={sending}
+          onClick={() => setCustomOpen(true)}
+        >
+          {tFor(lang, "asstChat.depositPick.custom")}
+        </button>
+      </div>
+      {customOpen
+        ? (
+          <div class="cust-create__row">
+            <label class="wiz-field">
+              <span class="wiz-field__input">
+                <span class="wiz-field__suffix">$</span>
+                <input
+                  type="number"
+                  inputMode="decimal"
+                  min={1}
+                  step="0.01"
+                  class="cust-pick__search"
+                  data-testid="deposit-pick-amount"
+                  placeholder={tFor(
+                    lang,
+                    "asstChat.depositPick.customPlaceholder",
+                  )}
+                  value={custom}
+                  autoFocus
+                  onInput={(e) =>
+                    setCustom((e.target as HTMLInputElement).value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") submitCustom();
+                  }}
+                />
+              </span>
+            </label>
+            {overTotal
+              ? (
+                <p class="recovery-card__error" role="alert">
+                  {tFor(lang, "asstChat.depositPick.overTotal", {
+                    total: fmtUSD(totalCents),
+                  })}
+                </p>
+              )
+              : null}
+            <button
+              type="button"
+              class="cust-create__btn cust-create__btn--primary"
+              data-testid="deposit-pick-use"
+              disabled={sending || !customValid}
+              onClick={submitCustom}
+            >
+              {tFor(lang, "asstChat.depositPick.use")}
+            </button>
+          </div>
+        )
+        : null}
+      <div class="cust-create__actions">
+        <button
+          type="button"
+          class="cust-create__btn"
+          onClick={onCancel}
+          disabled={sending}
+        >
+          {tFor(lang, "common.back")}
         </button>
       </div>
     </div>

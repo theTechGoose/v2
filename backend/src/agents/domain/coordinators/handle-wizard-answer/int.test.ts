@@ -1516,3 +1516,63 @@ Deno.test("REQ-531 p8-pair6-a handle-wizard-answer: use_active with an address o
   );
   await resetKv();
 });
+
+// REQ-678 — demo-loop cycle 5, issue c3-m60: the payment step's "Deposit +
+// balance" asks how much upfront. The picked amount lands on the quote's
+// terms as one English value, the transcript names it in the contractor's
+// language, and computePaymentSplit bills it.
+async function answerUpToPayment(language: "en" | "es") {
+  const ctx = fresh();
+  const user = await ctx.users.create({ phoneNumber: "+15125550178" });
+  await ctx.users.update(user.id, { language });
+  const quote = await ctx.quotes.create(user.id, {
+    summary: "Fence repair",
+    lineItems: [],
+    estimatedTotal: 45_000,
+    status: "draft",
+  });
+  const conv = await ctx.conversations.create({
+    userId: user.id,
+    quoteId: quote.id,
+    customerId: "cust-1",
+  });
+  await ctx.transitionFlow.run({ userId: user.id, conversationId: conv.id });
+  for (const step of TERMS_WIZARD_V1.steps) {
+    if (step.id === "payment_terms") break;
+    await ctx.flow.run({
+      userId: user.id,
+      conversationId: conv.id,
+      stepId: step.id,
+      optionId: step.options.find((o) => !o.isCustom)!.id,
+    });
+  }
+  return { ...ctx, user, quote, conv };
+}
+
+for (const [lang, line] of [
+  ["en", "Payment: Deposit 30% + balance"],
+  ["es", "Pago: Depósito 30% + saldo"],
+] as const) {
+  Deno.test(`REQ-678 c3-m60 handle-wizard-answer (${lang}): 'Deposit 30% + balance' lands on the quote, the transcript names it, the split bills 30%`, async () => {
+    Deno.env.set("KV_PATH", ":memory:");
+    await resetKv();
+    const ctx = await answerUpToPayment(lang);
+    const r = await ctx.flow.run({
+      userId: ctx.user.id,
+      conversationId: ctx.conv.id,
+      stepId: "payment_terms",
+      optionId: "deposit_bal",
+      customValue: "Deposit 30% + balance",
+    });
+    assert(
+      (r.newMessages[0].content ?? "").includes(line),
+      `transcript: ${r.newMessages[0].content}`,
+    );
+    const q = await ctx.quotes.getOwned(ctx.quote.id, ctx.user.id);
+    const pay = q?.terms?.find((x) => x.stepId === "payment_terms");
+    assertEquals(pay?.value, "Deposit 30% + balance");
+    const [dep, bal] = computePaymentSplit(pay!.value, 45_000);
+    assertEquals([dep.amountCents, bal.amountCents], [13_500, 31_500]);
+    await resetKv();
+  });
+}
