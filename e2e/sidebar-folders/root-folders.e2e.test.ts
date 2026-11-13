@@ -66,8 +66,8 @@ Deno.test("REQ-176: the root is Dashboard, Customers, Billing, Field (REQ-361, w
     let seen = await labels();
     expect.eq(
       seen.join(" | "),
-      "Dashboard | Customers | Billing | Field | Roles",
-      "the root is the five rows",
+      "Dashboard | Customers | Outbox | Billing | Field | Roles",
+      "the root is the six rows (REQ-784 added Outbox)",
     );
     // 2. Billing: Back, Quotes, Invoices, Payments, Work orders; Invoices loads inside it
     await nav.locator("[data-cy='nav-folder-billing']").click();

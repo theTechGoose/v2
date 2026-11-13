@@ -9,9 +9,15 @@ import {
 } from "@paperwork/domain/business/doc-render/mod.ts";
 import { UserStore } from "@users/domain/data/user-store/mod.ts";
 import { BusinessIdentityStore } from "@profile/domain/data/business-identity-store/mod.ts";
-import { EmailService } from "@communication/domain/data/email-service/mod.ts";
+import {
+  EmailService,
+  type SendEmailInput,
+} from "@communication/domain/data/email-service/mod.ts";
 import { SmsService } from "@users/domain/data/sms/mod.ts";
-import { dispatchCustomerSms } from "@paperwork/domain/business/customer-sms/mod.ts";
+import {
+  customerSmsTarget,
+  dispatchCustomerSms,
+} from "@paperwork/domain/business/customer-sms/mod.ts";
 import { businessFrom } from "@communication/domain/business/sender/mod.ts";
 import { emailLogo, emailLogoHtml } from "@paperwork/domain/business/email-logo/mod.ts";
 import { type Lang, t } from "@core/i18n/mod.ts";
@@ -19,6 +25,10 @@ import { SITE_ORIGIN } from "#quote-flow/site-meta.ts";
 import { EventBus } from "@core/business/events/mod.ts";
 import { phoneCantReceiveTexts } from "#quote-flow/sms-number.ts";
 import { resolveCommsLanguage } from "#quote-flow/comms-language.ts"; // REQ-715
+import { LogPaperworkMessage } from "@communication/domain/coordinators/log-paperwork-message/mod.ts"; // REQ-784
+import { customerLabel } from "@communication/domain/business/outbox-entry/mod.ts"; // REQ-784
+import { ConversationStore } from "@communication/domain/data/conversation-store/mod.ts"; // REQ-784
+import { MessageStore } from "@communication/domain/data/message-store/mod.ts"; // REQ-784
 
 const APP_URL = (() => {
   const explicit = Deno.env.get("APP_URL")?.trim() || undefined;
@@ -91,6 +101,11 @@ export class SendChangeOrderAlert {
     private sms: SmsService,
     private invoices: InvoiceStore,
     private bus?: EventBus,
+    /** REQ-784 — the business's outbox (defaulted for direct construction) */
+    private commsLog: LogPaperworkMessage = new LogPaperworkMessage(
+      new ConversationStore(),
+      new MessageStore(),
+    ),
   ) {}
 
   async run(changeOrderId: string): Promise<ChangeOrderAlertResult> {
@@ -141,11 +156,38 @@ export class SendChangeOrderAlert {
       number: docRef(co),
       approvalPath,
     };
+    // REQ-784 (demo-loop dv1, d12): the request to the CUSTOMER lands in the
+    // business's outbox — sent, or not and why — with what was sent. The
+    // contractor's own heads-up below is not a customer message.
+    const toOutbox = (
+      channel: "email" | "text",
+      ok: boolean,
+      what: {
+        to: string;
+        subject?: string;
+        body?: string;
+        reasonCode?: string;
+        reason?: string;
+      },
+    ) =>
+      this.commsLog.outbox({
+        userId: co.userId,
+        channel,
+        kind: "changeOrder",
+        language: coLang,
+        ok,
+        customerId: co.customerId ?? liveCustomer?.id,
+        customerName: customerLabel(customer),
+        docId: co.id,
+        docRef: docRef(co),
+        ...what,
+      });
 
     // ── Customer: the actual approval request ───────────────────────────
     if (contact.email) {
+      let mail: SendEmailInput | undefined;
       try {
-        const res = await this.email.send({
+        mail = {
           to: contact.email,
           subject: `${
             t(coLang, "changeOrderRequest.email.subject", {
@@ -169,7 +211,8 @@ export class SendChangeOrderAlert {
             lang: coLang,
             ref: refCo,
           }),
-        });
+        };
+        const res = await this.email.send(mail);
         console.log(
           `[send-change-order-alert] co ${co.id} customer-email → ${contact.email}: ok=${res.ok}${
             res.reason ? ` (${res.reason})` : ""
@@ -178,9 +221,20 @@ export class SendChangeOrderAlert {
         sentAny = sentAny || res.ok;
         if (res.ok) delivered.emailedTo = contact.email;
         else delivered.emailFailureReason = res.reason ?? "failed";
+        await toOutbox("email", res.ok, {
+          to: contact.email,
+          subject: mail.subject,
+          body: mail.htmlBody,
+          ...(res.ok ? {} : { reason: res.reason }),
+        });
       } catch (err) {
         console.error("[send-change-order-alert] customer email failed:", err);
         delivered.emailFailureReason = errText(err);
+        await toOutbox("email", false, {
+          to: contact.email,
+          subject: mail?.subject,
+          reason: errText(err),
+        });
       }
     }
     if (phoneCantReceiveTexts(contact.phoneNumber)) {
@@ -188,21 +242,28 @@ export class SendChangeOrderAlert {
       // texting this number (REQ-569) — don't attempt it here either, and say
       // why it was skipped rather than reporting a failed text.
       delivered.smsSkippedReason = t(cxLang, "sms.fictionalNumber");
+      const target = customerSmsTarget(contact.phoneNumber);
+      await toOutbox("text", false, {
+        to: "e164" in target ? target.e164 : contact.phoneNumber ?? "",
+        reasonCode: "fictional",
+        reason: delivered.smsSkippedReason,
+      });
     } else if (contact.phoneNumber) {
       try {
         // REQ-588 (demo-loop cycle 4, M29): the ONE guarded customer-text
         // dispatch (REQ-403) — a missing/invalid/555 number never reaches the
         // provider, and the failure reason comes back worded in the
         // contractor's UI language instead of a raw "sms.fictionalNumber" key.
+        const smsBody = `${refCo}: ${
+          t(coLang, "changeOrderRequest.sms.body", {
+            business: businessName,
+            delta,
+            url,
+          })
+        }`;
         const res = await dispatchCustomerSms(this.sms, {
           to: contact.phoneNumber,
-          body: `${refCo}: ${
-            t(coLang, "changeOrderRequest.sms.body", {
-              business: businessName,
-              delta,
-              url,
-            })
-          }`,
+          body: smsBody,
           uiLang: cxLang,
         });
         console.log(
@@ -213,9 +274,20 @@ export class SendChangeOrderAlert {
         sentAny = sentAny || res.ok;
         if (res.ok) delivered.textedTo = contact.phoneNumber;
         else delivered.smsFailureReason = res.reason ?? "failed";
+        await toOutbox("text", res.ok, {
+          to: res.to || contact.phoneNumber,
+          body: smsBody,
+          ...(res.ok
+            ? {}
+            : { reasonCode: res.failureCode, reason: res.reason }),
+        });
       } catch (err) {
         console.error("[send-change-order-alert] customer sms failed:", err);
         delivered.smsFailureReason = errText(err);
+        await toOutbox("text", false, {
+          to: contact.phoneNumber,
+          reason: errText(err),
+        });
       }
     }
 

@@ -1,5 +1,5 @@
 /**
- * REQ-176 — the sidebar's tree, as data. The root is four rows: Dashboard, Customers, the
+ * REQ-176 — the sidebar's tree, as data. The root is: Dashboard, Customers, Outbox (REQ-784), the
  * Billing folder (Quotes, Invoices, Payments — the quote IS the contract since the Quote+Agreement
  * merge, so there is no Contracts entry; /contracts 302s into /quotes), the REQ-156 Field folder
  * with the field entries (REQ-361: named "Field", not "Recurring" — it holds one-off tasks too),
@@ -28,6 +28,9 @@ export const NAV: NavNode<IconName>[] = [
   // (/clients stays live as an alias route). REQ-518: no countKey — a customers total is not
   // work waiting, so it never gets the pink pill.
   { id: "customers", icon: "user", href: "/customers" },
+  // REQ-784 (demo-loop dv1, d12; Raphael: "And yes to a sent message outbox."): every email
+  // and text that went to a customer — /messages, which used to 302 to the assistant.
+  { id: "outbox", icon: "send", href: "/messages" },
   {
     id: "billing",
     icon: "pay",

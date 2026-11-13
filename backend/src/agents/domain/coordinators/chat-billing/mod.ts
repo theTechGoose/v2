@@ -199,6 +199,14 @@ export class ChatBilling {
         kind: "invoice",
         resourceId: inv.id,
       }).catch(() => false);
+    // REQ-784 (demo-loop dv1, d12): the skipped text is in the outbox —
+    // "not sent" and why — next to the email that went.
+    if (skipText) {
+      await this.texter.noteSkipped(userId, {
+        kind: "invoice",
+        resourceId: inv.id,
+      }, t(lang, "sms.fictionalNumber"));
+    }
     const text = input.channel === "email" || skipText
       ? undefined
       : await this.deliver("text", userId, inv.id);

@@ -179,6 +179,23 @@ export class ConfirmPayment {
           }],
         });
         receiptEmailed = mailed.ok;
+        // REQ-784 (demo-loop dv1, d12): the receipt is a customer message —
+        // the outbox lists it, sent or not, with the email as sent.
+        await this.commsLog.outbox({
+          userId,
+          channel: "email",
+          kind: "receipt",
+          language: lang,
+          ok: mailed.ok,
+          ...(mailed.ok ? {} : { reason: mailed.reason }),
+          customerId: invoice.customerId,
+          customerName,
+          to: customer.email,
+          docId: invoice.id,
+          docRef: docRef(updated),
+          subject,
+          body: htmlBody,
+        });
         // UX-30: the promised receipt must be auditable in the comms trail,
         // like every other outbound paperwork dispatch.
         await this.commsLog.run({
@@ -199,6 +216,22 @@ export class ConfirmPayment {
       // REQ-523 (demo m16): only a number that can take a text gets the
       // receipt text — a missing, invalid or fictional one is skipped.
       const smsTo = customerSmsTarget(customer?.phoneNumber);
+      if (!smsTo.ok && smsTo.failureCode !== "missing") {
+        // REQ-784: a phone on file that can't take the text — "not texted" and why
+        await this.commsLog.outbox({
+          userId,
+          channel: "text",
+          kind: "receipt",
+          language: lang,
+          ok: false,
+          reasonCode: smsTo.failureCode,
+          customerId: invoice.customerId,
+          customerName,
+          to: "e164" in smsTo ? smsTo.e164 : customer?.phoneNumber ?? "",
+          docId: invoice.id,
+          docRef: docRef(updated),
+        });
+      }
       if (smsTo.ok) {
         // Mint a shortlink back to the public invoice page so the SMS
         // receipt is a single short line.
@@ -240,6 +273,21 @@ export class ConfirmPayment {
           to: smsTo.e164,
           body,
           uiLang: lang,
+        });
+        // REQ-784: the receipt text, in the outbox, sent or not and why
+        await this.commsLog.outbox({
+          userId,
+          channel: "text",
+          kind: "receipt",
+          language: lang,
+          ok: res.ok,
+          ...(res.ok ? {} : { reasonCode: res.failureCode, reason: res.reason }),
+          customerId: invoice.customerId,
+          customerName,
+          to: res.to,
+          docId: invoice.id,
+          docRef: docRef(updated),
+          body,
         });
         // UX-30: log the receipt SMS to the comms trail — REQ-523: only a
         // text the provider accepted, never a refused or rejected one.
