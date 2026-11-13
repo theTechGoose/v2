@@ -150,6 +150,39 @@ export default function PublicInvoiceClaim(
         <div style="margin-top:4px">
           {tFor(lang, "publicInvoiceClaim.internalPreviewBody")}
         </div>
+        {
+          /* REQ-705 (demo-loop c5 m68): the preview is "viewing as the
+           customer", so it lists the methods the customer's page offers —
+           the same chips, read-only (nothing to claim from here). */
+        }
+        {acceptedMethods.length > 0
+          ? (
+            <div
+              data-cy="invoice-preview-methods"
+              style={`margin-top:12px;background:#fff;border:1px solid ${LINE};border-radius:12px;padding:12px 14px`}
+            >
+              <div
+                style={`font-size:11px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:${MUTED}`}
+              >
+                {tFor(lang, "publicInvoiceClaim.howToPay")}
+              </div>
+              <div style="margin-top:8px;display:flex;flex-wrap:wrap;gap:8px">
+                {acceptedMethods.map((m) => (
+                  <button
+                    type="button"
+                    key={m.method}
+                    disabled
+                    aria-disabled="true"
+                    data-cy={`invoice-preview-method-${m.method}`}
+                    style={`appearance:none;cursor:default;background:#fff;color:${INK};border:1px solid ${LINE};border-radius:999px;padding:9px 16px;font-size:13.5px;font-weight:700;letter-spacing:.01em;opacity:.75`}
+                  >
+                    {methodLabel(m.method, lang)}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )
+          : null}
         <a
           href={recordPaymentHref(invoiceId)}
           data-cy="invoice-record-payment"
