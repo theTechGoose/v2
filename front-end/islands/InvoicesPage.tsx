@@ -35,6 +35,7 @@ import {
   finishDraftDates,
   invoiceDispatchBody,
   invoiceSendContact,
+  invoiceSendReview,
 } from "../lib/invoice-send-sheet.ts";
 import type { SendPreviewDates } from "../../shared/quote-flow/send-preview.ts";
 import { I, ICN } from "../lib/dash-icons.tsx";
@@ -1441,6 +1442,7 @@ export default function InvoicesPage(_props: { lang?: Lang }) {
             ),
           )}
           dates={sendSheet.dates}
+          review={invoiceSendReview(sendSheet.inv, sendSheet.dates)}
           onCancel={() => setSendSheet(null)}
           onSend={async (pick) => {
             await sendSheet.send(pick);
@@ -2557,6 +2559,7 @@ function InvoiceDetail(
           }}
           customer={invoiceSendContact(sendSheet.inv, undefined)}
           dates={sendSheet.dates}
+          review={invoiceSendReview(sendSheet.inv, sendSheet.dates)}
           onCancel={() => setSendSheet(null)}
           onSend={async (pick) => {
             await sendSheet.send(pick);

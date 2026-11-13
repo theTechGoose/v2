@@ -1709,3 +1709,48 @@
   color: var(--brand-teal, #1a535c);
   cursor: pointer;
 }
+/* REQ-776 (demo-loop cycle dv1, d3): the Finish + send review — what is
+   about to go out, above the channel picker */
+.send-review {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--surface-muted, #f4f6f1);
+  font-size: 13px;
+}
+.send-review__row {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+}
+.send-review__row dt {
+  flex: 0 0 76px;
+  font-weight: 700;
+  color: var(--fg-muted, #6b7560);
+}
+.send-review__row dd {
+  margin: 0;
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.send-review__amount {
+  font-weight: 900;
+  color: var(--brand-teal, #144852);
+}
+.send-review__lines {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.send-review__lines li {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}

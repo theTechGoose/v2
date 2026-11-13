@@ -402,3 +402,132 @@ Deno.test("REQ-727 c4-M16: 'Issue invoice' → Cancel keeps the invoice as a dra
       "it waits in Drafting with Finish + send",
     );
   }));
+
+/**
+ * REQ-776 — Raphael: "Finish and send should have a review step." Demo-loop
+ * cycle dv1, issue d3: "Finish + send" opens a review of what is about to
+ * go out — the amount, the line items, who it goes to, the channel(s) and
+ * the due date — with Cancel and Send. Cancel sends nothing and keeps the
+ * draft; Finish + send again → Send sends it. In Spanish too
+ * ("Terminar + enviar").
+ */
+Deno.test("REQ-776 dv1-d3: 'Finish + send' reviews the amount, line items, recipient, channels and due date; Cancel sends nothing, Send sends it — in English and Spanish", (t) =>
+  story(t, async ({ page, expect, http, baseUrl }) => {
+    const { auth } = await signIn(http, page, baseUrl);
+    const customer = await post(http, auth, "/api/customers", {
+      name: "Marta Díaz",
+      email: "md@blackhole.postmarkapp.com",
+      phoneNumber: realPhone(),
+    });
+    const job = `Review gate ${digits()}`;
+    const inv = await post(http, auth, "/api/invoices", {
+      customerId: customer.id,
+      jobName: job,
+      amount: 72500,
+      status: "draft",
+      netDays: 15,
+      lineItems: [
+        { description: "Paint gate", quantity: 2, unit: "ea", price: 30000 },
+        { description: "Primer", quantity: 1, unit: "ea", price: 12500 },
+      ],
+    });
+    const sends = watchSends(page);
+    const due = new Date(`${inDays(15)}T00:00:00Z`).toLocaleDateString(
+      "en-US",
+      { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" },
+    );
+
+    await page.goto("/invoices");
+    const cta =
+      `article.qcard:has-text("${job}") [data-cy='invoice-cta-drafting']`;
+    await page.locator(cta).waitFor({ timeout: 15_000 });
+    expect.eq(
+      (await page.locator(cta).innerText()).replace(/\s+/g, " ").trim()
+        .replace(/\s*→$/, ""),
+      "Finish + send",
+      "the draft's CTA",
+    );
+    await clickUntil(page, cta, async () => await sheet(page).isVisible());
+    const review = sheet(page).locator("[data-cy='send-review']");
+    await review.waitFor({ timeout: 10_000 });
+    const txt = async (cy: string) =>
+      (await sheet(page).locator(`[data-cy='${cy}']`).innerText()).replace(
+        /\s+/g,
+        " ",
+      );
+    expect((await txt("send-review-amount")).includes("$725.00"), "amount");
+    const lines = sheet(page).locator("[data-cy='send-review-line']");
+    expect.eq(await lines.count(), 2, "both line items");
+    expect(
+      (await lines.nth(0).innerText()).includes("Paint gate"),
+      "line 1 named",
+    );
+    const to = await txt("send-review-to");
+    expect(
+      to.includes("Marta Díaz") && to.includes("md@blackhole.postmarkapp.com"),
+      `recipient (${to})`,
+    );
+    expect(
+      (await txt("send-review-due")).includes(due),
+      `due date ${due} (${await txt("send-review-due")})`,
+    );
+    expect.eq(
+      await sheet(page).locator(
+        "[data-cy^='send-option-'][aria-checked='true']",
+      ).count(),
+      1,
+      "a channel is picked",
+    );
+
+    // Cancel → nothing sent, still a draft
+    await sheet(page).locator("[data-cy='send-cancel']").click();
+    await sheet(page).waitFor({ state: "hidden", timeout: 5_000 });
+    await page.waitForTimeout(800);
+    expect.eq(sends.length, 0, "Cancel sent nothing");
+    expect.eq(
+      (await invoiceById(http, auth, inv.id)).status,
+      "draft",
+      "Cancel keeps the draft",
+    );
+
+    // Spanish: "Terminar + enviar" opens the same review, in Spanish
+    await post(http, auth, "/api/me", { language: "es" }, "PUT");
+    const hosts = new Set([
+      new URL(baseUrl).hostname,
+      "localhost",
+      "127.0.0.1",
+    ]);
+    await page.context().addCookies(
+      [...hosts].map((domain) => ({
+        name: "pm_lang",
+        value: "es",
+        domain,
+        path: "/",
+      })),
+    );
+    await page.goto("/invoices");
+    await page.locator(cta).waitFor({ timeout: 15_000 });
+    expect(
+      (await page.locator(cta).innerText()).includes("Terminar + enviar"),
+      "the Spanish CTA",
+    );
+    await clickUntil(page, cta, async () => await sheet(page).isVisible());
+    await review.waitFor({ timeout: 10_000 });
+    expect((await txt("send-review-amount")).includes("Monto"), "Monto");
+    expect((await txt("send-review-to")).includes("Para"), "Para");
+    expect((await txt("send-review-due")).includes("Vence"), "Vence");
+    await page.waitForTimeout(500);
+    expect.eq(sends.length, 0, "opening the review sent nothing");
+
+    // Send → sent
+    await sheet(page).locator("[data-cy='send-keep']").click();
+    const moved = await card(page, job).locator("[data-cy='invoice-cta-out']")
+      .waitFor({ timeout: 20_000 }).then(() => true, () => false);
+    expect(moved, "after Send the invoice moves to Sent");
+    expect(sends.length > 0, "Send dispatched it");
+    expect.eq(
+      (await invoiceById(http, auth, inv.id)).status,
+      "sent",
+      "the delivery issued it",
+    );
+  }));

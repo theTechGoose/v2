@@ -16,6 +16,7 @@
  * shared with the /invoices send sheet (InvoiceSendDialog.tsx) — the title,
  * the preview and what Send does are the caller's.
  */
+import type { ComponentChildren } from "preact";
 import { useEffect, useRef, useState } from "preact/hooks";
 import Backdrop from "./Backdrop.tsx";
 import SendLangPreview from "./SendLangPreview.tsx";
@@ -73,11 +74,14 @@ export function SendDialog(
     loadPreview,
     previewKey,
     errorKey,
+    summary,
     onCancel,
     onSend,
   }: {
     lang: Lang;
     title: string;
+    /** REQ-776: a review of what is being sent, under the title */
+    summary?: ComponentChildren;
     customer: SendDialogCustomer | null;
     initialChannel: SendChannel;
     /** "Sends in" starts here; else on the app language */
@@ -187,6 +191,7 @@ export function SendDialog(
         <h4 id="qopen-send-title" class="send-dialog__title">
           {title}
         </h4>
+        {summary}
         <div class="send-dialog__options" role="radiogroup">
           {CHANNELS.map(([ch, key, icon]) => {
             const needs = channelNeedsKey(ch, onFile);
