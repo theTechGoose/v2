@@ -7,6 +7,7 @@
  */
 import { type Lang, t } from "@core/i18n/mod.ts";
 import {
+  hasCardPayLink,
   payButtons,
   payWayNames,
   projectPayMethods,
@@ -67,7 +68,8 @@ export function payWaysEmailHtml(
 ): string {
   const { lang } = opts;
   const amount = money(opts.amountCents);
-  const buttons = payButtons(projectPayMethods(apm), {
+  const methods = projectPayMethods(apm);
+  const buttons = payButtons(methods, {
     amountCents: opts.amountCents,
     note: opts.note,
   });
@@ -80,7 +82,8 @@ export function payWaysEmailHtml(
         ? `background:${GREEN};color:#ffffff;border:1px solid ${GREEN}`
         : `background:#ffffff;color:${TEAL};border:1px solid ${LINE}`
     }">${esc(label)}</a>`;
-  if (opts.card) {
+  // REQ-782: a card pay link is a card way too — the row goes to the invoice page's Pay by card
+  if (opts.card || hasCardPayLink(methods)) {
     rows.push(btn("card", opts.payUrl, t(lang, "payLinks.email.card"), true));
   }
   for (const b of buttons) {

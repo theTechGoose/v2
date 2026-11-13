@@ -132,7 +132,8 @@ Deno.test("REQ-782 a card pay link names card in the text and puts the Pay by ca
   });
   assert(
     html.indexOf('data-pay-way="card"') >= 0 &&
-      html.indexOf('data-pay-way="card"') < html.indexOf('data-pay-way="venmo"'),
+      html.indexOf('data-pay-way="card"') <
+        html.indexOf('data-pay-way="venmo"'),
     html,
   );
   assertStringIncludes(html, 'href="https://documonster.com/i/inv-1"');

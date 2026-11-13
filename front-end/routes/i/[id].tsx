@@ -36,9 +36,9 @@ import PublicInvoiceClaim from "../../islands/PublicInvoiceClaim.tsx";
 import PublicInvoiceRefresh from "../../islands/PublicInvoiceRefresh.tsx";
 import OwnerClaimReview from "../../islands/OwnerClaimReview.tsx";
 import PublicLangToggle from "../../islands/PublicLangToggle.tsx";
-import PublicCardPay, {
-  type CardConfig,
-} from "../../islands/PublicCardPay.tsx"; // REQ-213
+import type { CardConfig } from "../../islands/PublicCardPay.tsx"; // REQ-213
+import PayByCard from "../../components/PayByCard.tsx"; // REQ-782
+import { cardPayWay } from "../../../shared/payments/pay-links.ts"; // REQ-782
 import {
   invoiceHeadline,
   shortDate,
@@ -277,15 +277,6 @@ export default define.page(async function PublicInvoice(ctx) {
           rel="stylesheet"
           href={asset("/public-lang.css")}
         />
-        {card
-          ? (
-            <link
-              key="css-paycard"
-              rel="stylesheet"
-              href={asset("/paycard.css")}
-            />
-          )
-          : null}
       </Head>
       <div
         style={`min-height:100dvh;background:${BG};font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:${INK};display:flex;flex-direction:column;scroll-padding-bottom:var(--kb-inset, 0px)`}
@@ -408,6 +399,14 @@ function InvoiceDoc(
   const balanceCents = invoice.balanceCents ??
     Math.max(0, amountCents - paidCents);
   const overpaidCents = invoice.overpaidCents ?? 0;
+  // REQ-782 — where "Pay by card" goes: the business's Stripe (REQ-213) → our card portal
+  // page; else the card pay link from Settings; else nowhere
+  const cardWay = cardPayWay({
+    invoiceId: invoice.id,
+    stripe: !!card,
+    methods: invoice.acceptedMethods ?? [],
+    lang,
+  });
   const serviceDates = invoice.serviceDateFrom || invoice.serviceDateTo
     ? [invoice.serviceDateFrom, invoice.serviceDateTo]
       .filter((d): d is string => !!d)
@@ -910,16 +909,19 @@ function InvoiceDoc(
                   claim with "Didn't get it" — say so, and where to check. */
                 }
                 <ClaimRejectedNote invoice={invoice} lang={lang} />
-                {/* REQ-213 — the card first, on the business's own Stripe; the manual methods below */}
-                {card
-                  ? (
-                    <PublicCardPay
-                      invoiceId={invoice.id}
-                      config={card}
-                      lang={es ? "es" : "en"}
-                    />
-                  )
-                  : null}
+                {
+                  /* REQ-782 — "Card payments should be a link to a separate portal": Pay by
+                  card first (the business's Stripe → /i/:id/pay, else its card pay link); the
+                  app buttons and the manual methods below */
+                }
+                <PayByCard
+                  way={cardWay}
+                  lang={lang}
+                  amountCents={balanceCents}
+                  business={businessLabel}
+                  number={invoice.number}
+                  internal={invoice.internal === true}
+                />
                 <div data-claim-wrap>
                   <PublicInvoiceClaim
                     invoiceId={invoice.id}
@@ -932,7 +934,7 @@ function InvoiceDoc(
                     internal={invoice.internal === true}
                     status={invoice.status}
                     search={search}
-                    hasCard={!!card}
+                    hasCard={!!cardWay}
                     docNumber={invoice.number}
                   />
                 </div>

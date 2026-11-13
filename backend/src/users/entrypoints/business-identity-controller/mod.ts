@@ -14,7 +14,7 @@ import {
   hasSendLanguage,
 } from "#quote-flow/comms-language.ts";
 import { businessNameError } from "#quote-flow/settings-fields.ts";
-import { checkPayLinks } from "#payments/pay-links.ts";
+import { checkCardPayUrl, checkPayLinks } from "#payments/pay-links.ts";
 
 /** REQ-172 — a time zone Intl does not know is a 400, not a stored string */
 class BadTimezone extends Error {
@@ -86,8 +86,20 @@ export class BusinessIdentityController {
       }
       links = checked.links;
     }
+    // REQ-782 — the card pay link: https only, refused whole; "" clears it
+    const rawCard = (body as { acceptedPaymentMethods?: { card?: { url?: unknown } } } | null)
+      ?.acceptedPaymentMethods?.card;
+    let cardUrl: string | undefined;
+    if (rawCard && typeof rawCard === "object" && "url" in rawCard) {
+      const checked = checkCardPayUrl(rawCard.url);
+      if (!checked.ok) return ctx.json({ error: `card_${checked.reason}` }, 400);
+      cardUrl = checked.url ?? "";
+    }
     const patch = parseUpdateBusinessIdentity(body);
     if (links && patch.acceptedPaymentMethods) patch.acceptedPaymentMethods.links = links;
+    if (cardUrl !== undefined && patch.acceptedPaymentMethods?.card) {
+      patch.acceptedPaymentMethods.card.url = cardUrl;
+    }
     if (patch.timezone !== undefined && !validTimezone(patch.timezone)) {
       throw new BadTimezone(String(patch.timezone));
     }

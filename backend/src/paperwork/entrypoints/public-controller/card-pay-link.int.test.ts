@@ -94,7 +94,9 @@ Deno.test("REQ-782 PUT /profile/identity: the card pay link is https only — ht
   await withServer(async (sid) => {
     const first = await putIdentity(sid, {
       businessName: "Acme Roofing",
-      acceptedPaymentMethods: { zelle: { enabled: true, handle: "pay@acme.test" } },
+      acceptedPaymentMethods: {
+        zelle: { enabled: true, handle: "pay@acme.test" },
+      },
     });
     assertEquals(first.status, 200, await first.text());
     for (
@@ -134,7 +136,11 @@ Deno.test("REQ-782 GET /invoices/:id/public: the card row carries the business's
       businessName: "Acme Roofing",
       acceptedPaymentMethods: {
         zelle: { enabled: true, handle: "pay@acme.test" },
-        card: { enabled: true, instructions: "Visa, Mastercard, Amex", url: LINK },
+        card: {
+          enabled: true,
+          instructions: "Visa, Mastercard, Amex",
+          url: LINK,
+        },
       },
     });
     assertEquals(put.status, 200, await put.text());

@@ -65,7 +65,10 @@ import {
 } from "../../shared/quote-flow/logo-image.ts"; // REQ-252
 import { stripeClient, type StripeStatus } from "../clients/stripe.ts"; // REQ-212
 import { checkKeyPair, maskSecret } from "../../shared/payments/stripe-keys.ts"; // REQ-212
-import { checkPayLinks } from "../../shared/payments/pay-links.ts"; // REQ-630
+import {
+  checkCardPayUrl,
+  checkPayLinks,
+} from "../../shared/payments/pay-links.ts"; // REQ-630, REQ-782
 import { ApiError } from "../lib/api.ts";
 import { fmtPhone } from "../lib/format.ts";
 import { TransferAccount } from "../components/TransferAccount.tsx"; // REQ-220
@@ -1341,6 +1344,8 @@ interface PayState {
   enabled: boolean;
   value: string;
   confirm: string;
+  /** REQ-782 — the card row's card pay link ("" when none) */
+  url?: string;
 }
 
 /** PaymentsEditCard — enable/disable each method + enter the handle with a
@@ -1363,10 +1368,12 @@ function PaymentsEditCard(
         cashtag?: string;
         mailTo?: string;
         instructions?: string;
+        url?: string;
       }
     >)[r.id];
     const val = r.handleField ? (cur?.[r.handleField] ?? "") : "";
     init[r.id] = { enabled: !!cur?.enabled, value: val, confirm: val };
+    if (r.id === "card") init[r.id].url = cur?.url ?? "";
   }
   const [rows, setRows] = useState<Record<string, PayState>>(init);
   const [busy, setBusy] = useState(false);
@@ -1409,6 +1416,8 @@ function PaymentsEditCard(
       const st = cur[r.id];
       const entry: Record<string, unknown> = { enabled: st.enabled };
       if (r.handleField) entry[r.handleField] = st.value.trim();
+      // REQ-782 — the card pay link ("Pay by card" on the invoice opens it)
+      if (r.id === "card") entry.url = (st.url ?? "").trim();
       apmPatch[r.id] = entry;
     }
     return apmPatch;
@@ -1418,6 +1427,7 @@ function PaymentsEditCard(
    *  for a SILENT instant-save (incomplete rows wait for the explicit Save,
    *  which surfaces the validation copy). */
   function autosaveReady(cur: Record<string, PayState>): boolean {
+    if (!checkCardPayUrl(cur.card?.url ?? "").ok) return false; // REQ-782
     return PAYMENT_METHOD_CATALOG.every((r) => {
       const st = cur[r.id];
       if (!st.enabled || r.handleField === null || r.optional) return true;
@@ -1467,6 +1477,11 @@ function PaymentsEditCard(
         setErr(t.handleMismatch(label));
         return;
       }
+    }
+    // REQ-782 — the card pay link is https only
+    if (rows.card?.enabled && !checkCardPayUrl(rows.card.url ?? "").ok) {
+      setErr(tFor(lang, "settings.pay.cardUrlErr"));
+      return;
     }
     setBusy(true);
     setErr(null);
@@ -1580,6 +1595,42 @@ function PaymentsEditCard(
                     </div>
                   )}
                 </div>
+              )}
+              {
+                /* REQ-782 — "Card payments should be a link to a separate portal": the
+                business's own card payment page; "Pay by card" on the invoice opens it */
+              }
+              {st.enabled && r.id === "card" && (
+                <label style="display:block;margin-top:10px">
+                  <span style={labelStyle}>
+                    {tFor(lang, "settings.pay.cardUrl")}
+                  </span>
+                  <input
+                    type="url"
+                    inputMode="url"
+                    data-cy="pay-card-url"
+                    style={`${inputStyle}${
+                      checkCardPayUrl(st.url ?? "").ok
+                        ? ""
+                        : ";border-color:#a83b3b"
+                    }`}
+                    value={st.url ?? ""}
+                    placeholder={tFor(lang, "settings.pay.cardUrlPh")}
+                    onInput={(e) =>
+                      patchRow(r.id, {
+                        url: (e.target as HTMLInputElement).value,
+                      })}
+                    onBlur={() => autosave(rowsRef.current)}
+                  />
+                  <span
+                    data-cy="pay-card-url-hint"
+                    style="display:block;margin-top:6px;font-size:12px;line-height:1.5;color:var(--fg-muted, #6b7560)"
+                  >
+                    {checkCardPayUrl(st.url ?? "").ok
+                      ? tFor(lang, "settings.pay.cardUrlHint")
+                      : tFor(lang, "settings.pay.cardUrlErr")}
+                  </span>
+                </label>
               )}
             </div>
           );
