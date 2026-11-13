@@ -29,6 +29,16 @@
  *
  * REQ-546 (demo m14, cycle 4) — the waves and the last-click dot are drawn inside a clip with
  * `bounds`' box (`data-cy="demo-wave-clip"`, overflow:hidden), never over what is around it.
+ *
+ * REQ-645 (demo-loop cycle 5, M1 + M2 + c4-M6) — three more looks:
+ *   - `cue`: the element pointed at is out of view — the same small chevron against the edge of
+ *     `cue.box` (where the element can be seen: the page's scroller, not the window's edge over
+ *     its topbar or the strip under its footer), pointing the way, with the way in words
+ *     (`demo-pointer-cue`, "Hans is pointing below — scroll ↓"); no arrow, no ring (`data-cue`);
+ *   - `faded`: the element moved more than DRIFT_FADE_PX since he pointed — the arrow and its tag
+ *     at DRIFT_OPACITY (`data-faded`): what he pointed at, no longer where he points;
+ *   - `pending`: his pointer is being found again — "Hans is pointing…" with a pulsing dot
+ *     (`demo-pointer-pending`), no arrow: it points at nothing.
  */
 import {
   useCallback,
@@ -45,6 +55,7 @@ import {
   tagPlacement,
 } from "../../../shared/demo-mode/motion.ts";
 import {
+  DRIFT_OPACITY,
   OFF_MARK_OPACITY,
   OFF_MARK_PX,
   offMark,
@@ -174,11 +185,32 @@ export function placeTag(
 }
 
 export default function DemoPointer(
-  { pointer, outside, off, rect, waves, name, color, z, attach, bounds }: {
+  {
+    pointer,
+    outside,
+    off,
+    cue,
+    faded,
+    pending,
+    rect,
+    waves,
+    name,
+    color,
+    z,
+    attach,
+    bounds,
+  }: {
     pointer: Pt | null;
     outside?: boolean;
     /** REQ-451 — the sender's pointer is off the shared screen: the small edge marker */
     off?: boolean;
+    /** REQ-645 — the element pointed at is out of view: the marker against the edge of `box`
+     *  (where it can be seen), with the way to it in words (`text`; none: the marker alone) */
+    cue?: { box: Bounds; text: string } | null;
+    /** REQ-645 — the element moved away since he pointed: the arrow and its tag faded */
+    faded?: boolean;
+    /** REQ-645 — his pointer is being found again: these words, no arrow */
+    pending?: string | null;
     /** REQ-437 — the box of the element the pointer is anchored to (null: none, or out of view) */
     rect?: Rect | null;
     waves: Wave[];
@@ -235,23 +267,60 @@ export default function DemoPointer(
     if (drawn.current) paintTag(drawn.current);
   });
   // REQ-437 — the first render places the tag from the target with the estimated size; every
-  // painted frame then places it from the drawn arrow with the measured one
-  const fallback = estimate(name);
-  live.current = { bounds, rect: outside ? null : rect ?? null, fallback };
+  // painted frame then places it from the drawn arrow with the measured one. REQ-645 — the cue's
+  // words and the pending words are placed the same way: the cue's inside the box the element can
+  // be seen in, by no element's box
+  const words = pending ?? (cue ? cue.text : null);
+  const fallback = estimate(words ?? name);
+  const tagBox = cue?.box ?? bounds;
+  const tagRect = outside || cue || pending !== undefined && pending !== null
+    ? null
+    : rect ?? null;
+  live.current = { bounds: tagBox, rect: tagRect, fallback };
   const place = pointer
-    ? tagPlacement(
-      pointer,
-      bounds ?? windowBox(),
-      fallback,
-      outside ? null : rect,
-    )
+    ? tagPlacement(pointer, tagBox ?? windowBox(), fallback, tagRect)
     : null;
-  const mark = pointer && off ? offMark(pointer, bounds ?? windowBox()) : null;
+  const mark = pointer && (off || cue)
+    ? offMark(pointer, cue?.box ?? bounds ?? windowBox())
+    : null;
   const clip = bounds ?? windowBox();
+  const tagStyle = place && pointer
+    ? `position:absolute;left:${place.x - pointer.x}px;top:${
+      place.y - pointer.y
+    }px;padding:2px 8px;border-radius:999px;background:${color};color:#fff;font-size:12px;font-weight:700;white-space:nowrap;border:1px solid rgba(255,255,255,.85);box-shadow:0 1px 4px rgba(0,0,0,.35)`
+    : "";
+  /** REQ-645 — the chevron against the edge (off their screen, or the element out of view) */
+  const chevron = (m: { left: number; top: number; deg: number }) => (
+    <svg
+      data-cy="demo-pointer-off-mark"
+      width={OFF_MARK_PX}
+      height={OFF_MARK_PX}
+      viewBox="0 0 14 14"
+      aria-hidden="true"
+      style={`position:absolute;left:${m.left}px;top:${m.top}px;overflow:visible;opacity:${OFF_MARK_OPACITY};transform:rotate(${m.deg}deg);filter:drop-shadow(0 1px 1px rgba(0,0,0,.35))`}
+    >
+      <path
+        d={OFF_MARK_PATH}
+        fill="none"
+        stroke="#fff"
+        stroke-width="5"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+      />
+      <path
+        d={OFF_MARK_PATH}
+        fill="none"
+        stroke={color}
+        stroke-width="2.6"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+      />
+    </svg>
+  );
   return (
     <>
       <style>
-        {`@keyframes pmDemoWave{0%{transform:translate(-50%,-50%) scale(.15);opacity:.95}100%{transform:translate(-50%,-50%) scale(1);opacity:0}}@keyframes pmDemoClickDot{0%{opacity:.95}60%{opacity:.8}100%{opacity:0}}`}
+        {`@keyframes pmDemoWave{0%{transform:translate(-50%,-50%) scale(.15);opacity:.95}100%{transform:translate(-50%,-50%) scale(1);opacity:0}}@keyframes pmDemoClickDot{0%{opacity:.95}60%{opacity:.8}100%{opacity:0}}@keyframes pmDemoPend{from{opacity:.35}to{opacity:1}}`}
       </style>
       {waves.length > 0 && (
         // REQ-546 (demo m14, cycle 4) — the waves are clipped to `bounds` (the stage's fitted
@@ -292,38 +361,49 @@ export default function DemoPointer(
           data-idle={idle ? 1 : 0}
           data-outside={outside ? "" : undefined}
           data-off={off ? "" : undefined}
+          data-cue={cue ? "" : undefined}
+          data-faded={faded ? "" : undefined}
+          data-pending={pending ? "" : undefined}
           ref={ref}
           style={`position:fixed;left:0;top:0;width:24px;height:30px;overflow:visible;pointer-events:none;z-index:${
             z + 1
           }`}
         >
-          {off && mark
+          {pending !== undefined && pending !== null
             ? (
-              <svg
-                data-cy="demo-pointer-off-mark"
-                width={OFF_MARK_PX}
-                height={OFF_MARK_PX}
-                viewBox="0 0 14 14"
+              // REQ-645 — his pointer is being found again: words that point at nothing
+              <span
+                ref={tagRef}
+                data-cy="demo-pointer-pending"
+                data-tag-side={place?.side}
                 aria-hidden="true"
-                style={`position:absolute;left:${mark.left}px;top:${mark.top}px;overflow:visible;opacity:${OFF_MARK_OPACITY};transform:rotate(${mark.deg}deg);filter:drop-shadow(0 1px 1px rgba(0,0,0,.35))`}
+                style={`${tagStyle};display:inline-flex;align-items:center;gap:6px;background:rgba(255,255,255,.92);color:${color};border:1px solid ${color};opacity:.9`}
               >
-                <path
-                  d={OFF_MARK_PATH}
-                  fill="none"
-                  stroke="#fff"
-                  stroke-width="5"
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
+                <span
+                  style={`width:7px;height:7px;border-radius:50%;background:${color};animation:pmDemoPend 1s ease-in-out infinite alternate`}
                 />
-                <path
-                  d={OFF_MARK_PATH}
-                  fill="none"
-                  stroke={color}
-                  stroke-width="2.6"
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                />
-              </svg>
+                {pending}
+              </span>
+            )
+            : off && mark
+            ? chevron(mark)
+            : cue && mark
+            ? (
+              // REQ-645 — out of view: the chevron where it can be seen, and the way in words
+              <>
+                {chevron(mark)}
+                {cue.text && (
+                  <span
+                    ref={tagRef}
+                    data-cy="demo-pointer-cue"
+                    data-tag-side={place?.side}
+                    aria-hidden="true"
+                    style={tagStyle}
+                  >
+                    {cue.text}
+                  </span>
+                )}
+              </>
             )
             : (
               <>
@@ -338,7 +418,9 @@ export default function DemoPointer(
                   height="30"
                   viewBox="0 0 22 28"
                   aria-hidden="true"
-                  style={`position:absolute;left:0;top:0;overflow:visible;opacity:${look.arrow};filter:drop-shadow(0 1px 2px rgba(0,0,0,.45))`}
+                  style={`position:absolute;left:0;top:0;overflow:visible;opacity:${
+                    faded ? DRIFT_OPACITY : look.arrow
+                  };filter:drop-shadow(0 1px 2px rgba(0,0,0,.45))`}
                 >
                   <path
                     d={ARROW_PATH}
@@ -360,11 +442,9 @@ export default function DemoPointer(
                   data-cy="demo-pointer-tag"
                   data-tag-side={place?.side}
                   aria-hidden="true"
-                  style={`position:absolute;left:${
-                    (place?.x ?? 0) - pointer.x
-                  }px;top:${
-                    (place?.y ?? 0) - pointer.y
-                  }px;padding:2px 8px;border-radius:999px;background:${color};color:#fff;font-size:12px;font-weight:700;white-space:nowrap;border:1px solid rgba(255,255,255,.85);box-shadow:0 1px 4px rgba(0,0,0,.35);opacity:${look.tag};transition:opacity .3s`}
+                  style={`${tagStyle};opacity:${
+                    faded ? DRIFT_OPACITY : look.tag
+                  };transition:opacity .3s`}
                 >
                   {name}
                 </span>

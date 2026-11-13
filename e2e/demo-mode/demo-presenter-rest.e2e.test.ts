@@ -39,6 +39,13 @@
  * the Demo button's spot falls on it — the arrow sat on her mic button from the start. Only the
  * stage's own hand-off (a reload) is sent; /admin's, on the frame or beside it, puts nothing on
  * the customer's screen until he moves (beside the frame the stage may say he is off it).
+ *
+ * REQ-645 AMENDMENT (demo m36, cycle 5) — supersedes REQ-538's look-up on a tab the stage newly
+ * follows: "he pointed at 'ES' on /customers; the arrow appeared on Linda's /q tab". Another of
+ * her browser tabs followed gets NO arrow while his mouse is still — what he pointed at was on
+ * the other tab — and the stage says which tab it shows now ("Now showing Ana Torres's other tab
+ * (/settings) — move to point there"); a tab followed again with its page unchanged still gets
+ * back the arrow he left there; his move still reaches the followed tab only.
  */
 import { story, type StoryTools } from "#shots";
 import { pillUp } from "../_shared/demo-pill.ts";
@@ -228,6 +235,24 @@ async function noArrowFor(what: string, pg: Page, ms: number) {
     await sleep(150);
   }
 }
+
+/** REQ-645 (m36) — the stage's "now showing her other tab" notice, when it shows */
+const tabNote = (pg: Page) =>
+  pg.evaluate(() => {
+    const el = document.querySelector("[data-cy='demo-tab-switched']");
+    return el ? (el as HTMLElement).innerText.trim() : null;
+  }) as Promise<string | null>;
+
+/** REQ-645 (m36) — the notice for Ana Torres's /settings tab, or what the stage says instead */
+const OTHER_TAB =
+  "Now showing Ana Torres's other tab (/settings) — move to point there";
+const saysOtherTab = async (pg: Page) => {
+  const note = await tabNote(pg);
+  if (note !== OTHER_TAB) {
+    throw new Error(`the stage's tab notice is ${JSON.stringify(note)}`);
+  }
+  return true;
+};
 
 /** the stage's "your pointer is off their screen" hint, when it shows */
 const offHint = (pg: Page) =>
@@ -502,7 +527,7 @@ Deno.test("REQ-539 (demo m24): a desktop customer — the click on Demo lands on
     }
   }));
 
-Deno.test("REQ-393 (demo M2 tab switch) + REQ-451 (demo M1) + REQ-538 (cycle 4 M1): the tab the stage leaves loses the presenter's arrow; a tab it newly follows gets it with his mouse still once its mirror has settled; a tab followed again with its page unchanged gets back the arrow he left there; his moves reach the followed tab only", (t) =>
+Deno.test("REQ-393 (demo M2 tab switch) + REQ-451 (demo M1) + REQ-645 (cycle 5 m36): the tab the stage leaves loses the presenter's arrow; a tab it newly follows gets none while his mouse is still, and the stage says which tab it shows; a tab followed again with its page unchanged gets back the arrow he left there; his moves reach the followed tab only", (t) =>
   story(t, async ({ page, expect, http, baseUrl }) => {
     await page.setViewportSize({ width: 1280, height: 800 });
     const who = await people(http);
@@ -545,8 +570,8 @@ Deno.test("REQ-393 (demo M2 tab switch) + REQ-451 (demo M1) + REQ-538 (cycle 4 M
 
       // 1. a second tab is the one the customer uses now: the stage follows it. REQ-451 (M1) —
       //    he pointed at tab 1's page (never the spot under his mouse over an unsettled tab 2).
-      //    REQ-538 (cycle 4 M1): once tab 2's mirror has settled, his still mouse is looked up
-      //    again — tab 2 gets the arrow with no move
+      //    REQ-645 AMENDMENT (cycle 5 m36) — supersedes REQ-538's look-up of his still mouse on
+      //    tab 2: no arrow there until he moves, and the stage says which tab it shows now
       const tab2 = await userCtx.newPage();
       await tab2.setViewportSize({ width: 640, height: 760 });
       await tab2.goto(`${baseUrl}/settings`);
@@ -557,14 +582,19 @@ Deno.test("REQ-393 (demo M2 tab switch) + REQ-451 (demo M1) + REQ-538 (cycle 4 M
         20_000,
       );
       await until(
+        "REQ-645 (m36): the stage says it shows her other tab now, and to move to point there",
+        () => saysOtherTab(page),
+        10_000,
+      );
+      await until(
         "M2: the tab the stage left (tab 1) loses the presenter's arrow",
         async () => (await arrowOn(tab1)) === null,
         10_000,
       );
-      await until(
-        "REQ-538: the tab the stage newly follows (tab 2) gets the arrow with his mouse still",
-        async () => (await arrowOn(tab2))?.off === false,
-        10_000,
+      await noArrowFor(
+        "REQ-645 (m36): the tab the stage newly follows (tab 2), his mouse still",
+        tab2,
+        2_500,
       );
 
       // 2. REQ-451 — the customer uses tab 1 again (any pointerdown claims the stage; this one
@@ -602,8 +632,9 @@ Deno.test("REQ-393 (demo M2 tab switch) + REQ-451 (demo M1) + REQ-538 (cycle 4 M
         10_000,
       );
 
-      // 3. tab 2 again: REQ-538 — the arrow comes back with his mouse still; his move reaches
-      //    tab 2 only
+      // 3. tab 2 again: REQ-645 (m36) — he never pointed at tab 2's page: no arrow there with his
+      //    mouse still (REQ-538 put one under it), the stage says which tab it shows; his move
+      //    reaches tab 2 only
       await pillUp(tab2);
       await tab2.locator("[data-cy='demo-more']").click();
       await until(
@@ -612,20 +643,30 @@ Deno.test("REQ-393 (demo M2 tab switch) + REQ-451 (demo M1) + REQ-538 (cycle 4 M
         20_000,
       );
       await until(
+        "REQ-645 (m36): the stage says it shows her other tab again",
+        () => saysOtherTab(page),
+        10_000,
+      );
+      await until(
         "M2: tab 1, left, loses the arrow",
         async () => (await arrowOn(tab1)) === null,
         10_000,
       );
-      await until(
-        "REQ-538: tab 2 followed again (his last arrow on tab 1's page) gets the arrow with his mouse still",
-        async () => (await arrowOn(tab2))?.off === false,
-        10_000,
+      await noArrowFor(
+        "REQ-645 (m36): tab 2 followed again (his last arrow on tab 1's page), his mouse still",
+        tab2,
+        2_500,
       );
       await page.mouse.move(rest.x + 25, rest.y + 20);
       await until(
         "his move reaches tab 2",
         async () => (await arrowOn(tab2))?.off === false,
         10_000,
+      );
+      expect.eq(
+        await tabNote(page),
+        null,
+        "REQ-645 (m36): he points again — the stage's tab notice is gone",
       );
       await sleep(1_500);
       expect.eq(
@@ -635,7 +676,8 @@ Deno.test("REQ-393 (demo M2 tab switch) + REQ-451 (demo M1) + REQ-538 (cycle 4 M
       );
 
       // 4. the customer clicks in tab 1: the stage follows it again; tab 2 loses the arrow; his
-      //    last arrow was on tab 2's page — REQ-538: tab 1 gets it back with his mouse still
+      //    last arrow was on tab 2's page — REQ-645 (m36): tab 1's page is unchanged, so it gets
+      //    back the arrow he left there (kept for that page load), with his mouse still
       await pillUp(tab1);
       await tab1.locator("[data-cy='demo-more']").click();
       await until(
@@ -649,7 +691,7 @@ Deno.test("REQ-393 (demo M2 tab switch) + REQ-451 (demo M1) + REQ-538 (cycle 4 M
         10_000,
       );
       await until(
-        "REQ-538: tab 1 (his last arrow on tab 2's page) gets the arrow with his mouse still",
+        "REQ-645 (m36): tab 1, followed again with its page unchanged, gets back the arrow he left there, his mouse still",
         async () => (await arrowOn(tab1))?.off === false,
         10_000,
       );

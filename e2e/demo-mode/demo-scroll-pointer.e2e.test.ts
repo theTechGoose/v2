@@ -25,6 +25,11 @@
  *      up again ONCE under his still mouse when the new mirror has settled — the arrow is back on
  *      the element under his cursor with no move, and the stage's "isn't on their screen" hint is
  *      gone.
+ *      REQ-645 AMENDMENT (demo M1 + M2, cycle 5) — supersedes REQ-538's look-up: a dead anchor is
+ *      found again by WHAT it pointed at, never by what is under his still mouse. The customer's
+ *      next page has no such element: no arrow while his mouse is still, and the stage says his
+ *      pointer isn't on their screen; his move puts it on the element under his cursor. The
+ *      customer reloads that page: the arrow is back on the same element with no move.
  */
 import { story, type StoryTools } from "#shots";
 import { pillUp } from "../_shared/demo-pill.ts";
@@ -174,7 +179,13 @@ const pointerAt = (page: Page, name: string) =>
       .find((e) => e.getAttribute("data-presenter") === n);
     if (!el) return null;
     const m = new DOMMatrixReadOnly(getComputedStyle(el).transform);
-    return { x: m.m41, y: m.m42, outside: el.hasAttribute("data-outside") };
+    return {
+      x: m.m41,
+      y: m.m42,
+      outside: el.hasAttribute("data-outside"),
+      // REQ-645 — "pointing…" (being found again): no arrow, it points at nothing
+      pending: el.hasAttribute("data-pending"),
+    };
   }, name);
 
 /** the demo on the customer's account: the admin on the stage, the customer's page on `start` */
@@ -467,7 +478,7 @@ Deno.test("REQ-305 (demo M7, m16, setup-m6): the customer scrolls /q by window.s
     }
   }));
 
-Deno.test("REQ-305 (demo M2) + REQ-451 (demo M1) + REQ-538 (cycle 4 M1): after the customer goes to another page and after a reload the arrow comes back with his mouse still, once the mirror has settled, on the element under his cursor — never on what an unstyled mirror put there; when the customer scrolls it rides with its element and the stage draws its ghost there", (t) =>
+Deno.test("REQ-305 (demo M2) + REQ-451 (demo M1) + REQ-645 (cycle 5 M1 + M2): after the customer goes to another page the arrow is not put on whatever is under his still mouse — the stage says it isn't on their screen and his move brings it; after a reload it is back on the same element with no move; when the customer scrolls it rides with its element and the stage draws its ghost there", (t) =>
   story(t, async (tools) => {
     const { page, expect, baseUrl } = tools;
     const d = await demoOn(tools, () => "/customers");
@@ -485,7 +496,7 @@ Deno.test("REQ-305 (demo M2) + REQ-451 (demo M1) + REQ-538 (cycle 4 M1): after t
           async () => {
             const meant = await underMirror(page, rest.x, rest.y);
             const at = await pointerAt(userPage, "Hans");
-            if (!at) {
+            if (!at || at.pending) {
               throw new Error("no presenter arrow on the customer's screen");
             }
             if (!meant) {
@@ -507,9 +518,9 @@ Deno.test("REQ-305 (demo M2) + REQ-451 (demo M1) + REQ-538 (cycle 4 M1): after t
       // 1. the customer goes to their quote's page under the still mouse: a new mirror, whose
       //    stylesheets the stage has never loaded — its first layout is the unstyled one.
       //    REQ-451 (M1): what he pointed at was on /customers — never the spot under his mouse
-      //    over whatever an unsettled /q has there. REQ-538 AMENDMENT (demo cycle 4, M1): once the
-      //    new page's mirror has settled, his still mouse is looked up again ONCE — the arrow is
-      //    back on the element under his cursor with no move (it used to stay gone until he moved)
+      //    over whatever an unsettled /q has there. REQ-645 AMENDMENT (demo cycle 5, M1 + M2) —
+      //    supersedes REQ-538's look-up of his still mouse: it is looked for on /q by what it is;
+      //    /q has no such element — no arrow, and the stage says so; his move brings it
       const qPath = `/q/${d.quote.id}`;
       await userPage.goto(`${baseUrl}${qPath}`);
       await until(
@@ -519,17 +530,36 @@ Deno.test("REQ-305 (demo M2) + REQ-451 (demo M1) + REQ-538 (cycle 4 M1): after t
         25_000,
       );
       await d.mirrorAsTall("the quote page");
-      await presenterOnItsNode(
-        "REQ-538: after the customer's page change, his mouse still",
+      const t0 = Date.now();
+      while (Date.now() - t0 < 2_500) {
+        const at = await pointerAt(userPage, "Hans");
+        if (at && !at.pending) {
+          throw new Error(
+            `REQ-645: an arrow on her new page with his mouse still ${
+              JSON.stringify(at)
+            }`,
+          );
+        }
+        await new Promise((r) => setTimeout(r, 150));
+      }
+      await until(
+        "REQ-645: the stage says his pointer isn't on her screen",
+        async () =>
+          (await page.locator("[data-cy='demo-pointer-absent']").count()) ===
+            1,
+        5_000,
       );
+      await page.mouse.move(stagePt.x + 2, stagePt.y + 1);
+      await page.mouse.move(stagePt.x, stagePt.y);
+      await presenterOnItsNode("REQ-645: his move on /q");
       expect.eq(
         await page.locator("[data-cy='demo-pointer-absent']").count(),
         0,
-        "REQ-538: the stage's \"isn't on their screen\" hint is gone once the arrow is back",
+        "REQ-645: the stage's \"isn't on their screen\" hint is gone once the arrow is back",
       );
 
-      // 2. the customer reloads it: a new page load — REQ-538: once its mirror has settled the
-      //    arrow is back on the same element with no move
+      // 2. the customer reloads it: a new page load — REQ-645: what he pointed at is found in
+      //    it by what it is: the arrow is back on the same element with no move
       await userPage.reload();
       // REQ-545 — the link is up (the pill may be folded to its tab: this story scrolls)
       await userPage.locator("[data-cy='demo-pill'][data-status='live']")
@@ -546,7 +576,7 @@ Deno.test("REQ-305 (demo M2) + REQ-451 (demo M1) + REQ-538 (cycle 4 M1): after t
         25_000,
       );
       await presenterOnItsNode(
-        "REQ-538: after the customer's reload, his mouse still",
+        "REQ-645: after the customer's reload, his mouse still",
       );
       // the reloaded page's mirror has settled: the arrow stays, with no move
       await page.waitForTimeout(2_000);

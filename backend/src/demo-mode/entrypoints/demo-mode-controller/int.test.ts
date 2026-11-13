@@ -1792,3 +1792,49 @@ Deno.test("REQ-378 (demo-loop cycle 2, m22) the customer's app hears of a new de
     assert(Date.now() - t0 < 1000, "a demo already on answers at once");
   });
 });
+
+Deno.test("REQ-645 (demo-loop cycle 5, M1 + M2) over the composed router's socket: a stage's `pending` (his pointer being found again — 'pointing…', never an arrow) addressed to the followed tab crosses as a bare fraction with the sender's clock: any element it named is stripped, junk is dropped", async () => {
+  await withServer(async (call) => {
+    const ana = await signIn(call, "+15125556451");
+    const hans = await signIn(call, "+15125556452");
+    await call("POST", "/api/admin/bootstrap", { phoneNumber: "+15125556452" });
+    const made = await call("POST", "/api/demo-mode/sessions", {
+      userId: ana.body.userId,
+    }, H(hans.body.sessionId));
+    const stage = open(made.body.id, hans.body.sessionId);
+    const sc = cidOf(await stage.next("the stage's welcome"));
+    const tab = open(made.body.id, ana.body.sessionId);
+    const c1 = cidOf(await tab.next("the tab's welcome"));
+    await tab.next("the tab is told the stage is here");
+    await stage.next("the tab arrives");
+    assert(c1 && sc, "every socket is named");
+
+    // a provisional fraction of the stage: `pending`, a fraction only — an element it named (a
+    // sender that should not have) never reaches the customer's page
+    stage.send({
+      t: "relay",
+      data: {
+        k: "pending",
+        a: { vx: 0.25, vy: 0.5, n: { id: 7, x: 0.5, y: 0.5, l: "L1" } },
+        t: 40,
+      },
+      tab: c1,
+    });
+    assertEquals(await tab.next("the tab gets the pending"), {
+      t: "relay",
+      from: "presenter",
+      pid: hans.body.userId,
+      cid: sc,
+      data: { k: "pending", a: { vx: 0.25, vy: 0.5 }, t: 40 },
+    });
+    // junk on the same kind: dropped, never relayed
+    stage.send({
+      t: "relay",
+      data: { k: "pending", a: { vx: "x", vy: 0.5 } },
+      tab: c1,
+    });
+    await quiet(tab, "a pending without a fraction is never relayed");
+    await stage.close();
+    await tab.close();
+  });
+});

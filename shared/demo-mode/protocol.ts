@@ -108,6 +108,10 @@ export type PeerMessage =
   | { k: "leave" }
   | ({ k: "dom" } & DomChunk)
   | { k: "resync" }
+  // REQ-645 (demo-loop cycle 5, M1 + M2) — a presenter's pointer is being found again (his anchor's
+  // page went, or the stage's replay cannot name the element under his mouse yet): their screen
+  // says "{name} is pointing…" near this fraction — never an arrow at it
+  | { k: "pending"; a: Anchor; t?: number } // t: the sender's clock, as a move's (REQ-180)
   // REQ-295 — the customer's demo pill box in their viewport (null: no pill), for the stage's ghost;
   // REQ-372 — and what the pill says, so the ghost is a replica, not an empty box
   | ({ k: "pill"; r: Rect | null } & PillFace);
@@ -341,6 +345,14 @@ export function parsePeerMessage(x: unknown): PeerMessage | null {
     }
     case "leave":
       return { k: "leave" };
+    case "pending": {
+      // REQ-645 — a fraction of the screen only: it names no element, and is never off it
+      const a = parseAnchor(o.a);
+      if (!a) return null;
+      return typeof o.t === "number" && Number.isFinite(o.t)
+        ? { k: "pending", a: { vx: a.vx, vy: a.vy }, t: o.t }
+        : { k: "pending", a: { vx: a.vx, vy: a.vy } };
+    }
     case "dom": {
       const c = parseDomChunk(o);
       return c
