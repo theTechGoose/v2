@@ -216,17 +216,65 @@ export function tabBox(home: Rect): Rect {
   };
 }
 
+/** REQ-781 (demo-loop cycle dv1, d7) — the mini-pill's places, in the order asked: flush with the
+ *  window's left edge with its foot on the home's foot (`tabBox`), then flush with the right edge;
+ *  then up both edges a tab's height (and a gap) at a time, down to `top` (the banner) */
+export function tabSpots(home: Rect, view: Size, top = 0): Rect[] {
+  const left = tabBox(home);
+  const right = Math.max(0, view.w - PILL_TAB.w);
+  const out: Rect[] = [];
+  for (
+    let t = left.top;
+    t >= top + PILL_MARGIN;
+    t -= PILL_TAB.h + PILL_BAND_GAP
+  ) {
+    out.push({ ...left, top: t }, { ...left, top: t, left: right });
+  }
+  return out.length ? out : [left, { ...left, left: right }];
+}
+
 /**
- * REQ-545 (demo-loop cycle 4, m2) — where the pill is right now. REQ-379's band only frees
- * the END of a document that scrolls: mid-scroll, what scrolled into the window's bottom strip
- * (tiles, "Export customers (CSV)", a service address, "Registrar un pago…") was under the band
- * and the pill. So the pill YIELDS instead of reserving the strip: with anything of the page under
- * its home it tucks into a small edge tab (`tabBox`) and the band is not painted — the page shows;
- * with the home clear (a shell that subtracts the band, the document's end) it sits home on the
- * painted band. A dialog docks it (`dockPill`: home, top-left, top-right) or, all covered, tucks
- * it. REQ-637 (demo-loop cycle 5, m5) — a dialog docks it above the dialog's own box first
- * (`dialogBox`); on a public document page (`minimal`) it stays whole on its strip (the band),
- * folding only under a dialog with no place free.
+ * REQ-781 (demo-loop cycle dv1, d7) — where the whole pill may float, in the order asked: its home
+ * (bottom-left), the bottom-right, the bottom-centre, the top-right and the top-left (under the
+ * impersonation banner, `top`). All inside the window.
+ */
+export function pillSpots(o: {
+  home: Rect;
+  view: Size;
+  top?: number;
+  margin?: number;
+}): Rect[] {
+  const margin = o.margin ?? PILL_MARGIN;
+  const top = (o.top ?? 0) + margin;
+  const w = o.home.width;
+  // across, kept a margin inside the window; down, the home's own foot (its band gap) or the top
+  const at = (left: number, t: number) => ({
+    ...o.home,
+    left: Math.max(margin, Math.min(left, o.view.w - margin - w)),
+    top: t,
+  });
+  return [
+    o.home,
+    at(o.view.w - margin - w, o.home.top),
+    at(Math.round((o.view.w - w) / 2), o.home.top),
+    at(o.view.w - margin - w, top),
+    at(o.home.left, top),
+  ];
+}
+
+/**
+ * REQ-545 (demo-loop cycle 4, m2) — where the pill is right now: it yields to the page, folding
+ * to a mini-pill (REQ-637) rather than sitting over it; a dialog docks it (`dockPill`).
+ * REQ-781 (demo-loop cycle dv1, d7) — Raphael: "the gap reserved for the demo pill ... that's not
+ * a decision". No band is ever kept under the page for it (REQ-379/440/643's room is gone): the
+ * pill floats over the page, never on a band (`band` is always false). In order:
+ *   1. whole, in the first spot (`pillSpots`) with nothing of the page under it (`blocked`);
+ *   2. a pill that yields: folded to its mini-pill at an edge (`tabSpots`) with no control under
+ *      it (`controls`; defaults to `blocked`);
+ *   3. whole, in the first spot with no control under it (text and cards may be);
+ *   4. folded at the left edge (a pill that yields, or a public /q /i /co page), else home.
+ * A public document page (`minimal`) prefers the whole pill (End in reach): 1, 3, then 2. The
+ * ended notice (`floats`) and a pill that does not yield never fold: 1, 3, else home.
  */
 export function placePill(o: {
   home: Rect;
@@ -236,49 +284,39 @@ export function placePill(o: {
   /** REQ-637 — the dialog's own box, when one is up */
   dialogBox?: Rect;
   minimal?: boolean;
-  /** false: a pill that never tucks (the ended notice, a message to read and dismiss) — a
-   *  dialog still docks it, and with no place free it stays home */
+  /** false: a pill that never tucks (a message to read and dismiss) — a dialog still docks it,
+   *  and with no place free it stays home */
   yields?: boolean;
-  /** REQ-643 (demo-loop cycle 5, m9) — a floating message (the ended notice): never a band
-   *  (no room is reserved under the page for it); off content under the home to a clear corner
-   *  (`dockPill`), else home over the page */
+  /** REQ-643 (demo-loop cycle 5, m9) — a floating message (the ended notice): never folded */
   floats?: boolean;
+  /** how many pieces of the page (controls, media, text, cards) are under a box */
   blocked: (r: Rect) => number;
+  /** REQ-781 — how many controls of the page (links, buttons, fields) are under a box */
+  controls?: (r: Rect) => number;
 }): { box: Rect; tucked: boolean; band: boolean } {
-  if (o.floats) {
-    return {
-      box: dockPill({ ...o, dialog: o.dialogBox }) ?? o.home,
-      tucked: false,
-      band: false,
-    };
-  }
-  const yields = o.yields ?? true;
-  const tucked = { box: tabBox(o.home), tucked: true, band: false };
+  const controls = o.controls ?? o.blocked;
+  const whole = (box: Rect) => ({ box, tucked: false, band: false });
+  const fold = (box: Rect) => ({ box, tucked: true, band: false });
+  const folds = !o.floats && (o.yields ?? true);
+  const tabs = tabSpots(o.home, o.view, o.top);
+  const tab = () => tabs.find((r) => controls(r) === 0);
   if (o.dialog) {
     const box = dockPill({ ...o, dialog: o.dialogBox });
-    if (box) return { box, tucked: false, band: box === o.home };
-    return yields ? tucked : { box: o.home, tucked: false, band: true };
+    if (box) return whole(box);
+    if (!folds) return whole(o.home);
+    return fold(tab() ?? tabs[0]);
   }
-  // REQ-637 — a public document page: whole, on its strip, whatever scrolls under it
-  if (!yields || o.minimal) return { box: o.home, tucked: false, band: true };
-  return o.blocked(o.home) === 0
-    ? { box: o.home, tucked: false, band: true }
-    : tucked;
-}
-
-/**
- * REQ-643 (demo-loop cycle 5, m9) — the room reserved under the page (REQ-379's band, which the
- * shells subtract): only while the pill sits home on its band. Folded to its edge tab, or a
- * floating message (the ended notice), it reserves none — REQ-545 left the room reserved but
- * unpainted under the tab, an empty body-coloured strip that cut the app, and kept it under the
- * ended notice until dismissed. A dialog keeps it (REQ-618's sheet ends above the pill by it).
- */
-export function bandRoom(
-  o: { band: boolean; dialog: boolean; floats?: boolean },
-  room: number,
-): number {
-  if (o.floats) return 0;
-  return o.band || o.dialog ? Math.max(0, room) : 0;
+  const spots = pillSpots(o);
+  const free = spots.find((r) => o.blocked(r) === 0);
+  if (free) return whole(free);
+  if (folds && !o.minimal) {
+    const t = tab();
+    if (t) return fold(t);
+  }
+  const clear = spots.find((r) => controls(r) === 0);
+  if (clear) return whole(clear);
+  if (!folds) return whole(o.home);
+  return fold(tab() ?? tabs[0]);
 }
 
 /**

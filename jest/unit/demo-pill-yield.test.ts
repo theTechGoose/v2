@@ -51,10 +51,11 @@ describe("REQ-545 (demo-loop cycle 4, m2) — mid-scroll content under the home:
     expect(p.box.top + p.box.height).toBe(home.top + home.height);
   });
 
-  test("nothing of the page under the home (a shell that subtracts the band, the document's end): home, on the painted band", () => {
+  // REQ-781 (demo-loop cycle dv1, d7) AMENDMENT — no band any more: home, floating over the page
+  test("nothing of the page under the home: home (REQ-781: floating, never on a band)", () => {
     const home = homeBox();
     expect(placePill({ home, view, dialog: false, blocked: () => 0 }))
-      .toEqual({ box: home, tucked: false, band: true });
+      .toEqual({ box: home, tucked: false, band: false });
   });
 });
 
@@ -63,7 +64,7 @@ describe("REQ-545 — only the live pill yields: the ended notice is a message t
     const home = homeBox();
     expect(
       placePill({ home, view, dialog: false, yields: false, blocked: () => 2 }),
-    ).toEqual({ box: home, tucked: false, band: true });
+    ).toEqual({ box: home, tucked: false, band: false });
     expect(
       placePill({
         home,
@@ -154,7 +155,8 @@ describe("REQ-545 — public /q, /i, /co pages in the owner's browser: the pill 
 
   // REQ-637 (demo-loop cycle 5, m5) SUPERSEDED — "minimal: the tab even with the home clear":
   // the 16 px tab hid End on the owner's own document; now the whole pill sits on its strip there
-  test("minimal (REQ-637): the whole pill home on its strip, even with content under it", () => {
+  // REQ-781 (cycle dv1, d7) AMENDMENT — whole where no control is under it, never on a band
+  test("minimal (REQ-637): the whole pill home, even with content (no control) under it", () => {
     const home = homeBox();
     const p = placePill({
       home,
@@ -162,9 +164,10 @@ describe("REQ-545 — public /q, /i, /co pages in the owner's browser: the pill 
       dialog: false,
       minimal: true,
       blocked: () => 2,
+      controls: () => 0,
     });
     expect(p.tucked).toBe(false);
-    expect(p.band).toBe(true);
+    expect(p.band).toBe(false);
   });
 });
 
@@ -233,9 +236,8 @@ describe("REQ-545 — the overlay wires it: placePill, a scroll re-check, the ed
     expect(tab.slice(0, 1600)).toMatch(/onClick=/);
   });
 
-  test("the band is painted only when the pill sits home on it", () => {
-    expect(o()).toMatch(
-      /height:\$\{[\s\S]{0,300}?bandOn\s*\?\s*"var\(--demo-pill-h, 0px\)"\s*:\s*"0px"/,
-    );
+  // REQ-781 (cycle dv1, d7) SUPERSEDES it: no band is painted at all
+  test("REQ-781: no band is painted under the pill", () => {
+    expect(o()).not.toMatch(/bandOn/);
   });
 });

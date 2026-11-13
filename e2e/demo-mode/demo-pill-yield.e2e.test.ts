@@ -14,6 +14,11 @@
  * REQ-637 (demo-loop cycle 5, m5) AMENDMENT — the tab is a labelled mini-pill (PILL_TAB, 96×32:
  * "● Demo" and an × that is End), and on the public /q the whole pill sits on its strip instead
  * of folding: that part of this story moved to demo-pill-folded-label.e2e.test.ts.
+ *
+ * REQ-781 (demo-loop cycle dv1, d7) AMENDMENT — no band at all, and the mini-pill sits at an edge
+ * with no control under it: the left edge, else the right, else up an edge. So mid-scroll the
+ * pill is folded, no band is painted, no link, button or field of the page in the bottom strip
+ * has the demo's chrome over it, and the tab is small and flush with an edge.
  */
 import { story, type StoryTools } from "#shots";
 import { answerQuestions } from "../_shared/onboarding-answers.ts";
@@ -117,7 +122,7 @@ const probe = (tabW: number) => {
   if (shown(pill)) pill.style.pointerEvents = "auto";
   const covered: string[] = [];
   const strip = 72;
-  for (let x = tabW + 4; x < innerWidth - 2; x += 12) {
+  for (let x = 2; x < innerWidth - 2 && tabW > 0; x += 12) {
     for (let y = innerHeight - strip; y < innerHeight - 1; y += 8) {
       const stack = document.elementsFromPoint(x, y);
       const top = stack[0];
@@ -126,12 +131,14 @@ const probe = (tabW: number) => {
       if (
         !under || under === document.body || under === document.documentElement
       ) continue;
-      const text = (under.textContent ?? "").trim().replace(/\s+/g, " ").slice(
-        0,
-        30,
+      // REQ-781 — the mini-pill may float over text; never over a control
+      const control = under.closest(
+        'a[href],button,input,select,textarea,summary,label,[role="button"],[role="link"],[role="tab"],[role="menuitem"],[role="checkbox"],[role="switch"]',
       );
-      if (!text) continue;
-      covered.push(`${under.tagName.toLowerCase()} "${text}"`);
+      if (!control) continue;
+      const text = (control.textContent ?? "").trim().replace(/\s+/g, " ")
+        .slice(0, 30);
+      covered.push(`${control.tagName.toLowerCase()} "${text}"`);
     }
   }
   if (band) band.style.pointerEvents = was;
@@ -147,6 +154,7 @@ const probe = (tabW: number) => {
     tab: t
       ? {
         left: Math.round(t.left),
+        right: Math.round(t.right),
         width: Math.round(t.width),
         height: Math.round(t.height),
         bottom: Math.round(t.bottom),
@@ -157,6 +165,7 @@ const probe = (tabW: number) => {
     status: pill.dataset.status ?? "",
     covered: [...new Set(covered)],
     vh: innerHeight,
+    vw: innerWidth,
   };
 };
 
@@ -311,11 +320,13 @@ Deno.test("REQ-545 (demo-loop cycle 4, m2): the customer's demo pill yields — 
         !m.pillShown,
         `mid-scroll the full pill is tucked away — ${JSON.stringify(m)}`,
       );
-      expect.eq(m.bandH, 0, "mid-scroll the band is not painted over the rows");
+      expect(m.bandH <= 0, "mid-scroll no band is painted over the rows");
+      // REQ-781 — the left edge, or the right one when the left has a control under it (the
+      // tab's button sits inside the mini-pill, so its box is at most the mini-pill's)
       expect(
-        m.tab !== null && m.tab.left === 0 && m.tab.width <= TAB_W &&
-          m.tab.height <= 32 && m.tab.bottom <= m.vh,
-        `the tab is small, on the left edge — ${JSON.stringify(m.tab)}`,
+        m.tab !== null && (m.tab.left <= 0 || m.tab.right >= m.vw - TAB_W) &&
+          m.tab.width <= TAB_W && m.tab.height <= 32 && m.tab.bottom <= m.vh,
+        `the tab is small, at an edge — ${JSON.stringify(m.tab)}`,
       );
 
       // 2. the stage draws the tab where the customer has it (both screens agree)
@@ -343,8 +354,10 @@ Deno.test("REQ-545 (demo-loop cycle 4, m2): the customer's demo pill yields — 
         .waitFor({ state: "visible", timeout: 5_000 });
       await userPage.screenshot({ path: `${folder}/phone-tab-hover.png` });
       // the pointer moves along the whole pill (it stays), then off it: folded again
+      // REQ-781 — along it, inward from whichever edge the tab is on
+      const inward = tabAt.x < 195 ? 30 : -30;
       await userPage.mouse.move(
-        tabAt.x + tabAt.width / 2 + 30,
+        tabAt.x + tabAt.width / 2 + inward,
         tabAt.y + tabAt.height / 2,
         { steps: 4 },
       );

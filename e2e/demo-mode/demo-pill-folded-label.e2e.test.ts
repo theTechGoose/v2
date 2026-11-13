@@ -8,6 +8,9 @@
  * the whole pill out with "End for everyone?" already asked; Keep going puts it back. On the
  * contractor's public quote page (/q) the whole pill, End included, sits on its bottom strip from
  * the first load and mid-scroll — never folded.
+ *
+ * REQ-781 (demo-loop cycle dv1, d7) AMENDMENT — no band is kept or painted: on /q the whole pill
+ * floats (no strip under it), and the mini-pill sits at whichever edge has no control under it.
  */
 import { story, type StoryTools } from "#shots";
 import { answerQuestions } from "../_shared/onboarding-answers.ts";
@@ -111,7 +114,12 @@ const look = () => {
   return {
     folded: pill.hasAttribute("data-tucked"),
     status: pill.dataset.status ?? "",
-    pill: { left: Math.round(p.left), width: Math.round(p.width) },
+    pill: {
+      left: Math.round(p.left),
+      right: Math.round(p.right),
+      width: Math.round(p.width),
+    },
+    vw: innerWidth,
     pillText: (pill.textContent ?? "").replace(/\s+/g, " ").trim(),
     tab: box("[data-cy='demo-pill-tab']"),
     tabEnd: box("[data-cy='demo-pill-tab-end']"),
@@ -251,8 +259,9 @@ Deno.test('REQ-637 (demo-loop cycle 5, m5): the folded customer pill is a labell
       await userPage.screenshot({ path: `${folder}/phone-mini-pill.png` });
       const f = m!;
       expect(
-        f.pill.left === 0 && f.pill.width >= 80 && f.pill.width <= 110,
-        `the folded pill is a mini-pill (80-110 px) on the left edge, not a 16 px sliver — ${
+        (f.pill.left === 0 || f.pill.right === f.vw) && f.pill.width >= 80 &&
+          f.pill.width <= 110,
+        `the folded pill is a mini-pill (80-110 px) flush with an edge (REQ-781: left or right), not a 16 px sliver — ${
           JSON.stringify(f)
         }`,
       );
@@ -314,10 +323,10 @@ Deno.test('REQ-637 (demo-loop cycle 5, m5): the folded customer pill is a labell
         await new Promise((r) => setTimeout(r, 1_000));
         let q: Awaited<ReturnType<typeof look>> = null;
         await until(
-          `/q at ${frac}: the whole pill with End, on its strip`,
+          `/q at ${frac}: the whole pill with End, floating (REQ-781: no band)`,
           async () => {
             q = await userPage.evaluate(look);
-            return q && !q.folded && q.end !== null && q.bandH > 0
+            return q && !q.folded && q.end !== null && q.bandH <= 0
               ? null
               : JSON.stringify(q);
           },

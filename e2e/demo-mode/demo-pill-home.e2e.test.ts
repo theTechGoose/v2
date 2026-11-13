@@ -12,6 +12,13 @@
  * never wider than 366 px with End inside the screen — after the resize and after a reload — the
  * details opened stay open across a reload, and the drawer's "Log out" is above the pill. The
  * ended notice fits the phone too, and once it is dismissed the page has its band back.
+ *
+ * REQ-781 (demo-loop cycle dv1, d7) AMENDMENT — Raphael: "the gap reserved for the demo pill ...
+ * that's not a decision". No band is kept any more: the pill floats over the page where nothing of
+ * it is under it, else where no control is. So "home, bottom-left in its band" and "the same spot
+ * on every page" become: no band is kept (--demo-pill-h unset) and no link, button or field is
+ * under the pill, on every page and after a reload; the composer, the sidebar and the drawer's
+ * Log out stay on top where the customer clicks them.
  */
 import { story, type StoryTools } from "#shots";
 import { answerQuestions } from "../_shared/onboarding-answers.ts";
@@ -115,6 +122,25 @@ const probe = () => {
     ? document.elementFromPoint(e.left + e.width / 2, e.top + e.height / 2)
     : null;
   const app = document.querySelector(".app")?.getBoundingClientRect() ?? null;
+  // REQ-781 — the page's controls (links, buttons, fields) under the pill
+  const CONTROL =
+    'a[href],button,input,select,textarea,summary,label,[role="button"],[role="link"],[role="tab"],[role="menuitem"],[role="checkbox"],[role="switch"]';
+  const controls = new Set<string>();
+  for (let i = 0; i <= 10; i++) {
+    for (let j = 0; j <= 2; j++) {
+      const x = r.left + 2 + ((r.width - 4) * i) / 10;
+      const y = r.top + 2 + ((r.height - 4) * j) / 2;
+      const c = document.elementsFromPoint(x, y)
+        .find((n) => !n.closest("[data-demo-overlay]"))?.closest(CONTROL);
+      if (c) {
+        controls.add(
+          `${c.tagName.toLowerCase()} "${
+            (c.textContent ?? "").trim().slice(0, 24)
+          }"`,
+        );
+      }
+    }
+  }
   return {
     left: Math.round(r.left),
     top: Math.round(r.top),
@@ -124,7 +150,10 @@ const probe = () => {
     vw: innerWidth,
     vh: innerHeight,
     under: [...new Set(under)],
-    throughGap: !(gap?.closest("[data-demo-overlay]")),
+    // REQ-781 — shown whole out of its mini-pill (REQ-545), the pill takes the pointer by design
+    // (leaving it folds it again): only a pill as placed lets a click through its empty area
+    throughGap: pill.style.pointerEvents === "auto" ||
+      !(gap?.closest("[data-demo-overlay]")),
     endHit: Boolean(end && hit && end.contains(hit)),
     endRight: e ? Math.round(e.right) : null,
     endCut: end ? end.scrollWidth > end.clientWidth + 1 : null,
@@ -134,6 +163,7 @@ const probe = () => {
       "--demo-pill-h",
     ).trim(),
     minWidth: pill.style.minWidth,
+    controls: [...controls],
   };
 };
 type Probe = NonNullable<ReturnType<typeof probe>>;
@@ -242,22 +272,35 @@ Deno.test("REQ-379: the customer's demo pill has one home in a band the page lea
         }
         throw new Error(`the pill never held still: ${JSON.stringify(last)}`);
       };
-      /** the band is the page's: the pill sits in it, over nothing of the page */
+      /** REQ-781 — the pill as placed (the pointer off it: a pointer on the mini-pill shows the
+       *  whole pill out of it, under that pointer) covers no control; then whole again */
+      const placedClear = async (where: string) => {
+        await userPage.mouse.move(640, 300);
+        await until(
+          `${where}: as placed, no control is under the pill`,
+          async () => {
+            const p = await userPage.evaluate(probe);
+            return p && p.band === "" && p.controls.length === 0
+              ? null
+              : JSON.stringify(p);
+          },
+        );
+        await connected();
+      };
+      /** REQ-781 — no band is kept; the pill floats over no control of the page */
       const inItsBand = (p: Probe, where: string) => {
-        expect(
-          p.left === 12 && Math.abs(p.vh - 8 - p.bottom) <= 1,
-          `${where}: the pill is home, bottom-left in its band — ${
-            JSON.stringify({ left: p.left, bottom: p.bottom, vh: p.vh })
-          }`,
-        );
-        expect(
-          p.appBottom === null || p.appBottom <= p.top,
-          `${where}: the app's shell ends above the pill (shell bottom ${p.appBottom}, pill top ${p.top}, --demo-pill-h "${p.band}")`,
-        );
         expect.eq(
-          p.under.join(" | "),
+          p.band,
           "",
-          `${where}: nothing of the page is under the pill`,
+          `${where}: no band is kept under the page for the pill`,
+        );
+        expect(
+          p.appBottom === null || p.appBottom >= p.vh - 1,
+          `${where}: the app's shell reaches the window's foot (shell bottom ${p.appBottom}, window ${p.vh})`,
+        );
+        expect(
+          p.left >= 0 && p.right <= p.vw && p.top >= 0 && p.bottom <= p.vh,
+          `${where}: the pill is inside the window — ${JSON.stringify(p)}`,
         );
       };
 
@@ -265,6 +308,7 @@ Deno.test("REQ-379: the customer's demo pill has one home in a band the page lea
       const onCustomers = await settled();
       await userPage.screenshot({ path: `${folder}/customer-customers.png` });
       inItsBand(onCustomers, "/customers");
+      await placedClear("/customers");
       expect(
         onCustomers.throughGap,
         "M28: a click on the pill's empty area reaches the page, not the pill",
@@ -275,11 +319,16 @@ Deno.test("REQ-379: the customer's demo pill has one home in a band the page lea
         "",
         "M6: no measured box is written back as a min-width",
       );
+      // REQ-781 — with the pointer off the pill (a mini-pill shown whole under a pointer is not
+      // where the pill was placed)
+      await userPage.mouse.move(640, 300);
+      await userPage.waitForTimeout(1_000);
       expect.eq(
         (await userPage.evaluate(sidebarBlocked)).join(" | "),
         "",
         "every link and button of the sidebar is on top at its own middle",
       );
+      await connected();
       // REQ-536 (cycle 4, m29) — at desktop width "Connected" is a plain status: no details
       // toggle that is always "expanded" and whose click changes nothing
       const desktopStatus = await userPage.evaluate(() => {
@@ -317,11 +366,7 @@ Deno.test("REQ-379: the customer's demo pill has one home in a band the page lea
       const onDashboard = await settled();
       await userPage.screenshot({ path: `${folder}/customer-dashboard.png` });
       inItsBand(onDashboard, "/dashboard");
-      expect.eq(
-        `${onDashboard.left},${onDashboard.bottom}`,
-        `${onCustomers.left},${onCustomers.bottom}`,
-        "M1: the pill is in the same spot on /dashboard as on /customers",
-      );
+      await placedClear("/dashboard");
 
       // 3. back through the sidebar, then a reload: still the same spot (no per-page memory, no hop)
       await userPage.locator(".sb a.nav-item[href='/customers']").click({
@@ -333,6 +378,9 @@ Deno.test("REQ-379: the customer's demo pill has one home in a band the page lea
       await userPage.reload();
       await connected();
       const reloaded = await settled();
+      // REQ-781 — placed by the same rule after a reload: the same page puts it in the same spot
+      inItsBand(reloaded, "/customers after a reload");
+      await placedClear("/customers after a reload");
       expect.eq(
         `${reloaded.left},${reloaded.bottom},${reloaded.width}`,
         `${onCustomers.left},${onCustomers.bottom},${onCustomers.width}`,
@@ -349,7 +397,8 @@ Deno.test("REQ-379: the customer's demo pill has one home in a band the page lea
         if (!p) return "no pill";
         if (!/Terminar demo/.test(p.endText)) return `End says "${p.endText}"`;
         if (p.endCut) return `End is cut: "${p.endText}"`;
-        return p.right <= p.vw - 12
+        // REQ-781 — shown out of a mini-pill on the right edge it is flush with that edge
+        return p.right <= p.vw
           ? null
           : `the pill runs to ${p.right} of ${p.vw}`;
       });
@@ -364,25 +413,9 @@ Deno.test("REQ-379: the customer's demo pill has one home in a band the page lea
       await connected();
       const onAssistant = await settled();
       await userPage.screenshot({ path: `${folder}/customer-assistant.png` });
+      // REQ-781 — the composer's field and buttons are controls: none is under the pill
       inItsBand(onAssistant, "/assistant");
-      expect.eq(
-        `${onAssistant.left},${onAssistant.bottom}`,
-        `${onCustomers.left},${onCustomers.bottom}`,
-        "M1: the pill is in the same spot on /assistant",
-      );
-      const ends = await userPage.evaluate(() => {
-        const b = (s: string) =>
-          document.querySelector(s)?.getBoundingClientRect().bottom ?? null;
-        return {
-          composer: b(".composer"),
-          footer: b(".site-footer"),
-        };
-      });
-      expect(
-        ends.composer !== null && ends.composer <= onAssistant.top &&
-          (ends.footer === null || ends.footer <= onAssistant.top),
-        `/assistant: the composer (${ends.composer}) and the footer (${ends.footer}) end above the pill (${onAssistant.top})`,
-      );
+      await placedClear("/assistant");
 
       // 6. a phone: compact, never wider than 366 px, End inside the screen
       await userPage.goto(`${baseUrl}/dashboard`);
@@ -403,16 +436,17 @@ Deno.test("REQ-379: the customer's demo pill has one home in a band the page lea
             return p.endCut ? `End is cut: "${p.endText}"` : null;
           },
         );
+      // REQ-781 — on the phone the pill folds where no spot is clear: out of its mini-pill first
+      await connected();
       await fits("after the resize");
       await userPage.reload();
       await connected();
       await fits("after a reload on the phone");
       const phone = await settled();
       await userPage.screenshot({ path: `${folder}/customer-phone.png` });
-      expect(
-        phone.left === 12 && Math.abs(phone.vh - 8 - phone.bottom) <= 1,
-        `phone: the pill is home, bottom-left — ${JSON.stringify(phone)}`,
-      );
+      // REQ-781 — no band on the phone either (the pill may be shown out of its mini-pill here,
+      // under the pointer that opened it)
+      expect.eq(phone.band, "", "phone: no band is kept under the page");
       expect(
         phone.throughGap,
         "phone: the pill's empty area lets a tap through",
@@ -445,7 +479,7 @@ Deno.test("REQ-379: the customer's demo pill has one home in a band the page lea
         timeout: 5_000,
       });
       await userPage.locator(".sb.sb--open").waitFor({ timeout: 5_000 });
-      await until("phone: the drawer ends above the pill", async () => {
+      await until("phone: the drawer's Log out is on top", async () => {
         const r = await userPage.evaluate(() => {
           const out = document.querySelector<HTMLElement>(
             ".sb .nav-item--logout",
@@ -465,9 +499,7 @@ Deno.test("REQ-379: the customer's demo pill has one home in a band the page lea
           };
         });
         if (!r) return "no Log out or no pill";
-        if (r.logoutBottom > r.pillTop) {
-          return `Log out ends at ${r.logoutBottom}, the pill starts at ${r.pillTop}`;
-        }
+        // REQ-781 — no band lifts the drawer's foot any more: Log out is on top where it is tapped
         return r.onTop ? null : "Log out is not on top at its middle";
       });
       await userPage.screenshot({

@@ -50,14 +50,24 @@ describe("REQ-637 (demo-loop cycle 5, m5) — the folded pill is a labelled mini
 });
 
 describe("REQ-637 — a public /q /i /co page: the whole pill on its bottom strip, never folded", () => {
-  test("REQ-637 minimal with page content under the home: home on the painted band (not tucked)", () => {
+  // REQ-781 (demo-loop cycle dv1, d7) AMENDMENT — no band any more: the whole pill floats home
+  // while nothing is under it, else to a spot with no control under it; only a page with a
+  // control under every spot folds it (see jest/unit/demo-pill-no-gap.test.ts)
+  test("REQ-637 minimal with page content under the home: whole where no control is (REQ-781: never on a band)", () => {
     const home = homeBox();
     expect(
-      placePill({ home, view, dialog: false, minimal: true, blocked: () => 3 }),
-    ).toEqual({ box: home, tucked: false, band: true });
+      placePill({
+        home,
+        view,
+        dialog: false,
+        minimal: true,
+        blocked: () => 3,
+        controls: () => 0,
+      }),
+    ).toEqual({ box: home, tucked: false, band: false });
     expect(
       placePill({ home, view, dialog: false, minimal: true, blocked: () => 0 }),
-    ).toEqual({ box: home, tucked: false, band: true });
+    ).toEqual({ box: home, tucked: false, band: false });
   });
 
   test("REQ-637 minimal under a dialog: it still docks, and with nowhere free it folds to the mini-pill", () => {

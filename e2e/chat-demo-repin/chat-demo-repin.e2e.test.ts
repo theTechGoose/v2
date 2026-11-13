@@ -220,17 +220,16 @@ Deno.test("REQ-469 (demo m39, cycle 3): a demo starting while a draft quote card
         timeout: 20_000,
       });
 
-      // the contractor's app joins on its own (its poll) and reserves the band
+      // the contractor's app joins on its own (its poll). REQ-781 (demo-loop cycle dv1, d7)
+      // AMENDMENT — the demo keeps no band under the page any more (the pill floats), so the
+      // chat's scroller keeps its height; the card's buttons must still be whole
       await userPage.locator("[data-cy='demo-pill']").waitFor({
-        state: "visible",
+        state: "attached",
         timeout: 30_000,
       });
-      let band = "";
-      for (let i = 0; i < 100 && !/[1-9]/.test(band); i++) {
-        band = (await userPage.evaluate(buttonsBox)).band;
-        if (!/[1-9]/.test(band)) await userPage.waitForTimeout(200);
-      }
-      expect(/[1-9]/.test(band), `the demo reserved its band ("${band}")`);
+      await userPage.waitForTimeout(1_500);
+      const band = (await userPage.evaluate(buttonsBox)).band;
+      expect(!/[1-9]/.test(band), `the demo keeps no band ("${band}")`);
 
       // the chat settles (a smooth scroll runs for a moment), untouched by the person
       let after: Box = await userPage.evaluate(buttonsBox);
@@ -244,7 +243,7 @@ Deno.test("REQ-469 (demo m39, cycle 3): a demo starting while a draft quote card
       }
       expect(
         whole(after),
-        `Lock it in and Edit are whole above the composer once the demo's band is reserved ${
+        `Lock it in and Edit are whole above the composer once the demo is up ${
           JSON.stringify(after)
         }`,
       );

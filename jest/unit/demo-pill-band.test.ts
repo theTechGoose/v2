@@ -64,20 +64,13 @@ describe("REQ-440 (demo-loop cycle 3, m2) — the pill's band is real on pages w
     expect(bandBackground([])).toBe("#fff");
   });
 
-  test("REQ-440: the overlay paints the band — window-wide, the band's height, under the page's own fixed layers, never taking a click", () => {
+  // REQ-781 (demo-loop cycle dv1, d7) SUPERSEDES this: Raphael — "the gap reserved for the demo
+  // pill ... that's not a decision". The overlay paints no band and keeps no room; the pill floats
+  test("REQ-440 SUPERSEDED by REQ-781: the overlay paints no band under the pill", () => {
     const src = read("front-end/islands/DemoModeOverlay.tsx");
-    expect(src).toContain(`data-cy="demo-band"`);
-    const band = src.match(/const bandStyle =\s*`[^`]*`/)?.[0] ?? "";
-    expect(band).toContain("position:fixed");
-    expect(band).toContain("left:0;right:0;bottom:0");
-    // REQ-545 (cycle 4, m2) AMENDMENT — the band's height while the pill sits home on it; 0
-    // while the pill is tucked to its tab (the band hid what scrolled into the strip)
-    expect(band.replace(/\s+/g, " ")).toContain(
-      `bandOn ? "var(${PILL_ROOM_VAR}, 0px)" : "0px"`,
-    );
-    expect(band).toContain("pointer-events:none");
-    expect(band).toContain("z-index:1;");
-    expect(src).toContain("bandBackground(");
+    expect(src).not.toContain(`data-cy="demo-band"`);
+    expect(src).not.toMatch(/const bandStyle =/);
+    expect(src).not.toContain("bandBackground(");
   });
 
   // REQ-618 (demo-loop cycle 4, p4-p3b) amends REQ-440(c): the backdrop is also the dim, so
