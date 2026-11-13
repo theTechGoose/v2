@@ -80,6 +80,10 @@ export interface ChangeOrderRequest {
    *  a line already on the quote — a reprice, never an added line. When set,
    *  `description` / `deltaAmountCents` are not. */
   reprice?: LineReprice;
+  /** REQ-661 (demo-loop cycle 5, M15): "heated floor is $1,200 not 150" —
+   *  `deltaAmountCents` is the line's RIGHT price. A line by that name already
+   *  on the job is repriced to it; with none, it is added at that price. */
+  setsLinePrice?: boolean;
 }
 
 /** Words that open the "what changed" part; "add"-type ones are dropped. */
@@ -132,7 +136,84 @@ export function isCleanChangeClause(text: string): boolean {
   if (!clause) return false;
   if (clause.split(/\s+/).length > MAX_CLAUSE_WORDS) return false;
   if (/[.!?]\s/.test(clause)) return false;
+  // REQ-661 (M15): "heated floor for the hendersons is not 150" — a copula,
+  // "not N" or "instead of" makes it a sentence (a correction), not an item.
+  if (COPULA_RE.test(clause) || CORRECTION_WORD_RE.test(clause)) return false;
   return !NARRATIVE_RE.test(clause);
+}
+
+/** REQ-661 (demo-loop cycle 5, M15): a verb "to be" — an item's name never
+ *  holds one ("Heated floor is 1200" is a sentence about the item). */
+const COPULA_RE =
+  /(?<!\p{L})(?:is|isn['’]?t|are|was|were|should\s+be|es|son|era|eran|est[aá]|deber[ií]a\s+ser|debe\s+ser)(?!\p{L})/iu;
+/** REQ-661: a correction — "not 150", "no $150", "instead of", "en vez de". */
+const CORRECTION_WORD_RE =
+  /(?<!\p{L})(?:(?:not|no)\s+\$?\s?\d|instead\s+of|rather\s+than|en\s+vez\s+de|en\s+lugar\s+de)/iu;
+
+export interface LineCorrection {
+  /** The line as named ("heated floor"), article and customer dropped. */
+  item: string;
+  /** "for the hendersons" inside the clause — who the job is for. */
+  customerName?: string;
+  /** The RIGHT price, integer cents. */
+  amountCents: number;
+  /** The wrong one it replaces, integer cents. */
+  previousCents: number;
+}
+
+const CORR_MONEY = String
+  .raw`\$\s?(?<whole>\d{1,3}(?:,\d{3})+|\d+)(?:\.(?<frac>\d{1,2}))?`;
+const CORR_OLD = String
+  .raw`\$?\s?(?<oldWhole>\d{1,3}(?:,\d{3})+|\d+)(?:\.(?<oldFrac>\d{1,2}))?`;
+/** "<item> is $1,200 not 150", "<item> should be $1,200, not $150",
+ *  "<item> is $900 instead of $700", "el <item> es $1,200, no 150". */
+const LINE_CORRECTION_RE = new RegExp(
+  String
+    .raw`^\s*(?:(?:no|oops|sorry|actually|wait|correction|perd[oó]n|en\s+realidad)[,!]?\s+)*(?<line>[^$\n.:;!?]+?)\s+(?:is|should\s+be|was\s+supposed\s+to\s+be|=|es|debe\s+ser|deber[ií]a\s+ser|cuesta)\s+(?:actually\s+|really\s+|en\s+realidad\s+)?${CORR_MONEY}\s*,?\s+(?:not|no|instead\s+of|rather\s+than|en\s+vez\s+de|en\s+lugar\s+de|y\s+no)\s+${CORR_OLD}(?!\d)`,
+  "iu",
+);
+/** "heated floor for the hendersons" → the job's customer, at the end. */
+const LINE_FOR_WHO_RE =
+  /\s+(?:for|para)\s+(?:(?:the|los|las|la|el)\s+)?(?<who>[\p{L}][\p{L}'’.-]*(?:\s+[\p{L}][\p{L}'’.-]*){0,2})$/u;
+/** Names that point at no one line ("it is $1,200 not 150", "the total"). */
+const NOT_A_NAMED_LINE =
+  /^(?:it|that|this|total|the\s+total|price|quote|job|estimate|eso|esto|todo|precio|cotizaci[oó]n|presupuesto|trabajo)$/i;
+
+function wholeFracCents(whole: string, frac?: string): number {
+  return Number(whole.replace(/,/g, "")) * 100 +
+    (frac ? Number(frac.padEnd(2, "0")) : 0);
+}
+
+/**
+ * REQ-661 (demo-loop cycle 5, M15): "heated floor for the hendersons is
+ * $1,200 not 150" is a correction of a line's price — the item, who it is
+ * for, its right price and the wrong one. Undefined when the words are not
+ * one, or name no line ("it is $1,200 not 150").
+ */
+export function parseLineCorrection(
+  text: string,
+): LineCorrection | undefined {
+  const m = (text ?? "").match(LINE_CORRECTION_RE);
+  const g = m?.groups;
+  if (!g?.line || !g.whole || !g.oldWhole) return undefined;
+  let line = g.line.trim();
+  let customerName: string | undefined;
+  const who = line.match(LINE_FOR_WHO_RE);
+  if (who?.groups?.who) {
+    customerName = who.groups.who.trim();
+    line = line.slice(0, who.index).trim();
+  }
+  line = line.replace(/^(?:the|a|an|el|la|los|las|un|una)\s+/i, "").trim();
+  if (!line || !/\p{L}/u.test(line) || NOT_A_NAMED_LINE.test(line)) {
+    return undefined;
+  }
+  if (!isCleanChangeClause(line)) return undefined;
+  return {
+    item: line,
+    ...(customerName ? { customerName } : {}),
+    amountCents: wholeFracCents(g.whole, g.frac),
+    previousCents: wholeFracCents(g.oldWhole, g.oldFrac),
+  };
 }
 
 /**
@@ -173,6 +254,20 @@ export function parseChangeOrderRequest(
   }
   // drop the separator between "who" and "what"
   rest = rest.replace(/^\s*(?:[:,;—–]|-\s)\s*/, "").trim();
+
+  // REQ-661 (M15): "heated floor for the hendersons is $1,200 not 150" is
+  // the line's right price — never "Heated floor for the hendersons is not
+  // 150" added at +$1,200.
+  const correction = parseLineCorrection(rest);
+  if (correction) {
+    if (!out.customerName && correction.customerName) {
+      out.customerName = correction.customerName;
+    }
+    out.description = capitalize(correction.item);
+    out.deltaAmountCents = correction.amountCents;
+    out.setsLinePrice = true;
+    return out;
+  }
 
   // REQ-315 (M26): "change plumbing fixtures to $1,300" is a new price for a
   // line that is already there — not "Change plumbing fixtures to" +$1,300.

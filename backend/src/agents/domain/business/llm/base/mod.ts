@@ -129,6 +129,10 @@ export type LLMAction =
        *  set, the delta is that minus the current total, worked out by the
        *  coordinator — never by the model. */
       targetTotalCents?: number;
+      /** REQ-661 (demo-loop cycle 5, M15): set in code for a correction
+       *  ("heated floor is $1,200 not 150") — `deltaAmountCents` is the
+       *  line's RIGHT price; a line by that name is repriced, not doubled. */
+      setsLinePrice?: boolean;
     };
   }
   /** REQ-315 (demo-loop cycle 1, M26): change lines that are ALREADY on a

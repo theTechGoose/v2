@@ -16,7 +16,9 @@ import {
   isInvoiceLocked,
   isQuoteIssued,
   isQuoteLocked,
+  versionOf,
 } from "#documents/versions.ts";
+import { findLine } from "@agents/domain/business/quote-line-revision/mod.ts";
 import {
   askAmountExamples,
   pickChangeOrderTarget,
@@ -44,6 +46,11 @@ export interface ChatChangeOrderInput {
   /** REQ-377 (B1): what the contractor typed. A model-supplied delta is
    *  cross-checked against its dollar amounts before anything is written. */
   userText?: string;
+  /** REQ-661 (demo-loop cycle 5, M15): "heated floor is $1,200 not 150" —
+   *  `deltaAmountCents` is the RIGHT price of the line `description` names.
+   *  A line by that name already on the job is repriced to it (an invoiced
+   *  job's change order carries the difference); with none, it is added. */
+  setsLinePrice?: boolean;
 }
 
 /** REQ-315 (m49): outcomes that name a quote carry its number too, so the
@@ -221,7 +228,30 @@ export class ApplyChatChangeOrder {
       ? totalOf(baseLines)
       : quote.estimatedTotal ?? 0;
     const label = labelOf(quote);
+    // REQ-661 (M15): a correction names the line and its right price. The
+    // amount was read in code from what was typed — no reconcile needed.
+    const corrected = input.setsLinePrice && description
+      ? findLine(baseLines, description)
+      : -1;
+    const was = corrected >= 0
+      ? (baseLines[corrected].price ?? 0) *
+        (baseLines[corrected].quantity ?? 1)
+      : 0;
+    if (corrected >= 0) {
+      delta = Math.trunc(input.deltaAmountCents) - was;
+      if (delta === 0) {
+        return {
+          text: t(lang, "chatCoordinator.changeOrder.lineAlready", {
+            description: baseLines[corrected].description,
+            price: money(was),
+            job: label,
+          }),
+          outcome: { kind: "no_change", ...named },
+        };
+      }
+    }
     if (
+      !input.setsLinePrice &&
       typeof input.targetTotalCents === "number" &&
       Number.isFinite(input.targetTotalCents)
     ) {
@@ -246,7 +276,7 @@ export class ApplyChatChangeOrder {
           outcome: { kind: "needs_description", ...named },
         };
       }
-    } else if (input.userText) {
+    } else if (input.userText && !input.setsLinePrice) {
       // The demo's model wrote 12500 for "$19,750" on an $18,500 quote.
       const check = reconcileChangeOrderDelta({
         deltaCents: delta,
@@ -293,6 +323,26 @@ export class ApplyChatChangeOrder {
       amount: money(delta),
       job: labelOf(quote),
       name: nameOf(quote) || t(lang, "chatCoordinator.changeOrder.theCustomer"),
+      // REQ-661 (M15): why an unsigned quote changes by version
+      number: quote.number ?? labelOf(quote),
+      version: versionOf(quote) + 1,
+    };
+    /** REQ-661 (M15): the repriced line, before → after. */
+    const repricedVars = corrected >= 0
+      ? {
+        ...vars,
+        description: baseLines[corrected].description,
+        was: money(was),
+        price: money(was + delta),
+      }
+      : undefined;
+    /** The job's lines with the change on them: the named line repriced, or
+     *  a new line appended. */
+    const withChange = (lines: LineItem[]): LineItem[] => {
+      if (corrected < 0) return [...lines, line];
+      return lines.map((l, i) =>
+        i === corrected ? { ...l, quantity: 1, price: was + delta } : l
+      );
     };
 
     // 1) An open invoice for this job → a change order on it.
@@ -417,13 +467,19 @@ export class ApplyChatChangeOrder {
 
     // 4) Issued, unsigned → the next revision (REQ-201), published by the contractor.
     if (isQuoteIssued(quote)) {
-      const lineItems = [...baseLines, line];
+      const lineItems = withChange(baseLines);
       await this.quotes.setPending(quote.id, userId, {
         lineItems,
         estimatedTotal: totalOf(lineItems),
       });
       return {
-        text: t(lang, "chatCoordinator.changeOrder.pendingRevision", vars),
+        text: repricedVars
+          ? t(
+            lang,
+            "chatCoordinator.changeOrder.pendingRevisionRepriced",
+            repricedVars,
+          )
+          : t(lang, "chatCoordinator.changeOrder.pendingRevision", vars),
         outcome: {
           kind: "pending_revision",
           quoteId: quote.id,
@@ -433,13 +489,15 @@ export class ApplyChatChangeOrder {
     }
 
     // 5) A draft → the line lands on it.
-    const lineItems = [...(quote.lineItems ?? []), line];
+    const lineItems = withChange(quote.lineItems ?? []);
     await this.quotes.update(quote.id, userId, {
       lineItems,
       estimatedTotal: totalOf(lineItems),
     });
     return {
-      text: t(lang, "chatCoordinator.changeOrder.draftUpdated", vars),
+      text: repricedVars
+        ? t(lang, "chatCoordinator.changeOrder.draftRepriced", repricedVars)
+        : t(lang, "chatCoordinator.changeOrder.draftUpdated", vars),
       outcome: {
         kind: "draft_updated",
         quoteId: quote.id,
