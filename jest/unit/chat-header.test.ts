@@ -533,8 +533,9 @@ describe("REQ-447 (cycle 3, p8-pair10-d/m14) header and list share one title rul
     expect(call).toMatch(/title:\s*convTitle/);
     // seeded from the route, and re-read after every turn
     expect(chat).toMatch(/initialTitle/);
-    expect(chat).toMatch(/turnTitle = \(res\.conversation[^;]*\?\.title;/);
-    expect(chat).toMatch(/setConvTitle\(turnTitle\)/);
+    // REQ-671 (cycle 5, p8): through adoptTurnTitle, which the draft note
+    // and the wizard answers share (c5-chat-header-title.test.ts).
+    expect(chat).toMatch(/adoptTurnTitle\(res\.conversation\)/);
   });
 
   it("the server-rendered header passes the conversation title too", () => {

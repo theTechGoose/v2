@@ -117,6 +117,16 @@ function filled(v: unknown): string | undefined {
   return typeof v === "string" && v.trim().length > 0 ? v : undefined;
 }
 
+/** REQ-671 (demo-loop cycle 5, p8): the title a landed turn's server row
+ *  carries, or undefined when it has none (blank never counts). The chat
+ *  header adopts it the moment the list does — the details-first draft note
+ *  titles the thread before any chat turn runs. */
+export function threadTurnTitle(
+  conversation?: object | null,
+): string | undefined {
+  return filled((conversation as { title?: unknown } | null)?.title);
+}
+
 /** The chat's turn push. `conversation` is the server's patched row (the
  *  turn's response); only its title and preview travel. Browser-only. */
 export function publishThreadTurn(
