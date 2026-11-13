@@ -914,3 +914,92 @@ Deno.test("REQ-657 M13 settleCreateQuote: the demo's $1,450-total draft is saved
     amountCents: 145_000,
   }]);
 });
+
+// ---------------------------------------------------------------------------
+// REQ-762 (demo-loop cycle 5v2, m48 re-verified) — one typed price repeated on
+// every job is one line too
+// ---------------------------------------------------------------------------
+
+/** The verifier's try 2 on the merged demo-fixes, as typed. */
+const M48V2_TEXT =
+  "Cotización para Rosa Delgado: cambiar el calentador de agua y reparar la llave de la regadera, $900";
+/** What the model drafted: the one $900 on BOTH jobs, $1,800 in all. */
+const M48V2_LINES: PricedLine[] = [
+  { description: "Cambio de calentador de agua", amountCents: 90_000 },
+  { description: "Reparación de llave de regadera", amountCents: 90_000 },
+];
+
+Deno.test("REQ-762 m48 settleCreateQuote: the verifier's one typed $900 put on both jobs ($900 + $900 = $1,800) is saved as ONE $900 line naming both", async () => {
+  const out = await settleCreateQuote({
+    payload: {
+      summary: "Calentador y regadera — Rosa Delgado",
+      lineItems: M48V2_LINES,
+    },
+    userText: M48V2_TEXT,
+    lang: "es",
+    reask: () => Promise.resolve(undefined),
+  });
+  assertEquals(out.kind, "save");
+  if (out.kind !== "save") return;
+  assertEquals(out.payload.lineItems, [{
+    description:
+      "Cambio de calentador de agua (incluye reparación de llave de regadera)",
+    amountCents: 90_000,
+  }]);
+});
+
+Deno.test("REQ-762 m48 settleCreateQuote: the typed price repeated on three jobs beside a $0 line is one line at that price (English)", async () => {
+  const out = await settleCreateQuote({
+    payload: {
+      summary: "Plumbing — Delgado",
+      lineItems: [
+        { description: "Replace water heater", amountCents: 90_000 },
+        { description: "Fix shower faucet", amountCents: 90_000 },
+        { description: "Haul away old heater", amountCents: 0 },
+        { description: "Check shutoff valves", amountCents: 90_000 },
+      ],
+    },
+    userText:
+      "Quote for Rosa Delgado: replace the water heater, fix the shower faucet and check the shutoffs, $900",
+    lang: "en",
+    reask: () => Promise.resolve(undefined),
+  });
+  assertEquals(out.kind, "save");
+  if (out.kind !== "save") return;
+  assertEquals(out.payload.lineItems.length, 1);
+  assertEquals(out.payload.lineItems[0].amountCents, 90_000);
+  assertEquals(
+    out.payload.lineItems[0].description,
+    "Replace water heater (incl. fix shower faucet, haul away old heater, check shutoff valves)",
+  );
+});
+
+Deno.test("REQ-762 m48 settleCreateQuote: one job at the typed price beside a job the model priced itself, and a draft revision repeating a price, are kept", async () => {
+  const partial = await settleCreateQuote({
+    payload: {
+      summary: "Heater + faucet",
+      lineItems: [
+        { description: "Replace water heater", amountCents: 90_000 },
+        { description: "Fix shower faucet", amountCents: 15_000 },
+      ],
+    },
+    userText: "Replace the water heater $900 and fix the shower faucet",
+    lang: "en",
+    reask: () => Promise.resolve(undefined),
+  });
+  assertEquals(partial.kind, "keep");
+  const revision = await settleCreateQuote({
+    payload: { summary: "Heater + faucet", lineItems: M48V2_LINES },
+    userText: "la llave de la regadera también $900",
+    draft: {
+      summary: "Heater + faucet",
+      lineItems: [
+        { description: "Cambio de calentador de agua", price: 90_000 },
+        { description: "Reparación de llave de regadera", price: 20_000 },
+      ],
+    },
+    lang: "es",
+    reask: () => Promise.resolve(undefined),
+  });
+  assertEquals(revision.kind, "keep");
+});
