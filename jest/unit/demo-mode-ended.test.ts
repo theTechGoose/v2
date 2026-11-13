@@ -310,7 +310,8 @@ describe("REQ-300 the question stays put and the pill under it stays still", () 
     expect(coversView({ left: 0, top: 0, width: 280, height: 800 }, view))
       .toBe(false);
     const island = read("front-end/islands/DemoModeOverlay.tsx");
-    expect(island).toMatch(/coversView\(/);
+    // REQ-643 (cycle 5, p18-3d) — coversView down to the band (backdropCovers)
+    expect(island).toMatch(/backdropCovers\(/);
   });
 });
 

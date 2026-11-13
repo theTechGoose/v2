@@ -229,7 +229,8 @@ describe("REQ-379 — the overlay keeps the pill home", () => {
 
   test("a dialog is no longer a freeze: place() docks instead of returning early", () => {
     expect(o).not.toMatch(/posRef\.current && dialogBackdropUp\(\)\) return/);
-    expect(o).toMatch(/dialogBackdropUp\(\)/);
+    // REQ-643 (cycle 5, p18-3d) — asked down to the band: dialogBackdropUp(roomRef.current)
+    expect(o).toMatch(/dialogBackdropUp\(/);
     // REQ-300 still: End's question up, nothing moves
     expect(o).toMatch(
       /querySelector\(\s*['"]\[data-cy=["']?demo-end-ask["']?\]['"]\s*\)/,
