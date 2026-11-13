@@ -18,8 +18,10 @@
  * What never crosses: scripts, <noscript>, <template>, <base>, http-equiv metas (refresh, CSP),
  * links other than stylesheets and icons (preloads), tracking pixels, comments, the demo overlay
  * (`data-demo-overlay`) and anything marked `data-demo-skip` (the staff banner); event handler
- * attributes, `javascript:` URLs, integrity/nonce, an embedded page's src/srcdoc (the frame is an
- * empty box), media sources. URLs are made absolute (the stage's frame has no base of its own).
+ * attributes, `javascript:` URLs, integrity/nonce, an embedded page's src (the frame is an
+ * empty box), media sources. REQ-780 (cycle dv1, d6): an iframe's srcdoc (the send dialog's email
+ * preview) does cross, cleaned by `cleanEmbedDoc` (no scripts, handlers, nested frames) — never
+ * under `data-demo-mask` — and the stage builds it sandboxed without scripts. URLs are made absolute (the stage's frame has no base of its own).
  * Passwords, one-time codes, card numbers and anything under `data-demo-mask` are masked, a
  * bullet per character, before they leave this browser.
  *
@@ -51,6 +53,7 @@
  * back to its old place still goes out.
  */
 import {
+  cleanEmbedDoc,
   MIRROR_FLUSH_MS,
   MIRROR_HEARTBEAT_MS,
   type MirrorFrame,
@@ -252,7 +255,8 @@ function nameAllowed(tag: string, name: string): boolean {
   }
   if (n === OPEN_ATTR) return false; // REQ-638 — only the recorder says a select is open
   if (EMBED_TAGS.has(tag) && (n === "src" || n === "srcdoc" || n === "data")) {
-    return false;
+    // REQ-780 — but an iframe's srcdoc (the send dialog's email preview) crosses, cleaned
+    return tag === "iframe" && n === "srcdoc";
   }
   if (MEDIA_TAGS.has(tag) && (n === "src" || n === "srcset")) return false;
   return true;
@@ -268,6 +272,8 @@ function attrValue(
   base: string,
 ): string | null {
   const n = name.toLowerCase();
+  // REQ-780 — an iframe's own document, without anything that could run (none under a mask)
+  if (n === "srcdoc") return masked ? null : cleanEmbedDoc(value);
   if (n === "srcset" || n === "imagesrcset") return absSrcset(value, base);
   if (n === "style") return absCss(value, base);
   if (URL_ATTRS.has(n)) {

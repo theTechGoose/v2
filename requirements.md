@@ -6020,3 +6020,22 @@ A public /q /i /co page tries the whole pill first (1, 3, then 2). The ended not
 - RED: jest `--testPathPattern unit/default-terms-shown` failed "Cannot find module '../../shared/quote-flow/cancellation-term'". `cd backend && deno test -A --unstable-kv --no-check …/cancellation-term.int.test.ts …/default-terms-shown.e2e.test.ts` gave 1 passed (the default) and 3 failed: the PDF printed "CANCELLATION 14 days' notice CANCELLATION 7 days' notice" and clause 10 still said "7 days' written notice". The e2e failed the same way after the review's PUT. `cd front-end && deno test -A lib/default-terms-shown.test.tsx` gave 1 passed (the default) and 2 failed with "Values are not equal": the 14-day edit and the removal still showed the 7-day row.
 - GREEN: the jest file gave "Tests: 8 passed". The backend int + e2e files gave 4 ok. The front-end file gave 3 ok.
 - Neighbours: `npx jest --selectProjects unit` gave "Test Suites: 498 passed · Tests: 1 skipped, 5066 passed". `deno test -A --unstable-kv --parallel src/paperwork/ src/agents/` gave "1818 passed | 1 failed". The failure was REQ-209 exports.int "GET /invoices took 2871 ms" (a < 1 s timing check under host load); re-run alone it gave "ok | 2 passed". The front-end QuoteDoc tests (signature-section, quote-preview-banner, owner-signed-quote, quote-to-invoice-lang, sign-gate, default-terms-shown) gave "ok | 38 passed". `deno lint` and `deno check` are clean on every touched file. `deno fmt` was run only on new files.
+
+## REQ-780 — the send dialog's email preview is visible on the presenter's stage (demo-loop cycle dv1, d6)
+Raphael: "fix every issue the demo found, loop until there are none." His decision on this one: "The email preview should not be blank on the presenter screen."
+
+Demo issue d6, cycle dv1. Earlier it was cycle 5 m18. The RCA: SendLangPreview renders "What they'll get" as `<iframe sandbox="" srcdoc=EMAIL>`. The REQ-242 mirror recorder dropped every embedded page's srcdoc, and the replay refused it, so the stage showed an empty box.
+
+Now an iframe's srcdoc crosses the mirror. It is cleaned on both ends by `cleanEmbedDoc` (shared/demo-mode/mirror.ts), which removes:
+- scripts, `<noscript>`/`<template>` and comments
+- nested frames, objects and embeds
+- `<base>` and http-equiv metas
+- event handlers, nested srcdoc and integrity/nonce attributes
+- `javascript:`/`vbscript:` URLs and scripting `data:` URLs
+
+It is not sent under `data-demo-mask` or over 512 000 characters. The stage builds it in a frame with `sandbox="allow-same-origin"` and never `allow-scripts`. That sandbox is set before the srcdoc, and no frame can change or remove it. The frame sits inside the stage frame and inherits its sandbox and CSP (`script-src 'none'`), so nothing in the email runs. A frame's `src` still never crosses, and nothing of a frame/object/embed does. This amends REQ-242: its snapshot expectation now shows the sample frame's srcdoc, cleaned and sandboxed.
+
+**Tests:**
+- unit: jest `unit/demo-stage-email-preview.test.ts` (REQ-780: cleaning, snapshot, language-switch op, forged ops) and `unit/demo-mode-mirror-dom.test.ts` (the REQ-242 expectation, amended)
+- integration: n/a — the mirror is browser-to-browser; the backend only relays opaque chunks (`backend/src/demo-mode/entrypoints/demo-mode-controller/int.test.ts` still green)
+- e2e: `e2e/demo-mode/demo-stage-email-preview.e2e.test.ts`. In real Chromium, the real recorder and replayer inside MIRROR_SRCDOC show the Spanish email on the stage within 1 s (styled, at the customer's size), then the English one after the switch, and no script runs.
