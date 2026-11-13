@@ -869,12 +869,13 @@ describe("REQ-105 the demo's day strip scrolls under the finger — every day in
  */
 describe("REQ-109 Monster Free's inclusions are the three lines, free forever", () => {
   test("the shared plan lists exactly the three lines, each its own feature, in both languages, and its blurb says free forever", () => {
-    expect(planFeatures("free", "en")).toEqual([
+    // REQ-733 (cycle 5): the three lead the list, word for word; what every plan has follows them
+    expect(planFeatures("free", "en").slice(0, 3)).toEqual([
       "Unlimited invoices",
       "Up to five quotes and contracts a month",
       "Spanish and English output",
     ]);
-    expect(planFeatures("free", "es")).toEqual([
+    expect(planFeatures("free", "es").slice(0, 3)).toEqual([
       "Facturas ilimitadas",
       "Hasta cinco cotizaciones y contratos al mes",
       "Documentos en español y en inglés",

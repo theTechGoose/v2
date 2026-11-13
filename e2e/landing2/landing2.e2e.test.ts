@@ -2041,7 +2041,7 @@ Deno.test("REQ-109: Monster Free's card lists its three inclusions, each on its 
       const free = page.locator("[data-cy='l2-plan'][data-plan='free']"); // REQ-120 — the card carries the id, its button no plan
       expect.eq(await free.count(), 1, `the Monster Free card (${lang})`);
       const feats = (await free.locator(".l2-plan__feats .l2-check").allTextContents()).map((s) => s.replace(/\s+/g, " ").trim());
-      expect.eq(feats.join(" | "), lines.join(" | "), `the three lines, each its own (${lang})`);
+      expect.eq(feats.slice(0, 3).join(" | "), lines.join(" | "), `the three lines lead, each its own (${lang})`); // REQ-733: every-plan lines follow them
       await expect.see(forever);
     }
   }));
