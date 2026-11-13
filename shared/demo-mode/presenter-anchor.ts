@@ -542,6 +542,22 @@ export function seedUse(
 export const GHOST_GAP_PX = 6;
 /** the ghost is faint: the live arrow on their screen is the real one */
 export const GHOST_OPACITY = 0.5;
+/** REQ-789 — the ghost is drawn only once he has rested this long after his last anchor: while
+ *  he moves, the report for each anchor (a link's round trip late) would flash it on and off */
+export const GHOST_REST_MS = 500;
+
+/** REQ-789 — how long a report must still wait before the ghost may be drawn: the rest left
+ *  since his last anchor (`lastHoldAt`, 0: none yet), never less than nothing */
+export function ghostWait(
+  lastHoldAt: number,
+  now: number,
+  rest = GHOST_REST_MS,
+): number {
+  if (!lastHoldAt) return 0;
+  const since = now - lastHoldAt;
+  if (since < 0) return rest;
+  return Math.max(0, rest - since);
+}
 
 /** where the stage draws the ghost of his arrow, or null: `placed` is where their screen has it
  *  now (on the frame), the page shown is `shownLoad` (REQ-645 — handed back as it came: its way

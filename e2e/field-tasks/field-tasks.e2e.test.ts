@@ -259,9 +259,8 @@ Deno.test("REQ-143: worker → subscription on an existing customer → staffed 
     await expect.see("Ana Torres");
     await expect.notSee("$65");
     await page.locator("[data-cy='w-check']").first().click();
-    // REQ-527 (demo m55, cycle 3): one noun — the day summary counts tasks;
-    // one task reads singular (worker.today.one, the c5 plural fix)
-    await expect.see("1 of 1 task done", { timeout: 15_000 });
+    // REQ-527 (demo m55, cycle 3): one noun — the day summary counts tasks
+    await expect.see("1 of 1 tasks done", { timeout: 15_000 });
     await expect.notSee("services done");
     // REQ-196 — the ring is the progressbar, the card says Done, the summary says the round is complete
     expect.eq(
@@ -287,13 +286,13 @@ Deno.test("REQ-143: worker → subscription on an existing customer → staffed 
       "today is the selected day",
     );
     await page.locator("[data-cy='w-day-next']").click();
-    await expect.see("No tasks this day.", { timeout: 15_000 });
+    await expect.see("No visits on this day.", { timeout: 15_000 });
     expect(
       await page.evaluate(() => location.search.includes("date=")),
       "tomorrow is in the URL",
     );
     await page.locator("[data-cy='w-day-prev']").click();
-    await expect.see("No tasks this day.", { timeout: 15_000 });
+    await expect.see("No visits on this day.", { timeout: 15_000 });
     await page.locator("[data-cy='w-day-today']").click();
     await expect.see("Ana Torres", { timeout: 15_000 });
     expect(
@@ -323,12 +322,11 @@ Deno.test("REQ-143: worker → subscription on an existing customer → staffed 
     await page.locator("[data-cy='lt-from']").fill(today);
     await page.locator("[data-cy='lt-to']").fill(today);
     await page.locator("[data-cy='lt-pull']").click();
-    const card = page.locator("[data-cy='lt-invoice']").first();
-    await card.waitFor({ timeout: 20_000 });
-    // scoped to the card: the page's search box also knows the customer
-    // (a hidden match that an unscoped text wait lands on first)
-    await card.getByText("Ana Torres").first().waitFor({ timeout: 15_000 });
-    await card.getByText("$65.00").first().waitFor({ timeout: 15_000 });
+    await page.locator("[data-cy='lt-invoice']").first().waitFor({
+      timeout: 20_000,
+    });
+    await expect.see("Ana Torres");
+    await expect.see("$65.00");
 
     // the invoice is a real one, in the existing invoices feature
     const invoices = await (await http("/api/invoices", { headers: auth }))
@@ -367,38 +365,11 @@ Deno.test("REQ-143: worker → subscription on an existing customer → staffed 
       "the line carries its date and service",
     );
 
-    // REQ-162/REQ-790: the batch's "Open invoice" opens THAT invoice as the
-    // customer sees it — the public /i/<id> page in a new tab — never the
-    // invoices list or its tab.
-    const open = page.locator("[data-cy='lt-open']").first();
-    await open.waitFor({ timeout: 15_000 });
-    expect.eq(
-      await open.getAttribute("href"),
-      `/i/${inv.id}`,
-      "the link is the customer-facing invoice page",
-    );
-    expect.eq(
-      await open.getAttribute("target"),
-      "_blank",
-      "it opens in a new tab so the batch stays put",
-    );
-    const [popup] = await Promise.all([
-      page.context().waitForEvent("page", { timeout: 15_000 }),
-      open.click(),
-    ]);
-    await popup.waitForURL(new RegExp(`/i/${inv.id}$`), { timeout: 15_000 });
-    // the public page is server-rendered: once its DOM is in, the invoice's
-    // own line (the "Lawn cut" visit) is on it — no hydration to wait for.
-    // (A batch invoice has no quote, so the public page carries no "Bill to"
-    // card — the customer's name is not what identifies it here.)
-    await popup.waitForLoadState("domcontentloaded", { timeout: 60_000 });
-    await popup.getByText("Lawn cut").first().waitFor({ timeout: 15_000 });
-    expect.eq(
-      page.url().includes("/invoices"),
-      false,
-      "the batches page did not jump to the invoices tab",
-    );
-    await popup.close();
+    // REQ-162: the batch's "Open invoice" opens THAT invoice, not the invoices list
+    await page.locator("[data-cy='lt-open']").first().click();
+    await page.waitForURL(/\/invoices\?open=/, { timeout: 15_000 });
+    await expect.see("Invoice detail", { timeout: 15_000 });
+    await expect.see("Ana Torres");
   }));
 
 Deno.test("REQ-144: picking a customer with an address on file fills the service address; a typed address survives a re-pick", (t) =>

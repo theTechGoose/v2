@@ -3,9 +3,7 @@
  * a date range into one DRAFT invoice per customer (REQ-142), reviews the
  * drafts as cards, ticks the ones to send, and sends. Earlier batches are listed
  * below. Invoices themselves are the existing feature (REQ-137) — a card only
- * links to that invoice (REQ-162); since REQ-790 the link opens the
- * customer-facing page /i/<id> in a new tab — what the customer would see —
- * never the invoices list. Nothing is edited here.
+ * links to that invoice on /invoices (REQ-162); nothing is edited here.
  *
  * Ported from a2z/web/lotes.html (minus the demo driver and the inline line
  * editor, which belongs to the invoices page).
@@ -456,9 +454,7 @@ function InvoiceCard(
           </div>
         ))}
         <a
-          href={`/i/${inv.id}`}
-          target="_blank"
-          rel="noopener noreferrer"
+          href={`/invoices?open=${inv.id}`}
           data-cy="lt-open"
           style="display:inline-flex;align-items:center;gap:6px;margin-top:8px;font-weight:700;color:var(--brand-teal)"
         >

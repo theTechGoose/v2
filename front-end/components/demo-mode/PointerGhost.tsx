@@ -14,6 +14,8 @@
  * (`reportedGhost`), tagged "You" (short), and the tag is placed like DemoPointer's: outside the
  * anchored element (`rect`), next to the arrow, off the other controls under it (`covers`; by
  * default a hit-test of the page through the stage's mirror, `coversControl`).
+ * REQ-789 — drawn only once he has rested (the stage's `ghostWait`), and it fades in rather than
+ * popping up beside his cursor.
  */
 import {
   type Pt,
@@ -71,8 +73,11 @@ export default function PointerGhost(
       data-outside={outside ? "" : undefined}
       data-cue={dir ? "" : undefined}
       aria-hidden="true"
-      style={`position:fixed;left:0;top:0;width:${ARROW_W}px;height:${ARROW_H}px;overflow:visible;pointer-events:none;z-index:${z};transform:translate(${at.x}px,${at.y}px);opacity:${GHOST_OPACITY}`}
+      style={`position:fixed;left:0;top:0;width:${ARROW_W}px;height:${ARROW_H}px;overflow:visible;pointer-events:none;z-index:${z};transform:translate(${at.x}px,${at.y}px);opacity:${GHOST_OPACITY};animation:pmDemoGhostIn .25s ease-out`}
     >
+      <style>
+        {`@keyframes pmDemoGhostIn{from{opacity:0}to{opacity:${GHOST_OPACITY}}}`}
+      </style>
       {dir
         ? (
           // REQ-645 — out of view: the chevron, centred in the arrow's box, pointing the way
