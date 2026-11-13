@@ -143,6 +143,9 @@ export interface ConversationDetail {
   quote?: Quote;
   /** REQ-230 (demo M14): the assistant's in-flight flow, server-side. */
   draft?: AssistantDraft;
+  /** REQ-700 (cycle 5, m20): the bound invoice's LIVE status (the invoice
+   *  row's); null when no bill is bound. The list's rows carry the same. */
+  invoiceStatus?: string | null;
   [k: string]: unknown;
 }
 

@@ -266,7 +266,9 @@ import { threadStatusKey } from "../../shared/quote-flow/chat-header.ts";
 import {
   publishThreadStatus,
   publishThreadTurn,
+  THREAD_SERVER_INVOICE_EVENT, // REQ-700
   THREAD_SERVER_STATUS_EVENT,
+  type ThreadInvoiceDetail,
   type ThreadStatusDetail,
 } from "../lib/thread-status-sync.ts";
 import {
@@ -671,6 +673,9 @@ interface Props {
   /** REQ-447 (cycle 3, p8-pair10-d): the conversation's stored title — the
    *  header falls back to it the way the thread list does. */
   initialTitle?: string;
+  /** REQ-700 (cycle 5, m20): the bound invoice's LIVE status from the
+   *  snapshot (null: no bill) — the header names the bill with it. */
+  initialInvoiceStatus?: string | null;
   /** REQ-230 (demo M14): the in-flight flow stored on the conversation
    *  (options, pick, price, open panel) — seeds the view so ANY window's
    *  load, SSR included, rebuilds where the contractor is. */
@@ -819,6 +824,7 @@ export default function AsstChat({
   initialCustomer,
   initialQuote,
   initialTitle,
+  initialInvoiceStatus,
   initialDraft,
   userInitials = "?",
   from,
@@ -858,6 +864,13 @@ export default function AsstChat({
   const [convTitle, setConvTitle] = useState<string | undefined>(
     initialTitle,
   );
+  // REQ-700 (demo-loop cycle 5, m20): the bill's LIVE status — the
+  // snapshot's, then the list's re-read (THREAD_SERVER_INVOICE_EVENT) — so
+  // the header names the bill as the list chip does, not by the signed
+  // divider's frozen copy. undefined until known: the divider decides.
+  const [liveInvoiceStatus, setLiveInvoiceStatus] = useState<
+    string | null | undefined
+  >(initialInvoiceStatus);
   const [customer, setCustomer] = useState<CustomerLite | undefined>(
     initialCustomer,
   );
@@ -1740,6 +1753,7 @@ export default function AsstChat({
     setMessages(initialMessages);
     setCustomer(initialCustomer);
     setConvTitle(initialTitle); // REQ-447
+    setLiveInvoiceStatus(initialInvoiceStatus); // REQ-700
     // Seed the quote from the route's SSR detail (when present) so the
     // quote-fetch effect below kicks in without waiting for a CTA click.
     if (initialQuote?.id) setQuoteId(initialQuote.id);
@@ -2006,6 +2020,7 @@ export default function AsstChat({
         setConvTitle(
           (detail.conversation as { title?: string } | undefined)?.title,
         );
+        setLiveInvoiceStatus(detail.invoiceStatus); // REQ-700
         if (Array.isArray(detail.messages)) setMessages(detail.messages);
         if (detail.customer) setCustomer(detail.customer);
         const qId =
@@ -2061,6 +2076,9 @@ export default function AsstChat({
     messages,
     detailsPending: needsJobPolish ||
       draftOwesDetails({ jobOptionsOpen, pickerMode }),
+    // REQ-700 (cycle 5, m20): the bill as the server says it now — the same
+    // value the list chip reads.
+    invoiceStatus: liveInvoiceStatus,
   });
   useEffect(() => {
     if (typeof globalThis.window === "undefined") return;
@@ -2175,6 +2193,22 @@ export default function AsstChat({
       );
     };
   }, [convoId, quote?.id]);
+
+  // REQ-700 (demo-loop cycle 5, m20): the list re-reads the thread rows with
+  // the bill's LIVE status (the invoice row's) — take this thread's, so the
+  // header and the list chip name the bill alike, after a send or a payment
+  // made on /invoices too.
+  useEffect(() => {
+    if (typeof globalThis.window === "undefined" || !convoId) return;
+    const onInvoice = (e: Event) => {
+      const d = (e as CustomEvent<ThreadInvoiceDetail>).detail;
+      if (!d || d.conversationId !== convoId) return;
+      setLiveInvoiceStatus(d.invoiceStatus);
+    };
+    globalThis.addEventListener(THREAD_SERVER_INVOICE_EVENT, onInvoice);
+    return () =>
+      globalThis.removeEventListener(THREAD_SERVER_INVOICE_EVENT, onInvoice);
+  }, [convoId]);
 
   // REQ-493 (demo-loop c3 m7): the row above moved only on that hand-back,
   // which waits for the list's poll — backed off to 60 s in a tab nobody

@@ -15,9 +15,11 @@ import {
   listNeedsRefresh,
   listStatusFor,
   serverDisagreement,
+  THREAD_SERVER_INVOICE_EVENT,
   THREAD_SERVER_STATUS_EVENT,
   THREAD_STATUS_EVENT,
   THREAD_TURN_EVENT,
+  type ThreadInvoiceDetail,
   type ThreadStatusDetail,
   type ThreadTurnDetail,
 } from "../lib/thread-status-sync.ts";
@@ -130,6 +132,20 @@ export default function AsstThreads(
         // customer signed on the public page while the chat sat open) —
         // hand it back so the chat re-reads its quote and both move.
         const open = liveRef.current;
+        // REQ-700 (cycle 5, m20): the open thread's bill as the server's row
+        // names it now — the chat header follows the list chip.
+        const openId = open?.conversationId ?? activeId;
+        const openRow = openId ? next.find((r) => r.id === openId) : undefined;
+        if (openRow) {
+          globalThis.dispatchEvent(
+            new CustomEvent<ThreadInvoiceDetail>(THREAD_SERVER_INVOICE_EVENT, {
+              detail: {
+                conversationId: openRow.id,
+                invoiceStatus: openRow.invoiceStatus ?? null,
+              },
+            }),
+          );
+        }
         const server = serverDisagreement(next, open);
         if (open && server) {
           globalThis.dispatchEvent(

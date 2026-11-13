@@ -46,6 +46,18 @@ export function latestThreadStatus(): ThreadStatusDetail | null {
   return latest;
 }
 
+/** REQ-700 (demo-loop cycle 5, m20): AsstThreads → AsstChat — the open
+ *  thread's bill as the server's list row names it (the invoice ROW's live
+ *  status: sent or paid on /invoices included), so the chat header says
+ *  what the list chip says. */
+export const THREAD_SERVER_INVOICE_EVENT = "pm:asst-thread-server-invoice";
+
+export interface ThreadInvoiceDetail {
+  conversationId: string;
+  /** The live status; null when the thread has no bill. */
+  invoiceStatus: string | null;
+}
+
 /** A conversation-list row, as much of it as the sync reads. */
 interface ListRow {
   id: string;

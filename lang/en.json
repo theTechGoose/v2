@@ -304,6 +304,7 @@
   "asstChat.header.newConversation": "New conversation",
   "asstChat.header.quoteAccepted": "Quote accepted",
   "asstChat.header.signedInvoiced": "Signed · Invoiced",
+  "asstChat.header.signedScheduled": "Signed · Invoice scheduled",
   "asstChat.header.quoteDrafted": "Quote drafted · review",
   "asstChat.header.quoteSent": "Quote sent",
   "asstChat.header.notDelivered": "Not delivered",

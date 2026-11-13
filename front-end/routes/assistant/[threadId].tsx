@@ -85,6 +85,8 @@ export default define.page(async function AssistantThread(ctx) {
       quote: detail.quote,
       messages: detail.messages ?? [],
       detailsPending: draftOwesDetails(detail.draft),
+      // REQ-700 (cycle 5, m20): the bill as the invoice row says it now.
+      invoiceStatus: detail.invoiceStatus,
     })
     : null;
   const headerTitle = ssrHeader?.clientName ??
@@ -171,6 +173,7 @@ export default define.page(async function AssistantThread(ctx) {
                   initialQuote={detail?.quote}
                   initialTitle={detail?.conversation?.title}
                   initialDraft={detail?.draft}
+                  initialInvoiceStatus={detail?.invoiceStatus}
                   userInitials={userInitials}
                   from={{
                     business: businessName,
