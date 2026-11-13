@@ -8,6 +8,9 @@
  */
 import Backdrop from "../components/Backdrop.tsx";
 import AddressAutocomplete from "../components/AddressAutocomplete.tsx";
+import CustomerLanguageSelect, {
+  type CustomerLanguageValue,
+} from "../components/CustomerLanguageSelect.tsx"; // REQ-715
 import { useEffect, useState } from "preact/hooks";
 import { formatPhoneInput } from "../../shared/quote-flow/format-helpers.ts";
 import {
@@ -114,6 +117,8 @@ export default function ClientsPage({ lang: _lang }: { lang?: "en" | "es" }) {
   const [addEmail, setAddEmail] = useState("");
   // REQ-599 (demo-loop cycle 4, m30): the customer's address, optional
   const [addAddress, setAddAddress] = useState("");
+  // REQ-715 (demo-loop cycle 5, m31): the language the customer reads
+  const [addLanguage, setAddLanguage] = useState<CustomerLanguageValue>("");
   // REQ-135 — what the API is asked for: the page, the search, the chip (seeded from ?segment=)
   const [page, setPage] = useState(1);
   const [query, setQuery] = useState("");
@@ -199,12 +204,14 @@ export default function ClientsPage({ lang: _lang }: { lang?: "en" | "es" }) {
         phoneNumber: addPhone,
         email: addEmail,
         address: addAddress,
+        language: addLanguage,
       }));
       setAddName("");
       setAddBusiness("");
       setAddPhone("");
       setAddEmail("");
       setAddAddress("");
+      setAddLanguage("");
       setFieldErrs({});
       setAddOpen(false);
       setFlash(tFor(lang, "clientsPage.added", { name }));
@@ -357,6 +364,7 @@ export default function ClientsPage({ lang: _lang }: { lang?: "en" | "es" }) {
               phoneNumber: addPhone,
               email: addEmail,
               address: addAddress,
+              language: addLanguage,
             }) && setAddOpen(false)}
           style="position:fixed;inset:0;background:rgba(20,40,45,0.45);display:flex;align-items:center;justify-content:center;z-index:1000;padding:20px"
         >
@@ -469,6 +477,23 @@ export default function ClientsPage({ lang: _lang }: { lang?: "en" | "es" }) {
                   ";width:100%;box-sizing:border-box"}
               />
             </div>
+            {
+              /* REQ-715 (demo-loop cycle 5, m31): "¿cómo le digo que Carmen
+                habla español?" — every send to them starts in it */
+            }
+            <label style="display:flex;flex-direction:column;gap:5px;font-size:13px;font-weight:700;color:var(--fg-muted,#6b7560)">
+              {tFor(lang, "customer.language.label")}
+              <CustomerLanguageSelect
+                lang={lang}
+                data-cy="add-client-language"
+                value={addLanguage}
+                onChange={setAddLanguage}
+                style={inputStyle(false) + ";background:#fff"}
+              />
+              <span style="font-size:12px;font-weight:400;line-height:1.4">
+                {tFor(lang, "customer.language.hint")}
+              </span>
+            </label>
             {addErr && (
               <p
                 role="alert"

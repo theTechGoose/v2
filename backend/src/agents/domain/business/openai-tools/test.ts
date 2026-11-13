@@ -456,3 +456,35 @@ Deno.test("REQ-418 parseToolCall: a phone, email or letterless serviceAddress is
     }
   }
 });
+
+// REQ-715 (demo-loop cycle 5, c4-M34): "Quote para Carmen Ruiz … Ella habla
+// español." had nowhere to go — create_quote now carries the customer's
+// language when the user states it; only en | es survive the parse.
+Deno.test("REQ-715 c4-M34: create_quote offers customerLanguage, en | es only", () => {
+  const def = TOOL_DEFS.find((d) => d.function.name === "create_quote")!;
+  const props = def.function.parameters.properties as Record<
+    string,
+    { enum?: readonly string[]; description?: string }
+  >;
+  assertEquals(props.customerLanguage?.enum, ["en", "es"]);
+  assertEquals(typeof props.customerLanguage?.description, "string");
+
+  const base = {
+    summary: "Quote: Faucet + 2 doors",
+    lineItems: [{ description: "Faucet + 2 doors", amountCents: 45_000 }],
+  };
+  const out = parseToolCall(call("create_quote", { ...base, customerLanguage: "es" }));
+  assertEquals(
+    out?.type === "create_quote" ? out.payload.customerLanguage : "no action",
+    "es",
+  );
+  for (const bad of ["fr", "Spanish", 1, null]) {
+    const o = parseToolCall(call("create_quote", { ...base, customerLanguage: bad }));
+    assertEquals(o?.type, "create_quote");
+    assertEquals(
+      o?.type === "create_quote" && "customerLanguage" in o.payload,
+      false,
+      `customerLanguage ${JSON.stringify(bad)} must be dropped`,
+    );
+  }
+});

@@ -233,12 +233,14 @@ import {
   channelNeedsKey,
   contactSaveErrorKey,
   defaultSendChannel,
+  defaultSendLang,
   newSendRequestId,
   recommendedChannel,
   recoveryContactErrors,
   recoveryPhoneValue,
   runExclusive,
   sendDialogErrorKey,
+  sendLangChoices,
   sendOpenLabelKey,
 } from "../lib/send-dialog.ts";
 import {
@@ -867,16 +869,6 @@ export default function AsstChat({
   // the contractor flips the language in Settings. `lang?: Lang` remains on
   // Props as an optional SSR seed but is intentionally ignored here.
   const lang = langSignal.value;
-  // Languages offered in the quote-review "Preview in" toggle. Start from the
-  // contractor's configured send languages, but ALWAYS include their app
-  // language (first → the default) so e.g. a Spanish-app contractor can always
-  // preview/send in Spanish even when their send languages are English-only.
-  const previewLangOptions =
-    (sendLanguages && sendLanguages.length ? sendLanguages : ["en"]).filter((
-      l,
-    ) => l in SEND_LANG_LABEL_KEYS);
-  const sendLangs = Array.from(new Set([lang, ...previewLangOptions]))
-    .filter((l) => l in SEND_LANG_LABEL_KEYS);
   const [convoId, setConvoId] = useState<string | undefined>(conversationId);
   const [messages, setMessages] = useState<Message[]>(initialMessages);
   // REQ-447 (cycle 3, p8-pair10-d): the stored conversation title, re-read
@@ -904,6 +896,13 @@ export default function AsstChat({
   const [customer, setCustomer] = useState<CustomerLite | undefined>(
     initialCustomer,
   );
+  // Languages offered in the quote-review "Preview in" toggle. Start from the
+  // contractor's configured send languages, but ALWAYS include their app
+  // language (first) so e.g. a Spanish-app contractor can always preview/send
+  // in Spanish even when their send languages are English-only — and, REQ-715
+  // (demo-loop cycle 5, c4-M34), the customer's own language, which the
+  // toggle starts on.
+  const sendLangs = sendLangChoices(lang, sendLanguages, customer?.language);
   /** Per-user "see what your customer sees" sample quote URL. Minted
    *  lazily — eagerly fetched on mount when the synthetic onboarding-
    *  handoff CTA is in the thread so cmd+click works without a round-
@@ -1354,21 +1353,24 @@ export default function AsstChat({
   /** REQ-456: which reply's change-order link was just copied. */
   const [coLinkCopied, setCoLinkCopied] = useState<string | null>(null);
   /** Language the quote-review card is PREVIEWED in (and sent in). The
-   *  contractor flips it with the "Preview in" toggle; defaults to their app
-   *  language until they explicitly pick one. */
+   *  contractor flips it with the "Preview in" toggle; defaults to REQ-715
+   *  the customer's own language, else their app language, until they
+   *  explicitly pick one. */
   const [previewLang, setPreviewLang] = useState<"en" | "es">(
-    (sendLangs[0] as "en" | "es") ?? "en",
+    defaultSendLang(customer, lang),
   );
   // Until the contractor explicitly taps a "Preview in" pill, keep the preview
   // following their app language — so a Spanish-app contractor sees the quote
   // in Spanish even if the app language only resolved after first render
-  // (e.g. profile/impersonation loaded late).
+  // (e.g. profile/impersonation loaded late). REQ-715 (demo-loop cycle 5,
+  // c4-M34): a customer who reads Spanish ("Ella habla español") puts it on
+  // Spanish — also when the assistant just learned it.
   const previewLangPickedRef = useRef(false);
   useEffect(() => {
     if (!previewLangPickedRef.current) {
-      setPreviewLang(lang === "es" ? "es" : "en");
+      setPreviewLang(defaultSendLang(customer, lang));
     }
-  }, [lang]);
+  }, [lang, customer?.language]);
   /**
    * Tracks `continue_cta` messages whose Review button has been clicked.
    * Drives the inline "Drafted ✓" confirmation state — replaces the

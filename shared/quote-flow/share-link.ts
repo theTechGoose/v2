@@ -75,6 +75,10 @@ export function quoteSendLang(
  * own `lang` (a standalone invoice, REQ-497), else the language its quote
  * was sent in, else the quote's base language. /i reads it ahead of the
  * contractor's default commsLanguage.
+ *
+ * REQ-715 (demo-loop cycle 5, m31): the customer's own language
+ * (Customer.language) comes first — the reader's language, the one every
+ * send to them resolves to when no language is picked.
  */
 export function invoiceDocLang(
   inv: { lang?: string | null } | null | undefined,
@@ -84,7 +88,8 @@ export function invoiceDocLang(
       lastDelivery?: { lang?: string | null } | null;
     }
     | null,
+  customer?: { language?: string | null } | null,
 ): SendLang | undefined {
-  return publicLang(inv?.lang) ?? quoteSendLang(quote) ??
-    publicLang(quote?.lang);
+  return publicLang(customer?.language) ?? publicLang(inv?.lang) ??
+    quoteSendLang(quote) ?? publicLang(quote?.lang);
 }

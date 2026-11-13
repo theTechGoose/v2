@@ -62,6 +62,11 @@ import {
 import { invoiceTextByLang } from "#documents/invoice-lang.ts"; // REQ-497
 import { invoiceDocLang } from "#quote-flow/share-link.ts"; // REQ-586
 import { accountNetDays } from "#quote-flow/completion-schedule.ts"; // REQ-697
+import {
+  asCommsLang,
+  type CommsLang,
+  resolveCommsLanguage,
+} from "#quote-flow/comms-language.ts"; // REQ-715
 
 /**
  * Map a NotFoundError into a 404 JSON response. Public endpoints used to
@@ -411,14 +416,21 @@ export class PaperworkPublicController {
         ? await this.sessions.get(sessionId).catch(() => null)
         : null;
       const internal = isInternalViewer(session, co.userId);
+      // REQ-715 (demo-loop cycle 5, m31): the customer's own language
+      const coCustomerLang = await customerLanguageOf(
+        this.customers,
+        co.customerId,
+        co.userId,
+      );
       let invoiceAmount: number | undefined;
       // REQ-398 (demo m25): the JOB's agreed total before/after this order —
       // the headline; the invoice amounts are "This invoice".
       let jobTotals: { beforeCents: number; afterCents: number } | undefined;
       let businessName: string | undefined;
-      // Language the customer document should render in (the contractor's
-      // outgoing-comms language). Defaults EN if the identity can't be read.
-      let commsLanguage: "en" | "es" = "en";
+      // Language the customer document should render in: REQ-715 the
+      // customer's own language, else the contractor's outgoing-comms
+      // language. Defaults EN if neither can be read.
+      let commsLanguage: "en" | "es" = coCustomerLang ?? "en";
       // REQ-205: the documents this order belongs to, as clickable links
       let invoiceLink: {
         id: string;
@@ -443,7 +455,11 @@ export class PaperworkPublicController {
         };
         const ident = await this.identity.get(inv.userId).catch(() => null);
         businessName = ident?.businessName ?? ident?.legalName ?? undefined;
-        commsLanguage = ident?.commsLanguage === "es" ? "es" : "en";
+        commsLanguage = resolveCommsLanguage({
+          customerLanguage: coCustomerLang ??
+            await customerLanguageOf(this.customers, inv.customerId, co.userId),
+          identityCommsLanguage: ident?.commsLanguage,
+        });
         const quoteId = co.quoteId ?? inv.quoteId;
         if (quoteId) {
           const q = await this.quotes.get(quoteId).catch(() => undefined);
@@ -695,7 +711,7 @@ export class PaperworkPublicController {
           console.warn(`[quotes/${id}/public] mark-viewed failed:`, err);
         }
       }
-      const [contractor, customer, related, cos, filed] = await Promise.all([
+      const [contractor, customer, related, cos, filed, docLang] = await Promise.all([
         loadContractor(
           this.users,
           this.identity,
@@ -724,6 +740,10 @@ export class PaperworkPublicController {
         versionOf(q) > 1
           ? this.quotes.listVersions(q.id, q.userId).catch(() => [])
           : Promise.resolve([]),
+        // REQ-715 (demo-loop cycle 5, m31): the language the customer reads
+        // (live, never the issued snapshot) — /q opens in it when the
+        // visitor chose none (no ?lang=, no pm_lang pick).
+        customerLanguageOf(this.customers, q.customerId, q.userId),
       ]);
       const previous = filed.find((v) => v.version === versionOf(q) - 1);
       const changesFromPrevious = previous
@@ -752,6 +772,8 @@ export class PaperworkPublicController {
         ...redactQuote(q),
         contractor,
         customer,
+        // REQ-715: the customer's own language, when one is on file
+        ...(docLang ? { docLang } : {}),
         invoices,
         changeOrders: cos.map(projectLinkedChangeOrder),
         ...(changesFromPrevious ? { changesFromPrevious } : {}),
@@ -1217,6 +1239,7 @@ export class PaperworkPublicController {
       const docLang = invoiceDocLang(
         i,
         quote && quote.userId === i.userId ? quote : undefined,
+        receiptTo, // REQ-715: the customer's own language first
       );
       // REQ-479 (demo M30): the business's own viewer previews the claim
       const internal = await isInternalRequest(ctx, this.sessions, i.userId);
@@ -1233,7 +1256,8 @@ export class PaperworkPublicController {
         customer,
         jobDetails,
         // REQ-586 (cycle 4, M11): the document's language — /i reads it
-        // ahead of the contractor's default commsLanguage.
+        // ahead of the contractor's default commsLanguage (REQ-715: the
+        // customer's own language first).
         ...(docLang ? { docLang } : {}),
         ...(visits ? { visits } : {}),
         siblings: sortedSiblings,
@@ -1759,6 +1783,23 @@ async function lookupCustomerName(
   } catch {
     return undefined;
   }
+}
+
+/**
+ * REQ-715 (demo-loop cycle 5, m31): the language a document's customer reads
+ * (Customer.language), read live — an issued document's snapshot (REQ-204)
+ * is who they were, not the language they read today. Undefined when the
+ * customer has none or can't be read. Module-level: Danet routes every
+ * controller method.
+ */
+async function customerLanguageOf(
+  customers: CustomerStore,
+  customerId: string | undefined,
+  ownerId: string,
+): Promise<CommsLang | undefined> {
+  if (!customerId) return undefined;
+  const c = await customers.getOwned(customerId, ownerId).catch(() => undefined);
+  return asCommsLang(c?.language);
 }
 
 /** Safe-to-expose customer projection for public preview "To:" block.

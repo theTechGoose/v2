@@ -14,20 +14,47 @@ function normalize(value: string | null | undefined): CommsLang | undefined {
   return v === "en" || v === "es" ? v : undefined;
 }
 
+/** REQ-715: a stored language as en | es, or undefined (trim/case tolerant). */
+export function asCommsLang(
+  value: string | null | undefined,
+): CommsLang | undefined {
+  return normalize(value);
+}
+
 /**
  * Resolve the language an outbound send goes out in:
  *   1. the explicit per-send pick (assistant "Send in <lang>" / preview
  *      toggle) when present and valid;
- *   2. else the stored Settings default (identity.commsLanguage);
- *   3. else "en" — EN-by-default is the product's promise.
+ *   2. REQ-715 (demo-loop cycle 5, m31): else the customer's own language
+ *      (Customer.language — "Carmen reads Spanish");
+ *   3. else the stored Settings default (identity.commsLanguage);
+ *   4. else "en" — EN-by-default is the product's promise.
  * Trim/case tolerant; anything that is not "en"/"es" is treated as absent.
  */
 export function resolveCommsLanguage(args: {
   override?: string | null;
+  customerLanguage?: string | null;
   identityCommsLanguage?: string | null;
 }): CommsLang {
-  return normalize(args.override) ?? normalize(args.identityCommsLanguage) ??
-    "en";
+  return normalize(args.override) ?? normalize(args.customerLanguage) ??
+    normalize(args.identityCommsLanguage) ?? "en";
+}
+
+/**
+ * UX-28: a send's explicit pick is adopted as the account's stored default
+ * when none is stored yet, so later sends resolve the same way. REQ-715: a
+ * pick that is just the customer's own language is the customer's, not the
+ * account's — adopting it would send every other customer's paperwork in
+ * Carmen's Spanish. Returns the language to store, or undefined.
+ */
+export function commsLanguageToAdopt(args: {
+  override?: string | null;
+  customerLanguage?: string | null;
+  identityCommsLanguage?: string | null;
+}): CommsLang | undefined {
+  const pick = normalize(args.override);
+  if (!pick || normalize(args.identityCommsLanguage)) return undefined;
+  return pick === normalize(args.customerLanguage) ? undefined : pick;
 }
 
 /**

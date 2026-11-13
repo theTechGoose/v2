@@ -28,6 +28,7 @@ import type { User } from "@users/dto/user.ts";
 import type { Customer } from "@crm/dto/customer.ts";
 import type { CustomerSnapshot } from "@core/data/numbered-store/mod.ts";
 import { SITE_ORIGIN } from "#quote-flow/site-meta.ts";
+import { resolveCommsLanguage } from "#quote-flow/comms-language.ts"; // REQ-715
 import {
   accountNetDays,
   completionFromTerms,
@@ -157,8 +158,12 @@ export class SendSignedConfirmation {
       ident?.legalName?.trim() || contractor?.name?.trim();
 
     // Roadmap p.13: customer-facing comms resolve to the contractor's
-    // outgoing-comms language (default en), not their UI language.
-    const lang: Lang = ident?.commsLanguage === "es" ? "es" : "en";
+    // outgoing-comms language (default en), not their UI language —
+    // REQ-715 (demo-loop cycle 5, m31): the customer's own language first.
+    const lang: Lang = resolveCommsLanguage({
+      customerLanguage: customer?.language,
+      identityCommsLanguage: ident?.commsLanguage,
+    });
 
     // ---- 0. REQ-699 (demo-loop cycle 5, M20): a recurring payment term is
     // billed each period by the Field subscription the signature makes —
@@ -327,9 +332,8 @@ export class SendSignedConfirmation {
           customer,
           contractor,
           ...(businessName ? { businessName } : {}),
-          ...(ident?.commsLanguage
-            ? { commsLanguage: ident.commsLanguage }
-            : {}),
+          // REQ-715: the countersigned copy is in the email's language
+          commsLanguage: lang,
           // REQ-697 (m22): the payment term states the days to pay
           invoiceNetDays: accountNetDays(ident?.invoiceNetDays),
         });

@@ -216,6 +216,16 @@ export class HandleWizardAnswer {
       boundCustomerId = handled.customerId ?? boundCustomerId;
       boundCustomerName = handled.customerName;
       customerCustomValue = handled.customValue ?? customerCustomValue;
+      // REQ-715 (demo-loop cycle 5, c4-M34): a language the user stated
+      // before the customer was known ("Ella habla español") lands on the
+      // customer this step bound.
+      if (conv.customerLanguage && handled.customerId) {
+        await this.customers.update(handled.customerId, input.userId, {
+          language: conv.customerLanguage,
+        }).catch((err) =>
+          console.warn("[handle-wizard-answer] customer language:", err)
+        );
+      }
       stepAddress = await this.applyServiceAddress(
         conv,
         input.userId,

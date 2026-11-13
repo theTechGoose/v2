@@ -10,6 +10,15 @@ import { plainToInstance } from "#class-transformer";
 import type { NumberedFields } from "@core/data/numbered-store/mod.ts";
 import { customerContactError } from "#quote-flow/customer-contact.ts"; // REQ-278
 
+/**
+ * REQ-715 (demo-loop cycle 5, m31 + c2-M29 + c3-m43 + c4-M34): the language
+ * the customer reads. Every customer-facing send resolves to it when no
+ * language is picked for that send (shared/quote-flow/comms-language.ts).
+ * On edit, "" clears it.
+ */
+export type CustomerLanguage = "en" | "es";
+export const CUSTOMER_LANGUAGES: CustomerLanguage[] = ["en", "es"];
+
 export type ClientSegment = "property_mgmt" | "homeowner" | "small_biz" | "hoa";
 export const CLIENT_SEGMENTS: ClientSegment[] = [
   "property_mgmt",
@@ -53,6 +62,11 @@ export class CreateCustomerDto {
   @IsOptional()
   @IsString()
   businessName?: string;
+
+  /** REQ-715: the language they read; "" (the form's "Not set") is dropped. */
+  @IsOptional()
+  @IsIn([...CUSTOMER_LANGUAGES, ""])
+  language?: CustomerLanguage;
 }
 
 export class UpdateCustomerDto {
@@ -91,6 +105,11 @@ export class UpdateCustomerDto {
   @IsOptional()
   @IsString()
   businessName?: string;
+
+  /** REQ-715: change the language they read; "" clears it. */
+  @IsOptional()
+  @IsIn([...CUSTOMER_LANGUAGES, ""])
+  language?: CustomerLanguage | "";
 }
 
 export interface Customer
@@ -198,6 +217,8 @@ export function parseCreateCustomer(input: unknown): CreateCustomerDto {
     throw new CustomerInputError(`invalid customer: ${JSON.stringify(errors)}`);
   }
   assertContact(dto);
+  // REQ-715: "Not set" is no language at all, never a stored ""
+  if ((dto.language as string | undefined) === "") delete dto.language;
   return dto;
 }
 

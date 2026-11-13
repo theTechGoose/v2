@@ -17,7 +17,10 @@ import {
   outboundSenderFirstName,
   senderIdentityRefusal,
 } from "#quote-flow/outbound-identity.ts";
-import { resolveCommsLanguage } from "#quote-flow/comms-language.ts";
+import {
+  commsLanguageToAdopt,
+  resolveCommsLanguage,
+} from "#quote-flow/comms-language.ts";
 import { withSendLang } from "#quote-flow/share-link.ts";
 import type { SmsFailureCode } from "#quote-flow/sms-failure.ts";
 import {
@@ -105,29 +108,22 @@ export class SendPaperworkSms {
     if (refusal) return { ...refusal, failureCode: "other" };
 
     // UX-28: ONE commsLanguage resolution for every outbound (explicit
-    // per-send pick → stored Settings default → en). An explicit pick is
-    // adopted as the stored default when none exists yet, so every later
-    // dispatch for this contractor resolves to the same answer.
-    const lang = resolveCommsLanguage({
-      override: input.language,
-      identityCommsLanguage: rawBiz?.commsLanguage,
-    });
-    if (
-      (input.language === "en" || input.language === "es") &&
-      rawBiz?.commsLanguage !== "en" && rawBiz?.commsLanguage !== "es"
-    ) {
-      try {
-        await this.identity.upsert(userId, { commsLanguage: input.language });
-      } catch (err) {
-        console.warn("[send-paperwork-sms] commsLanguage adopt failed:", err);
-      }
-    }
-    // Overriding commsLanguage on the resolved identity lets every
-    // downstream body/subject helper honor the resolution without new params.
-    const senderBiz = {
-      ...(rawBiz ?? {}),
-      commsLanguage: lang,
-    } as BusinessIdentity;
+    // per-send pick → REQ-715 the customer's own language → stored Settings
+    // default → en), made once the document's customer is known. Overriding
+    // commsLanguage on the resolved identity lets every downstream
+    // body/subject helper honor the resolution without new params.
+    const resolve = (customer: Customer | undefined) => {
+      const lang = resolveCommsLanguage({
+        override: input.language,
+        customerLanguage: customer?.language,
+        identityCommsLanguage: rawBiz?.commsLanguage,
+      });
+      const senderBiz = {
+        ...(rawBiz ?? {}),
+        commsLanguage: lang,
+      } as BusinessIdentity;
+      return { lang, senderBiz };
+    };
 
     let recipient: string | undefined = input.to;
     let body: string;
@@ -135,12 +131,16 @@ export class SendPaperworkSms {
     let quoteForStamp: Quote | undefined;
     let invoiceToIssue = false;
     let customerNameForEvent: string | undefined;
+    /** REQ-715: the document's customer — their language joins the resolution */
+    let docCustomer: Customer | undefined;
 
     if (input.kind === "quote") {
       // REQ-201: a send publishes what is pending — the link must show what was sent
       const quote = await publishPendingQuote(this.quotes, input.resourceId, userId, senderAsPublisher(userId, sender?.name));
       quoteForStamp = quote;
       const customer = await this.tryGetCustomer(userId, quote.customerId);
+      docCustomer = customer;
+      const { lang, senderBiz } = resolve(customer);
       customerIdForLog = customer?.id;
       // the live number first (a corrected typo should reach them), the snapshot's otherwise
       if (!recipient) recipient = customer?.phoneNumber ?? customerOnDocument(quote, customer)?.phoneNumber;
@@ -156,6 +156,8 @@ export class SendPaperworkSms {
       invoiceToIssue = isUnissuedInvoice(stored);
       const invoice = invoiceToIssue ? asDelivered(stored) : stored;
       const customer = await this.tryGetCustomer(userId, invoice.customerId);
+      docCustomer = customer;
+      const { lang } = resolve(customer);
       customerIdForLog = customer?.id;
       customerNameForEvent = customer?.name || undefined;
       if (!recipient) recipient = customer?.phoneNumber ?? customerOnDocument(invoice, customer)?.phoneNumber;
@@ -163,13 +165,24 @@ export class SendPaperworkSms {
         kind: "invoice",
         id: invoice.id,
       }, lang);
-      body = renderInvoiceBody(
-        invoice,
-        customer,
-        sender,
-        shortUrl,
-        senderBiz?.commsLanguage === "es" ? "es" : "en",
-      );
+      body = renderInvoiceBody(invoice, customer, sender, shortUrl, lang);
+    }
+
+    // UX-28: an explicit pick is adopted as the stored default when none
+    // exists yet, so every later dispatch for this contractor resolves the
+    // same way — REQ-715: never a pick that is just this customer's own
+    // language (that one is theirs, not the account's).
+    const adopt = commsLanguageToAdopt({
+      override: input.language,
+      customerLanguage: docCustomer?.language,
+      identityCommsLanguage: rawBiz?.commsLanguage,
+    });
+    if (adopt) {
+      try {
+        await this.identity.upsert(userId, { commsLanguage: adopt });
+      } catch (err) {
+        console.warn("[send-paperwork-sms] commsLanguage adopt failed:", err);
+      }
     }
 
     // REQ-030 (NW-25): the contractor reads the reason — their UI language.

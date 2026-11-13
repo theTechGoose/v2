@@ -95,13 +95,20 @@ export function customerFormErrors(
  * moving under a hand, a mis-aimed tap) never throws typed text away.
  */
 export function customerDraftDirty(d: NewCustomerDraft): boolean {
-  return [d.name, d.businessName, d.phoneNumber, d.email, d.address ?? ""]
-    .some((v) => v.trim() !== "");
+  return [
+    d.name,
+    d.businessName,
+    d.phoneNumber,
+    d.email,
+    d.address ?? "",
+    d.language ?? "", // REQ-715: a picked language is part of the draft
+  ].some((v) => v.trim() !== "");
 }
 
 /**
  * The New customer modal's typed values. REQ-599 (demo-loop cycle 4, m30):
- * `address` is the modal's optional Address field.
+ * `address` is the modal's optional Address field. REQ-715 (demo-loop cycle
+ * 5, m31): `language` is the customer's language ("en" | "es"; "" = not set).
  */
 export interface NewCustomerDraft {
   name: string;
@@ -109,6 +116,7 @@ export interface NewCustomerDraft {
   phoneNumber: string;
   email: string;
   address?: string;
+  language?: string;
 }
 
 /**
@@ -122,16 +130,20 @@ export function newCustomerPayload(d: NewCustomerDraft): {
   phoneNumber?: string;
   email?: string;
   address?: string;
+  language?: "en" | "es";
 } {
   const out: ReturnType<typeof newCustomerPayload> = { name: d.name.trim() };
   const businessName = d.businessName.trim();
   const phoneNumber = d.phoneNumber.trim();
   const email = d.email.trim();
   const address = (d.address ?? "").trim();
+  const language = (d.language ?? "").trim();
   if (businessName) out.businessName = businessName;
   if (phoneNumber) out.phoneNumber = phoneNumber;
   if (email) out.email = email;
   if (address) out.address = address;
+  // REQ-715: "Not set" (or anything but en | es) sends no language at all
+  if (language === "en" || language === "es") out.language = language;
   return out;
 }
 

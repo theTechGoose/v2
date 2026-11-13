@@ -132,6 +132,9 @@ export interface CustomerLite {
   name: string;
   email?: string;
   phoneNumber?: string;
+  /** REQ-715 (demo-loop cycle 5, c4-M34): the language the customer reads —
+   *  the review card's "Preview in" / "Sends in" starts on it. */
+  language?: "en" | "es";
   [k: string]: unknown;
 }
 
