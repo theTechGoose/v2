@@ -998,3 +998,64 @@ describe("REQ-380 (demo-loop cycle 2, M10) — a drawn signature reaches the sta
     expect(canvasOf(stage).painted).toBe(INK);
   });
 });
+
+describe("REQ-641 (cycle 5, demo m11) a scroll that stops is never left behind on the stage", () => {
+  test("a known scroller's (and the window's) new position goes out on the next frame even when no scroll event reached the recorder (a hidden page runs no rendering steps, so it fires none)", () => {
+    const doc = customerPage();
+    const frames: MirrorFrame[] = [];
+    const rec = record(doc, frames);
+    rec.snapshot();
+    const { doc: stage, rep } = replay();
+    let at = applyAll(rep, frames, 0);
+    const main = el(doc, (e) => e.localName === "main");
+    // a scroll the recorder heard: main is a scroller it knows
+    main.scrollTop = 40;
+    doc.fire("scroll", main);
+    rec.flush();
+    at = applyAll(rep, frames, at);
+    const twin = el(stage, (e) => e.localName === "main");
+    expect(twin.scrollTop).toBe(40);
+    // the burst's trailing position, and the window's, with no event behind them
+    main.scrollTop = 410;
+    doc.defaultView.scrollY = 75;
+    rec.flush();
+    at = applyAll(rep, frames, at);
+    expect(twin.scrollTop).toBe(410);
+    expect(stage.documentElement?.scrollTop).toBe(75);
+    // and nothing goes out again while it rests
+    const n = frames.length;
+    rec.flush();
+    expect(frames.length).toBe(n);
+  });
+
+  test("a scroller sent anew at the top (moved in the page) is at the top on the stage — the settle never puts its old scroll back — and a later scroll to that old place still goes out", () => {
+    const doc = customerPage();
+    const frames: MirrorFrame[] = [];
+    const rec = record(doc, frames);
+    rec.snapshot();
+    const { doc: stage, rep } = replay();
+    let at = applyAll(rep, frames, 0);
+    const main = el(doc, (e) => e.localName === "main");
+    main.scrollTop = 300;
+    doc.fire("scroll", main);
+    rec.flush();
+    at = applyAll(rep, frames, at);
+    expect(el(stage, (e) => e.localName === "main").scrollTop).toBe(300);
+    // the page moves main (out and back in, as a keyed re-render does): the browser puts a
+    // re-inserted scroller back at its top
+    const parent = main.parentNode as FNode;
+    parent.removeChild(main);
+    parent.appendChild(main);
+    main.scrollTop = 0;
+    rec.flush();
+    at = applyAll(rep, frames, at);
+    rep.settle();
+    expect(el(stage, (e) => e.localName === "main").scrollTop).toBe(0);
+    // the customer scrolls it back to exactly where it was before the move
+    main.scrollTop = 300;
+    doc.fire("scroll", main);
+    rec.flush();
+    at = applyAll(rep, frames, at);
+    expect(el(stage, (e) => e.localName === "main").scrollTop).toBe(300);
+  });
+});
