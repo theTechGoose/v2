@@ -735,6 +735,63 @@ Deno.test("REQ-666 m48: the quote-phase prompt and the create_quote lineItems de
 });
 
 // ---------------------------------------------------------------------------
+// REQ-762 (demo-loop cycle 5v2, m48 re-verified) — the typed price repeated on
+// every job
+// ---------------------------------------------------------------------------
+
+Deno.test("REQ-762 m48: the verifier's Rosa Delgado job at one typed $900 is saved as ONE $900 line — never $900 + $900 = $1,800", async () => {
+  const ctx = await fresh();
+  const conv = await ctx.conversations.create({ userId: "u-1" });
+  // the verifier's try 2 on the merged demo-fixes: $900 on each job
+  script(ctx.llm, [{
+    text: "Drafting a quote.",
+    action: {
+      type: "create_quote",
+      payload: {
+        summary: "Calentador y regadera — Rosa Delgado",
+        lineItems: [
+          { description: "Cambio de calentador de agua", amountCents: 90_000 },
+          {
+            description: "Reparación de llave de regadera",
+            amountCents: 90_000,
+          },
+        ],
+      },
+    },
+  }]);
+  const result = await ctx.flow.run({
+    userId: "u-1",
+    conversationId: conv.id,
+    content:
+      "Cotización para Rosa Delgado: cambiar el calentador de agua y reparar la llave de la regadera, $900",
+  });
+  const quoteId = result.conversation.quoteId!;
+  assert(quoteId, "a draft is bound");
+  const stored = await ctx.quotes.getOwned(quoteId, "u-1");
+  assertEquals(stored.estimatedTotal, 90_000);
+  assertEquals(stored.lineItems.length, 1);
+  assertEquals(stored.lineItems[0].price, 90_000);
+  assertStringIncludes(stored.lineItems[0].description, "calentador de agua");
+  assertStringIncludes(stored.lineItems[0].description, "llave de regadera");
+  const card = cardOf(result.newMessages)!;
+  assertEquals((card.payload as { totalCents: number }).totalCents, 90_000);
+  await resetKv();
+});
+
+Deno.test("REQ-762 m48: the quote-phase prompt and the create_quote lineItems description (en and es) say never to repeat the one price on every job", () => {
+  for (
+    const prompt of [
+      t("en", "prompts.systemQuote"),
+      t("es", "prompts.systemQuote"),
+      t("en", "prompts.tools.createQuote.lineItems"),
+      t("es", "prompts.tools.createQuote.lineItems"),
+    ]
+  ) {
+    assertStringIncludes(prompt, "never put that same price on each job");
+  }
+});
+
+// ---------------------------------------------------------------------------
 // REQ-657 (demo-loop cycle 5, M13) — a folded $0 line does not repeat the host
 // ---------------------------------------------------------------------------
 

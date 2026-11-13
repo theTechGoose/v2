@@ -507,24 +507,36 @@ export function foldZeroLines<T extends PricedLine>(
  * largest line (the first on a tie) carries the whole price and names the
  * rest — "Reparación de puerta de cocina (incluye cambio de llave del
  * fregadero) $350". Same total, same work named, no per-line price nobody
- * gave. Applies only when exactly one amount was typed, every line is priced
- * and the lines add up to exactly that amount; anything else comes back
- * undefined.
+ * gave. Applies only when exactly one amount (no rate) was typed and either
+ * every line is priced and the lines add up to exactly that amount, or —
+ * REQ-762 (demo-loop cycle 5v2, m48 re-verified: "cambiar el calentador de
+ * agua y reparar la llave de la regadera, $900" → $900 + $900 = $1,800) —
+ * every priced line (two or more) carries that same amount; anything else
+ * comes back undefined.
  */
 export function keepOnePrice<T extends PricedLine>(
   lines: readonly T[],
   userText: string,
   lang: Lang,
 ): T[] | undefined {
-  if (lines.length < 2 || lines.some((l) => l.amountCents <= 0)) {
+  if (lines.length < 2 || lines.some((l) => l.amountCents < 0)) {
     return undefined;
   }
-  const typed = [...new Set(moneyAmounts(userText).map((a) => a.cents))];
-  const total = sumOf(lines);
-  if (typed.length !== 1 || typed[0] !== total) return undefined;
-  const host = lines.reduce((a, b) => b.amountCents > a.amountCents ? b : a);
+  const amounts = moneyAmounts(userText);
+  if (amounts.some((a) => a.rate)) return undefined;
+  const typed = [...new Set(amounts.map((a) => a.cents))];
+  if (typed.length !== 1) return undefined;
+  const price = typed[0];
+  const priced = lines.filter((l) => l.amountCents > 0);
+  // the one price spread over the jobs ($350 → $175 + $175), or — REQ-762
+  // (cycle 5v2, m48) — the one price put on every job ($900 → $900 + $900)
+  const spread = priced.length === lines.length && sumOf(lines) === price;
+  const repeated = priced.length >= 2 &&
+    priced.every((l) => l.amountCents === price);
+  if (!spread && !repeated) return undefined;
+  const host = priced.reduce((a, b) => b.amountCents > a.amountCents ? b : a);
   return foldZeroLines(
-    lines.map((l) => ({ ...l, amountCents: l === host ? total : 0 })),
+    lines.map((l) => ({ ...l, amountCents: l === host ? price : 0 })),
     lang,
   );
 }
