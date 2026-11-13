@@ -53,7 +53,8 @@ describe("REQ-608 (demo m47, cycle 4) a loaded batch ticks its drafts", () => {
   test("FieldBatchesPage's mount load and openBatch use the rule, not an empty set", () => {
     const src = read("front-end/islands/FieldBatchesPage.tsx");
     const mount = src.slice(
-      src.indexOf("useEffect(() => {\n    load()"),
+      // REQ-730 — the mount effect now returns early when seeded; anchor on its load()
+      src.indexOf("    load()\n      .then("),
       src.indexOf("async function pull()"),
     );
     expect(mount).toMatch(/defaultBatchChecks\(/);

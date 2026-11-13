@@ -44,6 +44,7 @@ import {
 import { langSignal, t } from "../lib/i18n.ts";
 import SearchSelect from "./SearchSelect.tsx";
 import { Icon } from "../components/ui/Icon.tsx";
+import type { FieldTasksSeed } from "../lib/field-ssr.ts";
 
 const ISO = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -107,12 +108,19 @@ interface AddForm {
 const INPUT =
   "padding:8px 10px;border:1px solid var(--border);border-radius:8px;font:inherit;font-size:13px";
 
-export default function FieldTasksPage() {
+/** REQ-730 (demo c2-p13-p) — `seed`: the day read by the route on the SSR side; used when it is the browser's day too */
+export default function FieldTasksPage(
+  { seed }: { seed?: FieldTasksSeed | null } = {},
+) {
   const lang = langSignal.value;
   const [date, setDate] = useState<string>(() => todayIso());
-  const [tasks, setTasks] = useState<TaskView[]>([]);
-  const [skipped, setSkipped] = useState<GenerateResult["skipped"]>([]);
-  const [loading, setLoading] = useState(true);
+  // the server's day can differ from the browser's: then the seed is not this page's day
+  const [day] = useState(() => seed && seed.date === date ? seed : null);
+  const [tasks, setTasks] = useState<TaskView[]>(day?.tasks ?? []);
+  const [skipped, setSkipped] = useState<GenerateResult["skipped"]>(
+    day?.skipped ?? [],
+  );
+  const [loading, setLoading] = useState(!day);
   const [error, setError] = useState<string | null>(null);
   const [flash, setFlash] = useState("");
   const [busy, setBusy] = useState(false);
@@ -120,9 +128,9 @@ export default function FieldTasksPage() {
   const [noteDraft, setNoteDraft] = useState<Drafts>({});
   const [saving, setSaving] = useState<string | null>(null);
   // REQ-164..166 — what the forms pick from
-  const [workers, setWorkers] = useState<FieldWorker[]>([]);
+  const [workers, setWorkers] = useState<FieldWorker[]>(seed?.workers ?? []);
   // REQ-521 — the empty-roster hint waits for the real list, never flashes on load
-  const [workersLoaded, setWorkersLoaded] = useState(false);
+  const [workersLoaded, setWorkersLoaded] = useState(!!seed?.workers);
   const [types, setTypes] = useState<TaskType[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [add, setAdd] = useState<AddForm | null>(null);
@@ -155,7 +163,13 @@ export default function FieldTasksPage() {
     }
   }
 
+  // REQ-730 — the seeded day is already on screen: skip only that first read
+  const seededDay = useRef(day?.date ?? null);
   useEffect(() => {
+    if (seededDay.current === date) {
+      seededDay.current = null;
+      return;
+    }
     load(date);
   }, [date]);
 

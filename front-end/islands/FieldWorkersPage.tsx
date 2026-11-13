@@ -26,6 +26,7 @@ import {
   type InviteShare,
   inviteShare,
 } from "../lib/invite-share.ts";
+import type { FieldWorkersSeed } from "../lib/field-ssr.ts";
 
 interface AddForm {
   name: string;
@@ -51,10 +52,15 @@ function errMsg(err: WorkerErr): string {
   return t(err.key, err.vars);
 }
 
-export default function FieldWorkersPage() {
+/** REQ-730 (demo c2-p13-p) — `seed`: the lists read by the route on the SSR side; the first HTML then carries the rows, not "Loading…" */
+export default function FieldWorkersPage(
+  { seed }: { seed?: FieldWorkersSeed | null } = {},
+) {
   const lang = langSignal.value;
-  const [workers, setWorkers] = useState<FieldWorker[] | null>(null);
-  const [regions, setRegions] = useState<RegionView[]>([]);
+  const [workers, setWorkers] = useState<FieldWorker[] | null>(
+    seed?.workers ?? null,
+  );
+  const [regions, setRegions] = useState<RegionView[]>(seed?.regions ?? []);
   const [loadErr, setLoadErr] = useState<WorkerErr | null>(null);
   const [form, setForm] = useState<AddForm>(BLANK);
   const [adding, setAdding] = useState(false);
@@ -96,6 +102,8 @@ export default function FieldWorkersPage() {
   }
 
   useEffect(() => {
+    // REQ-730 — seeded on the server: no client fetch on mount
+    if (seed) return;
     let alive = true;
     Promise.all([
       fieldClient.workers(),
@@ -573,7 +581,8 @@ export default function FieldWorkersPage() {
                               class="btn btn--ghost btn--sm"
                               data-cy="wk-delete-cancel"
                               disabled={busy}
-                              onClick={() => setConfirmId(null)}
+                              onClick={() =>
+                                setConfirmId(null)}
                             >
                               {t("field.common.cancel")}
                             </button>
