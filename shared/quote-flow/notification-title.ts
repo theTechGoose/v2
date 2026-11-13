@@ -52,6 +52,9 @@ function fmtCents(cents: number): string {
  *   - `amountCents` (integer cents) → `{amount}` as dollars ("$450").
  *     A legacy numeric `amount` is the same integer cents; a string
  *     `amount` is pre-formatted.
+ *   - `deltaCents` (signed integer cents, a change order) → `{delta}` as
+ *     "+$1,600" / "−$1,250.50" (REQ-717). A legacy string `delta` is
+ *     pre-formatted and passes through.
  *   - `method` (the PaymentMethod enum, "zelle") → its localized phrase.
  */
 function renderParams(
@@ -74,6 +77,12 @@ function renderParams(
     out.amount = fmtCents(params.amount);
   }
   delete out.amountCents;
+  // REQ-717 (demo-loop cycle 5, p11): grouped like every other amount.
+  if (typeof params.deltaCents === "number") {
+    const d = params.deltaCents;
+    out.delta = `${d >= 0 ? "+" : "−"}${fmtCents(Math.abs(d))}`;
+  }
+  delete out.deltaCents;
   if (typeof params.method === "string") {
     const key = METHOD_PHRASE_KEY[params.method];
     if (key) out.method = tr(key);

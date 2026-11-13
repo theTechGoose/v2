@@ -1890,11 +1890,6 @@ function projectLinkedChangeOrder(co: ChangeOrder) {
   };
 }
 
-/** Signed money string for notification copy: 25050 → "+$250.50". */
-function fmtDelta(cents: number): string {
-  return `${cents >= 0 ? "+" : "−"}$${(Math.abs(cents) / 100).toFixed(2)}`;
-}
-
 /** Fire the contractor-facing bus event for a CO decision so the bell
  *  picks it up (the decline copy promises "we've let your contractor
  *  know" — this is what makes that true). Best-effort lookups mirror the
@@ -1930,8 +1925,8 @@ async function emitChangeOrderDecision(
       ...(customerName ? { customerName } : {}),
       ...(contractor?.language ? { language: contractor.language } : {}),
       description: co.description,
+      // REQ-717: raw cents only — NotifyOnEvent formats it ("+$1,600").
       deltaAmountCents: co.deltaAmountCents,
-      delta: fmtDelta(co.deltaAmountCents),
       ...extra,
     },
   });

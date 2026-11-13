@@ -277,10 +277,18 @@ export function notificationL10n(event: DomainEvent): NotificationL10n | null {
     (event.action === "change_order_approved" ||
       event.action === "change_order_declined")
   ) {
-    // Customer decided on a change order via the public /co/:id link. The
-    // delta arrives pre-formatted ("+$250.00") from the public controller.
+    // Customer decided on a change order via the public /co/:id link.
+    // REQ-717 (cycle 5, p11): the delta is stored as raw signed cents and
+    // formatted at render time ("+$1,600") by the shared renderer; a legacy
+    // event's pre-formatted `delta` string still passes through.
     const approved = event.action === "change_order_approved";
-    const delta = event.data?.delta as string | undefined;
+    const deltaCents = event.data?.deltaAmountCents;
+    const legacy = event.data?.delta as string | undefined;
+    const delta: Vars | undefined = typeof deltaCents === "number"
+      ? { deltaCents }
+      : legacy
+      ? { delta: legacy }
+      : undefined;
     const description = event.data?.description as string | undefined;
     const base = approved
       ? "notify.invoice.changeOrderApproved"
@@ -291,7 +299,7 @@ export function notificationL10n(event: DomainEvent): NotificationL10n | null {
     return {
       type: "generic",
       titleKey: delta ? withAmount : base,
-      titleParams: delta ? { ...nameParams, delta } : nameParams,
+      titleParams: delta ? { ...nameParams, ...delta } : nameParams,
       bodyText: description
         ? (description.length > 140
           ? `${description.slice(0, 139)}…`
