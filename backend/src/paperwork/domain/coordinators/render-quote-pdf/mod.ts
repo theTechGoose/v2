@@ -18,6 +18,10 @@ import {
 } from "#quote-flow/recurring-billing.ts"; // REQ-699
 import { agreementClauses } from "#documents/warranty-clause.ts";
 import {
+  CANCELLATION_STEP_ID,
+  cancellationValueText,
+} from "#quote-flow/cancellation-term.ts"; // REQ-783
+import {
   formatTermDate,
   termDateIso,
   websiteLabel,
@@ -530,7 +534,10 @@ export class RenderQuotePdf {
         deadline: "renderQuotePdf.termLabel.deadline", // REQ-771
       };
       const cells = quote.terms
-        .filter((term) => term.stepId !== "customer")
+        // REQ-783: the cancellation term is the fixed row pushed below.
+        .filter((term) =>
+          term.stepId !== "customer" && term.stepId !== CANCELLATION_STEP_ID
+        )
         .map((term) => {
           const localized = term.stepId === "payment_terms"
             ? paymentTermText(term.value, lang, input.invoiceNetDays)
@@ -548,10 +555,15 @@ export class RenderQuotePdf {
           };
         });
       // REQ-035 (NW-55): the cancelation notice is a term row on every
-      // agreement, mirroring the web document.
+      // agreement, mirroring the web document. REQ-783 (dv1 d4): it states
+      // the notice the owner saw in the quote review — 7 days by default.
       cells.push({
         label: t(lang, "renderQuotePdf.termLabel.cancellation").toUpperCase(),
-        value: t(lang, "renderQuotePdf.termValue.cancellation"),
+        value: cancellationValueText(quote.terms, {
+          prefix: "renderQuotePdf",
+          t: (key, vars) => t(lang, key, vars),
+          localize: (v) => localizeTermValue(v, lang),
+        }),
       });
       const colCount = 2;
       const gap = 10;

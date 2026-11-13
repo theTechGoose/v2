@@ -129,7 +129,8 @@ export function quoteSignRefusal(
 ): SignRefusal | undefined {
   if (q.isSample === true) return undefined;
   if (!isQuoteIssued(q) && !q.lastDelivery) return "not_issued";
-  const terms = q.terms ?? [];
+  // REQ-783: the review's cancellation row is not a wizard answer.
+  const terms = (q.terms ?? []).filter((t) => t.stepId !== "cancellation");
   if (terms.length > 0 && !terms.some((t) => t.stepId === "payment_terms")) {
     return "terms_incomplete";
   }

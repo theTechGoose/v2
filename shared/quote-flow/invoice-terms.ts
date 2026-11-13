@@ -44,7 +44,10 @@ export function invoiceTerms<T extends { stepId: string; value: string }>(
   at: { quotedAt?: string; issuedAt?: string },
 ): T[] {
   // REQ-771: the job is done — the quote's deadline row is not billed.
-  const list = (terms ?? []).filter((t) => t.stepId !== "deadline");
+  // REQ-783: nor is the agreement's cancellation notice.
+  const list = (terms ?? []).filter((t) =>
+    t.stepId !== "deadline" && t.stepId !== "cancellation"
+  );
   const quoted = dayOf(at.quotedAt);
   const issued = dayOf(at.issuedAt) ?? dayOf(new Date().toISOString());
   if (!quoted || !issued) return list;

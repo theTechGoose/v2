@@ -634,6 +634,9 @@ export function TermGrid(props: {
       {(props.terms ?? [])
         .filter((term) =>
           term.stepId !== "customer" && !isEmptyWarranty(term) &&
+          // REQ-783: the cancellation notice is the agreement's own row
+          // (extraRows), stated from this term — never printed twice.
+          term.stepId !== "cancellation" &&
           // A concrete start date on the agreement supersedes the coarse
           // wizard answer — never print both.
           !(term.stepId === "start_date" && !!props.startDate)

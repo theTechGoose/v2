@@ -54,6 +54,7 @@ import {
 } from "../../shared/documents/linked-view.ts";
 import type { VersionChanges } from "../../shared/documents/versions.ts";
 import { agreementClauses } from "../../shared/documents/warranty-clause.ts";
+import { cancellationValueText } from "../../shared/quote-flow/cancellation-term.ts"; // REQ-783
 import { localizeTermValue } from "../lib/term-i18n.ts";
 import { withLang } from "../../shared/quote-flow/public-lang.ts";
 import { fmtMoneyExact, fmtPhone, telHref } from "../lib/format.ts";
@@ -201,7 +202,13 @@ function cstr(lang: Lang, terms?: Term[]) {
     // collapsed under a "Terms and Conditions" summary (NW-54's name).
     terms: tFor(lang, "quoteDoc.terms"),
     termsAndConditions: tFor(lang, "quoteDoc.termsAndConditions"),
-    cancellationValue: tFor(lang, "quoteDoc.termValue.cancellation"),
+    // REQ-783 (dv1 d4): the notice the owner saw in the quote review — the
+    // 7-day default, or the one they set there.
+    cancellationValue: cancellationValueText(terms, {
+      prefix: "quoteDoc",
+      t: (key, vars) => tFor(lang, key, vars),
+      localize: (v) => localizeTermValue(v, lang),
+    }),
     start: tFor(lang, "quoteDoc.start"),
     startTbd: tFor(lang, "quoteDoc.startTbd"),
     estCompletion: tFor(lang, "quoteDoc.estCompletion"),
