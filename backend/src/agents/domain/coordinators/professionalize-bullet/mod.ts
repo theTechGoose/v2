@@ -4,7 +4,14 @@ import {
   type LLMClient,
 } from "@agents/domain/business/llm/base/mod.ts";
 import { t } from "@core/i18n/mod.ts";
-import { onlyDeletesWords } from "#quote-flow/polish-offer.ts";
+import {
+  onlyDeletesWords,
+  splitJoinedItems,
+} from "#quote-flow/polish-offer.ts";
+
+// REQ-751: the joiner split moved to shared/quote-flow/polish-offer.ts so the
+// client can tell a licensed "A + B" split from a model-invented one.
+export { splitJoinedItems };
 
 export interface ProfessionalizeBulletInput {
   userId: string;
@@ -89,6 +96,14 @@ export class ProfessionalizeBullet {
         candidates.every((l, i) => isFaithfulTo(l, items[i]))
       : candidates.length > 0 && candidates.every((l) => isFaithfulTo(l, text));
     if (!faithful) return fallback();
+    // REQ-751 (cycle 5v1, p18-7b re-test): a bullet with no top-level
+    // "+"/"plus" names ONE item. A reply that splits it into several lines
+    // ("Patch two holes in drywall" / "Apply joint compound" / "Repaint the
+    // area") re-cuts a clear line and drops its words — not a polish. Hand
+    // the bullet back as written, so the client offers nothing.
+    if (items.length === 1 && candidates.length > 1) {
+      return { text, lines: [text] };
+    }
     // REQ-675 (cycle 5, p18-7b): a single line that only deletes words of the
     // bullet ("…tile with dark grout" → "…tile dark grout") is not a polish.
     // Hand the bullet back as written, so the client offers nothing.
@@ -104,35 +119,6 @@ export class ProfessionalizeBullet {
 
 function tidy(s: string): string {
   return s.replace(/\s+/g, " ").replace(/[.;]+$/, "").trim();
-}
-
-/** REQ-332: "4 recesed lights + City of Austin permit" → two items. Only an
- *  explicit joiner ("+", "plus") splits; "and" is left to the model, since
- *  "tile, vanity and glass" is one install.
- *  REQ-443 (demo m46): only a TOP-LEVEL joiner splits — one inside (), [] or
- *  {} belongs to its parenthetical ("island (trench + patch)" is one item) —
- *  and only when every piece names an item of its own (has a letter). */
-export function splitJoinedItems(text: string): string[] {
-  const parts: string[] = [];
-  let depth = 0;
-  let start = 0;
-  const joiner = /\s*\+\s*|\s+plus\s+/iy;
-  for (let i = 0; i < text.length; i++) {
-    const ch = text[i];
-    if (ch === "(" || ch === "[" || ch === "{") depth++;
-    else if ((ch === ")" || ch === "]" || ch === "}") && depth > 0) depth--;
-    if (depth > 0) continue;
-    joiner.lastIndex = i;
-    const m = joiner.exec(text);
-    if (!m) continue;
-    parts.push(text.slice(start, i));
-    start = i + m[0].length;
-    i = start - 1;
-  }
-  parts.push(text.slice(start));
-  const items = parts.map((p) => p.trim());
-  const real = items.every((p) => /\p{L}/u.test(p));
-  return items.length > 1 && real ? items : [text];
 }
 
 /** The bullet first (the stub echoes the first line, which the gate then

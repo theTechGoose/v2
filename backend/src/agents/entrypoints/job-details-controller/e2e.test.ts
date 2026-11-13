@@ -347,3 +347,45 @@ Deno.test("REQ-400 M21 + m32 e2e: POST /agents/job-details/options answers whole
       }),
   );
 });
+
+// ── REQ-751 — demo-loop cycle 5v1, p18-7b re-test over the booted app ────
+// The model split a bullet with no "+" into several word-dropping lines; the
+// endpoint must hand such a bullet back as written (one line).
+
+Deno.test("REQ-751 p18-7b e2e: POST /agents/job-details/professionalize never answers a '+'-less bullet as several lines", async () => {
+  const cases: Array<[string, string[]]> = [
+    [
+      "Install kitchen backsplash, 30 sq ft white subway tile with dark grout",
+      ["Install kitchen backsplash", "30 sq ft white subway tile dark grout"],
+    ],
+    [
+      "Patch two holes in the drywall with joint compound and repaint the area",
+      [
+        "Patch two holes in drywall",
+        "Apply joint compound",
+        "Repaint the area",
+      ],
+    ],
+  ];
+  for (const [text, reply] of cases) {
+    await withScriptedLlm(
+      () => ({ text: JSON.stringify({ lines: reply }) }),
+      () =>
+        withServer(async (base) => {
+          const sid = await login(base, "+15125557510");
+          const res = await fetch(
+            `${base}/agents/job-details/professionalize`,
+            {
+              method: "POST",
+              headers: { ...J, "x-session-id": sid },
+              body: JSON.stringify({ text, context: { siblings: [] } }),
+            },
+          );
+          assertEquals(res.status, 200);
+          const body = await res.json();
+          assertEquals(body.lines, [text]);
+          assertEquals(body.text, text);
+        }),
+    );
+  }
+});
