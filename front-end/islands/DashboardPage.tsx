@@ -31,6 +31,7 @@ import { dueDateLine } from "../../shared/quote-flow/pipeline-stats.ts";
 import { docNumberOf } from "../../shared/documents/numbering.ts";
 import { versionOf } from "../../shared/documents/versions.ts";
 import { readCached, refreshDash } from "../lib/dash-cache.ts";
+import { scrollToHashTarget } from "../lib/dash-anchor.ts";
 import { pickKpis } from "../lib/dashboard-kpis.ts";
 import { jobRowTitle, quoteRowTitle } from "../lib/dashboard-titles.ts";
 import {
@@ -462,6 +463,16 @@ export default function DashboardPage(_props: { lang?: Lang } = {}) {
       alive = false;
     };
   }, []);
+
+  // REQ-726 (demo cycle 5, m57): the topbar pill links to /dashboard#activity,
+  // but the SSR render is the skeleton (no #activity), so the browser's own
+  // fragment scroll found nothing and the page stayed at the top. Scroll to the
+  // panel once it mounts (hydration on a warm start, the fetch on a cold one)
+  // and once more when the lists land and the content above it settles.
+  useEffect(() => {
+    if (s.loading || typeof document === "undefined") return;
+    scrollToHashTarget(document, globalThis.location?.hash ?? "");
+  }, [s.loading, s.listsLoaded]);
 
   // PDF p8: "My Assistant needs to be on the dashboard at the top because on
   // mobile you have to hit the hamburger to actually see that." This block is

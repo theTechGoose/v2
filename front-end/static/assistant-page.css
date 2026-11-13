@@ -717,7 +717,7 @@ body {
 .topbar__ticker {
   /* REQ-406 (demo m15, cycle 2): the pill gives way first — a far larger
      shrink factor than the search box's, down to its 220px floor — so it
-     never squeezes the search below its placeholder. Below 1250px it is
+     never squeezes the search below its placeholder. Below 1500px (REQ-726) it is
      hidden (TOPBAR_CSS, front-end/lib/topbar-css.ts). */
   flex: 0 100 auto;
   /* REQ-273: never narrower than dot + 120px of text + time — an
@@ -725,7 +725,9 @@ body {
      collapse until only "● hace 1m" was left. REQ-319: an explicit floor
      (not min-content) so the pill sizes to its sentence up to the cap and
      shows an ellipsis past it, instead of a fixed 120px track. */
-  min-width: 220px;
+  /* REQ-726 (demo cycle 5, m6): 240px — the time no longer wraps, so the
+     floor holds dot + 120px track + a one-line "ahora mismo" + padding. */
+  min-width: 240px;
   max-width: 280px; /* REQ-319: wider from 1024px, below */
   height: 36px;
   display: inline-flex;
@@ -834,11 +836,14 @@ body {
      takes the rest of the squeeze and wraps onto the pill's second line
      ("ahora / mismo"). */
   flex: 0 1 auto;
+  /* REQ-726 (demo cycle 5, m6): one line, in the body font — the pill only
+     shows from 1500px (TOPBAR_CSS), where it has room, and the wrapped
+     monospace "hace / 1m" read as broken. */
+  white-space: nowrap;
   line-height: 14px;
-  max-height: 28px;
   font-size: 10.5px;
   color: var(--fg-subtle);
-  font-family: var(--font-mono, ui-monospace, monospace);
+  font-family: var(--font-body);
   letter-spacing: 0;
 }
 
@@ -2957,7 +2962,7 @@ body {
 .topbar__ticker {
   /* REQ-406 (demo m15, cycle 2): the pill gives way first — a far larger
      shrink factor than the search box's, down to its 220px floor — so it
-     never squeezes the search below its placeholder. Below 1250px it is
+     never squeezes the search below its placeholder. Below 1500px (REQ-726) it is
      hidden (TOPBAR_CSS, front-end/lib/topbar-css.ts). */
   flex: 0 100 auto;
   /* REQ-273: never narrower than dot + 120px of text + time — an
@@ -2965,7 +2970,9 @@ body {
      collapse until only "● hace 1m" was left. REQ-319: an explicit floor
      (not min-content) so the pill sizes to its sentence up to the cap and
      shows an ellipsis past it, instead of a fixed 120px track. */
-  min-width: 220px;
+  /* REQ-726 (demo cycle 5, m6): 240px — the time no longer wraps, so the
+     floor holds dot + 120px track + a one-line "ahora mismo" + padding. */
+  min-width: 240px;
   max-width: 280px; /* REQ-319: wider from 1024px, below */
   height: 36px;
   display: inline-flex;
@@ -3074,11 +3081,14 @@ body {
      takes the rest of the squeeze and wraps onto the pill's second line
      ("ahora / mismo"). */
   flex: 0 1 auto;
+  /* REQ-726 (demo cycle 5, m6): one line, in the body font — the pill only
+     shows from 1500px (TOPBAR_CSS), where it has room, and the wrapped
+     monospace "hace / 1m" read as broken. */
+  white-space: nowrap;
   line-height: 14px;
-  max-height: 28px;
   font-size: 10.5px;
   color: var(--fg-subtle);
-  font-family: var(--font-mono, ui-monospace, monospace);
+  font-family: var(--font-body);
   letter-spacing: 0;
 }
 /* REQ-273: phones hide the ticker, as dashboard.css does — there is no room

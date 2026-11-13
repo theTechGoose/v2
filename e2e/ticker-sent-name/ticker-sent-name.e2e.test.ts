@@ -84,7 +84,8 @@ for (const { lang, sentence } of CASES) {
             createdAt: new Date(Date.now() - 5_000).toISOString(),
           }]),
         }));
-      await page.setViewportSize({ width: 1280, height: 720 });
+      // REQ-726 (cycle 5, m6): the pill shows from 1500px only
+      await page.setViewportSize({ width: 1500, height: 720 });
       for (const path of ["/assistant", "/dashboard"]) {
         await page.goto(path);
         await page.locator(".topbar__ticker-time").first().waitFor({

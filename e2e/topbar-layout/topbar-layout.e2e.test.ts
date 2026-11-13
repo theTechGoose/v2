@@ -121,7 +121,9 @@ for (const lang of ["en", "es"] as const) {
     story(t, async ({ page, expect, http, baseUrl }) => {
       await signIn(http, page, baseUrl, lang);
       await feedOneLongEvent(page);
-      await page.setViewportSize({ width: 1280, height: 720 });
+      // REQ-726 (cycle 5, m6): the pill is hidden below 1500px now, so the
+      // squeeze is checked at the narrowest width it still shows.
+      await page.setViewportSize({ width: 1500, height: 720 });
       for (const path of ["/assistant", "/dashboard"]) {
         await page.goto(path);
         await searchFitsItsPlaceholder(page, expect, `${path} (${lang})`);

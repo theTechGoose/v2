@@ -55,7 +55,8 @@ describe("REQ-319 the ticker shows only the newest event (demo m12)", () => {
   test("DashTopbar renders the newest event, never a rotation by index, and re-fetches on a mutation", () => {
     const src = read("front-end/islands/DashTopbar.tsx");
     expect(src).toMatch(/from "\.\.\/lib\/ticker-pick\.ts"/);
-    expect(src).toMatch(/newestNotification\(/);
+    // REQ-726 (cycle 5, m6): freshTickerItem is newestNotification + a lifetime
+    expect(src).toMatch(/(newestNotification|freshTickerItem)\(/);
     expect(src).not.toMatch(/% liveItems\.length|tickerIdx/);
     expect(src).toMatch(/addEventListener\(MUTATION_EVENT/);
     // the full sentence on hover
