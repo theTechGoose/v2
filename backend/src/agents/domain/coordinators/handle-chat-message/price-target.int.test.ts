@@ -666,3 +666,70 @@ Deno.test("REQ-578 m34: the quote-phase prompt (en and es) says never output a $
   }
   await resetKv();
 });
+
+// ---------------------------------------------------------------------------
+// REQ-666 (demo-loop cycle 5, m48) — one typed price is never split evenly
+// ---------------------------------------------------------------------------
+
+Deno.test("REQ-666 m48: the demo's Carmen job at one typed $350 is saved as ONE $350 line — never the model's $175 + $175", async () => {
+  const ctx = await fresh();
+  const conv = await ctx.conversations.create({ userId: "u-1" });
+  // pair 6's answer from gpt-4o-mini (fleet-5 stdout:231)
+  script(ctx.llm, [{
+    text: "Drafting a quote.",
+    action: {
+      type: "create_quote",
+      payload: {
+        summary: "Reparación de puerta — Carmen Núñez",
+        lineItems: [
+          {
+            description: "Reparación de puerta de cocina",
+            amountCents: 17_500,
+          },
+          { description: "Cambio de llave del fregadero", amountCents: 17_500 },
+        ],
+      },
+    },
+  }]);
+  const result = await ctx.flow.run({
+    userId: "u-1",
+    conversationId: conv.id,
+    content:
+      "Cotización para Carmen Núñez: reparar puerta de la cocina y cambiar llave del fregadero, $350",
+  });
+  const quoteId = result.conversation.quoteId!;
+  assert(quoteId, "a draft is bound");
+  const stored = await ctx.quotes.getOwned(quoteId, "u-1");
+  assertEquals(stored.estimatedTotal, 35_000);
+  assertEquals(stored.lineItems.length, 1);
+  assertEquals(stored.lineItems[0].price, 35_000);
+  assertStringIncludes(stored.lineItems[0].description, "puerta de cocina");
+  assertStringIncludes(stored.lineItems[0].description, "llave del fregadero");
+  const card = cardOf(result.newMessages)!;
+  assertEquals((card.payload as { totalCents: number }).totalCents, 35_000);
+  await resetKv();
+});
+
+Deno.test("REQ-666 m48: the quote-phase prompt and the create_quote lineItems description (en and es) say one typed price for several jobs stays one line", async () => {
+  const ctx = await fresh();
+  const conv = await ctx.conversations.create({ userId: "u-1" });
+  const seen = script(ctx.llm, [draftCall(NEAR_18K)]);
+  await ctx.flow.run({
+    userId: "u-1",
+    conversationId: conv.id,
+    content: "Bathroom vanity swap for Derek Chen, $2,250",
+  });
+  for (
+    const prompt of [
+      seen[0].systemPrompt,
+      t("en", "prompts.systemQuote"),
+      t("es", "prompts.systemQuote"),
+      t("en", "prompts.tools.createQuote.lineItems"),
+      t("es", "prompts.tools.createQuote.lineItems"),
+    ]
+  ) {
+    assertStringIncludes(prompt, "ONE price for several");
+    assertStringIncludes(prompt, "never split it evenly");
+  }
+  await resetKv();
+});
