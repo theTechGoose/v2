@@ -3826,7 +3826,7 @@
   "field.subs.client": "Client",
   "field.subs.newClient": "+ New client",
   "field.subs.address": "Service address",
-  "field.subs.addressPh": "E.g. 4505 Socastee Blvd, Myrtle Beach, SC",
+  "field.subs.addressPh": "E.g. 123 Main St, Springfield",
   "field.subs.cadence": "Cadence",
   "field.subs.weekly": "Weekly",
   "field.subs.biweekly": "Every two weeks",
