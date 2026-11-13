@@ -13,6 +13,10 @@
  * hand (customer search box, service, price, worker, address, day) · REQ-165
  * "Add service" on a card · REQ-166 a worker picker on the card.
  *
+ * REQ-785 (demo-loop dv1-d11) — a job of several days: "Add task" takes a last
+ * day and more workers; the job is ONE card on each of its days ("Day 2 of 3"),
+ * "Edit dates" changes its days and crew, and one check marks it done.
+ *
  * Ported from a2z/web/tareas.html (demo driver dropped).
  */
 import { useEffect, useRef, useState } from "preact/hooks";
@@ -28,6 +32,14 @@ import FieldHead from "../components/FieldHead.tsx";
 import { ApiError } from "../lib/api.ts";
 import { I, ICN } from "../lib/dash-icons.tsx";
 import { daySummary } from "../lib/field-task-summary.ts";
+import {
+  crewChoices,
+  endDateToSend,
+  jobDayOf,
+  jobDays,
+  jobRange,
+  jobSpanProblem,
+} from "../lib/field-job.ts";
 import { groupTasks, workerZoneLabel } from "../lib/field-task-groups.ts";
 import {
   addedNotice,
@@ -103,6 +115,63 @@ interface AddForm {
   workerId: string;
   address: string;
   date: string;
+  /** REQ-785 — the last day ("" = one day) and more workers */
+  endDate: string;
+  crewIds: string[];
+}
+
+/** REQ-785 — the open "Edit dates" form of one card */
+interface DatesForm {
+  taskId: string;
+  first: string;
+  last: string;
+  crewIds: string[];
+  err: string | null;
+}
+
+/** REQ-785 — a checkbox list of workers: tick to add one to the job, untick to take them off */
+function CrewPicks(
+  { workers, picked, onChange, cy }: {
+    workers: FieldWorker[];
+    picked: string[];
+    onChange: (ids: string[]) => void;
+    cy: string;
+  },
+) {
+  if (!workers.length) return null;
+  return (
+    <fieldset
+      class="field"
+      data-cy={cy}
+      style="border:0;padding:0;margin:0;min-width:0"
+    >
+      <legend style="padding:0;margin-bottom:4px">{t("field.tk.crew")}</legend>
+      <span style="display:flex;gap:12px;flex-wrap:wrap">
+        {workers.map((w) => (
+          <label
+            key={w.id}
+            style="display:inline-flex;align-items:center;gap:6px;font-weight:600;min-height:32px"
+          >
+            <input
+              type="checkbox"
+              data-cy={`${cy}-pick`}
+              value={w.id}
+              checked={picked.includes(w.id)}
+              onChange={(e) => {
+                const on = (e.currentTarget as HTMLInputElement).checked;
+                onChange(
+                  on
+                    ? [...picked.filter((id) => id !== w.id), w.id]
+                    : picked.filter((id) => id !== w.id),
+                );
+              }}
+            />
+            {w.name}
+          </label>
+        ))}
+      </span>
+    </fieldset>
+  );
 }
 
 const INPUT =
@@ -137,12 +206,14 @@ export default function FieldTasksPage(
   const [addErr, setAddErr] = useState<string | null>(null);
   // REQ-283 — the field the last Save found missing, marked aria-invalid
   const [addBad, setAddBad] = useState<
-    "customer" | "type" | "price" | "worker" | null
+    "customer" | "type" | "price" | "worker" | "end" | null
   >(null);
   const [service, setService] = useState<
     { taskId: string; typeName: string; price: string } | null
   >(null);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
+  // REQ-785 — the card whose days (and crew) are being edited
+  const [dates, setDates] = useState<DatesForm | null>(null);
   const lastPick = useRef<string | null>(null);
 
   async function load(d: string) {
@@ -193,6 +264,7 @@ export default function FieldTasksPage(
     setSkipped([]);
     setPriceDraft({});
     setNoteDraft({});
+    setDates(null);
     setDate(d);
   }
 
@@ -262,6 +334,8 @@ export default function FieldTasksPage(
       workerId: "",
       address: "",
       date,
+      endDate: "",
+      crewIds: [],
     });
   }
 
@@ -281,6 +355,13 @@ export default function FieldTasksPage(
       );
       return;
     }
+    // REQ-785 — the last day: never before the first, at most 31 days
+    const span = jobSpanProblem(add.date, add.endDate);
+    if (span) {
+      setAddBad("end");
+      setAddErr(t(span.key, "vars" in span ? span.vars : undefined));
+      return;
+    }
     setBusy(true);
     setAddErr(null);
     setAddBad(null);
@@ -292,6 +373,8 @@ export default function FieldTasksPage(
         priceCents: cents,
         workerId: add.workerId || undefined,
         address: add.address.trim() || undefined,
+        endDate: endDateToSend(add.date, add.endDate), // REQ-785
+        crewIds: add.crewIds,
       });
       if (made.date === date) setTasks((rows) => [...rows, made]);
       // REQ-340 (demo M37): the server put the task's address on a customer
@@ -389,6 +472,56 @@ export default function FieldTasksPage(
     }
   }
 
+  // REQ-785 — "Edit dates": a one-off's first and last day, and its other workers
+  function openDates(x: TaskView) {
+    setService(null);
+    setConfirmDelete(null);
+    setDates({
+      taskId: x.id,
+      first: x.date,
+      last: x.endDate ?? "",
+      crewIds: x.crewIds ?? [],
+      err: null,
+    });
+  }
+
+  async function saveDates(task: TaskView) {
+    if (!dates || dates.taskId !== task.id) return;
+    const problem = !ISO.test(dates.first)
+      ? { key: "field.tk.badEnd" }
+      : jobSpanProblem(dates.first, dates.last);
+    if (problem) {
+      setDates((f) =>
+        f && {
+          ...f,
+          err: t(problem.key, "vars" in problem ? problem.vars : undefined),
+        }
+      );
+      return;
+    }
+    setSaving(task.id);
+    setError(null);
+    try {
+      const next = await fieldClient.updateTask(task.id, {
+        date: dates.first,
+        endDate: endDateToSend(dates.first, dates.last) ?? null,
+        crewIds: dates.crewIds.filter((id) => id !== task.workerId),
+      });
+      setDates(null);
+      // the job may have left the day on screen, or still cover it: read the day again
+      await load(date);
+      setFlash(t("field.tk.datesSaved", { range: jobRange(next, lang) }));
+    } catch (e) {
+      const inv = invoiceIdOf(e);
+      if (inv) {
+        setDates(null);
+        replace({ ...task, invoiceId: inv });
+      } else setDates((f) => f && { ...f, err: errMsg(e) });
+    } finally {
+      setSaving(null);
+    }
+  }
+
   function commitPrice(task: TaskView) {
     const raw = priceDraft[task.id];
     if (raw === undefined) return;
@@ -474,6 +607,9 @@ export default function FieldTasksPage(
       .join(" ");
     const asking = confirmDelete === x.id;
     const adding = service?.taskId === x.id;
+    // REQ-785 — a job of several days: which of its days this is, and its form
+    const span = jobDayOf(x, date);
+    const editing = dates?.taskId === x.id ? dates : null;
     return (
       <div
         class={cls}
@@ -483,6 +619,7 @@ export default function FieldTasksPage(
         data-status={x.status}
         data-worker={x.workerId}
         data-oneoff={x.oneOff ? "true" : undefined}
+        data-end={x.endDate}
         style={isOpen(x) ? undefined : "opacity:.55"}
       >
         {/* REQ-159 — the office marks the task done, or re-opens it; inert once invoiced */}
@@ -539,12 +676,32 @@ export default function FieldTasksPage(
                 </span>
               </>
             )}
+            {/* REQ-785 — one job on each of its days: "Day 2 of 3 · Nov 16 – Nov 18" */}
+            {span && (
+              <>
+                {" "}
+                <span
+                  class="chip chip--amber"
+                  data-cy="tk-span"
+                  data-n={span.n}
+                  data-of={span.of}
+                >
+                  {t("field.tk.jobDay", { n: span.n, total: span.of })} ·{" "}
+                  {jobRange(x, lang)}
+                </span>
+              </>
+            )}
           </div>
           <div class="task__client">{x.customerName}</div>
           {x.address && <div class="task__addr">{x.address}</div>}
           <div class="hint">
             {workerZoneLabel(x)}
           </div>
+          {!!x.crewNames?.length && (
+            <div class="hint" data-cy="tk-crew">
+              {t("field.tk.crewLine", { names: x.crewNames.join(", ") })}
+            </div>
+          )}
           {showNote && (
             <div class="task__note">
               💬 <b>{t("field.tk.note")}:</b> {x.note}
@@ -631,7 +788,7 @@ export default function FieldTasksPage(
                 ))}
               </select>
             </label>
-            {!adding && !asking && (
+            {!adding && !asking && !editing && (
               <button
                 type="button"
                 class="btn btn--ghost btn--sm"
@@ -639,13 +796,26 @@ export default function FieldTasksPage(
                 disabled={locked || saving === x.id}
                 onClick={() => {
                   setConfirmDelete(null);
+                  setDates(null);
                   setService({ taskId: x.id, typeName: "", price: "" });
                 }}
               >
                 <I d={ICN.plus} size={12} /> {t("field.tk.addService")}
               </button>
             )}
-            {!adding && !asking && (
+            {/* REQ-785 — a one-off's days (one, or a job of several) and its other workers */}
+            {!adding && !asking && !editing && x.oneOff && (
+              <button
+                type="button"
+                class="btn btn--ghost btn--sm"
+                data-cy="tk-edit-dates"
+                disabled={locked || saving === x.id}
+                onClick={() => openDates(x)}
+              >
+                <I d={ICN.cal} size={12} /> {t("field.tk.editDates")}
+              </button>
+            )}
+            {!adding && !asking && !editing && (
               <button
                 type="button"
                 class="btn btn--ghost btn--sm"
@@ -654,6 +824,7 @@ export default function FieldTasksPage(
                 style="color:#a83b3b"
                 onClick={() => {
                   setService(null);
+                  setDates(null);
                   setConfirmDelete(x.id);
                 }}
               >
@@ -665,7 +836,11 @@ export default function FieldTasksPage(
                 data-cy="tk-delete-ask"
                 style="display:flex;gap:6px;align-items:center;flex-wrap:wrap"
               >
-                <span style="font-size:13px">{t("field.tk.deleteAsk")}</span>
+                <span style="font-size:13px">
+                  {span
+                    ? t("field.tk.deleteJobAsk", { n: span.of })
+                    : t("field.tk.deleteAsk")}
+                </span>
                 <button
                   type="button"
                   class="btn btn--danger btn--sm"
@@ -686,6 +861,96 @@ export default function FieldTasksPage(
               </span>
             )}
           </div>
+          {editing && (
+            <form
+              data-cy="tk-dates-form"
+              noValidate
+              style="display:flex;flex-direction:column;gap:8px;margin-top:8px"
+              onSubmit={(e) => {
+                e.preventDefault();
+                saveDates(x);
+              }}
+            >
+              <span style="font-size:13px;font-weight:700">
+                {t("field.tk.datesTitle")}
+              </span>
+              <span style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap">
+                <label style="font-size:12px;color:var(--fg-muted);display:flex;flex-direction:column;gap:4px">
+                  {t("field.tk.firstDay")}
+                  <input
+                    type="date"
+                    data-cy="tk-dates-start"
+                    value={editing.first}
+                    required
+                    style={INPUT}
+                    onChange={(e) => {
+                      const v = (e.currentTarget as HTMLInputElement).value;
+                      setDates((f) => f && { ...f, first: v, err: null });
+                    }}
+                  />
+                </label>
+                <label style="font-size:12px;color:var(--fg-muted);display:flex;flex-direction:column;gap:4px">
+                  {t("field.tk.lastDay")}
+                  <input
+                    type="date"
+                    data-cy="tk-dates-end"
+                    value={editing.last}
+                    min={editing.first}
+                    aria-invalid={!!editing.err || undefined}
+                    style={INPUT}
+                    onChange={(e) => {
+                      const v = (e.currentTarget as HTMLInputElement).value;
+                      setDates((f) => f && { ...f, last: v, err: null });
+                    }}
+                  />
+                </label>
+                <span class="hint" data-cy="tk-dates-span">
+                  {jobDays({ date: editing.first, endDate: editing.last }) > 1
+                    ? t("field.tk.spanDays", {
+                      n: jobDays({
+                        date: editing.first,
+                        endDate: editing.last,
+                      }),
+                      range: jobRange(
+                        { date: editing.first, endDate: editing.last },
+                        lang,
+                      ),
+                    })
+                    : t("field.tk.lastDayHint")}
+                </span>
+              </span>
+              <CrewPicks
+                cy="tk-dates-crew"
+                workers={crewChoices(workers, x.workerId)}
+                picked={editing.crewIds}
+                onChange={(ids) =>
+                  setDates((f) => f && { ...f, crewIds: ids, err: null })}
+              />
+              {editing.err && (
+                <div class="alert" style="margin:0" role="alert">
+                  {editing.err}
+                </div>
+              )}
+              <span style="display:flex;gap:8px;align-items:center">
+                <button
+                  type="submit"
+                  class="btn btn--green btn--sm"
+                  data-cy="tk-dates-save"
+                  disabled={saving === x.id}
+                >
+                  {t("field.common.save")}
+                </button>
+                <button
+                  type="button"
+                  class="btn btn--ghost btn--sm"
+                  data-cy="tk-dates-cancel"
+                  onClick={() => setDates(null)}
+                >
+                  {t("field.common.cancel")}
+                </button>
+              </span>
+            </form>
+          )}
           {adding && service && (
             <form
               data-cy="tk-service-form"
@@ -919,7 +1184,14 @@ export default function FieldTasksPage(
                 value={add.workerId}
                 onChange={(e) => {
                   const v = (e.currentTarget as HTMLSelectElement).value;
-                  setAdd((f) => f && { ...f, workerId: v });
+                  // REQ-785 — the job's worker is not also on its crew
+                  setAdd((f) =>
+                    f && {
+                      ...f,
+                      workerId: v,
+                      crewIds: f.crewIds.filter((id) => id !== v),
+                    }
+                  );
                 }}
               >
                 <option value="">{t("field.tk.pickWorker")}</option>
@@ -952,7 +1224,7 @@ export default function FieldTasksPage(
               />
             </label>
             <label class="field">
-              <span>{t("field.tk.date")}</span>
+              <span>{t("field.tk.firstDay")}</span>
               <input
                 type="date"
                 data-cy="tk-add-date"
@@ -964,6 +1236,42 @@ export default function FieldTasksPage(
                 }}
               />
             </label>
+            {/* REQ-785 — a job of several days: its last day (blank = one day) */}
+            <label class="field">
+              <span>{t("field.tk.lastDay")}</span>
+              <input
+                type="date"
+                data-cy="tk-add-end"
+                value={add.endDate}
+                min={add.date}
+                aria-invalid={addBad === "end" || undefined}
+                onChange={(e) => {
+                  const v = (e.currentTarget as HTMLInputElement).value;
+                  setAdd((f) => f && { ...f, endDate: v });
+                  if (addBad === "end") setAddBad(null);
+                }}
+              />
+              <span class="hint" data-cy="tk-add-span">
+                {jobDays({ date: add.date, endDate: add.endDate }) > 1
+                  ? t("field.tk.spanDays", {
+                    n: jobDays({ date: add.date, endDate: add.endDate }),
+                    range: jobRange(
+                      { date: add.date, endDate: add.endDate },
+                      lang,
+                    ),
+                  })
+                  : t("field.tk.lastDayHint")}
+              </span>
+            </label>
+          </div>
+          {/* REQ-785 — "assign workers": more workers on the job, besides its worker */}
+          <div class="row">
+            <CrewPicks
+              cy="tk-add-crew"
+              workers={crewChoices(workers, add.workerId)}
+              picked={add.crewIds}
+              onChange={(ids) => setAdd((f) => f && { ...f, crewIds: ids })}
+            />
           </div>
           {addErr && (
             <div class="alert" style="margin:0 0 10px" role="alert">

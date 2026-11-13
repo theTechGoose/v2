@@ -37,6 +37,7 @@ import {
   workerNewTaskText,
 } from "@field/domain/business/notices/mod.ts";
 import { todayIn } from "@field/domain/business/schedule/mod.ts";
+import { covers, lastDayOf } from "@field/domain/business/job-span/mod.ts";
 import type { FieldTask } from "@field/dto/field.ts";
 
 const EVERY_MINUTE_MS = 60_000;
@@ -152,16 +153,32 @@ export class FieldNotices {
     }
   }
 
-  /** REQ-171: a worker hears about a job added to (or moved onto) their list TODAY */
+  /**
+   * REQ-171: a worker hears about a job added to (or moved onto) their list TODAY.
+   * REQ-785: a job of several days is on today's list on any of its days, and every worker on it hears — once each.
+   */
   async workerNewTask(userId: string, task: FieldTask): Promise<boolean> {
     const s = await this.sender(userId);
     if (!s) return false;
-    if (task.date !== todayIn(s.tz)) return false;
+    if (!covers(task, todayIn(s.tz))) return false;
+    let texted = false;
+    for (const workerId of [task.workerId, ...(task.crewIds ?? [])]) {
+      if (await this.workerNewTaskTo(userId, s, task, workerId)) texted = true;
+    }
+    return texted;
+  }
+
+  private async workerNewTaskTo(
+    userId: string,
+    s: Sender,
+    task: FieldTask,
+    workerId: string,
+  ): Promise<boolean> {
     if (
-      !await this.once(["field_notice", "worker-new", task.id, task.workerId])
+      !await this.once(["field_notice", "worker-new", task.id, workerId])
     ) return false;
     const [w, types, customer] = await Promise.all([
-      this.workers.find(task.workerId),
+      this.workers.find(workerId),
       this.types.listByUser(userId),
       this.customers.get(task.customerId).catch(() => null),
     ]);
@@ -179,11 +196,11 @@ export class FieldNotices {
     );
   }
 
-  /** REQ-171: a customer hears that a service on or after today was canceled */
+  /** REQ-171: a customer hears that a service on or after today was canceled (REQ-785: a job still running counts) */
   async customerCanceled(userId: string, task: FieldTask): Promise<boolean> {
     const s = await this.sender(userId);
     if (!s) return false;
-    if (task.date < todayIn(s.tz)) return false;
+    if (lastDayOf(task) < todayIn(s.tz)) return false;
     if (!await this.once(["field_notice", "canceled", task.id])) return false;
     const [types, customer] = await Promise.all([
       this.types.listByUser(userId),
