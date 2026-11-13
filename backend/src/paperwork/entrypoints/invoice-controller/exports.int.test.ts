@@ -23,7 +23,10 @@ import { matchesDocNumber } from "#documents/numbering.ts";
 import {
   CUSTOMER_EXPORT_HEADER,
   INVOICE_EXPORT_HEADER,
+  PAYMENT_EXPORT_HEADER,
+  QUOTE_EXPORT_HEADER,
 } from "#documents/exports.ts";
+import { PaymentStore } from "@paperwork/domain/data/payment-store/mod.ts"; // REQ-795
 
 @Module({ imports: [AnalyticsModule] })
 class TestApp {}
@@ -458,5 +461,174 @@ Deno.test("REQ-209 300 invoices on one account: INV-001…INV-300 with no gaps o
   } finally {
     await server.stop();
     await resetKv();
+  }
+});
+
+Deno.test("REQ-795 Reports: GET /invoices|customers|quotes|payments/export.csv take ?from&to (inclusive ISO days — issued/created, paid, received, created); a malformed day is 400 {field}; the file name carries the range; nothing crosses accounts", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const server = await bootstrapServer(TestApp, { port: PORT, swagger: false });
+  await server.listen();
+  try {
+    const { sid, userId } = await login("+15125557795");
+    const customers = new CustomerStore();
+    const quotes = new QuoteStore();
+    const invoices = new InvoiceStore();
+    const payments = new PaymentStore();
+    const ana = await customers.create(userId, { name: "Ana Reports" });
+    const quote = await quotes.create(userId, {
+      customerId: ana.id,
+      summary: "Fence",
+      lineItems: [],
+      status: "sent",
+      estimatedTotal: 120000,
+    });
+    // two paid invoices: paid in January and in March; one open issued in February
+    const jan = await invoices.create(userId, {
+      customerId: ana.id,
+      quoteId: quote.id,
+      amount: 10000,
+      status: "paid",
+      issuedDate: "2026-01-05",
+      dueDate: "2026-01-20",
+      paidAt: "2026-01-15T12:00:00.000Z",
+    });
+    const mar = await invoices.create(userId, {
+      customerId: ana.id,
+      amount: 20000,
+      status: "paid",
+      issuedDate: "2026-03-01",
+      dueDate: "2026-03-20",
+      paidAt: "2026-03-31T23:00:00.000Z",
+    });
+    await invoices.create(userId, {
+      customerId: ana.id,
+      amount: 30000,
+      status: "sent",
+      issuedDate: "2026-02-10",
+      dueDate: "2026-03-10",
+    });
+    await payments.create(userId, {
+      invoiceId: jan.id,
+      amount: 10000,
+      method: "zelle",
+      receivedAt: "2026-01-15T12:00:00.000Z",
+      reference: "Z-1",
+    });
+    await payments.create(userId, {
+      invoiceId: mar.id,
+      amount: 20000,
+      method: "cash",
+      receivedAt: "2026-03-31T23:00:00.000Z",
+    });
+
+    // paid invoices, Q1 up to March 31 inclusive: both; up to March 30: January only
+    let r = await csv(
+      sid,
+      "/invoices/export.csv?status=paid&from=2026-01-01&to=2026-03-31",
+    );
+    assertEquals(r.status, 200);
+    assertEquals(cells(r.lines[0]), [...INVOICE_EXPORT_HEADER]);
+    assertEquals(r.lines.length, 3, "header + the two paid invoices");
+    assert(
+      r.disposition.includes("invoices-paid-2026-01-01-to-2026-03-31.csv"),
+      r.disposition,
+    );
+    r = await csv(
+      sid,
+      "/invoices/export.csv?status=paid&from=2026-01-01&to=2026-03-30",
+    );
+    assertEquals(r.lines.length, 2, "the March 31 payment is outside `to`");
+    assert(r.lines[1].startsWith("INV-001,"), r.lines[1]);
+    // all invoices by issued day: February only
+    r = await csv(
+      sid,
+      "/invoices/export.csv?status=all&from=2026-02-01&to=2026-02-28",
+    );
+    assertEquals(r.lines.length, 2);
+    assert(r.lines[1].startsWith("INV-003,"), r.lines[1]);
+    // unpaid, from March on: nothing (the open one was issued in February)
+    r = await csv(sid, "/invoices/export.csv?status=unpaid&from=2026-03-01");
+    assertEquals(r.lines.length, 1, "header only");
+    // only `from`, only `to`
+    r = await csv(sid, "/invoices/export.csv?status=all&from=2026-03-01");
+    assertEquals(r.lines.length, 2);
+    r = await csv(sid, "/invoices/export.csv?status=all&to=2026-01-31");
+    assertEquals(r.lines.length, 2);
+    assert(
+      r.disposition.includes("invoices-all-start-to-2026-01-31.csv"),
+      r.disposition,
+    );
+
+    // payments by received day
+    r = await csv(sid, "/payments/export.csv?from=2026-01-01&to=2026-01-31");
+    assertEquals(r.status, 200);
+    assert(r.type.includes("text/csv"), r.type);
+    assert(r.bom, "BOM");
+    assertEquals(cells(r.lines[0]), [...PAYMENT_EXPORT_HEADER]);
+    assertEquals(r.lines.length, 2);
+    assertEquals(cells(r.lines[1]), [
+      "2026-01-15",
+      "INV-001",
+      "C-001",
+      "Ana Reports",
+      "zelle",
+      "100.00",
+      "Z-1",
+    ]);
+    r = await csv(sid, "/payments/export.csv");
+    assertEquals(r.lines.length, 3, "no range: both payments");
+    assert(r.disposition.includes('filename="payments.csv"'), r.disposition);
+
+    // quotes and customers by created day (today): today's range has them, last year's does not
+    const today = new Date().toISOString().slice(0, 10);
+    r = await csv(sid, `/quotes/export.csv?from=${today}&to=${today}`);
+    assertEquals(r.status, 200);
+    assertEquals(cells(r.lines[0]), [...QUOTE_EXPORT_HEADER]);
+    assertEquals(r.lines.length, 2);
+    const q = cells(r.lines[1]);
+    assertEquals(q.slice(0, 4), ["Q-001", "sent", "C-001", "Ana Reports"]);
+    assertEquals(q[7], "1200.00");
+    assertEquals(q[8], today);
+    assert(q[11].endsWith(`/q/${quote.id}`), q[11]);
+    r = await csv(sid, "/quotes/export.csv?from=2020-01-01&to=2020-12-31");
+    assertEquals(r.lines.length, 1);
+    r = await csv(sid, `/customers/export.csv?from=${today}&to=${today}`);
+    assertEquals(cells(r.lines[0]), [...CUSTOMER_EXPORT_HEADER]);
+    assertEquals(r.lines.length, 2);
+    r = await csv(sid, "/customers/export.csv?from=2020-01-01&to=2020-12-31");
+    assertEquals(r.lines.length, 1);
+    assert(
+      r.disposition.includes("customers-2020-01-01-to-2020-12-31.csv"),
+      r.disposition,
+    );
+
+    // a malformed day is 400 and names the field
+    for (
+      const [path, field] of [
+        ["/invoices/export.csv?status=all&from=2026-02-30", "from"],
+        ["/payments/export.csv?to=yesterday", "to"],
+        ["/quotes/export.csv?from=01/02/2026", "from"],
+        ["/customers/export.csv?to=2026-1-1", "to"],
+      ] as const
+    ) {
+      const bad = await fetch(`${BASE}${path}`, {
+        headers: { "x-session-id": sid },
+      });
+      assertEquals(bad.status, 400, path);
+      assertEquals((await bad.json()).field, field, path);
+    }
+
+    // another account sees none of it; anonymous is refused
+    const { sid: sidB } = await login("+15125557796");
+    assertEquals((await csv(sidB, "/quotes/export.csv")).lines.length, 1);
+    assertEquals((await csv(sidB, "/payments/export.csv")).lines.length, 1);
+    for (const path of ["/quotes/export.csv", "/payments/export.csv"]) {
+      const anon = await fetch(`${BASE}${path}`);
+      assertEquals(anon.status, 401, path);
+      await drain(anon);
+    }
+  } finally {
+    await server.stop();
   }
 });

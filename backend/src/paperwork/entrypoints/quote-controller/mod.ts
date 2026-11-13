@@ -18,6 +18,15 @@ import { UserStore } from "@users/domain/data/user-store/mod.ts";
 import { SessionStore } from "@users/domain/data/session-store/mod.ts";
 import { requireUser } from "@users/domain/coordinators/require-user/mod.ts";
 import { requestIdOf } from "@core/business/request-id/mod.ts";
+import { CustomerStore } from "@crm/domain/data/customer-store/mod.ts"; // REQ-795
+import { appUrl } from "@users/domain/business/app-url/mod.ts"; // REQ-795
+import {
+  exportDateOf,
+  exportRangeSuffix,
+  filterByDateRange,
+  parseExportRange,
+  quoteExportCsv,
+} from "#documents/exports.ts"; // REQ-795
 import { PreviewQuoteSend } from "@paperwork/domain/coordinators/preview-quote-send/mod.ts";
 import { QuoteAllowance } from "@paperwork/domain/coordinators/quote-allowance/mod.ts";
 import { parseSendPreviewQuery } from "#quote-flow/send-preview.ts";
@@ -70,6 +79,57 @@ export class QuoteController {
    * /quotes can say "your five quotes are used" before New quote is tapped.
    * (Declared before `:id` so "allowance" is never read as a quote id.)
    */
+  /**
+   * REQ-795 (Reports): every quote as CSV — number, status, customer, job,
+   * total, created / sent / accepted days, the public link — optionally only
+   * those created in `?from`…`?to` (inclusive ISO days). Declared before
+   * `:id` so "export.csv" is never read as a quote id.
+   */
+  @Get("export.csv")
+  async exportCsv(
+    @Context() ctx: ExecutionContext,
+    @Query("from") fromQ?: string,
+    @Query("to") toQ?: string,
+  ) {
+    const user = await requireUser(ctx, this.sessions, this.users);
+    const range = parseExportRange(fromQ, toQ);
+    if ("field" in range) {
+      return ctx.json(
+        { ok: false, reason: "invalid", field: range.field },
+        400,
+      );
+    }
+    const [quotes, customers] = await Promise.all([
+      this.store.listByUser(user.id),
+      new CustomerStore().listByUser(user.id),
+    ]);
+    const customerById = new Map(customers.map((c) => [c.id, c]));
+    const rows = filterByDateRange(
+      quotes,
+      (q) => exportDateOf("quotes", q),
+      range.from,
+      range.to,
+    ).sort((a, b) =>
+      (a.seq ?? 0) - (b.seq ?? 0) ||
+      (a.createdAt ?? "").localeCompare(b.createdAt ?? "")
+    );
+    const base = appUrl();
+    const csv = quoteExportCsv(rows, {
+      customerOf: (
+        q,
+      ) => (q.customerId ? customerById.get(q.customerId) : undefined),
+      linkOf: (q) => `${base}/q/${q.id}`,
+    });
+    return new Response(csv, {
+      headers: {
+        "content-type": "text/csv; charset=utf-8",
+        "content-disposition": `attachment; filename="quotes${
+          exportRangeSuffix(range)
+        }.csv"`,
+      },
+    });
+  }
+
   @Get("allowance")
   async allowanceOf(@Context() ctx: ExecutionContext) {
     const user = await requireUser(ctx, this.sessions, this.users);

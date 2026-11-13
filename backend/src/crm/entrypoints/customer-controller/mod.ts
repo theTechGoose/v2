@@ -22,7 +22,13 @@ import { SessionStore } from "@users/domain/data/session-store/mod.ts";
 import { requireUser } from "@users/domain/coordinators/require-user/mod.ts";
 import { QuoteStore } from "@paperwork/domain/data/quote-store/mod.ts"; // REQ-208
 import { InvoiceStore } from "@paperwork/domain/data/invoice-store/mod.ts"; // REQ-208
-import { customerExportCsv } from "#documents/exports.ts"; // REQ-208
+import {
+  customerExportCsv,
+  exportDateOf,
+  exportRangeSuffix,
+  filterByDateRange,
+  parseExportRange,
+} from "#documents/exports.ts"; // REQ-208, REQ-795
 
 @Controller("customers")
 export class CustomerController {
@@ -66,13 +72,31 @@ export class CustomerController {
    * the CRM module does not have to import the paperwork module.
    */
   @Get("export.csv")
-  async exportCsv(@Context() ctx: ExecutionContext) {
+  async exportCsv(
+    @Context() ctx: ExecutionContext,
+    @Query("from") fromQ?: string,
+    @Query("to") toQ?: string,
+  ) {
     const user = await requireUser(ctx, this.sessions, this.users);
-    const [customers, quotes, invoices] = await Promise.all([
+    // REQ-795: an inclusive day range on the day the customer was added
+    const range = parseExportRange(fromQ, toQ);
+    if ("field" in range) {
+      return ctx.json(
+        { ok: false, reason: "invalid", field: range.field },
+        400,
+      );
+    }
+    const [allCustomers, quotes, invoices] = await Promise.all([
       this.store.listByUser(user.id),
       new QuoteStore().listByUser(user.id),
       new InvoiceStore().listByUser(user.id),
     ]);
+    const customers = filterByDateRange(
+      allCustomers,
+      (c) => exportDateOf("customers", c),
+      range.from,
+      range.to,
+    );
     const ordered = customers.slice().sort((a, b) =>
       (a.seq ?? 0) - (b.seq ?? 0) ||
       (a.createdAt ?? "").localeCompare(b.createdAt ?? "")
@@ -80,7 +104,9 @@ export class CustomerController {
     return new Response(customerExportCsv(ordered, quotes, invoices), {
       headers: {
         "content-type": "text/csv; charset=utf-8",
-        "content-disposition": `attachment; filename="customers.csv"`,
+        "content-disposition": `attachment; filename="customers${
+          exportRangeSuffix(range)
+        }.csv"`,
       },
     });
   }

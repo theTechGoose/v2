@@ -1693,20 +1693,10 @@ function InvoicesHero(
           {
             /* UX-23: nothing to export on an empty account — and when shown,
               the ghost must be legible on the cream page, not the .qph__cta
-              white-on-transparent ghost the audit measured. */
+              white-on-transparent ghost the audit measured. REQ-794: two
+              links — all, unpaid; the paid-this-year export lives on
+              /reports (REQ-795). */
           }
-          {!trulyEmpty && (
-            <a
-              class="qph__cta qph__cta--ghost"
-              data-cy="invoice-export"
-              href={`/api/invoices/export.csv?year=${new Date().getFullYear()}`}
-              style="background:transparent;border:1px solid var(--brand-teal);color:var(--brand-teal)"
-            >
-              {tFor(lang, "invoicesPage.exportCsv", {
-                year: new Date().getFullYear(),
-              })}
-            </a>
-          )}
           {/* REQ-208: the full exports — every invoice, or only the open ones */}
           {!trulyEmpty && (
             <a

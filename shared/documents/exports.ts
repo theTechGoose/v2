@@ -358,3 +358,221 @@ export function customerExportCsv(
     ),
   ]);
 }
+
+// ---- REQ-795: date ranges, quotes, payments ----
+
+/** A "YYYY-MM-DD" day that exists on the calendar; null for anything else. */
+export function parseIsoDay(raw: unknown): string | null {
+  if (typeof raw !== "string") return null;
+  const s = raw.trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return null;
+  const [y, m, d] = s.split("-").map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  return dt.getUTCFullYear() === y && dt.getUTCMonth() === m - 1 &&
+      dt.getUTCDate() === d
+    ? s
+    : null;
+}
+
+/**
+ * Is the stored date's ISO day inside [from, to]? Both ends inclusive and
+ * each optional. A record with no date is in only when the range is open.
+ */
+export function inDateRange(
+  value: string | null | undefined,
+  from?: string | null,
+  to?: string | null,
+): boolean {
+  const day = isoDate(value);
+  if (!from && !to) return true;
+  if (!day) return false;
+  if (from && day < from) return false;
+  if (to && day > to) return false;
+  return true;
+}
+
+export type ExportSlice =
+  | "invoices"
+  | "unpaid"
+  | "paid"
+  | "payments"
+  | "quotes"
+  | "customers";
+
+/** The day a slice is filtered on: issued (else created) for invoices, paid
+ *  for paid invoices, received for payments, created for quotes and customers. */
+export function exportDateOf(
+  slice: ExportSlice,
+  r: {
+    issuedDate?: string;
+    createdAt?: string;
+    paidAt?: string;
+    receivedAt?: string;
+  },
+): string {
+  switch (slice) {
+    case "paid":
+      return isoDate(r.paidAt);
+    case "payments":
+      return isoDate(r.receivedAt);
+    case "invoices":
+    case "unpaid":
+      return isoDate(r.issuedDate) || isoDate(r.createdAt);
+    case "quotes":
+    case "customers":
+      return isoDate(r.createdAt);
+  }
+}
+
+export function filterByDateRange<R>(
+  rows: readonly R[],
+  dateOf: (r: R) => string,
+  from?: string | null,
+  to?: string | null,
+): R[] {
+  if (!from && !to) return [...rows];
+  return rows.filter((r) => inDateRange(dateOf(r), from, to));
+}
+
+export const QUOTE_EXPORT_HEADER = [
+  "Quote #",
+  "Status",
+  "Customer #",
+  "Customer",
+  "Email",
+  "Phone",
+  "Job",
+  "Total",
+  "Created",
+  "Sent",
+  "Accepted",
+  "Link",
+] as const;
+
+export interface ExportQuoteRow {
+  id: string;
+  number?: string;
+  status?: string;
+  customerId?: string;
+  jobName?: string;
+  summary?: string;
+  estimatedTotal?: number;
+  lineItems?: Array<{ price?: number; quantity?: number }>;
+  createdAt?: string;
+  sentAt?: string;
+  acceptedAt?: string;
+}
+
+function quoteTotalOf(q: ExportQuoteRow): number {
+  if (typeof q.estimatedTotal === "number") {
+    return Math.max(0, Math.round(q.estimatedTotal));
+  }
+  return (q.lineItems ?? []).reduce(
+    (s, li) => s + Math.round((li.price ?? 0) * (li.quantity ?? 1)),
+    0,
+  );
+}
+
+export function quoteExportCsv<Q extends ExportQuoteRow>(
+  quotes: readonly Q[],
+  lookups: {
+    customerOf: (q: Q) => ExportCustomer | undefined;
+    linkOf: (q: Q) => string;
+  },
+): string {
+  return toCsv([
+    [...QUOTE_EXPORT_HEADER],
+    ...quotes.map((q) => {
+      const c = lookups.customerOf(q);
+      return [
+        docNumberOf(q),
+        q.status ?? "draft",
+        c?.number ?? "",
+        c?.name ?? "",
+        c?.email ?? "",
+        c?.phoneNumber ?? "",
+        q.jobName ?? q.summary ?? "",
+        dollars(quoteTotalOf(q)),
+        isoDate(q.createdAt),
+        isoDate(q.sentAt),
+        isoDate(q.acceptedAt),
+        lookups.linkOf(q),
+      ];
+    }),
+  ]);
+}
+
+export const PAYMENT_EXPORT_HEADER = [
+  "Received",
+  "Invoice #",
+  "Customer #",
+  "Customer",
+  "Method",
+  "Amount",
+  "Reference",
+] as const;
+
+export interface ExportPaymentRow {
+  id: string;
+  invoiceId: string;
+  amount?: number;
+  method?: string;
+  receivedAt?: string;
+  reference?: string;
+}
+
+export function paymentExportCsv<P extends ExportPaymentRow>(
+  payments: readonly P[],
+  lookups: {
+    invoiceOf: (
+      p: P,
+    ) => { id: string; number?: string; customerId?: string } | undefined;
+    customerOf: (customerId: string) => ExportCustomer | undefined;
+  },
+): string {
+  return toCsv([
+    [...PAYMENT_EXPORT_HEADER],
+    ...payments.map((p) => {
+      const inv = lookups.invoiceOf(p);
+      const c = inv?.customerId
+        ? lookups.customerOf(inv.customerId)
+        : undefined;
+      return [
+        isoDate(p.receivedAt),
+        inv ? docNumberOf(inv) : "",
+        c?.number ?? "",
+        c?.name ?? "",
+        p.method ?? "",
+        dollars(p.amount),
+        p.reference ?? "",
+      ];
+    }),
+  ]);
+}
+
+export type ExportRange = { from?: string; to?: string };
+
+/** `?from`/`?to` as inclusive ISO days; `{field}` names the malformed one. */
+export function parseExportRange(
+  fromQ: unknown,
+  toQ: unknown,
+): ExportRange | { field: "from" | "to" } {
+  const out: ExportRange = {};
+  if (typeof fromQ === "string" && fromQ.trim() !== "") {
+    const from = parseIsoDay(fromQ);
+    if (!from) return { field: "from" };
+    out.from = from;
+  }
+  if (typeof toQ === "string" && toQ.trim() !== "") {
+    const to = parseIsoDay(toQ);
+    if (!to) return { field: "to" };
+    out.to = to;
+  }
+  return out;
+}
+
+/** "-2026-01-01-to-2026-01-31" for the download's file name; "" when open. */
+export function exportRangeSuffix(range: ExportRange): string {
+  if (!range.from && !range.to) return "";
+  return `-${range.from ?? "start"}-to-${range.to ?? "today"}`;
+}
