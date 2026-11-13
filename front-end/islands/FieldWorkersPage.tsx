@@ -220,7 +220,8 @@ export default function FieldWorkersPage() {
 
       {loadErr && <p class="alert">{errMsg(loadErr)}</p>}
 
-      <form class="panel" onSubmit={submit} data-cy="wk-form">
+      {/* REQ-708 (cycle 5, c1-setup-m15): novalidate — REQ-520's in-app messages, not the browser's bubble */}
+      <form class="panel" noValidate onSubmit={submit} data-cy="wk-form">
         <h2 class="panel__title">
           <I d={ICN.plus} size={14} sw={2.5} /> {t("field.wk.new")}
         </h2>

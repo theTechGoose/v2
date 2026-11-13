@@ -54,6 +54,11 @@ export default define.page<typeof handler>(function Contact(ctx) {
     success: tFor(lang, "contactPage.success"),
     errorRate: tFor(lang, "contactPage.errorRate"),
     errorGeneric: tFor(lang, "contactPage.errorGeneric"),
+    // REQ-708 (cycle 5, c1-setup-m15): the form's own per-field messages
+    errName: tFor(lang, "contactPage.errName"),
+    errEmail: tFor(lang, "contactPage.errEmail"),
+    errSubject: tFor(lang, "contactPage.errSubject"),
+    errMessage: tFor(lang, "contactPage.errMessage"),
   };
 
   return (
