@@ -280,6 +280,35 @@ const CHIP_FONT =
   '"Inter","Nunito",system-ui,-apple-system,"Segoe UI",sans-serif';
 /** REQ-862 — the gap between a control and a chip beside it */
 const CHIP_GAP = 8;
+/** REQ-878 — a box in the frame's viewport */
+type Rect = { left: number; top: number; width: number; height: number };
+/** REQ-878 — the gap between a control and a chip under or over it */
+const CHIP_UNDER = 4;
+/** REQ-878 — what textBoxes never reads (no text the customer sees) */
+const SKIP_TEXT = new Set([
+  "head",
+  "style",
+  "script",
+  "template",
+  "noscript",
+  "title",
+  "meta",
+  "link",
+]);
+/** REQ-878 — elements whose own box is what the customer reads */
+const BOXED_TEXT = new Set([
+  "input",
+  "textarea",
+  "select",
+  "button",
+  "img",
+  "svg",
+  "canvas",
+  "video",
+  "iframe",
+  "progress",
+  "meter",
+]);
 
 const LIST_CSS = "position:fixed;z-index:2147483647;pointer-events:none;" +
   "box-sizing:border-box;margin:0;padding:4px 0;display:block;visibility:visible;" +
@@ -527,11 +556,56 @@ export function createReplayer(
       ? "file"
       : "date";
   }
-  /** REQ-827 — the element the chip sits under: the input, or its nearest ancestor with a box */
+  const boxed = (n: Element) => {
+    const r = n.getBoundingClientRect();
+    return r.width > 0 || r.height > 0;
+  };
+  /** REQ-878 — a control that opens a hidden input for the customer: a button, a role=button, a
+   *  label */
+  const activator = (n: Element) => {
+    const t = n.localName.toLowerCase();
+    if (t === "button" || t === "label") return true;
+    if (n.getAttribute("role") === "button") return true;
+    const ty = (n.getAttribute("type") ?? "").toLowerCase();
+    return t === "input" && (ty === "button" || ty === "submit");
+  };
+  /** REQ-878 — the boxed `<label for=id>` of an input, if the page has one */
+  function labelFor(id: string): Element | null {
+    const walk = (n: Element): Element | null => {
+      if (
+        n.localName.toLowerCase() === "label" &&
+        n.getAttribute("for") === id && boxed(n)
+      ) return n;
+      for (const k of kidEls(n)) {
+        const hit = walk(k);
+        if (hit) return hit;
+      }
+      return null;
+    };
+    return doc.documentElement ? walk(doc.documentElement) : null;
+  }
+  /** REQ-827 — the element the chip sits by: the input when it has a box. REQ-878 — a hidden one
+   *  (display:none, `hidden`) is by the control the customer used: its boxed `<label for>`, else
+   *  its nearest sibling button / role=button / label (SettingsPage's Upload logo and Upload
+   *  certificate rows), and only then its nearest ancestor with a box — which for a sibling button
+   *  was the whole full-width row, so the chip was centred over the row's hint text. */
   function chipAnchor(e: Element): Element {
-    for (let n: Element | null = e; n; n = n.parentElement) {
-      const r = n.getBoundingClientRect();
-      if (r.width > 0 || r.height > 0) return n;
+    if (boxed(e)) return e;
+    const id = e.getAttribute("id");
+    const label = id ? labelFor(id) : null;
+    if (label) return label;
+    const p = e.parentElement;
+    if (p) {
+      const kids = kidEls(p);
+      const i = kids.indexOf(e);
+      for (let d = 1; d < kids.length; d++) {
+        for (const k of [kids[i - d], kids[i + d]]) {
+          if (k && activator(k) && boxed(k)) return k;
+        }
+      }
+    }
+    for (let n: Element | null = e.parentElement; n; n = n.parentElement) {
+      if (boxed(n)) return n;
     }
     return e;
   }
@@ -697,10 +771,66 @@ export function createReplayer(
     box.setAttribute("style", base + `left:${r.left}px;top:${top}px;`);
   }
 
+  /** REQ-878 — the boxes of what the customer can read in the frame: every text run (its line
+   *  boxes, through a Range; its parent's box where there is no Range, unless that parent holds
+   *  `at`) and every control or picture other than `at` itself. Never the head, the stage's own
+   *  drawn lists and chips, or what has no box. */
+  function textBoxes(at: Element): Rect[] {
+    const out: Rect[] = [];
+    const add = (
+      r: { left: number; top: number; width: number; height: number },
+    ) => {
+      if (r.width > 0 && r.height > 0) {
+        out.push({
+          left: r.left,
+          top: r.top,
+          width: r.width,
+          height: r.height,
+        });
+      }
+    };
+    let range: Range | null = null;
+    try {
+      range = typeof doc.createRange === "function" ? doc.createRange() : null;
+    } catch {
+      range = null;
+    }
+    const walk = (n: Element) => {
+      const t = n.localName.toLowerCase();
+      if (SKIP_TEXT.has(t)) return;
+      if (n.hasAttribute(PICKER_ATTR) || n.hasAttribute(LISTBOX_ATTR)) return;
+      if (n !== at && BOXED_TEXT.has(t)) {
+        add(n.getBoundingClientRect());
+        if (t !== "button") return;
+      }
+      for (const c of Array.from(n.childNodes)) {
+        if (c.nodeType === 1) walk(c as Element);
+        else if (c.nodeType === 3 && squash(c.textContent ?? "")) {
+          if (range) {
+            try {
+              range.selectNodeContents(c);
+              for (const r of Array.from(range.getClientRects())) add(r);
+            } catch {
+              // a node the range cannot hold: nothing to keep clear
+            }
+          } else if (n === at || !n.contains(at)) {
+            add(n.getBoundingClientRect());
+          }
+        }
+      }
+    };
+    const root = doc.body ?? doc.documentElement;
+    if (root) walk(root);
+    return out;
+  }
+
   /** REQ-862 — the chip in its control's own row, never over the text under it: on the control
    *  (centred) when it fits there, else beside it (right edge + 8 px, else left edge − 8 px), else
    *  centred on it, kept inside the frame. REQ-827 hung it under the control, over the next
-   *  field's label or the date's helper line. */
+   *  field's label or the date's helper line.
+   *  REQ-878 — every spot is checked against the frame's text (textBoxes): the first that covers
+   *  none wins — on the control, right of it, left of it, past the text beside it in its row
+   *  (SettingsPage's hint), then under it, then over it; REQ-862's rule only when none is free. */
   function placeChip(box: Element, sel: Element) {
     const r = sel.getBoundingClientRect();
     const base = box.getAttribute("style") ?? "";
@@ -718,15 +848,59 @@ export function createReplayer(
     const vw = doc.defaultView?.innerWidth ?? 0;
     const vh = doc.defaultView?.innerHeight ?? 0;
     const fits = (x: number) => !vw || (x >= 0 && x + w <= vw);
+    const fitsY = (y: number) => !vh || (y >= 0 && y + h <= vh);
     const right = r.left + r.width + CHIP_GAP;
     const leftOf = r.left - CHIP_GAP - w;
-    let left: number;
-    if (w <= r.width) left = r.left + (r.width - w) / 2;
-    else if (fits(right)) left = right;
-    else if (fits(leftOf)) left = leftOf;
-    else left = r.left + (r.width - w) / 2;
+    const mid = r.top + (r.height - h) / 2;
+    let free: [number, number] | null = null;
+    try {
+      const texts = textBoxes(sel);
+      const covers = (x: number, y: number) =>
+        texts.some((t) =>
+          x < t.left + t.width && t.left < x + w && y < t.top + t.height &&
+          t.top < y + h
+        );
+      const spots: [number, number][] = [];
+      if (w <= r.width) spots.push([r.left + (r.width - w) / 2, mid]);
+      spots.push([right, mid], [leftOf, mid]);
+      const band = texts.filter((t) =>
+        t.top < mid + h && mid < t.top + t.height
+      );
+      for (
+        const t of band.filter((t) => t.left >= r.left + r.width)
+          .sort((a, b) => (a.left + a.width) - (b.left + b.width))
+      ) spots.push([t.left + t.width + CHIP_GAP, mid]);
+      for (
+        const t of band.filter((t) => t.left + t.width <= r.left)
+          .sort((a, b) => b.left - a.left)
+      ) spots.push([t.left - CHIP_GAP - w, mid]);
+      spots.push(
+        [r.left, r.top + r.height + CHIP_UNDER],
+        [r.left, r.top - CHIP_UNDER - h],
+      );
+      // a spot inside the control's own row (its parent's box) before one outside it: never the
+      // page's sidebar when there is room past the row's hint
+      const row = sel.parentElement?.getBoundingClientRect();
+      const inRow = (x: number) =>
+        !row || !(row.width > 0) ||
+        (x >= row.left && x + w <= row.left + row.width);
+      const ok = ([x, y]: [number, number]) =>
+        fits(x) && fitsY(y) && !covers(x, y);
+      free = spots.find((p) => ok(p) && inRow(p[0])) ?? spots.find(ok) ??
+        null;
+    } catch {
+      free = null; // no layout to read: REQ-862's rule below
+    }
+    let left: number, top: number;
+    if (free) [left, top] = free;
+    else {
+      if (w <= r.width) left = r.left + (r.width - w) / 2;
+      else if (fits(right)) left = right;
+      else if (fits(leftOf)) left = leftOf;
+      else left = r.left + (r.width - w) / 2;
+      top = mid;
+    }
     if (vw) left = Math.max(0, Math.min(left, vw - w));
-    let top = r.top + (r.height - h) / 2;
     if (vh) top = Math.max(0, Math.min(top, vh - h));
     box.setAttribute("style", base + `left:${left}px;top:${top}px;`);
   }
