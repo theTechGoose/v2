@@ -39,12 +39,18 @@ import {
 import { CustomerStore } from "@crm/domain/data/customer-store/mod.ts";
 import {
   BatchStore,
+  ChecklistStore,
   FieldTaskStore,
   FieldWorkerStore,
   RegionStore,
   SubscriptionStore,
   TaskTypeStore,
 } from "@field/domain/data/field-stores/mod.ts";
+import {
+  checklistNameTaken,
+  checklistUsage,
+  hasServices,
+} from "@field/domain/business/checklist/mod.ts"; // REQ-811
 import { FieldGeocoder } from "@field/domain/data/geocoder/mod.ts";
 import {
   FieldZones,
@@ -78,6 +84,7 @@ import {
   type Cadence,
   CADENCES,
   CAP,
+  type Checklist,
   digitsOf,
   FieldError,
   type FieldTask,
@@ -417,6 +424,7 @@ export class FieldSubscriptionsController {
   constructor(
     private subs: SubscriptionStore,
     private types: TaskTypeStore,
+    private checklists: ChecklistStore,
     private regions: RegionStore,
     private customers: CustomerStore,
     private geocoder: FieldGeocoder,
@@ -450,8 +458,15 @@ export class FieldSubscriptionsController {
     if (!address) throw new FieldError("address required");
     if (address.length > CAP.text) throw new FieldError("address too long");
     const items = await parseItems(this.types, user.id, b.items);
-    if (!items.length) {
-      throw new FieldError("at least one task type with a price");
+    // REQ-811: a checklist stands in for the rows — a visit needs one or the other
+    const ckl = await parseChecklistId(this.checklists, user.id, b.checklistId);
+    if (!hasServices(items, ckl.set ? ckl.id : undefined)) {
+      throw new FieldError(
+        "at least one task type with a price, or a checklist",
+        400,
+        undefined,
+        "no_services",
+      );
     }
     const sched = parseSchedule(b, { cadence: "weekly" });
     if (b.startDate !== undefined && !isValidDate(b.startDate)) {
@@ -469,6 +484,7 @@ export class FieldSubscriptionsController {
       lat,
       lng,
       items,
+      ...(ckl.set && ckl.id ? { checklistId: ckl.id } : {}), // REQ-811
       ...sched,
       startDate: isValidDate(b.startDate) ? b.startDate : fieldToday(),
       ...(netDays.value !== undefined ? { netDays: netDays.value } : {}),
@@ -510,11 +526,21 @@ export class FieldSubscriptionsController {
       }
     }
     if (b.items !== undefined) {
-      const items = await parseItems(this.types, user.id, b.items);
-      if (!items.length) {
-        throw new FieldError("at least one task type with a price");
-      }
-      s.items = items;
+      s.items = await parseItems(this.types, user.id, b.items);
+    }
+    // REQ-811: a string names the account's checklist, null clears it; the visit keeps a checklist or at least one own row
+    const ckl = await parseChecklistId(this.checklists, user.id, b.checklistId);
+    if (ckl.set) {
+      if (ckl.id) s.checklistId = ckl.id;
+      else delete s.checklistId;
+    }
+    if (!hasServices(s.items, s.checklistId)) {
+      throw new FieldError(
+        "at least one task type with a price, or a checklist",
+        400,
+        undefined,
+        "no_services",
+      );
     }
     Object.assign(s, sched);
     if (isValidDate(b.startDate)) s.startDate = b.startDate;
@@ -636,6 +662,171 @@ async function parseItems(
   }
   await store.putMany(created);
   return out;
+}
+
+/** REQ-811: `checklistId` — a string names the account's checklist (404 otherwise), null or "" clears it, absent leaves it */
+async function parseChecklistId(
+  store: ChecklistStore,
+  userId: string,
+  raw: unknown,
+): Promise<{ set: false } | { set: true; id?: string }> {
+  if (raw === undefined) return { set: false };
+  if (raw === null || raw === "") return { set: true };
+  const id = str(raw);
+  const c = id ? await store.find(id) : null;
+  if (!c || c.userId !== userId) {
+    throw new FieldError(
+      "checklist not found",
+      404,
+      undefined,
+      "checklist_not_found",
+    );
+  }
+  return { set: true, id: c.id };
+}
+
+/** REQ-811: the checklist's name — required, at most CAP.checklist characters */
+function parseChecklistName(raw: unknown): string {
+  const name = str(raw);
+  if (!name) throw new FieldError("name required");
+  if (name.length > CAP.checklist) throw new FieldError("name too long");
+  return name;
+}
+
+/**
+ * REQ-811 — the account's checklists: a named list of services (task types with a
+ * price) a repeat visit REFERENCES instead of listing the same rows again. Editing
+ * one changes every visit on it; deleting one in use is refused.
+ */
+@Controller("field/checklists")
+export class FieldChecklistsController {
+  constructor(
+    private checklists: ChecklistStore,
+    private types: TaskTypeStore,
+    private subs: SubscriptionStore,
+    private day: FieldDay,
+    private views: FieldViews,
+    private users: UserStore,
+    private sessions: SessionStore,
+  ) {}
+
+  @Get()
+  async list(@Context() ctx: ExecutionContext) {
+    const user = await requireUser(ctx, this.sessions, this.users);
+    const [all, subs, n] = await Promise.all([
+      this.checklists.listByUser(user.id),
+      this.subs.listByUser(user.id),
+      this.views.names(user.id),
+    ]);
+    return all.sort((a, b) => a.name.localeCompare(b.name)).map((c) =>
+      this.views.checklist(c, n, subs)
+    );
+  }
+
+  @Post()
+  async create(@Context() ctx: ExecutionContext, @Body() raw: unknown) {
+    const user = await requireUser(ctx, this.sessions, this.users);
+    const b = body(raw);
+    const name = parseChecklistName(b.name);
+    if (checklistNameTaken(await this.checklists.listByUser(user.id), name)) {
+      throw new FieldError(
+        "a checklist with that name exists",
+        409,
+        undefined,
+        "checklist_name_taken",
+      );
+    }
+    const items = await parseItems(this.types, user.id, b.items);
+    if (!items.length) {
+      throw new FieldError("at least one task type with a price");
+    }
+    const now = new Date().toISOString();
+    const c: Checklist = {
+      id: newId(),
+      userId: user.id,
+      name,
+      items,
+      createdAt: now,
+      updatedAt: now,
+    };
+    await this.checklists.put(c);
+    return ctx.json(
+      this.views.checklist(c, await this.views.names(user.id), []),
+      201,
+    );
+  }
+
+  @Put(":id")
+  async update(
+    @Context() ctx: ExecutionContext,
+    @Param("id") id: string,
+    @Body() raw: unknown,
+  ) {
+    const user = await requireUser(ctx, this.sessions, this.users);
+    const c = await this.checklists.getOwned(id, user.id);
+    const b = body(raw);
+    if (b.name !== undefined) {
+      const name = parseChecklistName(b.name);
+      if (
+        checklistNameTaken(
+          await this.checklists.listByUser(user.id),
+          name,
+          c.id,
+        )
+      ) {
+        throw new FieldError(
+          "a checklist with that name exists",
+          409,
+          undefined,
+          "checklist_name_taken",
+        );
+      }
+      c.name = name;
+    }
+    let itemsChanged = false;
+    if (b.items !== undefined) {
+      const items = await parseItems(this.types, user.id, b.items);
+      if (!items.length) {
+        throw new FieldError("at least one task type with a price");
+      }
+      c.items = items;
+      itemsChanged = true;
+    }
+    c.updatedAt = new Date().toISOString();
+    await this.checklists.put(c);
+    const subs = await this.subs.listByUser(user.id);
+    if (itemsChanged) {
+      // REQ-170 — every visit on this checklist: open future work is dropped here, re-derived on the next read
+      const using = new Set(
+        subs.filter((s) => s.checklistId === c.id).map((s) => s.id),
+      );
+      if (using.size) {
+        await this.day.dropOpen(
+          user.id,
+          fieldToday(),
+          (t) => using.has(t.subscriptionId),
+        );
+      }
+    }
+    return this.views.checklist(c, await this.views.names(user.id), subs);
+  }
+
+  @Delete(":id")
+  async remove(@Context() ctx: ExecutionContext, @Param("id") id: string) {
+    const user = await requireUser(ctx, this.sessions, this.users);
+    const c = await this.checklists.getOwned(id, user.id);
+    const n = checklistUsage(await this.subs.listByUser(user.id), c.id);
+    if (n > 0) {
+      throw new FieldError(
+        "checklist is used by repeat visits",
+        409,
+        { subscriptions: n },
+        "checklist_in_use",
+      );
+    }
+    await this.checklists.delete(c);
+    return { ok: true };
+  }
 }
 
 /** REQ-139: cadence / days / intervalWeeks, validated; REQ-157: daysOfMonth (1–31); REQ-787: month (1–12) for annual */
@@ -961,9 +1152,11 @@ export class FieldTasksController {
       b.priceCents === undefined || b.priceCents === null || b.priceCents === ""
         ? undefined
         : priceOf(b.priceCents);
-    const subscription = t.subscriptionId
-      ? await this.subs.find(t.subscriptionId) ?? undefined
-      : undefined;
+    const found = t.subscriptionId
+      ? await this.subs.find(t.subscriptionId)
+      : null;
+    // REQ-811: priced from the visit's effective services (its checklist's included)
+    const subscription = found ? await this.day.effective(found) : undefined;
     const r = officeService({
       task: t,
       visit: await this.tasks.listByDay(user.id, t.date),

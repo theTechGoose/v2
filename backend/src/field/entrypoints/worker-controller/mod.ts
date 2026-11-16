@@ -139,7 +139,7 @@ export class FieldWorkerController {
       types.push(r.type);
     }
     if (!taskTypeId || !types.some((x) => x.id === taskTypeId)) throw new FieldError("taskTypeId required");
-    const r = addService({ subscription: s, taskTypeId, date, existing: dayTasks, newId, addedByName: w.name });
+    const r = addService({ subscription: await this.day.effective(s), taskTypeId, date, existing: dayTasks, newId, addedByName: w.name }); // REQ-811: priced from the checklist too
     if (!r.ok) throw new FieldError(r.reason === "invoiced" ? "visit already invoiced" : r.reason, r.reason === "no_visit" ? 404 : 409);
     await this.tasks.put(r.task);
     const n = await this.views.workerNames(w.userId);

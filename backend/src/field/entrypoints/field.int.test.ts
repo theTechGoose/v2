@@ -15,6 +15,7 @@ import { fieldToday, shiftDate } from "@field/domain/business/schedule/mod.ts";
 import { FieldNotices } from "@field/domain/coordinators/field-notices/mod.ts";
 import { FieldDay } from "@field/domain/coordinators/field-day/mod.ts";
 import {
+  ChecklistStore,
   FieldTaskStore,
   FieldWorkerStore,
   RegionStore,
@@ -1595,6 +1596,7 @@ Deno.test("REQ-172 the sweep at 09:05 New York texts the day's customers once; H
           new SubscriptionStore(),
           new RegionStore(),
           new FieldTaskStore(),
+          new ChecklistStore(), // REQ-811
         ),
         new SmsService(),
       );
@@ -1681,6 +1683,7 @@ Deno.test("REQ-255 with no zone picked, a TX address puts the 9 am sweep on Cent
           new SubscriptionStore(),
           new RegionStore(),
           new FieldTaskStore(),
+          new ChecklistStore(), // REQ-811
         ),
         new SmsService(),
       );
@@ -2385,5 +2388,135 @@ Deno.test("REQ-810 remove a line of an invoice pulled before lines named their t
     assertEquals(gone.body.invoiceIds.includes(bobInv.id), false);
     // the invoice is deleted, so its remaining task is pullable again either way (and un-stamped)
     assertEquals((await tasks()).filter((t) => t.customerId === bob.id).map((t) => t.invoiceId), [undefined, undefined]);
+  });
+});
+
+// REQ-811 — Raphael: "recurring has the same thing over and over … optionally associate A checklist to recurring … it's a reference"
+/** an owner with one customer and one worker; a repeat visit on `checklistId` (no rows of its own unless given), its zone staffed */
+async function checklistSetUp(call: Call, phone: string, own: { taskTypeName: string; priceCents: number }[] = []) {
+  const H = await login(call, phone, "Checklist Owner");
+  const customer = (await call("POST", "/customers", { name: "Ana Torres", phoneNumber: `(843) 555-${phone.slice(-4)}`, email: "ana@blackhole.postmarkapp.com" }, H)).body;
+  const worker = (await call("POST", "/field/workers", { name: "Luis", phoneNumber: `843555${phone.slice(-4)}`, pin: "1234" }, H)).body;
+  const ckl = (await call("POST", "/field/checklists", {
+    name: "Full yard",
+    items: [{ taskTypeName: "Lawn cut", priceCents: 6500 }, { taskTypeName: "Edging", priceCents: 2500 }],
+  }, H)).body;
+  assertEquals(ckl.name, "Full yard", JSON.stringify(ckl));
+  const today = fieldToday();
+  const sub = (await call("POST", "/field/subscriptions", {
+    customerId: customer.id,
+    address: "4601 Dick Pond Rd, Myrtle Beach, SC",
+    startDate: today,
+    checklistId: ckl.id,
+    items: own,
+  }, H)).body;
+  assertEquals(sub.checklistId, ckl.id, JSON.stringify(sub));
+  await call("PUT", `/field/regions/${sub.region.id}/worker`, { workerId: worker.id }, H);
+  return { H, customer, worker, ckl, sub, today };
+}
+
+Deno.test("REQ-811 checklists — created with its items (by name, created or reused in any case), listed sorted by name with usedBy 0 and the names resolved; the same name in another case is 409 checklist_name_taken; no items or no name 400; another account's is 403 and absent from its list", async () => {
+  await withServer(async (call) => {
+    const H = await login(call, "+15125551811", "Checklist Owner");
+    const made = await call("POST", "/field/checklists", {
+      name: "Full yard",
+      items: [{ taskTypeName: "Lawn cut", priceCents: 6500 }, { taskTypeName: "Edging", priceCents: 2500 }],
+    }, H);
+    assertEquals(made.status, 201, JSON.stringify(made.body));
+    assertEquals(made.body.items.map((i: { taskTypeName: string; priceCents: number }) => [i.taskTypeName, i.priceCents]), [["Lawn cut", 6500], ["Edging", 2500]]);
+    assertEquals(made.body.usedBy, 0);
+    // a known type in another case is reused, not created twice
+    const second = await call("POST", "/field/checklists", { name: "Beds only", items: [{ taskTypeName: "EDGING", priceCents: 3000 }] }, H);
+    assertEquals(second.status, 201);
+    assertEquals(second.body.items[0].taskTypeId, made.body.items[1].taskTypeId);
+    assertEquals((await call("GET", "/field/task-types", undefined, H)).body.length, 2);
+    const list = (await call("GET", "/field/checklists", undefined, H)).body;
+    assertEquals(list.map((c: { name: string }) => c.name), ["Beds only", "Full yard"]);
+    // the name is unique in the account, in any case
+    const dup = await call("POST", "/field/checklists", { name: "full YARD", items: [{ taskTypeName: "Lawn cut", priceCents: 1 }] }, H);
+    assertEquals([dup.status, dup.body?.code], [409, "checklist_name_taken"]);
+    const renamed = await call("PUT", `/field/checklists/${second.body.id}`, { name: "Full Yard" }, H);
+    assertEquals([renamed.status, renamed.body?.code], [409, "checklist_name_taken"]);
+    assertEquals((await call("PUT", `/field/checklists/${made.body.id}`, { name: "FULL yard" }, H)).status, 200, "its own name in another case is fine");
+    assertEquals((await call("POST", "/field/checklists", { name: "Nothing", items: [] }, H)).status, 400);
+    assertEquals((await call("POST", "/field/checklists", { items: [{ taskTypeName: "X", priceCents: 100 }] }, H)).status, 400);
+    assertEquals((await call("POST", "/field/checklists", { name: "x".repeat(81), items: [{ taskTypeName: "X", priceCents: 100 }] }, H)).status, 400);
+    // another account
+    const H2 = await login(call, "+15125551812", "Other Owner");
+    assertEquals((await call("GET", "/field/checklists", undefined, H2)).body, []);
+    assertEquals((await call("PUT", `/field/checklists/${made.body.id}`, { name: "Mine now" }, H2)).status, 403);
+    assertEquals((await call("DELETE", `/field/checklists/${made.body.id}`, undefined, H2)).status, 403);
+    assertEquals((await call("GET", "/field/checklists", undefined, H)).body.length, 2);
+  });
+});
+
+Deno.test("REQ-811 a repeat visit on a checklist — saved with no task type of its own; the view flags the checklist's rows and names it; today's round carries one task per checklist service at the checklist's price and the visit's own row at ITS price; a checklist service the office removed comes back at the checklist's price; no own rows and no checklist 400; clearing the checklist of such a visit 400; an unknown checklist 404", async () => {
+  await withServer(async (call) => {
+    const { H, ckl, sub, today, customer } = await checklistSetUp(call, "+15125551813");
+    // the view: the checklist's two rows, flagged, and the name
+    assertEquals(sub.checklistName, "Full yard");
+    assertEquals(sub.items.map((i: { taskTypeName: string; priceCents: number; fromChecklist?: true }) => [i.taskTypeName, i.priceCents, i.fromChecklist]), [["Lawn cut", 6500, true], ["Edging", 2500, true]]);
+    // today's round: one task per checklist service, at the checklist's prices
+    const day = (await call("GET", `/field/tasks?date=${today}`, undefined, H)).body;
+    assertEquals(day.map((t: { taskTypeName: string; priceCents: number }) => [t.taskTypeName, t.priceCents]).sort(), [["Edging", 2500], ["Lawn cut", 6500]]);
+    // a type in both: the visit's own price wins — and its own extra is listed last, unflagged
+    const own = await call("PUT", `/field/subscriptions/${sub.id}`, { items: [{ taskTypeName: "Edging", priceCents: 3000 }, { taskTypeName: "Leaf blowing", priceCents: 1500 }] }, H);
+    assertEquals(own.status, 200, JSON.stringify(own.body));
+    assertEquals(own.body.items.map((i: { taskTypeName: string; priceCents: number; fromChecklist?: true }) => [i.taskTypeName, i.priceCents, i.fromChecklist]), [["Lawn cut", 6500, true], ["Edging", 3000, undefined], ["Leaf blowing", 1500, undefined]]);
+    const day2 = (await call("GET", `/field/tasks?date=${today}`, undefined, H)).body;
+    assertEquals(day2.map((t: { taskTypeName: string; priceCents: number }) => [t.taskTypeName, t.priceCents]).sort(), [["Edging", 3000], ["Lawn cut", 6500], ["Leaf blowing", 1500]]);
+    // the office removes the checklist's Lawn cut, then adds it back with no price → the checklist's price
+    const lawn = day2.find((t: { taskTypeName: string }) => t.taskTypeName === "Lawn cut");
+    const edging = day2.find((t: { taskTypeName: string }) => t.taskTypeName === "Edging");
+    assertEquals((await call("DELETE", `/field/tasks/${lawn.id}`, undefined, H)).status, 200);
+    const back = await call("POST", `/field/tasks/${edging.id}/services`, { taskTypeId: lawn.taskTypeId }, H);
+    assertEquals([back.status, back.body.priceCents], [201, 6500]);
+    // guards
+    const none = await call("POST", "/field/subscriptions", { customerId: customer.id, address: "1 Main St, Myrtle Beach, SC", startDate: today, items: [] }, H);
+    assertEquals(none.status, 400);
+    const bare = (await call("POST", "/field/subscriptions", { customerId: customer.id, address: "2 Main St, Myrtle Beach, SC", startDate: today, checklistId: ckl.id }, H)).body;
+    assertEquals(bare.items.length, 2, "a visit with only the checklist");
+    assertEquals((await call("PUT", `/field/subscriptions/${bare.id}`, { checklistId: null }, H)).status, 400, "clearing the checklist of a visit with no rows of its own");
+    const cleared = await call("PUT", `/field/subscriptions/${bare.id}`, { checklistId: null, items: [{ taskTypeName: "Edging", priceCents: 2500 }] }, H);
+    assertEquals([cleared.status, cleared.body.checklistId, cleared.body.items.length], [200, undefined, 1]);
+    const unknown = await call("POST", "/field/subscriptions", { customerId: customer.id, address: "3 Main St, Myrtle Beach, SC", startDate: today, checklistId: "nope" }, H);
+    assertEquals([unknown.status, unknown.body?.code], [404, "checklist_not_found"]);
+    // another account's checklist is not found either
+    const H2 = await login(call, "+15125551814", "Other Owner");
+    const otherCkl = (await call("POST", "/field/checklists", { name: "Theirs", items: [{ taskTypeName: "Mow", priceCents: 100 }] }, H2)).body;
+    assertEquals((await call("PUT", `/field/subscriptions/${sub.id}`, { checklistId: otherCkl.id }, H)).status, 404);
+  });
+});
+
+Deno.test("REQ-811 editing and deleting a checklist — a price change and a new service re-derive the open round while a done task keeps its price; usedBy counts the visit; deleting one in use is 409 checklist_in_use with the count; once the visit drops it the delete is 200", async () => {
+  await withServer(async (call) => {
+    const { H, ckl, sub, today } = await checklistSetUp(call, "+15125551815");
+    const day = (await call("GET", `/field/tasks?date=${today}`, undefined, H)).body;
+    const lawn = day.find((t: { taskTypeName: string }) => t.taskTypeName === "Lawn cut");
+    assertEquals((await call("PUT", `/field/tasks/${lawn.id}`, { status: "complete" }, H)).status, 200);
+    assertEquals((await call("GET", "/field/checklists", undefined, H)).body[0].usedBy, 1);
+    // the checklist changes: Lawn cut 70, Edging 25, + Leaf blowing 15
+    const edited = await call("PUT", `/field/checklists/${ckl.id}`, {
+      items: [{ taskTypeName: "Lawn cut", priceCents: 7000 }, { taskTypeName: "Edging", priceCents: 2500 }, { taskTypeName: "Leaf blowing", priceCents: 1500 }],
+    }, H);
+    assertEquals(edited.status, 200, JSON.stringify(edited.body));
+    assertEquals(edited.body.items.length, 3);
+    const after = (await call("GET", `/field/tasks?date=${today}`, undefined, H)).body;
+    assertEquals(
+      after.map((t: { taskTypeName: string; priceCents: number; status: string }) => [t.taskTypeName, t.priceCents, t.status]).sort(),
+      [["Edging", 2500, "assigned"], ["Lawn cut", 6500, "complete"], ["Leaf blowing", 1500, "assigned"]],
+      "the done Lawn cut keeps its 65; the new service appears",
+    );
+    // the view follows the checklist too
+    const view = (await call("GET", "/field/subscriptions", undefined, H)).body.find((s: { id: string }) => s.id === sub.id);
+    assertEquals(view.items.map((i: { taskTypeName: string }) => i.taskTypeName), ["Lawn cut", "Edging", "Leaf blowing"]);
+    // in use → refused, with the count
+    const refused = await call("DELETE", `/field/checklists/${ckl.id}`, undefined, H);
+    assertEquals([refused.status, refused.body?.code, refused.body?.detail?.subscriptions], [409, "checklist_in_use", 1]);
+    // the visit drops it (keeping one row of its own) → the delete goes through
+    assertEquals((await call("PUT", `/field/subscriptions/${sub.id}`, { checklistId: null, items: [{ taskTypeName: "Edging", priceCents: 2500 }] }, H)).status, 200);
+    assertEquals((await call("DELETE", `/field/checklists/${ckl.id}`, undefined, H)).body, { ok: true });
+    assertEquals((await call("GET", "/field/checklists", undefined, H)).body, []);
+    assertEquals((await call("DELETE", `/field/checklists/${ckl.id}`, undefined, H)).status, 404);
   });
 });

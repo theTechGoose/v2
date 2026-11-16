@@ -243,6 +243,13 @@ export function subscriptionsByCustomer<
   return m;
 }
 
+/** REQ-811 — the rows a repeat visit lists itself; the checklist's come flagged `fromChecklist` */
+export function ownItems<T extends { fromChecklist?: true }>(
+  s: { items: T[] },
+): T[] {
+  return s.items.filter((i) => !i.fromChecklist);
+}
+
 /** REQ-145 — what one visit of a subscription bills: its items' sum */
 export function perVisitCents(s: { items: { priceCents: number }[] }): number {
   return s.items.reduce((sum, i) => sum + i.priceCents, 0);

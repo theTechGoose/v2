@@ -2,17 +2,20 @@
 import { Injectable } from "#danet/core";
 import { CustomerStore } from "@crm/domain/data/customer-store/mod.ts";
 import { InvoiceStore } from "@paperwork/domain/data/invoice-store/mod.ts";
-import { FieldWorkerStore, RegionStore, SubscriptionStore, TaskTypeStore } from "@field/domain/data/field-stores/mod.ts";
+import { ChecklistStore, FieldWorkerStore, RegionStore, SubscriptionStore, TaskTypeStore } from "@field/domain/data/field-stores/mod.ts";
 import { scheduleText } from "@field/domain/business/schedule/mod.ts";
 import { subscriptionBilling } from "@field/domain/business/quote-subscription/mod.ts"; // REQ-699
 import { workerView } from "@field/domain/business/tasks/mod.ts";
-import type { FieldTask, FieldWorker, Region, Subscription } from "@field/dto/field.ts";
+import { checklistUsage, withChecklist } from "@field/domain/business/checklist/mod.ts"; // REQ-811
+import type { Checklist, FieldTask, FieldWorker, Region, Subscription } from "@field/dto/field.ts";
 
 export interface Names {
   customer: (id: string) => string;
   type: (id: string) => string;
   worker: (id: string) => string;
   region: (id: string | undefined) => Region | null;
+  /** REQ-811: the checklist a repeat visit references */
+  checklist: (id: string | undefined) => Checklist | null;
   /** REQ-401: the status of a task's invoice — only the worker views load it */
   invoiceStatus?: (id: string | undefined) => string | undefined;
 }
@@ -31,6 +34,7 @@ export class FieldViews {
     private regions: RegionStore,
     private subs: SubscriptionStore,
     private invoices: InvoiceStore,
+    private checklists: ChecklistStore,
   ) {}
 
   /** REQ-401: names + each invoice's status, so a worker's lock reads "draft" until it is sent */
@@ -41,12 +45,14 @@ export class FieldViews {
   }
 
   async names(userId: string): Promise<Names> {
-    const [customers, types, workers, regions] = await Promise.all([
+    const [customers, types, workers, regions, checklists] = await Promise.all([
       this.customers.listByUser(userId),
       this.types.listByUser(userId),
       this.workers.listByUser(userId),
       this.regions.listByUser(userId),
+      this.checklists.listByUser(userId),
     ]);
+    const k = new Map(checklists.map((x) => [x.id, x]));
     const c = new Map(customers.map((x) => [x.id, x.name]));
     const t = new Map(types.map((x) => [x.id, x.name]));
     const w = new Map(workers.map((x) => [x.id, x.name]));
@@ -56,19 +62,30 @@ export class FieldViews {
       type: (id) => t.get(id) ?? "—",
       worker: (id) => w.get(id) ?? "—",
       region: (id) => (id && r.get(id)) || null,
+      checklist: (id) => (id && k.get(id)) || null,
     };
   }
 
+  /** REQ-811: `items` is the EFFECTIVE list — the checklist's rows (flagged `fromChecklist`) then the visit's own */
   subscription(s: Subscription, n: Names) {
-    const billing = subscriptionBilling(s); // REQ-699: a quote's "Monthly · $180/mo"
+    const ckl = n.checklist(s.checklistId);
+    const eff = withChecklist(s, () => ckl);
+    const own = new Set(s.items.map((i) => i.taskTypeId));
+    const billing = subscriptionBilling(eff); // REQ-699: a quote's "Monthly · $180/mo"
     return {
       ...s,
       customerName: n.customer(s.customerId),
       region: n.region(s.regionId),
       schedule: { es: scheduleText(s, "es"), en: scheduleText(s, "en") },
       ...(billing ? { billing } : {}),
-      items: s.items.map((i) => ({ ...i, taskTypeName: n.type(i.taskTypeId) })),
+      ...(ckl ? { checklistName: ckl.name } : {}),
+      items: eff.items.map((i) => ({ ...i, taskTypeName: n.type(i.taskTypeId), ...(own.has(i.taskTypeId) ? {} : { fromChecklist: true as const }) })),
     };
+  }
+
+  /** REQ-811: a checklist with its services named and how many repeat visits reference it */
+  checklist(c: Checklist, n: Names, subs: Pick<Subscription, "checklistId">[]) {
+    return { ...c, items: c.items.map((i) => ({ ...i, taskTypeName: n.type(i.taskTypeId) })), usedBy: checklistUsage(subs, c.id) };
   }
 
   task(t: FieldTask, n: Names) {

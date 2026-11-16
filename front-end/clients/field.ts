@@ -47,6 +47,25 @@ export interface SubscriptionItemView {
   taskTypeId: string;
   taskTypeName: string;
   priceCents: number;
+  /** REQ-811: the row comes from the visit's checklist (not one of its own) */
+  fromChecklist?: true;
+}
+
+/** REQ-811: GET /field/checklists — a named list of services a repeat visit references */
+export interface ChecklistView {
+  id: string;
+  userId: string;
+  name: string;
+  items: SubscriptionItemView[];
+  /** how many repeat visits reference it */
+  usedBy: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ChecklistInput {
+  name: string;
+  items: SubscriptionItemInput[];
 }
 
 /** GET /field/subscriptions — a subscription with its names resolved */
@@ -58,7 +77,11 @@ export interface SubscriptionView {
   address: string;
   lat: number;
   lng: number;
+  /** REQ-811: the EFFECTIVE services — the checklist's rows (flagged) then the visit's own */
   items: SubscriptionItemView[];
+  /** REQ-811: the checklist referenced, and its name */
+  checklistId?: string;
+  checklistName?: string;
   cadence: Cadence;
   startDate?: string;
   /** weekdays, 0 = Sunday … 6 = Saturday */
@@ -99,7 +122,10 @@ export interface SubscriptionItemInput {
 export interface SubscriptionInput {
   customerId: string;
   address: string;
+  /** the visit's own rows — may be empty when `checklistId` is set (REQ-811) */
   items: SubscriptionItemInput[];
+  /** REQ-811: a checklist's id; null clears it */
+  checklistId?: string | null;
   cadence?: Cadence;
   /** 1–8; 2 = biweekly */
   intervalWeeks?: number;
@@ -318,6 +344,19 @@ export const fieldClient = {
   // ---- task types (REQ-139) ----
   taskTypes: (q = "", opts?: ApiOptions) =>
     api.get<TaskType[]>("/field/task-types", { ...opts, query: { q } }),
+
+  // ---- checklists (REQ-811) ----
+  checklists: (opts?: ApiOptions) =>
+    api.get<ChecklistView[]>("/field/checklists", opts),
+  createChecklist: (b: ChecklistInput, opts?: ApiOptions) =>
+    api.post<ChecklistView>("/field/checklists", b, opts),
+  updateChecklist: (
+    id: string,
+    b: Partial<ChecklistInput>,
+    opts?: ApiOptions,
+  ) => api.put<ChecklistView>(`/field/checklists/${id}`, b, opts),
+  deleteChecklist: (id: string, opts?: ApiOptions) =>
+    api.delete<{ ok: true }>(`/field/checklists/${id}`, opts),
 
   // ---- subscriptions (REQ-139) ----
   subscriptions: (opts?: ApiOptions) =>

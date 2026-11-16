@@ -13,6 +13,7 @@ import { assertEquals, assertStringIncludes } from "#std/assert";
 import { FieldNotices } from "./mod.ts";
 import { FieldDay } from "@field/domain/coordinators/field-day/mod.ts";
 import {
+  ChecklistStore,
   FieldTaskStore,
   FieldWorkerStore,
   RegionStore,
@@ -51,6 +52,7 @@ async function rig() {
       new SubscriptionStore(),
       new RegionStore(),
       new FieldTaskStore(),
+      new ChecklistStore(), // REQ-811
     ),
     sms,
   );

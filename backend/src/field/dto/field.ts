@@ -34,6 +34,16 @@ export interface SubscriptionItem {
   priceCents: number;
 }
 
+/** REQ-811: a named list of services (task types with a price each) a repeat visit references instead of listing the same items again */
+export interface Checklist {
+  id: string;
+  userId: string;
+  name: string;
+  items: SubscriptionItem[];
+  createdAt: string;
+  updatedAt: string;
+}
+
 export type Cadence = "weekly" | "biweekly" | "monthly" | "annual";
 export const CADENCES: readonly Cadence[] = [
   "weekly",
@@ -51,7 +61,10 @@ export interface Subscription {
   /** geocoded once, kept with the subscription */
   lat: number;
   lng: number;
+  /** the visit's OWN rows; REQ-811: with a checklist, the effective services are the checklist's + these (an own row on the same type wins) */
   items: SubscriptionItem[];
+  /** REQ-811: the checklist referenced (ChecklistStore) — optional; a visit needs it or at least one own row */
+  checklistId?: string;
   cadence: Cadence;
   /** the first service day; cadence counts from here (defaults to createdAt's day) */
   startDate?: string;
@@ -161,7 +174,12 @@ export class FieldError extends Error {
 }
 
 /** free-text caps */
-export const CAP = { note: 2000, text: 300, taskType: 80 } as const;
+export const CAP = {
+  note: 2000,
+  text: 300,
+  taskType: 80,
+  checklist: 80,
+} as const;
 
 export const str = (v: unknown): string | undefined =>
   typeof v === "string" && v.trim() ? v.trim() : undefined;

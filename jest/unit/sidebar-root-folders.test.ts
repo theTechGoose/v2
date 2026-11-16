@@ -57,6 +57,7 @@ describe("REQ-176 the sidebar's root folders", () => {
     // REQ-604 (demo m18): Workers is listed in Field too — the same node as in Roles
     expect(ids(["field"])).toEqual([
       "subscriptions",
+      "checklists", // REQ-811 — the service checklists a repeat visit references
       "assignments",
       "tasks",
       "batches",
@@ -71,9 +72,13 @@ describe("REQ-176 the sidebar's root folders", () => {
 
   test("the sidebar renders the tree module and shows the super-admin tab on the root and inside Roles (REQ-604) — labelled Admin (REQ-191)", () => {
     const src = read("front-end/islands/DashSidebar.tsx");
-    expect(src).toMatch(/import \{ NAV, superAdminTabAt \} from "\.\.\/lib\/nav-tree\.ts"/);
+    expect(src).toMatch(
+      /import \{ NAV, superAdminTabAt \} from "\.\.\/lib\/nav-tree\.ts"/,
+    );
     expect(src).not.toMatch(/const NAV\b/);
-    expect(src).toMatch(/superAdminTabAt\(s\.superAdmin, view\.folder\?\.id \?\? null\)/);
+    expect(src).toMatch(
+      /superAdminTabAt\(s\.superAdmin, view\.folder\?\.id \?\? null\)/,
+    );
     expect(src).toMatch(/<span class="nav-item__label">Admin<\/span>/); // REQ-191
     expect(src).not.toContain("Super admin");
   });

@@ -60,6 +60,8 @@ export const NAV: NavNode<IconName>[] = [
     icon: "map",
     items: [
       { id: "subscriptions", icon: "repeat", href: "/field/subscriptions" },
+      // REQ-811: the service checklists a repeat visit references instead of listing the same rows
+      { id: "checklists", icon: "list", href: "/field/checklists" },
       { id: "assignments", icon: "map", href: "/field/assignments" },
       { id: "tasks", icon: "cal", href: "/field/tasks" },
       { id: "batches", icon: "batch", href: "/field/batches" },

@@ -5,6 +5,7 @@
  */
 import type {
   BatchView,
+  ChecklistView,
   FieldWorker,
   GenerateResult,
   RegionView,
@@ -23,6 +24,10 @@ export interface FieldAssignmentsSeed {
 }
 export interface FieldSubscriptionsSeed {
   subs: SubscriptionView[];
+}
+/** REQ-811 */
+export interface FieldChecklistsSeed {
+  checklists: ChecklistView[];
 }
 export interface FieldBatchesSeed {
   batches: BatchView[];
@@ -93,6 +98,20 @@ export async function loadFieldSubscriptionsSeed(
     sessionId,
   );
   return subs ? { subs } : null;
+}
+
+/** REQ-811 /field/checklists: the checklist cards. */
+export async function loadFieldChecklistsSeed(
+  sessionId: string | undefined,
+  get: AuthedGet = ssrBackendGetAuthed,
+): Promise<FieldChecklistsSeed | null> {
+  if (!sessionId) return null;
+  const checklists = await readList<ChecklistView>(
+    get,
+    "/field/checklists",
+    sessionId,
+  );
+  return checklists ? { checklists } : null;
 }
 
 /** /field/batches: the past batches (the island filters and sorts them). */

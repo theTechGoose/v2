@@ -1,7 +1,8 @@
 /** REQ-141 — the day's round: generated on demand, idempotent per day. */
 import { Injectable } from "#danet/core";
-import { FieldTaskStore, RegionStore, SubscriptionStore } from "@field/domain/data/field-stores/mod.ts";
+import { ChecklistStore, FieldTaskStore, RegionStore, SubscriptionStore } from "@field/domain/data/field-stores/mod.ts";
 import { generateTasks, unstaffed } from "@field/domain/business/tasks/mod.ts";
+import { withChecklist } from "@field/domain/business/checklist/mod.ts"; // REQ-811
 import type { FieldTask, Subscription } from "@field/dto/field.ts";
 import { newId } from "@field/domain/coordinators/field-zones/mod.ts";
 
@@ -14,12 +15,26 @@ export async function stableTaskId(t: Pick<FieldTask, "userId" | "subscriptionId
 
 @Injectable()
 export class FieldDay {
-  constructor(private subs: SubscriptionStore, private regions: RegionStore, private tasks: FieldTaskStore) {}
+  constructor(private subs: SubscriptionStore, private regions: RegionStore, private tasks: FieldTaskStore, private checklists: ChecklistStore) {}
+
+  /** REQ-811: the account's repeat visits with their EFFECTIVE services (the checklist's + their own) */
+  async effectiveSubscriptions(userId: string): Promise<Subscription[]> {
+    const [subs, checklists] = await Promise.all([this.subs.listByUser(userId), this.checklists.listByUser(userId)]);
+    const byId = new Map(checklists.map((c) => [c.id, c]));
+    return subs.map((s) => withChecklist(s, (id) => byId.get(id)));
+  }
+
+  /** REQ-811: one repeat visit with its effective services */
+  async effective(s: Subscription): Promise<Subscription> {
+    if (!s.checklistId) return s;
+    const c = await this.checklists.find(s.checklistId);
+    return withChecklist(s, () => (c && c.userId === s.userId ? c : null));
+  }
 
   /** make the day's tasks that do not exist yet; answers them and the due subscriptions no worker covers */
   async generate(userId: string, date: string): Promise<{ created: FieldTask[]; skipped: Subscription[]; all: FieldTask[] }> {
     // REQ-163: a task the office deleted stays as a tombstone, so the round does not bring it back
-    const [subscriptions, regions, existing] = await Promise.all([this.subs.listByUser(userId), this.regions.listByUser(userId), this.tasks.listByDay(userId, date, { withDeleted: true })]);
+    const [subscriptions, regions, existing] = await Promise.all([this.effectiveSubscriptions(userId), this.regions.listByUser(userId), this.tasks.listByDay(userId, date, { withDeleted: true })]);
     const created = generateTasks({ userId, date, subscriptions, regions, existing, newId });
     // REQ-170: a generated task's id is a function of (account, subscription, type, day), so two reads of the
     // same day at the same instant (the office and a worker, the page's two requests) write the SAME record
