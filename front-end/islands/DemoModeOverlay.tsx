@@ -987,7 +987,11 @@ export default function DemoModeOverlay(
         off: a.o === 1,
         // REQ-645 (c4-M6) — out of view: the chevron where it can be seen, and the way to it
         cue: p.dir
-          ? { box: p.box, text: t(cueKey(p.dir), { name: nameOf(pid) }) }
+          ? {
+            box: p.box,
+            text: t(cueKey(p.dir), { name: nameOf(pid) }),
+            dir: p.dir, // REQ-815 — the chevron placed by the way, as the stage's ghost is
+          }
           : null,
         faded,
         rect: p.outside ? null : rectOnScreen(a),

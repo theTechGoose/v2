@@ -735,6 +735,30 @@ export function offMark(
   return { left, top, deg };
 }
 
+/** REQ-815 (demo dm1 p4) — the out-of-view chevron (REQ-645) inside the arrow box (its top-left
+ *  at the tip), from the way to the element alone: against the edge it is off (OFF_MARK_INSET in),
+ *  centred on the tip along that edge, turned to point out. The customer's DemoPointer and the
+ *  stage's PointerGhost both draw it from this, so the two screens put it on the same pixel (the
+ *  stage only gets the report's tip and way, never the customer's box) */
+export function cueMarkOffset(
+  dir: Dir,
+): { left: number; top: number; deg: number } {
+  const half = OFF_MARK_PX / 2;
+  const along = (d: -1 | 0 | 1, size: number) =>
+    d === 1
+      ? size - OFF_MARK_PX - OFF_MARK_INSET
+      : d === -1
+      ? OFF_MARK_INSET
+      : -half;
+  return {
+    left: along(dir.dx, ARROW_BOX.w),
+    top: along(dir.dy, ARROW_BOX.h),
+    deg: dir.dx === 0 && dir.dy === 0
+      ? 0
+      : Math.round(Math.atan2(dir.dy, dir.dx) * 180 / Math.PI),
+  };
+}
+
 /** REQ-635 (demo m37, cycle 5) — how long the off marker is shown before it fades, and the fade */
 export const OFF_MARK_SHOW_MS = 2_500;
 export const OFF_MARK_FADE_MS = 400;

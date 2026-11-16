@@ -65,6 +65,8 @@ import {
   tagPlacement,
 } from "../../../shared/demo-mode/motion.ts";
 import {
+  cueMarkOffset,
+  type Dir,
   DRIFT_OPACITY,
   initialOf,
   OFF_BADGE_PX,
@@ -73,6 +75,7 @@ import {
   OFF_MARK_PX,
   OFF_MARK_SHOW_MS,
   offBadge,
+  offEdge,
   offMark,
 } from "../../../shared/demo-mode/presenter-anchor.ts";
 
@@ -309,7 +312,7 @@ export default function DemoPointer(
     off?: boolean;
     /** REQ-645 — the element pointed at is out of view: the marker against the edge of `box`
      *  (where it can be seen), with the way to it in words (`text`; none: the marker alone) */
-    cue?: { box: Bounds; text: string } | null;
+    cue?: { box: Bounds; text: string; dir?: Dir } | null;
     /** REQ-645 — the element moved away since he pointed: the arrow and its tag faded */
     faded?: boolean;
     /** REQ-645 — his pointer is being found again: these words, no arrow */
@@ -385,8 +388,12 @@ export default function DemoPointer(
   const place = pointer
     ? tagPlacement(pointer, tagBox ?? windowBox(), fallback, tagRect)
     : null;
-  const mark = pointer && (off || cue)
-    ? offMark(pointer, cue?.box ?? bounds ?? windowBox())
+  // REQ-815 (demo dm1 p4) — the cue's chevron from the way to the element alone
+  // (`cueMarkOffset`), as the stage's ghost draws it from the report; off the screen: `offMark`
+  const mark = pointer && cue
+    ? cueMarkOffset(cue.dir ?? offEdge(pointer, cue.box))
+    : pointer && off
+    ? offMark(pointer, bounds ?? windowBox())
     : null;
   const badge = pointer && off
     ? offBadge(pointer, bounds ?? windowBox())
