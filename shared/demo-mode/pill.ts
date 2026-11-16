@@ -332,10 +332,21 @@ function fewest(boxes: Rect[], controls: (r: Rect) => number): Rect {
  * `pillRows` / `askSpot`), then `pillSpots`; the first with no control under it. None clear: the
  * row's fewest, as before. Wherever it opens, `peekHolds` still counts the tab's box as the pill's.
  */
+/** REQ-890 — how long after the pointer was last on the tab or the pill its way between them is
+ *  not a leave (a peek that opened away from the tab is reached, not folded on the way) */
+export const PEEK_TRAVEL_MS = 1500;
+
+/** REQ-890 — a peek's box: `compact` when it is the compact form's, `crowded` when no form had a
+ *  control-free box and this is the row's fewest */
+export type PeekBox = Rect & { compact?: boolean; crowded?: boolean };
+
 export function peekBox(o: {
   home: Rect;
   view: Size;
   tab: Rect;
+  /** REQ-890 — the pill's compact form (the ≤640 px one), tried on the tab's row before the whole
+   *  pill moves to another row; unknown until it has been rendered once */
+  compact?: Size;
   /** REQ-816 — the left edge's tab spot (`tabBox(home)`); the tab's own box already says which
    *  edge it is on, so it is not needed (kept for the REQ-816 callers) */
   edge?: Rect;
@@ -343,53 +354,73 @@ export function peekBox(o: {
   controls?: (r: Rect) => number;
   /** REQ-873 — the impersonation banner's height: no row or spot above it */
   top?: number;
-}): Rect {
-  const w = o.home.width;
-  // REQ-849 — inside the margins (a pill wider than that: at the left margin)
-  const min = PILL_MARGIN;
-  const max = Math.max(min, o.view.w - PILL_MARGIN - w);
-  const top = o.tab.top + o.tab.height - o.home.height;
-  // at the left edge's margin, or the right one's; a tab along the bottom: centred over it
-  const flush = o.tab.left <= 0
-    ? min
-    : o.tab.left + o.tab.width >= o.view.w
-    ? max
-    : Math.max(
-      min,
-      Math.min(Math.round(o.tab.left + (o.tab.width - w) / 2), max),
-    );
-  const at = (x: number): Rect => ({
-    ...o.home,
-    top,
-    left: Math.max(min, Math.min(Math.round(x), max)),
-  });
-  const xs = [flush];
-  for (let x = min; x < max; x += PILL_TAB.w / 2) xs.push(x);
-  xs.push(max);
-  xs.sort((a, b) => Math.abs(a - flush) - Math.abs(b - flush));
+}): PeekBox {
   const controls = o.controls ?? (() => 0);
-  const best = fewest(xs.map(at), controls);
-  if (controls(best) === 0) return best;
-  // REQ-873 — the row is crowded: other rows (between the banner and home's row), nearest first,
-  // each along x as above; then the pill's spots
-  const ceil = (o.top ?? 0) + PILL_MARGIN;
-  const floor = Math.max(top, o.home.top);
-  const step = o.home.height + PILL_BAND_GAP;
-  const rows: number[] = [];
-  for (let k = 1; top - k * step >= ceil || top + k * step <= floor; k++) {
-    if (top - k * step >= ceil) rows.push(top - k * step);
-    if (top + k * step <= floor) rows.push(top + k * step);
+  /** the search for one form of the pill (`home` is its box): the tab's row along x, flush with
+   *  the tab first; then (`more`) the other rows, nearest first, and the pill's spots */
+  function search(home: Rect) {
+    const w = home.width;
+    // REQ-849 — inside the margins (a pill wider than that: at the left margin)
+    const min = PILL_MARGIN;
+    const max = Math.max(min, o.view.w - PILL_MARGIN - w);
+    const top = o.tab.top + o.tab.height - home.height;
+    // at the left edge's margin, or the right one's; a tab along the bottom: centred over it
+    const flush = o.tab.left <= 0
+      ? min
+      : o.tab.left + o.tab.width >= o.view.w
+      ? max
+      : Math.max(
+        min,
+        Math.min(Math.round(o.tab.left + (o.tab.width - w) / 2), max),
+      );
+    const at = (x: number): Rect => ({
+      ...home,
+      top,
+      left: Math.max(min, Math.min(Math.round(x), max)),
+    });
+    const xs = [flush];
+    for (let x = min; x < max; x += PILL_TAB.w / 2) xs.push(x);
+    xs.push(max);
+    xs.sort((a, b) => Math.abs(a - flush) - Math.abs(b - flush));
+    const best = fewest(xs.map(at), controls);
+    const row = controls(best) === 0 ? best : null;
+    // REQ-873 — the row is crowded: other rows (between the banner and home's row), nearest
+    // first, each along x as above; then the pill's spots
+    const more = (): Rect | null => {
+      const ceil = (o.top ?? 0) + PILL_MARGIN;
+      const floor = Math.max(top, home.top);
+      const step = home.height + PILL_BAND_GAP;
+      const rows: number[] = [];
+      for (let k = 1; top - k * step >= ceil || top + k * step <= floor; k++) {
+        if (top - k * step >= ceil) rows.push(top - k * step);
+        if (top + k * step <= floor) rows.push(top + k * step);
+      }
+      for (const t of rows) {
+        for (const x of xs) {
+          const r = { ...at(x), top: t };
+          if (controls(r) === 0) return r;
+        }
+      }
+      for (const r of pillSpots({ home, view: o.view, top: o.top })) {
+        if (controls(r) === 0) return r;
+      }
+      return null;
+    };
+    return { best, row, more };
   }
-  for (const t of rows) {
-    for (const x of xs) {
-      const r = { ...at(x), top: t };
-      if (controls(r) === 0) return r;
-    }
-  }
-  for (const r of pillSpots({ home: o.home, view: o.view, top: o.top })) {
-    if (controls(r) === 0) return r;
-  }
-  return best;
+  const whole = search(o.home);
+  if (whole.row) return whole.row;
+  // REQ-890 — the whole pill has no clear box on the tab's row: the compact form there, before
+  // the whole pill moves away from the tab
+  const compact = o.compact
+    ? search({ ...o.home, width: o.compact.w, height: o.compact.h })
+    : null;
+  if (compact?.row) return { ...compact.row, compact: true };
+  const away = whole.more();
+  if (away) return away;
+  const awayCompact = compact?.more();
+  if (awayCompact) return { ...awayCompact, compact: true };
+  return { ...whole.best, crowded: true };
 }
 
 /**
@@ -403,11 +434,32 @@ export function peekHolds(o: {
   tab: Rect | null;
   x: number;
   y: number;
+  /** REQ-890 — when the pointer was last on the tab or the pill, and the time now: within
+   *  PEEK_TRAVEL_MS the corridor between the tab and the pill (their union) holds it too, for the
+   *  pointer on its way to a peek that opened away from the tab */
+  since?: number;
+  now?: number;
 }): boolean {
   const inside = (r: Rect) =>
     o.x >= r.left && o.x <= r.left + r.width && o.y >= r.top &&
     o.y <= r.top + r.height;
-  return inside(o.pill) || (o.tab !== null && inside(o.tab));
+  if (inside(o.pill) || (o.tab !== null && inside(o.tab))) return true;
+  if (
+    o.tab !== null && o.since !== undefined &&
+    (o.now ?? Date.now()) - o.since < PEEK_TRAVEL_MS
+  ) {
+    const left = Math.min(o.pill.left, o.tab.left);
+    const top = Math.min(o.pill.top, o.tab.top);
+    return inside({
+      left,
+      top,
+      width: Math.max(o.pill.left + o.pill.width, o.tab.left + o.tab.width) -
+        left,
+      height: Math.max(o.pill.top + o.pill.height, o.tab.top + o.tab.height) -
+        top,
+    });
+  }
+  return false;
 }
 
 /**

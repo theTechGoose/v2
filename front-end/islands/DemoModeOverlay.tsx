@@ -586,6 +586,8 @@ export default function DemoModeOverlay(
           pill: pillRef.current.getBoundingClientRect(),
           tab: peekTabRef.current,
           ...pointRef.current,
+          since: peekSinceRef.current, // REQ-890
+          now: Date.now(),
         })),
     fold: () => setPeek(false),
   });
@@ -602,7 +604,16 @@ export default function DemoModeOverlay(
   const floatsRef = useRef(false);
   /** REQ-379 — the phone's compact form from the first render: a full-size first measure is what
    *  grew to a 400 px pill on a 390 px phone (M6) */
-  const [compact, setCompact] = useState(narrow);
+  const [compactBase, setCompact] = useState(narrow);
+  /** REQ-890 — a peek on a crowded row shows the compact form (whole again when it folds) */
+  const [peekCompact, setPeekCompact] = useState(false);
+  const compact = compactBase || (peek && peekCompact);
+  /** REQ-890 — when the pointer was last on the tab or the pill (the opening counts): its way
+   *  between them is not a leave for PEEK_TRAVEL_MS from then */
+  const peekSinceRef = useRef(0);
+  /** REQ-890 — the compact form's size once it has rendered, for `peekBox` to try on a crowded
+   *  row before the whole pill moves away from the tab */
+  const compactSizeRef = useRef<{ w: number; h: number } | null>(null);
   /** REQ-781 (cycle dv1, d7) — where the folded mini-pill sits: its offset from the left edge's
    *  spot (`tabBox`; x > 0: the right edge) */
   const [tabAt, setTabAt] = useState({ x: 0, y: 0 });
@@ -1857,7 +1868,10 @@ export default function DemoModeOverlay(
       // 444, which put a right-edge pill 0.08 px past its place)
       if (!folded) {
         const r = el.getBoundingClientRect();
-        fullRef.current = { w: Math.ceil(r.width), h: el.offsetHeight };
+        const size = { w: Math.ceil(r.width), h: el.offsetHeight };
+        // REQ-890 — the compact form shown only for a peek: its size kept apart, the whole's stays
+        if (peekCompact && !compactBase) compactSizeRef.current = size;
+        else fullRef.current = size;
       }
       const home = pillHome({
         view,
@@ -1929,17 +1943,41 @@ export default function DemoModeOverlay(
       // m5) — unless a control is under it there (a footer link): slid along the tab's row to the
       // place with the fewest controls, inside the window. Measured only while it is out (a peek
       // places it again): a folded tab costs no sampling of the row
+      // REQ-890 — a peek already shown compact (this row was crowded) is placed as the compact
+      // pill it is; a whole one offers its compact size (once known) for a crowded row
+      const peekCompactSize = peekCompact && !compactBase
+        ? compactSizeRef.current
+        : null;
+      const peekHome = peekCompactSize
+        ? pillHome({ view, size: peekCompactSize }).box
+        : home.box;
       const box = p.tucked
         ? peekBox({
-          home: home.box,
+          home: peekHome,
           view,
           tab: p.box,
           top: bannerH(),
           controls: can && peekRef.current
             ? (r) => countControls(r, backdrop)
             : () => 0,
+          compact: peekCompactSize
+            ? undefined
+            : compactSizeRef.current ?? undefined,
         })
         : p.box;
+      // REQ-890 — the tab's row holds a control under every x for the whole pill: the compact
+      // form is shown (and measured again, a frame later) rather than the pill moving away from
+      // the tab or landing on a control. Its size unknown yet: shown as soon as the whole pill
+      // would leave the tab's row
+      if (p.tucked && peekRef.current && !compact) {
+        const onRow = Math.round(box.top + box.height) ===
+          Math.round(p.box.top + p.box.height);
+        const crowded = ("crowded" in box && !!box.crowded) ||
+          ("compact" in box && !!box.compact);
+        if (crowded || (!compactSizeRef.current && !onRow)) {
+          setPeekCompact(true);
+        }
+      }
       setDock({
         x: Math.round(box.left - home.box.left),
         y: Math.round(box.top - home.box.top),
@@ -2106,7 +2144,11 @@ export default function DemoModeOverlay(
   // REQ-545 — the tab opened or closed: the stage hears where the pill is now
   useEffect(() => {
     placeRef.current();
-  }, [peek, open, fresh]);
+  }, [peek, open, fresh, compact]);
+  // REQ-890 — the peek folded: the whole form again
+  useEffect(() => {
+    if (!peek) setPeekCompact(false);
+  }, [peek]);
   // REQ-849 (demo-loop cycle dm3, p14) — while the pill is out of its tab: where the mouse is, and
   // a pointer that was in the pill-plus-tab region leaving it folds it (as leaving the pill does)
   useEffect(() => {
@@ -2117,10 +2159,19 @@ export default function DemoModeOverlay(
       pointRef.current = { x: e.clientX, y: e.clientY };
       const el = pillRef.current;
       if (!el) return;
+      const pill = el.getBoundingClientRect();
+      const tab = peekTabRef.current;
+      // REQ-890 — the pointer on the pill or the tab: its way between them is not a leave for
+      // PEEK_TRAVEL_MS from here
+      if (peekHolds({ pill, tab, ...pointRef.current })) {
+        peekSinceRef.current = Date.now();
+      }
       const now = peekHolds({
-        pill: el.getBoundingClientRect(),
-        tab: peekTabRef.current,
+        pill,
+        tab,
         ...pointRef.current,
+        since: peekSinceRef.current,
+        now: Date.now(),
       });
       if (inside && !now) foldTimer.current?.arm(300);
       inside = now;
@@ -2148,7 +2199,10 @@ export default function DemoModeOverlay(
    *  pointer on it: PILL_PEEK_MS) */
   const openPeek = () => {
     // REQ-820 — out of the tab with no glide (it never slides in from the tab's translate)
-    if (!peekRef.current) setNoGlide(true);
+    if (!peekRef.current) {
+      setNoGlide(true);
+      peekSinceRef.current = Date.now(); // REQ-890
+    }
     setPeek(true);
     unpeekIn(PILL_PEEK_MS);
   };
