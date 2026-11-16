@@ -226,6 +226,7 @@ import {
   stageDebugOn,
   stageEndShown,
   stageLeaveShown,
+  stageLiveDetailsShown,
   stagePillH,
 } from "../../shared/demo-mode/stage-chrome.ts";
 import { pageLabel } from "../../shared/demo-mode/page-label.ts";
@@ -2389,20 +2390,25 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
           {/* REQ-650 (cycle 5, c4-m1) — End's question replaces these, adding no width */}
           {!endAsking && (
             <>
-              {/* REQ-374 (demo p8) — the customer's pointer colour is named, as the chips name each presenter's */}
-              <span style="display:inline-flex;align-items:center;gap:6px">
-                <span
-                  data-cy="demo-customer-dot"
-                  aria-hidden="true"
-                  style={`width:10px;height:10px;border-radius:50%;background:${CUSTOMER_COLOR};box-shadow:0 0 0 2px rgba(255,255,255,.85)`}
-                />
-                {t("demoMode.presenting", { name })}
-              </span>
-              <PresenterChips
-                presenters={demo.presenters}
-                me={demo.pid}
-                t={t}
-              />
+              {/* REQ-857 (dm4 p10) — present-tense lines only while live; ended keeps the title + status */}
+              {stageLiveDetailsShown(ended) && (
+                <>
+                  {/* REQ-374 (demo p8) — the customer's pointer colour is named, as the chips name each presenter's */}
+                  <span style="display:inline-flex;align-items:center;gap:6px">
+                    <span
+                      data-cy="demo-customer-dot"
+                      aria-hidden="true"
+                      style={`width:10px;height:10px;border-radius:50%;background:${CUSTOMER_COLOR};box-shadow:0 0 0 2px rgba(255,255,255,.85)`}
+                    />
+                    {t("demoMode.presenting", { name })}
+                  </span>
+                  <PresenterChips
+                    presenters={demo.presenters}
+                    me={demo.pid}
+                    t={t}
+                  />
+                </>
+              )}
               <span
                 data-cy="demo-status"
                 style={live.key === "elsewhere"
@@ -2443,7 +2449,7 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
                   {t("demoMode.useHere")}
                 </button>
               )}
-              {mirrored && (
+              {stageLiveDetailsShown(ended) && mirrored && (
                 <span
                   data-cy="demo-screen"
                   title={t("demoMode.pointOnlyHint")}

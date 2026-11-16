@@ -110,3 +110,14 @@ export function stagePillH(
 export function stageEndShown(ended: boolean): boolean {
   return !ended;
 }
+
+/**
+ * REQ-857 (demo-loop cycle dm4, issue p10) — once the demo has ended, the stage pill keeps only its
+ * title and "The demo ended". Until the hop to /admin (end(): 800 ms after the API answers; onEnded:
+ * 1500 ms) it read "Guiding Maria Lopez | Alex (you) | The demo ended | Maria Lopez's screen,
+ * 1280 × 800": present-tense lines next to a past-tense status. The "Guiding {name}" line, the
+ * presenter chips and the "{name}'s screen" label are drawn only while the demo is live.
+ */
+export function stageLiveDetailsShown(ended: boolean): boolean {
+  return !ended;
+}
