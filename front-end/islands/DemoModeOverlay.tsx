@@ -240,11 +240,13 @@ import {
   peekHolds,
   peekTimer,
   PILL_BAND_GAP,
+  PILL_BOX_METRICS,
   PILL_COMPACT_MAX_W,
   PILL_FONT,
   PILL_MARGIN,
   PILL_MOVE_MS,
   PILL_PEEK_MS,
+  PILL_STATUS_CHIP,
   PILL_TAB,
   PILL_UNDER_DIALOG_OPACITY,
   pillDetailsShown,
@@ -291,8 +293,7 @@ const POINTER_Z = PILL_Z + 1;
 /** REQ-379 (M28) — the pill lets a click through to the page; its buttons take theirs */
 const HIT = "pointer-events:auto";
 /** REQ-536 — the customer pill's status chip ("Connected"), in the toggle or on its own */
-const STATUS_CHIP =
-  "padding:2px 8px;border-radius:999px;background:rgba(255,255,255,.18);font-size:11.5px;font-weight:700";
+const STATUS_CHIP = PILL_STATUS_CHIP;
 
 const here = () => globalThis.location.pathname + globalThis.location.search;
 /** REQ-379 — how often the pill looks for a dialog over its home (it never hunts for a spot) */
@@ -2134,9 +2135,9 @@ export default function DemoModeOverlay(
         ? "transition:none"
         : `transition:transform ${PILL_MOVE_MS}ms ease`}`;
   const pillStyle =
-    `position:fixed;${at};z-index:${PILL_Z};display:flex;gap:10px;align-items:center;justify-content:space-between;flex-wrap:nowrap;white-space:nowrap;max-width:calc(100vw - ${
+    `position:fixed;${at};z-index:${PILL_Z};display:flex;${PILL_BOX_METRICS};align-items:center;justify-content:space-between;flex-wrap:nowrap;white-space:nowrap;max-width:calc(100vw - ${
       2 * PILL_MARGIN
-    }px);box-sizing:border-box;padding:7px 12px;border-radius:14px;background:#1f3d1b;color:#fff;font-family:${PILL_FONT};font-size:13px;box-shadow:0 4px 18px rgba(0,0,0,.35);${
+    }px);box-sizing:border-box;border-radius:14px;background:#1f3d1b;color:#fff;font-family:${PILL_FONT};box-shadow:0 4px 18px rgba(0,0,0,.35);${
       // REQ-545 — shown whole from its tab, it takes the pointer, so leaving it folds it again
       tucked ? "pointer-events:auto" : "pointer-events:none"};${
       // REQ-765 (cycle 5v2, p18-3d) — under a dialog's dim: softened, never hidden, still clickable

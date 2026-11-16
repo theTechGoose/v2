@@ -216,6 +216,8 @@ import PeerPointer, {
 } from "../components/demo-mode/PeerPointer.tsx";
 import PresenterChips from "../components/demo-mode/PresenterChips.tsx";
 import EndDemo from "../components/demo-mode/EndDemo.tsx";
+// REQ-865 — End's own styles, for the ghost of the customer's pill
+import { END_BTN, END_NO } from "../components/demo-mode/EndDemo.tsx";
 import {
   STAGE_BADGE_H,
   STAGE_DEBUG_KEY,
@@ -239,7 +241,9 @@ import {
   ghostDrawsTab,
   ghostFlow,
   ghostWords,
+  PILL_BOX_METRICS,
   PILL_FONT,
+  PILL_STATUS_CHIP,
   PILL_UNDER_DIALOG_OPACITY,
   pillFaceAwaiting,
   pillFaceOffline,
@@ -2053,7 +2057,14 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
               const g = ghost.box;
               const cut = ghost.clipped || pillFace.clipped === true;
               const words = ghostWords(pillFace, t);
-              const px = Math.max(7, 13 * fit.s);
+              // REQ-865 (demo-loop cycle dm4, p1) — laid out at the CUSTOMER's px with her pill's
+              // own styles (PILL_BOX_METRICS, PILL_STATUS_CHIP, EndDemo's END_BTN / END_NO) in a
+              // box of her width, then scaled by the frame's s from its top-left: the same words
+              // fit as on her pill, never cut by metrics of the stage's own
+              const lw = g.width / fit.s;
+              const lh = g.height / fit.s;
+              /** a chip the stage cannot use (EndDemo's buttons take the pointer; these never) */
+              const inert = "pointer-events:none;cursor:default";
               // REQ-835 (demo-loop cycle dm2, m2) — rows like the customer's when their pill wraps
               // (the phone's pill asking or opened), one cut row otherwise
               const flow = ghostFlow(pillFace.wraps === true);
@@ -2064,15 +2075,10 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
                   data-dim={pillFace.dim ? "" : undefined}
                   aria-hidden="true"
                   title={t("demoMode.pillGhost", { name })}
-                  style={`position:fixed;left:${g.left}px;top:${g.top}px;width:${g.width}px;height:${g.height}px;z-index:${Z};box-sizing:border-box;border:1.5px dashed rgba(31,61,27,.55);border-radius:${
-                    Math.max(4, 14 * fit.s)
-                  }px;background:rgba(31,61,27,.78);color:#fff;pointer-events:none;opacity:${
+                  // REQ-865 — the dashed edge is an outline: it takes no layout space (a border took 3 px)
+                  style={`position:fixed;left:${g.left}px;top:${g.top}px;width:${lw}px;height:${lh}px;transform:scale(${fit.s});transform-origin:0 0;z-index:${Z};box-sizing:border-box;outline:1.5px dashed rgba(31,61,27,.55);outline-offset:-1.5px;border-radius:14px;background:rgba(31,61,27,.78);color:#fff;pointer-events:none;opacity:${
                     pillFace.dim ? PILL_UNDER_DIALOG_OPACITY : 1
-                  };display:flex;align-items:center;justify-content:space-between;gap:${
-                    Math.max(2, 10 * fit.s)
-                  }px;padding:0 ${
-                    Math.max(2, 12 * fit.s)
-                  }px;overflow:hidden;${flow.box};font-family:${PILL_FONT};font-size:${px}px;line-height:1.1`}
+                  };display:flex;align-items:center;justify-content:space-between;${PILL_BOX_METRICS};overflow:hidden;${flow.box};font-family:${PILL_FONT}`}
                 >
                   {words.title && (
                     <strong
@@ -2101,7 +2107,7 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
                   {words.status && (
                     <span
                       data-cy="demo-pill-ghost-status"
-                      style="flex:none;padding:1px 4px;border-radius:999px;background:rgba(255,255,255,.18);font-weight:700"
+                      style={`flex:none;${PILL_STATUS_CHIP}`}
                     >
                       {words.status}
                     </span>
@@ -2113,7 +2119,7 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
                     // group takes the row and the answers sit beside the question when they fit
                     <span
                       data-cy="demo-pill-ghost-asking"
-                      style={`${flow.ask};gap:${Math.max(2, 8 * fit.s)}px`}
+                      style={`${flow.ask};gap:8px`}
                     >
                       <strong
                         data-cy="demo-pill-ghost-ask"
@@ -2124,22 +2130,14 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
                       <span
                         data-cy="demo-pill-ghost-yes"
                         aria-disabled="true"
-                        style={`flex:none;padding:${5 * fit.s}px ${
-                          12 * fit.s
-                        }px;border-radius:${8 * fit.s}px;font-size:${
-                          Math.max(6, 12 * fit.s)
-                        }px;background:#c62828;color:#fff;font-weight:700;opacity:.75`}
+                        style={`flex:none;${END_BTN};background:#c62828;color:#fff;opacity:.75;${inert}`}
                       >
                         {words.yes}
                       </span>
                       <span
                         data-cy="demo-pill-ghost-no"
                         aria-disabled="true"
-                        style={`flex:none;padding:${5 * fit.s}px ${
-                          6 * fit.s
-                        }px;font-size:${
-                          Math.max(6, 12 * fit.s)
-                        }px;text-decoration:underline;font-weight:600;opacity:.75`}
+                        style={`flex:none;${END_NO};opacity:.75;${inert}`}
                       >
                         {words.no}
                       </span>
@@ -2150,7 +2148,7 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
                     <span
                       data-cy="demo-pill-ghost-end"
                       aria-disabled="true"
-                      style="flex:none;padding:1px 5px;border-radius:5px;background:#fff;color:#7a2e2e;font-weight:700;opacity:.6"
+                      style={`flex:none;${END_BTN};background:#fff;color:#7a2e2e;opacity:.6;${inert}`}
                     >
                       {words.end}
                     </span>
