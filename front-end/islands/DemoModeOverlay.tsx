@@ -202,6 +202,7 @@ import {
 import { langSignal } from "../lib/i18n.ts";
 import {
   askDock,
+  askSpot,
   backdropCovers,
   CONTROL_SELECTOR,
   countsAsPage,
@@ -1554,6 +1555,31 @@ export default function DemoModeOverlay(
     }
     atRef.current = { left: fit.left, top: fit.top, tab: false };
   };
+  /** REQ-852 (demo-loop cycle dm3, p4) — End's question just came up: the asking box (its size
+   *  now) is placed ONCE where no control of the page is under it (`askSpot`: the current anchor,
+   *  the same row at the opposite edge, the bottom row; else the fewest), counted through a
+   *  dialog's backdrop. clampAsk runs after it (REQ-835) and REQ-300 freezes it from then on */
+  const placeAsk = () => {
+    const el = pillRef.current;
+    if (!el || el.hasAttribute("data-tucked")) return;
+    if (typeof document.elementsFromPoint !== "function") return;
+    const vv = globalThis.visualViewport;
+    const view = {
+      w: globalThis.innerWidth,
+      h: vv ? vv.offsetTop + vv.height : globalThis.innerHeight,
+    };
+    const backdrop = dialogBackdropUp();
+    const { dock: next } = askSpot({
+      view,
+      dock: dockRef.current,
+      size: { w: el.offsetWidth, h: el.offsetHeight },
+      controls: (r) => countControls(r, backdrop),
+    });
+    if (next !== dockRef.current) {
+      dockRef.current = next;
+      setDock(next);
+    }
+  };
   // REQ-830 (demo-loop cycle dm2, p6) — the first place() runs before paint (a layout effect): a
   // full load never paints the whole pill at home for a frame before it folds and moves. The
   // interval and the listeners stay in the effect below
@@ -1835,6 +1861,8 @@ export default function DemoModeOverlay(
   // atRef from the box it fits
   useLayoutEffect(() => {
     if (!asking) return;
+    // REQ-852 (cycle dm3, p4) — first where no control is, then kept in view
+    placeAsk();
     clampAsk();
     // the compact form a resize switched to lands a frame later: measured again
     const id = requestAnimationFrame(clampAsk);

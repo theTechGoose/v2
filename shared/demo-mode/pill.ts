@@ -515,6 +515,55 @@ export function askDock(o: {
   };
 }
 
+/**
+ * REQ-852 (demo-loop cycle dm3, p4; amends REQ-228 / REQ-835) — where End's question opens: the
+ * asking pill at its asking `size`, placed once where no CONTROL of the page is under it. It grew
+ * in place and REQ-835's clamp only pulled it back inside the window, so a 444 px pill at the
+ * top-right grew to 671 px over /welcome's centred brand link. Tried in order: the current anchor;
+ * the same row anchored at the opposite edge (then the near one); the bottom row (home, then the
+ * bottom-right). The first with no control under it, else the fewest (a tie keeps the earlier).
+ * Each is laid out by `askDock`, so REQ-835's in-view clamp is the last step; a clear current
+ * anchor returns askDock's own result (a pill that fits keeps the same dock: REQ-300).
+ */
+export function askSpot(o: {
+  view: Size;
+  dock: { x: number; y: number };
+  size: Size;
+  /** how many controls of the page are under a box */
+  controls: (r: Rect) => number;
+}): { dock: { x: number; y: number }; fit: Rect } {
+  const at = (dock: { x: number; y: number }) =>
+    askDock({ view: o.view, dock, size: o.size });
+  const here = at(o.dock);
+  // dock.x that puts the pill's left edge at the margin, or its right edge at the margin
+  const leftX = 0;
+  const rightX = o.view.w - 2 * PILL_MARGIN - o.size.w;
+  const onRight = here.fit.left + here.fit.width / 2 > o.view.w / 2;
+  const row = here.dock.y;
+  const tries = [
+    here,
+    at({ x: onRight ? leftX : rightX, y: row }),
+    at({ x: onRight ? rightX : leftX, y: row }),
+    at({ x: leftX, y: 0 }),
+    at({ x: rightX, y: 0 }),
+  ];
+  const seen = new Set<string>();
+  let best = here;
+  let n = Infinity;
+  for (const t of tries) {
+    const k = `${t.fit.left},${t.fit.top}`;
+    if (seen.has(k)) continue;
+    seen.add(k);
+    const c = o.controls(t.fit);
+    if (c < n) {
+      best = t;
+      n = c;
+      if (c === 0) break;
+    }
+  }
+  return best;
+}
+
 /** REQ-835 (cycle dm2, m2) — the translate of a computed `transform` ("none", matrix, matrix3d) */
 export function translateOf(css: string): { x: number; y: number } {
   const m = /^matrix(3d)?\(([^)]*)\)$/.exec(css.trim());
