@@ -99,7 +99,9 @@ describe("REQ-813 (demo dm1 m4) wiring on the stage", () => {
     expect(at).toBeGreaterThan(-1);
     const tag = s.slice(at, at + 600);
     expect(tag).toMatch(/look=\{ownLook\(absent,\s*pending\)\}/);
-    expect(tag).toContain('"demoMode.pointerOwnAbsent"');
+    // REQ-848 AMENDMENT (demo dm3 m4): no in-frame "not shown" pill — the chrome-row
+    // demo-pointer-absent banner says it, so the stage no longer passes absentLabel
+    expect(tag).not.toContain("absentLabel=");
     expect(tag).toContain('"demoMode.pointerOwnPending"');
   });
   test("resendPointer starts the stage's pending window when it sends {k:'pending'}", () => {

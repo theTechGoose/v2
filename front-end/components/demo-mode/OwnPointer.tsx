@@ -12,7 +12,9 @@
  *
  * REQ-813 (demo-loop cycle dm1, m4) — it says what the customer HAS (`look`): "live" at full
  * strength; "absent" (his arrow is not on their screen: their next page, a node gone) dimmed to
- * OWN_ABSENT_OPACITY, hollow, dashed, tagged "not shown" and `data-absent`; "pending" (their page
+ * OWN_ABSENT_OPACITY, hollow, dashed and `data-absent` (REQ-848, dm3 m4: no longer tagged "not
+ * shown" in the frame — that white pill sat on the customer's text, and the chrome-row
+ * demo-pointer-absent banner already says it); "pending" (their page
  * says "{name} is pointing…") the same words with a pulsing dot and `data-pending`. Before, it was
  * drawn at full strength under the stage's own "isn't on their screen" banner.
  *
@@ -52,16 +54,16 @@ type MarkerProps = {
   tagged: boolean;
   /** REQ-813 — live, absent (not on their screen) or pending ("pointing…" there) */
   look: OwnLook;
-  /** REQ-813 — the tag while absent ("You · not shown") */
-  absentLabel: string;
   /** REQ-813 — the words while pending ("pointing…") */
   pendingLabel: string;
   /** REQ-837 — where the customer's tag is, beside the arrow, in the stage's px (none: placed here) */
   tag?: TagPlace | null;
   /** REQ-837 — the box the tag stays inside when placed here (the fitted frame) */
   bounds?: Bounds;
-  /** REQ-837 — how much a tag at this box would hide (default: `coverage` of the page) */
-  covers?: (r: Rect) => boolean | number;
+  /** REQ-837 — how much a tag at this box would hide (default: `coverage` of the page).
+   *  REQ-848 (demo dm3 m4) — the stage passes `frameCoverage` of its replay (its own document
+   *  only sees the click-capture layer over the frame) */
+  covers?: (r: Rect, at: Pt) => boolean | number;
 };
 
 /** REQ-813 — the marker itself, drawn at `at` (rendered on its own in tests) */
@@ -73,7 +75,6 @@ export function OwnMarker(
     label,
     tagged,
     look,
-    absentLabel,
     pendingLabel,
     tag,
     bounds,
@@ -87,13 +88,15 @@ export function OwnMarker(
   const absent = look === "absent";
   const pending = look === "pending";
   // REQ-837 (demo dm2 m3) — the tag where the customer's is, else placed as theirs is placed
-  const words = absent ? absentLabel : label;
-  const size = { w: 14 + words.length * 6, h: 18 };
+  const size = { w: 14 + label.length * 6, h: 18 };
   const spot = (() => {
     if (tag) return { ...alignTag(tag, size), side: tag.side };
     const doc = globalThis.document;
-    const hit = covers ??
-      (doc ? (r: Rect) => coverage(doc, r, at) : undefined);
+    const hit = covers
+      ? (r: Rect) => covers(r, at)
+      : doc
+      ? (r: Rect) => coverage(doc, r, at)
+      : undefined;
     const box = bounds ??
       { left: at.x - 200, top: at.y - 200, width: 400, height: 400 };
     const p = tagPlacement(at, box, size, null, hit);
@@ -161,18 +164,7 @@ export function OwnMarker(
             {pendingLabel}
           </span>
         )
-        : absent
-        ? (
-          // REQ-813 — always tagged while absent: the ghost (which carries "You") is not there
-          <span
-            data-cy="demo-pointer-own-label"
-            data-tag-side={spot.side}
-            style={`${tagStyle};background:#fff;color:${color};border:1px dashed ${color}`}
-          >
-            {absentLabel}
-          </span>
-        )
-        : tagged && (
+        : !absent && tagged && (
           <span
             data-cy="demo-pointer-own-label"
             data-tag-side={spot.side}

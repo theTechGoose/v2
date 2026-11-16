@@ -32,6 +32,7 @@
  *      customer reloads that page: the arrow is back on the same element with no move.
  *      REQ-813 AMENDMENT (demo dm1 m4): while her next page has no arrow, the stage's own marker
  *      is drawn "not shown" (data-absent), never a live "You" arrow; his move makes it live.
+ *      REQ-848 (demo dm3 m4): and with no in-frame "not shown" pill (the banner says it).
  */
 import { story, type StoryTools } from "#shots";
 import { pillUp } from "../_shared/demo-pill.ts";
@@ -564,9 +565,14 @@ Deno.test("REQ-305 (demo M2) + REQ-451 (demo M1) + REQ-645 (cycle 5 M1 + M2) + R
           ).count();
           const theirs = await userPage.locator("[data-cy='demo-pointer']")
             .count();
-          if (own !== 1 || live !== 0 || theirs !== 0) {
+          // REQ-848 (demo dm3 m4) — no 'not shown' pill in the frame over her text (the
+          // chrome-row demo-pointer-absent banner says it): the faint hollow arrow only
+          const pill = await page.locator(
+            "[data-cy='demo-pointer-own'][data-absent] [data-cy='demo-pointer-own-label']",
+          ).count();
+          if (own !== 1 || live !== 0 || theirs !== 0 || pill !== 0) {
             throw new Error(
-              `stage own marker absent=${own} live=${live} · customer demo-pointer=${theirs}`,
+              `stage own marker absent=${own} live=${live} pill=${pill} · customer demo-pointer=${theirs}`,
             );
           }
           return true;

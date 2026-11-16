@@ -70,8 +70,9 @@ export default function PointerGhost(
     bounds: Bounds;
     /** REQ-642 — the box of the element his anchor names on the stage (null: none, out of view) */
     rect?: Rect | null;
-    /** REQ-642 — would a tag at this box cover another control */
-    covers?: (r: Rect) => boolean;
+    /** REQ-642 — would a tag at this box cover another control. REQ-848 (demo dm3 m4) — or how
+     *  much it would hide, by the stage's hit-test of its replay (`frameCoverage`) */
+    covers?: (r: Rect, at: Pt) => boolean | number;
     /** REQ-837 — where the customer's tag is, beside the arrow, in the stage's px */
     tag?: TagPlace | null;
     /** REQ-837 — out of view: the words the customer reads (the way to the element) */
@@ -84,8 +85,11 @@ export default function PointerGhost(
   const words = cue ? `${label} · ${cue}` : label;
   const box = outside || cue ? null : rect ?? null;
   const doc = globalThis.document;
-  const hit = covers ??
-    (doc && box ? (r: Rect) => coversControl(doc, r, at) : undefined);
+  const hit = covers
+    ? (r: Rect) => covers(r, at)
+    : doc && box
+    ? (r: Rect) => coversControl(doc, r, at)
+    : undefined;
   // the label's size, near enough: 11px bold, padded. REQ-437 + REQ-642: outside the anchored
   // element, next to the arrow, off the other controls; else below-right past the arrow's tail.
   // REQ-837 — where the customer's tag is when they said; the cue's words inside `cueBox`

@@ -147,6 +147,7 @@ import {
   outsideBox,
   placeIn,
   type Pt,
+  STAGE_TAG_REST_OPACITY,
 } from "../../shared/demo-mode/motion.ts";
 import {
   type CursorSeed,
@@ -203,7 +204,10 @@ import {
 import { anchorAhead } from "../../shared/demo-mode/customer-pointer.ts";
 import PointerGhost from "../components/demo-mode/PointerGhost.tsx";
 import OwnPointer from "../components/demo-mode/OwnPointer.tsx";
-import DemoPointer, { WAVE_MS } from "../components/demo-mode/DemoPointer.tsx";
+import DemoPointer, {
+  frameCoverage,
+  WAVE_MS,
+} from "../components/demo-mode/DemoPointer.tsx";
 import PeerPointer, {
   type PointerCmd,
 } from "../components/demo-mode/PeerPointer.tsx";
@@ -557,6 +561,14 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
   );
   const fitRef = useRef(fit);
   fitRef.current = fit;
+  /** REQ-848 (demo dm3 m4 + p9) — how much a tag at stage px `r` would hide of the customer's
+   *  page: hit-tested in the replay (this document only sees the click-capture layer over the
+   *  frame, so every spot scored 0 and the tail slot sat on their text) */
+  const coversFrame = useCallback(
+    (r: Rect, at: Pt) =>
+      frameCoverage(frameRef.current?.contentDocument, fitRef.current, r, at),
+    [],
+  );
   /** REQ-188 — the frame's box on this screen: fractions of the customer's viewport map onto it */
   const fitBox = () => fitRef.current;
   /** REQ-393 — the frame on the stage is fitted to the replay's screen, so a point of the stage
@@ -2207,6 +2219,7 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
                   ? rectOnStage(sentRef.current)
                   : null}
                 tag={ghost.dir ? null : ownTag}
+                covers={coversFrame}
                 cueText={ghost.dir
                   ? t(cueKey(ghost.dir), {
                     name: presenterNameOf(demo?.pid),
@@ -2229,10 +2242,10 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
                 label={t("demoMode.pointerGhost")}
                 tagged={!ghost}
                 look={ownLook(absent, pending)}
-                absentLabel={t("demoMode.pointerOwnAbsent")}
                 pendingLabel={t("demoMode.pointerOwnPending")}
                 tag={ownTag}
                 bounds={fit}
+                covers={coversFrame}
                 bind={bindOwn}
               />
             )}
@@ -2317,6 +2330,8 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
         z={Z + 1}
         attach={glide.attach}
         bounds={fit}
+        covers={coversFrame}
+        restTagOpacity={STAGE_TAG_REST_OPACITY}
       />
       {demo?.presenters.filter((p) => p.userId !== demo.pid).map((p) => (
         <PeerPointer
