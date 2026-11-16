@@ -96,6 +96,16 @@
  * when there is no room below), the chosen one highlighted — the stage's own element, never a
  * mirrored node: no id, no pointer anchor (`pointer-events: none`), redrawn after every frame and
  * every layout pass, gone once the mark is.
+ *
+ * REQ-824 (demo-loop cycle dm1, m2) — nothing in the stage's inert frame is ever focused or
+ * hovered, so the recorder marks the customer's focus and hover (data-mirror-focus, -focus-within,
+ * -hover) and the replay reads the marks in the customer's own rules: every same-origin sheet of
+ * the frame (its links as they load — before REQ-547 keeps their copy — its <style>s, the bridge
+ * copies) has `:hover`, `:focus`, `:focus-visible` and `:focus-within` rewritten in place into
+ * the marks' attribute selectors (`restateRules`: the same specificity, the same place — the
+ * customer's cascade, a `:not(:hover)` included), each sheet once. The UA's state rules no sheet
+ * of the page's carries — the focus ring, the search box's × — are the stage's own adopted sheet
+ * (MIRROR_UA_CSS, in a layer every page rule beats), put in with every page shown.
  */
 import {
   cleanEmbedDoc,
@@ -104,6 +114,11 @@ import {
   type SNode,
 } from "../../../shared/demo-mode/mirror.ts";
 import type { NodeAnchor } from "../../../shared/demo-mode/protocol.ts";
+import {
+  MIRROR_UA_CSS,
+  restateRules,
+  type StateRule,
+} from "../../../shared/demo-mode/mirror-state.ts";
 import {
   type ClipNode,
   type ClipStyle,
@@ -409,6 +424,62 @@ export function createReplayer(
   /** REQ-638 — the selects marked open, and the lists drawn for them (with what they show) */
   let opened = new Set<Element>();
   let drawnLists: { box: Element; key: string }[] = [];
+  /** REQ-824 — the sheets already reading the focus and hover marks, and the stage's own sheet of
+   *  the UA's state rules */
+  const restated = new WeakSet<object>();
+  let uaSheet: CSSStyleSheet | null = null;
+
+  /** REQ-824 — `sheet` (else every sheet of the frame and every adopted one) reads the marks, in
+   *  place; each once. Another origin's sheet has no rules to read: it is left as it is */
+  function restate(sheet?: unknown) {
+    const all: unknown[] = [];
+    if (sheet !== undefined) all.push(sheet);
+    else {
+      try {
+        const list = (doc as Document).styleSheets;
+        for (let k = 0; list && k < list.length; k++) all.push(list[k]);
+      } catch {
+        // no sheets here
+      }
+      const adopted = (doc as Document & { adoptedStyleSheets?: unknown[] })
+        .adoptedStyleSheets;
+      if (Array.isArray(adopted)) all.push(...adopted);
+    }
+    for (const s of all) {
+      if (!s || typeof s !== "object" || restated.has(s)) continue;
+      if (s === stillSheet || s === uaSheet) continue;
+      let rules: ArrayLike<StateRule> | null | undefined;
+      try {
+        rules = (s as { cssRules?: ArrayLike<StateRule> | null }).cssRules;
+      } catch {
+        restated.add(s); // another origin's
+        continue;
+      }
+      if (!rules) continue;
+      restated.add(s);
+      restateRules(rules);
+    }
+  }
+  /** REQ-824 — the stage's own sheet of the UA's state rules into the frame's document (once) */
+  function putUa() {
+    const W = doc.defaultView as
+      | (Window & { CSSStyleSheet?: typeof CSSStyleSheet })
+      | null;
+    const adopted = (doc as Document & { adoptedStyleSheets?: CSSStyleSheet[] })
+      .adoptedStyleSheets;
+    if (!W?.CSSStyleSheet || !Array.isArray(adopted)) return;
+    try {
+      if (!uaSheet) {
+        uaSheet = new W.CSSStyleSheet();
+        uaSheet.replaceSync(MIRROR_UA_CSS);
+      }
+      if (!adopted.includes(uaSheet)) {
+        doc.adoptedStyleSheets = [uaSheet, ...adopted];
+      }
+    } catch {
+      uaSheet = null; // no constructed sheets: the page's own rules still read the marks
+    }
+  }
 
   const kidEls = (e: Element) =>
     Array.from(e.childNodes).filter((c) => c.nodeType === 1) as Element[];
@@ -629,6 +700,7 @@ export function createReplayer(
       try {
         const c = new W.CSSStyleSheet({ baseURL: href } as CSSStyleSheetInit);
         c.replaceSync(text);
+        restate(c); // REQ-824
         made.push(c);
       } catch {
         // a copy this browser will not take: that link is waited for as it is
@@ -705,6 +777,8 @@ export function createReplayer(
     if (t) loaded.add(t);
     // REQ-547 — a stylesheet this frame has: a later snapshot that links it is not held for it
     if (t?.nodeType === 1 && t.localName?.toLowerCase() === "link") {
+      // REQ-824 — its rules read the focus and hover marks (before their copy is kept)
+      restate((t as HTMLLinkElement).sheet ?? null);
       const href = (t.getAttribute("href") ?? "").trim();
       if (href) {
         readyHrefs.add(href);
@@ -956,6 +1030,8 @@ export function createReplayer(
     }, SETTLE_CAP_MS);
     holdStill(true);
     putBridge();
+    putUa(); // REQ-824
+    restate(); // REQ-824 — its <style>s are in (a held page's only now)
     opts.onShown?.(); // REQ-648 — the stage's page clock stops here
   }
 
@@ -1136,6 +1212,7 @@ export function createReplayer(
       else if (stillOn) putStill();
       newSheet = false;
       drawLists(); // REQ-638
+      restate(); // REQ-824 — a <style> an op added or changed reads the marks
       // REQ-305 — the layout changes once the browser has laid the frame out, not now
       settleSoon();
       return fit;

@@ -15,6 +15,7 @@ import { createRecorder } from "../../front-end/lib/demo-mode/mirror-record";
 import * as replayMod from "../../front-end/lib/demo-mode/mirror-replay";
 import { createReplayer } from "../../front-end/lib/demo-mode/mirror-replay";
 import type { MirrorFrame } from "../../shared/demo-mode/mirror";
+import { MIRROR_UA_CSS } from "../../shared/demo-mode/mirror-state";
 import {
   docWith,
   FakeMutationObserver,
@@ -301,7 +302,9 @@ describe("REQ-547 (cycle 4, M21 + m32) — a later snapshot keeps the previous p
     expect(adopted().some((t) => t.includes(".ccard2__panel"))).toBe(true);
     stage.fire("load", sheetsIn(stage)[0]); // its own link is in
     flush();
-    expect(adopted()).toEqual([]);
+    // REQ-824 AMENDMENT: the copies are gone; only the stage's own sheet of the UA's state rules
+    // (the focus ring, the search box's ×) stays adopted
+    expect(adopted()).toEqual([MIRROR_UA_CSS]);
   });
 
   test("REQ-547 ops that come while a snapshot is held apply to it (nothing is lost at the swap)", () => {
