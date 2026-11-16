@@ -42,7 +42,8 @@ describe("REQ-195 the motion system", () => {
   });
   test("_app.tsx links the stylesheet and tags the direction from a classic head script", () => {
     expect(app).toMatch(
-      /<link rel="stylesheet" href=\{asset\("\/motion\.css"\)\} \/>/,
+      // REQ-858 AMENDMENT: keyed, so a page's unkeyed <Head> link cannot take its place
+      /<link key="css-motion" rel="stylesheet" href=\{asset\("\/motion\.css"\)\} \/>/,
     );
     expect(app).toMatch(/const MOTION_SCRIPT = `\(function\(\)\{try\{/);
     expect(app).toMatch(/addEventListener\("pagereveal"/);

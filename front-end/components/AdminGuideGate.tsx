@@ -33,8 +33,17 @@ export default function AdminGuideGate(
           title={(l) => `Admin · ${tFor(l, "brand.name")}`}
         />
         <meta name="robots" content="noindex" />
-        <link rel="stylesheet" href={asset("/dashboard.css")} />
-        <link rel="stylesheet" href={asset("/public-lang.css")} />
+        {/* REQ-858 — each keyed: Fresh's <Head> keeps one unkeyed stylesheet link */}
+        <link
+          key="css-dashboard"
+          rel="stylesheet"
+          href={asset("/dashboard.css")}
+        />
+        <link
+          key="css-public-lang"
+          rel="stylesheet"
+          href={asset("/public-lang.css")}
+        />
       </Head>
       <main style="min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;box-sizing:border-box">
         <section
