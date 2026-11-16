@@ -197,6 +197,29 @@ export const PILL_TAB = { w: 96, h: 32 } as const;
 export const PILL_PEEK_MS = 6000;
 
 /**
+ * REQ-820 (demo-loop cycle dm1, m6 + test-setup-m4) — the peek's fold timer. When it fires the
+ * pill folds, unless it is HELD (a mouse or pen pointer on it, or End's question up): then it
+ * waits again. A pointer resting on the pill keeps it whole however long it rests; only leaving
+ * it (the caller arms a short wait) folds it.
+ */
+export function peekTimer(o: {
+  held: () => boolean;
+  fold: () => void;
+}): { arm: (ms: number) => void; cancel: () => void } {
+  let id: ReturnType<typeof setTimeout> | undefined;
+  const cancel = () => clearTimeout(id);
+  const arm = (ms: number) => {
+    cancel();
+    id = setTimeout(() => {
+      id = undefined;
+      if (o.held()) arm(ms);
+      else o.fold();
+    }, ms);
+  };
+  return { arm, cancel };
+}
+
+/**
  * REQ-545 — the public pages a customer is sent (/q quote, /i invoice, /co change order).
  * REQ-637 (cycle 5, m5) — in the owner's browser during a demo the whole pill sits on its bottom
  * strip there (minimal): it never folds over the content (only a dialog with nowhere free folds it).
