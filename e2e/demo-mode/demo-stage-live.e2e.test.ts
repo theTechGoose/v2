@@ -163,7 +163,7 @@ const recorded = (pg: Page) =>
     (globalThis as unknown as { __pmSeen: string[] }).__pmSeen
   ) as Promise<string[]>;
 
-Deno.test("REQ-391 (demo-loop cycle 2, M4 + m21): an in-app page change says 'Loading their next page…' — never Live over the old page, never Waiting — and the dev chip measures the lag; the customer leaving the app is 'Waiting for …' within ~2 s, under a banner across the frame's top", (t) =>
+Deno.test("REQ-391 (demo-loop cycle 2, M4 + m21): an in-app page change says 'Loading their next page…' — never Live over the old page, never Waiting — and the dev chip measures the lag; the customer leaving the app is 'Waiting for …' within ~2 s, under a banner in the chrome row above the frame (REQ-846)", (t) =>
   story(t, async ({ page, expect, http, baseUrl }) => {
     await page.setViewportSize({ width: 1280, height: 800 });
     const who = await people(http);
@@ -248,6 +248,9 @@ Deno.test("REQ-391 (demo-loop cycle 2, M4 + m21): an in-app page change says 'Lo
       await page.locator("[data-cy='demo-waiting']").waitFor({
         timeout: 5_000,
       });
+      // REQ-846 (REQ-391 AMENDMENT, cycle dm3 p11) — the banner sits in REQ-642's chrome row
+      // ABOVE the frame: its bottom at or above the frame's top (never over their header), one
+      // badge high, within the frame's width and centred on it
       const geo = await page.evaluate(() => {
         const b = document.querySelector("[data-cy='demo-waiting']")
           ?.getBoundingClientRect();
@@ -255,22 +258,22 @@ Deno.test("REQ-391 (demo-loop cycle 2, M4 + m21): an in-app page change says 'Lo
           ?.getBoundingClientRect();
         return b && f
           ? {
-            top: b.top - f.top,
-            left: b.left - f.left,
-            width: b.width - f.width,
+            overlap: b.bottom - f.top,
+            top: b.top,
             height: b.height,
-            frameHeight: f.height,
+            widthOver: b.width - f.width,
+            offCentre: (b.left + b.width / 2) - (f.left + f.width / 2),
           }
           : null;
       });
       if (!geo) {
         problems.push("m21: no waiting notice or no frame on the stage");
       } else if (
-        Math.abs(geo.top) > 2 || Math.abs(geo.left) > 2 ||
-        Math.abs(geo.width) > 2 || geo.height > geo.frameHeight * 0.2
+        geo.overlap > 0.5 || geo.top < -0.5 || geo.height > 28 ||
+        geo.widthOver > 0.5 || Math.abs(geo.offCentre) > 2
       ) {
         problems.push(
-          `m21: the waiting notice is not a banner across the frame's top edge (${
+          `p11: the waiting notice is not a one-line badge in the chrome row above the frame (${
             JSON.stringify(geo)
           })`,
         );
