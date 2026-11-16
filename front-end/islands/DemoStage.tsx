@@ -97,6 +97,13 @@
  * frames come in over 1.5 s late (each frame carries its push time on the deploy's clock; the dev
  * chip shows the lag's median/worst, whole path and wire). A tab that said it is closing is
  * "Waiting for {name}'s app…" at once, under a banner across the frame's top edge.
+ *
+ * REQ-823 (demo-loop cycle dm1, m8 + M2) — the tab notice says only what the presenter SAW change:
+ * the transport holds a same-tab navigation the page could not tell from a close (SILENT_GRACE_MS),
+ * and `followTabs` weighs a follow against the tab last on show (`shown`, from pageShown) — a
+ * fallback whose page never showed, then the same tab again, is no switch and drops a pending
+ * notice. A customer who signed out (`onSignedOut`) is said: "{name} signed out" in the pill and
+ * on the waiting banner, until a tab of theirs is followed again.
  */
 import {
   useCallback,
@@ -479,6 +486,9 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
   const [absent, setAbsent] = useState(false);
   /** REQ-645 (m36) — the stage follows another of their tabs now: its page, said until he moves */
   const [tabNote, setTabNote] = useState<string | null>(null);
+  /** REQ-823 (cycle dm1, M2) — the customer signed out in the tab the stage followed: the pill and
+   *  the waiting banner say so, until a tab of theirs is followed again */
+  const [signedOut, setSignedOut] = useState(false);
   const tabNoteTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   /** REQ-214 — how a colleague's pointer is driven, for the placing again */
   const commandRef = useRef<
@@ -1102,6 +1112,7 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
   const pageShown = () => {
     pageClockRef.current?.shown();
     setAwaiting(false);
+    tabsRef.current.shown(); // REQ-823 (m8) — he has seen this tab now
   };
   const pageShownRef = useRef(pageShown);
   pageShownRef.current = pageShown;
@@ -1299,6 +1310,8 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
       pid: demo.pid ?? undefined,
       // REQ-648 — the followed tab's page went: the page clock runs from when it said so
       onPageGone: (at) => pages.left(at),
+      // REQ-823 (M2) — the customer signed out there: said, and no other tab of theirs followed
+      onSignedOut: () => setSignedOut(true),
       onPresence: (pid, online) => {
         lastTOf.delete(pid); // their stage came or went: its clock starts over
         if (!online) {
@@ -1364,12 +1377,15 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
         // REQ-642 — a report from the page before says nothing of this one's screen
         reportRef.current = null;
         showGhost();
+        setSignedOut(false); // REQ-823 (M2) — a tab of theirs is followed again
         if (cid !== followedCid) {
           // REQ-645 (cycle 5 m36) — ANOTHER of their browser tabs (not the same tab's next page):
           // his anchor is kept for its page load and dropped here (otherTab) — known now when the
           // socket's claim said its key first, else once it says it (onPeerTab); the last socket's
-          // page waits for nothing more
+          // page waits for nothing more. REQ-823 (m8) — no switch from the tab he last saw (the
+          // same tab's next page after a fallback that never showed): no tab notice is owed
           if (tabsRef.current.follow(cid, tab)) otherTab();
+          else switchedRef.current = false;
           waitTabRef.current = null;
           // REQ-292 — another of the customer's tabs: its page load may be OLDER than the one
           // shown; the receiver starts over so that tab's snapshot is taken (the mirrored page
@@ -1560,6 +1576,7 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
       if (tabNoteTimerRef.current) clearTimeout(tabNoteTimerRef.current);
       tabNoteTimerRef.current = null;
       setTabNote(null);
+      setSignedOut(false); // REQ-823 — the next demo starts unsaid
       styledRef.current = false;
       setStyled(false);
       setPeerOnline(false);
@@ -1713,7 +1730,10 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
     : live.key === "elsewhere"
     ? t("demoMode.elsewhere")
     : live.key === "waiting"
-    ? t("demoMode.waitingFor", { name })
+    // REQ-823 (M2) — waiting because the customer signed out: said as that
+    ? (signedOut
+      ? t("demoMode.signedOut", { name })
+      : t("demoMode.waitingFor", { name }))
     : live.key === "loadingNext"
     ? (live.n
       ? t("demoMode.loadingNextBehind", { n: live.n })
@@ -1975,9 +1995,15 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
                 };box-sizing:border-box;pointer-events:none;color:#fff;font:inherit`}
               >
                 <div style="display:flex;flex-wrap:wrap;gap:2px 8px;align-items:baseline;justify-content:center;text-align:center;padding:7px 12px;border-radius:6px 6px 0 0;background:rgba(18,26,22,.88);box-shadow:0 2px 10px rgba(0,0,0,.35);font-size:12.5px;line-height:1.35">
-                  <strong>{t("demoMode.waitingFor", { name })}</strong>
+                  <strong>
+                    {signedOut
+                      ? t("demoMode.signedOut", { name })
+                      : t("demoMode.waitingFor", { name })}
+                  </strong>
                   <span style="opacity:.8">
-                    {t("demoMode.waitingKeep")}
+                    {signedOut
+                      ? t("demoMode.signedOutKeep")
+                      : t("demoMode.waitingKeep")}
                   </span>
                 </div>
               </div>

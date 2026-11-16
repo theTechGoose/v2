@@ -349,31 +349,46 @@ export function tabSwitched(
  *  the followed socket's key, said by its claim AFTER the stage followed it (a socket is announced
  *  before its page says which tab it is). Each answers whether the stage shows ANOTHER browser tab
  *  than before (`tabSwitched` against the last key known). `unsure` — another socket is followed and
- *  which tab it is of is not known yet: nothing of his is sent to it or looked for on it until it is */
+ *  which tab it is of is not known yet: nothing of his is sent to it or looked for on it until it is.
+ *  REQ-823 (demo-loop cycle dm1, m8) — `shown`: the followed socket's page is on show (the replay's
+ *  onShown). A socket followed and left before any page of it was on show is no tab he saw: the
+ *  next follow is weighed against the tab last on show — A → B (never on show) → A is no switch,
+ *  so the stage's own detour is never said as "Now showing {name}'s other tab" */
 export function followTabs(): {
   follow(cid: string | undefined, key?: string): boolean;
   learn(cid: string, key: string): boolean;
+  shown(): void;
   unsure(): boolean;
 } {
   let cid: string | undefined;
   let key: string | undefined;
   /** the key of what was followed before `cid`, while `cid`'s own is not known */
   let before: string | undefined;
+  /** REQ-823 — the key of the browser tab whose page was last on show; and whether a page of the
+   *  socket followed now has been on show */
+  let seenKey: string | undefined;
+  let seen = false;
   return {
     follow(c, k) {
       if (c === cid) return false;
-      const was = key ?? before;
+      const was = seen || seenKey === undefined ? key ?? before : seenKey;
       cid = c;
       key = k;
+      seen = false;
       before = k ? undefined : was;
       return tabSwitched(was, k);
     },
     learn(c, k) {
       if (c !== cid || key) return false;
       key = k;
+      if (seen) seenKey = k;
       const was = before;
       before = undefined;
       return tabSwitched(was, k);
+    },
+    shown() {
+      seen = true;
+      if (key) seenKey = key;
     },
     unsure: () => !key && !!before,
   };

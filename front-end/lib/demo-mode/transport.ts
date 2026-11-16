@@ -59,6 +59,16 @@
  * browser's shared clock) or its last input claim — so a background tab that merely booted (or
  * emulates focus) later never outranks the page the customer moved to. A stage that joins gets
  * each tab's last claim with its `peer` (the hub keeps them) and ranks the roster at once.
+ *
+ * REQ-823 (demo-loop cycle dm1, m8 + M2) — amends REQ-436: the followed browser tab whose page went
+ * CLOSING or said nothing while another of the customer's tabs is open is held too, for
+ * SILENT_GRACE_MS — an address-bar navigation, `page.goto` or the browser's reload button fires no
+ * `navigate` and says "closing", and its next page (the same key) takes the stage back without the
+ * other tab ever being offered, synced or named; a real close falls over once the grace is up. A
+ * tab that went because the customer SIGNED OUT (`signout`) is held with no timer: the stage says
+ * "waiting" at once (never "between"), hears it (`onSignedOut`), and follows no other tab of the
+ * dead session — only a tab claimed since the sign-out, or a page of that browser tab signed in
+ * again.
  */
 import {
   type ClientMessage,
@@ -123,8 +133,13 @@ export interface DemoLinkOptions {
   /** REQ-235 — `pid`: the presenter who ended it (none when the viewer did) */
   onEnded(by: Role, reason?: "declined" | "expired", pid?: string): void;
   /** REQ-648 — a stage: the page of the followed tab went (not closing) — `at`: when it said so,
-   *  on the deploy's clock (this link's `now()` when it said nothing); `why`: what it said */
+   *  on the deploy's clock (this link's `now()` when it said nothing); `why`: what it said.
+   *  REQ-823 — nor after a sign-out: no page of that sign-in comes next */
   onPageGone?(at: number, why?: LeaveWhy): void;
+  /** REQ-823 (cycle dm1, M2) — a stage: the customer signed out in the tab it follows — the link
+   *  says "waiting", and no tab of theirs is followed until one is claimed since the sign-out (or
+   *  that browser tab signs in again: its next onPeerOnline) */
+  onSignedOut?(): void;
 }
 
 export interface DemoLink {
@@ -183,13 +198,16 @@ interface Tab {
   i?: boolean;
 }
 
-/** REQ-436 — a browser tab whose followed page went navigating: the stage holds on to it */
+/** REQ-436 — a browser tab whose followed page went navigating: the stage holds on to it.
+ *  REQ-823 — or went closing / said nothing while another tab is open (the shorter grace); or
+ *  signed out (`signout`: no timer — held until a tab is claimed since, or its key comes back) */
 interface Held {
-  key: string;
+  key?: string;
   at: number;
   f?: boolean;
   i?: boolean;
-  timer: ReturnType<typeof setTimeout>;
+  timer?: ReturnType<typeof setTimeout>;
+  signout?: boolean;
 }
 
 export function connectDemo(o: DemoLinkOptions): DemoLink {
@@ -254,6 +272,8 @@ export function connectDemo(o: DemoLinkOptions): DemoLink {
     if (closed) return setStatus("closed");
     if (ws?.readyState !== WebSocket.OPEN) return setStatus("connecting");
     if (!online()) return setStatus("waiting");
+    // REQ-823 (M2) — the customer signed out: nothing of theirs is coming — waiting, not between
+    if (o.role === "presenter" && held?.signout) return setStatus("waiting");
     // REQ-391 — a stage whose customer's page went: never "live" over it while the next may come
     if (o.role === "presenter" && (tabs.size === 0 || held)) {
       return setStatus("between");
@@ -433,6 +453,27 @@ export function connectDemo(o: DemoLinkOptions): DemoLink {
     clearTimeout(held.timer);
     held = null;
   };
+  /** REQ-436 — keep following the browser tab of the followed page that went (`t`), "between", for
+   *  `ms` — the page that went takes its connection and its pointer along. REQ-823 — `ms` null:
+   *  it signed out — held until a tab is claimed since (or its key comes back), no timer */
+  const hold = (cid: string, t: Tab | undefined, ms: number | null) => {
+    teardown(cid);
+    o.onPeer({ k: "leave" }, { role: "viewer", cid });
+    release();
+    held = {
+      ...(t?.key ? { key: t.key } : {}),
+      at: t?.at ?? 0,
+      f: t?.f,
+      i: t?.i,
+      ...(ms === null ? { signout: true } : {
+        timer: setTimeout(() => {
+          held = null;
+          follow();
+          refresh();
+        }, ms),
+      }),
+    };
+  };
   /** REQ-436 — a page of browser tab `key` is here: it takes over what the tab's earlier page had
    *  (its claim; the stage, when the tab was held) */
   const inherit = (
@@ -485,42 +526,37 @@ export function connectDemo(o: DemoLinkOptions): DemoLink {
   };
   /** REQ-391 — `why`: what its page said as it went. The last tab gone: closing — nobody to wait
    *  for (waiting at once, m21); navigating — its next page comes (the full grace, M4); nothing
-   *  said — a short grace */
+   *  said — a short grace. REQ-823 — signout: nobody to wait for either (waiting at once) */
   const tabLeft = (cid: string, why?: LeaveWhy, at?: number) => {
     gone.add(cid);
     if (gone.size > 200) gone.delete(gone.values().next().value!);
     const t = tabs.get(cid);
     if (!tabs.delete(cid)) return;
     // REQ-648 — the followed page went and a next one may come: the stage times the change
-    if (cid === followed && why !== "closing") {
+    // (REQ-823 — not after a sign-out: no page of that sign-in comes next)
+    if (cid === followed && why !== "closing" && why !== "signout") {
       o.onPageGone?.(at ?? Date.now() + skew, why);
     }
-    if (cid === followed && t?.key) {
+    if (cid === followed && why === "signout") {
+      // REQ-823 (M2) — the customer signed out in the tab the stage follows: the browser's other
+      // tabs are the same dead session — none is followed until a tab is claimed since (her
+      // phone, used) or this browser tab signs in again (a page with its key); the stage says so
+      hold(cid, t, null);
+      o.onSignedOut?.();
+    } else if (cid === followed && t?.key) {
       // REQ-436 — a page of the same browser tab is already here: it is the stage's now
       const next = [...tabs.values()].find((u) => u.key === t.key);
       if (next) inherit(next, t.key, t.at, t.f, t.i);
-      else if (why === "navigating") {
-        // its next page is coming: keep following this browser tab, "between", for the grace —
-        // the page that went takes its connection and its pointer along
-        teardown(cid);
-        o.onPeer({ k: "leave" }, { role: "viewer", cid });
-        release();
-        held = {
-          key: t.key,
-          at: t.at,
-          f: t.f,
-          i: t.i,
-          timer: setTimeout(() => {
-            held = null;
-            follow();
-            refresh();
-          }, PRESENCE_GRACE_MS),
-        };
-      }
+      // its next page is coming: keep following this browser tab for the grace
+      else if (why === "navigating") hold(cid, t, PRESENCE_GRACE_MS);
+      // REQ-823 (m8) — closing, or nothing said, while another tab is open: an address-bar
+      // navigation or the reload button says "closing" too — its next page (the same key) may
+      // come within SILENT_GRACE_MS; the other tab is followed only after it
+      else if (tabs.size > 0) hold(cid, t, SILENT_GRACE_MS);
     }
     if (tabs.size === 0) {
       const ms = why === "navigating" ? PRESENCE_GRACE_MS : SILENT_GRACE_MS;
-      if (why === "closing") endGrace();
+      if (why === "closing" || why === "signout") endGrace();
       else startGrace(ms);
     }
     follow();

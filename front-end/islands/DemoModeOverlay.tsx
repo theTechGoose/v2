@@ -68,6 +68,11 @@
  * notice to its next page (pill-carry.ts keepEnded). "{name} started a new demo" stays ~10 s or
  * until the customer acts. /admin's handover notice comes in as a prop (`endedNotice`, read by
  * _app on the server), so it is painted on first paint, hydrated or not.
+ * REQ-823 (demo-loop cycle dm1, M2) — a sign-out is said: the app's sign-out event in this tab, or
+ * another tab of the browser telling it (signout-signal.ts), makes this page say
+ * `leaving("signout")` on its link and close it at once — before the redirect, so the stage says
+ * the customer signed out and never falls back to another tab of the dead session — and drop the
+ * demo (the carry forgotten: the next page is not this sign-in's).
  */
 import {
   useEffect,
@@ -86,6 +91,7 @@ import {
 } from "../clients/demo-mode.ts";
 import { adminClient } from "../clients/admin.ts";
 import { announceImpersonation } from "../lib/demo-mode/impersonation-signal.ts";
+import { onSignout } from "../lib/demo-mode/signout-signal.ts";
 import {
   ACTIVE_POLL_MS,
   ACTIVE_REASK_MS,
@@ -749,6 +755,27 @@ export default function DemoModeOverlay(
       globalThis.removeEventListener("pageshow", liveAgain);
     };
   }, []);
+  // REQ-823 (demo-loop cycle dm1, M2) — the customer signed out (here, or in another tab of this
+  // browser: the same dead session): this page says so on its link and closes it now — the
+  // redirect's pagehide would say "navigating", and the stage would wait for a page that never
+  // comes, then follow another tab of hers — and the demo is dropped, its carry forgotten
+  const signedOutRef = useRef(false);
+  useEffect(() => {
+    if (inert) return;
+    return onSignout(() => {
+      // this page's sign-in is over (or about to be): it asks for no demo and joins none again
+      signedOutRef.current = true;
+      const link = linkRef.current;
+      linkRef.current = null;
+      link?.leaving("signout");
+      link?.close();
+      demoRef.current = null; // the pagehide that may come first keeps nothing
+      forgetDemo(sessionStore());
+      anchorsRef.current.clear();
+      setCmds({});
+      setDemo(null);
+    });
+  }, []);
   // REQ-549 (cycle 4, S4) — did the app reload this page on its own (a public page re-reading the
   // server)? Taken once per page; such a page never claims the stage without the customer's input
   const selfReloadRef = useRef<boolean | null>(null);
@@ -858,6 +885,8 @@ export default function DemoModeOverlay(
       ask: async () => {
         // REQ-217 — a hidden tab asks nothing and says nothing; it picks up again when looked at
         if (!viewerTab(document.visibilityState)) return;
+        // REQ-823 (M2) — signed out: a page of a dead sign-in rejoins no demo
+        if (signedOutRef.current) return;
         // signed out, or the backend is away: it throws, nothing to draw, ask again later. A
         // hidden tab never holds a connection (HTTP/1.1 allows six per host) — REQ-217: it does
         // not ask at all (above), so a visible one holds the ask
@@ -865,7 +894,7 @@ export default function DemoModeOverlay(
           ? ACTIVE_WAIT_MS
           : 0;
         const a = await demoModeClient.active({ path: here(), wait });
-        if (!alive) return;
+        if (!alive || signedOutRef.current) return;
         if (a.session && a.role) {
           const found: Demo = { role: a.role, ...a.session };
           setActiveOk(true);
