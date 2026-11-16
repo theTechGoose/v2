@@ -82,6 +82,86 @@ export function restartNotice(o: {
   };
 }
 
+/** REQ-821 (demo-loop cycle dm1, m9) — how long a first join keeps the whole pill out ("{name} is
+ *  guiding you" with End) before it yields to the page (REQ-545/637/781). Short enough that a
+ *  dense page is covered only briefly; the customer's input after RESTART_MIN_MS ends it sooner */
+export const JOIN_SAY_MS = 5_000;
+
+export interface JoinGrace {
+  /** a demo id reached this tab: the first time it is seen, the whole pill shows (Connecting…
+   *  included) — for JOIN_SAY_MS at most if the link never comes up */
+  arrived(id: string): void;
+  /** the link is up for this id: the JOIN_SAY_MS clock starts over, once, so "{name} is guiding
+   *  you" is read with Connected */
+  live(id: string): void;
+  /** this id is already known (carried in from the last page): no grace for it */
+  seen(id: string): void;
+  /** the customer pressed or typed: the line has been read (after RESTART_MIN_MS) */
+  touched(): void;
+  /** stop the clock (unmount) */
+  dispose(): void;
+}
+
+/**
+ * REQ-821 — a first join gets the grace a restart gets (REQ-298/647): the REQ-153 amendment's
+ * "{name} is guiding you" with End is on screen from the moment the demo arrives until JOIN_SAY_MS
+ * after its link is up, or until the customer acts after RESTART_MIN_MS, before the pill yields.
+ * Once per demo id: a page load that carries the demo in (REQ-535, every link is a full load)
+ * calls `seen` and says nothing again.
+ */
+export function joinGrace(o: {
+  /** true: keep the whole pill out; false: it may yield again */
+  onChange: (joined: boolean) => void;
+  now?: () => number;
+  setTimer?: (fn: () => void, ms: number) => unknown;
+  clearTimer?: (h: unknown) => void;
+}): JoinGrace {
+  const now = o.now ?? (() => Date.now());
+  const setTimer = o.setTimer ?? ((fn, ms) => setTimeout(fn, ms));
+  const clearTimer = o.clearTimer ?? ((h) => clearTimeout(h as number));
+  const known = new Set<string>();
+  let current: string | null = null;
+  let wentLive = false;
+  let timer: unknown = null;
+  let saidAt = 0;
+  const stop = () => {
+    if (timer !== null) clearTimer(timer);
+    timer = null;
+  };
+  const say = () => {
+    stop();
+    saidAt = now();
+    timer = setTimer(() => {
+      timer = null;
+      o.onChange(false);
+    }, JOIN_SAY_MS);
+  };
+  return {
+    arrived(id) {
+      if (known.has(id)) return;
+      known.add(id);
+      current = id;
+      wentLive = false;
+      say();
+      o.onChange(true);
+    },
+    live(id) {
+      if (id !== current || wentLive || timer === null) return;
+      wentLive = true;
+      say();
+    },
+    seen(id) {
+      known.add(id);
+    },
+    touched() {
+      if (timer === null || now() - saidAt < RESTART_MIN_MS) return;
+      stop();
+      o.onChange(false);
+    },
+    dispose: stop,
+  };
+}
+
 /** the dictionary line for a new demo: the presenters by name, or the opener, or nobody */
 export function startedText(
   presenters: Presenter[],

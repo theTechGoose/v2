@@ -122,6 +122,8 @@ import {
 } from "../../shared/demo-mode/presenter-anchor.ts";
 import { anchorFrame } from "../../shared/demo-mode/customer-pointer.ts";
 import {
+  type JoinGrace,
+  joinGrace,
   type RestartNotice,
   restartNotice,
   startedText,
@@ -431,6 +433,13 @@ export default function DemoModeOverlay(
   if (!restartRef.current) {
     restartRef.current = restartNotice({ onChange: setFresh });
   }
+  /** REQ-821 (demo-loop cycle dm1, m9) — a first join: the whole pill ("{name} is guiding you"
+   *  with End) shows for a few seconds before it yields, as a restart's line does */
+  const [joined, setJoined] = useState(false);
+  const joinRef = useRef<JoinGrace | null>(null);
+  if (!joinRef.current) {
+    joinRef.current = joinGrace({ onChange: setJoined });
+  }
   const linkRef = useRef<DemoLink | null>(null);
   /** REQ-228 — the pill, where it sits, and whether it is the phone's compact one */
   const pillRef = useRef<HTMLDivElement | null>(null);
@@ -704,6 +713,8 @@ export default function DemoModeOverlay(
     const carried = carriedDemo(sessionStore(), Date.now());
     if (!carried || carried.demo.role !== "viewer") return;
     setDemo(carried.demo);
+    // REQ-821 — carried in from the last page: already joined, no grace again on every link
+    joinRef.current?.seen(carried.demo.id);
     if (!carried.connected) return;
     setCarrying(true);
     const grace = setTimeout(() => setCarrying(false), PILL_CARRY_GRACE_MS);
@@ -804,14 +815,30 @@ export default function DemoModeOverlay(
     setNotice(null);
   }, [demo?.id]);
   useEffect(() => () => restartRef.current?.dispose(), []);
+  // REQ-821 — a demo id first seen here: the whole pill shows from its arrival (Connecting…) until
+  // a few seconds after its link is up; then it may yield to the page again
+  useEffect(() => {
+    if (inert || !demo || demo.role !== "viewer") return;
+    joinRef.current?.arrived(demo.id);
+    if (status === "direct" || status === "relay") {
+      joinRef.current?.live(demo.id);
+    }
+  }, [demo?.id, status]);
+  // REQ-821 — the grace began or ended: placed at once, not at the next PILL_CHECK_MS tick
+  useEffect(() => {
+    placeRef.current();
+  }, [joined]);
+  useEffect(() => () => joinRef.current?.dispose(), []);
   // REQ-647 (cycle 5, m23) — the customer pressed or typed in the page: "started a new demo" has
   // been read. A press on the pill itself (End, the details) is not: the line stays while they act
+  //    REQ-821 — the same input ends a first join's grace
   useEffect(() => {
-    if (inert || !fresh) return;
+    if (inert || (!fresh && !joined)) return;
     const read = (e: Event) => {
       const at = e.target as Element | null;
       if (at?.closest?.("[data-demo-overlay]")) return;
       restartRef.current?.touched();
+      joinRef.current?.touched();
     };
     const opts = { capture: true, passive: true };
     document.addEventListener("pointerdown", read, opts);
@@ -820,7 +847,7 @@ export default function DemoModeOverlay(
       document.removeEventListener("pointerdown", read, opts);
       document.removeEventListener("keydown", read, opts);
     };
-  }, [fresh]);
+  }, [fresh, joined]);
   /**
    * REQ-647 (cycle 5, m29) — the demo is gone and no `ended` frame said so (the poll answered
    * null, the socket closed for good): said like any end — the notice in the pill's place (one
@@ -1713,8 +1740,9 @@ export default function DemoModeOverlay(
   }
 
   // the phone pill's details opened (a tap, to read them): shown until closed — never tucked away
-  // under the hand that opened them; nor while it says a new demo started (REQ-298)
-  yieldsRef.current = !(compact && open) && !fresh;
+  // under the hand that opened them; nor while it says a new demo started (REQ-298); nor for the
+  // first seconds of a join, so "{name} is guiding you" and End are seen whole (REQ-821)
+  yieldsRef.current = !(compact && open) && !fresh && !joined;
   // REQ-214 — the presenters, by name; a demo written before the list has the one
   const presenters: Presenter[] = demo.presenters.length > 0
     ? demo.presenters
