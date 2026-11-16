@@ -291,6 +291,10 @@ export type EndReason = "declined" | "expired";
 
 /** how often a browser with no demo asks `active` again — the customer sees the invitation within this */
 export const ACTIVE_POLL_MS = 5_000;
+/** REQ-817 (demo-loop cycle dm1, m3) — while the customer's app IS connected the stage still asks
+ *  `active` this often, so a name the customer saves mid-demo reaches its pill and their cursor
+ *  (their next page joining asks at once) */
+export const ACTIVE_NAME_REFRESH_MS = 15_000;
 /** REQ-378 (demo-loop cycle 2, m22) — how long the server may hold an ask that finds no demo
  *  (`GET /demo-mode/active?wait=`): it answers the moment a demo is opened for the caller, so the
  *  customer's app hears of it at once instead of on its next ask */

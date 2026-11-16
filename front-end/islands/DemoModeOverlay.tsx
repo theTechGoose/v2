@@ -104,6 +104,8 @@ import {
   sameAnchor,
   STAGE_PATH,
 } from "../../shared/demo-mode/protocol.ts";
+// REQ-817 (cycle dm1, m3) — a new name in an /active answer is a new demo to draw (and carry)
+import { sameDemo } from "../../shared/demo-mode/stage-frame.ts";
 import {
   anchorAt,
   createTouchFade,
@@ -238,11 +240,6 @@ interface Demo {
   /** REQ-214 — everyone presenting, each with a name and a colour */
   presenters: Presenter[];
 }
-
-/** the same demo, with the same presenters (a roster change re-renders, a poll's echo does not) */
-const sameDemo = (a: Demo | null, b: Demo) =>
-  a?.id === b.id &&
-  JSON.stringify(a.presenters) === JSON.stringify(b.presenters);
 
 const Z = 2147483000;
 /** REQ-379 (M28) — the pill lets a click through to the page; its buttons take theirs */

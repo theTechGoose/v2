@@ -26,6 +26,7 @@
  * it for their screen — and the stage sends no pointer against it — and the pill says how long
  * the wait has run ("… N s behind", `pageBehind`), timed from their page going.
  */
+import { ACTIVE_NAME_REFRESH_MS, ACTIVE_POLL_MS } from "./protocol.ts";
 
 /** the transport's link status — mirrored here so this module stays free of the front-end.
  *  REQ-391 — "between": the followed tab's page went and its next page may still come (the
@@ -118,6 +119,32 @@ export function stageFrameLook(
     filter: waiting ? WAITING_FILTER : "none",
     waiting,
   };
+}
+
+/** REQ-817 (demo-loop cycle dm1, m3) — the demo as an /active answer gives it (the fields the
+ *  stage and the customer's overlay draw from) */
+export interface DemoNames {
+  id: string;
+  presenterName?: string;
+  targetName?: string;
+  presenters: { userId: string; name: string; color: string }[];
+}
+
+/** the same demo with the same presenters and the same names: a poll's echo does not re-render; a
+ *  roster change does, and so (REQ-817, cycle dm1, m3) does a name the customer — or a
+ *  presenter — saved mid-demo (it was dropped, and the stage named the customer by their phone
+ *  for the rest of the demo) */
+export function sameDemo(a: DemoNames | null, b: DemoNames): boolean {
+  return a?.id === b.id &&
+    (a.targetName ?? "") === (b.targetName ?? "") &&
+    (a.presenterName ?? "") === (b.presenterName ?? "") &&
+    JSON.stringify(a.presenters) === JSON.stringify(b.presenters);
+}
+
+/** REQ-817 — when the stage asks /active next: every ACTIVE_POLL_MS while the customer's app is
+ *  not connected (REQ-153), every ACTIVE_NAME_REFRESH_MS while it is (a name saved mid-demo) */
+export function activeAskDelay(peerOnline: boolean): number {
+  return peerOnline ? ACTIVE_NAME_REFRESH_MS : ACTIVE_POLL_MS;
 }
 
 /** REQ-541 (cycle 4, M22) — what the stage does with an /active answer. A stage that showed a

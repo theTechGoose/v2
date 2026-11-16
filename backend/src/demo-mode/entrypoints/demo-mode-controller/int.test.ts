@@ -1557,6 +1557,46 @@ Deno.test("REQ-355 (demo cycle 1, m1 / setup-m8) the sign-in placeholder is neve
   });
 });
 
+// REQ-817 — demo-loop cycle dm1, issue m3: the stage named the customer by their phone for the
+// whole demo after they saved a name. The stage now re-asks /active while connected and takes a
+// changed name; this pins the contract it reads: the name is the customer's as of each ask.
+Deno.test("REQ-817 (cycle dm1, m3) a customer who saves a name mid-demo: the presenter's next /active names them by it, not by their phone", async () => {
+  await withServer(async (call) => {
+    const ana = await signIn(call, "+15125553051");
+    const hans = await signIn(call, "+15125553052");
+    assertEquals(
+      (await call("POST", "/api/admin/bootstrap", {
+        phoneNumber: "+15125553052",
+      })).status,
+      200,
+    );
+    const made = await call("POST", "/api/demo-mode/sessions", {
+      userId: ana.body.userId,
+    }, H(hans.body.sessionId));
+    assertEquals(made.status, 201, JSON.stringify(made.body));
+    const ask = () =>
+      call("GET", "/api/demo-mode/active", undefined, H(hans.body.sessionId));
+    const before = await ask();
+    assertEquals(before.body.role, "presenter", JSON.stringify(before.body));
+    assertEquals(before.body.session.targetName, "+15125553051");
+
+    const saved = await call(
+      "PUT",
+      "/api/me",
+      { name: "Maria Lopez" },
+      H(ana.body.sessionId),
+    );
+    assertEquals(saved.status, 200, JSON.stringify(saved.body));
+    const after = await ask();
+    assertEquals(
+      after.body.session.id,
+      before.body.session.id,
+      "the same demo",
+    );
+    assertEquals(after.body.session.targetName, "Maria Lopez");
+  });
+});
+
 // REQ-296 — demo-loop cycle 1, issue nc-3: the two-hour expiry was silent (a KV `expireIn` and
 // nothing else); over the composed router's socket both sides now hear `ended … expired`
 Deno.test("REQ-296 a demo that reaches its TTL: the presenter's and the customer's sockets hear ended with reason expired and close; active is empty for both", async () => {

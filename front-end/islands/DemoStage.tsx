@@ -116,7 +116,6 @@ import { type Lang, langSignal, t } from "../lib/i18n.ts";
 import { demoModeClient } from "../clients/demo-mode.ts";
 import { adminClient } from "../clients/admin.ts";
 import {
-  ACTIVE_POLL_MS,
   type Anchor,
   CUSTOMER_COLOR,
   fitScale,
@@ -236,9 +235,11 @@ import {
 } from "../../shared/demo-mode/pill.ts";
 import { createPillSync } from "../../shared/demo-mode/pill-sync.ts";
 import {
+  activeAskDelay,
   afterActiveCheck,
   behindSeconds,
   frameReady,
+  sameDemo,
   stageFrameLook,
   stageStatus,
   STYLE_WAIT_MS,
@@ -260,11 +261,6 @@ interface Screen {
   h: number;
   path: string;
 }
-
-/** the same demo with the same presenters (a roster change re-renders, a poll's echo does not) */
-const sameDemo = (a: Demo | null, b: Demo) =>
-  a?.id === b.id &&
-  JSON.stringify(a.presenters) === JSON.stringify(b.presenters);
 
 const Z = 2147483000;
 /** REQ-636 — a `pill` message from the customer */
@@ -1238,7 +1234,9 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
     return () => ro.disconnect();
   }, [hasPill]);
 
-  // 1. which demo: on load, every 5 s while the customer's app is not connected
+  // 1. which demo: on load, every 5 s while the customer's app is not connected; REQ-817 (cycle
+  //    dm1, m3) — every ACTIVE_NAME_REFRESH_MS while it is, and when their next page joins, so a
+  //    name they save mid-demo reaches the pill and their cursor (sameDemo compares the names)
   useEffect(() => {
     let alive = true;
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -1266,8 +1264,8 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
       } catch {
         // signed out, or the backend is away
       }
-      if (alive && !peerOnlineRef.current) {
-        timer = setTimeout(check, ACTIVE_POLL_MS);
+      if (alive) {
+        timer = setTimeout(check, activeAskDelay(peerOnlineRef.current));
       }
     };
     pollRef.current = () => void check();
@@ -1466,6 +1464,8 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
         // dropped by the link)
         pills.reset();
         linkRef.current?.send({ k: "askPill" });
+        // REQ-817 (cycle dm1, m3) — their next page (after saving a name, say): ask who they are
+        pollRef.current?.();
       },
       onPeerTab: (cid, tab) => {
         // REQ-645 (cycle 5 m36) — the followed socket says which browser tab it is only now: another
