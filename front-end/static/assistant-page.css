@@ -9532,14 +9532,17 @@ body {
 
 /* REQ-035 (NW-55): "How do you want to send to customer?" dialog. */
 .send-dialog__backdrop {
+  /* REQ-859 (demo dm4 m4): pinned at a fixed top, never centred — opening "What they'll get"
+     grows the dialog downward, so the summary just clicked stays under the cursor. */
+  --send-dialog-top: max(16px, 10vh);
   position: fixed;
   inset: 0;
   z-index: 60;
   background: rgba(20, 44, 48, 0.45);
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: center;
-  padding: 16px;
+  padding: var(--send-dialog-top) 16px 16px;
 }
 .send-dialog {
   width: min(420px, 100%);
@@ -9624,7 +9627,7 @@ body {
 
 /* REQ-461 (demo m8): "Sends in" + the collapsed "What they'll get". */
 .send-dialog {
-  max-height: calc(100vh - 32px);
+  max-height: calc(100vh - var(--send-dialog-top, 16px) - 16px);
   overflow-y: auto;
 }
 .send-dialog__preview-wrap {
