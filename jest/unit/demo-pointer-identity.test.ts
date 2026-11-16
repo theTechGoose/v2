@@ -1013,6 +1013,9 @@ describe("REQ-645 the replay: a node's print, and the one laid-out node with a p
       top: 0,
       width: 420,
       height: 800,
+      // REQ-867 (demo dm4 m6) — the ways a scroll can reach it: this fake DOM has no scroll
+      // metrics, so every way is open (the cue as before)
+      room: { left: true, right: true, up: true, down: true },
     });
     expect(rep.clipOf!({ id: 99_999, x: 0.5, y: 0.5 })).toBeNull();
   });

@@ -446,6 +446,17 @@ export function keptFor(
 export interface Dir {
   dx: -1 | 0 | 1;
   dy: -1 | 0 | 1;
+  /** REQ-867 (demo dm4 m6) — no scroll can bring it into view that way (an item in a closed
+   *  off-canvas drawer): the cue says it is hidden, never "scroll" */
+  hidden?: true;
+}
+
+/** REQ-867 (demo dm4 m6) — which ways an element's scrollers can still scroll (`scrollRoom`) */
+export interface Room {
+  left: boolean;
+  right: boolean;
+  up: boolean;
+  down: boolean;
 }
 
 /** REQ-645 — where an anchor's point `p` is drawn against `box`, the box its element can be seen
@@ -454,7 +465,7 @@ export interface Dir {
  *  a chevron with a cue there, never an arrow over the page's chrome */
 export function placeView(
   p: Pt,
-  box: Rect,
+  box: Rect & { room?: Room | null },
   arrow: { w: number; h: number } = ARROW_BOX,
 ): { at: Pt; outside: boolean; dir: Dir | null } {
   if (!outsideBox(p, box)) {
@@ -462,17 +473,26 @@ export function placeView(
   }
   const dx = p.x < box.left ? -1 : p.x > box.left + box.width ? 1 : 0;
   const dy = p.y < box.top ? -1 : p.y > box.top + box.height ? 1 : 0;
-  return { ...placeIn(p, box, arrow), dir: { dx, dy } };
+  // REQ-867 (demo dm4 m6) — a way no scroller can go (`box.room`, from `scrollRoom`): hidden
+  const r = box.room;
+  const stuck = !!r &&
+    ((dx < 0 && !r.left) || (dx > 0 && !r.right) ||
+      (dy < 0 && !r.up) || (dy > 0 && !r.down));
+  const dir: Dir = stuck ? { dx, dy, hidden: true } : { dx, dy };
+  return { ...placeIn(p, box, arrow), dir };
 }
 
 /** REQ-645 — the words for the way to an element out of view (up / down first) */
 export function cueKey(
-  dir: { dx: number; dy: number },
+  dir: { dx: number; dy: number; hidden?: boolean },
 ):
+  | "demoMode.pointerHidden"
   | "demoMode.pointerBelow"
   | "demoMode.pointerAbove"
   | "demoMode.pointerRight"
   | "demoMode.pointerLeft" {
+  // REQ-867 (demo dm4 m6) — nothing can scroll to it: never "scroll ←"
+  if (dir.hidden) return "demoMode.pointerHidden";
   if (dir.dy > 0) return "demoMode.pointerBelow";
   if (dir.dy < 0) return "demoMode.pointerAbove";
   return dir.dx < 0 ? "demoMode.pointerLeft" : "demoMode.pointerRight";
@@ -484,12 +504,14 @@ export function cueKey(
  * `cueKey` words ("{name} is pointing below") stay for colleagues' pointers on the stage.
  */
 export function ownCueKey(
-  dir: { dx: number; dy: number },
+  dir: { dx: number; dy: number; hidden?: boolean },
 ):
+  | "demoMode.pointerGhostCue.hidden"
   | "demoMode.pointerGhostCue.below"
   | "demoMode.pointerGhostCue.above"
   | "demoMode.pointerGhostCue.right"
   | "demoMode.pointerGhostCue.left" {
+  if (dir.hidden) return "demoMode.pointerGhostCue.hidden"; // REQ-867 (demo dm4 m6)
   if (dir.dy > 0) return "demoMode.pointerGhostCue.below";
   if (dir.dy < 0) return "demoMode.pointerGhostCue.above";
   return dir.dx < 0
@@ -503,6 +525,13 @@ export interface ClipNode {
   getBoundingClientRect(): Rect;
   /** its element children (a bar pinned over its other children: a sticky topbar) */
   children?: ArrayLike<ClipNode>;
+  /** REQ-867 — its scroll metrics, as `scrollRoom` reads them (absent: unknown) */
+  scrollLeft?: number;
+  scrollTop?: number;
+  scrollWidth?: number;
+  scrollHeight?: number;
+  clientWidth?: number;
+  clientHeight?: number;
 }
 /** REQ-645 — the bits of its computed style `visibleBox` reads */
 export interface ClipStyle {
@@ -612,6 +641,60 @@ export function visibleBox(
   };
 }
 
+/** REQ-867 (demo dm4 m6) — which ways a scroll can still move `el`: every ancestor that scrolls on
+ *  an axis (overflow auto / scroll / overlay) with room left that way — `scrollLeft > 0` for
+ *  left, `scrollWidth − clientWidth − scrollLeft > 0` for right, the same for up / down — and the
+ *  document (the root, unless its overflow, or the body's it takes, is hidden). A fixed element,
+ *  or one under a fixed ancestor, is moved by nothing above it, so an item in a closed off-canvas
+ *  drawer (fixed, translated off the screen; or on a page as wide as the screen at scrollX 0) can
+ *  be scrolled to no way at all. With no scroll metrics on `el` (a bare box, not an element) every
+ *  way is open, as before. */
+export function scrollRoom(
+  el: ClipNode,
+  styleOf: (e: ClipNode) => ClipStyle | null,
+): Room {
+  const open: Room = { left: true, right: true, up: true, down: true };
+  // a real element always has its metrics; a caller's bare box has none: unknown, every way open
+  if (typeof el.scrollWidth !== "number") return open;
+  const room: Room = { left: false, right: false, up: false, down: false };
+  const scrolls = (o: string | undefined) =>
+    o === "auto" || o === "scroll" || o === "overlay";
+  const add = (a: ClipNode, x: boolean, y: boolean) => {
+    const n = (v: number | undefined) => typeof v === "number" && isFinite(v);
+    if (!n(a.scrollWidth) || !n(a.clientWidth)) return;
+    const sl = Math.abs(a.scrollLeft ?? 0);
+    const st = a.scrollTop ?? 0;
+    if (x) {
+      if (sl > 0.5) room.left = true;
+      if (a.scrollWidth! - a.clientWidth! - sl > 0.5) room.right = true;
+    }
+    if (y && n(a.scrollHeight) && n(a.clientHeight)) {
+      if (st > 0.5) room.up = true;
+      if (a.scrollHeight! - a.clientHeight! - st > 0.5) room.down = true;
+    }
+  };
+  if (styleOf(el)?.position !== "fixed") {
+    let child: ClipNode = el;
+    for (let a = el.parentElement; a; child = a, a = a.parentElement) {
+      const s = styleOf(a);
+      if (!a.parentElement) {
+        // the document's scroller: the root's overflow, or the body's when the root's is visible
+        const own = (o: string | undefined) => !o || o === "visible";
+        const b = child !== el ? styleOf(child) : null;
+        const ox = own(s?.overflowX) ? b?.overflowX : s?.overflowX;
+        const oy = own(s?.overflowY) ? b?.overflowY : s?.overflowY;
+        add(a, own(ox) || scrolls(ox), own(oy) || scrolls(oy));
+        break;
+      }
+      if (s && (scrolls(s.overflowX) || scrolls(s.overflowY))) {
+        add(a, scrolls(s.overflowX), scrolls(s.overflowY));
+      }
+      if (s?.position === "fixed") break;
+    }
+  }
+  return room;
+}
+
 /** the mouse handed over by the page that opened the stage, counted only on the fitted frame */
 export function seedOn(seed: Pt | null, frame: Rect): Pt | null {
   return seed && !outsideBox(seed, frame) ? seed : null;
@@ -693,7 +776,11 @@ export function placedReport(
     ? { k: "placed", pid, a, p, o: 1 }
     : { k: "placed", pid, a, p };
   // REQ-645 + REQ-642 (reconciled on demo-fixes) — out of view that way: a chevron on their screen
-  if (placed.dir) m.d = { dx: placed.dir.dx, dy: placed.dir.dy };
+  if (placed.dir) {
+    m.d = placed.dir.hidden // REQ-867 (demo dm4 m6) — hidden, not a way to scroll
+      ? { dx: placed.dir.dx, dy: placed.dir.dy, h: 1 }
+      : { dx: placed.dir.dx, dy: placed.dir.dy };
+  }
   // REQ-837 (demo dm2 m3) — where its tag went beside the arrow, so the stage draws it there too
   if (tag) {
     m.t = {
@@ -756,7 +843,7 @@ export const PLACED_GAP_MS = 100;
 
 const samePlaced = (x: PlacedMessage | null, y: PlacedMessage) =>
   !!x && x.pid === y.pid && !x.o === !y.o && sameAnchor(x.a, y.a) &&
-  x.d?.dx === y.d?.dx && x.d?.dy === y.d?.dy &&
+  x.d?.dx === y.d?.dx && x.d?.dy === y.d?.dy && x.d?.h === y.d?.h &&
   // REQ-837 — the tag moved (another side, another spot): a new report
   x.t?.s === y.t?.s && x.t?.x === y.t?.x && x.t?.y === y.t?.y &&
   x.t?.w === y.t?.w && x.t?.h === y.t?.h &&
@@ -831,7 +918,12 @@ export function reportedGhost(
 ): { at: Pt; outside: boolean; dir?: Dir | null } | null {
   if (!h.a || h.a.o === 1 || !r?.p || !sameAnchor(r.a, h.a)) return null;
   // REQ-645 + REQ-642 — out of view on their screen: the ghost is their chevron, where it is
-  if (r.d) return { at: fracToPoint(r.p, frame), outside: false, dir: r.d };
+  if (r.d) {
+    const { dx, dy } = r.d;
+    // REQ-867 (demo dm4 m6) — hidden on their screen: hidden on the ghost too
+    const dir: Dir = r.d.h === 1 ? { dx, dy, hidden: true } : { dx, dy };
+    return { at: fracToPoint(r.p, frame), outside: false, dir };
+  }
   const placed = placeIn(fracToPoint(r.p, frame), frame, ARROW_BOX, r.o === 1);
   if (
     !placed.outside && h.at &&

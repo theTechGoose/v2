@@ -197,6 +197,7 @@ import {
   reportedGhost,
   reportedTag,
   resendable,
+  type Room,
   seedUse,
   SEEK_RETRY_MS,
   seekGaveUp,
@@ -700,7 +701,7 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
   /** REQ-645 (c4-M6) — where on the stage the element an anchor names can be seen: the frame
    *  without the customer's band, cut by the replay's clipping ancestors (its scroller, under its
    *  topbar) — never the frame's edge over their topbar's search bar */
-  const visOnStage = (a: Anchor): Rect => {
+  const visOnStage = (a: Anchor): Rect & { room?: Room } => {
     const f = fitBox();
     const frame = {
       left: f.left,
@@ -726,6 +727,7 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
       top,
       width: Math.max(0, right - left),
       height: Math.max(0, bottom - top),
+      room: c.room, // REQ-867 (demo dm4 m6) — the ways a scroll can reach it, for placeView
     };
   };
   /** REQ-451 — what he points at, as the stage keeps it */
@@ -776,6 +778,7 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
     setGhost((was) =>
       was && g && was.outside === g.outside &&
         was.dir?.dx === g.dir?.dx && was.dir?.dy === g.dir?.dy &&
+        was.dir?.hidden === g.dir?.hidden && // REQ-867
         Math.abs(was.at.x - g.at.x) < 0.5 && Math.abs(was.at.y - g.at.y) < 0.5
         ? was
         : g
