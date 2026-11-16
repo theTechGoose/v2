@@ -2039,10 +2039,10 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
                     Math.max(4, 14 * fit.s)
                   }px;background:rgba(31,61,27,.78);color:#fff;pointer-events:none;opacity:${
                     pillFace.dim ? PILL_UNDER_DIALOG_OPACITY : 1
-                  };display:flex;align-items:center;gap:${
-                    Math.max(2, 6 * fit.s)
+                  };display:flex;align-items:center;justify-content:space-between;gap:${
+                    Math.max(2, 10 * fit.s)
                   }px;padding:0 ${
-                    Math.max(2, 8 * fit.s)
+                    Math.max(2, 12 * fit.s)
                   }px;overflow:hidden;${flow.box};font-family:${PILL_FONT};font-size:${px}px;line-height:1.1`}
                 >
                   {words.title && (
@@ -2079,29 +2079,42 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
                   )}
                   {words.ask && (
                     // REQ-822 (demo-loop cycle dm1, m1) — End is asking on their pill: the
-                    // question and both answers in End's place, chips the stage cannot use
-                    <>
+                    // question and both answers in End's place, chips the stage cannot use.
+                    // REQ-851 (dm3, p3) — in ONE group, as EndDemo draws them: wrapping, the
+                    // group takes the row and the answers sit beside the question when they fit
+                    <span
+                      data-cy="demo-pill-ghost-asking"
+                      style={`${flow.ask};gap:${Math.max(2, 8 * fit.s)}px`}
+                    >
                       <strong
                         data-cy="demo-pill-ghost-ask"
-                        style={flow.ask}
+                        style={flow.q}
                       >
                         {words.ask}
                       </strong>
                       <span
                         data-cy="demo-pill-ghost-yes"
                         aria-disabled="true"
-                        style="flex:none;padding:1px 5px;border-radius:5px;background:#c62828;color:#fff;font-weight:700;opacity:.75"
+                        style={`flex:none;padding:${5 * fit.s}px ${
+                          12 * fit.s
+                        }px;border-radius:${8 * fit.s}px;font-size:${
+                          Math.max(6, 12 * fit.s)
+                        }px;background:#c62828;color:#fff;font-weight:700;opacity:.75`}
                       >
                         {words.yes}
                       </span>
                       <span
                         data-cy="demo-pill-ghost-no"
                         aria-disabled="true"
-                        style="flex:none;text-decoration:underline;font-weight:600;opacity:.75"
+                        style={`flex:none;padding:${5 * fit.s}px ${
+                          6 * fit.s
+                        }px;font-size:${
+                          Math.max(6, 12 * fit.s)
+                        }px;text-decoration:underline;font-weight:600;opacity:.75`}
                       >
                         {words.no}
                       </span>
-                    </>
+                    </span>
                   )}
                   {words.end && (
                     // REQ-540 (cycle 4, m9) — the pill's End, drawn as a chip the stage cannot use

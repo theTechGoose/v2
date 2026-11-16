@@ -1808,9 +1808,16 @@ export default function DemoModeOverlay(
     addEventListener("resize", onResize);
     // REQ-545 — what scrolls into the bottom strip tucks the pill (any scroller: capture)
     addEventListener("scroll", later, { capture: true, passive: true });
+    // REQ-851 (demo-loop cycle dm3, p3) — End asking: the pill's wrap reflow (a taller pill, a
+    // new row) is clamped and sent at once — a size change fires no transitionend, and the
+    // stage's ghost must not keep the pre-wrap box for the debounce
+    const resized = () => {
+      if (pillRef.current?.querySelector('[data-cy="demo-end-ask"]')) place();
+      later();
+    };
     const ro = typeof ResizeObserver === "undefined"
       ? null
-      : new ResizeObserver(later);
+      : new ResizeObserver(resized);
     if (pillRef.current) ro?.observe(pillRef.current);
     // REQ-835 (dm2, m2) — the glide ended: the stage hears the box it came to rest in
     const glided = pillRef.current;
