@@ -242,6 +242,15 @@ interface Demo {
 }
 
 const Z = 2147483000;
+/** the pill and its folded tab: above the page, its dialogs and coach mark */
+const PILL_Z = Z + 3;
+/**
+ * REQ-831 (demo-loop cycle dm2, m4) — the presenters' pointers sit above the pill (wave clip at
+ * POINTER_Z, arrow at POINTER_Z + 1), as on the stage (ghost at Z, pointer at Z + 1): the pill's
+ * End question is something to point at. Both are pointer-events:none, so its buttons still
+ * take the click; the off-screen mark keeps OFF_MARK_Z (REQ-635).
+ */
+const POINTER_Z = PILL_Z + 1;
 /** REQ-379 (M28) — the pill lets a click through to the page; its buttons take theirs */
 const HIT = "pointer-events:auto";
 /** REQ-536 — the customer pill's status chip ("Connected"), in the toggle or on its own */
@@ -1686,15 +1695,14 @@ export default function DemoModeOverlay(
       noGlide
         ? "transition:none"
         : `transition:transform ${PILL_MOVE_MS}ms ease`}`;
-  const pillStyle = `position:fixed;${at};z-index:${
-    Z + 3
-  };display:flex;gap:10px;align-items:center;justify-content:space-between;flex-wrap:nowrap;white-space:nowrap;max-width:calc(100vw - ${
-    2 * PILL_MARGIN
-  }px);box-sizing:border-box;padding:7px 12px;border-radius:14px;background:#1f3d1b;color:#fff;font-family:${PILL_FONT};font-size:13px;box-shadow:0 4px 18px rgba(0,0,0,.35);${
-    // REQ-545 — shown whole from its tab, it takes the pointer, so leaving it folds it again
-    tucked ? "pointer-events:auto" : "pointer-events:none"};${
-    // REQ-765 (cycle 5v2, p18-3d) — under a dialog's dim: softened, never hidden, still clickable
-    underDim ? `opacity:${PILL_UNDER_DIALOG_OPACITY}` : "opacity:1"}`;
+  const pillStyle =
+    `position:fixed;${at};z-index:${PILL_Z};display:flex;gap:10px;align-items:center;justify-content:space-between;flex-wrap:nowrap;white-space:nowrap;max-width:calc(100vw - ${
+      2 * PILL_MARGIN
+    }px);box-sizing:border-box;padding:7px 12px;border-radius:14px;background:#1f3d1b;color:#fff;font-family:${PILL_FONT};font-size:13px;box-shadow:0 4px 18px rgba(0,0,0,.35);${
+      // REQ-545 — shown whole from its tab, it takes the pointer, so leaving it folds it again
+      tucked ? "pointer-events:auto" : "pointer-events:none"};${
+      // REQ-765 (cycle 5v2, p18-3d) — under a dialog's dim: softened, never hidden, still clickable
+      underDim ? `opacity:${PILL_UNDER_DIALOG_OPACITY}` : "opacity:1"}`;
   // REQ-545 (demo-loop cycle 4, m2) — the pill folded on the window's left edge, its foot on the
   // home's foot: only its buttons take a click. REQ-637 (cycle 5, m5) — a labelled mini-pill
   // ("● Demo" and an × that is End), never a bare 16 px sliver
@@ -1702,9 +1710,7 @@ export default function DemoModeOverlay(
   // REQ-818 (cycle dm1, m5) — or along the bottom edge, fully round
   const tabR = PILL_TAB.h / 2;
   const tabStyle =
-    `position:fixed;left:0;bottom:calc(100% - var(--vvt, 0px) - var(--vvh, 100%) + ${PILL_BAND_GAP}px);transform:translate(${tabAt.x}px, ${tabAt.y}px);z-index:${
-      Z + 3
-    };display:flex;align-items:stretch;width:${PILL_TAB.w}px;height:${PILL_TAB.h}px;box-sizing:border-box;padding:0;border-radius:${
+    `position:fixed;left:0;bottom:calc(100% - var(--vvt, 0px) - var(--vvh, 100%) + ${PILL_BAND_GAP}px);transform:translate(${tabAt.x}px, ${tabAt.y}px);z-index:${PILL_Z};display:flex;align-items:stretch;width:${PILL_TAB.w}px;height:${PILL_TAB.h}px;box-sizing:border-box;padding:0;border-radius:${
       tabAt.x <= 0
         ? `0 ${tabR}px ${tabR}px 0`
         // REQ-818 (cycle dm1, m5) — along the bottom edge (no window edge beside it): round
@@ -1912,7 +1918,7 @@ export default function DemoModeOverlay(
           key={p.userId}
           name={p.name}
           color={p.color}
-          z={Z + 1}
+          z={POINTER_Z}
           offZ={OFF_MARK_Z}
           cmd={cmds[p.userId] ?? null}
           bounds={viewportBox()}

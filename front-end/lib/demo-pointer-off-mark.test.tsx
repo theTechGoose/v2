@@ -94,14 +94,15 @@ Deno.test("REQ-635 (demo m37) on the customer's screen the off marker sits under
     new RegExp(`z-index:${OFF_MARK_Z}(;|$)`).test(styleOf(box)),
     `off: the pointer's layer is OFF_MARK_Z — ${styleOf(box)}`,
   );
-  // not off: the arrow keeps the overlay's z, above everything
+  // not off: the arrow keeps the overlay's z, above everything — REQ-831 (demo dm2 m4): the
+  // overlay passes POINTER_Z (Z + 4, above the pill's Z + 3), so the arrow is at Z + 5
   const html = renderToString(
     <DemoPointer
       pointer={{ x: 100, y: 300 }}
       waves={[]}
       name="Alex"
       color="#7a3fd1"
-      z={2147483001}
+      z={2147483004}
       offZ={OFF_MARK_Z}
       attach={() => {}}
       bounds={phone}
@@ -109,7 +110,7 @@ Deno.test("REQ-635 (demo m37) on the customer's screen the off marker sits under
   );
   const on = new DOMParser().parseFromString(html, "text/html")!
     .querySelector('[data-cy="demo-pointer"]') as Element;
-  assert(/z-index:2147483002/.test(styleOf(on)), styleOf(on));
+  assert(/z-index:2147483005/.test(styleOf(on)), styleOf(on));
 });
 
 Deno.test("REQ-635 offBadge sits the initial on the inner side of the chevron, never past the edge it is off", () => {

@@ -29,7 +29,8 @@ describe("REQ-294 the pill carries the app's own font (demo m21: monospace on th
 
   test("the pill style uses PILL_FONT, never font:inherit", () => {
     const o = read("front-end/islands/DemoModeOverlay.tsx");
-    const pillStyle = o.match(/const pillStyle = `([^`]*)`/)?.[1] ?? "";
+    // REQ-831 — deno fmt may break the template onto the next line
+    const pillStyle = o.match(/const pillStyle =\s*`([^`]*)`/)?.[1] ?? "";
     expect(pillStyle).toContain("font-family:${PILL_FONT}");
     expect(pillStyle).not.toContain("font:inherit");
     expect(o).toMatch(
