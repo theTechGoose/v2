@@ -22,6 +22,8 @@ import "./assets/styles.css";
  * On redirect the returned promise never settles: the page is navigating
  * away, and settling would let the caller flash its generic error copy first.
  */
+import { bounceToLogin } from "./lib/signout-bounce.ts";
+
 const AUTHED_ROUTE_PREFIXES = [
   "/dashboard",
   "/invoices",
@@ -59,6 +61,12 @@ function isApiRequest(input: RequestInfo | URL): boolean {
 }
 
 if (typeof document !== "undefined") {
+  // REQ-907 — the sidebar's sign-out (`pm:logout`, fired before the session dies) owns the
+  // navigation to "/": a poll's 401 in flight meanwhile never bounces the tab to /login
+  let signingOut = false;
+  globalThis.addEventListener("pm:logout", () => {
+    signingOut = true;
+  });
   const originalFetch = globalThis.fetch.bind(globalThis);
   globalThis.fetch = ((
     input: RequestInfo | URL,
@@ -66,8 +74,12 @@ if (typeof document !== "undefined") {
   ): Promise<Response> =>
     originalFetch(input, init).then((res) => {
       if (
-        res.status === 401 && isApiRequest(input) &&
-        isAuthedAppRoute(globalThis.location.pathname)
+        bounceToLogin({
+          status: res.status,
+          api: isApiRequest(input),
+          authed: isAuthedAppRoute(globalThis.location.pathname),
+          signingOut,
+        })
       ) {
         const here = globalThis.location.pathname + globalThis.location.search;
         globalThis.location.assign(`/login?next=${encodeURIComponent(here)}`);
