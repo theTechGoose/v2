@@ -25,7 +25,10 @@ export const handler = define.middleware(async (ctx) => {
   }
   if (user.superAdmin !== true) {
     const gate = await adminGateForRequest(ctx.req);
-    if (gate) return await ctx.render(h(AdminGuideGate, { gate }));
+    // REQ-855 — the gate's EN | ES switch links this same address with ?lang=
+    if (gate) {
+      return await ctx.render(h(AdminGuideGate, { gate, url: ctx.req.url }));
+    }
     return new Response(null, {
       status: 302,
       headers: { Location: "/dashboard" },

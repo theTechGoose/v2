@@ -14,6 +14,43 @@ export function impersonationBannerOn(pathname: string): boolean {
   return pathname.replace(/\/+$/, "") !== STAGE_PATH;
 }
 
+/**
+ * REQ-855 (demo-loop cycle dm3, issue m5) — one notice per page. While this staff presents the demo
+ * the red "Impersonating … Return to your account" bar sat next to the overlay's "Demo mode ·
+ * Guiding {name} · Back to the demo" pill (and on /admin over the REQ-376 guide gate as well): two
+ * vocabularies, two competing exits. The bar is drawn only for an impersonation, never on the stage
+ * (REQ-537), never while this staff presents the demo (the presenter's pill is its notice and
+ * carries the way out), and never over /admin's guide gate — what /admin shows an impersonated
+ * non-super-admin (routes/admin/_middleware.ts), with its own Back to the demo and Return.
+ */
+export function impersonationBarShown(o: {
+  path: string;
+  /** whoami: this session acts as someone */
+  impersonating: boolean;
+  /** whoami: the account it acts as is a super admin (then /admin is the console, not the gate) */
+  superAdmin?: boolean;
+  /** GET /demo-mode/active: this staff presents the demo (role "presenter") */
+  presenting: boolean;
+}): boolean {
+  if (!o.impersonating || o.presenting || !impersonationBannerOn(o.path)) {
+    return false;
+  }
+  return !adminGateShown(o);
+}
+
+/** REQ-855 — does this page show /admin's guide gate (REQ-376): /admin while this browser acts as
+ *  a non-super-admin (routes/admin/_middleware.ts renders it instead of the console). Its card has
+ *  Back to the demo, Return to your account and the EN | ES switch, so neither the red bar nor the
+ *  presenter pill's own exits and switch are drawn beside it. */
+export function adminGateShown(o: {
+  path: string;
+  impersonating: boolean;
+  superAdmin?: boolean;
+}): boolean {
+  const admin = o.path === "/admin" || o.path.startsWith("/admin/");
+  return admin && o.impersonating && o.superAdmin !== true;
+}
+
 /** does the stage pill offer "Leave the demo" next to End — only when others present too */
 export function stageLeaveShown(presenters: number): boolean {
   return presenters > 1;

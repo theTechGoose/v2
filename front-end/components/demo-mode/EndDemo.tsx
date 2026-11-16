@@ -17,6 +17,9 @@
  * REQ-649 (demo-loop cycle 5, m64) — the question is the caller's: the stage keeps "End for
  * everyone?" (`demoMode.endAsk`, a presenter among staff); the customer's pill passes
  * `askKey="demoMode.endAskViewer"` with the guide's name ("End the demo with {name}?").
+ *
+ * REQ-855 (demo-loop cycle dm3, m5) — `outline`: a secondary action in its host (the presenter's
+ * pill off the stage, beside its solid Back to the demo) — outlined, not a second solid button.
  */
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import type { Vars } from "../../lib/i18n.ts";
@@ -24,6 +27,9 @@ import { type EndAsk, endConfirm } from "../../../shared/demo-mode/ended.ts";
 
 const BTN =
   "padding:5px 12px;border-radius:8px;border:0;cursor:pointer;font:inherit;font-size:12px;font-weight:700;pointer-events:auto";
+/** REQ-855 — End as an outlined secondary on a dark pill */
+const OUTLINE =
+  "background:transparent;color:#fff;border:1px solid rgba(255,255,255,.7)";
 
 /** The caller's string lookup (REQ-544). */
 export type DemoT = (key: string, vars?: Vars) => string;
@@ -54,6 +60,7 @@ export default function EndDemo(
     askAtOnce = false,
     askKey,
     askVars,
+    outline = false,
   }: {
     onEnd: () => void;
     disabled?: boolean;
@@ -66,6 +73,8 @@ export default function EndDemo(
     /** REQ-637 (demo-loop cycle 5, m5) — shown already asking: the folded mini-pill's × was End's
      *  first click (Yes still waits END_ARM_MS, so no tap ends a demo on its own) */
     askAtOnce?: boolean;
+    /** REQ-855 — drawn outlined (a secondary beside its host's primary) */
+    outline?: boolean;
   } & EndAskWords,
 ) {
   const words = endDemoWords(t, { askKey, askVars });
@@ -126,7 +135,7 @@ export default function EndDemo(
         data-cy="demo-end"
         disabled={disabled}
         onClick={ask.ask}
-        style={`${BTN};background:#fff;color:#7a2e2e${
+        style={`${BTN};${outline ? OUTLINE : "background:#fff;color:#7a2e2e"}${
           disabled ? ";opacity:.55;cursor:default" : ""
         }`}
       >

@@ -23,13 +23,22 @@
  *
  * REQ-537 (demo-loop cycle 4, m36) — not drawn on the stage (/demo/stage): the stage pill's End is
  * its one exit (and, with other presenters, its "Leave the demo"); every other page keeps the bar.
+ *
+ * REQ-855 (demo-loop cycle dm3, m5) — one notice per page: nor while this staff PRESENTS the demo
+ * (asked of /demo-mode/active on mount, once whoami says impersonating, before anything is drawn —
+ * the presenter's pill is then the notice and carries the way out and the language), nor over
+ * /admin's guide gate (it has both exits). When the overlay says the demo is gone
+ * (DEMO_PRESENTING_EVENT), the bar comes back: an impersonation is never left unsaid.
  */
 import { useEffect, useRef, useState } from "preact/hooks";
 import { adminClient, type WhoAmI } from "../clients/admin.ts";
-import { demoModeClient } from "../clients/demo-mode.ts";
+import { DEMO_PRESENTING_EVENT, demoModeClient } from "../clients/demo-mode.ts";
 import { clearBannerRoom, setBannerRoom } from "../lib/banner-room.ts";
 import { ImpersonationBannerView } from "../components/ImpersonationBannerView.tsx";
-import { impersonationBannerOn } from "../../shared/demo-mode/stage-chrome.ts";
+import {
+  impersonationBannerOn,
+  impersonationBarShown,
+} from "../../shared/demo-mode/stage-chrome.ts";
 
 export default function ImpersonationBanner() {
   const [who, setWho] = useState<WhoAmI | null>(null);
@@ -39,24 +48,43 @@ export default function ImpersonationBanner() {
   const [leaving, setLeaving] = useState<
     { id: string; name: string; presenters: number } | null
   >(null);
+  /** REQ-855 — this staff presents the demo this impersonation is for: the pill is the notice */
+  const [presenting, setPresenting] = useState(false);
   const el = useRef<HTMLDivElement>(null);
   // REQ-537 — on the stage the pill is the one exit: no bar (and no whoami asked for it)
   const [onPage] = useState(() =>
     typeof globalThis.location === "undefined" ||
     impersonationBannerOn(globalThis.location.pathname)
   );
-  const shown = onPage && Boolean(who?.impersonating);
+  const shown = onPage && Boolean(who) && impersonationBarShown({
+    path: globalThis.location?.pathname ?? "",
+    impersonating: who?.impersonating === true,
+    superAdmin: who?.superAdmin === true,
+    presenting,
+  });
 
   useEffect(() => {
     if (!onPage) return;
     let alive = true;
     adminClient.whoami()
-      .then((w) => {
-        if (alive) setWho(w);
+      .then(async (w) => {
+        // REQ-855 — an impersonation is asked whether it is a demo this staff presents BEFORE the
+        // bar can be drawn (no red flash beside the pill); the demo side away: a plain bar
+        const a = w.impersonating
+          ? await demoModeClient.active().catch(() => null)
+          : null;
+        if (!alive) return;
+        setPresenting(a?.role === "presenter" && Boolean(a.session));
+        setWho(w);
       })
       .catch(() => {/* not logged in / backend down — show nothing */});
+    // REQ-855 — the overlay says the presented demo appeared or went while this page is up
+    const onPresenting = (e: Event) =>
+      setPresenting((e as CustomEvent).detail === true);
+    globalThis.addEventListener(DEMO_PRESENTING_EVENT, onPresenting);
     return () => {
       alive = false;
+      globalThis.removeEventListener(DEMO_PRESENTING_EVENT, onPresenting);
     };
   }, []);
 
