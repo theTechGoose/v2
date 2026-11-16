@@ -18,6 +18,19 @@ export interface AddressSuggestion {
   postal: string;
 }
 
+/** REQ-861 — a picked suggestion as an address form's four parts (the
+ *  /settings mailing-address card fills street, city, state and ZIP). */
+export function addressPick(
+  s: AddressSuggestion,
+): { street: string; city: string; state: string; postal: string } {
+  return {
+    street: s.street.trim(),
+    city: s.city.trim(),
+    state: s.state.trim().toUpperCase(),
+    postal: s.postal.trim(),
+  };
+}
+
 /**
  * Autocomplete US street addresses. Returns [] for short queries and on any
  * API failure — autocomplete is a convenience layer, never an error surface.
