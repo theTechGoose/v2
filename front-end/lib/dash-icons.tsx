@@ -277,6 +277,20 @@ export const ICN = {
       <path d="M9 12l2 2 4-4" />
     </>
   ),
+  // REQ-883 — the HR folder (an ID badge) and a connected system (a plug)
+  badge: (
+    <>
+      <rect x="3" y="4" width="18" height="16" rx="2" />
+      <circle cx="9" cy="10" r="2" />
+      <path d="M6 16c0-1.7 1.3-3 3-3s3 1.3 3 3M14 9h4M14 13h4" />
+    </>
+  ),
+  plug: (
+    <>
+      <path d="M9 2v6M15 2v6M7 8h10v3a5 5 0 0 1-10 0z" />
+      <path d="M12 16v6" />
+    </>
+  ),
 } as const;
 
 export type IconName = keyof typeof ICN;

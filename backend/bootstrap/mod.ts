@@ -15,6 +15,8 @@ import { ScheduleInvoiceNudges } from "@paperwork/domain/coordinators/schedule-i
 import { DemoModeModule } from "@demo-mode/mod-root.ts";
 import { TimeclockModule } from "@timeclock/mod-root.ts";
 import { RoofModule } from "@roof/mod-root.ts";
+import { HrModule } from "@hr/mod-root.ts";
+import { HrNotices } from "@hr/domain/coordinators/hr-notices/mod.ts";
 
 @Module({
   imports: [
@@ -29,6 +31,7 @@ import { RoofModule } from "@roof/mod-root.ts";
     DemoModeModule, // REQ-153
     TimeclockModule, // REQ-192
     RoofModule, // REQ-856
+    HrModule, // REQ-883
   ],
 })
 class AppModule {}
@@ -48,36 +51,66 @@ await app.init(AppModule);
 {
   const leads = app.get(CrmLeadCapture);
   const minute = leads.registerSweep();
-  console.log(`[crm-lead-capture] boot sweep started; minute sweep ${minute ? "on a timer" : "not available"}`);
+  console.log(
+    `[crm-lead-capture] boot sweep started; minute sweep ${
+      minute ? "on a timer" : "not available"
+    }`,
+  );
   void leads.drain();
+}
+// REQ-889 — the HR module's 24-hour signing reminders: the same minute sweep (never Deno.cron);
+// every roster read sweeps the account's own too
+{
+  const hr = app.get(HrNotices);
+  const minute = hr.registerSweep();
+  console.log(
+    `[hr/notices] reminder sweep ${minute ? "on a timer" : "not available"}`,
+  );
 }
 // REQ-172 — the field's 9 am schedule texts: the same minute sweep, in each business's time zone
 {
   const notices = app.get(FieldNotices);
   const minute = notices.registerSweep();
-  console.log(`[field/notices] minute sweep ${minute ? "on a timer" : "not available"}`);
+  console.log(
+    `[field/notices] minute sweep ${minute ? "on a timer" : "not available"}`,
+  );
 }
 // REQ-508 (demo cycle 3, m20) — the scheduled-invoice nudges: the same minute timer, a KV lease so
 // one isolate sweeps every account per period; no page view triggers it any more
 {
   const nudges = app.get(ScheduleInvoiceNudges);
   const minute = nudges.registerSweep();
-  console.log(`[schedule-invoice-nudges] minute sweep ${minute ? "on a timer" : "not available"}`);
+  console.log(
+    `[schedule-invoice-nudges] minute sweep ${
+      minute ? "on a timer" : "not available"
+    }`,
+  );
 }
 
 const hono = (app as unknown as {
   app: {
-    fetch: (req: Request, env?: unknown, ctx?: unknown) => Response | Promise<Response>;
+    fetch: (
+      req: Request,
+      env?: unknown,
+      ctx?: unknown,
+    ) => Response | Promise<Response>;
     // Hono middleware signature — keep loose so we don't have to import hono types.
     // deno-lint-ignore no-explicit-any
     use: (handler: (c: any, next: () => Promise<void>) => unknown) => unknown;
   };
 }).app;
 
-function setCorsHeaders(headers: Headers, origin: string, reqHeaders: string): void {
+function setCorsHeaders(
+  headers: Headers,
+  origin: string,
+  reqHeaders: string,
+): void {
   headers.set("access-control-allow-origin", origin);
   headers.set("access-control-allow-credentials", "true");
-  headers.set("access-control-allow-methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS");
+  headers.set(
+    "access-control-allow-methods",
+    "GET, POST, PUT, PATCH, DELETE, OPTIONS",
+  );
   headers.set("access-control-allow-headers", reqHeaders);
   headers.set("access-control-expose-headers", "set-cookie, x-session-id");
   headers.append("vary", "Origin");
@@ -89,10 +122,14 @@ function setCorsHeaders(headers: Headers, origin: string, reqHeaders: string): v
 // responses. This is what mod.ts (worker mode) AND bootstrapServer
 // (standalone mode) both end up calling.
 const innerFetch = hono.fetch.bind(hono);
-hono.fetch = ((req: Request, env?: unknown, ctx?: unknown): Response | Promise<Response> => {
+hono.fetch = ((
+  req: Request,
+  env?: unknown,
+  ctx?: unknown,
+): Response | Promise<Response> => {
   const origin = req.headers.get("origin") ?? "*";
-  const reqHeaders = req.headers.get("access-control-request-headers")
-    ?? "content-type, x-session-id, accept";
+  const reqHeaders = req.headers.get("access-control-request-headers") ??
+    "content-type, x-session-id, accept";
   if (req.method === "OPTIONS") {
     const headers = new Headers();
     setCorsHeaders(headers, origin, reqHeaders);
@@ -101,7 +138,11 @@ hono.fetch = ((req: Request, env?: unknown, ctx?: unknown): Response | Promise<R
   return Promise.resolve(innerFetch(req, env, ctx)).then((res) => {
     const headers = new Headers(res.headers);
     setCorsHeaders(headers, origin, reqHeaders);
-    return new Response(res.body, { status: res.status, statusText: res.statusText, headers });
+    return new Response(res.body, {
+      status: res.status,
+      statusText: res.statusText,
+      headers,
+    });
   });
 }) as typeof hono.fetch;
 
@@ -119,6 +160,9 @@ if (import.meta.main) {
   // Serve through the SAME monkey-patched hono.fetch so CORS applies
   // in standalone mode too. bootstrapServer would create a separate
   // app instance, bypassing our patch.
-  Deno.serve({ port: config.port, hostname: "0.0.0.0" }, (req) => hono.fetch(req));
+  Deno.serve(
+    { port: config.port, hostname: "0.0.0.0" },
+    (req) => hono.fetch(req),
+  );
   console.log(`backendv2 listening on http://localhost:${config.port}`);
 }

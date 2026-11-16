@@ -81,6 +81,21 @@ export const NAV: NavNode<IconName>[] = [
       { id: "admins", icon: "shield", href: "/admins" },
     ],
   },
+  // REQ-883 — HR: new-hire onboarding (the Monster Onboarding prototype folded in): the overview,
+  // the roster, the document library, the departments that drive the packet, the connected
+  // systems, the HR settings.
+  {
+    id: "hr",
+    icon: "badge",
+    items: [
+      { id: "hrHome", icon: "home", href: "/hr" },
+      { id: "hires", icon: "user", href: "/hr/hires" },
+      { id: "hrDocuments", icon: "doc", href: "/hr/documents" },
+      { id: "departments", icon: "batch", href: "/hr/departments" },
+      { id: "hrSystems", icon: "plug", href: "/hr/systems" },
+      { id: "hrSettings", icon: "cog", href: "/hr/settings" },
+    ],
+  },
   // REQ-795 (hotfix, Raphael: "make a data export section at the top level ... call it reports"):
   // pick a slice of the account's data and a date range, download the CSV.
   { id: "reports", icon: "trend", href: "/reports" },

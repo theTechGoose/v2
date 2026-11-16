@@ -30,7 +30,7 @@ describe("REQ-176 the sidebar's root folders", () => {
     expect(nested).not.toContain("quotes");
   });
 
-  test("the root is Dashboard, Customers, Quotes, Outbox, Billing, Field, Admin, Reports (REQ-795) — nothing else (REQ-176 amendment: the field folder is not nested; REQ-361: Field, was Recurring; REQ-773: Quotes; REQ-784: the Outbox row)", () => {
+  test("the root is Dashboard, Customers, Quotes, Outbox, Billing, Field, Admin, HR (REQ-883), Reports (REQ-795) — nothing else (REQ-176 amendment: the field folder is not nested; REQ-361: Field, was Recurring; REQ-773: Quotes; REQ-784: the Outbox row)", () => {
     // REQ-773 (demo dv1-d1): Quotes is on the root, one click from anywhere
     expect(ids([])).toEqual([
       "home",
@@ -40,6 +40,7 @@ describe("REQ-176 the sidebar's root folders", () => {
       "billing",
       "field",
       "manage",
+      "hr", // REQ-883: the HR folder (new-hire onboarding)
       "reports", // REQ-795: the Reports (data export) row
       "tools", // REQ-891: the Tools folder (Satellite measure, REQ-856) — specific tools live off the root
     ]);
@@ -47,6 +48,7 @@ describe("REQ-176 the sidebar's root folders", () => {
       "billing",
       "field",
       "manage",
+      "hr", // REQ-883
       "tools",
     ]);
     // REQ-891 (Raphael: "this tool is very specific, so stick it in a folder on the side called Tools")
