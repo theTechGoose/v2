@@ -228,6 +228,7 @@ import {
 import {
   bandGhostBox,
   bandPaint,
+  ghostDrawsTab,
   ghostFlow,
   ghostWords,
   PILL_FONT,
@@ -1838,6 +1839,10 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
   // this one no longer hears it, so it would only say a stale "Connecting…". REQ-838 (cycle dm2,
   // p4) — nor while the customer is signed out: their pill went with their session
   const pillShown = look.elsewhere || signedOut ? null : pillBox;
+  // REQ-854 (demo-loop cycle dm3, p6) — the ghost is the folded tab when their pill is, and while
+  // awaiting a new page in the tab's box: never the whole pill's words in a tab-sized box
+  const pillTab = pillShown !== null &&
+    ghostDrawsTab(pillFace, pillShown, awaiting);
   const statusLabel = live.key === "ended"
     ? t("demoMode.ended")
     : live.key === "elsewhere"
@@ -1970,7 +1975,7 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
                 />
               );
             })()}
-            {mirrored && pillShown && pillFace.tucked === true && (() => {
+            {mirrored && pillShown && pillTab && (() => {
               // REQ-545 — the pill tucked to its edge tab on their screen: a tab here too.
               // REQ-637 (demo-loop cycle 5, m5) — the labelled mini-pill: "● Demo" and its ×
               const ghost = pillGhost(pillShown, fit);
@@ -2013,7 +2018,7 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
                 </div>
               );
             })()}
-            {mirrored && pillShown && pillFace.tucked !== true && (() => {
+            {mirrored && pillShown && !pillTab && (() => {
               // REQ-372 (cycle 2, m1 + m8) — cut to the frame, and a read-only replica of what
               // the pill says, and a marker when the pill runs off their screen or past the frame.
               // REQ-430 (cycle 3, m4) — its status in the CUSTOMER's words (their pill's label),

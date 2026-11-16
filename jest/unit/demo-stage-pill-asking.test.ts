@@ -168,7 +168,8 @@ describe("REQ-822 (demo-loop cycle dm1, m1) — overlay state is not held for a 
     pills.frame(1_000);
     let shown: PillFace = pills.offer(live, 1_000)!;
     expect(shown.tucked).toBeUndefined();
-    // the stage follows the customer's new page: its guess (untucked, Connecting…), nothing held
+    // the stage follows the customer's new page: its guess (as the old page was — whole here —
+    // Connecting…; REQ-854 keeps a folded page's fold), nothing held
     shown = pillFaceAwaiting(shown);
     pills.reset();
     // the new page's pill: folded to its mini-pill — before its frame has been replayed
