@@ -8,11 +8,13 @@ import { ThreadsController } from "@communications/entrypoints/threads-controlle
 import { CallsController } from "@communications/entrypoints/calls-controller/mod.ts";
 import { VoiceController } from "@communications/entrypoints/voice-controller/mod.ts";
 import { TwilioWebhooksController } from "@communications/entrypoints/twilio-webhooks-controller/mod.ts";
+import { LinesController } from "@communications/entrypoints/lines-controller/mod.ts";
 import { TwilioClient } from "@communications/domain/data/twilio-client/mod.ts";
 import { CommsConfigSource } from "@communications/domain/data/config/mod.ts";
 import { ThreadStore } from "@communications/domain/data/thread-store/mod.ts";
 import { TextMessageStore } from "@communications/domain/data/text-message-store/mod.ts";
 import { CallStore } from "@communications/domain/data/call-store/mod.ts";
+import { LineStore } from "@communications/domain/data/line-store/mod.ts";
 import { SendText } from "@communications/domain/coordinators/send-text/mod.ts";
 import { VerifyWebhook } from "@communications/domain/coordinators/verify-webhook/mod.ts";
 import { ReceiveText } from "@communications/domain/coordinators/receive-text/mod.ts";
@@ -27,6 +29,8 @@ import { RelayDone } from "@communications/domain/coordinators/relay-done/mod.ts
 import { CallStatus } from "@communications/domain/coordinators/call-status/mod.ts";
 import { CallRecording } from "@communications/domain/coordinators/call-recording/mod.ts";
 import { Calls } from "@communications/domain/coordinators/calls/mod.ts";
+import { Lines } from "@communications/domain/coordinators/lines/mod.ts";
+import { LineContext } from "@communications/domain/coordinators/line-context/mod.ts";
 
 /** the same switch as AgentsModule: OpenAI when AGENTS_LLM_CLIENT=openai, the stub otherwise (never the stub in prod) */
 async function selectLLMClass(): Promise<new () => LLMClient> {
@@ -43,9 +47,12 @@ async function selectLLMClass(): Promise<new () => LLMClient> {
 const LlmClientClass = await selectLLMClass();
 
 /**
- * CommunicationsModule — REQ-899..901. The business's own phone line on its
- * own Twilio account: texting (threads per peer), a browser softphone (token,
- * outbound dial, inbound ring), and the AI receptionist over ConversationRelay.
+ * CommunicationsModule — REQ-899..905. A phone line per customer: the env
+ * line (ours, `COMMS_TWILIO_*`, owned by COMMS_ENV_LINE_OWNER) and a line each
+ * customer buys on a Twilio subaccount of ours (REQ-903) — texting (threads
+ * per peer), a browser softphone (token, outbound dial, inbound ring), and
+ * the AI receptionist over ConversationRelay. Every request acts on exactly
+ * one line (REQ-904).
  * A sibling of `communication` (conversations / notifications / email), on purpose.
  *
  *   POST /communications/texts                      send a text
@@ -53,17 +60,24 @@ const LlmClientClass = await selectLLMClass();
  *   GET  /communications/calls[/:id]                the call log
  *   POST /communications/voice/token                softphone token
  *   GET  /communications/voice/relay                ConversationRelay websocket (Twilio)
- *   POST /communications/twilio/*                   Twilio webhooks (signature-gated)
+ *   POST /communications/twilio/*                   Twilio webhooks (per-line signature-gated)
+ *   GET  /communications/numbers/available          numbers for sale (areaCode / contains)
+ *   POST /communications/numbers                    buy one → the user's line
+ *   GET  /communications/line                       the user's line (redacted)
+ *   POST /communications/line/release               give it back
  */
 @Module({
   imports: [UsersModule],
-  controllers: [TextsController, ThreadsController, CallsController, VoiceController, TwilioWebhooksController],
+  controllers: [TextsController, ThreadsController, CallsController, VoiceController, TwilioWebhooksController, LinesController],
   injectables: [
     CommsConfigSource,
     TwilioClient,
     ThreadStore,
     TextMessageStore,
     CallStore,
+    LineStore,
+    LineContext,
+    Lines,
     SendText,
     VerifyWebhook,
     ReceiveText,

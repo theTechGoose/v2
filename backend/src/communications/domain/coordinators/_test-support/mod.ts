@@ -5,6 +5,7 @@ import type { SendMessageInput, SendMessageResult, TwilioClient } from "@communi
 import type { ThreadStore } from "@communications/domain/data/thread-store/mod.ts";
 import type { TextMessageStore } from "@communications/domain/data/text-message-store/mod.ts";
 import type { CallStore } from "@communications/domain/data/call-store/mod.ts";
+import type { LineStore } from "@communications/domain/data/line-store/mod.ts";
 
 export const LINE = "+18432588463";
 export const PEER = "+15125551234";
@@ -40,13 +41,14 @@ export class CapturingTwilio {
 }
 export const asTwilio = (c: CapturingTwilio) => c as unknown as TwilioClient;
 
-export async function stores(): Promise<{ threads: ThreadStore; texts: TextMessageStore; calls: CallStore }> {
-  const [{ ThreadStore }, { TextMessageStore }, { CallStore }] = await Promise.all([
+export async function stores(): Promise<{ threads: ThreadStore; texts: TextMessageStore; calls: CallStore; lines: LineStore }> {
+  const [{ ThreadStore }, { TextMessageStore }, { CallStore }, { LineStore }] = await Promise.all([
     import("@communications/domain/data/thread-store/mod.ts"),
     import("@communications/domain/data/text-message-store/mod.ts"),
     import("@communications/domain/data/call-store/mod.ts"),
+    import("@communications/domain/data/line-store/mod.ts"),
   ]);
-  return { threads: new ThreadStore(), texts: new TextMessageStore(), calls: new CallStore() };
+  return { threads: new ThreadStore(), texts: new TextMessageStore(), calls: new CallStore(), lines: new LineStore() };
 }
 
 /** a Twilio-shaped webhook Request, signed with the test token */

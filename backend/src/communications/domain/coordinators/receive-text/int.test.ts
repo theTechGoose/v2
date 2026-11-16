@@ -5,7 +5,7 @@ import { freshLine, LINE, PEER, stores } from "../_test-support/mod.ts";
 import { ReceiveText } from "./mod.ts";
 
 Deno.test("REQ-899 receive-text int: records the inbound text (received, with MMS urls) and bumps the thread's unread count", async () => {
-  const { restore, cfg } = await freshLine();
+  const { restore } = await freshLine();
   try {
     const s = await stores();
     const r = new ReceiveText(s.threads, s.texts);
@@ -25,7 +25,7 @@ Deno.test("REQ-899 receive-text int: records the inbound text (received, with MM
 });
 
 Deno.test("REQ-899 receive-text int: the same MessageSid delivered twice is stored once", async () => {
-  const { restore, cfg } = await freshLine();
+  const { restore } = await freshLine();
   try {
     const s = await stores();
     const r = new ReceiveText(s.threads, s.texts);

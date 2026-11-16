@@ -110,3 +110,58 @@ export function safePhone(input: string | undefined): string {
     return "";
   }
 }
+
+// ── REQ-903..905 — a customer's own line on its own Twilio subaccount ──────────
+
+export type LineStatus = "active" | "released";
+
+/** stored record: the two secrets are sealed with secret-box (REQ-212) and never leave the server */
+export interface Line {
+  id: string;
+  userId: string;
+  kind: "subaccount";
+  subaccountSid: string;
+  /** E.164 */
+  number: string;
+  /** Twilio IncomingPhoneNumber SID (PN…) */
+  numberSid: string;
+  apiKeySid: string;
+  twimlAppSid: string;
+  friendlyName?: string;
+  status: LineStatus;
+  authTokenSealed: string;
+  apiKeySecretSealed: string;
+  createdAt: string;
+  updatedAt: string;
+  releasedAt?: string;
+}
+
+export type PublicLine = Omit<Line, "authTokenSealed" | "apiKeySecretSealed">;
+
+/** what the app may see of a line */
+export function redactLine(line: Line): PublicLine {
+  const { authTokenSealed: _a, apiKeySecretSealed: _b, ...pub } = line;
+  return pub;
+}
+
+export interface AvailableNumber {
+  phoneNumber: string;
+  friendlyName: string;
+  locality: string;
+  region: string;
+  capabilities: { voice: boolean; sms: boolean; mms: boolean };
+}
+
+export interface BuyNumberInput {
+  phoneNumber: string;
+  friendlyName?: string;
+}
+
+export function parseBuyNumber(body: unknown): BuyNumberInput {
+  const b = (body ?? {}) as Record<string, unknown>;
+  if (typeof b.phoneNumber !== "string" || !b.phoneNumber.trim()) throw new BadRequestError("phoneNumber is required");
+  const phoneNumber = safePhone(b.phoneNumber);
+  if (!phoneNumber) throw new BadRequestError("phoneNumber must be a valid phone number");
+  const friendlyName = typeof b.friendlyName === "string" ? b.friendlyName.trim().slice(0, 64) : "";
+  return { phoneNumber, ...(friendlyName ? { friendlyName } : {}) };
+}

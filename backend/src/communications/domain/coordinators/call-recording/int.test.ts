@@ -5,7 +5,7 @@ import { freshLine, LINE, PEER, stores } from "../_test-support/mod.ts";
 import { CallRecording } from "./mod.ts";
 
 Deno.test("REQ-900 call-recording int: completed → sid, url, duration on the call; in-progress ignored; unknown → null", async () => {
-  const { restore, cfg } = await freshLine();
+  const { restore } = await freshLine();
   try {
     const s = await stores();
     await s.calls.create({ line: LINE, peer: PEER, direction: "inbound", providerSid: "CA1", status: "completed", handledBy: "voicemail" });

@@ -5,7 +5,7 @@ import { freshLine, LINE, PEER, stores } from "../_test-support/mod.ts";
 import { RelayDone } from "./mod.ts";
 
 Deno.test("REQ-901 relay-done int: stores SessionStatus + HandoffData and answers Hangup; unknown call still hangs up", async () => {
-  const { restore, cfg } = await freshLine();
+  const { restore } = await freshLine();
   try {
     const s = await stores();
     const call = await s.calls.create({ line: LINE, peer: PEER, direction: "inbound", providerSid: "CA1", status: "in-progress", handledBy: "agent" });

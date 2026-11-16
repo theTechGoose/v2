@@ -2,6 +2,7 @@
 import { Injectable } from "#danet/core";
 import { safePhone } from "@communications/dto/mod.ts";
 import { CommsConfigSource, publicUrl, ROUTES, wsUrl } from "@communications/domain/data/config/mod.ts";
+import { envLine, type ResolvedLine } from "@communications/domain/business/line-resolution/mod.ts";
 import { selectFallback } from "@communications/domain/business/fallback/mod.ts";
 import { connectRelay, forwardTo, hangup, record } from "@communications/domain/business/twiml/mod.ts";
 import { CallStore } from "@communications/domain/data/call-store/mod.ts";
@@ -11,8 +12,10 @@ import { ThreadStore } from "@communications/domain/data/thread-store/mod.ts";
 export class VoiceUnanswered {
   constructor(private calls: CallStore, private threads: ThreadStore, private cfgSource: CommsConfigSource) {}
 
-  async handle(params: Record<string, string>): Promise<string> {
+  /** `on`: the line that rang (REQ-904); the env line when absent */
+  async handle(params: Record<string, string>, on?: ResolvedLine): Promise<string> {
     const cfg = this.cfgSource.get();
+    const resolved = on ?? envLine(cfg);
     const arm = selectFallback({ mode: cfg.fallback, forwardTo: cfg.forwardTo }, params.DialCallStatus ?? "");
     const call = params.CallSid ? await this.calls.findBySid(params.CallSid) : null;
     const taken = arm === "hangup" && ["completed", "answered"].includes(params.DialCallStatus ?? "");
@@ -22,7 +25,7 @@ export class VoiceUnanswered {
         await this.threads.touch({ line: call.line, peer: call.peer, at: new Date().toISOString(), preview: "Missed call", unread: true });
       }
     }
-    const line = cfg.from || safePhone(params.To ?? "");
+    const line = resolved.number || safePhone(params.To ?? "");
     switch (arm) {
       case "agent":
         return connectRelay({

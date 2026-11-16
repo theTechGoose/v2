@@ -5,7 +5,7 @@ import { freshLine, LINE, PEER, stores } from "../_test-support/mod.ts";
 import { CallStatus } from "./mod.ts";
 
 Deno.test("REQ-900 call-status int: in-progress stamps startedAt; completed stamps endedAt + duration; a child leg patches via ParentCallSid; unknown → null", async () => {
-  const { restore, cfg } = await freshLine();
+  const { restore } = await freshLine();
   try {
     const s = await stores();
     await s.calls.create({ line: LINE, peer: PEER, direction: "outbound", providerSid: "CAparent", status: "initiated", handledBy: "client" });

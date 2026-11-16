@@ -1,7 +1,7 @@
 /**
- * REQ-899..901 — the eight URLs Twilio calls. Every one goes through
- * VerifyWebhook first (403 without Twilio's signature) and answers either
- * TwiML (text/xml) or an empty 204.
+ * REQ-899..901/904 — the eight URLs Twilio calls. Every one goes through
+ * VerifyWebhook first (which line, then 403 without that line's signature)
+ * and answers either TwiML (text/xml) or an empty 204.
  */
 import { Context, Controller, Post } from "#danet/core";
 import type { ExecutionContext } from "#danet/core";
@@ -37,45 +37,48 @@ export class TwilioWebhooksController {
 
   @Post("sms")
   async sms(@Context() ctx: ExecutionContext): Promise<Response> {
-    await this.receiveText.receive(await this.verify.verify(ctx.req.raw));
+    await this.receiveText.receive((await this.verify.verify(ctx.req.raw)).params);
     return twiml(emptyResponse());
   }
 
   @Post("sms-status")
   async smsStatus(@Context() ctx: ExecutionContext): Promise<Response> {
-    await this.textStatus.apply(await this.verify.verify(ctx.req.raw));
+    await this.textStatus.apply((await this.verify.verify(ctx.req.raw)).params);
     return ack();
   }
 
   @Post("voice/outgoing")
   async voiceOutgoing(@Context() ctx: ExecutionContext): Promise<Response> {
-    return twiml(await this.outgoing.handle(await this.verify.verify(ctx.req.raw)));
+    const { params, line } = await this.verify.verify(ctx.req.raw);
+    return twiml(await this.outgoing.handle(params, line));
   }
 
   @Post("voice/incoming")
   async voiceIncoming(@Context() ctx: ExecutionContext): Promise<Response> {
-    return twiml(await this.incoming.handle(await this.verify.verify(ctx.req.raw)));
+    const { params, line } = await this.verify.verify(ctx.req.raw);
+    return twiml(await this.incoming.handle(params, line));
   }
 
   @Post("voice/unanswered")
   async voiceUnanswered(@Context() ctx: ExecutionContext): Promise<Response> {
-    return twiml(await this.unanswered.handle(await this.verify.verify(ctx.req.raw)));
+    const { params, line } = await this.verify.verify(ctx.req.raw);
+    return twiml(await this.unanswered.handle(params, line));
   }
 
   @Post("voice/relay-done")
   async voiceRelayDone(@Context() ctx: ExecutionContext): Promise<Response> {
-    return twiml(await this.relayDone.handle(await this.verify.verify(ctx.req.raw)));
+    return twiml(await this.relayDone.handle((await this.verify.verify(ctx.req.raw)).params));
   }
 
   @Post("voice/status")
   async voiceStatus(@Context() ctx: ExecutionContext): Promise<Response> {
-    await this.callStatus.apply(await this.verify.verify(ctx.req.raw));
+    await this.callStatus.apply((await this.verify.verify(ctx.req.raw)).params);
     return ack();
   }
 
   @Post("voice/recording")
   async voiceRecording(@Context() ctx: ExecutionContext): Promise<Response> {
-    await this.callRecording.apply(await this.verify.verify(ctx.req.raw));
+    await this.callRecording.apply((await this.verify.verify(ctx.req.raw)).params);
     return ack();
   }
 }

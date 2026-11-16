@@ -26,6 +26,8 @@ export interface CommsConfig {
   devMode: boolean;
   /** Twilio REST origin (COMMS_TWILIO_BASE_URL; tests point it at a local server) */
   baseUrl: string;
+  /** the user id that owns the env line (COMMS_ENV_LINE_OWNER); empty → nobody does (REQ-904) */
+  envLineOwner: string;
 }
 
 export const DEFAULT_AGENT_PROMPT =
@@ -55,6 +57,7 @@ export function readCommsConfig(env: (k: string) => string | undefined = (k) => 
     ringIdentities: identities.length ? identities : ["agent_default"],
     devMode: !accountSid,
     baseUrl: (env("COMMS_TWILIO_BASE_URL") ?? "https://api.twilio.com").replace(/\/+$/, ""),
+    envLineOwner: env("COMMS_ENV_LINE_OWNER")?.trim() ?? "",
   };
 }
 

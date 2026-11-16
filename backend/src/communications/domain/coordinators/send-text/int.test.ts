@@ -16,7 +16,7 @@ Deno.test("REQ-899 send-text int: dispatches with the status callback, records q
     assertEquals(out.message.line, LINE);
     assertEquals(out.message.status, "queued");
     assertEquals(out.message.providerSid, "SM1");
-    assertEquals(twilio.sent, [{ to: PEER, body: "On my way", statusCallback: "https://api.test/communications/twilio/sms-status" }]);
+    assertEquals(twilio.sent, [{ to: PEER, body: "On my way", from: LINE, accountSid: "ACtest", statusCallback: "https://api.test/communications/twilio/sms-status" }]);
     const thread = await s.threads.findByPeer(LINE, PEER);
     assertEquals(thread?.lastPreview, "On my way");
     assertEquals(thread?.unreadCount, 0);

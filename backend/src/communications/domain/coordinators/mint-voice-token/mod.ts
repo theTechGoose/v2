@@ -1,30 +1,28 @@
-/** REQ-900 — a softphone token for a signed-in user. */
+/** REQ-900/904 — a softphone token for a signed-in user, from their line's API key. */
 import { Injectable } from "#danet/core";
-import { CommsConfigSource } from "@communications/domain/data/config/mod.ts";
 import { mintVoiceToken, type VoiceToken } from "@communications/domain/business/voice-token/mod.ts";
+import { LineContext } from "@communications/domain/coordinators/line-context/mod.ts";
 
 export class VoiceNotConfiguredError extends Error {
   readonly status: number = 503;
   constructor() {
-    super("voice is not configured: set COMMS_TWILIO_ACCOUNT_SID, COMMS_TWILIO_API_KEY_SID, COMMS_TWILIO_API_KEY_SECRET and COMMS_TWILIO_TWIML_APP_SID");
+    super("voice is not configured on this line: it needs an account SID, an API key (SID + secret) and a TwiML App SID");
     this.name = "VoiceNotConfiguredError";
   }
 }
 
 @Injectable()
 export class MintVoiceToken {
-  constructor(private cfgSource: CommsConfigSource) {}
+  constructor(private lineContext: LineContext) {}
 
-  mint(userId: string): Promise<VoiceToken> {
-    const cfg = this.cfgSource.get();
-    if (!cfg.accountSid || !cfg.apiKeySid || !cfg.apiKeySecret || !cfg.twimlAppSid) {
-      return Promise.reject(new VoiceNotConfiguredError());
-    }
-    return mintVoiceToken({
-      accountSid: cfg.accountSid,
-      apiKeySid: cfg.apiKeySid,
-      apiKeySecret: cfg.apiKeySecret,
-      twimlAppSid: cfg.twimlAppSid,
+  async mint(userId: string): Promise<VoiceToken> {
+    const line = await this.lineContext.forUser(userId);
+    if (!line.accountSid || !line.apiKeySid || !line.apiKeySecret || !line.twimlAppSid) throw new VoiceNotConfiguredError();
+    return await mintVoiceToken({
+      accountSid: line.accountSid,
+      apiKeySid: line.apiKeySid,
+      apiKeySecret: line.apiKeySecret,
+      twimlAppSid: line.twimlAppSid,
       identity: userId,
     });
   }

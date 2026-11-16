@@ -1,11 +1,18 @@
 [MOD] communications
 
 [REQ] text.send(SendTextDto): TextMessageDto
+    // REQ-904: acts on the signed-in user's line: the env line
+    // (COMMS_TWILIO_*) when the user is COMMS_ENV_LINE_OWNER, else their
+    // active bought line, else 409 no_line
+    [NEW] lineResolver
+    lineResolver.forUser(OwnerDto): LineContextDto
+      no-line
     db:thread.upsert(PeerDto): ThreadDto
     ex:twilio.sendMessage(TwilioSendMessageDto): TwilioMessageResultDto
       unauthorized
       rejected
       timeout
+    // sent from the resolved line's account and number
     db:textMessage.save(CreateTextMessageDto): TextMessageDto
     mq:events.emit(DomainEventDto): void
     [NEW] textMessage
@@ -13,6 +20,13 @@
 
 
 [REQ:open] text.receive(TwilioInboundMessageDto): TwimlDto
+    // REQ-904: resolve the line from the form's AccountSid: main account
+    // -> env line; known subaccount -> that line (its auth token unsealed);
+    // unknown or missing -> 403. The signature is then checked with THAT
+    // line's auth token.
+    [NEW] lineResolver
+    lineResolver.forAccount(AccountRefDto): LineContextDto
+      forbidden
     [NEW] twilioSignature
     twilioSignature.verify(TwilioSignedRequestDto): SignatureDecisionDto
       forbidden
@@ -24,6 +38,10 @@
 
 
 [REQ:open] text.status(TwilioMessageStatusDto): OkDto
+    // REQ-904: line from AccountSid (else 403); verify with its token
+    [NEW] lineResolver
+    lineResolver.forAccount(AccountRefDto): LineContextDto
+      forbidden
     [NEW] twilioSignature
     twilioSignature.verify(TwilioSignedRequestDto): SignatureDecisionDto
       forbidden
@@ -34,10 +52,18 @@
 
 
 [REQ] thread.all({}): ThreadListDto
+    // REQ-904: on the user's line (env owner / active bought), else 409
+    [NEW] lineResolver
+    lineResolver.forUser(OwnerDto): LineContextDto
+      no-line
     db:thread.list(OwnerDto): ThreadListDto
 
 
 [REQ] thread.get(PeerQueryDto): ThreadDetailDto
+    // REQ-904: on the user's line (env owner / active bought), else 409
+    [NEW] lineResolver
+    lineResolver.forUser(OwnerDto): LineContextDto
+      no-line
     db:thread.get(PeerDto): ThreadDto
       not-found
     db:textMessage.listByPeer(PeerDto): TextMessageListDto
@@ -48,11 +74,20 @@
 
 
 [REQ] voice.token(VoiceTokenRequestDto): VoiceTokenDto
+    // REQ-904: on the user's line (env owner / active bought), else 409
+    [NEW] lineResolver
+    lineResolver.forUser(OwnerDto): LineContextDto
+      no-line
+    // signed with THAT line's API key; sub = that line's account SID
     [NEW] voiceToken
     voiceToken.mint(VoiceTokenClaimsDto): VoiceTokenDto
 
 
 [REQ:open] voice.outgoing(TwilioVoiceRequestDto): TwimlDto
+    // REQ-904: line from AccountSid (else 403); verify with its token
+    [NEW] lineResolver
+    lineResolver.forAccount(AccountRefDto): LineContextDto
+      forbidden
     [NEW] twilioSignature
     twilioSignature.verify(TwilioSignedRequestDto): SignatureDecisionDto
       forbidden
@@ -62,16 +97,25 @@
 
 
 [REQ:open] voice.incoming(TwilioVoiceRequestDto): TwimlDto
+    // REQ-904: line from AccountSid (else 403); verify with its token
+    [NEW] lineResolver
+    lineResolver.forAccount(AccountRefDto): LineContextDto
+      forbidden
     [NEW] twilioSignature
     twilioSignature.verify(TwilioSignedRequestDto): SignatureDecisionDto
       forbidden
     db:thread.upsert(PeerDto): ThreadDto
     db:call.save(CreateCallDto): CallDto
+    // a bought line rings only its owner's identity (their user id)
     [NEW] twiml
     twiml.ringClients(RingPlanDto): TwimlDto
 
 
 [REQ:open] voice.unanswered(TwilioDialStatusDto): TwimlDto
+    // REQ-904: line from AccountSid (else 403); verify with its token
+    [NEW] lineResolver
+    lineResolver.forAccount(AccountRefDto): LineContextDto
+      forbidden
     [NEW] twilioSignature
     twilioSignature.verify(TwilioSignedRequestDto): SignatureDecisionDto
       forbidden
@@ -101,6 +145,10 @@
 
 
 [REQ:open] voice.relayDone(TwilioConnectActionDto): TwimlDto
+    // REQ-904: line from AccountSid (else 403); verify with its token
+    [NEW] lineResolver
+    lineResolver.forAccount(AccountRefDto): LineContextDto
+      forbidden
     [NEW] twilioSignature
     twilioSignature.verify(TwilioSignedRequestDto): SignatureDecisionDto
       forbidden
@@ -111,6 +159,10 @@
 
 
 [REQ:open] voice.status(TwilioCallStatusDto): OkDto
+    // REQ-904: line from AccountSid (else 403); verify with its token
+    [NEW] lineResolver
+    lineResolver.forAccount(AccountRefDto): LineContextDto
+      forbidden
     [NEW] twilioSignature
     twilioSignature.verify(TwilioSignedRequestDto): SignatureDecisionDto
       forbidden
@@ -121,6 +173,10 @@
 
 
 [REQ:open] voice.recording(TwilioRecordingDto): OkDto
+    // REQ-904: line from AccountSid (else 403); verify with its token
+    [NEW] lineResolver
+    lineResolver.forAccount(AccountRefDto): LineContextDto
+      forbidden
     [NEW] twilioSignature
     twilioSignature.verify(TwilioSignedRequestDto): SignatureDecisionDto
       forbidden
@@ -131,14 +187,96 @@
 
 
 [REQ] call.all(CallListQueryDto): CallListDto
+    // REQ-904: on the user's line (env owner / active bought), else 409
+    [NEW] lineResolver
+    lineResolver.forUser(OwnerDto): LineContextDto
+      no-line
     db:call.list(CallListQueryDto): CallListDto
 
 
 [REQ] call.get(GetByIdDto): CallDto
+    // REQ-904: on the user's line (env owner / active bought), else 409
+    [NEW] lineResolver
+    lineResolver.forUser(OwnerDto): LineContextDto
+      no-line
     db:call.get(GetByIdDto): CallDto
       not-found
 
 
+[REQ] number.available(NumberSearchDto): AvailableNumberListDto
+    // REQ-903: session required; 502 when Twilio fails
+    [NEW] numberSearch
+    numberSearch.validate(NumberSearchDto): TwilioNumberQueryDto
+      missing-criteria
+      bad-area-code
+    // AvailablePhoneNumbers/US/Local: VoiceEnabled, SmsEnabled, PageSize
+    ex:twilio.listAvailableNumbers(TwilioNumberQueryDto): TwilioNumberPageDto
+      rejected
+      timeout
+    numberSearch.toDto(TwilioNumberPageDto): AvailableNumberListDto
+
+
+[REQ] number.buy(BuyNumberDto): PublicLineDto
+    // REQ-903: session required; at most one active line per user
+    db:line.assertNoneActive(OwnerDto): OkDto
+      line-exists
+    // FriendlyName "documonster:<userId>"
+    ex:twilio.createSubaccount(SubaccountRequestDto): SubaccountDto
+      rejected
+      timeout
+    // any failure from here on: close the subaccount (Status=closed), 502
+    ex:twilio.createApiKey(SubaccountRefDto): ApiKeyDto
+      rejected
+      timeout
+    // VoiceUrl = /communications/twilio/voice/outgoing
+    ex:twilio.createTwimlApp(TwimlAppRequestDto): TwimlAppDto
+      rejected
+      timeout
+    // VoiceUrl /twilio/voice/incoming, SmsUrl /twilio/sms,
+    // StatusCallback /twilio/voice/status
+    ex:twilio.buyNumber(BuyNumberRequestDto): IncomingNumberDto
+      rejected
+      timeout
+    // auth token + API key secret sealed with secret-box (REQ-212)
+    [NEW] secretBox
+    secretBox.seal(SecretPairDto): SealedSecretsDto
+    db:line.save(CreateLineDto): LineDto
+    [NEW] lineView
+    lineView.redact(LineDto): PublicLineDto
+
+
+[REQ] line.get({}): LineResultDto
+    // REQ-903: the user's latest line, whatever its status; else line null
+    db:line.latestFor(OwnerDto): LineLookupDto
+    [NEW] lineView
+    lineView.toResult(LineLookupDto): LineResultDto
+
+
+[REQ] line.release({}): LineResultDto
+    // REQ-905: idempotent; threads and calls stay readable
+    db:line.latestFor(OwnerDto): LineLookupDto
+    [NEW] lineView
+    [PLY] lineView.release(LineLookupDto): LineResultDto
+        [CSE] none
+        lineView.toResult(LineLookupDto): LineResultDto
+        [CSE] released
+        // already released: returned untouched, no Twilio calls
+        lineView.toResult(LineLookupDto): LineResultDto
+        [CSE] active
+        ex:twilio.releaseNumber(NumberRefDto): OkDto
+          rejected
+          timeout
+        ex:twilio.closeSubaccount(SubaccountRefDto): OkDto
+          rejected
+          timeout
+        db:line.markReleased(LineReleasePatchDto): LineDto
+        lineView.fromLine(LineDto): LineResultDto
+
+
+[ENT] numbers.available @ GET(NumberSearchDto): AvailableNumberListDto
+[ENT] numbers.buy(BuyNumberDto): PublicLineDto
+[ENT] line.get @ GET({}): LineResultDto
+    [REQ] line.get({}): LineResultDto
 [ENT] texts.send(SendTextDto): TextMessageDto
 [ENT] texts.receive(TwilioInboundMessageDto): TwimlDto
 [ENT] texts.status(TwilioMessageStatusDto): OkDto
@@ -155,6 +293,8 @@
 [ENT] voice.recording(TwilioRecordingDto): OkDto
 [ENT] calls.all @ GET(CallListQueryDto): CallListDto
 [ENT] calls.get @ GET /get/{id}(GetByIdDto): CallDto
+[ENT] line.release({}): LineResultDto
+    [REQ] line.release({}): LineResultDto
 [ENT:ws] relay @ /relay
     frame(RelayFrameDto): RelayReplyDto
 
@@ -323,6 +463,67 @@
 [TYP:from=query] before: string
     an ISO cursor: list calls created before this time
 
+[TYP:from=query,example=843] areaCode: string
+    a 3-digit US area code to search numbers in
+[TYP:from=query] contains: string
+    a number pattern to search for (A-Z, 0-9, *)
+[TYP:int,min=1,max=50,from=query] limit: number
+    how many available numbers to return (at most 50)
+[TYP:example=+18435550123] phoneNumber: string
+    an E.164 phone number offered by or bought from Twilio
+[TYP:example=Main line] friendlyName: string
+    a human label for a number, subaccount or line
+[TYP] locality: string
+    the city of an available number
+[TYP] region: string
+    the state of an available number
+[TYP] capabilities: NumberCapabilitiesDto
+    what an available number supports
+[TYP] voice: boolean
+    whether a number supports voice
+[TYP] sms: boolean
+    whether a number supports SMS
+[TYP] mms: boolean
+    whether a number supports MMS
+[TYP] availableNumber: AvailableNumberDto
+    a nested purchasable number
+[TYP] numberRow: TwilioNumberRowDto
+    a nested Twilio AvailablePhoneNumbers row
+[TYP] voiceEnabled: boolean
+    the Twilio VoiceEnabled search filter
+[TYP] smsEnabled: boolean
+    the Twilio SmsEnabled search filter
+[TYP:example=subaccount] kind: string
+    how a line is provisioned: subaccount
+[TYP:example=AC00000000000000000000000000000001] subaccountSid: string
+    the sid of the Twilio subaccount a line lives on
+[TYP:example=+18435550123] lineNumber: string
+    a line's E.164 phone number (the PublicLine "number" field)
+[TYP:example=PN00000000000000000000000000000000] numberSid: string
+    the Twilio IncomingPhoneNumber sid of a line's number
+[TYP:example=SK00000000000000000000000000000000] apiKeySid: string
+    the sid of the API key a line's voice tokens are signed with
+[TYP] apiKeySecret: string
+    an API key secret (never stored in clear, never returned)
+[TYP:example=AP00000000000000000000000000000000] twimlAppSid: string
+    the sid of a line's TwiML App (outgoing voice)
+[TYP] authToken: string
+    an account auth token (never stored in clear, never returned)
+[TYP] sealedAuthToken: string
+    a subaccount auth token sealed with secret-box (REQ-212)
+[TYP] sealedApiKeySecret: string
+    an API key secret sealed with secret-box (REQ-212)
+[TYP] releasedAt: string
+    an ISO timestamp of when a line was released
+[TYP:url] voiceUrl: string
+    a Twilio Voice webhook URL
+[TYP:url] smsUrl: string
+    a Twilio SMS webhook URL
+[TYP] line: PublicLineDto
+    a nested redacted line
+[TYP] storedLine: LineDto
+    a nested stored line (with sealed secrets)
+
 [DTO] SendTextDto: peer, body, mediaUrl(s)?
     a command to text a peer from the business line
 [DTO] PeerDto: userId, peer
@@ -416,6 +617,61 @@
 [DTO] TwilioRecordingDto: callSid, accountSid, webhookRecordingSid, webhookRecordingUrl, recordingDuration?, recordingStatus
     Twilio's recording-ready callback
 
+[DTO] NumberSearchDto: areaCode?, contains?, limit?
+    a search of purchasable US local numbers
+[DTO] NumberCapabilitiesDto: voice, sms, mms
+    the capabilities of an available number
+[DTO] AvailableNumberDto: phoneNumber, friendlyName, locality, region, capabilities
+    a purchasable number
+[DTO] AvailableNumberListDto: availableNumber(s)
+    the purchasable numbers matching a search (on the wire the key is "numbers")
+[DTO] TwilioNumberQueryDto: areaCode?, contains?, voiceEnabled, smsEnabled, limit
+    a Twilio AvailablePhoneNumbers/US/Local query
+[DTO] TwilioNumberRowDto: phoneNumber, friendlyName, locality?, region?, capabilities
+    one row of Twilio's available-number inventory
+[DTO] TwilioNumberPageDto: numberRow(s)
+    a page of Twilio's available-number inventory
+[DTO] BuyNumberDto: phoneNumber, friendlyName?
+    a command to buy a number as the user's line
+[DTO] SubaccountRequestDto: friendlyName
+    a Twilio subaccount to create
+[DTO] SubaccountDto: subaccountSid, authToken
+    a created Twilio subaccount
+[DTO] SubaccountRefDto: subaccountSid
+    a Twilio subaccount reference
+[DTO] ApiKeyDto: apiKeySid, apiKeySecret
+    an API key created on a subaccount
+[DTO] TwimlAppRequestDto: subaccountSid, voiceUrl
+    a TwiML App to create on a subaccount
+[DTO] TwimlAppDto: twimlAppSid
+    a created TwiML App
+[DTO] BuyNumberRequestDto: subaccountSid, phoneNumber, voiceUrl, smsUrl, statusCallbackUrl
+    a number to buy into a subaccount with its webhooks
+[DTO] IncomingNumberDto: numberSid, phoneNumber
+    a bought Twilio IncomingPhoneNumber
+[DTO] NumberRefDto: subaccountSid, numberSid
+    an IncomingPhoneNumber reference to release
+[DTO] SecretPairDto: authToken, apiKeySecret
+    the secrets to seal before storing a line
+[DTO] SealedSecretsDto: sealedAuthToken, sealedApiKeySecret
+    the sealed secrets of a line
+[DTO] CreateLineDto: userId, kind, subaccountSid, lineNumber, numberSid, apiKeySid, twimlAppSid, friendlyName?, sealedAuthToken, sealedApiKeySecret
+    input to persist a line
+[DTO] LineDto: id, userId, kind, subaccountSid, lineNumber, numberSid, apiKeySid, twimlAppSid, friendlyName?, status, sealedAuthToken, sealedApiKeySecret, createdAt, updatedAt, releasedAt?
+    a stored line, secrets sealed
+[DTO] PublicLineDto: id, userId, kind, subaccountSid, lineNumber, numberSid, apiKeySid, twimlAppSid, friendlyName?, status, createdAt, updatedAt, releasedAt?
+    a line with no sealed fields (status: active, released)
+[DTO] LineLookupDto: storedLine?
+    the user's latest line, if any
+[DTO] LineResultDto: line?
+    the user's line, redacted (absent = null: no line)
+[DTO] LineReleasePatchDto: id, status, releasedAt
+    the patch that marks a line released
+[DTO] AccountRefDto: accountSid
+    the AccountSid a Twilio webhook carries
+[DTO] LineContextDto: userId, accountSid, lineNumber, authToken, apiKeySid, apiKeySecret, twimlAppSid
+    the resolved line a request acts on, secrets unsealed
+
 [NON] textMessage
     a single text message
 [NON] twilioSignature
@@ -430,3 +686,11 @@
     the ConversationRelay protocol state machine
 [NON] ok
     a success marker
+[NON] lineResolver
+    resolves the line a request acts on (user or AccountSid)
+[NON] numberSearch
+    the available-number search validator and mapper
+[NON] secretBox
+    the secret-box sealer (REQ-212)
+[NON] lineView
+    the line redactor and release state machine
