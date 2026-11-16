@@ -166,7 +166,8 @@ export default define.page(function App(ctx) {
         <link rel="apple-touch-icon" href="/logo.png" />
         <title>{tFor(lang, "brand.name")}</title>
         {/* REQ-195 — the motion system: page transitions, entrances, press feedback */}
-        <link rel="stylesheet" href={asset("/motion.css")} />
+        {/* REQ-858 — keyed, or a page's lone unkeyed <Head> link takes its place */}
+        <link key="css-motion" rel="stylesheet" href={asset("/motion.css")} />
         <script
           // Server-built page-transition tagging (no user input).
           // deno-lint-ignore react-no-danger

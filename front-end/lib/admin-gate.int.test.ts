@@ -2,6 +2,7 @@ import { assert, assertEquals } from "@std/assert";
 import { App } from "fresh";
 import type { State } from "../utils.ts";
 import { handler as adminGate } from "../routes/admin/_middleware.ts";
+import AppShell from "../routes/_app.tsx";
 
 /**
  * REQ-376 (demo-loop cycle 2, issues m20 + nc-second-demo) — integration: the real /admin
@@ -253,4 +254,41 @@ Deno.test("REQ-863 (dm4 p5): the gate's EN | ES switch records the presenter's p
   );
   const set = res.headers.get("set-cookie") ?? "";
   assert(/(^|,\s*)pm_demo_lang=es;/.test(set), `Set-Cookie: ${set}`);
+});
+
+/**
+ * REQ-858 (demo-loop cycle dm4, issues m7 + setup-4) — the gate rendered inside the real app
+ * shell loads the app's stylesheets. Fresh dedupes <Head> links by a key that leaves out href, so
+ * the gate's two unkeyed links (dashboard.css, public-lang.css) and _app's unkeyed motion.css
+ * collapsed into public-lang.css alone: the card lost Nunito and the app styling (fleet-0
+ * stdout:85 "document.styleSheets = public-lang.css + 2 inline").
+ */
+Deno.test("REQ-858 (dm4 m7): the guide gate's page links dashboard.css, public-lang.css and the shell's motion.css", async () => {
+  const prev = g.__backendFetch;
+  g.__backendFetch = backend("impersonating", demo);
+  try {
+    const app = new App<State>()
+      // deno-lint-ignore no-explicit-any
+      .appWrapper(AppShell as any)
+      .use(adminGate)
+      .get("/admin", () => new Response("ADMIN CONSOLE"));
+    const res = await app.handler()(
+      new Request("http://app/admin", {
+        headers: { cookie: "pm_session=sess_1" },
+      }),
+    );
+    const html = await res.text();
+    assertEquals(res.status, 200);
+    assert(html.includes('data-cy="admin-gate"'), html.slice(0, 400));
+    const sheets = [...html.matchAll(/<link\b[^>]*rel="stylesheet"[^>]*>/g)]
+      .map((m) => /href="([^"?]+)/.exec(m[0])?.[1] ?? m[0]);
+    for (const css of ["/dashboard.css", "/public-lang.css", "/motion.css"]) {
+      assert(
+        sheets.some((h) => h.endsWith(css)),
+        `${css} is linked: ${JSON.stringify(sheets)}`,
+      );
+    }
+  } finally {
+    g.__backendFetch = prev;
+  }
 });
