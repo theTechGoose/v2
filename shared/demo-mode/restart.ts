@@ -41,8 +41,9 @@ export interface RestartNotice {
 }
 
 export function restartNotice(o: {
-  /** true: say "started a new demo"; false: back to the plain line */
-  onChange: (fresh: boolean) => void;
+  /** true: say "started a new demo"; false: back to the plain line. REQ-833 — `read` with false:
+   *  the customer's input ended it (true) or its clock ran out (false) */
+  onChange: (fresh: boolean, read?: boolean) => void;
   now?: () => number;
   setTimer?: (fn: () => void, ms: number) => unknown;
   clearTimer?: (h: unknown) => void;
@@ -70,13 +71,13 @@ export function restartNotice(o: {
       o.onChange(true);
       timer = setTimer(() => {
         timer = null;
-        o.onChange(false);
+        o.onChange(false, false);
       }, RESTART_SAY_MS);
     },
     touched() {
       if (timer === null || now() - saidAt < RESTART_MIN_MS) return;
       stop();
-      o.onChange(false);
+      o.onChange(false, true);
     },
     dispose: stop,
   };
@@ -96,6 +97,11 @@ export interface JoinGrace {
   live(id: string): void;
   /** this id is already known (carried in from the last page): no grace for it */
   seen(id: string): void;
+  /** REQ-833 (demo-loop cycle dm2, m6) — REQ-298's "started a new demo" line for this id went
+   *  away; `read`: the customer's input ended it. Its clock running out hands over to a fresh
+   *  JOIN_SAY_MS of "{name} is guiding you" (the grace otherwise ran out under the 10 s line).
+   *  Once per arrived id; a stale id, or a line the customer dismissed by acting, says nothing */
+  restartEnded(id: string, read: boolean): void;
   /** the customer pressed or typed: the line has been read (after RESTART_MIN_MS) */
   touched(): void;
   /** stop the clock (unmount) */
@@ -108,6 +114,8 @@ export interface JoinGrace {
  * after its link is up, or until the customer acts after RESTART_MIN_MS, before the pill yields.
  * Once per demo id: a page load that carries the demo in (REQ-535, every link is a full load)
  * calls `seen` and says nothing again.
+ * REQ-833 — after a restart the order is "started a new demo" (REQ-298, ≤ RESTART_SAY_MS), then
+ * "{name} is guiding you" (JOIN_SAY_MS, or until the customer acts), then the pill yields.
  */
 export function joinGrace(o: {
   /** true: keep the whole pill out; false: it may yield again */
@@ -122,6 +130,8 @@ export function joinGrace(o: {
   const known = new Set<string>();
   let current: string | null = null;
   let wentLive = false;
+  /** REQ-833 — the restart's hand-over is still owed to `current` */
+  let owed = false;
   let timer: unknown = null;
   let saidAt = 0;
   const stop = () => {
@@ -142,6 +152,7 @@ export function joinGrace(o: {
       known.add(id);
       current = id;
       wentLive = false;
+      owed = true;
       say();
       o.onChange(true);
     },
@@ -152,6 +163,13 @@ export function joinGrace(o: {
     },
     seen(id) {
       known.add(id);
+    },
+    restartEnded(id, read) {
+      if (id !== current || !owed) return;
+      owed = false;
+      if (read) return;
+      say();
+      o.onChange(true);
     },
     touched() {
       if (timer === null || now() - saidAt < RESTART_MIN_MS) return;

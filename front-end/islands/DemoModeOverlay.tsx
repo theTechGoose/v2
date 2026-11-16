@@ -214,6 +214,7 @@ import {
   PILL_PEEK_MS,
   PILL_TAB,
   PILL_UNDER_DIALOG_OPACITY,
+  pillDetailsShown,
   pillHome,
   pillOverflows,
   pillStore,
@@ -438,7 +439,18 @@ export default function DemoModeOverlay(
   const [fresh, setFresh] = useState(false);
   const restartRef = useRef<RestartNotice | null>(null);
   if (!restartRef.current) {
-    restartRef.current = restartNotice({ onChange: setFresh });
+    // REQ-833 (cycle dm2, m6) — the line's clock running out hands over to the join grace:
+    // "started a new demo", then "{name} is guiding you", then the pill yields
+    restartRef.current = restartNotice({
+      onChange: (on, read) => {
+        setFresh(on);
+        if (on) return;
+        joinRef.current?.restartEnded(
+          demoRef.current?.id ?? "",
+          read === true,
+        );
+      },
+    });
   }
   /** REQ-821 (demo-loop cycle dm1, m9) — a first join: the whole pill ("{name} is guiding you"
    *  with End) shows for a few seconds before it yields, as a restart's line does */
@@ -1864,7 +1876,8 @@ export default function DemoModeOverlay(
   // REQ-373 (demo m2, p13-h) — the guide's first name on the compact pill; the name said once
   const copy = pillCopy({ presenters, status: statusLabel, compact, open, t });
   /** REQ-373 — "● Alex" beside the status while the details are hidden */
-  const showGuide = copy.showShort && !started;
+  //    REQ-833 — nor through a join's grace, when the details row names the guide
+  const showGuide = copy.showShort && !started && !joined;
   // REQ-372 — what this pill shows, for the stage's replica. REQ-430 (cycle 3, m4) — its status
   // in this pill's own words (the customer's language) and the guide's short name when shown
   faceRef.current = {
@@ -1993,9 +2006,17 @@ export default function DemoModeOverlay(
           <>
             <span
               data-cy="demo-details"
-              // REQ-298 — a restart is said even on the phone's compact pill
+              // REQ-298 — a restart is said even on the phone's compact pill; REQ-833 — and a
+              // join's "{name} is guiding you" through its grace
               style={`display:${
-                compact && !open && !started ? "none" : "inline-flex"
+                pillDetailsShown({
+                    compact,
+                    open,
+                    started: started !== null,
+                    joined,
+                  })
+                  ? "inline-flex"
+                  : "none"
               };gap:10px;align-items:center;${
                 compact ? `flex-basis:100%;${wrap}` : cut
               }`}

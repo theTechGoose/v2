@@ -34,6 +34,15 @@ export function pillWraps(
 ): boolean {
   return o.compact && (o.open || o.asking);
 }
+/** REQ-373/298/821/833 — the customer's details row ("{name} is guiding you", or a restart's
+ *  "started a new demo"): the desktop pill always shows it; the phone's compact pill only while
+ *  its details are open, a restart line is up, or a join's grace is up (REQ-833, cycle dm2 m6:
+ *  without `joined` the compact pill never said who is guiding before it folded) */
+export function pillDetailsShown(
+  o: { compact: boolean; open: boolean; started: boolean; joined: boolean },
+): boolean {
+  return !o.compact || o.open || o.started || o.joined;
+}
 /** REQ-294 — the pills' own font: the app's `--font-body` stack, so a pill reads the same on a
  *  page that loads no app stylesheet (the 404 page), where `font:inherit` fell back to the
  *  browser's default face */
