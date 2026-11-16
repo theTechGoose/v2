@@ -1582,10 +1582,11 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
           case "pill": {
             // REQ-636 (cycle 5, m8) — shown with the frame it went out with (held till then)
             // REQ-822 (dm1, m1) — End's question (overlay state only) is not held for a frame
+            // REQ-828 (dm2, p7) — nor the fold that follows it with no frame between
             const p = pills.offer(
               m,
               m.t,
-              pillShowsAtOnce(shownFace, faceOf(m), awaiting),
+              pillShowsAtOnce(shownFace, faceOf(m), awaiting, pills.atOnce()),
             );
             if (p) showPill(p);
             break;

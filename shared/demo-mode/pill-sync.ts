@@ -24,6 +24,9 @@ export interface PillSync<P> {
   due(): P | null;
   /** the stage follows another tab (or page): its clock starts over, nothing held */
   reset(): void;
+  /** REQ-828 (dm2, p7) — the pill on show was shown at once (`now`) and no frame sent after it
+   *  has been replayed since: a fold that follows is part of the same overlay gesture */
+  atOnce(): boolean;
 }
 
 export function createPillSync<P>(
@@ -36,11 +39,15 @@ export function createPillSync<P>(
   let at = -Infinity;
   /** held pills, in arrival order (the channel keeps their order) */
   let held: { p: P; t: number; got: number }[] = [];
+  /** REQ-828 — the stamp of the pill shown at once, while no frame sent after it came (null:
+   *  the pill on show came with its frame) */
+  let quick: number | null = null;
   /** hand on the last of the first `n` held pills */
   const release = (n: number): P | null => {
     if (n <= 0) return null;
     const last = held[n - 1].p;
     held = held.slice(n);
+    quick = null;
     return last;
   };
   return {
@@ -51,6 +58,10 @@ export function createPillSync<P>(
       ) {
         // newer than anything held: what was held is superseded
         held = [];
+        // REQ-828 — an unstamped pill counts as sent now (any later frame ends the chain)
+        quick = instant === true
+          ? (t !== undefined && Number.isFinite(t) ? t : -Infinity)
+          : null;
         return p;
       }
       held.push({ p, t, got: now() });
@@ -59,6 +70,8 @@ export function createPillSync<P>(
     frame(sent) {
       if (sent === undefined || !Number.isFinite(sent)) return null;
       if (sent > at) at = sent;
+      // REQ-828 — a frame sent after the at-once pill: the page may have moved on with it
+      if (quick !== null && sent > quick) quick = null;
       let n = 0;
       while (n < held.length && held[n].t <= at + slack) n++;
       return release(n);
@@ -72,6 +85,10 @@ export function createPillSync<P>(
     reset() {
       at = -Infinity;
       held = [];
+      quick = null;
+    },
+    atOnce() {
+      return quick !== null;
     },
   };
 }
