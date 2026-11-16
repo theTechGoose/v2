@@ -36,8 +36,9 @@ export default define.page((ctx) => {
   return (
     <>
       {
-        /* REQ-294 — the body font: this page links no app stylesheet, so the demo pill (styled
-          inline, in <body> beside this div) fell back to the browser's default face */
+        /* REQ-294 / REQ-825 — the body font and the Inter webfont: this page links no app
+          stylesheet, so error-page.css loads Inter (like demo-stage.css) for the demo pill,
+          styled inline with PILL_FONT in <body> beside this div */
       }
       <Head>
         <link rel="stylesheet" href={asset("/error-page.css")} />

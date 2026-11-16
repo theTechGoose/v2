@@ -20,11 +20,12 @@ const block = (src: string, from: string, to: string) => {
 };
 
 describe("REQ-294 the pill carries the app's own font (demo m21: monospace on the 404 page)", () => {
-  test("PILL_FONT is the app's --font-body stack", () => {
+  test("PILL_FONT is the app's --font-body stack (REQ-825: plus Arial, Helvetica before the generic)", () => {
     const css = read("front-end/static/dashboard.css");
     const body = css.match(/--font-body:\s*([^;]+);/)?.[1].trim();
     expect(body).toBeDefined();
-    expect(PILL_FONT).toBe(body);
+    const named = body!.replace(/,\s*sans-serif$/, "");
+    expect(PILL_FONT).toBe(`${named}, Arial, Helvetica, sans-serif`);
   });
 
   test("the pill style uses PILL_FONT, never font:inherit", () => {
