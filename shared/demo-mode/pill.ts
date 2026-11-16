@@ -815,24 +815,34 @@ export function pillGhostBox(
  * REQ-835 (demo-loop cycle dm2, m2; amends REQ-822 / REQ-540) — how the stage's ghost lays its
  * words out: one row, cut with an ellipsis (the desktop pill), or — when the customer's pill wraps
  * (`pillWraps`: the phone's compact pill, opened or asking) — rows like theirs, words whole, never
- * squeezed to a sliver. `box`: the ghost's flow; `text`: its line; `part`: the guide's name; `ask`: End's question.
+ * squeezed to a sliver. `box`: the ghost's flow; `text`: its line; `part`: the guide's name.
+ *
+ * REQ-851 (demo-loop cycle dm3, p3; amends REQ-835) — End's question is laid out as EndDemo lays
+ * it: `ask` is the GROUP that holds the question and both answers (EndDemo's
+ * `[data-cy=demo-end-ask]` span), `q` the question inside it. Wrapping, the group takes a row of
+ * its own and wraps inside itself (EndDemo's `ownRow`), so the answers sit beside the question
+ * when they fit — the customer's 2 rows, never a third row of answers under the question.
  */
 export function ghostFlow(
   wraps: boolean,
-): { box: string; text: string; part: string; ask: string } {
+): { box: string; text: string; part: string; ask: string; q: string } {
   return wraps
     ? {
       box: "flex-wrap:wrap;align-content:center;white-space:normal",
       text: "flex:0 1 auto;overflow:hidden",
       part: "flex:0 1 auto;overflow:hidden",
-      // the question takes a row of its own, its answers under it (EndDemo's `ownRow`)
-      ask: "flex:1 0 100%;overflow:hidden",
+      // the group (question + answers) takes the row and wraps inside it: EndDemo's `ownRow`
+      ask:
+        "display:inline-flex;align-items:center;flex-wrap:wrap;flex:0 1 100%;min-width:0",
+      q: "flex:0 1 auto;overflow:hidden",
     }
     : {
       box: "flex-wrap:nowrap;white-space:nowrap",
       text: "flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis",
       part: "flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis",
-      ask: "flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis",
+      ask:
+        "display:inline-flex;align-items:center;flex-wrap:nowrap;flex:0 1 auto;min-width:0",
+      q: "flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis",
     };
 }
 

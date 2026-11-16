@@ -207,8 +207,10 @@ describe("REQ-835 (demo-loop cycle dm2, m2 + M2) — the open End question: one 
     expect(w.box).toMatch(/white-space:normal/);
     expect(w.text).not.toMatch(/min-width:0/);
     expect(w.text).not.toMatch(/text-overflow:ellipsis/);
-    // the question on a row of its own, its answers under it, as the customer's pill lays it out
-    expect(w.ask).toMatch(/flex:1 0 100%/);
+    // REQ-851 (dm3, p3) amends: the question GROUP (question + answers) takes the row, as
+    // EndDemo's ownRow does — not the question alone with its answers under it
+    expect(w.ask).toMatch(/flex:0 1 100%/);
+    expect(w.ask).toMatch(/flex-wrap:wrap/);
     const one = ghostFlow(false);
     expect(one.box).toMatch(/white-space:nowrap/);
     expect(one.box).not.toMatch(/flex-wrap:wrap/);

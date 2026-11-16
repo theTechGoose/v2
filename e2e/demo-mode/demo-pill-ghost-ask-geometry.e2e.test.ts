@@ -12,6 +12,11 @@
  * right edge; she taps its × (End). The stage's ghost, in her pixels, is her pill's box (± 3 px),
  * uncut. Her window then narrows to 390×844 with the question still up: her pill stays inside
  * (right ≤ 390 − 12), the ghost is again her pill's box, and it wraps into rows as hers does.
+ *
+ * REQ-851 (demo-loop cycle dm3, p3; amends REQ-835) — "wraps as hers does" is the SAME rows: at
+ * 560 and at 390 the ghost draws as many rows as her pill, Yes on the question's row on both
+ * (EndDemo's ownRow puts the question and its answers in one group that takes the row) — never
+ * the question on a row of its own and the answers under it.
  */
 import { story, type StoryTools } from "#shots";
 
@@ -163,28 +168,75 @@ const ghostProbe = () => {
     ask: g.querySelector("[data-cy='demo-pill-ghost-ask']") !== null,
     wrap: getComputedStyle(g).flexWrap,
     rows: rows(":scope > *"),
-    yesBelowAsk: (() => {
-      const a = g.querySelector("[data-cy='demo-pill-ghost-ask']");
-      const y = g.querySelector("[data-cy='demo-pill-ghost-yes']");
-      return a && y
-        ? y.getBoundingClientRect().top >= a.getBoundingClientRect().bottom - 1
-        : null;
+    // REQ-851 (demo-loop cycle dm3, p3) — the rows as drawn: End's question group counts by
+    // the rows its question and answers sit on (EndDemo's ownRow group, as on the customer's)
+    ...(() => {
+      const items: Element[] = [];
+      for (const c of Array.from(g.children)) {
+        if (c.matches("[data-cy='demo-pill-ghost-asking']")) {
+          items.push(...Array.from(c.children));
+        } else items.push(c);
+      }
+      const mid = (el: Element | null) => {
+        if (!el) return null;
+        const r = el.getBoundingClientRect();
+        return r.width > 0 && r.height > 0
+          ? { c: (r.top + r.bottom) / 2, h: r.height }
+          : null;
+      };
+      const mids = items.map(mid).filter((m) => m !== null)
+        .sort((a, b) => a!.c - b!.c) as { c: number; h: number }[];
+      let n = 0;
+      let last = -Infinity;
+      for (const m of mids) {
+        if (m.c - last > Math.max(3, m.h * 0.3)) n++;
+        last = m.c;
+      }
+      const a = mid(g.querySelector("[data-cy='demo-pill-ghost-ask']"));
+      const y = mid(g.querySelector("[data-cy='demo-pill-ghost-yes']"));
+      return {
+        drawnRows: n,
+        yesBesideAsk: a && y
+          ? Math.abs(a.c - y.c) <= Math.max(3, a.h * 0.3)
+          : null,
+      };
     })(),
   };
 };
 
-/** the customer's pill, and how many rows its children sit on */
+/** REQ-851 (demo-loop cycle dm3, p3) — the customer's pill: the rows its words sit on (End's
+ *  question group counted by its question and answers), and whether Yes is on the question's row */
 const pillRows = () => {
   const pill = document.querySelector<HTMLElement>("[data-cy='demo-pill']");
-  if (!pill) return 0;
-  const tops = new Set<number>();
-  for (
-    const c of Array.from(pill.querySelectorAll<HTMLElement>(":scope > *"))
-  ) {
-    const r = c.getBoundingClientRect();
-    if (r.width > 0 && r.height > 0) tops.add(Math.round(r.top / 4));
+  if (!pill) return { rows: 0, yesBesideAsk: null as boolean | null };
+  const items: Element[] = [];
+  for (const c of Array.from(pill.children)) {
+    if (c.matches("[data-cy='demo-end-ask']")) {
+      items.push(...Array.from(c.children));
+    } else items.push(c);
   }
-  return tops.size;
+  const mid = (el: Element | null | undefined) => {
+    if (!el) return null;
+    const r = el.getBoundingClientRect();
+    return r.width > 0 && r.height > 0
+      ? { c: (r.top + r.bottom) / 2, h: r.height }
+      : null;
+  };
+  const mids = items.map(mid).filter((m) => m !== null)
+    .sort((a, b) => a!.c - b!.c) as { c: number; h: number }[];
+  let rows = 0;
+  let last = -Infinity;
+  for (const m of mids) {
+    if (m.c - last > Math.max(3, m.h * 0.3)) rows++;
+    last = m.c;
+  }
+  const ask = pill.querySelector("[data-cy='demo-end-ask']");
+  const a = mid(ask?.firstElementChild);
+  const y = mid(pill.querySelector("[data-cy='demo-end-confirm']"));
+  return {
+    rows,
+    yesBesideAsk: a && y ? Math.abs(a.c - y.c) <= Math.max(3, a.h * 0.3) : null,
+  };
 };
 
 /** a screenshot, best effort: a busy host's capture error never hides the real failure */
@@ -195,7 +247,7 @@ const snap = async (p: any, o: { path: string }) => {
 
 const near = (a: number, b: number) => Math.abs(a - b) <= 3;
 
-Deno.test("REQ-835 (demo-loop cycle dm2, m2 + M2): End's open question — the stage's ghost is the customer's pill box at 1280 and, after the window narrows to 390, the pill stays inside and the ghost wraps like it", (t) =>
+Deno.test("REQ-835 (demo-loop cycle dm2, m2 + M2) + REQ-851 (dm3, p3): End's open question — the stage's ghost is the customer's pill box at 1280 and, after the window narrows to 560 and 390, the pill stays inside and the ghost draws the same rows as it (Yes beside the question)", (t) =>
   story(t, async ({ page, expect, http, baseUrl, folder }) => {
     await page.setViewportSize({ width: 1280, height: 800 });
     const userPhone = `+1512${digits()}`;
@@ -289,37 +341,46 @@ Deno.test("REQ-835 (demo-loop cycle dm2, m2 + M2): End's open question — the s
       await snap(userPage, { path: `${folder}/desktop-customer.png` });
       await snap(page, { path: `${folder}/desktop-stage.png` });
 
-      // the window narrows to a phone with the question still up (M2)
-      await userPage.setViewportSize({ width: 390, height: 844 });
-      await until(
-        "phone: the asking pill is pulled back inside the narrowed window",
-        async () => {
-          const p = await userPage.evaluate(probe);
-          return p.vw === 390 && p.ask && p.pill && p.pill.left >= 0 &&
-              p.pill.right <= p.vw - 12 && p.pill.top >= 0 &&
-              p.pill.bottom <= p.vh
-            ? null
-            : JSON.stringify(p);
-        },
-        8_000,
-      ).catch(async (e) => {
-        await snap(userPage, { path: `${folder}/phone-customer-RED.png` });
-        throw e;
-      });
-      await userPage.waitForTimeout(500);
-      const seen = await sameBox("phone", 390);
-      // the customer's pill wraps into rows; the ghost wraps the same way
-      const rows = await userPage.evaluate(pillRows);
-      const g = await page.evaluate(ghostProbe);
-      expect(
-        rows > 1 && g !== null && g.wrap === "wrap" && g.rows > 1 &&
-          g.yesBelowAsk === true,
-        `phone: the ghost wraps into rows like the customer's pill (${rows} rows) — ${
-          JSON.stringify(g)
-        } ${seen}`,
-      );
-      await snap(userPage, { path: `${folder}/phone-customer.png` });
-      await snap(page, { path: `${folder}/phone-stage.png` });
+      /** REQ-851 (demo-loop cycle dm3, p3) — the window narrows with the question still up
+       *  (M2): the pill stays inside, the ghost is its box, and the ghost draws the SAME rows as
+       *  the customer's pill, Yes on the question's row exactly when hers is (EndDemo's ownRow
+       *  group). `beside`: Yes must sit beside the question on her pill at this width */
+      const narrowTo = async (vw: number, vh: number, beside: boolean) => {
+        await userPage.setViewportSize({ width: vw, height: vh });
+        await until(
+          `${vw}: the asking pill is pulled back inside the narrowed window`,
+          async () => {
+            const p = await userPage.evaluate(probe);
+            return p.vw === vw && p.ask && p.pill && p.pill.left >= 0 &&
+                p.pill.right <= p.vw - 12 && p.pill.top >= 0 &&
+                p.pill.bottom <= p.vh
+              ? null
+              : JSON.stringify(p);
+          },
+          8_000,
+        ).catch(async (e) => {
+          await snap(userPage, { path: `${folder}/w${vw}-customer-RED.png` });
+          throw e;
+        });
+        await userPage.waitForTimeout(500);
+        const seen = await sameBox(`w${vw}`, vw);
+        const c = await userPage.evaluate(pillRows);
+        const g = await page.evaluate(ghostProbe);
+        await snap(userPage, { path: `${folder}/w${vw}-customer.png` });
+        await snap(page, { path: `${folder}/w${vw}-stage.png` });
+        expect(
+          c.rows > 1 && (!beside || c.yesBesideAsk === true) && g !== null &&
+            g.wrap === "wrap" && g.drawnRows === c.rows &&
+            g.yesBesideAsk === c.yesBesideAsk,
+          `${vw}: the ghost draws the customer's rows (${c.rows} rows, Yes beside the question: ${c.yesBesideAsk}) — ${
+            JSON.stringify(g)
+          } ${seen}`,
+        );
+      };
+      // 560: her 2 rows — the guide and status, then the question with Yes beside it
+      await narrowTo(560, 844, true);
+      // 390: the long English question leaves no room — her answers wrap under it, and so do the ghost's
+      await narrowTo(390, 844, false);
     } finally {
       await userCtx.close();
     }
