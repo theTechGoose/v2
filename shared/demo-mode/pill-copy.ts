@@ -5,6 +5,7 @@
  * labelled by the status alone ("Connected, show details"), so a screen reader hears the name
  * once.
  */
+import type { PillStatus } from "./protocol.ts";
 
 export type Translate = (
   key: string,
@@ -45,4 +46,17 @@ export function pillCopy(o: {
       { status: o.status },
     ),
   };
+}
+
+/**
+ * REQ-838 (demo-loop cycle dm2, p8) — what the customer's pill says of the demo, from its link's
+ * word (`link`: the transport's status) and whether it shows Connected (`live`: showsConnected —
+ * the link is up, or a connected page's carry still runs): the demo ended; Connected; the guide
+ * stepped away — the link is up, has heard who is there, and no stage is ("waiting": his stage
+ * closed, the demo is still open); else Connecting… (the link is opening, joining or lost).
+ */
+export function pillStatusOf(link: string, live: boolean): PillStatus {
+  if (link === "ended") return "ended";
+  if (live) return "live";
+  return link === "waiting" ? "away" : "connecting";
 }

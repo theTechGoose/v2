@@ -225,7 +225,7 @@ import {
   seeThrough,
   tabBox,
 } from "../../shared/demo-mode/pill.ts";
-import { pillCopy } from "../../shared/demo-mode/pill-copy.ts";
+import { pillCopy, pillStatusOf } from "../../shared/demo-mode/pill-copy.ts";
 import type { PillFace, Rect } from "../../shared/demo-mode/protocol.ts";
 
 // REQ-494 / REQ-544 — `t` is the demo chrome's (lib/demo-chrome-t.ts): on /worker it keeps
@@ -1455,6 +1455,9 @@ export default function DemoModeOverlay(
           ask: f.ask,
           yes: f.yes,
           no: f.no,
+          // REQ-838 (dm2, m5 + p4) — this pill's own words for what the stage guesses
+          connectingLabel: f.connectingLabel,
+          endedLabel: f.endedLabel,
         }
         : {};
       const faceKey = JSON.stringify(face);
@@ -1845,7 +1848,16 @@ export default function DemoModeOverlay(
     ? demo.presenters
     : [{ userId: "", name: demo.presenterName, color: "#2f6d29" }];
   const names = presenters.map((p) => p.name).join(", ");
-  const guidingText = presenters.length > 1
+  // REQ-232 (demo-lifecycle-p1) — plain words: is the staff here or not; never how the bytes travel.
+  // REQ-535 — a page loaded from a connected one says Connected through the grace
+  const live = showsConnected(status, carrying, activeOk);
+  // REQ-838 (demo-loop cycle dm2, p8) — the link is up and no stage is: the guide stepped away
+  // and the demo is still open — never "Connecting…" under "{name} is guiding you"
+  const pillStatus = pillStatusOf(status, live);
+  const away = pillStatus === "away";
+  const guidingText = away
+    ? t("demoMode.stillOpen")
+    : presenters.length > 1
     ? t("demoMode.guidingMany", { names })
     : t("demoMode.guiding", { name: names });
   // REQ-298 — just restarted: the line says so (and the pill pulses) before "is guiding you"
@@ -1853,24 +1865,26 @@ export default function DemoModeOverlay(
     ? startedText(demo.presenters, demo.presenterName)
     : null;
   const line = started ? t(started.key, started.vars) : guidingText;
-  // REQ-232 (demo-lifecycle-p1) — plain words: is the staff here or not; never how the bytes travel.
-  // REQ-535 — a page loaded from a connected one says Connected through the grace
-  const live = showsConnected(status, carrying, activeOk);
-  const statusLabel = status === "ended"
+  const statusLabel = pillStatus === "ended"
     ? t("demoMode.ended")
     : live
     ? t("demoMode.connected")
+    : away
+    ? (presenters.length > 1
+      ? t("demoMode.guideAwayMany", { names })
+      : t("demoMode.guideAway", { name: names }))
     : t("demoMode.connecting");
   // REQ-373 (demo m2, p13-h) — the guide's first name on the compact pill; the name said once
   const copy = pillCopy({ presenters, status: statusLabel, compact, open, t });
-  /** REQ-373 — "● Alex" beside the status while the details are hidden */
-  const showGuide = copy.showShort && !started;
+  /** REQ-373 — "● Alex" beside the status while the details are hidden; REQ-838 — not while
+   *  the status names him ("Alex stepped away") */
+  const showGuide = copy.showShort && !started && !away;
   // REQ-372 — what this pill shows, for the stage's replica. REQ-430 (cycle 3, m4) — its status
   // in this pill's own words (the customer's language) and the guide's short name when shown
   faceRef.current = {
     compact,
     open: compact && open,
-    status: status === "ended" ? "ended" : live ? "live" : "connecting",
+    status: pillStatus,
     text: line,
     label: statusLabel,
     guide: showGuide ? copy.shortName : undefined,
@@ -1878,6 +1892,10 @@ export default function DemoModeOverlay(
     // draws the whole pill (it hides the title on the compact pill, as this pill does)
     title: t("demoMode.title"),
     end: t("demoMode.end"),
+    // REQ-838 (demo-loop cycle dm2, m5 + p4) — what the stage says on its own (this app dropped,
+    // its next page joining) in this pill's words: its copy never mixes in the presenter's language
+    connectingLabel: t("demoMode.connecting"),
+    endedLabel: t("demoMode.ended"),
     // REQ-822 (demo-loop cycle dm1, m1) — End is asking: the question and both answers in this
     // pill's own words, so the stage's ghost draws them and the presenter knows
     ...(asking

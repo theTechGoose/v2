@@ -241,18 +241,22 @@ describe("REQ-823 m8 — a same-tab navigation the page cannot tell from a close
     s.link.close();
   });
 
-  test("no other tab is open: a closing page is still 'waiting' at once (REQ-391 m21), and the same tab's next page is followed when it comes", () => {
+  // REQ-823 AMENDMENT (REQ-838, demo-loop cycle dm2, m5) — with no other tab open the closing page
+  // is held the same way: "between" for SILENT_GRACE_MS, never "waiting" at once (the stage's
+  // "Waiting for {name}'s app…" flashed at every address-bar navigation)
+  test("no other tab is open: a closing page is 'between' (held for SILENT_GRACE_MS, REQ-838), and the same tab's next page is followed when it comes", () => {
     jest.useFakeTimers();
     const s = stage();
     s.online("a1");
     s.claim("a1", 100, "tab-A", 1);
     const k = s.statuses.length;
     s.gone("a1", "closing");
-    expect(s.statuses.slice(k)).toEqual(["waiting"]);
+    expect(s.statuses.slice(k)).toEqual(["between"]);
     s.online("a2");
     s.claim("a2", 0, "tab-A");
     expect(s.following()).toBe("a2");
     expect(s.status()).toBe("relay");
+    expect(s.statuses.slice(k)).toEqual(["between", "relay"]);
     s.link.close();
   });
 

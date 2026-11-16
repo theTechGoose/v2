@@ -349,15 +349,21 @@ describe("REQ-391 the stage's link says why the followed tab went", () => {
     };
   }
 
-  test("the tab says it is closing: waiting AT ONCE — no grace, never 'between' (m21)", () => {
+  // REQ-391 AMENDMENT (REQ-838, demo-loop cycle dm2, m5) — an address-bar navigation, page.goto
+  // or the reload button says "closing" too: the last tab closing is "between" for
+  // SILENT_GRACE_MS (its next page may come), then waiting — still long before PRESENCE_GRACE_MS
+  test("the tab says it is closing: 'between' for SILENT_GRACE_MS only, then waiting — not the 5 s grace (m21, REQ-838)", () => {
     jest.useFakeTimers();
     const s = stage();
     s.tab("t1");
     expect(s.status()).toBe("relay");
     const k = s.statuses.length;
     s.tab("t1", false, "closing");
+    expect(s.status()).toBe("between");
+    jest.advanceTimersByTime(SILENT_GRACE_MS + 50);
     expect(s.status()).toBe("waiting");
-    expect(s.since(k)).toEqual(["waiting"]);
+    expect(s.since(k)).toEqual(["between", "waiting"]);
+    expect(SILENT_GRACE_MS).toBeLessThan(PRESENCE_GRACE_MS);
     s.link.close();
   });
 
