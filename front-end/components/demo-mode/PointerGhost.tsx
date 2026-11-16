@@ -20,6 +20,8 @@
  * side and offset their overlay reported, in the stage's px), else placed as above. Out of view
  * (`dir`) it carries the words the customer reads (`cueText`: "Hans is pointing below — scroll ↓",
  * after "You ·"), placed inside the box the element can be seen in (`cueBox`), not only "You".
+ * REQ-843 (demo-loop cycle dm3, p15) — for his own ghost the words are his own (`ownCueKey`:
+ * "You · pointing below — the customer must scroll ↓"), never his name after "You ·".
  */
 import {
   type Pt,

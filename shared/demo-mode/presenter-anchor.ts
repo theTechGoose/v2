@@ -478,6 +478,25 @@ export function cueKey(
   return dir.dx < 0 ? "demoMode.pointerLeft" : "demoMode.pointerRight";
 }
 
+/**
+ * REQ-843 (demo-loop cycle dm3, p15) — the stage's own ghost's words for the way to its element:
+ * second person, no name ("You · pointing below — the customer must scroll ↓"). The customer's
+ * `cueKey` words ("{name} is pointing below") stay for colleagues' pointers on the stage.
+ */
+export function ownCueKey(
+  dir: { dx: number; dy: number },
+):
+  | "demoMode.pointerGhostCue.below"
+  | "demoMode.pointerGhostCue.above"
+  | "demoMode.pointerGhostCue.right"
+  | "demoMode.pointerGhostCue.left" {
+  if (dir.dy > 0) return "demoMode.pointerGhostCue.below";
+  if (dir.dy < 0) return "demoMode.pointerGhostCue.above";
+  return dir.dx < 0
+    ? "demoMode.pointerGhostCue.left"
+    : "demoMode.pointerGhostCue.right";
+}
+
 /** REQ-645 — the bits of an element `visibleBox` reads */
 export interface ClipNode {
   parentElement: ClipNode | null;
