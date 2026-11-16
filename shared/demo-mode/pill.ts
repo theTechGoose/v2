@@ -411,6 +411,34 @@ export function pillSpots(o: {
 }
 
 /**
+ * REQ-866 (demo-loop cycle dm4, m2b) — the whole pill's rows between its home row and the top
+ * one, a pill height plus a gap apart (as `tabSpots`), from home's row up; each at the left edge
+ * (home's), the right edge, then centred. Tried only when every `pillSpots` box holds a control
+ * and the pill may not fold.
+ */
+export function pillRows(o: {
+  home: Rect;
+  view: Size;
+  top?: number;
+  margin?: number;
+}): Rect[] {
+  const margin = o.margin ?? PILL_MARGIN;
+  const top = (o.top ?? 0) + margin;
+  const w = o.home.width;
+  const step = o.home.height + PILL_BAND_GAP;
+  const lefts = [
+    o.home.left,
+    o.view.w - margin - w,
+    Math.round((o.view.w - w) / 2),
+  ].map((l) => Math.max(margin, Math.min(l, o.view.w - margin - w)));
+  const out: Rect[] = [];
+  for (let t = o.home.top - step; t > top; t -= step) {
+    for (const left of new Set(lefts)) out.push({ ...o.home, left, top: t });
+  }
+  return out;
+}
+
+/**
  * REQ-545 (demo-loop cycle 4, m2) — where the pill is right now: it yields to the page, folding
  * to a mini-pill (REQ-637) rather than sitting over it; a dialog docks it (`dockPill`).
  * REQ-781 (demo-loop cycle dv1, d7) — Raphael: "the gap reserved for the demo pill ... that's not
@@ -428,7 +456,8 @@ export function pillSpots(o: {
  *      REQ-818 (cycle dm1, m5): not the left edge blindly — the mini-pill or whole spot with the
  *      fewest controls under it.
  * A public document page (`minimal`) prefers the whole pill (End in reach): 1, 3, then 2. The
- * ended notice (`floats`) and a pill that does not yield never fold: 1, 3, else home.
+ * ended notice (`floats`) and a pill that does not yield never fold: 1, 3, else (REQ-866, cycle
+ * dm4, m2b) the whole spot with the fewest controls under it — home only when none has fewer.
  */
 export function placePill(o: {
   home: Rect;
@@ -439,7 +468,7 @@ export function placePill(o: {
   dialogBox?: Rect;
   minimal?: boolean;
   /** false: a pill that never tucks (a message to read and dismiss) — a dialog still docks it,
-   *  and with no place free it stays home */
+   *  and with no place free of controls it takes the one with the fewest (REQ-866) */
   yields?: boolean;
   /** REQ-643 (demo-loop cycle 5, m9) — a floating message (the ended notice): never folded */
   floats?: boolean;
@@ -487,10 +516,32 @@ export function placePill(o: {
       tabs.find((r) => blocked(r) === 0) ??
       (kept && controls(kept) === 0 ? kept : undefined) ??
       tabs.find((r) => controls(r) === 0);
+  // REQ-866 (demo-loop cycle dm4, m2b) — a pill that may not fold (REQ-821's join grace, REQ-298's
+  // restart line, the ended notice) with no pillSpot free of controls: never home blindly — that
+  // was the sidebar's Log out on /customers at 1280×800, where every pillSpot holds 3 controls
+  // (the sidebar's foot and the footer links below, the topbar above). The rows between
+  // (`pillRows`): the first with nothing of the page under it, else the first with no control;
+  // else the box with the FEWEST controls (tied, the least of the page; then the earlier, home)
+  const standing = (spots: Rect[]) => {
+    const rows = pillRows(o);
+    const free = rows.find((r) => blocked(r) === 0) ??
+      rows.find((r) => controls(r) === 0);
+    if (free) return free;
+    const all = [...spots, ...rows];
+    let best = all[0];
+    for (const r of all.slice(1)) {
+      const d = controls(r) - controls(best);
+      if (d < 0 || (d === 0 && blocked(r) < blocked(best))) best = r;
+    }
+    return best;
+  };
   if (o.dialog) {
     const box = dockPill({ ...o, dialog: o.dialogBox });
     if (box) return whole(box);
-    if (!folds) return whole(o.home);
+    if (!folds) {
+      const spots = pillSpots(o);
+      return whole(spots.find((r) => controls(r) === 0) ?? standing(spots));
+    }
     // REQ-818 (cycle dm1, m5) — no tab spot clear: the one with the fewest controls, not tabs[0]
     return fold(tab() ?? fewest(tabs, controls));
   }
@@ -503,7 +554,7 @@ export function placePill(o: {
   }
   const clear = spots.find((r) => controls(r) === 0);
   if (clear) return whole(clear);
-  if (!folds) return whole(o.home);
+  if (!folds) return whole(standing(spots));
   // REQ-818 (demo-loop cycle dm1, m5) — nothing without a control: the mini-pill or whole spot with
   // the FEWEST controls (a tie keeps the mini-pill, in its order), never tabs[0] blindly — that was
   // the sidebar's Log out button at 1280×800
@@ -582,7 +633,7 @@ export function askSpot(o: {
   size: Size;
   /** how many controls of the page are under a box */
   controls: (r: Rect) => number;
-}): { dock: { x: number; y: number }; fit: Rect } {
+}): { dock: { x: number; y: number }; fit: Rect; controls: number } {
   const at = (dock: { x: number; y: number }) =>
     askDock({ view: o.view, dock, size: o.size });
   const here = at(o.dock);
@@ -591,17 +642,38 @@ export function askSpot(o: {
   const rightX = o.view.w - 2 * PILL_MARGIN - o.size.w;
   const onRight = here.fit.left + here.fit.width / 2 > o.view.w / 2;
   const row = here.dock.y;
-  const tries = [
-    here,
-    at({ x: onRight ? leftX : rightX, y: row }),
-    at({ x: onRight ? rightX : leftX, y: row }),
-    at({ x: leftX, y: 0 }),
-    at({ x: rightX, y: 0 }),
-  ];
+  const midX = Math.round((o.view.w - o.size.w) / 2) - PILL_MARGIN;
+  const tries = function* () {
+    yield here;
+    yield at({ x: onRight ? leftX : rightX, y: row });
+    yield at({ x: onRight ? rightX : leftX, y: row });
+    yield at({ x: leftX, y: 0 });
+    yield at({ x: rightX, y: 0 });
+    // REQ-866 (demo-loop cycle dm4, m2) — every one of those can hold a control (/welcome: the
+    // centred brand in the top row, the footer's centred phone link in the bottom one): a centred
+    // box in those two rows, then the rows between, a pill height plus a gap apart (as tabSpots),
+    // nearest the anchor's row first, each at the anchor's side, the other side, then centred
+    yield at({ x: midX, y: row });
+    yield at({ x: midX, y: 0 });
+    const step = o.size.h + PILL_BAND_GAP;
+    // dock.y of the top row: the pill's top at the margin
+    const topY = PILL_MARGIN + o.size.h - (o.view.h - PILL_BAND_GAP);
+    const rows: number[] = [];
+    for (let k = 1; row - k * step > topY || row + k * step < 0; k++) {
+      // a step down (the foot lower), then a step up, from the anchor's row
+      if (row + k * step < 0) rows.push(row + k * step);
+      if (row - k * step > topY) rows.push(row - k * step);
+    }
+    for (const y of rows) {
+      yield at({ x: onRight ? rightX : leftX, y });
+      yield at({ x: onRight ? leftX : rightX, y });
+      yield at({ x: midX, y });
+    }
+  };
   const seen = new Set<string>();
   let best = here;
   let n = Infinity;
-  for (const t of tries) {
+  for (const t of tries()) {
     const k = `${t.fit.left},${t.fit.top}`;
     if (seen.has(k)) continue;
     seen.add(k);
@@ -612,7 +684,7 @@ export function askSpot(o: {
       if (c === 0) break;
     }
   }
-  return best;
+  return { ...best, controls: n };
 }
 
 /** REQ-835 (cycle dm2, m2) — the translate of a computed `transform` ("none", matrix, matrix3d) */
