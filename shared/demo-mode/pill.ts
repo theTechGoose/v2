@@ -443,6 +443,73 @@ export function keepInView(r: Rect, view: Size, margin = PILL_MARGIN): Rect {
 }
 
 /**
+ * REQ-835 (demo-loop cycle dm2, M2; amends REQ-816 / REQ-228) — the asking pill kept in view at
+ * its size now: anchored at left PILL_MARGIN and its foot PILL_BAND_GAP above the visible bottom,
+ * shifted by `dock`. Run when End's question comes up AND on every re-place while it is up (a
+ * resize, the check interval, a scroll), so a window narrowed under the question pulls it back in.
+ * REQ-300 still holds: a pill that fits keeps its dock (the same object) and does not move.
+ * `fit` is the box it is laid out in with the returned dock.
+ */
+export function askDock(o: {
+  view: Size;
+  dock: { x: number; y: number };
+  size: Size;
+}): { dock: { x: number; y: number }; fit: Rect } {
+  const foot = o.view.h - PILL_BAND_GAP + o.dock.y;
+  const r = {
+    left: PILL_MARGIN + o.dock.x,
+    top: foot - o.size.h,
+    width: o.size.w,
+    height: o.size.h,
+  };
+  const fit = keepInView(r, o.view);
+  if (fit === r) return { dock: o.dock, fit };
+  const dock = {
+    x: Math.round(fit.left - PILL_MARGIN),
+    y: Math.round(o.dock.y + (fit.top - r.top)),
+  };
+  return {
+    dock,
+    fit: {
+      ...fit,
+      left: PILL_MARGIN + dock.x,
+      top: foot - o.size.h + (dock.y - o.dock.y),
+    },
+  };
+}
+
+/** REQ-835 (cycle dm2, m2) — the translate of a computed `transform` ("none", matrix, matrix3d) */
+export function translateOf(css: string): { x: number; y: number } {
+  const m = /^matrix(3d)?\(([^)]*)\)$/.exec(css.trim());
+  if (!m) return { x: 0, y: 0 };
+  const v = m[2].split(",").map((n) => Number(n.trim()));
+  const [x, y] = m[1] ? [v[12], v[13]] : [v[4], v[5]];
+  return {
+    x: Number.isFinite(x) ? x : 0,
+    y: Number.isFinite(y) ? y : 0,
+  };
+}
+
+/**
+ * REQ-835 (cycle dm2, m2) — the box the customer's pill is coming to rest in: its real box (the
+ * element's bounding rect, the dock translate included) less the part of the glide still to go
+ * (`now`: the computed translate; `to`: the dock it glides to). The stage is sent this, never
+ * atRef's left/top with a size measured later (REQ-816 moved the pill without touching atRef).
+ */
+export function pillRestBox(
+  box: Rect,
+  now: { x: number; y: number },
+  to: { x: number; y: number },
+): Rect {
+  return {
+    left: Math.round(box.left - now.x + to.x),
+    top: Math.round(box.top - now.y + to.y),
+    width: Math.round(box.width),
+    height: Math.round(box.height),
+  };
+}
+
+/**
  * REQ-643 (demo-loop cycle 5, p18-3d) — a fixed box that covers the view down to the band is a
  * dialog's backdrop: on a phone the mobile `.app` is transformed, so a backdrop inside it
  * (`position:fixed; inset:0`) covers only the app's box, which ends at the band's top.
@@ -656,6 +723,31 @@ export function pillGhostBox(
   return pillGhost(r, fit)?.box ?? null;
 }
 
+/**
+ * REQ-835 (demo-loop cycle dm2, m2; amends REQ-822 / REQ-540) — how the stage's ghost lays its
+ * words out: one row, cut with an ellipsis (the desktop pill), or — when the customer's pill wraps
+ * (`pillWraps`: the phone's compact pill, opened or asking) — rows like theirs, words whole, never
+ * squeezed to a sliver. `box`: the ghost's flow; `text`: its line; `part`: the guide's name; `ask`: End's question.
+ */
+export function ghostFlow(
+  wraps: boolean,
+): { box: string; text: string; part: string; ask: string } {
+  return wraps
+    ? {
+      box: "flex-wrap:wrap;align-content:center;white-space:normal",
+      text: "flex:0 1 auto;overflow:hidden",
+      part: "flex:0 1 auto;overflow:hidden",
+      // the question takes a row of its own, its answers under it (EndDemo's `ownRow`)
+      ask: "flex:1 0 100%;overflow:hidden",
+    }
+    : {
+      box: "flex-wrap:nowrap;white-space:nowrap",
+      text: "flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis",
+      part: "flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis",
+      ask: "flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis",
+    };
+}
+
 /** REQ-372 — the customer's pill runs off their screen (it would be cut, or the stage's copy is) */
 export function pillOverflows(r: Rect, view: Size, tolerance = 1): boolean {
   return r.left < -tolerance || r.top < -tolerance ||
@@ -737,7 +829,15 @@ export function ghostWords(
 
 /** REQ-822 — the face fields that only the customer's overlay changes (End's question and how
  *  wide it makes the pill): nothing in the mirrored page goes with them */
-const OVERLAY_ONLY = new Set(["asking", "ask", "yes", "no", "clipped"]);
+const OVERLAY_ONLY = new Set([
+  "asking",
+  "ask",
+  "yes",
+  "no",
+  "clipped",
+  // REQ-835 (dm2, m2) — the question wraps the phone's pill: it comes and goes with it
+  "wraps",
+]);
 /** REQ-822 — and the fields the stage's own guess sets after a follow switch (pillFaceAwaiting) */
 const GUESSED = new Set(["status", "label", "tucked"]);
 

@@ -201,6 +201,9 @@ export interface PillFace {
    *  joining) is said in their language, never the presenter's beside their title, line and End */
   connectingLabel?: string;
   endedLabel?: string;
+  /** REQ-835 (demo-loop cycle dm2, m2) — the customer's pill wraps into rows (`pillWraps`: the
+   *  phone's compact pill, opened or asking): the stage's ghost wraps the same way */
+  wraps?: boolean;
 }
 
 /** REQ-545 — a colour the stage may paint: hex, rgb() or rgba() only */
@@ -239,6 +242,7 @@ function parsePillFace(o: Record<string, unknown>): PillFace {
   if (typeof o.endedLabel === "string") {
     f.endedLabel = o.endedLabel.slice(0, PILL_LABEL_MAX);
   }
+  if (typeof o.wraps === "boolean") f.wraps = o.wraps;
   return f;
 }
 

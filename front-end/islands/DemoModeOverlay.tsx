@@ -196,13 +196,13 @@ import {
   whoEnded,
 } from "../../shared/demo-mode/ended.ts";
 import {
+  askDock,
   backdropCovers,
   CONTROL_SELECTOR,
   countsAsPage,
   coversView,
   dialogDim,
   isPublicDocPath,
-  keepInView,
   PAGE_MEDIA_SELECTOR,
   peekBox,
   peekTimer,
@@ -216,6 +216,7 @@ import {
   PILL_UNDER_DIALOG_OPACITY,
   pillHome,
   pillOverflows,
+  pillRestBox,
   pillStore,
   pillWraps,
   placePill,
@@ -224,6 +225,7 @@ import {
   samplePoints,
   seeThrough,
   tabBox,
+  translateOf,
 } from "../../shared/demo-mode/pill.ts";
 import { pillCopy, pillStatusOf } from "../../shared/demo-mode/pill-copy.ts";
 import type { PillFace, Rect } from "../../shared/demo-mode/protocol.ts";
@@ -453,6 +455,9 @@ export default function DemoModeOverlay(
   /** REQ-379 — how far from its home a dialog docked the pill (0: home); a move glides.
    *  REQ-545 (cycle 4, m2) — across too: the top-right is the third place */
   const [dock, setDock] = useState({ x: 0, y: 0 });
+  /** REQ-835 (cycle dm2, m2 + M2) — the dock the pill is gliding to, read outside a render */
+  const dockRef = useRef(dock);
+  dockRef.current = dock;
   /** REQ-545 — where the visible pill (or its tab) is, as told to the stage */
   const atRef = useRef<{ left: number; top: number; tab: boolean } | null>(
     null,
@@ -1410,19 +1415,50 @@ export default function DemoModeOverlay(
   // page where nothing of it is under it, else folds to its mini-pill where no control is, else
   // floats whole where no control is (`placePill`)
   const shown = !inert && Boolean(demo || opening || notice);
+  /** REQ-816 / REQ-835 (demo-loop cycle dm2, M2) — End asking: the pill at its size now, kept
+   *  inside the window — anchored at left PILL_MARGIN and its foot PILL_BAND_GAP above the visible
+   *  bottom. A pill that fits keeps its dock (REQ-300); atRef is the box it fits */
+  const clampAsk = () => {
+    const el = pillRef.current;
+    if (!el || el.hasAttribute("data-tucked")) return;
+    const vv = globalThis.visualViewport;
+    const view = {
+      w: globalThis.innerWidth,
+      h: vv ? vv.offsetTop + vv.height : globalThis.innerHeight,
+    };
+    const { dock: next, fit } = askDock({
+      view,
+      dock: dockRef.current,
+      size: { w: el.offsetWidth, h: el.offsetHeight },
+    });
+    if (next !== dockRef.current) {
+      dockRef.current = next;
+      setDock(next);
+    }
+    atRef.current = { left: fit.left, top: fit.top, tab: false };
+  };
   useEffect(() => {
     if (!shown) return;
     let settle: ReturnType<typeof setTimeout> | undefined;
     const sendPill = () => {
       const el = pillRef.current;
       const at = atRef.current;
+      // REQ-835 (demo-loop cycle dm2, m2) — the whole pill: its REAL box (the dock translate
+      // included), less the glide still to go — never atRef's left/top with a size measured now
+      // (End's question widens it and REQ-816 moves it while place() is frozen)
       const r: Rect | null = el && at
-        ? {
-          left: at.left,
-          top: at.top,
-          width: at.tab ? PILL_TAB.w : el.offsetWidth,
-          height: at.tab ? PILL_TAB.h : el.offsetHeight,
-        }
+        ? at.tab
+          ? {
+            left: at.left,
+            top: at.top,
+            width: PILL_TAB.w,
+            height: PILL_TAB.h,
+          }
+          : pillRestBox(
+            el.getBoundingClientRect(),
+            translateOf(getComputedStyle(el).transform),
+            dockRef.current,
+          )
         : null;
       // REQ-372 (cycle 2, m1) — what the pill says rides along: compact, open, status, text,
       // and whether it runs off this screen (clipped)
@@ -1458,6 +1494,8 @@ export default function DemoModeOverlay(
           // REQ-838 (dm2, m5 + p4) — this pill's own words for what the stage guesses
           connectingLabel: f.connectingLabel,
           endedLabel: f.endedLabel,
+          // REQ-835 (dm2, m2) — it wraps into rows (the phone's pill asking or opened)
+          wraps: f.wraps,
         }
         : {};
       const faceKey = JSON.stringify(face);
@@ -1486,7 +1524,10 @@ export default function DemoModeOverlay(
       // REQ-300 — End's question is up: nothing moves, so the Yes a hand is reaching for stays
       // where it was seen — nor does the page under it (the band keeps its height)
       // REQ-822 (dm1, m1) — the stage still hears what the pill says (End asking), without moving it
+      // REQ-835 (dm2, M2) — still kept inside the window (a resize under the question): it moves
+      // only when it would be off-screen, so a Yes that fits stays where it was seen
       if (el.querySelector('[data-cy="demo-end-ask"]')) {
+        clampAsk();
         sendPill();
         return;
       }
@@ -1583,6 +1624,14 @@ export default function DemoModeOverlay(
     // resize finds the phone's pill), then the band is measured again
     const onResize = () => {
       setCompact(narrow());
+      // REQ-835 (dm2, M2) — End asking: measured again once the compact form has rendered, and
+      // pulled back inside the narrowed window
+      requestAnimationFrame(() => {
+        if (pillRef.current?.querySelector('[data-cy="demo-end-ask"]')) {
+          clampAsk();
+          sendPill();
+        }
+      });
       later();
     };
     placeRef.current = place;
@@ -1595,7 +1644,11 @@ export default function DemoModeOverlay(
       ? null
       : new ResizeObserver(later);
     if (pillRef.current) ro?.observe(pillRef.current);
+    // REQ-835 (dm2, m2) — the glide ended: the stage hears the box it came to rest in
+    const glided = pillRef.current;
+    glided?.addEventListener("transitionend", sendPill);
     return () => {
+      glided?.removeEventListener("transitionend", sendPill);
       clearInterval(timer);
       clearTimeout(settle);
       ro?.disconnect();
@@ -1616,31 +1669,20 @@ export default function DemoModeOverlay(
   // two rows on the phone), and REQ-300 freezes its place while it asks. Placed from the right edge
   // (a peek from the right-edge mini-pill, the bottom-right / top-right spot) it grew past the
   // window's right edge, "Yes, end it" off-screen — so it is placed once at its asking size, before
-  // paint, and only then frozen
+  // paint, and only then frozen. REQ-835 (cycle dm2, m2 + M2) — the clamp is `clampAsk`, run here
+  // and by place() on every re-place while End asks (a resize, the interval, a scroll); it writes
+  // atRef from the box it fits
   useLayoutEffect(() => {
     if (!asking) return;
-    const el = pillRef.current;
-    if (!el || el.hasAttribute("data-tucked")) return;
-    const vv = globalThis.visualViewport;
-    const view = {
-      w: globalThis.innerWidth,
-      h: vv ? vv.offsetTop + vv.height : globalThis.innerHeight,
-    };
-    const w = el.offsetWidth;
-    const h = el.offsetHeight;
-    setDock((d) => {
-      // anchored at left PILL_MARGIN and its foot PILL_BAND_GAP above the visible bottom
-      const foot = view.h - PILL_BAND_GAP + d.y;
-      const r = { left: PILL_MARGIN + d.x, top: foot - h, width: w, height: h };
-      const fit = keepInView(r, view);
-      if (fit === r) return d;
-      return {
-        x: Math.round(fit.left - PILL_MARGIN),
-        y: Math.round(d.y + (fit.top - r.top)),
-      };
-    });
+    clampAsk();
+    // the compact form a resize switched to lands a frame later: measured again
+    const id = requestAnimationFrame(clampAsk);
     // the stage's ghost follows the move
-    setTimeout(() => sendPillRef.current(), PILL_MOVE_MS + 20);
+    const sent = setTimeout(() => sendPillRef.current(), PILL_MOVE_MS + 20);
+    return () => {
+      cancelAnimationFrame(id);
+      clearTimeout(sent);
+    };
   }, [asking]);
 
   // REQ-372 — the pill's words changed (status, compact, opened): the stage hears it; a render that
@@ -1896,6 +1938,8 @@ export default function DemoModeOverlay(
     // its next page joining) in this pill's words: its copy never mixes in the presenter's language
     connectingLabel: t("demoMode.connecting"),
     endedLabel: t("demoMode.ended"),
+    // REQ-835 (demo-loop cycle dm2, m2) — it wraps into rows, so the stage's ghost does too
+    wraps: pillWraps({ compact, open, asking }),
     // REQ-822 (demo-loop cycle dm1, m1) — End is asking: the question and both answers in this
     // pill's own words, so the stage's ghost draws them and the presenter knows
     ...(asking

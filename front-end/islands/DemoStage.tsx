@@ -223,6 +223,7 @@ import {
 import {
   bandGhostBox,
   bandPaint,
+  ghostFlow,
   ghostWords,
   PILL_FONT,
   PILL_UNDER_DIALOG_OPACITY,
@@ -1320,6 +1321,8 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
       // REQ-838 (dm2, m5 + p4) — their words for what this stage guesses (a drop, a new page)
       connectingLabel: m.connectingLabel,
       endedLabel: m.endedLabel,
+      // REQ-835 (dm2, m2) — their pill wraps into rows: the ghost does too
+      wraps: m.wraps,
     });
     const showPill = (m: PillMsg) => {
       setPillBox(m.r);
@@ -1981,6 +1984,9 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
               const cut = ghost.clipped || pillFace.clipped === true;
               const words = ghostWords(pillFace, t);
               const px = Math.max(7, 13 * fit.s);
+              // REQ-835 (demo-loop cycle dm2, m2) — rows like the customer's when their pill wraps
+              // (the phone's pill asking or opened), one cut row otherwise
+              const flow = ghostFlow(pillFace.wraps === true);
               return (
                 <div
                   data-cy="demo-pill-ghost"
@@ -1996,7 +2002,7 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
                     Math.max(2, 6 * fit.s)
                   }px;padding:0 ${
                     Math.max(2, 8 * fit.s)
-                  }px;overflow:hidden;white-space:nowrap;font-family:${PILL_FONT};font-size:${px}px;line-height:1.1`}
+                  }px;overflow:hidden;${flow.box};font-family:${PILL_FONT};font-size:${px}px;line-height:1.1`}
                 >
                   {words.title && (
                     <strong
@@ -2009,7 +2015,7 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
                   {words.text && (
                     <span
                       data-cy="demo-pill-ghost-text"
-                      style="flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis"
+                      style={flow.text}
                     >
                       {words.text}
                     </span>
@@ -2017,7 +2023,7 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
                   {words.guide && (
                     <span
                       data-cy="demo-pill-ghost-guide"
-                      style="flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis"
+                      style={flow.part}
                     >
                       {words.guide}
                     </span>
@@ -2036,7 +2042,7 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
                     <>
                       <strong
                         data-cy="demo-pill-ghost-ask"
-                        style="flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis"
+                        style={flow.ask}
                       >
                         {words.ask}
                       </strong>
