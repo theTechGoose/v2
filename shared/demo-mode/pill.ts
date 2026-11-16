@@ -974,16 +974,19 @@ export function pillShowsAtOnce(
  * stage's ghost keeps the last pill and says "Connecting…" in the stage's words until the new
  * page's pill speaks — never a blank, never a stale "Connected". An ended demo stays ended.
  * REQ-636 — and untucked (the old page's tuck is not the new page's).
+ * REQ-854 (demo-loop cycle dm3, p6) — REQ-636 AMENDMENT: the old page's fold IS kept (with its
+ * band): since REQ-830 a new page's first frame folds as the last page did, so an untucked guess
+ * drew the whole pill's words in the tab's box, a state the customer never shows. The new page's
+ * own face still replaces the guess at once (GUESSED includes `tucked`).
  * REQ-838 (demo-loop cycle dm2, m5) — "Connecting…" (or ended) in the CUSTOMER's words when their
  * pill carries them: never the presenter's word beside their title, line and End.
  */
 export function pillFaceAwaiting(face: PillFace): PillFace {
-  // REQ-636 (cycle 5, m8) — nor is it tucked: the new page decides that (a non-public page starts
-  // with the whole pill), so the old page's tab must not linger on the stage
+  // REQ-854 (dm3, p6) — the tuck stays (REQ-830: the new page starts folded as the old one was);
+  // the new page's own face decides it at once (pillShowsAtOnce, GUESSED)
   // REQ-822 (dm1, m1) — nor is it asking: End's question was the old page's pill's
   const {
     label: _label,
-    tucked: _tucked,
     asking: _asking,
     ask: _ask,
     yes: _yes,
@@ -993,6 +996,22 @@ export function pillFaceAwaiting(face: PillFace): PillFace {
   const status = face.status === "ended" ? "ended" : "connecting";
   const label = ownWord(face, status);
   return { ...rest, status, ...(label ? { label } : {}) };
+}
+
+/**
+ * REQ-854 (demo-loop cycle dm3, p6) — the stage's ghost of the customer's pill is drawn as the
+ * folded tab ("● Demo ×"), not the whole pill: when the face is tucked, or — a guard — while the
+ * stage awaits a new page of theirs (its face is the stage's own guess) and the box it holds is
+ * still the tab's. The whole pill's words never go in a tab-sized box.
+ */
+export function ghostDrawsTab(
+  face: PillFace,
+  box: { width: number; height: number } | null,
+  awaiting: boolean,
+): boolean {
+  if (face.tucked === true) return true;
+  if (!awaiting || !box) return false;
+  return box.width <= PILL_TAB.w + 1 && box.height <= PILL_TAB.h + 1;
 }
 
 /**
