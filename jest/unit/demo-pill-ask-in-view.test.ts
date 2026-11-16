@@ -56,8 +56,9 @@ describe("REQ-816 (demo-loop cycle dm1, M1) — End's question opens inside the 
   test("REQ-816 desktop 1280×800: a peek from the right-edge tab (rest 405 px) asking at 657 px keeps left + width ≤ view.w − margin", () => {
     const view = { w: 1280, h: 800 };
     const peek = rightPeek(view, 405);
-    // the bug, as the demo measured it: x 875, right edge 1532
-    expect(peek.left).toBe(875);
+    // the bug, as the demo measured it: x 875, right edge 1532 (REQ-849: the peek now keeps
+    // PILL_MARGIN from the right edge, so it rests at 863)
+    expect(peek.left).toBe(1280 - PILL_MARGIN - 405);
     const asking = grown(peek, { w: 657, h: 43 });
     expect(asking.left + asking.width).toBeGreaterThan(view.w);
     const fit = keepInView(asking, view);

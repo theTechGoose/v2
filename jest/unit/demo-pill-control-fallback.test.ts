@@ -17,6 +17,7 @@ import * as fs from "fs";
 import * as path from "path";
 import {
   peekBox,
+  PILL_MARGIN,
   PILL_TAB,
   pillHome,
   pillSpots,
@@ -131,14 +132,15 @@ describe("REQ-818 (demo-loop cycle dm1, m5) — the pill shown out of its mini-p
   const whole = { w: 520, h: 43 };
   const homeBox = pillHome({ view, size: whole }).box;
 
-  test("REQ-818 nothing under it: flush with the tab's edge, as before (the pointer that opened it is on it)", () => {
+  // REQ-849 (cycle dm3, p14) AMENDMENT — at the tab's edge, PILL_MARGIN in (the tab's box holds it)
+  test("REQ-818 nothing under it: at the tab's edge, PILL_MARGIN in (REQ-849)", () => {
     const left = peekBox({
       home: homeBox,
       view,
       tab: tabBox(homeBox),
       controls: () => 0,
     });
-    expect(left.left).toBe(0);
+    expect(left.left).toBe(PILL_MARGIN);
     expect(left.top + left.height).toBe(
       tabBox(homeBox).top + tabBox(homeBox).height,
     );
@@ -149,7 +151,7 @@ describe("REQ-818 (demo-loop cycle dm1, m5) — the pill shown out of its mini-p
       tab: rightTab,
       controls: () => 0,
     });
-    expect(right.left + right.width).toBe(view.w);
+    expect(right.left + right.width).toBe(view.w - PILL_MARGIN);
   });
 
   test("REQ-818 a peek box over a footer link slides off it, inside the window", () => {
