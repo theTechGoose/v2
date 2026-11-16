@@ -1140,16 +1140,17 @@ describe("REQ-645 the stage: the print rides with his anchor; a dead one is re-f
 
   test("the stage says it: the tab notice (demo-tab-switched) and the absent hint, in en and es", () => {
     expect(stage).toMatch(/data-cy="demo-tab-switched"/);
-    expect(stage).toContain(
-      't("demoMode.tabSwitched", { name, path: tabNote })',
+    // REQ-826 AMENDMENT (dm2 p10): the page's name, never its raw path
+    expect(stage).toMatch(
+      /t\("demoMode\.tabSwitched", \{\s*name,\s*page: pageLabel\(tabNote, t\),?\s*\}\)/,
     );
     const en = JSON.parse(read("lang/en.json")) as Record<string, string>;
     const es = JSON.parse(read("lang/es.json")) as Record<string, string>;
     expect(en["demoMode.tabSwitched"]).toBe(
-      "Now showing {name}'s other tab ({path}) — move to point there",
+      "Now showing {name}'s other tab ({page}) — move to point there",
     );
     expect(es["demoMode.tabSwitched"]).toBe(
-      "Ahora ves la otra pestaña de {name} ({path}) — mueve el puntero para señalar ahí",
+      "Ahora ves la otra pestaña de {name} ({page}) — mueve el puntero para señalar ahí",
     );
   });
 

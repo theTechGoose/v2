@@ -243,13 +243,24 @@ const tabNote = (pg: Page) =>
     return el ? (el as HTMLElement).innerText.trim() : null;
   }) as Promise<string | null>;
 
-/** REQ-645 (m36) — the notice for Ana Torres's /settings tab, or what the stage says instead */
+/** REQ-645 (m36) — the notice for Ana Torres's /settings tab, or what the stage says instead.
+ *  REQ-826 (dm2 p10) — it names the page ("Settings"), never its URL, and sits in REQ-642's
+ *  chrome row: its box ends above the frame's top, no part of it over the mirrored header */
 const OTHER_TAB =
-  "Now showing Ana Torres's other tab (/settings) — move to point there";
+  "Now showing Ana Torres's other tab (Settings) — move to point there";
 const saysOtherTab = async (pg: Page) => {
   const note = await tabNote(pg);
   if (note !== OTHER_TAB) {
     throw new Error(`the stage's tab notice is ${JSON.stringify(note)}`);
+  }
+  const b = await pg.locator("[data-cy='demo-tab-switched']").boundingBox();
+  const f = await frameBox(pg);
+  if (!b || b.y < 0 || b.y + b.height > f.y + 0.5) {
+    throw new Error(
+      `REQ-826: the tab notice ${JSON.stringify(b)} is not above the frame ${
+        JSON.stringify(f)
+      }`,
+    );
   }
   return true;
 };
