@@ -17,7 +17,10 @@
  */
 import { useEffect, useRef, useState } from "preact/hooks";
 import type { Pt, Rect } from "../../../shared/demo-mode/motion.ts";
-import { PENDING_MS } from "../../../shared/demo-mode/presenter-anchor.ts";
+import {
+  type Dir,
+  PENDING_MS,
+} from "../../../shared/demo-mode/presenter-anchor.ts";
 import { useGlide } from "../../lib/demo-mode/use-glide.ts";
 import DemoPointer, {
   type Bounds,
@@ -36,8 +39,9 @@ export interface PointerCmd {
   /** REQ-437 — the box of the element `at` is anchored to: the name tag sits outside it */
   rect?: Rect | null;
   /** REQ-645 — the element is out of view: the marker against the edge of `box` (where it can be
-   *  seen), with `text` (the way to it; empty: the marker alone) */
-  cue?: { box: Rect; text: string } | null;
+   *  seen), with `text` (the way to it; empty: the marker alone). REQ-815 — `dir`: that way, which
+   *  places the chevron (as the stage's ghost does from the report) */
+  cue?: { box: Rect; text: string; dir?: Dir } | null;
   /** REQ-645 — the element moved more than DRIFT_FADE_PX since he pointed: faded */
   faded?: boolean;
   /** REQ-645 — a `pending` command's words ("{name} is pointing…") */

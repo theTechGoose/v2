@@ -958,7 +958,7 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
       // REQ-645 — out of view: the chevron where the replay shows its element, no ring
       outside: p.outside && !p.dir,
       off: a.o === 1,
-      cue: p.dir ? { box: visOnStage(a), text: "" } : null,
+      cue: p.dir ? { box: visOnStage(a), text: "", dir: p.dir } : null,
       rect: p.outside ? null : rectOnStage(a), // REQ-437 — the tag sits outside it
     });
   };

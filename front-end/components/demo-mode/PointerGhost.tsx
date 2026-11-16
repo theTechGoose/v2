@@ -23,6 +23,7 @@ import {
   tagPlacement,
 } from "../../../shared/demo-mode/motion.ts";
 import {
+  cueMarkOffset,
   type Dir,
   GHOST_OPACITY,
   OFF_MARK_PX,
@@ -67,6 +68,7 @@ export default function PointerGhost(
     box,
     hit,
   );
+  const mark = dir ? cueMarkOffset(dir) : null;
   return (
     <div
       data-cy="demo-pointer-ghost"
@@ -78,20 +80,15 @@ export default function PointerGhost(
       <style>
         {`@keyframes pmDemoGhostIn{from{opacity:0}to{opacity:${GHOST_OPACITY}}}`}
       </style>
-      {dir
+      {mark
         ? (
-          // REQ-645 — out of view: the chevron, centred in the arrow's box, pointing the way
+          // REQ-645 — out of view: the chevron, pointing the way. REQ-815 — placed in the arrow's
+          // box as the customer's is (`cueMarkOffset`): against the edge, centred on the tip
           <svg
             width={OFF_MARK_PX}
             height={OFF_MARK_PX}
             viewBox="0 0 14 14"
-            style={`position:absolute;left:${
-              (ARROW_W - OFF_MARK_PX) / 2
-            }px;top:${
-              (ARROW_H - OFF_MARK_PX) / 2
-            }px;overflow:visible;transform:rotate(${
-              Math.round(Math.atan2(dir.dy, dir.dx) * 180 / Math.PI)
-            }deg)`}
+            style={`position:absolute;left:${mark.left}px;top:${mark.top}px;overflow:visible;transform:rotate(${mark.deg}deg)`}
           >
             <path
               d={CHEVRON}
