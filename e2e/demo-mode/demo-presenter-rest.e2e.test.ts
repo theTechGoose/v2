@@ -601,9 +601,8 @@ Deno.test("REQ-539 (demo m24): a desktop customer — the click on Demo lands on
       await useCookie(page.context(), baseUrl, who.admin.cookie);
       const clickedAt = await openDemo(page, baseUrl, who.userPhone);
       // her app picks the demo up where she is (no reload: as in the demo, the page she is on)
-      await desk.locator("[data-cy='demo-status']").waitFor({
-        timeout: 30_000,
-      });
+      // REQ-545 / REQ-890 — her pill whole (it folds to a tab, compact on a crowded row)
+      await pillUp(desk);
       await until(
         "the stage shows the customer's desktop (1280 × 720)",
         async () => (await screenOf(page)).includes("1280 × 720"),

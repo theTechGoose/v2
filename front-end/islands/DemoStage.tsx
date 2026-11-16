@@ -157,6 +157,7 @@ import {
 import {
   type CursorSeed,
   handCursor,
+  pointerCounts,
   sessionStore,
   takeCursor,
 } from "../lib/demo-mode/cursor-handoff.ts";
@@ -487,6 +488,9 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
   /** REQ-539 (m24) — /admin's hand-off: where his mouse is, for the off hint only (never sent,
    *  never his pointer); dropped by a real pointer event */
   const hintRef = useRef<Pt | null>(null);
+  /** REQ-539 AMENDMENT — has he moved (or pressed) on this stage since it opened? Before that a
+   *  `pointerover` (Chromium's, at load, under a still mouse) is where the mouse was, not a move */
+  const movedRef = useRef(false);
   /** REQ-451 — the ghost of his arrow where their screen has it, while that is apart from his
    *  cursor (their page moved it with its element, or the frame moved) */
   const [ghost, setGhost] = useState<
@@ -1739,6 +1743,7 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
       tabNoteTimerRef.current = null;
       setTabNote(null);
       setSignedOut(false); // REQ-823 — the next demo starts unsaid
+      movedRef.current = false; // REQ-539 AMENDMENT — the next demo's stage opens unmoved
       styledRef.current = false;
       setStyled(false);
       setPeerOnline(false);
@@ -1755,6 +1760,10 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
     // REQ-451 (M14) — held until the frame is fitted, and counted only on it (takeSeed)
     seedRef.current = takeCursor(sessionStore());
     const at = (e: PointerEvent) => {
+      // REQ-539 AMENDMENT — the pointerover Chromium fires at load under a still mouse is not a
+      // move of his: nothing of his on her screen until he moves (or presses) on the stage
+      if (!pointerCounts(e.type, movedRef.current)) return;
+      if (e.type !== "pointerover") movedRef.current = true;
       const p = { x: e.clientX, y: e.clientY };
       seedRef.current = null; // REQ-451 — a real event says where the mouse is
       hintRef.current = null;
