@@ -92,6 +92,7 @@ import {
 import { adminClient } from "../clients/admin.ts";
 import { announceImpersonation } from "../lib/demo-mode/impersonation-signal.ts";
 import { onSignout } from "../lib/demo-mode/signout-signal.ts";
+import { relayRenames } from "../lib/demo-mode/rename-signal.ts";
 import {
   ACTIVE_POLL_MS,
   ACTIVE_REASK_MS,
@@ -1297,6 +1298,9 @@ export default function DemoModeOverlay(
       link?.send({ k: "leave" });
     };
     globalThis.addEventListener("pagehide", onHide);
+    // REQ-836 (demo-loop cycle dm2, m1) — a name the customer saves on this page (Settings,
+    // /welcome's first step: no page load) goes to the stage at once; it asks who they are now
+    const stopRenames = relayRenames((m) => link?.send(m));
     // REQ-305 — the page moves under the pointers: a scroll of any scroller, a resize, the body
     // growing (an image in, a panel opened)
     addEventListener("resize", shifted);
@@ -1364,6 +1368,7 @@ export default function DemoModeOverlay(
     });
     return () => {
       globalThis.removeEventListener("pagehide", onHide);
+      stopRenames();
       hint.stop();
       globalThis.removeEventListener("pageshow", onShow);
       globalThis.removeEventListener("focus", onFocus);

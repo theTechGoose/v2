@@ -129,6 +129,9 @@ export type PeerMessage =
   // REQ-636 (cycle 5, m8) — a stage that just followed a tab asks it for its pill (one sent
   // before the stage followed it was dropped); `t` above: the pill's frame clock (link.now())
   | { k: "askPill" }
+  // REQ-836 (demo-loop cycle dm2, m1) — the customer just saved their name on this page: the stage
+  // asks `active` at once (it names them by it), not on its next ACTIVE_NAME_REFRESH_MS tick
+  | { k: "renamed" }
   // REQ-642 (demo-loop cycle 5, m10) — the customer's overlay says where it PLACED presenter
   // `pid`'s arrow: for anchor `a`, its tip as a fraction of their viewport (`p`; null — not on
   // their screen), `o` on the edge, outside. The stage draws his ghost from this, never a guess.
@@ -331,7 +334,8 @@ export type EndReason = "declined" | "expired";
 export const ACTIVE_POLL_MS = 5_000;
 /** REQ-817 (demo-loop cycle dm1, m3) — while the customer's app IS connected the stage still asks
  *  `active` this often, so a name the customer saves mid-demo reaches its pill and their cursor
- *  (their next page joining asks at once) */
+ *  (their next page joining asks at once). REQ-836 (cycle dm2, m1) — a fallback only: a name
+ *  saved on the customer's page is pushed as a `renamed` frame and the stage asks at once */
 export const ACTIVE_NAME_REFRESH_MS = 15_000;
 /** REQ-378 (demo-loop cycle 2, m22) — how long the server may hold an ask that finds no demo
  *  (`GET /demo-mode/active?wait=`): it answers the moment a demo is opened for the caller, so the
@@ -532,6 +536,8 @@ export function parsePeerMessage(x: unknown): PeerMessage | null {
       return parsePlaced(o);
     case "askPill":
       return { k: "askPill" };
+    case "renamed":
+      return { k: "renamed" };
     default:
       return null;
   }
