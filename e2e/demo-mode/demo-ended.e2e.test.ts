@@ -250,12 +250,25 @@ Deno.test("REQ-235 / REQ-300: End asks first — Keep going, or a click outside,
         ),
         "/admin says the customer ended it, by name",
       );
+      // read once: the ended parameters are gone from the address (REQ-829/855 — the
+      // presenter's ?lang= stays)
       expect.eq(
-        new URL(page.url()).search,
+        ["demo", "by", "name"].filter((k) =>
+          new URL(page.url()).searchParams.has(k)
+        ).join(","),
         "",
-        "read once: the address is a bare /admin again",
+        `read once: the address carries no ended parameter (${page.url()})`,
       );
       await page.locator("[data-cy='adm-q']").waitFor({ timeout: 15_000 });
+      // REQ-894 (dm6, p11) — the search the demo was started from is still in the box
+      expect.eq(
+        await page.locator("[data-cy='adm-q']").inputValue(),
+        userPhone.slice(2),
+        "p11: /admin's search box still holds the query after the demo ended",
+      );
+      await page.locator("[data-cy='adm-demo']").first().waitFor({
+        timeout: 15_000,
+      });
       await sleep(LASTING_MS);
       expect(
         (await textOf(userPage, "demo-ended")).includes("You ended the demo"),

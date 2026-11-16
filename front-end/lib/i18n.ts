@@ -35,6 +35,21 @@ export function tFor(lang: Lang, key: string, vars?: Vars): string {
   return interpolate(v, vars);
 }
 
+/** REQ-893 — the text before and after one `{slot}` of a key (the other vars interpolated), so
+ *  the slot's value can be rendered in an element of its own (a name kept on one line). A key
+ *  without the slot: all of it before, nothing after. */
+export function tAround(
+  lang: Lang,
+  key: string,
+  slot: string,
+  vars?: Vars,
+): [string, string] {
+  const mark = "\u0000";
+  const s = tFor(lang, key, { ...vars, [slot]: mark });
+  const i = s.indexOf(mark);
+  return i < 0 ? [s, ""] : [s.slice(0, i), s.slice(i + mark.length)];
+}
+
 /** Resolve a key in the current UI language (reactive via langSignal). */
 export function t(key: string, vars?: Vars): string {
   return tFor(langSignal.value, key, vars);

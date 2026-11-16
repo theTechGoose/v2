@@ -173,6 +173,24 @@ Deno.test("REQ-855 (cycle dm3, m5 + m6 + rc-17): Hans (en) guiding Maria (es) �
       gateEs.includes("Estás guiando a Maria Lopez en este navegador"),
       `m5: ES on the gate turns it Spanish ("${gateEs.slice(0, 200)}")`,
     );
+    // REQ-893 (dm6, p10) — the customer's name is on one line of the heading, in its own span
+    const nameLines = await page.evaluate(() => {
+      const el = document.querySelector("[data-cy='admin-gate-name']");
+      if (!el) return { lines: 0, text: "" };
+      const rs = el.getClientRects();
+      const tops = new Set([...rs].map((r) => Math.round(r.top)));
+      return { lines: tops.size, text: el.textContent ?? "" };
+    });
+    expect.eq(
+      nameLines.text.trim(),
+      "Maria Lopez",
+      "p10: the name span holds the name",
+    );
+    expect.eq(
+      nameLines.lines,
+      1,
+      "p10: the name is on one line, never Maria / Lopez",
+    );
     expect.eq(
       await page.locator("[data-cy='admin-gate-back']").getAttribute("href"),
       "/demo/stage?lang=es",

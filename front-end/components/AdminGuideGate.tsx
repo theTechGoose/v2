@@ -1,6 +1,6 @@
 import { asset, Head } from "fresh/runtime";
 import DocTitle from "./DocTitle.tsx";
-import { tFor } from "../lib/i18n.ts";
+import { tAround, tFor } from "../lib/i18n.ts";
 import type { AdminGate } from "../lib/admin-gate.ts";
 import { returnAskText } from "../../shared/demo-mode/restart.ts";
 import { stageHref } from "../../shared/demo-mode/ended.ts";
@@ -25,6 +25,8 @@ export default function AdminGuideGate(
 ) {
   const { lang, customer, demoId } = gate;
   const ask = demoId ? returnAskText(gate.presenters, customer) : null;
+  // REQ-893 (dm6, p10) — the customer's name is one thing: never "Maria / Lopez" across lines
+  const [titleBefore, titleAfter] = tAround(lang, "adminGate.title", "name");
   return (
     <>
       <Head>
@@ -61,9 +63,13 @@ export default function AdminGuideGate(
           {/* REQ-869 — class "h1" gives the heading font (Nunito); no rule styles a bare h1 */}
           <h1
             class="h1"
-            style="margin:0 0 12px;font-size:22px;line-height:1.3"
+            style="margin:0 0 12px;font-size:22px;line-height:1.3;text-wrap:balance"
           >
-            {tFor(lang, "adminGate.title", { name: customer })}
+            {titleBefore}
+            <span data-cy="admin-gate-name" style="white-space:nowrap">
+              {customer}
+            </span>
+            {titleAfter}
           </h1>
           <p style="margin:0 0 10px;line-height:1.5">
             {tFor(lang, "adminGate.body")}

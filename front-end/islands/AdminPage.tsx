@@ -21,6 +21,11 @@ import { adminClient, type AdminUserView } from "../clients/admin.ts";
 import { demoModeClient } from "../clients/demo-mode.ts";
 import { openDemo } from "../lib/demo-mode/open-demo.ts";
 import { fmtPhone } from "../lib/format.ts";
+import {
+  adminQueryStore,
+  keepAdminQuery,
+  readAdminQuery,
+} from "../lib/admin-query.ts";
 import { langSignal, t } from "../lib/i18n.ts";
 import { type FeatureKey, FEATURES } from "../../shared/features.ts";
 import {
@@ -124,7 +129,14 @@ export default function AdminPage({ selfId }: { selfId?: string }) {
   // focus / visibility and every ADMIN_REFRESH_MS while the tab is visible.
   // REQ-301 (M18) — the overlay's word that Demo made this browser the customer
   // (this tab or any other of the same browser) locks the page at once.
+  // REQ-894 (dm6, p11) — the query this tab searched last (a demo's end hops back to a fresh
+  // /admin): into the box and the ref BEFORE the first search, so that search is for it
   useEffect(() => {
+    const kept = readAdminQuery(adminQueryStore());
+    if (kept) {
+      setQ(kept);
+      qRef.current = kept;
+    }
     search();
     const stopRefresh = stopRefreshRef.current = refreshWhileVisible(() =>
       void search(undefined, true)
@@ -256,7 +268,11 @@ export default function AdminPage({ selfId }: { selfId?: string }) {
             type="search"
             placeholder={t("adminPage.search.placeholder")}
             value={q}
-            onInput={(e) => setQ((e.target as HTMLInputElement).value)}
+            onInput={(e) => {
+              const v = (e.target as HTMLInputElement).value;
+              setQ(v);
+              keepAdminQuery(adminQueryStore(), v); // REQ-894
+            }}
             aria-label={t("adminPage.search.aria")}
           />
           <button

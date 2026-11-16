@@ -7308,3 +7308,25 @@ Tests:
 - unit: `jest/unit/demo-landing-tab-rejoin.test.ts` ("REQ-892 …", 6 cases: the mark set/fresh/stale/cleared, garbage, a refused store; not on the sign-in pages or the stage; the target ("/" → /dashboard, else itself); startDemoRejoin with and without the mark, the mark cleared on the go; another page reloads itself; wiring of the overlay, the entry script, `_app.tsx`'s `!hasSession` tag, the stand-in and the plugin's two entries in dev and in a build). REQ-648's plugin tests amended for the second input.
 - integration: n/a — the stand-in is `null` outside Vite (the plugin writes the URLs), so a Fresh-handler test cannot see the tag; the plugin's dev/build output is asserted directly in the unit wiring test, and the HTTP side (GET /api/me) is REQ-879's unchanged.
 - e2e: `e2e/demo-mode/demo-stage-tab-leave.e2e.test.ts` ("REQ-892 …": demo on tab 1 at 1100×780 → Log out → the stage says she signed out, tab 1 is on "/" with no pill → she signs in again in tab 2 (640×760), Live there → tab 1 brought back and clicked goes to /dashboard, shows the pill, and the stage follows it, Live).
+
+## REQ-893 — The /admin guide gate's heading keeps the customer's name on one line (demo-loop run 6, dm6, issue p10)
+
+**Raphael (2026-11-16, demo loop run 6, issue p10):** "you personally go fix the polish problems" — the gate card's heading ("Estás guiando a Maria Lopez en este navegador") broke the customer's name across lines: "Maria / Lopez".
+
+Requirement: `AdminGuideGate` renders the name inside its own `white-space: nowrap` span (`data-cy=admin-gate-name`); the text around the `{name}` slot comes from `tAround(lang, key, slot)` (lib/i18n.ts: the halves before and after one slot, other vars interpolated, a slot-less key all before). The heading balances its lines (`text-wrap: balance`).
+
+Tests:
+- unit: `jest/unit/admin-gate-name-nowrap.test.ts` ("REQ-893 …", 2 cases: `tAround` in en and es, the halves make the whole title, a slot-less key, a name that looks like a slot; the gate's wiring — nowrap span around tAround's halves, balanced heading, no plain tFor title).
+- integration: n/a — a server-rendered component with no request/response of its own; the render is covered by the e2e.
+- e2e: `e2e/demo-mode/demo-presenter-chrome.e2e.test.ts` (REQ-855 story, added: on the ES gate the name span's client rects share one top — the name is on one line).
+
+## REQ-894 — /admin keeps its search query across a demo's end (demo-loop run 6, dm6, issue p11)
+
+**Raphael (2026-11-16, demo loop run 6, issue p11):** "you personally go fix the polish problems" — after a demo ended, the stage hopped back to /admin and the search box was empty; the staff had to type the customer's phone again to find the row they had just demoed.
+
+Requirement: the query lives in the tab's sessionStorage too (`pm:admin-q`, lib/admin-query.ts: `keepAdminQuery` as the staff types, cleared when the box is emptied, cut at 200 chars; `readAdminQuery`). A mounting AdminPage seeds its box and its ref from it BEFORE the first search, so that search is for the kept query and the rows are the ones the staff had.
+
+Tests:
+- unit: `jest/unit/admin-search-persist.test.ts` ("REQ-894 …", 2 cases: kept/read/cleared/cut, a missing or refused store; AdminPage's wiring — seeded before the first search, kept on input).
+- integration: n/a — sessionStorage is the browser's; the server is not involved.
+- e2e: `e2e/demo-mode/demo-ended.e2e.test.ts` (REQ-235/300 story, added: back on /admin after the customer's End the box still holds the phone digits searched and the Demo row is listed).
