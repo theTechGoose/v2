@@ -704,6 +704,9 @@ export function translateOf(css: string): { x: number; y: number } {
  * element's bounding rect, the dock translate included) less the part of the glide still to go
  * (`now`: the computed translate; `to`: the dock it glides to). The stage is sent this, never
  * atRef's left/top with a size measured later (REQ-816 moved the pill without touching atRef).
+ * REQ-871 (demo-loop cycle dm5, p1) — its width and height round UP, never to the nearest: her
+ * shrink-to-fit pill has a fractional width (404.25), and the stage lays the ghost's words out at
+ * exactly this width with her metrics (REQ-865), so half a pixel short cut "… is guiding y…".
  */
 export function pillRestBox(
   box: Rect,
@@ -713,8 +716,8 @@ export function pillRestBox(
   return {
     left: Math.round(box.left - now.x + to.x),
     top: Math.round(box.top - now.y + to.y),
-    width: Math.round(box.width),
-    height: Math.round(box.height),
+    width: Math.ceil(box.width),
+    height: Math.ceil(box.height),
   };
 }
 
