@@ -57,6 +57,7 @@ import {
   useState,
 } from "preact/hooks";
 import {
+  idleKey,
   pointerLook,
   type Pt,
   type Rect,
@@ -363,9 +364,10 @@ export default function DemoPointer(
     setIdle(false);
     const tag = setTimeout(() => setIdle(true), TAG_IDLE_MS);
     return () => clearTimeout(tag);
-    // REQ-374 — every placement is a new object (a move, a re-anchor after a scroll, an edge
-    // toggle), so the tag comes back fully on any of them, not only on a new x/y
-  }, [pointer, outside]);
+    // REQ-374 — a move, a re-anchor after a scroll, an edge toggle: the tag comes back fully.
+    // REQ-850 (dm3 p10) — keyed on the spot, not the object: a re-send of the same spot (her
+    // resting pointer sent again on a resize) leaves a resting tag at rest
+  }, [idleKey(pointer, outside)]);
   const look = pointerLook(idle);
 
   /** what the painter places the tag in, as of the latest render */
