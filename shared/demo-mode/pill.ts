@@ -320,6 +320,43 @@ export function placePill(o: {
 }
 
 /**
+ * REQ-545 — the folded pill shown whole out of its mini-pill (a hover, a tap, its × asking End):
+ * flush with the edge the tab is on, its foot on the tab's row, so the pointer that opened it is
+ * on it. REQ-781 — from a right-edge tab: flush right, at the width it has at rest (`home`).
+ */
+export function peekBox(o: {
+  home: Rect;
+  /** where the mini-pill is */
+  tab: Rect;
+  /** the left edge's tab spot (`tabBox(home)`) */
+  edge: Rect;
+  view: Size;
+}): Rect {
+  return {
+    ...o.home,
+    top: o.home.top + (o.tab.top - o.edge.top),
+    left: o.tab.left > o.edge.left ? Math.max(0, o.view.w - o.home.width) : 0,
+  };
+}
+
+/**
+ * REQ-816 (demo-loop cycle dm1, M1) — the pill grown where it stands (End's question, the phone's
+ * wrapped second row) kept inside the window: anchored on its left and its foot, it grows right and
+ * up, so a pill placed from the right edge (`peekBox`, the bottom-right / top-right `pillSpots`)
+ * ran past the right edge with "Yes, end it" off-screen. Its right edge is pulled to the margin
+ * and its top kept under the top margin; a pill that already fits does not move (a left-edge peek
+ * stays flush with the edge).
+ */
+export function keepInView(r: Rect, view: Size, margin = PILL_MARGIN): Rect {
+  let left = r.left;
+  if (left + r.width > view.w - margin) {
+    left = Math.max(Math.min(r.left, margin), view.w - margin - r.width);
+  }
+  const top = r.top < margin ? margin : r.top;
+  return left === r.left && top === r.top ? r : { ...r, left, top };
+}
+
+/**
  * REQ-643 (demo-loop cycle 5, p18-3d) — a fixed box that covers the view down to the band is a
  * dialog's backdrop: on a phone the mobile `.app` is transformed, so a backdrop inside it
  * (`position:fixed; inset:0`) covers only the app's box, which ends at the band's top.
