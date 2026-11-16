@@ -17,31 +17,21 @@
 import type { Lang } from "./i18n.ts";
 import { getSessionId } from "./auth.ts";
 import { ssrBackendGetAuthed } from "./backend-fetch.ts";
-import { personLanguage } from "../../shared/person-name/mod.ts"; // REQ-631
 import { langFromCookie } from "./lang.ts";
+// REQ-855 — the pure ranking lives in a client-safe module (the overlay ranks with it too)
+import {
+  type PresenterCarry,
+  type PresenterIdentity,
+  presenterLang,
+  type PresenterWhoAmI,
+} from "./presenter-lang-rank.ts";
 
-export interface PresenterIdentity {
-  id?: string;
-  language?: string;
-}
-
-export interface PresenterWhoAmI {
-  authenticated?: boolean;
-  impersonating?: boolean;
-  impersonator?: PresenterIdentity | null;
-}
-
-function asLang(v: unknown): Lang | undefined {
-  return v === "es" ? "es" : v === "en" ? "en" : undefined;
-}
-
-/** REQ-829 — what the request carries of the presenter's live language */
-export interface PresenterCarry {
-  /** an explicit `?lang=` on the address */
-  query?: string | null;
-  /** the browser's persisted `pm_lang` */
-  cookie?: string | null;
-}
+export {
+  type PresenterCarry,
+  type PresenterIdentity,
+  presenterLang,
+  type PresenterWhoAmI,
+};
 
 /** REQ-829 — the request's `?lang=` and `pm_lang` cookie */
 export function presenterCarry(req: Request): PresenterCarry {
@@ -49,20 +39,6 @@ export function presenterCarry(req: Request): PresenterCarry {
     query: new URL(req.url).searchParams.get("lang"),
     cookie: langFromCookie(req.headers.get("cookie")),
   };
-}
-
-/** Pure: the presenter's language — REQ-829: a carried ?lang= first; then whoami's impersonator,
- *  the resolved user's when not impersonating; then the cookie; en. */
-export function presenterLang(
-  who: PresenterWhoAmI | undefined,
-  user: PresenterIdentity | undefined,
-  carry: PresenterCarry = {},
-): Lang {
-  const profile = who?.impersonating
-    ? asLang(who.impersonator?.language)
-    // REQ-631: the signed-in person (an editor while acting), not the account
-    : asLang(personLanguage(user));
-  return asLang(carry.query) ?? profile ?? asLang(carry.cookie) ?? "en";
 }
 
 /** The request's presenter language: whoami with the request's session, then `presenterLang`. */

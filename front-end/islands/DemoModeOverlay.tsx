@@ -73,6 +73,14 @@
  * `leaving("signout")` on its link and close it at once — before the redirect, so the stage says
  * the customer signed out and never falls back to another tab of the dead session — and drop the
  * demo (the carry forgotten: the next page is not this sign-in's).
+ * REQ-855 (demo-loop cycle dm3, m5 + m6 + rc-17) — the presenter's own chrome off the stage is the
+ * PRESENTER's: the presenter pill, its Opening… and the end of a demo it presented speak the
+ * presenter's language (`presenterChromeLang`: whoami's impersonator under impersonation, never
+ * the customer page's langSignal), drawn once whoami has answered, and its hop back to the stage
+ * carries that language. Where the red impersonation bar used to sit beside it (the presenter's
+ * browser acting as the customer) the pill carries the way out — End demo (asks first; with others
+ * presenting, Leave the demo) — and an EN | ES switch for the presenter's language; it tells the
+ * bar whether it still shows a demo this staff presents (DEMO_PRESENTING_EVENT).
  */
 import {
   useEffect,
@@ -85,11 +93,23 @@ import { demoChromeT as t } from "../lib/demo-chrome-t.ts";
 import { fenceClicks } from "../lib/backdrop-dismiss.ts";
 import {
   DEMO_OPENING_EVENT,
+  DEMO_PRESENTING_EVENT,
   DEMO_STARTED_EVENT,
   demoModeClient,
   type DemoStarted,
 } from "../clients/demo-mode.ts";
-import { adminClient } from "../clients/admin.ts";
+import { adminClient, type WhoAmI } from "../clients/admin.ts";
+// REQ-855 (cycle dm3, m6) — the presenter's own chrome ranks its language like the stage does
+import {
+  pageLangCarry,
+  presenterChromeLang,
+} from "../lib/presenter-lang-rank.ts";
+import { persistLang } from "../lib/lang.ts";
+import { langToggleHref } from "../../shared/quote-flow/public-lang.ts";
+import {
+  adminGateShown,
+  stageLeaveShown,
+} from "../../shared/demo-mode/stage-chrome.ts";
 import { announceImpersonation } from "../lib/demo-mode/impersonation-signal.ts";
 import { signoutGate } from "../lib/demo-mode/signout-signal.ts";
 import { relayRenames } from "../lib/demo-mode/rename-signal.ts";
@@ -192,14 +212,16 @@ import EndDemo from "../components/demo-mode/EndDemo.tsx";
 import { endDemoWords } from "../components/demo-mode/EndDemo.tsx";
 import {
   ADMIN_PATH,
+  endedHref,
   type EndedNotice,
   endedText,
   goneNotice,
   readEndedNotice,
   stageHref,
   whoEnded,
+  withLang,
 } from "../../shared/demo-mode/ended.ts";
-import { langSignal } from "../lib/i18n.ts";
+import { type Lang, langSignal, tFor, type Vars } from "../lib/i18n.ts";
 import {
   askDock,
   backdropCovers,
@@ -238,7 +260,8 @@ import { pillCopy, pillStatusOf } from "../../shared/demo-mode/pill-copy.ts";
 import type { PillFace, Rect } from "../../shared/demo-mode/protocol.ts";
 
 // REQ-494 / REQ-544 — `t` is the demo chrome's (lib/demo-chrome-t.ts): on /worker it keeps
-// the viewer's stored language, not the signed-in worker's.
+// the viewer's stored language, not the signed-in worker's. REQ-855 — the presenter's own pill
+// uses `pt`, the presenter's language (presenterChromeLang), never the customer page's.
 
 interface Demo {
   id: string;
@@ -588,14 +611,28 @@ export default function DemoModeOverlay(
   const pollRef = useRef<(() => void) | null>(null);
   /** REQ-222 (M11) — the poll itself; `idle()` re-arms it whenever this side is not connected */
   const pollerRef = useRef<ActivePoll | null>(null);
-  const whoRef = useRef<Promise<boolean> | null>(null);
-  /** one whoami per page, started early (on the opening event) so the placement never waits for it */
-  const knowImpersonating = () =>
-    whoRef.current ??= adminClient.whoami()
-      .then((w) => Boolean(w.impersonating))
-      .catch(() => false);
+  const whoRef = useRef<Promise<WhoAmI | null> | null>(null);
+  /** one whoami per page, started early (on the opening event) so the placement never waits for it;
+   *  REQ-855 — kept whole (null: it failed): the presenter's chrome speaks its impersonator's language */
+  const knowWho = () =>
+    whoRef.current ??= adminClient.whoami().catch(() => null);
+  /** REQ-855 — whoami as this page has it, for the presenter's pill: undefined until it answers */
+  const [staffWho, setStaffWho] = useState<WhoAmI | null | undefined>(
+    undefined,
+  );
+  /** REQ-855 (cycle dm3, m6) — the presenter's own language on this page: the page's live language
+   *  on the presenter's own session; under impersonation (a page of the CUSTOMER's, whose
+   *  langSignal is hers) ?lang= → whoami's impersonator → pm_lang → en */
+  const presenterLangFor = (who: WhoAmI | null | undefined): Lang =>
+    presenterChromeLang({ who, live: langSignal.value, ...pageLangCarry() });
+  /** REQ-855 — the presenter is on the way out (End / Leave from the pill): nothing else moves */
+  const goingOutRef = useRef(false);
+  const [goingOut, setGoingOut] = useState(false);
   const demoRef = useRef<Demo | null>(null);
   demoRef.current = demo;
+  /** REQ-855 — the side of the demo this page last had: its end is said in that side's language */
+  const lastRoleRef = useRef<Role | null>(null);
+  if (demo) lastRoleRef.current = demo.role;
   /** REQ-242 — this page's recorder and the sender its frames go out through */
   const recorderRef = useRef<Recorder | null>(null);
   const senderRef = useRef<MirrorSender | null>(null);
@@ -729,8 +766,10 @@ export default function DemoModeOverlay(
     setPlacing(true);
     let moving = false;
     try {
+      // REQ-855 — the same whoami says whose language the hop to the stage carries
+      const who = await knowWho();
       if (impersonatingRef.current === null) {
-        impersonatingRef.current = await knowImpersonating();
+        impersonatingRef.current = Boolean(who?.impersonating);
       }
       if (impersonatingRef.current === false) {
         impersonatingRef.current = true;
@@ -753,8 +792,10 @@ export default function DemoModeOverlay(
         // — tagged /admin's: the stage uses it for its off hint only, never sends it
         handCursor(sessionStore(), cursorRef.current, Date.now(), "admin");
         // REQ-829 (dm2, m7) — the stage opens in the language this page shows (an es-profile
-        // staff on /admin?lang=en gets an English stage)
-        globalThis.location.assign(stageHref(langSignal.value));
+        // staff on /admin?lang=en gets an English stage). REQ-855 (dm3, m6 + rc-17) — the
+        // PRESENTER's: on a customer's page (this browser acts as her) that is not the page's
+        // langSignal — hers — but whoami's impersonator's (?lang= first, the cookie after)
+        globalThis.location.assign(stageHref(presenterLangFor(who)));
       }
     } finally {
       placingRef.current = false;
@@ -1059,7 +1100,7 @@ export default function DemoModeOverlay(
     const onOpening = (e: Event) => {
       const d = (e as CustomEvent).detail as { targetName?: string } | null;
       setOpening({ targetName: d?.targetName ?? "" });
-      void knowImpersonating();
+      void knowWho();
     };
     const onStarted = (e: Event) => {
       const d = (e as CustomEvent).detail as
@@ -1098,6 +1139,59 @@ export default function DemoModeOverlay(
   useEffect(() => {
     if (!peerOnline) pollerRef.current?.idle();
   }, [peerOnline, demo?.id]);
+
+  // 1c. REQ-855 (cycle dm3, m6) — the presenter's pill speaks the presenter's language: this page's
+  //     one whoami, asked as a demo this staff presents shows (or Demo was pressed here)
+  const presenterSide = !inert && (demo?.role === "presenter" || !!opening);
+  useEffect(() => {
+    if (!presenterSide) return;
+    let alive = true;
+    void knowWho().then((w) => {
+      if (alive) setStaffWho(w);
+    });
+    return () => {
+      alive = false;
+    };
+  }, [presenterSide]);
+  // 1d. REQ-855 (m5) — the impersonation bar is not drawn beside the presenter's pill: it hears
+  //     whether this page still shows a demo this staff presents (gone: the bar is the way back)
+  const presentingHere = !inert && demo?.role === "presenter";
+  const presentingRef = useRef(false);
+  useEffect(() => {
+    // on the way out (End / Leave from the pill) the page is leaving: no red bar for a frame
+    if (presentingRef.current === presentingHere || goingOutRef.current) return;
+    presentingRef.current = presentingHere;
+    globalThis.dispatchEvent(
+      new CustomEvent(DEMO_PRESENTING_EVENT, { detail: presentingHere }),
+    );
+  }, [presentingHere]);
+  /** REQ-855 (m5) — the presenter's way out from the pill (where the red bar's Return used to be):
+   *  End (alone — it asked first, like the stage's) or Leave (others present: it goes on with them),
+   *  then the account comes back and /admin says so — the stage's end() / leave() and
+   *  backToOwnAccount, in the presenter's language */
+  async function presenterOut(d: Demo, how: "end" | "leave") {
+    if (goingOutRef.current) return;
+    goingOutRef.current = true;
+    setGoingOut(true);
+    const lang = presenterLangFor(staffWho);
+    // REQ-235 — said at once, before the server answers
+    if (how === "end") setNotice({ by: "you" });
+    try {
+      if (how === "end") await demoModeClient.end(d.id);
+      else await demoModeClient.leave(d.id);
+    } catch {
+      // the server ends a demo nobody presents any more on its own
+    }
+    try {
+      const who = await adminClient.whoami();
+      if (who.impersonating) await adminClient.stopImpersonating();
+    } catch {
+      // not impersonating, or signed out
+    }
+    globalThis.location.href = how === "end"
+      ? endedHref({ by: "you" }, lang)
+      : withLang(ADMIN_PATH, lang);
+  }
 
   // 2. the link — the customer's side (the presenter's lives on the stage); REQ-217 — only
   //    while this is the tab the customer is looking at: hidden, it drops the link
@@ -1923,6 +2017,12 @@ export default function DemoModeOverlay(
   // notice always, the phone's details once opened; the title goes on a phone
   const wrap = "white-space:normal;min-width:0;overflow-wrap:anywhere";
 
+  // REQ-855 (cycle dm3, m6) — the presenter's own chrome speaks the presenter's language (`pt`),
+  // never the customer page's; `chromeT` is the demo chrome's `t` (the customer's pill's)
+  const pLang = presenterLangFor(staffWho);
+  const pt = (key: string, vars?: Vars) => tFor(pLang, key, vars);
+  const chromeT = t;
+
   // REQ-235 — the demo is over: who ended it, in the pill's place, until dismissed (Demo clicked
   // here again takes over)
   yieldsRef.current = false;
@@ -1930,6 +2030,9 @@ export default function DemoModeOverlay(
   if (notice && !opening) {
     // REQ-643 (demo-loop cycle 5, m9) — a floating message: it never folds
     floatsRef.current = true;
+    // REQ-855 (m6) — the end of a demo this staff presented is said in the presenter's language
+    // (on a customer's page the chrome's t is hers); the customer's notice keeps the chrome's
+    const t = lastRoleRef.current === "presenter" ? pt : chromeT;
     const said = endedText(notice);
     faceRef.current = {
       compact,
@@ -1974,26 +2077,28 @@ export default function DemoModeOverlay(
       compact: false,
       open: false,
       status: "connecting",
-      text: t("demoMode.presenting", { name: opening.targetName }),
+      text: pt("demoMode.presenting", { name: opening.targetName }),
     };
-    // REQ-179 — Demo was just clicked: the pill is up before the server answers
+    // REQ-179 — Demo was just clicked: the pill is up before the server answers (REQ-855: in the
+    // presenter's language — on /admin, the page's own)
     return (
       <div data-demo-overlay ref={fenceClicks}>
         <div
           ref={pillRef}
           data-cy="demo-pill"
           role="status"
+          lang={pLang}
           style={pillStyle}
         >
-          <strong>{t("demoMode.title")}</strong>
+          <strong>{pt("demoMode.title")}</strong>
           <span style={cut}>
-            {t("demoMode.presenting", { name: opening.targetName })}
+            {pt("demoMode.presenting", { name: opening.targetName })}
           </span>
           <span
             data-cy="demo-opening"
             style="padding:2px 8px;border-radius:999px;background:rgba(255,255,255,.18);font-size:11.5px;font-weight:700"
           >
-            {t("demoMode.opening")}
+            {pt("demoMode.opening")}
           </span>
         </div>
       </div>
@@ -2001,39 +2106,108 @@ export default function DemoModeOverlay(
   }
 
   // the presenter's own pill lives on the stage. On the way there, say so; on any other staff page
-  // (REQ-232: another window, /admin after Return to your account) offer the way back — never take it
+  // (REQ-232: another window, /admin after Return to your account) offer the way back — never take it.
+  // REQ-855 (cycle dm3, m5 + m6) — in the presenter's language (`pt`), drawn once whoami has said
+  // whose that is. Where this browser acts as the customer (the red bar is not drawn beside it) it
+  // carries the way out — End demo (it asks first), or Leave the demo when others present too —
+  // and the presenter's own EN | ES switch: this page with ?lang=, persisted (never the customer's
+  // topbar toggle, which saves HER profile). On /admin's guide gate the card carries both.
   if (demo.role === "presenter") {
+    const busy = placing || !!opening;
+    if (!busy && staffWho === undefined) return null;
+    const acting = !busy && staffWho?.impersonating === true &&
+      !adminGateShown({
+        path: globalThis.location.pathname,
+        impersonating: true,
+        superAdmin: staffWho.superAdmin === true,
+      });
+    const outline =
+      "padding:5px 12px;border-radius:8px;border:1px solid rgba(255,255,255,.7);background:transparent;color:#fff;cursor:pointer;font:inherit;font-size:12px;font-weight:700";
     return (
       <div data-demo-overlay ref={fenceClicks}>
         <div
           ref={pillRef}
           data-cy="demo-pill"
           role="status"
+          lang={pLang}
           style={pillStyle}
         >
-          <strong>{t("demoMode.title")}</strong>
+          <strong>{pt("demoMode.title")}</strong>
           <span style={cut}>
-            {t("demoMode.presenting", { name: demo.targetName })}
+            {pt("demoMode.presenting", { name: demo.targetName })}
           </span>
-          {placing || opening
+          {busy
             ? (
               <span
                 data-cy="demo-opening"
                 style="padding:2px 8px;border-radius:999px;background:rgba(255,255,255,.18);font-size:11.5px;font-weight:700"
               >
-                {t("demoMode.opening")}
+                {pt("demoMode.opening")}
               </span>
             )
             : (
               <button
                 type="button"
                 data-cy="demo-rejoin"
+                disabled={goingOut}
                 onClick={() => void placePresenter(demo)}
                 style={`padding:5px 12px;border-radius:8px;border:0;background:#fff;color:#1f3d1b;cursor:pointer;font:inherit;font-size:12px;font-weight:700;${HIT}`}
               >
-                {t("demoMode.rejoin")}
+                {pt("demoMode.rejoin")}
               </button>
             )}
+          {acting && stageLeaveShown(demo.presenters.length)
+            ? (
+              <button
+                type="button"
+                data-cy="demo-leave"
+                disabled={goingOut}
+                onClick={() => void presenterOut(demo, "leave")}
+                style={`${outline};${HIT}`}
+              >
+                {pt("demoMode.leave")}
+              </button>
+            )
+            : acting
+            ? (
+              <EndDemo
+                t={pt}
+                outline
+                disabled={goingOut}
+                onAsking={setAsking}
+                onEnd={() => void presenterOut(demo, "end")}
+              />
+            )
+            : null}
+          {acting
+            ? (
+              <span
+                data-cy="demo-lang"
+                role="group"
+                aria-label={pt("demoMode.yourLanguage")}
+                title={pt("demoMode.yourLanguage")}
+                style={`display:inline-flex;gap:2px;${HIT}`}
+              >
+                {(["en", "es"] as Lang[]).map((l) => (
+                  <a
+                    key={l}
+                    data-cy={`demo-lang-${l}`}
+                    href={langToggleHref(globalThis.location.href, l)}
+                    hreflang={l}
+                    aria-current={l === pLang ? "true" : "false"}
+                    onClick={() => persistLang(l)}
+                    style={`padding:3px 6px;border-radius:6px;color:#fff;text-decoration:none;font-size:11.5px;font-weight:700;${
+                      l === pLang
+                        ? "background:rgba(255,255,255,.22)"
+                        : "opacity:.7"
+                    }`}
+                  >
+                    {l.toUpperCase()}
+                  </a>
+                ))}
+              </span>
+            )
+            : null}
         </div>
       </div>
     );

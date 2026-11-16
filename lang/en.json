@@ -4384,6 +4384,7 @@
   "demoMode.returnAsk": "Returning to your account takes you out of the demo with {name}.",
   "demoMode.leave": "Leave the demo",
   "demoMode.opening": "Opening…",
+  "demoMode.yourLanguage": "Your language",
   "demoMode.endAsk": "End for everyone?",
   "demoMode.endAskViewer": "End the demo with {name}?",
   "demoMode.endYes": "Yes, end it",

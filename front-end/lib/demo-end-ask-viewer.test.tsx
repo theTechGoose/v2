@@ -40,12 +40,18 @@ Deno.test("REQ-649 (m64): EndDemo asks the caller's question; with none it keeps
 
 Deno.test("REQ-649 (m64): the customer's pill asks endAskViewer with the guide's name; the stage keeps endAsk", () => {
   const overlay = read("islands/DemoModeOverlay.tsx");
-  const tag = overlay.match(/<EndDemo\b[\s\S]*?\/>/)?.[0] ?? "";
+  // REQ-855 (dm3, m5) AMENDMENT — the overlay draws two: the customer's pill's (the chrome's
+  // `t`) and the presenter's pill's off the stage (`pt`), which asks like the stage
+  const tags = overlay.match(/<EndDemo\b[\s\S]*?\/>/g) ?? [];
+  const tag = tags.find((x) => /\bt=\{t\}/.test(x)) ?? "";
   assert(
     /askKey="demoMode\.endAskViewer"/.test(tag),
     `overlay EndDemo: ${tag}`,
   );
   assert(/askVars=\{\{\s*name:\s*names\s*\}\}/.test(tag), tag);
+  const presenterTag = tags.find((x) => /\bt=\{pt\}/.test(x)) ?? "";
+  assert(presenterTag.length > 0, "the presenter's pill draws EndDemo");
+  assert(!/askKey=/.test(presenterTag), `presenter EndDemo: ${presenterTag}`);
   const stage = read("islands/DemoStage.tsx");
   const stageTag = stage.match(/<EndDemo\b[\s\S]*?\/>/)?.[0] ?? "";
   assert(stageTag.length > 0, "stage draws EndDemo");

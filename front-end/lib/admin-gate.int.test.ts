@@ -143,3 +143,71 @@ Deno.test("REQ-376 the staff's own session still reaches the console; a plain cu
   assertEquals(none.res.status, 302);
   assertEquals(none.res.headers.get("location"), "/");
 });
+
+/**
+ * REQ-855 (demo-loop cycle dm3, issues m5 + rc-17) — while guiding, the gate is where the presenter
+ * changes THEIR language: an EN | ES switch to this same page with ?lang= (demo 3 "could not find
+ * a clickable EN/ES control on /admin while guiding" and fell back to a hand-set cookie). Picking
+ * EN on an es-profile presenter's gate gives an English gate whose Back to the demo carries it.
+ */
+async function hitAdminAt(fetcher: Fetch, path: string) {
+  const prev = g.__backendFetch;
+  g.__backendFetch = fetcher;
+  try {
+    const app = new App<State>()
+      .use(adminGate)
+      .get("/admin", () => new Response("ADMIN CONSOLE"));
+    const res = await app.handler()(
+      new Request(`http://app${path}`, {
+        headers: { cookie: "pm_session=sess_1" },
+      }),
+    );
+    return { res, body: await res.text() };
+  } finally {
+    g.__backendFetch = prev;
+  }
+}
+
+/** the attributes of the switch's link to `lang`, or null */
+function langLink(body: string, lang: "en" | "es"): string | null {
+  const nav = body.match(
+    /<nav[^>]*data-cy="public-lang-toggle"[^>]*>([\s\S]*?)<\/nav>/,
+  );
+  if (!nav) return null;
+  return nav[1].match(new RegExp(`<a[^>]*hreflang="${lang}"[^>]*>`))?.[0] ??
+    null;
+}
+
+Deno.test("REQ-855 (dm3 m5): the guide gate has an EN | ES switch to this same page with ?lang=", async () => {
+  const { res, body } = await hitAdminAt(
+    backend("impersonating", demo),
+    "/admin",
+  );
+  assertEquals(res.status, 200);
+  const en = langLink(body, "en");
+  const es = langLink(body, "es");
+  assert(en && es, `the gate offers EN and ES: ${body.slice(0, 600)}`);
+  assert(en.includes('href="/admin?lang=en"'), en);
+  assert(es.includes('href="/admin?lang=es"'), es);
+  // the presenter's own language (en) is the current one
+  assert(en.includes('aria-current="true"'), en);
+});
+
+Deno.test("REQ-855 (dm3 rc-17): an es presenter who picks EN on the gate reads it in English, and Back to the demo carries en", async () => {
+  const { body } = await hitAdminAt(
+    backend("impersonating", demo, "es"),
+    "/admin?lang=en",
+  );
+  assert(
+    body.includes("You are guiding Ana Torres in this browser"),
+    body.slice(0, 400),
+  );
+  assert(
+    /data-cy="admin-gate-back"[^>]*href="\/demo\/stage\?lang=en"|href="\/demo\/stage\?lang=en"[^>]*data-cy="admin-gate-back"/
+      .test(body),
+    "Back to the demo carries en",
+  );
+  const es = langLink(body, "es");
+  assert(es?.includes('href="/admin?lang=es"'), String(es));
+  assert(langLink(body, "en")?.includes('aria-current="true"'));
+});

@@ -57,9 +57,13 @@ describe("REQ-829 the demo's hops carry the language", () => {
     expect(endedHref({ by: "you" })).toBe("/admin?demo=ended&by=you");
   });
 
-  test("REQ-829 the row Demo button's hop (DemoModeOverlay placePresenter) goes to stageHref(langSignal.value)", () => {
+  // REQ-855 (dm3, m6) AMENDMENT — the PRESENTER's language: on /admin (the presenter's own session)
+  // that is still the page's live language; on a customer's page (impersonating) it is whoami's
+  // impersonator's, never the page's langSignal (hers) — presenterChromeLang
+  test("REQ-829 the row Demo button's hop (DemoModeOverlay placePresenter) goes to stageHref(<the presenter's language>) — REQ-855", () => {
     const src = read("front-end/islands/DemoModeOverlay.tsx");
-    expect(src).toMatch(/location\.assign\(stageHref\(langSignal\.value\)\)/);
+    expect(src).toMatch(/location\.assign\(stageHref\(presenterLangFor\(who\)\)\)/);
+    expect(src).toMatch(/presenterChromeLang\(\{ who, live: langSignal\.value, \.\.\.pageLangCarry\(\) \}\)/);
     expect(src).not.toMatch(/location\.assign\(STAGE_PATH\)/);
   });
 

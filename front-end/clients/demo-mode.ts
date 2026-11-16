@@ -42,6 +42,10 @@ export const DEMO_OPENING_EVENT = "pm:demo-opening";
 /** the tab's own signal that /admin opened a demo: `detail` is the DemoStarted plus `targetName`
  *  (the overlay takes it straight, no second ask); no detail → the overlay asks the server */
 export const DEMO_STARTED_EVENT = "pm:demo-started";
+/** REQ-855 (cycle dm3, m5) — the overlay's word to this tab that its page now shows (`detail`
+ *  true) or no longer shows (false) a demo this staff presents: the impersonation bar, hidden
+ *  beside the presenter's pill, comes back when the demo is gone */
+export const DEMO_PRESENTING_EVENT = "pm:demo-presenting";
 
 export const demoModeClient = {
   start: (userId: string, opts: ApiOptions = {}) =>
