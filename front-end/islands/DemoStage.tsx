@@ -1454,7 +1454,9 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
           glide.hide();
           lastTRef.current = 0;
           // REQ-430 (cycle 3, m4) — the frozen ghost stops saying "Connected": connecting (or
-          // ended) in the stage's words until the customer's pill speaks again
+          // ended) in the stage's words until the customer's pill speaks again. REQ-875 (cycle
+          // dm5, p4) — "between" (her page held): her last face with no status word, never
+          // "Connecting…" while nothing connects
           setPillFace((f) => pillFaceOffline(f, s));
         }
         if (s === "waiting") setStale(true);
@@ -2034,8 +2036,10 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
                     }px;height:${
                       Math.max(3, 8 * fit.s)
                     }px;border-radius:50%;background:${
-                      pillFace.status === "live" ? "#7ee081" : "#f2c14e"
-                    }`}
+                      // REQ-875 (dm5, p4) — held between pages: not the live green
+                      pillFace.status === "live" && !pillFace.held
+                        ? "#7ee081"
+                        : "#f2c14e"}`}
                   />
                   <span
                     data-cy="demo-pill-ghost-tab-label"

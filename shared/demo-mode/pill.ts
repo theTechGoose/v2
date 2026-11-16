@@ -1040,7 +1040,12 @@ export function ghostWords(
   const closed = face.compact === true && face.open !== true;
   const heard = face.status !== undefined;
   const asking = heard && face.status !== "ended" && face.asking === true;
-  const status = heard ? face.label || t(statusKeyOf(face.status!)) : undefined;
+  // REQ-875 (dm5, p4) — held between pages: no status word (the stage's chrome says "Loading
+  // their next page…"); an ended demo still says so
+  const quiet = face.held === true && face.status !== "ended";
+  const status = heard && !quiet
+    ? face.label || t(statusKeyOf(face.status!))
+    : undefined;
   return {
     title: heard && face.compact !== true
       ? face.title || t("demoMode.title")
@@ -1133,6 +1138,8 @@ export function pillFaceAwaiting(face: PillFace): PillFace {
     ask: _ask,
     yes: _yes,
     no: _no,
+    // REQ-875 (dm5, p4) — a page joined: the hold is over, it is connecting
+    held: _held,
     ...rest
   } = face;
   const status = face.status === "ended" ? "ended" : "connecting";
@@ -1172,7 +1179,14 @@ export function ghostDrawsTab(
  */
 export function pillFaceOffline(face: PillFace, link: string): PillFace {
   if (!face.status || link === "replaced") return face;
-  const { label: _label, ...rest } = face;
+  // REQ-875 (demo-loop cycle dm5, p4) — "between" is not a drop: her page went and the link
+  // holds it (SILENT_GRACE_MS, a navigation) while the chrome says "Loading their next page…".
+  // Nothing is connecting, so the ghost keeps her last face, marked held: no status word (never
+  // "Connecting…", nor a stale "Connected"). An ended demo stays ended.
+  if (link === "between") {
+    return face.status === "ended" ? face : { ...face, held: true };
+  }
+  const { label: _label, held: _held, ...rest } = face;
   const status = link === "ended" ? "ended" : "connecting";
   const label = ownWord(face, status);
   return { ...rest, status, ...(label ? { label } : {}) };

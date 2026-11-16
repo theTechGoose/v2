@@ -224,6 +224,10 @@ export interface PillFace {
   /** REQ-835 (demo-loop cycle dm2, m2) — the customer's pill wraps into rows (`pillWraps`: the
    *  phone's compact pill, opened or asking): the stage's ghost wraps the same way */
   wraps?: boolean;
+  /** REQ-875 (demo-loop cycle dm5, p4) — the STAGE's mark, never on the wire (parsePillFace
+   *  drops it): the customer's page went and the link holds it "between" (SILENT_GRACE_MS, or a
+   *  navigation): the ghost keeps her last face but says no status word, as nothing is connecting */
+  held?: boolean;
 }
 
 /** REQ-545 — a colour the stage may paint: hex, rgb() or rgba() only */
