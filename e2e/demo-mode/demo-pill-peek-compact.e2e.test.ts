@@ -88,8 +88,9 @@ const probe = () => {
   return {
     pill: b,
     tab: box(tab),
-    folded: /^\s*Demo\s*×\s*$/.test(text),
-    compact: !text.includes("Demo mode"),
+    folded: pill?.hasAttribute("data-tucked") ?? false,
+    compact: pill?.hasAttribute("data-compact") ?? false,
+    text: text.slice(0, 60),
     controls: [...controls].map((c) =>
       (c.textContent ?? "").trim().slice(0, 20)
     ),
@@ -155,8 +156,24 @@ Deno.test("REQ-890 (run 6, m1+m2): at 700×800 on /customers the hovered tab ope
       await userPage.mouse.move(tab.x + 30, tab.y + tab.height / 2, {
         steps: 3,
       });
-      await userPage.waitForTimeout(1_500);
-      const open = await userPage.evaluate(probe);
+      // what the pill did over the next 2 s (for the failure message)
+      const timeline: string[] = [];
+      for (let i = 0; i < 10; i++) {
+        await userPage.waitForTimeout(200);
+        const p = await userPage.evaluate(probe);
+        timeline.push(
+          `${(i + 1) * 200}ms ${
+            p.folded ? "folded" : p.compact ? "compact" : "whole"
+          } ${
+            p.pill
+              ? `${Math.round(p.pill.x)},${Math.round(p.pill.y)} w${
+                Math.round(p.pill.width)
+              }`
+              : "-"
+          } controls=${p.controls.length}`,
+        );
+      }
+      const open = { ...(await userPage.evaluate(probe)), timeline };
       await userPage.screenshot({ path: `${folder}/peek-open.png` });
       expect(
         !open.folded && open.pill !== null,
@@ -169,9 +186,20 @@ Deno.test("REQ-890 (run 6, m1+m2): at 700×800 on /customers the hovered tab ope
           JSON.stringify(open)
         }`,
       );
+      // on the tab's row, or (REQ-873: a control's edge on that row — "Export customers" ends
+      // 3 px into it here) the next clear row, one pill height plus the band's gap away; never
+      // 250 px off across the page
+      const feet = Math.abs(pill.y + pill.height - (tab.y + tab.height));
       expect(
-        Math.round(pill.y + pill.height) === Math.round(tab.y + tab.height),
-        `on the tab's row (feet level): pill ${JSON.stringify(pill)} tab ${
+        feet <= pill.height + 8 + 1,
+        `on the tab's row or the row next to it (feet ${feet} px apart): pill ${
+          JSON.stringify(pill)
+        } tab ${JSON.stringify(tab)}`,
+      );
+      // flush with the tab's edge: the pill reaches the tab's x-range
+      expect(
+        pill.x + pill.width >= tab.x + 8 && pill.x <= tab.x + tab.width,
+        `flush with the tab: pill ${JSON.stringify(pill)} tab ${
           JSON.stringify(tab)
         }`,
       );

@@ -1866,11 +1866,16 @@ export default function DemoModeOverlay(
         !peekRef.current;
       // REQ-849 (cycle dm3, p14) — its real width rounded up (offsetWidth rounds 444.08 down to
       // 444, which put a right-edge pill 0.08 px past its place)
+      // REQ-890 — the form on screen, read off the pill itself: this closure's `compact` /
+      // `peekCompact` are the mount's (stale), and the compact peek's size went into the whole
+      // pill's slot (a 282 px "whole" pill on /customers)
+      const compactNow = el.hasAttribute("data-compact");
+      const peekCompactNow = compactNow && !narrow();
       if (!folded) {
         const r = el.getBoundingClientRect();
         const size = { w: Math.ceil(r.width), h: el.offsetHeight };
         // REQ-890 — the compact form shown only for a peek: its size kept apart, the whole's stays
-        if (peekCompact && !compactBase) compactSizeRef.current = size;
+        if (peekCompactNow) compactSizeRef.current = size;
         else fullRef.current = size;
       }
       const home = pillHome({
@@ -1945,9 +1950,7 @@ export default function DemoModeOverlay(
       // places it again): a folded tab costs no sampling of the row
       // REQ-890 — a peek already shown compact (this row was crowded) is placed as the compact
       // pill it is; a whole one offers its compact size (once known) for a crowded row
-      const peekCompactSize = peekCompact && !compactBase
-        ? compactSizeRef.current
-        : null;
+      const peekCompactSize = peekCompactNow ? compactSizeRef.current : null;
       const peekHome = peekCompactSize
         ? pillHome({ view, size: peekCompactSize }).box
         : home.box;
@@ -1969,7 +1972,7 @@ export default function DemoModeOverlay(
       // form is shown (and measured again, a frame later) rather than the pill moving away from
       // the tab or landing on a control. Its size unknown yet: shown as soon as the whole pill
       // would leave the tab's row
-      if (p.tucked && peekRef.current && !compact) {
+      if (p.tucked && peekRef.current && !compactNow) {
         const onRow = Math.round(box.top + box.height) ===
           Math.round(p.box.top + p.box.height);
         const crowded = ("crowded" in box && !!box.crowded) ||
@@ -2581,6 +2584,8 @@ export default function DemoModeOverlay(
         data-cy="demo-pill"
         data-restarted={started ? "" : undefined}
         data-tucked={folded ? "" : undefined}
+        // REQ-890 — the compact form (the phone's, or a peek on a crowded row)
+        data-compact={compact ? "" : undefined}
         // REQ-545 — the link's state, said even while the pill is folded to its tab
         data-status={faceRef.current.status}
         role="status"
