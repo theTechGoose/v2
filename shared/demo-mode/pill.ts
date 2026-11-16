@@ -559,6 +559,10 @@ export function statusKeyOf(s: PillStatus): string {
  * title (never on the compact phone pill, as on the phone) and End (the stage draws it as a
  * disabled chip; none once the demo ended), in the customer's words when their pill sent them.
  * A pill never heard says nothing.
+ *
+ * REQ-822 (demo-loop cycle dm1, m1) — End asking on the customer's pill: its question and both
+ * answers in End's place (the stage draws the answers as disabled chips), in the customer's words
+ * when their pill sent them, else the stage's ("Wants to end the demo", Yes, end it / Keep going).
  */
 export function ghostWords(
   face: PillFace,
@@ -569,9 +573,13 @@ export function ghostWords(
   guide?: string;
   status?: string;
   end?: string;
+  ask?: string;
+  yes?: string;
+  no?: string;
 } {
   const closed = face.compact === true && face.open !== true;
   const heard = face.status !== undefined;
+  const asking = heard && face.status !== "ended" && face.asking === true;
   const status = heard ? face.label || t(statusKeyOf(face.status!)) : undefined;
   return {
     title: heard && face.compact !== true
@@ -580,10 +588,52 @@ export function ghostWords(
     text: !closed && face.text ? face.text : undefined,
     guide: closed && face.guide ? face.guide : undefined,
     status,
-    end: heard && face.status !== "ended"
+    end: heard && face.status !== "ended" && !asking
       ? face.end || t("demoMode.end")
       : undefined,
+    ask: asking ? face.ask || t("demoMode.pillGhostAsking") : undefined,
+    yes: asking ? face.yes || t("demoMode.endYes") : undefined,
+    no: asking ? face.no || t("demoMode.endNo") : undefined,
   };
+}
+
+/** REQ-822 — the face fields that only the customer's overlay changes (End's question and how
+ *  wide it makes the pill): nothing in the mirrored page goes with them */
+const OVERLAY_ONLY = new Set(["asking", "ask", "yes", "no", "clipped"]);
+/** REQ-822 — and the fields the stage's own guess sets after a follow switch (pillFaceAwaiting) */
+const GUESSED = new Set(["status", "label", "tucked"]);
+
+/** REQ-822 — the two faces differ only in `fields` (undefined and absent are alike) */
+function differsOnlyIn(a: PillFace, b: PillFace, fields: Set<string>): boolean {
+  const keys = new Set([...Object.keys(a), ...Object.keys(b)]);
+  for (const k of keys) {
+    if (fields.has(k)) continue;
+    const x = (a as Record<string, unknown>)[k];
+    const y = (b as Record<string, unknown>)[k];
+    if (x !== y) return false;
+  }
+  return true;
+}
+
+/**
+ * REQ-822 (demo-loop cycle dm1, m1) — a pill face the stage shows at once instead of holding it
+ * for its frame (REQ-636): one whose only change from the face on the stage (`shown`) is End's
+ * question going up or down — the customer's own tap, no page change goes with it — or, right
+ * after a follow switch (`awaiting`: the stage shows its own guess, pillFaceAwaiting), the new
+ * page's first face when it differs from that guess only in what the guess made up (status,
+ * label, tucked): the folded mini-pill replaces the guessed whole pill at once. A tuck, an
+ * opened pill or new words otherwise still wait for their frame.
+ */
+export function pillShowsAtOnce(
+  shown: PillFace,
+  next: PillFace,
+  awaiting: boolean,
+): boolean {
+  const fields = awaiting
+    ? new Set([...OVERLAY_ONLY, ...GUESSED])
+    : OVERLAY_ONLY;
+  const asked = (shown.asking === true) !== (next.asking === true);
+  return (asked || awaiting) && differsOnlyIn(shown, next, fields);
 }
 
 /**
@@ -596,7 +646,16 @@ export function ghostWords(
 export function pillFaceAwaiting(face: PillFace): PillFace {
   // REQ-636 (cycle 5, m8) — nor is it tucked: the new page decides that (a non-public page starts
   // with the whole pill), so the old page's tab must not linger on the stage
-  const { label: _label, tucked: _tucked, ...rest } = face;
+  // REQ-822 (dm1, m1) — nor is it asking: End's question was the old page's pill's
+  const {
+    label: _label,
+    tucked: _tucked,
+    asking: _asking,
+    ask: _ask,
+    yes: _yes,
+    no: _no,
+    ...rest
+  } = face;
   return { ...rest, status: face.status === "ended" ? "ended" : "connecting" };
 }
 

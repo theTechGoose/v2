@@ -4382,6 +4382,8 @@
   "demoMode.endAskViewer": "End the demo with {name}?",
   "demoMode.endYes": "Yes, end it",
   "demoMode.endNo": "Keep going",
+  "demoMode.pillGhostAsking": "Wants to end the demo",
+  "demoMode.customerAskingEnd": "{name} is deciding whether to end the demo",
   "demoMode.endedBy": "{name} ended the demo",
   "demoMode.endedByYou": "You ended the demo",
   "demoMode.expired": "The demo expired after two hours",

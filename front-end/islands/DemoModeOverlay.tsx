@@ -176,6 +176,7 @@ import PeerPointer, {
 } from "../components/demo-mode/PeerPointer.tsx";
 import PresenterChips from "../components/demo-mode/PresenterChips.tsx";
 import EndDemo from "../components/demo-mode/EndDemo.tsx";
+import { endDemoWords } from "../components/demo-mode/EndDemo.tsx";
 import {
   ADMIN_PATH,
   type EndedNotice,
@@ -1376,6 +1377,11 @@ export default function DemoModeOverlay(
           dim: bandRef.current.dim,
           title: f.title,
           end: f.end,
+          // REQ-822 (dm1, m1) — End's question, as this pill shows it
+          asking: f.asking,
+          ask: f.ask,
+          yes: f.yes,
+          no: f.no,
         }
         : {};
       const faceKey = JSON.stringify(face);
@@ -1403,7 +1409,11 @@ export default function DemoModeOverlay(
       if (!el) return;
       // REQ-300 — End's question is up: nothing moves, so the Yes a hand is reaching for stays
       // where it was seen — nor does the page under it (the band keeps its height)
-      if (el.querySelector('[data-cy="demo-end-ask"]')) return;
+      // REQ-822 (dm1, m1) — the stage still hears what the pill says (End asking), without moving it
+      if (el.querySelector('[data-cy="demo-end-ask"]')) {
+        sendPill();
+        return;
+      }
       // REQ-379 — the compact form follows the window across PILL_COMPACT_MAX_W, both ways
       setCompact(narrow());
       // the visible bottom: above an iOS keyboard, like the shells' --vvh (MobileViewport)
@@ -1753,6 +1763,17 @@ export default function DemoModeOverlay(
     // draws the whole pill (it hides the title on the compact pill, as this pill does)
     title: t("demoMode.title"),
     end: t("demoMode.end"),
+    // REQ-822 (demo-loop cycle dm1, m1) — End is asking: the question and both answers in this
+    // pill's own words, so the stage's ghost draws them and the presenter knows
+    ...(asking
+      ? (() => {
+        const w = endDemoWords(t, {
+          askKey: "demoMode.endAskViewer",
+          askVars: { name: names },
+        });
+        return { asking: true, ask: w.ask, yes: w.yes, no: w.no };
+      })()
+      : {}),
   };
 
   async function end() {

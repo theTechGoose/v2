@@ -220,6 +220,7 @@ import {
   pillFaceAwaiting,
   pillFaceOffline,
   pillGhost,
+  pillShowsAtOnce,
   STAGE_PILL_BOTTOM,
   stageInsetBottom,
 } from "../../shared/demo-mode/pill.ts";
@@ -1240,24 +1241,36 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
     commandRef.current = command;
     /** REQ-636 (cycle 5, m8) — the customer's pill faces, each held until its frame is replayed */
     const pills = createPillSync<PillMsg>();
+    /** REQ-822 (dm1, m1) — the face on the stage as the customer's pill last said it, and whether
+     *  the stage shows its own guess since a follow switch (pillFaceAwaiting) */
+    let shownFace: PillFace = {};
+    let awaiting = false;
+    const faceOf = (m: PillMsg): PillFace => ({
+      compact: m.compact,
+      open: m.open,
+      status: m.status,
+      text: m.text,
+      clipped: m.clipped,
+      label: m.label,
+      guide: m.guide,
+      // REQ-545 (cycle 4, m2) — tucked to its tab, and the band the customer sees
+      tucked: m.tucked,
+      band: m.band,
+      bandBg: m.bandBg,
+      dim: m.dim,
+      title: m.title,
+      end: m.end,
+      // REQ-822 (dm1, m1) — End asking on their pill, in their words
+      asking: m.asking,
+      ask: m.ask,
+      yes: m.yes,
+      no: m.no,
+    });
     const showPill = (m: PillMsg) => {
       setPillBox(m.r);
-      setPillFace({
-        compact: m.compact,
-        open: m.open,
-        status: m.status,
-        text: m.text,
-        clipped: m.clipped,
-        label: m.label,
-        guide: m.guide,
-        // REQ-545 (cycle 4, m2) — tucked to its tab, and the band the customer sees
-        tucked: m.tucked,
-        band: m.band,
-        bandBg: m.bandBg,
-        dim: m.dim,
-        title: m.title,
-        end: m.end,
-      });
+      shownFace = faceOf(m);
+      awaiting = false;
+      setPillFace(shownFace);
     };
     const rx = createMirrorReceiver({
       onFrame: (f, load, seq, sent) => {
@@ -1385,6 +1398,10 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
         // connecting and cannot say so: its face rides the link that is opening) — never a blank
         // and then a "Connected" the customer's pill never showed
         setPillFace((f) => pillFaceAwaiting(f));
+        // REQ-822 (dm1, m1) — the new page's first face replaces that guess at once when it
+        // differs from it only in what the guess made up (its tuck, its status)
+        shownFace = pillFaceAwaiting(shownFace);
+        awaiting = true;
         // REQ-636 (cycle 5, m8) — the old tab's held faces go; the new tab's wait for its own
         // frames, and it is asked for its pill (one it sent before this stage followed it was
         // dropped by the link)
@@ -1460,7 +1477,12 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
             break;
           case "pill": {
             // REQ-636 (cycle 5, m8) — shown with the frame it went out with (held till then)
-            const p = pills.offer(m, m.t);
+            // REQ-822 (dm1, m1) — End's question (overlay state only) is not held for a frame
+            const p = pills.offer(
+              m,
+              m.t,
+              pillShowsAtOnce(shownFace, faceOf(m), awaiting),
+            );
             if (p) showPill(p);
             break;
           }
@@ -1941,6 +1963,32 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
                       {words.status}
                     </span>
                   )}
+                  {words.ask && (
+                    // REQ-822 (demo-loop cycle dm1, m1) — End is asking on their pill: the
+                    // question and both answers in End's place, chips the stage cannot use
+                    <>
+                      <strong
+                        data-cy="demo-pill-ghost-ask"
+                        style="flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis"
+                      >
+                        {words.ask}
+                      </strong>
+                      <span
+                        data-cy="demo-pill-ghost-yes"
+                        aria-disabled="true"
+                        style="flex:none;padding:1px 5px;border-radius:5px;background:#c62828;color:#fff;font-weight:700;opacity:.75"
+                      >
+                        {words.yes}
+                      </span>
+                      <span
+                        data-cy="demo-pill-ghost-no"
+                        aria-disabled="true"
+                        style="flex:none;text-decoration:underline;font-weight:600;opacity:.75"
+                      >
+                        {words.no}
+                      </span>
+                    </>
+                  )}
                   {words.end && (
                     // REQ-540 (cycle 4, m9) — the pill's End, drawn as a chip the stage cannot use
                     <span
@@ -2164,6 +2212,18 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
               >
                 {statusLabel}
               </span>
+              {pillFace.asking === true && pillFace.status !== "ended" &&
+                !ended && (
+                  // REQ-822 (demo-loop cycle dm1, m1) — End is asking on the customer's pill: said on
+                  // this pill too, wherever (or whether) the ghost is in view
+                  <span
+                    data-cy="demo-customer-asking-end"
+                    role="status"
+                    style="padding:2px 8px;border-radius:999px;background:#f2c14e;color:#3a2a00;font-size:11.5px;font-weight:700"
+                  >
+                    {t("demoMode.customerAskingEnd", { name })}
+                  </span>
+                )}
               {dev && statsText && (
                 <span
                   data-cy="demo-mirror-stats"
