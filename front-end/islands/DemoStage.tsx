@@ -222,6 +222,7 @@ import {
   endedHref,
   type EndedNotice,
   whoEnded,
+  withLang,
 } from "../../shared/demo-mode/ended.ts";
 import {
   bandGhostBox,
@@ -1746,7 +1747,8 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
     } catch {
       // not impersonating, or signed out
     }
-    globalThis.location.href = endedHref(notice);
+    // REQ-829 — /admin in the stage's language, not the profile's
+    globalThis.location.href = endedHref(notice, langSignal.value);
   }
 
   /** REQ-541 (cycle 4, M22) — the demo went without this stage hearing who ended it: back to
@@ -1783,7 +1785,7 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
     } catch {
       // not impersonating, or signed out
     }
-    globalThis.location.href = "/admin";
+    globalThis.location.href = withLang("/admin", langSignal.value);
   }
 
   // REQ-648 — a click on the page they left (the next one loading) is never sent: it landed on

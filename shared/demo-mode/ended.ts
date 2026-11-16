@@ -16,7 +16,12 @@
  *     cancel itself after 4 s, before an agent or a reading human had answered, so Yes landed on
  *     nothing. It now stays up until answered, Escape, or a click outside the pill (EndDemo).
  */
-import type { EndReason, Presenter, Role } from "./protocol.ts";
+import {
+  type EndReason,
+  type Presenter,
+  type Role,
+  STAGE_PATH,
+} from "./protocol.ts";
 
 /** who ended it, from the reader's side: themselves, someone by name, or nobody nameable */
 export type EndedNotice =
@@ -103,8 +108,21 @@ export function endedText(
   return { key: "demoMode.ended" };
 }
 
-/** /admin, saying who ended it */
-export function endedHref(n: EndedNotice): string {
+/** REQ-829 (demo-loop dm2, m7) — `href` carrying the presenter's live language as `lang=`, so the
+ *  page it opens speaks what the presenter was viewing (an es-profile staff on /admin?lang=en);
+ *  unchanged without a language */
+export function withLang(href: string, lang?: string | null): string {
+  if (lang !== "en" && lang !== "es") return href;
+  return `${href}${href.includes("?") ? "&" : "?"}lang=${lang}`;
+}
+
+/** REQ-829 — the stage, in the presenter's live language */
+export function stageHref(lang?: string | null): string {
+  return withLang(STAGE_PATH, lang);
+}
+
+/** /admin, saying who ended it; REQ-829 — in the stage's language when given */
+export function endedHref(n: EndedNotice, lang?: string | null): string {
   const q = new URLSearchParams({ demo: "ended" });
   if (n.by === "you") q.set("by", "you");
   if (n.by === "expired") q.set("by", "expired");
@@ -112,7 +130,7 @@ export function endedHref(n: EndedNotice): string {
     q.set("by", "other");
     q.set("name", n.name.slice(0, NAME_MAX));
   }
-  return `${ADMIN_PATH}?${q}`;
+  return withLang(`${ADMIN_PATH}?${q}`, lang);
 }
 
 /** the notice an address carries, and the address's own parameters without it; null when none */

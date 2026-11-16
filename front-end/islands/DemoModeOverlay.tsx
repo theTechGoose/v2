@@ -195,8 +195,10 @@ import {
   endedText,
   goneNotice,
   readEndedNotice,
+  stageHref,
   whoEnded,
 } from "../../shared/demo-mode/ended.ts";
+import { langSignal } from "../lib/i18n.ts";
 import {
   askDock,
   backdropCovers,
@@ -725,7 +727,9 @@ export default function DemoModeOverlay(
         // where this page last saw the mouse (the click on Demo, Back to the demo); REQ-539 (m24)
         // — tagged /admin's: the stage uses it for its off hint only, never sends it
         handCursor(sessionStore(), cursorRef.current, Date.now(), "admin");
-        globalThis.location.assign(STAGE_PATH);
+        // REQ-829 (dm2, m7) — the stage opens in the language this page shows (an es-profile
+        // staff on /admin?lang=en gets an English stage)
+        globalThis.location.assign(stageHref(langSignal.value));
       }
     } finally {
       placingRef.current = false;

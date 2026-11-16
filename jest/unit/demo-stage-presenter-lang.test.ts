@@ -30,11 +30,12 @@ describe("REQ-341 presenterLang picks the presenter, not the impersonated custom
     ).toBe("es");
   });
 
-  test("REQ-341 not impersonating / whoami failed / impersonator without a language → the resolved user's; nothing → en", () => {
+  test("REQ-341 (amended by REQ-829) not impersonating / whoami failed → the resolved user's; impersonator without a language → en (not the customer's); nothing → en", () => {
     const es = { id: "cust", language: "es" as const };
     expect(presenterLang({ authenticated: true, impersonating: false }, es)).toBe("es");
     expect(presenterLang(undefined, es)).toBe("es");
-    expect(presenterLang({ authenticated: true, impersonating: true, impersonator: { id: "s" } }, es)).toBe("es");
+    // REQ-829 (dm2, m7): never the impersonated customer's language — the pm_lang cookie, then en
+    expect(presenterLang({ authenticated: true, impersonating: true, impersonator: { id: "s" } }, es)).toBe("en");
     expect(presenterLang(undefined, undefined)).toBe("en");
   });
 });

@@ -102,9 +102,10 @@ Deno.test("REQ-376 /admin while this browser guides a customer: an interstitial 
   );
   assert(body.includes('data-cy="admin-gate"'));
   assert(
-    /data-cy="admin-gate-back"[^>]*href="\/demo\/stage"|href="\/demo\/stage"[^>]*data-cy="admin-gate-back"/
+    // REQ-829: in the presenter's language (?lang=)
+    /data-cy="admin-gate-back"[^>]*href="\/demo\/stage\?lang=(en|es)"|href="\/demo\/stage\?lang=(en|es)"[^>]*data-cy="admin-gate-back"/
       .test(body),
-    "Back to the demo goes to the stage",
+    "Back to the demo goes to the stage, in the presenter's language",
   );
   assert(body.includes('data-cy="admin-gate-return"'));
   assert(body.includes("Return to your account"));

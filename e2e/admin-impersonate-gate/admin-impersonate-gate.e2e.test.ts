@@ -117,10 +117,12 @@ Deno.test("REQ-376 m20 + nc-second-demo: a second /admin tab during a demo shows
         /start another demo/i.test(text),
         `it says how to start another demo: ${text}`,
       );
-      expect.eq(
-        await tabB.locator("[data-cy='admin-gate-back']").getAttribute("href"),
-        "/demo/stage",
-        "Back to the demo goes to the stage",
+      // REQ-829: in the presenter's language
+      const back = await tabB.locator("[data-cy='admin-gate-back']")
+        .getAttribute("href");
+      expect(
+        /^\/demo\/stage\?lang=(en|es)$/.test(back ?? ""),
+        `Back to the demo goes to the stage, in the presenter's language: ${back}`,
       );
 
       // Return to your account → the console, Demo reachable again

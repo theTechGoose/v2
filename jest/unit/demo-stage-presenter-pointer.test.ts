@@ -552,7 +552,9 @@ describe("REQ-393 the customer's overlay: an off anchor sits on the window's edg
     const place = overlay.slice(
       overlay.indexOf("async function placePresenter("),
     );
-    const assign = place.indexOf("globalThis.location.assign(STAGE_PATH)");
+    const assign = place.indexOf(
+      "globalThis.location.assign(stageHref(langSignal.value))", // REQ-829
+    );
     // REQ-539 AMENDMENT (demo m24) — tagged /admin's: a hint for the stage, never sent
     const hand = place.indexOf(
       'handCursor(sessionStore(), cursorRef.current, Date.now(), "admin")',
