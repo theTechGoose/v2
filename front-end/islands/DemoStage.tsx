@@ -222,6 +222,7 @@ import {
   STAGE_BADGE_H,
   STAGE_DEBUG_KEY,
   STAGE_TOP_INSET,
+  stageBadgesShown,
   stageBadgeTop,
   stageDebugOn,
   stageEndShown,
@@ -1621,6 +1622,10 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
       onEnded: (by, reason, pid) => {
         leavingRef.current = true; // REQ-541 — the notice below says who ended it
         setEnded(true);
+        // REQ-868 (dm5 p8) — no live badge beside "The demo ended"
+        setOff(false);
+        setTabNote(null);
+        setAbsent(false);
         customerRef.current = null;
         peersRef.current.clear();
         placedRef.current.clear();
@@ -1791,6 +1796,10 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
     endedHere.current = true;
     leavingRef.current = true;
     setEnded(true);
+    // REQ-868 (dm5 p8) — no live badge beside "The demo ended"
+    setOff(false);
+    setTabNote(null);
+    setAbsent(false);
     linkRef.current?.end();
     try {
       if (demo) await demoModeClient.end(demo.id);
@@ -1858,6 +1867,14 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
     stale,
     styled,
     loadingNext,
+  });
+  // REQ-868 (cycle dm5, p8) — the chrome-row badges (pointer off, tab switched, pointer absent):
+  // one gate, false once the demo has ended
+  const badges = stageBadgesShown({
+    ended,
+    mirrored: !!mirrored,
+    elsewhere: !!look.elsewhere,
+    waiting: look.waiting,
   });
   // REQ-846 (cycle dm3, p11) — the waiting / signed-out notice, whole: the banner shows it on one
   // line in the chrome row (clipped with an ellipsis), its title and aria-label carry all of it
@@ -2288,7 +2305,7 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
               /* REQ-393 (demo M8) — his mouse is beside the frame: said, on its outline; REQ-642 —
                 in the chrome row above the frame, never over the replica */
             }
-            {mirrored && !look.elsewhere && !look.waiting && off && (
+            {badges && off && (
               <div
                 data-cy="demo-pointer-off"
                 role="status"
@@ -2310,8 +2327,7 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
                 moves. REQ-826 (dm2 p10) — it names the page (never its URL) and sits in REQ-642's
                 chrome row above the frame, never over the replica */
             }
-            {mirrored && !look.elsewhere && !look.waiting && tabNote !== null &&
-              !off && (
+            {badges && tabNote !== null && !off && (
               <div
                 data-cy="demo-tab-switched"
                 role="status"
@@ -2336,8 +2352,7 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
                 REQ-838 (cycle dm2, p4) — never while their app is gone (signed out, waiting): there
                 is no screen to move it onto */
             }
-            {mirrored && !look.elsewhere && !signedOut && !look.waiting &&
-              absent && !off && tabNote === null && (
+            {badges && !signedOut && absent && !off && tabNote === null && (
               <div
                 data-cy="demo-pointer-absent"
                 role="status"

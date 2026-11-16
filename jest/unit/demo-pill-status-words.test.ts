@@ -486,9 +486,16 @@ describe("REQ-838 p4 — the customer signed out: the stage draws nothing of a s
   });
 
   test("no 'move it to show it' advice while their app is gone — signed out or waiting", () => {
-    const g = guardOf('data-cy="demo-pointer-absent"');
+    // REQ-868 (dm5 p8) — the chrome-row badges share one gate, `badges = stageBadgesShown({…})`,
+    // which carries `waiting: look.waiting` (and is false while waiting)
+    const at = s.indexOf('data-cy="demo-pointer-absent"');
+    expect(at).toBeGreaterThan(-1);
+    const open = s.lastIndexOf("{badges", at);
+    const g = s.slice(open, s.indexOf("(", open));
     expect(g).toMatch(/!signedOut/);
-    expect(g).toMatch(/!look\.waiting/);
+    expect(s).toMatch(
+      /const badges = stageBadgesShown\(\{[^}]*waiting: look\.waiting[^}]*\}\)/,
+    );
   });
 
   test("none of his pointer either: his 'You' marker and his arrow's ghost are not drawn while they are signed out", () => {

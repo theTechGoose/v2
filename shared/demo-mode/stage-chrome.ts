@@ -121,3 +121,19 @@ export function stageEndShown(ended: boolean): boolean {
 export function stageLiveDetailsShown(ended: boolean): boolean {
   return !ended;
 }
+
+/**
+ * REQ-868 (demo-loop cycle dm5, issue p8) — the chrome-row badges above the frame (pointer off,
+ * tab switched, pointer absent) are drawn only while the demo is live. Once it has ended (end():
+ * 800 ms after the API answers; onEnded: 1500 ms) the stage read "Your pointer is off Maria
+ * Lopez's screen" next to "The demo ended" until the hop to /admin. One gate for all three, so they
+ * stay consistent: mirrored, live, the customer on the demo's tab, and not waiting for their app.
+ */
+export function stageBadgesShown(o: {
+  ended: boolean;
+  mirrored: boolean;
+  elsewhere: boolean;
+  waiting: boolean;
+}): boolean {
+  return !o.ended && o.mirrored && !o.elsewhere && !o.waiting;
+}
