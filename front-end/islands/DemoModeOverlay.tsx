@@ -211,6 +211,7 @@ import {
   PAGE_MEDIA_SELECTOR,
   pastBackdrop,
   peekBox,
+  peekHolds,
   peekTimer,
   PILL_BAND_GAP,
   PILL_COMPACT_MAX_W,
@@ -530,6 +531,11 @@ export default function DemoModeOverlay(
    *  Tracked on the persistent pill div, so a tab swapped for the whole pill under a resting
    *  pointer keeps it; a touch never counts (its :hover sticks after a tap) */
   const overPillRef = useRef(false);
+  /** REQ-849 (demo-loop cycle dm3, p14) — the folded tab's box (the peek keeps PILL_MARGIN from
+   *  the edge, so the pointer that opened it may rest in the gap, on the tab's old box) and the
+   *  last mouse/pen pointer seen (NaN: none yet) */
+  const peekTabRef = useRef<Rect | null>(null);
+  const pointRef = useRef({ x: NaN, y: NaN });
   /** REQ-820 — the frame that turns the tab into the whole pill: no transform glide, so it never
    *  slides in from the tab's translate (half off-screen on the right edge) */
   const [noGlide, setNoGlide] = useState(false);
@@ -539,7 +545,14 @@ export default function DemoModeOverlay(
   foldTimer.current ??= peekTimer({
     held: () =>
       overPillRef.current ||
-      !!pillRef.current?.querySelector('[data-cy="demo-end-ask"]'),
+      !!pillRef.current?.querySelector('[data-cy="demo-end-ask"]') ||
+      // REQ-849 — or in the pill-plus-tab region (the gap between the peek and the edge)
+      (peekRef.current && !!pillRef.current &&
+        peekHolds({
+          pill: pillRef.current.getBoundingClientRect(),
+          tab: peekTabRef.current,
+          ...pointRef.current,
+        })),
     fold: () => setPeek(false),
   });
   /** REQ-545 — what the stage is told of the strip under the pill. REQ-781 (cycle dv1, d7): no
@@ -1662,7 +1675,12 @@ export default function DemoModeOverlay(
       // REQ-545 — folded to its tab, the size it has when whole
       const folded = yieldsRef.current && tuckedRef.current &&
         !peekRef.current;
-      if (!folded) fullRef.current = { w: el.offsetWidth, h: el.offsetHeight };
+      // REQ-849 (cycle dm3, p14) — its real width rounded up (offsetWidth rounds 444.08 down to
+      // 444, which put a right-edge pill 0.08 px past its place)
+      if (!folded) {
+        const r = el.getBoundingClientRect();
+        fullRef.current = { w: Math.ceil(r.width), h: el.offsetHeight };
+      }
       const home = pillHome({
         view,
         size: fullRef.current ?? { w: el.offsetWidth, h: PILL_TAB.h },
@@ -1708,14 +1726,15 @@ export default function DemoModeOverlay(
       };
       // REQ-781 — the mini-pill on the left edge or the right one
       const edge = tabBox(home.box);
+      peekTabRef.current = p.tucked ? p.box : null;
       if (p.tucked) {
         setTabAt({
           x: Math.round(p.box.left - edge.left),
           y: Math.round(p.box.top - edge.top),
         });
       }
-      // tucked: a hover or tap shows the whole pill out of its tab — flush with the tab's edge,
-      // so the pointer that opened it is on it (leaving it folds it again). REQ-818 (cycle dm1,
+      // tucked: a hover or tap shows the whole pill out of its tab — at the tab's edge, PILL_MARGIN
+      // in (REQ-849), held while the pointer is on it or on the tab's box (leaving folds it). REQ-818 (cycle dm1,
       // m5) — unless a control is under it there (a footer link): slid along the tab's row to the
       // place with the fewest controls, inside the window. Measured only while it is out (a peek
       // places it again): a folded tab costs no sampling of the row
@@ -1855,6 +1874,28 @@ export default function DemoModeOverlay(
   useEffect(() => {
     placeRef.current();
   }, [peek, open, fresh]);
+  // REQ-849 (demo-loop cycle dm3, p14) — while the pill is out of its tab: where the mouse is, and
+  // a pointer that was in the pill-plus-tab region leaving it folds it (as leaving the pill does)
+  useEffect(() => {
+    if (!peek) return;
+    let inside = false;
+    const move = (e: PointerEvent) => {
+      if (e.pointerType === "touch") return;
+      pointRef.current = { x: e.clientX, y: e.clientY };
+      const el = pillRef.current;
+      if (!el) return;
+      const now = peekHolds({
+        pill: el.getBoundingClientRect(),
+        tab: peekTabRef.current,
+        ...pointRef.current,
+      });
+      if (inside && !now) foldTimer.current?.arm(300);
+      inside = now;
+    };
+    const opts = { capture: true, passive: true };
+    document.addEventListener("pointermove", move, opts);
+    return () => document.removeEventListener("pointermove", move, opts);
+  }, [peek]);
   // REQ-820 — the whole pill is painted where it is: from the next move on, it glides again
   useEffect(() => {
     if (!noGlide) return;

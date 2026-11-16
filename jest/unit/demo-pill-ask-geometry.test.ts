@@ -84,7 +84,8 @@ describe("REQ-835 (demo-loop cycle dm2, m2 + M2) — the open End question: one 
   test("REQ-835 m2: opened from the right-edge peek, the rect sent to the stage is the pill's real (bounding) box — not atRef's old left with the new width", () => {
     const view = { w: 1280, h: 800 };
     const { peek, dock } = rightPeek(view, { w: 462, h: 43 });
-    expect(peek.left).toBe(818);
+    // REQ-849 (cycle dm3, p14) — PILL_MARGIN in from the right edge (was 818, flush)
+    expect(peek.left).toBe(806);
     // atRef as place() left it: the peek, before the question (REQ-300 froze it there)
     const at = { left: peek.left, top: peek.top };
     const asking = { w: 771, h: 43 };
@@ -108,8 +109,8 @@ describe("REQ-835 (demo-loop cycle dm2, m2 + M2) — the open End question: one 
     expect(sentRest.left + sentRest.width).toBeLessThanOrEqual(
       view.w - PILL_MARGIN,
     );
-    // the old rect (the bug): atRef's left + the live width, 818..1589
-    expect(at.left + asking.w).toBe(1589);
+    // the old rect (the bug): atRef's left + the live width, 818..1589 (806..1577 since REQ-849's margin)
+    expect(at.left + asking.w).toBe(1577);
     expect(sentRest.left).not.toBe(at.left);
   });
 

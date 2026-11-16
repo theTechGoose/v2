@@ -322,6 +322,10 @@ function fewest(boxes: Rect[], controls: (r: Rect) => number): Rect {
  * a tap): on the tab's row (its foot on the tab's foot), flush with the tab's edge (centred over a
  * tab along the bottom) — so the pointer that opened it is on it — unless a control is under it there: then slid along the row to the
  * place with the fewest controls, nearest that edge first. Always inside the window.
+ * REQ-849 (demo-loop cycle dm3, p14) — kept PILL_MARGIN from either window edge, like every other
+ * spot (`pillSpots`): a peek flush with the right edge read as a pill pressed against it while the
+ * top-right one kept 12 px. The pointer that opened it may then be in the gap, on the tab's old
+ * box: `peekHolds` counts that box as part of the pill, so it does not fold.
  */
 export function peekBox(o: {
   home: Rect;
@@ -334,27 +338,47 @@ export function peekBox(o: {
   controls?: (r: Rect) => number;
 }): Rect {
   const w = o.home.width;
-  const max = Math.max(0, o.view.w - w);
+  // REQ-849 — inside the margins (a pill wider than that: at the left margin)
+  const min = PILL_MARGIN;
+  const max = Math.max(min, o.view.w - PILL_MARGIN - w);
   const top = o.tab.top + o.tab.height - o.home.height;
-  // flush with the left edge, or the right one; a tab along the bottom: centred over it
+  // at the left edge's margin, or the right one's; a tab along the bottom: centred over it
   const flush = o.tab.left <= 0
-    ? 0
+    ? min
     : o.tab.left + o.tab.width >= o.view.w
     ? max
     : Math.max(
-      0,
+      min,
       Math.min(Math.round(o.tab.left + (o.tab.width - w) / 2), max),
     );
   const at = (x: number): Rect => ({
     ...o.home,
     top,
-    left: Math.max(0, Math.min(Math.round(x), max)),
+    left: Math.max(min, Math.min(Math.round(x), max)),
   });
   const xs = [flush];
-  for (let x = 0; x < max; x += PILL_TAB.w / 2) xs.push(x);
+  for (let x = min; x < max; x += PILL_TAB.w / 2) xs.push(x);
   xs.push(max);
   xs.sort((a, b) => Math.abs(a - flush) - Math.abs(b - flush));
   return fewest(xs.map(at), o.controls ?? (() => 0));
+}
+
+/**
+ * REQ-849 (demo-loop cycle dm3, p14) — the peek is held while the pointer is on the pill OR on the
+ * tab's box it opened from: the peek keeps PILL_MARGIN from the edge, so a pointer that opened it
+ * on the tab's outer part sits in the gap, and folding there would only open it again. `tab` null
+ * (no tab placed) or a pointer never seen (NaN): only the pill counts.
+ */
+export function peekHolds(o: {
+  pill: Rect;
+  tab: Rect | null;
+  x: number;
+  y: number;
+}): boolean {
+  const inside = (r: Rect) =>
+    o.x >= r.left && o.x <= r.left + r.width && o.y >= r.top &&
+    o.y <= r.top + r.height;
+  return inside(o.pill) || (o.tab !== null && inside(o.tab));
 }
 
 /**
@@ -468,7 +492,7 @@ export function placePill(o: {
  * up, so a pill placed from the right edge (`peekBox`, the bottom-right / top-right `pillSpots`)
  * ran past the right edge with "Yes, end it" off-screen. Its right edge is pulled to the margin
  * and its top kept under the top margin; a pill that already fits does not move (a left-edge peek
- * stays flush with the edge).
+ * stays at its margin, REQ-849).
  */
 export function keepInView(r: Rect, view: Size, margin = PILL_MARGIN): Rect {
   let left = r.left;
