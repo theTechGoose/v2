@@ -456,8 +456,10 @@ export function pillRows(o: {
  *      REQ-818 (cycle dm1, m5): not the left edge blindly — the mini-pill or whole spot with the
  *      fewest controls under it.
  * A public document page (`minimal`) prefers the whole pill (End in reach): 1, 3, then 2. The
- * ended notice (`floats`) and a pill that does not yield never fold: 1, 3, else (REQ-866, cycle
- * dm4, m2b) the whole spot with the fewest controls under it — home only when none has fewer.
+ * ended notice (`floats`) and a pill that does not yield never fold: 1, then (REQ-874, cycle dm5,
+ * p9) a row between (`pillRows`) with nothing of the page under it — never over the footer's
+ * address while a row is clear — then 3, else (REQ-866, cycle dm4, m2b) the whole spot with the
+ * fewest controls under it — home only when none has fewer.
  */
 export function placePill(o: {
   home: Rect;
@@ -551,6 +553,13 @@ export function placePill(o: {
   if (folds && !o.minimal) {
     const t = tab();
     if (t) return fold(t);
+  }
+  // REQ-874 (demo-loop cycle dm5, p9) — a pill that does not fold takes a row with nothing of the
+  // page under it before a spot with only text under it: the ended notice sat bottom-right over
+  // /admin's footer address ("45…" cut off) while the row above was clear
+  if (!folds) {
+    const row = pillRows(o).find((r) => blocked(r) === 0);
+    if (row) return whole(row);
   }
   const clear = spots.find((r) => controls(r) === 0);
   if (clear) return whole(clear);
