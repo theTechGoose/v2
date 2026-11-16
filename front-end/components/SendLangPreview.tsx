@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "preact/hooks";
 import { type Lang, tFor } from "../lib/i18n.ts";
 import { quotesClient } from "../clients/quotes.ts";
+import { fitFrameToContent } from "../lib/email-frame-fit.ts";
 import {
   type QuoteSendPreview,
   type SendPreviewChannel,
@@ -132,6 +133,49 @@ export default function SendLangPreview(
   );
 }
 
+/**
+ * REQ-819 (demo-loop cycle dm1, M3) — the email, as tall as it is: no scroller of its own, so
+ * the dialog's scroll (which the demo mirror carries) is what moves, and the pointer over it is
+ * the page's (`pointer-events: none` in the CSS). Same-origin so the page can measure it; never
+ * allow-scripts, so nothing in it runs. Re-fitted on every load (a new srcdoc: the language
+ * switch) and when its width changes (the email re-wraps).
+ */
+function EmailFrame({ html, title }: { html: string; title: string }) {
+  const ref = useRef<HTMLIFrameElement>(null);
+  useEffect(() => {
+    const f = ref.current;
+    if (!f) return;
+    const fit = () => fitFrameToContent(f);
+    f.addEventListener("load", fit);
+    fit(); // the srcdoc may have loaded before this effect ran
+    const RO = f.ownerDocument.defaultView?.ResizeObserver;
+    let width = f.clientWidth;
+    const ro = RO
+      ? new RO(() => {
+        if (f.clientWidth === width) return; // its own height change: nothing to do
+        width = f.clientWidth;
+        fit();
+      })
+      : null;
+    ro?.observe(f);
+    return () => {
+      f.removeEventListener("load", fit);
+      ro?.disconnect();
+    };
+  }, []);
+  return (
+    <iframe
+      ref={ref}
+      class="send-dialog__preview-frame"
+      data-cy="send-preview-email"
+      title={title}
+      sandbox="allow-same-origin"
+      scrolling="no"
+      srcdoc={html}
+    />
+  );
+}
+
 /** The rendered parts, per channel: the subject and the email itself (a
  *  sandboxed frame — the same HTML the customer's inbox gets), then the text. */
 export function SendPreviewBody(
@@ -164,12 +208,9 @@ export function SendPreviewBody(
                 {preview.email.subject}
               </strong>
             </p>
-            <iframe
-              class="send-dialog__preview-frame"
-              data-cy="send-preview-email"
+            <EmailFrame
+              html={preview.email.html}
               title={preview.email.subject}
-              sandbox=""
-              srcdoc={preview.email.html}
             />
           </section>
         )

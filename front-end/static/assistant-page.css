@@ -9676,10 +9676,14 @@ body {
   margin: 0 0 8px;
   overflow-wrap: anywhere;
 }
+/* REQ-819 (demo dm1, M3): sized to its email by SendLangPreview (no inner scroller the demo
+   mirror can't see — the dialog's max-height + overflow scroll is what moves); the height here
+   is only until the email loads. The pointer over it stays the page's, so the demo tracks it. */
 .send-dialog__preview-frame {
   display: block;
   width: 100%;
-  height: 320px;
+  height: 160px;
+  pointer-events: none;
   border: 1px solid rgba(20, 72, 82, 0.12);
   border-radius: 8px;
   background: #fff;
