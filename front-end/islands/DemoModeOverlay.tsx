@@ -200,6 +200,7 @@ import {
   coversView,
   dialogDim,
   isPublicDocPath,
+  keepInView,
   PAGE_MEDIA_SELECTOR,
   peekBox,
   peekTimer,
@@ -1606,6 +1607,37 @@ export default function DemoModeOverlay(
       }
     };
   }, [shown, demo?.role]);
+
+  // REQ-816 (demo-loop cycle dm1, M1) — End's question just came up: the pill is wider now (and
+  // two rows on the phone), and REQ-300 freezes its place while it asks. Placed from the right edge
+  // (a peek from the right-edge mini-pill, the bottom-right / top-right spot) it grew past the
+  // window's right edge, "Yes, end it" off-screen — so it is placed once at its asking size, before
+  // paint, and only then frozen
+  useLayoutEffect(() => {
+    if (!asking) return;
+    const el = pillRef.current;
+    if (!el || el.hasAttribute("data-tucked")) return;
+    const vv = globalThis.visualViewport;
+    const view = {
+      w: globalThis.innerWidth,
+      h: vv ? vv.offsetTop + vv.height : globalThis.innerHeight,
+    };
+    const w = el.offsetWidth;
+    const h = el.offsetHeight;
+    setDock((d) => {
+      // anchored at left PILL_MARGIN and its foot PILL_BAND_GAP above the visible bottom
+      const foot = view.h - PILL_BAND_GAP + d.y;
+      const r = { left: PILL_MARGIN + d.x, top: foot - h, width: w, height: h };
+      const fit = keepInView(r, view);
+      if (fit === r) return d;
+      return {
+        x: Math.round(fit.left - PILL_MARGIN),
+        y: Math.round(d.y + (fit.top - r.top)),
+      };
+    });
+    // the stage's ghost follows the move
+    setTimeout(() => sendPillRef.current(), PILL_MOVE_MS + 20);
+  }, [asking]);
 
   // REQ-372 — the pill's words changed (status, compact, opened): the stage hears it; a render that
   // changed nothing sends nothing (sendPill compares)

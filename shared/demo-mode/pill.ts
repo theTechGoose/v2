@@ -290,7 +290,11 @@ export function peekBox(o: {
   home: Rect;
   view: Size;
   tab: Rect;
-  controls: (r: Rect) => number;
+  /** REQ-816 — the left edge's tab spot (`tabBox(home)`); the tab's own box already says which
+   *  edge it is on, so it is not needed (kept for the REQ-816 callers) */
+  edge?: Rect;
+  /** REQ-818 — controls under a box; none counted when absent (flush with the tab's edge) */
+  controls?: (r: Rect) => number;
 }): Rect {
   const w = o.home.width;
   const max = Math.max(0, o.view.w - w);
@@ -313,7 +317,7 @@ export function peekBox(o: {
   for (let x = 0; x < max; x += PILL_TAB.w / 2) xs.push(x);
   xs.push(max);
   xs.sort((a, b) => Math.abs(a - flush) - Math.abs(b - flush));
-  return fewest(xs.map(at), o.controls);
+  return fewest(xs.map(at), o.controls ?? (() => 0));
 }
 
 /**
@@ -419,6 +423,23 @@ export function placePill(o: {
   if (t) return fold(t);
   const best = fewest([...tabs, ...spots], controls);
   return tabs.includes(best) ? fold(best) : whole(best);
+}
+
+/**
+ * REQ-816 (demo-loop cycle dm1, M1) — the pill grown where it stands (End's question, the phone's
+ * wrapped second row) kept inside the window: anchored on its left and its foot, it grows right and
+ * up, so a pill placed from the right edge (`peekBox`, the bottom-right / top-right `pillSpots`)
+ * ran past the right edge with "Yes, end it" off-screen. Its right edge is pulled to the margin
+ * and its top kept under the top margin; a pill that already fits does not move (a left-edge peek
+ * stays flush with the edge).
+ */
+export function keepInView(r: Rect, view: Size, margin = PILL_MARGIN): Rect {
+  let left = r.left;
+  if (left + r.width > view.w - margin) {
+    left = Math.max(Math.min(r.left, margin), view.w - margin - r.width);
+  }
+  const top = r.top < margin ? margin : r.top;
+  return left === r.left && top === r.top ? r : { ...r, left, top };
 }
 
 /**
