@@ -1534,6 +1534,11 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
             reportRef.current = m;
             showGhost();
             break;
+          case "renamed":
+            // REQ-836 (demo-loop cycle dm2, m1) — the customer just saved their name: ask who they
+            // are now, at once (one round trip), not on the next ACTIVE_NAME_REFRESH_MS tick
+            pollRef.current?.();
+            break;
           case "pill": {
             // REQ-636 (cycle 5, m8) — shown with the frame it went out with (held till then)
             // REQ-822 (dm1, m1) — End's question (overlay state only) is not held for a frame

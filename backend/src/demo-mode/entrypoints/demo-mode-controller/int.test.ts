@@ -1548,7 +1548,7 @@ Deno.test("REQ-355 (demo cycle 1, m1 / setup-m8) the sign-in placeholder is neve
       forAna.body.session.presenters.map((p: { name: string }) => p.name),
       ["DocuMonster"],
     );
-    assertEquals(forAna.body.session.targetName, "+15125553041");
+    assertEquals(forAna.body.session.targetName, "(512) 555-3041"); // REQ-836: formatted
     const raw = JSON.stringify(forAna.body);
     assert(
       !raw.includes("Nuevo usuario") && !raw.includes("New user"),
@@ -1578,7 +1578,7 @@ Deno.test("REQ-817 (cycle dm1, m3) a customer who saves a name mid-demo: the pre
       call("GET", "/api/demo-mode/active", undefined, H(hans.body.sessionId));
     const before = await ask();
     assertEquals(before.body.role, "presenter", JSON.stringify(before.body));
-    assertEquals(before.body.session.targetName, "+15125553051");
+    assertEquals(before.body.session.targetName, "(512) 555-3051"); // REQ-836: formatted
 
     const saved = await call(
       "PUT",
@@ -1594,6 +1594,55 @@ Deno.test("REQ-817 (cycle dm1, m3) a customer who saves a name mid-demo: the pre
       "the same demo",
     );
     assertEquals(after.body.session.targetName, "Maria Lopez");
+  });
+});
+
+// REQ-836 — demo-loop cycle dm2, issue m1: the stage learned a saved name only on its next 15 s
+// ask (or the customer's next page). Now the customer's overlay sends a `renamed` frame on the
+// demo link the moment the name is saved; the hub carries it to the presenter, whose stage asks
+// /active at once — and that ask already names the customer by the new name.
+Deno.test("REQ-836 (cycle dm2, m1) the customer's `renamed` frame reaches the presenter's socket, and the presenter's next /active names them by the saved name", async () => {
+  await withServer(async (call) => {
+    const ana = await signIn(call, "+15125553061");
+    const hans = await signIn(call, "+15125553062");
+    assertEquals(
+      (await call("POST", "/api/admin/bootstrap", {
+        phoneNumber: "+15125553062",
+      })).status,
+      200,
+    );
+    const made = await call("POST", "/api/demo-mode/sessions", {
+      userId: ana.body.userId,
+    }, H(hans.body.sessionId));
+    assertEquals(made.status, 201, JSON.stringify(made.body));
+    const ask = () =>
+      call("GET", "/api/demo-mode/active", undefined, H(hans.body.sessionId));
+    assertEquals((await ask()).body.session.targetName, "(512) 555-3061");
+
+    const presenter = open(made.body.id, hans.body.sessionId);
+    await presenter.next("the presenter's welcome");
+    const customer = open(made.body.id, ana.body.sessionId);
+    const w = await customer.next("the customer's welcome");
+    await customer.next("the presenter is here");
+    await presenter.next("the presenter hears the customer");
+
+    const saved = await call(
+      "PUT",
+      "/api/me",
+      { name: "Maria Lopez" },
+      H(ana.body.sessionId),
+    );
+    assertEquals(saved.status, 200, JSON.stringify(saved.body));
+    customer.send({ t: "relay", data: { k: "renamed" } });
+    assertEquals(await presenter.next("the customer's renamed frame"), {
+      t: "relay",
+      from: "viewer",
+      cid: cidOf(w),
+      data: { k: "renamed" },
+    });
+    assertEquals((await ask()).body.session.targetName, "Maria Lopez");
+    await presenter.close();
+    await customer.close();
   });
 });
 

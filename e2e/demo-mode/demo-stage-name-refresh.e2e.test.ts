@@ -107,6 +107,10 @@ Deno.test("REQ-817 (cycle dm1, m3): a customer who saves a name mid-demo is name
   story(t, async ({ page, expect, http, baseUrl }) => {
     await page.setViewportSize({ width: 1280, height: 860 });
     const userPhone = `+1512${digits()}`;
+    // REQ-836 (cycle dm2, m1) — an unnamed customer is named by their phone as the app writes it
+    const shownPhone = `(${userPhone.slice(2, 5)}) ${userPhone.slice(5, 8)}-${
+      userPhone.slice(8)
+    }`;
     const hansPhone = `+1843${digits()}`;
     const user = await verify(http, userPhone);
     // no name: the stage names the customer by their phone (REQ-355)
@@ -150,16 +154,16 @@ Deno.test("REQ-817 (cycle dm1, m3): a customer who saves a name mid-demo is name
       const pill = page.locator("[data-cy='demo-pill']");
       // 1. no name yet: the phone, and a resting tag of its last digits — never '+'
       expect.eq(
-        (await pill.innerText()).includes(userPhone),
+        (await pill.innerText()).includes(shownPhone),
         true,
-        "REQ-355 the stage names an unnamed customer by their phone",
+        "REQ-355 + REQ-836 the stage names an unnamed customer by their phone, formatted",
       );
       await wiggle(userPage, 300);
       await until(
         "the customer's pointer rests on the stage with a tag",
         async () => {
           const p = await customerPointer(page);
-          if (p?.name === userPhone && p.tag.length > 0 && p.tag.length <= 2) {
+          if (p?.name === shownPhone && p.tag.length > 0 && p.tag.length <= 2) {
             return true;
           }
           throw new Error(JSON.stringify(p));
@@ -177,7 +181,7 @@ Deno.test("REQ-817 (cycle dm1, m3): a customer who saves a name mid-demo is name
       await putMe(http, user.auth, { name: "Maria Lopez" });
       await until("the stage's pill names Maria Lopez", async () => {
         const txt = await pill.innerText();
-        if (txt.includes("Maria Lopez") && !txt.includes(userPhone)) {
+        if (txt.includes("Maria Lopez") && !txt.includes(shownPhone)) {
           return true;
         }
         throw new Error(`pill: ${JSON.stringify(txt)}`);
