@@ -6,6 +6,8 @@
  * and Ana's app joins that one too.
  * REQ-298 (demo-loop cycle 1, M5 + M17) — each restart is SAID on Ana's side: her pill reads
  * "Hans started a new demo" when the next demo reaches her, never a silent swap of the notice.
+ * REQ-833 (demo-loop cycle dm2, m6) — Ana is on a phone (420 px, the compact pill): once the
+ * restart line goes, her pill says "Hans is guiding you" (REQ-821's grace) before it yields.
  */
 import { story, type StoryTools } from "#shots";
 import { pillUp } from "../_shared/demo-pill.ts";
@@ -153,7 +155,27 @@ Deno.test("REQ-222 (M11) + REQ-298: a connected demo ends — from the staff sid
         "Hans started a new demo",
         "REQ-298: the customer's pill says a new demo started, not a silent swap",
       );
+      // REQ-833 — then, on the compact pill, the guiding line: the restart line is gone and the
+      // details row reads "Hans is guiding you" (RESTART_SAY_MS 10 s + slack)
+      const guiding = userPage.waitForFunction(
+        () => {
+          const pill = document.querySelector("[data-cy='demo-pill']");
+          if (!pill || pill.hasAttribute("data-tucked")) return false;
+          if (pill.querySelector("[data-cy='demo-restarted']")) return false;
+          const d = pill.querySelector<HTMLElement>("[data-cy='demo-details']");
+          return !!d && getComputedStyle(d).display !== "none" &&
+            d.getBoundingClientRect().width > 0 &&
+            d.innerText.includes("Hans is guiding you");
+        },
+        undefined,
+        { timeout: 16_000, polling: 100 },
+      ).then(() => true, () => false);
       await connected("the demo after a staff End");
+      expect.eq(
+        await guiding,
+        true,
+        'REQ-833: after the restart line the phone\'s pill says "Hans is guiding you"',
+      );
 
       // 4. Ana ends it from her own pill; a third demo reaches her too
       await endFrom(userPage);

@@ -351,7 +351,8 @@ describe("REQ-838 p8 — the customer's pill: 'Connecting…' only while connect
     expect(words).toMatch(/t\("demoMode\.connecting"\)/);
     // the away status names the guide: the compact pill does not name him twice
     expect(words).toMatch(
-      /const showGuide = copy\.showShort && !started && !away;/,
+      // REQ-833 also keeps it off through a join's grace (reconciled on demo-fixes)
+      /const showGuide = copy\.showShort && !started && !away(?: && !joined)?;/,
     );
     const face = away.slice(away.indexOf("faceRef.current = {"));
     expect(face.slice(0, face.indexOf("};"))).toMatch(/status: pillStatus,/);
