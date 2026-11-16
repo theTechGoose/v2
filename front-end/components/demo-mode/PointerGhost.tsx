@@ -28,6 +28,12 @@
  * "You · pointing below — the customer must scroll ↓"), never his name after "You ·".
  * REQ-860 (demo-loop cycle dm4, m5) — the customer's tag offset is kept, but clamped TAG_EDGE
  * inside the cue's box (else the frame): her words are shorter than the stage's.
+ * REQ-877 (demo-loop cycle dm5, m1) — his mouse beside the frame (`off`, from `reportedGhost`):
+ * their screen shows the off marker — a chevron against its edge and his initial on a dot, no tag
+ * (REQ-635) — for OFF_MARK_SHOW_MS, faded out over OFF_MARK_FADE_MS. The ghost is that marker,
+ * faint, on the frame's same edge (`offMark`, `offBadge`), keyed on her marker's spot (`off.key`)
+ * with the same pmDemoOffFade (`OFF_FADE_KEYFRAMES`): a new spot restarts both fades, and it is
+ * gone when hers is. Before, the stage drew nothing there while her screen showed his initial.
  */
 import {
   type Pt,
@@ -39,7 +45,13 @@ import {
   cueMarkOffset,
   type Dir,
   GHOST_OPACITY,
+  OFF_BADGE_PX,
+  OFF_FADE_KEYFRAMES,
+  OFF_MARK_FADE_MS,
   OFF_MARK_PX,
+  OFF_MARK_SHOW_MS,
+  offBadge,
+  offMark,
   type TagPlace,
 } from "../../../shared/demo-mode/presenter-anchor.ts";
 import {
@@ -91,6 +103,8 @@ export default function PointerGhost(
     cueText,
     cueBox,
     scale,
+    off,
+    initial,
   }: {
     at: Pt;
     outside: boolean;
@@ -113,8 +127,66 @@ export default function PointerGhost(
     cueBox?: Rect | null;
     /** REQ-847 — the frame's scale (stage px per customer px): the cue is placed in theirs */
     scale?: number;
+    /** REQ-877 — his mouse beside the frame: their off marker, keyed on its spot (`key`) */
+    off?: { key: string } | null;
+    /** REQ-877 — his initial, as their off marker shows it */
+    initial?: string;
   },
 ) {
+  if (off) {
+    // REQ-877 (demo dm5 m1) — the off marker their screen has: chevron + initial, no tag, the
+    // same fade (DemoPointer's off branch, drawn faint)
+    const m = offMark(at, bounds);
+    const b = offBadge(at, bounds);
+    return (
+      <div
+        data-cy="demo-pointer-ghost"
+        data-outside=""
+        data-off=""
+        aria-hidden="true"
+        style={`position:fixed;left:0;top:0;width:${ARROW_W}px;height:${ARROW_H}px;overflow:visible;pointer-events:none;z-index:${z};transform:translate(${at.x}px,${at.y}px);opacity:${GHOST_OPACITY}`}
+      >
+        <style>{OFF_FADE_KEYFRAMES}</style>
+        <span
+          key={off.key}
+          data-cy="demo-pointer-ghost-off-mark"
+          style={`position:absolute;left:${m.left}px;top:${m.top}px;width:${OFF_MARK_PX}px;height:${OFF_MARK_PX}px;opacity:0;animation:pmDemoOffFade ${
+            OFF_MARK_SHOW_MS + OFF_MARK_FADE_MS
+          }ms linear forwards`}
+        >
+          <svg
+            width={OFF_MARK_PX}
+            height={OFF_MARK_PX}
+            viewBox="0 0 14 14"
+            style={`position:absolute;left:0;top:0;overflow:visible;transform:rotate(${m.deg}deg)`}
+          >
+            <path
+              d={CHEVRON}
+              fill="none"
+              stroke="#fff"
+              stroke-width="5"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            />
+            <path
+              d={CHEVRON}
+              fill="none"
+              stroke={color}
+              stroke-width="2.6"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            />
+          </svg>
+          <span
+            data-cy="demo-pointer-ghost-off-initial"
+            style={`position:absolute;left:${b.left}px;top:${b.top}px;width:${OFF_BADGE_PX}px;height:${OFF_BADGE_PX}px;border-radius:50%;background:${color};color:#fff;border:1.5px solid #fff;box-sizing:border-box;font:700 9px/13px system-ui,sans-serif;text-align:center;white-space:nowrap`}
+          >
+            {initial ?? ""}
+          </span>
+        </span>
+      </div>
+    );
+  }
   const cue = dir && cueText ? cueText : null;
   const words = cue ? `${label} · ${cue}` : label;
   const box = outside || cue ? null : rect ?? null;

@@ -16,6 +16,10 @@
  * (The customer scrolling under the presenter's still mouse is REQ-305's M2 story in
  * demo-scroll-pointer.e2e.test.ts, amended by REQ-393: the arrow stays under his cursor.)
  *
+ * REQ-877 (demo-loop cycle dm5, m1) — with his mouse beside the frame the stage draws a faint ghost
+ * of the phone's off marker (chevron + his initial) on the frame's same edge, and it fades out
+ * with the phone's.
+ *
  * REQ-451 AMENDMENT (demo M1 + M14, cycle 3) — his pointer is what he POINTED AT:
  *   1. the cursor handed over from /admin counts only on the frame: the Demo button sits beside
  *      the phone frame, so the phone shows no arrow (and the stage no "off" hint) until he moves;
@@ -426,6 +430,36 @@ Deno.test("REQ-393 (demo M8) + REQ-451 (demo M14): the cursor handed over from /
           JSON.stringify(named)
         })`,
       );
+      // REQ-877 (demo-loop cycle dm5, m1) — the stage draws a faint ghost of that marker: the
+      // chevron and his initial on the frame's same (left) edge, no "You" tag
+      const ghostMark = () =>
+        page.evaluate(() => {
+          const g = document.querySelector(
+            "[data-cy='demo-pointer-ghost'][data-off]",
+          );
+          const m = g?.querySelector("[data-cy='demo-pointer-ghost-off-mark']");
+          if (!g || !m) return null;
+          return {
+            x: g.getBoundingClientRect().left,
+            initial:
+              m.querySelector("[data-cy='demo-pointer-ghost-off-initial']")
+                ?.textContent ?? null,
+            label: !!g.querySelector("[data-cy='demo-pointer-ghost-label']"),
+            opacity: Number(getComputedStyle(m).opacity),
+          };
+        });
+      await until(
+        "REQ-877: the stage draws the ghost of the phone's off marker, with his initial, on the frame's left edge",
+        async () => {
+          const g = await ghostMark();
+          const f = await frameBox(page);
+          if (
+            !g || g.initial !== "H" || g.label || Math.abs(g.x - f.x) > 2
+          ) throw new Error(`ghost ${JSON.stringify(g)} frame x ${f.x}`);
+          return true;
+        },
+        5_000,
+      );
       await until(
         "REQ-635: the off marker fades out a few seconds after it showed",
         async () => {
@@ -436,6 +470,17 @@ Deno.test("REQ-393 (demo M8) + REQ-451 (demo M14): the cursor handed over from /
           return true;
         },
         4_000,
+      );
+      await until(
+        "REQ-877: the stage's ghost of the off marker fades out with it",
+        async () => {
+          const g = await ghostMark();
+          if (!g || g.opacity > 0.01) {
+            throw new Error(`ghost ${JSON.stringify(g)}`);
+          }
+          return true;
+        },
+        1_500,
       );
 
       // 3. back on the frame: on the screen, the hint gone

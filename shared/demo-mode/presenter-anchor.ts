@@ -950,13 +950,24 @@ export function placedReporter(o: {
 /** REQ-642 — where the stage draws the ghost of his arrow: where the customer's screen REPORTED
  *  it (`r`) for the anchor he holds now, on `frame` (the fitted replica of their viewport), when
  *  that is apart from where he put it. A report of another anchor (an older one, still on the
- *  wire), of nowhere, or none: no ghost. */
+ *  wire), of nowhere, or none: no ghost.
+ *  REQ-877 (demo-loop cycle dm5, m1) — his mouse beside the frame (an o:1 anchor): their screen
+ *  shows the off marker (chevron + his initial, REQ-635) on its edge for OFF_MARK_SHOW_MS +
+ *  OFF_MARK_FADE_MS, so the stage's ghost is that marker (`off`) on the same edge of the frame,
+ *  keyed on her marker's rounded spot (`key`: DemoPointer's markKey) — never dropped as under
+ *  his cursor. */
 export function reportedGhost(
   h: Held,
   r: PlacedMessage | null,
-  frame: Rect,
-): { at: Pt; outside: boolean; dir?: Dir | null } | null {
-  if (!h.a || h.a.o === 1 || !r?.p || !sameAnchor(r.a, h.a)) return null;
+  frame: Rect & { s?: number },
+): {
+  at: Pt;
+  outside: boolean;
+  dir?: Dir | null;
+  off?: { key: string } | null;
+} | null {
+  if (!h.a || !r?.p || !sameAnchor(r.a, h.a)) return null;
+  if (h.a.o === 1) return offGhost(r.p, frame);
   // REQ-645 + REQ-642 — out of view on their screen: the ghost is their chevron, where it is
   if (r.d) {
     const { dx, dy } = r.d;
@@ -970,6 +981,41 @@ export function reportedGhost(
     Math.hypot(placed.at.x - h.at.x, placed.at.y - h.at.y) <= GHOST_GAP_PX
   ) return null;
   return placed;
+}
+
+/** REQ-877 (demo-loop cycle dm5, m1) — the stage's ghost of the off marker their screen draws at
+ *  `p` (the fraction of their viewport the report gave): the edge it is against is read in THEIR
+ *  px (the frame's `s`: a scaled clamp is not on the stage's edge), and the ghost sits against
+ *  that edge of `frame`, at the same point along it */
+function offGhost(
+  p: { vx: number; vy: number },
+  frame: Rect & { s?: number },
+): { at: Pt; outside: true; off: { key: string } } {
+  const s = frame.s && frame.s > 0 ? frame.s : 1;
+  const view = {
+    left: 0,
+    top: 0,
+    width: frame.width / s,
+    height: frame.height / s,
+  };
+  const hers = { x: p.vx * view.width, y: p.vy * view.height };
+  const e = offEdge(hers, view);
+  const { at } = placeIn(fracToPoint(p, frame), frame, ARROW_BOX, true);
+  const snap = (
+    d: -1 | 0 | 1,
+    v: number,
+    lo: number,
+    len: number,
+    arrow: number,
+  ) => d === 1 ? lo + len - arrow : d === -1 ? lo : v;
+  return {
+    at: {
+      x: snap(e.dx, at.x, frame.left, frame.width, ARROW_BOX.w),
+      y: snap(e.dy, at.y, frame.top, frame.height, ARROW_BOX.h),
+    },
+    outside: true,
+    off: { key: `${Math.round(hers.x)},${Math.round(hers.y)}` },
+  };
 }
 
 /** REQ-642 (setup-14d) — where the stage draws his own small marker: where he pointed, whenever
@@ -1050,6 +1096,13 @@ export function cueMarkOffset(
 /** REQ-635 (demo m37, cycle 5) — how long the off marker is shown before it fades, and the fade */
 export const OFF_MARK_SHOW_MS = 2_500;
 export const OFF_MARK_FADE_MS = 400;
+/** REQ-635 — the off marker's fade: OFF_MARK_OPACITY for OFF_MARK_SHOW_MS, then out. REQ-877 —
+ *  one definition for the customer's marker (DemoPointer) and the stage's ghost of it
+ *  (PointerGhost), so both are gone at the same moment */
+export const OFF_FADE_KEYFRAMES =
+  `@keyframes pmDemoOffFade{0%{opacity:${OFF_MARK_OPACITY}}${
+    Math.round(OFF_MARK_SHOW_MS / (OFF_MARK_SHOW_MS + OFF_MARK_FADE_MS) * 100)
+  }%{opacity:${OFF_MARK_OPACITY}}100%{opacity:0}}`;
 /** REQ-635 — the off marker's layer on the customer's screen: under the app's modal dims (the
  *  lowest is z-index 50) — a hint, never over a dialog. The arrow keeps the overlay's top layer. */
 export const OFF_MARK_Z = 45;
