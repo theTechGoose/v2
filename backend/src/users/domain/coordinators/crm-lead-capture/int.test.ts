@@ -195,6 +195,9 @@ Deno.test("REQ-074 a boot sweep and a login sweep still carry the outbox with no
     await leads.enqueue("+1 (512) 555-0075");
     await until(() => calls.length >= 2);
     assertEquals(calls.map((c) => c.phone), ["+15125550074", "+15125550075"]);
+    // the CRM's answer is in; the record's delete lands a tick after it (under the parallel lane's
+    // load that tick is not immediate)
+    for (let i = 0; i < 200 && (await outbox.list()).length > 0; i++) await new Promise((r) => setTimeout(r, 10));
     assertEquals((await outbox.list()).length, 0);
     assertEquals(cronCalls, 0, "Deno.cron is never called");
   } finally {
@@ -569,7 +572,10 @@ Deno.test("REQ-128 a record enqueued while a sweep is held by a slow one is carr
   const waited = Date.now() - t0;
   assertEquals(sent.includes("+15125551281"), true, "the second lead reached the CRM while the first still holds");
   assert(waited < 800, `carried at once, not after the slow one (${waited} ms)`);
-  assertEquals((await outbox.list()).filter((r) => r.phone === "+15125551281").length, 0, "and its record is cleared");
+  // the CRM took it; its record's delete lands a tick after (not immediate under the lane's load)
+  const left = async () => (await outbox.list()).filter((r) => r.phone === "+15125551281").length;
+  for (let i = 0; i < 200 && (await left()) > 0; i++) await new Promise((r) => setTimeout(r, 10));
+  assertEquals(await left(), 0, "and its record is cleared");
   release();
   await leads.idle();
   assertEquals((await outbox.list()).length, 0, "both landed");
