@@ -1172,6 +1172,9 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
       onLayout: () => replaceRef.current(),
       // REQ-648 — a snapshot's page on show
       onShown: () => pageShownRef.current(),
+      // REQ-827 — the chip under an open date picker / file chooser, in the presenter's language
+      pickerLabel: (k) =>
+        t(k === "date" ? "demoMode.pickerDate" : "demoMode.pickerFile"),
     });
     const q = queueRef.current;
     queueRef.current = [];

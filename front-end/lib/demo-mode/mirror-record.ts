@@ -44,6 +44,16 @@
  * the stage's replay draws the list from them. A multiple or size > 1 select is a list box on
  * the page itself: it never opens.
  *
+ * REQ-827 (demo-loop cycle dm2, s1) — a native date/time picker and the OS file chooser are drawn
+ * outside the DOM too. The same mark goes on an `input[type=date|time|datetime-local|month|week]`
+ * (not disabled or readonly) from a primary mousedown on it, a click that reaches it (a label's,
+ * or the one a page's `showPicker()` runs from) or F4 / Alt+Arrow, until a change, a blur,
+ * Escape/Enter/Tab, a mousedown elsewhere or the input leaving the page; and on an
+ * `input[type=file]` (not disabled) from the click that opens its chooser (a label's or a
+ * script's `.click()` reach it too), until a change, a `cancel`, the window getting its focus
+ * back, a mousedown elsewhere or the input leaving the page — never on the blur the dialog causes.
+ * The stage draws a chip for it (mirror-replay.ts).
+ *
  * REQ-824 (demo-loop cycle dm1, m2) — and hover and focus are browser state too: the stage showed
  * the composer the customer typed in with its idle fill, never what her mouse was over. The
  * recorder marks what her own browser says matches (`Element.matches`), on the elements that
@@ -176,6 +186,8 @@ const NO_VALUE = new Set([
 
 /** REQ-638 — the attribute that says a native select's list is open (the recorder's, never the page's) */
 export const OPEN_ATTR = "data-mirror-open";
+/** REQ-827 — the inputs whose native date/time picker the mark also covers */
+const DATE_TYPES = new Set(["date", "time", "datetime-local", "month", "week"]);
 
 /** REQ-824 — the recorder's marks of the customer's focus and hover (the page's own never cross) */
 const STATE_ATTRS = new Set([FOCUS_ATTR, WITHIN_ATTR, HOVER_ATTR]);
@@ -382,8 +394,9 @@ export function createRecorder(doc: Document, o: RecorderOptions): Recorder {
   let inkDue = false;
   /** REQ-380 — canvas bitmaps sent */
   let cvSent = 0;
-  /** REQ-638 — the native select whose list is open on the customer's screen, and the id of the
-   *  one the stage has marked open */
+  /** REQ-638 — the native select whose list is open on the customer's screen (REQ-827: or the
+   *  date input whose picker, the file input whose chooser is open), and the id of the one the
+   *  stage has marked open */
   let openSel: Element | null = null;
   let sentOpen: number | null = null;
   /** REQ-824 — the focus and hover marks of the customer's screen as last read (element → value,
@@ -723,19 +736,44 @@ export function createRecorder(doc: Document, o: RecorderOptions): Recorder {
     const size = Number(e.getAttribute("size") ?? "0");
     return Number.isFinite(size) && size > 1 ? null : e;
   }
+  /** REQ-827 — `t` is an input of `types` that can open its picker (not disabled; a date one
+   *  not readonly either) */
+  function pickerInput(t: EventTarget | null, file: boolean): Element | null {
+    const n = t as Node | null;
+    if (!n || n.nodeType !== ELEMENT) return null;
+    const e = n as Element;
+    if (e.namespaceURI && e.namespaceURI !== XHTML) return null;
+    if (tagOf(e) !== "input" || e.hasAttribute("disabled")) return null;
+    const type = lower(e.getAttribute("type"));
+    if (file) return type === "file" ? e : null;
+    return DATE_TYPES.has(type) && !e.hasAttribute("readonly") ? e : null;
+  }
+  const isFile = (e: Element | null) =>
+    !!e && tagOf(e) === "input" && lower(e.getAttribute("type")) === "file";
   function setOpen(e: Element | null) {
     if (openSel === e) return;
     openSel = e;
     schedule();
   }
   /** REQ-638 — a mousedown on a closed select opens its list; any mousedown while one is open
-   *  (on it again, or elsewhere) closes it */
+   *  (on it again, or elsewhere) closes it. REQ-827 — one on a date input opens its picker (and
+   *  keeps it open: its click follows) */
   const onDown = (e: Event) => {
     const btn = (e as MouseEvent).button;
-    const sel = btn === undefined || btn === 0 ? popupSelect(e.target) : null;
+    const primary = btn === undefined || btn === 0;
+    const date = primary ? pickerInput(e.target, false) : null;
+    if (date) return setOpen(date);
+    const sel = primary ? popupSelect(e.target) : null;
     setOpen(sel && sel !== openSel ? sel : null);
   };
-  /** REQ-638 — the keys that open a focused select's list, and the ones that close it */
+  /** REQ-827 — the click that reaches a date input (a label's; a page's showPicker() runs from
+   *  it) or a file input (its chooser opens) */
+  const onClick = (e: Event) => {
+    const p = pickerInput(e.target, true) ?? pickerInput(e.target, false);
+    if (p) setOpen(p);
+  };
+  /** REQ-638 — the keys that open a focused select's list, and the ones that close it (REQ-827:
+   *  a date input's picker too, from F4 or Alt+Arrow) */
   const onKey = (e: Event) => {
     const k = e as KeyboardEvent;
     if (openSel) {
@@ -746,11 +784,22 @@ export function createRecorder(doc: Document, o: RecorderOptions): Recorder {
       return;
     }
     const sel = popupSelect(e.target);
-    if (sel && opensList(k)) setOpen(sel);
+    if (sel && opensList(k)) return setOpen(sel);
+    const date = pickerInput(e.target, false);
+    if (date && k.key !== " " && opensList(k)) setOpen(date);
   };
-  /** REQ-638 — the open select lost focus, or a pick was made: its list is closed */
+  /** REQ-638 — the open select lost focus, or a pick was made: its list is closed. REQ-827 — not
+   *  a file input: its own dialog takes the focus */
   const onBlur = (e: Event) => {
+    if (openSel && e.target === openSel && !isFile(openSel)) setOpen(null);
+  };
+  /** REQ-827 — the file chooser was dismissed */
+  const onCancel = (e: Event) => {
     if (openSel && e.target === openSel) setOpen(null);
+  };
+  /** REQ-827 — the window has its focus back: the file chooser is closed */
+  const onWinFocus = () => {
+    if (isFile(openSel)) setOpen(null);
   };
   const onChange = (e: Event) => {
     if (openSel && e.target === openSel) openSel = null;
@@ -824,8 +873,11 @@ export function createRecorder(doc: Document, o: RecorderOptions): Recorder {
     doc.addEventListener("input", onEvent, true);
     doc.addEventListener("change", onChange, true);
     doc.addEventListener("mousedown", onDown, true);
+    doc.addEventListener("click", onClick, true); // REQ-827
+    doc.addEventListener("cancel", onCancel, true); // REQ-827
     doc.addEventListener("keydown", onKey, true);
     doc.addEventListener("focusout", onBlur, true);
+    win?.addEventListener("focus", onWinFocus); // REQ-827
     doc.addEventListener("scroll", onScroll, { capture: true, passive: true });
     win?.addEventListener("resize", onEvent);
     for (const t of INK_EVENTS) {
@@ -856,8 +908,11 @@ export function createRecorder(doc: Document, o: RecorderOptions): Recorder {
     doc.removeEventListener("input", onEvent, true);
     doc.removeEventListener("change", onChange, true);
     doc.removeEventListener("mousedown", onDown, true);
+    doc.removeEventListener("click", onClick, true); // REQ-827
+    doc.removeEventListener("cancel", onCancel, true); // REQ-827
     doc.removeEventListener("keydown", onKey, true);
     doc.removeEventListener("focusout", onBlur, true);
+    win?.removeEventListener("focus", onWinFocus); // REQ-827
     doc.removeEventListener("scroll", onScroll, { capture: true });
     win?.removeEventListener("resize", onEvent);
     for (const t of INK_EVENTS) {
