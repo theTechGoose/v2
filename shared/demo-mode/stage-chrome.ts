@@ -100,3 +100,13 @@ export function stagePillH(
 ): number {
   return endAsking && prev > 0 ? prev : measured;
 }
+
+/**
+ * REQ-844 (demo-loop cycle dm3, issue p13) — the stage pill offers "End demo" only while the demo
+ * is live. Once it has ended (by you: end() waits for the API, then 800 ms; by the other side:
+ * onEnded waits 1500 ms) the stage stays up until the hop to /admin, and a dimmed End next to
+ * "The demo ended" offered to end a demo that was already over.
+ */
+export function stageEndShown(ended: boolean): boolean {
+  return !ended;
+}
