@@ -326,6 +326,11 @@ function fewest(boxes: Rect[], controls: (r: Rect) => number): Rect {
  * spot (`pillSpots`): a peek flush with the right edge read as a pill pressed against it while the
  * top-right one kept 12 px. The pointer that opened it may then be in the gap, on the tab's old
  * box: `peekHolds` counts that box as part of the pill, so it does not fold.
+ * REQ-873 (demo-loop cycle dm5, p5) — a row with a control under every x (/customers at 700 wide:
+ * a 501 px pill can only range over 12..187, and each box spans the filter tabs at 261..535): the
+ * rows above and below, a pill height plus PILL_BAND_GAP apart, nearest the tab's row first (as
+ * `pillRows` / `askSpot`), then `pillSpots`; the first with no control under it. None clear: the
+ * row's fewest, as before. Wherever it opens, `peekHolds` still counts the tab's box as the pill's.
  */
 export function peekBox(o: {
   home: Rect;
@@ -336,6 +341,8 @@ export function peekBox(o: {
   edge?: Rect;
   /** REQ-818 — controls under a box; none counted when absent (flush with the tab's edge) */
   controls?: (r: Rect) => number;
+  /** REQ-873 — the impersonation banner's height: no row or spot above it */
+  top?: number;
 }): Rect {
   const w = o.home.width;
   // REQ-849 — inside the margins (a pill wider than that: at the left margin)
@@ -360,7 +367,29 @@ export function peekBox(o: {
   for (let x = min; x < max; x += PILL_TAB.w / 2) xs.push(x);
   xs.push(max);
   xs.sort((a, b) => Math.abs(a - flush) - Math.abs(b - flush));
-  return fewest(xs.map(at), o.controls ?? (() => 0));
+  const controls = o.controls ?? (() => 0);
+  const best = fewest(xs.map(at), controls);
+  if (controls(best) === 0) return best;
+  // REQ-873 — the row is crowded: other rows (between the banner and home's row), nearest first,
+  // each along x as above; then the pill's spots
+  const ceil = (o.top ?? 0) + PILL_MARGIN;
+  const floor = Math.max(top, o.home.top);
+  const step = o.home.height + PILL_BAND_GAP;
+  const rows: number[] = [];
+  for (let k = 1; top - k * step >= ceil || top + k * step <= floor; k++) {
+    if (top - k * step >= ceil) rows.push(top - k * step);
+    if (top + k * step <= floor) rows.push(top + k * step);
+  }
+  for (const t of rows) {
+    for (const x of xs) {
+      const r = { ...at(x), top: t };
+      if (controls(r) === 0) return r;
+    }
+  }
+  for (const r of pillSpots({ home: o.home, view: o.view, top: o.top })) {
+    if (controls(r) === 0) return r;
+  }
+  return best;
 }
 
 /**
