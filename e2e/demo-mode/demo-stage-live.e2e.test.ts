@@ -10,6 +10,9 @@
  *       the stage says "Waiting for Ana Torres's app…" within ~2 s, not after the 5 s grace, and
  *       the notice is a banner across the frame's top edge — never a card over the middle of their
  *       page. Their app back, the stage is Live again and the banner gone.
+ *       REQ-391 AMENDMENT (REQ-838, demo-loop cycle dm2, m5): a closing page is held for
+ *       SILENT_GRACE_MS (2 s — an address-bar navigation or the reload button says "closing" too),
+ *       so "Waiting…" comes once that hold is up: within CLOSE_NOTICED_MS, still far short of 5 s.
  */
 import { story, type StoryTools } from "#shots";
 import { pillUp } from "../_shared/demo-pill.ts";
@@ -18,6 +21,9 @@ import { answerQuestions } from "../_shared/onboarding-answers.ts";
 const JSON_HEADERS = { "content-type": "application/json" };
 const digits = () => String(Math.floor(Math.random() * 9_000_000) + 1_000_000);
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+/** REQ-838 — SILENT_GRACE_MS (2 s) of "Loading their next page…", then the hop and this poll's
+ *  step: a closed tab is "Waiting…" within this, well before the 5 s grace m21 was about */
+const CLOSE_NOTICED_MS = 3_500;
 
 async function verify(http: StoryTools["http"], phone: string) {
   const r = await http("/api/auth/verify", {
@@ -232,9 +238,9 @@ Deno.test("REQ-391 (demo-loop cycle 2, M4 + m21): an in-app page change says 'Lo
         12_000,
       );
       const took = Date.now() - t0;
-      if (took > 2_500) {
+      if (took > CLOSE_NOTICED_MS) {
         problems.push(
-          `m21: the stage noticed after ${took} ms (wanted ≤ 2 500 ms; seen ${
+          `m21: the stage noticed after ${took} ms (wanted ≤ ${CLOSE_NOTICED_MS} ms; seen ${
             JSON.stringify(await recorded(page))
           })`,
         );

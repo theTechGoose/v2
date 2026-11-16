@@ -59,9 +59,10 @@ describe("REQ-646 (demo-loop cycle 5, m63) — an inactive stage window says onl
       n++;
     }
     expect(n).toBe(2);
-    // pillShown is the customer's pill box, or nothing while another window has the demo
+    // pillShown is the customer's pill box, or nothing while another window has the demo —
+    // REQ-646 AMENDMENT (REQ-838, cycle dm2, p4): nor while the customer is signed out
     expect(stage).toMatch(
-      /const pillShown = look\.elsewhere \? null : pillBox;/,
+      /const pillShown = look\.elsewhere \|\| signedOut \? null : pillBox;/,
     );
   });
 

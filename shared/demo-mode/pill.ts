@@ -663,13 +663,28 @@ export function pillOverflows(r: Rect, view: Size, tolerance = 1): boolean {
     r.top + r.height > view.h + tolerance;
 }
 
-/** REQ-372 — the pill's status as the stage words it (the presenter's dictionary) */
+/** REQ-372 — the pill's status as the stage words it (the presenter's dictionary). REQ-838 —
+ *  "away" (the customer's link is up, no stage is): a word that names nobody */
 export function statusKeyOf(s: PillStatus): string {
   return s === "live"
     ? "demoMode.connected"
     : s === "ended"
     ? "demoMode.ended"
+    : s === "away"
+    ? "demoMode.away"
     : "demoMode.connecting";
+}
+
+/** REQ-838 (demo-loop cycle dm2, m5 + p4) — the customer's own word for status `s`: the label
+ *  their pill sent while in `s`, else the word it carries for it (connectingLabel, endedLabel);
+ *  none from a page that carries none — then the stage words it (ghostWords) */
+function ownWord(face: PillFace, s: PillStatus): string | undefined {
+  if (face.status === s && face.label) return face.label;
+  return s === "connecting"
+    ? face.connectingLabel
+    : s === "ended"
+    ? face.endedLabel
+    : undefined;
 }
 
 /**
@@ -765,6 +780,8 @@ export function pillShowsAtOnce(
  * stage's ghost keeps the last pill and says "Connecting…" in the stage's words until the new
  * page's pill speaks — never a blank, never a stale "Connected". An ended demo stays ended.
  * REQ-636 — and untucked (the old page's tuck is not the new page's).
+ * REQ-838 (demo-loop cycle dm2, m5) — "Connecting…" (or ended) in the CUSTOMER's words when their
+ * pill carries them: never the presenter's word beside their title, line and End.
  */
 export function pillFaceAwaiting(face: PillFace): PillFace {
   // REQ-636 (cycle 5, m8) — nor is it tucked: the new page decides that (a non-public page starts
@@ -779,7 +796,9 @@ export function pillFaceAwaiting(face: PillFace): PillFace {
     no: _no,
     ...rest
   } = face;
-  return { ...rest, status: face.status === "ended" ? "ended" : "connecting" };
+  const status = face.status === "ended" ? "ended" : "connecting";
+  const label = ownWord(face, status);
+  return { ...rest, status, ...(label ? { label } : {}) };
 }
 
 /**
@@ -791,11 +810,17 @@ export function pillFaceAwaiting(face: PillFace): PillFace {
  * REQ-646 (demo-loop cycle 5, m63) — `replaced` is not a drop: the customer is still there, it
  * is THIS window that stopped hearing them (another window of the account has the demo). The
  * face is kept as it was — never "Connecting…" — and the stage hides the ghost while elsewhere.
+ *
+ * REQ-838 (demo-loop cycle dm2, m5 + p4) — the new status is said in the CUSTOMER's words when
+ * their pill carries them (connectingLabel, endedLabel; a face already in it keeps its own): the
+ * stage's dictionary only for a page that sent none.
  */
 export function pillFaceOffline(face: PillFace, link: string): PillFace {
   if (!face.status || link === "replaced") return face;
   const { label: _label, ...rest } = face;
-  return { ...rest, status: link === "ended" ? "ended" : "connecting" };
+  const status = link === "ended" ? "ended" : "connecting";
+  const label = ownWord(face, status);
+  return { ...rest, status, ...(label ? { label } : {}) };
 }
 
 /**

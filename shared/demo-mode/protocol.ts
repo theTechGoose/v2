@@ -146,9 +146,16 @@ export interface PlacedMessage {
   d?: { dx: -1 | 0 | 1; dy: -1 | 0 | 1 };
 }
 
-/** REQ-372 — the pill's state in words the stage translates itself (the presenter's language) */
-export type PillStatus = "live" | "connecting" | "ended";
-const PILL_STATUSES: readonly PillStatus[] = ["live", "connecting", "ended"];
+/** REQ-372 — the pill's state in words the stage translates itself (the presenter's language).
+ *  REQ-838 (demo-loop cycle dm2, p8) — "away": the customer's link is up and no stage is (their
+ *  guide left the stage; the demo is still open) */
+export type PillStatus = "live" | "connecting" | "ended" | "away";
+const PILL_STATUSES: readonly PillStatus[] = [
+  "live",
+  "connecting",
+  "ended",
+  "away",
+];
 /** REQ-372 — the longest pill text that rides to the stage */
 export const PILL_TEXT_MAX = 160;
 /** REQ-430 — the longest status label / guide name that rides to the stage */
@@ -189,6 +196,11 @@ export interface PillFace {
   /** REQ-822 — its two answers in the customer's words (drawn as disabled chips) */
   yes?: string;
   no?: string;
+  /** REQ-838 (demo-loop cycle dm2, m5 + p4) — the pill's "Connecting…" and "The demo ended" in
+   *  the customer's words: what the stage guesses on its own (their app dropped, their next page
+   *  joining) is said in their language, never the presenter's beside their title, line and End */
+  connectingLabel?: string;
+  endedLabel?: string;
 }
 
 /** REQ-545 — a colour the stage may paint: hex, rgb() or rgba() only */
@@ -220,6 +232,13 @@ function parsePillFace(o: Record<string, unknown>): PillFace {
   if (typeof o.ask === "string") f.ask = o.ask.slice(0, PILL_TEXT_MAX);
   if (typeof o.yes === "string") f.yes = o.yes.slice(0, PILL_LABEL_MAX);
   if (typeof o.no === "string") f.no = o.no.slice(0, PILL_LABEL_MAX);
+  // REQ-838 (dm2, m5 + p4) — the words for the stage's own guesses, capped like the label
+  if (typeof o.connectingLabel === "string") {
+    f.connectingLabel = o.connectingLabel.slice(0, PILL_LABEL_MAX);
+  }
+  if (typeof o.endedLabel === "string") {
+    f.endedLabel = o.endedLabel.slice(0, PILL_LABEL_MAX);
+  }
   return f;
 }
 
@@ -306,14 +325,18 @@ export const ACTIVE_REASK_MS = 1_000;
  *  is waiting. A page change in the customer's app is a new page and a new socket (the old one
  *  closes, the new one joins once the page has loaded), and it must never flash "waiting".
  *  REQ-391 — on a stage this is the grace of a tab that said it is NAVIGATING (its next page is
- *  coming); one that said it is closing gets none, one that said nothing SILENT_GRACE_MS. */
+ *  coming); one that said it is closing gets none, one that said nothing SILENT_GRACE_MS.
+ *  REQ-838 (demo-loop cycle dm2, m5) — a closing one gets SILENT_GRACE_MS too (the address bar,
+ *  `page.goto` and the reload button say "closing"); only a sign-out gets none. */
 export const PRESENCE_GRACE_MS = 5_000;
 /** REQ-391 — a customer tab's socket went without a word (a crash, a lost network — whose first
  *  reconnect comes after 1 s — or a page from before REQ-391): the stage waits this long for a
  *  next page before it says it is waiting. REQ-823 (demo-loop cycle dm1, m8) — and the followed
  *  browser tab whose page went closing or without a word while another of the customer's tabs is
  *  open is held this long before the stage follows the other tab: an address-bar navigation, a
- *  `page.goto` or the browser's reload button says "closing" and is that tab's next page */
+ *  `page.goto` or the browser's reload button says "closing" and is that tab's next page.
+ *  REQ-838 (demo-loop cycle dm2, m5) — and so is the last tab's page that went closing: the stage
+ *  says "between" this long, never "waiting" at once */
 export const SILENT_GRACE_MS = 2_000;
 /** a demo nobody ended expires on its own — and says so (REQ-296: `ended … expired` to everyone) */
 export const SESSION_TTL_MS = 2 * 60 * 60 * 1000;

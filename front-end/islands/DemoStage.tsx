@@ -1317,6 +1317,9 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
       ask: m.ask,
       yes: m.yes,
       no: m.no,
+      // REQ-838 (dm2, m5 + p4) — their words for what this stage guesses (a drop, a new page)
+      connectingLabel: m.connectingLabel,
+      endedLabel: m.endedLabel,
     });
     const showPill = (m: PillMsg) => {
       setPillBox(m.r);
@@ -1788,8 +1791,9 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
     loadingNext,
   });
   // REQ-646 (cycle 5, m63) — no copy of the customer's pill while another window has the demo:
-  // this one no longer hears it, so it would only say a stale "Connecting…"
-  const pillShown = look.elsewhere ? null : pillBox;
+  // this one no longer hears it, so it would only say a stale "Connecting…". REQ-838 (cycle dm2,
+  // p4) — nor while the customer is signed out: their pill went with their session
+  const pillShown = look.elsewhere || signedOut ? null : pillBox;
   const statusLabel = live.key === "ended"
     ? t("demoMode.ended")
     : live.key === "elsewhere"
@@ -2140,9 +2144,10 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
               /* REQ-451 (demo M1) — his arrow where their screen has it, while apart from his cursor;
                 REQ-642 (cycle 5, m10) — where their screen REPORTED it, tagged "You", the tag
                 outside his element and off its neighbours; REQ-646 (cycle 5, m63) — none of his
-                pointer while another window has the demo */
+                pointer while another window has the demo; REQ-838 (cycle dm2, p4) — nor while the
+                customer is signed out (their screen is gone) */
             }
-            {mirrored && !look.elsewhere && ghost && (
+            {mirrored && !look.elsewhere && !signedOut && ghost && (
               <PointerGhost
                 at={ghost.at}
                 outside={ghost.outside}
@@ -2158,9 +2163,10 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
             )}
             {
               /* REQ-642 (setup-14d) — his own pointer, always, where he pointed: his colour, "You";
-                REQ-813 — dimmed "not shown" / "pointing…" as their screen has it */
+                REQ-813 — dimmed "not shown" / "pointing…" as their screen has it; REQ-838 (cycle
+                dm2, p4) — not while the customer is signed out: no screen of theirs to point on */
             }
-            {mirrored && !look.elsewhere && (
+            {mirrored && !look.elsewhere && !signedOut && (
               <OwnPointer
                 color={myColor}
                 z={Z + 1}
@@ -2211,9 +2217,13 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
                 {t("demoMode.tabSwitched", { name, path: tabNote })}
               </div>
             )}
-            {/* REQ-538 (demo cycle 4 M1) — his arrow is not on their screen: said, until it is */}
-            {mirrored && !look.elsewhere && absent && !off &&
-              tabNote === null && (
+            {
+              /* REQ-538 (demo cycle 4 M1) — his arrow is not on their screen: said, until it is;
+                REQ-838 (cycle dm2, p4) — never while their app is gone (signed out, waiting): there
+                is no screen to move it onto */
+            }
+            {mirrored && !look.elsewhere && !signedOut && !look.waiting &&
+              absent && !off && tabNote === null && (
               <div
                 data-cy="demo-pointer-absent"
                 role="status"
