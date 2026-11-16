@@ -164,6 +164,7 @@ import {
   keepDemo,
   keepEnded,
   PILL_CARRY_GRACE_MS,
+  type PillPlace,
   showsConnected,
 } from "../lib/demo-mode/pill-carry.ts";
 import {
@@ -505,6 +506,9 @@ export default function DemoModeOverlay(
   /** REQ-781 (cycle dv1, d7) — where the folded mini-pill sits: its offset from the left edge's
    *  spot (`tabBox`; x > 0: the right edge) */
   const [tabAt, setTabAt] = useState({ x: 0, y: 0 });
+  /** REQ-830 (demo-loop cycle dm2, p6) — where the pill last was (folded, the mini-pill's spot, the
+   *  dock, its whole size): carried to the next page, which draws its first frame from it */
+  const lastPlaceRef = useRef<PillPlace | null>(null);
   /** REQ-765 (cycle 5v2, p18-3d) — a dialog's dim is up: the pill is softened under it */
   const [underDim, setUnderDim] = useState(false);
   /** REQ-295 — the pill's box as last told to the stage */
@@ -735,6 +739,17 @@ export default function DemoModeOverlay(
     setDemo(carried.demo);
     // REQ-821 — carried in from the last page: already joined, no grace again on every link
     joinRef.current?.seen(carried.demo.id);
+    // REQ-830 (demo-loop cycle dm2, p6) — where the last page had the pill, before paint: never the
+    // whole pill at home for a frame, then folded and moved by the first measure
+    const at = carried.place;
+    if (at) {
+      lastPlaceRef.current = at;
+      tuckedRef.current = at.tucked;
+      setTucked(at.tucked);
+      setTabAt(at.tabAt);
+      setDock(at.dock);
+      if (at.full) fullRef.current = at.full;
+    }
     if (!carried.connected) return;
     setCarrying(true);
     const grace = setTimeout(() => setCarrying(false), PILL_CARRY_GRACE_MS);
@@ -752,7 +767,13 @@ export default function DemoModeOverlay(
     if (inert || goneRef.current) return;
     if (demo?.role === "viewer") {
       hadDemoRef.current = true;
-      keepDemo(sessionStore(), demo, peerOnline, Date.now());
+      keepDemo(
+        sessionStore(),
+        demo,
+        peerOnline,
+        Date.now(),
+        lastPlaceRef.current,
+      );
     } else if (!demo && hadDemoRef.current) {
       hadDemoRef.current = false;
       // REQ-647 (cycle 5, m29) — an end is carried to the next page; a demo gone unsaid is not
@@ -765,7 +786,13 @@ export default function DemoModeOverlay(
     const keepOnHide = () => {
       const d = demoRef.current;
       if (d?.role === "viewer") {
-        keepDemo(sessionStore(), d, peerOnlineRef.current, Date.now());
+        keepDemo(
+          sessionStore(),
+          d,
+          peerOnlineRef.current,
+          Date.now(),
+          lastPlaceRef.current,
+        );
       }
       goneRef.current = true;
     };
@@ -1410,9 +1437,11 @@ export default function DemoModeOverlay(
   // page where nothing of it is under it, else folds to its mini-pill where no control is, else
   // floats whole where no control is (`placePill`)
   const shown = !inert && Boolean(demo || opening || notice);
-  useEffect(() => {
+  // REQ-830 (demo-loop cycle dm2, p6) — the first place() runs before paint (a layout effect): a
+  // full load never paints the whole pill at home for a frame before it folds and moves. The
+  // interval and the listeners stay in the effect below
+  useLayoutEffect(() => {
     if (!shown) return;
-    let settle: ReturnType<typeof setTimeout> | undefined;
     const sendPill = () => {
       const el = pillRef.current;
       const at = atRef.current;
@@ -1570,8 +1599,54 @@ export default function DemoModeOverlay(
       atRef.current = shownTab
         ? { left: p.box.left, top: p.box.top, tab: true }
         : { left: box.left, top: box.top, tab: false };
+      // REQ-830 — the placement the next page starts from (kept as it changes, and as the page goes)
+      const next: PillPlace = {
+        tucked: p.tucked,
+        tabAt: p.tucked
+          ? {
+            x: Math.round(p.box.left - edge.left),
+            y: Math.round(p.box.top - edge.top),
+          }
+          : lastPlaceRef.current?.tabAt ?? { x: 0, y: 0 },
+        dock: {
+          x: Math.round(box.left - home.box.left),
+          y: Math.round(box.top - home.box.top),
+        },
+        ...(fullRef.current ? { full: { ...fullRef.current } } : {}),
+      };
+      if (JSON.stringify(next) !== JSON.stringify(lastPlaceRef.current)) {
+        lastPlaceRef.current = next;
+        const d = demoRef.current;
+        if (d?.role === "viewer" && !goneRef.current) {
+          keepDemo(
+            sessionStore(),
+            d,
+            peerOnlineRef.current,
+            Date.now(),
+            lastPlaceRef.current,
+          );
+        }
+      }
       sendPill();
     };
+    placeRef.current = place;
+    place();
+    return () => {
+      placeRef.current = () => {};
+      sendPillRef.current = () => {};
+      // the pill is gone (or re-mounted): the stage drops its ghost
+      if (sentPillRef.current) {
+        sentPillRef.current = null;
+        linkRef.current?.send({ k: "pill", r: null });
+      }
+    };
+  }, [shown, demo?.role]);
+  // REQ-379 / REQ-545 — the pill is placed again on a timer, on resize, on scroll and when it
+  // changes size (REQ-830: the first place() already ran, before paint, above)
+  useEffect(() => {
+    if (!shown) return;
+    let settle: ReturnType<typeof setTimeout> | undefined;
+    const place = () => placeRef.current();
     const later = () => {
       clearTimeout(settle);
       settle = setTimeout(place, 150);
@@ -1582,8 +1657,6 @@ export default function DemoModeOverlay(
       setCompact(narrow());
       later();
     };
-    placeRef.current = place;
-    place();
     const timer = setInterval(place, PILL_CHECK_MS);
     addEventListener("resize", onResize);
     // REQ-545 — what scrolls into the bottom strip tucks the pill (any scroller: capture)
@@ -1599,13 +1672,6 @@ export default function DemoModeOverlay(
       removeEventListener("resize", onResize);
       removeEventListener("scroll", later, { capture: true });
       foldTimer.current?.cancel();
-      placeRef.current = () => {};
-      sendPillRef.current = () => {};
-      // the pill is gone (or re-mounted): the stage drops its ghost
-      if (sentPillRef.current) {
-        sentPillRef.current = null;
-        linkRef.current?.send({ k: "pill", r: null });
-      }
     };
   }, [shown, demo?.role]);
 
