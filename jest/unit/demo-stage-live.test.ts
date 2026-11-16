@@ -775,7 +775,9 @@ describe("REQ-391 the wiring", () => {
     expect(fn.slice(0, fn.indexOf("\n}"))).toMatch(/net/);
   });
 
-  test("m21 — the waiting notice is a banner across the frame's top edge, not a card in its middle", () => {
+  // REQ-391 AMENDMENT (REQ-846, cycle dm3 p11): the banner sits in REQ-642's chrome row above the
+  // frame (stageBadgeTop), centred on it and at most its width — no longer on the frame's top edge
+  test("m21 — the waiting notice is a banner in the chrome row above the frame, not a card in its middle", () => {
     const start = stageSrc.indexOf('data-cy="demo-waiting"');
     expect(start).toBeGreaterThan(-1);
     const block = stageSrc.slice(
@@ -784,8 +786,8 @@ describe("REQ-391 the wiring", () => {
     );
     expect(block).not.toMatch(/place-items:center/);
     expect(block).not.toMatch(/\$\{box\}/); // never the whole frame's box
-    expect(block).toMatch(/top:\$\{\s*fit\.top - bannerH\s*\}px/);
-    expect(block).toMatch(/width:\$\{\s*fit\.width\s*\}px/);
+    expect(block).toContain("stageBadgeTop(fit.top - bannerH)");
+    expect(block).toMatch(/max-width:\$\{\s*fit\.width\s*\}px/);
     expect(block).toMatch(/pointer-events:none/);
     expect(block).toContain('t("demoMode.waitingFor", { name })');
     expect(block).toContain('t("demoMode.waitingKeep")');

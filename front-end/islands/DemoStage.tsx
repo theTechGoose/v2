@@ -1849,6 +1849,11 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
     styled,
     loadingNext,
   });
+  // REQ-846 (cycle dm3, p11) — the waiting / signed-out notice, whole: the banner shows it on one
+  // line in the chrome row (clipped with an ellipsis), its title and aria-label carry all of it
+  const waitingNote = signedOut
+    ? `${t("demoMode.signedOut", { name })}. ${t("demoMode.signedOutKeep")}`
+    : `${t("demoMode.waitingFor", { name })} ${t("demoMode.waitingKeep")}`;
   // REQ-646 (cycle 5, m63) — no copy of the customer's pill while another window has the demo:
   // this one no longer hears it, so it would only say a stale "Connecting…". REQ-838 (cycle dm2,
   // p4) — nor while the customer is signed out: their pill went with their session
@@ -2158,28 +2163,33 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
               );
             })()}
             {look.waiting && (
-              // REQ-391 (m21) — a banner across the frame's top edge, never a card over their page
+              // REQ-391 (m21) — a banner, never a card over their page; REQ-846 (cycle dm3, p11) —
+              // in REQ-642's chrome row ABOVE the frame, one badge high: never over their header
               <div
                 data-cy="demo-waiting"
                 role="status"
-                style={`position:absolute;left:${fit.left}px;top:${
-                  fit.top - bannerH
-                }px;width:${fit.width}px;z-index:${
+                title={waitingNote}
+                aria-label={waitingNote}
+                style={`position:absolute;left:${
+                  fit.left + fit.width / 2
+                }px;top:${
+                  stageBadgeTop(fit.top - bannerH)
+                }px;transform:translateX(-50%);z-index:${
                   Z + 2
-                };box-sizing:border-box;pointer-events:none;color:#fff;font:inherit`}
+                };pointer-events:none;white-space:nowrap;box-sizing:border-box;height:${STAGE_BADGE_H}px;line-height:${
+                  STAGE_BADGE_H - 2
+                }px;max-width:${fit.width}px;overflow:hidden;text-overflow:ellipsis;padding:0 12px;border-radius:999px;border:1px solid rgba(255,255,255,.85);background:rgba(18,26,22,.92);color:#fff;font:inherit;font-size:12.5px;box-shadow:0 2px 10px rgba(0,0,0,.45)`}
               >
-                <div style="display:flex;flex-wrap:wrap;gap:2px 8px;align-items:baseline;justify-content:center;text-align:center;padding:7px 12px;border-radius:6px 6px 0 0;background:rgba(18,26,22,.88);box-shadow:0 2px 10px rgba(0,0,0,.35);font-size:12.5px;line-height:1.35">
-                  <strong>
-                    {signedOut
-                      ? t("demoMode.signedOut", { name })
-                      : t("demoMode.waitingFor", { name })}
-                  </strong>
-                  <span style="opacity:.8">
-                    {signedOut
-                      ? t("demoMode.signedOutKeep")
-                      : t("demoMode.waitingKeep")}
-                  </span>
-                </div>
+                <strong>
+                  {signedOut
+                    ? t("demoMode.signedOut", { name })
+                    : t("demoMode.waitingFor", { name })}
+                </strong>{" "}
+                <span style="opacity:.8">
+                  {signedOut
+                    ? t("demoMode.signedOutKeep")
+                    : t("demoMode.waitingKeep")}
+                </span>
               </div>
             )}
             {look.elsewhere && !ended && (
@@ -2276,7 +2286,7 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
               /* REQ-393 (demo M8) — his mouse is beside the frame: said, on its outline; REQ-642 —
                 in the chrome row above the frame, never over the replica */
             }
-            {mirrored && !look.elsewhere && off && (
+            {mirrored && !look.elsewhere && !look.waiting && off && (
               <div
                 data-cy="demo-pointer-off"
                 role="status"
@@ -2298,7 +2308,8 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
                 moves. REQ-826 (dm2 p10) — it names the page (never its URL) and sits in REQ-642's
                 chrome row above the frame, never over the replica */
             }
-            {mirrored && !look.elsewhere && tabNote !== null && !off && (
+            {mirrored && !look.elsewhere && !look.waiting && tabNote !== null &&
+              !off && (
               <div
                 data-cy="demo-tab-switched"
                 role="status"
