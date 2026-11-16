@@ -231,6 +231,151 @@ Deno.test("REQ-866 (demo-loop cycle dm4, m2) [es]: on /welcome at 1280×800 End'
     }
   }));
 
+/**
+ * REQ-876 (demo-loop cycle dm5, m2) — End's question opens near where End was pressed: on /welcome
+ * at 1280×800 the asking pill jumped ~630 px from the press (x823 y12 → x12 y63, fleet-r38fa8936-3
+ * stdout:92-101). Still no control under it (REQ-866), and its answers within 150 px of the press.
+ */
+Deno.test("REQ-876 (demo-loop cycle dm5, m2) [es]: on /welcome at 1280×800 End's question opens with its answers near where End was pressed, over no control", (t) =>
+  story(t, async ({ page, expect, http, baseUrl, folder }) => {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    const userPhone = `+1512${digits()}`;
+    const adminPhone = `+1843${digits()}`;
+    const user = await verify(http, userPhone);
+    await setMe(http, user.auth, "Ana Torres", "es");
+    const admin = await verify(http, adminPhone);
+    await setMe(http, admin.auth, "Alex from DocuMonster", "en");
+    const boot = await http("/api/admin/bootstrap", {
+      method: "POST",
+      headers: JSON_HEADERS,
+      body: JSON.stringify({ phoneNumber: adminPhone }),
+    });
+    expect.eq(boot.status, 200, "the admin phone is a super admin");
+    await boot.body?.cancel();
+    await useCookie(page.context(), baseUrl, admin.cookie, "en");
+
+    const browser = page.context().browser();
+    if (!browser) throw new Error("no browser behind the story page");
+    const userCtx = await browser.newContext({
+      viewport: { width: 1280, height: 800 },
+    });
+    try {
+      const userPage = await userCtx.newPage();
+      await useCookie(userCtx, baseUrl, user.cookie, "es");
+      await userPage.goto(`${baseUrl}/welcome`);
+      expect.eq(new URL(userPage.url()).pathname, "/welcome", "on /welcome");
+      await openDemo(page, baseUrl, userPhone);
+      await userPage.reload();
+      await userPage.locator("[data-cy='demo-pill'][data-status='live']")
+        .waitFor({ state: "attached", timeout: 25_000 });
+      await userPage.waitForTimeout(6_500);
+      const rest = await userPage.evaluate(controlsUnderPill);
+
+      // press End where it is (the whole pill's End, or the mini-pill's ×) and remember where
+      const whole = userPage.locator(
+        "[data-cy='demo-pill'] [data-cy='demo-end']",
+      );
+      const end = (await whole.isVisible())
+        ? whole
+        : userPage.locator("[data-cy='demo-pill-tab-end']");
+      const b = await end.boundingBox();
+      if (!b) throw new Error("End has no box");
+      const press = { x: b.x + b.width / 2, y: b.y + b.height / 2 };
+      await userPage.mouse.click(press.x, press.y);
+      await userPage.locator("[data-cy='demo-pill'] [data-cy='demo-end-ask']")
+        .waitFor({ state: "visible", timeout: 5_000 });
+      await userPage.waitForTimeout(600);
+      const a = await userPage.evaluate(controlsUnderPill);
+      const answers = await userPage.evaluate(() => {
+        const box = (s: string) =>
+          document.querySelector(s)!.getBoundingClientRect();
+        const y = box("[data-cy='demo-end-confirm']");
+        const n = box("[data-cy='demo-end-cancel']");
+        return {
+          left: Math.min(y.left, n.left),
+          top: Math.min(y.top, n.top),
+          right: Math.max(y.right, n.right),
+          bottom: Math.max(y.bottom, n.bottom),
+        };
+      });
+      await userPage.screenshot({ path: `${folder}/welcome-asking-near.png` });
+      const dx = Math.max(0, answers.left - press.x, press.x - answers.right);
+      const dy = Math.max(0, answers.top - press.y, press.y - answers.bottom);
+      const d = Math.round(Math.hypot(dx, dy));
+      // the nearest the answers could be: every box of the asking pill's size in the window (a
+      // 24 × 17 px grid) with no control of the page under it, its answers' gap to the press
+      const best = await userPage.evaluate(
+        ([p, ans]) => {
+          const SEL =
+            'a[href],button,input,select,textarea,summary,label,[role="button"],[role="link"],[role="tab"],[role="menuitem"],[role="checkbox"],[role="switch"]';
+          const pill = document.querySelector<HTMLElement>(
+            "[data-cy='demo-pill']",
+          )!;
+          const r = pill.getBoundingClientRect();
+          const off = {
+            left: ans.left - r.left,
+            top: ans.top - r.top,
+            w: ans.right - ans.left,
+            h: ans.bottom - ans.top,
+          };
+          const clear = (bx: number, by: number) => {
+            const cols = Math.max(5, Math.ceil(r.width / 40));
+            for (let i = 0; i < cols; i++) {
+              for (let j = 0; j < 3; j++) {
+                const x = bx + 2 + ((r.width - 4) * i) / (cols - 1);
+                const y = by + 2 + ((r.height - 4) * j) / 2;
+                for (const el of document.elementsFromPoint(x, y)) {
+                  if (pill.contains(el)) continue;
+                  if (el.closest("[data-demo-overlay],[data-cy^='demo-']")) {
+                    continue;
+                  }
+                  if (el.closest(SEL)) return false;
+                  break;
+                }
+              }
+            }
+            return true;
+          };
+          let g = Infinity;
+          let at: number[] = [];
+          for (let y = 12; y + r.height <= innerHeight - 12; y += 17) {
+            for (let x = 12; x + r.width <= innerWidth - 12; x += 24) {
+              const ax = x + off.left;
+              const ay = y + off.top;
+              const gx = Math.max(0, ax - p.x, p.x - (ax + off.w));
+              const gy = Math.max(0, ay - p.y, p.y - (ay + off.h));
+              const gg = Math.hypot(gx, gy);
+              if (gg < g && clear(x, y)) {
+                g = gg;
+                at = [x, y];
+              }
+            }
+          }
+          return { gap: Math.round(g), at };
+        },
+        [press, answers] as const,
+      );
+      const said = `asking pill ${JSON.stringify(a.pill)}, answers ${
+        JSON.stringify(answers)
+      }, End pressed at ${JSON.stringify(press)}, the nearest clear box ${
+        JSON.stringify(best)
+      } (at rest ${JSON.stringify(rest)})`;
+      expect(
+        a.under.length === 0,
+        `REQ-866 still: no control under the asking pill — ${said} over ${
+          JSON.stringify(a.under)
+        }`,
+      );
+      // as near as they can be: within 150 px of the press, or of the nearest clear box's answers
+      expect(
+        d <= Math.max(150, best.gap + 60),
+        `the answers open near where End was pressed: ${d} px — ${said}`,
+      );
+    } finally {
+      await userCtx.close();
+    }
+  }));
+
 type Sample = { t: number; status: string; folded: boolean; box: number[] };
 
 /** installed before the page loads: the pill's box every 100 ms on the page's own clock */

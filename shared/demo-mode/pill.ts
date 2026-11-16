@@ -617,6 +617,25 @@ export function askDock(o: {
   };
 }
 
+/** REQ-876 (demo-loop cycle dm5, m2) — the width the asking pill's answers ("Yes, end it" +
+ *  "Keep going") take at its right end, when the island has not measured them */
+export const ASK_ANSWERS_W = 150;
+
+/** REQ-876 — the gap between two boxes (0 when they touch or overlap) */
+function rectGap(a: Rect, b: Rect): number {
+  const dx = Math.max(
+    0,
+    b.left - (a.left + a.width),
+    a.left - (b.left + b.width),
+  );
+  const dy = Math.max(
+    0,
+    b.top - (a.top + a.height),
+    a.top - (b.top + b.height),
+  );
+  return Math.hypot(dx, dy);
+}
+
 /**
  * REQ-852 (demo-loop cycle dm3, p4; amends REQ-228 / REQ-835) — where End's question opens: the
  * asking pill at its asking `size`, placed once where no CONTROL of the page is under it. It grew
@@ -626,6 +645,10 @@ export function askDock(o: {
  * bottom-right). The first with no control under it, else the fewest (a tie keeps the earlier).
  * Each is laid out by `askDock`, so REQ-835's in-view clamp is the last step; a clear current
  * anchor returns askDock's own result (a pill that fits keeps the same dock: REQ-300).
+ * REQ-876 (demo-loop cycle dm5, m2) — with `near` (where End was pressed), the first clear box was
+ * ~630 px from the press (/welcome: x823 y12 → x12 y63): the boxes are ranked by how far their
+ * answers are from the press, the anchor's row and the rows next to it slid in PILL_TAB.w/2 steps
+ * too, and the nearest with the fewest controls wins. No control under it stays the rule.
  */
 export function askSpot(o: {
   view: Size;
@@ -633,6 +656,12 @@ export function askSpot(o: {
   size: Size;
   /** how many controls of the page are under a box */
   controls: (r: Rect) => number;
+  /** REQ-876 — where End was pressed (its button's box, or the press point as a 0×0 box): among
+   *  the boxes with the fewest controls, the one whose answers are nearest it wins */
+  near?: Rect;
+  /** REQ-876 — the answers' box inside the asking pill (relative to its left/top); absent, the
+   *  pill's right end (ASK_ANSWERS_W wide) stands for them */
+  answers?: Rect;
 }): { dock: { x: number; y: number }; fit: Rect; controls: number } {
   const at = (dock: { x: number; y: number }) =>
     askDock({ view: o.view, dock, size: o.size });
@@ -673,6 +702,73 @@ export function askSpot(o: {
   const seen = new Set<string>();
   let best = here;
   let n = Infinity;
+  if (o.near) {
+    // REQ-876 (demo-loop cycle dm5, m2) — End's press known: a clear anchor still stays (REQ-300);
+    // else every box (REQ-852/866's, rows a third of a step apart, and the anchor's row and the
+    // rows within a step of it slid from the anchor's edge in PILL_TAB.w/2 steps) is ranked by how far its answers are from the press and
+    // counted nearest first — the first with no control wins, else the fewest (a tie: the nearest)
+    const near = o.near;
+    const a = o.answers ?? {
+      left: Math.max(0, o.size.w - ASK_ANSWERS_W),
+      top: 0,
+      width: Math.min(o.size.w, ASK_ANSWERS_W),
+      height: o.size.h,
+    };
+    const far = (fit: Rect) =>
+      rectGap(
+        {
+          left: fit.left + a.left,
+          top: fit.top + a.top,
+          width: a.width,
+          height: a.height,
+        },
+        near,
+      );
+    const all: { t: typeof here; d: number; i: number }[] = [];
+    const add = (t: typeof here) => {
+      const k = `${t.fit.left},${t.fit.top}`;
+      if (seen.has(k)) return;
+      seen.add(k);
+      all.push({ t, d: far(t.fit), i: all.length });
+    };
+    for (const t of tries()) add(t);
+    const step = o.size.h + PILL_BAND_GAP;
+    const from = onRight ? rightX : leftX;
+    const dir = onRight ? -1 : 1;
+    const topRow = PILL_MARGIN + o.size.h - (o.view.h - PILL_BAND_GAP);
+    // rows a third of a step apart too (a clear gap between two of the page's controls is rarely
+    // on the pill-height grid): each at both edges and centred; the anchor's row and those within
+    // a step of it also slid from the anchor's edge in PILL_TAB.w/2 steps
+    const fine = Math.max(1, Math.ceil(step / 3));
+    for (let j = 0; row - j * fine >= topRow || row + j * fine <= 0; j++) {
+      for (const y of j ? [row + j * fine, row - j * fine] : [row]) {
+        // a row inside the window only (the pill's top under the top margin, its foot above the band)
+        if (y > 0 || y < topRow) continue;
+        add(at({ x: from, y }));
+        add(at({ x: onRight ? leftX : rightX, y }));
+        add(at({ x: midX, y }));
+        if (j * fine > step) continue;
+        for (let k = 1; k * (PILL_TAB.w / 2) < Math.abs(rightX - leftX); k++) {
+          add(at({ x: from + dir * k * (PILL_TAB.w / 2), y }));
+        }
+      }
+    }
+    const c0 = o.controls(here.fit);
+    if (c0 === 0) return { ...here, controls: 0 };
+    best = here;
+    n = c0;
+    all.sort((p, q) => p.d - q.d || p.i - q.i);
+    for (const { t } of all) {
+      if (t === here) continue;
+      const c = o.controls(t.fit);
+      if (c < n) {
+        best = t;
+        n = c;
+        if (c === 0) break;
+      }
+    }
+    return { ...best, controls: n };
+  }
   for (const t of tries()) {
     const k = `${t.fit.left},${t.fit.top}`;
     if (seen.has(k)) continue;
