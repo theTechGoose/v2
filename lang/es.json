@@ -4383,6 +4383,8 @@
   "demoMode.endAskViewer": "¿Terminar la demo con {name}?",
   "demoMode.endYes": "Sí, terminar",
   "demoMode.endNo": "Seguir",
+  "demoMode.pillGhostAsking": "Quiere terminar la demo",
+  "demoMode.customerAskingEnd": "{name} está decidiendo si terminar la demo",
   "demoMode.endedBy": "{name} terminó la demo",
   "demoMode.endedByYou": "Terminaste la demo",
   "demoMode.expired": "La demo expiró a las dos horas",

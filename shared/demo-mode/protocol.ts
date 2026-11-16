@@ -181,6 +181,14 @@ export interface PillFace {
   title?: string;
   /** REQ-540 — the pill's End label in the customer's words (the stage draws it as a disabled chip) */
   end?: string;
+  /** REQ-822 (demo-loop cycle dm1, m1) — End is asking on the customer's pill: the stage's ghost
+   *  draws the question in End's place, and the stage's pill says the customer is deciding */
+  asking?: boolean;
+  /** REQ-822 — the question as the customer's pill words it ("End the demo with Alex?") */
+  ask?: string;
+  /** REQ-822 — its two answers in the customer's words (drawn as disabled chips) */
+  yes?: string;
+  no?: string;
 }
 
 /** REQ-545 — a colour the stage may paint: hex, rgb() or rgba() only */
@@ -208,6 +216,10 @@ function parsePillFace(o: Record<string, unknown>): PillFace {
   if (typeof o.dim === "string" && BAND_BG.test(o.dim)) f.dim = o.dim;
   if (typeof o.title === "string") f.title = o.title.slice(0, PILL_LABEL_MAX);
   if (typeof o.end === "string") f.end = o.end.slice(0, PILL_LABEL_MAX);
+  if (typeof o.asking === "boolean") f.asking = o.asking;
+  if (typeof o.ask === "string") f.ask = o.ask.slice(0, PILL_TEXT_MAX);
+  if (typeof o.yes === "string") f.yes = o.yes.slice(0, PILL_LABEL_MAX);
+  if (typeof o.no === "string") f.no = o.no.slice(0, PILL_LABEL_MAX);
   return f;
 }
 

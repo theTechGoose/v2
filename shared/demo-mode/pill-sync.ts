@@ -15,8 +15,9 @@ export const PILL_SYNC_SLACK_MS = 250;
 export const PILL_HOLD_MAX_MS = 15_000;
 
 export interface PillSync<P> {
-  /** a pill message came in: what to show now (null: held for its frame) */
-  offer(p: P, t?: number): P | null;
+  /** a pill message came in: what to show now (null: held for its frame). REQ-822 — `now`: show
+   *  it at once (a change of the overlay's own state only), superseding what was held */
+  offer(p: P, t?: number, now?: boolean): P | null;
   /** the replay handed on a frame the customer sent at `sent`: the held pill it reached, if any */
   frame(sent?: number): P | null;
   /** a held pill that waited PILL_HOLD_MAX_MS: show it anyway */
@@ -43,8 +44,11 @@ export function createPillSync<P>(
     return last;
   };
   return {
-    offer(p, t) {
-      if (t === undefined || !Number.isFinite(t) || t <= at + slack) {
+    offer(p, t, instant) {
+      if (
+        instant === true || t === undefined || !Number.isFinite(t) ||
+        t <= at + slack
+      ) {
         // newer than anything held: what was held is superseded
         held = [];
         return p;
