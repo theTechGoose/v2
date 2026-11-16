@@ -228,11 +228,13 @@ describe("REQ-545 — the overlay wires it: placePill, a scroll re-check, the ed
     expect(o()).toMatch(/addEventListener\(\s*"scroll"/);
   });
 
-  test("the tab: its own control, expands on hover (mouseenter) or tap (click)", () => {
+  // REQ-820 (demo-loop cycle dm1, m6) AMENDMENT — the hover is real pointer movement over the tab
+  // (mousemove), never a bare mouseenter (a re-mounted tab under a resting pointer gets one)
+  test("the tab: its own control, expands on hover (pointer movement, REQ-820) or tap (click)", () => {
     const src = o();
     expect(src).toMatch(/data-cy="demo-pill-tab"/);
     const tab = src.slice(src.indexOf('data-cy="demo-pill-tab"') - 400);
-    expect(tab.slice(0, 1600)).toMatch(/onMouseEnter=/);
+    expect(tab.slice(0, 1600)).toMatch(/onMouseMove=/);
     expect(tab.slice(0, 1600)).toMatch(/onClick=/);
   });
 

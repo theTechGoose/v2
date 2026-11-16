@@ -192,6 +192,7 @@ import {
   dialogDim,
   isPublicDocPath,
   PAGE_MEDIA_SELECTOR,
+  peekTimer,
   PILL_BAND_GAP,
   PILL_COMPACT_MAX_W,
   PILL_FONT,
@@ -456,9 +457,22 @@ export default function DemoModeOverlay(
   /** REQ-545 — the pill's own size when last shown whole (folded to its tab, its home is still
    *  where the whole pill would sit) */
   const fullRef = useRef<{ w: number; h: number } | null>(null);
-  const peekTimer = useRef<ReturnType<typeof setTimeout> | undefined>(
-    undefined,
-  );
+  /** REQ-820 (demo-loop cycle dm1, m6) — a mouse or pen pointer is on the pill (folded or whole).
+   *  Tracked on the persistent pill div, so a tab swapped for the whole pill under a resting
+   *  pointer keeps it; a touch never counts (its :hover sticks after a tap) */
+  const overPillRef = useRef(false);
+  /** REQ-820 — the frame that turns the tab into the whole pill: no transform glide, so it never
+   *  slides in from the tab's translate (half off-screen on the right edge) */
+  const [noGlide, setNoGlide] = useState(false);
+  /** REQ-545 — the peek's fold timer. REQ-820 — it waits again while the pill is held: a pointer
+   *  resting on it, or End's question up (that stays until it is answered) */
+  const foldTimer = useRef<ReturnType<typeof peekTimer> | null>(null);
+  foldTimer.current ??= peekTimer({
+    held: () =>
+      overPillRef.current ||
+      !!pillRef.current?.querySelector('[data-cy="demo-end-ask"]'),
+    fold: () => setPeek(false),
+  });
   /** REQ-545 — what the stage is told of the strip under the pill. REQ-781 (cycle dv1, d7): no
    *  band is kept any more (h 0); a folded pill and a dialog's dim still ride along */
   const bandRef = useRef<
@@ -1513,7 +1527,7 @@ export default function DemoModeOverlay(
       ro?.disconnect();
       removeEventListener("resize", onResize);
       removeEventListener("scroll", later, { capture: true });
-      clearTimeout(peekTimer.current);
+      foldTimer.current?.cancel();
       placeRef.current = () => {};
       sendPillRef.current = () => {};
       // the pill is gone (or re-mounted): the stage drops its ghost
@@ -1533,30 +1547,28 @@ export default function DemoModeOverlay(
   useEffect(() => {
     placeRef.current();
   }, [peek, open, fresh]);
+  // REQ-820 — the whole pill is painted where it is: from the next move on, it glides again
+  useEffect(() => {
+    if (!noGlide) return;
+    let id = requestAnimationFrame(() => {
+      id = requestAnimationFrame(() => setNoGlide(false));
+    });
+    return () => cancelAnimationFrame(id);
+  }, [noGlide]);
 
   if (inert) return null;
 
   /** REQ-545 — the tucked pill shows whole: on hover until left, on a tap for PILL_PEEK_MS */
   const folded = tucked && !peek;
-  const unpeekIn = (ms: number) => {
-    clearTimeout(peekTimer.current);
-    peekTimer.current = setTimeout(() => {
-      // End's question is up: the pill stays until it is answered
-      if (pillRef.current?.querySelector('[data-cy="demo-end-ask"]')) {
-        unpeekIn(ms);
-        return;
-      }
-      setPeek(false);
-    }, ms);
-  };
-  /** the tab hovered or tapped: whole, until the pointer has been in and left (or PILL_PEEK_MS) */
+  // REQ-820 (demo-loop cycle dm1, m6) — held (a pointer on the pill, End asking): it waits again
+  const unpeekIn = (ms: number) => foldTimer.current?.arm(ms);
+  /** the tab hovered or tapped: whole, until the pointer has been in and left (a tap with no
+   *  pointer on it: PILL_PEEK_MS) */
   const openPeek = () => {
+    // REQ-820 — out of the tab with no glide (it never slides in from the tab's translate)
+    if (!peekRef.current) setNoGlide(true);
     setPeek(true);
     unpeekIn(PILL_PEEK_MS);
-  };
-  /** the pointer is on the whole pill: it stays */
-  const holdPeek = () => {
-    if (peekRef.current) clearTimeout(peekTimer.current);
   };
   const leavePeek = () => {
     if (peekRef.current) unpeekIn(300);
@@ -1567,7 +1579,11 @@ export default function DemoModeOverlay(
   // glide). No measure is written back: it is as wide as its content, capped by the window. Its
   // empty area lets a click through to the page (M28): only its buttons (HIT) take one
   const at =
-    `left:${PILL_MARGIN}px;bottom:calc(100% - var(--vvt, 0px) - var(--vvh, 100%) + ${PILL_BAND_GAP}px);transform:translate(${dock.x}px, ${dock.y}px);transition:transform ${PILL_MOVE_MS}ms ease`;
+    `left:${PILL_MARGIN}px;bottom:calc(100% - var(--vvt, 0px) - var(--vvh, 100%) + ${PILL_BAND_GAP}px);transform:translate(${dock.x}px, ${dock.y}px);${
+      // REQ-820 — the frame out of the tab jumps to its box; later moves glide
+      noGlide
+        ? "transition:none"
+        : `transition:transform ${PILL_MOVE_MS}ms ease`}`;
   const pillStyle = `position:fixed;${at};z-index:${
     Z + 3
   };display:flex;gap:10px;align-items:center;justify-content:space-between;flex-wrap:nowrap;white-space:nowrap;max-width:calc(100vw - ${
@@ -1789,7 +1805,12 @@ export default function DemoModeOverlay(
       )}
       <div
         ref={pillRef}
-        onMouseEnter={tucked ? holdPeek : undefined}
+        onPointerEnter={(e) => {
+          if (e.pointerType !== "touch") overPillRef.current = true;
+        }}
+        onPointerLeave={() => {
+          overPillRef.current = false;
+        }}
         onMouseLeave={tucked ? leavePeek : undefined}
         data-cy="demo-pill"
         data-restarted={started ? "" : undefined}
@@ -1816,7 +1837,9 @@ export default function DemoModeOverlay(
               aria-label={`${statusLabel} · ${t("demoMode.showPill")}`}
               title={`${statusLabel} · ${t("demoMode.showPill")}`}
               aria-expanded="false"
-              onMouseEnter={openPeek}
+              // REQ-820 (demo-loop cycle dm1, m6) — real pointer movement, never a bare mouseenter:
+              // a tab re-mounted under a resting pointer gets one from the hover update
+              onMouseMove={openPeek}
               onFocus={openPeek}
               onClick={openPeek}
               style={`flex:1;min-width:0;display:flex;align-items:center;gap:6px;margin:0;padding:0 4px 0 10px;border:0;background:transparent;color:inherit;font:inherit;cursor:pointer;${HIT}`}
