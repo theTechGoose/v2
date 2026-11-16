@@ -20,7 +20,6 @@ const base = {
   z: 10,
   label: "You",
   tagged: true,
-  absentLabel: "You · not shown",
   pendingLabel: "pointing…",
 };
 
@@ -37,7 +36,10 @@ Deno.test("REQ-813 (demo dm1 m4): live — full strength, filled, tagged 'You', 
   );
 });
 
-Deno.test("REQ-813 (demo dm1 m4): absent (pointerAbsent true) — dimmed, hollow, tagged 'not shown', data-absent", () => {
+// REQ-848 AMENDMENT (demo dm3 m4): absent is dimmed and hollow but no longer tagged "not shown"
+// in the frame — the white dashed pill sat on the customer's text; the chrome-row
+// demo-pointer-absent banner says it
+Deno.test("REQ-813 (demo dm1 m4) + REQ-848 (dm3 m4): absent (pointerAbsent true) — dimmed, hollow, no in-frame label, data-absent", () => {
   const doc = parse(renderToString(<OwnMarker {...base} look="absent" />));
   const el = doc.querySelector("[data-cy='demo-pointer-own']")!;
   assert(el, "the marker is still drawn (where he pointed)");
@@ -52,19 +54,22 @@ Deno.test("REQ-813 (demo dm1 m4): absent (pointerAbsent true) — dimmed, hollow
   );
   assertEquals(fill, "none", "hollow: no fill");
   assertEquals(
-    doc.querySelector("[data-cy='demo-pointer-own-label']")?.textContent,
-    "You · not shown",
+    doc.querySelector("[data-cy='demo-pointer-own-label']"),
+    null,
+    "REQ-848: no 'not shown' pill in the frame",
   );
 });
 
-Deno.test("REQ-813 (demo dm1 m4): absent is tagged even while a ghost carries 'You' (tagged false)", () => {
-  const doc = parse(
-    renderToString(<OwnMarker {...base} tagged={false} look="absent" />),
-  );
-  assertEquals(
-    doc.querySelector("[data-cy='demo-pointer-own-label']")?.textContent,
-    "You · not shown",
-  );
+Deno.test("REQ-813 (demo dm1 m4) + REQ-848 (dm3 m4): absent draws no label whether or not a ghost carries 'You'", () => {
+  for (const tagged of [true, false]) {
+    const doc = parse(
+      renderToString(<OwnMarker {...base} tagged={tagged} look="absent" />),
+    );
+    assertEquals(
+      doc.querySelector("[data-cy='demo-pointer-own-label']"),
+      null,
+    );
+  }
 });
 
 Deno.test("REQ-813 (demo dm1 m4): pending — the customer's 'pointing…' look, data-pending", () => {

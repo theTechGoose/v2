@@ -95,6 +95,10 @@ export const TAG_IDLE_MS = 1_500;
  *  scrim showed through it and the pointer read as "under the dark layer". It rests fully opaque
  *  on its solid colour, shrunk to the initials (`tagLabel`) so it covers less of the page */
 export const TAG_REST_OPACITY = 1;
+/** REQ-848 (demo dm3 p9) — the STAGE's copy of the customer's resting tag is see-through: solid,
+ *  it hid the day '20' and 'Keep going' in the frame. Per instance (`restTag` below), so the
+ *  presenter's arrow on the customer's own screen keeps REQ-633's opaque tag */
+export const STAGE_TAG_REST_OPACITY = 0.6;
 /** REQ-761 (demo c4-S12b, cycle 5v2) — a RESTING arrow is semi-transparent: Pair 5's employee
  *  read 'TBD' as 'Today' because the customer's arrow, solid at opacity 1, hid its letters. The
  *  svg (halo + dark outline) stays at ARROW_REST_OPACITY — never the faint .45/.55 REQ-374 (p8)
@@ -105,11 +109,12 @@ export const ARROW_REST_FILL = 0.5;
  *  (REQ-761) it turns see-through; the tag rests by shrinking (`compact`, REQ-633), not fading */
 export function pointerLook(
   resting: boolean,
+  restTag: number = TAG_REST_OPACITY,
 ): { arrow: number; fill: number; tag: number; compact: boolean } {
   return {
     arrow: resting ? ARROW_REST_OPACITY : 1,
     fill: resting ? ARROW_REST_FILL : 1,
-    tag: resting ? TAG_REST_OPACITY : 1,
+    tag: resting ? restTag : 1,
     compact: resting,
   };
 }

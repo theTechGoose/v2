@@ -232,6 +232,32 @@ export function coverage(doc: Document, r: Rect, tip: Pt): number {
   return n;
 }
 
+/** REQ-848 (demo dm3 m4 + p9) — `coverage` of a tag at stage px `r` (arrow at `tip`) over the
+ *  REPLAY the stage shows in a frame fitted at `fit`: each point mapped to the replay's px
+ *  ((x - fit.left) / fit.s) and hit-tested in its own document. On the stage `coverage(document)`
+ *  is blind there — the transparent click-capture layer sits over the pointer-events:none iframe,
+ *  so every spot scored 0 and the first (tail) slot won, over the customer's text */
+export function frameCoverage(
+  doc: Document | null | undefined,
+  fit: { left: number; top: number; s: number },
+  r: Rect,
+  tip: Pt,
+): number {
+  if (!doc || !(fit.s > 0)) return 0;
+  const map = (p: Pt): Pt => ({
+    x: (p.x - fit.left) / fit.s,
+    y: (p.y - fit.top) / fit.s,
+  });
+  const t = map(tip);
+  let n = 0;
+  for (const p of samples(r)) {
+    const m = map(p);
+    const c = contentAt(doc, m.x, m.y, t);
+    n += c === 2 ? 3 : c;
+  }
+  return n;
+}
+
 /** REQ-437 + REQ-543 — place the tag element for an arrow drawn at `tip`: its MEASURED size (the
  *  estimate only while it has none), outside `rect`, next to the arrow, off the controls `covers`
  *  finds, inside `box`; left/top relative to the tip (the pointer box is translated to it) and
@@ -316,6 +342,8 @@ export default function DemoPointer(
     attach,
     bounds,
     onTag,
+    covers,
+    restTagOpacity,
   }: {
     pointer: Pt | null;
     outside?: boolean;
@@ -341,6 +369,11 @@ export default function DemoPointer(
     bounds?: Bounds;
     /** REQ-837 (demo dm2 m3) — where the tag went whenever that changes (null: no tag drawn) */
     onTag?: (t: TagPlace | null) => void;
+    /** REQ-848 (demo dm3 m4 + p9) — how much a tag at `r` would hide (default: `coverage` of
+     *  this document; the stage hit-tests its replay instead, `frameCoverage`) */
+    covers?: (r: Rect, tip: Pt) => boolean | number;
+    /** REQ-848 (demo dm3 p9) — this instance's resting tag opacity (default REQ-633's opaque) */
+    restTagOpacity?: number;
   },
 ) {
   /** REQ-837 — the latest `onTag` (the painter is made once) and the last placement it was told */
@@ -368,11 +401,16 @@ export default function DemoPointer(
     // REQ-850 (dm3 p10) — keyed on the spot, not the object: a re-send of the same spot (her
     // resting pointer sent again on a resize) leaves a resting tag at rest
   }, [idleKey(pointer, outside)]);
-  const look = pointerLook(idle);
+  const look = pointerLook(idle, restTagOpacity);
 
   /** what the painter places the tag in, as of the latest render */
   const live = useRef<
-    { bounds?: Bounds; rect: Rect | null; fallback: { w: number; h: number } }
+    {
+      bounds?: Bounds;
+      rect: Rect | null;
+      fallback: { w: number; h: number };
+      covers?: (r: Rect, tip: Pt) => boolean | number;
+    }
   >({ rect: null, fallback: estimate(name) });
   const tagRef = useRef<HTMLSpanElement | null>(null);
   const drawn = useRef<Pt | null>(null);
@@ -383,14 +421,16 @@ export default function DemoPointer(
     const l = live.current;
     // REQ-543 + REQ-633 — off the other controls and the text of the page under it, anchored
     // or not (the tag and arrow are pointer-events:none, so the hit-test sees through them)
+    // REQ-848 (demo dm3) — the caller's hit-test when it has one (the stage: its replay)
     const doc = globalThis.document;
+    const own = l.covers;
     tell(placeTag(
       el,
       p,
       l.bounds ?? windowBox(),
       l.rect,
       l.fallback,
-      doc ? (r) => coverage(doc, r, p) : undefined,
+      own ? (r) => own(r, p) : doc ? (r) => coverage(doc, r, p) : undefined,
     ));
   }, []);
   const ref = useCallback(
@@ -412,7 +452,7 @@ export default function DemoPointer(
   const tagRect = outside || cue || pending !== undefined && pending !== null
     ? null
     : rect ?? null;
-  live.current = { bounds: tagBox, rect: tagRect, fallback };
+  live.current = { bounds: tagBox, rect: tagRect, fallback, covers };
   const place = pointer
     ? tagPlacement(pointer, tagBox ?? windowBox(), fallback, tagRect)
     : null;
