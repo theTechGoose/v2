@@ -531,6 +531,11 @@ export default function DemoModeOverlay(
   const linkRef = useRef<DemoLink | null>(null);
   /** REQ-228 — the pill, where it sits, and whether it is the phone's compact one */
   const pillRef = useRef<HTMLDivElement | null>(null);
+  /** REQ-876 (demo-loop cycle dm5, m2) — the last press on the pill (End, the mini-pill's ×): End's
+   *  question opens with its answers nearest it (`placeAsk` → `askSpot`'s `near`) */
+  const endPressRef = useRef<{ x: number; y: number; at: number } | null>(
+    null,
+  );
   /** REQ-379 — how far from its home a dialog docked the pill (0: home); a move glides.
    *  REQ-545 (cycle 4, m2) — across too: the top-right is the third place */
   const [dock, setDock] = useState({ x: 0, y: 0 });
@@ -1708,11 +1713,32 @@ export default function DemoModeOverlay(
       h: vv ? vv.offsetTop + vv.height : globalThis.innerHeight,
     };
     const backdrop = dialogBackdropUp();
+    // REQ-876 (demo-loop cycle dm5, m2) — where End was just pressed (a stale press, or the
+    // keyboard: none) and where the answers sit in the asking pill, so they open near it
+    const press = endPressRef.current;
+    const near = press && Date.now() - press.at < 5000
+      ? { left: press.x, top: press.y, width: 0, height: 0 }
+      : undefined;
+    const box = el.getBoundingClientRect();
+    const yes = el.querySelector('[data-cy="demo-end-confirm"]')
+      ?.getBoundingClientRect();
+    const no = el.querySelector('[data-cy="demo-end-cancel"]')
+      ?.getBoundingClientRect();
+    const answers = yes && no
+      ? {
+        left: Math.min(yes.left, no.left) - box.left,
+        top: Math.min(yes.top, no.top) - box.top,
+        width: Math.max(yes.right, no.right) - Math.min(yes.left, no.left),
+        height: Math.max(yes.bottom, no.bottom) - Math.min(yes.top, no.top),
+      }
+      : undefined;
     const { dock: next } = askSpot({
       view,
       dock: dockRef.current,
       size: { w: el.offsetWidth, h: el.offsetHeight },
       controls: (r) => countControls(r, backdrop),
+      near,
+      answers,
     });
     if (next !== dockRef.current) {
       dockRef.current = next;
@@ -2280,6 +2306,14 @@ export default function DemoModeOverlay(
       <div data-demo-overlay ref={fenceClicks}>
         <div
           ref={pillRef}
+          onPointerDownCapture={(e) => {
+            // REQ-876 — where End is pressed: End's question opens near it
+            endPressRef.current = {
+              x: e.clientX,
+              y: e.clientY,
+              at: Date.now(),
+            };
+          }}
           data-cy="demo-pill"
           role="status"
           lang={pLang}
@@ -2477,6 +2511,11 @@ export default function DemoModeOverlay(
       )}
       <div
         ref={pillRef}
+        onPointerDownCapture={(e) => {
+          // REQ-876 (cycle dm5, m2) — where End (or the mini-pill's ×) is pressed: End's question
+          // opens near it
+          endPressRef.current = { x: e.clientX, y: e.clientY, at: Date.now() };
+        }}
         onPointerEnter={(e) => {
           if (e.pointerType !== "touch") overPillRef.current = true;
         }}
