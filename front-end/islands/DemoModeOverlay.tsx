@@ -1235,7 +1235,10 @@ export default function DemoModeOverlay(
     setGoingOut(true);
     const lang = presenterLangFor(staffWho);
     // REQ-235 — said at once, before the server answers
-    if (how === "end") setNotice({ by: "you" });
+    if (how === "end") {
+      sayEnded({ by: "you" }); // REQ-895 — and to the stage, before the end
+      setNotice({ by: "you" });
+    }
     try {
       if (how === "end") await demoModeClient.end(d.id);
       else await demoModeClient.leave(d.id);
@@ -1821,6 +1824,8 @@ export default function DemoModeOverlay(
           endedLabel: f.endedLabel,
           // REQ-835 (dm2, m2) — it wraps into rows (the phone's pill asking or opened)
           wraps: f.wraps,
+          // REQ-895 (dm6, m6) — this pill is the ended notice
+          notice: f.notice,
         }
         : {};
       const faceKey = JSON.stringify(face);
@@ -2121,6 +2126,14 @@ export default function DemoModeOverlay(
     };
   }, [shown, demo?.role]);
 
+  // REQ-895 (demo-loop run 6, m6) — the pill just turned into the ended notice: its face goes to
+  // the stage NOW, before paint. It used to wait for the next PILL_CHECK_MS tick (the notice is
+  // the overlay's own render, which the page observers ignore), and the server's answer closed
+  // the link first: the stage's last frame kept the old pill with a status chip ("Ter…")
+  useLayoutEffect(() => {
+    if (notice) placeRef.current();
+  }, [notice]);
+
   // REQ-816 (demo-loop cycle dm1, M1) — End's question just came up: the pill is wider now (and
   // two rows on the phone), and REQ-300 freezes its place while it asks. Placed from the right edge
   // (a peek from the right-edge mini-pill, the bottom-right / top-right spot) it grew past the
@@ -2263,6 +2276,31 @@ export default function DemoModeOverlay(
   const pLang = presenterLangFor(staffWho);
   const pt = (key: string, vars?: Vars) => tFor(pLang, key, vars);
   const chromeT = t;
+  /** REQ-895 (dm6, m6) — the ended notice's face, as the notice branch renders it: the stage
+   *  draws it as the notice (title · text · ×), never with a status chip */
+  const noticeFaceOf = (n: EndedNotice): PillFace => {
+    // REQ-855 (m6) — the end of a demo this staff presented is said in the presenter's language
+    // (on a customer's page the chrome's t is hers); the customer's notice keeps the chrome's
+    const nt = lastRoleRef.current === "presenter" ? pt : chromeT;
+    const said = endedText(n);
+    return {
+      compact,
+      open: false,
+      status: "ended",
+      text: nt(said.key, said.vars),
+      label: nt("demoMode.ended"),
+      title: nt("demoMode.title"),
+      notice: true,
+    };
+  };
+  /** REQ-895 — the notice said to the stage NOW, before this side's `end` reaches the server:
+   *  the stage's socket closes on the server's `ended`, and a face sent after the next render
+   *  (place() samples the page first) lost that race by ~100 ms — the stage's last frame kept
+   *  the old pill with a status chip ("Ter…") */
+  const sayEnded = (n: EndedNotice) => {
+    faceRef.current = noticeFaceOf(n);
+    sendPillRef.current();
+  };
 
   // REQ-235 — the demo is over: who ended it, in the pill's place, until dismissed (Demo clicked
   // here again takes over)
@@ -2271,18 +2309,9 @@ export default function DemoModeOverlay(
   if (notice && !opening) {
     // REQ-643 (demo-loop cycle 5, m9) — a floating message: it never folds
     floatsRef.current = true;
-    // REQ-855 (m6) — the end of a demo this staff presented is said in the presenter's language
-    // (on a customer's page the chrome's t is hers); the customer's notice keeps the chrome's
     const t = lastRoleRef.current === "presenter" ? pt : chromeT;
     const said = endedText(notice);
-    faceRef.current = {
-      compact,
-      open: false,
-      status: "ended",
-      text: t(said.key, said.vars),
-      label: t("demoMode.ended"),
-      title: t("demoMode.title"),
-    };
+    faceRef.current = noticeFaceOf(notice); // REQ-895 — the notice it is: no chip, a ×
     return (
       <div data-demo-overlay ref={fenceClicks}>
         <div
@@ -2540,6 +2569,7 @@ export default function DemoModeOverlay(
 
   async function end() {
     const id = demo!.id;
+    sayEnded({ by: "you" }); // REQ-895 — the stage hears the notice before the end
     linkRef.current?.end();
     // REQ-235 + REQ-179 — said at once, before the server answers; the link stays up until the
     // server has it, so the presenters hear `ended` before this side's socket goes

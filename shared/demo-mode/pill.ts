@@ -1225,22 +1225,28 @@ export function ghostWords(
   ask?: string;
   yes?: string;
   no?: string;
+  /** REQ-895 — the notice's × (the pill is the ended notice: no status chip, no End) */
+  dismiss?: string;
 } {
   const closed = face.compact === true && face.open !== true;
   const heard = face.status !== undefined;
+  // REQ-895 (demo-loop run 6, m6) — the ended notice: its words are the title, the text and a ×;
+  // its label drawn as a status chip squeezed the text to "Ter…" on the stage's last frame
+  const notice = heard && face.notice === true;
   const asking = heard && face.status !== "ended" && face.asking === true;
   // REQ-875 (dm5, p4) — held between pages: no status word (the stage's chrome says "Loading
   // their next page…"); an ended demo still says so
   const quiet = face.held === true && face.status !== "ended";
-  const status = heard && !quiet
+  const status = heard && !quiet && !notice
     ? face.label || t(statusKeyOf(face.status!))
     : undefined;
   return {
     title: heard && face.compact !== true
       ? face.title || t("demoMode.title")
       : undefined,
-    text: !closed && face.text ? face.text : undefined,
-    guide: closed && face.guide ? face.guide : undefined,
+    // REQ-895 — the compact (phone) notice still shows its text, never a guide's short name
+    text: (!closed || notice) && face.text ? face.text : undefined,
+    guide: closed && !notice && face.guide ? face.guide : undefined,
     status,
     end: heard && face.status !== "ended" && !asking
       ? face.end || t("demoMode.end")
@@ -1248,6 +1254,7 @@ export function ghostWords(
     ask: asking ? face.ask || t("demoMode.pillGhostAsking") : undefined,
     yes: asking ? face.yes || t("demoMode.endYes") : undefined,
     no: asking ? face.no || t("demoMode.endNo") : undefined,
+    dismiss: notice ? "×" : undefined,
   };
 }
 
@@ -1294,6 +1301,9 @@ export function pillShowsAtOnce(
   awaiting: boolean,
   quick = false,
 ): boolean {
+  // REQ-895 (dm6, m6) — the pill turned into the ended notice: the overlay's own state (the page
+  // under it did not change, so no frame follows it to release it — it waited PILL_HOLD_MAX_MS)
+  if (next.notice === true && shown.notice !== true) return true;
   const fields = new Set(OVERLAY_ONLY);
   if (awaiting) { for (const k of GUESSED) fields.add(k); }
   // REQ-828 (dm2, p7) — the shown face came at once and no frame since (PillSync.atOnce): the

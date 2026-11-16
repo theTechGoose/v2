@@ -1394,6 +1394,8 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
       endedLabel: m.endedLabel,
       // REQ-835 (dm2, m2) — their pill wraps into rows: the ghost does too
       wraps: m.wraps,
+      // REQ-895 (dm6, m6) — their pill is the ended notice: title, text and a ×
+      notice: m.notice,
     });
     const showPill = (m: PillMsg) => {
       setPillBox(m.r);
@@ -1989,8 +1991,10 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
             )}
             <div
               style={`${box};border-radius:6px;box-shadow:0 10px 40px rgba(0,0,0,.6);background:#fff;overflow:hidden;visibility:${look.visibility};filter:${look.filter};transition:filter .3s;outline:${
-                mirrored && off ? "2px dashed rgba(255,255,255,.85)" : "none"
-              };outline-offset:4px`}
+                // REQ-895 (dm6, m6) — no off-frame outline once the demo has ended (as the badges, REQ-868)
+                !ended && mirrored && off
+                  ? "2px dashed rgba(255,255,255,.85)"
+                  : "none"};outline-offset:4px`}
             >
               <iframe
                 ref={frameRef}
@@ -2186,6 +2190,16 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
                       style={`flex:none;${END_BTN};background:#fff;color:#7a2e2e;opacity:.6;${inert}`}
                     >
                       {words.end}
+                    </span>
+                  )}
+                  {words.dismiss && (
+                    // REQ-895 (dm6, m6) — the ended notice's ×, as on the customer's pill
+                    <span
+                      data-cy="demo-pill-ghost-dismiss"
+                      aria-hidden="true"
+                      style="flex:none;padding:0 6px;font-size:18px;line-height:1;opacity:.85"
+                    >
+                      {words.dismiss}
                     </span>
                   )}
                   {cut && (

@@ -7330,3 +7330,19 @@ Tests:
 - unit: `jest/unit/admin-search-persist.test.ts` ("REQ-894 …", 2 cases: kept/read/cleared/cut, a missing or refused store; AdminPage's wiring — seeded before the first search, kept on input).
 - integration: n/a — sessionStorage is the browser's; the server is not involved.
 - e2e: `e2e/demo-mode/demo-ended.e2e.test.ts` (REQ-235/300 story, added: back on /admin after the customer's End the box still holds the phone digits searched and the Demo row is listed).
+
+## REQ-895 — The stage's last frame after an end mirrors the customer's notice (title · text · ×, nothing cut) and drops the off-frame outline (demo-loop run 6, dm6, issue m6; AMENDMENT of REQ-540 / REQ-838 / REQ-393 / REQ-868)
+
+**Raphael (2026-11-16, demo loop run 6, issue m6):** "you personally go fix the polish problems" — tester 5: the customer presses × then "Sí, terminar"; within 0.5 s the stage's ghost read "Modo demo · Ter… · La demo terminó" while her pill read "Modo demo · Terminaste la demo · ×", and the dashed off-frame outline was still drawn in that last frame.
+
+Cause: (1) the overlay's ended-notice face carried `label` ("La demo terminó"); `ghostWords` drew it as a status chip beside the text, and the chip squeezed the text to "Ter…" (the notice itself has no chip, only a ×). (2) The frame's outline (`mirrored && off`, REQ-393) had no `ended` gate; the chrome-row badges got theirs in REQ-868.
+
+Requirement:
+1. The ended-notice face says `notice: true` (PillFace, on the wire: `parsePillFace` keeps the boolean; the overlay's sender and the stage's `faceOf` copy it — both build the face field by field). `ghostWords` on a notice face: the title (not on the compact phone pill), the whole text (also on the compact pill: never the guide's short name), a `dismiss` "×" — no status chip, no End. `pillFaceOffline` keeps the flag, so the ghost stays the notice after her page goes. The stage draws the × (`data-cy=demo-pill-ghost-dismiss`).
+1b. The notice reaches the stage. (a) It shows AT ONCE (`pillShowsAtOnce`): it is the overlay's own render, which the page observers ignore, so no mirror frame follows to release a held face (it waited PILL_HOLD_MAX_MS). (b) It is SENT before this side's end: `end()` and `presenterOut()` call `sayEnded` (one face source, `noticeFaceOf`) before `link.end()` / the server call — the stage's socket closes on the server's `ended`, and the face sent after the next render (place() samples the page first) lost that race by ~100 ms in the headless re-check. A layout effect on `notice` re-places the notice element too.
+2. The frame's dashed off-frame outline is gone once the demo has ended (`!ended && mirrored && off`).
+
+Tests:
+- unit: `jest/unit/demo-stage-ended-frame.test.ts` ("REQ-895 …", 3 cases: ghostWords on a notice face (whole and compact), a status face unchanged; the flag through parsePeerMessage, junk dropped, kept offline; wiring — the overlay's face, the stage's × and the outline gate).
+- integration: n/a — pure face logic and a render gate, no request/response.
+- e2e: `e2e/demo-mode/demo-ended.e2e.test.ts` (REQ-235/300 story, added: while the server's answer is held after her Yes, the stage's ghost says "You ended the demo" whole with a × and no status/End chip; after the answer, every sampled frame whose status reads "The demo ended" has `outline-style: none`, until the hop to /admin).

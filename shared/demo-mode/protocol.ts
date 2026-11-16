@@ -228,6 +228,9 @@ export interface PillFace {
    *  drops it): the customer's page went and the link holds it "between" (SILENT_GRACE_MS, or a
    *  navigation): the ghost keeps her last face but says no status word, as nothing is connecting */
   held?: boolean;
+  /** REQ-895 (demo-loop run 6, m6) — the pill IS the ended notice ("You ended the demo" + ×): the
+   *  ghost draws title, text and a ×, never a status chip or End beside them */
+  notice?: boolean;
 }
 
 /** REQ-545 — a colour the stage may paint: hex, rgb() or rgba() only */
@@ -267,6 +270,7 @@ function parsePillFace(o: Record<string, unknown>): PillFace {
     f.endedLabel = o.endedLabel.slice(0, PILL_LABEL_MAX);
   }
   if (typeof o.wraps === "boolean") f.wraps = o.wraps;
+  if (typeof o.notice === "boolean") f.notice = o.notice; // REQ-895
   return f;
 }
 
