@@ -69,7 +69,12 @@ export const demoModeClient = {
       reason ? { reason } : undefined,
       opts,
     ),
-  /** REQ-232 — this presenter steps out ("Return to your account"); the demo ends only when nobody is left */
+  /** REQ-232 — this presenter steps out ("Return to your account"); the demo ends only when nobody is left.
+   *  REQ-870 — `ended`: true when this leave was the one that ended it */
   leave: (id: string, opts: ApiOptions = {}) =>
-    api.post<{ ok: true }>(`/demo-mode/sessions/${id}/leave`, undefined, opts),
+    api.post<{ ok: true; ended: boolean }>(
+      `/demo-mode/sessions/${id}/leave`,
+      undefined,
+      opts,
+    ),
 };

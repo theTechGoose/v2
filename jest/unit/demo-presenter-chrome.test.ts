@@ -214,8 +214,9 @@ describe("REQ-855 wiring", () => {
     expect(read("front-end/islands/AdminGateReturn.tsx")).toMatch(
       /returnToOwnAccount\(demoId, lang\)/,
     );
+    // REQ-870 AMENDMENT — through returnedHref, which keeps `lang` on both landings
     expect(read("front-end/lib/return-to-account.ts")).toMatch(
-      /location\.href = withLang\(ADMIN_PATH, lang\)/,
+      /location\.href = returnedHref\(ended, lang\)/,
     );
   });
 

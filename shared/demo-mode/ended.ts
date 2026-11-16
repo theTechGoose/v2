@@ -133,6 +133,14 @@ export function endedHref(n: EndedNotice, lang?: string | null): string {
   return withLang(`${ADMIN_PATH}?${q}`, lang);
 }
 
+/** REQ-870 (demo-loop dm5, p7) — where "Return to your account" lands: when its leave ended the
+ *  demo (this was the last presenter), the same /admin End from the pill hands back to ("You ended
+ *  the demo"); otherwise (a colleague goes on with it, or the leave's outcome is unknown) the plain
+ *  console — never claiming an end that did not happen. In the presenter's language. */
+export function returnedHref(ended: boolean, lang?: string | null): string {
+  return ended ? endedHref({ by: "you" }, lang) : withLang(ADMIN_PATH, lang);
+}
+
 /** the notice an address carries, and the address's own parameters without it; null when none */
 export function readEndedNotice(
   search: string,
