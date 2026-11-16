@@ -10,12 +10,14 @@ import { resolvePageLang } from "../lib/page-lang.ts";
 import { pickedLangHeaders } from "../lib/public-page.ts";
 import { langToggleHref } from "../../shared/quote-flow/public-lang.ts";
 import LoginForm from "../islands/LoginForm.tsx";
+import { rejoinTarget } from "../lib/login-rejoin.ts";
 import PublicLangToggle from "../islands/PublicLangToggle.tsx";
 
 /**
  * /login — a clean, dedicated login screen (roadmap p.13). Reuses the
  * existing phone → OTP → /verify flow; already-authenticated visitors are
- * bounced to the dashboard.
+ * bounced to the dashboard — REQ-879: to `?next=` when it names a page on this site (a stale
+ * /login?next=… tab reloaded after a sign-in elsewhere goes back where it was).
  */
 export const handler = define.handlers({
   async GET(ctx) {
@@ -23,7 +25,7 @@ export const handler = define.handlers({
     if (user) {
       return new Response(null, {
         status: 302,
-        headers: { Location: "/dashboard" },
+        headers: { Location: rejoinTarget(new URL(ctx.req.url).search) },
       });
     }
 

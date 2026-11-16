@@ -418,3 +418,108 @@ Deno.test("REQ-834 / REQ-823 AMENDMENT (demo-loop cycle dm2, M1): she signs out 
       await userCtx.close();
     }
   }));
+
+/** openDemo with a real mouse click on Demo: the runner's frame taken right after a click that
+ *  navigates to /demo/stage can stall 90 s on a loaded host (REQ-823's evidence) */
+async function openDemoByMouse(pg: Page, baseUrl: string, userPhone: string) {
+  await pg.goto(`${baseUrl}/admin`);
+  await pg.locator("[data-cy='adm-q']").fill(userPhone.slice(2));
+  await pg.locator("[data-cy='adm-search']").click();
+  const demo = pg.locator("[data-cy='adm-demo']").first();
+  await demo.waitFor({ timeout: 15_000 });
+  const b = await demo.boundingBox();
+  if (!b) throw new Error("no Demo button on /admin");
+  await pg.mouse.click(b.x + b.width / 2, b.y + b.height / 2);
+  await pg.waitForURL((u: URL) => u.pathname === "/demo/stage", {
+    timeout: 30_000,
+  });
+  await pg.locator("[data-cy='demo-pill']").waitFor({ timeout: 15_000 });
+}
+
+Deno.test("REQ-879 (demo-loop cycle dm5, m3): a stale logged-out /login?next=/quotes tab, brought back and clicked after she signed in again in another tab, goes to /quotes, shows the pill, and the stage follows it", (t) =>
+  story(t, async ({ page, expect, http, baseUrl }) => {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    const who = await people(http);
+    const browser = page.context().browser();
+    if (!browser) throw new Error("no browser behind the story page");
+    const userCtx = await browser.newContext({
+      viewport: { width: 1100, height: 780 },
+    });
+    try {
+      const tab1 = await userCtx.newPage();
+      await useCookie(userCtx, baseUrl, who.user.cookie);
+      // warm the routes the story moves to (the dev server compiles a route on first visit)
+      for (const p of ["/quotes", "/login"]) await tab1.goto(`${baseUrl}${p}`);
+      await tab1.goto(`${baseUrl}/dashboard`);
+      await useCookie(page.context(), baseUrl, who.admin.cookie);
+      await openDemoByMouse(page, baseUrl, who.userPhone);
+      await tab1.reload();
+      await pillUp(tab1);
+      await until(
+        "the stage shows tab 1 (1100 × 780)",
+        async () => (await screenOf(page)).includes("1100 × 780"),
+        20_000,
+      );
+      // she signs out in tab 1
+      await tab1.locator("button.nav-item--logout").click();
+      await until(
+        "the stage says Ana Torres signed out",
+        async () => (await statusOf(page)) === "Ana Torres signed out",
+        10_000,
+      );
+      await until(
+        "tab 1's sign-out redirect has left the app",
+        () => new URL(tab1.url()).pathname !== "/dashboard",
+        30_000,
+      );
+      // a second tab lands on the sign-in page with no session (client.ts's 401 redirect)
+      const stale = await userCtx.newPage();
+      await stale.setViewportSize({ width: 640, height: 760 });
+      await stale.goto(`${baseUrl}/login?next=%2Fquotes`);
+      expect.eq(
+        new URL(stale.url()).pathname,
+        "/login",
+        "the stale tab is on /login",
+      );
+      expect.eq(
+        await stale.locator("[data-cy='demo-pill']").count(),
+        0,
+        "no demo on a session-less /login",
+      );
+      // she signs in again in tab 1 (a new session in the browser's shared cookie)
+      const again = await verify(http, who.userPhone);
+      await useCookie(userCtx, baseUrl, again.cookie);
+      await tab1.goto(`${baseUrl}/dashboard`);
+      await pillUp(tab1);
+      await until(
+        "Live on tab 1 again (1100 × 780)",
+        async () =>
+          (await screenOf(page)).includes("1100 × 780") &&
+          (await statusOf(page)) === "Live",
+        20_000,
+      );
+      // she goes back to the stale /login tab and clicks in it
+      await stale.bringToFront();
+      await stale.mouse.click(8, 8);
+      await stale.waitForURL((u: URL) => u.pathname === "/quotes", {
+        timeout: 10_000,
+      }).catch(() => {
+        throw new Error(
+          `m3: the stale /login tab never went to /quotes after the re-login (still ${stale.url()})`,
+        );
+      });
+      await pillUp(stale);
+      await stale.keyboard.press("Shift");
+      await until(
+        "m3: the stage follows the formerly stale tab (640 × 760)",
+        async () => (await screenOf(page)).includes("640 × 760"),
+      );
+      await until(
+        "m3: Live on that tab",
+        async () => (await statusOf(page)) === "Live",
+      );
+      expect.eq(await pathOf(page), "/quotes", "the stage shows its /quotes");
+    } finally {
+      await userCtx.close();
+    }
+  }));
