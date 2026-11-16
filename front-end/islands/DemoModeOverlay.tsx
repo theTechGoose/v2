@@ -126,6 +126,7 @@ import {
   placedReporter,
   placeView,
   pointInBox,
+  type TagPlace,
   visibleBox,
 } from "../../shared/demo-mode/presenter-anchor.ts";
 import { anchorFrame } from "../../shared/demo-mode/customer-pointer.ts";
@@ -545,6 +546,11 @@ export default function DemoModeOverlay(
   /** REQ-305 — each presenter's pointer as last sent: its anchor, placed again on this screen
    *  whenever this page moves under it (the arrow follows the element they point at) */
   const anchorsRef = useRef<Map<string, Anchor>>(new Map());
+  /** REQ-837 (demo dm2 m3) — told where a presenter's name tag went on this screen (the link's
+   *  effect re-reports his arrow with it); none while no link */
+  const tagSinkRef = useRef<((pid: string, t: TagPlace | null) => void) | null>(
+    null,
+  );
   /** REQ-305 — where this side's pointer rests on this screen; null once it left the window */
   const lastMoveRef = useRef<Pt | null>(null);
   /** REQ-305 — this side's pointer as last sent */
@@ -1032,11 +1038,27 @@ export default function DemoModeOverlay(
      *  stages (each keeps its own pid's): the stage's ghost of his arrow is where THIS screen has
      *  it, never its own replay's guess. Rate-limited per presenter; the last one always goes */
     const reporter = placedReporter({ send: (m) => link?.send(m) });
+    /** REQ-837 (demo dm2 m3) — where each presenter's tag was last drawn here, and his arrow's
+     *  last placing: a tag that moves (another side, its initials at rest) is reported again, so
+     *  the stage draws his tag where this screen has it */
+    const tags = new Map<string, TagPlace | null>();
+    const lastPlaced = new Map<
+      string,
+      { a: Anchor; p: NonNullable<ReturnType<typeof placeOnScreen>> }
+    >();
+    tagSinkRef.current = (pid, tg) => {
+      tags.set(pid, tg);
+      const lp = lastPlaced.get(pid);
+      if (lp) {
+        reporter.report(placedReport(pid, lp.a, lp.p, viewportBox(), tg));
+      }
+    };
     const place = (pid: string, a: Anchor, kind: "move" | "click") => {
       const p = placeOnScreen(a);
       // REQ-451 — what he pointed at is not on this page (any more): no arrow, kept until it is
       // back or he points elsewhere
       if (!p) {
+        lastPlaced.delete(pid);
         reporter.report(placedReport(pid, a, null, viewportBox()));
         if (placed.delete(pid)) command(pid, { kind: "leave" });
         return;
@@ -1047,7 +1069,10 @@ export default function DemoModeOverlay(
         origins.set(pid, p.dir || a.o === 1 ? null : p.at);
       }
       const faded = !p.dir && a.o !== 1 && drifted(origins.get(pid), p.at);
-      reporter.report(placedReport(pid, a, p, viewportBox()));
+      lastPlaced.set(pid, { a, p });
+      reporter.report(
+        placedReport(pid, a, p, viewportBox(), tags.get(pid) ?? null),
+      );
       placed.set(pid, { ...p.at, outside: p.outside });
       // REQ-437 — the element's box goes with the point: the tag sits outside it
       command(pid, {
@@ -1325,6 +1350,7 @@ export default function DemoModeOverlay(
       document.removeEventListener("scroll", shifted, { capture: true });
       ro?.disconnect();
       reporter.cancel();
+      tagSinkRef.current = null;
       if (raf) cancelAnimationFrame(raf);
       anchorsRef.current.clear();
       throttle.cancel();
@@ -1916,6 +1942,7 @@ export default function DemoModeOverlay(
           offZ={OFF_MARK_Z}
           cmd={cmds[p.userId] ?? null}
           bounds={viewportBox()}
+          onTag={(t) => tagSinkRef.current?.(p.userId, t)}
         />
       ))}
       {started && (

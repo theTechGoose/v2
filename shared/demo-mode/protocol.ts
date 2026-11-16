@@ -144,7 +144,22 @@ export interface PlacedMessage {
   /** REQ-645 + REQ-642 (reconciled on demo-fixes) — its element is out of view that way on their
    *  screen: they see a chevron there, so the ghost is that chevron too */
   d?: { dx: -1 | 0 | 1; dy: -1 | 0 | 1 };
+  /** REQ-837 (demo dm2 m3) — where their tag went beside the arrow: its side, its top-left
+   *  relative to the arrow's box and its size, as fractions of their viewport (x / w of its
+   *  width, y / h of its height) — so the stage draws the presenter's tag on the same side */
+  t?: { s: PlacedTagSide; x: number; y: number; w: number; h: number };
 }
+
+/** REQ-837 — the sides a tag goes to (motion.ts `TagSide`) */
+export const PLACED_TAG_SIDES = [
+  "below",
+  "above",
+  "right",
+  "left",
+  "tail",
+  "tail-up",
+] as const;
+export type PlacedTagSide = typeof PLACED_TAG_SIDES[number];
 
 /** REQ-372 — the pill's state in words the stage translates itself (the presenter's language) */
 export type PillStatus = "live" | "connecting" | "ended";
@@ -420,6 +435,17 @@ function parsePlaced(o: Record<string, unknown>): PlacedMessage | null {
   const unit = (v: unknown): v is -1 | 0 | 1 => v === -1 || v === 0 || v === 1;
   if (p && d && typeof d === "object" && unit(d.dx) && unit(d.dy)) {
     m.d = { dx: d.dx, dy: d.dy };
+  }
+  // REQ-837 — the tag's placement, when said and well formed (else left out, the report kept)
+  const t = o.t as Record<string, unknown> | undefined;
+  const signed = (v: unknown): v is number => num(v) && v >= -1 && v <= 1;
+  if (
+    p && t && typeof t === "object" &&
+    (PLACED_TAG_SIDES as readonly unknown[]).includes(t.s) &&
+    signed(t.x) && signed(t.y) && signed(t.w) && signed(t.h) &&
+    t.w >= 0 && t.h >= 0
+  ) {
+    m.t = { s: t.s as PlacedTagSide, x: t.x, y: t.y, w: t.w, h: t.h };
   }
   return m;
 }

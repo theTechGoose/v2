@@ -16,6 +16,10 @@
  * default a hit-test of the page through the stage's mirror, `coversControl`).
  * REQ-789 — drawn only once he has rested (the stage's `ghostWait`), and it fades in rather than
  * popping up beside his cursor.
+ * REQ-837 (demo-loop cycle dm2, m3 + p3) — the tag sits where the customer's tag is (`tag`: the
+ * side and offset their overlay reported, in the stage's px), else placed as above. Out of view
+ * (`dir`) it carries the words the customer reads (`cueText`: "Hans is pointing below — scroll ↓",
+ * after "You ·"), placed inside the box the element can be seen in (`cueBox`), not only "You".
  */
 import {
   type Pt,
@@ -23,10 +27,12 @@ import {
   tagPlacement,
 } from "../../../shared/demo-mode/motion.ts";
 import {
+  alignTag,
   cueMarkOffset,
   type Dir,
   GHOST_OPACITY,
   OFF_MARK_PX,
+  type TagPlace,
 } from "../../../shared/demo-mode/presenter-anchor.ts";
 import {
   ARROW_H,
@@ -40,7 +46,20 @@ import {
 const CHEVRON = "M4.5 2.5 L10 7 L4.5 11.5";
 
 export default function PointerGhost(
-  { at, outside, dir, color, z, label, bounds, rect, covers }: {
+  {
+    at,
+    outside,
+    dir,
+    color,
+    z,
+    label,
+    bounds,
+    rect,
+    covers,
+    tag,
+    cueText,
+    cueBox,
+  }: {
     at: Pt;
     outside: boolean;
     /** REQ-645 — its element is out of view that way: a chevron, not the arrow */
@@ -53,21 +72,30 @@ export default function PointerGhost(
     rect?: Rect | null;
     /** REQ-642 — would a tag at this box cover another control */
     covers?: (r: Rect) => boolean;
+    /** REQ-837 — where the customer's tag is, beside the arrow, in the stage's px */
+    tag?: TagPlace | null;
+    /** REQ-837 — out of view: the words the customer reads (the way to the element) */
+    cueText?: string;
+    /** REQ-837 — out of view: the box the element can be seen in (the cue's words stay inside) */
+    cueBox?: Rect | null;
   },
 ) {
-  const box = outside ? null : rect ?? null;
+  const cue = dir && cueText ? cueText : null;
+  const words = cue ? `${label} · ${cue}` : label;
+  const box = outside || cue ? null : rect ?? null;
   const doc = globalThis.document;
   const hit = covers ??
     (doc && box ? (r: Rect) => coversControl(doc, r, at) : undefined);
   // the label's size, near enough: 11px bold, padded. REQ-437 + REQ-642: outside the anchored
-  // element, next to the arrow, off the other controls; else below-right past the arrow's tail
-  const place = tagPlacement(
-    at,
-    bounds,
-    { w: 14 + label.length * 6.5, h: 20 },
-    box,
-    hit,
-  );
+  // element, next to the arrow, off the other controls; else below-right past the arrow's tail.
+  // REQ-837 — where the customer's tag is when they said; the cue's words inside `cueBox`
+  const size = { w: 14 + words.length * 6.5, h: 20 };
+  const place = tag
+    ? (() => {
+      const p = alignTag(tag, size);
+      return { x: at.x + p.left, y: at.y + p.top, side: tag.side };
+    })()
+    : tagPlacement(at, cue ? cueBox ?? bounds : bounds, size, box, hit);
   const mark = dir ? cueMarkOffset(dir) : null;
   return (
     <div
@@ -139,13 +167,13 @@ export default function PointerGhost(
           </>
         )}
       <span
-        data-cy="demo-pointer-ghost-label"
+        data-cy={cue ? "demo-pointer-ghost-cue" : "demo-pointer-ghost-label"}
         data-tag-side={place.side}
         style={`position:absolute;left:${place.x - at.x}px;top:${
           place.y - at.y
         }px;padding:1px 7px;border-radius:999px;background:${color};color:#fff;font-size:11px;font-weight:700;white-space:nowrap;border:1px dashed rgba(255,255,255,.9)`}
       >
-        {label}
+        {words}
       </span>
     </div>
   );

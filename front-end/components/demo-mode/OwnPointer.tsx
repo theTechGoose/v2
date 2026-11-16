@@ -15,14 +15,32 @@
  * OWN_ABSENT_OPACITY, hollow, dashed, tagged "not shown" and `data-absent`; "pending" (their page
  * says "{name} is pointing…") the same words with a pulsing dot and `data-pending`. Before, it was
  * drawn at full strength under the stage's own "isn't on their screen" banner.
+ *
+ * REQ-837 (demo-loop cycle dm2, m3) — the tag sits where the customer's tag is: the side and
+ * offset their overlay reported (`tag`, in the stage's px; `alignTag` keeps the edge that faces
+ * the arrow), else placed as DemoPointer places it (`tagPlacement` with `coverage` of the page
+ * under it, through the stage's mirror) — never pinned bottom-right at +18,+17. Its words stay
+ * "You"/"Tú" (owner design, REQ-642).
  */
 import { useEffect, useState } from "preact/hooks";
-import type { Pt } from "../../../shared/demo-mode/motion.ts";
 import {
+  type Pt,
+  type Rect,
+  tagPlacement,
+} from "../../../shared/demo-mode/motion.ts";
+import {
+  alignTag,
   OWN_ABSENT_OPACITY,
   type OwnLook,
+  type TagPlace,
 } from "../../../shared/demo-mode/presenter-anchor.ts";
-import { ARROW_H, ARROW_PATH, ARROW_W } from "./DemoPointer.tsx";
+import {
+  ARROW_H,
+  ARROW_PATH,
+  ARROW_W,
+  type Bounds,
+  coverage,
+} from "./DemoPointer.tsx";
 
 /** the marker is the arrow, smaller: his cursor is on top of it */
 export const OWN_SCALE = 0.7;
@@ -38,11 +56,29 @@ type MarkerProps = {
   absentLabel: string;
   /** REQ-813 — the words while pending ("pointing…") */
   pendingLabel: string;
+  /** REQ-837 — where the customer's tag is, beside the arrow, in the stage's px (none: placed here) */
+  tag?: TagPlace | null;
+  /** REQ-837 — the box the tag stays inside when placed here (the fitted frame) */
+  bounds?: Bounds;
+  /** REQ-837 — how much a tag at this box would hide (default: `coverage` of the page) */
+  covers?: (r: Rect) => boolean | number;
 };
 
 /** REQ-813 — the marker itself, drawn at `at` (rendered on its own in tests) */
 export function OwnMarker(
-  { at, color, z, label, tagged, look, absentLabel, pendingLabel }:
+  {
+    at,
+    color,
+    z,
+    label,
+    tagged,
+    look,
+    absentLabel,
+    pendingLabel,
+    tag,
+    bounds,
+    covers,
+  }:
     & MarkerProps
     & { at: Pt },
 ) {
@@ -50,9 +86,21 @@ export function OwnMarker(
   const h = ARROW_H * OWN_SCALE;
   const absent = look === "absent";
   const pending = look === "pending";
-  const tagStyle = `position:absolute;left:${w + 2}px;top:${
-    h - 4
-  }px;padding:0 6px;border-radius:999px;font-size:10.5px;font-weight:700;line-height:16px;white-space:nowrap`;
+  // REQ-837 (demo dm2 m3) — the tag where the customer's is, else placed as theirs is placed
+  const words = absent ? absentLabel : label;
+  const size = { w: 14 + words.length * 6, h: 18 };
+  const spot = (() => {
+    if (tag) return { ...alignTag(tag, size), side: tag.side };
+    const doc = globalThis.document;
+    const hit = covers ??
+      (doc ? (r: Rect) => coverage(doc, r, at) : undefined);
+    const box = bounds ??
+      { left: at.x - 200, top: at.y - 200, width: 400, height: 400 };
+    const p = tagPlacement(at, box, size, null, hit);
+    return { left: p.x - at.x, top: p.y - at.y, side: p.side };
+  })();
+  const tagStyle =
+    `position:absolute;left:${spot.left}px;top:${spot.top}px;padding:0 6px;border-radius:999px;font-size:10.5px;font-weight:700;line-height:16px;white-space:nowrap`;
   return (
     <div
       data-cy="demo-pointer-own"
@@ -118,6 +166,7 @@ export function OwnMarker(
           // REQ-813 — always tagged while absent: the ghost (which carries "You") is not there
           <span
             data-cy="demo-pointer-own-label"
+            data-tag-side={spot.side}
             style={`${tagStyle};background:#fff;color:${color};border:1px dashed ${color}`}
           >
             {absentLabel}
@@ -126,6 +175,7 @@ export function OwnMarker(
         : tagged && (
           <span
             data-cy="demo-pointer-own-label"
+            data-tag-side={spot.side}
             style={`${tagStyle};background:${color};color:#fff;border:1px solid #fff`}
           >
             {label}
