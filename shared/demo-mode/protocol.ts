@@ -189,6 +189,9 @@ export interface PillFace {
   /** REQ-822 — its two answers in the customer's words (drawn as disabled chips) */
   yes?: string;
   no?: string;
+  /** REQ-835 (demo-loop cycle dm2, m2) — the customer's pill wraps into rows (`pillWraps`: the
+   *  phone's compact pill, opened or asking): the stage's ghost wraps the same way */
+  wraps?: boolean;
 }
 
 /** REQ-545 — a colour the stage may paint: hex, rgb() or rgba() only */
@@ -220,6 +223,7 @@ function parsePillFace(o: Record<string, unknown>): PillFace {
   if (typeof o.ask === "string") f.ask = o.ask.slice(0, PILL_TEXT_MAX);
   if (typeof o.yes === "string") f.yes = o.yes.slice(0, PILL_LABEL_MAX);
   if (typeof o.no === "string") f.no = o.no.slice(0, PILL_LABEL_MAX);
+  if (typeof o.wraps === "boolean") f.wraps = o.wraps;
   return f;
 }
 

@@ -107,12 +107,15 @@ describe("REQ-816 (demo-loop cycle dm1, M1) — End's question opens inside the 
   test("REQ-816 the overlay re-places the asking pill once, before paint, then freezes (REQ-300)", () => {
     const src = read("front-end/islands/DemoModeOverlay.tsx");
     expect(src).toMatch(/peekBox\(/);
+    // REQ-835 (dm2, M2) — the clamp is `clampAsk` (askDock → keepInView), run by this effect
+    // and by place() while End asks
     const effect = src.match(
-      /useLayoutEffect\(\(\) => \{[\s\S]*?keepInView\([\s\S]*?\}, \[asking\]\);/,
+      /useLayoutEffect\(\(\) => \{[\s\S]*?clampAsk\(\)[\s\S]*?\}, \[asking\]\);/,
     );
     expect(effect).not.toBeNull();
-    expect(effect![0]).toMatch(/offsetWidth/);
-    expect(effect![0]).toMatch(/PILL_BAND_GAP/);
+    const clamp = src.slice(src.indexOf("const clampAsk = () => {"));
+    expect(clamp.slice(0, clamp.indexOf("\n  };"))).toMatch(/offsetWidth/);
+    expect(clamp.slice(0, clamp.indexOf("\n  };"))).toMatch(/askDock\(/);
     expect(PILL_BAND_GAP).toBeGreaterThan(0);
   });
 });

@@ -215,7 +215,8 @@ describe("REQ-822 (demo-loop cycle dm1, m1) — the islands are wired", () => {
   test("place() still tells the stage while the question is up", () => {
     const place = between(o, "const place = () => {", "setCompact(narrow());");
     expect(place).toMatch(
-      /querySelector\('\[data-cy="demo-end-ask"\]'\)\) \{\s*sendPill\(\);\s*return;/,
+      // REQ-835 (dm2, M2) — after keeping the asking pill inside the window
+      /querySelector\('\[data-cy="demo-end-ask"\]'\)\) \{\s*(clampAsk\(\);\s*)?sendPill\(\);\s*return;/,
     );
   });
 
