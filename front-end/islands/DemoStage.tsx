@@ -215,6 +215,7 @@ import {
   STAGE_TOP_INSET,
   stageBadgeTop,
   stageDebugOn,
+  stageEndShown,
   stageLeaveShown,
   stagePillH,
 } from "../../shared/demo-mode/stage-chrome.ts";
@@ -2420,13 +2421,15 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
               )}
             </>
           )}
-          {/* REQ-235 — End asks first */}
-          <EndDemo
-            onEnd={end}
-            disabled={ended || leavingHere}
-            onAsking={setEndAsking}
-            t={t}
-          />
+          {/* REQ-235 — End asks first; REQ-844 (dm3 p13) — and is gone once the demo ended */}
+          {stageEndShown(ended) && (
+            <EndDemo
+              onEnd={end}
+              disabled={leavingHere}
+              onAsking={setEndAsking}
+              t={t}
+            />
+          )}
         </div>
       )}
     </div>
