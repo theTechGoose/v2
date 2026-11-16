@@ -183,6 +183,7 @@ import {
 } from "../lib/demo-mode/transport.ts";
 import { demoTabKey } from "../lib/demo-mode/tab-key.ts";
 import { takeEarlyLink } from "../lib/demo-mode/early-link.ts";
+import { markDemoRejoin } from "../lib/demo-mode/rejoin-mark.ts";
 import {
   carriedDemo,
   carriedEnded,
@@ -981,6 +982,9 @@ export default function DemoModeOverlay(
         linkRef.current = null;
         link?.leaving("signout");
         link?.close();
+        // REQ-892 (dm6, m3) — a demo dropped here: the session-less page this tab lands on (the
+        // landing, a public page) watches for her signing in again and rejoins
+        if (link || demoRef.current) markDemoRejoin(sessionStore(), Date.now());
         demoRef.current = null; // the pagehide that may come first keeps nothing
         forgetDemo(sessionStore());
         anchorsRef.current.clear();

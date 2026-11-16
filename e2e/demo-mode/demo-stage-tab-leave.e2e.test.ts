@@ -523,3 +523,97 @@ Deno.test("REQ-879 (demo-loop cycle dm5, m3): a stale logged-out /login?next=/qu
       await userCtx.close();
     }
   }));
+
+Deno.test("REQ-892 (demo-loop run 6, m3): the tab a sign-out landed on '/' (the landing, no session), brought back and clicked after she signed in again in another tab, goes to the dashboard, shows the pill, and the stage follows it", (t) =>
+  story(t, async ({ page, expect, http, baseUrl, folder }) => {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    const who = await people(http);
+    const browser = page.context().browser();
+    if (!browser) throw new Error("no browser behind the story page");
+    const userCtx = await browser.newContext({
+      viewport: { width: 1100, height: 780 },
+    });
+    try {
+      const tab1 = await userCtx.newPage();
+      await useCookie(userCtx, baseUrl, who.user.cookie);
+      // warm the routes the story moves to (the dev server compiles a route on first visit)
+      for (const p of ["/", "/dashboard"]) await tab1.goto(`${baseUrl}${p}`);
+      await useCookie(page.context(), baseUrl, who.admin.cookie);
+      await openDemoByMouse(page, baseUrl, who.userPhone);
+      await tab1.reload();
+      await pillUp(tab1);
+      await until(
+        "the stage shows tab 1 (1100 × 780)",
+        async () => (await screenOf(page)).includes("1100 × 780"),
+        20_000,
+      );
+      // she signs out in tab 1: it lands on the landing, with no session
+      await tab1.locator("button.nav-item--logout").click();
+      await until(
+        "the stage says Ana Torres signed out",
+        async () => (await statusOf(page)) === "Ana Torres signed out",
+        10_000,
+      );
+      // the sign-out's redirect ("/", or /login?next= when a 401 of a poll wins the race): the
+      // tab ends on the landing, as the tester's did
+      await until(
+        "tab 1's sign-out redirect has left the app",
+        () => new URL(tab1.url()).pathname !== "/dashboard",
+        30_000,
+      );
+      if (new URL(tab1.url()).pathname !== "/") {
+        await tab1.goto(`${baseUrl}/`);
+      }
+      expect.eq(
+        new URL(tab1.url()).pathname,
+        "/",
+        `tab 1 is on the session-less landing (${tab1.url()})`,
+      );
+      expect.eq(
+        await tab1.locator("[data-cy='demo-pill']").count(),
+        0,
+        "no demo on the session-less landing",
+      );
+      // she signs in again in a second tab (a new session in the browser's shared cookie)
+      const tab2 = await userCtx.newPage();
+      await tab2.setViewportSize({ width: 640, height: 760 });
+      const again = await verify(http, who.userPhone);
+      await useCookie(userCtx, baseUrl, again.cookie);
+      await tab2.goto(`${baseUrl}/dashboard`);
+      await pillUp(tab2);
+      await until(
+        "Live on tab 2 (640 × 760)",
+        async () =>
+          (await screenOf(page)).includes("640 × 760") &&
+          (await statusOf(page)) === "Live",
+        20_000,
+      );
+      // she goes back to the landing tab and clicks in it
+      await tab1.bringToFront();
+      await tab1.mouse.click(8, 8);
+      await tab1.waitForURL((u: URL) => u.pathname === "/dashboard", {
+        timeout: 10_000,
+      }).catch(() => {
+        throw new Error(
+          `m3: the landing tab never went to the dashboard after the re-login (still ${tab1.url()})`,
+        );
+      });
+      await pillUp(tab1);
+      await tab1.keyboard.press("Shift");
+      await until(
+        "m3: the stage follows the formerly signed-out tab (1100 × 780)",
+        async () => (await screenOf(page)).includes("1100 × 780"),
+      );
+      await until(
+        "m3: Live on that tab",
+        async () => (await statusOf(page)) === "Live",
+      );
+      expect.eq(
+        await pathOf(page),
+        "/dashboard",
+        "the stage shows its dashboard",
+      );
+    } finally {
+      await userCtx.close();
+    }
+  }));

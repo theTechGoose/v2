@@ -14,7 +14,7 @@ import CrazyEgg from "../components/CrazyEgg.tsx";
 import { readSessionCookie } from "../lib/api.ts";
 import { type Lang, tFor } from "../lib/i18n.ts";
 import { bootLangScript, resolveSsrLang } from "../lib/ssr-lang.ts";
-import { DEMO_EARLY_SRC } from "../lib/demo-mode/early-src.ts";
+import { DEMO_EARLY_SRC, DEMO_REJOIN_SRC } from "../lib/demo-mode/early-src.ts";
 import { pmLangFromAcceptLanguage } from "../../shared/quote-flow/public-lang.ts";
 
 // Browser-side `lib/api.ts` reads window.__PUBLIC_BACKEND_URL to decide
@@ -208,6 +208,14 @@ export default define.page(function App(ctx) {
         }
         {hasSession && DEMO_EARLY_SRC
           ? <script type="module" async src={DEMO_EARLY_SRC} />
+          : null}
+        {
+          /* REQ-892 (demo-loop run 6, m3): a page WITHOUT a session — the landing a sign-out
+            lands on, a public page — watches for the customer signing in again in another tab
+            when this browser tab's demo was dropped by that sign-out, and rejoins. */
+        }
+        {!hasSession && DEMO_REJOIN_SRC
+          ? <script type="module" async src={DEMO_REJOIN_SRC} />
           : null}
       </head>
       <body>
