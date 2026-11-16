@@ -7377,3 +7377,27 @@ Tests:
 - unit: `jest/unit/demo-pill-tab-spot-choice.test.ts` ("REQ-897 …", 10 cases: the 390×844 fixture; the least-covered control-free spot, not the heading's; a tie keeps the order; a clear spot still wins; the weight and selector; settled vs scrolling with text, with a control, with no kept spot; the overlay's wiring — heading weight in pageUnder, scrollingRef set on scroll and cleared with a final place() after PILL_SCROLL_SETTLE_MS, `scrolling:` passed to placePill). `demo-pill-peek-edge-margin.test.ts` (REQ-849) and `demo-pill-status-words.test.ts` (REQ-838) wiring regexes reconciled with REQ-890 / REQ-896 (the measurement goes through `size`; `pillShown` has REQ-896's waiting gate).
 - integration: n/a — pure placement geometry and a scroll flag in the browser; no request/response.
 - e2e: `e2e/demo-mode/demo-pill-tab-spot-choice.e2e.test.ts` (new, 390×844 ES, five setup items deferred so the checklist heading is on /dashboard: the folded chip covers no heading and no control there; on /settings a continuous wheel scroll of 30 × 40 px — the chip's box changes zero times during it, and settled it covers no control; `chip-log.json` in the evidence). REQ-853 (`demo-pill-tab-spot`), REQ-545 (`demo-pill-yield`), REQ-866 m2b and REQ-890 (`demo-pill-peek-compact`) re-run green. (REQ-228/291 `demo-pill-clear` and REQ-866 m2 / REQ-876 on /welcome fail on this branch with REQ-897 set aside too — pre-existing, taken up next.)
+
+## REQ-898 — The page's controls that the demo pill's sampling grid steps over are found by their centre (AMENDMENT of REQ-379 / REQ-781 / REQ-818 / REQ-852)
+
+**Raphael (2026-11-16, demo loop run 6):** "you personally go fix the polish problems" — while re-running the pill lane after REQ-897, REQ-228's e2e (the whole pill covers no control on /dashboard at 1280×800) was red; a bisect through scratch worktrees showed it red at every branch point back to origin/develop. Evidence (a throwaway probe): the pill at (12,549) 524×43 sat over three 13×10 px money-bar segment buttons ("$0 · 0 estimates out", …) at y 551. The same gap put REQ-890's compact End question on /welcome (74 px tall: `samplePoints` rows at 629, 664, 699) over the footer's 24 px links at 670–694 (REQ-866 m2 / REQ-876 e2e).
+
+Cause: `countControls` / `pageUnder` hit-test a grid (REQ-379: a point every 40 px across, three rows); a control smaller than the grid's pitch, or between its rows, is never hit.
+
+Requirement: the overlay also counts every control of the page whose CENTRE lies in the box (`centresIn`, shared/demo-mode/pill.ts) and which a hit at that centre reaches (`hitAt`: one hidden behind the page's own layers is not counted; through a dialog's backdrop it is, REQ-832). The page's controls and their boxes are read once per placement (`pageControls`: CONTROL_SELECTOR, the demo's own chrome and sizeless nodes left out; dropped in a microtask). Both counters add these to the grid's finds, so the whole pill, the folded chip, the peek (`peekBox`) and End's question (`askSpot`) all see them.
+
+Tests:
+- unit: `jest/unit/demo-pill-small-controls.test.ts` ("REQ-898 …", 3 cases: the money-bar segments under the whole pill and the footer link under the asking pill by centre; edge inclusion (left/top in, right/bottom out), none, a box larger than the pill; the overlay's wiring — controls read once per placement, verified by a hit at the centre, added in both counters).
+- integration: n/a — browser geometry; no request/response.
+- e2e: `e2e/demo-mode/demo-pill-clear.e2e.test.ts` (REQ-228 + REQ-291, red before: now the pill on /dashboard at 1280×800 covers none of the money-bar segments) — green; `e2e/demo-mode/demo-pill-fallback-controls.e2e.test.ts` REQ-866 m2 (End's question on /welcome covers no footer link) — green with REQ-890 AMENDMENT below. The pill lane (REQ-379, REQ-545, REQ-548, REQ-781, REQ-820, REQ-832, REQ-853, REQ-866 m2b, REQ-890, REQ-897) re-run green.
+
+## REQ-890 AMENDMENT — a peek opened by the tab's × (End asked) is never switched to the compact form
+
+**Raphael (2026-11-16, demo loop run 6):** "you personally go fix the polish problems" — the REQ-866 m2 and REQ-876 e2e on /welcome at 1280×800 went red with REQ-890 (bisected: green at 454b6433, red at bd6778df). A probe sampling the pill through the press: the tab's × opens the peek; the whole pill's row holds the wizard's "Omitir configuración por ahora" link, so REQ-890 switched the peek to the compact form; with the question it wrapped to two rows (626×74), which no longer fit the 75 px gap between that link and the footer's links, so `askSpot` (REQ-876) put it 426 px from the press (or, before REQ-898, over the links the grid missed).
+
+Requirement: the × marks the peek as End's (`peekForAskRef`) before opening it; the REQ-890 switch to the compact form is gated on that mark; the mark clears when the peek folds. The question keeps its own placement (REQ-852 / REQ-876); the whole pill's one row (43 px) fits the gap. A hover's peek on a crowded row still goes compact (REQ-890 unchanged).
+
+Tests:
+- unit: `jest/unit/demo-pill-peek-compact.test.ts` ("REQ-890 AMENDMENT …", 1 case: the ×'s mark before openPeek, the gated switch, the clear on fold).
+- integration: n/a.
+- e2e: `e2e/demo-mode/demo-pill-fallback-controls.e2e.test.ts` REQ-866 m2 and REQ-876 (red → green); `e2e/demo-mode/demo-pill-peek-compact.e2e.test.ts` (REQ-890's hover peek, unchanged) green.

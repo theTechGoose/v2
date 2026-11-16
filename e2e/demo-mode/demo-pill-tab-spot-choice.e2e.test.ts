@@ -261,7 +261,16 @@ Deno.test("REQ-897 (demo-loop cycle dm6, p4 + p5): at 390×844 in Spanish the fo
         state: "attached",
         timeout: 60_000,
       });
-      await userPage.waitForTimeout(1_500);
+      // the page's own settling first (its data arriving moves the chip, REQ-853): quiet for 2 s
+      await until("/settings: the chip has come to rest", async () => {
+        const q = await userPage.evaluate(() => {
+          // deno-lint-ignore no-explicit-any
+          const log = (globalThis as any).__chipLog as { t: number }[];
+          const last = log[log.length - 1];
+          return last ? performance.now() - last.t : 0;
+        });
+        return q >= 2_000 ? null : `moved ${Math.round(q)} ms ago`;
+      }, 30_000);
       const before = await userPage.evaluate(() =>
         // deno-lint-ignore no-explicit-any
         ((globalThis as any).__chipLog as { t: number; at: string }[]).length

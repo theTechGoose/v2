@@ -122,6 +122,23 @@ export function pastBackdrop<T>(
   return undefined;
 }
 
+/** REQ-898 — the boxes whose CENTRE lies in `r` (their indices). The sampling grid (`samplePoints`:
+ *  a point every 40 px across, three rows) misses a control smaller than its pitch — the
+ *  dashboard's 10 px money-bar segments, a 24 px footer link between the rows of a 74 px asking
+ *  pill — so the page's controls are also looked up by their centre */
+export function centresIn(boxes: readonly Rect[], r: Rect): number[] {
+  const out: number[] = [];
+  boxes.forEach((b, i) => {
+    const cx = b.left + b.width / 2;
+    const cy = b.top + b.height / 2;
+    if (
+      cx >= r.left && cx < r.left + r.width && cy >= r.top &&
+      cy < r.top + r.height
+    ) out.push(i);
+  });
+  return out;
+}
+
 /** REQ-295 — do two boxes share any area? */
 export function rectsOverlap(a: Rect, b: Rect): boolean {
   return a.left < b.left + b.width && b.left < a.left + a.width &&

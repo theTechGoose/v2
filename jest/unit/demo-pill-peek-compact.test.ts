@@ -16,6 +16,8 @@
  * counts the corridor between the tab and the pill for PEEK_TRAVEL_MS after the opening, so the
  * pointer reaching a peek that opened away from the tab does not fold it on the way.
  */
+import * as fs from "fs";
+import * as path from "path";
 import {
   PEEK_TRAVEL_MS,
   peekBox,
@@ -148,5 +150,31 @@ describe("REQ-890 — the pointer travelling from the tab to a peek that opened 
     expect(peekHolds({ pill, tab, ...corridor })).toBe(false);
     expect(peekHolds({ pill, tab, x: 300, y: 720 })).toBe(true);
     expect(peekHolds({ pill, tab, x: 40, y: 570 })).toBe(true);
+  });
+});
+
+/**
+ * REQ-890 AMENDMENT — a peek opened by the tab's × (End asked) is never switched to the compact
+ * form. The REQ-866 m2 / REQ-876 e2e on /welcome at 1280×800 went red with REQ-890: the whole
+ * pill's row holds the wizard's Skip link, so the switch made the question the compact form,
+ * wrapped to two rows (74 px) — which no longer fit the 75 px gap between that link and the
+ * footer's links, so `askSpot` (REQ-876) moved it 426 px from the press. The question has its own
+ * placement; the whole pill's one row (43 px) fits.
+ */
+describe("REQ-890 AMENDMENT — End asked from the tab: the peek stays the whole form", () => {
+  const src = fs.readFileSync(
+    path.join(__dirname, "../../front-end/islands/DemoModeOverlay.tsx"),
+    "utf8",
+  );
+  test("the tab's × marks the peek as End's before opening it; the switch is gated on the mark; folding clears it", () => {
+    expect(src).toMatch(
+      /setAskEnd\(true\);\s*peekForAskRef\.current = true;[^\n]*\n\s*openPeek\(\);/,
+    );
+    expect(src).toMatch(
+      /p\.tucked && peekRef\.current && !compactNow && !peekForAskRef\.current/,
+    );
+    expect(src).toMatch(
+      /if \(!peek\) \{\s*setPeekCompact\(false\);\s*peekForAskRef\.current = false;/,
+    );
   });
 });

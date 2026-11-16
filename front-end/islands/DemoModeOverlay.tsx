@@ -231,6 +231,7 @@ import {
   askDock,
   askSpot,
   backdropCovers,
+  centresIn,
   CONTROL_SELECTOR,
   countsAsPage,
   coversView,
@@ -418,10 +419,55 @@ function pageAt(
   return is ? top : null;
 }
 
+/** REQ-898 — every control of the page with its box, read once per placement (a placement asks
+ *  of many boxes in one synchronous run; the list is dropped in a microtask, so the next
+ *  placement reads the page afresh). The demo's own chrome and what has no size are left out */
+let pageControlsNow: { el: Element; box: Rect }[] | null = null;
+function pageControls(): { el: Element; box: Rect }[] {
+  if (pageControlsNow) return pageControlsNow;
+  const out: { el: Element; box: Rect }[] = [];
+  for (const el of document.querySelectorAll(CONTROL_SELECTOR)) {
+    if (el.closest("[data-demo-overlay]")) continue;
+    const b = el.getBoundingClientRect();
+    if (b.width < 2 || b.height < 2) continue;
+    out.push({
+      el,
+      box: { left: b.left, top: b.top, width: b.width, height: b.height },
+    });
+  }
+  pageControlsNow = out;
+  queueMicrotask(() => {
+    pageControlsNow = null;
+  });
+  return out;
+}
+
+/** REQ-898 — the controls whose centre is under a box (`centresIn`) and which a hit at that
+ *  centre reaches (one hidden behind the page's own layers is not; through a dialog's backdrop
+ *  it is, REQ-832): the sampling grid misses a control smaller than its pitch — the dashboard's
+ *  10 px money-bar segments under the whole pill, a 24 px footer link between the three rows of
+ *  a 74 px asking pill */
+function controlsByCentre(r: Rect, backdrop: Element | null): Element[] {
+  const all = pageControls();
+  const out: Element[] = [];
+  for (const i of centresIn(all.map((c) => c.box), r)) {
+    const { el, box } = all[i];
+    const hit = hitAt(
+      box.left + box.width / 2,
+      box.top + box.height / 2,
+      backdrop,
+    );
+    const c = hit?.el.closest(CONTROL_SELECTOR);
+    if (c && (c === el || el.contains(c))) out.push(el);
+  }
+  return out;
+}
+
 /** REQ-228 / REQ-295 — how many distinct pieces of the page lie under a box (the demo's own chrome
  *  not counted): controls, media, dialogs, text, cards and bars. REQ-379: a point every 40 px
  *  across, so a link between two points of a wide pill is not missed. REQ-897 (cycle dm6, p4) —
- *  a heading counts HEADING_WEIGHT: among spots that all cover something, the title's loses */
+ *  a heading counts HEADING_WEIGHT: among spots that all cover something, the title's loses.
+ *  REQ-898 — and the controls found by their centre */
 function pageUnder(r: Rect, backdrop: Element | null = null): number {
   const found = new Set<Element>();
   for (
@@ -430,6 +476,7 @@ function pageUnder(r: Rect, backdrop: Element | null = null): number {
     const el = pageAt(x, y, backdrop);
     if (el) found.add(el);
   }
+  for (const c of controlsByCentre(r, backdrop)) found.add(c);
   let n = 0;
   for (const el of found) {
     n += el.closest(HEADING_SELECTOR) ? HEADING_WEIGHT : 1;
@@ -449,6 +496,8 @@ function countControls(r: Rect, backdrop: Element | null = null): number {
     const c = hitAt(x, y, backdrop)?.el.closest(CONTROL_SELECTOR);
     if (c) found.add(c);
   }
+  // REQ-898 — and the ones the grid steps over, by their centre
+  for (const c of controlsByCentre(r, backdrop)) found.add(c);
   return found.size;
 }
 
@@ -626,6 +675,12 @@ export default function DemoModeOverlay(
   /** REQ-890 — the compact form's size once it has rendered, for `peekBox` to try on a crowded
    *  row before the whole pill moves away from the tab */
   const compactSizeRef = useRef<{ w: number; h: number } | null>(null);
+  /** REQ-890 AMENDMENT — the peek opened by the tab's × (End asked): never switched to the compact
+   *  form — the question has its own placement (`askSpot`, REQ-852/876), and the whole pill's one
+   *  row fits a gap between two of the page's controls that the compact form, wrapped to two rows
+   *  for the question, does not (/welcome at 1280×800: 75 px between the Skip link and the
+   *  footer's links). Cleared when the peek folds */
+  const peekForAskRef = useRef(false);
   /** REQ-781 (cycle dv1, d7) — where the folded mini-pill sits: its offset from the left edge's
    *  spot (`tabBox`; x > 0: the right edge) */
   const [tabAt, setTabAt] = useState({ x: 0, y: 0 });
@@ -1993,7 +2048,9 @@ export default function DemoModeOverlay(
       // form is shown (and measured again, a frame later) rather than the pill moving away from
       // the tab or landing on a control. Its size unknown yet: shown as soon as the whole pill
       // would leave the tab's row
-      if (p.tucked && peekRef.current && !compactNow) {
+      if (
+        p.tucked && peekRef.current && !compactNow && !peekForAskRef.current
+      ) {
         const onRow = Math.round(box.top + box.height) ===
           Math.round(p.box.top + p.box.height);
         const crowded = ("crowded" in box && !!box.crowded) ||
@@ -2193,7 +2250,10 @@ export default function DemoModeOverlay(
   }, [peek, open, fresh, compact]);
   // REQ-890 — the peek folded: the whole form again
   useEffect(() => {
-    if (!peek) setPeekCompact(false);
+    if (!peek) {
+      setPeekCompact(false);
+      peekForAskRef.current = false;
+    }
   }, [peek]);
   // REQ-849 (demo-loop cycle dm3, p14) — while the pill is out of its tab: where the mouse is, and
   // a pointer that was in the pill-plus-tab region leaving it folds it (as leaving the pill does)
@@ -2692,6 +2752,7 @@ export default function DemoModeOverlay(
               title={t("demoMode.end")}
               onClick={() => {
                 setAskEnd(true);
+                peekForAskRef.current = true; // REQ-890 AMENDMENT
                 openPeek();
               }}
               style={`flex:none;width:28px;display:flex;align-items:center;justify-content:center;margin:0;padding:0;border:0;border-left:1px solid rgba(255,255,255,.25);background:transparent;color:#fff;font:inherit;font-size:16px;line-height:1;cursor:pointer;${HIT}`}
