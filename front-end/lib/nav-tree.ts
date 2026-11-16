@@ -60,6 +60,10 @@ export const NAV: NavNode<IconName>[] = [
     icon: "map",
     items: [
       { id: "subscriptions", icon: "repeat", href: "/field/subscriptions" },
+      // REQ-811: the service checklists a repeat visit references instead of listing the same rows
+      { id: "checklists", icon: "list", href: "/field/checklists" },
+      // REQ-839: the service catalogue — every task type, described; prices live where it is used
+      { id: "services", icon: "wrench", href: "/field/services" },
       { id: "assignments", icon: "map", href: "/field/assignments" },
       { id: "tasks", icon: "cal", href: "/field/tasks" },
       { id: "batches", icon: "batch", href: "/field/batches" },
@@ -80,6 +84,9 @@ export const NAV: NavNode<IconName>[] = [
   // REQ-795 (hotfix, Raphael: "make a data export section at the top level ... call it reports"):
   // pick a slice of the account's data and a date range, download the CSV.
   { id: "reports", icon: "trend", href: "/reports" },
+  // REQ-856 (Raphael: "get satellite images of an address for free and do the measurement myself"):
+  // the roof measurement tool — a root row, one click from anywhere.
+  { id: "roof", icon: "ruler", href: "/roof" },
 ];
 
 /**

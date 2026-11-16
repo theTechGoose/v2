@@ -26,6 +26,20 @@ const CODES: Record<string, { key: string; field: WorkerErrField }> = {
   worker_phone_taken: { key: "field.wk.err.phoneTaken", field: "phone" },
   language_invalid: { key: "field.wk.err.language", field: null },
   worker_covers_zones: { key: "field.wk.err.coversZones", field: null },
+  // REQ-840 — /field/crews
+  crew_name_taken: { key: "field.crew.nameTaken", field: null },
+  foreman_not_member: { key: "field.crew.foremanNotMember", field: null },
+  task_type_claimed: { key: "field.crew.typeClaimed", field: null },
+  crew_covers_zones: { key: "field.crew.inUse", field: null },
+  crew_not_found: { key: "field.common.error", field: null },
+  // REQ-842 — /field/absences
+  who_required: { key: "field.common.error", field: null },
+  bad_dates: { key: "field.away.badDates", field: null },
+  end_before_start: { key: "field.away.badDates", field: null },
+  too_long: { key: "field.away.badDates", field: null },
+  bad_disposition: { key: "field.common.error", field: null },
+  cover_required: { key: "field.away.coverRequired", field: null },
+  cover_self: { key: "field.away.coverRequired", field: null },
 };
 
 /** "Zona 3" reads "Zone 3" in English (the server names zones in Spanish) */
@@ -33,7 +47,7 @@ export function zoneName(name: string, lang: "en" | "es"): string {
   return lang === "en" ? name.replace(/^Zona /, "Zone ") : name;
 }
 
-/** the worded error for a failed /field/workers call */
+/** the worded error for a failed /field/workers, /field/crews or /field/absences call (REQ-840/842) */
 export function workerError(err: unknown, lang: "en" | "es"): WorkerErr {
   const body = err instanceof ApiError ? err.body : null;
   const code = body && typeof body === "object"
@@ -41,7 +55,11 @@ export function workerError(err: unknown, lang: "en" | "es"): WorkerErr {
     : undefined;
   const hit = typeof code === "string" ? CODES[code] : undefined;
   if (!hit) return { key: "field.common.error", field: null };
-  if (code === "worker_covers_zones") {
+  if (code === "task_type_claimed") {
+    const crew = (body as { detail?: { crew?: unknown } }).detail?.crew;
+    return { ...hit, vars: { crew: typeof crew === "string" ? crew : "" } };
+  }
+  if (code === "worker_covers_zones" || code === "crew_covers_zones") {
     const zones = (body as { detail?: { zones?: unknown } }).detail?.zones;
     const names = Array.isArray(zones)
       ? zones.filter((z): z is string => typeof z === "string")

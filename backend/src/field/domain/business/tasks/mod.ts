@@ -3,10 +3,11 @@
  * × item) in every zone that has a worker, idempotent per day; what a worker
  * may see and do. Pure.
  */
-import type { FieldTask, FieldWorker, Region, Subscription, TaskType } from "@field/dto/field.ts";
+import type { Absence, Crew, FieldTask, FieldWorker, Region, Subscription, TaskType } from "@field/dto/field.ts";
 import { CAP } from "@field/dto/field.ts";
 import { isDue } from "@field/domain/business/schedule/mod.ts";
 import { lastDayOf, onTask } from "@field/domain/business/job-span/mod.ts";
+import { type Staff, staffFor, staffOn } from "@field/domain/business/crews/mod.ts"; // REQ-841/842
 
 export const fold = (s: string) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/\s+/g, " ").trim();
 
@@ -16,20 +17,83 @@ export function searchTaskTypes(types: TaskType[], q: string): TaskType[] {
   return types.filter((t) => fold(t.name).includes(needle));
 }
 
-/** pick the existing type by name (any case, any accents) or make a new one */
-export function findOrCreateTaskType(types: TaskType[], name: string, userId: string, newId: () => string): { type: TaskType; created: boolean } {
+/**
+ * pick the existing type by name (any case, any accents) or make a new one. REQ-839: an ARCHIVED
+ * type typed again comes back un-archived (`restored`) — the caller saves it, as it saves a created one.
+ */
+export function findOrCreateTaskType(types: TaskType[], name: string, userId: string, newId: () => string): { type: TaskType; created: boolean; restored?: true } {
   const clean = name.replace(/\s+/g, " ").trim().slice(0, CAP.taskType);
   const existing = types.find((t) => fold(t.name) === fold(clean));
+  if (existing?.archived) {
+    const { archived: _a, ...rest } = existing;
+    return { type: { ...rest, updatedAt: new Date().toISOString() }, created: false, restored: true };
+  }
   if (existing) return { type: existing, created: false };
   return { type: { id: newId(), userId, name: clean, createdAt: new Date().toISOString() }, created: true };
 }
 
-/** the due subscriptions on `date` whose zone has no worker — reported, never silently dropped */
-export function unstaffed(input: { date: string; subscriptions: Subscription[]; regions: Region[] }): Subscription[] {
-  const staffed = new Set(input.regions.filter((r) => r.workerId).map((r) => r.id));
-  return input.subscriptions.filter((s) => s.active && isDue(s, input.date) && (!s.regionId || !staffed.has(s.regionId)));
+/** REQ-839: the types a combobox offers — not the archived ones */
+export const liveTypes = (types: TaskType[]): TaskType[] => types.filter((t) => !t.archived);
+
+/** REQ-839: is the name (any case) another type's than `exceptId`? */
+export function taskTypeNameTaken(types: Pick<TaskType, "id" | "name">[], name: string, exceptId?: string): boolean {
+  const needle = fold(name);
+  return types.some((t) => t.id !== exceptId && fold(t.name) === needle);
 }
 
+/** REQ-839: where a type is used — the repeat visits, checklists and tasks on it */
+export function taskTypeUsage(
+  taskTypeId: string,
+  of: { subscriptions: { items: { taskTypeId: string; priceCents?: number }[] }[]; checklists: { items: { taskTypeId: string; priceCents?: number }[] }[]; tasks: { taskTypeId: string }[] },
+): { subscriptions: number; checklists: number; tasks: number } {
+  const has = (x: { items: { taskTypeId: string }[] }) => x.items.some((i) => i.taskTypeId === taskTypeId);
+  return {
+    subscriptions: of.subscriptions.filter(has).length,
+    checklists: of.checklists.filter(has).length,
+    tasks: of.tasks.filter((t) => t.taskTypeId === taskTypeId).length,
+  };
+}
+
+/** what the day's round needs besides the visits and zones — REQ-841/842: the crews, the workers, who is out */
+export interface RoundStaff {
+  crews?: Crew[];
+  workers?: FieldWorker[];
+  absences?: Absence[];
+}
+
+/**
+ * REQ-841: the due visits on `date` with the services nobody on their zone does — the whole
+ * visit when its zone has no staff at all. Reported, never silently dropped.
+ */
+export function uncovered(input: { date: string; subscriptions: Subscription[]; regions: Region[] } & RoundStaff): { subscription: Subscription; taskTypeIds: string[] }[] {
+  const crews = input.crews ?? [], workers = input.workers ?? [];
+  const out: { subscription: Subscription; taskTypeIds: string[] }[] = [];
+  for (const s of input.subscriptions) {
+    if (!s.active || !isDue(s, input.date)) continue;
+    const region = s.regionId ? input.regions.find((r) => r.id === s.regionId) : undefined;
+    const missing = s.items.filter((i) => !region || !staffFor({ region, taskTypeId: i.taskTypeId, crews, workers })).map((i) => i.taskTypeId);
+    if (missing.length) out.push({ subscription: s, taskTypeIds: missing });
+  }
+  return out;
+}
+
+/** the due subscriptions on `date` with a service nobody covers (REQ-141: the zone has no worker) */
+export function unstaffed(input: { date: string; subscriptions: Subscription[]; regions: Region[] } & RoundStaff): Subscription[] {
+  return uncovered(input).map((u) => u.subscription);
+}
+
+/** the fields that say who does a task — a crew's lead and members, or one worker */
+function assignment(staff: Staff): Pick<FieldTask, "workerId" | "crewIds" | "crewId"> {
+  if (staff.kind === "worker") return { workerId: staff.workerId };
+  return { workerId: staff.lead.id, crewId: staff.crew.id, ...(staff.crewIds.length ? { crewIds: staff.crewIds } : {}) };
+}
+
+/**
+ * REQ-141: one task per (due active visit × service), in the zones that have staff. REQ-841: the
+ * staff is per service — the zone's crew that does it (its foreman leads, the members are the crew),
+ * else the zone's worker. REQ-842: someone out → cover (`coverFor`), defer (the task is `deferred`
+ * and a COPY — a later `date` — holds the day they are back) or skip (`skipped`). Idempotent per day.
+ */
 export function generateTasks(input: {
   userId: string;
   date: string;
@@ -37,22 +101,33 @@ export function generateTasks(input: {
   regions: Region[];
   existing: FieldTask[];
   newId: () => string;
-}): FieldTask[] {
-  const workerOf = new Map(input.regions.filter((r) => r.workerId).map((r) => [r.id, r.workerId!]));
+} & RoundStaff): FieldTask[] {
+  const crews = input.crews ?? [], workers = input.workers ?? [], absences = input.absences ?? [];
   const have = new Set(input.existing.map((t) => `${t.subscriptionId}|${t.taskTypeId}|${t.date}`));
   const out: FieldTask[] = [];
   for (const s of input.subscriptions) {
     if (!s.active || !s.regionId || !isDue(s, input.date)) continue;
-    const workerId = workerOf.get(s.regionId);
-    if (!workerId) continue;
+    const region = input.regions.find((r) => r.id === s.regionId);
+    if (!region) continue;
     for (const item of s.items) {
       const key = `${s.id}|${item.taskTypeId}|${input.date}`;
       if (have.has(key)) continue;
+      const r = staffOn({ region, taskTypeId: item.taskTypeId, crews, workers, absences, date: input.date });
+      if (!r) continue;
       have.add(key);
-      out.push({
+      const base = {
         id: input.newId(), userId: input.userId, subscriptionId: s.id, taskTypeId: item.taskTypeId, customerId: s.customerId,
-        regionId: s.regionId, workerId, date: input.date, address: s.address, priceCents: item.priceCents, status: "assigned",
-      });
+        regionId: s.regionId, date: input.date, address: s.address, priceCents: item.priceCents,
+      };
+      if (r.kind === "staff") out.push({ ...base, ...assignment(r.staff), status: "assigned" });
+      else if (r.kind === "cover") out.push({ ...base, ...assignment(r.staff), status: "assigned", coverFor: r.coverFor, byAbsence: r.absence.id });
+      else if (r.kind === "skip" || !r.to) out.push({ ...base, ...assignment(r.staff), status: "skipped", byAbsence: r.absence.id });
+      else {
+        out.push({ ...base, ...assignment(r.staff), status: "deferred", deferredTo: r.to, byAbsence: r.absence.id });
+        const then = staffOn({ region, taskTypeId: item.taskTypeId, crews, workers, absences, date: r.to });
+        const who = then && then.kind !== "skip" && then.kind !== "defer" ? then.staff : r.staff;
+        out.push({ ...base, id: input.newId(), ...assignment(who), date: r.to, status: "assigned", deferredFrom: input.date, byAbsence: r.absence.id });
+      }
     }
   }
   return out;

@@ -10,6 +10,7 @@
 import Backdrop from "../components/Backdrop.tsx";
 import { useEffect, useRef, useState } from "preact/hooks";
 import {
+  type ChecklistView,
   fieldClient,
   type SubscriptionInput,
   type SubscriptionItemInput,
@@ -24,6 +25,7 @@ import { I, ICN } from "../lib/dash-icons.tsx";
 import {
   customerOptions,
   fmtMoneyExact,
+  ownItems,
   perVisitCents,
   prefillAddress,
   todayIso,
@@ -73,6 +75,9 @@ interface Form {
   daysOfMonth: number[];
   /** REQ-787 — annual: the month, 1–12 */
   month: number;
+  /** REQ-811 — the checklist referenced ("" = none); its rows are included on every visit */
+  checklistId: string;
+  /** the visit's OWN rows (REQ-811: extras beside the checklist, or everything when there is none) */
   items: Item[];
   /** the combobox query */
   q: string;
@@ -154,6 +159,7 @@ function blankForm(defaultNetDays = 30): Form {
     days: [weekdayOf(startDate)],
     daysOfMonth: [monthDayOf(startDate)],
     month: monthOf(startDate),
+    checklistId: "",
     items: [],
     q: "",
     searchOn: false,
@@ -190,7 +196,9 @@ function formFor(s: SubscriptionView, defaultNetDays = 30): Form {
       ? s.daysOfMonth
       : [monthDayOf(startDate)],
     month: s.month ?? monthOf(startDate),
-    items: s.items.map((i) => ({
+    checklistId: s.checklistId ?? "",
+    // REQ-811: the checklist's rows stay the checklist's — only the visit's own are edited here
+    items: ownItems(s).map((i) => ({
       id: i.taskTypeId,
       name: i.taskTypeName,
       priceCents: i.priceCents,
@@ -241,6 +249,8 @@ export default function FieldSubscriptionsPage(
   );
   const [loadErr, setLoadErr] = useState<string | null>(null);
   const [customers, setCustomers] = useState<Customer[]>([]);
+  /** REQ-811 — the account's checklists, for the form's Checklist select */
+  const [checklists, setChecklists] = useState<ChecklistView[]>([]);
   /** REQ-152 — the customer last picked in the open form (its address may sit in the box) */
   const lastPick = useRef<string | null>(null);
   const [form, setForm] = useState<Form | null>(null);
@@ -290,6 +300,11 @@ export default function FieldSubscriptionsPage(
       if (alive) setCustomers(list);
     }).catch(() => {
       // the picker stays empty; the modal's error line reports the save failure
+    });
+    fieldClient.checklists().then((list) => {
+      if (alive) setChecklists(list);
+    }).catch(() => {
+      // REQ-811: the select offers "None" only; the rows below still work
     });
     profileClient.get().then((snap) => {
       const n = snap.identity?.invoiceNetDays;
@@ -492,8 +507,8 @@ export default function FieldSubscriptionsPage(
       setForm({ ...f, err: t("field.subs.addressPh") });
       return;
     }
-    if (!f.items.length) {
-      setForm({ ...f, err: t("field.subs.noItems") });
+    if (!f.items.length && !f.checklistId) { // REQ-811: a checklist stands in for the rows
+      setForm({ ...f, err: t("field.subs.noItemsOrChecklist") });
       return;
     }
     const annual = f.cadence === "annual"; // REQ-787
@@ -551,6 +566,7 @@ export default function FieldSubscriptionsPage(
           address: f.address.trim(),
           ...schedule,
           items,
+          checklistId: f.checklistId || null, // REQ-811: null clears it
           netDays,
           overhead: f.overhead,
         });
@@ -560,6 +576,7 @@ export default function FieldSubscriptionsPage(
           address: f.address.trim(),
           ...schedule,
           items,
+          ...(f.checklistId ? { checklistId: f.checklistId } : {}), // REQ-811
           netDays,
           overhead: f.overhead,
         });
@@ -687,10 +704,39 @@ export default function FieldSubscriptionsPage(
                   >
                     <I d={ICN.pin} size={12} /> <span>{s.address}</span>
                   </div>
+                  {/* REQ-811: the checklist this visit references — its own line, so the name and zone keep theirs */}
+                  {s.checklistName && (
+                    <div
+                      class="sub__addr"
+                      data-cy="subs-card-checklist"
+                      style="display:flex;align-items:center;gap:6px"
+                    >
+                      <I d={ICN.list} size={12} />{" "}
+                      <span>
+                        {t("field.subs.checklist")}: <b>{s.checklistName}</b>
+                      </span>
+                    </div>
+                  )}
                   <div class="sub__items">
                     {s.items.map((it) => (
-                      <div key={it.taskTypeId}>
-                        <span>{it.taskTypeName}</span>
+                      <div
+                        key={it.taskTypeId}
+                        data-cy={it.fromChecklist
+                          ? "subs-item-from-checklist"
+                          : "subs-card-item"}
+                      >
+                        <span>
+                          {it.taskTypeName}
+                          {/* REQ-811: a row the checklist contributes, not one of the visit's own */}
+                          {it.fromChecklist && (
+                            <span
+                              class="chip chip--muted"
+                              style="margin-left:6px;font-size:11px"
+                            >
+                              {t("field.subs.fromChecklist")}
+                            </span>
+                          )}
+                        </span>
                         <b>{fmtMoneyExact(it.priceCents)}</b>
                       </div>
                     ))}
@@ -1115,8 +1161,33 @@ export default function FieldSubscriptionsPage(
               );
             })()}
 
+            {/* REQ-811: a checklist stands in for the rows — pick one and add only the extras below */}
+            <label class="field">
+              {t("field.subs.checklist")}
+              <select
+                data-cy="subs-checklist"
+                value={form.checklistId}
+                onChange={(e) =>
+                  patch({
+                    checklistId: (e.currentTarget as HTMLSelectElement).value,
+                  })}
+              >
+                <option value="">{t("field.subs.checklistNone")}</option>
+                {checklists.map((c) => (
+                  <option key={c.id} value={c.id}>{c.name}</option>
+                ))}
+              </select>
+              <span class="hint">
+                <a href="/field/checklists" data-cy="subs-manage-checklists">
+                  {t("field.subs.manageChecklists")}
+                </a>
+              </span>
+            </label>
+
             <div class="field">
-              {t("field.subs.taskTypes")}
+              {form.checklistId
+                ? t("field.subs.extraTypes")
+                : t("field.subs.taskTypes")}
               <div class="items">
                 {form.items.map((it, i) => (
                   <div
@@ -1252,7 +1323,11 @@ export default function FieldSubscriptionsPage(
                   <I d={ICN.plus} size={14} sw={2.5} />
                 </button>
               </div>
-              <span class="hint">{t("field.subs.noItems")}</span>
+              <span class="hint" data-cy="subs-items-hint">
+                {form.checklistId
+                  ? t("field.subs.checklistHint")
+                  : t("field.subs.noItems")}
+              </span>
             </div>
 
             {form.err && <p class="alert" data-cy="subs-error">{form.err}</p>}

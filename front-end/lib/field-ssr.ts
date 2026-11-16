@@ -4,11 +4,15 @@
  * of a "Loading…" line that waits for hydration + a client fetch.
  */
 import type {
+  AbsenceView,
   BatchView,
+  ChecklistView,
+  CrewView,
   FieldWorker,
   GenerateResult,
   RegionView,
   SubscriptionView,
+  TaskType,
   TaskView,
 } from "../clients/field.ts";
 import { ssrBackendGetAuthed } from "./backend-fetch.ts";
@@ -16,13 +20,28 @@ import { ssrBackendGetAuthed } from "./backend-fetch.ts";
 export interface FieldWorkersSeed {
   workers: FieldWorker[];
   regions: RegionView[];
+  /** REQ-840/842 — the crews and who is away; [] when unreadable */
+  crews: CrewView[];
+  absences: AbsenceView[];
+  /** REQ-840 — the live services, for the crew form; [] when unreadable */
+  types: TaskType[];
 }
 export interface FieldAssignmentsSeed {
   regions: RegionView[];
   workers: FieldWorker[];
+  /** REQ-841 — the crews a zone can be staffed with; [] when unreadable */
+  crews: CrewView[];
+}
+/** REQ-839 */
+export interface FieldServicesSeed {
+  types: TaskType[];
 }
 export interface FieldSubscriptionsSeed {
   subs: SubscriptionView[];
+}
+/** REQ-811 */
+export interface FieldChecklistsSeed {
+  checklists: ChecklistView[];
 }
 export interface FieldBatchesSeed {
   batches: BatchView[];
@@ -59,12 +78,21 @@ export async function loadFieldWorkersSeed(
   get: AuthedGet = ssrBackendGetAuthed,
 ): Promise<FieldWorkersSeed | null> {
   if (!sessionId) return null;
-  const [workers, regions] = await Promise.all([
+  const [workers, regions, crews, absences, types] = await Promise.all([
     readList<FieldWorker>(get, "/field/workers", sessionId),
     readList<RegionView>(get, "/field/regions", sessionId),
+    readList<CrewView>(get, "/field/crews", sessionId),
+    readList<AbsenceView>(get, "/field/absences", sessionId),
+    readList<TaskType>(get, "/field/task-types", sessionId),
   ]);
   if (!workers) return null;
-  return { workers, regions: regions ?? [] };
+  return {
+    workers,
+    regions: regions ?? [],
+    crews: crews ?? [],
+    absences: absences ?? [],
+    types: types ?? [],
+  };
 }
 
 /** /field/assignments: the zones and the crew — both required, as the island's load() needs both. */
@@ -73,12 +101,27 @@ export async function loadFieldAssignmentsSeed(
   get: AuthedGet = ssrBackendGetAuthed,
 ): Promise<FieldAssignmentsSeed | null> {
   if (!sessionId) return null;
-  const [regions, workers] = await Promise.all([
+  const [regions, workers, crews] = await Promise.all([
     readList<RegionView>(get, "/field/regions", sessionId),
     readList<FieldWorker>(get, "/field/workers", sessionId),
+    readList<CrewView>(get, "/field/crews", sessionId),
   ]);
   if (!regions || !workers) return null;
-  return { regions, workers };
+  return { regions, workers, crews: crews ?? [] };
+}
+
+/** REQ-839 /field/services: every service, the archived ones too. */
+export async function loadFieldServicesSeed(
+  sessionId: string | undefined,
+  get: AuthedGet = ssrBackendGetAuthed,
+): Promise<FieldServicesSeed | null> {
+  if (!sessionId) return null;
+  const types = await readList<TaskType>(
+    get,
+    "/field/task-types?all=1",
+    sessionId,
+  );
+  return types ? { types } : null;
 }
 
 /** /field/subscriptions: the subscription cards. */
@@ -93,6 +136,20 @@ export async function loadFieldSubscriptionsSeed(
     sessionId,
   );
   return subs ? { subs } : null;
+}
+
+/** REQ-811 /field/checklists: the checklist cards. */
+export async function loadFieldChecklistsSeed(
+  sessionId: string | undefined,
+  get: AuthedGet = ssrBackendGetAuthed,
+): Promise<FieldChecklistsSeed | null> {
+  if (!sessionId) return null;
+  const checklists = await readList<ChecklistView>(
+    get,
+    "/field/checklists",
+    sessionId,
+  );
+  return checklists ? { checklists } : null;
 }
 
 /** /field/batches: the past batches (the island filters and sorts them). */

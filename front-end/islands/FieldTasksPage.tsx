@@ -21,6 +21,7 @@
  */
 import { useEffect, useRef, useState } from "preact/hooks";
 import {
+  type CrewView,
   fieldClient,
   type FieldWorker,
   type GenerateResult,
@@ -200,6 +201,8 @@ export default function FieldTasksPage(
   const [workers, setWorkers] = useState<FieldWorker[]>(seed?.workers ?? []);
   // REQ-521 — the empty-roster hint waits for the real list, never flashes on load
   const [workersLoaded, setWorkersLoaded] = useState(!!seed?.workers);
+  /** REQ-841/842 — the crews, for "Move all to…" */
+  const [crews, setCrews] = useState<CrewView[]>([]);
   const [types, setTypes] = useState<TaskType[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [add, setAdd] = useState<AddForm | null>(null);
@@ -252,6 +255,7 @@ export default function FieldTasksPage(
       setWorkersLoaded(true);
     }).catch(() => {});
     fieldClient.taskTypes().then((x) => alive && setTypes(x)).catch(() => {});
+    fieldClient.crews().then((c) => alive && setCrews(c)).catch(() => {});
     loadAllCustomers().then((c) => alive && setCustomers(c)).catch(() => {});
     return () => {
       alive = false;
@@ -546,6 +550,31 @@ export default function FieldTasksPage(
     save(task, { adminNote: raw });
   }
 
+  /** REQ-842 — a group's whole open day to another crew or worker; `to` is "crew:<id>" | "worker:<id>" */
+  async function moveAll(lead: TaskView, to: string) {
+    const [kind, id] = to.split(":");
+    setBusy(true);
+    setError(null);
+    try {
+      const r = await fieldClient.reassignDay({
+        date,
+        ...(lead.crewId
+          ? { fromCrewId: lead.crewId }
+          : { fromWorkerId: lead.workerId }),
+        ...(kind === "crew" ? { toCrewId: id } : { toWorkerId: id }),
+      });
+      const name = kind === "crew"
+        ? crews.find((c) => c.id === id)?.name ?? ""
+        : workers.find((w) => w.id === id)?.name ?? "";
+      setFlash(t("field.tk.movedAll", { n: r.moved, name }));
+      await load(date);
+    } catch (e) {
+      setError(errMsg(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   const onEnter = (fn: () => void) => (e: KeyboardEvent) => {
     if (e.key === "Enter") {
       e.preventDefault();
@@ -700,6 +729,12 @@ export default function FieldTasksPage(
           {!!x.crewNames?.length && (
             <div class="hint" data-cy="tk-crew">
               {t("field.tk.crewLine", { names: x.crewNames.join(", ") })}
+            </div>
+          )}
+          {/* REQ-842 — this crew/worker stands in for someone marked out */}
+          {x.coverForName && (
+            <div class="chip chip--amber" data-cy="tk-cover-for">
+              {t("field.tk.coverFor", { name: x.coverForName })}
             </div>
           )}
           {showNote && (
@@ -1341,7 +1376,15 @@ export default function FieldTasksPage(
                 style="cursor:default"
               >
                 <span class="rsub__name">{s.customerName}</span>
-                <span class="rsub__addr">{s.address}</span>
+                <span class="rsub__addr">
+                  {s.address}
+                  {/* REQ-841 — which services no crew on the zone does */}
+                  {!!s.taskTypeNames?.length && (
+                    <span data-cy="tk-unstaffed-types">
+                      {` · ${s.taskTypeNames.join(", ")}`}
+                    </span>
+                  )}
+                </span>
                 <a
                   class="chip chip--pink"
                   href="/field/assignments"
@@ -1362,19 +1405,59 @@ export default function FieldTasksPage(
         <div class="panel hint">{t("field.tk.none")}</div>
       )}
 
-      {groups.map(({ key, title, rows }) => (
-        <div class="panel" key={key}>
-          <h3 class="panel__title">
-            <I d={ICN.hardhat} size={16} /> {title}{" "}
-            <span class="count">
-              {rows.filter((r) => r.status === "complete").length}/{rows.filter(
-                isOpen,
-              ).length}
-            </span>
-          </h3>
-          <div class="tasks">{rows.map(card)}</div>
-        </div>
-      ))}
+      {groups.map(({ key, title, rows }) => {
+        const lead = rows[0];
+        const open = rows.filter(isOpen);
+        return (
+          <div class="panel" key={key} data-cy="tk-group">
+            <h3
+              class="panel__title"
+              style="display:flex;align-items:center;gap:6px;flex-wrap:wrap"
+            >
+              <I d={ICN.hardhat} size={16} /> {title}{" "}
+              {/* REQ-841 — the crew this group goes out as */}
+              {lead.crewName && (
+                <span class="chip" data-cy="tk-group-crew">
+                  {lead.crewName}
+                </span>
+              )}
+              <span class="count">
+                {rows.filter((r) => r.status === "complete").length}/{open
+                  .length}
+              </span>
+            </h3>
+            {/* REQ-842 — the whole day's work of this worker/crew, moved at once (outside the title: the title is the group's name) */}
+            {open.length > 0 && workersLoaded && (
+              <div style="display:flex;justify-content:flex-end;margin:-6px 0 8px">
+                <select
+                  data-cy="tk-move-all"
+                  aria-label={t("field.tk.moveAll")}
+                  disabled={busy}
+                  value=""
+                  style={INPUT}
+                  onChange={(e) => {
+                    const v = (e.currentTarget as HTMLSelectElement).value;
+                    if (v) moveAll(lead, v);
+                  }}
+                >
+                  <option value="">{t("field.tk.moveAll")}</option>
+                  {crews.filter((c) => c.id !== lead.crewId).map((c) => (
+                    <option key={c.id} value={`crew:${c.id}`}>
+                      {t("field.crew.select")}: {c.name}
+                    </option>
+                  ))}
+                  {workers.filter((w) => w.id !== lead.workerId).map((w) => (
+                    <option key={w.id} value={`worker:${w.id}`}>
+                      {w.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+            <div class="tasks">{rows.map(card)}</div>
+          </div>
+        );
+      })}
     </>
   );
 }

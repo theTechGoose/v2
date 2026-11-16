@@ -29,6 +29,7 @@
     "#demo-booking/": "../shared/demo-booking/",
     "#lead-origin/": "../shared/lead-origin/",
     "#demo-mode/": "../shared/demo-mode/",
+    "#roof-geometry/": "../shared/roof-geometry/",
     "@core/": "./src/core/",
     "@crm/": "./src/crm/",
     "@paperwork/": "./src/paperwork/",
@@ -40,7 +41,8 @@
     "@files/": "./src/files/",
     "@field/": "./src/field/",
     "@demo-mode/": "./src/demo-mode/",
-    "@timeclock/": "./src/timeclock/"
+    "@timeclock/": "./src/timeclock/",
+    "@roof/": "./src/roof/"
   },
   "compilerOptions": {
     "experimentalDecorators": true,

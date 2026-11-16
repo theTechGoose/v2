@@ -1172,6 +1172,15 @@ export default function WorkerScreen(
                 <span class="chip chip--amber">{t("worker.foreman")}</span>
               </>
             )}
+            {/* REQ-840 — the crew they go out with */}
+            {me.crewName && (
+              <>
+                {" "}
+                <span class="chip" data-cy="w-crew">
+                  {t("worker.crewChip", { name: me.crewName })}
+                </span>
+              </>
+            )}
             <small>{dayLine()}</small>
           </div>
           {/* REQ-193 — the two tabs: the day's tasks, the time clock */}

@@ -9,7 +9,7 @@
 import { Injectable } from "#danet/core";
 import { getKv, indexedIds, readMany } from "@core/data/kv/mod.ts";
 import { ForbiddenError, NotFoundError } from "@core/data/repository/mod.ts";
-import type { Batch, FieldTask, FieldWorker, Region, Subscription, TaskType } from "@field/dto/field.ts";
+import type { Absence, Batch, Checklist, Crew, FieldTask, FieldWorker, Region, Subscription, TaskType } from "@field/dto/field.ts";
 import { daysCovered, lastDayOf } from "@field/domain/business/job-span/mod.ts";
 
 interface Owned {
@@ -105,6 +105,30 @@ export class FieldWorkerStore extends OwnedStore<FieldWorker> {
 export class TaskTypeStore extends OwnedStore<TaskType> {
   constructor() {
     super("field_task_type");
+  }
+}
+
+/** REQ-811: the account's checklists */
+@Injectable()
+export class ChecklistStore extends OwnedStore<Checklist> {
+  constructor() {
+    super("field_checklist");
+  }
+}
+
+/** REQ-840: the account's crews */
+@Injectable()
+export class CrewStore extends OwnedStore<Crew> {
+  constructor() {
+    super("field_crew");
+  }
+}
+
+/** REQ-842: who is out, when */
+@Injectable()
+export class AbsenceStore extends OwnedStore<Absence> {
+  constructor() {
+    super("field_absence");
   }
 }
 
