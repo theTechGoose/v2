@@ -202,9 +202,12 @@ export function PartyCard(props: {
   email?: string;
   phone?: string;
   address?: string;
+  /** REQ-906: the name's font size in px (the invoice's Bill-to uses 18). */
+  nameSize?: number;
 }) {
   const displayName = props.name?.trim();
   const biz = props.businessName?.trim();
+  const nameSize = props.nameSize ?? 15;
   return (
     <div
       style={`background:#fff;border:1px solid ${LINE};border-radius:12px;padding:14px 16px`}
@@ -215,7 +218,8 @@ export function PartyCard(props: {
         {props.role}
       </div>
       <div
-        style={`margin-top:6px;color:${INK};font-weight:800;font-size:15px;line-height:1.25`}
+        data-cy="party-name"
+        style={`margin-top:6px;color:${INK};font-weight:800;font-size:${nameSize}px;line-height:1.25`}
       >
         {displayName ?? "—"}
       </div>
