@@ -215,6 +215,7 @@ import {
   stageLeaveShown,
   stagePillH,
 } from "../../shared/demo-mode/stage-chrome.ts";
+import { pageLabel } from "../../shared/demo-mode/page-label.ts";
 import {
   endedHref,
   type EndedNotice,
@@ -2193,7 +2194,11 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
                 {t("demoMode.pointerOff", { name })}
               </div>
             )}
-            {/* REQ-645 (demo cycle 5 m36) — another of their tabs is shown now: said, until he moves */}
+            {
+              /* REQ-645 (demo cycle 5 m36) — another of their tabs is shown now: said, until he
+                moves. REQ-826 (dm2 p10) — it names the page (never its URL) and sits in REQ-642's
+                chrome row above the frame, never over the replica */
+            }
             {mirrored && !look.elsewhere && tabNote !== null && !off && (
               <div
                 data-cy="demo-tab-switched"
@@ -2201,14 +2206,17 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
                 style={`position:absolute;left:${
                   fit.left + fit.width / 2
                 }px;top:${
-                  fit.top - bannerH
-                }px;transform:translate(-50%,-50%);z-index:${
+                  stageBadgeTop(fit.top - bannerH)
+                }px;transform:translateX(-50%);z-index:${
                   Z + 2
-                };pointer-events:none;white-space:nowrap;max-width:${
-                  Math.max(200, fit.width)
-                }px;overflow:hidden;text-overflow:ellipsis;padding:4px 12px;border-radius:999px;border:1px solid rgba(255,255,255,.85);background:#3d2e1b;color:#fff;font:inherit;font-size:12.5px;font-weight:700;box-shadow:0 2px 10px rgba(0,0,0,.45)`}
+                };pointer-events:none;white-space:nowrap;box-sizing:border-box;height:${STAGE_BADGE_H}px;line-height:${
+                  STAGE_BADGE_H - 2
+                }px;max-width:calc(100vw - 16px);overflow:hidden;text-overflow:ellipsis;padding:0 12px;border-radius:999px;border:1px solid rgba(255,255,255,.85);background:#3d2e1b;color:#fff;font:inherit;font-size:12.5px;font-weight:700;box-shadow:0 2px 10px rgba(0,0,0,.45)`}
               >
-                {t("demoMode.tabSwitched", { name, path: tabNote })}
+                {t("demoMode.tabSwitched", {
+                  name,
+                  page: pageLabel(tabNote, t),
+                })}
               </div>
             )}
             {/* REQ-538 (demo cycle 4 M1) — his arrow is not on their screen: said, until it is */}
