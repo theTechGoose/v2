@@ -142,7 +142,7 @@ describe("REQ-850 (demo-loop cycle dm3, p10) a re-send to the same spot does not
     const src = read("front-end/components/demo-mode/DemoPointer.tsx");
     const fx = src.slice(
       src.indexOf("const [idle, setIdle] = useState(false);"),
-      src.indexOf("const look = pointerLook(idle);"),
+      src.indexOf("const look = pointerLook(idle"),
     );
     expect(fx).toMatch(/\}, \[idleKey\(pointer, outside\)\]\);/);
     expect(fx).not.toMatch(/\}, \[pointer, outside\]\);/);
