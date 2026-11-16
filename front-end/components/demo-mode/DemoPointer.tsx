@@ -77,6 +77,7 @@ import {
   offBadge,
   offEdge,
   offMark,
+  type TagPlace,
 } from "../../../shared/demo-mode/presenter-anchor.ts";
 
 export interface Wave {
@@ -128,6 +129,10 @@ export const CONTROL_SELECTOR =
 /** REQ-633 (demo m2, cycle 5) — what the tag must not hide besides a control: a text block */
 export const TEXT_SELECTOR =
   "h1,h2,h3,h4,h5,h6,p,li,td,th,dt,dd,caption,figcaption,blockquote,pre,code,legend";
+
+/** REQ-837 (demo dm2 m3c) — a sidebar or nav: its labels are never a spot for the tag, not even
+ *  the label of the link the arrow is on ("Add a w[A]ker") */
+export const NAV_SELECTOR = "nav,aside,[role=navigation]";
 
 /** REQ-633 — does `el` show text at (x, y)? Its own text nodes' boxes when the browser lays them
  *  out (a Range), else the element: a text block, or one holding text directly */
@@ -195,7 +200,9 @@ function contentAt(
       tip.y >= r.top && tip.y <= r.top + r.height;
     if (!holdsTip) return 2;
   }
-  return textAt(doc, el, x, y) ? 1 : 0;
+  if (!textAt(doc, el, x, y)) return 0;
+  // REQ-837 (demo dm2 m3c) — text in a sidebar/nav weighs as a control: the tag goes elsewhere
+  return el.closest(NAV_SELECTOR) ? 2 : 1;
 }
 
 /** the tag box's sample points: a 3 × 3 grid, inset 2 px */
@@ -227,7 +234,8 @@ export function coverage(doc: Document, r: Rect, tip: Pt): number {
 /** REQ-437 + REQ-543 — place the tag element for an arrow drawn at `tip`: its MEASURED size (the
  *  estimate only while it has none), outside `rect`, next to the arrow, off the controls `covers`
  *  finds, inside `box`; left/top relative to the tip (the pointer box is translated to it) and
- *  the side on `data-tag-side` */
+ *  the side on `data-tag-side`. REQ-837 — returns that placement (relative to the tip, with the
+ *  size used), which the customer's overlay reports to the stage */
 export function placeTag(
   el: HTMLElement,
   tip: Pt,
@@ -235,7 +243,7 @@ export function placeTag(
   rect: Rect | null,
   fallback: { w: number; h: number },
   covers?: (r: Rect) => boolean | number,
-): void {
+): TagPlace {
   const tag = {
     w: el.offsetWidth || fallback.w,
     h: el.offsetHeight || fallback.h,
@@ -244,6 +252,7 @@ export function placeTag(
   el.style.left = `${at.x - tip.x}px`;
   el.style.top = `${at.y - tip.y}px`;
   el.setAttribute("data-tag-side", at.side);
+  return { side: at.side, x: at.x - tip.x, y: at.y - tip.y, ...tag };
 }
 
 /** REQ-374 + REQ-761 — the arrow: a white halo under a colour-filled body with a dark outline,
@@ -305,6 +314,7 @@ export default function DemoPointer(
     z,
     attach,
     bounds,
+    onTag,
   }: {
     pointer: Pt | null;
     outside?: boolean;
@@ -328,8 +338,24 @@ export default function DemoPointer(
     /** the glide's ref callback; `onPaint` gets every DRAWN position of the arrow */
     attach(el: HTMLDivElement | null, onPaint?: (p: Pt) => void): void;
     bounds?: Bounds;
+    /** REQ-837 (demo dm2 m3) — where the tag went whenever that changes (null: no tag drawn) */
+    onTag?: (t: TagPlace | null) => void;
   },
 ) {
+  /** REQ-837 — the latest `onTag` (the painter is made once) and the last placement it was told */
+  const tagSink = useRef(onTag);
+  tagSink.current = onTag;
+  const told = useRef("");
+  const tell = (t: TagPlace | null) => {
+    const key = t
+      ? `${t.side}:${Math.round(t.x)}:${Math.round(t.y)}:${Math.round(t.w)}:${
+        Math.round(t.h)
+      }`
+      : "";
+    if (key === told.current) return;
+    told.current = key;
+    tagSink.current?.(t);
+  };
   /** the tag rests (fades, never out) a while after the pointer was last placed */
   const [idle, setIdle] = useState(false);
   useEffect(() => {
@@ -351,19 +377,19 @@ export default function DemoPointer(
   const paintTag = useCallback((p: Pt) => {
     drawn.current = p;
     const el = tagRef.current;
-    if (!el) return;
+    if (!el) return tell(null);
     const l = live.current;
     // REQ-543 + REQ-633 — off the other controls and the text of the page under it, anchored
     // or not (the tag and arrow are pointer-events:none, so the hit-test sees through them)
     const doc = globalThis.document;
-    placeTag(
+    tell(placeTag(
       el,
       p,
       l.bounds ?? windowBox(),
       l.rect,
       l.fallback,
       doc ? (r) => coverage(doc, r, p) : undefined,
-    );
+    ));
   }, []);
   const ref = useCallback(
     (el: HTMLDivElement | null) => attach(el, el ? paintTag : undefined),

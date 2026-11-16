@@ -175,6 +175,7 @@ import {
 import {
   anchorDead,
   anchorPoint,
+  cueKey,
   type Dir,
   followTabs,
   ghostWait,
@@ -191,11 +192,13 @@ import {
   printable,
   reanchored,
   reportedGhost,
+  reportedTag,
   resendable,
   seedUse,
   SEEK_RETRY_MS,
   seekGaveUp,
   seekPrint,
+  type TagPlace,
 } from "../../shared/demo-mode/presenter-anchor.ts";
 import { anchorAhead } from "../../shared/demo-mode/customer-pointer.ts";
 import PointerGhost from "../components/demo-mode/PointerGhost.tsx";
@@ -466,6 +469,9 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
   /** REQ-642 (cycle 5, m10) — the followed tab's last report of where it placed HIS arrow: the
    *  ghost is drawn from it (never from this stage's own replay, which can put it elsewhere) */
   const reportRef = useRef<PlacedMessage | null>(null);
+  /** REQ-837 (demo dm2 m3) — where the customer's screen has HIS name tag (their report's `t`, in
+   *  this stage's px): his own marker and the ghost draw their tag there */
+  const [ownTag, setOwnTag] = useState<TagPlace | null>(null);
   /** REQ-789 — when he last pointed (performance.now()), and the one report waiting for his
    *  rest: a report that comes back while he still moves is never drawn — it flashed the ghost
    *  on and off beside his cursor, elsewhere on the frame, on every move */
@@ -717,6 +723,18 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
   /** REQ-451 — the ghost of his arrow where their screen has it now, when apart from his cursor;
    *  REQ-642 (cycle 5, m10) — where their overlay REPORTED it, for the anchor he holds now */
   const showGhost = () => {
+    // REQ-837 (demo dm2 m3) — his tag where their screen has it (a report of another anchor keeps
+    // the one drawn: the next report moves it)
+    const tg = reportedTag(heldNow(), reportRef.current, fitBox());
+    if (tg !== undefined) {
+      setOwnTag((was) =>
+        was && tg && was.side === tg.side &&
+          Math.abs(was.x - tg.x) < 0.5 && Math.abs(was.y - tg.y) < 0.5 &&
+          Math.abs(was.w - tg.w) < 0.5 && Math.abs(was.h - tg.h) < 0.5
+          ? was
+          : tg
+      );
+    }
     const g = reportedGhost(heldNow(), reportRef.current, fitBox());
     if (!g) {
       // a report of nowhere, a stale one, none: no ghost, and nothing to wait for
@@ -943,6 +961,10 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
     const p = placeOnStage(a);
     glide.glideTo(p.at, p.outside, p.outside ? null : rectOnStage(a));
   };
+  /** REQ-837 (demo dm2 p3) — a presenter's name as the customer's screen words it (its roster) */
+  const presenterNameOf = (pid: string | null | undefined) =>
+    demoRef.current?.presenters.find((x) => x.userId === pid)?.name ??
+      demoRef.current?.presenterName ?? "";
   const placePeer = (pid: string, a: Anchor, kind: "move" | "click") => {
     const p = presenterOnStage(a);
     // REQ-451 — what the colleague pointed at is not in this frame (another page now): no arrow
@@ -959,7 +981,14 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
       // REQ-645 — out of view: the chevron where the replay shows its element, no ring
       outside: p.outside && !p.dir,
       off: a.o === 1,
-      cue: p.dir ? { box: visOnStage(a), text: "", dir: p.dir } : null,
+      // REQ-837 (demo dm2 p3) — with the way in words, as their screen says it
+      cue: p.dir
+        ? {
+          box: visOnStage(a),
+          text: t(cueKey(p.dir), { name: presenterNameOf(pid) }),
+          dir: p.dir,
+        }
+        : null,
       rect: p.outside ? null : rectOnStage(a), // REQ-437 — the tag sits outside it
     });
   };
@@ -2168,6 +2197,15 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
                 rect={sentRef.current && !ghost.outside
                   ? rectOnStage(sentRef.current)
                   : null}
+                tag={ghost.dir ? null : ownTag}
+                cueText={ghost.dir
+                  ? t(cueKey(ghost.dir), {
+                    name: presenterNameOf(demo?.pid),
+                  })
+                  : undefined}
+                cueBox={ghost.dir && sentRef.current
+                  ? visOnStage(sentRef.current)
+                  : null}
               />
             )}
             {
@@ -2184,6 +2222,8 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
                 look={ownLook(absent, pending)}
                 absentLabel={t("demoMode.pointerOwnAbsent")}
                 pendingLabel={t("demoMode.pointerOwnPending")}
+                tag={ownTag}
+                bounds={fit}
                 bind={bindOwn}
               />
             )}

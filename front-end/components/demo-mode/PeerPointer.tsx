@@ -20,6 +20,7 @@ import type { Pt, Rect } from "../../../shared/demo-mode/motion.ts";
 import {
   type Dir,
   PENDING_MS,
+  type TagPlace,
 } from "../../../shared/demo-mode/presenter-anchor.ts";
 import { useGlide } from "../../lib/demo-mode/use-glide.ts";
 import DemoPointer, {
@@ -49,7 +50,7 @@ export interface PointerCmd {
 }
 
 export default function PeerPointer(
-  { name, color, z, offZ, cmd, bounds }: {
+  { name, color, z, offZ, cmd, bounds, onTag }: {
     name: string;
     color: string;
     z: number;
@@ -57,6 +58,8 @@ export default function PeerPointer(
     offZ?: number;
     cmd: PointerCmd | null;
     bounds?: Bounds;
+    /** REQ-837 (demo dm2 m3) — where its name tag went (the customer reports it to the stage) */
+    onTag?: (t: TagPlace | null) => void;
   },
 ) {
   const glide = useGlide();
@@ -142,6 +145,7 @@ export default function PeerPointer(
       offZ={offZ}
       attach={glide.attach}
       bounds={bounds}
+      onTag={onTag}
     />
   );
 }

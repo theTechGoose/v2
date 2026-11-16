@@ -62,6 +62,7 @@ import {
   outsideBox,
   placeIn,
   type Pt,
+  type TagSide,
 } from "./motion.ts";
 import {
   type Anchor,
@@ -657,10 +658,14 @@ export function placedReport(
   a: Anchor,
   placed: { at: Pt; outside: boolean; dir?: Dir | null } | null,
   view: Rect,
+  tag?: TagPlace | null,
 ): PlacedMessage {
   if (!placed) return { k: "placed", pid, a, p: null };
   const frac = (v: number, lo: number, len: number) =>
     Math.round(Math.min(1, Math.max(0, (v - lo) / (len || 1))) * 1e4) / 1e4;
+  /** REQ-837 — a signed length as a fraction of the viewport's */
+  const part = (v: number, len: number) =>
+    Math.round(Math.min(1, Math.max(-1, v / (len || 1))) * 1e4) / 1e4 || 0;
   const p = {
     vx: frac(placed.at.x, view.left, view.width),
     vy: frac(placed.at.y, view.top, view.height),
@@ -670,7 +675,61 @@ export function placedReport(
     : { k: "placed", pid, a, p };
   // REQ-645 + REQ-642 (reconciled on demo-fixes) — out of view that way: a chevron on their screen
   if (placed.dir) m.d = { dx: placed.dir.dx, dy: placed.dir.dy };
+  // REQ-837 (demo dm2 m3) — where its tag went beside the arrow, so the stage draws it there too
+  if (tag) {
+    m.t = {
+      s: tag.side,
+      x: part(tag.x, view.width),
+      y: part(tag.y, view.height),
+      w: part(tag.w, view.width),
+      h: part(tag.h, view.height),
+    };
+  }
   return m;
+}
+
+/** REQ-837 (demo dm2 m3) — a tag's placement beside its arrow: the side it went to
+ *  (`tagPlacement`), its top-left relative to the arrow's box (the tip's point) and its size, in
+ *  px of the screen it is drawn on */
+export interface TagPlace {
+  side: TagSide;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+/** REQ-837 (demo dm2 m3) — the customer's tag for the anchor he holds, in the stage's px (`frame`:
+ *  the fitted replica of their viewport): null when their report says no tag (none placed, or not
+ *  on their screen), undefined when the report is not for this anchor (keep what is drawn) */
+export function reportedTag(
+  h: Held,
+  r: PlacedMessage | null,
+  frame: Rect,
+): TagPlace | null | undefined {
+  if (!h.a || !r || !sameAnchor(r.a, h.a)) return undefined;
+  if (!r.p || !r.t) return null;
+  return {
+    side: r.t.s,
+    x: r.t.x * frame.width,
+    y: r.t.y * frame.height,
+    w: r.t.w * frame.width,
+    h: r.t.h * frame.height,
+  };
+}
+
+/** REQ-837 (demo dm2 m3) — where a tag of size `own` goes to sit as `tag` does: the edge that
+ *  faces the arrow kept (a tag above keeps its bottom, one to the left its right edge), so a
+ *  smaller or larger label never runs into the arrow */
+export function alignTag(
+  tag: TagPlace,
+  own: { w: number; h: number },
+): { left: number; top: number } {
+  const left = tag.side === "left" ? tag.x + tag.w - own.w : tag.x;
+  const top = tag.side === "above" || tag.side === "tail-up"
+    ? tag.y + tag.h - own.h
+    : tag.y;
+  return { left, top };
 }
 
 /** REQ-642 — the customer's reports go out at most this often per presenter (the last always) */
@@ -679,6 +738,9 @@ export const PLACED_GAP_MS = 100;
 const samePlaced = (x: PlacedMessage | null, y: PlacedMessage) =>
   !!x && x.pid === y.pid && !x.o === !y.o && sameAnchor(x.a, y.a) &&
   x.d?.dx === y.d?.dx && x.d?.dy === y.d?.dy &&
+  // REQ-837 — the tag moved (another side, another spot): a new report
+  x.t?.s === y.t?.s && x.t?.x === y.t?.x && x.t?.y === y.t?.y &&
+  x.t?.w === y.t?.w && x.t?.h === y.t?.h &&
   (x.p === null || y.p === null
     ? x.p === y.p
     : x.p.vx === y.p.vx && x.p.vy === y.p.vy);
