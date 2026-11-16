@@ -238,6 +238,12 @@ for (
               `${v.tag}: the customer's screen says "${L.ended}"`,
             );
           }
+          // the stage shows "The demo ended" 1.5 s, then returns the staff's account and hops to
+          // /admin on its own (REQ-235 / REQ-541): the next viewport starts from there — a goto
+          // /admin during those 1.5 s would leave the browser impersonating (the guide gate)
+          await page.waitForURL((u) => u.pathname === "/admin", {
+            timeout: 20_000,
+          });
         } finally {
           await userCtx.close();
         }

@@ -7401,3 +7401,7 @@ Tests:
 - unit: `jest/unit/demo-pill-peek-compact.test.ts` ("REQ-890 AMENDMENT …", 1 case: the ×'s mark before openPeek, the gated switch, the clear on fold).
 - integration: n/a.
 - e2e: `e2e/demo-mode/demo-pill-fallback-controls.e2e.test.ts` REQ-866 m2 and REQ-876 (red → green); `e2e/demo-mode/demo-pill-peek-compact.e2e.test.ts` (REQ-890's hover peek, unchanged) green.
+
+## REQ-816 REVISION — the e2e waits for the stage's own return to /admin between its viewports (test flow; no behaviour change)
+
+**Raphael (2026-11-16, demo loop run 6):** "you personally go fix the polish problems" — both REQ-816 stories were red on demo-fixes: after the customer's "Yes, end it" the story opened its next viewport and sent the staff tab to /admin at once, which found the guide gate ("You are guiding Ana Torres in this browser"). The stage shows "The demo ended" for 1.5 s (REQ-541) and only then returns the staff's account and hops to /admin (REQ-235): a navigation inside those 1.5 s left the browser impersonating. Bisected through scratch worktrees as a race (green at 454b6433, both red at c44d73b6, one of two red at cbf47d46): REQ-895's at-once notice let the story move on sooner. The story now waits for the stage's hop to /admin before the next viewport, as a staff member's browser does on its own. No tests — test flow only; both stories green.
