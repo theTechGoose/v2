@@ -275,11 +275,20 @@ Deno.test("REQ-897 (demo-loop cycle dm6, p4 + p5): at 390×844 in Spanish the fo
         // deno-lint-ignore no-explicit-any
         ((globalThis as any).__chipLog as { t: number; at: string }[]).length
       );
-      await userPage.mouse.move(195, 420);
-      for (let i = 0; i < 30; i++) {
-        await userPage.mouse.wheel(0, 40);
-        await userPage.waitForTimeout(30);
-      }
+      // a finger's flick: the page scrolled from inside, a step per frame for a second (a wheel
+      // event per round trip from here is spaced by the host's load — past PILL_SCROLL_SETTLE_MS
+      // under a parallel lane, which is a settled scroll, not this one)
+      await userPage.evaluate(() =>
+        new Promise<void>((done) => {
+          const t0 = performance.now();
+          const step = () => {
+            scrollBy(0, 20);
+            if (performance.now() - t0 < 1_000) requestAnimationFrame(step);
+            else done();
+          };
+          requestAnimationFrame(step);
+        })
+      );
       const during = await userPage.evaluate((n) =>
         // deno-lint-ignore no-explicit-any
         ((globalThis as any).__chipLog as { t: number; at: string }[]).slice(n)
