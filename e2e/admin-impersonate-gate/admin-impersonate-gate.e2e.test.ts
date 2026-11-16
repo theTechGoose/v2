@@ -73,7 +73,7 @@ async function superAdmin(
   return admin;
 }
 
-Deno.test("REQ-376 m20 + nc-second-demo: a second /admin tab during a demo shows 'You are guiding {name} in this browser' — not the customer's /dashboard — and Return to your account brings the console (and Demo) back", (t) =>
+Deno.test("REQ-376 m20 + nc-second-demo: a second /admin tab during a demo shows 'You are guiding {name} in this browser' — not the customer's /dashboard — and Return to your account brings the console (and Demo) back; REQ-869 (dm5 p3): the gate's h1 is set in Nunito", (t) =>
   story(t, async ({ page, expect, http, baseUrl }) => {
     await page.setViewportSize({ width: 1280, height: 800 });
     const customerPhone = `+1512${digits()}`;
@@ -116,6 +116,14 @@ Deno.test("REQ-376 m20 + nc-second-demo: a second /admin tab during a demo shows
       expect(
         /start another demo/i.test(text),
         `it says how to start another demo: ${text}`,
+      );
+      // REQ-869 (dm5 p3): the gate heading resolves to the app's heading font, not the body's Inter
+      const h1Font = await gate.locator("h1").evaluate((el) =>
+        getComputedStyle(el).fontFamily
+      );
+      expect(
+        /^"?Nunito"?\b/.test(h1Font),
+        `the gate h1 is set in Nunito (--font-heading): ${h1Font}`,
       );
       // REQ-829: in the presenter's language
       const back = await tabB.locator("[data-cy='admin-gate-back']")

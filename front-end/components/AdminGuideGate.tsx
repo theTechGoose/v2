@@ -58,7 +58,11 @@ export default function AdminGuideGate(
               es: langToggleHref(url, "es"),
             }}
           />
-          <h1 style="margin:0 0 12px;font-size:22px;line-height:1.3">
+          {/* REQ-869 — class "h1" gives the heading font (Nunito); no rule styles a bare h1 */}
+          <h1
+            class="h1"
+            style="margin:0 0 12px;font-size:22px;line-height:1.3"
+          >
             {tFor(lang, "adminGate.title", { name: customer })}
           </h1>
           <p style="margin:0 0 10px;line-height:1.5">
