@@ -14,6 +14,7 @@ import {
   STAGE_BADGE_GAP,
   STAGE_BADGE_H,
   STAGE_TOP_INSET,
+  stageBadgesShown,
   stageBadgeTop,
 } from "../../shared/demo-mode/stage-chrome";
 
@@ -79,12 +80,24 @@ describe("REQ-846 (demo-loop cycle dm3, p11) the waiting / signed-out banner sit
         "demo-pointer-absent",
       ]
     ) {
+      // REQ-868 (dm5 p8) — the three badges open on one gate, `badges`, from stageBadgesShown
       const at = src.indexOf(`data-cy="${cy}"`);
       const cond = src.slice(
-        src.lastIndexOf("{mirrored", at),
+        src.lastIndexOf("{badges", at),
         src.lastIndexOf("&& (", at),
       );
-      expect(cond).toMatch(/!look\.waiting/);
+      expect(cond).toMatch(/^\{badges &&/);
     }
+    expect(src).toMatch(
+      /const badges = stageBadgesShown\(\{[^}]*waiting: look\.waiting[^}]*\}\)/,
+    );
+    expect(
+      stageBadgesShown({
+        ended: false,
+        mirrored: true,
+        elsewhere: false,
+        waiting: true,
+      }),
+    ).toBe(false);
   });
 });
