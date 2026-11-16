@@ -319,6 +319,57 @@ Deno.test("REQ-838 m5 (demo-loop cycle dm2): the customer's address-bar navigati
     }
   }));
 
+Deno.test("REQ-875 p4 (demo-loop cycle dm5): the customer closes her only tab — through the SILENT_GRACE_MS hold ('Loading their next page…') the stage's copy of her pill never says 'Connecting…'; then 'Waiting for her app…'", (t) =>
+  story(t, async ({ page, expect, http, baseUrl }) => {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    // fleet-r38fa8936's pair: both English, so the ghost's word and the stage's are the same tongue
+    const { userCtx, tab } = await demoOn(
+      page,
+      http,
+      baseUrl,
+      { user: "en", admin: "en" },
+      { width: 1000, height: 760 },
+      "Live",
+    );
+    try {
+      await until(
+        "the stage draws her pill's copy, Connected",
+        async () =>
+          (await text(page, "[data-cy='demo-pill-ghost-status']")) ===
+            "Connected",
+        15_000,
+      );
+      await record(page);
+      // her only tab closes: the page says "closing", the stage holds it as "between" for 2 s
+      await tab.close();
+      await until(
+        "the stage waits for her app",
+        async () => /Waiting for/.test(await statusOf(page)),
+        SILENT_GRACE_MS + 15_000,
+      );
+      const seen = await recorded(page);
+      const first = seen.findIndex((s) =>
+        /Waiting for/.test(s.status) || s.banner !== ""
+      );
+      const hold = seen.slice(0, first < 0 ? seen.length : first);
+      expect(
+        hold.some((s) => /Loading their next page/.test(s.status)),
+        `p4: the stage held her closed tab as 'Loading their next page…' (${
+          JSON.stringify(seen)
+        })`,
+      );
+      const lying = hold.filter((s) => /Connecting|Conectando/.test(s.ghost));
+      expect(
+        lying.length === 0,
+        `p4: her pill's copy never said 'Connecting…' while nothing was connecting (${
+          JSON.stringify(lying)
+        } of ${JSON.stringify(seen)})`,
+      );
+    } finally {
+      await userCtx.close();
+    }
+  }));
+
 Deno.test("REQ-838 p4 (demo-loop cycle dm2): the customer signs out — the stage says so and draws no copy of her pill, no 'move to show it' advice and none of his pointer over the screen she no longer has", (t) =>
   story(t, async ({ page, expect, http, baseUrl }) => {
     await page.setViewportSize({ width: 1280, height: 800 });
