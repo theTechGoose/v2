@@ -1677,10 +1677,23 @@ export default function DemoModeOverlay(
       // REQ-545 (demo-loop cycle 4, m2) — the pill YIELDS to the page; a dialog docks it home,
       // above the dialog's box, top-left, top-right, else folds it. REQ-781 (cycle dv1, d7) — it
       // floats: no band, never over a control
+      // REQ-853 (demo-loop cycle dm3, p8) — the mini-pill's spot now, or the one carried from the
+      // last page (REQ-830): kept while it is still clear, so the page's data replacing its
+      // skeleton does not make the chip hop between equally clear spots
+      const was = lastPlaceRef.current?.tucked ? lastPlaceRef.current : null;
+      const keptEdge = was ? tabBox(home.box) : null;
+      const kept = was && keptEdge
+        ? {
+          ...keptEdge,
+          left: keptEdge.left + was.tabAt.x,
+          top: keptEdge.top + was.tabAt.y,
+        }
+        : undefined;
       const p = placePill({
         home: home.box,
         view,
         top: bannerH(),
+        keep: kept,
         dialog,
         // REQ-637 (cycle 5, m5) — docked just above the dialog's own box first
         dialogBox: dialog ? dialogPanel() : undefined,
@@ -1812,6 +1825,35 @@ export default function DemoModeOverlay(
       ? null
       : new ResizeObserver(later);
     if (pillRef.current) ro?.observe(pillRef.current);
+    // REQ-853 (demo-loop cycle dm3, p8) — the PAGE changed under the pill (a skeleton swapped for
+    // its data, a list grown, a footer drawn): placed again in the next frame, not at the next
+    // PILL_CHECK_MS tick 0.7 s later. The body's size and any node added or removed outside the
+    // overlay (its own renders never re-place it: no loop)
+    let frame = 0;
+    const nextFrame = () => {
+      if (frame) return;
+      frame = requestAnimationFrame(() => {
+        frame = 0;
+        place();
+      });
+    };
+    const pageRo = typeof ResizeObserver === "undefined"
+      ? null
+      : new ResizeObserver(nextFrame);
+    pageRo?.observe(document.body);
+    const mo = typeof MutationObserver === "undefined"
+      ? null
+      : new MutationObserver((records) => {
+        for (const m of records) {
+          const at = m.target instanceof Element
+            ? m.target
+            : m.target.parentElement;
+          if (at?.closest?.("[data-demo-overlay]")) continue;
+          nextFrame();
+          return;
+        }
+      });
+    mo?.observe(document.body, { childList: true, subtree: true });
     // REQ-835 (dm2, m2) — the glide ended: the stage hears the box it came to rest in
     const glided = pillRef.current;
     glided?.addEventListener("transitionend", sendPill);
@@ -1820,6 +1862,9 @@ export default function DemoModeOverlay(
       clearInterval(timer);
       clearTimeout(settle);
       ro?.disconnect();
+      pageRo?.disconnect();
+      mo?.disconnect();
+      cancelAnimationFrame(frame);
       removeEventListener("resize", onResize);
       removeEventListener("scroll", later, { capture: true });
       foldTimer.current?.cancel();
