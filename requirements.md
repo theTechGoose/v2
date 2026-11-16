@@ -7266,3 +7266,15 @@ A way that can be scrolled keeps its scroll cue unchanged.
 **Evidence (2026-11-16, Mac host, worktree fix-cdm5-admin-gate-h1-font off origin/demo-fixes abbf6bc3):**
 - RED: `cd front-end && deno test -A --unstable-kv lib/admin-gate.int.test.ts` gave "FAILED | 9 passed | 1 failed": `the gate h1 uses the heading font … <h1 style="margin:0 0 12px;font-size:22px;line-height:1.3">`. `SHOTS_JOBS=1 SHOTS_PLAYWRIGHT=… shots run e2e/admin-impersonate-gate/admin-impersonate-gate.e2e.test.ts -- --no-check` gave "0 passed | 1 failed": `the gate h1 is set in Nunito (--font-heading): Inter, system-ui, -apple-system, "Segoe UI", sans-serif`.
 - GREEN: `deno test -A --unstable-kv lib/admin-gate.int.test.ts lib/demo-stage-lang.int.test.ts` gave "ok | 17 passed | 0 failed". The same shots story gave "ok | 1 passed | 0 failed". `deno lint` and `deno fmt --check` are clean on the three touched files, and `deno check components/AdminGuideGate.tsx` is clean.
+
+## REQ-881 — the stage's drawn select list closes when the popup is gone, even with no event (AMENDMENT of REQ-638)
+
+**Raphael (2026-11-16, demo loop run 6, issue m5; "you personally go fix the polish problems"):** the stage kept drawing a native select's list after the customer closed it with Escape; a second Escape cleared it.
+
+Why: a real browser's native popup swallows the Escape (and the click outside) that closes it, so the page receives no keydown/mousedown and the recorder (REQ-638) keeps the select marked open until some other event.
+
+Requirement:
+1. While a select is marked open, the recorder reads the browser's own state with `select.matches(":open")` on every frame pass (the 500 ms sweep included). Once `:open` has read true for that select, a false reading closes the mark, with no event needed. A `:open` that never read true (a browser without a picker, a headless one) is not trusted: the REQ-638 events still decide.
+2. Where `:open` is unsupported (matches throws), a pointer move that reaches the page more than 400 ms after the opening and at least 4 px from the opening point closes the mark: an open native list captures the pointer, so a move means it is gone. A date input's picker is not closed this way (REQ-827 keeps its own rules).
+
+Tests: `jest/unit/demo-mirror-select-open.test.ts` ("REQ-881 — …", 4 tests: `:open` true→false clears on the next frame; a never-true `:open` is not trusted; a pointer move closes it after the grace and not on a jitter; a date picker is untouched). e2e: n/a — the fix is in the recorder's event/state logic, covered end to end on the fake DOM through the replayer; a real popup's swallowed Escape cannot be driven from Playwright (its key events bypass the native popup).

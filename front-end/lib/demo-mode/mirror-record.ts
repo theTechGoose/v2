@@ -186,6 +186,10 @@ const NO_VALUE = new Set([
 
 /** REQ-638 — the attribute that says a native select's list is open (the recorder's, never the page's) */
 export const OPEN_ATTR = "data-mirror-open";
+/** REQ-881 — without `:open`, a pointer move this long after a select opened, and this far from
+ *  where it was opened, says its native list is gone (the list captures the pointer while open) */
+export const OPEN_MOVE_GRACE_MS = 400;
+export const OPEN_MOVE_PX = 4;
 /** REQ-827 — the inputs whose native date/time picker the mark also covers */
 const DATE_TYPES = new Set(["date", "time", "datetime-local", "month", "week"]);
 
@@ -399,6 +403,12 @@ export function createRecorder(doc: Document, o: RecorderOptions): Recorder {
    *  stage has marked open */
   let openSel: Element | null = null;
   let sentOpen: number | null = null;
+  /** REQ-881 — when and where the open one was opened, whether the browser's own `:open` has
+   *  read true for it (only then is a false reading trusted), and whether `:open` is supported */
+  let openAt = 0;
+  let openPt: { x: number; y: number } | null = null;
+  let openSeen = false;
+  let openSupported: boolean | null = null;
   /** REQ-824 — the focus and hover marks of the customer's screen as last read (element → value,
    *  by attribute), and the ones the stage has (mirror id → value, by attribute) */
   let wantMarks = new Map<string, Map<Element, string>>();
@@ -750,11 +760,44 @@ export function createRecorder(doc: Document, o: RecorderOptions): Recorder {
   }
   const isFile = (e: Element | null) =>
     !!e && tagOf(e) === "input" && lower(e.getAttribute("type")) === "file";
-  function setOpen(e: Element | null) {
+  function setOpen(e: Element | null, at?: { x: number; y: number } | null) {
     if (openSel === e) return;
     openSel = e;
+    openAt = now();
+    openPt = at ?? null;
+    openSeen = false;
     schedule();
   }
+  /** REQ-881 — the browser's own word on the open select's popup: `:open`. Once it has read
+   *  true, a false reading means the popup is gone (an Escape or a click outside that the page
+   *  never saw) and the mark comes off. Unsupported (it throws): the events keep deciding. */
+  function readOpen() {
+    if (!openSel || !popupSelect(openSel)) return;
+    try {
+      const open = openSel.matches(":open");
+      openSupported = true;
+      if (open) openSeen = true;
+      else if (openSeen) openSel = null;
+    } catch {
+      openSupported = false;
+    }
+  }
+  /** REQ-881 — without `:open`: an open native list captures the pointer, so a move that reaches
+   *  the page well after the opening, and away from where it was opened, means the list is gone */
+  const onMove = (e: Event) => {
+    if (!openSel || !popupSelect(openSel)) return;
+    if (openSupported === null) readOpen();
+    if (openSupported !== false) return;
+    if (now() - openAt < OPEN_MOVE_GRACE_MS) return;
+    const m = e as MouseEvent;
+    if (
+      openPt && typeof m.clientX === "number" && typeof m.clientY === "number"
+    ) {
+      const d = Math.hypot(m.clientX - openPt.x, m.clientY - openPt.y);
+      if (d < OPEN_MOVE_PX) return;
+    }
+    setOpen(null);
+  };
   /** REQ-638 — a mousedown on a closed select opens its list; any mousedown while one is open
    *  (on it again, or elsewhere) closes it. REQ-827 — one on a date input opens its picker (and
    *  keeps it open: its click follows) */
@@ -764,7 +807,11 @@ export function createRecorder(doc: Document, o: RecorderOptions): Recorder {
     const date = primary ? pickerInput(e.target, false) : null;
     if (date) return setOpen(date);
     const sel = primary ? popupSelect(e.target) : null;
-    setOpen(sel && sel !== openSel ? sel : null);
+    const m = e as MouseEvent;
+    const at = typeof m.clientX === "number" && typeof m.clientY === "number"
+      ? { x: m.clientX, y: m.clientY }
+      : null;
+    setOpen(sel && sel !== openSel ? sel : null, at);
   };
   /** REQ-827 — the click that reaches a date input (a label's; a page's showPicker() runs from
    *  it) or a file input (its chooser opens) */
@@ -877,6 +924,10 @@ export function createRecorder(doc: Document, o: RecorderOptions): Recorder {
     doc.addEventListener("cancel", onCancel, true); // REQ-827
     doc.addEventListener("keydown", onKey, true);
     doc.addEventListener("focusout", onBlur, true);
+    doc.addEventListener("pointermove", onMove, {
+      capture: true,
+      passive: true,
+    }); // REQ-881
     win?.addEventListener("focus", onWinFocus); // REQ-827
     doc.addEventListener("scroll", onScroll, { capture: true, passive: true });
     win?.addEventListener("resize", onEvent);
@@ -912,6 +963,7 @@ export function createRecorder(doc: Document, o: RecorderOptions): Recorder {
     doc.removeEventListener("cancel", onCancel, true); // REQ-827
     doc.removeEventListener("keydown", onKey, true);
     doc.removeEventListener("focusout", onBlur, true);
+    doc.removeEventListener("pointermove", onMove, { capture: true }); // REQ-881
     win?.removeEventListener("focus", onWinFocus); // REQ-827
     doc.removeEventListener("scroll", onScroll, { capture: true });
     win?.removeEventListener("resize", onEvent);
@@ -1099,6 +1151,7 @@ export function createRecorder(doc: Document, o: RecorderOptions): Recorder {
       }
     }
     // REQ-638 — the open select's mark: moved, set or taken off (a node sent whole has it as is)
+    readOpen(); // REQ-881
     if (openSel && !(mirrored(openSel) && inPage(openSel))) openSel = null;
     const wantOpen = openSel ? ids.get(openSel)! : null;
     if (wantOpen !== sentOpen) {

@@ -22,11 +22,16 @@ import {
   h,
 } from "./support/fake-dom";
 
-function record(doc: FDocument, out: MirrorFrame[]) {
+function record(
+  doc: FDocument,
+  out: MirrorFrame[],
+  extra: { now?: () => number } = {},
+) {
   return createRecorder(doc as unknown as Document, {
     emit: (f) => out.push(JSON.parse(JSON.stringify(f))),
     Observer: FakeMutationObserver as unknown as typeof MutationObserver,
     manual: true,
+    ...extra,
   });
 }
 
@@ -74,10 +79,13 @@ function customerPage(selectAttrs: Record<string, string> = {}) {
 }
 
 /** a customer page, recorded, its snapshot replayed on a stage */
-function setup(selectAttrs: Record<string, string> = {}) {
+function setup(
+  selectAttrs: Record<string, string> = {},
+  extra: { now?: () => number } = {},
+) {
   const doc = customerPage(selectAttrs);
   const frames: MirrorFrame[] = [];
-  const rec = record(doc, frames);
+  const rec = record(doc, frames, extra);
   rec.snapshot();
   const stage = stageDoc();
   const rep = createReplayer(stage as unknown as Document, {
@@ -259,5 +267,93 @@ describe("REQ-638 (cycle 5, M11) — an open native select is drawn on the stage
     expect(box.getAttribute("style") ?? "").toMatch(/pointer-events:\s*none/);
     expect(box.getAttribute("aria-hidden")).toBe("true");
     for (let id = 1; id < 100; id++) expect(rep.nodeOf(id)).not.toBe(box);
+  });
+});
+
+/**
+ * REQ-881 (demo-loop cycle dm6, m5; amends REQ-638) — a native popup swallows the Escape (and
+ * the click outside) that closes it, so the page never sees the event the recorder waits for and
+ * the stage kept drawing the list. The recorder now reads the browser's own `:open` state while a
+ * select is marked open, and where `:open` is not supported treats a pointer move reaching the
+ * page as proof the popup is gone (an open native list captures the pointer).
+ */
+describe("REQ-881 — the list closes when the browser says the popup is gone", () => {
+  /** the fake select answers `:open` from a flag; anything else is unsupported as before */
+  function withOpenState(sel: FElement) {
+    const state = { open: false };
+    const orig = sel.matches.bind(sel);
+    sel.matches = (q: string) => q === ":open" ? state.open : orig(q);
+    return state;
+  }
+
+  test("`:open` read true, then false with no event: the next frame takes the list off the stage", () => {
+    const { doc, sel, stage, sync } = setup();
+    const state = withOpenState(sel);
+    doc.fire("mousedown", sel);
+    state.open = true;
+    sync();
+    expect(stageList(stage)).not.toBeNull();
+    sync();
+    expect(stageList(stage)).not.toBeNull(); // still open, still drawn
+    state.open = false; // Escape, or a click outside, swallowed by the popup
+    sync();
+    expect(stageList(stage)).toBeNull();
+  });
+
+  test("a `:open` that never read true is not trusted: the events still decide", () => {
+    const { doc, sel, stage, sync } = setup();
+    withOpenState(sel); // stays false: a browser (or a headless one) that never shows a picker
+    doc.fire("mousedown", sel);
+    sync();
+    expect(stageList(stage)).not.toBeNull();
+    sync();
+    expect(stageList(stage)).not.toBeNull();
+    doc.fire("keydown", sel, { key: "Escape" });
+    sync();
+    expect(stageList(stage)).toBeNull();
+  });
+
+  test("without `:open`: a pointer move well after the opening closes it, a jitter right after does not", () => {
+    let t = 1_000;
+    const { doc, sel, stage, sync } = setup({}, { now: () => t });
+    doc.fire("mousedown", sel, { clientX: 100, clientY: 100 });
+    sync();
+    expect(stageList(stage)).not.toBeNull();
+    t += 80;
+    doc.fire("pointermove", doc.body, { clientX: 112, clientY: 103 }); // the hand settling
+    sync();
+    expect(stageList(stage)).not.toBeNull();
+    t += 600;
+    doc.fire("pointermove", doc.body, { clientX: 101, clientY: 101 }); // a 1 px tremor
+    sync();
+    expect(stageList(stage)).not.toBeNull();
+    doc.fire("pointermove", doc.body, { clientX: 140, clientY: 160 }); // the popup is gone
+    sync();
+    expect(stageList(stage)).toBeNull();
+  });
+
+  test("a date picker is not closed by a pointer move (its picker does not capture the pointer the same way)", () => {
+    let t = 1_000;
+    const doc = docWith((d) =>
+      h(
+        d,
+        "html",
+        {},
+        h(d, "head"),
+        h(d, "body", {}, h(d, "input", { type: "date" })),
+      )
+    );
+    const frames: MirrorFrame[] = [];
+    const rec = record(doc, frames, { now: () => t });
+    rec.snapshot();
+    const input = find(doc, (e) => e.localName === "input")!;
+    doc.fire("mousedown", input, { clientX: 10, clientY: 10 });
+    rec.flush();
+    t += 2_000;
+    doc.fire("pointermove", doc.body, { clientX: 300, clientY: 300 });
+    rec.flush();
+    const last = frames[frames.length - 1];
+    const ops = JSON.stringify(last);
+    expect(ops).not.toContain('"n":"data-mirror-open","v":null');
   });
 });
