@@ -99,7 +99,9 @@ describe("REQ-270 (c) the stage takes the staff's language from the server", () 
   // language (presenterLangForRequest → /admin/whoami), not read user.language.
   test("REQ-270 /demo/stage passes the presenter's language as initialLang to DemoStage", () => {
     const route = read("front-end/routes/demo/stage.tsx");
-    expect(route).toMatch(/const lang(?:: Lang)? = await presenterLangForRequest\(/);
+    // REQ-812: resolved once in the /demo middleware onto ctx.state.lang (the shell uses it too)
+    expect(read("front-end/routes/demo/_middleware.ts")).toMatch(/ctx\.state\.lang = await presenterLangForRequest\(/);
+    expect(route).toMatch(/const lang(?:: Lang)? = ctx\.state\.lang\b/);
     expect(route).not.toMatch(/ctx\.state\.user\??\.language/);
     expect(route).toMatch(/<DemoStage\s+initialLang=\{lang\}\s*\/>/);
   });

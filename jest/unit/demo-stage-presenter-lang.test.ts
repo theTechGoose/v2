@@ -42,9 +42,11 @@ describe("REQ-341 presenterLang picks the presenter, not the impersonated custom
 describe("REQ-341 /demo/stage resolves its language through the presenter resolver", () => {
   const route = read("front-end/routes/demo/stage.tsx");
 
-  test("REQ-341 the route awaits presenterLangForRequest(ctx.req, ctx.state.user) into lang", () => {
-    expect(route).toMatch(/import \{[^}]*presenterLangForRequest[^}]*\} from "\.\.\/\.\.\/lib\/presenter-lang\.ts"/);
-    expect(route).toMatch(/const lang(?:: Lang)? = await presenterLangForRequest\(\s*ctx\.req,\s*ctx\.state\.user,?\s*\)/);
+  test("REQ-341 (amended by REQ-812) the /demo middleware awaits presenterLangForRequest(ctx.req, user) into ctx.state.lang, which the route reads", () => {
+    const mw = read("front-end/routes/demo/_middleware.ts");
+    expect(mw).toMatch(/import \{[^}]*presenterLangForRequest[^}]*\} from "\.\.\/\.\.\/lib\/presenter-lang\.ts"/);
+    expect(mw).toMatch(/ctx\.state\.lang = await presenterLangForRequest\(\s*ctx\.req,\s*user,?\s*\)/);
+    expect(route).toMatch(/const lang(?:: Lang)? = ctx\.state\.lang\b/);
   });
 
   test("REQ-341 the route never reads ctx.state.user.language itself (that is the customer under impersonation)", () => {
