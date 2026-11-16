@@ -249,13 +249,62 @@ export function frameCoverage(
     y: (p.y - fit.top) / fit.s,
   });
   const t = map(tip);
+  const drawn = drawnBoxes(doc);
   let n = 0;
   for (const p of samples(r)) {
     const m = map(p);
-    const c = contentAt(doc, m.x, m.y, t);
+    const c = Math.max(contentAt(doc, m.x, m.y, t), drawnAt(drawn, m, t));
     n += c === 2 ? 3 : c;
   }
   return n;
+}
+
+/** REQ-872 (demo dm5 p12) — the replay's own drawn boxes: an open select's list
+ *  ([data-mirror-listbox], REQ-638) with its rows, and the picker chip ([data-mirror-picker],
+ *  REQ-827). They are pointer-events:none (anchorAt must never land on them), so hit-testing sees
+ *  through them to the dialog under them; coverage reads their boxes instead */
+interface Drawn {
+  r: Rect;
+  kind: "list" | "row" | "chip";
+}
+const DRAWN_SELECTOR =
+  "[data-mirror-listbox],[data-mirror-listbox] [role=option],[data-mirror-picker]";
+function drawnBoxes(doc: Document): Drawn[] {
+  if (typeof doc.querySelectorAll !== "function") return [];
+  const out: Drawn[] = [];
+  try {
+    for (const el of Array.from(doc.querySelectorAll(DRAWN_SELECTOR))) {
+      const b = el.getBoundingClientRect();
+      if (!(b.width > 0 && b.height > 0)) continue;
+      const kind = el.hasAttribute("data-mirror-picker")
+        ? "chip"
+        : el.hasAttribute("data-mirror-listbox")
+        ? "list"
+        : "row";
+      out.push({
+        r: { left: b.left, top: b.top, width: b.width, height: b.height },
+        kind,
+      });
+    }
+  } catch {
+    return out;
+  }
+  return out;
+}
+const inside = (r: Rect, p: Pt) =>
+  p.x >= r.left && p.x <= r.left + r.width && p.y >= r.top &&
+  p.y <= r.top + r.height;
+/** REQ-872 — what of the drawn boxes is at `p`: 2 for the chip or a list row other than the one
+ *  `tip` is on, 1 for the row the arrow is on (its label) or the list's padding, else 0 */
+function drawnAt(drawn: Drawn[], p: Pt, tip: Pt): 0 | 1 | 2 {
+  let c: 0 | 1 | 2 = 0;
+  for (const d of drawn) {
+    if (!inside(d.r, p)) continue;
+    if (d.kind === "list") c = Math.max(c, 1) as 1 | 2;
+    else if (d.kind === "chip" || !inside(d.r, tip)) return 2;
+    else c = Math.max(c, 1) as 1 | 2;
+  }
+  return c;
 }
 
 /** REQ-437 + REQ-543 — place the tag element for an arrow drawn at `tip`: its MEASURED size (the
