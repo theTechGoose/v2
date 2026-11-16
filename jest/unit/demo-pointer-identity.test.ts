@@ -724,6 +724,54 @@ describe("REQ-645 placeView, visibleBox, cueKey: an element out of view is a che
     tree({ left: 0, top: 0, width: 420, height: 2060 }, {}, [bar, page2]);
     expect(visibleBox(toggle, phone, styleOf)).toEqual(phone);
   });
+
+  /** REQ-814 (demo dm1 m7) — the Settings page on a phone: a sticky 91 px topbar over the
+   *  window-scrolled page, the "Account" heading inside an overflow:hidden `.panel` card */
+  const settingsPhone = (panelBox: Box, headingBox: Box) => {
+    const heading = tree(headingBox, {});
+    const panel = tree(panelBox, { overflowX: "hidden", overflowY: "hidden" }, [
+      heading,
+    ]);
+    const content = tree({ left: 0, top: -559, width: 390, height: 2400 }, {}, [
+      panel,
+    ]);
+    const topbar = tree({ left: 0, top: 0, width: 390, height: 91 }, {
+      position: "sticky",
+    });
+    const main = tree({ left: 0, top: -650, width: 390, height: 2491 }, {
+      overflowX: "clip",
+      overflowY: "visible",
+    }, [topbar, content]);
+    tree({ left: 0, top: -650, width: 390, height: 2491 }, {}, [main]);
+    return heading;
+  };
+  const phone804 = { left: 0, top: 0, width: 390, height: 804 };
+
+  test("REQ-814 visibleBox (dm1 m7): the target's overflow:hidden panel scrolled fully above the view — the box is the screen under the sticky topbar (top 91), never top 0 with no height; the chevron sits at y=91, not over the topbar", () => {
+    const { visibleBox, placeView } = pa();
+    const heading = settingsPhone(
+      { left: 16, top: -540, width: 358, height: 300 },
+      { left: 32, top: -520, width: 200, height: 24 },
+    );
+    const box = visibleBox(heading, phone804, styleOf);
+    expect(box.top).toBe(91);
+    expect(box).toEqual({ left: 0, top: 91, width: 390, height: 713 });
+    const p = placeView({ x: 132, y: -508 }, box);
+    expect(p.outside).toBe(true);
+    expect(p.at.y).toBe(91);
+    expect(p.dir).toEqual({ dx: 0, dy: -1 });
+  });
+
+  test("REQ-814 visibleBox (dm1 m7): the panel partly visible but less than twice the topbar's height (150 px on screen) — the topbar still cuts it: top 91, bottom 150", () => {
+    const { visibleBox, placeView } = pa();
+    const heading = settingsPhone(
+      { left: 16, top: -100, width: 358, height: 250 },
+      { left: 32, top: -80, width: 200, height: 24 },
+    );
+    const box = visibleBox(heading, phone804, styleOf);
+    expect(box).toEqual({ left: 16, top: 91, width: 358, height: 59 });
+    expect(placeView({ x: 132, y: -68 }, box).at.y).toBe(91);
+  });
 });
 
 describe("REQ-645 tabSwitched, keepHeld, keptFor: another browser tab followed drops his anchor; it is kept for its page load only", () => {

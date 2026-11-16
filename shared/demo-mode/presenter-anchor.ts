@@ -455,16 +455,41 @@ const clips = (o: string | undefined) => !!o && o !== "visible";
  *  every bar pinned over the content beside it (a phone's sticky topbar over the scrolled page; a
  *  fixed bar at the bottom) — so a row scrolled up under the topbar is out of view, never
  *  "visible" over its search bar. A fixed element, or one under a fixed ancestor, is clipped by
- *  nothing above that */
+ *  nothing above that.
+ *  REQ-814 (demo dm1 m7) — a bar is judged against the screen (and the scrollers), never the box
+ *  already narrowed by a clipping card: a card scrolled partly or fully out of view is still cut
+ *  by the topbar. When the clipping ancestors leave nothing (the card is wholly out of view), the
+ *  box is the outer one — the screen cut by the bars and the scrollers only — never a box at
+ *  top 0 with no height (a chevron drawn over the topbar) */
 export function visibleBox(
   el: ClipNode,
   screen: Rect,
   styleOf: (e: ClipNode) => ClipStyle | null,
 ): Rect {
-  let left = screen.left;
-  let top = screen.top;
-  let right = screen.left + screen.width;
-  let bottom = screen.top + screen.height;
+  type B = { left: number; top: number; right: number; bottom: number };
+  const empty = (b: B) => b.right <= b.left || b.bottom <= b.top;
+  const full = (): B => ({
+    left: screen.left,
+    top: screen.top,
+    right: screen.left + screen.width,
+    bottom: screen.top + screen.height,
+  });
+  /** cut by every clipping ancestor and bar */
+  const inner = full();
+  /** cut by the bars and the scrollers only (a scroller that would leave nothing is skipped) */
+  const outer = full();
+  const scrolls = (o: string | undefined) =>
+    o === "auto" || o === "scroll" || o === "overlay";
+  /** a bar `r` covering `b`'s top or bottom edge cuts that strip off it */
+  const cut = (b: B, r: Rect) => {
+    if (r.top <= b.top + 1 && r.top + r.height > b.top) {
+      b.top = Math.max(b.top, r.top + r.height);
+    } else if (r.top + r.height >= b.bottom - 1 && r.top < b.bottom) {
+      b.bottom = Math.min(b.bottom, r.top);
+    }
+  };
+  const spans = (b: B, r: Rect) =>
+    !empty(b) && r.left <= b.left + 1 && r.left + r.width >= b.right - 1;
   /** a sticky or fixed sibling of `child` that spans the box's width and sits at its top or its
    *  bottom edge covers that strip (never a full-screen layer, a floating button, or a sticky
    *  header mid-page, in its place in the flow) */
@@ -478,13 +503,10 @@ export function visibleBox(
       if (pos !== "sticky" && pos !== "fixed") continue;
       const r = k.getBoundingClientRect();
       if (r.width <= 0 || r.height <= 0) continue;
-      if (r.left > left + 1 || r.left + r.width < right - 1) continue;
-      if (r.height * 2 >= bottom - top) continue;
-      if (r.top <= top + 1 && r.top + r.height > top) {
-        top = r.top + r.height;
-      } else if (r.top + r.height >= bottom - 1 && r.top < bottom) {
-        bottom = r.top;
-      }
+      if (!spans(outer, r) && !spans(inner, r)) continue;
+      if (r.height * 2 >= screen.height) continue;
+      cut(outer, r);
+      cut(inner, r);
     }
   };
   if (styleOf(el)?.position !== "fixed") {
@@ -497,23 +519,34 @@ export function visibleBox(
       const cy = clips(s.overflowY);
       if (cx || cy) {
         const r = a.getBoundingClientRect();
-        if (cx) {
-          left = Math.max(left, r.left);
-          right = Math.min(right, r.left + r.width);
-        }
-        if (cy) {
-          top = Math.max(top, r.top);
-          bottom = Math.min(bottom, r.top + r.height);
+        const narrow = (b: B, x: boolean, y: boolean) => {
+          if (x) {
+            b.left = Math.max(b.left, r.left);
+            b.right = Math.min(b.right, r.left + r.width);
+          }
+          if (y) {
+            b.top = Math.max(b.top, r.top);
+            b.bottom = Math.min(b.bottom, r.top + r.height);
+          }
+        };
+        narrow(inner, cx, cy);
+        const sx = scrolls(s.overflowX);
+        const sy = scrolls(s.overflowY);
+        if (sx || sy) {
+          const next = { ...outer };
+          narrow(next, sx, sy);
+          if (!empty(next)) Object.assign(outer, next);
         }
       }
       if (s.position === "fixed") break;
     }
   }
+  const b = empty(inner) ? outer : inner;
   return {
-    left,
-    top,
-    width: Math.max(0, right - left),
-    height: Math.max(0, bottom - top),
+    left: b.left,
+    top: b.top,
+    width: Math.max(0, b.right - b.left),
+    height: Math.max(0, b.bottom - b.top),
   };
 }
 
