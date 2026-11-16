@@ -476,8 +476,16 @@ describe("REQ-393 the stage: the resting pointer is the spot under the presenter
     expect(gone.slice(0, gone.indexOf("};"))).toMatch(
       /lastMoveRef\.current = null;[\s\S]*linkRef\.current\?\.send\(\{ k: "leave" \}\)/,
     );
-    // only the window: the only `leave` this presenter sends
-    expect(stageSrc.match(/send\(\{ k: "leave" \}\)/g)?.length).toBe(1);
+    // only the window: the only `leave` his MOUSE sends. REQ-813 (demo dm1 m4) — the one other is
+    // seekAgain's, when the look by the print gives up (it ends the customer's "pointing…")
+    const seek = stageSrc.slice(
+      stageSrc.indexOf("const seekAgain = () =>"),
+      stageSrc.indexOf("const seekRef = useRef(seekAgain)"),
+    );
+    expect(seek.match(/send\(\{ k: "leave" \}\)/g)?.length).toBe(1);
+    expect(
+      stageSrc.replace(seek, "").match(/send\(\{ k: "leave" \}\)/g)?.length,
+    ).toBe(1);
     expect(layer).not.toMatch(/onPointerLeave|onPointerMove/);
     expect(layer).toMatch(
       /onPointerDown=\{\(e\) => \{\s*e\.preventDefault\(\);/,

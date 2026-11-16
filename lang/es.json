@@ -4393,6 +4393,8 @@
   "demoMode.pointerGhost": "Tú",
   "demoMode.pointerAbsent": "Tu puntero no está en la pantalla de {name} — muévelo para mostrarlo",
   "demoMode.pointerPending": "{name} está señalando…",
+  "demoMode.pointerOwnAbsent": "Tú · no se ve",
+  "demoMode.pointerOwnPending": "Tú · señalando…",
   "demoMode.pointerBelow": "{name} señala más abajo — desplázate ↓",
   "demoMode.pointerAbove": "{name} señala más arriba — desplázate ↑",
   "demoMode.pointerRight": "{name} señala a la derecha — desplázate →",

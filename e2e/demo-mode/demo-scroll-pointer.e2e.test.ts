@@ -30,6 +30,8 @@
  *      next page has no such element: no arrow while his mouse is still, and the stage says his
  *      pointer isn't on their screen; his move puts it on the element under his cursor. The
  *      customer reloads that page: the arrow is back on the same element with no move.
+ *      REQ-813 AMENDMENT (demo dm1 m4): while her next page has no arrow, the stage's own marker
+ *      is drawn "not shown" (data-absent), never a live "You" arrow; his move makes it live.
  */
 import { story, type StoryTools } from "#shots";
 import { pillUp } from "../_shared/demo-pill.ts";
@@ -478,7 +480,7 @@ Deno.test("REQ-305 (demo M7, m16, setup-m6): the customer scrolls /q by window.s
     }
   }));
 
-Deno.test("REQ-305 (demo M2) + REQ-451 (demo M1) + REQ-645 (cycle 5 M1 + M2): after the customer goes to another page the arrow is not put on whatever is under his still mouse — the stage says it isn't on their screen and his move brings it; after a reload it is back on the same element with no move; when the customer scrolls it rides with its element and the stage draws its ghost there", (t) =>
+Deno.test("REQ-305 (demo M2) + REQ-451 (demo M1) + REQ-645 (cycle 5 M1 + M2) + REQ-813 (dm1 m4): after the customer goes to another page the arrow is not put on whatever is under his still mouse — the stage says it isn't on their screen and his move brings it; after a reload it is back on the same element with no move; when the customer scrolls it rides with its element and the stage draws its ghost there", (t) =>
   story(t, async (tools) => {
     const { page, expect, baseUrl } = tools;
     const d = await demoOn(tools, () => "/customers");
@@ -549,9 +551,36 @@ Deno.test("REQ-305 (demo M2) + REQ-451 (demo M1) + REQ-645 (cycle 5 M1 + M2): af
             1,
         5_000,
       );
+      // REQ-813 (demo dm1 m4) — the stage's own marker says what she has: nothing on her
+      // screen, so his marker is drawn "not shown" (data-absent), never a live "You" arrow
+      await until(
+        "REQ-813: the stage's own marker is absent while the customer has no presenter pointer",
+        async () => {
+          const own = await page.locator(
+            "[data-cy='demo-pointer-own'][data-absent]",
+          ).count();
+          const live = await page.locator(
+            "[data-cy='demo-pointer-own']:not([data-absent]):not([data-pending])",
+          ).count();
+          const theirs = await userPage.locator("[data-cy='demo-pointer']")
+            .count();
+          if (own !== 1 || live !== 0 || theirs !== 0) {
+            throw new Error(
+              `stage own marker absent=${own} live=${live} · customer demo-pointer=${theirs}`,
+            );
+          }
+          return true;
+        },
+        5_000,
+      );
       await page.mouse.move(stagePt.x + 2, stagePt.y + 1);
       await page.mouse.move(stagePt.x, stagePt.y);
       await presenterOnItsNode("REQ-645: his move on /q");
+      expect.eq(
+        await page.locator("[data-cy='demo-pointer-own'][data-absent]").count(),
+        0,
+        "REQ-813: once the arrow is on her screen his own marker is live again",
+      );
       expect.eq(
         await page.locator("[data-cy='demo-pointer-absent']").count(),
         0,
