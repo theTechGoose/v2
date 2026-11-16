@@ -232,6 +232,15 @@ export function dockPill(o: {
 export const PILL_TAB = { w: 96, h: 32 } as const;
 /** REQ-545 — a tab tapped open shows the whole pill this long (a hover: until it leaves) */
 export const PILL_PEEK_MS = 6000;
+/** REQ-897 (demo-loop cycle dm6, p4) — a heading under a box counts this many pieces of the page
+ *  in the overlay's `blocked` count: with text under every tab spot the folded chip takes the
+ *  least-covered one, and a title ("Termina la configuración — faltan 5 cosas") is never it */
+export const HEADING_SELECTOR = "h1,h2,h3,[role='heading']";
+export const HEADING_WEIGHT = 3;
+/** REQ-897 (cycle dm6, p5) — a scroll is over this long after its last event: the folded chip
+ *  holds its spot while the page scrolls and is judged against what is under it only once the
+ *  scroll has settled — not hopping edge to edge as lines (on /settings: a field every row) pass */
+export const PILL_SCROLL_SETTLE_MS = 500;
 
 /**
  * REQ-820 (demo-loop cycle dm1, m6 + test-setup-m4) — the peek's fold timer. When it fires the
@@ -562,6 +571,9 @@ export function placePill(o: {
   /** REQ-853 (cycle dm3, p8) — the mini-pill's spot now (or carried from the last page): kept
    *  while it is as clear as the best other spot. Ignored unless it is one of `tabSpots` */
   keep?: Rect;
+  /** REQ-897 (cycle dm6, p5) — the page is scrolling: the kept spot stays (what passes under it
+   *  is judged once the scroll has settled, PILL_SCROLL_SETTLE_MS after its last event) */
+  scrolling?: boolean;
 }): { box: Rect; tucked: boolean; band: boolean } {
   // REQ-818 — each box is measured once (the last resort asks of every spot again)
   const counted = new Map<string, number>();
@@ -590,15 +602,26 @@ export function placePill(o: {
   const folds = !o.floats && (o.yields ?? true);
   const tabs = tabSpots(o.home, o.view, o.top);
   // REQ-853 (demo-loop cycle dm3, p1 + p8) — the mini-pill's spot: the kept one if nothing of the
-  // page is under it, else the first with nothing under it (never over the footer's address line),
-  // else the kept one if no control is under it, else the first with no control (REQ-781)
+  // page is under it, else the first with nothing under it (never over the footer's address line);
+  // REQ-897 (cycle dm6, p4 + p5) — else, among the spots with no control under them (REQ-781),
+  // the one with the LEAST of the page under it (a heading weighs HEADING_WEIGHT; a tie keeps the
+  // spots' order) — the kept one while it is as clear as that. While the page scrolls the kept spot
+  // holds: what passes under it (on /settings a field every row: no spot is clear for long) is
+  // judged once the scroll has settled — a finger on the page is scrolling, not tapping
   const kept = o.keep &&
     tabs.find((r) => r.left === o.keep!.left && r.top === o.keep!.top);
-  const tab = () =>
-    (kept && blocked(kept) === 0 ? kept : undefined) ??
-      tabs.find((r) => blocked(r) === 0) ??
-      (kept && controls(kept) === 0 ? kept : undefined) ??
-      tabs.find((r) => controls(r) === 0);
+  const tab = () => {
+    if (o.scrolling && kept) return kept;
+    if (kept && blocked(kept) === 0) return kept;
+    const clear = tabs.find((r) => blocked(r) === 0);
+    if (clear) return clear;
+    const open = tabs.filter((r) => controls(r) === 0);
+    if (open.length === 0) return undefined;
+    const least = fewest(open, blocked);
+    return kept && controls(kept) === 0 && blocked(kept) <= blocked(least)
+      ? kept
+      : least;
+  };
   // REQ-866 (demo-loop cycle dm4, m2b) — a pill that may not fold (REQ-821's join grace, REQ-298's
   // restart line, the ended notice) with no pillSpot free of controls: never home blindly — that
   // was the sidebar's Log out on /customers at 1280×800, where every pillSpot holds 3 controls

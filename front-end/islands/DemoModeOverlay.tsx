@@ -235,6 +235,8 @@ import {
   countsAsPage,
   coversView,
   dialogDim,
+  HEADING_SELECTOR,
+  HEADING_WEIGHT,
   isPublicDocPath,
   PAGE_MEDIA_SELECTOR,
   pastBackdrop,
@@ -248,6 +250,7 @@ import {
   PILL_MARGIN,
   PILL_MOVE_MS,
   PILL_PEEK_MS,
+  PILL_SCROLL_SETTLE_MS,
   PILL_STATUS_CHIP,
   PILL_TAB,
   PILL_UNDER_DIALOG_OPACITY,
@@ -417,7 +420,8 @@ function pageAt(
 
 /** REQ-228 / REQ-295 — how many distinct pieces of the page lie under a box (the demo's own chrome
  *  not counted): controls, media, dialogs, text, cards and bars. REQ-379: a point every 40 px
- *  across, so a link between two points of a wide pill is not missed */
+ *  across, so a link between two points of a wide pill is not missed. REQ-897 (cycle dm6, p4) —
+ *  a heading counts HEADING_WEIGHT: among spots that all cover something, the title's loses */
 function pageUnder(r: Rect, backdrop: Element | null = null): number {
   const found = new Set<Element>();
   for (
@@ -426,7 +430,11 @@ function pageUnder(r: Rect, backdrop: Element | null = null): number {
     const el = pageAt(x, y, backdrop);
     if (el) found.add(el);
   }
-  return found.size;
+  let n = 0;
+  for (const el of found) {
+    n += el.closest(HEADING_SELECTOR) ? HEADING_WEIGHT : 1;
+  }
+  return n;
 }
 
 /** REQ-781 (demo-loop cycle dv1, d7) — how many controls of the page (links, buttons, fields:
@@ -598,6 +606,9 @@ export default function DemoModeOverlay(
     { h: number; bg: string; tucked: boolean; dim?: string }
   >({ h: 0, bg: "#fff", tucked: false });
   const placeRef = useRef<() => void>(() => {});
+  /** REQ-897 (cycle dm6, p5) — the page is scrolling (its last scroll event under
+   *  PILL_SCROLL_SETTLE_MS ago): the folded chip holds its spot until the scroll has settled */
+  const scrollingRef = useRef(false);
   /** REQ-545 — only the customer's live pill yields to the page; the ended notice (a message to
    *  read and dismiss), Opening… and the presenter's way back stay home (a dialog still docks) */
   const yieldsRef = useRef(false);
@@ -1924,6 +1935,7 @@ export default function DemoModeOverlay(
         minimal,
         blocked: can ? (r) => pageUnder(r, backdrop) : () => 0,
         controls: can ? (r) => countControls(r, backdrop) : () => 0,
+        scrolling: scrollingRef.current,
         yields: yieldsRef.current,
         floats,
       });
@@ -2067,8 +2079,20 @@ export default function DemoModeOverlay(
     };
     const timer = setInterval(place, PILL_CHECK_MS);
     addEventListener("resize", onResize);
-    // REQ-545 — what scrolls into the bottom strip tucks the pill (any scroller: capture)
-    addEventListener("scroll", later, { capture: true, passive: true });
+    // REQ-545 — what scrolls into the bottom strip tucks the pill (any scroller: capture).
+    // REQ-897 (cycle dm6, p5) — while the events come the folded chip holds its spot; once they
+    // have stopped for PILL_SCROLL_SETTLE_MS it is placed once more against what is under it now
+    let scrollSettle: ReturnType<typeof setTimeout> | undefined;
+    const onScroll = () => {
+      scrollingRef.current = true;
+      clearTimeout(scrollSettle);
+      scrollSettle = setTimeout(() => {
+        scrollingRef.current = false;
+        place();
+      }, PILL_SCROLL_SETTLE_MS);
+      later();
+    };
+    addEventListener("scroll", onScroll, { capture: true, passive: true });
     // REQ-851 (demo-loop cycle dm3, p3) — End asking: the pill's wrap reflow (a taller pill, a
     // new row) is clamped and sent at once — a size change fires no transitionend, and the
     // stage's ghost must not keep the pre-wrap box for the debounce
@@ -2116,12 +2140,14 @@ export default function DemoModeOverlay(
       glided?.removeEventListener("transitionend", sendPill);
       clearInterval(timer);
       clearTimeout(settle);
+      clearTimeout(scrollSettle);
+      scrollingRef.current = false;
       ro?.disconnect();
       pageRo?.disconnect();
       mo?.disconnect();
       cancelAnimationFrame(frame);
       removeEventListener("resize", onResize);
-      removeEventListener("scroll", later, { capture: true });
+      removeEventListener("scroll", onScroll, { capture: true });
       foldTimer.current?.cancel();
     };
   }, [shown, demo?.role]);

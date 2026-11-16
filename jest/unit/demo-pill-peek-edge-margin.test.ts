@@ -110,8 +110,9 @@ describe("REQ-849 — the island's wiring", () => {
   const src = () => read("front-end/islands/DemoModeOverlay.tsx");
 
   test("REQ-849 the pill's width is measured rounded UP from its real box (never offsetWidth's rounding)", () => {
+    // REQ-890 — the size is measured once into `size`, then kept in the slot of the form shown
     expect(src()).toMatch(
-      /fullRef\.current = \{\s*w: Math\.ceil\(\w+\.width\)/,
+      /const size = \{\s*w: Math\.ceil\(\w+\.width\)[\s\S]{0,400}fullRef\.current = size;/,
     );
     expect(src()).not.toMatch(/fullRef\.current = \{ w: el\.offsetWidth/);
   });
