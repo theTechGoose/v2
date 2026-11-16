@@ -3,9 +3,9 @@ import { UsersModule } from "@users/mod-root.ts";
 import { CrmModule } from "@crm/mod-root.ts";
 import { PaperworkModule } from "@paperwork/mod-root.ts";
 import { CommunicationModule } from "@communication/mod-root.ts";
-import { FieldBatchesController, FieldChecklistsController, FieldRegionsController, FieldSubscriptionsController, FieldTasksController, FieldTaskTypesController, FieldWorkersController } from "@field/entrypoints/field-controllers/mod.ts";
+import { FieldAbsencesController, FieldBatchesController, FieldChecklistsController, FieldCrewsController, FieldRegionsController, FieldSubscriptionsController, FieldTasksController, FieldTaskTypesController, FieldWorkersController } from "@field/entrypoints/field-controllers/mod.ts";
 import { FieldWorkerController } from "@field/entrypoints/worker-controller/mod.ts";
-import { BatchStore, ChecklistStore, FieldTaskStore, FieldWorkerStore, RegionStore, SubscriptionStore, TaskTypeStore } from "@field/domain/data/field-stores/mod.ts";
+import { AbsenceStore, BatchStore, ChecklistStore, CrewStore, FieldTaskStore, FieldWorkerStore, RegionStore, SubscriptionStore, TaskTypeStore } from "@field/domain/data/field-stores/mod.ts";
 import { WorkerSessionStore } from "@field/domain/data/worker-session-store/mod.ts";
 import { FieldGeocoder } from "@field/domain/data/geocoder/mod.ts";
 import { FieldZones } from "@field/domain/coordinators/field-zones/mod.ts";
@@ -26,6 +26,8 @@ import { FieldQuoteSubscriptions } from "@field/domain/coordinators/field-quote-
     FieldTaskTypesController,
     FieldSubscriptionsController,
     FieldChecklistsController, // REQ-811
+    FieldCrewsController, // REQ-840
+    FieldAbsencesController, // REQ-842
     FieldRegionsController,
     FieldTasksController,
     FieldBatchesController,
@@ -36,6 +38,8 @@ import { FieldQuoteSubscriptions } from "@field/domain/coordinators/field-quote-
     TaskTypeStore,
     SubscriptionStore,
     ChecklistStore, // REQ-811
+    CrewStore, // REQ-840
+    AbsenceStore, // REQ-842
     RegionStore,
     FieldTaskStore,
     BatchStore,

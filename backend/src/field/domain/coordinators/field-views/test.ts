@@ -11,9 +11,10 @@ const names: Names = {
   worker: () => "Miguel Torres",
   region: (id) => (id === "r1" ? zone : null),
   checklist: () => null, // REQ-811
+  crew: () => null, // REQ-840
 };
 // task() only reads the names it is given — the stores are not touched
-const views = new FieldViews(null!, null!, null!, null!, null!, null!, null!);
+const views = new FieldViews(null!, null!, null!, null!, null!, null!, null!, null!);
 const task = (regionId: string) =>
   ({
     id: "t",

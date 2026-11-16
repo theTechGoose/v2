@@ -827,6 +827,11 @@
   background: #eee;
   color: #666;
 }
+/* REQ-840: a picked toggle chip (crew members / services) */
+.chip--on {
+  background: var(--brand-green);
+  color: #fff;
+}
 
 /* REQ-041: the map stays put while the zone list scrolls; per-row move; workload line */
 .alay__map {

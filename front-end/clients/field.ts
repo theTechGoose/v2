@@ -22,15 +22,91 @@ export interface FieldWorker {
   role?: "worker" | "foreman";
   /** REQ-155 — the language the worker is texted in */
   language?: "en" | "es";
+  /** REQ-840 — the ONE crew the worker is in, and its name */
+  crewId?: string;
+  crewName?: string;
   createdAt: string;
   updatedAt: string;
 }
 
+/** REQ-839 — a service in the catalogue; the price lives where it is used */
 export interface TaskType {
   id: string;
   userId: string;
   name: string;
+  description?: string;
+  /** out of every combobox; history keeps the name */
+  archived?: true;
+  /** GET /field/task-types — where it is used */
+  usedBy?: { subscriptions: number; checklists: number };
   createdAt: string;
+  updatedAt?: string;
+}
+
+export interface TaskTypeInput {
+  name: string;
+  description?: string | null;
+}
+
+/** REQ-840 — a crew: a foreman and members who go out together, and the services it does */
+export interface CrewView {
+  id: string;
+  userId: string;
+  name: string;
+  color: string;
+  foremanId?: string;
+  foremanName?: string;
+  /** [] = any service */
+  taskTypeIds: string[];
+  taskTypeNames: string[];
+  /** staff on every zone, not only the zones that list it (REQ-841) */
+  coversAll?: true;
+  members: { id: string; name: string }[];
+  /** how many zones list it */
+  zones: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CrewInput {
+  name?: string;
+  color?: string;
+  /** null = none */
+  foremanId?: string | null;
+  /** replaces the membership */
+  memberIds?: string[];
+  taskTypeIds?: string[];
+  coversAll?: boolean;
+}
+
+/** REQ-842 — a worker or a crew out from `from` to `to`, and what happens to their work */
+export type AbsenceDisposition = "cover" | "defer" | "skip";
+export interface AbsenceView {
+  id: string;
+  userId: string;
+  workerId?: string;
+  crewId?: string;
+  /** who is out */
+  name: string;
+  from: string;
+  to: string;
+  disposition: AbsenceDisposition;
+  coverCrewId?: string;
+  coverWorkerId?: string;
+  coverName?: string;
+  note?: string;
+  createdAt: string;
+}
+
+export interface AbsenceInput {
+  workerId?: string;
+  crewId?: string;
+  from: string;
+  to: string;
+  disposition: AbsenceDisposition;
+  coverCrewId?: string;
+  coverWorkerId?: string;
+  note?: string;
 }
 
 export interface Region {
@@ -41,6 +117,8 @@ export interface Region {
   lat: number;
   lng: number;
   workerId?: string;
+  /** REQ-841 — the crews staffing the zone, in order */
+  crewIds?: string[];
 }
 
 export interface SubscriptionItemView {
@@ -145,9 +223,10 @@ export type SubscriptionPatch =
   & Partial<Omit<SubscriptionInput, "customerId">>
   & { active?: boolean };
 
-/** GET /field/regions — a zone with its worker and its active subscriptions */
+/** GET /field/regions — a zone with its worker, its crews (REQ-841) and its active subscriptions */
 export interface RegionView extends Region {
   worker: { id: string; name: string; role: "worker" | "foreman" } | null;
+  crews: { id: string; name: string; color: string }[];
   subscriptions: SubscriptionView[];
 }
 
@@ -179,6 +258,12 @@ export interface TaskView {
   /** REQ-785: the job's other workers, and their names */
   crewIds?: string[];
   crewNames?: string[];
+  /** REQ-841: the crew doing it */
+  crewId?: string;
+  crewName?: string;
+  /** REQ-842: made for someone who is out — their name */
+  coverFor?: string;
+  coverForName?: string;
   address?: string;
   priceCents: number;
   status: TaskStatus;
@@ -230,6 +315,11 @@ export interface WorkerTaskView {
   /** REQ-785: the job's other workers, and their names */
   crewIds?: string[];
   crewNames?: string[];
+  /** REQ-841/842: the crew doing it; who it covers for */
+  crewId?: string;
+  crewName?: string;
+  coverFor?: string;
+  coverForName?: string;
   address?: string;
   status: TaskStatus;
   deferredTo?: string;
@@ -247,12 +337,13 @@ export interface WorkerTaskView {
 export interface GenerateResult {
   created: number;
   tasks: TaskView[];
-  /** subscriptions due that day whose zone has no worker */
+  /** subscriptions due that day with a service nobody covers (REQ-841: which services) */
   skipped: {
     subscriptionId: string;
     customerName: string;
     address: string;
     regionName: string;
+    taskTypeNames?: string[];
   }[];
 }
 
@@ -312,9 +403,13 @@ export interface SendResult {
 export interface WorkerMe {
   id: string;
   name: string;
+  /** REQ-840 — "foreman" for the account foreman or a worker who leads their crew */
   role: "worker" | "foreman";
   /** REQ-285 — the language the worker's screen opens in (theirs, else the owner's) */
   language?: "en" | "es";
+  /** REQ-840 — the crew, when in one */
+  crewId?: string;
+  crewName?: string;
 }
 
 export const fieldClient = {
@@ -338,12 +433,44 @@ export const fieldClient = {
   /** REQ-155 — the worker's language, changed from the row */
   setWorkerLanguage: (id: string, language: "en" | "es", opts?: ApiOptions) =>
     api.put<FieldWorker>(`/field/workers/${id}`, { language }, opts),
+  /** REQ-840 — the worker's crew, from the row (null = none) */
+  setWorkerCrew: (id: string, crewId: string | null, opts?: ApiOptions) =>
+    api.put<FieldWorker>(`/field/workers/${id}`, { crewId }, opts),
   deleteWorker: (id: string, opts?: ApiOptions) =>
     api.delete<{ ok: true }>(`/field/workers/${id}`, opts),
 
-  // ---- task types (REQ-139) ----
+  // ---- task types (REQ-139) · the service catalogue (REQ-839) ----
   taskTypes: (q = "", opts?: ApiOptions) =>
     api.get<TaskType[]>("/field/task-types", { ...opts, query: { q } }),
+  /** REQ-839 — every service, the archived ones too, with its usage */
+  allTaskTypes: (opts?: ApiOptions) =>
+    api.get<TaskType[]>("/field/task-types", { ...opts, query: { all: "1" } }),
+  createTaskType: (b: TaskTypeInput, opts?: ApiOptions) =>
+    api.post<TaskType>("/field/task-types", b, opts),
+  updateTaskType: (
+    id: string,
+    b: Partial<TaskTypeInput> & { archived?: boolean },
+    opts?: ApiOptions,
+  ) => api.put<TaskType>(`/field/task-types/${id}`, b, opts),
+  deleteTaskType: (id: string, opts?: ApiOptions) =>
+    api.delete<{ ok: true }>(`/field/task-types/${id}`, opts),
+
+  // ---- crews (REQ-840) ----
+  crews: (opts?: ApiOptions) => api.get<CrewView[]>("/field/crews", opts),
+  createCrew: (b: CrewInput, opts?: ApiOptions) =>
+    api.post<CrewView>("/field/crews", b, opts),
+  updateCrew: (id: string, b: CrewInput, opts?: ApiOptions) =>
+    api.put<CrewView>(`/field/crews/${id}`, b, opts),
+  deleteCrew: (id: string, opts?: ApiOptions) =>
+    api.delete<{ ok: true }>(`/field/crews/${id}`, opts),
+
+  // ---- absences (REQ-842) ----
+  absences: (opts?: ApiOptions) =>
+    api.get<AbsenceView[]>("/field/absences", opts),
+  createAbsence: (b: AbsenceInput, opts?: ApiOptions) =>
+    api.post<AbsenceView>("/field/absences", b, opts),
+  deleteAbsence: (id: string, opts?: ApiOptions) =>
+    api.delete<{ ok: true }>(`/field/absences/${id}`, opts),
 
   // ---- checklists (REQ-811) ----
   checklists: (opts?: ApiOptions) =>
@@ -384,6 +511,9 @@ export const fieldClient = {
     api.post<{ regions: number }>("/field/regions/regroup", {}, opts),
   staffRegion: (id: string, workerId: string | null, opts?: ApiOptions) =>
     api.put<Region>(`/field/regions/${id}/worker`, { workerId }, opts),
+  /** REQ-841 — the crews staffing the zone, in order ([] clears) */
+  staffRegionCrews: (id: string, crewIds: string[], opts?: ApiOptions) =>
+    api.put<Region>(`/field/regions/${id}/worker`, { crewIds }, opts),
 
   // ---- tasks (REQ-141) ----
   tasks: (date?: string, opts?: ApiOptions) =>
@@ -413,6 +543,17 @@ export const fieldClient = {
     },
     opts?: ApiOptions,
   ) => api.put<TaskView>(`/field/tasks/${id}`, b, opts),
+  /** REQ-842 — one worker's or crew's whole day to another worker or crew */
+  reassignDay: (
+    b: {
+      date: string;
+      fromWorkerId?: string;
+      fromCrewId?: string;
+      toWorkerId?: string;
+      toCrewId?: string;
+    },
+    opts?: ApiOptions,
+  ) => api.post<{ moved: number }>("/field/tasks/reassign", b, opts),
   /** REQ-163 */
   deleteTask: (id: string, opts?: ApiOptions) =>
     api.delete<{ ok: true }>(`/field/tasks/${id}`, opts),

@@ -38,14 +38,23 @@ import {
 } from "@field/domain/business/worker-welcome/mod.ts";
 import { CustomerStore } from "@crm/domain/data/customer-store/mod.ts";
 import {
+  AbsenceStore,
   BatchStore,
   ChecklistStore,
+  CrewStore,
   FieldTaskStore,
   FieldWorkerStore,
   RegionStore,
   SubscriptionStore,
   TaskTypeStore,
 } from "@field/domain/data/field-stores/mod.ts";
+import {
+  claimedBy,
+  crewMembers,
+  crewNameTaken,
+  leadOf,
+  MAX_DEFER_DAYS,
+} from "@field/domain/business/crews/mod.ts"; // REQ-840..842
 import {
   checklistNameTaken,
   checklistUsage,
@@ -67,13 +76,18 @@ import {
 } from "@field/domain/coordinators/field-views/mod.ts";
 import {
   findOrCreateTaskType,
+  fold,
+  liveTypes,
   officeService,
   oneOffTask,
   searchTaskTypes,
+  taskTypeNameTaken,
+  taskTypeUsage,
 } from "@field/domain/business/tasks/mod.ts";
 import {
   fieldToday,
   isValidDate,
+  shiftDate,
 } from "@field/domain/business/schedule/mod.ts";
 import {
   crewList,
@@ -81,11 +95,15 @@ import {
   spanFrom,
 } from "@field/domain/business/job-span/mod.ts";
 import {
+  type Absence,
+  type AbsenceDisposition,
   type Cadence,
   CADENCES,
   CAP,
   type Checklist,
+  type Crew,
   digitsOf,
+  DISPOSITIONS,
   FieldError,
   type FieldTask,
   type FieldWorker,
@@ -95,6 +113,30 @@ import {
   type TaskType,
   tooLong,
 } from "@field/dto/field.ts";
+
+/** the account's crew a body names, or 404 */
+async function ownCrew(
+  crews: CrewStore,
+  userId: string,
+  id: string,
+): Promise<Crew> {
+  const c = await crews.find(id);
+  if (!c || c.userId !== userId) {
+    throw new FieldError("crew not found", 404, undefined, "crew_not_found");
+  }
+  return c;
+}
+
+/** a list of ids from a body, or null when it is not one */
+function idList(raw: unknown): string[] | null {
+  if (!Array.isArray(raw)) return null;
+  const out: string[] = [];
+  for (const x of raw) {
+    if (typeof x !== "string" || !x.trim()) return null;
+    if (!out.includes(x.trim())) out.push(x.trim());
+  }
+  return out;
+}
 
 type Body_ = Record<string, unknown>;
 const body = (
@@ -207,12 +249,20 @@ export class FieldWorkersController {
     private sessions: SessionStore,
     readonly identities: BusinessIdentityStore,
     readonly sms: SmsService,
+    private crews: CrewStore, // REQ-840
+    private day: FieldDay,
+    private views: FieldViews,
   ) {}
 
+  /** REQ-840: each row with its crew's name */
   @Get()
   async list(@Context() ctx: ExecutionContext) {
     const user = await requireUser(ctx, this.sessions, this.users);
-    return (await this.workers.listByUser(user.id)).map(safeWorker);
+    const [workers, n] = await Promise.all([
+      this.workers.listByUser(user.id),
+      this.views.names(user.id),
+    ]);
+    return workers.map((w) => this.views.worker(w, n));
   }
 
   /** REQ-138: name, cell (the login name, unique), a 4-digit PIN, an optional foreman role; REQ-151: the worker is texted the link and the PIN */
@@ -355,7 +405,7 @@ export class FieldWorkersController {
     };
   }
 
-  /** REQ-155 — the owner changes a worker's language (the one thing the row edits) */
+  /** REQ-155 — the owner changes a worker's language; REQ-840 — or the worker's crew (`crewId`, null = none) */
   @Put(":id")
   async update(
     @Context() ctx: ExecutionContext,
@@ -365,19 +415,47 @@ export class FieldWorkersController {
     const user = await requireUser(ctx, this.sessions, this.users);
     const w = await this.workers.getOwned(id, user.id);
     const b = body(raw);
-    const language = parseLang(b.language);
-    if (!language) {
-      throw new FieldError(
-        "language must be en or es",
-        400,
-        undefined,
-        "language_invalid",
-      );
+    if ("language" in b || !("crewId" in b)) {
+      const language = parseLang(b.language);
+      if (!language) {
+        throw new FieldError(
+          "language must be en or es",
+          400,
+          undefined,
+          "language_invalid",
+        );
+      }
+      w.language = language;
     }
-    w.language = language;
+    if ("crewId" in b) {
+      const cid = str(b.crewId);
+      const before = w.crewId;
+      if (cid) {
+        await ownCrew(this.crews, user.id, cid);
+        w.crewId = cid;
+      } else delete w.crewId;
+      if (before && before !== w.crewId) {
+        // leaving a crew they led: the crew has no foreman until one is picked
+        const old = await this.crews.find(before);
+        if (old && old.foremanId === w.id) {
+          delete old.foremanId;
+          old.updatedAt = new Date().toISOString();
+          await this.crews.put(old);
+        }
+      }
+      if (before !== w.crewId) {
+        await this.day.dropOpen(
+          user.id,
+          fieldToday(),
+          (t) =>
+            (!!before && t.crewId === before) ||
+            (!!w.crewId && t.crewId === w.crewId),
+        );
+      }
+    }
     w.updatedAt = new Date().toISOString();
     await this.workers.put(w);
-    return safeWorker(w);
+    return this.views.worker(w, await this.views.names(user.id));
   }
 
   @Delete(":id")
@@ -400,22 +478,636 @@ export class FieldWorkersController {
   }
 }
 
+/** REQ-839: a description for the catalogue, ≤ CAP.text; null or "" clears it */
+function parseDescription(raw: unknown): string | undefined {
+  if (raw === undefined || raw === null) return undefined;
+  if (typeof raw !== "string") throw new FieldError("description must be text");
+  if (raw.length > CAP.text) {
+    throw new FieldError(
+      `description too long (max ${CAP.text})`,
+      400,
+      undefined,
+      "description_too_long",
+    );
+  }
+  return raw.trim() || undefined;
+}
+
+/** REQ-839: where each type is used — on the repeat visits and the checklists (a module function: Danet chokes on undecorated methods) */
+async function typeUsage(
+  d: { subs: SubscriptionStore; checklists: ChecklistStore },
+  userId: string,
+) {
+  const [subscriptions, checklists] = await Promise.all([
+    d.subs.listByUser(userId),
+    d.checklists.listByUser(userId),
+  ]);
+  return (t: TaskType) => {
+    const u = taskTypeUsage(t.id, { subscriptions, checklists, tasks: [] });
+    return {
+      ...t,
+      usedBy: { subscriptions: u.subscriptions, checklists: u.checklists },
+    };
+  };
+}
+
 @Controller("field/task-types")
 export class FieldTaskTypesController {
   constructor(
     private types: TaskTypeStore,
     private users: UserStore,
     private sessions: SessionStore,
+    readonly subs: SubscriptionStore, // REQ-839
+    readonly checklists: ChecklistStore,
+    private tasks: FieldTaskStore,
   ) {}
 
-  /** REQ-139: case- and accent-insensitive search */
+  /** REQ-139: case- and accent-insensitive search; REQ-839: archived types only with `all=1`, each with its usage */
   @Get()
-  async search(@Context() ctx: ExecutionContext, @Query("q") q?: string) {
+  async search(
+    @Context() ctx: ExecutionContext,
+    @Query("q") q?: string,
+    @Query("all") all?: string,
+  ) {
     const user = await requireUser(ctx, this.sessions, this.users);
-    return searchTaskTypes(await this.types.listByUser(user.id), q ?? "").sort((
-      a,
-      b,
-    ) => a.name.localeCompare(b.name));
+    const types = await this.types.listByUser(user.id);
+    const withUsage = await typeUsage(this, user.id);
+    return searchTaskTypes(all === "1" ? types : liveTypes(types), q ?? "")
+      .sort((a, b) => a.name.localeCompare(b.name))
+      .map(withUsage);
+  }
+
+  /** REQ-839: a new service — 201; the same name in any case is 409, unless it is archived: then it comes back (200) */
+  @Post()
+  async create(@Context() ctx: ExecutionContext, @Body() raw: unknown) {
+    const user = await requireUser(ctx, this.sessions, this.users);
+    const b = body(raw);
+    const name = str(b.name)?.replace(/\s+/g, " ");
+    if (!name) {
+      throw new FieldError("name required", 400, undefined, "name_required");
+    }
+    if (name.length > CAP.taskType) {
+      throw new FieldError("name too long", 400, undefined, "name_too_long");
+    }
+    const description = parseDescription(b.description);
+    const types = await this.types.listByUser(user.id);
+    const same = types.find((t) => fold(t.name) === fold(name));
+    const withUsage = await typeUsage(this, user.id);
+    if (same && !same.archived) {
+      throw new FieldError(
+        "a service with that name exists",
+        409,
+        undefined,
+        "task_type_name_taken",
+      );
+    }
+    const now = new Date().toISOString();
+    if (same) {
+      const { archived: _a, ...rest } = same;
+      const restored: TaskType = {
+        ...rest,
+        ...(description !== undefined ? { description } : {}),
+        updatedAt: now,
+      };
+      await this.types.put(restored);
+      return withUsage(restored);
+    }
+    const t: TaskType = {
+      id: newId(),
+      userId: user.id,
+      name,
+      ...(description ? { description } : {}),
+      createdAt: now,
+      updatedAt: now,
+    };
+    await this.types.put(t);
+    return ctx.json(withUsage(t), 201);
+  }
+
+  /** REQ-839: rename, describe, archive or restore */
+  @Put(":id")
+  async update(
+    @Context() ctx: ExecutionContext,
+    @Param("id") id: string,
+    @Body() raw: unknown,
+  ) {
+    const user = await requireUser(ctx, this.sessions, this.users);
+    const t = await this.types.getOwned(id, user.id);
+    const b = body(raw);
+    if ("name" in b) {
+      const name = str(b.name)?.replace(/\s+/g, " ");
+      if (!name) {
+        throw new FieldError("name required", 400, undefined, "name_required");
+      }
+      if (name.length > CAP.taskType) {
+        throw new FieldError("name too long", 400, undefined, "name_too_long");
+      }
+      if (taskTypeNameTaken(await this.types.listByUser(user.id), name, t.id)) {
+        throw new FieldError(
+          "a service with that name exists",
+          409,
+          undefined,
+          "task_type_name_taken",
+        );
+      }
+      t.name = name;
+    }
+    if ("description" in b) {
+      const d = parseDescription(b.description);
+      if (d) t.description = d;
+      else delete t.description;
+    }
+    if ("archived" in b) {
+      if (b.archived === true) t.archived = true;
+      else delete t.archived;
+    }
+    t.updatedAt = new Date().toISOString();
+    await this.types.put(t);
+    return (await typeUsage(this, user.id))(t);
+  }
+
+  /** REQ-839: gone when nothing uses it; 409 with the counts otherwise */
+  @Delete(":id")
+  async remove(@Context() ctx: ExecutionContext, @Param("id") id: string) {
+    const user = await requireUser(ctx, this.sessions, this.users);
+    const t = await this.types.getOwned(id, user.id);
+    const [subscriptions, checklists, tasks] = await Promise.all([
+      this.subs.listByUser(user.id),
+      this.checklists.listByUser(user.id),
+      this.tasks.listByUser(user.id),
+    ]);
+    const u = taskTypeUsage(t.id, { subscriptions, checklists, tasks });
+    if (u.subscriptions || u.checklists || u.tasks) {
+      throw new FieldError(
+        "service in use — archive it instead",
+        409,
+        u,
+        "task_type_in_use",
+      );
+    }
+    await this.types.delete(t);
+    return { ok: true };
+  }
+}
+
+/** REQ-840: the crew a body describes — checked against the account; `cur` on an edit */
+async function parseCrew(
+  d: { crews: CrewStore; workers: FieldWorkerStore; types: TaskTypeStore },
+  userId: string,
+  b: Body_,
+  cur?: Crew,
+): Promise<{ crew: Crew; members: string[] | null }> {
+  const all = await d.crews.listByUser(userId);
+  const now = new Date().toISOString();
+  const crew: Crew = cur
+    ? { ...cur, taskTypeIds: [...cur.taskTypeIds], updatedAt: now }
+    : {
+      id: newId(),
+      userId,
+      name: "",
+      color: "",
+      taskTypeIds: [],
+      createdAt: now,
+      updatedAt: now,
+    };
+  if ("name" in b || !cur) {
+    const name = str(b.name)?.replace(/\s+/g, " ");
+    if (!name) {
+      throw new FieldError("name required", 400, undefined, "name_required");
+    }
+    if (name.length > CAP.crew) {
+      throw new FieldError("name too long", 400, undefined, "name_too_long");
+    }
+    if (crewNameTaken(all, name, cur?.id)) {
+      throw new FieldError(
+        "a crew with that name exists",
+        409,
+        undefined,
+        "crew_name_taken",
+      );
+    }
+    crew.name = name;
+  }
+  if ("color" in b || !cur) {
+    const color = str(b.color);
+    if (color && !/^#[0-9a-f]{6}$/i.test(color)) {
+      throw new FieldError(
+        "color must be #rrggbb",
+        400,
+        undefined,
+        "bad_color",
+      );
+    }
+    const used = new Set(
+      all.filter((c) => c.id !== crew.id).map((c) => c.color),
+    );
+    crew.color = color ?? CREW_COLORS.find((c) => !used.has(c)) ??
+      CREW_COLORS[all.length % CREW_COLORS.length];
+  }
+  if ("taskTypeIds" in b) {
+    const ids = idList(b.taskTypeIds);
+    if (!ids) throw new FieldError("taskTypeIds must be a list of ids");
+    const types = await d.types.listByUser(userId);
+    for (const id of ids) {
+      if (!types.some((t) => t.id === id)) {
+        throw new FieldError("unknown taskTypeId");
+      }
+      const other = claimedBy(all, id, crew.id);
+      if (other) {
+        throw new FieldError(
+          `${other.name} already does that service`,
+          409,
+          { crew: other.name, taskTypeId: id },
+          "task_type_claimed",
+        );
+      }
+    }
+    crew.taskTypeIds = ids;
+  }
+  if ("coversAll" in b) {
+    if (b.coversAll === true) crew.coversAll = true;
+    else delete crew.coversAll;
+  }
+  let members: string[] | null = null;
+  const workers = await d.workers.listByUser(userId);
+  if ("memberIds" in b) {
+    members = idList(b.memberIds);
+    if (!members) {
+      throw new FieldError("memberIds must be a list of worker ids");
+    }
+    for (const id of members) {
+      if (!workers.some((w) => w.id === id)) {
+        throw new FieldError("unknown workerId");
+      }
+    }
+  }
+  const finalMembers = members ??
+    workers.filter((w) => w.crewId === crew.id).map((w) => w.id);
+  if ("foremanId" in b) {
+    const fid = str(b.foremanId);
+    if (fid) {
+      if (!finalMembers.includes(fid)) {
+        throw new FieldError(
+          "the foreman must be one of the crew's members",
+          400,
+          undefined,
+          "foreman_not_member",
+        );
+      }
+      crew.foremanId = fid;
+    } else delete crew.foremanId;
+  } else if (crew.foremanId && !finalMembers.includes(crew.foremanId)) {
+    delete crew.foremanId; // the foreman left with the new member list
+  }
+  return { crew, members };
+}
+
+/** REQ-840: a crew's colours — the zone palette's neighbours, so a crew and a zone never read alike */
+const CREW_COLORS = [
+  "#2f6f4e",
+  "#b5541c",
+  "#1f5f8b",
+  "#8a5bb5",
+  "#9c2f4b",
+  "#5a6b1f",
+  "#13747d",
+  "#7a4b2a",
+];
+
+interface CrewDeps {
+  crews: CrewStore;
+  workers: FieldWorkerStore;
+  regions: RegionStore;
+  views: FieldViews;
+}
+
+/** REQ-840: one crew as the page shows it */
+async function crewView(d: CrewDeps, userId: string, c: Crew) {
+  const [workers, regions, n] = await Promise.all([
+    d.workers.listByUser(userId),
+    d.regions.listByUser(userId),
+    d.views.names(userId),
+  ]);
+  return d.views.crew(c, workers, regions, n);
+}
+
+/** REQ-840: the members as sent — those named join (leaving their old crew), the rest of this crew leave; true when anyone moved */
+async function applyMembers(
+  d: CrewDeps,
+  userId: string,
+  crew: Crew,
+  members: string[],
+): Promise<boolean> {
+  const workers = await d.workers.listByUser(userId);
+  const changed: FieldWorker[] = [];
+  const now = new Date().toISOString();
+  for (const w of workers) {
+    if (members.includes(w.id) && w.crewId !== crew.id) {
+      changed.push({ ...w, crewId: crew.id, updatedAt: now });
+    } else if (!members.includes(w.id) && w.crewId === crew.id) {
+      const { crewId: _c, ...rest } = w;
+      changed.push({ ...rest, updatedAt: now });
+    }
+  }
+  await d.workers.putMany(changed);
+  // a worker who left a crew they led
+  const others = (await d.crews.listByUser(userId)).filter((c) =>
+    c.id !== crew.id && c.foremanId && members.includes(c.foremanId)
+  );
+  for (const c of others) {
+    delete c.foremanId;
+    c.updatedAt = now;
+    await d.crews.put(c);
+  }
+  return changed.length > 0 || others.length > 0;
+}
+
+/** REQ-840: the crews, their members and the services they do */
+@Controller("field/crews")
+export class FieldCrewsController {
+  constructor(
+    readonly crews: CrewStore,
+    readonly workers: FieldWorkerStore,
+    private types: TaskTypeStore,
+    readonly regions: RegionStore,
+    private absences: AbsenceStore,
+    private day: FieldDay,
+    readonly views: FieldViews,
+    private users: UserStore,
+    private sessions: SessionStore,
+  ) {}
+
+  @Get()
+  async list(@Context() ctx: ExecutionContext) {
+    const user = await requireUser(ctx, this.sessions, this.users);
+    const [crews, workers, regions, n] = await Promise.all([
+      this.crews.listByUser(user.id),
+      this.workers.listByUser(user.id),
+      this.regions.listByUser(user.id),
+      this.views.names(user.id),
+    ]);
+    return crews.sort((a, b) => a.name.localeCompare(b.name)).map((c) =>
+      this.views.crew(c, workers, regions, n)
+    );
+  }
+
+  @Post()
+  async create(@Context() ctx: ExecutionContext, @Body() raw: unknown) {
+    const user = await requireUser(ctx, this.sessions, this.users);
+    const { crew, members } = await parseCrew(
+      { crews: this.crews, workers: this.workers, types: this.types },
+      user.id,
+      body(raw),
+    );
+    await this.crews.put(crew);
+    if (members) await applyMembers(this, user.id, crew, members);
+    if (members?.length || crew.coversAll) {
+      await this.day.dropOpen(user.id, fieldToday(), (t) => !!t.subscriptionId);
+    }
+    return ctx.json(await crewView(this, user.id, crew), 201);
+  }
+
+  @Put(":id")
+  async update(
+    @Context() ctx: ExecutionContext,
+    @Param("id") id: string,
+    @Body() raw: unknown,
+  ) {
+    const user = await requireUser(ctx, this.sessions, this.users);
+    const cur = await this.crews.getOwned(id, user.id);
+    const { crew, members } = await parseCrew(
+      { crews: this.crews, workers: this.workers, types: this.types },
+      user.id,
+      body(raw),
+      cur,
+    );
+    await this.crews.put(crew);
+    const moved = members
+      ? await applyMembers(this, user.id, crew, members)
+      : false;
+    const staffing = moved ||
+      JSON.stringify(cur.taskTypeIds) !== JSON.stringify(crew.taskTypeIds) ||
+      cur.foremanId !== crew.foremanId || !!cur.coversAll !== !!crew.coversAll;
+    if (staffing) {
+      // REQ-841: who does what changed — the open round from today re-derives on it
+      const zones = new Set(
+        (await this.regions.listByUser(user.id)).filter((r) =>
+          r.crewIds?.includes(crew.id)
+        ).map((r) => r.id),
+      );
+      const everywhere = !!cur.coversAll || !!crew.coversAll;
+      await this.day.dropOpen(
+        user.id,
+        fieldToday(),
+        (t) =>
+          !!t.subscriptionId &&
+          (everywhere || t.crewId === crew.id || zones.has(t.regionId)),
+      );
+    }
+    return await crewView(this, user.id, crew);
+  }
+
+  /** 409 while a zone lists the crew; else its members are freed and its open round re-derives */
+  @Delete(":id")
+  async remove(@Context() ctx: ExecutionContext, @Param("id") id: string) {
+    const user = await requireUser(ctx, this.sessions, this.users);
+    const crew = await this.crews.getOwned(id, user.id);
+    const zones = (await this.regions.listByUser(user.id)).filter((r) =>
+      r.crewIds?.includes(crew.id)
+    ).map((r) => r.name);
+    if (zones.length) {
+      throw new FieldError(
+        "crew still staffs zones — take it off them first",
+        409,
+        { zones },
+        "crew_covers_zones",
+      );
+    }
+    await applyMembers(this, user.id, crew, []);
+    await this.absences.deleteMany(
+      (await this.absences.listByUser(user.id)).filter((a) =>
+        a.crewId === crew.id || a.coverCrewId === crew.id
+      ),
+    );
+    await this.crews.delete(crew);
+    await this.day.dropOpen(
+      user.id,
+      fieldToday(),
+      (t) => t.crewId === crew.id || t.coverFor === crew.id || !!crew.coversAll,
+    );
+    return { ok: true };
+  }
+}
+
+/**
+ * REQ-842: the tasks an absence touches — the absent crew's or worker's (and, for a worker, their
+ * crew's: the lead may change), those covering for them, those it decided
+ */
+const touchedBy = (a: Absence, workerCrewId?: string) => (t: FieldTask) =>
+  t.byAbsence === a.id ||
+  (a.crewId
+    ? t.crewId === a.crewId || t.coverFor === a.crewId
+    : (t.workerId === a.workerId ||
+      !!t.crewIds?.includes(a.workerId!) || t.coverFor === a.workerId ||
+      (!!workerCrewId && t.crewId === workerCrewId)));
+
+/** REQ-842: the open round in the absence's days (from today) re-derives for everyone it touches */
+async function redoAbsence(
+  day: FieldDay,
+  workers: FieldWorkerStore,
+  userId: string,
+  a: Absence,
+) {
+  const today = fieldToday();
+  const from = a.from > today ? a.from : today;
+  if (a.to < from) return;
+  const crewId = a.workerId
+    ? (await workers.find(a.workerId))?.crewId
+    : undefined;
+  await day.dropOpen(userId, from, touchedBy(a, crewId), a.to);
+  // a deferred visit's copy sits after the absence — up to MAX_DEFER_DAYS later
+  await day.dropOpen(
+    userId,
+    a.to,
+    (t) => t.byAbsence === a.id,
+    shiftDate(a.to, MAX_DEFER_DAYS),
+  );
+}
+
+/** REQ-842: who is out, when, and what happens to their work */
+@Controller("field/absences")
+export class FieldAbsencesController {
+  constructor(
+    private absences: AbsenceStore,
+    private workers: FieldWorkerStore,
+    private crews: CrewStore,
+    private day: FieldDay,
+    private views: FieldViews,
+    private users: UserStore,
+    private sessions: SessionStore,
+  ) {}
+
+  /** from today on, soonest first */
+  @Get()
+  async list(@Context() ctx: ExecutionContext) {
+    const user = await requireUser(ctx, this.sessions, this.users);
+    const today = fieldToday();
+    const [rows, n] = await Promise.all([
+      this.absences.listByUser(user.id),
+      this.views.names(user.id),
+    ]);
+    return rows.filter((a) => a.to >= today)
+      .sort((a, b) =>
+        a.from.localeCompare(b.from) || a.createdAt.localeCompare(b.createdAt)
+      )
+      .map((a) => this.views.absence(a, n));
+  }
+
+  @Post()
+  async create(@Context() ctx: ExecutionContext, @Body() raw: unknown) {
+    const user = await requireUser(ctx, this.sessions, this.users);
+    const b = body(raw);
+    const workerId = str(b.workerId), crewId = str(b.crewId);
+    if (!!workerId === !!crewId) {
+      throw new FieldError(
+        "workerId or crewId — one of them",
+        400,
+        undefined,
+        "who_required",
+      );
+    }
+    if (workerId) await ownWorker(this.workers, user.id, workerId);
+    if (crewId) await ownCrew(this.crews, user.id, crewId);
+    const from = str(b.from), to = str(b.to);
+    if (!from || !to || !isValidDate(from) || !isValidDate(to)) {
+      throw new FieldError(
+        "from and to must be YYYY-MM-DD",
+        400,
+        undefined,
+        "bad_dates",
+      );
+    }
+    if (to < from) {
+      throw new FieldError(
+        "to is before from",
+        400,
+        undefined,
+        "end_before_start",
+      );
+    }
+    if (Date.parse(to) - Date.parse(from) > 366 * 86_400_000) {
+      throw new FieldError(
+        "an absence runs at most a year",
+        400,
+        undefined,
+        "too_long",
+      );
+    }
+    const disposition = str(b.disposition) as AbsenceDisposition | undefined;
+    if (!disposition || !DISPOSITIONS.includes(disposition)) {
+      throw new FieldError(
+        "disposition must be cover, defer or skip",
+        400,
+        undefined,
+        "bad_disposition",
+      );
+    }
+    const coverCrewId = str(b.coverCrewId),
+      coverWorkerId = str(b.coverWorkerId);
+    if (disposition === "cover") {
+      if (!!coverCrewId === !!coverWorkerId) {
+        throw new FieldError(
+          "cover: coverCrewId or coverWorkerId — one of them",
+          400,
+          undefined,
+          "cover_required",
+        );
+      }
+      if (
+        (coverCrewId && coverCrewId === crewId) ||
+        (coverWorkerId && coverWorkerId === workerId)
+      ) {
+        throw new FieldError(
+          "they cannot cover for themselves",
+          400,
+          undefined,
+          "cover_self",
+        );
+      }
+      if (coverCrewId) await ownCrew(this.crews, user.id, coverCrewId);
+      if (coverWorkerId) await ownWorker(this.workers, user.id, coverWorkerId);
+    }
+    if (tooLong(b.note, CAP.note)) {
+      throw new FieldError(`note too long (max ${CAP.note})`);
+    }
+    const a: Absence = {
+      id: newId(),
+      userId: user.id,
+      ...(workerId ? { workerId } : { crewId }),
+      from,
+      to,
+      disposition,
+      ...(disposition === "cover"
+        ? (coverCrewId ? { coverCrewId } : { coverWorkerId })
+        : {}),
+      ...(str(b.note) ? { note: str(b.note) } : {}),
+      createdAt: new Date().toISOString(),
+    };
+    await this.absences.put(a);
+    await redoAbsence(this.day, this.workers, user.id, a);
+    return ctx.json(
+      this.views.absence(a, await this.views.names(user.id)),
+      201,
+    );
+  }
+
+  @Delete(":id")
+  async remove(@Context() ctx: ExecutionContext, @Param("id") id: string) {
+    const user = await requireUser(ctx, this.sessions, this.users);
+    const a = await this.absences.getOwned(id, user.id);
+    await this.absences.delete(a);
+    await redoAbsence(this.day, this.workers, user.id, a);
+    return { ok: true };
   }
 }
 
@@ -652,7 +1344,7 @@ async function parseItems(
         userId,
         newId,
       );
-      if (r.created) created.push(r.type);
+      if (r.created || r.restored) created.push(r.type); // REQ-839: a restored type is saved too
       taskTypeId = r.type.id;
     }
     if (
@@ -904,6 +1596,8 @@ export class FieldRegionsController {
     private users: UserStore,
     private sessions: SessionStore,
     private mapCenter: FieldMapCenter,
+    private crews: CrewStore, // REQ-841
+    private day: FieldDay,
   ) {}
 
   @Get()
@@ -928,7 +1622,11 @@ export class FieldRegionsController {
     return { regions: regions.length };
   }
 
-  /** REQ-140: staff a zone; today's and later open tasks of the zone move to that worker */
+  /**
+   * REQ-140: staff a zone; today's and later open tasks of the zone move to that worker.
+   * REQ-841: `crewIds` — the crews staffing it, in order (replaces the list; [] clears it);
+   * the zone's open round from today re-derives on them.
+   */
   @Put(":id/worker")
   async staff(
     @Context() ctx: ExecutionContext,
@@ -937,7 +1635,22 @@ export class FieldRegionsController {
   ) {
     const user = await requireUser(ctx, this.sessions, this.users);
     const r = await this.regions.getOwned(id, user.id);
-    const workerId = str(body(raw).workerId);
+    const b = body(raw);
+    if ("crewIds" in b) {
+      const ids = idList(b.crewIds);
+      if (!ids) throw new FieldError("crewIds must be a list of crew ids");
+      for (const cid of ids) await ownCrew(this.crews, user.id, cid);
+      if (ids.length) r.crewIds = ids;
+      else delete r.crewIds;
+      await this.regions.put(r);
+      await this.day.dropOpen(
+        user.id,
+        fieldToday(),
+        (t) => t.regionId === r.id && !!t.subscriptionId,
+      );
+      if (!("workerId" in b)) return r;
+    }
+    const workerId = str(b.workerId);
     if (workerId) {
       const w = await this.workers.find(workerId);
       if (!w || w.userId !== user.id) {
@@ -974,7 +1687,7 @@ async function taskTypeFrom(
   const name = str(b.taskTypeName);
   if (!name) throw new FieldError("taskTypeId or taskTypeName required");
   const r = findOrCreateTaskType(list, name, userId, newId);
-  if (r.created) await types.put(r.type);
+  if (r.created || r.restored) await types.put(r.type); // REQ-839: an archived type typed again comes back
   return r.type.id;
 }
 
@@ -1074,7 +1787,65 @@ export class FieldTasksController {
     private customers: CustomerStore,
     private notices: FieldNotices,
     private activity: FieldActivity,
+    private crews: CrewStore, // REQ-842
   ) {}
+
+  /**
+   * REQ-842: the whole day of one worker or one crew goes to another worker or crew at once —
+   * the open, un-invoiced tasks that day (REQ-166 for a day). The new crew's foreman leads, its
+   * members are the crew.
+   */
+  @Post("reassign")
+  async reassign(@Context() ctx: ExecutionContext, @Body() raw: unknown) {
+    const user = await requireUser(ctx, this.sessions, this.users);
+    const b = body(raw);
+    const date = str(b.date) ?? fieldToday();
+    if (!isValidDate(date)) throw new FieldError("date must be YYYY-MM-DD");
+    const fromWorkerId = str(b.fromWorkerId), fromCrewId = str(b.fromCrewId);
+    const toWorkerId = str(b.toWorkerId), toCrewId = str(b.toCrewId);
+    if (!!fromWorkerId === !!fromCrewId) {
+      throw new FieldError("fromWorkerId or fromCrewId — one of them");
+    }
+    if (!!toWorkerId === !!toCrewId) {
+      throw new FieldError("toWorkerId or toCrewId — one of them");
+    }
+    let to: Pick<FieldTask, "workerId" | "crewId" | "crewIds">;
+    if (toWorkerId) {
+      await ownWorker(this.workers, user.id, toWorkerId);
+      to = { workerId: toWorkerId };
+    } else {
+      const crew = await ownCrew(this.crews, user.id, toCrewId!);
+      const members = crewMembers(crew, await this.workers.listByUser(user.id));
+      const lead = leadOf(crew, members);
+      if (!lead) {
+        throw new FieldError(
+          "that crew has no members",
+          400,
+          undefined,
+          "crew_empty",
+        );
+      }
+      const rest = members.filter((m) => m.id !== lead.id).map((m) => m.id);
+      to = {
+        workerId: lead.id,
+        crewId: crew.id,
+        ...(rest.length ? { crewIds: rest } : {}),
+      };
+    }
+    const day = await this.tasks.listByDay(user.id, date);
+    const moved = day
+      .filter((t) =>
+        t.status === "assigned" && !t.invoiceId &&
+        (fromCrewId ? t.crewId === fromCrewId : t.workerId === fromWorkerId)
+      )
+      .map((t) => {
+        const { crewId: _c, crewIds: _k, ...rest } = t;
+        return { ...rest, ...to } as FieldTask;
+      });
+    await this.tasks.putMany(moved);
+    for (const t of moved) await this.notices.workerNewTask(user.id, t); // REQ-171
+    return { moved: moved.length };
+  }
 
   /**
    * REQ-164: a one-off task by hand — one customer, no subscription. REQ-785: one day, or a job of
@@ -1218,13 +1989,15 @@ export class FieldTasksController {
     const user = await requireUser(ctx, this.sessions, this.users);
     const d = date ?? fieldToday();
     if (!isValidDate(d)) throw new FieldError("date must be YYYY-MM-DD");
-    const skipped = await this.day.unstaffedOn(user.id, d);
+    const skipped = await this.day.uncoveredOn(user.id, d);
     const n = await this.views.names(user.id);
-    return skipped.map((s) => ({
+    // REQ-841: which services nobody covers
+    return skipped.map(({ subscription: s, taskTypeIds }) => ({
       subscriptionId: s.id,
       customerName: n.customer(s.customerId),
       address: s.address,
       regionName: n.region(s.regionId)?.name ?? "—",
+      taskTypeNames: taskTypeIds.map((id) => n.type(id)),
     }));
   }
 

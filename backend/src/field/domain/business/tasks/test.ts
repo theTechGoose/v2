@@ -1,6 +1,6 @@
 /** REQ-139/141 — task types, the day's tasks, and what a worker may do to them. */
 import { assert, assertEquals } from "#std/assert";
-import { addService, canAct, deferTask, findOrCreateTaskType, generateTasks, inActionWindow, officeService, oneOffTask, searchTaskTypes, unstaffed, workerView } from "./mod.ts";
+import { addService, canAct, deferTask, findOrCreateTaskType, generateTasks, inActionWindow, officeService, oneOffTask, searchTaskTypes, uncovered, unstaffed, workerView } from "./mod.ts";
 import type { FieldTask, FieldWorker, Region, Subscription, TaskType } from "@field/dto/field.ts";
 
 let n = 0;
@@ -150,4 +150,81 @@ Deno.test("REQ-165 officeService — a sibling of the visit, priced as given or 
   const one = oneOffTask({ userId: "u", customerId: "c9", date: "2026-10-27", taskTypeId: "1", priceCents: 100, workerId: "w2", newId });
   const sib = officeService({ task: one, visit: [one], taskTypeId: "2", newId });
   assert(sib.ok && sib.task.oneOff === true && sib.task.subscriptionId === "" && sib.task.workerId === "w2" && sib.task.priceCents === 0, "a one-off's sibling is a one-off too, $0 without a price");
+});
+
+// ---- REQ-839 — the service catalogue ----
+import { liveTypes, taskTypeNameTaken, taskTypeUsage } from "./mod.ts";
+
+Deno.test("REQ-839 findOrCreateTaskType — an archived type typed again is restored, not duplicated; liveTypes hides archived ones", () => {
+  const archived: TaskType = { id: "9", userId: "u", name: "Fertilizar", archived: true, createdAt: "x" };
+  const r = findOrCreateTaskType([...types, archived], "FERTILIZAR", "u", newId);
+  assertEquals([r.created, r.restored, r.type.id, r.type.archived], [false, true, "9", undefined]);
+  const plain = findOrCreateTaskType(types, "cortar césped", "u", newId);
+  assertEquals([plain.created, plain.restored], [false, undefined]);
+  assertEquals(liveTypes([...types, archived]).map((t) => t.id), ["1", "2", "3"]);
+});
+
+Deno.test("REQ-839 taskTypeNameTaken / taskTypeUsage — a name in any case is taken (its own id excepted); usage counts the repeat visits, checklists and tasks on the type", () => {
+  assert(taskTypeNameTaken(types, "CORTAR CÉSPED"));
+  assert(!taskTypeNameTaken(types, "Cortar césped", "1"));
+  assert(!taskTypeNameTaken(types, "Podar"));
+  const usage = taskTypeUsage("1", {
+    subscriptions: [sub("s1", "ra"), sub("s2", "ra", { items: [{ taskTypeId: "2", priceCents: 1 }] })],
+    checklists: [{ items: [{ taskTypeId: "1", priceCents: 1 }] }, { items: [{ taskTypeId: "1", priceCents: 2 }] }],
+    tasks: [{ taskTypeId: "1" }, { taskTypeId: "3" }],
+  });
+  assertEquals(usage, { subscriptions: 1, checklists: 2, tasks: 1 });
+});
+
+// ---- REQ-841/842 — crews on the day's round ----
+import type { Absence, Crew } from "@field/dto/field.ts";
+
+const cworker = (id: string, name: string, crewId?: string): FieldWorker => ({ id, userId: "u", name, phoneNumber: id, pin: "1234", crewId, createdAt: "x", updatedAt: "x" });
+const CREWS: Crew[] = [
+  { id: "grass", userId: "u", name: "Grass crew", color: "#1", foremanId: "a", taskTypeIds: ["1", "2"], createdAt: "x", updatedAt: "x" },
+  { id: "mulch", userId: "u", name: "Mulch crew", color: "#2", taskTypeIds: ["3"], createdAt: "x", updatedAt: "x" },
+];
+const CREW_WORKERS = [cworker("a", "Ana", "grass"), cworker("b", "Beto", "grass"), cworker("p", "Pedro", "mulch")];
+const crewZones: Region[] = [{ id: "rz", userId: "u", name: "Zona A", color: "#0", lat: 0, lng: 0, crewIds: ["grass", "mulch"] }];
+// the shared house: mowing (1) and mulch (3); the grass-only house: mowing + hedges (1, 2)
+const shared = sub("shared", "rz", { items: [{ taskTypeId: "1", priceCents: 6500 }, { taskTypeId: "3", priceCents: 12000 }] });
+const grassOnly = sub("grassonly", "rz");
+
+Deno.test("REQ-841 generateTasks — the shared house splits across the two crews; the grass-only house reaches only the grass crew; each crew task is led by the foreman with the rest as crew", () => {
+  const out = generateTasks({ userId: "u", date: "2026-10-27", subscriptions: [shared, grassOnly], regions: crewZones, existing: [], newId, crews: CREWS, workers: CREW_WORKERS, absences: [] });
+  const by = (s: string, ty: string) => out.find((t) => t.subscriptionId === s && t.taskTypeId === ty)!;
+  assertEquals(out.length, 4);
+  assertEquals([by("shared", "1").crewId, by("shared", "1").workerId, by("shared", "1").crewIds], ["grass", "a", ["b"]]);
+  assertEquals([by("shared", "3").crewId, by("shared", "3").workerId, by("shared", "3").crewIds], ["mulch", "p", undefined]);
+  assertEquals(out.filter((t) => t.subscriptionId === "grassonly").map((t) => t.crewId), ["grass", "grass"]);
+  // a zone with no crews keeps today's rule
+  const legacy = generateTasks({ userId: "u", date: "2026-10-27", subscriptions: [sub("s1", "ra")], regions, existing: [], newId, crews: CREWS, workers: CREW_WORKERS, absences: [] });
+  assertEquals(legacy.map((t) => [t.workerId, t.crewId]), [["w1", undefined], ["w1", undefined]]);
+});
+
+Deno.test("REQ-841 unstaffed / uncovered — a service no crew on the zone does is reported with its type; a visit fully covered is not", () => {
+  const trees = sub("trees", "rz", { items: [{ taskTypeId: "1", priceCents: 1 }, { taskTypeId: "9", priceCents: 1 }] });
+  const input = { date: "2026-10-27", subscriptions: [shared, trees], regions: crewZones, crews: CREWS, workers: CREW_WORKERS };
+  assertEquals(unstaffed(input).map((s) => s.id), ["trees"]);
+  assertEquals(uncovered(input), [{ subscription: trees, taskTypeIds: ["9"] }]);
+  // no crews, no worker: the whole visit, as before
+  assertEquals(uncovered({ date: "2026-10-12", subscriptions: [sub("u", "rb", { startDate: "2026-10-05" })], regions, crews: [], workers: [] })[0].taskTypeIds, ["1", "2"]);
+});
+
+const absence = (o: Partial<Absence>): Absence => ({ id: "ab", userId: "u", from: "2026-10-27", to: "2026-10-28", disposition: "skip", createdAt: "x", ...o });
+
+Deno.test("REQ-842 generateTasks — the grass crew out: covered → the mulch crew's task says who it covers; deferred → marked, with a copy on the day they are back; skipped → not done; the foreman out → the next member leads", () => {
+  const base = { userId: "u", date: "2026-10-27", subscriptions: [grassOnly], regions: crewZones, existing: [], newId, crews: CREWS, workers: CREW_WORKERS };
+  const covered = generateTasks({ ...base, absences: [absence({ crewId: "grass", disposition: "cover", coverCrewId: "mulch" })] });
+  assertEquals(covered.map((t) => [t.crewId, t.workerId, t.coverFor, t.status]), [["mulch", "p", "grass", "assigned"], ["mulch", "p", "grass", "assigned"]]);
+  const deferred = generateTasks({ ...base, absences: [absence({ crewId: "grass", disposition: "defer" })] });
+  const today = deferred.filter((t) => t.date === "2026-10-27"), later = deferred.filter((t) => t.date !== "2026-10-27");
+  assertEquals(today.map((t) => [t.status, t.deferredTo, t.crewId]), [["deferred", "2026-10-29", "grass"], ["deferred", "2026-10-29", "grass"]]);
+  assertEquals(later.map((t) => [t.date, t.status, t.deferredFrom, t.workerId]), [["2026-10-29", "assigned", "2026-10-27", "a"], ["2026-10-29", "assigned", "2026-10-27", "a"]]);
+  const skipped = generateTasks({ ...base, absences: [absence({ crewId: "grass", disposition: "skip" })] });
+  assertEquals(skipped.map((t) => [t.status, t.workerId]), [["skipped", "a"], ["skipped", "a"]]);
+  const anaOut = generateTasks({ ...base, absences: [absence({ workerId: "a" })] });
+  assertEquals(anaOut.map((t) => [t.workerId, t.crewIds, t.status]), [["b", undefined, "assigned"], ["b", undefined, "assigned"]]);
+  // the same day again, with the deferred ones in place, adds nothing
+  assertEquals(generateTasks({ ...base, existing: today, absences: [absence({ crewId: "grass", disposition: "defer" })] }).filter((t) => t.date === "2026-10-27").length, 0);
 });

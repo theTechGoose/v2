@@ -58,6 +58,7 @@ describe("REQ-176 the sidebar's root folders", () => {
     expect(ids(["field"])).toEqual([
       "subscriptions",
       "checklists", // REQ-811 — the service checklists a repeat visit references
+      "services", // REQ-839 — the service catalogue
       "assignments",
       "tasks",
       "batches",
