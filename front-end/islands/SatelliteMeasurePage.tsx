@@ -1,5 +1,7 @@
 /**
- * REQ-856 — /roof island. Raphael: "get satellite images of an address for
+ * REQ-856 — the Satellite measure island (/tools/satellite; REQ-891: in the
+ * Tools folder, renamed from Roof measure, and a section can be a flat
+ * surface — a driveway, a patio — with no pitch). Raphael: "get satellite images of an address for
  * free and do the measurement myself … just in the United States".
  *
  * An address → /api/roof/locate (Mapbox when there is a token, else the free
@@ -27,6 +29,7 @@ import {
   bboxAround,
   centroid,
   distanceM,
+  type FacetKind,
   latLngToPixel,
   pixelToLatLng,
   summarize,
@@ -73,7 +76,7 @@ function errMsg(lang: Lang, err: unknown): string {
   return tFor(lang, "roof.error");
 }
 
-export default function RoofMeasurePage({ initialLang }: Props) {
+export default function SatelliteMeasurePage({ initialLang }: Props) {
   const [, force] = useState(0);
   useEffect(() => {
     const stored = globalThis.localStorage?.getItem("pm:lang") as Lang | null;
@@ -139,7 +142,7 @@ export default function RoofMeasurePage({ initialLang }: Props) {
     // on its own (REQ-856 AMENDMENT) before the page says it didn't load
     const url = roofClient.imageUrl(center, windowM, SIZE);
     let attempt = 0;
-    let timer: number | undefined;
+    let timer: ReturnType<typeof setTimeout> | undefined;
     const img = new Image();
     img.onload = () => {
       if (gone) return;
@@ -282,7 +285,11 @@ export default function RoofMeasurePage({ initialLang }: Props) {
 
   function closeDraft() {
     if (draft.length < 3) return;
-    setFacets([...facets, { points: draft, pitch: DEFAULT_PITCH }]);
+    setFacets([...facets, {
+      points: draft,
+      pitch: DEFAULT_PITCH,
+      kind: "roof",
+    }]);
     setDraft([]);
     setSavedMsg(false);
   }
@@ -317,7 +324,11 @@ export default function RoofMeasurePage({ initialLang }: Props) {
       [...site.footprints].sort((a, b) =>
         distanceM(centroid(a), center) - distanceM(centroid(b), center)
       )[0];
-    setFacets([...facets, { points: ring, pitch: DEFAULT_PITCH }]);
+    setFacets([...facets, {
+      points: ring,
+      pitch: DEFAULT_PITCH,
+      kind: "roof",
+    }]);
     setDraft([]);
     setSavedMsg(false);
   }
@@ -326,6 +337,23 @@ export default function RoofMeasurePage({ initialLang }: Props) {
     setFacets(facets.map((f, j) => (j === i ? { ...f, pitch } : f)));
     setSavedMsg(false);
   }
+
+  // REQ-891 — a driveway or patio has no pitch; back to a roof it gets the default
+  function setKind(i: number, kind: FacetKind) {
+    setFacets(
+      facets.map((f, j) =>
+        j === i
+          ? {
+            ...f,
+            kind,
+            pitch: kind === "flat" ? 0 : (f.pitch || DEFAULT_PITCH),
+          }
+          : f
+      ),
+    );
+    setSavedMsg(false);
+  }
+  const hasRoof = facets.some((f) => (f.kind ?? "roof") === "roof");
 
   async function save() {
     if (!center || saving) return;
@@ -591,6 +619,7 @@ export default function RoofMeasurePage({ initialLang }: Props) {
             <thead>
               <tr>
                 <th>{t("roof.facet")}</th>
+                <th>{t("roof.kind")}</th>
                 <th>{t("roof.pitch")}</th>
                 <th class="num">{t("roof.plan")}</th>
                 <th class="num">{t("roof.surface")}</th>
@@ -610,22 +639,41 @@ export default function RoofMeasurePage({ initialLang }: Props) {
                   <td>
                     <select
                       class="roof__select"
-                      data-cy="roof-pitch"
-                      value={String(f.pitch)}
+                      data-cy="roof-kind"
+                      value={f.kind ?? "roof"}
                       onChange={(e) =>
-                        setPitch(
+                        setKind(
                           i,
-                          Number((e.target as HTMLSelectElement).value),
+                          (e.target as HTMLSelectElement).value as FacetKind,
                         )}
                     >
-                      {PITCHES.map((p) => (
-                        <option value={String(p)}>
-                          {p === 0
-                            ? t("roof.pitchFlat")
-                            : t("roof.pitchN", { n: p })}
-                        </option>
-                      ))}
+                      <option value="roof">{t("roof.kindRoof")}</option>
+                      <option value="flat">{t("roof.kindFlat")}</option>
                     </select>
+                  </td>
+                  <td>
+                    {(f.kind ?? "roof") === "flat"
+                      ? <span class="roof__hint">—</span>
+                      : (
+                        <select
+                          class="roof__select"
+                          data-cy="roof-pitch"
+                          value={String(f.pitch)}
+                          onChange={(e) =>
+                            setPitch(
+                              i,
+                              Number((e.target as HTMLSelectElement).value),
+                            )}
+                        >
+                          {PITCHES.map((p) => (
+                            <option value={String(p)}>
+                              {p === 0
+                                ? t("roof.pitchFlat")
+                                : t("roof.pitchN", { n: p })}
+                            </option>
+                          ))}
+                        </select>
+                      )}
                   </td>
                   <td class="num">
                     {t("roof.sqft", { n: fmtInt(sum.facets[i].planSqft) })}
@@ -697,10 +745,12 @@ export default function RoofMeasurePage({ initialLang }: Props) {
               </b>
               <span>{t("roof.withWaste")} ({sum.wastePct}%)</span>
             </div>
-            <div class="roof__kpi roof__kpi--hero">
-              <b data-cy="roof-squares">{sum.squares.toFixed(2)}</b>
-              <span>{t("roof.squares")}</span>
-            </div>
+            {hasRoof && (
+              <div class="roof__kpi roof__kpi--hero">
+                <b data-cy="roof-squares">{sum.squares.toFixed(2)}</b>
+                <span>{t("roof.squares")}</span>
+              </div>
+            )}
           </div>
 
           <div class="roof__row" style="margin-top:12px">

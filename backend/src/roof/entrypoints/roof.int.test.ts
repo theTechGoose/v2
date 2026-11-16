@@ -233,6 +233,42 @@ Deno.test("REQ-856 measurements — created with its summary, listed newest firs
       assertEquals(r.status, 400, JSON.stringify(bad));
     }
 
+    // REQ-891 — a flat section (driveway, patio): its pitch is stored as 0 whatever was sent,
+    // the kind is kept, and an unknown kind is 400 bad_kind
+    const drive = await call("POST", "/roof/measurements", {
+      address: ADDRESS,
+      lat,
+      lng,
+      facets: [{ ...facet(lat, lng, 6), kind: "flat" }],
+      wastePct: 5,
+    }, H);
+    assertEquals(drive.status, 201, JSON.stringify(drive.body));
+    assertEquals(drive.body.facets[0].kind, "flat");
+    assertEquals(drive.body.facets[0].pitch, 0);
+    assertEquals(
+      Math.round(drive.body.summary.surfaceSqft),
+      Math.round(drive.body.summary.planSqft),
+      "a flat section's surface is its footprint",
+    );
+    const badKind = await call("POST", "/roof/measurements", {
+      address: ADDRESS,
+      lat,
+      lng,
+      facets: [{ ...facet(lat, lng, 6), kind: "dome" }],
+      wastePct: 5,
+    }, H);
+    assertEquals(badKind.status, 400);
+    assertEquals(badKind.body.code, "bad_kind");
+    assertEquals(
+      (await call(
+        "DELETE",
+        `/roof/measurements/${drive.body.id}`,
+        undefined,
+        H,
+      )).status,
+      200,
+    );
+
     // a second one, then the list is newest first
     const c2 = await call("POST", "/roof/measurements", {
       address: "1 Elm St, Austin, TX 78701",

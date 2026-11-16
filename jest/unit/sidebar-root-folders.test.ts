@@ -41,13 +41,17 @@ describe("REQ-176 the sidebar's root folders", () => {
       "field",
       "manage",
       "reports", // REQ-795: the Reports (data export) row
-      "roof", // REQ-856: the roof measurement tool
+      "tools", // REQ-891: the Tools folder (Satellite measure, REQ-856) — specific tools live off the root
     ]);
     expect(viewAt(NAV, []).items.filter(isFolder).map((n) => n.id)).toEqual([
       "billing",
       "field",
       "manage",
+      "tools",
     ]);
+    // REQ-891 (Raphael: "this tool is very specific, so stick it in a folder on the side called Tools")
+    expect(ids(["tools"])).toEqual(["satellite"]);
+    expect(folderPathTo(NAV, "satellite")).toEqual(["tools"]);
   });
 
   test("Billing holds Invoices, Payments, Work orders (REQ-773: Quotes left for the root); Field the four (REQ-361); Admin holds Workers, Timesheet and Admins (REQ-178, REQ-192)", () => {

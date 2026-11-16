@@ -5,7 +5,7 @@
  */
 import * as fs from "fs";
 import * as path from "path";
-import { viewAt } from "../../front-end/lib/nav-folders";
+import { isFolder, viewAt } from "../../front-end/lib/nav-folders";
 import { NAV } from "../../front-end/lib/nav-tree";
 
 const ROOT = path.resolve(__dirname, "../..");
@@ -18,7 +18,11 @@ const JARGON =
   /geocod|mercator|bbox|server|servidor|backend|\bAPI\b|endpoint|\bid\b|null|undefined|NAIP|USGS|Overpass/i;
 
 const KEYS = [
-  "nav.roof",
+  "nav.tools", // REQ-891
+  "nav.satellite", // REQ-891
+  "roof.kind", // REQ-891
+  "roof.kindRoof",
+  "roof.kindFlat",
   "roof.docTitle",
   "roof.eyebrow",
   "roof.title",
@@ -79,12 +83,39 @@ describe("REQ-856 roof measurement copy", () => {
       expect(leaks).toEqual([]);
     });
   }
-  test("the sidebar root has a Roof measure row (/roof, ruler icon) right after Reports", () => {
+  test("REQ-891: the sidebar has a Tools folder right after Reports holding Satellite measure (/tools/satellite, ruler icon); the words are 'Tools' / 'Satellite measure'", () => {
     const root = viewAt(NAV, []).items;
-    const i = root.findIndex((n) => n.id === "roof");
+    const i = root.findIndex((n) => n.id === "tools");
     expect(i).toBeGreaterThan(0);
     expect(root[i - 1].id).toBe("reports");
-    expect(root[i].href).toBe("/roof");
-    expect(root[i].icon).toBe("ruler");
+    expect(isFolder(root[i])).toBe(true);
+    const tools = viewAt(NAV, ["tools"]).items;
+    expect(tools.map((n) => n.id)).toEqual(["satellite"]);
+    expect(tools[0].href).toBe("/tools/satellite");
+    expect(tools[0].icon).toBe("ruler");
+    expect(en["nav.tools"]).toBe("Tools");
+    expect(en["nav.satellite"]).toBe("Satellite measure");
+    expect(es["nav.tools"]).toBe("Herramientas");
+    // the page no longer says it is only for roofs
+    expect(en["roof.eyebrow"]).toBe("Satellite measure");
+    expect(en["roof.title"]).toMatch(/driveway/i); // not only roofs any more
+    expect(es["roof.title"]).toMatch(/entrada/i);
+  });
+  test("REQ-891: the island is SatelliteMeasurePage on /tools/satellite; /roof redirects there (bookmarks and the first release's links keep working)", () => {
+    expect(
+      fs.existsSync(
+        path.join(ROOT, "front-end/islands/SatelliteMeasurePage.tsx"),
+      ),
+    ).toBe(true);
+    expect(
+      fs.existsSync(path.join(ROOT, "front-end/islands/RoofMeasurePage.tsx")),
+    ).toBe(false);
+    const route = read("front-end/routes/tools/satellite.tsx");
+    expect(route).toMatch(/SatelliteMeasurePage/);
+    expect(route).toMatch(/active="satellite"/);
+    expect(route).toMatch(/pageTitleKey="nav\.satellite"/);
+    const old = read("front-end/routes/roof/index.tsx");
+    expect(old).toMatch(/\/tools\/satellite/);
+    expect(old).toMatch(/302/);
   });
 });
