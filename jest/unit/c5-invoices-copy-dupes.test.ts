@@ -33,7 +33,7 @@ describe("REQ-706 (cycle 5, p18-9a) the invoices empty track talks about invoice
   });
 });
 
-describe("REQ-706 (cycle 5, p18-9a) the invoice detail header names the client once", () => {
+describe("REQ-706 (cycle 5, p18-9a) the invoice detail header names the client once — AMENDED by REQ-906: the client is always the title", () => {
   test("no job name: the client is the title and the sub-line is just the ref", () => {
     const h = detailTitle({ client: "Linda Morales", invoiceRef: "INV-001" });
     expect(h).toEqual({ title: "Linda Morales", sub: "INV-001" });
@@ -48,14 +48,14 @@ describe("REQ-706 (cycle 5, p18-9a) the invoice detail header names the client o
       }),
     ).toEqual({ title: "Linda Morales", sub: "INV-001" });
   });
-  test("with a job name: job is the title, client · ref the sub-line", () => {
+  test("with a job name (REQ-906): the client is still the title, job · ref the sub-line", () => {
     expect(
       detailTitle({
         jobName: "Kitchen remodel",
         client: "Linda Morales",
         invoiceRef: "INV-001",
       }),
-    ).toEqual({ title: "Kitchen remodel", sub: "Linda Morales · INV-001" });
+    ).toEqual({ title: "Linda Morales", sub: "Kitchen remodel · INV-001" });
   });
   test("InvoicesPage renders the header through detailTitle", () => {
     const src = read("front-end/islands/InvoicesPage.tsx");

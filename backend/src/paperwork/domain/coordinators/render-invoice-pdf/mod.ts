@@ -285,10 +285,11 @@ export class RenderInvoicePdf {
       const rows = Math.max(toLines.length, fromLines.length, 1);
       for (let i = 0; i < rows; i++) {
         if (toLines[i]) {
+          // REQ-906: the customer's name is the block's biggest line
           page.drawText(toLines[i], {
             x: M,
             y,
-            size: 9,
+            size: i === 0 ? 11 : 9,
             font: i === 0 ? bold : reg,
             color: i === 0 ? INK : MUTED,
           });

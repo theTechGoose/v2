@@ -17,6 +17,7 @@
     "#qrcode": "jsr:@libs/qrcode@^3.1.0",
     "#std/assert": "jsr:@std/assert@^1",
     "#std/encoding/base64": "jsr:@std/encoding@^1/base64",
+    "#std/encoding/base64url": "jsr:@std/encoding@^1/base64url",
     "#payment-split": "../front-end/lib/payment-split.ts",
     "#quote-flow/": "../shared/quote-flow/",
     "#documents/": "../shared/documents/",
@@ -42,7 +43,8 @@
     "@field/": "./src/field/",
     "@demo-mode/": "./src/demo-mode/",
     "@timeclock/": "./src/timeclock/",
-    "@roof/": "./src/roof/"
+    "@roof/": "./src/roof/",
+    "@hr/": "./src/hr/"
   },
   "compilerOptions": {
     "experimentalDecorators": true,
