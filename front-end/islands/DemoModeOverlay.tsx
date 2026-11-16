@@ -1908,6 +1908,7 @@ export default function DemoModeOverlay(
           home: home.box,
           view,
           tab: p.box,
+          top: bannerH(),
           controls: can && peekRef.current
             ? (r) => countControls(r, backdrop)
             : () => 0,

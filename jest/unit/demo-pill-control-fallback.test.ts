@@ -187,7 +187,16 @@ describe("REQ-818 (demo-loop cycle dm1, m5) — the pill shown out of its mini-p
     for (let x = 0; x <= view.w - homeBox.width; x++) {
       best = Math.min(best, controls({ ...homeBox, left: x, top }));
     }
-    expect(controls(box)).toBe(best);
+    // REQ-873 (cycle dm5, p5) AMENDMENT — the row's fewest is the last resort: every x on this row
+    // holds a control (best > 0), so the peek takes the nearest clear row instead
+    expect(best).toBeGreaterThan(0);
+    expect(controls(box)).toBe(0);
+    expect(box.top).not.toBe(top);
+    // nothing clear anywhere: the row's fewest, as REQ-818 had it
+    const everywhere = (r: Rect) => r.top === top ? controls(r) : 9;
+    const last = peekBox({ home: homeBox, view, tab, controls: everywhere });
+    expect(last.top).toBe(top);
+    expect(controls(last)).toBe(best);
     expect(box.left + box.width).toBeLessThanOrEqual(view.w);
   });
 
