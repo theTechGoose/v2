@@ -197,11 +197,12 @@ describe("REQ-795 the Reports page's pure helpers", () => {
     expect(isValidRange({ from: "2026-02-01", to: "2026-01-01" })).toBe(false);
     expect(isValidRange({ from: "bogus" })).toBe(false);
   });
-  test("Reports is the last root sidebar row, linking /reports, in both dictionaries", () => {
+  test("Reports is a root sidebar row after the folders (REQ-856: Roof measure sits after it), linking /reports, in both dictionaries", () => {
     const root = viewAt(NAV, []).items;
-    const last = root[root.length - 1];
-    expect(last.id).toBe("reports");
-    expect(last.href).toBe("/reports");
+    const i = root.findIndex((n) => n.id === "reports");
+    expect(i).toBe(root.length - 2);
+    expect(root[i].href).toBe("/reports");
+    expect(root[i + 1].id).toBe("roof"); // REQ-856
     const en = JSON.parse(read("lang/en.json")) as Record<string, string>;
     const es = JSON.parse(read("lang/es.json")) as Record<string, string>;
     expect(en["nav.reports"]).toBe("Reports");

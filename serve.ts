@@ -59,6 +59,10 @@ const children: ChildSpec[] = [
       AGENTS_LLM_CLIENT: "openai",
       APP_URL: `http://localhost:${FRONTEND_PORT}`,
       ...(KV_PATH ? { KV_PATH } : {}),
+      // REQ-856 — the roof tool's sources: a developer run (no bare PORT) reads the REAL
+      // free imagery and geocoders; the gate's / a pin's bare-PORT serve stays on the fakes
+      // (REQ-318: nothing leaves the box). An explicit ROOF_SOURCES always wins.
+      ROOF_SOURCES: Deno.env.get("ROOF_SOURCES") ?? (GATE_PORT ? "fake" : "live"),
     },
     color: "\x1b[36m", // cyan
   },

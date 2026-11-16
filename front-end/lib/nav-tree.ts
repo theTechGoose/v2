@@ -84,6 +84,9 @@ export const NAV: NavNode<IconName>[] = [
   // REQ-795 (hotfix, Raphael: "make a data export section at the top level ... call it reports"):
   // pick a slice of the account's data and a date range, download the CSV.
   { id: "reports", icon: "trend", href: "/reports" },
+  // REQ-856 (Raphael: "get satellite images of an address for free and do the measurement myself"):
+  // the roof measurement tool — a root row, one click from anywhere.
+  { id: "roof", icon: "ruler", href: "/roof" },
 ];
 
 /**

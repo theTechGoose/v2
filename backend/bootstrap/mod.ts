@@ -14,6 +14,7 @@ import { FieldNotices } from "@field/domain/coordinators/field-notices/mod.ts";
 import { ScheduleInvoiceNudges } from "@paperwork/domain/coordinators/schedule-invoice-nudges/mod.ts";
 import { DemoModeModule } from "@demo-mode/mod-root.ts";
 import { TimeclockModule } from "@timeclock/mod-root.ts";
+import { RoofModule } from "@roof/mod-root.ts";
 
 @Module({
   imports: [
@@ -27,6 +28,7 @@ import { TimeclockModule } from "@timeclock/mod-root.ts";
     FieldModule,
     DemoModeModule, // REQ-153
     TimeclockModule, // REQ-192
+    RoofModule, // REQ-856
   ],
 })
 class AppModule {}

@@ -41,6 +41,7 @@ describe("REQ-176 the sidebar's root folders", () => {
       "field",
       "manage",
       "reports", // REQ-795: the Reports (data export) row
+      "roof", // REQ-856: the roof measurement tool
     ]);
     expect(viewAt(NAV, []).items.filter(isFolder).map((n) => n.id)).toEqual([
       "billing",
