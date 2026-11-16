@@ -135,7 +135,9 @@ describe("REQ-534 (cycle 4, M8) — ink streams to the stage while it is drawn",
     const doc = padPage();
     const r = live(doc, []);
     r.snapshot();
-    expect(doc.listening("pointermove")).toBe(1);
+    // REQ-881 — a second pointermove listener (capture) watches for the drawn select list's
+    // popup going; both go on pause
+    expect(doc.listening("pointermove")).toBe(2);
     expect(doc.listening("pointerup")).toBe(1);
     r.pause();
     expect(doc.listening("pointermove")).toBe(0);
