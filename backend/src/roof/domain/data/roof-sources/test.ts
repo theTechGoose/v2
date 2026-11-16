@@ -5,8 +5,10 @@
  * building ways → lat/lng rings; and the live-vs-fake switch.
  */
 import { assert, assertEquals } from "#std/assert";
+import { RoofError } from "@roof/dto/roof.ts";
 import {
   naipExportUrl,
+  NaipImagery,
   parseCensus,
   parseMapbox,
   parseNaipItemName,
@@ -135,4 +137,60 @@ Deno.test("REQ-856 roofSourcesMode: live on the real deploy or ROOF_SOURCES=live
     "an explicit fake wins even on the real deploy — a prod story never leaves the box",
   );
   assert(true);
+});
+
+// REQ-856 AMENDMENT — a cold USGS export can take 20 s+ (measured 1–21 s across
+// five US windows); one slow answer must not cost the user the photo.
+const PNG = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 1, 2, 3]);
+const pngResponse = () =>
+  new Response(PNG, { status: 200, headers: { "content-type": "image/png" } });
+const BBOX = { west: 0, south: 0, east: 1, north: 1 };
+
+Deno.test("REQ-856 NaipImagery.image: a timed-out export is retried once and the second answer is the photo", async () => {
+  let calls = 0;
+  const fetchImpl = ((_u: unknown, _i?: unknown) => {
+    calls++;
+    if (calls === 1) {
+      return Promise.reject(new DOMException("timed out", "TimeoutError"));
+    }
+    return Promise.resolve(pngResponse());
+  }) as unknown as typeof fetch;
+  const warns: string[] = [];
+  const origWarn = console.warn;
+  console.warn = (...a: unknown[]) => warns.push(a.map(String).join(" "));
+  try {
+    const img = new NaipImagery(fetchImpl, { timeoutMs: 1_000, pauseMs: 0 });
+    const bytes = await img.image(BBOX, 1000);
+    assertEquals(Array.from(bytes), Array.from(PNG));
+    assertEquals(calls, 2);
+    assertEquals(warns.length, 1, "the slow attempt is logged as evidence");
+    assert(/\[roof\] naip export failed \(attempt 1/.test(warns[0]), warns[0]);
+  } finally {
+    console.warn = origWarn;
+  }
+});
+
+Deno.test("REQ-856 NaipImagery.image: two failures → 502 imagery_unavailable (the page shows 'didn't load' and offers Try again)", async () => {
+  let calls = 0;
+  const fetchImpl = (() => {
+    calls++;
+    return Promise.resolve(
+      new Response("<html>oops</html>", {
+        status: 503,
+        headers: { "content-type": "text/html" },
+      }),
+    );
+  }) as unknown as typeof fetch;
+  const origWarn = console.warn;
+  console.warn = () => {};
+  try {
+    const img = new NaipImagery(fetchImpl, { timeoutMs: 1_000, pauseMs: 0 });
+    const e = await img.image(BBOX, 1000).then(() => null, (e) => e);
+    assert(e instanceof RoofError, `expected RoofError, got ${e}`);
+    assertEquals(e.status, 502);
+    assertEquals(e.code, "imagery_unavailable");
+    assertEquals(calls, 2);
+  } finally {
+    console.warn = origWarn;
+  }
 });

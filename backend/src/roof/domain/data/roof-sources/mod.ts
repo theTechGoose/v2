@@ -203,17 +203,56 @@ export class ChainLocator implements RoofLocator {
   }
 }
 
+export interface NaipOptions {
+  /** per-attempt budget for one export; a cold USGS answer measured 1–21 s across five US windows */
+  timeoutMs?: number;
+  /** pause before the second attempt */
+  pauseMs?: number;
+}
+const IMAGE_TIMEOUT_MS = 45_000;
+const IMAGE_ATTEMPTS = 2;
+
 export class NaipImagery implements RoofImagery {
-  constructor(private fetchImpl: Fetch = fetch) {}
+  private timeoutMs: number;
+  private pauseMs: number;
+  constructor(private fetchImpl: Fetch = fetch, opts: NaipOptions = {}) {
+    this.timeoutMs = opts.timeoutMs ?? IMAGE_TIMEOUT_MS;
+    this.pauseMs = opts.pauseMs ?? 750;
+  }
+  /** the export, tried twice: the service is slow on the first look at a
+   *  window (REQ-856 AMENDMENT — a 24 s single try lost the photo on a real
+   *  address); every failed attempt is logged with its elapsed time */
   async image(bbox: Bbox, px: number): Promise<Uint8Array> {
-    const r = await this.fetchImpl(naipExportUrl(bbox, px), {
-      signal: AbortSignal.timeout(TIMEOUT_MS * 2),
-    });
-    if (!r.ok || !(r.headers.get("content-type") ?? "").startsWith("image/")) {
-      await r.body?.cancel();
-      throw new RoofError(`naip ${r.status}`, 502, "imagery_unavailable");
+    const url = naipExportUrl(bbox, px);
+    let last: unknown = null;
+    for (let attempt = 1; attempt <= IMAGE_ATTEMPTS; attempt++) {
+      const t0 = Date.now();
+      try {
+        const r = await this.fetchImpl(url, {
+          signal: AbortSignal.timeout(this.timeoutMs),
+        });
+        if (
+          !r.ok || !(r.headers.get("content-type") ?? "").startsWith("image/")
+        ) {
+          await r.body?.cancel();
+          throw new RoofError(`naip ${r.status}`, 502, "imagery_unavailable");
+        }
+        return new Uint8Array(await r.arrayBuffer());
+      } catch (e) {
+        last = e;
+        console.warn(
+          `[roof] naip export failed (attempt ${attempt}, ${
+            Date.now() - t0
+          } ms): ${(e as Error).message ?? String(e)}`,
+        );
+        if (attempt < IMAGE_ATTEMPTS && this.pauseMs > 0) {
+          await new Promise((r) => setTimeout(r, this.pauseMs));
+        }
+      }
     }
-    return new Uint8Array(await r.arrayBuffer());
+    throw last instanceof RoofError
+      ? last
+      : new RoofError(`naip ${String(last)}`, 502, "imagery_unavailable");
   }
   /** the catalog item under the point; a slow or odd answer from the service
    *  still names the provider (the service is sometimes flaky right after an

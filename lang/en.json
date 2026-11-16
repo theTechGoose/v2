@@ -5308,6 +5308,8 @@
   "roof.locating": "Finding it…",
   "roof.notFound": "We couldn't find that address. Check the street number, city and state, and try again.",
   "roof.imageFailed": "The aerial photo didn't load. Try again in a moment, or move the view a little.",
+  "roof.fetchingPhoto": "Fetching the aerial photo… the first look at an address can take up to a minute.",
+  "roof.retry": "Try again",
   "roof.window": "View width",
   "roof.windowM": "{m} m",
   "roof.nudge": "Move the view",

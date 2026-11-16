@@ -5308,6 +5308,8 @@
   "roof.locating": "Buscando…",
   "roof.notFound": "No encontramos esa dirección. Revisa el número, la ciudad y el estado, e inténtalo de nuevo.",
   "roof.imageFailed": "La foto aérea no cargó. Inténtalo en un momento, o mueve un poco la vista.",
+  "roof.fetchingPhoto": "Cargando la foto aérea… la primera vez en una dirección puede tardar hasta un minuto.",
+  "roof.retry": "Intentar de nuevo",
   "roof.window": "Ancho de la vista",
   "roof.windowM": "{m} m",
   "roof.nudge": "Mover la vista",

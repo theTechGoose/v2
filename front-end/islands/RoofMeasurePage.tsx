@@ -44,6 +44,8 @@ const DEFAULT_WASTE = 10;
 const DEFAULT_PITCH = 4;
 /** clicking this close (canvas px) to the first corner closes the ring */
 const CLOSE_PX = 18;
+const IMG_RETRIES = 2; // silent retries of the aerial photo before 'didn't load'
+const IMG_RETRY_MS = 1500;
 const COLORS = [
   "#e6397a",
   "#1f8a70",
@@ -94,6 +96,7 @@ export default function RoofMeasurePage({ initialLang }: Props) {
   const [windowM, setWindowM] = useState<number>(60);
   const [site, setSite] = useState<SiteInfo | null>(null);
   const [imgState, setImgState] = useState<ImgState>("idle");
+  const [imgTry, setImgTry] = useState(0); // bumped by "Try again"
   const [facets, setFacets] = useState<RoofFacet[]>([]);
   const [draft, setDraft] = useState<LatLng[]>([]);
   const [wastePct, setWastePct] = useState<number>(DEFAULT_WASTE);
@@ -132,6 +135,11 @@ export default function RoofMeasurePage({ initialLang }: Props) {
     }).catch(() => {
       if (!gone) setSite(null);
     });
+    // the photo: a cold aerial export can be slow, so a failed load is retried
+    // on its own (REQ-856 AMENDMENT) before the page says it didn't load
+    const url = roofClient.imageUrl(center, windowM, SIZE);
+    let attempt = 0;
+    let timer: number | undefined;
     const img = new Image();
     img.onload = () => {
       if (gone) return;
@@ -141,13 +149,21 @@ export default function RoofMeasurePage({ initialLang }: Props) {
     img.onerror = () => {
       if (gone) return;
       imgRef.current = null;
+      if (attempt < IMG_RETRIES) {
+        attempt++;
+        timer = setTimeout(() => {
+          if (!gone) img.src = `${url}&try=${attempt}`;
+        }, IMG_RETRY_MS);
+        return;
+      }
       setImgState("error");
     };
-    img.src = roofClient.imageUrl(center, windowM, SIZE);
+    img.src = url;
     return () => {
       gone = true;
+      if (timer !== undefined) clearTimeout(timer);
     };
-  }, [center?.lat, center?.lng, windowM]);
+  }, [center?.lat, center?.lng, windowM, imgTry]);
 
   // ---- drawing ----
   useEffect(() => {
@@ -436,9 +452,24 @@ export default function RoofMeasurePage({ initialLang }: Props) {
             {imgState !== "ready" && (
               <div class="roof__stage-msg">
                 {imgState === "loading"
-                  ? t("roof.locating")
+                  ? t("roof.fetchingPhoto")
                   : imgState === "error"
-                  ? t("roof.imageFailed")
+                  ? (
+                    <div>
+                      <p>{t("roof.imageFailed")}</p>
+                      <button
+                        type="button"
+                        class="roof__btn-sm"
+                        data-cy="roof-retry"
+                        onClick={() => {
+                          setImgState("loading");
+                          setImgTry((n) => n + 1);
+                        }}
+                      >
+                        {t("roof.retry")}
+                      </button>
+                    </div>
+                  )
                   : t("roof.howTo")}
               </div>
             )}

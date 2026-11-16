@@ -30,6 +30,8 @@ const KEYS = [
   "roof.locating",
   "roof.notFound",
   "roof.imageFailed",
+  "roof.fetchingPhoto",
+  "roof.retry",
   "roof.window",
   "roof.nudge",
   "roof.howTo",
