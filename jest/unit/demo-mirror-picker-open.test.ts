@@ -132,7 +132,7 @@ const stageEl = (stage: FDocument, cy: string) =>
   find(stage, (e) => e.getAttribute("data-cy") === cy) as FElement;
 
 describe("REQ-827 (cycle dm2, s1) — an open date picker is shown on the stage", () => {
-  test("a mousedown on a date input marks it open and the stage draws a 'Choosing a date…' chip under it", () => {
+  test("a mousedown on a date input marks it open and the stage draws a 'Choosing a date…' chip on it (REQ-862: in its row, not under it)", () => {
     const { doc, by, stage, sync } = setup();
     expect(chip(stage)).toBeNull();
     doc.fire("mousedown", by("when"));
@@ -142,7 +142,8 @@ describe("REQ-827 (cycle dm2, s1) — an open date picker is shown on the stage"
     expect(c).not.toBeNull();
     expect(c!.kind).toBe("date");
     expect(c!.text).toBe("Choosing a date…");
-    expect(c!.style).toMatch(/left:10px;top:50px;/);
+    // REQ-862: centred on the 160×30 input (no layout: the chip is estimated 140×26)
+    expect(c!.style).toMatch(/left:20px;top:22px;/);
     expect(c!.style).toMatch(/pointer-events:\s*none/);
     expect(c!.el.getAttribute("aria-hidden")).toBe("true");
     // never a select's list
@@ -265,7 +266,7 @@ describe("REQ-827 (cycle dm2, s1) — an open date picker is shown on the stage"
 });
 
 describe("REQ-827 (cycle dm2, s1) — an open file chooser is shown on the stage", () => {
-  test("a click on a file input marks it open and the stage draws 'Customer is choosing a file…' under it", () => {
+  test("a click on a file input marks it open and the stage draws 'Customer is choosing a file…' on it (REQ-862: in its row)", () => {
     const { doc, by, stage, sync } = setup();
     doc.fire("mousedown", by("doc"));
     doc.fire("click", by("doc"));
@@ -274,10 +275,11 @@ describe("REQ-827 (cycle dm2, s1) — an open file chooser is shown on the stage
     const c = chip(stage);
     expect(c?.kind).toBe("file");
     expect(c?.text).toBe("Customer is choosing a file…");
-    expect(c!.style).toMatch(/left:10px;top:230px;/);
+    // REQ-862: centred on the 250×30 input (the chip estimated 230×26)
+    expect(c!.style).toMatch(/left:20px;top:202px;/);
   });
 
-  test("a hidden file input opened from its label: the chip sits under the label (the nearest box)", () => {
+  test("a hidden file input opened from its label: the chip sits by the label (the nearest box; REQ-862: beside it, in its row)", () => {
     const { doc, by, stage, sync } = setup();
     doc.fire("mousedown", by("logo-btn"));
     doc.fire("click", by("logo-btn"));
@@ -285,7 +287,8 @@ describe("REQ-827 (cycle dm2, s1) — an open file chooser is shown on the stage
     sync();
     const c = chip(stage);
     expect(c?.kind).toBe("file");
-    expect(c!.style).toMatch(/left:10px;top:136px;/);
+    // REQ-862: wider than the 120 px label, so beside it: right edge + 8 px
+    expect(c!.style).toMatch(/left:138px;top:105px;/);
   });
 
   test("a chosen file (change), a cancel, the window's focus coming back or a mousedown elsewhere closes it", () => {
@@ -347,5 +350,144 @@ describe("REQ-827 (cycle dm2, s1) — the chip speaks the presenter's language",
       "utf8",
     );
     expect(src).toMatch(/pickerLabel[\s\S]{0,200}demoMode\.picker(Date|File)/);
+  });
+});
+
+/**
+ * REQ-862 (demo-loop cycle dm4, issue p7) — the chip never covers frame text the customer can
+ * read, and is set in the app's font.
+ *
+ * REQ-827 hung the chip under its field (place(): top = the control's bottom + a 4 px margin), so
+ * it sat over whatever was next: the "November 16, 2026" helper under "Received on", the
+ * "APP LANGUAGE" label under "Upload logo". Its CHIP_CSS hard-coded
+ * `font:600 13px/1.4 system-ui,…`, a family the app uses nowhere (monospace-looking on headless
+ * Linux). Now the chip sits on the control's own box when it fits there, else beside it
+ * (right edge + 8 px, else left edge − 8 px), else centred on the control; always in the
+ * control's own row; in the frame's body font (Inter by default).
+ */
+describe("REQ-862 (cycle dm4, p7) — the picker chip covers no frame text and uses the app font", () => {
+  const W: Record<string, number> = {
+    "Choosing a date…": 140,
+    "Customer is choosing a file…": 238,
+  };
+  let spy: jest.SpyInstance;
+  beforeEach(() => {
+    // the fake DOM has no layout: the chip gets the size Chromium gave it in the demo
+    const orig = FElement.prototype.getBoundingClientRect;
+    spy = jest.spyOn(FElement.prototype, "getBoundingClientRect")
+      .mockImplementation(function (this: FElement) {
+        if (this.hasAttribute("data-mirror-picker")) {
+          const w = W[this.textContent ?? ""] ?? 200;
+          return {
+            left: 0,
+            top: 0,
+            width: w,
+            height: 26,
+            x: 0,
+            y: 0,
+            right: w,
+            bottom: 26,
+          };
+        }
+        return orig.call(this);
+      });
+  });
+  afterEach(() => spy.mockRestore());
+
+  /** the chip's box from its style (left/top) and its size */
+  const box = (c: NonNullable<ReturnType<typeof chip>>) => {
+    const left = Number(/left:(-?[\d.]+)px/.exec(c.style)![1]);
+    const top = Number(/top:(-?[\d.]+)px/.exec(c.style)![1]);
+    const w = W[c.text ?? ""] ?? 200;
+    return { left, top, right: left + w, bottom: top + 26 };
+  };
+  const overlaps = (
+    a: { left: number; top: number; right: number; bottom: number },
+    b: { left: number; top: number; width: number; height: number },
+  ) =>
+    a.left < b.left + b.width && b.left < a.right &&
+    a.top < b.top + b.height && b.top < a.bottom;
+
+  test("a date chip that fits sits on the date input itself, centred — never under it on the next line", () => {
+    const { doc, by, stage, sync } = setup();
+    doc.fire("mousedown", by("when"));
+    sync();
+    const c = chip(stage)!;
+    const b = box(c);
+    const r = by("when").rect; // 10,20 160×30
+    expect(c.style).toMatch(/left:20px;top:22px;/);
+    expect(b.top).toBeGreaterThanOrEqual(r.top);
+    expect(b.bottom).toBeLessThanOrEqual(r.top + r.height);
+    expect(c.style).not.toMatch(/margin:4px/);
+    // the helper line right under the input stays readable
+    expect(overlaps(b, { left: 10, top: 52, width: 300, height: 18 })).toBe(
+      false,
+    );
+  });
+
+  test("a file chip wider than its upload button sits beside it (right edge + 8 px), in its row — not over the next label", () => {
+    const { doc, by, stage, sync } = setup();
+    doc.fire("mousedown", by("logo-btn"));
+    doc.fire("click", by("logo-btn"));
+    doc.fire("click", by("logo"));
+    sync();
+    const c = chip(stage)!;
+    const b = box(c);
+    expect(c.style).toMatch(/left:138px;top:105px;/);
+    // "APP LANGUAGE" right under the button
+    expect(overlaps(b, { left: 10, top: 146, width: 120, height: 18 })).toBe(
+      false,
+    );
+    for (const cy of ["when", "logo-btn", "doc", "name"]) {
+      expect(overlaps(b, by(cy).rect)).toBe(false);
+    }
+  });
+
+  test("no room on the right: beside its left edge (left edge − 8 px)", () => {
+    const { doc, by, stage, sync, boxes } = setup();
+    by("logo-btn").rect = { left: 800, top: 100, width: 120, height: 36 };
+    boxes(stage);
+    doc.fire("mousedown", by("logo-btn"));
+    doc.fire("click", by("logo-btn"));
+    doc.fire("click", by("logo"));
+    sync();
+    expect(chip(stage)!.style).toMatch(/left:554px;top:105px;/);
+  });
+
+  test("no room on the control or on either side: centred on the control, kept inside the frame", () => {
+    const { doc, by, stage, sync, boxes } = setup();
+    // a 200 px button in a 300 px frame: the 238 px chip fits neither on it nor beside it
+    by("logo-btn").rect = { left: 10, top: 100, width: 200, height: 36 };
+    stage.defaultView.innerWidth = 300;
+    boxes(stage);
+    doc.fire("mousedown", by("logo-btn"));
+    doc.fire("click", by("logo-btn"));
+    doc.fire("click", by("logo"));
+    sync();
+    // centred would be left -9: clamped to the frame's edge, still in the button's row
+    expect(chip(stage)!.style).toMatch(/left:0px;top:105px;/);
+  });
+
+  test("the chip is set in the app's font: the frame body's family, Inter when it has none — never the system-ui stack", () => {
+    const a = setup();
+    a.doc.fire("mousedown", a.by("when"));
+    a.sync();
+    const plain = chip(a.stage)!.style;
+    expect(plain).not.toMatch(/system-ui,-apple-system,sans-serif/);
+    expect(plain).toMatch(/font-family:\s*"?Inter"?,/);
+    expect(plain).toMatch(/font-weight:\s*600/);
+    expect(plain).toMatch(/font-size:\s*13px/);
+
+    const b = setup();
+    (b.stage.defaultView as unknown as {
+      getComputedStyle: (e: unknown) => { fontFamily: string };
+    }).getComputedStyle = (e) => ({
+      fontFamily: e === b.stage.body ? '"Nunito", sans-serif' : "serif",
+    });
+    b.doc.fire("mousedown", b.by("when"));
+    b.sync();
+    expect(chip(b.stage)!.style).toMatch(
+      /font-family:\s*"Nunito", sans-serif;/,
+    );
   });
 });
