@@ -744,19 +744,25 @@ function differsOnlyIn(a: PillFace, b: PillFace, fields: Set<string>): boolean {
  * question going up or down — the customer's own tap, no page change goes with it — or, right
  * after a follow switch (`awaiting`: the stage shows its own guess, pillFaceAwaiting), the new
  * page's first face when it differs from that guess only in what the guess made up (status,
- * label, tucked): the folded mini-pill replaces the guessed whole pill at once. A tuck, an
+ * label, tucked): the folded mini-pill replaces the guessed whole pill at once. REQ-828 (dm2,
+ * p7) — and, when the shown face was itself shown at once with no frame since (`quick`), a face
+ * whose only change is the tuck (folding changes nothing on the mirrored page). A tuck, an
  * opened pill or new words otherwise still wait for their frame.
  */
 export function pillShowsAtOnce(
   shown: PillFace,
   next: PillFace,
   awaiting: boolean,
+  quick = false,
 ): boolean {
-  const fields = awaiting
-    ? new Set([...OVERLAY_ONLY, ...GUESSED])
-    : OVERLAY_ONLY;
+  const fields = new Set(OVERLAY_ONLY);
+  if (awaiting) { for (const k of GUESSED) fields.add(k); }
+  // REQ-828 (dm2, p7) — the shown face came at once and no frame since (PillSync.atOnce): the
+  // pill folding back to its tab (Keep going, then the peek ends) is the same overlay gesture
+  const tucked = quick && (shown.tucked === true) !== (next.tucked === true);
+  if (tucked) fields.add("tucked");
   const asked = (shown.asking === true) !== (next.asking === true);
-  return (asked || awaiting) && differsOnlyIn(shown, next, fields);
+  return (asked || awaiting || tucked) && differsOnlyIn(shown, next, fields);
 }
 
 /**
