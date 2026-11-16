@@ -267,6 +267,28 @@ export class FElement extends FNode {
   toDataURL(): string {
     return this.bitmap;
   }
+  /** REQ-845 — `closest()` for a list of simple selectors: `tag`, `tag[attr]`, `[attr="v"]`
+   *  (what CONTROL_SELECTOR is made of); itself included, as in a browser */
+  closest(sel: string): FElement | null {
+    const parts = sel.split(",").map((p) => {
+      const m = /^([a-z0-9-]*)(?:\[([a-z-]+)(?:="([^"]*)")?\])?$/i.exec(
+        p.trim(),
+      );
+      if (!m) throw new Error(`fake-dom closest(): unsupported selector ${p}`);
+      return { tag: m[1].toLowerCase(), attr: m[2], val: m[3] };
+    });
+    const hit = (e: FElement) =>
+      parts.some((p) =>
+        (!p.tag || e.localName === p.tag) &&
+        (!p.attr || (p.val === undefined
+          ? e.getAttribute(p.attr) !== null
+          : e.getAttribute(p.attr) === p.val))
+      );
+    for (let e: FNode | null = this; e; e = e.parentNode) {
+      if (e.nodeType === 1 && hit(e as FElement)) return e as FElement;
+    }
+    return null;
+  }
   /** REQ-824 — the four user-action pseudo-classes, answered from the document's state (any other
    *  selector is a test's mistake: it throws) */
   matches(sel: string): boolean {

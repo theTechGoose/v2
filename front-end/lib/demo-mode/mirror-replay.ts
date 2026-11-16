@@ -120,6 +120,7 @@ import {
   type SNode,
 } from "../../../shared/demo-mode/mirror.ts";
 import type { NodeAnchor } from "../../../shared/demo-mode/protocol.ts";
+import { CONTROL_SELECTOR } from "../../../shared/demo-mode/pill.ts";
 import {
   MIRROR_UA_CSS,
   restateRules,
@@ -1298,12 +1299,24 @@ export function createReplayer(
         return null;
       }
       for (; n && n.nodeType !== 9; n = n.parentNode) {
-        const id = idOf.get(n);
+        let id = idOf.get(n);
         if (id === undefined || n.nodeType !== 1 || byId.get(id) !== n) {
           continue;
         }
-        const r = (n as Element).getBoundingClientRect();
+        let r = (n as Element).getBoundingClientRect();
         if (r.width <= 0 || r.height <= 0) continue;
+        // REQ-845 (demo dm3 m1) — the control around the point (a link, a button…), not the
+        // innermost element under it: a nav link's label span leaves the page when the sidebar
+        // collapses, the link (and its print) stays
+        const c = (n as Element).closest?.(CONTROL_SELECTOR) ?? null;
+        const cid = c ? idOf.get(c) : undefined;
+        if (c && c !== n && cid !== undefined && byId.get(cid) === c) {
+          const cr = c.getBoundingClientRect();
+          if (cr.width > 0 && cr.height > 0) {
+            id = cid;
+            r = cr;
+          }
+        }
         return {
           id,
           x: clamp01((x - r.left) / r.width),
