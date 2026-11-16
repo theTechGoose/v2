@@ -27,6 +27,12 @@ import { type EndAsk, endConfirm } from "../../../shared/demo-mode/ended.ts";
 
 const BTN =
   "padding:5px 12px;border-radius:8px;border:0;cursor:pointer;font:inherit;font-size:12px;font-weight:700;pointer-events:auto";
+/** End and Yes. REQ-865 (cycle dm4, p1) — exported: the stage's ghost draws them with these */
+export const END_BTN = BTN;
+/** Keep going's style, as drawn below. REQ-865 — exported for the stage's ghost (a unit test
+ *  holds the two equal) */
+export const END_NO =
+  "padding:5px 6px;border:0;background:transparent;color:#fff;text-decoration:underline;cursor:pointer;font:inherit;font-size:12px;font-weight:600;pointer-events:auto";
 /** REQ-855 — End as an outlined secondary on a dark pill */
 const OUTLINE =
   "background:transparent;color:#fff;border:1px solid rgba(255,255,255,.7)";

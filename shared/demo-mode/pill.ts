@@ -812,6 +812,17 @@ export function bandBackground(colors: readonly string[]): string {
 }
 
 /**
+ * REQ-865 (demo-loop cycle dm4, p1) — the customer pill's box metrics: its gap, padding and font
+ * size. One definition for the customer's pill (DemoModeOverlay) and the stage's ghost of it,
+ * which lays its words out at these px and then scales by the frame's `s` — never its own,
+ * hand-scaled numbers (they cut words the customer sees whole).
+ */
+export const PILL_BOX_METRICS = "gap:10px;padding:7px 12px;font-size:13px";
+/** REQ-536 / REQ-865 — the customer pill's status chip ("Connected"), and the ghost's copy of it */
+export const PILL_STATUS_CHIP =
+  "padding:2px 8px;border-radius:999px;background:rgba(255,255,255,.18);font-size:11.5px;font-weight:700";
+
+/**
  * REQ-295 — the customer's pill box on the stage: scaled and offset like the frame.
  * REQ-372 (demo-loop cycle 2, m8) — and cut to the frame: a pill wider than the customer's view
  * (M6's min-width) must not hang off the phone; `clipped` says something was cut. A box wholly
