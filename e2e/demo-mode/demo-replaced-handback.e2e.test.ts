@@ -126,7 +126,8 @@ Deno.test("REQ-541 (cycle 4, M22): a replaced stage window is greyed under the m
       await useCookie(page.context(), baseUrl, admin.cookie);
       await openDemo(page, baseUrl, userPhone);
       await tab.reload();
-      await tab.locator("[data-cy='demo-status']").waitFor({ timeout: 20_000 });
+      // her app has joined (REQ-890 — the phone's compact pill carries no status chip: the pill)
+      await tab.locator("[data-cy='demo-pill']").waitFor({ timeout: 20_000 });
       await page.locator("[data-cy='demo-status']").filter({
         hasText: /^\s*Live\s*$/,
       }).waitFor({ timeout: 20_000 });

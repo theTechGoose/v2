@@ -609,6 +609,8 @@ Deno.test("REQ-242: the stage mirrors the customer's actual screen — connectin
       // 11. End from the customer clears both
       await pillUp(userPage);
       await userPage.locator("[data-cy='demo-end']").click();
+      // REQ-235 — End asks first
+      await userPage.locator("[data-cy='demo-end-confirm']").click();
       await userPage.locator("[data-cy='demo-pill']").waitFor({
         state: "hidden",
         timeout: 15_000,
