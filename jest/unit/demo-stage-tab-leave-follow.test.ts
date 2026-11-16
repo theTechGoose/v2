@@ -548,11 +548,11 @@ describe("REQ-823 the wiring: the overlay, the stage, the words", () => {
   const en = JSON.parse(read("lang/en.json")) as Record<string, string>;
   const es = JSON.parse(read("lang/es.json")) as Record<string, string>;
 
-  test("M2: the overlay hears the sign-out (onSignout) — says leaving('signout') on its link and closes it BEFORE the redirect, forgets the carried demo and drops it", () => {
+  test("M2: the overlay hears the sign-out (signoutGate, REQ-834: onSignout time-boxed) — says leaving('signout') on its link and closes it BEFORE the redirect, forgets the carried demo and drops it", () => {
     expect(overlay).toMatch(
-      /import \{ onSignout \} from "\.\.\/lib\/demo-mode\/signout-signal\.ts";/,
+      /import \{ signoutGate \} from "\.\.\/lib\/demo-mode\/signout-signal\.ts";/,
     );
-    const at = overlay.indexOf("onSignout(");
+    const at = overlay.indexOf("signoutGate(");
     expect(at).toBeGreaterThan(0);
     const body = overlay.slice(at, at + 900);
     const said = body.indexOf('leaving("signout")');

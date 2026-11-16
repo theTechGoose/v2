@@ -9,6 +9,10 @@
  *   2. M2: the customer signs out from the sidebar with a second tab open: the stage says
  *      "Ana Torres signed out" at once. It never says "Loading their next page…" for it and never
  *      goes Live on the other tab. The other tab's pill goes too (its overlay heard the sign-out).
+ *   3. REQ-834 (demo-loop cycle dm2, M1 — amends REQ-823): she signs out in tab 1 and back in
+ *      while tab 2 stays open (never reloaded). Tab 2 rejoins: its pill is back within 5 s of
+ *      tab 1's, and a key in tab 2 takes the stage there. REQ-823's latch was for the page's whole
+ *      life, so tab 2 asked for no demo again until a navigation inside it.
  *
  * Which tab the stage shows is read off the stage pill's screen size ("Ana Torres's screen,
  * 1000 × 760"): the two tabs have different viewports.
@@ -343,6 +347,72 @@ Deno.test("REQ-823 M2 (demo-loop cycle dm1): the customer signs out from the sid
         await statusOf(page),
         "Ana Torres signed out",
         "still says she signed out",
+      );
+    } finally {
+      await userCtx.close();
+    }
+  }));
+
+Deno.test("REQ-834 / REQ-823 AMENDMENT (demo-loop cycle dm2, M1): she signs out in tab 1 and back in while tab 2 stays open — tab 2 shows the pill again within 5 s, and a key in tab 2 takes the stage there", (t) =>
+  story(t, async ({ page, expect, http, baseUrl }) => {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    const { userCtx, tab1, tab2, userPhone } = await twoTabs(
+      page,
+      http,
+      baseUrl,
+      { width: 1100, height: 780 },
+      "/quotes",
+    );
+    try {
+      await sleep(1_000);
+      await tab1.locator("button.nav-item--logout").click();
+      await until(
+        "the stage says Ana Torres signed out",
+        async () => (await statusOf(page)) === "Ana Torres signed out",
+        10_000,
+      );
+      await tab2.locator("[data-cy='demo-pill']").waitFor({
+        state: "detached",
+        timeout: 10_000,
+      });
+      // the sign-out's redirect has left the app (its own page load may still be going)
+      await tab1.waitForURL((u: URL) => u.pathname === "/", {
+        timeout: 20_000,
+        waitUntil: "commit",
+      });
+      // she signs in again (the same phone: a new session); the browser's cookie is the new one,
+      // in tab 2 too — and tab 2 is never reloaded
+      const again = await verify(http, userPhone);
+      await useCookie(userCtx, baseUrl, again.cookie);
+      await tab1.goto(`${baseUrl}/dashboard`);
+      await pillUp(tab1);
+      // she goes back to tab 2: its pill is back within 5 s
+      await tab2.bringToFront();
+      const back = Date.now();
+      await tab2.locator("[data-cy='demo-pill']").waitFor({
+        state: "attached",
+        timeout: 5_000,
+      }).catch(() => {
+        throw new Error(
+          `M1: tab 2's pill is back within 5 s of the re-login (none after ${
+            Date.now() - back
+          } ms)`,
+        );
+      });
+      // and her key in tab 2 takes the stage there
+      await tab2.keyboard.press("Shift");
+      await until(
+        "M1: a key in tab 2 takes the stage to it (640 × 760)",
+        async () => (await screenOf(page)).includes("640 × 760"),
+      );
+      await until(
+        "M1: Live on tab 2",
+        async () => (await statusOf(page)) === "Live",
+      );
+      expect.eq(
+        await pathOf(page),
+        "/quotes",
+        "the stage shows tab 2's /quotes",
       );
     } finally {
       await userCtx.close();
