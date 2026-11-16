@@ -1,4 +1,4 @@
-import { useState } from "preact/hooks";
+import { useEffect, useState } from "preact/hooks";
 // NW-34 (REQ-012): ONE as-you-type phone mask, shared with every customer input.
 import { formatPhoneInput } from "../../shared/quote-flow/format-helpers.ts";
 import { langSignal } from "../lib/lang.ts";
@@ -6,6 +6,11 @@ import { t } from "../lib/i18n.ts";
 import { landingClient } from "../clients/landing.ts";
 import { ApiError } from "../lib/api.ts";
 import { stashDevCode } from "../lib/dev-code.ts";
+import {
+  rejoinTarget,
+  signedInNow,
+  watchLoginRejoin,
+} from "../lib/login-rejoin.ts";
 
 /**
  * LoginForm — the clean, login-branded phone entry used by /login
@@ -26,6 +31,19 @@ export default function LoginForm() {
   const [err, setErr] = useState<string | null>(null);
 
   const lang = langSignal.value;
+
+  // REQ-879 (demo-loop cycle dm5, m3) — this page was rendered with no session, so it runs no
+  // demo code. When she comes back to it after signing in again in another tab (the shared
+  // cookie is live), it goes on to ?next= (or the dashboard): that page has the session, mounts
+  // the demo overlay and claims the stage.
+  useEffect(() =>
+    watchLoginRejoin({
+      win: globalThis,
+      doc: document,
+      signedIn: () => signedInNow(),
+      go: (to) => globalThis.location.replace(to),
+      target: rejoinTarget(globalThis.location.search),
+    }), []);
 
   async function onSubmit(e: Event) {
     e.preventDefault();
