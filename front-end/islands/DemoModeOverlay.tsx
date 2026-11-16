@@ -192,6 +192,7 @@ import {
   dialogDim,
   isPublicDocPath,
   PAGE_MEDIA_SELECTOR,
+  peekBox,
   PILL_BAND_GAP,
   PILL_COMPACT_MAX_W,
   PILL_FONT,
@@ -1468,15 +1469,17 @@ export default function DemoModeOverlay(
         });
       }
       // tucked: a hover or tap shows the whole pill out of its tab — flush with the tab's edge,
-      // so the pointer that opened it is on it (leaving it folds it again)
+      // so the pointer that opened it is on it (leaving it folds it again). REQ-818 (cycle dm1,
+      // m5) — unless a control is under it there (a footer link): slid along the tab's row to the
+      // place with the fewest controls, inside the window. Measured only while it is out (a peek
+      // places it again): a folded tab costs no sampling of the row
       const box = p.tucked
-        ? {
-          ...home.box,
-          top: home.box.top + (p.box.top - edge.top),
-          left: p.box.left > edge.left
-            ? Math.max(0, view.w - home.box.width)
-            : 0,
-        }
+        ? peekBox({
+          home: home.box,
+          view,
+          tab: p.box,
+          controls: can && peekRef.current ? countControls : () => 0,
+        })
         : p.box;
       setDock({
         x: Math.round(box.left - home.box.left),
@@ -1580,13 +1583,19 @@ export default function DemoModeOverlay(
   // REQ-545 (demo-loop cycle 4, m2) — the pill folded on the window's left edge, its foot on the
   // home's foot: only its buttons take a click. REQ-637 (cycle 5, m5) — a labelled mini-pill
   // ("● Demo" and an × that is End), never a bare 16 px sliver
-  // REQ-781 (cycle dv1, d7) — or on the right edge (`tabAt`), when the left one has a control
+  // REQ-781 (cycle dv1, d7) — or on the right edge (`tabAt`), when the left one has a control;
+  // REQ-818 (cycle dm1, m5) — or along the bottom edge, fully round
   const tabR = PILL_TAB.h / 2;
   const tabStyle =
     `position:fixed;left:0;bottom:calc(100% - var(--vvt, 0px) - var(--vvh, 100%) + ${PILL_BAND_GAP}px);transform:translate(${tabAt.x}px, ${tabAt.y}px);z-index:${
       Z + 3
     };display:flex;align-items:stretch;width:${PILL_TAB.w}px;height:${PILL_TAB.h}px;box-sizing:border-box;padding:0;border-radius:${
-      tabAt.x > 0 ? `${tabR}px 0 0 ${tabR}px` : `0 ${tabR}px ${tabR}px 0`
+      tabAt.x <= 0
+        ? `0 ${tabR}px ${tabR}px 0`
+        // REQ-818 (cycle dm1, m5) — along the bottom edge (no window edge beside it): round
+        : tabAt.x + PILL_TAB.w < (globalThis.innerWidth || 0)
+        ? `${tabR}px`
+        : `${tabR}px 0 0 ${tabR}px`
     };background:#1f3d1b;color:#fff;font-family:${PILL_FONT};font-size:12.5px;font-weight:700;white-space:nowrap;overflow:hidden;box-shadow:0 2px 10px rgba(0,0,0,.3);pointer-events:none;opacity:${
       underDim ? PILL_UNDER_DIALOG_OPACITY : 1
     }`;

@@ -218,7 +218,10 @@ export function tabBox(home: Rect): Rect {
 
 /** REQ-781 (demo-loop cycle dv1, d7) — the mini-pill's places, in the order asked: flush with the
  *  window's left edge with its foot on the home's foot (`tabBox`), then flush with the right edge;
- *  then up both edges a tab's height (and a gap) at a time, down to `top` (the banner) */
+ *  then up both edges a tab's height (and a gap) at a time, down to `top` (the banner).
+ *  REQ-818 (demo-loop cycle dm1, m5) — then along the bottom edge, a tab's width (and a gap) at a
+ *  time from left to right: a page with controls up both edges (a sidebar, a right rail) still has
+ *  a place with no control under the mini-pill */
 export function tabSpots(home: Rect, view: Size, top = 0): Rect[] {
   const left = tabBox(home);
   const right = Math.max(0, view.w - PILL_TAB.w);
@@ -230,7 +233,64 @@ export function tabSpots(home: Rect, view: Size, top = 0): Rect[] {
   ) {
     out.push({ ...left, top: t }, { ...left, top: t, left: right });
   }
-  return out.length ? out : [left, { ...left, left: right }];
+  if (!out.length) out.push(left, { ...left, left: right });
+  const step = PILL_TAB.w + PILL_BAND_GAP;
+  for (let x = step; x + PILL_TAB.w <= right - PILL_BAND_GAP; x += step) {
+    out.push({ ...out[0], left: x });
+  }
+  return out;
+}
+
+/** REQ-818 (demo-loop cycle dm1, m5) — the box with the fewest controls under it; a tie keeps the
+ *  first (the order asked) */
+function fewest(boxes: Rect[], controls: (r: Rect) => number): Rect {
+  let best = boxes[0];
+  let n = Infinity;
+  for (const r of boxes) {
+    const c = controls(r);
+    if (c < n) {
+      best = r;
+      n = c;
+      if (c === 0) break;
+    }
+  }
+  return best;
+}
+
+/**
+ * REQ-818 (demo-loop cycle dm1, m5) — the whole pill shown out of its mini-pill (`tab`, a hover or
+ * a tap): on the tab's row (its foot on the tab's foot), flush with the tab's edge (centred over a
+ * tab along the bottom) — so the pointer that opened it is on it — unless a control is under it there: then slid along the row to the
+ * place with the fewest controls, nearest that edge first. Always inside the window.
+ */
+export function peekBox(o: {
+  home: Rect;
+  view: Size;
+  tab: Rect;
+  controls: (r: Rect) => number;
+}): Rect {
+  const w = o.home.width;
+  const max = Math.max(0, o.view.w - w);
+  const top = o.tab.top + o.tab.height - o.home.height;
+  // flush with the left edge, or the right one; a tab along the bottom: centred over it
+  const flush = o.tab.left <= 0
+    ? 0
+    : o.tab.left + o.tab.width >= o.view.w
+    ? max
+    : Math.max(
+      0,
+      Math.min(Math.round(o.tab.left + (o.tab.width - w) / 2), max),
+    );
+  const at = (x: number): Rect => ({
+    ...o.home,
+    top,
+    left: Math.max(0, Math.min(Math.round(x), max)),
+  });
+  const xs = [flush];
+  for (let x = 0; x < max; x += PILL_TAB.w / 2) xs.push(x);
+  xs.push(max);
+  xs.sort((a, b) => Math.abs(a - flush) - Math.abs(b - flush));
+  return fewest(xs.map(at), o.controls);
 }
 
 /**
@@ -273,6 +333,8 @@ export function pillSpots(o: {
  *      it (`controls`; defaults to `blocked`);
  *   3. whole, in the first spot with no control under it (text and cards may be);
  *   4. folded at the left edge (a pill that yields, or a public /q /i /co page), else home.
+ *      REQ-818 (cycle dm1, m5): not the left edge blindly — the mini-pill or whole spot with the
+ *      fewest controls under it.
  * A public document page (`minimal`) prefers the whole pill (End in reach): 1, 3, then 2. The
  * ended notice (`floats`) and a pill that does not yield never fold: 1, 3, else home.
  */
@@ -294,7 +356,17 @@ export function placePill(o: {
   /** REQ-781 — how many controls of the page (links, buttons, fields) are under a box */
   controls?: (r: Rect) => number;
 }): { box: Rect; tucked: boolean; band: boolean } {
-  const controls = o.controls ?? o.blocked;
+  // REQ-818 — each box is measured once (the last resort asks of every spot again)
+  const counted = new Map<string, number>();
+  const controls = (r: Rect) => {
+    const k = `${r.left},${r.top},${r.width},${r.height}`;
+    let n = counted.get(k);
+    if (n === undefined) {
+      n = (o.controls ?? o.blocked)(r);
+      counted.set(k, n);
+    }
+    return n;
+  };
   const whole = (box: Rect) => ({ box, tucked: false, band: false });
   const fold = (box: Rect) => ({ box, tucked: true, band: false });
   const folds = !o.floats && (o.yields ?? true);
@@ -304,7 +376,8 @@ export function placePill(o: {
     const box = dockPill({ ...o, dialog: o.dialogBox });
     if (box) return whole(box);
     if (!folds) return whole(o.home);
-    return fold(tab() ?? tabs[0]);
+    // REQ-818 (cycle dm1, m5) — no tab spot clear: the one with the fewest controls, not tabs[0]
+    return fold(tab() ?? fewest(tabs, controls));
   }
   const spots = pillSpots(o);
   const free = spots.find((r) => o.blocked(r) === 0);
@@ -316,7 +389,13 @@ export function placePill(o: {
   const clear = spots.find((r) => controls(r) === 0);
   if (clear) return whole(clear);
   if (!folds) return whole(o.home);
-  return fold(tab() ?? tabs[0]);
+  // REQ-818 (demo-loop cycle dm1, m5) — nothing without a control: the mini-pill or whole spot with
+  // the FEWEST controls (a tie keeps the mini-pill, in its order), never tabs[0] blindly — that was
+  // the sidebar's Log out button at 1280×800
+  const t = tab();
+  if (t) return fold(t);
+  const best = fewest([...tabs, ...spots], controls);
+  return tabs.includes(best) ? fold(best) : whole(best);
 }
 
 /**
