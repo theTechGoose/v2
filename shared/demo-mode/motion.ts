@@ -114,11 +114,21 @@ export function pointerLook(
   };
 }
 /** REQ-633 (demo m2, cycle 5) — the tag's text: the whole name while the pointer moves, its
- *  initials (two at most) once it rests */
+ *  initials (two at most) once it rests. REQ-817 (cycle dm1, m3) — initials are LETTERS: a name
+ *  with none (a customer named by their phone, REQ-355) rests on its last two digits, never '+' */
 export function tagLabel(name: string, compact: boolean): string {
   if (!compact) return name;
-  return name.trim().split(/\s+/).filter(Boolean).slice(0, 2)
-    .map((w) => w[0].toUpperCase()).join("");
+  return initialsOf(name, 2);
+}
+/** REQ-817 — up to `max` initials: the first letter of each word that has one; for a name with
+ *  no letters, its last two digits (a phone's); '' for neither */
+export function initialsOf(name: string, max: number): string {
+  const letters = name.trim().split(/\s+/)
+    .map((w) => Array.from(w).find((c) => /\p{L}/u.test(c)))
+    .filter((c): c is string => Boolean(c))
+    .slice(0, max);
+  if (letters.length) return letters.map((c) => c.toLocaleUpperCase()).join("");
+  return name.replace(/\D/g, "").slice(-2);
 }
 /** REQ-374 / REQ-437 — the gap between the tag and what it sits beside (the arrow, an element) */
 export const TAG_GAP = 6;

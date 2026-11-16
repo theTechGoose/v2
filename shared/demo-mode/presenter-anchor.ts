@@ -56,6 +56,7 @@
  */
 import {
   ARROW_BOX,
+  initialsOf,
   type MoveThrottle,
   moveThrottle,
   outsideBox,
@@ -758,8 +759,9 @@ export function offBadge(at: Pt, box: Rect): { left: number; top: number } {
   return { left, top };
 }
 
-/** REQ-635 — the sender's initial: the name's first letter, upper-cased ('?' for no name) */
+/** REQ-635 — the sender's initial: the name's first letter, upper-cased ('?' for no name).
+ *  REQ-817 (cycle dm1, m3) — a name with no letters (a phone, REQ-355) shows its last two
+ *  digits, never '+' */
 export function initialOf(name: string): string {
-  const first = Array.from(name.trim())[0];
-  return first ? first.toLocaleUpperCase() : "?";
+  return initialsOf(name, 1) || "?";
 }
