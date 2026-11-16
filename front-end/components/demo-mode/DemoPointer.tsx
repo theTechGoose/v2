@@ -71,6 +71,7 @@ import {
   DRIFT_OPACITY,
   initialOf,
   OFF_BADGE_PX,
+  OFF_FADE_KEYFRAMES,
   OFF_MARK_FADE_MS,
   OFF_MARK_OPACITY,
   OFF_MARK_PX,
@@ -466,8 +467,6 @@ export default function DemoPointer(
   const badge = pointer && off
     ? offBadge(pointer, bounds ?? windowBox())
     : null;
-  /** REQ-635 — shown for OFF_MARK_SHOW_MS, then faded out over OFF_MARK_FADE_MS */
-  const showFor = OFF_MARK_SHOW_MS / (OFF_MARK_SHOW_MS + OFF_MARK_FADE_MS);
   /** a new spot remounts the marker (its fade starts again); the same spot re-sent does not */
   const markKey = pointer
     ? `${Math.round(pointer.x)},${Math.round(pointer.y)}`
@@ -509,9 +508,7 @@ export default function DemoPointer(
   return (
     <>
       <style>
-        {`@keyframes pmDemoWave{0%{transform:translate(-50%,-50%) scale(.15);opacity:.95}100%{transform:translate(-50%,-50%) scale(1);opacity:0}}@keyframes pmDemoClickDot{0%{opacity:.95}60%{opacity:.8}100%{opacity:0}}@keyframes pmDemoPend{from{opacity:.35}to{opacity:1}}@keyframes pmDemoOffFade{0%{opacity:${OFF_MARK_OPACITY}}${
-          Math.round(showFor * 100)
-        }%{opacity:${OFF_MARK_OPACITY}}100%{opacity:0}}`}
+        {`@keyframes pmDemoWave{0%{transform:translate(-50%,-50%) scale(.15);opacity:.95}100%{transform:translate(-50%,-50%) scale(1);opacity:0}}@keyframes pmDemoClickDot{0%{opacity:.95}60%{opacity:.8}100%{opacity:0}}@keyframes pmDemoPend{from{opacity:.35}to{opacity:1}}${OFF_FADE_KEYFRAMES}`}
       </style>
       {waves.length > 0 && (
         // REQ-546 (demo m14, cycle 4) — the waves are clipped to `bounds` (the stage's fitted

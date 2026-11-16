@@ -53,6 +53,9 @@
  * a reload or another tab gets no arrow until he moves — never a fraction under his still mouse.
  * The hand-off counts only once the frame is fitted, and only on it (`seedOn`): beside the frame
  * it is unknown until he moves. Off the frame, their screen shows a small edge marker, no tag.
+ * REQ-877 (demo dm5 m1) — and the stage draws a faint ghost of that marker (chevron + his
+ * initial) on the frame's same edge from their report, fading out when theirs does; the chrome
+ * row still says "Your pointer is off {name}'s screen".
  * REQ-539 (demo m24 — cycle 4) — amends that: only the stage's own hand-off (a reload) is sent;
  * /admin's (the Demo click, on a desktop customer's frame) is a hint for the off outline only, and
  * their screen gets no arrow until he makes a real pointer move (`seedUse`).
@@ -182,6 +185,7 @@ import {
   followTabs,
   ghostWait,
   type Held,
+  initialOf,
   keepHeld,
   keptFor,
   lookAgain,
@@ -480,7 +484,13 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
   /** REQ-451 — the ghost of his arrow where their screen has it, while that is apart from his
    *  cursor (their page moved it with its element, or the frame moved) */
   const [ghost, setGhost] = useState<
-    { at: Pt; outside: boolean; dir?: Dir | null } | null
+    {
+      at: Pt;
+      outside: boolean;
+      dir?: Dir | null;
+      // REQ-877 — their off marker: drawn at once (never held back for REQ-789's rest), as theirs is
+      off?: { key: string } | null;
+    } | null
   >(null);
   /** REQ-642 (cycle 5, m10) — the followed tab's last report of where it placed HIS arrow: the
    *  ghost is drawn from it (never from this stage's own replay, which can put it elsewhere) */
@@ -771,7 +781,7 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
     // timer; his next anchor drops it), and is looked at again then — if it is still the report
     // for the anchor he holds
     const wait = ghostWait(holdAtRef.current, performance.now());
-    if (wait > 0) {
+    if (wait > 0 && !g.off) {
       if (!ghostWaitRef.current) {
         ghostWaitRef.current = setTimeout(() => {
           ghostWaitRef.current = null;
@@ -784,6 +794,7 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
       was && g && was.outside === g.outside &&
         was.dir?.dx === g.dir?.dx && was.dir?.dy === g.dir?.dy &&
         was.dir?.hidden === g.dir?.hidden && // REQ-867
+        was.off?.key === g.off?.key && // REQ-877 — a new spot: a new fade
         Math.abs(was.at.x - g.at.x) < 0.5 && Math.abs(was.at.y - g.at.y) < 0.5
         ? was
         : g
@@ -1833,6 +1844,8 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
    *  customer's orange) */
   const myColor = demo?.presenters.find((p) => p.userId === demo.pid)?.color ??
     PRESENTER_COLORS[0];
+  /** REQ-877 (demo dm5 m1) — his initial, as the customer's off marker shows it (REQ-635) */
+  const myInitial = initialOf(presenterNameOf(demo?.pid));
   // REQ-232 (demo-lifecycle-p1, m1, m3) — plain words, never the transport
   // REQ-309 (demo m26) — "Live" is the frame's truth: the followed tab's screen is in it
   // REQ-391 (M4) — …and in time: their page gone or not in yet, a resync out, frames late
@@ -2247,6 +2260,8 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
                 at={ghost.at}
                 outside={ghost.outside}
                 dir={ghost.dir}
+                off={ghost.off} // REQ-877 — his mouse beside the frame: their off marker
+                initial={myInitial}
                 color={myColor}
                 z={Z + 1}
                 label={t("demoMode.pointerGhost")}
