@@ -24,6 +24,8 @@
  * (`tag`, their report); with no report its words are placed in the customer's px (`scale`: the
  * frame's s), so `tagPlacement`'s px offsets (the tail 36 px under the tip) mean the same on both
  * screens — not 36 stage px, ≈ 42 of theirs at s 0.86.
+ * REQ-843 (demo-loop cycle dm3, p15) — for his own ghost the words are his own (`ownCueKey`:
+ * "You · pointing below — the customer must scroll ↓"), never his name after "You ·".
  */
 import {
   type Pt,

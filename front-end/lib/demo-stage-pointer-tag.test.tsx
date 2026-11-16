@@ -212,7 +212,9 @@ Deno.test("REQ-837 (demo dm2 m3) unit: PointerGhost draws its tag at the reporte
   assertEquals(px(tag, "top"), 0);
 });
 
-Deno.test("REQ-837 (demo dm2 p3) unit: PointerGhost out of view shows the customer's cue words, not only 'Tú'", () => {
+// REQ-843 AMENDMENT (demo dm3 p15) — the ghost's cue is his own second-person words (ownCueKey),
+// not the customer's "{name} is pointing below", which named him to himself
+Deno.test("REQ-837 (demo dm2 p3) unit: PointerGhost out of view shows cue words, not only 'Tú' (REQ-843: his own words, not his name)", () => {
   const doc = parse(renderToString(
     <PointerGhost
       at={{ x: 372, y: 725 }}
@@ -222,7 +224,7 @@ Deno.test("REQ-837 (demo dm2 p3) unit: PointerGhost out of view shows the custom
       z={10}
       label="Tú"
       bounds={VIEW}
-      cueText="DocuMonster is pointing below — scroll ↓"
+      cueText="señalando más abajo — el cliente debe desplazarse ↓"
       cueBox={{ left: 0, top: 56, width: 1000, height: 700 }}
     />,
   ));
@@ -230,7 +232,7 @@ Deno.test("REQ-837 (demo dm2 p3) unit: PointerGhost out of view shows the custom
   assert(cue, "the cue words are drawn");
   assertEquals(
     cue!.textContent,
-    "Tú · DocuMonster is pointing below — scroll ↓",
+    "Tú · señalando más abajo — el cliente debe desplazarse ↓",
   );
   // inside where the element can be seen
   const top = px(cue, "top") + 725;

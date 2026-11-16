@@ -187,6 +187,7 @@ import {
   lookAgain,
   type NodePrint,
   ownAt,
+  ownCueKey,
   ownLook,
   PENDING_MS,
   placeView,
@@ -2254,9 +2255,7 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
                 covers={coversFrame}
                 scale={fit.s}
                 cueText={ghost.dir
-                  ? t(cueKey(ghost.dir), {
-                    name: presenterNameOf(demo?.pid),
-                  })
+                  ? t(ownCueKey(ghost.dir)) // REQ-843 — his own words, not his name
                   : undefined}
                 cueBox={ghost.dir && sentRef.current
                   ? visOnStage(sentRef.current)
