@@ -5,6 +5,8 @@
  * computed on read with shared/roof-geometry, never stored.
  */
 import {
+  FACET_KINDS,
+  type FacetKind,
   type LatLng,
   MAX_PITCH,
   MAX_WINDOW_M,
@@ -127,7 +129,22 @@ export function parseFacet(v: unknown): RoofFacet {
       "bad_pitch",
     );
   }
-  return { points: o.points.map(parsePoint), pitch };
+  // REQ-891 — the kind: a roof (default, and every section saved before) or a
+  // flat surface such as a driveway, whose pitch is always 0
+  const kind = o.kind === undefined ? "roof" : o.kind;
+  if (!(FACET_KINDS as readonly unknown[]).includes(kind)) {
+    throw new RoofError(
+      `kind must be one of ${FACET_KINDS.join(", ")}`,
+      400,
+      "bad_kind",
+    );
+  }
+  const k = kind as FacetKind;
+  return {
+    points: o.points.map(parsePoint),
+    pitch: k === "flat" ? 0 : pitch,
+    kind: k,
+  };
 }
 
 export function parseMeasurementInput(raw: unknown): RoofMeasurementInput {

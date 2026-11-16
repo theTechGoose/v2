@@ -23,10 +23,22 @@ export interface Bbox {
   north: number;
 }
 
+/** REQ-891 — what the traced section is: a roof (its pitch counts) or a flat
+ *  surface — a driveway, a patio, a slab — where there is no pitch at all. A
+ *  section saved before REQ-891 has no kind and is a roof. */
+export type FacetKind = "roof" | "flat";
+export const FACET_KINDS: readonly FacetKind[] = ["roof", "flat"];
+
 export interface RoofFacet {
   points: LatLng[];
-  /** rise per 12 of run, 0 (flat) … 24 */
+  /** rise per 12 of run, 0 (flat) … 24 — ignored when kind is "flat" */
   pitch: number;
+  kind?: FacetKind;
+}
+
+/** the pitch that counts: a flat surface has none, whatever the row carries */
+export function effectivePitch(f: RoofFacet): number {
+  return f.kind === "flat" ? 0 : f.pitch;
 }
 
 export interface FacetSummary {
@@ -155,10 +167,11 @@ export function pitchFactor(rise: number): number {
 
 export function facetSummary(f: RoofFacet): FacetSummary {
   const planSqft = planAreaM2(f.points) * M2_TO_SQFT;
+  const pitch = effectivePitch(f); // REQ-891
   return {
-    pitch: f.pitch,
+    pitch,
     planSqft,
-    surfaceSqft: planSqft * pitchFactor(f.pitch),
+    surfaceSqft: planSqft * pitchFactor(pitch),
     perimeterFt: perimeterM(f.points) * M_TO_FT,
   };
 }

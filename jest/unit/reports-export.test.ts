@@ -202,7 +202,7 @@ describe("REQ-795 the Reports page's pure helpers", () => {
     const i = root.findIndex((n) => n.id === "reports");
     expect(i).toBe(root.length - 2);
     expect(root[i].href).toBe("/reports");
-    expect(root[i + 1].id).toBe("roof"); // REQ-856
+    expect(root[i + 1].id).toBe("tools"); // REQ-856 → REQ-891: the Tools folder
     const en = JSON.parse(read("lang/en.json")) as Record<string, string>;
     const es = JSON.parse(read("lang/es.json")) as Record<string, string>;
     expect(en["nav.reports"]).toBe("Reports");

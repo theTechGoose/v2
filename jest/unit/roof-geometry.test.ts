@@ -97,3 +97,23 @@ describe("REQ-856 roof geometry", () => {
     expect(px.y).toBeCloseTo(456, 3);
   });
 });
+
+// REQ-891 — a driveway, patio or any flat surface has no pitch: whatever pitch the
+// section carries, its surface is its footprint (Raphael: "Driveways don't have pitch").
+describe("REQ-891 flat sections", () => {
+  test("kind 'flat' makes the surface equal the plan area even with a pitch set; a roof section still scales by its pitch", () => {
+    const sq = [
+      { lat: LAT, lng: LNG },
+      { lat: LAT, lng: LNG + dLng(10) },
+      { lat: LAT + dLat(10), lng: LNG + dLng(10) },
+      { lat: LAT + dLat(10), lng: LNG },
+    ];
+    const flat = summarize([{ points: sq, pitch: 6, kind: "flat" }], 0);
+    expect(flat.surfaceSqft).toBeCloseTo(flat.planSqft, 6);
+    expect(flat.facets[0].pitch).toBe(0);
+    const roof = summarize([{ points: sq, pitch: 6, kind: "roof" }], 0);
+    expect(roof.surfaceSqft / roof.planSqft).toBeCloseTo(pitchFactor(6), 6);
+    const legacy = summarize([{ points: sq, pitch: 6 }], 0); // saved before REQ-891: a roof
+    expect(legacy.surfaceSqft).toBeCloseTo(roof.surfaceSqft, 6);
+  });
+});

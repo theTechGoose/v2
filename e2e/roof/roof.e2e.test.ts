@@ -76,14 +76,19 @@ async function clickUntil(
   throw new Error(`${selector}: the click never took`);
 }
 
-Deno.test("REQ-856: /roof — an address → the aerial window → four corners traced → pitch and waste → totals → saved, and still there after a reload", (t) =>
+Deno.test("REQ-856 + REQ-891: /tools/satellite (Tools › Satellite measure; /roof redirects) — an address → the aerial window → four corners traced → pitch and waste → totals → saved, and still there after a reload", (t) =>
   story(t, async ({ page, expect, http, baseUrl }) => {
     await signIn(http, page, baseUrl);
     // the whole square window must be on screen for the corner clicks
     await page.setViewportSize({ width: 1280, height: 1150 });
+    // REQ-891: the old address still lands, on the renamed tool inside Tools
     await page.goto("/roof");
     await page.locator("[data-cy='roof-address']").waitFor({ timeout: 15_000 });
-    await expect.see("Roof measure");
+    expect(
+      page.url().includes("/tools/satellite"),
+      `/roof → /tools/satellite (${page.url()})`,
+    );
+    await expect.see("Satellite measure");
 
     // the island may still be hydrating when the input appears (a fill before
     // hydration is lost): type, then click until the address is found; the
@@ -125,7 +130,20 @@ Deno.test("REQ-856: /roof — an address → the aerial window → four corners 
       "one facet",
     );
 
-    // flat: surface equals the footprint; 6/12 raises it by sqrt(1 + (6/12)^2)
+    // REQ-891: a driveway — pick Flat surface: the pitch select goes, the surface is the
+    // footprint and roofing squares are not offered; back to Roof and the pitch returns
+    await page.locator("[data-cy='roof-kind']").first().selectOption("flat");
+    await page.waitForFunction(() =>
+      document.querySelectorAll("[data-cy='roof-pitch']").length === 0 &&
+      document.querySelectorAll("[data-cy='roof-squares']").length === 0
+    );
+    await page.locator("[data-cy='roof-kind']").first().selectOption("roof");
+    await page.locator("[data-cy='roof-pitch']").first().waitFor({
+      timeout: 5_000,
+    });
+    await page.locator("[data-cy='roof-squares']").waitFor({ timeout: 5_000 });
+
+    // flat pitch: surface equals the footprint; 6/12 raises it by sqrt(1 + (6/12)^2)
     await page.locator("[data-cy='roof-pitch']").first().selectOption("0");
     await page.waitForFunction(() => {
       const n = (sel: string) =>
