@@ -190,6 +190,8 @@ interface Seen {
   banner: string;
   title: string;
   ghost: string;
+  /** REQ-896 (p7) — "drawn" while a ghost of her pill is on the stage */
+  pill: string;
   /** when it was first seen (ms, the stage page's clock) */
   at: number;
 }
@@ -210,6 +212,10 @@ const record = (pg: Page) =>
         banner: read("[data-cy='demo-waiting']"),
         title: read("[data-cy='demo-pill-ghost-title']"),
         ghost: read("[data-cy='demo-pill-ghost-status']"),
+        // REQ-896 (p7) — is a ghost of her pill drawn at all
+        pill: document.querySelector("[data-cy='demo-pill-ghost']")
+          ? "drawn"
+          : "",
       };
       const k = JSON.stringify(s);
       if (k !== last) {
@@ -223,7 +229,7 @@ const recorded = (pg: Page) =>
     (globalThis as unknown as { __pmSeen: unknown[] }).__pmSeen
   ) as Promise<Seen[]>;
 
-Deno.test("REQ-838 m5 (demo-loop cycle dm2): the customer's address-bar navigation and reload in her only tab — the stage says 'Loading their next page…', never 'Waiting for …' at once, and its copy of her English pill never says the Spanish stage's 'Conectando…'", (t) =>
+Deno.test("REQ-838 m5 (demo-loop cycle dm2) + REQ-896 (dm6, p1): the customer's address-bar navigation and reload in her only tab (a page says 'closing' for both) — the stage says 'Un momento…', never 'Waiting for …' at once, and its copy of her English pill never says the Spanish stage's 'Conectando…'", (t) =>
   story(t, async ({ page, expect, http, baseUrl }) => {
     await page.setViewportSize({ width: 1280, height: 800 });
     // fleet-1's pair: the customer English, the presenter Spanish (his stage speaks Spanish)
@@ -307,11 +313,17 @@ Deno.test("REQ-838 m5 (demo-loop cycle dm2): the customer's address-bar navigati
           JSON.stringify(mixed)
         })`,
       );
+      // REQ-896 (p1) — a page that says "closing" (an address-bar navigation, a reload) is held
+      // as the neutral "Un momento…": the first state after Live is never "Cargando su siguiente
+      // página…" (that line is for a navigation, or — later — her next page claimed and loading)
+      const wents = seen.filter((s, i) =>
+        i > 0 && live(seen[i - 1]) && !live(s)
+      );
       expect(
-        seen.some((s) => /Cargando su siguiente página/.test(s.status)),
-        `m5: the stage said her next page was loading (${
-          JSON.stringify(seen)
-        })`,
+        wents.length > 0 && wents.every((s) => /Un momento/.test(s.status)),
+        `m5/p1: her page going is held as 'Un momento…', never 'Cargando…' (${
+          JSON.stringify(wents)
+        } of ${JSON.stringify(seen)})`,
       );
       expect.eq(await statusOf(page), "En vivo", "and it is Live");
     } finally {
@@ -319,7 +331,7 @@ Deno.test("REQ-838 m5 (demo-loop cycle dm2): the customer's address-bar navigati
     }
   }));
 
-Deno.test("REQ-875 p4 (demo-loop cycle dm5): the customer closes her only tab — through the SILENT_GRACE_MS hold ('Loading their next page…') the stage's copy of her pill never says 'Connecting…'; then 'Waiting for her app…'", (t) =>
+Deno.test("REQ-875 p4 (demo-loop cycle dm5) + REQ-896 (dm6, p1 + p7): the customer closes her only tab — through the SILENT_GRACE_MS hold ('One moment…', never 'Loading their next page…') the stage's copy of her pill never says 'Connecting…'; then 'Waiting for her app…' with no ghost of her pill at all", (t) =>
   story(t, async ({ page, expect, http, baseUrl }) => {
     await page.setViewportSize({ width: 1280, height: 800 });
     // fleet-r38fa8936's pair: both English, so the ghost's word and the stage's are the same tongue
@@ -352,10 +364,27 @@ Deno.test("REQ-875 p4 (demo-loop cycle dm5): the customer closes her only tab �
         /Waiting for/.test(s.status) || s.banner !== ""
       );
       const hold = seen.slice(0, first < 0 ? seen.length : first);
+      // REQ-896 (p1) — a closed tab's hold is "One moment…": the label never says she is
+      // loading a page when the tab is gone
       expect(
-        hold.some((s) => /Loading their next page/.test(s.status)),
-        `p4: the stage held her closed tab as 'Loading their next page…' (${
+        hold.some((s) => /One moment/.test(s.status)),
+        `p1: the stage held her closed tab as 'One moment…' (${
           JSON.stringify(seen)
+        })`,
+      );
+      expect(
+        !hold.some((s) => /Loading their next page/.test(s.status)),
+        `p1: never 'Loading their next page…' for a closed tab (${
+          JSON.stringify(seen)
+        })`,
+      );
+      // REQ-896 (p7) — once waiting, no ghost of her pill (it said "Connecting…" for a page
+      // that was gone)
+      const waiting = seen.slice(first < 0 ? seen.length : first);
+      expect(
+        waiting.length > 0 && waiting.every((s) => s.pill === ""),
+        `p7: no ghost of her pill under the waiting banner (${
+          JSON.stringify(waiting)
         })`,
       );
       const lying = hold.filter((s) => /Connecting|Conectando/.test(s.ghost));

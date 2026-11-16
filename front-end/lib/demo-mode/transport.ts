@@ -131,7 +131,9 @@ export interface DemoLinkOptions {
    *  performance.timeOrigin) — what a load or focus claim says. Default: when the link was made */
   loadedAt?: number;
   onPeer(m: PeerMessage, from: PeerFrom): void;
-  onStatus(s: LinkStatus): void;
+  /** REQ-896 (dm6, p1 + p7) — `leave`: why the followed tab's last page went (closing,
+   *  navigating, signout, or nothing said: undefined), while no tab of hers has come since */
+  onStatus(s: LinkStatus, leave?: LeaveWhy): void;
   /** the other side arrived (or was there on welcome); REQ-232 — on the customer's side also: a
    *  stage asks this tab for its whole view (it follows this tab now); on a stage: it follows
    *  another of the customer's tabs — `cid` names it (REQ-292: the stage starts its mirror over
@@ -249,6 +251,9 @@ export function connectDemo(o: DemoLinkOptions): DemoLink {
   /** REQ-232 — the other side's last socket went a moment ago: still "live" until the grace ends */
   let lingering = false;
   let grace: ReturnType<typeof setTimeout> | undefined;
+  /** REQ-896 — a presenter: why the followed (or last) tab's page went; undefined once a tab of
+   *  hers is here again */
+  let lastLeave: LeaveWhy | undefined;
   /** REQ-838 (p8) — the customer's side: this socket has not heard who is there yet (not
    *  welcomed, or welcomed less than JOIN_GRACE_MS ago with no stage heard) */
   let joining = true;
@@ -266,7 +271,7 @@ export function connectDemo(o: DemoLinkOptions): DemoLink {
   const setStatus = (s: LinkStatus) => {
     if (status === s) return;
     status = s;
-    o.onStatus(s);
+    o.onStatus(s, lastLeave);
   };
   const wsSend = (m: ClientMessage) => {
     if (ws?.readyState === WebSocket.OPEN) ws.send(JSON.stringify(m));
@@ -537,6 +542,7 @@ export function connectDemo(o: DemoLinkOptions): DemoLink {
     i?: boolean,
   ) => {
     if (gone.has(cid)) return;
+    lastLeave = undefined; // REQ-896 — a tab of hers is here: nothing left behind
     let t = tabs.get(cid);
     if (!t) tabs.set(cid, t = { at: 0, n: ++arrivals });
     if (at >= t.at && (at > 0 || key)) {
@@ -570,6 +576,10 @@ export function connectDemo(o: DemoLinkOptions): DemoLink {
     if (gone.size > 200) gone.delete(gone.values().next().value!);
     const t = tabs.get(cid);
     if (!tabs.delete(cid)) return;
+    // REQ-896 (dm6, p1 + p7) — why the page went rides with every status from here: the stage
+    // words a closed tab's hold "One moment…", a navigation's "Loading their next page…", and
+    // draws no ghost of a pill whose page closed
+    if (cid === followed || tabs.size === 0) lastLeave = why;
     // REQ-648 — the followed page went and a next one may come: the stage times the change
     // (REQ-823 — not after a sign-out: no page of that sign-in comes next)
     if (cid === followed && why !== "closing" && why !== "signout") {

@@ -7346,3 +7346,19 @@ Tests:
 - unit: `jest/unit/demo-stage-ended-frame.test.ts` ("REQ-895 …", 3 cases: ghostWords on a notice face (whole and compact), a status face unchanged; the flag through parsePeerMessage, junk dropped, kept offline; wiring — the overlay's face, the stage's × and the outline gate).
 - integration: n/a — pure face logic and a render gate, no request/response.
 - e2e: `e2e/demo-mode/demo-ended.e2e.test.ts` (REQ-235/300 story, added: while the server's answer is held after her Yes, the stage's ghost says "You ended the demo" whole with a × and no status/End chip; after the answer, every sampled frame whose status reads "The demo ended" has `outline-style: none`, until the hop to /admin).
+
+## REQ-896 — The stage knows WHY the customer's page went: a closed tab's hold is "One moment…" (never "Loading their next page…"), and no ghost of her pill is drawn while waiting after a close (demo-loop run 6, dm6, issues p1 + p7; AMENDMENT of REQ-838 / REQ-875 / REQ-391)
+
+**Raphael (2026-11-16, demo loop run 6, issues p1 + p7):** "you personally go fix the polish problems" — p1 (testers 2, 4): closing the customer's only tab showed "Cargando su siguiente página…" for up to 2 s before "Esperando la app de Maria Lopez…" — the label said she was loading a page when the tab was gone. p7 (tester 4): the stage's dimmed ghost of her pill read "Conectando…" under the waiting banner after her page was gone.
+
+Cause: transport.ts `tabLeft` knows the leave's `why` (closing / navigating / signout / nothing said) but `hold`, `startGrace` and `refresh` dropped it, so the stage could not word a closed page differently from a navigation, and `pillFaceOffline(face, "waiting")` made the ghost say "Connecting…".
+
+Requirement:
+1. The link carries the reason with every status: `onStatus(s, leave?)` — the followed (or last) tab's leave reason, cleared the moment a tab of hers is here again (`tabSeen`).
+2. `stageStatus` takes `leave`: a "between" hold over a mirrored screen is "Loading their next page…" only for a navigation; a close, or nothing said, is the neutral "One moment…" (`pageGone`, `demoMode.pageGone` in en and es). A new tab awaited (`awaiting`) still loads its page; not mirrored is still connecting. The frame is held for `pageGone` as for `loadingNext` (dimmed, his pointer not sent).
+3. While waiting after anything but a navigation the stage draws no ghost of her pill (`pillShown`): nothing is connecting; the banner says it is waiting.
+
+Tests:
+- unit: `jest/unit/demo-stage-leave-reason.test.ts` ("REQ-896 …", 5 cases: the transport's statuses carry closing / navigating / nothing through between → waiting and clear on her next page; stageStatus's words per reason, with awaiting / not mirrored / waiting / ended unchanged; the two words in en and es; the stage's wiring). REQ-391 (`demo-stage-live.test.ts`) and REQ-648 (`demo-stage-page-latency.test.ts`) tests amended: their "Loading their next page…" cases name a navigation, and a close is pageGone.
+- integration: n/a — the hub relays `why` unchanged (REQ-823's int tests); this is client-side wording and a render gate.
+- e2e: `e2e/demo-mode/demo-pill-status-words.e2e.test.ts` — REQ-875 p4 story amended (her only tab closes: the hold says "One moment…", never "Loading their next page…"; once waiting, no ghost of her pill at all) and REQ-838 m5 story amended (an address-bar navigation / reload says "closing": "Un momento…", never "Cargando su siguiente página…"). `e2e/demo-mode/demo-stage-live.e2e.test.ts` (REQ-391: an in-app page change still says "Loading their next page…") unchanged, re-run.

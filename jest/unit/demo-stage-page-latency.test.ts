@@ -154,6 +154,8 @@ describe("REQ-648 the pill says how far behind the stage is while it waits for t
     awaiting: false,
     resyncing: false,
     behind: 0,
+    // REQ-896 — "Loading their next page…" is a navigation's hold; a close is "One moment…"
+    leave: "navigating" as const,
   };
 
   test("Loading their next page… carries N s once the wait is over LAG_BEHIND_MS, whether their page is gone (between) or the new tab's snapshot is not in (awaiting)", () => {

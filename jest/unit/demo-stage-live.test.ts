@@ -498,8 +498,14 @@ describe("REQ-391 the pill's words: Live only when the frame shows the followed 
   });
 
   test("their page went and the next may come ('between'): Loading their next page… over the old screen", () => {
+    // REQ-896 — "Loading their next page…" for a navigation; a closed (or silent) page's hold
+    // is the neutral "One moment…" (pageGone)
+    expect(stageStatus({ ...base, status: "between", leave: "navigating" }))
+      .toEqual({ key: "loadingNext" });
+    expect(stageStatus({ ...base, status: "between", leave: "closing" }))
+      .toEqual({ key: "pageGone" });
     expect(stageStatus({ ...base, status: "between" })).toEqual({
-      key: "loadingNext",
+      key: "pageGone",
     });
     expect(stageStatus({ ...base, status: "between", mirrored: false }))
       .toEqual({ key: "connecting" });

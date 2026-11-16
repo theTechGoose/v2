@@ -123,6 +123,7 @@ import {
   CUSTOMER_COLOR,
   fitScale,
   fracToPoint,
+  type LeaveWhy,
   type PeerMessage,
   type PillFace,
   type PlacedMessage,
@@ -353,6 +354,10 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
   /** REQ-541 — the stage is already on its way back to the presenter's own account */
   const leavingRef = useRef(false);
   const [status, setStatus] = useState<LinkStatus>("connecting");
+  /** REQ-896 (dm6, p1 + p7) — why her followed page went, while no tab of hers is back */
+  const [leaveWhy, setLeaveWhy] = useState<LeaveWhy | undefined>(
+    undefined,
+  );
   const [peerOnline, setPeerOnline] = useState(false);
   const [ended, setEnded] = useState(false);
   /** REQ-537 — Leave the demo was clicked here: on the way to /admin */
@@ -1457,8 +1462,9 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
         }
         pollRef.current?.();
       },
-      onStatus: (s) => {
+      onStatus: (s, why) => {
         setStatus(s);
+        setLeaveWhy(why);
         const online = s === "direct" || s === "relay";
         setPeerOnline(online);
         // the customer's app dropped: their pointer is nowhere now (the mirror keeps their last
@@ -1871,10 +1877,13 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
     resyncing: lagView.resyncing,
     behind: lagView.behind,
     pageBehind: lagView.page,
+    leave: leaveWhy,
   });
   // REQ-648 (c4-m28) — the frame holds the page they left while their next one loads: dimmed, and
   // his pointer is not sent against it (the move throttle, the look-up of his still mouse, a click)
-  const loadingNext = live.key === "loadingNext";
+  // REQ-896 — and while a closed page is held ("One moment…"), the same
+  const loadingNext = live.key === "loadingNext" ||
+    live.key === "pageGone";
   loadingNextRef.current = loadingNext;
   // REQ-297 — the frame's look: greyed, dimmed and under the waiting overlay while the screen in it
   // is the one from before the customer's app dropped; REQ-370 — hidden until the replay is styled
@@ -1901,7 +1910,12 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
   // REQ-646 (cycle 5, m63) — no copy of the customer's pill while another window has the demo:
   // this one no longer hears it, so it would only say a stale "Connecting…". REQ-838 (cycle dm2,
   // p4) — nor while the customer is signed out: their pill went with their session
-  const pillShown = look.elsewhere || signedOut ? null : pillBox;
+  // REQ-896 (dm6, p7) — nor while waiting after her page closed (or went without a word): the
+  // ghost would only say "Connecting…" for a page that is gone; after a navigation, as before
+  const pillShown =
+    look.elsewhere || signedOut || (look.waiting && leaveWhy !== "navigating")
+      ? null
+      : pillBox;
   // REQ-854 (demo-loop cycle dm3, p6) — the ghost is the folded tab when their pill is, and while
   // awaiting a new page in the tab's box: never the whole pill's words in a tab-sized box
   const pillTab = pillShown !== null &&
@@ -1915,6 +1929,8 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
     ? (signedOut
       ? t("demoMode.signedOut", { name })
       : t("demoMode.waitingFor", { name }))
+    : live.key === "pageGone"
+    ? t("demoMode.pageGone")
     : live.key === "loadingNext"
     ? (live.n
       ? t("demoMode.loadingNextBehind", { n: live.n })

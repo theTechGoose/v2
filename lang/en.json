@@ -4437,6 +4437,7 @@
   "demoMode.page.welcome": "Welcome",
   "demoMode.page.other": "another page",
   "demoMode.loadingNext": "Loading their next page…",
+  "demoMode.pageGone": "One moment…",
   "demoMode.loadingNextBehind": "Loading their next page… {n} s behind",
   "demoMode.catchingUp": "Catching up…",
   "demoMode.pickerDate": "Choosing a date…",

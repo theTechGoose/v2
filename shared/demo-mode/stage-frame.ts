@@ -26,7 +26,11 @@
  * it for their screen — and the stage sends no pointer against it — and the pill says how long
  * the wait has run ("… N s behind", `pageBehind`), timed from their page going.
  */
-import { ACTIVE_NAME_REFRESH_MS, ACTIVE_POLL_MS } from "./protocol.ts";
+import {
+  ACTIVE_NAME_REFRESH_MS,
+  ACTIVE_POLL_MS,
+  type LeaveWhy,
+} from "./protocol.ts";
 
 /** the transport's link status — mirrored here so this module stays free of the front-end.
  *  REQ-391 — "between": the followed tab's page went and its next page may still come (the
@@ -183,6 +187,8 @@ export type StageStatusKey =
   | "waiting"
   | "connecting"
   | "loadingNext"
+  /** REQ-896 — her page went closing (or without a word) and the hold is on: "One moment…" */
+  | "pageGone"
   | "catchingUp"
   | "behind"
   | "live";
@@ -202,6 +208,9 @@ export function stageStatus(o: {
   /** REQ-648 — behindSeconds of the wait for their next page (their page going → the next on
    *  show): "Loading their next page… N s behind" */
   pageBehind?: number;
+  /** REQ-896 (dm6, p1) — why her page went (transport's onStatus): "Loading their next page…"
+   *  only for a navigation; a close, or nothing said, is the neutral "One moment…" */
+  leave?: LeaveWhy;
 }): { key: StageStatusKey; n?: number } {
   if (o.ended || o.status === "ended") return { key: "ended" };
   if (o.status === "replaced") return { key: "elsewhere" };
@@ -212,7 +221,8 @@ export function stageStatus(o: {
       ? { key: "loadingNext", n: o.pageBehind }
       : { key: "loadingNext" };
   if (o.status === "between") {
-    return o.mirrored ? loadingNext() : { key: "connecting" };
+    if (!o.mirrored) return { key: "connecting" };
+    return o.leave === "navigating" ? loadingNext() : { key: "pageGone" };
   }
   if (o.status !== "direct" && o.status !== "relay") {
     return { key: "connecting" };
