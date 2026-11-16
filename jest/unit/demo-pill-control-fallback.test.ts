@@ -192,7 +192,7 @@ describe("REQ-818 (demo-loop cycle dm1, m5) — the pill shown out of its mini-p
   test("REQ-818 the overlay places the peek through peekBox with countControls", () => {
     const src = read("front-end/islands/DemoModeOverlay.tsx");
     expect(src).toMatch(
-      /peekBox\(\{[\s\S]{0,200}controls:\s*can && peekRef\.current \? countControls/,
+      /peekBox\(\{[\s\S]{0,200}controls:\s*can && peekRef\.current\s*\?\s*(\(r\) => )?countControls/,
     );
   });
 });

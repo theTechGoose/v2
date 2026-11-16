@@ -204,6 +204,7 @@ import {
   isPublicDocPath,
   keepInView,
   PAGE_MEDIA_SELECTOR,
+  pastBackdrop,
   peekBox,
   peekTimer,
   PILL_BAND_GAP,
@@ -322,11 +323,33 @@ function painted(cs: CSSStyleDeclaration): boolean {
     .some((w) => parseFloat(w) > 0);
 }
 
-/** REQ-295 — the piece of the page the topmost element at a point belongs to, or null if none */
-function pageAt(x: number, y: number): Element | null {
-  const top = document.elementsFromPoint(x, y)
-    .find((el) => !el.closest("[data-demo-overlay]"));
-  if (!top) return null;
+/** REQ-832 (cycle dm2, p1) — the element a pill would cover at a point: the topmost of the page,
+ *  or with a dialog up (`backdrop`) the dialog's own layer, else the page beneath its dim */
+function hitAt(
+  x: number,
+  y: number,
+  backdrop: Element | null,
+): { el: Element; under: boolean } | undefined {
+  return pastBackdrop(
+    document.elementsFromPoint(x, y)
+      .filter((el) => !el.closest("[data-demo-overlay]")),
+    backdrop,
+    (outer, inner) => outer.contains(inner),
+  );
+}
+
+/** REQ-295 — the piece of the page the topmost element at a point belongs to, or null if none.
+ *  REQ-832 (cycle dm2, p1) — with a dialog up, looked at through its backdrop: the dialog's layer
+ *  counts as before; beneath the dim only a control does (covering text stays allowed, REQ-818) */
+function pageAt(
+  x: number,
+  y: number,
+  backdrop: Element | null = null,
+): Element | null {
+  const hit = hitAt(x, y, backdrop);
+  if (!hit) return null;
+  const top = hit.el;
+  if (hit.under) return top.closest(CONTROL_SELECTOR);
   const owner = top.closest(CONTROL_SELECTOR) ??
     top.closest(PAGE_MEDIA_SELECTOR);
   if (owner) return owner;
@@ -347,27 +370,27 @@ function pageAt(x: number, y: number): Element | null {
 /** REQ-228 / REQ-295 — how many distinct pieces of the page lie under a box (the demo's own chrome
  *  not counted): controls, media, dialogs, text, cards and bars. REQ-379: a point every 40 px
  *  across, so a link between two points of a wide pill is not missed */
-function pageUnder(r: Rect): number {
+function pageUnder(r: Rect, backdrop: Element | null = null): number {
   const found = new Set<Element>();
   for (
     const { x, y } of samplePoints(r, Math.max(5, Math.ceil(r.width / 40)), 3)
   ) {
-    const el = pageAt(x, y);
+    const el = pageAt(x, y, backdrop);
     if (el) found.add(el);
   }
   return found.size;
 }
 
 /** REQ-781 (demo-loop cycle dv1, d7) — how many controls of the page (links, buttons, fields:
- *  CONTROL_SELECTOR) are under a box: a floating pill may cover text, never one of these */
-function countControls(r: Rect): number {
+ *  CONTROL_SELECTOR) are under a box: a floating pill may cover text, never one of these.
+ *  REQ-832 (cycle dm2, p1) — with a dialog up, the controls beneath its backdrop count too (the
+ *  sidebar's Log out under the send dialog's dim) */
+function countControls(r: Rect, backdrop: Element | null = null): number {
   const found = new Set<Element>();
   for (
     const { x, y } of samplePoints(r, Math.max(5, Math.ceil(r.width / 40)), 3)
   ) {
-    const top = document.elementsFromPoint(x, y)
-      .find((el) => !el.closest("[data-demo-overlay]"));
-    const c = top?.closest(CONTROL_SELECTOR);
+    const c = hitAt(x, y, backdrop)?.el.closest(CONTROL_SELECTOR);
     if (c) found.add(c);
   }
   return found.size;
@@ -1508,7 +1531,9 @@ export default function DemoModeOverlay(
       const floats = floatsRef.current;
       const minimal = yieldsRef.current &&
         isPublicDocPath(globalThis.location.pathname);
-      const dialog = can && dialogBackdropUp() !== null;
+      // REQ-832 (cycle dm2, p1) — the dialog's backdrop, found once: the counters look through it
+      const backdrop = can ? dialogBackdropUp() : null;
+      const dialog = backdrop !== null;
       // REQ-545 (demo-loop cycle 4, m2) — the pill YIELDS to the page; a dialog docks it home,
       // above the dialog's box, top-left, top-right, else folds it. REQ-781 (cycle dv1, d7) — it
       // floats: no band, never over a control
@@ -1520,15 +1545,14 @@ export default function DemoModeOverlay(
         // REQ-637 (cycle 5, m5) — docked just above the dialog's own box first
         dialogBox: dialog ? dialogPanel() : undefined,
         minimal,
-        blocked: can ? pageUnder : () => 0,
-        controls: can ? countControls : () => 0,
+        blocked: can ? (r) => pageUnder(r, backdrop) : () => 0,
+        controls: can ? (r) => countControls(r, backdrop) : () => 0,
         yields: yieldsRef.current,
         floats,
       });
       // REQ-765 (cycle 5v2, p18-3d) — the dialog's dim rides to the stage, which draws the pill
       // itself over the replayed page (the mirror skips the overlay); the pill here is softened
       // under it, still clickable
-      const backdrop = dialog ? dialogBackdropUp() : null;
       const dim = backdrop
         ? dialogDim(getComputedStyle(backdrop).backgroundColor)
         : null;
@@ -1560,7 +1584,9 @@ export default function DemoModeOverlay(
           home: home.box,
           view,
           tab: p.box,
-          controls: can && peekRef.current ? countControls : () => 0,
+          controls: can && peekRef.current
+            ? (r) => countControls(r, backdrop)
+            : () => 0,
         })
         : p.box;
       setDock({

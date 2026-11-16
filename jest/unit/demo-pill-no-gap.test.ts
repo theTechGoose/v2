@@ -175,7 +175,8 @@ describe("REQ-781 — the overlay keeps no strip for the pill", () => {
 
   test("REQ-781 placePill is told which spots hold a control (countControls), and the mini-pill can sit on either edge", () => {
     const src = o();
-    expect(src).toMatch(/controls:\s*can \? countControls/);
+    // REQ-832 — handed the dialog's backdrop too
+    expect(src).toMatch(/controls:\s*can \? (\(r\) => )?countControls/);
     expect(src).toMatch(/function countControls\(/);
     expect(src).toMatch(/tabAt/);
   });
