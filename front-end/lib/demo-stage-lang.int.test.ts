@@ -133,3 +133,25 @@ Deno.test("REQ-829 presenter es viewing /admin?lang=en: /demo/stage?lang=en is E
   assertEquals(title(html), "Demo mode · DocuMonster");
   assert(html.includes('window.__PM_LANG="en"'));
 });
+
+/** REQ-863 (demo-loop cycle dm4, issue p5) — the stage records the presenter's live language for
+ *  his other tabs: the pm_demo_lang cookie (ranked before his profile while impersonating) */
+Deno.test("REQ-863 (dm4 p5) es presenter opening /demo/stage?lang=en: the stage records en as the demo's language (Set-Cookie pm_demo_lang=en)", async () => {
+  const { res } = await stage(
+    backend("es", "es"),
+    "pm_session=sess_1",
+    "http://app/demo/stage?lang=en",
+  );
+  assertEquals(res.status, 200);
+  const set = res.headers.get("set-cookie") ?? "";
+  assert(/(^|,\s*)pm_demo_lang=en;/.test(set), `Set-Cookie: ${set}`);
+});
+
+Deno.test("REQ-863 (dm4 p5) a stage reload without ?lang= keeps the recorded demo language over the es profile", async () => {
+  const { html } = await stage(
+    backend("es", "es"),
+    "pm_session=sess_1; pm_demo_lang=en",
+  );
+  assertEquals(htmlLang(html), "en");
+  assertEquals(title(html), "Demo mode · DocuMonster");
+});

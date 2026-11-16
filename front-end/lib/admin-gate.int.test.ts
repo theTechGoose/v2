@@ -211,3 +211,46 @@ Deno.test("REQ-855 (dm3 rc-17): an es presenter who picks EN on the gate reads i
   assert(es?.includes('href="/admin?lang=es"'), String(es));
   assert(langLink(body, "en")?.includes('aria-current="true"'));
 });
+
+async function hitAdminWith(fetcher: Fetch, path: string, cookie: string) {
+  const prev = g.__backendFetch;
+  g.__backendFetch = fetcher;
+  try {
+    const app = new App<State>()
+      .use(adminGate)
+      .get("/admin", () => new Response("ADMIN CONSOLE"));
+    const res = await app.handler()(
+      new Request(`http://app${path}`, { headers: { cookie } }),
+    );
+    return { res, body: await res.text() };
+  } finally {
+    g.__backendFetch = prev;
+  }
+}
+
+Deno.test("REQ-863 (dm4 p5): an es-profile presenter whose demo runs in en (pm_demo_lang=en) reads an English gate on a fresh /admin tab, and Back to the demo carries en", async () => {
+  const { res, body } = await hitAdminWith(
+    backend("impersonating", demo, "es"),
+    "/admin",
+    "pm_session=sess_1; pm_demo_lang=en",
+  );
+  assertEquals(res.status, 200);
+  assert(
+    body.includes("You are guiding Ana Torres in this browser"),
+    body.slice(0, 400),
+  );
+  assert(
+    /href="\/demo\/stage\?lang=en"/.test(body),
+    "Back to the demo carries en",
+  );
+});
+
+Deno.test("REQ-863 (dm4 p5): the gate's EN | ES switch records the presenter's pick as the demo's language", async () => {
+  const { res } = await hitAdminWith(
+    backend("impersonating", demo, "en"),
+    "/admin?lang=es",
+    "pm_session=sess_1; pm_demo_lang=en",
+  );
+  const set = res.headers.get("set-cookie") ?? "";
+  assert(/(^|,\s*)pm_demo_lang=es;/.test(set), `Set-Cookie: ${set}`);
+});
