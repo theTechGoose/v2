@@ -146,7 +146,9 @@ export interface PlacedMessage {
   o?: 1;
   /** REQ-645 + REQ-642 (reconciled on demo-fixes) — its element is out of view that way on their
    *  screen: they see a chevron there, so the ghost is that chevron too */
-  d?: { dx: -1 | 0 | 1; dy: -1 | 0 | 1 };
+  d?: { dx: -1 | 0 | 1; dy: -1 | 0 | 1; h?: 1 };
+  /** REQ-867 (demo dm4 m6) — `d.h`: no scroll on their screen can reach it that way (a closed
+   *  off-canvas drawer): their cue says hidden, and so does the stage's ghost */
   /** REQ-837 (demo dm2 m3) — where their tag went beside the arrow: its side, its top-left
    *  relative to the arrow's box and its size, as fractions of their viewport (x / w of its
    *  width, y / h of its height) — so the stage draws the presenter's tag on the same side */
@@ -465,7 +467,7 @@ function parsePlaced(o: Record<string, unknown>): PlacedMessage | null {
   const d = o.d as Record<string, unknown> | undefined;
   const unit = (v: unknown): v is -1 | 0 | 1 => v === -1 || v === 0 || v === 1;
   if (p && d && typeof d === "object" && unit(d.dx) && unit(d.dy)) {
-    m.d = { dx: d.dx, dy: d.dy };
+    m.d = d.h === 1 ? { dx: d.dx, dy: d.dy, h: 1 } : { dx: d.dx, dy: d.dy };
   }
   // REQ-837 — the tag's placement, when said and well formed (else left out, the report kept)
   const t = o.t as Record<string, unknown> | undefined;

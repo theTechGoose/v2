@@ -4413,6 +4413,8 @@
   "demoMode.pointerGhostCue.above": "pointing above — the customer must scroll ↑",
   "demoMode.pointerGhostCue.right": "pointing to the right — the customer must scroll →",
   "demoMode.pointerGhostCue.left": "pointing to the left — the customer must scroll ←",
+  "demoMode.pointerHidden": "{name} is pointing at something hidden — open the menu ☰",
+  "demoMode.pointerGhostCue.hidden": "pointing at something hidden — the customer must open the menu ☰",
   "demoMode.tabSwitched": "Now showing {name}'s other tab ({page}) — move to point there",
   "demoMode.page.home": "Home",
   "demoMode.page.dashboard": "Dashboard",

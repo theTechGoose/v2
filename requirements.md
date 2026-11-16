@@ -6938,3 +6938,28 @@ Since REQ-830 a new page's first frame folds as the last page's did, so REQ-636'
 **Evidence (2026-11-16, Mac host, worktree fix-cdm3-ended-hides-end off origin/demo-fixes 5fef7e6d):**
 - RED: `cd jest && npx jest --selectProjects unit --testPathPattern demo-stage-ended-hides-end` → "Tests: 2 failed, 1 passed, 3 total" (`stageEndShown is not a function`; the text before `<EndDemo` was `{/* REQ-235 — End asks first */}`, no guard).
 - GREEN: `npx jest --selectProjects unit --testPathPattern 'demo-'` → "Test Suites: 85 passed, 85 total · Tests: 983 passed, 983 total". `deno lint` (DemoStage.tsx, stage-chrome.ts) and `deno check islands/DemoStage.tsx` clean; `deno fmt --check` clean on the three touched files.
+
+## REQ-867 — An item hidden in a closed phone drawer is cued "hidden — open the menu ☰", never "scroll ←" (demo-loop cycle dm4, issue m6) — AMENDMENT of REQ-645 / REQ-843
+**Source:** Raphael: "fix every issue the demo found, loop until there are none." Demo-loop cycle dm4 (run rf5fcb8b9, demo-report.md), issue **m6** "A target hidden in the closed phone drawer is cued as 'scroll ←' though nothing can scroll". The customer was at 390×844 on /dashboard. She opened the drawer, the presenter pointed at "Informes", and she closed the drawer (Escape). Her screen then read "Alex señala a la izquierda — desplázate ←" and the stage read "You · pointing to the left — the customer must scroll ←". At that moment "Informes" was at x=-244, document scrollWidth 390 = clientWidth 390, scrollX 0. RCA CONFIRMED, skeptic UPHELD, judge BUG_POLISH, at 7401e980.
+**Cause (RCA):** `placeView` (shared/demo-mode/presenter-anchor.ts, REQ-645 07f2e1dc) takes the out-of-view direction from geometry alone: the point against `visibleBox`. `cueKey` / `ownCueKey` turn any direction into "scroll" words. Nothing checked whether any scroller, or the document, could actually bring the point into view.
+**Requirement:** `scrollRoom(el, styleOf)` returns the ways a scroll can still move the element. It counts every ancestor that scrolls on an axis (overflow auto/scroll/overlay) and still has room that way (`scrollLeft > 0` for left, `scrollWidth − clientWidth − scrollLeft > 0` for right, the same for up/down). It also counts the document (the root, or the body's overflow when the root's is visible), unless a fixed ancestor or the element itself is fixed. A bare box with no scroll metrics leaves every way open, as before. When `placeView` gets a box carrying `room` and the way to the point on either axis cannot be scrolled, it marks the direction `hidden`. `cueKey` then gives `demoMode.pointerHidden` ("{name} is pointing at something hidden — open the menu ☰" / "{name} señala algo oculto — abre el menú ☰"), and `ownCueKey` gives `demoMode.pointerGhostCue.hidden` ("pointing at something hidden — the customer must open the menu ☰" / "señalando algo oculto — el cliente debe abrir el menú ☰", with no {name}).
+Both sides honour it:
+- The customer's `DemoModeOverlay.placeOnScreen` passes `room: scrollRoom(el, styleOf)` with the visible box.
+- The stage replay's `clipOf` returns `room` and `visOnStage` keeps it, so colleagues' pointers and `presenterOnStage` also say hidden.
+- The customer's placed report carries it on the wire as `d.h: 1`. `parsePlaced` keeps it and `reportedGhost` turns it back into `hidden`, so the stage's own ghost says hidden too.
+A way that can be scrolled keeps its scroll cue unchanged.
+**Tests:**
+- unit: `front-end/lib/demo-scroll-cue-reachable.test.tsx` ("REQ-867 (demo dm4 m6) unit: …", 5 cases):
+  - x=-244 in a fixed off-canvas drawer, with scrollWidth==clientWidth and scrollX 0, gets no `pointerLeft` / `pointerGhostCue.left`; it gets `pointerHidden` / `pointerGhostCue.hidden`.
+  - An absolute drawer on a page that cannot scroll sideways is hidden. A page scrolled 300 px right keeps "scroll ←".
+  - Below the fold of a scrolling page keeps ↓. An inner scroller with room up keeps ↑. The child of a fixed sheet below the screen is hidden.
+  - No metrics means as before.
+  - en/es carry both keys: the customer's has {name}, the ghost's has none, neither says scroll, and both point at ☰.
+- Amended: `jest/unit/demo-pointer-identity.test.ts` REQ-645 `clipOf` now expects `room` (all ways open on the metric-less fake DOM).
+- integration: the same file, 2 cases:
+  - DemoModeOverlay, mirror-replay `clipOf` and DemoStage `visOnStage` wire `scrollRoom` / `room` into `placeView`.
+  - `placedReport` → JSON → `parsePeerMessage` → `reportedGhost` keeps `hidden`, so `ownCueKey` is the hidden key. A scrollable way has no `h` on the wire.
+- e2e: n/a here. The demo loop does not run the browser lane per fix (it needs a two-browser demo session). The next demo cycle re-checks the closed drawer live.
+**Evidence (2026-11-16, Mac host, worktree fix-cdm4-scroll-cue-reachable off origin/demo-fixes 7401e980):**
+- RED. `scrollRoom` was stubbed to today's behaviour (every way open). `cd front-end && deno test -A --no-check lib/demo-scroll-cue-reachable.test.tsx` gave "FAILED | 1 passed | 5 failed": "Values are not equal" (room.left true; dir with no `hidden`), "en lacks demoMode.pointerHidden", and "DemoModeOverlay placeOnScreen does not read the scroll room". Once those passed, the wire case failed alone ("Values are not equal": `reportedGhost` dropped `hidden`).
+- GREEN. The same file gave "ok | 7 passed | 0 failed". `deno test -A lib/demo-*.test.tsx components/demo-mode/` gave "ok | 89 passed | 0 failed". `cd jest && npx jest --selectProjects unit --testPathPattern 'demo-'` gave "Test Suites: 94 passed, 94 total · Tests: 1057 passed, 1057 total". `deno lint` and `deno check` are clean on every touched file, and `deno fmt` changes nothing beyond the diff.

@@ -148,6 +148,7 @@ import {
   placedReporter,
   placeView,
   pointInBox,
+  scrollRoom,
   type TagPlace,
   visibleBox,
 } from "../../shared/demo-mode/presenter-anchor.ts";
@@ -736,7 +737,11 @@ export default function DemoModeOverlay(
     if (!p) return null;
     const el = a.o === 1 ? null : elOf(a);
     if (el) {
-      const box = visibleBox(el as unknown as ClipNode, screenBox(), styleOf);
+      const box = {
+        ...visibleBox(el as unknown as ClipNode, screenBox(), styleOf),
+        // REQ-867 (demo dm4 m6) — which ways a scroll can bring it here (a closed drawer: none)
+        room: scrollRoom(el as unknown as ClipNode, styleOf),
+      };
       return { ...placeView(p, box), box };
     }
     // his mouse beside the frame (REQ-393), a bare fraction: as before

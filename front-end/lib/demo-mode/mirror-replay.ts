@@ -133,6 +133,8 @@ import {
   pickByPrint,
   type PrintNode,
   printOf,
+  type Room,
+  scrollRoom,
   visibleBox,
 } from "../../../shared/demo-mode/presenter-anchor.ts";
 
@@ -215,10 +217,13 @@ export interface Replayer {
    *  when there is none, or more than one alike (never a guess) */
   findPrint(p: NodePrint): number | null;
   /** REQ-645 — the part of the frame (its px) the element an anchor names can be seen in: the view
-   *  cut by every ancestor that clips its overflow; null when the element is gone */
+   *  cut by every ancestor that clips its overflow; null when the element is gone.
+   *  REQ-867 (demo dm4 m6) — `room`: which ways a scroll of the replay can bring it into view */
   clipOf(
     a: NodeAnchor,
-  ): { left: number; top: number; width: number; height: number } | null;
+  ):
+    | { left: number; top: number; width: number; height: number; room: Room }
+    | null;
   /** every node's latest scroll, applied again where the replay lost it */
   settle(): void;
   /** REQ-305 — every stylesheet the replay links has loaded (or failed): its layout is the customer's */
@@ -1384,11 +1389,15 @@ export function createReplayer(
           return null;
         }
       };
-      return visibleBox(
-        n as unknown as ClipNode,
-        { left: 0, top: 0, width: w.w, height: w.h },
-        styleOf,
-      );
+      return {
+        ...visibleBox(
+          n as unknown as ClipNode,
+          { left: 0, top: 0, width: w.w, height: w.h },
+          styleOf,
+        ),
+        // REQ-867 (demo dm4 m6) — a closed off-canvas drawer: no way a scroll reaches it
+        room: scrollRoom(n as unknown as ClipNode, styleOf),
+      };
     },
     settle,
     styled,

@@ -4412,6 +4412,8 @@
   "demoMode.pointerGhostCue.above": "señalando más arriba — el cliente debe desplazarse ↑",
   "demoMode.pointerGhostCue.right": "señalando a la derecha — el cliente debe desplazarse →",
   "demoMode.pointerGhostCue.left": "señalando a la izquierda — el cliente debe desplazarse ←",
+  "demoMode.pointerHidden": "{name} señala algo oculto — abre el menú ☰",
+  "demoMode.pointerGhostCue.hidden": "señalando algo oculto — el cliente debe abrir el menú ☰",
   "demoMode.tabSwitched": "Ahora ves la otra pestaña de {name} ({page}) — mueve el puntero para señalar ahí",
   "demoMode.page.home": "Inicio",
   "demoMode.page.dashboard": "Panel",
