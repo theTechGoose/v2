@@ -292,3 +292,40 @@ Deno.test("REQ-858 (dm4 m7): the guide gate's page links dashboard.css, public-l
     g.__backendFetch = prev;
   }
 });
+
+/**
+ * REQ-869 (demo-loop cycle dm5, issue p3; re-check 11 of REQ-858) — the gate card's heading is set
+ * in the app's heading font. dashboard.css gives Nunito (`--font-heading`) only through classes
+ * (`.ds-prose h1, .h1`); no rule targets a bare h1, so the gate's class-less
+ * `<h1 style="margin:0 0 12px;font-size:22px;line-height:1.3">` inherited the body's Inter
+ * (fleet-r38fa8936-0/stdout:74) even after REQ-858 restored the stylesheet links.
+ */
+Deno.test("REQ-869 (dm5 p3): the guide gate's h1 carries the app's heading font (class h1 or font-family var(--font-heading))", async () => {
+  const prev = g.__backendFetch;
+  g.__backendFetch = backend("impersonating", demo);
+  try {
+    const app = new App<State>()
+      // deno-lint-ignore no-explicit-any
+      .appWrapper(AppShell as any)
+      .use(adminGate)
+      .get("/admin", () => new Response("ADMIN CONSOLE"));
+    const res = await app.handler()(
+      new Request("http://app/admin", {
+        headers: { cookie: "pm_session=sess_1" },
+      }),
+    );
+    const html = await res.text();
+    assertEquals(res.status, 200);
+    const gate = html.slice(html.indexOf('data-cy="admin-gate"'));
+    const h1 = /<h1\b[^>]*>/.exec(gate)?.[0] ?? "";
+    assert(h1, `the gate has an h1: ${gate.slice(0, 400)}`);
+    const cls = /\bclass="([^"]*)"/.exec(h1)?.[1]?.split(/\s+/) ?? [];
+    const style = /\bstyle="([^"]*)"/.exec(h1)?.[1] ?? "";
+    assert(
+      cls.includes("h1") || /font-family:\s*var\(--font-heading\)/.test(style),
+      `the gate h1 uses the heading font (class "h1" or var(--font-heading)): ${h1}`,
+    );
+  } finally {
+    g.__backendFetch = prev;
+  }
+});
