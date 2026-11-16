@@ -45,9 +45,11 @@ export function pillDetailsShown(
 }
 /** REQ-294 — the pills' own font: the app's `--font-body` stack, so a pill reads the same on a
  *  page that loads no app stylesheet (the 404 page), where `font:inherit` fell back to the
- *  browser's default face */
+ *  browser's default face. REQ-825 — then concrete installed sans faces (Arial, Helvetica)
+ *  before the generic, so a machine with no system-ui face and no Inter (the demo's headless
+ *  box) never lands on its monospace `sans-serif` mapping. */
 export const PILL_FONT =
-  '"Inter", system-ui, -apple-system, "Segoe UI", sans-serif';
+  '"Inter", system-ui, -apple-system, "Segoe UI", Arial, Helvetica, sans-serif';
 /** what counts as a control of the page: a pill on top of one of these is in the way */
 export const CONTROL_SELECTOR =
   'a[href],button,input,select,textarea,summary,label,[role="button"],[role="link"],[role="tab"],[role="menuitem"],[role="checkbox"],[role="switch"]';
